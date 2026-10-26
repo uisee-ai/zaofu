@@ -40,6 +40,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.runtime.backend import get_adapter
 from zf.runtime.codex_hooks import codex_hook_trust_states, write_codex_hook_settings
+from zf.runtime.codex_session_ownership import codex_launch_observation_since
 from zf.runtime.launch_artifact import write_launch_artifact
 from zf.runtime.provider_session_config import ProviderSessionPreparationMixin
 from zf.runtime.session_tailer import attach_codex_session_tailer
@@ -650,7 +651,9 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
         if role.instance_id in self._codex_observe_inflight:
             return  # background thread is already polling
         self._codex_observe_inflight.add(role.instance_id)
-        since_ts = self._spawn_ts.get(role.instance_id, 0.0)
+        since_ts = self._spawn_ts.get(role.instance_id) or codex_launch_observation_since(
+            self.event_log, role.instance_id,
+        )
         threading.Thread(
             target=self._observe_codex_in_background,
             args=(role, since_ts),

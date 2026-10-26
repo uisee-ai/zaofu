@@ -1,0 +1,164 @@
+{
+  "status": "integration_in_progress_not_final",
+  "rows": [
+    {
+      "receipt": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/scaffold/runs/2026-10-26T01-31-09-801Z-e85d20c2-b899-4a56-b14f-d73533331846/receipt.json",
+      "sha256": "ce26456c45f15fcae1937ceb5fd2d5b56220b83bee1e60ea6ee16bd781d9a6e9",
+      "command_id": "VC-FOUNDATION",
+      "status": "failed",
+      "exit_code": 1,
+      "commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+      "stages": [
+        {
+          "name": "unit",
+          "command": [
+            "/home/uisee/.nvm/versions/node/v24.14.0/bin/node",
+            "node_modules/vitest/vitest.mjs",
+            "run",
+            "tests/scaffold/unit.test.ts",
+            "--reporter=json",
+            "--outputFile=artifacts/racing/scaffold/runs/2026-10-26T01-31-09-801Z-e85d20c2-b899-4a56-b14f-d73533331846/result.json"
+          ],
+          "exit_code": 1,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 57,
+          "stdout": "artifacts/racing/scaffold/runs/2026-10-26T01-31-09-801Z-e85d20c2-b899-4a56-b14f-d73533331846/unit.stdout.bin",
+          "stderr": "artifacts/racing/scaffold/runs/2026-10-26T01-31-09-801Z-e85d20c2-b899-4a56-b14f-d73533331846/unit.stderr.bin"
+        }
+      ]
+    },
+    {
+      "receipt": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/scaffold/runs/2026-10-26T01-31-09-977Z-eba0026b-1ccd-439f-a552-e9aaa8afba44/receipt.json",
+      "sha256": "2212eda24bde1f721cba35850a7f445993ba0bf3c1229d22f11edadf29ebe3fb",
+      "command_id": "VC-SCAFFOLD-BROWSER",
+      "status": "failed",
+      "exit_code": 1,
+      "commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+      "stages": [
+        {
+          "name": "image",
+          "command": [
+            "docker",
+            "image",
+            "inspect",
+            "mcp/playwright:latest"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 80,
+          "stdout": "artifacts/racing/scaffold/runs/2026-10-26T01-31-09-977Z-eba0026b-1ccd-439f-a552-e9aaa8afba44/image.stdout.bin",
+          "stderr": "artifacts/racing/scaffold/runs/2026-10-26T01-31-09-977Z-eba0026b-1ccd-439f-a552-e9aaa8afba44/image.stderr.bin"
+        },
+        {
+          "name": "docker",
+          "command": [
+            "bash",
+            "-c",
+            "docker run --rm --pull never --network host --user \"$(id -u):$(id -g)\" --entrypoint bash -v \"$PWD:/work\" -w /work -e PLAYWRIGHT_BROWSERS_PATH=0 -e RACING_SUITE=\"$RACING_SUITE\" mcp/playwright:latest -lc 'bash scripts/racing-runner/container.sh'"
+          ],
+          "exit_code": 1,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 573,
+          "stdout": "artifacts/racing/scaffold/runs/2026-10-26T01-31-09-977Z-eba0026b-1ccd-439f-a552-e9aaa8afba44/docker.stdout.bin",
+          "stderr": "artifacts/racing/scaffold/runs/2026-10-26T01-31-09-977Z-eba0026b-1ccd-439f-a552-e9aaa8afba44/docker.stderr.bin"
+        }
+      ]
+    },
+    {
+      "receipt": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/race/runs/2026-10-26T01-31-17-119Z-e58fa64d-6e37-4928-b483-fe41ab23e63d/receipt.json",
+      "sha256": "b481d35e5e05de942d5434c5e0727f502002d155e8b28de6da4d4a146b07da1d",
+      "command_id": "VC-DRIVE",
+      "status": "passed",
+      "exit_code": 0,
+      "commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+      "stages": [
+        {
+          "name": "unit",
+          "command": [
+            "/home/uisee/.nvm/versions/node/v24.14.0/bin/node",
+            "node_modules/vitest/vitest.mjs",
+            "run",
+            "tests/race/unit.test.ts",
+            "--reporter=json",
+            "--outputFile=artifacts/racing/race/runs/2026-10-26T01-31-17-119Z-e58fa64d-6e37-4928-b483-fe41ab23e63d/result.json"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 1308,
+          "stdout": "artifacts/racing/race/runs/2026-10-26T01-31-17-119Z-e58fa64d-6e37-4928-b483-fe41ab23e63d/unit.stdout.bin",
+          "stderr": "artifacts/racing/race/runs/2026-10-26T01-31-17-119Z-e58fa64d-6e37-4928-b483-fe41ab23e63d/unit.stderr.bin"
+        }
+      ]
+    },
+    {
+      "receipt": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/race/runs/2026-10-26T01-31-18-510Z-73c76b74-e8e5-4c9b-9556-6e99dc73474a/receipt.json",
+      "sha256": "ae5a7b69dad34db985c07122954b0f4239dbef2583564a1085a7b3fc699d44e7",
+      "command_id": "VC-DRIVE-BROWSER",
+      "status": "failed",
+      "exit_code": 124,
+      "commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+      "stages": [
+        {
+          "name": "image",
+          "command": [
+            "docker",
+            "image",
+            "inspect",
+            "mcp/playwright:latest"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 42,
+          "stdout": "artifacts/racing/race/runs/2026-10-26T01-31-18-510Z-73c76b74-e8e5-4c9b-9556-6e99dc73474a/image.stdout.bin",
+          "stderr": "artifacts/racing/race/runs/2026-10-26T01-31-18-510Z-73c76b74-e8e5-4c9b-9556-6e99dc73474a/image.stderr.bin"
+        },
+        {
+          "name": "docker",
+          "command": [
+            "bash",
+            "-c",
+            "docker run --rm --pull never --network host --user \"$(id -u):$(id -g)\" --entrypoint bash -v \"$PWD:/work\" -w /work -e PLAYWRIGHT_BROWSERS_PATH=0 -e RACING_SUITE=\"$RACING_SUITE\" mcp/playwright:latest -lc 'bash scripts/racing-runner/container.sh'"
+          ],
+          "exit_code": 124,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 180947,
+          "stdout": "artifacts/racing/race/runs/2026-10-26T01-31-18-510Z-73c76b74-e8e5-4c9b-9556-6e99dc73474a/docker.stdout.bin",
+          "stderr": "artifacts/racing/race/runs/2026-10-26T01-31-18-510Z-73c76b74-e8e5-4c9b-9556-6e99dc73474a/docker.stderr.bin"
+        }
+      ]
+    },
+    {
+      "receipt": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/track/runs/2026-10-26T01-34-37-735Z-180528bd-312d-4308-8a50-ea1b1079cb6d/receipt.json",
+      "sha256": "dc9e60213848f3b9c8019d1e9e0472bc18906e86cccad565a677bcec65d4f5fa",
+      "command_id": "VC-TRACK",
+      "status": "passed",
+      "exit_code": 0,
+      "commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+      "stages": [
+        {
+          "name": "unit",
+          "command": [
+            "/home/uisee/.nvm/versions/node/v24.14.0/bin/node",
+            "node_modules/vitest/vitest.mjs",
+            "run",
+            "tests/track/unit.test.ts",
+            "--reporter=json",
+            "--outputFile=artifacts/racing/track/runs/2026-10-26T01-34-37-735Z-180528bd-312d-4308-8a50-ea1b1079cb6d/result.json"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 1174,
+          "stdout": "artifacts/racing/track/runs/2026-10-26T01-34-37-735Z-180528bd-312d-4308-8a50-ea1b1079cb6d/unit.stdout.bin",
+          "stderr": "artifacts/racing/track/runs/2026-10-26T01-34-37-735Z-180528bd-312d-4308-8a50-ea1b1079cb6d/unit.stderr.bin"
+        }
+      ]
+    }
+  ]
+}

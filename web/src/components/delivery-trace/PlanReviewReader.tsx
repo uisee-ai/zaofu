@@ -9,7 +9,15 @@ type View = "overview" | "modules" | "scenarios" | "original";
 const views: [View, string][] = [["overview", "审批概览"], ["modules", "模块规格"], ["scenarios", "验收场景"], ["original", "完整原文"]];
 
 export default function PlanReviewReader({ preview, projectId }: { preview: PlanPreview; projectId: string }) {
-  const available = useMemo(() => reviewPorts.filter(name => preview.artifacts?.some(p => p.name === name)), [preview.artifacts]);
+  // Graph polls recreate arrays; reload only when a bound port actually changes.
+  const bindingKey = JSON.stringify(reviewPorts.map(name => {
+    const port = preview.artifacts?.find(p => p.name === name);
+    return port ? [port.ref, port.sha256] : null;
+  }));
+  const available = useMemo(() => {
+    const bindings: unknown[] = JSON.parse(bindingKey);
+    return reviewPorts.filter((_, index) => bindings[index] !== null);
+  }, [bindingKey]);
   const [view, setView] = useState<View>(available.includes("task_map") ? "overview" : "original");
   const [artifacts, setArtifacts] = useState<ReviewArtifacts>({});
   const [errors, setErrors] = useState<string[]>([]);

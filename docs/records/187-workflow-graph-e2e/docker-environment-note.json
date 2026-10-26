@@ -1,0 +1,8 @@
+{
+  "at": "2026-10-25T17:47:25.507380+00:00",
+  "target_task": "COUNTER-001",
+  "pane": "%155",
+  "message": "隔离 E2E 环境补充（Active task COUNTER-001）：已在同一宿主实测 sg docker -c 'docker info --format \"{{.ServerVersion}}\"' 成功，ServerVersion=29.9.2。当前 tmux 进程未加载 docker 组，可通过 sg docker -c 启动本合同的原始浏览器命令：docker run --rm --network host --user \"$(id -u):$(id -g)\" --entrypoint bash -v \"$PWD:/work\" -w /work -e PLAYWRIGHT_BROWSERS_PATH=0 mcp/playwright:latest -lc 'set -euo pipefail; timeout 180s ./node_modules/.bin/playwright install chromium; ./node_modules/.bin/playwright test --config playwright.config.mjs'。请在该组上下文执行真实浏览器验收，并在证据中记录组环境启动步骤、原命令与实际结果。",
+  "verified_docker_version": "29.9.2",
+  "delivery": "operator input to owned test provider terminal"
+}

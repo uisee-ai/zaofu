@@ -1,0 +1,36 @@
+{
+  "status": "candidate_exported_independent_verification_pending",
+  "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+  "source_archive_sha256": "9b6e0d6cd12429f3221a679583cb50d223825b6cf75db66835aa1e414219b996",
+  "workflow_original_sha256": "6b285255e54f09e1779ad4e045e43474b320d1d6359c79b4d9caf70aaa82bf74",
+  "workflow_relocated_sha256": "169dbe9710a5bf3f9574ab036467ba7e94997d92bbe263330fe5d3754195446c",
+  "relocation_only": true,
+  "source_files": 136,
+  "production_deployment": "unconnected",
+  "path": "/home/uisee/workspace/zaofu-e2e-deliveries/2026-10-25-racing-187/candidate-a15b6b6f5247",
+  "relocated_audit": {
+    "status": "passed",
+    "predecessor_only": true,
+    "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "plan_approval": "evt-15434756a885",
+    "writer_dispatches": [
+      "evt-323a76e4e195",
+      "evt-015b34dacba8",
+      "evt-603d84af1e50",
+      "evt-14632de1a0b4"
+    ],
+    "configured_writers": [
+      "prd-dev-lane-0",
+      "prd-dev-lane-1",
+      "prd-dev-lane-2"
+    ],
+    "configured_verifiers": [
+      "prd-verify-lane-0",
+      "prd-verify-lane-1",
+      "prd-verify-lane-2"
+    ],
+    "judge": "judge-prd",
+    "kernel_admission": "evt-ab7a56759026",
+    "independent_verification": "pending downstream receipts"
+  }
+}

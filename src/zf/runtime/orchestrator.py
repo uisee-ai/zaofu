@@ -1746,15 +1746,13 @@ class WorkflowRuntimeCoordinator(
                     spawn_repairs=False,
                 )
             events = read_runtime_events(self.event_log, self.state_dir)
-            from zf.runtime.replan_resynth import (
-                plan_missing_replan_resynth_events,
-            )
+            from zf.runtime import replan_resynth
 
-            for replan_event in plan_missing_replan_resynth_events(
+            for replan_event in replan_resynth.plan_missing_replan_resynth_events(
                 events,
                 config=self.config,
             ):
-                self.event_writer.append(replan_event)
+                replan_resynth.append_replan_resynth_once(self.event_writer, self.state_dir, replan_event)
             events = read_runtime_events(self.event_log, self.state_dir)
             self._resume_unstarted_rework_task_maps(events)
             return
@@ -1802,15 +1800,15 @@ class WorkflowRuntimeCoordinator(
 
     def _maybe_resynth_on_replan(self, plan, events: list[ZfEvent]) -> None:
         """Re-emit the configured plan-synth trigger for plan-level rework."""
-        from zf.runtime.replan_resynth import build_replan_resynth_event
+        from zf.runtime import replan_resynth
 
-        event = build_replan_resynth_event(
+        event = replan_resynth.build_replan_resynth_event(
             plan=plan,
             events=events,
             config=self.config,
         )
         if event is not None:
-            self.event_writer.append(event)
+            replan_resynth.append_replan_resynth_once(self.event_writer, self.state_dir, event)
 
     def _resume_unstarted_rework_task_maps(self, events: list[ZfEvent]) -> None:
         """Start rework task maps that were emitted by an older sweep.

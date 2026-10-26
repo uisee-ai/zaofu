@@ -658,9 +658,10 @@ def test_pinned_oci_image_ref_is_not_treated_as_repository_path() -> None:
     assert result.passed is True, result.errors
 
 
-def test_docker_playwright_runtime_flags_are_not_task_paths() -> None:
+@pytest.mark.parametrize("pull", ["", "--pull=never", "--pull never"])
+def test_docker_playwright_runtime_flags_are_not_task_paths(pull: str) -> None:
     command = (
-        'docker run --rm --network host --mount "type=bind,src=$PWD,dst=/work" '
+        f'docker run --rm {pull} --network host --mount "type=bind,src=$PWD,dst=/work" '
         '--mount "type=bind,src=/path/to/zaofu/web/node_modules,'
         'dst=/opt/zaofu-node_modules,readonly" --workdir /work '
         '--env NODE_PATH=/opt/zaofu-node_modules mcp/playwright:latest '

@@ -1,0 +1,49 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_action_and_stale_kernel_snapshot_share_one_resynth ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-224/test_action_and_stale_kernel_s0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x735809f98d90>
+
+    def test_action_and_stale_kernel_snapshot_share_one_resynth(tmp_path: Path, monkeypatch):
+        state = tmp_path / 'custom-state'
+        state.mkdir()
+        config = ZfConfig()
+        config.workflow.admission_replan.enabled = True
+        config.workflow.admission_replan.resynth_trigger = 'prd.scan.completed'
+        writer = EventWriter(EventLog(state / 'events.jsonl'))
+        service = ControlledActionService(state, writer, config=config, actor='operator')
+        runtime = SimpleNamespace(state_dir=state, config=config, event_writer=writer)
+        original = actions._build_resynth_event
+
+        def overlap(payload, **kwargs):
+            # The Web action has written its marker; the sweep sees that partial
+            # snapshot before either consumer has appended its follow-through.
+            candidate = original(payload, **kwargs)
+            assert candidate is not None
+            plan = SimpleNamespace(pdd_id='P1', trace_id=payload['trace_id'],
+                source_event_id=payload['source_event_id'], attempt=1,
+                source_event_type='integration.failed', flow_kind='prd')
+            snapshot = writer.event_log.read_all()
+            Orchestrator._maybe_resynth_on_replan(runtime, plan, snapshot)
+            return candidate
+
+        monkeypatch.setattr(actions, '_build_resynth_event', overlap)
+        for run, failure in [('run-1', 'failure-1'), ('run-2', 'failure-1'), ('run-1', 'failure-2')]:
+            payload = {'candidate_rework_action':'replan', 'pdd_id':'P1', 'trace_id':run,
+                'workflow_run_id':run, 'flow_kind':'prd', 'source_event_id':failure,
+                'source_event_type':'integration.failed', 'rework_attempt':1}
+            result = service._candidate_rework_apply(
+                requested=ZfEvent(type='web.action.requested', actor='web'),
+                action='candidate-rework-apply', requested_action='candidate-rework-apply',
+                payload=payload)
+            assert result['ok']
+        triggers = [e for e in writer.event_log.read_all() if e.type == 'prd.scan.completed']
+>       assert len(triggers) == 3
+E       AssertionError: assert 6 == 3
+E        +  where 6 = len([ZfEvent(type='prd.scan.completed', id='evt-3c21829bb645', ts='2026-10-26T02:34:20.410461+00:00', actor='zf-cli', task...ification': '', 'workflow_run_id': 'run-1', 'flow_kind': 'prd'}, causation_id=None, correlation_id='run-1', origin='')])
+
+tests/test_replan_resynth_race.py:46: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_replan_resynth_race.py::test_action_and_stale_kernel_snapshot_share_one_resynth
+1 failed in 1.49s

@@ -15,9 +15,14 @@ function testLifecycleBuckets(): void {
   assert(workflowViewForRequest({ status: "clarifying" }) === "decision", "clarification needs a decision");
   assert(workflowViewForRequest({ status: "running" }) === "active", "running workflows are active");
   assert(workflowViewForRequest({ status: "rejected" }) === "history", "rejected workflows are history");
+  assert(workflowViewForRequest({ status: "cancelled" }) === "history", "cancelled preparation belongs to history");
 }
 
 function testRequestReadinessPrecedesProposalReadiness(): void {
+  assert(
+    readinessPresentation({ blockerCount: 0, requestStatus: "cancelled", runStatus: "", terminal: "" }).title === "Workflow cancelled",
+    "cancelled preparation must not be presented as ready to run",
+  );
   assert(
     readinessPresentation({
       blockerCount: 0,

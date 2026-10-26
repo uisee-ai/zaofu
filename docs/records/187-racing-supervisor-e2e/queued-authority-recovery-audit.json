@@ -1,0 +1,111 @@
+{
+  "source_seq": 5735,
+  "observed_at": "2026-10-26T01:14:21.654477+00:00",
+  "events": [
+    {
+      "id": "evt-3f137b35e5da",
+      "type": "dev.build.done",
+      "ts": "2026-10-26T00:52:49.336113+00:00",
+      "actor": "prd-dev-lane-1",
+      "causation_id": "evt-c6a52fefc3b5",
+      "payload": {
+        "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+        "child_id": "queued-RACE-DRIVE-2",
+        "source_commit": "2d58b91886ecdb7e92c3776c7ba7a74e85313ea2",
+        "operation_id": "wop-prd-lanes-impl-queued-RACE-DRIVE-2-trig-evt-adf-edfc43404965",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "run_id": "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-DRIVE-2"
+      }
+    },
+    {
+      "id": "evt-6e2d2f8bd376",
+      "type": "dev.build.done",
+      "ts": "2026-10-26T00:55:32.013767+00:00",
+      "actor": "prd-dev-lane-2",
+      "causation_id": "evt-ff1aa10eb1c2",
+      "payload": {
+        "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+        "child_id": "queued-RACE-TRACK-3",
+        "source_commit": "fc3f13f850f2da4bcaa3957c244f45684d992b83",
+        "operation_id": "wop-prd-lanes-impl-queued-RACE-TRACK-3-trig-evt-adf-cb5e3d8beff3",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "run_id": "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-TRACK-3"
+      }
+    },
+    {
+      "id": "evt-049f56c81c3a",
+      "type": "fanout.child.completed",
+      "ts": "2026-10-26T01:05:14.883016+00:00",
+      "actor": "zf-cli",
+      "causation_id": "evt-3f137b35e5da",
+      "payload": {
+        "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+        "child_id": "queued-RACE-DRIVE-2",
+        "role_instance": "prd-dev-lane-1",
+        "task_id": "RACE-DRIVE",
+        "source_commit": "2d58b91886ecdb7e92c3776c7ba7a74e85313ea2",
+        "operation_id": "wop-prd-lanes-impl-queued-RACE-DRIVE-2-trig-evt-adf-edfc43404965",
+        "contract_authority_revision": "authority-re175ad2200c656b6f3cb70ed",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "run_id": "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-DRIVE-2"
+      }
+    },
+    {
+      "id": "evt-01ade5921a6d",
+      "type": "fanout.child.completed",
+      "ts": "2026-10-26T01:05:15.206332+00:00",
+      "actor": "zf-cli",
+      "causation_id": "evt-6e2d2f8bd376",
+      "payload": {
+        "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+        "child_id": "queued-RACE-TRACK-3",
+        "role_instance": "prd-dev-lane-2",
+        "task_id": "RACE-TRACK",
+        "source_commit": "fc3f13f850f2da4bcaa3957c244f45684d992b83",
+        "operation_id": "wop-prd-lanes-impl-queued-RACE-TRACK-3-trig-evt-adf-cb5e3d8beff3",
+        "contract_authority_revision": "authority-r52b3a4f1f1f238698fe04c5b",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "run_id": "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-TRACK-3"
+      }
+    },
+    {
+      "id": "evt-64b8d0dcad37",
+      "type": "fanout.child.dispatched",
+      "ts": "2026-10-26T01:05:18.605428+00:00",
+      "actor": "zf-cli",
+      "causation_id": "evt-adf3807d914c",
+      "payload": {
+        "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+        "child_id": "queued-RACE-ASSEMBLY-4",
+        "role_instance": "prd-dev-lane-2",
+        "task_id": "RACE-ASSEMBLY",
+        "operation_id": "wop-prd-lanes-impl-queued-RACE-ASSEMBLY-4-trig-evt--498bf2112cb7",
+        "contract_authority_revision": "authority-r0d63b04c8b82de172e048ab3",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "run_id": "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-ASSEMBLY-4"
+      }
+    }
+  ],
+  "provider_activity_intervals": [
+    {
+      "role": "prd-dev-lane-1",
+      "first_observed_activity": "2026-10-26T00:29:49.749182+00:00",
+      "first_event": "evt-2c27176dc2df",
+      "last_observed_activity": "2026-10-26T00:52:45.889659+00:00",
+      "last_event": "evt-eb21b79952d5",
+      "activity_events": 231
+    },
+    {
+      "role": "prd-dev-lane-2",
+      "first_observed_activity": "2026-10-26T00:29:53.983854+00:00",
+      "first_event": "evt-2c88123b43d4",
+      "last_observed_activity": "2026-10-26T00:55:29.548119+00:00",
+      "last_event": "evt-c6c3b115d2e0",
+      "activity_events": 238
+    }
+  ],
+  "interval_caveat": "First/last actual provider activity; does not assert uninterrupted CPU activity. Kernel dispatch/settlement includes repair wait.",
+  "selfcheck_events_before_repair": 544,
+  "selfcheck_events_after_repair": 0,
+  "yaml_sha256": "2b356f6a13021b0616878f71079c83a31abd25d1f262a1fb73ae206778b6a6f3"
+}

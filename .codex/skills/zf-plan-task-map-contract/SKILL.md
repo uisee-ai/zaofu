@@ -79,6 +79,10 @@ turns consume the workflow operation budget without adding planning evidence.
 
 ## Product Boundary
 
+为多模块需求编写 Task Map 时，遵循
+[通用模块与任务关联](references/module-graph.md)，输出显式模块、需求和任务关系。
+模块语义由 Planner 决定；图布局与运行状态由代码从已接纳工件和事件派生。
+
 ZaoFu plan stages have two output layers:
 
 - Human layer: durable markdown for review and discussion.

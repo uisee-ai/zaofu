@@ -1,0 +1,37 @@
+{"timings_with_profiler": {"sources": 8.861327551305294, "build": 3.1897477954626083, "redact_serialize": 2.8163593485951424}, "bytes": 4680462, "events": 7716}
+         6597550 function calls (6288489 primitive calls) in 14.857 seconds
+
+   Ordered by: cumulative time
+   List reduced from 669 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.041    0.041    8.861    8.861 workflow_workbench_sources.py:74(read_workbench_sources)
+        1    0.005    0.005    6.677    6.677 log.py:316(read_all)
+        2    0.229    0.114    6.660    3.330 log.py:260(_parse_file_consumed)
+    10681    0.128    0.000    5.025    0.000 log.py:144(_decode)
+    21504    0.126    0.000    4.330    0.000 __init__.py:299(loads)
+    21504    0.173    0.000    4.183    0.000 decoder.py:332(decode)
+    21504    3.871    0.000    3.871    0.000 decoder.py:343(raw_decode)
+        1    0.119    0.119    3.189    3.189 sdlc_graph.py:39(build_sdlc_graph)
+        1    0.007    0.007    2.946    2.946 log.py:256(_parse_file)
+127266/21    0.162    0.000    2.727    0.130 redaction.py:71(redact_obj)
+ 14560/21    0.107    0.000    2.727    0.130 redaction.py:75(<dictcomp>)
+102756/413    0.246    0.000    2.726    0.007 redaction.py:86(_redact_dict_value)
+    10681    0.064    0.000    2.714    0.000 model.py:38(from_json)
+ 5066/113    0.018    0.000    2.709    0.024 redaction.py:80(<listcomp>)
+    89493    0.183    0.000    1.605    0.000 redaction.py:63(redact_text)
+        7    0.233    0.033    1.597    0.228 operator_plan_preview.py:28(build_plan_preview)
+   357972    1.269    0.000    1.422    0.000 {method 'sub' of 're.Pattern' objects}
+        1    0.001    0.001    1.320    1.320 workflow_trace_fanout.py:14(build_fanout_runs)
+       20    0.002    0.000    0.715    0.036 workflow_run.py:31(build_workflow_run)
+      185    0.009    0.000    0.639    0.003 plan_preview_artifacts.py:37(read_preview_artifact)
+    10681    0.185    0.000    0.634    0.000 model.py:42(from_dict)
+        2    0.606    0.303    0.606    0.303 {method 'split' of 'bytes' objects}
+       20    0.325    0.016    0.575    0.029 workflow_trace_fanout.py:23(<listcomp>)
+      206    0.003    0.000    0.561    0.003 plan_preview_artifacts.py:24(preview_artifact_path)
+    10869    0.525    0.000    0.525    0.000 {method 'decode' of 'bytes' objects}
+     1034    0.015    0.000    0.522    0.001 pathlib.py:981(resolve)
+        7    0.004    0.001    0.510    0.073 plan_review_packet.py:14(build_review_packet)
+   102756    0.309    0.000    0.491    0.000 redaction.py:51(_sensitive_key)
+      479    0.002    0.000    0.463    0.001 dataclasses.py:1265(asdict)
+45194/479    0.139    0.000    0.460    0.001 dataclasses.py:1289(_asdict_inner)

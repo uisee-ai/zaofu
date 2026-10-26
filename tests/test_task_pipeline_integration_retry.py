@@ -18,9 +18,12 @@ from zf.runtime.task_pipeline_integration import reconcile_task_pipeline_integra
 from zf.runtime.task_pipeline_integration_retry import request_integration_retry
 from zf.runtime.task_pipeline_reconciler import TaskPipelineReconciler
 from zf.runtime.workflow_operation import reduce_workflow_operations
+from zf.runtime.candidates import CandidateRebuilder
+from zf.runtime.sidecar_refs import write_sidecar_json
+from zf.runtime.task_contract_snapshot import effective_contract_revision
 
 
-def seed_verified(writer, task_id="T1", generation="map-g1"):
+def seed_verified(writer, task_id="T1", generation="map-g1", verify_ref=None):
     identity = dict(task_id=task_id, workflow_run_id="run-1", task_map_generation=generation,
                     operation_generation=1)
     writer.append(ZfEvent(type="task.pipeline.generation.admitted", payload={
@@ -30,8 +33,9 @@ def seed_verified(writer, task_id="T1", generation="map-g1"):
         p = {**identity, "operation_id": f"op-{stage}", "task_pipeline_stage": stage,
              "request_hash": f"hash-{stage}", "role_instance": f"{stage}-1"}
         writer.append(ZfEvent(type="workflow.operation.requested", task_id=task_id, payload=p))
+        evidence = {"control_result_ref": verify_ref} if stage == "verify" and verify_ref else {}
         writer.append(ZfEvent(type="workflow.call.result.admitted", task_id=task_id,
-                             payload={**p, "semantic_verdict": "passed"}))
+                             payload={**p, "semantic_verdict": "passed", **evidence}))
         writer.append(ZfEvent(type="workflow.operation.settled", task_id=task_id, payload=p))
     return identity
 
@@ -168,8 +172,18 @@ def test_active_attempt_blocks_retry_even_after_operation_settled(case, capsys):
 
 @pytest.mark.mock_e2e
 def test_setup_repair_retries_real_candidate_integration_without_provider(tmp_path):
-    state, config, log, writer, base, _ = _setup(tmp_path)
-    seed_verified(writer, task_id="TASK-A")
+    state, config, log, writer, base, target = _setup(tmp_path)
+    store = TaskStore(state / "kanban.json")
+    verify_ref = write_sidecar_json(
+        state, "artifacts/verified.json", {
+            "schema_version": "verification-result.v1", "task_id": "TASK-A",
+            "workflow_run_id": "run-1", "task_map_generation": "map-g1",
+            "contract_revision": effective_contract_revision(store.get("TASK-A")),
+            "target_commit": target, "verdict": "passed",
+        }, kind="control_result", schema_version="verification-result.v1",
+        created_by="test-admission",
+    )
+    seed_verified(writer, task_id="TASK-A", verify_ref=verify_ref)
     config.project.setup_script = "exit 2"
     failed = _integrate(tmp_path, state, config, log, writer, base)
     assert failed.status == "needs_review"
@@ -184,9 +198,12 @@ def test_setup_repair_retries_real_candidate_integration_without_provider(tmp_pa
     )
     contexts = task_pipeline_generation_contexts(log.read_all())
     contexts["TASK-A"]["dispatch_base_commit"] = base
+    rebuilder = CandidateRebuilder(state_dir=state, project_root=tmp_path,
+                                   config=config, event_log=log)
     runtime = SimpleNamespace(state_dir=state, project_root=tmp_path, config=config,
                               event_log=log, event_writer=writer,
-                              task_store=TaskStore(state / "kanban.json"))
+                              task_store=store,
+                              _task_ref_entry=lambda task_id: rebuilder._task_index().get(task_id, {}))
     decisions = reconcile_task_pipeline_integration(
         runtime, projection=plan, generation_contexts=contexts, operation_rows=operations,
     )

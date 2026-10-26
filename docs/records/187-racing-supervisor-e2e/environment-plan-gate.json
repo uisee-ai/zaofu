@@ -1,0 +1,98 @@
+{
+  "plan_id": "evt-498c4d468cc2",
+  "status": "pending",
+  "accepted_plan_sha256": "93255908dd5c222141dd85b9c448829f2dde9a96fecdcf88d0ec0737d5095916",
+  "source_seq": 9768,
+  "task_count": 4,
+  "acceptance_count": 16,
+  "plan_approved": false,
+  "impl_dispatched": false,
+  "command_timeout_changes": [
+    {
+      "task_id": "RACE-FOUNDATION",
+      "command_id": "VC-FOUNDATION",
+      "old_timeout": 90,
+      "new_timeout": 780
+    },
+    {
+      "task_id": "RACE-FOUNDATION",
+      "command_id": "VC-SCAFFOLD-BROWSER",
+      "old_timeout": 300,
+      "new_timeout": 2100
+    },
+    {
+      "task_id": "RACE-DRIVE",
+      "command_id": "VC-DRIVE",
+      "old_timeout": 90,
+      "new_timeout": 780
+    },
+    {
+      "task_id": "RACE-DRIVE",
+      "command_id": "VC-DRIVE-BROWSER",
+      "old_timeout": 360,
+      "new_timeout": 2100
+    },
+    {
+      "task_id": "RACE-TRACK",
+      "command_id": "VC-TRACK",
+      "old_timeout": 90,
+      "new_timeout": 780
+    },
+    {
+      "task_id": "RACE-TRACK",
+      "command_id": "VC-TRACK-BROWSER",
+      "old_timeout": 360,
+      "new_timeout": 2100
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "command_id": "VC-ASSEMBLY",
+      "old_timeout": 120,
+      "new_timeout": 780
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "command_id": "VC-INSTALL",
+      "old_timeout": 240,
+      "new_timeout": 660
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "command_id": "VC-LINT",
+      "old_timeout": 120,
+      "new_timeout": 780
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "command_id": "VC-UNIT",
+      "old_timeout": 120,
+      "new_timeout": 780
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "command_id": "VC-BUILD",
+      "old_timeout": 120,
+      "new_timeout": 780
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "command_id": "VC-BROWSER",
+      "old_timeout": 600,
+      "new_timeout": 2400
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "command_id": "VC-DELIVERY",
+      "old_timeout": 1200,
+      "new_timeout": 3600
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "command_id": "VC-GOVERNANCE",
+      "old_timeout": 90,
+      "new_timeout": 90
+    }
+  ],
+  "run_status": "running",
+  "url": "http://10.0.169.194:8002/?page=workflows&project=racing-project-33598481&request=prepare-TASK-5F44B4-c32763f31115843f"
+}

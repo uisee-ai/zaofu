@@ -1,0 +1,15 @@
+{
+  "type": "plan.approved",
+  "id": "evt-158a8630051c",
+  "ts": "2026-10-26T00:01:28.943399+00:00",
+  "actor": "operator",
+  "task_id": null,
+  "payload": {
+    "plan_id": "evt-adf3807d914c",
+    "via": "controlled-action:kanban-agent",
+    "surface": "web"
+  },
+  "causation_id": "evt-adf3807d914c",
+  "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+  "origin": ""
+}

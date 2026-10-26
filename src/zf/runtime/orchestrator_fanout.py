@@ -953,6 +953,7 @@ class FanoutCoordinationMixin(
             "task_map_ref",
             "source_index_ref",
             "rework_of",
+            "rework_attempt",
             "pdd_id",
             "feature_id",
         ):
@@ -3314,9 +3315,7 @@ class FanoutCoordinationMixin(
             return True
         if not requested:
             task_items = list(getattr(loaded, "task_items", []) or [])
-            # FIX-12(bizsim r4 F12):plan 语义指纹判重。r4 judge cap 冻结期
-            # 每轮 replan 铸新 plan_id(14 请求/7 批,批一生一),同
-            # stage+pdd+task 集及产物版本相同的未决 plan 不再铸新单。
+            # Suppress only the same pending task contract and reviewed artifact.
             from zf.runtime.plan_approval_identity import plan_approval_fingerprint
 
             fingerprint = plan_approval_fingerprint(
@@ -3329,8 +3328,9 @@ class FanoutCoordinationMixin(
                     **{
                         key: str(trigger_event.payload.get(key) or "")
                         for key in (
-                            "task_map_generation", "plan_artifact_package_digest",
-                            "requirement_spec_digest",
+                            "task_map_generation", "task_map_digest", "plan_artifact_package_digest",
+                            "requirement_spec_digest", "effective_config_digest",
+                            "workflow_proposal_digest", "run_contract_digest", "plan_artifact_digest",
                         )
                     },
                 },
@@ -6182,7 +6182,7 @@ class FanoutCoordinationMixin(
             for child in children
             if child.get("status") == "failed"
         ]
-        self.event_writer.append(ZfEvent(
+        integration_trigger = self.event_writer.append(ZfEvent(
             type="fanout.aggregate.started",
             actor="zf-cli",
             payload={
@@ -6218,6 +6218,7 @@ class FanoutCoordinationMixin(
                 ).rebuild(
                     pdd_id,
                     event_writer=self.event_writer,
+                    trigger_event=integration_trigger,
                     task_ids=completed_task_ids,
                     candidate_base_ref=candidate_base_ref or None,
                 )

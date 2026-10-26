@@ -1,0 +1,364 @@
+{
+  "schema_version": "goal-completion-receipt.v1",
+  "is_derived_projection": true,
+  "generated_at": "2026-10-26T08:27:51.844696+00:00",
+  "project_id": "racing-project-33598481",
+  "feature_id": "TASK-5F44B4",
+  "goal_id": "prepare-TASK-5F44B4-c32763f31115843f",
+  "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+  "requested_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+  "terminal": {
+    "status": "completed",
+    "event_id": "evt-e31b1c6d9a73",
+    "event_type": "run.goal.completed",
+    "event_seq": 13406,
+    "event_ts": "2026-10-26T08:27:11.281862+00:00",
+    "event_sha256": "c5474260111e8e448568548cb47bc1932e67cbfe7f730513fcb258c926933974",
+    "claim_id": "goal-claim-804982e6131712b08f8d"
+  },
+  "completion_gate": {
+    "status": "passed",
+    "claim_event_id": "evt-17c54730c6a3",
+    "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+    "workflow_generation": "",
+    "target_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+    "verified_target_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03"
+  },
+  "verification": {
+    "event_id": "evt-057d6cec2cf7",
+    "admitted_call_result_ref": {
+      "ref": "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+      "sha256": "510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390"
+    }
+  },
+  "goal_closure": {
+    "source_event_id": "evt-974cde5a3b23",
+    "admitted_call_result_ref": {
+      "ref": "artifacts/call-results/envelopes/dc75486a15df86131eab78148712f813e4472a4aabb5580bf75a1756b8c77af2.json",
+      "sha256": "dc75486a15df86131eab78148712f813e4472a4aabb5580bf75a1756b8c77af2"
+    },
+    "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/15b7b9f8c0288fe0b0e315a777bc1a7cadc0eb1259433b98513ccc94fe92d9ff.json",
+    "goal_claim_set_digest": "15b7b9f8c0288fe0b0e315a777bc1a7cadc0eb1259433b98513ccc94fe92d9ff"
+  },
+  "artifact_delivery": {
+    "source_event_id": "",
+    "admitted_call_result_ref": {},
+    "run_contract_ref": "",
+    "run_contract_digest": "",
+    "generic_workflow_contract_digest": "",
+    "verifier_stage_id": "",
+    "verifier_role": "",
+    "required_artifacts": [],
+    "goal_coverage": [
+      {
+        "goal_claim_id": "OBJECTIVE-AC1-bb2ebfd6ea",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json",
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC2-42a351a63e",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC3-19d9dc0070",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json",
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC4-81f1fe455e",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC5-7bf10e83c7",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC6-0bbea7b832",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC7-b71d060c10",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC8-1ce336d677",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC9-fd5578600a",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC10-7636f1b6f3",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC11-8fec43a6b4",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-01",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json",
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-02",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-03",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json",
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-04",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-05",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-06",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-07",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-08",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-09",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e63b046e7c05a41fc9e569c147dee69eb59a3b58489105740b3f3d4a40ca7abd.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-10",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-11",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/1f5e99957382ebaa3a0a80ec5090b79f92bc083516ed120be64a01c42ffe3b3e.json",
+          "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      },
+      {
+        "goal_claim_id": "REQ-ASSEMBLY-LOCAL",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/e96dec894814b781e7f0f0ec324ad707ba3433c76e2e656217dbe86e40fdc63b.json",
+          "artifacts/call-results/envelopes/266debd3f4817c6a18a6e2b9bb5931021f79ee29267b389f1a31474280313794.json"
+        ]
+      }
+    ]
+  },
+  "candidate": {
+    "event_id": "evt-c1e65c55c50a",
+    "ref": "candidate/TASK-5F44B4",
+    "base_commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+    "head_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+    "completed_task_ids": [
+      "RACE-FOUNDATION",
+      "RACE-ASSEMBLY",
+      "RACE-DRIVE",
+      "RACE-TRACK"
+    ]
+  },
+  "delivery": {
+    "policy": "report_only",
+    "status": "not_required",
+    "event_id": ""
+  },
+  "source_refs": {
+    "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-fe204937/prd-planner/artifacts/plan/task_map.json",
+    "source_index_ref": "artifacts/fanouts/fanout-prd-plan-evt-fe204937/prd-planner/artifacts/plan/source_index.json",
+    "diff_ref": "dfe994958e811acbfd95101dafd4a73c4df56eb5..a15b6b6f5247c6b2d8d08390c5aa9f532529ae03"
+  },
+  "event_refs": {
+    "completion": {
+      "event_id": "evt-e31b1c6d9a73",
+      "event_type": "run.goal.completed",
+      "event_ts": "2026-10-26T08:27:11.281862+00:00",
+      "actor": "zf-cli",
+      "origin": "kernel"
+    },
+    "completion_claim": {
+      "event_id": "evt-17c54730c6a3",
+      "event_type": "run.goal.completion.claimed",
+      "event_ts": "2026-10-26T08:27:09.277303+00:00",
+      "actor": "zf-cli",
+      "origin": "kernel"
+    },
+    "goal_closure": {
+      "event_id": "evt-974cde5a3b23",
+      "event_type": "goal.closure.synthesized",
+      "event_ts": "2026-10-26T08:27:04.721472+00:00",
+      "actor": "zf-cli",
+      "origin": "kernel"
+    },
+    "verification": {
+      "event_id": "evt-057d6cec2cf7",
+      "event_type": "fanout.child.completed",
+      "event_ts": "2026-10-26T07:59:35.554358+00:00",
+      "actor": "zf-cli",
+      "origin": "kernel"
+    },
+    "candidate": {
+      "event_id": "evt-c1e65c55c50a",
+      "event_type": "candidate.ready",
+      "event_ts": "2026-10-26T05:52:01.436332+00:00",
+      "actor": "zf-cli",
+      "origin": "kernel"
+    },
+    "delivery": {}
+  },
+  "evidence_refs": [
+    {
+      "kind": "goal_claim_set",
+      "ref": "artifacts/goal-closure/claim-sets/15b7b9f8c0288fe0b0e315a777bc1a7cadc0eb1259433b98513ccc94fe92d9ff.json",
+      "sha256": "15b7b9f8c0288fe0b0e315a777bc1a7cadc0eb1259433b98513ccc94fe92d9ff"
+    },
+    {
+      "kind": "goal_closure_result",
+      "ref": "artifacts/call-results/envelopes/dc75486a15df86131eab78148712f813e4472a4aabb5580bf75a1756b8c77af2.json",
+      "sha256": "dc75486a15df86131eab78148712f813e4472a4aabb5580bf75a1756b8c77af2"
+    },
+    {
+      "kind": "candidate_verification_result",
+      "ref": "artifacts/call-results/envelopes/510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390.json",
+      "sha256": "510bf6434673a5bb12536b9268d2c716f7fbdef9b8517b0a9de8b1cfec719390"
+    }
+  ],
+  "cursor": {
+    "sequence_base": 0,
+    "completion_event_seq": 13406,
+    "last_seq": 13421,
+    "last_event_id": "evt-9d73a7c99476",
+    "last_event_at": "2026-10-26T08:27:29.479205+00:00"
+  },
+  "source_fingerprint": "b9e0e32450fbc580a186112589228bdda2393beb36573b9eebc661a2b5c537db",
+  "degraded": false,
+  "diagnostics": []
+}

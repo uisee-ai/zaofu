@@ -1,0 +1,5 @@
+[
+  "请区分候选编译与运行：当前确实只有 2 个 lane，不能宣称 3 个已生效；本轮只准备待批准 Proposal。PrdFlow 编译器支持 short_flow_spec.parameters.lanes=3，可在私有候选 YAML 中生成第三个 writer 和对应 verify lane，不需要先修改当前 zf.yaml 或先启动消费者。requested_roles 保持当前 allowlist 内或留空，不能编造角色名。先生成完整候选 Preview，监工将在 Preview Chat 中核验/设置 3 lanes、真实角色/skills 和 plan_approval=true，经受控配置 apply/validate 后才批准 Scan/Plan。Plan 产生后仍必须等待用户显式审批。配置应用及运行消费者证据是在这些后续阶段取得，不应成为生成未启动预览的循环前置条件。",
+  "本次阶段是准备并审阅 YAML，不是证明未来所有任务能完成。已实测本机真实 Kanban Codex 调用可运行，Docker daemon 29.9.2 和 mcp/playwright:latest 可用；Web 与私有 tmux 将继承 Docker 组。当前 global_budget_usd=None、角色 budget_usd=None，direct-v1 limits 零值不证明无限额度或可行性。本次由监工持续观察实际成本、超时和 provider 失败，明确保留预算尚未验证的风险，不谎称费用/时间已覆盖。请先输出可审阅候选并把未配置预算和 90 秒容器验证成本写入 risk_hints；工作流启动前核对有效配置，必要时再受控调整。不能要求先完成尚未授权的实现/验证才允许生成预览。用户已经授权真实端到端测试；计划具体内容仍需另行用户批准。",
+  "/tmp/zf-racing-supervision-20261025T211020Z/racing-project；本项目自身就是目标应用仓库。PRD、验证脚本和赛车源代码都是后续计划的交付物；目前不要求已存在。"
+]

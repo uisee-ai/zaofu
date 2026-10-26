@@ -992,7 +992,7 @@ class CandidateRebuilder:
             "commit": commit,
             "merger_worktree": str(worktree),
             "gate_source": gate_source,
-            "gate_count": len({gate for gate, _ in checks}),
+            "gate_count": len({gate for gate, _, _ in checks}),
             "check_count": len(checks),
         }
         if not checks and gate_source != "task_contract_deferred":
@@ -1043,14 +1043,14 @@ class CandidateRebuilder:
         gate_checks: dict[str, list[dict[str, Any]]] = {}
         expected_red_checks: list[dict[str, Any]] = []
 
-        by_gate: dict[str, list[str]] = {}
-        for gate_name, command in checks:
-            by_gate.setdefault(gate_name, []).append(command)
+        by_gate: dict[str, list[tuple[str, int]]] = {}
+        for gate_name, command, timeout_seconds in checks:
+            by_gate.setdefault(gate_name, []).append((command, timeout_seconds))
 
         for gate_name, commands in by_gate.items():
             gates_run.append(gate_name)
             gate_ok = True
-            for command in commands:
+            for command, timeout_seconds in commands:
                 started = time.monotonic()
                 context_ref: dict[str, Any] = {}
                 try:
@@ -1071,7 +1071,7 @@ class CandidateRebuilder:
                         cwd=worktree,
                         capture_output=True,
                         text=True,
-                        timeout=_QUALITY_TIMEOUT_SECONDS,
+                        timeout=timeout_seconds,
                         check=False,
                         env=env,
                     )
@@ -1109,7 +1109,7 @@ class CandidateRebuilder:
                         timed_out=True,
                     )
                     failure_details.setdefault(gate_name, []).append(
-                        f"{command}: timed out after {_QUALITY_TIMEOUT_SECONDS}s"
+                        f"{command}: timed out after {timeout_seconds}s"
                     )
                 except Exception as exc:
                     gate_ok = False
@@ -1122,6 +1122,7 @@ class CandidateRebuilder:
                         f"{command}: {exc}"
                     )
                 evidence["duration_ms"] = int((time.monotonic() - started) * 1000)
+                evidence["timeout_seconds"] = timeout_seconds
                 if context_ref:
                     evidence["execution_context_ref"] = context_ref
                 gate_checks.setdefault(gate_name, []).append(evidence)
@@ -1542,7 +1543,7 @@ class CandidateRebuilder:
     def _quality_checks(
         self,
         tasks: list[CandidateTask],
-    ) -> tuple[list[tuple[str, str]], str]:
+    ) -> tuple[list[tuple[str, str, int]], str]:
         from zf.runtime.candidate_verification_stages import candidate_quality_checks
 
         return candidate_quality_checks(self.config, self.task_store, tasks)

@@ -43,9 +43,24 @@ def admission_catalog(config: Any, project_root: Path) -> dict[str, Any]:
     for skill_path in Path(project_root).glob("skills/*/SKILL.md"):
         skills.add(skill_path.parent.name)
     execution = execution_profile_catalog_projection(config)
+    from zf.runtime.workflow_proposal_projection import completion_profile
+    workflow = getattr(config, "workflow", None)
+    metadata_by_kind = dict(getattr(workflow, "flow_metadata_by_kind", {}) or {})
+    primary = getattr(workflow, "flow_metadata", {}) or {}
+    if primary.get("flow_kind"):
+        metadata_by_kind.setdefault(primary["flow_kind"], primary)
+    completion_by_family = {}
+    for kind, metadata in metadata_by_kind.items():
+        completion = completion_profile({}, {"effective_flow_metadata": metadata})
+        completion_by_family[kind] = {
+            "id": completion["id"], "delivery_policy": completion["delivery_policy"],
+            "completion_threshold": completion["completion_threshold"],
+            "required_artifacts": completion["required_delivery_artifacts"],
+        }
     for role in getattr(config, "roles", []) or []:
         execution["roles"][str(role.instance_id or role.name)].update(
             role_kind=role.role_kind,
+            permission_mode=role.permission_mode,
             native_delegation=getattr(role.provider_session, "native_delegation", None),
         )
     return {
@@ -58,6 +73,9 @@ def admission_catalog(config: Any, project_root: Path) -> dict[str, Any]:
         "template_contracts": generic_workflow_catalog_projection()["templates"],
         "execution_catalog": execution,
         "effective_policy_digest": effective_execution_policy_digest(config),
+        "configured_role_skills": {str(role.instance_id or role.name): list(role.skills)
+                                  for role in getattr(config, "roles", []) or []},
+        "configured_completion_by_family": completion_by_family,
     }
 
 
@@ -74,6 +92,8 @@ def admission_contract(catalog: Mapping[str, Any]) -> dict[str, Any]:
         "allowed_generic_templates": sorted(catalog["templates"]),
         "allowed_generic_operations": sorted(catalog["operations"]),
         "allowed_completion_profiles": sorted(catalog["completion_profiles"]),
+        "configured_role_skills": catalog.get("configured_role_skills", {}),
+        "configured_completion_by_family": catalog.get("configured_completion_by_family", {}),
     }
 
 

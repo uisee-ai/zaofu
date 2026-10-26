@@ -1,0 +1,21 @@
+{
+  "plan_status": "approved",
+  "source_seq": 4066,
+  "running": [
+    {
+      "id": "operation:wop-prd-lanes-impl-prd-dev-lane-0-RACE-FOUNDATION-t-18972e0e5fde",
+      "status": "running",
+      "agent": {
+        "backend": "codex",
+        "model": "gpt-6-astra",
+        "skills": [
+          "zf-yoke-dev-worker-role-context",
+          "zf-plan-task-map-contract"
+        ],
+        "source": "provider_usage",
+        "source_event_id": "evt-3e201ade9aad"
+      }
+    }
+  ],
+  "detail": "prd-dev-lane-0\n\n执行中\n\noperation:wop-prd-lanes-impl-prd-dev-lane-0-RACE-FOUNDATION-t-18972e0e5fde\n\nAgent：prd-dev-lane-0 · Attempt：run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION\n\nProvider：codex · 模型：gpt-6-astra · 实际用量记录\n\n最近活动\n\n2026-10-26T00:27:52.366414+00:00 · Bash\n{\"command\":\"python3 - <<'PY'\\nimport json\\nfrom pathlib import Path\\np=Path('artifacts/racing/scaffold/runs/active-browser/binding.json')\\nif p.exists():\\n r=Path(json.loads(p.read_text())['dir'])\\n for n in ['install-chromium.stdout.bin','\n\n2026-10-26T00:27:54.862763+00:00 · Bash\n{\"command\":\"python3 - <<'PY'\\nimport json\\nfrom pathlib import Path\\np=Path('artifacts/racing/scaffold/runs/active-browser/binding.json')\\nif p.exists():\\n r=Path(json.loads(p.read_text())['dir'])\\n for n in ['install-chromium.stdout.bin','\n\n2026-10-26T00:28:05.054633+00:00 · agent.usage\n\n2026-10-26T00:28:18.096700+00:00 · Bash\n{\"command\":\"bash scripts/racing-runner/docker.sh scaffold\"}\n\n2026-10-26T00:28:26.164385+00:00 · agent.usage\n\n收起节点\n关联\n← executes · prd-lanes-impl\n← execution · 建立可启动的工程骨架与共享契约\n→ attempt · run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION\n→ attempt · ta-a0674362b0dfa46cb12f\n来源与执行证据"
+}

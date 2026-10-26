@@ -1,0 +1,10 @@
+{
+  "old_trigger": "evt-bddccfe072a9",
+  "pending_trigger": "evt-fe204937543b",
+  "legacy_keys_equal": true,
+  "fixed_keys_equal": false,
+  "old_attempt": 3,
+  "pending_attempt": 4,
+  "run_active": true,
+  "runtime_mutated": false
+}

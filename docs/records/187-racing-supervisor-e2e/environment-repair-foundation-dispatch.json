@@ -1,0 +1,19 @@
+{
+  "task_id": "RACE-FOUNDATION",
+  "role_instance": "prd-dev-lane-0",
+  "fanout_id": "fanout-prd-lanes-impl-evt-498c4d46",
+  "run_id": "run-fanout-prd-lanes-impl-evt-498c4d46-prd-dev-lane-0-RACE-FOUNDATION",
+  "workdir": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-dev-lane-0/project",
+  "source_commit": null,
+  "base_commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+  "source_branch": "worker/prd-dev-lane-0",
+  "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+  "plan_artifact_package_digest": "3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52",
+  "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-fe204937/prd-planner/artifacts/plan/task_map.json",
+  "effective_config_digest": "df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487",
+  "authority_snapshot_digest": null,
+  "contract_snapshot_digest": "519efb082baa8ea83e689937a09e3301a9491f99333f85fa02888ef91aba2e7b",
+  "event_id": "evt-323a76e4e195",
+  "ts": "2026-10-26T04:26:00.799778+00:00",
+  "causation_id": "evt-498c4d468cc2"
+}

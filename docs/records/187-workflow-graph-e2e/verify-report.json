@@ -1,0 +1,273 @@
+{
+  "event_id": "evt-9361bec63bd4",
+  "timestamp": "2026-10-25T19:02:01.363128+00:00",
+  "actor": "prd-verify-lane-0",
+  "origin": "worker",
+  "report": {
+    "child_id": "prd-verify-lane-0-counter",
+    "status": "passed",
+    "summary": "候选 cd8a21c 的 11 个源码/测试/运行文档文件完成五轴评审；4/4 合同命令、6/6 单测、11/11 静态检查及双视口 3/3 产品旅程、11/11 必需断言通过；额外 6561 条操作序列和 8 项 HTTP 边界检查通过，已跟踪文件未变。",
+    "findings": [],
+    "recommendation": "approve",
+    "changed_files": [],
+    "requirement_coverage_matrix": [
+      {
+        "requirement_id": "AC-INITIAL",
+        "status": "passed",
+        "task_result": "passed",
+        "product_result": "passed",
+        "observation": "生产初值和双视口首次 DOM 均为 0。",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ]
+      },
+      {
+        "requirement_id": "AC-INCREMENT",
+        "status": "passed",
+        "task_result": "passed",
+        "product_result": "passed",
+        "observation": "真实按钮点击与生产 transition 均逐步得到 1、2；桌面前后截图从 0 变为 1。",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ]
+      },
+      {
+        "requirement_id": "AC-DECREMENT",
+        "status": "passed",
+        "task_result": "passed",
+        "product_result": "passed",
+        "observation": "从 2 两次减一逐步为 1、0。",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ]
+      },
+      {
+        "requirement_id": "AC-FLOOR",
+        "status": "passed",
+        "task_result": "passed",
+        "product_result": "passed",
+        "observation": "初始零值和正数减至零后各连续五次减一，生产规则及双视口 DOM 均保持 0。",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ]
+      },
+      {
+        "requirement_id": "AC-RESET",
+        "status": "passed",
+        "task_result": "passed",
+        "product_result": "passed",
+        "observation": "可见归零按钮在零值、正数、重复重置后结果为 0，随后加一为 1。",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ]
+      },
+      {
+        "requirement_id": "AC-SEQUENCE",
+        "status": "passed",
+        "task_result": "passed",
+        "product_result": "passed",
+        "observation": "真实点击和规则模块均逐步得到 1、2、1、0、0、1；额外穷举 8 步序列。",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ]
+      },
+      {
+        "requirement_id": "AC-CARD",
+        "status": "passed",
+        "task_result": "not_applicable",
+        "product_result": "passed",
+        "observation": "1280×720、390×844 卡片中心误差 ≤8px，数值和三个按钮可见、不重叠；归零唯一且可见文案精确匹配。",
+        "evidence_refs": [
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+          "event:evt-38ddac746b0f"
+        ]
+      },
+      {
+        "requirement_id": "AC-STATIC",
+        "status": "passed",
+        "task_result": "passed",
+        "product_result": "passed",
+        "observation": "原生静态资源、无生产依赖；浏览器禁止业务/第三方请求后全部操作仍通过且无页面错误。",
+        "evidence_refs": [
+          "event:evt-5cc27799bf73",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ]
+      },
+      {
+        "requirement_id": "AC-RUN",
+        "status": "passed",
+        "task_result": "not_applicable",
+        "product_result": "passed",
+        "observation": "当前干净候选 npm ci 成功，README 原命令在 Docker 内自动启停真实服务，报告、三张截图、trace 可读且校验通过。",
+        "evidence_refs": [
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+          "event:evt-38ddac746b0f"
+        ]
+      }
+    ],
+    "evidence_refs": [
+      "event:evt-077ae823a63e",
+      "event:evt-31cbef93a4c8",
+      "event:evt-dbb13dfa1c52",
+      "event:evt-5cc27799bf73",
+      "event:evt-3e88bfdb034f",
+      "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+      "event:evt-300e609ddf2c",
+      "event:evt-38ddac746b0f",
+      "event:evt-49583e8fbd5b"
+    ],
+    "gap_findings": [],
+    "replan_recommendation": "none",
+    "axes": [
+      {
+        "axis": "correctness",
+        "status": "passed",
+        "summary": "9 条产品验收对应 3 个旅程、11 个必需断言；6 项规则单测与真实浏览器断言相符，未发现越界产品行为。"
+      },
+      {
+        "axis": "readability",
+        "status": "passed",
+        "summary": "11 个产品/测试/运行文件均可直接阅读；生产状态、DOM 接线和服务代码分别为 10、12、39 行。"
+      },
+      {
+        "axis": "architecture",
+        "status": "passed",
+        "summary": "纯规则模块由页面和单测共用；DOM 状态单一，静态服务仅提供白名单资源，无业务后端或运行框架。"
+      },
+      {
+        "axis": "security",
+        "status": "passed",
+        "summary": "textContent 渲染，无外部输入路径；HTTP 探针验证配置/git 路径拒绝、POST 405，浏览器禁止外部及业务网络。npm ci 审计 0 vulnerabilities。"
+      },
+      {
+        "axis": "performance",
+        "status": "passed",
+        "summary": "操作为常数规模状态变更与一次文本更新，无计时器、列表查询或重复事件注册；实际浏览器完整双视口测试 5.138 秒。"
+      }
+    ],
+    "commands": [
+      {
+        "command_id": "VC-INSTALL",
+        "command": "timeout 180s npm ci",
+        "exit_code": 0,
+        "status": "passed"
+      },
+      {
+        "command_id": "VC-UNIT",
+        "command": "node --test tests/counter.test.mjs",
+        "exit_code": 0,
+        "status": "passed"
+      },
+      {
+        "command_id": "VC-STATIC",
+        "command": "node scripts/check-static.mjs",
+        "exit_code": 0,
+        "status": "passed"
+      },
+      {
+        "command_id": "VC-BROWSER",
+        "command": "docker run --rm --network host --user \"$(id -u):$(id -g)\" --entrypoint bash -v \"$PWD:/work\" -w /work -e PLAYWRIGHT_BROWSERS_PATH=0 mcp/playwright:latest -lc 'set -euo pipefail; timeout 180s ./node_modules/.bin/playwright install chromium; ./node_modules/.bin/playwright test --config playwright.config.mjs'",
+        "exit_code": 0,
+        "status": "passed"
+      }
+    ],
+    "independent_probes": [
+      {
+        "probe_id": "independent-rule-and-static-server-boundaries",
+        "command": "node --input-type=module -e 'import assert from \"node:assert/strict\"; import { spawn } from \"node:child_process\"; import { INITIAL_COUNT, transition } from \"./src/counter.mjs\"; const actions=[\"increment\",\"decrement\",\"reset\"]; let sequences=0, steps=0; function walk(count, expected, depth) { if (!depth) { sequences++; return; } for (const action of actions) { const next=transition(count, action); const oracle=action===\"increment\"?expected+1:action===\"reset\"?0:expected===0?0:expected-1; assert.equal(next,oracle); assert.ok(next>=0); steps++; walk(next,oracle,depth-1); } } walk(INITIAL_COUNT,0,8); const server=spawn(process.execPath,[\"scripts/serve.mjs\",\"--host\",\"127.0.0.1\",\"--port\",\"4174\"],{stdio:[\"ignore\",\"pipe\",\"pipe\"]}); const failures=[]; server.stderr.on(\"data\",d=>failures.push(String(d))); try { await Promise.race([new Promise((resolve,reject)=>{server.stdout.once(\"data\",resolve);server.once(\"error\",reject);server.once(\"exit\",code=>reject(new Error(\"server exit \"+code)));}),new Promise((_,reject)=>setTimeout(()=>reject(new Error(\"start timeout\")),5000).unref())]); const results=[]; for (const [method,path,status] of [[\"GET\",\"/\",200],[\"GET\",\"/src/app.mjs\",200],[\"GET\",\"/src/counter.mjs\",200],[\"HEAD\",\"/\",200],[\"GET\",\"/package.json\",404],[\"GET\",\"/.git/config\",404],[\"GET\",\"/%2e%2e/package.json\",404],[\"POST\",\"/\",405]]) { const response=await fetch(\"http://127.0.0.1:4174\"+path,{method,signal:AbortSignal.timeout(3000)}); assert.equal(response.status,status); if(method===\"HEAD\")assert.equal(await response.text(),\"\"); if(method===\"POST\")assert.equal(response.headers.get(\"allow\"),\"GET, HEAD\"); if(path===\"/src/app.mjs\")assert.match(response.headers.get(\"content-type\"),/javascript/); results.push({method,path,status:response.status}); } assert.deepEqual(failures,[]); console.log(JSON.stringify({target_commit:\"cd8a21cf3e5cd919e78aad0a1516d2a517649d38\",probe:\"independent-rule-and-static-server-boundaries\",status:\"passed\",sequences,steps,http_checks:results},null,2)); } finally { server.kill(\"SIGTERM\"); }'",
+        "status": "passed",
+        "exit_code": 0,
+        "sequences": 6561,
+        "steps": 9840,
+        "http_checks": 8,
+        "evidence_refs": [
+          "event:evt-300e609ddf2c"
+        ]
+      }
+    ],
+    "environment": {
+      "node_setup": "timeout 180s npm ci",
+      "docker_version": "29.9.2",
+      "browser": "Chromium 141.0.7390.37 / Playwright 1.56.1",
+      "runner": "mcp/playwright:latest",
+      "bind_host": "0.0.0.0",
+      "service_url": "http://localhost:4173",
+      "browser_origin": "http://localhost:4173",
+      "launch_command": "sg docker -c 'docker run --rm --network host --user \"$(id -u):$(id -g)\" --entrypoint bash -v \"$PWD:/work\" -w /work -e PLAYWRIGHT_BROWSERS_PATH=0 mcp/playwright:latest -lc '\\''set -euo pipefail; timeout 180s ./node_modules/.bin/playwright install chromium; ./node_modules/.bin/playwright test --config playwright.config.mjs'\\'''",
+      "resolution": "账户 uisee 已属于 docker 组，当前会话组列表未加载；sg docker 组上下文恢复访问后执行完整原命令，未修改组配置、socket 权限或源码。",
+      "secure_context_requirement": "none"
+    },
+    "target_binding": {
+      "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+      "head_matched": true,
+      "source_files_unchanged": true,
+      "evidence_refs": [
+        "event:evt-077ae823a63e",
+        "event:evt-38ddac746b0f"
+      ]
+    },
+    "receipt_reuse": {
+      "reused": [],
+      "reason": "简报 reusable_impl_receipts 为空；实现自检绑定 2de0e9d 而非当前 cd8a21c，故四条命令全部在当前候选执行。"
+    },
+    "tdd_review": {
+      "status": "reviewed",
+      "summary": "解压原始 RED 为 1 通过、5 个真实 ERR_ASSERTION 失败；占位 transition 和同一测试文件摘要可定位。AC-INITIAL 在 scaffold 已通过，不宣称其曾 RED。当前 6/6 GREEN。",
+      "evidence_refs": [
+        "event:evt-97a115c27fb6",
+        "artifacts/evidence/counter/red-receipt.json",
+        "event:evt-dbb13dfa1c52"
+      ]
+    },
+    "matrix_integrity": {
+      "task_ids_match": true,
+      "acceptance_ids_match": true,
+      "commands_match": true,
+      "acceptance_command_links": true,
+      "capability_refs": true
+    },
+    "evidence_catalog": {
+      "browser_report": {
+        "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+      },
+      "screenshot_before": {
+        "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-e8e15ea1d539bebf.txt",
+        "sha256": "e8e15ea1d539bebfe84cbe3c605b7518748fa1f91f49979009f24bc389797d1a"
+      },
+      "screenshot_mobile": {
+        "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-d5b07e9f404dd106.txt",
+        "sha256": "d5b07e9f404dd10629af83f83894dff973d2a920f44a7dbe432c27417d540784"
+      },
+      "original_browser_outputs": [
+        {
+          "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/report.json",
+          "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+        },
+        {
+          "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/desktop-before.png",
+          "sha256": "e7598764a4cdc87be340ce352ccbcaa60d78a719ca2dec334699642ab647a818"
+        },
+        {
+          "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/desktop-after.png",
+          "sha256": "496c3baef55e7da3d5fd1716e4958f8e5e076c7232678787934b3ca7882c70a4"
+        },
+        {
+          "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/mobile.png",
+          "sha256": "a389ca3186816ffe53f1dc222434c4a374c2cd8eb4fb4e644be9cb65c00c3f81"
+        },
+        {
+          "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/trace.zip",
+          "sha256": "0bdf1c9ac1e483ae5378e5468022cee0e8f091318f34e61fd785e03e3b850c67"
+        }
+      ],
+      "image_sidecar_encoding": "截图 sidecar 为 JSON 数组中的 input_image.image_url，使用 data URI base64 无损保存 PNG。"
+    }
+  }
+}

@@ -11,7 +11,6 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from zf.cli.watched_batch import process_watched_batch
 from zf.core.config.loader import load_config, ConfigError
 from zf.core.config.lkg import (
     infer_state_dir,
@@ -1375,21 +1374,17 @@ def run(args: argparse.Namespace) -> int:
             )
 
             restore_flow_role_activations(orchestrator)
-        def _on_batch_consumed(
-            events: list[ZfEvent],
-            consumed_offset: int,
-        ) -> None:
-            process_watched_batch(
-                events,
-                consumed_offset=consumed_offset,
-                wake_patterns=wake_pattern_set,
-                wake_worthy_fn=wake_worthy,
-                rate_limiter=rate_limiter,
-                orchestrator=orchestrator,
-                simulation=simulation,
-                event_log=event_log,
-                stop_watcher=watcher.stop,
-            )
+        from zf.cli.watch_batch import make_watch_callbacks
+
+        _on_event, _on_batch_consumed = make_watch_callbacks(
+            orchestrator=orchestrator,
+            wake_patterns=wake_pattern_set,
+            wake_worthy_fn=wake_worthy,
+            rate_limiter=rate_limiter,
+            simulation=simulation,
+            event_log=event_log,
+            stop_watcher=lambda: watcher.stop(),
+        )
 
         # α-3 + β-1 periodic-sweep throttles: the EventWatcher tick fires
         # every ~5s but heartbeat/supervisor/autoresearch services have
@@ -1445,7 +1440,7 @@ def run(args: argparse.Namespace) -> int:
 
         watcher = EventWatcher(
             state_dir / "events.jsonl",
-            on_event=lambda _line: None,
+            on_event=_on_event,
             on_tick=_on_tick,
             on_batch_consumed=_on_batch_consumed,
             wake_patterns=wake_patterns,

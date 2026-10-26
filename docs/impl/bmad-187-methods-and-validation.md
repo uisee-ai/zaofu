@@ -1,7 +1,7 @@
 # 187 实施：需求对账、Epic 阅读层与交付证据
 
 > 状态: implemented — 方法及机械诊断已接入；真实模型效果评估见记录中的未覆盖项。
-> 设计: [187](../design/187-bmad-inspired-epic-task-map-and-tdd.md)。
+> 设计: [187](../design/188-bmad-inspired-epic-task-map-and-tdd.md)。
 > 验证: [本轮评估记录](../records/2026-10-26-0336-187-delivery-validation.md)。
 > 后续效果: [12 次真实模型对照](../records/2026-10-26-0431-187-model-effect-evaluation.md)；质量基本持平，未证明长程收益。
 

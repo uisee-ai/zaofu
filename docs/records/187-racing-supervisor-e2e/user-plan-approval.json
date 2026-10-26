@@ -1,0 +1,54 @@
+{
+  "authorization": "用户在当前会话明确回复：批准，继续",
+  "plan_id": "evt-adf3807d914c",
+  "approved_event": {
+    "type": "plan.approved",
+    "id": "evt-158a8630051c",
+    "ts": "2026-10-26T00:01:28.943399+00:00",
+    "actor": "operator",
+    "task_id": null,
+    "payload": {
+      "plan_id": "evt-adf3807d914c",
+      "via": "controlled-action:kanban-agent",
+      "surface": "web"
+    },
+    "causation_id": "evt-adf3807d914c",
+    "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "origin": ""
+  },
+  "action_receipts": [
+    {
+      "type": "runtime.action.completed",
+      "id": "evt-559e979bf65c",
+      "ts": "2026-10-26T00:01:28.947508+00:00",
+      "actor": "web",
+      "task_id": "",
+      "payload": {
+        "action": "plan-approve",
+        "requested_action": "plan-approve",
+        "status": "recorded",
+        "plan_id": "evt-adf3807d914c"
+      },
+      "causation_id": "evt-158a8630051c",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": ""
+    },
+    {
+      "type": "web.action.completed",
+      "id": "evt-a2fe2e1b215c",
+      "ts": "2026-10-26T00:01:28.956813+00:00",
+      "actor": "web",
+      "task_id": "",
+      "payload": {
+        "action": "plan-approve",
+        "requested_action": "plan-approve",
+        "status": "recorded",
+        "plan_id": "evt-adf3807d914c"
+      },
+      "causation_id": "evt-158a8630051c",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": ""
+    }
+  ],
+  "browser_assertion_error": "点击后脚本误取request.plan_id，实际Web请求为request.payload.plan_id；未重复提交。"
+}

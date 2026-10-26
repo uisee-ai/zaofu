@@ -154,9 +154,9 @@ def ensure_project_runtime(
                 status = "failed"
                 break
             if time.monotonic() >= deadline:
-                reason = f"project runtime is still starting; retry the same proposal and inspect {log_path}"
-                status = "starting"
-                break
+                return {"ok": False, "status": "starting", "pid": pid,
+                        "launched": launched, "log_ref": str(log_path),
+                        "reason": "project runtime is still starting; follow runtime readiness and Workflow events"}
             time.sleep(0.1)
     except (OSError, ValueError, TimeoutError) as exc:
         reason, status = f"could not start project runtime: {exc}", "failed"
@@ -187,6 +187,9 @@ def ensure_submitted_workflow_runtime(
     if runtime["ok"]:
         return {**result, "runtime_start": runtime,
                 "next_action": "project runtime is ready; follow Workflow dispatch and execution events"}
+    if runtime["status"] == "starting":
+        return {**result, "_status_code": 202, "runtime_start": runtime,
+                "next_action": "project runtime is starting; follow Workflow dispatch and execution events"}
     blocker = {"severity": "STOP", "kind": "workflow_runtime_start_failed",
                "message": runtime["reason"], "log_ref": runtime["log_ref"]}
     return {**result, "ok": False, "status": "STOP", "_status_code": 503,

@@ -1,0 +1,141 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+______ test_late_hook_cannot_restore_cleared_session_from_stale_registry _______
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-277/test_late_hook_cannot_restore_0')
+
+    def test_late_hook_cannot_restore_cleared_session_from_stale_registry(tmp_path):
+        owner = registry(tmp_path)
+        old = str(uuid4())
+        owner.bind_codex_session("verify", old)
+        stale_hook = registry(tmp_path)
+        owner.clear("verify")
+
+>       assert not stale_hook.bind_codex_session("verify", old)
+E       AssertionError: assert not True
+E        +  where True = bind_codex_session('verify', '7461db49-2755-4816-aec6-5a6accab886e')
+E        +    where bind_codex_session = <zf.core.state.role_sessions.RoleSessionRegistry object at 0x77cf909ef250>.bind_codex_session
+
+tests/test_role_session_retirement.py:23: AssertionError
+_________ test_old_hook_cannot_replace_new_session_or_mutate_metadata __________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-277/test_old_hook_cannot_replace_n0')
+
+    def test_old_hook_cannot_replace_new_session_or_mutate_metadata(tmp_path):
+        owner = registry(tmp_path)
+        old, fresh = str(uuid4()), str(uuid4())
+        owner.bind_codex_session("verify", old)
+        owner.clear("verify")
+        assert owner.bind_codex_session("verify", fresh, session_path=tmp_path / "fresh")
+        before = owner.path.read_bytes()
+
+>       assert not owner.bind_codex_session("verify", old, session_path=tmp_path / "old")
+E       AssertionError: assert not True
+E        +  where True = bind_codex_session('verify', 'ff53b652-dee5-4670-8901-2986968eb3c4', session_path=(PosixPath('/tmp/pytest-of-uisee/pytest-277/test_old_hook_cannot_replace_n0') / 'old'))
+E        +    where bind_codex_session = <zf.core.state.role_sessions.RoleSessionRegistry object at 0x77cf9042fad0>.bind_codex_session
+
+tests/test_role_session_retirement.py:35: AssertionError
+________ test_retirement_survives_multiple_recycles_and_registry_reload ________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-277/test_retirement_survives_multi0')
+
+    def test_retirement_survives_multiple_recycles_and_registry_reload(tmp_path):
+        old_ids = [str(uuid4()), str(uuid4())]
+        for session in old_ids:
+            owner = registry(tmp_path)
+            assert owner.bind_codex_session("verify", session)
+            owner.clear("verify")
+        reloaded = registry(tmp_path)
+        for session in old_ids:
+>           assert not reloaded.bind_codex_session("verify", session)
+E           AssertionError: assert not True
+E            +  where True = bind_codex_session('verify', '0c07eeb0-bd8d-47ed-9116-a1439adb7751')
+E            +    where bind_codex_session = <zf.core.state.role_sessions.RoleSessionRegistry object at 0x77cf9043f8d0>.bind_codex_session
+
+tests/test_role_session_retirement.py:48: AssertionError
+______ test_observer_skips_retired_rollout_even_when_it_has_latest_mtime _______
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-277/test_observer_skips_retired_ro0')
+
+    def test_observer_skips_retired_rollout_even_when_it_has_latest_mtime(tmp_path):
+        owner = registry(tmp_path)
+        folder = tmp_path / "sessions/2026/10/26"
+        folder.mkdir(parents=True)
+        old, fresh = uuid4(), uuid4()
+        paths = [folder / f"rollout-2026-10-26T00-00-00-{sid}.jsonl"
+                 for sid in (old, fresh)]
+        for path, stamp in zip(paths, (20, 10)):
+            path.write_text("")
+            os.utime(path, (stamp, stamp))
+        owner.bind_codex_session("verify", str(old), session_path=paths[0])
+        owner.clear("verify")
+
+>       assert owner.observe_codex_session("verify", max_wait_seconds=0,
+            sessions_root=tmp_path / "sessions") == (fresh, paths[1])
+E       AssertionError: assert (UUID('ce8b4e...0a490.jsonl')) == (UUID('d46664...b08f9.jsonl'))
+E
+E         At index 0 diff: UUID('ce8b4e1b-f484-4f06-bfe1-122ba370a490') != UUID('d4666405-9c3a-4c29-a646-0b69692b08f9')
+E         Use -v to get more diff
+
+tests/test_role_session_retirement.py:65: AssertionError
+__________ test_observer_does_not_return_session_retired_during_scan ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-277/test_observer_does_not_return_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77cf9047e1d0>
+
+    def test_observer_does_not_return_session_retired_during_scan(tmp_path, monkeypatch):
+        owner = registry(tmp_path)
+        old = uuid4()
+        owner.bind_codex_session("verify", str(old))
+
+        def scan(*args, **kwargs):
+            registry(tmp_path).clear("verify")
+            return tmp_path / "old", old
+
+        monkeypatch.setattr(owner, "_glob_newest_since", scan)
+>       assert owner.observe_codex_session("verify", max_wait_seconds=0) is None
+E       AssertionError: assert (UUID('5be6d253-8b0e-4088-b6cc-d861bd6e19cc'), PosixPath('/tmp/pytest-of-uisee/pytest-277/test_observer_does_not_return_0/old')) is None
+E        +  where (UUID('5be6d253-8b0e-4088-b6cc-d861bd6e19cc'), PosixPath('/tmp/pytest-of-uisee/pytest-277/test_observer_does_not_return_0/old')) = observe_codex_session('verify', max_wait_seconds=0)
+E        +    where observe_codex_session = <zf.core.state.role_sessions.RoleSessionRegistry object at 0x77cf9047d910>.observe_codex_session
+
+tests/test_role_session_retirement.py:79: AssertionError
+_______ test_late_codex_hook_remains_auditable_without_restoring_session _______
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-277/test_late_codex_hook_remains_a0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77cf9049ce10>
+
+    def test_late_codex_hook_remains_auditable_without_restoring_session(tmp_path, monkeypatch):
+        state_dir = tmp_path / "custom-state"
+        state_dir.mkdir()
+        owner = RoleSessionRegistry(state_dir / "role_sessions.yaml", str(tmp_path))
+        old = str(uuid4())
+        transcript = state_dir / f"workdirs/verify/codex-home/sessions/2026/10/26/rollout-{old}.jsonl"
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text("")
+        owner.bind_codex_session("verify", old, session_path=transcript)
+        owner.clear("verify")
+
+        assert _invoke(state_dir, "codex.hook.post_tool_use", "codex", {
+            "session_id": old, "transcript_path": str(transcript),
+            "tool_name": "Read", "tool_input": {},
+        }, monkeypatch) == 0
+        events = EventLog(state_dir / "events.jsonl").read_all()
+        hook = next(event for event in events if event.type == "codex.hook.post_tool_use")
+        assert hook.actor == "verify"
+>       assert RoleSessionRegistry(owner.path, str(tmp_path)).get("verify") is None
+E       AssertionError: assert UUID('d187e1b7-afb1-4eee-a6ff-47e645ed4b17') is None
+E        +  where UUID('d187e1b7-afb1-4eee-a6ff-47e645ed4b17') = get('verify')
+E        +    where get = <zf.core.state.role_sessions.RoleSessionRegistry object at 0x77cf90fa76d0>.get
+E        +      where <zf.core.state.role_sessions.RoleSessionRegistry object at 0x77cf90fa76d0> = RoleSessionRegistry(PosixPath('/tmp/pytest-of-uisee/pytest-277/test_late_codex_hook_remains_a0/custom-state/role_sessions.yaml'), '/tmp/pytest-of-uisee/pytest-277/test_late_codex_hook_remains_a0')
+E        +        where PosixPath('/tmp/pytest-of-uisee/pytest-277/test_late_codex_hook_remains_a0/custom-state/role_sessions.yaml') = <zf.core.state.role_sessions.RoleSessionRegistry object at 0x77cf9049c4d0>.path
+E        +        and   '/tmp/pytest-of-uisee/pytest-277/test_late_codex_hook_remains_a0' = str(PosixPath('/tmp/pytest-of-uisee/pytest-277/test_late_codex_hook_remains_a0'))
+
+tests/test_role_session_retirement.py:101: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_role_session_retirement.py::test_late_hook_cannot_restore_cleared_session_from_stale_registry
+FAILED tests/test_role_session_retirement.py::test_old_hook_cannot_replace_new_session_or_mutate_metadata
+FAILED tests/test_role_session_retirement.py::test_retirement_survives_multiple_recycles_and_registry_reload
+FAILED tests/test_role_session_retirement.py::test_observer_skips_retired_rollout_even_when_it_has_latest_mtime
+FAILED tests/test_role_session_retirement.py::test_observer_does_not_return_session_retired_during_scan
+FAILED tests/test_role_session_retirement.py::test_late_codex_hook_remains_auditable_without_restoring_session
+6 failed in 0.92s

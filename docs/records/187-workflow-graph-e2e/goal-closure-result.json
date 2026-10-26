@@ -1,0 +1,85 @@
+{
+  "schema_version": "goal-closure-result.v1",
+  "workflow_run_id": "workflow-ccaaed87c1b1d6c7",
+  "goal_id": "PRD-WORKFLOW-CCAAED87C1B1D6C7",
+  "flow_kind": "prd",
+  "task_map_generation": "8dd4adae72518eb5de9b58456a98b528fe508df9bc0b0f175bf2231252c27db2",
+  "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+  "objective_ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workflow-requests/workflow-ccaaed87c1b1d6c7/requirements/revision-0013-a5eb15eba216d4d1.json",
+  "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/6964d41850d323291371baa97cec55d3ea775b59b7ded38241cf9f16a04c8987.json",
+  "goal_claim_set_digest": "6964d41850d323291371baa97cec55d3ea775b59b7ded38241cf9f16a04c8987",
+  "planning_result_ref": "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/artifacts/plan/task_map.json",
+  "candidate_ref": "candidate/PRD-WORKFLOW-CCAAED87C1B1D6C7",
+  "closure_fact_ref": "artifacts/goal-closure/facts/522789c2b19a3a69d4613afaf0ea4d7d8ccec61274e881eeb72a0745e4128e51.json",
+  "closure_fact_digest": "522789c2b19a3a69d4613afaf0ea4d7d8ccec61274e881eeb72a0745e4128e51",
+  "verdict": "passed",
+  "goal_coverage": [
+    {
+      "goal_claim_id": "OBJECTIVE-AC1-5636c62bb4",
+      "status": "closed",
+      "supporting_result_refs": [
+        "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+        "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+      ]
+    },
+    {
+      "goal_claim_id": "OBJECTIVE-AC2-b3e306a8a5",
+      "status": "closed",
+      "supporting_result_refs": [
+        "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+        "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+      ]
+    },
+    {
+      "goal_claim_id": "OBJECTIVE-AC3-ec4b7d42ad",
+      "status": "closed",
+      "supporting_result_refs": [
+        "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+      ]
+    },
+    {
+      "goal_claim_id": "GOAL-COUNT",
+      "status": "closed",
+      "supporting_result_refs": [
+        "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+        "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+      ]
+    },
+    {
+      "goal_claim_id": "GOAL-WEB",
+      "status": "closed",
+      "supporting_result_refs": [
+        "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+        "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+      ]
+    },
+    {
+      "goal_claim_id": "GOAL-RUN",
+      "status": "closed",
+      "supporting_result_refs": [
+        "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+        "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+      ]
+    }
+  ],
+  "input_result_refs": [
+    "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json",
+    "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+    "artifacts/call-results/envelopes/37cb18b84b0968e0eb44214b76401126f9626f4d0b21c3825fe2bbe83367312a.json",
+    "artifacts/call-results/envelopes/91078e4ed573a4902768afe200600d998215703e5e24c9281e3d90bdf523f4ed.json",
+    "artifacts/call-results/envelopes/e2f030bd251a0301336371fce8a452e836478b5125e41c7480fc20c82920e055.json",
+    "artifacts/call-results/envelopes/9813d3a491ab53da1b5400a34511bf00d6f6c69cdd18787033d0a8b2acc61f78.json",
+    "artifacts/call-results/envelopes/3a26498b1c6d9cda5c929be2bac42b1d224496b6dedc6c9a69cda26e36973d20.json"
+  ],
+  "open_gap_refs": [],
+  "recommended_action": "complete",
+  "summary": "依据 7 份已准入结果及冻结 closure fact 综合：当前候选 6/6 必需声明闭合，6/6 单测、4/4 验证命令、9/9 产品 AC、3/3 旅程和 11/11 必需断言通过；PRD、3 模块/1 任务映射及先审批后实施由 Discovery 证据支持。当前 Spec/Report 与代际、提交一致，无开放语义缺口或豁免，Provider 不要求；历史 YAML 审批及最终完成门禁由 human/kernel 持有。",
+  "product_acceptance_required": true,
+  "product_acceptance_spec_ref": "artifacts/product-acceptance/specs/7ff8df3dc761bd60e6083c6b1f1c4ab8b9bdb47312c8b2948326ff216188ae0d.json",
+  "product_acceptance_spec_digest": "7ff8df3dc761bd60e6083c6b1f1c4ab8b9bdb47312c8b2948326ff216188ae0d",
+  "product_acceptance_report_ref": "artifacts/product-acceptance/reports/be2f2d9268bb35e0642f48bb25ab5bb910c0f672556fcb3dd0de5adc1743e40a.json",
+  "product_acceptance_report_digest": "be2f2d9268bb35e0642f48bb25ab5bb910c0f672556fcb3dd0de5adc1743e40a",
+  "product_acceptance_verdict": "passed",
+  "provider_qualification_required": false,
+  "provider_qualification_status": "not_required"
+}

@@ -455,6 +455,13 @@ def plan_reader_stage_replan(
         and stage_flow_kind != canonical_flow_kind
     ):
         return None, "cross_flow_failure"
+    from zf.runtime.reader_replan_ownership import active_candidate_replan_owns_failure
+
+    if (
+        getattr(stage, "attempt_domain", "") != "plan"
+        and active_candidate_replan_owns_failure(config, events, failure_event)
+    ):
+        return None, "owned_by_active_candidate_replan"
     failure_payload = (
         failure_event.payload if isinstance(failure_event.payload, dict) else {}
     )

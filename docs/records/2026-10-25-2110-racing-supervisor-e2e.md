@@ -1,0 +1,196 @@
+# 赛车小游戏：187 分支监工端到端验证
+
+> 状态: done — `f952370 fix: reconcile admitted retries and terminal task evidence`
+> 执行依据：[完整监工 Prompt](../runbooks/2026-10-25-2110-racing-supervisor-e2e-prompt.md)。基线 `8367e6c`，使用真实 Provider 与 Docker Playwright，进行中的步骤不记为通过。
+
+## 最终结论（2026-10-26 08:42 UTC）
+
+真实Kanban赛车主链已完成，候选 `a15b6b6f5247`，Kernel完成事件 `evt-e31b1c6d9a73`。23/23强制声明、16/16产品AC、四条正式浏览器旅程通过；独立正常比赛90.308秒，监工固定构建复核90.208秒。
+
+- AskUserQuestion、完整YAML预览、lane/model/skills局部Chat修改及生效均有真实证据。
+- Plan预览及局部Agent Chat修改经过真实Planner/Critic；用户批准具体版本前没有Impl派发，技术续修的受控审批来源逐项记录。
+- 配置3 Impl/3 Verify lanes，实际峰值Impl 2、Verify 3。Impl由FOUNDATION → DRIVE/TRACK并行 → ASSEMBLY的依赖宽度限制；Verify四个逻辑子任务复用三lane，不是四lane。
+- 六视角、YAML完整结构、真实执行状态、终态Task与Goal证据关联通过。最终浏览器1 passed；[终态摘要](187-racing-supervisor-e2e/terminal-graph-summary.json)、[完成收据](187-racing-supervisor-e2e/final-goal-completion-receipt.json)、[节点详情截图](187-racing-supervisor-e2e/51-terminal-goal-inspector.png)。
+- CLI/Channel自动启动补充是宿主+Mock Provider层；赛车Kanban主链为真实Provider，未把前者写成三入口真实Provider E2E。
+- [清理证明](187-racing-supervisor-e2e/final-cleanup.json)：模拟完成事件已发，8002/8023和专用tmux/runtime已停止，6.3GB临时根删除；dev/8001未改动。源代码worktree保留，未merge/push。
+
+交付保存在 `/home/uisee/workspace/zaofu-e2e-deliveries/2026-10-25-racing-187/candidate-a15b6b6f5247/`，包含源码归档、固定构建、实际YAML、完整独立验证证据和acceptance.json。按该目录README可重新启动试玩。
+
+剩余非阻断限制：1280×800时键位图例轻微遮挡；573节点历史图API观察8–21秒。发布策略report_only，没有执行生产部署。初轮冷环境失败、协议修正及超时后成功重试均保留，不声称全程无失败或全量pytest通过。
+
+## 本次环境
+
+- Worktree：`/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph`，分支 `wip/codex-20261025-ai-sdlc-graph`。
+- 测试期间Dashboard：`0.0.0.0:8002`（已按规范停止）；dev 的 8001 保持运行。
+- 隔离根：`/tmp/zf-racing-supervision-20261025T211020Z`。
+- 浏览器新建项目：`racing-project-33598481`，名称 `187 Racing Supervision`。
+- 项目配置生成的 state_dir 为 `.zf-187 Racing Supervision`，按配置读取，保留空格路径的真实覆盖。
+- Docker：`mcp/playwright:latest`，host network；服务继承 Docker 组，tmux 使用本次独立 `TMUX_TMPDIR`，不复用未加载 Docker 组的旧 server。
+- Plan 审批由用户决定；在具体 Plan 交付用户前不请求空泛批准，也不自行批准实现。
+
+## 按时间记录的验收事实
+
+1. 首次空 workspace 展示 onboarding；浏览器先跳过全局引导，再走实际 Add Project 表单创建项目。初次脚本的按钮等待失败属于脚本入口假设，未创建重复项目。
+2. Kanban 真实 Codex 问答提出三项选择，已选择 2D 俯视、90 秒积分赛、桌面 Chromium。Agent 识别到当前 PRD 为 2 个实现/验证 lane，未假称 3 lanes 已生效。
+3. 生成了待确认 Create task 提案，`prepare_workflow=true`，保留完整 YAML 与 Plan 两道审批。首次浏览器脚本使用全页最后一个 `Create task` 按钮，误点了旧 Pending Proposal，创建 `TASK-5F44B4` 的旧合同；这属于测试脚本定位错误，不能宣称修订稿已建单。
+4. 通过 token-gated API 受控恢复：取消旧 Synthesis operation，把真实 Agent 修订稿合同应用到同一个 Task，再准备新请求 `prepare-TASK-5F44B4-c32763f31115843f`。未直接修改 canonical state，未启动 Run。三个动作结果保存在隔离 evidence 的 `recovery-*.json`。
+5. 修复准备队列发现后，尚未访问 Workflows 页面时已出现 `workflow.operation.started`（`2026-10-25T21:31:34.235860+00:00`），证明后台接管真实请求；随后浏览器进入 Workflows 观察。
+6. Workflow Synthesis 的真实 AskUserQuestion 提出 lane 配置、预算和目标路径三问。浏览器填写项目 root，说明候选编译与已运行配置的不同阶段，并如实保留预算未配置风险；答案入 revision 3，随后生成 PrdFlow Proposal。
+7. 初始候选生成 3 Impl / 3 Verify lane，但 Plan 审批为 false。真实 Preview Chat 分别修改审批为 true、PrdFlow model 为 `gpt-6-astra`、impl skills 增加 `zf-plan-task-map-contract`；revision 4/5/6 均有单字段 diff。原候选字节未变。浏览器展开完整 YAML，点击 Apply config，实际 `zf.yaml` 编译后角色数、模型、skills 和审批开关一致，配置摘要 `2b356f6a13021b0616878f71079c83a31abd25d1f262a1fb73ae206778b6a6f3`。
+8. 浏览器批准 Workflow 以运行 Scan/Plan：`workflow.invoke.requested` 于 21:39:32 UTC 写入，runtime 于 21:40:30 接纳并就绪，两个 Scan 子角色于 21:40:59 / 21:41:02 派发。Plan 的人工实现审批尚未发生。
+9. 产品/技术 Scan 已完成，技术 Scan 从实际 Worker 环境验证 Docker、指定镜像与 host networking；Planner 于 21:47:27 派发。Docker Playwright 对当前真实 Run 的六视角、完整结构、运行中 Planner 的 Provider/模型/最近活动、手机布局通过；旧取消准备显示 History 且无伪 Run ID。图事件序号从 958 增至 1038，证明当前运行持续投影。
+10. Planner 首轮产出 4 任务/3 波次、15 项 AC 和 12 条命令，但 22:04:10 的机械准入拒绝 Docker 路径误报和 assembly owner 冲突；内核自动 protocol repair，未计 semantic rework，未进入实现。Planner 自主把骨架移到 lane 0，将 lane 2 留给装配，并明确声明 Docker runner 的生产任务/命令。当前模式为任务片内自检、全部候选汇聚后独立 Verify；不能把 Scan 的双 lane 重叠当作 Impl/Verify 并行证明。
+11. 修订版在收拢 FOUNDATION 专用 runner 目录以满足现有 scope 上限后，运行时预校验通过。22:14:17 派发独立 Critic；22:21:23 仍因两项语义缺口退回：DRIVE/TRACK 的中间 demo 缺少本片浏览器命令，防刷分用例把 highWater=10 的前态与首次新增10米的预期混淆。旧机械问题已由 Critic 核对关闭，内核于 22:21:27 自动派发下一轮 Planner。监工未修改裁决、规格或 Plan 批准状态。浏览器对待审批按钮的10分钟等待在此期间超时，属于尚无合格 Preview 的等待期限，不计作 Preview 功能失败。
+12. 第三次 Planner 提交补齐 DRIVE/TRACK 的本片 Docker smoke，防刷分拆成八个独立子场景，保持4任务/15AC/3波依赖，命令增至14条。提交前校验0错误，22:35:46 派发第二轮 Critic。Planner 同时发现隔离 Git 工作树内旧 `zf.yaml` 为2 lanes，但本 Run 根项目受控配置为3 lanes；使用匹配 briefing 摘要的有效配置重验，不改控制面或把旧 checkout 配置当作当前 Run 真值。
+13. 第二轮 Critic 上下文达到0.9065，超过配置 hard cap 0.9 持续180秒，22:41:27 自动回收。运行时注入同一 fanout 的恢复 briefing，随后按新 session 重派 synth，`semantic_attempt_consumed=false`；此过程没有监工重启或人工修改状态。继续观察恢复后的独立裁决，不将进程存活或重新派发记为审查通过。
+14. Critic 正式接纳后，`task_map.ready=evt-a6b18c1e2f25` 于22:50:46产生，`plan.approval.requested=evt-aa21710a4b7b` 于22:50:50产生。此时图接口实际500：绑定 source index 省略可选 authority_refs，被投影当作可迭代对象。先复现5失败/1通过，加入形状判断后89项 Plan/Inbox/图/Chat影响闭包通过。仅重载8002 Web，runtime保持等待审批；Docker浏览器随后读到完整25125字符正文和15个绑定附件，Plan为pending。未手改source index或审批事件。
+15. 实际 Plan Chat 选中 PRD 摘要段，仅追加结束面板按钮“重新比赛”的文案要求。Agent diff 与预期逐字一致，引用外正文不变；待确认草稿时批准按钮被禁用。浏览器确认局部修改产生 `plan.rejected=evt-d1196c40945f`，审阅工件摘要 `baf19be49ce30312d1ee0576eb8e9b76093b2a4346fd4b4b7010794d2f68f359`；旧正文摘要 `c7bba1969a075e626bb6daab5a0552abcb65f8857b7b31caa740fb09b5accdea` 仍一致。22:54:52 内核派发重新规划，未产生 plan.approved 或 Impl 派发。新版本是否完整接纳仍待验证。
+16. 并行的 `orchestrator` 角色只执行 `checkpoint_policy=shadow` 的语义审查，不是第二状态机。它建议补齐 `VC-ASSEMBLY` 的具名本片验收映射及 TDD 断言：机械 self-check 仍要求真实命令收据，但本片命令的 acceptance_ids 为空。监工将此作为计划质量缺口，在文案修订完成后通过同一受控 Plan Chat 修订，不降低运行时门禁，也不把 shadow 建议当作已生效的 canonical 返工。
+17. 文案重规划时，`apply_patch` 仅写 artifacts/plan/task_map.json，却因正文提及账本路径被 runtime write guard 拒绝。监工复现 apply_patch/Write/Edit 三种合法引用误报，真实 protected target 的增改删移和未知输入五项保持拒绝；复用现有目标解析器后64项 Hook/调用链/集成测试通过。Planner 自主使用审阅工件和事件ID保留来源，原拒绝未被删除；没有代替 Worker 写产物或伪造 Hook 成功。
+18. 文案新版本 `evt-99bf2fe56f16` 于23:11:35接纳，23:11:38再次请求审批。Critic核对全文与确认候选一致，文案同步到PRD、AC-A02、浏览器场景及产品验收规格，要求真实点击后完整重置。此时shadow审查仍指出assembly自检映射缺口；没有把Critic批准当作用户Plan批准。
+19. 第二次真实Plan Chat只在选中自检段落追加具名验收/TDD映射要求，保留完整90秒和候选集成后独立验证责任。首个脚本断言错误地期待一个未发送给Agent的空格，未应用候选；修正脚本后逐字局部diff、引用外不变及审批按钮禁用均通过。确认产生 `plan.rejected=evt-2992693c229e`（23:17:04），不可变审阅摘要 `67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a`，23:17:24开始重新规划，尚未批准实现。
+20. 真实页面12秒观测到同版三个Plan附件共请求12次，加载提示反复出现。根因是图轮询每次创建新的artifacts数组，触发审阅器Effect清空并重载。按端口路径/摘要稳定依赖后，同样真实观测只有3次请求、12次采样均持续显示内容。独立Docker浏览器回归用明确的图响应夹具证明同版轮询不重载、绑定变化后重新读取，1 passed；构建、类型及bundle预算通过。
+21. 第二次Plan Chat在23:17:24进入重规划，Planner正式预检零错误，`prd.plan.child.completed=evt-e501a93cea9a`。独立Critic核对新增AC-A07的五组场景、验收矩阵与运行时责任选择一致，23:42:45生成 `task_map.ready=evt-adf3807d914c`，23:42:47生成 `plan.approval.requested=evt-40e85f0b4734`。原4任务、依赖、lane归属及15项AC保留，新增后共16项；3个Impl/Verify lane已由实际配置编译核对，依赖图最大实现并行宽度为2。没有Plan批准或Impl派发。
+22. 真实Docker浏览器读到新版25377字符正文，与绑定SHA-256 `c12ce3ef9dd16ba97c60259ba3ee75dca12d19d8397f67f5127f6546f9d2cc28` 一致；在模块/验收场景中找到AC-A07，审批按钮可用但未点击，桌面和手机没有横向溢出。最终两张Viewport截图已目视核对有效。完整PRD、SDD接口和Plan已导出，[审批摘要](187-racing-supervisor-e2e/approval-review.md)交付用户，并请求批准这一具体版本。此确认来自用户明确要求，不是监工自行追加的流程。
+23. 用户明确回复“批准，继续”后，浏览器再次核对同一Plan及正文摘要，点击“确认计划并继续”，2026-10-26 00:01:28产生唯一 `plan.approved=evt-158a8630051c`。点击后脚本误取请求顶层plan_id，真实字段在payload内，导致测试断言失败；没有重复提交，随后从受控动作完成收据和正式审批事件补齐审计。午夜EventLog已归档，监工临时读取脚本改用项目配置下的EventLog.read_all，未将当日活跃文件误当完整账本；产品图接口本身始终正确读取历史。
+24. 审批后没有Impl派发，发现23:55:13的 `run.goal.blocked=evt-de04e59f0b5a`：Run Manager在人工等待超过300秒后，将22:21的历史failure-closeout候选升级成人工收尾并终止Run。23:50还发生了不必要的goal idle rescan。原有防护覆盖运行中Operation及近期Worker活动，遗漏了同Run待审批Plan。新增反例先复现6失败/23通过；共用只读审批归约后234项影响闭包、51项sentinel、10项flow-smoke通过，另以真实3300条事件前缀回放，20次idle探测无错误升级或重扫。
+25. 确认没有运行中Operation后，用本项目 `zf stop --include-run-manager` 平稳停机，保留workdirs；受控 `human-decision-dismiss` 关闭误升级项 `hdec-5cd556415d99`（`evt-d68bf23ae39c`），没有激活失败backlog。`zf goal set --status active` 产生 `evt-0e5dacd557be`，恢复同Run和根Task，再启动加载修复后的runtime。00:09:01内核自动派发 `prd-dev-lane-0-RACE-FOUNDATION`（`evt-ebd2fe29a7a8`），实际Worker随后开始读取briefing。未重写账本或canonical state，未新建Plan/Run，也未重复批准。
+
+## 发现与处理
+
+| 问题 | 证据 / 处理 | 状态 |
+| --- | --- | --- |
+| `.gitignore` 被当作 scope 说明文字丢弃，Channel 同一路径被拒绝 | 两条实际消费链回归先失败；共享路径形状判断保留 dotfile，canonical 路径安全校验不变；69 passed、47 deselected | 真实 Agent 新提案保留 dotfile，受控更新后的 Task 合同一致 |
+| Task 草稿把 Chromium 安装安排在宿主 | 通过真实 Kanban Chat 补充 Docker-only 约束，改为将来交付的 `scripts/verify-racing.sh`，保留正常 90 秒浏览器验收 | 修订稿及受控 Task 更新已核对 |
+| 新注册项目准备队列必须访问 Workflows 才消费 | 原 Worker 仅 watch 启动默认项目及 Workflow 路由读到的项目；新增启动后注册项目的实际 create-task API 回归，不调用 Workflow GET，先复现 ready 挂起；Worker 每轮发现 workspace 注册项目，保持并发上限和进程租约 | 45 项准备/合成调用链测试通过；真实请求自动消费已观察 |
+| 多角色启动超过 30 秒被误报 STOP | 真实后台继续启动并接纳同一 invoke，但旧 API 写 runtime.start.failed 并返回 503；慢启动回归先失败，修复将活进程尚未就绪保留为 starting/202，真实退出仍失败 | 47 项启动与 CLI/Web/受控调用链测试通过，另 3 项 host tier 未在该命令运行 |
+| 取消准备请求仍显示待决策，Synthesis ID 冒充 Run ID | 真实取消请求在列表中仍 ready；回归先失败。详情只从 Run admission/已绑定 Run 获取运行身份，列表与详情仅对当前 revision 的取消准备投影 cancelled，旧代取消不污染新修订 | 58 项 Web/图/准备调用链通过，前端 build/typecheck/unit/bundle budget 通过 |
+| Docker `--pull never` 导致验证输入路径误报 | 提取器将策略值 `never` 当作镜像，后续挂载和镜像被错误当作仓库路径；新增两种 pull 语法回归先得到 1 failed / 2 passed，加入值参数识别，不修改路径门禁 | Task Map / evidence / Plan preflight / counterexamples 100 passed；真实 Planner 同时自主改为显式 Docker runner，未据此宣称运行时热加载 |
+| 合格 Plan 已请求审批但 Workflow 图500 | source index 的可选 authority_refs 缺失导致 NoneType 遍历异常；回归覆盖缺失/null/错误形状及真实图路由，原正文、pending和只读事件计数保持 | 89项影响闭包通过；重载8002后真实浏览器成功读取Plan正文和附件 |
+| 规划文档引用账本路径被误判为直接写账本 | 原保护扫描完整工具输入，混淆正文与文件目标；复用已有写入目标解析器，未知输入及shell检查不变；3失败/5通过的反例先复现 | 64项Hook、调用链和Codex路由集成测试通过，真实账本增改删移仍拒绝 |
+| 图轮询使Plan审阅内容周期性消失并重复加载 | 真实浏览器先复现12秒12次请求；加载依赖改为绑定路径/摘要，项目及Plan切换仍取消旧请求 | 同样真实浏览器3次请求且持续可读；绑定变更浏览器回归1 passed，build/typecheck/bundle通过 |
+| 人工Plan审批等待被当作停滞，历史失败收尾将Run误终止 | 同Run待决审批在匹配裁决前阻止失败收尾升级及goal idle rescan；其他Run、错误Plan裁决、已处理Plan保持原有行为 | 234项影响闭包、51项sentinel、10项Mock通过；真实事件前缀回放通过，受控恢复后同Plan已自动进入Impl |
+
+26. 为供应已批准Plan要求的 `RACING_WORKFLOW_EVIDENCE`，监工从只读账本与绑定工件生成前置治理证据，保留人工批准、配置/YAML预览/启动授权及已发生writer派发的原始引用与摘要，不填未来Verify/Judge结果。证据作为外部环境输入，不修改受控zf.yaml。准备保留Worker重载时发现actuator只读旧pid字段，真实锁为process-guard.v2/owner_pid；回归先失败，修复后212项actuator/process guard/CLI start/Run Manager测试通过，sentinel 51通过。真实重载使watcher PID从1559070变为1602023，FOUNDATION会话与派发不变，全部Provider pane PID不变。读取sg子进程的/proc/environ被宿主权限拒绝，环境消费仍须以后续真实audit结果证明，不将wrapper赋值当作已通过治理验收。
+
+27. 重载后真实Docker浏览器核对Plan为approved，运行中的FOUNDATION节点绑定实际Provider用量：`prd-dev-lane-0 / codex / gpt-6-astra`，详情显示真实工具活动。首轮模块与执行截图过早捕获加载态，不作证据；补充等待canvas节点后重新截图并目视核对。截图同时发现Run节点仍显示恢复前blocked，后续继续修复该投影不一致。仅对确认idle的装配与三个Verify角色执行正式 `zf restart <role>` 以加载外部证据路径，没有替换活跃FOUNDATION。此时Impl观察峰值仍为1，不声称已完成多lane验收。
+
+本轮恢复修复验证：审批等待影响闭包234 passed；重载器及调用链212 passed；最新sentinel 51 passed；`dev-verify plan/run --base dev`审阅整条分支的broad建议，按已完成影响闭包跳过deterministic/serial及未变化且已验证的Web/contract，实际运行flow-smoke 10 passed（6.63秒）。一次手写命令误用了不存在的 `tests/test_flow_smoke.py`，无用例执行，错误日志保留；随后使用正式脚本通过。没有运行全量pytest。
+
+本记录后续补入实际并行区间、门禁与最终交付。原始认证 token、storageState 和带认证 trace 不进入仓库。
+
+28. FOUNDATION于00:29:37产生真实 `dev.build.done=evt-be0dfb11bd11`；内核随后分别在00:29:42、00:29:46向lane 1/2派发DRIVE/TRACK（`evt-a081f912774a`、`evt-858a6a8aa9d9`）。运行时按可用slot分配实际role，Plan里的lane归属不是静态线程绑定。两个真实Provider均开始实现，Impl峰值2；3个配置lane不意味着依赖宽度3。`parallel-intervals.json`按正式派发/settlement计算，未关闭区间只统计到观察时刻，Verify仍未发生。
+29. 当前Run原有admission投影为running，但图及详情仍使用旧 `run.goal.blocked`。新增真实API+历史回放反例1失败/3通过；复用既有admission状态后115项图、Web Proposal、Run admission、请求验收与Goal coverage测试通过，sentinel51通过。仅重启8002 Web，实际Docker浏览器验证Run=running、详情无旧terminal、终点pending、两个Impl operation同时running；历史blocked证据仍保留。此前等待/重载修复提交为 `e5c7f64 fix: preserve manual plan waits and worker-safe reloads`。
+
+已导出审阅用问答、候选YAML、实际配置、局部修订回执、人工批准与Impl首次派发和验证日志，见 [证据清单与SHA-256](187-racing-supervisor-e2e/manifest.json)。审批文档保留批准前快照；当前状态以本记录及正式事件为准，不包含尚未发生的Verify或产品完成证明。
+
+修复提交：`bd11edf fix: harden workflow preparation and plan review gates`。最终自动验证器再次执行Web类型检查和全部模型测试通过；已单独通过的后端影响闭包、sentinel及Mock E2E不重复运行。尚未merge/push。工作区保留本次运行需要的`.venv`和`web/node_modules`临时符号链接，8002与runtime留供用户审批，任务未归档。
+
+补充真实 host + Mock Provider 层：`tests/e2e/test_workflow_runtime_autostart.py -k starting -m host` 的 CLI / Kanban / Channel 三入口全部通过（49.74 秒）。将同步等待设为 0，使回执实际返回 starting；各入口随后自动启动 watcher、接纳 invoke 并派发，重复批准不生成新 invoke，没有 runtime.start.failed。每个测试使用独立临时 tmux socket，并清理自己的 runtime。这一层不冒充真实 Provider 验证。
+
+本轮 `dev-verify plan/run --base dev` 覆盖整条 187 分支，文件阈值扩为 broad deterministic。按 AGENTS 的域与影响闭包执行上述 focused 验证，自动运行器跳过已执行的 Web/contract 及 broad deterministic/serial，补跑 flow-smoke：10 passed（4.68 秒）。没有运行或声称通过全量 pytest。
+
+后续Hook与Preview修复的最终sentinel为51 passed（8.49秒），flow-smoke为10 passed（15.47秒）。首次sentinel因hook_recv.py超过1000行而失败；将目标文本归一化放到已有hook_workdir_guard责任模块后997行，不提高结构豁免上限。
+
+与Prompt的差异：3个Impl/Verify lanes由真实Synthesis问答进入候选，而非另做一次lane数Chat修改；Workflow Chat实际验证审批开关、model和skills三项。两张真实Plan局部diff截图捕获位置失效，不作视觉证据，保留真实API与DOM断言；另以完整Plan候选的明确UI夹具复测桌面/手机diff可读且不横向溢出，1 passed，不冒充真实Provider执行证据。Docker镜像内没有@playwright/test runner，浏览器回归将已有前端node_modules只读挂入容器，仍使用容器Chromium，未安装宿主浏览器。
+
+恢复投影的验证器按本次5个改动路径（仍以dev为base）规划80个关联测试文件；已执行明确的115项影响闭包及51项sentinel，匹配run跳过已覆盖deterministic与未改变的Web层，没有额外执行全量或把跳过的tier计为通过。真实浏览器当前与历史状态由上述API回归及Docker复核共同验证。
+
+30. DRIVE提交`2d58b91886ecdb7e92c3776c7ba7a74e85313ea2`、TRACK提交`fc3f13f`，分别于00:52:49/00:55:32产生`dev.build.done`。两者真实Docker浏览器与本片测试完成，但结果被运行时标为stale_contract_authority：dispatch及Worker self-check使用当前authority，fanout投影遗漏五个authority/execution binding字段，结果binder错误采用排队旧payload。同时恢复循环反复写相同impl.self_check.completed。反例先复现3失败/1通过，修复保存正式dispatch元数据并对同来源/摘要去重，未放宽合同验证。两项旧兼容性测试需要从模拟“untyped replacement”的原始事件与投影中同时去除新增字段，保持原有成功/拒绝断言。
+31. 使用原5517条事件经`FanoutManifestProjector.write_manifest`重建可再生manifest，核对账本未变、未写TaskStore；保留Provider会话重载watcher。01:05:14/15内核自动接纳DRIVE/TRACK原结果（`evt-049f56c81c3a`、`evt-01ade5921a6d`），01:05:18派发ASSEMBLY（`evt-64b8d0dcad37`，实际lane 2）。监工没有代写产品代码、补造Worker成功或跳过独立Verify。治理外部证据随第四个实际派发更新，仍不包含未来验证结果。
+
+Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把全部区间称为活跃编码；实际两Provider均在00:29至00:53期间工作。配置3 lanes，当前依赖图实现最大宽度2，装配须等待两项交付接纳，独立Verify仍待候选生成。
+
+排队authority修复最终验证：8个调用链/合同模块233 passed（198.78秒），旧合同交接Mock E2E 1 passed（9.80秒），sentinel 51 passed，flow-smoke 10 passed。首次sentinel因fanout.py新增后超过1000行及orchestrator_fanout.py超过既有上限失败；将既有metadata函数移入同责任模块，并撤掉无必要的orchestrator改动后通过，未提高结构豁免。自动验证器规划211个关联文件而扩成broad；实际按AGENTS执行上述影响闭包，run跳过deterministic/serial与已通过contract，仅补跑flow-smoke 10 passed（6.55秒），不声称全量pytest。修复后截至01:14未再生成两份交付的重复self-check事件；修复前544条历史重复事件保留不删除。
+
+32. ASSEMBLY最终交付提交`0864db0d743dacd660685eb0c516299b14124499`，在该提交上`VC-ASSEMBLY`33/33通过，正式90秒旅程仍待独立验收。`dev.build.done=evt-45c3926d0db5`于01:31:02产生，01:31:07内核接纳`evt-3e017c1b34af`，4个原实现子任务全部交接完成。图在独立验收前仍将全部Task显示in_progress，accepted_event_ids为空，没有把Worker完成自报投影成产品通过。排队authority修复已提交`93b292c fix: preserve dispatched writer authority during replay`。
+33. 初轮集成候选`dfe994958e811acbfd95101dafd4a73c4df56eb5`于01:44:25质量失败（`evt-b787a6c135c0`）；14项命令中8项通过、6项失败。全新候选未声明setup_script，前两个命令先于VC-INSTALL，分别缺Vitest/Vite；随后各浏览器命令重新下载约167 MiB的Chromium v1208，180秒内未完成。既有Docker镜像不等于当前项目Playwright包所需版本已经安装；不能把环境失败当行为RED。真实VC-GOVERNANCE已通过，证明读取了监工前置证据；完整90秒比赛尚未执行通过。候选检查目前为顺序执行，只有candidate.ready才启动多lane独立Verify，故此时Verify未运行不是3-lane配置失效。
+34. 同轮发现候选执行器丢弃合同timeout_seconds，统一使用300秒。4个确定性反例失败后修复传递规范化期限，并写入实际收据；90秒、1200秒、超时失败及旧300秒fallback均覆盖。19项聚焦、149项候选/返工/验证合同闭包、17项集成调用方及旧交接Mock、51项sentinel、10项flow-smoke通过。首次闭包命令误写不存在的tests/test_verification_commands.py，未执行用例，已改为实际模块重跑；不将该空运行记作通过。自动验证器因179个关联文件建议broad，按AGENTS选择上述明确影响闭包，匹配run只登记已通过tier，不声称全量pytest。
+35. 失败后Kernel `workflow_resume_batch`生成同版返工触发`evt-746215246543`并再次请求Plan审批。只读核对10个绑定字段及真实文件摘要，原Plan与返工引用完全相同package `2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a`、Task Map generation、需求及Run contract，没有新产品范围。监工依据用户对原版的明确批准及持续修复授权，经token-gated受控入口记录`plan.approved=evt-c94ace449772`，reason引用原`evt-158a8630051c`并明确不是用户再次操作。未关闭Plan审批开关、未为新语义计划设自动豁免。01:51:38/40/43重新派发FOUNDATION、DRIVE、TRACK。
+36. 通过保留Worker的正式actuator重载watcher（新PID1845927）以加载合同超时修复。DRIVE会话恢复时出现旧文本集中重放，不能将这些新账本时间戳当作新的编码活动；后续并行证据按本轮派发、实际工具活动和交付结果核对。此现象继续调查，未删除历史事件或伪造执行状态。
+
+37. 历史文本重放已定位为观察器恢复缺陷：DRIVE在01:05清理旧会话并启动新进程，但首次输入到01:51才写新rollout；watcher重载丢失内存_spawn_ts，后台观察以0作为时间边界，抢先选中旧rollout。稍后Hook已绑定正确新会话，tailer仍留在旧文件，因此重放旧文本且遗漏新文本。确定性竞态反例先失败，改为从同instance正式launch事件恢复边界后48项聚焦、198项启动/注册/生命周期/CLI闭包、51项sentinel和10项flow-smoke通过。真实只读回放确认旧mtime早于恢复边界、新文件晚于边界且选择匹配Hook绑定；经正式actuator保留Provider重载watcher。
+38. 返工FOUNDATION发现宿主代理未进入Docker，增加仅用于下载的代理白名单与0600临时文件回归，检查点`1060cc46a88c51593d213bef3dbcf0fbfb406084`；传递后下载仍在180秒超时，未把环境探针成功算作产品通过。TRACK检查点`ddc5aed`、DRIVE检查点`82dd2884ee23d76d6e6cf7a025a3e8227950e3ec`保留通过的本片单测与真实浏览器阻塞日志，各自遵守共享runner范围并报告blocked。内核将子任务标为failed，继续派发ASSEMBLY及独立Discovery做归因；Verify尚未运行。
+
+观察器修复的dev-verify规划189个关联文件而建议broad；按AGENTS采用已完成198项明确闭包，匹配run登记跳过deterministic/serial，不宣称全量通过。
+
+39. 独立监工探针在被拒绝的原候选`dfe994`隔离checkout上显式安装依赖并构建，使用Docker镜像自带Chromium 149，不修改正式Run裁决。真实按键、暂停冻结、重开重置、自然90秒结束（单调时钟90294.5ms）、单次结算、结束后冻结和“重新比赛”全部通过，无console/pageerror。截图28与source文件摘要可核验。该结果只排查游戏行为，不能替代当前候选质量门或独立Verify。探针8023服务已停止，注册的隔离worktree留待最终清理。
+40. 受控`candidate-rework-apply/replan`于02:29接纳环境计划修订（`evt-b54797ff6f28`）。反馈明确原Plan安装180秒、依赖准备只覆盖writer、npm ci清除浏览器缓存等缺口；不修改运行中YAML，不降低16项产品AC或90秒要求，不声明新用户审批。反馈通过必读`plan-rework-context` sidecar（SHA3883bdca）交给真实Planner。原第一Planner被重复trigger替代，新`evt-442e54ec`已继续同一修订。
+41. 将冷环境消费者、命令顺序、镜像/项目版本和重装后缓存审查补入通用执行准备skill，canonical及两分发副本一致。23项技能物化/指令检查通过，1项已有可选example跳过；本次在途Planner使用派发时的冻结skill，不冒称热升级。Codex观察边界修复已提交`7636473 fix: recover Codex observation boundaries after restart`。
+
+42. 真实环境返工出现两个同源scan触发`evt-79e1f868b6f4`和`evt-442e54ec2fbd`，导致第一Planner刚启动即被superseded并重启。受控动作写marker后构造trigger期间，恢复扫描也可能读取未完成快照；双方原来直接追加。实际受控动作+Kernel消费交错反例先得到6个触发（应3），修复为锁内重新读取账本后复用同一返工事件。另验证4个并发writer只追加1次、新attempt仍允许。138项合同/动作/EventLog/锁闭包、56项Run Manager/Writer调用方（316 deselected）、51项sentinel、4项语义控制Mock及10项flow-smoke通过。首次闭包包含不存在的测试文件，未执行用例；已记录失败命令并按真实模块重跑。
+
+返工竞态的dev-verify规划198个关联文件而扩成broad；按AGENTS采用已运行的具体影响闭包，匹配run登记跳过已完成tier，不声称全量pytest。正式actuator保留Provider重载watcher，同时仅重启8002 Web；8001未动。独立Discovery另复现交付脚本对缺失/无效90秒字段错误放行，正在正式报告，最终闭环尚未完成。
+
+43. 实时图错误保留4个返工writer为running。账本与TaskAttempt Store均已记录失败，但Operation未收尾。新增回归覆盖dev.blocked/dev.failed的即时及恢复路径、旧dispatch不关闭新dispatch，并检查图终态。最初测试将Worker事件经Kernel writer追加时漏设origin，已纠正；在隔离测试进程加载修复前HEAD函数重跑，仍4 failed/1 passed。修复经TaskAttempt规范状态与真实结果来源、Run/Task/dispatch匹配后，通过WorkflowOperationService补记失败，未修改Graph标签。125项Operation/Attempt/图闭包、16项writer调用方（142 deselected）通过。
+44. 正式重载watcher后02:53:45补记`evt-6e00a8595a3f`、`evt-b1758406d125`、`evt-322f7ac9b8e9`、`evt-ebc4cd5a7300`。Docker Playwright核验4节点均failed，Run仍running、Task未显示done，详情保留真实Provider、失败来源与最近活动；截图29/30已人工查看。补记时间表示Operation收尾时间，不宣称期间Worker持续编码。
+45. Discovery的真实计时字段缺陷已形成`RACE-ASSEMBLY-TIMING-REPAIR`，但两次amend被旧modules引用阻断（`evt-381d4ed7925f`、`evt-4cd709268f39`）。两个反例先复现单/多后继替换失败；修复仅重绑明确supersedes映射。76项gap/Task Map/模块/真实runtime调用方通过；对本次`evt-dede9ac3a65e`原始输入只读回放也完整校验通过，未改旧工件或账本。修复已加载，实际缺口重新接纳尚待验证；不把只读回放算成任务已派发。
+46. 两项修复合并验证另有51项sentinel、5项语义控制/旧合同Mock E2E、10项flow-smoke通过。dev-verify按共享边界规划较宽；实际采用上述具体闭包，匹配run登记跳过已通过tier，不声称全量测试。返工触发竞态已提交`7eab802 fix: deduplicate concurrent plan recovery triggers`。
+
+47. 03:02:57旧候选DRIVE Discovery再次环境失败（`evt-c8b21d50a8fc`），通用阶段cap触发`human.escalate=evt-093d49440983`和`run.goal.blocked=evt-2eb794871018`；03:03:07取消正在进行的环境Plan（`evt-52b81862362d`）。Critic继续运行，03:15提交建议通过`fanout.synth.completed=evt-0f1857beaa75`，但取消后的报告不构成正式Plan接纳，没有新版task_map.ready。180秒浏览器等待因此超时，不能计作Preview成功，也不是已证明的Preview渲染故障。
+48. 复现旧reader失败抢占活跃候选重规划的恢复所有权：更正测试导入名后2 failed/11 passed。新增保护要求正式返工marker、同Run/PDD/旧代际、匹配返工来源与次数的活跃Plan fanout；其他范围、终止的Plan及新Planner自身失败不豁免。首次真实回放发现fanout.started不在顶层携带代际，已按实际trigger引用绑定并补充反例，而非放宽身份检查。最终117项stage/recovery/escalation/真实调用方测试、51项sentinel、5项Mock E2E、10项flow-smoke通过；8467条真实事件前缀回放从cap_exhausted变为owned_by_active_candidate_replan，未改历史账本。最初只读脚本误用Pydantic API，已改用EventLog原生对象。dev-verify规划201个关联文件而扩成broad；按AGENTS执行上述具体闭包，匹配run登记跳过deterministic/serial，没有运行全量pytest。
+49. 正式保留Provider重载watcher，从2001347切到2049658。监工通过`zf goal set`记录operator_review并恢复同Run（`evt-50445443495c`），保留旧cap/cancellation事实；受控候选重规划产生`evt-49490d05913e`和唯一新trigger`evt-bddccfe072a9`。请求载荷指定24份带摘要的最近环境Plan/Critic工件，反馈要求复用已完成环境设计，仅把Discovery已证实的时长字段校验缺陷纳入原ASSEMBLY/AC-A07；这尚不证明引用已实际派发，后续核验见第50条。新Plan尚未批准，正式Impl/Verify及最终产品验收仍待执行。此前两项Operation/module修复已提交`e2cf090 fix: preserve failure and module state during rework`。
+
+50. 实际source manifest核验发现，受控动作丢掉previous_plan_candidate_refs，回退到3ac7f23a旧版22份引用。Planner也独立发现冲突，03:34:41正式报告`prd.plan.child.failed=evt-e6fc77183c4f`，没有用旧版冒充环境修订。即时/恢复路径两个反例均失败；修复使持久marker和即时触发携带同一语义上下文。109项动作/重规划/读取合同、43项Run Manager调用方（171 deselected）、28项preflight/语义Mock通过，真实请求只读回放确认修复后24份引用逐项等于请求。03:30出现的`task_map.ready=evt-7bacfb824596`是原package 2e051662的机械返工副本，不是新环境Plan，未批准。
+51. 修正引用后重载8002（PID2071940）及watcher（2072052），受控动作产生`evt-cfbd221c0502`和`evt-fe204937543b`。此时输入失败已触发Planner自身cap，Run被阻塞，派发记录`evt-0894f8ff1093`如实拒绝；监工在修复证据基础上通过`evt-22f59b3c206a`恢复同Run。恢复仍不补派，确定性反例1 failed/1 passed：旧/新trigger仅rework_attempt为3/4，恢复身份遗漏该字段。补入后162项Reader/恢复/动作闭包通过；真实两trigger回放确认旧key相等、新key不同。最终51项sentinel、10项flow-smoke通过，未改上限或手写fanout状态；dev-verify按共享边界建议broad，匹配run登记上述已执行tier，未运行全量pytest。
+
+52. 再次正式保留Provider重载watcher至2087527，03:44:30自动补派原trigger `evt-fe204937543b`，实际child dispatch为`evt-5c5bd8fe86ff`，没有新建第五轮请求。输入清单SHA `63e37777e857824fb4f3312a4f26490d877c1721bee3301e84ad0e7dd7e35282`包含24份previous candidate，逐项ref/digest与受控请求完全一致；必读返工context包含GAP-ASSEMBLY-TIMING-001，zf.yaml摘要未变。这里只证明输入已正确派发，Planner/Critic、用户审批与后续交付仍待完成。恢复所有权修复已提交`17404f2 fix: preserve active candidate replan ownership`。
+
+53. 04:04:23 Planner正式交接，04:16:13独立Critic产生`fanout.synth.completed=evt-096167993e32`，approve且无阻断项；04:16:19接纳`task_map.ready=evt-498c4d468cc2`，package `3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52`。保留4任务/16AC/14命令/23 mandatory claims与完整产品规则；环境方案和8组时长负例仍是待实施合同，不将Planner预检或Critic结论记为产品通过。上下文及重试恢复两项修复已提交`cdee583 fix: retain replan inputs and recover pending retries`。
+54. 新Plan未出现在审批入口：`plan.minting.suppressed=evt-3346de48b3cc`仅按stage/PDD/Task ID集合与旧待审副本判重。7失败/1通过的回归复现package、generation、Run、合同、正文变化及旧抑制永久封锁。改为带版本的Run与绑定内容指纹，同版仍幂等抑制，历史旧指纹不再证明同候选。49项审批/预览/语义调用链、52项恢复/图/Feishu投影、5项writer入口（153 deselected）、7项Mock、51项sentinel、10项flow-smoke通过；两个真实Plan ID相同任务集但不同package/generation的只读回放也通过。dev-verify因共享Orchestrator映射193个文件建议broad；实际采用上述闭包，matching run明确跳过已执行/非相关tier，未运行全量pytest。
+55. 保留Provider重载watcher至2159491后，原Plan自动产生`plan.approval.requested=evt-9246060d466a`，无新Plan重跑。Docker Playwright精确选择该Plan，核对31031字符正文与SHA `93255908dd5c222141dd85b9c448829f2dde9a96fecdcf88d0ec0737d5095916`、AC-A07、可用审批按钮及桌面/手机布局，截图31/32已目视核对。监工交付[完整修订审阅](187-racing-supervisor-e2e/environment-plan-review.md)，核对产品/依赖/owner/配置保持后，依据用户既有“批准，继续”与持续修复授权，经正式token-gated动作记录operator续修确认`plan.approved=evt-15434756a885`（04:25:48）；不声明新用户点击，也未开启auto批准。04:26:00内核派发新FOUNDATION `evt-323a76e4e195`。当前仍待环境/时长修复、正式候选、独立Verify及最终交付。
+
+56. 新FOUNDATION于05:02:27报告`evt-882305b36cfb`，05:02:48内核接纳`evt-012347b4e642`，交付提交`2a92610dfab80aeb6a24f161d0fa64d7a2cb0ac9`。共享runner已验证冷依赖准备、半安装CLI检测、镜像浏览器资格检查、独立冷副本以及真实npm ci后的浏览器复用；900秒下载回退只有夹具覆盖，本轮没有实际触发下载。05:02:52/56分别派发DRIVE与TRACK（`evt-015b34dacba8`、`evt-603d84af1e50`），同新版Plan/package/generation、两个独立workdir，实际Provider usage及浏览器截图33–36证明并行。配置3 lanes，当前依赖宽度为2；不能把Foundation或装配的依赖等待算作调度失败。DRIVE提交`85ce137`于05:14:55交接，05:15:09内核接纳`evt-644332b1f73a`；独立Verify仍未启动。
+
+57. TRACK最终提交`0c335dc`通过22项本片单测及真实Docker浏览器；保留favicon 404失败和修复后通过证据，完整游戏单测首轮82/83因5秒超时失败、重跑83/83，不能只报全绿。05:23:37内核接纳`evt-8e4c971b93e4`，05:23:45自动派发ASSEMBLY `evt-14632de1a0b4`。监工只读导出本版审批和四个真实writer派发，外部治理bundle更新为SHA `6b285255e54f09e1779ad4e045e43474b320d1d6359c79b4d9caf70aaa82bf74`，明确不含未来Verify/Judge；zf.yaml摘要保持不变。
+
+58. 真实活动图筛选后仍沿用完整历史图坐标，32节点夹具缩至2节点后卡片仅30.46px宽，回归先失败。改为显式视角/筛选/关系/折叠/回放变更时重排并适配，轮询保留拖动坐标和视口；真实截图37确认活动节点可读。随后Plan Chat宽表格把987px面板的Grid列撑至1667px，两轮诊断均复现，页面根scrollWidth仍为1600，说明只检查页面宽度会漏检。限定面板单列minmax并补直接面板宽度断言；截图38/39/40保留前后结果，Chat均为明确拦截API的布局夹具，不冒充新的Provider修改。
+
+最终前端build/typecheck/bundle通过，图模型5场景通过、8项文档指令检查通过，Docker浏览器4项全部通过（2.1分钟）：真实Run六视角/选择/Provider/实时/移动布局、Plan附件轮询与绑定变更、Chat长文桌面/手机、筛选布局与缩放轮询稳定。首次回归两个加载断言因图快照超过默认5秒失败；真实量测detail 0.317秒，完整图4.48MB为5.673/6.173秒，首次数据等待调整到30秒，交互断言未放宽。只读冷进程profile额外包含首次EventLog解码，不当作热接口延迟。后续复跑还发现测试对已达最大缩放的“放大”点击无效，改用“缩小”后保留同样视口稳定断言。dev-verify匹配本次UI/docs路径，已执行build及聚焦模型/浏览器，不重复跑全部Web模型；第二次仅CSS和文档变更复用8项指令结果。没有运行后台回归、sentinel或全量pytest。本次两项UI修复不代表赛车已完成，ASSEMBLY、独立Verify/Judge/最终候选仍待执行。
+
+59. ASSEMBLY在生产交付脚本上新增八组时间证据回归，先得到96项中32项失败（合法边界对照通过），修复后101项装配自检通过。提交`d05d03d`最终自检再次101/101，05:39:55内核接纳`evt-93669f013a62`。新候选`a15b6b6f5247c6b2d8d08390c5aa9f532529ae03`于05:39:59开始质量门，05:52:01产生`candidate.quality.passed=evt-af8c5322ed65`及`candidate.ready=evt-c1e65c55c50a`，14项全部通过，含统一交付及真实治理审计。首轮正式浏览器4旅程全部通过、无失败/跳过/重试，正常90秒实测90244.2ms，6份来源摘要逐项核对，截图43已查看。这不是独立Verify/Judge或最终Run通过。
+60. 05:52:13/16/19正式派发`prd-verify-lane-0/2/1`，同Task Map generation、三个独立工作区均固定HEAD为候选`a15b6b6f`。05:53的三个实际Provider usage均绑定本轮Operation，Docker Playwright核验同屏三lane运行及实际模型详情，截图23/24/25/44已查看。API此时所有产品Task仍未done，Run running，未把Impl自检或candidate.ready冒充交付。Impl宽度2、Verify峰值3已实证；独立结论、Discovery/Judge及终态仍待完成。此前两项UI修复已提交`b7dd59a fix: keep workflow filters and plan chat layouts readable`。
+
+61. 监工从候选`a15b6b6f`已通过VC-BUILD的4个产物逐字节复制并核对SHA，在隔离8023启动试玩。独立Docker Playwright完成真实键盘、暂停冻结/恢复、重开、正常90秒比赛、终局不可变及“重新比赛”重置，实测90207.9ms、浏览器错误为空；截图41/42已目视核对，trace原样保留。此证据只绑定该候选；若最终接纳commit变化必须重验。源码的136个Git文件、静态产物、原始治理bundle及13份引用正文导出至`/home/uisee/workspace/zaofu-e2e-deliveries/2026-10-25-racing-187/candidate-a15b6b6f5247`，未复制Provider凭据或完整运行态。原bundle保持SHA，另生成仅设置本地absolute_path的迁移副本并通过只读前置治理重放；迁移副本摘要独立记录，不宣称原始引用不变。目前无最终acceptance.json。
+
+62. 独立Verify的lane 0/1分别完成90.3585/90.439秒的真实比赛，lane 1另有20,000条扫掠几何和20,565步跨圈折返探针。lane 2两次在工具准备阶段失败（5秒Playwright CLI探测），其后安装恢复；lane 0/2的统一交付均在内层120秒单测期限返回124，后续阶段未执行。4逻辑CPU宿主负载约14；资源竞争为待验证解释，不能把失败收据算为通过，也不将候选串行14项通过代替并行环境的独立结论。lane 2浏览器重试及正式Verify/Discovery/Judge仍进行中。
+
+63. lane 2随后完成101/101装配自检及90.359秒真实比赛，并于06:23启动原命令重试；其统一交付最终六阶段全0，未修改产品源码、期限或期望。lane 0/2在06:25被原有hard-cap策略回收，正式恢复仍绑定原fanout/子任务/候选，但仅重发原briefing，两个新回合重复执行了部分此前检查；不把重复执行算作额外独立lane。lane 1提交`verify.child.completed=evt-544646bee75f`（06:28:23.324455），内核于06:31:09.951740接纳`fanout.child.completed=evt-e7b2102f7fd1`，延迟166.627秒。lane 0新回合90.158秒比赛通过，额外冷工作树检查首轮工具探测超时，后续分阶段单元和容器启动页通过；这些仍须正式结果接纳。
+
+64. 密集唤醒逐事件调用完整调度造成积压；回归复现同一快照多次调度，较早的观察事件被留到批末。将Watch callbacks抽至独立小模块，真实`zf start`按快照调用一次调度，逐事件过滤/限流、账本顺序和精确字节游标保留；追加的新事件留待下一轮。初始64项CLI/Watcher回归通过；补充闭包首次因旧Mock E2E导入旧helper而收集失败，迁移其真实回调接线后147项通过、7项条件跳过，另51项sentinel及5项Mock/flow通过。dev-verify首次显式tests误用逗号路径，改为合法参数后plan/run成功；共享边界规划122个文件而建议broad，matching run记录跳过deterministic/serial，以以上实际闭包为准，未运行全量pytest。06:49正式保留Provider重载watcher至2439703，全部pane PID一致；真实延迟改善仍待后续完成事件量测，不以单元调用次数代替实测。
+
+65. 三个Verify报告均已正式接纳：lane 2报告`evt-09fca80d510d`至接纳`evt-5b058f18acdd`耗时20.156732秒；lane 0报告`evt-29287f9a6af3`至接纳`evt-178981d81d7c`耗时24.395379秒。与修复前lane 1的166.627285秒相比有改善，但不是同负载受控基准。前三份独立结论及14个完整摘要清单已导出至portable evidence，共11,730文件/788,050,072字节，包含冷启动检查依赖，不含Provider homes。第4个DRIVE仍排队，未宣称Run完成。
+
+66. 定位DRIVE排队：lane 0注册表06:55:49.289447清除旧会话，迟到Hook在06:55:49.453342重新绑定同一UUID；旧0.92上下文用量令idle worker仍被hard-cap拒绝派发。新增6个反例覆盖跨进程旧实例、重启持久化、新会话保护、最新mtime旧rollout、扫描/clear竞态及真实Hook入口审计。首轮pytest未指定本worktree的PYTHONPATH，被导入来源断言拦截；校正后6项全部在旧代码失败。修复在canonical registry加退休UUID栅栏，观察器跳过并尊重绑定失败；155项registry/Hook/Spawn/回收/reader影响闭包及51项sentinel通过。真实重载恢复及最终验收仍待验证。
+
+67. 补充17项流程Mock/锁/文档测试通过。dev-verify plan因共享Store边界规划225个文件而建议broad，matching run明确跳过deterministic/serial、通过sentinel；实际执行范围以上述155+17闭包为准，无全量pytest。正式重载watcher至2489416后，07:18:27自动派发DRIVE（`evt-7f42e3b6091d`），Provider开始读取新briefing；重载清除内存hard-cap是此次立即恢复的直接条件，旧UUID的下一轮退休保护尚待真实回收验证。
+
+68. 退休UUID修复提交`0061a7a`。07:22:11.796668真实回收旧会话01a176e2…，新会话01a17716…正常绑定；07:23:41.321212旧会话迟到Hook`evt-b8573036019e`仍进入账本，之后注册表保持新UUID，旧UUID仍在退休记录中。新上下文比例约0.065，证实没有复用旧0.93 transcript。DRIVE以retry briefing继续独立验证。
+
+69. 图中DRIVE退回backlog不是UI猜测：07:19:14的`task.requeued=evt-96e619cb17ac`来自reader context critical的普通completion audit，错误地按产品Task owner安排writer retry。新增reader归属检查同时保护告警入口和升级前残留schedule消费；原派发终结后仍保留归属，六种不匹配反例不豁免正常审计。旧代码2 failed/6 passed；初轮修复测试夹具缺少fanout.started，被真实EventWriter投影覆盖topology，已改为完整事件初始化，不放宽生产检查。真实critical与schedule两条账本事件只读回放均判定属于reader；最终闭包与受控状态恢复继续验证。
+
+70. 修正事件夹具后，106项context/audit/reader生命周期闭包、9项reader恢复与流程Mock、51项sentinel及16项最终入口/文档检查通过；正确夹具在旧代码仍为2 failed/6 passed。调用方测试首轮因文件名误写未收集，改为test_reader_retry_recovery.py后通过。07:35正式保留Provider重载watcher至2517936，全部pane PID一致；经`zf kanban move RACE-DRIVE in_progress`恢复07:19误重排的非终态，图API与canonical TaskStore均为in_progress、accepted_event_ids仍为空。该次状态纠正是监工受控操作，不宣称既有错误状态被运行时自动修复。
+
+71. 本轮dev-verify规划200个影响文件而建议broad；matching run显式跳过deterministic/serial，实际106+9闭包已执行，另自动sentinel 51和flow-smoke 10通过。未运行全量pytest；这不是最终赛车交付通过。
+
+72. DRIVE独立验证完成：16项片内测试、151项全量单测、1条驾驶demo、4条正式产品旅程及键盘折返探针通过；正常比赛90308.10ms，结算一次，浏览器errors为空，无跳过/重试。首次报告`evt-cf19b6e5b836`缺少控制结果内嵌product_acceptance_report，运行时正式要求协议修正（`evt-86e793ad9080`）；原生压缩后原会话继续，Agent修正结构并补齐canonical command_digest，result validate通过后正式提交`evt-5d7a30898be8`，07:59:35由`evt-057d6cec2cf7`接纳。没有重写候选或把未接纳报告当成功。
+
+73. 07:59:36 Kernel产生`test.passed=evt-c8edd347d036`，四个Verify children全部完成；07:59:43自动派发Discovery（`evt-86c1caf81fc5`），目标仍是a15b6b6f。完整独立证据增量导出到manifest-all-four.json，19个带完整哈希清单的运行目录、11,948文件/1,043,361,586字节，原first-three版本保留。portable目录另保存本次实际批准的runtime-zf.yaml，与候选Git归档里的基线配置明确区分。Discovery/Judge/Run终态及最终图断言尚未完成。
+
+74. Verify正式通过后的真实图检查发现：阶段节点completed，但完整YAML结构中的aggregate与role仍为pending。5项后端反例及Docker Playwright分别复现；新增只读结构状态投影，角色绑定实际Operation并保留运行优先，aggregate绑定最新fanout的Kernel汇总，旧汇总迟到及Worker自报不会冒充当前成功。63项图/API/trace闭包、22项Operation/Spine/文档检查及51项sentinel通过；8002 Web单独重载，watcher 2517936及Provider保留。Docker Playwright由RED转GREEN（1 passed），实际角色、汇总及触发事件均按证据更新，截图45–47保留。追加触发节点回归先1 failed/5 passed，最终dev-verify自动66项Python、Web typecheck及全部Web模型单测通过；没有运行全量pytest。触发事件只标reported，不冒充产品完成。
+
+75. Discovery于08:17:47接纳，08:18:36产生flow.goal.closed，08:18:42真实派发Judge（evt-60e9f425e7d3）。同时发现DRIVE成功重试的TaskAttempt在08:15误报lease_expired：修正报告沿用初次CallRequest身份而未收尾retry尝试；保留历史，正在验证机械身份绑定修复。
+
+76. Judge于08:27:03接纳（evt-c2f68ba19724），23/23强制声明、16/16 AC及四条产品旅程通过；08:27:11.281862 Kernel产生run.goal.completed=evt-e31b1c6d9a73，目标a15b6b6f5247。独立完整比赛90308.10ms，监工另一次固定候选比赛90207.90ms。发布策略report_only，无生产部署，不把生产健康显示为通过。
+
+77. 重试身份修复以Kernel child完成作为来源关联，不改不可变CallRequest。2 failed/8 passed先复现，228项Attempt/reader/CallResult闭包、51项sentinel、3项复杂workflow Mock E2E通过。正式actuator重载后，08:33:22自动补记task.attempt.succeeded=evt-b572515cdc65，retry尝试成功、初始尝试仍superseded；历史lease_expired事件evt-4260aba7956d及诊断字段保留。
+
+78. 第一次终态浏览器检查恰逢Task异步收尾，捕获in_progress；随后四个子任务done，但根需求任务因投影遗漏容器证据显示evidence_missing。补充5项反例（1 failed/4 passed），绑定当前Run/generation的Kernel Goal终态到pdd_id/feature_id，最终自动选择13文件共184项测试通过。第二次页面因重载后首次加载超过默认5秒失败，等待上限明确为30秒后1 passed/32.3秒；状态断言未放宽。大型历史图API本次观察约8–21秒，保留为性能限制，未将它描述为瞬时加载。
+
+79. 最终证明材料已导出临时目录之外：完成收据SHA14ad5837363bbe9d9e3d4a2860ad256c111f7cef3a02139bd1b47ad47bd3fb0c；77份递归sidecar摘要全部核对，最终manifest SHA6a8f4eba8cecd63e67c09056923e1747c4edb4480606361bd9a5b887dda4e4a6。另保留四个Verify的19个完整哈希运行目录、源代码Git归档、实际运行YAML、固定构建与浏览器trace。
+
+80. 最终Docker Playwright补充完成节点详情断言：1 passed/20.1秒，五个Task均done且accepted_event_ids指向Kernel完成事件，Goal 23/23、open_gaps=0，截图48–51。最后以base dev、精确变更paths生成验证计划；matching run跳过已执行的deterministic/Web层，不重复扩大测试，实际通过184项自动选择+228项Attempt闭包、51项sentinel、3项Mock E2E、8项文档检查、Web typecheck和真实浏览器。不宣称全量pytest。
+
+81. 已发simulation.done=evt-e191747854b7，正式zf stop完成18步并关闭本次专用Run Manager，8002停止。外部交付目录的acceptance.json SHA d0cdae2d5142258c2b6da39e7adbb3e0088b387d1304b367d5ce418868c6af08；剩余临时监控/试玩进程与状态将在最终清理审计后删除。
+
+82. 实现提交f952370后完成资源清理，工作区仅保留本任务源分支；临时软链接删除，指定临时根已删除，8001仍监听。任务归档到tasks/done，最终记录中的历史active/pending均为当时快照，不覆盖本节最终结论。

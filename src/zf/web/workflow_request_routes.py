@@ -412,18 +412,18 @@ def build_workflow_request_router(
             if isinstance(lifecycle.get("admission"), dict)
             else {}
         )
-        effective_result = {
-            **result,
-            "status": str(admission.get("status") or result.get("status") or ""),
-            "run_id": str(admission.get("run_id") or result.get("run_id") or ""),
-            "queue_position": int(admission.get("queue_position") or 0),
-            "run_admission": admission,
-        }
         operation = _workflow_synthesis_operation(
             context.state_dir,
             str(result.get("synthesis_operation_id") or ""),
             config=context.config,
         )
+        effective_result = {
+            **result,
+            "status": _request_status(result, admission, operation),
+            "run_id": str(admission.get("run_id") or result.get("run_id") or ""),
+            "queue_position": int(admission.get("queue_position") or 0),
+            "run_admission": admission,
+        }
         return JSONResponse(redact_obj({
             "ok": True,
             "status": effective_result.get("status"),
@@ -481,13 +481,14 @@ def build_workflow_request_router(
                     context.state_dir,
                     str(value.get("requirement_spec_ref") or ""),
                 )
+                operation = _workflow_synthesis_operation(
+                    context.state_dir,
+                    str(value.get("synthesis_operation_id") or ""),
+                    config=context.config,
+                )
                 items.append({
                     **value,
-                    "status": str(
-                        admission.get("status")
-                        or value.get("status")
-                        or ""
-                    ),
+                    "status": _request_status(value, admission, operation),
                     "run_id": str(
                         admission.get("run_id")
                         or value.get("run_id")
@@ -497,11 +498,7 @@ def build_workflow_request_router(
                         admission.get("queue_position") or 0
                     ),
                     "run_admission": admission,
-                    "operation": _workflow_synthesis_operation(
-                        context.state_dir,
-                        str(value.get("synthesis_operation_id") or ""),
-                        config=context.config,
-                    ),
+                    "operation": operation,
                     "objective": str(requirement.get("objective") or ""),
                     "acceptance_count": len(
                         requirement.get("acceptance")
@@ -673,6 +670,10 @@ def build_workflow_request_router(
 
     from zf.web.workflow_preview_review_routes import build_preview_review_router
     router.include_router(build_preview_review_router(resolve=resolve, auth_response=auth_response))
+    from zf.web.workflow_workbench_routes import build_workbench_router
+    router.include_router(build_workbench_router(resolve=resolve, detail=project_workflow_request_detail))
+    from zf.web.plan_artifact_review_routes import build_plan_artifact_review_router
+    router.include_router(build_plan_artifact_review_router(resolve=resolve, auth_response=auth_response))
     return router
 
 
@@ -700,7 +701,11 @@ def _workflow_request_lifecycle(
 
     refs: dict[str, Any] = {}
     matched: list[Any] = []
-    effective_run_id = str(run_id or request_id)
+    admission = request_admission_view(
+        events, request_id=request_id, run_id=run_id,
+    )
+    # Synthesis operations have a workflow-request:* identity, not a Run.
+    effective_run_id = str(admission.get("run_id") or run_id or "")
     ref_keys = (
         "workflow_proposal_ref",
         "effective_config_ref",
@@ -732,8 +737,6 @@ def _workflow_request_lifecycle(
         if not belongs:
             continue
         matched.append(event)
-        if event_run_id:
-            effective_run_id = event_run_id
         for key in ref_keys:
             value = payload.get(key)
             if value not in (None, "", [], {}):
@@ -754,11 +757,8 @@ def _workflow_request_lifecycle(
         ),
         None,
     )
-    admission = request_admission_view(
-        events,
-        request_id=request_id,
-        run_id=effective_run_id,
-    )
+    if admission.get("active"):
+        terminal = None
     return {
         "config_applied": "workflow.config.change.applied" in types,
         "submitted": "workflow.submit.accepted" in types,
@@ -771,14 +771,23 @@ def _workflow_request_lifecycle(
         ),
         "terminal": terminal.type if terminal is not None else "",
         "terminal_event_id": str(terminal.id if terminal is not None else ""),
-        "run_id": str(
-            admission.get("run_id")
-            or (effective_run_id if matched else str(run_id or ""))
-        ),
+        "run_id": effective_run_id,
         "event_count": len(matched),
         "refs": refs,
         "admission": admission,
     }
+
+
+def _request_status(request: dict, admission: dict, operation: dict) -> str:
+    status = str(admission.get("status") or request.get("status") or "")
+    if (
+        not (admission.get("run_id") or request.get("run_id"))
+        and status in {"draft", "ready", "clarifying"}
+        and operation.get("queue_status") == "cancelled"
+        and request.get("synthesis_operation_revision") == request.get("revision")
+    ):
+        return "cancelled"
+    return status
 
 
 def _workflow_synthesis_operation(

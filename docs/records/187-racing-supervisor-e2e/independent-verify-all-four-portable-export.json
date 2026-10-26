@@ -1,0 +1,19 @@
+{
+  "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+  "accepted_event_ids": [
+    "evt-057d6cec2cf7",
+    "evt-09fca80d510d",
+    "evt-178981d81d7c",
+    "evt-29287f9a6af3",
+    "evt-544646bee75f",
+    "evt-5b058f18acdd",
+    "evt-5d7a30898be8",
+    "evt-e7b2102f7fd1"
+  ],
+  "complete_hashed_run_directories": 19,
+  "remaining": "All four Verify children admitted; Discovery, Judge and final Kernel acceptance are pending",
+  "file_count": 11948,
+  "total_bytes": 1043361586,
+  "path": "/home/uisee/workspace/zaofu-e2e-deliveries/2026-10-25-racing-187/candidate-a15b6b6f5247/evidence/independent-verify",
+  "manifest_sha256": "f677fbf15919a557dc5745226a1db5bbdd83215ea872cbd8b4566eb217d79824"
+}

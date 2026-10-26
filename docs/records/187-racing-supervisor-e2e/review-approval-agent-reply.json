@@ -1,0 +1,34 @@
+{
+  "ok": true,
+  "answer": "仅将 config.4.workflow.plan_approval 从 false 改为 true，要求 Plan 生成后等待 Owner 审阅并显式批准，批准前不得进入 impl。其余 YAML 字段、任务验收及 lane 配置保持不变。此处仅提供 Preview 修改建议；新版配置仍需受控确认，未执行写入、批准或启动。",
+  "changes": [
+    {
+      "field": "config.4.workflow.plan_approval",
+      "before": false,
+      "after": true
+    }
+  ],
+  "draft_ref": {
+    "ref_schema_version": "sidecar-ref.v1",
+    "kind": "workflow_preview_review",
+    "ref": "artifacts/workflow/preview-reviews/244fa701aeb179d05bab1901e59b0507a7f8c4c041a285bef5b63d78e8ecc2a6.json",
+    "sha256": "244fa701aeb179d05bab1901e59b0507a7f8c4c041a285bef5b63d78e8ecc2a6",
+    "byte_count": 4054,
+    "content_type": "application/json",
+    "schema_version": "workflow-preview-review.v1",
+    "encoding": "utf-8",
+    "created_by": "workflow-preview-review",
+    "source_event_id": "",
+    "access_scope": {},
+    "retention": {
+      "class": "audit_required"
+    },
+    "required": true,
+    "preview": ""
+  },
+  "binding": {
+    "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "revision": 3,
+    "proposal_digest": "75da6724b575a5a59df176a321fbc7379d638a0f77f5d515eb6db711f51d5fac"
+  }
+}

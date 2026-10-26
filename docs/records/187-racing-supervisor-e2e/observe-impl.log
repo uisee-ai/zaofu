@@ -1,0 +1,21 @@
+{
+  "plan_status": "approved",
+  "source_seq": 3943,
+  "running": [
+    {
+      "id": "operation:wop-prd-lanes-impl-prd-dev-lane-0-RACE-FOUNDATION-t-18972e0e5fde",
+      "status": "running",
+      "agent": {
+        "backend": "codex",
+        "model": "gpt-6-astra",
+        "skills": [
+          "zf-yoke-dev-worker-role-context",
+          "zf-plan-task-map-contract"
+        ],
+        "source": "provider_usage",
+        "source_event_id": "evt-c385d76bfa1b"
+      }
+    }
+  ],
+  "detail": "prd-dev-lane-0\n\n执行中\n\noperation:wop-prd-lanes-impl-prd-dev-lane-0-RACE-FOUNDATION-t-18972e0e5fde\n\nAgent：prd-dev-lane-0 · Attempt：run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION\n\nProvider：codex · 模型：gpt-6-astra · 实际用量记录\n\n最近活动\n\n2026-10-26T00:23:57.829598+00:00 · Bash\n{\"command\":\"python3 - <<'PY'\\nfrom pathlib import Path\\nimport json\\nfor f in sorted(Path('artifacts/racing/scaffold/runs').glob('*/receipt.json')):\\n d=json.loads(f.read_text())\\n if d.get('command_id') in ['ROOT-CHECKS','SETUP-FROZEN']:\\n\n\n2026-10-26T00:24:02.391763+00:00 · Bash\n{\"command\":\"python3 - <<'PY'\\nfrom pathlib import Path\\nimport json\\nfor f in sorted(Path('artifacts/racing/scaffold/runs').glob('*/receipt.json')):\\n d=json.loads(f.read_text())\\n if d.get('command_id') in ['ROOT-CHECKS','SETUP-FROZEN']:\\n\n\n2026-10-26T00:24:08.269087+00:00 · Bash\n{\"command\":\"git diff --stat\"}\n\n2026-10-26T00:24:13.400643+00:00 · Bash\n{\"command\":\"git diff --stat\"}\n\n2026-10-26T00:24:32.550378+00:00 · agent.usage\n\n收起节点\n关联\n← executes · prd-lanes-impl\n← execution · 建立可启动的工程骨架与共享契约\n→ attempt · run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION\n→ attempt · ta-a0674362b0dfa46cb12f\n来源与执行证据"
+}

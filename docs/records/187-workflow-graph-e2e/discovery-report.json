@@ -1,0 +1,392 @@
+{
+  "child_id": "prd-flow-discovery",
+  "status": "passed",
+  "summary": "候选 cd8a21c 残余缺口复核通过：6/6 mandatory 目标声明、9/9 产品验收已有对应证据；复用同提交 4 条通过收据，核对 11 个当前文件、12 个 Plan port 条目和 5 份浏览器产物摘要。新增真实 Chromium 键盘、2250 次逐步 DOM 点击、页面隔离和刷新探针全部通过。阻塞产品/回归/一致性缺口为 0。",
+  "findings": [],
+  "recommendation": "approve",
+  "goal_id": "workflow-ccaaed87c1b1d6c7",
+  "goal_kind": "prd",
+  "gap_category": "product_regression_parity",
+  "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+  "candidate_ref": "candidate/PRD-WORKFLOW-CCAAED87C1B1D6C7",
+  "task_map_generation": "8dd4adae72518eb5de9b58456a98b528fe508df9bc0b0f175bf2231252c27db2",
+  "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/d9a3489b04bacc8d4e3a022c19a2435e8f18b861f01e5ccf240dfbe0d12a04ab.json",
+  "goal_claim_set_digest": "d9a3489b04bacc8d4e3a022c19a2435e8f18b861f01e5ccf240dfbe0d12a04ab",
+  "source_refs": [
+    "git:cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "artifacts/attempt-inputs/a5eb15eba216d4d1-revision-0013-a5eb15eba216d4d1.json",
+    "artifacts/plan-packages/f26abd87bd7fd9b95b8456671e645d5dea11e381758cc6ec12cf5968a2fe03df.json",
+    "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/docs/plans/prd-plan-prd-planner-plan.md",
+    "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/artifacts/plan/task_map.json",
+    "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json"
+  ],
+  "inventory_refs": [
+    "artifacts/plan-ports/2ac952f92edbbd97df5f0242a63073d19f0d8a7edc3e48d703a2b153e45b056b.json"
+  ],
+  "inventory_coverage": [
+    {
+      "inventory_id": "SURFACE-COUNTER-WEB",
+      "capability_ids": [
+        "CAP-COUNT",
+        "CAP-CARD",
+        "CAP-DELIVERY"
+      ],
+      "module_ids": [
+        "MOD-COUNT",
+        "MOD-CARD",
+        "MOD-DELIVERY"
+      ],
+      "task_ids": [
+        "COUNTER-001"
+      ],
+      "status": "passed",
+      "evidence_refs": [
+        "event:evt-a3632f0f26c3",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+      ]
+    }
+  ],
+  "goal_claim_results": [
+    {
+      "goal_claim_id": "OBJECTIVE-AC1-5636c62bb4",
+      "priority": "P1",
+      "status": "passed",
+      "acceptance_ids": [
+        "AC-INITIAL",
+        "AC-INCREMENT",
+        "AC-DECREMENT",
+        "AC-FLOOR",
+        "AC-RESET",
+        "AC-SEQUENCE"
+      ],
+      "observation": "生产 transition 与 Node 行为用例共用模块，原始 6/6 单测收据及当前文件摘要匹配。",
+      "evidence_refs": [
+        "event:evt-dbb13dfa1c52",
+        "event:evt-a3632f0f26c3"
+      ]
+    },
+    {
+      "goal_claim_id": "OBJECTIVE-AC2-b3e306a8a5",
+      "priority": "P1",
+      "status": "passed",
+      "acceptance_ids": [
+        "AC-CARD",
+        "AC-STATIC"
+      ],
+      "observation": "真实双视口浏览器按钮/DOM 旅程通过且无业务请求；本轮补充真实键盘和快速点击通过。",
+      "evidence_refs": [
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-932abb17ca7f"
+      ]
+    },
+    {
+      "goal_claim_id": "OBJECTIVE-AC3-ec4b7d42ad",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "完整 PRD/SDD/TDD、3 个模块到 COUNTER-001 的显式映射和验收/测试方案均存在；17:41:45 UTC task_map.ready 绑定本次代际和包，17:42:03 受控 web Plan 批准引用该事件，早于 18:03:53 同代际 writer 派发。",
+      "evidence_refs": [
+        "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/docs/plans/prd-plan-prd-planner-plan.md",
+        "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/artifacts/plan/task_map.json",
+        "event:evt-a3624c3d5e6c",
+        "event:evt-5b104efd71c0",
+        "event:evt-f9c3cd213c84"
+      ]
+    },
+    {
+      "goal_claim_id": "GOAL-COUNT",
+      "priority": "P1",
+      "status": "passed",
+      "acceptance_ids": [
+        "AC-INITIAL",
+        "AC-INCREMENT",
+        "AC-DECREMENT",
+        "AC-FLOOR",
+        "AC-RESET",
+        "AC-SEQUENCE"
+      ],
+      "observation": "初始 0、单位加减、0 下限、归零及连续操作均由生产规则、现有单测/浏览器断言及独立生命周期探针支持。",
+      "evidence_refs": [
+        "event:evt-dbb13dfa1c52",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-932abb17ca7f"
+      ]
+    },
+    {
+      "goal_claim_id": "GOAL-WEB",
+      "priority": "P1",
+      "status": "passed",
+      "acceptance_ids": [
+        "AC-CARD",
+        "AC-STATIC"
+      ],
+      "observation": "居中卡片、可见加一/减一/归零及原生静态入口真实可操作；已查看窄屏截图，3 个按钮清楚且无遮挡。",
+      "evidence_refs": [
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-62bdc298c3b4f37f.txt",
+        "event:evt-a3632f0f26c3",
+        "event:evt-932abb17ca7f"
+      ]
+    },
+    {
+      "goal_claim_id": "GOAL-RUN",
+      "priority": "P1",
+      "status": "passed",
+      "acceptance_ids": [
+        "AC-RUN"
+      ],
+      "observation": "同候选安装/静态/浏览器收据通过，README 启动命令与生产入口匹配；本轮从只读候选挂载实际启动静态服务完成浏览器探针。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-932abb17ca7f",
+        "event:evt-a3632f0f26c3"
+      ]
+    }
+  ],
+  "requirement_coverage_matrix": [
+    {
+      "requirement_id": "AC-INITIAL",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "新页面及 reload 为 0。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-a3632f0f26c3",
+        "event:evt-932abb17ca7f"
+      ]
+    },
+    {
+      "requirement_id": "AC-INCREMENT",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "两次真实键盘操作得到 1、2；1000 次 DOM click 每一步恰加 1。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-a3632f0f26c3",
+        "event:evt-932abb17ca7f"
+      ]
+    },
+    {
+      "requirement_id": "AC-DECREMENT",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "既有 2→1→0 断言和独立 1000→0 逐步断言通过。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-a3632f0f26c3",
+        "event:evt-932abb17ca7f"
+      ]
+    },
+    {
+      "requirement_id": "AC-FLOOR",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "1250 次减一中最后 250 次保持 0；零值按钮仍可点击。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-a3632f0f26c3",
+        "event:evt-932abb17ca7f"
+      ]
+    },
+    {
+      "requirement_id": "AC-RESET",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "唯一可见归零按钮执行 reset；正数、重复及零值归零已有双视口断言，本轮空格归零通过。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-a3632f0f26c3",
+        "event:evt-932abb17ca7f"
+      ]
+    },
+    {
+      "requirement_id": "AC-SEQUENCE",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "既有混合序列 1、2、1、0、0、1 逐步通过；本轮刷新后仍只有单次响应。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-a3632f0f26c3",
+        "event:evt-932abb17ca7f"
+      ]
+    },
+    {
+      "requirement_id": "AC-CARD",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "1280×720 / 390×844 居中及无遮挡断言通过；截图核对可见文案为归零。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-a3632f0f26c3"
+      ]
+    },
+    {
+      "requirement_id": "AC-STATIC",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "生产无依赖和网络 API，静态服务只返回资源；浏览器网络限制下全部旅程通过。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-a3632f0f26c3"
+      ]
+    },
+    {
+      "requirement_id": "AC-RUN",
+      "priority": "P1",
+      "status": "passed",
+      "observation": "README、包脚本、实际服务一致；同提交通过收据及浏览器产物摘要可验证。",
+      "evidence_refs": [
+        "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+        "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+        "event:evt-a3632f0f26c3",
+        "event:evt-932abb17ca7f"
+      ]
+    }
+  ],
+  "axes": [
+    {
+      "axis": "correctness",
+      "status": "passed",
+      "summary": "9 条 AC 对应真实断言，归零文案遵循 Owner 局部修订，未发现遗漏行为或产品范围扩张。"
+    },
+    {
+      "axis": "readability",
+      "status": "passed",
+      "summary": "规则 10 行、页面接线 12 行，名称与动作一致；测试按行为组织。"
+    },
+    {
+      "axis": "architecture",
+      "status": "passed",
+      "summary": "纯规则供页面和测试共用，DOM 控制器单一状态，静态预览服务没有计数业务。"
+    },
+    {
+      "axis": "security",
+      "status": "passed",
+      "summary": "显示使用 textContent，生产无用户输入或外部资源；资源白名单避免暴露项目文件。"
+    },
+    {
+      "axis": "performance",
+      "status": "passed",
+      "summary": "每次操作只更新单个文本节点，无轮询或重复监听；真实浏览器 2250 次逐步点击全部正确。"
+    }
+  ],
+  "open_p0_p1_gap_count": 0,
+  "gap_tasks": [],
+  "gap_findings": [],
+  "replan_recommendation": "none",
+  "evidence_refs": [
+    "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+    "git:cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "event:evt-dbb13dfa1c52",
+    "event:evt-3e88bfdb034f",
+    "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+    "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-62bdc298c3b4f37f.txt",
+    "event:evt-a3632f0f26c3",
+    "event:evt-932abb17ca7f",
+    "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/docs/plans/prd-plan-prd-planner-plan.md",
+    "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/artifacts/plan/task_map.json",
+    "event:evt-a3624c3d5e6c",
+    "event:evt-5b104efd71c0",
+    "event:evt-f9c3cd213c84"
+  ],
+  "test_refs": [
+    "event:evt-dbb13dfa1c52",
+    "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-62bdc298c3b4f37f.txt",
+    "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json"
+  ],
+  "e2e_refs": [
+    "event:evt-3e88bfdb034f",
+    "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+    "event:evt-932abb17ca7f"
+  ],
+  "regression_refs": [
+    "event:evt-932abb17ca7f",
+    "event:evt-a3632f0f26c3"
+  ],
+  "runtime_evidence_refs": [
+    "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+    "event:evt-932abb17ca7f"
+  ],
+  "reused_command_receipt_ids": [
+    "verify-VC-INSTALL",
+    "verify-VC-UNIT",
+    "verify-VC-STATIC",
+    "verify-VC-BROWSER"
+  ],
+  "receipt_reuse": {
+    "source_ref": "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json",
+    "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "reason": "四条已接纳 Verify 收据均绑定本候选，命令摘要与任务图一致；11 个文件摘要与实际工作区一致。不重复运行同一确定性门。"
+  },
+  "independent_probes": [
+    {
+      "probe_id": "DISC-BROWSER-LIFECYCLE",
+      "command": "timeout 60s sg docker -c 'docker run --rm --network host --user 1000:1000 --entrypoint node -v /tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-flow-discovery/project:/work:ro -v /tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/node_modules:/deps:ro -w /work -e NODE_PATH=/deps -e PLAYWRIGHT_BROWSERS_PATH=0 mcp/playwright:latest -e '\\''const assert = require(\"node:assert/strict\");\nconst {spawn} = require(\"node:child_process\");\nconst {chromium} = require(\"/deps/playwright\");\n(async () => {\n const server=spawn(process.execPath,[\"scripts/serve.mjs\",\"--host\",\"0.0.0.0\",\"--port\",\"4185\"],{stdio:[\"ignore\",\"pipe\",\"pipe\"]});\n let browser;\n const errors=[];\n try {\n  await Promise.race([new Promise((resolve,reject)=>{server.stdout.once(\"data\",resolve);server.once(\"error\",reject);server.once(\"exit\",c=>reject(new Error(\"server exit \"+c)));}),new Promise((_,reject)=>setTimeout(()=>reject(new Error(\"start timeout\")),5000).unref())]);\n  browser=await chromium.launch({headless:true});\n  const context=await browser.newContext({viewport:{width:390,height:844}});\n  const page=await context.newPage();\n  page.on(\"pageerror\",e=>errors.push(e.message));\n  const requests=[];\n  page.on(\"request\",r=>requests.push(r.url()));\n  await page.goto(\"http://localhost:4185\");\n  const count=page.locator(\"#count\");\n  assert.equal(await count.textContent(),\"0\");\n  await page.keyboard.press(\"Tab\");\n  assert.equal(await page.locator(\":focus\").textContent(),\"加一\");\n  await page.keyboard.press(\"Enter\");assert.equal(await count.textContent(),\"1\");\n  await page.keyboard.press(\"Space\");assert.equal(await count.textContent(),\"2\");\n  await page.keyboard.press(\"Tab\");assert.equal(await page.locator(\":focus\").textContent(),\"减一\");\n  await page.keyboard.press(\"Enter\");assert.equal(await count.textContent(),\"1\");\n  await page.keyboard.press(\"Tab\");assert.equal(await page.locator(\":focus\").textContent(),\"归零\");\n  await page.keyboard.press(\"Space\");assert.equal(await count.textContent(),\"0\");\n  const burst=await page.evaluate(()=>{\n   const out=document.querySelector(\"#count\"),plus=document.querySelector(\"[data-action=increment]\"),minus=document.querySelector(\"[data-action=decrement]\");\n   for(let i=1;i<=1000;i++){plus.click();if(out.textContent!==String(i))throw Error(\"increment \"+i);}\n   for(let i=999;i>=-250;i--){minus.click();if(out.textContent!==String(Math.max(0,i)))throw Error(\"decrement \"+i);}\n   return {increments:1000,decrements:1250,final_count:out.textContent};\n  });\n  await page.getByRole(\"button\",{name:\"加一\",exact:true}).click();\n  assert.equal(await count.textContent(),\"1\");\n  const second=await context.newPage();await second.goto(\"http://localhost:4185\");assert.equal(await second.locator(\"#count\").textContent(),\"0\");assert.equal(await count.textContent(),\"1\");\n  await page.reload();assert.equal(await count.textContent(),\"0\");\n  await page.getByRole(\"button\",{name:\"加一\",exact:true}).click();assert.equal(await count.textContent(),\"1\");\n  assert.deepEqual(errors,[]);\n  assert.ok(requests.every(u=>new URL(u).origin===\"http://localhost:4185\"));\n  console.log(JSON.stringify({probe_id:\"DISC-BROWSER-LIFECYCLE\",target_commit:\"cd8a21cf3e5cd919e78aad0a1516d2a517649d38\",status:\"passed\",browser:browser.version(),origin:\"http://localhost:4185\",viewport:\"390x844\",keyboard_sequence:[0,1,2,1,0],burst,isolated_pages:true,reload_resets_to_zero:true,reload_single_listener:true,page_errors:errors,requests},null,2));\n } finally {if(browser)await browser.close();server.kill(\"SIGTERM\");}\n})().catch(e=>{console.error(e);process.exitCode=1;});'\\'''",
+      "status": "passed",
+      "exit_code": 0,
+      "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+      "evidence_refs": [
+        "event:evt-932abb17ca7f"
+      ],
+      "observation": "Docker/Chromium 141.0.7390.37，候选与已安装依赖均只读挂载；390×844、localhost:4185；键盘序列 0/1/2/1/0、2250 次逐步 DOM 操作、两页隔离、刷新后初值与单一监听通过。"
+    },
+    {
+      "probe_id": "DISC-EVIDENCE-BINDING",
+      "command": "node --input-type=module -e 'import assert from \"node:assert/strict\";import {readFileSync} from \"node:fs\";import {createHash} from \"node:crypto\";import {execFileSync} from \"node:child_process\";\nconst state=\"/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/\";\nconst hash=b=>createHash(\"sha256\").update(b).digest(\"hex\");const read=p=>JSON.parse(readFileSync(state+p,\"utf8\"));\nconst target=\"cd8a21cf3e5cd919e78aad0a1516d2a517649d38\";assert.equal(execFileSync(\"git\",[\"rev-parse\",\"HEAD\"],{encoding:\"utf8\"}).trim(),target);\nconst report=read(\"fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json\");assert.equal(report.target_commit,target);\nconst staticRef=\"artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-62bdc298c3b4f37f.txt\";\nassert.equal(hash(readFileSync(state+staticRef)),\"62bdc298c3b4f37f27100cf2fd145cde02971b82ffcf9a1b3ae9dba62bb32412\");\nconst stat=read(staticRef);assert.equal(stat.status,\"passed\");for(const f of stat.files)assert.equal(hash(readFileSync(f.path)),f.sha256,f.path);\nfor(const p of report.verification_result.probe_receipts){assert.equal(p.target_commit,target);assert.equal(p.command_digest,hash(p.command));assert.equal(p.exit_code,0);}\nconst artifacts=report.evidence_catalog.original_browser_outputs;for(const a of artifacts)assert.equal(hash(readFileSync(a.ref)),a.sha256,a.ref);\nconst browser=report.evidence_catalog.browser_report;assert.equal(hash(readFileSync(state+browser.ref)),browser.sha256);\nconst pkg=read(\"artifacts/plan-packages/f26abd87bd7fd9b95b8456671e645d5dea11e381758cc6ec12cf5968a2fe03df.json\");\nfor(const p of pkg.produced)assert.equal(hash(readFileSync(state+p.ref)),p.sha256,p.logical_name);\nconst map=read(\"artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/artifacts/plan/task_map.json\");\nassert.deepEqual(map.tasks[0].acceptance_criteria.map(x=>x.id).sort(),report.requirement_coverage_matrix.map(x=>x.requirement_id).sort());\nassert.ok(map.modules.every(m=>m.task_ids.includes(\"COUNTER-001\")));\nassert.equal(pkg.task_map_generation,report.task_map_generation);\nexecFileSync(\"git\",[\"diff\",\"--exit-code\",\"HEAD\",\"--\"],{encoding:\"utf8\"});\nconsole.log(JSON.stringify({probe_id:\"DISC-EVIDENCE-BINDING\",target_commit:target,status:\"passed\",current_source_hashes_matched:stat.files.length,exact_command_digests:report.verification_result.probe_receipts.length,browser_artifacts_hash_verified:artifacts.length,plan_ports_hash_verified:pkg.produced.length,acceptance_ids_matched:map.tasks[0].acceptance_criteria.length,modules:map.modules.map(m=>m.module_id),tracked_files_unchanged:true},null,2));'",
+      "status": "passed",
+      "exit_code": 0,
+      "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+      "evidence_refs": [
+        "event:evt-a3632f0f26c3"
+      ],
+      "observation": "11 文件、4 命令、5 浏览器产物、12 Plan port 条目摘要一致；9 AC ID 完整匹配；已跟踪文件无变更。"
+    }
+  ],
+  "execution_notes": [
+    {
+      "classification": "verifier_environment",
+      "resolved": true,
+      "description": "补充探针首次启动因 /deps 重定位后 Node 未解析 playwright-core 退出 1，尚未进入产品操作。设置 NODE_PATH=/deps 后相同只读环境探针退出 0；未修改依赖或产品代码。"
+    }
+  ],
+  "workflow_gate_scope": {
+    "G_PLAN": {
+      "status": "passed",
+      "evidence_refs": [
+        "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/docs/plans/prd-plan-prd-planner-plan.md",
+        "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/artifacts/plan/task_map.json",
+        "event:evt-a3624c3d5e6c",
+        "event:evt-5b104efd71c0",
+        "event:evt-f9c3cd213c84"
+      ]
+    },
+    "G_YAML": {
+      "status": "not_applicable",
+      "verification_owner": "human",
+      "observation": "历史启动 YAML 审阅由 human/kernel 持有；本 discovery 不重新签署该审批。evt-3660745caa34 仅证明 revision 13 需求获批，不冒充完整 YAML 审阅证据。"
+    }
+  },
+  "source_files_unchanged": true,
+  "zero_gap_closure": {
+    "status": "passed",
+    "mandatory_goal_claims": 6,
+    "covered_goal_claims": 6,
+    "product_acceptance_criteria": 9,
+    "covered_product_acceptance_criteria": 9,
+    "blocking_product_gap_count": 0,
+    "evidence_refs": [
+      "event:evt-a3632f0f26c3",
+      "event:evt-932abb17ca7f",
+      "fanouts/fanout-prd-lanes-verify-evt-e175a504/children/prd-verify-lane-0-counter/report.json"
+    ],
+    "scope": "本次候选残余产品/回归/一致性缺口审查；不授予根 Task 完成或发布。"
+  }
+}

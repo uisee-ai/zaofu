@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from types import SimpleNamespace
 
 from zf.core.events.model import ZfEvent
+from zf.core.events.writer import EventWriter
+from zf.core.state.locks import locked_path
 from zf.runtime.candidate_rework_identity import (
     _CANDIDATE_REWORK_IDENTITY_KEYS,
 )
@@ -40,6 +43,40 @@ _REPLAN_SEMANTIC_PASSTHROUGH_KEYS = (
     "operator_override",
     "owner_authorization",
 )
+
+
+def replan_semantic_context(payload: Mapping) -> dict:
+    """Keep the action marker and immediate/recovered trigger on one context."""
+    return {
+        key: payload[key]
+        for key in _REPLAN_SEMANTIC_PASSTHROUGH_KEYS
+        if payload.get(key) not in (None, "", [], {})
+    }
+
+
+def append_replan_resynth_once(
+    writer: EventWriter, state_dir: Path, event: ZfEvent,
+) -> ZfEvent:
+    """Serialize action/sweep follow-through against the current ledger."""
+    def identity(item: ZfEvent) -> tuple:
+        payload = item.payload
+        return (
+            item.type,
+            str(payload.get("workflow_run_id") or payload.get("trace_id")
+                or item.correlation_id or ""),
+            str(payload.get("pdd_id") or payload.get("feature_id") or ""),
+            str(payload.get("rework_of") or ""),
+            int(payload.get("rework_attempt") or 0),
+        )
+
+    key = identity(event)
+    if not key[3]:
+        return writer.append(event)
+    with locked_path(state_dir / "replan-resynth"):
+        for existing in reversed(writer.event_log.read_all()):
+            if existing.type == event.type and identity(existing) == key:
+                return existing
+        return writer.append(event)
 
 
 def build_replan_resynth_event(

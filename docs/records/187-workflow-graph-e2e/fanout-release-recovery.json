@@ -1,0 +1,7 @@
+{
+  "reason": "真实候选质量返工中，旧 fanout 交接补偿覆盖 lane 释放，worker 保持 awaiting_review，新任务排队。",
+  "reproduced_test": "tests/test_writer_fanout_runtime.py::test_pending_handoff_reconcile_completes_writer_fanout_child_after_task_ref",
+  "fix": "普通交接补偿不覆盖 writer fanout 的 lane 状态。",
+  "recovery": "zf stop --include-run-manager；保留工作目录和提交；control-plane-only 因旧 tmux session 已停止而明确拒绝，随后以 sg docker 执行正常 zf start，由 runtime 恢复排队任务。",
+  "timestamp": "2026-10-25T18:40:52.719270+00:00"
+}

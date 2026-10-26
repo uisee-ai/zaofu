@@ -1,0 +1,58 @@
+{
+  "run": [
+    {
+      "id": "run:prepare-TASK-5F44B4-c32763f31115843f",
+      "status": "done",
+      "terminal_event_id": "evt-e31b1c6d9a73"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task:RACE-ASSEMBLY",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    },
+    {
+      "id": "task:RACE-DRIVE",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    },
+    {
+      "id": "task:RACE-FOUNDATION",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    },
+    {
+      "id": "task:RACE-TRACK",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    },
+    {
+      "id": "task:TASK-5F44B4",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    }
+  ],
+  "goal_coverage": {
+    "mandatory_claims": 23,
+    "planned_claims": 23,
+    "claims_with_current_results": 23,
+    "closed_claims": 23,
+    "open_gaps": 0
+  },
+  "production": {
+    "status": "unconnected",
+    "reason": "未绑定部署环境与生产健康数据源"
+  },
+  "node_count": 573
+}

@@ -1,0 +1,17 @@
+{
+  "old_watcher_pid": 1602023,
+  "source_event_count": 5517,
+  "ledger_unchanged_by_projection_rebuild": true,
+  "task_store_written": false,
+  "rebuild_helper": "FanoutManifestProjector.write_manifest",
+  "checks": [
+    {
+      "task": "RACE-DRIVE",
+      "authority": "authority-re175ad2200c656b6f3cb70ed"
+    },
+    {
+      "task": "RACE-TRACK",
+      "authority": "authority-r52b3a4f1f1f238698fe04c5b"
+    }
+  ]
+}

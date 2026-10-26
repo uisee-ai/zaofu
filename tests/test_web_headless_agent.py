@@ -2541,6 +2541,9 @@ def test_proposal_prose_scope_moved_to_notes_paths_kept():
                     "scope": [
                         "src/**",
                         "index.html",
+                        ".gitignore",
+                        ".editorconfig",
+                        ".nvmrc",
                         "仅包含现代桌面浏览器 Web 页面、键盘方向键输入",
                     ],
                 },
@@ -2552,7 +2555,7 @@ def test_proposal_prose_scope_moved_to_notes_paths_kept():
 
     assert proposal is not None
     payload = proposal["payload"]
-    assert payload["contract"]["scope"] == ["src/**", "index.html"]
+    assert payload["contract"]["scope"] == ["src/**", "index.html", ".gitignore", ".editorconfig", ".nvmrc"]
     assert "scope(non-path):" in payload["notes"]
     assert "键盘方向键输入" in payload["notes"]
 

@@ -2,10 +2,32 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from zf.core.events.log import EventLog
 from zf.core.state import role_sessions
+
+
+def codex_launch_observation_since(event_log: EventLog | None, instance_id: str) -> float:
+    """Recover the current role's launch boundary after a watcher restart."""
+    if event_log is None:
+        return 0.0
+    try:
+        events = event_log.read_all()
+    except Exception:
+        return 0.0
+    for event in reversed(events):
+        if (event.type == "worker.launch_artifact.written"
+                and event.payload.get("instance_id") == instance_id
+                and event.payload.get("backend") == "codex"):
+            try:
+                started = datetime.fromisoformat(event.ts.replace("Z", "+00:00"))
+                return started.replace(tzinfo=started.tzinfo or timezone.utc).timestamp()
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
 
 
 def codex_session_exists_for_role(
@@ -48,4 +70,4 @@ def codex_session_exists_for_role(
     return False
 
 
-__all__ = ["codex_session_exists_for_role"]
+__all__ = ["codex_launch_observation_since", "codex_session_exists_for_role"]

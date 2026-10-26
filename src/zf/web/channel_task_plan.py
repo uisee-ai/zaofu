@@ -301,11 +301,12 @@ def scope_entry_is_path_like(entry: object) -> bool:
     if not text or any(ch.isspace() for ch in text):
         return False
     has_extension = _has_short_file_extension(text)
+    dotfile = text.startswith(".") and text[1:].replace("_", "").replace("-", "").isalnum()
     if any("一" <= ch <= "鿿" for ch in text):
-        return "*" in text or has_extension
+        return "*" in text or has_extension or dotfile
     if "/" in text or "*" in text:
         return True
-    return has_extension
+    return has_extension or dotfile
 
 
 def _has_short_file_extension(text: str) -> bool:

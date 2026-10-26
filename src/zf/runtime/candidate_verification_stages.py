@@ -29,10 +29,10 @@ def has_candidate_verification_consumer(config: Any) -> bool:
 
 def candidate_quality_checks(
     config: Any, task_store: Any, tasks: Iterable[Any],
-) -> tuple[list[tuple[str, str]], str]:
+) -> tuple[list[tuple[str, str, int]], str]:
     """Preserve run-owned commands and explicitly defer later acceptance."""
     required = config.workflow.candidate_quality_source == "task_contract_required"
-    checks: list[tuple[str, str]] = []
+    checks: list[tuple[str, str, int]] = []
     seen: set[tuple[str, str, str]] = set()
     missing: list[str] = []
     deferred = False
@@ -60,6 +60,7 @@ def candidate_quality_checks(
                 checks.append((
                     f"task_contract:{candidate_task.task_id}:{command['id']}",
                     command["command"],
+                    int(command["timeout_seconds"]),
                 ))
     if required and missing:
         return [], "task_contract_missing"
@@ -74,7 +75,7 @@ def candidate_quality_checks(
     for name, gate in config.quality_gates.items():
         if gate.enabled:
             checks.extend(
-                (name, str(command).strip()) for command in gate.required_checks
+                (name, str(command).strip(), 300) for command in gate.required_checks
                 if str(command).strip()
             )
     return checks, "zf_config_fallback" if checks else "intrinsic_only"

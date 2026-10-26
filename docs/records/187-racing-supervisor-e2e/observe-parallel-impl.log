@@ -1,0 +1,35 @@
+{
+  "plan_status": "approved",
+  "source_seq": 4275,
+  "running": [
+    {
+      "id": "operation:wop-prd-lanes-impl-queued-RACE-DRIVE-2-trig-evt-adf-edfc43404965",
+      "status": "running",
+      "agent": {
+        "backend": "codex",
+        "model": "gpt-6-astra",
+        "skills": [
+          "zf-yoke-dev-worker-role-context",
+          "zf-plan-task-map-contract"
+        ],
+        "source": "provider_usage",
+        "source_event_id": "evt-300019bebbbd"
+      }
+    },
+    {
+      "id": "operation:wop-prd-lanes-impl-queued-RACE-TRACK-3-trig-evt-adf-cb5e3d8beff3",
+      "status": "running",
+      "agent": {
+        "backend": "codex",
+        "model": "gpt-6-astra",
+        "skills": [
+          "zf-yoke-dev-worker-role-context",
+          "zf-plan-task-map-contract"
+        ],
+        "source": "provider_usage",
+        "source_event_id": "evt-98109c116543"
+      }
+    }
+  ],
+  "detail": "prd-dev-lane-1\n\n执行中\n\noperation:wop-prd-lanes-impl-queued-RACE-DRIVE-2-trig-evt-adf-edfc43404965\n\nAgent：prd-dev-lane-1 · Attempt：run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-DRIVE-2\n\nProvider：codex · 模型：gpt-6-astra · 实际用量记录\n\n最近活动\n\n2026-10-26T00:31:54.298949+00:00 · Bash\n{\"command\":\"rg -n 'heartbeat|scratch|target_ref|quality|remote_policy' '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/briefings/prd-dev-lane-1-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-DRIVE-2.md\n\n2026-10-26T00:31:56.707599+00:00 · agent.usage\n\n2026-10-26T00:33:03.743886+00:00 · apply_patch\n\"{\\\"command\\\": \\\"*** Begin Patch\\\\n*** Add File: src/race/index.ts\\\\n+import { RACE_DURATION_MS, type InputState, type RaceConfig, type RaceController, type RaceSnapshot, type TrackPort } from '../contracts/types';\\\\n+\\\\n+export function no\n\n2026-10-26T00:33:06.675120+00:00 · apply_patch\n\"{\\\"command\\\": \\\"*** Begin Patch\\\\n*** Add File: src/race/index.ts\\\\n+import { RACE_DURATION_MS, type InputState, type RaceConfig, type RaceController, type RaceSnapshot, type TrackPort } from '../contracts/types';\\\\n+\\\\n+export function no\n\n2026-10-26T00:33:10.007870+00:00 · Bash\n{\"command\":\"git add -- src/race/index.ts tests/race/unit.test.ts\"}\n\n收起节点\n关联\n← executes · prd-lanes-impl\n← execution · 可驾驶并可暂停重开的90秒比赛\n→ attempt · run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-DRIVE-2\n→ attempt · ta-beda4a72d06fcefb5f14\n来源与执行证据"
+}

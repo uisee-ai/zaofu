@@ -1,0 +1,633 @@
+{
+  "type": "flow.gap_plan.ready",
+  "id": "evt-dede9ac3a65e",
+  "ts": "2026-10-26T02:45:51.455408+00:00",
+  "actor": "zf-cli",
+  "task_id": null,
+  "payload": {
+    "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "flow_kind": "prd",
+    "request_id": "semantic-replan-7587232afcf6e7e7",
+    "workflow_proposal_ref": {
+      "ref_schema_version": "sidecar-ref.v1",
+      "kind": "workflow_proposal",
+      "ref": "artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/proposals/d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8.json",
+      "sha256": "d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8",
+      "byte_count": 77409,
+      "content_type": "application/json",
+      "schema_version": "workflow-proposal.v1",
+      "encoding": "utf-8",
+      "created_by": "workflow-proposal-compiler",
+      "source_event_id": "",
+      "access_scope": {},
+      "retention": {
+        "class": "audit_required"
+      },
+      "required": true,
+      "preview": ""
+    },
+    "workflow_proposal_digest": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+    "effective_config_ref": {
+      "access_scope": {},
+      "byte_count": 205419,
+      "content_type": "application/json",
+      "created_by": "workflow-proposal-compiler",
+      "encoding": "utf-8",
+      "kind": "effective_config_snapshot",
+      "preview": "",
+      "ref": "artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/effective-configs/df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487.json",
+      "ref_schema_version": "sidecar-ref.v1",
+      "required": true,
+      "retention": {
+        "class": "audit_required"
+      },
+      "schema_version": "effective-config-snapshot.v1",
+      "sha256": "df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487",
+      "source_event_id": ""
+    },
+    "effective_config_digest": "df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487",
+    "run_contract_ref": "artifacts/run-contracts/c89a9f70232d3807898647ac16f5f5d2f82896e07cbc2305e71ec7227b0d29b4.json",
+    "run_contract_digest": "d447ba8184c68daa8ec9223086a7b64f42ca587a5e58b2f25cda629112822532",
+    "plan_artifact_package_id": "planpkg-2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a",
+    "plan_artifact_package_ref": "artifacts/plan-packages/2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a.json",
+    "plan_artifact_package_digest": "2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a",
+    "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/cdfbeb745d46f6173053d6f265322a3f7ee80dab54e4a03c693bbad51f20c2aa.json",
+    "goal_claim_set_digest": "cdfbeb745d46f6173053d6f265322a3f7ee80dab54e4a03c693bbad51f20c2aa",
+    "task_map_generation": "bc70eca2006225af346bbebbd8c49a3e7c59f479ef491a4056368aa90736ec8e",
+    "source_commit": "0937a8f1a57f5df1b5c196df3355613418300391",
+    "candidate_base_commit": "0937a8f1a57f5df1b5c196df3355613418300391",
+    "candidate_ref": "worker/prd-dev-lane-2",
+    "candidate_head_commit": "5f37bf4443888afaa2f8e5ef4623bbe1372d6b25",
+    "schema_version": "goal-gap-plan.v1",
+    "pdd_id": "TASK-5F44B4",
+    "feature_id": "TASK-5F44B4",
+    "goal_id": "TASK-5F44B4",
+    "goal_kind": "prd",
+    "gap_category": "acceptance_gap",
+    "trace_id": "semantic-replan-c4309b9b0f7e55ac",
+    "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/task_map.json",
+    "gap_plan_ref": "",
+    "target_ref": "ddc5aed0aed34d4d426f04859064626520ca8585",
+    "dispatch_base_commit": "5f37bf4443888afaa2f8e5ef4623bbe1372d6b25",
+    "gap_tasks": [
+      {
+        "task_id": "RACE-ASSEMBLY-TIMING-REPAIR",
+        "title": "延续装配实现并修复90秒计时证据漏验",
+        "description": "从合约基线保留共享依赖，按固定来源迁移现有装配文件，新增语义改动仅修复 scripts/verify-racing.sh 与两份 tests/assembly 控制器测试。保留原AC-A01至AC-A07及后续真实浏览器门；不把环境下载失败改为产品返工。",
+        "owner_role": "prd-dev-lane-2",
+        "affinity_tag": "experience-assembly",
+        "wave": 1,
+        "blocked_by": [],
+        "allowed_paths": [
+          "index.html",
+          "src/main.ts",
+          "src/ui/**",
+          "public/**",
+          "playwright.config.ts",
+          "scripts/verify-racing.sh",
+          "scripts/audit-racing-workflow.mjs",
+          "tests/assembly/**",
+          "tests/acceptance/**",
+          "README.md",
+          "docs/racing/delivery.md",
+          "artifacts/racing/assembly/**"
+        ],
+        "allowed_paths_reason": "唯一最终assembly owner：拥有正式入口、交互画面、共享接线、聚合验证脚本和最终证据；消费已完成片的API与证据，不重写兄弟源码。",
+        "exclusive_files": [
+          "index.html",
+          "src/main.ts",
+          "playwright.config.ts",
+          "scripts/verify-racing.sh",
+          "scripts/audit-racing-workflow.mjs",
+          "README.md",
+          "docs/racing/delivery.md"
+        ],
+        "source_key": "REQ-01",
+        "source_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+        "source_excerpt": "PRD 明确车辆控制、赛道边界、有效前进距离、碰撞判定与扣分去重、计分公式及结束规则；Plan Preview 列出模块接口、依赖图、文件归属、验收映射和证据生产路径，生成后停在 Owner 人工审批，批准前不得派发游戏实现。",
+        "goal_claim_ids": [
+          "REQ-01",
+          "REQ-02",
+          "REQ-03",
+          "REQ-04",
+          "REQ-05",
+          "REQ-06",
+          "REQ-07",
+          "REQ-08",
+          "REQ-09",
+          "REQ-10",
+          "REQ-11",
+          "REQ-ASSEMBLY-LOCAL"
+        ],
+        "capability_ids": [
+          "CAP-DELIVERY"
+        ],
+        "validation": {
+          "commands": [
+            {
+              "id": "VC-ASSEMBLY",
+              "command": "node scripts/racing-runner/unit.mjs assembly",
+              "acceptance_ids": [
+                "AC-A07"
+              ],
+              "owner": "impl_self_check",
+              "tier": "runtime",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 120,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR",
+              "producer_paths": [
+                "artifacts/racing/assembly/runs/"
+              ],
+              "rolling_smoke": true
+            },
+            {
+              "id": "VC-INSTALL",
+              "command": "env PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --ignore-scripts",
+              "acceptance_ids": [
+                "AC-F01",
+                "AC-A03"
+              ],
+              "owner": "candidate_verify",
+              "tier": "static",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 240,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR"
+            },
+            {
+              "id": "VC-LINT",
+              "command": "npm run lint",
+              "acceptance_ids": [
+                "AC-A04"
+              ],
+              "owner": "candidate_verify",
+              "tier": "static",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 120,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR"
+            },
+            {
+              "id": "VC-UNIT",
+              "command": "npm test",
+              "acceptance_ids": [
+                "AC-D01",
+                "AC-D02",
+                "AC-D03",
+                "AC-D04",
+                "AC-T01",
+                "AC-T02",
+                "AC-T03",
+                "AC-A04"
+              ],
+              "owner": "candidate_verify",
+              "tier": "runtime",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 120,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR"
+            },
+            {
+              "id": "VC-BUILD",
+              "command": "npm run build",
+              "acceptance_ids": [
+                "AC-A04"
+              ],
+              "owner": "candidate_verify",
+              "tier": "static",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 120,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR",
+              "producer_paths": [
+                "artifacts/racing/assembly/build/"
+              ]
+            },
+            {
+              "id": "VC-BROWSER",
+              "command": "bash scripts/racing-runner/docker.sh acceptance",
+              "acceptance_ids": [
+                "AC-A01",
+                "AC-A02",
+                "AC-A03",
+                "AC-A05"
+              ],
+              "owner": "candidate_verify",
+              "tier": "e2e",
+              "deterministic": false,
+              "reusable": true,
+              "timeout_seconds": 600,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR",
+              "producer_paths": [
+                "artifacts/racing/assembly/runs/"
+              ]
+            },
+            {
+              "id": "VC-DELIVERY",
+              "command": "bash scripts/verify-racing.sh",
+              "acceptance_ids": [
+                "AC-A01",
+                "AC-A02",
+                "AC-A03",
+                "AC-A04",
+                "AC-A05"
+              ],
+              "owner": "candidate_verify",
+              "tier": "e2e",
+              "deterministic": false,
+              "reusable": true,
+              "timeout_seconds": 1200,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR",
+              "producer_paths": [
+                "artifacts/racing/assembly/runs/"
+              ]
+            },
+            {
+              "id": "VC-GOVERNANCE",
+              "command": "node scripts/audit-racing-workflow.mjs",
+              "acceptance_ids": [
+                "AC-A06"
+              ],
+              "owner": "candidate_verify",
+              "tier": "manual_evidence",
+              "deterministic": false,
+              "reusable": true,
+              "timeout_seconds": 90,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR",
+              "producer_paths": [
+                "artifacts/racing/assembly/runs/"
+              ]
+            },
+            {
+              "id": "VC-ASSEMBLY-DELTA",
+              "command": "python -c \"import subprocess; assert subprocess.run(['git','diff','--quiet','5f37bf4443888afaa2f8e5ef4623bbe1372d6b25','HEAD','--','scripts/verify-racing.sh','tests/assembly/unit.test.ts','tests/assembly/runner-fixture.mjs']).returncode == 1\"",
+              "acceptance_ids": [
+                "AC-A07"
+              ],
+              "owner": "impl_self_check",
+              "tier": "static",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 30,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR"
+            },
+            {
+              "id": "VC-ASSEMBLY-PRESERVE",
+              "command": "git diff --exit-code 5f37bf4443888afaa2f8e5ef4623bbe1372d6b25 HEAD -- index.html src/main.ts src/ui public playwright.config.ts scripts/audit-racing-workflow.mjs tests/acceptance README.md docs/racing/delivery.md",
+              "acceptance_ids": [
+                "AC-A07"
+              ],
+              "owner": "impl_self_check",
+              "tier": "static",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 30,
+              "producer_task_id": "RACE-ASSEMBLY-TIMING-REPAIR"
+            }
+          ]
+        },
+        "acceptance_criteria": [
+          {
+            "id": "AC-A01",
+            "statement": "正式页面具备开始、比赛HUD、暂停、继续、重开与结束结果；两套真实键盘驱动车辆，赛道/障碍/碰撞反馈清楚可见。",
+            "mandatory": true,
+            "verification_owner": "candidate_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "VC-BROWSER",
+              "VC-DELIVERY"
+            ],
+            "source_requirement_ids": [
+              "REQ-03",
+              "REQ-04",
+              "REQ-05",
+              "REQ-07"
+            ],
+            "expected_result": "1280×800与1440×900桌面视口可见按钮/HUD/赛道；键盘改变车辆位置/朝向与像素；碰撞闪红300ms且次数和分数同步；暂停2秒状态全冻，继续后恢复。",
+            "evidence_state": "NOT_RUN",
+            "expected_evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ]
+          },
+          {
+            "id": "AC-A02",
+            "statement": "至少一场容器内真实Chromium比赛按正常时间完整运行90秒并一次结算，结果显示真实距离、碰撞次数和总分且可重新开局。结束面板的重开按钮文案统一为“重新比赛”，重开行为不变。",
+            "mandatory": true,
+            "verification_owner": "candidate_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "VC-BROWSER",
+              "VC-DELIVERY"
+            ],
+            "source_requirement_ids": [
+              "REQ-05",
+              "REQ-07"
+            ],
+            "expected_result": "单独完整比赛用例从按钮开始到finished：活跃时间90000ms，浏览器单调经过时间≥90000ms；不注入状态/时钟、不改duration；终局等待2秒结果不变，再按钮重开归零。结束面板的重开按钮可见文本及可访问名称必须精确为“重新比赛”；真实点击该按钮后，按既定restart规则重置车辆、速度、输入、时间、距离、highWater、检查点、碰撞数及接触集、结果与结算计数并进入running，仍只有一个更新循环且能再次驾驶。",
+            "evidence_state": "NOT_RUN",
+            "expected_evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ],
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/baf19be49ce30312d1ee0576eb8e9b76093b2a4346fd4b4b7010794d2f68f359.json#/replacement"
+            ]
+          },
+          {
+            "id": "AC-A03",
+            "statement": "每次实际环境preflight确认Docker、指定镜像、host网络、端口及服务连接；浏览器只在容器安装运行。",
+            "mandatory": true,
+            "verification_owner": "candidate_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "VC-INSTALL",
+              "VC-BROWSER",
+              "VC-DELIVERY"
+            ],
+            "source_requirement_ids": [
+              "REQ-07",
+              "REQ-08",
+              "REQ-09"
+            ],
+            "expected_result": "镜像记录digest；host UID/GID可写新证据目录；0.0.0.0绑定、端口≥8004且避开8001/8002；容器fetch成功才启动浏览器；失败原样报告且非0。",
+            "evidence_state": "NOT_RUN",
+            "expected_evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ]
+          },
+          {
+            "id": "AC-A04",
+            "statement": "根目录统一验证入口依次完成preflight、安装、lint、确定性单测、构建和真实浏览器；任何失败、跳过或未完成均非零。",
+            "mandatory": true,
+            "verification_owner": "candidate_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "VC-LINT",
+              "VC-UNIT",
+              "VC-BUILD",
+              "VC-DELIVERY"
+            ],
+            "source_requirement_ids": [
+              "REQ-06",
+              "REQ-10"
+            ],
+            "expected_result": "实际整套运行所有阶段有收据且90秒用例通过才exit0；单独runner故障注入测试令每个阶段分别失败/超时/缺报告，均非0且清理本次服务。",
+            "evidence_state": "NOT_RUN",
+            "expected_evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ]
+          },
+          {
+            "id": "AC-A05",
+            "statement": "验证运行与重跑拥有不覆盖历史的独立目录，原始日志按字节保留，截图/trace/报告/错误检查及摘要哈希齐全。",
+            "mandatory": true,
+            "verification_owner": "candidate_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "VC-BROWSER",
+              "VC-DELIVERY"
+            ],
+            "source_requirement_ids": [
+              "REQ-07",
+              "REQ-09",
+              "REQ-11"
+            ],
+            "expected_result": "两次运行目录不同，第一轮sha256不变；含空白和CRLF日志的归档hash相等；每次输出command/commit/exit/stages/图片/trace/浏览器错误报告，缺必需文件非0。",
+            "evidence_state": "NOT_RUN",
+            "expected_evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ]
+          },
+          {
+            "id": "AC-A06",
+            "statement": "当前交付可追溯到获批的完整PRD/SDD/TDD与唯一任务归属；3实现lane和至少2独立验证lane、Judge、Kernel边界受控。",
+            "mandatory": true,
+            "verification_owner": "candidate_verify",
+            "verification_tier": "manual_evidence",
+            "verification_command_ids": [
+              "VC-GOVERNANCE"
+            ],
+            "source_requirement_ids": [
+              "REQ-01",
+              "REQ-02",
+              "REQ-03",
+              "REQ-06"
+            ],
+            "expected_result": "审计绑定本Run/Plan digest的人工plan.approved（auto不为true）、实际writer fanout.child.dispatched顺序、受控配置加载快照及预算风险；独立验证/最终Judge/Kernel各自未来收据由阶段门核查，不要求本脚本消费自己的未来结果。",
+            "evidence_state": "NOT_RUN",
+            "expected_evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json"
+            ]
+          },
+          {
+            "id": "AC-A07",
+            "statement": "正式入口装配真实比赛与赛道依赖；卸载后按钮、输入和更新循环停止作用且重新挂载不重复响应；统一验证runner的任一阶段失败、超时或缺证据均向调用者返回非零并清理本次资源。",
+            "mandatory": true,
+            "verification_owner": "impl_self_check",
+            "verification_tier": "runtime",
+            "verification_command_ids": [
+              "VC-ASSEMBLY",
+              "VC-ASSEMBLY-DELTA",
+              "VC-ASSEMBLY-PRESERVE"
+            ],
+            "source_requirement_ids": [
+              "REQ-ASSEMBLY-LOCAL"
+            ],
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json#/replacement",
+              "events.jsonl#evt-b6892cd1ae52",
+              "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25:scripts/verify-racing.sh#L56",
+              "events.jsonl#evt-5bbded67ad15"
+            ],
+            "expected_result": "真实src/main.ts装配createRace与真实TrackPort，生产durationMs=90000；dispose移除按钮/键盘/blur/visibility监听并取消rAF，重复dispose安全，重新挂载一次动作只响应一次。preflight/install/lint/unit/build/browser逐阶段独立失败及超时均非零、停止后续阶段，cleanup不吞原错误，只清理本次服务；缺阶段或必需报告不成功。 计时证明 started、finishedAt、monotonic_elapsed_ms 必须是有限数值，持续时间也必须有限且满足90000ms下限；缺任一字段、无效类型/非有限值及89999ms均非零，合法90000ms仍成功，所有路径清理资源。补充测试必须先在固定旧控制器上复现失败，再在修复后通过；产出新的已提交实现delta。",
+            "evidence_state": "NOT_RUN",
+            "expected_evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ]
+          }
+        ],
+        "evidence_contract": {
+          "expected_red": true,
+          "planning_status": "NOT_RUN",
+          "demo_entrypoint": "/",
+          "read_only_dependencies": [
+            "RACE-FOUNDATION",
+            "RACE-DRIVE",
+            "RACE-TRACK"
+          ],
+          "evidence_root": "artifacts/racing/assembly/runs/<unique-run-id>/",
+          "retention": "历史证据只读保留；新增原始输出、报告及哈希写入唯一运行目录。",
+          "goal_id": "prepare-TASK-5F44B4-c32763f31115843f",
+          "goal_kind": "prd",
+          "gap_category": "acceptance_gap",
+          "gap_kind": "acceptance_gap",
+          "parent_task_id": "RACE-ASSEMBLY",
+          "affinity_tag": "experience-assembly",
+          "source_refs": [
+            "fanouts/fanout-prd-post-verify-discovery-evt-7a3837dc/children/prd-flow-discovery/report.json#/gap_findings/0",
+            "fanouts/fanout-prd-post-verify-discovery-evt-7a3837dc/children/prd-flow-discovery/report.json#/requirement_coverage_matrix/6",
+            "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/task_map.json#/tasks/3",
+            "git:f45376ae80aaa734c32573d6c7fc9d34d0bc53d3",
+            "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25",
+            "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25:scripts/verify-racing.sh#L56",
+            "events.jsonl#evt-5bbded67ad15",
+            "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25:artifacts/racing/assembly/rework-evt-74621524/local-evidence.zip",
+            "diagnostics/recovery/semantic-replan-7587232afcf6e7e7/context.json"
+          ],
+          "repro_ref": "events.jsonl#evt-5bbded67ad15",
+          "acceptance_id": "AC-A07",
+          "replan_history_ref": "diagnostics/recovery/semantic-replan-7587232afcf6e7e7/context.json",
+          "affected_tasks": [
+            "RACE-ASSEMBLY"
+          ],
+          "gate_changes": [],
+          "red_requirement": "新增计时缺失/非法输入回归测试先在旧控制器失败，修复后所有本地测试通过；fixture证据不能替代真实浏览器比赛。"
+        },
+        "root_owner_class": "assembly",
+        "skills_required": [
+          "zf-browser-e2e-contract"
+        ],
+        "source_refs": [
+          "fanouts/fanout-prd-post-verify-discovery-evt-7a3837dc/children/prd-flow-discovery/report.json#/gap_findings/0",
+          "fanouts/fanout-prd-post-verify-discovery-evt-7a3837dc/children/prd-flow-discovery/report.json#/requirement_coverage_matrix/6",
+          "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/task_map.json#/tasks/3",
+          "git:f45376ae80aaa734c32573d6c7fc9d34d0bc53d3",
+          "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25",
+          "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25:scripts/verify-racing.sh#L56",
+          "events.jsonl#evt-5bbded67ad15",
+          "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25:artifacts/racing/assembly/rework-evt-74621524/local-evidence.zip",
+          "diagnostics/recovery/semantic-replan-7587232afcf6e7e7/context.json"
+        ],
+        "parent_task_id": "RACE-ASSEMBLY",
+        "supersedes_task_ids": [
+          "RACE-ASSEMBLY"
+        ],
+        "base_commit": "f45376ae80aaa734c32573d6c7fc9d34d0bc53d3",
+        "goal_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "goal_kind": "prd",
+        "gap_category": "acceptance_gap",
+        "gap_kind": "acceptance_gap",
+        "claim_paths": [
+          "index.html",
+          "src/main.ts",
+          "src/ui/**",
+          "public/**",
+          "playwright.config.ts",
+          "scripts/verify-racing.sh",
+          "scripts/audit-racing-workflow.mjs",
+          "tests/assembly/**",
+          "tests/acceptance/**",
+          "README.md",
+          "docs/racing/delivery.md",
+          "artifacts/racing/assembly/**"
+        ],
+        "verification_read_paths": [
+          "package.json",
+          "package-lock.json",
+          "tsconfig.json",
+          "vite.config.ts",
+          "eslint.config.js",
+          ".gitignore",
+          "scripts/racing-runner/**",
+          "src/contracts/**",
+          "src/scaffold/**",
+          "src/race/**",
+          "src/track/**",
+          "tests/scaffold/**",
+          "tests/race/**",
+          "tests/track/**",
+          "node_modules/**"
+        ],
+        "replan_history_ref": "diagnostics/recovery/semantic-replan-7587232afcf6e7e7/context.json",
+        "affected_tasks": [
+          "RACE-ASSEMBLY"
+        ],
+        "gate_changes": [],
+        "required_delta": {
+          "task_map_revision_required": true,
+          "behavioral_write_paths": [
+            "scripts/verify-racing.sh",
+            "tests/assembly/unit.test.ts",
+            "tests/assembly/runner-fixture.mjs"
+          ],
+          "carry_forward": {
+            "source_commit": "5f37bf4443888afaa2f8e5ef4623bbe1372d6b25",
+            "allowed_paths": [
+              "index.html",
+              "src/main.ts",
+              "src/ui/**",
+              "public/**",
+              "playwright.config.ts",
+              "scripts/verify-racing.sh",
+              "scripts/audit-racing-workflow.mjs",
+              "tests/assembly/**",
+              "tests/acceptance/**",
+              "README.md",
+              "docs/racing/delivery.md",
+              "artifacts/racing/assembly/**"
+            ],
+            "policy": "基线缺少装配文件时从固定候选迁移既有装配内容；这些内容仍待验收，不能当作通过证明。除三份修复文件与新增证据外不改变现有行为。共享模块与已归档证据保持不变。"
+          },
+          "acceptance_change": "AC-A07明确包含计时字段存在、数值类型、有限性、持续时间下限的负向用例；其余验收条款、候选门和接口不变。",
+          "base_rationale": "发现涉及产品行为，因此保留本轮合约基线f45376ae80aaa734c32573d6c7fc9d34d0bc53d3，不把失败候选5f37整体晋升为已验收基线；用显式迁移来源保存已有装配工作。"
+        },
+        "inherited_contract_ref": "artifacts/task-contract-snapshots/prepare-TASK-5F44B4-c32763f31115843f/RACE-ASSEMBLY/contract-r52d0b2ed144b-904c4d2b4a052a7e.json",
+        "inherited_plan_package_ref": "artifacts/plan-packages/2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a.json",
+        "verify_commands": [
+          "node scripts/racing-runner/unit.mjs assembly",
+          "python -c \"import subprocess; assert subprocess.run(['git','diff','--quiet','5f37bf4443888afaa2f8e5ef4623bbe1372d6b25','HEAD','--','scripts/verify-racing.sh','tests/assembly/unit.test.ts','tests/assembly/runner-fixture.mjs']).returncode == 1\"",
+          "git diff --exit-code 5f37bf4443888afaa2f8e5ef4623bbe1372d6b25 HEAD -- index.html src/main.ts src/ui public playwright.config.ts scripts/audit-racing-workflow.mjs tests/acceptance README.md docs/racing/delivery.md"
+        ],
+        "verification": "node scripts/racing-runner/unit.mjs assembly",
+        "acceptance": "正式页面具备开始、比赛HUD、暂停、继续、重开与结束结果；两套真实键盘驱动车辆，赛道/障碍/碰撞反馈清楚可见。 1280×800与1440×900桌面视口可见按钮/HUD/赛道；键盘改变车辆位置/朝向与像素；碰撞闪红300ms且次数和分数同步；暂停2秒状态全冻，继续后恢复。\n至少一场容器内真实Chromium比赛按正常时间完整运行90秒并一次结算，结果显示真实距离、碰撞次数和总分且可重新开局。结束面板的重开按钮文案统一为“重新比赛”，重开行为不变。 单独完整比赛用例从按钮开始到finished：活跃时间90000ms，浏览器单调经过时间≥90000ms；不注入状态/时钟、不改duration；终局等待2秒结果不变，再按钮重开归零。结束面板的重开按钮可见文本及可访问名称必须精确为“重新比赛”；真实点击该按钮后，按既定restart规则重置车辆、速度、输入、时间、距离、highWater、检查点、碰撞数及接触集、结果与结算计数并进入running，仍只有一个更新循环且能再次驾驶。\n每次实际环境preflight确认Docker、指定镜像、host网络、端口及服务连接；浏览器只在容器安装运行。 镜像记录digest；host UID/GID可写新证据目录；0.0.0.0绑定、端口≥8004且避开8001/8002；容器fetch成功才启动浏览器；失败原样报告且非0。\n根目录统一验证入口依次完成preflight、安装、lint、确定性单测、构建和真实浏览器；任何失败、跳过或未完成均非零。 实际整套运行所有阶段有收据且90秒用例通过才exit0；单独runner故障注入测试令每个阶段分别失败/超时/缺报告，均非0且清理本次服务。\n验证运行与重跑拥有不覆盖历史的独立目录，原始日志按字节保留，截图/trace/报告/错误检查及摘要哈希齐全。 两次运行目录不同，第一轮sha256不变；含空白和CRLF日志的归档hash相等；每次输出command/commit/exit/stages/图片/trace/浏览器错误报告，缺必需文件非0。\n当前交付可追溯到获批的完整PRD/SDD/TDD与唯一任务归属；3实现lane和至少2独立验证lane、Judge、Kernel边界受控。 审计绑定本Run/Plan digest的人工plan.approved（auto不为true）、实际writer fanout.child.dispatched顺序、受控配置加载快照及预算风险；独立验证/最终Judge/Kernel各自未来收据由阶段门核查，不要求本脚本消费自己的未来结果。\n正式入口装配真实比赛与赛道依赖；卸载后按钮、输入和更新循环停止作用且重新挂载不重复响应；统一验证runner的任一阶段失败、超时或缺证据均向调用者返回非零并清理本次资源。 真实src/main.ts装配createRace与真实TrackPort，生产durationMs=90000；dispose移除按钮/键盘/blur/visibility监听并取消rAF，重复dispose安全，重新挂载一次动作只响应一次。preflight/install/lint/unit/build/browser逐阶段独立失败及超时均非零、停止后续阶段，cleanup不吞原错误，只清理本次服务；缺阶段或必需报告不成功。 计时证明 started、finishedAt、monotonic_elapsed_ms 必须是有限数值，持续时间也必须有限且满足90000ms下限；缺任一字段、无效类型/非有限值及89999ms均非零，合法90000ms仍成功，所有路径清理资源。补充测试必须先在固定旧控制器上复现失败，再在修复后通过；产出新的已提交实现delta。"
+      }
+    ],
+    "gap_task_count": 1,
+    "supersedes_task_ids": [
+      "RACE-ASSEMBLY"
+    ],
+    "source_event_id": "evt-a716f80a2b20",
+    "source": "flow_discovery_bridge",
+    "artifact_refs": [
+      "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/fanouts/fanout-prd-post-verify-discovery-evt-05186d09/children/prd-flow-discovery/report.json",
+      "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/task_map.json",
+      "artifacts/plan-packages/2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a.json",
+      "artifacts/goal-closure/claim-sets/cdfbeb745d46f6173053d6f265322a3f7ee80dab54e4a03c693bbad51f20c2aa.json",
+      "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/fanouts/fanout-prd-post-verify-discovery-evt-7a3837dc/children/prd-flow-discovery/report.json"
+    ],
+    "evidence_refs": [
+      "events.jsonl#evt-5bbded67ad15",
+      "artifacts/agent-session-output/01a17609-42db-7ba0-aca0-28c0837097b6/tool-response-9b3e564e797cff6a.txt",
+      "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25:scripts/verify-racing.sh#L56",
+      "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25:artifacts/racing/assembly/rework-evt-74621524/local-evidence.zip",
+      "artifacts/task-contract-snapshots/prepare-TASK-5F44B4-c32763f31115843f/RACE-ASSEMBLY/contract-r52d0b2ed144b-904c4d2b4a052a7e.json",
+      "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/task_map.json",
+      "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/source_index.json",
+      "artifacts/plan-packages/2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a.json",
+      "artifacts/goal-closure/claim-sets/cdfbeb745d46f6173053d6f265322a3f7ee80dab54e4a03c693bbad51f20c2aa.json"
+    ],
+    "test_refs": [
+      "git:5f37bf4443888afaa2f8e5ef4623bbe1372d6b25:artifacts/racing/assembly/rework-evt-74621524/local-evidence.zip",
+      "events.jsonl#evt-5bbded67ad15"
+    ],
+    "regression_refs": [
+      "events.jsonl#evt-5bbded67ad15"
+    ]
+  },
+  "causation_id": "evt-a716f80a2b20",
+  "correlation_id": "semantic-replan-c4309b9b0f7e55ac",
+  "origin": "kernel"
+}

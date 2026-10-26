@@ -1,0 +1,104 @@
+{
+  "plan_id": "evt-498c4d468cc2",
+  "events": [
+    {
+      "id": "evt-882305b36cfb",
+      "type": "dev.build.done",
+      "ts": "2026-10-26T05:02:27.704744+00:00",
+      "actor": "prd-dev-lane-0",
+      "causation_id": "evt-9ed61e3ec340",
+      "payload": {
+        "task_id": null,
+        "role_instance": null,
+        "fanout_id": "fanout-prd-lanes-impl-evt-498c4d46",
+        "child_id": "prd-dev-lane-0-RACE-FOUNDATION",
+        "source_commit": "2a92610dfab80aeb6a24f161d0fa64d7a2cb0ac9",
+        "base_commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+        "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+        "plan_artifact_package_digest": "3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52",
+        "operation_id": "wop-prd-lanes-impl-prd-dev-lane-0-RACE-FOUNDATION-t-d4b4a5dcd9fa",
+        "workdir": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-dev-lane-0/project",
+        "status": null
+      }
+    },
+    {
+      "id": "evt-012347b4e642",
+      "type": "fanout.child.completed",
+      "ts": "2026-10-26T05:02:48.545075+00:00",
+      "actor": "zf-cli",
+      "causation_id": "evt-882305b36cfb",
+      "payload": {
+        "task_id": "RACE-FOUNDATION",
+        "role_instance": "prd-dev-lane-0",
+        "fanout_id": "fanout-prd-lanes-impl-evt-498c4d46",
+        "child_id": "prd-dev-lane-0-RACE-FOUNDATION",
+        "source_commit": "2a92610dfab80aeb6a24f161d0fa64d7a2cb0ac9",
+        "base_commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+        "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+        "plan_artifact_package_digest": "3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52",
+        "operation_id": "wop-prd-lanes-impl-prd-dev-lane-0-RACE-FOUNDATION-t-d4b4a5dcd9fa",
+        "workdir": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-dev-lane-0/project",
+        "status": "completed"
+      }
+    },
+    {
+      "id": "evt-015b34dacba8",
+      "type": "fanout.child.dispatched",
+      "ts": "2026-10-26T05:02:52.650018+00:00",
+      "actor": "zf-cli",
+      "causation_id": "evt-498c4d468cc2",
+      "payload": {
+        "task_id": "RACE-DRIVE",
+        "role_instance": "prd-dev-lane-0",
+        "fanout_id": "fanout-prd-lanes-impl-evt-498c4d46",
+        "child_id": "queued-RACE-DRIVE-2",
+        "source_commit": null,
+        "base_commit": "d43aa9b263f346c83c59d96adc0225fcf0656f5d",
+        "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+        "plan_artifact_package_digest": "3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52",
+        "operation_id": "wop-prd-lanes-impl-queued-RACE-DRIVE-2-trig-evt-498-aa17dbe6a22a",
+        "workdir": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-dev-lane-0/project",
+        "status": null
+      }
+    },
+    {
+      "id": "evt-603d84af1e50",
+      "type": "fanout.child.dispatched",
+      "ts": "2026-10-26T05:02:56.899540+00:00",
+      "actor": "zf-cli",
+      "causation_id": "evt-498c4d468cc2",
+      "payload": {
+        "task_id": "RACE-TRACK",
+        "role_instance": "prd-dev-lane-1",
+        "fanout_id": "fanout-prd-lanes-impl-evt-498c4d46",
+        "child_id": "queued-RACE-TRACK-3",
+        "source_commit": null,
+        "base_commit": "fc7f8f8053169113bc15914c348f3e3890035b6f",
+        "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+        "plan_artifact_package_digest": "3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52",
+        "operation_id": "wop-prd-lanes-impl-queued-RACE-TRACK-3-trig-evt-498-2d7b32d8a838",
+        "workdir": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-dev-lane-1/project",
+        "status": null
+      }
+    }
+  ],
+  "actual_provider_usage": [
+    {
+      "id": "evt-6171513d00b6",
+      "ts": "2026-10-26T05:03:28.340683+00:00",
+      "actor": "prd-dev-lane-0",
+      "operation_id": "wop-prd-lanes-impl-queued-RACE-DRIVE-2-trig-evt-498-aa17dbe6a22a",
+      "provider": "openai",
+      "model": "gpt-6-astra"
+    },
+    {
+      "id": "evt-b327c88605fc",
+      "ts": "2026-10-26T05:03:28.538743+00:00",
+      "actor": "prd-dev-lane-1",
+      "operation_id": "wop-prd-lanes-impl-queued-RACE-TRACK-3-trig-evt-498-2d7b32d8a838",
+      "provider": "openai",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "scope": "Foundation accepted; two new implementation lanes have real provider activity; Verify and delivery remain pending"
+}

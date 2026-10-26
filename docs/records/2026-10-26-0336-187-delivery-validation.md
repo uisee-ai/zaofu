@@ -1,7 +1,7 @@
 # 187 实施与评估记录
 
 > 日期: 2026-10-26 UTC。
-> 范围: [设计 187](../design/187-bmad-inspired-epic-task-map-and-tdd.md)的六项实施任务。
+> 范围: [设计 187](../design/188-bmad-inspired-epic-task-map-and-tdd.md)的六项实施任务。
 > 分支: `wip/codex-20261026-bmad187`。
 > 工作树: `/home/min/workspace/public/zaofu-187-bmad`。
 > 方法落点: [实施说明](../impl/bmad-187-methods-and-validation.md)。

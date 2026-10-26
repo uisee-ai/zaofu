@@ -71,6 +71,11 @@ context for runtime truth, task scope, and completion claims.
 - 保存完整测试日志和退出码，向上下文呈现用例总数、失败类型及代表性堆栈；大量
   subTest 同因失败时逐类检查，避免重复展开每一份相同堆栈。不得遗漏不同失败原因，
   也不得把节选当完整证据。后续验证应引用原始日志和实际命令收据。
+- 候选/独立验证会重跑合同命令时，将不可变历史证据与命令默认写入的本轮输出分开；
+  检查重复执行是否改写已跟踪文件。保留完整证据及引用，不靠删除证据、篡改命令
+  或放宽 clean gate 解决输出覆盖；输入代码与被验证提交的绑定仍需可审计。
+- 提交后检查基线到 HEAD 的完整 diff；原始日志的尾随空格触发格式门禁时，使用
+  无损归档并记录解压摘要与引用映射，不改写原始日志或绕过门禁。
 - Treat every `plan-port-*` input as immutable Planner/Adapter output. Implement
   against the current port contents; do not rewrite a matrix or Plan Package
   after the contract snapshot has been dispatched.

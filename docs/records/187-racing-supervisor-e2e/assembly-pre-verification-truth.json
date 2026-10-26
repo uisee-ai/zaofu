@@ -1,0 +1,49 @@
+{
+  "source_seq": 5779,
+  "graph_sha256": "f0e02d34749a46401c4582107cb1e645e4d391b4bfc9aa37d716c7475e0ba90a",
+  "run": [
+    {
+      "id": "run:prepare-TASK-5F44B4-c32763f31115843f",
+      "status": "running"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task:RACE-ASSEMBLY",
+      "status": "in_progress",
+      "label": "装配正式赛车入口与完整交付验收",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "task:RACE-DRIVE",
+      "status": "in_progress",
+      "label": "可驾驶并可暂停重开的90秒比赛",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "task:RACE-FOUNDATION",
+      "status": "in_progress",
+      "label": "建立可启动的工程骨架与共享契约",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "task:RACE-TRACK",
+      "status": "in_progress",
+      "label": "可见赛道、障碍与不能刷分的碰撞路径",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "task:TASK-5F44B4",
+      "status": "in_progress",
+      "label": "浏览器赛车小游戏：2D 俯视 90 秒积分赛，先规划审批再实现",
+      "accepted_event_ids": []
+    }
+  ],
+  "goal_coverage": {
+    "mandatory_claims": 23,
+    "planned_claims": 12,
+    "claims_with_current_results": 0,
+    "closed_claims": 0,
+    "open_gaps": 0
+  }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "event_id": "evt-68332e23f02c",
+    "event_type": "worker.context.critical",
+    "reader_owns_recovery": true
+  },
+  {
+    "event_id": "evt-28aa0be39db5",
+    "event_type": "task.retry_scheduled",
+    "reader_owns_recovery": true
+  }
+]
