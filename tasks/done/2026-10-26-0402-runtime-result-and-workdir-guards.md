@@ -1,4 +1,6 @@
-> 状态: proposed
+> 状态: done
+> 完成提交: cd496b5 feat: harden plan review lineage and runtime guards
+> 验证: verdict、workdir guard、fanout hardening focused tests 全部通过。
 
 # Runtime result and task workdir guard compatibility
 

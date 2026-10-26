@@ -1,4 +1,6 @@
-> 状态: proposed
+> 状态: done
+> 完成提交: cd496b5 feat: harden plan review lineage and runtime guards
+> 验证: CLI/API scope 相关测试包含在 103 个 focused tests 中并全部通过。
 
 # Plan review workflow-run scope
 

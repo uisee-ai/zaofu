@@ -1,4 +1,6 @@
-> 状态: proposed
+> 状态: done
+> 完成提交: cd496b5 feat: harden plan review lineage and runtime guards
+> 验证: 2 个 plan minting 用例与 authority bundle 用例通过；pre-merge sentinel 通过。
 
 # Plan review lineage and dedupe
 
