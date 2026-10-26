@@ -17,6 +17,7 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   await page.goto(`/?page=workflows&project=${encodeURIComponent(project)}&request=${encodeURIComponent(requestId)}`);
   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
   await expect(workbench).toBeVisible();
+  await expect(workbench.getByTestId("workflow-graph-canvas")).toBeVisible({ timeout: 30_000 });
   for (const name of ["生命周期", "模块与任务", "Workflow 执行", "追溯与变更", "验证与交付", "时间线"]) {
     await workbench.getByRole("button", { name, exact: true }).click();
     await expect(workbench.getByTestId("workflow-graph-canvas")).toBeVisible();
@@ -82,7 +83,7 @@ test("Plan reader retains unchanged attachments across graph polls and reloads c
   await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
   await page.getByRole("button", { name: `PRD / Plan Preview · ${plan.status}`, exact: true }).click();
   const reader = page.getByRole("region", { name: "计划审阅内容" });
-  await expect(reader.getByRole("heading", { name: "本次交付与审批范围" })).toBeVisible();
+  await expect(reader.getByRole("heading", { name: "本次交付与审批范围" })).toBeVisible({ timeout: 30_000 });
   const firstPoll = polls;
   await expect.poll(() => polls, { timeout: 20_000 }).toBeGreaterThanOrEqual(firstPoll + 3);
   expect(loads).toHaveLength(3);
@@ -131,11 +132,52 @@ test("Plan Chat fixture keeps a long quoted diff inside desktop and mobile panel
     await diff.scrollIntoViewIfNeeded();
     const size = await diff.boundingBox();
     expect(size!.width).toBeLessThanOrEqual(width);
+    const panel = await page.getByRole("region", { name: "PRD Plan Agent Chat" }).boundingBox();
+    expect(size!.width).toBeLessThanOrEqual(panel!.width);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
     await page.screenshot({ path: test.info().outputPath(`plan-diff-fixture-${width}.png`) });
   }
   await page.getByRole("button", { name: "放弃修改", exact: true }).last().click();
   await expect(diff).toHaveCount(0);
+});
+
+test("explicit graph filters compact the layout while polls retain the viewport", async ({ page, request }) => {
+  const endpoint = `/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`;
+  const graph = await (await request.get(endpoint)).json();
+  let polls = 0;
+  // Display-only fixture: separate active nodes with a long history column.
+  const nodes = Array.from({ length: 32 }, (_, index) => ({
+    id: `layout-${String(index).padStart(2, "0")}`, kind: "operation", label: `Layout fixture ${index}`,
+    status: index === 0 || index === 31 ? "running" : "done", views: ["workflow"], data: {},
+  }));
+  await page.route(`**${endpoint}*`, route => {
+    polls += 1;
+    return route.fulfill({ json: { ...graph, nodes, edges: [] } });
+  });
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto(`/?page=workflows&project=${project}&request=${requestId}&graph=workflow`);
+  const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
+  await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
+  await expect(workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button")).toHaveCount(32);
+  await workbench.getByLabel("图节点状态").selectOption("running");
+  const active = workbench.locator('.react-flow__node[data-id="layout-31"]');
+  await expect(active).toBeVisible();
+  // Auto-fit must make the filtered cards legible without a manual fit click.
+  await expect.poll(async () => (await active.boundingBox())?.width || 0).toBeGreaterThan(160);
+  const first = workbench.locator('.react-flow__node[data-id="layout-00"]');
+  const a = (await first.boundingBox())!, b = (await active.boundingBox())!;
+  expect(Math.abs(a.y - b.y)).toBeLessThan(350);
+  await workbench.getByRole("button", { name: /zoom out/i }).click();
+  const viewport = workbench.locator(".react-flow__viewport");
+  // Wait for the zoom control animation before checking polling stability.
+  await page.waitForTimeout(500);
+  const transform = await viewport.getAttribute("style");
+  const before = polls;
+  await expect.poll(() => polls, { timeout: 12_000 }).toBeGreaterThanOrEqual(before + 2);
+  expect(await viewport.getAttribute("style")).toBe(transform);
+  await workbench.getByLabel("搜索图节点").fill("layout-31");
+  await expect(workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button")).toHaveCount(1);
+  await expect.poll(async () => (await active.boundingBox())?.width || 0).toBeGreaterThan(160);
 });
 
 test("terminal Run, Tasks and Goal coverage agree with kernel evidence", async ({ page, request }) => {

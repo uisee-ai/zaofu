@@ -1,5 +1,5 @@
 {
-  "status": "environment_plan_approved_repair_impl_running_verify_pending",
+  "status": "repair_impl_in_progress_verify_pending_graph_layout_fixed",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -73,6 +73,46 @@
       "file": "32-environment-plan-mobile.png",
       "sha256": "847f35713eefe9970b4067d884458e1ff73bd6a0105e4d930185cba3bcaabe07",
       "bytes": 96059
+    },
+    {
+      "file": "33-current-parallel-impl-modules.png",
+      "sha256": "0d14732257e67cd200e6a40c9e051f44c5011fc0b72c89341094b3cb05ab81d0",
+      "bytes": 255424
+    },
+    {
+      "file": "34-current-parallel-impl-workflow.png",
+      "sha256": "86c518809d1b3aab54fa678aad3465c162b251a81d7d8c3d84a3133a5ee9fe74",
+      "bytes": 198209
+    },
+    {
+      "file": "35-current-parallel-impl-inspector.png",
+      "sha256": "9efabcb1a0f654ec143bba7de33246c6129fb154084e1720188ea4bd48982133",
+      "bytes": 151727
+    },
+    {
+      "file": "36-current-impl-active-view.png",
+      "sha256": "28f3ec6a4afa30158937e92912b12c8dd211006068b1b33ee22ca9fa171bb542",
+      "bytes": 119301
+    },
+    {
+      "file": "37-current-active-layout-fixed.png",
+      "sha256": "02dba1197a625795010f05ff78c6faaa6a4c5578dc97f101a4114e1090e92b88",
+      "bytes": 100723
+    },
+    {
+      "file": "38-plan-chat-grid-overflow.png",
+      "sha256": "f5d0943d6f502eb8523ae2733fe18f3ecd2d2fc20229d5ac9b647cab656e8097",
+      "bytes": 336484
+    },
+    {
+      "file": "39-plan-chat-grid-fixed-desktop.png",
+      "sha256": "fb9673b01c78888e922b7b5495c85094dfb8597fa9ffff36e69feda6f5443900",
+      "bytes": 289451
+    },
+    {
+      "file": "40-plan-chat-grid-fixed-mobile.png",
+      "sha256": "3461b8943cc56c1cc511cf229edd7b7b3cdc5cf08b88aed729369e05fa637c87",
+      "bytes": 126931
     },
     {
       "file": "approval-recovery-dev-verify-plan.log",
@@ -410,6 +450,16 @@
       "bytes": 50018
     },
     {
+      "file": "environment-repair-foundation-dispatch.json",
+      "sha256": "376c7716433e3735bea80898039afb5b03163e0308287d006e3155a1f8fbe94c",
+      "bytes": 1126
+    },
+    {
+      "file": "environment-repair-parallel-dispatch.json",
+      "sha256": "db8422eefd52f64e2ff1d54f174f0a2bf45db0547694c9541e0da60ba467d186",
+      "bytes": 4713
+    },
+    {
       "file": "environment-replan-delivery.json",
       "sha256": "a289a0f49e7afef207cd6ddc7371d7a39253412e055e91326519cf05f1bf71b6",
       "bytes": 661
@@ -423,6 +473,11 @@
       "file": "environment-replan-result.json",
       "sha256": "7d03160c68efb093636954cd7b56bf468a2fe77e1461eaabc2027ac245d8b5c8",
       "bytes": 809
+    },
+    {
+      "file": "environment-workflow-evidence-export.json",
+      "sha256": "974c47f7550d399980e172057543a28d7787a38ffc42032489a1ed2d3e6be5b8",
+      "bytes": 248
     },
     {
       "file": "evidence-environment-idle-role-restarts.json",
@@ -485,9 +540,64 @@
       "bytes": 34668
     },
     {
+      "file": "graph-and-chat-layout-build.log",
+      "sha256": "3f0c09e85bb397f71a26dfddbb2b78f72d67452c8d5eca2b4984b8c938b89b14",
+      "bytes": 6118
+    },
+    {
+      "file": "graph-and-chat-layout-green.log",
+      "sha256": "f4fa13ae7ba5dd45cc63d4de270e60d0cf8a1664c8e9e0671845d9b903820af2",
+      "bytes": 673
+    },
+    {
+      "file": "graph-and-chat-verification-plan.json",
+      "sha256": "857f9a63d6bfeea33cb5ef24db2b8a7026595262cda88759c8c500be1ebe9882",
+      "bytes": 1667
+    },
+    {
+      "file": "graph-and-chat-verification-run.json",
+      "sha256": "f33c6f31153029496c4216639d0b37c72b593806a635b3a5c18566fe8bd32605",
+      "bytes": 2413
+    },
+    {
+      "file": "graph-and-chat-verification-run.log",
+      "sha256": "db9a62c2f44fdb2f36dfe217742ae98ba0c160524e8b9adaa534097706c06b7f",
+      "bytes": 853
+    },
+    {
+      "file": "graph-api-latency.json",
+      "sha256": "856be944e61060c3407d42f3ebeb29e7b523c88fb23d80281e57bf7d2ef0af25",
+      "bytes": 392
+    },
+    {
+      "file": "graph-filter-layout-green-retry.log",
+      "sha256": "42f7f01dbe0ced820c316f24167fe855fe764047b855ba3044466c78e07de7e6",
+      "bytes": 1838
+    },
+    {
+      "file": "graph-filter-layout-green.log",
+      "sha256": "c6d8bcaf7918fa533b9e4e3412f6366960f238396233ba7ecbba67db32bd6149",
+      "bytes": 5969
+    },
+    {
+      "file": "graph-filter-layout-red.log",
+      "sha256": "5461f81f67e401b0b5e5c69b3056474c7cafea37d7f1eebd93fb9b45076e7a16",
+      "bytes": 1470
+    },
+    {
+      "file": "graph-filter-verification-run.log",
+      "sha256": "efe5a401b8a05089dc6c6f300b0a496d1a72c78a871d163a4884171061f63e89",
+      "bytes": 1187
+    },
+    {
       "file": "graph-projection-web-reload.json",
       "sha256": "4d2daf5991a4c70b80c181ec3a6754a95bc079e916991479b84d0dfec8951765",
       "bytes": 66
+    },
+    {
+      "file": "graph-read-profile.log",
+      "sha256": "1ce2be310a2b14a3e9f9cac467d5e54972812ac85b81ef774f5bc8b8761d0ca4",
+      "bytes": 2791
     },
     {
       "file": "initial-candidate.yaml",
@@ -693,6 +803,11 @@
       "file": "plan-chat-gate.json",
       "sha256": "a60cf8fd48bd9eae8dc5b0c84713226c9a754882ebc040f4ce03a917dca09948",
       "bytes": 299
+    },
+    {
+      "file": "plan-chat-layout-diagnostic.log",
+      "sha256": "190060923a49cdd293162e6b9ffc6e55278b3ddf5c893dcb564a6ca6f2555620",
+      "bytes": 14818
     },
     {
       "file": "plan-selfcheck-chat-gate.json",
@@ -1185,6 +1300,11 @@
       "bytes": 379
     },
     {
+      "file": "verify-dispatch-configuration.json",
+      "sha256": "28f0bcde7a7ed9bd91e9f9db4910183997eabc5a9e454626142c4a3558d38579",
+      "bytes": 1485
+    },
+    {
       "file": "web-reader-build.log",
       "sha256": "be75656294af4c97f92359c288006c229c118bc2a265191eaa046034ec7bb7a0",
       "bytes": 6118
@@ -1217,6 +1337,31 @@
       "file": "plan-approval-identity-red.log",
       "raw_sha256": "32c9aae024dda8f49d8442387934f2bbe163cbcc02d3343770f4a0a05e2d9d4c",
       "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "graph-filter-layout-red.log",
+      "raw_sha256": "ed89d9cc512765c55a46e6ef518b4014d5adf5a74bb155d6a09840ee40d74d56",
+      "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "graph-filter-layout-green.log",
+      "raw_sha256": "7e7f9e0a8cd3d3b289891267053575a8942fc5b83af55e5acbaf65cdd4ac7edb",
+      "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "graph-filter-layout-green-retry.log",
+      "raw_sha256": "beaa0429f19fff390e4045b8eff5b56e003bc7a91b0699b291b8f486e93816f7",
+      "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "plan-chat-layout-diagnostic.log",
+      "raw_sha256": "a797e3bb0b75d9ab51b86843f603cdc717b050cafad41cf963673f376ad6542a",
+      "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "graph-read-profile.log",
+      "raw_sha256": "60888680cd121cc98da2b84dc3767fb736ae523cdcf5f435056698ef50c3ce80",
+      "transformation": "remove line-end whitespace and trailing blank lines only"
     }
   ],
   "last_recovery_event_id": "evt-22f59b3c206a",

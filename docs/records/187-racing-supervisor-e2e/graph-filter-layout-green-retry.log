@@ -1,0 +1,30 @@
+
+Running 4 tests using 1 worker
+
+  ✓  1 ui-regression/workflow-graph-workbench.spec.ts:7:5 › real Workflow graph shows bound execution, every lens, stable selection and mobile layout (50.9s)
+  ✓  2 ui-regression/workflow-graph-workbench.spec.ts:66:5 › Plan reader retains unchanged attachments across graph polls and reloads changed bindings (25.3s)
+  ✘  3 ui-regression/workflow-graph-workbench.spec.ts:97:5 › Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels (15.7s)
+  ✓  4 ui-regression/workflow-graph-workbench.spec.ts:142:5 › explicit graph filters compact the layout while polls retain the viewport (9.6s)
+
+
+  1) ui-regression/workflow-graph-workbench.spec.ts:97:5 › Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m1600[39m
+    Received:    [31m1667.265625[39m
+
+      132 |     await diff.scrollIntoViewIfNeeded();
+      133 |     const size = await diff.boundingBox();
+    > 134 |     expect(size!.width).toBeLessThanOrEqual(width);
+          |                         ^
+      135 |     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+      136 |     await page.screenshot({ path: test.info().outputPath(`plan-diff-fixture-${width}.png`) });
+      137 |   }
+        at /tmp/zf-racing-supervision-20261025T211020Z/ui-regression/workflow-graph-workbench.spec.ts:134:25
+
+    Error Context: evidence/browser-ui-regression/workflow-graph-workbench-P-d4290-e-desktop-and-mobile-panels/error-context.md
+
+  1 failed
+    ui-regression/workflow-graph-workbench.spec.ts:97:5 › Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels
+  3 passed (1.8m)

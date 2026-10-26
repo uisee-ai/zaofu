@@ -1,0 +1,29 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 ui-regression/workflow-graph-workbench.spec.ts:141:5 › explicit graph filters compact the layout while polls retain the viewport (30.6s)
+
+
+  1) ui-regression/workflow-graph-workbench.spec.ts:141:5 › explicit graph filters compact the layout while polls retain the viewport
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m160[39m
+    Received:   [31m30.456207275390625[39m
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      161 |   await expect(active).toBeVisible();
+      162 |   // Auto-fit must make the filtered cards legible without a manual fit click.
+    > 163 |   await expect.poll(async () => (await active.boundingBox())?.width || 0).toBeGreaterThan(160);
+          |   ^
+      164 |   const first = workbench.locator('.react-flow__node[data-id="layout-00"]');
+      165 |   const a = (await first.boundingBox())!, b = (await active.boundingBox())!;
+      166 |   expect(Math.abs(a.y - b.y)).toBeLessThan(350);
+        at /tmp/zf-racing-supervision-20261025T211020Z/ui-regression/workflow-graph-workbench.spec.ts:163:3
+
+    Error Context: evidence/browser-ui-regression/workflow-graph-workbench-e-d982a-e-polls-retain-the-viewport/error-context.md
+
+  1 failed
+    ui-regression/workflow-graph-workbench.spec.ts:141:5 › explicit graph filters compact the layout while polls retain the viewport

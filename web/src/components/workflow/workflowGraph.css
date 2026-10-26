@@ -24,6 +24,8 @@
 .sdlc-timeline table { width:100%; font-size:var(--text-12); border-collapse:collapse; }.sdlc-timeline td,.sdlc-timeline th { text-align:left; padding:8px; border-bottom:1px solid #475569; }
 .sdlc-plan { border:1px solid #64748b; border-radius:8px; padding:12px; margin:12px 0; min-width:0; overflow-wrap:anywhere; }.sdlc-plan .plan-review { max-height:700px; overflow:auto; }
 .sdlc-plan pre { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; overflow:auto; }
+.sdlc-plan .workflow-clarification { grid-template-columns:minmax(0,1fr); }
+.sdlc-plan .workflow-clarification > * { min-width:0; }
 @media(max-width:1100px) { .sdlc-body { grid-template-columns:minmax(260px,1fr) 210px; }.sdlc-tree { display:none; } }
 @media(max-width:700px) { .sdlc-body { display:block; }.sdlc-inspector { max-height:250px; }.sdlc-canvas { height:440px; } }
 .sdlc-expanded { position:fixed; inset:56px 12px 12px; z-index:45; overflow:auto; background:var(--surface,#fff); }

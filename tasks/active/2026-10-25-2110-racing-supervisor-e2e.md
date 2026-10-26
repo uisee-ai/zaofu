@@ -34,6 +34,6 @@
 
 派发输入核验进一步发现受控动作遗漏新工件引用，Planner正确报告输入冲突；已修复上下文传递及恢复身份遗漏重试次数，两项分别有失败回归和真实事件/请求回放。109项主闭包、43项调用方、28项preflight/Mock及162项Reader恢复闭包通过；最终sentinel51和flow-smoke10通过。正式新Plan审批、环境修复实施与多lane Verify仍待完成。
 
-## 当前进度（2026-10-26 04:26 UTC）
+## 当前进度（2026-10-26 05:27 UTC）
 
-新版环境/时长证据Plan通过独立Critic后，发现审批按Task ID错误判重并隐藏新版，已复现并修复。恢复后完整真实浏览器预览通过；依据既有批准和持续修复授权，经受控operator确认`evt-15434756a885`继续Plan `evt-498c4d468cc2`，没有新的用户点击声明或auto批准。FOUNDATION已实际派发；多lane Verify、当前候选正常90秒验收和终态仍待完成。
+本版FOUNDATION、DRIVE、TRACK均已被内核接纳，DRIVE/TRACK有同代际、两个workdir及实际Provider并行证据；ASSEMBLY于05:23:45自动派发，正在修复时间字段校验和正式入口环境。外部治理bundle绑定本版审批及四次派发，未含未来Verify/Judge。新修复图筛选稀疏坐标和Plan Chat宽表格溢出，均有浏览器失败复现；最终build/typecheck、5图模型场景、8指令检查及4项Docker浏览器通过。API完整快照读取约6秒已记录。任务仍active，等待正式候选、独立Verify多lane、当前候选正常90秒和终态闭环。

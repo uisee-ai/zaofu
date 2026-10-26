@@ -32,6 +32,8 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const [busy, setBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const positions = useRef(new Map<string, { x: number; y: number }>());
+  const positionScope = useRef("");
+  const [canvasScope, setCanvasScope] = useState("");
   const [canvasNodes, setCanvasNodes] = useState<Node[]>([]);
   useEffect(() => {
     positions.current.clear(); setGraph(null); setAsOf(0); setPlanId(""); setCollapsed(new Set()); setSearch(""); setStatus("");
@@ -72,7 +74,13 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     const ids = new Set(nodes.map(n => n.id));
     return { nodes, edges: graph.edges.filter(e => e.views.includes(view) && ids.has(e.source) && ids.has(e.target)) };
   }, [graph, view, direction, selected, collapsed, search, status, fullStructure]);
+  const layoutScope = JSON.stringify([projectId, requestId, view, direction,
+    direction === "all" ? "" : selected, [...collapsed].sort(), search.trim().toLowerCase(), status, fullStructure, asOf]);
   useEffect(() => {
+    // Explicit navigation gets a compact layout; live polls preserve dragged nodes and the viewport.
+    if (positionScope.current !== layoutScope) {
+      positions.current.clear(); positionScope.current = layoutScope;
+    }
     const layout = graphPositions(filtered.nodes, filtered.edges);
     for (const n of filtered.nodes) {
       const key = `${view}:${n.id}`;
@@ -89,7 +97,8 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
       className: `sdlc-node sdlc-status-${n.status}`,
       data: { label: <><small>{n.kind}</small><strong>{n.label}</strong><span>{statusLabels[n.status] || n.status}</span></> },
     })));
-  }, [filtered, selected, view]);
+    setCanvasScope(layoutScope);
+  }, [filtered, selected, view, layoutScope]);
   const canvasEdges: Edge[] = filtered.edges.map(e => ({ ...e, type: "smoothstep", label: e.event || e.relation,
     labelStyle: { fill: "#cbd5e1", fontSize: 11 }, labelBgStyle: { fill: "#1e293b" },
     animated: filtered.nodes.some(n => (n.id === e.target || n.id === e.source) && activeStatus(n.status)),
@@ -132,7 +141,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
       <div className="sdlc-body">
         <aside className="sdlc-tree" aria-label="图节点目录">{filtered.nodes.map(n => <button key={n.id} type="button" aria-pressed={selected === n.id} onClick={() => pick(n.id)} title={n.id}>{n.label}<small>{statusLabels[n.status] || n.status}</small></button>)}</aside>
         <div className="sdlc-canvas" data-testid="workflow-graph-canvas">
-          <ReactFlow nodes={canvasNodes} edges={canvasEdges} onNodesChange={onNodesChange} onNodeClick={(_, node) => pick(node.id)} fitView minZoom={0.1} onlyRenderVisibleElements nodesConnectable={false} deleteKeyCode={null} aria-label="Workflow 关系图"><Background /><Controls showInteractive={false} /><MiniMap pannable zoomable maskColor="#0f172a99" nodeColor="#475569" style={{ background: "#1e293b" }} /></ReactFlow>
+          <ReactFlow key={canvasScope} nodes={canvasNodes} edges={canvasEdges} onNodesChange={onNodesChange} onNodeClick={(_, node) => pick(node.id)} fitView minZoom={0.1} onlyRenderVisibleElements nodesConnectable={false} deleteKeyCode={null} aria-label="Workflow 关系图"><Background /><Controls showInteractive={false} /><MiniMap pannable zoomable maskColor="#0f172a99" nodeColor="#475569" style={{ background: "#1e293b" }} /></ReactFlow>
         </div>
         <aside className="sdlc-inspector" aria-label="图节点详情">
           {selectedNode ? <><h3>{selectedNode.label}</h3><p>{statusLabels[selectedNode.status] || selectedNode.status}</p><code>{selectedNode.id}</code>
