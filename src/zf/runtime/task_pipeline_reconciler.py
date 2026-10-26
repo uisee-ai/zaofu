@@ -30,6 +30,7 @@ class TaskPipelineReconciler:
         external_gate_satisfied_task_ids: Iterable[str] = (),
         impl_rework_requests: Mapping[str, Mapping[str, Any]] | None = None,
         preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
+        oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         normalized_tasks = sorted(
             (_task_row(task) for task in tasks),
@@ -218,8 +219,12 @@ class TaskPipelineReconciler:
                     or integration_blocked
                 ):
                     continue
+                delegation = (oa_delegations or {}).get(
+                    view["task_id"], {}
+                ).get(stage_name)
                 role = _select_role(
                     pools[stage_name],
+                    delegation=delegation,
                     required_capabilities=view["required_capabilities"],
                     used_roles=used_roles,
                     preferred_role=str(
@@ -239,6 +244,16 @@ class TaskPipelineReconciler:
                         view["next_operation_generation"]
                     ),
                 }
+                if delegation is not None:
+                    preferred = list(delegation.get("preferred_roles") or [])
+                    assignment["orchestration_assignment"] = {
+                        "execution_plan_ref": dict(delegation["execution_plan_ref"]),
+                        "work_unit_id": str(delegation["work_unit_id"]),
+                        "preferred_roles": preferred,
+                        "selected_role": role,
+                        "reason": ("oa_preferred" if role in preferred
+                                   else "oa_preferred_unavailable_or_incompatible"),
+                    }
                 if (
                     stage_name == "impl"
                     and view["stage"] == "impl_rework_ready"
@@ -268,6 +283,7 @@ class TaskPipelineReconciler:
             ),
             "impl_rework_requests": normalized_rework_requests,
             "preferred_role_instances": normalized_preferred_roles,
+            "oa_delegations": dict(oa_delegations or {}),
         }
         projection: dict[str, Any] = {
             "schema_version": TASK_PIPELINE_SHADOW_SCHEMA,
@@ -742,7 +758,9 @@ def _derive_stage(
         (impl_rework_request or {}).get("operation_generation") or 0
     )
     operator_retry = (
-        (impl_rework_request or {}).get("fault") == "task_pipeline_operator_retry"
+        (impl_rework_request or {}).get("fault") in {
+            "task_pipeline_operator_retry", "task_pipeline_oa_rework",
+        }
         and impl_status == "settled"
         and impl.get("semantic_verdict") in {"blocked", "failed"}
     )
@@ -1045,6 +1063,7 @@ def _select_role(
     required_capabilities: list[str],
     used_roles: set[str],
     preferred_role: str = "",
+    delegation: Mapping[str, Any] | None = None,
 ) -> str:
     roles = sorted({str(item) for item in pool.get("role_instances", []) if str(item)})
     profiles = {
@@ -1058,9 +1077,12 @@ def _select_role(
         str(item) for item in pool.get("capabilities", []) if str(item)
     )
     required = set(required_capabilities)
+    oa_preferred = list(delegation.get("preferred_roles") or []) if delegation else []
+    if delegation is not None:
+        roles = [role for role in roles if role in delegation.get("eligible_roles", [])]
     ordered_roles = [
         role
-        for role in [preferred_role, *roles]
+        for role in [*oa_preferred, preferred_role, *roles]
         if role and role in roles
     ]
     ordered_roles = list(dict.fromkeys(ordered_roles))

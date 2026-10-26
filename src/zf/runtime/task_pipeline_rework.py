@@ -44,6 +44,10 @@ def derive_impl_rework_requests(
     requests = operator_impl_retry_requests(
         events=event_rows, operations=operations, contexts=generation_contexts,
     )
+    from zf.runtime.task_pipeline_oa_rework import oa_impl_rework_requests
+    requests.update(oa_impl_rework_requests(
+        events=event_rows, operations=operations, contexts=generation_contexts,
+    ))
     for event in event_rows:
         if event.type != "task.ref.rejected" or not event.task_id:
             continue

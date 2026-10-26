@@ -7,6 +7,7 @@ import json
 from collections import Counter
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterable, Mapping
 
 from zf.core.events.log import EventLog
@@ -74,8 +75,26 @@ def read_task_pipeline_projection(
         generation_contexts=contexts,
         project_root=Path(project_root),
     )
+    from zf.runtime.task_pipeline_orchestration import admitted_pipeline_delegations
+    from zf.runtime.task_pipeline_affinity import task_pipeline_preferred_roles
+
+    reader = SimpleNamespace(
+        state_dir=state_dir, project_root=project_root, config=config,
+        event_log=SimpleNamespace(read_all=lambda: events),
+    )
+    delegations = {}
+    for partition in partitions:
+        delegations.update(admitted_pipeline_delegations(
+            reader,
+            generation_contexts={key: contexts[key] for key in partition["task_ids"]},
+            policy=partition["policy"],
+        ))
     return build_task_pipeline_projection(
         policy=None,
+        oa_delegations=delegations,
+        preferred_role_instances=task_pipeline_preferred_roles(
+            reader, generation_contexts=contexts,
+        ),
         policy_by_task=policy_by_task,
         tasks=tasks,
         events=events,
@@ -95,6 +114,8 @@ def build_task_pipeline_projection(
     session_bindings: Mapping[str, Mapping[str, Any]]
     | Iterable[Mapping[str, Any]] = (),
     external_gate_satisfied_task_ids: Iterable[str] = (),
+    oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+    preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Build a deterministic projection suitable for live and archive replay."""
 
@@ -149,6 +170,8 @@ def build_task_pipeline_projection(
             attempts=attempt_rows,
             impl_rework_requests=impl_rework_requests,
             external_gate_satisfied_task_ids=external_gate_satisfied_ids,
+            oa_delegations=oa_delegations,
+            preferred_role_instances=preferred_role_instances,
         )
     else:
         scheduler = _scheduler_projection(
@@ -158,6 +181,8 @@ def build_task_pipeline_projection(
             attempts=attempt_rows,
             impl_rework_requests=impl_rework_requests,
             external_gate_satisfied_task_ids=external_gate_satisfied_ids,
+            oa_delegations=oa_delegations,
+            preferred_role_instances=preferred_role_instances,
         )
     selected_policies = [
         dict(row["policy"])
@@ -315,6 +340,8 @@ def _scheduler_projection(
     attempts: list[dict[str, Any]],
     impl_rework_requests: Mapping[str, Mapping[str, Any]] | None = None,
     external_gate_satisfied_task_ids: Iterable[str] = (),
+    oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+    preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
 ) -> dict[str, Any]:
     if not policy:
         return {}
@@ -332,6 +359,8 @@ def _scheduler_projection(
         terminal_task_ids=terminal_ids,
         impl_rework_requests=impl_rework_requests,
         external_gate_satisfied_task_ids=external_gate_satisfied_task_ids,
+        oa_delegations=oa_delegations,
+        preferred_role_instances=preferred_role_instances,
     )
 
 
@@ -372,6 +401,8 @@ def _partitioned_scheduler_projection(
     attempts: list[dict[str, Any]],
     impl_rework_requests: Mapping[str, Mapping[str, Any]],
     external_gate_satisfied_task_ids: Iterable[str] = (),
+    oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+    preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     task_by_id = {
         str(getattr(task, "id", "") or _mapping_value(task, "id")): task
@@ -402,6 +433,8 @@ def _partitioned_scheduler_projection(
         task_policy = dict(group["policy"])
         scheduler = _scheduler_projection(
             policy=task_policy,
+            oa_delegations=oa_delegations,
+            preferred_role_instances=preferred_role_instances,
             tasks=[task_by_id[task_id] for task_id in task_ids],
             operations=operations,
             attempts=attempts,
