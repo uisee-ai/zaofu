@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 52ccf954 feat: apply OA delegation and feedback in task pipelines
 
 # OA + WRC 委派、证据回流与受控调整闭环
 
