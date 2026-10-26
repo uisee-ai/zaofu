@@ -82,6 +82,43 @@ def test_state_packet_explicit_task_id(
     assert "TASK-EXPLICIT" in out
 
 
+@pytest.mark.parametrize("request_bound", [False, True])
+def test_handoff_uses_current_operation_stage_and_run(tmp_path, capsys, monkeypatch, request_bound):
+    from zf.core.task.schema import TaskExecutionBinding
+    from zf.core.task.store import TaskStore
+    from zf.core.events import EventLog, EventWriter, ZfEvent
+
+    _bootstrap_project(tmp_path, monkeypatch, with_task="TASK-CURRENT")
+    state = tmp_path / ".zf"
+    store = TaskStore(state / "kanban.json")
+    task = store.get("TASK-CURRENT")
+    task.execution_binding = (
+        TaskExecutionBinding(owner="workflow", request_id="request-current", request_revision=2)
+        if request_bound else TaskExecutionBinding(workflow_run_id="workflow-current")
+    )
+    store.compare_and_update_contract(
+        task.id, expected_authority_revision="", contract=task.contract,
+        execution_binding=task.execution_binding,
+        contract_authority_revision="test-r1", contract_authority_sequence=1,
+    )
+    writer = EventWriter(EventLog(state / "events.jsonl"))
+    if request_bound:
+        writer.append(ZfEvent(type="workflow.invoke.accepted", task_id=task.id,
+                             actor="zf-cli", payload={"request_id": "request-current",
+                             "request_revision": 2, "workflow_run_id": "workflow-current"}))
+    for kind, payload in [
+        ("workflow.operation.requested", {"operation_id": "op", "parent_stage_id": "issue-lanes-verify"}),
+        ("workflow.operation.started", {"operation_id": "op", "dispatch_id": "disp-1"}),
+    ]:
+        writer.append(ZfEvent(type=kind, task_id=task.id, actor="zf-cli",
+                             payload={"workflow_run_id": "workflow-current", **payload}))
+    assert run(Namespace(format="state-packet", task_id=task.id)) == 0
+    output = capsys.readouterr().out
+    assert "issue-lanes-verify" in output
+    assert "workflow-current" in output
+    assert "dev.build.done" not in output
+
+
 # ---------------------------------------------------------------------------
 # Fixture helper — minimal zaofu state_dir so `run` doesn't crash
 # ---------------------------------------------------------------------------

@@ -21,29 +21,36 @@ def build_plan_health_router(
     router = APIRouter()
 
     @router.get("/api/projects/{project_id}/plan/pending")
-    def plan_pending(project_id: str) -> dict:
+    def plan_pending(project_id: str, workflow_run_id: str | None = None) -> dict:
         ctx = resolve_ctx(project_id)
         if ctx is None:
             raise HTTPException(status_code=404, detail="unknown project")
-        from pathlib import Path
-
-        from zf.cli.plan_approval import _checklist, _pending, review_advice
+        from zf.cli.plan_approval import _pending, review_advice
         from zf.core.events.factory import event_log_from_project
+        from zf.runtime.plan_preview_artifacts import preview_artifact_path
 
         events = list(
             event_log_from_project(ctx.state_dir, config=ctx.config).read_all()
         )
         items = []
-        for item in _pending(events):
+        for item in _pending(events, workflow_run_id):
             ref = str(item.get("task_map_ref") or "")
             entry = dict(item)
             if ref:
-                path = Path(ref)
-                if not path.is_absolute():
-                    root = getattr(ctx, "project_root", None) or Path.cwd()
-                    path = Path(root) / ref
-                entry["checklist_warnings"] = _checklist(path)
-                entry["advice"] = review_advice(path)
+                try:
+                    path = preview_artifact_path(
+                        ref, state_dir=ctx.state_dir,
+                        project_root=getattr(ctx, "project_root", None),
+                    )
+                    advice = review_advice(path)
+                except (OSError, ValueError) as exc:
+                    advice = {
+                        "advice": "reject", "binding": False,
+                        "note": "Advice is non-binding; the operator makes the decision.",
+                        "checklist_warnings": [f"[X] task_map unavailable: {exc}"],
+                    }
+                entry["checklist_warnings"] = advice["checklist_warnings"]
+                entry["advice"] = advice
             items.append(entry)
         return {"schema_version": "plan-pending.v1", "pending": items}
 

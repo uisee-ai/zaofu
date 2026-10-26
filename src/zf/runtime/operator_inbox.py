@@ -62,6 +62,10 @@ def build_operator_inbox(
     names remains the Web controlled-action path's responsibility.
     """
 
+    events = list(events)
+    events_by_id = {
+        _event_id(event): event for event in events if _event_id(event)
+    }
     items: dict[str, dict[str, Any]] = {}
     attention_aliases: dict[str, str] = {}
     channel_question_aliases: dict[str, str] = {}
@@ -231,11 +235,19 @@ def build_operator_inbox(
 
         if etype == GENERIC_APPROVAL_REQUESTED:
             approval_ref = _approval_ref(payload, event_id)
+            payload = _owner_preview_payload(
+                payload,
+                events_by_id=events_by_id,
+                state_dir=state_dir,
+                project_root=project_root,
+            )
             items[_generic_item_id(approval_ref)] = _generic_approval_item(
                 event=event,
                 payload=payload,
                 approval_ref=approval_ref,
                 status="pending",
+                state_dir=state_dir,
+                project_root=project_root,
             )
             continue
 
@@ -255,6 +267,8 @@ def build_operator_inbox(
                     payload=payload,
                     approval_ref=approval_ref,
                     status="resolved",
+                    state_dir=state_dir,
+                    project_root=project_root,
                 )
                 items[key] = existing
             existing["status"] = _generic_resolution_status(etype, payload)
@@ -624,6 +638,8 @@ def _generic_approval_item(
     payload: dict[str, Any],
     approval_ref: str,
     status: str,
+    state_dir: Path | None = None,
+    project_root: Path | None = None,
 ) -> dict[str, Any]:
     item = {
         "id": _generic_item_id(approval_ref),
@@ -655,7 +671,81 @@ def _generic_approval_item(
         value = str(payload.get(key) or "")
         if value:
             item[key] = value
+    if str(payload.get("owner_route") or "") == "plan_synth_owner_decision":
+        plan_id = str(payload.get("plan_id") or payload.get("source_event_id") or "")
+        plan_ref = str(
+            payload.get("plan_artifact_ref") or payload.get("plan_ref") or ""
+        )
+        task_map_ref = str(
+            payload.get("task_map_ref") or payload.get("candidate_task_map_ref") or ""
+        )
+        item.update({
+            "plan_id": plan_id,
+            "stage_id": str(payload.get("stage_id") or ""),
+            "trace_id": str(payload.get("trace_id") or payload.get("workflow_run_id") or ""),
+            "pdd_id": str(payload.get("pdd_id") or payload.get("feature_id") or ""),
+            "task_count": _int_or_none(payload.get("task_count")),
+            "owner_route": str(payload.get("owner_route") or ""),
+            "refs": {
+                "plan_artifact_ref": plan_ref,
+                "plan_artifact_digest": str(payload.get("plan_artifact_digest") or ""),
+                "task_map_ref": task_map_ref,
+                "source_index_ref": str(payload.get("source_index_ref") or ""),
+                "requirement_spec_ref": str(payload.get("requirement_spec_ref") or ""),
+                "plan_preview_bundle_ref": str(payload.get("plan_preview_bundle_ref") or ""),
+                "plan_preview_bundle_digest": str(payload.get("plan_preview_bundle_digest") or ""),
+            },
+            "content_profile": str(payload.get("plan_content_profile") or "unknown"),
+            "preview": {
+                "available": bool(
+                    state_dir is not None
+                    and project_root is not None
+                    and plan_preview_available(
+                        state_dir,
+                        project_root=project_root,
+                        refs=[plan_ref, task_map_ref],
+                    )
+                ),
+                "api_path": f"/plans/{plan_id}/preview" if plan_id else "",
+                "fullscreen": True,
+                "scroll": True,
+            },
+        })
     return item
+
+
+def _owner_preview_payload(
+    payload: dict[str, Any],
+    *,
+    events_by_id: dict[str, Any],
+    state_dir: Path,
+    project_root: Path | None,
+) -> dict[str, Any]:
+    if str(payload.get("owner_route") or "") != "plan_synth_owner_decision":
+        return payload
+    source_id = str(payload.get("source_event_id") or "").strip()
+    source = events_by_id.get(source_id)
+    source_payload = (
+        source.payload if source is not None and isinstance(source.payload, dict) else {}
+    )
+    if not source_payload:
+        return payload
+    if payload.get("plan_artifact_ref") and payload.get("task_map_ref"):
+        return payload
+    from zf.runtime.plan_synth_owner_checkpoint import plan_preview_refs
+
+    refs = plan_preview_refs(
+        source_payload,
+        state_dir=state_dir,
+        project_root=project_root,
+    )
+    return {
+        **payload,
+        **{
+            key: value for key, value in refs.items()
+            if value and not payload.get(key)
+        },
+    }
 
 
 def _run_delivery_item(

@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
 
 import zf
 
 
-def build_parser() -> argparse.ArgumentParser:
+_HOT_COMMAND_MODULES = {
+    "hook-recv": "hook_recv",
+    "artifact": "artifact",
+    "result": "result",
+    "guard": "guard",
+}
+
+
+def build_parser(*, command: str | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zf",
         description="ZaoFu multi-agent harness CLI",
@@ -21,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.set_defaults(func=None)
 
     subparsers = parser.add_subparsers(dest="command")
+
+    if command in _HOT_COMMAND_MODULES:
+        module = importlib.import_module(f"zf.cli.{_HOT_COMMAND_MODULES[command]}")
+        module.register(subparsers)
+        return parser
 
     from zf.cli import (init, validate, status, events, start, stop, restart,
                         kanban, gate, cost, memory, handoff, presets, attach,
@@ -121,7 +135,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
+    argv = sys.argv[1:] if argv is None else argv
+    parser = build_parser(command=argv[0] if argv else None)
     args = parser.parse_args(argv)
 
     if args.func is None:

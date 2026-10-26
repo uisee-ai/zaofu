@@ -9,7 +9,7 @@ from zf.runtime.channel_synthesis_lock import synthesis_request_in_flight
 from zf.runtime.control_actions import ControlledActionService
 
 
-def seed(tmp_path: Path, *, exhausted_generation: int | None = 3):
+def seed(tmp_path: Path, *, exhausted_generation: int | None = 3, failure_status="timeout"):
     state = tmp_path / 'state'
     writer = EventWriter(EventLog(state / 'events.jsonl'))
     def emit(event_type, **payload):
@@ -23,7 +23,7 @@ def seed(tmp_path: Path, *, exhausted_generation: int | None = 3):
     emit('channel.synthesis.requested', request_id='synth-old', target_member_id='synth', discussion_revision=2)
     emit('channel.message.posted', message_id='msg-old', role='user', text='Generate full PRD', refs={'synthesis_request_id':'synth-old'})
     emit('channel.agent.reply.requested', request_id='reply-old', message_id='msg-old', target_member_id='synth', run_generation=3)
-    emit('channel.agent.reply.failed', request_id='reply-old', run_generation=3, reason='deadline', failure_status='timeout')
+    emit('channel.agent.reply.failed', request_id='reply-old', run_generation=3, reason='deadline', failure_status=failure_status)
     if exhausted_generation is not None:
         emit('channel.agent.reply.remediation.exhausted', request_id='reply-old', run_generation=exhausted_generation, reason='budget exhausted')
     return state, writer, emit
@@ -75,4 +75,24 @@ def test_owner_question_keeps_retry_unavailable(tmp_path):
     state, writer, emit = seed(tmp_path)
     emit('channel.question.opened', question_id='decision', question='Choose scope', kind='owner_decision', status='open')
     channel = project_channel(state, 'ch-recovery')
+    assert not channel['discussion_attention']['main']['can_synthesize']
+
+
+def test_unknown_provider_delivery_rejects_new_synthesis_before_enqueue(tmp_path, monkeypatch):
+    state, writer, emit = seed(tmp_path, failure_status='delivery_unknown')
+    dispatched = []
+    monkeypatch.setattr('zf.runtime.control_actions_channel_msg.dispatch_channel_replies_background',
+                        lambda **kwargs: dispatched.append(kwargs))
+    service = ControlledActionService(state, writer, project_root=tmp_path,
+                                     actor='web', source='web', surface='web')
+    requested = emit('runtime.action.requested', action='channel-synthesis-request')
+    result = service.execute(action='channel-synthesis-request', requested_action='channel-synthesis-request',
+                             requested=requested, payload={'channel_id': 'ch-recovery', 'thread_id': 'main'})
+    assert result['status'] == 'provider_delivery_unknown'
+    assert result['_status_code'] == 409 and not result['ok']
+    assert 'reply-old' in result['reason']
+    assert not dispatched
+    channel = project_channel(state, 'ch-recovery')
+    assert len(channel['synthesis_requests']) == len(channel['reply_requests']) == 1
+    assert channel['reply_requests'][0]['failure_status'] == 'delivery_unknown'
     assert not channel['discussion_attention']['main']['can_synthesize']

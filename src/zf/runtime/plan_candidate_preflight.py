@@ -8,6 +8,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from zf.runtime.plan_execution_review import plan_candidate_writer_policy, review_execution
+from zf.runtime.execution_usage_facts import execution_usage_facts
+
 from zf.runtime.plan_artifact_package import (
     hydrate_plan_artifact_package,
     required_plan_ports,
@@ -99,6 +102,18 @@ def evaluate_plan_candidate_preflight(
             )
 
     if task_map:
+        from zf.runtime.task_scoped_plan_inputs import task_input_paths
+
+        for name, body in port_bodies.items():
+            raw_tasks = task_map.get("tasks")
+            for task in raw_tasks if isinstance(raw_tasks, list) else []:
+                if not isinstance(task, Mapping):
+                    continue
+                try:
+                    task_input_paths(body, task_id=str(task.get("task_id") or task.get("id") or ""))
+                except ValueError as exc:
+                    _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}", str(exc))
+                    break
         prior_task_map = _canonical_prior_task_map(
             trigger=trigger,
             state_dir=state_dir,
@@ -202,6 +217,14 @@ def evaluate_plan_candidate_preflight(
 
     return {
         "schema_version": SCHEMA_VERSION,
+        "execution_review": review_execution(
+            task_map or {}, ports=port_bodies,
+            policy=(writer_policy or {}).get("execution", {}), metadata=metadata or {},
+            identity=trigger,
+            usage_facts=execution_usage_facts(
+                state_dir, workflow_run_id=str(trigger.get("workflow_run_id") or ""),
+            ),
+        ),
         "status": "passed" if not errors else "failed",
         "stage_id": str(manifest.get("stage_id") or ""),
         "fanout_id": str(manifest.get("fanout_id") or ""),
@@ -296,34 +319,6 @@ def _product_acceptance_spec_errors(
         )
         return rows
     return []
-
-
-def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
-    """Snapshot the exact mechanical writer policy used after Plan."""
-
-    workflow = getattr(config, "workflow", None)
-    work_units = getattr(workflow, "work_units", None)
-    split = getattr(work_units, "split_quality", None)
-    return {
-        "candidate_quality_source": str(
-            getattr(workflow, "candidate_quality_source", "auto") or "auto"
-        ),
-        "work_units": {
-            "enabled": bool(getattr(work_units, "enabled", False)),
-            "split_quality": {
-                "mode": str(getattr(split, "mode", "warning") or "warning"),
-                "max_scope_files": int(
-                    getattr(split, "max_scope_files", 0) or 0
-                ),
-                "max_acceptance_criteria": int(
-                    getattr(split, "max_acceptance_criteria", 0) or 0
-                ),
-                "require_validation_surface": bool(
-                    getattr(split, "require_validation_surface", True)
-                ),
-            },
-        },
-    }
 
 
 def _canonical_prior_task_map(

@@ -35,6 +35,8 @@ docs/*
 !docs/releases/**
 backlogs/
 tasks/
+!tests/fixtures/**/tasks/
+!tests/fixtures/**/tasks/**
 prompt/
 prompts/
 ideas/

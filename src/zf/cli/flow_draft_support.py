@@ -141,6 +141,7 @@ def draft_runtime_profile_doc(
         },
         "workflow": {
             "candidate_quality_source": "task_contract_required",
+            "impl_self_check_required": True,
             "rework_routing": (
                 {"static_gate.failed": "fix-lane-0"}
                 if kind == "issue"
@@ -152,7 +153,7 @@ def draft_runtime_profile_doc(
                 "enabled": True,
                 "split_quality": {
                     "mode": "blocking",
-                    "max_acceptance_criteria": 8,
+                    "max_acceptance_criteria": 0,
                 },
             },
         },

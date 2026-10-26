@@ -65,7 +65,7 @@ def render_workflow_state_breadcrumb(
         lines.append(f"dispatch_id: {dispatch_id}")
     lines.append(f"current_stage: {packet.current_stage or '-'}")
     lines.append(
-        f"required_next_event: {packet.next_event or '(none — task ready to ship)'}"
+        f"required_next_event: {display_next_event(packet)}"
     )
     if packet.blocked_by:
         lines.append(f"blocked_by: {list(packet.blocked_by)}")
@@ -82,7 +82,7 @@ def render_workflow_state_breadcrumb(
     lines.append(_SANDBOX_BEGIN)
     lines.append(
         f"  task_id: {packet.task_id} · stage: {packet.current_stage} · "
-        f"next: {packet.next_event or 'ship-ready'}"
+        f"next: {display_next_event(packet)}"
     )
     if packet.contract.behavior:
         lines.append(f"  behavior: {packet.contract.behavior[:200]}")
@@ -94,20 +94,28 @@ def render_workflow_state_breadcrumb(
     return "\n".join(lines)
 
 
+def display_next_event(packet: StatePacket) -> str:
+    if packet.next_event:
+        return packet.next_event
+    if packet.current_stage == "ship":
+        return "(none — await Kernel delivery)"
+    return "(not determined — consult the active operation result contract)"
+
+
 def _forbidden_completion_reason(packet: StatePacket) -> str:
     """Return a non-empty string when the worker MUST NOT yet declare
-    completion. Empty string means it's safe to emit terminal events.
+    completion. An empty string does not authorize terminal events.
 
     Heuristics:
     - If required next event is empty AND current_stage == "ship",
-      completion is allowed (task is done).
+      the legacy gate chain has no remaining event; Kernel owns delivery.
     - Otherwise, list the gates the worker still owes.
     """
-    if not packet.next_event and packet.current_stage in {"ship", ""}:
+    if not packet.next_event and packet.current_stage == "ship":
         return ""
     if packet.next_event:
         return (
             f"required_next_event '{packet.next_event}' not yet emitted; "
             f"do not declare done/ship"
         )
-    return ""
+    return "current result contract is unresolved; do not declare done/ship"

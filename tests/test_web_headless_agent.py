@@ -300,7 +300,10 @@ def test_chat_orchestrator_binds_agent_selected_channel_prd_plan(
                     "effect": {
                         "mode": "propose",
                         "action": "create-task",
-                        "payload": {"title": "Deliver the Channel PRD"},
+                        "payload": {"title": "Deliver the Channel PRD", "workflow_plan": {
+                            "options": [{"route_id": "delivery:prd:standard", "parameters": {}},
+                                        {"mode": "defer"}],
+                        }},
                     },
                 },
                 {
@@ -363,6 +366,10 @@ def test_chat_orchestrator_binds_agent_selected_channel_prd_plan(
         "channel_authority"
     ]["source_ref"] == artifact_ref
 
+
+    nested = response.json()["reply"]["plan_request"]["options"][0]["submit_payload"]["workflow_plan"]
+    assert nested["options"][0]["parameters"]["target_root"] == str(state_dir.parent.resolve())
+    assert "parameters" not in nested["options"][1]
 
 def _fake_codex_patch_approval_script(tmp_path: Path) -> Path:
     script = tmp_path / "fake_codex_patch_approval.py"
@@ -474,7 +481,7 @@ def test_claude_headless_turn_parses_reply_and_persists_thread(
     assert result.reply == "final headless answer"
     assert result.usage == {"input_tokens": 3, "output_tokens": 4}
     assert result.permission_snapshot["backend"] == "claude-headless"
-    assert result.permission_snapshot["permission_profile"] == "read_only"
+    assert result.permission_snapshot["permission_profile"] == "workspace_writer"
     assert result.permission_snapshot["permission_mode"] == "bypassPermissions"
     assert result.permission_drift == {"status": "ok", "items": []}
     sent = json.loads(capture.read_text(encoding="utf-8"))
@@ -1407,7 +1414,7 @@ def test_chat_orchestrator_can_use_claude_headless_backend(
     runtime_snapshots = [event for event in events if event.type == "runtime.snapshot.recorded"]
     assert session_started[-1].payload["snapshot_ref"] == runtime_snapshots[-1].payload["snapshot_ref"]
     snapshots = [event for event in events if event.type == "provider.permission.snapshot.recorded"]
-    assert snapshots[-1].payload["snapshot"]["permission_profile"] == "read_only"
+    assert snapshots[-1].payload["snapshot"]["permission_profile"] == "workspace_writer"
     assert snapshots[-1].payload["runtime_snapshot_ref"] == runtime_snapshots[-1].payload["snapshot_ref"]
     turn_completed = [
         event for event in events

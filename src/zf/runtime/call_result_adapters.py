@@ -620,13 +620,7 @@ def _normalize_plan_synth(
         or "abstain"
     ).lower()
     status = str(source.get("status") or report.get("status") or "completed").lower()
-    failed = status in {"failed", "failure"} or recommendation in {
-        "reject",
-        "rejected",
-        "block",
-        "blocked",
-        "needs_rework",
-    }
+    failed = status in {"failed", "failure"} or recommendation != "approve"
     task_map = source.get("task_map")
     if not isinstance(task_map, Mapping):
         task_map = report.get("task_map")
@@ -675,6 +669,21 @@ def _normalize_plan_synth(
         "plan_artifact_ref": (
             _text(source, "plan_artifact_ref")
             or _text(report, "plan_artifact_ref")
+        ),
+        "plan_content_profile": (
+            _text(source, "plan_content_profile")
+            or _text(report, "plan_content_profile")
+        ),
+        "authority_refs": (
+            source.get("authority_refs")
+            if isinstance(source.get("authority_refs"), list)
+            else report.get("authority_refs")
+            if isinstance(report.get("authority_refs"), list)
+            else []
+        ),
+        "requirement_spec_ref": (
+            _text(source, "requirement_spec_ref")
+            or _text(report, "requirement_spec_ref")
         ),
         "task_map_ref": (
             _text(source, "task_map_ref")
@@ -879,6 +888,20 @@ def _normalize_implementation(
     ):
         if payload.get(key) not in (None, ""):
             result.setdefault(key, payload[key])
+    if not str(result.get("verdict") or "").strip():
+        inferred_self_check = result.get("self_check")
+        if not isinstance(inferred_self_check, Mapping):
+            inferred_self_check = payload.get("impl_self_check")
+        if isinstance(inferred_self_check, Mapping):
+            self_check_verdict = str(inferred_self_check.get("verdict") or "").strip()
+            if self_check_verdict:
+                result["verdict"] = self_check_verdict
+        if not str(result.get("verdict") or "").strip():
+            report = payload.get("report")
+            if isinstance(report, Mapping):
+                report_status = str(report.get("status") or "").strip()
+                if report_status:
+                    result["verdict"] = report_status
     issues = [
         {"field": f"control_result.{field}", "code": "missing_required"}
         for field in ("task_id", "target_commit")

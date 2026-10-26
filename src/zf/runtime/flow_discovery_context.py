@@ -111,6 +111,8 @@ def build_flow_discovery_context(
             "rolling_smoke": rolling_smoke,
         }
     for key in (
+        "requirement_spec_ref",
+        "requirement_spec_digest",
         "task_map_generation",
         "task_map_digest",
         "plan_artifact_package_id",

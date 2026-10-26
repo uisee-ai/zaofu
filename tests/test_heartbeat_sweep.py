@@ -33,7 +33,11 @@ from zf.runtime.orchestrator_types import OrchestratorDecision
 
 
 class _NoopTransport:
-    pass
+    def terminate(self, role_name):
+        pass
+
+    def is_alive(self, role_name):
+        return False
 
 
 # ─── fixtures ────────────────────────────────────────────────────────────

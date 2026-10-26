@@ -24,7 +24,6 @@ from zf.runtime.plan_artifact_package import (
     reduce_plan_artifact_packages,
 )
 from zf.runtime.artifact_package_policy import effective_artifact_package_mode
-from zf.runtime.plan_artifact_ports import canonical_plan_port_name
 from zf.runtime.run_scope import events_for_run
 from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
 from zf.runtime.task_contract_snapshot import (
@@ -116,6 +115,7 @@ class CanonicalHandoffResolver:
                     profile == "workflow-read"
                     and mutable.get("canonical_success_event") == "flow.discovery.child.completed"
                 ),
+                candidate=profile == "candidate-verify",
             )
             if profile in {"implementation", "task-verify", "candidate-verify"} or (
                 profile == "workflow-read"
@@ -717,108 +717,17 @@ class CanonicalHandoffResolver:
         return snapshot
 
     def _current_plan_port_sources(
-        self,
-        *,
-        workflow_run_id: str,
-        task_id: str,
-        currentness: Mapping[str, Any],
-        allow_without_task: bool = False,
+        self, *, workflow_run_id: str, task_id: str,
+        currentness: Mapping[str, Any], allow_without_task: bool = False,
+        candidate: bool = False,
     ) -> list[dict[str, Any]]:
-        task = TaskStore(self.state_dir / "kanban.json").get(task_id) if task_id else None
-        if task is None and not allow_without_task:
-            return []
-        evidence = (
-            task.contract.evidence_contract
-            if task is not None
-            and isinstance(task.contract.evidence_contract, dict)
-            else {}
-        )
-        declared = self._declared_required_ports(
-            evidence.get("required_plan_ports")
-        )
-        package_ref = str(currentness.get("plan_artifact_package_ref") or "")
-        package_digest = str(currentness.get("plan_artifact_package_digest") or "")
-        if not package_ref or not package_digest:
-            if declared:
-                raise ArtifactReadError(
-                    "task contract declares required_plan_ports but no current "
-                    "Plan Artifact Package is bound"
-                )
-            return []
-        try:
-            package = hydrate_plan_artifact_package(
-                self.state_dir,
-                {"ref": package_ref, "sha256": package_digest},
-            )
-        except (PlanArtifactPackageError, SidecarRefError) as exc:
-            raise ArtifactReadError(
-                f"current Plan Artifact Package cannot be hydrated: {exc}"
-            ) from exc
-        expected = {
-            "workflow_run_id": workflow_run_id,
-            "task_map_generation": str(
-                currentness.get("task_map_generation") or ""
-            ),
-        }
-        for field, value in expected.items():
-            if value and str(package.get(field) or "") != value:
-                raise ArtifactReadError(
-                    f"current Plan Artifact Package {field} mismatch: "
-                    f"expected {value!r}, got {package.get(field)!r}"
-                )
-        package_required = self._declared_required_ports(
-            package.get("required_ports")
-        )
-        missing_declarations = sorted(set(declared) - set(package_required))
-        if missing_declarations:
-            raise ArtifactReadError(
-                "current Plan Artifact Package does not bind task required ports: "
-                + ", ".join(missing_declarations)
-            )
-        required = list(dict.fromkeys([*package_required, *declared]))
-        ports = {
-            str(item.get("logical_name") or ""): item
-            for group in ("produced", "inherited")
-            for item in package.get(group, [])
-            if isinstance(item, Mapping)
-        }
-        missing = [name for name in required if name not in ports]
-        if missing:
-            raise ArtifactReadError(
-                "current Plan Artifact Package is missing required ports: "
-                + ", ".join(missing)
-            )
-        return [
-            {
-                "source_id": f"plan-port-{name}",
-                "artifact_id": name,
-                "kind": str(ports[name].get("artifact_kind") or name),
-                "ref": str(ports[name].get("ref") or ""),
-                "sha256": str(ports[name].get("sha256") or ""),
-                "allowed_paths": ["$"],
-            }
-            for name in required
-        ]
+        from zf.runtime.task_scoped_plan_inputs import current_plan_port_sources
 
-    @staticmethod
-    def _declared_required_ports(value: Any) -> list[str]:
-        if value in (None, ""):
-            return []
-        if not isinstance(value, list):
-            raise ArtifactReadError("required_plan_ports must be a list")
-        ports: list[str] = []
-        for item in value:
-            if not isinstance(item, str) or not item.strip():
-                raise ArtifactReadError(
-                    "required_plan_ports entries must be non-empty strings"
-                )
-            name = canonical_plan_port_name(item)
-            if name in ports:
-                raise ArtifactReadError(
-                    f"duplicate required_plan_ports entry: {name}"
-                )
-            ports.append(name)
-        return ports
+        return current_plan_port_sources(
+            state_dir=self.state_dir, workflow_run_id=workflow_run_id,
+            task_id=task_id, currentness=currentness,
+            allow_without_task=allow_without_task, candidate=candidate,
+        )
 
     def _validate_task_snapshots(
         self,

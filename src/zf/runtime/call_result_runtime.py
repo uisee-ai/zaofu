@@ -314,6 +314,17 @@ def prepare_call_operation(
         "attempt_source_manifest": source_descriptor,
     })
     explicit_required_reads = payload.get("required_reads")
+    if payload.get("workflow_template") == "bounded-agent-v1":
+        # The bounded executor must consume its admitted request, just as its
+        # verifier consumes the admitted report. Pin this before registration.
+        explicit_required_reads = [
+            *(explicit_required_reads if isinstance(explicit_required_reads, list) else []),
+            *({"source_id": source["source_id"], "artifact_id": source["artifact_id"],
+               "artifact_sha256": source["sha256"], "json_path": path,
+               "min_returned_bytes": 1, "allow_truncated": False}
+              for source in source_manifest.get("sources", [])
+              for path in source.get("allowed_paths", ["$"])),
+        ]
     required_reads = canonical_required_reads(
         source_manifest,
         output_profile_id=output_profile_id,
@@ -776,7 +787,9 @@ def admit_runtime_call_result(
         if require_semantic_submit
         else mode or result_protocol_mode(runtime.config, payload)
     )
-    if require_semantic_submit and semantic_submit:
+    # Verified semantic submissions are already admitted even when that path
+    # is optional. Re-adapting their projection can change the verdict on replay.
+    if semantic_submit:
         return CallResultAdmissionOutcome(
             status="admitted",
             mode=effective_mode,

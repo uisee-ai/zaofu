@@ -676,6 +676,51 @@ def test_plan_synth_validate_uses_typed_profile_without_candidate_context(
     assert submitted.canonical_event_type == "fanout.synth.completed"
 
 
+@pytest.mark.parametrize("field", ["status", "recommendation", "summary"])
+@pytest.mark.parametrize("empty", [None, "", "   "])
+def test_plan_synth_cannot_submit_unwritten_verdict(tmp_path, field, empty):
+    runtime, prepared, service, token = _running_plan_synth_operation(tmp_path)
+    semantic = {
+        "status": "completed", "recommendation": "approve", "summary": "Reviewed",
+        "report": {"status": "passed", "recommendation": "approve", "summary": "Reviewed"},
+    }
+    semantic["report"][field] = empty
+    before = [event.id for event in runtime.event_log.read_all()]
+    validation = service.validate_plan_candidate(
+        operation_id=prepared.operation_id, semantic_result=semantic,
+        role_instance="plan-critic", credential=token,
+    )
+    assert validation["status"] == "failed"
+    assert any(item["field"] == f"report.{field}" for item in validation["errors"])
+    with pytest.raises(ResultSubmitError) as error:
+        service.submit(
+            operation_id=prepared.operation_id, semantic_result=semantic,
+            role_instance="plan-critic", credential=token,
+        )
+    assert error.value.code == "plan_synth_verdict_required"
+    assert [event.id for event in runtime.event_log.read_all()] == before
+    semantic["report"][field] = {"status": "passed", "recommendation": "approve", "summary": "Reviewed"}[field]
+    submitted = service.submit(
+        operation_id=prepared.operation_id, semantic_result=semantic,
+        role_instance="plan-critic", credential=token,
+    )
+    assert submitted.canonical_event_type == "fanout.synth.completed"
+
+
+def test_plan_synth_abstention_never_becomes_passed(tmp_path):
+    runtime, prepared, service, token = _running_plan_synth_operation(tmp_path)
+    submitted = service.submit(
+        operation_id=prepared.operation_id,
+        semantic_result={
+            "status": "completed", "recommendation": "abstain", "summary": "Cannot judge",
+            "report": {"status": "failed", "recommendation": "abstain", "summary": "Cannot judge"},
+        }, role_instance="plan-critic", credential=token,
+    )
+    canonical = next(e for e in runtime.event_log.read_all() if e.id == submitted.canonical_event_id)
+    hydrated = hydrate_profiled_control_result_event(runtime.state_dir, canonical)
+    assert hydrated.payload["plan_synthesis_result"]["verdict"] == "rejected"
+
+
 def test_result_validate_cli_is_registered() -> None:
     args = build_parser().parse_args([
         "result",

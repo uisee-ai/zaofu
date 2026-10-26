@@ -7836,6 +7836,9 @@ def test_cancelled_run_closes_writer_resources_before_restart_recovery(
         affinity_stage_slots=True,
         affinity_lane_count=1,
     )
+    # This is the successful stop path; a live process after terminate must
+    # instead remain blocked (covered by test_cancelled_run_workers).
+    _transport.is_alive = lambda role: role not in _transport.terminated
     task_map_path = state_dir / "artifacts" / "F-11111111" / "task_map.json"
     task_map = json.loads(task_map_path.read_text(encoding="utf-8"))
     task_map["tasks"] = task_map["tasks"][:1]
@@ -9190,3 +9193,36 @@ def test_plan_minting_suppressed_for_pending_same_fingerprint(tmp_path):
     EventWriter(log).append(approved)
     orch.run_once(events=[approved])
     assert any(e.type == "fanout.started" for e in log.read_all())
+
+
+def test_plan_minting_allows_new_artifact_generation_with_same_task_ids(tmp_path):
+    """A richer replan must not be hidden by an older pending task-id set."""
+    from zf.core.events.writer import EventWriter
+
+    _, log, orch = _approval_orch(tmp_path, enabled=True)
+    first = _approval_start(orch, log)
+    first_request = [
+        e for e in log.read_all() if e.type == "plan.approval.requested"
+    ][0]
+
+    second = ZfEvent(
+        type="task_map.ready",
+        actor="zf-cli",
+        correlation_id="trace-1",
+        payload={
+            "pdd_id": "F-11111111",
+            "plan_artifact_package_digest": "package-generation-2",
+        },
+    )
+    EventWriter(log).append(second)
+    orch.run_once(events=[second])
+    requests = [
+        e for e in log.read_all() if e.type == "plan.approval.requested"
+    ]
+    assert len(requests) == 2
+    assert requests[1].payload["plan_id"] != first_request.payload["plan_id"]
+    assert not [
+        e for e in log.read_all()
+        if e.type == "plan.minting.suppressed"
+        and e.payload.get("plan_id") == second.id
+    ]

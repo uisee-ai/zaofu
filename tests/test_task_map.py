@@ -669,6 +669,18 @@ def test_docker_playwright_runtime_flags_are_not_task_paths() -> None:
     assert command_path_refs(command) == ["verification/browser-acceptance.mjs"]
 
 
+@pytest.mark.parametrize("prefix", [".", "./", "././"])
+def test_root_test_convention_accepts_project_relative_test_files(prefix):
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "shared_conventions": {"test_path_prefix": prefix},
+        "tasks": [{"task_id": "regression", "title": "Fix counter",
+                   "allowed_paths": ["counter.py", "test_counter.py"],
+                   "verification": "python -m unittest test_counter.py"}],
+    })
+    assert result.passed, result.errors
+
+
 def test_task_map_validation_accepts_package_root_relative_node_commands() -> None:
     result = validate_task_map_payload({
         "schema_version": "task-map.v1",

@@ -237,3 +237,58 @@ def test_prd_export_exposes_task_handoff_fields():
     assert "### 验收目录" in body
     assert "AC-01" in body
     assert "支付" in body
+
+
+@pytest.mark.parametrize("fault", ["", "missing", "tampered", "thread", "scope", "request"])
+def test_file_source_evaluation_uses_bound_snapshot_without_discussion(tmp_path, monkeypatch, fault):
+    from zf.runtime.sidecar_refs import write_sidecar_text
+
+    log = EventLog(tmp_path / "events.jsonl")
+    writer = EventWriter(log)
+    writer.emit("channel.created", actor="web", payload={"channel_id": "ch-file", "owner_actor_ref": "web"})
+    source = write_sidecar_text(
+        tmp_path, "channels/prd-sources/source.md", "ORIGINAL complete requirement; END",
+        kind="channel_prd_source", schema_version="channel.prd-source.v1",
+        content_type="text/markdown", created_by="web", source_event_id="selection",
+        access_scope={"channel_id": "ch-file", "thread_id": "other" if fault == "scope" else "main"})
+    writer.emit("channel.synthesis.requested", actor="web", correlation_id="ch-file", payload={
+        "channel_id": "ch-file", "thread_id": "other" if fault == "thread" else "main",
+        "request_id": "wrong" if fault == "request" else "synthesis", "prd_source_file": source})
+    readiness = persist_channel_prd_readiness(tmp_path, channel_id="ch-file", thread_id="main",
+        revision=1, body={"verdict": "ready"}, created_by="author", source_event_id="synthesis")
+    target = persist_channel_prd(tmp_path, channel_id="ch-file", thread_id="main", revision=1,
+        previous_ref="", previous_digest="", body={"markdown": "AUTHOR TARGET ONLY", "synthesis": {}},
+        readiness_descriptor=readiness, created_by="author", source_event_id="synthesis")
+    writer.emit("channel.synthesis.proposed", actor="author", correlation_id="ch-file", payload={
+        "channel_id": "ch-file", "thread_id": "main", "request_id": "synthesis", "prd_revision": 1,
+        "artifact_ref": target["ref"], "artifact_digest": target["sha256"]})
+    if fault == "missing":
+        (tmp_path / source["ref"]).unlink()
+    elif fault == "tampered":
+        (tmp_path / source["ref"]).write_text("altered")
+    captured = []
+
+    class InlineThread:
+        def __init__(self, *, target, **kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr("zf.runtime.channel_prd_evaluation_reactor.threading.Thread", InlineThread)
+    monkeypatch.setattr("zf.runtime.channel_prd_evaluation_reactor.evaluate_output",
+                        lambda **kw: captured.append(kw["item"]) or {"verdict": "PASS"})
+    request = writer.emit("channel.prd_evaluation.requested", correlation_id="ch-file", payload={
+        "request_id": str(uuid.uuid4()), "channel_id": "ch-file", "thread_id": "main",
+        "prd_revision": 1, "artifact_ref": target["ref"], "artifact_digest": target["sha256"]})
+    host = SimpleNamespace(state_dir=tmp_path, event_log=log, event_writer=writer)
+    EventReactorMixin._on_channel_prd_evaluation_requested(host, request)
+    if fault:
+        assert not captured
+        assert any(e.type == "output.evaluation.failed" for e in log.read_all())
+    else:
+        assert len(captured) == 1
+        assert "ORIGINAL complete requirement; END" in captured[0].source_text
+        assert source["sha256"] in captured[0].source_text
+        assert "AUTHOR TARGET ONLY" not in captured[0].source_text
+        assert "AUTHOR TARGET ONLY" in captured[0].target_text

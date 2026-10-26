@@ -751,6 +751,7 @@ def test_codex_refactor_planner_allows_workdir_artifact_and_result_scratch(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     role = "refactor-plan-synth"
@@ -839,11 +840,61 @@ def test_codex_refactor_planner_allows_workdir_artifact_and_result_scratch(
         "uuid-refactor-plan-result",
         operation="Update",
     ) == 0
+
+    # A plan producer may write workdir-relative artifacts and then update the
+    # exact signed result scratch in one provider shell turn. The legacy root
+    # heuristic must allow that compound operation while the scope guard still
+    # protects all provider-native path writes.
+    compound = (
+        "python3 - <<'PY'\n"
+        "from pathlib import Path\n"
+        "Path('artifacts/plan/task_map.json').write_text('{}')\n"
+        f"Path('{scratch}').write_text('{{}}')\n"
+        "PY"
+    )
+    assert _invoke(
+        state_dir,
+        event="codex.hook.pre_tool_use",
+        backend="codex",
+        payload={
+            "session_id": "uuid-refactor-plan-compound",
+            "transcript_path": str(transcript),
+            "cwd": str(workdir),
+            "tool_name": "Bash",
+            "tool_input": {"command": compound},
+        },
+        monkeypatch=monkeypatch,
+    ) == 0
     assert not [
         event
         for event in event_log.read_all()
         if event.type == "worker.scope_write.rejected"
     ]
+
+    # An authorized mention must not hide another root reference or let the
+    # path extractor authorize only a prefix of a different target.
+    for index, expression in enumerate([
+        f"Path('{tmp_path}').joinpath('outside.txt')",
+        f"Path(f'{scratch}{{suffix}}')",
+        f"Path('{scratch}其他')",
+    ]):
+        ambiguous = (
+            compound.removesuffix("PY")
+            + f"{expression}.write_text('bad')\nPY"
+        )
+        assert _invoke(
+            state_dir,
+            event="codex.hook.pre_tool_use",
+            backend="codex",
+            payload={
+                "session_id": f"uuid-refactor-plan-ambiguous-root-{index}",
+                "transcript_path": str(transcript),
+                "cwd": str(workdir),
+                "tool_name": "Bash",
+                "tool_input": {"command": ambiguous},
+            },
+            monkeypatch=monkeypatch,
+        ) == 2
 
 
 def _seed_claude_fanout_workdir(state_dir: Path) -> Path:
@@ -966,6 +1017,62 @@ def test_claude_workdir_write_is_allowed(tmp_path: Path, monkeypatch) -> None:
     )
 
     assert code == 0
+
+
+def test_codex_task_stage_workdir_write_is_allowed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    task_workdir = (
+        state_dir / "workdirs" / "tasks" / "run" / "T10-R4-abcd" / "g1"
+        / "project"
+    )
+    task_workdir.mkdir(parents=True)
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="T10-R4",
+        title="integration",
+        status="in_progress",
+        assigned_to="dev-1",
+        contract=TaskContract(scope=["app/tests/e2e/test_t10.py"]),
+    ))
+    EventLog(state_dir / "events.jsonl").append(ZfEvent(
+        type="task.pipeline.stage.dispatched",
+        actor="orchestrator",
+        task_id="T10-R4",
+        payload={
+            "role_instance": "dev-1",
+            "task_pipeline_stage": "impl",
+            "workdir": str(task_workdir),
+        },
+    ))
+
+    code = _invoke(
+        state_dir,
+        event="codex.hook.pre_tool_use",
+        backend="codex",
+        payload={
+            "session_id": "uuid-task-stage-workdir",
+            "cwd": str(task_workdir),
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "command": (
+                    "*** Begin Patch\n"
+                    "*** Add File: "
+                    + str(task_workdir / "app/tests/e2e/test_t10.py")
+                    + "\n+"
+                    "+def test_smoke(): pass\n"
+                    "*** End Patch"
+                ),
+            },
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code != 2
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    assert not [e for e in events if e.type == "worker.scope_write.rejected"]
 
 
 def test_claude_workdir_guard_allows_only_current_result_scratch(

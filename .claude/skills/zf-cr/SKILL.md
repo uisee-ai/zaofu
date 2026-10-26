@@ -1,445 +1,95 @@
 ---
 name: zf-cr
-description: "Read-only architecture review of the ZaoFu repository before development. Use when Codex / Claude needs to build accurate development context for harness engineering, deterministic kernel/runtime, multi-agent orchestration, state/event invariants, Web/API boundaries, integrations, tests, docs, or refactor planning."
+description: "Read-only ZaoFu code review: scoped files or diffs, architecture and state/event boundaries, or full review for refactor planning. Use for ZaoFu development-readiness and regression reviews; not for implementation or unrelated writing."
 ---
 
 # ZaoFu Codebase Review
 
-## Objective
+以当前代码、直接调用方和测试建立可复核的审查结论。默认中文。
+技能名称和既有 runtime/profile/channel 引用保持 `zf-cr`。
 
-Perform a read-only, architecture-level codebase review that builds accurate
-development context before implementation. Focus on ZaoFu's harness
-engineering invariants: deterministic kernel, runtime state, event log,
-orchestration boundaries, integrations, Web/API projections, tests, and docs.
+## 范围与只读边界
 
-This skill is the **baseline checklist** for ZaoFu review. It does not claim
-"everything is covered" by itself. A complete review must produce evidence:
-coverage matrix, file/line references, explicit uncovered areas, and a
-follow-up prompt or supplement plan for gaps.
+先读项目 `AGENTS.md`，确认用户目标、当前 checkout 和审查范围。
+审查不修改或创建文件、不运行会写缓存/lockfile 的测试、不发 ZaoFu 事件、不改 runtime state。
+可用只读查询或确认无外部副作用的纯内存复现验证假设，并禁用字节码/缓存写入。
+需要落盘、联网或调用业务副作用的验证，先给方法；有相应授权和隔离条件才执行。
+`git status --short`、定向 `rg` 和文件读取足够作为起点。
+用户只请求审查时，不自行实施、归档任务、提交或启动服务。
+仅在用户明确要求时拆分并行审查；普通审查本地完成。
 
-Default to Chinese for repository-facing prose unless the user asks otherwise.
+## 选择模式
 
-## Modes
+| 用户目标 | 模式 | 读取与停止条件 |
+|---|---|---|
+| 指定文件、diff、函数或回归问题 | scoped | 目标 -> 直接调用方 -> 跨越的共享合同和相关测试；证据链闭合即停止扩展 |
+| 一般 codebase review / 开发前建立上下文 | architecture | 读 [架构检查单](references/architecture.md)，建立系统地图后优先检查高风险边界；报告实际覆盖 |
+| 明确 full review、全面扫描或 refactor planning | full | 读 [架构检查单](references/architecture.md) 和 [全面审查流程](references/full-review.md)，完成覆盖审计与缺口补查 |
 
-- If the user asks to review the repository, execute the review workflow
-  below.
-- If the user asks for refactor planning, run the adaptive full-review loop:
-  bootstrap -> dynamic Review Prompt V2 -> deep review -> coverage audit ->
-  synthesis.
-- If the user asks for a reusable command, generate a Codex command using
-  `codex exec --ephemeral --ignore-user-config -s read-only -a never`.
-- If the user explicitly asks for parallel or multi-agent review, split
-  the review into independent read-only areas. Otherwise perform the
-  review locally.
+scoped 不默认读取全面流程、全历史或无关子系统。若目标依赖状态/事件/编排边界，
+再按需读取架构检查单相关章节；扩展时说明发现了什么依赖。
+没有明确目标的一般审查默认 architecture，不擅自声称 full。
 
-## Safety Rules
+## 文档与代码锚点
 
-- Read `AGENTS.md` first and follow its repository rules.
-- Do not modify files, create files, emit ZaoFu events, or update runtime
-  state during review.
-- Do not run commands that mutate the repo, configured state dirs,
-  `.zf/`, caches, lockfiles, progress files, kanban files, or session
-  files.
-- Treat `.zf/` and configured state dirs as runtime state, not source
-  code.
-- Do not hard-code `.zf`; verify behavior against `zf.yaml` and
-  `project.state_dir`.
-- Prefer `rg`, `rg --files`, `git status --short`, `git diff --stat`, and
-  targeted file reads for inspection.
+- `zf.yaml` 是唯一控制面，实际状态位置来自 `project.state_dir`。
+- 完整仓库优先使用 `docs/design/00-index.md` 和
+  `docs/design/142-layered-runtime-authority-and-orchestration-modes.md`。
+  先检查存在性；公开导出缺失时用 `docs/manual/00-index.md`、
+  `docs/manual/architecture.md` 及当前代码/测试继续，明确设计上下文缺口。
+  doc 44 is only a historical scoring snapshot，不覆盖当前权威。
+- `.claude/rules/` 按目标路径读取已有规则；文档不存在不等于运行行为有 bug。
+- 文档只能解释意图，必须沿实际 CLI / runtime / Web caller 核实接线。
+  文件迁移用符号搜索定位新 owner，不依赖历史行号或文件体积。
+- 历史仅用于解释目标变化：先 `git log -20 -- <target>`。
+  不无条件扫描全历史；full 模式的扩展条件见全面审查流程。
 
-## Review Workflow
+## 所有模式的核心判据
 
-### Step 0 — Bootstrap Strategy
+- Kernel 决定确定性状态迁移；agent/skill/prompt 提供语义判断和意图。
+  配置的 orchestrator role agent 不是 Python `Orchestrator` 的替代状态机。
+- `EventWriter` / `EventLog` 管 occurrence/order/causation/verdict/ref；
+  `TaskStore` / `FeatureStore` / `SessionStore` / `RoleSessionRegistry` 管 canonical current state。
+  大语义体与证据由 sanctioned atomic artifact/sidecar writer 持久化并绑定 ref/digest。
+- 单一 task `contract`；不要引入第二 task schema 或绕开确定性完成 gate。
+- integrations / Web projection 不能直接写 canonical business state；变更必须经过
+  token-gated controlled action。检查实际 caller、权限、项目归属和失败路径。
+- `skills/` 是源码；provider 目录是分发包。活跃 workdir/worktree 可能有未提交候选，
+  不能当可删投影。progress/cost/diagnostics 等按实际 owner 区分，不能统称真相。
 
-Use this skill first to build the review map, not as the final review answer.
-The first pass should output:
+## 证据与输出
 
-- repository map: important directories, runtime state location, major
-  subsystems
-- invariant map: state ownership, event ownership, task contract, Web/API
-  mutation boundary, skill/workdir boundary
-- hot spots: recent git changes, oversized modules, TODO/defer debt, failing
-  or risky areas
-- initial coverage matrix: subsystem -> files inspected -> evidence refs ->
-  uncovered refs
-- dynamic Review Prompt V2: a precise prompt for the second-pass deep review
+每个 finding 给出严重度、可定位的 `file:line`、触发条件、实际影响和验证方法。
+沿输入 -> 分支 -> 调用方 -> 可观察结果论证；区分 confirmed / inferred / uncovered / known defer。
+环境敏感的结论要核对实际前提，例如路径规范化、符号链接和依赖版本；
+同时检查测试期望是否符合该前提。仅静态阅读不能代替这些可只读核验的证据。
+仅列新问题；已知大文件不是新 bug，未检查的模块不能标已通过。
 
-If the user asks for "full review", "refactor scan", or "plan generation",
-do not stop after bootstrap unless explicitly asked.
+scoped 输出 findings + 调用链/测试依据 + 未覆盖项即可，不要求系统总览或固定数量建议。
+architecture 增加简短系统地图和实际 coverage；full 按全面流程输出完整矩阵。
+没有确证问题时直接说明，并限定于已检查范围；不能以“测试存在”代替测试已执行。
 
-### Step 1 — Anchor Reading
+## 外部真跑证据（可选）
 
-Read these **4 anchor sources before anything else**. They save most of the
-time the reviewer would otherwise spend rediscovering structure:
-
-1. `AGENTS.md` — repository rules at top level
-2. `docs/design/00-index.md` — canonical doc map, lists design docs with
-   one-line summaries + status
-3. `docs/design/142-layered-runtime-authority-and-orchestration-modes.md` —
-   canonical authority, storage, orchestration-mode, and residual-gap boundary;
-   doc 44 is only a historical scoring snapshot
-4. `.claude/rules/code.md`, `.claude/rules/backlogs.md`,
-   `.claude/rules/docs.md` — path-scoped rules and backlog/doc discipline
-
-Then absorb the layout:
-
-- `zf.yaml` (the only control plane)
-- `src/zf/cli/`, `src/zf/core/`, `src/zf/runtime/`,
-  `src/zf/integrations/`, `src/zf/autoresearch/`, `src/zf/web/`
-- `tests/`, `web/`
-- `docs/design/` (especially recent docs)
-- `skills/` (ZaoFu's deliverable runtime skills)
-- `.codex/skills/` and `.claude/skills/` (provider-local skills)
-
-### Step 1.5 — Full Git History Map
-
-Reviewing without the full project history misses architectural drift. Build a
-full-history map first, then use recent commits only as hotspot signals.
-Always run:
+仅当用户提供或明确指定 `ZF_VALIDATION_PROJECT` 时读取该项目。
+先用 [路径解析器](scripts/validation_paths.py) 从显式项目的 `zf.yaml` 解析路径：
 
 ```bash
-git log --all --oneline --decorate
-git log --reverse --oneline | head -40
-git log --all --name-only --pretty=format: | sort | uniq -c | sort -nr | head -80
-git shortlog -sn --all
-git log --all --since="2 weeks ago" --oneline | head -50
-git diff --stat HEAD~30 2>/dev/null | tail -10
+python <skill-directory>/scripts/validation_paths.py "$ZF_VALIDATION_PROJECT"
 ```
 
-Use the complete `git log --all` to identify eras, feature families, subsystem
-ownership, reversions, and long-running refactor debt. Use the recent scan to
-rank likely regression hotspots. Sprint families to recognise: `feat: TR-* /
-EVAL-* / PWF-* / ZF-LH-* / ZF-PWF-* / omega-* / alpha-* / beta-*`.
+需要当前 ZaoFu Python 环境。解析器只输出路径，不读事件内容、不建目录；
+缺少配置或环境时记录 blocker，不猜测 `.zf` 或回退 `/path/to/project`。
+然后按需要只读有限事件尾部和相关 task，记录证据范围并避免暴露敏感内容。
+不要从当前会话继承的 `ZF_STATE_DIR` 推断另一个验证项目的位置。
 
-The review output should include a short Git History Map:
+## 分发与验证
 
-- major eras and feature families
-- high-churn files/directories
-- recent drift hotspots
-- stale docs/backlogs that conflict with current code
-- commits or commit families that deserve targeted follow-up
+修改 canonical `skills/zf-cr/` 后同步整个包到 `.codex/skills/zf-cr/` 和
+`.claude/skills/zf-cr/`，包括 references/scripts/agents。
+`tests/test_review_skill_package.py` 验证包一致性、引用闭包及真实 materialization/briefing。
+`zf-tool-skill-parity` 审查的是目标 Agent 的工具/技能兼容，不是本仓库的同步器。
 
-### Step 1.6 — Global Architecture Inventory
-
-Before deep review, build a whole-system inventory so the second-pass prompt is
-not biased toward only the files already known to the reviewer:
-
-- entrypoints: CLI commands, Web/API routes, runtime loops, background
-  sweepers, scripts, examples
-- data/control flow: config -> kernel -> events/stores -> runtime projections
-  -> Web/API/operator surfaces
-- external contracts: provider CLIs, tmux, git worktrees, browser E2E,
-  Feishu/OpenClaw integrations, file artifacts
-- state/artifact inventory: source files vs event ledger vs canonical stores vs
-  required artifacts/sidecars vs rebuildable projections and exported reports
-- security boundaries: tokens, permission modes, path guards, read-only vs
-  mutation routes, secret redaction
-- compatibility surfaces: examples, runbooks, CLI flags, YAML schema, skill
-  source resolution, migration behavior
-- observability: events, traces, diagnostics, costs, token/context metrics,
-  stuck-worker and recovery signals
-- performance/scale risks: oversized handlers, polling, log scans, fanout
-  concurrency, Web payload size, context growth
-
-### Step 2 — Control-Plane Invariants
-
-- Confirm `zf.yaml` is the only control-plane config.
-- Search for hard-coded `.zf`, direct state path assumptions, duplicate task
-  contracts (`sprint_contract` vs `contract`), and schema drift.
-- Verify `project.state_dir` is respected by CLI, runtime, Web/API,
-  simulations, examples, and tests.
-- Check YAML schema/backward compatibility: old examples should fail clearly or
-  migrate explicitly, not silently activate stale behavior.
-
-### Step 3 — State Ownership
-
-- Verify layered authority follows doc 142: event occurrence/causation/verdict
-  refs through `EventWriter` / `EventLog`; current state through `TaskStore`,
-  `FeatureStore`, `SessionStore`, and `RoleSessionRegistry`; complete semantic
-  bodies/evidence through sanctioned artifact/sidecar writers.
-- Flag direct writes to `events.jsonl`, `kanban.json`, `session.yaml`,
-  `feature_list.json`, or `role_sessions.yaml` outside allowed helpers.
-- Treat `skills/` as source and provider skill trees as synced copies. Do not
-  classify active workdirs/worktrees as disposable while they may contain
-  uncommitted candidates. Classify lockfiles, progress, cost, diagnostics,
-  traces, and dashboard state individually as projections unless code proves a
-  narrower authority.
-- Trace event type -> payload schema -> projector/store update -> Web/API
-  projection for the critical workflows under review.
-
-### Step 4 — Runtime / Orchestration Boundaries
-
-- Separate deterministic kernel behavior from agent-driven behavior.
-- Review orchestrator, worker protocol, Star fanout, child/synth payloads,
-  inline override, heartbeat, recovery, stuck-worker fallback, rework routing,
-  and task completion gates.
-- Flag self-declared completion paths without supporting deterministic gate
-  evidence.
-- Check the 4-level rework cap (evidence_reissue / respawn / dispatch_retry /
-  circuit_breaker) actually bounds long-running failures.
-- Verify the contract surfaces that landed after the rework cap (基线检查单,
-  漏掉即当新发现/漏真热点):
-  - **Tier-2 诊断路由**:`diagnosis.requested` / `diagnosis.completed`
-    (`src/zf/core/events/known_types.py` `KNOWN_EVENT_TYPES`;铸造/消费在
-    `src/zf/runtime/diagnosis.py` + `orchestrator.py` `_run_diagnosis_sweep`,propose-only
-    路由,`diagnosis.completed` 判 needs_owner 才升级 owner)。
-  - **plan 指纹判重**:`plan.minting.suppressed`
-    (`src/zf/runtime/orchestrator_fanout.py` `_plan_approval_satisfied`,FIX-12;语义指纹重复则
-    抑制铸造,防 judge cap 冻结期重复铸 plan)。
-  - **判审收敛 delta 门 + pin-commit**:`fanout.retrigger.suppressed`
-    (`orchestrator_fanout.py` `_delta_gate_allows`,FIX-9/15)配合
-    `fanout.child.dispatched` payload 的 `target_commit`(pin 审计对象,
-    历史审计取 dispatch 时锁定的 commit,而非漂移的当前 HEAD)。
-  - **verify report schema `non_empty` 档位**:required 只保证键在,空转合约
-    需 `non_empty`(`src/zf/core/verification/event_schema.py` `EventSchemaRule.non_empty`,FIX-14;
-    典型字段 `requirement_coverage_matrix` / `gap_findings` 必须非空)。
-  - **candidate 增量幂等**:`candidates.py` 的
-    `git rev-list --cherry-pick` 按 patch-id 排除 base 侧已含等价补丁
-    (`src/zf/runtime/candidates.py` `CandidateRebuilder._task_commits`,FIX-10)。
-- For Star/refactor-planning workflows, verify reader/writer/synth routes,
-  artifact contracts, `target_ref` behavior, and final plan materialization
-  boundary.
-- Check concurrency semantics: fanout/fanin ordering, idempotency, retry
-  dedupe, stale worker cleanup, and whether independent tasks can be traced
-  under one parent without false dependencies.
-
-### Step 5 — Integrations + Web/API
-
-- Verify integrations do not write canonical business state directly or couple to
-  orchestrator internals.
-- Verify Web/API projections stay read-oriented unless a deterministic,
-  token-gated kernel action path exists.
-- Check workspace/project switching, Kanban agent, channel/group chat,
-  headless provider sessions, token/context telemetry, and runtime metrics for
-  project-state leakage.
-- Check UX-backed runtime claims: if the UI shows streaming, progress, token
-  usage, role context, or completion status, verify the authoritative backend
-  field/ref, its provenance, and failure state.
-
-### Step 6 — Tests / Docs + Backlog Hygiene
-
-Before judging gaps, run the backlog audit dry-run if available
-(`/audit-backlogs` when the local slash command exists, otherwise the manual
-recipe in `.claude/rules/backlogs.md`). Its TRUE-DEFER list is the inventory
-of known not-done work with explicit trigger conditions. Do not re-discover
-what audit already catalogued.
-
-Then:
-
-- Identify coverage gaps for config validation, runtime state transitions,
-  event append/query behavior, orchestration, verification, recovery, Web/API,
-  Star fanout, skills, workspace/project, and regressions.
-- Check whether architecture, runtime, config schema, Web/API, security, or
-  external control-plane changes are reflected in relevant docs.
-- Check doc 00-index hygiene: new design docs registered? orphan docs?
-- Check task/backlog files follow status, acceptance, and done/defer rules.
-- Cross-check examples and runbooks against current validation/runtime code;
-  stale examples are review findings when they can mislead real runs.
-
-### Step 7 — Module Size Baseline
-
-Known oversized files are explicit defer debt, not surprise findings:
-
-| File | Last known LOC | Status |
-|---|---:|---|
-| `src/zf/web/server.py` | ~9186 | explicit defer |
-| `src/zf/runtime/orchestrator_fanout.py` | ~7687 | 第二大文件、近期新合约主要落点(plan 判重 / 判审收敛 / pin-commit) |
-| `src/zf/runtime/orchestrator_dispatch.py` | ~5019 | already split, residual cohesion |
-| `src/zf/runtime/orchestrator.py` | ~4576 | already split, residual cohesion |
-
-`orchestrator_fanout.py` 已是第二大文件,且是 FIX-12/14/9/15 等合约的主要落点。
-新合约不断往它里加是一条真热点,不要因为它是已知 defer 就漏看。
-
-Do not repeat-flag these as new findings. Instead check:
-
-- Has any **new** file violated the ≤1000-line discipline?
-  (`.claude/rules/code.md:34`、CLAUDE.md Discipline Health Signals:新文件
-  首版 ≤1000 行,无后续"切分"refactor commit。旧超大文件是 out-of-scope
-  defer,不是新发现。)
-- Has any new code been appended to these oversized files instead of creating
-  a sibling module when a sibling owner would be clearer? (尤其
-  `orchestrator_fanout.py`,近期合约都往这里堆。)
-- Did a refactor reduce or increase coupling around these files?
-
-### Step 8 — Coverage Audit
-
-After the deep review, run a coverage audit before synthesis. The audit is
-fail-closed: uncovered areas stay explicit and must not be hidden in a
-"complete" conclusion.
-
-Minimum coverage matrix:
-
-```json
-{
-  "subsystem": "runtime/orchestration",
-  "expected_paths": ["src/zf/runtime/", "tests/test_star_topology.py"],
-  "inspected_paths": ["src/zf/runtime/orchestrator.py"],
-  "evidence_refs": ["src/zf/runtime/orchestrator.py:Orchestrator.run_once"],
-  "coverage": "partial",
-  "uncovered": ["writer fanout resume route"],
-  "followup_prompt": "Review writer fanout resume route..."
-}
-```
-
-Coverage categories:
-
-- `git_history_drift`
-- `control_plane`
-- `state_event_truth`
-- `runtime_orchestration`
-- `star_fanout`
-- `skills_materialization`
-- `workspace_project`
-- `integrations_web_api`
-- `kanban_agent_channels`
-- `autoresearch_eval_loop`
-- `provider_headless_streaming`
-- `security_permissions`
-- `observability_diagnostics`
-- `performance_cost_context`
-- `compatibility_examples_runbooks`
-- `tests_docs_backlogs`
-
-### Step 9 — Supplement Review
-
-If coverage audit finds meaningful gaps, generate a supplement prompt targeted
-only at the missing evidence. Do not rerun broad review unless the repo map was
-wrong.
-
-Supplement prompt must include:
-
-- exact uncovered category
-- expected paths to inspect
-- invariant or behavior to verify
-- required evidence shape
-- stop condition
-
-### Step 10 — Real-Run Project Cross-Check
-
-Point `ZF_VALIDATION_PROJECT` at a cangjie 类真跑项目(ZaoFu 的主验证回路是这类
-real-task 跑,见 MEMORY.md / CLAUDE.md;review 缺这个信号就看不到真 bug 落在
-哪里)。若该目录存在,扫它最近的 `.zf/events.jsonl` 尾部和 `tasks/`,找
-r-next-N 失败模式。路径是参数化钩子,不是写死占位——照抄不设变量会空跑。
-
-```bash
-ZF_VALIDATION_PROJECT="${ZF_VALIDATION_PROJECT:-/path/to/project}"
-ls -t "$ZF_VALIDATION_PROJECT"/tasks/ 2>/dev/null | head -5
-tail -50 "$ZF_VALIDATION_PROJECT"/.zf/events.jsonl 2>/dev/null | grep -E "ship.blocked|judge.failed|discriminator.failed|worker.stuck"
-```
-
-## Adaptive Full-Review Loop
-
-Use this loop for refactor-planning or "full review" requests:
-
-```text
-bootstrap with zf-cr
-  -> repo map + invariant map + hot spots + Review Prompt V2
-deep review with Review Prompt V2
-  -> findings + refactor slices + verification needs
-coverage auditor
-  -> coverage_matrix + uncovered + supplement prompts
-supplement review if needed
-  -> gap-specific findings
-synthesis
-  -> review.md + refactor-plan.md + task_map/backlogs
-```
-
-The final synthesis must distinguish:
-
-- **confirmed**: supported by file/line or command evidence
-- **inferred**: likely based on nearby code or docs, but not fully proven
-- **uncovered**: not inspected or blocked by time/tooling
-- **known defer**: already tracked and not a new finding
-
-## Parallel Review Slices
-
-Use these slices only when the user explicitly requests parallel or
-multi-agent review:
-
-- kernel/runtime/state/event invariants
-- CLI/orchestrator/worker protocol/recovery
-- integrations/Web/API boundaries
-- tests/docs/backlog/development risks
-- autoresearch / self-eval / metrics
-- workspace/project/Kanban agent/channel runtime
-- Star fanout / refactor planning / skill materialization
-- security / permissions / token-gated mutation routes
-- observability / diagnostics / cost and context telemetry
-- git-history drift / docs / examples / compatibility
-
-Each slice must stay read-only and report concrete file/line evidence.
-
-## Output Format
-
-Return a concise Chinese report:
-
-1. **Codebase 总览** — 当前系统如何工作。
-2. **Git History Map** — 历史阶段、feature family、高 churn 区域、
-   近期漂移热点。
-3. **核心不变量** — 哪些规则不能破坏。
-4. **Coverage Matrix** — category / inspected paths / evidence refs /
-   coverage / uncovered。
-5. **高风险问题** — 按严重度排序，包含 file:line / 问题 / 失败场景 /
-   建议。已知 defer 的超大文件不算新发现。
-6. **测试缺口** — 哪些行为最该补测试，与 backlog audit 输出去重。
-7. **Refactor Slices** — 可拆分实施单元，包含 allowed_paths、依赖、
-   gate、验证命令。
-8. **开发建议** — 下一步最值得做的 5-10 个工程任务。
-9. **不确定项 / Supplement Prompt** — 说明哪些结论需要进一步验证。
-
-### Full-Green Early Exit
-
-If the repository is genuinely healthy (no high risk, no new rule violations,
-coverage matrix complete, and recent docs/tests align), output a compact
-version:
-
-1. Codebase 总览
-2. 核心不变量确认
-3. Coverage Matrix
-4. 不确定项 / 持续观察点
-
-Avoid inventing problems. "无高风险" is a valid conclusion only when coverage
-evidence supports it.
-
-## Command Template
-
-When asked to produce a command rather than perform the review, use this
-template:
-
-```bash
-ZAOFU_ROOT="${ZAOFU_ROOT:-$(pwd)}"
-
-codex -C "$ZAOFU_ROOT" \
-  -s read-only \
-  -a never \
-  exec --ephemeral --ignore-user-config - <<'PROMPT'
-Use $zf-cr to run the adaptive full-review loop for this repository.
-Return repo map, Review Prompt V2, coverage matrix, findings, refactor slices,
-and supplement prompts for uncovered areas.
-PROMPT
-```
-
-Path is derived from `$ZAOFU_ROOT` or the current working directory, not
-hard-coded.
-
-## Related ZaoFu Tooling
-
-The review skill works with other tooling already in place:
-
-- `.claude/rules/code.md` — module size + wire-up discipline + changeset
-  simplicity
-- `.claude/rules/backlogs.md` — sprint/backlog status field vocabulary
-- `.claude/rules/docs.md` — doc numbering + 00-index registration
-- `.claude/commands/audit-backlogs.md` — optional `/audit-backlogs` slash
-  command
-- `skills/zf-harness-evidence-collection/` — structured evidence shape
-- `skills/zf-harness-instruction-hygiene/` — instruction-source conflict
-  handling
-- `skills/zf-harness-backlog-synthesis/` — convert findings into candidate
-  backlog/task units
-- `skills/zf-tool-skill-parity/` — 治理 `skills/` 为单源、`.codex/skills/` 与
-  `.claude/skills/` 为分发副本的漂移。本技能的 canonical 版是
-  `skills/zf-cr/SKILL.md`;provider-local 副本须由此同步,不可各自演化。
-
-If any of these are missing, the review can still proceed but should flag the
-absence as a hygiene gap.
+若用户只要可复用命令，先核对本机 `codex exec --help`；使用 ephemeral / read-only /
+approval never，并保留用户已有 provider 配置，除非明确要求独立配置。
+不要为了生成命令直接启动 review；不得硬编码项目路径。

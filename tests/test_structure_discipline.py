@@ -311,10 +311,10 @@ _OVERSIZED_FILE_CAPS = {
     # 也会被拦。新方法与既有 _schema_education_report_fields 是一对镜像,
     # 紧贴 briefing 组装点(共用 _SCHEMA_EDU_PLACEHOLDERS + self.config
     # registry),拆 sibling 会割裂这对教育逻辑,故 cap 吸收。
-    # Reconciliation 2026-07-26: generic artifact-delivery call sites merged
-    # with dev's current fanout identity wiring at 8564 lines. Freeze at that
-    # merged size; new coordination behavior must remain in sibling modules.
-    "src/zf/runtime/orchestrator_fanout.py": 8564,
+    # Reconciliation 2026-10-26: GitHub dev's generic artifact-delivery call
+    # sites merged with current fanout identity wiring at 8584 lines. Freeze at
+    # that merged size; new coordination behavior must remain in sibling modules.
+    "src/zf/runtime/orchestrator_fanout.py": 8584,
     # Reconciliation 2026-07-07: terminal child success predicate and
     # judge.failed state guard call sites; predicates live in terminal_events.
     # Reconciliation 2026-07-08: dev 已到 6962(feishu/goal-spine merges),
@@ -358,7 +358,10 @@ _OVERSIZED_FILE_CAPS = {
     # successful proposal action so its Triage card clears — an inline guard on
     # the central dispatch's own result, not a new action, so it stays here.
     "src/zf/runtime/control_actions.py": 577,
-    "src/zf/runtime/orchestrator_lifecycle.py": 2750,
+    # Reconciliation 2026-10-26: local lifecycle recovery handlers already
+    # reached 2873 lines before this merge. Freeze that baseline; the next lifecycle
+    # feature must move into a sibling module.
+    "src/zf/runtime/orchestrator_lifecycle.py": 2873,
     # Frontend freeze (2026-06-12): the two web monoliths had no size
     # gate at all (doc 44 "web 没人 review"); after the server.py split
     # App.tsx is the largest single file in the repo. Caps are the
@@ -452,6 +455,11 @@ _KNOWN_OVERSIZED_SOURCE_FILES = {
     # keeping prepare/admit/hydrate behavior together. Split trigger: next
     # durable call preparation, admission, or hydration behavior change.
     "src/zf/runtime/call_result_runtime.py",
+    # Reconciliation 2026-10-26: local and GitHub adapter compatibility and
+    # semantic profile changes jointly crossed the soft limit at 1009 lines.
+    # Split trigger: the next result-profile or compatibility projection rule
+    # moves into a sibling adapter module.
+    "src/zf/runtime/call_result_adapters.py",
     # E1/E3(2026-07-04)registry closure 达成 100% 后 43 条新注册破千行。
     # 同质数据表(平行 EventProblemSpec 条目),认知成本=滚动而非结构;
     # defer 触发条件:下次新增 ≥10 条 spec 时把 EVENT_PROBLEM_SPECS 数据

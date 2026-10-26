@@ -1805,8 +1805,9 @@ def test_candidate_verify_binds_frozen_candidate_not_workflow_anchor_contract(
         )
 
 
+@pytest.mark.parametrize("scoped", [False, True])
 def test_handoff_resolver_materializes_current_required_plan_ports(
-    tmp_path: Path,
+    tmp_path: Path, scoped: bool,
 ) -> None:
     project_root, state_dir, _ = _service(tmp_path)
     run_contract_body = {
@@ -1821,10 +1822,17 @@ def test_handoff_resolver_materializes_current_required_plan_ports(
         },
     )
     ports = []
-    for logical_name in ("acceptance_matrix", "test_matrix"):
+    names = ["acceptance_matrix", "test_matrix"] + (["execution_spec"] if scoped else [])
+    for logical_name in names:
+        body = ({"schema_version": "task-scoped-plan-input.v1",
+                 "shared": {"rule": "access control"},
+                 "tasks": [{"task_id": "T-ports", "body": {"action": "publish"}},
+                           {"task_id": "other", "body": {"action": "archive"}}]}
+                if logical_name == "execution_spec"
+                else {"schema_version": f"{logical_name}.v1", "rows": [{"id": "AC-1"}]})
         descriptor = write_immutable_json_sidecar(
             state_dir,
-            {"schema_version": f"{logical_name}.v1", "rows": [{"id": "AC-1"}]},
+            body,
             root=f"fixtures/{logical_name}",
             kind=logical_name,
             schema_version=f"{logical_name}.v1",
@@ -1846,7 +1854,7 @@ def test_handoff_resolver_materializes_current_required_plan_ports(
         plan_revision="R2",
         task_map_generation="G2",
         produced=ports,
-        required_ports=["acceptance_matrix", "test_matrix"],
+        required_ports=names,
     )
     package_descriptor = write_plan_artifact_package(state_dir, package)
     EventLog(state_dir / "events.jsonl").append(ZfEvent(
@@ -1930,6 +1938,28 @@ def test_handoff_resolver_materializes_current_required_plan_ports(
     } <= set(sources)
     assert manifest["plan_artifact_package_ref"] == package_descriptor["ref"]
     assert manifest["plan_artifact_package_digest"] == package_descriptor["sha256"]
+    if scoped:
+        from zf.runtime.artifact_read_ledger import read_attempt_artifact
+        from zf.runtime.artifact_read_requirements import build_canonical_required_reads
+
+        reads = build_canonical_required_reads(manifest, output_profile_id="implementation")
+        selected = [r for r in reads if r["source_id"] == "plan-port-execution_spec"]
+        assert [r["json_path"] for r in selected] == ["$.shared", "$.tasks[0]"]
+        for row in selected:
+            read_attempt_artifact(state_dir, manifest=manifest,
+                                  source_id=row["source_id"], artifact_id=row["artifact_id"],
+                                  json_path=row["json_path"])
+        with pytest.raises(ArtifactReadError, match="not allowed"):
+            read_attempt_artifact(state_dir, manifest=manifest,
+                                  source_id="plan-port-execution_spec", artifact_id="execution_spec",
+                                  json_path="$.tasks[1]")
+        candidate_sources = resolver._current_plan_port_sources(
+            workflow_run_id="run-ports", task_id="",
+            currentness={"task_map_generation": "G2",
+                         "plan_artifact_package_ref": package_descriptor["ref"],
+                         "plan_artifact_package_digest": package_descriptor["sha256"]},
+            allow_without_task=True, candidate=True)
+        assert all(s["allowed_paths"] == ["$"] for s in candidate_sources)
 
     tampered = state_dir / ports[0]["ref"]
     tampered.write_text('{"tampered": true}\n', encoding="utf-8")

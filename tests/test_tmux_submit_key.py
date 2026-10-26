@@ -15,9 +15,42 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.schema import RoleConfig
 from zf.runtime.tmux import TmuxError, TmuxSession
 from zf.runtime.transport import TmuxTransport
+
+
+def test_codex_dispatch_uses_one_bracketed_paste_and_cleans_unique_buffer(tmp_path, monkeypatch):
+    from zf.runtime.transport import DispatchContext
+
+    tmux = TmuxSession(session_name="zf-test", dry_run=True)
+    transport = TmuxTransport(tmux)
+    monkeypatch.setattr(transport, "_agent_process_liveness", lambda role: (True, ""))
+    transport.send_task("reader", tmp_path / "brief.md", "a long prompt\nwith Unicode 中文",
+                        context=DispatchContext(backend="codex"))
+    log = tmux.command_log
+    assert sum("paste-buffer -p" in command for command in log) == 1
+    assert sum(command.endswith(" Enter") for command in log) == 1
+    assert sum("delete-buffer" in command for command in log) == 1
+    assert not any("send-keys" in command and "a long prompt" in command for command in log)
+
+
+def test_failed_bracketed_paste_cleans_buffer_without_submitting(monkeypatch):
+    tmux = TmuxSession(session_name="zf-test", dry_run=True)
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if "paste-buffer" in argv:
+            raise TmuxError("pane vanished")
+
+    monkeypatch.setattr(tmux, "_run", run)
+    with pytest.raises(TmuxError):
+        tmux.send_paste("reader", "briefing")
+    assert calls[-1][1] == "delete-buffer"
+    assert not any("Enter" in call for call in calls)
 
 
 def test_tmux_send_keys_accepts_submit_key_param():

@@ -1,0 +1,123 @@
+{
+  "schema_version": "intake-routing-eval.v1",
+  "cases": [
+    {
+      "id": "explain",
+      "message": "解释一下 intake 到 task_map 的过程，不创建任务。",
+      "expected_decisions": [
+        "answer"
+      ],
+      "expected_route_kinds": [],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "negated_create",
+      "message": "不要创建任务，我只想知道创建按钮的作用。",
+      "expected_decisions": [
+        "answer"
+      ],
+      "expected_route_kinds": [],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "quoted_request",
+      "message": "请解释示例文字“创建任务修复 bug”的含义。",
+      "expected_decisions": [
+        "answer"
+      ],
+      "expected_route_kinds": [],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "ambiguous",
+      "message": "帮我处理一下这个项目。",
+      "expected_decisions": [
+        "clarify"
+      ],
+      "expected_route_kinds": [],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "mixed",
+      "message": "数据库迁移是否值得做还没决定，可能只修复登录。先明确方向。",
+      "expected_decisions": [
+        "clarify"
+      ],
+      "expected_route_kinds": [],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "negated_refactor",
+      "message": "创建一个任务：不要重构，只修复登录失效；补登录回归测试。",
+      "expected_decisions": [
+        "create-task"
+      ],
+      "expected_route_kinds": [
+        "issue"
+      ],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "negated_research",
+      "message": "不需要调研。创建任务修复重复提交问题，验收同一个请求只产生一次效果。",
+      "expected_decisions": [
+        "create-task"
+      ],
+      "expected_route_kinds": [
+        "issue"
+      ],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "new_feature",
+      "message": "创建任务实现订单导出功能：CSV 保留订单编号和金额，在当前项目交付并测试。",
+      "expected_decisions": [
+        "create-task"
+      ],
+      "expected_route_kinds": [
+        "prd"
+      ],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "track_only",
+      "message": "创建任务记录订单导出想法，暂时不要规划或启动工作流。",
+      "expected_decisions": [
+        "create-task"
+      ],
+      "expected_route_kinds": [],
+      "forbid_workflow_plan": true
+    },
+    {
+      "id": "english_negation",
+      "message": "Do not create a task. Explain the retry policy.",
+      "expected_decisions": [
+        "answer"
+      ],
+      "expected_route_kinds": [],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "spanish_create",
+      "message": "Crea una tarea para corregir el fallo de inicio de sesión y añadir una prueba de regresión.",
+      "expected_decisions": [
+        "create-task"
+      ],
+      "expected_route_kinds": [
+        "issue"
+      ],
+      "forbid_workflow_plan": false
+    },
+    {
+      "id": "scope_correction",
+      "prior_messages": [
+        "创建任务修复登录故障并补回归测试。"
+      ],
+      "message": "更正上一条：不要创建任务，先解释登录机制。",
+      "expected_decisions": [
+        "answer"
+      ],
+      "expected_route_kinds": []
+    }
+  ]
+}

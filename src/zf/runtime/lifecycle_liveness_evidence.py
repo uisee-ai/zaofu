@@ -90,6 +90,17 @@ class LifecycleLivenessEvidenceMixin:
         if hb_ts:
             try:
                 age = now - _dt.fromisoformat(str(hb_ts)).timestamp()
+                if isinstance(hb_payload, dict) and hb_payload.get("source") in {
+                    "task.dispatched", "fanout.child.dispatched",
+                }:
+                    # Dispatch is startup grace, not worker-originated proof.
+                    # A long-turn stuck threshold must not keep a dead startup
+                    # leased until its operation budget expires first.
+                    startup_grace = float(
+                        getattr(role, "spawn_ready_timeout_seconds", 0) or 120.0
+                    )
+                    grace = min(threshold, startup_grace)
+                    return age > grace, f"dispatch_seed_age={int(age)}s"
                 return age > threshold, f"heartbeat_age={int(age)}s"
             except (ValueError, TypeError):
                 pass

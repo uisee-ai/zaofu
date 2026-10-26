@@ -1568,6 +1568,9 @@ def run(args: argparse.Namespace) -> int:
         if foreground:
             print("  Watcher: running in foreground (Ctrl+C to stop)")
             event_log.append(ZfEvent(type="loop.started", actor="zf-cli"))
+            from zf.runtime.workflow_runtime_start import mark_runtime_ready
+
+            mark_runtime_ready(state_dir)
             try:
                 watcher.run(poll_interval=1.0, tick_interval=5.0)
             except KeyboardInterrupt:

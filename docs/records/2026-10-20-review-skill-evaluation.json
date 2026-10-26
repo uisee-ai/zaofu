@@ -1,0 +1,221 @@
+{
+  "base_commit": "7bee177aabe46b4f94dc7cf7b74551f6b8d4c72b",
+  "source_reference": "/tmp/gm/agent-skills@b8caa26",
+  "frozen": {
+    "frozen_at": "2026-10-20T05:51:03.065432+00:00",
+    "candidate_files": {
+      "SKILL.md": "a7d7728ada808daf714be2581fa0aeeb735e982698641ef7bd140ccbe12977c6",
+      "agents/openai.yaml": "ddc0bd0b5fab44e3f247057c4c174b9b5e912de1c54886ce8ba980cf1298069b",
+      "references/architecture.md": "b69f0177073887ecc5dcb3fc2002fc39c29cac015b9077d9a2434333fc0b08e6",
+      "references/full-review.md": "12122859e952206dd796ffa6c917c2f6f3d223a1d5de700904dc49439d4f889a",
+      "scripts/validation_paths.py": "e40f7e8440f5cd1c2e974642a55222ff52a06a9184f37531d8b8f17c87210e26"
+    },
+    "cases_sha256": "efef2239147c0a4af0ff3a8108c499cc10b2351d5a466f3ea930065896b2bb94",
+    "holdout_sha256": "adf63c8abd14868e1885ada813d79541653986ec25ff4c0cb4af4febb96b1b66",
+    "extra_quality_gate": "clean-paths 必须指出测试对 /var/run 的字面相等不适用于符号链接环境；不得宣称业务解析有 bug。",
+    "model": "gpt-6.1-sol",
+    "repetitions": 3,
+    "v1_verdict": "not accepted: scoped readonly validation restriction caused missed test portability finding",
+    "additional_fix": "CLI 空字符串项目参数必须拒绝，不能通过 Path(空字符串) 回退当前项目；已加确定性回归。"
+  },
+  "model": "gpt-6.1-sol",
+  "codex_version": "codex-cli 0.163.0",
+  "docker_image": "sha256:50cbb76d250a50002045a95f484c5f40573cde831adbe40c784052c037e36118",
+  "bundle_digests": {
+    "baseline": "d29e32a36986a1c7dee71b230eed1df2792842e1a201073f4cffe94574a9031c",
+    "candidate": "0a41e13ecd31bfb74b5087ee58d30436757da6e50f599b2e3befed53ac424779"
+  },
+  "raw_evidence_root": "/tmp/zf-skill-review-20261020-0525",
+  "formal_runs": 28,
+  "forced_runs": 24,
+  "routing_smoke_runs": 4,
+  "quality": "12/12 case checks passed per arm; target findings and clean-negative behavior only",
+  "input_files_changed": 0,
+  "summary": {
+    "scoped-retry": {
+      "baseline": {
+        "runs": 3,
+        "input_median": 130997,
+        "output_median": 1600,
+        "seconds_median": 112.254,
+        "commands_median": 7,
+        "dynamic_evidence_runs": 3
+      },
+      "candidate": {
+        "runs": 3,
+        "input_median": 96152,
+        "output_median": 1120,
+        "seconds_median": 108.494,
+        "commands_median": 5,
+        "dynamic_evidence_runs": 3
+      },
+      "input_delta_percent": -26.6
+    },
+    "clean-paths": {
+      "baseline": {
+        "runs": 3,
+        "input_median": 132934,
+        "output_median": 1585,
+        "seconds_median": 105.868,
+        "commands_median": 7,
+        "dynamic_evidence_runs": 3
+      },
+      "candidate": {
+        "runs": 3,
+        "input_median": 80090,
+        "output_median": 1145,
+        "seconds_median": 87.959,
+        "commands_median": 5,
+        "dynamic_evidence_runs": 3
+      },
+      "input_delta_percent": -39.75
+    },
+    "full-event-owner": {
+      "baseline": {
+        "runs": 3,
+        "input_median": 86688,
+        "output_median": 3075,
+        "seconds_median": 150.722,
+        "commands_median": 6,
+        "dynamic_evidence_runs": 1
+      },
+      "candidate": {
+        "runs": 3,
+        "input_median": 93999,
+        "output_median": 2579,
+        "seconds_median": 123.477,
+        "commands_median": 7,
+        "dynamic_evidence_runs": 3
+      },
+      "input_delta_percent": 8.43
+    },
+    "clean-holdout": {
+      "baseline": {
+        "runs": 3,
+        "input_median": 108035,
+        "output_median": 1107,
+        "seconds_median": 88.81,
+        "commands_median": 6,
+        "dynamic_evidence_runs": 3
+      },
+      "candidate": {
+        "runs": 3,
+        "input_median": 79297,
+        "output_median": 949,
+        "seconds_median": 82.896,
+        "commands_median": 5,
+        "dynamic_evidence_runs": 3
+      },
+      "input_delta_percent": -26.6
+    }
+  },
+  "validation": {
+    "passed": 173,
+    "skipped": 2,
+    "failed": 1,
+    "baseline_failure": "tests/test_dev_verify.py::test_ci_uses_current_controller_and_skips_provider_auth: missing .gitlab-ci.yml; reproduced from base",
+    "receipt": {
+      "schema_version": "zf-dev-verification-receipt.v1",
+      "plan": {
+        "schema_version": "zf-dev-verification-plan.v1",
+        "root": "/home/min/workspace/public/zaofu-worktrees/skill-review-20261020",
+        "changed_files": [
+          ".claude/skills/zf-cr/SKILL.md",
+          ".claude/skills/zf-cr/references/architecture.md",
+          ".claude/skills/zf-cr/references/full-review.md",
+          ".claude/skills/zf-cr/scripts/validation_paths.py",
+          ".codex/skills/zf-cr/SKILL.md",
+          ".codex/skills/zf-cr/references/architecture.md",
+          ".codex/skills/zf-cr/references/full-review.md",
+          ".codex/skills/zf-cr/scripts/validation_paths.py",
+          "docs/manual/00-index.md",
+          "docs/manual/operations/review-skill-evaluation.md",
+          "scripts/eval-review-skill.py",
+          "skills/zf-cr/SKILL.md",
+          "skills/zf-cr/agents/openai.yaml",
+          "skills/zf-cr/references/architecture.md",
+          "skills/zf-cr/references/full-review.md",
+          "skills/zf-cr/scripts/validation_paths.py",
+          "tests/fixtures/review_skill_eval/cases.json",
+          "tests/fixtures/review_skill_eval/holdout.json",
+          "tests/test_channel_skill_materialization.py",
+          "tests/test_review_skill_package.py"
+        ],
+        "domains": [
+          "docs",
+          "skills",
+          "tests",
+          "tooling"
+        ],
+        "selected_tests": [
+          "tests/test_autoresearch_self_repair.py",
+          "tests/test_channel_skill_materialization.py",
+          "tests/test_channel_templates.py",
+          "tests/test_dev_verify.py",
+          "tests/test_instruction_stack_contracts.py",
+          "tests/test_manual_docs.py",
+          "tests/test_review_skill_package.py",
+          "tests/test_runtime_injection.py",
+          "tests/test_skill_provenance.py",
+          "tests/test_structure_discipline.py"
+        ],
+        "steps": [
+          {
+            "id": "python-deterministic",
+            "tier": "deterministic",
+            "command": [
+              "/home/min/workspace/public/zaofu/.venv/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_autoresearch_self_repair.py",
+              "tests/test_channel_skill_materialization.py",
+              "tests/test_channel_templates.py",
+              "tests/test_dev_verify.py",
+              "tests/test_instruction_stack_contracts.py",
+              "tests/test_manual_docs.py",
+              "tests/test_review_skill_package.py",
+              "tests/test_runtime_injection.py",
+              "tests/test_skill_provenance.py",
+              "tests/test_structure_discipline.py",
+              "-q",
+              "--no-cov",
+              "-m",
+              "not serial and not perf and not host and not real_provider",
+              "-n",
+              "2",
+              "--dist",
+              "loadfile"
+            ],
+            "reasons": [
+              "changed tests + direct imports/callers + boundary sentinels"
+            ],
+            "cwd": ".",
+            "automatic": true
+          }
+        ],
+        "warnings": [],
+        "errors": [],
+        "broad_python": false
+      },
+      "started_at_epoch": 1792476098.9843724,
+      "results": [
+        {
+          "id": "python-deterministic",
+          "tier": "deterministic",
+          "returncode": 1,
+          "duration_s": 10.042,
+          "status": "failed"
+        }
+      ],
+      "finished_at_epoch": 1792476109.026121,
+      "status": "failed"
+    }
+  },
+  "delivery": {
+    "package_digest": "fee4fe7ecf2b5ced4d8d515596ca6c7be6b42100a3d056a4c18d9078fec074a7",
+    "post_eval_change": "Remove one blank line at EOF from references/architecture.md in all three copies; exact byte equality elsewhere verified. No instruction or executable behavior changed; model runs not repeated.",
+    "changed_resource": [
+      "references/architecture.md"
+    ]
+  }
+}

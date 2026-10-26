@@ -401,8 +401,12 @@ def bind_product_acceptance_report(
     state_dir: Path,
     operation: Mapping[str, Any] | None,
     source_event_id: str,
+    persist: bool = True,
 ) -> Any:
-    """Bind global verification/discovery to the exact full-product report."""
+    """Bind Candidate Verify and discovery to the exact full-product report.
+
+    Preflight can validate without materializing refs.
+    """
 
     schema = str(getattr(adapted, "schema_version", ""))
     operation = operation or {}
@@ -508,6 +512,9 @@ def bind_product_acceptance_report(
             raise ProductAcceptanceError(
                 "rejected Candidate Verify cannot carry passed Product Acceptance"
             )
+
+        if not persist:
+            return adapted
 
         receipt_refs: list[dict[str, Any]] = []
         for receipt in _objects(report.get("provider_qualification_receipts")):

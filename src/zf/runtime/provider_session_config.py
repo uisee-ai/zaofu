@@ -181,6 +181,10 @@ def resolve_effective_provider_session(
         },
         "explicit": explicit,
         "resolved": {
+            "native_delegation": {
+                "value": session.native_delegation if session is not None else None,
+                "source": "role.provider_session" if session is not None and session.native_delegation is not None else "provider_default",
+            },
             "effort": {
                 "value": effort or None,
                 "source": "role.provider_session" if effort else "provider_default",

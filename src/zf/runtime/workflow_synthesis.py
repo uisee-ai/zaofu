@@ -11,10 +11,12 @@ from zf.core.events import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.workflow_request_routing import synthesis_request_is_ready
 from zf.runtime.workflow_synthesis_support import (
     ALLOWED_FLOW_FAMILIES,
     WORKFLOW_SYNTHESIS_RESULT_SCHEMA,
     admission_catalog as _admission_catalog,
+    admission_contract,
     normalized_strings as _strings,
     safe_component as _safe_component,
     synthesis_prompt as _synthesis_prompt,
@@ -569,7 +571,7 @@ def _prepare_synthesis_operation(
         raise WorkflowSynthesisError(
             f"workflow request not found: {request_id}"
         )
-    if str(request.get("status") or "") != "ready":
+    if not synthesis_request_is_ready(request):
         raise WorkflowSynthesisError(
             "workflow synthesis requires a ready request"
         )
@@ -593,15 +595,7 @@ def _prepare_synthesis_operation(
         "request_revision": revision,
         "requirement_ref": requirement_ref,
         "requirement_digest": requirement_digest,
-        "allowed_flow_families": sorted(ALLOWED_FLOW_FAMILIES),
-        "allowed_roles": sorted(catalog["roles"]),
-        "allowed_skills": sorted(catalog["skills"]),
-        "allowed_profiles": sorted(catalog["profiles"]),
-        "allowed_generic_templates": sorted(catalog["templates"]),
-        "allowed_generic_operations": sorted(catalog["operations"]),
-        "allowed_completion_profiles": sorted(
-            catalog["completion_profiles"]
-        ),
+        **admission_contract(catalog),
         "adapter_skill_plan_ref": str(
             request.get("skill_adapter_plan_ref") or ""
         ),
@@ -675,7 +669,7 @@ def _invoke_synthesis_agent(
     operation_id: str,
     backend: str,
     agent: Any | None,
-    catalog: Mapping[str, set[str]],
+    catalog: Mapping[str, Any],
 ) -> dict[str, Any]:
     if not backend:
         raise WorkflowSynthesisError(
@@ -732,7 +726,7 @@ def _admit_result(
     result: Mapping[str, Any],
     *,
     request: Mapping[str, Any],
-    catalog: Mapping[str, set[str]],
+    catalog: Mapping[str, Any],
     state_dir: Path,
     operation_id: str,
 ) -> dict[str, Any]:

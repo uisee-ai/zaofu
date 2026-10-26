@@ -7,9 +7,9 @@ so: each lane read the full 213-file candidate + reference source, exhausted its
 context (worker.context.warning → context.compact.failed → 2400s timeout) and
 spuriously emitted ``review.rejected``.
 
-This renders a prominent scope section telling the agent to inspect ONLY its slice
-and NOT read the full candidate — the other lanes + the synth role cover the rest.
-Pure function so it is trivially unit-tested; the briefing renderer splices it in.
+Ordinary affinity review remains slice-scoped. A bound Product Acceptance report
+also requires the candidate-wide journeys, so its briefing authorizes that
+additional evidence closure without widening source-write permissions.
 """
 from __future__ import annotations
 
@@ -33,7 +33,9 @@ def affinity_scope_identity_errors(
     return errors
 
 
-def affinity_scope_briefing_lines(child_payload: dict | None) -> list[str]:
+def affinity_scope_briefing_lines(
+    child_payload: dict | None, *, product_acceptance_required: bool = False,
+) -> list[str]:
     """Scope-discipline briefing lines for an affinity child, or [] if the child
     is not an affinity_stage_slots lane (or carries no lane/task identity)."""
     payload = child_payload if isinstance(child_payload, dict) else {}
@@ -46,6 +48,20 @@ def affinity_scope_briefing_lines(child_payload: dict | None) -> list[str]:
     label = (f"lane `{lane}`" if lane else "") + (
         (" / task `" + tag + "`") if tag else ""
     )
+    if product_acceptance_required:
+        return [
+            "## Review Scope — Task Slice and Candidate Product Acceptance",
+            "",
+            f"You are the slot for affinity {label.strip(' /')}. "
+            "Task requirement rows remain scoped to the pinned task contract.",
+            "The bound Product Acceptance report is a separate obligation: verify all "
+            "mandatory product journeys against this exact candidate. Cross-slice "
+            "reads and probes needed by those journeys are authorized; do not leave "
+            "them unverified for other lanes or synth. Limit inspection to the "
+            "journeys and their dependency closure, not an unrelated whole-repository audit.",
+            "This does not grant source-write permission or change task ownership.",
+            "",
+        ]
     return [
         "## Review Scope — YOUR AFFINITY SLICE ONLY (context discipline)",
         "",

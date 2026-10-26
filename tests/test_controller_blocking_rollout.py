@@ -116,11 +116,11 @@ def test_general_controllers_pin_verified_artifact_delivery(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", ALL_CONTROLLER_CONFIGS)
-def test_production_controllers_bound_every_provider_role(name: str) -> None:
+def test_production_controllers_allow_long_horizon_with_cost_and_usage_guards(name: str) -> None:
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "examples" / "prod" / "controller" / name)
 
-    assert config.workflow.run_limits.timeout_seconds == 3000
+    assert config.workflow.run_limits.timeout_seconds == 0
     assert config.workflow.run_limits.token_budget == 10_000_000
     assert config.workflow.run_limits.cost_budget_usd == 40
     profile = config.workflow.execution_profiles["bounded-direct-v1"]

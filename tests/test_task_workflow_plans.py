@@ -586,6 +586,13 @@ def test_task_workflow_start_runs_delivery_request_and_submit(
         "# Specification\n\nPreserve the approved phase-one contract.\n",
         encoding="utf-8",
     )
+    external = tmp_path.parent / f"{tmp_path.name}-handoff"
+    external.mkdir()
+    assets = external / "assets"
+    assets.mkdir()
+    handoff = external / "handoff.md"
+    handoff.write_text("Supplementary delivery inputs", encoding="utf-8")
+    handoff_artifacts = ["requirement.md", "phase1-spec.md", str(handoff), f"{assets}/"]
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     writer = EventWriter(EventLog(state_dir / "events.jsonl"))
@@ -609,9 +616,9 @@ def test_task_workflow_start_runs_delivery_request_and_submit(
             ],
             source_ref="requirement.md",
             spec_ref="phase1-spec.md",
-            handoff_artifacts=["requirement.md", "phase1-spec.md"],
+            handoff_artifacts=handoff_artifacts,
             scope=["src/**"],
-            exclusions=["docs/generated/**"],
+            exclusions=["docs/generated/**", ".git/**", ".zf/**"],
             explicit_non_goals=["Do not rewrite the approved specification."],
             evidence_contract={
                 "execution_owner": "workflow",
@@ -671,6 +678,8 @@ def test_task_workflow_start_runs_delivery_request_and_submit(
     task_input_contract = json.loads(task_input_ref.read_text(encoding="utf-8"))
     assert task_input_contract["source_ref"] == "requirement.md"
     assert task_input_contract["spec_ref"] == "phase1-spec.md"
+    assert task_input_contract["handoff_artifacts"] == handoff_artifacts
+    assert task_input_contract["exclusions"] == ["docs/generated/**", ".git/**", ".zf/**"]
     assert task_input_contract["evidence_contract"] == {
         "required_source_outputs": ["implementation-report.md"],
     }

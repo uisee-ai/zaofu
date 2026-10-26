@@ -116,6 +116,18 @@ def test_no_forbidden_reason_when_ship_ready() -> None:
     assert "forbidden_completion_reason" not in out
 
 
+@pytest.mark.parametrize("stage", ["unknown", "", "prd-lanes-verify"])
+def test_missing_next_event_does_not_authorize_completion(stage):
+    from zf.runtime.recovery_briefing import render_recovery_briefing
+
+    packet = _packet(current_stage=stage, next_event="")
+    briefing = render_recovery_briefing(packet, recovery_reason="respawn")
+    assert "ship-ready" not in briefing
+    assert "ready to ship" not in briefing
+    assert "forbidden_completion_reason" in briefing
+    assert "do not declare done/ship" in briefing
+
+
 # ---------------------------------------------------------------------------
 # blocked_by surfaced
 # ---------------------------------------------------------------------------

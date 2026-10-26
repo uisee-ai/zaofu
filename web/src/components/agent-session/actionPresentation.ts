@@ -40,10 +40,10 @@ const ACTION_PRESENTATIONS: Record<string, ActionPresentation> = {
     completedLabel: "Task created",
   },
   "idea-to-product": {
-    title: "Start product workflow",
-    confirmLabel: "Start workflow",
-    busyLabel: "Starting",
-    completedLabel: "Product workflow start requested",
+    title: "Prepare product workflow",
+    confirmLabel: "Prepare workflow",
+    busyLabel: "Preparing",
+    completedLabel: "Workflow preparation requested",
   },
   "research-adopt": {
     title: "Adopt research",

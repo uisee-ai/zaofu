@@ -260,6 +260,12 @@ class DurableCallWorkflowMixin:
             self.state_dir,
             payload,
         )
+        if not proposal_binding_error:
+            from zf.runtime.workflow_config_consumer import approved_config_consumer_error
+
+            proposal_binding_error = approved_config_consumer_error(
+                self.state_dir, self.config, payload,
+            )
         if proposal_binding_error:
             self._emit_workflow_invoke_rejected(
                 event,

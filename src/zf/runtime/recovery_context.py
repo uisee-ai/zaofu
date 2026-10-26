@@ -13,6 +13,8 @@ from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.core.task.store import TaskStore
 from zf.runtime.sidecar_refs import write_sidecar_json
+from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
+from zf.runtime.recovery_checkpoint import maintenance_checkpoint_facts
 
 
 RECOVERY_CONTEXT_SCHEMA_VERSION = "task-recovery-context.v1"
@@ -44,6 +46,16 @@ def build_task_recovery_context(
     state_dir = Path(state_dir)
     task = TaskStore(state_dir / "kanban.json").get(task_id) if task_id else None
     task_events = [event for event in events if _event_task_id(event) == task_id]
+    from zf.runtime.task_run_binding import canonical_task_run
+    from zf.runtime.run_scope import events_for_run
+
+    run_id, strict_binding = canonical_task_run(task, events)
+    if run_id:
+        task_events = events_for_run(
+            task_events, run_id=run_id, include_legacy_single_run=False,
+        )
+    elif strict_binding:
+        task_events = []
     failures = set(str(value) for value in failure_event_ids if str(value).strip())
     failure_rows = [
         _event_row(event, include_findings=True)
@@ -82,10 +94,23 @@ def build_task_recovery_context(
         for event in task_events
         if isinstance(event.payload, dict)
     )
+    attempt = recovery_attempt_facts(state_dir, task, run_id=run_id)
     return redact_obj({
         "schema_version": RECOVERY_CONTEXT_SCHEMA_VERSION,
         "is_derived_projection": True,
         "request_id": request_id,
+        "attempt_identity": attempt,
+        "maintenance_checkpoint": maintenance_checkpoint_facts(
+            state_dir, task_events, task_id=task_id, attempt_facts=attempt,
+        ),
+        "execution_boundary": {
+            "workflow_run_id": run_id,
+            "dispatch_id": task.active_dispatch_id if task is not None else "",
+            "binding_status": (
+                "bound" if run_id else "unresolved" if strict_binding else "legacy"
+            ),
+            "authorizes_continuation": False,
+        },
         "scope": {
             "kind": "candidate" if candidate_scope else "task",
             "id": task_id,
@@ -99,12 +124,18 @@ def build_task_recovery_context(
             "recent_events": [_event_row(event) for event in task_events[-_TASK_EVENT_LIMIT:]],
         },
         "failure_ledger": {
-            "failure_event_ids": sorted(failures),
+            "failure_event_ids": sorted(row["event_id"] for row in failure_rows),
+            "unresolved_failure_event_ids": sorted(
+                failures - {row["event_id"] for row in failure_rows}
+            ),
             "failures": failure_rows,
             "failure_count": len(failure_rows),
         },
         "attempted_recovery_actions": attempted,
-        "worker": _worker_context(state_dir, task.assigned_to if task is not None else ""),
+        "worker": _worker_context(
+            state_dir, task.assigned_to if task is not None else "",
+            expected_task_id=task_id,
+        ),
         "truth_refs": {
             "events": "events.jsonl",
             "kanban": "kanban.json",
@@ -195,7 +226,9 @@ def _event_row(event: ZfEvent, *, include_findings: bool = False) -> dict[str, A
     return row
 
 
-def _worker_context(state_dir: Path, assignee: str | None) -> dict[str, Any]:
+def _worker_context(
+    state_dir: Path, assignee: str | None, *, expected_task_id: str,
+) -> dict[str, Any]:
     assignee = str(assignee or "")
     path = Path(state_dir) / "role_sessions.yaml"
     if not assignee or not path.exists():
@@ -209,6 +242,10 @@ def _worker_context(state_dir: Path, assignee: str | None) -> dict[str, Any]:
     row = meta.get(assignee)
     if not isinstance(row, dict):
         return {"instance_id": assignee, "available": False}
+    active_task_id = str(row.get("active_task_id") or row.get("task_id") or "")
+    if active_task_id != expected_task_id:
+        return {"instance_id": assignee, "available": False,
+                "reason": "worker Task binding is missing or different"}
     return redact_obj({
         "instance_id": assignee,
         "available": True,

@@ -3286,6 +3286,7 @@ def test_plan_candidate_briefing_validates_before_submit(
                 "manifest": {"stage_id": "issue-triage"},
                 "metadata": {
                     "flow_kind": "issue",
+                    "artifact_package": {"required_ports": ["issue_spec", "task_map", "product_acceptance_spec"]},
                     "task_pipeline": {
                         "candidate": {"rolling_smoke": "required"},
                     },
@@ -3316,6 +3317,19 @@ def test_plan_candidate_briefing_validates_before_submit(
     assert "maximum acceptance criteria per task: `8`" in briefing
     assert "rolling smoke policy: `required`" in briefing
     assert "tier `static` or `runtime`" in briefing
+    assert "required Plan inputs/outputs: `issue_spec`, `task_map`, `product_acceptance_spec`, `source_index`" in briefing
+    assert "do not rewrite intake" in briefing
+    # Validate the nested authoring example from the actual dispatch, after
+    # adding only the identities that the Kernel binds at admission.
+    example_line = next(line for line in briefing.splitlines()
+                        if "Product Acceptance shape example" in line)
+    example = json.loads(example_line.split("`", 1)[1].rsplit("`", 1)[0])
+    from zf.runtime.product_acceptance import validate_product_acceptance_spec
+    validate_product_acceptance_spec({
+        **example["body"], "schema_version": example["schema_version"],
+        "workflow_run_id": "run-test", "flow_kind": "issue",
+        "plan_revision": "r1", "task_map_generation": "g1",
+    })
 
 
 def test_artifact_delivery_briefing_pins_identity_and_admitted_inputs(
@@ -3470,7 +3484,7 @@ def test_artifact_delivery_briefing_pins_identity_and_admitted_inputs(
     assert "Kernel. Do not add raw child result files" in briefing
 
 
-def test_goal_closure_success_uses_immutable_payload_file(
+def test_goal_closure_success_uses_editable_payload_draft(
     tmp_path: Path,
     monkeypatch,
 ):
@@ -4521,6 +4535,9 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
     approval = next(event for event in events if event.type == "approval.requested")
     assert checkpoint.payload["workflow_run_id"] == "trace-product"
     assert approval.payload["approve_action"] == "replan-approve"
+    assert approval.payload["plan_preview_bundle_ref"].startswith("artifacts/plan-preview/bundles/")
+    assert len(approval.payload["plan_preview_bundle_digest"]) == 64
+    assert (state_dir / approval.payload["plan_preview_bundle_ref"]).is_file()
     assert not [event for event in events if event.type == "fanout.aggregate.completed"]
     assert not [event for event in events if event.type == "task_map.blocked"]
 
@@ -5461,6 +5478,13 @@ def test_refactor_plan_critic_submits_only_verdict_delta(tmp_path: Path):
     assert "`goal_claim_set` and `planning_result` are Kernel-derived" in briefing
     assert "issue flows adapt `requirement_spec` to `issue_spec`" in briefing
     assert "Edit only the signed result scratch file" in briefing
+    assert f"Edit `{(state_dir / scratch_ref).resolve()}`" in briefing
+    assert "Use native Edit/Write/apply_patch" in briefing
+    assert "not shell redirection or Python/shell heredocs" in briefing
+    for body in (result, result["report"]):
+        assert body["status"] == ""
+        assert body["recommendation"] == ""
+        assert body["summary"] == ""
     assert "non-empty `message`" in briefing
     assert "`info`, `low`, `medium`, `high`, or `critical`" in briefing
     assert "never invent `residual-risk`" in briefing
@@ -5475,8 +5499,10 @@ def test_refactor_plan_critic_submits_only_verdict_delta(tmp_path: Path):
     assert str(state_dir / "artifacts" / "fanout-refactor-plan") not in briefing
 
 
+@pytest.mark.parametrize("admitted", [False, True])
+@pytest.mark.parametrize("ledger_bound", [False, True])
 def test_refactor_plan_critic_large_package_is_ref_digest_only(
-    tmp_path: Path,
+    tmp_path: Path, admitted: bool, ledger_bound: bool,
 ) -> None:
     state_dir = tmp_path / ".zf-refactor-critic-large"
     state_dir.mkdir()
@@ -5524,6 +5550,23 @@ def test_refactor_plan_critic_large_package_is_ref_digest_only(
         "report_path": str(report_path),
         "report": planner_body,
     }]
+    if admitted:
+        from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+        control = {"verdict": "passed", "payload": planner_body}
+        control_ref = write_immutable_json_sidecar(
+            state_dir, control, root="control-results", kind="control_result",
+            schema_version="fanout-child-result.v1", created_by="test",
+        )
+        envelope_ref = write_immutable_json_sidecar(
+            state_dir, {"control_result_ref": control_ref}, root="call-results",
+            kind="agent_call_result", schema_version="agent-call-result.v1",
+            created_by="test",
+        )
+        reports[0].update({
+            "control_result": control, "control_result_ref": control_ref,
+            "admitted_call_result_ref": envelope_ref,
+        })
     from zf.runtime.plan_synth_handoff import build_plan_synth_call_payload
 
     call_payload = build_plan_synth_call_payload(
@@ -5584,7 +5627,7 @@ def test_refactor_plan_critic_large_package_is_ref_digest_only(
             "children": [],
         },
         run_id="run-synth-large",
-        call_payload=call_payload,
+        call_payload=call_payload if ledger_bound else {},
         reports=reports,
     )
 
@@ -5592,12 +5635,23 @@ def test_refactor_plan_critic_large_package_is_ref_digest_only(
     metrics = json.loads(
         path.with_suffix(".md.metrics.json").read_text(encoding="utf-8")
     )
+    if not ledger_bound:
+        assert "LARGE-PLAN-SENTINEL" in briefing
+        return
     assert "LARGE-PLAN-SENTINEL" not in briefing
     assert "Child report bodies are canonical required inputs" in briefing
     assert "artifact read --attempt run-synth-large" in briefing
     assert len(briefing.encode("utf-8")) < 24 * 1024
     assert metrics["briefing_bytes"] < 24 * 1024
     assert metrics["required_read_count"] >= 2
+    if admitted:
+        assert envelope_ref["sha256"] in briefing
+        assert json.loads((state_dir / control_ref["ref"]).read_text()) == control
+        assert any(source["source_id"].endswith("-control-result")
+                   and source["sha256"] == control_ref["sha256"]
+                   for source in manifest["sources"])
+        assert any(read["source_id"] == "child-result-refactor-plan-synth"
+                   for read in call_payload["required_reads"])
 
 
 def test_issue_triage_retry_restores_lineage_and_plan_contract(tmp_path: Path):

@@ -1035,6 +1035,42 @@
 .plan-preview-markdown {
   max-width: 980px;
 }
+.plan-review-dossier {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+.plan-review-divider {
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.plan-document-outline {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+.plan-document-outline ol {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding-left: 24px;
+}
+.plan-document-outline button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+.plan-document-outline button:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
 .plan-preview-markdown .agent-markdown-plain-guard {
   max-height: none;
   overflow: visible;
@@ -1105,6 +1141,30 @@
   align-content: start;
   gap: 10px;
   background: var(--panel);
+}
+.plan-preview-repair-chat {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.plan-preview-repair-chat span {
+  font-weight: 650;
+  font-size: var(--text-12);
+}
+.plan-preview-repair-chat textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-12);
 }
 .delivery-cycle-strip {
   display: grid;
@@ -1309,3 +1369,24 @@
 /* PM 后批:Graph 邻居高亮 + 选中边 */
 .dt-thick-node.neighbor { border-color: var(--brand, #47d); border-style: dashed; }
 .dt-thick-edge.active { color: var(--brand, #47d); border-color: var(--brand, #47d); font-weight: 600; }
+
+/* Bound Plan reading layers share the original document's scroll boundary. */
+.plan-review { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.plan-review-scroll { flex: 1; min-height: 0; overflow: auto; padding: 14px; overflow-wrap: anywhere; }
+.plan-review-card { border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin: 12px 0; }
+.plan-review-card summary { cursor: pointer; }
+.plan-review-card dd { margin: 4px 0 12px; white-space: pre-wrap; }
+.plan-review-selector { display: grid; gap: 8px; }
+.plan-review-selector select { width: 100%; min-width: 0; padding: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+.plan-review-sources code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.plan-review-scroll { font-size: var(--text-14); line-height: 1.7; padding: 20px; }
+.plan-review-scroll h2 { font-size: var(--text-20); margin: 8px 0 16px; }
+.plan-review-scroll h3 { font-size: var(--text-16); margin: 24px 0 12px; }
+.plan-review-scroll h4 { font-size: var(--text-14); margin: 0 0 10px; }
+.plan-review-scroll p { margin: 10px 0; }
+.plan-review-scroll > .muted { font-size: var(--text-12); }
+.plan-review-scroll .agent-markdown { line-height: inherit; }
+.plan-review-scroll .plan-review-card { padding: 16px; }
+@media (max-width: 700px) {
+  .plan-review-scroll { padding: 14px; }
+}

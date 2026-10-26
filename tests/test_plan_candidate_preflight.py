@@ -253,6 +253,61 @@ def test_plan_candidate_preflight_accepts_closed_plan_handoff(tmp_path) -> None:
 
     assert result["status"] == "passed"
     assert result["summary"] == {"error_count": 0, "task_count": 1}
+    assert result["execution_review"]["graph"]["task_count"] == 1
+
+
+def test_missing_task_partition_is_rejected_before_critic(tmp_path):
+    result = evaluate_plan_candidate_preflight(
+        state_dir=tmp_path / "state", project_root=tmp_path,
+        reports=[{"report": {
+            "task_map": _task_map(), "source_index": _source_index(),
+            "source_index_ref": "inline:source-index", "plan_md": "# Plan",
+            "plan_ports": [{"logical_name": "execution_spec", "body": {
+                "schema_version": "task-scoped-plan-input.v1", "shared": {}, "tasks": [],
+            }}],
+        }}],
+        manifest={"trigger_payload": {"flow_kind": "prd", "prd_ref": "requirements.md"}},
+        metadata={"flow_kind": "prd"},
+    )
+    assert "task_scoped_input_invalid" in {error["code"] for error in result["errors"]}
+
+
+def test_valid_candidate_delivers_execution_facts_to_actual_critic_caller(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    import zf.runtime.call_result_runtime as calls
+    import zf.runtime.plan_synth_handoff as handoff
+
+    harness = _PlanSynthHarness(tmp_path, reports=[{"child_id": "planner", "report": {
+        "task_map": _task_map(), "source_index": _source_index(),
+        "source_index_ref": "inline:source-index", "plan_md": "# Plan",
+    }}])
+    harness._checkout_fanout_reader = lambda *args: None
+    from zf.core.cost.tracker import CostTracker
+    CostTracker(harness.state_dir / "cost.jsonl").record_usage(
+        "planner", 100, 20, model="unknown-model",
+    )
+    captured = {}
+
+    def prepare(runtime, *, payload, **kwargs):
+        captured.update(payload)
+        return SimpleNamespace(should_dispatch=False)
+
+    monkeypatch.setattr(calls, "prepare_call_operation", prepare)
+    monkeypatch.setattr(handoff, "build_plan_synth_call_payload", lambda **kwargs: {})
+    harness._dispatch_fanout_synth("fanout-plan", {
+        "fanout_id": "fanout-plan", "trace_id": "run", "stage_id": "issue-triage",
+        "trigger_event_id": "evt-input",
+        "trigger_payload": {"flow_kind": "issue", "issue_ref": "docs/issue.md"},
+        "aggregate_config": {"success_event": "task_map.ready", "synth_role": "plan-critic"},
+        "children": [],
+    }, "wait_for_all", "plan-critic")
+    assert harness.critic_dispatch_attempted
+    source = next(r for r in captured["input_refs"] if r["source_id"] == "plan-execution-review")
+    assert hydrate_sidecar_ref(harness.state_dir, source).payload["graph"]["task_count"] == 1
+    usage = hydrate_sidecar_ref(harness.state_dir, source).payload["usage_observations"]
+    assert usage["groups"][0]["total_tokens"] == 120
+    assert usage["groups"][0]["estimated_usd"] is None
 
 
 def test_plan_candidate_preflight_validates_product_acceptance_before_critic(

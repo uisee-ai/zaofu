@@ -38,6 +38,10 @@ authoritative when it differs from an older Skill example.
 
 - 在最终提交前加载 `zf-plan-execution-readiness`，记录条款级验收责任、切片可演示结果、
   阶段集成和条件决定的审查证据；机械数量检查不替代语义评估。
+- 对多章节或多份 authority，先建立来源单元到领域/模块/能力/旅程/需求/AC/task/test/
+  evidence 的覆盖账本，逐项标记 `covered`、`explicit_non_goal`、`pending_decision` 或
+  `out_of_scope`。章节级引用、任务标题和矩阵计数不能替代语义覆盖；没有模块定义时记录
+  分组理由。该账本使用已有矩阵或评审工件，不新增 task schema。
 
 - **判据前置(criteria-before-dispatch)**:每个 task 的 `verification`
   与 `acceptance_criteria` 在 **task_map 落盘时** 写死——验收命令是任务
@@ -55,10 +59,21 @@ authoritative when it differs from an older Skill example.
   命令拼成 `cmd1 && cmd2`;`verification` 单字符串只用于旧合同兼容。命令
   identity 包含完整字符串:必须按最终序列化后的原文可执行,不能用补转义后的
   “等价命令”代替。含多层引号/反斜杠的断言应落到本 task 拥有的测试或脚本。
+- 流程审批的 `manual_evidence` 命令按绑定事件 ID 或具体类型收集原始事件，
+  再核对版本、身份和先后顺序；不要用宽泛的 `zf events --task ... --last 1000`
+  转储代替审批证明。建单前的 PRD 评审/Owner 确认可能没有 task_id；未知的未来批准
+  使用有界类型查询及实际版本校验，不捏造 ID。将各项采集命令分别映射到同一流程 AC，
+  保留后续原始报告 ref/digest 的读取要求，避免重复加载工具历史消耗验证预算。
+- 事件类型必须对照当前事件合同及实际 producer 核对，不凭名称猜测未来事件。
+  查询 exit 0 或空数组仅表示查询成功，不能证明批准或执行发生。证明“批准先于实施”
+  必须比较绑定当前 Run/Task 的批准与实际 writer 启动/派发事件；完成事件不能替代
+  开始时间。若项目不存在 `impl.child.completed`，不得把它写成可执行验收判据。
 - **两轴自检**:task_map 交付前对照两轴——**落闩**(每片有机械可验的
   完成闸门:命令+退出码,不是"应当工作")与**分母**(所有验收条款都
   映射到某个 task,`requirement_coverage` 无遗漏)。只报分母不落闩 =
   永远差一轮;只落闩不看分母 = 绿灯下漏需求。
+- 在人工 Preview 返修时保留 Plan revision 和旧/新覆盖 diff；影响 scope、合同、owner、
+  依赖或 AC 的修改必须触发新的 Critic verdict 和 approval，不能静默改写已批准版本。
 - Real dependencies only: if task B imports what task A owns, B is
   `blocked_by` A. Secretly coupled "parallel" waves produce convention
   races and doomed slice verification.
@@ -78,6 +93,9 @@ authoritative when it differs from an older Skill example.
   relocates admitted workdir refs into canonical artifact storage and computes
   their digests. The Kernel admission gate, not your prose, decides whether the
   map is accepted.
+- 含项目根路径的来源引用只是产物数据，也可能触发动态 shell 写入门禁；优先用
+  原生 Edit/Write/apply_patch 写 workdir 产物与 Kernel 授权的确切 result scratch，
+  不把外部来源读取和本地产物写入混进一个 Python/shell 脚本，不绕过 guard。
 - Load `zf-plan-task-map-contract` before emitting the map. On incremental
   replan, also load `zf-gap-task-synth` and preserve unaffected completed tasks.
 - When Controlled Artifact Inputs include portable matrix drafts, load

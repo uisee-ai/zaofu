@@ -21,7 +21,11 @@ from zf.runtime.call_result_adapters import (
     ControlResultAdapterRegistry,
 )
 from zf.runtime.call_result_admission import CallResultAdmissionService
-from zf.runtime.plan_candidate_submit_validation import validate_plan_candidate_semantic
+from zf.runtime.plan_candidate_submit_validation import (
+    plan_synth_verdict_errors,
+    validate_plan_candidate_semantic,
+    validate_plan_synth_result,
+)
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import (
     WorkflowOperationService,
@@ -306,7 +310,7 @@ class SemanticResultSubmitService:
         credential: str,
         project_root: Path | None = None,
     ) -> dict[str, Any]:
-        """Preflight one Plan result without consuming its submit binding.
+        """Preflight a supported result without consuming its submit binding.
 
         Plan producers carry the full candidate-validation context. Plan Synth
         operations carry only the critic verdict delta, so they use their
@@ -334,7 +338,9 @@ class SemanticResultSubmitService:
         if validation is not None:
             return validation
         if profile_id == _PLAN_SYNTH_PROFILE_ID:
-            return self._validate_plan_synth_result(
+            return validate_plan_synth_result(
+                registry=self.registry,
+                event_type=self._canonical_event_type(request, semantic),
                 operation=_operation,
                 request=request,
                 semantic=semantic,
@@ -343,122 +349,25 @@ class SemanticResultSubmitService:
                 profile_id=profile_id,
                 revision=_revision,
             )
+        if profile_id in {"task-verify", "candidate-verify"}:
+            from zf.runtime.verification_submit_validation import validate_verification_submission
+
+            return validate_verification_submission(
+                state_dir=self.state_dir,
+                registry=self.registry,
+                event_type=self._canonical_event_type(request, semantic),
+                operation=_operation,
+                request=request,
+                semantic=semantic,
+                role_instance=role_instance,
+                profile_id=profile_id,
+                revision=_revision,
+                delivery=self._current_task_pipeline_delivery(_operation, request),
+            )
         raise ResultSubmitError(
             "plan_candidate_validation_unavailable",
             "operation has no supported pre-submit validation profile",
         )
-
-    def _validate_plan_synth_result(
-        self,
-        *,
-        operation: Mapping[str, Any],
-        request: Mapping[str, Any],
-        semantic: Mapping[str, Any],
-        operation_id: str,
-        role_instance: str,
-        profile_id: str,
-        revision: str,
-    ) -> dict[str, Any]:
-        """Run the Plan Synth typed-result checks without writing sidecars."""
-
-        profile = self.registry.profile(profile_id, revision)
-        event_type = self._canonical_event_type(request, semantic)
-        identity = dict(request.get("result_identity") or {})
-        identity.update({
-            "workflow_run_id": str(operation.get("workflow_run_id") or ""),
-            "operation_id": operation_id,
-            "request_hash": str(operation.get("request_hash") or ""),
-            "attempt_id": str(operation.get("active_attempt_id") or ""),
-            "dispatch_id": str(operation.get("dispatch_id") or ""),
-            "lease_id": str(operation.get("lease_id") or ""),
-            "role_instance": role_instance,
-            "output_profile_id": profile_id,
-            "output_profile_revision": revision,
-        })
-        protected = {
-            key: value for key, value in identity.items()
-            if value not in (None, "")
-        }
-        event = ZfEvent(
-            type=event_type,
-            actor=role_instance,
-            payload={
-                **protected,
-                profile.semantic_field: {**dict(semantic), **protected},
-            },
-        )
-        adapter = self.registry.adapter_for(event)
-        if adapter is None or adapter.adapter_id != profile.adapter_id:
-            raise ResultSubmitError(
-                "profile_adapter_invalid",
-                f"no {profile.adapter_id!r} adapter for {event_type!r}",
-            )
-        _normalized, adapter_issues = adapter.normalize(event)
-        errors = [dict(item) for item in adapter_issues]
-
-        execution_status = str(semantic.get("status") or "completed").lower()
-        if execution_status not in {"completed", "failed", "failure"}:
-            errors.append({
-                "field": "status",
-                "code": "plan_synth_status_invalid",
-                "message": (
-                    "Plan Synth status must be completed or failed; "
-                    f"got {execution_status!r}"
-                ),
-            })
-        recommendation = str(semantic.get("recommendation") or "").lower()
-        if recommendation and recommendation not in {
-            "approve", "reject", "needs_rework", "abstain",
-        }:
-            errors.append({
-                "field": "recommendation",
-                "code": "plan_synth_recommendation_invalid",
-                "message": (
-                    "Plan Synth recommendation must be approve, reject, "
-                    "needs_rework, or abstain; "
-                    f"got {recommendation!r}"
-                ),
-            })
-
-        report = semantic.get("report")
-        if not isinstance(report, Mapping):
-            errors.append({
-                "field": "report",
-                "code": "plan_synth_report_invalid",
-                "message": "Plan Synth result requires a report object",
-            })
-        else:
-            from zf.runtime.fanout import validate_fanout_report
-
-            report_validation = validate_fanout_report(
-                dict(report),
-                child_id="synth",
-            )
-            errors.extend({
-                "field": "report",
-                "code": "plan_synth_report_invalid",
-                "message": diagnostic,
-            } for diagnostic in report_validation.diagnostics)
-            if semantic.get("findings") not in (None, []):
-                top_level_report = dict(report)
-                top_level_report["findings"] = semantic.get("findings")
-                top_level_validation = validate_fanout_report(
-                    top_level_report,
-                    child_id="synth",
-                )
-                errors.extend({
-                    "field": "findings",
-                    "code": "plan_synth_report_invalid",
-                    "message": diagnostic,
-                } for diagnostic in top_level_validation.diagnostics)
-
-        return {
-            "schema_version": "semantic-result-preflight.v1",
-            "status": "failed" if errors else "passed",
-            "profile_id": profile_id,
-            "profile_revision": revision,
-            "errors": errors,
-        }
 
     def submit(
         self,
@@ -481,6 +390,14 @@ class SemanticResultSubmitService:
             )
         )
         profile = self.registry.profile(profile_id, revision)
+        if profile_id == _PLAN_SYNTH_PROFILE_ID:
+            verdict_errors = plan_synth_verdict_errors(semantic)
+            if verdict_errors:
+                raise ResultSubmitError(
+                    "plan_synth_verdict_required",
+                    "Plan Synth requires an authored review verdict",
+                    details={"issues": verdict_errors},
+                )
         candidate_validation = validate_plan_candidate_semantic(
             state_dir=self.state_dir,
             request=request,

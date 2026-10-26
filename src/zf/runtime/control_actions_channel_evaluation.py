@@ -58,6 +58,10 @@ class ChannelEvaluationActionsMixin:
                       and all((event.payload or {}).get(key) == value
                               for key, value in identity.items())), None)
         if prior:
+            from zf.runtime.channel_prd_evaluation_recovery import fail_interrupted_evaluation
+
+            fail_interrupted_evaluation(self.state_dir, self.writer, prior)
+            events = self.writer.event_log.read_all()
             terminal = next((event for event in reversed(events)
                              if event.type in {"output.evaluation.completed", "output.evaluation.failed"}
                              and (event.payload or {}).get("request_id") == (prior.payload or {}).get("request_id")), None)

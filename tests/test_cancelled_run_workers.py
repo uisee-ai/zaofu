@@ -105,3 +105,12 @@ def test_replayed_busy_projection_does_not_terminate_an_already_stopped_dispatch
     assert stopped == ["scan"]
     assert not any(event.payload.get("to") == "blocked_human"
                    for event in runtime.event_log.read_all())
+
+
+def test_stop_that_returns_with_live_provider_remains_blocked(tmp_path):
+    runtime, stopped = _runtime(tmp_path)
+    runtime.transport.is_alive = lambda role: True
+    _release(runtime)
+    assert stopped == ["scan"]
+    assert runtime._last_worker_state["scan"] == "blocked_human"
+    assert runtime._last_worker_task_id["scan"] == "TASK-1"

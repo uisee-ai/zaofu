@@ -69,6 +69,7 @@ def react_channel_synthesis_requested(
                 "text": f"@{target_member_id} {prompt}",
                 "mentions": [target_member_id],
                 "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1",
+                         "prd_quality_contract": payload.get("prd_quality_contract", ""),
                          **({"prd_source_file": payload["prd_source_file"]} if payload.get("prd_source_file") else {})},
             },
             created_by="channel-synthesis:runtime",
@@ -455,7 +456,6 @@ def _synthesis_source_refs(host, request_id: str, channel_id: str, thread_id: st
     for event in host.event_log.read_all():
         p = event.payload
         if (event.type == "channel.synthesis.requested" and p.get("request_id") == request_id
-                and p.get("channel_id") == channel_id and str(p.get("thread_id") or "main") == thread_id
-                and isinstance(p.get("prd_source_file"), dict)):
-            return {"prd_source_file": p["prd_source_file"]}
+                and p.get("channel_id") == channel_id and str(p.get("thread_id") or "main") == thread_id):
+            return {key: p[key] for key in ("prd_source_file", "prd_quality_contract") if p.get(key)}
     return {}

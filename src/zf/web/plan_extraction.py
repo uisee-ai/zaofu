@@ -19,6 +19,7 @@ from zf.runtime.task_workflow_plans import normalize_task_workflow_parameters
 from zf.runtime.workflow_route_catalog import workflow_route_catalog
 from zf.runtime.workflow_start import is_workflow_start_action
 from zf.web.channel_task_plan import (
+    bind_nested_workflow_target,
     normalize_channel_task_submit_payload,
     selected_channel_task_authority,
 )
@@ -381,6 +382,9 @@ def normalize_plan_request(
                             if key in normalized_workflow_context
                         },
                     }
+                    raw_submit_payload = bind_nested_workflow_target(
+                        raw_submit_payload, normalized_workflow_context,
+                    )
                 if (
                     is_workflow_start_action(option_submit_action)
                     and isinstance(raw_submit_payload, dict)

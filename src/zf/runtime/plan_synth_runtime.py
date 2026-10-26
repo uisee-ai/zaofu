@@ -43,6 +43,9 @@ PLAN_SYNTH_SEMANTIC_FIELDS = (
     "plan_ports",
     "review_artifact_ref",
     "plan_artifact_ref",
+    "plan_content_profile",
+    "authority_refs",
+    "requirement_spec_ref",
     "task_map_ref",
     "risk_register_ref",
     "backlog_candidates_ref",
@@ -148,6 +151,7 @@ class PlanSynthRuntimeMixin:
             lost_event = self._reader_dispatch_lost_event_after(
                 lost_by_role.get(role_instance, []),
                 latest_index,
+                events=events, dispatch_event=latest_dispatch,
             )
             if lost_event is None:
                 continue
@@ -445,6 +449,7 @@ class PlanSynthRuntimeMixin:
                 ),
                 None,
             )
+            execution_review = None
             if (
                 is_plan_synth
                 and str(getattr(stage, "attempt_domain", "") or "") == "plan"
@@ -472,6 +477,7 @@ class PlanSynthRuntimeMixin:
                     ),
                     writer_policy=plan_candidate_writer_policy(self.config),
                 )
+                execution_review = preflight.get("execution_review")
                 if preflight["status"] != "passed":
                     from zf.runtime.plan_synth_handoff import (
                         build_plan_candidate_input_refs,
@@ -569,6 +575,14 @@ class PlanSynthRuntimeMixin:
                     run_id=run_id,
                     role_instance=role.instance_id,
                 )
+                if execution_review is not None:
+                    from zf.runtime.plan_execution_review import attach_execution_review
+
+                    attach_execution_review(
+                        state_dir=self.state_dir, payload=call_payload,
+                        review=execution_review,
+                        source_event_id=str(manifest.get("trigger_event_id") or ""),
+                    )
                 workdir_write_scopes = []
                 if not pure_aggregator_policy_plan(self.config, role).get("applies"):
                     workdir_write_scopes = plan_artifact_workdir_write_scopes(

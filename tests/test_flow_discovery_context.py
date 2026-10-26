@@ -76,3 +76,20 @@ def test_discovery_receives_only_exact_admitted_shard_results(mismatch: str | No
     )
     assert context.request_payload["result_refs"] == ([] if mismatch else [descriptor])
     assert context.request_payload["effective_config_ref"] == identity["effective_config_ref"]
+
+
+@pytest.mark.parametrize("source", ["payload", "fallback"])
+def test_discovery_preserves_requirement_snapshot_for_gap_replanning(source: str) -> None:
+    identity = {
+        "requirement_spec_ref": "workflow-requests/run-1/requirements/revision-0002.json",
+        "requirement_spec_digest": "a" * 64,
+    }
+    trigger = ZfEvent(type="verify.passed", payload={"workflow_run_id": "run-1"})
+    context = build_flow_discovery_context(
+        [trigger], event=trigger,
+        payload={**trigger.payload, **(identity if source == "payload" else {})},
+        fallback=identity if source == "fallback" else {},
+        metadata={}, pdd_id="PRD-1", feature_id="PRD-1", trace_id="run-1",
+        flow_kind="prd", discovery_profile="product_completeness",
+    )
+    assert {key: context.request_payload.get(key) for key in identity} == identity

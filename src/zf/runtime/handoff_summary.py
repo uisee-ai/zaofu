@@ -48,6 +48,19 @@ def project_handoff_summary(
 
     now = now or datetime.now(timezone.utc)
     task = task or _load_task(state_dir, task_id)
+    from zf.runtime.task_run_binding import canonical_task_run
+    from zf.runtime.run_scope import events_for_run
+
+    rows = [event for _, event in task_events or []]
+    bound_run, strict_binding = canonical_task_run(
+        task, index.events if index is not None else rows,
+    )
+    if strict_binding:
+        kept = {event.id for event in events_for_run(
+            rows, run_id=bound_run, include_legacy_single_run=False,
+        )} if bound_run else set()
+        task_events = [(sequence, event) for sequence, event in task_events or []
+                       if event.id in kept]
     dispatch_id = dispatch_id or _latest_dispatch_id(task, task_events or [])
     state_packet = _safe_state_packet(state_dir, task_id, dispatch_id=dispatch_id)
     resume_packet = _safe_resume_packet(

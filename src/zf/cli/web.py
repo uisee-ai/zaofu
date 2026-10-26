@@ -34,6 +34,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--port", type=int, default=8001, help="Bind port")
     parser.add_argument(
+        "--read-only", action="store_true",
+        help="Disable dashboard mutations (default: writable, with authentication for network access)",
+    )
+    parser.add_argument(
         "--state-dir", type=str, default=None,
         help="Path to runtime state dir (default: project.state_dir from zf.yaml, else .zf)",
     )
@@ -124,10 +128,12 @@ def run(args: argparse.Namespace) -> int:
 
     # Lazy import so the web module's fastapi dep doesn't break base zf
     from zf.web.server import create_app, validate_trusted_session_host
+    from zf.cli.web_access import configure_web_access, dashboard_launch_url
 
     try:
+        configure_web_access(host=args.host, read_only=getattr(args, "read_only", False))
         validate_trusted_session_host(args.host)
-    except RuntimeError as exc:
+    except (OSError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
@@ -139,8 +145,8 @@ def run(args: argparse.Namespace) -> int:
     )
     mode = "workspace" if workspace_shell else "project"
     print(
-        f"zaofu dashboard -> http://{args.host}:{args.port}/"
-        f"  (mode={mode}, state_dir={state_dir})"
+        f"zaofu dashboard -> {dashboard_launch_url(args.host, args.port)}"
+        f"  (mode={mode}, state_dir={state_dir})", flush=True,
     )
     uvicorn.run(
         app, host=args.host, port=args.port, log_level="warning",

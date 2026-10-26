@@ -75,16 +75,25 @@ class FanoutDispatchLivenessMixin:
         trace_id: str,
         state: str,
         provider_session_replaced: bool,
+        dispatch_id: str = "",
     ) -> tuple[bool, dict[str, str]]:
-        """Rotate an idle reader before it crosses a root workflow boundary."""
+        """Fence and rotate an idle reader at its configured context boundary."""
 
         if (
             role.role_kind != "reader"
             or not self._role_is_on_demand(role)
-            or not task_id
+            or (not task_id and role.lifecycle.reader_context_scope != "dispatch")
         ):
             return True, {}
         registry = self._role_lifecycle_registry()
+        per_dispatch = role.lifecycle.reader_context_scope == "dispatch"
+        if per_dispatch and not dispatch_id:
+            return False, {"defer_reason": "reader_context_dispatch_id_missing"}
+        if per_dispatch and not (task_id or trace_id):
+            return False, {"defer_reason": "reader_context_scope_missing"}
+        previous_dispatch = str(registry.instance_meta().get(
+            role.instance_id, {},
+        ).get("fanout_context_dispatch_id") or "")
         current = (task_id, trace_id)
         previous = self._reader_fanout_context_scope(role.instance_id)
         if provider_session_replaced or not any(previous):
@@ -92,9 +101,11 @@ class FanoutDispatchLivenessMixin:
                 role.instance_id,
                 fanout_context_task_id=task_id,
                 fanout_context_trace_id=trace_id,
+                fanout_context_dispatch_id=dispatch_id,
             )
             return True, {}
-        if self._reader_fanout_context_matches(previous, current):
+        same_root = self._reader_fanout_context_matches(previous, current)
+        if same_root and (not per_dispatch or previous_dispatch == dispatch_id):
             return True, {}
 
         blockers: list[str] = []
@@ -121,6 +132,12 @@ class FanoutDispatchLivenessMixin:
 
         old_session = registry.get(role.instance_id)
         rotation = {
+            "reason": (
+                "reader_dispatch_context_changed" if same_root
+                else "reader_root_context_changed"
+            ),
+            "dispatch_id": dispatch_id,
+            "previous_dispatch_id": previous_dispatch,
             "previous_task_id": previous[0],
             "previous_trace_id": previous[1],
             "task_id": task_id,
@@ -135,7 +152,6 @@ class FanoutDispatchLivenessMixin:
                 "role": role.name,
                 "instance_id": role.instance_id,
                 "backend": role.backend,
-                "reason": "reader_root_context_changed",
                 **rotation,
             },
             correlation_id=trace_id or None,
@@ -143,6 +159,8 @@ class FanoutDispatchLivenessMixin:
         try:
             if self.transport.is_alive(role.instance_id):
                 self.transport.terminate(role.instance_id)
+            if self.transport.is_alive(role.instance_id):
+                raise RuntimeError("reader provider process still alive after termination")
         except Exception as exc:  # noqa: BLE001
             self.event_writer.append(ZfEvent(
                 type="worker.recycle.failed",
@@ -151,7 +169,6 @@ class FanoutDispatchLivenessMixin:
                 payload={
                     "role": role.name,
                     "instance_id": role.instance_id,
-                    "reason": "reader_root_context_changed",
                     "error": str(exc)[:500],
                     **rotation,
                 },
@@ -173,6 +190,7 @@ class FanoutDispatchLivenessMixin:
             role.instance_id,
             fanout_context_task_id=task_id,
             fanout_context_trace_id=trace_id,
+            fanout_context_dispatch_id=dispatch_id,
             fanout_context_previous_task_id=previous[0],
             fanout_context_previous_trace_id=previous[1],
             fanout_context_rotated_at=now,
@@ -184,7 +202,7 @@ class FanoutDispatchLivenessMixin:
         self._set_worker_state(
             role.instance_id,
             "suspended",
-            reason="reader provider context rotated for a new root workflow",
+            reason=rotation["reason"],
             task_id=task_id,
             force=True,
         )
@@ -198,7 +216,29 @@ class FanoutDispatchLivenessMixin:
     def _reader_dispatch_lost_event_after(
         role_events: list[tuple[int, ZfEvent]],
         dispatch_index: int,
+        *,
+        events: list[ZfEvent],
+        dispatch_event: ZfEvent,
     ) -> ZfEvent | None:
+        # A protocol correction continues this exact attempt. Its source turn's
+        # stop is no longer evidence that the child disappeared. A later stop
+        # or transport loss still follows the existing bounded recovery path.
+        original = dispatch_event.payload
+        identity = {
+            "operation_id": str(original.get("operation_id") or ""),
+            "request_hash": str(original.get("request_hash") or ""),
+            "dispatch_id": str(original.get("run_id") or original.get("dispatch_id") or ""),
+            "role_instance": str(original.get("role_instance") or ""),
+        }
+        if all(identity.values()):
+            for index in range(len(events) - 1, dispatch_index, -1):
+                event = events[index]
+                if event.type != "workflow.call.result.repair.dispatched":
+                    continue
+                if all(str(event.payload.get(key) or "") == value
+                       for key, value in identity.items()):
+                    dispatch_index = index
+                    break
         for index, event in reversed(role_events):
             if index > dispatch_index:
                 return event
@@ -558,6 +598,7 @@ class FanoutDispatchLivenessMixin:
             trace_id=str(trace_id or "").strip(),
             state=state,
             provider_session_replaced=provider_session_replaced,
+            dispatch_id=str(run_id or "").strip(),
         )
         if not context_ready:
             try:
@@ -602,7 +643,6 @@ class FanoutDispatchLivenessMixin:
                     "role": role.name,
                     "instance_id": role.instance_id,
                     "backend": role.backend,
-                    "reason": "reader_root_context_changed",
                     **context_rotation,
                     "new_session": (
                         str(observed_session)

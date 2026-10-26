@@ -110,6 +110,10 @@ class TmuxLayout(ABC):
         """
         return target.pane is None and target.window == instance_id
 
+    def role_absence_confirmed(self, session: "TmuxSession", instance_id: str) -> bool:
+        """Only a successful layout inventory may prove an already lost slot."""
+        return False
+
 
 class WindowPerRoleLayout(TmuxLayout):
     """Default: one tmux window per role instance (legacy behavior).
@@ -361,6 +365,32 @@ class PaneGridLayout(TmuxLayout):
             return self._panes.get(instance_id) == target.pane
         pane_exists, owner = self._pane_owner(session, str(target.pane))
         return pane_exists and owner == instance_id
+
+    def role_absence_confirmed(self, session: "TmuxSession", instance_id: str) -> bool:
+        if session.dry_run:
+            return instance_id not in self._panes and not self._binding_entry(instance_id)
+        binding = self._binding_entry(instance_id)
+        known_pane = self._panes.get(instance_id) or binding.get("pane")
+        expected_cwd = self.expected_cwd(instance_id)
+        result = session._run(
+            ["tmux", "list-panes", "-s", "-t", session.session_name,
+             "-F", "#{pane_id}\t#{@zf_instance_id}\t#{pane_title}\t#{pane_current_path}\t#{window_name}"],
+            check=False, capture=True,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+        for line in result.stdout.splitlines():
+            fields = line.split("\t")
+            if len(fields) != 5 or not fields[0].startswith("%"):
+                return False
+            pane, owner, title, cwd, window = fields
+            # A reused binding or unlabelled pane in the old workdir is
+            # ambiguous; never treat it as permission to replace a writer.
+            if (pane == known_pane or instance_id in {owner, title}
+                    or (expected_cwd and cwd == expected_cwd)
+                    or (window == self.window_name and not owner)):
+                return False
+        return True
 
     def record_cwd(
         self,

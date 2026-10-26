@@ -188,16 +188,27 @@ def hydrate_sidecar_ref(
     Raises ``SidecarRefError`` with stable ``code`` on failure.
     """
 
-    verified = verify_sidecar_ref(state_dir, descriptor)
-    normalized = verified["descriptor"]
-    ref = str(verified["ref"] or "")
+    normalized = normalize_sidecar_ref_descriptor(descriptor)
+    ref = str(normalized["ref"])
     rel = safe_sidecar_ref(ref)
     path = sidecar_path(state_dir, rel)
-    size = int(verified["byte_count"])
-    if size > max(1, int(max_bytes or DEFAULT_HYDRATE_LIMIT_BYTES)):
+    if not path.is_file():
+        raise SidecarRefError("ref_missing", f"sidecar ref missing: {ref}", ref=ref)
+    limit = max(1, int(max_bytes or DEFAULT_HYDRATE_LIMIT_BYTES))
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(limit + 1)
+    except (FileNotFoundError, IsADirectoryError) as exc:
+        raise SidecarRefError("ref_missing", f"sidecar ref missing: {ref}", ref=ref) from exc
+    size = len(raw)
+    if size > limit:
         raise SidecarRefError("payload_too_large", f"sidecar payload too large: {ref}", ref=ref)
-    raw = path.read_bytes()
-    digest = str(verified["sha256"])
+    expected_bytes = int(normalized.get("byte_count") or 0)
+    if expected_bytes and expected_bytes != size:
+        raise SidecarRefError("byte_count_mismatch", f"sidecar byte_count mismatch for {ref}", ref=ref)
+    digest = hashlib.sha256(raw).hexdigest()
+    if normalized.get("sha256") and normalized["sha256"] != digest:
+        raise SidecarRefError("hash_mismatch", f"sidecar hash mismatch for {ref}", ref=ref)
     encoding = str(normalized.get("encoding") or "utf-8")
     content_type = str(normalized.get("content_type") or normalized.get("mime") or "text/plain")
     try:

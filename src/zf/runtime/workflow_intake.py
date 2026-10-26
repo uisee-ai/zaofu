@@ -93,6 +93,9 @@ def build_flow_intake(
         )
     )
     config = _load_project_config(project_root)
+    existing: dict[str, Any] = {}
+    if config is None and manifest_path.is_file():
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
     if config is not None:
         from zf.runtime.workflow_requests import (
             WorkflowRequestError,
@@ -123,7 +126,7 @@ def build_flow_intake(
         " ".join([kind, objective_text, source_hint])
     )
     effective_kind = (
-        inferred_kind if requested_kind == "auto"
+        str(existing.get("kind") or "auto") if requested_kind == "auto"
         else _normalize_request_kind(requested_kind)
     )
     lanes = lanes or default_lanes_for_kind(effective_kind)
@@ -453,7 +456,7 @@ def _build_skill_adapter_plan(
     strictness: str = "standard",
     parity_scope: tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    if kind == "workflow":
+    if kind in {"workflow", "auto"}:
         catalog = {
             "kind": "registered-generic-workflow-catalog",
             "version": "generic-workflow.v1",
@@ -465,7 +468,7 @@ def _build_skill_adapter_plan(
             "project_key": project_id,
             "strictness": strictness,
             "parity_scope": [],
-            "status": "PASS",
+            "status": "PENDING" if kind == "auto" else "PASS",
             "required_skills": [],
             "recommended_skills": [],
             "loaded_skills": [],
@@ -515,7 +518,7 @@ def _write_delivery_matrix_drafts(
     skill_plan: dict[str, Any],
     created_at: str,
 ) -> dict[str, str]:
-    if kind == "workflow":
+    if kind in {"workflow", "auto"}:
         return {}
     source_text = _read_text_ref(source_ref)
     extracted_acceptance = _extract_acceptance_criteria(source_text)
