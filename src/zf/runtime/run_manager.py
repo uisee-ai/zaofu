@@ -8580,6 +8580,10 @@ def _run_has_recent_worker_activity(
 def _pending_failure_closeout_activation_actions(
     events: list[ZfEvent], *, workflow_run_id: str = "",
 ) -> list[dict[str, Any]]:
+    from zf.runtime.plan_approval_state import has_pending_plan_approval
+
+    if has_pending_plan_approval(events, workflow_run_id=workflow_run_id):
+        return []
     if _current_run_completed_closeout(events) is not None:
         return []
     if _autoresearch_inflight_request_ids(events):

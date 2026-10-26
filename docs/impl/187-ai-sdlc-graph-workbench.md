@@ -128,3 +128,7 @@ Plan Preview 从绑定的 source index 补读可选 `authority_refs` 时，仅�
 Provider 的结构化文件写入保护复用现有目标解析器，只检查实际 Add/Update/Delete/Move 或 Write/Edit 目标，避免把规划文档正文里的账本引用当作写账本。未知输入继续使用原有保守检查，shell 变更检测和 Task/Workdir 范围检查不变。
 
 Plan 审阅器按三个绑定端口的路径和摘要确定加载身份，图轮询创建的新数组不再触发清空与重载。切换项目、Plan，或绑定端口变化仍取消旧请求并重新读取；API 的绑定与摘要校验保持有效。真实浏览器12秒观测从12次附件请求降为3次，另用明确标记的图响应夹具验证绑定变化触发重新读取。
+
+等待人工Plan审批是合法等待态。Run Manager 的失败收尾升级和 goal idle rescan 共用只读审批事件归约：同一Run的 `plan.approval.requested` 在对应 `plan.approved` / `plan.rejected` 到来前，不因Worker静默而触发上述动作。其他Run的审批、其他Plan的裁决不影响当前等待；匹配裁决后恢复原有诊断策略，不修改审批、任务或Run真值。此修复避免长时间审批等待被历史失败候选升级成Run blocked。
+
+保留Worker的源码修复重载器从 `process-guard.v2` 读取 `owner_pid`，同时兼容旧 `pid`，继续检查目标进程身份。此前只读旧字段，导致找不到现有watcher。真实运行中通过此路径更换watcher后，FOUNDATION的Provider会话、派发ID和全部pane PID均未变化；该操作不替代Plan批准，也不重建任务图。

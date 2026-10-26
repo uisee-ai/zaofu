@@ -1,5 +1,7 @@
 # 赛车小游戏：待你批准的 Plan
 
+审批后更新：用户已回复“批准，继续”，00:01:28 UTC产生 `plan.approved=evt-158a8630051c`。以下保留批准前审阅内容；当前执行进展见[运行记录](../2026-10-25-2110-racing-supervisor-e2e.md)。
+
 > 状态: active。Plan `evt-adf3807d914c` 已通过独立 Critic，等待用户批准；尚未实现或通过产品验收。
 
 [打开 8002 Workflow](http://10.0.169.194:8002/?page=workflows&project=racing-project-33598481&request=prepare-TASK-5F44B4-c32763f31115843f)，点击 **PRD / Plan Preview · pending**；可切换审批概览、模块规格、验收场景、完整原文。用户也可在当前对话批准此具体版本，由监工代为操作审批按钮。

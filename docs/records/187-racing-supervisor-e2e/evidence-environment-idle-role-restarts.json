@@ -1,0 +1,22 @@
+[
+  {
+    "role": "prd-dev-lane-2",
+    "verified_idle": true,
+    "returncode": 0
+  },
+  {
+    "role": "prd-verify-lane-0",
+    "verified_idle": true,
+    "returncode": 0
+  },
+  {
+    "role": "prd-verify-lane-1",
+    "verified_idle": true,
+    "returncode": 0
+  },
+  {
+    "role": "prd-verify-lane-2",
+    "verified_idle": true,
+    "returncode": 0
+  }
+]

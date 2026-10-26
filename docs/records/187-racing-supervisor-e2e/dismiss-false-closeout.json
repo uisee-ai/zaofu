@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "status": "acknowledged",
+  "action": "human-decision-dismiss",
+  "requested_action": "human-decision-dismiss",
+  "event_type": "human.escalation.acknowledged",
+  "event_id": "evt-d68bf23ae39c",
+  "decision_token": "hdec-5cd556415d99",
+  "decision": "dismissed"
+}

@@ -1,0 +1,564 @@
+{
+  "approval_count": 1,
+  "plan_approved": {
+    "type": "plan.approved",
+    "id": "evt-158a8630051c",
+    "ts": "2026-10-26T00:01:28.943399+00:00",
+    "actor": "operator",
+    "task_id": null,
+    "payload": {
+      "plan_id": "evt-adf3807d914c",
+      "via": "controlled-action:kanban-agent",
+      "surface": "web"
+    },
+    "causation_id": "evt-adf3807d914c",
+    "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "origin": ""
+  },
+  "impl_dispatches": [
+    {
+      "type": "fanout.child.dispatched",
+      "id": "evt-ebd2fe29a7a8",
+      "ts": "2026-10-26T00:09:01.419823+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+        "trace_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "stage_id": "prd-lanes-impl",
+        "child_id": "prd-dev-lane-0-RACE-FOUNDATION",
+        "run_id": "run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION",
+        "role_instance": "prd-dev-lane-0",
+        "target_ref": "0937a8f1a57f5df1b5c196df3355613418300391",
+        "task_id": "RACE-FOUNDATION",
+        "scope": "建立可启动的工程骨架与共享契约",
+        "workdir": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-dev-lane-0/project",
+        "source_branch": "worker/prd-dev-lane-0",
+        "pdd_id": "TASK-5F44B4",
+        "feature_id": "TASK-5F44B4",
+        "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/task_map.json",
+        "source_index_ref": "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/source_index.json",
+        "skills": [
+          "zf-yoke-dev-worker-role-context",
+          "zf-plan-task-map-contract"
+        ],
+        "briefing_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/briefings/prd-dev-lane-0-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION.md",
+        "task_contract_snapshot_ref": "artifacts/task-contract-snapshots/prepare-TASK-5F44B4-c32763f31115843f/RACE-FOUNDATION/contract-r9aa286168074-ecbced3e3acdb342.json",
+        "task_contract_snapshot_digest": "eecd3533ffe2b38d45979d852e6428e17b6b540a5e38b125bb84ce746b4f1d90",
+        "contract_snapshot_ref": "artifacts/task-contract-snapshots/prepare-TASK-5F44B4-c32763f31115843f/RACE-FOUNDATION/contract-r9aa286168074-ecbced3e3acdb342.json",
+        "contract_snapshot_digest": "eecd3533ffe2b38d45979d852e6428e17b6b540a5e38b125bb84ce746b4f1d90",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "contract_authority_revision": "authority-rc2d5d6dd5e3e5015c5f9a407",
+        "contract_revision": "contract-r9aa286168074",
+        "task_map_generation": "bc70eca2006225af346bbebbd8c49a3e7c59f479ef491a4056368aa90736ec8e",
+        "base_commit": "0937a8f1a57f5df1b5c196df3355613418300391",
+        "task_ref": "task/RACE-FOUNDATION",
+        "plan_artifact_package_id": "planpkg-2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a",
+        "plan_artifact_package_ref": "artifacts/plan-packages/2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a.json",
+        "plan_artifact_package_digest": "2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a",
+        "operation_id": "wop-prd-lanes-impl-prd-dev-lane-0-RACE-FOUNDATION-t-18972e0e5fde",
+        "attempt_id": "run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION",
+        "lease_id": "lease-1d744d270144f9ca44c9",
+        "dispatch_id": "run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION",
+        "assignment_strategy": "affinity_stage_slots",
+        "lane_profile": "prd-lanes-slot",
+        "lane_id": "lane0",
+        "stage_slot": "impl",
+        "affinity_tag": "foundation",
+        "flow_kind": "prd",
+        "goal_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "workflow_generation": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+        "request_revision": 6,
+        "completion_profile": "software_delivery",
+        "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/cdfbeb745d46f6173053d6f265322a3f7ee80dab54e4a03c693bbad51f20c2aa.json",
+        "goal_claim_set_digest": "cdfbeb745d46f6173053d6f265322a3f7ee80dab54e4a03c693bbad51f20c2aa",
+        "workflow_proposal_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "workflow_proposal",
+          "ref": "artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/proposals/d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8.json",
+          "sha256": "d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8",
+          "byte_count": 77409,
+          "content_type": "application/json",
+          "schema_version": "workflow-proposal.v1",
+          "encoding": "utf-8",
+          "created_by": "workflow-proposal-compiler",
+          "source_event_id": "",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "workflow_proposal_digest": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+        "effective_config_ref": {
+          "access_scope": {},
+          "byte_count": 205419,
+          "content_type": "application/json",
+          "created_by": "workflow-proposal-compiler",
+          "encoding": "utf-8",
+          "kind": "effective_config_snapshot",
+          "preview": "",
+          "ref": "artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/effective-configs/df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487.json",
+          "ref_schema_version": "sidecar-ref.v1",
+          "required": true,
+          "retention": {
+            "class": "audit_required"
+          },
+          "schema_version": "effective-config-snapshot.v1",
+          "sha256": "df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487",
+          "source_event_id": ""
+        },
+        "effective_config_digest": "df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487",
+        "run_contract_ref": "artifacts/run-contracts/c89a9f70232d3807898647ac16f5f5d2f82896e07cbc2305e71ec7227b0d29b4.json",
+        "run_contract_digest": "d447ba8184c68daa8ec9223086a7b64f42ca587a5e58b2f25cda629112822532",
+        "request_hash": "6861bfb1304f60ded67cd12047902c5e2a4d953f4ed477d8bba45e1730e9e246",
+        "result_protocol_mode": "blocking",
+        "attempt_source_manifest_ref": "artifacts/attempts/run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION/source-manifests/41725aebfe6ba682575d52cfa7307ec2c471099a42235b84f372d8c94e185439.json",
+        "attempt_source_manifest_digest": "41725aebfe6ba682575d52cfa7307ec2c471099a42235b84f372d8c94e185439",
+        "attempt_source_manifest": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "attempt_source_manifest",
+          "ref": "artifacts/attempts/run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION/source-manifests/41725aebfe6ba682575d52cfa7307ec2c471099a42235b84f372d8c94e185439.json",
+          "sha256": "41725aebfe6ba682575d52cfa7307ec2c471099a42235b84f372d8c94e185439",
+          "byte_count": 40194,
+          "content_type": "application/json",
+          "schema_version": "attempt-source-manifest.v1",
+          "encoding": "utf-8",
+          "created_by": "artifact-read-ledger",
+          "source_event_id": "evt-200a652e517b",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "input_consumption_policy_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "input_consumption_policy",
+          "ref": "artifacts/attempts/read-policies/b215c9eaf41f2037f116370e82c018b76f284033340263bd7491da61c992f59e.json",
+          "sha256": "b215c9eaf41f2037f116370e82c018b76f284033340263bd7491da61c992f59e",
+          "byte_count": 4292,
+          "content_type": "application/json",
+          "schema_version": "input-consumption-policy.v1",
+          "encoding": "utf-8",
+          "created_by": "artifact-read-ledger",
+          "source_event_id": "evt-200a652e517b",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "input_consumption_policy": {
+          "schema_version": "input-consumption-policy.v1",
+          "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+          "attempt_id": "run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION",
+          "required_reads": [
+            {
+              "source_id": "contract",
+              "artifact_id": "contract-r9aa286168074-ecbced3e3acdb342.json",
+              "artifact_sha256": "eecd3533ffe2b38d45979d852e6428e17b6b540a5e38b125bb84ce746b4f1d90",
+              "json_path": "$.acceptance_criteria",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "contract",
+              "artifact_id": "contract-r9aa286168074-ecbced3e3acdb342.json",
+              "artifact_sha256": "eecd3533ffe2b38d45979d852e6428e17b6b540a5e38b125bb84ce746b4f1d90",
+              "json_path": "$.verification_commands",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-requirement_spec",
+              "artifact_id": "requirement_spec",
+              "artifact_sha256": "5c0dd9f57a1ada94b699ab4ec0bee6a6df05ee695f49c79b7af28850d40ebb9b",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-goal_claim_set",
+              "artifact_id": "goal_claim_set",
+              "artifact_sha256": "cdfbeb745d46f6173053d6f265322a3f7ee80dab54e4a03c693bbad51f20c2aa",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-task_map",
+              "artifact_id": "task_map",
+              "artifact_sha256": "7bd2382a01ff2e6c48efcb355256e5e395668761dfc201b61f1b294e4f2311d0",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-planning_result",
+              "artifact_id": "planning_result",
+              "artifact_sha256": "7bd2382a01ff2e6c48efcb355256e5e395668761dfc201b61f1b294e4f2311d0",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-source_index",
+              "artifact_id": "source_index",
+              "artifact_sha256": "2dca2a6b5ef9d55deb598b608395f71970cbf38f5a56b8ee55554ac5ef047da9",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-skill_adapter_plan",
+              "artifact_id": "skill_adapter_plan",
+              "artifact_sha256": "5dc45bcc1116ed0d0776943708401e756657617af0358045db3f46b85f9e9722",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-source_inventory",
+              "artifact_id": "source_inventory",
+              "artifact_sha256": "7a53f0fd35ef130883f43a8ab7d669f7dc8ec29e44feb1feb5ae1358aeae8fe9",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-capability_matrix",
+              "artifact_id": "capability_matrix",
+              "artifact_sha256": "d8172ffe13f3d3eefbe127f6f15e495cee7e57a157189cee09c233a861b70ca6",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-acceptance_matrix",
+              "artifact_id": "acceptance_matrix",
+              "artifact_sha256": "5b00e515e921ba9e5336653f0c165b88f0ecd1784dd8b57fc2d821ac28b2a3ad",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-test_matrix",
+              "artifact_id": "test_matrix",
+              "artifact_sha256": "59e39038060b641975c176eb1d851824086adaa6a80e238e8973a7c1027402ee",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-real_e2e_matrix",
+              "artifact_id": "real_e2e_matrix",
+              "artifact_sha256": "c2b899d550305c7bae755f352349a3ec8c74cf70f33c9f81a7c106b1b65d8ed7",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-product_acceptance_spec",
+              "artifact_id": "product_acceptance_spec",
+              "artifact_sha256": "caa777109e6f5c1836c5665d2406fb32a5ceca42c2ef6db66fcfbf86f5607151",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-execution_spec",
+              "artifact_id": "execution_spec",
+              "artifact_sha256": "d36ae1614bd19cb34fc4dab89c870150152f03161c833a092b032fc9d79a9978",
+              "json_path": "$.shared",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-port-execution_spec",
+              "artifact_id": "execution_spec",
+              "artifact_sha256": "d36ae1614bd19cb34fc4dab89c870150152f03161c833a092b032fc9d79a9978",
+              "json_path": "$.tasks[0]",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            }
+          ]
+        },
+        "input_consumption_policy_digest": "b215c9eaf41f2037f116370e82c018b76f284033340263bd7491da61c992f59e",
+        "required_reads": [
+          {
+            "source_id": "contract",
+            "artifact_id": "contract-r9aa286168074-ecbced3e3acdb342.json",
+            "artifact_sha256": "eecd3533ffe2b38d45979d852e6428e17b6b540a5e38b125bb84ce746b4f1d90",
+            "json_path": "$.acceptance_criteria",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "contract",
+            "artifact_id": "contract-r9aa286168074-ecbced3e3acdb342.json",
+            "artifact_sha256": "eecd3533ffe2b38d45979d852e6428e17b6b540a5e38b125bb84ce746b4f1d90",
+            "json_path": "$.verification_commands",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-requirement_spec",
+            "artifact_id": "requirement_spec",
+            "artifact_sha256": "5c0dd9f57a1ada94b699ab4ec0bee6a6df05ee695f49c79b7af28850d40ebb9b",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-goal_claim_set",
+            "artifact_id": "goal_claim_set",
+            "artifact_sha256": "cdfbeb745d46f6173053d6f265322a3f7ee80dab54e4a03c693bbad51f20c2aa",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-task_map",
+            "artifact_id": "task_map",
+            "artifact_sha256": "7bd2382a01ff2e6c48efcb355256e5e395668761dfc201b61f1b294e4f2311d0",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-planning_result",
+            "artifact_id": "planning_result",
+            "artifact_sha256": "7bd2382a01ff2e6c48efcb355256e5e395668761dfc201b61f1b294e4f2311d0",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-source_index",
+            "artifact_id": "source_index",
+            "artifact_sha256": "2dca2a6b5ef9d55deb598b608395f71970cbf38f5a56b8ee55554ac5ef047da9",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-skill_adapter_plan",
+            "artifact_id": "skill_adapter_plan",
+            "artifact_sha256": "5dc45bcc1116ed0d0776943708401e756657617af0358045db3f46b85f9e9722",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-source_inventory",
+            "artifact_id": "source_inventory",
+            "artifact_sha256": "7a53f0fd35ef130883f43a8ab7d669f7dc8ec29e44feb1feb5ae1358aeae8fe9",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-capability_matrix",
+            "artifact_id": "capability_matrix",
+            "artifact_sha256": "d8172ffe13f3d3eefbe127f6f15e495cee7e57a157189cee09c233a861b70ca6",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-acceptance_matrix",
+            "artifact_id": "acceptance_matrix",
+            "artifact_sha256": "5b00e515e921ba9e5336653f0c165b88f0ecd1784dd8b57fc2d821ac28b2a3ad",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-test_matrix",
+            "artifact_id": "test_matrix",
+            "artifact_sha256": "59e39038060b641975c176eb1d851824086adaa6a80e238e8973a7c1027402ee",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-real_e2e_matrix",
+            "artifact_id": "real_e2e_matrix",
+            "artifact_sha256": "c2b899d550305c7bae755f352349a3ec8c74cf70f33c9f81a7c106b1b65d8ed7",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-product_acceptance_spec",
+            "artifact_id": "product_acceptance_spec",
+            "artifact_sha256": "caa777109e6f5c1836c5665d2406fb32a5ceca42c2ef6db66fcfbf86f5607151",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-execution_spec",
+            "artifact_id": "execution_spec",
+            "artifact_sha256": "d36ae1614bd19cb34fc4dab89c870150152f03161c833a092b032fc9d79a9978",
+            "json_path": "$.shared",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-port-execution_spec",
+            "artifact_id": "execution_spec",
+            "artifact_sha256": "d36ae1614bd19cb34fc4dab89c870150152f03161c833a092b032fc9d79a9978",
+            "json_path": "$.tasks[0]",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          }
+        ],
+        "rework_of": "evt-2992693c229e",
+        "rework_attempt": 2,
+        "rework_source": "plan.rejected",
+        "rework_feedback": [
+          "plan-rejection: plan-review:67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json (sha256=67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+        ],
+        "rework_summary": {
+          "pdd_id": "TASK-5F44B4",
+          "source_event_type": "plan.rejected",
+          "attempt": 2,
+          "action": "replan",
+          "classification": "ambiguous",
+          "categories": [],
+          "failed_task_ids": [],
+          "gap_tasks": [],
+          "rework_paths": [],
+          "feedback_count": 1,
+          "feedback_excerpt": [
+            "plan-rejection: plan-review:67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json (sha256=67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+          ],
+          "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+          "path_owner_task_ids": [],
+          "terminal_path_owner_task_ids": [],
+          "unowned_rework_paths": [],
+          "invalid_failed_task_ids": [],
+          "terminal_failed_task_ids": []
+        },
+        "replan_classification": "ambiguous",
+        "task_status": "in_progress",
+        "assigned_to": "prd-dev-lane-0",
+        "snapshot_ref": ".zf-187 Racing Supervision/snapshots/RACE-FOUNDATION/run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION/runtime-snapshot.json"
+      },
+      "causation_id": "evt-adf3807d914c",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": "kernel"
+    }
+  ],
+  "recovery_events": [
+    {
+      "type": "human.escalation.acknowledged",
+      "id": "evt-d68bf23ae39c",
+      "ts": "2026-10-26T00:07:49.100126+00:00",
+      "actor": "web",
+      "task_id": null,
+      "payload": {
+        "schema_version": "human-escalation-acknowledged.v1",
+        "decision_token": "hdec-5cd556415d99",
+        "decision": "dismissed",
+        "source": "operator-inbox",
+        "surface": "web",
+        "project_id": "racing-project-33598481",
+        "approval_ref": "",
+        "checkpoint_id": "",
+        "fingerprint": "",
+        "created_event_id": ""
+      },
+      "causation_id": "evt-ba591fe4977d",
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "run.goal.updated",
+      "id": "evt-0e5dacd557be",
+      "ts": "2026-10-26T00:07:50.341642+00:00",
+      "actor": "operator",
+      "task_id": null,
+      "payload": {
+        "source": "zf_goal_cli",
+        "run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "status": "active",
+        "reason": "User approved Plan evt-adf3807d914c; restore this Run after verified fix of pending-Plan idle escalation, preserving plan and task-map generation"
+      },
+      "causation_id": null,
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": ""
+    }
+  ],
+  "config_sha256": "2b356f6a13021b0616878f71079c83a31abd25d1f262a1fb73ae206778b6a6f3"
+}

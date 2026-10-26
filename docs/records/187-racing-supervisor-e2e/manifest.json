@@ -1,5 +1,5 @@
 {
-  "status": "awaiting_user_plan_approval",
+  "status": "plan_approved_foundation_running",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -20,9 +20,39 @@
       "bytes": 87000
     },
     {
+      "file": "17-impl-modules.png",
+      "sha256": "6b02c81e5796d65fb1c43fa3be98e4cf33cd67824aa009e7c4ff599b37d501f6",
+      "bytes": 288564
+    },
+    {
+      "file": "18-impl-workflow.png",
+      "sha256": "3a5293a7082f3535289d3d1b228f5ca7a8e44072383c604c6ded50ab968c63dc",
+      "bytes": 203725
+    },
+    {
+      "file": "19-impl-running-inspector.png",
+      "sha256": "59d7e8a01cde95799e5f012594d2418e3eb4500afcf5c9d58cc98260ab3ee2ac",
+      "bytes": 155490
+    },
+    {
+      "file": "approval-recovery-dev-verify-plan.log",
+      "sha256": "7365fbf0b03cb8d9262e23cc4ca31b2fbc2939749e9a72be215b294f90fc512b",
+      "bytes": 11166
+    },
+    {
+      "file": "approval-recovery-dev-verify-run.log",
+      "sha256": "b44fbcf4c4194be99e601245ceb7d2f10d616bcce1912973ca803ee952fcbb23",
+      "bytes": 11313
+    },
+    {
       "file": "approval-review.md",
-      "sha256": "5829c1d30b04b24fd4801d533e5f5b239d14e495a43b85610c14c92f9c73cda8",
-      "bytes": 3820
+      "sha256": "4a2a5fabd9a4982fef932e0c2004626ffbd89b51e92872a2d1cfd2c6a9ac7f36",
+      "bytes": 4052
+    },
+    {
+      "file": "approved-plan-impl-continuation.json",
+      "sha256": "1f24047b6ad852f84e9f8ae622b986e8677b352f698f53e1d5980e309e2c2038",
+      "bytes": 25730
     },
     {
       "file": "cancel-projection-green2.log",
@@ -35,6 +65,16 @@
       "bytes": 1525
     },
     {
+      "file": "control-plane-reload-after.json",
+      "sha256": "4fc900f756c90f53a9ef26fd2f2d1e4f04a6bae9d619ed627ace9de2fbe5ed49",
+      "bytes": 2227
+    },
+    {
+      "file": "control-plane-reload-before.json",
+      "sha256": "5628ae924c0373e2c6f3321a9c03547339f86a14424d9646b00f436e5fdf041f",
+      "bytes": 6337
+    },
+    {
       "file": "dev-verify-final-plan.log",
       "sha256": "f829c68afda0ce3a847a9332a8db4cdbc1e5194c897294f28c97d5c0009d5188",
       "bytes": 7503
@@ -43,6 +83,11 @@
       "file": "dev-verify-final-web.log",
       "sha256": "c74e97878aaafab9dac9ef1f6e61629481d774c28bcc4d48ddfbf7426dfbe1dd",
       "bytes": 9355
+    },
+    {
+      "file": "dismiss-false-closeout.json",
+      "sha256": "a2eae4e5ab459bbffdf4a468c76753b8cd0a8097f94fddfbef27ef108d1a80c8",
+      "bytes": 281
     },
     {
       "file": "docker-pull-impact-closure.log",
@@ -58,6 +103,11 @@
       "file": "effective-config-verified.json",
       "sha256": "fd713478af5c1c198cbb3e276bf167dfe9ae8b59931e0e572538460450ea0f58",
       "bytes": 2829
+    },
+    {
+      "file": "evidence-environment-idle-role-restarts.json",
+      "sha256": "387240732c3e3a8ea43b8b857a1274f13d3885be30e91a29a013d61de0fb5ebc",
+      "bytes": 355
     },
     {
       "file": "final-candidate.yaml",
@@ -95,6 +145,16 @@
       "bytes": 525
     },
     {
+      "file": "observe-impl-retry.log",
+      "sha256": "adead6c68f9428f032d5c11c63d1989d96585bafc9e3c566d40b75722e7b5ae5",
+      "bytes": 1866
+    },
+    {
+      "file": "observe-impl.log",
+      "sha256": "793bca58b983e3b9a7f1209c16eaf3df8462f3640984d2fba4fb3e2b43f78760",
+      "bytes": 1864
+    },
+    {
       "file": "pending-interfaces.md",
       "sha256": "32def2aebb68ec65c8a50853583110cef81e1ddac95df35372b31f06bf66503a",
       "bytes": 12051
@@ -125,9 +185,44 @@
       "bytes": 111014
     },
     {
+      "file": "pending-plan-real-prefix-replay.json",
+      "sha256": "900f0f2d94d90ddecf6da0ce1bcc37a94fc371c087bfbdf2bab85cd076dd9980",
+      "bytes": 281
+    },
+    {
       "file": "pending-plan-task_map.json",
       "sha256": "7bd2382a01ff2e6c48efcb355256e5e395668761dfc201b61f1b294e4f2311d0",
       "bytes": 72965
+    },
+    {
+      "file": "pending-plan-wait-closure.log",
+      "sha256": "0213bd506dab7fadbad8874d56f6c64189dfd769e3c5d634d6c406e25c9b41d3",
+      "bytes": 341
+    },
+    {
+      "file": "pending-plan-wait-dev-verify-plan.log",
+      "sha256": "4ff440aba68d599e13e8cea5854b6e1d60f65f6709b208a073fcdc6b6e559ab9",
+      "bytes": 11064
+    },
+    {
+      "file": "pending-plan-wait-dev-verify-run.log",
+      "sha256": "4ff440aba68d599e13e8cea5854b6e1d60f65f6709b208a073fcdc6b6e559ab9",
+      "bytes": 11064
+    },
+    {
+      "file": "pending-plan-wait-flow-smoke.log",
+      "sha256": "b138150b19421218b6615c427f475ae4f784c73c0b246589deb4c58f2aab062e",
+      "bytes": 99
+    },
+    {
+      "file": "pending-plan-wait-red.log",
+      "sha256": "050d0ec872c8e76384e79930b523bc0058f009b3169a87c07bbc0fda542f81a5",
+      "bytes": 8476
+    },
+    {
+      "file": "pending-plan-wait-sentinel.log",
+      "sha256": "52c4bdcc00c4b024c0cb86a391160095925ff14e1db5657836145928bd47c031",
+      "bytes": 127
     },
     {
       "file": "pending-plan.md",
@@ -175,6 +270,46 @@
       "bytes": 2262
     },
     {
+      "file": "recover-approved-goal.log",
+      "sha256": "cba59d28cfb51fc8adde9a503a0af6ceed835e41d8adcc5ca71f681af5691b8e",
+      "bytes": 44
+    },
+    {
+      "file": "restart-actuator-closure.log",
+      "sha256": "a7a20f1d2634cc6686d8a4ac4c184260926f450323f5e455fe7758089afbb0fc",
+      "bytes": 261
+    },
+    {
+      "file": "restart-actuator-flow-matrix.log",
+      "sha256": "1f3ebe457d7b225b0555f65b769f56e61ef8e108ab0110f5072913f1ce4dbcc1",
+      "bytes": 98
+    },
+    {
+      "file": "restart-actuator-flow-smoke-corrected.log",
+      "sha256": "acb78a5166f01d8a3d7506fbc03bb944110b25dac08640e346db6d31e3736871",
+      "bytes": 98
+    },
+    {
+      "file": "restart-actuator-flow-smoke.log",
+      "sha256": "31f1e23043fa5cbf83c6eb3b947cd9f73418dd94727bd52353bfdc35adbef42c",
+      "bytes": 85
+    },
+    {
+      "file": "restart-actuator-live-red.json",
+      "sha256": "99d0326798e9d52a9867d7eb8630b29e69782019ee41611f1cf8e060af7e528f",
+      "bytes": 182
+    },
+    {
+      "file": "restart-actuator-red.log",
+      "sha256": "3fcc2a3699162f82fc1fb90db42a90ef972d13c1310393859e8b27583f00320c",
+      "bytes": 2948
+    },
+    {
+      "file": "restart-actuator-sentinel.log",
+      "sha256": "81b9878a28223386c7f292f105a44604f157240c9204943ddd7cb9a12b18d327",
+      "bytes": 128
+    },
+    {
       "file": "review-approval-agent-reply.json",
       "sha256": "2005a198cf2929190d319492b513fbb685ceb76bfbcceb8f2f184fcd3d4bd2ed",
       "bytes": 1306
@@ -210,6 +345,11 @@
       "bytes": 100
     },
     {
+      "file": "runtime-reload-stop.log",
+      "sha256": "eda827bb1702966604d83b62a92efbdc378d5d9391ab499f848d2826d6c2dd1d",
+      "bytes": 72
+    },
+    {
       "file": "sentinel-final.log",
       "sha256": "e7d726a4700a3d5921588c22fb3ac1bfb3b1f6645cb41365d459a60f82dbecbc",
       "bytes": 127
@@ -225,6 +365,16 @@
       "bytes": 114
     },
     {
+      "file": "user-plan-approval.json",
+      "sha256": "cc775eabec1f53384bbdbd851c035473c3d2932373321f3fb0a08ef9f4d75c12",
+      "bytes": 1649
+    },
+    {
+      "file": "user-plan-approved-event.json",
+      "sha256": "1ef1f52e930e34a9574a34e47592840c934ec3eb119b54e0c91364b392abe234",
+      "bytes": 379
+    },
+    {
       "file": "web-reader-build.log",
       "sha256": "be75656294af4c97f92359c288006c229c118bc2a265191eaa046034ec7bb7a0",
       "bytes": 6118
@@ -235,5 +385,18 @@
       "bytes": 1797
     }
   ],
-  "pending_plan_id": "evt-adf3807d914c"
+  "pending_plan_id": "evt-adf3807d914c",
+  "approval_event_id": "evt-158a8630051c",
+  "normalized_logs": [
+    {
+      "file": "pending-plan-wait-red.log",
+      "raw_sha256": "b9fa2c5dbfde37e50ba985a00b5b7e596a03170ba1fb08f773327eb9b4307eb5",
+      "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "restart-actuator-red.log",
+      "raw_sha256": "17d8f751089af4730e6127122c199ed1170025af8b86facf244f569332e9e033",
+      "transformation": "remove line-end whitespace only"
+    }
+  ]
 }

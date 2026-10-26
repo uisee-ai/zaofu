@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from zf.core.events.model import ZfEvent
 from zf.runtime.goal_idle_driver import GOAL_RESCAN_EVENT, maybe_emit_goal_idle_rescan
 
@@ -49,6 +51,29 @@ def test_idle_active_goal_fires_bounded_rescan() -> None:
     assert writer.appended[0].type == GOAL_RESCAN_EVENT
     assert writer.appended[0].payload["trigger"] == "idle"
     assert writer.appended[0].payload["rescan_ordinal"] == 1
+
+
+@pytest.mark.parametrize("scope", ["trace_id", "workflow_run_id", "correlation_id"])
+def test_pending_plan_approval_is_a_wait_not_idle_rescan(scope) -> None:
+    payload = {"plan_id": "plan-1"}
+    if scope != "correlation_id":
+        payload[scope] = "r-1"
+    request = ZfEvent(type="plan.approval.requested", actor="zf-cli", payload=payload,
+                     correlation_id="r-1" if scope == "correlation_id" else None)
+    events = [_goal_started(), request]
+    state, writer = _state(), _Writer()
+    assert _tick_until_fire(events, _cfg(), state, writer, ticks=20) == ""
+    assert state.goal_idle_ticks == 0
+    assert not writer.appended
+
+    events.append(ZfEvent(type="plan.approved", actor="operator", payload={"plan_id": "plan-1"}))
+    assert _tick_until_fire(events, _cfg(), state, writer) == "rescan"
+
+
+def test_other_run_pending_plan_does_not_suppress_current_idle_rescan() -> None:
+    events = [_goal_started(), ZfEvent(type="plan.approval.requested", actor="zf-cli",
+              payload={"plan_id": "other-plan", "workflow_run_id": "other"})]
+    assert _tick_until_fire(events, _cfg(), _state(), _Writer()) == "rescan"
 
 
 def test_inflight_fanout_blocks_fire() -> None:

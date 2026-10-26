@@ -37,6 +37,9 @@
 20. 真实页面12秒观测到同版三个Plan附件共请求12次，加载提示反复出现。根因是图轮询每次创建新的artifacts数组，触发审阅器Effect清空并重载。按端口路径/摘要稳定依赖后，同样真实观测只有3次请求、12次采样均持续显示内容。独立Docker浏览器回归用明确的图响应夹具证明同版轮询不重载、绑定变化后重新读取，1 passed；构建、类型及bundle预算通过。
 21. 第二次Plan Chat在23:17:24进入重规划，Planner正式预检零错误，`prd.plan.child.completed=evt-e501a93cea9a`。独立Critic核对新增AC-A07的五组场景、验收矩阵与运行时责任选择一致，23:42:45生成 `task_map.ready=evt-adf3807d914c`，23:42:47生成 `plan.approval.requested=evt-40e85f0b4734`。原4任务、依赖、lane归属及15项AC保留，新增后共16项；3个Impl/Verify lane已由实际配置编译核对，依赖图最大实现并行宽度为2。没有Plan批准或Impl派发。
 22. 真实Docker浏览器读到新版25377字符正文，与绑定SHA-256 `c12ce3ef9dd16ba97c60259ba3ee75dca12d19d8397f67f5127f6546f9d2cc28` 一致；在模块/验收场景中找到AC-A07，审批按钮可用但未点击，桌面和手机没有横向溢出。最终两张Viewport截图已目视核对有效。完整PRD、SDD接口和Plan已导出，[审批摘要](187-racing-supervisor-e2e/approval-review.md)交付用户，并请求批准这一具体版本。此确认来自用户明确要求，不是监工自行追加的流程。
+23. 用户明确回复“批准，继续”后，浏览器再次核对同一Plan及正文摘要，点击“确认计划并继续”，2026-10-26 00:01:28产生唯一 `plan.approved=evt-158a8630051c`。点击后脚本误取请求顶层plan_id，真实字段在payload内，导致测试断言失败；没有重复提交，随后从受控动作完成收据和正式审批事件补齐审计。午夜EventLog已归档，监工临时读取脚本改用项目配置下的EventLog.read_all，未将当日活跃文件误当完整账本；产品图接口本身始终正确读取历史。
+24. 审批后没有Impl派发，发现23:55:13的 `run.goal.blocked=evt-de04e59f0b5a`：Run Manager在人工等待超过300秒后，将22:21的历史failure-closeout候选升级成人工收尾并终止Run。23:50还发生了不必要的goal idle rescan。原有防护覆盖运行中Operation及近期Worker活动，遗漏了同Run待审批Plan。新增反例先复现6失败/23通过；共用只读审批归约后234项影响闭包、51项sentinel、10项flow-smoke通过，另以真实3300条事件前缀回放，20次idle探测无错误升级或重扫。
+25. 确认没有运行中Operation后，用本项目 `zf stop --include-run-manager` 平稳停机，保留workdirs；受控 `human-decision-dismiss` 关闭误升级项 `hdec-5cd556415d99`（`evt-d68bf23ae39c`），没有激活失败backlog。`zf goal set --status active` 产生 `evt-0e5dacd557be`，恢复同Run和根Task，再启动加载修复后的runtime。00:09:01内核自动派发 `prd-dev-lane-0-RACE-FOUNDATION`（`evt-ebd2fe29a7a8`），实际Worker随后开始读取briefing。未重写账本或canonical state，未新建Plan/Run，也未重复批准。
 
 ## 发现与处理
 
@@ -51,10 +54,17 @@
 | 合格 Plan 已请求审批但 Workflow 图500 | source index 的可选 authority_refs 缺失导致 NoneType 遍历异常；回归覆盖缺失/null/错误形状及真实图路由，原正文、pending和只读事件计数保持 | 89项影响闭包通过；重载8002后真实浏览器成功读取Plan正文和附件 |
 | 规划文档引用账本路径被误判为直接写账本 | 原保护扫描完整工具输入，混淆正文与文件目标；复用已有写入目标解析器，未知输入及shell检查不变；3失败/5通过的反例先复现 | 64项Hook、调用链和Codex路由集成测试通过，真实账本增改删移仍拒绝 |
 | 图轮询使Plan审阅内容周期性消失并重复加载 | 真实浏览器先复现12秒12次请求；加载依赖改为绑定路径/摘要，项目及Plan切换仍取消旧请求 | 同样真实浏览器3次请求且持续可读；绑定变更浏览器回归1 passed，build/typecheck/bundle通过 |
+| 人工Plan审批等待被当作停滞，历史失败收尾将Run误终止 | 同Run待决审批在匹配裁决前阻止失败收尾升级及goal idle rescan；其他Run、错误Plan裁决、已处理Plan保持原有行为 | 234项影响闭包、51项sentinel、10项Mock通过；真实事件前缀回放通过，受控恢复后同Plan已自动进入Impl |
 
-本记录后续补入 Workflow/Plan 修订、用户审批、实际并行区间、门禁与最终交付。原始认证 token、storageState 和带认证 trace 不进入仓库。
+26. 为供应已批准Plan要求的 `RACING_WORKFLOW_EVIDENCE`，监工从只读账本与绑定工件生成前置治理证据，保留人工批准、配置/YAML预览/启动授权及已发生writer派发的原始引用与摘要，不填未来Verify/Judge结果。证据作为外部环境输入，不修改受控zf.yaml。准备保留Worker重载时发现actuator只读旧pid字段，真实锁为process-guard.v2/owner_pid；回归先失败，修复后212项actuator/process guard/CLI start/Run Manager测试通过，sentinel 51通过。真实重载使watcher PID从1559070变为1602023，FOUNDATION会话与派发不变，全部Provider pane PID不变。读取sg子进程的/proc/environ被宿主权限拒绝，环境消费仍须以后续真实audit结果证明，不将wrapper赋值当作已通过治理验收。
 
-已导出审阅用问答、候选YAML、实际配置、局部修订回执和验证日志，见 [证据清单与SHA-256](187-racing-supervisor-e2e/manifest.json)。这批证据截止人工Plan审批前，不包含尚未发生的Impl/Verify或产品完成证明。
+27. 重载后真实Docker浏览器核对Plan为approved，运行中的FOUNDATION节点绑定实际Provider用量：`prd-dev-lane-0 / codex / gpt-6-astra`，详情显示真实工具活动。首轮模块与执行截图过早捕获加载态，不作证据；补充等待canvas节点后重新截图并目视核对。截图同时发现Run节点仍显示恢复前blocked，后续继续修复该投影不一致。仅对确认idle的装配与三个Verify角色执行正式 `zf restart <role>` 以加载外部证据路径，没有替换活跃FOUNDATION。此时Impl观察峰值仍为1，不声称已完成多lane验收。
+
+本轮恢复修复验证：审批等待影响闭包234 passed；重载器及调用链212 passed；最新sentinel 51 passed；`dev-verify plan/run --base dev`审阅整条分支的broad建议，按已完成影响闭包跳过deterministic/serial及未变化且已验证的Web/contract，实际运行flow-smoke 10 passed（6.63秒）。一次手写命令误用了不存在的 `tests/test_flow_smoke.py`，无用例执行，错误日志保留；随后使用正式脚本通过。没有运行全量pytest。
+
+本记录后续补入实际并行区间、门禁与最终交付。原始认证 token、storageState 和带认证 trace 不进入仓库。
+
+已导出审阅用问答、候选YAML、实际配置、局部修订回执、人工批准与Impl首次派发和验证日志，见 [证据清单与SHA-256](187-racing-supervisor-e2e/manifest.json)。审批文档保留批准前快照；当前状态以本记录及正式事件为准，不包含尚未发生的Verify或产品完成证明。
 
 修复提交：`bd11edf fix: harden workflow preparation and plan review gates`。最终自动验证器再次执行Web类型检查和全部模型测试通过；已单独通过的后端影响闭包、sentinel及Mock E2E不重复运行。尚未merge/push。工作区保留本次运行需要的`.venv`和`web/node_modules`临时符号链接，8002与runtime留供用户审批，任务未归档。
 
