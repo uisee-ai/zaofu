@@ -121,3 +121,10 @@ Autoresearch 与真实 mixed runner 的完成统计共用 canonical task complet
 `task.done(authority=task_integration_receipt)`，同一 TaskStore 的任务ID只计一次。
 worker 自报及 `dev.build.done` 不算完成。Product Flow 的等待仍必须看到
 `run.goal.completed`；完成任务数不能代替 Goal/交付闭环。
+
+关联 Git worktree 的 Codex hooks：本机0.163的原生加载器将项目hooks定位到Git
+主checkout，实验本地 `.codex/hooks.json` 因而可能不被读取。SpawnCoordinator
+对关联实验在各角色独立 `CODEX_HOME/hooks.json` 安装相同的受控bridge和trust；
+只在该私有home中禁用继承的ZaoFu bridge以防重复/跨state写入，保留自定义hooks，
+不修改共享主checkout。普通独立仓库沿用原项目hook路径。native hooks/list与
+实际PostToolUse事件是独立验证层，不能用静态hash测试代替真实执行证明。

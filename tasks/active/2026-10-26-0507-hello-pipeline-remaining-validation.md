@@ -141,3 +141,24 @@ v4冻结候选reader修复通过实际Orchestrator入口验证：当前blocking�
 回调等待原Run终态；不重新submit、不reset状态、不覆盖原失败轮次，输出到
 ar-loop-checkpoint。只有真实Goal、stuck关联审计、交付审计都通过才返回passed。
 这证明范围是“真实监督断点恢复闭环”，不等于原轮次无需介入一次通过。
+
+实现提交：`a39e829f fix: align frozen candidate readers and completion projections`；
+最终组合sentinel51 passed、flow mock10 passed。
+
+### 真实关联worktree的Codex证据采集缺陷
+
+候选两个reader都报告文档检查成功，但没有工具输出sidecar引用；实验从scan开始
+hook事件始终为0。对照独立HelloWorld仓库已有2,455项hook事件，排除统一CLI故障。
+本机Codex源码config loader明确将linked worktree项目hooks映射至Git主checkout；
+原spawn仅写实验/worker项目本地hooks，在此拓扑不被发现。修复在角色私有home
+安装bridge/trust，并仅在该home禁用继承的ZaoFu bridge，避免污染共享checkout。
+mock+spawn入口62 passed、sentinel51 passed。原生hooks/list现在发现5项，全部
+来自角色私有home且enabled/trusted；07:09重载后真实PostToolUse开始落账。
+证据codex-linked-native-hooks.json；受控重验evt-0287e38a7256，candidate不变。
+
+该失败还暴露blocked验证反馈被legacy candidate rework当成产品返工，产生
+新task_map待OA审查；OA已识别范围扩大/任务引用问题，尚未批准新Impl。记录为
+待追踪的恢复路由问题，不能把原失败轮次改为成功，也不强行通过产品验收。
+
+hook bridge/reader caller闭包169 passed、flow mock10 passed。07:11两个reader已明确
+获得真实文档输出sidecar；OA正式提交revise并由Planner修正返工边界，原Impl仍未重复。
