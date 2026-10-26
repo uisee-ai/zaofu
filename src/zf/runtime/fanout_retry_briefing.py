@@ -39,10 +39,16 @@ def write_blocking_reader_retry_briefing(
         value = child.get(key)
         if value not in (None, "", [], {}):
             child_payload.setdefault(key, value)
+    has_contract = bool(
+        child_payload.get("contract_snapshot_ref")
+        and child_payload.get("contract_snapshot_digest")
+    )
     if (
         str(manifest.get("topology") or "") != "fanout_reader"
-        or str(child_payload.get("semantic_result_submit_mode") or "")
-        != "blocking"
+        or (
+            str(child_payload.get("semantic_result_submit_mode") or "") != "blocking"
+            and not has_contract
+        )
         or not str(child_payload.get("operation_id") or "").strip()
     ):
         return None
@@ -102,6 +108,7 @@ def write_fanout_retry_briefing(
         runtime.event_log.read_all(),
         stage_id=str(manifest.get("stage_id") or ""),
         correlation_id=str(manifest.get("trace_id") or ""),
+        fanout_id=fanout_id,
     )
     current_trigger = (
         child_payload.get("trigger_payload")

@@ -836,6 +836,41 @@ def test_task_map_validation_can_accept_structural_candidate_map() -> None:
     assert result.passed is True
 
 
+def test_task_map_rejects_external_acceptance_evidence_without_dependency() -> None:
+    result = validate_task_map_payload(
+        {
+            "schema_version": "task-map.v1",
+            "tasks": [
+                {
+                    "task_id": "TASK-IMPL",
+                    "owner_role": "impl",
+                    "allowed_paths": ["artifacts/impl.json"],
+                    "wave": 1,
+                    "verification": "test -f artifacts/impl.json",
+                },
+                {
+                    "task_id": "TASK-VERIFY",
+                    "owner_role": "verify",
+                    "wave": 1,
+                    "acceptance_criteria": [{
+                        "id": "AC-EXTERNAL",
+                        "statement": "The implementation evidence is accepted.",
+                        "evidence_requirements": [{
+                            "producer_task_id": "TASK-IMPL",
+                            "producer_paths": ["artifacts/impl.json"],
+                            "independence_required": True,
+                        }],
+                    }],
+                    "verification": "test -f artifacts/impl.json",
+                },
+            ],
+        },
+    )
+
+    assert result.passed is False
+    assert any("does not depend on evidence producer" in error for error in result.errors)
+
+
 def test_source_index_validation_requires_task_map_coverage() -> None:
     task_map = {
         "schema_version": "task-map.v1",

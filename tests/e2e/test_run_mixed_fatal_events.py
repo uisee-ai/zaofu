@@ -5,6 +5,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from tests.e2e import run_mixed
 from tests.e2e.run_mixed import (
     _commit_initialized_flow_baseline,
@@ -138,8 +140,10 @@ def test_wait_for_flow_requires_run_goal_completion(tmp_path: Path) -> None:
     assert result.status == "passed"
 
 
+@pytest.mark.parametrize("ignored_docs", [False, True])
 def test_prepare_flow_source_commits_only_controller_input(
     tmp_path: Path,
+    ignored_docs: bool,
 ) -> None:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(
@@ -153,8 +157,9 @@ def test_prepare_flow_source_commits_only_controller_input(
         check=True,
     )
 
-    (tmp_path / ".gitignore").write_text("docs/prd/\n", encoding="utf-8")
-    (tmp_path / "unrelated.txt").write_text("retain", encoding="utf-8")
+    if ignored_docs:
+        (tmp_path / ".gitignore").write_text("docs/\n", encoding="utf-8")
+    (tmp_path / "unrelated.txt").write_text("another session's staged work\n", encoding="utf-8")
     subprocess.run(["git", "add", "--", "unrelated.txt"], cwd=tmp_path, check=True)
 
     request_id = prepare_flow_source(
@@ -173,9 +178,10 @@ def test_prepare_flow_source_commits_only_controller_input(
     ).stdout.splitlines()
     assert request_id.startswith("autoresearch-")
     assert tracked == ["docs/prd/autoresearch.md"]
-    staged = subprocess.check_output(
-        ["git", "diff", "--cached", "--name-only"], cwd=tmp_path, text=True,
-    ).splitlines()
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"], cwd=tmp_path,
+        check=True, capture_output=True, text=True,
+    ).stdout.splitlines()
     assert staged == ["unrelated.txt"]
 
 

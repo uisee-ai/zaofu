@@ -1067,40 +1067,16 @@ def _durable_reader_state(tmp_path: Path):
     return state_dir, log, transport, orch, config, child
 
 
-def _durable_verification_payload(child: dict, *, verdict: str) -> dict:
+def _durable_verification_payload(child: dict, *, state_dir: Path, verdict: str) -> dict:
+    from tests.test_call_result_admission import _persisted_verification_payload
+
     child_payload = dict(child.get("payload") or {})
     failed = verdict == "rejected"
-    identity = {
-        "workflow_run_id": "run-durable",
-        "task_id": "T-VERIFY",
-        "contract_revision": "contract-1",
-        "task_map_generation": "generation-1",
-        "base_commit": "base-1",
-        "task_ref": "artifacts/task-ref.json",
-        "contract_snapshot_ref": "artifacts/contract.json",
-        "contract_snapshot_digest": "a" * 64,
-        "target_snapshot_ref": "artifacts/target.json",
-        "target_snapshot_digest": "b" * 64,
-        "target_commit": "target-1",
-    }
-    verification_result = {
-        "schema_version": "verification-result.v1",
-        "execution_status": "completed",
-        "verdict": verdict,
-        "failure_class": "product_rejection" if failed else "none",
-        **identity,
-        "verification_owner": "task_verify",
-        "verification_tier": "runtime",
-        "requirement_results": [{
-            "acceptance_id": "AC-1",
-            "status": "failed" if failed else "passed",
-            "verification_owner": "task_verify",
-            "verification_tier": "runtime",
-            "evidence_refs": ["test:durable"],
-            "findings": [{"message": "gap"}] if failed else [],
-            "reproduction_commands": ["pytest"],
-        }],
-    }
+    typed_payload = _persisted_verification_payload(state_dir, verdict, identity={
+        "workflow_run_id": "run-durable", "task_id": "T-VERIFY",
+    })
+    verification_result = typed_payload.pop("verification_result")
+    identity = typed_payload
     return {
         **child_payload,
         **identity,
@@ -1134,7 +1110,7 @@ def test_selected_reader_repair_is_restart_idempotent_and_semantic_rejects(
     tmp_path: Path,
 ) -> None:
     state_dir, log, transport, orch, config, child = _durable_reader_state(tmp_path)
-    initial_payload = _durable_verification_payload(child, verdict="rejected")
+    initial_payload = _durable_verification_payload(child, state_dir=state_dir, verdict="rejected")
     initial_payload["verification_result"].pop("target_commit")
     malformed = ZfEvent(
         type="verify.child.completed",
@@ -1188,7 +1164,7 @@ def test_selected_reader_repair_is_restart_idempotent_and_semantic_rejects(
         actor="verify-1",
         task_id="T-VERIFY",
         correlation_id="run-durable",
-        payload=_durable_verification_payload(child, verdict="rejected"),
+        payload=_durable_verification_payload(child, state_dir=state_dir, verdict="rejected"),
     )
     log.append(corrected)
     restarted.run_once(events=[corrected])
@@ -1239,7 +1215,7 @@ def test_selected_reader_restart_projects_settled_result_without_provider_call(
         actor="verify-1",
         task_id="T-VERIFY",
         correlation_id="run-durable",
-        payload=_durable_verification_payload(child, verdict="passed"),
+        payload=_durable_verification_payload(child, state_dir=state_dir, verdict="passed"),
     )
     log.append(terminal)
     admitted = admit_runtime_call_result(
@@ -1295,7 +1271,7 @@ def test_reader_turn_close_after_admitted_result_is_not_dispatch_lost(
         actor="verify-1",
         task_id="T-VERIFY",
         correlation_id="run-durable",
-        payload=_durable_verification_payload(child, verdict="passed"),
+        payload=_durable_verification_payload(child, state_dir=state_dir, verdict="passed"),
     )
     log.append(result)
     admitted = admit_runtime_call_result(
@@ -1456,7 +1432,7 @@ def test_superseded_blocking_reader_result_closes_child_once(
         actor="verify-1",
         task_id="T-VERIFY",
         correlation_id="run-durable",
-        payload=_durable_verification_payload(child, verdict="passed"),
+        payload=_durable_verification_payload(child, state_dir=state_dir, verdict="passed"),
     )
     terminal.payload.update({
         "flow_kind": "workflow",
@@ -1521,7 +1497,7 @@ def test_blocking_reader_evidence_gate_uses_admitted_control_result(
         artifact_id="context",
         json_path="$.facts",
     )
-    payload = _durable_verification_payload(child, verdict="passed")
+    payload = _durable_verification_payload(child, state_dir=state_dir, verdict="passed")
     payload["report"].pop("evidence_refs")
     terminal = ZfEvent(
         type="verify.child.completed",
@@ -4340,12 +4316,13 @@ def _task_map_synth_orchestrator(
         ]),
     )
     orch = Orchestrator(state_dir, config, transport)  # type: ignore[arg-type]
-    orch.run_once(events=[ZfEvent(
+    trigger = orch.event_writer.append(ZfEvent(
         type="product.design.ready",
         actor="zf-cli",
         correlation_id="trace-product",
         payload={"pdd_id": "PDD-1", "feature_id": "PDD-1"},
-    )])
+    ))
+    orch.run_once(events=[trigger])
     fanout_id = next(
         event.payload["fanout_id"] for event in log.read_all()
         if event.type == "fanout.started"
@@ -5706,6 +5683,14 @@ def test_issue_triage_retry_restores_lineage_and_plan_contract(tmp_path: Path):
             "trigger_event_id": rich_trigger.id,
         },
     ))
+    replan = EventWriter(log).append(ZfEvent(
+        type="issue.requested", correlation_id="issue-run", causation_id=rich_trigger.id,
+        payload={**rich_trigger.payload, "rework_attempt": 2},
+    ))
+    log.append(ZfEvent(type="fanout.started", correlation_id="issue-run", payload={
+        "fanout_id": "fanout-replan", "stage_id": "issue-triage",
+        "trigger_event_id": replan.id,
+    }))
     orch = Orchestrator.__new__(Orchestrator)
     orch.state_dir = state_dir
     orch.event_log = log

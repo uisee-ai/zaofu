@@ -212,3 +212,68 @@ def test_recovery_metrics_count_effects_not_triage_or_replay() -> None:
         "superseded": 1,
     }
     assert projection["total_effects"] == 5
+
+
+def test_replan_delivery_receipt_does_not_resolve_original_failure():
+    events = [
+        _event("run.manager.action.effect.failed", "case"),
+        _event("run.manager.action.verify.passed", "case", action="semantic-replan-request"),
+        _event("task_map.ready", "case"),
+    ]
+    case = build_recovery_case_projection(events)["cases"][0]
+    assert case["status"] == "verifying"
+    assert case["consecutive_failures"] == 1
+
+
+def test_effect_settlement_requires_matching_task(tmp_path):
+    from zf.core.events.log import EventLog
+    from zf.core.events.writer import EventWriter
+    from zf.runtime.run_manager import _settle_pending_action_effects
+    log = EventLog(tmp_path / "events.jsonl")
+    writer = EventWriter(log)
+    pending = _event("run.manager.action.effect.pending", "case",
+                     effect_id="effect", action="semantic-replan-request",
+                     expected_event_types=["task.done"], failure_event_types=["dev.blocked"])
+    log.append(pending)
+    log.append(_event("task.done", "other-case", task_id="OTHER"))
+    assert _settle_pending_action_effects(log.read_all(), writer) == 0
+    log.append(_event("task.done", "case"))
+    assert _settle_pending_action_effects(log.read_all(), writer) == 1
+
+
+def test_effect_timeout_reopens_case_once(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    from zf.core.events.log import EventLog
+    from zf.core.events.writer import EventWriter
+    from zf.runtime.run_manager import _settle_pending_action_effects
+    log = EventLog(tmp_path / "events.jsonl")
+    writer = EventWriter(log)
+    pending = _event("run.manager.action.effect.pending", "case",
+                     effect_id="effect", effect_timeout_seconds=60,
+                     expected_event_types=["task.done"])
+    pending.ts = (datetime.now(timezone.utc) - timedelta(seconds=61)).isoformat()
+    log.append(pending)
+    assert _settle_pending_action_effects(log.read_all(), writer) == 1
+    assert _settle_pending_action_effects(log.read_all(), writer) == 0
+    case = build_recovery_case_projection(log.read_all())["cases"][0]
+    assert case["status"] == "open"
+    assert case["consecutive_failures"] == 1
+
+
+def test_worker_effect_matches_instance_and_request(tmp_path):
+    from zf.core.events.log import EventLog
+    from zf.core.events.writer import EventWriter
+    from zf.runtime.run_manager import _settle_pending_action_effects
+    log = EventLog(tmp_path / "events.jsonl")
+    writer = EventWriter(log)
+    log.append(_event("run.manager.action.effect.pending", "case",
+                     action="worker-lifecycle-recover", effect_id="effect",
+                     instance_id="dev-0", effect_request_event_id="respawn-request",
+                     expected_event_types=["worker.respawn.completed"],
+                     failure_event_types=["worker.respawn.failed"]))
+    log.append(ZfEvent(type="worker.respawn.completed", actor="dev-1", causation_id="respawn-request"))
+    log.append(ZfEvent(type="worker.respawn.completed", actor="dev-0", causation_id="older-request"))
+    assert _settle_pending_action_effects(log.read_all(), writer) == 0
+    log.append(ZfEvent(type="worker.respawn.failed", actor="dev-0", causation_id="respawn-request"))
+    assert _settle_pending_action_effects(log.read_all(), writer) == 1
+    assert log.read_all()[-1].type == "run.manager.action.effect.failed"

@@ -248,6 +248,8 @@ class ReworkTriageResult:
 def classify_rework_trigger(
     event: ZfEvent,
     config: Any = None,
+    *,
+    evidence_events: list[ZfEvent] | None = None,
 ) -> ReworkTriageResult:
     """Classify a failure event before product rework is requested.
 
@@ -271,6 +273,26 @@ def classify_rework_trigger(
     failed_d = _failed_d(payload)
     gate = _gate_rule(payload, failed_d)
 
+    # An evidenced kernel admission failure needs protocol diagnosis, even
+    # when an older worker briefing labels every blocker a design issue.
+    # This does not assert a source bug or authorize accepting a stale result.
+    refs = payload.get("evidence_refs") or []
+    ref_ids = {
+        str(ref).removeprefix("event:").rsplit("#", 1)[-1]
+        for ref in refs if isinstance(ref, str)
+    }
+    if any(
+        candidate.id in ref_ids
+        and candidate.type == "workflow.call.result.invalid"
+        and candidate.origin == "kernel"
+        and candidate.task_id == event.task_id
+        for candidate in evidence_events or []
+    ):
+        return _result(
+            "harness_rule_issue", "result_admission", "harness",
+            "suspend_for_harness_fix", "referenced kernel result admission requires diagnosis",
+        )
+
     explicit_failure_class = str(payload.get("failure_class") or "").strip()
     if event.type == "dev.blocked" and "task_context_stale" in {
         explicit_failure_class,
@@ -283,6 +305,11 @@ def classify_rework_trigger(
             "suspend_for_harness_fix",
             "task projection/snapshot versions disagree; repair and validate "
             "execution context before controlled retry, not product replan",
+        )
+    if explicit_failure_class in {"harness_failure", "runtime_result_admission"}:
+        return _result(
+            "harness_rule_issue", gate or "result_admission", "harness",
+            "suspend_for_harness_fix", "producer reports a runtime admission failure",
         )
     if explicit_failure_class in {
         "candidate_environment_setup_failed",

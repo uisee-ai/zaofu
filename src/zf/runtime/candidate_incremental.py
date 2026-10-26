@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -28,6 +29,68 @@ from zf.runtime.workflow_operation import WorkflowOperationService
 
 TASK_INTEGRATION_RECEIPT_SCHEMA = "task-integration-receipt.v1"
 ROLLING_SMOKE_RECEIPT_SCHEMA = "rolling-smoke-command-receipt.v1"
+
+
+def _rolling_smoke_command(command: str, worktree: Path) -> tuple[str, Path]:
+    """Run npm ``--prefix`` commands from the prefix directory.
+
+    npm's ``--prefix`` changes package resolution but does not change the
+    process cwd. Commands recorded in task contracts are written from the
+    repository root, so tools such as TypeScript would otherwise search the
+    wrong directory for their config. Evidence retains the original command;
+    execution removes the prefix flag after changing cwd.
+    """
+
+    try:
+        tokens = shlex.split(str(command))
+    except ValueError:
+        return str(command), worktree
+    if len(tokens) < 4 or tokens[0] != "npm":
+        return str(command), worktree
+    if tokens[1] == "--prefix" and len(tokens) > 3:
+        prefix = tokens[2]
+        rest = tokens[3:]
+    elif tokens[1].startswith("--prefix="):
+        prefix = tokens[1].split("=", 1)[1]
+        rest = tokens[2:]
+    else:
+        return str(command), worktree
+    if not prefix or not rest:
+        return str(command), worktree
+    prefix_path = Path(prefix)
+    execution_root = prefix_path if prefix_path.is_absolute() else worktree / prefix_path
+    try:
+        execution_root = execution_root.resolve()
+        execution_root.relative_to(worktree.resolve())
+    except (OSError, ValueError):
+        return str(command), worktree
+    if not execution_root.is_dir():
+        return str(command), worktree
+    return " ".join(shlex.quote(item) for item in ("npm", *rest)), execution_root
+
+
+def _rolling_smoke_environment_error(
+    command: str,
+    execution_root: Path,
+) -> str | None:
+    """Return a stable setup error before invoking a package manager.
+
+    A candidate worktree without dependencies is an environment failure, not
+    a product verification failure.  Keeping this distinction in the error
+    makes Run Manager able to request setup/redrive instead of semantic
+    rework.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    if not tokens or tokens[0] != "npm":
+        return None
+    if (execution_root / "package.json").is_file() and not (
+        execution_root / "node_modules"
+    ).is_dir():
+        return f"candidate_environment_not_ready: dependencies missing at {execution_root}"
+    return None
 
 
 class CandidateIncrementalError(RuntimeError):
@@ -575,11 +638,19 @@ def _run_rolling_smoke(
     for command in selected:
         started = time.monotonic()
         timeout = max(1, min(int(command.get("timeout_seconds") or 900), 3600))
+        execution_command, execution_root = _rolling_smoke_command(
+            str(command["command"]), worktree,
+        )
+        environment_error = _rolling_smoke_environment_error(
+            str(command["command"]), execution_root,
+        )
+        if environment_error:
+            raise CandidateIncrementalError(environment_error)
         try:
             result = subprocess.run(
-                str(command["command"]),
+                execution_command,
                 shell=True,
-                cwd=worktree,
+                cwd=execution_root,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -605,7 +676,7 @@ def _run_rolling_smoke(
             "command_id": str(command["id"]),
             "command_digest": str(command["command_digest"]),
             "command_registry_digest": registry_digest,
-            "execution_root": str(worktree),
+            "execution_root": str(execution_root),
             "target_commit": target_commit,
             "duration_ms": int((time.monotonic() - started) * 1000),
         })

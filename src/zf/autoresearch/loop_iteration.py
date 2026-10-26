@@ -28,6 +28,7 @@ def run_iteration(*, scenario: str, run_id: str, cfg: LoopConfig) -> dict:
         review_gate=cfg.review_gate,
         sync_dirty=False,
         output_dir=run_output_dir,
+        diagnostic_context=cfg.seed_text,
     )
     try:
         result = run_autoresearch(ar_cfg)

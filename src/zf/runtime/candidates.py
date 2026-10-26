@@ -24,7 +24,7 @@ from zf.core.task.store import TaskStore
 from zf.core.verification.evidence import command_evidence
 from zf.runtime.git_capture import git_env
 from zf.runtime.worktree_env import provision_worktree_env, run_project_setup
-from zf.runtime.verification_commands import task_contract_verification_commands
+from zf.runtime.candidate_quality_context import candidate_quality_context
 
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -995,19 +995,25 @@ class CandidateRebuilder:
             "gate_count": len({gate for gate, _ in checks}),
             "check_count": len(checks),
         }
-        if not checks:
-            if gate_source == "task_contract_missing":
+        if not checks and gate_source != "task_contract_deferred":
+            if gate_source in {"task_contract_missing", "task_contract_missing_consumer"}:
+                failure = (
+                    "candidate_verify_consumer_required"
+                    if gate_source == "task_contract_missing_consumer"
+                    else "task_contract_required"
+                )
                 return {
                     **base_payload,
                     "status": "failed",
-                    "gates_run": ["task_contract_required"],
+                    "gates_run": [failure],
                     "gates_passed": [],
-                    "gates_failed": ["task_contract_required"],
+                    "gates_failed": [failure],
                     "gate_checks": {},
                     "failure_details": {
-                        "task_contract_required": [
-                            "one or more candidate tasks have no executable "
-                            "contract.verification"
+                        failure: [
+                            "deferred verification requires a wired candidate reader"
+                            if gate_source == "task_contract_missing_consumer"
+                            else "one or more candidate tasks have no executable contract.verification"
                         ],
                     },
                 }
@@ -1046,7 +1052,19 @@ class CandidateRebuilder:
             gate_ok = True
             for command in commands:
                 started = time.monotonic()
+                context_ref: dict[str, Any] = {}
                 try:
+                    context_ref = candidate_quality_context(
+                        state_dir=self.state_dir, task_store=self.task_store,
+                        tasks=tasks, gate=gate_name, command=command,
+                        pdd_id=pdd_id, branch=branch, base_commit=base_commit,
+                        commit=commit, source_event_id=causation_id or "",
+                    )
+                    env = _quality_gate_env(worktree)
+                    env["ZF_CANDIDATE_QUALITY_CONTEXT"] = str(
+                        (self.state_dir / context_ref["ref"]).resolve()
+                    )
+                    env["ZF_CANDIDATE_QUALITY_CONTEXT_SHA256"] = context_ref["sha256"]
                     result = subprocess.run(
                         command,
                         shell=True,
@@ -1055,7 +1073,7 @@ class CandidateRebuilder:
                         text=True,
                         timeout=_QUALITY_TIMEOUT_SECONDS,
                         check=False,
-                        env=_quality_gate_env(worktree),
+                        env=env,
                     )
                     evidence = command_evidence(
                         command=command,
@@ -1104,6 +1122,8 @@ class CandidateRebuilder:
                         f"{command}: {exc}"
                     )
                 evidence["duration_ms"] = int((time.monotonic() - started) * 1000)
+                if context_ref:
+                    evidence["execution_context_ref"] = context_ref
                 gate_checks.setdefault(gate_name, []).append(evidence)
             (gates_passed if gate_ok else gates_failed).append(gate_name)
 
@@ -1523,58 +1543,9 @@ class CandidateRebuilder:
         self,
         tasks: list[CandidateTask],
     ) -> tuple[list[tuple[str, str]], str]:
-        """Resolve project checks from this run before legacy config fallback.
+        from zf.runtime.candidate_verification_stages import candidate_quality_checks
 
-        Task contracts are plan-owned, run-scoped project facts. The config
-        remains a compatibility fallback for legacy/manual flows that do not
-        produce verification contracts; it must not impose one technology
-        stack on every generated project.
-        """
-
-        quality_source = str(getattr(
-            getattr(self.config, "workflow", None),
-            "candidate_quality_source",
-            "auto",
-        ) or "auto")
-        checks: list[tuple[str, str]] = []
-        seen_commands: set[tuple[str, str]] = set()
-        missing_task_ids: list[str] = []
-        for candidate_task in tasks:
-            task = self.task_store.get(candidate_task.task_id)
-            commands = (
-                task_contract_verification_commands(task.contract)
-                if task is not None
-                else []
-            )
-            if not commands:
-                missing_task_ids.append(candidate_task.task_id)
-                continue
-            for command in commands:
-                identity = (str(command["id"]), str(command["command_digest"]))
-                if identity in seen_commands:
-                    continue
-                seen_commands.add(identity)
-                checks.append((
-                    f"task_contract:{candidate_task.task_id}:{command['id']}",
-                    str(command["command"]),
-                ))
-        if quality_source == "task_contract_required" and missing_task_ids:
-            return [], "task_contract_missing"
-        if checks:
-            return checks, "task_contract"
-
-        if quality_source == "task_contract_required":
-            return [], "task_contract_missing"
-
-        checks: list[tuple[str, str]] = []
-        for gate_name, gate_cfg in self.config.quality_gates.items():
-            if not getattr(gate_cfg, "enabled", True):
-                continue
-            for command in getattr(gate_cfg, "required_checks", []) or []:
-                command_text = str(command).strip()
-                if command_text:
-                    checks.append((gate_name, command_text))
-        return checks, "zf_config_fallback" if checks else "intrinsic_only"
+        return candidate_quality_checks(self.config, self.task_store, tasks)
 
     def _prepare_candidate_environment(
         self,

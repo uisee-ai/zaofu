@@ -13,9 +13,11 @@ def test_controller_skills_follow_experiment_checkout_without_duplicate_roots(tm
         {"name": "customer", "path": "/customer/skills"},
     ]}
     _apply_autoresearch_controller_overrides(data, cfg=AutoresearchRunConfig(worktree=worktree), run_id="diagnosis")
-    assert data["skill_sources"][0]["path"] == str(worktree / "skills")
-    assert data["skill_sources"][1]["path"] == str(worktree / "yoke")
-    assert data["skill_sources"][2]["path"] == "/customer/skills"
+    # Project skills are loaded implicitly; adding the root duplicates candidates.
+    assert data["skill_sources"] == [
+        {"name": "yoke", "path": str(worktree / "yoke")},
+        {"name": "customer", "path": "/customer/skills"},
+    ]
 
 
 def test_controller_pins_local_yoke_instead_of_implicit_driver_fallback(tmp_path: Path):

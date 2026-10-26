@@ -33,6 +33,7 @@ LOOP_EVENTS = {
 }
 DEFAULT_LOOP_SCENARIOS = ["controlled-stuck-recovery"]
 RESEARCH_MODE_DEFAULT_SCENARIOS: dict[str, list[str]] = {
+    "debug": ["incident-reproduction"],
     "simplify": ["simplification-audit"],
 }
 DEFAULT_EXPECTED_OUTPUT = ["diagnosis_report", "reproduction_steps", "patch_proposal"]
