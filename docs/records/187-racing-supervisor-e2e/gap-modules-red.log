@@ -1,0 +1,66 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_replacement_rebinds_all_declared_modules_without_mutating_source[1] ___
+
+successors = 1
+
+    @pytest.mark.parametrize('successors', [1, 2])
+    def test_replacement_rebinds_all_declared_modules_without_mutating_source(successors):
+        base = {'schema_version':'task-map.v1', 'feature_id':'P1', 'tasks':[
+            {'task_id':task, 'title':task, 'owner_role':'dev', 'wave':0,
+             'allowed_paths':[f'src/{task}/**'], 'allowed_paths_reason':'owned source',
+             'acceptance':['behavior works']} for task in ['KEEP','OLD']],
+            'modules':[
+                {'module_id':'root', 'title':'Product', 'task_ids':['KEEP','OLD'],
+                 'design_refs':['docs/design.md']},
+                {'module_id':'child', 'title':'Feature', 'parent_module_id':'root',
+                 'task_ids':['OLD']},
+            ]}
+        assert validate_task_map_payload(base).passed
+        snapshot = deepcopy(base)
+        gaps = [{'task_id':f'NEW{i}', 'parent_task_id':'OLD', 'supersedes_task_ids':['OLD'],
+            'claim_paths':[f'src/new{i}/**',f'tests/test_new{i}.py'],
+            'acceptance':['replacement works'], 'verify_commands':[f'pytest tests/test_new{i}.py'],
+            'source_refs':['docs/design.md'], 'base_commit':'a'*40} for i in range(successors)]
+        amended = build_gap_task_map_amend(base, gap_tasks=gaps, supersedes_task_map_ref='artifacts/old.json')
+        validation = validate_task_map_payload(amended)
+>       assert validation.passed, validation.errors
+E       AssertionError: ["modules[0].task_ids references unknown id 'OLD'", "modules[1].task_ids references unknown id 'OLD'"]
+E       assert False
+E        +  where False = TaskMapValidationResult(passed=False, errors=["modules[0].task_ids references unknown id 'OLD'", "modules[1].task_ids ...legacy_derived', 'claim_count': 2, 'mapped_claim_count': 2, 'diagnostics': []}, 'topological_order': ['KEEP', 'NEW0']}).passed
+
+tests/test_module_gap_modules.py:29: AssertionError
+___ test_replacement_rebinds_all_declared_modules_without_mutating_source[2] ___
+
+successors = 2
+
+    @pytest.mark.parametrize('successors', [1, 2])
+    def test_replacement_rebinds_all_declared_modules_without_mutating_source(successors):
+        base = {'schema_version':'task-map.v1', 'feature_id':'P1', 'tasks':[
+            {'task_id':task, 'title':task, 'owner_role':'dev', 'wave':0,
+             'allowed_paths':[f'src/{task}/**'], 'allowed_paths_reason':'owned source',
+             'acceptance':['behavior works']} for task in ['KEEP','OLD']],
+            'modules':[
+                {'module_id':'root', 'title':'Product', 'task_ids':['KEEP','OLD'],
+                 'design_refs':['docs/design.md']},
+                {'module_id':'child', 'title':'Feature', 'parent_module_id':'root',
+                 'task_ids':['OLD']},
+            ]}
+        assert validate_task_map_payload(base).passed
+        snapshot = deepcopy(base)
+        gaps = [{'task_id':f'NEW{i}', 'parent_task_id':'OLD', 'supersedes_task_ids':['OLD'],
+            'claim_paths':[f'src/new{i}/**',f'tests/test_new{i}.py'],
+            'acceptance':['replacement works'], 'verify_commands':[f'pytest tests/test_new{i}.py'],
+            'source_refs':['docs/design.md'], 'base_commit':'a'*40} for i in range(successors)]
+        amended = build_gap_task_map_amend(base, gap_tasks=gaps, supersedes_task_map_ref='artifacts/old.json')
+        validation = validate_task_map_payload(amended)
+>       assert validation.passed, validation.errors
+E       AssertionError: ["modules[0].task_ids references unknown id 'OLD'", "modules[1].task_ids references unknown id 'OLD'"]
+E       assert False
+E        +  where False = TaskMapValidationResult(passed=False, errors=["modules[0].task_ids references unknown id 'OLD'", "modules[1].task_ids ...erived', 'claim_count': 3, 'mapped_claim_count': 3, 'diagnostics': []}, 'topological_order': ['KEEP', 'NEW0', 'NEW1']}).passed
+
+tests/test_module_gap_modules.py:29: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_module_gap_modules.py::test_replacement_rebinds_all_declared_modules_without_mutating_source[1]
+FAILED tests/test_module_gap_modules.py::test_replacement_rebinds_all_declared_modules_without_mutating_source[2]
+2 failed in 1.19s

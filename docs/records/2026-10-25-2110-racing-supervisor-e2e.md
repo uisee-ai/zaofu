@@ -106,3 +106,8 @@ Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把
 42. 真实环境返工出现两个同源scan触发`evt-79e1f868b6f4`和`evt-442e54ec2fbd`，导致第一Planner刚启动即被superseded并重启。受控动作写marker后构造trigger期间，恢复扫描也可能读取未完成快照；双方原来直接追加。实际受控动作+Kernel消费交错反例先得到6个触发（应3），修复为锁内重新读取账本后复用同一返工事件。另验证4个并发writer只追加1次、新attempt仍允许。138项合同/动作/EventLog/锁闭包、56项Run Manager/Writer调用方（316 deselected）、51项sentinel、4项语义控制Mock及10项flow-smoke通过。首次闭包包含不存在的测试文件，未执行用例；已记录失败命令并按真实模块重跑。
 
 返工竞态的dev-verify规划198个关联文件而扩成broad；按AGENTS采用已运行的具体影响闭包，匹配run登记跳过已完成tier，不声称全量pytest。正式actuator保留Provider重载watcher，同时仅重启8002 Web；8001未动。独立Discovery另复现交付脚本对缺失/无效90秒字段错误放行，正在正式报告，最终闭环尚未完成。
+
+43. 实时图错误保留4个返工writer为running。账本与TaskAttempt Store均已记录失败，但Operation未收尾。新增回归覆盖dev.blocked/dev.failed的即时及恢复路径、旧dispatch不关闭新dispatch，并检查图终态。最初测试将Worker事件经Kernel writer追加时漏设origin，已纠正；在隔离测试进程加载修复前HEAD函数重跑，仍4 failed/1 passed。修复经TaskAttempt规范状态与真实结果来源、Run/Task/dispatch匹配后，通过WorkflowOperationService补记失败，未修改Graph标签。125项Operation/Attempt/图闭包、16项writer调用方（142 deselected）通过。
+44. 正式重载watcher后02:53:45补记`evt-6e00a8595a3f`、`evt-b1758406d125`、`evt-322f7ac9b8e9`、`evt-ebc4cd5a7300`。Docker Playwright核验4节点均failed，Run仍running、Task未显示done，详情保留真实Provider、失败来源与最近活动；截图29/30已人工查看。补记时间表示Operation收尾时间，不宣称期间Worker持续编码。
+45. Discovery的真实计时字段缺陷已形成`RACE-ASSEMBLY-TIMING-REPAIR`，但两次amend被旧modules引用阻断（`evt-381d4ed7925f`、`evt-4cd709268f39`）。两个反例先复现单/多后继替换失败；修复仅重绑明确supersedes映射。76项gap/Task Map/模块/真实runtime调用方通过；对本次`evt-dede9ac3a65e`原始输入只读回放也完整校验通过，未改旧工件或账本。修复已加载，实际缺口重新接纳尚待验证；不把只读回放算成任务已派发。
+46. 两项修复合并验证另有51项sentinel、5项语义控制/旧合同Mock E2E、10项flow-smoke通过。dev-verify按共享边界规划较宽；实际采用上述具体闭包，匹配run登记跳过已通过tier，不声称全量测试。返工触发竞态已提交`7eab802 fix: deduplicate concurrent plan recovery triggers`。

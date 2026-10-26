@@ -18,6 +18,50 @@ _NON_RESULT_TERMINAL_EVENTS = frozenset({
 })
 
 
+def settle_failed_attempt_operations(
+    runtime: Any, rows: list[dict[str, Any]], *, events: list[ZfEvent] | None = None,
+) -> int:
+    """Close live operations whose matching canonical attempt already failed."""
+    from zf.runtime.workflow_operation import WorkflowOperationService, reduce_workflow_operations
+
+    failed = [row for row in rows if row.get("status") == "failed"
+              and row.get("failure_class") == "semantic_result_failed"
+              and row.get("retryable") is False and row.get("recovery_owner") == "workflow"]
+    if not failed:
+        return 0
+    events = events if events is not None else runtime.event_log.read_all()
+    by_id = {event.id: event for event in events}
+    operations = reduce_workflow_operations(events)
+    service = WorkflowOperationService(state_dir=runtime.state_dir,
+        event_log=runtime.event_log, event_writer=runtime.event_writer)
+    changed = 0
+    for row in failed:
+        operation_id = str(row.get("operation_id") or "")
+        operation = operations.get(operation_id, {})
+        source = by_id.get(str(row.get("terminal_event_id") or ""))
+        dispatch_id = str(row.get("dispatch_id") or "")
+        if (operation.get("status") != "running" or not operation.get("request_hash")
+                or source is None or source.task_id != row.get("task_id") or not dispatch_id
+                or str(operation.get("dispatch_id") or "") != dispatch_id
+                or operation.get("workflow_run_id") != row.get("run_id")
+                or operation.get("task_id") != row.get("task_id")):
+            continue
+        event = service.fail(
+            operation_id=operation_id, request_hash=operation["request_hash"],
+            workflow_run_id=str(row["run_id"]), task_id=str(row["task_id"]),
+            reason=str(row.get("failure_reason") or "semantic_result_failed"),
+            causation_id=source.id, correlation_id=str(row["run_id"]),
+            details={"source_attempt_id": str(row["attempt_id"]),
+                     "source_event_id": source.id, "source_event_type": source.type,
+                     "dispatch_id": dispatch_id, "failure_class": "semantic_result_failed",
+                     "retryable": False, "recovery_owner": "workflow"},
+        )
+        if event is not None:
+            operation["status"] = "failed"
+            changed += 1
+    return changed
+
+
 def settle_admitted_operation_attempt(
     runtime: Any,
     event: ZfEvent,

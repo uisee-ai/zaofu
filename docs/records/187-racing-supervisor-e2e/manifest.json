@@ -55,6 +55,16 @@
       "bytes": 111407
     },
     {
+      "file": "29-rework-workflow-truth.png",
+      "sha256": "f6a2549daccc4f18fe69870419abf4b89820b97b0959387fc0b38ef18ecf5775",
+      "bytes": 225943
+    },
+    {
+      "file": "30-failed-operation-detail.png",
+      "sha256": "7425a3067e2af683ce02a6e5c8a8316dfa0b041ce21356c3d8a742e8d36471a3",
+      "bytes": 168025
+    },
+    {
       "file": "approval-recovery-dev-verify-plan.log",
       "sha256": "7365fbf0b03cb8d9262e23cc4ca31b2fbc2939749e9a72be215b294f90fc512b",
       "bytes": 11166
@@ -78,6 +88,68 @@
       "file": "assembly-pre-verification-truth.json",
       "sha256": "5e3c7dd90d0ed69a3b62fe854a920a4bd71a370c8d75615cbb04fe3673dc6cc6",
       "bytes": 1294
+    },
+    {
+      "file": "attempt-and-gap-dev-verify-plan.log",
+      "sha256": "f3e25144f3c96615db386ee51e082b5496870b2f74a8e6d0306d44a32038e59e",
+      "bytes": 1007
+    },
+    {
+      "file": "attempt-and-gap-dev-verify-run.log",
+      "sha256": "f3e25144f3c96615db386ee51e082b5496870b2f74a8e6d0306d44a32038e59e",
+      "bytes": 1007
+    },
+    {
+      "file": "attempt-and-gap-flow-smoke.log",
+      "sha256": "91248b703c1baa2197992417ac1fba7db861d3bb5fdedc3b1dee028608a8a3b4",
+      "bytes": 100
+    },
+    {
+      "file": "attempt-and-gap-mock-e2e.log",
+      "sha256": "0e2b9fbf400ad7d04fbe228a3c425b4726810b04c4c80165d64d77100e967a34",
+      "bytes": 99
+    },
+    {
+      "file": "attempt-and-gap-reload.json",
+      "sha256": "d34fc9188cfb08dd89b1abae1ed5c1c58c9ed1a309c1d9349a674856f3808d9a",
+      "bytes": 162
+    },
+    {
+      "file": "attempt-and-gap-sentinel.log",
+      "sha256": "59d9930aca59270a0e8056d5bbe9402ec3dcfdd0156c232dcf65eba682322ac4",
+      "bytes": 128
+    },
+    {
+      "file": "attempt-operation-callers.log",
+      "sha256": "07bacd0b22ae80e80dac47388be519486415046eea1d70afac2fef718e7dd676",
+      "bytes": 116
+    },
+    {
+      "file": "attempt-operation-closure.log",
+      "sha256": "6543003b2497441039112159cee629a42e125d494e51ec9c999e65799e26bf37",
+      "bytes": 181
+    },
+    {
+      "file": "attempt-operation-focused-corrected.log",
+      "sha256": "714cd001d89776c03851592b02da76578445516656470ed6d36b9656e71a2260",
+      "bytes": 99
+    },
+    {
+      "file": "attempt-operation-focused.log",
+      "sha256": "bc549b5adee82654a28da4b793145870e04ec0faab6d91d4ec04c3cf66a987e4",
+      "bytes": 14863,
+      "raw_sha256": "9f723d06d249eedb44661aefac7f492a8c7e9a646f7bf1eab510f0f5ca6a7470",
+      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+    },
+    {
+      "file": "attempt-operation-red-corrected.log",
+      "sha256": "67d835beb9f5d3ff87da0d1ee574622f5d9973f0993296fadeff8e8dd2eadb54",
+      "bytes": 8977
+    },
+    {
+      "file": "attempt-operation-red.log",
+      "sha256": "becc77746d03c06b7c733feee01397dca47da893890e672279c09142969ba890",
+      "bytes": 8854
     },
     {
       "file": "cancel-projection-green2.log",
@@ -264,6 +336,16 @@
       "bytes": 12071
     },
     {
+      "file": "failed-operation-recovery-browser.json",
+      "sha256": "991092beb4490d86a050fde55095ab45b3a582b90f7ad4f0ac9b322eb3937ac5",
+      "bytes": 2589
+    },
+    {
+      "file": "failed-operation-recovery-browser.log",
+      "sha256": "b43722d6f66fcf015533bc84e5283fceb6b890e42dd782665cb77351e2b59f29",
+      "bytes": 2294
+    },
+    {
       "file": "final-candidate.yaml",
       "sha256": "2b356f6a13021b0616878f71079c83a31abd25d1f262a1fb73ae206778b6a6f3",
       "bytes": 6973
@@ -277,6 +359,26 @@
       "file": "full-plan-diff-layout.log",
       "sha256": "85a733096241b6a05e8376914f4a01de568a0e62b4d6ce61f3dc77aa21e4caae",
       "bytes": 200
+    },
+    {
+      "file": "gap-modules-closure.log",
+      "sha256": "885dc87ed4534c9db2232b95b91bf4b7ab35b2b2730293f65990040a964b01a0",
+      "bytes": 180
+    },
+    {
+      "file": "gap-modules-real-replay.json",
+      "sha256": "ffca9dc81b29208d9fdedf8f66f23edbac6c0ea7757c134784d7c3349c8f00a0",
+      "bytes": 4256
+    },
+    {
+      "file": "gap-modules-red.log",
+      "sha256": "7fb25dc430f3b7cd94ee2bcb4bb8b92b06d3023a3f6faf26c174cb98260afaff",
+      "bytes": 4468
+    },
+    {
+      "file": "gap-modules-source-event.json",
+      "sha256": "2a2c698c7c18ac2cfb70357e4f81b004a5c4f890c4f3d893afde4cb1e16a0198",
+      "bytes": 34668
     },
     {
       "file": "graph-projection-web-reload.json",

@@ -320,6 +320,19 @@ def build_gap_task_map_amend(
     out["schema_version"] = "task-map.v1"
     out["source_refs"] = source_refs
     out["tasks"] = tasks
+    if superseded_task_ids and isinstance(base_task_map.get("modules"), list):
+        replacements = _replacement_ids_by_superseded(gap_tasks)
+        out["modules"] = deepcopy(base_task_map["modules"])
+        for module in out["modules"]:
+            if not isinstance(module, dict) or not isinstance(module.get("task_ids"), list):
+                continue
+            rebound = []
+            for task_id in module["task_ids"]:
+                successors = replacements.get(task_id, [task_id]) if isinstance(task_id, str) else [task_id]
+                for successor in successors:
+                    if successor not in rebound:
+                        rebound.append(successor)
+            module["task_ids"] = rebound
     out["amend"] = {
         "schema_version": "task-map-amend.v1",
         "kind": _amend_kind(gap_tasks),
