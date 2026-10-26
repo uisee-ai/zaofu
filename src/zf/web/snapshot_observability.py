@@ -23,7 +23,7 @@ def observability_snapshot(
     data.update(s._snapshot_empty_defaults())
     data["snapshot_slice"] = "observability-summary"
     builders = {
-        "metrics_snapshot": lambda: s._metrics_snapshot_projection(state_dir),
+        "metrics_snapshot": lambda: s._metrics_snapshot_projection(state_dir, config=config),
         "fleet_stats": lambda: s._fleet_stats_projection(state_dir, config=config),
         "provider_health": lambda: s._provider_health_projection(state_dir),
         "long_run_truth": lambda: s._read_long_run_truth(state_dir, config=config),

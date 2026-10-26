@@ -4039,7 +4039,7 @@ def _snapshot(
             "features", [], lambda: _features(state_dir, delivery_features=_delivery_shared)
         ),
         "metrics_snapshot": _safe_snapshot_projection(
-            "metrics_snapshot", {}, lambda: _metrics_snapshot_projection(state_dir)
+            "metrics_snapshot", {}, lambda: _metrics_snapshot_projection(state_dir, config=config)
         ),
         "long_run_truth": _safe_snapshot_projection(
             "long_run_truth",

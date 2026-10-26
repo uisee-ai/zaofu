@@ -131,7 +131,8 @@ def test_loop_view_cache_miss_reads_eventlog_once_and_hit_skips_catch_up(
 
     scans = 0
     builds = 0
-    real_iter = loop_view_source.iter_event_records
+    from zf.web.projections import metric_facts
+    real_iter = metric_facts.iter_event_records_from_cursor
     real_build = measure_loop_routes.build_loop_view
 
     def iter_spy(*args, **kwargs):
@@ -147,7 +148,7 @@ def test_loop_view_cache_miss_reads_eventlog_once_and_hit_skips_catch_up(
     def forbidden(*_args, **_kwargs):
         pytest.fail("Loop cache lookup must not catch up the SQLite read model")
 
-    monkeypatch.setattr(loop_view_source, "iter_event_records", iter_spy)
+    monkeypatch.setattr(metric_facts, "iter_event_records_from_cursor", iter_spy)
     monkeypatch.setattr(measure_loop_routes, "build_loop_view", build_spy)
     monkeypatch.setattr(read_model, "current_projected_seq", forbidden)
     monkeypatch.setattr(read_model, "rebuild", forbidden)
@@ -382,8 +383,8 @@ def test_loop_view_does_not_cache_a_moving_source_watermark(
     )
     monkeypatch.setattr(
         loop_view_source,
-        "iter_event_records",
-        lambda *_args, **_kwargs: iter(snapshots.pop(0)),
+        "_read_metric_events",
+        lambda *_args, **_kwargs: [(record.seq, record.event) for record in snapshots.pop(0)],
     )
 
     def forbidden(*_args, **_kwargs):

@@ -12,6 +12,7 @@ import binascii
 from datetime import datetime
 import hashlib
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -63,8 +64,13 @@ def trace_list_page(
     """Return one stable newest-first page of EventLog-derived traces."""
 
     bounded_limit = _bounded_limit(limit, default=50, maximum=_MAX_LIST_LIMIT)
-    events = _events_with_seq(state_dir, config=config)
-    current_seq = int(events[-1][0]) if events else 0
+    from zf.web.projections import metric_traces
+    fallback = None
+    try:
+        current_seq = metric_traces.current_seq(state_dir, config)
+    except sqlite3.DatabaseError:
+        fallback = _events_with_seq(state_dir, config=config)
+        current_seq = int(fallback[-1][0]) if fallback else 0
     scope = _scope_digest(state_dir)
     before_seq: int | None = None
     as_of_seq = current_seq
@@ -82,6 +88,8 @@ def trace_list_page(
             current_seq=current_seq,
         )
 
+    events = fallback if fallback is not None else metric_traces.list_events(
+        state_dir, as_of_seq=as_of_seq, before_seq=before_seq, limit=bounded_limit + 1)
     summaries = _trace_summaries(events, as_of_seq=as_of_seq)
     if before_seq is not None:
         summaries = [

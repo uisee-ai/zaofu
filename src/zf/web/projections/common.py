@@ -170,7 +170,13 @@ def _cost(state_dir: Path) -> dict:
             "reconciliation": None,
         }
     try:
-        tracker = CostTracker(cost_path)
+        from zf.web.projections.metric_costs import refresh, ProjectedCostTracker
+        import sqlite3
+        try:
+            refresh(state_dir)
+            tracker = ProjectedCostTracker(cost_path)
+        except sqlite3.DatabaseError:
+            tracker = CostTracker(cost_path)
         per_role = tracker.per_role_totals()
         return {
             "total_usd": round(tracker.total_usd(), 4),

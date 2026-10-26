@@ -177,22 +177,17 @@ def _safe_handoff_summary_projection(
         }
 
 
-def _metrics_snapshot_projection(state_dir: Path) -> dict:
+def _metrics_snapshot_projection(state_dir: Path, *, config=None) -> dict:
     """Kernel metrics plus additive read-only subsystem projections."""
-    from zf.core.metrics.collector import MetricsCollector
+    from zf.web.projections.metric_views import core, oa_events
     from zf.runtime.orchestrator_agent_metrics import (
         build_orchestrator_agent_metrics,
     )
 
-    event_log = EventLog(state_dir / "events.jsonl")
-    snapshot = MetricsCollector.compute(
-        events=event_log,
-        tasks=TaskStore(state_dir / "kanban.json"),
-        cost=CostTracker(state_dir / "cost.jsonl"),
-    ).to_dict()
+    snapshot = core(state_dir, config)
     snapshot["orchestrator_agent"] = _safe_snapshot_projection(
         "orchestrator_agent", {}, lambda: build_orchestrator_agent_metrics(
-            event_log.read_all() if event_log.path.exists() else []
+            oa_events(state_dir, config)
         ),
     )
     return snapshot

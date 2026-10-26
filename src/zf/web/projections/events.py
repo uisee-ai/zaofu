@@ -72,21 +72,8 @@ def _trace_detail(
 
 
 def _fleet_stats_projection(state_dir: Path, *, config: ZfConfig | None = None) -> dict:
-    from zf.runtime.fleet_efficiency import (
-        build_role_efficiency,
-        build_task_flow_stats,
-    )
-
-    events = _events_with_seq(state_dir, config=config)
-    kanban_path = state_dir / "kanban.json"
-    tasks = (
-        {task.id: task for task in TaskStore(kanban_path).list_all()}
-        if kanban_path.exists() else {}
-    )
-    return {
-        "task_flow": build_task_flow_stats(events, tasks),
-        "role_efficiency": build_role_efficiency(events, tasks),
-    }
+    from zf.web.projections.metric_views import fleet
+    return fleet(state_dir, config)
 
 
 def _event_log_run_summary(

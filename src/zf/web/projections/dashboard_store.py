@@ -18,7 +18,7 @@ from zf.core.config.schema import ZfConfig
 from zf.web.projections.read_model import db_path, _connect
 from zf.web.projections.sqlite_reader import connect_readonly
 
-VERSION = "dashboard-resources.v1"
+VERSION = "dashboard-resources.v2"
 # Clock-derived ages/windows and external probes are snapshots as of generated_at.
 REFRESH_SECONDS = 60.0
 
