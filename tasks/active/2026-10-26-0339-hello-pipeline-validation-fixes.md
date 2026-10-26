@@ -31,3 +31,13 @@ HW-06：断点恢复后 RM 建议已消费、AR invocation 与 loop 均启动；
 - AR 修复闭包 33 passed；实际 11 角色模板技能校验无错误。
 - premerge sentinel 51 passed（34.27 秒）。自动 dev-verify 更大范围确定性层正在执行，真实 fresh/断点验证仍在运行。
 - 证据目录 `/tmp/zf-hello-fixes-20261026/evidence/`；旧断点 8/8 集成、Candidate 已冻结；AR invocation 和 loop 已实际执行，首次 loop 的技能预检失败保留原始结果。
+
+## 提交后复测
+
+- 实现提交 `0fb743f7 fix: preserve approval and checkpoint dispatch across parallel workflows`。
+- 提交版本聚焦闭包 184 passed；transport caller 闭包 198 passed；registry/telemetry caller 闭包 23 passed。
+- 较大确定性层在 30 分钟预算前主动中断并保留详情：10122 passed、18 skipped、5 failed，不能视为全量通过。serial 10 passed，sentinel 51 passed，deterministic flow smoke 10 passed。
+- 5 个失败归因：旧 config fixture 已修复；lane override fixture 改用 Claude stream-json；CSafeDumper 暴露 Path 参数需要规范化为字符串，已修复。另两项（未跟踪 runbook 缺失、five-workflow 测试的过期 digest 断言）在原基线 fe6f3bd6 独立复现，未混入本批产品修改。
+- Docker Playwright：Graph API 41 节点，实际 Delivery Graph 渲染成功，page_errors=[]。初次只读挂载配置和一次页面等待超时保留为测试基础设施失败，修正后重测成功。
+- 真实 fresh / resume 均通过 `zf start --control-plane-only` 加载提交代码，事件确认 `workers_preserved=true`。fresh 已完成一次 Plan Critic→Planner 返工并进入 blocking pre_impl；resume 已完成 8/8 候选 Verify、零产品缺口复扫并进入 Judge。
+- 未通过项继续保持 active；AR 真实 loop 初次失败仍保留，不以技能预检通过冒充真实 loop 完成。

@@ -65,9 +65,9 @@ def _uuid5_seed(
 
 
 class RoleSessionRegistry:
-    def __init__(self, path: Path, project_root: str) -> None:
+    def __init__(self, path: Path, project_root: str | Path) -> None:
         self.path = path
-        self.project_root = project_root
+        self.project_root = str(project_root)
         self._entries: dict[str, str] = {}          # instance_id → uuid str
         self._meta: dict[str, dict] = {}            # instance_id → metadata dict
         self._task_stage_bindings: dict[str, dict] = {}

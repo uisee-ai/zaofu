@@ -445,7 +445,7 @@ class TestLaneRoleTemplate:
             },
             {
                 "name": "dev-lane-0",
-                "backend": "codex",
+                "backend": "claude-code",
                 "instance_id": "dev-lane-0",
                 "transport": "stream-json",
             },
