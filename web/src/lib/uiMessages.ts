@@ -1,5 +1,6 @@
 // Backend bodies and protocol identifiers retain their source language.
 export const CHINESE_MESSAGES: Record<string, string> = {
+  "Collapse sidebar": "收起侧栏", "Expand sidebar": "展开侧栏", "Open navigation": "打开导航", "Close navigation": "关闭导航",
   "Projects": "项目", "Project views": "项目视图", "Search workspace…": "搜索工作区…", "Add task": "添加任务", "Accent": "强调色", "Density": "密度",
   "diagnostics": "项诊断", "deliveries": "项交付", "total": "项总计",
   "Channels": "频道", "Open Channels": "打开频道", "New Channel": "新建频道", "Add Project": "添加项目", "System settings": "系统设置",

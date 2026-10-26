@@ -1,9 +1,9 @@
 import { useUiPreferences } from "../../app/UiPreferences";
 // WorkspaceRail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, ChannelSummary, Snapshot, WorkspaceProject } from "../../api/types";
-import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, Menu, MessageSquare, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
+import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, Menu, MessageSquare, PanelLeft, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LiveState, PageId } from "../../app/sharedTypes";
 import { allBoardTasks, channelIdOf, channelNameOf, isObservabilityPage, projectLabelFromId } from "../../app/shared";
 
@@ -14,6 +14,7 @@ interface RailNavItem {
   badge?: number;
 }
 
+const COLLAPSED_KEY = "zf.sidebarCollapsed.v1";
 
 function shouldShowRailActionResult(result: ActionResponse): boolean {
   if (result.action === "chat-orchestrator" && result.ok) return false;
@@ -60,6 +61,53 @@ export function WorkspaceRail({
 }) {
   const { t } = useUiPreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(COLLAPSED_KEY) === "true"; }
+    catch { return false; }
+  });
+  const [systemOpen, setSystemOpen] = useState(true);
+  const railRef = useRef<HTMLElement>(null);
+  const mobileToggleRef = useRef<HTMLButtonElement>(null);
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try { localStorage.setItem(COLLAPSED_KEY, String(next)); }
+    catch { /* Navigation still works when browser storage is unavailable. */ }
+  };
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 981px)");
+    const closeOnDesktop = () => { if (desktop.matches) setMobileOpen(false); };
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, []);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const rail = railRef.current;
+    const workspace = rail?.parentElement;
+    const background = [...(workspace?.children ?? []), ...(workspace?.parentElement?.children ?? [])]
+      .filter((node): node is HTMLElement => node instanceof HTMLElement && node !== rail && node !== workspace && !node.classList.contains("rail-scrim"));
+    const priorInert = background.map((node) => node.inert);
+    background.forEach((node) => { node.inert = true; });
+    mobileToggleRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileOpen(false);
+      }
+      if (event.key !== "Tab") return;
+      const items = [...(rail?.querySelectorAll<HTMLElement>("button:not([disabled]), select:not([disabled]), summary, [tabindex='0']") ?? [])]
+        .filter((item) => item.getClientRects().length > 0);
+      const first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      background.forEach((node, index) => { node.inert = priorInert[index]; });
+      document.removeEventListener("keydown", onKey);
+      mobileToggleRef.current?.focus();
+    };
+  }, [mobileOpen]);
   const openPage = (nextPage: PageId) => {
     onOpenPage(nextPage);
     setMobileOpen(false);
@@ -124,18 +172,35 @@ export function WorkspaceRail({
         : activePage;
 
   return (
-    <section className={`panel project-rail ${mobileOpen ? "mobile-open" : ""}`} aria-label="Navigation rail">
+    <>
+    {mobileOpen && <button className="rail-scrim" aria-label={t("Close navigation")} tabIndex={-1} type="button" onClick={() => setMobileOpen(false)} />}
+    <section ref={railRef} className={`panel project-rail ${mobileOpen ? "mobile-open" : ""} ${collapsed ? "is-collapsed" : ""}`} aria-label="Navigation rail" role={mobileOpen ? "dialog" : "region"} aria-modal={mobileOpen || undefined}>
       <div className="section-heading">
         <div>
-          <h2 className="rail-brand">ZaoFu</h2>
+          <h2 className="rail-brand" aria-label="ZaoFu">
+            <span className="rail-brand-mark" aria-hidden="true">Z</span>
+            <span className="rail-brand-name">ZaoFu</span>
+          </h2>
           {/* count removed: the unified header is the single count source (doc116 §11.2) */}
         </div>
         <div className="rail-heading-actions">
           <span className={`status-dot ${liveState === "live" ? "ok" : "warn"}`} />
           <button
             aria-controls="workspace-navigation"
+            aria-expanded={!collapsed}
+            aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
+            title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
+            className="rail-desktop-toggle"
+            type="button"
+            onClick={toggleCollapsed}
+          >
+            <PanelLeft aria-hidden="true" size={16} strokeWidth={1.8} />
+          </button>
+          <button
+            ref={mobileToggleRef}
+            aria-controls="workspace-navigation"
             aria-expanded={mobileOpen}
-            aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+            aria-label={t(mobileOpen ? "Close navigation" : "Open navigation")}
             className="rail-mobile-toggle"
             type="button"
             onClick={() => setMobileOpen((open) => !open)}
@@ -165,7 +230,7 @@ export function WorkspaceRail({
                     </option>
                   ))}
                 </select>
-                <button className="project-switcher-add" title="Add Project" type="button" onClick={onAddProject}>
+                <button className="project-switcher-add" title="Add Project" type="button" onClick={() => { setMobileOpen(false); onAddProject(); }}>
                   <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
                 </button>
                 <button
@@ -175,14 +240,14 @@ export function WorkspaceRail({
                     : "Remove Project from Workspace"}
                   type="button"
                   disabled={removeDisabled}
-                  onClick={onRemoveProject}
+                  onClick={() => { setMobileOpen(false); onRemoveProject(); }}
                 >
                   <Trash2 aria-hidden="true" size={16} strokeWidth={1.8} />
                 </button>
               </div>
             </div>
           ) : (
-            <button className="rail-nav-button muted-action" type="button" onClick={onAddProject}>
+            <button className="rail-nav-button muted-action" aria-label={t("Add Project")} title={t("Add Project")} type="button" onClick={() => { setMobileOpen(false); onAddProject(); }}>
               <span className="rail-nav-label">
                 <Plus aria-hidden="true" className="rail-nav-icon" size={16} strokeWidth={1.8} />
                 <span>{t("Add Project")}</span>
@@ -202,6 +267,8 @@ export function WorkspaceRail({
               <button
                 className={`rail-nav-button channel-nav-button ${activePage === "channels" && selectedChannelId === channelIdOf(channel) ? "active" : ""}`}
                 key={channelIdOf(channel)}
+                aria-label={channelNameOf(channel)}
+                title={channelNameOf(channel)}
                 type="button"
                 onClick={() => openChannel(channelIdOf(channel))}
               >
@@ -214,14 +281,14 @@ export function WorkspaceRail({
           )) : channelsLoaded ? (
             <span className="empty-text">No channels</span>
           ) : (
-            <button className="rail-nav-button" type="button" onClick={() => openPage("channels")}>
+            <button className="rail-nav-button" aria-label={t("Open Channels")} title={t("Open Channels")} type="button" onClick={() => openPage("channels")}>
               <span className="rail-nav-label">
                 <MessageSquare aria-hidden="true" className="rail-nav-icon" size={16} strokeWidth={1.8} />
                 <span>{t("Open Channels")}</span>
               </span>
             </button>
           )}
-          <button className="rail-nav-button muted-action" type="button" onClick={onNewChannel}>
+          <button className="rail-nav-button muted-action" aria-label={t("New Channel")} title={t("New Channel")} type="button" onClick={() => { setMobileOpen(false); onNewChannel(); }}>
             <span className="rail-nav-label">
               <Plus aria-hidden="true" className="rail-nav-icon" size={16} strokeWidth={1.8} />
               <span>{t("New Channel")}</span>
@@ -229,8 +296,8 @@ export function WorkspaceRail({
           </button>
         </div>
         </div>
-        <details className="rail-section" open>
-          <summary>
+        <details className="rail-section" open={(collapsed && !mobileOpen) || systemOpen}>
+          <summary onClick={(event) => { event.preventDefault(); setSystemOpen((open) => !open); }}>
             <span>{t("System settings")}</span>
             <ChevronRight className="rail-section-chevron" size={14} strokeWidth={1.9} aria-hidden="true" />
           </summary>
@@ -241,6 +308,7 @@ export function WorkspaceRail({
         ) : null}
       </div>
     </section>
+    </>
   );
 }
 
@@ -264,6 +332,9 @@ function RailNav({
         <button
           className={`rail-nav-button ${activePage === item.id ? "active" : ""}`}
           key={item.id}
+          aria-label={t(item.label)}
+          aria-current={activePage === item.id ? "page" : undefined}
+          title={t(item.label)}
           type="button"
           onClick={() => onOpenPage(item.id)}
         >

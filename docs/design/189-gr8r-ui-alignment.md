@@ -118,3 +118,17 @@ docker run --rm --network host \
 右侧 Tasks 的项目标题、标签栏、工具栏、Geist 字体、Board 卡片与 List / Table 排版继续使用已验收版本；现有 Inbox 和 General / Appearance 内容继续保留。共享外框尺寸不变，避免侧栏菜单修订移动右侧对齐线。
 
 验收：`python scripts/dev-verify.py plan --base dev` / `run --base dev` 通过 docs / web_ui 闭包（8 个 instruction contract、前端 typecheck / unit）；Vite 生产构建与 bundle budget 通过（最大 443067 bytes）。既有 `ui-alignment.spec.ts` + `kanban-toolbar.spec.ts` 7/7 通过；最后的紧凑密度修正再运行 General preferences 1/1 通过。Docker Playwright 专项检查确认原菜单顺序、项目选择器优先、桌面 2px 选中边线、移动端跳转关闭菜单，以及舒适 30px / 紧凑 26px 行高；无业务写请求或 page errors。证据：`/tmp/zf-ui-navigation-20261026-1555/`。
+
+## 2026-10-26 品牌与侧栏收放
+
+用户随后补充：左上角 ZaoFu 品牌区、侧栏收起和展开参考 GR8R。此修订仅调整品牌与收放交互，保留上一节的菜单分组和顺序。
+
+- 品牌保留 ZaoFu 名称，使用 22px 黑底圆角字标、8px 间距、Geist 13.5px / 600。
+- Docker Playwright 实测参考站展开宽 252px、收起宽 52px，收起后 Logo 下方保留展开按钮，刷新仍保留收起状态。本地同步这些行为：图标可直接导航，悬停有名称提示，Inbox 待处理提示保留为圆点；项目选择器在展开后使用。
+- 桌面收起状态仅存储于 `zf.sidebarCollapsed.v1`，不写业务 API。浏览器禁用存储时仍可在当前页面收放。
+- 移动端菜单以 280px 抽屉覆盖内容；关闭按钮、遮罩、Escape 和选择页面均可关闭。打开时隔离背景交互、约束键盘焦点，关闭后恢复入口焦点；跨回桌面自动关闭抽屉，保留桌面收起偏好。
+- 右侧 Tasks / Inbox / Settings 随可用宽度伸展，其标题、工具栏、卡片、字体和内部间距保持已验收版本。
+
+验收：展开与收起 -> verify: 252px / 52px、顶栏与内容起点同步；刷新及图标导航 -> verify: 状态保留且原菜单顺序不变；移动抽屉 -> verify: 焦点、遮罩、Escape、导航和断点切换正确；现有三个模块 -> verify: 原浏览器用例通过。对应 `web/tests/workspace-rail.spec.ts`，证据目录 `/tmp/zf-ui-sidebar-20261026-1618/`。
+
+验证结果：`dev-verify.py plan/run --base dev` 通过 docs / web_ui 闭包，含 8 个 instruction contract、前端 typecheck / unit；Vite 构建与 bundle budget 通过（39 chunks，最大 446084 bytes）。Docker Playwright `workspace-rail.spec.ts`、`ui-alignment.spec.ts`、`kanban-toolbar.spec.ts` 共 **10 passed**，覆盖收放、刷新、存储失败、移动焦点和既有模块回归；token lint 与 diff 检查通过。截图经目视复核后同步至 8019 预览。

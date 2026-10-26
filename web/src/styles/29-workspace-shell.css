@@ -24,11 +24,26 @@ body { font-size: var(--type-body); line-height: 1.45; }
 .workspace > .board-panel { border: 0; border-radius: 0; max-height: none; background: var(--panel); }
 .project-rail { border: 0; border-right: 1px solid var(--line); background: var(--sidebar); }
 .project-rail > .section-heading { height: 46px; min-height: 46px; padding: 8px 14px; border: 0; }
+.project-rail .section-heading .rail-brand { display: flex; align-items: center; gap: 8px; font-size: var(--text-13-5); font-weight: 600; white-space: nowrap; }
+.rail-brand-mark { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 6px; background: #000; color: #fff; font-size: var(--text-12); font-weight: 700; }
+.rail-desktop-toggle, .rail-mobile-toggle { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); }
+.rail-desktop-toggle:hover, .rail-mobile-toggle:hover { background: var(--surface-2); color: var(--text); }
+.rail-mobile-toggle, .rail-scrim { display: none; }
 :root[data-sidebar-density="compact"] .project-rail .rail-nav-button { padding-block: 2px; }
 @media (min-width: 981px) {
+  .app-shell:has(.project-rail.is-collapsed) { --workspace-rail-width: 52px; }
   .topbar, .app-shell > .error-strip { margin-left: var(--workspace-rail-width); }
   .workspace { grid-template-columns: var(--workspace-rail-width) minmax(0, 1fr); }
   .workspace > .project-rail { position: fixed; z-index: 12; inset: 0 auto 0 0; width: var(--workspace-rail-width); height: 100dvh; max-height: none; }
+  .project-rail.is-collapsed > .section-heading { height: 78px; min-height: 78px; padding: 12px 8px 0; flex-direction: column; gap: 8px; }
+  .is-collapsed .rail-brand-name, .is-collapsed .rail-heading-actions > .status-dot,
+  .is-collapsed .rail-nav-title, .is-collapsed .project-switcher, .is-collapsed .rail-section > summary,
+  .is-collapsed .rail-nav-label > span, .is-collapsed .rail-nav-button > .muted, .is-collapsed .rail-nav-badge,
+  .is-collapsed .empty-text { display: none; }
+  .is-collapsed .project-rail-body { padding: 4px 8px 12px; gap: 10px; scrollbar-width: none; }
+  .is-collapsed .rail-nav-button { position: relative; justify-content: center; padding-inline: 0; }
+  .is-collapsed .rail-nav-button:has(.rail-nav-badge)::after { content: ""; position: absolute; top: 4px; right: 4px; width: 4px; height: 4px; border-radius: 50%; background: var(--brand); }
+  .is-collapsed .rail-section { border-top: 1px solid var(--line-soft); padding-top: 7px; }
 }
 @media (max-width: 980px) {
   .topbar { padding-inline: 16px; }
@@ -38,7 +53,11 @@ body { font-size: var(--type-body); line-height: 1.45; }
   .project-rail { max-height: none; border-bottom: 1px solid var(--line); }
   .project-rail > .section-heading { height: 42px; min-height: 42px; }
   .project-rail-body { display: none; }
-  .project-rail.mobile-open .project-rail-body { display: grid; max-height: 60dvh; overflow: auto; }
+  .workspace:has(.mobile-open) { grid-template-rows: 42px minmax(0, 1fr); }
+  .project-rail.mobile-open { position: fixed; inset: 0 auto 0 0; z-index: 71; width: min(280px, calc(100vw - 48px)); height: 100dvh; box-shadow: 8px 0 32px #0002; }
+  .project-rail.mobile-open .project-rail-body { display: grid; flex: 1; overflow: auto; overscroll-behavior: contain; }
+  .rail-scrim { display: block; position: fixed; inset: 0; z-index: 70; border: 0; padding: 0; border-radius: 0; background: #0006; }
+  .rail-desktop-toggle { display: none; }
   .rail-mobile-toggle { display: grid; }
   .topbar-search-control { width: 180px; }
   .topbar-runtime-summary { display: none; }
