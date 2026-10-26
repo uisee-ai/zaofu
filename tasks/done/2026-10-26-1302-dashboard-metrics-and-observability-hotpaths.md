@@ -65,3 +65,10 @@ python -m pytest tests/test_web_projection_hotpaths.py tests/test_web_observabil
 证据：`/tmp/zf-dashboard-deep-fix-20261026T1302` 的 browser-comparison/final/warm JSON、core-metric-parity、tasks-parity、observability-timings、tests/build/sentinel logs、e2e-1400/report.json。早期 SIGALRM profile 被内部异常处理吞掉，不用于时延验收。
 
 设计更新在 gitignored `docs/design/186-inbox-and-task-board-human-centered-design.md` 第 17 节、`188-dashboard-workflow-multi-run-sqlite-review.md` 第 6.1 节；不提交这些设计文档与 proposed backlog。仅本地 commit/archive，8002 保留供复看，未 merge/push。
+
+
+## 提交后重启复核（14:12 UTC）
+
+8002 `/health.git_commit=4fef8d93`，8001 保持 `50eb6ba1` 且启动时间不变。`browser-final-head.json` 新 context：Cargo Board 30.290s、Overview 首摘要 1.639s（15 项）、Events 46.352s（6 卡/26 个核心+OA 顶层字段）；loshu Board 4.170s（40 卡）、Overview 首摘要 2.452s 但 Pulse 等待 30s 超时、Events 等待 90s 超时。无 JS 异常不等于性能通过。此时主机另有独立 worktree 的 UI Docker 测试，未控制其负载，也没有证据把延迟全归因于它。
+
+这是本任务“报告冷/热及残余延迟”的失败证据；已修复的异常/无效计算已验证，但整个 Dashboard 冷加载目标仍未完成，后续增量摘要候选保留。没有提高浏览器超时来掩盖失败。详见设计 186 第 17.5 节。第一次探针早于服务监听而 ECONNREFUSED，另存 startup-race 文件后在 health 就绪后复跑。
