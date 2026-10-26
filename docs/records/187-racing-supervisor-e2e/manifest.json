@@ -1,5 +1,5 @@
 {
-  "status": "combined_environment_timing_replan_running_verify_pending",
+  "status": "corrected_combined_replan_running_verify_pending",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -264,6 +264,21 @@
       "file": "cold-environment-skill-checks.log",
       "sha256": "c92a6fb73ffbc2a94dbe0077f84cbdf71d00ae321c700c6e34c9b159203d79a2",
       "bytes": 110
+    },
+    {
+      "file": "combined-replan-corrected-delivery.json",
+      "sha256": "fb393b4f4391d105d5e107dcc499bd5f5c0dee2f18cf2422d2fd30387ea15504",
+      "bytes": 875
+    },
+    {
+      "file": "combined-replan-corrected-request.json",
+      "sha256": "0fa5f3db69208f86be1c29a1f8931e8d99408b2b22e5a9dc503c73e5a64dc15c",
+      "bytes": 335964
+    },
+    {
+      "file": "combined-replan-corrected-result.json",
+      "sha256": "dc06d52ba97fda9620a2a67c5a2781e13b2e23d3b3db0383a027504d3d907ca4",
+      "bytes": 814
     },
     {
       "file": "combined-replan-request.json",
@@ -722,6 +737,28 @@
       "bytes": 127
     },
     {
+      "file": "reader-retry-recovery-closure.log",
+      "sha256": "f3f1baf8e908bab855c71b58644c3d1850650d3f1e6712aa0adb9eb5ddd9e861",
+      "bytes": 261
+    },
+    {
+      "file": "reader-retry-recovery-live-replay.json",
+      "sha256": "6af0dfcf763199f66fb8d17c44c9e5d8feda489a866b6bf4ccc7cb371eb0b2cd",
+      "bytes": 233
+    },
+    {
+      "file": "reader-retry-recovery-red.log",
+      "sha256": "8ef9afdc53f8b1ad6e287624b6143fc9dd1ababce2af4e3dbc6b15ee43b16616",
+      "bytes": 2530,
+      "raw_sha256": "21d85aeb8fcc5c3c6806bbb09bc5ae00565da488d470723e3088762bcc65539d",
+      "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "reader-retry-runtime-reload.json",
+      "sha256": "3a07116dd94938788be74b03ec30d3501f59ee72497ccf9955944157af0e7f89",
+      "bytes": 194
+    },
+    {
       "file": "reader-stability-green.json",
       "sha256": "1f2628c87ffdd6884a24b5ed1e8b04a3000d02e0577620c2482ad47de9fa832a",
       "bytes": 1435
@@ -760,6 +797,96 @@
       "file": "recovered-run-graph-sentinel.log",
       "sha256": "3b84b08e51c315ead900c501c92fc4b750adb2765faf8c30c64c09c15cd5bb85",
       "bytes": 128
+    },
+    {
+      "file": "replan-context-callers.log",
+      "sha256": "0474b49f33b2c839491c4276a189db12b07eab26bc2a21b31cf78562cbc5cbb5",
+      "bytes": 116
+    },
+    {
+      "file": "replan-context-closure.log",
+      "sha256": "a3461f3377086639f87a73c4ae8e2f9e90e4a52f8d4dac63bdd47f9f54f29c5e",
+      "bytes": 180
+    },
+    {
+      "file": "replan-context-dev-verify-plan.log",
+      "sha256": "893f86de117ffb7487c9ee474006388009709cfef2dac6a57b44c9be157afc72",
+      "bytes": 1182
+    },
+    {
+      "file": "replan-context-dev-verify-receipt.json",
+      "sha256": "394e5185de593b3d8855aabff22bb3e312e82ab09d3b978ca6a031129a1ab795",
+      "bytes": 12624
+    },
+    {
+      "file": "replan-context-dev-verify-run.log",
+      "sha256": "893f86de117ffb7487c9ee474006388009709cfef2dac6a57b44c9be157afc72",
+      "bytes": 1182
+    },
+    {
+      "file": "replan-context-flow-smoke.log",
+      "sha256": "09ab8c2e09848ae8a4a7eb47958b80e3e13552c52f9a9b4ea1d86663b565a32a",
+      "bytes": 100
+    },
+    {
+      "file": "replan-context-live-replay.json",
+      "sha256": "8e356e2a13e15e596c717480a1418938b92aa4ac995cdf23846dd8d9bdfaa889",
+      "bytes": 346
+    },
+    {
+      "file": "replan-context-operator-recovery.log",
+      "sha256": "3da03b34bab1ad44386b466e3d3e4354e66f67e32d06a2f1dbea92211046b934",
+      "bytes": 44
+    },
+    {
+      "file": "replan-context-preflight-mock.log",
+      "sha256": "61663ee1e4618aee373cc9f154c7292c96a1db539f5249cde3fa959f24cfcf76",
+      "bytes": 99
+    },
+    {
+      "file": "replan-context-red.log",
+      "sha256": "5c5ae0bba972105cadb6417040ad506ff6344be64ada1eb509ab5c5b3dfeb023",
+      "bytes": 6654
+    },
+    {
+      "file": "replan-context-retry-dev-verify-plan.log",
+      "sha256": "c99f8b71d6d6f4b404a90728154976080668dedb92d5079c71c8cfa470ebeffa",
+      "bytes": 1264
+    },
+    {
+      "file": "replan-context-retry-dev-verify-receipt.json",
+      "sha256": "cce0a4d54d6bb25d4233661d63a0034acecee3cfa1157bff6e4bc4359214f9cb",
+      "bytes": 13045
+    },
+    {
+      "file": "replan-context-retry-dev-verify-run.log",
+      "sha256": "c99f8b71d6d6f4b404a90728154976080668dedb92d5079c71c8cfa470ebeffa",
+      "bytes": 1264
+    },
+    {
+      "file": "replan-context-retry-flow-smoke.log",
+      "sha256": "7209702be7843ace9d05f6e8116a85fd1161e5d4411c61b257c93f698151b548",
+      "bytes": 99
+    },
+    {
+      "file": "replan-context-retry-sentinel.log",
+      "sha256": "e8171381972f1959afc99e84f5b0bdf42dfeec416c6049f5f0c13be48a903ae7",
+      "bytes": 127
+    },
+    {
+      "file": "replan-context-runtime-reload.json",
+      "sha256": "e25596f608fdcb27e5ad0bd8659f5d965ad4d2190658d0901f592cc0c1385fcc",
+      "bytes": 163
+    },
+    {
+      "file": "replan-context-sentinel.log",
+      "sha256": "21aab66ff735b06ebf712f6f0d064ae3a8042a4d245c473f0fc73aeaccd2da94",
+      "bytes": 128
+    },
+    {
+      "file": "replan-context-web-reload.json",
+      "sha256": "ff9fd02dcee541024dc97cae402bfe7f7eac29aee2dae90c0118a9b5cd8d69d7",
+      "bytes": 156
     },
     {
       "file": "replan-race-callers.log",
@@ -954,7 +1081,7 @@
       "bytes": 1797
     }
   ],
-  "pending_plan_id": "evt-adf3807d914c",
+  "pending_plan_id": "",
   "approval_event_id": "evt-158a8630051c",
   "normalized_logs": [
     {
@@ -973,6 +1100,7 @@
       "transformation": "remove line-end whitespace only"
     }
   ],
-  "last_recovery_event_id": "evt-50445443495c",
-  "latest_plan_trigger_id": "evt-bddccfe072a9"
+  "last_recovery_event_id": "evt-22f59b3c206a",
+  "latest_plan_trigger_id": "evt-fe204937543b",
+  "original_approved_plan_id": "evt-adf3807d914c"
 }

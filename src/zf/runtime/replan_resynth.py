@@ -45,6 +45,15 @@ _REPLAN_SEMANTIC_PASSTHROUGH_KEYS = (
 )
 
 
+def replan_semantic_context(payload: Mapping) -> dict:
+    """Keep the action marker and immediate/recovered trigger on one context."""
+    return {
+        key: payload[key]
+        for key in _REPLAN_SEMANTIC_PASSTHROUGH_KEYS
+        if payload.get(key) not in (None, "", [], {})
+    }
+
+
 def append_replan_resynth_once(
     writer: EventWriter, state_dir: Path, event: ZfEvent,
 ) -> ZfEvent:

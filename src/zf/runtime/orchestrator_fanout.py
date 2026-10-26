@@ -948,6 +948,7 @@ class FanoutCoordinationMixin(
             "task_map_ref",
             "source_index_ref",
             "rework_of",
+            "rework_attempt",
             "pdd_id",
             "feature_id",
         ):

@@ -13,6 +13,7 @@ from zf.runtime.candidate_rework_identity import (
     _candidate_rework_amended_identity_payload,
     _candidate_rework_identity_payload,
 )
+from zf.runtime.replan_resynth import replan_semantic_context
 
 
 class CandidateReworkActionsMixin:
@@ -349,18 +350,7 @@ class CandidateReworkActionsMixin:
             "idempotency_key": str(payload.get("checkpoint_id") or ""),
             **scope_payload,
         }
-        for key in (
-            "required_actions",
-            "orchestration_delta",
-            "orchestration_delta_ref",
-            "orchestration_delta_digest",
-            "reason_codes",
-            "operator_override",
-            "owner_authorization",
-        ):
-            value = payload.get(key)
-            if value not in (None, "", [], {}):
-                event_payload[key] = value
+        event_payload.update(replan_semantic_context(payload))
         replan = self.writer.emit(
             "orchestrator.replan_requested",
             actor="zf-cli",
@@ -556,7 +546,10 @@ def _build_resynth_event(
                 _string_list(payload.get("downstream_task_ids"))
             ),
             resume_scope=str(payload.get("resume_scope") or ""),
-            **_candidate_rework_identity_payload(payload),
+            **{
+                **_candidate_rework_identity_payload(payload),
+                **replan_semantic_context(payload),
+            },
         )
         return build_replan_resynth_event(plan=plan, events=events, config=config)
     except Exception:

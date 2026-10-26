@@ -1,0 +1,45 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_recovery_distinguishes_new_retry_from_duplicate_trigger[2-1] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-255/test_recovery_distinguishes_ne0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x713c0841d310>
+new_attempt = 2, expected_count = 1
+
+    @pytest.mark.parametrize("new_attempt, expected_count", [(2, 1), (1, 0)])
+    def test_recovery_distinguishes_new_retry_from_duplicate_trigger(tmp_path, monkeypatch, new_attempt, expected_count):
+        _state_dir, log, _transport, orch = _state(tmp_path)
+        writer = EventWriter(log)
+        payload = {"pdd_id": "PDD-1", "rework_of": "failure-1", "rework_attempt": 1}
+        old = writer.append(ZfEvent(type="candidate.ready", payload=payload))
+        writer.append(ZfEvent(type="fanout.started", payload={
+            "fanout_id": "old-reader", "stage_id": "review-candidate", "trigger_event_id": old.id,
+        }))
+        writer.append(ZfEvent(type="fanout.cancelled", payload={
+            "fanout_id": "old-reader", "stage_id": "review-candidate", "trigger_event_id": old.id,
+        }))
+        new = writer.append(ZfEvent(type="candidate.ready", payload={**payload, "rework_attempt": new_attempt}))
+        writer.append(ZfEvent(type="run.dispatch.blocked", causation_id=new.id, payload={
+            "source_event_id": new.id, "reason": "run_terminal:blocked",
+        }))
+        writer.append(ZfEvent(type="run.goal.updated", payload={"status": "active"}))
+        dispatched = []
+
+        def start(event):
+            dispatched.append(event.id)
+            writer.append(ZfEvent(type="fanout.started", payload={
+                "fanout_id": "new-reader", "stage_id": "review-candidate", "trigger_event_id": event.id,
+            }))
+
+        monkeypatch.setattr(orch, "_maybe_start_reader_fanout", start)
+        orch._resume_unstarted_reader_fanouts(log.read_all())
+>       assert dispatched == ([new.id] if expected_count else [])
+E       AssertionError: assert [] == ['evt-dcdc83da9728']
+E
+E         Right contains one more item: 'evt-dcdc83da9728'
+E         Use -v to get more diff
+
+tests/test_reader_retry_recovery.py:34: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_reader_retry_recovery.py::test_recovery_distinguishes_new_retry_from_duplicate_trigger[2-1]
+1 failed, 1 passed in 2.77s

@@ -1,0 +1,14 @@
+{
+  "fanout_id": "fanout-prd-plan-evt-fe204937",
+  "status": "started",
+  "operation_id": "wop-prd-plan-prd-planner-trig-evt-fe204937-re-aa9ac573eedf",
+  "source_manifest_ref": "artifacts/attempts/run-fanout-prd-plan-evt-fe204937-prd-planner/source-manifests/63e37777e857824fb4f3312a4f26490d877c1721bee3301e84ad0e7dd7e35282.json",
+  "source_manifest_sha256": "63e37777e857824fb4f3312a4f26490d877c1721bee3301e84ad0e7dd7e35282",
+  "previous_candidate_sources": 24,
+  "all_refs_match_request": true,
+  "feedback_ref": "artifacts/plan-synth/rework-contexts/c985fc63cea01eaa96b2691e91d88387ad509b533c52ec46aa8f0cfbf178533f.json",
+  "feedback_sha256": "c985fc63cea01eaa96b2691e91d88387ad509b533c52ec46aa8f0cfbf178533f",
+  "timing_finding_delivered": true,
+  "new_plan_approved": false,
+  "configuration_sha256": "2b356f6a13021b0616878f71079c83a31abd25d1f262a1fb73ae206778b6a6f3"
+}

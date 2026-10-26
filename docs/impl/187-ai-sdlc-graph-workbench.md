@@ -150,3 +150,5 @@ Plan 审阅器按三个绑定端口的路径和摘要确定加载身份，图轮
 Discovery缺口替换已有任务时，Task Map amendment除重连依赖外，也将所有显式modules[].task_ids中的被替换ID映射到声明的后继；一对多继承全部后继，其他模块元数据保持，原Plan对象不被修改。不存在的引用仍由原校验拒绝，不根据目录猜测模块归属。
 
 候选级重规划已通过`orchestrator.replan_requested`及对应Plan fanout正式开始时，同Run、PDD和旧Task Map generation的下游reader失败不再竞争通用阶段重试或触发cap终止整个Run。绑定使用真实trigger的代际及返工来源/次数，不能仅凭存在其他活跃Agent抑制失败。只覆盖明确的候选返工范围；其他Run/代际/任务、未派发或已终止的重规划，以及新Planner自身失败，仍执行原有重试上限。失败原事件保留，Plan审批及最终验收不因此通过。
+
+受控候选重规划将既有语义上下文字段同时传入持久marker与即时resynth，恢复扫描沿用同一字段集。显式指定的`previous_plan_candidate_refs`覆盖历史触发中的旧引用，required_actions及授权来源保持，不因即时路径丢字段而与恢复路径产生不同输入。下游仍校验引用摘要和读取契约。Reader的未启动触发恢复将`rework_attempt`计入身份：同一来源的新重试可在Run恢复后补派，已经派发的同轮重复触发不再启动。
