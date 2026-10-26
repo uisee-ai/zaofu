@@ -157,3 +157,7 @@ Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把
 70. 修正事件夹具后，106项context/audit/reader生命周期闭包、9项reader恢复与流程Mock、51项sentinel及16项最终入口/文档检查通过；正确夹具在旧代码仍为2 failed/6 passed。调用方测试首轮因文件名误写未收集，改为test_reader_retry_recovery.py后通过。07:35正式保留Provider重载watcher至2517936，全部pane PID一致；经`zf kanban move RACE-DRIVE in_progress`恢复07:19误重排的非终态，图API与canonical TaskStore均为in_progress、accepted_event_ids仍为空。该次状态纠正是监工受控操作，不宣称既有错误状态被运行时自动修复。
 
 71. 本轮dev-verify规划200个影响文件而建议broad；matching run显式跳过deterministic/serial，实际106+9闭包已执行，另自动sentinel 51和flow-smoke 10通过。未运行全量pytest；这不是最终赛车交付通过。
+
+72. DRIVE独立验证完成：16项片内测试、151项全量单测、1条驾驶demo、4条正式产品旅程及键盘折返探针通过；正常比赛90308.10ms，结算一次，浏览器errors为空，无跳过/重试。首次报告`evt-cf19b6e5b836`缺少控制结果内嵌product_acceptance_report，运行时正式要求协议修正（`evt-86e793ad9080`）；原生压缩后原会话继续，Agent修正结构并补齐canonical command_digest，result validate通过后正式提交`evt-5d7a30898be8`，07:59:35由`evt-057d6cec2cf7`接纳。没有重写候选或把未接纳报告当成功。
+
+73. 07:59:36 Kernel产生`test.passed=evt-c8edd347d036`，四个Verify children全部完成；07:59:43自动派发Discovery（`evt-86c1caf81fc5`），目标仍是a15b6b6f。完整独立证据增量导出到manifest-all-four.json，19个带完整哈希清单的运行目录、11,948文件/1,043,361,586字节，原first-three版本保留。portable目录另保存本次实际批准的runtime-zf.yaml，与候选Git归档里的基线配置明确区分。Discovery/Judge/Run终态及最终图断言尚未完成。
