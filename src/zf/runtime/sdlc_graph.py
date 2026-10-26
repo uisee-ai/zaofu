@@ -224,6 +224,8 @@ def build_sdlc_graph(source: dict[str, Any]) -> dict[str, Any]:
         parent = stage if stage in nodes else role if role in nodes else run
         stage_operations.setdefault(parent, []).append(operation)
         edge(parent, op, "executes", views=["workflow"])
+        if role in nodes and role != parent:
+            edge(role, op, "executes", views=["workflow"])
         tid = "task:" + operation.get("task_id", "")
         if tid in nodes:
             edge(tid, op, "execution", views=["workflow", "trace", "timeline"])
@@ -240,6 +242,9 @@ def build_sdlc_graph(source: dict[str, Any]) -> dict[str, Any]:
             nodes[parent]["status"] = next((s for s in ("running", "blocked", "failed", "reserved", "requested", "cancelled", "superseded") if s in states), "settled")
         nodes[parent]["data"]["operation_ids"] = [r["operation_id"] for r in rows]
 
+    from zf.runtime.sdlc_workflow_states import project_structure_states
+
+    project_structure_states(nodes, operations, event_rows)
     timeline = []
     for seq, event in event_rows:
         p = event.payload

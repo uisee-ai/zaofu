@@ -161,3 +161,7 @@ Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把
 72. DRIVE独立验证完成：16项片内测试、151项全量单测、1条驾驶demo、4条正式产品旅程及键盘折返探针通过；正常比赛90308.10ms，结算一次，浏览器errors为空，无跳过/重试。首次报告`evt-cf19b6e5b836`缺少控制结果内嵌product_acceptance_report，运行时正式要求协议修正（`evt-86e793ad9080`）；原生压缩后原会话继续，Agent修正结构并补齐canonical command_digest，result validate通过后正式提交`evt-5d7a30898be8`，07:59:35由`evt-057d6cec2cf7`接纳。没有重写候选或把未接纳报告当成功。
 
 73. 07:59:36 Kernel产生`test.passed=evt-c8edd347d036`，四个Verify children全部完成；07:59:43自动派发Discovery（`evt-86c1caf81fc5`），目标仍是a15b6b6f。完整独立证据增量导出到manifest-all-four.json，19个带完整哈希清单的运行目录、11,948文件/1,043,361,586字节，原first-three版本保留。portable目录另保存本次实际批准的runtime-zf.yaml，与候选Git归档里的基线配置明确区分。Discovery/Judge/Run终态及最终图断言尚未完成。
+
+74. Verify正式通过后的真实图检查发现：阶段节点completed，但完整YAML结构中的aggregate与role仍为pending。5项后端反例及Docker Playwright分别复现；新增只读结构状态投影，角色绑定实际Operation并保留运行优先，aggregate绑定最新fanout的Kernel汇总，旧汇总迟到及Worker自报不会冒充当前成功。63项图/API/trace闭包、22项Operation/Spine/文档检查及51项sentinel通过；8002 Web单独重载，watcher 2517936及Provider保留。Docker Playwright由RED转GREEN（1 passed），实际角色、汇总及触发事件均按证据更新，截图45–47保留。追加触发节点回归先1 failed/5 passed，最终dev-verify自动66项Python、Web typecheck及全部Web模型单测通过；没有运行全量pytest。触发事件只标reported，不冒充产品完成。
+
+75. Discovery于08:17:47接纳，08:18:36产生flow.goal.closed，08:18:42真实派发Judge（evt-60e9f425e7d3）。同时发现DRIVE成功重试的TaskAttempt在08:15误报lease_expired：修正报告沿用初次CallRequest身份而未收尾retry尝试；保留历史，正在验证机械身份绑定修复。

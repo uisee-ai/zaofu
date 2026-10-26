@@ -161,3 +161,7 @@ Plan审批去重按Run、阶段、产品、绑定的Plan/合同版本及完整�
 Codex会话被`RoleSessionRegistry.clear()`明确废弃时，在同一文件锁内持久记录退休UUID；迟到Hook或观察器不能把它重新绑定为当前会话，也不能覆写新的Task/Stage绑定。观察器跳过已退休rollout，即使其mtime因迟到写入而更新，并检查最终绑定结果以覆盖扫描与回收的竞态。Hook仍按原角色写入审计账本，新UUID正常接纳，Claude会话策略不变。此边界防止已完成reader回收后，旧上下文用量再次阻塞下一条排队lane。
 
 Reader fanout的`worker.context.critical`只由其fanout回收/重试生命周期恢复，不再触发普通产品Task的completion audit重新排队。归属同时核对reader topology及原Kernel派发的fanout/stage/child/run、角色、Task和trace；仅有相同Task或角色不够。升级前已排出的context retry也回溯原trigger并应用同一边界，旧attempt结束后仍不能重排writer。普通Task及writer fanout的现有context审计不变。
+
+YAML完整结构中的role节点也关联真实Operation：有running操作时保留运行态，不被预注册的排队子任务覆盖；否则展示最新调用状态。aggregate节点按本阶段最新fanout的Kernel汇总事件变化，新的fanout先回到pending，旧fanout迟到完成及Worker自报不覆盖当前状态。结构节点记录Operation或来源事件引用，与阶段概览共用既有只读账本投影，不产生完成事件。
+
+已发生的编译触发事件节点显示reported并关联source_event_ids；该状态仅证明事件发生，不构成成功或交付裁决。

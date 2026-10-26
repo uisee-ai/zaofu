@@ -180,6 +180,44 @@ test("explicit graph filters compact the layout while polls retain the viewport"
   await expect.poll(async () => (await active.boundingBox())?.width || 0).toBeGreaterThan(160);
 });
 
+test("completed fanout updates aggregate and role structure nodes", async ({ page, request }) => {
+  const stageId = process.env.ZF_GRAPH_EXPECT_COMPLETED_STAGE || "";
+  test.skip(!stageId, "Requires an explicitly selected completed fanout stage.");
+  const graph = await (await request.get(`/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`)).json();
+  const aggregate = graph.nodes.find((n: { id: string }) => n.id === `workflow:aggregate:${stageId}`);
+  expect(aggregate.status).toBe("completed");
+  expect(aggregate.data.status_source_event_id).toBeTruthy();
+  const roles = aggregate.data.definition.roles as string[];
+  expect(roles.length).toBeGreaterThan(0);
+  for (const role of roles) {
+    const node = graph.nodes.find((n: { id: string }) => n.id === `workflow:role:${role}`);
+    expect(node.status).toBe("settled");
+    expect(node.data.current_operation_id).toBeTruthy();
+  }
+  const eventType = process.env.ZF_GRAPH_EXPECT_REPORTED_EVENT || "";
+  if (eventType) {
+    const trigger = graph.nodes.find((n: { id: string }) => n.id === `workflow:event:${eventType}`);
+    expect(trigger.status).toBe("reported");
+    expect(trigger.data.source_event_ids.length).toBeGreaterThan(0);
+  }
+  await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
+  const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
+  await expect(workbench).toBeVisible();
+  await workbench.getByRole("button", { name: "Workflow 执行", exact: true }).click();
+  await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
+  await workbench.getByRole("button", { name: "展开角色、汇聚与事件结构", exact: true }).click();
+  const checks = [[aggregate.id, "已结束"], [`workflow:role:${roles[0]}`, "操作结束"]];
+  if (eventType) checks.push([`workflow:event:${eventType}`, "已报告"]);
+  for (const [id, label] of checks) {
+    await workbench.getByLabel("搜索图节点").fill(id);
+    await workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button", { exact: false }).first().click();
+    const inspector = workbench.getByRole("complementary", { name: "图节点详情" });
+    await expect(inspector).toContainText(id);
+    await expect(inspector).toContainText(label);
+    await workbench.screenshot({ path: test.info().outputPath(id === aggregate.id ? "aggregate-completed.png" : id.startsWith("workflow:event:") ? "trigger-reported.png" : "role-settled.png") });
+  }
+});
+
 test("terminal Run, Tasks and Goal coverage agree with kernel evidence", async ({ page, request }) => {
   test.skip(process.env.ZF_GRAPH_EXPECT_TERMINAL !== "1", "Requires a completed isolated acceptance Run.");
   test.setTimeout(90_000);

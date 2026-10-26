@@ -1,0 +1,18 @@
+.....F                                                                   [100%]
+=================================== FAILURES ===================================
+_______ test_trigger_node_records_occurrence_without_claiming_completion _______
+
+    def test_trigger_node_records_occurrence_without_claiming_completion():
+        trigger = event("discovery.requested")
+        result = graph([trigger])
+        node = state(result, "event:discovery.requested")
+>       assert node["status"] == "reported"
+E       AssertionError: assert 'pending' == 'reported'
+E
+E         - reported
+E         + pending
+
+tests/test_sdlc_workflow_states.py:73: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sdlc_workflow_states.py::test_trigger_node_records_occurrence_without_claiming_completion
+1 failed, 5 passed in 1.75s
