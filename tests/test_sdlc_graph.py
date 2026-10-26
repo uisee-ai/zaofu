@@ -123,6 +123,50 @@ def test_workbench_api_uses_proposal_snapshot_and_is_read_only(setup):
     assert client.get(url.replace(binding["request_id"], "missing")).status_code == 404
 
 
+def test_recovered_run_graph_and_detail_keep_old_block_as_history(setup):
+    from zf.runtime.workflow_requests import mark_workflow_request
+
+    client, service, binding = setup
+    for status in ["approved", "submitted"]:
+        mark_workflow_request(service.state_dir, binding["request_id"],
+                              status=status, actor="test", run_id="run-a")
+    service.writer.append(ZfEvent(id="blocked", type="run.goal.blocked", origin="kernel",
+                                 payload={"workflow_run_id": "run-a"}))
+    blocked_seq = len(service.writer.event_log.read_all())
+    service.writer.append(ZfEvent(type="run.goal.updated", actor="operator",
+                                 payload={"workflow_run_id": "run-a", "status": "active"}))
+    before = service.writer.event_log.read_all()
+    url = f"/api/projects/default/workflow-requests/{binding['request_id']}"
+    graph = client.get(url + "/graph").json()
+    nodes = {n["id"]: n for n in graph["nodes"]}
+    assert nodes["run:run-a"]["status"] == "running"
+    assert not nodes["run:run-a"]["data"].get("terminal_event_id")
+    assert nodes["workflow:terminal:done"]["status"] == "pending"
+    assert nodes["event:blocked"]["status"] == "blocked"
+    detail = client.get(url).json()
+    assert detail["lifecycle"]["terminal"] == ""
+    assert detail["lifecycle"]["terminal_event_id"] == ""
+    historical = client.get(url + f"/graph?as_of={blocked_seq}").json()
+    assert next(n for n in historical["nodes"] if n["id"] == "run:run-a")["status"] == "blocked"
+    assert len(service.writer.event_log.read_all()) == len(before)
+
+
+@pytest.mark.parametrize("terminal_type,recovery_run,status", [
+    ("run.goal.blocked", "other-run", "blocked"),
+    ("run.goal.completed", "run-a", "done"),
+    ("run.cancelled", "run-a", "cancelled"),
+])
+def test_recovery_does_not_reopen_foreign_or_irreversible_terminal(terminal_type, recovery_run, status):
+    events = [ZfEvent(id="terminal", type=terminal_type, origin="kernel",
+                     payload={"workflow_run_id": "run-a"}),
+              ZfEvent(type="run.goal.updated", actor="operator",
+                      payload={"workflow_run_id": recovery_run, "status": "active"})]
+    graph = build_sdlc_graph(sources(events=list(enumerate(events, 1))))
+    run = next(n for n in graph["nodes"] if n["id"] == "run:run-a")
+    assert run["status"] == status
+    assert run["data"]["terminal_event_id"] == "terminal"
+
+
 def test_workbench_keeps_pending_plan_when_source_index_omits_authority_refs(setup):
     import hashlib
     import json

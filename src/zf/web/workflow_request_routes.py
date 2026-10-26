@@ -757,6 +757,8 @@ def _workflow_request_lifecycle(
         ),
         None,
     )
+    if admission.get("active"):
+        terminal = None
     return {
         "config_applied": "workflow.config.change.applied" in types,
         "submitted": "workflow.submit.accepted" in types,

@@ -9,6 +9,7 @@ from typing import Any
 from zf.runtime.plan_modules import plan_modules
 from zf.runtime.candidate_result_binding import same_task_map_generation
 from zf.runtime.goal_coverage_graph import build_goal_coverage_graph
+from zf.runtime.run_admission import request_admission_view
 from zf.runtime.workflow_operation import reduce_workflow_operations
 from zf.runtime.sdlc_graph_timeline import build_timeline
 from zf.runtime.workflow_trace_fanout import build_fanout_runs
@@ -290,6 +291,17 @@ def build_sdlc_graph(source: dict[str, Any]) -> dict[str, Any]:
                 if ref:
                     aid = node("artifact:" + ref, "artifact", key, views=["trace", "delivery"], ref=ref, descriptor=value)
                     edge(eid, aid, "evidence_ref", views=["trace", "delivery"])
+    admission = request_admission_view(
+        [e for _, e in event_rows if e.type not in RUN_TERMINAL or e.origin == "kernel"],
+        request_id=scope["request_id"], run_id=scope["run_id"],
+    )
+    if admission.get("active"):
+        nodes[run]["status"] = admission["status"]
+        nodes[run]["data"].pop("terminal_event_id", None)
+        terminal = nodes.get("workflow:terminal:done")
+        if terminal is not None:
+            terminal["status"] = "pending"
+            terminal["data"].pop("terminal_event_id", None)
     # Reuse the existing admitted-result/current-generation verifier. Do not infer
     # claim closure from Task status or a worker's success declaration.
     goal_coverage = {}

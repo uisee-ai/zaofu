@@ -1,5 +1,5 @@
 {
-  "status": "plan_approved_foundation_running",
+  "status": "impl_parallel_observed_verify_pending",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -33,6 +33,21 @@
       "file": "19-impl-running-inspector.png",
       "sha256": "59d7e8a01cde95799e5f012594d2418e3eb4500afcf5c9d58cc98260ab3ee2ac",
       "bytes": 155490
+    },
+    {
+      "file": "20-parallel-impl-modules.png",
+      "sha256": "126d7ada84e1a6dd3c4ce05cbaf353df1ba8d2f51713b4893893481318fe9625",
+      "bytes": 290649
+    },
+    {
+      "file": "21-parallel-impl-workflow.png",
+      "sha256": "ab66402a8cda441d758ce2a6a5b1b2b891ae51a024b63401628913cdd786f042",
+      "bytes": 208305
+    },
+    {
+      "file": "22-parallel-impl-inspector.png",
+      "sha256": "393c88d2b5cf7db65941d296d43b6e91d7996f3ba045501bef70c8c602d91606",
+      "bytes": 159939
     },
     {
       "file": "approval-recovery-dev-verify-plan.log",
@@ -106,8 +121,8 @@
     },
     {
       "file": "evidence-environment-idle-role-restarts.json",
-      "sha256": "387240732c3e3a8ea43b8b857a1274f13d3885be30e91a29a013d61de0fb5ebc",
-      "bytes": 355
+      "sha256": "8ff74dd65a62ff3fd0ef2470ad8cea0ee0d65f44d424fb445e283fa70ad99e9e",
+      "bytes": 557
     },
     {
       "file": "final-candidate.yaml",
@@ -123,6 +138,11 @@
       "file": "full-plan-diff-layout.log",
       "sha256": "85a733096241b6a05e8376914f4a01de568a0e62b4d6ce61f3dc77aa21e4caae",
       "bytes": 200
+    },
+    {
+      "file": "graph-projection-web-reload.json",
+      "sha256": "4d2daf5991a4c70b80c181ec3a6754a95bc079e916991479b84d0dfec8951765",
+      "bytes": 66
     },
     {
       "file": "initial-candidate.yaml",
@@ -153,6 +173,16 @@
       "file": "observe-impl.log",
       "sha256": "793bca58b983e3b9a7f1209c16eaf3df8462f3640984d2fba4fb3e2b43f78760",
       "bytes": 1864
+    },
+    {
+      "file": "observe-parallel-impl.log",
+      "sha256": "08bfa3d16bc7cc863725f1a2fe604c80b307e1fa2ae223c4decd8cc2ef7d7c75",
+      "bytes": 2522
+    },
+    {
+      "file": "parallel-intervals.json",
+      "sha256": "41514a764d70b12aaf498282edb1f3d2c0254a25500d0ded6b7c1e37940c7618",
+      "bytes": 6949
     },
     {
       "file": "pending-interfaces.md",
@@ -273,6 +303,31 @@
       "file": "recover-approved-goal.log",
       "sha256": "cba59d28cfb51fc8adde9a503a0af6ceed835e41d8adcc5ca71f681af5691b8e",
       "bytes": 44
+    },
+    {
+      "file": "recovered-run-dev-verify-plan.log",
+      "sha256": "d518b3773f5a4c2e51a5f8082479ad463e3614264e5ffca256de9a0fb39c49f3",
+      "bytes": 3707
+    },
+    {
+      "file": "recovered-run-dev-verify-run.log",
+      "sha256": "d518b3773f5a4c2e51a5f8082479ad463e3614264e5ffca256de9a0fb39c49f3",
+      "bytes": 3707
+    },
+    {
+      "file": "recovered-run-graph-closure.log",
+      "sha256": "cd9ce8fdfab30f3bedfc014f14c1820fce96caa8ed4a4b10fb47d7791826f7e2",
+      "bytes": 181
+    },
+    {
+      "file": "recovered-run-graph-red.log",
+      "sha256": "aaf83f2af4d087ec5f334164ab27616c9b6d59fc838745fe7a304b134d52cb47",
+      "bytes": 1953
+    },
+    {
+      "file": "recovered-run-graph-sentinel.log",
+      "sha256": "3b84b08e51c315ead900c501c92fc4b750adb2765faf8c30c64c09c15cd5bb85",
+      "bytes": 128
     },
     {
       "file": "restart-actuator-closure.log",
@@ -396,6 +451,11 @@
     {
       "file": "restart-actuator-red.log",
       "raw_sha256": "17d8f751089af4730e6127122c199ed1170025af8b86facf244f569332e9e033",
+      "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "recovered-run-graph-red.log",
+      "raw_sha256": "0fc391565302a040b2d2f390d74a61562f270c20ab7fcb2133a5752065d42257",
       "transformation": "remove line-end whitespace only"
     }
   ]

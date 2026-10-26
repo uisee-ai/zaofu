@@ -132,3 +132,5 @@ Plan 审阅器按三个绑定端口的路径和摘要确定加载身份，图轮
 等待人工Plan审批是合法等待态。Run Manager 的失败收尾升级和 goal idle rescan 共用只读审批事件归约：同一Run的 `plan.approval.requested` 在对应 `plan.approved` / `plan.rejected` 到来前，不因Worker静默而触发上述动作。其他Run的审批、其他Plan的裁决不影响当前等待；匹配裁决后恢复原有诊断策略，不修改审批、任务或Run真值。此修复避免长时间审批等待被历史失败候选升级成Run blocked。
 
 保留Worker的源码修复重载器从 `process-guard.v2` 读取 `owner_pid`，同时兼容旧 `pid`，继续检查目标进程身份。此前只读旧字段，导致找不到现有watcher。真实运行中通过此路径更换watcher后，FOUNDATION的Provider会话、派发ID和全部pane PID均未变化；该操作不替代Plan批准，也不重建任务图。
+
+图与Workflow详情复用Run admission归约后的active状态。受控 `run.goal.updated(status=active)` 恢复原blocked Run后，当前Run显示running，终点回到pending，旧blocked事件仍可在历史/证据中查看；历史回放保持当时的blocked，completed/cancelled等不可逆终态不被该恢复事件清除。图不把Worker自报terminal当作Kernel终态。

@@ -1,0 +1,178 @@
+{
+  "run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+  "as_of": "2026-10-26T00:33:30.351281+00:00",
+  "source_seq": 4307,
+  "basis": "Kernel fanout dispatch/settlement intervals; open intervals stop at observation time, not completion",
+  "stages": {
+    "prd-lanes-impl": {
+      "observed_peak": 2,
+      "spans": [
+        {
+          "stage": "prd-lanes-impl",
+          "role": "prd-dev-lane-0",
+          "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+          "child_id": "prd-dev-lane-0-RACE-FOUNDATION",
+          "attempt": "run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION",
+          "operation_id": "wop-prd-lanes-impl-prd-dev-lane-0-RACE-FOUNDATION-t-18972e0e5fde",
+          "start": "2026-10-26T00:09:01.419823+00:00",
+          "start_event": "evt-ebd2fe29a7a8",
+          "end": "2026-10-26T00:29:39.732647+00:00",
+          "end_event": "evt-dc905f07bee2",
+          "outcome": "fanout.child.completed"
+        },
+        {
+          "stage": "prd-lanes-impl",
+          "role": "prd-dev-lane-1",
+          "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+          "child_id": "queued-RACE-DRIVE-2",
+          "attempt": "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-DRIVE-2",
+          "operation_id": "wop-prd-lanes-impl-queued-RACE-DRIVE-2-trig-evt-adf-edfc43404965",
+          "start": "2026-10-26T00:29:42.907691+00:00",
+          "start_event": "evt-a081f912774a",
+          "end": null
+        },
+        {
+          "stage": "prd-lanes-impl",
+          "role": "prd-dev-lane-2",
+          "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+          "child_id": "queued-RACE-TRACK-3",
+          "attempt": "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-TRACK-3",
+          "operation_id": "wop-prd-lanes-impl-queued-RACE-TRACK-3-trig-evt-adf-cb5e3d8beff3",
+          "start": "2026-10-26T00:29:46.806407+00:00",
+          "start_event": "evt-858a6a8aa9d9",
+          "end": null
+        }
+      ],
+      "overlap": [
+        {
+          "roles": [
+            "prd-dev-lane-1",
+            "prd-dev-lane-2"
+          ],
+          "attempts": [
+            "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-DRIVE-2",
+            "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-TRACK-3"
+          ],
+          "seconds": 223.545,
+          "both_settled": false
+        }
+      ]
+    },
+    "prd-plan": {
+      "observed_peak": 1,
+      "spans": [
+        {
+          "stage": "prd-plan",
+          "role": "prd-planner",
+          "fanout_id": "fanout-prd-plan-evt-3ac7f23a",
+          "child_id": "prd-planner",
+          "attempt": "run-fanout-prd-plan-evt-3ac7f23a-prd-planner",
+          "operation_id": "wop-prd-plan-prd-planner-trig-evt-3ac7f23a-98b84b92a4ef",
+          "start": "2026-10-25T21:47:27.399683+00:00",
+          "start_event": "evt-9916b861bf2b",
+          "end": "2026-10-25T22:04:09.546688+00:00",
+          "end_event": "evt-37657211cd3f",
+          "outcome": "fanout.child.completed"
+        },
+        {
+          "stage": "prd-plan",
+          "role": "prd-planner",
+          "fanout_id": "fanout-prd-plan-evt-fff066d0",
+          "child_id": "prd-planner",
+          "attempt": "run-fanout-prd-plan-evt-fff066d0-prd-planner",
+          "operation_id": "wop-prd-plan-prd-planner-trig-evt-fff066d0-re-d165884bfde1",
+          "start": "2026-10-25T22:04:20.185199+00:00",
+          "start_event": "evt-86b98bd05eb9",
+          "end": "2026-10-25T22:14:14.580418+00:00",
+          "end_event": "evt-d9a52add284d",
+          "outcome": "fanout.child.completed"
+        },
+        {
+          "stage": "prd-plan",
+          "role": "prd-planner",
+          "fanout_id": "fanout-prd-plan-evt-ad9fac4b",
+          "child_id": "prd-planner",
+          "attempt": "run-fanout-prd-plan-evt-ad9fac4b-prd-planner",
+          "operation_id": "wop-prd-plan-prd-planner-trig-evt-ad9fac4b-re-98c3ebf88e81",
+          "start": "2026-10-25T22:21:27.819687+00:00",
+          "start_event": "evt-cf1ee6253d83",
+          "end": "2026-10-25T22:35:42.965952+00:00",
+          "end_event": "evt-9086eb4d0b54",
+          "outcome": "fanout.child.completed"
+        },
+        {
+          "stage": "prd-plan",
+          "role": "prd-planner",
+          "fanout_id": "fanout-prd-plan-evt-41f9f85a",
+          "child_id": "prd-planner",
+          "attempt": "run-fanout-prd-plan-evt-41f9f85a-prd-planner",
+          "operation_id": "wop-prd-plan-prd-planner-trig-evt-41f9f85a-re-e00a21727cfc",
+          "start": "2026-10-25T22:54:52.756311+00:00",
+          "start_event": "evt-3e0424c6cd91",
+          "end": "2026-10-25T23:05:52.006689+00:00",
+          "end_event": "evt-ae346ef39454",
+          "outcome": "fanout.child.completed"
+        },
+        {
+          "stage": "prd-plan",
+          "role": "prd-planner",
+          "fanout_id": "fanout-prd-plan-evt-982e731b",
+          "child_id": "prd-planner",
+          "attempt": "run-fanout-prd-plan-evt-982e731b-prd-planner",
+          "operation_id": "wop-prd-plan-prd-planner-trig-evt-982e731b-re-25a22e917549",
+          "start": "2026-10-25T23:17:24.307961+00:00",
+          "start_event": "evt-9374e3bd8692",
+          "end": "2026-10-25T23:32:33.292049+00:00",
+          "end_event": "evt-7707509b76e6",
+          "outcome": "fanout.child.completed"
+        }
+      ],
+      "overlap": []
+    },
+    "prd-scan": {
+      "observed_peak": 2,
+      "spans": [
+        {
+          "stage": "prd-scan",
+          "role": "prd-product-scan",
+          "fanout_id": "fanout-prd-scan-evt-da89bee7",
+          "child_id": "prd-product-scan",
+          "attempt": "run-fanout-prd-scan-evt-da89bee7-prd-product-scan",
+          "operation_id": "wop-prd-scan-prd-product-scan-trig-evt-da89be-aaabff959c4a",
+          "start": "2026-10-25T21:40:59.338134+00:00",
+          "start_event": "evt-89d568d168ce",
+          "end": "2026-10-25T21:45:47.949091+00:00",
+          "end_event": "evt-4f2cb737128e",
+          "outcome": "fanout.child.completed"
+        },
+        {
+          "stage": "prd-scan",
+          "role": "prd-tech-scan",
+          "fanout_id": "fanout-prd-scan-evt-da89bee7",
+          "child_id": "prd-tech-scan",
+          "attempt": "run-fanout-prd-scan-evt-da89bee7-prd-tech-scan",
+          "operation_id": "wop-prd-scan-prd-tech-scan-trig-evt-da89bee7-dc35ee3b97e4",
+          "start": "2026-10-25T21:41:02.155370+00:00",
+          "start_event": "evt-af67cd83265c",
+          "end": "2026-10-25T21:47:23.723181+00:00",
+          "end_event": "evt-20ae7441feda",
+          "outcome": "fanout.child.completed"
+        }
+      ],
+      "overlap": [
+        {
+          "roles": [
+            "prd-product-scan",
+            "prd-tech-scan"
+          ],
+          "attempts": [
+            "run-fanout-prd-scan-evt-da89bee7-prd-product-scan",
+            "run-fanout-prd-scan-evt-da89bee7-prd-tech-scan"
+          ],
+          "seconds": 285.794,
+          "both_settled": true
+        }
+      ]
+    }
+  }
+}

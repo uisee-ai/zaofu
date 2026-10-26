@@ -18,5 +18,12 @@
     "role": "prd-verify-lane-2",
     "verified_idle": true,
     "returncode": 0
+  },
+  {
+    "role": "prd-dev-lane-0",
+    "verified_idle": true,
+    "active_operations": 0,
+    "returncode": 0,
+    "reason": "foundation completed; scheduler allocated second wave to lanes 1 and 2"
   }
 ]

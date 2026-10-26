@@ -64,6 +64,9 @@
 
 本记录后续补入实际并行区间、门禁与最终交付。原始认证 token、storageState 和带认证 trace 不进入仓库。
 
+28. FOUNDATION于00:29:37产生真实 `dev.build.done=evt-be0dfb11bd11`；内核随后分别在00:29:42、00:29:46向lane 1/2派发DRIVE/TRACK（`evt-a081f912774a`、`evt-858a6a8aa9d9`）。运行时按可用slot分配实际role，Plan里的lane归属不是静态线程绑定。两个真实Provider均开始实现，Impl峰值2；3个配置lane不意味着依赖宽度3。`parallel-intervals.json`按正式派发/settlement计算，未关闭区间只统计到观察时刻，Verify仍未发生。
+29. 当前Run原有admission投影为running，但图及详情仍使用旧 `run.goal.blocked`。新增真实API+历史回放反例1失败/3通过；复用既有admission状态后115项图、Web Proposal、Run admission、请求验收与Goal coverage测试通过，sentinel51通过。仅重启8002 Web，实际Docker浏览器验证Run=running、详情无旧terminal、终点pending、两个Impl operation同时running；历史blocked证据仍保留。此前等待/重载修复提交为 `e5c7f64 fix: preserve manual plan waits and worker-safe reloads`。
+
 已导出审阅用问答、候选YAML、实际配置、局部修订回执、人工批准与Impl首次派发和验证日志，见 [证据清单与SHA-256](187-racing-supervisor-e2e/manifest.json)。审批文档保留批准前快照；当前状态以本记录及正式事件为准，不包含尚未发生的Verify或产品完成证明。
 
 修复提交：`bd11edf fix: harden workflow preparation and plan review gates`。最终自动验证器再次执行Web类型检查和全部模型测试通过；已单独通过的后端影响闭包、sentinel及Mock E2E不重复运行。尚未merge/push。工作区保留本次运行需要的`.venv`和`web/node_modules`临时符号链接，8002与runtime留供用户审批，任务未归档。
@@ -75,3 +78,5 @@
 后续Hook与Preview修复的最终sentinel为51 passed（8.49秒），flow-smoke为10 passed（15.47秒）。首次sentinel因hook_recv.py超过1000行而失败；将目标文本归一化放到已有hook_workdir_guard责任模块后997行，不提高结构豁免上限。
 
 与Prompt的差异：3个Impl/Verify lanes由真实Synthesis问答进入候选，而非另做一次lane数Chat修改；Workflow Chat实际验证审批开关、model和skills三项。两张真实Plan局部diff截图捕获位置失效，不作视觉证据，保留真实API与DOM断言；另以完整Plan候选的明确UI夹具复测桌面/手机diff可读且不横向溢出，1 passed，不冒充真实Provider执行证据。Docker镜像内没有@playwright/test runner，浏览器回归将已有前端node_modules只读挂入容器，仍使用容器Chromium，未安装宿主浏览器。
+
+恢复投影的验证器按本次5个改动路径（仍以dev为base）规划80个关联测试文件；已执行明确的115项影响闭包及51项sentinel，匹配run跳过已覆盖deterministic与未改变的Web层，没有额外执行全量或把跳过的tier计为通过。真实浏览器当前与历史状态由上述API回归及Docker复核共同验证。
