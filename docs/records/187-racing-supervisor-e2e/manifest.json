@@ -1,5 +1,5 @@
 {
-  "status": "environment_plan_revision_running_verify_pending",
+  "status": "combined_environment_timing_replan_running_verify_pending",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -142,6 +142,11 @@
       "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
     },
     {
+      "file": "attempt-operation-live-closeout.json",
+      "sha256": "c6cb28dc9ee174af3f49a76882072fcb6e2f7135e5adb43a222cba20be54f1e6",
+      "bytes": 124025
+    },
+    {
       "file": "attempt-operation-red-corrected.log",
       "sha256": "67d835beb9f5d3ff87da0d1ee574622f5d9973f0993296fadeff8e8dd2eadb54",
       "bytes": 8977
@@ -261,6 +266,16 @@
       "bytes": 110
     },
     {
+      "file": "combined-replan-request.json",
+      "sha256": "520d0314639029754e15bb52b120f2ccfc56dc56ace2ce501ead4a13175d9fc2",
+      "bytes": 335479
+    },
+    {
+      "file": "combined-replan-result.json",
+      "sha256": "83e319dc70e477c5c8f875431c4a5899a071f68bdf4698ff5c000f103d26aefc",
+      "bytes": 806
+    },
+    {
       "file": "compiled-lane-stages.json",
       "sha256": "92d493e7c127b7f6456f7794916b1354f577e3c5a828829e175f6350745c9754",
       "bytes": 1525
@@ -304,6 +319,11 @@
       "file": "effective-config-verified.json",
       "sha256": "fd713478af5c1c198cbb3e276bf167dfe9ae8b59931e0e572538460450ea0f58",
       "bytes": 2829
+    },
+    {
+      "file": "environment-plan-browser.log",
+      "sha256": "fe120f125accb38bb4fb126b3b185d5394218fdb7a7bfa6c7318e8ccabf735e5",
+      "bytes": 519
     },
     {
       "file": "environment-replan-delivery.json",
@@ -625,6 +645,83 @@
       "bytes": 215
     },
     {
+      "file": "reader-replan-operator-recovery.log",
+      "sha256": "12d946fd8b0e4f96ff1021a61cc64dcbc60b66fb2c756c8143cfdace43c2a0b8",
+      "bytes": 44
+    },
+    {
+      "file": "reader-replan-ownership-caller-closure.log",
+      "sha256": "c41eddb26c10a3a13b98a8d626191bbf00b8ec1136eadbaeb2bc02dc8626c0a1",
+      "bytes": 180
+    },
+    {
+      "file": "reader-replan-ownership-closure.log",
+      "sha256": "899cfca23d61abd1c1f7168d45fd296961a582ea7db8d783bdb83a85a976aaaa",
+      "bytes": 99
+    },
+    {
+      "file": "reader-replan-ownership-dev-verify-plan.log",
+      "sha256": "623be57b3d496a8d61d556e2cd05057a6ea2cef08ac7719b4e813c665b99e896",
+      "bytes": 914
+    },
+    {
+      "file": "reader-replan-ownership-dev-verify-receipt.json",
+      "sha256": "68e0be8c12d2d35929148013da6f241ec9dc1e2fd1100b0236c36dbb69bfe6e4",
+      "bytes": 11878
+    },
+    {
+      "file": "reader-replan-ownership-dev-verify-run.log",
+      "sha256": "623be57b3d496a8d61d556e2cd05057a6ea2cef08ac7719b4e813c665b99e896",
+      "bytes": 914
+    },
+    {
+      "file": "reader-replan-ownership-final-closure.log",
+      "sha256": "544fe249fe28543c4d9d19573c57dfbb6a774a0f1042833556fe26e23ecd0782",
+      "bytes": 180
+    },
+    {
+      "file": "reader-replan-ownership-flow-smoke.log",
+      "sha256": "24a94a4b796c437cb3a21fbe5dc89a5c9c760632ae0ce35394ee68728b833451",
+      "bytes": 99
+    },
+    {
+      "file": "reader-replan-ownership-live-replay.json",
+      "sha256": "2a48504054754fba0b368f19ec82ee25155d4ea744b90edd1f0b0461a89bae97",
+      "bytes": 349
+    },
+    {
+      "file": "reader-replan-ownership-live-replay.log",
+      "sha256": "9232b77ea5a7b0abccc009903ff80cc039aee562e3c61d041a6ba3a6c2ec4fab",
+      "bytes": 329
+    },
+    {
+      "file": "reader-replan-ownership-mock-e2e.log",
+      "sha256": "69c560faa8aaf5580db23256499c58288666048bd55d139a2cd0c20f5ca50817",
+      "bytes": 98
+    },
+    {
+      "file": "reader-replan-ownership-red-corrected.log",
+      "sha256": "4edec69073b4784fe4a626648787224da5f914d773fc416ceab175ee4fd4c2d4",
+      "bytes": 2031,
+      "raw_sha256": "541ede9666de620d5b3186f9b90607d5e2486fcf402c35b3c66d4f0094c3c39c",
+      "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "reader-replan-ownership-red.log",
+      "sha256": "cb06a97611f09889028adf03b2c420016305510c5376b92f6fe85c17f2844322",
+      "bytes": 1162
+    },
+    {
+      "file": "reader-replan-ownership-reload.json",
+      "sha256": "e84d5ba05b39d77b79e9f973964281a65d7434ecb7073c10562f93223f168eec",
+      "bytes": 196
+    },
+    {
+      "file": "reader-replan-ownership-sentinel.log",
+      "sha256": "2b2bb45a6ad59c85c4d008640d22f3a9ce1d92b88857f082de4168100527ad02",
+      "bytes": 127
+    },
+    {
       "file": "reader-stability-green.json",
       "sha256": "1f2628c87ffdd6884a24b5ed1e8b04a3000d02e0577620c2482ad47de9fa832a",
       "bytes": 1435
@@ -875,5 +972,7 @@
       "raw_sha256": "0fc391565302a040b2d2f390d74a61562f270c20ab7fcb2133a5752065d42257",
       "transformation": "remove line-end whitespace only"
     }
-  ]
+  ],
+  "last_recovery_event_id": "evt-50445443495c",
+  "latest_plan_trigger_id": "evt-bddccfe072a9"
 }

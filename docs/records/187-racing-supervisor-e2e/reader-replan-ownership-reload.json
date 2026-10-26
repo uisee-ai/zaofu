@@ -1,0 +1,5 @@
+{
+  "old_watcher_pid": 2001347,
+  "reason": "Load tested candidate replan ownership guard; preserve provider processes and original cancellation evidence",
+  "verified_new_watcher_pid": 2049658
+}
