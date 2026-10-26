@@ -73,8 +73,14 @@ export function AgentViewPage({
       status: "loading",
     });
     Promise.allSettled([
-      agents.length ? Promise.resolve(agents) : getAgents(projectId),
-      agentLive ? Promise.resolve(agentLive) : getAgentLive(projectId),
+      (agents.length ? Promise.resolve(agents) : getAgents(projectId)).then((nextAgents) => {
+        if (!cancelled) setFallback((current) => ({ ...current, agents: nextAgents, status: "active" }));
+        return nextAgents;
+      }),
+      (agentLive ? Promise.resolve(agentLive) : getAgentLive(projectId)).then((nextLive) => {
+        if (!cancelled) setFallback((current) => ({ ...current, agentLive: nextLive, status: "active" }));
+        return nextLive;
+      }),
     ]).then(([agentsResult, liveResult]) => {
       if (cancelled) return;
       const nextAgents = agentsResult.status === "fulfilled" ? agentsResult.value : [];

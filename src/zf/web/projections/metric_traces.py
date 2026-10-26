@@ -35,3 +35,17 @@ def list_events(state_dir: Path, *, as_of_seq: int, before_seq: int | None, limi
     return [(r["seq"], ZfEvent(id=r["event_id"], ts=r["ts"], type=r["type"], actor=r["actor"],
                               task_id=r["task_id"], correlation_id=r["trace_key"],
                               causation_id=r["causation_id"], payload=json.loads(r["payload"]))) for r in rows]
+
+
+def summaries(state_dir: Path, *, as_of_seq: int, before_seq: int | None, limit: int) -> list[dict]:
+    """Current cursor reads bounded aggregates; older snapshots replay scalars."""
+    from zf.web.projections.trace_pages import _finalize_trace_summaries, _trace_summaries
+    with connect_readonly(db_path(state_dir)) as conn:
+        conn.execute("BEGIN")
+        current = int(facts.meta(conn, "events", {}).get("source_seq", 0))
+        if current == as_of_seq:
+            rows = conn.execute("SELECT trace_key,payload FROM metric_trace WHERE last_seq<? ORDER BY last_seq DESC LIMIT ?",
+                                (before_seq if before_seq is not None else as_of_seq + 1, limit)).fetchall()
+            return _finalize_trace_summaries({r[0]: json.loads(r[1]) for r in rows})
+    return _trace_summaries(list_events(state_dir, as_of_seq=as_of_seq, before_seq=before_seq, limit=limit),
+                            as_of_seq=as_of_seq)

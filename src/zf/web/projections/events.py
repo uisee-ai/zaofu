@@ -410,7 +410,7 @@ def _derived_cached(state_dir, kind: str, config, build, fold=None):
     may be concurrently read).
     """
     key = f"{state_dir}::{kind}"
-    fingerprint = _event_log_fingerprint(state_dir)
+    fingerprint = _event_log_fingerprint(state_dir, config)
     cached = _DERIVED_CACHE.get(key)
     if cached is not None and cached["fp"] == fingerprint:
         return cached["value"]
@@ -424,6 +424,10 @@ def _derived_cached(state_dir, kind: str, config, build, fold=None):
         value = fold(cached["value"], events[cached["n"]:])
     else:
         value = build()
+    admitted = _EVENTS_WITH_SEQ_CACHE.get(str(state_dir))
+    if admitted is None or admitted["fp"] != fp:
+        # A failed/evicted source read must not become a reusable empty view.
+        return value
     basis = _log_bytes_basis(state_dir, fp)
     factor = _DERIVED_COST_FACTOR
     with _DERIVED_CACHE_LOCK:
@@ -581,7 +585,7 @@ def _archive_inventory(state_dir: Path) -> tuple:
     )
 
 
-def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple[int, int], config) -> dict | None:
+def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple, config) -> dict | None:
     """Fold new active-log tail onto the cached events (R6-1).
 
     events.jsonl is append-only and archive segments are immutable, so when
@@ -590,9 +594,12 @@ def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple[int, int],
     whole log (a full rebuild on every append made "warm" a fiction for
     active projects). Any other shape change falls back to a full rebuild.
     """
-    if fingerprint == (0, 0):
+    if not fingerprint[0]:
         return None
-    if entry["archives"] != _archive_inventory(state_dir):
+    # Only a growing active file with the same inode, archive identities and
+    # decoder can reuse a prefix. Corrections/replacements must rebuild.
+    previous = entry["fp"]
+    if previous[2:5] != fingerprint[2:5] or fingerprint[0] <= previous[0]:
         return None
     consumed = entry["consumed"]
     size = fingerprint[0]
@@ -652,12 +659,12 @@ def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple[int, int],
 def _events_state(
     state_dir: Path,
     config: ZfConfig | None = None,
-) -> tuple[list[tuple[int, object]], int, tuple[int, int]]:
+) -> tuple[list[tuple[int, object]], int, tuple]:
     """(events, epoch, fingerprint). epoch increments on full rebuild only —
     derived views may fold onto their cached value iff the epoch matched
     (guaranteeing the shared prefix is the same list objects)."""
     key = str(state_dir)
-    fingerprint = _event_log_fingerprint(state_dir)
+    fingerprint = _event_log_fingerprint(state_dir, config)
     entry = _EVENTS_WITH_SEQ_CACHE.get(key)
     if entry is not None and entry["fp"] == fingerprint:
         return entry["events"], entry["epoch"], fingerprint
@@ -675,6 +682,8 @@ def _events_state(
             try:
                 records = list(iter_event_records(state_dir, config=config))
             except Exception:
+                from zf.web.projections.projection_failures import record_projection_failure
+                record_projection_failure("events")
                 return [], (entry["epoch"] + 1 if entry else 0), fingerprint
             events = [(record.seq, record.event) for record in records]
             ranges = []
@@ -713,12 +722,22 @@ def _events_with_seq(
     return events
 
 
-def _event_log_fingerprint(state_dir: Path) -> tuple[int, int]:
+def _event_log_fingerprint(state_dir: Path, config=None) -> tuple:
+    from zf.web.projections.loop_view_source import _decoder_identity
+
+    archives = []
+    for segment in list_event_segments(state_dir):
+        if segment.kind == "archive":
+            stat = segment.path.stat()
+            archives.append((segment.rel_path, stat.st_dev, stat.st_ino, stat.st_size,
+                             stat.st_mtime_ns, stat.st_ctime_ns))
     try:
         stat = (state_dir / "events.jsonl").stat()
+        active = (int(stat.st_size), int(stat.st_mtime_ns), (stat.st_dev, stat.st_ino))
+        ctime = stat.st_ctime_ns
     except OSError:
-        return (0, 0)
-    return (int(stat.st_size), int(stat.st_mtime_ns))
+        active, ctime = (0, 0, (0, 0)), 0
+    return (*active, tuple(archives), _decoder_identity(config), ctime)
 
 
 def _events_with_exact_task_id(

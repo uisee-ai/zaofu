@@ -774,6 +774,8 @@ def _cost_by_instance(state_dir: Path) -> dict[str, dict]:
     try:
         totals = CostTracker(cost_path).per_instance_totals()
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("cost_by_instance")
         return {}
     return {
         instance_id: {

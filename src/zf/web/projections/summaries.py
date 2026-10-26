@@ -218,6 +218,12 @@ def _features(state_dir: Path, delivery_features: list[dict] | None = None) -> l
 
 
 def _delivery_features(state_dir: Path) -> list[dict]:
+    from zf.web.projections.source_cache import read_source_projection, task_paths
+    paths = task_paths(state_dir) + [state_dir / "refs" / "feature-index.json", state_dir / "feature_list.json"]
+    return read_source_projection(state_dir, "delivery-features", paths, lambda: _build_delivery_features(state_dir))
+
+
+def _build_delivery_features(state_dir: Path) -> list[dict]:
     index = _feature_index(state_dir)
     statuses = _delivery_feature_statuses(state_dir)
     rows: list[dict] = []

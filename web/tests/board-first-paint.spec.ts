@@ -24,6 +24,34 @@ async function mockApi(page: Page) {
   });
 }
 
+test("Agents shows returned workers while its live projection is pending", async ({ page }) => {
+  await mockApi(page);
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(String(error)));
+  let release!: () => void;
+  const live = new Promise<void>(resolve => { release = resolve; });
+  let liveStarted = false;
+  await page.route("**/projects/a/cost", route => route.fulfill({ json: { total_usd: 0, per_role: {} } }));
+  await page.route("**/projects/a/agents", route => route.fulfill({ json: [{
+    instance_id: "dev-ready", name: "dev", parent_role: "dev", role_type: "dev", backend: "codex",
+    state: "running", skills: [], cost: { usd: 0.123456789, input_tokens: 123456, output_tokens: 7, entries: 1 },
+  }] }));
+  await page.route("**/projects/a/agent-live", async route => {
+    liveStarted = true;
+    await live;
+    await route.fulfill({ json: { tasks: [] } }).catch(() => {});
+  });
+  try {
+    await page.goto("/?project=a&page=agents");
+    await expect.poll(() => liveStarted).toBe(true);
+    await expect(page.getByRole("cell", { name: "dev-ready", exact: true }).first()).toBeVisible();
+    await expect(page.locator(".agent-fleet-summary-grid")).toContainText("1");
+    release();
+    await expect(page.getByRole("cell", { name: "dev-ready", exact: true }).first()).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally { release(); }
+});
+
 test("Board displays before workspace and health, and late health cannot restore an old snapshot", async ({ page }) => {
   await mockApi(page);
   let releaseWorkspace!: () => void;

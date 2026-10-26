@@ -223,6 +223,13 @@ def _agent_view_next_expected_event(task: Task, latest_type: str) -> str:
 
 
 def _roles(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
+    from zf.web.projections.source_cache import read_source_projection, task_paths
+    paths = task_paths(state_dir) + [state_dir / "role_sessions.yaml", state_dir / "cost.jsonl", state_dir / "cost", *sorted((state_dir / "cost").glob("*.jsonl"))]
+    return read_source_projection(state_dir, "agent-roles", paths,
+                                  lambda: _build_roles(state_dir, config), config=config)
+
+
+def _build_roles(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
     meta = _role_session_meta(state_dir)
     sessions = _role_session_ids(state_dir)
     state_by_actor = _worker_states(state_dir, config=config)
@@ -373,6 +380,12 @@ def _worker_signal_index(
     state_dir: Path,
     config: ZfConfig | None = None,
 ) -> dict[str, dict]:
+    from zf.web.projections.source_cache import read_source_projection
+    return read_source_projection(state_dir, "worker-signals", [],
+                                  lambda: _build_worker_signal_index(state_dir, config), config=config)
+
+
+def _build_worker_signal_index(state_dir: Path, config: ZfConfig | None = None) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for seq, event in _events_with_seq(state_dir, config=config):
         actor = getattr(event, "actor", None)
@@ -579,6 +592,8 @@ def _role_sessions_data(state_dir: Path) -> dict:
     try:
         data = yaml.load(path.read_text(encoding="utf-8"), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("role_sessions")
         return {}
     return data if isinstance(data, dict) else {}
 

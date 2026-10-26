@@ -18,7 +18,7 @@ from zf.web.projections.event_index_cursor import active_identity, can_resume
 from zf.web.projections.read_model import _connect, db_path
 from zf.web.projections.sqlite_reader import connect_readonly
 
-VERSION = "metric-facts.v1"
+VERSION = "metric-facts.v2"
 PULSE_KEYS = {"signal", "status", "to", "task_id", "role", "instance_id", "state",
               "current_task_id", "assignee", "assigned_to", "tier", "route", "rework_kind", "backend",
               "run_id", "workflow_run_id", "trace_id", "stage_id", "child_id",
@@ -41,6 +41,10 @@ def writer(state_dir: Path):
         CREATE INDEX IF NOT EXISTS metric_event_trace ON metric_event(trace_key, seq);
         CREATE INDEX IF NOT EXISTS metric_event_id ON metric_event(event_id);
         CREATE INDEX IF NOT EXISTS metric_event_segment ON metric_event(raw_segment, seq);
+        CREATE TABLE IF NOT EXISTS metric_trace (
+            trace_key TEXT PRIMARY KEY, last_seq INTEGER, payload TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS metric_trace_last ON metric_trace(last_seq DESC);
         CREATE TABLE IF NOT EXISTS metric_task_trace (task_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
         """)
         yield conn
@@ -68,6 +72,7 @@ def load_meta(state_dir: Path, key: str, default=None):
 def refresh_events(state_dir: Path, config=None) -> dict:
     from zf.web.projections.metric_reducer import empty_state, consume
     from zf.web.projections.trace_identity import event_trace_id
+    from zf.web.projections.trace_pages import _accumulate_trace_summary
     from zf.web.projections.loop_view_source import _decoder_identity
 
     manifest = build_event_manifest(state_dir)
@@ -91,6 +96,7 @@ def refresh_events(state_dir: Path, config=None) -> dict:
                 return previous
             state = meta(conn, "core", empty_state()) if resume else empty_state()
             task_changes = {}
+            trace_changes = {}
             rows = []
             cursor = dict(previous) if resume else {}
             log = event_log_from_project(state_dir, config=config, warn=False)
@@ -116,8 +122,17 @@ def refresh_events(state_dir: Path, config=None) -> dict:
                     consume(state, event, task)
                 payload = event.payload if isinstance(event.payload, dict) else {}
                 small = {key: payload[key] for key in PULSE_KEYS if key in payload}
+                trace_key = event_trace_id(event)
+                if trace_key:
+                    if trace_key not in trace_changes and resume:
+                        old_trace = conn.execute("SELECT payload FROM metric_trace WHERE trace_key=?", (trace_key,)).fetchone()
+                        if old_trace:
+                            trace_changes[trace_key] = json.loads(old_trace[0])
+                            for field in ("task_ids", "actors", "backends"):
+                                trace_changes[trace_key][field] = set(trace_changes[trace_key][field])
+                    _accumulate_trace_summary(trace_changes, record.seq, event, trace_key=trace_key)
                 rows.append((record.seq, int(valid), event.id, event.ts, event.type, event.actor, event.task_id,
-                             event.correlation_id, event.causation_id, json.dumps(small), event_trace_id(event),
+                             event.correlation_id, event.causation_id, json.dumps(small), trace_key,
                              record.raw_segment, record.raw_offset, record.raw_length,
                              str(payload.get("workflow_run_id") or payload.get("run_id") or ""),
                              str(payload.get("attempt_id") or ""), str(payload.get("operation_id") or "")))
@@ -127,9 +142,13 @@ def refresh_events(state_dir: Path, config=None) -> dict:
                 if not resume:
                     conn.execute("DELETE FROM metric_event")
                     conn.execute("DELETE FROM metric_task_trace")
+                    conn.execute("DELETE FROM metric_trace")
                 conn.executemany("INSERT INTO metric_event VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
                 conn.executemany("INSERT OR REPLACE INTO metric_task_trace VALUES (?,?)",
                                  [(key, json.dumps(value)) for key, value in task_changes.items()])
+                conn.executemany("INSERT OR REPLACE INTO metric_trace VALUES (?,?,?)",
+                    [(key, value["last_seq"], json.dumps(value, default=lambda item: sorted(item)))
+                     for key, value in trace_changes.items()])
                 put_meta(conn, "core", state)
                 put_meta(conn, "events", cursor)
             return cursor
