@@ -47,7 +47,11 @@ ON_TICK_BUDGET = 2
 #   结论升级,doc 96 §5 无人值守不能 dead-end 的 kernel recovery hard
 #   rule,与 unclaimed_new_tasks/channel_reply_remediation 同类。
 # 新 sweep 仍要求 one-in-one-out 或此处留痕评审。
-RUN_ONCE_HOUSEKEEPING_BUDGET = 18
+# 18→19 现有机制补账（a06712238，2026-08-08）：reader_fanout_trigger_replay。
+# 2026-10-26 逐项复核：仅重放已记录触发和依赖屏障，修补崩溃遗漏派发；
+# 不新增语义决策或状态机，当前源码已有19项。评审与保留理由见
+# docs/impl/oa-wrc-task-pipeline-delegation.md「现有周期机制基线对账」。
+RUN_ONCE_HOUSEKEEPING_BUDGET = 19
 RUN_ONCE_SWEEP_BUDGET = 7
 
 _PERIODIC_PREFIXES = (

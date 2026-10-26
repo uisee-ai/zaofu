@@ -75,3 +75,26 @@ Autoresearch 实验配置的 `zaofu-skills` 和 `yoke` 来源优先绑定实验 
 续验与修复账目见 [本轮任务](../../tasks/active/2026-10-26-0507-hello-pipeline-remaining-validation.md)。
 
 配置加载同样优先使用 `CSafeLoader`，缺少 C 扩展时回退 `SafeLoader`；主 YAML、多文档 profile_sources 与 feature 配置保持安全构造器和原有 schema 验证。真实恢复 CLI 的取样发现纯 Python YAML 解析是明显热点；同一 96 KB、23 角色配置的三次加载中位数从约 2.03 秒降为 0.33 秒。这是配置读取基准，不是整个 agent 流程的 SLA。`tests/test_config_yaml_safe_loader.py` 证明有/无 C 扩展的配置值一致，Python object 标签均拒绝。
+
+### 现有周期机制基线对账
+
+2026-10-26 广域回归核对：`a06712238` 在2026-08-08引入 `reader_fanout_trigger_replay`，但 I44 的 housekeeping 计数仍是18；当前 `dev` 和本工作分支均为19，非本轮增加。复核 `_reconcile_reader_fanout_triggers`：它只读取账本，重放已有依赖屏障和未启动 reader fanout，属于当前 AGENTS 规定的 Kernel replay/resume 与机械派发；不判断任务语义、不构建第二状态机。仅靠结果重放无法恢复“触发已入账、fanout.started 未写入”的崩溃窗口，因此保留该独立恢复入口。不能通过删除这条恢复路径或把调用藏到计数器外来凑18。基于这项明确边界审查，将机械预算补账为19，并保留精确相等及未来增量拦截断言；on_tick=2、decision sweep=7不变。此项是补录已有恢复机制，不新增 periodic sweep。
+
+### 真实终审的审批时序证据（2026-10-26）
+
+真实 Codex Judge 曾在产品验证通过后正确给出 hold：必读证据缺少同版
+Plan Preview 的正式批准及其早于 writer 派发的凭据。现在
+`build_closure_identity` 将当前 Run / Plan Artifact Package 对应的审批请求、
+正式决策及同代 task pipeline dispatch 投影进不可变 closure fact；保留事件 ID、
+actor、账本位置和派发身份，完整内容经原有必读来源及 digest 接入 Judge。
+OA 的 semantic_control adoption 不作为用户批准，其他 Run、旧包和旧任务代次
+不能补证；缺失记录保持缺失，内核不因此宣告语义验收通过。
+
+修复后的恢复通过 `fanout-aggregate-rebuild` 从已完成 discovery manifest
+重建 aggregate，再运行新身份的 Judge / OA 终审；保持 candidate、原批准及
+已完成 Impl/Verify 不变。OA halt 后须通过受控 `run-resume` 恢复调度。
+
+Autoresearch controlled-stuck-recovery 的产品输入只要求一份中文演练说明及
+文件存在性验收。故障注入、恢复关联和最终 done 由外层 runner 的
+`requires_worker_stuck_injection`、`audit_stuck_incident` 与终态检查验证，
+不把尚未发生的终态写成中途 candidate_verify 的先决条件。

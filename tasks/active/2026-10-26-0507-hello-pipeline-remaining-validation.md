@@ -31,3 +31,33 @@
 RV-04 取样：直接 py-spy attach 被宿主 ptrace 权限拒绝，未修改权限；改为对真实只读恢复 CLI 做 cProfile。24.3 秒 profiler 样本中 config load 约6.9秒，纯 Python YAML 为主要热点之一。配置主文件/profile_sources/feature 解析改用 C safe loader（保留 safe fallback），相关862 passed、7 skipped。固定96,115 bytes/23 roles/6 stages配置三次实测中位数2.026→0.333秒；仅证明配置加载优化，不把它当作整个 long-horizon 流程的延迟证明。运行中控制进程未为这个优化打断，后续 CLI 子进程可加载新代码。证据：config-loader-before/after.json、recovery-inspect.prof/txt、config-closure.log。
 
 配置优化补充：sentinel51 passed、flow-smoke10 passed。
+
+## AR 第二次实弹：配置限额阻断（保留失败）
+
+`ar-loop-retry` 跑通扫描、Plan/Critic、blocking OA、真实 Impl 派发及受控 stuck 注入。05:33:38 注入、05:33:45 worker.stuck、05:33:46 worker.stuck.recovered（completion_nudge_requested）；dev 随后产出文档提交52a96f08。但05:37 operation因模板 token_budget=1,500,000 被阻断（total_tokens1,559,758，其中cache_read1,473,536）。内层runner检测 run.goal.blocked 后停止；loop结果 incomplete0/1、max_iter_unmet。真实 Codex 反思已返回有效JSON，verdict=unknown是对未完成证据的语义结论，并非命令失败fallback。
+
+这是本次实验遗漏了用户已授权的 YAML 无token上限，不是门禁失效。Run级 goal patch 不能改写已冻结 operation 的上限，保留旧状态与报告，不造成功证据。新建独立 ar-experiment-unlimited，使用 ar-no-token-limit.yaml：仅将execution profile token_budget1,500,000与Run token_budget10,000,000改为0，其他门禁保持原值；没有删除代码限额。修改记录在evidence/ar-config-budget-amendment.json。继续等新loop完整结束。
+
+配置优化提交：`62b10b9d fix: reduce safe config parsing overhead in worker commands`；真实运行配置的 C/Python解析完整对象相等（live-config-parity.json）。
+
+### 06:06 UTC 后续真实发现
+
+- 新 Run 的 8/8 candidate Verify、product discovery 均完成；Judge 因缺少
+  同版 Plan 的正式批准时序证据给出 blocked/hold，OA pre_closeout 随后 halt。
+  原审批 `evt-7b3c4740d080` 实际早于全部 16 次任务阶段派发，缺陷是必读证据传递。
+  修复将包/Run/代次约束的原账本事实纳入 closure fact，未伪造批准或完成。
+  focused 25 passed；包含真实 bridge 必读契约与 AR 调用闭包的检查 39 passed。
+- 原 discovery `evt-420f9be3d4ef` 的受控 aggregate rebuild 已接受
+  `evt-b0f65f078708`；run-resume `evt-81cfd06a70af`。仅重启隔离 fresh runtime。
+  Web 不开放该修复动作（404 allowlist），改走既有 ControlledActionService。
+- AR 第三次演练的 Critic 揭示 seed 将最终 done 误写进中途产品验收，形成循环依赖。
+  两次独立 reject 后停止该隔离实验并保留证据；修正 scenario 产品输入，外层
+  故障注入、关联恢复及最终 done 的强制审计仍保留。新实验验证待完成。
+
+- 生命周期/AR 影响闭包：114 passed；sentinel：51 passed；flow mock E2E：10 passed。
+- 停机期间提交的 aggregate rebuild 未在重启后自动消费；运行后通过已有
+  `stage-retrigger` 重放原 discovery（`evt-7b7eff4f545a`），06:06 已派发新的
+  Judge `fanout-prd-lanes-final-evt-8d29743e`。此恢复未产生新的实现/任务验证派发。
+  停机期间控制请求的重放覆盖仍需独立验证，不能由这次在线重触发证明。
+- 第四次独立 AR：`ar-experiment-product-seed`，使用修订后的产品 seed 与同一
+  token_budget=0 配置，保留全部外层终态与故障恢复检查；进行中。

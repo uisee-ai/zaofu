@@ -69,17 +69,15 @@ CONTROLLED_STUCK_RECOVERY = AutoresearchScenario(
         "stuck threshold or external stuck injection."
     ),
     seed_text=(
-        "Run a controlled stuck-recovery harness validation for ZaoFu. Produce "
-        "docs/autoresearch-campaign/stuck-recovery.md with a concise Chinese "
-        "run note, then complete the normal review/test/judge/discriminator "
-        "flow. Arch must only produce the implementation handoff plan. Critic "
-        "must only evaluate that plan and should not run full verification; "
-        "dev owns creating the deliverable and test/judge own verification. "
-        "The outer operator may inject or configure one worker.stuck event "
-        "during the run; if stuck happens, the harness must requeue or recover "
-        "the task and still reach done without manual status moves. "
-        "Acceptance command: test -f "
-        "docs/autoresearch-campaign/stuck-recovery.md."
+        "Produce one deliverable: docs/autoresearch-campaign/stuck-recovery.md. "
+        "It must contain a concise Chinese note describing a controlled worker "
+        "stuck-recovery exercise and the command used to check that this file "
+        "exists. Describe the exercise as a procedure, not as a claim that a "
+        "future run has already succeeded. Product acceptance command: "
+        "test -f docs/autoresearch-campaign/stuck-recovery.md. "
+        "Keep this as one independent implementation task. Planner plans, "
+        "Critic reviews the plan, dev writes the file, and Verify/Judge evaluate "
+        "the delivered file against these product requirements."
     ),
 )
 
