@@ -1,0 +1,8 @@
+[
+  {
+    "file": "reader-context-owner-red-corrected.log",
+    "original_sha256": "74a24fb891dd6fc66aabf0b13297996235818c1a626ef2a5a3c8f0eb0dd12951",
+    "rendered_sha256": "ef156743c43e3e3c0228c8571f1278e1d43fa621c7a2d999dfa53016b595d94d",
+    "normalization": "rstrip lines; original .raw.gz retained"
+  }
+]

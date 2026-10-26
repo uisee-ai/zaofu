@@ -1,0 +1,41 @@
+FF......                                                                 [100%]
+=================================== FAILURES ===================================
+______ test_reader_context_critical_does_not_schedule_product_task_retry _______
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-287/test_reader_context_critical_d0')
+
+    def test_reader_context_critical_does_not_schedule_product_task_retry(tmp_path):
+        runtime, trigger = setup_reader(tmp_path)
+        decision = runtime._on_context_critical(trigger)
+>       assert decision.action == "skip"
+E       AssertionError: assert 'retry' == 'skip'
+E
+E         - skip
+E         + retry
+
+tests/test_reader_context_audit_ownership.py:30: AssertionError
+__________ test_preupgrade_reader_retry_schedule_cannot_requeue_task ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-287/test_preupgrade_reader_retry_s0')
+
+    def test_preupgrade_reader_retry_schedule_cannot_requeue_task(tmp_path):
+        runtime, trigger = setup_reader(tmp_path)
+        apply_completion_audit(state_dir=runtime.state_dir, task_id="T1",
+            event_writer=runtime.event_writer, trigger_event=trigger, task_store=runtime.task_store,
+            config=runtime.config, project_root=runtime.project_root, mutate=False)
+        schedule = next(e for e in runtime.event_log.read_all() if e.type == "task.retry_scheduled")
+        # The original attempt may already have been replaced when the schedule is consumed.
+        runtime.event_writer.append(ZfEvent(type="fanout.child.dispatch_lost", actor="zf-cli",
+            payload={"fanout_id": "verify", "child_id": "reader", "run_id": "read-1"}))
+        for _ in range(2):
+>           assert runtime._on_completion_scheduled(schedule).action == "skip"
+E           AssertionError: assert 'move' == 'skip'
+E
+E             - skip
+E             + move
+
+tests/test_reader_context_audit_ownership.py:47: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_reader_context_audit_ownership.py::test_reader_context_critical_does_not_schedule_product_task_retry
+FAILED tests/test_reader_context_audit_ownership.py::test_preupgrade_reader_retry_schedule_cannot_requeue_task
+2 failed, 6 passed in 5.40s

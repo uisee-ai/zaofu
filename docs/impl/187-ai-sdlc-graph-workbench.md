@@ -159,3 +159,5 @@ Plan审批去重按Run、阶段、产品、绑定的Plan/合同版本及完整�
 `zf start`按EventWatcher读到的不可变快照批量调用一次调度循环。快照内的观察与唤醒事件保持账本顺序，处理后只提交该快照的字节游标；处理期间新追加的事件由下一轮消费。每种唤醒的过滤和限流仍逐项检查，纯观察或全部限流的快照仍交给周期性durable catch-up。模拟终态强制进入调度，在Task收敛后才追加`simulation.done`并停watcher。此变更减少密集唤醒引起的重复调度扫描，不改变Worker报告的证据准入。
 
 Codex会话被`RoleSessionRegistry.clear()`明确废弃时，在同一文件锁内持久记录退休UUID；迟到Hook或观察器不能把它重新绑定为当前会话，也不能覆写新的Task/Stage绑定。观察器跳过已退休rollout，即使其mtime因迟到写入而更新，并检查最终绑定结果以覆盖扫描与回收的竞态。Hook仍按原角色写入审计账本，新UUID正常接纳，Claude会话策略不变。此边界防止已完成reader回收后，旧上下文用量再次阻塞下一条排队lane。
+
+Reader fanout的`worker.context.critical`只由其fanout回收/重试生命周期恢复，不再触发普通产品Task的completion audit重新排队。归属同时核对reader topology及原Kernel派发的fanout/stage/child/run、角色、Task和trace；仅有相同Task或角色不够。升级前已排出的context retry也回溯原trigger并应用同一边界，旧attempt结束后仍不能重排writer。普通Task及writer fanout的现有context审计不变。

@@ -1,0 +1,46 @@
+{
+  "old_watcher_pid": 2489416,
+  "reason": "Load verified reader context ownership; preserve current DRIVE verification",
+  "provider_panes_before": [
+    "zf-187-racing-supervision %0 1559115 bash",
+    "zf-187-racing-supervision %2 1559491 codex",
+    "zf-187-racing-supervision %4 1560367 codex",
+    "zf-187-racing-supervision %5 1560821 codex",
+    "zf-187-racing-supervision %9 1562734 codex",
+    "zf-187-racing-supervision %16 1605049 codex",
+    "zf-187-racing-supervision %27 2021050 codex",
+    "zf-187-racing-supervision %28 2053176 codex",
+    "zf-187-racing-supervision %29 2126787 codex",
+    "zf-187-racing-supervision %30 2250104 codex",
+    "zf-187-racing-supervision %31 2265485 codex",
+    "zf-187-racing-supervision %34 2407927 codex",
+    "zf-187-racing-supervision %35 2448632 bash",
+    "zf-187-racing-supervision %38 2495681 codex",
+    "zf-187-racing-supervision-run-manager %1 1559133 bash",
+    "zf-187-racing-supervision-run-manager %3 1559976 codex"
+  ],
+  "tests": {
+    "focused": 106,
+    "sentinel": 51,
+    "reader_flow_mock": 9
+  },
+  "provider_panes_after": [
+    "zf-187-racing-supervision %0 1559115 bash",
+    "zf-187-racing-supervision %2 1559491 codex",
+    "zf-187-racing-supervision %4 1560367 codex",
+    "zf-187-racing-supervision %5 1560821 codex",
+    "zf-187-racing-supervision %9 1562734 codex",
+    "zf-187-racing-supervision %16 1605049 codex",
+    "zf-187-racing-supervision %27 2021050 codex",
+    "zf-187-racing-supervision %28 2053176 codex",
+    "zf-187-racing-supervision %29 2126787 codex",
+    "zf-187-racing-supervision %30 2250104 codex",
+    "zf-187-racing-supervision %31 2265485 codex",
+    "zf-187-racing-supervision %34 2407927 codex",
+    "zf-187-racing-supervision %35 2448632 bash",
+    "zf-187-racing-supervision %38 2495681 codex",
+    "zf-187-racing-supervision-run-manager %1 1559133 bash",
+    "zf-187-racing-supervision-run-manager %3 1559976 codex"
+  ],
+  "all_provider_panes_preserved": true
+}

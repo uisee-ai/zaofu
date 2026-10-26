@@ -149,3 +149,11 @@ Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把
 66. 定位DRIVE排队：lane 0注册表06:55:49.289447清除旧会话，迟到Hook在06:55:49.453342重新绑定同一UUID；旧0.92上下文用量令idle worker仍被hard-cap拒绝派发。新增6个反例覆盖跨进程旧实例、重启持久化、新会话保护、最新mtime旧rollout、扫描/clear竞态及真实Hook入口审计。首轮pytest未指定本worktree的PYTHONPATH，被导入来源断言拦截；校正后6项全部在旧代码失败。修复在canonical registry加退休UUID栅栏，观察器跳过并尊重绑定失败；155项registry/Hook/Spawn/回收/reader影响闭包及51项sentinel通过。真实重载恢复及最终验收仍待验证。
 
 67. 补充17项流程Mock/锁/文档测试通过。dev-verify plan因共享Store边界规划225个文件而建议broad，matching run明确跳过deterministic/serial、通过sentinel；实际执行范围以上述155+17闭包为准，无全量pytest。正式重载watcher至2489416后，07:18:27自动派发DRIVE（`evt-7f42e3b6091d`），Provider开始读取新briefing；重载清除内存hard-cap是此次立即恢复的直接条件，旧UUID的下一轮退休保护尚待真实回收验证。
+
+68. 退休UUID修复提交`0061a7a`。07:22:11.796668真实回收旧会话01a176e2…，新会话01a17716…正常绑定；07:23:41.321212旧会话迟到Hook`evt-b8573036019e`仍进入账本，之后注册表保持新UUID，旧UUID仍在退休记录中。新上下文比例约0.065，证实没有复用旧0.93 transcript。DRIVE以retry briefing继续独立验证。
+
+69. 图中DRIVE退回backlog不是UI猜测：07:19:14的`task.requeued=evt-96e619cb17ac`来自reader context critical的普通completion audit，错误地按产品Task owner安排writer retry。新增reader归属检查同时保护告警入口和升级前残留schedule消费；原派发终结后仍保留归属，六种不匹配反例不豁免正常审计。旧代码2 failed/6 passed；初轮修复测试夹具缺少fanout.started，被真实EventWriter投影覆盖topology，已改为完整事件初始化，不放宽生产检查。真实critical与schedule两条账本事件只读回放均判定属于reader；最终闭包与受控状态恢复继续验证。
+
+70. 修正事件夹具后，106项context/audit/reader生命周期闭包、9项reader恢复与流程Mock、51项sentinel及16项最终入口/文档检查通过；正确夹具在旧代码仍为2 failed/6 passed。调用方测试首轮因文件名误写未收集，改为test_reader_retry_recovery.py后通过。07:35正式保留Provider重载watcher至2517936，全部pane PID一致；经`zf kanban move RACE-DRIVE in_progress`恢复07:19误重排的非终态，图API与canonical TaskStore均为in_progress、accepted_event_ids仍为空。该次状态纠正是监工受控操作，不宣称既有错误状态被运行时自动修复。
+
+71. 本轮dev-verify规划200个影响文件而建议broad；matching run显式跳过deterministic/serial，实际106+9闭包已执行，另自动sentinel 51和flow-smoke 10通过。未运行全量pytest；这不是最终赛车交付通过。

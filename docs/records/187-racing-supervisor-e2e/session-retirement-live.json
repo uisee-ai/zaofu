@@ -1,0 +1,285 @@
+{
+  "events": [
+    {
+      "type": "worker.state.changed",
+      "id": "evt-7037512875b3",
+      "ts": "2026-10-26T07:18:27.560612+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": "RACE-DRIVE",
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "idle",
+        "to": "busy",
+        "reason": "dispatched fanout child fanout-prd-lanes-verify-evt-c1e65c55/prd-verify-lane-0-vehicle-race-2",
+        "task_id": "RACE-DRIVE"
+      },
+      "causation_id": "evt-7f42e3b6091d",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": "kernel"
+    },
+    {
+      "type": "codex.hook.session_start",
+      "id": "evt-c2dc2d05f787",
+      "ts": "2026-10-26T07:18:32.724853+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "session_id": "01a176e2-6af6-78e2-9361-2a2ce48c2406",
+        "hook_event": "SessionStart",
+        "cwd": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project",
+        "transcript_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/codex-home/sessions/2026/10/26/rollout-2026-10-26T14-25-12-01a176e2-6af6-78e2-9361-2a2ce48c2406.jsonl",
+        "permission_mode": "bypassPermissions",
+        "context_state": "active_task"
+      },
+      "causation_id": "evt-7f42e3b6091d",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": ""
+    },
+    {
+      "type": "worker.state.changed",
+      "id": "evt-af8fae600417",
+      "ts": "2026-10-26T07:19:02.182089+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "busy",
+        "to": "pending_recycle",
+        "reason": "context ratio 0.92, busy"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.state.changed",
+      "id": "evt-86fef439d037",
+      "ts": "2026-10-26T07:22:11.685772+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "pending_recycle",
+        "to": "recycling",
+        "reason": "context ratio 0.93 over hard cap 0.9 for >= 180s, force recycle"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.recycling",
+      "id": "evt-51a24799b255",
+      "ts": "2026-10-26T07:22:11.814676+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "role": "prd-verify-lane-0",
+        "instance_id": "prd-verify-lane-0",
+        "backend": "codex",
+        "old_session": "01a176e2-6af6-78e2-9361-2a2ce48c2406",
+        "new_session": "",
+        "session_strategy": "fresh_context_recycle_clear_codex",
+        "reason": "context_threshold_recycle"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.launch_artifact.written",
+      "id": "evt-5d5103dbafe3",
+      "ts": "2026-10-26T07:22:14.184988+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "role": "prd-verify-lane-0",
+        "backend": "codex",
+        "artifact_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/runtime/launch.json",
+        "launch_attempt": 7,
+        "is_resume": false
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "worker.recovery.injected",
+      "id": "evt-2b5fcca80ccb",
+      "ts": "2026-10-26T07:22:19.976977+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "role": "prd-verify-lane-0",
+        "reason": "active_fanout_after_recycle",
+        "fanout_id": "fanout-prd-lanes-verify-evt-c1e65c55",
+        "stage_id": "prd-lanes-verify",
+        "child_id": "prd-verify-lane-0-vehicle-race-2",
+        "run_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2",
+        "briefing_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/briefings/prd-verify-lane-0-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2.md",
+        "snapshot_ref": ".zf-187 Racing Supervision/snapshots/RACE-DRIVE/run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2/runtime-snapshot.json"
+      },
+      "causation_id": null,
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.recycled",
+      "id": "evt-fbd59753bd36",
+      "ts": "2026-10-26T07:22:19.977719+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "role": "prd-verify-lane-0",
+        "instance_id": "prd-verify-lane-0",
+        "backend": "codex",
+        "old_session": "01a176e2-6af6-78e2-9361-2a2ce48c2406",
+        "new_session": "",
+        "session_strategy": "fresh_context_recycle_clear_codex",
+        "reason": "context_threshold_recycle"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.state.changed",
+      "id": "evt-31f718c31701",
+      "ts": "2026-10-26T07:22:20.295530+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "recycling",
+        "to": "busy",
+        "reason": "recycle complete; resumed fanout fanout-prd-lanes-verify-evt-c1e65c55:prd-verify-lane-0-vehicle-race-2"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.state.changed",
+      "id": "evt-03b9db64957d",
+      "ts": "2026-10-26T07:22:30.643439+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "busy",
+        "to": "idle",
+        "reason": "reader_worker_session_replaced_after_dispatch",
+        "generation_override": true
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.state.changed",
+      "id": "evt-576968850e82",
+      "ts": "2026-10-26T07:22:33.141932+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": "RACE-DRIVE",
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "idle",
+        "to": "busy",
+        "reason": "dispatched fanout child fanout-prd-lanes-verify-evt-c1e65c55/prd-verify-lane-0-vehicle-race-2",
+        "task_id": "RACE-DRIVE"
+      },
+      "causation_id": "evt-645e894c0d18",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": "kernel"
+    },
+    {
+      "type": "codex.hook.session_start",
+      "id": "evt-9b8631983444",
+      "ts": "2026-10-26T07:22:52.764325+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "session_id": "01a17716-d50e-7973-b8af-3d9345ac29ff",
+        "hook_event": "SessionStart",
+        "cwd": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project",
+        "transcript_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/codex-home/sessions/2026/10/26/rollout-2026-10-26T15-22-27-01a17716-d50e-7973-b8af-3d9345ac29ff.jsonl",
+        "permission_mode": "bypassPermissions",
+        "context_state": "active_task"
+      },
+      "causation_id": "evt-b049563d45af",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": ""
+    }
+  ],
+  "session_id": "01a17716-d50e-7973-b8af-3d9345ac29ff",
+  "meta": {
+    "cleared_at": "2026-10-26T07:22:11.796668+00:00",
+    "observed_at": "2026-10-26T07:23:37.401390+00:00",
+    "observed_from": "hook",
+    "retired_codex_session_ids": [
+      "01a176e2-6af6-78e2-9361-2a2ce48c2406"
+    ],
+    "session_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/codex-home/sessions/2026/10/26/rollout-2026-10-26T15-22-27-01a17716-d50e-7973-b8af-3d9345ac29ff.jsonl"
+  },
+  "late_retired_hooks": [
+    {
+      "type": "codex.hook.post_tool_use",
+      "id": "evt-b8573036019e",
+      "ts": "2026-10-26T07:23:41.321212+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "session_id": "01a17716-d50e-7973-b8af-3d9345ac29ff",
+        "hook_event": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "cat '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/briefings/prd-verify-lane-0-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry.md'"
+        },
+        "cwd": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project",
+        "tool_response": "Warning: truncated output (original token count: 12933)\nTotal output lines: 953\n\n# Fanout Retry: prd-verify-lane-0-vehicle-race-2\n\n- fanout_id: `fanout-prd-lanes-verify-evt-c1e65c55`\n- stage_id: `prd-lanes-verify`\n- child_id: `prd-verify-lane-0-vehicle-race-2`\n- run_id: `run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1`\n- target_ref: `candidate/TASK-5F44B4`\n\nThis is a retry of the same fanout child. Keep the same child_id and use the new run_id.\n\nChild payload:\n```json\n{\n  \"fanout_id\": \"fanout-prd-lanes-verify-evt-c1e65c55\",\n  \"trace_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"stage_id\": \"prd-lanes-verify\",\n  \"status\": \"completed\",\n  \"request_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"flow_kind\": \"prd\",\n  \"request_kind\": \"auto\",\n  \"workflow_request_ref\": \"/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f.json\",\n  \"requirement_spec_ref\": \"/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json\",\n  \"requirement_spec_digest\": \"5c0dd9f57a1ada94b699ab4ec0bee6a6df05ee695f49c79b7af28850d40ebb9b\",\n  \"request_revision\": 6,\n  \"workflow_generation\": \"e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340\",\n  \"task_map_generation\": \"29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2\",\n  \"plan_artifact_package_id\": \"planpkg-3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52\",\n  \"plan_artifact_package_ref\": \"artifacts/plan-packages/3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52.json\",\n  \"plan_artifact_package_digest\": \"3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52\",\n  \"completion_profile\": \"software_delivery\",\n  \"goal_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"pdd_id\": \"TASK-5F44B4\",\n  \"feature_id\": \"TASK-5F44B4\",\n  \"workflow_proposal_ref\": {\n    \"ref_schema_version\": \"sidecar-ref.v1\",\n    \"kind\": \"workflow_proposal\",\n    \"ref\": \"artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/proposals/d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8.json\",\n    \"sha256\": \"d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8\",\n    \"byte_count\": 77409,\n    \"content_type\": \"application/json\",\n    \"schema_version\": \"workflow-proposal.v1\",\n    \"encoding\": \"utf-8\",\n    \"created_by\": \"workflow-proposal-compiler\",\n    \"source_event_id\": \"\",\n    \"access_scope\": {},\n    \"retention\": {\n      \"class\": \"audit_required\"\n    },\n    \"required\": true,\n    \"preview\": \"\"\n  },\n  \"workflow_proposal_digest\": \"e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340\",\n  \"effective_config_ref\": {\n    \"access_scope\": {},\n    \"byte_count\": 205419,\n    \"content_type\": \"application/json\",\n    \"created_by\": \"workflow-proposal-compiler\",\n    \"encoding\": \"utf-8\",\n    \"kind\": \"effective_config_snapshot\",\n    \"preview\": \"\",\n    \"ref\": \"artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/effective-configs/df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487.json\",\n    \"ref_schema_version\": \"sidecar-ref.v1\",\n    \"required\": true,\n    \"retention\": {\n      \"class\": \"audit_required\"\n    },\n    \"schema_version\": \"effective-config-snapshot.v1\",\n    \"sha256\": \"df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487\",\n    \"source_event_id\": \"\"\n  },\n  \"effective_config_digest\": \"df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487\",\n  \"run_contract_ref\": \"artifacts/run-contracts/c89a9f70232d3807898647ac16f5f5d2f82896e07cbc2305e71ec7227b0d29b4.json\",\n  \"run_contract_digest\": \"d447ba8184c68daa8ec9223086a7b64f42ca587a5e58b2f25cda629112822532\",\n  \"rework_of\": \"evt-4ad6ce6ed7f3\",\n  \"rework_attempt\": 4,\n  \"rework_source\": \"integration.failed\",\n  \"rework_feedback\": [\n    \"监工基于用户“直到最后修复”和“批准，继续”的授权请求执行环境修复；不是新的产品范围，也不声明新的用户审批。产品需求revision6、16项AC、完整真实90秒比赛、独立Verify/Discovery/Judge、3 lane及Plan人工门禁全部保留。\",\n    \"首个集成候选dfe994958e811acbfd95101dafd4a73c4df56eb5真实质量检查14项中8通过6失败。VC-FOUNDATION和VC-SCAFFOLD-BROWSER在VC-INSTALL之前运行，冷候选缺Vitest/Vite。project.scripts.setup没有配置，不能仅让worker手动npm ci而假定CandidateRebuilder也会准备环境。每个真实独立候选/验证入口必须有显式可执行的冷依赖准备，并处理后续npm ci清除node_modules的影响；不要给Kernel硬编码npm语义。\",\n    \"共享runner使用项目Playwright1.58.2所需Chromium v1208，mcp/playwright:latest内置1226。现Plan硬规定timeout180s安装167MiB，真实多次只下载40%-70%即124，未进入任何浏览器产品断言。FOUNDATION检查点1060cc46a88c51593d213bef3dbcf0fbfb406084已修复代理白名单传递但仍超时。需要明确新环境方案：优先复用经过版本/路径校验的镜像浏览器，或在Docker内完成足够期限的持久缓存安装；实际版本与来源进入证据。不能依赖操作员偷偷预热node_modules，也不能每次npm ci导致重下载。必要时在Plan明确修订原180秒安装期限和外层命令期限，不能静默绕开旧约束；保留失败非零和原始日志。\",\n    \"原4个实现已交付源代码。监工另在dfe994的隔离只读构建用镜像自带浏览器实测正常90秒，movement/pause/restart/finish/replay通过，报告/tmp/zf-racing-supervision-20261025T211020Z/evidence/operator-game-probe.json；这只是拒绝候选的诊断，不能替代正式验收。请最小修订共享环境/runner的所有权与执行规格，复用已有实现，勿重新开发赛车行为，勿把环境失败列为已证明产品RED。\",\n    \"对冷工作树、命令独立执行/顺序、npm ci后缓存、并发验证隔离、版本匹配、下载失败非零、凭据不入证据做具名回归。以完整Plan package和Critic结论输出供审阅；如果需要冻结YAML变更，明确旧新值和受影响任务，走受控路径，不直接改运行中配置。\",\n    \"恢复说明：环境修订fanout-prd-plan-evt-442e54ec的Planner已完成，Critic于evt-0f1857beaa75提交建议通过；但旧候选Discovery失败evt-c8b21d50a8fc触发cap，03:03取消了该fanout，所以没有正式task_map.ready或用户审批。监工已复现修复此旧代失败与活跃候选重规划争抢恢复所有权的问题。此次是受控恢复并补入已证实缺陷，不把取消后的Critic建议伪装成正式Plan批准。\",\n    \"必须以本次previous_plan_candidate_refs中的442e54ec完整环境计划、task_map、execution_spec和矩阵作为最近候选，保留已完成的冷依赖准备、镜像浏览器资格校验、持久缓存、900秒安装回退和各命令期限等设计；复用既有赛车代码。原始admitted Plan是基线追溯，不能用它覆盖最近环境修订而丢失修复。仅做以下已知缺口的最小补充，再重新预校验/独立Critic/用户审批。\",\n    \"独立Discovery真实发现GAP-ASSEMBLY-TIMING-001（evt-2c483b806f3c、evt-9a44e8ad1c15；gap提交evt-dede9ac3a65e）。scripts/verify-racing.sh读取normal-90-seconds.json时仅比较monotonic_elapsed_ms<90000及finishedAt-started<90000，undefined/NaN比较为false，导致缺失或非数字时长证据被错误接纳。隔离fixture探针：合法90000退出0、89999退出1、缺失退出0、非数字退出0。该探针只证明校验器缺陷，不是实际90秒比赛证据。\",\n    \"将该缺口纳入现有RACE-ASSEMBLY的AC-A07/VC-ASSEMBLY及交付控制器责任，不另做整片产品重写；明确覆盖三个原始时间字段必须为有限数字，monotonic_elapsed_ms以及finishedAt-started均至少90000，缺失/null/字符串/非有限/倒序/89999必须非零并停止后续成功处理。完整90000及更长的合法证据通过；保留snapshot有效时间90000、finished及单次结算、摘要/commit/环境/报告真实性检查，不降低其他门禁。测试应调用实际交付校验路径，保留失败收据。更新具名TDD、验收/测试矩阵与执行规格，说明原gap被吸收进当前ASSEMBLY，只有修复和独立重验后才关闭。\",\n    \"需求revision6、16个原AC ID、完整正常90秒实测、4任务的原产品行为、3实现/3验证lane和配置SHA保持；新环境Plan人工审批仍未发生。最终验收必须基于新候选与独立Verify/Discovery/Judge，不能复用旧operator probe冒充正式通过。\",\n    \"输入恢复修正：前次bddccfe0派发的previous_plan_candidate_refs被受控动作丢弃，实际误带了3ac7f23a旧计划，虽然新文字反馈存在。监工已用真实输入清单复现并修复即时触发/恢复重放引用传递。本次必须使用明确绑定的442e54ec环境候选及其Critic作为最近基线，不继续错误来源的上一轮；保留已有环境修订与本轮时长字段反例。该操作仍未批准任何新Plan。\"\n  ],\n  \"rework_categories\": [\n    \"environment\",\n    \"cold_setup\",\n    \"browser_installation\",\n    \"timing_evidence_validation\"\n  ],\n  \"rework_summary\": {\n    \"pdd_id\": \"TASK-5F44B4\",\n    \"source_event_type\": \"plan.rejected\",\n    \"attempt\": 2,\n    \"action\": \"replan\",\n    \"classification\": \"ambiguous\",\n    \"categories\": [],\n    \"failed_task_ids\": [],\n    \"gap_tasks\": [],\n    \"rework_paths\": [],\n    \"feedback_count\": 1,\n    \"feedback_excerpt\": [\n      \"plan-rejection: plan-review:67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a\\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json (sha256=67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。\"\n    ],\n    \"attribution_contract\": \"Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.\",\n    \"path_owner_task_ids\": [],\n    \"terminal_path_owner_task_ids\": [],\n    \"unowned_rework_paths\": [],\n    \"invalid_failed_task_ids\": [],\n    \"terminal_failed_task_ids\": []\n  },\n  \"replan_classification\": \"environment_and_timing_evidence_repair\",\n  \"resume_scope\": \"all_tasks_rework\",\n  \"workflow_run_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"run_id\n\n[... output truncated; open raw artifact for full content ...]\n\n88d01df998d17c8875aa1536a93e7eb28bc7d5e0a85d5dcfc5093e805e8ab.json\",\n  \"context_delivery_envelope_digest\": \"61488d01df998d17c8875aa1536a93e7eb28bc7d5e0a85d5dcfc5093e805e8ab\",\n  \"provider_session_id\": \"01a176e2-6af6-78e2-9361-2a2ce48c2406\"\n}\n```\n\nAggregate contract:\n```json\n{\n  \"mode\": \"wait_for_all\",\n  \"success_event\": \"test.passed\",\n  \"failure_event\": \"test.failed\",\n  \"child_success_event\": \"verify.child.completed\",\n  \"child_failure_event\": \"verify.child.failed\",\n  \"synth_role\": \"\",\n  \"max_retries\": 1,\n  \"review_strategy\": \"\",\n  \"synth_timeout_seconds\": 0\n}\n```\n\n## Workflow Input Manifest\nThese refs came from a Channel/Squad workflow invocation. Treat the manifest as read-only input; do not write into another worker's workdir. If a referenced artifact is missing, emit a blocking event instead of continuing from stale chat context.\n```json\n{\n  \"workflow_run_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"workflow_input_manifest_ref\": \"\",\n  \"source_refs\": {},\n  \"artifact_refs\": [],\n  \"request_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"request_revision\": 6,\n  \"origin_binding\": {}\n}\n```\n\n## Child Result Authority\n\nAny root Task id in the payload is a lineage anchor for this workflow operation; this reader child is not the canonical Task assignee. Do not run `zf guard ownership` for that Task. Use the new retry run_id and submit exactly one result with a command below.\n\nSuccess command:\n```bash\n/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python /tmp/zf-racing-supervision-20261025T211020Z/runtime-control.py emit verify.child.completed --actor prd-verify-lane-0 --state-dir '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision' --payload '{\"fanout_id\": \"fanout-prd-lanes-verify-evt-c1e65c55\", \"stage_id\": \"prd-lanes-verify\", \"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"run_id\": \"run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1\", \"role_instance\": \"prd-verify-lane-0\", \"status\": \"completed\", \"report\": {\"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"status\": \"passed\", \"summary\": \"Short retry outcome summary.\", \"findings\": [], \"recommendation\": \"approve\"}}'\n```\n\nFailure command:\n```bash\n/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python /tmp/zf-racing-supervision-20261025T211020Z/runtime-control.py emit verify.child.failed --actor prd-verify-lane-0 --state-dir '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision' --payload '{\"fanout_id\": \"fanout-prd-lanes-verify-evt-c1e65c55\", \"stage_id\": \"prd-lanes-verify\", \"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"run_id\": \"run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1\", \"role_instance\": \"prd-verify-lane-0\", \"status\": \"failed\", \"report\": {\"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"status\": \"failed\", \"summary\": \"Short retry failure summary.\", \"findings\": [], \"recommendation\": \"reject\"}, \"reason\": \"Retry could not complete the assigned child scope.\"}'\n```\n\nDo not emit the aggregate success/failure event directly; the kernel publishes it after the fanout barrier or synth role finishes.\nEmit once: command exit 0 is success; there is no asynchronous ack. Never retry or re-send (stale generations are discarded). Then stop.\n`fanout_id`, `stage_id`, `child_id`, `run_id`, `role_instance`, and `status` must stay as top-level payload fields.\nFinding schema: use `severity` = info|low|medium|high|critical, `path`, `message`, and optional integer `line`.\n\n<!-- ZF:TASK-ATTEMPT -->\n## Runtime TaskAttempt Identity\n\nKernel-owned attempt; preserve these values. `zf emit --task ...` auto-fills them from canonical state.\n\n- workflow_run_id: `prepare-TASK-5F44B4-c32763f31115843f`\n- operation_id: `wop-prd-lanes-verify-prd-verify-lane-0-vehicle-race-2-aeeacccf6f9f`\n- attempt_id: `ta-a12ce703111fef3c7ce1`\n- lease_id: `lease-0bfa5f14d840079b8a51`\n- dispatch_id: `run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1`\n",
+        "refs": {
+          "raw_output": {
+            "ref_schema_version": "sidecar-ref.v1",
+            "kind": "agent_session_output",
+            "ref": "artifacts/agent-session-output/01a17716-d6ac-7623-bfc6-390d130a2d15/tool-response-b6ccda5a89d580b5.txt",
+            "schema_version": "agent-output-raw.v1",
+            "artifact_type": "agent-output-raw.v1",
+            "raw_ref": "artifacts/agent-session-output/01a17716-d6ac-7623-bfc6-390d130a2d15/tool-response-b6ccda5a89d580b5.txt",
+            "meta_ref": "artifacts/agent-session-output/01a17716-d6ac-7623-bfc6-390d130a2d15/tool-response-b6ccda5a89d580b5.json",
+            "sha256": "b6ccda5a89d580b5963ac2cfaf86b53a448ae632abe664ef8635559dba31bf79",
+            "byte_count": 40108,
+            "content_type": "text/plain",
+            "created_by": "agent_session_output",
+            "source_event_id": "",
+            "access_scope": {},
+            "retention": {
+              "class": "audit_required",
+              "redaction_profile": "default"
+            },
+            "required": false,
+            "line_count": 619,
+            "mime": "text/plain",
+            "encoding": "utf-8",
+            "preview": "Warning: truncated output (original token count: 12933)\nTotal output lines: 953\n\n# Fanout Retry: prd-verify-lane-0-vehicle-race-2\n\n- fanout_id: `fanout-prd-lanes-verify-evt-c1e65c55`\n- stage_id: `prd-lanes-verify`\n- child_id: `prd-verify-lane-0-vehicle-race-2`\n- run_id: `run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1`\n- target_ref: `candidate/TASK-5F44B4`\n\nThis is a retry of the same fanout child. Keep the same child_id and use the new run_id.\n\nChild payload:\n```json\n{\n  \"fanout_id\": \"fanout-prd-lanes-verify-evt-c1e65c55\",\n  \"trace_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"stage_id\": \"prd-lanes-verify\",\n  \"status\": \"completed\",\n  \"request_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"flow_kind\": \"prd\",\n  \"request_kind\": \"auto\",\n  \"workflow_request_ref\": \"/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f.json\",\n  \"requirement_spec_ref\": \"/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json\",\n  \"requirement_spec_digest\": \"5c0dd9f57a1ada94b699ab4ec0bee6a6df05ee695f49c79b7af28850d40ebb9b\",\n  \"request_revision\": 6,\n  \"workflow_generation\": \"e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340\",\n  \"task_map_generation\": \"29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2\",\n  \"plan_artifact_package_id\": \"planpkg-3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52\",\n  \"plan_artifact_package_ref\": \"artifacts/plan-packages/3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52.json\",\n  \"plan_artifact_package_digest\": \"3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52\",\n  \"completion_profile\": \"software_delivery\",\n  \"goal_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"pdd_id\": \"TASK-5F44B4\",\n  \"feature_id\": \"TASK-5F44B4\",\n  \"workflow_proposal_ref\": {\n    \"ref_schema_version\": \"sidecar-ref.v1\",\n    \"kind\": \"workflow_proposal\",\n    \"ref\": \"artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/proposals/d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8.json\",\n    \"sha256\": \"d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8\",\n    \"byte_count\": 77409,\n    \"content_type\": \"application/json\",\n    \"schema_version\": \"workflow-proposal.v1\",\n    \"encoding\": \"utf-8\",\n    \"created_by\": \"workflow-proposal-compiler\",\n    \"source_event_id\": \"\",\n    \"access_scope\": {},\n    \"retention\": {\n      \"class\": \"audit_required\"\n    },\n    \"required\": true,\n    \"preview\": \"\"\n  },\n  \"workflow_proposal_digest\": \"e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340\",\n  \"effective_config_ref\": {\n    \"access_scope\": {},\n    \"byte_count\": 205419,\n    \"content_type\": \"application/json\",\n    \"created_by\": \"workflow-proposal-compiler\",\n    \"encoding\": \"utf-8\",\n    \"kind\": \"effective_config_snapshot\",\n    \"preview\": \"\",\n    \"ref\": \"artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/effective-configs/df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487.json\",\n    \"ref_schema_version\": \"sidecar-ref.v1\",\n    \"required\": true,\n    \"retention\": {\n      \"class\": \"audit_required\"\n    },\n    \"schema_version\": \"effective-config-snapshot.v1\",\n    \"sha256\": \"df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487\",\n    \"source_event_id\": \"\"\n  },\n  \"effective_config_digest\": \"df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487\",\n  \"run_contract_ref\": \"artifacts/run-contracts/c89a9f70232d3807898647ac16f5f5d2f82896e07cbc2305e71ec7227b0d29b4.json\",\n  \"run_contract_digest\": \"d447ba8184c68daa8ec9223086a7b64f42ca587a5e58b2f25cda629112822532\",\n  \"rework_of\": \"evt-4ad6ce6ed7f3\",\n  \"rework_attempt\": 4,\n  \"rework_source\": \"integration.failed\",\n  \"rework_feedback\": [\n    \"监工基于用户“直到最后修复”和“批准，继续”的授权请求执行环境修复；不是新的产品范围，也不声明新的用户审批。产品需求revision6、16项AC、完整真实90秒比赛、独立Verify/Discovery/Judge、3 lane及Plan人工门禁全部保留。\",\n    \"首个集成候选dfe994958e811acbfd95101dafd4a73c4df56eb5真实质量检查14项中8通过6失败。VC-FOUNDATION和VC-SCAFFOLD-BROWSER在VC-INSTALL之前运行，冷候选缺Vitest/Vite。project.scripts.setup没有配置，不能仅让worker手动npm ci而假定CandidateRebuilder也会准备环境。每个真实独立候选/验证入口必须有显式可执行的冷依赖准备，并处理后续npm ci清除node_modules的影响；不要给Kernel硬编码npm语义。\",\n    \"共享runner使用项目Playwright1.58.2所需Chromium v1208，mcp/playwright:latest内置1226。现Plan硬规定timeout180s安装167MiB，真实多次只下载40%-70%即124，未进入任何浏览器产品断言。FOUNDATION检查点1060cc46a88c51593d213bef3dbcf0fbfb406084已修复代理白名单传递但仍超时。需要明确新环境方案：优先复用经过版本/路径校验的镜像浏览器，或在Docker内完成足够期限的持久缓存安装；实际版本与来源进入证据。不能依赖操作员偷偷预热node_modules，也不能每次npm ci导致重下载。必要时在Plan明确修订原180秒安装期限和外层命令期限，不能静默绕开旧约束；保留失败非零和原始日志。\",\n    \"原4个实现已交付源代码。监工另在dfe994的隔离只读构建用镜像自带浏览器实测正常90秒，movement/pause/restart/finish/replay通过，报告/tmp/zf-racing-supervision-20261025T211020Z/evidence/operator-game-probe.json；这只是拒绝候选的诊断，不能替代正式验收。请最小修订共享环境/runner的所有权与执行规格，复用已有实现，勿重新开发赛车行为，勿把环境失败列为已证明产品RED。\",\n    \"对冷工作树、命令独立执行/顺序、npm ci后缓存、并发验证隔离、版本匹配、下载失败非零、凭据不入证据做具名回归。以完整Plan package和Critic结论输出供审阅；如果需要冻结YAML变更，明确旧新值和受影响任务，走受控路径，不直接改运行中配置。\",\n    \"恢复说明：环境修订fanout-prd-plan-evt-442e54ec的Planner已完成，Critic于evt-0f1857beaa75提交建议通过；但旧候选Discovery失败evt-c8b21d50a8fc触发cap，03:03取消了该fanout，所以没有正式task_map.ready或用户审批。监工已复现修复此旧代失败与活跃候选重规划争抢恢复所有权的问题。此次是受控恢复并补入已证实缺陷，不把取消后的Critic建议伪装成正式Plan批准。\",\n    \"必须以本次previous_plan_candidate_refs中的442e54ec完整环境计划、task_map、execution_spec和矩阵作为最近候选，保留已完成的冷依赖准备、镜像浏览器资格校验、持久缓存、900秒安装回退和各命令期限等设计；复用既有赛车代码。原始admitted Plan是基线追溯，不能用它覆盖最近环境修订而丢失修复。仅做以下已知缺口的最小补充，再重新预校验/独立Critic/用户审批。\",\n    \"独立Discovery真实发现GAP-ASSEMBLY-TIMING-001（evt-2c483b806f3c、evt-9a44e8ad1c15；gap提交evt-dede9ac3a65e）。scripts/verify-racing.sh读取normal-90-seconds.json时仅比较monotonic_elapsed_ms<90000及finishedAt-started<90000，undefined/NaN比较为false，导致缺失或非数字时长证据被错误接纳。隔离fixture探针：合法90000退出0、89999退出1、缺失退出0、非数字退出0。该探针只证明校验器缺陷，不是实际90秒比赛证据。\",\n    \"将该缺口纳入现有RACE-ASSEMBLY的AC-A07/VC-ASSEMBLY及交付控制器责任，不另做整片产品重写；明确覆盖三个原始时间字段必须为有限数字，monotonic_elapsed_ms以及finishedAt-started均至少90000，缺失/null/字符串/非有限/倒序/89999必须非零并停止后续成功处理。完整90000及更长的合法证据通过；保留snapshot有效时间90000、finished及单次结算、摘要/commit/环境/报告真实性检查，不降低其他门禁。测试应调用实际交付校验路径，保留失败收据。更新具名TDD、验收/测试矩阵与执行规格，说明原gap被吸收进当前ASSEMBLY，只有修复和独立重验后才关闭。\",\n    \"需求revision6、16个原AC ID、完整正常90秒实测、4任务的原产品行为、3实现/3验证lane和配置SHA保持；新环境Plan人工审批仍未发生。最终验收必须基于新候选与独立Verify/Discovery/Judge，不能复用旧operator probe冒充正式通过。\",\n    \"输入恢复修正：前次bddccfe0派发的previous_plan_candidate_refs被受控动作丢弃，实际误带了3ac7f23a旧计划，虽然新文字反馈存在。监工已用真实输入清单复现并修复即时触发/恢复重放引用传递。本次必须使用明确绑定的442e54ec环境候选及其Critic作为最近基线，不继续错误来源的上一轮；保留已有环境修订与本轮时长字段反例。该操作仍未批准任何新Plan。\"\n  ],\n  \"rework_categories\": [\n    \"environment\",\n    \"cold_setup\",\n    \"browser_installation\",\n    \"timing_evidence_validation\"\n  ],\n  \"rework_summary\": {\n    \"pdd_id\": \"TASK-5F44B4\",\n    \"source_event_type\": \"plan.rejected\",\n    \"attempt\": 2,\n    \"action\": \"replan\",\n    \"classification\": \"ambiguous\",\n    \"categories\": [],\n    \"failed_task_ids\": [],\n    \"gap_tasks\": [],\n    \"rework_paths\": [],\n    \"feedback_count\": 1,\n    \"feedback_excerpt\": [\n      \"plan-rejection: plan-review:67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a\\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json (sha256=67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。\"\n    ],\n    \"attribution_contract\": \"Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.\",\n    \"path_owner_task_ids\": [],\n    \"terminal_path_owner_task_ids\": [],\n    \"unowned_rework_paths\": [],\n    \"invalid_failed_task_ids\": [],\n    \"terminal_failed_task_ids\": []\n  },\n  \"replan_classification\": \"environment_and_timing_evidence_repair\",\n  \"resume_scope\": \"all_tasks_rework\",\n  \"workflow_run_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"run_id\n\n[... output truncated; open raw artifact for full content ...]\n\n88d01df998d17c8875aa1536a93e7eb28bc7d5e0a85d5dcfc5093e805e8ab.json\",\n  \"context_delivery_envelope_digest\": \"61488d01df998d17c8875aa1536a93e7eb28bc7d5e0a85d5dcfc5093e805e8ab\",\n  \"provider_session_id\": \"01a176e2-6af6-78e2-9361-2a2ce48c2406\"\n}\n```\n\nAggregate contract:\n```json\n{\n  \"mode\": \"wait_for_all\",\n  \"success_event\": \"test.passed\",\n  \"failure_event\": \"test.failed\",\n  \"child_success_event\": \"verify.child.completed\",\n  \"child_failure_event\": \"verify.child.failed\",\n  \"synth_role\": \"\",\n  \"max_retries\": 1,\n  \"review_strategy\": \"\",\n  \"synth_timeout_seconds\": 0\n}\n```\n\n## Workflow Input Manifest\nThese refs came from a Channel/Squad workflow invocation. Treat the manifest as read-only input; do not write into another worker's workdir. If a referenced artifact is missing, emit a blocking event instead of continuing from stale chat context.\n```json\n{\n  \"workflow_run_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"workflow_input_manifest_ref\": \"\",\n  \"source_refs\": {},\n  \"artifact_refs\": [],\n  \"request_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"request_revision\": 6,\n  \"origin_binding\": {}\n}\n```\n\n## Child Result Authority\n\nAny root Task id in the payload is a lineage anchor for this workflow operation; this reader child is not the canonical Task assignee. Do not run `zf guard ownership` for that Task. Use the new retry run_id and submit exactly one result with a command below.\n\nSuccess command:\n```bash\n/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python /tmp/zf-racing-supervision-20261025T211020Z/runtime-control.py emit verify.child.completed --actor prd-verify-lane-0 --state-dir '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision' --payload '{\"fanout_id\": \"fanout-prd-lanes-verify-evt-c1e65c55\", \"stage_id\": \"prd-lanes-verify\", \"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"run_id\": \"run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1\", \"role_instance\": \"prd-verify-lane-0\", \"status\": \"completed\", \"report\": {\"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"status\": \"passed\", \"summary\": \"Short retry outcome summary.\", \"findings\": [], \"recommendation\": \"approve\"}}'\n```\n\nFailure command:\n```bash\n/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python /tmp/zf-racing-supervision-20261025T211020Z/runtime-control.py emit verify.child.failed --actor prd-verify-lane-0 --state-dir '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision' --payload '{\"fanout_id\": \"fanout-prd-lanes-verify-evt-c1e65c55\", \"stage_id\": \"prd-lanes-verify\", \"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"run_id\": \"run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1\", \"role_instance\": \"prd-verify-lane-0\", \"status\": \"failed\", \"report\": {\"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"status\": \"failed\", \"summary\": \"Short retry failure summary.\", \"findings\": [], \"recommendation\": \"reject\"}, \"reason\": \"Retry could not complete the assigned child scope.\"}'\n```\n\nDo not emit the aggregate success/failure event directly; the kernel publishes it after the fanout barrier or synth role finishes.\nEmit once: command exit 0 is success; there is no asynchronous ack. Never retry or re-send (stale generations are discarded). Then stop.\n`fanout_id`, `stage_id`, `child_id`, `run_id`, `role_instance`, and `status` must stay as top-level payload fields.\nFinding schema: use `severity` = info|low|medium|high|critical, `path`, `message`, and optional integer `line`.\n\n<!-- ZF:TASK-ATTEMPT -->\n## Runtime TaskAttempt Identity\n\nKernel-owned attempt; preserve these values. `zf emit --task ...` auto-fills them from canonical state.\n\n- workflow_run_id: `prepare-TASK-5F44B4-c32763f31115843f`\n- operation_id: `wop-prd-lanes-verify-prd-verify-lane-0-vehicle-race-2-aeeacccf6f9f`\n- attempt_id: `ta-a12ce703111fef3c7ce1`\n- lease_id: `lease-0bfa5f14d840079b8a51`\n- dispatch_id: `run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1`\n",
+            "head": "Warning: truncated output (original token count: 12933)\nTotal output lines: 953\n\n# Fanout Retry: prd-verify-lane-0-vehicle-race-2\n\n- fanout_id: `fanout-prd-lanes-verify-evt-c1e65c55`\n- stage_id: `prd-lanes-verify`\n- child_id: `prd-verify-lane-0-vehicle-race-2`\n- run_id: `run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1`\n- target_ref: `candidate/TASK-5F44B4`\n\nThis is a retry of the same fanout child. Keep the same child_id and use the new run_id.\n\nChild payload:\n```json\n{\n  \"fanout_id\": \"fanout-prd-lanes-verify-evt-c1e65c55\",\n  \"trace_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"stage_id\": \"prd-lanes-verify\",\n  \"status\": \"completed\",\n  \"request_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"flow_kind\": \"prd\",\n  \"request_kind\": \"auto\",\n  \"workflow_request_ref\": \"/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f.json\",\n  \"requirement_spec_ref\": \"/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json\",\n  \"requirement_spec_digest\": \"5c0dd9f57a1ada94b699ab4ec0bee6a6df05ee695f49c79b7af28850d40ebb9b\",\n  \"request_revision\": 6,\n  \"workflow_generation\": \"e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340\",\n  \"task_map_generation\": \"29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2\",\n  \"plan_artifact_package_id\": \"planpkg-3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52\",\n  \"plan_artifact_package_ref\": \"artifacts/plan-packages/3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52.json\",\n  \"plan_artifact_package_digest\": \"3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52\",\n  \"completion_profile\": \"software_delivery\",\n  \"goal_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"pdd_id\": \"TASK-5F44B4\",\n  \"feature_id\": \"TASK-5F44B4\",\n  \"workflow_proposal_ref\": {\n    \"ref_schema_version\": \"sidecar-ref.v1\",\n    \"kind\": \"workflow_proposal\",\n    \"ref\": \"artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/proposals/d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8.json\",\n    \"sha256\": \"d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8\",\n    \"byte_count\": 77409,\n    \"content_type\": \"application/json\",\n    \"schema_version\": \"workflow-proposal.v1\",\n    \"encoding\": \"utf-8\",\n    \"created_by\": \"workflow-proposal-compiler\",\n    \"source_event_id\": \"\",\n    \"access_scope\": {},\n    \"retention\": {\n      \"class\": \"audit_required\"\n    },\n    \"required\": true,\n    \"preview\": \"\"\n  },\n  \"workflow_proposal_digest\": \"e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340\",\n  \"effective_config_ref\": {\n    \"access_scope\": {},\n    \"byte_count\": 205419,\n    \"content_type\": \"application/json\",\n    \"created_by\": \"workflow-proposal-compiler\",\n    \"encoding\": \"utf-8\",\n    \"kind\": \"effective_config_snapshot\",\n    \"preview\": \"\",\n    \"ref\": \"artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/effective-configs/df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487.json\",\n    \"ref_schema_version\": \"sidecar-ref.v1\",\n    \"required\": true,\n    \"retention\": {\n      \"class\": \"audit_required\"\n    },\n    \"schema_version\": \"effective-config-snapshot.v1\",\n    \"sha256\": \"df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487\",\n    \"source_event_id\": \"\"\n  },\n  \"effective_config_digest\": \"df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487\",\n  \"run_contract_ref\": \"artifacts/run-contracts/c89a9f70232d3807898647ac16f5f5d2f82896e07cbc2305e71ec7227b0d29b4.json\",\n  \"run_contract_digest\": \"d447ba8184c68daa8ec9223086a7b64f42ca587a5e58b2f25cda629112822532\",\n  \"rework_of\": \"evt-4ad6ce6ed7f3\",\n  \"rework_attempt\": 4,\n  \"rework_source\": \"integration.failed\",\n  \"rework_feedback\": [\n    \"监工基于用户“直到最后修复”和“批准，继续”的授权请求执行环境修复；不是新的产品范围，也不声明新的用户审批。产品需求revision6、16项AC、完整真实90秒比赛、独立Verify/Discovery/Judge、3 lane及Plan人工门禁全部保留。\",\n    \"首个集成候选dfe994958e811acbfd95101dafd4a73c4df56eb5真实质量检查14项中8通过6失败。VC-FOUNDATION和VC-SCAFFOLD-BROWSER在VC-INSTALL之前运行，冷候选缺Vitest/Vite。project.scripts.setup没有配置，不能仅让worker手动npm ci而假定CandidateRebuilder也会准备环境。每个真实独立候选/验证入口必须有显式可执行的冷依赖准备，并处理后续npm ci清除node_modules的影响；不要给Kernel硬编码npm语义。\",\n    \"共享runner使用项目Playwright1.58.2所需Chromium v1208，mcp/playwright:latest内置1226。现Plan硬规定timeout180s安装167MiB，真实多次只下载40%-70%即124，未进入任何浏览器产品断言。FOUNDATION检查点1060cc46a88c51593d213bef3dbcf0fbfb406084已修复代理白名单传递但仍超时。需要明确新环境方案：优先复用经过版本/路径校验的镜像浏览器，或在Docker内完成足够期限的持久缓存安装；实际版本与来源进入证据。不能依赖操作员偷偷预热node_modules，也不能每次npm ci导致重下载。必要时在Plan明确修订原180秒安装期限和外层命令期限，不能静默绕开旧约束；保留失败非零和原始日志。\",\n    \"原4个实现已交付源代码。监工另在dfe994的隔离只读构建用镜像自带浏览器实测正常90秒，movement/pause/restart/finish/replay通过，报告/tmp/zf-racing-supervision-20261025T211020Z/evidence/operator-game-probe.json；这只是拒绝候选的诊断，不能替代正式验收。请最小修订共享环境/runner的所有权与执行规格，复用已有实现，勿重新开发赛车行为，勿把环境失败列为已证明产品RED。\",\n    \"对冷工作树、命令独立执行/顺序、npm ci后缓存、并发验证隔离、版本匹配、下载失败非零、凭据不入证据做具名回归。以完整Plan package和Critic结论输出供审阅；如果需要冻结YAML变更，明确旧新值和受影响任务，走受控路径，不直接改运行中配置。\",\n    \"恢复说明：环境修订fanout-prd-plan-evt-442e54ec的Planner已完成，Critic于evt-0f1857beaa75提交建议通过；但旧候选Discovery失败evt-c8b21d50a8fc触发cap，03:03取消了该fanout，所以没有正式task_map.ready或用户审批。监工已复现修复此旧代失败与活跃候选重规划争抢恢复所有权的问题。此次是受控恢复并补入已证实缺陷，不把取消后的Critic建议伪装成正式Plan批准。\",\n    \"必须以本次previous_plan_candidate_refs中的442e54ec完整环境计划、task_map、execution_spec和矩阵作为最近候选，保留已完成的冷依赖准备、镜像浏览器资格校验、持久缓存、900秒安装回退和各命令期限等设计；复用既有赛车代码。原始admitted Plan是基线追溯，不能用它覆盖最近环境修订而丢失修复。仅做以下已知缺口的最小补充，再重新预校验/独立Critic/用户审批。\",\n    \"独立Discovery真实发现GAP-ASSEMBLY-TIMING-001（evt-2c483b806f3c、evt-9a44e8ad1c15；gap提交evt-dede9ac3a65e）。scripts/verify-racing.sh读取normal-90-seconds.json时仅比较monotonic_elapsed_ms<90000及finishedAt-started<90000，undefined/NaN比较为false，导致缺失或非数字时长证据被错误接纳。隔离fixture探针：合法90000退出0、89999退出1、缺失退出0、非数字退出0。该探针只证明校验器缺陷，不是实际90秒比赛证据。\",\n    \"将该缺口纳入现有RACE-ASSEMBLY的AC-A07/VC-ASSEMBLY及交付控制器责任，不另做整片产品重写；明确覆盖三个原始时间字段必须为有限数字，monotonic_elapsed_ms以及finishedAt-started均至少90000，缺失/null/字符串/非有限/倒序/89999必须非零并停止后续成功处理。完整90000及更长的合法证据通过；保留snapshot有效时间90000、finished及单次结算、摘要/commit/环境/报告真实性检查，不降低其他门禁。测试应调用实际交付校验路径，保留失败收据。更新具名TDD、验收/测试矩阵与执行规格，说明原gap被吸收进当前ASSEMBLY，只有修复和独立重验后才关闭。\",\n    \"需求revision6、16个原AC ID、完整正常90秒实测、4任务的原产品行为、3实现/3验证lane和配置SHA保持；新环境Plan人工审批仍未发生。最终验收必须基于新候选与独立Verify/Discovery/Judge，不能复用旧operator probe冒充正式通过。\",\n    \"输入恢复修正：前次bddccfe0派发的previous_plan_candidate_refs被受控动作丢弃，实际误带了3ac7f23a旧计划，虽然新文字反馈存在。监工已用真实输入清单复现并修复即时触发/恢复重放引用传递。本次必须使用明确绑定的442e54ec环境候选及其Critic作为最近基线，不继续错误来源的上一轮；保留已有环境修订与本轮时长字段反例。该操作仍未批准任何新Plan。\"\n  ],\n  \"rework_categories\": [\n    \"environment\",\n    \"cold_setup\",\n    \"browser_installation\",\n    \"timing_evidence_validation\"\n  ],\n  \"rework_summary\": {\n    \"pdd_id\": \"TASK-5F44B4\",\n    \"source_event_type\": \"plan.rejected\",\n    \"attempt\": 2,\n    \"action\": \"replan\",\n    \"classification\": \"ambiguous\",\n    \"categories\": [],\n    \"failed_task_ids\": [],\n    \"gap_tasks\": [],\n    \"rework_paths\": [],\n    \"feedback_count\": 1,\n    \"feedback_excerpt\": [\n      \"plan-rejection: plan-review:67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a\\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json (sha256=67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。\"\n    ],\n    \"attribution_contract\": \"Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.\",\n    \"path_owner_task_ids\": [],\n    \"terminal_path_owner_task_ids\": [],\n    \"unowned_rework_paths\": [],\n    \"invalid_failed_task_ids\": [],\n    \"terminal_failed_task_ids\": []\n  },\n  \"replan_classification\": \"environment_and_timing_evidence_repair\",\n  \"resume_scope\": \"all_tasks_rework\",\n  \"workflow_run_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"run_id",
+            "tail": "88d01df998d17c8875aa1536a93e7eb28bc7d5e0a85d5dcfc5093e805e8ab.json\",\n  \"context_delivery_envelope_digest\": \"61488d01df998d17c8875aa1536a93e7eb28bc7d5e0a85d5dcfc5093e805e8ab\",\n  \"provider_session_id\": \"01a176e2-6af6-78e2-9361-2a2ce48c2406\"\n}\n```\n\nAggregate contract:\n```json\n{\n  \"mode\": \"wait_for_all\",\n  \"success_event\": \"test.passed\",\n  \"failure_event\": \"test.failed\",\n  \"child_success_event\": \"verify.child.completed\",\n  \"child_failure_event\": \"verify.child.failed\",\n  \"synth_role\": \"\",\n  \"max_retries\": 1,\n  \"review_strategy\": \"\",\n  \"synth_timeout_seconds\": 0\n}\n```\n\n## Workflow Input Manifest\nThese refs came from a Channel/Squad workflow invocation. Treat the manifest as read-only input; do not write into another worker's workdir. If a referenced artifact is missing, emit a blocking event instead of continuing from stale chat context.\n```json\n{\n  \"workflow_run_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"workflow_input_manifest_ref\": \"\",\n  \"source_refs\": {},\n  \"artifact_refs\": [],\n  \"request_id\": \"prepare-TASK-5F44B4-c32763f31115843f\",\n  \"request_revision\": 6,\n  \"origin_binding\": {}\n}\n```\n\n## Child Result Authority\n\nAny root Task id in the payload is a lineage anchor for this workflow operation; this reader child is not the canonical Task assignee. Do not run `zf guard ownership` for that Task. Use the new retry run_id and submit exactly one result with a command below.\n\nSuccess command:\n```bash\n/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python /tmp/zf-racing-supervision-20261025T211020Z/runtime-control.py emit verify.child.completed --actor prd-verify-lane-0 --state-dir '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision' --payload '{\"fanout_id\": \"fanout-prd-lanes-verify-evt-c1e65c55\", \"stage_id\": \"prd-lanes-verify\", \"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"run_id\": \"run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1\", \"role_instance\": \"prd-verify-lane-0\", \"status\": \"completed\", \"report\": {\"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"status\": \"passed\", \"summary\": \"Short retry outcome summary.\", \"findings\": [], \"recommendation\": \"approve\"}}'\n```\n\nFailure command:\n```bash\n/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python /tmp/zf-racing-supervision-20261025T211020Z/runtime-control.py emit verify.child.failed --actor prd-verify-lane-0 --state-dir '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision' --payload '{\"fanout_id\": \"fanout-prd-lanes-verify-evt-c1e65c55\", \"stage_id\": \"prd-lanes-verify\", \"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"run_id\": \"run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1\", \"role_instance\": \"prd-verify-lane-0\", \"status\": \"failed\", \"report\": {\"child_id\": \"prd-verify-lane-0-vehicle-race-2\", \"status\": \"failed\", \"summary\": \"Short retry failure summary.\", \"findings\": [], \"recommendation\": \"reject\"}, \"reason\": \"Retry could not complete the assigned child scope.\"}'\n```\n\nDo not emit the aggregate success/failure event directly; the kernel publishes it after the fanout barrier or synth role finishes.\nEmit once: command exit 0 is success; there is no asynchronous ack. Never retry or re-send (stale generations are discarded). Then stop.\n`fanout_id`, `stage_id`, `child_id`, `run_id`, `role_instance`, and `status` must stay as top-level payload fields.\nFinding schema: use `severity` = info|low|medium|high|critical, `path`, `message`, and optional integer `line`.\n\n<!-- ZF:TASK-ATTEMPT -->\n## Runtime TaskAttempt Identity\n\nKernel-owned attempt; preserve these values. `zf emit --task ...` auto-fills them from canonical state.\n\n- workflow_run_id: `prepare-TASK-5F44B4-c32763f31115843f`\n- operation_id: `wop-prd-lanes-verify-prd-verify-lane-0-vehicle-race-2-aeeacccf6f9f`\n- attempt_id: `ta-a12ce703111fef3c7ce1`\n- lease_id: `lease-0bfa5f14d840079b8a51`\n- dispatch_id: `run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1`\n",
+            "truncated": true
+          }
+        },
+        "turn_id": "01a17716-d6ac-7623-bfc6-390d130a2d15",
+        "transcript_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/codex-home/sessions/2026/10/26/rollout-2026-10-26T15-22-27-01a17716-d50e-7973-b8af-3d9345ac29ff.jsonl",
+        "permission_mode": "bypassPermissions",
+        "context_state": "active_task"
+      },
+      "causation_id": "evt-b049563d45af",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": ""
+    }
+  ],
+  "observed_after_late_hook_at": "2026-10-26T07:25:41.560689+00:00",
+  "session_after_late_hook": "01a17716-d50e-7973-b8af-3d9345ac29ff",
+  "retired_ids_after_late_hook": [
+    "01a176e2-6af6-78e2-9361-2a2ce48c2406"
+  ]
+}
