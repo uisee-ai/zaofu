@@ -1,0 +1,44 @@
+# OA + WRC 的 v4 委派与证据闭环
+
+本实现对应 [Plan / Task Map / 调度手册](../manual/13-plan-task-map-orchestrator-dispatch.md)，基线为 dev c6a92a2f。OA 提出语义策略，WRC 校验并执行；不增加第二套 canonical Task/Graph。
+
+## 委派如何影响执行
+
+`pre_impl` / `run_start` 接纳的 execution plan 与 Run、Task Map generation 和 Plan Artifact Package ref/digest 绑定。`task_pipeline_runtime` 调用 `admitted_pipeline_delegations`，再将结果交给 `TaskPipelineReconciler`。WRC 实际派发前仍执行 Task contract、依赖、背压、租约和输出协议校验。
+
+OA work unit 用 `task_ids` 限定任务，用 `stage_ids` 限定 `impl`、`verify`、`acceptance_review`（兼容 `implementation` 与 `<flow>-lanes-<stage>`）。未限定任务的 stage unit 适用于当前接纳的 generation。一个 task-stage 的重叠委派拒绝执行；损坏或身份不匹配的工件也拒绝执行。
+
+角色选择顺序：
+
+1. OA `preferred_role_refs` 中仍在对应执行池的兼容空闲实例，按声明顺序。
+2. 兼容的历史 task-stage 会话实例。
+3. 对应池中的其他兼容空闲实例，按稳定顺序。
+
+OA 角色偏好是软约束；`capability_refs`、Task 能力要求和执行池范围是硬约束。忙碌或能力不符时不抢占、不绕过容量。调度 operation payload 和 `task.pipeline.stage.dispatched` 中的 `orchestration_assignment` 保存计划 ref/digest、work unit、角色偏好、最终角色及回退原因。已运行的 operation 不会因后续选择重新派发。
+
+OA execution plan 的 graph/edges 不替换 Task Map 的依赖；`skill_refs` 也不授权临时安装或执行未配置的技能。改变任务依赖、scope 或执行配置须走既有计划修订与审批。局部修订保留的任务继续使用自身已接纳 generation 的委派。
+
+## 阶段结果回流
+
+正常结果在已启用的 `stage_barrier` / `pre_closeout` 检查点批量进入 OA 的 canonical source manifest 和 required reads。聚合阶段不会把每个 lane 的完成变成全局 LLM 等待点。
+
+v4 Impl/Verify/acceptance 的结果通过已接纳的当前 Task generation、最新 stage operation 和结果摘要校验筛选；有新 attempt 时旧结果不再作为当前结果。局部修订中未替换任务的旧 generation 证据继续保留。Judge 等既有聚合结果也进入来源集合。其他 Run、无 Run 身份的历史结果及 OA 自己的语义决策不能冒充本 Run 的执行结果。
+
+## 受控调整
+
+语义异常继续经 Run Manager / 已配置 `semantic_failure` 检查点。指定 Run 的恢复请求不得回退到另一个 Run 的 Plan；已声明 generation 过期或失败事件属于另一任务/Run 时拒绝创建检查点。
+
+OA 对已 settled、当前 Impl operation 的精确 `rework`，经 decision admission 后转换为 v4 的下一次 Impl operation 输入，保留反馈和原有最大返工次数。只有存在 kernel `decision.applied` 回执的指令才可消费；活跃 successor、旧 attempt、旧 generation 或未应用的指令不触发重试。v4 reactor 不调用 legacy `_dispatch_rework`。
+
+Verify 的常规失败继续使用既有有界 Impl 返工。涉及图变化、读者角色重绑定或超出当前精确 Impl 重试范围的调整，使用 `return_to_plan` / 人工处置，不能通过强行 legacy 派发实现。回计划请求仅触发 Planner 修订，不能自动生成 `task_map.ready` 或跳过 Critic/人工审批，也不覆盖其他运行中或完成任务。
+
+## 启用与验证
+
+本批不修改活跃项目的冻结配置，也不默认启用所有 OA 检查点。希望 OA 实际委派的 v4 Run，需要在 `zf.yaml` 相应 flow policy 中启用 `semantic_control` 和 blocking `pre_impl`；如需阶段聚合、关闭及异常语义决策，再显式启用 `stage_barrier`、`pre_closeout`、`semantic_failure`。必须通过新的受控 Workflow 提案或既有配置修订流程生效，不能手改运行工件。
+
+验证入口：
+
+- `tests/test_task_pipeline_orchestration.py`：OA 选择、忙碌回退、能力/依赖边界、重放及损坏计划。
+- `tests/test_orchestrator_agent_results.py`：当前 Impl/Verify/Judge required reads、跨 Run 隔离、旧 attempt 和局部 generation。
+- `tests/test_task_pipeline_oa_rework.py` 与 `tests/test_orchestrator_agent_semantic_failure.py`：精确返工、重放、预算、过期拒绝及局部重规划。
+- `tests/e2e/test_oa_wrc_dispatch_mock_e2e.py`：真实 WRC 入口、隔离 Git worktree、实际 briefing/operation/TaskStore、记录型 transport 和重启去重。此层不调用真实 Provider，不作为模型语义判断质量证明。

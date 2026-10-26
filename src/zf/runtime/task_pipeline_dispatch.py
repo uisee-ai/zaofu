@@ -290,6 +290,8 @@ def dispatch_task_pipeline_stage(
         **package_identity,
         **target_fields,
     }
+    if assignment.get("orchestration_assignment"):
+        operation_payload["orchestration_assignment"] = dict(assignment["orchestration_assignment"])
     if operation_generation > 1:
         rework_feedback = _verify_rework_feedback(
             runtime,

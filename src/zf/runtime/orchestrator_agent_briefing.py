@@ -183,7 +183,12 @@ def build_orchestrator_agent_operation_briefing(
         if prepared.checkpoint in {"run_start", "pre_impl"}:
             output_rules.append(
                 "- adopt requires a `run-orchestration-plan.v1` bound to the "
-                "prefilled Run/Goal/config/Run Contract identity"
+                "prefilled Run/Goal/config/Run Contract identity. For v4 delegation, "
+                "use work_units.task_ids and stage_ids (impl, verify, acceptance_review); "
+                "preferred_role_refs are ordered soft preferences within the stage pool. "
+                "WRC enforces capabilities/dependencies and may use a compatible idle fallback. "
+                "Graph/dependency changes require Planner revision and normal approval, "
+                "not new edges in this advisory execution plan."
             )
         elif prepared.checkpoint in {"stage_barrier", "pre_closeout"}:
             output_rules.append(

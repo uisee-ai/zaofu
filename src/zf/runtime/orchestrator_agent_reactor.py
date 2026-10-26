@@ -199,6 +199,22 @@ class OrchestratorAgentReactorMixin:
                 task_id=event.task_id,
                 reason="semantic rework target task is missing",
             )
+        from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+        contexts = task_pipeline_generation_contexts(self.event_log.read_all())
+        if task.id in contexts:
+            from zf.runtime.task_pipeline_rework import derive_impl_rework_requests
+            from zf.runtime.workflow_operation import reduce_workflow_operations
+            events = self.event_log.read_all()
+            requests = derive_impl_rework_requests(
+                events=events, generation_contexts=contexts,
+                operation_rows=reduce_workflow_operations(events).values(),
+            )
+            return WorkflowRuntimeDecision(
+                action="gate" if task.id in requests else "block",
+                task_id=task.id,
+                reason=("OA rework admitted to Task Pipeline ready-set" if task.id in requests
+                        else "OA rework is stale, active, or requires a plan revision"),
+            )
         role = self._dispatch_rework(task, event)
         return WorkflowRuntimeDecision(
             action="dispatch" if role else "block",

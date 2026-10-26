@@ -521,6 +521,11 @@ def reconcile_task_pipeline_runtime(
             generation_contexts=group_contexts,
             operation_rows=group_operations,
         )
+        from zf.runtime.task_pipeline_orchestration import admitted_pipeline_delegations
+
+        delegation = admitted_pipeline_delegations(
+            runtime, generation_contexts=group_contexts, policy=policy,
+        )
         projection = TaskPipelineReconciler().reconcile(
             policy=policy,
             tasks=tasks,
@@ -533,6 +538,7 @@ def reconcile_task_pipeline_runtime(
                 )
             ),
             impl_rework_requests=impl_rework_requests,
+            oa_delegations=delegation,
             preferred_role_instances=task_pipeline_preferred_roles(
                 runtime,
                 generation_contexts=group_contexts,

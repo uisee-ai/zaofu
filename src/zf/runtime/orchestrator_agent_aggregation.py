@@ -428,29 +428,12 @@ def _current_result_descriptors(
     task_map_generation: str,
 ) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
-    candidates = [source_event]
-    for event in events:
-        if event.id == source_event.id or event.type not in _RESULT_EVENT_TYPES:
-            continue
-        payload = event.payload if isinstance(event.payload, Mapping) else {}
-        event_run_id = str(
-            payload.get("workflow_run_id")
-            or payload.get("run_id")
-            or payload.get("trace_id")
-            or event.correlation_id
-            or ""
-        )
-        if workflow_run_id and event_run_id and event_run_id != workflow_run_id:
-            continue
-        generation = str(payload.get("task_map_generation") or "")
-        if task_map_generation and generation and generation != task_map_generation:
-            continue
-        if str(payload.get("control_result_schema") or "") in {
-            "orchestration-decision.v1",
-            "owner-delivery-narrative.v1",
-        }:
-            continue
-        candidates.append(event)
+    from zf.runtime.orchestrator_agent_results import current_result_events
+
+    candidates = current_result_events(
+        events, source_event=source_event, workflow_run_id=workflow_run_id,
+        task_map_generation=task_map_generation, result_event_types=_RESULT_EVENT_TYPES,
+    )
     for event in candidates:
         payload = event.payload if isinstance(event.payload, Mapping) else {}
         selected.extend(_payload_result_descriptors(payload))
