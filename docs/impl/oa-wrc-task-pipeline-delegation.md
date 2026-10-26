@@ -1,0 +1,153 @@
+# OA + WRC 的 v4 委派与证据闭环
+
+本实现对应 [Plan / Task Map / 调度手册](../manual/13-plan-task-map-orchestrator-dispatch.md)，基线为 dev c6a92a2f。OA 提出语义策略，WRC 校验并执行；不增加第二套 canonical Task/Graph。
+
+## 委派如何影响执行
+
+`pre_impl` / `run_start` 接纳的 execution plan 与 Run、Task Map generation 和 Plan Artifact Package ref/digest 绑定。`task_pipeline_runtime` 调用 `admitted_pipeline_delegations`，再将结果交给 `TaskPipelineReconciler`。WRC 实际派发前仍执行 Task contract、依赖、背压、租约和输出协议校验。
+
+OA work unit 用 `task_ids` 限定任务，用 `stage_ids` 限定 `impl`、`verify`、`acceptance_review`（兼容 `implementation` 与 `<flow>-lanes-<stage>`）。未限定任务的 stage unit 适用于当前接纳的 generation。一个 task-stage 的重叠委派拒绝执行；损坏或身份不匹配的工件也拒绝执行。
+
+角色选择顺序：
+
+1. OA `preferred_role_refs` 中仍在对应执行池的兼容空闲实例，按声明顺序。
+2. 兼容的历史 task-stage 会话实例。
+3. 对应池中的其他兼容空闲实例，按稳定顺序。
+
+OA 角色偏好是软约束；`capability_refs`、Task 能力要求和执行池范围是硬约束。忙碌或能力不符时不抢占、不绕过容量。调度 operation payload 和 `task.pipeline.stage.dispatched` 中的 `orchestration_assignment` 保存计划 ref/digest、work unit、角色偏好、最终角色及回退原因。已运行的 operation 不会因后续选择重新派发。
+
+OA execution plan 的 graph/edges 不替换 Task Map 的依赖；`skill_refs` 也不授权临时安装或执行未配置的技能。改变任务依赖、scope 或执行配置须走既有计划修订与审批。局部修订保留的任务继续使用自身已接纳 generation 的委派。
+
+## 阶段结果回流
+
+正常结果在已启用的 `stage_barrier` / `pre_closeout` 检查点批量进入 OA 的 canonical source manifest 和 required reads。聚合阶段不会把每个 lane 的完成变成全局 LLM 等待点。
+
+v4 Impl/Verify/acceptance 的结果通过已接纳的当前 Task generation、最新 stage operation 和结果摘要校验筛选；有新 attempt 时旧结果不再作为当前结果。局部修订中未替换任务的旧 generation 证据继续保留。Judge 等既有聚合结果也进入来源集合。其他 Run、无 Run 身份的历史结果及 OA 自己的语义决策不能冒充本 Run 的执行结果。
+
+## 受控调整
+
+语义异常继续经 Run Manager / 已配置 `semantic_failure` 检查点。指定 Run 的恢复请求不得回退到另一个 Run 的 Plan；已声明 generation 过期或失败事件属于另一任务/Run 时拒绝创建检查点。
+
+OA 对已 settled、当前 Impl operation 的精确 `rework`，经 decision admission 后转换为 v4 的下一次 Impl operation 输入，保留反馈和原有最大返工次数。只有存在 kernel `decision.applied` 回执的指令才可消费；活跃 successor、旧 attempt、旧 generation 或未应用的指令不触发重试。v4 reactor 不调用 legacy `_dispatch_rework`。
+
+Verify 的常规失败继续使用既有有界 Impl 返工。涉及图变化、读者角色重绑定或超出当前精确 Impl 重试范围的调整，使用 `return_to_plan` / 人工处置，不能通过强行 legacy 派发实现。回计划请求仅触发 Planner 修订，不能自动生成 `task_map.ready` 或跳过 Critic/人工审批，也不覆盖其他运行中或完成任务。
+
+## 启用与验证
+
+本批不修改活跃项目的冻结配置，也不默认启用所有 OA 检查点。希望 OA 实际委派的 v4 Run，需要在 `zf.yaml` 相应 flow policy 中启用 `semantic_control` 和 blocking `pre_impl`；正式 YAML 入口仅对 `prd` / `issue` / `refactor` 的 `standard` / `full` 路由、带显式 `pilot_id` 的策略开放 `plan_candidate`、`pre_impl`、`semantic_failure`、`pre_closeout` blocking。其他检查点保留 shadow，不能把直接构造配置的单测当作 YAML 准入证明。必须通过新的受控 Workflow 提案或既有配置修订流程生效，不能手改运行工件。
+
+验证入口：
+
+- `tests/test_task_pipeline_orchestration.py`：OA 选择、忙碌回退、能力/依赖边界、重放及损坏计划。
+- `tests/test_orchestrator_agent_results.py`：当前 Impl/Verify/Judge required reads、跨 Run 隔离、旧 attempt 和局部 generation。
+- `tests/test_task_pipeline_oa_rework.py` 与 `tests/test_orchestrator_agent_semantic_failure.py`：精确返工、重放、预算、过期拒绝及局部重规划。
+- `tests/e2e/test_oa_wrc_dispatch_mock_e2e.py`：真实 WRC 入口、隔离 Git worktree、实际 briefing/operation/TaskStore、记录型 transport 和重启去重。此层不调用真实 Provider，不作为模型语义判断质量证明。
+
+
+## Hello World 实测后的边界修复
+
+`workflow.plan_approval: true` 时，OA `adopt` 只满足语义采纳。Kernel 回到同一 Plan Artifact Package 的审批门，生成 `plan.approval.requested`，人工批准前不能孵化或派发 Impl。历史 `semantic_control: true` 的 `plan.approved` 不作为人工批准；关闭人工审批时仍保留既有自动推进。配置入口回归与真实运行需要分别验证这两种路径。
+
+同一 `orchestrator` 会话一次只接收一个 typed operation。后续检查点保留为账本中的 requested operation，前一项结算后由 Kernel 周期再次派发；重启不依赖进程内队列。reserved/running/suspended 的 operation 保留会话占用，原 operation 的受控恢复重试不被自己的占用阻挡。普通 Layer 2 通知在 typed operation 活跃期间暂存，不覆盖其对话。
+
+Codex 当前使用 `tmux`。`stream-json` 仅准入 `claude-code`，包含逐副本 backend 校验，错误在 loader 中报告，不等到 provider 启动后误入 Claude SDK。
+
+高频 provider 活动事件可复用文件身份和版本未变化的 RoleSessionRegistry 读快照；其他 writer 修改或原子替换文件即失效。heartbeat 写仍走原有锁内重新加载和原子写，不缓存 canonical 写入。注册表优先采用 PyYAML 的 C safe loader/dumper，缺少扩展时回退 safe 实现。相同状态、任务、attempt 和 context ratio 的 usage liveness 在既有 60 秒窗口内不重复写入；任何上述字段变化立即落盘。费用事实、租约和事件顺序均不折叠。
+
+回归覆盖 `tests/test_activity_liveness.py`、`tests/test_orchestrator_agent_operations.py` 与 `tests/e2e/test_orchestrator_agent_semantic_control_mock_e2e.py`。本轮 backlog 与实际验证结果见 [任务记录](../../tasks/done/2026-10-26-0339-hello-pipeline-validation-fixes.md)。
+
+Autoresearch 实验配置的 `zaofu-skills` 和 `yoke` 来源优先绑定实验 checkout 的本地目录；本地不存在时才回退安装来源。存在本地 yoke 时显式声明来源，避免隐式 fallback 同时命中 driver 的副本。客户自定义来源保持原声明，严格碰撞校验不关闭。`tests/test_autoresearch_controller_skill_sources.py` 与实际 11 角色默认模板预检覆盖这一恢复分支。
+
+### 高并发下的派发归属读取
+
+日志看门狗查询角色活动任务时，派发归属使用活动账本的增量只读投影，通过 EventLog.read_from_offset 消费完整新增行，不再为每个角色重复搜索全部工具正文。保持原有 task/fanout 派发、重分配、重排和终态释放语义；日志替换、截断或轮转后重建，半行写入不提前消费。该缓存不是 canonical store，不产生派发或修改任务状态。
+
+### 候选 Reader 的停止与恢复
+
+`zf recover workflow --state-dir <state> --json` 将因 `fast_stop` / `graceful_stop` 中断、且没有更新活跃 TaskAttempt 的 `fanout_reader_child` 列为 `redrive_interrupted_reader_operation`。核对 checkpoint 后，使用 `--resume-pending --checkpoint-id <id>` 经既有 WorkflowOperationService 准入 redrive；保留 operation/request/candidate 身份，由运行中的 Kernel 派发。已 settled 的 sibling 不重跑；未知中断原因、其他 operation 类型与活跃重试继续遵守原有门禁。仅重启进程不能把 suspended operation 当成新请求。
+
+对应入口及竞态回归：`tests/test_workflow_operation_resume.py`、`tests/test_workflow_resume_batch.py`、`tests/test_call_result_runtime.py`。临时运行的精确收尾见 [按 Run 收尾](../runbooks/scoped-fast-teardown.md)。
+
+### Autoresearch 实验续验
+
+真实 loop 的 eval/指标显式绑定实验配置解析出的 state_dir，在清理生成配置前记录；父项目仍持有诊断与改进上下文，不能用父 Run 的完成数证明内层实验完成。实验 PRD 输入即使被 checkout 忽略规则覆盖，也仅强制加入精确输入路径，提交不吸收其他暂存文件。Codex 反思通过 stdin 执行，审批参数位于顶层 `codex -a never exec ...`，解析或 provider 失败仍保留 unknown 与原始错误。
+
+续验与修复账目见 [本轮任务](../../tasks/active/2026-10-26-0507-hello-pipeline-remaining-validation.md)。
+
+配置加载同样优先使用 `CSafeLoader`，缺少 C 扩展时回退 `SafeLoader`；主 YAML、多文档 profile_sources 与 feature 配置保持安全构造器和原有 schema 验证。真实恢复 CLI 的取样发现纯 Python YAML 解析是明显热点；同一 96 KB、23 角色配置的三次加载中位数从约 2.03 秒降为 0.33 秒。这是配置读取基准，不是整个 agent 流程的 SLA。`tests/test_config_yaml_safe_loader.py` 证明有/无 C 扩展的配置值一致，Python object 标签均拒绝。
+
+### 现有周期机制基线对账
+
+2026-10-26 广域回归核对：`a06712238` 在2026-08-08引入 `reader_fanout_trigger_replay`，但 I44 的 housekeeping 计数仍是18；当前 `dev` 和本工作分支均为19，非本轮增加。复核 `_reconcile_reader_fanout_triggers`：它只读取账本，重放已有依赖屏障和未启动 reader fanout，属于当前 AGENTS 规定的 Kernel replay/resume 与机械派发；不判断任务语义、不构建第二状态机。仅靠结果重放无法恢复“触发已入账、fanout.started 未写入”的崩溃窗口，因此保留该独立恢复入口。不能通过删除这条恢复路径或把调用藏到计数器外来凑18。基于这项明确边界审查，将机械预算补账为19，并保留精确相等及未来增量拦截断言；on_tick=2、decision sweep=7不变。此项是补录已有恢复机制，不新增 periodic sweep。
+
+### 真实终审的审批时序证据（2026-10-26）
+
+真实 Codex Judge 曾在产品验证通过后正确给出 hold：必读证据缺少同版
+Plan Preview 的正式批准及其早于 writer 派发的凭据。现在
+`build_closure_identity` 将当前 Run / Plan Artifact Package 对应的审批请求、
+正式决策及同代 task pipeline dispatch 投影进不可变 closure fact；保留事件 ID、
+actor、账本位置和派发身份，完整内容经原有必读来源及 digest 接入 Judge。
+OA 的 semantic_control adoption 不作为用户批准，其他 Run、旧包和旧任务代次
+不能补证；缺失记录保持缺失，内核不因此宣告语义验收通过。
+
+修复后的恢复通过 `fanout-aggregate-rebuild` 从已完成 discovery manifest
+重建 aggregate，再运行新身份的 Judge / OA 终审；保持 candidate、原批准及
+已完成 Impl/Verify 不变。OA halt 后须通过受控 `run-resume` 恢复调度。
+
+Autoresearch controlled-stuck-recovery 的产品输入只要求一份中文演练说明及
+文件存在性验收。故障注入、恢复关联和最终 done 由外层 runner 的
+`requires_worker_stuck_injection`、`audit_stuck_incident` 与终态检查验证，
+不把尚未发生的终态写成中途 candidate_verify 的先决条件。
+
+Thin Judge 的 `judge.failed(authority=compat_projection)` 只供兼容展示。
+Candidate rework planner 与 `candidate-rework-apply` 不再把它当第二次语义裁决；
+reader currentness 同时忽略历史版本从此类投影误派生的候选失效记录。正式
+`goal.closure.rejected` 的受控 replan/复验路径及普通 `test.failed` 返工保持有效。
+真实恢复中发现的 hold→legacy rework→取消新 Judge 已覆盖回归测试；历史账本不改写。
+
+Graph 对任务级 Verify 的当前性使用当前 Candidate 的已集成 task source commit
+绑定，不要求任务提交 SHA 等于合并后的 Candidate SHA。仅 `task_verify` 可以使用
+这条精确来源关联；其他 Run、未集成任务、旧代次和 Candidate Verify 仍按原规则拒绝。
+真实浏览器验证发现的8项错误 stale 投影按此修正，Goal closure 结论不受影响。
+
+Blocking Task Pipeline 的 `candidate-freeze-receipt.v1` 不携带旧 writer fanout 的
+任务/lane manifest。候选级 reader 入口识别当前 frozen 回执，沿用 YAML 的 affinity
+profile 中配置的 reader角色池，以完整冻结候选为验证范围；不再把回执的 planning
+fanout_id 当作 writer children。配置本体不改写，当前代次、冻结提交、结果准入和
+聚合门禁不变；shadow、旧版候选事件、过期代次仍走原有路径与保护。
+
+Autoresearch 与真实 mixed runner 的完成统计共用 canonical task completion 计数：
+兼容旧 `task.status_changed(to=done)`，并纳入内核
+`task.done(authority=task_integration_receipt)`，同一 TaskStore 的任务ID只计一次。
+worker 自报及 `dev.build.done` 不算完成。Product Flow 的等待仍必须看到
+`run.goal.completed`；完成任务数不能代替 Goal/交付闭环。
+
+关联 Git worktree 的 Codex hooks：本机0.163的原生加载器将项目hooks定位到Git
+主checkout，实验本地 `.codex/hooks.json` 因而可能不被读取。SpawnCoordinator
+对关联实验在各角色独立 `CODEX_HOME/hooks.json` 安装相同的受控bridge和trust；
+只在该私有home中禁用继承的ZaoFu bridge以防重复/跨state写入，保留自定义hooks，
+不修改共享主checkout。普通独立仓库沿用原项目hook路径。native hooks/list与
+实际PostToolUse事件是独立验证层，不能用静态hash测试代替真实执行证明。
+
+候选验证 `verification-result.v1` 的 `blocked`/`abstain` 表示未能认证产品，
+不是产品 `rejected`。故障分类保留这一typed区别：证据阻塞和provider无结果归入
+运行环境故障，供恢复/升级路径处理；仅有这些故障的候选不能触发实现返工，也
+不能消耗产品返工次数。受控动作入口同样拒绝旧队列中的此类retrigger/replan，
+但保留escalate；真正的产品拒绝与混合失败仍走原质量返工路径。
+
+
+### 工具输出证据的定位
+
+Impl handoff 和 Verify 使用 `<provider>.hook.post_tool_use`，按角色和派发因果
+核对命令证据。hook 顶层 `task_id` 可能为空，不应凭 `--task` 查询为空认定采集
+失败。完整正文和已有 `refs.raw_output` 是证据；索引仅用于定位。短输出或空
+stdout 可仅内联于事件，没有 sidecar 不代表工具未执行；若当前契约明确要求
+额外 sidecar，则必须核对允许的证据形式并如实报告约束，不补造引用。
+
+
+### 已终局 reader 的恢复清理
+
+停止后仍为 suspended 的 reader，若最后一次派发已有精确 fanout/child/dispatch/Run
+终态，`recover workflow` 生成 `cancel_terminal_reader_operation`，通过 Operation
+服务取消残留占用。它不重放旧 child、不签发验收结果，也不把正在新代次工作的父
+任务改为 blocked；新的活跃 TaskAttempt 优先保护，取消前再次核对终态归属。

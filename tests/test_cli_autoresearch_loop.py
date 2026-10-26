@@ -242,3 +242,39 @@ def test_loop_handler_defaults_to_project_state_dir(
     cfg = captured["cfg"]
     assert cfg.parent_state_dir == project / "runtime-state"
     assert cfg.output_dir == project / "runtime-state" / "autoresearch" / "loop"
+
+
+def test_real_iteration_reports_its_own_state_before_config_cleanup(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from zf.cli import autoresearch as cli
+    from zf.autoresearch import loop_iteration
+    from zf.autoresearch.loop import LoopConfig
+
+    worktree = tmp_path / "experiment"
+    worktree.mkdir()
+    config = worktree / "zf.yaml"
+    config.write_text("experiment config", encoding="utf-8")
+    state = worktree / "custom-state"
+    result = SimpleNamespace(
+        worktree=worktree, status="failed", tasks_done=0, expected_done=1,
+        fatal_event=None, report_path=tmp_path / "report.md", review_gate=None,
+    )
+    monkeypatch.setattr(loop_iteration, "run_autoresearch", lambda cfg: result)
+
+    monkeypatch.setenv("ZF_PROJECT_ROOT", str(tmp_path / "parent"))
+    monkeypatch.setenv("ZF_STATE_DIR", str(tmp_path / "parent-state"))
+
+    def load(path):
+        assert path == config
+        assert config.exists()
+        return SimpleNamespace(project=SimpleNamespace(state_dir="custom-state"))
+
+    monkeypatch.setattr(loop_iteration, "load_config", load)
+    monkeypatch.setattr(loop_iteration, "cleanup_autoresearch_run", lambda *a, **kw: config.unlink())
+    outcome = cli._real_autoresearch_fn(
+        scenario="controlled-stuck-recovery", run_id="test",
+        cfg=LoopConfig(worktree=worktree, parent_state_dir=tmp_path / "parent"),
+    )
+    assert outcome["state_dir"] == str(state)
+    assert outcome["tasks_done"] == 0
+    assert not config.exists()

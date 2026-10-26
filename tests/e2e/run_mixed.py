@@ -170,20 +170,20 @@ def _count_event(events_path: Path, type_: str) -> int:
 
 
 def _count_status_done(events_path: Path) -> int:
-    """Count `task.status_changed` events with payload to=='done'."""
+    """Count canonical legacy and v4 task completion facts."""
+    from zf.autoresearch.task_completion import count_completed_tasks
+
     if not events_path.exists():
         return 0
-    n = 0
+    events = []
     for line in events_path.read_text(encoding="utf-8").splitlines():
         try:
-            e = json.loads(line)
+            event = json.loads(line)
         except ValueError:
             continue
-        if e.get("type") == "task.status_changed":
-            payload = e.get("payload", {}) or {}
-            if payload.get("to") == "done":
-                n += 1
-    return n
+        if isinstance(event, dict):
+            events.append(event)
+    return count_completed_tasks(events)
 
 
 def _scan_first_fatal_event(
@@ -515,7 +515,7 @@ def prepare_flow_source(
     )
     source_path.write_text(body, encoding="utf-8")
     staged = _run(
-        ["git", "add", "--", source_ref],
+        ["git", "add", "-f", "--", source_ref],
         cwd=worktree,
         capture_output=True,
         text=True,
@@ -767,7 +767,7 @@ def wait_for_done(
     expectation = (
         "run.goal.completed"
         if require_run_goal
-        else f"{expected} task.status_changed→done"
+        else f"{expected} canonical task completions"
     )
     print(f"[wait] expecting {expectation} (timeout {timeout_s}s)")
     start = time.time()

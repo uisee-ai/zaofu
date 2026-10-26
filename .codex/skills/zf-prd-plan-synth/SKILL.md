@@ -107,6 +107,36 @@ Critic rework finding. The operator may render a read-only dossier from these
 bound artifacts, but Runtime must not invent project semantics or silently
 select an owner decision.
 
+## Semantic Coverage Contract
+
+`derived_plan_full` is a semantic coverage claim, not a heading or row-count
+claim. Before emitting it, build a coverage ledger in the existing requirement,
+acceptance, or review artifacts; do not create a second task schema. Classify
+the confirmed authority into the applicable source units:
+
+- product outcome, scope, and non-goals;
+- domain, module, capability, and user journey;
+- behavior rule, state transition, input/output or data/event contract;
+- integration, permission, failure, recovery, concurrency, performance, and
+  other non-functional constraints;
+- acceptance, test, real-E2E, and provider-qualification obligations.
+
+Each source unit must have exactly one current disposition:
+`covered`, `explicit_non_goal`, `pending_decision`, or `out_of_scope`. A
+`covered` row keeps a stable source section/heading anchor, a meaningful
+statement, the Plan section, requirement/acceptance ids, owning task(s), test
+or command ids, evidence refs, and the owner or next stage. A non-goal,
+pending decision, or out-of-scope row keeps its reason and impact; it cannot be
+silently omitted. If the authority does not define domains or modules, record
+that fact and the chosen grouping rationale.
+
+Chapter-level refs may index an authority bundle, but they are not sufficient
+as the sole proof for every behavior row. Prefer stable section/heading anchors
+with a short excerpt or digest. Do not infer module coverage from task names,
+file counts, or a shared statement such as “待执行/待审批追踪项”. Any
+mandatory source unit without a disposition, semantic Plan body, producer, or
+verification path is a Critic rework finding and blocks `derived_plan_full`.
+
 Return `plan_content_profile: "derived_plan_full"` only when those sections and
 the exact confirmed authority have been reviewed. Use `summary_only` when the
 output is intentionally abbreviated; the operator UI must label that result as
@@ -115,19 +145,21 @@ a summary and keep it out of the full Plan approval path. Also return
 available so the owner can open the original PRD beside the derived Plan.
 
 For a source PRD that defines formal task or acceptance mappings, preserve the
-mapping as data instead of paraphrasing it away. Keep the exact source-defined
-task boundaries, acceptance ownership, and the source anchor that proves each
-association. Do not round-robin acceptance ids, infer a
-new owner from task order, or replace a requirement statement with a shared
-placeholder such as “待执行/待审批追踪项”. Every trace row must retain its
-source id, a meaningful requirement statement, owning task(s), and evidence
-status. If the source mapping cannot be recovered, mark the Plan as needing
-rework and do not claim `derived_plan_full`.
+mapping as data instead of paraphrasing it away. Keep the authority's exact
+task boundaries, acceptance ownership, and source anchor that proves each
+association. Do not round-robin acceptance ids, infer a new owner from task
+order, or replace a requirement statement with a shared placeholder such as
+“待执行/待审批追踪项”. Every trace row must retain its source id, a meaningful
+requirement statement, owning task(s), and evidence status. If the source
+mapping cannot be recovered, mark the Plan as needing rework and do not claim
+`derived_plan_full`.
 
 When the authority includes UI/UX acceptance, carry the named screens and
-interaction boundaries into the integration task, preserving the names and
-identifiers from that project's authority. Do not impose another project's
-screens, task numbering, or acceptance categories.
+interaction boundaries into the relevant journey and integration task. Keep
+product-specific screen names, page counts, interaction rules, task numbering,
+and acceptance categories in the confirmed authority or project adapter; a
+generic Plan skill must not invent them. “Page integration” without the named
+boundaries supplied by the authority is an incomplete task slice.
 
 Emit top-level `plan_artifact_ref`, `task_map_ref`, `source_index_ref`,
 `artifact_refs`, and `evidence_refs`.
@@ -144,6 +176,19 @@ or a confirmed/recommended workflow, preserve that decision map exactly unless
 the current owner request explicitly asks for a redesign. A smaller task count
 or a cleaner-looking merge is not permission to collapse those boundaries.
 Derived matrices and scan summaries do not override the authority artifact.
+
+## Human Revision Contract
+
+The Preview is a review input and does not mutate the canonical Plan. A human
+comment or change request must identify the current Plan revision and at least
+one target source anchor, requirement/acceptance id, decision id, or Plan
+section. The next replan records the requested change, old/new semantic diff,
+affected decisions, tasks, dependencies, acceptance, and evidence, while
+preserving unaffected completed tasks and their refs. Approval applies only to
+the current revision; a change that affects scope, contract, task ownership,
+dependencies, or acceptance invalidates the previous approval and requires a
+new Critic verdict and owner approval. Do not silently edit a preview or reuse
+an approval after its covered content changed.
 
 For greenfield PRD builds, include top-level `schema_version: "task-map.v1"`,
 `target_root`, and `shared_conventions` before emitting success. At minimum,

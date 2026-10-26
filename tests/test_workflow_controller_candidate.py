@@ -35,7 +35,9 @@ def test_admitted_controller_lanes_become_bound_candidate(tmp_path, family, kind
     base.write_text(body)
     config = load_config(base)
     state = tmp_path / ".zf"
-    request = _request(state)
+    request = _request(state, requirement_fields={
+        "kind": kind, "source_root": "src", "target_root": "app",
+    })
     writer = EventWriter(EventLog(state / "events.jsonl"))
     result = _synthesis_result(request, lanes=2)
     result["selected_flow_family"] = family

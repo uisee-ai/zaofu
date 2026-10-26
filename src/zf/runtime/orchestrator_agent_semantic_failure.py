@@ -62,10 +62,23 @@ def request_semantic_failure_checkpoint(
     )
     if not package:
         raise SemanticFailureCheckpointError("current_plan_package_missing")
+    claimed_generation = str(payload.get("task_map_generation") or "")
+    if claimed_generation and claimed_generation != str(
+        package.get("task_map_generation") or ""
+    ):
+        raise SemanticFailureCheckpointError("target_generation_stale")
     failure_ids = _failure_event_ids(payload)
     failures = [item for item in events if item.id in failure_ids]
     if not failure_ids or {item.id for item in failures} != set(failure_ids):
         raise SemanticFailureCheckpointError("exact_failure_events_missing")
+    for failure in failures:
+        body = failure.payload if isinstance(failure.payload, Mapping) else {}
+        run_id = str(
+            body.get("workflow_run_id") or body.get("run_id")
+            or body.get("trace_id") or failure.correlation_id or ""
+        )
+        if run_id != workflow_run_id or (failure.task_id and failure.task_id != task_id):
+            raise SemanticFailureCheckpointError("failure_target_scope_mismatch")
     latest_failure_payload = (
         failures[-1].payload if failures and isinstance(failures[-1].payload, dict)
         else {}
@@ -183,7 +196,7 @@ def _current_plan_package(
     run_ids: list[str] = []
     if preferred_run_id:
         run_ids.append(preferred_run_id)
-    for event in reversed(events):
+    for event in reversed(events) if not preferred_run_id else []:
         if event.type != "plan.artifact_package.admitted":
             continue
         run_id = str((event.payload or {}).get("workflow_run_id") or "")

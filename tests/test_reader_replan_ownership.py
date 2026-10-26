@@ -40,7 +40,11 @@ def _history():
     started.payload.pop("task_map_generation")  # Actual reader dispatch shape.
     failure = _event("flow.discovery.failed", fanout_id="old-discovery",
                      stage_id="prd-discovery", affected_task_ids=["DRIVE"])
-    return [origin, repair, trigger, started, failure]
+    discovery_started = _event(
+        "fanout.started", fanout_id="old-discovery", stage_id="prd-discovery",
+        trigger_event_id=origin.id,
+    )
+    return [origin, repair, trigger, started, discovery_started, failure]
 
 
 def test_old_reader_failure_does_not_exhaust_active_candidate_replan():

@@ -216,11 +216,14 @@ def write_plan_preview_bundle(
     report = report if isinstance(report, Mapping) else {}
     artifacts: list[dict[str, str]] = []
     seen: set[str] = set()
+    seen_refs: set[str] = set()
 
     def add_artifact(name: str, ref: str, digest: str = "") -> None:
         name = str(name or "").strip()
         ref = str(ref or "").strip()
         if not name or not ref or name in seen:
+            return
+        if ref in seen_refs:
             return
         try:
             body = read_preview_artifact(
@@ -235,6 +238,7 @@ def write_plan_preview_bundle(
             return
         artifacts.append({"name": name, "ref": ref, "sha256": actual})
         seen.add(name)
+        seen_refs.add(ref)
 
     plan_ref = str(refs.get("plan_artifact_ref") or refs.get("plan_ref") or "")
     add_artifact("accepted_plan", plan_ref, str(refs.get("plan_artifact_digest") or ""))
@@ -263,6 +267,18 @@ def write_plan_preview_bundle(
                 continue
             if name.endswith((".md", ".markdown")):
                 add_artifact(f"requirement_{index}_{name}", ref, digest)
+
+    # Authority documents are part of the human approval contract even when
+    # the provider report omitted them from its generic artifact list. Bind
+    # them explicitly so the review bundle remains complete and replayable.
+    authority_refs = refs.get("authority_refs") or payload.get("authority_refs") or []
+    if isinstance(authority_refs, list):
+        for index, raw_ref in enumerate(authority_refs, start=1):
+            ref = str(raw_ref or "").strip()
+            if not ref:
+                continue
+            name = Path(ref).name or f"authority_{index}"
+            add_artifact(f"authority_{index}_{name}", ref)
 
     raw_ports = payload.get("plan_ports") or report.get("plan_ports") or []
     for port in coerce_plan_port_descriptors(raw_ports):

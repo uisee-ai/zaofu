@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from zf.autoresearch.resident_commands import _command_for_request
 from zf.autoresearch.loop_requests import (
     LOOP_ACCEPTED,
     LOOP_COMPLETED,
@@ -200,38 +201,6 @@ def pending_review_gate_requests(events: list[ZfEvent]) -> list[ZfEvent]:
             pending.append(event)
     return pending
 
-
-def _command_for_request(
-    payload: dict[str, Any],
-    *,
-    worktree: Path,
-    state_dir: Path,
-    output_root: Path,
-) -> list[str]:
-    request_id = loop_request_id_from_payload(payload, fallback="request")
-    mode = normalize_research_mode(payload.get("mode") or payload.get("research_mode"))
-    scenarios = _string_list(payload.get("scenarios")) or default_scenarios_for_mode(mode)
-    fix_wait = str(payload.get("fix_wait_strategy") or "none")
-    return [
-        sys.executable,
-        "-m",
-        "zf.cli.main",
-        "autoresearch",
-        "loop",
-        "--scenarios",
-        *scenarios,
-        "--worktree",
-        str(worktree),
-        "--parent-state-dir",
-        str(state_dir),
-        "--max-iterations",
-        "1",
-        "--fix-wait-strategy",
-        fix_wait,
-        "--no-backlog-on-failure",
-        "--output-dir",
-        str(output_root / request_id),
-    ]
 
 
 def _path_from_payload(

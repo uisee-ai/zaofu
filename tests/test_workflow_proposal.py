@@ -52,7 +52,7 @@ spec:
     load_config(path)
 
 
-def _request(state_dir: Path) -> dict:
+def _request(state_dir: Path, *, requirement_fields: dict | None = None) -> dict:
     requirement = state_dir / "workflow-requests" / "req-1" / "requirement.json"
     requirement.parent.mkdir(parents=True)
     requirement.write_text(
@@ -61,6 +61,7 @@ def _request(state_dir: Path) -> dict:
             "objective": "Repair the confirmed issue",
             "request_id": "req-1",
             "revision": 1,
+            **(requirement_fields or {}),
         }),
         encoding="utf-8",
     )
@@ -70,7 +71,7 @@ def _request(state_dir: Path) -> dict:
     projection = {
         "schema_version": "workflow.request.v1",
         "request_id": "req-1",
-        "kind": "issue",
+        "kind": (requirement_fields or {}).get("kind", "issue"),
         "status": "ready",
         "revision": 1,
         "requirement_spec_ref": str(requirement),

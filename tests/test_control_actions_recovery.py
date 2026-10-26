@@ -511,3 +511,19 @@ def test_rescan_grant_requires_exhaustion(tmp_path: Path) -> None:
         requested_action="rescan-grant", payload={},
     )
     assert r3["ok"] is False
+
+
+def test_stale_candidate_rework_action_rejects_goal_compat_projection(tmp_path):
+    svc = _service(tmp_path)
+    source = svc.writer.append(ZfEvent(type="judge.failed", payload={
+        "pdd_id": "P-1", "authority": "compat_projection", "verdict": "blocked",
+    }))
+    requested = svc.writer.emit("control.action.requested", actor="operator", payload={})
+    result = svc.execute(
+        action="candidate-rework-apply", requested_action="candidate-rework-apply",
+        requested=requested, payload={"pdd_id": "P-1", "source_event_id": source.id,
+                                     "candidate_rework_action": "retrigger"},
+    )
+    assert result["ok"] is False
+    assert "compatibility projection" in result["reason"]
+    assert not any(e.type == "task_map.ready" for e in svc.writer.event_log.read_all())

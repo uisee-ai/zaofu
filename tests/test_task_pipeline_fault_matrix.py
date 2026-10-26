@@ -246,3 +246,42 @@ def test_expired_operation_v2_waits_for_run_manager_then_redrives_once(
     )
     assert recovery["wrc_authority"] == "frozen_mechanical_effect_executor"
     assert len(recovery["admitted_redrives"]) == 1
+
+
+def test_retryable_respawn_failure_with_identity_redrives_same_operation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _runtime(tmp_path)
+    first_attempt = _running_operation_v2_attempt(runtime)
+    monkeypatch.setattr(
+        "zf.runtime.task_attempt_runtime._expired",
+        lambda _value: True,
+    )
+    assert reconcile_task_attempts(runtime) >= 1
+    runtime.event_writer.append(ZfEvent(
+        type="worker.respawn.failed",
+        actor="impl-1",
+        task_id="TASK-A",
+        payload={
+            "task_id": "TASK-A",
+            "operation_id": first_attempt["operation_id"],
+            "attempt_id": first_attempt["attempt_id"],
+            "recovery_retryable": True,
+            "recovery_context_bound": True,
+            "recovery_decision_owner": "run_manager",
+            "recovery_effect_owner": "workflow_runtime_coordinator",
+        },
+    ))
+
+    decisions = reconcile_task_pipeline_redrives(
+        runtime,
+        generation_contexts={"TASK-A": {"workflow_run_id": "run-1"}},
+    )
+
+    assert [item.action for item in decisions] == [
+        "task_pipeline_operation_redrive_admitted",
+    ]
+    assert reduce_workflow_operations(runtime.event_log.read_all())[
+        first_attempt["operation_id"]
+    ]["redrive_count"] == 1

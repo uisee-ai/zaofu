@@ -926,6 +926,9 @@ class WorkflowRuntimeCoordinator(
         # transport; runtime must explicitly pull them out and route them
         # through the same append + housekeeping pipeline as any other event.
         self._drain_transport_events()
+        from zf.runtime.orchestrator_agent_transport import dispatch_pending_orchestrator_checkpoint
+
+        dispatch_pending_orchestrator_checkpoint(self)
         # doc 69 S-f: emit delivery.phase.* milestones for active features
         # (deterministic, idempotent; counts kernel verdicts, never re-judges).
         self._safe_housekeeping("phase_milestones", self._emit_phase_milestones)
@@ -3091,15 +3094,12 @@ class WorkflowRuntimeCoordinator(
                     role_backends=self._role_backends(),
                 )
                 try:
-                    from zf.core.state.role_sessions import RoleSessionRegistry
+                    from zf.runtime.activity_liveness import activity_registry
                     from zf.runtime.usage_liveness import (
                         apply_agent_usage_liveness,
                     )
 
-                    registry = RoleSessionRegistry(
-                        self.state_dir / "role_sessions.yaml",
-                        project_root=str(self.project_root),
-                    )
+                    registry = activity_registry(self)
                     apply_agent_usage_liveness(
                         registry,
                         event,
@@ -3210,14 +3210,11 @@ class WorkflowRuntimeCoordinator(
                 # Provider hooks and transcripts prove a worker is alive during
                 # long turns where agent.usage is sparse (agent.usage keeps its
                 # own richer handler above).
-                # Throttled inside the helper; backend- and workflow-agnostic.
-                from zf.core.state.role_sessions import RoleSessionRegistry
+                # Reuse unchanged registry reads; heartbeat writes stay throttled.
                 try:
-                    registry = RoleSessionRegistry(
-                        self.state_dir / "role_sessions.yaml",
-                        project_root=str(self.project_root),
-                    )
-                    apply_worker_activity_heartbeat(registry, event)
+                    from zf.runtime.activity_liveness import apply_observed_activity
+
+                    apply_observed_activity(self, event)
                 except Exception:
                     pass
             elif event.type == "repair.action.requested":
@@ -3482,7 +3479,9 @@ class WorkflowRuntimeCoordinator(
             return existing
         # P1/K2: thread self.config so yaml workflow.rework_routing
         # takes priority over heuristic classifiers.
-        result = classify_rework_trigger(event, self.config)
+        result = classify_rework_trigger(
+            event, self.config, evidence_events=self.event_log.read_all(),
+        )
         try:
             self.event_writer.append(ZfEvent(
                 type="task.rework.triage.completed",
@@ -3521,7 +3520,9 @@ class WorkflowRuntimeCoordinator(
         if existing_only:
             return None
         # P1/K2: same priority rule as _ensure_rework_triage.
-        return classify_rework_trigger(event, self.config)
+        return classify_rework_trigger(
+            event, self.config, evidence_events=self.event_log.read_all(),
+        )
 
     def _check_reader_write_violation(self, event: ZfEvent) -> None:
         role = None
@@ -4792,6 +4793,8 @@ class WorkflowRuntimeCoordinator(
         """Send one Layer 2 turn covering `triggers` (most recent is primary)."""
         if not triggers:
             return
+        from zf.runtime.orchestrator_agent_transport import orchestrator_checkpoint_busy
+
         primary = triggers[-1]
         if primary.type == "orchestrator.semantic.checkpoint.requested":
             from zf.runtime.orchestrator_agent_transport import (
@@ -4799,6 +4802,10 @@ class WorkflowRuntimeCoordinator(
             )
 
             dispatch_orchestrator_agent_operation(self, orch_role, primary)
+            return
+        if orchestrator_checkpoint_busy(self):
+            for trigger in triggers:
+                self._add_layer2_pending(trigger)
             return
         # Regenerate progress.md so Layer 2 sees fresh narrative state.
         try:

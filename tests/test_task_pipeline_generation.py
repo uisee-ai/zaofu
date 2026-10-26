@@ -475,6 +475,14 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from zf.core.task.schema import Task, TaskContract
+    from zf.core.task.store import TaskStore
+    from zf.runtime.task_doc import compute_task_capsule_revisions
+
+    task = Task(id="TASK-1", title="fix", skills_required=["can-domain"], contract=TaskContract())
+    store = TaskStore(tmp_path / ".zf" / "kanban.json")
+    store.add(task)
+    log = EventLog(tmp_path / ".zf" / "events.jsonl")
     project_root = tmp_path / "project"
     project_root.mkdir()
     workspace_root = tmp_path / "workspace"
@@ -536,7 +544,7 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
         lambda *_args, **_kwargs: (
             {
                 "task_ref": "refs/zf/tasks/TASK-1",
-                "contract_revision": "contract-r1",
+                "contract_revision": compute_task_capsule_revisions(task)["contract_revision"],
                 "allowed_paths": ["app/**"],
                 "plan_artifact_package_id": _PACKAGE_ID,
                 "plan_artifact_package_ref": _PACKAGE_REF,
@@ -564,18 +572,15 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
         state_dir=tmp_path / ".zf",
         project_root=project_root,
         config=SimpleNamespace(),
+        task_store=store,
+        event_writer=EventWriter(log),
         _find_role_by_instance=lambda _value: role,
     )
 
     result = dispatch_task_pipeline_stage(
         runtime,
         policy={},
-        task=SimpleNamespace(
-            id="TASK-1",
-            title="fix",
-            skills_required=["can-domain"],
-            contract=SimpleNamespace(),
-        ),
+        task=task,
         assignment={
             "stage": "impl",
             "role_instance": "fix-lane-0",

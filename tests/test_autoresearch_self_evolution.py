@@ -428,7 +428,7 @@ def test_loop_request_projection_roundtrip(tmp_path):
 
     assert projection["summary"]["pending"] == 1
     assert projection["recent"][0]["loop_request_id"].startswith("arlp-")
-    assert projection["recent"][0]["scenarios"] == ["controlled-stuck-recovery"]
+    assert projection["recent"][0]["scenarios"] == ["incident-reproduction"]
 
 
 def test_resident_dry_run_plans_without_executing(tmp_path):

@@ -145,6 +145,8 @@ def validate_verification_result(
         return
     if verdict not in COMPLETED_VERDICTS:
         raise VerificationResultError("completed verifier must pass, reject, or block")
+    if strict:
+        _validate_concrete_evidence_refs(result)
     if strict and verdict == "passed":
         if not _string_list(result.get("evidence_refs")):
             raise VerificationResultError(
@@ -227,6 +229,22 @@ def validate_verification_result(
             raise VerificationResultError(
                 f"{verdict} verdict requires structured rework_items"
             )
+
+
+def _validate_concrete_evidence_refs(value: Any, path: str = "result") -> None:
+    """Angle-bracket template slots are not durable evidence references."""
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            if key == "evidence_refs":
+                if any("<" in ref or ">" in ref for ref in _string_list(child)):
+                    raise VerificationResultError(
+                        f"{path}.evidence_refs contains an unresolved placeholder"
+                    )
+            elif isinstance(child, (Mapping, list)):
+                _validate_concrete_evidence_refs(child, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _validate_concrete_evidence_refs(child, f"{path}[{index}]")
 
 
 def recovery_owner(result: Mapping[str, Any]) -> str:

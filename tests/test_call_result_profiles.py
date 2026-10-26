@@ -682,3 +682,26 @@ def test_ref_backed_event_hydrates_once_and_hash_mismatch_fails(tmp_path: Path) 
     )
     with pytest.raises(ControlResultAdapterError, match="hydration failed"):
         hydrate_profiled_control_result_event(tmp_path, broken)
+
+
+def test_implementation_result_uses_nested_impl_self_check_verdict(
+    tmp_path: Path,
+) -> None:
+    event = ZfEvent(
+        type="dev.build.done",
+        task_id="T08-R4",
+        payload={
+            "workflow_run_id": "run-1",
+            "task_id": "T08-R4",
+            "target_commit": "abc123",
+            "impl_self_check": {
+                "verdict": "passed",
+                "acceptance_results": [],
+            },
+        },
+    )
+
+    adapted = ControlResultAdapterRegistry().adapt(tmp_path, event)
+
+    assert adapted.payload["verdict"] == "passed"
+    assert adapted.payload["self_check"]["verdict"] == "passed"

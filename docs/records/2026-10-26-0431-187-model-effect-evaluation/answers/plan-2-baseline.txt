@@ -1,0 +1,24 @@
+结论：**P-good：approve；P-risk：revise。** `scope.md` 是本次权威范围与执行事实，两个候选均位于 `plans.md`。已按 Critic、执行就绪及相关引用审阅；未改文件、发事件或启动 agent。
+
+**P-good：approve（仅限本次语义规划审阅）**
+
+- **当前 Goal 与未来范围合理。** [scope.md:3](/workspace/scope.md:3) 的 O1 已明确批准本期查询＋原子转移；[plans.md:3](/workspace/plans.md:3) 保留未来通知义务、负责人及决定时点，没有静默删减总目标。O2 的渠道选择只在准备 Phase-2、细化通知接口前关闭，不阻塞 Phase-1。**无需修订。**
+- **依赖与事务边界成立。** [plans.md:4](/workspace/plans.md:4) 至第 7 行先建立共享契约，再实现行为，最后验证完整旅程；transfer 单一 owner 覆盖扣源、增目标、流水与回滚，符合 [scope.md:5](/workspace/scope.md:5) 的 O3。不会因任务拆分允许部分事务成功。**无需拆成三个写入任务。**
+- **路径与环境资源分别处理。** 各任务列出的写入路径互不重叠；[scope.md:10](/workspace/scope.md:10) 已确认独立注册入口，因此无依据要求各片修改共享 `app.py`。[plans.md:8](/workspace/plans.md:8) 的独立数据库命名空间和动态端口针对已知测试冲突提供了隔离方案。**无需增加 lanes 或改变拓扑。**
+- **验收时点符合实际配置。** [plans.md:9](/workspace/plans.md:9) 保留片内自检与 stage_barrier 下的独立 Verify；第 7–8 行将跨片旅程放到最终集成树。不会把局部自检冒充独立验收。**无需提前索取尚未生成的测试证据。**
+
+剩余风险是执行时须兑现环境隔离及真实入口测试；本次 approve 不代表它们已经运行或产品已经交付。
+
+**P-risk：revise**
+
+1. **真实依赖未表达。** [plans.md:13](/workspace/plans.md:13) 明知 transfer 消费 contract，却以同波次和名称代替依赖。后果是消费者可能在接口就绪前启动。**最小处置：明确 transfer 依赖 contract 完成；拆分若撤回，依赖随统一 transfer 保留。**
+
+2. **写入所有权冲突。** [plans.md:14](/workspace/plans.md:14) 两任务独占同一 `src/app.py`，直接违反 [scope.md:6](/workspace/scope.md:6) 的 O4；先后波次不能消除全图冲突。**最小处置：利用既有自动注册入口，各自拥有独立注册文件；共享文件如确需修改，只指定一个 owner。**
+
+3. **原子性被破坏。** [plans.md:15](/workspace/plans.md:15) 三任务分别提交数据库，违反 O3/O4。扣源成功后增目标或流水失败，即可留下部分结果；追加顺序依赖也无法修复。**最小处置：恢复单一事务 owner，将三步保留为片内实现步骤，并验证任一步失败后三类状态全部回滚。**
+
+4. **路径独立不代表测试资源独立。** [plans.md:16](/workspace/plans.md:16) 与 [scope.md:11](/workspace/scope.md:11) 的固定端口、共享 fixture 冲突。可能端口占用或互清数据，污染测试结论。**最小处置：独立数据库命名空间＋动态端口；或仅对共享环境测试设置互斥，不添加虚假的产品依赖。**
+
+5. **验收承诺超出配置能力。** [plans.md:17](/workspace/plans.md:17) 用 `task_verify` 标签承诺逐片立即独立 Verify，与 [scope.md:8](/workspace/scope.md:8) 至第 10 行矛盾。后果是计划等待并不存在的派发阶段。**最小处置：恢复逐片 Impl 自检，独立 Verify 在 Candidate 就绪后执行；无需为此强推 v4。**
+
+[plans.md:18](/workspace/plans.md:18) 的未来通知安排正确，不列为缺陷。以上问题均可由 Planner 在现有权威范围内修正，故为 **revise，而非 blocked**；省略的机器 envelope 不计入发现。

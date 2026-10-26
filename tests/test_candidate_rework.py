@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from zf.core.events.model import ZfEvent
 from zf.runtime.candidate_rework import (
     candidate_quality_failure_message,
@@ -2534,3 +2536,25 @@ def test_same_candidate_failure_reaches_cap_despite_volatile_diagnostics() -> No
     assert plans[0].action == "escalate"
     assert plans[0].attempt == 3
     assert len(plans[0].feedback) == 1
+
+
+@pytest.mark.parametrize("verdict", ["blocked", "rejected"])
+def test_goal_compat_projection_does_not_duplicate_typed_rework(verdict):
+    failure = _ev("judge.failed", {
+        "workflow_run_id": "run-1", "pdd_id": "PDD-1",
+        "candidate_head_commit": "a" * 40,
+        "authority": "compat_projection", "verdict": verdict,
+    }, eid="compat-failure", corr="run-1")
+    assert plan_candidate_rework([failure]) == []
+    # A legacy runtime may already have minted an erroneous rework from it.
+    # That projection must not consume a real product rejection's retry budget.
+    erroneous = _ev("task_map.ready", {
+        "pdd_id": "PDD-1", "rework_of": failure.id,
+    }, eid="erroneous-rework", corr="run-1")
+    real = _ev("test.failed", {
+        "pdd_id": "PDD-1", "target_ref": "candidate/PDD-1",
+    }, eid="real-failure", corr="run-1")
+    plans = plan_candidate_rework([failure, erroneous, real])
+    assert len(plans) == 1
+    assert plans[0].source_event_id == real.id
+    assert plans[0].attempt == 1

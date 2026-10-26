@@ -1307,6 +1307,7 @@
   }
   .plan-preview-body {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 120px);
   }
   .plan-preview-reader {
     border-right: 0;

@@ -194,6 +194,15 @@ def plan_candidate_rework(
     event id>``; attempts count prior re-triggers per pdd_id, and at/over
     ``max_attempts`` the plan escalates instead of re-triggering.
     """
+    # Thin Judge routes its typed result separately. Its legacy projection is
+    # display evidence, never a second candidate failure/rework authority.
+    projection_ids = {
+        event.id for event in events
+        if event.type in {"judge.failed", "judge.passed"}
+        and (event.payload or {}).get("authority") == "compat_projection"
+    }
+    events = [event for event in events if event.id not in projection_ids
+              and (event.payload or {}).get("rework_of") not in projection_ids]
     infra_failure_ids = _infra_only_candidate_failure_ids(events)
     budget_failure_ids = budget_candidate_failure_ids(events, CANDIDATE_FAIL_EVENTS)
     protocol_repair_ids = {

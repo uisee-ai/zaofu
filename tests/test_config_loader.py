@@ -1198,6 +1198,7 @@ def test_role_transport_stream_json(tmp_path: Path):
         'version: "1.0"\nproject:\n  name: test\n'
         "roles:\n"
         "  - name: dev\n"
+        "    backend: claude-code\n"
         "    transport: stream-json\n"
     )
     cfg = load_config(p)

@@ -22,6 +22,7 @@ from zf.runtime.task_pipeline_reconciler import (
     TaskPipelineReconciler,
     task_pipeline_policy_partitions,
 )
+from zf.runtime.workflow_operation import reduce_workflow_operations
 from zf.runtime.task_pipeline_semantic_exhaustion import (
     reconcile_task_pipeline_semantic_exhaustion,
 )
@@ -230,6 +231,23 @@ def test_reconciler_prefers_task_stage_session_owner_when_slot_is_idle() -> None
     assert projection["dispatchable"]["impl"][0]["role_instance"] == "impl-2"
 
 
+def test_reconciler_preserves_declared_role_precedence_over_legacy_defaults() -> None:
+    policy = _policy()
+    policy["pools"]["impl"].update({
+        "capacity": 1,
+        "role_instances": ["prd-dev-lane-0", "dev-lane-0"],
+    })
+
+    projection = TaskPipelineReconciler().reconcile(
+        policy=policy,
+        tasks=[_task("A", priority=1)],
+        operations=[],
+        attempts=[],
+    )
+
+    assert projection["dispatchable"]["impl"][0]["role_instance"] == "prd-dev-lane-0"
+
+
 def test_request_hash_divergence_gets_one_compatibility_replay_probe() -> None:
     operation = _operation("A", "impl", "blocked", generation=3)
     operation["reason"] = "request_hash_divergence"
@@ -346,6 +364,84 @@ def test_verify_rejection_at_rework_cap_exposes_semantic_blocker() -> None:
             "sha256": "a" * 64,
         },
     }
+
+
+def test_admitted_verify_rejection_survives_malformed_child_event() -> None:
+    operation_id = "op-A-verify-1"
+    events = [
+        ZfEvent(
+            id="verify-request",
+            type="workflow.operation.requested",
+            task_id="A",
+            payload={
+                "workflow_run_id": "run-1",
+                "task_id": "A",
+                "operation_id": operation_id,
+                "request_hash": "request-sha",
+                "task_pipeline_stage": "verify",
+                "operation_generation": 1,
+            },
+        ),
+        ZfEvent(
+            id="verify-start",
+            type="workflow.operation.started",
+            task_id="A",
+            payload={
+                "workflow_run_id": "run-1",
+                "task_id": "A",
+                "operation_id": operation_id,
+                "request_hash": "request-sha",
+            },
+        ),
+        ZfEvent(
+            id="verify-admitted",
+            type="workflow.call.result.admitted",
+            task_id="A",
+            payload={
+                "workflow_run_id": "run-1",
+                "task_id": "A",
+                "operation_id": operation_id,
+                "semantic_verdict": "rejected",
+                "control_result_ref": {
+                    "ref": "verify.json",
+                    "sha256": "b" * 64,
+                },
+            },
+        ),
+        ZfEvent(
+            id="verify-settled",
+            type="workflow.operation.settled",
+            task_id="A",
+            payload={
+                "workflow_run_id": "run-1",
+                "task_id": "A",
+                "operation_id": operation_id,
+                "request_hash": "request-sha",
+            },
+        ),
+        ZfEvent(
+            id="malformed-child",
+            type="discriminator.failed",
+            task_id="A",
+            payload={"reason": "missing evidence payload"},
+        ),
+    ]
+
+    operation = reduce_workflow_operations(events)[operation_id]
+    assert operation["semantic_verdict"] == "rejected"
+    policy = _policy()
+    policy["max_rework_attempts"] = 2
+    view = TaskPipelineReconciler().reconcile(
+        policy=policy,
+        tasks=[_task("A", priority=1)],
+        operations=[
+            _operation("A", "impl", "settled"),
+            operation,
+        ],
+        attempts=[],
+    )["tasks"][0]
+
+    assert view["stage"] == "impl_rework_ready"
 
 
 def test_semantic_rework_exhaustion_event_is_idempotent(tmp_path: Path) -> None:
@@ -611,7 +707,7 @@ def test_integration_bridge_uses_rotated_projection_generation() -> None:
         "pipeline_key": "pipeline-1",
     }]
 
-    with patch(
+    with patch("zf.runtime.task_pipeline_integration._verify_result_is_current", return_value=True), patch(
         "zf.runtime.candidates.CandidateRebuilder",
         return_value=SimpleNamespace(integrate_task_pipeline_task=integrate),
     ):

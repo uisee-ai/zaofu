@@ -144,7 +144,41 @@ def test_autoresearch_resident_sidecar_starts_authorized_and_stops(
 
     assert sidecar.process.terminated is True
     assert not sidecar.pid_path.exists()
+    assert not (sidecar.pid_path.parent / "autoresearch-resident.lock").exists()
     assert events.events[-1].type == "autoresearch.resident_sidecar.stopped"
+
+
+def test_autoresearch_resident_sidecar_is_singleton_per_state_dir(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_CLI_CMD", "zf")
+    monkeypatch.setattr(
+        "zf.runtime.autoresearch_resident_sidecar.subprocess",
+        SimpleNamespace(
+            Popen=lambda *args, **kwargs: FakeProcess(4313),
+            STDOUT=subprocess.STDOUT,
+            TimeoutExpired=subprocess.TimeoutExpired,
+        ),
+    )
+    cfg = ZfConfig(
+        runtime=RuntimeConfig(
+            autoresearch_resident=RuntimeAutoresearchResidentConfig(enabled=True),
+        ),
+    )
+    events = EventSink()
+    state_dir = tmp_path / ".zf"
+    first = start_autoresearch_resident_sidecar(
+        config=cfg, state_dir=state_dir, project_root=tmp_path, event_log=events,
+    )
+    second = start_autoresearch_resident_sidecar(
+        config=cfg, state_dir=state_dir, project_root=tmp_path, event_log=events,
+    )
+
+    assert first is not None
+    assert second is None
+    assert events.events[-1].type == "autoresearch.resident_sidecar.already_running"
+    stop_autoresearch_resident_sidecar(first)
 
 
 def test_handle_stop_kills_whole_process_group(tmp_path: Path):

@@ -26,6 +26,60 @@ def test_idle_tick_catches_up_from_durable_offset_without_empty_pushed_events():
     assert calls == [((), {})]
 
 
+def test_simulation_processes_goal_terminal_before_auto_stop(tmp_path: Path):
+    from zf.cli.watched_batch import process_watched_batch
+    from zf.core.events.log import EventLog
+    from zf.core.events.model import ZfEvent
+
+    log = EventLog(tmp_path / "events.jsonl")
+    terminal = ZfEvent(
+        type="run.goal.completed",
+        correlation_id="RUN-SIM",
+        payload={
+            "run_id": "RUN-SIM",
+            "completed_task_ids": ["TASK-SIM"],
+        },
+    )
+    log.append(terminal)
+    order: list[str] = []
+
+    class FakeOrchestrator:
+        def run_once(self, *, events, consumed_offset):  # noqa: ANN001
+            order.append(f"orchestrator:{events[0].type}")
+            log.append(ZfEvent(
+                type="task.status_changed",
+                task_id="TASK-SIM",
+                payload={"from": "in_progress", "to": "done"},
+            ))
+
+    class DenyRateLimiter:
+        def allow(self, _event_type: str) -> bool:
+            return False
+
+    def stop_watcher() -> None:
+        order.append("stop")
+
+    stopped = process_watched_batch(
+        [terminal],
+        consumed_offset=log.current_offset(),
+        wake_patterns=set(),
+        wake_worthy_fn=lambda _event: False,
+        rate_limiter=DenyRateLimiter(),
+        orchestrator=FakeOrchestrator(),
+        simulation=True,
+        event_log=log,
+        stop_watcher=stop_watcher,
+    )
+
+    assert stopped is True
+    assert order == ["orchestrator:run.goal.completed", "stop"]
+    assert [event.type for event in log.read_all()] == [
+        "run.goal.completed",
+        "task.status_changed",
+        "simulation.done",
+    ]
+
+
 def test_startup_catchup_uses_durable_offset_path():
     from zf.cli.start import _run_startup_orchestrator_catchup
 
@@ -447,9 +501,22 @@ workflow:
         assert "event_without_consumer" not in captured.err
         assert "dry-run" in captured.out.lower()
 
-    def test_start_dry_run_succeeds(self, project_dir: Path, capsys):
+    def test_start_dry_run_succeeds(self, project_dir: Path, capsys, monkeypatch):
+        from zf.cli import watch_batch
+
+        batches = []
+        original = watch_batch.process_watched_batch
+
+        def record_batch(events, **kwargs):
+            batches.append((events, kwargs["consumed_offset"]))
+            return original(events, **kwargs)
+
+        monkeypatch.setattr(watch_batch, "process_watched_batch", record_batch)
         result = main(["start", "--dry-run"])
         assert result == 0
+        assert len(batches) == 1
+        assert any(event.type == "loop.started" for event in batches[0][0])
+        assert batches[0][1] > 0
         captured = capsys.readouterr()
         assert "started" in captured.out.lower() or "dry" in captured.out.lower()
         assert (

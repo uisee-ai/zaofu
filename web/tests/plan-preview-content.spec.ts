@@ -41,6 +41,7 @@ for (const action of ["replan-approve", "replan-reject"]) {
     await expect.poll(() => actions.length).toBe(1);
     expect(actions[0].name).toBe(action);
     expect(actions[0].payload).toMatchObject({ approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" });
+    await page.unrouteAll({ behavior: "wait" });
   });
 }
 

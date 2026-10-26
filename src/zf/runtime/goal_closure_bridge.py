@@ -373,6 +373,7 @@ class GoalClosureBridgeMixin:
         candidate_child_authorities: dict[str, dict] = {}
         product_report: dict = {}
         product_report_descriptor: dict = {}
+        source_types = {item.id: item.type for item in events}
         for event in reversed(events):
             if event.type != "workflow.call.result.admitted" or not isinstance(event.payload, dict):
                 continue
@@ -488,8 +489,15 @@ class GoalClosureBridgeMixin:
                             }
             if (
                 not product_report_descriptor
-                and str(body.get("control_result_schema") or "")
-                == "verification-result.v1"
+                and (
+                    str(body.get("control_result_schema") or "")
+                    == "verification-result.v1"
+                    or (
+                        body.get("control_result_schema") == "workflow-read-result.v1"
+                        and source_types.get(str(body.get("source_event_id") or ""))
+                        == "flow.discovery.child.completed"
+                    )
+                )
                 and result_generation
                 and same_task_map_generation(
                     result_generation,

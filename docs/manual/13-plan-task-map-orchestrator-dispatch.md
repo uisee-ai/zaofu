@@ -308,3 +308,7 @@ uv run zf refs verify
 
 相关阅读：[Harness 运行流程](04-harness-runtime.md)、[交付控制模型](concepts/delivery-control-model.md)、
 [观察一次交付](operations/observe-delivery.md)。
+
+## OA 与 WRC 的 v4 委派闭环
+
+启用并接纳 OA `pre_impl` 执行计划后，v4 WRC 消费其中的 task-stage 角色偏好与能力约束，保持依赖、容量和状态迁移的确定性权限。阶段结果在聚合/关闭检查点回流；精确 Impl 返工由 v4 operation 接续。字段语义、回退策略、启用边界与验证入口见 [OA + WRC 实现说明](../impl/oa-wrc-task-pipeline-delegation.md)。

@@ -1094,3 +1094,59 @@ def test_full_prd_semantic_control_run_is_replay_safe_and_auditable(
     assert replayed_narrative.replay_hit is True
     assert metrics["summary"]["required_read_closure_rate"] == 1.0
     assert hydrate_sidecar_ref(state_dir, report_ref).payload == report
+
+
+def test_oa_adopt_does_not_replace_human_plan_approval(tmp_path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    from zf.core.config.loader import load_config
+
+    config_path = tmp_path / "zf.yaml"
+    config_path.write_text(f"""project:
+  name: approval-regression
+  workspace: {tmp_path}
+  state_dir: {state_dir}
+roles:
+  - name: orchestrator
+    backend: mock
+    role_kind: reader
+    triggers: [orchestrator.semantic.checkpoint.requested]
+workflow:
+  plan_approval: true
+  orchestration:
+    flow_policies:
+      prd:
+        mode: semantic_control
+        pilot_id: approval-regression
+        checkpoints: [plan_candidate, pre_impl]
+  kind_routes:
+    prd:
+      pattern_id: route
+      default_tier: full
+  stages:
+    - id: route
+      trigger: test.requested
+      topology: fanout_reader
+      roles: [orchestrator]
+""")
+    config = load_config(config_path)
+    runtime = Orchestrator(state_dir, config, _RecordingTransport())
+    provision_role_submit_credential(state_dir, "orchestrator")
+    provision_role_artifact_read_credential(state_dir, "orchestrator", role_name="orchestrator", provider="mock")
+    trigger, loaded = _candidate(runtime)
+    gate = dict(stage_id="impl-writers", trigger_event=trigger, loaded=loaded, trace_id="run-oa-mock-e2e")
+    assert not runtime._plan_approval_satisfied(**gate)
+    checkpoint = next(e for e in runtime.event_log.read_all() if e.type == "orchestrator.semantic.checkpoint.requested")
+    prepared = prepared_operation_from_checkpoint_event(runtime, checkpoint)
+    event = _submit_result(runtime, prepared, _adopt_decision(prepared))
+    apply_orchestrator_agent_decision(runtime, event)
+    assert not runtime._plan_approval_satisfied(**gate)
+    events = runtime.event_log.read_all()
+    assert not any(e.type == "plan.approved" for e in events)
+    requests = [e for e in events if e.type == "plan.approval.requested"]
+    assert len(requests) == 1
+    assert requests[0].payload["plan_id"] == trigger.id
+    runtime.event_writer.append(ZfEvent(type="plan.approved", actor="zf-cli", payload={"plan_id": trigger.id, "semantic_control": True}))
+    assert not runtime._plan_approval_satisfied(**gate)
+    runtime.event_writer.append(ZfEvent(type="plan.approved", actor="operator", payload={"plan_id": trigger.id}))
+    assert runtime._plan_approval_satisfied(**gate)

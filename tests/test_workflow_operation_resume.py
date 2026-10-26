@@ -750,3 +750,55 @@ def test_budget_amendment_before_block_does_not_authorize_redrive(
 
     assert projection["summary"]["operation_pending"] == 0
     assert projection["operation_checkpoints"] == []
+
+
+@pytest.mark.parametrize("reason", ["fast_stop", "graceful_stop"])
+@pytest.mark.parametrize("started", [False, True])
+def test_stopped_reader_resumes_same_request_without_repeating_settled_sibling(
+    tmp_path: Path, reason: str, started: bool,
+) -> None:
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    log = EventLog(state_dir / "events.jsonl")
+    service = WorkflowOperationService(
+        state_dir=state_dir, event_log=log, event_writer=EventWriter(log),
+    )
+    kwargs = dict(
+        workflow_run_id="run-1", operation_id="reader-1",
+        operation_type="fanout_reader_child",
+        request={"candidate_head": "a" * 40}, task_id="FLOW-1",
+    )
+    requested = service.ensure_operation(**kwargs)
+    if started:
+        service.mark_started(
+            operation_id="reader-1", request_hash=requested.request_hash,
+            workflow_run_id="run-1", task_id="FLOW-1", dispatch_id="reader-attempt",
+        )
+    service.interrupt(
+        operation_id="reader-1", request_hash=requested.request_hash,
+        workflow_run_id="run-1", task_id="FLOW-1", reason=reason,
+    )
+    sibling = service.ensure_operation(**{**kwargs, "operation_id": "reader-2"})
+    service.settle(
+        operation_id="reader-2", request_hash=sibling.request_hash,
+        workflow_run_id="run-1", task_id="FLOW-1",
+        admitted_call_result_ref={"ref": "results/2.json", "sha256": "b" * 64},
+    )
+    projection = build_workflow_resume_projection(state_dir, _config())
+    checkpoint = projection["operation_checkpoints"][0]
+    assert checkpoint["safe_resume_action"] == "redrive_interrupted_reader_operation"
+    assert len(projection["operation_checkpoints"]) == 1
+    applied = apply_workflow_resume(
+        state_dir, _config(), checkpoint_id=checkpoint["checkpoint_id"],
+    )
+    assert applied["applied"] == 1
+    replay = service.ensure_operation(**kwargs)
+    assert replay.status == "requested"
+    assert replay.request_hash == requested.request_hash
+    assert reduce_workflow_operations(log.read_all())["reader-2"]["status"] == "settled"
+    second = apply_workflow_resume(
+        state_dir, _config(), checkpoint_id=checkpoint["checkpoint_id"],
+    )
+    assert second["applied"] == 0
+    assert sum(e.type == "workflow.operation.redrive_admitted" for e in log.read_all()) == 1
