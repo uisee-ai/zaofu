@@ -104,3 +104,20 @@ Candidate rework planner 与 `candidate-rework-apply` 不再把它当第二次�
 reader currentness 同时忽略历史版本从此类投影误派生的候选失效记录。正式
 `goal.closure.rejected` 的受控 replan/复验路径及普通 `test.failed` 返工保持有效。
 真实恢复中发现的 hold→legacy rework→取消新 Judge 已覆盖回归测试；历史账本不改写。
+
+Graph 对任务级 Verify 的当前性使用当前 Candidate 的已集成 task source commit
+绑定，不要求任务提交 SHA 等于合并后的 Candidate SHA。仅 `task_verify` 可以使用
+这条精确来源关联；其他 Run、未集成任务、旧代次和 Candidate Verify 仍按原规则拒绝。
+真实浏览器验证发现的8项错误 stale 投影按此修正，Goal closure 结论不受影响。
+
+Blocking Task Pipeline 的 `candidate-freeze-receipt.v1` 不携带旧 writer fanout 的
+任务/lane manifest。候选级 reader 入口识别当前 frozen 回执，沿用 YAML 的 affinity
+profile 中配置的 reader角色池，以完整冻结候选为验证范围；不再把回执的 planning
+fanout_id 当作 writer children。配置本体不改写，当前代次、冻结提交、结果准入和
+聚合门禁不变；shadow、旧版候选事件、过期代次仍走原有路径与保护。
+
+Autoresearch 与真实 mixed runner 的完成统计共用 canonical task completion 计数：
+兼容旧 `task.status_changed(to=done)`，并纳入内核
+`task.done(authority=task_integration_receipt)`，同一 TaskStore 的任务ID只计一次。
+worker 自报及 `dev.build.done` 不算完成。Product Flow 的等待仍必须看到
+`run.goal.completed`；完成任务数不能代替 Goal/交付闭环。

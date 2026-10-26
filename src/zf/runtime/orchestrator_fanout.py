@@ -68,7 +68,7 @@ from zf.runtime.orchestrator_agent_dispatch_fences import (
     pre_impl_dispatch_fence,
     stage_barrier_blocks_dispatch,
 )
-from zf.runtime import skill_briefing, task_pipeline_fanout
+from zf.runtime import skill_briefing, task_pipeline_fanout, task_pipeline_candidate_readers
 from zf.runtime.lane_stage_handoff import (
     LANE_STAGE_HANDOFF_FAILURE_EVENT,
     LANE_STAGE_HANDOFF_SUCCESS_EVENT,
@@ -2494,11 +2494,7 @@ class FanoutCoordinationMixin(
             and not str(trigger_payload.get("workflow_invoke_pattern_id") or "")
         ):
             return False
-        stages = [
-            stage for stage in getattr(self.config.workflow, "stages", [])
-            if stage.topology == "fanout_reader" and stage.trigger == event.type
-            and self._fanout_stage_matches_trigger_event(stage, event)
-        ]
+        stages = task_pipeline_candidate_readers.candidate_reader_stages(self, event)
         if not stages:
             return False
         if suppress_stale_task_pipeline_generation(

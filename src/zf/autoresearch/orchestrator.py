@@ -27,6 +27,7 @@ from zf.autoresearch.review_gate import (
     prepare_review_gate_summary,
 )
 from zf.autoresearch.scenarios import AutoresearchScenario, resolve_scenario
+from zf.autoresearch.task_completion import count_completed_tasks
 from zf.autoresearch.stuck_incident import (
     audit_stuck_incident,
     event_log_for_worktree,
@@ -991,7 +992,7 @@ def summarize_events(
         event_models,
         required=stuck_incident_required,
     )
-    done = 0
+    done = count_completed_tasks(events)
     fatal = None
     fatal_count = 0
     dispatch_by_instance: dict[str, int] = {}
@@ -1006,10 +1007,6 @@ def summarize_events(
     for event in events:
         event_type = str(event.get("type") or "")
         event_counts[event_type] = event_counts.get(event_type, 0) + 1
-        if event_type == "task.status_changed":
-            payload = event.get("payload") or {}
-            if isinstance(payload, dict) and payload.get("to") == "done":
-                done += 1
         if event_type in FATAL_EVENT_TYPES:
             fatal_count += 1
             if fatal is None:

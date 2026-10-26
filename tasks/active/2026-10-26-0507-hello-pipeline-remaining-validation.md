@@ -4,10 +4,10 @@
 
 用户已批准继续执行上一轮未验证部分。基于 `a841ef5c`、当前工作树 `zaofu-hello-pipeline-fixes`。继续使用 zf-backlog-batch-closeout；只提交本分支，不合并或推送。上一轮证据及局限保留，不覆盖原失败结果。
 
-- [ ] RV-01 新 Run 完整终态 -> verify: 从 `prod-new-prd-20261026-fix` 的 candidate.ready 恢复，候选 Verify、产品复扫、Judge、blocking OA pre_closeout 以及 Goal/交付审计；核对无重复 Impl、原批准不被重造。
+- [x] RV-01 新 Run 完整终态 -> verify: 从 `prod-new-prd-20261026-fix` 的 candidate.ready 恢复，候选 Verify、产品复扫、Judge、blocking OA pre_closeout 以及 Goal/交付审计；核对无重复 Impl、原批准不被重造。
 - [ ] RV-02 真实 AR loop -> verify: 实际 Codex/provider 跑过技能预检、内层任务、eval/reflection、loop 终态；若失败，定位并修复后重新验证，不用单元测试代替真实 loop。
-- [ ] RV-03 广域确定性回归 -> verify: 先复现两项基线问题并解决正确性/测试基建问题；按分片记录全部 deterministic 测试的结果与范围，host/real-provider 独立分层，不覆盖旧失败。
-- [ ] RV-04 连续交接性能 -> verify: 保存新控制进程的处理延迟、任务交接和停顿原因；有明确热点则修复并回归，不将局部查询基准当作全链路延迟。
+- [x] RV-03 广域确定性回归 -> verify: 先复现两项基线问题并解决正确性/测试基建问题；按分片记录全部 deterministic 测试的结果与范围，host/real-provider 独立分层，不覆盖旧失败。
+- [x] RV-04 连续交接性能 -> verify: 保存新控制进程的处理延迟、任务交接和停顿原因；有明确热点则修复并回归，不将局部查询基准当作全链路延迟。
 - [ ] RV-05 收尾 -> verify: 提交实现与验证记录，只有已通过项标 done；停止本轮临时 runtime/tmux/Web，保留可审计产物与恢复依据。
 
 证据目录：`/tmp/zf-hello-followup-20261026T050741Z/evidence/`。前轮详细记录：[已归档批次](../done/2026-10-26-0339-hello-pipeline-validation-fixes.md)。新 Run 保留原目录 `/tmp/zf-hello-fixes-20261026/fresh/product`，与真实 dev 的 8001 和其他运行项目隔离。
@@ -88,3 +88,56 @@ passed、flow-smoke 10 passed。这里不包含 host/real_provider，也不冒�
 修复在 planner、受控动作准入、reader currentness 三处维持同一边界：兼容投影
 不能授权返工；历史错误派生记录不能消耗真实产品失败的重试预算或取消恢复reader。
 不修改既有账本、终态结果、候选提交或审批。该发现保留在真实失败记录中。
+
+
+后续实现提交：`790a1d4f fix: bind approval lifecycle evidence into goal closure reads`；
+`a9b0493d fix: keep goal compatibility projections out of candidate rework`。
+兼容路由修复的影响闭包347 passed、sentinel51 passed、flow mock10 passed。
+真实账本只读复核：candidate rework source ids为空、reader fences为空，旧错误
+兼容事件已不能再授权返工；补证fact有18条原始事件，任务阶段派发仍16次、无重复。
+恢复动作 `evt-f426e6e4bba8` 已成功产生新aggregate及Judge派发。
+
+RV-04连续交接实测（followup-audit.json）：五个reader受控redrive到派发为
+30.59/22.15/92.83/83.36/74.37秒；14个结果准入到child投影中位10.99秒、最大52.26秒。
+这些样本包括旧控制进程和真实provider/队列等待，尚不能声明端到端秒级或稳定SLA。
+已证明配置解析优化与真实链路推进；后续若要求吞吐SLA，需要单独定义负载及分位指标。
+
+## 新 Run 终态与 Graph 复核
+
+06:29:49 `run.goal.completed`=`evt-7de4416c8e6c`，原候选9169cbd未变；新Judge
+与blocking OA均已准入，OA读取87项必读来源并提交aggregate、无未关闭claim。
+终态交付审计passed：dossier、完成回执和owner消息请求都匹配本次终态；未配置
+外部飞书，所以不声明外部送达。Docker Playwright显示done/Ready to ship、41个
+编译节点、0页面错误；截图仍揭示8项任务Verify被误标stale（任务SHA与候选SHA不同）。
+修复复用精确Candidate来源绑定；Graph/绑定/Web API闭包61 passed、sentinel51 passed。
+修复后已重启隔离Web并用Docker Playwright复核：8项task Verify全部current/passed，
+11个claim关闭、0 gap；browser-domain-assertions.json为真实浏览器领域断言。
+
+## AR 候选 checkpoint 新阻断
+
+第四次实验成功走过受控stuck注入/恢复、Impl提交d0e6699b、独立task Verify和候选冻结。
+随后candidate Verify报missing_affinity_child_identity：v4冻结回执的fanout_id指向
+planning provenance，旧affinity派生错误地把planner当writer lane。正在接入v4冻结
+候选的配置reader pool，保留精确候选/版本/结果门禁，恢复不重新执行已完成任务。
+
+v4冻结候选reader修复通过实际Orchestrator入口验证：当前blocking回执派发配置的
+两个reader、重复触发不重复派发；shadow/旧事件/过期代次不绕过原affinity保护。
+候选角色范围来自既有YAML；没有伪造writer manifest或改写原计划/候选。
+
+候选reader影响闭包182 passed、最终sentinel51 passed、flow mock10 passed。
+06:54受控stage-retrigger `evt-17b76a7cb324`成功派发2个真实Codex candidate Verify，
+冻结候选3fb65eee不变；此前的1次Impl/1次task Verify没有重复。
+
+### AR 完成数计数兼容缺陷与监督恢复
+
+原第四轮在停止runtime重载修复时结束为incomplete0/1，原journal保留。实际
+`task.done`=`evt-2f7603ba1e6b`已产生，但旧outer summary和mixed runner只计
+`task.status_changed(to=done)`。新增共享计数模块，识别kernel integration receipt、
+按canonical task ID去重；自报/中途build不算done，require_run_goal继续等待正式Goal。
+真实账本现在为1/1；计数/runner/summary53 passed，loop/CLI调用闭包53 passed。
+
+恢复严格匹配原生成配置SHA256=72f1771a6b0b30cd192aa20ef3e3c861e6583e94cc9932f227e74382177ba1e8。
+独立监督验证适配器resume-ar-loop.py通过同一run_loop引擎及真实eval/reflection/git
+回调等待原Run终态；不重新submit、不reset状态、不覆盖原失败轮次，输出到
+ar-loop-checkpoint。只有真实Goal、stuck关联审计、交付审计都通过才返回passed。
+这证明范围是“真实监督断点恢复闭环”，不等于原轮次无需介入一次通过。
