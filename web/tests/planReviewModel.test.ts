@@ -1,5 +1,6 @@
 const assert = { equal(a: unknown, b: unknown) { if (a !== b) throw new Error(`${a} !== ${b}`); }, doesNotThrow(fn: () => unknown) { fn(); } };
-import { buildPlanReview, planArtifactUrl } from "../src/components/delivery-trace/planReviewModel.js";
+import { buildPlanReview, planArtifactUrl, resolvePlanPreviewItem } from "../src/components/delivery-trace/planReviewModel.js";
+import type { OperatorInboxItem } from "../src/api/types";
 const task = { task_id: "T1", title: "调整库存", source_ref: "spec.md#stock", acceptance_criteria: [{ id: "AC1", statement: "只扣差额", verification_command_ids: ["VC1"] }] };
 const legacy = buildPlanReview({ task_map: { tasks: [task], owner_decision_items: [{ decision_id: "Q1", affected_task_ids: ["T1"], status: "pending" }] }, source_inventory: { pages: [{ id: "A01", task_id: "T1" }], forms: [] } });
 assert.equal(legacy.modules[0].specification, "");
@@ -21,3 +22,13 @@ assert.equal(duplicate.warnings.length, 2);
 assert.equal(planArtifactUrl("p/q", "a?b", "task_map"), "/api/projects/p%2Fq/plans/a%3Fb/artifacts/task_map");
 // A large Plan must not inherit the old summary's first-50-task truncation.
 assert.equal(buildPlanReview({ task_map: { tasks: Array.from({ length: 80 }, (_, i) => ({ ...task, task_id: `T${i}` })) } }).modules.length, 80);
+
+const preview = { plan_id: "plan-owner" };
+const ownerItem = { id: "approval-owner", plan_id: "plan-owner", owner_route: "plan_synth_owner_decision", proposal_ref: "proposal.json", eval_ref: "evaluation.json" } as OperatorInboxItem;
+const unrelated = { ...ownerItem, plan_id: "other-plan" };
+// A deep link opens before Inbox finishes loading; later data must supply its identity.
+assert.equal(resolvePlanPreviewItem(preview, [], unrelated), null);
+assert.equal(resolvePlanPreviewItem(preview, [unrelated, ownerItem]), ownerItem);
+assert.equal(resolvePlanPreviewItem(null, [ownerItem], ownerItem), null);
+const refreshed = { ...ownerItem, status: "resolved" };
+assert.equal(resolvePlanPreviewItem(preview, [refreshed], ownerItem), refreshed);

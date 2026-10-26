@@ -33,6 +33,43 @@ _TERMINAL_TASK_STATUSES = frozenset({"done", "cancelled"})
 _STAGE_ORDER = {"impl": 1, "verify": 2, "acceptance_review": 3, "integration": 4}
 
 
+def normalize_task_pipeline_operation_semantics(
+    state_dir: Path,
+    operations: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Recover a missing implementation verdict from its immutable result.
+
+    Older ``dev.build.done`` producers stored ``passed`` under
+    ``self_check.verdict`` while admission recorded ``pending`` at the
+    operation level.  The sidecar is the durable semantic body, so the
+    projection can derive the effective verdict without mutating events.
+    """
+
+    normalized: list[dict[str, Any]] = []
+    for raw in operations:
+        row = dict(raw)
+        stage = str(row.get("stage") or row.get("task_pipeline_stage") or "")
+        verdict = str(row.get("semantic_verdict") or "").strip().lower()
+        descriptor = row.get("admitted_control_result_ref")
+        if stage == "impl" and verdict == "pending" and isinstance(descriptor, Mapping):
+            try:
+                from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+                body = hydrate_sidecar_ref(
+                    Path(state_dir), dict(descriptor)
+                ).payload
+            except Exception:
+                body = None
+            if isinstance(body, Mapping):
+                effective = str(body.get("verdict") or "").strip()
+                if not effective and isinstance(body.get("self_check"), Mapping):
+                    effective = str(body["self_check"].get("verdict") or "").strip()
+                if effective:
+                    row["semantic_verdict"] = effective
+        normalized.append(row)
+    return normalized
+
+
 def read_task_pipeline_projection(
     state_dir: Path,
     *,
@@ -101,6 +138,7 @@ def read_task_pipeline_projection(
         attempts=attempts,
         session_bindings=bindings,
         external_gate_satisfied_task_ids=satisfied_external_gate_ids,
+        state_dir=state_dir,
     )
 
 
@@ -116,6 +154,7 @@ def build_task_pipeline_projection(
     external_gate_satisfied_task_ids: Iterable[str] = (),
     oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
     preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
+    state_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Build a deterministic projection suitable for live and archive replay."""
 
@@ -137,6 +176,11 @@ def build_task_pipeline_projection(
         for row in reduce_workflow_operations(event_rows).values()
         if _matches_current_generation(row, contexts)
     ]
+    if state_dir is not None:
+        operation_rows = normalize_task_pipeline_operation_semantics(
+            state_dir,
+            operation_rows,
+        )
     attempt_rows = [
         dict(row)
         for row in attempts
@@ -899,6 +943,7 @@ def _digest(value: Any) -> str:
 __all__ = [
     "TASK_PIPELINE_PROJECTION_SCHEMA",
     "build_task_pipeline_projection",
+    "normalize_task_pipeline_operation_semantics",
     "read_task_pipeline_projection",
     "write_task_pipeline_projection",
 ]

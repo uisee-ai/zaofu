@@ -236,6 +236,13 @@ D02 的备选方案是只修改计划，把完整候选 AC 放到集成任务，
 - 对应：F01、D01；所有者：Runtime/Web；依赖：D01 确认。
 - 变更面：审批事件、Preview 投影、必要的 UI/产物阅读入口及相关测试。
 - 新请求携带已有正式 Plan 引用；完整正文优先，摘要单独保留。
+- Plan Critic 在完整 Plan 发布前触发 owner decision 时，通用 checkpoint 审批卡也必须携带同一组
+  完整正文、task map 和来源索引引用，并复用只读 Preview API；回答 owner decision 仍保持阻塞，
+  不得由预览卡直接孵化 writer。
+- 在 owner gate 之前固化不可变 `plan-preview-bundle.v1`，绑定完整正文、需求 Markdown、task map、
+  source index 和已产生的矩阵端口；审批 payload 同时声明 `plan_content_profile`、来源引用和 bundle digest。
+  Dashboard 分开显示完整正文、需求原文、任务图、矩阵附件和机械摘要；`summary_only` 或未声明完整性
+  必须直观标识，不能把短摘要冒充完整 Plan。
 - 对缺少完整引用的旧 pending 请求，只沿已绑定因果事件/正式 Package 解析，不扫描目录猜测，
   不重写历史事件；无可靠来源时明确显示不可用并走受控重新交接。
 - 先构造含完整正文、Digest、矩阵和长文末尾标记的真实审批链测试 → verify: 当前能复现引用丢失或错误选择。

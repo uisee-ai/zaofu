@@ -1125,7 +1125,8 @@ spec:
     assert result["schema_version"] == "workflow.submit.apply.v1"
     assert result["status"] == "accepted"
     assert result["workflow_invoke_status"] == "pending_consumer"
-    assert "zf start" in result["next_action"]
+    assert result["runtime_start"]["status"] == "running"
+    assert "runtime is ready" in result["next_action"]
     events = EventLog(tmp_path / ".zf-apply" / "events.jsonl").read_all()
     types = [event.type for event in events]
     assert "workflow.submit.requested" in types

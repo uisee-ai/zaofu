@@ -481,7 +481,7 @@ def test_claude_headless_turn_parses_reply_and_persists_thread(
     assert result.reply == "final headless answer"
     assert result.usage == {"input_tokens": 3, "output_tokens": 4}
     assert result.permission_snapshot["backend"] == "claude-headless"
-    assert result.permission_snapshot["permission_profile"] == "read_only"
+    assert result.permission_snapshot["permission_profile"] == "workspace_writer"
     assert result.permission_snapshot["permission_mode"] == "bypassPermissions"
     assert result.permission_drift == {"status": "ok", "items": []}
     sent = json.loads(capture.read_text(encoding="utf-8"))
@@ -1414,7 +1414,7 @@ def test_chat_orchestrator_can_use_claude_headless_backend(
     runtime_snapshots = [event for event in events if event.type == "runtime.snapshot.recorded"]
     assert session_started[-1].payload["snapshot_ref"] == runtime_snapshots[-1].payload["snapshot_ref"]
     snapshots = [event for event in events if event.type == "provider.permission.snapshot.recorded"]
-    assert snapshots[-1].payload["snapshot"]["permission_profile"] == "read_only"
+    assert snapshots[-1].payload["snapshot"]["permission_profile"] == "workspace_writer"
     assert snapshots[-1].payload["runtime_snapshot_ref"] == runtime_snapshots[-1].payload["snapshot_ref"]
     turn_completed = [
         event for event in events

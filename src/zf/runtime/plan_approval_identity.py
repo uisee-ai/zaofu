@@ -1,9 +1,10 @@
-"""Stable approval identity for an execution scope and its reviewed artifact."""
+"""Bind a reviewed artifact fallback into pending Plan approval identity."""
 
 from __future__ import annotations
 
-import hashlib
 from typing import Any
+
+from zf.runtime.plan_approval_fingerprint import plan_approval_fingerprint as fingerprint
 
 
 def plan_approval_fingerprint(
@@ -12,16 +13,12 @@ def plan_approval_fingerprint(
     pdd_id: str,
     task_items: list[Any],
     artifact_digest: str = "",
+    identity: dict[str, str] | None = None,
 ) -> str:
-    task_ids = sorted(
-        str(
-            getattr(item, "task_id", "")
-            or (item.get("task_id") if isinstance(item, dict) else "")
-            or ""
-        )
-        for item in task_items
+    bound_identity = dict(identity or {})
+    if artifact_digest and not bound_identity.get("plan_artifact_package_digest"):
+        bound_identity["plan_artifact_package_digest"] = artifact_digest
+    return fingerprint(
+        stage_id=stage_id, pdd_id=pdd_id, task_items=task_items,
+        identity=bound_identity,
     )
-    identity = [stage_id, pdd_id, *task_ids]
-    if artifact_digest:
-        identity.append(artifact_digest)
-    return hashlib.sha256("|".join(identity).encode("utf-8")).hexdigest()[:16]

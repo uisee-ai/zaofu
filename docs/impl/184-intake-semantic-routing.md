@@ -18,14 +18,72 @@ Workflow Synthesis Operation、Proposal 编译器及 Task Map 合同，没有增
 选择后的必需 source/target 输入仍会检查，不能借 auto 的中性字段要求绕过校验。
 历史请求保留原 kind，不因重放 auto 隐式迁移。
 
-需要模型建议时，调用方显式传入 `synthesis_backend`，使用已有持久化 Synthesis
-Operation。Agent 根据完整需求和目录选路；内核验证版本、摘要、目录、schema 和准入。
-没有 backend 时，系统返回待澄清，不额外发起模型调用。
+受控 workflow-request 的 kind=auto 默认进入已有持久化 Synthesis Operation。
+已初始化项目确认 `idea-to-product` 时也立即创建同一 Workflow Request 并开始准备，
+使 Workflows 列表可见；不再仅记录一层无人执行的嵌套提案。确认表示准备需求、
+问答与 YAML Preview，配置应用和运行仍需各自批准。显式 `proposal_only=true`
+以及未初始化项目保留原提案行为；不凭产品想法伪造完整 Task 合同。
+准备消费者的单轮限额只计算实际处理的操作；已完成预览或已返回问答的操作
+不占用名额，避免同一项目的后续请求永远排队。
+编译被阻断时，详情页仍按当前 Request revision/digest 展示不可变候选中的 YAML
+和阻断原因；它不会成为可批准的 Request 绑定，旧 revision 的候选也不会显示。
+backend 优先采用显式 synthesis_backend、原操作 backend、请求 backend、项目 Run Manager
+backend，最后为 codex。Agent 根据完整需求和目录选路，内核校验版本、目录和准入。
+单独的 flow intake/classify 仍只收集需求，不隐式调用模型。
 已确认 Requirement 的 `ready` 表示需求可供 Synthesis 读取，并不表示路线已选定。
 
 相同输入重试不修订 Requirement，同版本已完成结果可复用；真实语义字段变化才修订。
 取消、需求修订、过期返回、Provider 失败沿用既有生命周期检查，不回退到关键词选路。
 Proposal 仍须通过受控 submit 才启动；重复 submit 复用已启动实例。
+
+### Task-bound Workflow 的路径合同
+
+Delivery 点火预检按字段用途校验 Task 路径：`scope`、`shared_files`、
+`exclusive_files` 以及普通 worker 的 `handoff_artifacts` 保持项目内相对路径，
+不能指向 `.git` 或 `project.state_dir`。`exclusions` 表示禁止修改的位置，
+允许列出 `.git/**` 和配置的运行态目录，但仍拒绝绝对路径、`..` 和越界符号链接。
+
+由 `execution_binding.owner=workflow`（兼容旧 `evidence_contract.execution_owner`）
+标记的父任务，其 `handoff_artifacts` 会绑定为 Workflow 输入 `artifact_refs`，
+可引用已有文件或目录的绝对路径，例如外部交接 Markdown、素材目录和数据库样例目录。
+这些引用不授予写入权限；绝对路径必须存在，不能指向项目内部状态，不能包含 `..`。
+预览保留原始引用、排除项和 Task 摘要，不重写 Task，也不追加启动事件。
+回归覆盖见 `tests/test_contract_validation.py` 与 `tests/test_workflow_start_service.py`。
+
+### 批准后自动启动项目运行器
+
+`workflow-start` 的 CLI、Kanban Agent 和 Channel Group 批准入口，以及
+`zf flow submit --apply`，在请求受控提交后调用同一个运行器启动器
+`src/zf/runtime/workflow_runtime_start.py`。预览、提案和被拒绝的请求不会启动运行器。
+启动器按 `zf.yaml` 的 `project.state_dir` 锁定启动记录，复用已有 watcher，或在
+项目根目录后台执行当前安装的 `zf start`。子进程固定目标 Project 上下文，移除
+Web/Workflow 授权凭证，仍执行原有 preflight、tmux/transport、sidecar 和 catch-up。
+
+`zf start` 完成启动后发布与 watcher PID/epoch 绑定的 readiness 投影；响应中的
+`runtime_start.status=running` 表示运行器已就绪，不表示 Workflow 或代码交付已完成。
+并发启动和重试复用同一进程；`runtime.start.requested`、`runtime.start.failed` 记录
+启动副作用。日志位于 `<state_dir>/logs/workflow-runtime-start.log`。
+启动失败或等待超过 30 秒返回明确失败/仍在启动信息，保留已提交 Request 与原提案；
+修复环境后重试原提案，不追加第二个 invoke。首次提交生成的 Request 标识不会改写
+原提案的输入摘要；Task、参数、配置和来源 currentness 检查继续生效。
+
+### Dashboard 默认写权限
+
+`zf web` 在未配置权限策略时默认启用写操作：loopback 使用可信本机会话，
+非 loopback（含 `0.0.0.0`）复用或创建 Workspace 的 `web-action-token`（权限 0600）。
+已有 Token/Passcode/可信会话策略保持不变；`--read-only` 显式禁用写操作。
+`tools/start-webkanban.sh` 默认可写，并输出 `write_url`；浏览器从 URL fragment
+读取授权到既有 Token 存储，立即清除 fragment，再发送 API 请求。Token 不进入 HTTP
+请求路径、查询参数或 Referer。局域网匿名请求仍被拒绝；所有写操作仍经过受控 action。
+Kanban Agent 默认文件权限统一为 `workspace_writer`（Write），Workflow 独立批准仍然必需。
+显式选择 `dangerous_full` 继续要求原有确认字段，不通过省略权限字段隐式扩大写入范围。
+未传权限字段的 API、Agent 直接调用、交互续跑、启动恢复和队列派发统一采用同一写权限
+默认值；明确传入 `read_only` 继续生效。`ZF_WEB_TRUSTED_SESSION=0` 只禁用免鉴权的
+可信会话，自动配置 Token 写操作；只读 Dashboard 需明确传入 `--read-only`。
+
+回归见 `tests/test_workflow_runtime_start.py`、`tests/test_cli_web_access.py`、
+`web/tests/dashboardLaunch.test.ts`。真实 watcher/tmux + mock Provider 的三个入口验证见
+`tests/e2e/test_workflow_runtime_autostart.py`（显式 `host` 层），不等同真实模型交付验证。
 
 ## 验证材料
 
@@ -106,3 +164,35 @@ PYTHONPATH=src /home/min/workspace/public/zaofu/.venv/bin/python scripts/dev-ver
 flow smoke（10 passed）均通过。相对 dev 的范围包含此前 184 的 Web 后端修复，
 所以保留 Web 边界检查。临时复用的 `web/node_modules` 链接已移除。
 测试组存在重叠，不累加为独立用例总数。
+
+
+## 统一准备与完整 YAML Preview（2026-10-25）
+
+关联任务：2026-10-25-1258-workflow-prepare-and-yaml-preview.md（实施后归档至 tasks/done）。
+
+Kanban/Channel 的交付建单提案使用 prepare_workflow=true，由批准后的 create-task 创建
+Task，再调用同一个受控 workflow-request。完整合同、验收、来源和 Channel 授权从
+canonical Task 继承；仅跟踪省略标记，旧显式 route Plan 保留兼容。
+已有 Task 通过 `zf workflow prepare --task TASK-ID` 或 workflow-request(kind=auto) 准备。
+
+Web AskUserQuestion 展示 Request 当前问题，答案持久化为新的 Requirement revision，
+按原操作上下文/Provider 重新合成。CLI 用 --request、--revision 和可重复的
+`--answer '原问题=答案'` 回答；--enqueue-only 仅入队。取消、失败、旧版本不回退
+关键词选路。所选 Flow 的必需 root 缺失也回到澄清，不产生可执行提案。
+
+Web 生命周期托管最多两个项目准备消费者，复用原 process lease/Operation；没有 zf start
+也能完成准备。它不派发 Task、不运行完整 runtime tick、不启动 Run。CLI 默认同步消费
+本 Request 当前 revision，不抢其他请求，运行器仍能消费相同持久化操作。
+
+Proposal 的 effective_config_ref 增加完整、多文档、脱敏 yaml 字段，来自不可变配置候选。
+原始 SHA 仍绑定私有候选，对外 YAML 用于审核，不作为批准写入的输入。Workflows 展示
+Assembled zf.yaml、Config Diff、Execution Plan；CLI
+`zf workflow preview --request REQUEST-ID --format yaml` 使用同一快照。旧 Proposal
+没有该字段时不伪造全文，须准备新版才能看到全文。
+
+配置变更仍先受控 Apply config，再精确 Approve & Run。提交重查 Task 合同与 Channel
+Owner/PRD 绑定，不允许省略或替换 task_id 绕过来源。运行后 Plan 人审开关保持原语义。
+
+回归：tests/test_workflow_prepare.py、tests/test_workflow_preparation_worker.py；浏览器：
+web/tests/workflow-preparation.spec.ts。测试只模拟 Provider 语义结果和启动边界，不代表
+真实模型质量或产品最终验收。

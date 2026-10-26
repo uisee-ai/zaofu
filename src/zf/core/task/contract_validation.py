@@ -48,9 +48,10 @@ def validate_task_contract(
         if isinstance(contract.evidence_contract, dict)
         else {}
     )
-    workflow_owned = str(
-        evidence_contract.get("execution_owner") or ""
-    ).strip() == "workflow"
+    workflow_owned = (
+        task.execution_binding.owner == "workflow"
+        or str(evidence_contract.get("execution_owner") or "").strip() == "workflow"
+    )
     if (
         not contract.owner_role
         and not contract.owner_instance
@@ -77,7 +78,15 @@ def validate_task_contract(
         ("handoff_artifacts", contract.handoff_artifacts),
     ):
         for value in values or []:
-            reason = _invalid_contract_path_reason(str(value), project_root)
+            reason = _invalid_contract_path_reason(
+                str(value),
+                project_root,
+                state_dir=config.project.state_dir,
+                allow_internal=field_name == "exclusions",
+                # Workflow parents supply inputs through artifact_refs; worker
+                # handoffs remain project-relative output paths.
+                allow_external_input=workflow_owned and field_name == "handoff_artifacts",
+            )
             if reason:
                 errors.append(f"{prefix}.{field_name} {value!r}: {reason}")
 
@@ -283,18 +292,33 @@ def _has_enabled_quality_checks(config: ZfConfig) -> bool:
     return False
 
 
-def _invalid_contract_path_reason(value: str, project_root: Path) -> str:
-    if not value:
+def _invalid_contract_path_reason(
+    value: str,
+    project_root: Path,
+    *,
+    state_dir: str,
+    allow_internal: bool = False,
+    allow_external_input: bool = False,
+) -> str:
+    if not value.strip():
         return "empty path"
     path = Path(value)
-    if path.is_absolute():
+    if path.is_absolute() and not allow_external_input:
         return "absolute paths are not allowed"
     if any(part == ".." for part in path.parts):
         return "parent traversal is not allowed"
-    if path.parts and path.parts[0] in {".zf", ".git"}:
-        return "runtime/internal paths are not allowed"
     try:
-        (project_root / path).resolve().relative_to(project_root.resolve())
-    except ValueError:
-        return "path escapes project root"
+        resolved = (project_root / path).resolve()
+        internal_roots = [project_root / ".git", project_root / state_dir]
+        if not allow_internal and any(
+            resolved.is_relative_to(root.resolve()) for root in internal_roots
+        ):
+            return "runtime/internal paths are not allowed"
+        if path.is_absolute() and allow_external_input:
+            if not (resolved.is_file() or resolved.is_dir()):
+                return "external input must be an existing file or directory"
+        elif not resolved.is_relative_to(project_root.resolve()):
+            return "path escapes project root"
+    except (OSError, RuntimeError, ValueError):
+        return "path cannot be resolved"
     return ""

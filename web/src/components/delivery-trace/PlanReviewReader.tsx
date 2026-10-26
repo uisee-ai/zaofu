@@ -47,7 +47,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
     <nav className="plan-document-toolbar" aria-label="计划审阅视图">
       {views.map(([id, label]) => <button key={id} className="delivery-action-button" type="button" aria-pressed={view === id} onClick={() => setView(id)}>{label}</button>)}
     </nav>
-    {view === "original" ? <PlanMarkdownDocument content={preview.markdown || ""} /> : <div className="plan-review-scroll" role="region" aria-label="计划审阅内容" tabIndex={0}>
+    {view === "original" ? <PlanMarkdownDocument content={preview.markdown || ""} reviewContent={preview.review_dossier_markdown || ""} /> : <div className="plan-review-scroll" role="region" aria-label="计划审阅内容" tabIndex={0}>
       <p className="muted">以下内容来自本次 Plan 的绑定附件；规划条目与场景不代表实现或测试已通过。</p>
       {loading && <p role="status">正在读取同版规格…</p>}
       {errors.map(error => <p role="alert" key={error}>附件读取失败：{error}。请查看完整原文。</p>)}

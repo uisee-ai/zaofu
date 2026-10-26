@@ -502,8 +502,13 @@ export function OrchestratorPanel({
   const appliedAgentProfile = recordValue(webChatRuntime?.agent_profile?.profile);
   const permissionProfile = textValue(
     appliedAgentProfile?.permission_profile || agentSurface?.permission_profile,
-  ).trim() || "dangerous_full";
-  const mutationEnabled = Boolean(snapshot?.runtime.actions?.mutation_enabled);
+  ).trim() || "workspace_writer";
+  // A project snapshot is intentionally token-agnostic and may report
+  // mutation_enabled=false when it was hydrated without the browser token.
+  // A locally saved token is the explicit fallback authorization for this
+  // surface, so it must participate in the same gate as the snapshot flag.
+  const mutationEnabled = Boolean(snapshot?.runtime.actions?.mutation_enabled)
+    || tokenPresent;
   const headlessConversationId = kanbanAgentConversationId(headlessProjectId);
   const webChatInteractionDraftKey = interactionDraftStorageKey(
     headlessProjectId,
@@ -1051,7 +1056,7 @@ export function OrchestratorPanel({
       override: options.permissionProfileOverride,
       projectId: headlessProjectId,
       runtime: webChatRuntime,
-      fallback: textValue(agentSurface?.permission_profile).trim() || "dangerous_full",
+      fallback: textValue(agentSurface?.permission_profile).trim() || "workspace_writer",
       loadRuntime: () => getWebChatRuntime(headlessProjectId, {
         conversationId: headlessConversationId,
         threadId: headlessThreadKey,

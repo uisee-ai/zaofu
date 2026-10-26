@@ -239,16 +239,10 @@ uv run --project "$ZAOFU_ROOT" zf flow submit \
 `--allow-missing-env` 只适合受控 dry-run 或 CI 预览，不应拿来掩盖真实运行缺失的
 provider、Git、tmux 或测试工具。
 
-### 4.4 启动 runtime，再显式点火
+### 4.4 显式点火，自动启动 runtime
 
-终端 A：
-
-```bash
-cd "$TARGET_PROJECT"
-uv run --project "$ZAOFU_ROOT" zf start
-```
-
-终端 B：
+提交被接受后会自动在项目目录后台执行 `zf start`；已有运行器会复用。
+无需先在另一个终端手动启动。需要前台观察时，仍可提前手动执行 `zf start`。
 
 ```bash
 cd "$TARGET_PROJECT"
@@ -312,7 +306,7 @@ zf project init --kind refactor ...
 
 ## 7. Web：全局 Onboarding 与 Add/Open Project
 
-设置受控写操作 token，并以 workspace 模式启动 Dashboard：
+以默认可写的 workspace 模式启动 Dashboard：
 
 ```bash
 "$ZAOFU_ROOT/tools/start-webkanban.sh" \
@@ -321,9 +315,11 @@ zf project init --kind refactor ...
   --workspace-only
 ```
 
-launcher 会复用或创建 action token，并统一加载 Workspace/provider 环境和可信本地
-Codex headless sandbox 策略。直接 `zf web` 是低层调试入口，不应作为 Channel /
-Kanban Agent 的默认启动方式。
+launcher 会复用或创建 action token，输出 `write_url`。用该链接打开页面即可自动
+获得操作权限，无需手动粘贴 Token；`--host 0.0.0.0` 时将链接中的主机换成服务器 IP。
+launcher 统一加载 Workspace/provider 环境和可信本地 Codex headless sandbox 策略。
+显式传入 `--read-only` 可禁用写操作。直接 `zf web` 在 loopback 且未配置权限策略时
+也默认可写；网络监听使用授权链接，已有 Token/Passcode 配置继续生效。
 
 首次安装引导固定为：
 

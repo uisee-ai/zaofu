@@ -180,8 +180,9 @@ def test_in_memory_dispatch_index_tracks_pipeline_assignment(assignment):
         ("task_map_generation", "old-map"),
     ],
 )
+@pytest.mark.parametrize("shell", [False, True])
 def test_old_dispatch_cannot_override_current_placement(
-    assignment, monkeypatch, field, value
+    assignment, monkeypatch, field, value, shell
 ):
     _, _, workspace, log, writer, _ = assignment
     dispatch = [
@@ -199,9 +200,12 @@ def test_old_dispatch_cannot_override_current_placement(
             },
         )
     )
-    assert invoke(assignment, monkeypatch, workspace / "src/app.ts") == 0
+    assert invoke(assignment, monkeypatch, workspace / "src/app.ts", shell=shell) == 0
     assert (
-        invoke(assignment, monkeypatch, workspace.parent / "old/project/src/app.ts")
+        invoke(
+            assignment, monkeypatch, workspace.parent / "old/project/src/app.ts",
+            shell=shell,
+        )
         == 2
     )
 

@@ -1,0 +1,178 @@
+{
+  "schema_version": "test-matrix.v1",
+  "status": "draft",
+  "metadata": {
+    "objective": "基于两份原生 v1.4 Markdown 重新生成完整人类可读 PRD Preview：读取 docs/prd/v1.4_需求补齐增补.md 与 docs/prd/行泊一体数据闭环工具链_总体设计与UIUX规格_v1.4_需求补齐与验收追踪版.md，保留 Appendix B T01-T10、342 条逐项 trace、页面1-6、drawer、通知、键盘和窄屏细节；Plan Preview 必须先人工 approval，禁止自动启动 impl/verify。",
+    "adapter_skills": [
+      {
+        "name": "source-verification",
+        "sha256": "431fbf90ac1e1b840d283d1a7fc532f21bf870f1f361253470cdec81d9f7c201"
+      },
+      {
+        "name": "context-hygiene",
+        "sha256": "ba5dd37b616fe144ca7beb5862c721d27e49c9005e933a343a736691a88d8fce"
+      },
+      {
+        "name": "zf-workflow-adaptation-boundary",
+        "sha256": "17c4c4b1b697511b911cf0711d9dc75abe3558436a5894d406ec809d13ba9652"
+      },
+      {
+        "name": "zf-project-adapter-matrix-enrichment",
+        "sha256": "705ba03d8f16b306fe7afec812f2e96588740aaaf1ea43721f14319446855c4b"
+      },
+      {
+        "name": "zf-prd-plan-synth",
+        "sha256": "ab00d27dee94d776c4519bff6515797037c1e13b19fe0362c99e021d77b6f1dd"
+      },
+      {
+        "name": "zf-yoke-planner-role-context",
+        "sha256": "099f889a243abbdfb43a7ff6baa7eb9a73ee3bc694c6acc522c74f3e940927f9"
+      },
+      {
+        "name": "zf-yoke-critic-role-context",
+        "sha256": "3061fa450176765b109acf145d093adfd1a61e4d6246b05867801f4d2b96b209"
+      },
+      {
+        "name": "zf-verify-rescan-replan",
+        "sha256": "17b200f009056382102efd9ca970d8310237f8523bf3e6e55920ebbd8f641d80"
+      },
+      {
+        "name": "zf-goal-closure-replan-contract",
+        "sha256": "6bad3c3bff8993badbd0f59339e6a66f6605cd03fd526fb1810d1162849b9864"
+      },
+      {
+        "name": "zf-yoke-test-evaluator-role-context",
+        "sha256": "84e1f80e27d13c675c7ca97090ab4cb74cf9062862c1d65d215c3ce118f13cb7"
+      },
+      {
+        "name": "zf-goal-closure-judge-contract",
+        "sha256": "b427e98a6a8586548dd7f8c2d6fb6ca262220b1d234cb67da54e7455b1ae4d3f"
+      },
+      {
+        "name": "zf-yoke-dev-worker-role-context",
+        "sha256": "53567277ea422ec4218c6d112dfaab2d29cfb59bc5ec8c7894d4b3b151efae0b"
+      },
+      {
+        "name": "zf-browser-e2e-contract",
+        "sha256": "94e705ae9c7c9744722e74835417c7c925020b7cf476993921ef0ff6734f3003"
+      },
+      {
+        "name": "vertical-slicing",
+        "sha256": "d77c38757b16c37e9ea96a8ece518b7537207a3422ff8c78c89908f2448b1311"
+      },
+      {
+        "name": "grill",
+        "sha256": "55ffcce4226b88ba772f3bf7f0a831870b77fc1e4b890d49f5e48108052f6d6f"
+      },
+      {
+        "name": "zf-plan-task-map-contract",
+        "sha256": "80f5a6a2ffbd767932c65a962a273aad94bc4dc5e69b3cea5ca33ff2dcba470d"
+      },
+      {
+        "name": "zf-gap-task-synth",
+        "sha256": "860e487b73ce29a21598f33ed79558ad77b075b6c202bc94c4b7b2296cd41e0d"
+      },
+      {
+        "name": "zf-plan-execution-readiness",
+        "sha256": "3314b37e7f8368131fff176aed500dd994e55e417b162a78fbac22286658ae04"
+      },
+      {
+        "name": "zf-verify-gap-producer-contract",
+        "sha256": "5b24e16bfd1c0384eb3c2a6a21bf9c8d591fdee001cfe616b97cfbcc06aca38b"
+      },
+      {
+        "name": "verify-review",
+        "sha256": "3081c089a9937b22af7a15f9d75157182e23d967012fa2a8ff71b0f1a64825a0"
+      },
+      {
+        "name": "zf-harness-verification-checklist",
+        "sha256": "96cd40f7f198b1032f2a19d646193ae4055d8a8b8ccb11d5d5a3e1487da49c26"
+      },
+      {
+        "name": "zf-mechanical-claim-verifier",
+        "sha256": "351b4284621e9d61189c4ddbef8ec44fa6e503bbd72ecf8cbb5b8a6235947dc9"
+      },
+      {
+        "name": "tdd-evidence",
+        "sha256": "e74272b5412ad7d8547f01d9d7eb14755ab792133bcef41cf8a2c143e6a9099d"
+      },
+      {
+        "name": "incremental-delivery",
+        "sha256": "a7892e76ed4ba985316dff324d10c39e384fa6d5ec0723dcbc7d97f55865e9d4"
+      },
+      {
+        "name": "debugging-triage",
+        "sha256": "b8d0f1eb4b21040667f2e12833db5f8ffba9de6817f188d3f01df929b2a1cb14"
+      },
+      {
+        "name": "git-evidence",
+        "sha256": "86c18a3b0b771f8e2a36a566513e175420a86d725acff4bd4fb1bc8486e5a5f6"
+      },
+      {
+        "name": "zf-harness-done-contract",
+        "sha256": "be65e0424b2dd4714795d31a802de55ffd589409f67217d0e11d931873fd9c3f"
+      },
+      {
+        "name": "zf-find-simplifications",
+        "sha256": "1943250617fdb9a0519f0878d4fdfdba038daf716c6b9e05c9131c2c31c609e5"
+      },
+      {
+        "name": "zf-dynamic-artifact-gate",
+        "sha256": "c127a2abadbc482eadfaa45a0c9b4f8149e802348d53a01eabafe0f02bbeb491"
+      }
+    ],
+    "adapter_skill_plan_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/skill-adapter-plan.json",
+    "adapter_skill_plan_digest": "500082cea8c3474b52f0a77ee43adaa91f2dd313fc6eaf7e9a39bfae6f3a7167",
+    "created_at": "2026-10-24T15:19:06.740871+00:00",
+    "source": "zf-flow-intake",
+    "enrichment_contract": {
+      "schema_version": "delivery-matrix-enrichment-contract.v1",
+      "status": "requires_scan_plan_enrichment",
+      "owner": "project-adapter-skill",
+      "principle": "Runtime generated a portable draft only. Scan/plan skills must replace placeholders with project facts before final judge.",
+      "required_updates": [
+        "source_inventory must cite concrete source files/modules.",
+        "capability_matrix must map source behavior to target behavior.",
+        "acceptance_matrix must state user-visible acceptance criteria.",
+        "test_matrix.commands[] is the only command registry and must include deterministic verification commands or evidence refs.",
+        "task_map must assign each blocking capability to a lane/role.",
+        "real_e2e_matrix must declare real command/evidence for surfaces that need live validation."
+      ],
+      "command_policy": {
+        "mode": "declared_only",
+        "runtime_behavior": "real E2E runner executes only commands declared in real_e2e_matrix rows.",
+        "adapter_requirement": "For each required real-e2e row, scan/plan/verify skills must replace empty command placeholders with project-specific commands or attach passing evidence_refs with a clear reason.",
+        "forbidden": [
+          "Do not hard-code project commands in runtime.",
+          "Do not mark a required real-e2e row passed without command output or evidence_refs.",
+          "Do not use mock-only commands for release/full-parity validation unless objective explicitly says mock."
+        ]
+      },
+      "flow_kind": "prd",
+      "surfaces": [
+        "product"
+      ],
+      "adapter_skill_phases": [
+        "scan",
+        "plan",
+        "verify",
+        "real_e2e"
+      ]
+    }
+  },
+  "commands": [
+    {
+      "id": "test-prd-product",
+      "command_id": "test-prd-product",
+      "capability_id": "prd-product",
+      "acceptance_ids": [
+        "accept-prd-product"
+      ],
+      "tier": "integration",
+      "command": "",
+      "command_source": "project-adapter-skill",
+      "status": "planned",
+      "evidence_required": true
+    }
+  ]
+}

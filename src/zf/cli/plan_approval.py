@@ -22,7 +22,7 @@ from zf.core.events.writer import EventWriter
 from zf.runtime.plan_preview_artifacts import preview_artifact_path
 
 
-def _pending(events) -> list[dict]:
+def _pending(events, workflow_run_id: str | None = None) -> list[dict]:
     state: dict[str, dict] = {}
     for event in events:
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -33,7 +33,13 @@ def _pending(events) -> list[dict]:
             state[plan_id] = {**payload, "requested_ts": event.ts}
         elif event.type in ("plan.approved", "plan.rejected"):
             state.pop(plan_id, None)
-    return list(state.values())
+    pending = list(state.values())
+    if workflow_run_id:
+        pending = [
+            item for item in pending
+            if str(item.get("workflow_run_id") or "") == workflow_run_id
+        ]
+    return pending
 
 
 def _checklist(task_map_path: Path) -> list[str]:
@@ -62,6 +68,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
     register_execution(sub)
     review = sub.add_parser("review", help="List plans awaiting review with digest and checklist")
+    review.add_argument("--workflow-run-id", default=None)
     review.set_defaults(func=_run)
     ap = sub.add_parser("approve", help="Approve a plan and unlock writer fanout")
     ap.add_argument("plan_id")
@@ -91,7 +98,7 @@ def _run(args: argparse.Namespace) -> int:
     events = list(log.read_all())
 
     if args.plan_cmd == "review":
-        pending = _pending(events)
+        pending = _pending(events, getattr(args, "workflow_run_id", None))
         if not pending:
             print("No plans are awaiting review.")
             return 0
@@ -100,6 +107,10 @@ def _run(args: argparse.Namespace) -> int:
             ref = str(item.get("task_map_ref") or "")
             print(f"plan {plan_id}  stage={item.get('stage_id')}  "
                   f"tasks={item.get('task_count')}  pdd={item.get('pdd_id')}")
+            print(
+                f"  workflow_run_id: {item.get('workflow_run_id') or '(none)'}  "
+                f"task_map_generation: {item.get('task_map_generation') or '(none)'}"
+            )
             print(f"  task_map: {ref}")
             digest_ref = str(item.get("digest_ref") or "")
             digest = ""

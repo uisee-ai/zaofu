@@ -351,6 +351,57 @@ def test_delivery_route_rejects_incomplete_task_contract_before_invoke(
     assert EventLog(state_dir / "events.jsonl").read_all() == []
 
 
+def test_delivery_preview_preserves_external_handoff_and_internal_exclusions(
+    tmp_path: Path,
+) -> None:
+    project_root, state_dir = _project(tmp_path)
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("Product specification", encoding="utf-8")
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    artifacts = [str(handoff), f"{assets}/"]
+    task = Task(
+        id="TASK-EXTERNAL-HANDOFF",
+        title="Deliver the supplied specification",
+        contract=TaskContract(
+            behavior="Implement the supplied product specification.",
+            verification="Run the specification acceptance checks.",
+            verification_tiers=["runtime"],
+            scope=["src/**"],
+            exclusions=[".git/**", ".zf/**"],
+            source_ref=str(handoff),
+            handoff_artifacts=artifacts,
+        ),
+    )
+    mark_workflow_managed_task(task)
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(task)
+    before = (state_dir / "kanban.json").read_bytes()
+    service = WorkflowStartService(
+        state_dir, load_config(project_root / "zf.yaml"), project_root=project_root,
+    )
+
+    preview = service.preview(
+        {
+            "task_id": task.id,
+            "route_id": "delivery:prd:standard",
+            "objective": task.title,
+            "parameters": {"target_root": str(project_root)},
+        },
+        require_bindings=False,
+    )
+
+    assert preview["ok"] is True, preview
+    parameters = preview["payload"]["parameters"]
+    assert parameters["artifact_refs"] == artifacts
+    assert parameters["constraints"] == [".git/**", ".zf/**"]
+    assert preview["payload"]["task_input_binding"]["task_contract_digest"] == (
+        task_workflow_binding_digest(task)
+    )
+    assert (state_dir / "kanban.json").read_bytes() == before
+    assert EventLog(state_dir / "events.jsonl").read_all() == []
+
+
 def test_service_uses_request_origin_and_rejects_target_override(
     tmp_path: Path,
 ) -> None:

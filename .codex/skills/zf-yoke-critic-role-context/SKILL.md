@@ -60,12 +60,14 @@ AC 或风险。
 按以下顺序检查：
 
 1. owner/Goal 原意是否全部映射到 mandatory AC，是否发生静默收窄；
-2. AC 是否描述可观察结果，而不是实施步骤、文件列表或命令；
-3. 每个 mandatory AC 是否绑定 verification owner、tier 和 command id；
-4. 每条 canonical command 是否能由下游从 repo root 按存储原文执行；若
+2. authority 的领域/模块/能力/用户旅程是否都有覆盖 disposition；是否存在“章节有
+   引用但模块业务规则没有正文”的空洞覆盖；
+3. AC 是否描述可观察结果，而不是实施步骤、文件列表或命令；
+4. 每个 mandatory AC 是否绑定 verification owner、tier 和 command id；
+5. 每条 canonical command 是否能由下游从 repo root 按存储原文执行；若
    Planner 只能通过重写、补转义或“等价命令”证明它，必须 Reject。含多层
    shell/interpreter 转义的 inline program 应改为 task-owned 测试/脚本；
-5. 每个 mandatory AC 的行为与 evidence 是否有明确 producer，producer 的
+6. 每个 mandatory AC 的行为与 evidence 是否有明确 producer，producer 的
    `allowed_paths` 是否覆盖生成 evidence 所需的实现、runner 配置、spec、
    fixture 和输出登记路径；
    不要把 command registry 的定义 owner、writer 路径 owner 和 verification
@@ -82,11 +84,11 @@ AC 或风险。
    以及 writable scope 是否无重叠。host/container/tmp 只读操作数属于 Task
    顶层 `verification_read_paths` 和 canonical command 边界，不属于 writer
    `allowed_paths`。只有路径无 owner、owner 重叠或依赖顺序不可满足时才 Reject；
-6. Final assembly 是否只聚合已生成的 evidence refs；如果它必须修改上游
+7. Final assembly 是否只聚合已生成的 evidence refs；如果它必须修改上游
    Playwright/测试/仿真配置才能满足 AC，则当前 task map 不可满足，必须 Reject；
-7. `e2e` / `real_e2e` command 是否真的调用合同指定的 application/browser/
+8. `e2e` / `real_e2e` command 是否真的调用合同指定的 application/browser/
    provider/simulation；分析模型、fixture replay 或 mock 不得冒充真实执行；
-8. 区分 Plan readiness 与 execution evidence：implementation 前尚未生成的
+9. 区分 Plan readiness 与 execution evidence：implementation 前尚未生成的
    screenshot/trace/receipt 是计划内未来产物，不得据此 Reject。若 producer task
    已拥有 runner/config/test/evidence paths，且声明的 sanctioned runner 可用，计划
    可以进入实施；browser 场景按 `zf-browser-e2e-contract` 核对 Docker Playwright。
@@ -112,6 +114,11 @@ AC 或风险。
     deterministic Product E2E 与 Provider qualification 是否分层。此处只审核
     Planner 语义；run/revision/generation/ref/digest 由 Kernel Package admission 绑定，
     不得因计划期尚未产生 screenshot/receipt 而 Reject。
+
+14. 若本次是人工反馈后的 replan，逐项检查旧/新覆盖账本、SDD/TDD、Decision Register、
+    task map、依赖和 evidence diff；影响 scope、合同、owner、依赖或 AC 的变更必须重新
+    判定 approval 是否失效，不能沿用旧 verdict。未受影响的完成证据可以复用，但必须有
+    明确映射和当前 revision ref。
 
 先读取 required reads 中的 exact requirement/PRD authority artifact，再审 child
 plan。若 authority 明确规定 task ids、任务边界、依赖或 AC 归属，Critic 必须逐项
