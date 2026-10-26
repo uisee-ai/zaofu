@@ -57,3 +57,7 @@ Codex 当前使用 `tmux`。`stream-json` 仅准入 `claude-code`，包含逐副
 回归覆盖 `tests/test_activity_liveness.py`、`tests/test_orchestrator_agent_operations.py` 与 `tests/e2e/test_orchestrator_agent_semantic_control_mock_e2e.py`。本轮 backlog 与实际验证结果见 [任务记录](../../tasks/active/2026-10-26-0339-hello-pipeline-validation-fixes.md)。
 
 Autoresearch 实验配置的 `zaofu-skills` 和 `yoke` 来源优先绑定实验 checkout 的本地目录；本地不存在时才回退安装来源。存在本地 yoke 时显式声明来源，避免隐式 fallback 同时命中 driver 的副本。客户自定义来源保持原声明，严格碰撞校验不关闭。`tests/test_autoresearch_controller_skill_sources.py` 与实际 11 角色默认模板预检覆盖这一恢复分支。
+
+### 高并发下的派发归属读取
+
+日志看门狗查询角色活动任务时，派发归属使用活动账本的增量只读投影，通过 EventLog.read_from_offset 消费完整新增行，不再为每个角色重复搜索全部工具正文。保持原有 task/fanout 派发、重分配、重排和终态释放语义；日志替换、截断或轮转后重建，半行写入不提前消费。该缓存不是 canonical store，不产生派发或修改任务状态。

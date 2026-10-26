@@ -6,12 +6,12 @@
 
 ## Backlog 与验收
 
-- [ ] HW-01 正式配置准入：开放实现已具备的 Product Flow pilot 检查点 -> verify: YAML loader 到 OA/WRC caller 回归通过；仍拒绝无 pilot、非 Product Flow、micro/light。
-- [ ] HW-02 人工审批边界：OA adopt 与 Owner approval 分离 -> verify: 审批开启时 adopt 后只有精确版本审批请求且无 Impl；正式批准后派发；拒绝/重放不绕过。
-- [ ] HW-03 Provider 传输准入：拦截 Codex + Claude-only stream-json -> verify: 配置/preflight 给出明确错误，Codex tmux 与 Claude stream-json 保持可用。
+- [x] HW-01 正式配置准入：开放实现已具备的 Product Flow pilot 检查点 -> verify: YAML loader 到 OA/WRC caller 回归通过；仍拒绝无 pilot、非 Product Flow、micro/light。
+- [x] HW-02 人工审批边界：OA adopt 与 Owner approval 分离 -> verify: 审批开启时 adopt 后只有精确版本审批请求且无 Impl；正式批准后派发；拒绝/重放不绕过。
+- [x] HW-03 Provider 传输准入：拦截 Codex + Claude-only stream-json -> verify: 配置/preflight 给出明确错误，Codex tmux 与 Claude stream-json 保持可用。
 - [ ] HW-04 活动事件与阶段交接：复现注册表热路径并修复 -> verify: 噪声事件回归保证有界加载、保留活动/状态顺序；真实断点 Verify→集成继续且没有重复 Impl；新 Run 观察连续交接。
-- [ ] HW-05 OA 单会话互斥：多个检查点排队、结算后继续 -> verify: 同角色不同时注入两个 operation；恢复与重复事件不会丢失请求。
-- [ ] HW-06 恢复服务与交付闭环：核查 RM recommendation 消费和 AR 受控调用 -> verify: 实际入口回归覆盖建议→调用/明确拒绝；断点跑到 Judge/终态，有不足如实记录。
+- [x] HW-05 OA 单会话互斥：多个检查点排队、结算后继续 -> verify: 同角色不同时注入两个 operation；恢复与重复事件不会丢失请求。
+- [x] HW-06 恢复服务与交付闭环：核查 RM recommendation 消费和 AR 受控调用 -> verify: 实际入口回归覆盖建议→调用/明确拒绝；断点跑到 Judge/终态，有不足如实记录。
 - [ ] HW-07 复测与收尾：focused closure + sentinel + deterministic E2E + 隔离真实 Codex 入口/断点验证 -> verify: 保存命令/计数/证据；实现与任务状态提交，未通过项不得标 done。
 
 ## 实施原则
@@ -41,3 +41,26 @@ HW-06：断点恢复后 RM 建议已消费、AR invocation 与 loop 均启动；
 - Docker Playwright：Graph API 41 节点，实际 Delivery Graph 渲染成功，page_errors=[]。初次只读挂载配置和一次页面等待超时保留为测试基础设施失败，修正后重测成功。
 - 真实 fresh / resume 均通过 `zf start --control-plane-only` 加载提交代码，事件确认 `workers_preserved=true`。fresh 已完成一次 Plan Critic→Planner 返工并进入 blocking pre_impl；resume 已完成 8/8 候选 Verify、零产品缺口复扫并进入 Judge。
 - 未通过项继续保持 active；AR 真实 loop 初次失败仍保留，不以技能预检通过冒充真实 loop 完成。
+
+## 真实断点闭环结果
+
+- 续跑 Run：`prod-new-prd-20261026T015754Z-tmux`，候选提交 `b8893cf1b4764d151eba44da0a88fb1de73edec9`。
+- 8 次 Impl / 8 次 task Verify、8/8 增量集成；8/8 候选 Verify → 产品缺口复扫零阻断 → Judge passed → `run.goal.completed`（`evt-ecc84501c26f`）。续跑没有重复 task pipeline dispatch。
+- `prod_flow_terminal_audit.py` 最终 passed：Dossier ready、完成凭据与终态一致、Owner delivery request 存在。产品主分支 `npm test`：9 passed（包含 seed health）。
+- 交付审计覆盖本地请求闭环，不代表飞书实际送达：隔离环境未配置 alert 路由，保留 `feishu_route_unconfigured` 结果，没有配置或联系外部接收者。
+- `simulation.done` 已记录，旧测试 tmux / Run Manager / watcher 已按 `zf stop --fast --include-run-manager` 停止；候选、产物和证据保留。
+- follow-up 提交 `aea63c57 fix: normalize registry paths for safe serialization`；状态/heartbeat/AR 追加闭包 96 passed。
+- 实际交接时延仍随账本和投影负载变化：控制进程重载后 old Run 样本 30.8–62.7 秒，fresh 样本约 5.1–15.2 秒。32 hook 回放 1.22 秒只证明局部优化，不能宣称整个控制循环已经毫秒级。
+
+## 新 Run 审批与并行入口
+
+- `prod-new-prd-20261026-fix`：真实 Planner → Critic 拒绝范围验收缺口 → Planner 返工 → Critic approve → OA `pre_impl adopt` → OA `plan_candidate adopt`。
+- OA adopt 明确产生 `owner_approval_required=true`，仅一条正式 `plan.approval.requested`，当时 `plan.approved=0`、Impl dispatch=0。证据 `approval-held.json` 与 `browser-approval-held-*`。
+- 核对精确 Plan 包、8 个独立任务与16个独占文件后，通过 `zf plan approve evt-4b2e3c758639` 正式批准；并行入口已达到 8 个 Impl，分别为 dev-lane-0…7，审批时间早于所有派发。
+- 最终提交的 sentinel 再跑 51 passed（33.33 秒）；`fresh-pipeline-metrics.json` 持续保存实际任务并发与交接证据。
+
+## HW-04 第二处瓶颈修复
+
+真实 8 lane 验证仍观察到 200 秒级事件延迟，因此追加采样，而未将局部注册表优化宣称为完整性能修复。120 秒 py-spy 样本显示 `_capture_logs` → `_active_task_for_instance` → `_latest_dispatched_per_task` 为主要热点：活动账本被每角色重复全量字符串扫描。
+
+两条复现先 RED：新增正文后重复读取历史，以及 spaced JSON 的重排事件被字面匹配遗漏。改为通过 EventLog 完整新增行增量更新派发归属；覆盖重派发、fanout 终态释放、部分行、较大原子替换及截断。相关实际 caller/watchdog/recovery 闭包 109 passed；采样精度存在滞后，性能比例不作精确基准。
