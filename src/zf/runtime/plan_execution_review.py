@@ -220,20 +220,45 @@ def _graph(tasks: list[Mapping[str, Any]]) -> dict[str, Any]:
         for dep in ds:
             if dep in children:
                 children[dep].append(key)
-    queue = deque(key for key, degree in indegree.items() if not degree)
+    for dependents in children.values():
+        dependents.sort()
+    queue = deque(sorted(key for key, degree in indegree.items() if not degree))
     levels = {key: 1 for key in queue}
+    predecessor: dict[str, str] = {}
     visited = set()
     while queue:
         key = queue.popleft()
         visited.add(key)
         for child in children[key]:
-            levels[child] = max(levels.get(child, 1), levels[key] + 1)
+            depth = levels[key] + 1
+            if (depth > levels.get(child, 1)
+                    or (depth == levels.get(child) and key < predecessor[child])):
+                levels[child] = depth
+                predecessor[child] = key
             indegree[child] -= 1
             if not indegree[child]:
                 queue.append(child)
+    complete = len(visited) == len(nodes)
+    longest_path: list[str] | None = [] if complete else None
+    if complete and visited:
+        # Equal-length chains use task IDs for deterministic diagnostics, not priority.
+        cursor = min(visited, key=lambda key: (-levels[key], key))
+        while True:
+            longest_path.append(cursor)
+            if cursor not in predecessor:
+                break
+            cursor = predecessor[cursor]
+        longest_path.reverse()
+    tasks_by_level: dict[int, list[str]] = {}
+    for key in sorted(visited):
+        tasks_by_level.setdefault(levels[key], []).append(key)
     return {
         "task_count": len(tasks),
-        "longest_dependency_chain": max(levels.values(), default=0) if len(visited) == len(nodes) else None,
+        "longest_dependency_chain": max(levels.values(), default=0) if complete else None,
+        "longest_dependency_path": longest_path,
+        "tasks_by_level": dict(sorted(tasks_by_level.items())),
+        "direct_dependencies": {key: sorted(dependencies[key]) for key in sorted(nodes)},
+        "direct_dependents": {key: children[key] for key in sorted(nodes)},
         "level_widths": dict(sorted(Counter(levels[k] for k in visited).items())),
         "missing_dependencies": missing,
         "unresolved_task_ids": sorted(set(nodes) - visited),

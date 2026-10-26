@@ -3,7 +3,7 @@ name: zf-plan-execution-readiness
 description: "Planner/Critic 在 Plan 提交前审查条款验收责任、任务粒度和阶段集成；语义判断留在方法和评审证据中。"
 stages: [plan, replan, critic]
 tags: [planning, acceptance, slicing]
-dependencies: [vertical-slicing]
+dependencies: [vertical-slicing, zf-requirement-reconciliation]
 auto_inject: false
 load_on_demand: true
 ---
@@ -13,6 +13,10 @@ load_on_demand: true
 本方法用于把完整需求转换为可执行计划。它不定义新的 task schema，不写运行态，
 不替代 Kernel 的引用、路径、代际及完成证据检查。产物使用现有 Plan、task_map、
 矩阵和 Critic verdict；项目语义判断必须附来源，不能变成 Runtime 的项目规则。
+
+先读取 `zf-requirement-reconciliation` 核对来源及未决问题。大需求、未来范围尚待
+细化或需要调整依赖图时，按[薄 Epic 与渐进细化](references/epic-refinement.md)
+保留全局义务并形成当前执行边界；不把 Epic 规划状态写成 Kernel Task 状态。
 
 规划长依赖链、并行实现或新项目冷启动时，先按
 [执行路线与任务切片](references/execution-route.md)核对有效配置和反馈时点。
