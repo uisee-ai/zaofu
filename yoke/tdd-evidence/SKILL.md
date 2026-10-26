@@ -8,7 +8,8 @@ description: "测试驱动开发 + 完成证据纪律:测试先行、bug 先复�
 先写失败的测试,再写让它通过的代码;修 bug 先用测试复现。测试是证明——
 "看起来对了"不算完成。在 ZaoFu 里这不是风格偏好,而是**完成证据的生产线**:
 你的 `dev.build.done` 会被 4 道机械审计消费(schema / attempt 绑定 / 代际
-current / 契约 scope),verify reader 会复跑你的证据,复跑不过比没证据更重。
+current / 契约 scope)。Verify 按当前 wrapper 审核证据；允许复用的 current
+receipt 与必须独立执行的命令分开，不以作者的通过声明代替证据。
 
 ## 何时使用
 
@@ -21,11 +22,14 @@ current / 契约 scope),verify reader 会复跑你的证据,复跑不过比没�
 | 你产出的 | 谁消费 | 驳回条件 |
 |---|---|---|
 | 新测试 + 实现同 commit | verify reader 源码轴 | 只有实现没有测试 → gap finding |
-| `dev.build.done` 的 evidence(测试命令+计数) | 完成审计 + verify 复跑 | 不可复跑 = 假证据,直接返工 |
+| `dev.build.done` 的 evidence(测试命令+计数) | 完成审计 + Verify 证据核验 | 无有效结果不能签收；执行故障与产品失败分开 |
 | commit 前缀 `feat:`/`fix:` | 归档审计 | TDD 提交(测试+实现一体)用 `feat:`,不拆 `test:` |
 | bug 修复的复现测试 | verify 回归轴 | 修复无对应回归测试 → rework |
 
 ## TDD 循环
+
+Impl 开始前与 Verify 审核时读取[循环证据与例外处理](references/cycle-evidence.md)。
+它约束片内 RED/GREEN/REFACTOR 的证据，不增加 workflow 阶段或完成权限。
 
 ```
    RED               GREEN                REFACTOR
@@ -33,7 +37,8 @@ current / 契约 scope),verify reader 会复跑你的证据,复跑不过比没�
  测试必须失败      不过度设计            每步重跑测试
 ```
 
-1. **RED**:先写测试,必须先失败——立即通过的测试什么也证明不了。
+1. **RED**:先写行为测试，确认缺失行为导致失败。首跑即绿先核实行为是否已存在，
+   如实记录；不得故意破坏实现或伪造 RED。
    留下那次失败输出,它是证据链第一环。**先读 task contract 的
    `verification` 字段**:验收命令是真相,你的测试对齐它,不发明
    自己的验收——contract 就是 ZaoFu 的"预先约定 seam":测试写在
@@ -145,7 +150,7 @@ bug 报告 → 写复现测试 → 测试失败(bug 确证)→ 实现修复
 
 ## Red Flags
 
-- 写代码没有任何对应测试;测试首跑即过(可能没测到你以为的东西);
+- 写代码没有任何对应测试;测试首跑即过却未核实既有行为与断言意义;
 - "全部通过"但根本没跑;bug 修复无复现测试;
 - 跳过/禁用测试让套件变绿;代码未变重复跑同一命令。
 

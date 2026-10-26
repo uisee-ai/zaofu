@@ -1,7 +1,7 @@
 ---
 name: zf-channel-discussion-synthesizer
 description: "Use for the designated synthesizer in a ZaoFu fanout-then-synthesis Channel. Defines typed question-graph normalization, targeted cross-review, owner frontier, evidence-bound synthesis, dissent preservation, and all-role sign-off."
-dependencies: [zf-browser-e2e-contract]
+dependencies: [zf-browser-e2e-contract, zf-requirement-reconciliation]
 ---
 
 # Channel 需求澄清讨论 — Synthesizer 协议
@@ -87,6 +87,9 @@ synthesis。若请求携带上一次 rejection reason，必须基于最新 ledge
 不得原样重放。
 
 ## 收到 synthesis 请求时(channel.synthesis.requested 指向你)
+
+先读取并执行 `zf-requirement-reconciliation`，把来源去向与未决问题处理写入下面
+已有的覆盖、决定和风险产物；本方法不豁免 owner frontier 或正式 synthesis 门禁。
 
 问题依赖已满足、定向质询完成且 owner frontier 已清零后，产出综合 artifact：
 

@@ -21,3 +21,4 @@
 | 182 | [Plan 完整预览、任务拆分与验收证据闭环](182-plan-review-task-slicing-and-evidence-closure.md) | implemented | 完整 Preview、分层验收与 TDD/SDD 方法已实施；洛书受控重规划及浏览器复核完成，产品 Plan 保持待审批。 |
 | 185 | [主 Agent 路由、受控协作与 Workflow 断点恢复](185-agent-routing-delegation-and-workflow-recovery.md) | candidate | 区分 headless、单执行者、根 Agent 辅助协作与 Kernel Workflow；包含 Kimi 源码 review、Provider 能力准入、受控恢复及分期验收。 |
 | 186 | [项目交付工作台：Kanban、Graph 与 Loop 关联](186-unified-delivery-kanban-graph-and-loop.md) | candidate | 复用现有投影与任务身份，统一三视图导航、依赖与覆盖展示、尝试及恢复追踪；定义只读边界、分期实施与验收。 |
+| 187 | [借鉴 BMAD 的需求闭环、Epic 渐进细化、任务调度与 TDD](187-bmad-inspired-epic-task-map-and-tdd.md) | partial | 方法、薄 Epic 阅读层与依赖诊断已实施；[12 次真实模型对照](../records/2026-10-26-0431-187-model-effect-evaluation.md)质量基本持平，长程收益仍待验证；[实施说明](../impl/bmad-187-methods-and-validation.md)保留工程边界。 |

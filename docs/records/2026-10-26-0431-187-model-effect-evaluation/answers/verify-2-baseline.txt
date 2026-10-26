@@ -1,0 +1,19 @@
+产品 verdict：**rejected**，目标为 handoff 指定的 **revision-3**。这是产品语义失败，不是环境阻塞。已审查规格、交接、3 个源码文件及 3 个测试；复用 U3 的 `3 passed`，未重跑原 unit 命令。J2 属于 revision-2，不能证明当前组合入口正常。
+
+新增探针使用 `PYTHONDONTWRITEBYTECODE=1 python3 -B -`，仅在内存执行，无文件修改、依赖安装或联网。探针逐项捕获异常并打印结果，因此进程退出 0 不代表全部通过：实际为 **2 FAIL、1 PASS**。
+
+1. **Critical／AC-TXN：流水失败后库存未回滚。**
+   [transfer.py:2](/workspace/src/transfer.py:2) 先扣源、增目标，第 5 行才抛错。具名回归 `test_ledger_failure_rolls_back_all_state`：输入 `s={"source":10,"destination":0,"ledger":[]}`，保存深拷贝后调用 `transfer(s,3,fail_ledger=True)`；捕获 `RuntimeError("ledger unavailable")` 后断言 `s == before`。实际为 `{source:7,destination:3,ledger:[]}`，应保持 `{source:10,destination:0,ledger:[]}`。
+   漏检原因：[test_transfer.py:9](/workspace/tests/test_transfer.py:9) 只测成功路径的 `ok` 和源库存，没有错误注入、全状态断言。
+   **返工 owner：transfer 实现负责人**；在 transfer 与对应测试范围内保证扣源、增目标、流水原子性。完成条件：先保留上述业务失败证据，再修复至通过，并保留成功路径。
+
+2. **必改／AC-UI：当前真实组合入口抛出 KeyError。**
+   [transfer.py:7](/workspace/src/transfer.py:7) 返回 `transfer_id`，而 [presenter.py:5](/workspace/src/presenter.py:5) 读取 `id`。具名回归 `test_combined_entry_displays_transfer_id`：以上述初始库存调用 `transfer_and_present(s,3)`，断言结果为 `"转移完成：TX-7"`，且状态为 `{source:7,destination:3,ledger:[3]}`；实际在返回文本前抛出 `KeyError('id')`。
+   漏检原因：[test_transfer.py:15](/workspace/tests/test_transfer.py:15) 人工传入旧字段 `{"id":"TX-7"}`，绕过真实生产者，无法发现 revision-3 字段契约断裂。
+   **返工 owner：字段清理／组合入口负责人**；统一生产与展示契约，新增真实组合测试，不能只调整人工 payload 让局部测试变绿。
+
+**明确保留：**AC-COUNT 通过；`query.total` 未改动，已有回归有效。新增 `test_success_preserves_transfer_and_total_contracts` 也通过：转移后库存为 7/3、流水为 `[3]`、返回 `transfer_id=TX-7` 且 `ok=True`，总数仍为 10。保留这些成功行为。本期不含通知，不提出通知缺口。五轴结论：正确性失败；可读性、架构、安全、性能在本次范围内未发现额外必改点，字段边界问题已归入 AC-UI。
+
+**TDD 证据：未认证“完整执行 TDD”。**`ModuleNotFoundError: optional_test_helper` 是环境错误，不能证明业务 RED；修好环境后通过也不能补足历史链。DEV 应更正声明，为上述返工保留条款、具名测试、修复前业务失败及修复后通过的绑定证据。AC-COUNT 属既有正确行为的回归，首跑通过合理；不得故意改坏 query 来制造 RED。
+
+**责任边界：**Candidate Verify 必须覆盖三个非人工 AC，检查当前组合行为，不能以 Task done 或 U3 全绿替代验收。返工后应核验新版本差异、两项失败回归及受影响行为。Thin Judge 消费已接纳的当前证据判断闭合，不另跑产品测试、不修复代码，也不能用旧 J2 或完成声明覆盖失败。本次只提供只读评审，未提交平台结果或改变运行状态。
