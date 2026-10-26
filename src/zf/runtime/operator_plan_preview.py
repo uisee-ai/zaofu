@@ -447,6 +447,10 @@ def build_plan_preview(
             "repair_chat": "chat-orchestrator",
         },
         "owner_decision_items": decision_items,
+        "action_payload": {key: payload[key] for key in (
+            "proposal_ref", "eval_ref", "candidate_task_map_ref", "approval_ref",
+            "checkpoint_id", "workflow_run_id", "fanout_id", "source_event_id",
+        ) if payload.get(key)},
         "decision_count": len(decision_items),
         "policy": {
             "mutation_path": "controlled-action",
@@ -650,6 +654,8 @@ def _source_index_authority_refs(
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return []
     refs = data.get("authority_refs") if isinstance(data, dict) else []
+    if not isinstance(refs, list):
+        return []
     return [str(item) for item in refs if str(item).strip()]
 
 

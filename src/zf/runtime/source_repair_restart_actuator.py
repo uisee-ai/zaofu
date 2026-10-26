@@ -43,7 +43,7 @@ def _recorded_watcher_pid(state_dir: Path) -> int:
     except (OSError, json.JSONDecodeError):
         return 0
     try:
-        pid = int(payload.get("pid") or 0)
+        pid = int(payload.get("owner_pid") or payload.get("pid") or 0)
     except (TypeError, ValueError):
         return 0
     if pid <= 0 or not _looks_like_watcher(pid):

@@ -1,0 +1,1663 @@
+{
+  "schema_version": "task-scoped-plan-input.v1",
+  "shared": {
+    "decision_register": {
+      "items": [
+        {
+          "affected_task_ids": [
+            "RACE-FOUNDATION",
+            "RACE-DRIVE",
+            "RACE-TRACK",
+            "RACE-ASSEMBLY"
+          ],
+          "blocker_impact": "本版参数随 Plan 审批接受；若要求调整，先修订同版规格与测试，未批准不实施。",
+          "blocking": false,
+          "decision_id": "DEC-01",
+          "disposition": "proposed_for_plan_approval",
+          "evidence_refs": [
+            "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+            "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3"
+          ],
+          "options": [
+            {
+              "label": "采用 PRD 候选参数",
+              "option_id": "adopt"
+            },
+            {
+              "label": "在 Plan Chat 指定调整后重审",
+              "option_id": "revise"
+            }
+          ],
+          "question": "是否采用环形赛道、连续自由转向、刹车到零而不倒车的本版驾驶参数？",
+          "recommended_option_id": "adopt"
+        },
+        {
+          "affected_task_ids": [
+            "RACE-DRIVE",
+            "RACE-TRACK",
+            "RACE-ASSEMBLY"
+          ],
+          "blocker_impact": "禁止 writer 各自改分母或去重；不同规则须受控修订。",
+          "blocking": false,
+          "decision_id": "DEC-02",
+          "disposition": "proposed_for_plan_approval",
+          "evidence_refs": [
+            "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+            "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3"
+          ],
+          "options": [
+            {
+              "label": "采用本版计分及接触去重规则",
+              "option_id": "adopt"
+            },
+            {
+              "label": "调整计分参数并重新审批",
+              "option_id": "revise"
+            }
+          ],
+          "question": "是否采用只计历史最高合法路线进度、每米1分、每次接触事件扣20分且总分不低于0？",
+          "recommended_option_id": "adopt"
+        },
+        {
+          "affected_task_ids": [
+            "RACE-DRIVE",
+            "RACE-ASSEMBLY"
+          ],
+          "blocker_impact": "正常前台90秒完整比赛仍mandatory；不得借自动暂停缩短比赛。",
+          "blocking": false,
+          "decision_id": "DEC-03",
+          "disposition": "proposed_for_plan_approval",
+          "evidence_refs": [
+            "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/4"
+          ],
+          "options": [
+            {
+              "label": "自动暂停且显式继续",
+              "option_id": "adopt"
+            },
+            {
+              "label": "提出后台计时规则再审",
+              "option_id": "revise"
+            }
+          ],
+          "question": "是否在失焦或页面隐藏时自动暂停，并只由页面继续按钮恢复？",
+          "recommended_option_id": "adopt"
+        },
+        {
+          "affected_task_ids": [
+            "RACE-FOUNDATION",
+            "RACE-DRIVE",
+            "RACE-TRACK",
+            "RACE-ASSEMBLY"
+          ],
+          "blocker_impact": "Planner不改配置；writer实际访问权、消费者加载和预算在派发前由编排方核对，零值不代表无限。",
+          "blocking": false,
+          "decision_id": "DEC-04",
+          "disposition": "owner_clarification_retained",
+          "evidence_refs": [
+            "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/clarification_answers/0",
+            "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/clarification_answers/1",
+            "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/prepare-TASK-5F44B4-c32763f31115843f/workflow-preflight.json"
+          ],
+          "options": [
+            {
+              "label": "保持现配置及风险记录",
+              "option_id": "retain"
+            },
+            {
+              "label": "执行前受控调整预算或权限",
+              "option_id": "controlled_revision"
+            }
+          ],
+          "question": "是否保持已编译3实现/3验证 lane，保留未配置预算风险并由监工按实际用量观察？",
+          "recommended_option_id": "retain"
+        }
+      ],
+      "schema_version": "decision-register.v1"
+    },
+    "human_review": {
+      "assembly_local_review_ref": "docs/plans/assembly-self-check-addendum.md",
+      "journeys_markdown": "- J-DRIVE：开始并以两套键盘自由驾驶。DOM控制说明和赛道/障碍/车辆清楚可见，Canvas非空且操作后像素与位姿都变化；真实Arrow/WASD分别加速、刹车和连续改变朝向，静止及无效移动不增距离\n- J-CONTACT：避障碰撞和合法进度计分。真实驾驶撞边界/障碍出现闪红和碰撞文本，次数+1、分数按公式变化；持续接触不重复扣分，分离再撞新计一次；反向折返不重复得分\n- J-PAUSE：暂停、继续与重开。页面暂停后至少2秒全部比赛快照不变，继续后恢复且不补算暂停时间；running/paused/finished重开均清零全部状态且只有一个更新循环；失焦自动暂停，回到页面不自动继续或卡键\n- J-FINISH：完整90秒并查看结果再开局。独立比赛在容器真实Chromium按正常单调时间完整90秒，无fake clock、状态写入或缩短赛程；终局仅一次，距离/碰撞次数/总分一致；终局等待2秒和键盘输入后稳定；结束面板的重开按钮可见文本及可访问名称必须精确为“重新比赛”；真实点击该按钮后，按既定restart规则重置车辆、速度、输入、时间、距离、highWater、检查点、碰撞数及接触集、结果与结算计数并进入running，仍只有一个更新循环且能再次驾驶。",
+      "overview_markdown": "# 187 Racing Supervision — Plan Preview\n\n本版是供独立 Critic 和 Owner 审阅的完整派生计划。**提交计划不授权实施。Owner 显式批准本版 Plan 前，全部游戏 writer 和产品验证保持阻塞。**\n初始目标提交：`0937a8f1a57f5df1b5c196df3355613418300391`；目标应用就是当前项目，Task Map 的 target_root 为仓库相对 `.`。\n阶段结论：规划产物已准备；产品实现、独立验收和交付均 NOT_RUN。恰好使用已配置的3个实现lane，不新增角色。\n\n## PRD：交付目标与审批范围\n\n桌面 Chromium 单人俯视赛车；双键盘映射、自由转向、可见赛道与障碍、碰撞反馈、合法距离计分、90秒有效时间及开始/暂停/继续/重开/结束闭环。结束面板的重开按钮文案统一为“重新比赛”；行为仍遵循本版既定的重开规则。\n本次审阅的具体产品规则在 [PRD](../racing/prd.md)，完整正文也绑定 execution_spec.shared.prd，供搬移后的下游受控读取。\n非目标：移动触控、Firefox/Safari、联网多人/账号/排行榜、3D；保留原始范围中的 .gitignore，不省略任何需求。\n候选规则：环形赛道与8检查点，刹车到零、连续自由转向；新增历史最高合法进度计距离；每米1分、每次接触事件扣20分、最低0分；失焦自动暂停且显式继续。\n这些参数是Planner建议，由本次Plan审阅确认，未冒称既有Owner决定；DEC-01..03可在Plan Chat逐项修改。没有提出削弱90秒、Docker、独立验证或审批强度的选项。\n\n阶段可演示成果：先启动工程页；第二波能分别打开可驾驶比赛demo和赛道碰撞demo；第三波正式首页打通完整比赛。demo只是早反馈，最终验收始终使用正式根入口。\n\n"
+    },
+    "interfaces": "# 模块接口与执行规格（随本版 Plan 审批）\n\n## 边界与所有权\n\n浏览器本地单人应用，不引入服务器业务、账号、数据库或Provider。\nRACE-FOUNDATION 提供package/lockfile、Vite/TS/ESLint配置、src/contracts/types.ts、runner和启动骨架。\nRACE-DRIVE独占输入、时钟、运动与RaceState单一写入者；RACE-TRACK独占世界定义、扫掠碰撞与路线进度查询。\n二者只导入src/contracts，禁止互相导入，因此在共享契约完成后可并行。\nRACE-ASSEMBLY是唯一正式入口/接线负责人，src/main.ts将真实TrackPort注入RaceController，绑定DOM操作并把快照交给UI；不反向改兄弟目录。\n类型变更若影响兄弟必须受控replan或回到原owner，不以新增重复文件规避唯一所有权。\n\n## 数据和函数契约 v1\n\n- InputState={throttle:boolean,brake:boolean,steer:-1|0|1}；normalizeKeys(set):InputState由RACE-DRIVE实现。\n- Pose={x:number,y:number,headingRad:number,speedMps:number}；所有数必须有限。无效dt（负数/NaN/Infinity）与无效输入拒绝推进，返回原状态和diagnostic，不损坏终局。\n- TrackDefinition={center:{x,y},innerRadiusM,outerRadiusM,centerRadiusM,startPose,checkpoints:[{id,angleRad}],obstacles:[{id,x,y,radiusM}]}；固定PRD坐标/单位，render也读这份数据。\n- RouteState={lastAngleRad,unwrappedProgressM,highWaterM,nextCheckpointIndex,completedLaps}。\n- MotionQuery={from:Pose,proposed:Pose,dtSeconds,route:RouteState,contactIds:string[]}。\n- TrackPort.resolve(query):MotionResolution={pose:Pose,route:RouteState,validDistanceDeltaM:number,contactIds:string[],collisionStarted:boolean,collisionIds:string[],diagnostics:string[]}。纯函数，返回值不修改输入；裁剪实际轨迹后计算距离；collisionStarted遵循episode去重。\n- createRace(trackPort,config):RaceController；config.durationMs在生产固定90000，单测构造不改变正式入口。\n- RaceController.dispatch(action:'start'|'pause'|'resume'|'restart',nowMs):Readonly<RaceSnapshot>；tick(input,nowMs)只由浏览器单调时钟适配调用。\n- RaceSnapshot={phase,vehicle:Pose,elapsedActiveMs,remainingMs,distanceM,collisionCount,score,route,contactIds,result:RaceResult|null,finishCount}。\n- RaceResult={distanceM,collisionCount,score,elapsedActiveMs:90000}。\n- tick返回{snapshot,events:RaceEvent[]}；RaceEvent为collision.started（ids、count、penalty）或race.finished（结果）。只消费一次事件，不能用事件监听器再次改分数。\n- render(snapshot,trackDefinition,view):void只绘制；bindControls(controller):dispose管理键盘/按钮/blur/visibility。dispose释放监听器/rAF，重开不创建重复loop。\n- window.__racingSnapshot()仅供只读观察，返回深复制冻结数据；无setter、快进、自动驾驶或缩短赛程入口。所有用户操作经实际键盘与HTML按钮。\n\n数值边界与更新顺序以PRD为准。几何计算误差阈值1e-6m，分离阈值0.01m；同一测试输入应产生相同状态。未知action为无操作并诊断，UI不得暴露不支持操作。\nRACE-DRIVE可用其自有开放平面TrackPort夹具做本片演示；RACE-TRACK可用自有车辆代理调用resolve做几何演示。两者不声称最终产品验收通过。\n最终入口必须导入真实两片，不得保留fixture路由；构建包含根index.html，demo不是默认首页。\n\n## 工程约定和初始化\n\npackage_root=target_root='.'，test_path_prefix='tests/'，ES模块TypeScript + Vite + Canvas2D/HTML；Vitest确定性测试、Playwright Chromium。\n具体依赖版本在获批后的FOUNDATION核对Node兼容性并锁入package-lock.json；未声称现在已安装或验证任何版本。\npackage.json从首片预先提供dev、build、preview、lint、test脚本，后续片不得改它。\nbuild输出artifacts/racing/assembly/build/（归assembly生成输出），preview绑定0.0.0.0并strictPort。\ntest只选择tests/*/unit.test.ts等明确单元测试模式，不误跑*.spec.ts浏览器文件；片内runner精确选定tests/<suite>/unit.test.ts。\nlint只检查存在的源码/测试，不要求未来片文件先存在。首片先验证自己的静态检查与类型合同。\nproject.scripts.setup目前未配置，不能声称运行时自动安装。FOUNDATION先生成lockfile，后续每个干净工作树由worker在自检前明确执行 env PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --ignore-scripts。\n安装是环境初始化，不复制进并行切片validation；安装失败留日志并分类为setup失败。必要的本地构建依赖初始化要逐项审查，仅允许非浏览器工具，禁止随意开启全量生命周期脚本。\n\n## runner、端口及证据契约\n\nscripts/racing-runner/unit.mjs <scaffold|race|track|assembly>：校验suite白名单，原子创建artifacts/racing/<suite>/runs/<UTC+随机id>/，运行本片单测并保留stdout.bin/stderr.bin/result.json/receipt.json；同一命令重跑不覆盖。\nscripts/racing-runner/container.sh由FOUNDATION实现：容器内校验环境，timeout 180s ./node_modules/.bin/playwright install chromium，调用scripts/racing-runner/browser.mjs。禁止依赖容器不存在的curl；HTTP探测用Node fetch。\nscripts/racing-runner/docker.sh <scaffold|race|track|acceptance> 由FOUNDATION一次性交付全部suite白名单和映射，未知suite非零；不访问其他suite的config/spec，也不因未来配置尚未生成使scaffold失败。race/track在本片实现后即可运行，不要求根playwright.config.ts或正式index.html。\nscripts/racing-runner/browser.mjs读取RACING_SUITE：scaffold→tests/scaffold/playwright.config.ts，race→tests/race/playwright.config.ts，track→tests/track/playwright.config.ts，acceptance→playwright.config.ts。每个config只选择本片browser.spec.ts（acceptance选择tests/acceptance/**），并将输出定向本次独立run；不能扫描未来suite。\n选择可用端口从8004向上，真正listen成功才算占用，启动失败重选且最多20次；使用strictPort防止Vite静默跳端口；元数据记录实际bind_host、port、service_url和browser_origin。\nacceptance服务使用构建后的preview，scaffold/race/track使用dev且直接访问各自HTML入口。所有suite均0.0.0.0，browser_origin/service_url=http://127.0.0.1:<实际端口>；默认8004只为首选不是已预留。\n只清理本runner启动的服务/容器；finally和trap保存失败状态后清理，不用成功的清理覆盖子命令exit code。\n每个run保存commit、精确command/id、镜像tag+digest、UID/GID、端口、URL、阶段状态、退出码、原始日志、report.json、browser-errors.json、截图和trace。\n所有日志/报告产生于新目录；源码只读消费。前置片输出不可由assembly覆盖；assembly只聚合其ref/digest并产生自己的整体验收证据。\n浏览器执行前每个worker核对git HEAD与该次candidate绑定目标；本Plan target_commit是初始实现基线，后续验证应绑定组装后的候选commit，不能继续验证初始空仓库。\n无需WebCrypto或LAN origin；验收声明仅为本机127.0.0.1 origin，不宣称其他网络地址已通过。\n\n## 人工流程证据\n\nscripts/audit-racing-workflow.mjs读取编排方通过RACING_WORKFLOW_EVIDENCE提供的只读证据bundle路径；不写Kernel。\nbundle须包含当前run/plan/package摘要、受控配置/加载证明、YAML Preview/Workflow启动授权引用、plan.approved原始事件以及实际writer fanout.child.dispatched事件。\n核对Plan批准为人工且auto不为true，身份/版本/digest一致，批准时间先于该Plan全部writer派发；原始类型已对照runtime/orchestrator_fanout.py确认。\n空查询、缺配置、旧Plan批准、仅writer完成记录均不算证明。缺bundle非0并明确环境/编排证据阻塞，不能伪造。\n本命令在candidate阶段只验证已发生前置；不消费自身未来verify/judge结果。\n独立验证lane及Judge/Kernel完成由各后续阶段生成自己的原始报告和事件引用，Kernel核查后方可交付；不会把“配置里有角色”当成实际验证发生。\n\n\n## 第二波浏览器入口与suite闭包（PC-01修订）\n\n| suite / command | 入口 | 独占config/spec/证据owner | 最早执行 |\n| --- | --- | --- | --- |\n| race / VC-DRIVE-BROWSER | /src/race/demo.html | RACE-DRIVE：tests/race/playwright.config.ts、tests/race/browser.spec.ts、artifacts/racing/race/runs/ | FOUNDATION + DRIVE 后，波次2 writer自检 |\n| track / VC-TRACK-BROWSER | /src/track/demo.html | RACE-TRACK：tests/track/playwright.config.ts、tests/track/browser.spec.ts、artifacts/racing/track/runs/ | FOUNDATION + TRACK 后，波次2 writer自检 |\n\nFOUNDATION独占四个共享runner文件；两片只读调用，无须修改共享runner。其单元测试覆盖四个suite映射、未知suite拒绝、当前suite缺config非零、未选择的未来suite缺文件不报错。\nDRIVE演示显示开放世界夹具标签；使用真实页面按钮和两组按键经RaceController更新画面，比赛duration仍90000，局部smoke无需等待终局。\nTRACK演示代理用真实页面“相对路程”输入框与“前进/后退”“外移/内移”“重置代理”“障碍路线”控件产生MotionQuery并调用真实TrackPort；前进/后退请求有限路程0..20m，按≤1/120秒及≤0.25m步进播放，最后一步裁到目标，不直接写resolve结果。外移/内移为径向运动。重置按钮只重置演示，不暴露正式产品状态setter。0→10→5→10→12的测试用fill/click请求+10/−5/+5/+2，等待只读代理状态显示播放完成，允许1e-6几何误差并报告每段增量；精确数值夹具另由VC-TRACK确定性验证。\n两片均在1280×800记录Canvas非空、车辆前后帧差、DOM/位姿/输入反馈，捕获console.error/pageerror且断言为空；完整CASE-DRIVE-DEMO/CASE-TRACK-DEMO通过execution_spec和test_matrix交接。\n局部smoke不声称完成最终驾驶赛道组合，正式入口四条mandatory旅程及90秒完整比赛无排除项。\n\ndocker.sh内部唯一Docker调用形状如下；只有经白名单验证的RACING_SUITE传入，所有suite保留相同边界：\n```bash\ndocker run --rm --pull never --network host --user \"$(id -u):$(id -g)\" --entrypoint bash -v \"$PWD:/work\" -w /work -e PLAYWRIGHT_BROWSERS_PATH=0 -e RACING_SUITE=\"$RACING_SUITE\" mcp/playwright:latest -lc 'bash scripts/racing-runner/container.sh'\n```\n该共享脚本是明确生产者和复用协议，不改变Docker边界；command registry执行的是bash scripts/racing-runner/docker.sh <suite>，内部命令记录在receipt。容器安装必须timeout 180s；任何失败保留日志后非零；不运行宿主浏览器。\n\n## 防刷分独立夹具（PC-02修订）\n\n使用PRD真实TrackDefinition。L=2π×180，P(s,r)=(300+r·sin(s/180),300−r·cos(s/180))；lastAngleRad=atan2(y−300,x−300)。合法路线单步|Δs|≤0.25m、dt=1/120秒、speedMps=45，故r=200时弦长<45dt；该半径避开三个半径8m障碍且在143..217内。每个场景新建contactIds=[]、completedLaps=0和独立累加器；不依赖其他场景输出。\nCASE-AC-T03的子场景SC-T03-FIRST/RETURN/LAP/MISSING-CP/BOUNDARY/SPEED-JUMP/CORRECTION/STATIONARY具有各自完整初态；不得把highWater=10套入首次前进。非法检查点历史作为明确负例，未确认的CP不能由新位置猜补；位置纠正无真实运动便不能奖励。\n原始highWater公式、碰撞扣分、正式游戏时长均保持不变。\n\n## 收据归属\n\n同一AC关联的runtime与e2e命令分别保存自己的运行目录。单元收据不能冒充浏览器截图；最终VC-UNIT/VC-BROWSER/VC-DELIVERY的输出归assembly，不覆盖race/track原始证据。\n候选执行器对直接安装/lint/build命令逐条捕获原始stdout/stderr与exit，记录到自己的assembly运行目录；统一verify-racing.sh对子阶段使用相同采集规则。每条receipt记录实际command_id、command、commit和产物哈希。\n",
+    "owner_resolution": {
+      "acceptance_ids": [
+        "AC-A07"
+      ],
+      "affected_task_ids": [
+        "RACE-ASSEMBLY"
+      ],
+      "answer": "替换文本保留所选原文，仅在段末追加指定文字。引用外内容不变；未写文件、批准整版Plan或启动Impl。",
+      "approval_impact": "仅授权指定片段及相关映射修订，未批准整版Plan或启动实现。",
+      "command_ids": [
+        "VC-ASSEMBLY"
+      ],
+      "requirement": "- ASSEMBLY先以VC-ASSEMBLY测实际注入/按钮/监听器dispose及runner各阶段失败传播，再真实运行VC-BROWSER/VC-DELIVERY。浏览器spec包括最终所有旅程，不能沿用片内demo的范围排除。VC-ASSEMBLY必须绑定一个专属的局部自检验收项，并在execution_spec中提供具名TDD断言：真实入口依赖注入、按钮与输入监听器dispose清理、runner各阶段失败及超时非零传播；同步task_map、acceptance_matrix、test_matrix与证据引用。完整90秒浏览器验收、独立Verify/Discovery/Judge仍保留原来的候选集成后责任，不提前当作片内自检，也不减少原有验收项。",
+      "resolution_id": "OWNER-ASSEMBLY-LOCAL-SELF-CHECK",
+      "schema_version": "owner-resolution.v1",
+      "source_event_id": "evt-b6892cd1ae52",
+      "source_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json",
+      "source_sha256": "67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a",
+      "status": "owner_confirmed_content_change_only"
+    },
+    "owner_resolutions": [
+      {
+        "acceptance_ids": [
+          "AC-A02"
+        ],
+        "affected_task_ids": [
+          "RACE-ASSEMBLY"
+        ],
+        "answer": "仅追加指定句，原文逐字保留且不换行。后续重新规划时需同步至 PRD 和对应验收场景。",
+        "approval_impact": "仅授权局部修订并重新提交预览；未批准本版Plan或游戏实施。",
+        "command_ids": [
+          "VC-BROWSER",
+          "VC-DELIVERY"
+        ],
+        "requirement": "结束面板的重开按钮文案统一为“重新比赛”；行为仍遵循本版既定的重开规则。",
+        "resolution_id": "OWNER-REPLAY-LABEL",
+        "source_event_id": "evt-388f2f1814a2",
+        "source_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/baf19be49ce30312d1ee0576eb8e9b76093b2a4346fd4b4b7010794d2f68f359.json",
+        "source_sha256": "baf19be49ce30312d1ee0576eb8e9b76093b2a4346fd4b4b7010794d2f68f359",
+        "status": "owner_confirmed_content_change_only"
+      },
+      {
+        "acceptance_ids": [
+          "AC-A07"
+        ],
+        "affected_task_ids": [
+          "RACE-ASSEMBLY"
+        ],
+        "answer": "替换文本保留所选原文，仅在段末追加指定文字。引用外内容不变；未写文件、批准整版Plan或启动Impl。",
+        "approval_impact": "仅授权指定片段及相关映射修订，未批准整版Plan或启动实现。",
+        "command_ids": [
+          "VC-ASSEMBLY"
+        ],
+        "requirement": "- ASSEMBLY先以VC-ASSEMBLY测实际注入/按钮/监听器dispose及runner各阶段失败传播，再真实运行VC-BROWSER/VC-DELIVERY。浏览器spec包括最终所有旅程，不能沿用片内demo的范围排除。VC-ASSEMBLY必须绑定一个专属的局部自检验收项，并在execution_spec中提供具名TDD断言：真实入口依赖注入、按钮与输入监听器dispose清理、runner各阶段失败及超时非零传播；同步task_map、acceptance_matrix、test_matrix与证据引用。完整90秒浏览器验收、独立Verify/Discovery/Judge仍保留原来的候选集成后责任，不提前当作片内自检，也不减少原有验收项。",
+        "resolution_id": "OWNER-ASSEMBLY-LOCAL-SELF-CHECK",
+        "schema_version": "owner-resolution.v1",
+        "source_event_id": "evt-b6892cd1ae52",
+        "source_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json",
+        "source_sha256": "67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a",
+        "status": "owner_confirmed_content_change_only"
+      }
+    ],
+    "prd": "# 赛车小游戏 PRD（待 Owner 审批）\n\n来源：需求 revision 6，SHA-256 `5c0dd9f57a1ada94b699ab4ec0bee6a6df05ee695f49c79b7af28850d40ebb9b`。本文件是本次 Plan 的产品规则候选，不代表 Owner 已批准。\n原始目标与 11 条 acceptance 全部保留，原始约束优先于本派生文档。\n\n## 用户、目标和范围\n\n桌面 Chromium 用户打开单人 2D 俯视赛车，点击开始，以方向键或 WASD 自由驾驶，避开边界和障碍，在 90 秒有效时间内增加合法前进距离并减少碰撞。结果展示最终距离、碰撞次数及总分，可重新开局。\n范围包括源码、配置、PRD/接口/实施计划、独立测试与真实浏览器证据。移动端触控、Firefox/Safari、联网多人、账号/排行榜、3D 明确不在本次范围。没有外部参考图或竞品被删去。\n\n## PRD-01：驾驶与赛道（DEC-01 候选）\n\n世界坐标以米计，x 向右、y 向下，朝向弧度以向右为零、顺时针为正。赛车碰撞体为半径 3m 的圆。\n赛道是以 (300,300) 为中心、中心线半径180m的圆环，内边界140m、外边界220m；车中心合法范围为143..217m。\n起点 (300,120)，车头朝右，顺时针为正向。8个等角检查点从起点每45度排列，必须按顺序前进。\n障碍为半径8m的圆，中心 (480,300)、(300,480)、(120,300)。渲染和物理读取同一份 TrackDefinition。\n赛道使用深色路面、明确内外边界、顺时针标识和高对比障碍，车体与路面可区分；Canvas完整容纳600×600m世界，保持比例，HTML HUD与按钮不遮挡赛道。\n目标视口为1280×800与1440×900，均须能看见全部核心操作与结果，不新增移动适配承诺。\n\nArrowUp/W 加速，ArrowDown/S 刹车，ArrowLeft/A 左转，ArrowRight/D 右转。\n加速度8m/s²、松油门阻力2m/s²、制动18m/s²、速度范围0..45m/s；刹车优先于同时按下的油门，左右同时按下等于不转。\n朝向以160度/秒连续改变，静止时也可改变方向但不会得距离；不使用固定车道切换。刹停不倒车；用户可转向180度朝反方向驾驶。\n运动采用小步半隐式更新：先更新速度与朝向，再以该速度/朝向提出位移；每物理步≤1/120秒，最后不足一步按实际余量。\n键盘只在游戏容器激活时阻止方向键滚动；keyup、失焦、暂停、继续、重开都清除输入锁存。控制说明始终可读。\n\n## PRD-02：接触与合法距离（DEC-02 候选）\n\n运动必须检查整段路径的首次碰撞而非只检查终点。接触内外边界或障碍时，停在首接触前可行位置，速度归零，不能穿透。\n接触状态记录当前稳定 collider ids；一次连续接触 episode 从无接触到有接触只发一次事件，同一物理步碰到多个物体合为一次并排序记录ids。\n持续贴墙或障碍不逐帧扣分；和所有接触物体分离超过0.01m后再次碰撞才开始下一事件。移动方向离开表面可解除接触，不能永久锁死。\n每个新碰撞事件立即增加计数并给车体/边框300ms红色闪烁及“碰撞 -20”文本；仅视觉反馈计时可继续，paused时比赛状态冻结。\n\n沿赛道中心线角度展开计算有符号路线进度，检查点有序且每步检查扫掠路径；完整顺序一圈增加2π×180m。\n保留历史最高合法进度 highWater，新增有效距离为 max(0, newProgress-highWater)，再更新 highWater。\n逆向行驶降低当前位置进度但不减已得距离；逆向后回到旧最高点不重复计分；跨起点的圈数只在顺序检查点确认后增加。\n静止、原地转向、横向抖动、逆向折返、越界切内圈、跳过检查点及超过速度×dt上界的跳变均不能增加有效距离。\n碰撞前真实走过的合法路段可计分；恢复/位置纠正本身不得计分。碰撞和进度由同一次已提交运动原子计算，不读取渲染坐标。\n分数 = max(0, floor(有效距离米数) - 20×碰撞次数)。例如125.9m、2次碰撞=85分；0m、1次碰撞=0分。\n内部保留距离小数，HUD与结果均显示一位小数；分数整数只由统一函数派生。\n\n## PRD-03：状态、时间与结束（DEC-03 候选）\n\n状态枚举 ready / running / paused / finished。ready 显示说明、90秒倒计时与开始按钮；其余按钮按状态显示或禁用。\nstart 仅在ready有效，原子重置并进入running。pause仅running有效，进入paused；resume仅paused有效，重新建立单调时钟基线后进入running。\nrestart在running/paused/finished有效：重置车姿态、速度、输入、计时、距离、进度highWater、检查点、碰撞数与接触集、结果及结算计数，然后直接进入新一局running。\n不适用状态下重复start/pause/resume为无操作。finished只能通过restart开始新比赛。\n失焦/visibility hidden自动暂停，回到页面仍paused，必须按继续按钮；单测可以注入时钟，正式比赛禁止测试时钟或时间缩放。\n计时以单调时钟累计running间隔，且只累计到90000ms。正常前台比赛真实运行90秒。物理分步不能丢弃正常间隔来延长比赛。\n长间隔由多个≤1/120秒子步处理；若跨90秒只模拟剩余有效时长。不能通过简单clamp dt丢弃有效时间。\n每一步顺序为：规范化输入→时间上界裁剪→提出运动→碰撞裁剪/接触事件→合法进度→统一得分→时间更新→若到90000ms只结算一次。\n最后有效步中的碰撞/进度应计入终局；90000ms之后任何事件不再进入本局。\npaused时车姿态、时间、距离、计数、分数、进度和接触集完全不变；resume不补算暂停间隔。\nfinished生成不可变RaceResult，事件race.finished仅一次；继续rAF或按键不能改变结果。结果屏必须展示最终距离、碰撞次数与总分，结束面板的重开按钮文案统一为“重新比赛”；行为仍遵循本版既定的重开规则。\n\n## PRD-04：可观察性与验收\n\n正式页面为 /；片内演示只是早期反馈，不能代替正式游戏。\nHUD以可读DOM显示剩余时间、距离、碰撞数、分数和状态；Canvas与HUD都消费同一只读快照。\n测试观察接口只能读取快照，不提供改状态、调时钟、传入短赛程或自动结束的方法；浏览器测试动作必须来自真实键盘/页面按钮。\n每个浏览器用例记录console.error和pageerror并断言为空；截图和像素前后差异只作动态画面证据，必须结合DOM/位置/朝向/得分业务断言。\n完整90秒用例必须独立于暂停/重开用例，不能因提前重开中止唯一完整比赛。允许键盘自动化正常驾驶，禁止直接注入位姿。\n测试记录开始/结束performance.now及有效时间；正常比赛有效时间恰为90000ms，真实单调时长不少于90000ms，测试超时180秒，结束后2秒快照稳定。\n静止/无效移动防刷、同接触去重、分离再撞、真实按键双映射、暂停2秒、继续、重置及终局稳定均有独立场景。\n\n## PRD-05：交付与治理\n\n编排侧提供恰好3实现lane、至少2独立验证lane（当前编译为3）、独立Judge与Kernel交付。\n当前有效策略要求Plan审批；建单、Workflow启动和Plan批准分开。当前Planner只生成可审阅产物，禁止游戏实施、产品Verify或自批。\nPlan获批后交付根入口 bash scripts/verify-racing.sh。全部阶段完成成功才返回0；安装失败、任何测试失败、必需用例跳过、证据缺失和超时均非0。\n浏览器必须在Docker mcp/playwright:latest、--network host内运行，宿主禁止安装/下载浏览器。服务绑定0.0.0.0，端口从8004起选择可用值；绝不使用8001/8002。\n每个执行者重新preflight自己的Docker权限、镜像digest、UID/GID写权限、host网络、端口和容器fetch。不能把环境失败改成测试通过。\n每次验证原子创建独立run目录；原始stdout/stderr逐字节保存，空白/CRLF不清理；另写摘要和sha256清单。重跑只新增目录，不覆盖或删除历史。\n.gitignore只忽略指定依赖/构建/缓存输出，不忽略源码/测试/脚本/文档；不放宽clean/diff门禁。\n预算未配置/零限制不代表无限或充足；由监工观察实际成本、超时和provider失败，必要时受控修订，不降低90秒要求。\n\n\n## 第二波反馈与防刷分夹具说明\n\n第二波race/track演示分别有本片Docker Chromium smoke，真实交互、DOM与像素变化同时验收；共享runner在FOUNDATION就声明四个suite。演示的局部反馈不替代正式入口完整90秒比赛。\n首次前进的初态为progress=highWater=0，0→10新增10；折返的独立初态为progress=highWater=10，10→5→10均新增0，10→12仅新增2。跨圈、缺检查点、越界、速度跳变与位置纠正均用独立夹具，详细见CASE-AC-T03。该澄清保持PRD-02公式。\n"
+  },
+  "tasks": [
+    {
+      "body": {
+        "acceptance_scenarios": [
+          {
+            "acceptance_ids": [
+              "AC-F01"
+            ],
+            "command_ids": [
+              "VC-FOUNDATION",
+              "VC-SCAFFOLD-BROWSER",
+              "VC-INSTALL"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-FOUNDATION": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/scaffold/runs/<vc-foundation-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-FOUNDATION",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              },
+              "VC-INSTALL": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-install-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "static"
+              },
+              "VC-SCAFFOLD-BROWSER": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/scaffold/runs/<vc-scaffold-browser-run-id>/receipt.json",
+                  "artifacts/racing/scaffold/runs/<vc-scaffold-browser-run-id>/report.json",
+                  "artifacts/racing/scaffold/runs/<vc-scaffold-browser-run-id>/playwright/",
+                  "artifacts/racing/scaffold/runs/<vc-scaffold-browser-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-FOUNDATION",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/scaffold/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "测试从空依赖状态的已记录 setup 输出核对锁文件和工具链；共享协议字段/单位齐全，启动页非空；无宿主浏览器下载进程。",
+            "given": "全新工作树、当前锁文件与实际Node环境",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/2",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/7"
+            ],
+            "test_id": "CASE-AC-F01",
+            "then": "测试从空依赖状态的已记录 setup 输出核对锁文件和工具链；共享协议字段/单位齐全，启动页非空；无宿主浏览器下载进程。 FOUNDATION单测预先核对scaffold/race/track/acceptance四suite路由；只校验当前选中suite存在，后续suite缺失不影响scaffold，未知suite必须非零。",
+            "when": "按明确setup安装后运行骨架检查及容器启动页smoke"
+          },
+          {
+            "acceptance_ids": [
+              "AC-F02"
+            ],
+            "command_ids": [
+              "VC-FOUNDATION"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-FOUNDATION": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/scaffold/runs/<vc-foundation-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-FOUNDATION",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/scaffold/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "git check-ignore 确认 node_modules、dist、artifacts/racing/{scaffold,race,track,assembly}/runs、playwright-report、test-results 被忽略；src、tests、scripts、.gitignore 等不被忽略；原有忽略保留。",
+            "given": "包含源码、缓存路径及既有运行态忽略规则的仓库",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/10"
+            ],
+            "test_id": "CASE-AC-F02",
+            "then": "git check-ignore 确认 node_modules、dist、artifacts/racing/{scaffold,race,track,assembly}/runs、playwright-report、test-results 被忽略；src、tests、scripts、.gitignore 等不被忽略；原有忽略保留。",
+            "when": "分别执行git check-ignore、tracked源码检查及diff门禁"
+          }
+        ],
+        "boundary": "纯基建例外：统一工具链、共享类型、测试收据与容器runner，独占依赖和配置；不创建后续片目录的占位文件。 FOUNDATION复用lane0；lane2仅供最终ASSEMBLY，避免assembly与依赖bundle共用角色。runner目录归并保持职责不变，不扩大到scripts/**。",
+        "candidate_only_commands": [
+          "VC-INSTALL"
+        ],
+        "demo": "可在 /src/scaffold/index.html 打开工程就绪页；冻结合同与runner可被后续独立片直接消费。",
+        "human_review": {
+          "module_spec_markdown": "建立可启动的工程骨架与共享契约\n\n入口 /src/scaffold/index.html；可在 /src/scaffold/index.html 打开工程就绪页；冻结合同与runner可被后续独立片直接消费。\n\n纯基建例外：统一工具链、共享类型、测试收据与容器runner，独占依赖和配置；不创建后续片目录的占位文件。 FOUNDATION复用lane0；lane2仅供最终ASSEMBLY，避免assembly与依赖bundle共用角色。runner目录归并保持职责不变，不扩大到scripts/**。\n\n完整共享字段/动作/失败语义见本端口shared.interfaces及shared.prd；本片AC：AC-F01, AC-F02。",
+          "scenario_refs": [
+            "CASE-AC-F01",
+            "CASE-AC-F02"
+          ]
+        },
+        "local_tdd_commands": [
+          "VC-FOUNDATION",
+          "VC-SCAFFOLD-BROWSER"
+        ],
+        "tdd_steps": [
+          {
+            "assertions": [
+              "CASE-AC-F01",
+              "CASE-AC-F02"
+            ],
+            "command_id": "VC-FOUNDATION",
+            "green": "最小实现满足同一断言后原文重跑命令，保留RED/GREEN原始日志及commit。",
+            "red": "先实现具名用例，在依赖及当前suite正确加载后捕获行为断言失败；环境或缺文件不算RED。",
+            "regression": "保留此前已通过的本片用例；最终candidate范围不沿用局部排除项。",
+            "rework_owner": "RACE-FOUNDATION"
+          },
+          {
+            "assertions": [
+              "CASE-AC-F01"
+            ],
+            "command_id": "VC-SCAFFOLD-BROWSER",
+            "green": "最小实现满足同一断言后原文重跑命令，保留RED/GREEN原始日志及commit。",
+            "red": "先实现具名用例，在依赖及当前suite正确加载后捕获行为断言失败；环境或缺文件不算RED。",
+            "regression": "保留此前已通过的本片用例；最终candidate范围不沿用局部排除项。",
+            "rework_owner": "RACE-FOUNDATION"
+          }
+        ]
+      },
+      "task_id": "RACE-FOUNDATION"
+    },
+    {
+      "body": {
+        "acceptance_scenarios": [
+          {
+            "acceptance_ids": [
+              "AC-D01"
+            ],
+            "command_ids": [
+              "VC-DRIVE",
+              "VC-UNIT"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-DRIVE": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/race/runs/<vc-drive-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-DRIVE",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              },
+              "VC-UNIT": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-unit-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/race/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "相同输入dt的两套按键轨迹相等；W+S刹车优先，A+D转向0；速度不负且≤45m/s，静止转向不增距离，清键后无卡键。",
+            "given": "相同ready→running状态与相同输入时间序列",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "test_id": "CASE-AC-D01",
+            "then": "相同输入dt的两套按键轨迹相等；W+S刹车优先，A+D转向0；速度不负且≤45m/s，静止转向不增距离，清键后无卡键。",
+            "when": "分别使用两组键，以及同时按相反键、松键、失焦"
+          },
+          {
+            "acceptance_ids": [
+              "AC-D02"
+            ],
+            "command_ids": [
+              "VC-DRIVE",
+              "VC-UNIT"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-DRIVE": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/race/runs/<vc-drive-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-DRIVE",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              },
+              "VC-UNIT": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-unit-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/race/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "89999ms再推进2ms仅消耗1ms；paused任意dt状态不变；resume重建时间基线；running大间隔不因物理分步截断丢有效时间。",
+            "given": "running elapsed=89999ms，另有paused快照与恢复基线",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/4",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "test_id": "CASE-AC-D02",
+            "then": "89999ms再推进2ms仅消耗1ms；paused任意dt状态不变；resume重建时间基线；running大间隔不因物理分步截断丢有效时间。",
+            "when": "推进2ms、暂停期间推进2000ms、继续后推进1ms"
+          },
+          {
+            "acceptance_ids": [
+              "AC-D03"
+            ],
+            "command_ids": [
+              "VC-DRIVE",
+              "VC-UNIT"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-DRIVE": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/race/runs/<vc-drive-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-DRIVE",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              },
+              "VC-UNIT": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-unit-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/race/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "重开后车辆回起点、速度0、elapsed0、距离/分数/碰撞0、接触集空、result空；重复finish不再发事件；finished输入和tick后结果深相等。",
+            "given": "运行/暂停/结束三种包含非零距离及碰撞的状态",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/4",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "test_id": "CASE-AC-D03",
+            "then": "重开后车辆回起点、速度0、elapsed0、距离/分数/碰撞0、接触集空、result空；重复finish不再发事件；finished输入和tick后结果深相等。",
+            "when": "各执行restart，并对终局重复tick、start和finish"
+          },
+          {
+            "acceptance_ids": [
+              "AC-D04"
+            ],
+            "command_ids": [
+              "VC-DRIVE",
+              "VC-UNIT"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-DRIVE": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/race/runs/<vc-drive-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-DRIVE",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              },
+              "VC-UNIT": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-unit-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/race/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "125.9米、2次碰撞得85分；0米1次为0分；持续接触不重复扣分；只有合法新增路线进度计入距离，终点同帧先处理截断步事件再结算。",
+            "given": "合法距离125.9m、碰撞2次及0m/1碰撞对照",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "test_id": "CASE-AC-D04",
+            "then": "125.9米、2次碰撞得85分；0米1次为0分；持续接触不重复扣分；只有合法新增路线进度计入距离，终点同帧先处理截断步事件再结算。",
+            "when": "统一计算分数并让最后有效步同时发生碰撞和计时归零"
+          },
+          {
+            "acceptance_ids": [
+              "AC-D01",
+              "AC-D02",
+              "AC-D03",
+              "AC-D04"
+            ],
+            "command_ids": [
+              "VC-DRIVE-BROWSER"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-DRIVE-BROWSER": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/race/runs/<vc-drive-browser-run-id>/receipt.json",
+                  "artifacts/racing/race/runs/<vc-drive-browser-run-id>/report.json",
+                  "artifacts/racing/race/runs/<vc-drive-browser-run-id>/playwright/",
+                  "artifacts/racing/race/runs/<vc-drive-browser-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-DRIVE",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/race/runs/<browser-run-id>/receipt.json",
+              "artifacts/racing/race/runs/<browser-run-id>/report.json",
+              "artifacts/racing/race/runs/<browser-run-id>/playwright/",
+              "artifacts/racing/race/runs/<browser-run-id>/pixel-diff.json",
+              "artifacts/racing/race/runs/<browser-run-id>/browser-errors.json"
+            ],
+            "expected_result": "真实按钮/键盘驱动本片RaceController并可见，截图+pixel-diff与DOM/位姿变化共同证明；不使用ASSEMBLY配置、不导入TRACK、不注入状态或缩短duration。",
+            "given": "只具备FOUNDATION及DRIVE的隔离分支；Docker Chromium 1280×800打开/src/race/demo.html，显示“开放世界演示”标签、ready、开始/暂停/继续/重开、DOM计时/距离/分数和可见车辆，使用DRIVE自有明确夹具。",
+            "pass_rule": "全部断言、报告、原始日志、截图、trace和错误检查齐全且命令exit0；无效启动/缺文件不算行为RED。此早期smoke不替代最终正常90秒比赛。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "task_id": "RACE-DRIVE",
+            "test_id": "CASE-DRIVE-DEMO",
+            "then": "两套按键均使速度先增加后降低、位置和朝向发生变化；Canvas非空且车体像素前后变化，DOM读数与只读RaceSnapshot一致；暂停期间比赛状态不变，继续不补时，重开清零且仅一个循环；无卡键、console.error或pageerror。每个驱动和显示断言具名，页面空白、未绑定输入或绘制未加载均失败。",
+            "title": "第二波驾驶演示真实输入与可见状态闭环",
+            "verification_owner": "impl_self_check",
+            "verification_tier": "e2e",
+            "when": "点击开始，真实ArrowUp+ArrowRight后ArrowDown；按钮重开后真实W+D后S；采集操作前后Canvas；暂停2秒、继续后驾驶、再重开；失焦后回到页面检查仍暂停并显式继续。"
+          }
+        ],
+        "boundary": "拥有输入、运动、原子比赛状态与自己的可驾驶演示、单测和浏览器spec；只读共享合同，不导入赛道实现。",
+        "browser_contract": {
+          "command_id": "VC-DRIVE-BROWSER",
+          "config": "tests/race/playwright.config.ts",
+          "evidence_root": "artifacts/racing/race/runs/<unique-run-id>/",
+          "execution_stage": "wave2 impl_self_check; only this slice and FOUNDATION required; candidate reuses registry",
+          "files": [
+            "receipt.json",
+            "report.json",
+            "browser-errors.json",
+            "stdout.bin",
+            "stderr.bin",
+            "sha256.json",
+            "playwright/trace.zip",
+            "playwright/before.png",
+            "playwright/after.png",
+            "pixel-diff.json"
+          ],
+          "runner": "scripts/racing-runner/docker.sh",
+          "runner_owner": "RACE-FOUNDATION",
+          "spec": "tests/race/browser.spec.ts",
+          "suite": "race"
+        },
+        "candidate_only_commands": [
+          "VC-UNIT"
+        ],
+        "demo": "在 /src/race/demo.html 用真实按键驾驶，开始/暂停/继续/重开与结果读数工作；使用本片明确标识的开放世界夹具，不代替最终赛道验收。",
+        "human_review": {
+          "module_spec_markdown": "可驾驶并可暂停重开的90秒比赛\n\n入口 /src/race/demo.html；在 /src/race/demo.html 用真实按键驾驶，开始/暂停/继续/重开与结果读数工作；使用本片明确标识的开放世界夹具，不代替最终赛道验收。\n\n拥有输入、运动、原子比赛状态与自己的可驾驶演示、单测和浏览器spec；只读共享合同，不导入赛道实现。\n\n完整共享字段/动作/失败语义见本端口shared.interfaces及shared.prd；本片AC：AC-D01, AC-D02, AC-D03, AC-D04。",
+          "scenario_refs": [
+            "CASE-AC-D01",
+            "CASE-AC-D02",
+            "CASE-AC-D03",
+            "CASE-AC-D04",
+            "CASE-DRIVE-DEMO"
+          ]
+        },
+        "local_tdd_commands": [
+          "VC-DRIVE",
+          "VC-DRIVE-BROWSER"
+        ],
+        "tdd_steps": [
+          {
+            "assertions": [
+              "CASE-AC-D01",
+              "CASE-AC-D02",
+              "CASE-AC-D03",
+              "CASE-AC-D04"
+            ],
+            "command_id": "VC-DRIVE",
+            "green": "最小实现满足同一断言后原文重跑命令，保留RED/GREEN原始日志及commit。",
+            "red": "先实现具名用例，在依赖及当前suite正确加载后捕获行为断言失败；环境或缺文件不算RED。",
+            "regression": "保留此前已通过的本片用例；最终candidate范围不沿用局部排除项。",
+            "rework_owner": "RACE-DRIVE"
+          },
+          {
+            "assertions": [
+              "CASE-DRIVE-DEMO"
+            ],
+            "command_id": "VC-DRIVE-BROWSER",
+            "green": "最小实现满足同一断言后原文重跑命令，保留RED/GREEN原始日志及commit。",
+            "red": "先实现具名用例，在依赖及当前suite正确加载后捕获行为断言失败；环境或缺文件不算RED。",
+            "regression": "保留此前已通过的本片用例；最终candidate范围不沿用局部排除项。",
+            "rework_owner": "RACE-DRIVE"
+          }
+        ]
+      },
+      "task_id": "RACE-DRIVE"
+    },
+    {
+      "body": {
+        "acceptance_scenarios": [
+          {
+            "acceptance_ids": [
+              "AC-T01"
+            ],
+            "command_ids": [
+              "VC-TRACK",
+              "VC-UNIT"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-TRACK": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/track/runs/<vc-track-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-TRACK",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              },
+              "VC-UNIT": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-unit-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/track/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "圆环中心(300,300)，中心线半径180；车辆中心可行半径143..217；半径3车辆对半径8障碍接触距11；高速线段穿透被首接触截断。",
+            "given": "固定圆环、半径3车辆和半径8障碍",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "test_id": "CASE-AC-T01",
+            "then": "圆环中心(300,300)，中心线半径180；车辆中心可行半径143..217；半径3车辆对半径8障碍接触距11；高速线段穿透被首接触截断。",
+            "when": "将运动线段横跨障碍或内外边界，并测最小接触距离"
+          },
+          {
+            "acceptance_ids": [
+              "AC-T02"
+            ],
+            "command_ids": [
+              "VC-TRACK",
+              "VC-UNIT"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-TRACK": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/track/runs/<vc-track-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-TRACK",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              },
+              "VC-UNIT": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-unit-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/track/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "空接触→A+B输出一个带sorted ids事件；保持接触100步仍1；间隔>0.01m后再触碰计2；位置纠正不产出奖励距离。",
+            "given": "车体未接触，然后同帧接触A和B",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "test_id": "CASE-AC-T02",
+            "then": "空接触→A+B输出一个带sorted ids事件；保持接触100步仍1；间隔>0.01m后再触碰计2；位置纠正不产出奖励距离。",
+            "when": "持续100步接触，分离超过0.01m，再接触"
+          },
+          {
+            "acceptance_ids": [
+              "AC-T03"
+            ],
+            "command_ids": [
+              "VC-TRACK",
+              "VC-UNIT"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-TRACK": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/track/runs/<vc-track-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-TRACK",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              },
+              "VC-UNIT": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-unit-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/track/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "独立初态：首次progress=highWater=0时0→10增10；折返progress=highWater=10时10→5→10各增0、10→12增2。顺序跨圈、缺检查点、越界、速度跳变、位置纠正分别重置夹具；只有合法新增历史最高进度计分，详细边界见CASE-AC-T03及其具名子场景。",
+            "fixture_contract": "使用PRD真实TrackDefinition。L=2π×180，P(s,r)=(300+r·sin(s/180),300−r·cos(s/180))；lastAngleRad=atan2(y−300,x−300)。合法路线单步|Δs|≤0.25m、dt=1/120秒、speedMps=45，故r=200时弦长<45dt；该半径避开三个半径8m障碍且在143..217内。每个场景新建contactIds=[]、completedLaps=0和独立累加器；不依赖其他场景输出。",
+            "given": "每个具名子场景分别新建RouteState、Pose和接触集合；禁止共用highWater=10作为首次前进初态。具体完整初态见subcases。",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "subcases": [
+              {
+                "given": "from=P(0,200)，progress=0、highWater=0、nextCheckpointIndex=1、completedLaps=0，起点CP0已确认。",
+                "id": "SC-T03-FIRST",
+                "then": "各步增量为该步正向Δs；累计10，最终progress=highWater=10、nextCheckpointIndex=1、laps=0。",
+                "when": "以合法小步推进s=0→10（不跨CP1）。"
+              },
+              {
+                "given": "from=P(10,200)，progress=10、highWater=10、nextCheckpointIndex=1、laps=0，当前会话已记距离10。",
+                "id": "SC-T03-RETURN",
+                "then": "三段新增分别0、0、2；每段结束highWater分别10、10、12；最终累计有效距离12；旧最高点不得重复加10。",
+                "when": "按合法小步依次10→5、5→10、10→12。"
+              },
+              {
+                "given": "from=P(0,200)，progress=highWater=0、nextCheckpointIndex=1、laps=0；本场景无其他已访问历史。",
+                "id": "SC-T03-LAP",
+                "then": "到L前累计新增L（误差≤1e-6m），跨CP0只增加1圈，nextCheckpointIndex回1；随后新增2，highWater=L+2。L−ε→L+ε的wrap连续，无负向整圈或重复奖励。",
+                "when": "按合法小步完整0→L→L+2，依次跨CP1..CP7、CP0，再前进2m。"
+              },
+              {
+                "given": "独立非法检查点历史夹具：from=P(L/4−0.25,200)，progress=L/4−0.25，highWater=0、nextCheckpointIndex=1、laps=0；CP1从未获确认，不能隐含已通过。",
+                "id": "SC-T03-MISSING-CP",
+                "then": "新增有效距离0，highWater仍0、nextCheckpointIndex仍1、laps仍0；输出诊断/不合法进度而不把CP2当作CP1。此负例仅故意替换检查点历史，其几何/速度满足边界。",
+                "when": "合法位移到P(L/4+0.25,200)，分两个小步扫过CP2；不能补写虚构CP1历史。"
+              },
+              {
+                "given": "from=P(0,217)在外边界接触位置，progress=highWater=0、nextCheckpointIndex=1、laps=0、contactIds=[]。",
+                "id": "SC-T03-BOUNDARY",
+                "then": "首接触截断在r≤217，合法角进度增量0、有效距离0、highWater0；不能为越界提议的位移发距离奖励。",
+                "when": "dt=0.1s、speed=45，径向向外提出P(0,218)。"
+              },
+              {
+                "given": "from=P(0,200)，progress=highWater=0、nextCheckpointIndex=1、laps=0、speed=45，接触空。",
+                "id": "SC-T03-SPEED-JUMP",
+                "then": "新增距离0，highWater和检查点历史不变；返回诊断，不把角进度10当作合法奖励。",
+                "when": "单步dt=1/120秒直接提出P(10,200)，超过45dt上界；不跨CP1且无几何接触以隔离速度拒绝。"
+              },
+              {
+                "given": "独立越界恢复夹具：from=P(12,230)，proposed=from，route记录lastAngle对应s=10、progress=highWater=10、nextCheckpointIndex=1、laps=0；没有本步实际运动，dt=0。",
+                "id": "SC-T03-CORRECTION",
+                "then": "validDistanceDeltaM=0、highWater保持10且检查点不获奖励；即使修正姿态投影为s=12，也不得额外获得2m。下一次真正合法运动才重新判断进度。",
+                "when": "调用resolve执行越界位置纠正；位置纠正不能冒充由输入产生的新合法运动。"
+              },
+              {
+                "given": "from=P(10,200)，progress=highWater=10、nextCheckpointIndex=1、laps=0；另一个独立夹具在P(0,200)且progress=highWater=0。",
+                "id": "SC-T03-STATIONARY",
+                "then": "两夹具新增距离均为0；原地转向和径向抖动不能把欧氏移动长度当作路线奖励。",
+                "when": "第一夹具固定坐标仅改变朝向，第二夹具保持角度径向200→201→200；步长与dt匹配速度上界。"
+              }
+            ],
+            "test_id": "CASE-AC-T03",
+            "then": "独立初态：首次progress=highWater=0时0→10增10；折返progress=highWater=10时10→5→10各增0、10→12增2。顺序跨圈、缺检查点、越界、速度跳变、位置纠正分别重置夹具；只有合法新增历史最高进度计分，详细边界见CASE-AC-T03及其具名子场景。",
+            "when": "依次独立运行首次前进、折返复访、跨圈、缺检查点、越界、速度跳变和位置纠正场景。"
+          },
+          {
+            "acceptance_ids": [
+              "AC-T01",
+              "AC-T02",
+              "AC-T03"
+            ],
+            "command_ids": [
+              "VC-TRACK-BROWSER"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-TRACK-BROWSER": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/track/runs/<vc-track-browser-run-id>/receipt.json",
+                  "artifacts/racing/track/runs/<vc-track-browser-run-id>/report.json",
+                  "artifacts/racing/track/runs/<vc-track-browser-run-id>/playwright/",
+                  "artifacts/racing/track/runs/<vc-track-browser-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-TRACK",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/track/runs/<browser-run-id>/receipt.json",
+              "artifacts/racing/track/runs/<browser-run-id>/report.json",
+              "artifacts/racing/track/runs/<browser-run-id>/playwright/",
+              "artifacts/racing/track/runs/<browser-run-id>/pixel-diff.json",
+              "artifacts/racing/track/runs/<browser-run-id>/browser-errors.json"
+            ],
+            "expected_result": "真实DOM操作→本片代理运动请求→真实几何/进度resolve→DOM和绘制反馈链完整；空白页、未接线按钮或缺绘制都失败。",
+            "given": "只具备FOUNDATION及TRACK的隔离分支；Docker Chromium 1280×800打开/src/track/demo.html。可见同一TrackDefinition的内外边界、3个障碍、车辆代理、当前路线进度/highWater/新增距离/接触次数的DOM及重置控件。",
+            "pass_rule": "全部业务断言加非空/动态像素检查通过且截图、trace、report、receipt、错误报告齐全、exit0。演示不导入DRIVE、不依赖ASSEMBLY；正式完整比赛仍mandatory。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "task_id": "RACE-TRACK",
+            "test_id": "CASE-TRACK-DEMO",
+            "then": "代理位姿和Canvas像素随操作变化，世界非空且边界/障碍可辨；路线段读数分别新增10、0、0、2；接触位置不穿透；每个连续episode次数仅+1并可见红色/文本反馈，分离再撞+1，障碍亦有真实接触；只读DOM与resolve结果一致，console.error/pageerror为空。",
+            "title": "第二波赛道演示真实代理操作与接触反馈",
+            "verification_owner": "impl_self_check",
+            "verification_tier": "e2e",
+            "when": "点击“重置代理”到P(0,200)；通过可见路程输入框及“前进/后退”按钮依次请求+10、−5、+5、+2m，等待每次轨迹播放完成。演示把请求按≤1/120秒及≤0.25m的合法小步送入真实TrackPort.resolve，最后一步裁到输入目标，不直接写返回状态。再用“外移/内移”控件接触外边界、保持、分离>0.01m再撞；点击“障碍路线”沿预设合法小步移近并撞障碍。全部请求来自Playwright的fill/click操作，不从evaluate写状态。"
+          }
+        ],
+        "boundary": "拥有赛道数据、几何碰撞、合法路线进度及独立交互演示、测试；仅依赖共享合同，与车辆实现无import关系。",
+        "browser_contract": {
+          "command_id": "VC-TRACK-BROWSER",
+          "config": "tests/track/playwright.config.ts",
+          "evidence_root": "artifacts/racing/track/runs/<unique-run-id>/",
+          "execution_stage": "wave2 impl_self_check; only this slice and FOUNDATION required; candidate reuses registry",
+          "files": [
+            "receipt.json",
+            "report.json",
+            "browser-errors.json",
+            "stdout.bin",
+            "stderr.bin",
+            "sha256.json",
+            "playwright/trace.zip",
+            "playwright/before.png",
+            "playwright/after.png",
+            "pixel-diff.json"
+          ],
+          "runner": "scripts/racing-runner/docker.sh",
+          "runner_owner": "RACE-FOUNDATION",
+          "spec": "tests/track/browser.spec.ts",
+          "suite": "track"
+        },
+        "candidate_only_commands": [
+          "VC-UNIT"
+        ],
+        "demo": "在 /src/track/demo.html 移动车辆代理可见边界、障碍、接触反馈和路线进度；该几何演示只验证轨迹查询，不替代生产驾驶。",
+        "human_review": {
+          "module_spec_markdown": "可见赛道、障碍与不能刷分的碰撞路径\n\n入口 /src/track/demo.html；在 /src/track/demo.html 移动车辆代理可见边界、障碍、接触反馈和路线进度；该几何演示只验证轨迹查询，不替代生产驾驶。\n\n拥有赛道数据、几何碰撞、合法路线进度及独立交互演示、测试；仅依赖共享合同，与车辆实现无import关系。\n\n完整共享字段/动作/失败语义见本端口shared.interfaces及shared.prd；本片AC：AC-T01, AC-T02, AC-T03。",
+          "scenario_refs": [
+            "CASE-AC-T01",
+            "CASE-AC-T02",
+            "CASE-AC-T03",
+            "CASE-TRACK-DEMO"
+          ]
+        },
+        "local_tdd_commands": [
+          "VC-TRACK",
+          "VC-TRACK-BROWSER"
+        ],
+        "tdd_steps": [
+          {
+            "assertions": [
+              "CASE-AC-T01",
+              "CASE-AC-T02",
+              "CASE-AC-T03"
+            ],
+            "command_id": "VC-TRACK",
+            "green": "最小实现满足同一断言后原文重跑命令，保留RED/GREEN原始日志及commit。",
+            "red": "先实现具名用例，在依赖及当前suite正确加载后捕获行为断言失败；环境或缺文件不算RED。",
+            "regression": "保留此前已通过的本片用例；最终candidate范围不沿用局部排除项。",
+            "rework_owner": "RACE-TRACK"
+          },
+          {
+            "assertions": [
+              "CASE-TRACK-DEMO"
+            ],
+            "command_id": "VC-TRACK-BROWSER",
+            "green": "最小实现满足同一断言后原文重跑命令，保留RED/GREEN原始日志及commit。",
+            "red": "先实现具名用例，在依赖及当前suite正确加载后捕获行为断言失败；环境或缺文件不算RED。",
+            "regression": "保留此前已通过的本片用例；最终candidate范围不沿用局部排除项。",
+            "rework_owner": "RACE-TRACK"
+          }
+        ]
+      },
+      "task_id": "RACE-TRACK"
+    },
+    {
+      "body": {
+        "acceptance_scenarios": [
+          {
+            "acceptance_ids": [
+              "AC-A01"
+            ],
+            "command_ids": [
+              "VC-BROWSER",
+              "VC-DELIVERY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-BROWSER": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/report.json",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/playwright/",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              },
+              "VC-DELIVERY": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/report.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/playwright/",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ],
+            "expected_result": "1280×800与1440×900桌面视口可见按钮/HUD/赛道；键盘改变车辆位置/朝向与像素；碰撞闪红300ms且次数和分数同步；暂停2秒状态全冻，继续后恢复。",
+            "given": "生产构建正式 / 页面及两桌面视口",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/2",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/3",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/4",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/6"
+            ],
+            "test_id": "CASE-AC-A01",
+            "then": "1280×800与1440×900桌面视口可见按钮/HUD/赛道；键盘改变车辆位置/朝向与像素；碰撞闪红300ms且次数和分数同步；暂停2秒状态全冻，继续后恢复。",
+            "when": "点击开始，用两套键驾驶/制动/转向，撞障碍；暂停2秒再继续与重开"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A02"
+            ],
+            "command_ids": [
+              "VC-BROWSER",
+              "VC-DELIVERY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-BROWSER": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/report.json",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/playwright/",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              },
+              "VC-DELIVERY": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/report.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/playwright/",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ],
+            "expected_result": "单独完整比赛用例从按钮开始到finished：活跃时间90000ms，浏览器单调经过时间≥90000ms；不注入状态/时钟、不改duration；终局等待2秒结果不变，再按钮重开归零。结束面板的重开按钮可见文本及可访问名称必须精确为“重新比赛”；真实点击该按钮后，按既定restart规则重置车辆、速度、输入、时间、距离、highWater、检查点、碰撞数及接触集、结果与结算计数并进入running，仍只有一个更新循环且能再次驾驶。",
+            "given": "独立新开的正式90秒比赛，不沿用暂停/重开的用例",
+            "named_assertions": [
+              {
+                "assertion_id": "finish-replay-label",
+                "statement": "结束面板中唯一重开按钮可见，textContent.trim()及可访问名称均精确为“重新比赛”；不能仅在别处出现相同文案。"
+              },
+              {
+                "assertion_id": "finish-replay-reset",
+                "statement": "点击结束面板的“重新比赛”按钮后仍执行既有restart转换：完整状态向量重置并进入running，仅一个循环，真实按键可再次驾驶。"
+              }
+            ],
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/4",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/6",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/baf19be49ce30312d1ee0576eb8e9b76093b2a4346fd4b4b7010794d2f68f359.json#/replacement"
+            ],
+            "test_id": "CASE-AC-A02",
+            "then": "单独完整比赛用例从按钮开始到finished：活跃时间90000ms，浏览器单调经过时间≥90000ms；不注入状态/时钟、不改duration；终局等待2秒结果不变，再按钮重开归零。结束面板的重开按钮可见文本及可访问名称必须精确为“重新比赛”；真实点击该按钮后，按既定restart规则重置车辆、速度、输入、时间、距离、highWater、检查点、碰撞数及接触集、结果与结算计数并进入running，仍只有一个更新循环且能再次驾驶。",
+            "when": "真实键盘正常驾驶并等到finished；再等待2秒、按键，核对结束面板按钮可见文本和可访问名称精确为“重新比赛”，通过该真实按钮点击重开。"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A03"
+            ],
+            "command_ids": [
+              "VC-INSTALL",
+              "VC-BROWSER",
+              "VC-DELIVERY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-BROWSER": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/report.json",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/playwright/",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              },
+              "VC-DELIVERY": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/report.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/playwright/",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              },
+              "VC-INSTALL": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-install-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "static"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ],
+            "expected_result": "镜像记录digest；host UID/GID可写新证据目录；0.0.0.0绑定、端口≥8004且避开8001/8002；容器fetch成功才启动浏览器；失败原样报告且非0。",
+            "given": "当前worker实际Docker环境，首选8004可能占用",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/6",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/7",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/8"
+            ],
+            "test_id": "CASE-AC-A03",
+            "then": "镜像记录digest；host UID/GID可写新证据目录；0.0.0.0绑定、端口≥8004且避开8001/8002；容器fetch成功才启动浏览器；失败原样报告且非0。",
+            "when": "记录镜像digest和UID/GID，选择端口，0.0.0.0启动，再容器Node fetch和Chromium启动"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A04"
+            ],
+            "command_ids": [
+              "VC-LINT",
+              "VC-UNIT",
+              "VC-BUILD",
+              "VC-DELIVERY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-BUILD": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-build-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "static"
+              },
+              "VC-DELIVERY": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/report.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/playwright/",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              },
+              "VC-LINT": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-lint-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "static"
+              },
+              "VC-UNIT": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-unit-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ],
+            "expected_result": "实际整套运行所有阶段有收据且90秒用例通过才exit0；单独runner故障注入测试令每个阶段分别失败/超时/缺报告，均非0且清理本次服务。",
+            "given": "当前候选和干净依赖环境；另有独立runner故障测试夹具",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/9"
+            ],
+            "test_id": "CASE-AC-A04",
+            "then": "实际整套运行所有阶段有收据且90秒用例通过才exit0；单独runner故障注入测试令每个阶段分别失败/超时/缺报告，均非0且清理本次服务。",
+            "when": "运行完整根入口；在单元夹具中分别模拟各阶段失败/超时/未完成"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A05"
+            ],
+            "command_ids": [
+              "VC-BROWSER",
+              "VC-DELIVERY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-BROWSER": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/report.json",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/playwright/",
+                  "artifacts/racing/assembly/runs/<vc-browser-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              },
+              "VC-DELIVERY": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/report.json",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/playwright/",
+                  "artifacts/racing/assembly/runs/<vc-delivery-run-id>/browser-errors.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "e2e"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<unique-run-id>/playwright/",
+              "artifacts/racing/assembly/runs/<unique-run-id>/browser-errors.json"
+            ],
+            "expected_result": "两次运行目录不同，第一轮sha256不变；含空白和CRLF日志的归档hash相等；每次输出command/commit/exit/stages/图片/trace/浏览器错误报告，缺必需文件非0。",
+            "given": "首轮完整证据及含空白/CRLF的日志夹具",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/6",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/8",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/10"
+            ],
+            "test_id": "CASE-AC-A05",
+            "then": "两次运行目录不同，第一轮sha256不变；含空白和CRLF日志的归档hash相等；每次输出command/commit/exit/stages/图片/trace/浏览器错误报告，缺必需文件非0。",
+            "when": "再次运行；比较历史哈希并校验新报告、trace、截图与错误检查"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A06"
+            ],
+            "command_ids": [
+              "VC-GOVERNANCE"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-GOVERNANCE": {
+                "owner": "candidate_verify",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-governance-run-id>/receipt.json"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "manual_evidence"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<unique-run-id>/receipt.json"
+            ],
+            "expected_result": "审计绑定本Run/Plan digest的人工plan.approved（auto不为true）、实际writer fanout.child.dispatched顺序、受控配置加载快照及预算风险；独立验证/最终Judge/Kernel各自未来收据由阶段门核查，不要求本脚本消费自己的未来结果。",
+            "given": "编排方提供的本Run/本Plan只读原始证据bundle，含配置加载、人工审批及writer实际派发",
+            "pass_rule": "全部具名断言满足、命令exit0且所需原始证据齐全；缺失/跳过/超时均不通过。",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/0",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/1",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/2",
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json#/acceptance/5"
+            ],
+            "test_id": "CASE-AC-A06",
+            "then": "审计绑定本Run/Plan digest的人工plan.approved（auto不为true）、实际writer fanout.child.dispatched顺序、受控配置加载快照及预算风险；独立验证/最终Judge/Kernel各自未来收据由阶段门核查，不要求本脚本消费自己的未来结果。",
+            "when": "逐项核对身份digest、角色独立性、3lane配置、auto标志和时间因果；留未来Verify/Judge/Kernel门为pending"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A07"
+            ],
+            "command_ids": [
+              "VC-ASSEMBLY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-ASSEMBLY": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "expected_result": "createRace接收真实TrackPort和durationMs=90000，真实resolve被调用；HUD和render消费同一快照，按钮进入running、按键推进真实车辆；没有demo/开放世界fixture接到正式入口。仅重写测试中的同构bootstrap而未加载生产入口不能通过。",
+            "given": "FOUNDATION/DRIVE/TRACK前置已就绪；加载实际根index.html对应的src/main.ts及真实race/track模块，DOM和单调调度器为本片可重置测试环境；对真实导出加透传观察，不替换业务算法。",
+            "named_assertions": [
+              {
+                "assertion_id": "A07-real-entrypoint",
+                "statement": "createRace接收真实TrackPort和durationMs=90000，真实resolve被调用；HUD和render消费同一快照，按钮进入running、按键推进真实车辆；没有demo/开放世界fixture接到正式入口。仅重写测试中的同构bootstrap而未加载生产入口不能通过。"
+              }
+            ],
+            "owner": "impl_self_check",
+            "pass_rule": "全部具名断言成立、原文VC-ASSEMBLY退出0且本次独立目录有完整原始日志/结果/收据；缺文件、未执行、跳过、超时或环境启动失败不算通过或有效RED。",
+            "producer_task_id": "RACE-ASSEMBLY",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json#/replacement",
+              "events.jsonl#evt-b6892cd1ae52"
+            ],
+            "test_id": "CASE-AC-A07-INJECTION",
+            "test_paths": [
+              "tests/assembly/unit.test.ts"
+            ],
+            "then": "createRace接收真实TrackPort和durationMs=90000，真实resolve被调用；HUD和render消费同一快照，按钮进入running、按键推进真实车辆；没有demo/开放世界fixture接到正式入口。仅重写测试中的同构bootstrap而未加载生产入口不能通过。",
+            "tier": "runtime",
+            "title": "正式入口注入真实依赖",
+            "when": "挂载正式入口，点击开始并派发规范化键盘事件与一个有效tick，读取DOM/HUD与controller只读快照；检查实际调用的TrackPort及配置。"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A07"
+            ],
+            "command_ids": [
+              "VC-ASSEMBLY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-ASSEMBLY": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "expected_result": "卸载后旧controller没有新增dispatch/tick，所有按钮和键盘/失焦/隐藏监听移除、待执行rAF取消，双dispose不抛错。重新挂载后每次动作恰好执行一次、仅一个活跃循环，无残留按键；不改restart规则或结束按钮“重新比赛”文案。",
+            "given": "每个子例独立挂载实际bindControls与生产调度生命周期，记录controller动作、tick及注册监听器；先验证一个按钮及按键事件能够作用。",
+            "named_assertions": [
+              {
+                "assertion_id": "A07-listeners-disposed",
+                "statement": "卸载后旧controller没有新增dispatch/tick，所有按钮和键盘/失焦/隐藏监听移除、待执行rAF取消，双dispose不抛错。重新挂载后每次动作恰好执行一次、仅一个活跃循环，无残留按键；不改restart规则或结束按钮“重新比赛”文案。"
+              },
+              {
+                "assertion_id": "A07-loop-single",
+                "statement": "卸载后旧controller没有新增dispatch/tick，所有按钮和键盘/失焦/隐藏监听移除、待执行rAF取消，双dispose不抛错。重新挂载后每次动作恰好执行一次、仅一个活跃循环，无残留按键；不改restart规则或结束按钮“重新比赛”文案。"
+              }
+            ],
+            "owner": "impl_self_check",
+            "pass_rule": "全部具名断言成立、原文VC-ASSEMBLY退出0且本次独立目录有完整原始日志/结果/收据；缺文件、未执行、跳过、超时或环境启动失败不算通过或有效RED。",
+            "producer_task_id": "RACE-ASSEMBLY",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json#/replacement",
+              "events.jsonl#evt-b6892cd1ae52"
+            ],
+            "test_id": "CASE-AC-A07-DISPOSE",
+            "test_paths": [
+              "tests/assembly/unit.test.ts"
+            ],
+            "then": "卸载后旧controller没有新增dispatch/tick，所有按钮和键盘/失焦/隐藏监听移除、待执行rAF取消，双dispose不抛错。重新挂载后每次动作恰好执行一次、仅一个活跃循环，无残留按键；不改restart规则或结束按钮“重新比赛”文案。",
+            "tier": "runtime",
+            "title": "卸载清理与重新挂载唯一响应",
+            "when": "调用dispose两次，再发送start/pause/resume/restart点击、keydown/keyup、blur/visibility并尝试触发先前排队帧；随后全新挂载一次并重复一次开始和一次按键。"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A07"
+            ],
+            "command_ids": [
+              "VC-ASSEMBLY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-ASSEMBLY": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "expected_result": "每一故障均使根调用非零（正常非信号子进程保留17），任何后续阶段都不启动，不生成passed收据；成功cleanup不覆盖17，cleanup自身失败仍非零并保留原故障。仅清理本次拥有的服务/临时资源，另一run哨兵及历史证据hash不变。",
+            "given": "tests/assembly/unit.test.ts逐例创建独立临时运行目录，执行实际scripts/verify-racing.sh及其生产阶段控制代码；仅外部子进程用确定性fixture替代。阶段集合preflight/install/lint/unit/build/browser，每例此前阶段成功、所选阶段退出17，另有cleanup成功与失败子例。",
+            "named_assertions": [
+              {
+                "assertion_id": "A07-stage-failure",
+                "statement": "每一故障均使根调用非零（正常非信号子进程保留17），任何后续阶段都不启动，不生成passed收据；成功cleanup不覆盖17，cleanup自身失败仍非零并保留原故障。仅清理本次拥有的服务/临时资源，另一run哨兵及历史证据hash不变。"
+              },
+              {
+                "assertion_id": "A07-cleanup-preserves-error",
+                "statement": "每一故障均使根调用非零（正常非信号子进程保留17），任何后续阶段都不启动，不生成passed收据；成功cleanup不覆盖17，cleanup自身失败仍非零并保留原故障。仅清理本次拥有的服务/临时资源，另一run哨兵及历史证据hash不变。"
+              }
+            ],
+            "owner": "impl_self_check",
+            "pass_rule": "全部具名断言成立、原文VC-ASSEMBLY退出0且本次独立目录有完整原始日志/结果/收据；缺文件、未执行、跳过、超时或环境启动失败不算通过或有效RED。",
+            "producer_task_id": "RACE-ASSEMBLY",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json#/replacement",
+              "events.jsonl#evt-b6892cd1ae52"
+            ],
+            "test_id": "CASE-AC-A07-FAILURE",
+            "test_paths": [
+              "tests/assembly/unit.test.ts"
+            ],
+            "then": "每一故障均使根调用非零（正常非信号子进程保留17），任何后续阶段都不启动，不生成passed收据；成功cleanup不覆盖17，cleanup自身失败仍非零并保留原故障。仅清理本次拥有的服务/临时资源，另一run哨兵及历史证据hash不变。",
+            "tier": "runtime",
+            "title": "六阶段失败原样传播",
+            "when": "分别执行六个故障位置，记录实际调用顺序、最终退出码、资源标识与原始日志；不得调用单独重写的测试版runner，不启动嵌套真实浏览器或安装。"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A07"
+            ],
+            "command_ids": [
+              "VC-ASSEMBLY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-ASSEMBLY": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "expected_result": "每种超时或信号均在局部deadline加清理宽限内非零返回（timeout为124或等效明确非零状态），无遗留子进程/本次服务、无后续阶段、无成功收据。保留timeout与信号原因及原始输出，不能仅断言模拟函数返回124。",
+            "given": "六阶段各自独立的生产runner夹具；所选子进程挂起超过有界deadline，之前阶段成功。局部子进程测试通过内部依赖注入设置短deadline，不暴露游戏时钟/赛程覆盖，不改变正式candidate命令600/1200秒预算或正常90秒比赛。",
+            "named_assertions": [
+              {
+                "assertion_id": "A07-stage-timeout",
+                "statement": "每种超时或信号均在局部deadline加清理宽限内非零返回（timeout为124或等效明确非零状态），无遗留子进程/本次服务、无后续阶段、无成功收据。保留timeout与信号原因及原始输出，不能仅断言模拟函数返回124。"
+              },
+              {
+                "assertion_id": "A07-signal-failure",
+                "statement": "每种超时或信号均在局部deadline加清理宽限内非零返回（timeout为124或等效明确非零状态），无遗留子进程/本次服务、无后续阶段、无成功收据。保留timeout与信号原因及原始输出，不能仅断言模拟函数返回124。"
+              }
+            ],
+            "owner": "impl_self_check",
+            "pass_rule": "全部具名断言成立、原文VC-ASSEMBLY退出0且本次独立目录有完整原始日志/结果/收据；缺文件、未执行、跳过、超时或环境启动失败不算通过或有效RED。",
+            "producer_task_id": "RACE-ASSEMBLY",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json#/replacement",
+              "events.jsonl#evt-b6892cd1ae52"
+            ],
+            "test_id": "CASE-AC-A07-TIMEOUT",
+            "test_paths": [
+              "tests/assembly/unit.test.ts"
+            ],
+            "then": "每种超时或信号均在局部deadline加清理宽限内非零返回（timeout为124或等效明确非零状态），无遗留子进程/本次服务、无后续阶段、无成功收据。保留timeout与信号原因及原始输出，不能仅断言模拟函数返回124。",
+            "tier": "runtime",
+            "title": "六阶段超时和信号失败",
+            "when": "逐阶段触发真实子进程deadline/termination，观察最终退出码、子进程回收、后续调用记录及cleanup；追加终止信号子例。"
+          },
+          {
+            "acceptance_ids": [
+              "AC-A07"
+            ],
+            "command_ids": [
+              "VC-ASSEMBLY"
+            ],
+            "current_state": "NOT_RUN",
+            "evidence_by_command": {
+              "VC-ASSEMBLY": {
+                "owner": "impl_self_check",
+                "paths": [
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+                  "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+                ],
+                "producer_task_id": "RACE-ASSEMBLY",
+                "state": "NOT_RUN",
+                "tier": "runtime"
+              }
+            },
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "expected_result": "只有全成功且完整fixture证据才使局部控制器返回0；缺阶段、缺报告或必需用例跳过均非零。第二次目录不同，第一次原始字节与hash不变。夹具成功只证明控制流，不能作为AC-A04整套真实运行或AC-A02真实90秒收据。",
+            "given": "实际runner阶段控制器与独立fixture目录；全成功对照有完整六阶段收据；负例逐一删除阶段完成记录、必需报告或将必需用例标记跳过。",
+            "named_assertions": [
+              {
+                "assertion_id": "A07-no-false-success",
+                "statement": "只有全成功且完整fixture证据才使局部控制器返回0；缺阶段、缺报告或必需用例跳过均非零。第二次目录不同，第一次原始字节与hash不变。夹具成功只证明控制流，不能作为AC-A04整套真实运行或AC-A02真实90秒收据。"
+              }
+            ],
+            "owner": "impl_self_check",
+            "pass_rule": "全部具名断言成立、原文VC-ASSEMBLY退出0且本次独立目录有完整原始日志/结果/收据；缺文件、未执行、跳过、超时或环境启动失败不算通过或有效RED。",
+            "producer_task_id": "RACE-ASSEMBLY",
+            "source_refs": [
+              "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json#/replacement",
+              "events.jsonl#evt-b6892cd1ae52"
+            ],
+            "test_id": "CASE-AC-A07-EVIDENCE",
+            "test_paths": [
+              "tests/assembly/unit.test.ts"
+            ],
+            "then": "只有全成功且完整fixture证据才使局部控制器返回0；缺阶段、缺报告或必需用例跳过均非零。第二次目录不同，第一次原始字节与hash不变。夹具成功只证明控制流，不能作为AC-A04整套真实运行或AC-A02真实90秒收据。",
+            "tier": "runtime",
+            "title": "完成与证据门拒绝假成功",
+            "when": "分别运行所有子例，检查最终返回、receipt阶段记录及原始日志；同一fixture再次运行到新的独立目录。"
+          }
+        ],
+        "boundary": "唯一最终assembly owner：拥有正式入口、交互画面、共享接线、聚合验证脚本和最终证据；消费已完成片的API与证据，不重写兄弟源码。",
+        "candidate_only_commands": [
+          "VC-BROWSER",
+          "VC-DELIVERY",
+          "VC-INSTALL",
+          "VC-LINT",
+          "VC-UNIT",
+          "VC-BUILD",
+          "VC-GOVERNANCE"
+        ],
+        "demo": "正式 / 页面完成开始→驾驶/碰撞→暂停/继续→结束结果→再开局，根验证命令全阶段完成后才成功。",
+        "human_review": {
+          "module_spec_markdown": "装配正式赛车入口与完整交付验收\n\n入口 /；正式 / 页面完成开始→驾驶/碰撞→暂停/继续→结束结果→再开局，根验证命令全阶段完成后才成功。\n\n唯一最终assembly owner：拥有正式入口、交互画面、共享接线、聚合验证脚本和最终证据；消费已完成片的API与证据，不重写兄弟源码。\n\n完整共享字段/动作/失败语义见本端口shared.interfaces及shared.prd；本片AC：AC-A01, AC-A02, AC-A03, AC-A04, AC-A05, AC-A06。\n\n结束面板的重开按钮可见文本及可访问名称必须精确为“重新比赛”；真实点击该按钮后，按既定restart规则重置车辆、速度、输入、时间、距离、highWater、检查点、碰撞数及接触集、结果与结算计数并进入running，仍只有一个更新循环且能再次驾驶。\n来源：/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/baf19be49ce30312d1ee0576eb8e9b76093b2a4346fd4b4b7010794d2f68f359.json#/replacement。\n\nAC-A07（impl_self_check/runtime）验证本片真实入口依赖注入、dispose清理及runner逐阶段失败/超时传播。全部旧candidate AC-A01..06和独立Verify/Discovery/Judge责任保持。场景：CASE-AC-A07-INJECTION、CASE-AC-A07-DISPOSE、CASE-AC-A07-FAILURE、CASE-AC-A07-TIMEOUT、CASE-AC-A07-EVIDENCE；证据由VC-ASSEMBLY生产。\n来源：/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json#/replacement。",
+          "scenario_refs": [
+            "CASE-AC-A01",
+            "CASE-AC-A02",
+            "CASE-AC-A03",
+            "CASE-AC-A04",
+            "CASE-AC-A05",
+            "CASE-AC-A06",
+            "CASE-AC-A07-INJECTION",
+            "CASE-AC-A07-DISPOSE",
+            "CASE-AC-A07-FAILURE",
+            "CASE-AC-A07-TIMEOUT",
+            "CASE-AC-A07-EVIDENCE"
+          ]
+        },
+        "local_tdd_commands": [
+          "VC-ASSEMBLY"
+        ],
+        "tdd_steps": [
+          {
+            "assertions": [
+              "A07-real-entrypoint"
+            ],
+            "command_id": "VC-ASSEMBLY",
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "green": "在本片拥有的生产入口/控件/脚本实现同一断言，原文重跑 node scripts/racing-runner/unit.mjs assembly。",
+            "red": "前置依赖和本片测试可执行后，以“正式入口注入真实依赖”的明确行为缺陷捕获RED；缺文件、依赖或未来证据不算行为RED。",
+            "regression": "保留此前本片场景，保存每次独立目录原始日志及commit；不执行candidate_only_commands，不将局部fixture作为真实90秒验收。",
+            "rework_owner": "RACE-ASSEMBLY",
+            "scenario_ids": [
+              "CASE-AC-A07-INJECTION"
+            ]
+          },
+          {
+            "assertions": [
+              "A07-listeners-disposed",
+              "A07-loop-single"
+            ],
+            "command_id": "VC-ASSEMBLY",
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "green": "在本片拥有的生产入口/控件/脚本实现同一断言，原文重跑 node scripts/racing-runner/unit.mjs assembly。",
+            "red": "前置依赖和本片测试可执行后，以“卸载清理与重新挂载唯一响应”的明确行为缺陷捕获RED；缺文件、依赖或未来证据不算行为RED。",
+            "regression": "保留此前本片场景，保存每次独立目录原始日志及commit；不执行candidate_only_commands，不将局部fixture作为真实90秒验收。",
+            "rework_owner": "RACE-ASSEMBLY",
+            "scenario_ids": [
+              "CASE-AC-A07-DISPOSE"
+            ]
+          },
+          {
+            "assertions": [
+              "A07-stage-failure",
+              "A07-cleanup-preserves-error"
+            ],
+            "command_id": "VC-ASSEMBLY",
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "green": "在本片拥有的生产入口/控件/脚本实现同一断言，原文重跑 node scripts/racing-runner/unit.mjs assembly。",
+            "red": "前置依赖和本片测试可执行后，以“六阶段失败原样传播”的明确行为缺陷捕获RED；缺文件、依赖或未来证据不算行为RED。",
+            "regression": "保留此前本片场景，保存每次独立目录原始日志及commit；不执行candidate_only_commands，不将局部fixture作为真实90秒验收。",
+            "rework_owner": "RACE-ASSEMBLY",
+            "scenario_ids": [
+              "CASE-AC-A07-FAILURE"
+            ]
+          },
+          {
+            "assertions": [
+              "A07-stage-timeout",
+              "A07-signal-failure"
+            ],
+            "command_id": "VC-ASSEMBLY",
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "green": "在本片拥有的生产入口/控件/脚本实现同一断言，原文重跑 node scripts/racing-runner/unit.mjs assembly。",
+            "red": "前置依赖和本片测试可执行后，以“六阶段超时和信号失败”的明确行为缺陷捕获RED；缺文件、依赖或未来证据不算行为RED。",
+            "regression": "保留此前本片场景，保存每次独立目录原始日志及commit；不执行candidate_only_commands，不将局部fixture作为真实90秒验收。",
+            "rework_owner": "RACE-ASSEMBLY",
+            "scenario_ids": [
+              "CASE-AC-A07-TIMEOUT"
+            ]
+          },
+          {
+            "assertions": [
+              "A07-no-false-success"
+            ],
+            "command_id": "VC-ASSEMBLY",
+            "evidence_paths": [
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/receipt.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/result.json",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stdout.bin",
+              "artifacts/racing/assembly/runs/<vc-assembly-run-id>/stderr.bin"
+            ],
+            "green": "在本片拥有的生产入口/控件/脚本实现同一断言，原文重跑 node scripts/racing-runner/unit.mjs assembly。",
+            "red": "前置依赖和本片测试可执行后，以“完成与证据门拒绝假成功”的明确行为缺陷捕获RED；缺文件、依赖或未来证据不算行为RED。",
+            "regression": "保留此前本片场景，保存每次独立目录原始日志及commit；不执行candidate_only_commands，不将局部fixture作为真实90秒验收。",
+            "rework_owner": "RACE-ASSEMBLY",
+            "scenario_ids": [
+              "CASE-AC-A07-EVIDENCE"
+            ]
+          }
+        ]
+      },
+      "task_id": "RACE-ASSEMBLY"
+    }
+  ]
+}

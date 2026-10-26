@@ -21,3 +21,4 @@
 | 182 | [Plan 完整预览、任务拆分与验收证据闭环](182-plan-review-task-slicing-and-evidence-closure.md) | implemented | 完整 Preview、分层验收与 TDD/SDD 方法已实施；洛书受控重规划及浏览器复核完成，产品 Plan 保持待审批。 |
 | 185 | [主 Agent 路由、受控协作与 Workflow 断点恢复](185-agent-routing-delegation-and-workflow-recovery.md) | candidate | 区分 headless、单执行者、根 Agent 辅助协作与 Kernel Workflow；包含 Kimi 源码 review、Provider 能力准入、受控恢复及分期验收。 |
 | 186 | [项目交付工作台：Kanban、Graph 与 Loop 关联](186-unified-delivery-kanban-graph-and-loop.md) | candidate | 复用现有投影与任务身份，统一三视图导航、依赖与覆盖展示、尝试及恢复追踪；定义只读边界、分期实施与验收。 |
+| 187 | [AI SDLC Graph 工作台：生命周期、模块任务与 Workflow 执行](187-ai-sdlc-graph-workbench.md) | candidate | 以用户提供的 AI SDLC Graph 设计为基线，补齐 PRD 模块分解和 zf.yaml 流程运行叠层，保留执行协作、追溯影响、验证回流、发布生产与时间线视图；包含 ASCII 原型、现有代码证据和分期验收。 |

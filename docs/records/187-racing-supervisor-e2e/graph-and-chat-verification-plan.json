@@ -1,0 +1,73 @@
+{
+  "schema_version": "zf-dev-verification-plan.v1",
+  "root": "/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph",
+  "changed_files": [
+    "docs/impl/187-ai-sdlc-graph-workbench.md",
+    "web/src/components/workflow/WorkflowGraphWorkbench.tsx",
+    "web/src/components/workflow/workflowGraph.css",
+    "web/tests/workflow-graph-workbench.spec.ts"
+  ],
+  "domains": [
+    "docs",
+    "web_ui"
+  ],
+  "selected_tests": [
+    "tests/test_instruction_stack_contracts.py"
+  ],
+  "steps": [
+    {
+      "id": "python-deterministic",
+      "tier": "deterministic",
+      "command": [
+        "/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_instruction_stack_contracts.py",
+        "-q",
+        "--no-cov",
+        "-m",
+        "not serial and not perf and not host and not real_provider",
+        "-n",
+        "4",
+        "--dist",
+        "loadfile"
+      ],
+      "reasons": [
+        "changed tests + direct imports/callers + boundary sentinels"
+      ],
+      "cwd": ".",
+      "automatic": true
+    },
+    {
+      "id": "web-typecheck",
+      "tier": "web",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "reasons": [
+        "Web UI/API boundary changed"
+      ],
+      "cwd": "web",
+      "automatic": true
+    },
+    {
+      "id": "web-unit",
+      "tier": "web",
+      "command": [
+        "npm",
+        "run",
+        "test:unit"
+      ],
+      "reasons": [
+        "compile Web unit tests once and execute model contracts"
+      ],
+      "cwd": "web",
+      "automatic": true
+    }
+  ],
+  "warnings": [],
+  "errors": [],
+  "broad_python": false
+}

@@ -1,0 +1,90 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_candidate_action_keeps_current_review_context[False] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-249/test_candidate_action_keeps_cu0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x761ca2c67390>
+recover_marker_only = False
+
+    @pytest.mark.parametrize("recover_marker_only", [False, True])
+    def test_candidate_action_keeps_current_review_context(tmp_path: Path, monkeypatch, recover_marker_only):
+        config = ZfConfig()
+        config.workflow.admission_replan.enabled = True
+        config.workflow.admission_replan.resynth_trigger = "prd.scan.completed"
+        writer = EventWriter(EventLog(tmp_path / "events.jsonl"))
+        writer.append(ZfEvent(type="prd.scan.completed", correlation_id="run-1", payload={
+            "previous_plan_candidate_refs": [{"ref": "old-plan.json", "sha256": "a" * 64}],
+        }))
+        service = ControlledActionService(tmp_path, writer, config=config, actor="operator")
+        if recover_marker_only:
+            monkeypatch.setattr(actions, "_build_resynth_event", lambda *args, **kwargs: None)
+        context = {
+            "previous_plan_candidate_refs": [{"ref": "new-plan.json", "sha256": "b" * 64}],
+            "required_actions": ["Keep the repaired environment and reject invalid timing proof"],
+            "owner_authorization": {"source": "existing operator repair authorization"},
+            "operator_override": True,
+        }
+        result = service._candidate_rework_apply(
+            requested=ZfEvent(type="web.action.requested", actor="web"),
+            action="candidate-rework-apply", requested_action="candidate-rework-apply",
+            payload={"candidate_rework_action": "replan", "pdd_id": "PDD-1", "trace_id": "run-1",
+                     "workflow_run_id": "run-1", "flow_kind": "prd", "source_event_id": "failure-1",
+                     "source_event_type": "integration.failed", "rework_attempt": 3, **context},
+        )
+        assert result["ok"]
+        events = writer.event_log.read_all()
+        marker = next(e for e in events if e.type == "orchestrator.replan_requested")
+        for key, value in context.items():
+>           assert marker.payload.get(key) == value
+E           AssertionError: assert None == [{'ref': 'new-plan.json', 'sha256': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'}]
+E            +  where None = <built-in method get of dict object at 0x761ca2aeb4c0>('previous_plan_candidate_refs')
+E            +    where <built-in method get of dict object at 0x761ca2aeb4c0> = {'candidate_base_commit': '', 'classification': '', 'flow_kind': 'prd', 'idempotency_key': '', ...}.get
+E            +      where {'candidate_base_commit': '', 'classification': '', 'flow_kind': 'prd', 'idempotency_key': '', ...} = ZfEvent(type='orchestrator.replan_requested', id='evt-0afcaf58ae70', ts='2026-10-26T03:32:41.196953+00:00', actor='zf-...n': {'source': 'existing operator repair authorization'}}, causation_id='failure-1', correlation_id='run-1', origin='').payload
+
+tests/test_replan_action_context.py:41: AssertionError
+___________ test_candidate_action_keeps_current_review_context[True] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-249/test_candidate_action_keeps_cu1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x761ca2ad0c90>
+recover_marker_only = True
+
+    @pytest.mark.parametrize("recover_marker_only", [False, True])
+    def test_candidate_action_keeps_current_review_context(tmp_path: Path, monkeypatch, recover_marker_only):
+        config = ZfConfig()
+        config.workflow.admission_replan.enabled = True
+        config.workflow.admission_replan.resynth_trigger = "prd.scan.completed"
+        writer = EventWriter(EventLog(tmp_path / "events.jsonl"))
+        writer.append(ZfEvent(type="prd.scan.completed", correlation_id="run-1", payload={
+            "previous_plan_candidate_refs": [{"ref": "old-plan.json", "sha256": "a" * 64}],
+        }))
+        service = ControlledActionService(tmp_path, writer, config=config, actor="operator")
+        if recover_marker_only:
+            monkeypatch.setattr(actions, "_build_resynth_event", lambda *args, **kwargs: None)
+        context = {
+            "previous_plan_candidate_refs": [{"ref": "new-plan.json", "sha256": "b" * 64}],
+            "required_actions": ["Keep the repaired environment and reject invalid timing proof"],
+            "owner_authorization": {"source": "existing operator repair authorization"},
+            "operator_override": True,
+        }
+        result = service._candidate_rework_apply(
+            requested=ZfEvent(type="web.action.requested", actor="web"),
+            action="candidate-rework-apply", requested_action="candidate-rework-apply",
+            payload={"candidate_rework_action": "replan", "pdd_id": "PDD-1", "trace_id": "run-1",
+                     "workflow_run_id": "run-1", "flow_kind": "prd", "source_event_id": "failure-1",
+                     "source_event_type": "integration.failed", "rework_attempt": 3, **context},
+        )
+        assert result["ok"]
+        events = writer.event_log.read_all()
+        marker = next(e for e in events if e.type == "orchestrator.replan_requested")
+        for key, value in context.items():
+>           assert marker.payload.get(key) == value
+E           AssertionError: assert None == [{'ref': 'new-plan.json', 'sha256': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'}]
+E            +  where None = <built-in method get of dict object at 0x761ca2b318c0>('previous_plan_candidate_refs')
+E            +    where <built-in method get of dict object at 0x761ca2b318c0> = {'candidate_base_commit': '', 'classification': '', 'flow_kind': 'prd', 'idempotency_key': '', ...}.get
+E            +      where {'candidate_base_commit': '', 'classification': '', 'flow_kind': 'prd', 'idempotency_key': '', ...} = ZfEvent(type='orchestrator.replan_requested', id='evt-12bb8d44f41d', ts='2026-10-26T03:32:41.305699+00:00', actor='zf-...n': {'source': 'existing operator repair authorization'}}, causation_id='failure-1', correlation_id='run-1', origin='').payload
+
+tests/test_replan_action_context.py:41: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_replan_action_context.py::test_candidate_action_keeps_current_review_context[False]
+FAILED tests/test_replan_action_context.py::test_candidate_action_keeps_current_review_context[True]
+2 failed in 0.95s

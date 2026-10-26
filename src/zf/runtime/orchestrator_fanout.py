@@ -948,6 +948,7 @@ class FanoutCoordinationMixin(
             "task_map_ref",
             "source_index_ref",
             "rework_of",
+            "rework_attempt",
             "pdd_id",
             "feature_id",
         ):
@@ -3249,7 +3250,7 @@ class FanoutCoordinationMixin(
             return True  # 评估不可用不挡主路(observe-first)
         plan_id = trigger_event.id
         requested = False
-        suppressed = False
+        suppressed_fingerprints: set[str] = set()
         decided_plan_ids: set[str] = set()
         pending_fingerprints: dict[str, str] = {}
         for existing in events:
@@ -3278,9 +3279,7 @@ class FanoutCoordinationMixin(
             if existing.type == "plan.approval.requested":
                 requested = True
             if existing.type == "plan.minting.suppressed":
-                suppressed = True
-        if suppressed and not requested:
-            return False
+                suppressed_fingerprints.add(str(payload.get("plan_fingerprint") or ""))
         enabled = bool(getattr(
             self.config.workflow, "plan_approval_enabled", False,
         ))
@@ -3309,12 +3308,13 @@ class FanoutCoordinationMixin(
             return True
         if not requested:
             task_items = list(getattr(loaded, "task_items", []) or [])
-            # FIX-12(bizsim r4 F12):plan 语义指纹判重。r4 judge cap 冻结期
-            # 每轮 replan 铸新 plan_id(14 请求/7 批,批一生一),同
-            # stage+pdd+task 集的未决 plan 已在队时不再铸新单。
-            fingerprint = self._plan_fingerprint(
+            from zf.runtime.plan_approval_state import plan_approval_fingerprint
+
+            fingerprint = plan_approval_fingerprint(
                 stage_id=stage_id,
                 pdd_id=base_payload["pdd_id"],
+                trace_id=trace_id,
+                payload={**trigger_event.payload, **base_payload},
                 task_items=task_items,
             )
             duplicate_of = next(
@@ -3327,6 +3327,8 @@ class FanoutCoordinationMixin(
                 "",
             )
             if duplicate_of:
+                if fingerprint in suppressed_fingerprints:
+                    return False
                 self.event_writer.append(ZfEvent(
                     type="plan.minting.suppressed",
                     actor="zf-cli",
@@ -3358,26 +3360,6 @@ class FanoutCoordinationMixin(
                 correlation_id=trace_id,
             ))
         return False
-
-    def _plan_fingerprint(
-        self,
-        *,
-        stage_id: str,
-        pdd_id: str,
-        task_items: list,
-    ) -> str:
-        import hashlib
-
-        task_ids = sorted(
-            str(
-                getattr(item, "task_id", "")
-                or (item.get("task_id") if isinstance(item, dict) else "")
-                or ""
-            )
-            for item in task_items
-        )
-        raw = "|".join([stage_id, pdd_id, *task_ids])
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
     def _write_plan_digest(self, plan_id: str, task_items: list, task_map_ref: str) -> str:
         """B-93-03: 落 plan-digest.md,返回相对 state_dir 的 digest_ref(失败返回 '')。"""
@@ -6173,7 +6155,7 @@ class FanoutCoordinationMixin(
             for child in children
             if child.get("status") == "failed"
         ]
-        self.event_writer.append(ZfEvent(
+        integration_trigger = self.event_writer.append(ZfEvent(
             type="fanout.aggregate.started",
             actor="zf-cli",
             payload={
@@ -6209,6 +6191,7 @@ class FanoutCoordinationMixin(
                 ).rebuild(
                     pdd_id,
                     event_writer=self.event_writer,
+                    trigger_event=integration_trigger,
                     task_ids=completed_task_ids,
                     candidate_base_ref=candidate_base_ref or None,
                 )

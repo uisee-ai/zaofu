@@ -46,6 +46,7 @@ def _ready_prd_fixture(
     readiness_verdict: str = "ready",
     readiness_gaps: list[str] | None = None,
     risk_accepted: bool = False,
+    owner_actor_ref: str = "web",
 ) -> tuple[Path, EventWriter, ControlledActionService, dict[str, object]]:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -56,14 +57,14 @@ def _ready_prd_fixture(
         writer,
         config=config,
         project_root=tmp_path,
-        actor="web",
+        actor=owner_actor_ref,
         source="channel",
         surface="web",
     )
     assert _execute(service, writer, "channel-create", {
         "channel_id": "ch-prd-task",
         "name": "PRD Task",
-        "owner_actor_ref": "web",
+        "owner_actor_ref": owner_actor_ref,
     })["ok"]
     assert _execute(service, writer, "channel-invite-member", {
         "channel_id": "ch-prd-task",
@@ -393,7 +394,7 @@ def test_approved_task_plan_preserves_local_scope_through_controlled_creation(tm
         "objective": "只验证 Workflow 取消后不再派发", "acceptance": "取得取消收据且无取消后的派发",
         "acceptance_criteria": ["取消后无派发"], "channel_prd_scope": "approved_task",
         "verification": "python -m pytest tests/test_cancel.py -q",
-        "verification_tiers": ["runtime"], "scope": ["tests/test_cancel.py"],
+        "verification_tiers": ["runtime"], "scope": ["tests/test_cancel.py", ".gitignore"],
         "explicit_non_goals": ["不交付完整产品"], "channel_authority": authority,
     })
     assert not error
@@ -404,7 +405,7 @@ def test_approved_task_plan_preserves_local_scope_through_controlled_creation(tm
     assert task.contract.acceptance == "取得取消收据且无取消后的派发"
     assert task.contract.acceptance_criteria == ["取消后无派发"]
     assert task.contract.verification == "python -m pytest tests/test_cancel.py -q"
-    assert task.contract.scope == ["tests/test_cancel.py"]
+    assert task.contract.scope == ["tests/test_cancel.py", ".gitignore"]
     assert task.contract.explicit_non_goals == ["不交付完整产品"]
     assert task.contract.evidence_contract["channel_prd_binding_scope"] == "approved_task"
     assert task.contract.evidence_contract["implementation_start"] is True

@@ -1,0 +1,25 @@
+{
+  "note": "Sequential live observations, not a controlled equal-load benchmark. Both reports retain their original evidence.",
+  "observations": [
+    {
+      "worker_event_id": "evt-544646bee75f",
+      "worker_ts": "2026-10-26T06:28:23.324455+00:00",
+      "kernel_event_id": "evt-e7b2102f7fd1",
+      "kernel_ts": "2026-10-26T06:31:09.951740+00:00",
+      "origin": "kernel",
+      "delay_seconds": 166.627285,
+      "child_id": "prd-verify-lane-1-track-collision",
+      "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03"
+    },
+    {
+      "worker_event_id": "evt-09fca80d510d",
+      "worker_ts": "2026-10-26T06:53:37.713126+00:00",
+      "kernel_event_id": "evt-5b058f18acdd",
+      "kernel_ts": "2026-10-26T06:53:57.869858+00:00",
+      "origin": "kernel",
+      "delay_seconds": 20.156732,
+      "child_id": "prd-verify-lane-2-experience-assembly",
+      "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03"
+    }
+  ]
+}

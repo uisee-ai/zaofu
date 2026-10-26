@@ -1,0 +1,65 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_restart_actuator_stops_old_watcher_then_execs_control_plane_only _____
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-190/test_restart_actuator_stops_ol0')
+
+    def test_restart_actuator_stops_old_watcher_then_execs_control_plane_only(
+        tmp_path: Path,
+    ) -> None:
+        project = tmp_path / "project"
+        state_dir = project / ".zf"
+        state_dir.mkdir(parents=True)
+        guard = SingleOwnerProcessGuard(
+            state_dir / "processes" / "watcher.pid.json", owner_pid=1234, component="watcher",
+        )
+        assert guard.acquire().acquired
+
+        with patch(
+            "zf.runtime.source_repair_restart_actuator._looks_like_watcher",
+            side_effect=lambda pid: pid == 1234,
+        ), patch(
+            "zf.runtime.source_repair_restart_actuator._terminate_watcher",
+        ) as terminate, patch(
+            "zf.runtime.source_repair_restart_actuator.zf_cli_cmd",
+            return_value="uv run zf",
+        ), patch(
+            "zf.runtime.source_repair_restart_actuator.os.execvp",
+            side_effect=RuntimeError("exec captured"),
+        ) as execvp, patch(
+            "zf.runtime.source_repair_restart_actuator.time.sleep",
+        ), patch(
+            "zf.runtime.source_repair_restart_actuator.os.chdir",
+        ):
+            with pytest.raises(RuntimeError, match="exec captured"):
+                main([
+                    "--project-root",
+                    str(project),
+                    "--state-dir",
+                    str(state_dir),
+                ])
+
+>       terminate.assert_called_once_with(1234)
+
+tests/test_source_repair_restart_actuator.py:47:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <MagicMock name='_terminate_watcher' id='129796632707664'>
+args = (1234,), kwargs = {}
+msg = "Expected '_terminate_watcher' to be called once. Called 0 times."
+
+    def assert_called_once_with(self, /, *args, **kwargs):
+        """assert that the mock was called exactly once and that that call was
+        with the specified arguments."""
+        if not self.call_count == 1:
+            msg = ("Expected '%s' to be called once. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected '_terminate_watcher' to be called once. Called 0 times.
+
+../../.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:950: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_source_repair_restart_actuator.py::test_restart_actuator_stops_old_watcher_then_execs_control_plane_only
+1 failed in 0.29s

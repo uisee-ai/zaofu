@@ -19,9 +19,11 @@ from zf.runtime.workflow_start import WorkflowStartService
 pytestmark = pytest.mark.mock_e2e
 
 
-def _setup(tmp_path, surface, *, root_tests=False):
+def _setup(tmp_path, surface, *, root_tests=False, owner_actor_ref="web"):
     if surface == 'channel':
-        state, writer, service, authority = _ready_prd_fixture(tmp_path, implementation_start=True)
+        state, writer, service, authority = _ready_prd_fixture(
+            tmp_path, implementation_start=True, owner_actor_ref=owner_actor_ref,
+        )
         payload = _task_payload(authority)
         cfgroot = tmp_path / 'config-fixture'
         cfgroot.mkdir()
@@ -54,7 +56,8 @@ def _setup(tmp_path, surface, *, root_tests=False):
     and not (surface == 'channel' and fault == 'root_tests')
 ])
 def test_preview_approval_and_light_map_preserve_source_and_scope(tmp_path, monkeypatch, capsys, surface, fault):
-    service, task, authority = _setup(tmp_path, surface, root_tests=fault == 'root_tests')
+    service, task, authority = _setup(tmp_path, surface, root_tests=fault == 'root_tests',
+                                     owner_actor_ref="operator:cli")
     state = service.state_dir
     log = EventLog(state / 'events.jsonl')
     start = WorkflowStartService(state, service.config, project_root=tmp_path)

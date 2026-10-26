@@ -1,0 +1,27 @@
+{
+  "old_watcher_pid": 2439703,
+  "reason": "Load verified retired Codex session fence; preserve providers and candidate",
+  "provider_panes_before": [
+    "zf-187-racing-supervision %0 1559115 bash",
+    "zf-187-racing-supervision %2 1559491 codex",
+    "zf-187-racing-supervision %4 1560367 codex",
+    "zf-187-racing-supervision %5 1560821 codex",
+    "zf-187-racing-supervision %9 1562734 codex",
+    "zf-187-racing-supervision %16 1605049 codex",
+    "zf-187-racing-supervision %27 2021050 codex",
+    "zf-187-racing-supervision %28 2053176 codex",
+    "zf-187-racing-supervision %29 2126787 codex",
+    "zf-187-racing-supervision %30 2250104 codex",
+    "zf-187-racing-supervision %31 2265485 codex",
+    "zf-187-racing-supervision %34 2407927 codex",
+    "zf-187-racing-supervision %35 2448632 bash",
+    "zf-187-racing-supervision %37 2452395 codex",
+    "zf-187-racing-supervision-run-manager %1 1559133 bash",
+    "zf-187-racing-supervision-run-manager %3 1559976 codex"
+  ],
+  "tests": {
+    "focused": 155,
+    "sentinel": 51,
+    "flow_store_docs": 17
+  }
+}

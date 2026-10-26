@@ -44,6 +44,7 @@ from zf.cli.hook_workdir_guard import (
     bash_command_looks_mutating as _bash_command_looks_mutating,
     evaluate_workdir_write_guard as _evaluate_workdir_write_guard,
     is_authorized_result_scratch_target as _is_authorized_result_scratch_target,
+    runtime_write_guard_text as _runtime_write_guard_text,
     tool_input_digest as _tool_input_digest,
     write_target_operations as _write_target_operations,
     write_target_paths as _write_target_paths,
@@ -605,11 +606,7 @@ def _evaluate_runtime_write_guard(
 
     tool_name = str(event_payload.get("tool_name") or "").strip()
     tool_input = event_payload.get("tool_input")
-    input_text = (
-        json.dumps(tool_input, ensure_ascii=False)
-        if isinstance(tool_input, (dict, list))
-        else str(tool_input or "")
-    )
+    input_text = _runtime_write_guard_text(tool_name, tool_input)
     lower_tool = tool_name.lower()
     protected = _mentions_protected_runtime_state(input_text, state_dir=state_dir)
     reason = ""

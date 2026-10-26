@@ -1,0 +1,20 @@
+const fs=require('fs'),assert=require('assert/strict');
+const {chromium}=require('/app/node_modules/playwright');
+const root='/tmp/zf-racing-supervision-20261025T211020Z';
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:'/ms-playwright/chromium-1226/chrome-linux64/chrome',args:['--no-sandbox']});
+const result={source:JSON.parse(fs.readFileSync(root+'/evidence/operator-game-probe-source.json')),browser:browser.version(),status:'running',checks:[],errors:[]};
+let page;
+try{const ctx=await browser.newContext({viewport:{width:1440,height:900}});page=await ctx.newPage();page.on('pageerror',e=>result.errors.push(String(e)));page.on('console',m=>{if(m.type()==='error')result.errors.push(m.text());});
+await page.goto('http://127.0.0.1:8023/');await page.getByRole('heading',{name:'环道挑战',exact:true}).waitFor();const snap=()=>page.evaluate(()=>window.__racingSnapshot());
+assert.equal((await snap()).phase,'ready');await page.screenshot({path:root+'/evidence/27-operator-game-ready.png'});
+await page.getByRole('button',{name:'开始比赛',exact:true}).click();await page.keyboard.down('w');await page.waitForTimeout(2000);await page.keyboard.up('w');assert((await snap()).vehicle.x>300);result.checks.push('real keyboard moves vehicle');
+await page.getByRole('button',{name:'暂停',exact:true}).click();await page.waitForTimeout(100);const paused=await snap();assert.equal(paused.phase,'paused');await page.waitForTimeout(700);assert.deepEqual(await snap(),paused);result.checks.push('pause freezes snapshot');
+await page.getByRole('button',{name:'继续',exact:true}).click();await page.waitForTimeout(250);assert.equal((await snap()).phase,'running');
+const start=await page.evaluate(()=>performance.now());await page.getByRole('button',{name:'重新开始',exact:true}).click();let state=await snap();assert.equal(state.phase,'running');assert.equal(state.distanceM,0);assert.equal(state.collisionCount,0);result.checks.push('restart resets live race');
+await page.keyboard.down('w');await page.waitForTimeout(7000);await page.keyboard.up('w');console.log('Normal 90-second race in progress');
+await page.waitForFunction(()=>window.__racingSnapshot().phase==='finished',null,{timeout:100000,polling:250});const end=await page.evaluate(()=>performance.now());state=await snap();
+assert(end-start>=90000);assert.equal(state.elapsedActiveMs,90000);assert.equal(state.remainingMs,0);assert.equal(state.finishCount,1);assert(state.distanceM>0);assert(state.collisionCount>0);assert.equal(state.score,Math.max(0,Math.floor(state.distanceM)-20*state.collisionCount));result.normal_race={monotonic_elapsed_ms:end-start,snapshot:state};
+await page.keyboard.down('w');await page.waitForTimeout(700);await page.keyboard.up('w');assert.deepEqual(await snap(),state);result.checks.push('normal 90 seconds, single immutable settlement, correct score');
+await page.screenshot({path:root+'/evidence/28-operator-game-finished.png'});await page.locator('#result').getByRole('button',{name:'重新比赛',exact:true}).click();const replay=await snap();assert.equal(replay.phase,'running');assert.equal(replay.distanceM,0);assert.equal(replay.collisionCount,0);assert.equal(replay.finishCount,0);result.checks.push('exact replay button resets finished game');assert.deepEqual(result.errors,[]);result.status='passed';
+}catch(e){result.status='failed';result.error=String(e);if(page)await page.screenshot({path:root+'/evidence/operator-game-probe-failed.png'});process.exitCode=1;}
+finally{fs.writeFileSync(root+'/evidence/operator-game-probe.json',JSON.stringify(result,null,2));await browser.close();console.log(JSON.stringify(result));}})();

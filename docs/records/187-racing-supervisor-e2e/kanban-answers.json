@@ -1,0 +1,14 @@
+[
+  {
+    "question": "驾驶玩法\n1 OF 3\n希望采用哪种驾驶视角？两种都提供真实加速、刹车、转向及碰撞反馈。\n希望采用哪种驾驶视角？两种都提供真实加速、刹车、转向及碰撞反馈。\n2D 俯视驾驶（推荐）\nRecommended\n单人封闭赛道，自由转向；车辆、赛道边界和障碍清晰，便于验证控制与碰撞。\n伪 3D 追尾驾驶\n追尾视角呈现速度与弯道；需增加透视表现及碰撞位置一致性的验收。\nOther\nChat about\nRequired to continue\nNext question",
+    "answer": "top_down"
+  },
+  {
+    "question": "比赛规则\n2 OF 3\n首版采用哪套结束与计分规则？\n首版采用哪套结束与计分规则？\n三圈计时赛（推荐）\nRecommended\n按顺序通过检查点，完成三圈结束；碰撞减速并罚时，结果显示总用时、碰撞次数与分数。\n90 秒积分赛\n倒计时结束结算；按有效前进距离得分、碰撞扣分，结果显示距离、碰撞次数与总分。\n耐久生存赛\n碰撞扣耐久、耐久归零结束；按有效前进距离计分，结果显示存活时间、距离与总分。\nOther\nBack\nChat about\nRequired to continue\nNext question",
+    "answer": "timed_score"
+  },
+  {
+    "question": "验收范围\n3 OF 3\n首版需要覆盖哪些设备和浏览器？所有选项都包含自动测试与真实浏览器操作验收。\n首版需要覆盖哪些设备和浏览器？所有选项都包含自动测试与真实浏览器操作验收。\n桌面 Chromium（推荐）\nRecommended\n键盘方向键/WASD；真实浏览器验证完整比赛、碰撞、暂停冻结、重开清零和结果，保留截图、运行记录与控制台错误检查。\n桌面 Chromium＋Firefox\n相同键盘玩法在两个真实浏览器运行验收，增加兼容性验证工作量。\n桌面与移动端\n桌面 Chromium 键盘操作，加移动端 Chrome/Safari 触控；须覆盖触屏布局及真实移动浏览器，明确可用设备和证据来源。\nOther\nBack\nChat about\nRequired to continue\nContinue",
+    "answer": "desktop_chromium"
+  }
+]

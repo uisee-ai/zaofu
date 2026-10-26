@@ -3214,6 +3214,7 @@ export interface OperatorInboxProjection {
 }
 
 export interface PlanPreview {
+  action_payload?: Record<string, unknown>;
   schema_version: string;
   ok: boolean;
   plan_id: string;

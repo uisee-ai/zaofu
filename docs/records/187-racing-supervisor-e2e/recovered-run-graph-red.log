@@ -1,0 +1,32 @@
+F...                                                                     [100%]
+=================================== FAILURES ===================================
+________ test_recovered_run_graph_and_detail_keep_old_block_as_history _________
+
+setup = (<starlette.testclient.TestClient object at 0x72971ddd5c10>, <zf.runtime.workflow_preview_review.WorkflowPreviewReview...gest': '4a4f3673076a7a892ebb2499a7952571cd1c51c5e316dd067d6fd2687a35b09b', 'request_id': 'review-test', 'revision': 2})
+
+    def test_recovered_run_graph_and_detail_keep_old_block_as_history(setup):
+        from zf.runtime.workflow_requests import mark_workflow_request
+
+        client, service, binding = setup
+        for status in ["approved", "submitted"]:
+            mark_workflow_request(service.state_dir, binding["request_id"],
+                                  status=status, actor="test", run_id="run-a")
+        service.writer.append(ZfEvent(id="blocked", type="run.goal.blocked", origin="kernel",
+                                     payload={"workflow_run_id": "run-a"}))
+        blocked_seq = len(service.writer.event_log.read_all())
+        service.writer.append(ZfEvent(type="run.goal.updated", actor="operator",
+                                     payload={"workflow_run_id": "run-a", "status": "active"}))
+        before = service.writer.event_log.read_all()
+        url = f"/api/projects/default/workflow-requests/{binding['request_id']}"
+        graph = client.get(url + "/graph").json()
+        nodes = {n["id"]: n for n in graph["nodes"]}
+>       assert nodes["run:run-a"]["status"] == "running"
+E       AssertionError: assert 'blocked' == 'running'
+E
+E         - running
+E         + blocked
+
+tests/test_sdlc_graph.py:142: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sdlc_graph.py::test_recovered_run_graph_and_detail_keep_old_block_as_history
+1 failed, 3 passed, 43 deselected in 2.62s

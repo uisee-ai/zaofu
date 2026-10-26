@@ -1202,9 +1202,15 @@ export async function reviewWorkflowPreview(
   return mutateWorkflowRequest(projectId, "workflow-preview-review", payload);
 }
 
+export async function reviewPlanArtifact(
+  projectId: string, payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return mutateWorkflowRequest(projectId, "plan-artifact-review", payload);
+}
+
 async function mutateWorkflowRequest(
   projectId: string,
-  action: "workflow-clarify" | "workflow-submit" | "workflow-preview-review",
+  action: "workflow-clarify" | "workflow-submit" | "workflow-preview-review" | "plan-artifact-review",
   payload: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const response = await fetch(`${projectPrefix(projectId)}/${action}`, {

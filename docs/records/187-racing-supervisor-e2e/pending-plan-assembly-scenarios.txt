@@ -1,0 +1,72 @@
+以下内容来自本次 Plan 的绑定附件；规划条目与场景不代表实现或测试已通过。
+
+任务 / 模块
+RACE-FOUNDATION · 建立可启动的工程骨架与共享契约
+RACE-DRIVE · 可驾驶并可暂停重开的90秒比赛
+RACE-TRACK · 可见赛道、障碍与不能刷分的碰撞路径
+RACE-ASSEMBLY · 装配正式赛车入口与完整交付验收
+装配正式赛车入口与完整交付验收
+
+RACE-ASSEMBLY · 前置：RACE-FOUNDATION、RACE-DRIVE、RACE-TRACK
+
+来源条款（4）
+具体验收场景（计划，未执行）
+
+本版尚未提供逐条 Given / When / Then 场景；下方验收项不能代替测试执行证据。
+
+验收项与验证责任
+AC-A01
+
+正式页面具备开始、比赛HUD、暂停、继续、重开与结束结果；两套真实键盘驱动车辆，赛道/障碍/碰撞反馈清楚可见。
+
+验证层级：e2e · 命令：VC-BROWSER、VC-DELIVERY
+
+未提供来源条款。
+
+AC-A02
+
+至少一场容器内真实Chromium比赛按正常时间完整运行90秒并一次结算，结果显示真实距离、碰撞次数和总分且可重新开局。结束面板的重开按钮文案统一为“重新比赛”，重开行为不变。
+
+验证层级：e2e · 命令：VC-BROWSER、VC-DELIVERY
+
+未提供来源条款。
+
+AC-A03
+
+每次实际环境preflight确认Docker、指定镜像、host网络、端口及服务连接；浏览器只在容器安装运行。
+
+验证层级：e2e · 命令：VC-INSTALL、VC-BROWSER、VC-DELIVERY
+
+未提供来源条款。
+
+AC-A04
+
+根目录统一验证入口依次完成preflight、安装、lint、确定性单测、构建和真实浏览器；任何失败、跳过或未完成均非零。
+
+验证层级：e2e · 命令：VC-LINT、VC-UNIT、VC-BUILD、VC-DELIVERY
+
+未提供来源条款。
+
+AC-A05
+
+验证运行与重跑拥有不覆盖历史的独立目录，原始日志按字节保留，截图/trace/报告/错误检查及摘要哈希齐全。
+
+验证层级：e2e · 命令：VC-BROWSER、VC-DELIVERY
+
+未提供来源条款。
+
+AC-A06
+
+当前交付可追溯到获批的完整PRD/SDD/TDD与唯一任务归属；3实现lane和至少2独立验证lane、Judge、Kernel边界受控。
+
+验证层级：manual_evidence · 命令：VC-GOVERNANCE
+
+未提供来源条款。
+
+AC-A07
+
+正式入口装配真实比赛与赛道依赖；卸载后按钮、输入和更新循环停止作用且重新挂载不重复响应；统一验证runner的任一阶段失败、超时或缺证据均向调用者返回非零并清理本次资源。
+
+验证层级：runtime · 命令：VC-ASSEMBLY
+
+未提供来源条款。

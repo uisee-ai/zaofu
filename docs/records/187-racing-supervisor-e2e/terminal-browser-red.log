@@ -1,0 +1,26 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 ui-regression/workflow-graph-workbench.spec.ts:221:5 › terminal Run, Tasks and Goal coverage agree with kernel evidence (5.6s)
+
+
+  1) ui-regression/workflow-graph-workbench.spec.ts:221:5 › terminal Run, Tasks and Goal coverage agree with kernel evidence
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "done"
+    Received: "in_progress"
+
+      232 |   expect(tasks.length).toBeGreaterThan(0);
+      233 |   for (const task of tasks) {
+    > 234 |     expect(task.status).toBe("done");
+          |                         ^
+      235 |     expect(task.data.accepted_event_ids.length).toBeGreaterThan(0);
+      236 |   }
+      237 |   expect(graph.goal_coverage.summary.closed_claims).toBe(graph.goal_coverage.summary.mandatory_claims);
+        at /tmp/zf-racing-supervision-20261025T211020Z/ui-regression/workflow-graph-workbench.spec.ts:234:25
+
+    Error Context: evidence/browser-ui-regression/workflow-graph-workbench-t-ecab5--agree-with-kernel-evidence/error-context.md
+
+  1 failed
+    ui-regression/workflow-graph-workbench.spec.ts:221:5 › terminal Run, Tasks and Goal coverage agree with kernel evidence

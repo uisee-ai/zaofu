@@ -1,0 +1,47 @@
+[
+  {
+    "dispatch_id": "evt-8c72aa3f5b93",
+    "role": "prd-verify-lane-0",
+    "workdir": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project",
+    "head": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+    "observed_at": "2026-10-26T05:54:26.742947+00:00",
+    "bindings": {
+      "target_ref": "candidate/TASK-5F44B4",
+      "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+      "workflow_generation": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+      "target_snapshot_ref": "artifacts/task-verification-targets/prepare-TASK-5F44B4-c32763f31115843f/RACE-FOUNDATION/a15b6b6f5247c6b2d8d0-a994e061678fa1b9.json",
+      "target_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+      "target_snapshot_digest": "087b100b9f12256477849a82027d234d718c948781baf2ce3900571c7b02afdd"
+    }
+  },
+  {
+    "dispatch_id": "evt-b496ec76365b",
+    "role": "prd-verify-lane-2",
+    "workdir": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-2/project",
+    "head": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+    "observed_at": "2026-10-26T05:54:26.770694+00:00",
+    "bindings": {
+      "target_ref": "candidate/TASK-5F44B4",
+      "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+      "workflow_generation": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+      "target_snapshot_ref": "artifacts/task-verification-targets/prepare-TASK-5F44B4-c32763f31115843f/RACE-ASSEMBLY/a15b6b6f5247c6b2d8d0-4e0f79de00f8a813.json",
+      "target_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+      "target_snapshot_digest": "b382caa2f976ef33f6b58bc905df5805e1f97ff3d974a400b6fbfd0d6909dbcc"
+    }
+  },
+  {
+    "dispatch_id": "evt-623bd4bbf8e6",
+    "role": "prd-verify-lane-1",
+    "workdir": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-1/project",
+    "head": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+    "observed_at": "2026-10-26T05:54:26.785037+00:00",
+    "bindings": {
+      "target_ref": "candidate/TASK-5F44B4",
+      "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+      "workflow_generation": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+      "target_snapshot_ref": "artifacts/task-verification-targets/prepare-TASK-5F44B4-c32763f31115843f/RACE-TRACK/a15b6b6f5247c6b2d8d0-69348027c84f94e5.json",
+      "target_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+      "target_snapshot_digest": "c69d5091ba127e1f5bb2480694f6aef1c3814b7b1fbbc7c7f98524663ed573ef"
+    }
+  }
+]

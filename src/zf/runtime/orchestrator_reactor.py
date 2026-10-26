@@ -6054,6 +6054,13 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         the same work unit without treating context exhaustion as success or
         product failure.
         """
+        from zf.runtime.reader_context_recovery import reader_fanout_owns_context_recovery
+
+        if reader_fanout_owns_context_recovery(self, event):
+            return WorkflowRuntimeDecision(
+                action="skip", task_id=event.task_id,
+                reason="context recovery belongs to reader fanout lifecycle",
+            )
         payload = event.payload if isinstance(event.payload, dict) else {}
         task_id = (
             event.task_id
@@ -6132,6 +6139,13 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         deterministic state transition that makes the task dispatchable again.
         It does not mark the task done and it does not invent new evidence.
         """
+        from zf.runtime.reader_context_recovery import reader_fanout_owns_context_recovery
+
+        if reader_fanout_owns_context_recovery(self, event):
+            return WorkflowRuntimeDecision(
+                action="skip", task_id=event.task_id,
+                reason="context retry belongs to reader fanout lifecycle",
+            )
         task_id = event.task_id or ""
         payload = event.payload if isinstance(event.payload, dict) else {}
         if not task_id:

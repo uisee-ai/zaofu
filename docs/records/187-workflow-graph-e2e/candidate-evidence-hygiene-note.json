@@ -1,0 +1,8 @@
+{
+  "at": "2026-10-25T18:20:33.923607+00:00",
+  "task_id": "COUNTER-001",
+  "message": "本次隔离验收补充（COUNTER-001）：运行时已通过 control-plane-only 在 docker 组环境重启，候选门禁的 socket 权限已恢复，原始合同命令未改。另从上一轮 git diff 已观察到，重复 VC-BROWSER 会改写已跟踪的 browser/report.json 与 trace.zip；candidate_worktree_clean 要求运行门禁后 tracked 内容不变。请检查这个可重复性问题，在任务授权路径内将历史证据保存为不可变版本，当前运行输出与已提交证据分离；保留完整日志/引用及全部原始验收命令，不降低门禁。按当前新 briefing 的完整模板交接。",
+  "basis": "Previous real rerun changed tracked browser/report.json and browser/trace.zip; candidate cleanliness gate rejects tracked modifications",
+  "delivery": "Queued in owned test Agent terminal; interrupted its read-only preparation turn so the queued environment/evidence note is consumed before another completion submission",
+  "delivered_at": "2026-10-25T18:23:17.732151+00:00"
+}

@@ -171,6 +171,7 @@ def build_workflow_proposal(
     if not candidate_path.is_file():
         raise WorkflowProposalError("workflow proposal config input is missing")
     config = load_config(candidate_path)
+    from zf.runtime.workflow_graph_snapshot import compile_proposal_graph
     rendered = redact_config(renderable_config_to_primitive(config))
     source_docs = _flow_documents(candidate_path)
     if not short_spec_ref:
@@ -201,6 +202,8 @@ def build_workflow_proposal(
             "sha256": candidate_digest,
         },
         "config": rendered,
+        "compiled_graph": redact_obj(compile_proposal_graph(config, str(
+            short_spec.get("flow_family") or flow_kind or request.get("kind") or ""))),
         "yaml": yaml.safe_dump_all(
             [redact_obj(redact_config(doc)) for doc in yaml.safe_load_all(candidate_path.read_text(encoding="utf-8"))],
             sort_keys=False, allow_unicode=True,

@@ -295,6 +295,42 @@ def test_fanout_manifest_closes_pending_after_terminal_run_completed() -> None:
     assert reconciled["reconciled_by"] == "run.completed"
 
 
+def test_dispatched_authority_replaces_queued_authority_for_result_binding(tmp_path: Path):
+    from zf.runtime.fanout_result_identity import bind_blocking_writer_result_identity
+
+    state_dir = tmp_path / "custom-state"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(log)
+    old = {"contract_authority_revision": "authority-planned",
+           "execution_owner": "planned-owner", "workflow_request_id": "request-1",
+           "workflow_request_revision": "1", "origin_binding_digest": "origin-old"}
+    context = FanoutContext(
+        fanout_id="queued-authority", stage_id="impl", topology="fanout_writer_scoped",
+        trace_id="run-1", trigger_event_id="plan", target_ref="main",
+        expected_children=[FanoutChild(child_id="queued-task", role_instance="",
+                                      payload={**old, "task_id": "TASK-1", "result_protocol_mode": "blocking"})],
+    )
+    writer.append(context.started_event())
+    for revision in ("dispatched", "redispatched"):
+        current = {**old, "contract_authority_revision": "authority-" + revision,
+                   "execution_owner": "runtime-owner", "workflow_request_revision": "2",
+                   "origin_binding_digest": "origin-current"}
+        writer.append(ZfEvent(type="fanout.child.dispatched", actor="zf-cli", payload={
+            "fanout_id": context.fanout_id, "child_id": "queued-task",
+            "role_instance": "dev-2", "run_id": revision, **current,
+        }))
+        manifest = json.loads((state_dir / "fanouts" / context.fanout_id / "manifest.json").read_text())
+        child = manifest["children"][0]
+        result = bind_blocking_writer_result_identity({
+            "impl_self_check": {**current, "evidence_refs": ["actual-command-receipt"]},
+        }, child)
+        assert {key: child[key] for key in current} == current
+        assert {key: result[key] for key in current} == current
+        assert result["impl_self_check"]["contract_authority_revision"] == current["contract_authority_revision"]
+        assert result["impl_self_check"]["evidence_refs"] == ["actual-command-receipt"]
+
+
 def test_fanout_manifest_projects_affinity_stage_slot_queue(tmp_path: Path):
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()

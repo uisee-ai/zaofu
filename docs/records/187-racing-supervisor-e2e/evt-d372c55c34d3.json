@@ -1,0 +1,199 @@
+{
+  "type": "integration.failed",
+  "id": "evt-d372c55c34d3",
+  "ts": "2026-10-26T01:44:26.028800+00:00",
+  "actor": "zf-cli",
+  "task_id": null,
+  "payload": {
+    "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+    "trace_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "stage_id": "prd-lanes-impl",
+    "status": "failed",
+    "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "flow_kind": "prd",
+    "request_kind": "auto",
+    "workflow_request_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f.json",
+    "requirement_spec_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json",
+    "requirement_spec_digest": "5c0dd9f57a1ada94b699ab4ec0bee6a6df05ee695f49c79b7af28850d40ebb9b",
+    "request_revision": 6,
+    "workflow_generation": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+    "task_map_generation": "bc70eca2006225af346bbebbd8c49a3e7c59f479ef491a4056368aa90736ec8e",
+    "plan_artifact_package_id": "planpkg-2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a",
+    "plan_artifact_package_ref": "artifacts/plan-packages/2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a.json",
+    "plan_artifact_package_digest": "2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a",
+    "completion_profile": "software_delivery",
+    "goal_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "pdd_id": "TASK-5F44B4",
+    "feature_id": "TASK-5F44B4",
+    "workflow_proposal_ref": {
+      "ref_schema_version": "sidecar-ref.v1",
+      "kind": "workflow_proposal",
+      "ref": "artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/proposals/d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8.json",
+      "sha256": "d645d43ad6e41596b40937201956822a337b8785eb8e28cd0fa4d17b697228d8",
+      "byte_count": 77409,
+      "content_type": "application/json",
+      "schema_version": "workflow-proposal.v1",
+      "encoding": "utf-8",
+      "created_by": "workflow-proposal-compiler",
+      "source_event_id": "",
+      "access_scope": {},
+      "retention": {
+        "class": "audit_required"
+      },
+      "required": true,
+      "preview": ""
+    },
+    "workflow_proposal_digest": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+    "effective_config_ref": {
+      "access_scope": {},
+      "byte_count": 205419,
+      "content_type": "application/json",
+      "created_by": "workflow-proposal-compiler",
+      "encoding": "utf-8",
+      "kind": "effective_config_snapshot",
+      "preview": "",
+      "ref": "artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/effective-configs/df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487.json",
+      "ref_schema_version": "sidecar-ref.v1",
+      "required": true,
+      "retention": {
+        "class": "audit_required"
+      },
+      "schema_version": "effective-config-snapshot.v1",
+      "sha256": "df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487",
+      "source_event_id": ""
+    },
+    "effective_config_digest": "df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487",
+    "run_contract_ref": "artifacts/run-contracts/c89a9f70232d3807898647ac16f5f5d2f82896e07cbc2305e71ec7227b0d29b4.json",
+    "run_contract_digest": "d447ba8184c68daa8ec9223086a7b64f42ca587a5e58b2f25cda629112822532",
+    "rework_of": "evt-2992693c229e",
+    "rework_attempt": 2,
+    "rework_source": "plan.rejected",
+    "rework_feedback": [
+      "plan-rejection: plan-review:67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json (sha256=67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+    ],
+    "rework_summary": {
+      "pdd_id": "TASK-5F44B4",
+      "source_event_type": "plan.rejected",
+      "attempt": 2,
+      "action": "replan",
+      "classification": "ambiguous",
+      "categories": [],
+      "failed_task_ids": [],
+      "gap_tasks": [],
+      "rework_paths": [],
+      "feedback_count": 1,
+      "feedback_excerpt": [
+        "plan-rejection: plan-review:67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a.json (sha256=67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+      ],
+      "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+      "path_owner_task_ids": [],
+      "terminal_path_owner_task_ids": [],
+      "unowned_rework_paths": [],
+      "invalid_failed_task_ids": [],
+      "terminal_failed_task_ids": []
+    },
+    "replan_classification": "ambiguous",
+    "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/task_map.json",
+    "source_index_ref": "artifacts/fanouts/fanout-prd-plan-evt-982e731b/prd-planner/artifacts/plan/source_index.json",
+    "candidate_ref": "candidate/TASK-5F44B4",
+    "candidate_base_commit": "0937a8f1a57f5df1b5c196df3355613418300391",
+    "candidate_head_commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+    "diff_ref": "0937a8f1a57f5df1b5c196df3355613418300391..dfe994958e811acbfd95101dafd4a73c4df56eb5",
+    "completed_task_ids": [
+      "RACE-FOUNDATION",
+      "RACE-ASSEMBLY",
+      "RACE-DRIVE",
+      "RACE-TRACK"
+    ],
+    "quality_status": "failed",
+    "quality_check_count": 14,
+    "quality_gates_passed": [
+      "task_contract:RACE-FOUNDATION:VC-INSTALL",
+      "task_contract:RACE-DRIVE:VC-DRIVE",
+      "task_contract:RACE-DRIVE:VC-UNIT",
+      "task_contract:RACE-TRACK:VC-TRACK",
+      "task_contract:RACE-ASSEMBLY:VC-ASSEMBLY",
+      "task_contract:RACE-ASSEMBLY:VC-LINT",
+      "task_contract:RACE-ASSEMBLY:VC-BUILD",
+      "task_contract:RACE-ASSEMBLY:VC-GOVERNANCE"
+    ],
+    "quality_gates_failed": [
+      "task_contract:RACE-FOUNDATION:VC-FOUNDATION",
+      "task_contract:RACE-FOUNDATION:VC-SCAFFOLD-BROWSER",
+      "task_contract:RACE-DRIVE:VC-DRIVE-BROWSER",
+      "task_contract:RACE-TRACK:VC-TRACK-BROWSER",
+      "task_contract:RACE-ASSEMBLY:VC-BROWSER",
+      "task_contract:RACE-ASSEMBLY:VC-DELIVERY"
+    ],
+    "candidate_environment": {
+      "schema_version": "candidate-environment.v1",
+      "status": "ready",
+      "candidate_commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+      "setup_declared": false,
+      "setup_script_digest": "",
+      "setup_ran": false,
+      "exit_code": null,
+      "detail": "no setup declared"
+    },
+    "integration_attempt_id": "candidate-integration-958a5dbe47324b1cfdc963a3",
+    "candidate_input_digest": "a3b0b8da32f36771fb13836acba9f71324b0d17a66f6f6d7263f83ecf292edc8",
+    "candidate_environment_digest": "50410be42ddbf5eed1c773487de180c5cc6d5a7decd261191946c4ba412d0462",
+    "candidate_quality_digest": "8656544890567f95c5f5f093acd89456297eaf84b1f4f902731273bf50c93c13",
+    "failure_class": "candidate_product_quality_failed",
+    "failure_scope": "candidate",
+    "primary_failure_reason": "candidate quality gate failed: node scripts/racing-runner/unit.mjs scaffold",
+    "diagnostic_summary": "RACING_RUN=artifacts/racing/scaffold/runs/2026-10-26T01-31-09-801Z-e85d20c2-b899-4a56-b14f-d73533331846",
+    "diagnostic_class": "command_failed",
+    "failing_command": "node scripts/racing-runner/unit.mjs scaffold",
+    "exit_code": 1,
+    "failed_task_ids": [
+      "RACE-ASSEMBLY",
+      "RACE-DRIVE",
+      "RACE-FOUNDATION",
+      "RACE-TRACK"
+    ],
+    "setup_script_digest": "",
+    "failure_fingerprint": "candidate-failure-98c6b2a9d6107bb065aeb447",
+    "commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+    "failed_children": [],
+    "findings": [
+      {
+        "finding_id": "candidate-quality-failed",
+        "severity": "high",
+        "category": "candidate_quality",
+        "message": "candidate quality gates failed\n\n$ node scripts/racing-runner/unit.mjs scaffold\nRACING_RUN=artifacts/racing/scaffold/runs/2026-10-26T01-31-09-801Z-e85d20c2-b899-4a56-b14f-d73533331846\n\n$ bash scripts/racing-runner/docker.sh scaffold\nRACING_RUN=artifacts/racing/scaffold/runs/2026-10-26T01-31-09-977Z-eba0026b-1ccd-439f-a552-e9aaa8afba44\n\n$ bash scripts/racing-runner/docker.sh race\nRACING_RUN=artifacts/racing/race/runs/2026-10-26T01-31-18-510Z-73c76b74-e8e5-4c9b-9556-6e99dc73474a\n\n$ bash scripts/racing-runner/docker.sh track\nRACING_RUN=artifacts/racing/track/runs/2026-10-26T01-34-39-048Z-11dfd687-b0bb-4aa5-b774-8a6ca0273aff\n\n$ bash scripts/racing-runner/docker.sh acceptance\nRACING_RUN=artifacts/racing/assembly/runs/2026-10-26T01-37-57-595Z-f8968fe4-b89b-476d-97c9-e41419ac1b45",
+        "verification_command": "node scripts/racing-runner/unit.mjs scaffold; bash scripts/racing-runner/docker.sh scaffold; bash scripts/racing-runner/docker.sh race; bash scripts/racing-runner/docker.sh track; bash scripts/racing-runner/docker.sh acceptance; bash scripts/verify-racing.sh",
+        "evidence_refs": [
+          "task_contract:RACE-FOUNDATION:VC-FOUNDATION",
+          "task_contract:RACE-FOUNDATION:VC-SCAFFOLD-BROWSER",
+          "task_contract:RACE-DRIVE:VC-DRIVE-BROWSER",
+          "task_contract:RACE-TRACK:VC-TRACK-BROWSER",
+          "task_contract:RACE-ASSEMBLY:VC-BROWSER",
+          "task_contract:RACE-ASSEMBLY:VC-DELIVERY"
+        ]
+      }
+    ],
+    "product_findings": [
+      {
+        "finding_id": "candidate-quality-failed",
+        "severity": "high",
+        "category": "candidate_quality",
+        "message": "candidate quality gates failed\n\n$ node scripts/racing-runner/unit.mjs scaffold\nRACING_RUN=artifacts/racing/scaffold/runs/2026-10-26T01-31-09-801Z-e85d20c2-b899-4a56-b14f-d73533331846\n\n$ bash scripts/racing-runner/docker.sh scaffold\nRACING_RUN=artifacts/racing/scaffold/runs/2026-10-26T01-31-09-977Z-eba0026b-1ccd-439f-a552-e9aaa8afba44\n\n$ bash scripts/racing-runner/docker.sh race\nRACING_RUN=artifacts/racing/race/runs/2026-10-26T01-31-18-510Z-73c76b74-e8e5-4c9b-9556-6e99dc73474a\n\n$ bash scripts/racing-runner/docker.sh track\nRACING_RUN=artifacts/racing/track/runs/2026-10-26T01-34-39-048Z-11dfd687-b0bb-4aa5-b774-8a6ca0273aff\n\n$ bash scripts/racing-runner/docker.sh acceptance\nRACING_RUN=artifacts/racing/assembly/runs/2026-10-26T01-37-57-595Z-f8968fe4-b89b-476d-97c9-e41419ac1b45",
+        "verification_command": "node scripts/racing-runner/unit.mjs scaffold; bash scripts/racing-runner/docker.sh scaffold; bash scripts/racing-runner/docker.sh race; bash scripts/racing-runner/docker.sh track; bash scripts/racing-runner/docker.sh acceptance; bash scripts/verify-racing.sh",
+        "evidence_refs": [
+          "task_contract:RACE-FOUNDATION:VC-FOUNDATION",
+          "task_contract:RACE-FOUNDATION:VC-SCAFFOLD-BROWSER",
+          "task_contract:RACE-DRIVE:VC-DRIVE-BROWSER",
+          "task_contract:RACE-TRACK:VC-TRACK-BROWSER",
+          "task_contract:RACE-ASSEMBLY:VC-BROWSER",
+          "task_contract:RACE-ASSEMBLY:VC-DELIVERY"
+        ]
+      }
+    ]
+  },
+  "causation_id": "evt-27a7562e7887",
+  "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+  "origin": "kernel"
+}

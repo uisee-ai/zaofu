@@ -1,0 +1,21 @@
+worktree: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph
+changed:
+  - docs/impl/187-ai-sdlc-graph-workbench.md
+  - web/src/components/workflow/WorkflowGraphWorkbench.tsx
+  - web/tests/workflow-graph-workbench.spec.ts
+domains: docs, web_ui
+python tests: 1
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests/test_instruction_stack_contracts.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: changed tests + direct imports/callers + boundary sentinels
+  - [auto/web] web-typecheck: npm run typecheck
+      reason: Web UI/API boundary changed
+  - [auto/web] web-unit: npm run test:unit
+      reason: compile Web unit tests once and execute model contracts
+
+==> python-deterministic: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests/test_instruction_stack_contracts.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+bringing up nodes...
+bringing up nodes...
+
+........                                                                 [100%]
+8 passed in 11.02s

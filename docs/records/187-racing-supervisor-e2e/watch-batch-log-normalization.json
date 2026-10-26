@@ -1,0 +1,7 @@
+{
+  "file": "watch-batch-red.log",
+  "normalization": "strip trailing whitespace on each line for git diff checks; preserve original bytes in gzip",
+  "original_sha256": "d04a9c89733ead35b312e0f00ef99f5a5d323c64fc03145ea3d40588197ef24d",
+  "display_sha256": "fb456225c39da7ff0dc7aacd0de4831088d1304e9fccf67711194dc50fdab997",
+  "original_archive": "watch-batch-red.raw.log.gz"
+}

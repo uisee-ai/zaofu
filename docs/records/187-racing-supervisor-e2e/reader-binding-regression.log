@@ -1,0 +1,6 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 ui-regression/workflow-graph-workbench.spec.ts:65:5 › Plan reader retains unchanged attachments across graph polls and reloads changed bindings (15.7s)
+
+  1 passed (18.2s)

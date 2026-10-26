@@ -1,0 +1,9 @@
+{
+  "basis": "Read-only replay of real pre-escalation ledger prefix through patched consumers",
+  "source_events": 3300,
+  "cutoff": "2026-10-25T23:50:25Z",
+  "pending_failure_closeout_actions": [],
+  "idle_probe_ticks": 20,
+  "idle_probe_emissions": 0,
+  "runtime_writes": false
+}

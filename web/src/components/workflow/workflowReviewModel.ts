@@ -21,8 +21,11 @@ export function previewQuote(selection: Selection | null, root: HTMLElement | nu
   return { field: start.dataset.reviewField || "", text, start: offset, end: offset + Array.from(text).length };
 }
 export function reviewFieldLabel(field: string): string {
+  if (field.includes(".workflow.plan_approval")) return "计划生成后等待审批";
   if (field === "execution_plan") return "执行计划";
   const parts = field.split(".");
+  if (["roleDefaults", "role_defaults"].includes(parts[2])) return "执行配置 · 模型（model）";
+  if (["roleSkillBundles", "role_skill_bundles"].includes(parts[2])) return `执行配置 · ${parts[3]} skills`;
   if (parts[0] === "requirement") {
     const label = ({ objective: "目标", acceptance: "验收条件", constraints: "约束", open_questions: "待澄清问题" } as Record<string, string>)[parts[1]] || "需求";
     return parts.length > 2 ? `${label} ${Number(parts[2]) + 1}` : label;

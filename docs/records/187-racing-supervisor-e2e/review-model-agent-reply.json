@@ -1,0 +1,34 @@
+{
+  "ok": true,
+  "answer": "拟仅将 PrdFlow 的 roleDefaults.model 设为 gpt-6-astra，其他字段、全局 provider 配置及其他 Flow 保持不变。此修改用于重新编译配置候选，新版 YAML 仍需审核；本次未写入、批准或启动任务。",
+  "changes": [
+    {
+      "field": "config.1.roleDefaults.model",
+      "before": "",
+      "after": "gpt-6-astra"
+    }
+  ],
+  "draft_ref": {
+    "ref_schema_version": "sidecar-ref.v1",
+    "kind": "workflow_preview_review",
+    "ref": "artifacts/workflow/preview-reviews/3243e1a9c9e7c5b946b262a334027a819aea6d62c60461abcb588df78fe7bb63.json",
+    "sha256": "3243e1a9c9e7c5b946b262a334027a819aea6d62c60461abcb588df78fe7bb63",
+    "byte_count": 3826,
+    "content_type": "application/json",
+    "schema_version": "workflow-preview-review.v1",
+    "encoding": "utf-8",
+    "created_by": "workflow-preview-review",
+    "source_event_id": "",
+    "access_scope": {},
+    "retention": {
+      "class": "audit_required"
+    },
+    "required": true,
+    "preview": ""
+  },
+  "binding": {
+    "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "revision": 4,
+    "proposal_digest": "bd34674022322397e65cad94c7a09a70856185ff89d6da574ce7904d117a99ab"
+  }
+}

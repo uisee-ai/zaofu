@@ -11,6 +11,8 @@ import uuid
 
 import yaml
 
+from zf.runtime.workflow_review_fields import apply_config_field, config_review_fields, flow_input_roles
+
 from zf.core.config.loader import load_config
 from zf.core.events.writer import EventWriter
 from zf.core.state.atomic_io import atomic_write_text
@@ -25,8 +27,6 @@ from zf.runtime.workflow_requests import (
 )
 
 SCHEMA = "workflow-preview-review.v1"
-# These are existing controller inputs, not an agent-defined execution topology.
-CONFIG_FIELDS = {"lanes", "strictness", "backend", "verifyBackend", "topology"}
 
 
 class PreviewReviewError(ValueError):
@@ -162,8 +162,16 @@ class WorkflowPreviewReview:
                 "invalid_config_candidate", "Preview config candidate digest mismatch"
             )
         config_text = candidate_path.read_text()
+        compiled_config = load_config(candidate_path)
         docs = list(yaml.safe_load_all(config_text))
         for index, doc in enumerate(docs):
+            if isinstance(doc, dict) and doc.get("kind") == "ZfConfig":
+                plan_approval = (doc.get("spec", {}).get("workflow") or {}).get("plan_approval")
+                suffix = ".enabled" if isinstance(plan_approval, dict) else ""
+                fields[f"config.{index}.workflow.plan_approval{suffix}"] = {
+                    "value": compiled_config.workflow.plan_approval_enabled, "editable": True,
+                    "reason": "计划生成后等待 Owner 审阅 PRD / Plan，再进入实施；需确认新版配置。",
+                }
             if not isinstance(doc, dict) or doc.get("kind") not in {
                 "IssueFlow",
                 "PrdFlow",
@@ -174,15 +182,9 @@ class WorkflowPreviewReview:
             if str(doc["kind"]).lower().removesuffix("flow") != family:
                 continue
             spec = doc.get("spec") or {}
-            for name in sorted(CONFIG_FIELDS & spec.keys()):
-                if isinstance(spec[name], (str, int)) and not isinstance(
-                    spec[name], bool
-                ):
-                    fields[f"config.{index}.{name}"] = {
-                        "value": spec[name],
-                        "editable": True,
-                        "reason": "生成配置候选；仍需单独批准 Apply config",
-                    }
+            role_inputs = flow_input_roles(docs, index, family)
+            fields.update(config_review_fields(index, spec, role_names=list(role_inputs),
+                family=family, inherited_skills=role_inputs))
         return {
             "binding": expected,
             "request": request,
@@ -192,6 +194,7 @@ class WorkflowPreviewReview:
             "fields": fields,
             "config_digest": config_digest,
             "config_text": config_text,
+            "compiled_role_skills": {role.name: list(role.skills) for role in compiled_config.roles},
         }
 
     def public_context(self, binding: dict) -> dict:
@@ -317,7 +320,7 @@ class WorkflowPreviewReview:
                         422,
                     )
             if type(before) is not type(after) or (
-                isinstance(after, str) and not after.strip()
+                isinstance(after, str) and not after.strip() and not field.endswith(".model")
             ):
                 raise PreviewReviewError(
                     "invalid_patch",
@@ -384,12 +387,16 @@ class WorkflowPreviewReview:
         if field.startswith("config."):
             path = self._candidate_config(ctx, changes)
             try:
-                load_config(path)
+                compiled = load_config(path)
+                if any(key in field for key in (".roleSkillBundles.", ".role_skill_bundles.")) and (
+                    {role.name: list(role.skills) for role in compiled.roles} == ctx["compiled_role_skills"]
+                ):
+                    raise PreviewReviewError("ineffective_skill_binding", "该 skills 输入没有改变实际角色绑定，请选择编译器支持的角色或技能组", 422)
                 from zf.runtime.workflow_preflight import build_flow_preflight_report
 
                 report = build_flow_preflight_report(
                     path,
-                    flow_kind=ctx["request"]["kind"],
+                    flow_kind=self._flow_kind(ctx),
                     intake_path=Path(
                         str(
                             ctx["manifest"].get("intake_json_ref")
@@ -414,8 +421,7 @@ class WorkflowPreviewReview:
     def _candidate_config(self, ctx: dict, changes: list) -> Path:
         docs = list(yaml.safe_load_all(ctx["config_text"]))
         for change in changes:
-            _, index, key = change["field"].split(".")
-            docs[int(index)]["spec"][key] = change["after"]
+            docs = apply_config_field(docs, change["field"], change["after"])
         # Beside zf.yaml so relative config references preserve their meaning.
         path = self.project_root / f".zf-preview-{uuid.uuid4().hex}.yaml"
         atomic_write_text(
@@ -427,6 +433,11 @@ class WorkflowPreviewReview:
         path.chmod(0o600)
         return path
 
+    @staticmethod
+    def _flow_kind(ctx: dict) -> str:
+        return {"IssueFlow": "issue", "PrdFlow": "prd", "RefactorFlow": "refactor",
+                "Workflow": "workflow"}.get(ctx["proposal"].get("flow_family"), ctx["request"]["kind"])
+
     def apply(self, descriptor: dict) -> dict:
         draft = hydrate_sidecar_ref(self.state_dir, descriptor).payload
         if not isinstance(draft, dict) or draft.get("schema_version") != SCHEMA:
@@ -434,7 +445,10 @@ class WorkflowPreviewReview:
                 "invalid_patch", "Not a Preview revision artifact", 422
             )
         digest = str(descriptor.get("sha256") or "")
-        with locked_path(self.state_dir / "locks" / "workflow-preview-mutation"):
+        # The durable preparation consumer must not replay this intermediate
+        # ready revision against the old canonical config while we compile it.
+        with locked_path(self.state_dir / "projections" / "workflow-synthesis-consumer.guard"), \
+                locked_path(self.state_dir / "locks" / "workflow-preview-mutation"):
             for event in reversed(self.writer.event_log.read_all()):
                 if (
                     event.type == "web.action.completed"
@@ -503,7 +517,7 @@ class WorkflowPreviewReview:
 
                 report = build_flow_preflight_report(
                     candidate,
-                    flow_kind=current["kind"],
+                    flow_kind=self._flow_kind(ctx),
                     intake_path=Path(
                         str(
                             ctx["manifest"].get("intake_json_ref")
@@ -525,7 +539,7 @@ class WorkflowPreviewReview:
                     base_config_path=self.config_path,
                     candidate_config_path=candidate,
                     preflight=report,
-                    flow_kind=current["kind"],
+                    flow_kind=self._flow_kind(ctx),
                     synthesis_result_ref=synthesis_ref,
                     actor="web-owner",
                     writer=self.writer,
@@ -581,11 +595,19 @@ class WorkflowPreviewReview:
             for key in ("flow_family", "intent", "parameters", "purpose", "template")
             if key in spec
         }
+        compiled = load_config(candidate)
         for change in changes:
             if change["field"].startswith("config."):
                 key = change["field"].split(".")[-1]
                 if key in {"lanes", "strictness"}:
                     short_spec.setdefault("parameters", {})[key] = change["after"]
+                if key == "lanes":
+                    # Lane expansion is compiler-owned. A smaller approved lane
+                    # count must not retain references to removed lane instances.
+                    family = str(result["selected_flow_family"]).lower().removesuffix("flow")
+                    prior_roles = set(result.get("requested_roles", []))
+                    result["requested_roles"] = sorted({role.name for role in compiled.roles
+                        if role.flow_kind == family or (not role.flow_kind and role.name in prior_roles)})
         result.update(
             request_id=current["request_id"],
             request_revision=current["revision"],
@@ -598,7 +620,7 @@ class WorkflowPreviewReview:
         outcome = run_workflow_synthesis(
             state_dir=self.state_dir,
             project_root=self.project_root,
-            config=load_config(candidate),
+            config=compiled,
             writer=self.writer,
             request_id=current["request_id"],
             actor="web-owner",

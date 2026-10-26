@@ -1,0 +1,16 @@
+worktree: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph
+changed:
+  - docs/impl/187-ai-sdlc-graph-workbench.md
+  - docs/records/2026-10-25-2110-racing-supervisor-e2e.md
+  - src/zf/core/state/role_sessions.py
+  - tasks/active/2026-10-25-2110-racing-supervisor-e2e.md
+  - tests/test_role_session_retirement.py
+domains: backend, docs, event_store, tests
+python tests: 225 (broad deterministic)
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: 225 impacted test files exceed 80; run deterministic suite
+  - [auto/serial] python-serial: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests/test_memory_rotate_concurrency.py tests/test_session_mutex.py tests/test_state_locks.py -q --no-cov -m 'serial and not perf and not host and not real_provider'
+      reason: selected process/fixed-resource tests run without xdist
+  - [auto/contract] premerge-sentinels: bash scripts/dev-premerge-gate.sh
+      reason: shared Event/Store/Config/Orchestration contract changed

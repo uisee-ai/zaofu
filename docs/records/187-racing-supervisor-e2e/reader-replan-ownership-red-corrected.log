@@ -1,0 +1,35 @@
+F...........F                                                            [100%]
+=================================== FAILURES ===================================
+_______ test_old_reader_failure_does_not_exhaust_active_candidate_replan _______
+
+    def test_old_reader_failure_does_not_exhaust_active_candidate_replan():
+        events = _history()
+>       assert plan_reader_stage_replan(_config(), events, events[-1]) == (
+            None, "owned_by_active_candidate_replan",
+        )
+E       AssertionError: assert (None, 'cap_exhausted') == (None, 'owned...idate_replan')
+E
+E         At index 1 diff: 'cap_exhausted' != 'owned_by_active_candidate_replan'
+E         Use -v to get more diff
+
+tests/test_reader_replan_ownership.py:47: AssertionError
+________ test_runtime_caller_retains_failure_without_terminalizing_run _________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-242/test_runtime_caller_retains_fa0')
+
+    def test_runtime_caller_retains_failure_without_terminalizing_run(tmp_path):
+        events = _history()
+        log = EventLog(tmp_path / "events.jsonl")
+        for event in events:
+            log.append(event)
+        reactor = SimpleNamespace(config=_config(), event_log=log, state_dir=tmp_path,
+                                  event_writer=EventWriter(log), escalation=Mock(), task_store=Mock())
+        result = EventReactorMixin._on_reader_stage_failure_replan(reactor, events[-1])
+>       assert result is None
+E       AssertionError: assert WorkflowRuntimeDecision(action='escalate', task_id='', role=None, target_role=None, reason='flow.discovery.failed → stage replan cap exhausted → human') is None
+
+tests/test_reader_replan_ownership.py:97: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_reader_replan_ownership.py::test_old_reader_failure_does_not_exhaust_active_candidate_replan
+FAILED tests/test_reader_replan_ownership.py::test_runtime_caller_retains_failure_without_terminalizing_run
+2 failed, 11 passed in 1.29s

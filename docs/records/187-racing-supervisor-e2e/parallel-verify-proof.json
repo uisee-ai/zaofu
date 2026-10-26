@@ -1,0 +1,153 @@
+{
+  "scope": {
+    "project_id": "racing-project-33598481",
+    "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "revision": 6,
+    "run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "proposal_digest": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+    "source_seq": 11036,
+    "head_seq": 11036,
+    "historical": false,
+    "execution_started": true
+  },
+  "current_plan_id": "evt-498c4d468cc2",
+  "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+  "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+  "run": {
+    "id": "run:prepare-TASK-5F44B4-c32763f31115843f",
+    "kind": "run",
+    "label": "prepare-TASK-5F44B4-c32763f31115843f",
+    "status": "running",
+    "views": [
+      "lifecycle",
+      "workflow",
+      "trace",
+      "delivery"
+    ],
+    "data": {
+      "project_id": "racing-project-33598481",
+      "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "revision": 6,
+      "run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "proposal_digest": "e6b96388d991a90e8f0c11255708007db0cfd8dd80133fa8a56ff9d142b20340",
+      "source_seq": 11036,
+      "head_seq": 11036,
+      "historical": false,
+      "execution_started": true
+    }
+  },
+  "operations": [
+    {
+      "id": "operation:wop-prd-lanes-verify-prd-verify-lane-0-foundation-tri-2bff8048b562",
+      "status": "running",
+      "data": {
+        "operation_id": "wop-prd-lanes-verify-prd-verify-lane-0-foundation-tri-2bff8048b562",
+        "role_instance": "prd-verify-lane-0",
+        "task_id": "RACE-FOUNDATION",
+        "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "started_at": "2026-10-26T05:52:13.144642+00:00",
+        "active_attempt_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-foundation",
+        "agent_binding": {
+          "backend": "codex",
+          "model": "gpt-6-astra",
+          "skills": [
+            "zf-workflow-adaptation-boundary",
+            "zf-project-adapter-matrix-enrichment",
+            "zf-yoke-test-evaluator-role-context"
+          ],
+          "source": "provider_usage",
+          "source_event_id": "evt-851e29c0f623"
+        },
+        "source_event_ids": [
+          "evt-dccc9c327f09",
+          "evt-a8d5fb58f755"
+        ]
+      }
+    },
+    {
+      "id": "operation:wop-prd-lanes-verify-prd-verify-lane-2-experience-ass-317ae58ae006",
+      "status": "running",
+      "data": {
+        "operation_id": "wop-prd-lanes-verify-prd-verify-lane-2-experience-ass-317ae58ae006",
+        "role_instance": "prd-verify-lane-2",
+        "task_id": "RACE-ASSEMBLY",
+        "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "started_at": "2026-10-26T05:52:16.218988+00:00",
+        "active_attempt_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-2-experience-assembly",
+        "agent_binding": {
+          "backend": "codex",
+          "model": "gpt-6-astra",
+          "skills": [
+            "zf-workflow-adaptation-boundary",
+            "zf-project-adapter-matrix-enrichment",
+            "zf-yoke-test-evaluator-role-context"
+          ],
+          "source": "provider_usage",
+          "source_event_id": "evt-1b6b6ac01db9"
+        },
+        "source_event_ids": [
+          "evt-8974ac762656",
+          "evt-b6fe470d91e6"
+        ]
+      }
+    },
+    {
+      "id": "operation:wop-prd-lanes-verify-prd-verify-lane-1-track-collisio-d29b1c767894",
+      "status": "running",
+      "data": {
+        "operation_id": "wop-prd-lanes-verify-prd-verify-lane-1-track-collisio-d29b1c767894",
+        "role_instance": "prd-verify-lane-1",
+        "task_id": "RACE-TRACK",
+        "task_map_generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+        "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "started_at": "2026-10-26T05:52:19.696247+00:00",
+        "active_attempt_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-1-track-collision",
+        "agent_binding": {
+          "backend": "codex",
+          "model": "gpt-6-astra",
+          "skills": [
+            "zf-workflow-adaptation-boundary",
+            "zf-project-adapter-matrix-enrichment",
+            "zf-yoke-test-evaluator-role-context"
+          ],
+          "source": "provider_usage",
+          "source_event_id": "evt-a951c15a028a"
+        },
+        "source_event_ids": [
+          "evt-387885053e90",
+          "evt-5d6b5609e14b"
+        ]
+      }
+    }
+  ],
+  "task_statuses": [
+    {
+      "id": "task:RACE-ASSEMBLY",
+      "status": "in_progress",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "task:RACE-DRIVE",
+      "status": "in_progress",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "task:RACE-FOUNDATION",
+      "status": "in_progress",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "task:RACE-TRACK",
+      "status": "in_progress",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "task:TASK-5F44B4",
+      "status": "in_progress",
+      "accepted_event_ids": []
+    }
+  ],
+  "full_graph_raw_sha256": "737582a4391744d62d5aec2cff5cd3245819ca244f798a3b611ff87c14f22af9"
+}

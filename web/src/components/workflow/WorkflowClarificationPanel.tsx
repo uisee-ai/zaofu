@@ -38,12 +38,14 @@ export function WorkflowClarificationPanel({
   const [targetRoot, setTargetRoot] = useState(textValue(requirement.target_root));
   const [acceptance, setAcceptance] = useState(asStringArray(requirement.acceptance).join("\n"));
   const [constraints, setConstraints] = useState(asStringArray(requirement.constraints).join("\n"));
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     setObjective(textValue(requirement.objective));
     setSourceRoot(textValue(requirement.source_root));
     setTargetRoot(textValue(requirement.target_root));
     setAcceptance(asStringArray(requirement.acceptance).join("\n"));
     setConstraints(asStringArray(requirement.constraints).join("\n"));
+    setEditing(false);
   }, [requestId, requirement.revision]);
   const openQuestions = asStringArray(requirement.open_questions);
   const questionBatch = openQuestions.slice(0, 3);
@@ -61,7 +63,7 @@ export function WorkflowClarificationPanel({
     expected_requirement_digest: requirementDigest,
   };
 
-  if (requestStatus === "ready") {
+  if (requestStatus === "ready" && !editing) {
     return (
       <section className="workflow-clarification compact" data-testid="workflow-ready-to-prepare">
         <div className="workflow-clarification-head">
@@ -69,6 +71,8 @@ export function WorkflowClarificationPanel({
             <span className="eyebrow">Requirement revision</span>
             <strong>Confirmed and ready</strong>
           </div>
+          <button type="button" disabled={!actionReady || busyAction !== ""}
+            onClick={() => setEditing(true)}>修改需求与配置约束</button>
           <button
             className="icon-button primary"
             disabled={!actionReady || busyAction !== "" || !intakeRef}
@@ -83,7 +87,7 @@ export function WorkflowClarificationPanel({
       </section>
     );
   }
-  if (!["clarifying", "draft"].includes(requestStatus)) return null;
+  if (!["clarifying", "draft", "ready"].includes(requestStatus)) return null;
 
   const clarificationPayload = {
     ...preparePayload,
@@ -106,6 +110,7 @@ export function WorkflowClarificationPanel({
       <label>
         <span>Objective</span>
         <textarea
+          aria-label="Objective"
           rows={3}
           value={objective}
           onChange={(event) => setObjective(event.target.value)}
@@ -116,6 +121,7 @@ export function WorkflowClarificationPanel({
           <label>
             <span>Source root</span>
             <input
+              aria-label="Source root"
               value={sourceRoot}
               onChange={(event) => setSourceRoot(event.target.value)}
             />
@@ -125,6 +131,7 @@ export function WorkflowClarificationPanel({
           <label>
             <span>Target root</span>
             <input
+              aria-label="Target root"
               value={targetRoot}
               onChange={(event) => setTargetRoot(event.target.value)}
             />
@@ -135,6 +142,7 @@ export function WorkflowClarificationPanel({
         <label>
           <span>Acceptance</span>
           <textarea
+            aria-label="Acceptance"
             rows={4}
             value={acceptance}
             onChange={(event) => setAcceptance(event.target.value)}
@@ -143,6 +151,7 @@ export function WorkflowClarificationPanel({
         <label>
           <span>Constraints</span>
           <textarea
+            aria-label="Constraints"
             rows={4}
             value={constraints}
             onChange={(event) => setConstraints(event.target.value)}

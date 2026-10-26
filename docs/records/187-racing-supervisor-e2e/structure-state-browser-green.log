@@ -1,0 +1,6 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 ui-regression/workflow-graph-workbench.spec.ts:183:5 › completed fanout updates aggregate and role structure nodes (25.9s)
+
+  1 passed (28.9s)

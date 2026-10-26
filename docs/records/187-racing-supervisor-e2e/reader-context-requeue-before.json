@@ -1,0 +1,198 @@
+[
+  {
+    "type": "worker.context.critical",
+    "id": "evt-68332e23f02c",
+    "ts": "2026-10-26T07:18:59.997408+00:00",
+    "actor": "prd-verify-lane-0",
+    "task_id": "RACE-DRIVE",
+    "payload": {
+      "task_id": "RACE-DRIVE",
+      "dispatch_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2",
+      "snapshot_ref": ".zf-187 Racing Supervision/snapshots/RACE-DRIVE/run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2/runtime-snapshot.json",
+      "role": "prd-verify-lane-0",
+      "instance_id": "prd-verify-lane-0",
+      "backend": "codex",
+      "context_usage_ratio": 0.9243,
+      "ratio": 0.9243,
+      "session_ref": "01a176e2-6af6-78e2-9361-2a2ce48c2406",
+      "source": "session_reader",
+      "reason": "hard_cap_exceeded",
+      "context_warning_threshold": 0.6,
+      "context_compact_threshold": 0.7,
+      "context_hard_cap": 0.9,
+      "effective_tokens": 238840,
+      "window": 258400,
+      "model_context_window": 258400,
+      "idle": false,
+      "active_fanout": {
+        "fanout_id": "fanout-prd-lanes-verify-evt-c1e65c55",
+        "stage_id": "prd-lanes-verify",
+        "child_id": "prd-verify-lane-0-vehicle-race-2",
+        "run_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2"
+      },
+      "hard_cap": 0.9
+    },
+    "causation_id": "evt-aaa27d76d974",
+    "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "origin": "kernel"
+  },
+  {
+    "type": "completion_audit.routed",
+    "id": "evt-5a015e6ce2a7",
+    "ts": "2026-10-26T07:19:02.179588+00:00",
+    "actor": "zf-cli",
+    "task_id": "RACE-DRIVE",
+    "payload": {
+      "task_id": "RACE-DRIVE",
+      "route": "retry",
+      "reason": "context critical: hard_cap_exceeded; task is blocked by dependency or external state",
+      "missing_evidence": [
+        {
+          "kind": "active_blocker",
+          "severity": "blocking",
+          "message": "blocker RACE-FOUNDATION is not terminal",
+          "expected": "RACE-FOUNDATION done/cancelled",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        },
+        {
+          "kind": "missing_acceptance_evidence",
+          "severity": "blocking",
+          "message": "acceptance criterion has no evidence: 方向键与 WASD 等价控制加速、刹停及连续朝向变化；相反输入、松键和失焦有确定语义。",
+          "expected": "方向键与 WASD 等价控制加速、刹停及连续朝向变化；相反输入、松键和失焦有确定语义。",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        },
+        {
+          "kind": "missing_acceptance_evidence",
+          "severity": "blocking",
+          "message": "acceptance criterion has no evidence: 只有 running 推进有效时间与车辆；暂停冻结全部比赛状态，继续不补算暂停时间；前台正常90秒归零。",
+          "expected": "只有 running 推进有效时间与车辆；暂停冻结全部比赛状态，继续不补算暂停时间；前台正常90秒归零。",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        },
+        {
+          "kind": "missing_acceptance_evidence",
+          "severity": "blocking",
+          "message": "acceptance criterion has no evidence: 开始与重开原子重置所有比赛状态；终局生成一次不可变结果，后续帧/按键/重复操作不再改变它。",
+          "expected": "开始与重开原子重置所有比赛状态；终局生成一次不可变结果，后续帧/按键/重复操作不再改变它。",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        },
+        {
+          "kind": "missing_acceptance_evidence",
+          "severity": "blocking",
+          "message": "acceptance criterion has no evidence: 有效距离和接触事件统一计分：floor(距离米数)-20×碰撞次数，下限0；HUD和结果读取同一值。",
+          "expected": "有效距离和接触事件统一计分：floor(距离米数)-20×碰撞次数，下限0；HUD和结果读取同一值。",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        }
+      ],
+      "recommended_role": "prd-dev-lane-0",
+      "next_required_event": "",
+      "work_unit_id": "WU-RACE-DRIVE",
+      "dispatch_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2",
+      "attempt": 0,
+      "trigger_event_type": "worker.context.critical",
+      "trigger_event_id": "evt-68332e23f02c",
+      "resume_packet_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/briefings/RACE-DRIVE/run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2/resume-packet.json",
+      "resume_packet_missing_evidence_count": 5,
+      "previous_snapshot_ref": ".zf-187 Racing Supervision/snapshots/RACE-DRIVE/run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2/runtime-snapshot.json",
+      "recovery_snapshot_ref": ".zf-187 Racing Supervision/snapshots/RACE-DRIVE/run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2/runtime-snapshot.json"
+    },
+    "causation_id": "evt-68332e23f02c",
+    "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "origin": "kernel"
+  },
+  {
+    "type": "task.retry_scheduled",
+    "id": "evt-28aa0be39db5",
+    "ts": "2026-10-26T07:19:02.180874+00:00",
+    "actor": "zf-cli",
+    "task_id": "RACE-DRIVE",
+    "payload": {
+      "task_id": "RACE-DRIVE",
+      "route": "retry",
+      "reason": "context critical: hard_cap_exceeded; task is blocked by dependency or external state",
+      "missing_evidence": [
+        {
+          "kind": "active_blocker",
+          "severity": "blocking",
+          "message": "blocker RACE-FOUNDATION is not terminal",
+          "expected": "RACE-FOUNDATION done/cancelled",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        },
+        {
+          "kind": "missing_acceptance_evidence",
+          "severity": "blocking",
+          "message": "acceptance criterion has no evidence: 方向键与 WASD 等价控制加速、刹停及连续朝向变化；相反输入、松键和失焦有确定语义。",
+          "expected": "方向键与 WASD 等价控制加速、刹停及连续朝向变化；相反输入、松键和失焦有确定语义。",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        },
+        {
+          "kind": "missing_acceptance_evidence",
+          "severity": "blocking",
+          "message": "acceptance criterion has no evidence: 只有 running 推进有效时间与车辆；暂停冻结全部比赛状态，继续不补算暂停时间；前台正常90秒归零。",
+          "expected": "只有 running 推进有效时间与车辆；暂停冻结全部比赛状态，继续不补算暂停时间；前台正常90秒归零。",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        },
+        {
+          "kind": "missing_acceptance_evidence",
+          "severity": "blocking",
+          "message": "acceptance criterion has no evidence: 开始与重开原子重置所有比赛状态；终局生成一次不可变结果，后续帧/按键/重复操作不再改变它。",
+          "expected": "开始与重开原子重置所有比赛状态；终局生成一次不可变结果，后续帧/按键/重复操作不再改变它。",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        },
+        {
+          "kind": "missing_acceptance_evidence",
+          "severity": "blocking",
+          "message": "acceptance criterion has no evidence: 有效距离和接触事件统一计分：floor(距离米数)-20×碰撞次数，下限0；HUD和结果读取同一值。",
+          "expected": "有效距离和接触事件统一计分：floor(距离米数)-20×碰撞次数，下限0；HUD和结果读取同一值。",
+          "owner_role": "prd-dev-lane-0",
+          "evidence_refs": []
+        }
+      ],
+      "recommended_role": "prd-dev-lane-0",
+      "next_required_event": "",
+      "work_unit_id": "WU-RACE-DRIVE",
+      "dispatch_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2",
+      "attempt": 0,
+      "trigger_event_type": "worker.context.critical",
+      "trigger_event_id": "evt-68332e23f02c",
+      "resume_packet_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/briefings/RACE-DRIVE/run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2/resume-packet.json",
+      "resume_packet_missing_evidence_count": 5,
+      "previous_snapshot_ref": ".zf-187 Racing Supervision/snapshots/RACE-DRIVE/run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2/runtime-snapshot.json",
+      "recovery_snapshot_ref": ".zf-187 Racing Supervision/snapshots/RACE-DRIVE/run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2/runtime-snapshot.json",
+      "completion_audit_event_id": "evt-5a015e6ce2a7"
+    },
+    "causation_id": "evt-5a015e6ce2a7",
+    "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "origin": "kernel"
+  },
+  {
+    "type": "task.requeued",
+    "id": "evt-96e619cb17ac",
+    "ts": "2026-10-26T07:19:14.288370+00:00",
+    "actor": "zf-cli",
+    "task_id": "RACE-DRIVE",
+    "payload": {
+      "source": "completion_audit_schedule",
+      "schedule_event_id": "evt-28aa0be39db5",
+      "schedule_event_type": "task.retry_scheduled",
+      "completion_audit_event_id": "evt-5a015e6ce2a7",
+      "route": "retry",
+      "reason": "context critical: hard_cap_exceeded; task is blocked by dependency or external state",
+      "previous_status": "in_progress",
+      "previous_dispatch_id": "",
+      "assigned_to": "prd-dev-lane-0",
+      "next_required_event": ""
+    },
+    "causation_id": "evt-28aa0be39db5",
+    "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "origin": "kernel"
+  }
+]

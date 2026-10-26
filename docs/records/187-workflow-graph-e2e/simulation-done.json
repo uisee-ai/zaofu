@@ -1,0 +1,17 @@
+{
+  "type": "simulation.done",
+  "id": "evt-00b25479b896",
+  "ts": "2026-10-25T19:22:16.820714+00:00",
+  "actor": "zf-cli",
+  "task_id": null,
+  "payload": {
+    "schema_version": "simulation-lifecycle.v1",
+    "run_id": "workflow-ccaaed87c1b1d6c7",
+    "status": "completed",
+    "terminal_event_id": "evt-c227df403c7a",
+    "terminal_event_type": "run.goal.completed"
+  },
+  "causation_id": "evt-c227df403c7a",
+  "correlation_id": "workflow-ccaaed87c1b1d6c7",
+  "origin": ""
+}

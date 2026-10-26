@@ -1,0 +1,86 @@
+worktree: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph
+changed:
+  - docs/impl/187-ai-sdlc-graph-workbench.md
+  - docs/records/2026-10-25-2110-racing-supervisor-e2e.md
+  - src/zf/runtime/sdlc_graph.py
+  - src/zf/runtime/sdlc_workflow_states.py
+  - tests/test_sdlc_workflow_states.py
+  - web/tests/workflow-graph-workbench.spec.ts
+domains: backend, docs, tests, web_ui
+python tests: 4
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests/test_instruction_stack_contracts.py tests/test_sdlc_graph.py tests/test_sdlc_workflow_states.py tests/test_task_attempt_failure_operations.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: changed tests + direct imports/callers + boundary sentinels
+  - [auto/web] web-typecheck: npm run typecheck
+      reason: Web UI/API boundary changed
+  - [auto/web] web-unit: npm run test:unit
+      reason: compile Web unit tests once and execute model contracts
+
+==> python-deterministic: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests/test_instruction_stack_contracts.py tests/test_sdlc_graph.py tests/test_sdlc_workflow_states.py tests/test_task_attempt_failure_operations.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+bringing up nodes...
+bringing up nodes...
+
+..................................................................       [100%]
+66 passed in 27.34s
+
+==> web-typecheck: npm run typecheck
+
+> @zaofu/web@0.0.7 typecheck
+> tsc --noEmit
+
+
+==> web-unit: npm run test:unit
+
+> @zaofu/web@0.0.7 test:unit
+> node scripts/run-unit-tests.mjs
+
+agentJsonDisplay.test.ts OK
+agentToolGrouping.test.ts OK
+agentToolOutput.test.ts OK
+agentTurnWindow.test.ts OK
+agentWorkState.test.ts OK
+channelActionAdapter tests passed
+channelChatPresentation tests passed
+channelConversationState tests passed
+channelDecisions tests passed
+channelDiscussionAttention.test.ts OK
+channelEvaluationFinding.test.ts OK
+channelFlow tests passed
+channelLiveRefreshPolicy tests passed
+channelLiveStream.test.ts OK
+channelLiveStream compaction tests OK
+channelProjection.test.ts OK
+channelProjection origin-thread normalization tests OK
+channelProjection blocked-route notice tests OK
+channelProjection pending-request tests OK
+channelProjection provider-pending tests OK
+channelProjection failure classification tests OK
+channelProjection workflow-result tests OK
+channelTerminalProjection tests passed
+channelWorkflowPlanning tests passed
+contributionPresentation.test.ts OK
+dashboardLaunch tests passed
+deliveryWorkGoalModel tests passed
+deliveryWorkGraphModel tests passed
+deliveryWorkModel tests passed
+goalCoverageModel tests passed
+kanbanAgentInteractionPolicy tests passed
+kanbanAgentPermission.test.ts OK
+kanbanSessionEvents.test.ts OK
+latestRequestGate tests passed
+liveRunIndicator.test.ts OK
+localDocumentLink tests passed
+markdownGuard.test.ts OK
+notices.test.ts OK
+planMarkdownPages.test.ts OK
+prdMarkdownPages.test.ts OK
+projectRequestScope tests passed
+replyHealth tests passed
+run graph state tests passed
+run regression action tests passed
+taskToolbarSelection.test.ts OK
+triageProposals.test.ts OK
+proposalRunNotice OK
+webChatInteractionModel.test.ts OK
+webChatPendingModel.test.ts OK
+workspaceProjectSelection tests passed

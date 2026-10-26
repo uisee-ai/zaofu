@@ -1,0 +1,111 @@
+{
+  "status": "accepted",
+  "accepted_at": "2026-10-26T08:27:11.281862+00:00",
+  "exported_at": "2026-10-26T08:40:32.470976+00:00",
+  "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+  "kernel_terminal_event_id": "evt-e31b1c6d9a73",
+  "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+  "goal_coverage": {
+    "mandatory_claims": 23,
+    "planned_claims": 23,
+    "claims_with_current_results": 23,
+    "closed_claims": 23,
+    "open_gaps": 0
+  },
+  "tasks": [
+    {
+      "id": "task:RACE-ASSEMBLY",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    },
+    {
+      "id": "task:RACE-DRIVE",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    },
+    {
+      "id": "task:RACE-FOUNDATION",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    },
+    {
+      "id": "task:RACE-TRACK",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    },
+    {
+      "id": "task:TASK-5F44B4",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-e31b1c6d9a73"
+      ]
+    }
+  ],
+  "parallelism": {
+    "configured_impl_lanes": 3,
+    "configured_verify_lanes": 3,
+    "observed_impl_peak": 2,
+    "observed_verify_peak": 3,
+    "verify_children": 4,
+    "impl_limit": "dependency width: FOUNDATION then DRIVE/TRACK in parallel then ASSEMBLY"
+  },
+  "real_browser": {
+    "independent_verify_normal_race_ms": 90308.09999847412,
+    "supervisor": {
+      "monotonic_elapsed_ms": 90207.90000152588,
+      "snapshot": {
+        "phase": "finished",
+        "vehicle": {
+          "x": 421.1981848048889,
+          "y": 120,
+          "headingRad": 0,
+          "speedMps": 0
+        },
+        "elapsedActiveMs": 90000,
+        "remainingMs": 0,
+        "distanceM": 106.66743469759487,
+        "collisionCount": 1,
+        "score": 86,
+        "route": {
+          "lastAngleRad": -0.9781994673638144,
+          "unwrappedProgressM": 106.66743469759487,
+          "highWaterM": 106.66743469759487,
+          "nextCheckpointIndex": 1,
+          "completedLaps": 0
+        },
+        "contactIds": [
+          "outer"
+        ],
+        "result": {
+          "distanceM": 106.66743469759487,
+          "collisionCount": 1,
+          "score": 86,
+          "elapsedActiveMs": 90000
+        },
+        "finishCount": 1
+      }
+    },
+    "ui_terminal_test": "passed"
+  },
+  "production_deployment": "not performed; report_only",
+  "limitations": [
+    "large historical graph loads observed 8–21 seconds",
+    "minor clipped keyboard legend at 1280×800",
+    "initial cold-environment and timeout failures retained; final unchanged contract commands passed"
+  ],
+  "evidence": {
+    "goal-completion-receipt.json": "14ad5837363bbe9d9e3d4a2860ad256c111f7cef3a02139bd1b47ad47bd3fb0c",
+    "final-game-browser.json": "74fb91dd042a070b06ebcdbc6bc2b531dbf18b132a5d793b33a93d60671fe4de",
+    "terminal-graph.json": "5a58db6aa093f573fadbe18e48da5bda76bd9847517c43018b39bfab413f0d68",
+    "runtime-zf.yaml": "2b356f6a13021b0616878f71079c83a31abd25d1f262a1fb73ae206778b6a6f3"
+  },
+  "historical_snapshots": "Earlier candidate_pending files remain unchanged; this receipt joins them to the actual matching Kernel terminal."
+}

@@ -1,0 +1,148 @@
+FFFF.                                                                    [100%]
+=================================== FAILURES ===================================
+__ test_semantic_failure_closes_active_operation_and_graph[dev.blocked-False] __
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-231/test_semantic_failure_closes_a0')
+recover = False, result_type = 'dev.blocked'
+
+    @pytest.mark.parametrize('recover', [False, True])
+    @pytest.mark.parametrize('result_type', ['dev.blocked', 'dev.failed'])
+    def test_semantic_failure_closes_active_operation_and_graph(tmp_path: Path, recover, result_type):
+        runtime, _, state = _runtime(tmp_path)
+        context = _send(runtime, state, dispatch_id='disp-1')
+        assert context and context.operation_id
+        payload = {'workflow_run_id':'RUN-1', 'operation_id':context.operation_id,
+            'request_hash':'hash', 'task_id':'TASK-1', 'dispatch_id':context.dispatch_id,
+            'active_attempt_id':context.dispatch_id, 'role_instance':'dev'}
+        for kind in ['requested', 'started']:
+            runtime.event_writer.append(ZfEvent(type='workflow.operation.'+kind,
+                origin='kernel', task_id='TASK-1', payload=payload))
+        result = runtime.event_writer.append(ZfEvent(type=result_type, actor='dev', task_id='TASK-1',
+            payload={**dispatch_attempt_payload(context), 'reason':'browser setup failed'}))
+        if recover:
+            TaskAttemptStore(state/'task_attempts.json').update(context.attempt_id,
+                status='failed', updated_at=result.ts, terminal_event_id=result.id,
+                failure_class='semantic_result_failed', failure_reason='browser setup failed',
+                retryable=False, recovery_owner='workflow')
+        else:
+            settle_task_attempt_result(runtime, result)
+        reconcile_task_attempts(runtime)
+        reconcile_task_attempts(runtime)
+        events = runtime.event_log.read_all()
+        terminal = [e for e in events if e.type == 'workflow.operation.failed']
+>       assert len(terminal) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_task_attempt_failure_operations.py:41: AssertionError
+__ test_semantic_failure_closes_active_operation_and_graph[dev.blocked-True] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-231/test_semantic_failure_closes_a1')
+recover = True, result_type = 'dev.blocked'
+
+    @pytest.mark.parametrize('recover', [False, True])
+    @pytest.mark.parametrize('result_type', ['dev.blocked', 'dev.failed'])
+    def test_semantic_failure_closes_active_operation_and_graph(tmp_path: Path, recover, result_type):
+        runtime, _, state = _runtime(tmp_path)
+        context = _send(runtime, state, dispatch_id='disp-1')
+        assert context and context.operation_id
+        payload = {'workflow_run_id':'RUN-1', 'operation_id':context.operation_id,
+            'request_hash':'hash', 'task_id':'TASK-1', 'dispatch_id':context.dispatch_id,
+            'active_attempt_id':context.dispatch_id, 'role_instance':'dev'}
+        for kind in ['requested', 'started']:
+            runtime.event_writer.append(ZfEvent(type='workflow.operation.'+kind,
+                origin='kernel', task_id='TASK-1', payload=payload))
+        result = runtime.event_writer.append(ZfEvent(type=result_type, actor='dev', task_id='TASK-1',
+            payload={**dispatch_attempt_payload(context), 'reason':'browser setup failed'}))
+        if recover:
+            TaskAttemptStore(state/'task_attempts.json').update(context.attempt_id,
+                status='failed', updated_at=result.ts, terminal_event_id=result.id,
+                failure_class='semantic_result_failed', failure_reason='browser setup failed',
+                retryable=False, recovery_owner='workflow')
+        else:
+            settle_task_attempt_result(runtime, result)
+        reconcile_task_attempts(runtime)
+        reconcile_task_attempts(runtime)
+        events = runtime.event_log.read_all()
+        terminal = [e for e in events if e.type == 'workflow.operation.failed']
+>       assert len(terminal) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_task_attempt_failure_operations.py:41: AssertionError
+__ test_semantic_failure_closes_active_operation_and_graph[dev.failed-False] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-231/test_semantic_failure_closes_a2')
+recover = False, result_type = 'dev.failed'
+
+    @pytest.mark.parametrize('recover', [False, True])
+    @pytest.mark.parametrize('result_type', ['dev.blocked', 'dev.failed'])
+    def test_semantic_failure_closes_active_operation_and_graph(tmp_path: Path, recover, result_type):
+        runtime, _, state = _runtime(tmp_path)
+        context = _send(runtime, state, dispatch_id='disp-1')
+        assert context and context.operation_id
+        payload = {'workflow_run_id':'RUN-1', 'operation_id':context.operation_id,
+            'request_hash':'hash', 'task_id':'TASK-1', 'dispatch_id':context.dispatch_id,
+            'active_attempt_id':context.dispatch_id, 'role_instance':'dev'}
+        for kind in ['requested', 'started']:
+            runtime.event_writer.append(ZfEvent(type='workflow.operation.'+kind,
+                origin='kernel', task_id='TASK-1', payload=payload))
+        result = runtime.event_writer.append(ZfEvent(type=result_type, actor='dev', task_id='TASK-1',
+            payload={**dispatch_attempt_payload(context), 'reason':'browser setup failed'}))
+        if recover:
+            TaskAttemptStore(state/'task_attempts.json').update(context.attempt_id,
+                status='failed', updated_at=result.ts, terminal_event_id=result.id,
+                failure_class='semantic_result_failed', failure_reason='browser setup failed',
+                retryable=False, recovery_owner='workflow')
+        else:
+            settle_task_attempt_result(runtime, result)
+        reconcile_task_attempts(runtime)
+        reconcile_task_attempts(runtime)
+        events = runtime.event_log.read_all()
+        terminal = [e for e in events if e.type == 'workflow.operation.failed']
+>       assert len(terminal) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_task_attempt_failure_operations.py:41: AssertionError
+___ test_semantic_failure_closes_active_operation_and_graph[dev.failed-True] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-231/test_semantic_failure_closes_a3')
+recover = True, result_type = 'dev.failed'
+
+    @pytest.mark.parametrize('recover', [False, True])
+    @pytest.mark.parametrize('result_type', ['dev.blocked', 'dev.failed'])
+    def test_semantic_failure_closes_active_operation_and_graph(tmp_path: Path, recover, result_type):
+        runtime, _, state = _runtime(tmp_path)
+        context = _send(runtime, state, dispatch_id='disp-1')
+        assert context and context.operation_id
+        payload = {'workflow_run_id':'RUN-1', 'operation_id':context.operation_id,
+            'request_hash':'hash', 'task_id':'TASK-1', 'dispatch_id':context.dispatch_id,
+            'active_attempt_id':context.dispatch_id, 'role_instance':'dev'}
+        for kind in ['requested', 'started']:
+            runtime.event_writer.append(ZfEvent(type='workflow.operation.'+kind,
+                origin='kernel', task_id='TASK-1', payload=payload))
+        result = runtime.event_writer.append(ZfEvent(type=result_type, actor='dev', task_id='TASK-1',
+            payload={**dispatch_attempt_payload(context), 'reason':'browser setup failed'}))
+        if recover:
+            TaskAttemptStore(state/'task_attempts.json').update(context.attempt_id,
+                status='failed', updated_at=result.ts, terminal_event_id=result.id,
+                failure_class='semantic_result_failed', failure_reason='browser setup failed',
+                retryable=False, recovery_owner='workflow')
+        else:
+            settle_task_attempt_result(runtime, result)
+        reconcile_task_attempts(runtime)
+        reconcile_task_attempts(runtime)
+        events = runtime.event_log.read_all()
+        terminal = [e for e in events if e.type == 'workflow.operation.failed']
+>       assert len(terminal) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_task_attempt_failure_operations.py:41: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task_attempt_failure_operations.py::test_semantic_failure_closes_active_operation_and_graph[dev.blocked-False]
+FAILED tests/test_task_attempt_failure_operations.py::test_semantic_failure_closes_active_operation_and_graph[dev.blocked-True]
+FAILED tests/test_task_attempt_failure_operations.py::test_semantic_failure_closes_active_operation_and_graph[dev.failed-False]
+FAILED tests/test_task_attempt_failure_operations.py::test_semantic_failure_closes_active_operation_and_graph[dev.failed-True]
+4 failed, 1 passed in 2.64s

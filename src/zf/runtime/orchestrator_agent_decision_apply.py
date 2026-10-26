@@ -508,7 +508,7 @@ def _apply_return_to_plan(
         causation_id=event.id,
         correlation_id=event.correlation_id or workflow_run_id,
     ))
-    from zf.runtime.replan_resynth import build_replan_resynth_event
+    from zf.runtime import replan_resynth
 
     plan = SimpleNamespace(
         pdd_id=feature_id,
@@ -531,14 +531,14 @@ def _apply_return_to_plan(
         plan_artifact_package_ref=package_ref,
         plan_artifact_package_digest=package_digest,
     )
-    resynth = build_replan_resynth_event(
+    resynth = replan_resynth.build_replan_resynth_event(
         plan=plan,
         events=runtime.event_log.read_all(),
         config=runtime.config,
     )
     emitted = [marker.id]
     if resynth is not None:
-        emitted.append(runtime.event_writer.append(resynth).id)
+        emitted.append(replan_resynth.append_replan_resynth_once(runtime.event_writer, runtime.state_dir, resynth).id)
     return {**dict(outcome), "semantic_replan_event_ids": emitted}
 
 

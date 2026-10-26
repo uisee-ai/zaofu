@@ -91,3 +91,58 @@ def test_preparation_worker_services_every_open_project(tmp_path, monkeypatch):
         assert set(calls) == roots
     finally:
         worker.stop()
+
+
+def test_new_workspace_task_prepares_without_opening_workflows(tmp_path, monkeypatch):
+    from tests.test_workflow_prepare import _create_payload
+    from zf.core.workspace.registry import WorkspaceProject, WorkspaceRegistry
+
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / "workspace"))
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+    calls = _provider(monkeypatch)
+    bootstrap = tmp_path / "bootstrap"
+    bootstrap.mkdir()
+    _write_config(bootstrap / "zf.yaml")
+    app = create_app(
+        bootstrap / ".zf", config=load_config(bootstrap / "zf.yaml"),
+        project_root=bootstrap,
+    )
+    with TestClient(app) as client:
+        # Registered after Dashboard startup; no workflow GET may activate it.
+        root = tmp_path / "new-project"
+        root.mkdir()
+        _write_config(root / "zf.yaml")
+        config_text = (root / "zf.yaml").read_text().replace("state_dir: .zf", "state_dir: .custom state")
+        (root / "zf.yaml").write_text(config_text)
+        state = root / ".custom state"
+        state.mkdir()
+        (state / "events.jsonl").touch()
+        (state / "kanban.json").write_text("[]")
+        WorkspaceRegistry().upsert(WorkspaceProject(
+            project_id="new-project", name="new-project", root=str(root),
+            config_path=str(root / "zf.yaml"), state_dir_hint=str(state),
+            last_opened_at="",
+        ))
+        payload = _create_payload()
+        payload["contract"].update({
+            "scope": ["src/**"], "verification_tiers": ["static"],
+            "spec_skip_reason": "Use the confirmed task contract for initial planning",
+        })
+        response = client.post(
+            "/api/projects/new-project/actions/create-task",
+            headers={"x-zf-web-token": "test-token"},
+            json={"project_id": "new-project", "idempotency_key": "new-task",
+                  "actor": "web", "payload": payload},
+        )
+        assert response.status_code == 201, response.text
+        rid = response.json()["workflow_preparation"]["request_id"]
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            if load_workflow_request(state, rid).get("status") == "clarifying":
+                break
+            time.sleep(0.05)
+        assert load_workflow_request(state, rid)["status"] == "clarifying"
+    assert len(calls) == 1
+    assert not (root / ".zf").exists()
+    assert not any(e.type == "workflow.invoke.requested"
+                   for e in EventLog(state / "events.jsonl").read_all())

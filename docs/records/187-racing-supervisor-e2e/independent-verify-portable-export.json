@@ -1,0 +1,17 @@
+{
+  "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+  "accepted_event_ids": [
+    "evt-09fca80d510d",
+    "evt-178981d81d7c",
+    "evt-29287f9a6af3",
+    "evt-544646bee75f",
+    "evt-5b058f18acdd",
+    "evt-e7b2102f7fd1"
+  ],
+  "complete_hashed_run_directories": 14,
+  "remaining": "DRIVE Verify, Discovery, Judge and final Kernel acceptance are pending",
+  "file_count": 11730,
+  "total_bytes": 788050072,
+  "path": "/home/uisee/workspace/zaofu-e2e-deliveries/2026-10-25-racing-187/candidate-a15b6b6f5247/evidence/independent-verify",
+  "manifest_sha256": "8392227b63b1b7867eee311659c421cd25065849f1ffd52f9d573e76fea49c78"
+}

@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "status": "applied",
+  "action": "candidate-rework-apply",
+  "requested_action": "candidate-rework-apply",
+  "event_id": "evt-d5dd63ff63ad",
+  "checkpoint_id": "supervisor-environment-replan-20261026T0230",
+  "candidate_rework_action": "replan",
+  "emitted_event_ids": [
+    "evt-b54797ff6f28",
+    "evt-79e1f868b6f4",
+    "evt-d5dd63ff63ad"
+  ],
+  "reason": "candidate replan requested",
+  "action_result": {
+    "schema_version": "controlled-action-result.v1",
+    "attempt_id": "act-evt-0ce27e65",
+    "action": "candidate-rework-apply",
+    "requested_action": "candidate-rework-apply",
+    "status": "applied",
+    "operation_id": "",
+    "request_hash": "",
+    "ok": true,
+    "event_id": "evt-d5dd63ff63ad",
+    "reply_event_id": "",
+    "reason": "candidate replan requested"
+  }
+}

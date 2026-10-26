@@ -1,0 +1,22 @@
+{
+  "event_count": 5375,
+  "writes_to_runtime_state": false,
+  "rows": [
+    {
+      "task": "RACE-DRIVE",
+      "old_top": null,
+      "old_payload": "authority-r4702f079c2ee1a66349a90ca",
+      "rebuilt": "authority-re175ad2200c656b6f3cb70ed",
+      "dispatch": "authority-re175ad2200c656b6f3cb70ed",
+      "status": "dispatched"
+    },
+    {
+      "task": "RACE-TRACK",
+      "old_top": null,
+      "old_payload": "authority-r01c2dcf78ffc80bda3fca27a",
+      "rebuilt": "authority-r52b3a4f1f1f238698fe04c5b",
+      "dispatch": "authority-r52b3a4f1f1f238698fe04c5b",
+      "status": "dispatched"
+    }
+  ]
+}

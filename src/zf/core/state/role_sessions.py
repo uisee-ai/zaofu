@@ -580,7 +580,7 @@ class RoleSessionRegistry:
         Codex hooks include the live ``session_id`` and ``transcript_path``.
         The hook bridge can therefore repair a missing or stale registry
         binding without waiting for the background session observer. Returns
-        False when ``session_id`` is not a UUID.
+        False when ``session_id`` is not a UUID or was explicitly retired.
         """
         try:
             parsed_uuid = uuid.UUID(session_id)
@@ -590,6 +590,8 @@ class RoleSessionRegistry:
             if self.path.exists():
                 self._load()
             meta = self._meta.setdefault(instance_id, {})
+            if str(parsed_uuid) in meta.get("retired_codex_session_ids", []):
+                return False
             meta["backend"] = "codex"
             meta["observed_at"] = _now_iso()
             meta["observed_from"] = observed_from
@@ -631,6 +633,13 @@ class RoleSessionRegistry:
             if self.path.exists():
                 self._load()
             meta = self._meta.setdefault(instance_id, {})
+            retired = self._entries.get(instance_id)
+            if retired and meta.get("backend") == "codex":
+                # Hooks from the departing process can arrive after clear().
+                # Persist the fence under the same lock as the binding update.
+                retired_ids = meta.setdefault("retired_codex_session_ids", [])
+                if retired not in retired_ids:
+                    retired_ids.append(retired)
             meta["session_path"] = None
             meta["cleared_at"] = _now_iso()
             self._entries.pop(instance_id, None)
@@ -702,16 +711,20 @@ class RoleSessionRegistry:
         """
         deadline = time.monotonic() + max_wait_seconds
         while True:
-            found = self._glob_newest_since(since_ts, sessions_root=sessions_root)
+            found = self._glob_newest_since(
+                since_ts, sessions_root=sessions_root,
+                excluded_session_ids=set(self._meta.get(instance_id, {}).get(
+                    "retired_codex_session_ids", [])),
+            )
             if found is not None:
                 path, parsed_uuid = found
-                self.bind_codex_session(
+                if self.bind_codex_session(
                     instance_id,
                     str(parsed_uuid),
                     session_path=path,
                     observed_from="observer",
-                )
-                return parsed_uuid, path
+                ):
+                    return parsed_uuid, path
             if time.monotonic() >= deadline:
                 return None
             time.sleep(0.2)
@@ -721,6 +734,7 @@ class RoleSessionRegistry:
         since_ts: float,
         *,
         sessions_root: Path | None = None,
+        excluded_session_ids: set[str] | None = None,
     ) -> tuple[Path, uuid.UUID] | None:
         root = sessions_root or CODEX_SESSIONS_ROOT
         pattern = str(root / "*" / "*" / "*" / "rollout-*.jsonl")
@@ -754,6 +768,8 @@ class RoleSessionRegistry:
             try:
                 parsed = uuid.UUID(uuid_str)
             except ValueError:
+                continue
+            if excluded_session_ids and str(parsed) in excluded_session_ids:
                 continue
             return path, parsed
         return None

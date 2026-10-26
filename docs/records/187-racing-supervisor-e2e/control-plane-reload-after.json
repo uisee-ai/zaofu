@@ -1,0 +1,43 @@
+{
+  "checks": {
+    "watcher_replaced": true,
+    "foundation_session_unchanged": true,
+    "foundation_dispatch_unchanged": true,
+    "all_provider_panes_unchanged": true
+  },
+  "watcher": {
+    "component": "watcher",
+    "epoch": "74fec6451a13492dbdcfe57f150af776",
+    "heartbeat_at": "2026-10-26T00:22:38.323952+00:00",
+    "owner_pid": 1602023,
+    "schema_version": "process-guard.v2",
+    "started_at": "2026-10-26T00:22:08.197410+00:00"
+  },
+  "foundation": {
+    "backend": "codex",
+    "last_heartbeat_at": "2026-10-26T00:22:19.663362+00:00",
+    "last_heartbeat_payload": {
+      "attempt_id": "ta-a0674362b0dfa46cb12f",
+      "context_usage_ratio": 0.6373,
+      "current_task_id": "RACE-FOUNDATION",
+      "dispatch_id": "run-fanout-prd-lanes-impl-evt-adf3807d-prd-dev-lane-0-RACE-FOUNDATION",
+      "event_id": "evt-dda655d0b390",
+      "instance_id": "prd-dev-lane-0",
+      "last_action_ts": "2026-10-26T00:22:19.550103+00:00",
+      "lease_id": "lease-1d744d270144f9ca44c9",
+      "operation_id": "wop-prd-lanes-impl-prd-dev-lane-0-RACE-FOUNDATION-t-18972e0e5fde",
+      "source": "agent.usage",
+      "state": "busy"
+    },
+    "observed_at": "2026-10-26T00:22:16.125198+00:00",
+    "observed_from": "hook",
+    "provider_session_config_bound_at": "2026-10-26T00:08:32.059702+00:00",
+    "provider_session_config_digest": "58f4764df8d72503d4a5bacf1855824ddf88e2d13f3dd8257b96ec51371d1a33",
+    "provider_session_config_explicit": false,
+    "provider_session_config_ref": "artifacts/provider-sessions/effective/58f4764df8d72503d4a5bacf1855824ddf88e2d13f3dd8257b96ec51371d1a33.json",
+    "session_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-dev-lane-0/codex-home/sessions/2026/10/26/rollout-2026-10-26T08-08-35-01a17589-9ca7-7060-a177-9859945f4642.jsonl",
+    "spawned_at": "2026-10-25T21:40:08.321326+00:00"
+  },
+  "panes": "%0 1559115\n%2 1559491\n%4 1560367\n%5 1560821\n%6 1561299\n%7 1561822\n%8 1562234\n%9 1562734\n%10 1563228\n%11 1563718\n%12 1564116\n%13 1564644\n%14 1565127\n%15 1565625\n%1 1559133\n%3 1559976\n",
+  "environment_binding": "wrapper sets path; /proc/environ permission denied; actual audit consumption still pending"
+}

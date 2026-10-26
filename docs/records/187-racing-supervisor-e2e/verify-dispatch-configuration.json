@@ -1,0 +1,45 @@
+{
+  "source_ref": "artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/effective-configs/df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487.json",
+  "source_sha256": "df4fd3ca9223bb3b6a2a7612c93891e64c51276462a6a957e2c55371ddc08487",
+  "stage": {
+    "id": "prd-lanes-verify",
+    "trigger": "candidate.ready",
+    "roles": [
+      "prd-verify-lane-0",
+      "prd-verify-lane-1",
+      "prd-verify-lane-2"
+    ],
+    "fanout": {
+      "assignment": {
+        "lane_profile": "prd-lanes-slot",
+        "role_pool": [],
+        "stage_slot": "verify",
+        "strategy": "affinity_stage_slots"
+      }
+    },
+    "aggregate": {
+      "child_failure_event": "verify.child.failed",
+      "child_success_event": "verify.child.completed",
+      "failure_event": "test.failed",
+      "max_retries": 1,
+      "mode": "wait_for_all",
+      "pending_event": "",
+      "quorum": 0,
+      "review_strategy": "",
+      "success_event": "test.passed",
+      "synth_role": "",
+      "synth_timeout_seconds": 0
+    }
+  },
+  "workdirs": {
+    "enabled": true,
+    "mode": "worktree",
+    "provision_paths": [],
+    "root": ".zf-187 Racing Supervision/workdirs"
+  },
+  "scope": "configuration and read-only code inspection only; actual parallel dispatch and pinned independent workdirs still require runtime evidence",
+  "implementation": [
+    "src/zf/runtime/orchestrator_fanout.py::_pin_reader_target_or_reject",
+    "src/zf/runtime/workdirs.py::pin_reader_target"
+  ]
+}

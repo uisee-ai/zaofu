@@ -45,7 +45,7 @@ _SENSITIVE_CONFIG_KEY = re.compile(
     re.IGNORECASE,
 )
 _TOKEN_VALUE = re.compile(
-    r"(?:sk-[A-Za-z0-9_-]{12,}|"
+    r"\b(?:sk-[A-Za-z0-9_-]{12,}|"
     r"xox[baprs]-[A-Za-z0-9-]{10,}|"
     r"gh[pousr]_[A-Za-z0-9_]{12,})"
 )

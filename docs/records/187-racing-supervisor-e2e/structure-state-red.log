@@ -1,0 +1,93 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+___ test_aggregate_uses_kernel_verdict_not_completed_child_count[completed] ____
+
+verdict = 'completed'
+
+    @pytest.mark.parametrize("verdict", ["completed", "failed", "cancelled"])
+    def test_aggregate_uses_kernel_verdict_not_completed_child_count(verdict):
+        rows = [event("fanout.started", fanout_id="F", stage_id="verify"),
+                event("fanout.child.completed", fanout_id="F", child_id="child", run_id="attempt")]
+        assert state(graph(rows), "aggregate:verify")["status"] == "pending"
+        terminal = event("fanout.aggregate.completed", fanout_id="F", status=verdict)
+        result = graph([*rows, terminal])
+>       assert state(result, "aggregate:verify")["status"] == verdict
+E       AssertionError: assert 'pending' == 'completed'
+E
+E         - completed
+E         + pending
+
+tests/test_sdlc_workflow_states.py:34: AssertionError
+_____ test_aggregate_uses_kernel_verdict_not_completed_child_count[failed] _____
+
+verdict = 'failed'
+
+    @pytest.mark.parametrize("verdict", ["completed", "failed", "cancelled"])
+    def test_aggregate_uses_kernel_verdict_not_completed_child_count(verdict):
+        rows = [event("fanout.started", fanout_id="F", stage_id="verify"),
+                event("fanout.child.completed", fanout_id="F", child_id="child", run_id="attempt")]
+        assert state(graph(rows), "aggregate:verify")["status"] == "pending"
+        terminal = event("fanout.aggregate.completed", fanout_id="F", status=verdict)
+        result = graph([*rows, terminal])
+>       assert state(result, "aggregate:verify")["status"] == verdict
+E       AssertionError: assert 'pending' == 'failed'
+E
+E         - failed
+E         + pending
+
+tests/test_sdlc_workflow_states.py:34: AssertionError
+___ test_aggregate_uses_kernel_verdict_not_completed_child_count[cancelled] ____
+
+verdict = 'cancelled'
+
+    @pytest.mark.parametrize("verdict", ["completed", "failed", "cancelled"])
+    def test_aggregate_uses_kernel_verdict_not_completed_child_count(verdict):
+        rows = [event("fanout.started", fanout_id="F", stage_id="verify"),
+                event("fanout.child.completed", fanout_id="F", child_id="child", run_id="attempt")]
+        assert state(graph(rows), "aggregate:verify")["status"] == "pending"
+        terminal = event("fanout.aggregate.completed", fanout_id="F", status=verdict)
+        result = graph([*rows, terminal])
+>       assert state(result, "aggregate:verify")["status"] == verdict
+E       AssertionError: assert 'pending' == 'cancelled'
+E
+E         - cancelled
+E         + pending
+
+tests/test_sdlc_workflow_states.py:34: AssertionError
+__ test_latest_fanout_resets_aggregate_and_old_completion_cannot_overwrite_it __
+
+    def test_latest_fanout_resets_aggregate_and_old_completion_cannot_overwrite_it():
+        rows = [event("fanout.started", fanout_id="old", stage_id="verify"),
+                event("fanout.aggregate.completed", fanout_id="old", status="completed"),
+                event("fanout.started", fanout_id="new", stage_id="verify"),
+                event("fanout.synth.dispatched", fanout_id="new"),
+                event("fanout.aggregate.completed", fanout_id="old", status="completed")]
+>       assert state(graph(rows), "aggregate:verify")["status"] == "running"
+E       AssertionError: assert 'pending' == 'running'
+E
+E         - running
+E         + pending
+
+tests/test_sdlc_workflow_states.py:44: AssertionError
+_______ test_stage_owned_operation_also_updates_role_and_links_execution _______
+
+    def test_stage_owned_operation_also_updates_role_and_links_execution():
+        rows = [event("workflow.operation.requested", workflow_run_id="run-a", operation_id="O1",
+                      parent_stage_id="verify", role_instance="reader"),
+                event("workflow.operation.started", workflow_run_id="run-a", operation_id="O1",
+                      role_instance="reader")]
+        result = graph(rows)
+>       assert state(result, "role:reader")["status"] == "running"
+E       AssertionError: assert 'pending' == 'running'
+E
+E         - running
+E         + pending
+
+tests/test_sdlc_workflow_states.py:56: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sdlc_workflow_states.py::test_aggregate_uses_kernel_verdict_not_completed_child_count[completed]
+FAILED tests/test_sdlc_workflow_states.py::test_aggregate_uses_kernel_verdict_not_completed_child_count[failed]
+FAILED tests/test_sdlc_workflow_states.py::test_aggregate_uses_kernel_verdict_not_completed_child_count[cancelled]
+FAILED tests/test_sdlc_workflow_states.py::test_latest_fanout_resets_aggregate_and_old_completion_cannot_overwrite_it
+FAILED tests/test_sdlc_workflow_states.py::test_stage_owned_operation_also_updates_role_and_links_execution
+5 failed in 1.93s

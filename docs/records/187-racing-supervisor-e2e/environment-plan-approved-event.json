@@ -1,0 +1,16 @@
+{
+  "type": "plan.approved",
+  "id": "evt-15434756a885",
+  "ts": "2026-10-26T04:25:48.889810+00:00",
+  "actor": "operator",
+  "task_id": null,
+  "payload": {
+    "plan_id": "evt-498c4d468cc2",
+    "via": "controlled-action:kanban-agent",
+    "surface": "web",
+    "reason": "监工续修确认：用户已批准原 Plan evt-adf3807d914c（evt-158a8630051c），并明确要求真实端到端验证、持续修复到完成。本版经独立 Critic evt-096167993e32 通过及真实 Playwright 完整预览核对，保持原产品、4任务/16AC/依赖/owner和已加载zf.yaml；仅修复冷启动、Docker浏览器资格/持久缓存及真实90秒证据校验。采纳 DEC-ENV-01 qualified_reuse_cache 和明确的冷准备/命令期限。依据既有授权经受控接口继续，不声明用户进行了新的点击；原gap和独立Verify/Discovery/Judge/Kernel交付仍待实际证据。审阅依据 environment-plan-review.md、environment-plan-browser-proof.json，正文SHA 93255908dd5c222141dd85b9c448829f2dde9a96fecdcf88d0ec0737d5095916。"
+  },
+  "causation_id": "evt-498c4d468cc2",
+  "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+  "origin": ""
+}

@@ -1,0 +1,52 @@
+FF........                                                               [100%]
+=================================== FAILURES ===================================
+_ test_admitted_retry_settles_correct_attempt_and_preserves_old_history[False] _
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-299/test_admitted_retry_settles_co0')
+recover = False
+
+    @pytest.mark.parametrize("recover", [False, True])
+    def test_admitted_retry_settles_correct_attempt_and_preserves_old_history(tmp_path, recover):
+        runtime, store, first, retry, admitted, child = _case(tmp_path)
+        if recover:
+            store.update(retry.attempt_id, status="failed", updated_at=child.ts,
+                         failure_class="lease_expired", failure_reason="lease_expired_shadow_only")
+        runtime.event_writer.append(child)
+        if recover:
+            reconcile_task_attempts(runtime)
+        else:
+            runtime._settle_task_attempt_result(admitted)
+>       assert store.get(retry.attempt_id)["status"] == "succeeded"
+E       AssertionError: assert 'sent' == 'succeeded'
+E
+E         - succeeded
+E         + sent
+
+tests/test_fanout_retry_attempt_settlement.py:48: AssertionError
+_ test_admitted_retry_settles_correct_attempt_and_preserves_old_history[True] __
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-299/test_admitted_retry_settles_co1')
+recover = True
+
+    @pytest.mark.parametrize("recover", [False, True])
+    def test_admitted_retry_settles_correct_attempt_and_preserves_old_history(tmp_path, recover):
+        runtime, store, first, retry, admitted, child = _case(tmp_path)
+        if recover:
+            store.update(retry.attempt_id, status="failed", updated_at=child.ts,
+                         failure_class="lease_expired", failure_reason="lease_expired_shadow_only")
+        runtime.event_writer.append(child)
+        if recover:
+            reconcile_task_attempts(runtime)
+        else:
+            runtime._settle_task_attempt_result(admitted)
+>       assert store.get(retry.attempt_id)["status"] == "succeeded"
+E       AssertionError: assert 'failed' == 'succeeded'
+E
+E         - succeeded
+E         + failed
+
+tests/test_fanout_retry_attempt_settlement.py:48: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_fanout_retry_attempt_settlement.py::test_admitted_retry_settles_correct_attempt_and_preserves_old_history[False]
+FAILED tests/test_fanout_retry_attempt_settlement.py::test_admitted_retry_settles_correct_attempt_and_preserves_old_history[True]
+2 failed, 8 passed in 1.45s
