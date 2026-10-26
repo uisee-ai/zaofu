@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shlex
+import sys
+
+import pytest
+
+from zf.runtime import env_preflight
 
 from zf.runtime.env_preflight import (
     check_browser_deps,
@@ -14,7 +20,7 @@ from zf.runtime.env_preflight import (
 
 
 def test_hook_command_healthy_for_real_zf() -> None:
-    result = check_hook_command("/path/to/zaofu/.venv/bin/zf")
+    result = check_hook_command(shlex.join([sys.executable, "-m", "zf.cli.main"]))
     assert result.ok, result.detail
 
 
@@ -32,8 +38,10 @@ def test_hook_command_missing_binary() -> None:
     assert result.ok is False and "unavailable" in result.detail
 
 
-def test_tmux_probe() -> None:
-    assert check_tmux().ok is True  # 本机有 tmux
+@pytest.mark.parametrize("available", [False, True])
+def test_tmux_probe(monkeypatch, available: bool) -> None:
+    monkeypatch.setattr(env_preflight.shutil, "which", lambda name: "/bin/tmux" if available else None)
+    assert check_tmux().ok is available
 
 
 def test_workdir_ownership_clean_and_missing(tmp_path: Path) -> None:
@@ -48,9 +56,10 @@ def test_browser_deps_only_when_declared(tmp_path: Path) -> None:
     assert check_browser_deps(tmp_path).ok is True  # 未声明 playwright
 
 
-def test_run_env_preflight_shape(tmp_path: Path) -> None:
+def test_run_env_preflight_shape(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(env_preflight, "check_tmux", lambda: env_preflight.EnvCheck("tmux", True, True))
     checks = run_env_preflight(
-        zf_cmd="/path/to/zaofu/.venv/bin/zf",
+        zf_cmd=shlex.join([sys.executable, "-m", "zf.cli.main"]),
         state_dir=tmp_path / ".zf",
         project_root=tmp_path,
     )

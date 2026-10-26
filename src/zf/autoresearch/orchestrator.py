@@ -27,6 +27,7 @@ from zf.autoresearch.review_gate import (
     prepare_review_gate_summary,
 )
 from zf.autoresearch.scenarios import AutoresearchScenario, resolve_scenario
+from zf.autoresearch.task_completion import count_completed_tasks
 from zf.autoresearch.stuck_incident import (
     audit_stuck_incident,
     event_log_for_worktree,
@@ -96,6 +97,7 @@ class AutoresearchRunConfig:
     # autoresearch worktree. Disable for strict HEAD-only evaluation (CI).
     sync_dirty: bool = True
     review_gate: str = "off"
+    diagnostic_context: str = ""
 
 
 @dataclass(frozen=True)
@@ -261,12 +263,31 @@ def _apply_autoresearch_controller_overrides(
     if isinstance(run_limits, dict):
         run_limits["cost_budget_usd"] = cfg.budget_usd
 
-    for source in data.get("skill_sources") or []:
-        if (
-            isinstance(source, dict)
-            and str(source.get("name") or "") == "zaofu-skills"
-        ):
+    # The diagnostic checkout owns the tested source version. Reusing the
+    # launcher checkout's skills adds a second candidate beside project skills.
+    sources = []
+    seen_roots: set[Path] = set()
+    worktree = cfg.worktree.resolve()
+    for raw_source in data.get("skill_sources") or []:
+        if not isinstance(raw_source, dict):
+            continue
+        source = dict(raw_source)
+        name = str(source.get("name") or "")
+        local_root = worktree / {"zaofu-skills": "skills", "yoke": "yoke"}.get(name, "")
+        if name in {"zaofu-skills", "yoke"} and local_root.is_dir():
+            source["path"] = str(local_root)
+        elif name == "zaofu-skills":
             source["path"] = str(repo_root() / "skills")
+        root = Path(source["path"]).expanduser()
+        root = (root if root.is_absolute() else worktree / root).resolve()
+        if root == worktree / "skills" or root in seen_roots:
+            continue
+        seen_roots.add(root)
+        sources.append(source)
+    local_yoke = worktree / "yoke"
+    if local_yoke.is_dir() and local_yoke.resolve() not in seen_roots:
+        sources.append({"name": "yoke", "path": str(local_yoke), "mode": "readonly"})
+    data["skill_sources"] = sources
 
     feishu_path = cfg.worktree.resolve() / "feishu.yaml"
     if feishu_path.is_file():
@@ -658,6 +679,13 @@ def prepare_worktree(
             write_preparation_journal(journal_path, preparation)
 
         seed_text = scenario.seed_text.strip() + "\n"
+        if cfg.diagnostic_context:
+            seed_text += (
+                "\n## 原始故障诊断输入\n"
+                "以下为待诊断事件的只读引用；通用场景通过不能证明原故障已修复。"
+                "核查原始证据并报告复现或未确认结论，不修改来源项目的运行状态。\n"
+                + cfg.diagnostic_context + "\n"
+            )
         preparation["generated_seed_sha256"] = hashlib.sha256(
             seed_text.encode("utf-8")
         ).hexdigest()
@@ -977,7 +1005,7 @@ def summarize_events(
         event_models,
         required=stuck_incident_required,
     )
-    done = 0
+    done = count_completed_tasks(events)
     fatal = None
     fatal_count = 0
     dispatch_by_instance: dict[str, int] = {}
@@ -992,10 +1020,6 @@ def summarize_events(
     for event in events:
         event_type = str(event.get("type") or "")
         event_counts[event_type] = event_counts.get(event_type, 0) + 1
-        if event_type == "task.status_changed":
-            payload = event.get("payload") or {}
-            if isinstance(payload, dict) and payload.get("to") == "done":
-                done += 1
         if event_type in FATAL_EVENT_TYPES:
             fatal_count += 1
             if fatal is None:
@@ -1414,7 +1438,8 @@ def run_autoresearch(cfg: AutoresearchRunConfig) -> AutoresearchRunResult:
     seed_path = prepare_worktree(cfg, scenario=scenario, run_id=run_id, run_dir=run_dir)
     validate_log = run_dir / "validate.log"
     validate = _run(
-        ["zf", "validate", "--path", str(cfg.worktree.resolve() / "zf.yaml")],
+        [sys.executable, "-m", "zf.cli.main", "validate", "--path",
+         str(cfg.worktree.resolve() / "zf.yaml")],
         cwd=repo_root(),
         log_path=validate_log,
     )

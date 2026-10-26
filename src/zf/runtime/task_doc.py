@@ -472,8 +472,11 @@ def task_doc_contract_metadata(result: TaskDocResult) -> dict[str, str]:
     }
 
 
-def verify_task_capsule(state_dir: Path, task: Task) -> list[str]:
-    """Return freshness/preflight errors for a task capsule."""
+def verify_task_capsule(
+    state_dir: Path, task: Task, *, expected_dispatch_id: str | None = None,
+    expected_role_instance: str | None = None,
+) -> list[str]:
+    """Check contract freshness and, for dispatch callers, the delivery identity."""
     errors: list[str] = []
     base = task_doc_dir(state_dir, task.id)
     required = {
@@ -494,6 +497,28 @@ def verify_task_capsule(state_dir: Path, task: Task) -> list[str]:
     for key in ("source_revision", "contract_revision", "capsule_revision"):
         if str(manifest.get(key) or "") != expected[key]:
             errors.append(f"{key}_stale")
+    if expected_dispatch_id is not None:
+        for key in ("dispatch_id", "active_dispatch_id"):
+            if manifest.get(key) != expected_dispatch_id:
+                errors.append(f"{key}_stale")
+        if manifest.get("task_id") != task.id:
+            errors.append("task_id_stale")
+        text = task_doc_path(state_dir, task.id).read_text(encoding="utf-8")
+        header = text.split("---", 2)
+        fields = header[1].splitlines() if len(header) == 3 else []
+        if (
+            [line for line in fields if line.startswith("active_dispatch_id:")]
+            != [f"active_dispatch_id: {expected_dispatch_id}"]
+            or f"- **Active dispatch id**: `{expected_dispatch_id}`" not in text.splitlines()
+        ):
+            errors.append("task_doc_dispatch_id_stale")
+        if expected_role_instance is not None and (
+            manifest.get("assigned_to") != expected_role_instance
+            or [line for line in fields if line.startswith("assigned_to:")]
+            != [f"assigned_to: {expected_role_instance}"]
+            or f"- **Assigned to**: `{expected_role_instance}`" not in text.splitlines()
+        ):
+            errors.append("assigned_to_stale")
     return errors
 
 

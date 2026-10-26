@@ -7,6 +7,7 @@ import json
 from collections import Counter
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterable, Mapping
 
 from zf.core.events.log import EventLog
@@ -30,6 +31,43 @@ _ACTIVE_OPERATION_STATUSES = frozenset({
 _ACTIVE_ATTEMPT_STATUSES = frozenset({"prepared", "delivering", "sent"})
 _TERMINAL_TASK_STATUSES = frozenset({"done", "cancelled"})
 _STAGE_ORDER = {"impl": 1, "verify": 2, "acceptance_review": 3, "integration": 4}
+
+
+def normalize_task_pipeline_operation_semantics(
+    state_dir: Path,
+    operations: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Recover a missing implementation verdict from its immutable result.
+
+    Older ``dev.build.done`` producers stored ``passed`` under
+    ``self_check.verdict`` while admission recorded ``pending`` at the
+    operation level.  The sidecar is the durable semantic body, so the
+    projection can derive the effective verdict without mutating events.
+    """
+
+    normalized: list[dict[str, Any]] = []
+    for raw in operations:
+        row = dict(raw)
+        stage = str(row.get("stage") or row.get("task_pipeline_stage") or "")
+        verdict = str(row.get("semantic_verdict") or "").strip().lower()
+        descriptor = row.get("admitted_control_result_ref")
+        if stage == "impl" and verdict == "pending" and isinstance(descriptor, Mapping):
+            try:
+                from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+                body = hydrate_sidecar_ref(
+                    Path(state_dir), dict(descriptor)
+                ).payload
+            except Exception:
+                body = None
+            if isinstance(body, Mapping):
+                effective = str(body.get("verdict") or "").strip()
+                if not effective and isinstance(body.get("self_check"), Mapping):
+                    effective = str(body["self_check"].get("verdict") or "").strip()
+                if effective:
+                    row["semantic_verdict"] = effective
+        normalized.append(row)
+    return normalized
 
 
 def read_task_pipeline_projection(
@@ -74,14 +112,33 @@ def read_task_pipeline_projection(
         generation_contexts=contexts,
         project_root=Path(project_root),
     )
+    from zf.runtime.task_pipeline_orchestration import admitted_pipeline_delegations
+    from zf.runtime.task_pipeline_affinity import task_pipeline_preferred_roles
+
+    reader = SimpleNamespace(
+        state_dir=state_dir, project_root=project_root, config=config,
+        event_log=SimpleNamespace(read_all=lambda: events),
+    )
+    delegations = {}
+    for partition in partitions:
+        delegations.update(admitted_pipeline_delegations(
+            reader,
+            generation_contexts={key: contexts[key] for key in partition["task_ids"]},
+            policy=partition["policy"],
+        ))
     return build_task_pipeline_projection(
         policy=None,
+        oa_delegations=delegations,
+        preferred_role_instances=task_pipeline_preferred_roles(
+            reader, generation_contexts=contexts,
+        ),
         policy_by_task=policy_by_task,
         tasks=tasks,
         events=events,
         attempts=attempts,
         session_bindings=bindings,
         external_gate_satisfied_task_ids=satisfied_external_gate_ids,
+        state_dir=state_dir,
     )
 
 
@@ -95,6 +152,9 @@ def build_task_pipeline_projection(
     session_bindings: Mapping[str, Mapping[str, Any]]
     | Iterable[Mapping[str, Any]] = (),
     external_gate_satisfied_task_ids: Iterable[str] = (),
+    oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+    preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
+    state_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Build a deterministic projection suitable for live and archive replay."""
 
@@ -116,6 +176,11 @@ def build_task_pipeline_projection(
         for row in reduce_workflow_operations(event_rows).values()
         if _matches_current_generation(row, contexts)
     ]
+    if state_dir is not None:
+        operation_rows = normalize_task_pipeline_operation_semantics(
+            state_dir,
+            operation_rows,
+        )
     attempt_rows = [
         dict(row)
         for row in attempts
@@ -149,6 +214,8 @@ def build_task_pipeline_projection(
             attempts=attempt_rows,
             impl_rework_requests=impl_rework_requests,
             external_gate_satisfied_task_ids=external_gate_satisfied_ids,
+            oa_delegations=oa_delegations,
+            preferred_role_instances=preferred_role_instances,
         )
     else:
         scheduler = _scheduler_projection(
@@ -158,6 +225,8 @@ def build_task_pipeline_projection(
             attempts=attempt_rows,
             impl_rework_requests=impl_rework_requests,
             external_gate_satisfied_task_ids=external_gate_satisfied_ids,
+            oa_delegations=oa_delegations,
+            preferred_role_instances=preferred_role_instances,
         )
     selected_policies = [
         dict(row["policy"])
@@ -315,6 +384,8 @@ def _scheduler_projection(
     attempts: list[dict[str, Any]],
     impl_rework_requests: Mapping[str, Mapping[str, Any]] | None = None,
     external_gate_satisfied_task_ids: Iterable[str] = (),
+    oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+    preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
 ) -> dict[str, Any]:
     if not policy:
         return {}
@@ -332,6 +403,8 @@ def _scheduler_projection(
         terminal_task_ids=terminal_ids,
         impl_rework_requests=impl_rework_requests,
         external_gate_satisfied_task_ids=external_gate_satisfied_task_ids,
+        oa_delegations=oa_delegations,
+        preferred_role_instances=preferred_role_instances,
     )
 
 
@@ -372,6 +445,8 @@ def _partitioned_scheduler_projection(
     attempts: list[dict[str, Any]],
     impl_rework_requests: Mapping[str, Mapping[str, Any]],
     external_gate_satisfied_task_ids: Iterable[str] = (),
+    oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+    preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     task_by_id = {
         str(getattr(task, "id", "") or _mapping_value(task, "id")): task
@@ -402,6 +477,8 @@ def _partitioned_scheduler_projection(
         task_policy = dict(group["policy"])
         scheduler = _scheduler_projection(
             policy=task_policy,
+            oa_delegations=oa_delegations,
+            preferred_role_instances=preferred_role_instances,
             tasks=[task_by_id[task_id] for task_id in task_ids],
             operations=operations,
             attempts=attempts,
@@ -462,6 +539,38 @@ def _merge_scheduler_projections(
         )
         if str(task_id)
     })
+    occupancy_pools: dict[str, int] = {}
+    capacity_pools: dict[str, dict[str, int]] = {}
+    max_active = 0
+    active_attempts = 0
+    backpressure_counts = {
+        "unverified_count": 0,
+        "integration_queue_count": 0,
+    }
+    backpressure_limits: dict[str, int] = {}
+    for scheduler in schedulers:
+        occupancy = scheduler.get("occupancy") or {}
+        capacity = scheduler.get("capacity") or {}
+        max_active += int(capacity.get("max_active_task_pipelines") or 0)
+        active_attempts += int(occupancy.get("active_attempts") or 0)
+        for name, value in (occupancy.get("pools") or {}).items():
+            occupancy_pools[str(name)] = occupancy_pools.get(str(name), 0) + int(value or 0)
+        for name, value in (capacity.get("pools") or {}).items():
+            if not isinstance(value, Mapping):
+                continue
+            entry = capacity_pools.setdefault(str(name), {"capacity": 0, "available": 0})
+            entry["capacity"] += int(value.get("capacity") or 0)
+            entry["available"] += int(value.get("available") or 0)
+        backpressure = scheduler.get("backpressure") or {}
+        for name in backpressure_counts:
+            backpressure_counts[name] += int(backpressure.get(name) or 0)
+        for name, value in backpressure.items():
+            if name.endswith("limit"):
+                backpressure_limits[name] = backpressure_limits.get(name, 0) + int(value or 0)
+    for name, entry in capacity_pools.items():
+        # Recalculate from merged occupancy so the explanation remains
+        # truthful even if one partition omitted an available field.
+        entry["available"] = max(0, entry["capacity"] - occupancy_pools.get(name, 0))
     return {
         "tasks": task_rows,
         "queues": {
@@ -485,11 +594,29 @@ def _merge_scheduler_projections(
         "occupancy": {
             "active_task_pipelines": len(active_task_ids),
             "active_task_ids": active_task_ids,
-            "pools": {},
+            "active_attempts": active_attempts,
+            "pools": occupancy_pools,
             "policy_partitioned": True,
         },
-        "capacity": {"policy_partitioned": True, "pools": {}},
-        "backpressure": {"policy_partitioned": True},
+        "capacity": {
+            "max_active_task_pipelines": max_active,
+            "available_task_pipelines": max(0, max_active - len(active_task_ids)),
+            "pools": capacity_pools,
+            "policy_partitioned": True,
+        },
+        "backpressure": {
+            **backpressure_counts,
+            **backpressure_limits,
+            "unverified_limit_reached": any(
+                bool((scheduler.get("backpressure") or {}).get("unverified_limit_reached"))
+                for scheduler in schedulers
+            ),
+            "integration_limit_reached": any(
+                bool((scheduler.get("backpressure") or {}).get("integration_limit_reached"))
+                for scheduler in schedulers
+            ),
+            "policy_partitioned": True,
+        },
         "fairness": {
             "ordering": "policy_partition,priority,created_at,task_id",
             "ordered_task_ids": [row["task_id"] for row in task_rows],
@@ -866,6 +993,7 @@ def _digest(value: Any) -> str:
 __all__ = [
     "TASK_PIPELINE_PROJECTION_SCHEMA",
     "build_task_pipeline_projection",
+    "normalize_task_pipeline_operation_semantics",
     "read_task_pipeline_projection",
     "write_task_pipeline_projection",
 ]

@@ -4,7 +4,6 @@ verbatim;零裁决零状态写。"""
 
 from __future__ import annotations
 
-import json
 import time
 
 from zf.core.events.model import ZfEvent
@@ -115,104 +114,9 @@ class DispatchRoutingQueriesMixin:
         N tasks were reassigned to the same single-replica role (they
         each saw each other as 'in flight' and all backed off).
         """
-        path = getattr(self.event_log, "path", None)
-        cache_key = None
-        if path is not None:
-            try:
-                stat = path.stat()
-                cache_key = (stat.st_mtime_ns, stat.st_size)
-                cached = getattr(self, "_latest_dispatched_per_task_cache", None)
-                if isinstance(cached, tuple) and cached[0] == cache_key:
-                    return dict(cached[1])
-            except OSError:
-                cache_key = None
-        latest: dict[str, str] = {}
-        interesting = (
-            '"type":"task.dispatched"',
-            '"type":"fanout.child.dispatched"',
-            '"type":"fanout.child.completed"',
-            '"type":"fanout.child.failed"',
-            '"type":"task.assigned"',
-            '"type":"task.requeued"',
-            '"type":"task.status_changed"',
-        )
-        try:
-            if path is None:
-                raise OSError("event log path unavailable")
-            with path.open("r", encoding="utf-8") as handle:
-                for line in handle:
-                    if not any(marker in line for marker in interesting):
-                        continue
-                    try:
-                        raw = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    payload = raw.get("payload")
-                    if not isinstance(payload, dict):
-                        continue
-                    event_type = str(raw.get("type") or "")
-                    tid = str(raw.get("task_id") or payload.get("task_id") or "")
-                    if not tid:
-                        continue
-                    if event_type in {
-                        "task.dispatched",
-                        "fanout.child.dispatched",
-                    }:
-                        assignee = (
-                            payload.get("assignee")
-                            or payload.get("role_instance")
-                            or payload.get("role")
-                            or ""
-                        )
-                        if assignee:
-                            latest[tid] = str(assignee)
-                    elif event_type in {
-                        "fanout.child.completed",
-                        "fanout.child.failed",
-                    }:
-                        latest.pop(tid, None)
-                    elif event_type == "task.status_changed":
-                        to_status = str(payload.get("to") or "")
-                        if to_status in {"done", "cancelled", "blocked"}:
-                            latest.pop(tid, None)
-                    elif event_type in {"task.assigned", "task.requeued"}:
-                        latest.pop(tid, None)
-        except Exception:
-            try:
-                for event in self.event_log.read_days(1):
-                    if not isinstance(event.payload, dict):
-                        continue
-                    tid = str(event.task_id or event.payload.get("task_id") or "")
-                    if not tid:
-                        continue
-                    if event.type in {"task.dispatched", "fanout.child.dispatched"}:
-                        a = (
-                            event.payload.get("assignee")
-                            or event.payload.get("role_instance")
-                            or event.payload.get("role")
-                            or ""
-                        )
-                        if a:
-                            latest[tid] = a
-                    elif event.type in {
-                        "fanout.child.completed",
-                        "fanout.child.failed",
-                    }:
-                        latest.pop(tid, None)
-                    elif event.type == "task.status_changed":
-                        to_status = str(event.payload.get("to") or "")
-                        if to_status in {"done", "cancelled", "blocked"}:
-                            latest.pop(tid, None)
-                    elif event.type in {"task.assigned", "task.requeued"}:
-                        latest.pop(tid, None)
-            except Exception:
-                return {}
-        if cache_key is not None:
-            try:
-                self._latest_dispatched_per_task_cache = (cache_key, dict(latest))
-            except Exception:
-                pass
-        return latest
+        from zf.runtime.dispatch_assignment_projection import latest_dispatch_assignments
+
+        return latest_dispatch_assignments(self)
 
     def _same_assignee_assignment_requests_dispatch(self, payload: dict) -> bool:
         """Return True when a same-assignee assignment is an explicit reissue.

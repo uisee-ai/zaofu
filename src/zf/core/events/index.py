@@ -31,6 +31,7 @@ from zf.core.state.atomic_io import atomic_write_text
 
 _DISPATCH_EVENT_TYPES = frozenset({
     "task.dispatched",
+    "task.pipeline.stage.dispatched",
     "fanout.child.dispatched",
     # B3 (R25 ISSUE-005): synth dispatches must register like children,
     # or the synth worker's hooks resolve no causation and go orphan.

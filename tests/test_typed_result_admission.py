@@ -199,7 +199,7 @@ def test_impl_rejects_invented_command_but_accepts_contract_receipt(
     assert issues[0]["recovery_owner"] == "implementation_owner"
 
 
-def test_impl_self_check_allows_no_receipt_when_commands_are_later_owned(
+def test_impl_self_check_requires_receipt_for_current_task_verify_command(
     tmp_path: Path,
 ) -> None:
     contract = _contract()
@@ -209,10 +209,27 @@ def test_impl_self_check_allows_no_receipt_when_commands_are_later_owned(
     result["self_check"]["command_receipts"] = []
     result["self_check"]["acceptance_results"][0]["command_receipt_ids"] = []
 
-    assert typed_result_admission_issues(
+    issues = typed_result_admission_issues(
         tmp_path,
         schema_version="implementation-result.v1",
         result=result,
+        semantic_submit=True,
+    )
+    assert [issue["code"] for issue in issues] == ["impl_self_check_invalid"]
+
+
+def test_impl_self_check_preserves_deferred_candidate_acceptance(tmp_path: Path) -> None:
+    contract = _contract()
+    contract["verification_commands"][0]["owner"] = "candidate_verify"
+    contract["acceptance_criteria"][0]["verification_owner"] = "candidate_verify"
+    descriptor = write_task_contract_snapshot(tmp_path, contract)
+    result = _implementation_result(contract, descriptor)
+    result["self_check"]["command_receipts"] = []
+    result["self_check"]["acceptance_results"][0].update({
+        "status": "blocked", "command_receipt_ids": [],
+    })
+    assert typed_result_admission_issues(
+        tmp_path, schema_version="implementation-result.v1", result=result,
         semantic_submit=True,
     ) == []
 
@@ -608,3 +625,59 @@ def test_canonical_plan_handoff_never_redispatches_same_contract() -> None:
     )
     assert payload["recovery_action"] == "return_to_plan"
     assert payload["redispatch_allowed"] is False
+
+
+def test_contract_bound_legacy_verification_cannot_bypass_typed_gate(tmp_path: Path) -> None:
+    contract, descriptor, target = _descriptors(tmp_path)
+    result = _verification_result(contract, descriptor, target)
+    assert typed_result_admission_issues(
+        tmp_path, schema_version="verification-result.v1", result=result, semantic_submit=False,
+    ) == []
+    result["probe_receipts"][0]["target_commit"] = "<exact target_commit from Stage Context>"
+    issues = typed_result_admission_issues(
+        tmp_path, schema_version="verification-result.v1", result=result, semantic_submit=False,
+    )
+    assert [item["code"] for item in issues] == ["verification_probe_command_mismatch"]
+
+
+def test_passed_verification_rejects_evidence_template_placeholders(tmp_path: Path) -> None:
+    from copy import deepcopy
+    contract, descriptor, target = _descriptors(tmp_path)
+    valid = _verification_result(contract, descriptor, target)
+    for location in ["report", "probe", "requirement"]:
+        result = deepcopy(valid)
+        owner = result if location == "report" else result[
+            "probe_receipts" if location == "probe" else "requirement_results"
+        ][0]
+        owner["evidence_refs"] = ["<durable exact command output or event ref>"]
+        for semantic_submit in [False, True]:
+            issues = typed_result_admission_issues(
+                tmp_path, schema_version="verification-result.v1", result=result,
+                semantic_submit=semantic_submit,
+            )
+            assert issues, (location, semantic_submit)
+            assert "placeholder" in issues[0]["message"]
+
+
+def test_legacy_reader_admission_repairs_placeholder_result_before_accepting(tmp_path: Path) -> None:
+    from copy import deepcopy
+    contract, descriptor, target = _descriptors(tmp_path)
+    valid = _verification_result(contract, descriptor, target)
+    invalid = deepcopy(valid)
+    invalid["evidence_refs"] = ["<durable verification report ref>"]
+    log = EventLog(tmp_path / "events.jsonl")
+    service = CallResultAdmissionService(state_dir=tmp_path, event_log=log, event_writer=EventWriter(log))
+    operation = {"workflow_run_id": "run-1", "operation_id": "verify-1", "request_hash": "hash-1"}
+
+    def submit(result: dict):
+        return service.report_legacy_result(ZfEvent(
+            type="flow.discovery.child.completed", actor="flow-discovery", task_id="TASK-1",
+            payload={**result, **operation, "attempt_id": "attempt-1", "verification_result": result},
+        ), mode="blocking", operation=operation)
+
+    rejected = submit(invalid)
+    assert not rejected.admitted
+    assert rejected.repair_requested
+    assert "placeholder" in rejected.issues[0]["message"]
+    assert not any(event.type == "workflow.call.result.admitted" for event in log.read_all())
+    assert submit(valid).admitted

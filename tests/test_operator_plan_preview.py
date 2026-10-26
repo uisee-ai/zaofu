@@ -599,6 +599,31 @@ def test_owner_preview_bundle_exposes_requirements_and_plan_ports(tmp_path):
     assert result["authority_refs"] == payload["authority_refs"]
 
 
+def test_owner_preview_bundle_binds_authority_refs_when_artifact_list_omits_them(
+    tmp_path,
+):
+    from zf.runtime.plan_preview_artifacts import write_plan_preview_bundle
+
+    state, _full, payload = _artifacts(tmp_path)
+    authority = state / "authority.md"
+    authority.write_text("# Authority\n\nR001 must remain traceable.\n", encoding="utf-8")
+    payload.update({
+        "workflow_run_id": "run-authority",
+        "authority_refs": ["authority.md"],
+        "artifact_refs": [],
+    })
+    descriptor = write_plan_preview_bundle(
+        state,
+        payload=payload,
+        refs=payload,
+        project_root=tmp_path,
+        source_event_id="evt-authority",
+    )
+    bundle = json.loads((state / descriptor["ref"]).read_text(encoding="utf-8"))
+    assert bundle["authority_refs"] == ["authority.md"]
+    assert any(item["ref"] == "authority.md" for item in bundle["artifacts"])
+
+
 def test_review_packet_surfaces_cross_artifact_gaps_and_lineage(tmp_path):
     from zf.runtime.plan_preview_artifacts import write_plan_preview_bundle
 

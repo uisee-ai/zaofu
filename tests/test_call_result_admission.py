@@ -145,6 +145,44 @@ def _verification_payload(verdict: str = "rejected") -> dict:
     }
 
 
+def _persisted_verification_payload(
+    state_dir: Path, verdict: str = "rejected", *, identity: dict | None = None,
+) -> dict:
+    from tests.test_typed_result_admission import _contract
+
+    payload = _verification_payload(verdict)
+    result = payload["verification_result"]
+    payload.update(identity or {})
+    result.update(identity or {})
+    contract = _contract()
+    contract.update({key: payload[key] for key in (
+        "workflow_run_id", "task_id", "contract_revision", "task_map_generation",
+        "base_commit", "task_ref",
+    )})
+    result["verification_tier"] = "task_non_smoke"
+    for item in result["requirement_results"]:
+        item["verification_tier"] = "task_non_smoke"
+    descriptor = write_task_contract_snapshot(state_dir, contract)
+    target = write_target_snapshot(state_dir, build_target_snapshot(
+        descriptor, target_commit=payload["target_commit"], contract_snapshot=contract,
+    ))
+    identity = {
+        "contract_snapshot_ref": descriptor["ref"],
+        "contract_snapshot_digest": descriptor["sha256"],
+        "target_snapshot_ref": target["ref"], "target_snapshot_digest": target["sha256"],
+    }
+    payload.update(identity)
+    result.update(identity)
+    result["evidence_refs"] = ["mock://verification/report"]
+    command = contract["verification_commands"][0]
+    result["probe_receipts"] = [{
+        **{key: command[key] for key in ("command_id", "command", "command_digest")},
+        "probe_id": "probe-1", "target_commit": payload["target_commit"],
+        "status": "passed", "exit_code": 0, "evidence_refs": ["mock://verification/probe"],
+    }] if verdict == "passed" else []
+    return payload
+
+
 def _goal_closure_payload(
     *,
     claim_descriptor: dict,
@@ -204,7 +242,7 @@ def test_admitted_rejected_result_settles_call_without_semantic_rework(tmp_path:
         type="verify.child.completed",
         actor="verify-1",
         task_id="T1",
-        payload=_verification_payload(),
+        payload=_persisted_verification_payload(tmp_path),
     )
     outcome = admission.report_legacy_result(
         event,
@@ -232,7 +270,7 @@ def test_admitted_result_binds_provider_operation_summary(tmp_path: Path) -> Non
         request={"prompt": "verify"},
         task_id="T1",
     )
-    payload = _verification_payload(verdict="passed")
+    payload = _persisted_verification_payload(tmp_path, verdict="passed")
     payload["provider_operation_summary"] = {
         "schema_version": "provider-operation-summary.v1",
         "workflow_run_id": "run-1",
@@ -1170,3 +1208,14 @@ def test_task_and_global_verify_use_pinned_target_without_weakening_candidate_ve
         )
     }
     assert strict_codes == {"stale_task_map_generation", "stale_target_commit"}
+    scoped_codes = {
+        issue["code"]
+        for issue in admission._task_result_currentness_issues(
+            envelope, adapted,
+            {
+                "output_profile_id": "task-verify",
+                "handoff_authority_contract": {"requires_candidate_lineage": True},
+            },
+        )
+    }
+    assert scoped_codes == strict_codes

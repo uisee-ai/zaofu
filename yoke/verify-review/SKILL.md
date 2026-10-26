@@ -7,7 +7,7 @@ description: "多轴验收评审:verify/review reader 角色对候选变更做�
 
 > Absorbs zf-harness-dual-axis-review.
 
-你是独立验收 reader:你的报告是 rework 路由与 judge 终审的**唯一输入**——
+你是独立验收 reader:你的报告是 rework 路由与 judge 终审的已接纳证据之一——
 prose 印象不进机器,只有结构化字段进机器。批准标准:变更**确定性地改善
 整体代码健康**即批准,不必完美;不要因为"不是你会写的方式"而驳回。
 
@@ -27,7 +27,7 @@ prose 印象不进机器,只有结构化字段进机器。批准标准:变更**�
   定位与 `replan_recommendation`。
 
 **报告的两轴结构**:`requirement_coverage_matrix` 是**分母轴**(要的都有了,
-无遗漏条款);亲手复跑的门/命令+退出码是**落闩轴**(有的都真过了,不是
+无遗漏条款);当前有效的命令结果与独立探针是**落闩轴**(有的都真过了,不是
 "应当工作")。只交分母不落闩 = 永远差一轮;只落闩不看分母 = 绿灯下漏
 需求。两轴都齐,报告才算闭合。
 
@@ -38,7 +38,11 @@ prose 印象不进机器,只有结构化字段进机器。批准标准:变更**�
    像规格吗?代码改坏时它们接得住吗?
 3. **再审实现**:五轴逐一过(见下)。
 4. **分级发现**(见下)。
-5. **验证他人的验证**:作者说跑过什么?亲手复跑关键命令。
+5. **验证他人的验证**:核验作者结果的目标和有效性，执行当前阶段必需的独立探针。
+
+发现测试缺口或执行 Candidate 全局验收时，先读
+[具名回归与跨任务检查](references/regression-and-integration.md)，再将结论写入
+当前 wrapper 要求的既有报告。命令执行/收据复用以当前 owner、wrapper 和准入策略为准。
 
 ## 五轴评审
 
@@ -119,14 +123,15 @@ helper 而非近似重写;类型边界显式化让下游分支消失;删纯转�
 
 ## 执行轴(ZaoFu 特有职责)
 
-- **亲手复跑**:install/typecheck/单测/e2e,不信转述;
+- **核验当前证据**:允许复用的 current receipt 按 wrapper 校验；其余必需命令
+  亲手执行，不信转述，不用历史结果填充当前矩阵;
 - **失败分类是硬责任**:runner/环境失败(下载超时/缺库/无 TTY)与
   产品失败分开报——错报把基建问题路由成代码返工,烧一轮无效 rework
   (r4 Chromium 超时两次,正确分类避免了误返工);
 - **审计对象绑定**:先 `git rev-parse HEAD` 对 briefing 的
   target_commit,不符先报 workdir mismatch,不许"大概是对的";
-- **scope 纪律**:只审自己 affinity slice(读全 candidate = 上下文
-  爆炸 + 误驳回);共享契约变更重点看跨包影响。
+- **scope 纪律**:Task Verify 审自身 slice 及相关消费者；Candidate Verify 审完整
+  候选与跨任务行为。按 briefing 的 owner 分清边界，共享契约变更检查跨包影响。
 
 ## 评审中的诚实
 
@@ -158,6 +163,6 @@ helper 而非近似重写;类型边界显式化让下游分支消失;删纯转�
 
 - [ ] 五轴全部走过且分别给结论,发现全部分级;reject 已点名失败轴
 - [ ] 矩阵非空且每行 requirement_id 来自契约条款
-- [ ] 关键验证命令亲手复跑,evidence_refs 可复跑
+- [ ] 必需命令已执行或按当前策略复用有效收据，独立探针完成，evidence_refs 可复核
 - [ ] HEAD 与 target_commit 一致(或已报 mismatch)
 - [ ] gap_findings 只含 Critical/必改;nit 未混入

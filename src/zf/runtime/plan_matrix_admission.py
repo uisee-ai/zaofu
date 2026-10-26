@@ -32,6 +32,19 @@ def plan_matrix_admission_errors(
             continue
         if name in required:
             _matrix_readiness_errors(name, body, errors)
+    # Match package admission for enriched Task Maps and source inventories;
+    # legacy bodies without an enrichment contract remain valid.
+    for name, body in (
+        ("task_map", task_map),
+        ("source_inventory", ports.get("source_inventory")),
+    ):
+        if name not in required or not isinstance(body, Mapping):
+            continue
+        metadata = body.get("metadata")
+        if isinstance(metadata, Mapping) and isinstance(
+            metadata.get("enrichment_contract"), Mapping
+        ):
+            _matrix_readiness_errors(name, body, errors)
 
     tasks = _rows(task_map, "tasks")
     task_by_id = _unique_rows(tasks, "task", ("task_id", "id"), errors)

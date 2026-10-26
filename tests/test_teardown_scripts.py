@@ -213,3 +213,50 @@ def test_product_fanout_manual_uses_parseable_start_and_stop_commands():
         text = (ROOT / "docs" / "manual" / name).read_text(encoding="utf-8")
         assert "zf start --path" not in text
         assert "zf stop --path" not in text
+
+
+def test_teardown_fallback_uses_valid_payload_and_exact_session(tmp_path, monkeypatch):
+    import json
+    from zf.cli.main import main
+    from zf.core.events.log import EventLog
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    argv_path = tmp_path / "argv.json"
+    tmux_path = tmp_path / "tmux-args.json"
+    zf = bin_dir / "zf"
+    zf.write_text(
+        "#!/usr/bin/env python3\nimport json,sys\n"
+        "from pathlib import Path\n"
+        "if sys.argv[1] == 'stop': sys.exit(1)\n"
+        f"Path({str(argv_path)!r}).write_text(json.dumps(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
+    tmux = bin_dir / "tmux"
+    tmux.write_text(
+        "#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n"
+        f"Path({str(tmux_path)!r}).write_text(json.dumps(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
+    zf.chmod(0o755)
+    tmux.chmod(0o755)
+    state = tmp_path / "custom-state"
+    state.mkdir()
+    reason = 'verify "quoted" reason\nnext line'
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+           "ZF": str(zf), "ZF_STATE_DIR": str(state),
+           "ZF_TMUX_SESSION": "zf-exact-test"}
+    subprocess.run(
+        ["bash", str(ROOT / "tests/e2e/scripts/zf_run_teardown.sh"), reason],
+        cwd=tmp_path, env=env, check=True, capture_output=True, text=True,
+    )
+    args = json.loads(argv_path.read_text())
+    monkeypatch.chdir(tmp_path)
+    assert main([*args, "--state-dir", str(state)]) == 0
+    events = EventLog(state / "events.jsonl").read_all()
+    assert len(events) == 1
+    assert events[0].type == "run.teardown"
+    assert events[0].payload == {
+        "reason": reason, "session": "zf-exact-test", "by": "zf-run-teardown",
+    }
+    assert json.loads(tmux_path.read_text()) == ["kill-session", "-t", "zf-exact-test"]

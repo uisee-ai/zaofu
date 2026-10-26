@@ -1,0 +1,42 @@
+{
+  "schema_version": "task-scoped-plan-input.v1",
+  "shared": {
+    "purpose": "规划草稿阅读示例；不是 Task Map，不授权派发或完整 Goal 完成",
+    "goal": "车辆查询和状态变更；状态变更后发送通知",
+    "source_clauses": [
+      {"id": "SRC-1", "text": "列表支持筛选、分页和详情跳转", "acceptance_ids": ["AC-LIST"]},
+      {"id": "SRC-2", "text": "无写权限时拒绝状态变更，不留下任何写入", "acceptance_ids": ["AC-DENY"]},
+      {"id": "SRC-3", "text": "状态变更失败时回滚车辆和审计记录", "acceptance_ids": ["AC-TXN"]},
+      {"id": "SRC-4", "text": "错误提示让用户知道下一步可以做什么", "acceptance_ids": ["AC-ERROR"]},
+      {"id": "SRC-5", "text": "状态变更后发送通知；渠道待 Owner 决定", "acceptance_ids": ["AC-NOTIFY"]}
+    ],
+    "epics": [
+      {"id": "E-READ", "outcome": "找到并查看车辆", "acceptance_ids": ["AC-LIST", "AC-ERROR"], "task_ids": ["vehicle-read"], "planning_label": "ready-to-refine"},
+      {"id": "E-WRITE", "outcome": "按权限原子变更状态", "acceptance_ids": ["AC-DENY", "AC-TXN"], "task_ids": [], "planning_label": "blocked"},
+      {"id": "E-NOTIFY", "outcome": "变更后收到通知", "acceptance_ids": ["AC-NOTIFY"], "task_ids": [], "planning_label": "ready-to-refine"}
+    ],
+    "open_questions": [
+      {"id": "Q-TXN", "owner": "架构与领域负责人", "affects": ["E-WRITE"], "resolve_before": "状态变更任务准入", "revisit_when": "开始细化状态变更", "question": "车辆与审计记录由哪个存储边界保证已要求的原子性？", "allowed_work": "车辆读取规格与只读调查"},
+      {"id": "Q-NOTIFY", "owner": "产品负责人", "affects": ["E-NOTIFY"], "resolve_before": "通知接口与实现任务准入", "revisit_when": "准备通知 Epic", "question": "采用哪一种通知渠道？", "allowed_work": "不依赖通知的读取工作"}
+    ],
+    "unfulfilled_acceptance_ids": ["AC-LIST", "AC-DENY", "AC-TXN", "AC-ERROR", "AC-NOTIFY"],
+    "scope_decision": "尚无阶段范围批准；完整 Goal 的执行计划仍待补齐",
+    "candidate_checks": ["真实 API→列表→筛选分页→详情", "未授权写入无副作用", "事务中途失败无部分提交", "已确认渠道的通知与变更一致"]
+  },
+  "tasks": [
+    {
+      "task_id": "vehicle-read",
+      "body": {
+        "epic_id": "E-READ",
+        "acceptance_ids": ["AC-LIST", "AC-ERROR"],
+        "source_ids": ["SRC-1", "SRC-4"],
+        "outcome": "用户筛选车辆、翻页并进入详情；失败时知道重试或返回入口",
+        "scenarios": [
+          {"given": "真实 API 返回两页车辆", "when": "筛选后翻页并打开详情", "then": "筛选条件保持、无重复项、详情 ID 一致"},
+          {"given": "API 返回服务错误", "when": "请求车辆列表", "then": "展示可理解的错误与重试入口，不展示伪造成功数据"}
+        ],
+        "next_refinement": "补充接口版本、路径 owner 和实际 runner；经完整合同准入后才可执行"
+      }
+    }
+  ]
+}

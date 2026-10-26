@@ -231,6 +231,8 @@ def build_workflow_operation_resume_checkpoints(
     from zf.runtime.workflow_operation import reduce_workflow_operations
 
     event_list = list(events if events is not None else _read_events(Path(state_dir)))
+    from zf.runtime.terminal_reader_operation import terminal_reader_event
+
     operations = reduce_workflow_operations(event_list)
     attempts = _task_attempt_rows(Path(state_dir))
     now = datetime.now(timezone.utc).timestamp()
@@ -297,6 +299,12 @@ def build_workflow_operation_resume_checkpoints(
             )
         elif (
             status == "suspended"
+            and terminal_reader_event(operation, event_list)
+        ):
+            action = "cancel_terminal_reader_operation"
+            reason = "reader carrier already has an exact terminal occurrence"
+        elif (
+            status == "suspended"
             and task_pipeline_stage
             and str(operation.get("reason") or "")
             in {
@@ -310,6 +318,13 @@ def build_workflow_operation_resume_checkpoints(
                 "Task Pipeline operation was interrupted by a replayable "
                 "runtime stop and retains request identity"
             )
+        elif (
+            status == "suspended"
+            and str(operation.get("operation_type") or "") == "fanout_reader_child"
+            and str(operation.get("reason") or "") in {"graceful_stop", "fast_stop"}
+        ):
+            action = "redrive_interrupted_reader_operation"
+            reason = "reader operation retains its pinned request after runtime stop"
         elif status == "suspended":
             action = "cancel_interrupted_operation"
             reason = "operation was interrupted by an explicit runtime stop"
@@ -912,7 +927,7 @@ def _reader_stage_replan_owns_failed_batch(
     events: list[ZfEvent],
     aggregate_event: ZfEvent,
 ) -> bool:
-    """Avoid a task-map resume action for a pre-task reader failure."""
+    """Keep reader Plan failures with stage replan, even with inherited refs."""
 
     payload = _payload(aggregate_event)
     fanout_id = str(payload.get("fanout_id") or "").strip()
@@ -934,6 +949,30 @@ def _reader_stage_replan_owns_failed_batch(
         for event in result_events
     ):
         return True
+    reader_started = any(
+        event.type == "fanout.started"
+        and str(_payload(event).get("fanout_id") or "") == fanout_id
+        and str(_payload(event).get("topology") or "") == "fanout_reader"
+        for event in events
+    )
+    if reader_started and str(payload.get("failure_class") or "") in {
+        "plan_artifact_package_protocol",
+        "plan_candidate_review_identity",
+        "plan_candidate_preflight",
+    }:
+        return True
+    started = next((
+        event for event in reversed(events)
+        if event.type == "fanout.started"
+        and str(_payload(event).get("fanout_id") or "") == fanout_id
+    ), None)
+    if started is not None and _payload(started).get("topology") == "fanout_reader":
+        trigger_id = str(_payload(started).get("trigger_event_id") or "")
+        trigger = next((event for event in events if event.id == trigger_id), None)
+        if trigger is not None and trigger.type == "flow.discovery.requested":
+            # Candidate/task-map refs are inputs to discovery, not authority
+            # to reopen implementation tasks after a reader failure.
+            return True
     if (
         str(payload.get("task_map_ref") or "").strip()
         or _string_list(payload.get("completed_task_ids"))
@@ -941,12 +980,6 @@ def _reader_stage_replan_owns_failed_batch(
         or str(payload.get("candidate_head_commit") or "").strip()
     ):
         return False
-    reader_started = any(
-        event.type == "fanout.started"
-        and str(_payload(event).get("fanout_id") or "") == fanout_id
-        and str(_payload(event).get("topology") or "") == "fanout_reader"
-        for event in events
-    )
     if not reader_started:
         return False
     return bool(result_events)

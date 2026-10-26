@@ -165,3 +165,17 @@ Provenance 八个分区；每个分区保留 `status/counts/refs/notes`。来源
 Owner 决策深链接根据 Preview 的动作类型和同一 Plan 的 Inbox 审批身份提交；身份尚未
 加载时禁用审批，不能回落到普通 Plan 审批。相关回归见 `test_plan_review_packet.py`、
 `test_operator_plan_preview.py`、`planReviewModel.test.ts` 和 Plan 浏览器测试。
+
+## GitHub 与本地并行流程合并校验（2026-10-26）
+
+审批指纹统一绑定 Run、Task Map generation、需求摘要与 Plan package digest；
+缺少 package digest 时保留原始 Plan artifact digest 回退。OA 的语义采纳仍不能替代
+Owner 审批，重复审批抑制仍会在旧决定结束后重新判断。对应入口回归见
+`tests/test_plan_approval_merge_identity.py`。
+
+Task Pipeline 工作目录授权只采用当前 running operation 匹配的派发身份；
+不能把同一任务历史派发中的所有 workdir 都加入白名单。旧 dispatch、placement epoch
+和 Task Map generation 的写入拒绝覆盖原生文件工具及 shell。
+
+Plan Preview 在 760px 以下将侧栏限制在独立的 120px 滚动区域，
+为长导航下的正文保留阅读空间；320px、390px 与桌面视口由浏览器用例验证。

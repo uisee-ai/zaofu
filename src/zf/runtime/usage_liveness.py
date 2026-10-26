@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import datetime, timezone
 from typing import Any
 
 from zf.core.events.model import ZfEvent
@@ -39,8 +40,8 @@ def apply_agent_usage_liveness(
     previous_state = ""
     previous_task_id = ""
     previous_source = ""
+    kernel_ts, previous = registry.get_last_heartbeat(instance_id)
     if not explicit_task_id:
-        _, previous = registry.get_last_heartbeat(instance_id)
         if isinstance(previous, dict):
             previous_state = str(previous.get("state") or "").strip().lower()
             previous_task_id = str(
@@ -96,6 +97,23 @@ def apply_agent_usage_liveness(
         value = str(payload.get(key) or "").strip()
         if value:
             heartbeat[key] = value
+    # Accounting and lease facts are handled separately for every usage event.
+    # Only identical liveness samples can share the existing heartbeat window;
+    # context/state/task/attempt changes must remain immediately observable.
+    if isinstance(previous, dict) and all(
+        previous.get(key) == value for key, value in heartbeat.items()
+        if key not in {"event_id", "last_action_ts"}
+    ):
+        try:
+            stored = datetime.fromisoformat(str(kernel_ts).replace("Z", "+00:00"))
+            if stored.tzinfo is None:
+                stored = stored.replace(tzinfo=timezone.utc)
+            from zf.runtime.housekeeping import _ACTIVITY_LIVENESS_MIN_GAP_S
+
+            if 0 <= (datetime.now(timezone.utc) - stored).total_seconds() < _ACTIVITY_LIVENESS_MIN_GAP_S:
+                return
+        except (ValueError, TypeError):
+            pass
     registry.record_heartbeat(instance_id, heartbeat)
 
 

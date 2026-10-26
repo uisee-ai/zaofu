@@ -638,3 +638,29 @@ def test_return_to_plan_respects_semantic_revision_budget(tmp_path: Path) -> Non
         event.type == "orchestrator.replan_requested"
         for event in runtime.event_log.read_all()
     )
+
+
+@pytest.mark.parametrize("mutation,reason", [
+    ({"workflow_run_id": "other-run"}, "current_plan_package_missing"),
+    ({"task_map_generation": "obsolete"}, "target_generation_stale"),
+])
+def test_semantic_failure_never_falls_back_to_another_run_or_generation(tmp_path, mutation, reason):
+    runtime = _runtime(tmp_path)
+    event = _semantic_request(runtime)
+    event.payload.update(mutation)
+    with pytest.raises(SemanticFailureCheckpointError, match=reason):
+        request_semantic_failure_checkpoint(runtime, event)
+
+
+def test_replan_replay_preserves_unaffected_and_completed_tasks(tmp_path):
+    runtime = _runtime(tmp_path)
+    runtime.task_store.add(Task(id="TASK-DONE", status="done"))
+    before = {key: runtime.task_store.get(key) for key in ("TASK-2", "TASK-DONE")}
+    prepared = request_semantic_failure_checkpoint(runtime, _semantic_request(runtime))
+    event = _submit_rework(runtime, prepared, action="return_to_plan")
+    first = apply_orchestrator_agent_decision(runtime, event)
+    assert apply_orchestrator_agent_decision(runtime, event) == first
+    assert before == {key: runtime.task_store.get(key) for key in before}
+    events = runtime.event_log.read_all()
+    assert len([row for row in events if row.type == "prd.plan.requested"]) == 1
+    assert not any(row.type in {"task_map.ready", "task.pipeline.generation.admitted"} for row in events)

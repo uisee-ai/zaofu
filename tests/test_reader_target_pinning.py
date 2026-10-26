@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+import pytest
 
 from zf.core.config.schema import (
     FanoutAggregateConfig,
@@ -23,6 +24,11 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.workdirs import WorkdirManager
+from zf.core.task.schema import Task
+from zf.runtime.task_contract_snapshot import (
+    build_task_contract_snapshot, write_task_contract_snapshot, snapshot_payload_fields,
+    build_target_snapshot, write_target_snapshot, target_payload_fields,
+)
 
 
 class _RecordingTransport:
@@ -207,6 +213,38 @@ def test_valid_ref_pins_commit_into_child_payload(tmp_path: Path) -> None:
     assert child_payload.get("target_commit") == head
     project_path = state_dir / "workdirs" / "judge" / "project"
     assert _git(project_path, "rev-parse", "HEAD") == head
+
+
+@pytest.mark.parametrize('corrupt', [False, True])
+def test_immutable_reader_target_wins_over_old_stage_ref(tmp_path: Path, corrupt: bool) -> None:
+    old, state, log, transport, orch = _state(tmp_path, workdirs=True)
+    _git(tmp_path, 'checkout', '-b', 'repair')
+    (tmp_path / 'README.md').write_text('fixed\n')
+    _git(tmp_path, 'add', '--', 'README.md')
+    _git(tmp_path, 'commit', '-m', 'fix: reader input')
+    new = _git(tmp_path, 'rev-parse', 'HEAD')
+    snapshot = build_task_contract_snapshot(Task(id='T1', title='repair'),
+        workflow_run_id='trace-1', task_map_generation_id='g', base_commit=old, task_ref='task/T1')
+    descriptor = write_task_contract_snapshot(state, snapshot)
+    target = write_target_snapshot(state, build_target_snapshot(descriptor, target_commit=new, contract_snapshot=snapshot))
+    if corrupt:
+        (state / target['ref']).write_text('{}')
+    orch.run_once(events=[ZfEvent(type='test.passed', correlation_id='trace-1', payload={
+        'task_id': 'T1', 'workflow_run_id': 'trace-1', 'target_ref': old,
+        'candidate_head_commit': new, 'target_commit': new,
+        **snapshot_payload_fields(descriptor), **target_payload_fields(target),
+    })])
+    dispatched = [e for e in log.read_all() if e.type == 'fanout.child.dispatched']
+    if corrupt:
+        assert not dispatched
+        assert not transport.sent
+        assert any(e.type == 'fanout.child.workdir_mismatch' and
+                   e.payload['reason'].startswith('target_binding_invalid') for e in log.read_all())
+        return
+    assert dispatched
+    assert dispatched[-1].payload['payload']['target_commit'] == new
+    assert _git(state / 'workdirs/judge/project', 'rev-parse', 'HEAD') == new
+    assert transport.sent
 
 
 def test_pin_reader_target_verifies_head(tmp_path: Path) -> None:

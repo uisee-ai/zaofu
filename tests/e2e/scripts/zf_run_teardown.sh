@@ -37,10 +37,12 @@ else
 fi
 
 # 2) 留痕 fallback 仍走 zf emit,不直接写 events.jsonl。
-if [[ "$STOP_OK" -eq 0 ]] && ! ZF_STATE_DIR="$STATE_ABS" "$ZF" emit run.teardown \
-        --data "reason=$REASON" --data "session=$ZF_TMUX_SESSION" \
-        --data "by=zf-run-teardown" >/dev/null 2>&1; then
-  echo ">>> [teardown] zf emit run.teardown 失败,不直接写 events.jsonl"
+if [[ "$STOP_OK" -eq 0 ]]; then
+  PAYLOAD="$(python3 -c 'import json, sys; print(json.dumps({"reason": sys.argv[1], "session": sys.argv[2], "by": "zf-run-teardown"}))' "$REASON" "$ZF_TMUX_SESSION")"
+  if ! ZF_STATE_DIR="$STATE_ABS" "$ZF" emit run.teardown \
+      --payload "$PAYLOAD" >/dev/null 2>&1; then
+    echo ">>> [teardown] zf emit run.teardown 失败,不直接写 events.jsonl"
+  fi
 fi
 
 # 3) 只杀本 run 的 tmux session(精准,scoped; stop --fast 通常已处理)

@@ -68,7 +68,7 @@ from zf.runtime.orchestrator_agent_dispatch_fences import (
     pre_impl_dispatch_fence,
     stage_barrier_blocks_dispatch,
 )
-from zf.runtime import skill_briefing, task_pipeline_fanout
+from zf.runtime import skill_briefing, task_pipeline_fanout, task_pipeline_candidate_readers
 from zf.runtime.lane_stage_handoff import (
     LANE_STAGE_HANDOFF_FAILURE_EVENT,
     LANE_STAGE_HANDOFF_SUCCESS_EVENT,
@@ -166,6 +166,11 @@ _HANDOFF_REF_FIELDS = (
 )
 
 _CONTRACT_HANDOFF_KEYS = (
+    "contract_authority_revision",
+    "execution_owner",
+    "workflow_request_id",
+    "workflow_request_revision",
+    "origin_binding_digest",
     "task_ref",
     "workflow_run_id",
     "flow_kind",
@@ -2495,11 +2500,7 @@ class FanoutCoordinationMixin(
             and not str(trigger_payload.get("workflow_invoke_pattern_id") or "")
         ):
             return False
-        stages = [
-            stage for stage in getattr(self.config.workflow, "stages", [])
-            if stage.topology == "fanout_reader" and stage.trigger == event.type
-            and self._fanout_stage_matches_trigger_event(stage, event)
-        ]
+        stages = task_pipeline_candidate_readers.candidate_reader_stages(self, event)
         if not stages:
             return False
         if suppress_stale_task_pipeline_generation(
@@ -3242,15 +3243,16 @@ class FanoutCoordinationMixin(
             loaded=loaded,
             trace_id=trace_id,
         )
-        if semantic.enabled and semantic.blocking:
-            return semantic.satisfied
+        if semantic.enabled and semantic.blocking and not semantic.satisfied:
+            return False
+        enabled = bool(getattr(self.config.workflow, "plan_approval_enabled", False))
         try:
             events = self.event_log.read_all()
         except Exception:
-            return True  # 评估不可用不挡主路(observe-first)
+            return not enabled  # An unreadable ledger cannot satisfy owner approval.
         plan_id = trigger_event.id
         requested = False
-        suppressed_fingerprints: set[str] = set()
+        suppressed: set[tuple[str, str]] = set()
         decided_plan_ids: set[str] = set()
         pending_fingerprints: dict[str, str] = {}
         for existing in events:
@@ -3261,7 +3263,8 @@ class FanoutCoordinationMixin(
             if not pid:
                 continue
             if existing.type in ("plan.approved", "plan.rejected"):
-                decided_plan_ids.add(pid)
+                if not (enabled and existing.type == "plan.approved" and payload.get("semantic_control")):
+                    decided_plan_ids.add(pid)
             elif existing.type == "plan.approval.requested":
                 pending_fingerprints[pid] = str(
                     payload.get("plan_fingerprint") or "",
@@ -3273,17 +3276,21 @@ class FanoutCoordinationMixin(
             if str(payload.get("plan_id") or "") != plan_id:
                 continue
             if existing.type == "plan.approved":
+                if enabled and payload.get("semantic_control"):
+                    continue  # Historical OA adoption is not an owner decision.
                 return True
             if existing.type == "plan.rejected":
                 return False
             if existing.type == "plan.approval.requested":
                 requested = True
             if existing.type == "plan.minting.suppressed":
-                suppressed_fingerprints.add(str(payload.get("plan_fingerprint") or ""))
-        enabled = bool(getattr(
-            self.config.workflow, "plan_approval_enabled", False,
-        ))
-        from zf.runtime.plan_preview_artifacts import approval_artifact_refs, bind_plan_approval_preview
+                suppressed.add((
+                    str(payload.get("plan_fingerprint") or ""),
+                    str(payload.get("duplicate_of") or ""),
+                ))
+        from zf.runtime.plan_preview_artifacts import (
+            approval_artifact_refs, bind_plan_approval_preview,
+        )
 
         base_payload = {
             "plan_id": plan_id,
@@ -3308,14 +3315,25 @@ class FanoutCoordinationMixin(
             return True
         if not requested:
             task_items = list(getattr(loaded, "task_items", []) or [])
-            from zf.runtime.plan_approval_state import plan_approval_fingerprint
+            # Suppress only the same pending task contract and reviewed artifact.
+            from zf.runtime.plan_approval_identity import plan_approval_fingerprint
 
             fingerprint = plan_approval_fingerprint(
                 stage_id=stage_id,
                 pdd_id=base_payload["pdd_id"],
-                trace_id=trace_id,
-                payload={**trigger_event.payload, **base_payload},
                 task_items=task_items,
+                artifact_digest=str(base_payload.get("plan_artifact_digest") or ""),
+                identity={
+                    "workflow_run_id": trace_id,
+                    **{
+                        key: str(trigger_event.payload.get(key) or "")
+                        for key in (
+                            "task_map_generation", "task_map_digest", "plan_artifact_package_digest",
+                            "requirement_spec_digest", "effective_config_digest",
+                            "workflow_proposal_digest", "run_contract_digest", "plan_artifact_digest",
+                        )
+                    },
+                },
             )
             duplicate_of = next(
                 (
@@ -3327,7 +3345,7 @@ class FanoutCoordinationMixin(
                 "",
             )
             if duplicate_of:
-                if fingerprint in suppressed_fingerprints:
+                if (fingerprint, duplicate_of) in suppressed:
                     return False
                 self.event_writer.append(ZfEvent(
                     type="plan.minting.suppressed",
@@ -5215,7 +5233,16 @@ class FanoutCoordinationMixin(
             child=child,
         ):
             return
-        payload = bind_blocking_writer_result_identity(payload, child or {})
+        from zf.runtime.call_result_runtime import _pinned_operation_result_identity
+
+        pinned_identity = _pinned_operation_result_identity(
+            self,
+            operation_id=str((child or {}).get("operation_id") or payload.get("operation_id") or ""),
+            request_hash=str((child or {}).get("request_hash") or payload.get("request_hash") or ""),
+        )
+        payload = bind_blocking_writer_result_identity(
+            payload, child or {}, pinned_identity=pinned_identity,
+        )
         run_id = str(payload.get("run_id") or (child or {}).get("run_id") or "")
         expected_run_id = str((child or {}).get("run_id") or "")
         actual_run_id = str(payload.get("run_id") or "")
@@ -7089,9 +7116,14 @@ class FanoutCoordinationMixin(
             default_recommendation=str(payload.get("recommendation") or "abstain"),
             default_summary=str(payload.get("summary") or ""),
         )
+        # The synth envelope keeps structural fields from the prefilled
+        # scratch, while the nested report carries the critic's semantic
+        # verdict.  Prefer that report verdict whenever present; otherwise a
+        # stale top-level ``approve`` can promote a rejected review to
+        # ``task_map.ready`` (and unlock implementation before rework).
         recommendation = str(
-            payload.get("recommendation")
-            or report_result.report.get("recommendation")
+            report_result.report.get("recommendation")
+            or payload.get("recommendation")
             or "abstain"
         )
         if not report_result.valid:
@@ -7668,11 +7700,17 @@ class FanoutCoordinationMixin(
         cleaned = str(target_ref or "").strip()
         reason = ""
         pinned = ""
+        from zf.runtime.reader_target_binding import reader_checkout_ref
+
+        try:
+            cleaned = reader_checkout_ref(self.state_dir, child.payload or {}, cleaned)
+        except TaskContractSnapshotError as exc:
+            reason = f"target_binding_invalid: {exc}"
         unrendered = "${" in cleaned or "{{" in cleaned
-        if declared and (not cleaned or unrendered):
+        if not reason and declared and (not cleaned or unrendered):
             reason = "target_ref_unresolved"
             cleaned = "" if unrendered else cleaned
-        elif cleaned and not self._fanout_target_ref_is_project_path(cleaned):
+        elif not reason and cleaned and not self._fanout_target_ref_is_project_path(cleaned):
             from zf.runtime.workdirs import WorkdirManager
 
             try:
@@ -7933,8 +7971,8 @@ class FanoutCoordinationMixin(
         blocked_payload.update({
             "status": "failed",
             "reason": "<concise reproducible blocker>",
-            "failure_class": "task_contract_unsatisfiable",
-            "recommended_action": "replan",
+            "failure_class": "unknown",
+            "recommended_action": "diagnose",
             "blocker_task_ids": [],
             "required_paths": [],
             "evidence_refs": ["<reproduction command or artifact ref>"],

@@ -192,12 +192,56 @@ class LifecycleEvidenceQueriesMixin:
             ):
                 continue
             assigned = task.assigned_to or ""
-            if assigned == instance_id:
-                return task
             dispatched = latest_dispatched.get(task.id, "")
-            if dispatched == instance_id:
+            if assigned == instance_id or dispatched == instance_id:
+                terminal = self._terminal_task_pipeline_assignments()
+                terminal_dispatch = terminal.get((task.id, instance_id))
+                if terminal_dispatch and terminal_dispatch == task.active_dispatch_id:
+                    continue
                 return task
         return None
+
+    def _terminal_task_pipeline_assignments(self) -> dict[tuple[str, str], str]:
+        """A Task may await integration after its provider operation has ended."""
+        from zf.runtime.workflow_operation import (
+            TERMINAL_OPERATION_STATUSES,
+            reduce_workflow_operations,
+        )
+
+        cache_key = build_event_manifest(self.state_dir).digest
+        cached = getattr(self, "_terminal_pipeline_assignments_cache", None)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+        events = self.event_log.read_all()
+        operations = reduce_workflow_operations(events)
+        latest = {}
+        for event in events:
+            if event.type != "task.dispatched" or not event.task_id:
+                continue
+            payload = event.payload
+            instance = str(payload.get("role_instance") or payload.get("assignee") or "")
+            latest[(event.task_id, instance)] = payload
+        active = {
+            (str(row.get("task_id") or ""), str(row.get("role_instance") or ""))
+            for row in operations.values()
+            if row.get("task_pipeline_stage")
+            and row.get("status") not in TERMINAL_OPERATION_STATUSES
+        }
+        terminal = {}
+        for key, payload in latest.items():
+            if not payload.get("task_pipeline_stage") or key in active:
+                continue
+            operation = operations.get(str(payload.get("operation_id") or ""), {})
+            if operation.get("status") not in TERMINAL_OPERATION_STATUSES:
+                continue
+            if any(operation.get(field) != payload.get(field) for field in (
+                "task_id", "role_instance", "dispatch_id", "task_pipeline_stage",
+                "task_map_generation",
+            )):
+                continue
+            terminal[key] = str(payload.get("dispatch_id") or "")
+        self._terminal_pipeline_assignments_cache = (cache_key, terminal)
+        return terminal
 
     def _fanout_task_state_for_instance(
         self,

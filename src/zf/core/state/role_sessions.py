@@ -65,9 +65,9 @@ def _uuid5_seed(
 
 
 class RoleSessionRegistry:
-    def __init__(self, path: Path, project_root: str) -> None:
+    def __init__(self, path: Path, project_root: str | Path) -> None:
         self.path = path
-        self.project_root = project_root
+        self.project_root = str(project_root)
         self._entries: dict[str, str] = {}          # instance_id → uuid str
         self._meta: dict[str, dict] = {}            # instance_id → metadata dict
         self._task_stage_bindings: dict[str, dict] = {}
@@ -81,7 +81,7 @@ class RoleSessionRegistry:
         self._task_stage_bindings = {}
         if not self.path.exists():
             return
-        data = yaml.safe_load(self.path.read_text(encoding="utf-8")) or {}
+        data = yaml.load(self.path.read_text(encoding="utf-8"), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
         if not isinstance(data, dict):
             return
         roles = data.get("roles", {}) or {}
@@ -110,6 +110,7 @@ class RoleSessionRegistry:
                     "instance_meta": self._meta,
                     "task_stage_bindings": self._task_stage_bindings,
                 },
+                Dumper=getattr(yaml, "CSafeDumper", yaml.SafeDumper),
                 default_flow_style=False,
                 allow_unicode=True,
                 sort_keys=True,

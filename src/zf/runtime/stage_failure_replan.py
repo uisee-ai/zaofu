@@ -391,6 +391,7 @@ def reader_stage_lineage_payload(
     *,
     stage_id: str,
     correlation_id: str = "",
+    fanout_id: str = "",
 ) -> dict[str, Any]:
     """Recover the durable parent payload across pattern-bridged replans."""
 
@@ -400,6 +401,8 @@ def reader_stage_lineage_payload(
         if event.type != "fanout.started":
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if fanout_id and str(payload.get("fanout_id") or "") != fanout_id:
+            continue
         if str(payload.get("stage_id") or "") != stage_id:
             continue
         trace_id = str(
@@ -459,6 +462,10 @@ def plan_reader_stage_replan(
         and active_candidate_replan_owns_failure(config, events, failure_event)
     ):
         return None, "owned_by_active_candidate_replan"
+    failure_payload = (
+        failure_event.payload if isinstance(failure_event.payload, dict) else {}
+    )
+    failure_fanout_id = str(failure_payload.get("fanout_id") or "")
     origin_payload: dict[str, Any] = {}
     for event in events:
         if (
@@ -472,11 +479,16 @@ def plan_reader_stage_replan(
         events,
         stage_id=str(getattr(stage, "id", "") or ""),
         correlation_id=str(failure_event.correlation_id or ""),
+        fanout_id=failure_fanout_id,
     )
-    origin_payload = {**lineage, **origin_payload}
-    failure_payload = (
-        failure_event.payload if isinstance(failure_event.payload, dict) else {}
-    )
+    if failure_fanout_id:
+        if not lineage:
+            return None, "reader_origin_missing"
+        # A Run may contain many candidates for the same reader stage. Its
+        # latest request is not the causal input of this failed operation.
+        origin_payload = lineage
+    else:
+        origin_payload = {**lineage, **origin_payload}
     if (
         _requires_changed_scan_input(stage, failure_event.type)
         and _semantic_failure(failure_payload)
@@ -588,7 +600,7 @@ def plan_reader_stage_replan(
     target_ref = _payload_target_ref(failure_payload) or _payload_target_ref(
         origin_payload
     )
-    if not target_ref:
+    if not target_ref and not failure_fanout_id:
         for event in reversed(events):
             if (
                 not _same_run(event, failure_run_id)

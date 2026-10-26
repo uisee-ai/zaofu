@@ -416,8 +416,8 @@ def register(subparsers) -> None:
     )
     loop.add_argument(
         "--seed-text", default="",
-        help="(bypass mode) user.message text emitted at iter start "
-             "(JSON-wrapped). Pass the task description here.",
+        help="Diagnostic context appended to the scenario seed; in bypass mode, "
+             "the complete user.message emitted at iteration start.",
     )
     loop.add_argument(
         "--expected-done", type=int, default=1,
@@ -792,37 +792,9 @@ def _refresh_health_cache(parent_state_dir: Path) -> None:
 
 
 def _real_autoresearch_fn(*, scenario: str, run_id: str, cfg: LoopConfig) -> dict:
-    """Run one loop iteration in the reusable isolated worktree."""
-    run_output_dir = (
-        cfg.output_dir / "runs" / run_id
-        if cfg.output_dir is not None
-        else None
-    )
-    ar_cfg = AutoresearchRunConfig(
-        scenario_name=scenario,
-        worktree=cfg.worktree,
-        config_template=cfg.config_template,
-        run_id=run_id,
-        confirm=True,
-        reuse_worktree=True,
-        backlog_on_failure=cfg.backlog_on_failure,
-        backlog_state_dir=cfg.parent_state_dir,
-        review_gate=cfg.review_gate,
-        sync_dirty=False,
-        output_dir=run_output_dir,
-    )
-    try:
-        result = run_autoresearch(ar_cfg)
-        return {
-            "status": result.status,
-            "tasks_done": result.tasks_done,
-            "expected_done": result.expected_done,
-            "fatal_event": result.fatal_event,
-            "report_path": str(result.report_path),
-            "review_gate": result.review_gate or {},
-        }
-    finally:
-        cleanup_autoresearch_run(ar_cfg, run_id=run_id)
+    from zf.autoresearch.loop_iteration import run_iteration
+
+    return run_iteration(scenario=scenario, run_id=run_id, cfg=cfg)
 
 
 def _real_eval_collector(state_dir: Path):

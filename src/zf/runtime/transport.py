@@ -654,6 +654,15 @@ class CompositeTransport(TransportAdapter):
             return {}
         return result if isinstance(result, dict) else {}
 
+    def lifecycle_snapshot(self, role_name: str) -> WorkerLifecycleSnapshot:
+        transport = self.for_role(role_name)
+        getter = getattr(transport, "lifecycle_snapshot", None)
+        if callable(getter):
+            return getter(role_name)
+        return WorkerLifecycleSnapshot(
+            role_name=role_name, alive=transport.is_alive(role_name)
+        )
+
     def send_task(
         self,
         role_name: str,

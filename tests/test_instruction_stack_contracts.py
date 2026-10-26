@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from zf.core.skills import read_skill_metadata
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -133,7 +134,10 @@ def test_browser_planning_contract_keeps_future_evidence_out_of_blockers() -> No
     assert "canonical `acceptance_ids`" in synthesizer
     assert "瞬时状态只写入 `readiness`" in synthesizer
     assert "dependencies: [zf-browser-e2e-contract]" in adapter
-    assert "dependencies: [zf-browser-e2e-contract]" in synthesizer
+    assert "zf-browser-e2e-contract" in read_skill_metadata(
+        ROOT / "skills/zf-channel-discussion-synthesizer/SKILL.md",
+        expected_name="zf-channel-discussion-synthesizer",
+    ).dependencies
     assert "owner-facing origin" in browser
     assert "window.isSecureContext" in browser
     assert "crypto.subtle" in browser

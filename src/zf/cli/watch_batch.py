@@ -7,8 +7,7 @@ from typing import TYPE_CHECKING
 
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
-from zf.core.events.writer import EventWriter
-from zf.runtime.simulation_lifecycle import SIMULATION_TERMINAL_EVENTS, emit_simulation_done
+from zf.cli.watched_batch import process_watched_batch
 from zf.runtime.wake_patterns import WakeRateLimiter
 
 if TYPE_CHECKING:
@@ -33,30 +32,11 @@ def make_watch_callbacks(
         pass
 
     def on_batch(events: list[ZfEvent], offset: int) -> None:
-        should_wake = False
-        for event in events:
-            if simulation and event.type in SIMULATION_TERMINAL_EVENTS:
-                should_wake = True
-            elif (
-                event.type in wake_patterns
-                and wake_worthy_fn(event)
-                and rate_limiter.allow(event.type)
-            ):
-                should_wake = True
-        if not should_wake:
-            # Pure observations and rate-limited wakes retain the existing
-            # periodic durable catch-up path; do not acknowledge them here.
-            return
-        orchestrator.run_once(events=events, consumed_offset=offset)
-        if simulation:
-            for event in events:
-                if event.type not in SIMULATION_TERMINAL_EVENTS:
-                    continue
-                done = emit_simulation_done(
-                    event, events=event_log.read_all(),
-                    writer=EventWriter(event_log, default_origin="kernel"),
-                )
-                if done is not None:
-                    stop_watcher()
+        process_watched_batch(
+            events, consumed_offset=offset, orchestrator=orchestrator,
+            wake_patterns=wake_patterns, wake_worthy_fn=wake_worthy_fn,
+            rate_limiter=rate_limiter, simulation=simulation,
+            event_log=event_log, stop_watcher=stop_watcher,
+        )
 
     return on_event, on_batch

@@ -69,17 +69,15 @@ CONTROLLED_STUCK_RECOVERY = AutoresearchScenario(
         "stuck threshold or external stuck injection."
     ),
     seed_text=(
-        "Run a controlled stuck-recovery harness validation for ZaoFu. Produce "
-        "docs/autoresearch-campaign/stuck-recovery.md with a concise Chinese "
-        "run note, then complete the normal review/test/judge/discriminator "
-        "flow. Arch must only produce the implementation handoff plan. Critic "
-        "must only evaluate that plan and should not run full verification; "
-        "dev owns creating the deliverable and test/judge own verification. "
-        "The outer operator may inject or configure one worker.stuck event "
-        "during the run; if stuck happens, the harness must requeue or recover "
-        "the task and still reach done without manual status moves. "
-        "Acceptance command: test -f "
-        "docs/autoresearch-campaign/stuck-recovery.md."
+        "Produce one deliverable: docs/autoresearch-campaign/stuck-recovery.md. "
+        "It must contain a concise Chinese note describing a controlled worker "
+        "stuck-recovery exercise and the command used to check that this file "
+        "exists. Describe the exercise as a procedure, not as a claim that a "
+        "future run has already succeeded. Product acceptance command: "
+        "test -f docs/autoresearch-campaign/stuck-recovery.md. "
+        "Keep this as one independent implementation task. Planner plans, "
+        "Critic reviews the plan, dev writes the file, and Verify/Judge evaluate "
+        "the delivered file against these product requirements."
     ),
 )
 
@@ -183,7 +181,37 @@ SIMPLIFICATION_AUDIT = AutoresearchScenario(
 )
 
 
+INCIDENT_REPRODUCTION = AutoresearchScenario(
+    name="incident-reproduction",
+    expected_done=1,
+    timeout_seconds=7200,
+    description="Reproduce the referenced incident in isolation and verify a bounded repair.",
+    seed_text=(
+        "Diagnose the actual incident in the appended diagnostic context. Read its "
+        "source event, run/task identity, exact command, artifact refs/digests and "
+        "source checkout before proposing a cause. Source runtime state is read-only; "
+        "use an isolated fixture and the configured state_dir for any reproduction. "
+        "Deliver one bounded regression and repair candidate in this worktree. "
+        "Reproduce the observed failure through its real runtime caller, retain the "
+        "failing command and output (RED), then rerun the same assertion after the "
+        "smallest fix (GREEN) plus affected callers. Distinguish missing/stale stage "
+        "inputs, wrong run/task identity, evidence admission and product assertion "
+        "failures using the referenced evidence, not guessed keywords. Keep semantic "
+        "planning methods in skills/prompts and mechanical invariants in runtime. "
+        "Record evidence and limitations in reports/autoresearch/incident-reproduction.md. "
+        "Missing references, an unreproduced failure or an unavailable external "
+        "prerequisite must remain blocked/unverified. A file-existence check, generic "
+        "stuck injection, completed task count or score does not prove incident "
+        "recovery. Independent test/judge must inspect RED/GREEN and original-incident "
+        "coverage. Keep the normal result admission and review gates. Do not apply "
+        "the candidate to the source checkout, mutate production state or claim the "
+        "original run recovered without a separately authorized controlled resume."
+    ),
+)
+
+
 BUILTIN_SCENARIOS: dict[str, AutoresearchScenario] = {
+    INCIDENT_REPRODUCTION.name: INCIDENT_REPRODUCTION,
     SELF_EVAL_BACKLOG.name: SELF_EVAL_BACKLOG,
     POSITIVE_PRESSURE_4DEV.name: POSITIVE_PRESSURE_4DEV,
     CONTROLLED_STUCK_RECOVERY.name: CONTROLLED_STUCK_RECOVERY,

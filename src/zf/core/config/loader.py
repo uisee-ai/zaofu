@@ -803,9 +803,9 @@ def _build_orchestration_flow_policy(
             f"{path} blocking rollout is restricted to an explicit full "
             "Product Flow pilot"
         )
-    if blocking != ["plan_candidate"] and blocking:
+    if set(blocking) - {"plan_candidate", "pre_impl", "semantic_failure", "pre_closeout"}:
         raise ConfigError(
-            f"{path} rollout currently permits only plan_candidate blocking; "
+            f"{path} rollout permits plan_candidate, pre_impl, semantic_failure and pre_closeout blocking; "
             f"got {', '.join(blocking)}"
         )
     if pilot_id and not blocking:
@@ -2126,6 +2126,13 @@ def _build_role(data: dict) -> RoleConfig:
             f"Invalid transport {transport!r} for role {name!r}: "
             f"must be one of {_VALID_TRANSPORTS}"
         )
+    if transport == "stream-json" and any(
+        value != "claude-code" for value in (backends_list or [backend])
+    ):
+        raise ConfigError(
+            f"role {name!r}: stream-json requires backend=claude-code; "
+            "use transport=tmux for Codex or other backends"
+        )
     execution_data = data.get("execution")
     if execution_data is not None and not isinstance(execution_data, dict):
         raise ConfigError(f"role {name!r}: execution must be a mapping")
@@ -2601,7 +2608,7 @@ def _load_profile_source_documents(
                 env,
             )
             try:
-                loaded = list(yaml.safe_load_all(text))
+                loaded = list(yaml.load_all(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)))
             except yaml.YAMLError as exc:
                 raise ConfigError(
                     f"profile source {source_path} YAML parse error: {exc}"
@@ -2626,7 +2633,7 @@ def load_config(path: Path) -> ZfConfig:
     env = _config_env_map(path)
     text = _expand_env_vars(path.read_text(encoding="utf-8"), env)
     try:
-        documents = list(yaml.safe_load_all(text))
+        documents = list(yaml.load_all(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)))
     except yaml.YAMLError as e:
         raise ConfigError(f"YAML parse error: {e}")
     profile_documents, profile_source_files = _load_profile_source_documents(
@@ -4433,7 +4440,7 @@ def _merge_feishu_yaml(raw: dict, zf_yaml_path: Path) -> dict:
     text = _expand_env_vars(
         feishu_path.read_text(encoding="utf-8"), _config_env_map(feishu_path))
     try:
-        fdata = yaml.safe_load(text) or {}
+        fdata = yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
     except yaml.YAMLError as exc:
         raise ConfigError(f"feishu.yaml parse error: {exc}")
     if not isinstance(fdata, dict):

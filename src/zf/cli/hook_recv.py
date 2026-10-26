@@ -39,6 +39,9 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.state.role_sessions import RoleSessionRegistry
+from zf.cli.hook_dispatch_context import (
+    _fanout_key, _fanout_terminal_keys, _latest_active_dispatch_for_actor,
+)
 from zf.cli.hook_workdir_guard import (
     actor_from_workdir_cwd as _actor_from_workdir_cwd,
     bash_command_looks_mutating as _bash_command_looks_mutating,
@@ -294,6 +297,8 @@ def _resolve_causation(
     if index is not None:
         cached = index.latest_dispatch_event_for_actor(actor)
         if cached is not None:
+            if cached.type == "task.pipeline.stage.dispatched":
+                return _latest_active_dispatch_for_actor(event_log.read_all(), actor)
             if cached.type == "task.dispatched":
                 return cached.id
             if cached.type == "fanout.child.dispatched":
@@ -354,55 +359,6 @@ def _orphan_already_recorded(event_log: EventLog, *, session_id: str) -> bool:
     return False
 
 
-def _latest_active_dispatch_for_actor(
-    events: list[ZfEvent],
-    actor: str,
-) -> str | None:
-    terminal_fanout_children: set[tuple[str, str, str]] = set()
-    terminal_synth_fanouts: set[str] = set()
-    for event in reversed(events):
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        if event.type in {"fanout.child.completed", "fanout.child.failed"}:
-            terminal_fanout_children.update(_fanout_terminal_keys(payload))
-            continue
-        if event.type in {"fanout.synth.completed", "fanout.aggregate.completed"}:
-            fanout_id = str(payload.get("fanout_id") or "")
-            if fanout_id:
-                terminal_synth_fanouts.add(fanout_id)
-            continue
-        if event.type == "fanout.timed_out":
-            fanout_id = str(payload.get("fanout_id") or "")
-            for child_id in payload.get("pending_children", []) or []:
-                child_id = str(child_id or "")
-                if fanout_id and child_id:
-                    terminal_fanout_children.add((fanout_id, child_id, ""))
-            continue
-        if event.type == "fanout.child.dispatched":
-            if str(payload.get("role_instance") or "") != actor:
-                continue
-            key = _fanout_key(payload)
-            child_done = key in terminal_fanout_children
-            child_done = child_done or (
-                (key[0], key[1], "") in terminal_fanout_children
-            )
-            if not child_done:
-                return event.id
-            continue
-        if event.type == "fanout.synth.dispatched":
-            # B3 (R25 ISSUE-005): a dispatched synth is an active context
-            # for its role's hooks until the synth/aggregate completes.
-            if str(payload.get("role_instance") or "") != actor:
-                continue
-            if str(payload.get("fanout_id") or "") not in terminal_synth_fanouts:
-                return event.id
-            continue
-        if event.type != "task.dispatched":
-            continue
-        if payload.get("assignee") == actor or payload.get("role") == actor:
-            return event.id
-    return None
-
-
 def _synth_dispatch_is_active(
     events: list[ZfEvent],
     dispatch: ZfEvent,
@@ -451,24 +407,6 @@ def _fanout_dispatch_is_active(
             if target_key[0] == fanout_id and target_key[1] in pending:
                 return False
     return seen_dispatch
-
-
-def _fanout_key(payload: dict) -> tuple[str, str, str]:
-    return (
-        str(payload.get("fanout_id") or ""),
-        str(payload.get("child_id") or payload.get("child_run") or ""),
-        str(payload.get("run_id") or ""),
-    )
-
-
-def _fanout_terminal_keys(payload: dict) -> set[tuple[str, str, str]]:
-    fanout_id, child_id, run_id = _fanout_key(payload)
-    if not fanout_id or not child_id:
-        return set()
-    keys = {(fanout_id, child_id, "")}
-    if run_id:
-        keys.add((fanout_id, child_id, run_id))
-    return keys
 
 
 def _evaluate_stop_guard(

@@ -982,6 +982,22 @@ def test_retry_keeps_fanout_and_child_id_but_changes_run_id(
     fanout_id = _fanout_id(log)
     first_dispatch = next(event for event in log.read_all()
                           if event.type == "fanout.child.dispatched")
+    started = next(event for event in log.read_all() if event.type == "fanout.started")
+    writer = EventWriter(log)
+    writer.append(ZfEvent(
+        id=started.payload["trigger_event_id"], type="candidate.ready",
+        payload={"task_id": "original-task", "candidate_head_commit": "original-commit"},
+    ))
+    unrelated = writer.append(ZfEvent(
+        type="candidate.ready",
+        payload={"task_id": "unrelated-task", "other_task_only": "foreign-context"},
+    ))
+    writer.append(ZfEvent(
+        type="fanout.started", correlation_id="trace-1", payload={
+            "stage_id": "review-candidate", "fanout_id": "unrelated-fanout",
+            "trigger_event_id": unrelated.id,
+        },
+    ))
     orch._set_worker_state("review-a", "idle", force=True)  # type: ignore[attr-defined]
     orch._now = lambda: time.time() + 10  # type: ignore[method-assign]
 
@@ -997,6 +1013,8 @@ def test_retry_keeps_fanout_and_child_id_but_changes_run_id(
     assert retry.payload["retry_of_run_id"] == first_dispatch.payload["run_id"]
     retry_briefing = transport.sent[-1][1].read_text(encoding="utf-8")
     assert "Aggregate contract:" in retry_briefing
+    assert "original-commit" in retry_briefing
+    assert "foreign-context" not in retry_briefing
     assert "uv --project /repo run zf emit workflow.child.completed" in retry_briefing
     assert "zf emit workflow.child.completed" in retry_briefing
     assert "Do not emit the aggregate success/failure event directly" in retry_briefing
@@ -1248,6 +1266,58 @@ def test_synth_timeout_fails_aggregate_instead_of_hanging(tmp_path: Path):
     assert [e for e in events if e.type == "review.rejected"], (
         "aggregate must converge to its failure event instead of hanging"
     )
+
+
+def test_synth_report_rejection_overrides_prefilled_top_level_approval(
+    tmp_path: Path,
+):
+    """A critic report must be authoritative over a prefilled scratch field."""
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    log = EventLog(state_dir / "events.jsonl")
+    orch = Orchestrator(state_dir, _synth_config(), _RecordingTransport())
+    _start(orch)
+    fanout_id = _fanout_id(log)
+
+    orch.run_once(events=[ZfEvent(
+        type="workflow.child.completed",
+        actor="review-a",
+        correlation_id="trace-1",
+        payload={
+            "fanout_id": fanout_id,
+            "child_id": "review-a",
+            "run_id": f"run-{fanout_id}-review-a",
+            "status": "completed",
+        },
+    )])
+    orch.run_once(events=[ZfEvent(
+        type="fanout.synth.completed",
+        actor="review-synth",
+        correlation_id="trace-1",
+        payload={
+            "fanout_id": fanout_id,
+            "trace_id": "trace-1",
+            "stage_id": "review-candidate",
+            # The result scratch is prefilled with approve; the semantic
+            # critic report is the actual verdict.
+            "recommendation": "approve",
+            "report": {
+                "status": "failed",
+                "recommendation": "reject",
+                "summary": "critic found a blocking gap",
+            },
+        },
+    )])
+
+    events = log.read_all()
+    aggregate = [
+        event for event in events if event.type == "fanout.aggregate.completed"
+    ]
+    assert aggregate
+    assert aggregate[-1].payload["status"] == "failed"
+    assert aggregate[-1].payload["recommendation"] == "reject"
+    assert any(event.type == "review.rejected" for event in events)
 
 
 def _synth_budget_config(

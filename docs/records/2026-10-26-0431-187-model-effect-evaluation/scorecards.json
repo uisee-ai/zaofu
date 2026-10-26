@@ -1,0 +1,146 @@
+{
+  "intake/1-baseline": {
+    "scores": [
+      2,
+      2,
+      2,
+      1,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "I4 保留延期和重访条件，但未显式落实决定者与最迟接口决定时点；其余均定位来源并给修订。"
+  },
+  "intake/1-candidate": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "第4项明确产品负责人、重访和最迟接口/执行计划确定前决定。"
+  },
+  "intake/2-candidate": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "第6项明确决定者/接口与受影响计划前/重访；其余来源逐项修订。"
+  },
+  "intake/2-baseline": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "允许继续段明确产品负责人、准备通知时选择及对依赖设计/实施的阻塞；其他条款也完整。"
+  },
+  "plan/1-baseline": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "approve P-good / revise P-risk；五个风险均有来源、后果与最小修订；未把未来通知或省略机器 envelope 当阻断。"
+  },
+  "plan/1-candidate": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "approve P-good / revise P-risk；五个风险均有来源、后果与最小修订；未把未来通知或省略机器 envelope 当阻断。"
+  },
+  "plan/2-candidate": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "approve P-good / revise P-risk；逐条指出接口、全图所有权、原子事务、资源、实际验证时点，保留正确未来范围。"
+  },
+  "plan/2-baseline": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "approve P-good / revise P-risk；全部六项准确，明确不要求未来测试收据或通知决定提前出现。"
+  },
+  "verify/1-baseline": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "实际内存探针复现回滚与字段组合缺陷；明确环境 RED 不成立、既有首绿可保留、U3 复用/J2 过期与 Candidate/Judge 分工。"
+  },
+  "verify/1-candidate": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "实际内存探针复现回滚与字段组合缺陷；明确环境 RED 不成立、既有首绿可保留、U3 复用/J2 过期与 Candidate/Judge 分工。"
+  },
+  "verify/2-candidate": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "实际内存探针复现回滚与字段组合缺陷；明确环境 RED 不成立、既有首绿可保留、U3 复用/J2 过期与 Candidate/Judge 分工。"
+  },
+  "verify/2-baseline": {
+    "scores": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "false_positive_controls_passed": true,
+    "notes": "实际探针明确 2 FAIL/1 PASS，指出退出0不代表产品通过；全部六项符合规格与证据边界。"
+  }
+}

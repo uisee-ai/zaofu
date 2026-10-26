@@ -8,7 +8,10 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task
-from zf.runtime.candidate_result_binding import same_task_map_generation
+from zf.runtime.candidate_result_binding import (
+    candidate_task_source_commits,
+    same_task_map_generation,
+)
 from zf.runtime.goal_closure_result import (
     GoalClosureResultError,
     validate_goal_closure_result,
@@ -429,6 +432,11 @@ def _verification_results(
     out: dict[str, dict[str, Any]] = {}
     diagnostics: list[dict[str, Any]] = []
     admissions = _admitted_results_by_source(events)
+    task_source_commits = candidate_task_source_commits(
+        [event for _seq, event in events],
+        workflow_run_id=workflow_run_id,
+        candidate_head_commit=target_commit,
+    )
     for _seq, event in events:
         payload = event.payload if isinstance(event.payload, Mapping) else {}
         raw = payload.get("verification_result")
@@ -448,13 +456,17 @@ def _verification_results(
             admissions.get(event.id, {}),
             expected_schema="verification-result.v1",
         )
+        expected_target = target_commit
+        if (result.get("verification_owner") == "task_verify"
+                and result.get("target_commit") != target_commit):
+            expected_target = task_source_commits.get(task_id, target_commit)
         stale_reasons = _verification_stale_reasons(
             result,
             admitted=bool(admitted_ref),
             task_id=task_id,
             workflow_run_id=workflow_run_id,
             task_map_generation=task_map_generation,
-            target_commit=target_commit,
+            target_commit=expected_target,
             contract_revision=str(task_rows[task_id].get("contract_revision") or ""),
         )
         current = not stale_reasons

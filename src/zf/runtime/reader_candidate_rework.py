@@ -24,6 +24,7 @@ def candidate_rework_reader_fences(
             head = str(payload.get("candidate_head_commit") or "")
             if (
                 run_id and head and source is not None
+                and source.payload.get("authority") != "compat_projection"
                 and payload.get("source") in {
                     "run_manager_candidate_rework", "run_manager_gap_task_map_amend",
                 }

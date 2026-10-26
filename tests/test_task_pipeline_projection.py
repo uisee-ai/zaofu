@@ -310,6 +310,10 @@ def test_projection_combines_concurrent_flow_policy_partitions() -> None:
     assert {row["pipeline_stage"] for row in projection["tasks"]} == {
         "impl_ready",
     }
+    assert projection["capacity"]["max_active_task_pipelines"] == 4
+    assert projection["capacity"]["available_task_pipelines"] == 4
+    assert projection["capacity"]["pools"]["impl"]["capacity"] == 2
+    assert projection["occupancy"]["pools"]["impl"] == 0
 
 
 def test_projection_exposes_task_ref_rejection_as_impl_rework_ready() -> None:

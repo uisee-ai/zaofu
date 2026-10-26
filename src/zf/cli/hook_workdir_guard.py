@@ -331,14 +331,28 @@ def evaluate_workdir_write_guard(
 ) -> int:
     if not event_type.endswith(".pre_tool_use") or not should_check_actor(actor):
         return 0
+    from zf.cli.hook_dispatch_context import active_task_pipeline_dispatch
+
+    events = event_log.read_all()
+    pipeline = active_task_pipeline_dispatch(events, actor)
+    has_pipeline_assignment = any(
+        event.type == "task.pipeline.stage.dispatched"
+        and event.payload.get("role_instance") == actor for event in events
+    )
     assigned_root = state_dir / "workdirs" / actor / "project"
-    if not assigned_root.is_dir():
+    if pipeline is not None:
+        workdir = str(pipeline.payload.get("workdir") or "")
+        if workdir and Path(workdir).is_absolute():
+            assigned_root = Path(workdir)
+    if not has_pipeline_assignment and not assigned_root.is_dir():
         return 0
     tool_input = event_payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return 0
     tool_name = str(event_payload.get("tool_name") or "")
     cwd = Path(str(event_payload.get("cwd") or assigned_root))
+    task_id = active_task_id_for_actor(event_log, actor)
+    allowed_workdirs = {assigned_root}
     project_roots = {Path(project_root), state_dir.parent}
     offending: list[str] = []
     for operation, raw_target in write_target_operations(tool_name, tool_input):
@@ -346,7 +360,9 @@ def evaluate_workdir_write_guard(
         target = target if target.is_absolute() else cwd / target
         if (
             any(_path_is_within(target, root) for root in project_roots)
-            and not _path_is_within(target, assigned_root)
+            and not any(
+                _path_is_within(target, root) for root in allowed_workdirs
+            )
         ):
             if is_authorized_result_scratch_target(
                 state_dir,
@@ -358,22 +374,25 @@ def evaluate_workdir_write_guard(
             offending.append(str(target))
     if tool_name.lower() in {"bash", "shell"}:
         command = str(tool_input.get("command") or "")
-        if (
-            bash_command_looks_mutating(command)
-            and str(project_root.resolve(strict=False)) in command
-            and str(assigned_root.resolve(strict=False)) not in command
-            and not _command_uses_only_authorized_result_scratch(
-                command=command,
-                project_root=project_root,
-                state_dir=state_dir,
-                event_log=event_log,
-                actor=actor,
-            )
-        ):
-            offending.append(str(project_root.resolve(strict=False)))
+        for project_path in project_roots:
+            if (
+                bash_command_looks_mutating(command)
+                and str(project_path.resolve(strict=False)) in command
+                and not any(
+                    str(root.resolve(strict=False)) in command
+                    for root in allowed_workdirs
+                )
+                and not _command_uses_only_authorized_result_scratch(
+                    command=command,
+                    project_root=project_path,
+                    state_dir=state_dir,
+                    event_log=event_log,
+                    actor=actor,
+                )
+            ):
+                offending.append(str(project_path.resolve(strict=False)))
     if not offending:
         return 0
-    task_id = active_task_id_for_actor(event_log, actor)
     event_writer.append(ZfEvent(
         type="worker.scope_write.rejected",
         actor="zf-cli",

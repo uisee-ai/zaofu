@@ -104,6 +104,11 @@ def candidate_failure_envelope(
     elif _looks_like_missing_dependency(failure_context):
         failure_class = "candidate_dependency_missing"
         reason = f"candidate dependency unavailable while running {command or 'quality gate'}"
+    elif str(quality.get("gate_source") or "") in {
+        "task_contract_missing", "task_contract_missing_consumer",
+    }:
+        failure_class = "candidate_contract_failure"
+        reason = "candidate verification contract lacks executable checks or a downstream consumer"
     elif status == "stale":
         failure_class = "candidate_contract_failure"
         reason = "candidate inputs are stale or violate the task contract"

@@ -6020,7 +6020,9 @@ def _execute_semantic_replan_request(
     )
     _post_verify_action(
         writer,
-        action,
+        {**action,
+         "effect_expected_events": ["task.done", "task.done.accepted"],
+         "effect_failure_events": ["dev.blocked", "flow.discovery.failed", "task.attempt.failed"]},
         {"ok": True, "status": "applied", "emitted_event_ids": [request.id]},
         causation_id=outcome.id,
         state_dir=state_dir,
@@ -6234,6 +6236,9 @@ def _execute_workflow_batch_resume(
     causation_id: str,
 ) -> str:
     from zf.runtime.control_actions import ControlledActionService
+    from zf.runtime.workflow_resume_effects import bind_resume_request, resume_admission_effect
+
+    action = {**action, **resume_admission_effect(action)}
 
     planned = writer.emit(
         RUN_MANAGER_ACTION_PLANNED,
@@ -6279,6 +6284,7 @@ def _execute_workflow_batch_resume(
             },
         )
         return "failed"
+    action.update(bind_resume_request(action, result, writer.event_log.read_all()))
     status = str(result.get("status") or "")
     ok = bool(result.get("ok"))
     event_type = RUN_MANAGER_ACTION_APPLIED if ok else RUN_MANAGER_ACTION_FAILED
@@ -6380,7 +6386,9 @@ def _execute_worker_lifecycle_recover(
     )
     _post_verify_action(
         writer,
-        action,
+        {**action, "effect_request_event_id": requested.id,
+         "effect_expected_events": ["worker.respawn.completed"],
+         "effect_failure_events": ["worker.respawn.failed"]},
         {"ok": True, "status": "applied", "emitted_event_ids": [requested.id]},
         causation_id=outcome.id,
     )
@@ -7340,25 +7348,31 @@ def _settle_pending_action_effects(
                 None,
             )
         )
-        if observed is None:
+        timeout = int(payload.get("effect_timeout_seconds") or 0)
+        timed_out = timeout > 0 and (
+            (_event_age_seconds(pending, datetime.now(timezone.utc)) or 0)
+            >= timeout
+        )
+        if observed is None and not timed_out:
             continue
-        passed = observed.type in expected
+        passed = observed is not None and observed.type in expected
         writer.emit(
             RUN_MANAGER_ACTION_EFFECT_PASSED if passed else RUN_MANAGER_ACTION_EFFECT_FAILED,
             actor="run-manager",
-            causation_id=observed.id,
-            correlation_id=observed.correlation_id or pending.correlation_id,
+            causation_id=observed.id if observed else pending.id,
+            correlation_id=(observed.correlation_id if observed else None) or pending.correlation_id,
             payload={
                 "schema_version": "run-manager.action.effect.v1",
                 **_action_payload(payload),
                 "effect_id": effect_id,
                 "effect_pending_event_id": pending.id,
-                "observed_event_id": observed.id,
-                "observed_event_type": observed.type,
+                "observed_event_id": observed.id if observed else "",
+                "observed_event_type": observed.type if observed else "",
                 "status": "passed" if passed else "failed",
                 "reason": (
-                    "candidate integration effect observed"
-                    if passed else "candidate integration recovery did not make progress"
+                    "recovery effect observed" if passed else
+                    "recovery effect timed out" if observed is None else
+                    "recovery failed to make progress"
                 ),
             },
         )
@@ -7400,6 +7414,24 @@ def _effect_event_matches_scope(
     payload: dict[str, Any],
 ) -> bool:
     body = event.payload if isinstance(event.payload, dict) else {}
+    from zf.runtime.workflow_resume_effects import (
+        matches_resume_admission, resume_admission_effect,
+    )
+    if resume_admission_effect(payload):
+        return matches_resume_admission(event, payload)
+    if payload.get("action") == "worker-lifecycle-recover":
+        request_id = str(payload.get("effect_request_event_id") or "")
+        return bool(request_id) and event.causation_id == request_id and str(
+            body.get("instance_id") or event.actor or ""
+        ) == str(payload.get("instance_id") or payload.get("role_instance") or "")
+    expected_task = str(payload.get("task_id") or "") if (
+        payload.get("action") == "semantic-replan-request"
+    ) else ""
+    if expected_task and str(body.get("task_id") or event.task_id or "") != expected_task:
+        return False
+    for key in ("task_map_generation", "contract_revision"):
+        if payload.get(key) and body.get(key) and payload[key] != body[key]:
+            return False
     scope_keys = ["workflow_run_id", "run_id", "fanout_id"]
     if (
         str(payload.get("action") or "") == "candidate-rework-apply"
@@ -7727,8 +7759,8 @@ def _consume_autoresearch_candidate_result(
         candidate_status = "dismissed"
         reason = "expected plan-admission fault is not a source-repair defect"
     elif status == "failed":
-        candidate_status = "dismissed"
-        reason = "autoresearch diagnosis failed before reproducing a source defect"
+        candidate_status = "unverified"
+        reason = "diagnosis incomplete: repair diagnostic environment before bounded retry"
     elif reproduction in {"confirmed", "reproduced"} and evidence_paths and repair_scope:
         candidate_status = "confirmed"
         reason = "diagnosis reproduced the defect with scoped repair evidence"
@@ -7757,7 +7789,8 @@ def _consume_autoresearch_candidate_result(
             "continuation": _repair_continuation_from_action(request_payload),
         }
     writer.emit(
-        f"autoresearch.bug_candidate.{candidate_status}",
+        "autoresearch.bug_candidate.diagnosis_failed" if candidate_status == "unverified"
+        else f"autoresearch.bug_candidate.{candidate_status}",
         actor="run-manager",
         task_id=result_event.task_id or request_event.task_id,
         causation_id=result_event.id,
@@ -10799,6 +10832,8 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "effect_expected_events": _string_list(
             action.get("effect_expected_events")
         ),
+        "effect_request_event_id": str(action.get("effect_request_event_id") or ""),
+        "effect_timeout_seconds": int(action.get("effect_timeout_seconds") or 1800),
         "effect_failure_events": _string_list(
             action.get("effect_failure_events")
         ),
@@ -11541,15 +11576,18 @@ def _emit_no_progress_run_terminal(
     causation_id: str,
     terminal_reason: str = "recovery_no_progress_exhausted",
 ) -> ZfEvent | None:
+    action_run_id = str(
+        action.get("workflow_run_id") or action.get("run_id") or ""
+    ).strip()
+    # Unscoped maintenance cannot borrow the latest run's terminal authority.
+    if not action_run_id:
+        return None
     try:
         events = writer.event_log.read_all()
     except Exception:
         events = []
-    action_run_id = str(
-        action.get("workflow_run_id") or action.get("run_id") or ""
-    ).strip()
     goal = build_run_goal_projection(events, run_id=action_run_id)
-    run_id = str(action_run_id or goal.get("run_id") or "").strip()
+    run_id = action_run_id
     if not run_id or str(goal.get("status") or "") in {"complete", "blocked"}:
         return None
     for event in events:
