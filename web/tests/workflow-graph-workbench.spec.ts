@@ -240,12 +240,17 @@ test("terminal Run, Tasks and Goal coverage agree with kernel evidence", async (
   expect(graph.capabilities.production.status).toBe("unconnected");
   await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
-  await expect(workbench).toBeVisible();
+  await expect(workbench).toBeVisible({ timeout: 30_000 });
   await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
   for (const [view, file] of [["模块与任务", "modules-terminal.png"], ["Workflow 执行", "workflow-terminal.png"], ["验证与交付", "delivery-terminal.png"]]) {
     await workbench.getByRole("button", { name: view, exact: true }).click();
     await workbench.getByRole("button", { name: /fit view/i }).click();
     await workbench.screenshot({ path: test.info().outputPath(file) });
   }
+  await workbench.getByLabel("图节点状态").selectOption("done");
+  await workbench.getByLabel("搜索图节点").fill(`run:${requestId}`);
+  await workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button").first().click();
+  await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText("已完成");
+  await workbench.screenshot({ path: test.info().outputPath("goal-terminal-inspector.png") });
   await test.info().attach("terminal-graph", { body: JSON.stringify(graph), contentType: "application/json" });
 });

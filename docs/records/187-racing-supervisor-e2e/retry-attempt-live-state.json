@@ -1,0 +1,16 @@
+[
+  {
+    "attempt_id": "ta-17d32eddc34c32fecc13",
+    "status": "superseded",
+    "terminal_event_id": "",
+    "failure_class": "",
+    "updated_at": "2026-10-26T07:22:32.430651+00:00"
+  },
+  {
+    "attempt_id": "ta-a12ce703111fef3c7ce1",
+    "status": "succeeded",
+    "terminal_event_id": "evt-5d7a30898be8",
+    "failure_class": "lease_expired",
+    "updated_at": "2026-10-26T08:33:22.932785+00:00"
+  }
+]

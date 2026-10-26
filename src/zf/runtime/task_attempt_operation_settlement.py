@@ -114,7 +114,25 @@ def settle_admitted_operation_attempt(
         and str(row.get("operation_id") or "") == operation_id
         and (not run_id or str(row.get("run_id") or "") == run_id)
     ]
-    if dispatch_candidates:
+    # Result repair keeps the immutable CallRequest attempt. The admitted
+    # fanout occurrence identifies the execution dispatch that actually ended.
+    admitted_dispatches = {
+        str(row.payload.get("run_id") or "")
+        for row in events_by_id.values()
+        if row.type == "fanout.child.completed" and row.origin == "kernel"
+        and row.causation_id == source_event_id
+        and row.task_id == task_id
+        and row.payload.get("result_event_id") == source_event_id
+        and row.payload.get("operation_id") == operation_id
+        and row.payload.get("workflow_run_id") == run_id
+        and row.payload.get("run_id")
+    }
+    if admitted_dispatches:
+        if len(admitted_dispatches) != 1:
+            return False
+        candidates = [row for row in candidates
+                      if row.get("dispatch_id") in admitted_dispatches]
+    elif dispatch_candidates:
         matched = [
             row
             for row in candidates

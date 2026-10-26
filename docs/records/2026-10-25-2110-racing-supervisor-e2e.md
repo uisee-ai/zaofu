@@ -165,3 +165,15 @@ Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把
 74. Verify正式通过后的真实图检查发现：阶段节点completed，但完整YAML结构中的aggregate与role仍为pending。5项后端反例及Docker Playwright分别复现；新增只读结构状态投影，角色绑定实际Operation并保留运行优先，aggregate绑定最新fanout的Kernel汇总，旧汇总迟到及Worker自报不会冒充当前成功。63项图/API/trace闭包、22项Operation/Spine/文档检查及51项sentinel通过；8002 Web单独重载，watcher 2517936及Provider保留。Docker Playwright由RED转GREEN（1 passed），实际角色、汇总及触发事件均按证据更新，截图45–47保留。追加触发节点回归先1 failed/5 passed，最终dev-verify自动66项Python、Web typecheck及全部Web模型单测通过；没有运行全量pytest。触发事件只标reported，不冒充产品完成。
 
 75. Discovery于08:17:47接纳，08:18:36产生flow.goal.closed，08:18:42真实派发Judge（evt-60e9f425e7d3）。同时发现DRIVE成功重试的TaskAttempt在08:15误报lease_expired：修正报告沿用初次CallRequest身份而未收尾retry尝试；保留历史，正在验证机械身份绑定修复。
+
+76. Judge于08:27:03接纳（evt-c2f68ba19724），23/23强制声明、16/16 AC及四条产品旅程通过；08:27:11.281862 Kernel产生run.goal.completed=evt-e31b1c6d9a73，目标a15b6b6f5247。独立完整比赛90308.10ms，监工另一次固定候选比赛90207.90ms。发布策略report_only，无生产部署，不把生产健康显示为通过。
+
+77. 重试身份修复以Kernel child完成作为来源关联，不改不可变CallRequest。2 failed/8 passed先复现，228项Attempt/reader/CallResult闭包、51项sentinel、3项复杂workflow Mock E2E通过。正式actuator重载后，08:33:22自动补记task.attempt.succeeded=evt-b572515cdc65，retry尝试成功、初始尝试仍superseded；历史lease_expired事件evt-4260aba7956d及诊断字段保留。
+
+78. 第一次终态浏览器检查恰逢Task异步收尾，捕获in_progress；随后四个子任务done，但根需求任务因投影遗漏容器证据显示evidence_missing。补充5项反例（1 failed/4 passed），绑定当前Run/generation的Kernel Goal终态到pdd_id/feature_id，最终自动选择13文件共184项测试通过。第二次页面因重载后首次加载超过默认5秒失败，等待上限明确为30秒后1 passed/32.3秒；状态断言未放宽。大型历史图API本次观察约8–21秒，保留为性能限制，未将它描述为瞬时加载。
+
+79. 最终证明材料已导出临时目录之外：完成收据SHA14ad5837363bbe9d9e3d4a2860ad256c111f7cef3a02139bd1b47ad47bd3fb0c；77份递归sidecar摘要全部核对，最终manifest SHA6a8f4eba8cecd63e67c09056923e1747c4edb4480606361bd9a5b887dda4e4a6。另保留四个Verify的19个完整哈希运行目录、源代码Git归档、实际运行YAML、固定构建与浏览器trace。
+
+80. 最终Docker Playwright补充完成节点详情断言：1 passed/20.1秒，五个Task均done且accepted_event_ids指向Kernel完成事件，Goal 23/23、open_gaps=0，截图48–51。最后以base dev、精确变更paths生成验证计划；matching run跳过已执行的deterministic/Web层，不重复扩大测试，实际通过184项自动选择+228项Attempt闭包、51项sentinel、3项Mock E2E、8项文档检查、Web typecheck和真实浏览器。不宣称全量pytest。
+
+81. 已发simulation.done=evt-e191747854b7，正式zf stop完成18步并关闭本次专用Run Manager，8002停止。外部交付目录的acceptance.json SHA d0cdae2d5142258c2b6da39e7adbb3e0088b387d1304b367d5ce418868c6af08；剩余临时监控/试玩进程与状态将在最终清理审计后删除。

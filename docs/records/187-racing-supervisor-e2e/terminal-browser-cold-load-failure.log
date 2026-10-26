@@ -1,0 +1,33 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 ui-regression/workflow-graph-workbench.spec.ts:221:5 › terminal Run, Tasks and Goal coverage agree with kernel evidence (27.5s)
+
+
+  1) ui-regression/workflow-graph-workbench.spec.ts:221:5 › terminal Run, Tasks and Goal coverage agree with kernel evidence
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('region', { name: 'Workflow 图工作台' })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for getByRole('region', { name: 'Workflow 图工作台' })
+
+
+      241 |   await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
+      242 |   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
+    > 243 |   await expect(workbench).toBeVisible();
+          |                           ^
+      244 |   await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
+      245 |   for (const [view, file] of [["模块与任务", "modules-terminal.png"], ["Workflow 执行", "workflow-terminal.png"], ["验证与交付", "delivery-terminal.png"]]) {
+      246 |     await workbench.getByRole("button", { name: view, exact: true }).click();
+        at /tmp/zf-racing-supervision-20261025T211020Z/ui-regression/workflow-graph-workbench.spec.ts:243:27
+
+    Error Context: evidence/browser-ui-regression/workflow-graph-workbench-t-ecab5--agree-with-kernel-evidence/error-context.md
+
+  1 failed
+    ui-regression/workflow-graph-workbench.spec.ts:221:5 › terminal Run, Tasks and Goal coverage agree with kernel evidence

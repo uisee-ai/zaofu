@@ -100,8 +100,10 @@ def build_sdlc_graph(source: dict[str, Any]) -> dict[str, Any]:
                 and version.get("task_map_generation")
                 and same_task_map_generation(str(event.payload.get("task_map_generation") or ""),
                                              version["task_map_generation"])):
-            for task_id in event.payload.get("completed_task_ids", []):
-                accepted.setdefault(str(task_id), []).append(event.id)
+            completed = [*event.payload.get("completed_task_ids", []),
+                         event.payload.get("pdd_id"), event.payload.get("feature_id")]
+            for task_id in dict.fromkeys(str(value) for value in completed if value):
+                accepted.setdefault(task_id, []).append(event.id)
     for identity in sorted(set(planned) | set(tasks)):
         task, p = tasks.get(identity), planned.get(identity, {})
         status = task.status if task and not scope["historical"] else "draft" if not task else "unknown"
