@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `d2822449 fix: match GR8R workspace layout and typography`
 
 # GR8R 实测视觉校准
 
