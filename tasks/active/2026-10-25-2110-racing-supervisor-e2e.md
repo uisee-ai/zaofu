@@ -21,3 +21,5 @@
 第三波进度：FOUNDATION、DRIVE、TRACK已被Kernel接纳；排队派发authority投影及self-check重复事件缺陷已复现修复，233项影响闭包、1项旧交接Mock、51项sentinel及10项flow-smoke通过。01:05:18自动派发ASSEMBLY，Impl真实峰值2且有Provider活动证据；Verify及最终交付尚待完成。
 
 四个实现子任务已交接，但初轮集成候选因冷环境依赖准备和浏览器下载失败，尚未到独立Verify。已修复候选执行器丢弃命令超时值的问题，完成149项主闭包、17项调用方/Mock、51项sentinel、10项flow-smoke。对同一不可变Plan沿用已给授权，经受控接口继续返工；新语义Plan没有自动豁免。最终比赛及Verify/Judge/图闭环仍待验证。
+
+观察器恢复竞态已复现修复：从持久启动事件恢复Codex观察边界，避免重放旧会话并漏掉新会话。198项影响闭包、51项sentinel、10项flow-smoke及真实只读回放通过；游戏环境返工和独立浏览器探针继续进行，未标记交付完成。

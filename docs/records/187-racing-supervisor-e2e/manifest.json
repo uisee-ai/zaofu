@@ -127,6 +127,53 @@
       "bytes": 127
     },
     {
+      "file": "codex-observer-closure.log",
+      "sha256": "2ec8e92d4e2bc667561808be62e803c3c8a909f77baa68a356dce749682e57b8",
+      "bytes": 272
+    },
+    {
+      "file": "codex-observer-dev-verify-plan.log",
+      "sha256": "d1069064fc991a028e0669cc373cbc22832916e255f3a3f725729db209d57db8",
+      "bytes": 1065
+    },
+    {
+      "file": "codex-observer-dev-verify-run.log",
+      "sha256": "d1069064fc991a028e0669cc373cbc22832916e255f3a3f725729db209d57db8",
+      "bytes": 1065
+    },
+    {
+      "file": "codex-observer-flow-smoke.log",
+      "sha256": "26d164747ea98da8886e3b5009e5908ff953b8d9fd02c1cc890a736faa3fcbeb",
+      "bytes": 100
+    },
+    {
+      "file": "codex-observer-focused.log",
+      "sha256": "89836f536ec82e4061a52946ce15c73f8cd8a975e8e6ac3721ada15f00ef707d",
+      "bytes": 100
+    },
+    {
+      "file": "codex-observer-real-replay.json",
+      "sha256": "960d80dd2f95b5aa8dbbe87420367b9a5553e278d6de9520a360f8ee4e3726c9",
+      "bytes": 881
+    },
+    {
+      "file": "codex-observer-red.log",
+      "sha256": "bdbda64a9370adb07fb52d1ac9ce3725a2e07e79ce098b0c38f5ebd11f067081",
+      "bytes": 3331,
+      "raw_sha256": "6f4714e06116d8304cb72c4a3a6a52b64c7b82af147a37c636061dd91db991e8",
+      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+    },
+    {
+      "file": "codex-observer-reload.json",
+      "sha256": "5331d99ea691b8793f04d46e256410a35ea003e5454e4b952635095d4e3f47bd",
+      "bytes": 152
+    },
+    {
+      "file": "codex-observer-sentinel.log",
+      "sha256": "68630bef4fcc32f40b1b5b456c85f0067e877af18c1e1e1facb4b0b779c0003d",
+      "bytes": 128
+    },
+    {
       "file": "cold-candidate-precheck-observation.json",
       "sha256": "f9d1e45c32e18b21cf7f93f0ba60beb68941f3178fac562952cda92eb963c762",
       "bytes": 7610

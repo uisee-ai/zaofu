@@ -1,0 +1,11 @@
+{
+  "writes_to_runtime_state": false,
+  "role": "prd-dev-lane-1",
+  "restored_launch_boundary": 1792976733.20237,
+  "previous_rollout": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-dev-lane-1/codex-home/sessions/2026/10/26/rollout-2026-10-26T08-08-39-01a17589-abff-7c90-853f-9cb42fcd80f9.jsonl",
+  "previous_mtime": 1792975987.5106592,
+  "current_rollout": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-dev-lane-1/codex-home/sessions/2026/10/26/rollout-2026-10-26T09-05-36-01a175bd-d211-7e42-8c4d-72cf378f3699.jsonl",
+  "current_mtime": 1792980446.7228513,
+  "historical_race": "Before current rollout existed, boundary=0 selected retired history; recovered boundary excludes it and waits for current first turn.",
+  "current_selection_matches_hook_bound_session": true
+}
