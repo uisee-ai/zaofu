@@ -1,6 +1,7 @@
 # Dashboard 指标恢复与观测读取热点修复
 
-> 状态: active
+> 状态: done
+> 实现提交: `466343ab fix: restore dashboard metrics and reduce redundant projection work`
 > 基线: `088409c8`；用户要求继续排查和修复上轮遗留问题，区分前端设计、检索与其他原因。
 > 来源: `docs/design/186-inbox-and-task-board-human-centered-design.md` 第 16 节及 Dashboard 摘要候选的实测边界。
 
