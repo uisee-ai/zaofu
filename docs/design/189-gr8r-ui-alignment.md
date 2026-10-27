@@ -170,3 +170,17 @@ docker run --rm --network host \
 验收：桌面独立卡片间隔与边框、Execution Flow 紧接指标区并与 Work Queue 左对齐；窄屏四张卡边框和间距保持、无页面溢出；pulse-first 加载、指标跳转及未知值语义不变。随设计 190 的实施批次验证归档。
 
 验证通过：独立卡片几何量测、桌面/390px 截图、pulse-first 与空态、无溢出和跳转检查；本次完整记录见 [190 验收记录](190-channel-pipeline-and-loop-timeline.md#实施与验收记录)。
+
+### Execution Flow 容器溢出与同列对齐修复
+
+真实 pulse 包含 WIP、Rework 和阻塞说明时，原横向流程的最小内容宽度会撑开内部 grid，节点逃逸到卡片右侧。旧验收只覆盖 fallback 流程，未覆盖这个完整数据形态。
+
+按本轮「与 Work Queue 对齐」反馈，桌面下方内容复用顶部指标的四列网格：第一列为 Execution Flow，中间两列为 Needs attention / Delivery progress，第四列为运行上下文。Execution Flow 与 Work Queue 左右边界一致，标题左侧内距统一为 16px；卡片内部改为纵向 Todo → In Progress → Verify → Done，Rework 仍为独立统计，阻塞原因与 why-not 可换行。只调整 Overview 局部样式，不改共享流程数据和动作。
+
+1100px 以下指标与主体采用两列；720px 以下主体变为单列，Execution Flow 使用整行宽度。所有断点都限制内部 grid 的最小宽度，长说明不撑开卡片，流程无需横向滚动。
+
+验收：完整 pulse（含 WIP / Rework / 长阻塞原因）→ verify: 1440 / 1200 / 900 / 390 / 360px 下节点、说明和卡片不溢出；桌面和平板 → verify: Execution Flow 与 Work Queue 同宽同列；窄屏 → verify: 纵向节点可见且页面无横向溢出；节点下钻、pulse-first、fallback 与空态 → verify: 既有交互保持。
+
+验证结果：`python scripts/dev-verify.py plan --base dev` / `run --base dev` 通过 docs / web_ui 闭包（8 个 instruction contract、前端 typecheck、64 个单元测试文件）。Vite 生产构建、bundle budget（40 chunks，最大 450278 bytes）、token lint 与 diff 检查通过。Docker Playwright 的 Overview / pulse-first 共 4 个不同用例通过；完整流程覆盖五种屏宽、无横向滚动、同列同宽及阻塞任务跳转。初轮新增用例把任务页误当作抽屉，已按现有 `openTask` 行为修正并单独复跑通过，没有修改产品跳转。
+
+真实 8019 预览只读复核：Execution Flow 与 Work Queue 均为 266px 宽、x=290，卡片 clientWidth / scrollWidth 均为 264px，无前端异常；该次读取显示 fallback 流程，完整 pulse 的回归使用受控夹具。桌面和移动截图已目视检查。证据：`/tmp/zf-overview-flow-20261027/`，包含修复前失败、最终浏览器结果、构建和验证日志。

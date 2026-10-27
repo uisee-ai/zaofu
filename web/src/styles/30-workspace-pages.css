@@ -36,7 +36,7 @@
 .workspace-view-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 10px 0; color: var(--text-secondary); font-size: var(--text-13); }
 .workspace-view-tabs button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--text); }
 
-/* Overview: action-first main column, compact contextual column. */
+/* Overview: flow, actionable work and context follow the metric grid. */
 .overview-dashboard { width: 100%; max-width: 1160px; margin-inline: auto; padding: 28px 24px 40px; flex: 1; }
 .overview-heading { margin-bottom: 20px; }
 .overview-heading h2 { margin-top: 5px; }
@@ -48,8 +48,9 @@
 .overview-metrics { margin-bottom: 16px; gap: 16px; border: 0; border-radius: 0; background: transparent; overflow: visible; }
 .overview-dashboard .overview-metrics .workspace-stat { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .overview-dashboard .overview-metrics .workspace-stat:hover { background: var(--surface-2); }
-.overview-columns { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); align-items: start; gap: 16px; }
+.overview-columns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 16px; }
 .overview-main, .overview-aside { display: grid; align-content: start; gap: 16px; min-width: 0; }
+.overview-main { grid-column: span 2; }
 .overview-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .overview-card h3 { font-size: var(--text-13-5); font-weight: 600; text-transform: none; letter-spacing: 0; }
 .overview-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
@@ -87,11 +88,19 @@
 .overview-runtime-details summary { cursor: pointer; }
 .overview-runtime-details dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .overview-runtime-details dd { margin: 0; text-align: right; }
-.overview-flow .task-flow-chain-rail { gap: 5px; }
-.overview-flow .task-flow-node { flex: 1 0 92px; width: auto; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: var(--text-12); }
+.overview-flow { padding: 16px; }
+.overview-flow .overview-card-heading { flex-wrap: wrap; gap: 6px; }
+.overview-flow :is(.pulse-band-section, .task-flow-band, .task-flow-chain, .task-flow-meta) { min-width: 0; max-width: 100%; }
+.overview-flow .task-flow-band { grid-template-columns: minmax(0, 1fr); }
+.overview-flow .task-flow-chain-rail { flex-direction: column; align-items: stretch; gap: 5px; width: 100%; max-width: 100%; }
+.overview-flow .task-flow-pocket { display: block; max-width: 100%; overflow-wrap: anywhere; }
+.overview-flow .task-flow-node { flex: none; width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: var(--text-12); }
 .overview-flow .task-flow-node-line { flex-wrap: wrap; gap: 4px; }
-.overview-flow .task-flow-edge { min-width: 56px; flex: 0 0 56px; }
+.overview-flow .task-flow-edge { min-width: 0; flex: 0 0 30px; }
+.overview-flow .task-flow-edge-line { inset: 0 auto 0 50%; width: 1px; height: auto; }
+.overview-flow .task-flow-edge-line::after { top: auto; bottom: 0; right: -3px; transform: rotate(135deg); }
 .overview-flow .task-flow-edge-label { font-size: var(--text-10); }
+.overview-flow .task-flow-rework { align-self: flex-start; margin-top: 6px; }
 .overview-flow .task-flow-meta { flex-wrap: wrap; }
 .overview-status-bar { display: flex; height: 8px; gap: 2px; border-radius: 4px; overflow: hidden; margin-bottom: 10px; background: var(--sunken); }
 .overview-status-bar i { min-width: 0; }
@@ -233,8 +242,9 @@
 .general-settings-nav button, .inbox-category-tabs button, .workbench-view-tab { font-variant-numeric: tabular-nums; }
 
 @media (max-width: 1100px) {
-  .overview-columns { grid-template-columns: minmax(0, 1fr); }
-  .overview-aside { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-metrics, .overview-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-main { grid-column: auto; }
+  .overview-aside { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .overview-activity { grid-column: 1 / -1; }
   .workflow-proposal-workbench { grid-template-columns: 250px minmax(0, 1fr); }
   .board-panel[data-page="agents"] .agent-fleet-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -249,6 +259,7 @@
   .workspace-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-stat:nth-child(3) { border-left: 0; }
   .workspace-stat:nth-child(n+3) { border-top: 1px solid var(--line); }
+  .overview-columns { grid-template-columns: minmax(0, 1fr); }
   .overview-aside { grid-template-columns: minmax(0, 1fr); }
   .overview-card.project-focus-section .inline-row { grid-template-columns: 8px minmax(0, 1fr); }
   .overview-card.project-focus-section .inline-row > .muted:last-child { grid-column: 2; }
