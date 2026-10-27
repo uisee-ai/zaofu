@@ -5,8 +5,8 @@ import { createRoot } from "react-dom/client";
 import { PlanApprovalPanel } from "../src/components/delivery-trace/PlanApprovalPanel";
 import { WorkflowProposalPage } from "../src/components/workflow/WorkflowProposalPage";
 import { BoardWorkbench } from "../src/components/kanban/BoardWorkbench";
-import { BOARD_COLUMNS, taskColumn } from "../src/components/kanban/board";
-import type { BoardColumnId } from "../src/components/kanban/board";
+import { TaskDrawer } from "../src/components/kanban/TaskDrawer";
+import { RouteSummaryStrip } from "../src/components/kanban/TaskCard";
 import type { Task } from "../src/api/types";
 import "../src/styles.css";
 import "../src/cockpit.css";
@@ -25,22 +25,21 @@ const tasks = [task,
 function Fixture() {
   const surface = new URLSearchParams(location.search).get("surface") || "workflow";
   const [project, setProject] = useState("a");
-  const [mode, setMode] = useState<"board" | "list">("board");
+  const [mode, setMode] = useState<"board" | "list" | "table">("board");
   const [selected, setSelected] = useState<string | null>(null);
   const [actions, setActions] = useState<unknown[]>([]);
   const noop = () => {};
   return <>
     <button onClick={() => setProject(project === "a" ? "b" : "a")}>Switch project</button>
     <output data-testid="actions">{JSON.stringify(actions)}</output>
-    {surface === "inbox" ? <PlanApprovalPanel projectId={project} autoOpenPlanId={new URLSearchParams(location.search).get("plan")} /> : surface === "board" ? <BoardWorkbench
-      actionReady actionState="ready" actionResult={null} activeFanouts={[]} agents={[]} assignees={["dev-1"]} assigneeFilter="all"
+    {surface === "inbox" ? <PlanApprovalPanel projectId={project} autoOpenPlanId={new URLSearchParams(location.search).get("plan")} /> : surface === "board" ? <><BoardWorkbench
+      projectName="Fixture" onNewTask={noop} actionReady actionState="ready" actionResult={null} activeFanouts={[]} agents={[]} assignees={["dev-1"]} assigneeFilter="all"
       filteredTasks={tasks} mutationEnabled={false} onMoveTaskStatus={noop} onOpenFanout={noop} onOpenTask={setSelected}
       onSaveToken={noop} onUnlockSession={async () => ({ ok: true })} passcodeRequired={false} priorityFilter="all" quickFilter="all"
       selectedTaskId={selected} setAssigneeFilter={noop} setPriorityFilter={noop} setQuickFilter={noop} setSkillFilter={noop}
       showTokenRow={false} skillFilter="all" skills={[]} setStatusFilter={noop} setTextFilter={noop} setViewMode={setMode}
       statusFilter="all" textFilter="" totalTaskCount={tasks.length} viewMode={mode}
-      tasksByColumn={Object.fromEntries(BOARD_COLUMNS.map((column) => [column.id, tasks.filter((task) => taskColumn(task) === column.id)])) as Record<BoardColumnId, Task[]>}
-    /> : <WorkflowProposalPage actionReady actionState="ready" projectId={project} onOpenProjection={noop}
+    /><TaskDrawer open={Boolean(selected)} onClose={() => setSelected(null)}><RouteSummaryStrip route={tasks.find((item) => item.id === selected)?.route_summary} /></TaskDrawer></> : <WorkflowProposalPage actionReady actionState="ready" projectId={project} onOpenProjection={noop}
       onAction={async (action, payload) => { setActions((items) => [...items, { project, action, payload }]); return { ok: true }; }} />}
   </>;
 }

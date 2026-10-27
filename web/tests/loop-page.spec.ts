@@ -16,6 +16,7 @@ function loopViewWithAttempts(attemptCount: number) {
       counted: true,
     };
   });
+  const fails = Math.ceil(attemptCount / 5);
   return {
     schema_version: "loop-view.v1",
     generated_at: "2026-08-20T16:00:00Z",
@@ -45,16 +46,16 @@ function loopViewWithAttempts(attemptCount: number) {
     },
     stages: [
       { id: "plan", rounds: 1, last_status: "plan.approved", last_ts: "2026-08-20T00:00:00Z", warn: false },
-      { id: "implementation", rounds: 875, last_status: "dev.completed", last_ts: "2026-08-20T14:34:30Z", warn: true },
+      { id: "implementation", rounds: attemptCount, last_status: "dev.completed", last_ts: "2026-08-20T14:34:30Z", warn: true },
       { id: "verification", rounds: 1, last_status: "verify.started", last_ts: "2026-08-20T14:35:00Z", warn: false },
     ],
-    backflows: [{ from_stage: "verification", to_stage: "implementation", kind: "rework", count: 175 }],
+    backflows: [{ from_stage: "verification", to_stage: "implementation", kind: "rework", count: fails }],
     subscriber_chains: [{ topic: "plan.approved", seq: 1, subscriber: "implementation", result: "TASK-HIGH-CHURN", result_seq: 2 }],
     tasks: [{
       id: "TASK-HIGH-CHURN",
       stage_id: "implementation",
       attempts,
-      fails: 175,
+      fails,
       counted: attemptCount,
       source: "task_attempts.json",
     }],
@@ -64,14 +65,14 @@ function loopViewWithAttempts(attemptCount: number) {
         label: "Delivery",
         shape: ["plan", "task-map", "impl", "verify", "ship"],
         closure_edge: ["verify", "impl"],
-        counts: { tasks: 1, attempts: attemptCount, rejects: 175 },
-        arc: { state: "active", label: "175 backflows" },
+        counts: { tasks: 1, attempts: attemptCount, rejects: fails },
+        arc: { state: "active", label: `${fails} backflows` },
         health: "diverging",
-        members: [{ kind: "task", id: "TASK-HIGH-CHURN", note: `${attemptCount} att · 175✗` }],
-        node_stats: { impl: { attempts: attemptCount }, verify: { rejects: 175 } },
+        members: [{ kind: "task", id: "TASK-HIGH-CHURN", note: `${attemptCount} att · ${fails}✗` }],
+        node_stats: { impl: { attempts: attemptCount }, verify: { rejects: fails } },
       },
     },
-    faults: [{ kind: "verify.failed", count: 175, owner_loop: "delivery" }],
+    faults: [{ kind: "verify.failed", count: fails, owner_loop: "delivery" }],
     companions: {},
     pump: { total: 50_000, lag_warnings: 0 },
     health_counters: {},
@@ -235,7 +236,7 @@ test("Loop owns its request, bounds attempt DOM, and fits a 368px container", as
   await page.goto("/?page=behavior-loop&project=loop-browser-test");
   const loopPage = page.getByTestId("loop-page-v2");
   await expect(loopPage).toBeVisible({ timeout: 90_000 });
-  await expect(loopPage.getByText("875 att", { exact: false })).toBeVisible();
+  await expect(loopPage.getByText("875 attempts", { exact: false })).toBeVisible();
   const timelineTypography = await loopPage.getByTestId("loop-task-row").first().evaluate((row) => ({
     label: getComputedStyle(row.querySelector<HTMLElement>(".loop-v2-timeline-label")!).fontWeight,
     meta: getComputedStyle(row.querySelector<HTMLElement>(".loop-v2-timeline-meta")!).fontWeight,
@@ -262,7 +263,7 @@ test("Loop owns its request, bounds attempt DOM, and fits a 368px container", as
   await expect(drawer.getByTestId("loop-attempt-count")).toHaveText("Showing 200 of 875 attempts");
   await expect(drawer.getByTestId("loop-attempt-row")).toHaveCount(200);
 
-  await page.getByTestId("loop-task-row").locator(":scope > div").first().click();
+  await page.getByTestId("loop-task-row").getByRole("button", { name: /TASK-HIGH-CHURN/ }).click();
   await expect(drawer).toHaveCount(0);
   await page.getByTestId("loop-member").click();
   await expect(page.getByTestId("loop-attempt-row")).toHaveCount(100);
@@ -339,4 +340,60 @@ test("Loop owns its request, bounds attempt DOM, and fits a 368px container", as
   await page.getByRole("button", { name: "Loop", exact: true }).click();
   await expect.poll(() => loopRequestProjects.includes("loop-browser-test-2"), { timeout: 4_000 }).toBe(true);
   expect(deliveryFeatureRequests).toBe(0);
+});
+
+test("Loop timeline aligns time, selects original attempts and keeps unknown durations honest", async ({ page }, testInfo) => {
+  const view = loopViewWithAttempts(3);
+  view.run.last_ts = "2026-08-20T00:20:00Z";
+  view.tasks[0].attempts[0].terminal.ts = "2026-08-20T00:05:00Z";
+  view.tasks[0].attempts[1].started_ts = "2026-08-20T00:02:00Z";
+  view.tasks[0].attempts[1].terminal.ts = "2026-08-20T00:04:00Z";
+  Object.assign(view.tasks[0].attempts[2], { started_ts: "2026-08-20T00:15:00Z", orphan: true });
+  view.tasks[0].attempts[2].terminal.ts = "2026-08-20T00:15:00Z";
+  await installLoopStreamHarness(page);
+  await mockLoopBootstrap(page);
+  await page.route("**/api/projects/*/loop-view", (route) => route.fulfill({ json: view }));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/?page=behavior-loop&project=loop-browser-test");
+  const timeline = page.getByTestId("loop-timeline");
+  await expect(timeline.getByRole("button", { name: "Real time", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const axis = await page.getByTestId("loop-time-axis").boundingBox();
+  const track = await page.locator(".loop-v2-timeline-track").first().boundingBox();
+  expect(Math.abs(axis!.x - track!.x)).toBeLessThan(1);
+  expect(Math.abs(axis!.width - track!.width)).toBeLessThan(1);
+  await timeline.getByRole("button", { name: /^Attempt 2 ·/ }).focus();
+  await page.keyboard.press("Enter");
+  const drawer = page.getByTestId("loop-attempt-drawer");
+  await expect(drawer).toContainText("Attempt #2");
+  await expect(drawer.getByTestId("loop-attempt-row")).toHaveCount(1);
+  await expect(drawer).toContainText("2m 0s");
+  const original = view.tasks[0];
+  original.attempts = [original.attempts[2], original.attempts[0], original.attempts[1]];
+  view.tasks = [{ ...original, id: "NEW-TASK", attempts: [], counted: 0, fails: 0 }, original];
+  await page.evaluate(() => (window as unknown as {
+    __loopStream: { emit: (type: string, seq: number) => void };
+  }).__loopStream.emit("custom.profile.check.completed", 20));
+  await expect(drawer).toContainText("Attempt #3");
+  await expect(drawer).toContainText("implementer-1");
+  await expect(drawer).toContainText("2m 0s");
+  await timeline.getByRole("button", { name: /^Attempt 1 ·/ }).click();
+  await expect(drawer).toContainText("Duration unknown");
+  await expect(drawer).toContainText("Start unknown");
+  await drawer.getByRole("button", { name: "View all 3 attempts" }).click();
+  await expect(drawer.getByTestId("loop-attempt-row")).toHaveCount(3);
+  await timeline.getByRole("button", { name: "Compress gaps" }).click();
+  await expect(timeline).toContainText("Compressed scale");
+  await timeline.getByRole("button", { name: "Real time", exact: true }).click();
+  await timeline.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("loop-desktop.png") });
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await page.screenshot({ path: testInfo.outputPath("loop-dark.png") });
+  await page.setViewportSize({ width: 368, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(368);
+  await timeline.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("loop-mobile.png") });
+  view.tasks = [];
+  await page.reload();
+  await expect(timeline).toContainText("No attempts recorded yet");
+  await expect(page.getByTestId("loop-time-axis")).toHaveCount(0);
 });

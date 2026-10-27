@@ -1,8 +1,10 @@
+import { Clock3, SignalLow, SignalMedium, SignalHigh, OctagonAlert, UserRound } from "lucide-react";
 // Kanban TaskCard + 卡内子组件 —— 从 App.tsx 抽出(WEB-KANBAN-EXTRACT slice 3,docs/design/67 §4.1)。
 // 纯展示组件:消费 board 列模型 + lib 的 format/task-display helper,只读 projection,不持 truth。
-import type { CSSProperties, PointerEvent } from "react";
+import type { PointerEvent } from "react";
 import type { Task } from "../../api/types";
 import { taskColumn } from "./board";
+import { useUiPreferences } from "../../app/UiPreferences";
 import {
   taskPriority,
   taskActorLabel,
@@ -25,6 +27,7 @@ function shortStepLabel(step: string): string {
   return last.replace(/-[A-Z][A-Z0-9_-]*-\d+/, "");
 }
 
+// 后端原始 badge label 的中文/图标翻译(渐进:不识别的回退原样)。
 function workflowBadgeTone(tone: string | undefined): string {
   if (["ok", "warn", "err", "muted", "info"].includes(tone || "")) return tone || "muted";
   return "muted";
@@ -65,25 +68,6 @@ export function WorkflowBadges({
       ) : null}
     </>
   );
-}
-
-// actor (assigned_to) 头一个 `-` 前缀作 role,role → 颜色 token。
-// Task 没带 backend 字段,但 role 已足够告诉 operator 在做什么类型的活,
-// 而且 role 与 backend 在大多数项目里有强相关(arch/critic 多走 codex,
-// dev/test 跨 backend)。Backend 维度若以后真要可视化,fanout.run_id /
-// route_summary 里会有 provider 信息可挖。
-const ROLE_COLORS: Record<string, string> = {
-  arch: "oklch(0.62 0.16 255)",     // brand 蓝
-  critic: "oklch(0.65 0.17 35)",    // 暖橙
-  dev: "oklch(0.65 0.16 145)",      // 绿
-  review: "oklch(0.60 0.18 310)",   // 紫
-  test: "oklch(0.66 0.15 200)",     // 青
-  judge: "oklch(0.60 0.17 55)",     // 金
-};
-function actorRoleColor(assigned: string | null | undefined): string | null {
-  if (!assigned) return null;
-  const role = assigned.split(/[-_.]/)[0]?.toLowerCase() ?? "";
-  return ROLE_COLORS[role] ?? null;
 }
 
 export function BacklogRefsBadge({ task }: { task: Task }) {
@@ -165,8 +149,10 @@ export function TaskCard({
   selected: boolean;
   onSelect: (taskId: string) => void;
 }) {
+  const { t } = useUiPreferences();
   const currentColumn = taskColumn(task);
   const priority = taskPriority(task);
+  const PriorityIcon = priority === 0 ? OctagonAlert : priority === 1 ? SignalHigh : priority === 2 ? SignalMedium : SignalLow;
   const actorLabel = taskActorLabel(task);
   const age = latestEventAge(task);
   const attention = taskAttentionBadge(task);
@@ -174,42 +160,22 @@ export function TaskCard({
   const fanout = task.fanout;
 
   return (
-    <article
-      className={`task-card status-${currentColumn} priority-${priority} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""}`}
-      data-task-id={task.id}
-      data-task-status={currentColumn}
-      data-fanout-id={fanout?.fanout_id ?? undefined}
-      onPointerDown={(event) => onPointerDown(event, task.id)}
-    >
+    <article className={`task-card status-${currentColumn} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""}`}
+      data-task-id={task.id} data-task-status={currentColumn} data-fanout-id={task.fanout?.fanout_id}
+      onPointerDown={(event) => onPointerDown(event, task.id)}>
       <button className="task-open" type="button" onClick={() => onSelect(task.id)}>
-        <span className="task-id mono">{task.id}</span>
-        <span className="task-title">{task.title || "(untitled)"}</span>
-        {effectiveTerminal ? (
-          <span className="task-chip-row">
-            <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
-          </span>
-        ) : attention.label ? (
-          <span className="task-chip-row"><span className={`badge badge-${attention.tone}`}>{attention.label}</span></span>
-        ) : null}
-        {attention.label && task.blocked_reason ? <span className="blocked-note">{task.blocked_reason}</span> : null}
+        <span className="task-title">{task.title || task.id}</span>
+        {(effectiveTerminal || attention.label) && <span className="task-chip-row">{effectiveTerminal
+          ? <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
+          : <span className={`badge badge-${attention.tone}`}>{attention.label}</span>}</span>}
+        {!effectiveTerminal && attention.label && task.blocked_reason && <span className="blocked-note" title={task.blocked_reason}>{task.blocked_reason}</span>}
         <span className="task-footer">
-          {actorLabel ? (
-            <span className="task-assignee">
-              {(() => {
-                const roleColor = actorRoleColor(task.assigned_to);
-                return roleColor ? (
-                  <span
-                    className="actor-dot"
-                    style={{ background: roleColor } as CSSProperties}
-                    aria-hidden
-                  />
-                ) : null;
-              })()}
-              {actorLabel}
-            </span>
-          ) : null}
-          {!effectiveTerminal ? <span className={`priority-pill priority-${priority}`}>P{priority}</span> : null}
-          {age !== "-" ? <span className="task-age">{age}</span> : null}
+          <span className="task-id mono" title={task.id}>{task.id}</span>
+          <span className="task-priority-icon" title={`${t("Priority")} P${priority}`} aria-label={`${t("Priority")} P${priority}`}><PriorityIcon size={13} aria-hidden="true" /></span>
+          {age !== "-" && <span className="task-age"><Clock3 size={12} aria-hidden="true" />{age}</span>}
+          <span className={`task-assignee-avatar ${actorLabel ? "assigned" : ""}`} title={actorLabel || t("Unassigned")} aria-label={actorLabel || t("Unassigned")}>
+            {actorLabel ? actorLabel.replace(/^@/, "").split(/[-_ /]+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase() : <UserRound size={12} aria-hidden="true" />}
+          </span>
         </span>
       </button>
     </article>

@@ -54,9 +54,9 @@ test("late artifact fetch cannot contaminate the next Plan", async ({ page, requ
   const dialog = await openReview(page, request);
   await expect(dialog.getByText("正在读取同版规格…")).toBeVisible();
   await dialog.getByRole("button", { name: "Close preview" }).click();
-  const next = page.getByTestId("approval-card").filter({ hasText: "evt-preview-digest" });
+  const next = page.getByTestId("inbox-queue-item").filter({ hasText: "evt-preview-digest" });
   await next.click();
-  await next.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.locator(".inbox-reading-pane").getByRole("button", { name: "Preview", exact: true }).click();
   release();
   await expect(dialog.getByText("机械检查摘要。", { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "模块规格", exact: true }).click();

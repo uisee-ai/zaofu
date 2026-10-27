@@ -1,6 +1,6 @@
 import type { OperatorInboxItem, OperatorInboxProjection } from "../../api/types";
 
-export type InboxView = "all" | "decisions" | "unread" | "resolved" | "runtime_attention" | "automation";
+export type InboxView = "all" | "decisions" | "unread" | "resolved" | "runtime_attention" | "automation" | "notification";
 
 export const INBOX_VIEWS: Array<{ value: InboxView; label: string }> = [
   { value: "all", label: "All" },
@@ -8,6 +8,7 @@ export const INBOX_VIEWS: Array<{ value: InboxView; label: string }> = [
   { value: "unread", label: "Unread" },
   { value: "resolved", label: "Resolved" },
   { value: "runtime_attention", label: "Runtime" },
+  { value: "notification", label: "Delivery" },
   { value: "automation", label: "Automation" },
 ];
 
@@ -20,6 +21,7 @@ export function inboxItemsForView(
     if (view === "resolved") return item.status !== "pending" || item.category === "resolved";
     if (view === "decisions") return item.status === "pending" && item.actionability === "human_required";
     if (view === "runtime_attention") return item.status === "pending" && item.category === "runtime_attention";
+    if (view === "notification") return item.status === "pending" && (item.category === "notification" || item.kind === "run_delivery");
     return item.status === "pending" && item.category === "automation_diagnostic";
   });
 }

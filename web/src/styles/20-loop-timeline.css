@@ -1,0 +1,75 @@
+.loop-timeline { min-width: 0; margin-bottom: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.loop-timeline-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--line-soft); }
+.loop-timeline-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.loop-timeline-title > svg { flex: none; color: var(--brand); }
+.loop-timeline-title > div { min-width: 0; }
+.loop-timeline-title h3 { margin: 0; font-size: var(--text-14); font-weight: 600; }
+.loop-timeline-title p { margin: 4px 0 0; color: var(--muted-foreground); font-size: var(--text-12); max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loop-timeline-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; color: var(--muted-foreground); font-size: var(--text-12); }
+.loop-timeline-stats > span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.loop-timeline-stats strong { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.loop-timeline-stats .loop-timeline-failures { color: var(--err); padding: 4px 7px; border-radius: 5px; background: color-mix(in oklab, var(--err) 7%, var(--panel)); }
+.loop-timeline-failures strong { color: inherit; }
+.loop-timeline-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 20px; color: var(--muted-foreground); font-size: var(--text-11); }
+.loop-timeline-mode { display: inline-flex; padding: 2px; border-radius: 7px; background: var(--surface); }
+.loop-timeline-mode button { border: 0; padding: 5px 9px; border-radius: 5px; background: transparent; color: var(--muted-foreground); font-size: var(--text-11); cursor: pointer; }
+.loop-timeline-mode button[aria-pressed="true"] { color: var(--text); background: var(--panel); box-shadow: 0 1px 3px color-mix(in oklab, var(--text) 8%, transparent); }
+.loop-timeline-scroll { overflow-x: auto; padding: 0 20px; scrollbar-width: thin; }
+.loop-timeline-grid { --task-column: 240px; min-width: 640px; }
+.loop-timeline-axis-row, .loop-v2-timeline-task { display: grid; grid-template-columns: var(--task-column) minmax(0, 1fr); align-items: center; }
+.loop-timeline-axis-row { border-bottom: 1px solid var(--line-soft); }
+.loop-timeline-column-heading { position: sticky; left: 0; z-index: 2; align-self: stretch; display: flex; align-items: center; background: var(--panel); font-size: var(--text-11); color: var(--muted-foreground); }
+.loop-v2-timeline-axis { position: relative; height: 34px; min-width: 0; color: var(--muted-foreground); font-size: var(--text-11); font-variant-numeric: tabular-nums; }
+.loop-v2-timeline-axis > span { position: absolute; top: 8px; transform: translateX(-50%); white-space: nowrap; }
+.loop-v2-timeline-axis > span[data-edge="start"] { transform: none; }
+.loop-v2-timeline-axis > span[data-edge="end"] { transform: translateX(-100%); }
+.loop-v2-timeline-task { min-width: 0; border-bottom: 1px solid color-mix(in oklab, var(--line-soft) 65%, transparent); }
+.loop-v2-timeline-task:hover, .loop-v2-timeline-task.is-expanded { background: color-mix(in oklab, var(--brand) 3%, var(--panel)); }
+.loop-timeline-task-heading { min-width: 0; position: sticky; left: 0; z-index: 2; align-self: stretch; background: var(--panel); }
+.loop-timeline-task-button { display: flex; align-items: center; gap: 7px; width: 100%; height: 100%; min-height: 48px; padding: 6px 16px 6px 0; border: 0; background: transparent; text-align: left; color: var(--muted-foreground); cursor: pointer; }
+.loop-timeline-task-button:hover { background: color-mix(in oklab, var(--brand) 3%, var(--panel)); }
+.loop-timeline-task-button > svg { flex: none; }
+.loop-timeline-task-button > span { min-width: 0; }
+.loop-v2-timeline-label { display: block; overflow: hidden; color: var(--text); font-size: var(--type-label); font-weight: var(--font-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.loop-v2-timeline-meta { display: block; margin-top: 3px; color: var(--muted-foreground); font-size: var(--text-11); font-weight: var(--font-weight-regular); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loop-v2-timeline-track { position: relative; min-width: 0; }
+.loop-timeline-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line-soft); pointer-events: none; }
+.loop-timeline-gap { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(120deg, transparent 0 5px, color-mix(in oklab, var(--muted-foreground) 8%, transparent) 5px 6px); }
+.loop-timeline-observed { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in oklab, var(--brand) 60%, transparent); pointer-events: none; }
+.loop-timeline-segment { position: absolute; display: flex; align-items: center; justify-content: center; height: 24px; padding: 0; border: 0; background: transparent; color: var(--brand); cursor: pointer; }
+.loop-timeline-segment-fill { position: absolute; inset: 3px 0; border: 1px solid color-mix(in oklab, currentColor 30%, transparent); border-radius: 5px; background: color-mix(in oklab, currentColor 9%, var(--panel)); }
+.loop-timeline-segment.is-fail { color: var(--err); }
+.loop-timeline-segment.is-open { color: var(--brand); }
+.loop-timeline-segment.is-open .loop-timeline-segment-fill { border-style: dashed; }
+.loop-timeline-segment.is-uncounted { color: var(--muted-foreground); }
+.loop-timeline-segment.is-uncounted .loop-timeline-segment-fill { border-style: dotted; background: var(--surface); }
+.loop-timeline-segment.is-point { transform: translateX(-50%); }
+.loop-timeline-segment.is-point .loop-timeline-segment-fill { inset: 8px 4px; border-radius: 50%; background: currentColor; }
+.loop-timeline-segment.is-group .loop-timeline-segment-fill { background: repeating-linear-gradient(120deg, color-mix(in oklab, currentColor 5%, var(--panel)) 0 5px, color-mix(in oklab, currentColor 13%, var(--panel)) 5px 7px); border-style: dashed; }
+.loop-timeline-segment.is-group.is-point .loop-timeline-segment-fill { inset: 3px 0; border-radius: 5px; }
+.loop-timeline-segment[aria-pressed="true"] .loop-timeline-segment-fill, .loop-timeline-segment:hover .loop-timeline-segment-fill { border-color: currentColor; box-shadow: 0 0 0 2px color-mix(in oklab, currentColor 12%, transparent); }
+.loop-timeline-segment-text { position: relative; max-width: 100%; overflow: hidden; font-size: var(--text-10); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.loop-timeline-end-row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; color: var(--muted-foreground); font-size: var(--text-11); }
+.loop-timeline-footer { padding: 12px 20px; border-top: 1px solid var(--line-soft); color: var(--muted-foreground); font-size: var(--text-11); }
+.loop-timeline-legend { display: flex; flex-wrap: wrap; gap: 12px; }
+.loop-timeline-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.loop-timeline-legend i { display: inline-block; width: 12px; height: 9px; border: 1px solid; border-radius: 3px; }
+.loop-timeline-legend .is-done { color: var(--brand); background: color-mix(in oklab, var(--brand) 9%, var(--panel)); }
+.loop-timeline-legend .is-open { color: var(--brand); border-style: dashed; }
+.loop-timeline-legend .is-fail { color: var(--err); }
+.loop-timeline-legend .is-uncounted { border-style: dotted; }
+.loop-timeline-footer details { margin-top: 10px; }
+.loop-timeline-footer summary { cursor: pointer; }
+.loop-timeline-footer p { line-height: 1.6; margin: 8px 0 0; }
+.loop-timeline-empty { padding: 20px; color: var(--muted-foreground); font-size: var(--text-13); }
+.loop-timeline :is(button, summary, [tabindex]):focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.loop-timeline-show-all { border: 0; background: transparent; color: var(--brand); font-size: var(--text-12); cursor: pointer; }
+.loop-attempt-duration { display: block; margin-top: 3px; color: var(--muted-foreground); font-size: var(--text-11); }
+@media (max-width: 680px) {
+  .loop-timeline-header { align-items: flex-start; flex-direction: column; padding: 14px; gap: 12px; }
+  .loop-timeline-stats { gap: 10px; }
+  .loop-timeline-toolbar { padding: 10px 14px; }
+  .loop-timeline-scroll { padding: 0 14px; }
+  .loop-timeline-grid { --task-column: 176px; min-width: 580px; }
+  .loop-timeline-footer { padding: 12px 14px; }
+}

@@ -105,7 +105,7 @@ for (const sameResponder of [false, true]) {
       await expect(page.getByTestId("channel-flow-next")).toHaveText("1");
       await expect(page.getByTestId("channel-flow-next")).toHaveAccessibleName("1 decision");
       await expect(page.locator(".channel-flow-node-meta")).toHaveCount(0);
-      await expect(page.getByTestId("channel-flow-nav").getByText(/Captured|Unknown|Not generated|Not created/)).toHaveCount(0);
+      await expect(page.getByTestId("channel-flow-nav").getByText(/Captured|Unknown|Not generated|Not created/)).toHaveCount(4);
       await expect(page.getByTestId("channel-flow-discussion")).toHaveAttribute("aria-label", "Discussion · Awaiting input");
       await expect(page.getByTestId("channel-flow-prd")).toHaveAttribute("aria-label", "PRD · Not generated");
       const layout = await page.evaluate(() => {
@@ -115,9 +115,9 @@ for (const sameResponder of [false, true]) {
         const node = document.querySelector('.channel-flow-node[data-node="discussion"]')!;
         const marker = node.querySelector(".channel-flow-marker")!.getBoundingClientRect();
         const label = node.querySelector("strong")!.getBoundingClientRect();
-        const action = node.querySelector(".channel-flow-action")!.getBoundingClientRect();
+        const action = node.querySelector(".channel-flow-stage-status")!.getBoundingClientRect();
         const navigation = document.querySelector(".channel-flow-nav")!.getBoundingClientRect();
-        const composerBounds = composer.getBoundingClientRect();
+        const summaryBounds = document.querySelector(".channel-flow-summary")!.getBoundingClientRect();
         return {
           timelineHeight: timeline.clientHeight,
           composerBottom: composer.getBoundingClientRect().bottom,
@@ -129,10 +129,11 @@ for (const sameResponder of [false, true]) {
           headerHeight: document.querySelector<HTMLElement>(".channel-shell-header")!.clientHeight,
           flowHeight: document.querySelector(".channel-flow")!.getBoundingClientRect().height,
           markerWidth: marker.width,
-          headingAlignment: Math.abs(marker.top + marker.height / 2 - label.top - label.height / 2),
-          badgeAlignment: Math.abs(label.top + label.height / 2 - action.top - action.height / 2),
-          badgeGap: action.left - label.right,
-          columnAlignment: Math.max(Math.abs(navigation.left - composerBounds.left), Math.abs(navigation.right - composerBounds.right)),
+          headingAlignment: Math.abs(marker.left + marker.width / 2 - label.left - label.width / 2),
+          badgeAlignment: Math.abs(label.left + label.width / 2 - action.left - action.width / 2),
+          headingGap: label.top - marker.bottom,
+          badgeGap: action.top - label.bottom,
+          columnAlignment: Math.max(Math.abs(navigation.left - summaryBounds.left), Math.abs(navigation.right - summaryBounds.right)),
           navWidth: navigation.width,
           readableBadges: [...document.querySelectorAll<HTMLElement>(".channel-flow-badge")].every((badge) => badge.scrollWidth <= badge.clientWidth),
         };
@@ -143,9 +144,11 @@ for (const sameResponder of [false, true]) {
       expect(layout.descriptionHeight).toBeGreaterThanOrEqual(layout.descriptionScrollHeight);
       expect(layout.toolbarScrollWidth).toBeLessThanOrEqual(layout.toolbarWidth + 1);
       expect(layout.headerHeight).toBeLessThanOrEqual(104);
-      expect(layout.flowHeight).toBeGreaterThanOrEqual(44);
-      expect(layout.flowHeight).toBeLessThanOrEqual(48);
-      expect(layout.markerWidth).toBe(20);
+      expect(layout.flowHeight).toBeGreaterThanOrEqual(120);
+      expect(layout.flowHeight).toBeLessThanOrEqual(220);
+      expect(layout.markerWidth).toBe(30);
+      expect(layout.headingGap).toBeGreaterThanOrEqual(5);
+      expect(layout.headingGap).toBeLessThanOrEqual(10);
       expect(layout.headingAlignment).toBeLessThan(1);
       expect(layout.badgeAlignment).toBeLessThan(1);
       expect(layout.badgeGap).toBeGreaterThanOrEqual(4);

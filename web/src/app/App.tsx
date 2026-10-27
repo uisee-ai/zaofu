@@ -1,6 +1,8 @@
 import { useOverviewPulse } from "./useOverviewPulse";
 import { useDashboardProjectionRefresh } from "./useDashboardProjectionRefresh";
 import { ReadProjectionNotice } from "../components/shared/ReadProjectionNotice";
+import { TaskDrawer } from "../components/kanban/TaskDrawer";
+import { useUiPreferences } from "./UiPreferences";
 import type { CSSProperties, PointerEvent, ReactNode, UIEvent as ReactUIEvent } from "react";
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -103,6 +105,7 @@ import type { AgentConversation, AgentProviderCapability, AgentSessionActionProp
 import { BOARD_COLUMNS, isBoardColumnId, activeWorkflowColumn, taskColumn } from "../components/kanban/board";
 import { LogsPanel } from "../components/observability/LogsPanel";
 import { MetricsStrip, sparkline } from "../components/overview/MetricsStrip";
+import { OverviewDashboard } from "../components/overview/OverviewDashboard";
 import { PulseBand } from "../components/overview/PulseBand";
 import { TaskFlowBand } from "../components/overview/TaskFlowBand";
 import type { BoardColumnId } from "../components/kanban/board";
@@ -207,7 +210,7 @@ import {
 import { WorkspaceRail } from "../components/workspace/WorkspaceRail";
 import { WelcomeWizard } from "../components/workspace/WelcomeWizard";
 import { AddAgentModal } from "../components/modals/AddAgentModal";
-import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, ThemeMode, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
+import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
 import { KeyValuePanel, PreBlock, actionFailed, actionFailureReason, allBoardTasks, asRecord, asRecordArray, asStringArray, automationShortRunId, automationStatusTone, channelIdOf, channelNameOf, csvList, emptyAddAgentDraft, formatAge, isObservabilityPage, projectLabelFromId, recordString, recordValue, stringify, textValue } from "./shared";
 
 const REFRESH_EVENT_TYPES = new Set(["stream.gap"]);
@@ -221,6 +224,7 @@ const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", 
 const PAGE_QUERY_KEYS: Partial<Record<PageId, ReadonlySet<string>>> = {
   workflows: new Set(["request", "graph", "node"]),
   inbox: new Set(["plan"]),
+  settings: new Set(["settings"]),
   delivery: new Set(["feature"]),
   "delivery-trace": new Set(["feature"]),
   "delivery-graph": new Set(["feature"]),
@@ -309,7 +313,7 @@ function readInitialQuery() {
   const mobileDefaultList = window.matchMedia?.("(max-width: 680px)").matches ?? false;
   return {
     page: PAGES.includes(resolved.page as PageId) ? (resolved.page as PageId) : "board",
-    view: view === "list" || (!view && mobileDefaultList) ? "list" as ViewMode : "board" as ViewMode,
+    view: (view === "table" ? "table" : view === "list" || (!view && mobileDefaultList) ? "list" : "board") as ViewMode,
     status: params.get("status") ?? "all",
     task: params.get("task"),
     channel: params.get("channel") ?? "",
@@ -425,12 +429,6 @@ function projectNameFromPath(path: string): string {
   const normalized = path.trim().replace(/[\\/]+$/, "");
   const parts = normalized.split(/[\\/]/);
   return parts[parts.length - 1] || "zaofu-project";
-}
-
-function storedThemeMode(): ThemeMode {
-  if (typeof window === "undefined") return "system";
-  const value = window.localStorage.getItem("zf.themeMode");
-  return value === "dark" || value === "light" || value === "system" ? value : "system";
 }
 
 function skillRefOptions(summary: SkillsSummary | null | undefined): string[] {
@@ -653,6 +651,7 @@ export function App() {
   const [detailTab, setDetailTab] = useState<DetailTab>("Summary");
   const [page, setPage] = useState<PageId>(initial.page);
   useDashboardProjectionRefresh(activeProjectId, page, snapshot, setSnapshot);
+  const [taskDrawerOpen, setTaskDrawerOpen] = useState(initial.page === "board" && Boolean(initial.task));
   const [viewMode, setViewMode] = useState<ViewMode>(initial.view);
   const [statusFilter, setStatusFilter] = useState(initial.status);
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -670,7 +669,8 @@ export function App() {
     Boolean(storedWebActionToken()),
   );
   const [webSessionStatus, setWebSessionStatus] = useState<NonNullable<RuntimeSummary["web_session"]> | null>(null);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => storedThemeMode());
+  const { preferences, t } = useUiPreferences();
+  const themeMode = preferences.theme;
   const [agentPanelMode, setAgentPanelMode] = useState<AgentPanelMode>(
     initial.openAgent ? "docked" : "collapsed",
   );
@@ -1102,9 +1102,9 @@ export function App() {
       if (statusFilter !== "all") params.set("status", statusFilter);
     }
     if (page === "channels") params.set("channel", selectedChannelId);
-    if (selectedTaskId) params.set("task", selectedTaskId);
+    if (selectedTaskId && (page !== "board" || taskDrawerOpen)) params.set("task", selectedTaskId);
     window.history.replaceState(null, "", `?${params.toString()}`);
-  }, [activeProjectId, page, selectedChannelId, selectedTaskId, statusFilter, viewMode]);
+  }, [activeProjectId, page, selectedChannelId, selectedTaskId, statusFilter, taskDrawerOpen, viewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1427,10 +1427,7 @@ export function App() {
     selectedChannelId, selectedChannelIdRef, setChannelDetail,
   });
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
-    window.localStorage.setItem("zf.themeMode", themeMode);
-  }, [themeMode]);
+  useEffect(() => { if (page !== "board") setTaskDrawerOpen(false); }, [page]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1481,25 +1478,6 @@ export function App() {
       return true;
     });
   }, [assigneeFilter, priorityFilter, quickFilter, skillFilter, snapshot, statusFilter, textFilter]);
-
-  const tasksByColumn = useMemo(() => {
-    const grouped: Record<BoardColumnId, Task[]> = {
-      ready: [],
-      in_progress: [],
-      testing: [],
-      blocked: [],
-      done: [],
-    };
-
-    for (const task of filteredTasks) {
-      grouped[taskColumn(task)].push(task);
-    }
-    for (const column of BOARD_COLUMNS) {
-      grouped[column.id].sort((left, right) => taskPriority(left) - taskPriority(right));
-    }
-
-    return grouped;
-  }, [filteredTasks]);
 
   const activeFanouts = useMemo(() => {
     const active = new Set(["requested", "started", "running", "aggregating"]);
@@ -1911,6 +1889,7 @@ export function App() {
   }
 
   function backToBoard() {
+    if (taskDrawerOpen) setTaskDrawerOpen(false);
     setPage("board");
   }
 
@@ -2014,6 +1993,7 @@ export function App() {
     if (!projectId || projectId === activeProjectId) return;
     projectRequestScope.activate(projectId);
     setActiveProjectId(projectId);
+    setTaskDrawerOpen(false);
     void touchWorkspaceProject(projectId).then(() => loadWorkspaceProjects()).catch(() => {
       // Project selection must not fail just because recent-project metadata
       // could not be written.
@@ -2083,22 +2063,35 @@ export function App() {
     topbarStatus.title = "Archived project: historical record, no live runtime.";
   }
   const topbarProjectName = snapshot?.project.name || activeProject?.name || projectLabelFromId(activeProjectId) || "ZaoFu Project";
-  const sliceContextLabel = page === "channels" && channelsPage
-    ? "channels slice"
-    : pageLoadsDeliveryFeatures(page) && deliveryFeaturesPage
-      ? "measure slice"
-      : page === "agents"
-        ? "agent slice"
-        : "slice pending";
-  const topbarContextLabel = snapshot
-    ? "local workspace"
-    : activeProjectId
-      ? sliceContextLabel
-      : "no project";
+
   const agentPanelVisible = agentPanelMode !== "collapsed";
   const renderedAgentPanelMode: Exclude<AgentPanelMode, "collapsed"> = agentPanelMode === "fullscreen"
     ? "fullscreen"
     : "docked";
+
+  const taskDetailView = (
+    <TaskDetail
+      actionReady={actionGate.actionReady}
+      actionResult={actionResult}
+      actionState={actionGate.actionState}
+      detail={taskDetail}
+      diff={taskDiff}
+      events={events}
+      loadError={taskLoadError}
+      onAction={(action, payload) => void runTaskAction(action, payload)}
+      onBackToBoard={backToBoard}
+      onOpenOrchestrator={() => { setTaskDrawerOpen(false); openTaskAgent(); }}
+      onOpenProjection={(kind, id) => void openProjection(kind, id)}
+      selectedTaskId={selectedTaskId}
+      setTab={setDetailTab}
+      skillsSummary={snapshot?.skills ?? null}
+      tab={detailTab}
+      task={selectedTask}
+      timeline={taskTimeline}
+      timelineError={taskTimelineError}
+      timelineLoading={taskTimelineLoading}
+    />
+  );
 
   if (showWelcome) {
     return (
@@ -2119,17 +2112,15 @@ export function App() {
     <div className={`app-shell ${page === "channels" ? "app-shell-channel" : ""}`.trim()}>
       <header className="topbar">
         <div className="brand-block">
-          <h1>{topbarProjectName}</h1>
-          <span className="breadcrumb-separator">/</span>
-          <span className="breadcrumb-current">{pageTitle(page)}</span>
-          <span className="muted">{topbarContextLabel}</span>
+          <h1>{page === "board" ? t("Projects") : t(pageTitle(page))}</h1>
+          {page === "board" && <><span className="breadcrumb-separator">/</span><span className="breadcrumb-current">{topbarProjectName}</span></>}
         </div>
         <div className="status-row">
           <div className="topbar-search-control">
             <input
               className="search-input"
               aria-label="Search workspace"
-              placeholder="task:TASK-123 actor:dev-1"
+              placeholder={t("Search workspace…")}
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -2204,7 +2195,7 @@ export function App() {
           snapshot={snapshot}
         />
 
-        <section className="board-panel">
+        <section className="board-panel" data-page={page}>
           {!activeProjectId ? (
             <WorkspaceEmptyPanel onAddProject={() => openProjectWizard()} />
           ) : activeProject && !activeProjectReady ? (
@@ -2216,6 +2207,7 @@ export function App() {
             />
           ) : page === "project" ? (
             <ProjectHomePage
+              recentEvents={events}
               onOpenPage={setPage}
               projectId={activeProjectId}
               snapshot={snapshot}
@@ -2283,63 +2275,47 @@ export function App() {
               <p className="muted">Loading board…</p>
             </section>
           ) : page === "board" ? (
-            <BoardWorkbench
-              actionReady={actionGate.actionReady}
-              actionResult={actionResult}
-              actionState={actionGate.actionState}
-              activeFanouts={activeFanouts}
-              agents={snapshot?.agents ?? []}
-              assignees={assignees}
-              assigneeFilter={assigneeFilter}
-              filteredTasks={filteredTasks}
-              mutationEnabled={actionGate.mutationEnabled}
-              quickFilter={quickFilter}
-              skillFilter={skillFilter}
-              skills={skills}
-              priorityFilter={priorityFilter}
-              selectedTaskId={selectedTaskId}
-              setAssigneeFilter={setAssigneeFilter}
-              setSkillFilter={setSkillFilter}
-              setPriorityFilter={setPriorityFilter}
-              setQuickFilter={setQuickFilter}
-              showTokenRow={actionGate.showTokenRow}
-              onOpenTask={openTask}
-              onSaveToken={saveWebActionToken}
-              onUnlockSession={unlockSession}
-              passcodeRequired={actionGate.passcodeRequired}
-              setStatusFilter={setStatusFilter}
-              setTextFilter={setTextFilter}
-              setViewMode={setViewMode}
-              statusFilter={statusFilter}
-              tasksByColumn={tasksByColumn}
-              textFilter={textFilter}
-              viewMode={viewMode}
-              onMoveTaskStatus={(taskId, status) => void moveBoardTaskStatus(taskId, status)}
-              onOpenFanout={(fanoutId) => void openProjection("fanout", fanoutId)}
-              totalTaskCount={snapshot ? allBoardTasks(snapshot).length : 0}
-            />
+            <>
+              <BoardWorkbench
+                projectName={topbarProjectName}
+                actionReady={actionGate.actionReady}
+                actionResult={actionResult}
+                actionState={actionGate.actionState}
+                activeFanouts={activeFanouts}
+                agents={snapshot?.agents ?? []}
+                assignees={assignees}
+                assigneeFilter={assigneeFilter}
+                filteredTasks={filteredTasks}
+                mutationEnabled={actionGate.mutationEnabled}
+                quickFilter={quickFilter}
+                skillFilter={skillFilter}
+                skills={skills}
+                priorityFilter={priorityFilter}
+                selectedTaskId={selectedTaskId}
+                setAssigneeFilter={setAssigneeFilter}
+                setSkillFilter={setSkillFilter}
+                setPriorityFilter={setPriorityFilter}
+                setQuickFilter={setQuickFilter}
+                showTokenRow={actionGate.showTokenRow}
+                onOpenTask={(taskId) => { setSelectedTaskId(taskId); setDetailTab("Summary"); setTaskDrawerOpen(true); }}
+                onNewTask={openTaskAgent}
+                onSaveToken={saveWebActionToken}
+                onUnlockSession={unlockSession}
+                passcodeRequired={actionGate.passcodeRequired}
+                setStatusFilter={setStatusFilter}
+                setTextFilter={setTextFilter}
+                setViewMode={setViewMode}
+                statusFilter={statusFilter}
+                textFilter={textFilter}
+                viewMode={viewMode}
+                onMoveTaskStatus={(taskId, status) => void moveBoardTaskStatus(taskId, status)}
+                onOpenFanout={(fanoutId) => void openProjection("fanout", fanoutId)}
+                totalTaskCount={snapshot ? allBoardTasks(snapshot).length : 0}
+              />
+              <TaskDrawer open={taskDrawerOpen} onClose={backToBoard}>{taskDetailView}{selectedTask?.route_summary && <RouteSummaryStrip route={selectedTask.route_summary} />}</TaskDrawer>
+            </>
           ) : page === "task" ? (
-            <TaskDetail
-              actionReady={actionGate.actionReady}
-              actionResult={actionResult}
-              actionState={actionGate.actionState}
-              detail={taskDetail}
-              diff={taskDiff}
-              events={events}
-              loadError={taskLoadError}
-              onAction={(action, payload) => void runTaskAction(action, payload)}
-              onBackToBoard={backToBoard}
-              onOpenOrchestrator={openTaskAgent}
-              onOpenProjection={(kind, id) => void openProjection(kind, id)}
-              selectedTaskId={selectedTaskId}
-              setTab={setDetailTab}
-              skillsSummary={snapshot?.skills ?? null}
-              tab={detailTab}
-              task={selectedTask}
-              timeline={taskTimeline}
-              timelineError={taskTimelineError}
-              timelineLoading={taskTimelineLoading}
-            />
+            taskDetailView
           ) : page === "traces" ? (
             <section className="projection-scroll">
               <TracesRoute projectId={activeProjectId} liveState={liveState} recentEvents={events} />
@@ -2360,7 +2336,6 @@ export function App() {
                   channels={channelsPage?.channels ?? []}
                   snapshot={snapshot}
                   deliveryFeaturesPage={deliveryFeaturesPage}
-                  themeMode={themeMode}
                   actionReady={actionGate.actionReady}
                   actionState={actionGate.actionState}
                   onOpenChannel={openChannel}
@@ -2381,7 +2356,6 @@ export function App() {
                     });
                     openAddAgentModal();
                   }}
-                  onThemeModeChange={setThemeMode}
                   onOpenPage={(nextPage) => setPage(nextPage)}
                   onOpenProjection={(kind, id) => void openProjection(kind, id)}
                   onAction={submitAction}
@@ -2622,12 +2596,14 @@ function deliveryCardDetail(taskFlowStats: TaskFlowStats, metrics: MetricsSnapsh
 }
 
 function ProjectHomePage({
+  recentEvents,
   onOpenPage,
   projectId,
   snapshot,
   onOpenProjection,
   onOpenTask,
 }: {
+  recentEvents: RecentEvent[];
   onOpenPage: (page: PageId) => void;
   projectId: string;
   snapshot: Snapshot | null;
@@ -2649,29 +2625,21 @@ function ProjectHomePage({
   const completionRate = totalTasks ? doneCount / totalTasks : 0;
   const agents = snapshot?.agents ?? [];
   const effectiveCost = useProjectCost(projectId, snapshot?.cost);
-  const fleetMetrics = buildFleetMetrics(agents, snapshot?.agent_cockpit ?? null, effectiveCost);
   const attentionRows = buildAgentAttentionRows(agents, snapshot?.agent_cockpit ?? null, snapshot?.recovery ?? null);
   const kernelMetrics = snapshot?.metrics_snapshot;
   const taskFlowStats = snapshot?.fleet_stats?.task_flow;
-  // 2026-06-12: Q3 Cost 卡(方案 a,第五卡)。budget 占比待后端暴露 global_budget_usd 再显。
   const costSummary = effectiveCost;
   const costRoles = costSummary ? Object.entries(costSummary.per_role ?? {}) : [];
   const projectCost = buildProjectCostPresentation(costSummary);
   const costTokens = projectCost.totalTokens;
   const topCostRole = costRoles.slice().sort((a, b) => (b[1].usd ?? 0) - (a[1].usd ?? 0))[0];
   const fmtTok = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
-  const allFeatures = snapshot?.features ?? [];
-  const activeFeatureCount = allFeatures.filter((f) => f.status !== "done" && f.status !== "cancelled").length;
-  const doneFeatureCount = allFeatures.filter((f) => f.status === "done").length;
-  // Noise discipline: only warn+ rows with real evidence count as
-  // attention; "fresh"/info rows are ambient state, not signals. Focus Now and
-  // the Attention card share this one list so the numbers always agree.
   const actionableAttention = attentionRows.filter((row) =>
     row.severity !== "info" && String(row.reason || "").trim() !== "fresh");
   const topAttention = actionableAttention[0];
-  const actionMode = snapshot?.runtime.actions?.mutation_enabled
-    ? snapshot.runtime.actions.requires_token ? "token gated" : "available"
-    : "read-only";
+  const allFeatures = snapshot?.features ?? [];
+  const activeFeatureCount = allFeatures.filter((feature) => feature.status !== "done" && feature.status !== "cancelled").length;
+  const doneFeatureCount = allFeatures.filter((feature) => feature.status === "done").length;
   const deliveryDetail = taskFlowStats
     ? deliveryCardDetail(taskFlowStats, kernelMetrics)
     : `${doneCount} done / ${totalTasks} total`;
@@ -2698,8 +2666,6 @@ function ProjectHomePage({
       label: "Features",
       value: String(activeFeatureCount),
       detail: `${doneFeatureCount} done / ${allFeatures.length} total · ship flow`,
-      tone: "info",
-      zero: activeFeatureCount === 0,
       onClick: () => onOpenPage("delivery"),
     },
     {
@@ -2717,18 +2683,12 @@ function ProjectHomePage({
     {
       label: "Attention",
       value: String(actionableAttention.length),
-      detail: `${topAttention ? `${topAttention.target} · ${topAttention.reason}` : "clean"}${
-        typeof pulse?.attention?.oldest_unacked_escalation_seconds === "number"
-          ? ` · oldest ${formatAge(pulse.attention.oldest_unacked_escalation_seconds)}`
-          : ""
-      }`,
+      detail: `${topAttention ? `${topAttention.target} · ${topAttention.reason}` : "clean"}${typeof pulse?.attention?.oldest_unacked_escalation_seconds === "number" ? ` · oldest ${formatAge(pulse.attention.oldest_unacked_escalation_seconds)}` : ""}`,
       tone: actionableAttention.length ? attentionTone(actionableAttention) : "info",
-      zero: actionableAttention.length === 0,
       onClick: () => onOpenPage(topAttention?.domain === "runtime" ? "observability" : topAttention?.domain === "delivery" ? "delivery" : "agents"),
     },
   ];
   const blockedTask = tasks.find((task) => taskColumn(task) === "blocked");
-  const firstActiveRun = snapshot?.active_runs[0];
   const spineReview = asRecord(snapshot?.spine_review);
   const spineStatus = textValue(spineReview.status);
   const spineVerdict = textValue(spineReview.verdict);
@@ -2760,131 +2720,35 @@ function ProjectHomePage({
       title: "Blocked work",
     });
   }
-  if (inProgressCount) {
-    focusItems.push({
-      action: "Review task flow",
-      body: `${inProgressCount} task(s) are in progress; inspect Tasks for owner and evidence.`,
-      tone: "info",
-      title: "Work in motion",
-    });
-  }
-  if (firstActiveRun) {
-    focusItems.push({
-      action: "Open active run",
-      body: projectRunSummary(firstActiveRun),
-      onClick: firstActiveRun.run_id ? () => onOpenProjection("run", firstActiveRun.run_id) : undefined,
-      tone: "info",
-      title: "Active run",
-    });
-  }
-  if (!snapshot?.runtime.live) {
+  if (snapshot && !snapshot.runtime.live) {
     focusItems.push({
       action: "Check Runtime",
+      onClick: () => onOpenPage("runtime"),
       body: "Runtime is not live; project projections may be stale.",
       tone: "warn",
       title: "Runtime offline",
     });
   }
-  if (todoCount && !blockedCount) {
-    focusItems.push({
-      action: "Open Tasks",
-      body: `${todoCount} todo task(s) are queued for planning or dispatch.`,
-      tone: "info",
-      title: "Todo pressure",
-    });
-  }
-  const projectRows = [
-    { key: "repo", value: snapshot?.project.root ?? "-" },
-    { key: "zf.yaml", value: snapshot ? `${snapshot.project.root}/zf.yaml` : "-" },
-    { key: "state_dir", value: snapshot?.project.state_dir ?? "-" },
-    { key: "seq", value: snapshot?.seq ?? 0 },
-    { key: "generated_at", value: snapshot?.generated_at ?? "-" },
-  ];
-  const runtimeRows = [
-    { key: "web_mode", value: snapshot?.runtime.web_session?.mode ?? "-" },
-    { key: "web_unlocked", value: snapshot?.runtime.web_session?.unlocked ? "yes" : "no" },
-    { key: "actions", value: snapshot?.runtime.actions?.mutation_enabled ? "available" : "read-only" },
-    { key: "tmux_session", value: stringify(snapshot?.runtime.sessions?.tmux_session) },
-    { key: "workdir_mode", value: stringify(snapshot?.runtime.workdirs?.mode) },
-  ];
-  const boundaryRows = [
-    { key: "project_id", value: snapshot?.project.project_id ?? "-" },
-    { key: "truth", value: "zf.yaml + project.state_dir" },
-    { key: "events", value: "append-only" },
-    { key: "api_scope", value: snapshot?.project.project_id ? `/api/projects/${snapshot.project.project_id}` : "-" },
-    { key: "scope", value: "Project-local projections" },
-  ];
-
   return (
-    <section className="project-home">
-      <div className="project-overview-hero">
-        <div>
-          <span className="badge badge-info">Project Overview</span>
-          <h2>{snapshot?.project.name || "Project"}</h2>
-          {snapshot?.project.description ? (
-            <p data-testid="project-description">{snapshot.project.description}</p>
-          ) : null}
-          <p className="muted">
-            snapshot #{snapshot?.seq ?? 0} · {formatTime(snapshot?.generated_at ?? "") || "not generated"}
-          </p>
-        </div>
-        <div className="project-hero-badges">
-          <span className={`badge badge-${snapshot?.runtime.live ? "ok" : "warn"}`}>
-            {snapshot?.runtime.live ? "live" : "offline"}
-          </span>
-          <span className={`badge badge-${snapshot?.runtime.actions?.mutation_enabled ? "warn" : "info"}`}>
-            {actionMode}
-          </span>
-          <span className="badge badge-info">projection only</span>
-        </div>
-      </div>
-      <div className="project-health-grid">
-        {projectCards.map((card) => {
-          const content = (
-            <>
-              <span>{card.label}</span>
-              <strong>{card.value}</strong>
-              <p>{card.detail}</p>
-              {typeof card.meter === "number" ? (
-                <div className="project-health-meter">
-                  <span style={{ width: `${Math.max(0, Math.min(100, card.meter * 100))}%` }} />
-                </div>
-              ) : null}
-            </>
-          );
-          const cardClass = card.zero
-            ? "project-health-card is-zero"
-            : `project-health-card tone-${card.tone}`;
-          return card.onClick ? (
-            <button className={cardClass} key={card.label} type="button" onClick={card.onClick}>
-              {content}
-            </button>
-          ) : (
-            <article className={cardClass} key={card.label}>
-              {content}
-            </article>
-          );
-        })}
-      </div>
+<>
       <ReadProjectionNotice status={pulse?.read_projection} />
-      <PulseBand pulse={pulse?.run_pulse ?? null} />
-      <ProjectFocusPanel items={focusItems} />
-      <TaskFlowBand
-        fallbackCounts={taskCounts}
-        fallbackFlowStats={taskFlowStats ?? null}
-        flow={pulse?.task_flow ?? null}
-        onOpenPage={onOpenPage}
-        onOpenTask={onOpenTask}
-        tasks={tasks}
-        whyNot={pulse?.why_not ?? null}
-      />
-      {/* doc116 §7.1 deletions (operator-approved 2026-07-02): VQE metrics ->
-          Loop/Graph pages; Control Plane trio -> Settings; Runs -> Observability.
-          Spine Review is event-driven: it only appears with a real verdict. */}
-      {Boolean(spineStatus === "ready" && spineVerdict && spineVerdict !== "continue") && (
-        <SpineReviewInsightCard insight={spineReview} />
-      )}
-    </section>
+    <OverviewDashboard
+      key={projectId}
+      projectId={projectId}
+      snapshot={snapshot}
+      metrics={projectCards}
+      events={recentEvents}
+      counts={taskCounts}
+      onOpenPage={onOpenPage}
+      focus={<ProjectFocusPanel items={focusItems} />}
+      pulse={<PulseBand pulse={pulse?.run_pulse ?? null} />}
+      flow={<TaskFlowBand fallbackCounts={taskCounts} fallbackFlowStats={taskFlowStats ?? null}
+        flow={pulse?.task_flow ?? null} onOpenPage={onOpenPage} onOpenTask={onOpenTask}
+        tasks={tasks} whyNot={pulse?.why_not ?? null} />}
+      insight={Boolean(spineStatus === "ready" && spineVerdict && spineVerdict !== "continue")
+        ? <SpineReviewInsightCard insight={spineReview} /> : null}
+    />
+    </>
   );
 }
 
@@ -2950,12 +2814,12 @@ function SpineReviewInsightCard({ insight }: { insight: Record<string, unknown> 
 }
 
 function ProjectFocusPanel({ items }: { items: ProjectFocusItem[] }) {
-  const visibleItems = items.slice(0, 3);
+  const visibleItems = [...items].sort((a, b) => Number(b.tone === "err" || b.tone === "warn") - Number(a.tone === "err" || a.tone === "warn")).slice(0, 4);
   const hiddenCount = Math.max(0, items.length - visibleItems.length);
   return (
-    <section className="project-focus-section">
+    <section className="project-focus-section overview-card">
       <div className="inline-heading">
-        <h3 className="section-title">Focus Now</h3>
+        <h3 className="section-title">Needs attention</h3>
         <span className="muted">{visibleItems.length}/{items.length} signal(s)</span>
       </div>
       {items.length === 0 ? (
@@ -2965,7 +2829,7 @@ function ProjectFocusPanel({ items }: { items: ProjectFocusItem[] }) {
           {visibleItems.map((item) => {
             const content = (
               <>
-                <span className={`badge badge-${item.tone}`}>{item.tone}</span>
+                <span className={`overview-focus-dot tone-${item.tone}`} aria-label={item.tone} />
                 <strong>{item.title}</strong>
                 <span className="project-focus-body">{item.body}</span>
                 <span className="muted">{item.action}</span>

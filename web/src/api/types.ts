@@ -3464,6 +3464,7 @@ export interface LoopViewProjection {
     reason: string;
   };
   run: {
+    run_id?: string;
     event_count: number;
     semantic_event_count: number;
     first_ts: string;

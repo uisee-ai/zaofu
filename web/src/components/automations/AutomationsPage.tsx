@@ -1,3 +1,4 @@
+import { AutomationDirectory } from "./AutomationDirectory";
 // AutomationsPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse } from "../../api/types";
 import { Bell, CalendarClock, FileText, PlayCircle } from "lucide-react";
@@ -30,6 +31,7 @@ export function AutomationsPage({
     ? automations.items.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
     : [];
   const [selectedId, setSelectedId] = useState("daily-brief");
+  const [reportTab, setReportTab] = useState("report");
   useEffect(() => {
     if (items.length === 0) return;
     if (items.some((item) => String(item.automation_id) === selectedId)) return;
@@ -124,41 +126,11 @@ export function AutomationsPage({
           <h2>Automations</h2>
           <span className="muted">Project-scoped reports, alerts, and proposals</span>
         </div>
-        <span className="metric-chip">projection only</span>
+
       </div>
-      <div className="tab-row compact-tabs">
-        {items.map((item) => (
-          <button
-            className={`tab-button ${String(item.automation_id) === selectedId ? "active" : ""}`}
-            key={String(item.automation_id)}
-            type="button"
-            onClick={() => setSelectedId(String(item.automation_id))}
-          >
-            {String(item.title || item.automation_id)}
-          </button>
-        ))}
-      </div>
+      <AutomationDirectory items={items} selectedId={selectedAutomationId} onSelect={setSelectedId} />
       {selected ? (
         <div className="automation-dashboard">
-          <AutomationGlance
-            actionReady={actionReady}
-            actionState={actionState}
-            insights={insights}
-            outputs={outputs}
-            proposals={proposals}
-            runSummary={runSummary}
-            selected={selected}
-          />
-          <AutomationReportStats
-            insights={insights}
-            proposals={proposals}
-            runSummary={runSummary}
-            selected={selected}
-            successLabel={successLabel}
-          />
-          <AutomationDecisionPanel panel={decisionPanel} />
-          <AutomationArchetypeMatrix matrix={archetypeMatrix} />
-          <AutomationScorecard scorecard={scorecard} />
           <section className="subsection automation-control-section">
             <div className="automation-control-head">
               <div className="automation-control-title">
@@ -233,7 +205,30 @@ export function AutomationsPage({
               </section>
             </div>
           </section>
-          <AutomationReportNav />
+          <AutomationReportNav active={reportTab} onChange={setReportTab} />
+          {reportTab === "report" && <div className="automation-report-content">
+          <AutomationGlance
+            actionReady={actionReady}
+            actionState={actionState}
+            insights={insights}
+            outputs={outputs}
+            proposals={proposals}
+            runSummary={runSummary}
+            selected={selected}
+          />
+          <AutomationReportStats
+            insights={insights}
+            proposals={proposals}
+            runSummary={runSummary}
+            selected={selected}
+            successLabel={successLabel}
+          />
+          <AutomationDecisionPanel panel={decisionPanel} />
+          <details className="workspace-disclosure"><summary>Report diagnostics</summary>
+            <AutomationArchetypeMatrix matrix={archetypeMatrix} />
+            <AutomationScorecard scorecard={scorecard} />
+          </details>
+
           <section className="subsection automation-insight-section" id="automation-insights">
             <div className="inline-heading">
               <h3>Insights</h3>
@@ -242,14 +237,17 @@ export function AutomationsPage({
             <AutomationInsights insights={insights} />
           </section>
           <AutomationOutputs outputs={outputs} />
+          </div>}
+          {reportTab === "runs" && <div className="automation-report-content">
           <div id="automation-runs" className="automation-runs-grid">
             <AutomationRunCounts rows={runCounts} />
             <AutomationRecentRuns runs={runs} />
           </div>
           {allRuns.length > runs.length ? <TablePage title="Run Ledger" rows={allRuns} embedded /> : null}
-          <div id="automation-proposals" className="automation-anchor-target">
+          </div>}
+          {reportTab === "proposals" && <div id="automation-proposals" className="automation-anchor-target automation-report-content">
             <TablePage title="Proposals" rows={proposals} embedded />
-          </div>
+          </div>}
         </div>
       ) : (
         <section className="subsection automation-empty-section">
@@ -330,20 +328,11 @@ function AutomationGlance({
 }
 
 
-function AutomationReportNav() {
-  const links = [
-    ["#automation-insights", "Insights"],
-    ["#automation-outputs", "Outputs"],
-    ["#automation-runs", "Runs"],
-    ["#automation-proposals", "Proposals"],
-  ];
-  return (
-    <nav className="automation-report-nav" aria-label="Automation report sections">
-      {links.map(([href, label]) => (
-        <a href={href} key={href}>{label}</a>
-      ))}
-    </nav>
-  );
+function AutomationReportNav({ active, onChange }: { active: string; onChange: (tab: string) => void }) {
+  return <nav className="automation-report-nav workspace-view-tabs" aria-label="Automation report sections">
+    {[["report", "Report"], ["runs", "Run history"], ["proposals", "Proposals"]].map(([id, label]) =>
+      <button type="button" key={id} aria-pressed={active === id} onClick={() => onChange(id)}>{label}</button>)}
+  </nav>;
 }
 
 

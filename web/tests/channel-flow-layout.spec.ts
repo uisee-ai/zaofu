@@ -39,7 +39,10 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
     const path = new URL(req.url()).pathname;
     if (req.method() !== "GET") {
       state.writes.push(path);
-      if (path.endsWith("/actions/agent-session-cancel") && state.allowCancel) {
+      if (path.endsWith(`/${channelId}/attachments`) && state.allowMessages) {
+        const name = new URL(req.url()).searchParams.get("name");
+        await route.fulfill({ json: { attachment: { name, ref: `channels/${channelId}/attachments/${name}`, sha256: "fixture-attachment", size: 7, type: "text/plain" } } });
+      } else if (path.endsWith("/actions/agent-session-cancel") && state.allowCancel) {
         const payload = req.postDataJSON().payload;
         state.payloads.push(payload);
         if (!state.cancelOk) {
@@ -499,10 +502,9 @@ async function expectCenteredConnectors(page: Page) {
   }));
   for (const line of geometry) {
     expect(Math.abs(line.before - line.after)).toBeLessThan(1);
-    expect(line.before).toBeGreaterThanOrEqual(12);
-    expect(line.after).toBeGreaterThanOrEqual(12);
-    expect(line.width).toBeGreaterThanOrEqual(16);
-    expect(line.width).toBeLessThanOrEqual(20);
+    expect(line.before).toBeGreaterThanOrEqual(9);
+    expect(line.after).toBeGreaterThanOrEqual(9);
+    expect(line.width).toBeGreaterThanOrEqual(24);
     expect(line.verticalOffset).toBeLessThan(1);
     expect(line.decorative).toBe(true);
   }
@@ -540,14 +542,14 @@ for (const node of ["task", "workflow"] as const) {
     const badge = stage.getByRole("button", { name: "Open plan", exact: true });
     await expect(page.getByTestId(`channel-flow-${node}`)).toHaveAttribute("aria-label", `${node === "task" ? "Tasks" : "Workflow"} · ${label}`);
     await expect(badge).toHaveText(label);
-    expect(await badge.evaluate((element) => getComputedStyle(element).color === getComputedStyle(element.closest("nav")!).color)).toBe(status === "awaiting_approval");
+    await expect(stage).toHaveAttribute("data-tone", "waiting");
     for (const width of [390, 360, 1440]) {
       await page.setViewportSize({ width, height: 844 });
       await expect.poll(() => stage.evaluate((element) => {
         const rect = element.getBoundingClientRect(), nav = element.closest("nav")!.getBoundingClientRect();
         return rect.left >= nav.left && rect.right <= nav.right;
       })).toBe(true);
-      expect((await page.getByRole("region", { name: "Delivery progress" }).boundingBox())!.height).toBeLessThanOrEqual(48);
+      expect((await page.getByRole("region", { name: "Delivery progress" }).boundingBox())!.height).toBeLessThanOrEqual(240);
       await expectCenteredConnectors(page);
     }
     await badge.click();
@@ -889,6 +891,7 @@ test("actual origin thread, draft and attachment survive switching and reload", 
   await editor.fill("Origin draft");
   await page.getByLabel("Mark as original requirement source").check();
   await page.locator('input[type="file"]').setInputFiles({ name: "origin-only.txt", mimeType: "text/plain", buffer: Buffer.from("fixture") });
+  await expect(page.locator(".channel-composer")).toContainText("已上传");
   await navigation.getByRole("button", { name: "other", exact: true }).click();
   await expect(editor).toHaveText("");
   await expect(page.locator(".channel-composer")).not.toContainText("origin-only.txt");
@@ -1162,4 +1165,40 @@ test("rejected file publication retains preview and retries after the cause is r
   await expect(page.getByRole("button", { name: "Process", exact: true })).toBeDisabled();
   expect(state.payloads).toHaveLength(2);
   expect(state.payloads[0].source_file).toEqual(state.payloads[1].source_file);
+});
+
+test("pipeline summary follows inspected stages while execution and approvals keep their identity", async ({ page, request }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const detail = readyFixture();
+  detail.result_receipts = [{ ...detail.syntheses[0], receipt_kind: "task_created", revision: 2, task_id: "T-CURRENT" }];
+  detail.workflow_requests = [{ thread_id: "main", task_id: "T-CURRENT", status: "running" }];
+  const state = await setup(page, request, detail);
+  const summary = page.getByTestId("channel-flow-summary");
+  const workflow = page.getByTestId("channel-flow-workflow");
+  await expect(summary).toContainText("Running");
+  await expect(workflow).toHaveAttribute("aria-current", "step");
+  await page.getByTestId("channel-flow-prd").click();
+  await expect(summary).toContainText("Revision 2");
+  await expect(summary).toContainText("Current: Workflow");
+  await expect(page.getByTestId("channel-flow-prd")).toHaveAttribute("aria-pressed", "true");
+  await expect(workflow).toHaveAttribute("aria-current", "step");
+  await expect(page.locator('.channel-flow-connector[data-complete="true"]')).toHaveCount(3);
+  await page.getByRole("button", { name: "Close drawer" }).click();
+  await expect(summary).toContainText("Running");
+  await page.screenshot({ path: testInfo.outputPath("channel-desktop.png") });
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await page.screenshot({ path: testInfo.outputPath("channel-dark.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(workflow).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath("channel-mobile.png") });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  Object.assign(detail, { open_questions: fixture().open_questions, owner_questionnaires: fixture().owner_questionnaires, discussion_attention: fixture().discussion_attention });
+  await page.reload();
+  await expect(page.getByTestId("channel-flow-discussion")).toHaveAttribute("aria-current", "step");
+  await expect(summary).toContainText("1 decision needs your input");
+  await summary.getByRole("button", { name: "Review decisions" }).click();
+  await expect(page.getByTestId("channel-inline-question")).toBeInViewport();
+  expect(state.writes).toEqual([]);
+  expect(state.errors).toEqual([]);
 });
