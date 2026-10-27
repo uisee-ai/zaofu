@@ -1,6 +1,7 @@
 # Request / Run 工作台读投影与刷新
 
-> 状态: active
+> 状态: done
+> 实现: 5d289458 fix: cache workflow graphs and reduce dashboard refresh work
 > 用户已批准：针对新 Request / Run 进行读投影与刷新优化。基线 dev fec215b3。
 
 ## 范围
@@ -55,3 +56,6 @@ Monitoring summary / delivery / loop / trace 稳定源比较一致；Agents 差�
 Workflow 首屏仍经过项目目录／Request 列表与详情、完整图传输与布局；Agents 冷读仍可能全量解码窗口事件。
 本批完成的是读投影和刷新开销优化，不把缓存命中 API 时间宣称为完整页面首屏时间，也不宣称所有 Monitoring 冷路径已解决。
 下一轮应独立优化 Request 详情与列表读投影、workspace lifecycle 批量探测以及 Agents 冷窗口读取，并以完整页面 ready 而非单接口作为验收。
+
+最终稳定条件请求：Cargo 304 为 571 / 269 / 266 ms，0 byte；loshu 该轮源版本已变化，旧 ETag 正确返回 200，不将它计作 304 热读样本。
+临时 8031/8032/8033 服务已停止；两个隔离 fixture 已写 simulation.done 后清理；保留原始证据。
