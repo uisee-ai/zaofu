@@ -32,6 +32,23 @@ def config_review_fields(index: int, spec: dict, *, role_names: list[str], famil
     for key in sorted(SCALAR_FIELDS & spec.keys()):
         if type(spec[key]) in (str, int):
             result[f"config.{index}.{key}"] = {"value": spec[key], "editable": True, "reason": reason}
+    if family in {"issue", "prd", "refactor"}:
+        # A v4 controller requires the profile and pool policy together. Expose
+        # absent inputs as empty values so one reviewed patch can enable it.
+        profile_key = "flow_profile" if "flow_profile" in spec else "flowProfile"
+        pipeline_key = "task_pipeline" if "task_pipeline" in spec else "taskPipeline"
+        for key, default in ((profile_key, ""), (pipeline_key, {})):
+            value = spec.get(key, default)
+            if type(value) is type(default):
+                result[f"config.{index}.{key}"] = {"value": value, "editable": True, "reason": reason}
+        if family in {"issue", "prd"} and "topology" not in spec:
+            result[f"config.{index}.topology"] = {
+                "value": "light" if family == "issue" else "fanout", "editable": True, "reason": reason,
+            }
+        if family == "prd":
+            for key in ("prdRef", "targetRoot"):
+                if isinstance(spec.get(key, ""), str):
+                    result[f"config.{index}.{key}"] = {"value": spec.get(key, ""), "editable": True, "reason": reason}
     defaults_key = "role_defaults" if "role_defaults" in spec else "roleDefaults"
     defaults = spec.get(defaults_key) or {}
     for key in ("model",):

@@ -337,7 +337,7 @@ class ProductActionsMixin:
                 requested=event, action="workflow-request", requested_action="workflow-request",
                 payload={
                     "task_id": created.id, "kind": "auto",
-                    **{key: payload[key] for key in ("backend", "project_id", "conversation_id", "thread_id")
+                    **{key: payload[key] for key in ("backend", "project_id", "conversation_id", "thread_id", "source_root", "target_root")
                        if payload.get(key)},
                 },
             )

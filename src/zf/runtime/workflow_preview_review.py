@@ -638,6 +638,25 @@ class WorkflowPreviewReview:
             if key in spec
         }
         compiled = load_config(candidate)
+        parameters = short_spec.setdefault("parameters", {})
+        if "task_pipeline" in parameters and any(
+            change["field"].split(".")[-1] in {"taskPipeline", "task_pipeline", "flowProfile", "flow_profile"}
+            for change in changes
+        ):
+            kind = str(result["selected_flow_family"]).lower().removesuffix("flow")
+            metadata = (getattr(compiled.workflow, "flow_metadata_by_kind", {}) or {}).get(kind)
+            if not metadata:
+                metadata = compiled.workflow.flow_metadata
+            policy = metadata.get("task_pipeline") or {}
+            if policy:
+                parameters["task_pipeline"] = {
+                    "profile": policy["profile_id"], "mode": policy["mode"],
+                    "impl_capacity": policy["pools"]["impl"]["capacity"],
+                    "verify_capacity": policy["pools"]["verify"]["capacity"],
+                    "max_active_task_pipelines": policy["max_active_task_pipelines"],
+                }
+            else:
+                parameters.pop("task_pipeline")
         for change in changes:
             if change["field"].startswith("config."):
                 key = change["field"].split(".")[-1]

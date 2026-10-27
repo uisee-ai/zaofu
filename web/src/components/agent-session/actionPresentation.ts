@@ -45,6 +45,18 @@ const ACTION_PRESENTATIONS: Record<string, ActionPresentation> = {
     busyLabel: "Preparing",
     completedLabel: "Workflow preparation requested",
   },
+  "workflow-config-propose": {
+    title: "Record workflow configuration request",
+    confirmLabel: "Record request",
+    busyLabel: "Recording",
+    completedLabel: "Configuration request recorded · no YAML created",
+  },
+  "workflow-config-validate": {
+    title: "Request configuration validation",
+    confirmLabel: "Request validation",
+    busyLabel: "Requesting",
+    completedLabel: "Validation requested · result pending",
+  },
   "research-adopt": {
     title: "Adopt research",
     confirmLabel: "Adopt research",

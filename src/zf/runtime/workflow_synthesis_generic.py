@@ -21,6 +21,7 @@ FLOW_PARAMETER_KEYS = frozenset({
     "pattern_id",
     "scoper_role",
     "strictness",
+    "task_pipeline",
     "synthesizer_role",
     "verifier_role",
     "executor_role",
@@ -39,6 +40,7 @@ _CONTROLLER_PARAMETER_KEYS = frozenset({
     "lanes",
     "strictness",
     "pattern_id",
+    "task_pipeline",
 })
 
 
