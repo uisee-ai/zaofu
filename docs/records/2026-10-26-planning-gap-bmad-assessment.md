@@ -1,6 +1,6 @@
 # 规划实跑缺口修复与 BMAD 复评
 
-> 状态：实现已修复并完成针对性验证；真实模型 A/B 未完成，不宣称规划质量已得到统计证明。
+> 状态：实现已修复并完成针对性验证。本文记录 10 月 26 日当时的 A/B 阻塞；10 月 27 日已补跑，见[真实 A/B 评估](2026-10-27-planning-gap-real-ab.md)。仍不宣称规划质量已得到统计证明。
 
 基线：ZaoFu dev `50eb6ba1574a9869c18d2e0cab322bff529462d1`。
 候选工作区：`zaofu-planning-gap-fixes`，分支 `wip/codex-20261026-planning-gap-fixes`。

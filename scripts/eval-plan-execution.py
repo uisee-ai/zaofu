@@ -63,11 +63,13 @@ def main() -> int:
     parser.add_argument("--docker-image", required=True)
     parser.add_argument("--auth-file", type=Path, default=Path.home() / ".codex/auth.json")
     parser.add_argument("--repetitions", type=int, choices=range(1, 4), default=1)
-    parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument("--timeout", type=int, default=600,
+                        help="Wall-clock seconds; 0 waits for completion without a deadline")
     parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args()
-    if args.output.exists() or not 1 <= args.timeout <= 600:
-        parser.error("output must be new and timeout must be 1..600 seconds")
+    if args.output.exists() or args.timeout < 0:
+        parser.error("output must be new and timeout must be non-negative")
+    args.timeout = args.timeout or None
     prompt = (args.inputs / "prompt.md").read_text()
     if not args.prepare_only and (not args.auth_file.is_file() or not shutil.which("rg")):
         parser.error("real evaluation requires local auth and rg")
