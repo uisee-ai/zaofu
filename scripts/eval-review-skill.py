@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import ssl
 import subprocess
 import time
 
@@ -111,11 +112,11 @@ def run_one(run_dir: Path, prompt: str, args: argparse.Namespace) -> dict:
         # checkout, daemon socket or writable host directory is exposed.
         command = [
             "docker", "run", "--rm", "-i", "--name", container_name,
-            "--read-only", "--cap-drop=ALL", "--cap-add=DAC_OVERRIDE",
+            "--user", "0:0", "--read-only", "--cap-drop=ALL", "--cap-add=DAC_OVERRIDE",
             "--security-opt=no-new-privileges",
             "--memory=1g", "--cpus=1", "--network=host",
             "--tmpfs", "/tmp:rw,nosuid,size=128m",
-            "--tmpfs", "/root/.codex:rw,nosuid,size=128m",
+            "--tmpfs", "/root:rw,nosuid,size=128m",
             "-v", f"{Path(shutil.which('codex')).resolve().parent}:/opt/codex:ro",
             "-v", f"{Path(shutil.which('rg')).resolve()}:/usr/local/bin/rg:ro",
             "-v", f"{args.auth_file.resolve()}:/root/.codex/auth.json:ro",
@@ -123,6 +124,20 @@ def run_one(run_dir: Path, prompt: str, args: argparse.Namespace) -> dict:
             "-e", "GIT_CONFIG_COUNT=1", "-e", "GIT_CONFIG_KEY_0=safe.directory",
             "-e", "GIT_CONFIG_VALUE_0=/workspace",
         ]
+        # Minimal browser images can omit native TLS roots even when Node's
+        # bundled trust store works. Preserve verification with host CA roots.
+        trust = ssl.get_default_verify_paths()
+        ca_file = os.environ.get("SSL_CERT_FILE") or trust.cafile
+        if not ca_file and trust.capath:
+            bundle = Path(trust.capath) / "ca-certificates.crt"
+            if bundle.is_file():
+                ca_file = str(bundle)
+        if ca_file:
+            ca_path = Path(ca_file).expanduser().resolve(strict=True)
+            command.extend([
+                "-v", f"{ca_path}:/etc/zf-eval-ca.pem:ro",
+                "-e", "SSL_CERT_FILE=/etc/zf-eval-ca.pem",
+            ])
         for key in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "NO_PROXY"):
             if key in os.environ:
                 command.extend(["-e", key])

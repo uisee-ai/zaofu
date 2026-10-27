@@ -64,6 +64,19 @@ def load_project_env(project_root: Path) -> dict[str, str]:
     return load_env_file(Path(project_root) / ".env")
 
 
+def isolated_project_subprocess_env() -> dict[str, str]:
+    """Start a separate project without inheriting the caller's runtime owner.
+
+    Worker processes within one project still need these variables. Only
+    callers creating an independent experiment/test project use this boundary;
+    their cwd + zf.yaml select the new state dir. Preserve provider/tool config.
+    """
+    env = os.environ.copy()
+    for name in ("ZF_PROJECT_ROOT", "ZF_STATE_DIR"):
+        env.pop(name, None)
+    return env
+
+
 def _resolve_state_path(project_root: Path, state_dir: str | Path) -> Path:
     path = Path(state_dir)
     if not path.is_absolute():

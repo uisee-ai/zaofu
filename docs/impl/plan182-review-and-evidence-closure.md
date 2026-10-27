@@ -179,3 +179,15 @@ Task Pipeline 工作目录授权只采用当前 running operation 匹配的派�
 
 Plan Preview 在 760px 以下将侧栏限制在独立的 120px 滚动区域，
 为长导航下的正文保留阅读空间；320px、390px 与桌面视口由浏览器用例验证。
+
+## 实跑缺口补齐（2026-10-26）
+
+显式绑定的 `source_index` / `coverage_ledger` 兼容 `rows` 表示；任务级来源摘录单独
+计数，不用覆盖账本反推来源全集。读取/摘要错误进入审核包诊断，Web 展示每个分区的
+全部说明，避免隐藏未覆盖来源 ID。作者端约定见
+[review ports](../../skills/zf-plan-task-map-contract/references/review-ports.md)。
+旧 Plan 缺少绑定端口仍显示 incomplete，不通过目录猜测或重写旧摘要修复。
+
+同批修复独立实验父环境泄漏、完成 reader 的旧 skill treatment 回收；新增行为未放宽
+原有状态/技能保护，未触发产品批准。具体修改前后证据、验证层级及 BMAD 对照限制见
+[实跑缺口复评](../records/2026-10-26-planning-gap-bmad-assessment.md)。

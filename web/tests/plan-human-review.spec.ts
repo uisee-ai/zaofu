@@ -12,6 +12,8 @@ test("bound review layers expose decisions, module rules and concrete acceptance
   const mutations: string[] = [];
   page.on("request", req => { if (req.method() !== "GET" && req.url().includes("/api/")) mutations.push(req.url()); });
   const dialog = await openReview(page, request);
+  await expect(dialog.getByText("未覆盖: REQ-MISSING", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("来源条款 3，覆盖账本包含 2；映射存在不代表验收通过。", { exact: true })).toBeVisible();
   await expect(dialog.getByText("2 个任务 · 2 个验收项 · 2 个页面 · 1 类表单")).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "产品目标" })).toBeVisible();
   await dialog.locator("summary").filter({ hasText: "确认库存来源" }).click();

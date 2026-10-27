@@ -108,7 +108,9 @@ def _subprocess_env() -> dict[str, str]:
     silently disappears (RoleConfig falls back to backend='python' →
     MockAdapter → ['cat']). Diagnosed 2026-04-27.
     """
-    env = os.environ.copy()
+    from zf.core.config.project_context import isolated_project_subprocess_env
+
+    env = isolated_project_subprocess_env()
     env["PYTHONPATH"] = str(REPO_ROOT / "src")
     return env
 

@@ -28,7 +28,6 @@ from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.core.task.schema import Task
 from zf.runtime.injection import (
     build_task_prompt,
-    generate_role_instructions,
 )
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.provider_context import has_provider_context_exhausted
@@ -1993,61 +1992,10 @@ class LifecycleManagerMixin(
         task = self._active_task_for_instance(role.instance_id)
         idle_recovery = task is None
         if idle_recovery:
-            # Idle instances should come back as clean workers, not as a
-            # resumed copy of their previous task. Refresh role instructions
-            # without a Current Task block. Context recycle skips prompt
-            # injection; watchdog respawn still injects a compact recovery note
-            # so recovery delivery failures remain visible.
-            try:
-                idle_task = Task(
-                    id="(idle)",
-                    title="(idle)",
-                    status="in_progress",
-                    assigned_to=role.instance_id,
-                )
-                briefing_md = build_recovery_briefing(
-                    self.state_dir,
-                    role.instance_id,
-                    idle_task,
-                    git_context=None,
-                    compact=True,
-                    config=self.config,
-                    project_root=self.project_root,
-                )
-                briefing_dir = self.state_dir / "briefings"
-                briefing_dir.mkdir(parents=True, exist_ok=True)
-                (briefing_dir / f"{role.instance_id}-recovery.md").write_text(
-                    briefing_md,
-                    encoding="utf-8",
-                )
-                # ZF-CONTEXT-REC-001 integration (2026-05-18): write
-                # State Packet–driven recovery briefing alongside the
-                # legacy one. Best-effort — recovery success uses the
-                # legacy path; SP-based version is for operator /
-                # downstream tooling.
-                self._write_state_packet_recovery_briefing(
-                    role=role,
-                    task_id=getattr(idle_task, "id", None),
-                    recovery_reason="idle_after_recycle",
-                )
-                skill_entries = self._record_skill_provenance(
-                    role=role,
-                    task_id=None,
-                )
-                instructions_dir = self.state_dir / "instructions"
-                instructions_dir.mkdir(parents=True, exist_ok=True)
-                (instructions_dir / f"{role.instance_id}.md").write_text(
-                    generate_role_instructions(
-                        self.config,
-                        role,
-                        task=None,
-                        skill_entries=skill_entries,
-                        state_dir_ref=self.state_dir,
-                        project_root=getattr(self, "project_root", None),
-                    ),
-                    encoding="utf-8",
-                )
-            except Exception:
+            from zf.runtime.idle_recovery import prepare_idle_recovery
+
+            idle_task = prepare_idle_recovery(self, role)
+            if idle_task is None:
                 return False
             if not inject_idle_prompt:
                 try:
