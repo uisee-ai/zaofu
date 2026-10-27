@@ -22,12 +22,26 @@ test("Overview prioritizes actionable work and preserves pulse-first loading", a
   await expect(page.locator(".overview-metrics .workspace-stat strong")).toHaveText(["5", "17%", "1", "—"]);
   const main = await page.locator(".overview-main").boundingBox(), aside = await page.locator(".overview-aside").boundingBox();
   expect(main!.width).toBeGreaterThan(aside!.width); expect(main!.x + main!.width).toBeLessThan(aside!.x);
+  await expect(page.locator(".overview-main > :first-child")).toHaveClass(/overview-flow/);
+  const cards = await page.locator(".overview-metrics .workspace-stat").evaluateAll((nodes) => nodes.map((node) => {
+    const box = node.getBoundingClientRect(), style = getComputedStyle(node);
+    return { x: box.x, right: box.right, bottom: box.bottom, border: style.borderLeftWidth, radius: style.borderRadius };
+  }));
+  for (let index = 0; index < cards.length; index++) {
+    expect(cards[index].border).toBe("1px"); expect(cards[index].radius).toBe("10px");
+    if (index) expect(cards[index].x - cards[index - 1].right).toBeGreaterThanOrEqual(15);
+  }
+  const execution = await page.locator(".overview-flow").boundingBox();
+  expect(Math.abs(execution!.x - cards[0].x)).toBeLessThan(1);
+  expect(execution!.y - cards[0].bottom).toBeGreaterThanOrEqual(15);
+  expect(execution!.y - cards[0].bottom).toBeLessThanOrEqual(17);
   await expect(page.locator(".overview-activity")).toContainText("task · started");
   await expect(page.locator(".workspace-stat strong").first()).toHaveCSS("font-size", "24px");
   await page.getByRole("button", { name: "Read more", exact: true }).click();
   await expect(page.getByRole("button", { name: "Show less", exact: true })).toHaveAttribute("aria-expanded", "true");
   await page.screenshot({ path: info.outputPath("overview-desktop.png") });
   await page.setViewportSize({ width: 390, height: 844 }); await noOverflow(page);
+  await expect(page.locator(".overview-metrics .workspace-stat").nth(2)).toHaveCSS("border-left-width", "1px");
   await page.getByRole("button", { name: "Show less", exact: true }).click();
   await page.screenshot({ path: info.outputPath("overview-mobile.png") });
   await page.getByRole("button", { name: "Open Tasks", exact: true }).click();

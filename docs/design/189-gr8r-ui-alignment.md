@@ -162,3 +162,11 @@ docker run --rm --network host \
 - 截图与日志目录：`/tmp/zf-ui-pages-20261026-2337/`。逐页检查桌面、360/390px 窄屏与深色画面；Tasks / Inbox / Settings 的密度、语言、时区和偏好持久化使用原回归用例验证。
 - 真实 `loshu-fms` 项目：Overview、Tasks、Appearance 正常展示；Agents 接口超时会显示未知值和重试，未伪装为空列表。只读复核无前端异常、无非 GET 业务请求、无页面横向溢出。当前后台投影读取的耗时问题仍存在，未在 UI 批次中改动运行状态。
 - 8019 已更新为上述验证构建，首页内容与构建索引一致；保留旧哈希资源，避免已打开标签页加载旧模块时出现 404。
+
+## 2026-10-27 Overview 卡片与执行顺序校准
+
+用户要求恢复指标格子之间的间隔，并将 Execution Flow 放在 Work Queue 下方。Overview 顶部四张指标卡分别使用独立边框、10px 圆角和 16px 间距，保留各卡原有数据与跳转。左侧内容列顺序调整为 Execution Flow → Needs attention → Delivery progress，右侧上下文保持。移动端指标仍为两列，四张卡四边完整，不被共享统计条的移动端分隔线覆盖。
+
+验收：桌面独立卡片间隔与边框、Execution Flow 紧接指标区并与 Work Queue 左对齐；窄屏四张卡边框和间距保持、无页面溢出；pulse-first 加载、指标跳转及未知值语义不变。随设计 190 的实施批次验证归档。
+
+验证通过：独立卡片几何量测、桌面/390px 截图、pulse-first 与空态、无溢出和跳转检查；本次完整记录见 [190 验收记录](190-channel-pipeline-and-loop-timeline.md#实施与验收记录)。

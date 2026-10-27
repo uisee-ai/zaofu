@@ -71,6 +71,7 @@ export function OverviewDashboard({ projectId, snapshot, metrics, focus, flow, p
       </div>
       <div className="overview-columns">
         <div className="overview-main">
+          <section className="overview-card overview-flow"><div className="overview-card-heading"><h3>{t("Execution flow")}</h3><button type="button" onClick={() => onOpenPage("behavior-loop")}>{t("View Loop")} <ArrowUpRight size={13} aria-hidden="true" /></button></div>{flow}</section>
           {snapshot ? focus : <section className="overview-card"><h3>{t("Needs attention")}</h3><p className="muted">{t("Loading project summary…")}</p></section>}
           <section className="overview-card overview-deliveries">
             <div className="overview-card-heading"><h3>{t("Delivery progress")}</h3><button type="button" onClick={() => onOpenPage("delivery")}>{t("View all")} <ArrowUpRight size={13} aria-hidden="true" /></button></div>
@@ -82,7 +83,6 @@ export function OverviewDashboard({ projectId, snapshot, metrics, focus, flow, p
               </button>
             )) : <p className="overview-card-empty">{t(snapshot ? "No features yet. Track execution in Tasks." : "Loading project summary…")}</p>}
           </section>
-          <section className="overview-card overview-flow"><div className="overview-card-heading"><h3>{t("Execution flow")}</h3><button type="button" onClick={() => onOpenPage("behavior-loop")}>{t("View Loop")} <ArrowUpRight size={13} aria-hidden="true" /></button></div>{flow}</section>
           {insight}
         </div>
         <aside className="overview-aside" aria-label={t("Project context")}>

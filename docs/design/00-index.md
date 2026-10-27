@@ -29,5 +29,6 @@
 | 186 | [Inbox 阅读与处理、任务看板与子任务状态](186-inbox-and-task-board-human-centered-design.md) | candidate | 结合 Gr8r、Multica、Chorus 梳理 Inbox、Board／List、人工输入与执行图；保留性能实测及指标对照，按 dev 36c3bd32 修正 Workflow 现状。 |
 | 188 | [Dashboard、Workflow 多 Run 与 SQLite 读模型审查补充](188-dashboard-workflow-multi-run-sqlite-review.md) | candidate | dev 36c3bd32 的 Workflow 详情竞态、列表重复归约、多 Run 准入约束、SQLite 读写／游标／checkpoint 风险及分期验收。 |
 | 189 | [Inbox / Tasks / Settings 与 GR8R 对齐](189-gr8r-ui-alignment.md) | implemented | GR8R 实测排版与 Geist 字体、三视图、Inbox 双栏和 General / Appearance；保留受控动作。 |
+| 190 | [Channel 阶段导航与 Loop 时间线](190-channel-pipeline-and-loop-timeline.md) | implemented | 视频参考的五步导航、阶段摘要、真实比例时间线与执行详情；计划基线对比另列后续条件。 |
 
-181–188 的本地文档路由保留自主 checkout；本分支新增并纳入版本管理的是设计 189。
+181–188 的本地文档路由保留自主 checkout；本分支新增并纳入版本管理的是设计 189、190。

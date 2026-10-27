@@ -2635,7 +2635,9 @@ export function ChannelPage({
           </button>
         </div>
       </div>
-      <ChannelFlowNavigation flow={flow} onSelect={(node) => toggleDrawer(node)}
+      <ChannelFlowNavigation flow={flow}
+        selectedNode={drawer && ["requirement", "discussion", "prd", "task", "workflow"].includes(drawer) ? drawer as ChannelFlowNode : undefined}
+        onSelect={(node) => toggleDrawer(node)} onOpen={(node) => setDrawer(node)}
         onReviewQuestions={focusOwnerQuestions} onReviewPlans={onReviewPlans} deliveryError={delivery.error} />
       {loadError ? <div className="notice">{loadError}</div> : null}
       {actionResult && (

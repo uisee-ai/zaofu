@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { LoopViewTask } from "../../api/types";
+import { attemptRange, durationLabel } from "./loopTimelineModel";
 
 const ATTEMPT_BATCH_SIZE = 100;
 
@@ -14,10 +15,13 @@ const TONE = {
 
 const hhmm = (iso: string) => (iso ? iso.slice(11, 16) : "");
 
-export function LoopAttemptDrawer({ task }: { task: LoopViewTask }) {
+export function LoopAttemptDrawer({ task, indices, observed, onShowAll }: {
+  task: LoopViewTask; indices?: number[]; observed: number; onShowAll: () => void;
+}) {
   const [visibleCount, setVisibleCount] = useState(ATTEMPT_BATCH_SIZE);
-  const attempts = task.attempts.slice(0, visibleCount);
-  const remaining = task.attempts.length - attempts.length;
+  const entries = (indices ?? task.attempts.map((_, index) => index)).map((index) => ({ attempt: task.attempts[index], index }));
+  const attempts = entries.slice(0, visibleCount);
+  const remaining = entries.length - attempts.length;
   const nextBatch = Math.min(ATTEMPT_BATCH_SIZE, remaining);
 
   return (
@@ -26,13 +30,15 @@ export function LoopAttemptDrawer({ task }: { task: LoopViewTask }) {
       data-testid="loop-attempt-drawer"
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="loop-v2-attempt-heading" style={{ fontSize: 10 }}>
-        attempt projection · {task.source} · verbatim, read-only
+      <div className="loop-v2-attempt-heading">
+        <strong>{indices ? indices.length === 0 ? "Selected attempts are no longer available" : indices.length === 1 ? `Attempt #${indices[0] + 1}` : `${indices.length} grouped attempts` : "Attempt history"}</strong>
+        {indices ? <button type="button" className="loop-timeline-show-all" onClick={onShowAll}>View all {task.attempts.length} attempts</button> : null}
       </div>
-      <div className="loop-v2-attempt-count" data-testid="loop-attempt-count" style={{ fontSize: 10.5 }}>
-        Showing {attempts.length} of {task.attempts.length} attempts
+      <div className="loop-v2-attempt-count" data-testid="loop-attempt-count">
+        Showing {attempts.length} of {entries.length} attempts
       </div>
-      {attempts.map((attempt, index) => {
+      {attempts.map(({ attempt, index }) => {
+        const range = attemptRange(attempt, observed);
         const fail = attempt.terminal?.type.endsWith(".failed");
         return (
           <div
@@ -41,7 +47,7 @@ export function LoopAttemptDrawer({ task }: { task: LoopViewTask }) {
             key={`${attempt.started_ts}:${index}`}
             style={{
               borderTop: index ? `1px solid ${TONE.line}` : undefined,
-              fontSize: 11.5,
+              fontSize: "var(--text-12)",
               opacity: attempt.counted ? 1 : 0.55,
             }}
           >
@@ -50,7 +56,8 @@ export function LoopAttemptDrawer({ task }: { task: LoopViewTask }) {
             </span>
             <span style={{ color: TONE.muted }}>{attempt.role || "—"}</span>
             <span style={{ color: fail ? TONE.err : attempt.open ? TONE.accent : "var(--text)" }}>
-              {hhmm(attempt.started_ts)}{attempt.terminal ? `–${hhmm(attempt.terminal.ts)} · ${attempt.terminal.type}` : " · OPEN"}
+              {attempt.orphan ? "Start unknown" : hhmm(attempt.started_ts) || "Start unknown"}{attempt.terminal ? `–${hhmm(attempt.terminal.ts)} UTC · ${attempt.terminal.type}` : " UTC · OPEN at last observation"}
+              <span className="loop-attempt-duration">{range.known ? durationLabel(range.end - range.start) : "Duration unknown"}</span>
               {attempt.terminal?.reason ? <span style={{ color: TONE.muted }}> · {attempt.terminal.reason}</span> : null}
             </span>
           </div>
@@ -60,7 +67,7 @@ export function LoopAttemptDrawer({ task }: { task: LoopViewTask }) {
         <button
           className="loop-v2-attempt-load-more"
           data-testid="loop-attempt-load-more"
-          onClick={() => setVisibleCount((current) => Math.min(current + ATTEMPT_BATCH_SIZE, task.attempts.length))}
+          onClick={() => setVisibleCount((current) => Math.min(current + ATTEMPT_BATCH_SIZE, entries.length))}
           type="button"
         >
           Load more ({nextBatch})

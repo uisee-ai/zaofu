@@ -2,16 +2,14 @@
 // Design lineage: doc130 (stage-loop contract), doc131 §3.3/§8 (promise,
 // spine), 2026-07 five-run dry-run (mock v12 + gen3 reference prototypes).
 // Canonical Loop product view. Legacy BehaviorLoopPage was retired by design 150.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-import type { LoopViewLoop, LoopViewTask, RecentEvent } from "../../api/types";
+import type { LoopViewLoop, RecentEvent } from "../../api/types";
 import type { LiveState } from "../../app/sharedTypes";
 import "../../styles/20-loop-v2.css";
-import { LoopAttemptDrawer } from "./LoopAttemptDrawer";
+import { LoopTimeline } from "./LoopTimeline";
+import { timelineTaskKey } from "./loopTimelineModel";
 import { useLoopViewResource } from "./useLoopViewResource";
-
-const GAP_BREAK_MS = 30 * 60 * 1000;
-const BREAK_W = 4;
 
 const TONE = {
   ok: "var(--ok)",
@@ -30,127 +28,7 @@ interface Props {
   onOpenTrace?: (traceId: string) => void;
 }
 
-// ---------- time transform (gap compression; ported from gen3) ----------
-
-interface Span { a: number; b: number; xa: number; xb: number }
-
-function buildSpans(times: number[]): { spans: Span[]; breaks: Array<{ x: number; ms: number }> } {
-  if (!times.length) return { spans: [], breaks: [] };
-  const sorted = [...times].sort((p, q) => p - q);
-  const windows: Array<[number, number]> = [];
-  let cur: [number, number] = [sorted[0], sorted[0]];
-  for (const t of sorted.slice(1)) {
-    if (t - cur[1] > GAP_BREAK_MS) { windows.push(cur); cur = [t, t]; }
-    else cur[1] = t;
-  }
-  windows.push(cur);
-  const activeTotal = windows.reduce((s, w) => s + (w[1] - w[0]), 0) || 1;
-  const avail = 100 - (windows.length - 1) * BREAK_W;
-  const spans: Span[] = [];
-  const breaks: Array<{ x: number; ms: number }> = [];
-  let x = 0;
-  windows.forEach((w, i) => {
-    const wp = ((w[1] - w[0]) / activeTotal) * avail;
-    spans.push({ a: w[0], b: w[1], xa: x, xb: x + wp });
-    x += wp;
-    if (i < windows.length - 1) {
-      breaks.push({ x, ms: windows[i + 1][0] - w[1] });
-      x += BREAK_W;
-    }
-  });
-  return { spans, breaks };
-}
-
-function makeX(spans: Span[]): (t: number) => number {
-  return (t: number) => {
-    for (const s of spans) {
-      if (t <= s.b + 1000) {
-        if (t < s.a) return s.xa;
-        return s.xa + ((t - s.a) / Math.max(s.b - s.a, 1)) * (s.xb - s.xa);
-      }
-    }
-    return 100;
-  };
-}
-
 const hhmm = (iso: string) => (iso ? iso.slice(11, 16) : "");
-const ts = (iso: string) => (iso ? Date.parse(iso) : NaN);
-function fmtDur(ms: number): string {
-  const s = Math.round(ms / 1000);
-  if (s >= 3600) return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
-  if (s >= 60) return `${Math.floor(s / 60)}m`;
-  return `${s}s`;
-}
-
-// ---------- attempt segments with bundling (scale rule: no unreadable segs) ----------
-
-interface Seg { l: number; r: number; state: "done" | "fail" | "open" | "uncounted"; title: string; bundle?: number }
-
-function taskSegments(task: LoopViewTask, X: (t: number) => number, endT: number): Seg[] {
-  const items: Seg[] = [];
-  task.attempts.forEach((a, i) => {
-    const start = ts(a.started_ts);
-    if (!Number.isFinite(start)) return;
-    const ref = a.terminal?.seq !== undefined ? ` · events.jsonl #${a.terminal.seq}` : ` · attempt ledger`;
-    if (a.terminal) {
-      const end = ts(a.terminal.ts);
-      const fail = a.terminal.type.endsWith(".failed");
-      items.push({
-        l: X(start), r: Math.max(X(end), X(start) + 0.6),
-        state: fail ? "fail" : "done",
-        title: `attempt ${i + 1} · ${a.role} · ${hhmm(a.started_ts)}–${hhmm(a.terminal.ts)} · ${a.terminal.type}${ref}${a.terminal.reason ? ` · ${a.terminal.reason}` : ""}`,
-      });
-    } else if (!a.counted) {
-      items.push({
-        l: X(start), r: X(start) + 0.9, state: "uncounted",
-        title: `attempt ${i + 1} · ${a.role} · OPEN superseded — uncounted (E5)${ref}`,
-      });
-    } else {
-      items.push({
-        l: X(start), r: Math.max(X(endT), X(start) + 1.2), state: "open",
-        title: `attempt ${i + 1} · ${a.role} · OPEN since ${hhmm(a.started_ts)} · lease view${ref}`,
-      });
-    }
-  });
-  // bundle consecutive narrow items so nothing overlaps or truncates
-  const MINW = 2.4, MAXGAP = 1.2, BUNDLE_MIN = 3;
-  const out: Seg[] = [];
-  let cluster: Seg[] = [];
-  const flush = () => {
-    if (!cluster.length) return;
-    if (cluster.length >= BUNDLE_MIN) {
-      const fails = cluster.filter((c) => c.state === "fail").length;
-      out.push({
-        l: cluster[0].l, r: Math.max(cluster[cluster.length - 1].r, cluster[0].l + 2.6),
-        state: fails ? "fail" : "done", bundle: cluster.length,
-        title: `bundle of ${cluster.length} attempts · ${fails} rejected · attempt ledger`,
-      });
-    } else out.push(...cluster);
-    cluster = [];
-  };
-  for (const it of items) {
-    const narrow = it.r - it.l < MINW;
-    if (cluster.length && (it.l - cluster[cluster.length - 1].r > MAXGAP || !narrow)) flush();
-    if (narrow) cluster.push(it); else out.push(it);
-  }
-  flush();
-  // final clamp: acceptance is 0 overlapping segments
-  out.sort((p, q) => p.l - q.l);
-  for (let i = 1; i < out.length; i++) {
-    if (out[i].l < out[i - 1].r) {
-      out[i].l = out[i - 1].r + 0.1;
-      out[i].r = Math.max(out[i].r, out[i].l + 0.5);
-    }
-  }
-  return out;
-}
-
-const SEG_STYLE: Record<Seg["state"], React.CSSProperties> = {
-  done: { background: "color-mix(in oklab, var(--ok) 12%, transparent)", border: `1px solid color-mix(in oklab, var(--ok) 45%, transparent)`, color: TONE.ok },
-  fail: { background: "color-mix(in oklab, var(--err) 10%, transparent)", border: `1px solid color-mix(in oklab, var(--err) 45%, transparent)`, color: TONE.err },
-  open: { background: "color-mix(in oklab, var(--brand) 10%, transparent)", border: `1px solid var(--brand)`, color: TONE.accent },
-  uncounted: { background: "color-mix(in oklab, var(--muted) 8%, transparent)", border: `1px solid var(--line)`, color: TONE.muted },
-};
 
 // ---------- loop card chain SVG ----------
 
@@ -254,32 +132,16 @@ const HEALTH_TONE: Record<string, string> = {
 export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: Props) {
   const { error, view } = useLoopViewResource({ liveEvents, liveState, projectId });
   const [openLoop, setOpenLoop] = useState<string>("");
-  const [openTask, setOpenTask] = useState<string>("");
+  const [openTask, setOpenTask] = useState<string | null>(null);
 
   const jumpToTask = (taskId: string) => {
-    setOpenTask(taskId);
-    document.getElementById(`loop-row-${taskId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const index = view?.tasks.findIndex((task) => task.id === taskId) ?? -1;
+    if (index < 0) return;
+    const key = timelineTaskKey(view!.tasks[index]);
+    setOpenTask(key);
+    document.getElementById(`loop-row-${encodeURIComponent(key)}`)?.scrollIntoView({ block: "center", behavior: "instant" });
   };
-
-  const timeline = useMemo(() => {
-    if (!view) return null;
-    const times: number[] = [];
-    for (const task of view.tasks) {
-      for (const a of task.attempts) {
-        const t0 = ts(a.started_ts);
-        if (Number.isFinite(t0)) times.push(t0);
-        if (a.terminal) {
-          const t1 = ts(a.terminal.ts);
-          if (Number.isFinite(t1)) times.push(t1);
-        }
-      }
-    }
-    if (!times.length) return null;
-    const { spans, breaks } = buildSpans(times);
-    const X = makeX(spans);
-    const endT = Math.max(...times);
-    return { spans, breaks, X, endT };
-  }, [view]);
+  useEffect(() => setOpenTask(null), [projectId, view?.run.run_id, view?.run.first_ts]);
 
   useEffect(() => {
     // archived run defaults to post-mortem: all cards expanded is too loud;
@@ -295,7 +157,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
   }
   if (!view) return <div className="loop-v2-page loop-v2-state">Loading loop view…</div>;
 
-  const { run, loops, stages, tasks, faults, companions, pump } = view;
+  const { run, loops, stages, faults, companions } = view;
   const backflows = view.backflows ?? [];
 
   const card: React.CSSProperties = {
@@ -567,93 +429,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
         ) : null}
       </div>
 
-      {/* attempt timeline */}
-      <div style={card}>
-        <div style={h3}>Loop timeline
-          <span style={{ textTransform: "none", letterSpacing: 0, color: TONE.faint }}>
-            {" "}· one row per task · one segment per counted attempt · idle gaps compressed
-            {tasks[0]?.source === "task_attempts.json" ? " · source: attempt ledger (spine)" : " · source: events"}
-          </span>
-        </div>
-        {timeline ? (
-          <div style={{ marginTop: 10 }}>
-            <div className="loop-v2-timeline-axis" style={{ position: "relative", height: 14, fontSize: 10, color: TONE.faint, fontFamily: "var(--font-mono, monospace)" }}>
-              {/* gap 压缩后刻度挤在右端、和右对齐的 now/end 标签叠成一坨
-                  (2026-07-13 cangjie-r14 实测)。按最小间距去重 + 右端留白给
-                  now 标签,只渲染读得清的一组。 */}
-              {(() => {
-                const MIN_GAP = 6;        // % — 相邻刻度最小间距(标签 ~30px/轴 ~1000px)
-                const RIGHT_RESERVE = 12; // % — 右端留给 now/end 标签
-                let lastX = -Infinity;
-                return timeline.spans
-                  .filter((s) => s.xa <= 100 - RIGHT_RESERVE)
-                  .filter((s) => { if (s.xa - lastX >= MIN_GAP) { lastX = s.xa; return true; } return false; })
-                  .map((s) => (
-                    <span key={s.xa} style={{ position: "absolute", left: `${s.xa}%`, whiteSpace: "nowrap" }}>
-                      {new Date(s.a).toISOString().slice(11, 16)}
-                    </span>
-                  ));
-              })()}
-              <span style={{ position: "absolute", right: 0, whiteSpace: "nowrap" }}>
-                {run.latched ? "end" : "now"} {new Date(timeline.endT).toISOString().slice(11, 16)} UTC
-              </span>
-            </div>
-            <div style={{ position: "relative" }}>
-              {timeline.breaks.map((b) => (
-                <div key={b.x} title={`idle ${fmtDur(b.ms)} (compressed)`} style={{
-                  position: "absolute", top: 0, bottom: 0, left: `${b.x}%`, width: `${BREAK_W}%`,
-                  background: "repeating-linear-gradient(90deg, color-mix(in oklab, var(--muted) 12%, transparent) 0 6px, transparent 6px 12px)",
-                }} />
-              ))}
-              {tasks.map((task) => {
-                const segs = taskSegments(task, timeline.X, timeline.endT);
-                const uncounted = task.attempts.length - task.counted;
-                const opened = openTask === task.id;
-                return (
-                  <div className="loop-v2-timeline-task" key={task.id} id={`loop-row-${task.id}`} data-testid="loop-task-row"
-                    onClick={() => setOpenTask(opened ? "" : task.id)}
-                    style={{
-                      padding: "4px 0", cursor: "pointer", borderRadius: 6,
-                      background: opened ? "color-mix(in oklab, var(--brand) 5%, transparent)" : undefined,
-                    }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div className="loop-v2-timeline-label">
-                        {task.id}
-                        <span className="loop-v2-timeline-meta">
-                          {task.counted} att · {task.fails}✗{uncounted ? ` · ${uncounted} uncounted` : ""}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="loop-v2-timeline-track" style={{ position: "relative", height: 22 }}>
-                      {segs.map((seg, i) => (
-                        <span key={i} title={seg.title} data-testid="loop-seg" style={{
-                          position: "absolute", left: `${seg.l}%`, width: `${Math.max(seg.r - seg.l, 0.6)}%`,
-                          top: 2, bottom: 2, borderRadius: 4, fontSize: 9.5, overflow: "hidden",
-                          fontFamily: "var(--font-mono, monospace)", display: "flex", alignItems: "center",
-                          paddingLeft: 4, whiteSpace: "nowrap",
-                          ...SEG_STYLE[seg.state],
-                        }}>
-                          {seg.bundle ? `×${seg.bundle}` : seg.r - seg.l > 3.5 ? (seg.state === "open" ? "open" : "") : ""}
-                        </span>
-                      ))}
-                    </div>
-                    {opened ? <LoopAttemptDrawer task={task} /> : null}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 10.5, color: TONE.faint, marginTop: 8 }}>
-              <span>green = completed · red = rejected · blue = open (lease view) · grey = superseded/uncounted (E5)</span>
-              <span>×N = bundled attempt churn</span>
-              <span>pump: {pump.total} ticks not rendered (mechanical loop, outside the census){pump.lag_warnings ? ` · lag ⚠×${pump.lag_warnings}` : ""}</span>
-            </div>
-          </div>
-        ) : (
-          <div style={{ marginTop: 10, fontSize: 12.5, color: TONE.muted }}>
-            No attempts recorded yet — the loop timeline appears with the first dispatch.
-          </div>
-        )}
-      </div>
+      <LoopTimeline key={`${projectId}:${run.run_id ?? run.first_ts}`} view={view} openTask={openTask} onOpenTask={setOpenTask} />
 
       {/* event -> subscriber (131 §8.1, collapsed) */}
       {(view.subscriber_chains ?? []).length ? (
