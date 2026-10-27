@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { installUiFixture } from "./ui-alignment.fixture";
 
-test("Kanban Agent shows one rounded focus ring for the composer", async ({ page }) => {
+test("Kanban Agent keeps the composer border unchanged while typing", async ({ page }) => {
   test.setTimeout(90_000);
   const { writes, errors } = await installUiFixture(page);
   await page.route("**/webchat/runtime**", route => route.fulfill({ json: {
@@ -20,12 +20,17 @@ test("Kanban Agent shows one rounded focus ring for the composer", async ({ page
     await expect(input).toBeVisible({ timeout: 30_000 });
     await expect(input).toBeEnabled();
     await input.blur();
-    const previousShadow = await composer.evaluate(element => getComputedStyle(element).boxShadow);
+    const previousStyle = await composer.evaluate(element => ({
+      borderColor: getComputedStyle(element).borderColor,
+      boxShadow: getComputedStyle(element).boxShadow,
+    }));
     await input.focus();
     await expect(input).toBeFocused();
+    await input.fill("Test message");
+    await expect(input).toHaveValue("Test message");
     await expect(input).toHaveCSS("outline-style", "none");
-    await expect(composer).not.toHaveCSS("box-shadow", "none");
-    await expect.poll(() => composer.evaluate(element => getComputedStyle(element).boxShadow)).not.toBe(previousShadow);
+    await expect(composer).toHaveCSS("border-color", previousStyle.borderColor);
+    await expect(composer).toHaveCSS("box-shadow", previousStyle.boxShadow);
   }
   expect(writes).toEqual([]);
   expect(errors).toEqual([]);
