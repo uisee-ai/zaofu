@@ -132,3 +132,33 @@ docker run --rm --network host \
 验收：展开与收起 -> verify: 252px / 52px、顶栏与内容起点同步；刷新及图标导航 -> verify: 状态保留且原菜单顺序不变；移动抽屉 -> verify: 焦点、遮罩、Escape、导航和断点切换正确；现有三个模块 -> verify: 原浏览器用例通过。对应 `web/tests/workspace-rail.spec.ts`，证据目录 `/tmp/zf-ui-sidebar-20261026-1618/`。
 
 验证结果：`dev-verify.py plan/run --base dev` 通过 docs / web_ui 闭包，含 8 个 instruction contract、前端 typecheck / unit；Vite 构建与 bundle budget 通过（39 chunks，最大 446084 bytes）。Docker Playwright `workspace-rail.spec.ts`、`ui-alignment.spec.ts`、`kanban-toolbar.spec.ts` 共 **10 passed**，覆盖收放、刷新、存储失败、移动焦点和既有模块回归；token lint 与 diff 检查通过。截图经目视复核后同步至 8019 预览。
+
+## 2026-10-26 全工作区排版扩展
+
+用户批准按 Overview → Agents → Delivery → Workflows → Automations → Traces / Loop → Channels 全部优化，并校准 Tasks / Inbox / Settings。参考只用于视觉与交互结构，保留当前项目范围、真实字段、受控动作、原侧栏菜单顺序与收放行为。
+
+- 共用内容页采用 Geist、24px 页标题、13.5px 正文、12.5px 辅助文字、24px 内容边距、16px 分区间距、浅边框。Overview 最大宽度 1160px；表格、时间线和会话使用可用宽度。
+- Overview：四项摘要（工作队列、交付进度、活跃运行、用量）；主栏为待处理与交付进展，辅助栏为运行概况、状态分布和近期动态。项目说明两行展开；时间与权限可读，技术详情折叠。保留 pulse 先于 snapshot 展示、未知值与零值区分、成本精度提示。
+- Agents：摘要＋筛选后的 Fleet 表格＋选中 Worker 详情，常用列优先；效率和恢复数据进入 Advanced，空态与加载状态明确。
+- Delivery：简化状态头，Attention 与进度/最近执行按主次两栏排列，保留 Overview / Runs / Graph、证据与动作入口。
+- Workflows：沿用请求列表＋审批详情；扩大可读列表宽度、统一标题与标签。完整流程图默认折叠，展开后加载；含 `graph` / `node` 的深链接自动展开。审批、预览讨论和图工作台操作沿用原受控路径。
+- Automations：自动化目录与当前状态为入口，先控制与执行健康，再报告/运行记录；分析矩阵折叠，原 Run now 权限和行为不变。
+- Traces / Loop：统一标题、工具栏、卡片，保留有界索引、时间线、原始证据和下钻。
+- Channels：统一页头和流程导航，控制消息/输入区阅读宽度；保持历史、审批、文件、消息发送及抽屉。
+- Tasks / Inbox / Settings：以已验收布局为基准校准控件、焦点、深色和紧凑密度；不改变既有三视图几何和审批语义。
+
+验收：逐页桌面 / 窄屏截图 -> verify: 标题与边距一致、无页面横向溢出；摘要和详情操作 -> verify: 原导航、筛选、展开与权限行为保留；加载 / 空态 / populated 状态 -> verify: 不以零伪装缺失数据；现有 UI 测试和新增模块测试 -> verify: mock API 覆盖动作与零意外写请求，真实预览只读。实施完成后更新 8019 生产预览，focused verification、实现提交和任务归档分别记录。
+
+实现补充：Overview 近期动态通过当前项目的 `/events?limit=5` 独立读取，与 SSE 按 seq 合并，按新到旧显示；不阻塞 pulse/snapshot，不发起无项目范围的请求。Agents 详情使用原生 dialog，保留 Escape、焦点返回与 Worker 动作权限。Channels 流程导航、消息与输入区共用 820px 阅读列，维持审批侧栏与窄屏布局。
+
+真实项目复核发现 Agents 读取接口超过 30 秒仍无响应。UI 为自己的读取请求增加 20 秒取消边界：加载、空列表、读取失败分开显示；失败时不显示零 Worker/健康状态，提供只读重试。切换项目或离开页面时取消旧请求，Cockpit 辅助读取不覆盖 Agent 列表的失败状态。此批不修改后台投影的计算或运行状态。
+
+### 本批验收结果
+
+- `python scripts/dev-verify.py plan --base dev` 与 `run --base dev`：docs / web_ui 闭包通过，8 个 instruction contract、前端 typecheck 与 63 个单元测试文件通过。
+- `node node_modules/vite/bin/vite.js build --outDir /tmp/zf-ui-pages-20261026-2337/dist-complete` 与 bundle budget：39 chunks，最大 450236 bytes，小于 500000 限额；token lint、bundle budget 自测与 `git diff --check` 通过。
+- Docker Playwright 共 **26 个不同用例**验收通过：`ui-alignment` / `workspace-rail` / `kanban-toolbar` 10 个；`channel-chat-layout` / `dashboard-pulse-first` / `loop-page` / `traces-page` 6 个；新增 `workspace-pages` 10 个。使用 `mcp/playwright:latest`、host network、8020 预览、1 worker；最终运行采用 90 秒单例预算。
+- 初轮发现并修复 Channels 导航与输入区对齐、Worker 详情关闭后的焦点返回；Agents / Workflow 测试夹具补齐独立读取与 Preview context 字段。Traces 在默认 20 秒总预算内未完成，保持原断言以 90 秒预算复跑通过。每次只复跑修订影响的用例，最终日志见 `browser-final.log`、`browser-agents-complete.log`，既有三个模块与侧栏结果见 `browser-regression.log`。
+- 截图与日志目录：`/tmp/zf-ui-pages-20261026-2337/`。逐页检查桌面、360/390px 窄屏与深色画面；Tasks / Inbox / Settings 的密度、语言、时区和偏好持久化使用原回归用例验证。
+- 真实 `loshu-fms` 项目：Overview、Tasks、Appearance 正常展示；Agents 接口超时会显示未知值和重试，未伪装为空列表。只读复核无前端异常、无非 GET 业务请求、无页面横向溢出。当前后台投影读取的耗时问题仍存在，未在 UI 批次中改动运行状态。
+- 8019 已更新为上述验证构建，首页内容与构建索引一致；保留旧哈希资源，避免已打开标签页加载旧模块时出现 404。

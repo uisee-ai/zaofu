@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   clarifyWorkflowRequest,
@@ -46,7 +46,7 @@ import {
 import { WorkflowPreviewReview } from "./WorkflowPreviewReview";
 import { WorkflowClarificationPanel } from "./WorkflowClarificationPanel";
 import { LatestRequestGate } from "../../app/latestRequestGate";
-const WorkflowGraphWorkbench = lazy(() => import("./WorkflowGraphWorkbench"));
+import { WorkflowGraphDisclosure } from "./WorkflowGraphDisclosure";
 import {
   diagnosticSeverity,
   expectedOutputLabel,
@@ -353,11 +353,9 @@ export function WorkflowProposalPage({
           </aside>
 
           <main className="workflow-proposal-detail">
-            {detail && selectedId && <Suspense fallback={<p>正在载入图工作台…</p>}>
-              <WorkflowGraphWorkbench projectId={projectId} requestId={selectedId}
+            {detail && selectedId && <WorkflowGraphDisclosure key={`${projectId}:${selectedId}`} projectId={projectId} requestId={selectedId}
                 revision={`${detail.result?.revision}:${detail.result?.proposal_digest}`}
-                onAction={onAction} actionReady={actionReady} />
-            </Suspense>}
+                onAction={onAction} actionReady={actionReady} />}
             {detail ? (
               <WorkflowPreviewReview detail={detail} projectId={projectId} disabled={!actionReady}
                 onBusy={(busy) => { reviewBusy.current = busy; setBusyAction(busy ? "preview-review" : ""); }}

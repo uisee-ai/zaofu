@@ -10,6 +10,7 @@ import "./styles.css";
 import "./cockpit.css";
 import "./styles/28-workbench.css";
 import "./styles/29-workspace-shell.css";
+import "./styles/30-workspace-pages.css";
 
 const AgentSessionFixturePage = React.lazy(() => (
   import("./components/agent-session/AgentSessionFixturePage").then((module) => ({

@@ -1,0 +1,273 @@
+/* 内容页共享阅读节奏；任务工作区沿用 28-workbench 的几何基线。 */
+.workspace-page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.workspace-page-heading h2,
+.board-panel:is([data-page="agents"], [data-page="automations"]) > .projection-scroll > .section-heading h2,
+.delivery-trace-page > .section-heading h2, .workflow-proposal-toolbar h2,
+.traces-heading h2, .loop-v2-page-heading h2 {
+  font-size: var(--text-24); line-height: 1.2; font-weight: 600; letter-spacing: -.022em; text-transform: none;
+}
+.workspace-page-heading p { margin-top: 6px; font-size: var(--text-12-5); }
+.workspace-stat-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+.workspace-stat { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; text-align: left; border: 0; border-radius: 0; background: transparent; color: var(--text); min-width: 0; }
+.workspace-stat + .workspace-stat { border-left: 1px solid var(--line); }
+.workspace-stat:hover { background: var(--surface-2); }
+.workspace-stat > span { color: var(--text-secondary); font-size: var(--text-12-5); }
+.workspace-stat strong { font-size: var(--text-24); font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.workspace-stat small { color: var(--text-tertiary); font-size: var(--text-12); overflow-wrap: anywhere; }
+.workspace-text-link { border: 0; background: none; padding: 0; text-align: left; color: var(--text); font: inherit; }
+.workspace-text-link:hover { color: var(--brand); text-decoration: underline; }
+.workspace-list-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 0 14px; }
+.workspace-search { display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 6px; padding: 0 9px; color: var(--muted-foreground); min-width: 0; }
+.workspace-search input { width: 210px; min-width: 0; border: 0; background: transparent; padding: 5px 0; min-height: 28px; font-size: var(--text-12-5); }
+.workspace-segments { display: flex; padding: 2px; border-radius: 6px; background: var(--sunken); }
+.workspace-segments button { border: 0; border-radius: 5px; background: transparent; padding: 4px 9px; font-size: var(--text-12-5); color: var(--text-secondary); }
+.workspace-segments button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 3px var(--shadow); color: var(--text); }
+.workspace-segments span { margin-left: 4px; color: var(--text-tertiary); }
+.workspace-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.workspace-data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: var(--text-13); }
+.workspace-data-table th { padding: 10px 14px; color: var(--text-secondary); font-size: var(--text-12-5); font-weight: 500; white-space: nowrap; }
+.workspace-data-table td { border-top: 1px solid var(--line-soft); padding: 12px 14px; }
+.workspace-data-table tr:hover td { background: var(--surface-2); }
+.workspace-empty-inline { padding: 24px 14px; color: var(--text-secondary); text-align: center; }
+.workspace-disclosure { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.workspace-disclosure > summary { cursor: pointer; font-size: var(--text-12-5); color: var(--text-secondary); }
+.workspace-disclosure[open] > summary { margin-bottom: 16px; }
+.workspace-view-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--line); }
+.workspace-view-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 10px 0; color: var(--text-secondary); font-size: var(--text-13); }
+.workspace-view-tabs button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--text); }
+
+/* Overview: action-first main column, compact contextual column. */
+.overview-dashboard { width: 100%; max-width: 1160px; margin-inline: auto; padding: 28px 24px 40px; flex: 1; }
+.overview-heading { margin-bottom: 20px; }
+.overview-heading h2 { margin-top: 5px; }
+.overview-eyebrow { color: var(--text-secondary); font-size: var(--text-12-5); }
+.overview-description { display: flex; align-items: flex-start; gap: 12px; margin: -4px 0 20px; color: var(--text-secondary); }
+.overview-description p { flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: var(--text-13); line-height: 1.6; overflow-wrap: anywhere; }
+.overview-description.is-open p { display: block; }
+.overview-description button { display: flex; align-items: center; gap: 4px; flex-shrink: 0; background: none; border: 0; color: var(--text-secondary); padding: 2px 0; font-size: var(--text-12); }
+.overview-metrics { margin-bottom: 16px; }
+.overview-columns { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); align-items: start; gap: 16px; }
+.overview-main, .overview-aside { display: grid; align-content: start; gap: 16px; min-width: 0; }
+.overview-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.overview-card h3 { font-size: var(--text-13-5); font-weight: 600; text-transform: none; letter-spacing: 0; }
+.overview-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.overview-card-heading button { display: flex; align-items: center; gap: 4px; border: 0; padding: 0; background: none; color: var(--text-secondary); font-size: var(--text-12); white-space: nowrap; }
+.overview-card-heading button:hover { color: var(--text); }
+.overview-card-empty { margin: 0; color: var(--text-tertiary); font-size: var(--text-12-5); line-height: 1.6; }
+.overview-card.project-focus-section { gap: 12px; }
+.overview-card .inline-heading { padding: 0; border: 0; }
+.overview-card .compact-list { gap: 0; }
+.overview-card.project-focus-section .inline-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: baseline; gap: 5px 9px; border: 0; border-radius: 0; border-top: 1px solid var(--line-soft); background: transparent; padding: 12px 0; }
+.overview-card.project-focus-section .inline-row:first-child { border-top: 0; padding-top: 0; }
+.overview-card.project-focus-section .inline-row:last-child { padding-bottom: 0; }
+.overview-card.project-focus-section .inline-row > strong { font-size: var(--text-13); font-weight: 500; }
+.overview-card.project-focus-section .project-focus-body { grid-column: 2 / -1; grid-row: 2; line-height: 1.5; font-size: var(--text-12-5); overflow-wrap: anywhere; }
+.overview-card.project-focus-section .inline-row > .muted:last-child { font-size: var(--text-12); }
+.overview-focus-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted-foreground); }
+.overview-focus-dot.tone-warn { background: var(--warn); }
+.overview-focus-dot.tone-err { background: var(--err); }
+.overview-delivery-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 0; background: none; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; text-align: left; color: var(--text); }
+.overview-delivery-row > span:first-child { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.overview-delivery-row strong { font-weight: 500; font-size: var(--text-13); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overview-delivery-row small { color: var(--text-tertiary); font-size: var(--text-11); }
+.overview-delivery-row:hover strong { color: var(--brand); }
+.overview-state { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 4px; font-size: var(--text-11); line-height: 1.5; background: var(--sunken); color: var(--text-secondary); white-space: nowrap; }
+.overview-state.state-done, .overview-state.state-shipped { background: var(--ok-subtle); color: var(--ok); }
+.overview-state.state-blocked { background: var(--err-subtle); color: var(--err); }
+.overview-state.state-in_progress { background: var(--brand-subtle); color: var(--brand); }
+.overview-dashboard .pulse-band-section { padding: 0; border: 0; }
+.overview-dashboard .pulse-band, .overview-dashboard .task-flow-band { padding: 0; border: 0; background: transparent; }
+.overview-runtime .pulse-band { display: grid; gap: 12px; }
+.overview-dashboard .pulse-band-label { display: none; }
+.overview-runtime .pulse-band-item { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.overview-runtime .pulse-band-item > .muted { font-size: var(--text-12-5); }
+.overview-runtime-details { margin-top: 14px; border-top: 1px solid var(--line-soft); padding-top: 12px; color: var(--text-secondary); font-size: var(--text-12); }
+.overview-runtime-details summary { cursor: pointer; }
+.overview-runtime-details dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.overview-runtime-details dd { margin: 0; text-align: right; }
+.overview-flow .task-flow-chain-rail { gap: 5px; }
+.overview-flow .task-flow-node { flex: 1 0 92px; width: auto; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: var(--text-12); }
+.overview-flow .task-flow-node-line { flex-wrap: wrap; gap: 4px; }
+.overview-flow .task-flow-edge { min-width: 56px; flex: 0 0 56px; }
+.overview-flow .task-flow-edge-label { font-size: var(--text-10); }
+.overview-flow .task-flow-meta { flex-wrap: wrap; }
+.overview-status-bar { display: flex; height: 8px; gap: 2px; border-radius: 4px; overflow: hidden; margin-bottom: 10px; background: var(--sunken); }
+.overview-status-bar i { min-width: 0; }
+.overview-dashboard .status-ready { background: var(--muted-foreground); }
+.overview-dashboard .status-in_progress { background: var(--brand); }
+.overview-dashboard .status-testing { background: var(--warn); }
+.overview-dashboard .status-blocked { background: var(--err); }
+.overview-dashboard .status-done { background: var(--ok); }
+.overview-status-row { display: flex; align-items: center; width: 100%; gap: 8px; padding: 5px 0; background: none; border: 0; color: var(--text-secondary); font-size: var(--text-12-5); }
+.overview-status-row > i { width: 7px; height: 7px; border-radius: 50%; }
+.overview-status-row > span { flex: 1; text-align: left; }
+.overview-status-row strong { font-weight: 500; font-variant-numeric: tabular-nums; }
+.overview-activity-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; border-top: 1px solid var(--line-soft); padding: 10px 0; font-size: var(--text-12); }
+.overview-activity-row > span { min-width: 0; display: grid; gap: 3px; }
+.overview-activity-row strong { font-weight: 500; overflow-wrap: anywhere; }
+.overview-activity-row small, .overview-activity-row time { font-size: var(--text-11); color: var(--text-tertiary); }
+.overview-activity-row time { white-space: nowrap; }
+
+/* Agents and Automations use the same page rhythm and table treatment. */
+.board-panel:is([data-page="agents"], [data-page="automations"]) > .projection-scroll { padding: 28px 24px 40px; }
+.board-panel:is([data-page="agents"], [data-page="automations"]) > .projection-scroll > .section-heading { border: 0; padding: 0 0 20px; background: transparent; }
+.board-panel:is([data-page="agents"], [data-page="automations"]) > .projection-scroll > .section-heading .muted { display: block; font-size: var(--text-12-5); margin-top: 6px; }
+.board-panel[data-page="agents"] .agent-fleet-summary-grid { margin: 0 0 20px; padding: 0; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.board-panel[data-page="agents"] .runtime-summary-card { border: 0; border-left: 1px solid var(--line); border-radius: 0; background: var(--panel); padding: 14px 16px; }
+.board-panel[data-page="agents"] .runtime-summary-card:first-child { border-left: 0; }
+.board-panel[data-page="agents"] .runtime-summary-card strong { font-size: var(--text-20); font-weight: 600; }
+.board-panel[data-page="agents"] .runtime-summary-card > span { font-size: var(--text-12-5); }
+.board-panel[data-page="agents"] .subsection { border: 0; border-radius: 0; padding: 0; margin-bottom: 20px; }
+.board-panel[data-page="agents"] .inline-heading { border: 0; padding: 0 0 12px; }
+.board-panel[data-page="agents"] .inline-heading h2, .board-panel[data-page="agents"] .inline-heading h3 { text-transform: none; font-size: var(--text-13-5); font-weight: 600; }
+.board-panel[data-page="agents"] .agent-attention-cockpit { padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.board-panel[data-page="agents"] .agent-attention-cockpit .empty-text { padding: 0; }
+.board-panel[data-page="agents"] .data-table { font-size: var(--text-12-5); }
+.agent-fleet-table { margin-bottom: 20px; }
+.fleet-agent-open { display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 0; color: var(--text); text-align: left; }
+.fleet-agent-open > span:last-child { display: grid; gap: 3px; }
+.fleet-agent-open strong { font-weight: 500; font-size: var(--text-13); }
+.fleet-agent-open small { color: var(--text-tertiary); font-size: var(--text-12); }
+.fleet-agent-icon { width: 30px; height: 30px; border-radius: 7px; background: var(--brand-subtle); color: var(--brand); display: grid; place-items: center; }
+.worker-detail-drawer { position: fixed; inset: 0 0 0 auto; margin: 0; padding: 24px; width: min(680px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-left: 1px solid var(--line); background: var(--panel); color: var(--text); overflow: auto; }
+.worker-detail-drawer::backdrop { background: #0005; }
+.worker-detail-drawer .agent-cockpit-panel { border: 0; padding: 0; }
+.worker-detail-drawer .inline-heading { flex-wrap: wrap; }
+.worker-detail-drawer .kv-grid { grid-template-columns: minmax(0, 1fr); }
+.automation-directory { display: grid; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
+.automation-directory > button { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 24px; border: 0; border-radius: 0; border-top: 1px solid var(--line-soft); background: var(--panel); padding: 12px 14px; text-align: left; color: var(--text); }
+.automation-directory > button:first-child { border-top: 0; }
+.automation-directory > button[aria-pressed="true"] { background: var(--brand-subtle); box-shadow: inset 2px 0 var(--brand); }
+.automation-directory-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.automation-directory-name > span { display: grid; gap: 3px; min-width: 0; }
+.automation-directory-name strong { font-size: var(--text-13); font-weight: 500; }
+.automation-directory-name small, .automation-directory-next { font-size: var(--text-12); color: var(--text-secondary); }
+.board-panel[data-page="automations"] .automation-dashboard { padding: 0; gap: 16px; }
+.board-panel[data-page="automations"] .automation-control-section { padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
+.board-panel[data-page="automations"] .automation-control-title h3 { font-size: var(--text-16); font-weight: 600; }
+.board-panel[data-page="automations"] .automation-control-grid { gap: 20px; }
+.board-panel[data-page="automations"] .automation-detail-card { border: 0; padding: 0; background: transparent; }
+.board-panel[data-page="automations"] .automation-detail-card .eyebrow { text-transform: none; font-size: var(--text-12-5); letter-spacing: 0; }
+.board-panel[data-page="automations"] .automation-report-nav { padding: 0; margin: 0; background: transparent; border-radius: 0; }
+.automation-report-content { grid-column: 1 / -1; min-width: 0; display: grid; gap: 16px; }
+.board-panel[data-page="automations"] .automation-glance-section { padding: 14px 16px; border-color: var(--line); background: var(--panel); }
+.board-panel[data-page="automations"] .automation-report-stats { gap: 0; border: 1px solid var(--line); border-radius: 10px; }
+
+.board-panel[data-page="automations"] .automation-report-stat { border: 0; border-left: 1px solid var(--line); border-radius: 0; background: var(--panel); padding: 12px; }
+.board-panel[data-page="automations"] .automation-report-stat:first-child { border-left: 0; }
+.board-panel[data-page="automations"] .automation-report-stat span { font-size: var(--text-11); text-transform: none; }
+
+/* Delivery: a compact status header and cards that fit their contents. */
+.delivery-trace-page { padding: 28px 24px 40px; background: var(--panel); }
+.delivery-trace-page > .section-heading { padding: 0 0 20px; border: 0; }
+.delivery-trace-page > .section-heading .muted { display: block; margin-top: 6px; font-size: var(--text-12-5); }
+.delivery-trace-page .dt-feature-selector { margin: 0 0 16px; padding: 0; border: 0; }
+.delivery-trace-page .delivery-cockpit-hero { padding: 14px; border-color: var(--line); background: var(--panel); border-radius: 10px; }
+.delivery-trace-page .delivery-cockpit-metrics { gap: 12px; }
+.delivery-trace-page .delivery-cockpit-metric { min-width: 0; }
+.delivery-trace-page .delivery-cockpit-metric > span { font-size: var(--text-11); text-transform: none; }
+.delivery-trace-page .delivery-mode-tabs { margin-bottom: 16px; }
+.delivery-overview .delivery-overview-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.delivery-overview .delivery-overview-card { min-height: 0; background: var(--panel); border-radius: 10px; }
+.delivery-overview .delivery-overview-card:first-child { grid-row: span 2; }
+.delivery-overview .delivery-overview-grid > .delivery-overview-card:last-child:nth-child(odd) { grid-column: 2; }
+.delivery-overview-card-head span { color: var(--text-secondary); text-transform: none; font-size: var(--text-12); }
+.delivery-overview .delivery-overview-metrics { display: flex; flex-wrap: wrap; gap: 16px; }
+.delivery-overview .delivery-overview-metric { flex: 1; min-width: 62px; border: 0; border-radius: 0; background: none; padding: 4px 0; min-height: 0; }
+.delivery-overview .delivery-overview-metric strong { font-size: var(--text-24); font-weight: 600; }
+.delivery-overview .delivery-overview-metric span { font-size: var(--text-12); font-weight: 400; text-transform: none; }
+.delivery-overview .delivery-attention-list { gap: 0; }
+.delivery-overview .delivery-attention-row { border-radius: 0; background: none; border-left-width: 2px; padding: 8px 10px; margin-bottom: 10px; }
+.delivery-overview .delivery-attention-row:last-child { margin-bottom: 0; }
+
+.delivery-overview .delivery-overview-note { color: var(--text-secondary); line-height: 1.5; }
+
+/* Workflow inbox keeps its approval and graph workbench. */
+.workflow-proposal-page { background: var(--panel); }
+.workflow-proposal-toolbar { padding: 28px 24px 20px; border: 0; }
+.workflow-proposal-toolbar .muted { font-size: var(--text-12-5); margin-top: 3px; }
+.workflow-view-tabs { padding-inline: 24px; gap: 20px; min-height: 37px; }
+.workflow-view-tabs button { min-height: 37px; font-size: var(--text-13); }
+.workflow-view-tabs button.active { border-bottom-color: var(--text); }
+.workflow-proposal-workbench { grid-template-columns: 300px minmax(0, 1fr); }
+.workflow-request-list { background: var(--panel); }
+.workflow-request-row { padding: 16px; }
+.workflow-request-row-head strong { font-size: var(--text-13-5); font-weight: 500; white-space: normal; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.workflow-request-row small { font-size: var(--text-12); }
+.workflow-proposal-detail { padding: 24px; min-width: 0; }
+.workflow-proposal-detail-head h3 { font-size: var(--text-18); line-height: 1.4; font-weight: 600; }
+.workflow-proposal-section { border-color: var(--line); border-radius: 10px; }
+.workflow-proposal-detail .eyebrow { font-size: var(--text-12); text-transform: none; letter-spacing: 0; }
+
+/* Monitoring pages retain full-width diagrams and bounded trace inspection. */
+.trace-index-context { padding: 28px 24px; }
+.traces-heading { margin-bottom: 20px; }
+.traces-heading p { font-size: var(--text-12-5); }
+.trace-toolbar { gap: 10px; margin-bottom: 14px; }
+.trace-index-panel { border-radius: 10px; }
+.trace-table th { font-size: var(--text-12-5); font-weight: 500; }
+.trace-table td { font-size: var(--text-13); }
+.board-panel[data-page="behavior-loop"] .loop-v2-page { padding: 28px 24px 40px; background: var(--panel); }
+.board-panel[data-page="behavior-loop"] .loop-v2-page-heading { padding: 0 0 20px; border: 0; margin-bottom: 0; }
+.loop-v2-page-heading .muted { font-size: var(--text-12-5); display: block; margin-top: 6px; }
+.loop-v2-page .section-title { font-size: var(--text-13); text-transform: none; letter-spacing: 0; }
+.loop-v2-page > section { border-radius: 10px; margin-bottom: 16px; }
+
+/* Channels keep a stable composer and a readable conversation column. */
+.board-panel[data-page="channels"] .channel-shell-header { padding: 20px 24px 0; gap: 12px; }
+.board-panel[data-page="channels"] .channel-title-row { gap: 12px; }
+.board-panel[data-page="channels"] .channel-title-button { font-size: var(--text-20); font-weight: 600; }
+.board-panel[data-page="channels"] .channel-timeline { padding-inline: max(24px, calc((100% - 820px) / 2)); }
+.board-panel[data-page="channels"] .agent-turn-list { width: 100%; max-width: 820px; margin-inline: auto; }
+.board-panel[data-page="channels"] .channel-message-body { font-size: var(--text-13-5); line-height: 1.65; }
+.board-panel[data-page="channels"] .channel-composer { margin: 12px auto 16px; border-radius: 10px; box-shadow: none; }
+.board-panel[data-page="channels"] .channel-composer-input { font-size: var(--text-13-5); line-height: 1.6; }
+.board-panel[data-page="channels"] .channel-composer-toolbar { gap: 6px; }
+
+/* Calibration: a common control font and visible keyboard focus. */
+.board-panel:is([data-page="board"], [data-page="inbox"], [data-page="settings"]) :is(input, select, textarea, button) { font-family: var(--font-sans); }
+.board-panel :is(button, a, summary, input, select, textarea):focus-visible,
+.worker-detail-drawer :is(button, summary):focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.general-settings-nav button, .inbox-category-tabs button, .workbench-view-tab { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1100px) {
+  .overview-columns { grid-template-columns: minmax(0, 1fr); }
+  .overview-aside { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-activity { grid-column: 1 / -1; }
+  .workflow-proposal-workbench { grid-template-columns: 250px minmax(0, 1fr); }
+  .board-panel[data-page="agents"] .agent-fleet-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 980px) {
+  .app-shell:has(.board-panel:is([data-page="project"], [data-page="agents"], [data-page="automations"], [data-page="workflows"], [data-page="delivery"], [data-page="delivery-trace"], [data-page="delivery-graph"], [data-page="behavior-loop"], [data-page="traces"])) { height: 100dvh; min-height: 100dvh; overflow: hidden; }
+}
+@media (max-width: 720px) {
+  .overview-dashboard, .board-panel:is([data-page="agents"], [data-page="automations"]) > .projection-scroll,
+  .delivery-trace-page, .board-panel[data-page="behavior-loop"] .loop-v2-page, .trace-index-context { padding: 20px 16px 28px; }
+  .workspace-page-heading { flex-wrap: wrap; }
+  .workspace-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-stat:nth-child(3) { border-left: 0; }
+  .workspace-stat:nth-child(n+3) { border-top: 1px solid var(--line); }
+  .overview-aside { grid-template-columns: minmax(0, 1fr); }
+  .overview-card.project-focus-section .inline-row { grid-template-columns: 8px minmax(0, 1fr); }
+  .overview-card.project-focus-section .inline-row > .muted:last-child { grid-column: 2; }
+  .overview-description { flex-direction: column; gap: 4px; }
+  .board-panel[data-page="agents"] .agent-fleet-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .board-panel[data-page="agents"] .runtime-summary-card { border-top: 1px solid var(--line-soft); padding: 12px; }
+  .workspace-data-table { min-width: 680px; }
+  .worker-detail-drawer { padding: 16px; }
+  .automation-directory > button { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .automation-directory-next { grid-column: 1; grid-row: 2; }
+  .automation-directory > button > .overview-state { grid-column: 2; grid-row: 1 / 3; }
+  .board-panel[data-page="automations"] .automation-control-grid { grid-template-columns: minmax(0, 1fr); }
+  .delivery-overview .delivery-overview-grid { grid-template-columns: minmax(0, 1fr); }
+  .delivery-overview .delivery-overview-card:first-child { grid-row: auto; }
+  .delivery-overview .delivery-overview-grid > .delivery-overview-card:last-child:nth-child(odd) { grid-column: 1; }
+  .workflow-proposal-toolbar { padding: 20px 16px 16px; }
+  .workflow-view-tabs { padding-inline: 16px; }
+  .workflow-proposal-workbench { grid-template-columns: minmax(0, 1fr); }
+  .workflow-request-list { max-height: 220px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .workflow-proposal-detail { padding: 16px; }
+  .board-panel[data-page="channels"] .channel-shell-header { padding: 16px 16px 0; }
+  .board-panel[data-page="channels"] .channel-timeline { padding-inline: 16px; }
+  .board-panel[data-page="channels"] .channel-composer { margin-block: 8px; }
+}

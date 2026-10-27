@@ -299,12 +299,12 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
   const backflows = view.backflows ?? [];
 
   const card: React.CSSProperties = {
-    background: "var(--panel)", border: `1px solid ${TONE.line}`, borderRadius: 8,
-    padding: "14px 18px", marginBottom: 12,
+    background: "var(--panel)", border: `1px solid ${TONE.line}`, borderRadius: 10,
+    padding: "14px 16px", marginBottom: 16,
   };
   const h3: React.CSSProperties = {
-    margin: 0, fontSize: 11, fontWeight: 600, letterSpacing: ".08em",
-    textTransform: "uppercase", color: TONE.muted,
+    margin: 0, fontSize: "var(--text-13-5)", fontWeight: 600, letterSpacing: 0,
+    color: "var(--text)",
   };
   const chip: React.CSSProperties = {
     display: "inline-flex", gap: 6, alignItems: "center", padding: "3px 10px",

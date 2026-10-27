@@ -1071,16 +1071,16 @@ export function getRoles(projectId?: string): Promise<RoleSummary[]> {
   return requestJson<RoleSummary[]>(`${projectPrefix(projectId)}/roles`);
 }
 
-export function getAgents(projectId?: string): Promise<AgentSummary[]> {
-  return requestJson<AgentSummary[]>(`${projectPrefix(projectId)}/agents`);
+export function getAgents(projectId?: string, signal?: AbortSignal): Promise<AgentSummary[]> {
+  return requestJson<AgentSummary[]>(`${projectPrefix(projectId)}/agents`, { signal });
 }
 
-export function getAgentCockpit(projectId?: string): Promise<Record<string, unknown>> {
-  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/agent-cockpit`);
+export function getAgentCockpit(projectId?: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/agent-cockpit`, { signal });
 }
 
-export function getAgentLive(projectId?: string): Promise<Record<string, unknown>> {
-  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/agent-live`);
+export function getAgentLive(projectId?: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/agent-live`, { signal });
 }
 
 export function getRuntime(projectId?: string): Promise<RuntimeSummary> {

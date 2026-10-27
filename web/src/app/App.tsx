@@ -104,6 +104,7 @@ import type { AgentConversation, AgentProviderCapability, AgentSessionActionProp
 import { BOARD_COLUMNS, isBoardColumnId, activeWorkflowColumn, taskColumn } from "../components/kanban/board";
 import { LogsPanel } from "../components/observability/LogsPanel";
 import { MetricsStrip, sparkline } from "../components/overview/MetricsStrip";
+import { OverviewDashboard } from "../components/overview/OverviewDashboard";
 import { PulseBand } from "../components/overview/PulseBand";
 import { TaskFlowBand } from "../components/overview/TaskFlowBand";
 import type { BoardColumnId } from "../components/kanban/board";
@@ -2207,6 +2208,7 @@ export function App() {
             />
           ) : page === "project" ? (
             <ProjectHomePage
+              recentEvents={events}
               onOpenPage={setPage}
               projectId={activeProjectId}
               snapshot={snapshot}
@@ -2598,12 +2600,14 @@ function deliveryCardDetail(taskFlowStats: TaskFlowStats, metrics: MetricsSnapsh
 }
 
 function ProjectHomePage({
+  recentEvents,
   onOpenPage,
   projectId,
   snapshot,
   onOpenProjection,
   onOpenTask,
 }: {
+  recentEvents: RecentEvent[];
   onOpenPage: (page: PageId) => void;
   projectId: string;
   snapshot: Snapshot | null;
@@ -2683,29 +2687,17 @@ function ProjectHomePage({
   const completionRate = totalTasks ? doneCount / totalTasks : 0;
   const agents = snapshot?.agents ?? [];
   const effectiveCost = useProjectCost(projectId, snapshot?.cost);
-  const fleetMetrics = buildFleetMetrics(agents, snapshot?.agent_cockpit ?? null, effectiveCost);
   const attentionRows = buildAgentAttentionRows(agents, snapshot?.agent_cockpit ?? null, snapshot?.recovery ?? null);
   const kernelMetrics = snapshot?.metrics_snapshot;
   const taskFlowStats = snapshot?.fleet_stats?.task_flow;
-  // 2026-06-12: Q3 Cost 卡(方案 a,第五卡)。budget 占比待后端暴露 global_budget_usd 再显。
   const costSummary = effectiveCost;
   const costRoles = costSummary ? Object.entries(costSummary.per_role ?? {}) : [];
   const projectCost = buildProjectCostPresentation(costSummary);
   const costTokens = projectCost.totalTokens;
   const topCostRole = costRoles.slice().sort((a, b) => (b[1].usd ?? 0) - (a[1].usd ?? 0))[0];
   const fmtTok = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
-  const allFeatures = snapshot?.features ?? [];
-  const activeFeatureCount = allFeatures.filter((f) => f.status !== "done" && f.status !== "cancelled").length;
-  const doneFeatureCount = allFeatures.filter((f) => f.status === "done").length;
-  // Noise discipline: only warn+ rows with real evidence count as
-  // attention; "fresh"/info rows are ambient state, not signals. Focus Now and
-  // the Attention card share this one list so the numbers always agree.
   const actionableAttention = attentionRows.filter((row) =>
     row.severity !== "info" && String(row.reason || "").trim() !== "fresh");
-  const topAttention = actionableAttention[0];
-  const actionMode = snapshot?.runtime.actions?.mutation_enabled
-    ? snapshot.runtime.actions.requires_token ? "token gated" : "available"
-    : "read-only";
   const deliveryDetail = taskFlowStats
     ? deliveryCardDetail(taskFlowStats, kernelMetrics)
     : `${doneCount} done / ${totalTasks} total`;
@@ -2729,12 +2721,10 @@ function ProjectHomePage({
       onClick: () => onOpenPage("delivery"),
     },
     {
-      label: "Features",
-      value: String(activeFeatureCount),
-      detail: `${doneFeatureCount} done / ${allFeatures.length} total · ship flow`,
-      tone: "info",
-      zero: activeFeatureCount === 0,
-      onClick: () => onOpenPage("delivery"),
+      label: "Active runs",
+      value: String(snapshot?.active_runs.length ?? 0),
+      detail: "Current project executions",
+      onClick: () => onOpenPage("delivery-trace"),
     },
     {
       label: "Cost",
@@ -2748,21 +2738,9 @@ function ProjectHomePage({
       zero: !projectCost.hasUsage,
       onClick: () => onOpenPage("runtime"),
     },
-    {
-      label: "Attention",
-      value: String(actionableAttention.length),
-      detail: `${topAttention ? `${topAttention.target} · ${topAttention.reason}` : "clean"}${
-        typeof pulse?.attention?.oldest_unacked_escalation_seconds === "number"
-          ? ` · oldest ${formatAge(pulse.attention.oldest_unacked_escalation_seconds)}`
-          : ""
-      }`,
-      tone: actionableAttention.length ? attentionTone(actionableAttention) : "info",
-      zero: actionableAttention.length === 0,
-      onClick: () => onOpenPage(topAttention?.domain === "runtime" ? "observability" : topAttention?.domain === "delivery" ? "delivery" : "agents"),
-    },
+
   ];
   const blockedTask = tasks.find((task) => taskColumn(task) === "blocked");
-  const firstActiveRun = snapshot?.active_runs[0];
   const spineReview = asRecord(snapshot?.spine_review);
   const spineStatus = textValue(spineReview.status);
   const spineVerdict = textValue(spineReview.verdict);
@@ -2794,130 +2772,32 @@ function ProjectHomePage({
       title: "Blocked work",
     });
   }
-  if (inProgressCount) {
-    focusItems.push({
-      action: "Review task flow",
-      body: `${inProgressCount} task(s) are in progress; inspect Tasks for owner and evidence.`,
-      tone: "info",
-      title: "Work in motion",
-    });
-  }
-  if (firstActiveRun) {
-    focusItems.push({
-      action: "Open active run",
-      body: projectRunSummary(firstActiveRun),
-      onClick: firstActiveRun.run_id ? () => onOpenProjection("run", firstActiveRun.run_id) : undefined,
-      tone: "info",
-      title: "Active run",
-    });
-  }
-  if (!snapshot?.runtime.live) {
+  if (snapshot && !snapshot.runtime.live) {
     focusItems.push({
       action: "Check Runtime",
+      onClick: () => onOpenPage("runtime"),
       body: "Runtime is not live; project projections may be stale.",
       tone: "warn",
       title: "Runtime offline",
     });
   }
-  if (todoCount && !blockedCount) {
-    focusItems.push({
-      action: "Open Tasks",
-      body: `${todoCount} todo task(s) are queued for planning or dispatch.`,
-      tone: "info",
-      title: "Todo pressure",
-    });
-  }
-  const projectRows = [
-    { key: "repo", value: snapshot?.project.root ?? "-" },
-    { key: "zf.yaml", value: snapshot ? `${snapshot.project.root}/zf.yaml` : "-" },
-    { key: "state_dir", value: snapshot?.project.state_dir ?? "-" },
-    { key: "seq", value: snapshot?.seq ?? 0 },
-    { key: "generated_at", value: snapshot?.generated_at ?? "-" },
-  ];
-  const runtimeRows = [
-    { key: "web_mode", value: snapshot?.runtime.web_session?.mode ?? "-" },
-    { key: "web_unlocked", value: snapshot?.runtime.web_session?.unlocked ? "yes" : "no" },
-    { key: "actions", value: snapshot?.runtime.actions?.mutation_enabled ? "available" : "read-only" },
-    { key: "tmux_session", value: stringify(snapshot?.runtime.sessions?.tmux_session) },
-    { key: "workdir_mode", value: stringify(snapshot?.runtime.workdirs?.mode) },
-  ];
-  const boundaryRows = [
-    { key: "project_id", value: snapshot?.project.project_id ?? "-" },
-    { key: "truth", value: "zf.yaml + project.state_dir" },
-    { key: "events", value: "append-only" },
-    { key: "api_scope", value: snapshot?.project.project_id ? `/api/projects/${snapshot.project.project_id}` : "-" },
-    { key: "scope", value: "Project-local projections" },
-  ];
-
   return (
-    <section className="project-home">
-      <div className="project-overview-hero">
-        <div>
-          <span className="badge badge-info">Project Overview</span>
-          <h2>{snapshot?.project.name || "Project"}</h2>
-          {snapshot?.project.description ? (
-            <p data-testid="project-description">{snapshot.project.description}</p>
-          ) : null}
-          <p className="muted">
-            snapshot #{snapshot?.seq ?? 0} · {formatTime(snapshot?.generated_at ?? "") || "not generated"}
-          </p>
-        </div>
-        <div className="project-hero-badges">
-          <span className={`badge badge-${snapshot?.runtime.live ? "ok" : "warn"}`}>
-            {snapshot?.runtime.live ? "live" : "offline"}
-          </span>
-          <span className={`badge badge-${snapshot?.runtime.actions?.mutation_enabled ? "warn" : "info"}`}>
-            {actionMode}
-          </span>
-          <span className="badge badge-info">projection only</span>
-        </div>
-      </div>
-      <div className="project-health-grid">
-        {projectCards.map((card) => {
-          const content = (
-            <>
-              <span>{card.label}</span>
-              <strong>{card.value}</strong>
-              <p>{card.detail}</p>
-              {typeof card.meter === "number" ? (
-                <div className="project-health-meter">
-                  <span style={{ width: `${Math.max(0, Math.min(100, card.meter * 100))}%` }} />
-                </div>
-              ) : null}
-            </>
-          );
-          const cardClass = card.zero
-            ? "project-health-card is-zero"
-            : `project-health-card tone-${card.tone}`;
-          return card.onClick ? (
-            <button className={cardClass} key={card.label} type="button" onClick={card.onClick}>
-              {content}
-            </button>
-          ) : (
-            <article className={cardClass} key={card.label}>
-              {content}
-            </article>
-          );
-        })}
-      </div>
-      <PulseBand pulse={pulse?.run_pulse ?? null} />
-      <ProjectFocusPanel items={focusItems} />
-      <TaskFlowBand
-        fallbackCounts={taskCounts}
-        fallbackFlowStats={taskFlowStats ?? null}
-        flow={pulse?.task_flow ?? null}
-        onOpenPage={onOpenPage}
-        onOpenTask={onOpenTask}
-        tasks={tasks}
-        whyNot={pulse?.why_not ?? null}
-      />
-      {/* doc116 §7.1 deletions (operator-approved 2026-07-02): VQE metrics ->
-          Loop/Graph pages; Control Plane trio -> Settings; Runs -> Observability.
-          Spine Review is event-driven: it only appears with a real verdict. */}
-      {Boolean(spineStatus === "ready" && spineVerdict && spineVerdict !== "continue") && (
-        <SpineReviewInsightCard insight={spineReview} />
-      )}
-    </section>
+    <OverviewDashboard
+      key={projectId}
+      projectId={projectId}
+      snapshot={snapshot}
+      metrics={projectCards}
+      events={recentEvents}
+      counts={taskCounts}
+      onOpenPage={onOpenPage}
+      focus={<ProjectFocusPanel items={focusItems} />}
+      pulse={<PulseBand pulse={pulse?.run_pulse ?? null} />}
+      flow={<TaskFlowBand fallbackCounts={taskCounts} fallbackFlowStats={taskFlowStats ?? null}
+        flow={pulse?.task_flow ?? null} onOpenPage={onOpenPage} onOpenTask={onOpenTask}
+        tasks={tasks} whyNot={pulse?.why_not ?? null} />}
+      insight={Boolean(spineStatus === "ready" && spineVerdict && spineVerdict !== "continue")
+        ? <SpineReviewInsightCard insight={spineReview} /> : null}
+    />
   );
 }
 
@@ -2983,12 +2863,12 @@ function SpineReviewInsightCard({ insight }: { insight: Record<string, unknown> 
 }
 
 function ProjectFocusPanel({ items }: { items: ProjectFocusItem[] }) {
-  const visibleItems = items.slice(0, 3);
+  const visibleItems = [...items].sort((a, b) => Number(b.tone === "err" || b.tone === "warn") - Number(a.tone === "err" || a.tone === "warn")).slice(0, 4);
   const hiddenCount = Math.max(0, items.length - visibleItems.length);
   return (
-    <section className="project-focus-section">
+    <section className="project-focus-section overview-card">
       <div className="inline-heading">
-        <h3 className="section-title">Focus Now</h3>
+        <h3 className="section-title">Needs attention</h3>
         <span className="muted">{visibleItems.length}/{items.length} signal(s)</span>
       </div>
       {items.length === 0 ? (
@@ -2998,7 +2878,7 @@ function ProjectFocusPanel({ items }: { items: ProjectFocusItem[] }) {
           {visibleItems.map((item) => {
             const content = (
               <>
-                <span className={`badge badge-${item.tone}`}>{item.tone}</span>
+                <span className={`overview-focus-dot tone-${item.tone}`} aria-label={item.tone} />
                 <strong>{item.title}</strong>
                 <span className="project-focus-body">{item.body}</span>
                 <span className="muted">{item.action}</span>
