@@ -1,0 +1,15 @@
+结论：**需要返工，当前 v3 不满足 source.md。** 未找到方法文件，直接按原始 AC 评审。全程只读，使用 `python3 -B` 执行现有测试及内存探针；现有 2 项测试均通过。
+
+1. **阻断：事务失败留下库存变更，重试进一步重复扣款。**
+   [transfer.py:11](/workspace/transfer.py:11) 在调用 ledger 前修改库存，异常路径没有回滚。初始库存 `(10, 0)`、数量 `3`，ledger 写入前抛 `RuntimeError` 后，库存为 `(7, 3)`、ledger 为空、seen 为空；同 key 重试后库存变为 `(4, 6)`，ledger 仅有 `[3]`。违反 **AC-TXN**。其他异常类型同样留下库存变更。
+   ledger 写入后再抛错时，seen 仍为空；重试产生 `[3, 3]`，也破坏 **AC-IDEM**。返回 error 不代表原子性成立。
+
+2. **测试缺少关键验收路径。**
+   [tests/test_transfer.py:5](/workspace/tests/test_transfer.py:5) 仅覆盖成功重试和 `None` 未授权。缺少 ledger 失败、失败后重试、不同 payload 冲突零副作用测试。当前 v3 的额外探针确认：成功重试、不同 qty 冲突、`None`/`bob` 未授权路径均通过；旧 v2 receipt 无需也不能用来认证本次版本。
+
+3. **handoff 的评审判断不可靠。**
+   [handoff.md:1](/workspace/handoff.md:1) 中“单测全绿”属实，但不足以接受；R2 被上述探针推翻。R1 也不成立：`actor=None` 且不在 allowed 时正确抛出 `PermissionError`，满足 AC-AUTH，无需为此添加空值 guard。
+
+最小返工范围为 **transfer.py 与 tests/test_transfer.py**，不修改 AC：实现库存、ledger 与幂等记录的一致提交或撤销，并补充上述失败与冲突测试。当前 ledger 只是任意回调，无法通用撤销其已发生的写入；修复必须提供可实现的事务或撤销机制，不能只回滚库存或调整调用顺序。
+
+复验要求：对 ledger 写入前失败、写入后失败及非 `RuntimeError` 失败逐一注入故障，检查库存、ledger、seen 一致；随后同 key 重试只能产生一次有效转账。保留成功重试和鉴权测试，增加不同 payload 冲突后全部状态不变的断言。交接结论须以修复版本的新执行证据为依据。

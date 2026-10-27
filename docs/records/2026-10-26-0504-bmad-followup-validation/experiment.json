@@ -1,0 +1,35 @@
+{
+  "model": "gpt-6-astra",
+  "max_calls": 10,
+  "timeout_seconds": 180,
+  "repetitions": 1,
+  "cases": {
+    "routing": [
+      "baseline",
+      "candidate"
+    ],
+    "review": [
+      "baseline",
+      "candidate",
+      "variant",
+      "bare"
+    ],
+    "retrospective": [
+      "baseline",
+      "candidate"
+    ],
+    "spike": [
+      "baseline",
+      "candidate"
+    ]
+  },
+  "scoring": "本会话执行 agent 按冻结 rubric 逐条复核；非独立人评，非盲评；human_review_required 不变。",
+  "variant": {
+    "verify-review/references/independent-findings.md": "# 独立评审\n\n基于原始需求核对实现和测试；每个阻断项给具体证据，遵循现有报告合同。\n",
+    "tdd-evidence/references/rework-preservation.md": "# 返工\n\n返工保持原合同，修复失败行为并执行相关回归；不以历史通过代替当前证据。\n"
+  },
+  "fixture_hashes": "preregistered-fixtures.json",
+  "baseline_commit_title": "feat: integrate BMAD-inspired delivery methods and evaluation",
+  "candidate_commit_title": "chore: add method contribution evaluation and delivery feedback methods",
+  "case_concurrency": 2
+}

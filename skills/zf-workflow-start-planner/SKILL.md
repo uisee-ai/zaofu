@@ -116,6 +116,9 @@ truth or substituting a different route silently.
 
 ## Output Contract
 
+评估或调整本方法时读取[路由效果评估](references/routing-evaluation.md)，用近似意图
+案例核对路线、授权和上下文读取；日常路线建议不额外加载评测方法。
+
 For recommendation or clarification, include:
 
 - Task id and concise goal classification;

@@ -31,6 +31,9 @@ receipt 与必须独立执行的命令分开，不以作者的通过声明代替
 Impl 开始前与 Verify 审核时读取[循环证据与例外处理](references/cycle-evidence.md)。
 它约束片内 RED/GREEN/REFACTOR 的证据，不增加 workflow 阶段或完成权限。
 
+收到返工/恢复或复核返工结果时，读取[返工保留清单](references/rework-preservation.md)，
+明确修复项、必须保持的行为和当前复验范围；正常首次实现不额外加载。
+
 ```
    RED               GREEN                REFACTOR
  写失败测试  ──→  最小实现使其通过  ──→  绿灯保护下清理  ──→ (重复)

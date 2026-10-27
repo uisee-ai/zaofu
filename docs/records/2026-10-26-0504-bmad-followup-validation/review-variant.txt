@@ -1,0 +1,33 @@
+结论：**reject，需要返工**。已审查实现、测试和 handoff；当前 2 个单测通过，但内存探针证实事务失败会留下库存变更。全程未修改文件。
+
+**Critical：ledger 失败破坏原子性，重试会重复扣库存。**
+定位：[transfer.py:11](/workspace/transfer.py:11)–18，对应 AC-TXN、AC-IDEM。
+
+从库存 `{source: 10, target: 0}` 转移 3：
+
+- ledger 抛 `RuntimeError`：返回 error，但库存已变为 `{source: 7, target: 3}`，ledger 为空，seen 为空。
+- 随后用同一 key、同一数量成功重试：库存变为 `{source: 4, target: 6}`，ledger 只有一笔 `[3]`。
+- ledger 抛 `OSError`：异常传出，库存仍已改变。
+- ledger 写入后再抛异常：记录已存在，但 seen 未登记，后续重试仍有重复执行风险。
+
+捕获异常或返回 error 不等于回滚；仅调整调用顺序也不能保证三个动作原子完成。
+
+**最小返工范围及复验要求**
+
+仅修改 `transfer.py` 与 `tests/test_transfer.py`：
+
+1. 为库存、ledger 和成功幂等记录建立一致的提交/失败语义。当前任意 callable 的 ledger 接口无法保证撤销已经发生的外部写入，需要明确可事务提交或可回滚的接口契约。
+2. 在[测试文件](/workspace/tests/test_transfer.py:5)补充行为回归：ledger 写入前失败、写入后失败、不同异常类型，以及失败后的同 key 重试。失败后断言库存、ledger、seen 无残留；成功重试后断言仅一次转移、一笔记录。
+3. 保留已有成功重试、权限拒绝测试，并补充不同 payload 冲突时库存、ledger、seen 全部不变。现有两项测试未覆盖故障路径，无法捕获上述问题。
+
+| 需求 | 独立验证结论 |
+|---|---|
+| AC-TXN | **失败**：ledger 失败后库存未回滚 |
+| AC-IDEM | 成功后重试、数量冲突通过；失败后重试重复变更，整体不通过 |
+| AC-AUTH | 通过：`None`、未授权 actor 均拒绝，状态不变 |
+
+**handoff 核查：**[handoff.md](/workspace/handoff.md:1) 的“单测全绿”已复现，但不足以接受变更。R1 的空值 guard 判断不成立：`actor=None` 正确触发 `PermissionError`；R2 的原子性判断被探针直接推翻。v2 receipt 不能认证 v3，本次结论来自当前快照独立执行。
+
+五轴结论：正确性失败；架构上 ledger 接口缺少支撑原子性的能力；可读性、安全权限与性能未发现其他阻断项。
+
+验证使用 `python3 -B`，禁用字节码写入；初始 `python` 不存在属于环境问题，切换后执行成功。目录没有有效 HEAD，因此只能认证当前文件快照，不能绑定提交或确认历史差异。

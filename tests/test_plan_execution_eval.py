@@ -2,6 +2,8 @@
 import importlib.util
 from pathlib import Path
 import subprocess
+import json
+import sys
 
 import pytest
 
@@ -53,3 +55,83 @@ def test_inputs_do_not_follow_host_symlink(tmp_path):
     with pytest.raises(ValueError, match="symlink"):
         module().copy_inputs(source, tmp_path / "target")
     assert not (tmp_path / "target").exists()
+
+
+@pytest.mark.parametrize(("timeout", "expected_timeout"), [("0", None), ("601", 601)])
+def test_four_arm_prepare_uses_same_case_and_does_not_call_provider(tmp_path, monkeypatch, timeout, expected_timeout):
+    helper = module()
+    inputs = tmp_path / "inputs"
+    (inputs / "project").mkdir(parents=True)
+    (inputs / "prompt.md").write_text("Review the request without changing it.")
+    (inputs / "project/request.md").write_text("Untrusted example, same in all arms.")
+    variant = tmp_path / "variant/method"
+    variant.mkdir(parents=True)
+    (variant / "SKILL.md").write_text("Short method")
+
+    def freeze(ref, destination):
+        (destination / "method").mkdir(parents=True)
+        (destination / "method/SKILL.md").write_text(ref)
+        return "a" * 40
+
+    monkeypatch.setattr(helper, "freeze_skills", freeze)
+    monkeypatch.setattr(helper.subprocess, "check_output", lambda *a, **k: pytest.fail("provider or Docker called"))
+    output = tmp_path / "output"
+    monkeypatch.setattr(sys, "argv", ["eval", "--inputs", str(inputs), "--output", str(output),
+        "--baseline", "old", "--candidate", "new", "--variant", str(variant.parent),
+        "--include-bare", "--repetitions", "2", "--max-provider-calls", "8",
+        "--model", "test-only", "--timeout", timeout, "--prepare-only"])
+    assert helper.main() == 0
+    manifest = json.loads((output / "manifest.json").read_text())
+    assert manifest["prepared_only"] and manifest["isolation"] is None
+    assert manifest["codex_version"] is None
+    assert manifest["timeout_seconds"] == expected_timeout
+    assert [r["arm"] for r in manifest["runs"]] == [
+        "baseline", "candidate", "variant", "bare", "bare", "variant", "candidate", "baseline"]
+    for row in manifest["runs"]:
+        project = output / row["id"] / "project"
+        assert (project / "request.md").read_bytes() == (inputs / "project/request.md").read_bytes()
+        assert "turn_completed" not in row
+    assert (output / "bundles/candidate/method/SKILL.md").read_text() == "new"
+    assert (output / "bundles/variant/method/SKILL.md").read_text() == "Short method"
+    assert list((output / "bundles/bare").iterdir()) == []
+    assert manifest["bundle_digests"]["candidate"] != manifest["bundle_digests"]["variant"]
+    assert manifest["variant_replacements"]["method/SKILL.md"]
+
+
+@pytest.mark.parametrize("extra", [
+    ["--max-provider-calls", "1"],
+    ["--timeout", "-1"],
+    ["--include-bare", "--candidate-facts", "facts.json"],
+])
+def test_invalid_experiment_fails_before_creating_output(tmp_path, monkeypatch, extra):
+    helper = module()
+    output = tmp_path / "output"
+    monkeypatch.setattr(sys, "argv", ["eval", "--inputs", "missing", "--output", str(output),
+        "--baseline", "HEAD", "--candidate", "HEAD", "--model", "test", "--prepare-only", *extra])
+    with pytest.raises(SystemExit) as exc:
+        helper.main()
+    assert exc.value.code == 2
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("bad_path", ["method/new.md", "method/run.py", ".agents/method.md"])
+def test_variant_cannot_inject_new_or_executable_paths(tmp_path, bad_path):
+    source, target = tmp_path / "source", tmp_path / "target"
+    (source / bad_path).parent.mkdir(parents=True)
+    (source / bad_path).write_text("unapproved")
+    (target / "method").mkdir(parents=True)
+    (target / "method/SKILL.md").write_text("original")
+    with pytest.raises(ValueError, match="variant"):
+        module().overlay_variant(source, target)
+    assert (target / "method/SKILL.md").read_text() == "original"
+
+
+def test_variant_rejects_symlinks_before_replacing_any_file(tmp_path):
+    source, target = tmp_path / "source", tmp_path / "target"
+    for path in (source, target):
+        (path / "method").mkdir(parents=True)
+        (path / "method/SKILL.md").write_text(str(path))
+    (source / "method/z.md").symlink_to(target / "method/SKILL.md")
+    with pytest.raises(ValueError, match="unsafe"):
+        module().overlay_variant(source, target)
+    assert (target / "method/SKILL.md").read_text() == str(target)

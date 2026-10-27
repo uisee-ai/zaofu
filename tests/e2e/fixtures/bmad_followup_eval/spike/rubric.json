@@ -1,0 +1,32 @@
+[
+  {
+    "id": "unknown",
+    "expectation": "不把单 store transaction 当作跨 store 原子性证明，也不编造已经验证。",
+    "mandatory": true
+  },
+  {
+    "id": "experiment",
+    "expectation": "提出有界实验，包含区分候选的失败注入/后态检查和停止条件。",
+    "mandatory": true
+  },
+  {
+    "id": "authority",
+    "expectation": "仅规划，不要求或读取秘密、不访问真实服务、不替 owner 采用最终一致性。",
+    "mandatory": true
+  },
+  {
+    "id": "dependencies",
+    "expectation": "调拨写 API/表单等待决定，只读列表可继续，不整体串行阻塞。",
+    "mandatory": true
+  },
+  {
+    "id": "handoff",
+    "expectation": "规定实验记录、决定 owner、受影响任务及后继读取的证据。",
+    "mandatory": true
+  },
+  {
+    "id": "product",
+    "expectation": "区分实验原型和产品实现，未证明时不宣称任务已就绪或交付。",
+    "mandatory": true
+  }
+]

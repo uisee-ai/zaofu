@@ -39,9 +39,10 @@ def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role
     assert metadata.name == method
     references = {
         "zf-plan-task-map-contract": ("review-ports.md",),
-        "zf-plan-execution-readiness": ("execution-consistency.md", "human-review.md", "epic-refinement.md"),
-        "tdd-evidence": ("cycle-evidence.md",),
-        "verify-review": ("regression-and-integration.md",),
+        "zf-plan-execution-readiness": ("execution-consistency.md", "human-review.md", "epic-refinement.md",
+                                        "bounded-spike.md", "cross-domain-obligations.md", "early-feedback.md"),
+        "tdd-evidence": ("cycle-evidence.md", "rework-preservation.md"),
+        "verify-review": ("regression-and-integration.md", "independent-findings.md"),
     }
     if method in references:
         for name in references[method]:
@@ -116,3 +117,22 @@ def test_human_review_example_reaches_existing_task_scoped_reader():
     assert task_input_paths(body, task_id=task_id) == ["$.shared", "$.tasks[0]"]
     assert task_input_paths(body, task_id=task_id, candidate=True) == ["$"]
     assert body["tasks"][0]["body"]["human_review"]["scenarios"][0]["acceptance_ids"]
+
+
+@pytest.mark.parametrize("name", ["zf-plan-execution-readiness", "zf-workflow-start-planner", "zf-harness-self-improve"])
+def test_operator_methods_keep_references_in_provider_materialization(tmp_path, name):
+    root = Path(__file__).resolve().parents[1]
+    source = root / "skills" / name
+    role = RoleConfig(name="operator", backend="codex", skills=[name])
+    state = tmp_path / "runtime"
+    state.mkdir()
+    config = ZfConfig(project=ProjectConfig(name="methods"), roles=[role])
+    materialize_role_skills(config=config, project_root=root, state_dir=state, role=role)
+    actual = state / "workdirs/operator/codex-home/skills" / name
+    for path in source.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(source)
+        assert (actual / relative).read_bytes() == path.read_bytes()
+        for provider in (".claude", ".codex"):
+            assert (root / provider / "skills" / name / relative).read_bytes() == path.read_bytes()

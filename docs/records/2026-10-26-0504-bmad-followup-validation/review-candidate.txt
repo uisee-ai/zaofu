@@ -1,0 +1,33 @@
+**结论：reject，需要返工。** 当前 2 个单测通过，但故障探针证实违反原子性要求，并会导致失败后重试重复转账。全程只读，未修改文件。
+
+| 验收条款 | 独立验证结果 |
+|---|---|
+| AC-TXN | **失败**：ledger 抛错后库存已变化 |
+| AC-IDEM | 正常重试、不同 qty 冲突通过；**故障后重试重复变更** |
+| AC-AUTH | 通过：`None`、未授权用户在新 key、已缓存 key 下均拒绝且无副作用 |
+
+**gap_findings**
+
+1. **Critical：ledger 失败未回滚，重试再次扣款。**
+   位置：[transfer.py:11](/workspace/transfer.py:11)–18。初始库存 `10/0`，转账量 `3`，ledger 写入前抛出 `RuntimeError`：
+   - 返回 `{"error": "ledger unavailable"}`，但库存变为 `7/3`，ledger 为空，seen 为空。
+   - 同 key 重试成功后库存变为 `4/6`，ledger 只有 `[3]`。
+   - ledger 若先写入再抛错，重试后 ledger 为 `[3, 3]`。
+
+   **最小修复范围**：`transfer.py` 的事务及幂等提交路径。确保库存、ledger 和成功幂等记录一致提交或撤销。仅恢复库存不足以处理 ledger 已写后抛错；仅调整调用顺序也不能保证原子性，需明确可回滚或事务化的 ledger 协作方式。
+
+2. **必改：测试遗漏已证实的故障路径。**
+   位置：[tests/test_transfer.py:5](/workspace/tests/test_transfer.py:5)。当前仅覆盖成功重试和未授权拒绝，因此无法检测上述缺陷。
+
+   **复验要求**：在该测试文件补充 ledger 写入前失败、写入后失败、失败后同 key 重试；断言库存、ledger、seen 的完整后态，以及最终仅发生一次有效转账。补充不同 qty 冲突零副作用断言，并保留现有成功重试与鉴权回归。新增故障测试应先在当前版本失败，再在修复版本通过。
+
+**handoff 核验**
+
+- “所有单测都绿”属实，但不足以验收。
+- R1“`actor=None` 缺 guard”已被反证：当前入口正确抛出 `PermissionError`，没有副作用，不应据此返工。
+- R2“返回 error 即满足原子性”已被反证：返回值不能代替状态回滚。
+- v2 receipt 未用于认证 v3；以上结果均来自当前文件的新执行。
+
+**证据与范围**：运行 `python3 -B -m unittest discover -s tests -v` 得到 2/2 通过；内存探针得到上述失败后态。首次使用 `python` 因命令不存在失败，属于环境问题，已用 `python3` 完成验证。仓库无 HEAD，结论绑定当前工作区，而非提交差异。
+
+五轴结论：正确性失败；架构轴的事务边界问题并入发现 1；可读性、安全鉴权、性能未发现额外阻断项。返工仅限 `transfer.py` 与 `tests/test_transfer.py`，无需修改验收条款。
