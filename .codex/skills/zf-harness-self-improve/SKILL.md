@@ -55,6 +55,10 @@ useful evidence, but they are not ZaoFu truth.
 
 ## Phase 1: Read-Only Discovery
 
+评估或修改 Skill 的实际收益时读取[方法贡献对照](references/method-evaluation.md)；
+复盘 Epic/已实施批次时读取[累积复盘](references/epic-retrospective.md)。
+按当前任务选择，普通候选发现不默认加载两份全文。
+
 1. Identify a bounded time window or scope. If the user does not specify one,
    use recent repo/runtime evidence plus the current dirty state.
 2. Look for repeat signals:

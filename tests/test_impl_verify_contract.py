@@ -64,6 +64,31 @@ def _task() -> Task:
     )
 
 
+def test_rework_feedback_keeps_passed_behavior_and_preservation_actions(tmp_path):
+    result = {
+        "requirement_results": [
+            {"acceptance_id": "AC-ROLLBACK", "status": "failed", "findings": ["partial write"]},
+            {"acceptance_id": "AC-IDEMPOTENCY", "status": "passed", "evidence_refs": ["receipt/current"]},
+        ],
+        "summary": "Repair rollback; preserve idempotent retry and permission rejection.",
+        "reproduction_commands": ["pytest tests/test_transfer.py"],
+        "evidence_refs": ["receipt/current"],
+    }
+    descriptor = write_rework_feedback(
+        tmp_path, task_id="TASK-ONE", failure_fingerprint="rollback", source_attempt=1,
+        source_event=ZfEvent(type="test.failed", task_id="TASK-ONE"),
+        verification_result=result, allowed_paths=["src/transfer.py", "tests/test_transfer.py"],
+        required_actions=["Keep AC-IDEMPOTENCY; reverify it on the current candidate."],
+    )
+    body = hydrate_rework_feedback(tmp_path, descriptor, expected_task_id="TASK-ONE", expected_fingerprint="rollback")
+    assert body["failed_acceptance_ids"] == ["AC-ROLLBACK"]
+    assert body["requirement_results"][1]["status"] == "passed"
+    assert body["requirement_results"][1]["evidence_refs"] == ["receipt/current"]
+    lines = "\n".join(feedback_briefing_lines(body))
+    assert "preserve idempotent retry" in lines
+    assert "Keep AC-IDEMPOTENCY; reverify it on the current candidate." in lines
+
+
 def _snapshot(task: Task) -> dict:
     return build_task_contract_snapshot(
         task,

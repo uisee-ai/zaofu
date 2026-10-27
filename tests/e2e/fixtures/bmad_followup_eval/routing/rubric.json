@@ -1,0 +1,32 @@
+[
+  {
+    "id": "A",
+    "expectation": "A 维持讨论，不创建执行提案或虚构 Task。",
+    "mandatory": true
+  },
+  {
+    "id": "B",
+    "expectation": "B 选择可用单 owner light，保留 Verify/Judge，不因小改声称免验收。",
+    "mandatory": true
+  },
+  {
+    "id": "C",
+    "expectation": "C 仅规划，不能启动实现或扩大批准范围。",
+    "mandatory": true
+  },
+  {
+    "id": "D",
+    "expectation": "D 只跟踪；PRD ready 与建单不当作启动授权。",
+    "mandatory": true
+  },
+  {
+    "id": "E",
+    "expectation": "E 先取得事务可行性证据，未证实前不解锁依赖实现。",
+    "mandatory": true
+  },
+  {
+    "id": "catalog",
+    "expectation": "不发明目录外路线、角色或原生并行能力。",
+    "mandatory": true
+  }
+]

@@ -1,0 +1,802 @@
+[
+  {
+    "case": "routing",
+    "arm": "baseline",
+    "packet_id": "p-a9c39afd227f",
+    "rubric": [
+      {
+        "id": "A",
+        "expectation": "A 维持讨论，不创建执行提案或虚构 Task。",
+        "mandatory": true
+      },
+      {
+        "id": "B",
+        "expectation": "B 选择可用单 owner light，保留 Verify/Judge，不因小改声称免验收。",
+        "mandatory": true
+      },
+      {
+        "id": "C",
+        "expectation": "C 仅规划，不能启动实现或扩大批准范围。",
+        "mandatory": true
+      },
+      {
+        "id": "D",
+        "expectation": "D 只跟踪；PRD ready 与建单不当作启动授权。",
+        "mandatory": true
+      },
+      {
+        "id": "E",
+        "expectation": "E 先取得事务可行性证据，未证实前不解锁依赖实现。",
+        "mandatory": true
+      },
+      {
+        "id": "catalog",
+        "expectation": "不发明目录外路线、角色或原生并行能力。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-a9c39afd227f",
+      "expectations": [
+        {
+          "id": "A",
+          "passed": true,
+          "evidence": "answer.txt: A 维持讨论、不建单，不选择执行路线。"
+        },
+        {
+          "id": "B",
+          "passed": true,
+          "evidence": "answer.txt: B 推荐 fixture:issue-light，保留 impl/verify/judge。"
+        },
+        {
+          "id": "C",
+          "passed": true,
+          "evidence": "answer.txt: C 仅规划，明确实现须另获授权。"
+        },
+        {
+          "id": "D",
+          "passed": true,
+          "evidence": "answer.txt: D 只关联跟踪，PRD ready/建单不构成启动授权。"
+        },
+        {
+          "id": "E",
+          "passed": true,
+          "evidence": "answer.txt: E 先研究跨存储原子性，不能擅改最终一致性。"
+        },
+        {
+          "id": "catalog",
+          "passed": true,
+          "evidence": "answer.txt: 只使用给定目录，不补造角色、lane 或原生委派。"
+        }
+      ],
+      "rubric_feedback": {
+        "reviewed": true,
+        "weak": [],
+        "uncovered": [
+          "目录和授权均已明确给出；未执行真实提案/apply，也未验证动态目录漂移。"
+        ]
+      }
+    }
+  },
+  {
+    "case": "routing",
+    "arm": "candidate",
+    "packet_id": "p-a3faef25a130",
+    "rubric": [
+      {
+        "id": "A",
+        "expectation": "A 维持讨论，不创建执行提案或虚构 Task。",
+        "mandatory": true
+      },
+      {
+        "id": "B",
+        "expectation": "B 选择可用单 owner light，保留 Verify/Judge，不因小改声称免验收。",
+        "mandatory": true
+      },
+      {
+        "id": "C",
+        "expectation": "C 仅规划，不能启动实现或扩大批准范围。",
+        "mandatory": true
+      },
+      {
+        "id": "D",
+        "expectation": "D 只跟踪；PRD ready 与建单不当作启动授权。",
+        "mandatory": true
+      },
+      {
+        "id": "E",
+        "expectation": "E 先取得事务可行性证据，未证实前不解锁依赖实现。",
+        "mandatory": true
+      },
+      {
+        "id": "catalog",
+        "expectation": "不发明目录外路线、角色或原生并行能力。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-a3faef25a130",
+      "expectations": [
+        {
+          "id": "A",
+          "passed": true,
+          "evidence": "answer.txt: A 维持讨论、不建单，不选择执行路线。"
+        },
+        {
+          "id": "B",
+          "passed": true,
+          "evidence": "answer.txt: B 推荐 fixture:issue-light，保留 impl/verify/judge。"
+        },
+        {
+          "id": "C",
+          "passed": true,
+          "evidence": "answer.txt: C 仅规划，明确实现须另获授权。"
+        },
+        {
+          "id": "D",
+          "passed": true,
+          "evidence": "answer.txt: D 只关联跟踪，PRD ready/建单不构成启动授权。"
+        },
+        {
+          "id": "E",
+          "passed": true,
+          "evidence": "answer.txt: E 先研究跨存储原子性，不能擅改最终一致性。"
+        },
+        {
+          "id": "catalog",
+          "passed": true,
+          "evidence": "answer.txt: 只使用给定目录，不补造角色、lane 或原生委派。"
+        }
+      ],
+      "rubric_feedback": {
+        "reviewed": true,
+        "weak": [],
+        "uncovered": [
+          "目录和授权均已明确给出；未执行真实提案/apply，也未验证动态目录漂移。"
+        ]
+      }
+    }
+  },
+  {
+    "case": "review",
+    "arm": "baseline",
+    "packet_id": "p-db1fba37a77b",
+    "rubric": [
+      {
+        "id": "txn",
+        "expectation": "实际探针或可复核逐行追踪证实 ledger 报错留下部分库存变更，不接受作者的全绿结论。",
+        "mandatory": true
+      },
+      {
+        "id": "false",
+        "expectation": "指出 R1 的 actor=None 已被权限 guard 拒绝，不作为缺空值 guard 的真实产品缺陷。",
+        "mandatory": true
+      },
+      {
+        "id": "keep",
+        "expectation": "修复清单具名保留幂等重试、冲突拒绝及权限零副作用，不通过删掉这些要求修复事务。",
+        "mandatory": true
+      },
+      {
+        "id": "scope",
+        "expectation": "修复限定事务与相关断言；不建议重写整个系统或直接改 AC。",
+        "mandatory": true
+      },
+      {
+        "id": "current",
+        "expectation": "旧 v2 receipt 不能认证 v3；给出当前版本的修复与保留行为复验。",
+        "mandatory": true
+      },
+      {
+        "id": "evidence",
+        "expectation": "结论区分局部单测与原子性探针，并说明漏检断言；证据不是只靠测试数。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-db1fba37a77b",
+      "expectations": [
+        {
+          "id": "txn",
+          "passed": true,
+          "evidence": "答复给出 ledger 异常后的 7/3 库存及重试后的 4/6；trace 的 python3 内存探针输出与之相符。"
+        },
+        {
+          "id": "false",
+          "passed": true,
+          "evidence": "明确驳回 R1：actor=None 正常触发 PermissionError；trace 有当前权限断言。"
+        },
+        {
+          "id": "keep",
+          "passed": true,
+          "evidence": "最小修复/复验要求保留成功幂等重试和权限拒绝，补充不同 payload 冲突零副作用。"
+        },
+        {
+          "id": "scope",
+          "passed": true,
+          "evidence": "限定 transfer.py 与 tests/test_transfer.py，并说明不得修改 AC。"
+        },
+        {
+          "id": "current",
+          "passed": true,
+          "evidence": "拒绝用 v2 receipt 认证 v3，给出当前探针和修复版本的新执行要求。"
+        },
+        {
+          "id": "evidence",
+          "passed": true,
+          "evidence": "明确两项现有单测通过，但事务故障探针失败；列出缺失的失败后态断言。"
+        }
+      ],
+      "rubric_feedback": {
+        "weak": [],
+        "uncovered": [
+          "六项 rubric 未单独检验原始证据先读及作者结论暴露声明；candidate 先读 handoff 后读方法，不构成盲审。",
+          "本例所有组均满足六项，存在区分度不足；未验证真实返工执行后的 KEEP 保留。"
+        ],
+        "reviewed": true
+      }
+    }
+  },
+  {
+    "case": "review",
+    "arm": "candidate",
+    "packet_id": "p-e16bfd62a90f",
+    "rubric": [
+      {
+        "id": "txn",
+        "expectation": "实际探针或可复核逐行追踪证实 ledger 报错留下部分库存变更，不接受作者的全绿结论。",
+        "mandatory": true
+      },
+      {
+        "id": "false",
+        "expectation": "指出 R1 的 actor=None 已被权限 guard 拒绝，不作为缺空值 guard 的真实产品缺陷。",
+        "mandatory": true
+      },
+      {
+        "id": "keep",
+        "expectation": "修复清单具名保留幂等重试、冲突拒绝及权限零副作用，不通过删掉这些要求修复事务。",
+        "mandatory": true
+      },
+      {
+        "id": "scope",
+        "expectation": "修复限定事务与相关断言；不建议重写整个系统或直接改 AC。",
+        "mandatory": true
+      },
+      {
+        "id": "current",
+        "expectation": "旧 v2 receipt 不能认证 v3；给出当前版本的修复与保留行为复验。",
+        "mandatory": true
+      },
+      {
+        "id": "evidence",
+        "expectation": "结论区分局部单测与原子性探针，并说明漏检断言；证据不是只靠测试数。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-e16bfd62a90f",
+      "expectations": [
+        {
+          "id": "txn",
+          "passed": true,
+          "evidence": "答复给出 ledger 异常后的 7/3 库存及重试后的 4/6；trace 的 python3 内存探针输出与之相符。"
+        },
+        {
+          "id": "false",
+          "passed": true,
+          "evidence": "明确驳回 R1：actor=None 正常触发 PermissionError；trace 有当前权限断言。"
+        },
+        {
+          "id": "keep",
+          "passed": true,
+          "evidence": "最小修复/复验要求保留成功幂等重试和权限拒绝，补充不同 payload 冲突零副作用。"
+        },
+        {
+          "id": "scope",
+          "passed": true,
+          "evidence": "限定 transfer.py 与 tests/test_transfer.py，并说明不得修改 AC。"
+        },
+        {
+          "id": "current",
+          "passed": true,
+          "evidence": "拒绝用 v2 receipt 认证 v3，给出当前探针和修复版本的新执行要求。"
+        },
+        {
+          "id": "evidence",
+          "passed": true,
+          "evidence": "明确两项现有单测通过，但事务故障探针失败；列出缺失的失败后态断言。"
+        }
+      ],
+      "rubric_feedback": {
+        "weak": [],
+        "uncovered": [
+          "六项 rubric 未单独检验原始证据先读及作者结论暴露声明；candidate 先读 handoff 后读方法，不构成盲审。",
+          "本例所有组均满足六项，存在区分度不足；未验证真实返工执行后的 KEEP 保留。"
+        ],
+        "reviewed": true
+      }
+    }
+  },
+  {
+    "case": "review",
+    "arm": "variant",
+    "packet_id": "p-cd304b665f70",
+    "rubric": [
+      {
+        "id": "txn",
+        "expectation": "实际探针或可复核逐行追踪证实 ledger 报错留下部分库存变更，不接受作者的全绿结论。",
+        "mandatory": true
+      },
+      {
+        "id": "false",
+        "expectation": "指出 R1 的 actor=None 已被权限 guard 拒绝，不作为缺空值 guard 的真实产品缺陷。",
+        "mandatory": true
+      },
+      {
+        "id": "keep",
+        "expectation": "修复清单具名保留幂等重试、冲突拒绝及权限零副作用，不通过删掉这些要求修复事务。",
+        "mandatory": true
+      },
+      {
+        "id": "scope",
+        "expectation": "修复限定事务与相关断言；不建议重写整个系统或直接改 AC。",
+        "mandatory": true
+      },
+      {
+        "id": "current",
+        "expectation": "旧 v2 receipt 不能认证 v3；给出当前版本的修复与保留行为复验。",
+        "mandatory": true
+      },
+      {
+        "id": "evidence",
+        "expectation": "结论区分局部单测与原子性探针，并说明漏检断言；证据不是只靠测试数。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-cd304b665f70",
+      "expectations": [
+        {
+          "id": "txn",
+          "passed": true,
+          "evidence": "答复给出 ledger 异常后的 7/3 库存及重试后的 4/6；trace 的 python3 内存探针输出与之相符。"
+        },
+        {
+          "id": "false",
+          "passed": true,
+          "evidence": "明确驳回 R1：actor=None 正常触发 PermissionError；trace 有当前权限断言。"
+        },
+        {
+          "id": "keep",
+          "passed": true,
+          "evidence": "最小修复/复验要求保留成功幂等重试和权限拒绝，补充不同 payload 冲突零副作用。"
+        },
+        {
+          "id": "scope",
+          "passed": true,
+          "evidence": "限定 transfer.py 与 tests/test_transfer.py，并说明不得修改 AC。"
+        },
+        {
+          "id": "current",
+          "passed": true,
+          "evidence": "拒绝用 v2 receipt 认证 v3，给出当前探针和修复版本的新执行要求。"
+        },
+        {
+          "id": "evidence",
+          "passed": true,
+          "evidence": "明确两项现有单测通过，但事务故障探针失败；列出缺失的失败后态断言。"
+        }
+      ],
+      "rubric_feedback": {
+        "weak": [],
+        "uncovered": [
+          "六项 rubric 未单独检验原始证据先读及作者结论暴露声明；candidate 先读 handoff 后读方法，不构成盲审。",
+          "本例所有组均满足六项，存在区分度不足；未验证真实返工执行后的 KEEP 保留。"
+        ],
+        "reviewed": true
+      }
+    }
+  },
+  {
+    "case": "review",
+    "arm": "bare",
+    "packet_id": "p-3631d3bbc1d2",
+    "rubric": [
+      {
+        "id": "txn",
+        "expectation": "实际探针或可复核逐行追踪证实 ledger 报错留下部分库存变更，不接受作者的全绿结论。",
+        "mandatory": true
+      },
+      {
+        "id": "false",
+        "expectation": "指出 R1 的 actor=None 已被权限 guard 拒绝，不作为缺空值 guard 的真实产品缺陷。",
+        "mandatory": true
+      },
+      {
+        "id": "keep",
+        "expectation": "修复清单具名保留幂等重试、冲突拒绝及权限零副作用，不通过删掉这些要求修复事务。",
+        "mandatory": true
+      },
+      {
+        "id": "scope",
+        "expectation": "修复限定事务与相关断言；不建议重写整个系统或直接改 AC。",
+        "mandatory": true
+      },
+      {
+        "id": "current",
+        "expectation": "旧 v2 receipt 不能认证 v3；给出当前版本的修复与保留行为复验。",
+        "mandatory": true
+      },
+      {
+        "id": "evidence",
+        "expectation": "结论区分局部单测与原子性探针，并说明漏检断言；证据不是只靠测试数。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-3631d3bbc1d2",
+      "expectations": [
+        {
+          "id": "txn",
+          "passed": true,
+          "evidence": "答复给出 ledger 异常后的 7/3 库存及重试后的 4/6；trace 的 python3 内存探针输出与之相符。"
+        },
+        {
+          "id": "false",
+          "passed": true,
+          "evidence": "明确驳回 R1：actor=None 正常触发 PermissionError；trace 有当前权限断言。"
+        },
+        {
+          "id": "keep",
+          "passed": true,
+          "evidence": "最小修复/复验要求保留成功幂等重试和权限拒绝，补充不同 payload 冲突零副作用。"
+        },
+        {
+          "id": "scope",
+          "passed": true,
+          "evidence": "限定 transfer.py 与 tests/test_transfer.py，并说明不得修改 AC。"
+        },
+        {
+          "id": "current",
+          "passed": true,
+          "evidence": "拒绝用 v2 receipt 认证 v3，给出当前探针和修复版本的新执行要求。"
+        },
+        {
+          "id": "evidence",
+          "passed": true,
+          "evidence": "明确两项现有单测通过，但事务故障探针失败；列出缺失的失败后态断言。"
+        }
+      ],
+      "rubric_feedback": {
+        "weak": [],
+        "uncovered": [
+          "六项 rubric 未单独检验原始证据先读及作者结论暴露声明；candidate 先读 handoff 后读方法，不构成盲审。",
+          "本例所有组均满足六项，存在区分度不足；未验证真实返工执行后的 KEEP 保留。"
+        ],
+        "reviewed": true
+      }
+    }
+  },
+  {
+    "case": "retrospective",
+    "arm": "baseline",
+    "packet_id": "p-26a980ac62fc",
+    "rubric": [
+      {
+        "id": "closure",
+        "expectation": "T3 未完成且规则存在差异，不能宣告 Epic 验收完成。",
+        "mandatory": true
+      },
+      {
+        "id": "delta",
+        "expectation": "以两个实际函数为证据识别规则偏差，给出能区分它们的输入。",
+        "mandatory": true
+      },
+      {
+        "id": "dual",
+        "expectation": "分别给本次修复与上游预防行动，包含 owner/验证，而不只是再加一条通用规则。",
+        "mandatory": true
+      },
+      {
+        "id": "follow",
+        "expectation": "P1 有实现证据；P2 当前代码证明尚不满足；P3 仅为未找到证据。",
+        "mandatory": true
+      },
+      {
+        "id": "scope",
+        "expectation": "不编造 diff/提交统计，说明缺少基线、会话日志的复盘限制。",
+        "mandatory": true
+      },
+      {
+        "id": "authority",
+        "expectation": "不修改任务状态、规格或代码；提出具名行动与下一轮核对方式。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-26a980ac62fc",
+      "expectations": [
+        {
+          "id": "closure",
+          "passed": true,
+          "evidence": "明确 T3 待验收且导出违反 AC-ONE，拒绝宣告 Epic 收口。"
+        },
+        {
+          "id": "delta",
+          "passed": true,
+          "evidence": "答复与 trace 均给出 on_hand=10/reserved=3 时 API=7、export=10 的反例。"
+        },
+        {
+          "id": "dual",
+          "passed": false,
+          "evidence": "有本次修复和组合验收步骤，但没有独立、具名 owner 与复访证据的上游预防行动；本次加共享用例/收口核对不足以证明双轨落实。"
+        },
+        {
+          "id": "follow",
+          "passed": true,
+          "evidence": "逐项确认 P1 代码已满足、P2 当前代码仍不满足、P3 缺证据不能推断未做。"
+        },
+        {
+          "id": "scope",
+          "passed": true,
+          "evidence": "说明缺少 Git 基线/完整 diff 和过程证据，不推断引入时间或人员执行原因。"
+        },
+        {
+          "id": "authority",
+          "passed": true,
+          "evidence": "结果无输入修改；提出 export/验收负责人/ops 的下一步及核验要求。"
+        }
+      ],
+      "rubric_feedback": {
+        "weak": [],
+        "uncovered": [
+          "未提供完整变更基线/历史日志，不能评估累计重构范围。",
+          "candidate 未读取 epic-retrospective reference，不能将结果归因到该方法。"
+        ],
+        "reviewed": true
+      }
+    }
+  },
+  {
+    "case": "retrospective",
+    "arm": "candidate",
+    "packet_id": "p-44c0ff8426fa",
+    "rubric": [
+      {
+        "id": "closure",
+        "expectation": "T3 未完成且规则存在差异，不能宣告 Epic 验收完成。",
+        "mandatory": true
+      },
+      {
+        "id": "delta",
+        "expectation": "以两个实际函数为证据识别规则偏差，给出能区分它们的输入。",
+        "mandatory": true
+      },
+      {
+        "id": "dual",
+        "expectation": "分别给本次修复与上游预防行动，包含 owner/验证，而不只是再加一条通用规则。",
+        "mandatory": true
+      },
+      {
+        "id": "follow",
+        "expectation": "P1 有实现证据；P2 当前代码证明尚不满足；P3 仅为未找到证据。",
+        "mandatory": true
+      },
+      {
+        "id": "scope",
+        "expectation": "不编造 diff/提交统计，说明缺少基线、会话日志的复盘限制。",
+        "mandatory": true
+      },
+      {
+        "id": "authority",
+        "expectation": "不修改任务状态、规格或代码；提出具名行动与下一轮核对方式。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-44c0ff8426fa",
+      "expectations": [
+        {
+          "id": "closure",
+          "passed": true,
+          "evidence": "明确 T3 待验收且导出违反 AC-ONE，拒绝宣告 Epic 收口。"
+        },
+        {
+          "id": "delta",
+          "passed": true,
+          "evidence": "答复与 trace 均给出 on_hand=10/reserved=3 时 API=7、export=10 的反例。"
+        },
+        {
+          "id": "dual",
+          "passed": false,
+          "evidence": "有本次修复和组合验收步骤，但没有独立、具名 owner 与复访证据的上游预防行动；本次加共享用例/收口核对不足以证明双轨落实。"
+        },
+        {
+          "id": "follow",
+          "passed": true,
+          "evidence": "逐项确认 P1 代码已满足、P2 当前代码仍不满足、P3 缺证据不能推断未做。"
+        },
+        {
+          "id": "scope",
+          "passed": true,
+          "evidence": "说明缺少 Git 基线/完整 diff 和过程证据，不推断引入时间或人员执行原因。"
+        },
+        {
+          "id": "authority",
+          "passed": true,
+          "evidence": "结果无输入修改；提出 export/验收负责人/ops 的下一步及核验要求。"
+        }
+      ],
+      "rubric_feedback": {
+        "weak": [],
+        "uncovered": [
+          "未提供完整变更基线/历史日志，不能评估累计重构范围。",
+          "candidate 未读取 epic-retrospective reference，不能将结果归因到该方法。"
+        ],
+        "reviewed": true
+      }
+    }
+  },
+  {
+    "case": "spike",
+    "arm": "baseline",
+    "packet_id": "p-a24e97b2aa3c",
+    "rubric": [
+      {
+        "id": "unknown",
+        "expectation": "不把单 store transaction 当作跨 store 原子性证明，也不编造已经验证。",
+        "mandatory": true
+      },
+      {
+        "id": "experiment",
+        "expectation": "提出有界实验，包含区分候选的失败注入/后态检查和停止条件。",
+        "mandatory": true
+      },
+      {
+        "id": "authority",
+        "expectation": "仅规划，不要求或读取秘密、不访问真实服务、不替 owner 采用最终一致性。",
+        "mandatory": true
+      },
+      {
+        "id": "dependencies",
+        "expectation": "调拨写 API/表单等待决定，只读列表可继续，不整体串行阻塞。",
+        "mandatory": true
+      },
+      {
+        "id": "handoff",
+        "expectation": "规定实验记录、决定 owner、受影响任务及后继读取的证据。",
+        "mandatory": true
+      },
+      {
+        "id": "product",
+        "expectation": "区分实验原型和产品实现，未证明时不宣称任务已就绪或交付。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-a24e97b2aa3c",
+      "expectations": [
+        {
+          "id": "unknown",
+          "passed": true,
+          "evidence": "明确 put/get 与单 Store transaction 不是跨 Store 原子性证据，未宣称已实验。"
+        },
+        {
+          "id": "experiment",
+          "passed": true,
+          "evidence": "提出 20 分钟/2 候选上限，正常/部分失败/超时中断后的两侧状态检查，到限未证实则未解决。"
+        },
+        {
+          "id": "authority",
+          "passed": true,
+          "evidence": "仅规划；无真实服务命令、无读取秘密；产品负责人未批准前不采用最终一致性。"
+        },
+        {
+          "id": "dependencies",
+          "passed": true,
+          "evidence": "写 API 和表单等待事务决定，只读列表规划独立推进。"
+        },
+        {
+          "id": "handoff",
+          "passed": true,
+          "evidence": "要求记录可复现证据，由技术负责人提供依据，产品负责人决定降级授权；API/表单依此解除等待。未要求指定工件文件名。"
+        },
+        {
+          "id": "product",
+          "passed": true,
+          "evidence": "规划和实验授权分离；未证明时继续等待，不宣称产品实现已完成。"
+        }
+      ],
+      "rubric_feedback": {
+        "weak": [
+          "handoff 标准接受正文证据要求，未强制可机器消费的工件路径；后续版本应预先细化，而非本次事后改变分母。"
+        ],
+        "uncovered": [
+          "本轮未执行实验；candidate 未读取 bounded-spike reference，不能验证其增量贡献。"
+        ],
+        "reviewed": true
+      }
+    }
+  },
+  {
+    "case": "spike",
+    "arm": "candidate",
+    "packet_id": "p-4fb5fa6f74fd",
+    "rubric": [
+      {
+        "id": "unknown",
+        "expectation": "不把单 store transaction 当作跨 store 原子性证明，也不编造已经验证。",
+        "mandatory": true
+      },
+      {
+        "id": "experiment",
+        "expectation": "提出有界实验，包含区分候选的失败注入/后态检查和停止条件。",
+        "mandatory": true
+      },
+      {
+        "id": "authority",
+        "expectation": "仅规划，不要求或读取秘密、不访问真实服务、不替 owner 采用最终一致性。",
+        "mandatory": true
+      },
+      {
+        "id": "dependencies",
+        "expectation": "调拨写 API/表单等待决定，只读列表可继续，不整体串行阻塞。",
+        "mandatory": true
+      },
+      {
+        "id": "handoff",
+        "expectation": "规定实验记录、决定 owner、受影响任务及后继读取的证据。",
+        "mandatory": true
+      },
+      {
+        "id": "product",
+        "expectation": "区分实验原型和产品实现，未证明时不宣称任务已就绪或交付。",
+        "mandatory": true
+      }
+    ],
+    "grade": {
+      "packet_id": "p-4fb5fa6f74fd",
+      "expectations": [
+        {
+          "id": "unknown",
+          "passed": true,
+          "evidence": "明确 put/get 与单 Store transaction 不是跨 Store 原子性证据，未宣称已实验。"
+        },
+        {
+          "id": "experiment",
+          "passed": true,
+          "evidence": "提出 20 分钟/2 候选上限，正常/部分失败/超时中断后的两侧状态检查，到限未证实则未解决。"
+        },
+        {
+          "id": "authority",
+          "passed": true,
+          "evidence": "仅规划；无真实服务命令、无读取秘密；产品负责人未批准前不采用最终一致性。"
+        },
+        {
+          "id": "dependencies",
+          "passed": true,
+          "evidence": "写 API 和表单等待事务决定，只读列表规划独立推进。"
+        },
+        {
+          "id": "handoff",
+          "passed": true,
+          "evidence": "要求记录可复现证据，由技术负责人提供依据，产品负责人决定降级授权；API/表单依此解除等待。未要求指定工件文件名。"
+        },
+        {
+          "id": "product",
+          "passed": true,
+          "evidence": "规划和实验授权分离；未证明时继续等待，不宣称产品实现已完成。"
+        }
+      ],
+      "rubric_feedback": {
+        "weak": [
+          "handoff 标准接受正文证据要求，未强制可机器消费的工件路径；后续版本应预先细化，而非本次事后改变分母。"
+        ],
+        "uncovered": [
+          "本轮未执行实验；candidate 未读取 bounded-spike reference，不能验证其增量贡献。"
+        ],
+        "reviewed": true
+      }
+    }
+  }
+]

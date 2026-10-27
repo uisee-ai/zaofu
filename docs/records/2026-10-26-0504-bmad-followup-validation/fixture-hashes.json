@@ -1,0 +1,23 @@
+{
+  "tests/e2e/fixtures/bmad_followup_eval/README.md": "794ddcccbb9d1401c85bb4dd3285c75bcec297b047b43fae439a11d0ac5d4930",
+  "tests/e2e/fixtures/bmad_followup_eval/spike/rubric.json": "cbfb6af96a57089dd880354bc487d8eaf41820a05f01e8a654475c9b48a8ba0b",
+  "tests/e2e/fixtures/bmad_followup_eval/spike/prompt.md": "c0c49fd115718ada9fe7f138c293cf9ca5ec5c84f4b93f06469588def4439b1d",
+  "tests/e2e/fixtures/bmad_followup_eval/retrospective/rubric.json": "d131117e332ba216cf1bcdd1a7bbe4c263bd57109c2515d67797c52fdc62bbb0",
+  "tests/e2e/fixtures/bmad_followup_eval/retrospective/prompt.md": "2c921cf4648f7b026ed6854d38c740c829f4a98e48289569110fe959cc4a9c3a",
+  "tests/e2e/fixtures/bmad_followup_eval/review/rubric.json": "abb8efc71ab06e50a06bf8a19ea2caf6fda8c77dd3435dcad1a40fe70fb96c57",
+  "tests/e2e/fixtures/bmad_followup_eval/review/prompt.md": "88ec9d2e4b0d3f87cc9ec376cc64488fc7fff119b271ba509f877341d39126a9",
+  "tests/e2e/fixtures/bmad_followup_eval/routing/rubric.json": "0975d603436c6e5a4c7d47c02d0738e5f2184a73c89e72b15dd23e7d0b39b991",
+  "tests/e2e/fixtures/bmad_followup_eval/routing/prompt.md": "97d35709d86aff1717fde0e8202c593c2c12d91139d3d09a2807e16c077f6aba",
+  "tests/e2e/fixtures/bmad_followup_eval/spike/project/source.md": "90e203f506dafbf321d683e6225a20aa78b49567b6f8de63722df538c59612c1",
+  "tests/e2e/fixtures/bmad_followup_eval/retrospective/project/evidence.md": "788d35c3121a7e3af6200d9523f61e579e821141f7f24d9889f316546b6d6aad",
+  "tests/e2e/fixtures/bmad_followup_eval/retrospective/project/previous-retro.md": "0da4c26d3acf3bd8c6e4ddb752527b8a5ab30a2d412641ac6127c81002cd75d8",
+  "tests/e2e/fixtures/bmad_followup_eval/retrospective/project/epic.md": "c4380d66a67c85de845277c136d31bcacdce9ae1a74af472e61c95e5b1f106e5",
+  "tests/e2e/fixtures/bmad_followup_eval/retrospective/project/src/export.py": "c69e551ff02e883e94100985609d89c5351e4c5de36af3ddcd73691479c6417b",
+  "tests/e2e/fixtures/bmad_followup_eval/retrospective/project/src/api.py": "289ff7f8e310cbe462b5a607f061b748000b76bc4c59782961bc8655175def26",
+  "tests/e2e/fixtures/bmad_followup_eval/review/project/source.md": "e29962f1cb27ec94e8df2bf24897b8633cf2c7ae1d58ff737640e39e67313b41",
+  "tests/e2e/fixtures/bmad_followup_eval/review/project/handoff.md": "d40d21f82864a4eb64db875aeaaf13d07f313623e9035b2cf608c937cb9f7fbd",
+  "tests/e2e/fixtures/bmad_followup_eval/review/project/transfer.py": "51fa5dec173f7d577fa76cc0bd4386864cd504bc1b5aaaee1243682964114de5",
+  "tests/e2e/fixtures/bmad_followup_eval/review/project/tests/test_transfer.py": "7b2514ad3f59f810ac766ca65d17fdf7fba1d2185a29ffd1d438600b4898ebdb",
+  "tests/e2e/fixtures/bmad_followup_eval/routing/project/requests.md": "15fb2189e1df2d59a1fee723e7368c6a5ba55cb0a94510665fa9b56a306cf43f",
+  "tests/e2e/fixtures/bmad_followup_eval/routing/project/catalog.json": "24fec2fc07d112a1f6fffe5c0812afd12567e03d71eb1fe1c24ee7d1665ce617"
+}

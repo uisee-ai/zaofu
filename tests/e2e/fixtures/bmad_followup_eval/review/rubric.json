@@ -1,0 +1,32 @@
+[
+  {
+    "id": "txn",
+    "expectation": "实际探针或可复核逐行追踪证实 ledger 报错留下部分库存变更，不接受作者的全绿结论。",
+    "mandatory": true
+  },
+  {
+    "id": "false",
+    "expectation": "指出 R1 的 actor=None 已被权限 guard 拒绝，不作为缺空值 guard 的真实产品缺陷。",
+    "mandatory": true
+  },
+  {
+    "id": "keep",
+    "expectation": "修复清单具名保留幂等重试、冲突拒绝及权限零副作用，不通过删掉这些要求修复事务。",
+    "mandatory": true
+  },
+  {
+    "id": "scope",
+    "expectation": "修复限定事务与相关断言；不建议重写整个系统或直接改 AC。",
+    "mandatory": true
+  },
+  {
+    "id": "current",
+    "expectation": "旧 v2 receipt 不能认证 v3；给出当前版本的修复与保留行为复验。",
+    "mandatory": true
+  },
+  {
+    "id": "evidence",
+    "expectation": "结论区分局部单测与原子性探针，并说明漏检断言；证据不是只靠测试数。",
+    "mandatory": true
+  }
+]

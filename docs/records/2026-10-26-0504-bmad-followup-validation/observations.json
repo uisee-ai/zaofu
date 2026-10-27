@@ -1,0 +1,229 @@
+[
+  {
+    "case": "routing",
+    "arm": "baseline",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc 'cat requests.md catalog.json; rg --files --hidden .agents'",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat /workspace/.agents/skills/zf-workflow-start-planner/SKILL.md'",
+        "exit_code": 0
+      }
+    ],
+    "probe_results": []
+  },
+  {
+    "case": "routing",
+    "arm": "candidate",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc \"ls -la; cat requests.md; rg --files --hidden -g '\"'!'\"\\\\.git/**' -g '\"'!'\"\\\\.agents/**'\"",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat catalog.json; cat /workspace/.agents/skills/zf-workflow-start-planner/SKILL.md'",
+        "exit_code": 0
+      }
+    ],
+    "probe_results": []
+  },
+  {
+    "case": "review",
+    "arm": "baseline",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc \"pwd; rg --files -g 'source.md' -g '*handoff*' -g 'AGENTS.md' -g 'SKILL.md' -g 'package.json' -g 'pyproject.toml' -g 'go.mod' -g 'Cargo.toml'\"",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat /workspace/.agents/skills/verify-review/SKILL.md'",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat source.md; cat tests/*; cat transfer.py; cat handoff.md; git rev-parse HEAD; rg --files --hidden .agents; cat .agents/skills/verify-review/references/regression-and-integration.md'",
+        "exit_code": 0
+      }
+    ],
+    "probe_results": [
+      {
+        "command": "/bin/bash -lc 'python3 -B -m unittest discover -s tests -v'",
+        "exit_code": 0,
+        "output": "test_denied_is_unchanged (test_transfer.TransferTests.test_denied_is_unchanged) ... ok\ntest_retry_keeps_one_change (test_transfer.TransferTests.test_retry_keeps_one_change) ... ok\n\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nOK\n"
+      },
+      {
+        "command": "/bin/bash -lc \"python3 -B - <<'PY'\nfrom transfer import transfer\nfor kind in ('runtime_before', 'value_before', 'runtime_after'):\n    state, seen, rows = {'source': 10, 'target': 0}, {}, []\n    def ledger(qty):\n        if kind == 'runtime_after': rows.append(qty)\n        if kind == 'value_before': raise ValueError('offline')\n        raise RuntimeError('offline')\n    try: result = transfer(state, ledger, seen, 'alice', {'alice'}, 'k', 3)\n    except Exception as e: result = type(e).__name__\n    print(kind, 'result=', result, 'state=', state, 'rows=', rows, 'seen=', seen)\n    result = transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 3)\n    print('retry', 'result=', result, 'state=', state, 'rows=', rows)\nstate, seen, rows = {'source': 10, 'target': 0}, {}, []\nfirst = transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 3)\nassert transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 3) == first\nbefore = (state.copy(), seen.copy(), rows.copy())\ntry: transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 4)\nexcept ValueError: pass\nelse: raise AssertionError('missing conflict')\nassert (state, seen, rows) == before\nprint('same payload retry + different qty conflict: PASS')\nfor actor in (None, 'mallory'):\n    try: transfer(state, rows.append, seen, actor, {'alice'}, 'k', 3)\n    except PermissionError: pass\n    else: raise AssertionError('missing denial')\n    assert (state, seen, rows) == before\nprint('None + unauthorized actor on cached key: PASS')\nPY\"",
+        "exit_code": 0,
+        "output": "runtime_before result= {'error': 'ledger unavailable'} state= {'source': 7, 'target': 3} rows= [] seen= {}\nretry result= {'id': 'k'} state= {'source': 4, 'target': 6} rows= [3]\nvalue_before result= ValueError state= {'source': 7, 'target': 3} rows= [] seen= {}\nretry result= {'id': 'k'} state= {'source': 4, 'target': 6} rows= [3]\nruntime_after result= {'error': 'ledger unavailable'} state= {'source': 7, 'target': 3} rows= [3] seen= {}\nretry result= {'id': 'k'} state= {'source': 4, 'target': 6} rows= [3, 3]\nsame payload retry + different qty conflict: PASS\nNone + unauthorized actor on cached key: PASS\n"
+      }
+    ]
+  },
+  {
+    "case": "review",
+    "arm": "candidate",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc \"pwd; rg --files -g 'source.md' -g '*handoff*' -g 'AGENTS.md' -g 'SKILL.md' -g 'package.json' -g 'pyproject.toml' -g 'go.mod' -g 'Cargo.toml'\"",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'ls -la; cat source.md handoff.md; git status --short; git diff --stat'",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat /workspace/.agents/skills/verify-review/SKILL.md'",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc \"cat .agents/skills/verify-review/references/independent-findings.md .agents/skills/verify-review/references/regression-and-integration.md; nl -ba tests/test_transfer.py; nl -ba transfer.py; git log -1 --format='%H %s'; rg --files --hidden -g '\"'!.git/**'\"'\"",
+        "exit_code": 0
+      }
+    ],
+    "probe_results": [
+      {
+        "command": "/bin/bash -lc \"python3 -B -m unittest discover -s tests -v; python3 -B - <<'PY'\nfrom transfer import transfer\nfrom hashlib import sha256\nfrom pathlib import Path\nfor p in ('transfer.py','tests/test_transfer.py'):\n    print('SHA256', p, sha256(Path(p).read_bytes()).hexdigest())\nfor partial in (False, True):\n    s, seen, rows = {'source':10,'target':0}, {}, []\n    def ledger(q):\n        if partial: rows.append(q)\n        raise RuntimeError('offline')\n    result = transfer(s, ledger, seen, 'alice', {'alice'}, 'k', 3)\n    print('partial=',partial,'result=',result,'state=',s,'rows=',rows,'seen=',seen)\n    result = transfer(s, rows.append, seen, 'alice', {'alice'}, 'k', 3)\n    print('retry=',result,'state=',s,'rows=',rows,'seen=',seen)\ns, seen, rows = {'source':10,'target':0}, {}, []\na = transfer(s, rows.append, seen, 'alice', {'alice'}, 'k', 3)\nb = transfer(s, rows.append, seen, 'alice', {'alice'}, 'k', 3)\nassert a == b == {'id':'k'} and s == {'source':7,'target':3} and rows == [3]\nprint('same payload retry PASS')\nbefore = (s.copy(),seen.copy(),rows.copy())\ntry: transfer(s, rows.append, seen, 'alice', {'alice'}, 'k', 4)\nexcept ValueError as e: assert str(e) == 'conflict'\nelse: raise AssertionError('missing conflict')\nassert (s,seen,rows) == before\nprint('different qty conflict zero effects PASS')\nfor actor in (None, 'mallory'):\n    for key in ('k', 'new'):\n        try: transfer(s, rows.append, seen, actor, {'alice'}, key, 3)\n        except PermissionError: pass\n        else: raise AssertionError('missing denial')\n        assert (s,seen,rows) == before\nprint('unauthorized None/mallory cached/new key zero effects PASS')\nPY\"",
+        "exit_code": 0,
+        "output": "test_denied_is_unchanged (test_transfer.TransferTests.test_denied_is_unchanged) ... ok\ntest_retry_keeps_one_change (test_transfer.TransferTests.test_retry_keeps_one_change) ... ok\n\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nOK\nSHA256 transfer.py 51fa5dec173f7d577fa76cc0bd4386864cd504bc1b5aaaee1243682964114de5\nSHA256 tests/test_transfer.py 7b2514ad3f59f810ac766ca65d17fdf7fba1d2185a29ffd1d438600b4898ebdb\npartial= False result= {'error': 'ledger unavailable'} state= {'source': 7, 'target': 3} rows= [] seen= {}\nretry= {'id': 'k'} state= {'source': 4, 'target': 6} rows= [3] seen= {'k': (3, {'id': 'k'})}\npartial= True result= {'error': 'ledger unavailable'} state= {'source': 7, 'target': 3} rows= [3] seen= {}\nretry= {'id': 'k'} state= {'source': 4, 'target': 6} rows= [3, 3] seen= {'k': (3, {'id': 'k'})}\nsame payload retry PASS\ndifferent qty conflict zero effects PASS\nunauthorized None/mallory cached/new key zero effects PASS\n"
+      }
+    ]
+  },
+  {
+    "case": "review",
+    "arm": "variant",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc \"pwd; rg --files -g 'AGENTS.md' -g 'source.md' -g '*handoff*' -g 'SKILL.md' -g 'package.json' -g 'pyproject.toml' -g 'Cargo.toml' -g 'go.mod'\"",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat /workspace/.agents/skills/verify-review/SKILL.md'",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc \"ls -la; git status --short; git rev-parse HEAD; cat source.md; rg --files --hidden -g '\"'!.git/**'\"' -g '\"'!.agents/**'\"'\"",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat /workspace/.agents/skills/verify-review/references/independent-findings.md /workspace/.agents/skills/verify-review/references/regression-and-integration.md'",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc \"nl -ba tests/test_transfer.py; nl -ba transfer.py; nl -ba handoff.md; nl -ba source.md; rg --files --hidden /workspace -g 'AGENTS.md'\"",
+        "exit_code": 1
+      }
+    ],
+    "probe_results": [
+      {
+        "command": "/bin/bash -lc \"PYTHONDONTWRITEBYTECODE=1 python3 -B - <<'PY'\nimport unittest\nfrom transfer import transfer\nsuite = unittest.defaultTestLoader.discover('tests', pattern='test_transfer.py')\nr = unittest.TextTestRunner(verbosity=2).run(suite)\nif not r.wasSuccessful(): raise SystemExit(1)\ndef probe(label, exc, append_first=False, retry=False):\n    state, seen, rows = {'source':10, 'target':0}, {}, []\n    def ledger(q):\n        if append_first: rows.append(q)\n        raise exc('unavailable')\n    try: result = transfer(state, ledger, seen, 'alice', {'alice'}, 'k', 3)\n    except Exception as e: result = type(e).__name__\n    print(label, 'result=', result, 'state=', state, 'rows=', rows, 'seen=', seen)\n    if retry:\n        result = transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 3)\n        print('retry after failure', 'result=', result, 'state=', state, 'rows=', rows, 'seen=', seen)\nprobe('ledger fails before writing', RuntimeError, retry=True)\nprobe('ledger writes then fails', RuntimeError, append_first=True)\nprobe('ledger raises OSError', OSError)\nstate, seen, rows = {'source':10, 'target':0}, {}, []\nfirst = transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 3)\nassert transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 3)['id'] == first['id']\nfor actor, qty, error in [('alice',4,ValueError), (None,3,PermissionError), ('bob',3,PermissionError)]:\n    before = (state.copy(), list(rows), dict(seen))\n    try: transfer(state, rows.append, seen, actor, {'alice'}, 'k', qty)\n    except error:\n        assert (state, rows, seen) == before\n        print('PASS rejection without effects', repr(actor), qty, error.__name__)\n    else: raise AssertionError('expected rejection')\nprint('PASS successful retry', state, rows)\nPY\"",
+        "exit_code": 0,
+        "output": "test_denied_is_unchanged (test_transfer.TransferTests.test_denied_is_unchanged) ... ok\ntest_retry_keeps_one_change (test_transfer.TransferTests.test_retry_keeps_one_change) ... ok\n\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nOK\nledger fails before writing result= {'error': 'ledger unavailable'} state= {'source': 7, 'target': 3} rows= [] seen= {}\nretry after failure result= {'id': 'k'} state= {'source': 4, 'target': 6} rows= [3] seen= {'k': (3, {'id': 'k'})}\nledger writes then fails result= {'error': 'ledger unavailable'} state= {'source': 7, 'target': 3} rows= [3] seen= {}\nledger raises OSError result= OSError state= {'source': 7, 'target': 3} rows= [] seen= {}\nPASS rejection without effects 'alice' 4 ValueError\nPASS rejection without effects None 3 PermissionError\nPASS rejection without effects 'bob' 3 PermissionError\nPASS successful retry {'source': 7, 'target': 3} [3]\n"
+      }
+    ]
+  },
+  {
+    "case": "review",
+    "arm": "bare",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc \"pwd; rg --files -g 'AGENTS.md' -g 'source.md' -g '*handoff*' -g '*method*' -g 'package.json' -g 'pyproject.toml' -g 'README*' -g '*test*' -g '*.py' -g '*.ts' -g '*.js' -g '*.md'\"",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc \"ls -la; cat source.md handoff.md transfer.py tests/test_transfer.py; git status --short; git diff; rg --files -g 'AGENTS.md' /workspace /root 2>/dev/null\"",
+        "exit_code": 1
+      },
+      {
+        "command": "/bin/bash -lc 'find .agents -type f -maxdepth 5 -print; git log -3 --oneline; nl -ba transfer.py; nl -ba tests/test_transfer.py; nl -ba handoff.md'",
+        "exit_code": 0
+      }
+    ],
+    "probe_results": [
+      {
+        "command": "/bin/bash -lc \"python3 -B - <<'PY'\nimport unittest\nfrom transfer import transfer\nr = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover('tests'))\nprint('CURRENT_SUITE', r.wasSuccessful(), 'tests=', r.testsRun)\nfor mode in ('before_write', 'after_write', 'other_exception'):\n    state, seen, rows = {'source': 10, 'target': 0}, {}, []\n    def ledger(qty):\n        if mode == 'after_write': rows.append(qty)\n        if mode == 'other_exception': raise ValueError('ledger failure')\n        raise RuntimeError('ledger failure')\n    try: result = transfer(state, ledger, seen, 'alice', {'alice'}, 'k', 3)\n    except Exception as e: result = type(e).__name__\n    print(mode, 'result=', result, 'state=', state, 'rows=', rows, 'seen=', seen)\n    result = transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 3)\n    print('retry_after_failure', 'result=', result, 'state=', state, 'rows=', rows)\nstate, seen, rows = {'source': 10, 'target': 0}, {}, []\nfirst = transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 3)\nsecond = transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 3)\nassert first['id'] == second['id'] == 'k'\nassert state == {'source': 7, 'target': 3} and rows == [3]\ntry: transfer(state, rows.append, seen, 'alice', {'alice'}, 'k', 4)\nexcept ValueError as e: assert str(e) == 'conflict'\nelse: raise AssertionError('conflict not rejected')\nassert state == {'source': 7, 'target': 3} and rows == [3] and seen == {'k': (3, first)}\nfor actor in (None, 'bob'):\n    for key in ('k', 'new'):\n        try: transfer(state, rows.append, seen, actor, {'alice'}, key, 3)\n        except PermissionError: pass\n        else: raise AssertionError('unauthorized')\nassert state == {'source': 7, 'target': 3} and rows == [3] and seen == {'k': (3, first)}\nprint('CURRENT_V3_PROBES: successful retry, payload conflict, unauthorized None/bob on existing/new key passed')\nPY\"",
+        "exit_code": 0,
+        "output": "test_denied_is_unchanged (test_transfer.TransferTests.test_denied_is_unchanged) ... ok\ntest_retry_keeps_one_change (test_transfer.TransferTests.test_retry_keeps_one_change) ... ok\n\n----------------------------------------------------------------------\nRan 2 tests in 0.002s\n\nOK\nCURRENT_SUITE True tests= 2\nbefore_write result= {'error': 'ledger unavailable'} state= {'source': 7, 'target': 3} rows= [] seen= {}\nretry_after_failure result= {'id': 'k'} state= {'source': 4, 'target': 6} rows= [3]\nafter_write result= {'error': 'ledger unavailable'} state= {'source': 7, 'target': 3} rows= [3] seen= {}\nretry_after_failure result= {'id': 'k'} state= {'source': 4, 'target': 6} rows= [3, 3]\nother_exception result= ValueError state= {'source': 7, 'target': 3} rows= [] seen= {}\nretry_after_failure result= {'id': 'k'} state= {'source': 4, 'target': 6} rows= [3]\nCURRENT_V3_PROBES: successful retry, payload conflict, unauthorized None/bob on existing/new key passed\n"
+      }
+    ]
+  },
+  {
+    "case": "retrospective",
+    "arm": "baseline",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc 'ls -la /workspace; cat /workspace/epic.md; cat /workspace/.agents/skills/zf-backlog-batch-closeout/SKILL.md'",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc \"rg --files src; cat evidence.md previous-retro.md; git status --short; rg --files .agents/skills | rg '(mechanical-claim|verify-review|self-improve)/SKILL.md\"'$'\"'; find .. -name AGENTS.md -print\"",
+        "exit_code": 0
+      }
+    ],
+    "probe_results": [
+      {
+        "command": "/bin/bash -lc \"python3 -B - <<'PY'\nfrom pathlib import Path\nmodules = {}\nfor name in ('api', 'export'):\n    scope = {}\n    exec(compile(Path(f'src/{name}.py').read_text(), f'src/{name}.py', 'exec'), scope)\n    modules[name] = scope['available']\nfor on_hand, reserved in [(10, 3), (10, 0), (10, 10)]:\n    print({'on_hand': on_hand, 'reserved': reserved, 'expected': on_hand-reserved, 'api': modules['api'](on_hand, reserved), 'export': modules['export'](on_hand, reserved)})\nPY\"",
+        "exit_code": 0,
+        "output": "{'on_hand': 10, 'reserved': 3, 'expected': 7, 'api': 7, 'export': 10}\n{'on_hand': 10, 'reserved': 0, 'expected': 10, 'api': 10, 'export': 10}\n{'on_hand': 10, 'reserved': 10, 'expected': 0, 'api': 0, 'export': 10}\n"
+      }
+    ]
+  },
+  {
+    "case": "retrospective",
+    "arm": "candidate",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc \"ls -la; cat epic.md; rg --files --hidden -g '\"'!.git/**'\"' -g '\"'!.agents/**'\"' .\"",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat evidence.md previous-retro.md src/api.py src/export.py; cat .agents/skills/zf-backlog-batch-closeout/SKILL.md; cat .agents/skills/zf-cr/SKILL.md; git status --short; git log -5 --oneline'",
+        "exit_code": 128
+      }
+    ],
+    "probe_results": [
+      {
+        "command": "/bin/bash -lc \"python3 -B - <<'PY'\nfrom pathlib import Path\nfor name in ('epic.md', 'evidence.md', 'previous-retro.md', 'src/api.py', 'src/export.py'):\n    print(name)\n    for i, line in enumerate(Path(name).read_text().splitlines(), 1):\n        print(f'{i}: {line}')\napi = {}\nexport = {}\nexec(compile(Path('src/api.py').read_text(), 'src/api.py', 'exec'), api)\nexec(compile(Path('src/export.py').read_text(), 'src/export.py', 'exec'), export)\nfor on_hand, reserved in ((10, 3), (10, 0), (10, 10)):\n    expected = on_hand - reserved\n    a = api['available'](on_hand, reserved)\n    e = export['available'](on_hand, reserved)\n    print(f'on_hand={on_hand}, reserved={reserved}: expected={expected}, api={a}, export={e}, both_match={a == e == expected}')\nPY\"",
+        "exit_code": 0,
+        "output": "epic.md\n1: 目标：调拨接口和导出对同一库存使用同样的可用量规则。\n2: AC-ONE: 两个入口都排除 reserved 数量。\n3: Done when: 两入口实际组合验收，全部本 Epic 任务完成。\n4: 任务：T1 api 已完成；T2 export 已完成；T3 组合验收待执行。\nevidence.md\n1: 范围：本次只提供 src/api.py 和 src/export.py 当前内容；没有可确认的 Git 基线/完整 diff。\n2: T1 和 T2 各自单测通过，但没有共享用例。\n3: 没有提供 ops 日志、性能报告或会话轨迹。不得以此认定 P3 没做。\nprevious-retro.md\n1: P1 owner=api：把可用量修正为 on_hand-reserved。\n2: P2 owner=export：统一导出规则。上次未落地。\n3: P3 owner=ops：记录性能基线。\nsrc/api.py\n1: def available(on_hand, reserved):\n2:     return on_hand - reserved\nsrc/export.py\n1: def available(on_hand, reserved):\n2:     return on_hand\non_hand=10, reserved=3: expected=7, api=7, export=10, both_match=False\non_hand=10, reserved=0: expected=10, api=10, export=10, both_match=True\non_hand=10, reserved=10: expected=0, api=0, export=10, both_match=False\n"
+      }
+    ]
+  },
+  {
+    "case": "spike",
+    "arm": "baseline",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc \"pwd; rg --files -g 'source.md' -g 'AGENTS.md' -g '*SKILL.md' -g '\"'!node_modules'\"' -g '\"'!.git'\"'\"",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat /workspace/.agents/skills/zf-requirement-reconciliation/SKILL.md /workspace/.agents/skills/grill/SKILL.md'",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'ls -la /workspace; for p in /AGENTS.md /workspace/AGENTS.md; do if [ -f \"$p\" ]; then cat \"$p\"; fi; done; nl -ba /workspace/source.md; sha256sum /workspace/source.md'",
+        "exit_code": 0
+      }
+    ],
+    "probe_results": []
+  },
+  {
+    "case": "spike",
+    "arm": "candidate",
+    "read_commands": [
+      {
+        "command": "/bin/bash -lc \"pwd && rg --files -g 'source.md' -g 'AGENTS.md' -g '*SKILL.md' -g '\"'!node_modules'\"' -g '\"'!.git'\"'\"",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat /workspace/.agents/skills/zf-requirement-reconciliation/SKILL.md /workspace/.agents/skills/grill/SKILL.md'",
+        "exit_code": 0
+      },
+      {
+        "command": "/bin/bash -lc 'cat source.md; for p in /AGENTS.md /workspace/AGENTS.md; do if [ -f \"$p\" ]; then cat \"$p\"; fi; done; sha256sum source.md'",
+        "exit_code": 0
+      }
+    ],
+    "probe_results": []
+  }
+]

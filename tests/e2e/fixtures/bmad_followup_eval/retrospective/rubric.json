@@ -1,0 +1,32 @@
+[
+  {
+    "id": "closure",
+    "expectation": "T3 未完成且规则存在差异，不能宣告 Epic 验收完成。",
+    "mandatory": true
+  },
+  {
+    "id": "delta",
+    "expectation": "以两个实际函数为证据识别规则偏差，给出能区分它们的输入。",
+    "mandatory": true
+  },
+  {
+    "id": "dual",
+    "expectation": "分别给本次修复与上游预防行动，包含 owner/验证，而不只是再加一条通用规则。",
+    "mandatory": true
+  },
+  {
+    "id": "follow",
+    "expectation": "P1 有实现证据；P2 当前代码证明尚不满足；P3 仅为未找到证据。",
+    "mandatory": true
+  },
+  {
+    "id": "scope",
+    "expectation": "不编造 diff/提交统计，说明缺少基线、会话日志的复盘限制。",
+    "mandatory": true
+  },
+  {
+    "id": "authority",
+    "expectation": "不修改任务状态、规格或代码；提出具名行动与下一轮核对方式。",
+    "mandatory": true
+  }
+]

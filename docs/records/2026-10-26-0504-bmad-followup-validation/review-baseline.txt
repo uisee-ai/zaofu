@@ -1,0 +1,28 @@
+**结论：reject，需要返工。** 当前 2 个测试全部通过，但内存探针证实 AC-TXN 不成立，失败后重试还会重复修改库存。本次只读，未修改文件。
+
+| 原始需求 | 独立核验结果 |
+|---|---|
+| AC-TXN | **失败**：ledger 写入失败后库存未恢复 |
+| AC-IDEM | 成功后同 payload 重试、不同 qty 冲突通过；失败后重试存在重复副作用 |
+| AC-AUTH | 通过：`None` 和未授权 actor 均被拒绝，包括命中已有 key 时 |
+
+**gap_findings**
+
+1. **Critical — 原子性缺失，并导致重试重复扣库存。**
+   位置：[transfer.py:11](/workspace/transfer.py:11)。初始库存 `(10, 0)`，转移 `3`，ledger 在写入前抛出 `RuntimeError`，函数返回 error，但库存变成 `(7, 3)`，ledger 和 seen 均为空。恢复 ledger 后用相同 key 重试，库存变成 `(4, 6)`，ledger 却只有 `[3]`。抛出 `ValueError` 同样遗留库存修改；ledger 若先追加再抛错，重试产生 `[3, 3]`。
+
+   **最小返工范围**：`transfer.py` 的提交、失败恢复及幂等记录路径。需要让库存、ledger 与成功记录保持一致。仅扩大异常捕获、调整调用顺序或恢复库存，无法解决 ledger 已写入后抛错的情形；必须明确并实现可回滚或事务性的 ledger 协作契约。
+
+2. **必改 — 测试漏掉事务失败和冲突路径。**
+   位置：[tests/test_transfer.py:5](/workspace/tests/test_transfer.py:5)。现有测试只覆盖成功重试和 `None` 拒绝，无法捕获上述已复现缺陷。
+
+   **复验要求**：在该测试文件补充 ledger 写入前失败、写入后失败、非 `RuntimeError` 失败，以及失败后同 key 重试；断言库存、ledger、seen 的完整后态和最终仅一次生效。补充不同 qty 冲突零副作用、已缓存 key 的未授权访问断言。完整重跑现有测试与新增回归。
+
+**handoff 核验**
+
+- [handoff.md:1](/workspace/handoff.md:1) 的“所有单测都绿”已复现，但不能推出可接受。
+- R1 不成立：`actor=None` 正常触发 `PermissionError`，无需为此增加空值 guard。
+- R2 不成立：返回 error 不代表撤销副作用。
+- v2 receipt 未用于认证 v3。返工交接应提供当前版本的新证据；按原始范围，只修改 `transfer.py` 与 `tests/test_transfer.py`，不修改 AC。
+
+**证据与评审边界**：执行 `python3 -B -m unittest discover -s tests -v`，2/2 通过；上述失败由 `python3 -B` 内存探针复现。`python` 命令缺失是环境问题，已改用 `python3`。仓库没有 HEAD，结论绑定当前工作区文件。五轴中正确性失败；可读性、架构、安全和性能未发现额外阻断项，ledger 的事务边界问题归入第一项。
