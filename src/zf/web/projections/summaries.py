@@ -193,7 +193,7 @@ def _metrics_snapshot_projection(state_dir: Path, *, config=None) -> dict:
     return snapshot
 
 
-def _features(state_dir: Path, delivery_features: list[dict] | None = None) -> list[dict]:
+def _features(state_dir: Path, delivery_features: list[dict] | None = None, *, config: ZfConfig | None = None) -> list[dict]:
     rows: list[dict] = []
     seen: set[str] = set()
     path = state_dir / "feature_list.json"
@@ -208,7 +208,7 @@ def _features(state_dir: Path, delivery_features: list[dict] | None = None) -> l
             })
             seen.add(f.id)
     if delivery_features is None:
-        delivery_features = _delivery_features(state_dir)
+        delivery_features = _delivery_features(state_dir, config=config)
     for feature in delivery_features:
         fid = str(feature.get("id") or "")
         if fid and fid not in seen:
@@ -217,13 +217,13 @@ def _features(state_dir: Path, delivery_features: list[dict] | None = None) -> l
     return rows
 
 
-def _delivery_features(state_dir: Path) -> list[dict]:
+def _delivery_features(state_dir: Path, *, config: ZfConfig | None = None) -> list[dict]:
     from zf.web.projections.source_cache import read_source_projection, task_paths
     paths = task_paths(state_dir) + [state_dir / "refs" / "feature-index.json", state_dir / "feature_list.json"]
-    return read_source_projection(state_dir, "delivery-features", paths, lambda: _build_delivery_features(state_dir))
+    return read_source_projection(state_dir, "delivery-features", paths, lambda: _build_delivery_features(state_dir, config=config), config=config)
 
 
-def _build_delivery_features(state_dir: Path) -> list[dict]:
+def _build_delivery_features(state_dir: Path, *, config: ZfConfig | None = None) -> list[dict]:
     index = _feature_index(state_dir)
     statuses = _delivery_feature_statuses(state_dir)
     rows: list[dict] = []
@@ -256,26 +256,71 @@ def _build_delivery_features(state_dir: Path) -> list[dict]:
             "bundle_history_count": len(entry.get("bundle_history") or []),
         })
         seen.add(fid)
-    rows.extend(_delivery_feature_fallbacks(state_dir, statuses=statuses, seen=seen))
+    rows.extend(_delivery_feature_fallbacks(state_dir, statuses=statuses, seen=seen, config=config))
     return rows
+
+
+def _projection_array_file(path: Path) -> list[dict]:
+    """Read the canonical store shape without treating corrupt data as empty."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            return []
+        raise  # A dangling declared store file is not an absent store.
+    if not text.strip():
+        return []
+    value = json.loads(text)
+    if not isinstance(value, list):
+        raise ValueError(f"expected an array in {path.name}")
+    return value
+
+
+class _DeliveryTaskStore(TaskStore):
+    def _load_raw(self) -> list[dict]:
+        return _projection_array_file(self.path)
+
+    def _load_archive_file(self, path: Path) -> list[dict]:
+        return _projection_array_file(path)
+
+
+class _DeliveryFeatureStore(FeatureStore):
+    def _load_raw(self) -> list[dict]:
+        return _projection_array_file(self.path)
 
 
 def _feature_index(state_dir: Path) -> dict[str, Any]:
     path = state_dir / "refs" / "feature-index.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            return {}
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("delivery_feature_index")
         return {}
-    return data if isinstance(data, dict) else {}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("delivery_feature_index")
+        return {}
+    if not isinstance(data, dict):
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("delivery_feature_index")
+        return {}
+    return data
 
 
 def _feature_list_ids(state_dir: Path) -> set[str]:
     path = state_dir / "feature_list.json"
-    if not path.exists():
-        return set()
     try:
-        return {str(feature.id) for feature in FeatureStore(path).list_all() if str(feature.id or "").strip()}
+        return {str(feature.id) for feature in _DeliveryFeatureStore(path).list_all() if str(feature.id or "").strip()}
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("delivery_feature_list")
         return set()
 
 
@@ -284,6 +329,7 @@ def _delivery_feature_fallbacks(
     *,
     statuses: dict[str, str],
     seen: set[str],
+    config: ZfConfig | None = None,
 ) -> list[dict]:
     """Discover delivery targets when feature-index is absent.
 
@@ -295,14 +341,18 @@ def _delivery_feature_fallbacks(
     if _feature_list_ids(state_dir):
         return []
     try:
-        tasks = TaskStore(state_dir / "kanban.json").list_all_with_archive()
+        tasks = _DeliveryTaskStore(state_dir / "kanban.json").list_all_with_archive()
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("delivery_tasks")
         tasks = []
     try:
         from zf.web.projections.events import _events_with_seq
 
-        events = list(_events_with_seq(state_dir))
+        events = list(_events_with_seq(state_dir, config=config))
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("delivery_events")
         events = []
     runtime_statuses = _delivery_runtime_statuses(events)
     candidates: dict[str, dict[str, Any]] = {}
@@ -444,8 +494,10 @@ def _delivery_feature_title(
 
 def _delivery_feature_statuses(state_dir: Path) -> dict[str, str]:
     try:
-        tasks = TaskStore(state_dir / "kanban.json").list_all_with_archive()
+        tasks = _DeliveryTaskStore(state_dir / "kanban.json").list_all_with_archive()
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("delivery_task_status")
         return {}
     by_feature: dict[str, list[str]] = {}
     for task in tasks:
@@ -468,13 +520,21 @@ def _delivery_feature_statuses(state_dir: Path) -> dict[str, str]:
     return out
 
 
-def _archive_tasks(state_dir: Path, *, include_active: bool = False) -> list[dict]:
+def _archive_tasks(state_dir: Path, *, include_active: bool = False, config: ZfConfig | None = None) -> list[dict]:
     path = state_dir / "kanban.json"
-    if not path.exists():
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return []
+    except OSError:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("archive_tasks")
         return []
     try:
-        tasks = TaskStore(path).list_all_with_archive()
+        tasks = _DeliveryTaskStore(path).list_all_with_archive()
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("archive_tasks")
         return []
     tasks = [
         task
@@ -489,8 +549,8 @@ def _archive_tasks(state_dir: Path, *, include_active: bool = False) -> list[dic
         task_card_projection,
     )
 
-    all_events = _events_with_seq(state_dir)
-    search_texts = payload_search_texts(state_dir)
+    all_events = _events_with_seq(state_dir, config=config)
+    search_texts = payload_search_texts(state_dir, config=config)
     if len(search_texts) != len(all_events):
         from zf.web.projections.common import _payload_search_text
 
@@ -514,6 +574,7 @@ def _archive_tasks(state_dir: Path, *, include_active: bool = False) -> list[dic
                 task_events,
                 all_events,
                 state_dir=state_dir,
+                config=config,
             ),
         ).to_dict()
         projection = kanban_column_projection(task)

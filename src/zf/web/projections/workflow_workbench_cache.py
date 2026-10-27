@@ -82,13 +82,20 @@ def _references(value, context) -> set[str]:
 
 
 def read_workbench_projection(context, project_id: str, request_id: str, as_of: int,
-                              detail: Callable, *, if_none_match: str | None = None) -> tuple[dict, str] | JSONResponse:
+                              detail: Callable, *, if_none_match: str | None = None,
+                              structure_only: bool = False,
+                              structure_node_id: str | None = None) -> tuple[dict, str] | JSONResponse:
     request = load_workflow_request(context.state_dir, request_id)
     if not request:
         return JSONResponse({"ok": False, "status": "not_found"}, status_code=404)
-    identity = json.dumps([str(context.project_root.resolve()), project_id, request_id,
-                           request.get("run_id"), request.get("revision"),
-                           request.get("proposal_digest"), as_of], sort_keys=True)
+    identity_parts = [str(context.project_root.resolve()), project_id, request_id,
+                      request.get("run_id"), request.get("revision"),
+                      request.get("proposal_digest"), as_of]
+    if structure_node_id is not None:
+        identity_parts.extend(["structure-node-v1", structure_node_id])
+    elif structure_only:
+        identity_parts.append("structure-v1")
+    identity = json.dumps(identity_parts, sort_keys=True)
     key = "workflow-workbench.v2:" + hashlib.sha256(identity.encode()).hexdigest()
     dependencies = _references(request, context)
 
@@ -156,7 +163,11 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                     body = json.loads(response.body)
                 else:
                     body = response
-                inputs = read_workbench_sources(context, body, as_of=as_of, all_events=events)
+                if structure_only:
+                    from zf.web.projections.workflow_workbench_structure import read_structure_sources
+                    inputs = read_structure_sources(context, body, as_of=as_of, all_events=events)
+                else:
+                    inputs = read_workbench_sources(context, body, as_of=as_of, all_events=events)
             # Ordinary tool/trace events carry many opaque refs which the graph
             # never hydrates. Follow only the semantic readers' inputs/outputs.
             artifact_events = [event.payload for _, event in inputs["events"] if event.type in {
@@ -164,18 +175,28 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                 "replan.requested", "goal.claim_set.pinned", "task.pipeline.generation.admitted",
                 "task_map.materialization.committed", "task_map.admitted",
             }]
-            discovered = _references([body, inputs["plans"], inputs["versions"],
-                                      inputs["goal_claim_set"], artifact_events], context)
+            discovered = _references(body if structure_only else [
+                body, inputs["plans"], inputs["versions"], inputs["goal_claim_set"], artifact_events,
+            ], context)
             added = discovered - dependencies
             dependencies.update(discovered)
             if failures or added or before != version():
                 continue
             with collect_projection_failures() as graph_failures:
-                value = redact_obj(build_sdlc_graph(inputs), memoize=True)
+                if structure_only:
+                    from zf.web.projections.workflow_workbench_structure import build_structure, build_structure_node
+                    raw = (build_structure_node(inputs, node_id=structure_node_id) if structure_node_id is not None
+                           else build_structure(inputs, generation=tag(before)))
+                    if raw is None:
+                        return JSONResponse({"ok": False, "status": "node_not_found"}, status_code=404)
+                    value = redact_obj(raw, memoize=True)
+                else:
+                    value = redact_obj(build_sdlc_graph(inputs), memoize=True)
             if graph_failures or before != version():
                 continue
             try:
-                read_model.set_cached_projection(context.state_dir, key, kind="workflow-workbench",
+                read_model.set_cached_projection(context.state_dir, key,
+                    kind="workflow-workbench-structure" if structure_only else "workflow-workbench",
                     source_seq=value["scope"]["head_seq"], payload={
                         "fingerprint": before, "dependencies": sorted(dependencies), "value": value,
                     })

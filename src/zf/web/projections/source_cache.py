@@ -59,7 +59,12 @@ def read_source_projection(state_dir: Path, key: str, paths: list[Path], build: 
             result = build()
         for failure in failures:
             record_projection_failure(failure)
-        if not failures and before == fingerprint(state_dir, paths, config):
+        after = fingerprint(state_dir, paths, config)
+        if before != after:
+            # A caller that collects failures must not publish a value assembled
+            # across generations merely because it was not cached.
+            record_projection_failure(f"{key}:source_changed")
+        elif not failures:
             try:
                 read_model.set_cached_projection(state_dir, cache_key, kind="source-projection", source_seq=0,
                                                   payload={"fingerprint": before, "value": result})

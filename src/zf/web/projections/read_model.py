@@ -414,8 +414,8 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
     """Rebuild/catch up the read model from event truth."""
 
     path = db_path(state_dir)
-    manifest = build_event_manifest(state_dir)
-    write_event_manifest(state_dir)
+    manifest = build_event_manifest(state_dir, strict_io=True)
+    write_event_manifest(state_dir, manifest=manifest)
     with locked_path(path):
         with _connect(path) as conn:
             _ensure_schema(conn)
@@ -433,10 +433,15 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
             tail_segment = meta.get("tail_segment", "") if resume else ""
             tail_offset = int(meta.get("tail_offset") or 0) if resume else 0
             from zf.web.projections.event_index_rows import prepare_rows, insert_rows
-            rows, refs, timeline, last = prepare_rows(iter_event_records_from_cursor(
+            records = iter_event_records_from_cursor(
                 state_dir, config=config, start_seq=start_seq,
-                segment=tail_segment, byte_offset=tail_offset,
-            ))
+                segment=tail_segment, byte_offset=tail_offset, strict_io=True,
+            )
+            capture = None
+            if start_seq == 0 and not tail_segment:
+                from zf.web.projections.event_index_capture import capture_cold_index_events
+                records, capture = capture_cold_index_events(state_dir, config, records)
+            rows, refs, timeline, last = prepare_rows(records)
             # Parsing, hashing and redaction above hold no SQLite writer lock.
             # On rotation replace the old generation in the same transaction.
             if reset:
@@ -461,6 +466,9 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
             _set_meta(conn, "segment_count", len(manifest.segments))
             _set_meta(conn, "total_bytes", manifest.total_bytes)
             conn.commit()
+            if capture is not None:
+                from zf.web.projections.event_index_capture import admit_cold_index_events
+                admit_cold_index_events(state_dir, config, capture)
             if vacuum_required:
                 try:
                     conn.execute("VACUUM")

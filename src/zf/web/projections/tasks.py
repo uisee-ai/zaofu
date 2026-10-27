@@ -39,6 +39,7 @@ from zf.web.projections.workflow_graph import _workflow_judge_configured, _workf
 from zf.web.projections.operator import _operator_task_evidence
 from zf.web.projections.agents import _workdir_for_instance
 from zf.web.projections.task_fanout_runtime import _latest_task_fanout_runtimes
+from zf.web.projections.event_task_index import group_task_events as _group_task_events
 from zf.web.projections.fanouts import _candidate_detail, _fanout_child_projection, _fanout_manifest, _fanout_progress
 
 
@@ -1340,6 +1341,8 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
     try:
         ready_ids = {t.id for t in ts.ready()}
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("task_ready")
         ready_ids = set()
     events_path = state_dir / "events.jsonl"
     events = []
@@ -1349,6 +1352,8 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
 
             events = events_read_days(state_dir, 1, config=config)
         except Exception:
+            from zf.web.projections.projection_failures import record_projection_failure
+            record_projection_failure("task_recent_events")
             events = []
     all_events = _events_with_seq(state_dir, config=config)
     aliases = run_aliases(event for _, event in all_events)
@@ -1373,14 +1378,16 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
     latest_fanouts = _latest_task_fanout_runtimes(
         state_dir, {t.id for t in tasks}, include_report=include_detail_bodies,
     )
+    task_event_groups = _group_task_events(tasks, all_events, _search_texts)
     for t in tasks:
-        _tid = t.id.lower()
-        task_events = [
-            (seq, event)
-            for (seq, event), _text in zip(all_events, _search_texts)
-            if getattr(event, "task_id", None) == t.id
-            or (_tid and _tid in _text)
-        ]
+        if task_event_groups is None:
+            needle = t.id.lower()
+            task_events = [
+                (seq, event) for (seq, event), text in zip(all_events, _search_texts)
+                if getattr(event, "task_id", None) == t.id or (needle and needle in text)
+            ]
+        else:
+            task_events = task_event_groups[t.id]
         refs = _refs_from_events(task_events, task=t, state_dir=state_dir, config=config)
         latest_fanout = latest_fanouts.get(t.id, {})
         if latest_fanout:

@@ -92,7 +92,7 @@ def _event_log_run_summary(
         for _, event in task_events
         if getattr(event, "task_id", None)
     })
-    archived_tasks = _archive_tasks(state_dir, include_active=True)
+    archived_tasks = _archive_tasks(state_dir, include_active=True, config=config)
     terminal_tasks = [
         task for task in archived_tasks
         if str(task.get("id") or "") in set(task_ids)
@@ -364,6 +364,9 @@ _CACHE_BUDGET_BYTES = int(
 _DECODED_COST_FACTOR = 14   # events entries: own decoded objects
 _DERIVED_COST_FACTOR = 2    # index/texts entries: share event objects
 _CACHE_STAMP = itertools.count()
+# Epochs identify the object prefix across full rebuilds, even when the
+# decoded entry was evicted while a derived view still retained its epoch.
+_EVENT_EPOCH = itertools.count(1)
 
 
 def _log_bytes_basis(state_dir: Path, fingerprint: tuple[int, int]) -> int:
@@ -580,7 +583,7 @@ def _archive_inventory(state_dir: Path) -> tuple:
 
     return tuple(
         (seg.rel_path, seg.size)
-        for seg in list_event_segments(state_dir)
+        for seg in list_event_segments(state_dir, strict_io=True)
         if seg.kind == "archive"
     )
 
@@ -680,7 +683,7 @@ def _events_state(
                 result = (folded["events"], folded["epoch"], fingerprint)
         if result is None:
             try:
-                records = list(iter_event_records(state_dir, config=config))
+                records = list(iter_event_records(state_dir, config=config, strict_io=True))
             except Exception:
                 from zf.web.projections.projection_failures import record_projection_failure
                 record_projection_failure("events")
@@ -695,7 +698,7 @@ def _events_state(
                 if record.raw_segment == "events.jsonl":
                     consumed = record.raw_offset + record.raw_length
                     break
-            epoch = (entry["epoch"] + 1) if entry else 0
+            epoch = next(_EVENT_EPOCH)
             archives = _archive_inventory(state_dir)
             _EVENTS_WITH_SEQ_CACHE[key] = {
                 "segment_ranges": ranges,
@@ -726,7 +729,7 @@ def _event_log_fingerprint(state_dir: Path, config=None) -> tuple:
     from zf.web.projections.loop_view_source import _decoder_identity
 
     archives = []
-    for segment in list_event_segments(state_dir):
+    for segment in list_event_segments(state_dir, strict_io=True):
         if segment.kind == "archive":
             stat = segment.path.stat()
             archives.append((segment.rel_path, stat.st_dev, stat.st_ino, stat.st_size,
@@ -735,7 +738,7 @@ def _event_log_fingerprint(state_dir: Path, config=None) -> tuple:
         stat = (state_dir / "events.jsonl").stat()
         active = (int(stat.st_size), int(stat.st_mtime_ns), (stat.st_dev, stat.st_ino))
         ctime = stat.st_ctime_ns
-    except OSError:
+    except FileNotFoundError:
         active, ctime = (0, 0, (0, 0)), 0
     return (*active, tuple(archives), _decoder_identity(config), ctime)
 

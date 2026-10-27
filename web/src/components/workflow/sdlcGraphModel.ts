@@ -10,6 +10,12 @@ export interface SdlcGraph {
   timeline: { seq: number; id: string; ts: string; type: string; task_id?: string; actor?: string; origin: string; payload: Record<string, unknown> }[];
   analysis: { intervals: { operation_id: string; task_id: string; role: string; status: string; start_ms: number | null; end_ms: number | null; duration_ms: number | null; queue_wait_ms: number | null }[]; critical_path: { status: string; node_ids: string[]; duration_ms: number | null; method: string } };
 }
+export interface SdlcStructure extends Pick<SdlcGraph, "scope" | "nodes" | "edges" | "diagnostics"> {
+  schema_version: "sdlc-workbench-structure.v1";
+  partial: true;
+  generation: string;
+}
+export type WorkflowGraphResult = SdlcGraph | SdlcStructure;
 export const graphViews: [GraphView, string][] = [["lifecycle", "Lifecycle"], ["modules", "Task"], ["workflow", "Dag"], ["trace", "Trace"], ["delivery", "Delivery"], ["timeline", "Timeline"]];
 export const statusLabels: Record<string, string> = {
   unknown: "未知", draft: "草稿", pending: "等待", running: "执行中", in_progress: "执行中", reserved: "已预留", requested: "排队中",

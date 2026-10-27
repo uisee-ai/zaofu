@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from zf.core.security.redaction import redact_obj
+
 
 def board_snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Omit only large detail bodies without mutating the shared snapshot cache.
+    """Omit large detail bodies and redact task summaries without mutating the cache.
 
     Event identity and child report refs remain available. The existing task /
     fanout detail APIs still own complete payloads; numeric metrics, counts,
@@ -29,4 +31,4 @@ def _task_summary(task: dict[str, Any]) -> dict[str, Any]:
             **fanout,
             "current_child": {key: value for key, value in fanout["current_child"].items() if key != "report"},
         }
-    return result
+    return redact_obj(result)

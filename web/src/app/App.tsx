@@ -2286,7 +2286,13 @@ export function App() {
           ) : page === "board" ? (
             <>
               {boardBootstrap && <p className="muted" role="status" data-testid="board-tasks-loading-details">
-                已显示任务记录，正在更新执行状态与详情…
+                {boardBootstrap.source === "projection"
+                  ? boardBootstrap.read_projection.state === "error"
+                    ? "任务状态更新失败，当前显示上次结果。"
+                    : boardBootstrap.read_projection.state === "refreshing"
+                      ? "显示上次任务状态，正在更新任务与其他信息…"
+                      : "已显示任务状态，正在更新其他信息…"
+                  : "已显示任务记录，正在更新执行状态与详情…"}
               </p>}
               <BoardWorkbench
                 projectName={topbarProjectName}

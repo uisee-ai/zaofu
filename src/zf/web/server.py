@@ -967,8 +967,8 @@ def create_app(
             return JSONResponse(_no_default_project_payload(), status_code=409)
         return JSONResponse({
             "tasks": _kanban(state_dir, config=config),
-            "archive_tasks": _archive_tasks(state_dir, include_active=False),
-            "delivery_features": (_delivery_rows := _delivery_features(state_dir)),
+            "archive_tasks": _archive_tasks(state_dir, include_active=False, config=config),
+            "delivery_features": (_delivery_rows := _delivery_features(state_dir, config=config)),
             "features": _features(state_dir, delivery_features=_delivery_rows),
             "cost": _cost(state_dir),
             "workers": _workers(state_dir, config=config),
@@ -1701,6 +1701,22 @@ def create_app(
             token=_web_session_cookie(request),
         )), request)
 
+    @app.get("/api/projects/{project_id}/board-cards")
+    def project_board_cards(project_id: str) -> JSONResponse:
+        from zf.web.dashboard_projection import read_dashboard
+        from zf.web.projection_jobs import build_job
+        from zf.web.projection_worker import ProjectionJob
+
+        context = _resolve_api_project(project_id, default_project_id=default_project_id,
+            default_state_dir=state_dir, default_config=config, default_project_root=project_root)
+        job = ProjectionJob(context.state_dir, context.project_root, "board-cards", context.config, project_id)
+        data = read_dashboard(context.state_dir, context.project_root, context.config, job.group,
+                              lambda: build_job(job), worker=active_worker(app), project_id=project_id)
+        summary = board_snapshot_summary(data)
+        return JSONResponse({"schema_version": "board-cards.v1", "project_id": project_id,
+            "source": "projection", "tasks": summary["tasks"], "archive_tasks": summary["archive_tasks"],
+            "read_projection": data["read_projection"]}, headers={"Cache-Control": "no-store"})
+
     @app.get("/api/projects/{project_id}/snapshot/runtime")
     def project_snapshot_runtime(project_id: str, request: Request) -> JSONResponse:
         context = _resolve_api_project(
@@ -1743,15 +1759,18 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        delivery_rows = _safe_snapshot_projection(
-            "delivery_features", [], lambda: _delivery_features(context.state_dir)
-        )
-        return JSONResponse({
-            "delivery_features": delivery_rows,
-            "features": _safe_snapshot_projection(
+        from zf.web.projections.projection_failures import collect_projection_failures
+        with collect_projection_failures() as failures:
+            delivery_rows = _safe_snapshot_projection(
+                "delivery_features", [], lambda: _delivery_features(context.state_dir, config=context.config)
+            )
+            features = _safe_snapshot_projection(
                 "features", [], lambda: _features(context.state_dir, delivery_features=delivery_rows)
-            ),
-        })
+            )
+        if failures:
+            return JSONResponse({"status": "unavailable"}, status_code=503,
+                                headers={"Retry-After": "1", "Cache-Control": "no-store"})
+        return JSONResponse({"delivery_features": delivery_rows, "features": features})
 
     @app.get("/api/projects/{project_id}/kanban-agent/summary")
     def project_kanban_agent_summary_api(project_id: str) -> JSONResponse:
@@ -3125,7 +3144,7 @@ def create_app(
 
     @app.get("/api/archives/tasks")
     def archive_tasks(include_active: bool = False) -> JSONResponse:
-        return JSONResponse(_archive_tasks(state_dir, include_active=include_active))
+        return JSONResponse(_archive_tasks(state_dir, include_active=include_active, config=config))
 
     @app.get("/api/runs")
     def runs() -> JSONResponse:
@@ -4061,12 +4080,12 @@ def _snapshot(
             "tasks", [], lambda: _kanban(state_dir, config=config)
         ),
         "archive_tasks": _safe_snapshot_projection(
-            "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False)
+            "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False, config=config)
         ),
         # R3: delivery features computed once and shared with the features
         # section (each independently ran the full fallback scan, 2x1.4s).
         "delivery_features": (_delivery_shared := _safe_snapshot_projection(
-            "delivery_features", [], lambda: _delivery_features(state_dir)
+            "delivery_features", [], lambda: _delivery_features(state_dir, config=config)
         )),
         "features": _safe_snapshot_projection(
             "features", [], lambda: _features(state_dir, delivery_features=_delivery_shared)
@@ -4214,6 +4233,7 @@ def _snapshot_slice(
     config: ZfConfig | None = None,
     project_root: Path | None = None,
     web_session_token: str | None = None,
+    board_cards: dict | None = None,
 ) -> dict:
     if slice_name == "observability-summary":
         from zf.web.snapshot_observability import observability_snapshot
@@ -4235,14 +4255,14 @@ def _snapshot_slice(
 
     if slice_name in {"light", "board"}:
         data.update({
-            "tasks": _safe_snapshot_projection(
+            "tasks": board_cards["tasks"] if slice_name == "board" and board_cards is not None else _safe_snapshot_projection(
                 "tasks", [], lambda: _kanban(state_dir, config=config, include_detail_bodies=slice_name != "board")
             ),
-            "archive_tasks": _safe_snapshot_projection(
-                "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False)
+            "archive_tasks": board_cards["archive_tasks"] if slice_name == "board" and board_cards is not None else _safe_snapshot_projection(
+                "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False, config=config)
             ),
             "delivery_features": (_light_delivery := _safe_snapshot_projection(
-                "delivery_features", [], lambda: _delivery_features(state_dir)
+                "delivery_features", [], lambda: _delivery_features(state_dir, config=config)
             )),
             "features": _safe_snapshot_projection(
                 "features", [], lambda: _features(state_dir, delivery_features=_light_delivery)

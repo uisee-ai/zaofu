@@ -494,6 +494,16 @@ export function getBoardTasks(projectId: string, signal?: AbortSignal): Promise<
   return requestJson<BoardTaskBootstrap>(`${projectPrefix(projectId)}/board-tasks`, { signal });
 }
 
+export interface BoardCards extends Pick<Snapshot, "tasks" | "archive_tasks"> {
+  project_id: string;
+  source: "projection";
+  read_projection: { state: string; source_cursor?: { source_seq?: number } };
+}
+
+export function getBoardCards(projectId: string, signal?: AbortSignal): Promise<BoardCards> {
+  return requestJson<BoardCards>(`${projectPrefix(projectId)}/board-cards`, { signal });
+}
+
 export function getDeliveryFeatures(projectId?: string): Promise<DeliveryFeaturesPage> {
   return requestJson<DeliveryFeaturesPage>(`${projectPrefix(projectId)}/delivery-features`);
 }

@@ -113,7 +113,7 @@ def test_rotation_triggers_full_rebuild(state_dir: Path) -> None:
     (state_dir / "events.jsonl").rename(archive_dir / "2026-07-01.jsonl")
     _emit(state_dir, "run.started", {})
     events, epoch1, _ = ev._events_state(state_dir)
-    assert epoch1 == epoch0 + 1, "archive change must bump epoch (full rebuild)"
+    assert epoch1 > epoch0, "archive change must bump epoch (full rebuild)"
     assert [e.type for _, e in events][-1] == "run.started"
     assert len(events) == 3  # 归档 2 条 + 新活跃 1 条,seq 连续
     assert [s for s, _ in events] == [1, 2, 3]

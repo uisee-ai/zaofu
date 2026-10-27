@@ -40,6 +40,10 @@ def _serve(connection) -> None:
             try:
                 if job.trigger and quick_fingerprint(job.state_dir, job.root, job.config) != job.trigger:
                     raise ProjectionSourceChanged("queued source became obsolete")
+                if job.group == "board":
+                    cards_job = replace(job, group="board-cards")
+                    rebuild_group(job.state_dir, job.root, job.config, cards_job.group,
+                                  lambda: build_job(cards_job))
                 rebuild_group(job.state_dir, job.root, job.config, job.group,
                               lambda: build_job(job))
                 result = {"state": "ready"}

@@ -18,7 +18,7 @@ from zf.web.projections.read_model import db_path, _connect
 from zf.web.projections.sqlite_reader import connect_readonly
 from zf.web.projections.source_cache import _config_json_default
 
-VERSION = "dashboard-resources.v2"
+VERSION = "dashboard-resources.v3"
 # Clock-derived ages/windows and external probes are snapshots as of generated_at.
 REFRESH_SECONDS = 60.0
 
@@ -89,12 +89,15 @@ def refresh_seconds(group: str) -> float:
 def _stat_hash(digest: Any, path: Path, label: str) -> None:
     try:
         stat = path.stat()
-        digest.update(f"{label}\0{stat.st_dev}\0{stat.st_ino}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+        digest.update(f"{label}\0{stat.st_dev}\0{stat.st_ino}\0{stat.st_size}\0{stat.st_mtime_ns}\0{stat.st_ctime_ns}\n".encode())
     except OSError:
         digest.update(f"{label}\0missing\n".encode())
 
 
 def read_group(state_dir: Path, group: str) -> tuple[dict, dict] | None:
+    # Older dashboards can run alongside this version against the same project
+    # DB. The primary key must include the format, not just the metadata field.
+    group = f"{VERSION}:{group}"
     try:
         with connect_readonly(db_path(state_dir)) as conn:
             conn.execute("BEGIN")
@@ -118,6 +121,7 @@ def read_group(state_dir: Path, group: str) -> tuple[dict, dict] | None:
 
 
 def write_group(state_dir: Path, group: str, data: dict, *, fingerprint: str, cursor: dict, source_changed: bool, scope: str = "", trigger: str = "") -> None:
+    group = f"{VERSION}:{group}"
     shapes = {key: "list" if isinstance(value, list) else "value" for key, value in data.items()}
     rows = [(group, key, i, json.dumps(row, ensure_ascii=False, allow_nan=False))
             for key, value in data.items()
