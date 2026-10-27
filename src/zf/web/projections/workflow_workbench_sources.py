@@ -16,10 +16,11 @@ from zf.runtime.plan_preview_artifacts import read_preview_artifact
 from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
 
 
-def scope_events(events, *, request_id: str, run_id: str, tasks) -> list[tuple[int, ZfEvent]]:
+def scope_events(events, *, request_id: str, run_id: str, tasks, generations=None) -> list[tuple[int, ZfEvent]]:
     """Explicit ownership beats causal reachability, including foreign Task runs."""
     task_runs = {t.id: t.execution_binding.workflow_run_id for t in tasks}
-    generations = task_pipeline_generation_contexts(events)
+    if generations is None:
+        generations = task_pipeline_generation_contexts(events)
     owned_tasks = {key for key, value in task_runs.items() if run_id and value == run_id}
     owned_tasks.update(key for key, value in generations.items()
                        if run_id and value.get("workflow_run_id") == run_id)
@@ -71,17 +72,18 @@ def scope_events(events, *, request_id: str, run_id: str, tasks) -> list[tuple[i
     return sorted(matched.values(), key=lambda pair: pair[0])
 
 
-def read_workbench_sources(context, detail: dict, *, as_of: int = 0) -> dict[str, Any]:
+def read_workbench_sources(context, detail: dict, *, as_of: int = 0, all_events=None) -> dict[str, Any]:
     request = detail["result"]
     request_id = str(request["request_id"])
     run_id = str(request.get("run_id") or detail.get("links", {}).get("run_id") or "")
-    all_events = event_log_from_project(context.state_dir, config=context.config).read_all()
+    if all_events is None:
+        all_events = event_log_from_project(context.state_dir, config=context.config).read_all()
     source_seq = min(as_of, len(all_events)) if as_of else len(all_events)
     events = all_events[:source_seq]
     all_tasks = TaskStore(context.state_dir / "kanban.json").list_all_with_archive()
-    scoped = scope_events(events, request_id=request_id, run_id=run_id, tasks=all_tasks)
-    task_ids = {str(e.task_id or e.payload.get("task_id") or "") for _, e in scoped}
     generations = task_pipeline_generation_contexts(events)
+    scoped = scope_events(events, request_id=request_id, run_id=run_id, tasks=all_tasks, generations=generations)
+    task_ids = {str(e.task_id or e.payload.get("task_id") or "") for _, e in scoped}
     task_ids.update(key for key, value in generations.items()
                     if run_id and value.get("workflow_run_id") == run_id)
     tasks = {t.id: t for t in all_tasks if t.id in task_ids and (

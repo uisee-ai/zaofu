@@ -1,23 +1,32 @@
 """Read-only, Request-scoped Workflow workbench endpoint."""
 
-import json
-from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Header, Query
+from fastapi.responses import JSONResponse, Response
 
-from zf.core.security.redaction import redact_obj
-from zf.runtime.sdlc_graph import build_sdlc_graph
-from zf.web.projections.workflow_workbench_sources import read_workbench_sources
+from zf.web.projections.workflow_workbench_cache import (
+    WorkbenchSourceChanged, read_workbench_projection,
+)
 
 
 def build_workbench_router(*, resolve, detail):
     router = APIRouter()
 
     @router.get("/api/projects/{project_id}/workflow-requests/{request_id}/graph")
-    def graph(project_id: str, request_id: str, as_of: int = Query(0, ge=0)):
-        response = detail(project_id, request_id)
-        if response.status_code != 200:
-            return response
-        inputs = read_workbench_sources(resolve(project_id), json.loads(response.body), as_of=as_of)
-        return JSONResponse(redact_obj(build_sdlc_graph(inputs)))
+    def graph(project_id: str, request_id: str, as_of: int = Query(0, ge=0),
+              if_none_match: str | None = Header(default=None)):
+        try:
+            result = read_workbench_projection(resolve(project_id), project_id, request_id, as_of, detail,
+                                               if_none_match=if_none_match)
+        except (WorkbenchSourceChanged, OSError, ValueError):
+            return JSONResponse({"ok": False, "status": "source_unavailable",
+                                 "reason": "Workflow graph source changed or is unavailable; retry."},
+                                status_code=503, headers={"Retry-After": "1", "Cache-Control": "no-store"})
+        if isinstance(result, JSONResponse):
+            return result
+        value, etag = result
+        headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+        if if_none_match == etag:
+            return Response(status_code=304, headers=headers)
+        return JSONResponse(value, headers=headers)
 
     return router

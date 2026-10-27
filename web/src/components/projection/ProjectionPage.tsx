@@ -111,6 +111,8 @@ export function ProjectionPage({
   if (page === "workflows") {
     return (
       <WorkflowProposalPage
+        recentEvents={recentEvents}
+        liveState={liveState}
         actionReady={actionReady}
         actionState={actionState}
         onAction={onAction}

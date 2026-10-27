@@ -1,7 +1,7 @@
 import { RefreshCw, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { clarifyWorkflowRequest, prepareWorkflowProposal } from "../../api/client";
-import type { ActionResponse } from "../../api/types";
+import type { ActionResponse, RecentEvent } from "../../api/types";
 import type { ProjectionKind } from "../../app/sharedTypes";
 import { asRecord, asRecordArray, asStringArray, textValue } from "../../app/shared";
 import { WorkflowEmpty } from "./WorkflowProposalParts";
@@ -21,6 +21,8 @@ interface WorkflowProposalPageProps {
   ) => Promise<ActionResponse>;
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   projectId: string;
+  recentEvents?: RecentEvent[];
+  liveState?: string;
 }
 
 export function WorkflowProposalPage(props: WorkflowProposalPageProps) {
@@ -33,6 +35,8 @@ function WorkflowProposalWorkbench({
   onAction,
   onOpenProjection,
   projectId,
+  recentEvents = [],
+  liveState = "",
 }: WorkflowProposalPageProps) {
   const [busyAction, setBusyAction] = useState("");
   const [feedback, setFeedback] = useState<ActionResponse | null>(null);
@@ -210,6 +214,7 @@ function WorkflowProposalWorkbench({
           <Suspense fallback={<p>Loading graph…</p>}>
             <WorkflowGraphWorkbench key={`${projectId}:${selectedId}`} projectId={projectId} requestId={selectedId}
               revision={`${detail.result?.revision}:${detail.result?.proposal_digest}`} onAction={onAction} actionReady={actionReady}
+              recentEvents={recentEvents} liveState={liveState}
               onOpenRaw={() => setPanel("raw")} />
           </Suspense>
         </main>

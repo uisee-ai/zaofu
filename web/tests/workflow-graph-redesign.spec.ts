@@ -109,7 +109,9 @@ test("six graph views, themed top-down cards and live projection updates preserv
   const transform = await viewport.getAttribute("style");
   graph.nodes.find(n => n.id === "drive")!.status = "done";
   const before = polls;
-  await expect.poll(() => polls).toBeGreaterThan(before);
+  // No source event was emitted by this display-only fixture; the 30s
+  // reconciliation tick must still pick it up without resetting the viewport.
+  await expect.poll(() => polls, { timeout: 35_000 }).toBeGreaterThan(before);
   await expect(drive).toContainText("done");
   expect(await viewport.getAttribute("style")).toBe(transform);
   expect(await workbench.locator('.react-flow__edge[data-id="goal-drive"]').count()).toBe(1);
@@ -380,7 +382,8 @@ test("request selection retains deep links and Plan review keeps chat and approv
   plan.status = "pending";
   plan.markdown = "# Racing game plan\n\nKeep the race duration at 120 seconds.";
   plan.action_payload.binding_digest = "fixture-plan-version-2";
-  await expect(preview).toHaveCount(0);
+  // This fixture mutates its response without a Planner event.
+  await expect(preview).toHaveCount(0, { timeout: 35_000 });
   await page.getByRole("button", { name: "Review Plan", exact: true }).click();
   await expect(preview).toContainText("Keep the race duration at 120 seconds.");
   await preview.getByRole("button", { name: "确认计划并继续", exact: true }).click();
@@ -486,7 +489,8 @@ test("Plan main reader quotes formatted blocks, edits repeated paragraphs and se
   expect((await agent.boundingBox())!.width).toBeLessThan(390);
   await panel.screenshot({ path: test.info().outputPath("plan-entry-mobile.png") });
   plan.status = "approved";
-  await expect(agent.getByRole("textbox")).toBeDisabled();
+  // No approval event is emitted by this mocked response.
+  await expect(agent.getByRole("textbox")).toBeDisabled({ timeout: 35_000 });
   await selectText(blocks.nth(1).locator("p"));
   await expect(quoteAction).toHaveCount(0);
   expect(requests).toBe(3);

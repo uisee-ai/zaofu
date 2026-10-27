@@ -2,24 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Controls, MiniMap, MarkerType, ReactFlow, useNodesInitialized, useReactFlow, useStore, type Node, type Edge, type NodeChange, applyNodeChanges } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./workflowGraph.css";
-import type { ActionResponse } from "../../api/types";
+import type { ActionResponse, RecentEvent } from "../../api/types";
+import { useWorkflowGraph } from "./useWorkflowGraph";
 import { asRecord, asRecordArray } from "../../app/shared";
 import PlanReviewReader from "../delivery-trace/PlanReviewReader";
 import PlanArtifactChat from "./PlanArtifactChat";
 import { workflowNodeTypes } from "./WorkflowGraphNode";
 import { X, Code, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
-import { activeStatus, expandedNodeIds, graphPositions, graphViews, relatedNodes, statusLabels, workflowSummaryIds, type GraphView, type SdlcGraph } from "./sdlcGraphModel";
+import { activeStatus, expandedNodeIds, graphPositions, graphViews, relatedNodes, statusLabels, workflowSummaryIds, type GraphView } from "./sdlcGraphModel";
 
 const graphFitOptions = { padding: 0.22, maxZoom: 0.8, minZoom: 0 };
 
-export default function WorkflowGraphWorkbench({ projectId, requestId, revision, onAction, actionReady, onOpenRaw }: {
+export default function WorkflowGraphWorkbench({ projectId, requestId, revision, onAction, actionReady, onOpenRaw, recentEvents, liveState }: {
   projectId: string; requestId: string; revision: string;
   onAction: (action: string, payload: Record<string, unknown>) => Promise<ActionResponse>;
   actionReady: boolean;
   onOpenRaw?: () => void;
+  recentEvents: RecentEvent[];
+  liveState: string;
 }) {
-  const [graph, setGraph] = useState<SdlcGraph | null>(null);
-  const [error, setError] = useState("");
+  const [actionError, setError] = useState("");
   const [view, setView] = useState<GraphView>(() => {
     const value = new URLSearchParams(location.search).get("graph");
     return graphViews.some(([id]) => id === value) ? value as GraphView : "workflow";
@@ -34,7 +36,6 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const [asOf, setAsOf] = useState(0);
   const [cursor, setCursor] = useState("");
   const [planId, setPlanId] = useState("");
-  const [updatedAt, setUpdatedAt] = useState("");
   const [showTools, setShowTools] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -42,28 +43,13 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const positionScope = useRef("");
   const [canvasScope, setCanvasScope] = useState("");
   const [canvasNodes, setCanvasNodes] = useState<Node[]>([]);
+  const { graph, error: readError, updatedAt, refresh } = useWorkflowGraph(projectId, requestId, revision, asOf, recentEvents, liveState);
+  const error = actionError || readError;
   useEffect(() => {
-    positions.current.clear(); setGraph(null); setAsOf(0); setPlanId(""); setCollapsed(new Set()); setSearch(""); setStatus("");
+    positions.current.clear(); setError(""); setAsOf(0); setPlanId(""); setCollapsed(new Set()); setSearch(""); setStatus("");
     const query = new URLSearchParams(location.search);
     setSelected(query.get("request") === requestId ? query.get("node") || "" : "");
   }, [projectId, requestId]);
-  useEffect(() => {
-    let disposed = false; let pending = false;
-    const controller = new AbortController();
-    async function refresh() {
-      if (pending) return; pending = true;
-      try {
-        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workflow-requests/${encodeURIComponent(requestId)}/graph?as_of=${asOf}`, { signal: controller.signal, cache: "no-store" });
-        if (!response.ok) throw new Error(`图读取失败 HTTP ${response.status}`);
-        const next = await response.json() as SdlcGraph;
-        if (!disposed) { setGraph(next); setError(""); setUpdatedAt(new Date().toLocaleTimeString()); }
-      } catch (reason) { if (!disposed) setError(String(reason)); }
-      finally { pending = false; }
-    }
-    void refresh();
-    const timer = window.setInterval(() => { if (!asOf && !document.hidden) void refresh(); }, 2000);
-    return () => { disposed = true; controller.abort(); window.clearInterval(timer); };
-  }, [projectId, requestId, revision, asOf]);
   const pick = useCallback((id: string) => {
     setSelected(id); const url = new URL(location.href);
     url.searchParams.set("request", requestId); url.searchParams.set("graph", view); url.searchParams.set("node", id);
@@ -124,7 +110,8 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     setBusy(true);
     try {
       const result = await onAction(preview.actions?.approve || "plan-approve", { ...preview.action_payload, plan_id: preview.plan_id });
-      if (!result.ok) setError(String(result.reason || result.status)); else setPlanId("");
+      if (!result.ok) setError(String(result.reason || result.status));
+      else { setPlanId(""); await refresh(); }
     } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
   }
   return <section className={`sdlc-workbench${expanded ? " sdlc-expanded" : ""}`} aria-label="Workflow 图工作台">
@@ -142,7 +129,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
         </div>
       </header>
       <span className="sdlc-live" role="status"><i className={!asOf && !error ? "live" : ""} />{asOf ? "History" : error ? "Update delayed" : "Live"} · {graph?.scope.run_id || "Preview"}{updatedAt ? ` · ${updatedAt}` : ""}</span>
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{error} <button type="button" onClick={() => void refresh()}>Retry</button></p>}
       {!graph && !error && <p>正在读取流程与运行关系…</p>}
       {graph && <>
         {graph.plans.some(p => p.status === "pending") && !asOf && <div className="sdlc-attention" role="status">
@@ -181,7 +168,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
           </aside>}
         </div>
         <footer className="sdlc-footer"><span>{filtered.nodes.length} / {graph.nodes.length} nodes · {filtered.edges.length} relations · R{graph.scope.revision} · Event {graph.scope.source_seq}</span>
-          <span>{asOf ? "Historical snapshot" : "Updates every 2s"}</span></footer>
+          <span>{asOf ? "Historical snapshot" : "Live updates · checks every 30s"}</span></footer>
         {showTools && <details className="sdlc-directory"><summary>Node directory</summary><div aria-label="图节点目录">{filtered.nodes.map(n => <button key={n.id} type="button" aria-pressed={selected === n.id} onClick={() => pick(n.id)} title={n.id}>{n.label}<small>{statusLabels[n.status] || n.status}</small></button>)}</div></details>}
         {graph.plans.length > 0 && <details className="sdlc-plans"><summary>PRD / Plan documents · {graph.plans.length}</summary>{graph.plans.map(p => <button type="button" key={p.plan_id} onClick={() => setPlanId(p.plan_id)}>PRD / Plan Preview · {p.status}</button>)}</details>}
         {preview && <section className="sdlc-plan" aria-label="Workflow PRD Plan Preview">
@@ -189,7 +176,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
             {preview.status === "pending" && <button type="button" disabled={!actionReady || busy || reviewBusy || !!asOf} onClick={() => void approvePlan()}>确认计划并继续</button>}
             <button type="button" disabled={reviewBusy || busy} onClick={() => setPlanId("")}>关闭预览</button>
           </header>
-          <PlanArtifactChat preview={preview} projectId={projectId} disabled={!actionReady || !!asOf} onBusy={setReviewBusy} />
+          <PlanArtifactChat preview={preview} projectId={projectId} disabled={!actionReady || !!asOf} onBusy={setReviewBusy} onApplied={refresh} />
           <details className="plan-supporting-review"><summary>审批概览与附件</summary><p className="muted">这里是只读审批资料；修改请在上方正文选中文字并引用到 Agent。</p><PlanReviewReader preview={preview} projectId={projectId} /></details>
         </section>}
       </>}

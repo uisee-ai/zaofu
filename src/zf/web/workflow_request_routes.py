@@ -332,6 +332,9 @@ def build_workflow_request_router(
 
     @router.get("/api/projects/{project_id}/workflow-requests/{request_id}")
     def project_workflow_request_detail(project_id: str, request_id: str) -> JSONResponse:
+        return read_workflow_request_detail(project_id, request_id)
+
+    def read_workflow_request_detail(project_id: str, request_id: str, *, events=None) -> JSONResponse:
         from zf.runtime.workflow_review_candidate import review_candidate
         from zf.runtime.workflow_requests import load_workflow_request
 
@@ -348,7 +351,8 @@ def build_workflow_request_router(
             )
         proposal: dict[str, Any] = {}
         artifacts: dict[str, Any] = {}
-        events = event_log_from_project(context.state_dir, config=context.config).read_all()
+        if events is None:
+            events = event_log_from_project(context.state_dir, config=context.config).read_all()
         try:
             proposal, _ = review_candidate(context.state_dir, result, events)
         except (ValueError, OSError, KeyError, TypeError):
@@ -656,7 +660,7 @@ def build_workflow_request_router(
     from zf.web.workflow_preview_review_routes import build_preview_review_router
     router.include_router(build_preview_review_router(resolve=resolve, auth_response=auth_response))
     from zf.web.workflow_workbench_routes import build_workbench_router
-    router.include_router(build_workbench_router(resolve=resolve, detail=project_workflow_request_detail))
+    router.include_router(build_workbench_router(resolve=resolve, detail=read_workflow_request_detail))
     from zf.web.plan_artifact_review_routes import build_plan_artifact_review_router
     router.include_router(build_plan_artifact_review_router(resolve=resolve, auth_response=auth_response))
     return router
