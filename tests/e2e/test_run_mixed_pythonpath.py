@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import signal
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,37 @@ def test_subprocess_env_does_not_inherit_relative_pythonpath(
     monkeypatch.setenv("PYTHONPATH", "src")
     env = _subprocess_env()
     assert env["PYTHONPATH"] == str(REPO_ROOT / "src")
+
+
+@pytest.mark.parametrize("launcher", ["mixed", "autoresearch"])
+def test_nested_init_does_not_reset_parent_project(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, launcher: str,
+) -> None:
+    from zf.autoresearch.orchestrator import _env
+
+    parent = tmp_path / "parent"
+    child = tmp_path / "child"
+    for root, state in [(parent, ".parent-state"), (child, ".child-state")]:
+        root.mkdir()
+        (root / "zf.yaml").write_text(
+            f"project:\n  name: {root.name}\n  state_dir: {state}\n"
+        )
+    parent_state = parent / ".parent-state"
+    parent_state.mkdir()
+    ledger = parent_state / "events.jsonl"
+    ledger.write_text('{"id":"parent-ledger-must-survive"}\n')
+    original = ledger.read_bytes()
+    monkeypatch.setenv("ZF_PROJECT_ROOT", str(parent))
+    monkeypatch.setenv("ZF_STATE_DIR", str(parent_state))
+    env = _subprocess_env() if launcher == "mixed" else _env()
+    result = subprocess.run(
+        [sys.executable, "-m", "zf.cli.main", "init", "--force",
+         "--skip-instruction-docs", "--no-git-hooks", "--no-workspace-register"],
+        cwd=child, env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert ledger.read_bytes() == original
+    assert (child / ".child-state" / "events.jsonl").exists()
 
 
 # ---------------- _run ----------------

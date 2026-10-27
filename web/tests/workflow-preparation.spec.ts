@@ -23,6 +23,7 @@ test(`${action} asks, resumes, previews complete YAML, then starts only after ap
   const rid = created.request_id || created.workflow_preparation?.request_id;
   expect(rid).toBeTruthy();
   await page.goto(`/?page=workflows&project=${encodeURIComponent(project)}&request=${encodeURIComponent(rid)}`);
+  await page.getByRole("button", { name: "Answer Questions", exact: true }).click();
   const clarification = page.getByTestId("workflow-clarification");
   await expect(clarification).toBeVisible({ timeout: 25_000 });
   await expect(clarification).toContainText("Which session behavior should be preserved?");
@@ -30,10 +31,11 @@ test(`${action} asks, resumes, previews complete YAML, then starts only after ap
   expect(before.lifecycle.submitted).toBe(false);
   await clarification.getByPlaceholder("Type a concrete answer.").fill("Keep active sessions valid; reject expired sessions.");
   await clarification.getByRole("button", { name: "Save & prepare proposal" }).click();
+  await page.getByRole("button", { name: "Close workflow panel" }).click();
+  await page.getByRole("button", { name: "Raw", exact: true }).click();
   const yaml = page.getByTestId("workflow-yaml-preview");
   await expect(yaml).toBeVisible({ timeout: 30_000 });
-  await yaml.getByText("View complete YAML").click();
-  await expect(yaml.locator("pre")).toContainText("kind: IssueFlow");
+  await expect(yaml.locator("pre")).toContainText("kind: IssueFlow", { timeout: 30_000 });
   await expect(yaml.locator("pre")).toContainText("kind: ZfConfig");
   const detail = await (await request.get(`/api/projects/${project}/workflow-requests/${rid}`)).json();
   expect(detail.result.revision).toBeGreaterThan(before.result.revision);
@@ -41,7 +43,9 @@ test(`${action} asks, resumes, previews complete YAML, then starts only after ap
   expect(detail.lifecycle.submitted).toBe(false);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBeTruthy();
-  await page.getByTestId("workflow-approve-run").click();
+  await expect(page.getByTestId("workflow-start")).toBeEnabled();
+  await page.getByTestId("workflow-start").click();
+  await page.getByRole("button", { name: "Run Controls", exact: true }).click();
   await expect(page.getByTestId("workflow-open-run")).toBeVisible({ timeout: 20_000 });
   const submitted = await (await request.get(`/api/projects/${project}/workflow-requests/${rid}`)).json();
   expect(submitted.lifecycle.submitted).toBe(true);

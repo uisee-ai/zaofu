@@ -1,0 +1,73 @@
+
+Running 6 tests using 1 worker
+
+[1A[2K[1/6] [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 1440x1000
+[1A[2K[2/6] [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 1440x1400
+[1A[2K[3/6] [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 390x844
+[1A[2K  1) [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 390x844
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeCloseTo[2m([22m[32mexpected[39m[2m, [22mprecision[2m)[22m
+
+    Expected: [32m710[39m
+    Received: [31m709[39m
+
+    Expected precision:    0
+    Expected difference: < [32m0.5[39m
+    Received difference:   [31m1[39m
+
+      19 |     const body = (await document.boundingBox())!;
+      20 |     const bottomPadding = await reader.evaluate(element => parseFloat(getComputedStyle(element).paddingBottom));
+    > 21 |     expect(body.y + body.height).toBeCloseTo(editing.y + editing.height - bottomPadding, 0);
+         |                                  ^
+      22 |     expect(body.height).toBeGreaterThanOrEqual(originalDocument.height - 40);
+      23 |     expect(await reader.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+      24 |     const toolbar = panel.getByRole("navigation", { name: "Plan document view" });
+        at /home/uisee/workspace/zaofu-wt-workflow-graph-ui/web/tests/plan-preview-agent.spec.ts:21:34
+
+    Error Context: ../docs/records/2026-10-27-plan-edit-reader/after-tests/plan-preview-agent-quoted--d3b1d-e-Preview-reader-at-390x844-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/records/2026-10-27-plan-edit-reader/after-tests/plan-preview-agent-quoted--d3b1d-e-Preview-reader-at-390x844-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/records/2026-10-27-plan-edit-reader/after-tests/plan-preview-agent-quoted--d3b1d-e-Preview-reader-at-390x844-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K[4/6] [chromium] › tests/plan-preview-agent.spec.ts:40:1 › Inbox Plan editing uses quoted headless chat and keeps approval locked through Apply
+[1A[2K  2) [chromium] › tests/plan-preview-agent.spec.ts:40:1 › Inbox Plan editing uses quoted headless chat and keeps approval locked through Apply
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 120000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('dialog', { name: 'Plan preview', exact: true }).getByRole('button', { name: '引用到 Agent', exact: true })[22m
+
+
+      84 |   await expect(quoteAction).toHaveCount(0);
+      85 |   await block.locator("p").evaluate(element => {
+    > 86 |     const range = document.createRange(); range.selectNodeContents(element);
+         |                     ^
+      87 |     const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+      88 |   });
+      89 |   await quoteAction.click();
+        at /home/uisee/workspace/zaofu-wt-workflow-graph-ui/web/tests/plan-preview-agent.spec.ts:86:21
+
+    Error Context: ../docs/records/2026-10-27-plan-edit-reader/after-tests/plan-preview-agent-Inbox-P-b317a-proval-locked-through-Apply-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/records/2026-10-27-plan-edit-reader/after-tests/plan-preview-agent-Inbox-P-b317a-proval-locked-through-Apply-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/records/2026-10-27-plan-edit-reader/after-tests/plan-preview-agent-Inbox-P-b317a-proval-locked-through-Apply-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K[5/6] [chromium] › tests/plan-preview-layout.spec.ts:91:5 › plan preview layout › desktop keeps preview scrollable and non-overlapping
+[1A[2K[6/6] [chromium] › tests/plan-preview-layout.spec.ts:91:5 › plan preview layout › mobile keeps preview scrollable and non-overlapping
+[1A[2K  2 failed
+    [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 390x844
+    [chromium] › tests/plan-preview-agent.spec.ts:40:1 › Inbox Plan editing uses quoted headless chat and keeps approval locked through Apply
+  4 passed (2.4m)

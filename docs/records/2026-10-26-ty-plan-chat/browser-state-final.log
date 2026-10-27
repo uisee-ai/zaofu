@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1/1] [chromium] › tests/workflow-graph-redesign.spec.ts:281:1 › request selection retains deep links and Plan review keeps chat and approval bound
+  1 passed (17.1s)

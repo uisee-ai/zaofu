@@ -1,0 +1,114 @@
+{
+  "project_id": "ty-d2d22bb5",
+  "task_id": "TASK-CA8E83",
+  "request_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+  "old_plan_id": "evt-ead564fa2325",
+  "old_status": "rejected",
+  "new_plan_id": "evt-f0c18ed971c3",
+  "new_status": "pending",
+  "requested_ts": "2026-10-26T16:59:34.102748+00:00",
+  "canonical_old_plan_unchanged": true,
+  "revised_plan_exact_local_replacement": true,
+  "revised_sha256": "593a9f74ea169ca4848cf13d7bfd7776883679bbaf90090c9b15051a7876324c",
+  "plan_approved_events": [],
+  "impl_verify_dispatches": [],
+  "dispatched_stages": [
+    "prd-scan",
+    "prd-scan",
+    "prd-plan",
+    "prd-plan"
+  ],
+  "new_refs": {
+    "digest_ref": "artifacts/plan-digest/evt-f0c18ed971c3.md",
+    "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-c6c14900/prd-planner/artifacts/plan/task_map.json",
+    "plan_ref": "artifacts/fanouts/fanout-prd-plan-evt-c6c14900/prd-planner/docs/plans/prd-plan-prd-planner-plan.md",
+    "markdown_ref": "artifacts/fanouts/fanout-prd-plan-evt-c6c14900/prd-planner/docs/plans/prd-plan-prd-planner-plan.md",
+    "plan_artifact_digest": "593a9f74ea169ca4848cf13d7bfd7776883679bbaf90090c9b15051a7876324c",
+    "source_index_ref": "artifacts/fanouts/fanout-prd-plan-evt-c6c14900/prd-planner/artifacts/plan/source_index.json",
+    "requirement_spec_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+    "plan_preview_bundle_ref": "artifacts/plan-preview/bundles/f55f4c01ad75f480fd88cb5f83fb0f6918cacae135bb1f7ea83c6051d54afe73.json",
+    "plan_preview_bundle_digest": "f55f4c01ad75f480fd88cb5f83fb0f6918cacae135bb1f7ea83c6051d54afe73"
+  },
+  "new_artifacts": [
+    {
+      "name": "acceptance_matrix",
+      "ref": "artifacts/plan-ports/30639ea5ee340772ec59fdb09101970cf8679fb898f4da2da293fcdda6aae9d5.json",
+      "sha256": "30639ea5ee340772ec59fdb09101970cf8679fb898f4da2da293fcdda6aae9d5"
+    },
+    {
+      "name": "capability_matrix",
+      "ref": "artifacts/plan-ports/82f5d0fe55e84e0f16f3e5aa147792e99505d8d76fa70a4eba165e2ece149a08.json",
+      "sha256": "82f5d0fe55e84e0f16f3e5aa147792e99505d8d76fa70a4eba165e2ece149a08"
+    },
+    {
+      "name": "execution_spec",
+      "ref": "artifacts/plan-ports/f7bdc3fa3a662133a6485c050753f62281a2c8dbc1670e7bf7b46938c7b330a0.json",
+      "sha256": "f7bdc3fa3a662133a6485c050753f62281a2c8dbc1670e7bf7b46938c7b330a0"
+    },
+    {
+      "name": "goal_claim_set",
+      "ref": "artifacts/goal-closure/claim-sets/928c362fa6d6fd457b993666e9140a1f0cd285568b03fef7bca58e1b18fa80f1.json",
+      "sha256": "928c362fa6d6fd457b993666e9140a1f0cd285568b03fef7bca58e1b18fa80f1"
+    },
+    {
+      "name": "issue_spec",
+      "ref": "artifacts/attempt-inputs/a46a90463792ae6b-revision-0004-a46a90463792ae6b.json",
+      "sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9"
+    },
+    {
+      "name": "planning_result",
+      "ref": "artifacts/fanouts/fanout-prd-plan-evt-c6c14900/prd-planner/artifacts/plan/task_map.json",
+      "sha256": "3bd090784f24ad01d8111aa89c9de649ad19b7eefe13498f0f3f77fee060c680"
+    },
+    {
+      "name": "product_acceptance_spec",
+      "ref": "artifacts/product-acceptance/specs/39969e8cdf6b061ddbbaeae988391206b610e3d52599b5663df3c378dd5262aa.json",
+      "sha256": "39969e8cdf6b061ddbbaeae988391206b610e3d52599b5663df3c378dd5262aa"
+    },
+    {
+      "name": "real_e2e_matrix",
+      "ref": "artifacts/plan-ports/1422c51941fde70f9c640cd616be5acf740131a41557f8bc74bcc5e290437eab.json",
+      "sha256": "1422c51941fde70f9c640cd616be5acf740131a41557f8bc74bcc5e290437eab"
+    },
+    {
+      "name": "requirement_spec",
+      "ref": "artifacts/attempt-inputs/a46a90463792ae6b-revision-0004-a46a90463792ae6b.json",
+      "sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9"
+    },
+    {
+      "name": "skill_adapter_plan",
+      "ref": "artifacts/plan-ports/712c9da65ee648e7e6498e308522ae55cbe14407cb3dcf67b9db0468725cdea9.json",
+      "sha256": "712c9da65ee648e7e6498e308522ae55cbe14407cb3dcf67b9db0468725cdea9"
+    },
+    {
+      "name": "source_index",
+      "ref": "artifacts/fanouts/fanout-prd-plan-evt-c6c14900/prd-planner/artifacts/plan/source_index.json",
+      "sha256": "c1d2dc547b1469c6e9782d19068003df926aea09e962f65f101a8d190e44ce49"
+    },
+    {
+      "name": "source_inventory",
+      "ref": "artifacts/plan-ports/6d7c16cdd0879ceab34a87a99356619223481e45b63ed82c3d28821f0685b154.json",
+      "sha256": "6d7c16cdd0879ceab34a87a99356619223481e45b63ed82c3d28821f0685b154"
+    },
+    {
+      "name": "task_map",
+      "ref": "artifacts/fanouts/fanout-prd-plan-evt-c6c14900/prd-planner/artifacts/plan/task_map.json",
+      "sha256": "3bd090784f24ad01d8111aa89c9de649ad19b7eefe13498f0f3f77fee060c680"
+    },
+    {
+      "name": "test_matrix",
+      "ref": "artifacts/plan-ports/9ec55d879bea87202a9c09b5e23e92ca715718be9f77f4b02aa9cbbed58dd554.json",
+      "sha256": "9ec55d879bea87202a9c09b5e23e92ca715718be9f77f4b02aa9cbbed58dd554"
+    },
+    {
+      "name": "accepted_plan",
+      "ref": "artifacts/fanouts/fanout-prd-plan-evt-c6c14900/prd-planner/docs/plans/prd-plan-prd-planner-plan.md",
+      "sha256": "593a9f74ea169ca4848cf13d7bfd7776883679bbaf90090c9b15051a7876324c"
+    },
+    {
+      "name": "requirement_1_revision-0004-a46a90463792ae6b.json",
+      "ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+      "sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9"
+    }
+  ]
+}

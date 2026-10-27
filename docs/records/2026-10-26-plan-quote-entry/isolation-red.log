@@ -1,0 +1,86 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____________ test_nested_init_does_not_reset_parent_project[mixed] _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7192be077490>
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-357/test_nested_init_does_not_rese0')
+launcher = 'mixed'
+
+    @pytest.mark.parametrize("launcher", ["mixed", "autoresearch"])
+    def test_nested_init_does_not_reset_parent_project(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, launcher: str,
+    ) -> None:
+        from zf.autoresearch.orchestrator import _env
+
+        parent = tmp_path / "parent"
+        child = tmp_path / "child"
+        for root, state in [(parent, ".parent-state"), (child, ".child-state")]:
+            root.mkdir()
+            (root / "zf.yaml").write_text(
+                f"project:\n  name: {root.name}\n  state_dir: {state}\n"
+            )
+        parent_state = parent / ".parent-state"
+        parent_state.mkdir()
+        ledger = parent_state / "events.jsonl"
+        ledger.write_text('{"id":"parent-ledger-must-survive"}\n')
+        original = ledger.read_bytes()
+        monkeypatch.setenv("ZF_PROJECT_ROOT", str(parent))
+        monkeypatch.setenv("ZF_STATE_DIR", str(parent_state))
+        env = _subprocess_env() if launcher == "mixed" else _env()
+        result = subprocess.run(
+            [sys.executable, "-m", "zf.cli.main", "init", "--force",
+             "--skip-instruction-docs", "--no-git-hooks", "--no-workspace-register"],
+            cwd=child, env=env, capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+>       assert ledger.read_bytes() == original
+E       assert b'{"type":"se...origin":""}\n' == b'{"id":"pare...t-survive"}\n'
+E
+E         At index 2 diff: b't' != b'i'
+E         Use -v to get more diff
+
+tests/e2e/test_run_mixed_pythonpath.py:90: AssertionError
+_________ test_nested_init_does_not_reset_parent_project[autoresearch] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7192be043410>
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-357/test_nested_init_does_not_rese1')
+launcher = 'autoresearch'
+
+    @pytest.mark.parametrize("launcher", ["mixed", "autoresearch"])
+    def test_nested_init_does_not_reset_parent_project(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, launcher: str,
+    ) -> None:
+        from zf.autoresearch.orchestrator import _env
+
+        parent = tmp_path / "parent"
+        child = tmp_path / "child"
+        for root, state in [(parent, ".parent-state"), (child, ".child-state")]:
+            root.mkdir()
+            (root / "zf.yaml").write_text(
+                f"project:\n  name: {root.name}\n  state_dir: {state}\n"
+            )
+        parent_state = parent / ".parent-state"
+        parent_state.mkdir()
+        ledger = parent_state / "events.jsonl"
+        ledger.write_text('{"id":"parent-ledger-must-survive"}\n')
+        original = ledger.read_bytes()
+        monkeypatch.setenv("ZF_PROJECT_ROOT", str(parent))
+        monkeypatch.setenv("ZF_STATE_DIR", str(parent_state))
+        env = _subprocess_env() if launcher == "mixed" else _env()
+        result = subprocess.run(
+            [sys.executable, "-m", "zf.cli.main", "init", "--force",
+             "--skip-instruction-docs", "--no-git-hooks", "--no-workspace-register"],
+            cwd=child, env=env, capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+>       assert ledger.read_bytes() == original
+E       assert b'{"type":"se...origin":""}\n' == b'{"id":"pare...t-survive"}\n'
+E
+E         At index 2 diff: b't' != b'i'
+E         Use -v to get more diff
+
+tests/e2e/test_run_mixed_pythonpath.py:90: AssertionError
+=========================== short test summary info ============================
+FAILED tests/e2e/test_run_mixed_pythonpath.py::test_nested_init_does_not_reset_parent_project[mixed]
+FAILED tests/e2e/test_run_mixed_pythonpath.py::test_nested_init_does_not_reset_parent_project[autoresearch]
+2 failed, 12 deselected in 1.83s

@@ -1,0 +1,79 @@
+worktree: /home/uisee/workspace/zaofu-wt-workflow-graph-ui
+changed:
+  - docs/impl/187-ai-sdlc-graph-workbench.md
+  - src/zf/web/projections/workflow_yaml.py
+  - src/zf/web/workflow_request_routes.py
+  - tests/test_workflow_yaml_projection.py
+  - web/src/components/workflow/WorkflowProposalPage.tsx
+  - web/tests/workflow-proposal-page.spec.ts
+domains: backend, docs, tests, web_backend, web_ui
+python tests: 80
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python -m pytest tests/e2e/test_kanban_plan_approve_mock_e2e.py tests/e2e/test_self_evolution_mock_e2e.py tests/e2e/test_sqlite_event_ref_operation_mock_e2e.py tests/e2e/test_workflow_policy_admission_mock_e2e.py tests/e2e/test_workflow_runtime_autostart.py tests/test_artifact_query_consumers.py tests/test_autoresearch_projection.py tests/test_bounded_agent.py tests/test_channel_attachments.py tests/test_channel_execution_approval.py tests/test_channel_owner_report_permission_gate.py tests/test_channel_profile_registration.py tests/test_channel_provider_drill.py tests/test_channel_public_cancel.py tests/test_channel_question_provenance.py tests/test_channel_setup_other.py tests/test_channel_terminal_projection.py tests/test_cli_web_access.py tests/test_evolution_runtime.py tests/test_fanout_identity.py tests/test_fanout_manifest.py tests/test_flow_role_activation.py tests/test_gate_hook_projection.py tests/test_goal_dossier.py tests/test_instruction_stack_contracts.py tests/test_integration_arbiter.py tests/test_integration_queue.py tests/test_kanban_agent_operator_upgrade.py tests/test_kanban_agent_recovery_actions.py tests/test_kanban_pending_proposals.py tests/test_kimi_headless.py tests/test_live_delta_bus.py tests/test_operator_inbox.py tests/test_operator_plan_preview.py tests/test_operator_reliability_projection.py tests/test_operator_websocket_security.py tests/test_project_admission.py tests/test_provider_progress_operation_projection.py tests/test_repair_actions.py tests/test_run_manager_web.py tests/test_runtime_resources.py tests/test_sdlc_graph.py tests/test_ship.py tests/test_sidecar_refs.py tests/test_stage_reports.py tests/test_web_action_event_loop.py tests/test_web_channel_delivery.py tests/test_web_channel_fact_scope.py tests/test_web_config_refresh.py tests/test_web_delivery_trace.py tests/test_web_diagnostics_logs.py tests/test_web_dist_warning.py tests/test_web_headless_agent.py tests/test_web_headless_recovery.py tests/test_web_health_summary.py tests/test_web_kanban_upgrade.py tests/test_web_loop_routes.py tests/test_web_measure_loop_routes.py tests/test_web_metrics_snapshot.py tests/test_web_operations_observability.py tests/test_web_overview_pulse.py tests/test_web_perf_smoke.py tests/test_web_plan_continuation_sources.py tests/test_web_profile.py tests/test_web_project_scoped_observability.py tests/test_web_server.py tests/test_web_sse.py tests/test_web_terminal_routes.py tests/test_web_trace_api.py tests/test_web_workflow_proposals.py tests/test_webchat_public_cancel.py tests/test_webchat_routes.py tests/test_webchat_runtime_integration.py tests/test_workflow_config_apply.py tests/test_workflow_graph_runtime.py tests/test_workflow_operation_projection.py tests/test_workflow_preparation_worker.py tests/test_workflow_preview_blocked.py tests/test_workflow_yaml_projection.py tests/test_workspace_projects.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: changed tests + direct imports/callers + boundary sentinels
+  - [auto/web] web-typecheck: npm run typecheck
+      reason: Web UI/API boundary changed
+  - [auto/web] web-unit: npm run test:unit
+      reason: compile Web unit tests once and execute model contracts
+
+==> web-typecheck: npm run typecheck
+
+> @zaofu/web@0.0.7 typecheck
+> tsc --noEmit
+
+
+==> web-unit: npm run test:unit
+
+> @zaofu/web@0.0.7 test:unit
+> node scripts/run-unit-tests.mjs
+
+agentJsonDisplay.test.ts OK
+agentToolGrouping.test.ts OK
+agentToolOutput.test.ts OK
+agentTurnWindow.test.ts OK
+agentWorkState.test.ts OK
+channelActionAdapter tests passed
+channelChatPresentation tests passed
+channelConversationState tests passed
+channelDecisions tests passed
+channelDiscussionAttention.test.ts OK
+channelEvaluationFinding.test.ts OK
+channelFlow tests passed
+channelLiveRefreshPolicy tests passed
+channelLiveStream.test.ts OK
+channelLiveStream compaction tests OK
+channelProjection.test.ts OK
+channelProjection origin-thread normalization tests OK
+channelProjection blocked-route notice tests OK
+channelProjection pending-request tests OK
+channelProjection provider-pending tests OK
+channelProjection failure classification tests OK
+channelProjection workflow-result tests OK
+channelTerminalProjection tests passed
+channelWorkflowPlanning tests passed
+contributionPresentation.test.ts OK
+dashboardLaunch tests passed
+deliveryWorkGoalModel tests passed
+deliveryWorkGraphModel tests passed
+deliveryWorkModel tests passed
+goalCoverageModel tests passed
+kanbanAgentInteractionPolicy tests passed
+kanbanAgentPermission.test.ts OK
+kanbanSessionEvents.test.ts OK
+latestRequestGate tests passed
+liveRunIndicator.test.ts OK
+localDocumentLink tests passed
+markdownGuard.test.ts OK
+notices.test.ts OK
+planMarkdownPages.test.ts OK
+prdMarkdownPages.test.ts OK
+projectRequestScope tests passed
+replyHealth tests passed
+run graph state tests passed
+run regression action tests passed
+taskToolbarSelection.test.ts OK
+triageProposals.test.ts OK
+proposalRunNotice OK
+webChatInteractionModel.test.ts OK
+webChatPendingModel.test.ts OK
+workspaceProjectSelection tests passed

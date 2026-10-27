@@ -1,0 +1,80 @@
+worktree: /home/uisee/workspace/zaofu-wt-workflow-graph-ui
+changed:
+  - src/zf/runtime/operator_plan_preview.py
+  - tests/test_plan_artifact_review.py
+  - web/src/components/workflow/PlanArtifactChat.tsx
+  - web/tests/plan-preview-agent.spec.ts
+domains: backend, tests, web_ui
+python tests: 23
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python -m pytest tests/e2e/test_sqlite_event_ref_operation_mock_e2e.py tests/test_channel_conversation_projection.py tests/test_channel_projection.py tests/test_event_read_model.py tests/test_feishu_ai_native_loop_e2e.py tests/test_feishu_callback_security.py tests/test_feishu_channel_kanban_e2e.py tests/test_feishu_plan_approval_card.py tests/test_goal_dossier_owner_delivery.py tests/test_operator_inbox.py tests/test_operator_plan_preview.py tests/test_owner_visible_delivery.py tests/test_plan_artifact_review.py tests/test_read_model_freshness_gate.py tests/test_read_model_single_flight.py tests/test_read_model_slim_hydration.py tests/test_reader_fanout_runtime.py tests/test_sdlc_graph.py tests/test_web_delivery_trace.py tests/test_web_measure_loop_routes.py tests/test_web_plan_pending_refs.py tests/test_web_server.py tests/test_workflow_graph_runtime.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: changed tests + direct imports/callers + boundary sentinels
+  - [auto/web] web-typecheck: npm run typecheck
+      reason: Web UI/API boundary changed
+  - [auto/web] web-unit: npm run test:unit
+      reason: compile Web unit tests once and execute model contracts
+
+==> python-deterministic: /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python -m pytest tests/e2e/test_sqlite_event_ref_operation_mock_e2e.py tests/test_channel_conversation_projection.py tests/test_channel_projection.py tests/test_event_read_model.py tests/test_feishu_ai_native_loop_e2e.py tests/test_feishu_callback_security.py tests/test_feishu_channel_kanban_e2e.py tests/test_feishu_plan_approval_card.py tests/test_goal_dossier_owner_delivery.py tests/test_operator_inbox.py tests/test_operator_plan_preview.py tests/test_owner_visible_delivery.py tests/test_plan_artifact_review.py tests/test_read_model_freshness_gate.py tests/test_read_model_single_flight.py tests/test_read_model_slim_hydration.py tests/test_reader_fanout_runtime.py tests/test_sdlc_graph.py tests/test_web_delivery_trace.py tests/test_web_measure_loop_routes.py tests/test_web_plan_pending_refs.py tests/test_web_server.py tests/test_workflow_graph_runtime.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [ 11%]
+........................................................................ [ 23%]
+........................................................................ [ 35%]
+........................................................................ [ 46%]
+........................................................................ [ 58%]
+........................................................................ [ 70%]
+........................................................................ [ 82%]
+..F...F................................................................. [ 93%]
+.....................................                                    [100%]
+=================================== FAILURES ===================================
+__ test_bound_digest_supports_quoted_review_without_becoming_full_plan[False] __
+[gw0] linux -- Python 3.11.15 /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python
+
+review = (<starlette.testclient.TestClient object at 0x758da6c0fb10>, <zf.runtime.plan_artifact_review.PlanArtifactReview objec...isee/pytest-366/popen-gw0/test_bound_digest_supports_quo0/.zf/artifacts/plan.md'), '# PRD\n\n开头保持。\n玩家😀可以移动。\n结尾保持。\n')
+change_source = False
+
+    @pytest.mark.parametrize("change_source", [False, True])
+    def test_bound_digest_supports_quoted_review_without_becoming_full_plan(review, change_source):
+        client, service, artifact, body = review
+        service.writer.append(ZfEvent(type="plan.approval.requested", payload={
+            "plan_id": "P-digest", "digest_ref": "artifacts/plan.md",
+        }))
+        response = client.post("/api/projects/default/plan-artifact-review",
+            headers={"x-zf-web-token": "test-token"},
+            json={"operation": "context", "plan_id": "P-digest", "name": "plan_digest"})
+        assert response.status_code == 200, response.text
+        ctx = response.json()
+        assert ctx["body"] == body
+>       assert ctx["preview"]["content_kind"] == "digest_only"
+               ^^^^^^^^^^^^^^
+E       KeyError: 'preview'
+
+tests/test_plan_artifact_review.py:66: KeyError
+__ test_bound_digest_supports_quoted_review_without_becoming_full_plan[True] ___
+[gw0] linux -- Python 3.11.15 /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python
+
+review = (<starlette.testclient.TestClient object at 0x758da65d7b10>, <zf.runtime.plan_artifact_review.PlanArtifactReview objec...isee/pytest-366/popen-gw0/test_bound_digest_supports_quo1/.zf/artifacts/plan.md'), '# PRD\n\n开头保持。\n玩家😀可以移动。\n结尾保持。\n')
+change_source = True
+
+    @pytest.mark.parametrize("change_source", [False, True])
+    def test_bound_digest_supports_quoted_review_without_becoming_full_plan(review, change_source):
+        client, service, artifact, body = review
+        service.writer.append(ZfEvent(type="plan.approval.requested", payload={
+            "plan_id": "P-digest", "digest_ref": "artifacts/plan.md",
+        }))
+        response = client.post("/api/projects/default/plan-artifact-review",
+            headers={"x-zf-web-token": "test-token"},
+            json={"operation": "context", "plan_id": "P-digest", "name": "plan_digest"})
+        assert response.status_code == 200, response.text
+        ctx = response.json()
+        assert ctx["body"] == body
+>       assert ctx["preview"]["content_kind"] == "digest_only"
+               ^^^^^^^^^^^^^^
+E       KeyError: 'preview'
+
+tests/test_plan_artifact_review.py:66: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_plan_artifact_review.py::test_bound_digest_supports_quoted_review_without_becoming_full_plan[False]
+FAILED tests/test_plan_artifact_review.py::test_bound_digest_supports_quoted_review_without_becoming_full_plan[True]
+2 failed, 611 passed in 201.55s (0:03:21)

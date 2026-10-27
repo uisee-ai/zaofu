@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "project": "ty-review-42cb2551",
+  "requestId": "workflow-3dc6ff5623188714",
+  "realProvider": true,
+  "inputEnabled": true,
+  "mobileInputEnabled": true,
+  "answer": "当前流程声明 1 个 lane，对应 PrdFlow.spec.lanes: 1。impl 与 verify 没有各自独立的 lanes 字段；ConfigProfile 中的 spec.flow_defaults.prd.roleSkillBundles.impl 和 .verify 仅配置技能。因此，仅凭这份 YAML 不能确认两者各自的运行实例数或实际并行情况。",
+  "changes": [],
+  "draft_ref": null,
+  "snapshotUnchanged": true,
+  "actions": 0,
+  "applies": 0
+}

@@ -1,0 +1,104 @@
+{
+  "passed": true,
+  "project": "ty-review-42cb2551",
+  "planId": "evt-38c86009183e",
+  "status": "approved",
+  "measurements": [
+    {
+      "size": {
+        "width": 1440,
+        "height": 1000
+      },
+      "frame": {
+        "x": 0,
+        "y": 59,
+        "width": 1100,
+        "height": 941
+      },
+      "preview": {
+        "x": 0,
+        "y": 207,
+        "width": 1099,
+        "height": 793
+      },
+      "editing": {
+        "x": 14,
+        "y": 184,
+        "width": 1071,
+        "height": 802
+      },
+      "unusedHeight": 0,
+      "agent": {
+        "x": 14,
+        "y": 180,
+        "width": 440,
+        "height": 238
+      }
+    },
+    {
+      "size": {
+        "width": 1440,
+        "height": 1400
+      },
+      "frame": {
+        "x": 0,
+        "y": 59,
+        "width": 1100,
+        "height": 1341
+      },
+      "preview": {
+        "x": 0,
+        "y": 207,
+        "width": 1099,
+        "height": 1193
+      },
+      "editing": {
+        "x": 14,
+        "y": 184,
+        "width": 1071,
+        "height": 1202
+      },
+      "unusedHeight": 0,
+      "agent": {
+        "x": 14,
+        "y": 180,
+        "width": 440,
+        "height": 238
+      }
+    },
+    {
+      "size": {
+        "width": 390,
+        "height": 844
+      },
+      "frame": {
+        "x": 0,
+        "y": 179,
+        "width": 390,
+        "height": 545
+      },
+      "preview": {
+        "x": 0,
+        "y": 327,
+        "width": 390,
+        "height": 396
+      },
+      "editing": {
+        "x": 14,
+        "y": 332,
+        "width": 362,
+        "height": 377
+      },
+      "unusedHeight": 1,
+      "agent": {
+        "x": 14,
+        "y": 328,
+        "width": 362,
+        "height": 232
+      }
+    }
+  ],
+  "agentLayout": true,
+  "planUnchanged": true,
+  "writes": 0
+}

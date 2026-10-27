@@ -6,7 +6,7 @@
 
 采用 **skills 提供方法、Agent 输出语义关系、代码校验并渲染事实** 的方式。Planner 在现有 Task Map 中声明 `modules`、条款与任务引用；模块不会改变调度，也不会复制 Task。不同项目共享相同 schema、投影和 React Flow 组件，无产品名称、业务目录或任务类型的硬编码布局。
 
-`WorkflowProposalPage` 内提供生命周期、模块与任务、Workflow 执行、追溯与变更、验证与交付、时间线六个视角。结构来自 Proposal 固定的编译配置，动态叠层来自当前 Request/Run 的 EventLog、TaskStore、Workflow Operation、Fanout、Attempt 和已绑定计划工件。未声明模块、缺少证据和未接入生产环境均明确显示，不补造成功节点。
+`WorkflowProposalPage` 内提供 Lifecycle、Task、Dag、Trace、Delivery、Timeline 六个视角。结构来自 Proposal 固定的编译配置，动态叠层来自当前 Request/Run 的 EventLog、TaskStore、Workflow Operation、Fanout、Attempt 和已绑定计划工件。未声明模块、缺少证据和未接入生产环境均明确显示，不补造成功节点。
 
 ## 入口与合同
 
@@ -39,22 +39,60 @@
 ## 操作流程
 
 1. 在 Kanban Agent 输入需求并回答澄清问题，选择准备 Workflow。CLI / Channel 创建的同类 Workflow Request 使用同一投影入口。
-2. 在 Workflows 审阅完整 YAML；通过 Chat 选择并行数、模型、角色 skills 等字段提出局部修改，检查 diff，应用后重新审阅新版本。
-3. 需要先审阅计划时，在配置预览中打开“计划生成后等待审批”。应用候选配置，再批准运行；runtime 由现有启动链自动拉起。
+2. 在 Workflows 顶部选择 Workflow，在 Dag 点击 Raw 审阅完整 YAML；点击 YAML 面板内的 Agent 展开小回复框，用自然语言讨论或修改并行数、模型、角色 skills，Agent 自动定位字段、必要时追问，检查 Diff 后应用生成新版本。
+3. 待澄清请求通过 Answer Questions 处理，候选在 Raw 审阅。需要先审阅计划时，在 Chat 中要求打开“计划生成后等待审批”。点击 Start Workflow 后依序应用必要的候选配置并提交当前 Proposal；任一步失败即停止，runtime 仍由既有启动链自动拉起。
 4. Scan/Plan 生成已绑定文档后，点击 `PRD / Plan Preview`。在 Agent Chat 原文区域选择片段，提出修改并检查候选全文，确认后走既有 Plan reject / replan 决策路径。
 5. Planner 重新提交计划后再批准实施。在 Workflow 执行视角观察阶段、Agent、尝试和返工；从模块/任务进入追溯与验证视角核对提交及证据。
 
 局部修改不等于批准。配置修改始终重新编译、生成新 Proposal；文档修改生成不可变 sidecar，原 Plan 不原地覆盖。已处理的计划不能用旧草稿再次修改；执行中的变更必须经既有受控重新规划入口。
+
+## 图优先页面与主题（2026-10-26）
+
+取消 Needs decision / Active / History 页签和常驻请求列表；顶部只保留一个 Workflow 标题与请求选择器；全部请求由选择器访问，类型、状态和修订合并到选择项；不再单设类型/修订栏或 Review & Approve 上下文栏，深链接继续绑定 request/graph/node。默认展示 Dag，六个英文视角在工作台顶部横向排列，使用无图标的文字标签共享请求与节点身份；窄屏标签可横向滚动。未生成配置的请求仍显示澄清和准备入口，不要求已有 Run 才能访问。
+
+六个视角默认铺满页面剩余空间，无需先点击展开。画布高度受实际内容容器和窗口共同约束；窗口或侧栏尺寸变化后自动适配节点，自动适配与工具栏 Fit View 使用同一缩放规则，小图默认至多 80%，大图可继续缩小到完整可见；移除底部的版本与数据可用性、Live Events 区块，节点详情仍保留来源与执行证据。Timeline 只展示关系图，不再附带执行区间、关键路径说明与操作时间表格；Trace 和 Delivery 移除常驻说明文案，节点与受控接口的证据规则保持不变。画布采用纵向分层、圆角卡片和带箭头的曲线虚线。Provider 从已有执行绑定读取，边框使用主题品牌/警告/成功色区分已观测 Provider；执行状态单独使用文字和图标，不能从 Provider 颜色推断成功。目标节点采用圆角胶囊。背景、卡片、文字、连线、缩略图和控件共享现有明暗主题 token，不固定黑底。活动状态与连线随同一只读快照更新；普通轮询保留位置与缩放，主动筛选重新布局；减少动画偏好关闭运动效果。
+
+审批与运行控制统一从 Raw 面板进入；需要澄清的请求仍在顶部提供 Answer Questions，Plan 待审提示继续保留。Raw 是绑定 Proposal 的完整脱敏 YAML。未启动的 `proposed` 以及有当前不可变阻塞候选的 `ready` 请求均可使用 Agent Chat；阻塞候选用自己的 digest 绑定，修改后重新编译，有剩余阻塞项时保持不可审批。刷新时从匹配当前修订的准备候选或已记录的修改结果恢复 YAML，不修改 canonical `zf.yaml`，不自动启动 Run。Raw 专注展示 YAML；图工具栏不再显示 Agent，YAML 下方原 Details 位置改为 Agent，展开面板内的小回复框。没有居中模态窗口或背景遮罩；初始只显示一个输入框，消息和 Diff 按需出现在框内，支持 Ctrl/⌘+Enter 发送、Apply/Discard、Esc 或点击框外收起。Details 入口移除；必要的 Answer Questions、Prepare Workflow 和 Run Controls 入口继续保留。Chat 产生待应用候选期间不能切换请求或启动 Workflow；可关闭对话框，再打开时保留当前页面内的对话、输入及待应用 Diff。关闭 Raw 也不销毁 Chat；切换项目或请求后使用独立上下文。选中 YAML 片段可以引用到回复框，作为当前版本的修改上下文，由 Agent 定位可编辑字段并生成 Diff。应用生成新 Proposal 和图；Start Workflow 是一次显式启动确认，顺序调用原配置应用及提交接口，绑定相同 Proposal digest，失败不继续提交。已应用配置而提交失败时，刷新后重试仅提交，不重复应用。YAML 面板内的 Agent 入口始终可见；已启动 Run 时允许基于冻结 YAML 提问讨论，不生成可应用的 Diff；尚未生成可读预览或缺少 Agent 调用权限时，对话框显示具体原因并禁用输入及发送；历史事件回放时禁用 Raw，返回实时后可检查当前 Proposal，避免把当前配置误作历史配置。
+
+专用 Prompt `src/zf/runtime/workflow_dsl_prompt.py`（`workflow-dsl-editor.v1`）由 Preview 服务实际传入 headless 调用。输入包含服务端读取的当前脱敏 YAML、版本绑定和可编辑字段，Agent 负责判断讨论、追问或修改；代码只检查字段白名单、类型、版本、编译及受控应用。`mode=chat` 不要求选择 field，返回 `answer` 与 `changes:[{field,replacement}]`；支持一次修改多个配置字段，或一个需求字段，禁止混合。需求字段的结构化引用修改仍仅替换选中片段；YAML 引用通过消息提供上下文，配置变更仍受字段白名单和编译校验约束。headless 使用 read_only 权限，不直接写配置或启动；完整 YAML 通过已有 immutable snapshot 引用记录在事件中，不重复写入 ledger。旧 discuss/revise API 协议保留。
+
+运行后的 `context` / `discuss` 可读取同一 Proposal 绑定的冻结快照，返回 `read_only=true`，并将全部字段标为不可编辑。历史 YAML 恢复与脱敏共用 `runtime/workflow_snapshot_yaml.py`；不以当前 `zf.yaml` 替代运行快照。Agent 可以回答问题，代码拒绝 revise、非空补丁及旧候选 Apply。Provider 返回后再次校验版本，启动前发起的请求若期间已经启动仍拒绝迟到结果。此路径继续要求 action token；缺少权限时优先解释权限原因。API、浏览器与真实 headless 回复证据见 [运行快照 Agent 对话](../records/2026-10-27-0245-workflow-snapshot-chat.md)。
+
+旧版 Workflow 的 effective-config 快照可能只有结构化 `config`，没有 `yaml`。详情投影先验证不可变快照，再从同一 Proposal 的 private candidate 恢复完整脱敏 YAML；候选路径、大小和内容摘要均须通过检查，摘要必须同时匹配快照来源及 Proposal 目标。候选不可用时仅序列化已验证的冻结配置，并明确标为 `Compiled configuration snapshot`；快照本身不可读时显示证据不可用。不读取当前项目 `zf.yaml` 作为历史内容，也不改写旧快照、Proposal 或事件。实际 tt 修复及浏览器证据见 [旧版 Raw YAML 兼容记录](../records/2026-10-26-1540-workflow-legacy-yaml.md)。
+
+PRD/Plan 待审时在画布上方提示 Review Plan。主阅读区直接显示服务端绑定的文档，Preview 支持选段引用，Raw 支持精确选字。选中内容后才出现「引用到 Agent」悬浮入口，正文没有逐段编辑按钮。格式化内容按 Markdown 语法树的源区间引用完整段落/列表/表格块，保留标记；Unicode 偏移转换后送入原审阅合同，重复文本不做全文搜索匹配。审批概览与附件折叠保留为只读资料，加载失败明确提示并可重试。引用打开与 YAML 共用 `PreviewAgentReply` 的小回复框：一个输入框与 Send，按需显示消息、引用和 Diff；支持 Ctrl/⌘+Enter、关闭重开保留内容以及 Apply/Discard。点击外部动作后再收起，并使用原始事件路径识别已被 React 移除的 Diff 按钮和引用入口，避免吞掉点击或误收起。主阅读入口的早期修复证据见 [Plan Review Entry](../records/2026-10-26-2329-plan-review-entry.md)。
+
+Plan 审阅的 `mode=chat` 由 headless Agent 判断讨论、追问或局部修改；原 `discuss/revise` 协议保留。候选必须绑定同一 Plan、文档摘要与 Unicode 引用区间，引用外正文由服务端保持不变；Provider 返回后重新检查计划是否仍待审批。Apply 通过原受控拒绝/重新规划入口提交不可变候选，不批准旧计划或新计划；待应用 Diff 与重规划状态同步前锁住批准操作。已退回版本说明正在等待新版。Workflow 选择器优先显示 Synthesis 已选的 Flow family，未决时才显示原始 `auto`。页面没有新增调度或审批状态机；Kanban Agent、Channel 与 CLI 提交接口未改动。真实 Kanban → PrdFlow → 人工预览 → 引用修改 → 新版待审验证见 [ty Plan Chat](../records/2026-10-26-1700-ty-plan-chat.md)。
+
+选区悬浮入口跟随选区位置并限制在窗口内；滚动、缩放、清空选区或 Esc 将其收起。只有点击「引用到 Agent」才替换对话中的引用，临时选中文字不改写已有引用。Agent 入口与 Preview / Raw 位于同一工具栏，回复框锚定在工具栏下方，不推移正文，也不再出现在文档底部；窄屏保持入口同排并限制回复框宽度。待应用候选或 Agent 调用期间不开放新的引用入口。桌面真实鼠标选择、headless 修改及手机布局验证见 [2026-10-27 选区引用](../records/2026-10-27-0128-plan-selection-quote.md)。
+
+Inbox 的 Plan 预览与列表也提供「引用编辑」，进入相同的 `PlanArtifactChat`；共享样式由编辑组件加载，不依赖先访问 Workflow。该入口不再把修改要求发往 `chat-orchestrator`，避免没有配置 orchestrator Agent 时仅得到 `queued_no_runtime`。默认审阅视图和附件阅读保留；编辑时选段调用 headless Agent，再通过原 Apply 请求重新规划。候选存在或调用进行中时锁住 Approve、Reject、关闭和返回审阅；Apply 成功重新读取原 Plan 状态并刷新 Inbox，已退回版本不能批准。Discard 只丢弃页面候选，不写 Plan。Agent 工具栏定位与真实引用修改验证见 [2026-10-27 工具栏回复框](../records/2026-10-27-0147-plan-agent-toolbar.md)。
+
+Inbox 与 Workflow 入口的真实 Agent 修改、Apply 后重新规划及新版人工待审闭环见 [2026-10-26 Inbox Agent 验证](../records/2026-10-26-2343-plan-inbox-agent.md)。
+
+引用编辑默认使用格式化 Preview，沿用 Plan 阅读页的标题、行高、代码换行和加粗样式；段落间保持文档间距。长表格与代码块复用 `planMarkdownPages` 分段渲染，避免因单块过长降级为纯文本；渲染时补充的表头不改变原始 Markdown 源区间，引用仍绑定原文与摘要。
+
+Inbox 引用编辑时正文占满工具栏下方的宽高，资料侧栏在返回审阅后恢复。Workflow 的 Plan 也使用全屏阅读窗口，审批按钮保留在顶部，辅助资料折叠在底部。两个入口的正文都填满剩余空间，取消 55dvh 上限，独立滚动；文档选择、Preview / Raw / Agent 保持可见。早期高度修复见 [阅读空间对齐](../records/2026-10-27-0159-plan-edit-reader.md)，本轮格式化与两个入口全屏验证见 [统一阅读模式](../records/2026-10-27-0230-plan-reader-unified.md)。
+
+该实测随后暴露 Autoresearch 子进程继承父项目路径环境的问题。实验命令必须清除 `ZF_PROJECT_ROOT` / `ZF_STATE_DIR`，从自身 cwd/zf.yaml 解析状态；否则 `init --force` 和 `stop` 会作用于父项目。隔离修复、父账本保护回归及历史 ty 数据受损情况见 [2026-10-27 故障记录](../records/2026-10-27-0016-autoresearch-context-isolation.md)。
+
+窄屏的项目导航行按实际内容取高，避免空白导航区挤占画布。
+
+浏览器验证使用 `tests/e2e/scripts/workflow-prepare-server.py` 的隔离目录、独立 workspace 和 Docker Playwright。Provider 与启动进程为确定性替身；图实时状态及 Plan 面板测试明确使用投影夹具，不作为真实 Agent 执行证据。相关用例见 `web/tests/workflow-graph-redesign.spec.ts`、`workflow-preparation.spec.ts`、`workflow-preview-review.spec.ts` 和 `workflow-proposal-page.spec.ts`。
+
+Raw 阻塞候选的真实 Codex 验证见 [2026-10-26 Raw Chat 修复](../records/2026-10-26-1342-workflow-raw-chat.md)。 自然语言 DSL 编辑、单次启动确认及真实多轮 Chat 证据见 [2026-10-26 DSL Chat](../records/2026-10-26-1428-workflow-dsl-chat.md)。
+
+改版验证与截图见 [2026-10-26 验收记录](../records/2026-10-26-1218-workflow-graph-ui.md)。 简洁 Agent 对话框验收见 [2026-10-26 Agent Dialog](../records/2026-10-26-1453-workflow-agent-dialog.md)。 最新 YAML 内小回复框及 Details 移除验收见 [2026-10-26 YAML Reply](../records/2026-10-26-1524-workflow-yaml-reply.md)。
 
 ## 状态与数据限制
 
 - Task 绿色完成要求当前代内的内核 `task.done.accepted`，或同 Run、同代次 `run.goal.completed` 中明确列出的 `completed_task_ids`，同时 canonical Task 已置 done；Worker 自述仅显示已报告。复用 Goal Coverage 的已接纳结果、目标提交和代次校验，过期验证不计入当前闭合。TaskStore 中的提交链接只提供追溯。
 - 历史模式按事件游标读取，无法重建的 Task 历史状态显示未知。需求与配置取已绑定 Proposal，不重建旧准备修订；后续编辑当前 `zf.yaml` 不改写旧 Run 图。
 - 下游影响表示已声明关系可达；未声明业务依赖仍待 Agent/人工评估。
-- 时间线只使用实际开始/结束/请求时间，缺少时长不估算 ETA；关键路径计算 Task 操作区间并集后的 DAG 最长路径，不累加并行任务。
+- API 的时序分析只使用实际开始/结束/请求时间，缺少时长不估算 ETA；关键路径计算 Task 操作区间并集后的 DAG 最长路径，不累加并行任务。Timeline 页面不展示这些统计表格。
 - 当前未配置部署/生产健康数据源，发布与生产健康保持独立；代码交付不等于生产健康。
 - API 返回完整快照与 total/included/truncated 统计；画布使用可见区域渲染和层级折叠，1200 节点夹具验证无遗漏。当前没有服务端邻居分页。
-- 每 2 秒拉取一致快照，后台页面暂停轮询；返回实时后重新读取完整快照。请求有并发/范围保护。Live Events 只传事件索引，活动详情中的大型工具输入/输出使用有标记的摘要，完整正文保留在 EventLog / sidecar。
+- 每 2 秒拉取一致快照，后台页面暂停轮询；返回实时后重新读取完整快照。请求有并发/范围保护。事件索引仍由 API 提供，页面不再单独展示 Live Events；节点活动详情中的大型工具输入/输出使用有标记的摘要，完整正文保留在 EventLog / sidecar。
 - 切换视角、状态、搜索、关系范围、折叠或回放时，按当前可见节点重新布局并适配画布，避免少量活动节点沿用完整历史图的稀疏坐标。普通实时轮询保留节点拖动位置和缩放视角；只查看节点详情不重排。Plan Chat 的 Grid 列宽限制在面板内，完整文档中的宽表格不能撑开局部 diff。
 
 ## 真实验证记录
@@ -125,6 +163,8 @@ Kanban/Channel 共用的合同路径形状判断保留 `.gitignore` 等根目录
 验证命令的路径提取对 Docker `--pull never` 与 `--pull=never` 保持一致：镜像拉取策略值不作为镜像名，挂载目标和镜像标识不作为仓库输入；镜像后的项目脚本仍需声明路径归属。真实 Planner 首轮提交触发此误报，回归先复现失败后修复，未放宽任务路径或 assembly owner 约束。
 
 Plan Preview 从绑定的 source index 补读可选 `authority_refs` 时，仅消费列表。字段缺失、null 或其他形状表示没有可展示的附加引用，不再令 Plan/Inbox/Workflow 图接口崩溃，也不将字符串拆成字符引用；原 Plan 正文、摘要校验和待审批状态保持不变。
+
+引用编辑默认选择已绑定的完整 Markdown Plan。失败任务恢复时，Kernel 从同一 workflow、已批准 Plan、writer fanout 和失败事件的来源链继承正文引用；任务表、需求和计划包身份必须一致，正文与任务表摘要必须校验通过。对已生成的旧恢复事件，预览投影按同样规则还原引用。无法验证全文时摘要仅供阅读，不能将摘要当作全文交给 Agent 修改；其他附件由用户主动选择。Apply 沿用受控退回和重新规划，切换文档后默认恢复 Preview。验证见 [全文引用修复](../records/2026-10-27-0322-full-plan-review.md)。
 
 Provider 的结构化文件写入保护复用现有目标解析器，只检查实际 Add/Update/Delete/Move 或 Write/Edit 目标，避免把规划文档正文里的账本引用当作写账本。未知输入继续使用原有保守检查，shell 变更检测和 Task/Workdir 范围检查不变。
 

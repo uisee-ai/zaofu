@@ -1,0 +1,6 @@
+
+Running 2 tests using 1 worker
+
+[1/2] [chromium] › tests/workflow-graph-redesign.spec.ts:281:1 › request selection retains deep links and Plan review keeps chat and approval bound
+[2/2] [chromium] › tests/workflow-preview-review.spec.ts:4:1 › YAML reply stays inside Raw and retains text when the panel is reopened
+  2 passed (32.5s)

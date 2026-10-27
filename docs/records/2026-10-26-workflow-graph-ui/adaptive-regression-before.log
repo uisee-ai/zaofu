@@ -1,0 +1,36 @@
+
+Running 1 test using 1 worker
+
+[1/1] [chromium] › tests/workflow-graph-redesign.spec.ts:120:1 › large graphs fit shorter windows and resized content panels; Timeline stays graph-only
+  1) [chromium] › tests/workflow-graph-redesign.spec.ts:120:1 › large graphs fit shorter windows and resized content panels; Timeline stays graph-only
+
+    Error: expect(received).toBeTruthy()
+
+    Received: false
+
+    Call Log:
+    - Timeout 10000ms exceeded while waiting on the predicate
+
+      129 |   const canvas = workbench.getByTestId("workflow-graph-canvas");
+      130 |   const assertFits = async () => {
+    > 131 |     await expect.poll(() => canvas.evaluate(element => {
+          |     ^
+      132 |       const frame = element.getBoundingClientRect();
+      133 |       const nodes = [...element.querySelectorAll(".react-flow__node")].map(node => node.getBoundingClientRect());
+      134 |       const panel = document.querySelector(".projection-scroll")!.getBoundingClientRect();
+        at assertFits (/home/uisee/workspace/zaofu-wt-workflow-graph-ui/web/tests/workflow-graph-redesign.spec.ts:131:5)
+        at /home/uisee/workspace/zaofu-wt-workflow-graph-ui/web/tests/workflow-graph-redesign.spec.ts:140:3
+
+    Error Context: test-results-graph-autofit-before/workflow-graph-redesign-la-56ab7-s-Timeline-stays-graph-only-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results-graph-autofit-before/workflow-graph-redesign-la-56ab7-s-Timeline-stays-graph-only-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results-graph-autofit-before/workflow-graph-redesign-la-56ab7-s-Timeline-stays-graph-only-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  1 failed
+    [chromium] › tests/workflow-graph-redesign.spec.ts:120:1 › large graphs fit shorter windows and resized content panels; Timeline stays graph-only

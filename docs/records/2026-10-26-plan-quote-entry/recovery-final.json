@@ -1,0 +1,12 @@
+{
+  "project": "ty-review-42cb2551",
+  "request": "workflow-3dc6ff5623188714",
+  "plan_id": "evt-38c86009183e",
+  "status": "pending",
+  "realProvider": true,
+  "exactLocalChange": true,
+  "approvals": 0,
+  "legacyChats": 0,
+  "mobileOverflow": false,
+  "manualApprovalStillRequired": true
+}

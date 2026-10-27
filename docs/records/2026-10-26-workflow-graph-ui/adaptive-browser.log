@@ -1,0 +1,12 @@
+
+Running 8 tests using 1 worker
+
+[1/8] [chromium] › tests/workflow-graph-redesign.spec.ts:27:1 › six graph views, themed top-down cards and live projection updates preserve viewport
+[2/8] [chromium] › tests/workflow-graph-redesign.spec.ts:126:1 › large graphs fit shorter windows and resized content panels; Timeline stays graph-only
+[3/8] [chromium] › tests/workflow-graph-redesign.spec.ts:162:1 › Raw exposes bound YAML and opt-in Chat creates a new preview without starting a run
+[4/8] [chromium] › tests/workflow-graph-redesign.spec.ts:214:1 › request selection retains deep links and Plan review keeps chat and approval bound
+[5/8] [chromium] › tests/workflow-preparation.spec.ts:7:1 › create-task asks, resumes, previews complete YAML, then starts only after approval
+[6/8] [chromium] › tests/workflow-preparation.spec.ts:7:1 › idea-to-product asks, resumes, previews complete YAML, then starts only after approval
+[7/8] [chromium] › tests/workflow-preview-review.spec.ts:12:1 › quotes a clause, discusses, reviews a narrow diff, and creates a new Preview
+[8/8] [chromium] › tests/workflow-proposal-page.spec.ts:80:1 › reviews, approves, and follows a proposal without layout collisions
+  8 passed (49.4s)

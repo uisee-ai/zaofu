@@ -60,7 +60,8 @@ function OperatorInboxPanel(
   const [inboxRefreshing, setInboxRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
-  const [repairMessage, setRepairMessage] = useState<Record<string, string>>({});
+  const [previewEditing, setPreviewEditing] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [preview, setPreview] = useState<PlanPreview | null>(null);
   const [previewItem, setPreviewItem] = useState<OperatorInboxItem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -165,11 +166,13 @@ function OperatorInboxPanel(
     };
   }, [refreshInbox]);
 
-  const openPreview = async (planId: string, item?: OperatorInboxItem) => {
+  const openPreview = async (planId: string, item?: OperatorInboxItem, editing = false) => {
     const ticket = previewRequestGate.current.issue();
     setPreview(null);
     setPreviewItem(item || null);
     setPreviewLoading(true);
+    setPreviewEditing(editing);
+    setReviewBusy(false);
     setActionError("");
     setActionNotice("");
     try {
@@ -208,33 +211,9 @@ function OperatorInboxPanel(
     }
   };
 
-  const repairChat = async (plan: OperatorInboxItem) => {
+  const openPlanEditor = (plan: OperatorInboxItem) => {
     const planId = String(plan.plan_id || "");
-    if (!planId) return;
-    setBusy(`repair:${planId}`);
-    setActionError("");
-    setActionNotice("");
-    try {
-      const result = await postAction("chat-orchestrator", {
-        message: repairMessage[planId] || rejectReason[planId] || "请解释该 Plan 并提出需要修改的地方。",
-        plan_id: planId,
-        source: "operator-inbox",
-        intent_type: "plan_repair",
-        plan_context: preview?.plan_id === planId ? {
-          plan_id: preview.plan_id,
-          trace_id: preview.trace_id,
-          stage_id: preview.stage_id,
-          pdd_id: preview.pdd_id,
-          task_map_ref: preview.refs.task_map_ref,
-          source_index_ref: preview.refs.source_index_ref,
-          requirement_spec_ref: preview.refs.requirement_spec_ref,
-        } : undefined,
-      }, projectId || undefined);
-      if (result.ok === false) setActionError(result.reason || "repair chat failed");
-      else setActionNotice("修改请求已提交给 Kanban Agent；Plan 仍保持待审批，等待新的候选版本。");
-    } finally {
-      setBusy("");
-    }
+    if (planId) void openPreview(planId, plan, true);
   };
 
   const actOnItem = async (item: OperatorInboxItem, action: string, reason = "") => {
@@ -318,7 +297,7 @@ function OperatorInboxPanel(
       onPreview={() => item.plan_id && void openPreview(String(item.plan_id), item)}
       onApprove={() => item.plan_id && void act("plan-approve", String(item.plan_id))}
       onReject={() => item.plan_id && void act("plan-reject", String(item.plan_id))}
-      onRepair={() => void repairChat(item)}
+      onRepair={() => openPlanEditor(item)}
       onAction={(action) => void actOnItem(item, action)}
     />
   );
@@ -408,10 +387,14 @@ function OperatorInboxPanel(
             if (!preview) return;
             setRejectReason((current) => ({ ...current, [preview.plan_id]: value }));
           }}
-          repairMessage={preview ? repairMessage[preview.plan_id] || "" : ""}
-          onRepairMessage={(value) => {
+          editing={previewEditing}
+          onRead={() => setPreviewEditing(false)}
+          reviewBusy={reviewBusy}
+          onReviewBusy={setReviewBusy}
+          onApplied={async () => {
             if (!preview) return;
-            setRepairMessage((current) => ({ ...current, [preview.plan_id]: value }));
+            await openPreview(preview.plan_id, currentPreviewItem || undefined, true);
+            await refreshInbox();
           }}
           onClose={() => {
             previewRequestGate.current.invalidate();
@@ -435,7 +418,7 @@ function OperatorInboxPanel(
               void act("plan-reject", preview.plan_id);
             }
           }}
-          onRepair={() => preview && void repairChat(currentPreviewItem || { id: preview.plan_id, kind: "plan_approval", status: preview.status, title: "Plan Ready", plan_id: preview.plan_id })}
+          onRepair={() => setPreviewEditing(true)}
           ownerDecision={previewOwnerDecision}
           decisionReady={!previewOwnerDecision || Boolean(currentPreviewItem?.proposal_ref && currentPreviewItem?.eval_ref)}
           actionKey={currentPreviewItem?.id || preview?.plan_id || ""}
@@ -606,7 +589,7 @@ function InboxRowActions({
           <X size={14} /> {t("Reject")}
         </button>
         <button type="button" className="delivery-action-button" onClick={onRepair} disabled={disabled}>
-          <MessageSquare size={14} /> {t("Repair")}
+          <MessageSquare size={14} /> 引用编辑
         </button>
       </div>
     );

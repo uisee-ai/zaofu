@@ -1,0 +1,16 @@
+{
+  "project": "ty-review-42cb2551",
+  "planId": "evt-38c86009183e",
+  "passed": true,
+  "noPerParagraphButtons": true,
+  "nativeMouseSelection": true,
+  "contextualQuoteAction": true,
+  "realProviderLocalDiff": true,
+  "approvalLockedWithDraft": true,
+  "mobileOverflow": false,
+  "planUnchanged": true,
+  "status": "pending",
+  "applies": 0,
+  "approvals": 0,
+  "legacyChats": 0
+}

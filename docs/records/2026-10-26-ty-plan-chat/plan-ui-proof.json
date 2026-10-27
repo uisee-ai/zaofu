@@ -1,0 +1,14 @@
+{
+  "replyLabel": "Plan Agent",
+  "sharedShell": true,
+  "singleComposer": 1,
+  "pendingDiffSurvivesClose": true,
+  "approvalDisabledWithDraft": true,
+  "mobileBounds": {
+    "x": 25,
+    "y": 490.671875,
+    "width": 340,
+    "height": 340
+  },
+  "mobileOverflow": false
+}

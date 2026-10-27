@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] [chromium] › tests/plan-preview-agent.spec.ts:41:1 › a Plan without bound Markdown keeps its formatted preview instead of silently opening JSON
+[1A[2K  1 passed (8.3s)

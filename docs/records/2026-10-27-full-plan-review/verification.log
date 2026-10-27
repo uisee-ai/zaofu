@@ -1,0 +1,74 @@
+worktree: /home/uisee/workspace/zaofu-wt-workflow-graph-ui
+changed:
+  - src/zf/runtime/operator_plan_preview.py
+  - src/zf/runtime/resume_plan_preview.py
+  - src/zf/runtime/workflow_resume_apply.py
+  - tests/test_plan_artifact_review.py
+  - tests/test_resume_plan_preview.py
+  - tests/test_rework_feedback_in_resume_batch.py
+  - web/src/components/workflow/PlanArtifactChat.tsx
+  - web/tests/plan-preview-agent.spec.ts
+domains: backend, tests, web_ui
+python tests: 43
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python -m pytest tests/e2e/test_sqlite_event_ref_operation_mock_e2e.py tests/runtime/test_provider_stop_recovery.py tests/runtime/test_workflow_breakpoint_resume.py tests/test_channel_conversation_projection.py tests/test_channel_projection.py tests/test_cli_recover_workflow.py tests/test_escalate_throttle_and_cap_accounting.py tests/test_event_read_model.py tests/test_feishu_ai_native_loop_e2e.py tests/test_feishu_callback_security.py tests/test_feishu_channel_kanban_e2e.py tests/test_feishu_plan_approval_card.py tests/test_gate_unroutable_visibility.py tests/test_goal_dossier_owner_delivery.py tests/test_kanban_agent_recovery_actions.py tests/test_operator_inbox.py tests/test_operator_plan_preview.py tests/test_owner_visible_delivery.py tests/test_plan_artifact_review.py tests/test_read_model_freshness_gate.py tests/test_read_model_single_flight.py tests/test_read_model_slim_hydration.py tests/test_reader_batch_recovery_effects.py tests/test_reader_fanout_runtime.py tests/test_repair_checkpoint_dedup.py tests/test_resume_plan_preview.py tests/test_rework_attempt_ready.py tests/test_rework_feedback_in_resume_batch.py tests/test_run_manager.py tests/test_sdlc_graph.py tests/test_stage_failure_replan.py tests/test_terminal_reader_resume.py tests/test_web_delivery_trace.py tests/test_web_measure_loop_routes.py tests/test_web_plan_pending_refs.py tests/test_web_server.py tests/test_workflow_graph_runtime.py tests/test_workflow_operation_projection.py tests/test_workflow_operation_resume.py tests/test_workflow_resume_batch.py tests/test_workflow_resume_budget.py tests/test_workflow_resume_event_first.py tests/test_workflow_resume_filing_guards.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: changed tests + direct imports/callers + boundary sentinels
+  - [auto/web] web-typecheck: npm run typecheck
+      reason: Web UI/API boundary changed
+  - [auto/web] web-unit: npm run test:unit
+      reason: compile Web unit tests once and execute model contracts
+
+==> python-deterministic: /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python -m pytest tests/e2e/test_sqlite_event_ref_operation_mock_e2e.py tests/runtime/test_provider_stop_recovery.py tests/runtime/test_workflow_breakpoint_resume.py tests/test_channel_conversation_projection.py tests/test_channel_projection.py tests/test_cli_recover_workflow.py tests/test_escalate_throttle_and_cap_accounting.py tests/test_event_read_model.py tests/test_feishu_ai_native_loop_e2e.py tests/test_feishu_callback_security.py tests/test_feishu_channel_kanban_e2e.py tests/test_feishu_plan_approval_card.py tests/test_gate_unroutable_visibility.py tests/test_goal_dossier_owner_delivery.py tests/test_kanban_agent_recovery_actions.py tests/test_operator_inbox.py tests/test_operator_plan_preview.py tests/test_owner_visible_delivery.py tests/test_plan_artifact_review.py tests/test_read_model_freshness_gate.py tests/test_read_model_single_flight.py tests/test_read_model_slim_hydration.py tests/test_reader_batch_recovery_effects.py tests/test_reader_fanout_runtime.py tests/test_repair_checkpoint_dedup.py tests/test_resume_plan_preview.py tests/test_rework_attempt_ready.py tests/test_rework_feedback_in_resume_batch.py tests/test_run_manager.py tests/test_sdlc_graph.py tests/test_stage_failure_replan.py tests/test_terminal_reader_resume.py tests/test_web_delivery_trace.py tests/test_web_measure_loop_routes.py tests/test_web_plan_pending_refs.py tests/test_web_server.py tests/test_workflow_graph_runtime.py tests/test_workflow_operation_projection.py tests/test_workflow_operation_resume.py tests/test_workflow_resume_batch.py tests/test_workflow_resume_budget.py tests/test_workflow_resume_event_first.py tests/test_workflow_resume_filing_guards.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  7%]
+........................................................................ [ 14%]
+........................................................................ [ 22%]
+........................................................................ [ 29%]
+........................................................................ [ 36%]
+........................................................................ [ 44%]
+........................................................................ [ 51%]
+........................................................................ [ 59%]
+........................................................................ [ 66%]
+........................................................................ [ 73%]
+........................................................................ [ 81%]
+........................................................................ [ 88%]
+..............................................................F......... [ 95%]
+........................................                                 [100%]
+=================================== FAILURES ===================================
+_ TestApiTraceCandidateFanoutEventsSearchDiagnostics.test_events_exposes_malformed_and_cursor_paginates _
+[gw2] linux -- Python 3.11.15 /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python
+
+self = <tests.test_web_server.TestApiTraceCandidateFanoutEventsSearchDiagnostics object at 0x766e4199b090>
+state_dir = PosixPath('/tmp/pytest-of-uisee/pytest-372/popen-gw2/test_events_exposes_malformed_0/.zf')
+client = <starlette.testclient.TestClient object at 0x766e41df31d0>
+
+    def test_events_exposes_malformed_and_cursor_paginates(self, state_dir, client):
+        path = state_dir / "events.jsonl"
+        path.write_text(
+            '{"type":"task.created","id":"e1","ts":"2026-04-27T00:00:00",'
+            '"actor":"x","task_id":"T1","payload":{},'
+            '"causation_id":null,"correlation_id":null}\n'
+            'garbage line not json\n'
+            '{"type":"task.dispatched","id":"e2","ts":"2026-04-27T00:00:01",'
+            '"actor":"x","task_id":"T1","payload":{},'
+            '"causation_id":null,"correlation_id":null}\n',
+            encoding="utf-8",
+        )
+
+        first = client.get("/api/events?limit=2&cursor=0").json()
+        second = client.get(
+            f"/api/events?limit=2&cursor={first['next_cursor']}"
+        ).json()
+
+>       assert [item["seq"] for item in first["items"]] == [1, 2]
+E       assert [] == [1, 2]
+E
+E         Right contains 2 more items, first extra item: 1
+E         Use -v to get more diff
+
+tests/test_web_server.py:2591: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_web_server.py::TestApiTraceCandidateFanoutEventsSearchDiagnostics::test_events_exposes_malformed_and_cursor_paginates
+1 failed, 975 passed in 179.69s (0:02:59)

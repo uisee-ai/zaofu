@@ -6,7 +6,7 @@ function request(id: string) {
 function detail(id: string, queueStatus = "") {
   return { result: request(id), requirement: { objective: `Objective ${id}`, acceptance: ["Test this change"] },
     proposal: { approval_status: "approvable", stage_graph: { nodes: [] } }, operation: { queue_status: queueStatus },
-    artifacts: {}, lifecycle: {}, links: {} };
+    artifacts: { effective_config: { yaml: "spec: {}\n" } }, lifecycle: {}, links: {} };
 }
 async function routes(page: Page) {
   await page.route("**/api/projects/**", async (route) => {
@@ -21,6 +21,13 @@ async function routes(page: Page) {
   });
 }
 
+async function openRaw(page: Page) {
+  const graph = page.getByRole("region", { name: "Workflow 图工作台" });
+  await graph.getByRole("button", { name: "Dag", exact: true }).click();
+  await graph.getByRole("button", { name: "Raw", exact: true }).click();
+  await expect(page.getByTestId("workflow-start")).toBeVisible();
+}
+
 for (const failed of [false, true]) test(`late ${failed ? "error" : "detail"} cannot replace the selected Workflow or its action`, async ({ page }) => {
   await routes(page);
   let release!: () => void;
@@ -30,13 +37,14 @@ for (const failed of [false, true]) test(`late ${failed ? "error" : "detail"} ca
     await route.fulfill({ status: failed ? 500 : 200, json: detail("A") }).catch(() => {});
   });
   await page.goto("/tests/inbox-workflow.html?surface=workflow");
-  await page.getByRole("button", { name: /Objective B/ }).click();
-  await expect(page.locator(".workflow-proposal-detail")).toContainText("Objective B");
+  await page.getByLabel("Select workflow").selectOption("B");
+  await openRaw(page);
+  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective B");
   release();
   await page.evaluate(() => new Promise(requestAnimationFrame));
-  await expect(page.locator(".workflow-proposal-detail")).toContainText("Objective B");
+  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective B");
   await expect(page.locator(".workflow-proposal-notice.tone-error")).toHaveCount(0);
-  await page.getByTestId("workflow-approve-run").click();
+  await page.getByTestId("workflow-start").click();
   await expect(page.getByTestId("actions")).toContainText('"request_id":"B"');
 });
 
@@ -49,11 +57,11 @@ test("project change hides old Workflow details while new identity loads", async
     await route.fulfill({ json: { items: [request("NEW")] } });
   });
   await page.goto("/tests/inbox-workflow.html");
-  await expect(page.getByTestId("workflow-approve-run")).toBeVisible();
+  await openRaw(page);
   await page.getByRole("button", { name: "Switch project" }).click();
-  await expect(page.getByTestId("workflow-approve-run")).toHaveCount(0);
+  await expect(page.getByTestId("workflow-start")).toHaveCount(0);
   release();
-  await expect(page.locator(".workflow-proposal-detail")).toContainText("Objective NEW");
+  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective NEW");
 });
 
 test("an old project's delayed list cannot select an action in the new project", async ({ page }) => {
@@ -66,11 +74,12 @@ test("an old project's delayed list cannot select an action in the new project",
   });
   await page.goto("/tests/inbox-workflow.html");
   await page.getByRole("button", { name: "Switch project" }).click();
-  await expect(page.locator(".workflow-proposal-detail")).toContainText("Objective A");
+  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective A");
   release();
   await page.evaluate(() => new Promise(requestAnimationFrame));
-  await expect(page.getByRole("button", { name: /Objective OLD/ })).toHaveCount(0);
-  await page.getByTestId("workflow-approve-run").click();
+  await expect(page.getByRole("option", { name: /Objective OLD/ })).toHaveCount(0);
+  await openRaw(page);
+  await page.getByTestId("workflow-start").click();
   await expect(page.getByTestId("actions")).toContainText('"project":"b"');
 });
 
@@ -79,7 +88,7 @@ test("a response bound to a different Request cannot expose approval actions", a
   await page.route("**/workflow-requests/A", (route) => route.fulfill({ json: detail("OTHER") }));
   await page.goto("/tests/inbox-workflow.html");
   await expect(page.locator(".workflow-proposal-notice.tone-error")).toContainText("identity mismatch");
-  await expect(page.getByTestId("workflow-approve-run")).toHaveCount(0);
+  await expect(page.getByTestId("workflow-start")).toHaveCount(0);
 });
 
 test("slow preparation polls do not overlap or create an extra ordinary poll", async ({ page }) => {
@@ -94,7 +103,8 @@ test("slow preparation polls do not overlap or create an extra ordinary poll", a
     await route.fulfill({ json: detail("A", "running") }).catch(() => {});
   });
   await page.goto("/tests/inbox-workflow.html");
-  await expect(page.locator(".workflow-proposal-detail")).toContainText("Objective A");
+  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective A");
+  await expect(page.getByRole("region", { name: "Workflow 图工作台" })).toBeVisible();
   const initial = calls;
   await page.clock.runFor(1600);
   await expect.poll(() => calls).toBe(initial + 1);
@@ -258,19 +268,19 @@ for (const failed of [false, true]) test(`a late Workflow ${failed ? "error" : "
   });
   try {
     await page.goto("/tests/inbox-workflow.html");
-    await expect(page.getByTestId("workflow-approve-run")).toBeEnabled();
-    await page.locator(".workflow-graph-disclosure > summary").click();
+    await openRaw(page);
+    await expect(page.getByTestId("workflow-start")).toBeEnabled();
     await expect(page.getByRole("region", { name: "Workflow 图工作台" })).toBeVisible();
     await page.clock.runFor(8100);
     await expect.poll(() => reads).toBe(2);
-    await page.getByLabel("Review field").selectOption("requirement.acceptance.0");
+    await page.getByRole("button", { name: "Agent", exact: true }).click();
     await page.getByLabel("Preview discussion").fill("Keep the pending review");
-    await page.getByRole("button", { name: "提出局部修改", exact: true }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByTestId("review-diff")).toContainText("Keep this draft");
     release(); await answered;
     await page.clock.runFor(200);
     await expect(page.getByTestId("review-diff")).toContainText("Keep this draft");
-    await expect(page.getByTestId("workflow-approve-run")).toBeDisabled();
+    await expect(page.getByTestId("workflow-start")).toBeDisabled();
     await expect(page.locator(".workflow-proposal-notice.tone-error")).toHaveCount(0);
   } finally { release(); }
 });
