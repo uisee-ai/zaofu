@@ -2,6 +2,18 @@ import { expect, test } from "@playwright/test";
 
 const projectId = process.env.ZF_WEB_PROJECT_ID ?? "zaofu-915bc1fe";
 
+// These fixtures pin historical cursors; real project SSE must not advance them.
+// Live invalidation is exercised separately in board-first-paint.spec.ts.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).EventSource = class {
+      onmessage = null; onerror = null; onopen: (() => void) | null = null;
+      constructor() { setTimeout(() => this.onopen?.(), 0); }
+      addEventListener() {} close() {}
+    };
+  });
+});
+
 test("traces load a bounded index and disclose detail, history, and raw data on demand", async ({ page }) => {
   const traceListRequests: string[] = [];
   const traceDetailRequests: string[] = [];

@@ -15,12 +15,10 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   clarifyWorkflowRequest,
-  getWorkflowRequestDetail,
-  getWorkflowRequests,
   prepareWorkflowProposal,
 } from "../../api/client";
 import type {
@@ -43,9 +41,9 @@ import {
   WorkflowExecutionPlan,
   WorkflowList,
 } from "./WorkflowProposalParts";
+import { useWorkflowRequests } from "./useWorkflowRequests";
 import { WorkflowPreviewReview } from "./WorkflowPreviewReview";
 import { WorkflowClarificationPanel } from "./WorkflowClarificationPanel";
-import { LatestRequestGate } from "../../app/latestRequestGate";
 const WorkflowGraphWorkbench = lazy(() => import("./WorkflowGraphWorkbench"));
 import {
   diagnosticSeverity,
@@ -63,13 +61,7 @@ import {
   type WorkflowView,
 } from "./workflowProposalModel";
 
-export function WorkflowProposalPage({
-  actionReady,
-  actionState,
-  onAction,
-  onOpenProjection,
-  projectId,
-}: {
+interface WorkflowProposalPageProps {
   actionReady: boolean;
   actionState: string;
   onAction: (
@@ -78,89 +70,34 @@ export function WorkflowProposalPage({
   ) => Promise<ActionResponse>;
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   projectId: string;
-}) {
-  const [requests, setRequests] = useState<WorkflowRequest[]>([]);
-  const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get("request") || "");
-  const [detail, setDetail] = useState<WorkflowRequestDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+}
+
+export function WorkflowProposalPage(props: WorkflowProposalPageProps) {
+  return <WorkflowProposalWorkbench key={props.projectId} {...props} />;
+}
+
+function WorkflowProposalWorkbench({
+  actionReady,
+  actionState,
+  onAction,
+  onOpenProjection,
+  projectId,
+}: WorkflowProposalPageProps) {
   const [busyAction, setBusyAction] = useState("");
   const [feedback, setFeedback] = useState<ActionResponse | null>(null);
   const [view, setView] = useState<WorkflowView>("decision");
   const reviewBusy = useRef(false);
-  const detailGate = useRef(new LatestRequestGate());
-  const listGate = useRef(new LatestRequestGate());
-
-  const loadRequests = useCallback(async () => {
-    const ticket = listGate.current.issue();
-    if (!projectId) {
-      setRequests([]);
-      setSelectedId("");
-      setLoading(false);
-      return;
-    }
-    try {
-      const page = await getWorkflowRequests(projectId);
-      if (!listGate.current.isCurrent(ticket)) return;
-      setRequests(page.items);
-      setSelectedId((current) => {
-        if (page.items.some((item) => textValue(item.request_id) === current)) {
-          return current;
-        }
-        return textValue(page.items[0]?.request_id);
-      });
-      setError("");
-    } catch (reason) {
-      if (!listGate.current.isCurrent(ticket)) return;
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      if (listGate.current.isCurrent(ticket)) setLoading(false);
-    }
-  }, [projectId]);
-
-  const loadDetail = useCallback(async () => {
-    if (reviewBusy.current) return;
-    const ticket = detailGate.current.issue();
-    if (!projectId || !selectedId) {
-      setDetail(null);
-      return;
-    }
-    try {
-      const next = await getWorkflowRequestDetail(selectedId, projectId);
-      if (!detailGate.current.isCurrent(ticket) || reviewBusy.current) return;
-      setDetail(next);
-      setError("");
-    } catch (reason) {
-      if (!detailGate.current.isCurrent(ticket) || reviewBusy.current) return;
-      setDetail(null);
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }, [projectId, selectedId]);
-
+  const { requests, selectedId, setSelectedId, detail, loading, error, loadRequests, loadDetail }
+    = useWorkflowRequests(projectId, reviewBusy);
+  const actionSelection = useRef(selectedId);
+  actionSelection.current = selectedId;
+  const mounted = useRef(true);
   useEffect(() => {
-    setLoading(true);
-    setDetail(null);
-    void loadRequests();
-    const timer = window.setInterval(() => {
-      void loadRequests();
-      void loadDetail();
-    }, 8000);
-    return () => { window.clearInterval(timer); detailGate.current.invalidate(); listGate.current.invalidate(); };
-  }, [loadDetail, loadRequests]);
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
-  useEffect(() => {
-    void loadDetail();
-  }, [loadDetail]);
-
-  const operationStatus = textValue(detail?.operation?.queue_status);
-  useEffect(() => {
-    if (!["queued", "running"].includes(operationStatus)) return undefined;
-    const timer = window.setInterval(() => {
-      void loadDetail();
-      void loadRequests();
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [loadDetail, loadRequests, operationStatus]);
+  useEffect(() => { setBusyAction(""); setFeedback(null); }, [selectedId]);
 
   async function execute(
     action:
@@ -173,15 +110,19 @@ export function WorkflowProposalPage({
       | "run-cancel",
     payload: Record<string, unknown>,
   ) {
-    if (busyAction) return;
+    if (busyAction || !detail || payload.request_id !== selectedId) return;
+    const requestId = selectedId;
+    const current = () => mounted.current && actionSelection.current === requestId;
     setBusyAction(action);
     setFeedback(null);
     try {
       const result = await onAction(action, payload);
+      if (!current()) return;
       setFeedback(result);
       await loadRequests();
       await loadDetail();
     } catch (reason) {
+      if (!current()) return;
       setFeedback({
         ok: false,
         status: "failed",
@@ -189,7 +130,7 @@ export function WorkflowProposalPage({
         reason: reason instanceof Error ? reason.message : String(reason),
       });
     } finally {
-      setBusyAction("");
+      if (current()) setBusyAction("");
     }
   }
 
@@ -197,7 +138,9 @@ export function WorkflowProposalPage({
     action: "workflow-clarify" | "workflow-prepare",
     payload: Record<string, unknown>,
   ) {
-    if (busyAction) return;
+    if (busyAction || !detail || payload.request_id !== selectedId) return;
+    const requestId = selectedId;
+    const current = () => mounted.current && actionSelection.current === requestId;
     setBusyAction(action);
     setFeedback(null);
     try {
@@ -205,7 +148,8 @@ export function WorkflowProposalPage({
         ? await clarifyWorkflowRequest(projectId, payload)
         : await prepareWorkflowProposal(projectId, payload);
       if (
-        action === "workflow-clarify"
+        current()
+        && action === "workflow-clarify"
         && result.ok === true
         && textValue(result.status) === "ready"
       ) {
@@ -219,10 +163,12 @@ export function WorkflowProposalPage({
           allow_missing_env: true,
         });
       }
+      if (!current()) return;
       setFeedback(workflowRequestFeedback(action, result));
       await loadRequests();
       await loadDetail();
     } catch (reason) {
+      if (!current()) return;
       setFeedback({
         ok: false,
         status: "failed",
@@ -230,7 +176,7 @@ export function WorkflowProposalPage({
         reason: reason instanceof Error ? reason.message : String(reason),
       });
     } finally {
-      setBusyAction("");
+      if (current()) setBusyAction("");
     }
   }
 
@@ -333,6 +279,7 @@ export function WorkflowProposalPage({
                   type="button"
                   onClick={() => {
                     setFeedback(null);
+                    setBusyAction("");
                     setSelectedId(requestId);
                   }}
                 >
@@ -359,7 +306,7 @@ export function WorkflowProposalPage({
                 onAction={onAction} actionReady={actionReady} />
             </Suspense>}
             {detail ? (
-              <WorkflowPreviewReview detail={detail} projectId={projectId} disabled={!actionReady}
+              <WorkflowPreviewReview key={selectedId} detail={detail} projectId={projectId} disabled={!actionReady}
                 onBusy={(busy) => { reviewBusy.current = busy; setBusyAction(busy ? "preview-review" : ""); }}
                 onRefresh={async () => { await loadRequests(); await loadDetail(); }}>
               <WorkflowProposalDetail

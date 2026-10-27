@@ -64,6 +64,7 @@ esac
 
 utc_stamp="$(date -u +%Y%m%d-%H%M%S)"
 RUN_ROOT="${RUN_ROOT:-/tmp/zf-event-read-model-e2e-${utc_stamp}}"
+export ZF_WORKSPACE_HOME="${ZF_WORKSPACE_HOME:-$RUN_ROOT/workspace}"
 PROJECT_ROOT="$RUN_ROOT/project"
 STATE_DIR="$PROJECT_ROOT/.zf"
 REPORT_JSON="$RUN_ROOT/report.json"
@@ -298,15 +299,13 @@ real_provider_status = sys.argv[7]
 status = json.loads((run_root / "projection-status.json").read_text(encoding="utf-8"))
 doctor = json.loads((run_root / "projection-doctor.json").read_text(encoding="utf-8"))
 probes = json.loads((run_root / "api-probes.json").read_text(encoding="utf-8"))
-archive_segments = [
-    item for item in status.get("source_cursor", {}).get("segments", [])
-]
+event_index = status.get("projections", {}).get("event-index", status)
 payload = {
     "schema_version": "event-read-model-e2e.v1",
     "passed": (
-        status.get("projection_state") == "ready"
-        and int(status.get("projection_lag") or 0) == 0
-        and int(status.get("segment_count") or 0) > 1
+        event_index.get("projection_state") == "ready"
+        and int(event_index.get("projection_lag") or 0) == 0
+        and int(event_index.get("segment_count") or 0) > 1
         and probes.get("passed") is True
         and doctor.get("status") in {"ok", "attention"}
     ),
@@ -326,10 +325,10 @@ lines = [
     f"- status: {'passed' if payload['passed'] else 'failed'}",
     f"- run_root: `{run_root}`",
     f"- state_dir: `{state_dir}`",
-    f"- projection_state: `{status.get('projection_state')}`",
-    f"- source_seq: `{status.get('source_seq')}`",
-    f"- projection_lag: `{status.get('projection_lag')}`",
-    f"- segment_count: `{status.get('segment_count')}`",
+    f"- projection_state: `{event_index.get('projection_state')}`",
+    f"- source_seq: `{event_index.get('source_seq')}`",
+    f"- projection_lag: `{event_index.get('projection_lag')}`",
+    f"- segment_count: `{event_index.get('segment_count')}`",
     f"- playwright: `{playwright_status}`",
     f"- real_provider: `{real_provider_status}`",
     "",

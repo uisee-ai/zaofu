@@ -52,6 +52,18 @@ if TYPE_CHECKING:
     from zf.core.events.model import ZfEvent
 
 
+STUCK_PROGRESS_TYPES = {
+    "task.assigned",
+    "arch.proposal.done",
+    "design.critique.done",
+    "dev.build.done", "review.approved", "review.rejected",
+    "verify.passed", "verify.failed",
+    "test.passed", "test.failed", "judge.passed",
+    "judge.failed", "gate.failed", "task.status_changed",
+    "task.requeued", "worker.stuck.recovered",
+}
+
+
 @dataclass
 class MetricsSnapshot:
     # Group A
@@ -230,19 +242,10 @@ class MetricsCollector:
 
         if stuck_indices:
             recovered = 0
-            progress_types = {
-                "task.assigned",
-                "arch.proposal.done",
-                "design.critique.done",
-                "dev.build.done", "review.approved", "review.rejected",
-                "verify.passed", "verify.failed",
-                "test.passed", "test.failed", "judge.passed",
-                "judge.failed", "gate.failed", "task.status_changed",
-                "task.requeued", "worker.stuck.recovered",
-            }
+
             for si in stuck_indices:
                 window = all_events[si + 1: si + 8]
-                if any(e.type in progress_types for e in window):
+                if any(e.type in STUCK_PROGRESS_TYPES for e in window):
                     recovered += 1
             snap.stuck_recovery_rate = recovered / len(stuck_indices)
 

@@ -60,11 +60,12 @@ function testLoopRefreshPolicyStaysScoped(): void {
 }
 
 function testSnapshotPagesStayExplicit(): void {
-  assert(snapshotLoadKindForPage("board") === "light", "board should use light snapshot");
+  assert(snapshotLoadKindForPage("board") === "board", "board should use its body-free snapshot");
+  assert(snapshotLoadKindForPage("project") === "board", "overview needs the same task and cost fields, without report bodies");
   assert(snapshotLoadKindForPage("task") === "light", "task detail shell should use light snapshot");
   assert(snapshotLoadKindForPage("traces") === "none", "traces must load only its scoped index and detail resources");
-  assert(snapshotLoadKindForPage("events") === "full", "events should use full observability snapshot");
-  assert(snapshotLoadKindForPage("runs") === "full", "runs should use full observability snapshot");
+  assert(snapshotLoadKindForPage("events") === "observability", "events should use the scoped observability snapshot");
+  assert(snapshotLoadKindForPage("runs") === "observability", "runs should use the scoped observability snapshot");
 }
 
 function testInboxPollIsPageScoped(): void {
@@ -80,7 +81,8 @@ function testBootstrapManifestIsPageOwned(): void {
   assert(!channelPlan.includes("events.recent"), "channel plan should not duplicate scoped history");
 
   const boardPlan = pageResourcePlanForPage("board").foreground;
-  assert(boardPlan.includes("project.snapshot.light"), "board should own light snapshot during migration");
+  assert(boardPlan.includes("project.snapshot.board"), "board should own the body-free snapshot");
+  assert(!boardPlan.includes("project.snapshot.light"), "board should not duplicate the full light transport");
   assert(!boardPlan.includes("channels.summary"), "board should not bootstrap channels");
   assert(!boardPlan.includes("events.recent"), "board should not bootstrap recent events");
 

@@ -27,10 +27,13 @@ from zf.core.events.segments import (
     current_event_cursor,
     hydrate_event_at,
     iter_event_records,
+    iter_event_records_from_cursor,
     write_event_manifest,
 )
 from zf.core.security.redaction import redact_obj
 from zf.core.state.locks import locked_path
+from zf.web.projections.sqlite_reader import connect_readonly
+from zf.web.projections.event_index_cursor import active_identity, can_resume
 SCHEMA_VERSION = "event-read-model.v6"
 _JOBS: dict[str, threading.Thread] = {}
 _JOBS_LOCK = threading.Lock()
@@ -252,8 +255,7 @@ def projection_status(state_dir: Path, *, count_source: bool = False) -> dict[st
     row_count = 0
     if exists:
         try:
-            with _connect(path) as conn:
-                _ensure_schema(conn)
+            with connect_readonly(path) as conn:
                 meta = _meta(conn)
                 row = conn.execute("SELECT COALESCE(MAX(seq), 0) AS seq FROM event_index").fetchone()
                 row_count = int(row["seq"] or 0) if row else 0
@@ -267,10 +269,10 @@ def projection_status(state_dir: Path, *, count_source: bool = False) -> dict[st
     else:
         source_cursor = {
             "schema_version": "event-segment-cursor.v1",
-            "segment": "",
-            "byte_offset": 0,
+            "segment": meta.get("tail_segment", ""),
+            "byte_offset": int(meta.get("tail_offset") or 0),
             "line_no": projected_seq,
-            "last_event_id": "",
+            "last_event_id": meta.get("tail_event_id", ""),
             "archive_manifest_digest": manifest.digest,
         }
     digest = str(meta.get("manifest_digest") or "")
@@ -283,8 +285,8 @@ def projection_status(state_dir: Path, *, count_source: bool = False) -> dict[st
     # stable (only rotation forces a full, seq-stable reindex) and surface tail
     # growth via `tail_behind` so callers fire a non-blocking catch-up instead.
     layout_current = bool(exists and projected_layout and projected_layout == _layout_digest(manifest))
-    current = layout_current
-    tail_behind = bool(layout_current and digest != manifest.digest)
+    current = layout_current and meta.get("schema_version") == SCHEMA_VERSION
+    tail_behind = bool(layout_current and (digest != manifest.digest or not can_resume(meta, active_identity(state_dir))))
     lag = max(0, source_seq - projected_seq) if count_source else (0 if current and not tail_behind else None)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -419,109 +421,39 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
             _ensure_schema(conn)
             meta = _meta(conn)
             vacuum_required = meta.get("vacuum_required") == "1"
+            identity = active_identity(state_dir)
             previous_layout_digest = meta.get("segment_layout_digest", "")
             layout_digest = _layout_digest(manifest)
             row = conn.execute("SELECT COALESCE(MAX(seq), 0) AS seq FROM event_index").fetchone()
             start_seq = int(row["seq"] or 0) if row else 0
-            if previous_layout_digest and previous_layout_digest != layout_digest:
-                # Segment composition can change after lazy rotation. Rebuild
-                # from row 0 so seq stays globally stable across archives+active.
-                conn.executescript(
-                    """
-                    DELETE FROM event_ref;
-                    DELETE FROM task_timeline;
-                    DELETE FROM event_index;
-                    DELETE FROM projection_cache;
-                    """
-                )
+            resume = previous_layout_digest == layout_digest and can_resume(meta, identity)
+            reset = bool(start_seq and not resume)
+            if reset:
                 start_seq = 0
-
-            inserted = 0
+            tail_segment = meta.get("tail_segment", "") if resume else ""
+            tail_offset = int(meta.get("tail_offset") or 0) if resume else 0
+            from zf.web.projections.event_index_rows import prepare_rows, insert_rows
+            rows, refs, timeline, last = prepare_rows(iter_event_records_from_cursor(
+                state_dir, config=config, start_seq=start_seq,
+                segment=tail_segment, byte_offset=tail_offset,
+            ))
+            # Parsing, hashing and redaction above hold no SQLite writer lock.
+            # On rotation replace the old generation in the same transaction.
+            if reset:
+                for table in ("event_ref", "task_timeline", "event_index", "projection_cache"):
+                    conn.execute(f"DELETE FROM {table}")
+            insert_rows(conn, rows, refs, timeline)
+            inserted = len(rows)
             last_seq = start_seq
-            for record in iter_event_records(state_dir, config=config, start_seq=start_seq):
-                event = record.event
-                payload = event.payload if isinstance(event.payload, dict) else {}
-                slim = _payload_slim(payload)
-                trace_id = _first_nonempty(
-                    event.correlation_id,
-                    _payload_ref(payload, "trace_id"),
-                    _payload_ref(payload, "correlation_id"),
-                )
-                feature_id = _first_nonempty(
-                    _payload_ref(payload, "feature_id"),
-                    _feature_from_task_id(event.task_id),
-                )
-                channel_id = _first_nonempty(
-                    _payload_ref(payload, "channel_id"),
-                    _payload_ref(payload, "channel"),
-                )
-                status = _first_nonempty(_payload_ref(payload, "status"), _event_status(event.type))
-                summary = _event_summary(event.type, payload)
-                payload_json = json.dumps(slim, ensure_ascii=False, default=str)
-                digest = _payload_digest(payload)
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO event_index(
-                      seq, event_id, ts, type, actor, task_id, correlation_id,
-                      causation_id, feature_id, trace_id, channel_id, status,
-                      summary, payload_digest, payload_slim,
-                      raw_segment, raw_offset, raw_length
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        record.seq,
-                        event.id,
-                        event.ts,
-                        event.type,
-                        event.actor,
-                        event.task_id,
-                        event.correlation_id,
-                        event.causation_id,
-                        feature_id,
-                        trace_id,
-                        channel_id,
-                        status,
-                        summary,
-                        digest,
-                        payload_json,
-                        record.raw_segment,
-                        record.raw_offset,
-                        record.raw_length,
-                    ),
-                )
-                for kind, ref_id in _event_refs(payload):
-                    conn.execute(
-                        "INSERT OR IGNORE INTO event_ref(ref_kind, ref_id, seq) VALUES (?, ?, ?)",
-                        (kind, ref_id, record.seq),
-                    )
-                if event.task_id:
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO task_timeline(
-                          task_id, seq, event_id, ts, type, actor, status,
-                          summary, trace_id, payload_slim,
-                          raw_segment, raw_offset, raw_length
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            event.task_id,
-                            record.seq,
-                            event.id,
-                            event.ts,
-                            event.type,
-                            event.actor,
-                            status,
-                            summary,
-                            trace_id,
-                            payload_json,
-                            record.raw_segment,
-                            record.raw_offset,
-                            record.raw_length,
-                        ),
-                    )
-                inserted += 1
-                last_seq = record.seq
+            last_event_id = meta.get("tail_event_id", "") if resume else ""
+            if last:
+                last_seq, tail_segment, tail_offset, last_event_id = last
 
+            _set_meta(conn, "byte_cursor_version", 1)
+            _set_meta(conn, "tail_segment", tail_segment)
+            _set_meta(conn, "tail_offset", tail_offset)
+            _set_meta(conn, "tail_event_id", last_event_id)
+            _set_meta(conn, "active_identity", json.dumps(identity) if identity else "")
             _set_meta(conn, "source_seq", last_seq)
             _set_meta(conn, "manifest_digest", manifest.digest)
             _set_meta(conn, "segment_layout_digest", layout_digest)
@@ -536,13 +468,6 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
                     conn.commit()
                 except sqlite3.Error:
                     pass
-            try:
-                # Truncate the WAL after a rebuild: multi-MB projection_cache
-                # REPLACEs otherwise pile up (58MB WAL observed on a live
-                # project) because concurrent readers pin auto-checkpointing.
-                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            except sqlite3.Error:
-                pass
     return {
         "schema_version": SCHEMA_VERSION,
         "projection_state": "ready",
@@ -600,8 +525,7 @@ def events_page(
     args.append(selected_seq)
     sql_where = f"WHERE {' AND '.join(where)}" if where else ""
     order = "ASC" if cursor is not None else "DESC"
-    with _connect(db_path(state_dir)) as conn:
-        _ensure_schema(conn)
+    with connect_readonly(db_path(state_dir)) as conn:
         rows = conn.execute(
             f"""
             SELECT * FROM event_index
@@ -643,8 +567,7 @@ def task_timeline(
     if not db_path(state_dir).exists():
         return None
     limit = max(1, min(int(limit or 200), 1000))
-    with _connect(db_path(state_dir)) as conn:
-        _ensure_schema(conn)
+    with connect_readonly(db_path(state_dir)) as conn:
         rows = conn.execute(
             """
             SELECT * FROM task_timeline
@@ -679,8 +602,7 @@ def hydrate_event_by_seq(
     config: ZfConfig | None = None,
 ) -> ZfEvent | None:
     try:
-        with _connect(db_path(state_dir)) as conn:
-            _ensure_schema(conn)
+        with connect_readonly(db_path(state_dir)) as conn:
             row = conn.execute(
                 "SELECT raw_segment, raw_offset, raw_length FROM event_index WHERE seq = ?",
                 (int(seq),),
@@ -762,8 +684,7 @@ def hydrate_event_by_id(
     if not event_id:
         return None
     try:
-        with _connect(db_path(state_dir)) as conn:
-            _ensure_schema(conn)
+        with connect_readonly(db_path(state_dir)) as conn:
             row = conn.execute(
                 """
                 SELECT seq, raw_segment, raw_offset, raw_length
@@ -877,8 +798,7 @@ def hydrate_events(
     rows: list[sqlite3.Row]
     columns = _SLIM_COLUMNS if slim else "raw_segment, raw_offset, raw_length"
     try:
-        with _connect(db_path(state_dir)) as conn:
-            _ensure_schema(conn)
+        with connect_readonly(db_path(state_dir)) as conn:
             rows = conn.execute(
                 f"""
                 SELECT {columns}
@@ -978,8 +898,7 @@ def hydrate_events_by_ref(
         args.append(max(1, int(limit)))
 
     try:
-        with _connect(db_path(state_dir)) as conn:
-            _ensure_schema(conn)
+        with connect_readonly(db_path(state_dir)) as conn:
             rows = conn.execute(sql, tuple(args)).fetchall()
     except sqlite3.Error:
         return None
@@ -1042,8 +961,7 @@ def agent_session_history(
     args.append(selected_seq)
     sql_where = f"WHERE {' AND '.join(where)}"
     try:
-        with _connect(db_path(state_dir)) as conn:
-            _ensure_schema(conn)
+        with connect_readonly(db_path(state_dir)) as conn:
             rows = conn.execute(
                 f"""
                 SELECT seq, raw_segment, raw_offset, raw_length
@@ -1129,8 +1047,7 @@ def get_cached_projection(
     if not db_path(state_dir).exists():
         return None
     try:
-        with _connect(db_path(state_dir)) as conn:
-            _ensure_schema(conn)
+        with connect_readonly(db_path(state_dir)) as conn:
             row = conn.execute(
                 "SELECT payload_json, source_seq, updated_at FROM projection_cache WHERE key = ?",
                 (key,),
@@ -1391,8 +1308,7 @@ def _kanban_agent_context_events(
     primary_seqs = {int(item.get("seq") or 0) for item in primary_items if item.get("seq") is not None}
     type_placeholders = ", ".join("?" for _ in KANBAN_AGENT_CONTEXT_TYPES)
     try:
-        with _connect(db_path(state_dir)) as conn:
-            _ensure_schema(conn)
+        with connect_readonly(db_path(state_dir)) as conn:
             rows = conn.execute(
                 f"""
                 SELECT seq, raw_segment, raw_offset, raw_length

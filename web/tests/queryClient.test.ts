@@ -141,6 +141,33 @@ async function testCallerOwnedRequestDoesNotReadOrWriteSharedCache(): Promise<vo
   assert(calls === 2, `expected two network requests, got ${calls}`);
 }
 
+async function testPendingProjectionIsNotCachedAsData(): Promise<void> {
+  clearGetCache();
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify(calls === 1 ? { read_projection: { state: "building" } } : { tasks: ["ready"] }), { status: calls === 1 ? 202 : 200 });
+  }) as typeof fetch;
+  const rows = await Promise.all([cachedGetJson<{ tasks: string[] }>("/api/projects/p/snapshot/board"), cachedGetJson<{ tasks: string[] }>("/api/projects/p/snapshot/board")]);
+  assert(calls === 2, "pending consumers must share one polling request");
+  assert(rows.every(row => row.tasks[0] === "ready"), "202 must not become an empty snapshot");
+}
+
+async function testPendingProjectionCanBeCancelled(): Promise<void> {
+  clearGetCache();
+  const controller = new AbortController();
+  globalThis.fetch = (async () => {
+    queueMicrotask(() => controller.abort());
+    return new Response(JSON.stringify({ read_projection: { state: "building" } }), { status: 202 });
+  }) as typeof fetch;
+  await cachedGetJson("/api/projects/p/snapshot/board", { signal: controller.signal }).then(
+    () => { throw new Error("cancelled projection resolved"); },
+    error => assert(error instanceof DOMException && error.name === "AbortError", "pending cancellation must reject"),
+  );
+}
+
+await testPendingProjectionIsNotCachedAsData();
+await testPendingProjectionCanBeCancelled();
 await testSingleFlightAndTtlCache();
 await testPrefixInvalidation();
 await testBypassCacheStillSharesInFlightRequest();

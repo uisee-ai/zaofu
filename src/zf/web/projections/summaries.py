@@ -28,6 +28,8 @@ def _safe_snapshot_projection(name: str, default: Any, factory: Any) -> Any:
     try:
         return factory()
     except Exception as exc:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure(name)
         if isinstance(default, dict):
             return {"projection": name, "error": str(exc)}
         return default
@@ -175,21 +177,18 @@ def _safe_handoff_summary_projection(
         }
 
 
-def _metrics_snapshot_projection(state_dir: Path) -> dict:
+def _metrics_snapshot_projection(state_dir: Path, *, config=None) -> dict:
     """Kernel metrics plus additive read-only subsystem projections."""
-    from zf.core.metrics.collector import MetricsCollector
+    from zf.web.projections.metric_views import core, oa_events
     from zf.runtime.orchestrator_agent_metrics import (
         build_orchestrator_agent_metrics,
     )
 
-    event_log = EventLog(state_dir / "events.jsonl")
-    snapshot = MetricsCollector.compute(
-        events=event_log,
-        tasks=TaskStore(state_dir / "kanban.json"),
-        cost=CostTracker(state_dir / "cost.jsonl"),
-    ).to_dict()
-    snapshot["orchestrator_agent"] = build_orchestrator_agent_metrics(
-        event_log.read_all() if event_log.path.exists() else []
+    snapshot = core(state_dir, config)
+    snapshot["orchestrator_agent"] = _safe_snapshot_projection(
+        "orchestrator_agent", {}, lambda: build_orchestrator_agent_metrics(
+            oa_events(state_dir, config)
+        ),
     )
     return snapshot
 
@@ -219,6 +218,12 @@ def _features(state_dir: Path, delivery_features: list[dict] | None = None) -> l
 
 
 def _delivery_features(state_dir: Path) -> list[dict]:
+    from zf.web.projections.source_cache import read_source_projection, task_paths
+    paths = task_paths(state_dir) + [state_dir / "refs" / "feature-index.json", state_dir / "feature_list.json"]
+    return read_source_projection(state_dir, "delivery-features", paths, lambda: _build_delivery_features(state_dir))
+
+
+def _build_delivery_features(state_dir: Path) -> list[dict]:
     index = _feature_index(state_dir)
     statuses = _delivery_feature_statuses(state_dir)
     rows: list[dict] = []
@@ -582,6 +587,7 @@ def _skills(
     state_dir: Path,
     config: ZfConfig | None = None,
     project_root: Path | None = None,
+    *, include_invocations: bool = True,
 ) -> dict:
     project_root = _resolve_project_root_for_state(state_dir, project_root)
     roles = list(config.roles) if config is not None else []
@@ -702,7 +708,7 @@ def _skills(
         state_dir,
         config=config,
         project_root=project_root,
-    )
+    ) if include_invocations else {}
     return {
         "pool_path": str(pool_path),
         "materialize": materialize_mode,

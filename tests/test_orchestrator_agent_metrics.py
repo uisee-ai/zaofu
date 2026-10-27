@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from zf.core.events.model import ZfEvent
 from zf.runtime.orchestrator_agent_metrics import (
     build_orchestrator_agent_metrics,
@@ -210,6 +212,60 @@ def test_metrics_empty_snapshot_is_stable() -> None:
     assert metrics["checkpoints"] == {}
     assert metrics["summary"]["operation_count"] == 0
     assert metrics["summary"]["required_read_closure_rate"] == 0.0
+
+
+def test_unknown_model_keeps_tokens_and_marks_partial_cost_through_all_rollups() -> None:
+    request = _event("workflow.operation.requested", "request", 0, {
+        "operation_id": "op", "operation_type": "orchestrator_agent_semantic",
+        "parent_stage_id": "oa-plan_candidate",
+    })
+    unknown = _event("agent.usage", "unknown", 1, {
+        "operation_id": "op", "usage_sample_id": "sample-unknown",
+        "model": "unlisted-local-model", "usage": {"input_tokens": 12345, "output_tokens": 7},
+    })
+    priced = _event("agent.usage", "priced", 2, {
+        "operation_id": "op", "model": "unlisted-local-model", "total_cost_usd": 0.123456,
+        "usage": {"input_tokens": 9, "output_tokens": 2},
+    })
+    result = build_orchestrator_agent_metrics([request, unknown, unknown, priced])
+    for row in [result["operations"][0], result["checkpoints"]["plan_candidate"], result["summary"]]:
+        assert row["input_tokens"] == 12354
+        assert row["output_tokens"] == 9
+        assert row["cost_usd"] is None
+        assert row["known_cost_usd"] == 0.123456
+        assert row["unpriced_sample_count"] == 1
+    assert result["operations"][0]["usage_sample_count"] == 2
+
+
+@pytest.mark.parametrize("model", ["", "unlisted-local-model"])
+@pytest.mark.parametrize("provider_cost", [None, -1, float("nan"), float("inf"), True])
+def test_missing_rate_is_not_a_default_or_free_estimate(model, provider_cost) -> None:
+    result = build_orchestrator_agent_metrics([
+        _event("workflow.operation.requested", "request", 0, {
+            "operation_id": "op", "operation_type": "orchestrator_agent_semantic",
+        }),
+        _event("agent.usage", "usage", 1, {
+            "operation_id": "op", "model": model, "total_cost_usd": provider_cost,
+            "usage": {"input_tokens": 1000, "output_tokens": 100},
+        }),
+    ])
+    assert result["summary"]["cost_usd"] is None
+    assert result["summary"]["total_tokens"] == 1100
+    assert result["summary"]["unpriced_sample_count"] == 1
+
+
+def test_explicit_provider_zero_is_priced_without_fallback() -> None:
+    result = build_orchestrator_agent_metrics([
+        _event("workflow.operation.requested", "request", 0, {
+            "operation_id": "op", "operation_type": "orchestrator_agent_semantic",
+        }),
+        _event("agent.usage", "usage", 1, {
+            "operation_id": "op", "model": "default", "total_cost_usd": 0,
+            "usage": {"input_tokens": 1000, "output_tokens": 100},
+        }),
+    ])
+    assert result["summary"]["cost_usd"] == 0
+    assert result["summary"]["unpriced_sample_count"] == 0
 
 
 def test_metrics_projects_pending_and_terminal_sla_breaches() -> None:

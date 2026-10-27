@@ -55,3 +55,35 @@ def test_snapshot_has_fleet_stats(client: TestClient):
     assert flow["done_24h"] == 1
     roles = {row["role"]: row for row in fleet.get("role_efficiency", [])}
     assert roles["dev"]["done"] == 1
+
+
+def test_unknown_oa_pricing_does_not_erase_kernel_metrics(client: TestClient, tmp_path: Path):
+    log = event_log_from_project(tmp_path / ".zf", config=None, warn=False)
+    log.append(ZfEvent(type="workflow.operation.requested", payload={
+        "operation_id": "op", "operation_type": "orchestrator_agent_semantic",
+    }))
+    log.append(ZfEvent(type="agent.usage", payload={
+        "operation_id": "op", "model": "unlisted-local-model",
+        "usage": {"input_tokens": 17, "output_tokens": 3},
+    }))
+    metrics = client.get("/api/snapshot").json()["metrics_snapshot"]
+    assert metrics["tasks_done"] == 1
+    assert "throughput_per_hour" in metrics and "error" not in metrics
+    assert metrics["orchestrator_agent"]["summary"]["total_tokens"] == 20
+    assert metrics["orchestrator_agent"]["summary"]["cost_usd"] is None
+    assert metrics["orchestrator_agent"]["summary"]["unpriced_sample_count"] == 1
+
+
+def test_auxiliary_metric_failure_is_scoped(client: TestClient, monkeypatch):
+    from zf.runtime import orchestrator_agent_metrics
+
+    def failed(*args, **kwargs):
+        raise ValueError("auxiliary metric unavailable")
+
+    monkeypatch.setattr(orchestrator_agent_metrics, "build_orchestrator_agent_metrics", failed)
+    metrics = client.get("/api/snapshot").json()["metrics_snapshot"]
+    assert metrics["tasks_done"] == 1
+    assert "throughput_per_hour" in metrics and "error" not in metrics
+    assert metrics["orchestrator_agent"] == {
+        "projection": "orchestrator_agent", "error": "auxiliary metric unavailable",
+    }

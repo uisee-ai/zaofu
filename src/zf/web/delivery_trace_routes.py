@@ -12,6 +12,7 @@ module never imports back from server.py.
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, cast
@@ -36,47 +37,13 @@ from zf.web.projections.delivery_views import DeliveryView, build_delivery_view
 from zf.web.projections.delivery_view_wire import MAX_WIRE_ID_CHARS
 
 _DELIVERY_TRACE_CACHE_VERSION = "v3"
-_DELIVERY_VIEW_CACHE_VERSION = "v3"
+_DELIVERY_VIEW_CACHE_VERSION = "v4"
 _DELIVERY_VIEW_TASK_FRESHNESS_FIELD = "_delivery_view_task_freshness"
 _DELIVERY_VIEWS = {"overview", "runs", "graph", "work"}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _task_store_freshness_digest(state_dir: Path) -> str:
-    """Fingerprint TaskStore inputs without reading active/archive bodies.
-
-    TaskStore writes use atomic replacement, so inode/size/time metadata changes
-    for active-board mutations.  Archive writes also replace a child entry and
-    therefore change the archive directory metadata.  This keeps cache hits
-    O(1), while a cache miss still reads the complete TaskStore exactly once in
-    the Delivery view builder.
-    """
-
-    digest = hashlib.sha256()
-    paths = (
-        ("active", state_dir / "kanban.json"),
-        ("archive", state_dir / "kanban"),
-    )
-    for label, path in paths:
-        digest.update(label.encode("utf-8"))
-        digest.update(b"\0")
-        try:
-            stat = path.stat()
-        except FileNotFoundError:
-            digest.update(b"missing\0")
-            continue
-        except OSError:
-            return ""
-        digest.update(
-            (
-                f"{stat.st_dev}:{stat.st_ino}:{stat.st_size}:"
-                f"{stat.st_mtime_ns}:{stat.st_ctime_ns}\0"
-            ).encode("ascii")
-        )
-    return digest.hexdigest()
 
 
 def build_delivery_trace_router(*, resolve_ctx: Callable[[str], Any]) -> APIRouter:
@@ -164,52 +131,40 @@ def build_delivery_trace_router(*, resolve_ctx: Callable[[str], Any]) -> APIRout
         if goal_id:
             scope_key = hashlib.sha256(goal_id.encode("utf-8")).hexdigest()
             cache_key = f"{cache_key}:goal:{scope_key}"
-        task_freshness = _task_store_freshness_digest(ctx.state_dir)
-        source_seq = 0
-        try:
-            from zf.web.projections import read_model
+        from zf.web.projections.delivery_source import delivery_source_version
+        from zf.web.projections.metric_traces import current_seq
+        from zf.web.projections.projection_failures import collect_projection_failures
+        from zf.web.projections import read_model
 
-            source_seq = read_model.current_projected_seq(ctx.state_dir, config=ctx.config)
-            cached = read_model.get_cached_projection(
-                ctx.state_dir,
-                cache_key,
-                source_seq=source_seq,
-            )
-            if cached is not None:
-                cached_task_freshness = str(
-                    cached.pop(_DELIVERY_VIEW_TASK_FRESHNESS_FIELD, "")
-                )
-                if task_freshness and cached_task_freshness == task_freshness:
-                    return cached
-        except Exception:
-            source_seq = 0
-        result = build_delivery_view(
-            state_dir=ctx.state_dir,
-            config=ctx.config,
-            generated_at=_now(),
-            project_id=project_id,
-            feature_id=feature_id,
-            view=view,
-            as_of_seq=source_seq,
-            goal_id=goal_id,
-        )
-        if source_seq and task_freshness:
+        for _attempt in range(2):
+            before = delivery_source_version(ctx.state_dir, feature_id, ctx.config)
             try:
-                from zf.web.projections import read_model
-
-                read_model.set_cached_projection(
-                    ctx.state_dir,
-                    cache_key,
-                    kind="delivery-view",
-                    source_seq=source_seq,
-                    payload={
-                        **result,
-                        _DELIVERY_VIEW_TASK_FRESHNESS_FIELD: task_freshness,
-                    },
+                source_seq = current_seq(ctx.state_dir, ctx.config)
+            except sqlite3.DatabaseError:
+                from zf.web.projections.events import _events_with_seq
+                rows = _events_with_seq(ctx.state_dir, config=ctx.config)
+                source_seq = rows[-1][0] if rows else 0
+            cached = read_model.get_cached_projection(ctx.state_dir, cache_key, source_seq=source_seq)
+            if cached is not None:
+                cached_source = cached.pop(_DELIVERY_VIEW_TASK_FRESHNESS_FIELD, "")
+                if cached_source == before and before == delivery_source_version(ctx.state_dir, feature_id, ctx.config):
+                    return cached
+            with collect_projection_failures() as failures:
+                result = build_delivery_view(
+                    state_dir=ctx.state_dir, config=ctx.config, generated_at=_now(),
+                    project_id=project_id, feature_id=feature_id, view=view,
+                    as_of_seq=source_seq, goal_id=goal_id,
                 )
-            except Exception:
-                pass
-        return result
+            if not failures and before == delivery_source_version(ctx.state_dir, feature_id, ctx.config):
+                try:
+                    read_model.set_cached_projection(
+                        ctx.state_dir, cache_key, kind="delivery-view", source_seq=source_seq,
+                        payload={**result, _DELIVERY_VIEW_TASK_FRESHNESS_FIELD: before},
+                    )
+                except sqlite3.DatabaseError:
+                    pass  # Disposable storage failure does not erase the canonical result.
+                return result
+        raise HTTPException(status_code=503, detail="Delivery sources changed; retry")
 
     @router.get("/api/projects/{project_id}/delivery-traces/{feature_id}")
     def delivery_trace(
@@ -377,11 +332,11 @@ def _delivery_view_cursor_projection(
     reason = ""
     if requested:
         try:
-            hydrated = read_model.hydrate_event_by_id(
-                state_dir,
-                requested,
-                config=config,
-            )
+            from zf.web.projections.sqlite_reader import connect_readonly
+            with connect_readonly(read_model.db_path(state_dir)) as conn:
+                row = conn.execute("SELECT seq FROM metric_event WHERE event_id=? ORDER BY seq DESC LIMIT 1",
+                                   (requested,)).fetchone()
+            hydrated = (row[0], None) if row else None
         except Exception:
             hydrated = None
         if hydrated is None:

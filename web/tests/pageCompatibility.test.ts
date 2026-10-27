@@ -126,6 +126,8 @@ testSupportedCompatibilityTabsRemainReachable();
 testProjectionLinksPersistExactlyOneEntityId();
 
 const empty = resolve("");
+assert(canBootstrapScopedPageBeforeWorkspace("board", "project-a"), "a scoped Board must not wait for the workspace picker");
+assert(!canBootstrapScopedPageBeforeWorkspace("board", ""), "an unscoped Board must still resolve its project");
 assert(!empty.changed, "an empty URL should not be rewritten before board bootstrap");
 assert(
   canBootstrapScopedPageBeforeWorkspace("traces", "project-a"),
@@ -140,6 +142,6 @@ assert(
   "an explicitly scoped Project dashboard should start its pulse before workspace discovery",
 );
 assert(
-  !canBootstrapScopedPageBeforeWorkspace("runs", "project-a"),
-  "entity compatibility routes still wait for workspace discovery",
+  canBootstrapScopedPageBeforeWorkspace("runs", "project-a"),
+  "scoped observation routes must not wait for workspace discovery",
 );

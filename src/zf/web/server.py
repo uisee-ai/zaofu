@@ -108,6 +108,7 @@ from zf.runtime.channel_prd_context import (
 )
 from zf.runtime.channel_profiles import public_channel_profile_catalog
 from zf.web.kanban_channel_context import kanban_channel_group_context
+from zf.web.projections.board_summary import board_snapshot_summary
 from zf.runtime.channel_workflow_authority import (
     bind_task_channel_authority,
     channel_workflow_authority_error,
@@ -685,6 +686,8 @@ def create_app(
     gets a fresh app pointing at its own tmp .zf.
     """
     app = FastAPI(title="zaofu dashboard", version=__version__)
+    from zf.web.dashboard_projection import register_pending_handler
+    register_pending_handler(app)
     state_dir = Path(state_dir).resolve()
     project_root = _resolve_project_root_for_state(state_dir, project_root)
     app.state.kanban_agent_recovery = reconcile_kanban_startup(state_dir, config=config)
@@ -825,6 +828,9 @@ def create_app(
             return data
 
     def _cached_project_snapshot(sd: Path, *, slice_name: str, cfg, root, token) -> dict[str, Any]:
+        if slice_name in {"board", "observability-summary"}:
+            from zf.web.dashboard_projection import snapshot as dashboard_snapshot
+            return _with_session_overlay(dashboard_snapshot(sd, slice_name=slice_name, config=cfg, project_root=root or sd.parent), token)
         from zf.web.projections.events import _event_log_fingerprint
 
         key = f"{sd}::{slice_name}"
@@ -1672,13 +1678,13 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        return JSONResponse(_snapshot_slice(
+        return _etag_json(board_snapshot_summary(_cached_project_snapshot(
             context.state_dir,
             slice_name="board",
-            config=context.config,
-            project_root=context.project_root,
-            web_session_token=_web_session_cookie(request),
-        ))
+            cfg=context.config,
+            root=context.project_root,
+            token=_web_session_cookie(request),
+        )), request)
 
     @app.get("/api/projects/{project_id}/snapshot/runtime")
     def project_snapshot_runtime(project_id: str, request: Request) -> JSONResponse:
@@ -1706,13 +1712,12 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        return JSONResponse(_snapshot_slice(
+        return _etag_json(_cached_project_snapshot(
             context.state_dir,
-            slice_name="observability",
-            config=context.config,
-            project_root=context.project_root,
-            web_session_token=_web_session_cookie(request),
-        ))
+            slice_name="observability-summary",
+            cfg=context.config, root=context.project_root,
+            token=_web_session_cookie(request),
+        ), request)
 
     @app.get("/api/projects/{project_id}/delivery-features")
     def project_delivery_features(project_id: str) -> JSONResponse:
@@ -2403,6 +2408,24 @@ def create_app(
                 if context.config is not None else context.project_root.name
             ),
         ))
+
+    @app.get("/api/projects/{project_id}/agent-monitoring")
+    def project_agent_monitoring_page(project_id: str) -> JSONResponse:
+        import sqlite3
+        from zf.web.agent_monitoring import build_agent_monitoring, MonitoringSourceChanged
+        context = _resolve_api_project(
+            project_id, default_project_id=default_project_id,
+            default_state_dir=state_dir, default_config=config,
+            default_project_root=project_root,
+        )
+        try:
+            return JSONResponse(build_agent_monitoring(
+                context.state_dir, project_id=project_id, config=context.config,
+                project_root=context.project_root,
+            ))
+        except (MonitoringSourceChanged, OSError, sqlite3.DatabaseError):
+            return JSONResponse({"status": "refreshing", "detail": "Monitoring sources unavailable or changed; retry"},
+                                status_code=503, headers={"Retry-After": "1"})
 
     @app.get("/api/projects/{project_id}/agent-live")
     def project_agent_live_page(project_id: str) -> JSONResponse:
@@ -3764,87 +3787,6 @@ def create_app(
             headers={"Cache-Control": "no-cache"},
         )
 
-    def _prewarm_recent_projects() -> None:
-        """Warm the event memo + derived caches for recently opened projects.
-
-        Cold start on a 30k-event log costs ~12s (one-time full decode + leaf
-        index); without prewarm the first page load after a server restart eats
-        it. Background daemon, best-effort, one project at a time (GIL-bound
-        work — do not parallelize).
-        """
-        try:
-            from zf.core.workspace import WorkspaceRegistry, project_lifecycle
-            from zf.web.projections.events import (
-                _events_with_seq,
-                payload_search_texts,
-                task_event_index,
-            )
-
-            targets: list[tuple[str, Path]] = []
-            if default_project_enabled and state_dir.exists():
-                targets.append(("default", state_dir))
-            try:
-                rows = sorted(
-                    WorkspaceRegistry().list_projects(),
-                    key=lambda item: str(getattr(item, "last_opened_at", "") or ""),
-                    reverse=True,
-                )
-            except Exception:
-                rows = []
-            row_meta: dict[str, tuple] = {}
-            for row in rows[:4]:
-                lifecycle = project_lifecycle(row)
-                if lifecycle.can_open_board and lifecycle.state_dir_resolved:
-                    targets.append((row.project_id, Path(lifecycle.state_dir_resolved)))
-                    row_meta[str(lifecycle.state_dir_resolved)] = (
-                        getattr(row, "config_path", ""), getattr(row, "root", ""),
-                    )
-            seen: set[str] = set()
-
-            def _yield_to_requests() -> None:
-                # GIL courtesy: prewarming a 30k-event project starves a live
-                # request (observed: a cold project paid 20s queued behind
-                # prewarm). Wait for 2s of API silence before each project.
-                deadline = time.monotonic() + 60
-                while time.monotonic() < deadline:
-                    last = getattr(app.state, "last_api_request_monotonic", 0.0)
-                    if time.monotonic() - last >= 2.0:
-                        return
-                    time.sleep(0.5)
-
-            for name, sd in targets:
-                _yield_to_requests()
-                key = str(sd)
-                if key in seen or not sd.exists():
-                    continue
-                seen.add(key)
-                try:
-                    cfg = config if name == "default" else None
-                    root = project_root if name == "default" else None
-                    meta = row_meta.get(str(sd))
-                    if cfg is None and meta and meta[0]:
-                        try:
-                            from zf.core.config.loader import load_config as _load
-
-                            cfg = _load(Path(meta[0]))
-                            root = Path(meta[1]) if meta[1] else None
-                        except Exception:
-                            cfg = None
-                    _events_with_seq(sd, config=cfg)
-                    payload_search_texts(sd, config=cfg)
-                    task_event_index(sd, config=cfg)
-                    _cached_project_snapshot(
-                        sd, slice_name="light", cfg=cfg, root=root, token=None,
-                    )
-                except Exception:
-                    continue
-        except Exception:
-            pass
-
-    threading.Thread(
-        target=_prewarm_recent_projects, name="zf-web-prewarm", daemon=True,
-    ).start()
-
     return app
 
 
@@ -4115,7 +4057,7 @@ def _snapshot(
             "features", [], lambda: _features(state_dir, delivery_features=_delivery_shared)
         ),
         "metrics_snapshot": _safe_snapshot_projection(
-            "metrics_snapshot", {}, lambda: _metrics_snapshot_projection(state_dir)
+            "metrics_snapshot", {}, lambda: _metrics_snapshot_projection(state_dir, config=config)
         ),
         "long_run_truth": _safe_snapshot_projection(
             "long_run_truth",
@@ -4258,6 +4200,9 @@ def _snapshot_slice(
     project_root: Path | None = None,
     web_session_token: str | None = None,
 ) -> dict:
+    if slice_name == "observability-summary":
+        from zf.web.snapshot_observability import observability_snapshot
+        return observability_snapshot(state_dir, config=config, project_root=project_root, web_session_token=web_session_token)
     if slice_name == "observability":
         data = _snapshot(
             state_dir,
@@ -4276,7 +4221,7 @@ def _snapshot_slice(
     if slice_name in {"light", "board"}:
         data.update({
             "tasks": _safe_snapshot_projection(
-                "tasks", [], lambda: _kanban(state_dir, config=config)
+                "tasks", [], lambda: _kanban(state_dir, config=config, include_detail_bodies=slice_name != "board")
             ),
             "archive_tasks": _safe_snapshot_projection(
                 "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False)
@@ -4917,6 +4862,8 @@ def _agents(
     config: ZfConfig | None = None,
     project_root: Path | None = None,
     workdirs_snapshot: list[dict] | None = None,
+    *,
+    include_details: bool = True,
 ) -> list[dict]:
     """Runtime-facing agent projection for the Web UI.
 
@@ -4931,7 +4878,7 @@ def _agents(
         for item in (
             workdirs_snapshot
             if workdirs_snapshot is not None
-            else _workdirs(
+            else [] if not include_details else _workdirs(
                 state_dir,
                 config=config,
                 project_root=project_root,
@@ -4949,6 +4896,7 @@ def _agents(
         state_dir,
         config=config,
         project_root=project_root,
+        include_details=include_details,
     )
     out.append({
         "instance_id": "kanban-agent",
@@ -4980,10 +4928,10 @@ def _agents(
         "project_path": str(project_root),
         "cwd": str(project_root),
         "worktree_path": str(project_root),
-        "branch_or_ref": _git_branch_or_ref(project_root),
-        "branch": _git_branch_or_ref(project_root),
-        "commit": _git_commit(project_root),
-        "dirty": _git_dirty(project_root),
+        "branch_or_ref": _git_branch_or_ref(project_root) if include_details else "",
+        "branch": _git_branch_or_ref(project_root) if include_details else "",
+        "commit": _git_commit(project_root) if include_details else "",
+        "dirty": _git_dirty(project_root) if include_details else None,
         "workdir_mode": "operator-read-mostly",
         "last_event_seq": 0,
         "last_event_type": "",
@@ -5054,10 +5002,10 @@ def _agents(
             "project_path": str(project_root),
             "cwd": str(project_root),
             "worktree_path": str(project_root),
-            "branch_or_ref": _git_branch_or_ref(project_root),
-            "branch": _git_branch_or_ref(project_root),
-            "commit": _git_commit(project_root),
-            "dirty": _git_dirty(project_root),
+            "branch_or_ref": _git_branch_or_ref(project_root) if include_details else "",
+            "branch": _git_branch_or_ref(project_root) if include_details else "",
+            "commit": _git_commit(project_root) if include_details else "",
+            "dirty": _git_dirty(project_root) if include_details else None,
             "workdir_mode": "project-root",
             "last_event_seq": orchestrator_signal.get("last_event_seq", 0),
             "last_event_type": orchestrator_signal.get("last_event_type", ""),
@@ -5071,7 +5019,7 @@ def _agents(
                 attention_state=orchestrator_attention,
                 active_task="",
             ),
-            "debug": _agent_debug_projection(
+            "debug": {} if not include_details else _agent_debug_projection(
                 state_dir,
                 instance_id="orchestrator",
                 transport="tmux",
@@ -5157,7 +5105,7 @@ def _agents(
             "branch_or_ref": workdir.get("branch_or_ref", ""),
             "branch": workdir.get("branch", ""),
             "commit": workdir.get("commit", ""),
-            "dirty": bool(workdir.get("dirty", False)),
+            "dirty": bool(workdir.get("dirty", False)) if include_details else None,
             "workdir_mode": workdir.get("mode", ""),
             "last_event_seq": signal.get("last_event_seq", 0),
             "last_event_type": signal.get("last_event_type", ""),
@@ -5172,7 +5120,7 @@ def _agents(
                 attention_state=attention_state,
                 active_task=active_task,
             ),
-            "debug": _agent_debug_projection(
+            "debug": {} if not include_details else _agent_debug_projection(
                 state_dir,
                 instance_id=instance_id,
                 transport=str(role.get("transport", "") or "tmux"),
@@ -5342,6 +5290,8 @@ def _operator_agent_surface(
     state_dir: Path,
     config: ZfConfig | None = None,
     project_root: Path | None = None,
+    *,
+    include_details: bool = True,
 ) -> dict:
     project_root = _resolve_project_root_for_state(state_dir, project_root)
     session_path = state_dir / "operator" / "kanban-agent.json"
@@ -5375,12 +5325,12 @@ def _operator_agent_surface(
         status = "detached"
     last_event_seq = _line_count(state_dir / "events.jsonl")
     operator_workdir = Path(str(session.get("workdir") or (state_dir / "operator" / "workdir")))
-    shared_context = kanban_agent_shared_context(
+    shared_context = {} if not include_details else kanban_agent_shared_context(
         project_root=project_root,
         state_dir=state_dir,
         operator_workdir=operator_workdir,
     )
-    skills_available = _operator_skills_available(
+    skills_available = {} if not include_details else _operator_skills_available(
         state_dir,
         config=config,
         project_root=project_root,

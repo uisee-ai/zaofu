@@ -36,11 +36,23 @@ export function taskIsEffectivelyTerminal(task: Task): boolean {
 export function taskTerminalOutcome(task: Task): string {
   const outcome = task.task_card?.lifecycle.outcome || task.terminal_outcome;
   if (outcome) return outcome;
-  return (task.display_status || task.status) === "done" ? "success" : "completed";
+  const status = (task.display_status || task.status || "").toLowerCase();
+  if (status === "done") return "success";
+  return ["cancelled", "superseded", "archived"].includes(status) ? status : "completed";
 }
 
 export function taskTerminalTone(task: Task): "ok" | "muted" {
   return taskTerminalOutcome(task) === "success" ? "ok" : "muted";
+}
+
+export function taskAttentionBadge(task: Task): { label: string; tone: "warn" | "err" | "muted" } {
+  if (taskIsEffectivelyTerminal(task)) return { label: "", tone: "muted" };
+  const attention = task.task_card?.attention ?? task.attention;
+  if (attention?.required) return {
+    label: attention.label || "Needs attention",
+    tone: attention.severity === "error" ? "err" : "warn",
+  };
+  return !attention && task.blocked_reason ? { label: "Blocked", tone: "err" } : { label: "", tone: "muted" };
 }
 
 export function taskRiskBadge(

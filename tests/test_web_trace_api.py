@@ -1053,3 +1053,18 @@ def test_trace_v2_project_isolation_and_cursor_scope(
     assert crossed_span_cursor.json()["detail"] == (
         "trace cursor project mismatch"
     )
+
+
+def test_trace_source_failure_does_not_render_a_false_zero(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    import zf.web.trace_routes as routes
+    from zf.web.projections.projection_failures import record_projection_failure
+    def failed(*args, **kwargs):
+        record_projection_failure("canonical_events")
+        return {"items": [], "event_count": 0}
+    monkeypatch.setattr(routes, "trace_list_page", failed)
+    app = FastAPI()
+    app.include_router(routes.build_trace_router(resolve_ctx=lambda _: SimpleNamespace(state_dir=tmp_path, config=None)))
+    response = TestClient(app).get("/api/projects/p/traces?contract=v2")
+    assert response.status_code == 503
+    assert "items" not in response.json()

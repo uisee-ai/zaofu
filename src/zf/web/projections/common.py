@@ -170,7 +170,13 @@ def _cost(state_dir: Path) -> dict:
             "reconciliation": None,
         }
     try:
-        tracker = CostTracker(cost_path)
+        from zf.web.projections.metric_costs import refresh, ProjectedCostTracker
+        import sqlite3
+        try:
+            refresh(state_dir)
+            tracker = ProjectedCostTracker(cost_path)
+        except sqlite3.DatabaseError:
+            tracker = CostTracker(cost_path)
         per_role = tracker.per_role_totals()
         return {
             "total_usd": round(tracker.total_usd(), 4),
@@ -198,6 +204,8 @@ def _cost(state_dir: Path) -> dict:
             },
         }
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("cost")
         return {
             "total_usd": 0.0,
             "per_role": {},
@@ -768,6 +776,8 @@ def _cost_by_instance(state_dir: Path) -> dict[str, dict]:
     try:
         totals = CostTracker(cost_path).per_instance_totals()
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("cost_by_instance")
         return {}
     return {
         instance_id: {
@@ -919,8 +929,7 @@ def _payload_collect(node: Any, keys) -> dict:
             if not remaining:
                 break
             child = _payload_collect(value, remaining)
-            for k in list(remaining):
-                found = child.get(k)
+            for k, found in child.items():
                 if found not in (None, ""):
                     out[k] = found
                     remaining.remove(k)
@@ -930,8 +939,7 @@ def _payload_collect(node: Any, keys) -> dict:
             if not remaining:
                 break
             child = _payload_collect(value, remaining)
-            for k in list(remaining):
-                found = child.get(k)
+            for k, found in child.items():
                 if found not in (None, ""):
                     out[k] = found
                     remaining.remove(k)

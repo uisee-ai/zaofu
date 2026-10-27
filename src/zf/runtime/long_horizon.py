@@ -1512,47 +1512,8 @@ def project_state_freshness(
     if events is None:
         events = index.events if index is not None else EventLog(state_dir / "events.jsonl").read_all()
     now = now or datetime.now(timezone.utc)
-    if index is not None and events is index.events:
-        relevant = index.relevant(task_id=task_id, actor=actor)
-    else:
-        relevant = [
-            event for event in events
-            if (task_id and _event_task_match(event, task_id)) or (actor and event.actor == actor)
-        ]
-    last_event = relevant[-1] if relevant else None
-    heartbeat = next((event for event in reversed(events) if event.type == "worker.heartbeat" and (not actor or event.actor == actor)), None)
-    last_progress = next((event for event in reversed(relevant) if event.type in {"worker.progress", "phase.progressed"}), None)
-    last_file = next((event for event in reversed(relevant) if event.type in {"task.files_touched", "task.ref.updated", "dev.build.done"}), None)
-    last_test = next((event for event in reversed(relevant) if event.type in {"test.passed", "test.failed", "static_gate.passed", "static_gate.failed"}), None)
-    last_evidence = next((event for event in reversed(relevant) if event.type in {"task.done.evidence", "task.evidence_linked", "task.artifact_refs.updated"}), None)
-    context_ratio = None
-    for event in reversed(events):
-        if actor and event.actor not in {actor, None}:
-            continue
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        for key in ("context_usage_ratio", "usage_ratio", "context_ratio", "ratio"):
-            value = payload.get(key)
-            if isinstance(value, int | float):
-                context_ratio = float(value)
-                break
-        if context_ratio is not None:
-            break
-    return {
-        "last_event_at": last_event.ts if last_event else "",
-        "last_event_age_sec": _age_seconds(last_event.ts, now=now) if last_event else None,
-        "last_heartbeat_at": heartbeat.ts if heartbeat else "",
-        "last_heartbeat_age_sec": _age_seconds(heartbeat.ts, now=now) if heartbeat else None,
-        "last_progress_at": last_progress.ts if last_progress else "",
-        "last_progress_age_sec": _age_seconds(last_progress.ts, now=now) if last_progress else None,
-        "last_file_change_at": last_file.ts if last_file else "",
-        "last_file_change_age_sec": _age_seconds(last_file.ts, now=now) if last_file else None,
-        "last_test_at": last_test.ts if last_test else "",
-        "last_test_age_sec": _age_seconds(last_test.ts, now=now) if last_test else None,
-        "last_evidence_at": last_evidence.ts if last_evidence else "",
-        "last_evidence_age_sec": _age_seconds(last_evidence.ts, now=now) if last_evidence else None,
-        "context_usage_ratio": context_ratio,
-        "idle_age_sec": _age_seconds(last_event.ts, now=now) if last_event else None,
-    }
+    from zf.runtime.state_freshness import latest_state_freshness
+    return latest_state_freshness(events, task_id=task_id, actor=actor, now=now, index=index)
 
 
 def project_stall_status(

@@ -206,6 +206,7 @@ def _fanout_child_projection(
     child: dict,
     *,
     task_index: dict[str, object] | None = None,
+    include_report: bool = True,
 ) -> dict:
     child_id = str(
         child.get("child_id")
@@ -275,7 +276,7 @@ def _fanout_child_projection(
         "skills",
         "attempt",
     ):
-        if key in child:
+        if key in child and (include_report or key != "report"):
             projected[key] = child[key]
     return redact_obj(projected)
 
@@ -733,7 +734,7 @@ def _fanouts(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
                 if child.get("task_id"):
                     item["tasks"].add(str(child["task_id"]))
         projected_children = [
-            _fanout_child_projection(child, task_index=task_index)
+            _fanout_child_projection(child, task_index=task_index, include_report=False)
             for child in manifest.get("children", []) or []
             if isinstance(child, dict)
         ]

@@ -1,3 +1,6 @@
+import { useOverviewPulse } from "./useOverviewPulse";
+import { useDashboardProjectionRefresh } from "./useDashboardProjectionRefresh";
+import { ReadProjectionNotice } from "../components/shared/ReadProjectionNotice";
 import type { CSSProperties, PointerEvent, ReactNode, UIEvent as ReactUIEvent } from "react";
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -56,7 +59,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  fetchOverviewPulse,
   getChannelConversation,
   getChannelDetail,
   getChannels,
@@ -72,8 +74,7 @@ import {
   getRecentEventsPage,
   getProjectHealth,
   getRunDetail,
-  getSnapshot,
-  getSnapshotLight,
+  invalidateProjectReadCache,
   getTaskDetail,
   getTaskDiff,
   getTaskTimeline,
@@ -161,13 +162,10 @@ import type {
   FanoutSummary,
   FleetStats,
   IntegrationQueueEntry,
-  IntegrationQueueProjection,
-  TaskPipelineProjection,
   MetricsSnapshotProjection,
   OnboardingStatus,
   OverviewPulse,
   RecentEvent,
-  RepairActionProjection,
   RepairActionRecord,
   RuntimeSummary,
   RunSummary,
@@ -197,6 +195,7 @@ import {
   projectionNeedsFresh,
   snapshotLoadKindForPage,
 } from "./pageLoadPolicy";
+import { loadPageSnapshot } from "./pageSnapshot";
 // P1 frontend split: pages/shared extracted from this file.
 import { PlanApprovalPanel } from "../components/delivery-trace/PlanApprovalPanel";
 import { BoardWorkbench } from "../components/kanban/BoardWorkbench";
@@ -653,6 +652,7 @@ export function App() {
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("Summary");
   const [page, setPage] = useState<PageId>(initial.page);
+  useDashboardProjectionRefresh(activeProjectId, page, snapshot, setSnapshot);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.view);
   const [statusFilter, setStatusFilter] = useState(initial.status);
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -665,9 +665,6 @@ export function App() {
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [projectionDetail, setProjectionDetail] = useState<Record<string, unknown> | null>(null);
   const projectionNavigationRef = useRef("");
-  const [integrationQueue, setIntegrationQueue] = useState<IntegrationQueueProjection | null>(null);
-  const [taskPipeline, setTaskPipeline] = useState<TaskPipelineProjection | null>(null);
-  const [repairActions, setRepairActions] = useState<RepairActionProjection | null>(null);
   const [actionResult, setActionResult] = useState<ActionResponse | null>(null);
   const [webActionTokenPresent, setWebActionTokenPresent] = useState(() =>
     Boolean(storedWebActionToken()),
@@ -783,14 +780,12 @@ export function App() {
     return page;
   }, [activeProjectId]);
 
-  const loadSnapshot = useCallback(async (kindOverride?: "light" | "full") => {
+  const loadSnapshot = useCallback(async (kindOverride?: "board" | "light" | "full") => {
     const snapshotKind = kindOverride ?? snapshotLoadKindForPage(page);
     if (snapshotKind === "none") return null;
     const requestedProjectId = activeProjectId || "";
     const ticket = projectRequestScope.capture(requestedProjectId);
-    const next = snapshotKind === "full"
-      ? await getSnapshot(requestedProjectId || undefined)
-      : await getSnapshotLight(requestedProjectId || undefined);
+    const next = await loadPageSnapshot(snapshotKind, requestedProjectId || undefined);
     if (
       requestedProjectId
       && next.project?.project_id
@@ -885,9 +880,6 @@ export function App() {
       eventBusRef.current?.close();
       setSnapshot(null);
       setDeliveryFeaturesPage(null);
-      setIntegrationQueue(null);
-      setTaskPipeline(null);
-      setRepairActions(null);
       setChannelsPage(null);
       setError(null);
       setLiveState("connecting");
@@ -897,6 +889,7 @@ export function App() {
       const owns = (resource: BootstrapResource) => (
         pageOwnsBootstrapResource(page, resource)
       );
+      invalidateProjectReadCache(activeProjectId);
       const requests: Array<Promise<unknown>> = [
         getProjectHealth(activeProjectId || undefined)
           .then((health) => {
@@ -1125,13 +1118,19 @@ export function App() {
         const owns = (resource: BootstrapResource) => (
           pageOwnsBootstrapResource(page, resource)
         );
-        const projectsRequest = getWorkspaceProjects().catch(() => null);
+        const scopedSnapshot = (snapshotKind === "board" || snapshotKind === "observability") && Boolean(activeProjectId) && (
+          initial.project === activeProjectId
+          || workspaceProjects.some((project) => project.project_id === activeProjectId)
+        );
+        // A selected page needs no workspace-wide lifecycle probe to render.
+        // Start that background work after the page response to avoid CPU contention.
+        const projectsRequest = scopedSnapshot ? null : getWorkspaceProjects().catch(() => null);
         const bootstrapBeforeWorkspace = canBootstrapScopedPageBeforeWorkspace(
           page,
-          initial.project === activeProjectId ? activeProjectId : "",
+          scopedSnapshot || initial.project === activeProjectId ? activeProjectId : "",
         );
         const projectsPage = bootstrapBeforeWorkspace ? null : await projectsRequest;
-        if (bootstrapBeforeWorkspace) {
+        if (bootstrapBeforeWorkspace && projectsRequest) {
           void projectsRequest.then((workspacePage) => {
             if (cancelled || !workspacePage) return;
             setWorkspaceProjects(workspacePage.items ?? workspacePage.projects ?? []);
@@ -1156,9 +1155,6 @@ export function App() {
         if (!projectId || (selectedProject && !projectCanOpenBoard(selectedProject))) {
           setSnapshot(null);
           setDeliveryFeaturesPage(null);
-          setIntegrationQueue(null);
-          setTaskPipeline(null);
-          setRepairActions(null);
           setEvents([]);
           setChannelsPage(null);
           setError(null);
@@ -1205,12 +1201,20 @@ export function App() {
             setDeliveryFeaturesPage(initialFeatures);
           }).catch(() => undefined);
         }
+        const visibleSnapshot = loadPageSnapshot(snapshotKind, projectId || undefined).then((next) => {
+          if (scopedSnapshot && !cancelled && next?.project?.project_id === projectId) {
+            setSnapshot(next);
+            setError(null);
+            void getWorkspaceProjects().then((workspacePage) => {
+              if (cancelled) return;
+              setWorkspaceProjects(workspacePage.items ?? workspacePage.projects ?? []);
+              setServerDefaultProjectId(workspacePage.server_default_project_id ?? "");
+            }).catch(() => undefined);
+          }
+          return next;
+        });
         const [initialSnapshot, initialEventsPage, initialHealth] = await Promise.all([
-          snapshotKind === "none"
-            ? Promise.resolve(null)
-            : snapshotKind === "full"
-              ? getSnapshot(projectId || undefined)
-              : getSnapshotLight(projectId || undefined),
+          visibleSnapshot,
           owns("events.recent")
             ? getRecentEventsPage(60, projectId || undefined)
             : Promise.resolve(null),
@@ -1235,7 +1239,7 @@ export function App() {
           fallbackSeq: cursorFallback?.current_seq,
         });
         lastSeqRef.current = initialSeq;
-        if (initialSnapshot) setSnapshot(initialSnapshot);
+        if (initialSnapshot && !scopedSnapshot) setSnapshot(initialSnapshot);
         if (initialHealth) setProjectHealth(initialHealth);
         setEvents(initialEventsPage ? initialEventsPage.items.slice().reverse() : []);
         setError(null);
@@ -1356,9 +1360,6 @@ export function App() {
     eventFilter,
     onError: setError,
     onEventsPage: setEventsPage,
-    onIntegrationQueue: setIntegrationQueue,
-    onRepairActions: setRepairActions,
-    onTaskPipeline: setTaskPipeline,
     page,
     scope: projectRequestScope,
     selectedTaskId,
@@ -2024,9 +2025,6 @@ export function App() {
     setTaskTimelineLoading(false);
     setTaskTimelineError(null);
     setProjectionDetail(null);
-    setIntegrationQueue(null);
-    setTaskPipeline(null);
-    setRepairActions(null);
     setSearchResult(null);
     setEventFilter("");
     setEventsPage(null);
@@ -2183,6 +2181,7 @@ export function App() {
       </header>
 
       {error ? <div className="error-strip">{error}</div> : null}
+      <ReadProjectionNotice snapshot={snapshot} />
 
       <main className={`workspace ${terminalOpen && activeProjectId ? "has-web-terminal" : ""}`.trim()}>
         <WorkspaceRail
@@ -2343,7 +2342,7 @@ export function App() {
             />
           ) : page === "traces" ? (
             <section className="projection-scroll">
-              <TracesRoute projectId={activeProjectId} liveState={liveState} />
+              <TracesRoute projectId={activeProjectId} liveState={liveState} recentEvents={events} />
             </section>
           ) : (
             <section className="projection-scroll">
@@ -2353,11 +2352,8 @@ export function App() {
                   eventFilter={eventFilter}
                   liveState={liveState}
                   recentEvents={events}
-                  integrationQueue={integrationQueue}
-                  taskPipeline={taskPipeline}
                   page={page}
                   projectionDetail={projectionDetail}
-                  repairActions={repairActions}
                   searchResult={searchResult}
                   selectedTaskId={selectedTaskId}
                   setEventFilter={setEventFilter}
@@ -2638,65 +2634,7 @@ function ProjectHomePage({
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   onOpenTask: (taskId: string) => void;
 }) {
-  // overview-pulse.v1 is an independent project-scoped projection. A project
-  // already pinned by the URL can render its pulse while workspace discovery
-  // and the auxiliary light snapshot continue in parallel.
-  const pulseProjectId = projectId.trim();
-  const [pulseResource, setPulseResource] = useState<{
-    data: OverviewPulse | null;
-    projectId: string;
-  }>({ data: null, projectId: "" });
-  const pulse = pulseResource.projectId === pulseProjectId ? pulseResource.data : null;
-  const pulseSnapshotRef = useRef<{ projectId: string; seq: number | null }>({
-    projectId: "",
-    seq: null,
-  });
-  useEffect(() => {
-    if (!pulseProjectId) {
-      setPulseResource({ data: null, projectId: "" });
-      return;
-    }
-    let cancelled = false;
-    fetchOverviewPulse(pulseProjectId)
-      .then((next) => {
-        if (!cancelled) setPulseResource({ data: next, projectId: pulseProjectId });
-      })
-      .catch(() => {
-        if (!cancelled) setPulseResource({ data: null, projectId: pulseProjectId });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [pulseProjectId]);
-  const pulseSnapshotSeq = snapshot?.project.project_id === pulseProjectId
-    && typeof snapshot.seq === "number"
-    ? snapshot.seq
-    : null;
-  useEffect(() => {
-    const seen = pulseSnapshotRef.current;
-    if (seen.projectId !== pulseProjectId) {
-      pulseSnapshotRef.current = { projectId: pulseProjectId, seq: pulseSnapshotSeq };
-      return undefined;
-    }
-    if (pulseSnapshotSeq === null || seen.seq === null) {
-      seen.seq = pulseSnapshotSeq;
-      return undefined;
-    }
-    if (pulseSnapshotSeq === seen.seq) return undefined;
-    seen.seq = pulseSnapshotSeq;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void fetchOverviewPulse(pulseProjectId)
-        .then((next) => {
-          if (!cancelled) setPulseResource({ data: next, projectId: pulseProjectId });
-        })
-        .catch(() => undefined);
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [pulseProjectId, pulseSnapshotSeq]);
+  const pulse = useOverviewPulse(projectId.trim(), snapshot?.project.project_id === projectId ? snapshot.seq : undefined);
   const tasks = snapshot ? allBoardTasks(snapshot) : [];
   const activeTasks = tasks.filter((task) => task.status !== "done" && task.status !== "cancelled");
   const taskCounts = BOARD_COLUMNS.map((column) => ({
@@ -2928,6 +2866,7 @@ function ProjectHomePage({
           );
         })}
       </div>
+      <ReadProjectionNotice status={pulse?.read_projection} />
       <PulseBand pulse={pulse?.run_pulse ?? null} />
       <ProjectFocusPanel items={focusItems} />
       <TaskFlowBand

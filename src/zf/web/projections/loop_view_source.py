@@ -8,6 +8,7 @@ No read-model sequence is used as a second freshness authority.
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -144,6 +145,16 @@ def loop_view_source_fingerprint(
     return digest.hexdigest()
 
 
+def _read_metric_events(state_dir: Path, config=None) -> list[tuple[int, ZfEvent]]:
+    from zf.web.projections.metric_facts import refresh_events, events
+    try:
+        refresh_events(state_dir, config)
+        return events(state_dir, include_malformed=True)
+    except sqlite3.DatabaseError:
+        # A disposable cache must not erase canonical Loop data when corrupt.
+        return [(record.seq, record.event) for record in iter_event_records(state_dir, config=config)]
+
+
 def read_stable_loop_view_source(
     state_dir: Path,
     *,
@@ -166,10 +177,9 @@ def read_stable_loop_view_source(
             project_root=project_root,
         )
         try:
-            records = list(iter_event_records(state_dir, config=config))
+            last_events = _read_metric_events(state_dir, config)
         except Exception:
             return LoopViewSource(events=[], source_seq=0, fingerprint="")
-        last_events = [(record.seq, record.event) for record in records]
         after = loop_view_source_fingerprint(
             state_dir,
             config=config,

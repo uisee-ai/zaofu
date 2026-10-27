@@ -100,6 +100,7 @@ def build_execution_graph(
     events: EventSlice = (),
     feature_id: str = "",
     task_map_ref: str = "",
+    summary_only: bool = False,
 ) -> dict[str, Any]:
     """Join an accepted task-map with actual kanban tasks + evidence events.
 
@@ -113,8 +114,15 @@ def build_execution_graph(
     fanout_by_task = _fanout_ids_by_task(events)  # doc 69 S-d
     instances_by_task = _dispatch_instances_by_task(events)  # doc 69 S-h §14.3
     pipeline_stages_by_task = _task_pipeline_stages_by_task(events)
-    timing_by_task = _timing_by_task(events)  # §14.7
-    trace_by_task = _trace_by_task(events)  # §14.8
+    timing_by_task = {} if summary_only else _timing_by_task(events)  # §14.7
+    trace_by_task = {} if summary_only else _trace_by_task(events)  # §14.8
+    heartbeat_by_task = {}
+    latest_event = None
+    for _seq, event in events:
+        if event.ts:
+            latest_event = (_seq, event)
+            if event.type == "worker.heartbeat":
+                heartbeat_by_task[str(event.task_id or "")] = (_seq, event)
 
     planned_tasks = _planned_tasks(task_map)
     if not planned_tasks:
@@ -144,12 +152,23 @@ def build_execution_graph(
             })
         actual = _actual(task, evidence_by_task.get(task_id, []),
                          fanout_by_task.get(task_id, []))
-        _enrich_actual(actual, task, planned["planned"],
-                       instances_by_task.get(task_id, []),
-                       pipeline_stages_by_task.get(task_id, []),
-                       timing_by_task.get(task_id, {}),
-                       trace_by_task.get(task_id, ""),
-                       events)
+        if summary_only:
+            # Drift checks consume affinity; timing, health, fanout summaries and
+            # graph geometry are detail-only and do not affect delivery metrics.
+            actual["affinity"] = _affinity(task, planned["planned"],
+                                          instances_by_task.get(task_id, []),
+                                          pipeline_stages_by_task.get(task_id, []))
+        else:
+            _enrich_actual(actual, task, planned["planned"],
+                           instances_by_task.get(task_id, []),
+                           pipeline_stages_by_task.get(task_id, []),
+                           timing_by_task.get(task_id, {}),
+                           trace_by_task.get(task_id, ""),
+                           events,
+                           health_events=[item for item in (
+                               heartbeat_by_task.get(task.id if task is not None else ""),
+                               latest_event,
+                           ) if item is not None])
         nodes.append({
             "task_id": task_id,
             "title": planned["title"] or (task.title if task else ""),
@@ -168,8 +187,8 @@ def build_execution_graph(
             })
 
     node_status = {n["task_id"]: n["actual"]["status"] for n in nodes}
-    edges = _edges(planned_tasks, node_status)
-    waves = _waves(planned_tasks, node_status)
+    edges = [] if summary_only else _edges(planned_tasks, node_status)
+    waves = [] if summary_only else _waves(planned_tasks, node_status)
 
     return redact_obj({
         "schema_version": "execution-graph.v1",
@@ -314,7 +333,7 @@ def _fanout_ids_by_task(events: EventSlice) -> dict[str, list[str]]:
 def _enrich_actual(actual: dict, task: Task | None, planned: dict,
                    instances: list[str], pipeline_stages: list[str],
                    timing: dict, trace_id: str,
-                   events: EventSlice = ()) -> None:
+                   events: EventSlice = (), *, health_events: EventSlice | None = None) -> None:
     """doc 69 S-h: add affinity / time / trace_id / agent_summary / changed_files
     / health onto a node's actual block."""
     actual["affinity"] = _affinity(task, planned, instances, pipeline_stages)
@@ -326,7 +345,8 @@ def _enrich_actual(actual: dict, task: Task | None, planned: dict,
     actual["trace_id"] = trace_id
     actual["changed_files"] = _changed_files(task)
     actual["agent_summary"] = _agent_summary(actual.get("fanout_ids", []), events)
-    actual["health"] = _health(actual.get("status", ""), task, events)
+    actual["health"] = _health(actual.get("status", ""), task,
+                               events if health_events is None else health_events)
 
 
 def _changed_files(task: Task | None) -> list[str]:

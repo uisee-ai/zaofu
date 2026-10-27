@@ -3,14 +3,12 @@
 // commit 仍走 gate(doc 31)。本组件不持 truth、不做转换判断。
 import type { PointerEvent } from "react";
 import type { Task } from "../../api/types";
-import type { TaskTelemetry } from "../../lib/task-display";
 import type { BoardColumnConfig } from "./board";
 import { TaskCard } from "./TaskCard";
 
 export function BoardColumn({
   column,
   tasks,
-  telemetryByTaskId,
   selectedTaskId,
   dragTaskId,
   onPointerDown,
@@ -18,7 +16,6 @@ export function BoardColumn({
 }: {
   column: BoardColumnConfig;
   tasks: Task[];
-  telemetryByTaskId: Map<string, TaskTelemetry>;
   selectedTaskId: string | null;
   dragTaskId: string;
   onPointerDown: (event: PointerEvent<HTMLElement>, taskId: string) => void;
@@ -45,7 +42,6 @@ export function BoardColumn({
           <TaskCard
             key={task.id}
             task={task}
-            telemetry={telemetryByTaskId.get(task.id)}
             selected={task.id === selectedTaskId}
             dragging={task.id === dragTaskId}
             onPointerDown={onPointerDown}

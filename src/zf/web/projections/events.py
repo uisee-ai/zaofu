@@ -25,6 +25,7 @@ from zf.web.projections.common import _first_nonempty, _is_blocked_event, _is_fa
 from zf.web.projections.request_util import _active_event_seq_window, _record_sse_gap_projection, _sse_event, _sse_gap
 from zf.web.projections.summaries import _archive_tasks, _refs_from_events
 from zf.web.projections.task_pipeline_events import task_pipeline_trace
+from zf.web.projections.event_windows import events_read_days
 
 
 _EVENT_LOG_RUN_ID = "event-log-latest"
@@ -71,21 +72,8 @@ def _trace_detail(
 
 
 def _fleet_stats_projection(state_dir: Path, *, config: ZfConfig | None = None) -> dict:
-    from zf.runtime.fleet_efficiency import (
-        build_role_efficiency,
-        build_task_flow_stats,
-    )
-
-    events = _events_with_seq(state_dir, config=config)
-    kanban_path = state_dir / "kanban.json"
-    tasks = (
-        {task.id: task for task in TaskStore(kanban_path).list_all()}
-        if kanban_path.exists() else {}
-    )
-    return {
-        "task_flow": build_task_flow_stats(events, tasks),
-        "role_efficiency": build_role_efficiency(events, tasks),
-    }
+    from zf.web.projections.metric_views import fleet
+    return fleet(state_dir, config)
 
 
 def _event_log_run_summary(
@@ -373,7 +361,7 @@ _DERIVED_CACHE_MAX = 32
 _CACHE_BUDGET_BYTES = int(
     os.environ.get("ZF_WEB_EVENT_CACHE_BUDGET_MB", "2048")
 ) * 1024 * 1024
-_DECODED_COST_FACTOR = 14   # events / read_days entries: own decoded objects
+_DECODED_COST_FACTOR = 14   # events entries: own decoded objects
 _DERIVED_COST_FACTOR = 2    # index/texts entries: share event objects
 _CACHE_STAMP = itertools.count()
 
@@ -422,7 +410,7 @@ def _derived_cached(state_dir, kind: str, config, build, fold=None):
     may be concurrently read).
     """
     key = f"{state_dir}::{kind}"
-    fingerprint = _event_log_fingerprint(state_dir)
+    fingerprint = _event_log_fingerprint(state_dir, config)
     cached = _DERIVED_CACHE.get(key)
     if cached is not None and cached["fp"] == fingerprint:
         return cached["value"]
@@ -436,8 +424,12 @@ def _derived_cached(state_dir, kind: str, config, build, fold=None):
         value = fold(cached["value"], events[cached["n"]:])
     else:
         value = build()
+    admitted = _EVENTS_WITH_SEQ_CACHE.get(str(state_dir))
+    if admitted is None or admitted["fp"] != fp:
+        # A failed/evicted source read must not become a reusable empty view.
+        return value
     basis = _log_bytes_basis(state_dir, fp)
-    factor = _DECODED_COST_FACTOR if kind.startswith("read_days:") else _DERIVED_COST_FACTOR
+    factor = _DERIVED_COST_FACTOR
     with _DERIVED_CACHE_LOCK:
         _DERIVED_CACHE[key] = {
             "fp": fp,
@@ -551,37 +543,6 @@ def fanout_seq_maps(
     return _derived_cached(state_dir, "fanout_seq_maps", config, build, fold=fold)
 
 
-def events_read_days(state_dir, days: int = 1, config=None) -> list:
-    """Fingerprint-memoized EventLog.read_days — six projections each decoded
-    the log independently per snapshot (119k events decoded for a 10.6k log).
-    Key includes the UTC date so the calendar window rolls at midnight."""
-    from datetime import datetime, timezone
-
-    from zf.core.events.factory import event_log_from_project
-
-    day_key = datetime.now(timezone.utc).date().isoformat()
-
-    def build():
-        return list(event_log_from_project(state_dir, config=config).read_days(days))
-
-    def fold(old: list, tail) -> list:
-        # New rows are active-file appends = inside every read_days window.
-        # _parse_file silently skips non-JSON lines; the events cache injects
-        # an event.malformed placeholder (actor=segments) for them — drop
-        # those to keep exact parity. Schema-invalid JSON (actor=zf-cli) stays.
-        fresh = [
-            event
-            for _seq, event in tail
-            if not (
-                getattr(event, "type", "") == "event.malformed"
-                and getattr(event, "actor", "") == "segments"
-            )
-        ]
-        return old + fresh if fresh else old
-
-    return _derived_cached(state_dir, f"read_days:{days}:{day_key}", config, build, fold=fold)
-
-
 def payload_search_texts(state_dir, config=None) -> list[str]:
     """Lowered payload dumps aligned with _events_with_seq(state_dir)."""
     from zf.web.projections.common import _payload_search_text
@@ -624,7 +585,7 @@ def _archive_inventory(state_dir: Path) -> tuple:
     )
 
 
-def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple[int, int], config) -> dict | None:
+def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple, config) -> dict | None:
     """Fold new active-log tail onto the cached events (R6-1).
 
     events.jsonl is append-only and archive segments are immutable, so when
@@ -633,9 +594,12 @@ def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple[int, int],
     whole log (a full rebuild on every append made "warm" a fiction for
     active projects). Any other shape change falls back to a full rebuild.
     """
-    if fingerprint == (0, 0):
+    if not fingerprint[0]:
         return None
-    if entry["archives"] != _archive_inventory(state_dir):
+    # Only a growing active file with the same inode, archive identities and
+    # decoder can reuse a prefix. Corrections/replacements must rebuild.
+    previous = entry["fp"]
+    if previous[2:5] != fingerprint[2:5] or fingerprint[0] <= previous[0]:
         return None
     consumed = entry["consumed"]
     size = fingerprint[0]
@@ -674,7 +638,14 @@ def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple[int, int],
                     },
                 )
             tail.append((seq, event))
+    ranges = list(entry["segment_ranges"])
+    if ranges and ranges[-1][0] == "events.jsonl":
+        segment, start, _end = ranges[-1]
+        ranges[-1] = (segment, start, len(events) + len(tail))
+    elif tail:
+        ranges.append(("events.jsonl", len(events), len(events) + len(tail)))
     return {
+        "segment_ranges": ranges,
         "fp": fingerprint,
         "epoch": entry["epoch"],
         "events": events + tail if tail else events,
@@ -688,12 +659,12 @@ def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple[int, int],
 def _events_state(
     state_dir: Path,
     config: ZfConfig | None = None,
-) -> tuple[list[tuple[int, object]], int, tuple[int, int]]:
+) -> tuple[list[tuple[int, object]], int, tuple]:
     """(events, epoch, fingerprint). epoch increments on full rebuild only —
     derived views may fold onto their cached value iff the epoch matched
     (guaranteeing the shared prefix is the same list objects)."""
     key = str(state_dir)
-    fingerprint = _event_log_fingerprint(state_dir)
+    fingerprint = _event_log_fingerprint(state_dir, config)
     entry = _EVENTS_WITH_SEQ_CACHE.get(key)
     if entry is not None and entry["fp"] == fingerprint:
         return entry["events"], entry["epoch"], fingerprint
@@ -711,8 +682,14 @@ def _events_state(
             try:
                 records = list(iter_event_records(state_dir, config=config))
             except Exception:
+                from zf.web.projections.projection_failures import record_projection_failure
+                record_projection_failure("events")
                 return [], (entry["epoch"] + 1 if entry else 0), fingerprint
             events = [(record.seq, record.event) for record in records]
+            ranges = []
+            for segment, group in itertools.groupby(enumerate(records), key=lambda row: row[1].raw_segment):
+                indices = [index for index, _record in group]
+                ranges.append((segment, indices[0], indices[-1] + 1))
             consumed = 0
             for record in reversed(records):
                 if record.raw_segment == "events.jsonl":
@@ -721,6 +698,7 @@ def _events_state(
             epoch = (entry["epoch"] + 1) if entry else 0
             archives = _archive_inventory(state_dir)
             _EVENTS_WITH_SEQ_CACHE[key] = {
+                "segment_ranges": ranges,
                 "fp": fingerprint,
                 "epoch": epoch,
                 "events": events,
@@ -744,12 +722,22 @@ def _events_with_seq(
     return events
 
 
-def _event_log_fingerprint(state_dir: Path) -> tuple[int, int]:
+def _event_log_fingerprint(state_dir: Path, config=None) -> tuple:
+    from zf.web.projections.loop_view_source import _decoder_identity
+
+    archives = []
+    for segment in list_event_segments(state_dir):
+        if segment.kind == "archive":
+            stat = segment.path.stat()
+            archives.append((segment.rel_path, stat.st_dev, stat.st_ino, stat.st_size,
+                             stat.st_mtime_ns, stat.st_ctime_ns))
     try:
         stat = (state_dir / "events.jsonl").stat()
+        active = (int(stat.st_size), int(stat.st_mtime_ns), (stat.st_dev, stat.st_ino))
+        ctime = stat.st_ctime_ns
     except OSError:
-        return (0, 0)
-    return (int(stat.st_size), int(stat.st_mtime_ns))
+        active, ctime = (0, 0, (0, 0)), 0
+    return (*active, tuple(archives), _decoder_identity(config), ctime)
 
 
 def _events_with_exact_task_id(
@@ -778,8 +766,8 @@ def _trace_id_from_events(events: list[tuple[int, object]]) -> Any:
     )
 
 
-def _event_to_dict(seq: int, event: object) -> dict:
-    safe_event = redact_event(event)  # type: ignore[arg-type]
+def _event_to_dict(seq: int, event: object, *, include_payload: bool = True) -> dict:
+    safe_event = redact_event(event) if include_payload else event  # type: ignore[arg-type]
     return {
         "seq": seq,
         "id": getattr(safe_event, "id", ""),
@@ -787,7 +775,7 @@ def _event_to_dict(seq: int, event: object) -> dict:
         "type": getattr(safe_event, "type", ""),
         "actor": getattr(safe_event, "actor", None),
         "task_id": getattr(safe_event, "task_id", None),
-        "payload": getattr(safe_event, "payload", {}) or {},
+        "payload": (getattr(safe_event, "payload", {}) or {}) if include_payload else {},
         "causation_id": getattr(safe_event, "causation_id", None),
         "correlation_id": getattr(safe_event, "correlation_id", None),
     }

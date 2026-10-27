@@ -149,7 +149,7 @@ def build_orchestrator_agent_metrics(
             "input_tokens": int(usage.get("input_tokens") or 0),
             "output_tokens": int(usage.get("output_tokens") or 0),
             "total_tokens": int(usage.get("total_tokens") or 0),
-            "cost_usd": _rounded(float(usage.get("cost_usd") or 0.0)),
+            **_usage_cost_summary([usage]),
             "decision": str(decision_projection.get("decision") or ""),
             "reason_codes": list(decision_projection.get("reason_codes") or []),
             "summary": str(decision_projection.get("summary") or ""),
@@ -249,7 +249,7 @@ def build_orchestrator_agent_metrics(
             "input_tokens": sum(row["input_tokens"] for row in checkpoint_rows),
             "output_tokens": sum(row["output_tokens"] for row in checkpoint_rows),
             "total_tokens": sum(row["total_tokens"] for row in checkpoint_rows),
-            "cost_usd": _rounded(sum(row["cost_usd"] for row in checkpoint_rows)),
+            **_usage_cost_summary(checkpoint_rows),
         }
 
     return {
@@ -319,7 +319,7 @@ def build_orchestrator_agent_metrics(
             "input_tokens": sum(row["input_tokens"] for row in rows),
             "output_tokens": sum(row["output_tokens"] for row in rows),
             "total_tokens": sum(row["total_tokens"] for row in rows),
-            "cost_usd": _rounded(sum(row["cost_usd"] for row in rows)),
+            **_usage_cost_summary(rows),
         },
         "checkpoints": checkpoint_summary,
         "stale_rejections": [
@@ -379,22 +379,28 @@ def _operation_usage(
             else _integer(usage, "cache_read_input_tokens")
         )
         provider_cost = payload.get("total_cost_usd")
-        if isinstance(provider_cost, (int, float)) and provider_cost > 0:
+        if (
+            isinstance(provider_cost, (int, float))
+            and not isinstance(provider_cost, bool)
+            and math.isfinite(provider_cost)
+            and provider_cost >= 0
+        ):
             cost = float(provider_cost)
         else:
-            rate = resolve_rate(_text(payload, "model") or "default")
+            rate = resolve_rate(_text(payload, "model"))
             cost = (
                 input_tokens * rate.input
                 + output_tokens * rate.output
                 + cache_creation * rate.cache_creation
                 + cache_read * rate.cache_read
-            ) / 1_000_000
+            ) / 1_000_000 if rate is not None else None
         row = totals.setdefault(operation_id, {
             "sample_count": 0,
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
             "cost_usd": 0.0,
+            "unpriced_sample_count": 0,
         })
         row["sample_count"] += 1
         row["input_tokens"] += input_tokens
@@ -402,8 +408,24 @@ def _operation_usage(
         row["total_tokens"] += (
             input_tokens + output_tokens + cache_creation + cache_read
         )
-        row["cost_usd"] += cost
+        if cost is None:
+            row["unpriced_sample_count"] += 1
+        else:
+            row["cost_usd"] += cost
     return totals
+
+
+def _usage_cost_summary(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    known = 0.0
+    unpriced = 0
+    for row in rows:
+        known += float(row.get("known_cost_usd", row.get("cost_usd")) or 0.0)
+        unpriced += int(row.get("unpriced_sample_count") or 0)
+    return {
+        "cost_usd": None if unpriced else _rounded(known),
+        "known_cost_usd": _rounded(known),
+        "unpriced_sample_count": unpriced,
+    }
 
 
 def _operation_decisions(

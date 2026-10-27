@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from tests.dashboard_projection_helpers import ready_get
 from pathlib import Path
 
 import pytest
@@ -210,7 +211,7 @@ class TestWhyNotAndRoute:
     def test_route_served_for_default_project(self, state_dir: Path):
         _seed(state_dir, [ZfEvent(type="loop.started", actor="zf-cli", ts=_ts(1))])
         client = TestClient(create_app(state_dir))
-        response = client.get("/api/projects/default/overview-pulse")
+        response = ready_get(client, "/api/projects/default/overview-pulse")
         assert response.status_code == 200
         body = response.json()
         assert body["schema_version"] == "overview-pulse.v1"

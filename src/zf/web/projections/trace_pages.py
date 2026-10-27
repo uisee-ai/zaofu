@@ -12,6 +12,7 @@ import binascii
 from datetime import datetime
 import hashlib
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -63,8 +64,13 @@ def trace_list_page(
     """Return one stable newest-first page of EventLog-derived traces."""
 
     bounded_limit = _bounded_limit(limit, default=50, maximum=_MAX_LIST_LIMIT)
-    events = _events_with_seq(state_dir, config=config)
-    current_seq = int(events[-1][0]) if events else 0
+    from zf.web.projections import metric_traces
+    fallback = None
+    try:
+        current_seq = metric_traces.current_seq(state_dir, config)
+    except sqlite3.DatabaseError:
+        fallback = _events_with_seq(state_dir, config=config)
+        current_seq = int(fallback[-1][0]) if fallback else 0
     scope = _scope_digest(state_dir)
     before_seq: int | None = None
     as_of_seq = current_seq
@@ -82,7 +88,12 @@ def trace_list_page(
             current_seq=current_seq,
         )
 
-    summaries = _trace_summaries(events, as_of_seq=as_of_seq)
+    try:
+        summaries = (_trace_summaries(fallback, as_of_seq=as_of_seq) if fallback is not None
+                     else metric_traces.summaries(state_dir, as_of_seq=as_of_seq,
+                                                 before_seq=before_seq, limit=bounded_limit + 1))
+    except sqlite3.DatabaseError:
+        summaries = _trace_summaries(_events_with_seq(state_dir, config=config), as_of_seq=as_of_seq)
     if before_seq is not None:
         summaries = [
             item for item in summaries
@@ -120,8 +131,13 @@ def trace_detail_page(
     """Return a bounded oldest-to-newest window from one Trace timeline."""
 
     bounded_limit = _bounded_limit(limit, default=80, maximum=_MAX_DETAIL_LIMIT)
-    events = _events_with_seq(state_dir, config=config)
-    current_seq = int(events[-1][0]) if events else 0
+    from zf.web.projections import metric_traces
+    events = None
+    try:
+        current_seq = metric_traces.current_seq(state_dir, config)
+    except sqlite3.DatabaseError:
+        events = _events_with_seq(state_dir, config=config)
+        current_seq = int(events[-1][0]) if events else 0
     scope = _scope_digest(state_dir)
     before_seq: int | None = None
     as_of_seq = current_seq
@@ -139,6 +155,12 @@ def trace_detail_page(
             before_seq=before_seq,
             current_seq=current_seq,
         )
+
+    if events is None:
+        try:
+            events = metric_traces.trace_events(state_dir, trace_id, as_of_seq=as_of_seq, config=config)
+        except (sqlite3.DatabaseError, OSError, ValueError):
+            events = _events_with_seq(state_dir, config=config)
 
     resolved_trace_id = _resolve_trace_id(
         events,
@@ -220,48 +242,55 @@ def _trace_summaries(
     for seq, event in events:
         if seq > as_of_seq:
             break
-        trace_key = _event_trace_id(event)
-        if not trace_key:
-            continue
-        item = grouped.setdefault(trace_key, {
-            "trace_id": trace_key,
-            "first_seq": seq,
-            "last_seq": seq,
-            "first_ts": str(getattr(event, "ts", "") or ""),
-            "last_ts": str(getattr(event, "ts", "") or ""),
-            "duration_seconds": None,
-            "event_count": 0,
-            "task_ids": set(),
-            "task_ids_truncated": False,
-            "actors": set(),
-            "actors_truncated": False,
-            "backends": set(),
-            "backends_truncated": False,
-            "last_type": "",
-            "status": "observed",
-            "source": (
-                "event_trace"
-                if not trace_key.startswith("task:")
-                else "task_event_fallback"
-            ),
-        })
-        item["event_count"] += 1
-        item["last_seq"] = seq
-        item["last_ts"] = str(getattr(event, "ts", "") or "")
-        item["last_type"] = _bounded_metadata_value(
-            getattr(event, "type", ""),
-        )
-        item["status"] = _event_status(event)
-        if getattr(event, "task_id", None):
-            _add_bounded_set_value(item, "task_ids", event.task_id)
-        if getattr(event, "actor", None):
-            _add_bounded_set_value(item, "actors", event.actor)
-        payload = getattr(event, "payload", {}) or {}
-        if isinstance(payload, dict):
-            backend = payload.get("backend")
-            if isinstance(backend, str) and backend.strip():
-                _add_bounded_set_value(item, "backends", backend)
+        _accumulate_trace_summary(grouped, seq, event)
+    return _finalize_trace_summaries(grouped)
 
+
+def _accumulate_trace_summary(grouped: dict, seq: int, event: object, *, trace_key: str | None = None) -> None:
+    trace_key = trace_key if trace_key is not None else _event_trace_id(event)
+    if not trace_key:
+        return
+    item = grouped.setdefault(trace_key, {
+        "trace_id": trace_key,
+        "first_seq": seq,
+        "last_seq": seq,
+        "first_ts": str(getattr(event, "ts", "") or ""),
+        "last_ts": str(getattr(event, "ts", "") or ""),
+        "duration_seconds": None,
+        "event_count": 0,
+        "task_ids": set(),
+        "task_ids_truncated": False,
+        "actors": set(),
+        "actors_truncated": False,
+        "backends": set(),
+        "backends_truncated": False,
+        "last_type": "",
+        "status": "observed",
+        "source": (
+            "event_trace"
+            if not trace_key.startswith("task:")
+            else "task_event_fallback"
+        ),
+    })
+    item["event_count"] += 1
+    item["last_seq"] = seq
+    item["last_ts"] = str(getattr(event, "ts", "") or "")
+    item["last_type"] = _bounded_metadata_value(
+        getattr(event, "type", ""),
+    )
+    item["status"] = _event_status(event)
+    if getattr(event, "task_id", None):
+        _add_bounded_set_value(item, "task_ids", event.task_id)
+    if getattr(event, "actor", None):
+        _add_bounded_set_value(item, "actors", event.actor)
+    payload = getattr(event, "payload", {}) or {}
+    if isinstance(payload, dict):
+        backend = payload.get("backend")
+        if isinstance(backend, str) and backend.strip():
+            _add_bounded_set_value(item, "backends", backend)
+
+
+def _finalize_trace_summaries(grouped: dict) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for item in grouped.values():
         trace_ref, trace_id_opaque = _wire_trace_id(item["trace_id"])

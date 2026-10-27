@@ -3028,6 +3028,7 @@ export interface LongRunTruthProjection {
 }
 
 export interface Snapshot {
+  read_projection?: { state: "ready" | "building" | "refreshing" | "error"; generated_at_epoch?: number; source_cursor?: { source_seq?: number }; error?: string };
   seq: number;
   generated_at: string;
   project: {
@@ -3119,6 +3120,7 @@ export interface OperatorOutputPage {
 
 export interface OperatorInboxItem {
   id: string;
+  unread?: boolean;
   kind: string;
   status: string;
   title: string;
@@ -3193,6 +3195,7 @@ export interface OperatorInboxProjection {
   is_derived_projection: boolean;
   summary: {
     total: number;
+    unread?: number;
     pending: number;
     action_required_pending?: number;
     noise_pending?: number;
@@ -3402,6 +3405,7 @@ export interface OverviewWhyNot {
 }
 
 export interface OverviewPulse {
+  read_projection?: Snapshot["read_projection"];
   schema_version?: string;
   is_derived_projection?: boolean;
   generated_at?: string;

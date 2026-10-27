@@ -14,7 +14,16 @@ from zf.web.projections.trace_pages import (
     trace_list_page,
 )
 from zf.web.projections.trace_spans import trace_span_page
+from zf.web.projections.projection_failures import collect_projection_failures
 
+
+
+def _complete_read(build: Callable[..., dict], *args, **kwargs) -> dict:
+    with collect_projection_failures() as failures:
+        result = build(*args, **kwargs)
+    if failures:
+        raise HTTPException(503, "Trace sources unavailable; retry")
+    return result
 
 def build_trace_router(*, resolve_ctx: Callable[[str], Any]) -> APIRouter:
     """Build read-only Trace routes against the caller's project resolver."""
@@ -40,7 +49,7 @@ def build_trace_router(*, resolve_ctx: Callable[[str], Any]) -> APIRouter:
         if contract != "v2":
             raise HTTPException(400, "unsupported Trace list contract")
         try:
-            return trace_list_page(
+            return _complete_read(trace_list_page,
                 context.state_dir,
                 limit=limit,
                 cursor=cursor,
@@ -67,7 +76,7 @@ def build_trace_router(*, resolve_ctx: Callable[[str], Any]) -> APIRouter:
         if contract != "v2":
             raise HTTPException(400, "unsupported Trace detail contract")
         try:
-            return trace_detail_page(
+            return _complete_read(trace_detail_page,
                 context.state_dir,
                 trace_id,
                 limit=limit,
@@ -90,7 +99,7 @@ def build_trace_router(*, resolve_ctx: Callable[[str], Any]) -> APIRouter:
         if contract != "v1":
             raise HTTPException(400, "unsupported Trace spans contract")
         try:
-            return trace_span_page(
+            return _complete_read(trace_span_page,
                 context.state_dir,
                 trace_id,
                 limit=limit,

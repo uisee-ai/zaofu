@@ -66,7 +66,7 @@
   min-width: 0;
   max-width: 100%;
   display: grid;
-  grid-template-columns: minmax(88px, 0.16fr) minmax(160px, 1fr) minmax(72px, 0.22fr) max-content max-content max-content minmax(0, 0.55fr);
+  grid-template-columns: minmax(88px, 0.16fr) minmax(160px, 1fr) minmax(72px, 0.22fr) max-content minmax(90px, 0.3fr) max-content;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -96,6 +96,13 @@
   text-overflow: ellipsis;
   overflow-wrap: break-word;
   white-space: nowrap;
+}
+
+.task-list-row .task-list-blocker {
+  grid-column: 2 / -1;
+  color: var(--warning, var(--text));
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .task-route-list-cell {

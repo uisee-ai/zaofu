@@ -1567,3 +1567,47 @@ def test_delivery_trace_does_not_mutate_state(client: TestClient, state_dir: Pat
     client.get("/api/projects/default/delivery-traces/F-1")
     after = (kanban.stat().st_mtime_ns, kanban.read_bytes())
     assert before == after  # read-only projection
+
+
+def test_delivery_v2_invalidates_task_map_sidecar_without_event(client, state_dir):
+    path = "/api/projects/default/delivery-traces/F-1?contract=v2&view=overview"
+    before = client.get(path).json()
+    task_map = state_dir / "artifacts" / "F-1" / "task_map.json"
+    data = json.loads(task_map.read_text())
+    data["tasks"].append({"task_id": "T3", "owner_role": "dev", "wave": 3})
+    task_map.write_text(json.dumps(data))
+    after = client.get(path).json()
+    assert before["as_of_seq"] == after["as_of_seq"]
+    assert before["execution_graph"]["task_count"] == 2
+    assert after["execution_graph"]["task_count"] == 3
+
+
+def test_delivery_v2_tracks_external_referenced_task_map(client, state_dir, tmp_path):
+    external = tmp_path / "plan.json"
+    external.write_text(json.dumps({"tasks": [{"task_id": "T1"}]}))
+    log = event_log_from_project(state_dir, config=None, warn=False)
+    log.append(ZfEvent(type="task_map.ready", payload={"feature_id": "F-1", "task_map_ref": str(external)}))
+    path = "/api/projects/default/delivery-traces/F-1?contract=v2&view=overview"
+    before = client.get(path).json()
+    external.write_text(json.dumps({"tasks": [{"task_id": "T1"}, {"task_id": "T2"}]}))
+    after = client.get(path).json()
+    assert before["as_of_seq"] == after["as_of_seq"]
+    assert before["execution_graph"]["task_count"] == 1
+    assert after["execution_graph"]["task_count"] == 2
+
+
+def test_delivery_v2_retries_when_task_changes_during_build(client, state_dir, monkeypatch):
+    from zf.web import delivery_trace_routes as routes
+    original = routes.build_delivery_view
+    calls = []
+    def changing(**kwargs):
+        value = original(**kwargs)
+        calls.append(1)
+        if len(calls) == 1:
+            TaskStore(state_dir / "kanban.json").update("T2", status="done")
+        return value
+    monkeypatch.setattr(routes, "build_delivery_view", changing)
+    response = client.get("/api/projects/default/delivery-traces/F-1?contract=v2&view=overview")
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assert response.json()["execution_graph"]["done_count"] == 2

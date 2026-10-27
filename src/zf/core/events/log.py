@@ -182,7 +182,7 @@ class EventLog:
         if payload is not None and not isinstance(payload, dict):
             return self._malformed(line, TypeError("`payload` must be a dict"))
         try:
-            return ZfEvent.from_json(line)
+            return ZfEvent.from_dict(obj)
         except (json.JSONDecodeError, TypeError) as e:
             return self._malformed(line, e)
 
