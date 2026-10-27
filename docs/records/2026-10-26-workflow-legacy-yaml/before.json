@@ -1,0 +1,25 @@
+{
+  "project": "tt-7c45327e",
+  "request": "workflow-79e2bcedae7ad383",
+  "yaml_length": 0,
+  "status": "running",
+  "proposal_digest": "9aabc5c11dd11a0585e2bfe83a8e426004563cbe1432533bf6aad1f20def0c38",
+  "effective_config_ref": {
+    "access_scope": {},
+    "byte_count": 171122,
+    "content_type": "application/json",
+    "created_by": "workflow-proposal-compiler",
+    "encoding": "utf-8",
+    "kind": "effective_config_snapshot",
+    "preview": "",
+    "ref": "artifacts/workflow/proposals/workflow-79e2bcedae7ad383/effective-configs/9d35bba059d6152bfd321b957b18da70c524a2c35817cfe435e7a5243ab942b3.json",
+    "ref_schema_version": "sidecar-ref.v1",
+    "required": true,
+    "retention": {
+      "class": "audit_required"
+    },
+    "schema_version": "effective-config-snapshot.v1",
+    "sha256": "9d35bba059d6152bfd321b957b18da70c524a2c35817cfe435e7a5243ab942b3",
+    "source_event_id": ""
+  }
+}

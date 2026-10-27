@@ -1,0 +1,18 @@
+[
+  {
+    "root": "/tmp/zf-agent-dialog-20261026T144300Z",
+    "pid": 3087605,
+    "simulation_done": [
+      "evt-8a0d9f1f4365"
+    ],
+    "state_removed": true
+  },
+  {
+    "root": "/tmp/zf-agent-dialog-20261026T144800Z",
+    "pid": 3092428,
+    "simulation_done": [
+      "evt-795e9a83b66e"
+    ],
+    "state_removed": true
+  }
+]

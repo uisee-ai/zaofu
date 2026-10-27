@@ -1,0 +1,55 @@
+
+> @zaofu/web@0.0.7 test:unit
+> node scripts/run-unit-tests.mjs
+
+agentJsonDisplay.test.ts OK
+agentToolGrouping.test.ts OK
+agentToolOutput.test.ts OK
+agentTurnWindow.test.ts OK
+agentWorkState.test.ts OK
+channelActionAdapter tests passed
+channelChatPresentation tests passed
+channelConversationState tests passed
+channelDecisions tests passed
+channelDiscussionAttention.test.ts OK
+channelEvaluationFinding.test.ts OK
+channelFlow tests passed
+channelLiveRefreshPolicy tests passed
+channelLiveStream.test.ts OK
+channelLiveStream compaction tests OK
+channelProjection.test.ts OK
+channelProjection origin-thread normalization tests OK
+channelProjection blocked-route notice tests OK
+channelProjection pending-request tests OK
+channelProjection provider-pending tests OK
+channelProjection failure classification tests OK
+channelProjection workflow-result tests OK
+channelTerminalProjection tests passed
+channelWorkflowPlanning tests passed
+contributionPresentation.test.ts OK
+dashboardLaunch tests passed
+deliveryWorkGoalModel tests passed
+deliveryWorkGraphModel tests passed
+deliveryWorkModel tests passed
+goalCoverageModel tests passed
+kanbanAgentInteractionPolicy tests passed
+kanbanAgentPermission.test.ts OK
+kanbanSessionEvents.test.ts OK
+latestRequestGate tests passed
+liveRunIndicator.test.ts OK
+localDocumentLink tests passed
+markdownGuard.test.ts OK
+notices.test.ts OK
+planMarkdownPages.test.ts OK
+planReviewDocument.test.ts OK
+prdMarkdownPages.test.ts OK
+projectRequestScope tests passed
+replyHealth tests passed
+run graph state tests passed
+run regression action tests passed
+taskToolbarSelection.test.ts OK
+triageProposals.test.ts OK
+proposalRunNotice OK
+webChatInteractionModel.test.ts OK
+webChatPendingModel.test.ts OK
+workspaceProjectSelection tests passed

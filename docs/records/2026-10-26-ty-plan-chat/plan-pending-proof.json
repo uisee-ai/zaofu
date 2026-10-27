@@ -1,0 +1,105 @@
+{
+  "project_id": "ty-d2d22bb5",
+  "task_id": "TASK-CA8E83",
+  "request_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+  "plan_id": "evt-ead564fa2325",
+  "status": "pending",
+  "approval_enabled": true,
+  "impl_verify_dispatches": [],
+  "plan_approved_events": [],
+  "dispatched_stages": [
+    "prd-scan",
+    "prd-scan",
+    "prd-plan"
+  ],
+  "artifacts": [
+    {
+      "name": "acceptance_matrix",
+      "ref": "artifacts/plan-ports/76e1422ebf34a36a7b769a3553fc4e4103dde6fb86673456003c60c5dc20f9cc.json",
+      "sha256": "76e1422ebf34a36a7b769a3553fc4e4103dde6fb86673456003c60c5dc20f9cc"
+    },
+    {
+      "name": "capability_matrix",
+      "ref": "artifacts/plan-ports/82f5d0fe55e84e0f16f3e5aa147792e99505d8d76fa70a4eba165e2ece149a08.json",
+      "sha256": "82f5d0fe55e84e0f16f3e5aa147792e99505d8d76fa70a4eba165e2ece149a08"
+    },
+    {
+      "name": "execution_spec",
+      "ref": "artifacts/plan-ports/cdaccf1382792aa506621347facd324041bb508743065e61ca25e6ffcff25557.json",
+      "sha256": "cdaccf1382792aa506621347facd324041bb508743065e61ca25e6ffcff25557"
+    },
+    {
+      "name": "goal_claim_set",
+      "ref": "artifacts/goal-closure/claim-sets/c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64.json",
+      "sha256": "c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64"
+    },
+    {
+      "name": "issue_spec",
+      "ref": "artifacts/attempt-inputs/a46a90463792ae6b-revision-0004-a46a90463792ae6b.json",
+      "sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9"
+    },
+    {
+      "name": "planning_result",
+      "ref": "artifacts/fanouts/fanout-prd-plan-evt-15093221/prd-planner/artifacts/plan/task_map.json",
+      "sha256": "f929f34a582ff52efd7e08cba594eb5c92396e4236e5b2cbec8843567473a457"
+    },
+    {
+      "name": "product_acceptance_spec",
+      "ref": "artifacts/product-acceptance/specs/8d0bc378f6d191f75ba3010a842e28409ea19d62380065d82303e608f2286f83.json",
+      "sha256": "8d0bc378f6d191f75ba3010a842e28409ea19d62380065d82303e608f2286f83"
+    },
+    {
+      "name": "real_e2e_matrix",
+      "ref": "artifacts/plan-ports/1422c51941fde70f9c640cd616be5acf740131a41557f8bc74bcc5e290437eab.json",
+      "sha256": "1422c51941fde70f9c640cd616be5acf740131a41557f8bc74bcc5e290437eab"
+    },
+    {
+      "name": "requirement_spec",
+      "ref": "artifacts/attempt-inputs/a46a90463792ae6b-revision-0004-a46a90463792ae6b.json",
+      "sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9"
+    },
+    {
+      "name": "skill_adapter_plan",
+      "ref": "artifacts/plan-ports/712c9da65ee648e7e6498e308522ae55cbe14407cb3dcf67b9db0468725cdea9.json",
+      "sha256": "712c9da65ee648e7e6498e308522ae55cbe14407cb3dcf67b9db0468725cdea9"
+    },
+    {
+      "name": "source_index",
+      "ref": "artifacts/fanouts/fanout-prd-plan-evt-15093221/prd-planner/artifacts/plan/source_index.json",
+      "sha256": "7b6dfc129dfa46f90ad3a555bed59d8aed52efd82c540499412e0373bf109e1c"
+    },
+    {
+      "name": "source_inventory",
+      "ref": "artifacts/plan-ports/228e2cb3993ec2846359b3a764e6b654f292f9aaa096c68f207087dd26d437f0.json",
+      "sha256": "228e2cb3993ec2846359b3a764e6b654f292f9aaa096c68f207087dd26d437f0"
+    },
+    {
+      "name": "task_map",
+      "ref": "artifacts/fanouts/fanout-prd-plan-evt-15093221/prd-planner/artifacts/plan/task_map.json",
+      "sha256": "f929f34a582ff52efd7e08cba594eb5c92396e4236e5b2cbec8843567473a457"
+    },
+    {
+      "name": "test_matrix",
+      "ref": "artifacts/plan-ports/9ec55d879bea87202a9c09b5e23e92ca715718be9f77f4b02aa9cbbed58dd554.json",
+      "sha256": "9ec55d879bea87202a9c09b5e23e92ca715718be9f77f4b02aa9cbbed58dd554"
+    },
+    {
+      "name": "accepted_plan",
+      "ref": "artifacts/fanouts/fanout-prd-plan-evt-15093221/prd-planner/docs/plans/prd-plan-prd-planner-plan.md",
+      "sha256": "453f20fa02e37107856d93ef78d0da8221d1cd855b7095cc080ec3a470b200e9"
+    },
+    {
+      "name": "requirement_1_revision-0004-a46a90463792ae6b.json",
+      "ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+      "sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9"
+    }
+  ],
+  "action_payload": {
+    "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0"
+  },
+  "actions": {
+    "approve": "plan-approve",
+    "reject": "plan-reject",
+    "repair_chat": "chat-orchestrator"
+  }
+}

@@ -1,0 +1,44 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] [chromium] › tests/workflow-graph-redesign.spec.ts:383:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+[1A[2K  1) [chromium] › tests/workflow-graph-redesign.spec.ts:383:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoMatchObject[2m([22m[32mexpected[39m[2m)[22m
+
+    [32m- Expected  - 4[39m
+    [31m+ Received  + 4[39m
+
+    [2m  Object {[22m
+    [32m-   "height": 720,[39m
+    [32m-   "width": 1280,[39m
+    [32m-   "x": 0,[39m
+    [32m-   "y": 0,[39m
+    [31m+   "height": 643,[39m
+    [31m+   "width": 780,[39m
+    [31m+   "x": 488,[39m
+    [31m+   "y": 65,[39m
+    [2m  }[22m
+
+      412 |   const blocks = panel.locator(".plan-review-block");
+      413 |   await expect(blocks).toHaveCount(3);
+    > 414 |   expect(await panel.boundingBox()).toMatchObject({ x: 0, y: 0, ...page.viewportSize()! });
+          |                                     ^
+      415 |   expect((await panel.getByTestId("plan-review-document").boundingBox())!.height).toBeGreaterThan(page.viewportSize()!.height - 230);
+      416 |   await expect(blocks.first().getByRole("heading")).toHaveCSS("font-size", "20px");
+      417 |   await expect(blocks.nth(1).locator("strong")).toHaveText("加一");
+        at /home/uisee/workspace/zaofu-wt-workflow-graph-ui/web/tests/workflow-graph-redesign.spec.ts:414:37
+
+    Error Context: ../docs/records/2026-10-27-plan-reader-unified/before-workflow-tests/workflow-graph-redesign-Pl-84101--and-selects-exact-Raw-text-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/records/2026-10-27-plan-reader-unified/before-workflow-tests/workflow-graph-redesign-Pl-84101--and-selects-exact-Raw-text-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/records/2026-10-27-plan-reader-unified/before-workflow-tests/workflow-graph-redesign-Pl-84101--and-selects-exact-Raw-text-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K  1 failed
+    [chromium] › tests/workflow-graph-redesign.spec.ts:383:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text

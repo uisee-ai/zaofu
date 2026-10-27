@@ -168,6 +168,10 @@ def default_run_id(scenario_name: str) -> str:
 
 def _env() -> dict[str, str]:
     env = os.environ.copy()
+    # Experiments own their project context; inherited worker routing would
+    # send init/submit/stop commands into the resident's parent project.
+    for key in ("ZF_PROJECT_ROOT", "ZF_STATE_DIR"):
+        env.pop(key, None)
     env["PYTHONPATH"] = str(repo_root() / "src")
     return env
 

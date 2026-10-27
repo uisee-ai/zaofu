@@ -1,0 +1,31 @@
+{
+  "revision": 4,
+  "status": "proposed",
+  "flow_family": "PrdFlow",
+  "lanes": 1,
+  "backend": "codex",
+  "plan_approval": true,
+  "compiled_plan_approval": {
+    "enabled": true
+  },
+  "submitted": false,
+  "proposal_digest": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+  "effective_config_ref": {
+    "access_scope": {},
+    "byte_count": 195624,
+    "content_type": "application/json",
+    "created_by": "workflow-proposal-compiler",
+    "encoding": "utf-8",
+    "kind": "effective_config_snapshot",
+    "preview": "",
+    "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective-configs/09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943.json",
+    "ref_schema_version": "sidecar-ref.v1",
+    "required": true,
+    "retention": {
+      "class": "audit_required"
+    },
+    "schema_version": "effective-config-snapshot.v1",
+    "sha256": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+    "source_event_id": ""
+  }
+}

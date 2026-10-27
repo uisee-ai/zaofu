@@ -1,0 +1,13 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+locator.waitFor: Timeout 1800000ms exceeded.
+Call log:
+  - waiting for getByRole('button', { name: 'Review Plan', exact: true }) to be visible
+
+    at /evidence/recovery-inbox.mjs:13:72 {
+  name: 'TimeoutError'
+}
+
+Node.js v22.23.1

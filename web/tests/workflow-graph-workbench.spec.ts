@@ -18,26 +18,28 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
   await expect(workbench).toBeVisible();
   await expect(workbench.getByTestId("workflow-graph-canvas")).toBeVisible({ timeout: 30_000 });
-  for (const name of ["生命周期", "模块与任务", "Workflow 执行", "追溯与变更", "验证与交付", "时间线"]) {
+  for (const name of ["Lifecycle", "Task", "Dag", "Trace", "Delivery", "Timeline"]) {
     await workbench.getByRole("button", { name, exact: true }).click();
     await expect(workbench.getByTestId("workflow-graph-canvas")).toBeVisible();
     expect(new URL(page.url()).searchParams.has("graph")).toBeTruthy();
   }
-  await workbench.getByRole("button", { name: "Workflow 执行", exact: true }).click();
+  await workbench.getByRole("button", { name: "Dag", exact: true }).click();
   await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
   await workbench.getByRole("button", { name: /fit view/i }).click();
   await workbench.screenshot({ path: test.info().outputPath("workflow-execution.png") });
+  await workbench.getByRole("button", { name: "Graph filters", exact: true }).click();
   await workbench.getByRole("button", { name: "展开角色、汇聚与事件结构", exact: true }).click();
+  await workbench.getByText("Node directory", { exact: true }).click();
   await expect(workbench.getByRole("button", { name: "返回阶段与执行概览" })).toBeVisible();
   const task = graph.nodes.find((n: { kind: string }) => n.kind === "task");
   if (task) await workbench.getByLabel("搜索图节点").fill(task.id);
-  const item = workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button").first();
+  const item = workbench.getByLabel("图节点目录").getByRole("button").first();
   await item.click();
   const selected = new URL(page.url()).searchParams.get("node");
   expect(selected).toBeTruthy();
   if (task) expect(selected).toBe(task.id);
   await workbench.getByLabel("搜索图节点").clear();
-  for (const name of ["模块与任务", "追溯与变更", "Workflow 执行"]) {
+  for (const name of ["Task", "Trace", "Dag"]) {
     await workbench.getByRole("button", { name, exact: true }).click();
     await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText(selected!);
   }
@@ -46,8 +48,10 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   const observed = graph.nodes.find((n: { kind: string; data: { agent_binding?: { source: string } } }) =>
     n.kind === "operation" && n.data.agent_binding?.source === "provider_usage");
   if (observed) {
+    await workbench.getByRole("button", { name: "Graph filters", exact: true }).click();
+    await workbench.getByText("Node directory", { exact: true }).click();
     await workbench.getByLabel("搜索图节点").fill(observed.id);
-    await workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button").first().click();
+    await workbench.getByLabel("图节点目录").getByRole("button").first().click();
     await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText("实际用量记录");
     await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText(observed.data.agent_binding.model);
     await workbench.getByLabel("搜索图节点").clear();
@@ -55,7 +59,7 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   if (graph.nodes.some((n: { kind: string; status: string }) => n.kind === "operation" && n.status === "running")) {
     await expect.poll(async () => (await (await request.get(endpoint)).json()).scope.source_seq,
       { timeout: 60_000, intervals: [2000] }).toBeGreaterThan(graph.scope.source_seq);
-    await expect(workbench.getByRole("status")).not.toContainText(`事件 ${graph.scope.source_seq}`);
+    await expect(workbench.locator(".sdlc-footer")).not.toContainText(`Event ${graph.scope.source_seq}`);
   }
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
@@ -81,6 +85,7 @@ test("Plan reader retains unchanged attachments across graph polls and reloads c
     if (req.method() === "GET" && ports.some(name => req.url().endsWith(`/plans/${plan.plan_id}/artifacts/${name}`))) loads.push(req.url());
   });
   await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
+  await page.locator(".sdlc-plans summary").click();
   await page.getByRole("button", { name: `PRD / Plan Preview · ${plan.status}`, exact: true }).click();
   const reader = page.getByRole("region", { name: "计划审阅内容" });
   await expect(reader.getByRole("heading", { name: "本次交付与审批范围" })).toBeVisible({ timeout: 30_000 });
@@ -114,6 +119,7 @@ test("Plan Chat fixture keeps a long quoted diff inside desktop and mobile panel
       : { ok: true, answer: "局部修改候选", before, after, preview: graph.plans[0].markdown + "\n" + after, draft_ref: { ref: "fixture-only" } } });
   });
   await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
+  await page.locator(".sdlc-plans summary").click();
   await page.getByRole("button", { name: "PRD / Plan Preview · pending", exact: true }).click();
   const source = page.getByTestId("plan-review-source");
   await expect(source).toHaveText(before, { timeout: 30_000 });
@@ -158,7 +164,9 @@ test("explicit graph filters compact the layout while polls retain the viewport"
   await page.goto(`/?page=workflows&project=${project}&request=${requestId}&graph=workflow`);
   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
   await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
-  await expect(workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button")).toHaveCount(32);
+  await workbench.getByRole("button", { name: "Graph filters", exact: true }).click();
+  await workbench.getByText("Node directory", { exact: true }).click();
+  await expect(workbench.getByLabel("图节点目录").getByRole("button")).toHaveCount(32);
   await workbench.getByLabel("图节点状态").selectOption("running");
   const active = workbench.locator('.react-flow__node[data-id="layout-31"]');
   await expect(active).toBeVisible();
@@ -176,7 +184,7 @@ test("explicit graph filters compact the layout while polls retain the viewport"
   await expect.poll(() => polls, { timeout: 12_000 }).toBeGreaterThanOrEqual(before + 2);
   expect(await viewport.getAttribute("style")).toBe(transform);
   await workbench.getByLabel("搜索图节点").fill("layout-31");
-  await expect(workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button")).toHaveCount(1);
+  await expect(workbench.getByLabel("图节点目录").getByRole("button")).toHaveCount(1);
   await expect.poll(async () => (await active.boundingBox())?.width || 0).toBeGreaterThan(160);
 });
 
@@ -203,14 +211,16 @@ test("completed fanout updates aggregate and role structure nodes", async ({ pag
   await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
   await expect(workbench).toBeVisible();
-  await workbench.getByRole("button", { name: "Workflow 执行", exact: true }).click();
+  await workbench.getByRole("button", { name: "Dag", exact: true }).click();
   await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
+  await workbench.getByRole("button", { name: "Graph filters", exact: true }).click();
   await workbench.getByRole("button", { name: "展开角色、汇聚与事件结构", exact: true }).click();
+  await workbench.getByText("Node directory", { exact: true }).click();
   const checks = [[aggregate.id, "已结束"], [`workflow:role:${roles[0]}`, "操作结束"]];
   if (eventType) checks.push([`workflow:event:${eventType}`, "已报告"]);
   for (const [id, label] of checks) {
     await workbench.getByLabel("搜索图节点").fill(id);
-    await workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button", { exact: false }).first().click();
+    await workbench.getByLabel("图节点目录").getByRole("button", { exact: false }).first().click();
     const inspector = workbench.getByRole("complementary", { name: "图节点详情" });
     await expect(inspector).toContainText(id);
     await expect(inspector).toContainText(label);
@@ -242,14 +252,16 @@ test("terminal Run, Tasks and Goal coverage agree with kernel evidence", async (
   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
   await expect(workbench).toBeVisible({ timeout: 30_000 });
   await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
-  for (const [view, file] of [["模块与任务", "modules-terminal.png"], ["Workflow 执行", "workflow-terminal.png"], ["验证与交付", "delivery-terminal.png"]]) {
+  for (const [view, file] of [["Task", "modules-terminal.png"], ["Dag", "workflow-terminal.png"], ["Delivery", "delivery-terminal.png"]]) {
     await workbench.getByRole("button", { name: view, exact: true }).click();
     await workbench.getByRole("button", { name: /fit view/i }).click();
     await workbench.screenshot({ path: test.info().outputPath(file) });
   }
+  await workbench.getByRole("button", { name: "Graph filters", exact: true }).click();
+  await workbench.getByText("Node directory", { exact: true }).click();
   await workbench.getByLabel("图节点状态").selectOption("done");
   await workbench.getByLabel("搜索图节点").fill(`run:${requestId}`);
-  await workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button").first().click();
+  await workbench.getByLabel("图节点目录").getByRole("button").first().click();
   await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText("已完成");
   await workbench.screenshot({ path: test.info().outputPath("goal-terminal-inspector.png") });
   await test.info().attach("terminal-graph", { body: JSON.stringify(graph), contentType: "application/json" });

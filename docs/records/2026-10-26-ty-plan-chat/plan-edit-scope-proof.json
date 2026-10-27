@@ -1,0 +1,25 @@
+{
+  "plan_id": "evt-ead564fa2325",
+  "original_body_sha256": "453f20fa02e37107856d93ef78d0da8221d1cd855b7095cc080ec3a470b200e9",
+  "candidate_body_sha256": "593a9f74ea169ca4848cf13d7bfd7776883679bbaf90090c9b15051a7876324c",
+  "canonical_original_unchanged": true,
+  "only_quoted_paragraph_changed": true,
+  "draft_ref": {
+    "ref_schema_version": "sidecar-ref.v1",
+    "kind": "plan_artifact_review",
+    "ref": "artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json",
+    "sha256": "bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e",
+    "byte_count": 22093,
+    "content_type": "application/json",
+    "schema_version": "plan-artifact-review.v1",
+    "encoding": "utf-8",
+    "created_by": "plan-artifact-review",
+    "source_event_id": "evt-a14df1bda8f4",
+    "access_scope": {},
+    "retention": {
+      "class": "audit_required"
+    },
+    "required": true,
+    "preview": ""
+  }
+}

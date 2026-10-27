@@ -1,0 +1,19 @@
+{
+  "project": "ty-d2d22bb5",
+  "plan_id": "evt-fbb3199ea3ba",
+  "entry": "Inbox Plan preview",
+  "textEntryWorks": true,
+  "nativeMouseQuoteWorks": true,
+  "directParagraphEditWorks": true,
+  "realHeadlessCandidate": true,
+  "exactLocalChange": true,
+  "oneReplyComposer": true,
+  "approvalLockedWithDraft": true,
+  "discardRestoresApproval": true,
+  "mobileOverflow": false,
+  "legacyChats": 0,
+  "applies": 0,
+  "approvals": 0,
+  "canonicalPlanUnchanged": true,
+  "status": "pending"
+}

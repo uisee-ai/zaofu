@@ -1,0 +1,25 @@
+{
+  "health": {
+    "8001": {
+      "ok": true,
+      "git_commit": "50eb6ba",
+      "started_at": "2026-10-26T10:38:53.846080+00:00",
+      "dist_index_mtime": "2026-10-26T10:37:31.366981+00:00",
+      "state_dir": "/home/uisee/workspace/zaofu/.zf"
+    },
+    "8002": {
+      "ok": true,
+      "git_commit": "50eb6ba",
+      "started_at": "2026-10-26T16:09:06.433084+00:00",
+      "dist_index_mtime": "2026-10-26T23:41:39.981782+00:00",
+      "state_dir": "/home/uisee/workspace/zaofu/.zf"
+    }
+  },
+  "visibleTextButton": true,
+  "opensAgentWithQuote": true,
+  "composerFocused": true,
+  "sendEnabledAfterInput": true,
+  "mobileEntryWorks": true,
+  "mobileOverflow": false,
+  "actualMutations": 0
+}

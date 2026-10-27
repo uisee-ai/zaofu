@@ -1,0 +1,15 @@
+
+Running 11 tests using 1 worker
+
+[1/11] [chromium] › tests/plan-human-review.spec.ts:11:1 › bound review layers expose decisions, module rules and concrete acceptance without writes
+[2/11] [chromium] › tests/plan-human-review.spec.ts:36:1 › an unreadable bound port stays explicit and the original Plan remains readable
+[3/11] [chromium] › tests/plan-human-review.spec.ts:46:1 › late artifact fetch cannot contaminate the next Plan
+[4/11] [chromium] › tests/plan-preview-agent.spec.ts:3:1 › Inbox Plan editing uses quoted headless chat and keeps approval locked through Apply
+[5/11] [chromium] › tests/plan-preview-content.spec.ts:4:3 › owner deep link waits for approval identity and sends replan-approve
+[6/11] [chromium] › tests/plan-preview-content.spec.ts:4:3 › owner deep link waits for approval identity and sends replan-reject
+[7/11] [chromium] › tests/plan-preview-content.spec.ts:49:1 › complete Plan, bound matrix and summary remain distinct without writes
+[8/11] [chromium] › tests/plan-preview-content.spec.ts:72:1 › missing full Plan is explicit; legacy digest is identified
+[9/11] [chromium] › tests/plan-preview-content.spec.ts:84:1 › a late response from a closed preview cannot replace the newly selected Plan
+[10/11] [chromium] › tests/plan-preview-content.spec.ts:114:1 › large Plan pagination preserves every character through the final page
+[11/11] [chromium] › tests/plan-preview-content.spec.ts:152:1 › long Plan renders headings and tables instead of raw Markdown
+  11 passed (1.2m)

@@ -1,0 +1,11 @@
+
+Running 7 tests using 1 worker
+
+[1A[2K[1/7] [chromium] › tests/plan-preview-agent.spec.ts:4:3 › evt-preview-digest keeps the formatted preview read-only without a full Plan
+[1A[2K[2/7] [chromium] › tests/plan-preview-agent.spec.ts:4:3 › evt-preview-missing keeps the formatted preview read-only without a full Plan
+[1A[2K[3/7] [chromium] › tests/plan-preview-agent.spec.ts:24:3 › quoted editing fills the Preview reader at 1440x1000
+[1A[2K[4/7] [chromium] › tests/plan-preview-agent.spec.ts:24:3 › quoted editing fills the Preview reader at 1440x1400
+[1A[2K[5/7] [chromium] › tests/plan-preview-agent.spec.ts:24:3 › quoted editing fills the Preview reader at 390x844
+[1A[2K[6/7] [chromium] › tests/plan-preview-agent.spec.ts:71:1 › quoted Preview preserves reading typography and formats a long table with source-bound quotes
+[1A[2K[7/7] [chromium] › tests/plan-preview-agent.spec.ts:120:1 › Inbox Plan editing uses quoted headless chat and keeps approval locked through Apply
+[1A[2K  7 passed (53.0s)

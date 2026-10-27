@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "project": "ty-review-42cb2551",
+  "plan": "evt-192e7536a145",
+  "provider": "real headless Agent",
+  "candidate": true,
+  "quotedChangeOnly": true,
+  "discarded": true,
+  "actions": 0,
+  "applies": 0,
+  "status": "pending"
+}

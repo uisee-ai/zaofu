@@ -109,6 +109,10 @@ def _subprocess_env() -> dict[str, str]:
     MockAdapter → ['cat']). Diagnosed 2026-04-27.
     """
     env = os.environ.copy()
+    # This is a new project, not a worker of the launching runtime. Otherwise
+    # `zf init --force` and `zf stop` resolve back to the parent's live state.
+    for key in ("ZF_PROJECT_ROOT", "ZF_STATE_DIR"):
+        env.pop(key, None)
     env["PYTHONPATH"] = str(REPO_ROOT / "src")
     return env
 

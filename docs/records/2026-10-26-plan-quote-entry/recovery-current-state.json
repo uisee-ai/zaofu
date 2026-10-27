@@ -1,0 +1,9 @@
+{
+  "plan_id": "evt-38c86009183e",
+  "status": "pending",
+  "body_sha256": "9e6fcc592a9de7d3559b54e08d55eb734f3cd28c91c66547bf44f3e289d03a41",
+  "manual_plan_approval": true,
+  "autoresearch_resident": false,
+  "plan_approved_events": [],
+  "product_dispatches": []
+}

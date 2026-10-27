@@ -1,0 +1,16 @@
+{
+  "project": "ty-d2d22bb5",
+  "request": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+  "plan": "evt-f0c18ed971c3",
+  "formattedMouseSelection": true,
+  "directParagraphEdit": true,
+  "singleComposer": true,
+  "realHeadlessCandidate": true,
+  "onlyQuotedParagraphChanged": true,
+  "candidateDiscarded": true,
+  "canonicalPlanUnchanged": true,
+  "status": "pending",
+  "applyRequests": 0,
+  "approvalRequests": 0,
+  "mobileOverflow": false
+}

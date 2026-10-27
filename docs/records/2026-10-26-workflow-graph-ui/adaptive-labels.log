@@ -1,0 +1,6 @@
+
+Running 2 tests using 1 worker
+
+[1/2] [chromium] › tests/workflow-graph-redesign.spec.ts:27:1 › six graph views, themed top-down cards and live projection updates preserve viewport
+[2/2] [chromium] › tests/workflow-graph-redesign.spec.ts:128:1 › large graphs fit shorter windows and resized content panels; Timeline stays graph-only
+  2 passed (11.6s)

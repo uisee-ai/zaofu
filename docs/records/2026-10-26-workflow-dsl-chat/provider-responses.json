@@ -1,0 +1,63 @@
+[
+  {
+    "ok": true,
+    "answer": "当前 `lanes: 1` 表示配置一个工作分道；执行预览中对应实现角色 `fix-lane-0` 和验证角色 `verify-lane-0`，另有独立的 `judge-issue`。\n\n它不保证 impl/verify 同时并行。分道数量与阶段拓扑是不同维度：impl 的触发条件是 `task_map.ready`，verify 是 `candidate.ready`，最终 Judge 是 `flow.goal.closed`。verify 需要等待候选就绪，不能因为配置了 lanes 就与 impl 同时启动。\n\n增加 lanes 也不保证实际并发；是否能重叠执行还取决于任务依赖、写入范围冲突和执行策略。当前上下文未提供 execution_policy，无法进一步确认并发调度行为。本轮仅解释，不修改配置。",
+    "changes": [],
+    "draft_ref": null,
+    "binding": {
+      "request_id": "raw-real-review",
+      "revision": 2,
+      "proposal_digest": "04e8bb7b21d49a960db684fd6388c9a9c7ec6758aff425647ab22d5765ffc317"
+    }
+  },
+  {
+    "ok": true,
+    "answer": "当前 `config.0.roleDefaults.model` 为空，`backend` 为 `mock`；这些信息不足以确定实际使用的模型。选型前需要补充：\n\n1. 可用范围：目标后端支持哪些模型？提供准确模型 ID 或候选清单即可，无需提供密钥。若希望实际调用模型，还需确认目标后端。\n2. 应用范围：修改此 IssueFlow 的默认模型，还是只改 impl、verify 或 judge？当前仅开放默认模型字段，逐角色模型设置需要受控配置流程。\n3. 选型偏好：优先质量、速度还是成本？可补充任务复杂度、上下文长度需求及预算。\n\n尚未确定型号时，可以先提供可用候选和偏好；确认准确模型 ID 后再生成修改 Diff。本轮不修改。",
+    "changes": [],
+    "draft_ref": null,
+    "binding": {
+      "request_id": "raw-real-review",
+      "revision": 2,
+      "proposal_digest": "04e8bb7b21d49a960db684fd6388c9a9c7ec6758aff425647ab22d5765ffc317"
+    }
+  },
+  {
+    "ok": true,
+    "answer": "待审核 Diff：lanes 从 1 改为 2；开启计划生成后的审批，等待 Owner 批准后才进入实现。模型及其他配置保持不变。应用后 Runtime 将重新编译预览；本轮未应用配置或启动 Workflow。",
+    "changes": [
+      {
+        "field": "config.0.lanes",
+        "before": 1,
+        "after": 2
+      },
+      {
+        "field": "config.1.workflow.plan_approval",
+        "before": false,
+        "after": true
+      }
+    ],
+    "draft_ref": {
+      "ref_schema_version": "sidecar-ref.v1",
+      "kind": "workflow_preview_review",
+      "ref": "artifacts/workflow/preview-reviews/a9e4c92761881c9b6bf3b5a1bbd26b1f1c9c1bb998cab1eff2075de841bd5679.json",
+      "sha256": "a9e4c92761881c9b6bf3b5a1bbd26b1f1c9c1bb998cab1eff2075de841bd5679",
+      "byte_count": 2600,
+      "content_type": "application/json",
+      "schema_version": "workflow-preview-review.v1",
+      "encoding": "utf-8",
+      "created_by": "workflow-preview-review",
+      "source_event_id": "",
+      "access_scope": {},
+      "retention": {
+        "class": "audit_required"
+      },
+      "required": true,
+      "preview": ""
+    },
+    "binding": {
+      "request_id": "raw-real-review",
+      "revision": 2,
+      "proposal_digest": "04e8bb7b21d49a960db684fd6388c9a9c7ec6758aff425647ab22d5765ffc317"
+    }
+  }
+]
