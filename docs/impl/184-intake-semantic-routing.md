@@ -25,6 +25,14 @@ Workflow Synthesis Operation、Proposal 编译器及 Task Map 合同，没有增
 以及未初始化项目保留原提案行为；不凭产品想法伪造完整 Task 合同。
 准备消费者的单轮限额只计算实际处理的操作；已完成预览或已返回问答的操作
 不占用名额，避免同一项目的后续请求永远排队。
+用户要求基于材料创建交付 Workflow 时，Kanban Agent 应保留来源、目标、验收和所选
+profile/容量，提出准备 Workflow 的 Task；不能把仅写入事件的 `workflow-config-propose`
+描述为已生成 YAML。PRD v4 Synthesis 可携带有界 `task_pipeline` 参数（profile、mode、
+impl/verify 容量和最大活跃任务数），编译器生成 fanout 配置候选并执行原有预检；
+反压队列默认串行，其他质量门保持原项目配置。已有 Task Pipeline 须在 Preview 中
+显式修订。Preview DSL 可一次审查 profile、池配置、PRD 来源与目标路径；编译和预检
+失败仍阻断，保存新 Preview 不应用项目配置或启动 Run。配置提案登记和验证请求的
+回执分别标明“未生成 YAML”和“验证结果待返回”。
 编译被阻断时，详情页仍按当前 Request revision/digest 展示不可变候选中的 YAML
 和阻断原因；它不会成为可批准的 Request 绑定，旧 revision 的候选也不会显示。
 backend 优先采用显式 synthesis_backend、原操作 backend、请求 backend、项目 Run Manager

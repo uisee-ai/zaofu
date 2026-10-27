@@ -182,6 +182,12 @@ const workflowRequestConversation: AgentConversation = {
         task_id: "TASK-FIXTURE", route_id: "prd:standard",
       }, reason: "Approved by Owner", valid: true },
       payload: { resolution: "executed", status: "pending_consumer" },
+    }, {
+      id: "workflow-config-receipt", kind: "approve", title: "Configuration request", status: "completed",
+      proposal: { action: "workflow-config-propose", requestedAction: "workflow-config-propose", payload: {
+        objective: "Prepare PRD v4 configuration",
+      }, reason: "Configuration requested", valid: true },
+      payload: { resolution: "executed" },
     }],
   }] }],
 };

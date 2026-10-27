@@ -29,6 +29,13 @@ project constraints. Treat every allowlist as closed.
 3. Produce only a short FlowSpec with purpose and the selected template's
    sanctioned parameters. Controller flows use `lanes`, `strictness`, and
    `pattern_id`; registered generic workflows use their catalog parameters.
+   For an explicitly requested PRD v4 Task Pipeline, `task_pipeline` may contain
+   exactly `profile` (`prd-flow-v4-task-pipeline`), `mode` (`shadow` or
+   `blocking`), `impl_capacity`, `verify_capacity`, and
+   `max_active_task_pipelines`. Set `lanes` to at least the larger pool
+   capacity. Preserve independent verification; ask about decision-critical
+   mode or limits rather than guessing. Shadow is observation, not execution.
+   This produces a reviewed config candidate, never an applied config or Run.
 4. Request only registered roles, skills, and execution profiles.
    `allowed_skills` 表示已安装，不等于已装配；用 `configured_role_skills` 核对选中路线的实际
    角色绑定。确需新增能力时提出阻塞问题与配置变更要求，不能把希望使用的 skills 当作已启用。

@@ -413,3 +413,93 @@ def test_channel_prepared_submit_requires_owner_before_binding_task(
         )
         == 1
     )
+
+
+def test_kanban_preparation_keeps_explicit_prd_source_and_target(tmp_path):
+    service, _log = _service(tmp_path)
+    source = tmp_path / 'docs' / 'prd' / 'handoff.md'
+    source.parent.mkdir(parents=True)
+    source.write_text('Product requirements', encoding='utf-8')
+    payload = _create_payload()
+    payload['target_root'] = 'app'
+    payload['contract']['source_ref'] = 'docs/prd/handoff.md'
+    payload['contract']['behavior'] = 'Deliver PRD v4 with 8 independent impl and verify lanes'
+    result = _execute(service, 'create-task', payload)
+    assert result['ok'], result
+    request = load_workflow_request(service.state_dir, result['workflow_preparation']['request_id'])
+    requirement = hydrate_workflow_requirement(service.state_dir, request)
+    assert requirement['target_root'] == 'app'
+    assert requirement['source_ref'] == str(source)
+    assert '8 independent impl and verify lanes' in requirement['objective']
+
+
+def test_kanban_prd_v4_request_produces_bound_yaml_candidate(tmp_path, monkeypatch):
+    from tests.test_workflow_proposal import _synthesis_result
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    service, log = _service(tmp_path)
+    config_file = tmp_path / 'zf.yaml'
+    config_file.write_text(config_file.read_text().replace('IssueFlow', 'PrdFlow')
+                           .replace('issueRef', 'prdRef').replace('backend: mock', 'backend: codex')
+                           .replace('  lanes: 1', '  deliveryPolicy: report_only\n  lanes: 1', 1)
+                           .replace('  project: {name: demo, state_dir: .zf}',
+                                    '  project: {name: demo, state_dir: .zf}\n  workflow: {candidate_quality_source: task_contract_required}'))
+    service.config = load_config(config_file)
+    original = config_file.read_bytes()
+    source = tmp_path / 'docs' / 'prd' / 'handoff.md'
+    source.parent.mkdir(parents=True)
+    source.write_text('Product requirements', encoding='utf-8')
+    payload = _create_payload()
+    payload['target_root'] = 'app'
+    payload['contract']['source_ref'] = 'docs/prd/handoff.md'
+    payload['contract']['behavior'] = 'Deliver PRD v4 with 8 independent impl and verify lanes'
+    payload['backend'] = 'mock'
+
+    def synthesize(**kwargs):
+        if kwargs.get('candidate_result') is not None:
+            return run_workflow_synthesis(**kwargs)
+        request = load_workflow_request(kwargs['state_dir'], kwargs['request_id'])
+        result = _synthesis_result(request, lanes=8)
+        result['selected_flow_family'] = 'PrdFlow'
+        result['short_flow_spec']['flow_family'] = 'PrdFlow'
+        result['short_flow_spec']['parameters']['task_pipeline'] = {
+            'profile': 'prd-flow-v4-task-pipeline', 'mode': 'blocking',
+            'impl_capacity': 8, 'verify_capacity': 8, 'max_active_task_pipelines': 8,
+        }
+        return run_workflow_synthesis(**{**kwargs, 'candidate_result': result})
+
+    monkeypatch.setattr('zf.runtime.workflow_synthesis.run_workflow_synthesis', synthesize)
+    created = _execute(service, 'create-task', payload)
+    assert created['ok'], created
+    prepared = created['workflow_preparation']
+    assert prepared['status'] == 'synthesis_queued', prepared
+    assert _consume(service) == 1
+    request = load_workflow_request(service.state_dir, prepared['request_id'])
+    assert request['status'] == 'proposed', request
+    proposal = hydrate_sidecar_ref(service.state_dir, request['proposal_ref']).payload
+    snapshot = hydrate_sidecar_ref(service.state_dir, proposal['effective_config_ref']).payload
+    assert 'prd-flow-v4-task-pipeline' in snapshot['yaml']
+    assert 'capacity: 8' in snapshot['yaml']
+    assert proposal['change_mode'] == 'config_change'
+    assert config_file.read_bytes() == original
+    assert not any(e.type in {'workflow.config.change.applied', 'workflow.invoke.requested'} for e in log.read_all())
+
+    # A reviewed pool revision must update the synthesis binding, not silently
+    # retain the old capacities or apply the candidate to canonical config.
+    import yaml
+    from tests.test_workflow_preview_review import Agent
+    from zf.runtime.workflow_preview_review import WorkflowPreviewReview
+
+    service_review = WorkflowPreviewReview(service.state_dir, tmp_path, service.writer)
+    binding = {key: request[key] for key in ('request_id', 'revision', 'proposal_digest')}
+    docs = list(yaml.safe_load_all(snapshot['yaml']))
+    pipeline = docs[0]['spec']['taskPipeline']
+    pipeline['pools']['verify']['capacity'] = 4
+    draft = service_review.discuss({**binding, 'mode': 'chat', 'message': 'Set verify capacity to 4'}, agent=Agent({
+        'answer': 'Review the updated verify capacity',
+        'changes': [{'field': 'config.0.taskPipeline', 'replacement': pipeline}],
+    }))
+    revised = service_review.apply(draft['draft_ref'])
+    revised_proposal = hydrate_sidecar_ref(service.state_dir, revised['proposal_ref']).payload
+    assert revised_proposal['approval_status'] == 'approvable', revised_proposal['blockers']
+    assert config_file.read_bytes() == original

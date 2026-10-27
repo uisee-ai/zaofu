@@ -130,3 +130,96 @@ def test_task_pipeline_requires_explicit_pool_revision(tmp_path, family, kind):
             short_spec={"flow_family": family, "parameters": {"lanes": lanes}},
         )
     assert base.read_bytes() == original
+
+
+def test_admitted_prd_v4_pools_become_reviewable_candidate(tmp_path):
+    base = tmp_path / 'zf.yaml'
+    _config(base)
+    base.write_text(base.read_text().replace('IssueFlow', 'PrdFlow').replace('issueRef', 'prdRef').replace(
+        'spec:\n  lanes:', 'spec:\n  deliveryPolicy: report_only\n  lanes:', 1))
+    original = base.read_bytes()
+    config = load_config(base)
+    state = tmp_path / '.zf'
+    request = _request(state, requirement_fields={'kind': 'prd', 'target_root': 'app'})
+    writer = EventWriter(EventLog(state / 'events.jsonl'))
+    result = _synthesis_result(request, lanes=8)
+    result['selected_flow_family'] = 'PrdFlow'
+    result['short_flow_spec']['flow_family'] = 'PrdFlow'
+    result['short_flow_spec']['parameters']['task_pipeline'] = {
+        'profile': 'prd-flow-v4-task-pipeline', 'mode': 'blocking',
+        'impl_capacity': 8, 'verify_capacity': 8, 'max_active_task_pipelines': 8,
+    }
+    synthesis = run_workflow_synthesis(state_dir=state, project_root=tmp_path, config=config,
+                                       writer=writer, request_id=request['request_id'],
+                                       actor='test', candidate_result=result)
+    request = load_workflow_request(state, request['request_id'])
+    candidate = materialize_synthesized_workflow_candidate(
+        state, request=request, base_config_path=base,
+        synthesis_result_ref=synthesis.result_ref, flow_kind='prd',
+    )
+    compiled = load_config(candidate).workflow.flow_metadata['task_pipeline']
+    assert compiled['profile_id'] == 'prd-flow-v4-task-pipeline'
+    assert compiled['mode'] == 'blocking'
+    assert compiled['pools']['impl']['capacity'] == 8
+    assert compiled['pools']['verify']['capacity'] == 8
+    proposal, _ = build_workflow_proposal(
+        state, request=request, base_config_path=base, candidate_config_path=candidate,
+        synthesis_result_ref=synthesis.result_ref, flow_kind='prd', writer=writer,
+        preflight={'status': 'GO', 'blockers': [], 'delivery_contract': {'strictness': 'standard'}},
+    )
+    assert proposal['change_mode'] == 'config_change'
+    assert proposal['approval_status'] == 'approvable', proposal['blockers']
+    assert base.read_bytes() == original
+    assert not any(e.type in {'workflow.config.change.applied', 'workflow.invoke.requested'} for e in writer.event_log.read_all())
+
+
+def test_prd_v4_candidate_must_match_admitted_pool_capacity(tmp_path):
+    base = tmp_path / 'zf.yaml'
+    _config(base)
+    base.write_text(base.read_text().replace('IssueFlow', 'PrdFlow').replace('issueRef', 'prdRef').replace(
+        'spec:\n  lanes:', 'spec:\n  deliveryPolicy: report_only\n  lanes:', 1))
+    state = tmp_path / '.zf'
+    request = _request(state, requirement_fields={'kind': 'prd', 'target_root': 'app'})
+    writer = EventWriter(EventLog(state / 'events.jsonl'))
+    result = _synthesis_result(request, lanes=8)
+    result['selected_flow_family'] = result['short_flow_spec']['flow_family'] = 'PrdFlow'
+    result['short_flow_spec']['parameters']['task_pipeline'] = {
+        'profile': 'prd-flow-v4-task-pipeline', 'mode': 'blocking',
+        'impl_capacity': 8, 'verify_capacity': 8, 'max_active_task_pipelines': 8,
+    }
+    synthesis = run_workflow_synthesis(state_dir=state, project_root=tmp_path, config=load_config(base),
+                                       writer=writer, request_id=request['request_id'],
+                                       actor='test', candidate_result=result)
+    request = load_workflow_request(state, request['request_id'])
+    candidate = materialize_synthesized_workflow_candidate(
+        state, request=request, base_config_path=base, synthesis_result_ref=synthesis.result_ref, flow_kind='prd')
+    docs = list(yaml.safe_load_all(candidate.read_text()))
+    docs[0]['spec']['taskPipeline']['pools']['verify']['capacity'] = 4
+    candidate.write_text(yaml.safe_dump_all(docs, sort_keys=False))
+    proposal, _ = build_workflow_proposal(
+        state, request=request, base_config_path=base, candidate_config_path=candidate,
+        synthesis_result_ref=synthesis.result_ref, flow_kind='prd', writer=writer,
+        preflight={'status': 'GO', 'blockers': [], 'delivery_contract': {'strictness': 'standard'}},
+    )
+    assert proposal['approval_status'] == 'blocked'
+    assert any('verify_capacity requested 8, compiled 4' in item['message'] for item in proposal['blockers'])
+
+
+@pytest.mark.parametrize('change', [
+    {'mode': 'unknown'}, {'verify_capacity': 9}, {'impl_capacity': True},
+    {'profile': 'unregistered'}, {'unknown': 1},
+])
+def test_prd_v4_candidate_rejects_invalid_pool_inputs(tmp_path, change):
+    from zf.runtime.workflow_controller_candidate import materialize_controller_candidate
+
+    base = tmp_path / 'zf.yaml'
+    _config(base)
+    base.write_text(base.read_text().replace('IssueFlow', 'PrdFlow').replace('issueRef', 'prdRef'))
+    original = base.read_bytes()
+    pipeline = {'profile': 'prd-flow-v4-task-pipeline', 'mode': 'blocking', 'impl_capacity': 8,
+                'verify_capacity': 8, 'max_active_task_pipelines': 8, **change}
+    with pytest.raises(ValueError):
+        materialize_controller_candidate(base_path=base, request_id='test', short_spec={
+            'flow_family': 'PrdFlow', 'parameters': {'lanes': 8, 'task_pipeline': pipeline},
+        })
+    assert base.read_bytes() == original

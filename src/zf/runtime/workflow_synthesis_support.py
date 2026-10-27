@@ -117,7 +117,13 @@ def synthesis_prompt(
     return (
         "Use the zf-workflow-synthesis method. Return exactly one JSON object "
         "with no prose or code fence. Do not emit expanded config, handlers, "
-        "approval, submit, or task objects. Contract:\n"
+        "approval, submit, or task objects. If the owner explicitly requests PRD v4, "
+        "short_flow_spec.parameters can include task_pipeline with exactly profile "
+        "(prd-flow-v4-task-pipeline), mode (shadow or blocking), impl_capacity, "
+        "verify_capacity and max_active_task_pipelines, plus lanes large enough for "
+        "both pools. Preserve requested capacities. Ask when the mode or a decision-critical "
+        "limit is unknown; shadow is observation, not actual scheduling. This only "
+        "prepares a reviewed candidate and never applies configuration or starts a Run. Contract:\n"
         + json.dumps(contract, ensure_ascii=False, sort_keys=True)
     )
 

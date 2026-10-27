@@ -715,6 +715,21 @@ def _synthesis_compatibility_blockers(
         mismatches.append(
             f"lanes requested {requested_lanes}, compiled {actual_lanes or 'none'}"
         )
+    pipeline = parameters.get("task_pipeline")
+    if isinstance(pipeline, Mapping):
+        actual = source_spec.get("taskPipeline", source_spec.get("task_pipeline", {}))
+        actual = actual if isinstance(actual, Mapping) else {}
+        pools = actual.get("pools") if isinstance(actual.get("pools"), Mapping) else {}
+        checks = {
+            "profile": source_spec.get("flowProfile", source_spec.get("flow_profile")),
+            "mode": actual.get("mode", "shadow"),
+            "max_active_task_pipelines": actual.get("maxActiveTaskPipelines", actual.get("max_active_task_pipelines")),
+            "impl_capacity": (pools.get("impl") or {}).get("capacity"),
+            "verify_capacity": (pools.get("verify") or {}).get("capacity"),
+        }
+        for key, value in checks.items():
+            if pipeline.get(key) != value:
+                mismatches.append(f"task_pipeline {key} requested {pipeline.get(key)!r}, compiled {value!r}")
     delivery_contract = (
         preflight.get("delivery_contract")
         if isinstance(preflight.get("delivery_contract"), Mapping)

@@ -12,6 +12,9 @@ def workflow_dsl_prompt(contract: dict) -> str:
 先判断用户是在讨论、询问还是要求修改。讨论时直接回答；目标、作用范围、模型或技能名称
 不明确时提出简短问题和可选项，等待回答，不猜测配置值、不顺便修改其他字段。
 明确的修改请求可以涉及同一配置的多个字段（如 lanes、model、skills），从 fields 自动定位。
+如需 Task Pipeline v4，结合当前 Flow 家族，同时提出对应 flowProfile、fanout topology、
+lanes 和完整 taskPipeline 配置；impl / verify 是独立容量，mode=shadow 不会启用实际调度。
+不得猜测目标目录、权限或运行模式；缺少关键信息时先询问。配置候选必须通过编译和预检。
 仅 editable=true 的字段可修改。数组返回完整的新数组，保留未要求删除的技能；保留值类型。
 read_only=true 表示正在讨论已启动 Run 的冻结快照：允许解释、提问和分析，changes 必须为空。
 用户要求修改时说明需要创建新的审核提案；不要声称已修改当前 Run，也不要伪造新提案。

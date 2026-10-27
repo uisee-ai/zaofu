@@ -126,6 +126,9 @@ export function actionImpactRows(action: string, payload: Record<string, unknown
   } else if (action === "idea-to-product") {
     push("objective", payload.objective);
     push("next", "Prepare Workflow, answer questions, then review YAML before starting");
+  } else if (action === "workflow-config-propose") {
+    push("objective", payload.objective || payload.message);
+    push("next", "Records an intent only; no YAML, validation, task or Workflow Preview is created");
   } else if (action === "apply-patch-proposal") {
     push("patch", payload.patch_ref || payload.artifact_id || payload.path);
     push("mode", "gated preview only");

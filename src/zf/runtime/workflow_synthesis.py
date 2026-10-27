@@ -798,6 +798,13 @@ def _admit_result(
         raise WorkflowSynthesisError(
             "short FlowSpec lanes must be an integer between 1 and 64"
         )
+    pipeline = parameters.get("task_pipeline")
+    if pipeline is not None:
+        from zf.runtime.workflow_task_pipeline_inputs import validate_prd_task_pipeline
+        try:
+            validate_prd_task_pipeline(pipeline, family=flow_family, lanes=lanes)
+        except ValueError as exc:
+            raise WorkflowSynthesisError(str(exc)) from exc
     for key in ("strictness", "pattern_id"):
         value = parameters.get(key)
         if value is not None and (
