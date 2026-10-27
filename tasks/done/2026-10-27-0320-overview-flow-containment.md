@@ -1,6 +1,7 @@
 # Overview Execution Flow 溢出与列对齐修复
 
-> 状态: active
+> 状态: done
+> 实现提交: `9a19e470` fix: contain and align overview execution flow
 
 用户反馈 Execution Flow 中流程内容越出卡片，要求与 Work Queue 对齐。本项属于已批准 UI 批次的后续修复。
 
