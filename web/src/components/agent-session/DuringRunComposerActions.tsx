@@ -6,6 +6,7 @@ interface DuringRunComposerActionsProps {
   canInterrupt: boolean;
   canSteer: boolean;
   disabled?: boolean;
+  waitingForInput?: boolean;
   hasMessage: boolean;
   primaryAction: "queue" | "steer";
   onCancel: () => void;
@@ -19,6 +20,7 @@ export function DuringRunComposerActions({
   canInterrupt,
   canSteer,
   disabled = false,
+  waitingForInput = false,
   hasMessage,
   primaryAction,
   onCancel,
@@ -31,15 +33,15 @@ export function DuringRunComposerActions({
   if (!hasMessage) {
     return (
       <button
-        aria-label="Stop generating"
+        aria-label={waitingForInput ? "Cancel pending response" : "Stop generating"}
         className="headless-send-button"
         data-testid="during-run-stop-button"
         disabled={disabled || !canCancel}
-        title="Stop generating"
+        title={waitingForInput ? "Waiting for your answer · cancel response" : "Stop generating"}
         type="button"
         onClick={onCancel}
       >
-        <Square className="composer-submit-stop" size={21} />
+        {waitingForInput ? <Clock3 size={21} /> : <Square className="composer-submit-stop" size={21} />}
       </button>
     );
   }
@@ -123,7 +125,7 @@ export function DuringRunComposerActions({
             onClick={() => runAction(onCancel)}
           >
             <Square size={15} />
-            <span>Stop generating</span>
+            <span>{waitingForInput ? "Cancel pending response" : "Stop generating"}</span>
           </button>
         </div>
       </div>

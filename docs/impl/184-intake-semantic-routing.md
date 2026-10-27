@@ -33,6 +33,10 @@ impl/verify 容量和最大活跃任务数），编译器生成 fanout 配置候
 显式修订。Preview DSL 可一次审查 profile、池配置、PRD 来源与目标路径；编译和预检
 失败仍阻断，保存新 Preview 不应用项目配置或启动 Run。配置提案登记和验证请求的
 回执分别标明“未生成 YAML”和“验证结果待返回”。
+Kanban 问答暂停或回合结束后，前端依据 durable runtime 的 attempt、待回答交互和
+更新时间补拉对话历史；SSE 结束消息漏收或历史读取暂时失败时由后续轮询恢复。
+`waiting_input` 显示等待回答，可取消待回答回合，不显示仍在生成。发送在权限读取前
+同步防重入，问答提交同样防止重复点击；请求失败后允许重新提交。
 编译被阻断时，详情页仍按当前 Request revision/digest 展示不可变候选中的 YAML
 和阻断原因；它不会成为可批准的 Request 绑定，旧 revision 的候选也不会显示。
 backend 优先采用显式 synthesis_backend、原操作 backend、请求 backend、项目 Run Manager

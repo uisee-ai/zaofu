@@ -70,6 +70,8 @@ import type {
 } from "../../components/agent-session/types";
 import {
   kanbanAgentSessionEventsFromLive,
+  kanbanHistoryBoundary,
+  isKanbanRunWorking,
   mergeBoundedKanbanSessionEvents,
   mergeEventsByIdentity,
 } from "./kanbanSessionEvents";
@@ -444,6 +446,9 @@ export function OrchestratorPanel({
   const [headlessMessage, setHeadlessMessage] = useState("");
   const [headlessPlanDiscussion, setHeadlessPlanDiscussion] = useState<AgentSessionPlanRequest | null>(null);
   const [headlessSubmitting, setHeadlessSubmitting] = useState(false);
+  const headlessSubmitInFlight = useRef(false);
+  const planSubmissionsInFlight = useRef(new Set<string>());
+  const historyRecovery = useRef({ identity: "", boundary: "", inFlight: false });
   const [headlessProposalRunning, setHeadlessProposalRunning] = useState("");
   const [pendingProposals, setPendingProposals] = useState<PendingKanbanProposal[]>([]);
   const [pendingProposalsRefresh, setPendingProposalsRefresh] = useState(0);
@@ -727,6 +732,20 @@ export function OrchestratorPanel({
       setHeadlessQueue(runtime.queue ?? []);
       setWebChatArtifacts(runtime.artifacts ?? []);
       setHeadlessDurableMessages(runtime.messages ?? []);
+      if (historyRecovery.current.identity !== identity) {
+        historyRecovery.current = { identity, boundary: "", inFlight: false };
+      }
+      const recovery = historyRecovery.current;
+      const boundary = kanbanHistoryBoundary(runtime.turns, headlessThreadKey);
+      if (boundary !== "[]" && boundary !== recovery.boundary && !recovery.inFlight) {
+        recovery.inFlight = true;
+        try {
+          if (await reconcileHeadlessHistoryAfterTurn(identity)) recovery.boundary = boundary;
+        } finally {
+          recovery.inFlight = false;
+        }
+      }
+      if (webChatResourceIdentityRef.current !== identity) return;
       const durableRefs = (runtime.threads ?? []).flatMap((raw) => {
         const threadId = textValue(raw.thread_id).trim();
         if (!threadId) return [];
@@ -854,7 +873,9 @@ export function OrchestratorPanel({
     setHeadlessBufferedEvents((current) => mergeBoundedKanbanSessionEvents(current, scopedEvents));
   }, [context.taskId, events, headlessConversationId, headlessProjectId, operatorBackend]);
 
-  async function reconcileHeadlessHistoryAfterTurn(): Promise<void> {
+  async function reconcileHeadlessHistoryAfterTurn(
+    identity = `${headlessProjectId}:${headlessConversationId}:${headlessThreadKey}`,
+  ): Promise<boolean> {
     // SSE is the primary path. A successful action response is also a
     // deterministic terminal boundary, so reconcile the durable transcript
     // here when an event-stream delivery is delayed or dropped. Without this,
@@ -869,12 +890,15 @@ export function OrchestratorPanel({
         }),
         requireFresh: true,
       });
+      if (webChatResourceIdentityRef.current !== identity) return false;
       setHeadlessHistoryEvents((current) => mergeEventsByIdentity(current, page.items ?? []));
       setHeadlessHistoryBeforeSeq(page.next_before_seq ?? null);
       setHeadlessHistoryHasMore(Boolean(page.has_more));
+      return true;
     } catch {
       // The successful action is authoritative. Keep the live transcript when
       // this read-only recovery request is temporarily unavailable.
+      return false;
     }
   }
 
@@ -1013,6 +1037,20 @@ export function OrchestratorPanel({
   }
 
   async function submitHeadlessMessage(messageOverride?: string, options: SubmitHeadlessOptions = {}) {
+    // React state has not committed yet when two Enter/click events arrive.
+    // Lock before permission lookup, including the queue and early-return paths.
+    if (headlessSubmitInFlight.current) return;
+    headlessSubmitInFlight.current = true;
+    setHeadlessSubmitting(true);
+    try {
+      await dispatchHeadlessMessage(messageOverride, options);
+    } finally {
+      headlessSubmitInFlight.current = false;
+      setHeadlessSubmitting(false);
+    }
+  }
+
+  async function dispatchHeadlessMessage(messageOverride?: string, options: SubmitHeadlessOptions = {}) {
     const message = (messageOverride ?? headlessMessage).trim();
     const explicitRequestPatch = options.requestPatch ?? {};
     const discussionRequestPatch = (
@@ -1051,7 +1089,7 @@ export function OrchestratorPanel({
         )
       : null;
     const targetBackend = options.backendOverride ?? boundDiscussionBackend ?? operatorBackend;
-    if (!message || !isChatBackend(targetBackend) || headlessSubmitting) return;
+    if (!message || !isChatBackend(targetBackend)) return;
     const permissionResolution = await resolveKanbanTurnPermission({
       override: options.permissionProfileOverride,
       projectId: headlessProjectId,
@@ -1114,7 +1152,6 @@ export function OrchestratorPanel({
       return;
     }
     const directAction = slashAction(message);
-    setHeadlessSubmitting(true);
     setHeadlessMessage("");
     let pendingTurnId = "";
     try {
@@ -1190,8 +1227,6 @@ export function OrchestratorPanel({
       if (pendingTurnId) {
         setHeadlessPendingMessages((current) => current.filter((item) => item.turnId !== pendingTurnId));
       }
-    } finally {
-      setHeadlessSubmitting(false);
     }
   }
 
@@ -1393,6 +1428,8 @@ export function OrchestratorPanel({
     response: AgentSessionPlanResponse,
     key: string,
   ) {
+    if (planSubmissionsInFlight.current.has(key)) return;
+    planSubmissionsInFlight.current.add(key);
     if (
       headlessPlanDiscussion?.requestEventId === request.requestEventId
     ) {
@@ -1508,6 +1545,7 @@ export function OrchestratorPanel({
     } catch (err) {
       setOperatorError(err instanceof Error ? err.message : String(err));
     } finally {
+      planSubmissionsInFlight.current.delete(key);
       setHeadlessProposalRunning("");
       setPendingProposalsRefresh((value) => value + 1);
     }
@@ -1718,7 +1756,8 @@ export function OrchestratorPanel({
     response: Record<string, unknown>,
   ) {
     const key = interactionKey(interaction);
-    if (webChatInteractionBusy === key) return;
+    if (planSubmissionsInFlight.current.has(key)) return;
+    planSubmissionsInFlight.current.add(key);
     setWebChatInteractionBusy(key);
     setWebChatInteractionErrors((current) => ({ ...current, [key]: "" }));
     try {
@@ -1748,6 +1787,7 @@ export function OrchestratorPanel({
       setOperatorError("");
       await refreshWebChatResources();
     } finally {
+      planSubmissionsInFlight.current.delete(key);
       setWebChatInteractionBusy("");
     }
   }
@@ -1889,24 +1929,26 @@ export function OrchestratorPanel({
     ?? displayedHeadlessConversation.threads[0];
   const activeDurableTurn = webChatRuntime?.turns.find((item) => (
     item.thread_id === headlessThreadKey
-    && ["submitted", "queued", "claimed", "running", "waiting_input", "resume_queued", "retry_wait"].includes(item.state)
+    && ["submitted", "queued", "claimed", "running", "resume_queued", "retry_wait"].includes(item.state)
+  )) ?? webChatRuntime?.turns.find((item) => (
+    item.thread_id === headlessThreadKey && item.state === "waiting_input"
   ));
+  const hasDurableTurns = webChatRuntime?.turns.some((item) => item.thread_id === headlessThreadKey);
+  const activeHeadlessRun = activeHeadlessThread
+    ? [...activeHeadlessThread.turns.flatMap((turn) => turn.runs)].reverse()
+        .find((run) => isKanbanRunWorking(run, webChatRuntime?.turns ?? []))
+    : undefined;
   const activeThreadBusy = Boolean(
     activeDurableTurn
+    || activeHeadlessRun
     || (
-      activeHeadlessThread
+      !hasDurableTurns && activeHeadlessThread
       && ["streaming", "submitted", "queued", "waiting_input"].includes(activeHeadlessThread.status)
     ),
   );
   // Tab title shows "● …" while the headless session is working. Single owner:
   // channel group chat deliberately doesn't drive it.
-  useWorkingTitle(activeThreadBusy);
-  // The live run on the active thread — its id is what the composer's
-  // Interrupt affordance cancels.
-  const activeHeadlessRun = activeHeadlessThread
-    ? [...activeHeadlessThread.turns.flatMap((turn) => turn.runs)].reverse()
-        .find((run) => run.status === "streaming" || run.status === "submitted")
-    : undefined;
+  useWorkingTitle(Boolean(activeHeadlessRun) || Boolean(activeDurableTurn && activeDurableTurn.state !== "waiting_input"));
   const durableControls = new Set(webChatRuntime?.capabilities.controls ?? []);
   const canNativeSteer = Boolean(
     activeDurableTurn
@@ -2586,6 +2628,7 @@ export function OrchestratorPanel({
                   </div>
                   {activeDurableTurn ? (
                     <DuringRunComposerActions
+                      waitingForInput={activeDurableTurn.state === "waiting_input"}
                       canCancel={canCancelDurableTurn}
                       canInterrupt={canInterruptDurableTurn}
                       canSteer={canNativeSteer}
@@ -2602,7 +2645,7 @@ export function OrchestratorPanel({
                       className="headless-send-button"
                       disabled={!headlessMessage.trim() || Boolean(permissionEscalation)}
                       iconSize={21}
-                      status={deriveComposerStatus(activeHeadlessThread?.status, headlessSubmitting)}
+                      status={deriveComposerStatus(activeHeadlessRun?.status ?? (hasDurableTurns ? "idle" : activeHeadlessThread?.status), headlessSubmitting)}
                       onStop={activeHeadlessRun ? () => void cancelHeadlessRun(activeHeadlessRun.id) : undefined}
                       title={canUseAction("chat-orchestrator") ? "Send" : `${actionState}; save action token first`}
                       onClick={() => void submitHeadlessMessage()}
