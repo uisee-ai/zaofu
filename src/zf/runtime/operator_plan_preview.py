@@ -112,12 +112,20 @@ def build_plan_preview(
     if bound_source is not None:
         original = _payload(bound_source)
         if any(payload.get(key) and original.get(key) and payload[key] != original[key]
-               for key in ("task_map_ref", "pdd_id", "trace_id", "workflow_run_id")):
+               for key in ("task_map_ref", "pdd_id", "trace_id", "workflow_run_id",
+                           "plan_artifact_package_digest", "requirement_spec_ref")):
             bound_source = None
         else:
             for key in PLAN_REVIEW_REF_FIELDS:
                 if not payload.get(key) and original.get(key):
                     payload[key] = original[key]
+            if not payload.get("plan_artifact_ref"):
+                from zf.runtime.resume_plan_preview import resumed_plan_refs
+
+                payload.update(resumed_plan_refs(
+                    original, events[:events.index(bound_source) + 1],
+                    state_dir=state_dir, project_root=project_root,
+                ))
     resolved_payload = _payload(resolved) if resolved is not None else {}
     status = "pending"
     if resolved is not None:

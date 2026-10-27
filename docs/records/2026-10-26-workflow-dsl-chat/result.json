@@ -1,0 +1,7 @@
+{
+  "revision": 3,
+  "status": "ready",
+  "proposal": "84ff5dd33a4017863f52de2c80299314565104f06da933c4f0d104e64648249e",
+  "submitted": false,
+  "yaml": "apiVersion: zaofu.dev/v1\nkind: IssueFlow\nmetadata:\n  name: issue-demo\nspec:\n  lanes: 2\n  backend: mock\n  issueRef: docs/intake/bug.md\n---\napiVersion: zaofu.dev/v1\nkind: ZfConfig\nmetadata:\n  name: demo\nspec:\n  version: '1.0'\n  project:\n    name: demo\n    state_dir: .zf\n  workflow:\n    plan_approval: true\n"
+}

@@ -866,6 +866,7 @@ def _apply_batch_checkpoint(
             task_ids=task_ids,
             resume_scope=resume_scope,
             state_dir=state_dir,
+            project_root=project_root,
             gate_dispatcher=gate_dispatcher,
             override_task_map_ref=override_task_map_ref,
         )
@@ -958,6 +959,7 @@ def _apply_batch_task_map_ready(
     task_ids: list[str],
     resume_scope: str,
     state_dir: Path,
+    project_root: Path | None = None,
     gate_dispatcher=None,
     override_task_map_ref: str = "",
 ) -> WorkflowResumeApplyResult:
@@ -1021,6 +1023,11 @@ def _apply_batch_task_map_ready(
     }
     if task_map_repair:
         payload["task_map_repair"] = task_map_repair
+    from zf.runtime.resume_plan_preview import resumed_plan_refs
+
+    payload.update(resumed_plan_refs(
+        payload, writer.event_log.read_all(), state_dir=state_dir, project_root=project_root,
+    ))
     if task_ids:
         payload["task_ids"] = list(task_ids)
     # avbs-r4 F2: findings 随 rework 走(orchestrator_fanout 已有

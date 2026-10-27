@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] [chromium] › tests/workflow-graph-redesign.spec.ts:383:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+[1A[2K  1 passed (24.2s)

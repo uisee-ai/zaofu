@@ -1,0 +1,48 @@
+
+Running 7 tests using 1 worker
+
+[1A[2K[1/7] [chromium] › tests/plan-preview-agent.spec.ts:3:1 › digest-only Plan opens formatted Markdown and quotes its bound summary, not the first JSON attachment
+[1A[2K[2/7] [chromium] › tests/plan-preview-agent.spec.ts:41:1 › a Plan without bound Markdown keeps its formatted preview instead of silently opening JSON
+[1A[2K  1) [chromium] › tests/plan-preview-agent.spec.ts:41:1 › a Plan without bound Markdown keeps its formatted preview instead of silently opening JSON
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('dialog', { name: 'Plan preview', exact: true }).getByText('当前预览未绑定可引用的 Markdown 文档，可选择附件审阅。', { exact: true })
+    Expected: visible
+    Error: strict mode violation: getByRole('dialog', { name: 'Plan preview', exact: true }).getByText('当前预览未绑定可引用的 Markdown 文档，可选择附件审阅。', { exact: true }) resolved to 2 elements:
+        1) <p role="status">当前预览未绑定可引用的 Markdown 文档，可选择附件审阅。</p> aka getByRole('status')
+        2) <p class="workflow-agent-empty" data-testid="plan-agent-availability">当前预览未绑定可引用的 Markdown 文档，可选择附件审阅。</p> aka getByTestId('plan-agent-availability')
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 60000ms[22m
+    [2m  - waiting for getByRole('dialog', { name: 'Plan preview', exact: true }).getByText('当前预览未绑定可引用的 Markdown 文档，可选择附件审阅。', { exact: true })[22m
+
+
+      51 |   await expect(document.getByRole("heading").first()).toBeVisible();
+      52 |   await expect(document).not.toContainText("END-OF-MATRIX");
+    > 53 |   await expect(panel.getByText("当前预览未绑定可引用的 Markdown 文档，可选择附件审阅。", { exact: true })).toBeVisible();
+         |                                                                                      ^
+      54 |   expect(contexts).toBe(0);
+      55 | });
+      56 |
+        at /home/uisee/workspace/zaofu-wt-workflow-graph-ui/web/tests/plan-preview-agent.spec.ts:53:86
+
+    Error Context: ../docs/records/2026-10-27-plan-digest-reader/browser-tests/plan-preview-agent-a-Plan--8c070-ad-of-silently-opening-JSON-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/records/2026-10-27-plan-digest-reader/browser-tests/plan-preview-agent-a-Plan--8c070-ad-of-silently-opening-JSON-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/records/2026-10-27-plan-digest-reader/browser-tests/plan-preview-agent-a-Plan--8c070-ad-of-silently-opening-JSON-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K[3/7] [chromium] › tests/plan-preview-agent.spec.ts:58:3 › quoted editing fills the Preview reader at 1440x1000
+[1A[2K[4/7] [chromium] › tests/plan-preview-agent.spec.ts:58:3 › quoted editing fills the Preview reader at 1440x1400
+[1A[2K[5/7] [chromium] › tests/plan-preview-agent.spec.ts:58:3 › quoted editing fills the Preview reader at 390x844
+[1A[2K[6/7] [chromium] › tests/plan-preview-agent.spec.ts:105:1 › quoted Preview preserves reading typography and formats a long table with source-bound quotes
+[1A[2K[7/7] [chromium] › tests/plan-preview-agent.spec.ts:154:1 › Inbox Plan editing uses quoted headless chat and keeps approval locked through Apply
+[1A[2K  1 failed
+    [chromium] › tests/plan-preview-agent.spec.ts:41:1 › a Plan without bound Markdown keeps its formatted preview instead of silently opening JSON
+  6 passed (1.0m)

@@ -1,0 +1,2 @@
+{"phase":"real-provider","ok":true,"answer":"建议仅将 lanes 从 1 改为 2，其他配置保持不变。新版 YAML 仍需审核并应用；未执行工具或启动 Workflow。","changes":[{"field":"config.0.lanes","before":1,"after":2}]}
+{"phase":"applied-and-reloaded","revision":3,"status":"ready","approval":"blocked","submitted":false,"yamlUpdated":true}

@@ -1,0 +1,6 @@
+
+Running 2 tests using 1 worker
+
+[1A[2K[1/2] [chromium] › tests/workflow-graph-redesign.spec.ts:288:1 › request selection retains deep links and Plan review keeps chat and approval bound
+[1A[2K[2/2] [chromium] › tests/workflow-graph-redesign.spec.ts:383:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+[1A[2K  2 passed (18.2s)

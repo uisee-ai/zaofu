@@ -1,0 +1,24 @@
+..............F........................................                  [100%]
+=================================== FAILURES ===================================
+________________ test_mapping_events_follow_same_bound_lineage _________________
+
+lineage = (PosixPath('/tmp/pytest-of-uisee/pytest-369/test_mapping_events_follow_sam0'), PosixPath('/tmp/pytest-of-uisee/pytest-...test_mapping_events_follow_sam0/state/artifacts/task-map.json'), '# 完整计划\n\n## 需求\n用户可以开始游戏。\n\n## 验收\n验证运行结果。\n', ...)
+
+    def test_mapping_events_follow_same_bound_lineage(lineage):
+        root, state, writer, _, _, _, resume = lineage
+>       events = [e.model_dump() for e in writer.event_log.read_all()]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_resume_plan_preview.py:101:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+.0 = <list_iterator object at 0x788be7685420>
+
+>   events = [e.model_dump() for e in writer.event_log.read_all()]
+              ^^^^^^^^^^^^
+E   AttributeError: 'ZfEvent' object has no attribute 'model_dump'
+
+tests/test_resume_plan_preview.py:101: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_resume_plan_preview.py::test_mapping_events_follow_same_bound_lineage
+1 failed, 54 passed in 14.67s

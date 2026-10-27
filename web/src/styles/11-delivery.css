@@ -1115,18 +1115,21 @@
 .plan-document-actions {
   margin-left: auto;
 }
-.plan-document .agent-markdown {
+:is(.plan-document, .plan-bound-document) .agent-markdown {
   line-height: 1.7;
 }
-.plan-document .agent-markdown h2 {
+:is(.plan-document, .plan-bound-document) [data-streamdown="strong"] {
+  font-weight: 700;
+}
+:is(.plan-document, .plan-bound-document) .agent-markdown h2 {
   font-size: var(--text-20, 20px);
   margin: 20px 0 12px;
 }
-.plan-document .agent-markdown h3 {
+:is(.plan-document, .plan-bound-document) .agent-markdown h3 {
   font-size: var(--text-16, 16px);
   margin: 18px 0 10px;
 }
-.plan-document .agent-markdown :not(pre) > code {
+:is(.plan-document, .plan-bound-document) .agent-markdown :not(pre) > code {
   white-space: break-spaces;
   overflow-wrap: anywhere;
 }

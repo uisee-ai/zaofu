@@ -16,7 +16,7 @@ async function expectNoViewportOverflow(page: Page) {
 }
 
 async function expectVisibleControlsInViewport(page: Page) {
-  const metrics = await page.locator(".workflow-proposal-actions button:visible").evaluateAll(
+  const metrics = await page.locator(".workflow-review-drawer > header button:visible, .workflow-proposal-actions button:visible").evaluateAll(
     (buttons) => {
       const viewportWidth = document.documentElement.clientWidth;
       return buttons.map((button) => {
@@ -77,6 +77,36 @@ test.beforeEach(async ({ page }) => {
   }, actionToken);
 });
 
+test("Raw labels legacy compiled snapshots and unavailable run evidence", async ({ page, request }) => {
+  const response = await request.get(`/api/projects/default/workflow-requests/${requestId}`);
+  expect(response.ok()).toBeTruthy();
+  const original = await response.json();
+  let effectiveConfig: Record<string, unknown> = {
+    config: { project: { name: "legacy-run" } },
+    yaml: "project:\n  name: legacy-run\n",
+    yaml_source: "compiled_snapshot",
+  };
+  // Browser projection fixtures only; no running proposal is rewritten.
+  await page.route(`**/api/projects/*/workflow-requests/${requestId}`, route => route.fulfill({ json: {
+    ...original,
+    lifecycle: { ...original.lifecycle, submitted: true },
+    artifacts: { ...original.artifacts, effective_config: effectiveConfig },
+  } }));
+  await page.goto(`/?page=workflows&project=default&request=${requestId}`);
+  await page.getByRole("button", { name: "Raw", exact: true }).click();
+  const raw = page.getByTestId("workflow-yaml-preview");
+  await expect(raw.locator("pre")).toContainText("legacy-run");
+  await expect(raw).toContainText("Compiled configuration snapshot · original YAML unavailable");
+  await expect(page.getByTestId("workflow-start")).toHaveCount(0);
+
+  effectiveConfig = { status: "unreadable" };
+  await page.reload();
+  await page.getByRole("button", { name: "Raw", exact: true }).click();
+  await expect(raw).toContainText("The bound configuration snapshot is unavailable.");
+  await expect(raw).not.toContainText("after clarification");
+  await expect(raw.locator("pre")).toHaveCount(0);
+});
+
 test("reviews, approves, and follows a proposal without layout collisions", async ({ page, request }) => {
   let terminalProjection: Record<string, unknown> | null = null;
   let terminalProjectionHits = 0;
@@ -95,57 +125,28 @@ test("reviews, approves, and follows a proposal without layout collisions", asyn
 
   const proposalPage = page.getByTestId("workflow-proposal-page");
   await expect(proposalPage).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Workflows" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Needs decision/ })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await expect(page.getByRole("heading", {
-    name: "Fix checkout expiry and retain an auditable regression test.",
-  })).toBeVisible();
-  await expect(page.getByTestId("workflow-proposal-graph")).toBeVisible();
-  await expect(page.getByText("Execution Plan", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("workflow-readiness")).toContainText("Ready to run");
-  const advanced = page.locator(".workflow-proposal-advanced");
-  await expect(advanced).not.toHaveAttribute("open", "");
-  await advanced.locator("summary").first().click();
-  await expect(page.getByText("Execution Closure", { exact: true })).toBeVisible();
-  await expect(page.getByText("Decision Binding", { exact: true })).toBeVisible();
-  await expect(page.getByText("direct-v1", { exact: true }).first()).toBeVisible();
-  const approve = page.getByTestId("workflow-approve-run");
-  await expect(approve).toBeEnabled();
+  await expect(page.getByRole("heading", { name: "Workflow", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Needs decision/ })).toHaveCount(0);
+  await expect(page.getByLabel("Select workflow")).toHaveValue(requestId);
+  await expect(page.getByTestId("workflow-graph-canvas")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review & Approve", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Raw", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Details", exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("workflow-yaml-preview").locator("pre")).toContainText("kind: IssueFlow");
   await expectNoViewportOverflow(page);
   await expectVisibleControlsInViewport(page);
-
-  const workbenchBounds = await page.locator(".workflow-proposal-workbench").evaluate(
-    (workbench) => {
-      const list = workbench.querySelector(".workflow-request-list")!.getBoundingClientRect();
-      const detail = workbench.querySelector(".workflow-proposal-detail")!.getBoundingClientRect();
-      return { detailLeft: detail.left, listRight: list.right };
-    },
-  );
-  expect(workbenchBounds.listRight).toBeLessThanOrEqual(workbenchBounds.detailLeft + 1);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoViewportOverflow(page);
-  await approve.scrollIntoViewIfNeeded();
   await expectVisibleControlsInViewport(page);
-  const mobileBounds = await page.locator(".workflow-proposal-workbench").evaluate(
-    (workbench) => {
-      const list = workbench.querySelector(".workflow-request-list")!.getBoundingClientRect();
-      const detail = workbench.querySelector(".workflow-proposal-detail")!.getBoundingClientRect();
-      return { detailTop: detail.top, listBottom: list.bottom };
-    },
-  );
-  expect(mobileBounds.listBottom).toBeLessThanOrEqual(mobileBounds.detailTop + 1);
-
   const submitted = page.waitForResponse((response) => (
     response.url().endsWith("/actions/workflow-submit")
     && response.request().method() === "POST"
   ));
-  await approve.click();
+  await page.getByTestId("workflow-start").click();
   expect((await submitted).status()).toBe(202);
   await expect(page.getByTestId("workflow-proposal-feedback")).toContainText("accepted");
+  await page.getByRole("button", { name: "Run Controls", exact: true }).click();
   await expect(page.getByTestId("workflow-open-run")).toBeVisible();
 
   const detailResponse = await request.get(
@@ -172,6 +173,8 @@ test("reviews, approves, and follows a proposal without layout collisions", asyn
   };
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect.poll(() => terminalProjectionHits).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Raw", exact: true }).click();
+  await page.getByRole("button", { name: "Run Controls", exact: true }).click();
   await expect(page.getByTestId("workflow-readiness")).toContainText("Run completed");
   await expectNoViewportOverflow(page);
 

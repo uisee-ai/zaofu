@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] [chromium] › tests/plan-preview-agent.spec.ts:51:1 › quoted Preview preserves reading typography and formats a long table with source-bound quotes
+[1A[2K  1 passed (21.5s)

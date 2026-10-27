@@ -1,0 +1,40 @@
+
+Running 5 tests using 1 worker
+
+[1/5] [chromium] › tests/workflow-graph-redesign.spec.ts:27:1 › six graph views, themed top-down cards and live projection updates preserve viewport
+[2/5] [chromium] › tests/workflow-graph-redesign.spec.ts:128:1 › large graphs fit shorter windows and resized content panels; Timeline stays graph-only
+[3/5] [chromium] › tests/workflow-graph-redesign.spec.ts:164:1 › Agent dialog retains conversation and pending diff while Raw stays focused on YAML
+[4/5] [chromium] › tests/workflow-graph-redesign.spec.ts:281:1 › request selection retains deep links and Plan review keeps chat and approval bound
+[5/5] [chromium] › tests/workflow-graph-redesign.spec.ts:376:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+  1) [chromium] › tests/workflow-graph-redesign.spec.ts:376:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+
+    Test timeout of 90000ms exceeded.
+
+    Error: locator.evaluate: Test timeout of 90000ms exceeded.
+    Call log:
+      - waiting for getByRole('region', { name: 'Workflow PRD Plan Preview' }).locator('.plan-review-block').nth(1).locator('strong')
+
+
+      407 |   await expect(panel.getByTestId("plan-review-source")).toHaveCount(0);
+      408 |   // Selection in the primary formatted reading surface, including Markdown emphasis.
+    > 409 |   await blocks.nth(1).locator("strong").evaluate(element => {
+          |                                         ^
+      410 |     const range = document.createRange(); range.selectNodeContents(element);
+      411 |     const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+      412 |   });
+        at /home/uisee/workspace/zaofu-wt-workflow-graph-ui/web/tests/workflow-graph-redesign.spec.ts:409:41
+
+    Error Context: test-results-plan-entry/workflow-graph-redesign-Pl-84101--and-selects-exact-Raw-text-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results-plan-entry/workflow-graph-redesign-Pl-84101--and-selects-exact-Raw-text-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results-plan-entry/workflow-graph-redesign-Pl-84101--and-selects-exact-Raw-text-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  1 failed
+    [chromium] › tests/workflow-graph-redesign.spec.ts:376:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+  4 passed (2.0m)

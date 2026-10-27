@@ -1,0 +1,16 @@
+[
+  {
+    "name": "inbox",
+    "port": 8003,
+    "simulation_done_observed": true,
+    "process_stopped": true,
+    "state_removed": true
+  },
+  {
+    "name": "workflow",
+    "port": 8004,
+    "simulation_done_observed": true,
+    "process_stopped": true,
+    "state_removed": true
+  }
+]

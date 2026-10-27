@@ -1,0 +1,33 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 1440x1000
+[1A[2K  1) [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 1440x1000
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m1440[39m
+    Received: [31m1100[39m
+
+      17 |     const editing = (await reader.boundingBox())!;
+      18 |     expect(editing.x).toBe(0);
+    > 19 |     expect(editing.width).toBe(size.width);
+         |                           ^
+      20 |     expect(editing.y).toBe(original.y);
+      21 |     expect(editing.y + editing.height).toBe(size.height);
+      22 |     await expect(panel.locator(".plan-preview-context")).toBeHidden();
+        at /home/uisee/workspace/zaofu-wt-workflow-graph-ui/web/tests/plan-preview-agent.spec.ts:19:27
+
+    Error Context: ../docs/records/2026-10-27-plan-reader-unified/before-inbox-tests/plan-preview-agent-quoted--e5d59-Preview-reader-at-1440x1000-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/records/2026-10-27-plan-reader-unified/before-inbox-tests/plan-preview-agent-quoted--e5d59-Preview-reader-at-1440x1000-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/records/2026-10-27-plan-reader-unified/before-inbox-tests/plan-preview-agent-quoted--e5d59-Preview-reader-at-1440x1000-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K  1 failed
+    [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 1440x1000

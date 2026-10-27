@@ -1,0 +1,1429 @@
+[
+  {
+    "id": "evt-f1003ff48f69",
+    "type": "plan.rejected",
+    "ts": "2026-10-26T16:47:40.862878+00:00",
+    "payload": {
+      "plan_id": "evt-ead564fa2325",
+      "via": "controlled-action:plan-preview",
+      "surface": "web",
+      "reason": "plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+    }
+  },
+  {
+    "id": "evt-38acd0054e3e",
+    "type": "orchestrator.replan_requested",
+    "ts": "2026-10-26T16:47:42.986066+00:00",
+    "payload": {
+      "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+      "flow_kind": "prd",
+      "request_kind": "auto",
+      "request_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+      "requirement_spec_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+      "requirement_spec_digest": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9",
+      "workflow_proposal_ref": {
+        "ref_schema_version": "sidecar-ref.v1",
+        "kind": "workflow_proposal",
+        "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/proposals/9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387.json",
+        "sha256": "9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387",
+        "byte_count": 68715,
+        "content_type": "application/json",
+        "schema_version": "workflow-proposal.v1",
+        "encoding": "utf-8",
+        "created_by": "workflow-proposal-compiler",
+        "source_event_id": "",
+        "access_scope": {},
+        "retention": {
+          "class": "audit_required"
+        },
+        "required": true,
+        "preview": ""
+      },
+      "workflow_proposal_digest": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+      "effective_config_ref": {
+        "access_scope": {},
+        "byte_count": 195624,
+        "content_type": "application/json",
+        "created_by": "workflow-proposal-compiler",
+        "encoding": "utf-8",
+        "kind": "effective_config_snapshot",
+        "preview": "",
+        "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective-configs/09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943.json",
+        "ref_schema_version": "sidecar-ref.v1",
+        "required": true,
+        "retention": {
+          "class": "audit_required"
+        },
+        "schema_version": "effective-config-snapshot.v1",
+        "sha256": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+        "source_event_id": ""
+      },
+      "effective_config_digest": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+      "run_contract_ref": "artifacts/run-contracts/c5a6708bafb522a9a400d941b4a47914c5784067c31d67c31257ad66ef21ffdd.json",
+      "run_contract_digest": "62ca264a3c08947e6adea7d09671233c30e5039d11be29fb14c4aa3cfa43c4cf",
+      "plan_artifact_package_id": "planpkg-6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+      "plan_artifact_package_ref": "artifacts/plan-packages/6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878.json",
+      "plan_artifact_package_digest": "6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+      "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64.json",
+      "goal_claim_set_digest": "c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64",
+      "artifact_package_mode": "shadow",
+      "artifact_package_status": "admitted",
+      "plan_revision": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+      "task_map_generation": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+      "source_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+      "candidate_base_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+      "pdd_id": "TASK-CA8E83",
+      "trace_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+      "target_ref": "HEAD",
+      "rework_of": "evt-f1003ff48f69",
+      "rework_attempt": 1,
+      "rework_source": "plan.rejected",
+      "classification": "ambiguous",
+      "rework_feedback": [
+        "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+      ],
+      "rework_categories": [],
+      "rework_summary": {
+        "pdd_id": "TASK-CA8E83",
+        "source_event_type": "plan.rejected",
+        "attempt": 1,
+        "action": "replan",
+        "classification": "ambiguous",
+        "categories": [],
+        "failed_task_ids": [],
+        "gap_tasks": [],
+        "rework_paths": [],
+        "feedback_count": 1,
+        "feedback_excerpt": [
+          "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+        ],
+        "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+        "path_owner_task_ids": [],
+        "terminal_path_owner_task_ids": [],
+        "unowned_rework_paths": [],
+        "invalid_failed_task_ids": [],
+        "terminal_failed_task_ids": []
+      },
+      "reason": "plan-level failure (ambiguous) from plan.rejected; re-decompose the task_map (do NOT re-implement the same slices)",
+      "resume_checkpoint_ref": "crw-e3e201fc68ed8fa9",
+      "idempotency_key": "crw-e3e201fc68ed8fa9"
+    }
+  },
+  {
+    "id": "evt-922ea0d4a370",
+    "type": "fanout.started",
+    "ts": "2026-10-26T16:47:44.491635+00:00",
+    "payload": {
+      "fanout_id": "fanout-prd-plan-evt-c6c14900",
+      "stage_id": "prd-plan",
+      "topology": "fanout_reader",
+      "trace_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+      "trigger_event_id": "evt-c6c149000512",
+      "target_ref": "HEAD",
+      "expected_children": [
+        {
+          "child_id": "prd-planner",
+          "role_instance": "prd-planner",
+          "target_ref": "HEAD",
+          "payload": {
+            "task_id": "TASK-CA8E83",
+            "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+            "parent_task_id": "TASK-CA8E83",
+            "trigger_payload": {
+              "fanout_id": "fanout-prd-scan-evt-2085cad1",
+              "trace_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "stage_id": "prd-scan",
+              "pdd_id": "TASK-CA8E83",
+              "feature_id": "TASK-CA8E83",
+              "status": "completed",
+              "target_ref": "HEAD",
+              "child_count": 2,
+              "request_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "flow_kind": "prd",
+              "request_kind": "auto",
+              "workflow_request_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+              "requirement_spec_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+              "requirement_spec_digest": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9",
+              "request_revision": 4,
+              "workflow_generation": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+              "completion_profile": "software_delivery",
+              "goal_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "workflow_proposal_ref": {
+                "ref_schema_version": "sidecar-ref.v1",
+                "kind": "workflow_proposal",
+                "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/proposals/9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387.json",
+                "sha256": "9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387",
+                "byte_count": 68715,
+                "content_type": "application/json",
+                "schema_version": "workflow-proposal.v1",
+                "encoding": "utf-8",
+                "created_by": "workflow-proposal-compiler",
+                "source_event_id": "",
+                "access_scope": {},
+                "retention": {
+                  "class": "audit_required"
+                },
+                "required": true,
+                "preview": ""
+              },
+              "workflow_proposal_digest": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+              "effective_config_ref": {
+                "access_scope": {},
+                "byte_count": 195624,
+                "content_type": "application/json",
+                "created_by": "workflow-proposal-compiler",
+                "encoding": "utf-8",
+                "kind": "effective_config_snapshot",
+                "preview": "",
+                "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective-configs/09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943.json",
+                "ref_schema_version": "sidecar-ref.v1",
+                "required": true,
+                "retention": {
+                  "class": "audit_required"
+                },
+                "schema_version": "effective-config-snapshot.v1",
+                "sha256": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+                "source_event_id": ""
+              },
+              "effective_config_digest": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+              "run_contract_ref": "artifacts/run-contracts/c5a6708bafb522a9a400d941b4a47914c5784067c31d67c31257ad66ef21ffdd.json",
+              "run_contract_digest": "62ca264a3c08947e6adea7d09671233c30e5039d11be29fb14c4aa3cfa43c4cf",
+              "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "artifact_refs": [
+                "/home/uisee/workspace/ty/artifacts/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+                "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective/revision-0004-a71f70fad483d291/workflow-input-manifest.json",
+                "/home/uisee/workspace/ty/.zf-ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-preflight.json",
+                "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/task-input-contract.json",
+                "/home/uisee/workspace/ty/docs/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.md",
+                "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/skill-adapter-plan.json",
+                "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-input-manifest.json",
+                "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+                "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-product-scan/report.json",
+                "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-tech-scan/report.json"
+              ],
+              "evidence_refs": [],
+              "rework_of": "evt-f1003ff48f69",
+              "rework_attempt": 1,
+              "rework_source": "plan.rejected",
+              "rework_feedback": [
+                "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+              ],
+              "rework_categories": [],
+              "rework_summary": {
+                "pdd_id": "TASK-CA8E83",
+                "source_event_type": "plan.rejected",
+                "attempt": 1,
+                "action": "replan",
+                "classification": "ambiguous",
+                "categories": [],
+                "failed_task_ids": [],
+                "gap_tasks": [],
+                "rework_paths": [],
+                "feedback_count": 1,
+                "feedback_excerpt": [
+                  "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+                ],
+                "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+                "path_owner_task_ids": [],
+                "terminal_path_owner_task_ids": [],
+                "unowned_rework_paths": [],
+                "invalid_failed_task_ids": [],
+                "terminal_failed_task_ids": []
+              },
+              "replan_classification": "ambiguous",
+              "source_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+              "candidate_base_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+              "plan_artifact_package_id": "planpkg-6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+              "plan_artifact_package_ref": "artifacts/plan-packages/6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878.json",
+              "plan_artifact_package_digest": "6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+              "artifact_package_mode": "shadow",
+              "artifact_package_status": "admitted",
+              "plan_revision": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+              "task_map_generation": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+              "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64.json",
+              "goal_claim_set_digest": "c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64",
+              "task_id": "TASK-CA8E83",
+              "parent_task_id": "TASK-CA8E83"
+            },
+            "artifact_refs": [
+              "/home/uisee/workspace/ty/artifacts/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+              "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective/revision-0004-a71f70fad483d291/workflow-input-manifest.json",
+              "/home/uisee/workspace/ty/.zf-ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-preflight.json",
+              "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/task-input-contract.json",
+              "/home/uisee/workspace/ty/docs/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.md",
+              "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/skill-adapter-plan.json",
+              "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-input-manifest.json",
+              "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+              "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-product-scan/report.json",
+              "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-tech-scan/report.json"
+            ],
+            "plan_artifact_package_id": "planpkg-6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+            "plan_artifact_package_ref": "artifacts/plan-packages/6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878.json",
+            "plan_artifact_package_digest": "6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+            "workflow_proposal_ref": {
+              "ref_schema_version": "sidecar-ref.v1",
+              "kind": "workflow_proposal",
+              "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/proposals/9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387.json",
+              "sha256": "9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387",
+              "byte_count": 68715,
+              "content_type": "application/json",
+              "schema_version": "workflow-proposal.v1",
+              "encoding": "utf-8",
+              "created_by": "workflow-proposal-compiler",
+              "source_event_id": "",
+              "access_scope": {},
+              "retention": {
+                "class": "audit_required"
+              },
+              "required": true,
+              "preview": ""
+            },
+            "workflow_proposal_digest": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+            "effective_config_ref": {
+              "access_scope": {},
+              "byte_count": 195624,
+              "content_type": "application/json",
+              "created_by": "workflow-proposal-compiler",
+              "encoding": "utf-8",
+              "kind": "effective_config_snapshot",
+              "preview": "",
+              "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective-configs/09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943.json",
+              "ref_schema_version": "sidecar-ref.v1",
+              "required": true,
+              "retention": {
+                "class": "audit_required"
+              },
+              "schema_version": "effective-config-snapshot.v1",
+              "sha256": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+              "source_event_id": ""
+            },
+            "effective_config_digest": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+            "run_contract_ref": "artifacts/run-contracts/c5a6708bafb522a9a400d941b4a47914c5784067c31d67c31257ad66ef21ffdd.json",
+            "run_contract_digest": "62ca264a3c08947e6adea7d09671233c30e5039d11be29fb14c4aa3cfa43c4cf",
+            "goal_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+            "flow_kind": "prd",
+            "task_map_generation": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+            "workflow_generation": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+            "request_revision": 4,
+            "completion_profile": "software_delivery",
+            "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64.json",
+            "goal_claim_set_digest": "c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64",
+            "rework_of": "evt-f1003ff48f69",
+            "rework_attempt": 1,
+            "rework_source": "plan.rejected",
+            "rework_feedback": [
+              "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+            ],
+            "rework_categories": [],
+            "rework_summary": {
+              "pdd_id": "TASK-CA8E83",
+              "source_event_type": "plan.rejected",
+              "attempt": 1,
+              "action": "replan",
+              "classification": "ambiguous",
+              "categories": [],
+              "failed_task_ids": [],
+              "gap_tasks": [],
+              "rework_paths": [],
+              "feedback_count": 1,
+              "feedback_excerpt": [
+                "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+              ],
+              "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+              "path_owner_task_ids": [],
+              "terminal_path_owner_task_ids": [],
+              "unowned_rework_paths": [],
+              "invalid_failed_task_ids": [],
+              "terminal_failed_task_ids": []
+            },
+            "replan_classification": "ambiguous",
+            "attempt_domain": "plan",
+            "result_semantics": "artifact_production"
+          }
+        }
+      ],
+      "task_id": "TASK-CA8E83",
+      "parent_task_id": "TASK-CA8E83",
+      "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+      "pdd_id": "TASK-CA8E83",
+      "feature_id": "TASK-CA8E83",
+      "trigger_payload": {
+        "fanout_id": "fanout-prd-scan-evt-2085cad1",
+        "trace_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+        "stage_id": "prd-scan",
+        "pdd_id": "TASK-CA8E83",
+        "feature_id": "TASK-CA8E83",
+        "status": "completed",
+        "target_ref": "HEAD",
+        "child_count": 2,
+        "request_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+        "flow_kind": "prd",
+        "request_kind": "auto",
+        "workflow_request_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+        "requirement_spec_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+        "requirement_spec_digest": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9",
+        "request_revision": 4,
+        "workflow_generation": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+        "completion_profile": "software_delivery",
+        "goal_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+        "workflow_proposal_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "workflow_proposal",
+          "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/proposals/9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387.json",
+          "sha256": "9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387",
+          "byte_count": 68715,
+          "content_type": "application/json",
+          "schema_version": "workflow-proposal.v1",
+          "encoding": "utf-8",
+          "created_by": "workflow-proposal-compiler",
+          "source_event_id": "",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "workflow_proposal_digest": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+        "effective_config_ref": {
+          "access_scope": {},
+          "byte_count": 195624,
+          "content_type": "application/json",
+          "created_by": "workflow-proposal-compiler",
+          "encoding": "utf-8",
+          "kind": "effective_config_snapshot",
+          "preview": "",
+          "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective-configs/09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943.json",
+          "ref_schema_version": "sidecar-ref.v1",
+          "required": true,
+          "retention": {
+            "class": "audit_required"
+          },
+          "schema_version": "effective-config-snapshot.v1",
+          "sha256": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+          "source_event_id": ""
+        },
+        "effective_config_digest": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+        "run_contract_ref": "artifacts/run-contracts/c5a6708bafb522a9a400d941b4a47914c5784067c31d67c31257ad66ef21ffdd.json",
+        "run_contract_digest": "62ca264a3c08947e6adea7d09671233c30e5039d11be29fb14c4aa3cfa43c4cf",
+        "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+        "run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+        "artifact_refs": [
+          "/home/uisee/workspace/ty/artifacts/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+          "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective/revision-0004-a71f70fad483d291/workflow-input-manifest.json",
+          "/home/uisee/workspace/ty/.zf-ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-preflight.json",
+          "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/task-input-contract.json",
+          "/home/uisee/workspace/ty/docs/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.md",
+          "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/skill-adapter-plan.json",
+          "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-input-manifest.json",
+          "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+          "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-product-scan/report.json",
+          "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-tech-scan/report.json"
+        ],
+        "evidence_refs": [],
+        "rework_of": "evt-f1003ff48f69",
+        "rework_attempt": 1,
+        "rework_source": "plan.rejected",
+        "rework_feedback": [
+          "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+        ],
+        "rework_categories": [],
+        "rework_summary": {
+          "pdd_id": "TASK-CA8E83",
+          "source_event_type": "plan.rejected",
+          "attempt": 1,
+          "action": "replan",
+          "classification": "ambiguous",
+          "categories": [],
+          "failed_task_ids": [],
+          "gap_tasks": [],
+          "rework_paths": [],
+          "feedback_count": 1,
+          "feedback_excerpt": [
+            "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+          ],
+          "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+          "path_owner_task_ids": [],
+          "terminal_path_owner_task_ids": [],
+          "unowned_rework_paths": [],
+          "invalid_failed_task_ids": [],
+          "terminal_failed_task_ids": []
+        },
+        "replan_classification": "ambiguous",
+        "source_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+        "candidate_base_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+        "plan_artifact_package_id": "planpkg-6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+        "plan_artifact_package_ref": "artifacts/plan-packages/6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878.json",
+        "plan_artifact_package_digest": "6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+        "artifact_package_mode": "shadow",
+        "artifact_package_status": "admitted",
+        "plan_revision": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+        "task_map_generation": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+        "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64.json",
+        "goal_claim_set_digest": "c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64",
+        "task_id": "TASK-CA8E83",
+        "parent_task_id": "TASK-CA8E83"
+      },
+      "aggregate": {
+        "mode": "wait_for_all",
+        "success_event": "task_map.ready",
+        "failure_event": "prd.plan.failed",
+        "child_success_event": "prd.plan.child.completed",
+        "child_failure_event": "prd.plan.child.failed",
+        "synth_role": "prd-plan-critic",
+        "max_retries": 0,
+        "review_strategy": "",
+        "synth_timeout_seconds": 0
+      }
+    }
+  },
+  {
+    "id": "evt-2afa2dbdb304",
+    "type": "fanout.child.dispatched",
+    "ts": "2026-10-26T16:47:47.543469+00:00",
+    "payload": {
+      "fanout_id": "fanout-prd-plan-evt-c6c14900",
+      "trace_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+      "stage_id": "prd-plan",
+      "child_id": "prd-planner",
+      "run_id": "run-fanout-prd-plan-evt-c6c14900-prd-planner",
+      "role_instance": "prd-planner",
+      "target_ref": "HEAD",
+      "task_id": "TASK-CA8E83",
+      "parent_task_id": "TASK-CA8E83",
+      "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+      "skills": [
+        "zf-workflow-adaptation-boundary",
+        "zf-project-adapter-matrix-enrichment",
+        "zf-prd-plan-synth",
+        "zf-yoke-planner-role-context"
+      ],
+      "briefing_path": "/home/uisee/workspace/ty/.zf-ty/briefings/prd-planner-fanout-prd-plan-evt-c6c14900-prd-planner.md",
+      "operation_id": "wop-prd-plan-prd-planner-trig-evt-c6c14900-re-2340b6eabcf4",
+      "attempt_id": "run-fanout-prd-plan-evt-c6c14900-prd-planner",
+      "lease_id": "lease-c781bb218ddb2a8f20e2",
+      "dispatch_id": "run-fanout-prd-plan-evt-c6c14900-prd-planner",
+      "payload": {
+        "task_id": "TASK-CA8E83",
+        "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+        "parent_task_id": "TASK-CA8E83",
+        "trigger_payload": {
+          "fanout_id": "fanout-prd-scan-evt-2085cad1",
+          "trace_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+          "stage_id": "prd-scan",
+          "pdd_id": "TASK-CA8E83",
+          "feature_id": "TASK-CA8E83",
+          "status": "completed",
+          "target_ref": "HEAD",
+          "child_count": 2,
+          "request_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+          "flow_kind": "prd",
+          "request_kind": "auto",
+          "workflow_request_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+          "requirement_spec_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+          "requirement_spec_digest": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9",
+          "request_revision": 4,
+          "workflow_generation": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+          "completion_profile": "software_delivery",
+          "goal_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+          "workflow_proposal_ref": {
+            "ref_schema_version": "sidecar-ref.v1",
+            "kind": "workflow_proposal",
+            "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/proposals/9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387.json",
+            "sha256": "9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387",
+            "byte_count": 68715,
+            "content_type": "application/json",
+            "schema_version": "workflow-proposal.v1",
+            "encoding": "utf-8",
+            "created_by": "workflow-proposal-compiler",
+            "source_event_id": "",
+            "access_scope": {},
+            "retention": {
+              "class": "audit_required"
+            },
+            "required": true,
+            "preview": ""
+          },
+          "workflow_proposal_digest": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+          "effective_config_ref": {
+            "access_scope": {},
+            "byte_count": 195624,
+            "content_type": "application/json",
+            "created_by": "workflow-proposal-compiler",
+            "encoding": "utf-8",
+            "kind": "effective_config_snapshot",
+            "preview": "",
+            "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective-configs/09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943.json",
+            "ref_schema_version": "sidecar-ref.v1",
+            "required": true,
+            "retention": {
+              "class": "audit_required"
+            },
+            "schema_version": "effective-config-snapshot.v1",
+            "sha256": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+            "source_event_id": ""
+          },
+          "effective_config_digest": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+          "run_contract_ref": "artifacts/run-contracts/c5a6708bafb522a9a400d941b4a47914c5784067c31d67c31257ad66ef21ffdd.json",
+          "run_contract_digest": "62ca264a3c08947e6adea7d09671233c30e5039d11be29fb14c4aa3cfa43c4cf",
+          "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+          "run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+          "artifact_refs": [
+            "/home/uisee/workspace/ty/artifacts/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+            "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective/revision-0004-a71f70fad483d291/workflow-input-manifest.json",
+            "/home/uisee/workspace/ty/.zf-ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-preflight.json",
+            "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/task-input-contract.json",
+            "/home/uisee/workspace/ty/docs/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.md",
+            "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/skill-adapter-plan.json",
+            "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-input-manifest.json",
+            "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+            "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-product-scan/report.json",
+            "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-tech-scan/report.json"
+          ],
+          "evidence_refs": [],
+          "rework_of": "evt-f1003ff48f69",
+          "rework_attempt": 1,
+          "rework_source": "plan.rejected",
+          "rework_feedback": [
+            "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+          ],
+          "rework_categories": [],
+          "rework_summary": {
+            "pdd_id": "TASK-CA8E83",
+            "source_event_type": "plan.rejected",
+            "attempt": 1,
+            "action": "replan",
+            "classification": "ambiguous",
+            "categories": [],
+            "failed_task_ids": [],
+            "gap_tasks": [],
+            "rework_paths": [],
+            "feedback_count": 1,
+            "feedback_excerpt": [
+              "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+            ],
+            "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+            "path_owner_task_ids": [],
+            "terminal_path_owner_task_ids": [],
+            "unowned_rework_paths": [],
+            "invalid_failed_task_ids": [],
+            "terminal_failed_task_ids": []
+          },
+          "replan_classification": "ambiguous",
+          "source_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+          "candidate_base_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+          "plan_artifact_package_id": "planpkg-6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+          "plan_artifact_package_ref": "artifacts/plan-packages/6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878.json",
+          "plan_artifact_package_digest": "6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+          "artifact_package_mode": "shadow",
+          "artifact_package_status": "admitted",
+          "plan_revision": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+          "task_map_generation": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+          "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64.json",
+          "goal_claim_set_digest": "c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64",
+          "task_id": "TASK-CA8E83",
+          "parent_task_id": "TASK-CA8E83"
+        },
+        "artifact_refs": [
+          "/home/uisee/workspace/ty/artifacts/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+          "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective/revision-0004-a71f70fad483d291/workflow-input-manifest.json",
+          "/home/uisee/workspace/ty/.zf-ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-preflight.json",
+          "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/task-input-contract.json",
+          "/home/uisee/workspace/ty/docs/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.md",
+          "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/skill-adapter-plan.json",
+          "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-input-manifest.json",
+          "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+          "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-product-scan/report.json",
+          "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-tech-scan/report.json"
+        ],
+        "plan_artifact_package_id": "planpkg-6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+        "plan_artifact_package_ref": "artifacts/plan-packages/6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878.json",
+        "plan_artifact_package_digest": "6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+        "workflow_proposal_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "workflow_proposal",
+          "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/proposals/9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387.json",
+          "sha256": "9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387",
+          "byte_count": 68715,
+          "content_type": "application/json",
+          "schema_version": "workflow-proposal.v1",
+          "encoding": "utf-8",
+          "created_by": "workflow-proposal-compiler",
+          "source_event_id": "",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "workflow_proposal_digest": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+        "effective_config_ref": {
+          "access_scope": {},
+          "byte_count": 195624,
+          "content_type": "application/json",
+          "created_by": "workflow-proposal-compiler",
+          "encoding": "utf-8",
+          "kind": "effective_config_snapshot",
+          "preview": "",
+          "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective-configs/09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943.json",
+          "ref_schema_version": "sidecar-ref.v1",
+          "required": true,
+          "retention": {
+            "class": "audit_required"
+          },
+          "schema_version": "effective-config-snapshot.v1",
+          "sha256": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+          "source_event_id": ""
+        },
+        "effective_config_digest": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+        "run_contract_ref": "artifacts/run-contracts/c5a6708bafb522a9a400d941b4a47914c5784067c31d67c31257ad66ef21ffdd.json",
+        "run_contract_digest": "62ca264a3c08947e6adea7d09671233c30e5039d11be29fb14c4aa3cfa43c4cf",
+        "goal_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+        "flow_kind": "prd",
+        "task_map_generation": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+        "workflow_generation": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+        "request_revision": 4,
+        "completion_profile": "software_delivery",
+        "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64.json",
+        "goal_claim_set_digest": "c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64",
+        "rework_of": "evt-f1003ff48f69",
+        "rework_attempt": 1,
+        "rework_source": "plan.rejected",
+        "rework_feedback": [
+          "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+        ],
+        "rework_categories": [],
+        "rework_summary": {
+          "pdd_id": "TASK-CA8E83",
+          "source_event_type": "plan.rejected",
+          "attempt": 1,
+          "action": "replan",
+          "classification": "ambiguous",
+          "categories": [],
+          "failed_task_ids": [],
+          "gap_tasks": [],
+          "rework_paths": [],
+          "feedback_count": 1,
+          "feedback_excerpt": [
+            "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+          ],
+          "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+          "path_owner_task_ids": [],
+          "terminal_path_owner_task_ids": [],
+          "unowned_rework_paths": [],
+          "invalid_failed_task_ids": [],
+          "terminal_failed_task_ids": []
+        },
+        "replan_classification": "ambiguous",
+        "attempt_domain": "plan",
+        "result_semantics": "artifact_production",
+        "target_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+        "fanout_id": "fanout-prd-plan-evt-c6c14900",
+        "trace_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+        "stage_id": "prd-plan",
+        "child_id": "prd-planner",
+        "run_id": "run-fanout-prd-plan-evt-c6c14900-prd-planner",
+        "role_instance": "prd-planner",
+        "target_ref": "HEAD",
+        "skills": [
+          "zf-workflow-adaptation-boundary",
+          "zf-project-adapter-matrix-enrichment",
+          "zf-prd-plan-synth",
+          "zf-yoke-planner-role-context"
+        ],
+        "canonical_success_event": "prd.plan.child.completed",
+        "canonical_failure_event": "prd.plan.child.failed",
+        "operation_id": "wop-prd-plan-prd-planner-trig-evt-c6c14900-re-2340b6eabcf4",
+        "attempt_id": "run-fanout-prd-plan-evt-c6c14900-prd-planner",
+        "result_protocol_mode": "blocking",
+        "context_inheritance": {
+          "schema_version": "context-section-policy.v1",
+          "mode": "source_manifest",
+          "renderer_version": "source-manifest-renderer.v1"
+        },
+        "plan_candidate_validation": {
+          "schema_version": "plan-candidate-validation-context.v1",
+          "manifest": {
+            "fanout_id": "fanout-prd-plan-evt-c6c14900",
+            "stage_id": "prd-plan",
+            "trigger_payload": {
+              "fanout_id": "fanout-prd-scan-evt-2085cad1",
+              "trace_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "stage_id": "prd-scan",
+              "pdd_id": "TASK-CA8E83",
+              "feature_id": "TASK-CA8E83",
+              "status": "completed",
+              "target_ref": "HEAD",
+              "child_count": 2,
+              "request_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "flow_kind": "prd",
+              "request_kind": "auto",
+              "workflow_request_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+              "requirement_spec_ref": "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+              "requirement_spec_digest": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9",
+              "request_revision": 4,
+              "workflow_generation": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+              "completion_profile": "software_delivery",
+              "goal_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "workflow_proposal_ref": {
+                "ref_schema_version": "sidecar-ref.v1",
+                "kind": "workflow_proposal",
+                "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/proposals/9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387.json",
+                "sha256": "9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387",
+                "byte_count": 68715,
+                "content_type": "application/json",
+                "schema_version": "workflow-proposal.v1",
+                "encoding": "utf-8",
+                "created_by": "workflow-proposal-compiler",
+                "source_event_id": "",
+                "access_scope": {},
+                "retention": {
+                  "class": "audit_required"
+                },
+                "required": true,
+                "preview": ""
+              },
+              "workflow_proposal_digest": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+              "effective_config_ref": {
+                "access_scope": {},
+                "byte_count": 195624,
+                "content_type": "application/json",
+                "created_by": "workflow-proposal-compiler",
+                "encoding": "utf-8",
+                "kind": "effective_config_snapshot",
+                "preview": "",
+                "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective-configs/09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943.json",
+                "ref_schema_version": "sidecar-ref.v1",
+                "required": true,
+                "retention": {
+                  "class": "audit_required"
+                },
+                "schema_version": "effective-config-snapshot.v1",
+                "sha256": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+                "source_event_id": ""
+              },
+              "effective_config_digest": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+              "run_contract_ref": "artifacts/run-contracts/c5a6708bafb522a9a400d941b4a47914c5784067c31d67c31257ad66ef21ffdd.json",
+              "run_contract_digest": "62ca264a3c08947e6adea7d09671233c30e5039d11be29fb14c4aa3cfa43c4cf",
+              "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+              "artifact_refs": [
+                "/home/uisee/workspace/ty/artifacts/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.json",
+                "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective/revision-0004-a71f70fad483d291/workflow-input-manifest.json",
+                "/home/uisee/workspace/ty/.zf-ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-preflight.json",
+                "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/task-input-contract.json",
+                "/home/uisee/workspace/ty/docs/intake/prepare-TASK-CA8E83-0bd2143e4c45a9b0.md",
+                "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/skill-adapter-plan.json",
+                "/home/uisee/workspace/ty/artifacts/workflow/prepare-TASK-CA8E83-0bd2143e4c45a9b0/workflow-input-manifest.json",
+                "/home/uisee/workspace/ty/.zf-ty/workflow-requests/prepare-TASK-CA8E83-0bd2143e4c45a9b0/requirements/revision-0004-a46a90463792ae6b.json",
+                "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-product-scan/report.json",
+                "/home/uisee/workspace/ty/.zf-ty/fanouts/fanout-prd-scan-evt-2085cad1/children/prd-tech-scan/report.json"
+              ],
+              "evidence_refs": [],
+              "rework_of": "evt-f1003ff48f69",
+              "rework_attempt": 1,
+              "rework_source": "plan.rejected",
+              "rework_feedback": [
+                "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+              ],
+              "rework_categories": [],
+              "rework_summary": {
+                "pdd_id": "TASK-CA8E83",
+                "source_event_type": "plan.rejected",
+                "attempt": 1,
+                "action": "replan",
+                "classification": "ambiguous",
+                "categories": [],
+                "failed_task_ids": [],
+                "gap_tasks": [],
+                "rework_paths": [],
+                "feedback_count": 1,
+                "feedback_excerpt": [
+                  "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+                ],
+                "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+                "path_owner_task_ids": [],
+                "terminal_path_owner_task_ids": [],
+                "unowned_rework_paths": [],
+                "invalid_failed_task_ids": [],
+                "terminal_failed_task_ids": []
+              },
+              "replan_classification": "ambiguous",
+              "source_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+              "candidate_base_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+              "plan_artifact_package_id": "planpkg-6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+              "plan_artifact_package_ref": "artifacts/plan-packages/6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878.json",
+              "plan_artifact_package_digest": "6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+              "artifact_package_mode": "shadow",
+              "artifact_package_status": "admitted",
+              "plan_revision": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+              "task_map_generation": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+              "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64.json",
+              "goal_claim_set_digest": "c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64",
+              "task_id": "TASK-CA8E83",
+              "parent_task_id": "TASK-CA8E83"
+            }
+          },
+          "metadata": {
+            "flow_kind": "prd",
+            "quality_floor": "product-demo",
+            "evidence_policy": "strict_refs",
+            "environment_policy": "",
+            "projection_policy": "control_room",
+            "delivery_policy": "report_and_demo",
+            "post_verify_discovery": "product_completeness",
+            "result_protocol": {
+              "mode": "blocking",
+              "semantic_submit_profiles": {}
+            },
+            "artifact_package": {
+              "mode": "shadow",
+              "package_slot": "execution_plan",
+              "required_ports": [
+                "requirement_spec",
+                "goal_claim_set",
+                "task_map",
+                "planning_result"
+              ],
+              "conditional_ports": [
+                "accepted_plan",
+                "plan_critique",
+                "project_adapter",
+                "product_acceptance_spec"
+              ]
+            },
+            "product_acceptance": {
+              "mode": "shadow"
+            },
+            "prd_ref": "TODO: PRD path",
+            "target_root": "TODO: target app path",
+            "stack": ""
+          },
+          "writer_policy": {
+            "execution": {
+              "effective_policy_digest": "sha256:f03fcab95d00a9f789d1e54f2311ee32583678daff31a5d312a0426bfc2b2aef",
+              "setup_declared": false,
+              "impl_self_check_required": true,
+              "stages": [
+                {
+                  "id": "prd-scan",
+                  "trigger": "prd.requested",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "prd-product-scan",
+                    "prd-tech-scan"
+                  ]
+                },
+                {
+                  "id": "prd-plan",
+                  "trigger": "prd.scan.completed",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "prd-planner"
+                  ]
+                },
+                {
+                  "id": "prd-post-verify-discovery",
+                  "trigger": "flow.discovery.requested",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "prd-flow-discovery"
+                  ]
+                },
+                {
+                  "id": "refactor-flow-scan",
+                  "trigger": "refactor.scan.requested",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "refactor-scan-contract",
+                    "refactor-scan-runtime",
+                    "refactor-scan-verification"
+                  ]
+                },
+                {
+                  "id": "refactor-flow-plan",
+                  "trigger": "zaofu.refactor.review.ready",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "refactor-plan-synth"
+                  ]
+                },
+                {
+                  "id": "refactor-flow-verify-bridge",
+                  "trigger": "test.passed",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "refactor-verify-bridge"
+                  ]
+                },
+                {
+                  "id": "refactor-flow-module-parity-scan",
+                  "trigger": "verify.parity_scan.requested",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "refactor-module-parity-scan"
+                  ]
+                },
+                {
+                  "id": "refactor-flow-final-judge",
+                  "trigger": "module.parity.closed",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "judge-refactor"
+                  ]
+                },
+                {
+                  "id": "issue-lanes-impl",
+                  "trigger": "task_map.ready",
+                  "topology": "fanout_writer_scoped",
+                  "roles": [
+                    "issue-fix-lane-0"
+                  ]
+                },
+                {
+                  "id": "issue-lanes-verify",
+                  "trigger": "candidate.ready",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "issue-verify-lane-0"
+                  ]
+                },
+                {
+                  "id": "issue-lanes-final",
+                  "trigger": "flow.goal.closed",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "judge-issue"
+                  ]
+                },
+                {
+                  "id": "prd-lanes-impl",
+                  "trigger": "task_map.ready",
+                  "topology": "fanout_writer_scoped",
+                  "roles": [
+                    "prd-dev-lane-0"
+                  ]
+                },
+                {
+                  "id": "prd-lanes-verify",
+                  "trigger": "candidate.ready",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "prd-verify-lane-0"
+                  ]
+                },
+                {
+                  "id": "prd-lanes-final",
+                  "trigger": "flow.goal.closed",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "judge-prd"
+                  ]
+                },
+                {
+                  "id": "refactor-flow-lanes-impl",
+                  "trigger": "task_map.ready",
+                  "topology": "fanout_writer_scoped",
+                  "roles": [
+                    "refactor-dev-lane-0",
+                    "refactor-dev-lane-1",
+                    "refactor-dev-lane-2",
+                    "refactor-dev-lane-3",
+                    "refactor-dev-lane-4"
+                  ]
+                },
+                {
+                  "id": "refactor-flow-lanes-verify",
+                  "trigger": "candidate.ready",
+                  "topology": "fanout_reader",
+                  "roles": [
+                    "refactor-verify-lane-0",
+                    "refactor-verify-lane-1",
+                    "refactor-verify-lane-2",
+                    "refactor-verify-lane-3",
+                    "refactor-verify-lane-4"
+                  ]
+                }
+              ],
+              "writer_instances": [
+                {
+                  "instance_id": "issue-fix-lane-0",
+                  "flow_kind": "issue",
+                  "default_profile": "direct-v1",
+                  "profile_allowlist": [
+                    "direct-v1"
+                  ]
+                },
+                {
+                  "instance_id": "prd-dev-lane-0",
+                  "flow_kind": "prd",
+                  "default_profile": "direct-v1",
+                  "profile_allowlist": [
+                    "direct-v1"
+                  ]
+                },
+                {
+                  "instance_id": "refactor-dev-lane-0",
+                  "flow_kind": "refactor",
+                  "default_profile": "direct-v1",
+                  "profile_allowlist": [
+                    "direct-v1"
+                  ]
+                },
+                {
+                  "instance_id": "refactor-dev-lane-1",
+                  "flow_kind": "refactor",
+                  "default_profile": "direct-v1",
+                  "profile_allowlist": [
+                    "direct-v1"
+                  ]
+                },
+                {
+                  "instance_id": "refactor-dev-lane-2",
+                  "flow_kind": "refactor",
+                  "default_profile": "direct-v1",
+                  "profile_allowlist": [
+                    "direct-v1"
+                  ]
+                },
+                {
+                  "instance_id": "refactor-dev-lane-3",
+                  "flow_kind": "refactor",
+                  "default_profile": "direct-v1",
+                  "profile_allowlist": [
+                    "direct-v1"
+                  ]
+                },
+                {
+                  "instance_id": "refactor-dev-lane-4",
+                  "flow_kind": "refactor",
+                  "default_profile": "direct-v1",
+                  "profile_allowlist": [
+                    "direct-v1"
+                  ]
+                }
+              ]
+            },
+            "candidate_quality_source": "task_contract_required",
+            "work_units": {
+              "enabled": true,
+              "split_quality": {
+                "mode": "blocking",
+                "max_scope_files": 12,
+                "max_acceptance_criteria": 0,
+                "require_validation_surface": true
+              }
+            }
+          }
+        },
+        "output_profile_id": "workflow-read",
+        "output_profile_revision": "1",
+        "execution_profile_id": "direct-v1",
+        "execution_profile_digest": "e769e0ba44d4b6c72ec7079073235bb190c24e85a94ce8fba728774eac333251",
+        "execution_profile_shadow": {
+          "verdict": "supported",
+          "reason": "direct_profile",
+          "dispatch_effect": "none"
+        },
+        "result_scratch_ref": "tmp/result-submit/wop-prd-plan-prd-planner-trig-evt-c6c14900-re-2340b6eabcf4/run-fanout-prd-plan-evt-c6c14900-prd-planner/result.json",
+        "handoff_authority_contract": {
+          "schema_version": "handoff-authority-contract.v1",
+          "output_profile_id": "workflow-read",
+          "stage_id": "prd-plan",
+          "operation_type": "fanout_reader_child",
+          "attempt_domain": "plan",
+          "continuation_key": "evt-f1003ff48f69",
+          "requires_prior_task_ref": false,
+          "requires_candidate_lineage": false
+        },
+        "semantic_result_submit_mode": "off",
+        "attempt_source_manifest_ref": "artifacts/attempts/run-fanout-prd-plan-evt-c6c14900-prd-planner/source-manifests/dc372561d77ee5f985d4f9ce1ade3a24a905c422d2e18b72ee5b78ba63925710.json",
+        "attempt_source_manifest_digest": "dc372561d77ee5f985d4f9ce1ade3a24a905c422d2e18b72ee5b78ba63925710",
+        "attempt_source_manifest": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "attempt_source_manifest",
+          "ref": "artifacts/attempts/run-fanout-prd-plan-evt-c6c14900-prd-planner/source-manifests/dc372561d77ee5f985d4f9ce1ade3a24a905c422d2e18b72ee5b78ba63925710.json",
+          "sha256": "dc372561d77ee5f985d4f9ce1ade3a24a905c422d2e18b72ee5b78ba63925710",
+          "byte_count": 12647,
+          "content_type": "application/json",
+          "schema_version": "attempt-source-manifest.v1",
+          "encoding": "utf-8",
+          "created_by": "artifact-read-ledger",
+          "source_event_id": "evt-922ea0d4a370",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "required_reads": [
+          {
+            "source_id": "requirement",
+            "artifact_id": "revision-0004-a46a90463792ae6b.json",
+            "artifact_sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-rework-context",
+            "artifact_id": "plan-rework-context.json",
+            "artifact_sha256": "f6fb5ed295533102afd9de6509b0b55584d68ac07a55dce25e18fdfccf2b4b4c",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          }
+        ],
+        "input_consumption_policy": {
+          "schema_version": "input-consumption-policy.v1",
+          "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+          "attempt_id": "run-fanout-prd-plan-evt-c6c14900-prd-planner",
+          "required_reads": [
+            {
+              "source_id": "requirement",
+              "artifact_id": "revision-0004-a46a90463792ae6b.json",
+              "artifact_sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            },
+            {
+              "source_id": "plan-rework-context",
+              "artifact_id": "plan-rework-context.json",
+              "artifact_sha256": "f6fb5ed295533102afd9de6509b0b55584d68ac07a55dce25e18fdfccf2b4b4c",
+              "json_path": "$",
+              "min_returned_bytes": 1,
+              "max_items": 0,
+              "max_chars": 0,
+              "allow_truncated": false
+            }
+          ]
+        },
+        "input_consumption_policy_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "input_consumption_policy",
+          "ref": "artifacts/attempts/read-policies/fb426a467b3567e7e14d1809c99b8568e1fcfe34f34e6dfc2293cee4d3bb4e38.json",
+          "sha256": "fb426a467b3567e7e14d1809c99b8568e1fcfe34f34e6dfc2293cee4d3bb4e38",
+          "byte_count": 694,
+          "content_type": "application/json",
+          "schema_version": "input-consumption-policy.v1",
+          "encoding": "utf-8",
+          "created_by": "artifact-read-ledger",
+          "source_event_id": "evt-922ea0d4a370",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "input_consumption_policy_digest": "fb426a467b3567e7e14d1809c99b8568e1fcfe34f34e6dfc2293cee4d3bb4e38",
+        "request_hash": "be841c23a47fc6c813df2f300c0e5063a1e206cb9376d38a2df5d0e886dcc770",
+        "operation_request_status": "requested",
+        "context_delivery_envelope": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "context_delivery_envelope",
+          "ref": "artifacts/context-delivery/envelopes/1959bad422f367ea06ead75bebe8282cc3383a0ffb9b78e9acb2d32e2fe41d3d.json",
+          "sha256": "1959bad422f367ea06ead75bebe8282cc3383a0ffb9b78e9acb2d32e2fe41d3d",
+          "byte_count": 7769,
+          "content_type": "application/json",
+          "schema_version": "context-delivery-envelope.v1",
+          "encoding": "utf-8",
+          "created_by": "context-delivery",
+          "source_event_id": "evt-922ea0d4a370",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "context_delivery_envelope_ref": "artifacts/context-delivery/envelopes/1959bad422f367ea06ead75bebe8282cc3383a0ffb9b78e9acb2d32e2fe41d3d.json",
+        "context_delivery_envelope_digest": "1959bad422f367ea06ead75bebe8282cc3383a0ffb9b78e9acb2d32e2fe41d3d",
+        "provider_session_id": "01a178fb-2184-73c2-9e41-7883b619892a"
+      },
+      "flow_kind": "prd",
+      "task_map_generation": "0ffc759233ecaabf31ab6f185fbac27c4a8e597c07b932061e44430529b2fb2b",
+      "goal_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+      "workflow_generation": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+      "request_revision": 4,
+      "completion_profile": "software_delivery",
+      "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64.json",
+      "goal_claim_set_digest": "c68825cbca2505106c21511cc8e0d962e1611a09e7c4239ed8febdad876afc64",
+      "result_semantics": "artifact_production",
+      "plan_artifact_package_id": "planpkg-6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+      "plan_artifact_package_ref": "artifacts/plan-packages/6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878.json",
+      "plan_artifact_package_digest": "6b59033e4728a5973381185122bf5236e1203b0db8b371de8c1913279b24d878",
+      "workflow_proposal_ref": {
+        "ref_schema_version": "sidecar-ref.v1",
+        "kind": "workflow_proposal",
+        "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/proposals/9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387.json",
+        "sha256": "9af7545b6028200eca87cb24b193988ff19b1f7c2648d97032b198d643176387",
+        "byte_count": 68715,
+        "content_type": "application/json",
+        "schema_version": "workflow-proposal.v1",
+        "encoding": "utf-8",
+        "created_by": "workflow-proposal-compiler",
+        "source_event_id": "",
+        "access_scope": {},
+        "retention": {
+          "class": "audit_required"
+        },
+        "required": true,
+        "preview": ""
+      },
+      "workflow_proposal_digest": "d3dfb9eb7a7b5d7efe35282e42b668b28eab745bb58bf9ece480bdace0962fe5",
+      "effective_config_ref": {
+        "access_scope": {},
+        "byte_count": 195624,
+        "content_type": "application/json",
+        "created_by": "workflow-proposal-compiler",
+        "encoding": "utf-8",
+        "kind": "effective_config_snapshot",
+        "preview": "",
+        "ref": "artifacts/workflow/proposals/prepare-TASK-CA8E83-0bd2143e4c45a9b0/effective-configs/09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943.json",
+        "ref_schema_version": "sidecar-ref.v1",
+        "required": true,
+        "retention": {
+          "class": "audit_required"
+        },
+        "schema_version": "effective-config-snapshot.v1",
+        "sha256": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+        "source_event_id": ""
+      },
+      "effective_config_digest": "09a8c150ce74d5d91c31e8b56e50fa64b9e908d3ddfa67e3908771ec5ac9a943",
+      "run_contract_ref": "artifacts/run-contracts/c5a6708bafb522a9a400d941b4a47914c5784067c31d67c31257ad66ef21ffdd.json",
+      "run_contract_digest": "62ca264a3c08947e6adea7d09671233c30e5039d11be29fb14c4aa3cfa43c4cf",
+      "target_commit": "de6fd9addee6fefc71aa6be530678ad5e8f2886b",
+      "request_hash": "be841c23a47fc6c813df2f300c0e5063a1e206cb9376d38a2df5d0e886dcc770",
+      "result_protocol_mode": "blocking",
+      "attempt_source_manifest_ref": "artifacts/attempts/run-fanout-prd-plan-evt-c6c14900-prd-planner/source-manifests/dc372561d77ee5f985d4f9ce1ade3a24a905c422d2e18b72ee5b78ba63925710.json",
+      "attempt_source_manifest_digest": "dc372561d77ee5f985d4f9ce1ade3a24a905c422d2e18b72ee5b78ba63925710",
+      "attempt_source_manifest": {
+        "ref_schema_version": "sidecar-ref.v1",
+        "kind": "attempt_source_manifest",
+        "ref": "artifacts/attempts/run-fanout-prd-plan-evt-c6c14900-prd-planner/source-manifests/dc372561d77ee5f985d4f9ce1ade3a24a905c422d2e18b72ee5b78ba63925710.json",
+        "sha256": "dc372561d77ee5f985d4f9ce1ade3a24a905c422d2e18b72ee5b78ba63925710",
+        "byte_count": 12647,
+        "content_type": "application/json",
+        "schema_version": "attempt-source-manifest.v1",
+        "encoding": "utf-8",
+        "created_by": "artifact-read-ledger",
+        "source_event_id": "evt-922ea0d4a370",
+        "access_scope": {},
+        "retention": {
+          "class": "audit_required"
+        },
+        "required": true,
+        "preview": ""
+      },
+      "input_consumption_policy_ref": {
+        "ref_schema_version": "sidecar-ref.v1",
+        "kind": "input_consumption_policy",
+        "ref": "artifacts/attempts/read-policies/fb426a467b3567e7e14d1809c99b8568e1fcfe34f34e6dfc2293cee4d3bb4e38.json",
+        "sha256": "fb426a467b3567e7e14d1809c99b8568e1fcfe34f34e6dfc2293cee4d3bb4e38",
+        "byte_count": 694,
+        "content_type": "application/json",
+        "schema_version": "input-consumption-policy.v1",
+        "encoding": "utf-8",
+        "created_by": "artifact-read-ledger",
+        "source_event_id": "evt-922ea0d4a370",
+        "access_scope": {},
+        "retention": {
+          "class": "audit_required"
+        },
+        "required": true,
+        "preview": ""
+      },
+      "input_consumption_policy": {
+        "schema_version": "input-consumption-policy.v1",
+        "workflow_run_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+        "attempt_id": "run-fanout-prd-plan-evt-c6c14900-prd-planner",
+        "required_reads": [
+          {
+            "source_id": "requirement",
+            "artifact_id": "revision-0004-a46a90463792ae6b.json",
+            "artifact_sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          },
+          {
+            "source_id": "plan-rework-context",
+            "artifact_id": "plan-rework-context.json",
+            "artifact_sha256": "f6fb5ed295533102afd9de6509b0b55584d68ac07a55dce25e18fdfccf2b4b4c",
+            "json_path": "$",
+            "min_returned_bytes": 1,
+            "max_items": 0,
+            "max_chars": 0,
+            "allow_truncated": false
+          }
+        ]
+      },
+      "input_consumption_policy_digest": "fb426a467b3567e7e14d1809c99b8568e1fcfe34f34e6dfc2293cee4d3bb4e38",
+      "required_reads": [
+        {
+          "source_id": "requirement",
+          "artifact_id": "revision-0004-a46a90463792ae6b.json",
+          "artifact_sha256": "a46a90463792ae6b6949c3d924ac7783bc8865737ba01d8fdf952ff570fbcbe9",
+          "json_path": "$",
+          "min_returned_bytes": 1,
+          "max_items": 0,
+          "max_chars": 0,
+          "allow_truncated": false
+        },
+        {
+          "source_id": "plan-rework-context",
+          "artifact_id": "plan-rework-context.json",
+          "artifact_sha256": "f6fb5ed295533102afd9de6509b0b55584d68ac07a55dce25e18fdfccf2b4b4c",
+          "json_path": "$",
+          "min_returned_bytes": 1,
+          "max_items": 0,
+          "max_chars": 0,
+          "allow_truncated": false
+        }
+      ],
+      "rework_of": "evt-f1003ff48f69",
+      "rework_attempt": 1,
+      "rework_source": "plan.rejected",
+      "rework_feedback": [
+        "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+      ],
+      "rework_categories": [],
+      "rework_summary": {
+        "pdd_id": "TASK-CA8E83",
+        "source_event_type": "plan.rejected",
+        "attempt": 1,
+        "action": "replan",
+        "classification": "ambiguous",
+        "categories": [],
+        "failed_task_ids": [],
+        "gap_tasks": [],
+        "rework_paths": [],
+        "feedback_count": 1,
+        "feedback_excerpt": [
+          "plan-rejection: plan-review:bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e\n用户已确认局部修订。读取不可变审阅工件 artifacts/workflow/plan-reviews/bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e.json (sha256=bfe5a9898621b1dc87d399639e29adcec03851eb12f8d9fb4e5ee43ec1a7588e)，其中 body 是修订后完整文档。仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。"
+        ],
+        "attribution_contract": "Route the rework to the lane whose owned files the failure actually implicates. Provide attribution_evidence: failing check -> implicated files/packages -> target lane. Treat any worker-rejection feedback above as counter-evidence against the previous routing.",
+        "path_owner_task_ids": [],
+        "terminal_path_owner_task_ids": [],
+        "unowned_rework_paths": [],
+        "invalid_failed_task_ids": [],
+        "terminal_failed_task_ids": []
+      },
+      "replan_classification": "ambiguous",
+      "snapshot_ref": ".zf-ty/snapshots/TASK-CA8E83/run-fanout-prd-plan-evt-c6c14900-prd-planner/runtime-snapshot.json"
+    }
+  }
+]

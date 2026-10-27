@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1/1] [chromium] › tests/workflow-graph-redesign.spec.ts:164:1 › Agent dialog retains conversation and pending diff while Raw stays focused on YAML
+  1 passed (16.9s)

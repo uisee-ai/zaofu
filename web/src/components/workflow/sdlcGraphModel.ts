@@ -10,7 +10,7 @@ export interface SdlcGraph {
   timeline: { seq: number; id: string; ts: string; type: string; task_id?: string; actor?: string; origin: string; payload: Record<string, unknown> }[];
   analysis: { intervals: { operation_id: string; task_id: string; role: string; status: string; start_ms: number | null; end_ms: number | null; duration_ms: number | null; queue_wait_ms: number | null }[]; critical_path: { status: string; node_ids: string[]; duration_ms: number | null; method: string } };
 }
-export const graphViews: [GraphView, string][] = [["lifecycle", "生命周期"], ["modules", "模块与任务"], ["workflow", "Workflow 执行"], ["trace", "追溯与变更"], ["delivery", "验证与交付"], ["timeline", "时间线"]];
+export const graphViews: [GraphView, string][] = [["lifecycle", "Lifecycle"], ["modules", "Task"], ["workflow", "Dag"], ["trace", "Trace"], ["delivery", "Delivery"], ["timeline", "Timeline"]];
 export const statusLabels: Record<string, string> = {
   unknown: "未知", draft: "草稿", pending: "等待", running: "执行中", in_progress: "执行中", reserved: "已预留", requested: "排队中",
   settled: "操作结束", accepted: "内核已接纳", reported: "已报告", failed: "失败", blocked: "阻塞", evidence_missing: "缺少接纳证据",
@@ -42,7 +42,7 @@ export function expandedNodeIds(nodes: SdlcNode[], edges: SdlcEdge[], collapsed:
   return visible;
 }
 
-/** Dependencies drive columns; back/rework edges remain edges, never duplicate nodes. */
+/** Dependencies drive top-down ranks; back/rework edges never duplicate nodes. */
 export function graphPositions(nodes: SdlcNode[], edges: SdlcEdge[]): Map<string, { x: number; y: number }> {
   const ids = new Set(nodes.map(n => n.id));
   const incoming = new Map(nodes.map(n => [n.id, [] as string[]]));
@@ -58,10 +58,12 @@ export function graphPositions(nodes: SdlcNode[], edges: SdlcEdge[]): Map<string
       pending.delete(id);
     }
   }
+  const widths = new Map<number, number>();
+  for (const rank of columns.values()) widths.set(rank, (widths.get(rank) || 0) + 1);
   const rows = new Map<number, number>();
   return new Map([...columns].sort(([a], [b]) => a.localeCompare(b)).map(([id, column]) => {
     const row = rows.get(column) || 0; rows.set(column, row + 1);
-    return [id, { x: column * 280, y: row * 120 }];
+    return [id, { x: (row - (widths.get(column)! - 1) / 2) * 310, y: column * 200 }];
   }));
 }
 
