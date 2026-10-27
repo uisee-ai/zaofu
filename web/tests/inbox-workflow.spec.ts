@@ -39,10 +39,10 @@ for (const failed of [false, true]) test(`late ${failed ? "error" : "detail"} ca
   await page.goto("/tests/inbox-workflow.html?surface=workflow");
   await page.getByLabel("Select workflow").selectOption("B");
   await openRaw(page);
-  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective B");
+  await expect(page.getByLabel("Select workflow")).toHaveValue("B");
   release();
   await page.evaluate(() => new Promise(requestAnimationFrame));
-  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective B");
+  await expect(page.getByLabel("Select workflow")).toHaveValue("B");
   await expect(page.locator(".workflow-proposal-notice.tone-error")).toHaveCount(0);
   await page.getByTestId("workflow-start").click();
   await expect(page.getByTestId("actions")).toContainText('"request_id":"B"');
@@ -61,7 +61,10 @@ test("project change hides old Workflow details while new identity loads", async
   await page.getByRole("button", { name: "Switch project" }).click();
   await expect(page.getByTestId("workflow-start")).toHaveCount(0);
   release();
-  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective NEW");
+  await expect(page.getByLabel("Select workflow")).toHaveCount(0);
+  await openRaw(page);
+  await page.getByTestId("workflow-start").click();
+  await expect(page.getByTestId("actions")).toContainText('"request_id":"NEW"');
 });
 
 test("an old project's delayed list cannot select an action in the new project", async ({ page }) => {
@@ -74,10 +77,10 @@ test("an old project's delayed list cannot select an action in the new project",
   });
   await page.goto("/tests/inbox-workflow.html");
   await page.getByRole("button", { name: "Switch project" }).click();
-  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective A");
+  await expect(page.getByLabel("Select workflow")).toHaveValue("A");
   release();
   await page.evaluate(() => new Promise(requestAnimationFrame));
-  await expect(page.getByRole("option", { name: /Objective OLD/ })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: /^OLD/ })).toHaveCount(0);
   await openRaw(page);
   await page.getByTestId("workflow-start").click();
   await expect(page.getByTestId("actions")).toContainText('"project":"b"');
@@ -103,7 +106,7 @@ test("slow preparation polls do not overlap or create an extra ordinary poll", a
     await route.fulfill({ json: detail("A", "running") }).catch(() => {});
   });
   await page.goto("/tests/inbox-workflow.html");
-  await expect(page.locator(".workflow-selector option:checked")).toContainText("Objective A");
+  await expect(page.getByLabel("Select workflow")).toHaveValue("A");
   await expect(page.getByRole("region", { name: "Workflow 图工作台" })).toBeVisible();
   const initial = calls;
   await page.clock.runFor(1600);
@@ -140,7 +143,7 @@ test("Inbox read state stays separate from decisions and retains current unread 
   await expect(row("approval")).toContainText("Needs action");
   await expect(row("approval").locator(".operator-inbox-unread-dot")).toHaveCount(0);
   await expect(page.locator(".inbox-queue").getByText("Delivery report", { exact: true })).toHaveCount(2);
-  await page.getByRole("button", { name: "Unread", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Unread", exact: true }).check();
   await row("report-a").click();
   await expect(row("report-a").getByRole("button", { name: "Ack", exact: true })).toHaveCount(0);
   await page.locator(".inbox-reading-pane").getByRole("button", { name: "Mark read", exact: true }).click();
@@ -152,6 +155,7 @@ test("Inbox read state stays separate from decisions and retains current unread 
   await row("report-b").click();
   await expect(row("report-a")).toHaveCount(0);
   await page.getByRole("button", { name: "Mark all read" }).click();
+  await page.getByRole("checkbox", { name: "Unread", exact: true }).uncheck();
   await page.getByRole("button", { name: "Needs action", exact: true }).click();
   await expect(row("approval")).toBeVisible();
   expect(actions).toEqual(["inbox-item-read", "inbox-item-read", "inbox-all-read"]);
@@ -184,6 +188,30 @@ test("a pending Inbox poll cannot undo an accepted read acknowledgement", async 
   release();
   await page.clock.runFor(200);
   await expect(page.locator(".inbox-queue .operator-inbox-unread-dot")).toHaveCount(0);
+});
+
+test("Inbox row read control acknowledges only its own item", async ({ page }) => {
+  const items = ["first", "second"].map(id => ({ id, title: `Report ${id}`, kind: "run_delivery", status: "pending", actionability: "informational", unread: true }));
+  const reads: string[] = [];
+  await page.route("**/api/projects/**", async route => {
+    if (route.request().method() === "POST") {
+      const id = route.request().postDataJSON().payload.item_id;
+      reads.push(id);
+      items.find(item => item.id === id)!.unread = false;
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: { items, pending: items, summary: { unread: items.filter(item => item.unread).length }, policy: {} } });
+  });
+  await page.goto("/tests/inbox-workflow.html?surface=inbox");
+  await page.getByRole("button", { name: "Mark read: Report second" }).click();
+  await expect(page.getByRole("button", { name: "Mark read: Report second" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Mark read: Report first" })).toBeVisible();
+  expect(reads).toEqual(["second"]);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.locator('[data-inbox-id="first"]').click();
+  await page.locator(".inbox-reading-pane").getByRole("button", { name: "Mark read", exact: true }).click();
+  await expect(page.locator(".inbox-reading-pane").getByRole("button", { name: "Mark read", exact: true })).toHaveCount(0);
+  expect(reads).toEqual(["second", "first"]);
 });
 
 for (const action of ["replan-approve", "replan-reject"]) test(`Inbox owner preview waits for bound refs before ${action}`, async ({ page }) => {

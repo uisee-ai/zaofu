@@ -34,7 +34,6 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const [asOf, setAsOf] = useState(0);
   const [cursor, setCursor] = useState("");
   const [planId, setPlanId] = useState("");
-  const [updatedAt, setUpdatedAt] = useState("");
   const [showTools, setShowTools] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -56,7 +55,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
         const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workflow-requests/${encodeURIComponent(requestId)}/graph?as_of=${asOf}`, { signal: controller.signal, cache: "no-store" });
         if (!response.ok) throw new Error(`图读取失败 HTTP ${response.status}`);
         const next = await response.json() as SdlcGraph;
-        if (!disposed) { setGraph(next); setError(""); setUpdatedAt(new Date().toLocaleTimeString()); }
+        if (!disposed) { setGraph(next); setError(""); }
       } catch (reason) { if (!disposed) setError(String(reason)); }
       finally { pending = false; }
     }
@@ -119,6 +118,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   }, [view]);
   const selectedNode = graph?.nodes.find(n => n.id === selected);
   const preview = graph?.plans.find(p => p.plan_id === planId);
+  const pendingPlan = graph?.plans.find(p => p.status === "pending");
   async function approvePlan() {
     if (!preview || busy) return;
     setBusy(true);
@@ -141,14 +141,13 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
           <button type="button" onClick={() => setExpanded(!expanded)} aria-label={expanded ? "收回工作台" : "展开工作台"}>{expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
         </div>
       </header>
-      <span className="sdlc-live" role="status"><i className={!asOf && !error ? "live" : ""} />{asOf ? "History" : error ? "Update delayed" : "Live"} · {graph?.scope.run_id || "Preview"}{updatedAt ? ` · ${updatedAt}` : ""}</span>
+      <div className="sdlc-status-row">
+        <span className="sdlc-live" role="status"><i className={!asOf && !error ? "live" : ""} />{asOf ? "History" : error ? "Update delayed" : "Live"} · {graph?.scope.run_id || "Preview"}</span>
+        {pendingPlan && !asOf && <button className="sdlc-review" type="button" title="Review pending plan" onClick={() => setPlanId(pendingPlan.plan_id)}>Review</button>}
+      </div>
       {error && <p role="alert">{error}</p>}
       {!graph && !error && <p>正在读取流程与运行关系…</p>}
       {graph && <>
-        {graph.plans.some(p => p.status === "pending") && !asOf && <div className="sdlc-attention" role="status">
-          <span>Plan is ready. Review it before implementation continues.</span>
-          <button type="button" onClick={() => setPlanId(graph.plans.find(p => p.status === "pending")!.plan_id)}>Review Plan</button>
-        </div>}
         {showTools && <div className="sdlc-toolbar">
           {view === "workflow" && <button type="button" aria-pressed={fullStructure} onClick={() => setFullStructure(!fullStructure)}>{fullStructure ? "返回阶段与执行概览" : "展开角色、汇聚与事件结构"}</button>}
           <label>Search <input aria-label="搜索图节点" placeholder="Module, task, agent or ID" value={search} onChange={e => setSearch(e.target.value)} /></label>
@@ -208,7 +207,8 @@ function FitResizedCanvas() {
     const size = `${width}:${height}`;
     const changed = previous.current !== size;
     previous.current = size;
-    if (changed) void fitView({ ...graphFitOptions, duration: 150 });
+    // On narrow canvases, keep cards readable; the fit control still shows the whole graph.
+    if (changed) void fitView({ ...graphFitOptions, minZoom: width <= 600 ? 0.65 : 0, duration: 150 });
   }, [width, height, initialized, fitView]);
   return null;
 }

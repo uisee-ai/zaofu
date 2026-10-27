@@ -9,9 +9,11 @@ import {
   AlertTriangle,
   Bell,
   Check,
+  CheckCheck,
   CheckCircle2,
   Eye,
   FileText,
+  MailOpen,
   MessageSquare,
   RefreshCw,
   Search,
@@ -68,6 +70,7 @@ function OperatorInboxPanel(
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
   const [view, setView] = useState<InboxView>("all");
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [kindFilter, setKindFilter] = useState<InboxKindFilter>("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -87,18 +90,19 @@ function OperatorInboxPanel(
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return baseItems.filter((item) => {
+      if (unreadOnly && !item.unread && item.id !== retainedReadId) return false;
       if (kindFilter !== "all" && item.kind !== kindFilter) return false;
       if (!normalizedQuery) return true;
       return itemSearchText(item).includes(normalizedQuery);
     });
-  }, [baseItems, kindFilter, query]);
+  }, [baseItems, kindFilter, query, unreadOnly, retainedReadId]);
   const selectedItem = useMemo(
     () => filteredItems.find((item) => item.id === selectedId) ?? filteredItems[0] ?? null,
     [filteredItems, selectedId],
   );
 
   useEffect(() => { if (detailPane.current) detailPane.current.scrollTop = 0; }, [selectedItem?.id]);
-  useEffect(() => { setMobileDetail(false); }, [view, kindFilter, query]);
+  useEffect(() => { setMobileDetail(false); }, [view, kindFilter, query, unreadOnly]);
 
   useEffect(() => {
     if (!filteredItems.length) {
@@ -234,7 +238,7 @@ function OperatorInboxPanel(
     if (busy) return;
     setBusy(item ? `read:${item.id}` : "read:all");
     setActionError("");
-    if (view === "unread") setRetainedReadId(selectedItem?.id || "");
+    if (unreadOnly) setRetainedReadId(!item || item.id === selectedItem?.id ? selectedItem?.id || "" : "");
     try {
       const result = await postAction(item ? "inbox-item-read" : "inbox-all-read",
         item ? { item_id: item.id } : {}, projectId || undefined);
@@ -313,22 +317,28 @@ function OperatorInboxPanel(
       <div className="inbox-queue">
       <div className="plan-approval-head operator-inbox-head">
         <div className="inbox-title-row"><h3>{t("Inbox")}</h3><span className="inbox-pending-count" title={`${pendingCount} ${t("pending decisions")}`}>{initialLoading ? t("loading") : pendingCount}</span>
+          <label className="inbox-unread-toggle"><input type="checkbox" checked={unreadOnly} onChange={event => { setRetainedReadId(""); setUnreadOnly(event.target.checked); }} /> {t("Unread")}</label>
+          <button type="button" className="inbox-header-control" aria-label="Mark all read" title="Mark all as read" disabled={Boolean(busy) || !unreadCount} onClick={() => void markRead()}><CheckCheck size={15} aria-hidden="true" /></button>
           <button type="button" className={`inbox-header-control ${query || kindFilter !== "all" ? "active" : ""}`} aria-label={t("Search inbox")} aria-expanded={searchOpen} onClick={() => setSearchOpen(!searchOpen)}><Search size={15} aria-hidden="true" /></button>
           <button type="button" className="inbox-header-control" aria-label={t("Refresh")} onClick={() => void refresh()} disabled={inboxRefreshing}><RefreshCw size={15} aria-hidden="true" /></button>
         </div>
           <div className="operator-inbox-mode" aria-label="Inbox display view">
-            {VIEW_OPTIONS.map((option) => (
+            {VIEW_OPTIONS.filter(option => ["all", "decisions", "resolved"].includes(option.value)).map((option) => (
               <button
                 key={option.value}
                 type="button"
                 className={view === option.value ? "active" : ""}
+                aria-pressed={view === option.value}
                 onClick={() => { setRetainedReadId(""); setView(option.value); }}
               >
                 {t(option.label)}
               </button>
             ))}
+            <select className="inbox-more-views" aria-label="More inbox views" value={["runtime_attention", "notification", "automation"].includes(view) ? view : ""} onChange={event => { setRetainedReadId(""); if (event.target.value) setView(event.target.value as InboxView); }}>
+              <option value="">More</option>
+              {VIEW_OPTIONS.filter(option => ["runtime_attention", "notification", "automation"].includes(option.value)).map(option => <option key={option.value} value={option.value}>{t(option.label)}</option>)}
+            </select>
           </div>
-          <button type="button" className="delivery-action-button" disabled={Boolean(busy) || !unreadCount} onClick={() => void markRead()}>Mark all read</button>
         {searchOpen && <div className="operator-inbox-tools">
           <label className="operator-inbox-search">
             <Search size={14} aria-hidden="true" />
@@ -462,13 +472,14 @@ function InboxRow({
   const { t } = useUiPreferences();
   const Icon = kindIcon(item.kind);
   const disabled = Boolean(busy);
-  if (!detail) return <InboxQueueItem item={item} selected={selected} kind={t(kindLabel(item.kind))} primaryRef={inboxItemPrimaryRef(item)} onSelect={onSelect} />;
+  if (!detail) return <InboxQueueItem item={item} selected={selected} kind={t(kindLabel(item.kind))} primaryRef={inboxItemPrimaryRef(item)} onSelect={onSelect} onRead={onRead} disabled={disabled} />;
   return (
     <article
       className={`operator-inbox-row inbox-reading-card ${selected ? "selected" : ""} ${item.status === "pending" ? "pending" : "resolved"}`}
       data-testid={item.kind === "plan_approval" ? "approval-card" : "operator-inbox-row"}
       role="listitem"
     >
+      {selected && item.unread === true && <button type="button" className="inbox-detail-read" aria-label="Mark read" title="Mark as read" disabled={disabled} onClick={onRead}><MailOpen size={15} aria-hidden="true" /></button>}
       <div className="operator-inbox-row-grid">
         <div className="operator-inbox-avatar" aria-hidden="true">
           <Icon size={17} />
@@ -501,8 +512,6 @@ function InboxRow({
       </div>
       {selected ? (
         <>
-          <button type="button" className="delivery-action-button" disabled={disabled || !item.unread}
-            onClick={(event) => { event.stopPropagation(); onRead(); }}>Mark read</button>
           {item.deep_link ? (
             <div className="operator-inbox-inline-actions">
               <a className="delivery-action-button" href={inboxDeepLink(item.deep_link, projectId)}>
