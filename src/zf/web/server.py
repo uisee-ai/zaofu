@@ -688,6 +688,8 @@ def create_app(
     app = FastAPI(title="zaofu dashboard", version=__version__)
     from zf.web.dashboard_projection import register_pending_handler
     register_pending_handler(app)
+    from zf.web.projection_worker import active_worker, register_projection_worker
+    register_projection_worker(app)
     state_dir = Path(state_dir).resolve()
     project_root = _resolve_project_root_for_state(state_dir, project_root)
     app.state.kanban_agent_recovery = reconcile_kanban_startup(state_dir, config=config)
@@ -830,7 +832,7 @@ def create_app(
     def _cached_project_snapshot(sd: Path, *, slice_name: str, cfg, root, token) -> dict[str, Any]:
         if slice_name in {"board", "observability-summary"}:
             from zf.web.dashboard_projection import snapshot as dashboard_snapshot
-            return _with_session_overlay(dashboard_snapshot(sd, slice_name=slice_name, config=cfg, project_root=root or sd.parent), token)
+            return _with_session_overlay(dashboard_snapshot(sd, slice_name=slice_name, config=cfg, project_root=root or sd.parent, worker=active_worker(app)), token)
         from zf.web.projections.events import _event_log_fingerprint
 
         key = f"{sd}::{slice_name}"
@@ -927,6 +929,7 @@ def create_app(
             "started_at": _SERVER_STARTED_AT,
             "dist_index_mtime": dist_mtime,
             "state_dir": str(state_dir),
+            "projection_worker": app.state.projection_worker.status(),
         })
 
     from zf.web.observability import register_observability_routes
@@ -2412,16 +2415,16 @@ def create_app(
     @app.get("/api/projects/{project_id}/agent-monitoring")
     def project_agent_monitoring_page(project_id: str) -> JSONResponse:
         import sqlite3
-        from zf.web.agent_monitoring import build_agent_monitoring, MonitoringSourceChanged
+        from zf.web.agent_monitoring import read_agent_monitoring, MonitoringSourceChanged
         context = _resolve_api_project(
             project_id, default_project_id=default_project_id,
             default_state_dir=state_dir, default_config=config,
             default_project_root=project_root,
         )
         try:
-            return JSONResponse(build_agent_monitoring(
+            return JSONResponse(read_agent_monitoring(
                 context.state_dir, project_id=project_id, config=context.config,
-                project_root=context.project_root,
+                project_root=context.project_root, worker=active_worker(app),
             ))
         except (MonitoringSourceChanged, OSError, sqlite3.DatabaseError):
             return JSONResponse({"status": "refreshing", "detail": "Monitoring sources unavailable or changed; retry"},

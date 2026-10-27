@@ -59,6 +59,24 @@ def test_hot_read_and_new_app_reuse_sqlite_without_hydrating_or_rebuilding(setup
     fail.assert_not_called()
 
 
+def test_cold_dependency_discovery_reuses_the_same_unchanged_ledger(setup, monkeypatch):
+    client, service, binding = setup
+    factory = cache.event_log_from_project
+    reads = []
+    def observed(*args, **kwargs):
+        log = factory(*args, **kwargs)
+        def read():
+            reads.append(True)
+            return log.read_all()
+        return SimpleNamespace(read_all=read)
+    monkeypatch.setattr(cache, "event_log_from_project", observed)
+    monkeypatch.setattr(read_model, "hydrate_events_by_ref", Mock(side_effect=AssertionError("decoded ledger was indexed again")))
+    response = client.get(url(binding))
+    assert response.status_code == 200, response.text
+    assert response.json() == oracle(client, service, binding)
+    assert len(reads) == 1
+
+
 def test_event_and_history_generations_remain_exact_and_isolated(setup):
     client, service, binding = setup
     submit(service, binding)

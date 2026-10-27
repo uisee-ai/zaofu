@@ -420,7 +420,12 @@ export function AgentViewPage({
 
           </span>
         </div>
-
+        <span className="muted" role="status">
+          {projectionSource}
+          {monitoring.data?.generated_at && <time dateTime={monitoring.data.generated_at}>
+            {` · ${new Date(monitoring.data.generated_at).toLocaleTimeString()}`}
+          </time>}
+        </span>
       </div>
 
       {monitoring.error && <p role="alert">Metrics refresh failed. {metricsReady ? "Showing the previous reading." : "Retrying."}</p>}

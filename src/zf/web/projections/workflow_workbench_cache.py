@@ -141,10 +141,14 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
             return cached
         # A newly discovered external ref needs a before/after check on a
         # subsequent build; metadata observed only after reading is insufficient.
+        events, event_version = None, ""
         for _attempt in range(3):
             before = version()
             with collect_projection_failures() as failures:
-                events = event_log_from_project(context.state_dir, config=context.config).read_all()
+                current_events = fingerprint(context.state_dir, [], context.config)
+                if events is None or event_version != current_events:
+                    events = event_log_from_project(context.state_dir, config=context.config).read_all()
+                    event_version = current_events
                 response = detail(project_id, request_id, events=events)
                 if response.status_code != 200:
                     return response

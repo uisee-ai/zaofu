@@ -67,6 +67,24 @@ export function graphPositions(nodes: SdlcNode[], edges: SdlcEdge[]): Map<string
   }));
 }
 
+/** Status, labels and selection don't change the fixed-size dependency layout. */
+export class GraphLayoutCache {
+  private key = "";
+  private positions = new Map<string, { x: number; y: number }>();
+
+  get(nodes: SdlcNode[], edges: SdlcEdge[]) {
+    const ids = new Set(nodes.map(node => node.id));
+    const links = edges.filter(edge => ids.has(edge.source) && ids.has(edge.target) && !/rework|retry/.test(edge.relation))
+      .map(edge => JSON.stringify([edge.source, edge.target])).sort();
+    const key = JSON.stringify([[...ids].sort(), links]);
+    if (key !== this.key) {
+      this.positions = graphPositions(nodes, edges);
+      this.key = key;
+    }
+    return this.positions;
+  }
+}
+
 /** Structural reachability is confirmed; business impact beyond declared links needs review. */
 export function relatedNodes(id: string, edges: SdlcEdge[], direction: "upstream" | "downstream"): Set<string> {
   const result = new Set([id]); const queue = [id];

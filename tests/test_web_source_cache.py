@@ -28,3 +28,14 @@ def test_fingerprint_does_not_copy_config_and_tracks_in_place_changes(tmp_path, 
     assert fingerprint(tmp_path, [], config) == first
     config.project.state_dir = ".custom-state"
     assert fingerprint(tmp_path, [], config) != first
+
+
+def test_dashboard_scope_does_not_deepcopy_or_lose_nested_config_changes(tmp_path, monkeypatch):
+    from zf.web.projections.dashboard_store import scope_identity
+    config = ZfConfig()
+    def reject_copy(*args):
+        raise AssertionError("dashboard check deep-copied configuration")
+    monkeypatch.setattr("copy.deepcopy", reject_copy)
+    first = scope_identity(tmp_path, tmp_path.parent, config)
+    config.project.state_dir = "other-state"
+    assert scope_identity(tmp_path, tmp_path.parent, config) != first

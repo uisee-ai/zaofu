@@ -334,11 +334,11 @@ def build_workflow_request_router(
     def project_workflow_request_detail(project_id: str, request_id: str) -> JSONResponse:
         return read_workflow_request_detail(project_id, request_id)
 
-    def read_workflow_request_detail(project_id: str, request_id: str, *, events=None) -> JSONResponse:
+    def read_workflow_request_detail(project_id: str, request_id: str, *, events=None, context=None) -> JSONResponse:
         from zf.runtime.workflow_review_candidate import review_candidate
         from zf.runtime.workflow_requests import load_workflow_request
 
-        context = resolve(project_id)
+        context = context if context is not None else resolve(project_id)
         result = load_workflow_request(context.state_dir, request_id)
         if not result:
             return JSONResponse(
@@ -403,6 +403,7 @@ def build_workflow_request_router(
             context.state_dir,
             str(result.get("synthesis_operation_id") or ""),
             config=context.config,
+            events=events,
         )
         effective_result = {
             **result,
@@ -474,6 +475,7 @@ def build_workflow_request_router(
                     context.state_dir,
                     str(value.get("synthesis_operation_id") or ""),
                     config=context.config,
+                    events=events,
                 )
                 items.append({
                     **value,
@@ -784,6 +786,7 @@ def _workflow_synthesis_operation(
     operation_id: str,
     *,
     config: Any,
+    events=None,
 ) -> dict[str, Any]:
     if not operation_id:
         return {}
@@ -793,6 +796,7 @@ def _workflow_synthesis_operation(
         state_dir,
         operation_id,
         config=config,
+        events=events,
     )
     status = str(projection.get("status") or "unknown")
     return {

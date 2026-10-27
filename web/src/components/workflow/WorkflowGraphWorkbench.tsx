@@ -9,7 +9,7 @@ import PlanReviewReader from "../delivery-trace/PlanReviewReader";
 import PlanArtifactChat from "./PlanArtifactChat";
 import { workflowNodeTypes } from "./WorkflowGraphNode";
 import { X, Code, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
-import { activeStatus, expandedNodeIds, graphPositions, graphViews, relatedNodes, statusLabels, workflowSummaryIds, type GraphView } from "./sdlcGraphModel";
+import { activeStatus, expandedNodeIds, GraphLayoutCache, graphViews, relatedNodes, statusLabels, workflowSummaryIds, type GraphView } from "./sdlcGraphModel";
 
 const graphFitOptions = { padding: 0.22, maxZoom: 0.8, minZoom: 0 };
 
@@ -41,6 +41,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const [reviewBusy, setReviewBusy] = useState(false);
   const positions = useRef(new Map<string, { x: number; y: number }>());
   const positionScope = useRef("");
+  const layoutCache = useRef(new GraphLayoutCache());
   const [canvasScope, setCanvasScope] = useState("");
   const [canvasNodes, setCanvasNodes] = useState<Node[]>([]);
   const { graph, error: readError, updatedAt, refresh } = useWorkflowGraph(projectId, requestId, revision, asOf, recentEvents, liveState);
@@ -74,7 +75,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     if (positionScope.current !== layoutScope) {
       positions.current.clear(); positionScope.current = layoutScope;
     }
-    const layout = graphPositions(filtered.nodes, filtered.edges);
+    const layout = layoutCache.current.get(filtered.nodes, filtered.edges);
     for (const n of filtered.nodes) {
       const key = `${view}:${n.id}`;
       if (!positions.current.has(key)) {
@@ -92,11 +93,12 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     })));
     setCanvasScope(layoutScope);
   }, [filtered, selected, view, layoutScope]);
+  const activeNodes = useMemo(() => new Set(filtered.nodes.filter(n => activeStatus(n.status)).map(n => n.id)), [filtered.nodes]);
   const canvasEdges: Edge[] = filtered.edges.map(e => ({ ...e, type: "default",
     label: fullStructure || e.source === selected || e.target === selected ? e.event || e.relation : undefined,
     labelStyle: { fill: "var(--text-secondary)", fontSize: "var(--text-10)" }, labelBgStyle: { fill: "var(--canvas)" },
     markerEnd: { type: MarkerType.ArrowClosed, color: "var(--text-tertiary)", width: 14, height: 14 },
-    animated: !asOf && filtered.nodes.some(n => (n.id === e.target || n.id === e.source) && activeStatus(n.status)),
+    animated: !asOf && (activeNodes.has(e.source) || activeNodes.has(e.target)),
     style: { stroke: /rework|retry/.test(e.relation) ? "var(--warning)" : "var(--text-tertiary)", strokeWidth: 1.5, strokeDasharray: "5 6" },
   }));
   const onNodesChange = useCallback((changes: NodeChange[]) => {

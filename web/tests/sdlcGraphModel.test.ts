@@ -6,7 +6,7 @@ const assert = {
     if (JSON.stringify([...a]) !== JSON.stringify([...b])) throw new Error("Collections differ");
   },
 };
-import { workflowSummaryIds, expandedNodeIds, graphPositions, relatedNodes, type SdlcNode, type SdlcEdge } from "../src/components/workflow/sdlcGraphModel.js";
+import { workflowSummaryIds, expandedNodeIds, GraphLayoutCache, graphPositions, relatedNodes, type SdlcNode, type SdlcEdge } from "../src/components/workflow/sdlcGraphModel.js";
 
 const nodes: SdlcNode[] = ["A", "B", "C"].map(id => ({ id, kind: "task", label: id, status: "pending", views: ["modules"], data: {} }));
 const edges: SdlcEdge[] = ["A", "B"].map(id => ({ id, source: id, target: "C", relation: "depends_on", views: ["modules"] }));
@@ -16,6 +16,18 @@ test("shared dependency retains one node and deterministic layout across refresh
   assert.equal(first.get("A")?.y, first.get("B")?.y);
   assert.ok(first.get("C")!.y > first.get("A")!.y);
   assert.deepEqual(first, graphPositions([...nodes].reverse(), [...edges].reverse()));
+});
+test("status refresh reuses layout while topology and visible membership invalidate it", () => {
+  const cache = new GraphLayoutCache();
+  const first = cache.get(nodes, edges);
+  const changed = nodes.map(n => ({ ...n, status: "running", label: "updated", data: { detail: "new" } }));
+  assert.equal(cache.get(changed, [...edges].reverse()), first);
+  const next = cache.get(changed, edges.slice(1));
+  assert.ok(next !== first);
+  assert.deepEqual(next, graphPositions(changed, edges.slice(1)));
+  const filtered = cache.get(changed.slice(1), edges);
+  assert.equal(filtered.has("A"), false);
+  assert.deepEqual(filtered, graphPositions(changed.slice(1), edges));
 });
 test("bidirectional reachability follows declared edges and terminates on rework cycles", () => {
   assert.deepEqual(relatedNodes("C", edges, "upstream"), new Set(["C", "A", "B"]));

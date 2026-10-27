@@ -1089,6 +1089,7 @@ export interface AgentMonitoring {
   source_version: string;
   generated_at: string;
   status: "ready";
+  read_projection?: { state: "ready" | "refreshing" | "error"; error?: string; generated_at_epoch?: number };
   agents: AgentSummary[];
   agent_live: Record<string, unknown>;
   agent_cockpit: Record<string, unknown>;

@@ -15,8 +15,10 @@ def build_workbench_router(*, resolve, detail):
     def graph(project_id: str, request_id: str, as_of: int = Query(0, ge=0),
               if_none_match: str | None = Header(default=None)):
         try:
-            result = read_workbench_projection(resolve(project_id), project_id, request_id, as_of, detail,
-                                               if_none_match=if_none_match)
+            context = resolve(project_id)
+            result = read_workbench_projection(context, project_id, request_id, as_of,
+                lambda pid, rid, **kwargs: detail(pid, rid, context=context, **kwargs),
+                if_none_match=if_none_match)
         except (WorkbenchSourceChanged, OSError, ValueError):
             return JSONResponse({"ok": False, "status": "source_unavailable",
                                  "reason": "Workflow graph source changed or is unavailable; retry."},

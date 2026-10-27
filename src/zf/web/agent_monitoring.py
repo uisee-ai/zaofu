@@ -17,6 +17,17 @@ class MonitoringSourceChanged(RuntimeError):
     """A coherent source generation could not be read; never substitute zeros."""
 
 
+def read_agent_monitoring(state_dir: Path, *, project_id: str, config=None,
+                          project_root: Path, worker=None) -> dict:
+    if worker is None:
+        return build_agent_monitoring(state_dir, project_id=project_id, config=config, project_root=project_root)
+    from zf.web.dashboard_projection import read_dashboard
+    return read_dashboard(state_dir, project_root, config, f"agent-monitoring:{project_id}",
+                          lambda: build_agent_monitoring(state_dir, project_id=project_id,
+                                                         config=config, project_root=project_root),
+                          worker=worker, project_id=project_id)
+
+
 def source_paths(state_dir: Path, project_root: Path) -> list[Path]:
     return task_paths(state_dir) + [
         state_dir / "role_sessions.yaml", state_dir / "loop.lock",
@@ -34,7 +45,7 @@ def build_agent_monitoring(state_dir: Path, *, project_id: str, config=None,
     from zf.web.server import _agents, _metrics_snapshot_projection, _fleet_stats_projection
 
     # Reuse the existing algorithms and exact source-keyed SQLite projections.
-    # Clock ages and process liveness are recomputed on every request.
+    # Clock ages and process liveness are recomputed on each bounded refresh.
     for _attempt in range(2):
         before = fingerprint(state_dir, source_paths(state_dir, project_root), config)
         day = datetime.now(timezone.utc).date()
