@@ -12,6 +12,8 @@ from zf.core.events.factory import event_log_from_project
 from zf.core.events.writer import EventWriter
 from zf.core.workspace.registry import WorkspaceRegistry
 from zf.runtime.workflow_synthesis_consumer import consume_workflow_synthesis_operations
+from zf.web.projections.preparation_events import read_preparation_events
+from zf.web.projections.source_cache import fingerprint
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class WorkflowPreparationWorker:
         self._roots: set[Path] = set()
         self._active: set[Path] = set()
         self._scheduled: dict[Path, float] = {}
-        self._seen: dict[Path, tuple[int, int]] = {}
+        self._seen: dict[Path, str] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -33,6 +35,8 @@ class WorkflowPreparationWorker:
             self._roots.add(root.resolve())
 
     def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
         self._stop.clear()
         self._thread = threading.Thread(
             target=self._run, name="workflow-preparation", daemon=True
@@ -77,8 +81,7 @@ class WorkflowPreparationWorker:
                 state = root / state
             if not (state / "events.jsonl").is_file():
                 return
-            stat = (state / "events.jsonl").stat()
-            signature = (stat.st_mtime_ns, stat.st_size)
+            signature = fingerprint(state, [], config)
             if self._seen.get(root) == signature:
                 return
             writer = EventWriter(event_log_from_project(state, config=config))
@@ -87,6 +90,7 @@ class WorkflowPreparationWorker:
                 project_root=root,
                 config=config,
                 writer=writer,
+                read_operation_events=lambda: read_preparation_events(state, config, writer.event_log),
             )
             self._seen[root] = signature
         except TimeoutError:

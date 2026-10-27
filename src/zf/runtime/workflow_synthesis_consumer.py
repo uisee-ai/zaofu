@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -24,6 +24,7 @@ def consume_workflow_synthesis_operations(
     agent: Any | None = None,
     limit: int = 1,
     request_id: str = "",
+    read_operation_events: Callable[[], Iterable[ZfEvent]] | None = None,
 ) -> int:
     """Consume durable synthesis operations with a process-safe lease."""
 
@@ -38,7 +39,11 @@ def consume_workflow_synthesis_operations(
         event_writer=writer,
     )
     with locked_path(lock, timeout_seconds=0.1):
-        operations = reduce_workflow_operations(writer.event_log.read_all())
+        # Web may locate these canonical events through a disposable index.
+        # Read under the consumer lease; admission and writes remain canonical.
+        operations = reduce_workflow_operations(
+            read_operation_events() if read_operation_events else writer.event_log.read_all()
+        )
         candidates = [
             operation
             for operation in operations.values()
