@@ -98,6 +98,36 @@ def test_replan_owner_decision_can_be_proposed_for_web_approval() -> None:
 
 
 @pytest.mark.parametrize(
+    ("quote", "valid", "error"),
+    [
+        ("创建 8 lane 配置候选", True, ""),
+        ("", False, "intent.source_quote is required"),
+        ("创建八条 lane", False, "intent.source_quote must occur verbatim"),
+    ],
+)
+def test_workflow_config_proposal_intent_binds_to_owner_message(
+    quote: str, valid: bool, error: str,
+) -> None:
+    answer = json.dumps({
+        "action_proposal": {
+            "action": "workflow-config-propose",
+            "intent": {"decision": "propose_action", "source_quote": quote},
+            "payload": {"objective": "配置 8 条 impl 和独立 verify lane"},
+        },
+    }, ensure_ascii=False)
+    proposal = extract_action_proposal(
+        answer,
+        user_message="请创建 8 lane 配置候选，并保留独立 Verify。",
+        proposal_context={"causation_id": "evt-owner"},
+    )
+    assert proposal is not None
+    assert proposal["valid"] is valid
+    assert error in proposal["validation_error"]
+    if valid:
+        assert proposal["intent"]["source_message_event_id"] == "evt-owner"
+
+
+@pytest.mark.parametrize(
     ("intent", "error"),
     [
         (None, "intent is required"),
