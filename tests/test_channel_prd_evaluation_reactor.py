@@ -19,7 +19,7 @@ from zf.runtime.channel_prd_document import render_prd_document
 from zf.runtime.orchestrator_reactor import EventReactorMixin
 
 
-@pytest.mark.parametrize("attachment_fault", ["", "missing", "tampered", "scope"])
+@pytest.mark.parametrize("attachment_fault", ["", "missing", "tampered", "scope", "extra_missing", "extra_tampered", "extra_scope", "extra_identity"])
 def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeypatch, attachment_fault):
     state = tmp_path / "state"
     state.mkdir()
@@ -54,6 +54,19 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
         "refs": {"evaluation_source_document": True, "attachments": [attachment]}}, created_by="test")
     writer.emit("channel.message.posted", actor="web", correlation_id=channel_id,
                 payload=full_source)
+    extra_attachment = capture_channel_attachment(
+        state, channel_id=channel_id, thread_id="other" if attachment_fault == "extra_scope" else thread_id, name="supplement.md",
+        mime="text/markdown", data="审计日志不可省略。".encode())
+    if attachment_fault == "extra_missing":
+        (state / extra_attachment["body_ref"]["ref"]).unlink()
+    elif attachment_fault == "extra_tampered":
+        (state / extra_attachment["body_ref"]["ref"]).write_text("tampered")
+    supplementary = channel_message_event_payload(state, {
+        "channel_id": channel_id, "thread_id": thread_id, "message_id": "unmarked-extra",
+        "member_id": "operator", "role": "user", "text": "另外必须提供审计日志。",
+        "refs": {"attachments": [extra_attachment]}}, created_by="test")
+    writer.emit("channel.message.posted", actor="web", correlation_id=channel_id,
+                payload=supplementary)
     target_attachment = capture_channel_attachment(
         state, channel_id=channel_id, thread_id=thread_id, name="candidate.md",
         mime="text/markdown", data=b"AUTHOR-TARGET-MUST-NOT-ENTER-SOURCE")
@@ -73,6 +86,16 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
         previous_ref="", previous_digest="",
         body={"title": "PRD", "markdown": "# 最终 PRD\n必须保留权限。",
               "synthesis": {"readiness": readiness, "dissent": ["保留异议"],
+                            "source_coverage": [{"kind": kind, "message_id": message["message_id"],
+                                                 "message_body_ref": message["refs"]["message_body"]["ref"],
+                                                 "message_body_digest": "wrong-digest" if attachment_fault == "extra_identity" and message["message_id"] == "unmarked-extra" else message["refs"]["message_body"]["sha256"]}
+                                                for kind, message in [("requirement", source_payload),
+                                                    ("owner_input", full_source), ("owner_input", supplementary),
+                                                    ("owner_input", ordinary)]] + [
+                                                {"kind": "channel_attachment", "message_id": message_id,
+                                                 "message_body_ref": ref["uri"], "message_body_digest": ref["hash"]}
+                                                for message_id, ref in [("source-2", attachment),
+                                                    ("unmarked-extra", extra_attachment), ("owner-comment", target_attachment)]],
                             "acceptance_criteria": [{"id": "AC-01", "description": "权限"}],
                             "verification_commands": [{"id": "VC-01", "command": "pytest tests/test_permissions.py"}]}},
         readiness_descriptor=readiness_descriptor, created_by="leader", source_event_id="source-1")
@@ -80,6 +103,14 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
                 payload={"channel_id": channel_id, "thread_id": thread_id,
                          "prd_revision": 1, "artifact_ref": descriptor["ref"],
                          "artifact_digest": descriptor["sha256"]})
+    late = channel_message_event_payload(state, {
+        "channel_id": channel_id, "thread_id": thread_id, "message_id": "late-correction",
+        "member_id": "operator", "role": "user", "text": "LATE-CORRECTION-ONLY-FOR-NEXT-REVISION"}, created_by="test")
+    writer.emit("channel.message.posted", actor="web", correlation_id=channel_id, payload=late)
+    writer.emit("channel.discussion.started", actor="web", correlation_id=channel_id, payload={
+        "channel_id": channel_id, "thread_id": thread_id, "requirement_message_id": "late-correction", "mode": "multi_lens"})
+    writer.emit("channel.question.resolved", actor="web", correlation_id=channel_id, payload={
+        "channel_id": channel_id, "thread_id": thread_id, "question_id": "LATE-QUESTION-FOR-NEXT-REVISION", "answer": "later"})
     for member, ref, digest, thread in [
         ("same-version", descriptor["ref"], descriptor["sha256"], thread_id),
         ("old-version", "channels/ch-eval/prd/r0.json", "old", thread_id),
@@ -128,7 +159,7 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
         failures = [row for row in log.read_all() if row.type == "output.evaluation.failed"]
         assert len(failures) == 1
         assert failures[0].payload["verdict"] == "INDETERMINATE"
-        assert "attachment" in failures[0].payload["reason"].lower()
+        assert ("message" if attachment_fault == "extra_identity" else "attachment") in failures[0].payload["reason"].lower()
         return
     assert called.wait(3)
     EventReactorMixin._on_channel_prd_evaluation_requested(host, request)
@@ -140,6 +171,12 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
     assert "AUTHOR-TARGET-MUST-NOT-ENTER-SOURCE" not in captured[0].source_text
     assert "稍后考虑其他问题。" not in captured[0].source_text
     assert "稍后考虑其他问题。" in captured[0].decision_text
+    assert "另外必须提供审计日志。" in captured[0].decision_text
+    assert "审计日志不可省略。" in captured[0].decision_text
+    assert extra_attachment["hash"] in captured[0].decision_text
+    assert "LATE-CORRECTION-ONLY-FOR-NEXT-REVISION" not in captured[0].decision_text
+    assert "LATE-CORRECTION-ONLY-FOR-NEXT-REVISION" not in captured[0].source_text
+    assert "LATE-QUESTION-FOR-NEXT-REVISION" not in captured[0].decision_text
     assert "CANONICAL MARKDOWN:\n# 最终 PRD" in captured[0].target_text
     assert "CANONICAL STRUCTURED CONTRACT" in captured[0].target_text
     assert "pytest tests/test_permissions.py" in captured[0].target_text
@@ -292,3 +329,35 @@ def test_file_source_evaluation_uses_bound_snapshot_without_discussion(tmp_path,
         assert source["sha256"] in captured[0].source_text
         assert "AUTHOR TARGET ONLY" not in captured[0].source_text
         assert "AUTHOR TARGET ONLY" in captured[0].target_text
+
+
+def test_legacy_prd_keeps_published_anchor_after_restart_without_owner_metadata(tmp_path):
+    from zf.runtime.channel_prd_evaluation_reactor import _request_item
+
+    writer = EventWriter(EventLog(tmp_path / "events.jsonl"))
+    writer.emit("channel.created", actor="web", payload={"channel_id": "legacy"})
+    original = channel_message_event_payload(tmp_path, {"channel_id": "legacy", "thread_id": "main",
+        "message_id": "original", "member_id": "operator", "role": "user", "text": "原始需求：支持撤销。"}, created_by="web")
+    writer.emit("channel.message.posted", actor="web", correlation_id="legacy", payload=original)
+    writer.emit("channel.discussion.started", actor="web", correlation_id="legacy", payload={
+        "channel_id": "legacy", "thread_id": "main", "requirement_message_id": "original"})
+    ready = persist_channel_prd_readiness(tmp_path, channel_id="legacy", thread_id="main", revision=1,
+        body={"verdict": "ready"}, created_by="author", source_event_id="source")
+    document = persist_channel_prd(tmp_path, channel_id="legacy", thread_id="main", revision=1,
+        previous_ref="", previous_digest="", body={"markdown": "# PRD", "synthesis": {}},
+        readiness_descriptor=ready, created_by="author", source_event_id="source")
+    writer.emit("channel.synthesis.proposed", actor="author", correlation_id="legacy", payload={
+        "channel_id": "legacy", "thread_id": "main", "prd_revision": 1,
+        "artifact_ref": document["ref"], "artifact_digest": document["sha256"],
+        "readiness_ref": ready["ref"], "readiness_digest": ready["sha256"]})
+    later = channel_message_event_payload(tmp_path, {"channel_id": "legacy", "thread_id": "main",
+        "message_id": "later", "member_id": "operator", "role": "user", "text": "下一版不支持撤销。"}, created_by="web")
+    writer.emit("channel.message.posted", actor="web", correlation_id="legacy", payload=later)
+    writer.emit("channel.discussion.started", actor="web", correlation_id="legacy", payload={
+        "channel_id": "legacy", "thread_id": "main", "requirement_message_id": "later"})
+    event = writer.emit("channel.prd_evaluation.requested", actor="web", correlation_id="legacy", payload={
+        "channel_id": "legacy", "thread_id": "main", "prd_revision": 1,
+        "artifact_ref": document["ref"], "artifact_digest": document["sha256"]})
+    item = _request_item(SimpleNamespace(state_dir=tmp_path, event_log=writer.event_log), event)
+    assert "原始需求：支持撤销。" in item.source_text
+    assert "下一版不支持撤销。" not in item.source_text

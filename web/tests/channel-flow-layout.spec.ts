@@ -30,7 +30,8 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
     questionOk: true, allowInvitations: false, allowPlanning: false, allowMessages: false, planningOk: true, planningPayload: {} as Record<string, unknown>, runs: [] as Record<string, unknown>[],
     plans: [] as Record<string, unknown>[], deliveryError: false, fileCalls: 0, allowReports: false, allowSynthesis: false, allowConsensus: false, readiness: undefined as Record<string, unknown> | undefined,
     ownerReports: [] as Record<string, unknown>[], allowEvaluation: false, allowCancel: false, cancelOk: true, synthesisError: "",
-    evaluationRows: [] as Array<Record<string, unknown>> };
+    evaluationRows: [] as Array<Record<string, unknown>>,
+    sources: undefined as Record<string, unknown> | undefined, requirementCoverage: [] as Array<Record<string, unknown>> };
   page.on("pageerror", (error) => state.errors.push(error.message));
   // Intercept every write, including unexpected actions. These tests cannot
   // launch a real provider or mutate the real project even on a regression.
@@ -122,6 +123,7 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
       await route.fulfill(state.previewMode === "error" ? { status: 409, json: { detail: "digest mismatch" } } : { json: {
         channel_id: channelId, thread_id: prd.thread_id, revision: prd.prd_revision, artifact_ref: prd.artifact_ref,
         artifact_digest: prd.artifact_digest, title: "Canonical PRD", markdown: state.markdown, byte_count: state.markdown.length, readiness: state.readiness,
+        sources: state.sources, requirement_coverage: state.requirementCoverage,
       } });
     } else if (path.endsWith(`/${channelId}/delivery`)) {
       const prd = detail.syntheses.at(-1)!;
@@ -585,6 +587,24 @@ test("delivery read errors remain visible without a permanent Next step row", as
   expect(state.errors).toEqual([]);
 });
 
+test("PRD source view exposes bound inputs and returns to chat for correction", async ({ page, request }) => {
+  const state = await setup(page, request, readyFixture());
+  state.sources = { status: "ready", items: [{ kind: "owner_input", message_id: "msg-input", digest: "abc", name: "", content: "必须支持撤销。", available: true }] };
+  state.requirementCoverage = [{ id: "REQ-1", status: "covered", section: "Acceptance", source_refs: ["msg-input"] }];
+  await page.getByTestId("channel-flow-prd").click();
+  const inputs = page.getByTestId("channel-prd-inputs");
+  await inputs.locator("summary").first().click();
+  await inputs.getByText("讨论消息 · msg-input").click();
+  await expect(inputs).toContainText("必须支持撤销。");
+  await inputs.getByText("Agent 需求映射 · 1").click();
+  await expect(inputs).toContainText("REQ-1 · covered");
+  await inputs.getByRole("button", { name: "在讨论中补充或修正" }).click();
+  await expect(page.getByTestId("channel-prd-preview")).toHaveCount(0);
+  await expect(page.locator(".channel-composer-input")).toBeFocused();
+  expect(state.writes).toEqual([]);
+  expect(state.errors).toEqual([]);
+});
+
 test("verified Markdown preview supports Source and Process uses only the existing planning action", async ({ page, request }) => {
   const detail = readyFixture();
   const state = await setup(page, request, detail);
@@ -889,13 +909,13 @@ test("actual origin thread, draft and attachment survive switching and reload", 
   const editor = page.locator(".channel-composer-input");
   const navigation = page.getByTestId("agent-thread-navigation");
   await editor.fill("Origin draft");
-  await page.getByLabel("Mark as original requirement source").check();
+  await expect(page.getByLabel("Mark as original requirement source")).toHaveCount(0);
   await page.locator('input[type="file"]').setInputFiles({ name: "origin-only.txt", mimeType: "text/plain", buffer: Buffer.from("fixture") });
   await expect(page.locator(".channel-composer")).toContainText("已上传");
   await navigation.getByRole("button", { name: "other", exact: true }).click();
   await expect(editor).toHaveText("");
   await expect(page.locator(".channel-composer")).not.toContainText("origin-only.txt");
-  await expect(page.getByLabel("Mark as original requirement source")).not.toBeChecked();
+  await expect(page.getByLabel("Mark as original requirement source")).toHaveCount(0);
   await editor.fill("Other draft");
   await page.reload();
   await expect(editor).toHaveText("Other draft");
@@ -903,12 +923,12 @@ test("actual origin thread, draft and attachment survive switching and reload", 
   await navigation.getByRole("button", { name: "需求讨论到交付", exact: true }).click();
   await expect(editor).toHaveText("Origin draft");
   await expect(page.locator(".channel-composer")).toContainText("origin-only.txt");
-  await expect(page.getByLabel("Mark as original requirement source")).toBeChecked();
+  await expect(page.getByLabel("Mark as original requirement source")).toHaveCount(0);
   await editor.fill("Follow up in original discussion");
   await editor.press("Enter");
   await expect.poll(() => state.payloads.length).toBe(1);
   expect(state.payloads[0].thread_id).toBe(origin);
-  expect(state.payloads[0].refs?.evaluation_source_document).toBe(true);
+  expect(state.payloads[0].refs?.evaluation_source_document).toBeUndefined();
   expect(state.unexpected).toEqual([]);
   expect(state.errors).toEqual([]);
 });

@@ -151,6 +151,8 @@
 .channel-document-body [role="alert"] { overflow-wrap: anywhere; }
 .channel-document-evidence { margin: 24px 0; color: var(--muted-foreground); font-size: var(--text-11); }
 .channel-document-evidence code { display: block; overflow-wrap: anywhere; margin-top: 5px; }
+.channel-prd-inputs > details { margin: 10px 0; }
+.channel-prd-inputs pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .channel-document-footer { flex: none; border-top: 1px solid var(--line); padding: 12px 18px; background: var(--panel); }
 .channel-document-footer p { margin: 0 0 10px; color: var(--muted-foreground); font-size: var(--text-11); }
 .channel-document-footer > div { display: flex; justify-content: space-between; gap: 8px; }

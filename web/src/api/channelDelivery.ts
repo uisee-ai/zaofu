@@ -16,6 +16,10 @@ export interface ChannelPrdDocument {
   title: string;
   markdown: string;
   byte_count: number;
+  sources?: { status: "ready" | "incomplete" | "unavailable"; items: Array<{
+    kind: string; message_id: string; digest: string; name: string; content: string; available: boolean;
+  }> };
+  requirement_coverage?: Array<Record<string, unknown>>;
   readiness?: { ref: string; digest: string; verdict: string; implementation_start: boolean;
     reason: string; gaps: unknown[]; risks: unknown[] } | null;
 }

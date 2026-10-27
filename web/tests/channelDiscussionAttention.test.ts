@@ -61,6 +61,13 @@ assert(
   selectDiscussionStartSource(requirementMessages, "main", false, "")?.message_id === "original",
   "new discussion ignores generated review prompts",
 );
+const ordinaryChat = [
+  {message_id: "first", thread_id: "main", role: "user", text: "Original requirement"},
+  {message_id: "extra", thread_id: "main", role: "user", text: "Also support undo"},
+  {message_id: "other", thread_id: "other", role: "user", text: "Other thread"},
+];
+assert(selectDiscussionStartSource(ordinaryChat, "main", true, "first")?.message_id === "first",
+  "restart keeps the original anchor without requiring a source flag");
 
 const running = attention("running", {
   execution_state: "running",

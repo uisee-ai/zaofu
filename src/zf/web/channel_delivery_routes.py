@@ -216,7 +216,7 @@ def build_channel_delivery_router(
 
     @router.get("/api/projects/{project_id}/channels/{channel_id}/prd-preview")
     def channel_prd_preview(project_id: str, channel_id: str, thread_id: str, revision: int, digest: str) -> dict[str, Any]:
-        context, _, channel, prd = selection(project_id, channel_id, thread_id, revision, digest)
+        context, events, channel, prd = selection(project_id, channel_id, thread_id, revision, digest)
         try:
             doc = hydrate_sidecar_ref(
                 Path(context.state_dir),
@@ -259,9 +259,14 @@ def build_channel_delivery_router(
                 raise HTTPException(409, "PRD readiness identity mismatch")
             readiness = {"ref": ready_doc.ref, "digest": ready_doc.sha256,
                          **{key: ready.get(key) for key in ("verdict", "implementation_start", "reason", "gaps", "risks")}}
+        from zf.web.channel_prd_sources import prd_source_view
+
+        synthesis = body.get("synthesis") if isinstance(body.get("synthesis"), dict) else {}
         return {"schema_version": "channel-prd-preview.v1", "channel_id": channel["channel_id"],
                 "thread_id": thread_id, "revision": revision, "artifact_ref": doc.ref,
                 "artifact_digest": doc.sha256, "title": str(body.get("title") or "PRD"),
-                "markdown": markdown, "byte_count": doc.byte_count, "readiness": readiness}
+                "markdown": markdown, "byte_count": doc.byte_count, "readiness": readiness,
+                "sources": prd_source_view(Path(context.state_dir), channel, events, thread_id, synthesis),
+                "requirement_coverage": synthesis.get("requirement_coverage") if isinstance(synthesis.get("requirement_coverage"), list) else []}
 
     return router
