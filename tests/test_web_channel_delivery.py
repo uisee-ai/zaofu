@@ -42,6 +42,54 @@ def test_preview_is_complete_registered_and_read_only(fixture):
     assert (state / "events.jsonl").read_bytes() == before
 
 
+def test_prd_preview_shows_only_version_bound_verified_owner_inputs(fixture):
+    from zf.runtime.channel_attachments import capture_channel_attachment
+    from zf.runtime.channel_projection import project_channel
+    from zf.runtime.channel_semantic_sources import build_semantic_source_bundle
+    from zf.runtime.channel_sidecar import channel_message_event_payload
+
+    client, state, writer, _, params, _ = fixture
+    thread = "kanban:project"
+    writer.emit("channel.created", actor="web", payload={"channel_id": "ch-preview", "owner_actor_ref": "owner:operator"})
+    attachment = capture_channel_attachment(state, channel_id="ch-preview", thread_id=thread,
+        name="requirements.md", mime="text/markdown", data="必须支持撤销。".encode())
+    message = channel_message_event_payload(state, {"channel_id": "ch-preview", "thread_id": thread,
+        "message_id": "owner-input", "member_id": "operator", "role": "user", "source": "web", "text": "需求：支持回滚。",
+        "refs": {"attachments": [attachment]}}, created_by="web")
+    writer.emit("channel.message.posted", actor="web", correlation_id="ch-preview", payload=message)
+    writer.emit("channel.message.posted", actor="author", correlation_id="ch-preview", payload={
+        "channel_id": "ch-preview", "thread_id": thread, "message_id": "synth-trigger",
+        "role": "assistant", "text": "synthesize", "refs": {"synthesis_request_id": "synth"}})
+    channel = project_channel(state, "ch-preview")
+    bundle = build_semantic_source_bundle(channel, thread_id=thread, trigger_message_id="synth-trigger", state_dir=state)
+    assert bundle["complete"]
+    descriptor = persist_channel_prd(state, channel_id="ch-preview", thread_id=thread, revision=3,
+        previous_ref="", previous_digest="", body={"title": "PRD", "markdown": "# PRD",
+        "synthesis": {"source_coverage": bundle["manifest"], "requirement_coverage": [{"id": "REQ-1", "source_refs": ["owner-input"]}]}},
+        readiness_descriptor={}, created_by="leader", source_event_id="synth")
+    writer.emit("channel.synthesis.proposed", actor="leader", correlation_id="ch-preview", payload={
+        "channel_id": "ch-preview", "thread_id": thread, "prd_revision": 3,
+        "artifact_ref": descriptor["ref"], "artifact_digest": descriptor["sha256"]})
+    late = channel_message_event_payload(state, {"channel_id": "ch-preview", "thread_id": thread,
+        "message_id": "late", "member_id": "operator", "role": "user", "source": "web", "text": "下一版才包含此修改。"}, created_by="web")
+    writer.emit("channel.message.posted", actor="web", correlation_id="ch-preview", payload=late)
+    before = (state / "events.jsonl").read_bytes()
+    result = client.get("/api/projects/default/channels/ch-preview/prd-preview", params={**params, "revision": 3, "digest": descriptor["sha256"]})
+    assert result.status_code == 200, result.text
+    result = result.json()
+    assert result["sources"]["status"] == "ready"
+    assert [item["content"] for item in result["sources"]["items"]] == ["需求：支持回滚。", "必须支持撤销。"]
+    assert result["requirement_coverage"][0]["source_refs"] == ["owner-input"]
+    assert "下一版才包含此修改" not in str(result["sources"])
+    assert (state / "events.jsonl").read_bytes() == before
+    (state / attachment["body_ref"]["ref"]).write_text("tampered")
+    damaged = client.get("/api/projects/default/channels/ch-preview/prd-preview", params={**params, "revision": 3, "digest": descriptor["sha256"]})
+    assert damaged.status_code == 200
+    assert damaged.json()["sources"]["status"] == "incomplete"
+    assert damaged.json()["sources"]["items"][1]["available"] is False
+    assert damaged.json()["sources"]["items"][1]["content"] == ""
+
+
 @pytest.mark.parametrize("ref", ["generated.md", "generated.md §1—3"])
 def test_registered_file_preview_binds_project_channel_thread_and_does_not_write(fixture, ref):
     client, state, writer, _, _, markdown = fixture

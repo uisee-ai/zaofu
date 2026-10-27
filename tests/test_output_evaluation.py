@@ -134,6 +134,62 @@ def test_matrix_must_cover_each_frozen_source_criterion(tmp_path):
     assert "report_ref" not in result
 
 
+def test_matrix_covers_new_requirements_identified_from_owner_chat():
+    from zf.runtime.output_evaluation import _valid_matrix
+
+    inventory = {"criteria": [{"criterion_id": "R1"}]}
+    decisions = {"decision_deltas": [{"criterion_id": "R2", "source": "owner-message"}]}
+    report = {"matrix": [{"criterion_id": "R1", "result": "PASS", "target_location": "section 1"}]}
+    assert not _valid_matrix(report, inventory, decisions)
+    report["matrix"].append({"criterion_id": "R2", "result": "PASS", "target_location": "section 2"})
+    assert _valid_matrix(report, inventory, decisions)
+
+
+def test_owner_added_requirement_cannot_be_dropped_from_final_evaluation(tmp_path):
+    from dataclasses import replace
+
+    class AdditionalRequirementBackend(FakeBackend):
+        def run_turn(self, **kwargs):
+            turn = super().run_turn(**kwargs)
+            if len(self.calls) == 2:
+                return replace(turn, reply=json.dumps({"decision_deltas": [{"criterion_id": "R2",
+                    "source": "owner-message", "expected": "support undo"}], "read_scope": [], "unread_scope": []}))
+            return turn
+
+    backend = AdditionalRequirementBackend()
+    writer = EventWriter(EventLog(tmp_path / "events.jsonl"))
+    item = EvaluationInput(kind="prd_output", objective="评估输出", source_text="必须保留权限",
+                           decision_text="Owner 另外要求支持撤销", target_text="保留权限，但没有撤销",
+                           context={"channel_id": "ch", "thread_id": "main"})
+    assert item.manifest()["method_version"].endswith(".v3")
+    result = evaluate_output(state_dir=tmp_path, writer=writer, item=item,
+                             request_id=str(uuid.uuid4()), backend=backend)
+    assert result["verdict"] == "INDETERMINATE"
+    assert "report_ref" not in result
+    assert "没有撤销" not in backend.calls[0]["prompt"]
+    assert "没有撤销" not in backend.calls[1]["prompt"]
+
+
+def test_channel_decision_without_requirement_identity_does_not_reach_target(tmp_path):
+    from dataclasses import replace
+
+    class MissingDecisionIdentity(FakeBackend):
+        def run_turn(self, **kwargs):
+            turn = super().run_turn(**kwargs)
+            if len(self.calls) in {2, 3}:
+                return replace(turn, reply=json.dumps({"decision_deltas": [{"expected": "support undo"}],
+                    "read_scope": [], "unread_scope": []}))
+            return turn
+
+    backend = MissingDecisionIdentity()
+    item = EvaluationInput(kind="prd_output", objective="评估输出", source_text="必须保留权限",
+        decision_text="另外要求支持撤销", target_text="SECRET-TARGET", context={"channel_id": "ch"})
+    result = evaluate_output(state_dir=tmp_path, writer=EventWriter(EventLog(tmp_path / "events.jsonl")),
+                             item=item, request_id=str(uuid.uuid4()), backend=backend)
+    assert result["verdict"] == "INDETERMINATE"
+    assert all("SECRET-TARGET" not in call["prompt"] for call in backend.calls)
+
+
 def test_report_cannot_pass_with_failing_matrix_row(tmp_path):
     backend = FakeBackend(matrix_mode="fail_matrix")
     result = evaluate_output(

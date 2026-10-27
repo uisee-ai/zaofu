@@ -142,10 +142,11 @@ def build_semantic_source_bundle(
     errors: list[str] = []
     source_chars = 0
 
-    # Explicit original sources remain authoritative across restart messages.
+    # Prior user inputs remain candidates across restarts. Their semantic role
+    # is decided by the participant, not inferred from a UI flag.
     original_sources = [
         message for message in thread_messages[:start]
-        if (message.get("refs") or {}).get("evaluation_source_document") is True
+        if str(message.get("role") or "").lower() == "user"
     ]
     for message in [*original_sources, *thread_messages[start:end]]:
         if blind and message.get("role") != "user":

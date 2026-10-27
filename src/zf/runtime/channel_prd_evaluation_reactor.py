@@ -14,6 +14,7 @@ from zf.runtime.channel_prd_evaluation_recovery import (
     fail_interrupted_evaluation,
 )
 from zf.runtime.channel_attachments import read_channel_attachment
+from zf.runtime.channel_owner_sources import is_owner_message
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_prd_quality import required_prd_quality_contract, validate_prd_quality_contract
 from zf.runtime.channel_sidecar import hydrate_channel_message_text
@@ -125,21 +126,74 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
                         "Its digest differs from the raw JSON artifact digest by construction. "
                         "Version-bound consensus events sign the canonical_artifact digest.",
     }
-    discussions = channel.get("discussions") or {}
-    session = discussions.get(thread_id) if isinstance(discussions, dict) else {}
-    requirement_id = str((session or {}).get("requirement_message_id") or "")
     owner = str(channel.get("owner_actor_ref") or "")
+    # Bind conversation inputs to the current synthesis, never to later chat.
+    proposed_index = next((i for i, row in enumerate(events) if row.id == prd.get("event_id")), -1)
+    if proposed_index < 0:
+        raise ValueError("canonical PRD publication event is unavailable")
     owner_message_ids = {
         str((row.payload or {}).get("message_id") or "")
-        for row in host.event_log.read_all()
-        if row.type == "channel.message.posted" and row.correlation_id == channel_id
-        and row.actor == owner
+        for row in events[:proposed_index + 1]
+        if is_owner_message(row, channel_id=channel_id, thread_id=thread_id, owner=owner)
     }
+    coverage = synthesis.get("source_coverage") if isinstance(synthesis, dict) else None
+    if isinstance(coverage, list):
+        bound_ids = {str(row.get("message_id") or "") for row in coverage
+                     if isinstance(row, dict) and row.get("kind") in {"requirement", "owner_input"}}
+        owner_message_ids &= bound_ids
+        messages_by_id = {str(row.get("message_id") or ""): row for row in channel.get("messages") or []
+                          if isinstance(row, dict)}
+        for row in coverage:
+            if not isinstance(row, dict) or row.get("kind") not in {"requirement", "owner_input"}:
+                continue
+            message_id = str(row.get("message_id") or "")
+            if message_id not in owner_message_ids:
+                continue
+            message = messages_by_id.get(message_id) or {}
+            descriptor = (message.get("refs") or {}).get("message_body") or {}
+            actual_ref = str(descriptor.get("ref") or message.get("body_ref") or "")
+            actual_digest = str(descriptor.get("sha256") or message.get("body_sha256") or "")
+            if not actual_ref:
+                content = hydrate_channel_message_text(Path(host.state_dir), message, strict=True)
+                actual_ref = f"event:{message.get('event_id') or message_id}#inline-message"
+                actual_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            if (not row.get("message_body_ref") or not row.get("message_body_digest")
+                    or row.get("message_body_ref") != actual_ref
+                    or str(row.get("message_body_digest")).removeprefix("sha256:") != actual_digest.removeprefix("sha256:")
+                    or (row.get("event_id") and row.get("event_id") != message.get("event_id"))):
+                raise ValueError(f"version-bound owner message identity mismatch: {message_id}")
+        requirement_id = next((str(row.get("message_id") or "") for row in coverage
+                               if isinstance(row, dict) and row.get("kind") == "requirement"
+                               and str(row.get("message_id") or "") in owner_message_ids), "")
+    else:
+        # Older PRDs lack a manifest. Recover the discussion anchor that
+        # existed at publication instead of using today's restarted session.
+        requirement_id = next((str((row.payload or {}).get("requirement_message_id") or "")
+                               for row in reversed(events[:proposed_index + 1])
+                               if row.type in {"channel.discussion.started", "channel.discussion.continued"}
+                               and row.correlation_id == channel_id
+                               and str((row.payload or {}).get("thread_id") or "main") == thread_id
+                               and (row.payload or {}).get("requirement_message_id")), "")
+        published_user_ids = {str((row.payload or {}).get("message_id") or "")
+                              for row in events[:proposed_index + 1]
+                              if row.type == "channel.message.posted" and row.correlation_id == channel_id
+                              and str((row.payload or {}).get("thread_id") or "main") == thread_id
+                              and (row.payload or {}).get("role") == "user"}
+        if requirement_id not in published_user_ids:
+            requirement_id = ""
+    bound_attachments = {(str(row.get("message_id") or ""), str(row.get("message_body_ref") or ""),
+                          str(row.get("message_body_digest") or "").removeprefix("sha256:"))
+                         for row in coverage or [] if isinstance(row, dict) and row.get("kind") == "channel_attachment"}
+
+    def check_attachment_binding(message_id: str, attachment: dict[str, Any]) -> None:
+        if isinstance(coverage, list) and (message_id, str(attachment.get("uri") or ""),
+                str(attachment.get("hash") or "").removeprefix("sha256:")) not in bound_attachments:
+            raise ValueError(f"version-bound owner attachment mismatch: {message_id}")
     source_messages = [
         row for row in channel.get("messages") or []
         if isinstance(row, dict)
         and str(row.get("thread_id") or "main") == thread_id
-        and (str(row.get("message_id") or "") == requirement_id
+        and ((bool(requirement_id) and str(row.get("message_id") or "") == requirement_id)
              or (str(row.get("message_id") or "") in owner_message_ids
                  and row.get("role") == "user"
                  and isinstance(row.get("refs"), dict)
@@ -183,6 +237,7 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
             mime = str(attachment.get("mime") or attachment.get("type") or "")
             if not (mime.startswith("text/") or mime == "application/json"):
                 continue
+            check_attachment_binding(message_id, attachment)
             body, data = read_channel_attachment(
                 Path(host.state_dir), attachment, channel_id=channel_id, thread_id=thread_id,
             )
@@ -204,21 +259,36 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
     decisions = [
         {"kind": "question_resolution", "event_id": row.id,
          "actor": row.actor, "payload": row.payload}
-        for row in host.event_log.read_all()
+        for row in events[:proposed_index + 1]
         if row.type == "channel.question.resolved"
         and row.correlation_id == channel_id
         and str((row.payload or {}).get("thread_id") or "main") == thread_id
     ]
-    decisions.extend({
-        "kind": "owner_message", "message_id": str(message.get("message_id") or ""),
-        "body_digest": str(((message.get("refs") or {}).get("message_body") or {}).get("sha256") or ""),
-        "text": hydrate_channel_message_text(Path(host.state_dir), message, strict=True),
-    } for message in channel.get("messages") or []
-        if isinstance(message, dict)
-        and str(message.get("thread_id") or "main") == thread_id
-        and str(message.get("message_id") or "") in owner_message_ids
-        and str(message.get("message_id") or "") not in source_ids
-        and message.get("role") == "user")
+    for message in channel.get("messages") or []:
+        if not isinstance(message, dict) or str(message.get("thread_id") or "main") != thread_id:
+            continue
+        message_id = str(message.get("message_id") or "")
+        if message_id not in owner_message_ids or message_id in source_ids or message.get("role") != "user":
+            continue
+        attachments = []
+        for attachment in (message.get("refs") or {}).get("attachments") or []:
+            mime = str(attachment.get("mime") or attachment.get("type") or "")
+            if not (mime.startswith("text/") or mime == "application/json"):
+                continue
+            check_attachment_binding(message_id, attachment)
+            body, data = read_channel_attachment(Path(host.state_dir), attachment,
+                channel_id=channel_id, thread_id=thread_id)
+            text = data.decode("utf-8")
+            if not text.strip():
+                raise ValueError("owner conversation attachment body is empty")
+            attachments.append({"ref": attachment["uri"], "name": body["name"],
+                                "digest": body["hash"], "text": text})
+        decisions.append({
+            "kind": "owner_message", "message_id": message_id,
+            "body_digest": str(((message.get("refs") or {}).get("message_body") or {}).get("sha256") or ""),
+            "text": hydrate_channel_message_text(Path(host.state_dir), message, strict=True),
+            "attachments": attachments,
+        })
     decisions.extend({"kind": "channel_membership_event", **row}
                      for row in evidence["channel_membership_events"])
     role = str(payload.get("role") or "full")

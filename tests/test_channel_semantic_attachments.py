@@ -18,7 +18,7 @@ def test_restart_and_synthesis_include_verified_attachment_body(tmp_path: Path, 
         "discussions": {"main": {"requirement_message_id": "restart"}},
         "messages": [
             {"message_id": "upload", "thread_id": "main", "role": "user", "text": "原始需求",
-             "refs": {"evaluation_source_document": True, "attachments": [attachment, attachment]}},
+             "refs": {"attachments": [attachment, attachment]}},
             {"message_id": "restart", "thread_id": "main", "role": "user", "text": "Continue"},
             {"message_id": "synth", "thread_id": "main", "refs": {"synthesis_request_id": "synth-1"}},
         ]}

@@ -1485,9 +1485,15 @@
   gap: 6px;
 }
 
-.headless-composer:focus-within {
+.headless-composer:focus-within,
+.headless-chat.welcome .headless-composer:focus-within {
   border-color: var(--brand);
   box-shadow: 0 0 0 2px var(--focus);
+}
+
+/* The composer supplies the rounded focus indicator for its text field. */
+.headless-composer .headless-input:focus-visible {
+  outline: none;
 }
 
 .headless-composer-footer {

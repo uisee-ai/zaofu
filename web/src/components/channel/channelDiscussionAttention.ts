@@ -41,14 +41,16 @@ export function selectDiscussionStartSource<T extends Record<string, unknown>>(
     return Boolean(refs.consensus_review_id || refs.source_requirement_message_id);
   };
   if (restart) {
+    const pinned = candidates.find((message) => message.message_id === requirementMessageId);
+    if (pinned && !isReviewPrompt(pinned)) return pinned;
+    // Historical drafts may have an explicit source flag; newer chat does not need one.
     const markedSource = [...candidates].reverse().find((message) => {
       const refs = message.refs && typeof message.refs === "object"
         ? message.refs as Record<string, unknown> : {};
       return refs.evaluation_source_document === true;
     });
     if (markedSource) return markedSource;
-    const pinned = candidates.find((message) => message.message_id === requirementMessageId);
-    if (pinned && !isReviewPrompt(pinned)) return pinned;
+    return candidates.find((message) => !isReviewPrompt(message));
   }
   return [...candidates].reverse().find((message) => !isReviewPrompt(message));
 }

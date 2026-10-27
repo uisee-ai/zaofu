@@ -489,10 +489,6 @@ export function ChannelPage({
     retryClientMessageId, setRetryClientMessageId, composerError, setComposerError, currentDraftKey,
   } = useChannelComposerDraft(projectId || "", selectedChannelId, activeChannelThreadId, composerRef);
   const [postingCount, setPostingCount] = useState(0);
-  const evaluationSourceDocument = composerRefs.evaluation_source_document === true;
-  function setEvaluationSourceDocument(value: boolean) {
-    setComposerRefs((current) => ({...current, evaluation_source_document: value}));
-  }
   const [workflowDraft, setWorkflowDraft] = useState({ taskId: "", reason: "" });
   const [controlsBusy, setControlsBusy] = useState(false);
   const [controlError, setControlError] = useState("");
@@ -1392,9 +1388,8 @@ export function ChannelPage({
     setComposerAttachments((current) => current.filter((item) => item.id !== id));
   }
   function attachmentRefs(): Record<string, unknown> | undefined {
-    if (!composerAttachments.length && !evaluationSourceDocument) return undefined;
+    if (!composerAttachments.length) return undefined;
     return {
-      ...(evaluationSourceDocument ? { evaluation_source_document: true } : {}),
       ...(composerAttachments.length ? { attachments: composerAttachments.map((attachment) => ({
         ...attachment.uploadedRef,
         source: "browser-file-picker",
@@ -2316,7 +2311,7 @@ export function ChannelPage({
     if (activeDrawer === "prd") return <ChannelPrdPreview key={channelDocumentKey(prdSelection)}
       selection={prdSelection} flow={flow} actionReady={actionReady} busy={controlsBusy}
       onClose={() => setDrawer(null)}
-      onDiscuss={() => { setDrawer(null); composerRef.current?.focus(); }}
+      onDiscuss={() => { setDrawer(null); setChannelSplitThreadId(""); setActiveChannelThreadId(controlThreadId); requestAnimationFrame(() => composerRef.current?.focus()); }}
       onProcess={() => onWorkflowRequest("", workflowDraft.reason.trim() || "Create a Task bound to the canonical Channel PRD.", controlThreadId)}
       onEvaluate={(role, retry) => onEvaluatePrd(controlThreadId, flow.revision, flow.artifactRef, flow.artifactDigest, role, retry)}>
       {renderChannelConsensusControl()}
@@ -2880,11 +2875,6 @@ export function ChannelPage({
                   </div>
                 ) : null}
                 {composerError ? <div className="notice compact-error channel-composer-error">{composerError}</div> : null}
-                <label className="channel-source-document-toggle">
-                  <input type="checkbox" checked={evaluationSourceDocument}
-                    onChange={(event) => setEvaluationSourceDocument(event.target.checked)} />
-                  Mark as original requirement source
-                </label>
                 <div className="channel-composer-toolbar">
                   <div className="channel-composer-tools">
                     <button className="channel-tool-button" title="Upload attachment" type="button" onClick={() => attachmentInputRef.current?.click()}>

@@ -5,6 +5,7 @@ import { MarkdownText } from "../agent-session/MarkdownText";
 import { prdMarkdownPages } from "./prdMarkdownPages";
 import type { ChannelFlow } from "./channelFlow";
 import { channelEvaluationFinding } from "./channelEvaluationFinding";
+import { ChannelPrdSources } from "./ChannelPrdSources";
 
 /** Mounted with an exact project/thread/PRD key; old reads cannot enable Process. */
 export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProcess, onEvaluate, onDiscuss, onClose, children }: {
@@ -123,6 +124,7 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
         {source || currentPage.plain ? <pre data-testid="channel-prd-source">{currentPage.content}</pre>
           : <MarkdownText content={currentPage.content} />}
         <details className="channel-document-evidence"><summary>Version &amp; integrity</summary><code>{document.artifact_ref}</code><code>sha256:{document.artifact_digest}</code></details>
+        <ChannelPrdSources document={document} onDiscuss={onDiscuss} />
         <section className="channel-prd-evaluation" data-testid="channel-prd-evaluation">
           <strong>独立 PRD 评估</strong><p className="muted">未确认的群会把发现交给成员核实：文档缺陷进入修订，产品取舍交给 Owner。原始报告结论保留，执行仍需批准。新版 PRD 需重新评估。</p>
           {evaluationError ? <p role="alert">{evaluationError}</p> : null}

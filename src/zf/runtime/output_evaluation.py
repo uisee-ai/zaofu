@@ -66,7 +66,9 @@ class EvaluationInput:
             "target": {"ref": self.target_ref, "sha256": digest_text(self.target_text),
                        "revision": self.target_revision, "chars": len(self.target_text)},
             "context": dict(self.context or {}),
-            "method_version": "channel-full-test-and-prd-evaluation-prompts.v2",
+            "method_version": ("channel-full-test-and-prd-evaluation-prompts.v3"
+                               if self.kind == "prd_output" and (self.context or {}).get("channel_id")
+                               else "channel-full-test-and-prd-evaluation-prompts.v2"),
         }
 
 
@@ -78,7 +80,7 @@ def _json_reply(reply: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _valid_matrix(report: dict[str, Any] | None, inventory: dict[str, Any]) -> bool:
+def _valid_matrix(report: dict[str, Any] | None, inventory: dict[str, Any], decisions: dict[str, Any] | None = None) -> bool:
     if not isinstance(report, dict) or not isinstance(report.get("matrix"), list):
         return False
     rows = report["matrix"]
@@ -96,6 +98,8 @@ def _valid_matrix(report: dict[str, Any] | None, inventory: dict[str, Any]) -> b
             return False
         ids.append(criterion_id)
     source_ids = {row["criterion_id"] for row in inventory["criteria"]}
+    source_ids.update(str(row["criterion_id"]) for row in (decisions or {}).get("decision_deltas", [])
+                      if isinstance(row, dict) and isinstance(row.get("criterion_id"), str) and row["criterion_id"].strip())
     return len(ids) == len(set(ids)) and source_ids.issubset(ids)
 
 
@@ -122,6 +126,7 @@ def _stage_prompt(stage: str, item: EvaluationInput, manifest: dict[str, Any], *
         visible_manifest["target"] = {key: value for key, value in manifest["target"].items()
                                       if key != "ref"}
     identity = json.dumps(visible_manifest, ensure_ascii=False, sort_keys=True)
+    channel_prd = item.kind == "prd_output" and bool((item.context or {}).get("channel_id"))
     if stage == "inventory":
         return (
             "你是与作者、群内成员和已有 reviewer 隔离的只读评估者。现在只能建立评估标准，"
@@ -140,12 +145,20 @@ def _stage_prompt(stage: str, item: EvaluationInput, manifest: dict[str, Any], *
             f"MANIFEST:\n{identity}\nSOURCE:\n{item.source_text}"
         )
     if stage == "decisions":
+        conversation_guidance = (
+            "Owner 消息和附件是未经预分类的聊天输入：结合上下文识别补充需求、更正、有效授权、"
+            "未决问题、候选草案和平台操作指令；不得把候选草案或要求 Agent 执行操作本身"
+            "当作产品义务。新增需求须分配稳定的 criterion_id 并记录消息或附件来源；"
+            "后续有效更正须关联原标准，保留冲突和时序。criterion_id 仅用于需要在目标"
+            "矩阵核对的产品要求，非产品操作或无效决定不要分配。"
+        ) if channel_prd else ""
         return (
-            "现在只审查有效 Owner 决定及授权证据，不得读取或推测目标产物。"
+            "现在审查 Owner 输入、决定及授权证据，不得读取或推测目标产物。"
             "输出单个 JSON 对象：decision_deltas 为新增/修改/废止要求的逐项数组，"
             "每项须写明授权者、来源、作用范围、影响的 criterion_id、有效性；"
             "read_scope 和 unread_scope 必须分别是已读/未读决定证据的字符串数组，"
-            "尚未提供的目标不能列入 unread_scope。普通答复、"
+            "尚未提供的目标不能列入 unread_scope。" + conversation_guidance +
+            "普通答复、"
             "测试假设、风险接受和未决项不得当成已授权产品变更。无决定时返回空数组。"
             "不要使用 Markdown 代码围栏。\n"
             f"MANIFEST:\n{identity}\nFROZEN_SOURCE_INVENTORY:\n"
@@ -157,6 +170,7 @@ def _stage_prompt(stage: str, item: EvaluationInput, manifest: dict[str, Any], *
         "输出单个 JSON 对象：verdict=PASS/FAIL/INDETERMINATE，matrix 为逐项结论数组，"
         "每行必须含 criterion_id、result=PASS/FAIL/INDETERMINATE、target_location、reason；"
         "逐项覆盖全部冻结 criterion_id，不能改名或遗漏；"
+        + ("还须逐项覆盖决定阶段新增的需求 criterion_id；" if channel_prd else "") +
         "findings 为含严重度及来源/目标定位的数组，coverage 为实际检查与未查范围，"
         "score 为可选的辅助分数，product_verification 为通过/失败/未执行/阻塞。"
         "缺来源的 PRD/Markdown 只能判内部结构，整体来源覆盖为 INDETERMINATE；"
@@ -189,6 +203,7 @@ def evaluate_output(
 ) -> dict[str, Any]:
     """Run two fresh-context turns; persist stage one before revealing target."""
     manifest = item.manifest()
+    channel_prd = item.kind == "prd_output" and bool((item.context or {}).get("channel_id"))
     backend = backend or CodexHeadlessBackend()
     safe_id = str(uuid.UUID(request_id))
     base = f"artifacts/output-evaluations/{safe_id}"
@@ -286,6 +301,9 @@ def evaluate_output(
             session_id or inventory_turn.provider_session_id,
             lambda value: isinstance(value, dict)
             and isinstance(value.get("decision_deltas"), list)
+            and (not channel_prd or all(isinstance(row, dict)
+                 and isinstance(row.get("criterion_id"), str) and row["criterion_id"].strip()
+                 for row in value["decision_deltas"]))
             and isinstance(value.get("read_scope"), list)
             and isinstance(value.get("unread_scope"), list),
         )
@@ -303,7 +321,7 @@ def evaluate_output(
             session_id or decision_turn.provider_session_id,
             lambda value: isinstance(value, dict)
             and value.get("verdict") in {"PASS", "FAIL", "INDETERMINATE"}
-            and _valid_matrix(value, inventory)
+            and _valid_matrix(value, inventory, decisions if channel_prd else None)
             and isinstance(value.get("findings"), list)
             and isinstance(value.get("coverage"), (dict, list))
             and value.get("product_verification") in {"通过", "失败", "未执行", "阻塞"},
