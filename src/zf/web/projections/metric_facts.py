@@ -177,6 +177,11 @@ def events(state_dir: Path, *, days: int | None = None, full: bool = False,
         return [(r["seq"], ZfEvent(id=r["event_id"], ts=r["ts"], type=r["type"], actor=r["actor"],
                                   task_id=r["task_id"], correlation_id=r["correlation_id"],
                                   causation_id=r["causation_id"], payload=json.loads(r["payload"]))) for r in rows]
+    return hydrate_rows(state_dir, rows, config=config)
+
+
+def hydrate_rows(state_dir: Path, rows, *, config=None):
+    """Hydrate selected canonical refs, validating their identities."""
     log = event_log_from_project(state_dir, config=config, warn=False)
     from contextlib import ExitStack
     out = []

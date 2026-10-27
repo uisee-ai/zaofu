@@ -2409,6 +2409,24 @@ def create_app(
             ),
         ))
 
+    @app.get("/api/projects/{project_id}/agent-monitoring")
+    def project_agent_monitoring_page(project_id: str) -> JSONResponse:
+        import sqlite3
+        from zf.web.agent_monitoring import build_agent_monitoring, MonitoringSourceChanged
+        context = _resolve_api_project(
+            project_id, default_project_id=default_project_id,
+            default_state_dir=state_dir, default_config=config,
+            default_project_root=project_root,
+        )
+        try:
+            return JSONResponse(build_agent_monitoring(
+                context.state_dir, project_id=project_id, config=context.config,
+                project_root=context.project_root,
+            ))
+        except (MonitoringSourceChanged, OSError, sqlite3.DatabaseError):
+            return JSONResponse({"status": "refreshing", "detail": "Monitoring sources unavailable or changed; retry"},
+                                status_code=503, headers={"Retry-After": "1"})
+
     @app.get("/api/projects/{project_id}/agent-live")
     def project_agent_live_page(project_id: str) -> JSONResponse:
         context = _resolve_api_project(
@@ -4844,6 +4862,8 @@ def _agents(
     config: ZfConfig | None = None,
     project_root: Path | None = None,
     workdirs_snapshot: list[dict] | None = None,
+    *,
+    include_details: bool = True,
 ) -> list[dict]:
     """Runtime-facing agent projection for the Web UI.
 
@@ -4858,7 +4878,7 @@ def _agents(
         for item in (
             workdirs_snapshot
             if workdirs_snapshot is not None
-            else _workdirs(
+            else [] if not include_details else _workdirs(
                 state_dir,
                 config=config,
                 project_root=project_root,
@@ -4876,6 +4896,7 @@ def _agents(
         state_dir,
         config=config,
         project_root=project_root,
+        include_details=include_details,
     )
     out.append({
         "instance_id": "kanban-agent",
@@ -4907,10 +4928,10 @@ def _agents(
         "project_path": str(project_root),
         "cwd": str(project_root),
         "worktree_path": str(project_root),
-        "branch_or_ref": _git_branch_or_ref(project_root),
-        "branch": _git_branch_or_ref(project_root),
-        "commit": _git_commit(project_root),
-        "dirty": _git_dirty(project_root),
+        "branch_or_ref": _git_branch_or_ref(project_root) if include_details else "",
+        "branch": _git_branch_or_ref(project_root) if include_details else "",
+        "commit": _git_commit(project_root) if include_details else "",
+        "dirty": _git_dirty(project_root) if include_details else None,
         "workdir_mode": "operator-read-mostly",
         "last_event_seq": 0,
         "last_event_type": "",
@@ -4981,10 +5002,10 @@ def _agents(
             "project_path": str(project_root),
             "cwd": str(project_root),
             "worktree_path": str(project_root),
-            "branch_or_ref": _git_branch_or_ref(project_root),
-            "branch": _git_branch_or_ref(project_root),
-            "commit": _git_commit(project_root),
-            "dirty": _git_dirty(project_root),
+            "branch_or_ref": _git_branch_or_ref(project_root) if include_details else "",
+            "branch": _git_branch_or_ref(project_root) if include_details else "",
+            "commit": _git_commit(project_root) if include_details else "",
+            "dirty": _git_dirty(project_root) if include_details else None,
             "workdir_mode": "project-root",
             "last_event_seq": orchestrator_signal.get("last_event_seq", 0),
             "last_event_type": orchestrator_signal.get("last_event_type", ""),
@@ -4998,7 +5019,7 @@ def _agents(
                 attention_state=orchestrator_attention,
                 active_task="",
             ),
-            "debug": _agent_debug_projection(
+            "debug": {} if not include_details else _agent_debug_projection(
                 state_dir,
                 instance_id="orchestrator",
                 transport="tmux",
@@ -5084,7 +5105,7 @@ def _agents(
             "branch_or_ref": workdir.get("branch_or_ref", ""),
             "branch": workdir.get("branch", ""),
             "commit": workdir.get("commit", ""),
-            "dirty": bool(workdir.get("dirty", False)),
+            "dirty": bool(workdir.get("dirty", False)) if include_details else None,
             "workdir_mode": workdir.get("mode", ""),
             "last_event_seq": signal.get("last_event_seq", 0),
             "last_event_type": signal.get("last_event_type", ""),
@@ -5099,7 +5120,7 @@ def _agents(
                 attention_state=attention_state,
                 active_task=active_task,
             ),
-            "debug": _agent_debug_projection(
+            "debug": {} if not include_details else _agent_debug_projection(
                 state_dir,
                 instance_id=instance_id,
                 transport=str(role.get("transport", "") or "tmux"),
@@ -5269,6 +5290,8 @@ def _operator_agent_surface(
     state_dir: Path,
     config: ZfConfig | None = None,
     project_root: Path | None = None,
+    *,
+    include_details: bool = True,
 ) -> dict:
     project_root = _resolve_project_root_for_state(state_dir, project_root)
     session_path = state_dir / "operator" / "kanban-agent.json"
@@ -5302,12 +5325,12 @@ def _operator_agent_surface(
         status = "detached"
     last_event_seq = _line_count(state_dir / "events.jsonl")
     operator_workdir = Path(str(session.get("workdir") or (state_dir / "operator" / "workdir")))
-    shared_context = kanban_agent_shared_context(
+    shared_context = {} if not include_details else kanban_agent_shared_context(
         project_root=project_root,
         state_dir=state_dir,
         operator_workdir=operator_workdir,
     )
-    skills_available = _operator_skills_available(
+    skills_available = {} if not include_details else _operator_skills_available(
         state_dir,
         config=config,
         project_root=project_root,

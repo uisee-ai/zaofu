@@ -2341,7 +2341,7 @@ export function App() {
             />
           ) : page === "traces" ? (
             <section className="projection-scroll">
-              <TracesRoute projectId={activeProjectId} liveState={liveState} />
+              <TracesRoute projectId={activeProjectId} liveState={liveState} recentEvents={events} />
             </section>
           ) : (
             <section className="projection-scroll">

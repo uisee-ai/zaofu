@@ -1,4 +1,6 @@
 import type {
+  FleetStats,
+  MetricsSnapshotProjection,
   OnboardingStatus,
   LoopViewProjection,
   ActionResponse,
@@ -430,7 +432,7 @@ export function getProjectTraces(
     limit: String(params.limit ?? 50),
   });
   if (params.cursor) search.set("cursor", params.cursor);
-  return requestJson<TraceIndexPage>(`${projectPrefix(projectId)}/traces?${search.toString()}`);
+  return requestJson<TraceIndexPage>(`${projectPrefix(projectId)}/traces?${search.toString()}`, { bypassCache: !params.cursor });
 }
 
 export function getRunContractProjection(projectId?: string): Promise<Record<string, unknown>> {
@@ -1012,6 +1014,7 @@ export function getTraceDetail(
   if (params.cursor) search.set("cursor", params.cursor);
   return requestJson<TraceDetail>(
     `${projectPrefix(projectId)}/traces/${encodeURIComponent(traceId)}?${search.toString()}`,
+    { bypassCache: !params.cursor },
   );
 }
 
@@ -1028,6 +1031,7 @@ export function getTraceSpans(
   if (params.spanId) search.set("focus_span_id", params.spanId);
   return requestJson<TraceSpanPage>(
     `${projectPrefix(projectId)}/traces/${encodeURIComponent(traceId)}/spans?${search.toString()}`,
+    { bypassCache: !params.cursor },
   );
 }
 
@@ -1077,6 +1081,24 @@ export function getRuntimeResources(projectId?: string): Promise<RuntimeResource
 
 export function getRoles(projectId?: string): Promise<RoleSummary[]> {
   return requestJson<RoleSummary[]>(`${projectPrefix(projectId)}/roles`);
+}
+
+export interface AgentMonitoring {
+  project_id: string;
+  source_seq: number;
+  source_version: string;
+  generated_at: string;
+  status: "ready";
+  agents: AgentSummary[];
+  agent_live: Record<string, unknown>;
+  agent_cockpit: Record<string, unknown>;
+  cost: CostSummary;
+  metrics_snapshot: MetricsSnapshotProjection;
+  fleet_stats: FleetStats;
+}
+
+export function getAgentMonitoring(projectId: string): Promise<AgentMonitoring> {
+  return requestJson<AgentMonitoring>(`${projectPrefix(projectId)}/agent-monitoring`, { bypassCache: true });
 }
 
 export function getAgents(projectId?: string): Promise<AgentSummary[]> {

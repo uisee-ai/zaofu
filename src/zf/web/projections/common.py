@@ -204,6 +204,8 @@ def _cost(state_dir: Path) -> dict:
             },
         }
     except Exception:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure("cost")
         return {
             "total_usd": 0.0,
             "per_role": {},

@@ -49,3 +49,24 @@ def summaries(state_dir: Path, *, as_of_seq: int, before_seq: int | None, limit:
             return _finalize_trace_summaries({r[0]: json.loads(r[1]) for r in rows})
     return _trace_summaries(list_events(state_dir, as_of_seq=as_of_seq, before_seq=before_seq, limit=limit),
                             as_of_seq=as_of_seq)
+
+
+def trace_events(state_dir: Path, trace_ref: str, *, as_of_seq: int, config=None):
+    """Load every event of one trace, never truncate metrics to the visible page."""
+    from zf.web.projections.trace_identity import OPAQUE_TRACE_REF_PREFIX, wire_trace_id
+    from zf.web.projections.source_cache import fingerprint
+
+    before = fingerprint(state_dir, [], config)
+    current_seq(state_dir, config)
+    with connect_readonly(db_path(state_dir)) as conn:
+        conn.execute("BEGIN")
+        key = trace_ref
+        if trace_ref.startswith(OPAQUE_TRACE_REF_PREFIX):
+            keys = conn.execute("SELECT DISTINCT trace_key FROM metric_event WHERE seq<=?", (as_of_seq,))
+            key = next((r[0] for r in keys if wire_trace_id(r[0])[0] == trace_ref), trace_ref)
+        rows = conn.execute("SELECT * FROM metric_event WHERE trace_key=? AND seq<=? ORDER BY seq",
+                            (key, as_of_seq)).fetchall()
+    events = facts.hydrate_rows(state_dir, rows, config=config)
+    if before != fingerprint(state_dir, [], config):
+        raise ValueError("Trace source changed during hydration")
+    return events

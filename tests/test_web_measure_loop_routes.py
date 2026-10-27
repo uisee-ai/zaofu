@@ -343,8 +343,8 @@ def test_loop_view_disables_cache_when_fingerprint_probe_fails(
 
     response = client.get("/api/projects/default/loop-view")
 
-    assert response.status_code == 200
-    assert {task["id"] for task in response.json()["tasks"]} == {"T1"}
+    assert response.status_code == 503
+    assert "tasks" not in response.json()
     assert "projection_cache" not in response.json()
 
 
@@ -393,8 +393,8 @@ def test_loop_view_does_not_cache_a_moving_source_watermark(
     monkeypatch.setattr(read_model, "set_cached_projection", forbidden)
     response = _loop_only_client(state_dir).get("/api/projects/default/loop-view")
 
-    assert response.status_code == 200
-    assert {task["id"] for task in response.json()["tasks"]} == {"T-NEW"}
+    assert response.status_code == 503
+    assert "tasks" not in response.json()
     assert snapshots == []
     assert "projection_cache" not in response.json()
 

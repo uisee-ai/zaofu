@@ -172,16 +172,12 @@ export function ProjectionPage({
   if (page === "agents") {
     return (
       <AgentViewPage
+        recentEvents={recentEvents}
+        liveState={liveState}
         actionReady={actionReady}
-        agentCockpit={snapshot?.agent_cockpit ?? null}
-        agentLive={snapshot?.agent_live ?? null}
-        agents={snapshot?.agents ?? []}
         assignmentRoutes={snapshot?.assignment_routes ?? null}
         channels={channels.length ? channels : snapshot?.channels ?? []}
-        cost={snapshot?.cost ?? null}
         executionPatterns={snapshot?.execution_patterns ?? null}
-        fleetStats={snapshot?.fleet_stats ?? null}
-        metricsSnapshot={snapshot?.metrics_snapshot ?? null}
         onAddAgentToChannel={onAddAgentToChannel}
         onAction={onAction}
         onSelectTask={onSelectTask}

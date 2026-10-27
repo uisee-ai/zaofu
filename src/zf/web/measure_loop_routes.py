@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
 from zf.core.events.factory import event_log_from_project
@@ -116,6 +116,8 @@ def build_measure_loop_router(*, resolve_ctx: Callable[[str], Any]) -> APIRouter
             config=ctx.config,
             project_root=ctx.project_root,
         )
+        if not source.cacheable:
+            raise HTTPException(status_code=503, detail="Loop sources unavailable or changing; retry")
         projection = build_loop_view(
             ctx.state_dir,
             config=ctx.config,
@@ -132,7 +134,9 @@ def build_measure_loop_router(*, resolve_ctx: Callable[[str], Any]) -> APIRouter
                     ctx.state_dir,
                     config=ctx.config,
                     project_root=ctx.project_root,
-                ) == source.fingerprint:
+                ) != source.fingerprint:
+                    raise HTTPException(status_code=503, detail="Loop sources changed; retry")
+                else:
                     read_model.set_cached_projection(
                         ctx.state_dir,
                         cache_key,
@@ -143,6 +147,8 @@ def build_measure_loop_router(*, resolve_ctx: Callable[[str], Any]) -> APIRouter
                             LOOP_VIEW_SOURCE_FIELD: source.fingerprint,
                         },
                     )
+            except HTTPException:
+                raise
             except Exception:
                 pass
         return JSONResponse(projection)

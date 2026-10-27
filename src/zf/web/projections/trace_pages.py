@@ -131,8 +131,13 @@ def trace_detail_page(
     """Return a bounded oldest-to-newest window from one Trace timeline."""
 
     bounded_limit = _bounded_limit(limit, default=80, maximum=_MAX_DETAIL_LIMIT)
-    events = _events_with_seq(state_dir, config=config)
-    current_seq = int(events[-1][0]) if events else 0
+    from zf.web.projections import metric_traces
+    events = None
+    try:
+        current_seq = metric_traces.current_seq(state_dir, config)
+    except sqlite3.DatabaseError:
+        events = _events_with_seq(state_dir, config=config)
+        current_seq = int(events[-1][0]) if events else 0
     scope = _scope_digest(state_dir)
     before_seq: int | None = None
     as_of_seq = current_seq
@@ -150,6 +155,12 @@ def trace_detail_page(
             before_seq=before_seq,
             current_seq=current_seq,
         )
+
+    if events is None:
+        try:
+            events = metric_traces.trace_events(state_dir, trace_id, as_of_seq=as_of_seq, config=config)
+        except (sqlite3.DatabaseError, OSError, ValueError):
+            events = _events_with_seq(state_dir, config=config)
 
     resolved_trace_id = _resolve_trace_id(
         events,

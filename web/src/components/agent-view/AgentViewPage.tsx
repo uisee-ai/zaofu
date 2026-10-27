@@ -1,10 +1,10 @@
 // AgentViewPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
-import { getAgentCockpit, getAgentLive, getAgents } from "../../api/client";
-import type { AgentSummary, ChannelSummary, CostSummary, ExecutionPatternProjection, FleetStats, MetricsSnapshotProjection, Task } from "../../api/types";
+import { getAgents } from "../../api/client";
+import type { AgentSummary, ChannelSummary, ExecutionPatternProjection, Task, RecentEvent } from "../../api/types";
 import { formatTokens } from "../../lib/format";
 import { buildAgentAttentionRows, buildFleetMetrics, buildRoleFleetRows, contextPercent, isBackendWorker, needsAttention } from "../../app/cockpitModel";
 import { buildProjectCostPresentation } from "../../app/costPrecision";
-import { useProjectCost } from "../../app/useProjectCost";
+import { useAgentMonitoring } from "./useAgentMonitoring";
 import { useEffect, useMemo, useState } from "react";
 import { KeyValuePanel, RuntimeDetailSection, RuntimeSummaryCard, TablePage, asRecord, formatUsd, needsOperatorAttention, textValue } from "../../app/shared";
 import { fetchTerminalSessions } from "../terminal/api";
@@ -13,15 +13,11 @@ import { buildTerminalUsageRows } from "./terminalUsageRows";
 
 export function AgentViewPage({
   actionReady,
-  agentCockpit,
-  agentLive,
-  agents,
+  recentEvents = [],
+  liveState = "live",
   assignmentRoutes,
   channels,
-  cost,
   executionPatterns,
-  fleetStats,
-  metricsSnapshot,
   onAddAgentToChannel,
   onAction,
   onSelectTask,
@@ -30,15 +26,11 @@ export function AgentViewPage({
   recovery,
 }: {
   actionReady: boolean;
-  agentCockpit: Record<string, unknown> | null;
-  agentLive: Record<string, unknown> | null;
-  agents: AgentSummary[];
+  recentEvents?: RecentEvent[];
+  liveState?: string;
   assignmentRoutes: Record<string, unknown> | null;
   channels: ChannelSummary[];
-  cost: CostSummary | null;
   executionPatterns: ExecutionPatternProjection | null;
-  fleetStats: FleetStats | null;
-  metricsSnapshot: MetricsSnapshotProjection | null;
   onAddAgentToChannel: (agent: AgentSummary) => void;
   onAction: (action: string, payload: Record<string, unknown>) => void;
   onSelectTask: (taskId: string) => void;
@@ -46,70 +38,12 @@ export function AgentViewPage({
   providerCapabilities: Record<string, unknown> | null;
   recovery: Record<string, unknown> | null;
 }) {
-  const [fallback, setFallback] = useState<{
-    agentCockpit: Record<string, unknown> | null;
-    agentLive: Record<string, unknown> | null;
-    agents: AgentSummary[];
-    status: "idle" | "loading" | "active" | "failed";
-  }>({ agentCockpit: null, agentLive: null, agents: [], status: "idle" });
+  const monitoring = useAgentMonitoring(projectId, recentEvents, liveState);
   const [terminalProjection, setTerminalProjection] = useState<{
     page: TerminalSessionsPage | null;
     projectId: string;
     status: "idle" | "loading" | "active" | "failed";
   }>({ page: null, projectId: "", status: "idle" });
-
-  useEffect(() => {
-    if (!projectId) {
-      setFallback({ agentCockpit: null, agentLive: null, agents: [], status: "idle" });
-      return;
-    }
-    if (agents.length > 0 && agentCockpit && agentLive) return;
-    let cancelled = false;
-    let cockpitTimer: number | undefined;
-    setFallback({
-      agentCockpit: agentCockpit ?? null,
-      agentLive: agentLive ?? null,
-      agents: agents.length ? agents : [],
-      status: "loading",
-    });
-    Promise.allSettled([
-      (agents.length ? Promise.resolve(agents) : getAgents(projectId)).then((nextAgents) => {
-        if (!cancelled) setFallback((current) => ({ ...current, agents: nextAgents, status: "active" }));
-        return nextAgents;
-      }),
-      (agentLive ? Promise.resolve(agentLive) : getAgentLive(projectId)).then((nextLive) => {
-        if (!cancelled) setFallback((current) => ({ ...current, agentLive: nextLive, status: "active" }));
-        return nextLive;
-      }),
-    ]).then(([agentsResult, liveResult]) => {
-      if (cancelled) return;
-      const nextAgents = agentsResult.status === "fulfilled" ? agentsResult.value : [];
-      const nextLive = liveResult.status === "fulfilled" ? liveResult.value : null;
-      setFallback({
-        agentCockpit: agentCockpit ?? null,
-        agentLive: nextLive,
-        agents: nextAgents,
-        status: nextAgents.length || nextLive ? "active" : "failed",
-      });
-      if (agentCockpit) return;
-      cockpitTimer = window.setTimeout(() => {
-        void getAgentCockpit(projectId).then((nextCockpit) => {
-          if (cancelled) return;
-          setFallback((current) => ({
-            ...current,
-            agentCockpit: nextCockpit,
-            status: current.status === "failed" ? "active" : current.status,
-          }));
-        }).catch(() => undefined);
-      }, nextAgents.length || nextLive ? 800 : 0);
-    }).catch(() => {
-      if (!cancelled) setFallback((current) => ({ ...current, status: "failed" }));
-    });
-    return () => {
-      cancelled = true;
-      if (cockpitTimer !== undefined) window.clearTimeout(cockpitTimer);
-    };
-  }, [agentCockpit, agentLive, agents.length, projectId]);
 
   useEffect(() => {
     if (!projectId) {
@@ -153,10 +87,14 @@ export function AgentViewPage({
     };
   }, [projectId]);
 
-  const effectiveAgents = agents.length ? agents : fallback.agents;
-  const effectiveAgentCockpit = agentCockpit ?? fallback.agentCockpit;
-  const effectiveAgentLive = agentLive ?? fallback.agentLive;
-  const projectionSource = agents.length ? "snapshot" : fallback.status === "active" ? "fallback active" : fallback.status === "loading" ? "fallback loading" : "snapshot pending";
+  const effectiveAgents = monitoring.data?.agents ?? [];
+  const effectiveAgentCockpit = monitoring.data?.agent_cockpit ?? null;
+  const effectiveAgentLive = monitoring.data?.agent_live ?? null;
+  const metricsReady = Boolean(monitoring.data);
+  const fleetStats = monitoring.data?.fleet_stats ?? null;
+  const metricsSnapshot = monitoring.data?.metrics_snapshot ?? null;
+  const projectionSource = monitoring.error ? "Refresh failed" : monitoring.loading
+    ? metricsReady ? "Refreshing" : "Loading metrics" : "Live metrics";
   const workers = useMemo(
     () => effectiveAgents.filter(isBackendWorker),
     [effectiveAgents],
@@ -166,7 +104,7 @@ export function AgentViewPage({
     [workers],
   );
   const [selectedId, setSelectedId] = useState("");
-  const effectiveCost = useProjectCost(projectId, cost);
+  const effectiveCost = monitoring.data?.cost ?? null;
   const fleetMetrics = buildFleetMetrics(effectiveAgents, effectiveAgentCockpit, effectiveCost);
   const projectCost = buildProjectCostPresentation(effectiveCost);
   const displayedTokens = projectCost.hasUsage
@@ -229,7 +167,22 @@ export function AgentViewPage({
     return rows;
   }, [groups]);
 
-  const selected = workers.find((worker) => worker.instance_id === selectedId) ?? null;
+  const [detail, setDetail] = useState<{ projectId: string; agent: AgentSummary } | null>(null);
+  useEffect(() => {
+    if (!selectedId || !projectId) return;
+    let cancelled = false;
+    void getAgents(projectId).then(rows => {
+      const agent = rows.find(row => row.instance_id === selectedId);
+      if (!cancelled && agent) setDetail({ projectId, agent });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [projectId, selectedId]);
+  const selectedSummary = workers.find((worker) => worker.instance_id === selectedId) ?? null;
+  const details = detail?.projectId === projectId && detail.agent.instance_id === selectedId ? detail.agent : null;
+  const selected = selectedSummary && details ? { ...selectedSummary,
+    cwd: details.cwd, project_path: details.project_path, workdir: details.workdir,
+    branch: details.branch, branch_or_ref: details.branch_or_ref, debug: details.debug,
+  } : selectedSummary;
   const selectedTaskId = selected?.task_id || selected?.active_task || "";
   const selectedActions = new Set(selected?.allowed_actions ?? []);
   const workerActionReady = (action: string) => (
@@ -458,7 +411,7 @@ export function AgentViewPage({
         <div>
           <h2>Agents</h2>
           <span className="muted">
-            {workers.length} backend workers
+            {metricsReady ? workers.length : "…"} backend workers
             {terminalPage?.enabled ? ` · ${activeTerminalCount} terminal tabs` : ""}
             {` · ${projectionSource}`}
           </span>
@@ -466,31 +419,35 @@ export function AgentViewPage({
         <span className="metric-chip">Autopilot cockpit</span>
       </div>
 
-      <div className="agent-fleet-summary-grid">
+      {monitoring.error && <p role="alert">Metrics refresh failed. {metricsReady ? "Showing the previous reading." : "Retrying."}</p>}
+      <div className="agent-fleet-summary-grid" aria-busy={monitoring.loading}
+        data-metrics-ready={metricsReady && !monitoring.error}
+        data-refreshing={monitoring.loading && metricsReady}
+        data-source-seq={monitoring.data?.source_seq}>
         <RuntimeSummaryCard
           label="Workers"
-          value={fleetMetrics.backendWorkers}
-          meta={`${fleetMetrics.controlAgents} control / ${fleetMetrics.operatorAgents} operator`}
+          value={metricsReady ? fleetMetrics.backendWorkers : "…"}
+          meta={metricsReady ? `${fleetMetrics.controlAgents} control / ${fleetMetrics.operatorAgents} operator` : "Loading"}
           tone={fleetMetrics.backendWorkers ? "info" : "muted"}
         />
         <RuntimeSummaryCard
           label="Health"
-          value={`${fleetMetrics.stuck} stuck`}
-          meta={typeof metricsSnapshot?.mtts === "number" && metricsSnapshot.mtts > 0
+          value={metricsReady ? `${fleetMetrics.stuck} stuck` : "…"}
+          meta={!metricsReady ? "Loading" : typeof metricsSnapshot?.mtts === "number" && metricsSnapshot.mtts > 0
             ? `MTTS ${metricsSnapshot.mtts.toFixed(1)}h · recovery ${Math.round((metricsSnapshot.stuck_recovery_rate ?? 0) * 100)}% · ${fleetMetrics.silent} silent`
             : `${fleetMetrics.silent} silent / ${fleetMetrics.drift} drift`}
           tone={fleetMetrics.stuck || fleetMetrics.silent ? "err" : fleetMetrics.drift ? "warn" : "ok"}
         />
         <RuntimeSummaryCard
           label="Context"
-          value={contextPercent(fleetMetrics.maxContext)}
-          meta={`${fleetMetrics.contextWarn} warning`}
+          value={metricsReady ? contextPercent(fleetMetrics.maxContext) : "…"}
+          meta={metricsReady ? `${fleetMetrics.contextWarn} warning` : "Loading"}
           tone={fleetMetrics.contextWarn ? "warn" : "ok"}
         />
         <RuntimeSummaryCard
           label="Tokens"
-          value={formatTokens(displayedTokens)}
-          meta={typeof metricsSnapshot?.cost_per_task === "number" && metricsSnapshot.cost_per_task > 0
+          value={metricsReady ? formatTokens(displayedTokens) : "…"}
+          meta={!metricsReady ? "Loading" : typeof metricsSnapshot?.cost_per_task === "number" && metricsSnapshot.cost_per_task > 0
             ? `${formatUsd(displayedCost)} · $${metricsSnapshot.cost_per_task.toFixed(2)}/task${projectCost.precisionLabel ? ` · ${projectCost.precisionLabel}` : ""}`
             : `${formatUsd(displayedCost)}${projectCost.precisionLabel ? ` · ${projectCost.precisionLabel}` : ""}`}
           tone={displayedTokens || displayedCost
@@ -499,7 +456,7 @@ export function AgentViewPage({
         />
         <RuntimeSummaryCard
           label="Providers"
-          value={fleetMetrics.providerSummary}
+          value={metricsReady ? fleetMetrics.providerSummary : "…"}
           meta={projectionSource}
           tone={fleetMetrics.providerSummary === "-" ? "muted" : "info"}
         />
@@ -508,7 +465,7 @@ export function AgentViewPage({
       <section className="subsection agent-attention-cockpit">
         <div className="inline-heading">
           <h3 className="section-title">Attention Queue</h3>
-          <span className="muted">{agentAttentionRows.length} signals</span>
+          <span className="muted">{metricsReady ? agentAttentionRows.length : "…"} signals</span>
         </div>
         {agentAttentionRows.length ? (
           <div className="compact-list">
@@ -529,7 +486,7 @@ export function AgentViewPage({
           </div>
         ) : (
           <p className="empty-text">
-            {fleetMetrics.stale
+            {!metricsReady ? "Loading attention…" : fleetMetrics.stale
               ? "Historical attention hidden — project runtime is archived/stopped."
               : "No agent attention required."}
           </p>
@@ -588,7 +545,7 @@ export function AgentViewPage({
             <h3 className="section-title">Role Fleet</h3>
             <span className="muted">0 workers</span>
           </div>
-          <p className="empty-text">No backend worker projection data.</p>
+          <p className="empty-text">{metricsReady ? "No backend worker projection data." : "Loading workers…"}</p>
         </section>
       )}
 
@@ -624,10 +581,10 @@ export function AgentViewPage({
         <section className="subsection">
           <div className="inline-heading">
             <h3 className="section-title">Attention Needed</h3>
-            <span className="muted">{attentionWorkers.length} workers</span>
+            <span className="muted">{metricsReady ? attentionWorkers.length : "…"} workers</span>
           </div>
           {attentionWorkers.length === 0 ? (
-            <p className="empty-text">No worker attention required.</p>
+            <p className="empty-text">{metricsReady ? "No worker attention required." : "Loading attention…"}</p>
           ) : (
             <div className="compact-list">
               {attentionWorkers.map((worker) => (
@@ -723,7 +680,7 @@ export function AgentViewPage({
               </div>
             </>
           ) : (
-            <p className="empty-text">No backend worker projection data.</p>
+            <p className="empty-text">{metricsReady ? "No backend worker projection data." : "Loading workers…"}</p>
           )}
         </section>
       </div>

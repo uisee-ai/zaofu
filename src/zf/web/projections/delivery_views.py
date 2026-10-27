@@ -219,7 +219,7 @@ def _load_inputs(
 
 
 def _overview_view(inputs: _Inputs) -> dict[str, Any]:
-    graph, drift, counts, ship, diagnostics = _graph_context(inputs)
+    graph, drift, counts, ship, diagnostics = _graph_context(inputs, summary_only=True)
     del graph
     return {
         "status": _trace_status(counts),
@@ -405,7 +405,7 @@ def _run_visible_task_ids(
 
 
 def _graph_context(
-    inputs: _Inputs,
+    inputs: _Inputs, *, summary_only: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, int], dict[str, Any], list[dict[str, Any]]]:
     graph = build_execution_graph(
         task_map=inputs.task_map,
@@ -413,6 +413,7 @@ def _graph_context(
         events=inputs.events,
         feature_id=inputs.feature_id,
         task_map_ref=inputs.ref,
+        summary_only=summary_only,
     )
     diagnostics = [*list(graph.get("diagnostics") or []), *inputs.diagnostics]
     graph = {**graph, "diagnostics": diagnostics}

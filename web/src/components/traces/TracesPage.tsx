@@ -2,7 +2,8 @@ import { Search } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { getProjectTraces, getTraceDetail, getTraceEventRaw, getTraceSpans } from "../../api/client";
-import type { TraceDetail, TraceEventDetail, TraceSpanPage, TraceSummary } from "../../api/types";
+import type { RecentEvent, TraceDetail, TraceEventDetail, TraceSpanPage, TraceSummary } from "../../api/types";
+import { useTraceRefresh } from "./useTraceRefresh";
 import type { LiveState } from "../../app/sharedTypes";
 import type { TraceViewerActions, TraceViewerResources } from "./TraceViewer";
 import type { TraceInspectorTab } from "./TraceInspector";
@@ -41,9 +42,11 @@ const LazyTraceViewer = lazy(() => import("./TraceViewer").then((module) => ({
 })));
 
 export function TracesPage({
+  recentEvents = [],
   liveState,
   projectId,
 }: {
+  recentEvents?: RecentEvent[];
   liveState: LiveState;
   projectId: string;
 }) {
@@ -74,14 +77,21 @@ export function TracesPage({
   const [rawDetail, setRawDetail] = useState<TraceEventDetail | null>(null);
   const [rawLoading, setRawLoading] = useState(false);
   const [rawError, setRawError] = useState("");
+  const [sourceSeq, setSourceSeq] = useState(0);
+  const revision = useTraceRefresh(projectId, recentEvents, liveState,
+    listLoading || detailLoading || spanLoading || loadingMore || earlierLoading || earlierSpansLoading, sourceSeq);
   const listScopeRef = useRef(projectId);
   const detailScopeRef = useRef(`${projectId}::${selectedTraceId}`);
-  listScopeRef.current = projectId;
-  detailScopeRef.current = `${projectId}::${selectedTraceId}`;
+  listScopeRef.current = `${projectId}::${revision}`;
+  detailScopeRef.current = `${projectId}::${selectedTraceId}::${revision}`;
+  const loadedProject = useRef("");
+  const loadedDetail = useRef("");
+  const loadedSpans = useRef("");
 
   useEffect(() => {
     let cancelled = false;
-    setRows([]);
+    if (loadedProject.current !== projectId) { setRows([]); setSourceSeq(0); }
+    loadedProject.current = projectId;
     setListLoading(true);
     setListError("");
     setHasMore(false);
@@ -92,6 +102,7 @@ export function TracesPage({
       .then((page) => {
         if (cancelled) return;
         setRows(page.items.slice(0, TRACE_LIST_LIMIT));
+        setSourceSeq(page.as_of_seq);
         setHasMore(page.has_more);
         setNextCursor(page.next_cursor);
       })
@@ -104,7 +115,7 @@ export function TracesPage({
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, revision]);
 
   useEffect(() => {
     if (!selectedTraceId || !projectId) {
@@ -114,7 +125,9 @@ export function TracesPage({
       return undefined;
     }
     let cancelled = false;
-    setDetail(null);
+    const scope = `${projectId}::${selectedTraceId}`;
+    if (loadedDetail.current !== scope) setDetail(null);
+    loadedDetail.current = scope;
     setDetailLoading(true);
     setDetailError("");
     setEarlierLoading(false);
@@ -132,7 +145,7 @@ export function TracesPage({
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedTraceId]);
+  }, [projectId, selectedTraceId, revision]);
 
   useEffect(() => {
     if (!selectedTraceId || !projectId) {
@@ -144,7 +157,9 @@ export function TracesPage({
       return undefined;
     }
     let cancelled = false;
-    setSpanPage(null);
+    const scope = `${projectId}::${selectedTraceId}`;
+    if (loadedSpans.current !== scope) setSpanPage(null);
+    loadedSpans.current = scope;
     setSpanLoading(true);
     setSpanError("");
     setEarlierSpansLoading(false);
@@ -170,7 +185,7 @@ export function TracesPage({
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedTraceId]);
+  }, [projectId, selectedTraceId, revision]);
 
   const resolvedViewerMode = resolveTraceViewerMode(viewerMode, spanLoading, detailLoading, spanPage, detail);
   useEffect(() => {
@@ -303,7 +318,7 @@ export function TracesPage({
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
-    const requestScope = projectId;
+    const requestScope = `${projectId}::${revision}`;
     setLoadingMore(true);
     setListError("");
     try {
@@ -323,9 +338,9 @@ export function TracesPage({
   };
 
   const loadEarlierEvents = async () => {
-    if (!selectedTraceId || !detail?.next_cursor || earlierLoading) return;
+    if (!selectedTraceId || !detail?.next_cursor || earlierLoading || detailLoading) return;
     const traceId = selectedTraceId;
-    const requestScope = `${projectId}::${traceId}`;
+    const requestScope = `${projectId}::${traceId}::${revision}`;
     setEarlierLoading(true);
     setEarlierError("");
     try {
@@ -355,9 +370,9 @@ export function TracesPage({
   };
 
   const loadEarlierSpans = async () => {
-    if (!selectedTraceId || !spanPage?.next_cursor || earlierSpansLoading) return;
+    if (!selectedTraceId || !spanPage?.next_cursor || earlierSpansLoading || spanLoading) return;
     const traceId = selectedTraceId;
-    const requestScope = `${projectId}::${traceId}`;
+    const requestScope = `${projectId}::${traceId}::${revision}`;
     setEarlierSpansLoading(true);
     setEarlierSpansError("");
     try {
@@ -424,7 +439,7 @@ export function TracesPage({
 
         <section className="trace-index-panel" aria-busy={listLoading}>
           {listError ? <p className="trace-load-error" role="alert">Trace index unavailable: {listError}</p> : null}
-          {listLoading ? (
+          {listLoading && !rows.length ? (
             <p className="trace-table-state muted">Loading traces...</p>
           ) : visibleRows.length ? (
             <TraceTable rows={visibleRows} selectedTraceId={selectedTraceId} onOpen={openTrace} />

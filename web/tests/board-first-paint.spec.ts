@@ -24,31 +24,96 @@ async function mockApi(page: Page) {
   });
 }
 
-test("Agents shows returned workers while its live projection is pending", async ({ page }) => {
+async function installMetricStream(page: Page) {
+  await page.addInitScript(() => {
+    const streams: { onmessage: ((event: MessageEvent) => void) | null }[] = [];
+    (window as any).__pushMetricEvent = (seq: number) => streams.forEach(s => s.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ id: `event-${seq}`, seq, type: "worker.progress", actor: "dev-a", payload: {} }),
+    })));
+    (window as any).EventSource = class {
+      onmessage = null; onerror = null; onopen: (() => void) | null = null;
+      constructor() { streams.push(this); setTimeout(() => this.onopen?.(), 0); }
+      addEventListener() {} close() { const i = streams.indexOf(this); if (i >= 0) streams.splice(i, 1); }
+    };
+  });
+}
+
+function monitoring(project = "a", seq = 10, tokens = 123456) {
+  return { project_id: project, source_seq: seq, source_version: `v${seq}`, status: "ready",
+    generated_at: "2026-10-27T01:00:00Z", agents: [{
+      instance_id: `dev-${project}`, parent_role: "dev", role_type: "dev", backend: "codex",
+      state: "running", skills: [], cost: { usd: 0.123456789, input_tokens: tokens, output_tokens: 7, entries: 1 },
+    }], agent_live: { tasks: [] }, agent_cockpit: { workers: [], summary: { workers: 1, stuck: 0, silent: 0 } },
+    cost: { total_usd: 0.123456789, per_role: {} }, metrics_snapshot: {}, fleet_stats: { role_efficiency: [] } };
+}
+
+test("Agents shows unknown while loading and completes all metrics without detail requests", async ({ page }) => {
   await mockApi(page);
-  const errors: string[] = [];
-  page.on("pageerror", error => errors.push(String(error)));
   let release!: () => void;
-  const live = new Promise<void>(resolve => { release = resolve; });
-  let liveStarted = false;
-  await page.route("**/projects/a/cost", route => route.fulfill({ json: { total_usd: 0, per_role: {} } }));
-  await page.route("**/projects/a/agents", route => route.fulfill({ json: [{
-    instance_id: "dev-ready", name: "dev", parent_role: "dev", role_type: "dev", backend: "codex",
-    state: "running", skills: [], cost: { usd: 0.123456789, input_tokens: 123456, output_tokens: 7, entries: 1 },
-  }] }));
-  await page.route("**/projects/a/agent-live", async route => {
-    liveStarted = true;
-    await live;
-    await route.fulfill({ json: { tasks: [] } }).catch(() => {});
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const details: string[] = [];
+  page.on("request", r => { if (/\/(agents|agent-live|agent-cockpit)$/.test(r.url())) details.push(r.url()); });
+  await page.route("**/projects/a/agent-monitoring", async route => {
+    await pending; await route.fulfill({ json: monitoring() }).catch(() => {});
   });
   try {
     await page.goto("/?project=a&page=agents");
-    await expect.poll(() => liveStarted).toBe(true);
-    await expect(page.getByRole("cell", { name: "dev-ready", exact: true }).first()).toBeVisible();
-    await expect(page.locator(".agent-fleet-summary-grid")).toContainText("1");
+    const cards = page.locator(".agent-fleet-summary-grid");
+    await expect(cards).toHaveAttribute("aria-busy", "true");
+    await expect(cards).not.toContainText("0 stuck");
+    await expect(cards).toContainText("Loading");
     release();
-    await expect(page.getByRole("cell", { name: "dev-ready", exact: true }).first()).toBeVisible();
-    expect(errors).toEqual([]);
+    await expect(cards).toHaveAttribute("data-metrics-ready", "true");
+    await expect(page.getByRole("cell", { name: "dev-a", exact: true }).first()).toBeVisible();
+    await expect(cards).toContainText("0 stuck");
+    expect(details).toEqual([]);
+  } finally { release(); }
+});
+
+test("Agents refreshes on SSE and preserves the previous reading on errors", async ({ page }) => {
+  await mockApi(page);
+  await installMetricStream(page);
+  let seq = 10;
+  let fail = false;
+  await page.route("**/projects/a/agent-monitoring", route => fail
+    ? route.fulfill({ status: 503, json: { detail: "source changing" } })
+    : route.fulfill({ json: monitoring("a", seq, seq * 1000) }));
+  await page.goto("/?project=a&page=agents");
+  const cards = page.locator(".agent-fleet-summary-grid");
+  await expect(cards).toHaveAttribute("data-source-seq", "10");
+  seq = 11;
+  await page.evaluate(() => (window as any).__pushMetricEvent(11));
+  await expect(cards).toHaveAttribute("data-source-seq", "11");
+  fail = true;
+  await page.evaluate(() => (window as any).__pushMetricEvent(12));
+  await expect(page.getByRole("alert")).toContainText("Metrics refresh failed");
+  await expect(cards).toHaveAttribute("data-source-seq", "11");
+  await expect(cards).toHaveAttribute("data-metrics-ready", "false");
+  fail = false; seq = 13;
+  await page.evaluate(() => (window as any).__pushMetricEvent(13));
+  await expect(cards).toHaveAttribute("data-source-seq", "13");
+  await expect(cards).toHaveAttribute("data-metrics-ready", "true");
+});
+
+test("Agents rejects a late response from the previous project", async ({ page }) => {
+  await mockApi(page);
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  let started = false;
+  await page.route("**/projects/a/agent-monitoring", async route => {
+    started = true; await delayed;
+    await route.fulfill({ json: monitoring("a") }).catch(() => {});
+  });
+  await page.route("**/projects/b/agent-monitoring", route => route.fulfill({ json: monitoring("b", 20) }));
+  try {
+    await page.goto("/?project=a&page=agents");
+    await expect.poll(() => started).toBe(true);
+    await page.getByLabel("Project", { exact: true }).selectOption("b");
+    await page.getByRole("button", { name: "Agents", exact: true }).click();
+    await expect(page.locator(".agent-fleet-summary-grid")).toHaveAttribute("data-source-seq", "20");
+    release();
+    await expect(page.getByRole("cell", { name: "dev-b", exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("cell", { name: "dev-a", exact: true })).toHaveCount(0);
   } finally { release(); }
 });
 
@@ -234,4 +299,52 @@ test("ready projection refreshes clock-derived values without new events", async
   changed = true;
   await page.clock.fastForward(31_000);
   await expect(page.locator(".board-grid")).toContainText("Clock refreshed");
+});
+
+
+test("Traces refresh the index and selected details on SSE without losing values on errors", async ({ page }) => {
+  await mockApi(page);
+  await installMetricStream(page);
+  let seq = 10;
+  let fail = false;
+  let spanReads = 0;
+  const summary = () => ({ trace_id: "trace-live", first_seq: 1, last_seq: seq,
+    first_ts: "2026-10-27T01:00:00Z", last_ts: "2026-10-27T01:02:00Z",
+    duration_seconds: 120, event_count: seq, task_ids: ["TASK-a"], actors: ["dev-a"],
+    backends: ["codex"], status: "running", last_type: "worker.progress" });
+  await page.route("**/projects/a/traces?*", route => fail
+    ? route.fulfill({ status: 503, json: { detail: "unavailable" } })
+    : route.fulfill({ json: { items: [summary()], as_of_seq: seq, has_more: false, next_cursor: null } }));
+  await page.route("**/projects/a/traces/trace-live?*", route => route.fulfill({ json: {
+    ...summary(), schema_version: "trace-detail.v2", tasks: ["TASK-a"], timeline: [],
+    empty: false, has_more: false, next_cursor: null, as_of_seq: seq,
+  } }));
+  await page.route("**/projects/a/traces/trace-live/spans?*", route => {
+    spanReads++;
+    return route.fulfill({ json: { schema_version: "trace-spans.v1", trace_id: "trace-live",
+      items: [], span_count: 0, has_more: false, next_cursor: null, as_of_seq: seq,
+      coverage: { status: "unobserved", reason: "No paired boundaries" },
+    } });
+  });
+  await page.goto("/?project=a&page=traces");
+  const index = page.getByRole("table", { name: "Trace index" });
+  await expect(index.getByRole("cell", { name: "10", exact: true })).toBeVisible();
+  seq = 11;
+  await page.evaluate(() => (window as any).__pushMetricEvent(11));
+  await expect(index.getByRole("cell", { name: "11", exact: true })).toBeVisible();
+  fail = true;
+  await page.evaluate(() => (window as any).__pushMetricEvent(12));
+  await expect(page.getByRole("alert")).toContainText("Trace index unavailable");
+  await expect(index.getByRole("cell", { name: "11", exact: true })).toBeVisible();
+  fail = false; seq = 13;
+  await page.evaluate(() => (window as any).__pushMetricEvent(13));
+  await expect(index.getByRole("cell", { name: "13", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "trace-live", exact: true }).click();
+  await expect(page.getByLabel("Trace summary")).toContainText("13 events");
+  await expect.poll(() => spanReads).toBeGreaterThan(0);
+  const previousSpanReads = spanReads;
+  seq = 14;
+  await page.evaluate(() => (window as any).__pushMetricEvent(14));
+  await expect(page.getByLabel("Trace summary")).toContainText("14 events");
+  await expect.poll(() => spanReads).toBeGreaterThan(previousSpanReads);
 });
