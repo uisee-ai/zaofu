@@ -167,7 +167,9 @@ def default_run_id(scenario_name: str) -> str:
 
 
 def _env() -> dict[str, str]:
-    env = os.environ.copy()
+    from zf.core.config.project_context import isolated_project_subprocess_env
+
+    env = isolated_project_subprocess_env()
     env["PYTHONPATH"] = str(repo_root() / "src")
     return env
 

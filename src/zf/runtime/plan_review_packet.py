@@ -32,13 +32,20 @@ def build_review_packet(
 
     artifact_map = {str(item.get("name") or ""): item for item in artifacts}
     json_values: dict[str, dict[str, Any]] = {}
+    diagnostics: list[dict[str, Any]] = []
     for name, item in artifact_map.items():
         try:
             body = read_preview_artifact(
                 item["ref"], state_dir=state_dir, project_root=project_root,
                 digest=item.get("sha256", ""),
             )
-        except (OSError, ValueError, UnicodeError):
+        except (OSError, ValueError, UnicodeError) as exc:
+            diagnostics.append({
+                "code": "review_artifact_unreadable",
+                "severity": "error",
+                "message": f"{name}: {exc}",
+                "evidence": [item["ref"]],
+            })
             continue
         if name.endswith((".json", "_matrix", "_ledger", "_spec", "_index")) or name in {
             "task_map", "source_index", "coverage_ledger", "acceptance_matrix",
@@ -56,8 +63,13 @@ def build_review_packet(
         for name, item in artifact_map.items()
         if item.get("ref")
     }
-    trace_rows = _json_list(json_values.get("source_index"), "traceability")
-    coverage_rows = _json_list(json_values.get("coverage_ledger"), "entries")
+    source_index = json_values.get("source_index")
+    coverage_ledger = json_values.get("coverage_ledger")
+    # Accept the explicit row representation, never infer the source universe
+    # from coverage or turn task-level excerpts into requirement completeness.
+    trace_rows = _review_rows(source_index, "traceability")
+    coverage_rows = _review_rows(coverage_ledger, "entries")
+    task_source_rows = _json_list(source_index, "tasks")
     # Identifiers are authored by the Planner and bound through existing ports.
     # Their spelling and the applicable requirement categories are project-owned.
     source_ids = {"requirements": _trace_ids(trace_rows)}
@@ -66,7 +78,6 @@ def build_review_packet(
     test_rows = _json_list(json_values.get("test_matrix"), "commands")
     journeys = _json_list(json_values.get("product_acceptance_spec"), "user_journeys")
 
-    diagnostics: list[dict[str, Any]] = []
     declared_acceptance = _declared_acceptance_count(markdown)
     if declared_acceptance is not None and len(acceptance_rows) != declared_acceptance:
         diagnostics.append({
@@ -142,10 +153,17 @@ def build_review_packet(
         ),
         section(
             "traceability", "Traceability", "ready" if trace_rows and coverage_rows else "partial",
-            counts={"source_rows": len(trace_rows), "coverage_rows": len(coverage_rows), "uncovered": len(_json_list(json_values.get("coverage_ledger"), "uncovered"))},
+            counts={"source_rows": len(trace_rows), "coverage_rows": len(coverage_rows),
+                    "task_source_rows": len(task_source_rows),
+                    "uncovered": len(_json_list(coverage_ledger, "uncovered")),
+                    "pending_decision": sum(row.get("disposition") == "pending_decision" for row in coverage_rows)},
             names=[name for name in ("source_index", "coverage_ledger", "source_inventory") if name in artifact_map],
             refs=[refs_by_name.get(name, [""])[0] for name in ("source_index", "coverage_ledger", "source_inventory")],
-            notes=["source -> capability -> task -> test -> evidence 链可逐项查看。" if trace_rows and coverage_rows else "缺少 source index 或 coverage ledger。"],
+            notes=[
+                "source -> capability -> task -> test -> evidence 链可逐项查看。"
+                if trace_rows and coverage_rows else
+                f"已绑定 {len(task_source_rows)} 个任务来源；缺少逐条来源索引或显式绑定的覆盖账本，不能据此声明完整覆盖。"
+            ],
         ),
         section(
             "task_map", "Task Map", "ready" if task_map_summary.get("ok") else "missing",
@@ -222,6 +240,13 @@ def _json_list(value: dict[str, Any] | None, key: str) -> list[dict[str, Any]]:
         return []
     raw = value.get(key)
     return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+
+
+def _review_rows(value: dict[str, Any] | None, key: str) -> list[dict[str, Any]]:
+    """Support authored rows while preserving an explicit canonical field."""
+    if isinstance(value, dict) and key not in value:
+        return _json_list(value, "rows")
+    return _json_list(value, key)
 
 
 def _declared_acceptance_count(markdown: str) -> int | None:

@@ -10,6 +10,7 @@ from zf.core.skills import materialize_role_skills, read_skill_metadata
 
 @pytest.mark.parametrize("role_skill,method,source", [
     ("zf-yoke-planner-role-context", "zf-plan-execution-readiness", "skills"),
+    ("zf-yoke-planner-role-context", "zf-plan-task-map-contract", "skills"),
     ("zf-yoke-critic-role-context", "zf-plan-execution-readiness", "skills"),
     ("zf-yoke-dev-worker-role-context", "tdd-evidence", "yoke"),
     ("zf-yoke-dev-worker-role-context", "zf-harness-done-contract", "skills"),
@@ -37,6 +38,7 @@ def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role
     metadata = read_skill_metadata(actual, expected_name=method)
     assert metadata.name == method
     references = {
+        "zf-plan-task-map-contract": ("review-ports.md",),
         "zf-plan-execution-readiness": ("execution-consistency.md", "human-review.md", "epic-refinement.md"),
         "tdd-evidence": ("cycle-evidence.md",),
         "verify-review": ("regression-and-integration.md",),

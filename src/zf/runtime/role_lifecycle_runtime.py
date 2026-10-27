@@ -49,6 +49,13 @@ _NORMAL_SUSPEND_DEFERRALS = frozenset({
 class RoleLifecycleRuntimeMixin:
     """Host mixin for on-demand role process lifecycle."""
 
+    def _clear_role_skill_treatment(self, instance_id: str) -> None:
+        """Forget session-local treatment only after its work is quiescent."""
+        getattr(self, "_active_skill_treatment_tasks", {}).pop(instance_id, None)
+        cache = getattr(self, "_activation_skill_provenance", {})
+        for key in [key for key in cache if key[0] == instance_id]:
+            cache.pop(key, None)
+
     def _record_skill_provenance(
         self,
         *,
@@ -711,13 +718,7 @@ class RoleLifecycleRuntimeMixin:
             )
             return
 
-        getattr(self, "_active_skill_treatment_tasks", {}).pop(
-            role.instance_id,
-            None,
-        )
-        cache = getattr(self, "_activation_skill_provenance", {})
-        for key in [key for key in cache if key[0] == role.instance_id]:
-            cache.pop(key, None)
+        self._clear_role_skill_treatment(role.instance_id)
 
         completed = self._now()
         registry.update_instance_meta(
