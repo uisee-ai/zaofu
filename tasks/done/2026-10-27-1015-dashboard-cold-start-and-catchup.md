@@ -1,6 +1,7 @@
 # Dashboard 冷首屏与指标追赶
 
-> 状态: active
+> 状态: done
+> 实现提交: `81cc73c3 fix: accelerate dashboard cold views and metric catch-up`
 
 用户批准上一轮 Loshu 评估后的下一步实施。基线为 `3977bb57`，独立分支 `wip/codex-20261027-dashboard-cold-start`。
 采用 zf-backlog-batch-closeout 完成验证、实现提交、记录 hash 后归档；不合并 dev、不 push。
