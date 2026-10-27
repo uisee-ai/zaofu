@@ -1,6 +1,7 @@
 # Traces / Loop / Channels 排版
 
-> 状态: active
+> 状态: done
+> 实现提交: `eb2c9ea2` feat: align workspace pages with GR8R design
 
 用户已批准全工作区 UI 优化。本项范围：有界索引、下钻、循环图、会话与输入区保持交互，统一字号和间距。
 

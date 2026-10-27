@@ -1,8 +1,9 @@
-# Agents 与 Delivery 排版
+# Tasks / Inbox / Settings 校准与集成验收
 
-> 状态: active
+> 状态: done
+> 实现提交: `eb2c9ea2` feat: align workspace pages with GR8R design
 
-用户已批准全工作区 UI 优化。本项范围：Agent 搜索与常用列、Advanced 保留细节；Delivery 状态头与主次卡片、Run/Graph 入口。
+用户已批准全工作区 UI 优化。本项范围：原有几何、三视图、审批、General/Appearance、深色/紧凑/移动端回归，更新预览。
 
 设计：[189 全工作区排版扩展](../../docs/design/189-gr8r-ui-alignment.md#2026-10-26-全工作区排版扩展)。
 
@@ -10,7 +11,7 @@
 - 验证行为 -> verify: 前端 typecheck/build、影响域单元测试与 Docker Playwright mock 用例通过。
 - 完成交付 -> verify: 8019 预览同步，实现 commit 与归档 hash 齐备。
 
-验收记录：Agent 搜索/关注筛选、原生详情抽屉、Escape 焦点返回和动作权限通过；新增 HTTP 失败/20 秒超时/重试回归。Delivery 主次卡片与 Runs/Graph 入口保留。
+验收记录：Tasks Board/List/Table、Inbox 审批、General/Appearance、深色/密度/偏好持久化与原侧栏顺序/收放的 10 个既有浏览器用例全部通过。
 
 公共验证：`dev-verify.py plan/run --base dev` 通过 docs / web_ui；8 个 instruction contract、63 个前端单元测试文件、typecheck/build、bundle budget、token lint 与 diff 检查通过。全批 26 个不同浏览器用例验收通过；执行命令、分组结果与初轮修复见设计文档“本批验收结果”。证据：`/tmp/zf-ui-pages-20261026-2337/`。8019 已同步验证构建。
 
