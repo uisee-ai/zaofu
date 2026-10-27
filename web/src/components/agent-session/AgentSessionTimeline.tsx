@@ -1263,10 +1263,10 @@ function StackedCards({
             )
           ) : null}
           {isPlan && card.planRequest ? (
-            card.status === "stale" ? (
+            card.status === "stale" || card.status === "cancelled" ? (
               <div className="agent-plan-receipt muted">
                 <CircleSlash aria-hidden="true" size={14} />
-                <span>Superseded</span>
+                <span>{card.status === "cancelled" ? "Cancelled" : "Superseded"}</span>
               </div>
             ) : (
               <PlanInteractionForm

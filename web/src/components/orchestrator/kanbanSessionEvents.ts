@@ -1,13 +1,10 @@
 import type { RecentEvent, WebChatTurn } from "../../api/types";
 import type { AgentSessionRun } from "../agent-session/types";
+import { durableRunStatus } from "../agent-session/durableRunProjection.js";
 
 export function isKanbanRunWorking(run: AgentSessionRun, turns: WebChatTurn[]): boolean {
   if (!["streaming", "submitted"].includes(run.status)) return false;
-  const durable = turns.find((turn) => turn.turn_id === run.id);
-  if (!durable || !["waiting_input", "completed", "failed", "cancelled", "interrupted"].includes(durable.state)) return true;
-  // A newer SSE start can precede the next runtime poll. Older live fragments
-  // cannot keep a durably paused/completed turn working indefinitely.
-  return Date.parse(run.updatedAt || "") > Date.parse(durable.updated_at);
+  return !durableRunStatus(run, turns.find((turn) => turn.turn_id === run.id));
 }
 
 // A durable pause/terminal boundary can repair a dropped SSE reply. Include

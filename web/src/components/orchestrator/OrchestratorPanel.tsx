@@ -1901,9 +1901,10 @@ export function OrchestratorPanel({
     conversationId: headlessConversationId,
     events: headlessConversationEvents,
     durableMessages: headlessDurableMessages,
+    durableTurns: webChatRuntime?.turns,
     knownThreads: headlessThreads,
     projectId: headlessProjectId,
-  }), [headlessConversationEvents, headlessConversationId, headlessDurableMessages, headlessProjectId, headlessThreadKey, headlessThreads, operatorBackend]);
+  }), [headlessConversationEvents, headlessConversationId, headlessDurableMessages, headlessProjectId, headlessThreadKey, headlessThreads, operatorBackend, webChatRuntime?.turns]);
   useEffect(() => {
     setHeadlessPendingMessages((current) => (
       current.filter((item) => !conversationHasHeadlessTurn(headlessConversation, item))

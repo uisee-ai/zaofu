@@ -1,4 +1,5 @@
-import type { EventRecord } from "../../api/types.js";
+import type { EventRecord, WebChatTurn } from "../../api/types.js";
+import { reconcileDurableRuns } from "./durableRunProjection.js";
 import type {
   AgentConversation, AgentSessionActionProposal, AgentSessionCard, AgentSessionPart, AgentSessionPlanRequest, AgentSessionRun,
   AgentSessionThread, AgentSessionThreadRef, AgentSessionTurn,
@@ -453,6 +454,7 @@ export function buildKanbanConversation(args: {
   projectId?: string;
   conversationId?: string;
   durableMessages?: DurableWebChatMessage[];
+  durableTurns?: WebChatTurn[];
 }): AgentConversation {
   const threads = new Map<string, AgentSessionThread>();
   const turnToMessage = new Map<string, string>();
@@ -951,6 +953,7 @@ export function buildKanbanConversation(args: {
       run.updatedAt = event.ts;
     }
   }
+  reconcileDurableRuns(threads.values(), args.durableTurns ?? []);
   return {
     id: `kanban:${args.projectId || "default"}`,
     projectId: args.projectId,
