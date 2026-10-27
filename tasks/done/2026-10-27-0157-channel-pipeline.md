@@ -1,6 +1,7 @@
 # Channel 五步导航与阶段摘要
 
-> 状态: active
+> 状态: done
+> 实现提交: `e727031a` feat: refine overview, channel progress, and loop timelines
 
 用户已批准实施。范围：节点/连接线按真实状态展示；查看节点与当前阶段分离；摘要复用现有问题、计划和文档入口。
 

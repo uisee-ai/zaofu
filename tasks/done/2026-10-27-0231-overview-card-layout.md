@@ -1,6 +1,7 @@
 # Overview 独立指标卡与执行顺序
 
-> 状态: active
+> 状态: done
+> 实现提交: `e727031a` feat: refine overview, channel progress, and loop timelines
 
 用户在本批执行中追加批准：四张指标卡恢复独立边框与间距，Execution Flow 移至左列首位，直接位于 Work Queue 所在指标行下方。
 
