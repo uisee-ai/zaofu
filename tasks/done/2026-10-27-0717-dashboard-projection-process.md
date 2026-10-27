@@ -1,6 +1,9 @@
 # Dashboard 投影进程、刷新与性能验收
 
-> 状态: active
+> 状态: done
+
+实现提交：`497a33cf fix: isolate dashboard projection work and reuse workflow reads`。
+已通过影响闭包、补充回归、13 项浏览器测试及固定样本性能评估；冷加载限制按下文保留。
 
 来源：本轮用户明确批准“新 worktree 生成 md、生成 backlog 实施、完成后评估性能”。
 设计：`docs/design/191-dashboard-projection-process-and-refresh.md`（用户要求忽略，不提交）。
