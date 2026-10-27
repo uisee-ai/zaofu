@@ -54,9 +54,9 @@ test("six graph views, themed top-down cards and live projection updates preserv
   const canvas = workbench.getByTestId("workflow-graph-canvas");
   await expect(canvas).toBeVisible();
   await expect(page.getByRole("tab", { name: /Needs decision|Active|History/ })).toHaveCount(0);
-  await expect(page.getByLabel("Select workflow")).toHaveValue(id);
+  if (await page.getByLabel("Select workflow").count()) await expect(page.getByLabel("Select workflow")).toHaveValue(id);
   await expect(page.getByRole("heading", { name: "Workflow", exact: true })).toHaveCount(1);
-  expect(await page.locator(".workflow-selector").evaluate(element => [...element.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent).join("").trim())).toBe("");
+  await expect(page.locator(".workflow-proposal-toolbar")).not.toContainText("Graph browser fixture");
   await expect(page.locator(".workflow-context-bar,.workflow-selection-meta")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Review & Approve", exact: true })).toHaveCount(0);
   const navigation = workbench.getByRole("navigation", { name: "Workflow graph views" });
@@ -122,6 +122,8 @@ test("six graph views, themed top-down cards and live projection updates preserv
   await workbench.getByRole("button", { name: "Close node details" }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await noOverflow(page);
+  await expect.poll(async () => (await canvas.locator(".react-flow__node").first().boundingBox())?.width || 0).toBeGreaterThan(160);
+  await workbench.getByRole("button", { name: /fit view/i }).click();
   await expect.poll(async () => {
     const bounds = (await canvas.boundingBox())!;
     const first = await workbench.locator('.react-flow__node[data-id="goal"]').boundingBox();
@@ -159,12 +161,16 @@ test("large graphs fit shorter windows and resized content panels; Timeline stay
   await assertFits();
   await page.evaluate(() => { (document.querySelector(".board-panel") as HTMLElement).style.height = ""; });
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await canvas.locator(".react-flow__node").first().boundingBox())?.width || 0).toBeGreaterThan(160);
+  await workbench.getByRole("button", { name: /fit view/i }).click();
   await assertFits();
   await noOverflow(page);
   await workbench.getByRole("button", { name: "Timeline", exact: true }).click();
   await expect(workbench.getByRole("heading", { name: "执行区间与关键路径" })).toHaveCount(0);
   await expect(workbench.getByText("时序或依赖证据尚不完整，暂不计算关键路径。", { exact: true })).toHaveCount(0);
   await expect(workbench.getByRole("table")).toHaveCount(0);
+  await expect.poll(async () => (await canvas.locator(".react-flow__node").first().boundingBox())?.width || 0).toBeGreaterThan(160);
+  await workbench.getByRole("button", { name: /fit view/i }).click();
   await assertFits();
 });
 
@@ -239,7 +245,7 @@ test("Agent dialog retains conversation and pending diff while Raw stays focused
   await dialog.screenshot({ path: test.info().outputPath("agent-mobile.png") });
   await page.setViewportSize({ width: 1600, height: 1000 });
   await expect(page.getByTestId("workflow-start")).toBeDisabled();
-  await expect(page.getByLabel("Select workflow")).toBeDisabled();
+  if (await page.getByLabel("Select workflow").count()) await expect(page.getByLabel("Select workflow")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Close workflow panel" })).toBeDisabled();
   await chat.getByRole("button", { name: "Apply", exact: true }).click();
   await expect(raw.locator(".workflow-raw-yaml pre")).toContainText("lanes: 2");
@@ -334,9 +340,9 @@ test("request selection retains deep links and Plan review keeps chat and approv
   await expect(page.getByLabel("Select workflow")).toHaveValue(id);
   await page.getByLabel("Select workflow").selectOption(other);
   await expect(page).toHaveURL(new RegExp(`request=${other}`));
-  await expect(page.getByRole("button", { name: "Review Plan", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveCount(0);
   await page.getByLabel("Select workflow").selectOption(id);
-  await page.getByRole("button", { name: "Review Plan", exact: true }).click();
+  await page.getByRole("button", { name: "Review", exact: true }).click();
   const preview = page.getByRole("region", { name: "Workflow PRD Plan Preview" });
   await expect(preview).toContainText("Keep the race duration at 90 seconds.");
   await preview.getByRole("button", { name: "Raw", exact: true }).click();
@@ -381,7 +387,7 @@ test("request selection retains deep links and Plan review keeps chat and approv
   plan.markdown = "# Racing game plan\n\nKeep the race duration at 120 seconds.";
   plan.action_payload.binding_digest = "fixture-plan-version-2";
   await expect(preview).toHaveCount(0);
-  await page.getByRole("button", { name: "Review Plan", exact: true }).click();
+  await page.getByRole("button", { name: "Review", exact: true }).click();
   await expect(preview).toContainText("Keep the race duration at 120 seconds.");
   await preview.getByRole("button", { name: "确认计划并继续", exact: true }).click();
   await expect(preview).toHaveCount(0);
@@ -412,7 +418,7 @@ test("Plan main reader quotes formatted blocks, edits repeated paragraphs and se
     return route.fulfill({ json: { ok: true, answer: "引用范围已确认。", draft_ref: null } });
   });
   await page.goto(`/?page=workflows&project=default&request=${id}`);
-  await page.getByRole("button", { name: "Review Plan", exact: true }).click();
+  await page.getByRole("button", { name: "Review", exact: true }).click();
   const panel = page.getByRole("region", { name: "Workflow PRD Plan Preview" });
   await expect(panel.getByRole("alert")).toContainText("文档加载失败");
   failContext = false;

@@ -48,9 +48,9 @@
 
 ## 图优先页面与主题（2026-10-26）
 
-取消 Needs decision / Active / History 页签和常驻请求列表；顶部只保留一个 Workflow 标题与请求选择器；全部请求由选择器访问，类型、状态和修订合并到选择项；不再单设类型/修订栏或 Review & Approve 上下文栏，深链接继续绑定 request/graph/node。默认展示 Dag，六个英文视角在工作台顶部横向排列，使用无图标的文字标签共享请求与节点身份；窄屏标签可横向滚动。未生成配置的请求仍显示澄清和准备入口，不要求已有 Run 才能访问。
+取消 Needs decision / Active / History 页签和常驻请求列表；顶部保留 Workflow 标题；存在多个请求时通过选择器切换，选项显示请求 ID、类型、状态和修订；单请求不显示选择器；不再单设类型/修订栏或 Review & Approve 上下文栏，深链接继续绑定 request/graph/node。默认展示 Dag，六个英文视角在工作台顶部横向排列，使用无图标的文字标签共享请求与节点身份；窄屏标签可横向滚动。未生成配置的请求仍显示澄清和准备入口，不要求已有 Run 才能访问。
 
-六个视角默认铺满页面剩余空间，无需先点击展开。画布高度受实际内容容器和窗口共同约束；窗口或侧栏尺寸变化后自动适配节点，自动适配与工具栏 Fit View 使用同一缩放规则，小图默认至多 80%，大图可继续缩小到完整可见；移除底部的版本与数据可用性、Live Events 区块，节点详情仍保留来源与执行证据。Timeline 只展示关系图，不再附带执行区间、关键路径说明与操作时间表格；Trace 和 Delivery 移除常驻说明文案，节点与受控接口的证据规则保持不变。画布采用纵向分层、圆角卡片和带箭头的曲线虚线。Provider 从已有执行绑定读取，边框使用主题品牌/警告/成功色区分已观测 Provider；执行状态单独使用文字和图标，不能从 Provider 颜色推断成功。目标节点采用圆角胶囊。背景、卡片、文字、连线、缩略图和控件共享现有明暗主题 token，不固定黑底。活动状态与连线随同一只读快照更新；普通轮询保留位置与缩放，主动筛选重新布局；减少动画偏好关闭运动效果。
+六个视角默认铺满页面剩余空间，无需先点击展开。画布高度受实际内容容器和窗口共同约束；窗口或侧栏尺寸变化后自动适配节点，宽画布自动适配至多 80%；窄画布自动适配最低 65% 以保持节点可读，Fit View 仍可缩小至完整可见；移除底部的版本与数据可用性、Live Events 区块，节点详情仍保留来源与执行证据。Timeline 只展示关系图，不再附带执行区间、关键路径说明与操作时间表格；Trace 和 Delivery 移除常驻说明文案，节点与受控接口的证据规则保持不变。画布采用纵向分层、圆角卡片和带箭头的曲线虚线。Provider 从已有执行绑定读取，以卡片内的颜色和文字区分；卡片采用中性细边框，执行状态单独使用文字和图标，不能从 Provider 颜色推断成功。目标节点使用统一圆角。背景、卡片、文字、连线、缩略图和控件共享现有明暗主题 token，不固定黑底。活动状态与连线随同一只读快照更新；普通轮询保留位置与缩放，主动筛选重新布局；减少动画偏好关闭运动效果。
 
 审批与运行控制统一从 Raw 面板进入；需要澄清的请求仍在顶部提供 Answer Questions，Plan 待审提示继续保留。Raw 是绑定 Proposal 的完整脱敏 YAML。未启动的 `proposed` 以及有当前不可变阻塞候选的 `ready` 请求均可使用 Agent Chat；阻塞候选用自己的 digest 绑定，修改后重新编译，有剩余阻塞项时保持不可审批。刷新时从匹配当前修订的准备候选或已记录的修改结果恢复 YAML，不修改 canonical `zf.yaml`，不自动启动 Run。Raw 专注展示 YAML；图工具栏不再显示 Agent，YAML 下方原 Details 位置改为 Agent，展开面板内的小回复框。没有居中模态窗口或背景遮罩；初始只显示一个输入框，消息和 Diff 按需出现在框内，支持 Ctrl/⌘+Enter 发送、Apply/Discard、Esc 或点击框外收起。Details 入口移除；必要的 Answer Questions、Prepare Workflow 和 Run Controls 入口继续保留。Chat 产生待应用候选期间不能切换请求或启动 Workflow；可关闭对话框，再打开时保留当前页面内的对话、输入及待应用 Diff。关闭 Raw 也不销毁 Chat；切换项目或请求后使用独立上下文。选中 YAML 片段可以引用到回复框，作为当前版本的修改上下文，由 Agent 定位可编辑字段并生成 Diff。应用生成新 Proposal 和图；Start Workflow 是一次显式启动确认，顺序调用原配置应用及提交接口，绑定相同 Proposal digest，失败不继续提交。已应用配置而提交失败时，刷新后重试仅提交，不重复应用。YAML 面板内的 Agent 入口始终可见；已启动 Run 时允许基于冻结 YAML 提问讨论，不生成可应用的 Diff；尚未生成可读预览或缺少 Agent 调用权限时，对话框显示具体原因并禁用输入及发送；历史事件回放时禁用 Raw，返回实时后可检查当前 Proposal，避免把当前配置误作历史配置。
 
@@ -60,7 +60,7 @@
 
 旧版 Workflow 的 effective-config 快照可能只有结构化 `config`，没有 `yaml`。详情投影先验证不可变快照，再从同一 Proposal 的 private candidate 恢复完整脱敏 YAML；候选路径、大小和内容摘要均须通过检查，摘要必须同时匹配快照来源及 Proposal 目标。候选不可用时仅序列化已验证的冻结配置，并明确标为 `Compiled configuration snapshot`；快照本身不可读时显示证据不可用。不读取当前项目 `zf.yaml` 作为历史内容，也不改写旧快照、Proposal 或事件。实际 tt 修复及浏览器证据见 [旧版 Raw YAML 兼容记录](../records/2026-10-26-1540-workflow-legacy-yaml.md)。
 
-PRD/Plan 待审时在画布上方提示 Review Plan。主阅读区直接显示服务端绑定的文档，Preview 支持选段引用，Raw 支持精确选字。选中内容后才出现「引用到 Agent」悬浮入口，正文没有逐段编辑按钮。格式化内容按 Markdown 语法树的源区间引用完整段落/列表/表格块，保留标记；Unicode 偏移转换后送入原审阅合同，重复文本不做全文搜索匹配。审批概览与附件折叠保留为只读资料，加载失败明确提示并可重试。引用打开与 YAML 共用 `PreviewAgentReply` 的小回复框：一个输入框与 Send，按需显示消息、引用和 Diff；支持 Ctrl/⌘+Enter、关闭重开保留内容以及 Apply/Discard。点击外部动作后再收起，并使用原始事件路径识别已被 React 移除的 Diff 按钮和引用入口，避免吞掉点击或误收起。主阅读入口的早期修复证据见 [Plan Review Entry](../records/2026-10-26-2329-plan-review-entry.md)。
+PRD/Plan 待审时在 Live 状态同一行右侧提供 Review 入口。主阅读区直接显示服务端绑定的文档，Preview 支持选段引用，Raw 支持精确选字。选中内容后才出现「引用到 Agent」悬浮入口，正文没有逐段编辑按钮。格式化内容按 Markdown 语法树的源区间引用完整段落/列表/表格块，保留标记；Unicode 偏移转换后送入原审阅合同，重复文本不做全文搜索匹配。审批概览与附件折叠保留为只读资料，加载失败明确提示并可重试。引用打开与 YAML 共用 `PreviewAgentReply` 的小回复框：一个输入框与 Send，按需显示消息、引用和 Diff；支持 Ctrl/⌘+Enter、关闭重开保留内容以及 Apply/Discard。点击外部动作后再收起，并使用原始事件路径识别已被 React 移除的 Diff 按钮和引用入口，避免吞掉点击或误收起。主阅读入口的早期修复证据见 [Plan Review Entry](../records/2026-10-26-2329-plan-review-entry.md)。
 
 Plan 审阅的 `mode=chat` 由 headless Agent 判断讨论、追问或局部修改；原 `discuss/revise` 协议保留。候选必须绑定同一 Plan、文档摘要与 Unicode 引用区间，引用外正文由服务端保持不变；Provider 返回后重新检查计划是否仍待审批。Apply 通过原受控拒绝/重新规划入口提交不可变候选，不批准旧计划或新计划；待应用 Diff 与重规划状态同步前锁住批准操作。已退回版本说明正在等待新版。Workflow 选择器优先显示 Synthesis 已选的 Flow family，未决时才显示原始 `auto`。页面没有新增调度或审批状态机；Kanban Agent、Channel 与 CLI 提交接口未改动。真实 Kanban → PrdFlow → 人工预览 → 引用修改 → 新版待审验证见 [ty Plan Chat](../records/2026-10-26-1700-ty-plan-chat.md)。
 

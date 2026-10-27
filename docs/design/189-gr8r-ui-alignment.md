@@ -151,6 +151,8 @@ docker run --rm --network host \
 
 实现补充：Overview 近期动态通过当前项目的 `/events?limit=5` 独立读取，与 SSE 按 seq 合并，按新到旧显示；不阻塞 pulse/snapshot，不发起无项目范围的请求。Agents 详情使用原生 dialog，保留 Escape、焦点返回与 Worker 动作权限。Channels 流程导航、消息与输入区共用 820px 阅读列，维持审批侧栏与窄屏布局。
 
+后续校准：Workflow 现采用图优先页面，具体交互见 [187 工作台实施](../impl/187-ai-sdlc-graph-workbench.md)。节点沿用工作区字体和中性边框，Provider 与执行状态独立显示；窄屏优先可读并保留全图适配。Inbox 首行保留 Unread 开关和全部已读图标，常用分类保持一行，其他类型通过 More 选择。常规数据刷新不再显示旧结果和截至时间，真实读取错误仍提示。
+
 真实项目复核发现 Agents 读取接口超过 30 秒仍无响应。UI 为自己的读取请求增加 20 秒取消边界：加载、空列表、读取失败分开显示；失败时不显示零 Worker/健康状态，提供只读重试。切换项目或离开页面时取消旧请求，Cockpit 辅助读取不覆盖 Agent 列表的失败状态。此批不修改后台投影的计算或运行状态。
 
 ### 本批验收结果

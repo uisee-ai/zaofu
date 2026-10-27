@@ -127,7 +127,7 @@ test("reviews, approves, and follows a proposal without layout collisions", asyn
   await expect(proposalPage).toBeVisible();
   await expect(page.getByRole("heading", { name: "Workflow", exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: /Needs decision/ })).toHaveCount(0);
-  await expect(page.getByLabel("Select workflow")).toHaveValue(requestId);
+  if (await page.getByLabel("Select workflow").count()) await expect(page.getByLabel("Select workflow")).toHaveValue(requestId);
   await expect(page.getByTestId("workflow-graph-canvas")).toBeVisible();
   await expect(page.getByRole("button", { name: "Review & Approve", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Raw", exact: true }).click();

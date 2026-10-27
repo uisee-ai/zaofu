@@ -8,7 +8,6 @@ import { WorkflowEmpty } from "./WorkflowProposalParts";
 import { WorkflowPreviewReview } from "./WorkflowPreviewReview";
 import { WorkflowProposalDetail } from "./WorkflowProposalDetail";
 import { useWorkflowRequests } from "./useWorkflowRequests";
-import { requestTitle } from "./workflowProposalModel";
 import { startWorkflow, workflowStartActions } from "./workflowStartModel";
 const WorkflowGraphWorkbench = lazy(() => import("./WorkflowGraphWorkbench"));
 
@@ -189,12 +188,11 @@ function WorkflowProposalWorkbench({
   return <div ref={pageRoot} className="workflow-proposal-page workflow-graph-page" data-testid="workflow-proposal-page">
     <header className="workflow-proposal-toolbar">
       <h2>Workflow</h2>
-      <label className="workflow-selector">
+      {requests.length > 1 && <label className="workflow-selector">
         <select aria-label="Select workflow" value={selectedId} disabled={Boolean(busyAction)} onChange={e => selectRequest(e.target.value)}>
-          {!requests.length && <option value="">No workflows</option>}
-          {requests.map(item => <option key={textValue(item.request_id)} value={textValue(item.request_id)}>{requestTitle(item)} · {textValue(item.selected_flow_family) || textValue(item.kind).toUpperCase()} · {textValue(item.status)} · R{textValue(item.revision)}</option>)}
+          {requests.map(item => <option key={textValue(item.request_id)} value={textValue(item.request_id)}>{textValue(item.request_id)} · {textValue(item.selected_flow_family) || textValue(item.kind).toUpperCase()} · {textValue(item.status)} · R{textValue(item.revision)}</option>)}
         </select>
-      </label>
+      </label>}
       {needsAnswers && <button className="icon-button" type="button" disabled={Boolean(busyAction)} onClick={() => setPanel("review")}>Answer Questions</button>}
       <button aria-label="Refresh workflows" className="icon-button" type="button" disabled={Boolean(busyAction)} onClick={() => { void loadRequests(); void loadDetail(); }}><RefreshCw size={16} /></button>
     </header>

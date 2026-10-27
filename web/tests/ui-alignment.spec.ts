@@ -154,7 +154,7 @@ test("Inbox selection is read only; preview and explicit approve, reject and ack
   await page.locator(".inbox-reading-pane").getByRole("button", { name: "Reject", exact: true }).click();
   await expect.poll(() => writes.length).toBe(2);
   expect(writes[1].body.payload).toMatchObject({ plan_id: "plan-2", reason: "Clarify acceptance evidence" });
-  await page.locator(".operator-inbox-mode").getByRole("button", { name: "Delivery", exact: true }).click();
+  await page.getByLabel("More inbox views").selectOption("notification");
   await page.locator(".inbox-reading-pane").getByRole("button", { name: "Ack", exact: true }).click();
   await expect.poll(() => writes.length).toBe(3);
   expect(writes[2].path).toContain("run-delivery-ack");
