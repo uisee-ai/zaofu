@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] [chromium] › tests/plan-preview-content.spec.ts:84:1 › a late response from a closed preview cannot replace the newly selected Plan
+[1A[2K  1 passed (3.6s)

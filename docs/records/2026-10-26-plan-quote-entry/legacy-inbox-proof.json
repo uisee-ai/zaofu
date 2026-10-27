@@ -1,0 +1,62 @@
+[
+  {
+    "id": "evt-7782d2b08450",
+    "ts": "2026-10-26T23:40:52.457976+00:00",
+    "type": "user.message",
+    "source": "operator-inbox",
+    "plan_id": null,
+    "action": null,
+    "status": null,
+    "runtime_delivery": "queued_no_runtime"
+  },
+  {
+    "id": "evt-0a68ed48aa29",
+    "ts": "2026-10-26T23:40:52.458546+00:00",
+    "type": "runtime.action.completed",
+    "source": null,
+    "plan_id": null,
+    "action": "chat-orchestrator",
+    "status": "queued_no_runtime",
+    "runtime_delivery": null
+  },
+  {
+    "id": "evt-0305ee3d98c7",
+    "ts": "2026-10-26T23:40:53.019553+00:00",
+    "type": "user.message",
+    "source": "operator-inbox",
+    "plan_id": null,
+    "action": null,
+    "status": null,
+    "runtime_delivery": "queued_no_runtime"
+  },
+  {
+    "id": "evt-16154a8db56e",
+    "ts": "2026-10-26T23:40:53.020123+00:00",
+    "type": "runtime.action.completed",
+    "source": null,
+    "plan_id": null,
+    "action": "chat-orchestrator",
+    "status": "queued_no_runtime",
+    "runtime_delivery": null
+  },
+  {
+    "id": "evt-d6c00f3ddd0b",
+    "ts": "2026-10-26T23:40:55.280494+00:00",
+    "type": "user.message",
+    "source": "operator-inbox",
+    "plan_id": null,
+    "action": null,
+    "status": null,
+    "runtime_delivery": "queued_no_runtime"
+  },
+  {
+    "id": "evt-f651a04a49aa",
+    "ts": "2026-10-26T23:40:55.281111+00:00",
+    "type": "runtime.action.completed",
+    "source": null,
+    "plan_id": null,
+    "action": "chat-orchestrator",
+    "status": "queued_no_runtime",
+    "runtime_delivery": null
+  }
+]

@@ -27,6 +27,7 @@ from zf.runtime.workflow_delivery import (
 )
 from zf.runtime.workflow_intake import build_flow_intake
 from zf.web.projections.request_util import _request_json
+from zf.web.projections.workflow_yaml import project_workflow_yaml
 from zf.web.projections.workspace import _resolve_api_project
 
 
@@ -331,7 +332,7 @@ def build_workflow_request_router(
 
     @router.get("/api/projects/{project_id}/workflow-requests/{request_id}")
     def project_workflow_request_detail(project_id: str, request_id: str) -> JSONResponse:
-        from zf.runtime.workflow_proposal import load_workflow_proposal
+        from zf.runtime.workflow_review_candidate import review_candidate
         from zf.runtime.workflow_requests import load_workflow_request
 
         context = resolve(project_id)
@@ -347,30 +348,10 @@ def build_workflow_request_router(
             )
         proposal: dict[str, Any] = {}
         artifacts: dict[str, Any] = {}
-        proposal_ref = result.get("proposal_ref")
-        if not proposal_ref:
-            # A blocked candidate is reviewable without becoming an approved
-            # Request binding. Hydrate its immutable artifact, never its body
-            # from the disposable submit-preview projection.
-            preview = _bounded_json_body(context.state_dir, str(
-                context.state_dir / "artifacts" / "workflow" / request_id
-                / "workflow-submit-preview.json"
-            ))
-            proposal_ref = preview.get("proposal_ref")
-        if isinstance(proposal_ref, dict):
-            try:
-                proposal = load_workflow_proposal(
-                    context.state_dir,
-                    proposal_ref,
-                )
-            except Exception:
-                proposal = {}
-        if not result.get("proposal_ref") and (
-            proposal.get("approval_status") != "blocked"
-            or proposal.get("request_id") != result["request_id"]
-            or proposal.get("request_revision") != result["revision"]
-            or proposal.get("requirement_spec_digest") != result["requirement_spec_digest"]
-        ):
+        events = event_log_from_project(context.state_dir, config=context.config).read_all()
+        try:
+            proposal, _ = review_candidate(context.state_dir, result, events)
+        except (ValueError, OSError, KeyError, TypeError):
             proposal = {}
         for key in (
             "short_flow_spec_ref",
@@ -385,6 +366,12 @@ def build_workflow_request_router(
                     context.state_dir,
                     descriptor,
                 ).payload
+                if key == "effective_config_ref":
+                    artifacts["effective_config"] = project_workflow_yaml(
+                        artifacts["effective_config"], proposal,
+                        state_dir=context.state_dir,
+                        project_root=context.project_root,
+                    )
             except Exception:
                 artifacts[key.removesuffix("_ref")] = {
                     "status": "unreadable",
@@ -397,10 +384,6 @@ def build_workflow_request_router(
             context.state_dir,
             str(result.get("workflow_input_manifest_ref") or ""),
         )
-        events = event_log_from_project(
-            context.state_dir,
-            config=context.config,
-        ).read_all()
         lifecycle = _workflow_request_lifecycle(
             events,
             request_id=request_id,

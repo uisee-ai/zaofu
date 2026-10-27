@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1/1] [chromium] › tests/workflow-graph-redesign.spec.ts:27:1 › six graph views, themed top-down cards and live projection updates preserve viewport
+  1 passed (9.4s)

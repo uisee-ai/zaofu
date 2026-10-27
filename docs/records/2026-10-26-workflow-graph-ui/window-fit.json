@@ -1,0 +1,246 @@
+{
+  "before": [
+    {
+      "window": [
+        1600,
+        900
+      ],
+      "page": {
+        "x": 259,
+        "y": 60,
+        "width": 1330,
+        "height": 828,
+        "bottom": 888
+      },
+      "projection": {
+        "x": 259,
+        "y": 60,
+        "width": 1330,
+        "height": 829,
+        "bottom": 889
+      },
+      "canvas": {
+        "x": 276,
+        "y": 261,
+        "width": 1296,
+        "height": 535,
+        "bottom": 796
+      },
+      "zoom": "translate(628.569px, 209.899px) scale(0.157164)",
+      "rendered": 44,
+      "outside": 0
+    },
+    {
+      "window": [
+        1280,
+        720
+      ],
+      "page": {
+        "x": 259,
+        "y": 60,
+        "width": 1010,
+        "height": 648,
+        "bottom": 708
+      },
+      "projection": {
+        "x": 259,
+        "y": 60,
+        "width": 1010,
+        "height": 649,
+        "bottom": 709
+      },
+      "canvas": {
+        "x": 276,
+        "y": 261,
+        "width": 976,
+        "height": 355,
+        "bottom": 616
+      },
+      "zoom": "translate(472.638px, 134.191px) scale(0.118168)",
+      "rendered": 44,
+      "outside": 0
+    },
+    {
+      "window": [
+        1024,
+        600
+      ],
+      "page": {
+        "x": 259,
+        "y": 60,
+        "width": 758,
+        "height": 528,
+        "bottom": 588
+      },
+      "projection": {
+        "x": 259,
+        "y": 60,
+        "width": 758,
+        "height": 529,
+        "bottom": 589
+      },
+      "canvas": {
+        "x": 270,
+        "y": 305,
+        "width": 736,
+        "height": 218,
+        "bottom": 523
+      },
+      "zoom": "translate(357.402px, 76.3019px) scale(0.0892171)",
+      "rendered": 44,
+      "outside": 0
+    },
+    {
+      "window": [
+        390,
+        844
+      ],
+      "page": {
+        "x": 11,
+        "y": 513,
+        "width": 368,
+        "height": 320,
+        "bottom": 833
+      },
+      "projection": {
+        "x": 11,
+        "y": 513,
+        "width": 368,
+        "height": 320,
+        "bottom": 833
+      },
+      "canvas": {
+        "x": 22,
+        "y": 796.5,
+        "width": 346,
+        "height": 218,
+        "bottom": 1014.5
+      },
+      "zoom": "translate(162.6px, 79.68px) scale(0.08)",
+      "rendered": 36,
+      "outside": 0
+    }
+  ],
+  "after": [
+    {
+      "window": [
+        1600,
+        900
+      ],
+      "page": {
+        "x": 259,
+        "y": 60,
+        "width": 1330,
+        "height": 828,
+        "bottom": 888
+      },
+      "projection": {
+        "x": 259,
+        "y": 60,
+        "width": 1330,
+        "height": 829,
+        "bottom": 889
+      },
+      "canvas": {
+        "x": 276,
+        "y": 261,
+        "width": 1296,
+        "height": 535,
+        "bottom": 796
+      },
+      "zoom": "translate(628.569px, 209.899px) scale(0.157164)",
+      "rendered": 44,
+      "outside": 0
+    },
+    {
+      "window": [
+        1280,
+        720
+      ],
+      "page": {
+        "x": 259,
+        "y": 60,
+        "width": 1010,
+        "height": 648,
+        "bottom": 708
+      },
+      "projection": {
+        "x": 259,
+        "y": 60,
+        "width": 1010,
+        "height": 649,
+        "bottom": 709
+      },
+      "canvas": {
+        "x": 276,
+        "y": 261,
+        "width": 976,
+        "height": 355,
+        "bottom": 616
+      },
+      "zoom": "translate(472.638px, 134.191px) scale(0.118168)",
+      "rendered": 44,
+      "outside": 0
+    },
+    {
+      "window": [
+        1024,
+        600
+      ],
+      "page": {
+        "x": 259,
+        "y": 60,
+        "width": 758,
+        "height": 528,
+        "bottom": 588
+      },
+      "projection": {
+        "x": 259,
+        "y": 60,
+        "width": 758,
+        "height": 529,
+        "bottom": 589
+      },
+      "canvas": {
+        "x": 270,
+        "y": 305,
+        "width": 736,
+        "height": 191,
+        "bottom": 496
+      },
+      "zoom": "translate(357.402px, 62.8019px) scale(0.0892171)",
+      "rendered": 44,
+      "outside": 0
+    },
+    {
+      "window": [
+        390,
+        844
+      ],
+      "page": {
+        "x": 11,
+        "y": 144,
+        "width": 368,
+        "height": 688,
+        "bottom": 832
+      },
+      "projection": {
+        "x": 11,
+        "y": 144,
+        "width": 368,
+        "height": 689,
+        "bottom": 833
+      },
+      "canvas": {
+        "x": 22,
+        "y": 427.5,
+        "width": 346,
+        "height": 312.5,
+        "bottom": 740
+      },
+      "zoom": "translate(168.547px, 141.125px) scale(0.0419498)",
+      "rendered": 44,
+      "outside": 0
+    }
+  ]
+}

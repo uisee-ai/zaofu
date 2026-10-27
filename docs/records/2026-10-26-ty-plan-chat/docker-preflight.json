@@ -1,0 +1,6 @@
+{
+  "command": "sg docker -c \"docker version --format '{{.Client.Version}} {{.Server.Version}}'\"",
+  "exit_code": 0,
+  "stdout": "29.9.2 29.9.2",
+  "scope": "Docker access only; no product tests executed"
+}

@@ -3,6 +3,7 @@ import { Check, X, MessageSquare } from "lucide-react";
 import type { PlanPreview } from "../../api/types";
 import { MarkdownText } from "../agent-session/MarkdownText";
 const PlanReviewReader = lazy(() => import("./PlanReviewReader"));
+const PlanArtifactChat = lazy(() => import("../workflow/PlanArtifactChat"));
 
 export function PlanPreviewOverlay({
   projectId,
@@ -11,8 +12,11 @@ export function PlanPreviewOverlay({
   busy,
   rejectReason,
   onRejectReason,
-  repairMessage,
-  onRepairMessage,
+  editing,
+  onRead,
+  reviewBusy,
+  onReviewBusy,
+  onApplied,
   onClose,
   onApprove,
   onReject,
@@ -27,8 +31,11 @@ export function PlanPreviewOverlay({
   busy: string;
   rejectReason: string;
   onRejectReason: (value: string) => void;
-  repairMessage: string;
-  onRepairMessage: (value: string) => void;
+  editing: boolean;
+  onRead: () => void;
+  reviewBusy: boolean;
+  onReviewBusy: (value: boolean) => void;
+  onApplied: () => Promise<void>;
   onClose: () => void;
   onApprove: () => void;
   onReject: () => void;
@@ -42,7 +49,7 @@ export function PlanPreviewOverlay({
   const planId = preview?.plan_id || "";
   const disabled = Boolean(actionKey && busy.endsWith(`:${actionKey}`));
   return (
-    <dialog ref={modal} className="plan-preview-overlay" aria-label="Plan preview" onCancel={(event) => { event.preventDefault(); onClose(); }}>
+    <dialog ref={modal} className="plan-preview-overlay" aria-label="Plan preview" onCancel={(event) => { event.preventDefault(); if (!reviewBusy) onClose(); }}>
       <div className="plan-preview-toolbar">
         <div>
           <strong>{preview?.content_profile === "derived_plan_full" ? "完整 PRD Preview" : "Plan Preview"}</strong>
@@ -52,7 +59,7 @@ export function PlanPreviewOverlay({
           ) : null}
         </div>
         <div className="plan-preview-toolbar-actions">
-          <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || !decisionReady || disabled || loading || preview.content_kind === "unavailable"}>
+          <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || loading || preview.content_kind === "unavailable"}>
             <Check size={14} /> {ownerDecision ? "Approve decisions" : "Approve"}
           </button>
           <input
@@ -61,39 +68,29 @@ export function PlanPreviewOverlay({
             onChange={(event) => onRejectReason(event.target.value)}
             disabled={!preview}
           />
-          <button type="button" className="delivery-action-button" onClick={onReject} disabled={!preview || !decisionReady || disabled || !rejectReason.trim()}>
+          <button type="button" className="delivery-action-button" onClick={onReject} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || !rejectReason.trim()}>
             <X size={14} /> Reject
           </button>
-          <button type="button" className="delivery-action-button" onClick={onRepair} disabled={!preview || disabled}>
-            <MessageSquare size={14} /> Repair
+          <button type="button" className="delivery-action-button" onClick={editing ? onRead : onRepair} disabled={!preview || disabled || reviewBusy}>
+            <MessageSquare size={14} /> {editing ? "返回审阅" : "引用编辑"}
           </button>
-          <button type="button" className="icon-button" title="Close preview" onClick={onClose}>
+          <button type="button" className="icon-button" title="Close preview" onClick={onClose} disabled={reviewBusy}>
             <X size={16} />
           </button>
         </div>
       </div>
       <div className="plan-preview-body">
-        <main className="plan-preview-reader">
+        <main className={`plan-preview-reader${editing ? " plan-preview-editing" : ""}`}>
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
           {loading ? <p className="muted">Loading...</p> : <Suspense fallback={<p className="muted">Loading...</p>}>
-            {preview && <PlanReviewReader key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} />}
+            {preview && (editing
+              ? <PlanArtifactChat key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} disabled={disabled} onBusy={onReviewBusy} onApplied={onApplied} />
+              : <PlanReviewReader key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} />)}
           </Suspense>}
         </main>
         <aside className="plan-preview-context">
-          <label className="plan-preview-repair-chat">
-            <span>通过 Chat 修改 Plan</span>
-            <textarea
-              value={repairMessage}
-              placeholder="说明需要调整的范围、任务或验收要求。"
-              onChange={(event) => onRepairMessage(event.target.value)}
-              disabled={!preview || disabled}
-              rows={4}
-            />
-            <button type="button" className="delivery-action-button" onClick={onRepair} disabled={!preview || disabled || !repairMessage.trim()}>
-              <MessageSquare size={14} /> 发送修改请求
-            </button>
-          </label>
+          <p className="muted">{editing ? "选中文字，点击「引用到 Agent」说明修改要求，检查 Diff 后 Apply。" : "点击上方「引用编辑」，可选段并通过 Agent 修改。"}</p>
           <dl className="plan-approval-meta">
             <div><dt>正文</dt><dd>{planContentKindLabel(preview)}</dd></div>
             <div><dt>内容契约</dt><dd>{planContentProfileLabel(preview?.content_profile)}</dd></div>

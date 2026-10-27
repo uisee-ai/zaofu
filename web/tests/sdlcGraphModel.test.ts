@@ -13,8 +13,8 @@ const edges: SdlcEdge[] = ["A", "B"].map(id => ({ id, source: id, target: "C", r
 test("shared dependency retains one node and deterministic layout across refresh", () => {
   const first = graphPositions(nodes, edges);
   assert.equal(first.size, 3);
-  assert.equal(first.get("A")?.x, first.get("B")?.x);
-  assert.ok(first.get("C")!.x > first.get("A")!.x);
+  assert.equal(first.get("A")?.y, first.get("B")?.y);
+  assert.ok(first.get("C")!.y > first.get("A")!.y);
   assert.deepEqual(first, graphPositions([...nodes].reverse(), [...edges].reverse()));
 });
 test("bidirectional reachability follows declared edges and terminates on rework cycles", () => {

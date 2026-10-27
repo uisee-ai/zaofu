@@ -1,0 +1,18 @@
+{
+  "thread_id": "eda18e1e-6d05-5331-816d-f16630129fd0",
+  "thread_key": "preview:raw-real-review:2",
+  "last_backend": "codex-headless",
+  "created_at": "2026-10-26T14:19:36.977372Z",
+  "updated_at": "2026-10-26T14:21:25.803313Z",
+  "provider_session_id": "01a17894-c14b-7061-9ecf-08bd1d9579ce",
+  "permission_profile": "read_only",
+  "provider_security": {
+    "approvalPolicy": "never",
+    "sandbox": "danger-full-access"
+  },
+  "canonical_lanes": 1,
+  "preview_lanes": 2,
+  "preview_plan_approval": true,
+  "submitted": false,
+  "canonical_sha256": "21aa6bcdd7487cc479f8bcc516b1d6c0b7827c7095abd000000ad79d9cf1a2fe"
+}

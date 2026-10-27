@@ -1,0 +1,8 @@
+
+Running 4 tests using 1 worker
+
+[1A[2K[1/4] [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 1440x1000
+[1A[2K[2/4] [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 1440x1400
+[1A[2K[3/4] [chromium] › tests/plan-preview-agent.spec.ts:4:3 › quoted editing fills the Preview reader at 390x844
+[1A[2K[4/4] [chromium] › tests/plan-preview-agent.spec.ts:43:1 › Inbox Plan editing uses quoted headless chat and keeps approval locked through Apply
+[1A[2K  4 passed (14.8s)

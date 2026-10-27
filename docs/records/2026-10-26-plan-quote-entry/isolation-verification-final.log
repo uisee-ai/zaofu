@@ -1,0 +1,19 @@
+worktree: /home/uisee/workspace/zaofu-wt-workflow-graph-ui
+changed:
+  - src/zf/autoresearch/orchestrator.py
+  - tests/e2e/run_mixed.py
+  - tests/e2e/test_run_mixed_pythonpath.py
+domains: backend, tests
+python tests: 11
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python -m pytest tests/e2e/test_robustness_suite.py tests/e2e/test_run_mixed_fatal_events.py tests/e2e/test_run_mixed_pythonpath.py tests/test_autoresearch_controller_skill_sources.py tests/test_autoresearch_diagnostic_context.py tests/test_autoresearch_orchestrator.py tests/test_autoresearch_resident_sidecar.py tests/test_autoresearch_self_evolution.py tests/test_autoresearch_task_completion.py tests/test_cli_autoresearch.py tests/test_cli_autoresearch_loop.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: changed tests + direct imports/callers + boundary sentinels
+
+==> python-deterministic: /home/uisee/workspace/zaofu-wt-workflow-graph-ui/.venv/bin/python -m pytest tests/e2e/test_robustness_suite.py tests/e2e/test_run_mixed_fatal_events.py tests/e2e/test_run_mixed_pythonpath.py tests/test_autoresearch_controller_skill_sources.py tests/test_autoresearch_diagnostic_context.py tests/test_autoresearch_orchestrator.py tests/test_autoresearch_resident_sidecar.py tests/test_autoresearch_self_evolution.py tests/test_autoresearch_task_completion.py tests/test_cli_autoresearch.py tests/test_cli_autoresearch_loop.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [ 45%]
+........................................................................ [ 91%]
+.............                                                            [100%]
+157 passed in 17.57s

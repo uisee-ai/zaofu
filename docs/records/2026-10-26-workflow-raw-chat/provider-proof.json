@@ -1,0 +1,12 @@
+{
+  "backend": "codex-headless",
+  "providers": {
+    "codex-headless": {
+      "provider_session_id": "01a1786b-e156-7651-870d-b417b4bb6fa7",
+      "status": "completed"
+    }
+  },
+  "canonical_lanes": 1,
+  "preview_lanes": 2,
+  "workflow_submitted": false
+}

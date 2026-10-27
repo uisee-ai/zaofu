@@ -1,0 +1,42 @@
+
+Running 2 tests using 1 worker
+
+[1A[2K[1/2] [chromium] › tests/workflow-graph-redesign.spec.ts:288:1 › request selection retains deep links and Plan review keeps chat and approval bound
+[1A[2K[2/2] [chromium] › tests/workflow-graph-redesign.spec.ts:383:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+[1A[2K  1) [chromium] › tests/workflow-graph-redesign.spec.ts:383:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveText[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByRole('region', { name: 'Workflow PRD Plan Preview' }).locator('.plan-review-block').nth(1).locator('strong')
+    Expected: [32m"加一"[39m
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toHaveText" with timeout 5000ms[22m
+    [2m  - waiting for getByRole('region', { name: 'Workflow PRD Plan Preview' }).locator('.plan-review-block').nth(1).locator('strong')[22m
+
+
+      415 |   expect((await panel.getByTestId("plan-review-document").boundingBox())!.height).toBeGreaterThan(page.viewportSize()!.height - 230);
+      416 |   await expect(blocks.first().getByRole("heading")).toHaveCSS("font-size", "20px");
+    > 417 |   await expect(blocks.nth(1).locator("strong")).toHaveText("加一");
+          |                                                 ^
+      418 |   await expect(panel.getByRole("button", { name: "引用编辑此段" })).toHaveCount(0);
+      419 |   const quoteAction = panel.getByRole("button", { name: "引用到 Agent", exact: true });
+      420 |   await expect(quoteAction).toHaveCount(0);
+        at /home/uisee/workspace/zaofu-wt-workflow-graph-ui/web/tests/workflow-graph-redesign.spec.ts:417:49
+
+    Error Context: ../docs/records/2026-10-27-plan-reader-unified/workflow-tests/workflow-graph-redesign-Pl-84101--and-selects-exact-Raw-text-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/records/2026-10-27-plan-reader-unified/workflow-tests/workflow-graph-redesign-Pl-84101--and-selects-exact-Raw-text-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/records/2026-10-27-plan-reader-unified/workflow-tests/workflow-graph-redesign-Pl-84101--and-selects-exact-Raw-text-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K  1 failed
+    [chromium] › tests/workflow-graph-redesign.spec.ts:383:1 › Plan main reader quotes formatted blocks, edits repeated paragraphs and selects exact Raw text
+  1 passed (34.8s)

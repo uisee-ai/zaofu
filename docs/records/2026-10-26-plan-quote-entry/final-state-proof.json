@@ -1,0 +1,9 @@
+{
+  "old_plan_id": "evt-f0c18ed971c3",
+  "new_plan_id": "evt-fbb3199ea3ba",
+  "new_body_sha256": "e34168b9aa74a54f522837e42b492fa380b4bd241363858cfc1d5835a166572f",
+  "exact_replacement": true,
+  "canonical_original_preserved": true,
+  "plan_approved_events": [],
+  "impl_verify_dispatches": []
+}

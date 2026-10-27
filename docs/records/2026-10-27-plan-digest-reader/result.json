@@ -1,0 +1,70 @@
+{
+  "passed": true,
+  "project": "ty-review-42cb2551",
+  "planId": "evt-192e7536a145",
+  "status": "pending",
+  "measurements": [
+    {
+      "size": {
+        "width": 1440,
+        "height": 1000
+      },
+      "surface": "inbox",
+      "document": {
+        "x": 14,
+        "y": 204,
+        "width": 1412,
+        "height": 782
+      },
+      "formatted": true,
+      "agentDoesNotShrinkReader": true
+    },
+    {
+      "size": {
+        "width": 1440,
+        "height": 1000
+      },
+      "surface": "workflows",
+      "document": {
+        "x": 14,
+        "y": 175,
+        "width": 1412,
+        "height": 779
+      },
+      "formatted": true,
+      "agentDoesNotShrinkReader": true
+    },
+    {
+      "size": {
+        "width": 390,
+        "height": 844
+      },
+      "surface": "inbox",
+      "document": {
+        "x": 14,
+        "y": 372,
+        "width": 362,
+        "height": 458
+      },
+      "formatted": true,
+      "agentDoesNotShrinkReader": true
+    },
+    {
+      "size": {
+        "width": 390,
+        "height": 844
+      },
+      "surface": "workflows",
+      "document": {
+        "x": 12,
+        "y": 221,
+        "width": 366,
+        "height": 579
+      },
+      "formatted": true,
+      "agentDoesNotShrinkReader": true
+    }
+  ],
+  "planUnchanged": true,
+  "writes": 0
+}

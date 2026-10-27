@@ -1,0 +1,18 @@
+[
+  {
+    "root": "/tmp/zf-dsl-browser-20261026T1435Z",
+    "web_pid": 3054629,
+    "simulation_done_events": [
+      "evt-22891797d48c"
+    ],
+    "state_removed": true
+  },
+  {
+    "root": "/tmp/zf-dsl-real-20261026T1450Z",
+    "web_pid": 3058836,
+    "simulation_done_events": [
+      "evt-d51ac78794d9"
+    ],
+    "state_removed": true
+  }
+]

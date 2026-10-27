@@ -2,7 +2,26 @@ import type { WorkflowRequestDetail } from "../../api/types";
 
 export function reviewBinding(detail: WorkflowRequestDetail): Record<string, unknown> {
   const request = detail.result || {};
-  return { request_id: request.request_id, revision: request.revision, proposal_digest: request.proposal_digest };
+  return { request_id: request.request_id, revision: request.revision, proposal_digest: request.proposal_digest || detail.proposal?.proposal_digest };
+}
+export function reviewablePreview(detail: WorkflowRequestDetail): boolean {
+  const request = detail.result || {};
+  return !detail.lifecycle?.submitted && !detail.links?.run_id && !request.run_id
+    && (request.status === "proposed" || (request.status === "ready" && detail.proposal?.approval_status === "blocked"));
+}
+export function previewUnavailableReason(detail: WorkflowRequestDetail, actionReady: boolean): string {
+  if (!actionReady) return "当前页面没有 Agent 调用权限，请启用写入访问后再发送。";
+  if (discussablePreview(detail) && !reviewablePreview(detail)) return "当前 Workflow 已启动，YAML 已冻结；可以提问讨论，修改需创建新的 Workflow 预览。";
+  if (!reviewablePreview(detail)) return "当前没有可编辑的 YAML，请先完成澄清并生成新的 Workflow 预览。";
+  return "";
+}
+export function discussablePreview(detail: WorkflowRequestDetail): boolean {
+  const snapshot = detail.artifacts?.effective_config;
+  const yaml = snapshot && typeof snapshot === "object" && "yaml" in snapshot ? snapshot.yaml : null;
+  return reviewablePreview(detail) || Boolean(
+    (detail.lifecycle?.submitted || detail.links?.run_id || detail.result?.run_id)
+    && typeof yaml === "string" && yaml.trim(),
+  );
 }
 export function reviewText(value: unknown): string {
   return typeof value === "string" ? value : value === undefined ? "" : JSON.stringify(value, null, 2);

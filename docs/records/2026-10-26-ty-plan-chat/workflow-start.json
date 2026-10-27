@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "status": "accepted",
+  "action": "workflow-submit",
+  "requested_action": "workflow-submit",
+  "request_id": "prepare-TASK-CA8E83-0bd2143e4c45a9b0",
+  "workflow_invoke_event_id": "evt-a8dc380ee2ea",
+  "workflow_invoke_status": "pending_consumer",
+  "next_action": "project runtime is starting; follow Workflow dispatch and execution events",
+  "runtime_start": {
+    "ok": false,
+    "status": "starting",
+    "pid": 3185823,
+    "launched": true,
+    "log_ref": "/home/uisee/workspace/ty/.zf-ty/logs/workflow-runtime-start.log",
+    "reason": "project runtime is still starting; follow runtime readiness and Workflow events"
+  },
+  "reason": "",
+  "idempotent_replay": false,
+  "event_ids": [
+    "evt-ea7f19439ce6",
+    "evt-65b368c84322",
+    "evt-4d61612d08ed",
+    "evt-a8dc380ee2ea"
+  ],
+  "blockers": [],
+  "action_result": {
+    "schema_version": "controlled-action-result.v1",
+    "attempt_id": "act-evt-1f62fbb7",
+    "action": "workflow-submit",
+    "requested_action": "workflow-submit",
+    "status": "accepted",
+    "operation_id": "",
+    "request_hash": "",
+    "ok": true,
+    "event_id": "",
+    "reply_event_id": "",
+    "reason": ""
+  }
+}
