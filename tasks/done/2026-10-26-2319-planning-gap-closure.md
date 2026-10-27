@@ -1,6 +1,6 @@
 # 实跑规划缺口修复与 BMAD 复评
 
-> 状态: active
+> 状态: done — `767afe0d` fix: isolate planning experiments and close review handoff gaps；`717e8ba2` chore: restore isolated provider evaluations and record paired results
 
 用户已授权修复 fms-v1 实跑确认的缺口，完成后对照 BMAD 再评估。基线 dev `50eb6ba1`；保留真实项目的人工 Plan 审批停点。本批不合并、不推送，也不授权产品实施。
 
@@ -43,3 +43,9 @@
 
 完整方法与限制见[真实 A/B 报告](../../docs/records/2026-10-27-planning-gap-real-ab.md)。
 先前 provider 阻塞已关闭；产品新 Plan 生成及 Impl/Verify 不在本次评审实验证明范围。
+
+## 结项边界
+
+本任务列明的代码修复、机械验证、真实评审 A/B 和 BMAD 复评已完成。归档表示这些
+工作及证据已交付，不表示新方法已被证明全面优于基线，也不表示产品 build 完成。
+后续应以未见 PRD 的新 Plan 生成及批准后的 Impl/Verify 检验泛化与交付效果。
