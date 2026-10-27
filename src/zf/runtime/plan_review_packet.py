@@ -87,27 +87,33 @@ def build_review_packet(
             "evidence": [refs_by_name.get("acceptance_matrix", [""])[0]],
         })
 
+    # Run and PDD identities have different lifecycles and are not aliases.
+    lineage_by_kind: dict[str, dict[str, str]] = {
+        "workflow_run_id": {}, "pdd_id": {},
+    }
     lineage_values: dict[str, list[str]] = {}
-    preview_workflow = str(payload.get("workflow_run_id") or "").strip()
-    if preview_workflow:
-        lineage_values["preview_event"] = [preview_workflow]
-    bundle_workflow = str(preview_bundle.get("workflow_run_id") or "").strip()
-    if bundle_workflow:
-        lineage_values["preview_bundle"] = [bundle_workflow]
-    for name, value in json_values.items():
+    for name, value in {
+        "preview_event": payload, "preview_bundle": preview_bundle, **json_values,
+    }.items():
         metadata = value.get("metadata")
-        if isinstance(metadata, dict) and metadata.get("workflow_run_id"):
-            lineage_values[name] = [str(metadata["workflow_run_id"])]
-        if name == "task_map" and value.get("pdd_id"):
-            lineage_values[name] = [str(value["pdd_id"])]
+        sources = [(name, value)]
+        if isinstance(metadata, dict):
+            sources.append((f"{name}.metadata", metadata))
+        for source, body in sources:
+            for kind, identities in lineage_by_kind.items():
+                identity = str(body.get(kind) or "").strip()
+                if identity:
+                    identities[source] = identity
+                    lineage_values.setdefault(name, []).append(f"{kind}={identity}")
     lineage_ids = sorted({item for values in lineage_values.values() for item in values if item})
-    if len(lineage_ids) > 1:
-        diagnostics.append({
-            "code": "artifact_lineage_mismatch",
-            "severity": "error",
-            "message": "Plan Preview 绑定的事件、bundle 或 port 使用了不同 workflow/pdd 标识。",
-            "evidence": [f"{name}={value}" for name, values in lineage_values.items() for value in values],
-        })
+    for kind, identities in lineage_by_kind.items():
+        if len(set(identities.values())) > 1:
+            diagnostics.append({
+                "code": "artifact_lineage_mismatch",
+                "severity": "error",
+                "message": f"Plan Preview 绑定的事件、bundle 或 port 使用了不同 {kind} 标识。",
+                "evidence": [f"{name}.{kind}={value}" for name, value in identities.items()],
+            })
 
     def section(
         section_id: str,

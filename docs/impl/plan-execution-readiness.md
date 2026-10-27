@@ -74,6 +74,11 @@ Package 身份/摘要，并把 Impl/Task Verify 的必读路径设置为
 
 ## 同版 Plan 人工审阅
 
+审核包的 Provenance 按 `workflow_run_id` 和 `pdd_id` 分别核对事件、bundle 与
+已绑定工件（含 metadata）。Run ID 与 PDD ID 可以不同；同类标识不一致仍报
+`artifact_lineage_mismatch`。此只读检查不修改计划或批准状态；回归见
+`tests/test_plan_review_packet_lineage.py`。
+
 Planner/Critic 的[人工审阅方法](../../skills/zf-plan-execution-readiness/references/human-review.md)
 把审批概览、模块规格、业务旅程和 Given/When/Then 场景放入既有
 `execution_spec.shared.human_review` 与 `tasks[].body.human_review`；Task Map
