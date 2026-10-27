@@ -20,6 +20,11 @@ from zf.web.projections.source_cache import fingerprint, task_paths
 from zf.web.projections.workflow_workbench_sources import read_workbench_sources
 
 
+# Change when cached graph or Plan projection semantics change.  The version
+# participates in the storage key and ETag, isolating older running servers.
+CACHE_VERSION = "workflow-workbench.v3"
+
+
 class WorkbenchSourceChanged(RuntimeError):
     """No stable generation was available; do not serve mixed source state."""
 
@@ -96,7 +101,7 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
     elif structure_only:
         identity_parts.append("structure-v1")
     identity = json.dumps(identity_parts, sort_keys=True)
-    key = "workflow-workbench.v2:" + hashlib.sha256(identity.encode()).hexdigest()
+    key = CACHE_VERSION + ":" + hashlib.sha256(identity.encode()).hexdigest()
     dependencies = _references(request, context)
 
     def version() -> str:

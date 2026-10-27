@@ -77,7 +77,9 @@ Package 身份/摘要，并把 Impl/Task Verify 的必读路径设置为
 审核包的 Provenance 按 `workflow_run_id` 和 `pdd_id` 分别核对事件、bundle 与
 已绑定工件（含 metadata）。Run ID 与 PDD ID 可以不同；同类标识不一致仍报
 `artifact_lineage_mismatch`。此只读检查不修改计划或批准状态；回归见
-`tests/test_plan_review_packet_lineage.py`。
+`tests/test_plan_review_packet_lineage.py`。Workflow Graph 的持久缓存代际包含
+投影实现版本；审核包语义变化时同步更新代际，避免旧 SQLite 结果和旧 ETag
+继续隐藏修复，完整回归见 `tests/test_workflow_workbench_cache.py`。
 
 Planner/Critic 的[人工审阅方法](../../skills/zf-plan-execution-readiness/references/human-review.md)
 把审批概览、模块规格、业务旅程和 Given/When/Then 场景放入既有

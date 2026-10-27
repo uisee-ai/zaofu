@@ -208,3 +208,46 @@ def test_concurrent_reads_share_a_stable_build(setup, monkeypatch):
     assert all(r.status_code == 200 for r in responses)
     assert all(r.json() == responses[0].json() for r in responses)
     assert counter.call_count == 1
+
+
+def test_review_packet_generation_invalidates_previous_graph_cache_and_etag(setup, monkeypatch):
+    client, service, binding = setup
+    submit(service, binding)
+    plan = service.project_root / "docs/lineage-cache-plan.md"
+    plan.write_text("# Bound plan\n")
+    service.writer.append(ZfEvent(type="plan.approval.requested", payload={
+        "workflow_run_id": "run-a", "pdd_id": "TASK-42", "plan_id": "PLAN-LINEAGE",
+        "plan_artifact_ref": str(plan),
+    }))
+
+    # A previous server persisted the old review representation under v2.
+    build = cache.build_sdlc_graph
+    def old_graph(inputs):
+        graph = build(inputs)
+        section = next(s for s in graph["plans"][0]["review_packet"]["sections"]
+                       if s["id"] == "provenance")
+        section["counts"]["lineage_ids"] = 1
+        section["notes"] = ["run-a"]
+        return graph
+
+    with monkeypatch.context() as old:
+        old.setattr(cache, "CACHE_VERSION", "workflow-workbench.v2")
+        old.setattr(cache, "build_sdlc_graph", old_graph)
+        stale = client.get(url(binding))
+    assert stale.status_code == 200
+    assert stale.json()["plans"][0]["review_packet"]["sections"][-1]["notes"] == ["run-a"]
+
+    # Unchanged source files must not let the old persisted graph or its 304
+    # receipt suppress recomputation after the projection implementation changes.
+    latest = client.get(url(binding), headers={"If-None-Match": stale.headers["etag"]})
+    assert latest.status_code == 200
+    assert latest.headers["etag"] != stale.headers["etag"]
+    assert latest.json() == oracle(client, service, binding)
+    section = next(s for s in latest.json()["plans"][0]["review_packet"]["sections"]
+                   if s["id"] == "provenance")
+    assert section["counts"]["lineage_ids"] == 2
+    assert "pdd_id=TASK-42" in section["notes"][0]
+    assert client.get(url(binding), headers={"If-None-Match": latest.headers["etag"]}).status_code == 304
+    with monkeypatch.context() as old:
+        old.setattr(cache, "CACHE_VERSION", "workflow-workbench.v2")
+        assert client.get(url(binding), headers={"If-None-Match": stale.headers["etag"]}).status_code == 304
