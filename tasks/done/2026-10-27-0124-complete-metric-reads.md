@@ -1,16 +1,17 @@
-# 跨指标源版本一致
+# 完整统计与轻量读取
 
-> 状态: active
+> 状态: done
+> 实现提交: `50d2b6c4` fix: load coherent monitoring metrics and refresh trace views
 
 来源：本轮 VoltAgent 对照分析及用户明确批准执行 1–5。基线：715ffbc9。
 
 ## 范围
 
-共享读取绑定事件及 store/sidecar 源版本，变化时重新构建，保留已有缓存有效性检查。
+Agents 共用指标摘要，避免重复重建；Trace 详情先限 scope；Delivery 摘要避免不必要图构建；保留 Loop 完整统计。
 
 ## 验收
 
-- 变更事件、任务、会话与必要 sidecar -> verify: 更新后的结果可见，不返回混合版本；冷暖读取一致。
+- 覆盖超过分页限制、多 workflow 数据 -> verify: 所有计数与原算法一致；Trace 只读取目标 trace 的完整正文，Agents 摘要跳过 Git/调试/skills 探测（保留原算法所需事件事实）。
 - 聚焦测试、API 调用方及浏览器验证 -> verify: 记录命令、结果和证据路径。
 
 ## 边界
@@ -21,9 +22,9 @@ canonical EventLog/Stores/必要 sidecar 不变；SQLite 仅为可重建投影�
 
 实现说明：docs/impl/monitoring-complete-refresh.md（遵循本地文档忽略策略）。
 
-## 已验证，等待实现提交后归档
+## 验收结果
 
-任务/session/外部及内部 task-map/账单对账变化使版本失效；并发变化重试或返回 503；成本不可读不冒充零。相关后端测试通过。
+Trace 1005 条事件配合 limit=2 仍完整计数，只 hydrate 当前 trace；Delivery summary/full 的 counts、drift、ship 等值；Agents 不探测 Git/debug/skills。30 组 API 对照无业务偏差。
 
 聚焦后端：initial-tests 104 passed；final-focused 68 passed；caller-contracts 50 passed；trace-final-tests 21 passed；agents-final-tests 6 passed（集合有重叠，不相加）。dev-verify 自动 Web typecheck/unit、sentinel 50 passed / 1 skipped、flow-smoke 10 passed；Trace UI 增量 plan/run 全通过。最终前端 build/bundle budget、Docker Playwright 15 项通过。未跑 full pytest 或真实 provider E2E。
 
