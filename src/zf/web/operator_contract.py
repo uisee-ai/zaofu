@@ -445,7 +445,10 @@ KANBAN_AGENT_CHANNEL_PROPOSAL_CONTRACT = (
     '"contract": {"behavior": ..., "verification": ..., '
     '"verification_tiers": ["runtime"], "acceptance": ..., '
     '"spec_skip_reason": ...}}, '
-    '"reason": ...}}. '
+    '"reason": ...}}. For every action proposal, including workflow-config-propose, '
+    'include intent.decision="propose_action" and a nonempty intent.source_quote '
+    "copied verbatim from the user's semantic context; do not paraphrase it. "
+    "If intent is unclear, ask a clarification instead. "
     "For tracked execution, add payload.workflow_plan with a task-specific "
     "question and two or three options selected only from the active workflow "
     "route catalog. Executable options contain route_id, label, description, "

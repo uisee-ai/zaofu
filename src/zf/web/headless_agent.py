@@ -1326,10 +1326,12 @@ class KanbanHeadlessAgent:
             "explicit legacy/direct dispatch. When proposing "
             "an action, end the reply with exactly one compact fenced JSON object "
             "with action_proposal: {action, intent, payload, reason}; do not place "
-            "action proposal JSON earlier in prose. For create-task and "
-            'idea-to-product, intent must be {"decision": "propose_action", '
+            "action proposal JSON earlier in prose. For every action proposal, "
+            'including workflow-config-propose, intent must be {"decision": "propose_action", '
             '"source_quote": "<exact verbatim substring from the user semantic '
-            'context that supports this proposal>"}. For product '
+            'context that supports this proposal>"}. Never leave source_quote empty '
+            "or use a paraphrase. If the user's intent is unclear, ask a clarification "
+            "instead of proposing an action. For product "
             "ideas, prefer action=idea-to-product with payload.objective. Owner confirmation "
             "prepares a visible Workflow Request for semantic selection, questions and YAML "
             "Preview; it does not start execution. Describe this as preparation and require "

@@ -166,6 +166,8 @@ def test_system_prompt_requires_exact_artifact_lineage_for_create_task(
     assert "never invent a family-specific subject_type" in prompt
     assert '"decision": "propose_action"' in prompt
     assert "exact verbatim substring" in prompt
+    assert "For every action proposal, including workflow-config-propose" in prompt
+    assert "Never leave source_quote empty" in prompt
     assert "do not rely on English or Chinese keyword spelling" in prompt
     assert "subject_type=task_create with two or three options" in prompt
     assert "channel_prd_ref and channel_prd_digest" in prompt
