@@ -19,3 +19,5 @@ report.unread = false;
 assert(inboxItemsForView(inbox, "unread", "report").includes(report), "current reading survives refresh");
 assert(!inboxItemsForView(inbox, "unread").includes(report), "leaving selection releases the read item");
 assert(inboxItemsForView(null, "all").length === 0, "missing projection is handled");
+
+assert(inboxItemsForView(inbox, "notification").includes(report), "Delivery view retains delivery notifications");

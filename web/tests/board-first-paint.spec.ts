@@ -64,7 +64,7 @@ test("Agents shows unknown while loading and completes all metrics without detai
     await expect(cards).toContainText("Loading");
     release();
     await expect(cards).toHaveAttribute("data-metrics-ready", "true");
-    await expect(page.getByRole("cell", { name: "dev-a", exact: true }).first()).toBeVisible();
+    await expect(page.locator(".fleet-agent-open strong").filter({ hasText: /^dev-a$/ })).toBeVisible();
     await expect(cards).toContainText("0 stuck");
     expect(details).toEqual([]);
   } finally { release(); }
@@ -112,8 +112,8 @@ test("Agents rejects a late response from the previous project", async ({ page }
     await page.getByRole("button", { name: "Agents", exact: true }).click();
     await expect(page.locator(".agent-fleet-summary-grid")).toHaveAttribute("data-source-seq", "20");
     release();
-    await expect(page.getByRole("cell", { name: "dev-b", exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("cell", { name: "dev-a", exact: true })).toHaveCount(0);
+    await expect(page.locator(".fleet-agent-open strong").filter({ hasText: /^dev-b$/ })).toBeVisible();
+    await expect(page.locator(".fleet-agent-open strong").filter({ hasText: /^dev-a$/ })).toHaveCount(0);
   } finally { release(); }
 });
 
@@ -196,8 +196,8 @@ test("Overview keeps its summary cards while using the body-free task snapshot",
   const paths: string[] = [];
   page.on("request", req => { if (req.url().includes("/snapshot/")) paths.push(new URL(req.url()).pathname); });
   await page.goto("/?project=a&page=project");
-  await expect(page.locator(".project-health-card")).toHaveCount(5);
-  await expect(page.locator(".project-health-card").filter({ hasText: "Work Queue" }).locator("strong")).toHaveText("1");
+  await expect(page.locator(".overview-metrics .workspace-stat")).toHaveCount(5);
+  await expect(page.locator(".overview-metrics .workspace-stat").filter({ hasText: "Work Queue" }).locator("strong")).toHaveText("1");
   expect(paths.length).toBeGreaterThan(0);
   expect(paths.every(path => path.endsWith("/snapshot/board"))).toBe(true);
 });

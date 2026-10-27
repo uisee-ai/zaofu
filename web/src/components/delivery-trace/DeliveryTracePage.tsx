@@ -437,7 +437,7 @@ export function DeliveryTracePage({
     ? "run state, task lifecycle, and evidence"
     : mode === "graph"
       ? "goal-to-claim-to-task coverage"
-      : "feature delivery cockpit";
+      : "Delivery health, progress and recent runs";
 
   return (
     <div className={`delivery-trace-page mode-${mode}`} data-testid="delivery-trace-page">

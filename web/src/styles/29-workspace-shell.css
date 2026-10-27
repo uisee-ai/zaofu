@@ -1,0 +1,75 @@
+/* 右侧工作区保留 GR8R 排版；侧栏菜单使用 ZaoFu 原有结构与样式。 */
+:root, :root[data-theme="light"], :root[data-theme="dark"] {
+  --font-sans: "Geist Variable", "Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif;
+  --text-13-5: .84375rem;
+  --text-12-5: .78125rem;
+  --type-body: var(--text-13-5);
+  --topbar-height: 46px;
+  --workspace-rail-width: 252px;
+  --workspace-gap: 0px;
+  --workspace-padding: 0px;
+}
+body { font-size: var(--type-body); line-height: 1.45; }
+.topbar { flex-direction: row; align-items: center; height: 46px; min-height: 46px; flex-shrink: 0; padding: 0 12px 0 24px; gap: 6px; background: var(--panel); }
+.brand-block { align-items: center; gap: 10px; }
+.brand-block h1 { font-size: var(--text-12-5); font-weight: 400; margin: 0; color: var(--text-secondary); white-space: nowrap; }
+.breadcrumb-current { font-size: var(--text-12-5); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-row { gap: 8px; }
+.topbar-search-control { width: 220px; min-width: 120px; min-height: 26px; height: 26px; border-radius: 6px; background: var(--sunken); }
+.topbar-search-control .search-input { min-height: 24px; padding: 0 8px; font-size: var(--text-12); }
+.topbar-search-button { width: 28px; border: 0; order: -1; }
+.topbar-runtime-summary .status-pill { min-height: 0; padding: 2px 6px; font-size: var(--text-11); background: transparent; border: 0; }
+.topbar-activity { display: none; }
+.topbar-terminal-launch { width: 28px; height: 26px; background: transparent; border-color: var(--line); }
+.workspace > .board-panel { border: 0; border-radius: 0; max-height: none; background: var(--panel); }
+.project-rail { border: 0; border-right: 1px solid var(--line); background: var(--sidebar); }
+.project-rail > .section-heading { height: 46px; min-height: 46px; padding: 8px 14px; border: 0; }
+.project-rail .section-heading .rail-brand { display: flex; align-items: center; gap: 8px; font-size: var(--text-13-5); font-weight: 600; white-space: nowrap; }
+.rail-brand-mark { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 6px; background: #000; color: #fff; font-size: var(--text-12); font-weight: 700; }
+.rail-desktop-toggle, .rail-mobile-toggle { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); }
+.rail-desktop-toggle:hover, .rail-mobile-toggle:hover { background: var(--surface-2); color: var(--text); }
+.rail-mobile-toggle, .rail-scrim { display: none; }
+:root[data-sidebar-density="compact"] .project-rail .rail-nav-button { padding-block: 2px; }
+@media (min-width: 981px) {
+  .app-shell:has(.project-rail.is-collapsed) { --workspace-rail-width: 52px; }
+  .topbar, .app-shell > .error-strip { margin-left: var(--workspace-rail-width); }
+  .workspace { grid-template-columns: var(--workspace-rail-width) minmax(0, 1fr); }
+  .workspace > .project-rail { position: fixed; z-index: 12; inset: 0 auto 0 0; width: var(--workspace-rail-width); height: 100dvh; max-height: none; }
+  .project-rail.is-collapsed > .section-heading { height: 78px; min-height: 78px; padding: 12px 8px 0; flex-direction: column; gap: 8px; }
+  .is-collapsed .rail-brand-name, .is-collapsed .rail-heading-actions > .status-dot,
+  .is-collapsed .rail-nav-title, .is-collapsed .project-switcher, .is-collapsed .rail-section > summary,
+  .is-collapsed .rail-nav-label > span, .is-collapsed .rail-nav-button > .muted, .is-collapsed .rail-nav-badge,
+  .is-collapsed .empty-text { display: none; }
+  .is-collapsed .project-rail-body { padding: 4px 8px 12px; gap: 10px; scrollbar-width: none; }
+  .is-collapsed .rail-nav-button { position: relative; justify-content: center; padding-inline: 0; }
+  .is-collapsed .rail-nav-button:has(.rail-nav-badge)::after { content: ""; position: absolute; top: 4px; right: 4px; width: 4px; height: 4px; border-radius: 50%; background: var(--brand); }
+  .is-collapsed .rail-section { border-top: 1px solid var(--line-soft); padding-top: 7px; }
+}
+@media (max-width: 980px) {
+  .topbar { padding-inline: 16px; }
+  .app-shell:has(.board-panel:is([data-page="board"], [data-page="inbox"], [data-page="settings"])) { height: 100dvh; min-height: 100dvh; overflow: hidden; }
+  .workspace { padding: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+  .workspace > .board-panel { grid-column: 1; grid-row: 2; min-height: 0; }
+  .project-rail { max-height: none; border-bottom: 1px solid var(--line); }
+  .project-rail > .section-heading { height: 42px; min-height: 42px; }
+  .project-rail-body { display: none; }
+  .workspace:has(.mobile-open) { grid-template-rows: 42px minmax(0, 1fr); }
+  .project-rail.mobile-open { position: fixed; inset: 0 auto 0 0; z-index: 71; width: min(280px, calc(100vw - 48px)); height: 100dvh; box-shadow: 8px 0 32px #0002; }
+  .project-rail.mobile-open .project-rail-body { display: grid; flex: 1; overflow: auto; overscroll-behavior: contain; }
+  .rail-scrim { display: block; position: fixed; inset: 0; z-index: 70; border: 0; padding: 0; border-radius: 0; background: #0006; }
+  .rail-desktop-toggle { display: none; }
+  .rail-mobile-toggle { display: grid; }
+  .topbar-search-control { width: 180px; }
+  .topbar-runtime-summary { display: none; }
+}
+@media (max-width: 540px) {
+  .topbar { padding-inline: 12px; }
+  .brand-block { flex: 1; }
+  .breadcrumb-current { max-width: 100px; }
+  .topbar-search-control { width: 28px; min-width: 28px; border: 0; background: none; }
+  .topbar-search-control .search-input { display: none; }
+  .topbar-search-control:focus-within { position: absolute; left: 12px; right: 100px; width: auto; background: var(--panel); z-index: 15; }
+  .topbar-search-control:focus-within .search-input { display: block; }
+  .status-row { gap: 2px; }
+  .topbar-tool-separator { display: none; }
+}

@@ -101,11 +101,11 @@ test("loads the ZaoFu workbench from FastAPI projections", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Role Fleet" })).toBeVisible();
   await workspaceRail.getByRole("button", { name: "Tasks" }).click();
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
-  await expect(page.getByLabel("Task signal filter")).toHaveValue("all");
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await expect(page.getByLabel("Signal", { exact: true })).toHaveValue("all");
   await page.getByRole("button", { name: "List" }).click();
-  await expect(page.getByRole("heading", { name: "Task List" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Inspector" })).toBeVisible();
-  await expect(page.getByLabel("Task inspector")).toBeVisible();
+  await expect(page.locator(".workbench-task-list")).toBeVisible();
+  await expect(page.getByLabel("Task inspector")).toHaveCount(0);
   await page.getByRole("button", { name: "Board" }).click();
   const hiddenAgentColumns = await page.locator(".workspace").evaluate((el) =>
     getComputedStyle(el).gridTemplateColumns.split(" "),
@@ -215,19 +215,20 @@ test("settings exposes appearance theme controls", async ({ page }) => {
   await page.goto("/?page=settings");
   await expectWorkbenchLoaded(page);
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
 
-  const themeGroup = page.getByRole("radiogroup", { name: "Theme" });
-  await expect(themeGroup.getByRole("radio", { name: /System/ })).toBeVisible();
-  await expect(themeGroup.locator(".theme-preview")).toHaveCount(3);
-  await themeGroup.getByRole("radio", { name: /Light/ }).click();
-  await expect(themeGroup.getByRole("radio", { name: /Light/ })).toHaveAttribute("aria-checked", "true");
+  const themeGroup = page.getByRole("group", { name: "Theme" });
+  await expect(themeGroup.getByRole("button", { name: /System/ })).toBeVisible();
+  await expect(themeGroup.locator(".appearance-preview")).toHaveCount(3);
+  await themeGroup.getByRole("button", { name: /Light/ }).click();
+  await expect(themeGroup.getByRole("button", { name: /Light/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await themeGroup.getByRole("radio", { name: /Dark/ }).click();
+  await themeGroup.getByRole("button", { name: /Dark/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
-test("opens task drilldown as a page instead of a right sidebar", async ({ page }, testInfo) => {
+test("opens shared task details from the board and preserves direct task routes", async ({ page }, testInfo) => {
   let title = "";
   let taskId = "";
   if (token) {
@@ -258,7 +259,8 @@ test("opens task drilldown as a page instead of a right sidebar", async ({ page 
   await expectWorkbenchLoaded(page);
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
   if (title) {
-    await page.getByLabel("Task signal filter").selectOption("all");
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    await page.getByLabel("Signal", { exact: true }).selectOption("all");
     await page.locator(".task-open").filter({ hasText: title }).click();
   } else {
     await page.goto(`/?page=task&task=${encodeURIComponent(taskId)}`);
@@ -291,7 +293,7 @@ test("opens task drilldown as a page instead of a right sidebar", async ({ page 
   await expect(page.locator(".side-panel")).toHaveCount(0);
   await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
   await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toHaveCount(0);
-  await page.locator(".task-detail").getByRole("button", { name: "Board" }).click();
+  if (!title) await page.locator(".task-detail").getByRole("button", { name: "Board" }).click();
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
 });
 
@@ -311,7 +313,8 @@ test("keeps event timeline readable and inspector structured", async ({ page }) 
 
   await page.goto("/");
   await expectWorkbenchLoaded(page);
-  await page.getByLabel("Task signal filter").selectOption("all");
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByLabel("Signal", { exact: true }).selectOption("all");
   await page.locator(".task-open").first().click();
   await expect(page.getByRole("heading", { name: "Task", exact: true })).toBeVisible();
   await page.locator(".task-detail").getByRole("button", { name: "Advanced" }).click();
@@ -357,7 +360,8 @@ test("shows board action lock when dragging without an action token", async ({ p
   await page.goto("/");
   await expectWorkbenchLoaded(page);
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
-  await page.getByLabel("Task signal filter").selectOption("all");
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByLabel("Signal", { exact: true }).selectOption("all");
   await expect(page.getByText("board actions: token needed")).toBeVisible();
 
   const source = page.locator(".task-card").filter({ hasText: title }).first();
@@ -443,7 +447,8 @@ test("moves a board card by drag and drop through the controlled action path", a
   await page.goto("/");
   await expectWorkbenchLoaded(page);
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
-  await page.getByLabel("Task signal filter").selectOption("all");
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByLabel("Signal", { exact: true }).selectOption("all");
 
   const source = page.locator(".task-card").filter({ hasText: title }).first();
   const target = page.locator('.board-column[data-column-id="in_progress"]');
@@ -479,8 +484,9 @@ test("moves a board card by drag and drop through the controlled action path", a
   }, { timeout: 45_000 }).toBe("in_progress");
   await page.goto("/");
   await expectWorkbenchLoaded(page);
-  await page.getByLabel("Task signal filter").selectOption("all");
-  await page.getByPlaceholder("filter tasks").fill(title);
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByLabel("Signal", { exact: true }).selectOption("all");
+  await page.getByLabel("Search tasks", { exact: true }).fill(title);
   await expect(
     page.locator('.board-column[data-column-id="in_progress"] .task-card').filter({ hasText: title }),
   ).toBeVisible({ timeout: 60_000 });

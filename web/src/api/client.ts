@@ -1097,20 +1097,20 @@ export interface AgentMonitoring {
   fleet_stats: FleetStats;
 }
 
-export function getAgentMonitoring(projectId: string): Promise<AgentMonitoring> {
-  return requestJson<AgentMonitoring>(`${projectPrefix(projectId)}/agent-monitoring`, { bypassCache: true });
+export function getAgentMonitoring(projectId: string, signal?: AbortSignal): Promise<AgentMonitoring> {
+  return requestJson<AgentMonitoring>(`${projectPrefix(projectId)}/agent-monitoring`, { bypassCache: true, signal });
 }
 
-export function getAgents(projectId?: string): Promise<AgentSummary[]> {
-  return requestJson<AgentSummary[]>(`${projectPrefix(projectId)}/agents`);
+export function getAgents(projectId?: string, signal?: AbortSignal): Promise<AgentSummary[]> {
+  return requestJson<AgentSummary[]>(`${projectPrefix(projectId)}/agents`, { signal });
 }
 
-export function getAgentCockpit(projectId?: string): Promise<Record<string, unknown>> {
-  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/agent-cockpit`);
+export function getAgentCockpit(projectId?: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/agent-cockpit`, { signal });
 }
 
-export function getAgentLive(projectId?: string): Promise<Record<string, unknown>> {
-  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/agent-live`);
+export function getAgentLive(projectId?: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/agent-live`, { signal });
 }
 
 export function getRuntime(projectId?: string): Promise<RuntimeSummary> {

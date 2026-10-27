@@ -1,3 +1,4 @@
+import { AgentFleetTable, WorkerDetailsDialog } from "./AgentFleetTable";
 // AgentViewPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { getAgents } from "../../api/client";
 import type { AgentSummary, ChannelSummary, ExecutionPatternProjection, Task, RecentEvent } from "../../api/types";
@@ -111,6 +112,9 @@ export function AgentViewPage({
     ? projectCost.totalTokens
     : fleetMetrics.totalInputTokens + fleetMetrics.totalOutputTokens;
   const displayedCost = projectCost.hasUsage ? projectCost.totalUsd : fleetMetrics.totalCostUsd;
+  const agentsUnavailable = !metricsReady && !monitoring.loading && Boolean(monitoring.error);
+  const agentsLoading = !metricsReady && !agentsUnavailable;
+  const agentsUnknown = agentsLoading || agentsUnavailable;
   const agentAttentionRows = buildAgentAttentionRows(effectiveAgents, effectiveAgentCockpit, recovery);
   const roleFleetRows = buildRoleFleetRows(effectiveAgents, effectiveCost);
   const terminalPage = terminalProjection.projectId === projectId
@@ -411,12 +415,12 @@ export function AgentViewPage({
         <div>
           <h2>Agents</h2>
           <span className="muted">
-            {metricsReady ? workers.length : "…"} backend workers
+            {agentsUnavailable ? "Agent status unavailable" : agentsLoading ? "Loading agents…" : `${workers.length} agents`}
             {terminalPage?.enabled ? ` · ${activeTerminalCount} terminal tabs` : ""}
-            {` · ${projectionSource}`}
+
           </span>
         </div>
-        <span className="metric-chip">Autopilot cockpit</span>
+
       </div>
 
       {monitoring.error && <p role="alert">Metrics refresh failed. {metricsReady ? "Showing the previous reading." : "Retrying."}</p>}
@@ -426,28 +430,28 @@ export function AgentViewPage({
         data-source-seq={monitoring.data?.source_seq}>
         <RuntimeSummaryCard
           label="Workers"
-          value={metricsReady ? fleetMetrics.backendWorkers : "…"}
-          meta={metricsReady ? `${fleetMetrics.controlAgents} control / ${fleetMetrics.operatorAgents} operator` : "Loading"}
+          value={agentsUnknown ? "—" : fleetMetrics.backendWorkers}
+          meta={agentsUnknown ? "—" : `${fleetMetrics.controlAgents} control / ${fleetMetrics.operatorAgents} operator`}
           tone={fleetMetrics.backendWorkers ? "info" : "muted"}
         />
         <RuntimeSummaryCard
           label="Health"
-          value={metricsReady ? `${fleetMetrics.stuck} stuck` : "…"}
-          meta={!metricsReady ? "Loading" : typeof metricsSnapshot?.mtts === "number" && metricsSnapshot.mtts > 0
+          value={agentsUnknown ? "—" : `${fleetMetrics.stuck} stuck`}
+          meta={agentsUnknown ? "—" : typeof metricsSnapshot?.mtts === "number" && metricsSnapshot.mtts > 0
             ? `MTTS ${metricsSnapshot.mtts.toFixed(1)}h · recovery ${Math.round((metricsSnapshot.stuck_recovery_rate ?? 0) * 100)}% · ${fleetMetrics.silent} silent`
             : `${fleetMetrics.silent} silent / ${fleetMetrics.drift} drift`}
           tone={fleetMetrics.stuck || fleetMetrics.silent ? "err" : fleetMetrics.drift ? "warn" : "ok"}
         />
         <RuntimeSummaryCard
           label="Context"
-          value={metricsReady ? contextPercent(fleetMetrics.maxContext) : "…"}
-          meta={metricsReady ? `${fleetMetrics.contextWarn} warning` : "Loading"}
+          value={agentsUnknown ? "—" : contextPercent(fleetMetrics.maxContext)}
+          meta={agentsUnknown ? "—" : `${fleetMetrics.contextWarn} warning`}
           tone={fleetMetrics.contextWarn ? "warn" : "ok"}
         />
         <RuntimeSummaryCard
           label="Tokens"
-          value={metricsReady ? formatTokens(displayedTokens) : "…"}
-          meta={!metricsReady ? "Loading" : typeof metricsSnapshot?.cost_per_task === "number" && metricsSnapshot.cost_per_task > 0
+          value={agentsUnknown && !projectCost.hasUsage ? "—" : formatTokens(displayedTokens)}
+          meta={typeof metricsSnapshot?.cost_per_task === "number" && metricsSnapshot.cost_per_task > 0
             ? `${formatUsd(displayedCost)} · $${metricsSnapshot.cost_per_task.toFixed(2)}/task${projectCost.precisionLabel ? ` · ${projectCost.precisionLabel}` : ""}`
             : `${formatUsd(displayedCost)}${projectCost.precisionLabel ? ` · ${projectCost.precisionLabel}` : ""}`}
           tone={displayedTokens || displayedCost
@@ -456,16 +460,16 @@ export function AgentViewPage({
         />
         <RuntimeSummaryCard
           label="Providers"
-          value={metricsReady ? fleetMetrics.providerSummary : "…"}
-          meta={projectionSource}
+          value={fleetMetrics.providerSummary}
+          meta={agentsUnavailable ? "Unavailable" : agentsLoading ? "Loading…" : "Live projection"}
           tone={fleetMetrics.providerSummary === "-" ? "muted" : "info"}
         />
       </div>
 
-      <section className="subsection agent-attention-cockpit">
+      {!agentsUnknown && <section className="subsection agent-attention-cockpit">
         <div className="inline-heading">
-          <h3 className="section-title">Attention Queue</h3>
-          <span className="muted">{metricsReady ? agentAttentionRows.length : "…"} signals</span>
+          <h3 className="section-title">Runtime signals</h3>
+          <span className="muted">{agentAttentionRows.length} signals</span>
         </div>
         {agentAttentionRows.length ? (
           <div className="compact-list">
@@ -488,10 +492,10 @@ export function AgentViewPage({
           <p className="empty-text">
             {!metricsReady ? "Loading attention…" : fleetMetrics.stale
               ? "Historical attention hidden — project runtime is archived/stopped."
-              : "No agent attention required."}
+              : "No additional runtime signals reported."}
           </p>
         )}
-      </section>
+      </section>}
 
       {terminalPage?.enabled || terminalUsageRows.length ? (
         <section data-testid="interactive-terminals">
@@ -515,37 +519,15 @@ export function AgentViewPage({
       ) : null}
 
       {workers.length ? (
-        <TablePage
-          title="Fleet"
-          onOpen={(row) => setSelectedId(String(row.instance || ""))}
-          rows={workers.map((worker) => {
-            const role = worker.parent_role || worker.role_type || worker.instance_id;
-            const eff = (fleetStats?.role_efficiency ?? []).find((entry) => entry.role === role);
-            return {
-              instance: worker.instance_id,
-              backend: worker.backend || "-",
-              task: worker.task_id || worker.active_task || "-",
-              state: worker.stale
-                ? `last known: ${worker.lifecycle_state || worker.state || "-"}`
-                : (worker.lifecycle_state || worker.state || "-"),
-              context: worker.context_usage_ratio == null ? "-" : `${Math.round(worker.context_usage_ratio * 100)}%`,
-              tokens: formatTokens((worker.cost?.input_tokens ?? 0) + (worker.cost?.output_tokens ?? 0)),
-              usd: formatUsd(worker.cost?.usd),
-              done_7d: eff?.done ?? 0,
-              rework: eff?.rework ?? 0,
-              respawn: eff?.respawn ?? 0,
-              attention: worker.attention_state || "idle",
-            };
-          })}
-          embedded
-        />
+        <AgentFleetTable workers={workers} onSelect={setSelectedId} onOpenTask={onSelectTask} />
       ) : (
         <section className="subsection">
           <div className="inline-heading">
             <h3 className="section-title">Role Fleet</h3>
-            <span className="muted">0 workers</span>
+            <span className="muted">{agentsUnknown ? "—" : "0 workers"}</span>
           </div>
-          <p className="empty-text">{metricsReady ? "No backend worker projection data." : "Loading workers…"}</p>
+          <p className="empty-text" role="status">{agentsUnavailable ? "Could not load agents. Try again." : agentsLoading ? "Loading agents…" : "No agents are running in this project."}</p>
+          {agentsUnavailable && <button className="icon-button" type="button" onClick={monitoring.retry}>Retry agents</button>}
         </section>
       )}
 
@@ -559,6 +541,10 @@ export function AgentViewPage({
         meta={`${assignmentRouteRows.length} routes / ${recoverySuggestionRows.length} recovery suggestions`}
         defaultOpen={false}
       >
+        <TablePage title="Worker efficiency" embedded rows={workers.map((worker) => {
+          const efficiency = (fleetStats?.role_efficiency ?? []).find((row) => row.role === (worker.parent_role || worker.role_type || worker.instance_id));
+          return { instance: worker.instance_id, usd: formatUsd(worker.cost?.usd), done_7d: efficiency?.done ?? 0, rework: efficiency?.rework ?? 0, respawn: efficiency?.respawn ?? 0, attention: worker.attention_state || "idle" };
+        })} />
         <TablePage
           title="Assignment Routes"
           rows={assignmentRouteRows}
@@ -607,12 +593,12 @@ export function AgentViewPage({
       </div>
 
       {selected && (
-      <div className="agent-view-layout">
+      <WorkerDetailsDialog onClose={() => setSelectedId("")}>
         <section className="subsection agent-cockpit-panel">
           <div className="inline-heading">
             <h3 className="section-title">Selected Worker</h3>
             <span className="muted">{selected.instance_id}</span>
-            <button className="icon-button" type="button" onClick={() => setSelectedId("")}>
+            <button className="icon-button" aria-label="Close worker details" type="button" onClick={() => setSelectedId("")}>
               Close
             </button>
           </div>
@@ -683,7 +669,7 @@ export function AgentViewPage({
             <p className="empty-text">{metricsReady ? "No backend worker projection data." : "Loading workers…"}</p>
           )}
         </section>
-      </div>
+      </WorkerDetailsDialog>
       )}
     </>
   );

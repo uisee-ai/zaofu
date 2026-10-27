@@ -129,14 +129,14 @@ test("Inbox read state stays separate from decisions and retains current unread 
   const row = (id: string) => page.locator(`[data-inbox-id="${id}"]`);
   await expect(row("approval")).toContainText("Needs action");
   await expect(row("approval").locator(".operator-inbox-unread-dot")).toHaveCount(0);
-  await expect(page.getByText("Delivery report", { exact: true })).toHaveCount(2);
+  await expect(page.locator(".inbox-queue").getByText("Delivery report", { exact: true })).toHaveCount(2);
   await page.getByRole("button", { name: "Unread", exact: true }).click();
   await row("report-a").click();
   await expect(row("report-a").getByRole("button", { name: "Ack", exact: true })).toHaveCount(0);
-  await row("report-a").getByRole("button", { name: "Mark read", exact: true }).click();
+  await page.locator(".inbox-reading-pane").getByRole("button", { name: "Mark read", exact: true }).click();
   await expect(page.getByText("Read was rejected", { exact: true })).toBeVisible();
   await expect(row("report-a").locator(".operator-inbox-unread-dot")).toHaveCount(1);
-  await row("report-a").getByRole("button", { name: "Mark read", exact: true }).click();
+  await page.locator(".inbox-reading-pane").getByRole("button", { name: "Mark read", exact: true }).click();
   await expect(row("report-a").locator(".operator-inbox-unread-dot")).toHaveCount(0);
   await expect(row("report-a")).toBeVisible();
   await row("report-b").click();
@@ -165,15 +165,15 @@ test("a pending Inbox poll cannot undo an accepted read acknowledgement", async 
     await route.fulfill({ json: { items: [item], pending: [item], summary: { unread: item.unread ? 1 : 0 }, policy: {} } }).catch(() => {});
   });
   await page.goto("/tests/inbox-workflow.html?surface=inbox");
-  await expect(page.locator(".operator-inbox-unread-dot")).toHaveCount(1);
+  await expect(page.locator(".inbox-queue .operator-inbox-unread-dot")).toHaveCount(1);
   holdPoll = true;
   await page.clock.runFor(15_100);
   await expect.poll(() => held).toBe(true);
   await page.getByRole("button", { name: "Mark read", exact: true }).click();
-  await expect(page.locator(".operator-inbox-unread-dot")).toHaveCount(0);
+  await expect(page.locator(".inbox-queue .operator-inbox-unread-dot")).toHaveCount(0);
   release();
   await page.clock.runFor(200);
-  await expect(page.locator(".operator-inbox-unread-dot")).toHaveCount(0);
+  await expect(page.locator(".inbox-queue .operator-inbox-unread-dot")).toHaveCount(0);
 });
 
 for (const action of ["replan-approve", "replan-reject"]) test(`Inbox owner preview waits for bound refs before ${action}`, async ({ page }) => {
@@ -215,15 +215,17 @@ test("Board and List retain blockers and outcomes while diagnostics stay in deta
   const card = page.locator('[data-task-id="TASK-1"]');
   await expect(card).toContainText("Ship checkout");
   await expect(card).toContainText("Waiting for owner");
-  await expect(card).toContainText("dev-1");
+  await expect(card.locator(".task-assignee-avatar")).toHaveAttribute("title", "@dev-1");
   await expect(card).not.toContainText(/internal-|Internal verify|secret-skill|rework|ctx|fanout/);
   await expect(page.locator('[data-task-id="TASK-2"]')).toContainText("cancelled");
   await expect(page.locator('[data-task-id="TASK-3"]')).not.toContainText("fanout_queue");
   await page.getByRole("button", { name: "List", exact: true }).click();
-  const rows = page.locator(".task-list-view");
+  const rows = page.locator(".workbench-task-list");
   await expect(rows).toContainText("Waiting for owner");
   await expect(rows).not.toContainText(/internal-|tokens|ctx|tok |fanout_queue/);
-  await expect(page.getByRole("complementary", { name: "Task inspector" })).toContainText("internal-route");
+  await rows.locator(".workbench-task-row").filter({ hasText: "Ship checkout" }).click();
+  await expect(page.getByRole("dialog", { name: "Task details" })).toContainText("internal-route");
+  await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
@@ -257,6 +259,7 @@ for (const failed of [false, true]) test(`a late Workflow ${failed ? "error" : "
   try {
     await page.goto("/tests/inbox-workflow.html");
     await expect(page.getByTestId("workflow-approve-run")).toBeEnabled();
+    await page.locator(".workflow-graph-disclosure > summary").click();
     await expect(page.getByRole("region", { name: "Workflow 图工作台" })).toBeVisible();
     await page.clock.runFor(8100);
     await expect.poll(() => reads).toBe(2);

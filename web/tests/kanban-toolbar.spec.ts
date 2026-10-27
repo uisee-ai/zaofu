@@ -1,8 +1,10 @@
+import { installUiFixture } from "./ui-alignment.fixture";
 import { expect, test } from "@playwright/test";
 
 test.describe.configure({ timeout: 90_000 });
 
 test("Task Board toolbar has exclusive, reversible mouse selection", async ({ page }, testInfo) => {
+  await installUiFixture(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   const workflowSpineRequests: string[] = [];
   page.on("request", (request) => {
@@ -10,12 +12,13 @@ test("Task Board toolbar has exclusive, reversible mouse selection", async ({ pa
   });
   await page.goto("/?page=board", { waitUntil: "domcontentloaded" });
 
-  const toolbar = page.locator(".task-toolbar");
+  const toolbar = page.locator(".board-panel");
   await expect(toolbar).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(250);
   await expect(page.getByRole("button", { name: /attempts \(\d+\)/ })).toHaveCount(0);
   expect(workflowSpineRequests).toHaveLength(0);
   const view = toolbar.getByRole("group", { name: "Task view" });
+  await toolbar.getByRole("button", { name: "Filter", exact: true }).click();
   const focus = toolbar.getByRole("group", { name: "Task focus" });
   const board = view.getByRole("button", { name: "Board", exact: true });
   const list = view.getByRole("button", { name: "List", exact: true });
@@ -23,8 +26,8 @@ test("Task Board toolbar has exclusive, reversible mouse selection", async ({ pa
   const ready = focus.getByRole("button", { name: "Ready", exact: true });
   const blocked = focus.getByRole("button", { name: "Blocked", exact: true });
   const verify = focus.getByRole("button", { name: "Verify", exact: true });
-  const status = toolbar.getByLabel("Task status filter");
-  const signal = toolbar.getByLabel("Task signal filter");
+  const status = toolbar.getByLabel("Status", { exact: true });
+  const signal = toolbar.getByLabel("Signal", { exact: true });
 
   await expect(all).toHaveAttribute("aria-pressed", "true");
   await expect(status).toHaveValue("all");
