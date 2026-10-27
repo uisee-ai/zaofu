@@ -1,6 +1,8 @@
 # Dashboard 事件与 Graph 投影性能优化
 
-> 状态: active
+> 状态: done
+
+实现提交: `2f18f720 fix: accelerate board and workflow projections`
 
 用户已批准上一轮建议 1–4，并要求实施后重启 8002，用 loshu-fms 与现有 8001 对比。
 基于 `10e6812b` 创建独立 worktree；保留既有 EventLog、TaskStore、SQLite 只读投影边界。
@@ -54,9 +56,17 @@
 为 1456→818 毫秒、710→929 毫秒，均到目标水位，第二轮有回退。完整原始结果保存在
 `/tmp/zf-dashboard-projection-v2-eval-20261027T130534/`。
 
-实施提交后，将重启用户授权的 8002，记录真实 8001/8002 结果并在归档时补齐。
+真实 8001/8002 的运行版本、对比结果及限制见下文。
 
 最终代码验证：dev-verify 规划选中 343 个影响范围测试模块；逐模块运行确定性层
 `-m 'not serial and not perf and not host and not real_provider' -n 8 --dist loadfile` 得
 4294 passed、2 skipped；serial 层 10 passed，pre-merge sentinels 51 passed；Web typecheck、
 unit、生产构建通过；Docker Playwright Board/Graph 组件回归 32 passed。此非全量、host 或真实 provider 测试。
+
+实机验证：8002 已运行 `2f18f720`，与保留运行的 8001 对比的三次浏览器热样本中位数：
+Board 任务 1768→553ms、完整 1816→979ms；Workflow 首屏 7418→1084ms、完整图
+7449→2108ms。真实源采样哈希未变，卡片、图结构和关键指标一致，Delivery、Loop、Trace
+响应一致；但 8001 实际 PYTHONPATH 指向另一 worktree，加载了未提交的 Plan lineage 修复，
+因此 7 个 Plan 的 PDD 身份及 6 个 acceptance 来源引用在 8002 缺失。该预存 dev 问题与本次
+优化无关，应待独立工作正式落地后集成复测，不能声称两端完整 Graph 完全一致。
+详见 `/tmp/zf-dashboard-projection-v2-eval-20261027T130534/live/report.md`。
