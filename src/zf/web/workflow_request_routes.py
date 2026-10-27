@@ -334,7 +334,8 @@ def build_workflow_request_router(
     def project_workflow_request_detail(project_id: str, request_id: str) -> JSONResponse:
         return read_workflow_request_detail(project_id, request_id)
 
-    def read_workflow_request_detail(project_id: str, request_id: str, *, events=None, context=None) -> JSONResponse:
+    def read_workflow_request_detail(project_id: str, request_id: str, *, events=None, context=None,
+                                     as_mapping: bool = False) -> JSONResponse | dict:
         from zf.runtime.workflow_review_candidate import review_candidate
         from zf.runtime.workflow_requests import load_workflow_request
 
@@ -412,7 +413,7 @@ def build_workflow_request_router(
             "queue_position": int(admission.get("queue_position") or 0),
             "run_admission": admission,
         }
-        return JSONResponse(redact_obj({
+        body = redact_obj({
             "ok": True,
             "status": effective_result.get("status"),
             "result": effective_result,
@@ -441,7 +442,8 @@ def build_workflow_request_router(
                     or ""
                 ),
             },
-        }))
+        }, memoize=True)
+        return body if as_mapping else JSONResponse(body)
 
     @router.get("/api/projects/{project_id}/workflow-requests")
     def project_workflow_requests(project_id: str) -> JSONResponse:

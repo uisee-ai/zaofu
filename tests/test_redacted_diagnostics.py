@@ -62,6 +62,23 @@ def test_redact_obj_preserves_non_secret_token_capability_flags():
     assert redacted["nested"]["refresh_token"] is None
 
 
+def test_memoized_projection_redaction_preserves_context_and_scopes_its_cache():
+    shared = {"body": "ordinary text", "password": "private", "label": "TOKEN=secret"}
+    values = [shared, shared]
+    source = {"normal": values, "attachments": values, "other": (shared, True, None, 3),
+              "requires_token": True, "token": values}
+    expected = redact_obj(source)
+    actual = redact_obj(source, memoize=True)
+    assert actual == expected
+    assert actual["normal"][0]["body"] == "ordinary text"
+    assert actual["attachments"][0]["body"] == "[REDACTED_ATTACHMENT_BODY]"
+    assert source["normal"][0]["password"] == "private"
+    shared["body"] = "updated"
+    assert redact_obj(source, memoize=True)["normal"][0]["body"] == "updated"
+    default = redact_obj(source)
+    assert default["normal"][0] is not default["normal"][1]
+
+
 def test_diagnostics_collector_writes_redacted_jsonl(tmp_path: Path):
     collector = DiagnosticsCollector(tmp_path / ".zf", "trace/one")
 

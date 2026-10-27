@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
+from functools import lru_cache
 from typing import Any
 
 from zf.core.events.model import ZfEvent
@@ -68,7 +69,9 @@ def redact_text(text: str) -> str:
     return redacted
 
 
-def redact_obj(value: Any) -> Any:
+def redact_obj(value: Any, *, memoize: bool = False) -> Any:
+    if memoize:
+        return _memoized_redact(value)
     if isinstance(value, str):
         return redact_text(value)
     if isinstance(value, dict):
@@ -83,7 +86,36 @@ def redact_obj(value: Any) -> Any:
     return value
 
 
-def _redact_dict_value(key: object, value: Any) -> Any:
+def _memoized_redact(value: Any) -> Any:
+    """Per-call reuse for immutable projections with repeated bodies.
+
+    No sensitive input survives the call in a global cache. Object aliases are
+    retained only in this opt-in result; the default keeps independent copies.
+    """
+    objects: dict[int, Any] = {}
+    text = lru_cache(maxsize=4096)(redact_text)
+
+    def visit(item):
+        if isinstance(item, str):
+            return text(item)
+        if not isinstance(item, (dict, list, tuple)):
+            return item
+        identity = id(item)
+        if identity in objects:
+            return objects[identity]
+        if isinstance(item, dict):
+            result = {k: _redact_dict_value(k, v, redact=visit) for k, v in item.items()}
+        elif isinstance(item, list):
+            result = [visit(v) for v in item]
+        else:
+            result = tuple(visit(v) for v in item)
+        objects[identity] = result
+        return result
+
+    return visit(value)
+
+
+def _redact_dict_value(key: object, value: Any, *, redact=redact_obj) -> Any:
     if (
         str(key).lower().replace("-", "_") == "attachments"
         and isinstance(value, list)
@@ -94,16 +126,16 @@ def _redact_dict_value(key: object, value: Any) -> Any:
                     "[REDACTED_ATTACHMENT_BODY]"
                     if str(item_key).lower().replace("-", "_")
                     in _ATTACHMENT_BODY_KEYS
-                    else redact_obj(item_value)
+                    else redact(item_value)
                 )
                 for item_key, item_value in item.items()
             }
             if isinstance(item, dict)
-            else redact_obj(item)
+            else redact(item)
             for item in value
         ]
     if not _sensitive_key(key):
-        return redact_obj(value)
+        return redact(value)
     if value is None or isinstance(value, bool | int | float):
         return value
     return "[REDACTED_SECRET]"

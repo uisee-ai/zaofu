@@ -17,7 +17,7 @@ def build_workbench_router(*, resolve, detail):
         try:
             context = resolve(project_id)
             result = read_workbench_projection(context, project_id, request_id, as_of,
-                lambda pid, rid, **kwargs: detail(pid, rid, context=context, **kwargs),
+                lambda pid, rid, **kwargs: detail(pid, rid, context=context, as_mapping=True, **kwargs),
                 if_none_match=if_none_match)
         except (WorkbenchSourceChanged, OSError, ValueError):
             return JSONResponse({"ok": False, "status": "source_unavailable",

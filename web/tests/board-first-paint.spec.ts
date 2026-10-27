@@ -9,6 +9,11 @@ function snapshot(project: string, title = `Task ${project}`) {
 }
 const projects = ["a", "b"].map(project_id => ({ project_id, name: project_id, root: "/fixture", can_open_board: true, lifecycle: { initialized: true, can_open_board: true } }));
 
+function taskBootstrap(project: string) {
+  return { project_id: project, source: "TaskStore", derived_state: "pending",
+    tasks: snapshot(project, `Stored ${project}`).tasks, archive_tasks: [] };
+}
+
 async function mockApi(page: Page) {
   await page.route(/^http:\/\/[^/]+\/api\//, async route => {
     const path = new URL(route.request().url()).pathname;
@@ -46,6 +51,53 @@ function monitoring(project = "a", seq = 10, tokens = 123456) {
     }], agent_live: { tasks: [] }, agent_cockpit: { workers: [], summary: { workers: 1, stuck: 0, silent: 0 } },
     cost: { total_usd: 0.123456789, per_role: {} }, metrics_snapshot: {}, fleet_stats: { role_efficiency: [] } };
 }
+
+test("Board shows stored tasks while the complete projection is pending, then replaces them", async ({ page }) => {
+  await mockApi(page);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/projects/a/snapshot/board", async route => {
+    await pending;
+    await route.fulfill({ json: snapshot("a", "Complete a") }).catch(() => {});
+  });
+  await page.route("**/projects/a/board-tasks", route => route.fulfill({ json: taskBootstrap("a") }));
+  try {
+    await page.goto("/?project=a&page=board");
+    await expect(page.locator(".board-grid")).toContainText("Stored a");
+    await expect(page.getByTestId("board-tasks-loading-details")).toBeVisible();
+    await expect(page.getByLabel("Project", { exact: true }).locator("option")).toHaveCount(2);
+    release();
+    await expect(page.locator(".board-grid")).toContainText("Complete a");
+    await expect(page.locator(".board-grid")).not.toContainText("Stored a");
+    await expect(page.getByTestId("board-tasks-loading-details")).toHaveCount(0);
+  } finally { release(); }
+});
+
+test("Board preserves stored tasks on projection errors and rejects late bootstrap from another project", async ({ page }) => {
+  await mockApi(page);
+  await page.addInitScript(() => localStorage.setItem("zf.activeProjectId", "a"));
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let started = false;
+  await page.route("**/snapshot/board", route => route.fulfill({ status: 503, json: { detail: "warming up" } }));
+  await page.route("**/projects/a/board-tasks", async route => {
+    started = true; await pending;
+    await route.fulfill({ json: taskBootstrap("a") }).catch(() => {});
+  });
+  await page.route("**/projects/b/board-tasks", route => route.fulfill({ json: taskBootstrap("b") }));
+  try {
+    await page.goto("/?page=board");
+    await expect.poll(() => started).toBe(true);
+    await page.getByLabel("Project", { exact: true }).selectOption("b");
+    await page.getByRole("button", { name: "Tasks", exact: true }).click();
+    await expect(page.locator(".board-grid")).toContainText("Stored b");
+    release();
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(page.locator(".board-grid")).toContainText("Stored b");
+    await expect(page.locator(".board-grid")).not.toContainText("Stored a");
+    await expect(page.getByTestId("board-tasks-loading-details")).toBeVisible();
+  } finally { release(); }
+});
 
 test("Agents shows unknown while loading and completes all metrics without detail requests", async ({ page }) => {
   await mockApi(page);

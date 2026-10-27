@@ -150,9 +150,12 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                     events = event_log_from_project(context.state_dir, config=context.config).read_all()
                     event_version = current_events
                 response = detail(project_id, request_id, events=events)
-                if response.status_code != 200:
-                    return response
-                body = json.loads(response.body)
+                if isinstance(response, JSONResponse):
+                    if response.status_code != 200:
+                        return response
+                    body = json.loads(response.body)
+                else:
+                    body = response
                 inputs = read_workbench_sources(context, body, as_of=as_of, all_events=events)
             # Ordinary tool/trace events carry many opaque refs which the graph
             # never hydrates. Follow only the semantic readers' inputs/outputs.
@@ -168,7 +171,7 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
             if failures or added or before != version():
                 continue
             with collect_projection_failures() as graph_failures:
-                value = redact_obj(build_sdlc_graph(inputs))
+                value = redact_obj(build_sdlc_graph(inputs), memoize=True)
             if graph_failures or before != version():
                 continue
             try:

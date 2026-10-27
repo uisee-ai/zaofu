@@ -1,5 +1,6 @@
 import { useOverviewPulse } from "./useOverviewPulse";
 import { useDashboardProjectionRefresh } from "./useDashboardProjectionRefresh";
+import { useBoardBootstrap } from "./useBoardBootstrap";
 import { ReadProjectionNotice } from "../components/shared/ReadProjectionNotice";
 import { TaskDrawer } from "../components/kanban/TaskDrawer";
 import { useUiPreferences } from "./UiPreferences";
@@ -651,6 +652,8 @@ export function App() {
   const [detailTab, setDetailTab] = useState<DetailTab>("Summary");
   const [page, setPage] = useState<PageId>(initial.page);
   useDashboardProjectionRefresh(activeProjectId, page, snapshot, setSnapshot);
+  const boardBootstrap = useBoardBootstrap(activeProjectId, page === "board", snapshot);
+  const boardSource = snapshot?.project.project_id === activeProjectId ? snapshot : boardBootstrap;
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(initial.page === "board" && Boolean(initial.task));
   const [viewMode, setViewMode] = useState<ViewMode>(initial.view);
   const [statusFilter, setStatusFilter] = useState(initial.status);
@@ -736,15 +739,15 @@ export function App() {
 
   const selectedTask = useMemo(() => {
     if (!selectedTaskId) return null;
-    if (snapshot) {
-      const fromBoard = allBoardTasks(snapshot).find((task) => task.id === selectedTaskId);
+    if (boardSource) {
+      const fromBoard = allBoardTasks(boardSource).find((task) => task.id === selectedTaskId);
       if (fromBoard) return fromBoard;
     }
     // Fall back to the independently-fetched task detail so the task page renders
     // its header without waiting for the (shell) light snapshot to load/resolve.
     if (taskDetail?.task && taskDetail.task.id === selectedTaskId) return taskDetail.task;
     return null;
-  }, [selectedTaskId, snapshot, taskDetail]);
+  }, [selectedTaskId, boardSource, taskDetail]);
   const actionGate = useMemo(
     () => runtimeActionState(snapshot, webActionTokenPresent, webSessionStatus),
     [snapshot, webActionTokenPresent, webSessionStatus],
@@ -779,6 +782,12 @@ export function App() {
     }
     return page;
   }, [activeProjectId]);
+
+  useEffect(() => {
+    if (boardBootstrap && workspaceProjects.length === 0) {
+      void loadWorkspaceProjects().catch(() => undefined);
+    }
+  }, [boardBootstrap, workspaceProjects.length, loadWorkspaceProjects]);
 
   const loadSnapshot = useCallback(async (kindOverride?: "board" | "light" | "full") => {
     const snapshotKind = kindOverride ?? snapshotLoadKindForPage(page);
@@ -1442,25 +1451,25 @@ export function App() {
 
   const assignees = useMemo(() => {
     const values = new Set<string>();
-    for (const task of snapshot ? allBoardTasks(snapshot) : []) {
+    for (const task of boardSource ? allBoardTasks(boardSource) : []) {
       if (task.assigned_to) values.add(task.assigned_to);
     }
     return [...values].sort();
-  }, [snapshot]);
+  }, [boardSource]);
 
   const skills = useMemo(() => {
     const values = new Set<string>();
-    for (const task of snapshot ? allBoardTasks(snapshot) : []) {
+    for (const task of boardSource ? allBoardTasks(boardSource) : []) {
       for (const skill of task.skills_required ?? []) {
         if (skill) values.add(skill);
       }
     }
     return [...values].sort();
-  }, [snapshot]);
+  }, [boardSource]);
 
   const filteredTasks = useMemo(() => {
     const text = textFilter.trim().toLowerCase();
-    return (snapshot ? allBoardTasks(snapshot) : []).filter((task) => {
+    return (boardSource ? allBoardTasks(boardSource) : []).filter((task) => {
       if (statusFilter !== "all" && taskColumn(task) !== statusFilter && task.status !== statusFilter) {
         return false;
       }
@@ -1477,7 +1486,7 @@ export function App() {
       }
       return true;
     });
-  }, [assigneeFilter, priorityFilter, quickFilter, skillFilter, snapshot, statusFilter, textFilter]);
+  }, [assigneeFilter, priorityFilter, quickFilter, skillFilter, boardSource, statusFilter, textFilter]);
 
   const activeFanouts = useMemo(() => {
     const active = new Set(["requested", "started", "running", "aggregating"]);
@@ -2268,7 +2277,7 @@ export function App() {
               onOpenTask={openTask}
               tasks={snapshot ? allBoardTasks(snapshot) : []}
             />
-          ) : page === "board" && !snapshot ? (
+          ) : page === "board" && !boardSource ? (
             /* P0-B: loading must not impersonate an empty board ("0 tasks" for
                2s then 9 blocked appears — the trust-killer zero). */
             <section className="subsection">
@@ -2276,6 +2285,9 @@ export function App() {
             </section>
           ) : page === "board" ? (
             <>
+              {boardBootstrap && <p className="muted" role="status" data-testid="board-tasks-loading-details">
+                已显示任务记录，正在更新执行状态与详情…
+              </p>}
               <BoardWorkbench
                 projectName={topbarProjectName}
                 actionReady={actionGate.actionReady}
@@ -2310,7 +2322,7 @@ export function App() {
                 viewMode={viewMode}
                 onMoveTaskStatus={(taskId, status) => void moveBoardTaskStatus(taskId, status)}
                 onOpenFanout={(fanoutId) => void openProjection("fanout", fanoutId)}
-                totalTaskCount={snapshot ? allBoardTasks(snapshot).length : 0}
+                totalTaskCount={boardSource ? allBoardTasks(boardSource).length : 0}
               />
               <TaskDrawer open={taskDrawerOpen} onClose={backToBoard}>{taskDetailView}{selectedTask?.route_summary && <RouteSummaryStrip route={selectedTask.route_summary} />}</TaskDrawer>
             </>

@@ -17,7 +17,7 @@ def build_job(job: ProjectionJob) -> dict:
         from zf.web.dashboard_projection import ProjectionSourceChanged
         try:
             return build_agent_monitoring(job.state_dir, project_id=job.project_id,
-                                          config=job.config, project_root=job.root)
+                                          config=job.config, project_root=job.root, attempts=1)
         except MonitoringSourceChanged as exc:
             raise ProjectionSourceChanged("agent sources changed during build") from exc
     raise ValueError(f"unsupported read projection: {job.group}")

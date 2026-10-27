@@ -15,7 +15,7 @@ export function isObservabilityPage(page: PageId): boolean {
 }
 
 
-export function allBoardTasks(snapshot: Snapshot): Task[] {
+export function allBoardTasks(snapshot: Pick<Snapshot, "tasks" | "archive_tasks">): Task[] {
   const byId = new Map<string, Task>();
   for (const task of snapshot.tasks) {
     byId.set(task.id, task);

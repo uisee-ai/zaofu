@@ -1672,6 +1672,18 @@ def create_app(
             token=_web_session_cookie(request),
         ), request)
 
+    @app.get("/api/projects/{project_id}/board-tasks")
+    def project_board_tasks(project_id: str) -> JSONResponse:
+        from zf.web.board_bootstrap import board_tasks, BoardTasksChanged
+        context = _resolve_api_project(project_id, default_project_id=default_project_id,
+            default_state_dir=state_dir, default_config=config, default_project_root=project_root)
+        try:
+            return JSONResponse(board_tasks(context.state_dir, project_id=project_id),
+                                headers={"Cache-Control": "no-store"})
+        except (BoardTasksChanged, OSError, ValueError):
+            return JSONResponse({"status": "unavailable"}, status_code=503,
+                                headers={"Retry-After": "1", "Cache-Control": "no-store"})
+
     @app.get("/api/projects/{project_id}/snapshot/board")
     def project_snapshot_board(project_id: str, request: Request) -> JSONResponse:
         context = _resolve_api_project(

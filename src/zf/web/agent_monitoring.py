@@ -41,28 +41,41 @@ def source_paths(state_dir: Path, project_root: Path) -> list[Path]:
 
 
 def build_agent_monitoring(state_dir: Path, *, project_id: str, config=None,
-                           project_root: Path) -> dict:
+                           project_root: Path, attempts: int = 2) -> dict:
     from zf.web.server import _agents, _metrics_snapshot_projection, _fleet_stats_projection
 
     # Reuse the existing algorithms and exact source-keyed SQLite projections.
     # Clock ages and process liveness are recomputed on each bounded refresh.
-    for _attempt in range(2):
+    for _attempt in range(attempts):
         before = fingerprint(state_dir, source_paths(state_dir, project_root), config)
+        def changed():
+            return before != fingerprint(state_dir, source_paths(state_dir, project_root), config)
         day = datetime.now(timezone.utc).date()
         with collect_projection_failures() as failures:
             seq = current_seq(state_dir, config)
+            if changed():
+                continue
             agents = _agents(state_dir, config=config, project_root=project_root, include_details=False)
+            if changed():
+                continue
             events = events_read_days(state_dir, 7, config=config)
             now = datetime.now(timezone.utc)
+            live = project_agent_live(state_dir, events=events)
+            cockpit = project_agent_cockpit(state_dir, events=events, agents=agents, now=now)
+            if changed():
+                continue
+            metrics = _metrics_snapshot_projection(state_dir, config=config)
+            if changed():
+                continue
             result = {
                 "schema_version": "agent-monitoring.v1", "project_id": project_id,
                 "source_seq": seq, "source_version": before,
                 "generated_at": now.isoformat(), "status": "ready",
                 "agents": agents,
-                "agent_live": project_agent_live(state_dir, events=events),
-                "agent_cockpit": project_agent_cockpit(state_dir, events=events, agents=agents, now=now),
+                "agent_live": live,
+                "agent_cockpit": cockpit,
                 "cost": _cost(state_dir),
-                "metrics_snapshot": _metrics_snapshot_projection(state_dir, config=config),
+                "metrics_snapshot": metrics,
                 "fleet_stats": _fleet_stats_projection(state_dir, config=config),
             }
         if (not failures and day == datetime.now(timezone.utc).date()

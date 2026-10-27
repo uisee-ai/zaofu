@@ -103,6 +103,20 @@ def test_concurrent_change_retries_and_persistent_changes_return_503(tmp_path, m
     assert "agents" not in response.json()
 
 
+def test_worker_attempt_stops_stale_build_before_expensive_downstream_metrics(tmp_path, monkeypatch):
+    state = _state(tmp_path)
+    def changed(*args, **kwargs):
+        EventLog(state / "events.jsonl").append(ZfEvent(type="worker.progress", actor="dev-1"))
+        return []
+    def forbidden(*args, **kwargs):
+        raise AssertionError("stale worker attempt continued computing metrics")
+    monkeypatch.setattr(server, "_agents", changed)
+    monkeypatch.setattr(agent_monitoring, "project_agent_live", forbidden)
+    monkeypatch.setattr(server, "_metrics_snapshot_projection", forbidden)
+    with pytest.raises(agent_monitoring.MonitoringSourceChanged):
+        agent_monitoring.build_agent_monitoring(state, project_id="p", project_root=tmp_path, attempts=1)
+
+
 def test_metrics_keep_clock_ages_fresh_and_projects_isolated(tmp_path):
     one = _state(tmp_path)
     two_root = tmp_path / "other"

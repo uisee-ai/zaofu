@@ -484,6 +484,16 @@ export function getBoardSnapshot(projectId?: string): Promise<Snapshot> {
   return requestJson<Snapshot>(`${projectPrefix(projectId)}/snapshot/board`);
 }
 
+export interface BoardTaskBootstrap extends Pick<Snapshot, "tasks" | "archive_tasks"> {
+  project_id: string;
+  source: "TaskStore";
+  derived_state: "pending";
+}
+
+export function getBoardTasks(projectId: string, signal?: AbortSignal): Promise<BoardTaskBootstrap> {
+  return requestJson<BoardTaskBootstrap>(`${projectPrefix(projectId)}/board-tasks`, { signal });
+}
+
 export function getDeliveryFeatures(projectId?: string): Promise<DeliveryFeaturesPage> {
   return requestJson<DeliveryFeaturesPage>(`${projectPrefix(projectId)}/delivery-features`);
 }
