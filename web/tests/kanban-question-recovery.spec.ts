@@ -106,6 +106,11 @@ test("recovers questions without SSE, including a resumed turn and a failed hist
   expect(state.failedHistory).toBe(1);
   await expect(page.getByTestId("agent-card-preparing")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Stop generating", exact: true })).toHaveCount(0);
+  state.phase = "cancelled";
+  await expect(page.getByRole("region", { name: "Ask user question", exact: true })).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator(".agent-session").getByText("Cancelled", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel pending response", exact: true })).toHaveCount(0);
+  await expect(page).not.toHaveTitle(/^●/);
   expect(errors).toEqual([]);
 });
 
