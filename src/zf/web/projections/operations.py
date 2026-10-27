@@ -60,7 +60,13 @@ def workflow_operation(
     operation_id: str,
     *,
     config: ZfConfig | None = None,
+    events: list[ZfEvent] | None = None,
 ) -> dict[str, Any]:
+    if events is not None:
+        # Request/Graph already holds a canonically decoded ledger snapshot.
+        # Do not build and hydrate a second event index for the same read.
+        return {**project_workflow_operation(state_dir, operation_id, events=events),
+                "source": "events.jsonl", "projection_state": "ready", "projection_lag": 0}
     return _project(
         state_dir,
         ref_kind="operation_id",

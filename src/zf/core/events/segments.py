@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
@@ -81,20 +83,49 @@ class EventSegmentCursor:
         return asdict(self)
 
 
-def list_event_segments(state_dir: Path) -> list[EventSegment]:
+def _strict_archive_paths(archive_dir: Path) -> list[Path]:
+    """List optional archive files without hiding directory or stat failures."""
+    try:
+        entries = os.scandir(archive_dir)
+    except FileNotFoundError:
+        try:
+            archive_dir.lstat()
+        except FileNotFoundError:
+            return []
+        raise  # A dangling declared archive directory is not absent.
+    with entries:
+        return sorted(Path(entry.path) for entry in entries
+                      if entry.name.endswith(".jsonl") and stat.S_ISREG(entry.stat().st_mode))
+
+
+def list_event_segments(state_dir: Path, *, strict_io: bool = False) -> list[EventSegment]:
     """Return event segments oldest-first, with active ``events.jsonl`` last."""
 
     state_dir = Path(state_dir)
     active = state_dir / "events.jsonl"
     archive_dir = state_dir / "events"
     archive_paths: list[Path] = []
-    archive_paths.extend(list_archives(archive_dir, suffix=".jsonl"))
+    archive_paths.extend(_strict_archive_paths(archive_dir) if strict_io else list_archives(archive_dir, suffix=".jsonl"))
     future_archive_dir = archive_dir / "archive"
-    if future_archive_dir.exists():
+    if strict_io:
+        archive_paths.extend(_strict_archive_paths(future_archive_dir))
+    elif future_archive_dir.exists():
         archive_paths.extend(sorted(f for f in future_archive_dir.glob("*.jsonl") if f.is_file()))
 
     paths: list[tuple[str, Path]] = [("archive", path) for path in sorted(set(archive_paths))]
-    if active.exists():
+    try:
+        active_present = active.stat() is not None if strict_io else active.exists()
+    except FileNotFoundError:
+        if strict_io:
+            try:
+                active.lstat()
+            except FileNotFoundError:
+                active_present = False
+            else:
+                raise  # A dangling active segment is a read failure.
+        else:
+            active_present = False
+    if active_present:
         paths.append(("active", active))
 
     segments: list[EventSegment] = []
@@ -102,6 +133,8 @@ def list_event_segments(state_dir: Path) -> list[EventSegment]:
         try:
             stat = path.stat()
         except OSError:
+            if strict_io:
+                raise
             continue
         try:
             rel_path = path.relative_to(state_dir).as_posix()
@@ -118,8 +151,8 @@ def list_event_segments(state_dir: Path) -> list[EventSegment]:
     return segments
 
 
-def build_event_manifest(state_dir: Path) -> EventManifest:
-    segments = list_event_segments(state_dir)
+def build_event_manifest(state_dir: Path, *, strict_io: bool = False) -> EventManifest:
+    segments = list_event_segments(state_dir, strict_io=True) if strict_io else list_event_segments(state_dir)
     digest = hashlib.sha256()
     total_bytes = 0
     for segment in segments:
@@ -138,8 +171,8 @@ def build_event_manifest(state_dir: Path) -> EventManifest:
     )
 
 
-def write_event_manifest(state_dir: Path) -> Path:
-    manifest = build_event_manifest(state_dir)
+def write_event_manifest(state_dir: Path, *, manifest: EventManifest | None = None) -> Path:
+    manifest = manifest or build_event_manifest(state_dir)
     path = Path(state_dir) / "events" / "manifest.json"
     atomic_write_text(
         path,
@@ -192,6 +225,7 @@ def iter_event_records(
     *,
     config: ZfConfig | None = None,
     start_seq: int = 0,
+    strict_io: bool = False,
 ) -> Iterable[EventRecord]:
     """Yield decoded events with global seq and raw segment offsets.
 
@@ -201,11 +235,14 @@ def iter_event_records(
 
     event_log = event_log_from_project(state_dir, config=config)
     seq = 0
-    for segment in list_event_segments(state_dir):
+    segments = list_event_segments(state_dir, strict_io=True) if strict_io else list_event_segments(state_dir)
+    for segment in segments:
         try:
             with segment.path.open("rb") as fh:
                 data = fh.read(segment.size)
         except OSError:
+            if strict_io:
+                raise
             continue
         last_newline = data.rfind(b"\n")
         if last_newline < 0:
@@ -245,6 +282,7 @@ def iter_event_records_from_cursor(
     byte_offset: int = 0,
     start_seq: int = 0,
     config: ZfConfig | None = None,
+    strict_io: bool = False,
 ) -> Iterable[EventRecord]:
     """Yield complete records after an exact segment/byte cursor.
 
@@ -258,10 +296,11 @@ def iter_event_records_from_cursor(
             state_dir,
             config=config,
             start_seq=start_seq,
+            strict_io=strict_io,
         )
         return
 
-    segments = list_event_segments(state_dir)
+    segments = list_event_segments(state_dir, strict_io=True) if strict_io else list_event_segments(state_dir)
     start_index = next(
         (
             index
@@ -286,6 +325,8 @@ def iter_event_records_from_cursor(
                 fh.seek(offset)
                 data = fh.read(current.size - offset)
         except OSError:
+            if strict_io:
+                raise
             continue
         last_newline = data.rfind(b"\n")
         if last_newline < 0:

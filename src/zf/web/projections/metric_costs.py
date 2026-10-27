@@ -5,31 +5,123 @@ the same file cursor never charges it twice; corrections replace projections.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import stat as statmod
 from dataclasses import asdict
 from pathlib import Path
 
 from zf.core.cost.tracker import CostTracker, CostSummary, _entry_datetime
-from zf.core.state.rotation import list_archives
 from zf.core.state.locks import locked_path
 from zf.web.projections.metric_facts import writer, meta, put_meta, load_meta
 from zf.web.projections.read_model import db_path
 from zf.web.projections.sqlite_reader import connect_readonly
 
 
-def _identity(path: Path) -> list[int]:
-    s = path.stat()
-    return [s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns]
+def _sources(state_dir: Path) -> tuple[list[Path], dict[str, list[int]], dict[str, int]]:
+    try:
+        entries = os.scandir(state_dir / "cost")
+    except FileNotFoundError:
+        try:
+            (state_dir / "cost").lstat()
+        except FileNotFoundError:
+            paths = []
+        else:
+            raise  # A dangling declared cost archive directory is not absent.
+    else:
+        with entries:
+            paths = sorted(Path(entry.path) for entry in entries
+                           if entry.name.endswith(".jsonl") and statmod.S_ISREG(entry.stat().st_mode))
+    active = state_dir / "cost.jsonl"
+    try:
+        active.stat()
+    except FileNotFoundError:
+        try:
+            active.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise  # An existing dangling cost file cannot be read.
+    else:
+        paths.append(active)
+    source, ctimes = {}, {}
+    for path in paths:
+        rel = path.relative_to(state_dir).as_posix()
+        stat = path.stat()
+        # Keep the four-element source format readable by older dashboards.
+        source[rel] = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
+        ctimes[rel] = stat.st_ctime_ns
+    return paths, source, ctimes
+
+
+def _prefix_sha256(path: Path, size: int) -> str:
+    digest = hashlib.sha256()
+    remaining = size
+    with path.open("rb") as handle:
+        while remaining:
+            block = handle.read(min(1024 * 1024, remaining))
+            if not block:
+                raise OSError("cost source truncated during projection")
+            digest.update(block)
+            remaining -= len(block)
+    return digest.hexdigest()
+
+
+def _guard_matches(previous: dict, source: dict, ctimes: dict) -> bool:
+    guard = previous.get("source_guard")
+    return (isinstance(guard, dict) and guard.get("source") == source
+            and previous.get("source") == source and guard.get("ctimes") == ctimes
+            and guard.get("offsets") == previous.get("offsets")
+            and guard.get("ordinal") == previous.get("ordinal")
+            and ("cost.jsonl" not in source or isinstance(guard.get("active_sha256"), str)))
+
+
+def _assert_sources_unchanged(state_dir: Path, source: dict, ctimes: dict) -> None:
+    _, after, after_ctimes = _sources(state_dir)
+    if after != source or after_ctimes != ctimes:
+        raise OSError("cost source changed during projection")
+
+
+def _cost_record(raw: bytes, *, allow_partial_tail: bool) -> dict | None:
+    if not raw.strip():
+        return None
+    try:
+        value = json.loads(raw)
+    except (ValueError, UnicodeDecodeError) as exc:
+        if allow_partial_tail and not raw.endswith(b"\n"):
+            return None  # A partial active tail waits for the next append.
+        raise OSError("invalid complete cost record") from exc
+    if not isinstance(value, dict):
+        raise OSError("cost record must be an object")
+    return value
+
+
+def validate_cost_files(paths: list[Path], *, active: Path) -> None:
+    """Check fallback input before the legacy tracker can skip corrupt lines."""
+    for path in paths:
+        with path.open("rb") as handle:
+            for raw in handle:
+                _cost_record(raw, allow_partial_tail=path == active)
+
+
+def _append_keeps_record_boundary(path: Path, previous_size: int, consumed: int) -> bool:
+    if not previous_size or consumed < previous_size:
+        return True
+    with path.open("rb") as handle:
+        handle.seek(previous_size - 1)
+        old_last_and_new_first = handle.read(2)
+    if len(old_last_and_new_first) != 2:
+        raise OSError("cost source changed during boundary verification")
+    return old_last_and_new_first[0:1] == b"\n" or old_last_and_new_first[1:2] == b"\n"
 
 
 def refresh(state_dir: Path) -> None:
-    paths = list_archives(state_dir / "cost", suffix=".jsonl")
     active = state_dir / "cost.jsonl"
-    if active.exists(): paths.append(active)
-    source = {p.relative_to(state_dir).as_posix(): _identity(p) for p in paths}
+    paths, source, ctimes = _sources(state_dir)
     event_cursor = load_meta(state_dir, "events", {})
     previous = load_meta(state_dir, "costs", {})
-    if previous.get("source") == source and previous.get("event_manifest") == event_cursor.get("manifest"): return
+    if _guard_matches(previous, source, ctimes) and previous.get("event_manifest") == event_cursor.get("manifest"): return
     with locked_path(state_dir / "projections" / "metric-costs"), writer(state_dir) as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS metric_usage (ordinal INTEGER PRIMARY KEY, segment TEXT,
@@ -40,18 +132,52 @@ def refresh(state_dir: Path) -> None:
         CREATE TABLE IF NOT EXISTS metric_usage_rollup (kind TEXT, scope TEXT, ordinal INTEGER,
             payload TEXT, PRIMARY KEY(kind,scope));
         """)
+        paths, source, ctimes = _sources(state_dir)
+        event_cursor = meta(conn, "events", {})
         previous = meta(conn, "costs", {})
-        if previous.get("source") == source:
+        if _guard_matches(previous, source, ctimes):
             with conn:
                 _bind_receipts(conn, previous, event_cursor)
+                _assert_sources_unchanged(state_dir, source, ctimes)
                 put_meta(conn, "costs", previous)
             return
         old = previous.get("source", {})
-        resume = bool(previous) and old.keys() == source.keys()
+        if not isinstance(old, dict):
+            old = {}
+        guard = previous.get("source_guard")
+        old_ctimes = guard.get("ctimes") if isinstance(guard, dict) else None
+        previous_offsets = previous.get("offsets")
+        resume = (bool(previous) and isinstance(guard, dict) and guard.get("source") == old
+                  and isinstance(old_ctimes, dict) and isinstance(previous_offsets, dict)
+                  and guard.get("offsets") == previous_offsets and guard.get("ordinal") == previous.get("ordinal")
+                  and type(previous.get("ordinal")) is int and previous["ordinal"] >= 0
+                  and old.keys() == source.keys())
         for path, identity in source.items():
-            if old.get(path) == identity: continue
-            prior = old.get(path, [])
-            if path != "cost.jsonl" or not prior or identity[:2] != prior[:2] or identity[2] <= prior[2]:
+            prior = old.get(path)
+            if (not isinstance(prior, list) or len(prior) != 4
+                    or not all(type(item) is int for item in prior)):
+                resume = False
+                continue
+            old_offset = previous_offsets.get(path, 0) if isinstance(previous_offsets, dict) else None
+            if type(old_offset) is not int or not 0 <= old_offset <= prior[2]:
+                resume = False
+                continue
+            if old.get(path) == identity:
+                if not isinstance(old_ctimes, dict) or old_ctimes.get(path) != ctimes[path]:
+                    resume = False
+                continue
+            if path != "cost.jsonl" or identity[:2] != prior[:2] or identity[2] <= prior[2]:
+                resume = False
+            elif (not isinstance(guard, dict) or not isinstance(guard.get("active_sha256"), str)
+                  or _prefix_sha256(active, prior[2]) != guard["active_sha256"]):
+                # Same inode/greater size cannot prove the old prefix was not
+                # rewritten. Only a matching full-prefix digest permits fold.
+                resume = False
+            elif not _append_keeps_record_boundary(
+                active, prior[2], old_offset,
+            ):
+                # A complete no-newline JSON record was previously admitted;
+                # appending without a separator changes that same record.
                 resume = False
         groups = {}
         ordinal = int(previous.get("ordinal", 0)) if resume else 0
@@ -67,9 +193,10 @@ def refresh(state_dir: Path) -> None:
                     offset = handle.tell() - len(raw)
                     # A complete JSON tail without newline has always been
                     # admitted by CostTracker; partial JSON waits for append.
-                    try: entry = json.loads(raw)
-                    except (ValueError, UnicodeDecodeError):
-                        if raw.endswith(b"\n"): offsets[segment] = handle.tell()
+                    entry = _cost_record(raw, allow_partial_tail=segment == "cost.jsonl")
+                    if entry is None:
+                        if raw.endswith(b"\n"):
+                            offsets[segment] = handle.tell()
                         continue
                     offsets[segment] = handle.tell()
                     if entry.get("accounting_baseline") is True: continue
@@ -98,6 +225,8 @@ def refresh(state_dir: Path) -> None:
                         digest = str(entry.get("pricing_catalog_digest") or entry.get("catalog_digest") or "")
                         if digest: value["catalogs"][digest] = {"catalog_version": str(entry.get("catalog_version") or ""), "digest": digest}
                         dirty.add(key)
+        active_sha256 = _prefix_sha256(active, source["cost.jsonl"][2]) if "cost.jsonl" in source else None
+        _assert_sources_unchanged(state_dir, source, ctimes)
         with conn:
             if not resume:
                 conn.execute("DELETE FROM metric_usage")
@@ -105,9 +234,12 @@ def refresh(state_dir: Path) -> None:
             conn.executemany("INSERT INTO metric_usage VALUES (?,?,?,?,?,?,?,?,?)", new_rows)
             conn.executemany("INSERT OR REPLACE INTO metric_usage_rollup VALUES (?,?,?,?)",
                              [(kind, scope, groups[kind, scope]["ordinal"], json.dumps(groups[kind, scope], allow_nan=False)) for kind, scope in dirty])
-            updated = {**(previous if resume else {}), "source": source, "offsets": offsets, "ordinal": ordinal}
+            updated = {**(previous if resume else {}), "source": source, "offsets": offsets, "ordinal": ordinal,
+                       "source_guard": {"source": source, "ctimes": ctimes, "active_sha256": active_sha256,
+                                        "offsets": dict(offsets), "ordinal": ordinal}}
             _bind_receipts(conn, updated, event_cursor)
             put_meta(conn, "costs", updated)
+            _assert_sources_unchanged(state_dir, source, ctimes)
 
 
 def _bind_receipts(conn, metadata: dict, event_cursor: dict) -> None:

@@ -2,24 +2,27 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Controls, MiniMap, MarkerType, ReactFlow, useNodesInitialized, useReactFlow, useStore, type Node, type Edge, type NodeChange, applyNodeChanges } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./workflowGraph.css";
-import type { ActionResponse } from "../../api/types";
+import type { ActionResponse, RecentEvent } from "../../api/types";
+import { useWorkflowGraph } from "./useWorkflowGraph";
+import { useWorkflowStructureNode } from "./useWorkflowStructureNode";
 import { asRecord, asRecordArray } from "../../app/shared";
 import PlanReviewReader from "../delivery-trace/PlanReviewReader";
 import PlanArtifactChat from "./PlanArtifactChat";
 import { workflowNodeTypes } from "./WorkflowGraphNode";
 import { X, Code, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
-import { activeStatus, expandedNodeIds, graphPositions, graphViews, relatedNodes, statusLabels, workflowSummaryIds, type GraphView, type SdlcGraph } from "./sdlcGraphModel";
+import { activeStatus, expandedNodeIds, GraphLayoutCache, graphViews, relatedNodes, statusLabels, workflowSummaryIds, type GraphView } from "./sdlcGraphModel";
 
 const graphFitOptions = { padding: 0.22, maxZoom: 0.8, minZoom: 0 };
 
-export default function WorkflowGraphWorkbench({ projectId, requestId, revision, onAction, actionReady, onOpenRaw }: {
+export default function WorkflowGraphWorkbench({ projectId, requestId, revision, onAction, actionReady, onOpenRaw, recentEvents, liveState }: {
   projectId: string; requestId: string; revision: string;
   onAction: (action: string, payload: Record<string, unknown>) => Promise<ActionResponse>;
   actionReady: boolean;
   onOpenRaw?: () => void;
+  recentEvents: RecentEvent[];
+  liveState: string;
 }) {
-  const [graph, setGraph] = useState<SdlcGraph | null>(null);
-  const [error, setError] = useState("");
+  const [actionError, setError] = useState("");
   const [view, setView] = useState<GraphView>(() => {
     const value = new URLSearchParams(location.search).get("graph");
     return graphViews.some(([id]) => id === value) ? value as GraphView : "workflow";
@@ -37,32 +40,28 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const [showTools, setShowTools] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
+  const [detailRequested, setDetailRequested] = useState(false);
   const positions = useRef(new Map<string, { x: number; y: number }>());
   const positionScope = useRef("");
+  const layoutCache = useRef(new GraphLayoutCache());
   const [canvasScope, setCanvasScope] = useState("");
   const [canvasNodes, setCanvasNodes] = useState<Node[]>([]);
+  const { graph, error: readError, updatedAt, refresh, requireFull } = useWorkflowGraph(projectId, requestId, revision, asOf, recentEvents, liveState);
+  const partial = Boolean(graph && "partial" in graph && graph.partial);
+  const selectedStructure = partial && graph && "partial" in graph ? graph : null;
+  const structureNodeExists = Boolean(selectedStructure?.nodes.some(node => node.id === selected));
+  const structureNode = useWorkflowStructureNode(projectId, requestId, asOf, selectedStructure, selected, refresh);
+  const loadFull = useCallback(() => { setDetailRequested(true); requireFull(); }, [requireFull]);
+  const error = actionError || readError;
   useEffect(() => {
-    positions.current.clear(); setGraph(null); setAsOf(0); setPlanId(""); setCollapsed(new Set()); setSearch(""); setStatus("");
+    positions.current.clear(); setError(""); setAsOf(0); setPlanId(""); setCollapsed(new Set()); setSearch(""); setStatus(""); setDetailRequested(false);
     const query = new URLSearchParams(location.search);
     setSelected(query.get("request") === requestId ? query.get("node") || "" : "");
   }, [projectId, requestId]);
   useEffect(() => {
-    let disposed = false; let pending = false;
-    const controller = new AbortController();
-    async function refresh() {
-      if (pending) return; pending = true;
-      try {
-        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workflow-requests/${encodeURIComponent(requestId)}/graph?as_of=${asOf}`, { signal: controller.signal, cache: "no-store" });
-        if (!response.ok) throw new Error(`图读取失败 HTTP ${response.status}`);
-        const next = await response.json() as SdlcGraph;
-        if (!disposed) { setGraph(next); setError(""); }
-      } catch (reason) { if (!disposed) setError(String(reason)); }
-      finally { pending = false; }
-    }
-    void refresh();
-    const timer = window.setInterval(() => { if (!asOf && !document.hidden) void refresh(); }, 2000);
-    return () => { disposed = true; controller.abort(); window.clearInterval(timer); };
-  }, [projectId, requestId, revision, asOf]);
+    if (partial && (view !== "workflow" || (selected && !structureNodeExists) || asOf)) loadFull();
+    if (graph && !partial) setDetailRequested(false);
+  }, [graph, partial, view, selected, structureNodeExists, asOf, loadFull]);
   const pick = useCallback((id: string) => {
     setSelected(id); const url = new URL(location.href);
     url.searchParams.set("request", requestId); url.searchParams.set("graph", view); url.searchParams.set("node", id);
@@ -87,7 +86,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     if (positionScope.current !== layoutScope) {
       positions.current.clear(); positionScope.current = layoutScope;
     }
-    const layout = graphPositions(filtered.nodes, filtered.edges);
+    const layout = layoutCache.current.get(filtered.nodes, filtered.edges);
     for (const n of filtered.nodes) {
       const key = `${view}:${n.id}`;
       if (!positions.current.has(key)) {
@@ -105,11 +104,12 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     })));
     setCanvasScope(layoutScope);
   }, [filtered, selected, view, layoutScope]);
+  const activeNodes = useMemo(() => new Set(filtered.nodes.filter(n => activeStatus(n.status)).map(n => n.id)), [filtered.nodes]);
   const canvasEdges: Edge[] = filtered.edges.map(e => ({ ...e, type: "default",
     label: fullStructure || e.source === selected || e.target === selected ? e.event || e.relation : undefined,
     labelStyle: { fill: "var(--text-secondary)", fontSize: "var(--text-10)" }, labelBgStyle: { fill: "var(--canvas)" },
     markerEnd: { type: MarkerType.ArrowClosed, color: "var(--text-tertiary)", width: 14, height: 14 },
-    animated: !asOf && filtered.nodes.some(n => (n.id === e.target || n.id === e.source) && activeStatus(n.status)),
+    animated: !asOf && (activeNodes.has(e.source) || activeNodes.has(e.target)),
     style: { stroke: /rework|retry/.test(e.relation) ? "var(--warning)" : "var(--text-tertiary)", strokeWidth: 1.5, strokeDasharray: "5 6" },
   }));
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -117,14 +117,17 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     setCanvasNodes(nodes => applyNodeChanges(changes, nodes));
   }, [view]);
   const selectedNode = graph?.nodes.find(n => n.id === selected);
-  const preview = graph?.plans.find(p => p.plan_id === planId);
-  const pendingPlan = graph?.plans.find(p => p.status === "pending");
+  const inspectedNode = partial ? structureNode.node : selectedNode;
+  const plans = graph && "plans" in graph ? graph.plans : [];
+  const preview = plans.find(p => p.plan_id === planId);
+  const pendingPlan = plans.find(p => p.status === "pending");
   async function approvePlan() {
     if (!preview || busy) return;
     setBusy(true);
     try {
       const result = await onAction(preview.actions?.approve || "plan-approve", { ...preview.action_payload, plan_id: preview.plan_id });
-      if (!result.ok) setError(String(result.reason || result.status)); else setPlanId("");
+      if (!result.ok) setError(String(result.reason || result.status));
+      else { setPlanId(""); await refresh(); }
     } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
   }
   return <section className={`sdlc-workbench${expanded ? " sdlc-expanded" : ""}`} aria-label="Workflow 图工作台">
@@ -132,20 +135,23 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
       <header className="sdlc-heading">
         <nav className="sdlc-views" aria-label="Workflow graph views">{graphViews.map(([id, label]) =>
           <button key={id} type="button" aria-pressed={view === id} onClick={() => {
+            if (id !== "workflow" && partial) loadFull();
             setView(id); const url = new URL(location.href); url.searchParams.set("graph", id); history.replaceState(null, "", url);
           }}>{label}</button>
         )}</nav>
         <div className="sdlc-heading-actions">
-          <button type="button" aria-label="Graph filters" aria-expanded={showTools} onClick={() => setShowTools(!showTools)}><SlidersHorizontal size={15} /> Filters</button>
+          <button type="button" aria-label="Graph filters" aria-expanded={showTools} onClick={() => { if (!showTools && partial) loadFull(); setShowTools(!showTools); }}><SlidersHorizontal size={15} /> Filters</button>
           {view === "workflow" && onOpenRaw && <button type="button" disabled={Boolean(asOf)} title={asOf ? "Return to live to inspect this proposal's YAML" : "View version-bound YAML"} onClick={() => { setExpanded(false); onOpenRaw(); }}><Code size={15} /> Raw</button>}
           <button type="button" onClick={() => setExpanded(!expanded)} aria-label={expanded ? "收回工作台" : "展开工作台"}>{expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
         </div>
       </header>
       <div className="sdlc-status-row">
-        <span className="sdlc-live" role="status"><i className={!asOf && !error ? "live" : ""} />{asOf ? "History" : error ? "Update delayed" : "Live"} · {graph?.scope.run_id || "Preview"}</span>
+        <span className="sdlc-live" role="status"><i className={!asOf && !error ? "live" : ""} />{asOf ? "History" : error ? "Update delayed" : "Live"} · {graph?.scope.run_id || "Preview"}{updatedAt ? ` · ${updatedAt}` : ""}</span>
+        {partial && <><span role="status">{detailRequested ? "正在读取完整运行关系和详情…" : "已显示流程结构；运行关系和计划按需读取。"}</span>
+          <button type="button" onClick={() => error ? void refresh() : loadFull()} disabled={detailRequested && !error}>加载完整运行图和计划</button></>}
         {pendingPlan && !asOf && <button className="sdlc-review" type="button" title="Review pending plan" onClick={() => setPlanId(pendingPlan.plan_id)}>Review</button>}
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{error} <button type="button" onClick={() => void refresh()}>Retry</button></p>}
       {!graph && !error && <p>正在读取流程与运行关系…</p>}
       {graph && <>
         {showTools && <div className="sdlc-toolbar">
@@ -158,37 +164,43 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
           <button type="button" onClick={() => { setAsOf(0); setCursor(""); }}>回到实时</button>
         </div>}
         <div className={`sdlc-body${selectedNode ? " has-inspector" : ""}`}>
-          <div className="sdlc-canvas" data-testid="workflow-graph-canvas">
+          {partial && (view !== "workflow" || Boolean(search.trim())) ? <p role="status">正在读取完整运行关系…</p> : <div className="sdlc-canvas" data-testid="workflow-graph-canvas">
             <ReactFlow key={canvasScope} nodes={canvasNodes} edges={canvasEdges} nodeTypes={workflowNodeTypes} onNodesChange={onNodesChange} onNodeClick={(_, node) => pick(node.id)} fitView fitViewOptions={graphFitOptions} minZoom={0} onlyRenderVisibleElements nodesConnectable={false} deleteKeyCode={null} aria-label="Workflow 关系图">
               <FitResizedCanvas /><Controls showInteractive={false} fitViewOptions={graphFitOptions} /><MiniMap pannable zoomable maskColor="var(--surface)" nodeColor="var(--text-tertiary)" style={{ width: 130, height: 85 }} />
             </ReactFlow>
             {!filtered.nodes.length && <p className="sdlc-empty">{graph.nodes.length ? "No nodes match these filters." : "The graph will appear as this workflow is prepared."}</p>}
-          </div>
-          {selectedNode && <aside className="sdlc-inspector" aria-label="图节点详情">
+          </div>}
+          {selectedNode && partial && !inspectedNode && <aside className="sdlc-inspector" aria-label="图节点详情">
             <button className="sdlc-close" type="button" aria-label="Close node details" onClick={() => { setSelected(""); const url = new URL(location.href); url.searchParams.delete("node"); history.replaceState(null, "", url); }}><X size={16} /></button>
-            <h3>{selectedNode.label}</h3><p>{statusLabels[selectedNode.status] || selectedNode.status}</p><code>{selectedNode.id}</code>
-            {selectedNode.kind === "operation" && <div><p>Agent：{String(selectedNode.data.role_instance || "未绑定")} · Attempt：{String(selectedNode.data.active_attempt_id || "未观测")}</p>
-              <p>Provider：{String(asRecord(selectedNode.data.agent_binding).backend || "未观测")} · 模型：{String(asRecord(selectedNode.data.agent_binding).model || "未观测")} · {asRecord(selectedNode.data.agent_binding).source === "provider_usage" ? "实际用量记录" : "配置快照"}</p>
-              <h4>最近活动</h4>{asRecordArray(selectedNode.data.recent_activity).slice(-5).map(e => {
+            <p role={structureNode.error ? "alert" : "status"}>{structureNode.error || "正在读取节点详情…"}</p>
+            {structureNode.error && <><button type="button" onClick={structureNode.retry}>重试节点详情</button>
+              <button type="button" onClick={loadFull}>读取完整运行图</button></>}
+          </aside>}
+          {inspectedNode && <aside className="sdlc-inspector" aria-label="图节点详情">
+            <button className="sdlc-close" type="button" aria-label="Close node details" onClick={() => { setSelected(""); const url = new URL(location.href); url.searchParams.delete("node"); history.replaceState(null, "", url); }}><X size={16} /></button>
+            <h3>{inspectedNode.label}</h3><p>{statusLabels[inspectedNode.status] || inspectedNode.status}</p><code>{inspectedNode.id}</code>
+            {inspectedNode.kind === "operation" && <div><p>Agent：{String(inspectedNode.data.role_instance || "未绑定")} · Attempt：{String(inspectedNode.data.active_attempt_id || "未观测")}</p>
+              <p>Provider：{String(asRecord(inspectedNode.data.agent_binding).backend || "未观测")} · 模型：{String(asRecord(inspectedNode.data.agent_binding).model || "未观测")} · {asRecord(inspectedNode.data.agent_binding).source === "provider_usage" ? "实际用量记录" : "配置快照"}</p>
+              <h4>最近活动</h4>{asRecordArray(inspectedNode.data.recent_activity).slice(-5).map(e => {
                 const payload = asRecord(e.payload); return <p key={String(e.id)}>{String(e.ts || "")} · {String(payload.tool_name || e.type || "")}<small>{String(payload.tool_input ? JSON.stringify(payload.tool_input).slice(0, 240) : payload.reason || "")}</small></p>;
               })}</div>}
             <button type="button" onClick={() => setCollapsed(current => { const next = new Set(current); if (next.has(selected)) next.delete(selected); else next.add(selected); return next; })}>{collapsed.has(selected) ? "展开节点" : "收起节点"}</button>
-            {Boolean(selectedNode.data.plan_id) && <button type="button" onClick={() => setPlanId(String(selectedNode.data.plan_id))}>打开 PRD / Plan Preview</button>}
+            {Boolean(inspectedNode.data.plan_id) && <button type="button" onClick={() => setPlanId(String(inspectedNode.data.plan_id))}>打开 PRD / Plan Preview</button>}
             <h4>关联</h4>{graph.edges.filter(e => e.source === selected || e.target === selected).map(e => {
               const target = e.source === selected ? e.target : e.source; return <button type="button" key={e.id} onClick={() => pick(target)}>{e.source === selected ? "→" : "←"} {e.relation} · {graph.nodes.find(n => n.id === target)?.label || target}</button>;
-            })}<details><summary>来源与执行证据</summary><pre>{JSON.stringify(selectedNode.data, null, 2)}</pre></details>
+            })}<details><summary>来源与执行证据</summary><pre>{JSON.stringify(inspectedNode.data, null, 2)}</pre></details>
           </aside>}
         </div>
-        <footer className="sdlc-footer"><span>{filtered.nodes.length} / {graph.nodes.length} nodes · {filtered.edges.length} relations · R{graph.scope.revision} · Event {graph.scope.source_seq}</span>
-          <span>{asOf ? "Historical snapshot" : "Updates every 2s"}</span></footer>
+        <footer className="sdlc-footer"><span>{partial ? "已加载的流程结构" : `${filtered.nodes.length} / ${graph.nodes.length} nodes · ${filtered.edges.length} relations`} · R{graph.scope.revision} · Event {graph.scope.source_seq}</span>
+          <span>{asOf ? "Historical snapshot" : "Live updates · checks every 30s"}</span></footer>
         {showTools && <details className="sdlc-directory"><summary>Node directory</summary><div aria-label="图节点目录">{filtered.nodes.map(n => <button key={n.id} type="button" aria-pressed={selected === n.id} onClick={() => pick(n.id)} title={n.id}>{n.label}<small>{statusLabels[n.status] || n.status}</small></button>)}</div></details>}
-        {graph.plans.length > 0 && <details className="sdlc-plans"><summary>PRD / Plan documents · {graph.plans.length}</summary>{graph.plans.map(p => <button type="button" key={p.plan_id} onClick={() => setPlanId(p.plan_id)}>PRD / Plan Preview · {p.status}</button>)}</details>}
+        {plans.length > 0 && <details className="sdlc-plans"><summary>PRD / Plan documents · {plans.length}</summary>{plans.map(p => <button type="button" key={p.plan_id} onClick={() => setPlanId(p.plan_id)}>PRD / Plan Preview · {p.status}</button>)}</details>}
         {preview && <section className="sdlc-plan" aria-label="Workflow PRD Plan Preview">
           <header className="sdlc-plan-toolbar"><strong>Plan Preview</strong>
             {preview.status === "pending" && <button type="button" disabled={!actionReady || busy || reviewBusy || !!asOf} onClick={() => void approvePlan()}>确认计划并继续</button>}
             <button type="button" disabled={reviewBusy || busy} onClick={() => setPlanId("")}>关闭预览</button>
           </header>
-          <PlanArtifactChat preview={preview} projectId={projectId} disabled={!actionReady || !!asOf} onBusy={setReviewBusy} />
+          <PlanArtifactChat preview={preview} projectId={projectId} disabled={!actionReady || !!asOf} onBusy={setReviewBusy} onApplied={refresh} />
           <details className="plan-supporting-review"><summary>审批概览与附件</summary><p className="muted">这里是只读审批资料；修改请在上方正文选中文字并引用到 Agent。</p><PlanReviewReader preview={preview} projectId={projectId} /></details>
         </section>}
       </>}

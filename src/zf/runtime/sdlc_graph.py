@@ -171,6 +171,19 @@ def build_sdlc_graph(source: dict[str, Any]) -> dict[str, Any]:
                 operation_events.setdefault(event.id, operation_id)
         if len(operation_events) == before:
             break
+    # Preserve ledger order and duplicate IDs while avoiding a full event scan
+    # for each operation. The usage used for binding may precede the final ten
+    # visible activities, so keep the complete list of matching event references.
+    requested_events: dict[str, tuple[int, str]] = {}
+    operation_activity: dict[str, list] = {}
+    for position, (_, event) in enumerate(event_rows):
+        if event.type == "workflow.operation.requested":
+            requested_events.setdefault(event.id, (position, event.ts))
+        operation_id = operation_events.get(event.id)
+        if operation_id in operations and event.type.startswith(
+            ("agent.", "codex.hook.", "claude.hook.", "provider.")
+        ):
+            operation_activity.setdefault(operation_id, []).append(event)
     fanout_order, fanout_verdicts, fanout_stages = {}, {}, set()
     for seq, event in event_rows:
         identity = str(event.payload.get("fanout_id") or "")
@@ -199,13 +212,16 @@ def build_sdlc_graph(source: dict[str, Any]) -> dict[str, Any]:
             if child.get("task_id"):
                 edge("task:" + child["task_id"], cid, "execution", views=["workflow", "trace"])
     for operation in operations.values():
-        related = [e for _, e in event_rows if e.id in operation.get("source_event_ids", [])]
-        operation["requested_at"] = next((e.ts for e in related if e.type == "workflow.operation.requested"), "")
+        requested = min(
+            (requested_events[event_id] for event_id in operation.get("source_event_ids", [])
+             if event_id in requested_events),
+            key=lambda item: item[0], default=None,
+        )
+        operation["requested_at"] = requested[1] if requested is not None else ""
         operation["finished_at"] = operation.get("last_event_at", "") if operation["status"] in {
             "settled", "failed", "cancelled", "superseded", "blocked",
         } else ""
-        activity = [e for _, e in event_rows if operation_events.get(e.id) == operation["operation_id"]
-                    and e.type.startswith(("agent.", "codex.hook.", "claude.hook.", "provider."))]
+        activity = operation_activity.get(operation["operation_id"], [])
         operation["recent_activity"] = [activity_event(e) for e in activity[-10:]]
         configured = next((r for r in compiled.get("roles", []) if operation.get("role_instance")
                            in {r.get("name"), r.get("instance_id")}), {})

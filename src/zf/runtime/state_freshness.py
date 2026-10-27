@@ -18,6 +18,7 @@ def latest_state_freshness(
         "test": {"test.passed", "test.failed", "static_gate.passed", "static_gate.failed"},
         "evidence": {"task.done.evidence", "task.evidence_linked", "task.artifact_refs.updated"},
     }
+    category_for_type = {kind: key for key, kinds in categories.items() for kind in kinds}
     found: dict[str, ZfEvent] = {}
     context_ratio = None
     indexed = index is not None and events is index.events
@@ -33,7 +34,8 @@ def latest_state_freshness(
                     context_ratio = float(value)
                     break
 
-        needed = [key for key, kinds in categories.items() if key not in found and event.type in kinds]
+        category = category_for_type.get(event.type)
+        needed = category is not None and category not in found
         if "event" not in found or needed:
             # Actor equality is sufficient and avoids walking unrelated bodies.
             matches = bool(actor and event.actor == actor)
@@ -41,8 +43,8 @@ def latest_state_freshness(
                 matches = index.event_matches_task(i, task_id) if indexed else _event_task_match(event, task_id)
             if matches:
                 found.setdefault("event", event)
-                for key in needed:
-                    found[key] = event
+                if needed:
+                    found[category] = event
         if len(found) == 6 and context_ratio is not None:
             break
 

@@ -5,7 +5,6 @@ store is written here; an absent projection is not an empty task list.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
 import hashlib
 import json
 import os
@@ -17,15 +16,16 @@ from typing import Any
 from zf.core.config.schema import ZfConfig
 from zf.web.projections.read_model import db_path, _connect
 from zf.web.projections.sqlite_reader import connect_readonly
+from zf.web.projections.source_cache import _config_json_default
 
-VERSION = "dashboard-resources.v2"
+VERSION = "dashboard-resources.v3"
 # Clock-derived ages/windows and external probes are snapshots as of generated_at.
 REFRESH_SECONDS = 60.0
 
 
-def source_fingerprint(state_dir: Path, project_root: Path, config: ZfConfig | None) -> str:
+def source_fingerprint(state_dir: Path, project_root: Path, config: ZfConfig | None, *, scope: str | None = None) -> str:
     digest = hashlib.sha256()
-    digest.update(scope_identity(state_dir, project_root, config).encode())
+    digest.update((scope if scope is not None else scope_identity(state_dir, project_root, config)).encode())
     digest.update(str(int(time.time() // 86400)).encode())
     excluded_dirs = {"projections", "workdirs", "worktrees", ".git", "node_modules"}
     excluded_files = {"event_index.json", "manifest.json.lock"}
@@ -51,7 +51,7 @@ def source_fingerprint(state_dir: Path, project_root: Path, config: ZfConfig | N
     return digest.hexdigest()
 
 
-def quick_fingerprint(state_dir: Path, project_root: Path, config: ZfConfig | None) -> str:
+def quick_fingerprint(state_dir: Path, project_root: Path, config: ZfConfig | None, *, scope: str | None = None) -> str:
     """Bounded request check; recursive sidecar verification belongs to the worker.
 
     Canonical task/config/cost/session files and event appends wake updates
@@ -59,7 +59,7 @@ def quick_fingerprint(state_dir: Path, project_root: Path, config: ZfConfig | No
     the full fingerprint at the bounded clock refresh.
     """
     from zf.core.events.segments import build_event_manifest
-    digest = hashlib.sha256(scope_identity(state_dir, project_root, config).encode())
+    digest = hashlib.sha256((scope if scope is not None else scope_identity(state_dir, project_root, config)).encode())
     digest.update(str(int(time.time() // 86400)).encode())
     digest.update(build_event_manifest(state_dir).digest.encode())
     for path in sorted(state_dir.iterdir()):
@@ -77,19 +77,27 @@ def quick_fingerprint(state_dir: Path, project_root: Path, config: ZfConfig | No
 def scope_identity(state_dir: Path, project_root: Path, config: ZfConfig | None) -> str:
     data = f"{VERSION}\0{state_dir.resolve()}\0{project_root.resolve()}"
     if config is not None:
-        data += json.dumps(asdict(config), sort_keys=True, default=str)
+        data += json.dumps(config, sort_keys=True, default=_config_json_default)
     return hashlib.sha256(data.encode()).hexdigest()
+
+
+def refresh_seconds(group: str) -> float:
+    # Match the Agents page's existing clock/liveness reconciliation interval.
+    return 10.0 if group.startswith("agent-monitoring:") else REFRESH_SECONDS
 
 
 def _stat_hash(digest: Any, path: Path, label: str) -> None:
     try:
         stat = path.stat()
-        digest.update(f"{label}\0{stat.st_dev}\0{stat.st_ino}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+        digest.update(f"{label}\0{stat.st_dev}\0{stat.st_ino}\0{stat.st_size}\0{stat.st_mtime_ns}\0{stat.st_ctime_ns}\n".encode())
     except OSError:
         digest.update(f"{label}\0missing\n".encode())
 
 
 def read_group(state_dir: Path, group: str) -> tuple[dict, dict] | None:
+    # Older dashboards can run alongside this version against the same project
+    # DB. The primary key must include the format, not just the metadata field.
+    group = f"{VERSION}:{group}"
     try:
         with connect_readonly(db_path(state_dir)) as conn:
             conn.execute("BEGIN")
@@ -113,6 +121,7 @@ def read_group(state_dir: Path, group: str) -> tuple[dict, dict] | None:
 
 
 def write_group(state_dir: Path, group: str, data: dict, *, fingerprint: str, cursor: dict, source_changed: bool, scope: str = "", trigger: str = "") -> None:
+    group = f"{VERSION}:{group}"
     shapes = {key: "list" if isinstance(value, list) else "value" for key, value in data.items()}
     rows = [(group, key, i, json.dumps(row, ensure_ascii=False, allow_nan=False))
             for key, value in data.items()

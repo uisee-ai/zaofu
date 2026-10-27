@@ -484,6 +484,26 @@ export function getBoardSnapshot(projectId?: string): Promise<Snapshot> {
   return requestJson<Snapshot>(`${projectPrefix(projectId)}/snapshot/board`);
 }
 
+export interface BoardTaskBootstrap extends Pick<Snapshot, "tasks" | "archive_tasks"> {
+  project_id: string;
+  source: "TaskStore";
+  derived_state: "pending";
+}
+
+export function getBoardTasks(projectId: string, signal?: AbortSignal): Promise<BoardTaskBootstrap> {
+  return requestJson<BoardTaskBootstrap>(`${projectPrefix(projectId)}/board-tasks`, { signal });
+}
+
+export interface BoardCards extends Pick<Snapshot, "tasks" | "archive_tasks"> {
+  project_id: string;
+  source: "projection";
+  read_projection: { state: string; source_cursor?: { source_seq?: number } };
+}
+
+export function getBoardCards(projectId: string, signal?: AbortSignal): Promise<BoardCards> {
+  return requestJson<BoardCards>(`${projectPrefix(projectId)}/board-cards`, { signal });
+}
+
 export function getDeliveryFeatures(projectId?: string): Promise<DeliveryFeaturesPage> {
   return requestJson<DeliveryFeaturesPage>(`${projectPrefix(projectId)}/delivery-features`);
 }
@@ -1089,6 +1109,7 @@ export interface AgentMonitoring {
   source_version: string;
   generated_at: string;
   status: "ready";
+  read_projection?: { state: "ready" | "refreshing" | "error"; error?: string; generated_at_epoch?: number };
   agents: AgentSummary[];
   agent_live: Record<string, unknown>;
   agent_cockpit: Record<string, unknown>;

@@ -20,6 +20,7 @@ export function useAgentMonitoring(projectId: string, events: RecentEvent[], liv
     let inFlight = false;
     let pending = false;
     let activeRequest: AbortController | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     latestSourceSeq.current = 0;
     dirtySeq.current = 0;
     forcePending.current = false;
@@ -37,7 +38,10 @@ export function useAgentMonitoring(projectId: string, events: RecentEvent[], liv
         if (data.project_id !== projectId || data.status !== "ready") throw new Error("Metrics are not ready");
         if (!cancelled) {
           latestSourceSeq.current = data.source_seq;
-          setState({ projectId, data, loading: false, error: "" });
+          const refreshing = data.read_projection?.state === "refreshing";
+          setState({ projectId, data, loading: refreshing, error: data.read_projection?.error || "" });
+          clearTimeout(retryTimer);
+          if (refreshing) retryTimer = setTimeout(() => scheduler.invalidate(), 1000);
         }
       } catch (error) {
         if (!cancelled) setState(current => ({ ...current, loading: false, error: String(error) }));
@@ -63,7 +67,7 @@ export function useAgentMonitoring(projectId: string, events: RecentEvent[], liv
     const visible = () => { scheduler.visibilityChanged(); if (document.visibilityState === "visible") scheduler.invalidate(); };
     document.addEventListener("visibilitychange", visible);
     return () => {
-      cancelled = true; activeRequest?.abort(); clearTimeout(initial); clearInterval(timer); scheduler.cancel();
+      cancelled = true; activeRequest?.abort(); clearTimeout(initial); clearTimeout(retryTimer); clearInterval(timer); scheduler.cancel();
       document.removeEventListener("visibilitychange", visible);
       if (schedulerRef.current === scheduler) schedulerRef.current = null;
     };

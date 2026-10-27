@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from zf.core.config.schema import ZfConfig
@@ -371,12 +371,13 @@ def build_overview_pulse_router(*, resolve_ctx: Callable[[str], Any]) -> APIRout
     router = APIRouter()
 
     @router.get("/api/projects/{project_id}/overview-pulse")
-    def overview_pulse(project_id: str) -> JSONResponse:
+    def overview_pulse(project_id: str, request: Request) -> JSONResponse:
         ctx = resolve_ctx(project_id)
         from zf.web.dashboard_projection import read_dashboard
         from zf.web.projections.metric_views import pulse
+        from zf.web.projection_worker import active_worker
         data = read_dashboard(ctx.state_dir, ctx.project_root, ctx.config, "pulse",
-                              lambda: pulse(ctx.state_dir, ctx.config))
+                              lambda: pulse(ctx.state_dir, ctx.config), worker=active_worker(request.app))
         return JSONResponse(data)
 
     return router

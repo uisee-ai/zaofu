@@ -31,13 +31,20 @@ def core(state_dir: Path, config=None) -> dict:
 
 
 def oa_events(state_dir: Path, config=None):
-    facts.refresh_events(state_dir, config)
-    # Includes every event family inspected by the canonical OA reducer;
-    # payloads stay in the ledger and only these refs are hydrated.
-    return [event for _, event in facts.events(state_dir, config=config, full=True,
-        prefixes=("orchestrator.semantic.", "workflow.operation.", "owner.delivery.narrative."),
-        types=("workflow.call.result.admitted", "agent.usage", "owner.visible_message.requested",
-               "dev.build.done", "fanout.child.completed", "lane.stage.completed", "verify.passed", "task.rework.requested"))]
+    from zf.web.projections import events as shared
+    prefixes = ("orchestrator.semantic.", "workflow.operation.", "owner.delivery.narrative.")
+    types = {"workflow.call.result.admitted", "agent.usage", "owner.visible_message.requested",
+             "dev.build.done", "fanout.child.completed", "lane.stage.completed", "verify.passed",
+             "task.rework.requested"}
+
+    def selected(rows):
+        return [event for _, event in rows if event.type in types or event.type.startswith(prefixes)]
+
+    # Agents has already decoded this source generation. Reuse that exact
+    # decoder/rotation-aware snapshot instead of hydrating each row again.
+    return shared._derived_cached(state_dir, "oa_events", config,
+        lambda: selected(shared._events_with_seq(state_dir, config=config)),
+        fold=lambda old, tail: old + selected(tail))
 
 
 def fleet(state_dir: Path, config=None, *, now=None) -> dict:

@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from zf.web.projections.common import _cost as read_cost
+from zf.web.projections.projection_failures import collect_projection_failures
 
 
 def build_cost_router(
@@ -18,13 +19,21 @@ def build_cost_router(
 ) -> APIRouter:
     router = APIRouter()
 
+    def response(state_dir: Path) -> JSONResponse:
+        with collect_projection_failures() as failures:
+            value = read_cost(state_dir)
+        if failures:
+            return JSONResponse({"status": "unavailable"}, status_code=503,
+                                headers={"Retry-After": "1", "Cache-Control": "no-store"})
+        return JSONResponse(value)
+
     @router.get("/api/projects/{project_id}/cost")
     def project_cost(project_id: str) -> JSONResponse:
-        return JSONResponse(read_cost(resolve_ctx(project_id).state_dir))
+        return response(resolve_ctx(project_id).state_dir)
 
     @router.get("/api/cost")
     def cost() -> JSONResponse:
-        return JSONResponse(read_cost(default_state_dir))
+        return response(default_state_dir)
 
     return router
 

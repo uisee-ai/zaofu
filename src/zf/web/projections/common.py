@@ -162,23 +162,25 @@ def _deep_kanban_enabled() -> bool:
 
 def _cost(state_dir: Path) -> dict:
     cost_path = state_dir / "cost.jsonl"
-    if not cost_path.exists():
-        return {
-            "total_usd": 0.0,
-            "per_role": {},
-            "precision": _empty_cost_precision(),
-            "reconciliation": None,
-        }
     try:
-        from zf.web.projections.metric_costs import refresh, ProjectedCostTracker
+        from zf.web.projections.metric_costs import _assert_sources_unchanged, _sources, refresh, ProjectedCostTracker, validate_cost_files
+        paths, source, ctimes = _sources(state_dir)
+        if not paths:
+            return {
+                "total_usd": 0.0,
+                "per_role": {},
+                "precision": _empty_cost_precision(),
+                "reconciliation": None,
+            }
         import sqlite3
         try:
             refresh(state_dir)
             tracker = ProjectedCostTracker(cost_path)
         except sqlite3.DatabaseError:
+            validate_cost_files(paths, active=cost_path)
             tracker = CostTracker(cost_path)
         per_role = tracker.per_role_totals()
-        return {
+        result = {
             "total_usd": round(tracker.total_usd(), 4),
             "precision": tracker.precision_summary(),
             "reconciliation": (
@@ -203,6 +205,8 @@ def _cost(state_dir: Path) -> dict:
                 for role, s in per_role.items()
             },
         }
+        _assert_sources_unchanged(state_dir, source, ctimes)
+        return result
     except Exception:
         from zf.web.projections.projection_failures import record_projection_failure
         record_projection_failure("cost")

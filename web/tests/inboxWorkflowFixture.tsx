@@ -7,7 +7,7 @@ import { WorkflowProposalPage } from "../src/components/workflow/WorkflowProposa
 import { BoardWorkbench } from "../src/components/kanban/BoardWorkbench";
 import { TaskDrawer } from "../src/components/kanban/TaskDrawer";
 import { RouteSummaryStrip } from "../src/components/kanban/TaskCard";
-import type { Task } from "../src/api/types";
+import type { RecentEvent, Task } from "../src/api/types";
 import "../src/styles.css";
 import "../src/cockpit.css";
 
@@ -28,10 +28,17 @@ function Fixture() {
   const [mode, setMode] = useState<"board" | "list" | "table">("board");
   const [selected, setSelected] = useState<string | null>(null);
   const [actions, setActions] = useState<unknown[]>([]);
+  const [graphEvents, setGraphEvents] = useState<RecentEvent[]>([]);
+  const [liveState, setLiveState] = useState("live");
   const noop = () => {};
   return <>
     <button onClick={() => setProject(project === "a" ? "b" : "a")}>Switch project</button>
     <output data-testid="actions">{JSON.stringify(actions)}</output>
+    {surface === "graph-refresh" && <>
+      <button onClick={() => setGraphEvents(items => [{ id: String(Number(items[0]?.seq || 1) + 1),
+        seq: Number(items[0]?.seq || 1) + 1, type: "task.started", payload: {} } as RecentEvent])}>Graph event</button>
+      <button onClick={() => setLiveState(value => value === "live" ? "reconnecting" : "live")}>Graph connection</button>
+    </>}
     {surface === "inbox" ? <PlanApprovalPanel projectId={project} autoOpenPlanId={new URLSearchParams(location.search).get("plan")} /> : surface === "board" ? <><BoardWorkbench
       projectName="Fixture" onNewTask={noop} actionReady actionState="ready" actionResult={null} activeFanouts={[]} agents={[]} assignees={["dev-1"]} assigneeFilter="all"
       filteredTasks={tasks} mutationEnabled={false} onMoveTaskStatus={noop} onOpenFanout={noop} onOpenTask={setSelected}
@@ -40,6 +47,7 @@ function Fixture() {
       showTokenRow={false} skillFilter="all" skills={[]} setStatusFilter={noop} setTextFilter={noop} setViewMode={setMode}
       statusFilter="all" textFilter="" totalTaskCount={tasks.length} viewMode={mode}
     /><TaskDrawer open={Boolean(selected)} onClose={() => setSelected(null)}><RouteSummaryStrip route={tasks.find((item) => item.id === selected)?.route_summary} /></TaskDrawer></> : <WorkflowProposalPage actionReady actionState="ready" projectId={project} onOpenProjection={noop}
+      recentEvents={graphEvents} liveState={liveState}
       onAction={async (action, payload) => { setActions((items) => [...items, { project, action, payload }]); return { ok: true }; }} />}
   </>;
 }

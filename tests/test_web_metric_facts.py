@@ -230,3 +230,24 @@ def test_scoped_oa_inputs_keep_usage_stale_rework_and_clock_semantics(state):
     clock = NOW + timedelta(hours=1)
     full = EventLog(state / "events.jsonl").read_all()
     assert build_orchestrator_agent_metrics(views.oa_events(state), observed_at=clock) == build_orchestrator_agent_metrics(full, observed_at=clock)
+
+
+def test_oa_inputs_follow_append_rotation_and_replacement_without_losing_bodies(state):
+    def check():
+        expected = [e for e in EventLog(state / "events.jsonl").read_all()
+                    if e.type in {"agent.usage", "task.rework.requested"}]
+        assert views.oa_events(state) == expected
+    append(state, "agent.usage", payload={"usage": {"input_tokens": 9007199254740993}, "body": "full"})
+    append(state, "worker.progress", payload={"ignored": True})
+    check()
+    append(state, "task.rework.requested", offset=1, payload={"reason": "nested", "detail": {"values": [1, 2]}})
+    check()
+    # Atomic replacement invalidates the shared decoded generation.
+    replacement = state / "replacement.jsonl"
+    replacement.write_bytes((state / "events.jsonl").read_bytes().splitlines(keepends=True)[-1])
+    replacement.replace(state / "events.jsonl")
+    check()
+    (state / "events").mkdir(exist_ok=True)
+    (state / "events.jsonl").replace(state / "events" / "2026-10-26.jsonl")
+    append(state, "agent.usage", offset=2, payload={"usage": {"input_tokens": 17}})
+    check()

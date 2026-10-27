@@ -4,7 +4,7 @@ No TTL or stale response: clock values and external probes do not belong here.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import fields, is_dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -20,11 +20,19 @@ from zf.web.projections.projection_failures import collect_projection_failures, 
 T = TypeVar("T")
 
 
+def _config_json_default(value):
+    # JSON walks the tree itself; asdict first deep-copies the entire expanded
+    # workflow/profile configuration on every before/after source check.
+    if is_dataclass(value) and not isinstance(value, type):
+        return {field.name: getattr(value, field.name) for field in fields(value)}
+    return str(value)
+
+
 def fingerprint(state_dir: Path, paths: list[Path], config=None) -> str:
     digest = hashlib.sha256(str(state_dir.resolve()).encode())
     digest.update(_decoder_identity(config).encode())
     if config is not None:
-        digest.update(json.dumps(asdict(config), sort_keys=True, default=str).encode())
+        digest.update(json.dumps(config, sort_keys=True, default=_config_json_default).encode())
     inputs = [segment.path for segment in list_event_segments(state_dir)] + paths
     for path in sorted(set(inputs)):
         digest.update(str(path).encode())
@@ -51,7 +59,12 @@ def read_source_projection(state_dir: Path, key: str, paths: list[Path], build: 
             result = build()
         for failure in failures:
             record_projection_failure(failure)
-        if not failures and before == fingerprint(state_dir, paths, config):
+        after = fingerprint(state_dir, paths, config)
+        if before != after:
+            # A caller that collects failures must not publish a value assembled
+            # across generations merely because it was not cached.
+            record_projection_failure(f"{key}:source_changed")
+        elif not failures:
             try:
                 read_model.set_cached_projection(state_dir, cache_key, kind="source-projection", source_seq=0,
                                                   payload={"fingerprint": before, "value": result})
