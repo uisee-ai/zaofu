@@ -5548,6 +5548,14 @@ def _execute_controlled_run_action(
     causation_id: str,
 ) -> str:
     action_name = str(action.get("action") or "")
+    if action_name == "diagnose-attention":
+        return _execute_diagnose_attention(
+            state_dir=state_dir,
+            writer=writer,
+            project_root=project_root,
+            action=action,
+            causation_id=causation_id,
+        )
     if action_name == TRIAGE_REQUEST_ACTION:
         return _execute_orchestrator_triage_request(
             writer=writer,
@@ -5672,6 +5680,87 @@ def _execute_controlled_run_action(
         human=False,
     )
     return "blocked"
+
+
+def _execute_diagnose_attention(
+    *,
+    state_dir: Path,
+    writer: EventWriter,
+    project_root: Path | None,
+    action: dict[str, Any],
+    causation_id: str,
+) -> str:
+    """Route an approved diagnosis action into the autoresearch lane.
+
+    Diagnosis normally travels through the ``needs_diagnosis`` policy branch.
+    An operator approval, however, is consumed by the controlled-action path,
+    so it needs an explicit executor instead of falling through to the
+    unsupported-action guard.
+    """
+
+    planned = writer.emit(
+        RUN_MANAGER_ACTION_PLANNED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=causation_id,
+        correlation_id=str(action.get("workflow_run_id") or "") or None,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+        },
+    )
+    before_events = writer.event_log.read_all()
+    requested = _emit_autoresearch_request(
+        state_dir=state_dir,
+        writer=writer,
+        action=action,
+        projection={},
+        project_root=project_root,
+        causation_id=planned.id,
+    )
+    if not requested:
+        inflight = bool(_autoresearch_inflight_request_ids(writer.event_log.read_all()))
+        reason = (
+            "autoresearch request is already in flight"
+            if inflight
+            else "autoresearch request already exists"
+        )
+        _emit_blocked_action(
+            writer,
+            action,
+            causation_id=planned.id,
+            reason=reason,
+            human=False,
+        )
+        return "blocked"
+    request_id = _run_manager_autoresearch_request_id(action)
+    emitted_request_ids = [
+        event.id
+        for event in writer.event_log.read_all()[len(before_events):]
+        if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+        and str((event.payload or {}).get("request_id") or "") == request_id
+    ]
+    outcome = writer.emit(
+        RUN_MANAGER_ACTION_APPLIED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=planned.id,
+        correlation_id=str(action.get("workflow_run_id") or "") or None,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+            "status": "applied",
+            "request_id": request_id,
+            "emitted_event_ids": emitted_request_ids,
+        },
+    )
+    _post_verify_action(
+        writer,
+        action,
+        {"ok": True, "status": "applied", "request_id": request_id},
+        causation_id=outcome.id,
+    )
+    return "applied"
 
 
 def _execute_read_only_dynamic_continuation(

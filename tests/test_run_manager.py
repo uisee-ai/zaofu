@@ -67,6 +67,7 @@ from zf.runtime.run_manager import (
     _action_seen,
     _emit_autoresearch_request,
     _emit_no_progress_run_terminal,
+    _execute_controlled_run_action,
     _execute_repair_closeout_apply,
     _outcome_no_progress_break,
     _operation_precondition_holds,
@@ -4544,6 +4545,52 @@ def test_run_manager_approval_activates_failure_closeout_backlog(
     active_tasks = list((tmp_path / "tasks" / "active").glob("*.md"))
     assert len(active_tasks) == 1
     assert "> 状态: active" in active_tasks[0].read_text(encoding="utf-8")
+
+
+def test_approved_diagnose_attention_routes_to_autoresearch(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    action = {
+        "action": "diagnose-attention",
+        "safe_resume_action": "diagnose_attention",
+        "checkpoint_id": "lease_expired-test",
+        "fingerprint": "lease-expired:test",
+        "failure_class": "task_attempt_retry_budget_exhausted",
+        "owner_route": "human_escalation",
+        "action_policy": "human_decision",
+        "intervention_class": "human_decision",
+        "source_event_ids": ["evt-source"],
+        "summary": "approved diagnosis",
+    }
+
+    status = _execute_controlled_run_action(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        project_root=tmp_path,
+        action=action,
+        causation_id="evt-approval",
+    )
+
+    assert status == "applied"
+    events = log.read_all()
+    requests = [
+        event for event in events
+        if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+    ]
+    assert len(requests) == 1
+    assert requests[0].payload["checkpoint_id"] == action["checkpoint_id"]
+    assert any(
+        event.type == RUN_MANAGER_ACTION_APPLIED
+        and event.payload.get("action") == "diagnose-attention"
+        for event in events
+    )
+    assert not any(
+        event.type == RUN_MANAGER_ACTION_BLOCKED
+        and "unsupported run manager action" in str(event.payload.get("reason") or "")
+        for event in events
+    )
 
 
 def test_run_manager_routes_rework_exhausted_human_gate_to_repair_resume(
