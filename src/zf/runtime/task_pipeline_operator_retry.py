@@ -84,15 +84,18 @@ def request_impl_retry(
     operation_id: str,
     reason: str,
     apply: bool = False,
+    config: Any = None,
 ) -> dict[str, Any]:
     if not reason.strip():
         raise ValueError("operator repair reason is required")
     with locked_path(state_dir / "locks" / "task-pipeline-operator-retry.lock"):
         events = event_log.read_all()
+        operations = reduce_workflow_operations(events)
+        contexts = task_pipeline_generation_contexts(events)
         operation, source = _retryable_operation(
             operation_id,
-            reduce_workflow_operations(events),
-            task_pipeline_generation_contexts(events),
+            operations,
+            contexts,
             events,
         )
         task_id = operation["task_id"]
@@ -105,6 +108,25 @@ def request_impl_retry(
             for row in TaskAttemptStore(state_dir / "task_attempts.json").current_rows()
         ):
             raise ValueError("TaskAttempt must settle before operator retry")
+        from zf.runtime.task_pipeline_reconciler import task_pipeline_policy
+
+        policy = task_pipeline_policy(
+            config, flow_kind=str(contexts[task_id].get("flow_kind") or "")
+        )
+        if policy and policy.get("mode") == "blocking":
+            repair_offset = sum(
+                1 for row in operations.values()
+                if row.get("task_id") == task_id
+                and row.get("workflow_run_id") == operation.get("workflow_run_id")
+                and row.get("task_map_generation") == operation.get("task_map_generation")
+                and row.get("status") == "superseded"
+                and row.get("reason") == "missing_flow_kind_before_dispatch"
+            )
+            limit = int(policy.get("max_rework_attempts") or 0) + repair_offset
+            if int(operation.get("operation_generation") or 0) > limit:
+                raise ValueError(
+                    "Impl retry budget exhausted; a controlled new generation is required"
+                )
         for event in events:
             if (
                 event.type == "task.rework.requested"

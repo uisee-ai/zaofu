@@ -45,4 +45,33 @@ def required_plan_port_errors(value: Any) -> list[str]:
     return errors
 
 
-__all__ = ["required_plan_port_errors"]
+def plan_input_declaration_errors(payload: dict[str, Any]) -> list[str]:
+    """Validate optional task selections before admitting a Plan."""
+    declared = payload.get("required_plan_ports")
+    errors = required_plan_port_errors(declared)
+    available = set(declared) if isinstance(declared, list) and all(isinstance(x, str) for x in declared) else set()
+    for task in payload.get("tasks", []) if isinstance(payload.get("tasks"), list) else []:
+        if not isinstance(task, dict) or not isinstance(task.get("evidence_contract"), dict):
+            continue
+        policy = task["evidence_contract"].get("plan_input_selection")
+        if policy is None:
+            continue
+        task_id = str(task.get("task_id") or task.get("id") or "")
+        prefix = f"{task_id}.evidence_contract.plan_input_selection"
+        if not isinstance(policy, dict) or set(policy) != {"schema_version", "implementation", "task-verify"} or policy.get("schema_version") != "task-plan-input-selection.v1":
+            errors.append(f"{prefix} has invalid schema")
+            continue
+        full = {"execution_spec", "task_execution_input", "acceptance_matrix", "test_matrix", "real_e2e_matrix"}
+        if not full.issubset(available):
+            errors.append(f"{prefix} requires complete plan matrix ports")
+        for stage in ("implementation", "task-verify"):
+            values = policy.get(stage)
+            if (not isinstance(values, list) or not values or
+                    any(not isinstance(x, str) or not x.strip() or x != x.strip() for x in values)):
+                errors.append(f"{prefix}.{stage} must be a non-empty port list")
+            elif len(values) != len(set(values)) or not set(values).issubset(available) or "task_execution_input" not in values:
+                errors.append(f"{prefix}.{stage} contains duplicate, unbound or missing scoped input")
+    return errors
+
+
+__all__ = ["plan_input_declaration_errors", "required_plan_port_errors"]

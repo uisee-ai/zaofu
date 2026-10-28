@@ -34,8 +34,16 @@ def emit_stuck_signal(
     dispatch = (
         runtime._latest_dispatch_event_for_task(task.id) if task is not None else None
     )
+    foreign_dispatch = False
+    if dispatch is not None and dispatch.type == "fanout.child.dispatched":
+        dispatch_role = str(dispatch.payload.get("role_instance") or "")
+        if dispatch_role and dispatch_role != role.instance_id:
+            foreign_dispatch = True
+            dispatch = None
     dispatch_payload = dispatch.payload if dispatch is not None else {}
-    task_dispatch_id = getattr(task, "active_dispatch_id", "") if task else ""
+    task_dispatch_id = (
+        getattr(task, "active_dispatch_id", "") if task and not foreign_dispatch else ""
+    )
     dispatch_id = task_dispatch_id
     briefing = ""
     if isinstance(dispatch_payload, dict):

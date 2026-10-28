@@ -156,6 +156,11 @@ def evaluate_plan_candidate_preflight(
                 )
             if task_items:
                 policy = writer_policy or {}
+                from zf.runtime.plan_candidate_role_preflight import writer_role_errors
+
+                errors.extend(writer_role_errors(
+                    task_items, flow_kind=flow_kind, policy=policy,
+                ))
                 for message in writer_task_map_policy_errors(
                     task_items,
                     candidate_quality_source=str(

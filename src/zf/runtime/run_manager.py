@@ -9122,7 +9122,10 @@ def _pending_semantic_event_actions(
         if not event_is_recovery_actionable(event.type, event_payload):
             continue
         if (
-            event.type in {"task.rework.capped", "candidate.rework.capped"}
+            event.type in {
+                "task.rework.capped", "candidate.rework.capped",
+                "task.pipeline.semantic_rework.exhausted",
+            }
             and is_semantic_triage_cap(
                 event,
                 threshold=triage_threshold,

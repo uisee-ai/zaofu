@@ -56,3 +56,87 @@ def test_required_read_batch_preserves_authentication_slices_and_hashes(tmp_path
 def test_required_read_batch_rejects_worker_slice_override(capsys):
     assert main(["artifact", "read", "--attempt", "unused", "--required", "--max-chars", "1"]) == 1
     assert "cannot be combined" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("unauthorized_alias", [False, True])
+def test_identical_ports_share_delivery_but_not_authorization_or_receipts(
+    tmp_path, monkeypatch, capsys, unauthorized_alias,
+):
+    state = tmp_path / ".runtime"
+    path = state / "artifacts" / "plan.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"facts": "a" * 5000, "secret": "excluded"}))
+    sources = [{"source_id": name, "artifact_id": name, "ref": "artifacts/plan.json",
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "allowed_paths": ["$.facts"]} for name in ("task_map", "planning_result")]
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+        dispatch_id="attempt-1", sources=sources, metadata={"read_purpose": "implementation"},
+    )
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest)
+    requirements = [{"source_id": row["source_id"], "artifact_id": row["artifact_id"],
+                     "artifact_sha256": row["sha256"], "json_path": "$.facts"}
+                    for row in sources]
+    if unauthorized_alias:
+        requirements[1]["json_path"] = "$.secret"
+    EventWriter(EventLog(state / "events.jsonl")).append(ZfEvent(
+        type="task.dispatched", actor="orchestrator", task_id="T1",
+        payload={"dispatch_id": "attempt-1", "required_reads": requirements},
+    ))
+    result = main(["artifact", "read", "--attempt", "attempt-1", "--required",
+                   "--state-dir", str(state)])
+    output = capsys.readouterr()
+    ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
+    if unauthorized_alias:
+        assert result == 1
+        assert not ledger.exists()
+        assert not output.out
+    else:
+        assert result == 0, output.err
+        delivered = json.loads(output.out)
+        assert delivered["source_id"] == "task_map"
+        assert delivered["aliases"][0]["source_id"] == "planning_result"
+        assert delivered["content"] == "a" * 5000
+        assert len(output.out) < 8192
+        reads = [json.loads(line) for line in ledger.read_text().splitlines()]
+        assert len(reads) == 2
+        assert {row["source_id"] for row in reads} == {"task_map", "planning_result"}
+        assert all(row["artifact_sha256"] == sources[0]["sha256"] and not row["truncated"] for row in reads)
+
+
+def test_large_required_read_must_be_delivered_in_complete_pages(tmp_path, monkeypatch, capsys):
+    state = tmp_path / ".runtime"
+    path = state / "artifacts" / "large.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"facts": "中" * 10000}, ensure_ascii=False))
+    source = {"source_id": "large", "artifact_id": "large", "ref": "artifacts/large.json",
+              "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "allowed_paths": ["$.facts"]}
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+                                             dispatch_id="attempt-1", sources=[source],
+                                             metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest)
+    requirement = {"source_id": "large", "artifact_id": "large", "artifact_sha256": source["sha256"],
+                   "json_path": "$.facts"}
+    EventWriter(EventLog(state / "events.jsonl")).append(ZfEvent(
+        type="task.dispatched", actor="orchestrator", task_id="T1",
+        payload={"dispatch_id": "attempt-1", "required_reads": [requirement]},
+    ))
+    common = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state)]
+    assert main([*common, "--required"]) == 1
+    assert "bounded pages" in capsys.readouterr().err
+    ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
+    assert not ledger.exists()
+    first = [*common, "--source", "large", "--artifact", "large", "--json-path", "$.facts"]
+    assert main(first) == 1
+    assert "exceeds" in capsys.readouterr().err
+    assert not ledger.exists()
+    start = 0
+    while start is not None:
+        assert main([*first, "--page-start", str(start), "--page-size", "4096"]) == 0
+        start = json.loads(capsys.readouterr().out)["next_page_start"]
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+    from zf.runtime.artifact_read_ledger import required_read_satisfied
+
+    assert required_read_satisfied(rows, requirement)

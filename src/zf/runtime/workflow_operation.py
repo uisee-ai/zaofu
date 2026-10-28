@@ -184,7 +184,14 @@ def reduce_workflow_operations(
     """Deterministically rebuild operation views from archive+active events."""
 
     operations: dict[str, dict[str, Any]] = {}
+    sent_attempts: dict[tuple[str, str], Mapping[str, Any]] = {}
     for event in events:
+        if event.type == "task.attempt.sent" and event.origin == "kernel":
+            sent = event.payload if isinstance(event.payload, dict) else {}
+            key = (str(sent.get("operation_id") or ""), str(sent.get("attempt_id") or ""))
+            if all(key):
+                sent_attempts[key] = sent
+            continue
         if apply_call_result_admission(operations, event):
             continue
         if event.type not in OPERATION_EVENT_TYPES:
@@ -303,6 +310,26 @@ def reduce_workflow_operations(
                 value = str(payload.get(key) or "")
                 if value:
                     row[key] = value
+            sent = sent_attempts.get((operation_id, row["active_attempt_id"]))
+            if row.get("task_pipeline_stage") and (sent or row.get("redrive_count")):
+                # A redrive's request epoch belongs to an earlier attempt.  Do
+                # not let an unverified replacement inherit that authority.
+                row["placement_epoch"] = 0
+            if sent and row.get("task_pipeline_stage") and all(
+                str(sent.get(key) or "") == str(expected or "") and bool(expected)
+                for key, expected in (
+                    ("workflow_run_id", row["workflow_run_id"]),
+                    ("task_id", row["task_id"]),
+                    ("dispatch_id", row["dispatch_id"]),
+                    ("lease_id", row["lease_id"]),
+                )
+            ):
+                try:
+                    placement_epoch = int(sent.get("placement_epoch") or 0)
+                except (TypeError, ValueError):
+                    placement_epoch = 0
+                if placement_epoch > 0:
+                    row["placement_epoch"] = placement_epoch
             for key in (
                 "context_delivery_envelope_ref",
                 "context_delivery_receipt_ref",

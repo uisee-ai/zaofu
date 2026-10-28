@@ -651,6 +651,23 @@ preflight、提案摘要、`workflow-config-apply` CAS 和 submit 门保持有�
 不变；没有合并候选质量门时扩容仍被拒绝。light 不能通过 lanes 改成 fanout。
 显式 Task Pipeline 池不能只改 lanes：必须另提完整池配置修订；本批不自动猜测池成员。
 这不证明 Task Map 后重新配置运行中 Run 已实现，后者仍需新代际批准与恢复边界验证。
+多 Flow 的 v4 池引用随角色命名空间展开。对旧版已准入代次，仅当反向去除 Flow 前缀
+后完整策略可重算出原摘要、所有角色存在且类型匹配时，派发可绑定到命名空间化角色；
+保持原代次摘要，并在操作请求中记录原摘要和当前展开摘要。容量、角色以外的策略变化
+仍按摘要漂移拒绝；此兼容不支持任意运行中配置变更。
+Task Pipeline 操作必须携带准入的 Flow kind，以解析该 Flow 的语义结果提交策略。
+对于旧版缺失 Flow kind、提交策略为 off 且在 briefing 阶段明确失败的 Impl 请求，
+仅当该操作从未产生 TaskAttempt 时，Kernel 才能依据失败事件 supersede 该请求并
+建立新的操作身份；这不消耗语义返工预算。已派发或其他失败原因不能走此恢复。
+受控输入较大时，`zf artifact read --page-start 0 --page-size 8192` 可按字符分页；
+只有同一工件摘要、路径和选中内容摘要的所有连续页面覆盖全内容时才满足必读。
+CLI 拒绝向一次工具调用输出超过 8192 字符的完整读取，避免下游工具截断后误记为已完整交付；
+分页保留完整原件和验收要求，但不降低全量必读的模型输入成本。
+watchdog 在发现未终结的 Task Pipeline operation-v2 attempt 时，不再使用 legacy
+路径重排 Task 或发送 idle 恢复简报；保留已有身份，交给 Run Manager 的租约恢复路径。
+重驱后的 operation 投影从 Kernel 已送达的 attempt 恢复 placement epoch，要求
+operation、run、task、dispatch 和 lease 均与启动事实一致；不匹配时不采信该 epoch。
+运行中的 Pipeline 分配无法解析时，写入守卫不退回旧 lane 工作区授权，保持拒绝。
 
 `plan-execution-review.usage_observations` 和 `zf plan inspect-execution` 接入
 CostTracker 已准入的新增计量及事件归属，不重复累计 Provider 的累计快照。
@@ -983,6 +1000,22 @@ flow-smoke。首次共享合同命令误写测试路径，零测试执行，纠�
 
 ### Writer预算恢复后的汇总续行
 
+已接纳的 Task Map 在物化已有 backlog 任务时，同步更新该任务的 `blocked_by`，
+与合同一起通过 TaskContractAuthorityService 的 CAS 写入；变更依赖时同时核对
+任务仍为 backlog，避免在派发竞态中改变运行中任务的前置条件。运行中或终态任务
+的依赖修订需要先由受控生命周期处理，不能由物化流程静默修改。
+
+Task Pipeline 的 `zf recover task-impl` 在预览和申请前检查当前 Flow 的返工预算，
+计入未派发即因缺失 Flow kind 而被替代的 operation 抵扣；已耗尽时拒绝请求，
+避免返回无法调度的下一代预览。此检查不增加预算，也不更改已存在的请求。
+Impl 与 Verify 的已接纳失败结果达到有效返工上限时，调度投影均保留精确的
+`semantic_rework_exhausted` 原因、当前 Operation 和结果引用，Kernel 幂等发出
+`task.pipeline.semantic_rework.exhausted`，由 Run Manager 请求编排诊断。
+事件保留 Flow kind，避免多 Flow 配置选错恢复策略；新 Impl 的失败不引用旧 Verify
+结果。该升级只恢复诊断链路，不增加重试次数、不批准新 Plan，也不代表实施已恢复。
+`workflow.strict_triggers.rework_attempts_gte` 启用且达到阈值时，该耗尽事实走专门的
+编排 triage，避免同时请求通用 Autoresearch 诊断；阈值为 0 时保留通用诊断兜底。
+
 受控重试可保留原Run和已完成child，新Operation关联旧blocked Operation。
 当Owner已重新激活Run、当前fanout代际有效、全部writer完成时，由Run blocked
 产生的历史cancelled aggregate允许进入原候选集成；普通取消或仍终态Run不恢复。
@@ -994,3 +1027,26 @@ flow-smoke。首次共享合同命令误写测试路径，零测试执行，纠�
 不会因该命令重开任务。CLI与重复调用回归见同一监工记录SUP-012。
 
 长期Run策略与reader断点恢复见[补充说明](185-long-horizon-run-recovery.md)。
+同一 Task 的最新派发若属于其他 fanout 角色，watchdog 不把该 dispatch 用于本角色的
+completion nudge，也不据此重排任务；角色身份不明确时等待协调器处理。
+对持有租约的 Task Pipeline attempt，首次催办之后仅当其必读内容的去重覆盖增加、
+且 provider 轮次已关闭时，才可再次发送同一 dispatch 的续作提示。催办事件记录
+attempt 和覆盖计数，重启后仍据账本去重；重复页、不相关输入或未关闭轮次不触发。
+覆盖计数只用于活性恢复，不替代完整读取门禁或独立验证。
+Plan 可对单个 Task 显式声明 `evidence_contract.plan_input_selection`；仅在该声明
+与当前 Package 摘要绑定的 Task Map 完全一致、两个消费者列表均合法且选中
+task-scoped `task_execution_input` 时，Impl/Task Verify 按各自声明读取。原始
+`execution_spec`、完整 Task Map、验收、测试和真实 E2E 矩阵仍须作为 Package
+必需端口保留，Candidate Verify 读取全量。
+未声明时沿用原全量规则；Planner/Critic 负责证明任务闭包，Kernel 不推断业务范围。
+本机制不改变已有 Plan 或其已准入代次，内容/消费合同变更仍需新版本独立审查和批准。
+
+## FMS 复盘补齐的执行边界（2026-10-28）
+
+- Plan candidate 的 writer policy 固定实际 Flow 角色闭包；预检和结果提交使用同一份快照调用 `resolve_writer_owner`，在 Critic/审批前拒绝未知、跨 Flow 或不匹配的 owner。旧操作没有快照时保留原有 materialization 检查。
+- `workspace_binding_mismatch`、`runner_failure`、`input_delivery_failed` 等结构化执行阻塞优先进入 harness 诊断；即使混有 scope 描述也不据此发起业务 replan。真正有证据的 upstream/scope gap 仍保留语义重规划。守卫无法解析正在执行的任务分配时输出明确类别并拒绝写入。
+- `zf artifact read --required` 先独立鉴权和校验每个来源，再按摘要、JSON path 和完整正文合并完全相同的内容，返回 `aliases`。每个来源保留独立读取收据；整个编码输出超过 8192 字符时先拒绝，避免未交付却记为已读。大输入继续逐页读取，不能靠摘要补齐账本。
+- Task Pipeline 只读投影同时展示 TaskStore 状态、Run goal 状态及其事件、最后 Operation 状态/原因/事件；不将 `run.manager.action.verify.passed` 当作任务恢复或产品通过。恢复有效性需分别核对新派发、实际代码/命令进展和独立 Verify。
+- 执行 skill 用绑定当前合同和 HEAD 的续跑说明保存语义进度，并优先取得最小可执行检查反馈；不改变原 AC、证据所有权或人工审批门槛。
+
+恢复 briefing 的 Git 上下文复用当前 Task Pipeline 派发的任务工作区，终结 Attempt 不再授权旧工作区。原生压缩后的新低水位采样会清除过期 `pending_recycle`，已有回收过程和陈旧样本不受影响，防止刚恢复语义理解便再次丢失会话。

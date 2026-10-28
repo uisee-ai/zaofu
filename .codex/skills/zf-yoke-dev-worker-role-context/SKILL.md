@@ -59,15 +59,26 @@ context for runtime truth, task scope, and completion claims.
 - Execute each declared command exactly as stored. Do not repair quoting,
   escaping, paths, or arguments and then claim the rewritten command under the
   original command id; report a Planner/contract blocker instead.
-- Before editing, inspect the briefing's Controlled Artifact Inputs and execute
-  one literal sanctioned `zf artifact read` command for every declared
-  `required_reads` row, using its exact attempt id, source id, artifact id, and
-  JSON path. Reading the backing path with `cat`, `jq`, or an editor may help
+- Before editing, inspect the briefing's Controlled Artifact Inputs and consume
+  every declared `required_reads` row through literal sanctioned `zf artifact
+  read` commands (or the authenticated `--required` batch), using its exact
+  attempt id, source id, artifact id, and JSON path. Reading the backing path with `cat`, `jq`, or an editor may help
   exploration but does not satisfy the runtime read ledger.
 - 必需工件正文只完整读取一次；批量 `--required` 返回 JSONL，各行的 `content`
-  是正文字符串。先在工具内解析，按未读行分批呈现，避免把转义 JSONL 与解析后的
-  同一正文都输出。单项 `--source ... --artifact ...` 的 stdout 本身就是正文。
-  输出被截断时只补缺失部分，不重跑整个集合；不能以索引或摘要替代必需正文。
+  是正文字符串，`aliases` 表示已分别鉴权、校验和记账的相同内容来源，无需再读。
+  超过 CLI 输出上限时，使用原命令的 `--page-start` / `--page-size`，按返回的
+  `next_page_start` 完整续读；不要用 shell 循环把所有页再拼成超大输出。
+  单项未分页 stdout 本身就是正文；分页响应的 `content` 才是正文。
+  输出被截断时只补缺失部分，不重跑整个集合；索引、摘要及旧尝试的读取收据不能
+  代替当前必需正文。完成读取后按合同先跑最小可执行检查，保存实际首次反馈。
+- 在合同允许的路径维护续跑说明，绑定当前合同/工件摘要、HEAD、已理解的约束、
+  AC 与检查进度、下一步；重派时重新核对绑定。它帮助恢复语义理解，不替代原文、
+  命令收据或独立 Verify，也不把旧尝试的成功声明移作本次通过。
+- 工作区守卫、runner 或工件交付失败时，先核对本次任务 workdir、完整目标路径、
+  attempt/dispatch 与拒绝事件；使用当前输出 profile 支持的结构化故障字段和证据。
+  `workspace_binding_mismatch` / `runner_failure` / `input_delivery_failed` 不能仅凭
+  「写不了」改称 `scope_contract_gap`。只有确认正确绑定后仍无法在合同范围履行
+  AC，才报告业务契约缺口；不要修改权限或 Plan 工件来绕过故障。
 - 保存完整测试日志和退出码，向上下文呈现用例总数、失败类型及代表性堆栈；大量
   subTest 同因失败时逐类检查，避免重复展开每一份相同堆栈。不得遗漏不同失败原因，
   也不得把节选当完整证据。后续验证应引用原始日志和实际命令收据。

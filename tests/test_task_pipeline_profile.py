@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,7 @@ from zf.core.config.render import renderable_config_to_primitive
 from zf.core.config.task_pipeline_profile import compile_task_pipeline_profile
 from zf.core.config.workflow_profiles import WorkflowProfileError, expand_prd_flow
 from zf.core.profile.flows import flow_id_for_intent
+from zf.runtime.task_pipeline_reconciler import task_pipeline_policy_partitions
 
 
 def _task_pipeline(**overrides):
@@ -145,6 +148,66 @@ def test_v4_metadata_round_trips_through_loader(tmp_path: Path) -> None:
     policy = loaded.workflow.flow_metadata["task_pipeline"]
     assert policy["profile_id"] == "prd-flow-v4-task-pipeline"
     assert policy["mode"] == "shadow"
+
+
+def test_multi_flow_v4_pools_use_scoped_runtime_roles(tmp_path: Path) -> None:
+    path = tmp_path / "zf.yaml"
+    docs = [
+        {"apiVersion": "zaofu.dev/v1", "kind": "IssueFlow",
+         "metadata": {"name": "issue"}, "spec": {"lanes": 1}},
+        {"apiVersion": "zaofu.dev/v1", "kind": "PrdFlow",
+         "metadata": {"name": "prd"}, "spec": {
+             "flowProfile": "prd-flow-v4-task-pipeline", "topology": "fanout",
+             "lanes": 2, "taskPipeline": _task_pipeline(),
+         }},
+        {"apiVersion": "zaofu.dev/v1", "kind": "ZfConfig",
+         "metadata": {"name": "multi"},
+         "spec": {"version": "1.0", "project": {"name": "multi"}}},
+    ]
+    path.write_text(yaml.safe_dump_all(docs, sort_keys=False), encoding="utf-8")
+    config = load_config(path)
+    policy = config.workflow.flow_metadata_by_kind["prd"]["task_pipeline"]
+    roles = {role.instance_id for role in config.roles}
+    assert policy["pools"]["impl"]["role_instances"] == [
+        "prd-dev-lane-0", "prd-dev-lane-1",
+    ]
+    assert policy["pools"]["verify"]["role_instances"] == [
+        "prd-verify-lane-0", "prd-verify-lane-1",
+    ]
+    assert all(
+        role in roles for pool in policy["pools"].values()
+        for role in pool["role_instances"]
+    )
+    digest = policy["profile_digest"]
+    body = {key: value for key, value in policy.items() if key != "profile_digest"}
+    encoded = json.dumps(
+        body, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    assert digest == hashlib.sha256(encoded).hexdigest()
+    assert load_config(path).workflow.flow_metadata_by_kind["prd"]["task_pipeline"] == policy
+
+    legacy = expand_prd_flow({
+        "flowProfile": "prd-flow-v4-task-pipeline", "topology": "fanout",
+        "lanes": 2, "taskPipeline": _task_pipeline(),
+    })["metadata"]["task_pipeline"]
+    contexts = {"T-1": {"flow_kind": "prd", "profile_id": policy["profile_id"],
+                         "profile_digest": legacy["profile_digest"]}}
+    partition = task_pipeline_policy_partitions(config, contexts)[0]
+    bound = partition["policy"]
+    assert partition["profile_digest"] == legacy["profile_digest"]
+    assert bound["pools"] == policy["pools"]
+    assert bound["role_binding_resolution"]["configured_profile_digest"] == digest
+
+    changed = dict(contexts["T-1"], profile_digest="0" * 64)
+    with pytest.raises(ValueError, match="admitted profile_digest"):
+        task_pipeline_policy_partitions(config, {"T-1": changed})
+    policy["pools"]["impl"]["capacity"] = 1
+    with pytest.raises(ValueError, match="admitted profile_digest"):
+        task_pipeline_policy_partitions(config, contexts)
+    policy["pools"]["impl"]["capacity"] = 2
+    config.roles = [r for r in config.roles if r.instance_id != "prd-dev-lane-0"]
+    with pytest.raises(ValueError, match="admitted profile_digest"):
+        task_pipeline_policy_partitions(config, contexts)
 
 
 def test_unknown_task_pipeline_field_surfaces_as_config_error(tmp_path: Path) -> None:

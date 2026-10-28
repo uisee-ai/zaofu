@@ -345,6 +345,8 @@ class TaskStore:
         contract_authority_sequence: int,
         task_updates: dict | None = None,
         reopen_terminal: bool = False,
+        expected_status: str | None = None,
+        expected_blocked_by: list[str] | None = None,
     ) -> tuple[Task | None, bool]:
         """Atomically replace one complete contract when its CAS token matches."""
 
@@ -376,6 +378,10 @@ class TaskStore:
                 reopening = record is not None
             if record is not None:
                 d = dict(record) if reopening else record
+                if expected_status is not None and d.get("status") != expected_status:
+                    return self._to_task(dict(d)), False
+                if expected_blocked_by is not None and d.get("blocked_by", []) != expected_blocked_by:
+                    return self._to_task(dict(d)), False
                 current = str(d.get("contract_authority_revision") or "")
                 if current != str(expected_authority_revision or ""):
                     return self._to_task(dict(d)), False
@@ -428,6 +434,8 @@ class TaskStore:
         *,
         expected_authority_revision: str,
         updates: dict,
+        expected_status: str | None = None,
+        expected_blocked_by: list[str] | None = None,
     ) -> tuple[Task | None, bool]:
         """Patch non-authority Task fields only while the contract CAS token matches."""
 
@@ -448,6 +456,10 @@ class TaskStore:
             for index, record in enumerate(raw):
                 if record.get("id") != task_id:
                     continue
+                if expected_status is not None and record.get("status") != expected_status:
+                    return self._to_task(dict(record)), False
+                if expected_blocked_by is not None and record.get("blocked_by", []) != expected_blocked_by:
+                    return self._to_task(dict(record)), False
                 current = str(record.get("contract_authority_revision") or "")
                 if current != str(expected_authority_revision or ""):
                     return self._to_task(dict(record)), False
