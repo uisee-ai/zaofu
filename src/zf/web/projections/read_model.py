@@ -1557,6 +1557,7 @@ def _payload_slim(payload: dict[str, Any]) -> dict[str, Any]:
         "target",
         "message",
         "message_type",
+        "tool_call_id",
         "reason",
         "text",
         "content",

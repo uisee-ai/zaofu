@@ -357,12 +357,21 @@ function applyDelta(run: AgentSessionRun, event: EventRecord, payload: Record<st
     return;
   }
   if (type === "tool_result") {
+    const outcome = textValue(payload.status).trim().toLowerCase();
+    const state = outcome === "completed" || outcome === "failed" || outcome === "cancelled" ? outcome : "idle";
+    const callId = textValue(payload.tool_call_id).trim();
+    const started = callId ? run.parts.find((part) => part.toolCallId === callId && part.kind === "tool_call") : undefined;
+    if (started) {
+      started.state = state;
+      started.updatedAt = event.ts;
+    }
     upsertPart(run, {
       id: `tool-result-${seq}`,
       runId: run.id,
       kind: "tool",
-      state: "completed",
-      title: "Tool result",
+      state,
+      toolCallId: callId || undefined,
+      title: state === "idle" ? "Tool result · outcome unknown" : "Tool result",
       summary: content.slice(0, 120).replace(/\s+/g, " "),
       content,
       seq,
@@ -402,6 +411,7 @@ function applyDelta(run: AgentSessionRun, event: EventRecord, payload: Record<st
     content,
     seq,
     toolName: tool,
+    toolCallId: textValue(payload.tool_call_id).trim() || undefined,
     startedAt: event.ts,
     updatedAt: event.ts,
     sourceEventId: event.id,
@@ -434,8 +444,10 @@ function finalizeThreads(threads: Map<string, AgentSessionThread>, activeThreadI
         // the "status-started" placeholder) so a finished run shows no part
         // stuck "running".
         const inProgress = part.state === "streaming" || part.state === "submitted";
-        if (run.status === "completed" && inProgress) part.state = "completed";
-        if (run.status === "failed" && inProgress) part.state = "failed";
+        const tool = part.kind === "tool" || part.kind === "tool_call" || part.kind === "tool_result";
+        if ((run.status === "completed" || run.status === "failed") && inProgress && tool) part.state = "idle";
+        else if (run.status === "completed" && inProgress) part.state = "completed";
+        else if (run.status === "failed" && inProgress) part.state = "failed";
       }
     }
   }

@@ -206,6 +206,12 @@ def _message_event_payload(message: HeadlessMessage) -> dict[str, Any]:
         payload["input"] = redact_obj(message.input)
     if message.output:
         payload["output"] = message.output
+    tool_outcome = message.raw.get("tool_outcome")
+    if message.type == "tool_result" and isinstance(tool_outcome, str) and tool_outcome in {"completed", "failed", "cancelled", "unknown"}:
+        payload["status"] = tool_outcome
+    call_id = message.raw.get("call_id")
+    if message.type in {"tool_use", "tool_result"} and isinstance(call_id, str) and 0 < len(call_id) <= 256:
+        payload["tool_call_id"] = call_id
     control_state = str(message.raw.get("control_state") or "")
     if control_state:
         payload["control_state"] = control_state

@@ -70,6 +70,18 @@ const liveTurn = [
   }),
 ];
 
+const toolEvents = [
+  ...liveTurn.slice(0, 2),
+  event(3, "kanban.agent.turn.delta", { thread_key: "thread-a", turn_id: "turn-a", message_type: "tool_use", tool: "exec_command", tool_call_id: "call-1" }),
+  event(4, "kanban.agent.turn.delta", { thread_key: "thread-a", turn_id: "turn-a", message_type: "tool_result", tool: "exec_command", tool_call_id: "call-1", status: "failed", output: "exit 1" }),
+  event(5, "kanban.agent.turn.delta", { thread_key: "thread-a", turn_id: "turn-a", message_type: "tool_result", tool: "unknown", output: "unconfirmed" }),
+];
+const toolConversation = buildKanbanConversation({ events: toolEvents, activeThreadId: "thread-a" });
+const toolParts = toolConversation.threads.flatMap((thread) => thread.turns.flatMap((turn) => turn.runs.flatMap((run) => run.parts)));
+assert(toolParts.some((part) => part.toolCallId === "call-1" && part.kind === "tool_call" && part.state === "failed"), "a result closes its matching started tool with the actual failure state");
+assert(toolParts.some((part) => part.toolCallId === "call-1" && part.kind === "tool" && part.state === "failed"), "failed tool result remains a failure");
+assert(toolParts.some((part) => part.title.includes("outcome unknown") && part.state === "idle"), "missing result outcome must not be displayed as success");
+
 const unrelatedChannelRun = event(5, "agent.session.part.delta", {
   backend: "codex-headless",
   project_id: "proj-a",

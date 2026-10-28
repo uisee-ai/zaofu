@@ -436,6 +436,9 @@ function RunBlock({
   showRunProvider: boolean;
 }) {
   const capability = providerCapabilities.find((item) => item.provider === run.provider);
+  const requestedSettings = run.sourceEvents?.find((event) => event.type === "kanban.agent.turn.created")?.payload;
+  const requestedModel = typeof requestedSettings?.requested_model === "string" ? requestedSettings.requested_model : "";
+  const requestedEffort = typeof requestedSettings?.requested_thinking_level === "string" ? requestedSettings.requested_thinking_level : "";
   const canCancel = (
     onCancelRun
     && capability?.cancel !== false
@@ -585,6 +588,11 @@ function RunBlock({
           </div>
         ) : null}
       </div>
+      ) : null}
+      {requestedModel || requestedEffort ? (
+        <small className="muted" title="Requested settings; provider effective values may differ">
+          Requested: {[requestedModel, requestedEffort].filter(Boolean).join(" · ")}
+        </small>
       ) : null}
       {!hideQueuedStatusOnly ? (
         chatMode ? (

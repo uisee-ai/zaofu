@@ -84,9 +84,11 @@ def test_durable_turn_keeps_source_context_and_observed_outcome(
 
     state = _state(tmp_path)
     captured = {}
+    call_settings = {}
 
     def run_turn(**kwargs):
         captured.update(kwargs["context"])
+        call_settings.update({"model": kwargs.get("model"), "thinking_level": kwargs.get("thinking_level")})
         return HeadlessTurnResult(
             ok=True, status="completed", backend="codex-headless",
             thread_id="main", provider_session_id="merge-session",
@@ -107,6 +109,7 @@ def test_durable_turn_keeps_source_context_and_observed_outcome(
             "project_id": "default", "conversation_id": "conversation-a",
             "thread_key": "main", "turn_id": "turn-merged",
             "message": "Keep the owner requirement attached to this turn",
+            "model": "example-model", "thinking_level": "high",
             "attachment_refs": [{"version_id": "merge-attachment", "digest": "merge-digest"}],
         },
     )
@@ -115,10 +118,41 @@ def test_durable_turn_keeps_source_context_and_observed_outcome(
     assert captured["requirement_source_messages"][-1]["message"] == "Keep the owner requirement attached to this turn"
     assert captured["attachment_refs"][0]["version_id"] == "merge-attachment"
     assert "conversation_summary" in captured and "agent_profile" in captured
+    assert call_settings == {"model": "example-model", "thinking_level": "high"}
     assert AgentTurnStore(state).get("turn-merged")["state"] == "completed"
+    stored = AgentTurnStore(state).get("turn-merged")["request"]["payload"]
+    assert stored["model"] == "example-model" and stored["thinking_level"] == "high"
+    created = EventLog(state / "events.jsonl").query(event_type="kanban.agent.turn.created")[-1]
+    assert created.payload["requested_model"] == "example-model"
+    assert created.payload["requested_thinking_level"] == "high"
     completed = EventLog(state / "events.jsonl").query(event_type="kanban.agent.turn.completed")[-1]
     assert completed.payload["status"] == completed.payload["logical_state"] == "completed"
     assert completed.payload["outcome"] == "completed"
+
+
+def test_effort_only_reaches_codex_and_durable_request_without_changing_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+    from zf.web.headless_agent import HeadlessTurnResult
+
+    state = _state(tmp_path)
+    calls = []
+    def run_turn(**kwargs):
+        calls.append((kwargs.get("model"), kwargs.get("thinking_level")))
+        return HeadlessTurnResult(ok=True, status="completed", backend="codex-headless", thread_id="main",
+                                  provider_session_id="session", reply="ok", messages=[], usage={})
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+    monkeypatch.setattr("zf.web.observability.create_observed_headless_agent", lambda **kwargs: SimpleNamespace(run_turn=run_turn))
+    client = TestClient(create_app(state, project_root=tmp_path))
+    response = client.post("/api/actions/chat-orchestrator", headers={"x-zf-web-token": "test-token"}, json={
+        "backend": "codex-headless", "sync": True, "project_id": "default", "conversation_id": "c",
+        "thread_key": "main", "turn_id": "effort-only", "message": "check", "thinking_level": "high",
+    })
+    assert response.status_code == 200
+    assert calls == [(None, "high")]
+    payload = AgentTurnStore(state).get("effort-only")["request"]["payload"]
+    assert payload.get("thinking_level") == "high" and not payload.get("model")
 
 
 def test_durable_provider_exception_keeps_failure_classification(
@@ -151,6 +185,33 @@ def test_durable_provider_exception_keeps_failure_classification(
     failure = EventLog(state / "events.jsonl").query(event_type="kanban.agent.turn.failed")[-1]
     assert failure.payload["outcome"] == "failed"
     assert failure.payload["failure_class"] == "provider_error"
+
+
+def test_queued_turn_preserves_model_and_effort(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+    from zf.web.headless_agent import HeadlessTurnResult
+
+    state = _state(tmp_path)
+    settings: list[tuple[str, str]] = []
+
+    def run_turn(**kwargs):
+        settings.append((str(kwargs.get("model") or ""), str(kwargs.get("thinking_level") or "")))
+        return HeadlessTurnResult(ok=True, status="completed", backend="codex-headless", thread_id="main",
+                                  provider_session_id="session", reply="done", messages=[], usage={})
+
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+    monkeypatch.setattr("zf.web.observability.create_observed_headless_agent", lambda **kwargs: SimpleNamespace(run_turn=run_turn))
+    store = AgentTurnStore(state)
+    store.enqueue(project_id="default", conversation_id="conversation-a", thread_id="main",
+                  message="follow-up", idempotency_key="queued-model", source_turn_id="first",
+                  request={"backend": "codex-headless", "model": "model-a", "thinking_level": "high"})
+    client = TestClient(create_app(state, project_root=tmp_path))
+    response = client.post("/api/actions/chat-orchestrator", headers={"x-zf-web-token": "test-token"}, json={
+        "backend": "codex-headless", "sync": True, "project_id": "default",
+        "conversation_id": "conversation-a", "thread_key": "main", "turn_id": "first", "message": "start",
+    })
+    assert response.status_code == 200
+    _wait(lambda: ("model-a", "high") in settings)
 
 
 def test_terminal_turn_claims_and_dispatches_one_durable_queue_item(
