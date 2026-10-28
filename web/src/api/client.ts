@@ -110,6 +110,27 @@ function webActionAuthHeaders(): Record<string, string> {
   } : {};
 }
 
+export interface KanbanModelCatalog {
+  backend: string;
+  models: Array<{ model: string; label: string; default: boolean; default_effort: string; efforts: string[] }>;
+  session_defaults?: { model: string | null; effort: string | null; source: "provider_config" | "provider_session" | "session_baseline" | "unknown" };
+}
+
+export class KanbanModelCatalogError extends Error {
+  constructor(readonly status: number) {
+    super(`Model catalog unavailable (${status})`);
+  }
+}
+
+export async function getKanbanModelCatalog(projectId: string, threadId: string, taskId: string, signal?: AbortSignal): Promise<KanbanModelCatalog> {
+  const query = new URLSearchParams({ thread_key: threadId, task_id: taskId });
+  const response = await fetch(`${projectPrefix(projectId)}/webchat/model-catalog?${query}`, {
+    headers: webActionAuthHeaders(), signal, cache: "no-store",
+  });
+  if (!response.ok) throw new KanbanModelCatalogError(response.status);
+  return response.json() as Promise<KanbanModelCatalog>;
+}
+
 export async function uploadChannelAttachment(projectId: string, channelId: string, threadId: string, file: File): Promise<Record<string, unknown>> {
   const query = new URLSearchParams({ name: file.name, thread_id: threadId });
   const response = await fetch(`${projectPrefix(projectId)}/channels/${encodeURIComponent(channelId)}/attachments?${query}`, {

@@ -145,23 +145,22 @@ test("Kanban Agent centers an empty chat and moves resources into the composer",
   expect(welcomeBox.bottom, "welcome should be above composer").toBeLessThan(composerBox.top);
   expect(composerBox.top - welcomeBox.bottom, "welcome and composer should form one focus area").toBeLessThan(100);
 
-  const trigger = composer.getByRole("button", { name: "Tools and resources" });
+  const trigger = composer.getByRole("button", { name: "Add to message" });
   await expect(trigger).toBeVisible();
   await trigger.click();
-  const menu = page.getByRole("menu", { name: "Tools and resources" });
+  const menu = page.getByRole("dialog", { name: "Add to message" });
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitemcheckbox", { name: /Conversation/ })).toBeVisible();
-  await expect(menu.getByRole("menuitemcheckbox", { name: /Artifacts/ })).toBeVisible();
-  await expect(menu.getByRole("menuitemcheckbox", { name: /Activity/ })).toBeVisible();
-  await expect(menu.getByRole("menuitemcheckbox", { name: /Agent profile/ })).toBeVisible();
-  await expect(menu.getByLabel("Agent runtime status")).toContainText(/Permission/);
-  await expect(menu.getByLabel("Agent runtime status")).toContainText(/tools available/);
+  await expect(menu.getByRole("button", { name: /Conversation/ })).toBeVisible();
+  await expect(menu.getByRole("button", { name: /Artifacts/ })).toBeVisible();
+  await expect(menu.getByRole("button", { name: /Activity/ })).toBeVisible();
+  await expect(menu.getByRole("button", { name: /Agent profile/ })).toBeVisible();
+  await expect(menu.getByText("Tool catalog", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).not.toBeVisible();
   await expect(trigger).toBeFocused();
 
   await trigger.click();
-  await menu.getByRole("menuitemcheckbox", { name: /Artifacts/ }).click();
+  await menu.getByRole("button", { name: /Artifacts/ }).click();
   await expect(page.getByRole("dialog", { name: "Artifacts" })).toBeVisible();
   await page.getByRole("button", { name: "Close artifacts" }).click();
   await expect(page.getByRole("dialog", { name: "Artifacts" })).not.toBeVisible();

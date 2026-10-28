@@ -1802,8 +1802,8 @@ def create_app(
         )
         try:
             events = EventLog(context.state_dir / "events.jsonl").read_all()
-        except Exception:
-            events = []
+        except Exception as exc:
+            raise HTTPException(503, "pending proposals unavailable") from exc
         return JSONResponse({
             "schema_version": "kanban-agent.pending-proposals.v1",
             "project_id": project_id,
@@ -7217,6 +7217,7 @@ def _run_headless_kanban_agent_turn(
     project_id: str,
     conversation_id: str,
     thinking_level: str = "",
+    model: str = "",
     permission_profile: str = KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE,
     config: ZfConfig | None = None,
     durable_run: Any | None = None,
@@ -7373,6 +7374,7 @@ def _run_headless_kanban_agent_turn(
             },
             on_message=delta_emitter.emit,
             thinking_level=thinking_level,
+            **({"model": model} if model else {}),
             permission_profile=permission_profile,
         )
         delta_emitter.flush()

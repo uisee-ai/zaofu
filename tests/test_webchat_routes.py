@@ -49,6 +49,58 @@ def test_runtime_route_is_wired_and_read_only(client: tuple[TestClient, Path]) -
     assert body["capabilities"]["completion_authority"] is False
 
 
+def test_model_catalog_is_token_gated_and_reports_failure(
+    client: tuple[TestClient, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from zf.web import kanban_model_catalog
+
+    web, _ = client
+    path = "/api/projects/default/webchat/model-catalog"
+    assert web.get(path).status_code == 403
+    monkeypatch.setattr(kanban_model_catalog, "codex_model_catalog", lambda _root, **_kwargs: {
+        "backend": "codex-headless", "models": [{"model": "example", "efforts": ["high"]}],
+    })
+    response = web.get(path, headers={"x-zf-web-token": "test-token"})
+    assert response.status_code == 200
+    assert response.json()["models"][0]["model"] == "example"
+
+    def fail(_root: Path, **_kwargs) -> dict:
+        raise RuntimeError("sensitive provider details")
+
+    monkeypatch.setattr(kanban_model_catalog, "codex_model_catalog", fail)
+    response = web.get(path, headers={"x-zf-web-token": "test-token"})
+    assert response.status_code == 503
+    assert "sensitive provider details" not in response.text
+
+
+def test_concurrent_model_catalog_requests_wait_instead_of_failing(
+    client: tuple[TestClient, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    from zf.web import kanban_model_catalog
+
+    web, state = client
+    started = threading.Event()
+    calls = []
+    def catalog(_root: Path, **kwargs) -> dict:
+        calls.append(kwargs)
+        started.set()
+        time.sleep(0.15)
+        return {"backend": "codex-headless", "models": []}
+    monkeypatch.setattr(kanban_model_catalog, "codex_model_catalog", catalog)
+    def fetch():
+        return web.get("/api/projects/default/webchat/model-catalog?thread_key=t&task_id=T", headers={"x-zf-web-token": "test-token"})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(fetch)
+        assert started.wait(2)
+        second = pool.submit(fetch)
+        assert first.result().status_code == 200
+        assert second.result().status_code == 200
+    assert all(call["state_dir"] == state and call["thread_key"] == "t" and call["task_id"] == "T" for call in calls)
+
+
 def test_runtime_returns_project_scoped_control_receipts(
     client: tuple[TestClient, Path],
 ) -> None:

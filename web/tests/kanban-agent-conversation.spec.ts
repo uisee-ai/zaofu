@@ -364,6 +364,11 @@ test("KBA-PLAN Plan choice resumes into Approve and survives reload", async ({ p
   await expect(planCard.getByRole("button", { name: "Chat about" })).toBeEnabled();
   await expect(planCard.getByRole("button", { name: "Continue" })).toBeDisabled();
 
+  const composer = page.getByRole("dialog", { name: "Kanban Agent" });
+  await composer.getByRole("button", { name: "Add to message" }).click();
+  await composer.getByRole("button", { name: "Reference plan" }).last().click();
+  await expect(composer.getByText("Discussing plan")).toBeVisible();
+  await composer.getByRole("button", { name: "Stop discussing plan" }).click();
   await planCard.getByRole("button", { name: "Chat about" }).click();
   // Simulate a stale browser preference that differs from the provider-bound
   // Plan. The discussion turn must still use the Plan's original backend.

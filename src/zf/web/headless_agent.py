@@ -741,6 +741,9 @@ class CodexHeadlessBackend:
         execution_deadline: float | None = None,
         image_inputs: list[dict[str, str]] | None = None,
         thinking_level: str = "",
+        model: str = "",
+        model_restore: dict[str, str] | None = None,
+        on_model_baseline: Callable[[dict[str, str]], None] | None = None,
         run_id: str = "",
         run_thread_id: str = "",
         project_id: str = "",
@@ -773,6 +776,7 @@ class CodexHeadlessBackend:
             env=_headless_subprocess_env(self._telemetry_env),
         )
         resumed = bool(provider_session_id)
+        one_turn_override = bool((model or thinking_level) and on_model_baseline is not None)
         fallback_reason = ""
         session_key = run_key(
             run_id=run_id,
@@ -805,7 +809,7 @@ class CodexHeadlessBackend:
                             "developerInstructions": system_prompt or None,
                             "persistExtendedHistory": True,
                             **security_config,
-                            **_codex_reasoning_config(thinking_level),
+                            **_codex_reasoning_config("" if one_turn_override or model_restore else thinking_level),
                         })
                         codex_thread_id = _extract_thread_id(result)
                     except RuntimeError as exc:
@@ -817,12 +821,18 @@ class CodexHeadlessBackend:
                         "experimentalRawEvents": False,
                         "persistExtendedHistory": True,
                         **security_config,
-                        **_codex_reasoning_config(thinking_level),
+                        **_codex_reasoning_config("" if one_turn_override or model_restore else thinking_level),
                     })
                     codex_thread_id = _extract_thread_id(result)
                     resumed = False
                 if not codex_thread_id:
                     raise RuntimeError("codex app-server returned no thread id")
+                if one_turn_override and on_model_baseline and not model_restore:
+                    baseline_model = str(result.get("model") or "").strip()
+                    baseline_effort = str(result.get("reasoningEffort") or "").strip()
+                    if not baseline_model or not baseline_effort:
+                        raise RuntimeError("provider did not expose restorable model and effort")
+                    on_model_baseline({"model": baseline_model, "thinking_level": baseline_effort})
                 client.thread_id = codex_thread_id
                 on_session_id(codex_thread_id)
                 turn_params: dict[str, Any] = {
@@ -832,8 +842,12 @@ class CodexHeadlessBackend:
                         for image in image_inputs or []
                     ],
                 }
-                if thinking_level:
-                    turn_params["effort"] = thinking_level
+                turn_model = model or str((model_restore or {}).get("model") or "")
+                turn_effort = thinking_level if model or thinking_level or not model_restore else str(model_restore.get("thinking_level") or "")
+                if turn_effort:
+                    turn_params["effort"] = turn_effort
+                if turn_model:
+                    turn_params["model"] = turn_model
                 client.turn_submitted = True
                 client.request("turn/start", turn_params)
                 (
@@ -954,12 +968,15 @@ class KanbanHeadlessAgent:
         context: dict[str, Any] | None = None,
         on_message: MessageCallback | None = None,
         thinking_level: str = "",
+        model: str = "",
         permission_profile: str = KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE,
     ) -> HeadlessTurnResult:
         backend = canonical_headless_backend(backend)
         permission_profile = normalize_kanban_permission_profile(permission_profile)
         if not backend or backend not in self.backends:
             return _backend_failure(backend or "unknown", "", "unsupported headless backend")
+        if model and backend != "codex-headless":
+            return _backend_failure(backend, "", "model selection is not supported for this provider")
         adapter = self.backends[backend]
         if not adapter.available():
             return _backend_failure(backend, "", f"{backend} command is unavailable")
@@ -1043,6 +1060,24 @@ class KanbanHeadlessAgent:
                 context=context,
             )
             started_at = time.monotonic()
+            provider = self.store._provider(thread, backend)
+            model_restore = provider.get("one_turn_model_restore")
+            if model_restore is not None and (
+                not isinstance(model_restore, dict)
+                or not model_restore.get("model")
+                or not model_restore.get("thinking_level")
+            ):
+                return _backend_failure(backend, thread_id, "stored model baseline is invalid")
+            def save_model_baseline(baseline: dict[str, str]) -> None:
+                if "one_turn_model_restore" not in provider:
+                    provider["one_turn_model_restore"] = baseline
+                    self.store.save(thread)
+
+            model_options = ({
+                "model": model,
+                "model_restore": model_restore,
+                "on_model_baseline": save_model_baseline,
+            } if backend == "codex-headless" and (model or thinking_level or model_restore) else {})
             result = adapter.run_turn(
                 prompt=prompt,
                 cwd=self.project_root,
@@ -1053,6 +1088,7 @@ class KanbanHeadlessAgent:
                 on_message=on_message,
                 timeout_s=self.timeout_s,
                 thinking_level=thinking_level,
+                **model_options,
                 run_id=str(context.get("process_run_id") or context.get("turn_id") or ""),
                 run_thread_id=str(context.get("run_thread_id") or thread_key),
                 project_id=str(context.get("project_id") or ""),
@@ -1071,6 +1107,7 @@ class KanbanHeadlessAgent:
                     on_message=on_message,
                     timeout_s=self.timeout_s,
                     thinking_level=thinking_level,
+                    **model_options,
                     run_id=str(context.get("process_run_id") or context.get("turn_id") or ""),
                     run_thread_id=str(context.get("run_thread_id") or thread_key),
                     project_id=str(context.get("project_id") or ""),
@@ -1093,6 +1130,8 @@ class KanbanHeadlessAgent:
                     if telemetry_launch is not None else {}
                 ),
             )
+            if model_restore and not model and not thinking_level and result.ok:
+                provider.pop("one_turn_model_restore", None)
             self.store.record_turn(thread, result=result, workdir=str(self.project_root))
             self._record_telemetry_result(
                 telemetry_launch,
@@ -2543,6 +2582,23 @@ def _codex_item_message(item: dict[str, Any], *, message_type: str) -> HeadlessM
         "item_type": item_type,
         "call_id": call_id,
     }
+    if message_type == "tool_result":
+        provider_status = str(payload.get("status") or "").lower()
+        exit_code = payload.get("exitCode")
+        result = payload.get("result")
+        is_error = payload.get("isError")
+        if isinstance(result, dict) and is_error is None:
+            is_error = result.get("isError")
+        if provider_status in {"failed", "error", "declined"} or is_error is True:
+            raw["tool_outcome"] = "failed"
+        elif provider_status in {"cancelled", "canceled"}:
+            raw["tool_outcome"] = "cancelled"
+        elif isinstance(exit_code, int) and not isinstance(exit_code, bool):
+            raw["tool_outcome"] = "completed" if exit_code == 0 else "failed"
+        elif is_error is False and provider_status == "completed":
+            raw["tool_outcome"] = "completed"
+        else:
+            raw["tool_outcome"] = "unknown"
     return HeadlessMessage(
         type=message_type,
         tool=tool,

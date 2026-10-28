@@ -6,6 +6,7 @@ interface DuringRunComposerActionsProps {
   canInterrupt: boolean;
   canSteer: boolean;
   disabled?: boolean;
+  sendingDisabled?: boolean;
   waitingForInput?: boolean;
   hasMessage: boolean;
   primaryAction: "queue" | "steer";
@@ -20,6 +21,7 @@ export function DuringRunComposerActions({
   canInterrupt,
   canSteer,
   disabled = false,
+  sendingDisabled = false,
   waitingForInput = false,
   hasMessage,
   primaryAction,
@@ -61,7 +63,7 @@ export function DuringRunComposerActions({
         aria-label="Steer this response sooner"
         className="during-run-steer-sooner"
         data-testid="during-run-steer-sooner"
-        disabled={disabled || !canInterrupt}
+        disabled={disabled || sendingDisabled || !canInterrupt}
         title="Tries to steer at the next safe point"
         type="button"
         onClick={() => runAction(onSteerSooner)}
@@ -89,7 +91,7 @@ export function DuringRunComposerActions({
           aria-label={primaryLabel}
           className="headless-send-button"
           data-testid="during-run-send-button"
-          disabled={disabled}
+          disabled={disabled || sendingDisabled}
           title={primaryLabel}
           type="button"
           onClick={() => runAction(runPrimary)}
@@ -97,18 +99,18 @@ export function DuringRunComposerActions({
           <ArrowUp size={21} />
         </button>
         <div aria-label="During-run actions" className="during-run-action-menu" role="menu">
-          <button disabled={!canSteer} role="menuitem" type="button" onClick={() => runAction(onSteer)}>
+          <button disabled={sendingDisabled || !canSteer} role="menuitem" type="button" onClick={() => runAction(onSteer)}>
             <Zap className="during-run-action-steer" size={16} />
             <span>Steer</span>
             {primaryIsSteer ? <kbd>Enter</kbd> : null}
           </button>
-          <button role="menuitem" type="button" onClick={() => runAction(onQueue)}>
+          <button disabled={sendingDisabled} role="menuitem" type="button" onClick={() => runAction(onQueue)}>
             <Clock3 className="during-run-action-queue" size={16} />
             <span>Queue</span>
             {!primaryIsSteer ? <kbd>Enter</kbd> : null}
           </button>
           <button
-            disabled={!canInterrupt}
+            disabled={sendingDisabled || !canInterrupt}
             role="menuitem"
             type="button"
             onClick={() => runAction(onSteerSooner)}

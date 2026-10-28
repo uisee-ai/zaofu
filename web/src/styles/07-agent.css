@@ -1502,6 +1502,7 @@
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
+  flex-wrap: wrap;
   gap: 2px;
 }
 

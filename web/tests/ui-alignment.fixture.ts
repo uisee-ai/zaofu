@@ -41,6 +41,15 @@ export async function installUiFixture(page: Page, options: { manyInbox?: boolea
     else if (/\/tasks\/[^/]+\/diff$/.test(path)) json = { task_id: path.split("/").at(-2), files: [], diff: "", base: "", head: "" };
     else if (/\/tasks\/[^/]+\/timeline$/.test(path)) json = { task_id: path.split("/").at(-2), items: [], attempts: [], events: [], summary: {} };
     else if (/\/tasks\/[^/]+$/.test(path)) json = { task: uiTasks.find((task) => task.id === path.split("/").at(-1)), events: [], contract: {}, briefing: { text: "" }, artifacts: [] };
+    else if (path.endsWith("/webchat/runtime")) {
+      const url = new URL(request.url());
+      json = { schema_version: "webchat-runtime.v1", project_id: path.split("/")[3] || "ui-review",
+        conversation_id: url.searchParams.get("conversation_id") || "kanban:ui-review",
+        thread_id: url.searchParams.get("thread_id") || "kanban:ui-review",
+        capabilities: { actions: [], controls: [], native_steer: false, steer_fallback: "queue", completion_authority: false },
+        turns: [], interactions: [], queue: [], threads: [], artifacts: [], messages: [],
+        tool_catalog: { schema_version: "webchat-tool-catalog.v1", digest: "fixture", surface: "kanban_agent", credentials_exposed: false, items: [] } };
+    }
     else if (path.includes("/events") || path.includes("/views/recent")) json = { items: [], current_seq: 1, next_cursor: null };
     else if (path.includes("pending-proposals")) json = { items: [] };
     else if (path.endsWith("/sessions")) json = { sessions: [], items: [] };
