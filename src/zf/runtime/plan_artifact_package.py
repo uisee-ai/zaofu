@@ -513,7 +513,14 @@ def prepare_plan_artifact_package(
     explicit_ports = materialize_explicit_plan_ports(
         state_dir=state_dir,
         project_root=project_root,
-        payload=payload,
+        # Candidate rework events can carry only immutable artifact refs and
+        # rely on this caller to identify the producing stage.  Bind that
+        # identity before materializing ports so ref-based and inline ports
+        # have the same producer contract.
+        payload={
+            **payload,
+            "stage_id": str(payload.get("stage_id") or producer_stage_id),
+        },
         flow_kind=flow_kind,
         required_ports=required_ports,
     )

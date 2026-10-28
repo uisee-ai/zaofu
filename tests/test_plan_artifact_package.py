@@ -471,6 +471,10 @@ def test_package_preparation_materializes_declared_exact_ref_port(tmp_path) -> N
     )
     assert review_port["ref"] == "artifacts/review.md"
     assert review_port["sha256"]
+    assert all(
+        port["producer_stage_id"] == "refactor-plan"
+        for port in package["produced"]
+    )
 
 
 def test_issue_requirement_snapshot_adapts_to_issue_spec_port(tmp_path) -> None:
