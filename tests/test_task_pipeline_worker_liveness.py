@@ -79,3 +79,33 @@ def test_later_legacy_assignment_is_not_hidden_by_terminal_pipeline(tmp_path):
     }))
     runtime.task_store.update("T1", active_dispatch_id="legacy-dispatch")
     assert runtime._active_task_for_instance("verify-1").id == "T1"
+
+
+@pytest.mark.parametrize("alive", [True, False])
+def test_settled_stage_remains_terminal_after_attempt_dispatch_is_cleared(tmp_path, monkeypatch, alive):
+    runtime, transport, _, _ = runtime_case(tmp_path, status="settled")
+    from zf.runtime.task_attempt_terminal import clear_matching_active_dispatch
+
+    clear_matching_active_dispatch(runtime, ZfEvent(
+        type="task.pipeline.verify.completed", task_id="T1",
+        payload={"dispatch_id": "dispatch-1"},
+    ))
+    assert runtime.task_store.get("T1").active_dispatch_id == ""
+    transport.alive_flags["verify-1"] = alive
+    monkeypatch.setattr(runtime, "_worker_liveness_stale", lambda role: (True, "old"))
+    runtime._dead_threshold = 1
+    assert runtime._active_task_for_instance("verify-1") is None
+    runtime._capture_logs()
+    assert transport.spawn_calls == []
+    assert transport.terminate_calls == []
+    assert runtime.task_store.get("T1").status == "in_progress"
+    assert not any(e.type in {"worker.stuck", "task.requeued"} for e in runtime.event_log.read_all())
+
+
+def test_new_running_stage_with_cleared_pin_remains_visible(tmp_path):
+    runtime, _, writer, identity = runtime_case(tmp_path, status="settled")
+    runtime.task_store.update("T1", active_dispatch_id="")
+    identity = {**identity, "operation_id": "op-2", "dispatch_id": "dispatch-2"}
+    writer.append(ZfEvent(type="workflow.operation.requested", task_id="T1", payload=identity))
+    writer.append(ZfEvent(type="workflow.operation.started", task_id="T1", payload=identity))
+    assert runtime._active_task_for_instance("verify-1").id == "T1"
