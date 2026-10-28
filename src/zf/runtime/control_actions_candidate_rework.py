@@ -185,6 +185,7 @@ class CandidateReworkActionsMixin:
         emitted: list[str] = []
         gap_task_ids: list[str] = []
         amended_identity: dict[str, Any] = {}
+        amended_source_index_ref = ""
         task_map_digest = ""
         superseded_generation = ""
         if rework_summary.get("gap_tasks"):
@@ -203,6 +204,7 @@ class CandidateReworkActionsMixin:
             task_map_ref = amend["task_map_ref"]
             gap_task_ids = list(amend["gap_task_ids"])
             task_map_digest = str(amend.get("task_map_digest") or "")
+            amended_source_index_ref = str(amend.get("source_index_ref") or "")
             superseded_generation = str(
                 payload.get("task_map_generation") or ""
             )
@@ -230,6 +232,7 @@ class CandidateReworkActionsMixin:
                     "gap_task_ids": gap_task_ids,
                     "gap_task_count": len(gap_task_ids),
                     "source_event_id": str(payload.get("source_event_id") or ""),
+                    "source_index_ref": amended_source_index_ref or str(payload.get("source_index_ref") or ""),
                     "source": "run_manager_gap_task_map_amend",
                 },
             )
@@ -311,6 +314,8 @@ class CandidateReworkActionsMixin:
             event_payload["amend_of"] = str(payload.get("task_map_ref") or "")
             event_payload["gap_task_ids"] = gap_task_ids
             event_payload["task_map_digest"] = task_map_digest
+            if amended_source_index_ref:
+                event_payload["source_index_ref"] = amended_source_index_ref
             event_payload["supersedes_task_map_generation"] = (
                 superseded_generation
             )
@@ -646,6 +651,7 @@ def _write_gap_task_map_amend(
         source_event_id=checkpoint_id or str(payload.get("source_event_id") or "event"),
         gap_tasks=gap_tasks,
         gap_plan_ref=str(rework_summary.get("gap_plan_ref") or ""),
+        source_index_ref=str(payload.get("source_index_ref") or ""),
         supersedes_task_ids=(
             _string_list(rework_summary.get("supersedes_task_ids"))
             or _string_list(payload.get("supersedes_task_ids"))

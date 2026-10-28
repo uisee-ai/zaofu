@@ -65,6 +65,7 @@ def write_gap_task_map_amend_artifact(
     source_event_id: str,
     gap_tasks: list[dict[str, Any]],
     gap_plan_ref: str = "",
+    source_index_ref: str = "",
     supersedes_task_ids: list[str] | None = None,
     successor_base_commit: str = "",
     replacement_context: dict[str, Any] | None = None,
@@ -179,8 +180,75 @@ def write_gap_task_map_amend_artifact(
         ),
         "completed_task_ids": completed_dependency_task_ids,
     }
+    if source_index_ref:
+        source_index = _write_gap_source_index_amend_artifact(
+            state_dir=state_dir,
+            project_root=project_root,
+            base_source_index_ref=source_index_ref,
+            pdd_id=pdd_id,
+            source_event_id=source_event_id,
+            gap_tasks=gap_tasks,
+        )
+        result["source_index_ref"] = source_index["source_index_ref"]
+        result["source_index_digest"] = source_index["source_index_digest"]
     result.update(history)
     return result
+
+
+def _write_gap_source_index_amend_artifact(
+    *,
+    state_dir: Path,
+    project_root: Path | None,
+    base_source_index_ref: str,
+    pdd_id: str,
+    source_event_id: str,
+    gap_tasks: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Carry source-index rows forward when task ids are replaced."""
+
+    source_path = _resolve_artifact_ref(
+        base_source_index_ref,
+        state_dir=state_dir,
+        project_root=project_root,
+    )
+    if not source_path.exists():
+        raise ValueError(f"base source_index_ref not found: {base_source_index_ref}")
+    source_index = json.loads(source_path.read_text(encoding="utf-8"))
+    if not isinstance(source_index, dict):
+        raise ValueError("base source_index must be a JSON object")
+    replacements = _replacement_ids_by_superseded(gap_tasks)
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, str):
+            successors = replacements.get(value)
+            return successors[0] if successors else value
+        if isinstance(value, list):
+            out: list[Any] = []
+            for item in value:
+                rewritten = rewrite(item)
+                if rewritten not in out:
+                    out.append(rewritten)
+            return out
+        if isinstance(value, dict):
+            return {key: rewrite(item) for key, item in value.items()}
+        return value
+
+    amended = rewrite(source_index)
+    artifact_rel = (
+        Path("artifacts")
+        / _safe_artifact_part(pdd_id or "unknown")
+        / "gap-amends"
+        / _safe_artifact_part(source_event_id or "event")
+        / "source_index.json"
+    )
+    artifact_path = Path(state_dir) / artifact_rel
+    serialized = json.dumps(amended, ensure_ascii=False, indent=2) + "\n"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(artifact_path, serialized)
+    return {
+        "source_index_ref": artifact_rel.as_posix(),
+        "source_index_digest": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+    }
 
 
 def validate_module_gap_plan_payload(payload: dict[str, Any]) -> ModuleGapPlanValidationResult:
