@@ -395,8 +395,8 @@ def test_required_manual_evidence_waits_at_recoverable_human_gate(
         correlation_id="manual-run",
         payload={
             "workflow_run_id": "manual-run",
-            "failure_class": "upstream_contract_gap",
-            "blocker_kind": "upstream_contract_gap",
+            "failure_class": "manual_evidence_required",
+            "blocker_kind": "external_gate",
             "reason": "independent human acceptance receipt is absent",
             "evidence_refs": ["command:release-audit#exit=1"],
         },

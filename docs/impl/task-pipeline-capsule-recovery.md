@@ -8,6 +8,10 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 
 故障修复后，监工核验当前 operation 已停止、说明投影与快照一致，再通过现有受控恢复动作/CLI 恢复。已批准 Task Map 的修订仍须通过正式 Planner/Critic、Plan Preview 和新 package 接纳；重启进程不等于恢复 Run，也不等于批准新计划。
 
+Completion Audit 将 Task Pipeline 任务退回队列前，按 task/dispatch 精确中断原 operation，并通过既有 operation settlement 关闭原 attempt；不能只清空 TaskStore 的 dispatch 而留下 running operation。中断保留请求哈希和阶段代际，可由 `zf recover workflow` 的 operation checkpoint 从原断点恢复。旧 dispatch 的重试事件不能中断新 operation。
+
+`upstream_contract_gap` 不等于人工证据缺失。合同列有未来人工验收义务时，带证据的上游契约阻塞仍交给已有语义重规划入口；人工门禁须有显式 manual/external 分类，或绑定人工命令的结构化失败证据。不得从合同中存在人工证据字段推断本次失败必须人工处理。
+
 验证：tests/test_task_pipeline_capsule.py 覆盖派发入口与真实 briefing/transport 调用边界；tests/test_task_context_recovery.py 覆盖分类与 Run Manager 重规划排除；保留 pipeline、TaskDoc、result submit 和 flow mock E2E 回归。
 
 真实恢复时还发现：候选 Task Map 保留了草稿状态，Planner 预检放行、Critic 通过后才被 Package 门禁拒绝。预检现在也检查必需 Task Map / Source Inventory 中显式声明的 enrichment contract：只有 status=ready 且 enrichment=fulfilled 才能提交；无该契约的历史输入保持兼容。复用已有矩阵检查，不自动把草稿改为 ready，也不替代语义审核。tests/test_plan_enriched_port_readiness.py 覆盖两个端口，以及同一次 result submit 被拒绝后修正并重新提交的实际入口。

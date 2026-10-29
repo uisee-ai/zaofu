@@ -6204,6 +6204,11 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
             str(getattr(task, "assigned_to", "") or "")
             or str(payload.get("recommended_role") or payload.get("role") or "")
         )
+        from zf.runtime.task_pipeline_completion_recovery import interrupt_completion_operation
+
+        interrupt_completion_operation(
+            self, event, task_id=task_id, dispatch_id=active_dispatch_id,
+        )
         previous_status = task.status
         updates: dict[str, Any] = {
             "status": "backlog",

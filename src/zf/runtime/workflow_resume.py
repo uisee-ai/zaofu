@@ -311,6 +311,7 @@ def build_workflow_operation_resume_checkpoints(
                 "graceful_stop",
                 "fast_stop",
                 "task_pipeline_attempt_lease_expired",
+                "completion_audit_retry",
             }
         ):
             action = "redrive_interrupted_task_pipeline_operation"
