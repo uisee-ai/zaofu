@@ -65,3 +65,5 @@ Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role
 同一个 operation 的 request placement 不随重派变化。Hook 必须用当前 active_attempt_id、dispatch_id、lease_id、workflow/task 身份绑定 kernel 的 task.attempt.started，再核对派发位置；不能因 request 的首次 placement 不同而退回旧 role 目录，也不能仅删除 placement 校验。tests/test_hook_redrive_placement.py 覆盖真实写入守卫入口及伪造/过期身份拒绝。
 
 Gap amend 删除被替代任务、追加新任务后，原 task_input_policy 的数组位置不再有效。生成器按 task_id 重绑已有读取路径，新增任务只继承显式 parent/supersedes 的分区并添加自身合同；缺少来源分区时拒绝，不授予整份计划。source_refs/amend 是生成器维护的共享来源元数据。保留完整覆盖校验与不可变原始工件，通过新 amend/package 和正常批准发布修正版。tests/test_gap_input_policy_rebinding.py 覆盖替代、位置移动、只读依赖、重复生成与缺失来源。
+
+增量计划的读取契约覆盖整个 Plan Artifact Package。继承的 acceptance/execution/source/test 等端口也必须给 gap task 绑定显式 parent/supersedes 分区；只变更读取元数据，不改验收语义，不把验证证据变成 passed。生成新不可变 sidecar，记录原 ref/digest，并保留源分区覆盖。Package 接纳前逐端口检查新任务的输入分区，避免在 Impl 派发时才发现缺失。Product Acceptance 的 exact prior lineage 校验保持生效。验证：tests/test_gap_package_input_partitions.py 从 prepare_plan_artifact_package 入口覆盖多个继承端口、旧工件不变与缺失父分区拒绝。

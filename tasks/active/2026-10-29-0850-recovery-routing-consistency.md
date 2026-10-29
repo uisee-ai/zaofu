@@ -38,3 +38,11 @@ dev-verify plan --base 94e1ea9 已运行；共享 reactor 导入闭包推荐全�
 R5/R6 修复前新增回归 2 failed；修复后定向调用链 122 passed，新增负例与幂等测试 4 passed。P12A g3 受控 retry 预览允许，尚未直接修改任何 Task 状态。
 
 第二轮最终定向 124 passed，sentinel 50 passed / 1 skipped；dev-verify plan --base 59d574f 再次因共享 gap/hook 调用闭包推荐 broad deterministic，按 AGENTS.md 保持领域定向层级，包含 gap bridge、Goal gap、Hook 接收/写入守卫、受控 retry 与 flow smoke，未宣称全量通过。
+
+## Package 级读取闭包
+
+R7：继续派发发现 task_map 之外的 8 个继承端口还缺少 P02 新任务分区。step -> verify: 在 package 生产入口给显式 parent/supersedes 补齐只读分区，生成新 sidecar 并保留验收正文；缺失来源在接纳前拒绝。新增入口回归修复前 2 failed，修复后 package/admission/ports/acceptance/review/read-scope/gap runtime/flow smoke 定向 81 passed。实际 Package 13 端口 × 35 任务，共 455 次完整分区解析通过。
+
+操作记录：首次按原始 base 重发 gap 时，ProductAcceptance exact prior lineage 正确拒绝（evt-ec5fb691795f），原因是上一次增量包已接纳。改为以已接纳版本为前版生成独立修复工件；期间历史 stage cap escalation 使 Run blocked，通过 zf goal set --status active（evt-2b3b64e36cda）恢复，无预算重置。evt-2a523a3f4ee9 / Package 6a4045063a40e651a4c084ef9c2db4e1dc06179c84f5aead0802e18281d30681 已接纳/审批；它修正 task_map，R7 继续修正整个 package，不能将中间版本当最终恢复成功。
+
+P12A 已通过 zf recover task-impl 恢复 g3/p5（evt-b20a2130c69d），实际 hook 匹配正确 Task Workspace；09:23 UTC 已发生测试文件写入与 runtime/browser 执行，先前工作目录拒绝消失。部署回归曾因跨 worktree conftest/import-root 断言拒绝测试收集；把本轮新测试部署到同一源码目录后 4 passed，加已有 main 定向 47 passed。

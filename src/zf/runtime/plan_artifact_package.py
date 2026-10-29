@@ -618,6 +618,13 @@ def prepare_plan_artifact_package(
         workflow_run_id=workflow_run_id, flow_kind=flow_kind,
         explicit_ports=explicit_ports, inherited=inherited,
     )
+    from zf.runtime.plan_gap_input_partitions import rebind_gap_port_partitions
+
+    rebind_gap_port_partitions(
+        state_dir=state_dir, task_map=task_map, payload=payload,
+        explicit_ports=explicit_ports, inherited=inherited,
+        source_event_id=source_event_id,
+    )
     product_acceptance_port = next(
         (
             port
