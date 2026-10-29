@@ -84,9 +84,14 @@ def request_impl_retry(
     operation_id: str,
     reason: str,
     apply: bool = False,
+    config: Any = None,
+    authorize_extra_attempt: bool = False,
+    approval_ref: str = "",
 ) -> dict[str, Any]:
     if not reason.strip():
         raise ValueError("operator repair reason is required")
+    if authorize_extra_attempt and not approval_ref.strip():
+        raise ValueError("extra attempt requires explicit approval_ref")
     with locked_path(state_dir / "locks" / "task-pipeline-operator-retry.lock"):
         events = event_log.read_all()
         operation, source = _retryable_operation(
@@ -96,6 +101,25 @@ def request_impl_retry(
             events,
         )
         task_id = operation["task_id"]
+        from zf.runtime.task_pipeline_reconciler import task_pipeline_policy_for_contexts
+
+        policy = task_pipeline_policy_for_contexts(
+            config, task_pipeline_generation_contexts(events), task_ids=[task_id],
+        )
+        if authorize_extra_attempt and policy is None:
+            raise ValueError("extra attempt requires the current Task Pipeline policy")
+        next_generation = int(operation["operation_generation"]) + 1
+        granted = next((e for e in events if (
+            e.type == "task.rework.requested" and e.origin == "kernel"
+            and e.payload.get("source") == SOURCE
+            and e.payload.get("operation_id") == operation_id
+            and e.payload.get("source_event_id") == source.id
+            and e.payload.get("authorized_next_operation_generation") == next_generation
+            and str(e.payload.get("approval_ref") or "").strip()
+        )), None)
+        if (policy is not None and int(operation["operation_generation"]) > int(policy.get("max_rework_attempts", 0))
+                and not authorize_extra_attempt and granted is None):
+            raise ValueError("Impl rework cap exhausted; an explicit one-generation approval is required")
         task = TaskStore(state_dir / "kanban.json").get(task_id)
         if task is None or task.status not in {"in_progress", "backlog"}:
             raise ValueError("task is not eligible for Impl retry")
@@ -111,6 +135,7 @@ def request_impl_retry(
                 and event.origin == "kernel"
                 and event.payload.get("source") == SOURCE
                 and event.payload.get("operation_id") == operation_id
+                and (not authorize_extra_attempt or event.payload.get("authorized_next_operation_generation") == next_generation)
             ):
                 return {
                     "status": "already_requested",
@@ -121,10 +146,13 @@ def request_impl_retry(
             "status": "preview",
             "operation_id": operation_id,
             "task_id": task_id,
-            "next_operation_generation": int(operation["operation_generation"]) + 1,
+            "next_operation_generation": next_generation,
             "source_event_id": source.id,
             "reason": reason.strip(),
         }
+        grant = ({"authorized_next_operation_generation": next_generation,
+                  "approval_ref": approval_ref.strip()} if authorize_extra_attempt else {})
+        result.update(grant)
         if apply:
             event = event_writer.append(
                 ZfEvent(
@@ -143,6 +171,7 @@ def request_impl_retry(
                         "operation_generation": operation["operation_generation"],
                         "source_event_id": source.id,
                         "reason": reason.strip(),
+                        **grant,
                     },
                 )
             )
@@ -193,4 +222,10 @@ def operator_impl_retry_requests(
             "reason": p.get("reason"),
             "expected_action": "resume_impl_after_operator_repair",
         }
+        if (p.get("authorized_next_operation_generation") == int(operation["operation_generation"]) + 1
+                and str(p.get("approval_ref") or "").strip()):
+            requests[operation["task_id"]].update({
+                "authorized_next_operation_generation": p["authorized_next_operation_generation"],
+                "approval_ref": p["approval_ref"],
+            })
     return requests

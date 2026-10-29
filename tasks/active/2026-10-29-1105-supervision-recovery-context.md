@@ -11,3 +11,7 @@
 现场：P02 在 10:11 UTC 达到 context 硬阈值后重启 provider，但 recovery briefing 注入失败；10:26 租约过期 suspended，直到本次监工仍未自愈。新增回归原代码 2 failed。
 
 验证：原代码新增 2 项回归失败；修复后定向 recovery/result-submit/capsule/watchdog/mock flow 120 passed。dev-verify plan/run --base 71d6844 --tests tests/test_recovery_attempt_context.py 的 27 文件闭包 642 passed（排除 host/real_provider/serial/perf），sentinel 50 passed / 1 skipped。真实账本只读查询：旧 lifecycle 选择 P03，新 lifecycle 选择 P02-PUBLISH-CONTRACT。P02 checkpoint op-resume-afd927ff3751fd9e0c49f61d 可重派；P12A bounded retry 预览允许进入 g4。
+
+S4（恢复中发现）：P12A 当前 g3 已超过 max_rework_attempts=2，恢复 CLI 仍返回 requested，调度器静默维持 blocked。step -> verify: CLI 预览/执行明确检查配置额度；操作员额外一次授权必须带 approval_ref，绑定原已接纳结果和恰好下一 generation；缺失/伪造/过期授权不能越过预算，正常校验层保留。本次依据用户此前“需要人工批准的，你来批准”及持续修复授权，只批准 P12A g3→g4 一次，原因是两次基础设施阻塞已有可复现修复和验证，不修改全局配置额度。
+
+S4 验证：定向 86 passed；dev-verify plan/run --base 7725d3f --tests tests/test_operator_retry_extra_generation.py 的 21 文件闭包 196 passed，包含 8-slot mock verify 与 OA/WRC dispatch E2E；sentinel 50 passed / 1 skipped。未声明 full pytest 或完整真实产品验收。

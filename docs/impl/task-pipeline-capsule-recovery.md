@@ -36,7 +36,7 @@ zf recover task-impl --operation <operation-id> --reason '<修复与验证证据
 # 核对后使用同样参数并加 --apply
 ```
 
-默认不追加事件；apply 经 Run Contract 检查，只为当前已接纳的 blocked Impl 记录 task.rework.requested，绑定原结果、任务代际和 operation。重复请求幂等，旧代际/已通过/有更新 operation/活跃 attempt/终态任务或 Run 均拒绝。调度器继续使用原 Plan 和合同，在原 max_rework_attempts 预算内派发下一 operation generation；不重开旧 operation，不伪造 passed，不自动批准新计划。后续仍需 Impl 结果、TaskRef 接纳与 Verify。
+默认不追加事件；apply 经 Run Contract 检查，只为当前已接纳的 blocked Impl 记录 task.rework.requested，绑定原结果、任务代际和 operation。重复请求幂等，旧代际/已通过/有更新 operation/活跃 attempt/终态任务或 Run 均拒绝。调度器继续使用原 Plan 和合同，默认在原 max_rework_attempts 预算内派发下一 operation generation；不重开旧 operation，不伪造 passed，不自动批准新计划。后续仍需 Impl 结果、TaskRef 接纳与 Verify。
 
 ## Verify 后的集成失败与 Worker 生命周期
 
@@ -73,3 +73,5 @@ Gap amend 删除被替代任务、追加新任务后，原 task_input_policy 的
 同一 operation 可以跨多个 attempt 重派，稳定的签名 scratch 路径不表示可复用上一 attempt 的结果。草稿准备入口记录 attempt 元数据；同 attempt 保留编辑，跨 attempt 将原始草稿写入不可变 retired-result-drafts 工件并生成新模板。旧版本无元数据时，仅 Impl self_check 中相同 attempt_id 可证明同次重放；其余情况保留旧草稿后重新准备，不能重标旧的通过证据。Impl 与 Verify 的执行卡共用此规则。
 
 生命周期查询对已证明 terminal 的 Task Pipeline dispatch，即使 TaskStore 已清空 active_dispatch_id，也不再把它当作该 worker 的执行责任。保留 Task in_progress 以等待其他阶段，不影响另一任务在同一物理槽位执行；新的 legacy 派发继续覆盖旧终态事实。
+
+恢复预览会检查当前 Flow 的返工上限，耗尽时明确拒绝，不能仅追加一个永远不会派发的请求。经操作员明确审核的额外一次恢复可使用 `zf recover task-impl --operation <id> --reason <修复证据> --authorize-extra-attempt --approval-ref <批准来源>` 预览，再加 `--apply`。批准只绑定当前已接纳 blocked 结果、原 operation 和恰好下一代 Impl；通过 kernel 请求账本重放。它不修改 YAML 全局额度，不重开终态 operation，不替未来代际授权，正常 Verify/集成及后续预算仍生效。
