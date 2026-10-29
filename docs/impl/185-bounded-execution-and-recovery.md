@@ -1050,3 +1050,19 @@ task-scoped `task_execution_input` 时，Impl/Task Verify 按各自声明读取�
 - 执行 skill 用绑定当前合同和 HEAD 的续跑说明保存语义进度，并优先取得最小可执行检查反馈；不改变原 AC、证据所有权或人工审批门槛。
 
 恢复 briefing 的 Git 上下文复用当前 Task Pipeline 派发的任务工作区，终结 Attempt 不再授权旧工作区。原生压缩后的新低水位采样会清除过期 `pending_recycle`，已有回收过程和陈旧样本不受影响，防止刚恢复语义理解便再次丢失会话。
+
+2026-10-28 FMS 恢复补充：新建必读声明对 `plan-port-*` 的同一非空 ref、摘要、
+JSON selector、读取限制、访问范围和保留策略去重；完整 manifest/Package 中的逻辑
+端口保留。不同来源路径、摘要、选择范围或读取限制不合并，非 Plan 验证证据不合并；
+已有 attempt 的不可变 policy 和读取账本不改写，也不跨 attempt 或 Impl/Verify 继承收据。
+
+原生压缩后，只有新用量样本低于 warning threshold 才撤销 `pending_recycle`，
+并按当前 Task/fanout 恢复 busy/idle 投影；未知/重复样本及已经 recycling 的实例不撤销。
+硬上限和 drain hold 强制回收规则保留。恢复简报的 Git 事实优先来自已准入的活跃
+Task Pipeline 工作树，与 respawn 的 cwd 解析一致；终态 attempt 不作为恢复工作树。
+这保证事实采集位置正确，不等同于模型语义记忆；语义理解和下一步仍由 worker 持续
+写入批准合同要求的 continuation 工件，再由后续独立验证检查。
+
+新增回归先复现8项失败，修复后聚焦闭包162项通过（包含v4 runtime-noise mock E2E），
+premerge sentinel 51项通过。验证选择器对这3处代码选出200个文件并升级全套；本轮实际
+执行上述读取门禁、恢复/硬上限、角色生命周期和v4模拟闭包，未执行全仓或产品E2E。
