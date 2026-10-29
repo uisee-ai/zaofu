@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：55e3039 fix: preserve current plan authority during rescan reader hydration
 
 # 重规划 reader 保留当前 Plan 身份
 
@@ -12,3 +14,5 @@ TDD：实际 reader preregistration 先以旧 package/current package 不匹配�
 
 验证规划器因超大 orchestrator 依赖闭包自动建议全量确定性套件，已停止该进程树；本次仅 reader 合同 hydration 边界，按 AGENTS.md 改为明确的 11 文件影响闭包，不把中断全量计为通过。首轮 436 passed；结构冻结门禁阻止向超大模块继续追加，因此将既有单一责任函数移入 reader_contract_target.py，原入口委托，再跑同一闭包。
 最终同一影响闭包 436 passed；sentinel 50 passed / 1 skipped；stale-contract/恢复/语义控制 mock E2E 8 passed。
+
+部署后入口回归 3 passed；保留 worker 重启 PID 2572055。受控新代际批准 evt-b21c610e2760 恢复 Run；实际 reader 派发 evt-d472d492cb7a 固定当前候选 1451f1b 与 Plan 6b9d432，provider 开始读取 briefing。产品扫描结论仍待独立产物，不计为业务完成。
