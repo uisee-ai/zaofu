@@ -78,6 +78,11 @@ context for runtime truth, task scope, and completion claims.
 - 在合同允许的路径维护续跑说明，绑定当前合同/工件摘要、HEAD、已理解的约束、
   AC 与检查进度、下一步；重派时重新核对绑定。它帮助恢复语义理解，不替代原文、
   命令收据或独立 Verify，也不把旧尝试的成功声明移作本次通过。
+- 检查点是继续实施的依据，不是结束当前 attempt 的理由。合同范围内的代码、测试、
+  固定验证入口尚未写完，或刚完成一次薄切片提交时，继续实现和复跑；不能仅因
+  “本轮未完成”提交失败/阻塞结果。未完成项只有在确有外部依赖、权限、环境、合同
+  冲突或运行时明确要求暂停时才据实交回，附已尝试的动作及恢复所需条件；不要虚构
+  限额或阻塞。真实故障仍使用当前 briefing 的失败/暂停渠道，不绕过预算或门禁。
 - 工作区守卫、runner 或工件交付失败时，先核对本次任务 workdir、完整目标路径、
   attempt/dispatch 与拒绝事件；使用当前输出 profile 支持的结构化故障字段和证据。
   `workspace_binding_mismatch` / `runner_failure` / `input_delivery_failed` 不能仅凭
@@ -127,7 +132,8 @@ context for runtime truth, task scope, and completion claims.
   briefing. Do not infer an event name or duplicate its mechanical field list
   here.
 - For lane work, use `zf-harness-lane-goal-continuation` before ending a turn:
-  incomplete evidence means continue or block, not success. Include lane
+  incomplete evidence means continue work, or report a concrete blocker under
+  the rule above, never success. Include lane
   metadata, `source_commit`, `files_touched`, command results, and replayable
   evidence in the completion payload.
 
