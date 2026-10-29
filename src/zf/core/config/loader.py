@@ -713,6 +713,8 @@ def _build_orchestration_flow_policy(
         "checkpoint_policies",
         "pilot_id",
         "shadow_sample_percent",
+        "autonomous_actions",
+        "review_blocked_tasks",
     }
     unknown = sorted(str(key) for key in data if str(key) not in known)
     if unknown:
@@ -812,12 +814,28 @@ def _build_orchestration_flow_policy(
         raise ConfigError(
             f"{path}.pilot_id requires one blocking checkpoint"
         )
+    actions = data.get("autonomous_actions")
+    if actions is not None:
+        if (not isinstance(actions, list)
+                or any(not isinstance(item, str) for item in actions)
+                or set(actions) - {"delegate", "continue", "rework"}
+                or len(actions) != len(set(actions))):
+            raise ConfigError(f"{path}.autonomous_actions must list unique delegate/continue/rework actions")
+        if mode != "semantic_control":
+            raise ConfigError(f"{path}.autonomous_actions requires semantic_control")
+    review_blocked = data.get("review_blocked_tasks", False)
+    if not isinstance(review_blocked, bool):
+        raise ConfigError(f"{path}.review_blocked_tasks must be boolean")
+    if review_blocked and (actions is None or "semantic_failure" not in checkpoints):
+        raise ConfigError(f"{path}.review_blocked_tasks requires autonomous_actions and semantic_failure")
     return WorkflowOrchestrationFlowPolicyConfig(
         mode=mode,
         checkpoints=checkpoints,
         checkpoint_policies=policies,
         pilot_id=pilot_id,
         shadow_sample_percent=shadow_sample_percent,
+        autonomous_actions=actions,
+        review_blocked_tasks=review_blocked,
     )
 
 
@@ -856,6 +874,8 @@ def _build_workflow_orchestration(
         "checkpoint_policies",
         "pilot_id",
         "shadow_sample_percent",
+        "autonomous_actions",
+        "review_blocked_tasks",
         "flow_policies",
         "max_plan_revisions",
         "no_progress_limit",
@@ -875,6 +895,8 @@ def _build_workflow_orchestration(
                 "checkpoint_policies",
                 "pilot_id",
                 "shadow_sample_percent",
+                "autonomous_actions",
+                "review_blocked_tasks",
             )
             if key in data
         },
@@ -919,6 +941,8 @@ def _build_workflow_orchestration(
         checkpoint_policies=root.checkpoint_policies,
         pilot_id=root.pilot_id,
         shadow_sample_percent=root.shadow_sample_percent,
+        autonomous_actions=root.autonomous_actions,
+        review_blocked_tasks=root.review_blocked_tasks,
         flow_policies=flow_policies,
         max_plan_revisions=max_plan_revisions,
         no_progress_limit=no_progress_limit,

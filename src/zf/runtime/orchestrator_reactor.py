@@ -502,8 +502,12 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
                     task_id=str(event.task_id or ""),
                     reason=f"{event.type} → {reason} → human",
                 )
-            if note == "input_unchanged":
-                reason = "canonical input unchanged after semantic scan rejection"
+            if note in {"input_unchanged", "infrastructure_failure"}:
+                reason = (
+                    "execution infrastructure must be repaired before controlled reader retry"
+                    if note == "infrastructure_failure"
+                    else "canonical input unchanged after semantic scan rejection"
+                )
                 try:
                     self.escalation.escalate(
                         f"{event.type}: {reason}; owner action is required",

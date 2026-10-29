@@ -130,6 +130,8 @@ class TaskContractAuthorityService:
         task_updates: Mapping[str, Any] | None = None,
         audit_payload: Mapping[str, Any] | None = None,
         reopen_terminal: bool = False,
+        expected_task_status: str | None = None,
+        expected_blocked_by: list[str] | None = None,
     ) -> TaskContractMutation:
         current = self.task_store.get(task.id)
         if current is None:
@@ -183,6 +185,8 @@ class TaskContractAuthorityService:
                     task.id,
                     expected_authority_revision=expected_revision,
                     updates=effective_task_updates,
+                    expected_status=expected_task_status,
+                    expected_blocked_by=expected_blocked_by,
                 )
                 if not applied or updated is None:
                     actual = current_authority_revision(updated) if updated else ""
@@ -269,6 +273,8 @@ class TaskContractAuthorityService:
             contract_authority_sequence=sequence,
             task_updates=effective_task_updates,
             reopen_terminal=reopen_terminal,
+            expected_status=expected_task_status,
+            expected_blocked_by=expected_blocked_by,
         )
         if not applied or updated is None:
             actual = current_authority_revision(updated) if updated else ""

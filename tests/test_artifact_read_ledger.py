@@ -15,9 +15,60 @@ from zf.runtime.artifact_read_ledger import (
     materialize_attempt_source_ref,
     read_attempt_artifact,
     render_attempt_source_briefing,
+    required_read_satisfied,
     seal_read_ledger,
     validate_required_reads,
 )
+
+
+def test_required_read_accepts_only_contiguous_complete_pages(tmp_path: Path) -> None:
+    source = tmp_path / "artifacts" / "input.json"
+    source.parent.mkdir()
+    source.write_text(json.dumps({"body": "中文 abcdefghijklmnop"}, ensure_ascii=False), encoding="utf-8")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run", task_id="T1", attempt_id="attempt", dispatch_id="dispatch",
+        sources=[{"source_id": "s", "artifact_id": "a", "ref": "artifacts/input.json", "sha256": digest}],
+    )
+    requirement = {"source_id": "s", "artifact_id": "a", "artifact_sha256": digest,
+                   "json_path": "$.body", "min_returned_bytes": 1}
+    pages = []
+    start = 0
+    while True:
+        result = read_attempt_artifact(tmp_path, manifest=manifest, source_id="s", artifact_id="a",
+                                       json_path="$.body", page_start=start, page_size=5)
+        row = result["read"]
+        pages.append(row)
+        if row["page_end"] == row["page_total"]:
+            break
+        start = row["page_end"]
+    assert len(pages) > 2
+    assert not required_read_satisfied(pages[:-1], requirement)
+    assert not required_read_satisfied([pages[0], *pages[2:]], requirement)
+    assert required_read_satisfied(list(reversed(pages)), requirement)
+    corrupted = [dict(row, selected_sha256="0" * 64) if i == 1 else row
+                 for i, row in enumerate(pages)]
+    assert not required_read_satisfied(corrupted, requirement)
+    assert not required_read_satisfied(pages, {**requirement, "artifact_sha256": "0" * 64})
+    assert not required_read_satisfied(pages, {**requirement, "min_returned_bytes": 100000})
+
+
+def test_item_limit_cannot_satisfy_an_untruncated_required_read(tmp_path: Path) -> None:
+    source = tmp_path / "artifacts" / "input.json"
+    source.parent.mkdir()
+    source.write_text(json.dumps({"items": [1, 2, 3]}), encoding="utf-8")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run", task_id="T1", attempt_id="attempt", dispatch_id="dispatch",
+        sources=[{"source_id": "s", "artifact_id": "a", "ref": "artifacts/input.json", "sha256": digest}],
+    )
+    result = read_attempt_artifact(tmp_path, manifest=manifest, source_id="s", artifact_id="a",
+                                   json_path="$.items", max_items=1)
+    assert result["read"]["truncated"] is True
+    assert not required_read_satisfied([result["read"]], {
+        "source_id": "s", "artifact_id": "a", "artifact_sha256": digest,
+        "json_path": "$.items", "allow_truncated": False,
+    })
 
 
 def test_stage_profiles_declare_only_their_canonical_required_inputs() -> None:

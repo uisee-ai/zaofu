@@ -135,6 +135,14 @@ def admit_orchestrator_agent_decision(
             != expected["task_map_generation"]
         ):
             return _reject("plan_package_stale", operation_id=operation_id)
+    from zf.runtime.orchestrator_agent_execution_policy import execution_decision_rejection
+
+    try:
+        rejection = execution_decision_rejection(runtime, decision=decision, request=request)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        rejection = "execution_authority_invalid:" + type(exc).__name__
+    if rejection:
+        return _reject(rejection, operation_id=operation_id)
     return OrchestratorAgentAdmission(
         admitted=True,
         reason="current_typed_decision",

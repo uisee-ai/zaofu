@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.execution_context_failure import execution_context_failure
 
 
 # PREREQ-B (2026-05-18, doc 40 §6 I57): single source of truth via
@@ -108,7 +109,7 @@ def is_plan_level_task_contract_blocker(event: ZfEvent) -> bool:
     payload = event.payload if isinstance(event.payload, dict) else {}
     failure_class = str(payload.get("failure_class") or "").strip().lower()
     blocker_kind = str(payload.get("blocker_kind") or "").strip().lower()
-    if "task_context_stale" in {failure_class, blocker_kind}:
+    if execution_context_failure(payload):
         return False
     semantic_kind = (
         failure_class in {
@@ -294,22 +295,15 @@ def classify_rework_trigger(
         )
 
     explicit_failure_class = str(payload.get("failure_class") or "").strip()
-    if event.type == "dev.blocked" and "task_context_stale" in {
-        explicit_failure_class,
-        str(payload.get("blocker_kind") or "").strip(),
-    }:
+    context_failure = execution_context_failure(payload)
+    if context_failure:
         return _result(
             "harness_rule_issue",
-            "task_context",
+            context_failure,
             "harness",
             "suspend_for_harness_fix",
-            "task projection/snapshot versions disagree; repair and validate "
-            "execution context before controlled retry, not product replan",
-        )
-    if explicit_failure_class in {"harness_failure", "runtime_result_admission"}:
-        return _result(
-            "harness_rule_issue", gate or "result_admission", "harness",
-            "suspend_for_harness_fix", "producer reports a runtime admission failure",
+            "typed execution blocker requires context repair and validation "
+            "before controlled retry; it does not establish a product plan gap",
         )
     if explicit_failure_class in {
         "candidate_environment_setup_failed",

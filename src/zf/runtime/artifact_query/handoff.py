@@ -116,6 +116,7 @@ class CanonicalHandoffResolver:
                     and mutable.get("canonical_success_event") == "flow.discovery.child.completed"
                 ),
                 candidate=profile == "candidate-verify",
+                profile=profile,
             )
             if profile in {"implementation", "task-verify", "candidate-verify"} or (
                 profile == "workflow-read"
@@ -719,14 +720,14 @@ class CanonicalHandoffResolver:
     def _current_plan_port_sources(
         self, *, workflow_run_id: str, task_id: str,
         currentness: Mapping[str, Any], allow_without_task: bool = False,
-        candidate: bool = False,
+        candidate: bool = False, profile: str = "",
     ) -> list[dict[str, Any]]:
         from zf.runtime.task_scoped_plan_inputs import current_plan_port_sources
 
         return current_plan_port_sources(
             state_dir=self.state_dir, workflow_run_id=workflow_run_id,
             task_id=task_id, currentness=currentness,
-            allow_without_task=allow_without_task, candidate=candidate,
+            allow_without_task=allow_without_task, candidate=candidate, profile=profile,
         )
 
     def _validate_task_snapshots(

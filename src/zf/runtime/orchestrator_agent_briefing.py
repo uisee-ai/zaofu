@@ -132,6 +132,7 @@ def build_orchestrator_agent_operation_briefing(
                     "capability_refs": [],
                     "preferred_role_refs": ["replace-with-configured-role"],
                     "skill_refs": [],
+                    "dispatch_rank": 0,
                 }],
                 "context_routes": [{
                     "work_unit_id": "replace-with-task-or-stage",

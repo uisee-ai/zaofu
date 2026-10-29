@@ -54,6 +54,7 @@ def reconcile_task_pipeline_semantic_exhaustion(
             "workflow_run_id": str(
                 context.get("workflow_run_id") or ""
             ),
+            "flow_kind": str(context.get("flow_kind") or ""),
             "task_map_generation": str(
                 context.get("task_map_generation") or ""
             ),

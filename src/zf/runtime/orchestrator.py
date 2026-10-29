@@ -2097,6 +2097,16 @@ class WorkflowRuntimeCoordinator(
             return False
         if task.status != "in_progress":
             return False
+        try:
+            terminal_dispatch = self._terminal_task_pipeline_assignments().get(
+                (task.id, instance_id),
+            )
+        except Exception:
+            terminal_dispatch = None
+        if terminal_dispatch and task.active_dispatch_id in {"", terminal_dispatch}:
+            # Task status can remain in_progress after a blocked result or
+            # while awaiting integration; the ended stage no longer owes heartbeats.
+            return False
         if (task.assigned_to or "") == instance_id:
             return True
         try:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Iterable, Mapping
 from pathlib import Path
 
@@ -169,6 +170,11 @@ def build_canonical_required_reads(
 
     deduped: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, str]] = set()
+    source_by_identity = {
+        (str(source.get("source_id") or ""), str(source.get("artifact_id") or ""),
+         str(source.get("sha256") or "")): source for source in sources
+    }
+    seen_plan_slices: set[tuple[Any, ...]] = set()
     for row in rows:
         key = (
             str(row.get("source_id") or ""),
@@ -179,6 +185,21 @@ def build_canonical_required_reads(
         if not all(key[:3]) or key in seen:
             continue
         seen.add(key)
+        source = source_by_identity.get(key[:3], {})
+        ref = str(source.get("ref") or "")
+        if key[0].startswith("plan-port-") and ref:
+            # Preserve logical ports and attempt-local evidence authority;
+            # only collapse equal pinned reads in this new declaration.
+            slice_key = (
+                ref, key[2], key[3],
+                row.get("min_returned_bytes", 1), row.get("max_items", 0),
+                row.get("max_chars", 0), row.get("allow_truncated", False),
+                json.dumps(source.get("access_scope") or {}, sort_keys=True),
+                json.dumps(source.get("retention") or {}, sort_keys=True),
+            )
+            if slice_key in seen_plan_slices:
+                continue
+            seen_plan_slices.add(slice_key)
         deduped.append(row)
     return deduped
 

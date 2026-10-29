@@ -46,6 +46,7 @@ def run(args: argparse.Namespace) -> int:
             operation_id=args.operation,
             reason=args.reason,
             apply=args.apply,
+            config=context.config,
         )
     except (ConfigError, ValueError, OSError) as exc:
         print(json.dumps({"status": "rejected", "reason": str(exc)}))

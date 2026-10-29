@@ -41,6 +41,7 @@ def current_plan_port_sources(
     currentness: Mapping[str, Any],
     allow_without_task: bool = False,
     candidate: bool = False,
+    profile: str = "",
 ) -> list[dict[str, Any]]:
     from zf.core.task.store import TaskStore
     from zf.runtime.artifact_read_ledger import ArtifactReadError
@@ -92,12 +93,6 @@ def current_plan_port_sources(
     package_required = _declared_required_ports(
         package.get("required_ports")
     )
-    missing_declarations = sorted(set(declared) - set(package_required))
-    if missing_declarations:
-        raise ArtifactReadError(
-            "current Plan Artifact Package does not bind task required ports: "
-            + ", ".join(missing_declarations)
-        )
     required = list(dict.fromkeys([*package_required, *declared]))
     ports = {
         str(item.get("logical_name") or ""): item
@@ -105,12 +100,33 @@ def current_plan_port_sources(
         for item in package.get(group, [])
         if isinstance(item, Mapping)
     }
+    missing_declarations = sorted(set(declared) - set(ports))
+    if missing_declarations:
+        raise ArtifactReadError(
+            "current Plan Artifact Package does not bind task required ports: "
+            + ", ".join(missing_declarations)
+        )
     missing = [name for name in required if name not in ports]
     if missing:
         raise ArtifactReadError(
             "current Plan Artifact Package is missing required ports: "
             + ", ".join(missing)
         )
+
+    if not candidate and profile in {"implementation", "task-verify"}:
+        from zf.runtime.task_plan_consumption import selected_plan_ports
+
+        try:
+            selection = selected_plan_ports(
+                state_dir=state_dir, task_id=task_id, profile=profile,
+                evidence=evidence, ports=ports, required=required,
+            )
+        except (ValueError, SidecarRefError) as exc:
+            raise ArtifactReadError(f"invalid task plan input selection: {exc}") from exc
+        if selection is not None:
+            required = selection
+    else:
+        selection = None
 
     paths = {}
     kinds = {}
@@ -125,6 +141,8 @@ def current_plan_port_sources(
                 if isinstance(body, Mapping) and body.get("schema_version") == SCHEMA_VERSION
                 else str(ports[name].get("artifact_kind") or name)
             )
+            if selection is not None and name == "task_execution_input" and kinds[name] != "task_scoped_plan_input":
+                raise ValueError("selected task_execution_input must be task scoped")
         except ValueError as exc:
             raise ArtifactReadError(f"invalid task input port {name!r}: {exc}") from exc
     return [

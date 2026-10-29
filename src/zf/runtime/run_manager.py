@@ -912,6 +912,12 @@ def build_run_manager_projection(
             resident_advisor=resident_agent,
         ),
     ]
+    from zf.runtime.orchestrator_agent_execution_review import pending_execution_reviews
+
+    rework_triage_actions.extend(pending_execution_reviews(
+        state_dir=state_dir, config=config, events=events,
+        excluded_task_ids={str(action.get("task_id") or "") for action in rework_triage_actions},
+    ))
     rework_triage_actions = [
         enrich_semantic_replan_action(
             action,
@@ -5803,6 +5809,9 @@ def _execute_orchestrator_triage_request(
         payload={
             "schema_version": "orchestrator.rework-triage.request.v1",
             "problem_class": "semantic",
+            **{key: action[key] for key in (
+                "target_operation_id", "target_stage_id", "task_map_generation",
+            ) if key in action},
             "workflow_run_id": str(action.get("workflow_run_id") or ""),
             "flow_kind": str(action.get("flow_kind") or ""),
             "stage_id": str(action.get("stage_id") or ""),
@@ -9122,7 +9131,10 @@ def _pending_semantic_event_actions(
         if not event_is_recovery_actionable(event.type, event_payload):
             continue
         if (
-            event.type in {"task.rework.capped", "candidate.rework.capped"}
+            event.type in {
+                "task.rework.capped", "candidate.rework.capped",
+                "task.pipeline.semantic_rework.exhausted",
+            }
             and is_semantic_triage_cap(
                 event,
                 threshold=triage_threshold,

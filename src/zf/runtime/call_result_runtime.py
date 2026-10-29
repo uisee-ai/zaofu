@@ -503,6 +503,7 @@ def prepare_call_operation(
                 "placement_epoch",
                 "pipeline_key",
                 "task_stage_session_binding",
+                "role_binding_resolution",
                 "risk_class",
                 "integration_admission_profile",
                 "exact_task_target_commit",

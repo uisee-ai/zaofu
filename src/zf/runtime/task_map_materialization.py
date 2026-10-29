@@ -97,6 +97,20 @@ def commit_task_map_materialization(
             return dict(committed)
     store = TaskStore(state_dir / "kanban.json")
     tasks = [store._to_task(row) for row in plan["tasks"]]
+    # A revised dependency graph must not silently retain the old graph.
+    # Running and terminal tasks need a separate lifecycle decision; changing
+    # their prerequisites while an attempt may exist is not safe here.
+    for task in tasks:
+        current = store.get(task.id)
+        if (
+            current is not None
+            and current.status != "backlog"
+            and current.blocked_by != task.blocked_by
+        ):
+            raise ValueError(
+                f"cannot change dependencies of non-backlog task {task.id}: "
+                f"status={current.status}"
+            )
     created, skipped = store.add_many(tasks)
     if fail_after_store_write:
         if writer is not None:
@@ -151,6 +165,14 @@ def commit_task_map_materialization(
                 contract=task.contract,
                 source="task_map_materialization",
                 actor=actor,
+                task_updates={"blocked_by": list(task.blocked_by)},
+                expected_task_status=(
+                    "backlog" if current.blocked_by != task.blocked_by else None
+                ),
+                expected_blocked_by=(
+                    list(current.blocked_by)
+                    if current.blocked_by != task.blocked_by else None
+                ),
                 causation_id=(created_event.id if created_event else causation_id),
                 correlation_id=correlation_id,
                 audit_payload={

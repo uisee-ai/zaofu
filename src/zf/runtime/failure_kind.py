@@ -10,6 +10,8 @@ markers so pre-field event logs keep classifying.
 
 from __future__ import annotations
 
+from zf.runtime.execution_context_failure import execution_context_failure
+
 FAILURE_KIND_BUDGET = "budget"
 FAILURE_KIND_INFRA = "infra"
 FAILURE_KIND_QUALITY = "quality"
@@ -41,6 +43,8 @@ def failure_kind_from_payload(payload: object) -> str:
     kind = str(payload.get("failure_kind") or "").strip()
     if kind:
         return kind
+    if execution_context_failure(payload):
+        return FAILURE_KIND_INFRA
     if is_budget_reason(str(payload.get("reason") or "")):
         return FAILURE_KIND_BUDGET
     if (

@@ -234,6 +234,7 @@ def dispatch_task_pipeline_stage(
     )
     operation_payload: dict[str, Any] = {
         "workflow_run_id": workflow_run_id,
+        "flow_kind": str(generation_context.get("flow_kind") or ""),
         "trace_id": workflow_run_id,
         "task_id": task_id,
         "stage_id": stage,
@@ -290,6 +291,10 @@ def dispatch_task_pipeline_stage(
         **package_identity,
         **target_fields,
     }
+    if policy.get("role_binding_resolution"):
+        operation_payload["role_binding_resolution"] = dict(
+            policy["role_binding_resolution"]
+        )
     if assignment.get("orchestration_assignment"):
         operation_payload["orchestration_assignment"] = dict(assignment["orchestration_assignment"])
     if operation_generation > 1:

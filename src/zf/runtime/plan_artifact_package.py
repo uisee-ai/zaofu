@@ -611,6 +611,14 @@ def prepare_plan_artifact_package(
         ports=[*explicit_ports.values(), *inherited],
         required_ports=required_ports,
     )
+    from zf.runtime.task_map_required_ports import plan_input_declaration_errors
+
+    input_errors = plan_input_declaration_errors(
+        task_map,
+        available_ports=(port["logical_name"] for port in [*explicit_ports.values(), *inherited]),
+    )
+    if input_errors:
+        raise PlanArtifactPackageError("invalid task plan inputs: " + "; ".join(input_errors))
     from zf.runtime.plan_acceptance_rework import rebind_inherited_gap_acceptance
 
     rebind_inherited_gap_acceptance(

@@ -91,7 +91,11 @@ def reconcile_task_pipeline_redrives(
     *,
     generation_contexts: Mapping[str, Mapping[str, Any]],
 ) -> list[WorkflowRuntimeDecision]:
-    """Apply only exact, completed Run Manager recovery decisions."""
+    """Apply evidence-bound pre-dispatch repair and Run Manager redrives."""
+
+    from zf.runtime.task_pipeline_predispatch_repair import reconcile_missing_flow_kind_requests
+
+    reconcile_missing_flow_kind_requests(runtime, generation_contexts=generation_contexts)
 
     events = runtime.event_log.read_all()
     operations = reduce_workflow_operations(events)

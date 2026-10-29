@@ -178,6 +178,42 @@ def test_stuck_worker_requeues_task_and_records_recovery(tmp_path: Path) -> None
     assert orch._last_worker_state["test-1"] == "idle"
 
 
+def test_watchdog_does_not_requeue_a_live_task_pipeline_attempt(tmp_path: Path, monkeypatch) -> None:
+    orch, store, log = _make_orchestrator(tmp_path)
+    store.add(Task(id="T1", status="in_progress", assigned_to="test-1", active_dispatch_id="d1"))
+    log.append(ZfEvent(type="task.dispatched", task_id="T1", payload={
+        "role": "test", "assignee": "test-1", "dispatch_id": "d1",
+    }))
+    monkeypatch.setattr(orch, "_request_terminal_completion_nudge", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "zf.runtime.task_pipeline_attempt_recovery.live_task_pipeline_attempt_for_role",
+        lambda runtime, role: {"task_id": "T1", "instance_id": role, "status": "sent"},
+    )
+    decision = orch._report_stuck_worker(orch._find_role_by_instance("test-1"))
+    assert decision.action == "wait"
+    assert store.get("T1").status == "in_progress"
+    assert store.get("T1").active_dispatch_id == "d1"
+    assert not any(e.type == "task.requeued" for e in log.read_all())
+
+
+def test_watchdog_does_not_nudge_writer_with_another_roles_fanout_dispatch(tmp_path: Path) -> None:
+    orch, store, log = _make_orchestrator(tmp_path)
+    store.add(Task(id="T1", status="in_progress", assigned_to="test-1", active_dispatch_id=""))
+    log.append(ZfEvent(type="task.dispatched", task_id="T1", payload={
+        "role": "test", "assignee": "test-1", "dispatch_id": "old-writer",
+    }))
+    log.append(ZfEvent(type="fanout.child.dispatched", task_id="T1", payload={
+        "role_instance": "test-2", "dispatch_id": "discovery-reader",
+    }))
+    decision = orch._report_stuck_worker(orch._find_role_by_instance("test-1"))
+    assert decision.action == "wait"
+    assert not orch.transport.sends
+    assert store.get("T1").status == "in_progress"
+    events = log.read_all()
+    assert not any(e.type in {"task.requeued", "worker.stuck.recovered"} for e in events)
+    assert [e for e in events if e.type == "worker.stuck"][-1].payload["dispatch_id"] == ""
+
+
 def test_stuck_worker_does_not_requeue_after_recorded_progress(
     tmp_path: Path,
 ) -> None:

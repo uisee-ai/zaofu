@@ -276,10 +276,13 @@ def _object(value: Any) -> Mapping[str, Any]:
 def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
     """Snapshot the exact mechanical writer policy used after Plan."""
 
+    from zf.runtime.plan_candidate_role_preflight import writer_role_policy
+
     workflow = getattr(config, "workflow", None)
     work_units = getattr(workflow, "work_units", None)
     split = getattr(work_units, "split_quality", None)
     return {
+        "role_closure": writer_role_policy(config),
         "execution": execution_policy(config),
         "candidate_quality_source": str(
             getattr(workflow, "candidate_quality_source", "auto") or "auto"

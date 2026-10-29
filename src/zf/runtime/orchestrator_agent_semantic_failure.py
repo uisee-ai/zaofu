@@ -52,6 +52,12 @@ def request_semantic_failure_checkpoint(
     if task is None or str(task.status) in {"done", "cancelled"}:
         raise SemanticFailureCheckpointError("target_task_not_current")
     events = runtime.event_log.read_all()
+    if payload.get("target_operation_id"):
+        from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
+
+        current = operation_bindings(events, str(payload.get("workflow_run_id") or ""), {task_id}).get(task_id, {})
+        if current.get("operation_id") != payload["target_operation_id"] or current.get("status") != "settled":
+            raise SemanticFailureCheckpointError("target_operation_stale")
     workflow_run_id, package = _current_plan_package(
         events,
         preferred_run_id=str(

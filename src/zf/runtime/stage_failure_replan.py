@@ -466,6 +466,10 @@ def plan_reader_stage_replan(
         failure_event.payload if isinstance(failure_event.payload, dict) else {}
     )
     failure_fanout_id = str(failure_payload.get("fanout_id") or "")
+    from zf.runtime.failure_kind import FAILURE_KIND_INFRA, failure_kind_from_payload
+
+    if not authorized_generation and failure_kind_from_payload(failure_payload) == FAILURE_KIND_INFRA:
+        return None, "infrastructure_failure"
     origin_payload: dict[str, Any] = {}
     for event in events:
         if (
