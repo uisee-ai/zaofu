@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
@@ -1033,7 +1033,12 @@ def _apply_batch_task_map_ready(
     # avbs-r4 F2: findings 随 rework 走(orchestrator_fanout 已有
     # rework_feedback → child briefing 管线,此前 batch 不填该键 = 盲 rework)
     if getattr(checkpoint, "rework_feedback", None):
-        payload["rework_feedback"] = list(checkpoint.rework_feedback)
+        feedback = _writer_resume_feedback(
+            payload,
+            list(checkpoint.rework_feedback),
+        )
+        if feedback:
+            payload["rework_feedback"] = feedback
     event = writer.append(ZfEvent(
         type="task_map.ready",
         actor="zf-cli",
@@ -1077,6 +1082,25 @@ _RESUME_PLAN_IDENTITY_KEYS = (
     "goal_claim_set_ref",
     "goal_claim_set_digest",
 )
+
+
+def _writer_resume_feedback(
+    payload: Mapping[str, Any], feedback: list[str],
+) -> list[str]:
+    """Do not replay planner-only findings into a current writer package."""
+
+    if not str(payload.get("plan_artifact_package_ref") or "").strip():
+        return feedback
+    stale_markers = (
+        "mandatory_goal_claim_contract_rewritten",
+        "task_map_invalid",
+        "source_index_invalid",
+        "upstream dependency failed",
+    )
+    return [
+        line for line in feedback
+        if not any(marker in str(line).lower() for marker in stale_markers)
+    ]
 
 
 def _resume_plan_identity(

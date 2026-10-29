@@ -19,7 +19,10 @@ from zf.runtime.workflow_resume import (
     _batch_checkpoint_from_event,
     _escalated_batch_checkpoint,
 )
-from zf.runtime.workflow_resume_apply import _apply_batch_task_map_ready
+from zf.runtime.workflow_resume_apply import (
+    _apply_batch_task_map_ready,
+    _writer_resume_feedback,
+)
 
 
 _FINDINGS = [
@@ -117,6 +120,18 @@ def test_apply_batch_task_map_ready_injects_rework_feedback(tmp_path: Path) -> N
     assert ready[0].payload["rework_feedback"] == [
         "AVBS-FLOW-001: fix resource release",
     ]
+
+
+def test_current_plan_package_filters_stale_planner_feedback() -> None:
+    feedback = [
+        "TASK-WP14-B / mandatory_goal_claim_contract_rewritten: stale",
+        "TASK-WP14-C / runtime_failure: upstream dependency failed: TASK-WP14-B",
+        "TASK-WP14-B / implementation: fix frame governance",
+    ]
+    assert _writer_resume_feedback(
+        {"plan_artifact_package_ref": "artifacts/plan-packages/current.json"},
+        feedback,
+    ) == ["TASK-WP14-B / implementation: fix frame governance"]
 
 
 def test_apply_batch_task_map_ready_preserves_current_package_identity(
