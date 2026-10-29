@@ -94,3 +94,10 @@ Reader hydration 同样区分全局重扫描与任务验证：global-rescan 中�
 Run blocked 期间 typed Impl 已接纳但进度事件被 Run 生命周期门禁拦截时，显式恢复 active 后，Task Pipeline 的 TaskRef 恢复入口补跑原机械门禁。要求当前 generation、settled/passed operation、已接纳 control result 精确绑定 source event、无更新/活跃 operation、任务非终态；cancelled/completed Run 不适用。结果按 TaskRef 门禁真实 updated/rejected 追加并按 trigger 去重，保留原拒绝和 resume 事件；不生成 Impl/Verify/Task 成功事实。tests/test_blocked_impl_result_recovery.py 覆盖入口、拒绝分支和重建进程幂等。
 
 有已接纳 package 的 global-rescan 使用 gap attempt domain 和独立的扫描权威快照（仍为 task-contract-snapshot.v1）。它从原任务合同继承验收内容，绑定当前 Plan generation/package，生成 rescan contract revision，并保存原合同 ref/digest；TaskStore 与原快照不变。Reader 的模板、target snapshot 和结果均绑定这个扫描快照。结果门禁检查原任务合同仍当前、源任务未取消、扫描快照与目标吻合，以及当前已接纳 package；不按原任务的旧 generation 覆盖扫描身份。普通 Task Verify/Candidate Verify 规则不变。tests/test_rescan_contract_authority.py 验证完整派发到接纳，并拒绝合同、计划、目标、domain 变化。
+
+
+### Reader 终止及扫描报告准入
+
+Reader fanout 的 typed blocking 聚合只读取已接纳 envelope 所绑定的不可变 control result；临时 `result.json` 保留诊断用途，不能在结果拒收后成为 gap plan 的语义来源。已接纳的 rejected verdict 仍可携带有效缺口；后续临时报告也不能覆盖已接纳正文。
+
+周期恢复根据 kernel 的 `fanout.child.failed`（`worker_noop_or_terminal_missing`）与同一 fanout/child/run 的最后派发绑定，将尚未终止的 reader operation 标记 blocked。已有新派发、新 operation 事件、终态或不同 operation family 不被旧失败覆盖。该步骤在“所有 fanout 已终止”的快速退出之前执行，重启可幂等补齐历史遗漏。相关回归见 `tests/test_reader_terminal_authority.py`。

@@ -21,6 +21,10 @@ def recover_unrecorded_reader_fanout_results(runtime) -> None:
         events = read_runtime_events(runtime.event_log, runtime.state_dir)
     except Exception:
         return
+    from zf.runtime.reader_terminal_recovery import reconcile_exhausted_reader_operations
+
+    if reconcile_exhausted_reader_operations(runtime, events):
+        return
     event_token = event_log_snapshot_token(runtime.event_log)
     runtime._recover_durable_fanout_aggregate_results(events)
     if event_log_snapshot_token(runtime.event_log) != event_token:
