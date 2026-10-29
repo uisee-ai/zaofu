@@ -37,6 +37,7 @@ from zf.runtime.task_pipeline_reconciler import (
 from zf.runtime.task_pipeline_affinity import task_pipeline_preferred_roles
 from zf.runtime.task_pipeline_dispatch_events import (
     emit_task_pipeline_dispatch_deferred_once,
+    emit_task_pipeline_dispatch_failure,
     emit_task_pipeline_waiting_once,
 )
 from zf.runtime.task_pipeline_runtime_selection import (
@@ -295,7 +296,11 @@ def prepare_task_pipeline_dispatch(
         if str(task_id).strip()
     }
     managed: set[str] = set()
+    # Unknown authority remains fail-closed; a resolved shadow controller
+    # cannot acquire dispatch authority merely because its projection failed.
+    blocking = True
     try:
+        blocking = task_pipeline_any_blocking(runtime.config)
         event_log = getattr(runtime, "event_log", None)
         contexts = task_pipeline_generation_contexts(
             event_log.read_all() if event_log is not None else []
@@ -360,16 +365,9 @@ def prepare_task_pipeline_dispatch(
         write_task_pipeline_projection(runtime)
         return [], set()
     except Exception as exc:
-        runtime.event_writer.append(ZfEvent(
-            type="kernel.housekeeping.failed",
-            actor="orchestrator",
-            origin="kernel",
-            payload={
-                "step": "task_pipeline_dispatch",
-                "exc_type": type(exc).__name__,
-                "exc_repr": repr(exc)[:500],
-            },
-        ))
+        emit_task_pipeline_dispatch_failure(runtime, exc)
+        if not blocking:
+            return [], set()
         if not managed:
             managed = candidate_ids
         return [], managed

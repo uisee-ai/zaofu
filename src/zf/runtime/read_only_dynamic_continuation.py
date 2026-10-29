@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -19,6 +19,7 @@ from zf.runtime.dynamic_fragment_policy import (
     FRAGMENT_SCHEMA_VERSION,
     action_from_fragment_proposal,
     canonical_fragment_digest,
+    pattern_child_count,
     validate_read_only_fragment,
 )
 from zf.runtime.dynamic_continuation_state import (
@@ -101,6 +102,7 @@ def execute_read_only_continuation(
     action: Mapping[str, Any],
     causation_id: str = "",
     after_reserve: Callable[[], None] | None = None,
+    project_root: Path | None = None,
 ) -> DynamicContinuationResult:
     """Reserve and publish one existing read-only execution pattern."""
 
@@ -109,7 +111,7 @@ def execute_read_only_continuation(
     continuation_key = str(action_body.get("continuation_key") or "")
     generation = str(action_body.get("task_map_generation") or "")
     guard_name = hashlib.sha256(
-        f"{continuation_key}:{generation}".encode("utf-8"),
+        f"{action_body.get('parent_operation_id')}:{generation}".encode("utf-8"),
     ).hexdigest()[:24]
     with locked_path(
         state_dir / "locks" / f"dynamic-continuation-{guard_name}",
@@ -122,7 +124,18 @@ def execute_read_only_continuation(
             event_log=event_log,
             event_writer=writer,
         )
-        static_reason, pattern = validate_read_only_fragment(config, action_body)
+        from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+        from zf.runtime.stage_definition_binding import pin_stage_definition, restore_stage_definition
+
+        definition_ref = None
+        binding_config = config
+        if existing_operation.get("request_ref"):
+            prior_request = hydrate_sidecar_ref(state_dir, existing_operation["request_ref"]).payload["request"]
+            definition_ref = prior_request.get("stage_definition_ref")
+            if definition_ref:
+                frozen_stage = restore_stage_definition(state_dir, config, definition_ref)
+                binding_config = replace(config, workflow=replace(config.workflow, stages=[frozen_stage]))
+        static_reason, pattern = validate_read_only_fragment(binding_config, action_body)
         if static_reason:
             if str(existing_operation.get("status") or "") in {
                 "requested",
@@ -150,6 +163,7 @@ def execute_read_only_continuation(
             )
             return DynamicContinuationResult("rejected", static_reason)
 
+        action_body["reserved_child_count"] = pattern_child_count(binding_config, pattern)
         currentness_reason, pending_digest, budget = _currentness_preflight(
             state_dir,
             config=config,
@@ -210,6 +224,13 @@ def execute_read_only_continuation(
             pending_action_digest=pinned_pending_digest,
             budget_snapshot=pinned_budget,
         )
+        if not existing_operation:
+            definition_ref = pin_stage_definition(
+                state_dir, config, str(action_body["pattern_id"]), project_root=project_root,
+            )
+        if definition_ref:
+            operation_request["stage_definition_ref"] = dict(definition_ref)
+            operation_request["reserved_child_count"] = action_body["reserved_child_count"]
         ensured = service.ensure_operation(
             workflow_run_id=str(action_body["workflow_run_id"]),
             operation_id=operation_id,

@@ -5661,6 +5661,7 @@ def _execute_controlled_run_action(
             state_dir=state_dir,
             writer=writer,
             config=config,
+            project_root=project_root,
             action=action,
             causation_id=causation_id,
         )
@@ -5681,6 +5682,7 @@ def _execute_read_only_dynamic_continuation(
     config: ZfConfig,
     action: dict[str, Any],
     causation_id: str,
+    project_root: Path | None = None,
 ) -> str:
     planned = writer.emit(
         RUN_MANAGER_ACTION_PLANNED,
@@ -5700,6 +5702,7 @@ def _execute_read_only_dynamic_continuation(
         writer=writer,
         action=action,
         causation_id=planned.id,
+        project_root=project_root,
     )
     result_payload = {
         **_action_payload(action),
@@ -9382,6 +9385,16 @@ def _semantic_event_diagnostic_action(
         if event.type == "run.goal.completion.blocked"
         else {}
     )
+    if event.type == "run.delivery.blocked" and payload.get("effect_state") == "unknown":
+        blocker_recovery = {
+            "suggested_action_kind": "reconcile_delivery_effect",
+            "action_policy": "needs_diagnosis",
+            "intervention_class": "diagnose",
+            "recommended_actions": [
+                "inspect_exact_ship_request_and_git_receipt",
+                "resolve_unknown_effect_before_retry",
+            ],
+        }
     suggested_action_kind = str(
         blocker_recovery.get("suggested_action_kind")
         or spec.suggested_action_kind

@@ -5646,25 +5646,13 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         *,
         task_id: str,
     ) -> WorkflowRuntimeDecision | None:
-        pattern_id = str(payload.get("pattern_id") or "").strip()
-        if not pattern_id:
-            return None
-        stage = self._workflow_stage_by_id(pattern_id)
+        from zf.runtime.stage_definition_binding import declared_reader_stage
+        stage = declared_reader_stage(self, event, payload, task_id)
+        if isinstance(stage, WorkflowRuntimeDecision):
+            return stage
         if stage is None:
             return None
-        topology = str(getattr(stage, "topology", "") or "")
-        if topology != "fanout_reader":
-            self._emit_task_fanout_rejected(
-                event,
-                "declared workflow pattern is not an external reader entry",
-                expected="topology=fanout_reader",
-                actual=f"topology={topology or 'unset'}",
-            )
-            return WorkflowRuntimeDecision(
-                action="block",
-                task_id=task_id,
-                reason=f"unsupported declared workflow pattern: {pattern_id}",
-            )
+        pattern_id = stage.id
         trigger = str(getattr(stage, "trigger", "") or "").strip()
         if not trigger:
             return None

@@ -31,7 +31,11 @@ def evaluate_fanout_stage_success_criteria(
     manifest: dict[str, Any],
     artifact_payload: dict[str, Any],
 ) -> FanoutStageCriteriaFailure | None:
-    stage = _stage_by_id(config, str(manifest.get("stage_id") or ""))
+    from zf.runtime.stage_definition_binding import bound_operation_stage
+
+    stage = bound_operation_stage(
+        state_dir, event_log, config, manifest.get("trigger_payload") or {},
+    ) or _stage_by_id(config, str(manifest.get("stage_id") or ""))
     if stage is None:
         return None
     criteria = [

@@ -190,6 +190,10 @@ def build_fanout_currentness(
     from zf.runtime.reader_candidate_rework import candidate_rework_reader_fences
 
     identity_projection = build_fanout_identity_projection(rows)
+    from zf.runtime.dynamic_continuation_lifecycle import parent_fence
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    operations = reduce_workflow_operations(rows)
     rework_fences = candidate_rework_reader_fences(rows)
     identity_by_id = {
         str(item.get("fanout_id") or ""): item
@@ -237,6 +241,12 @@ def build_fanout_currentness(
     fanout_ids = set(identity_by_id) | set(first_index) | set(started)
     result: dict[str, tuple[str, str]] = {}
     for fanout_id in fanout_ids:
+        start = started.get(fanout_id)
+        trigger = (start.payload or {}).get("trigger_payload") or {} if start else {}
+        fence = parent_fence(operations, str(trigger.get("workflow_operation_id") or ""))
+        if fence[0]:
+            result[fanout_id] = fence
+            continue
         terminal = _latest_terminal_for_fanout(
             fanout_id,
             first_index=first_index,

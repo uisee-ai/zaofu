@@ -320,6 +320,12 @@ class SurgeryActionsMixin:
             if latest_delivery is not None and isinstance(latest_delivery.payload, dict)
             else {}
         )
+        if latest_payload.get("effect_state") == "unknown":
+            return self._surgery_failed(
+                requested, action, requested_action,
+                "delivery effect unknown; reconcile the original ship receipt before retry",
+                409,
+            )
         target_ref = str(
             latest_payload.get("candidate_ref")
             or claim_payload.get("candidate_ref")

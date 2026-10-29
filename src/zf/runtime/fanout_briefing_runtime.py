@@ -381,16 +381,8 @@ class FanoutBriefingMixin:
         child_success_event, child_failure_event = self._fanout_child_result_events(
             aggregate,
         )
-        config = getattr(self, "config", None)
-        workflow = getattr(config, "workflow", None)
-        stages = getattr(workflow, "stages", []) or []
-        stage = next(
-            (
-                s for s in stages
-                if getattr(s, "id", "") == context.stage_id
-            ),
-            None,
-        )
+        from zf.runtime.stage_definition_binding import stage_for_payload
+        stage = stage_for_payload(self, context.stage_id, trigger_payload)
         stage_instruction_values = (
             getattr(getattr(stage, "criteria", None), "instructions", [])
             if stage is not None else []
