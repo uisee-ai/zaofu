@@ -143,7 +143,11 @@ def reconcile_task_ref_repair_replays(
     if attempted is None:
         attempted = set()
         runtime._task_ref_repair_replay_attempts = attempted
-    emitted: list[ZfEvent] = []
+    from zf.runtime.task_pipeline_blocked_result import replay_blocked_impl_results
+
+    emitted = replay_blocked_impl_results(
+        runtime, events=event_rows, generation_contexts=generation_contexts,
+    )
     for source_id, repair in latest_repair_by_source.items():
         if repair.id in attempted:
             continue

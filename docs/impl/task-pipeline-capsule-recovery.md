@@ -90,3 +90,5 @@ Task Pipeline 通过同 Run 的 integration.queue.integrated 收据提供当前�
 验证：tests/test_semantic_replan_current_target.py 通过真实 run_manager_tick 入口检查 discovery 事件、跨 Run 隔离、未接纳草稿、失败集成、任务基线保护以及原合同不变；原 rework triage 回归覆盖 partial continuation。
 
 Reader hydration 同样区分全局重扫描与任务验证：global-rescan 中旧失败合同的 generation/package 是证据，不覆盖请求已绑定的当前 Plan 身份；普通 reader 的任务验证仍继承并校验 snapshot。tests/test_reader_replan_plan_binding.py 覆盖真实 Orchestrator 注册、派发、不可变输入和必读命令，避免仅验证上游请求正确却遗漏下游身份覆盖。
+
+Run blocked 期间 typed Impl 已接纳但进度事件被 Run 生命周期门禁拦截时，显式恢复 active 后，Task Pipeline 的 TaskRef 恢复入口补跑原机械门禁。要求当前 generation、settled/passed operation、已接纳 control result 精确绑定 source event、无更新/活跃 operation、任务非终态；cancelled/completed Run 不适用。结果按 TaskRef 门禁真实 updated/rejected 追加并按 trigger 去重，保留原拒绝和 resume 事件；不生成 Impl/Verify/Task 成功事实。tests/test_blocked_impl_result_recovery.py 覆盖入口、拒绝分支和重建进程幂等。
