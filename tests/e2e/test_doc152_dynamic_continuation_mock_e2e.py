@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.schema import (
     FanoutAggregateConfig,
     RoleConfig,
@@ -147,8 +149,10 @@ def _seed(state_dir: Path, writer: EventWriter) -> None:
     )
 
 
+@pytest.mark.parametrize("definition_change", ["unchanged", "modified", "removed", "queued_restart"])
 def test_dynamic_read_only_continuation_reaches_existing_fanout_once(
     tmp_path: Path,
+    definition_change: str,
 ) -> None:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -157,6 +161,7 @@ def test_dynamic_read_only_continuation_reaches_existing_fanout_once(
     log = EventLog(state_dir / "events.jsonl")
     writer = EventWriter(log)
     config = _config()
+    config.workflow.stages[0].criteria.instructions = ["Preserve independent source verification."]
     _seed(state_dir, writer)
 
     tick = run_manager_tick(
@@ -172,9 +177,21 @@ def test_dynamic_read_only_continuation_reaches_existing_fanout_once(
         for event in log.read_all()
         if event.type == "workflow.invoke.requested"
     )
+    if definition_change == "modified":
+        config.workflow.stages[0].roles = ["research-api"]
+        config.workflow.stages[0].aggregate.success_event = "changed.result"
+        config.workflow.stages[0].criteria.instructions = ["CHANGED METHOD MUST NOT EXECUTE"]
+    elif definition_change == "removed":
+        config.workflow.stages.clear()
     transport = _MockTransport()
     orchestrator = Orchestrator(state_dir, config, transport)  # type: ignore[arg-type]
+    if definition_change == "queued_restart":
+        orchestrator._dispatch_reader_fanout_child = lambda **kwargs: None
     orchestrator.run_once(events=[request])
+    if definition_change == "queued_restart":
+        assert not transport.sent
+        config.workflow.stages.clear()
+        orchestrator = Orchestrator(state_dir, config, transport)
     for _ in range(8):
         if len(transport.sent) >= 2:
             break
@@ -182,6 +199,10 @@ def test_dynamic_read_only_continuation_reaches_existing_fanout_once(
 
     assert tick.actions_applied == 1
     assert len(transport.sent) == 2
+    for _role, briefing, _prompt, _context in transport.sent:
+        body = briefing.read_text()
+        assert "Preserve independent source verification." in body
+        assert "CHANGED METHOD MUST NOT EXECUTE" not in body
     events = log.read_all()
     assert sum(event.type == "workflow.fragment.admitted" for event in events) == 1
     assert sum(event.type == "workflow.operation.reserved" for event in events) == 1
@@ -232,3 +253,15 @@ def test_dynamic_read_only_continuation_reaches_existing_fanout_once(
         event.type in {"task.rework.requested", "impl.rework.requested"}
         for event in replayed
     )
+
+    # The existing recovery sweep must consume the parent fence, including
+    # after restart and after removal of the source definition.
+    parent = reduce_workflow_operations(replayed)["parent-research-op"]
+    WorkflowOperationService(state_dir=state_dir, event_log=log, event_writer=writer).cancel(
+        workflow_run_id="RUN-DOC152-DYNAMIC", operation_id="parent-research-op",
+        request_hash=parent["request_hash"], reason="cancelled by owner",
+    )
+    restarted.run_once()
+    fanout_id = next(e.payload["fanout_id"] for e in replayed if e.type == "fanout.started")
+    assert restarted._fanout_manifest(fanout_id)["status"] == "cancelled"
+    assert not restarted_transport.sent

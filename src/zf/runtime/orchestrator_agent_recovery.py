@@ -9,6 +9,7 @@ from zf.runtime.orchestrator_agent_operations import (
     CHECKPOINT_REQUESTED,
     workflow_operation_service,
 )
+from zf.runtime.orchestrator_agent_role import orchestrator_instance_id
 from zf.runtime.workflow_operation import (
     load_workflow_operation,
     reduce_workflow_operations,
@@ -54,9 +55,10 @@ def request_orchestrator_agent_checkpoint_respawn(
     )
     if existing is not None:
         return None
+    role_instance = orchestrator_instance_id(runtime)
     shared = {
-        "role": "orchestrator",
-        "instance_id": "orchestrator",
+        "role": role_instance,
+        "instance_id": role_instance,
         "trigger_event_id": trigger_event_id,
         "checkpoint_event_id": checkpoint_event_id,
         "operation_id": operation_id,
@@ -82,7 +84,7 @@ def request_orchestrator_agent_checkpoint_respawn(
         origin="kernel",
         payload={
             **shared,
-            "assignee": "orchestrator",
+            "assignee": role_instance,
             "max_attempts": max_attempts,
         },
         causation_id=causation_id,
@@ -109,7 +111,8 @@ def reconcile_orchestrator_agent_operation_liveness(runtime: Any) -> None:
         for operation in operations.values()
         if str(operation.get("operation_type") or "")
         == "orchestrator_agent_semantic"
-        and str(operation.get("role_instance") or "") == "orchestrator"
+        and str(operation.get("role_instance") or "")
+        == orchestrator_instance_id(runtime)
         and (
             str(operation.get("status") or "") == "running"
             or (
@@ -122,7 +125,7 @@ def reconcile_orchestrator_agent_operation_liveness(runtime: Any) -> None:
     if not candidates:
         return
     try:
-        if runtime.transport.is_alive("orchestrator"):
+        if runtime.transport.is_alive(orchestrator_instance_id(runtime)):
             return
     except Exception:
         # A failed liveness probe is not proof that a paid provider turn died.
@@ -239,7 +242,8 @@ def _redrive_explicitly_stopped_checkpoints(
         if (
             str(operation.get("operation_type") or "")
             == "orchestrator_agent_semantic"
-            and str(operation.get("role_instance") or "") == "orchestrator"
+            and str(operation.get("role_instance") or "")
+            == orchestrator_instance_id(runtime)
             and str(operation.get("status") or "") == "suspended"
             and str(operation.get("reason") or "")
             in {"graceful_stop", "fast_stop"}
@@ -398,7 +402,7 @@ def requeue_orchestrator_agent_checkpoint_after_respawn(
 ) -> ZfEvent | None:
     payload = request.payload if isinstance(request.payload, Mapping) else {}
     if (
-        instance_id != "orchestrator"
+        instance_id != orchestrator_instance_id(runtime)
         or str(payload.get("source") or "") != _RECOVERY_SOURCE
     ):
         return None

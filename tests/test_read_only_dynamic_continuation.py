@@ -554,6 +554,36 @@ def test_run_manager_selects_fragment_as_unique_continuation_action(
     ) == 1
 
 
+def test_run_manager_owner_fence_blocks_wrc_owned_frontier(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    config = _config()
+    config.workflow.orchestration.normal_frontier_owner = "wrc"
+    _seed(state_dir, log, writer, config=config)
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=config,
+        event_log=log,
+        auto_execute=True,
+        spawn_repairs=False,
+    )
+
+    assert result.actions_applied == 0
+    assert not any(
+        event.type == "workflow.invoke.requested"
+        for event in log.read_all()
+    )
+    blocked = [
+        event for event in log.read_all()
+        if event.type == "workflow.normal_frontier.owner_blocked"
+    ]
+    assert len(blocked) == 1
+    assert blocked[0].payload["owner"] == "wrc"
+
+
 def test_reserved_continuation_reuses_existing_workflow_invoke_runtime(
     tmp_path: Path,
 ) -> None:

@@ -2424,6 +2424,8 @@ class WorkflowRuntimeCoordinator(
           `_on_*` handlers fire. This preserves backward compatibility with
           configs that don't yet use the three-layer architecture.
         """
+        from zf.runtime.orchestrator_agent_role import configured_orchestrator_role
+
         decisions: list[WorkflowRuntimeDecision] = []
         if pushed is not None:
             recent = pushed
@@ -2436,6 +2438,10 @@ class WorkflowRuntimeCoordinator(
             offset = self._load_offset()
             recent, new_offset = self.event_log.read_from_offset(offset)
 
+        # Keep 194 Layer 2 authority activation tied to the legacy role's
+        # presence. ``oa_profile`` binds semantic checkpoint transport but
+        # does not silently promote a registered profile to a second state
+        # machine.
         layer2_active = self._find_role_by_name("orchestrator") is not None
         reacted_tasks: set[str] = set()
         # doc 66 §14.0: enter Layer 2 batch — per-event _notify_orchestrator_agent
@@ -2619,7 +2625,7 @@ class WorkflowRuntimeCoordinator(
                         terminal_decision is not None
                         and terminal_decision.action == "block"
                     ):
-                        orch_role = self._find_role_by_name("orchestrator")
+                        orch_role = configured_orchestrator_role(self)
                         will_dispatch = (
                             orch_role is not None
                             and (
@@ -2658,7 +2664,7 @@ class WorkflowRuntimeCoordinator(
                 # if state changes are needed.
                 # Note: _notify_orchestrator_agent applies the orchestrator
                 # role's triggers filter — events not in triggers are no-op.
-                orch_role = self._find_role_by_name("orchestrator")
+                orch_role = configured_orchestrator_role(self)
                 will_dispatch = (
                     orch_role is not None
                     and (not orch_role.triggers or event.type in orch_role.triggers)
@@ -4655,7 +4661,9 @@ class WorkflowRuntimeCoordinator(
         event (e.g. loop.started, agent.usage). Only events the orchestrator
         role explicitly subscribes to via `triggers` reach Layer 2.
         """
-        orch_role = self._find_role_by_name("orchestrator")
+        from zf.runtime.orchestrator_agent_role import configured_orchestrator_role
+
+        orch_role = configured_orchestrator_role(self)
         if orch_role is None:
             return
         # B6a (R25 ISSUE-006 根因①): telemetry 噪音硬性不唤 Layer 2 —
@@ -4850,7 +4858,11 @@ class WorkflowRuntimeCoordinator(
                 task_id=primary.task_id,
                 trace_id=primary.correlation_id,
             )
-            self._send_transport_task("orchestrator", briefing_path, prompt, context)
+            from zf.runtime.orchestrator_agent_role import orchestrator_instance_id
+
+            self._send_transport_task(
+                orchestrator_instance_id(self), briefing_path, prompt, context
+            )
         except Exception as exc:
             payload = {
                 "trigger_event_id": primary.id,

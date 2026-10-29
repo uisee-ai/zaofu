@@ -137,6 +137,13 @@ def _pre_closeout_allows_claim(
 
 
 def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
+    from zf.core.state.locks import locked_path
+
+    with locked_path(runtime.state_dir / "locks" / "goal-completion.lock"):
+        _evaluate_locked_claims(runtime, list(runtime.event_log.read_all()))
+
+
+def _evaluate_locked_claims(runtime: Any, events: list[ZfEvent]) -> None:
     from zf.runtime.run_contract import load_run_contract
     from zf.runtime.run_manager import (
         RUN_GOAL_COMPLETION_CLAIMED,
@@ -176,8 +183,14 @@ def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
             or metadata.get("delivery_policy")
             or "report_only"
         )
+        from zf.runtime.goal_delivery_recovery import pending_delivery_request
+
+        pending = pending_delivery_request(events, str((claim.payload or {}).get("claim_id") or claim.id))
+        # Re-evaluate all current blockers before redriving a durable request.
+        # Exclude only that request from the gate's delivery-status projection.
+        gate_events = [e for e in events if e.id != pending.id] if pending else events
         outcome = run_goal_completion_gate_event(
-            events,
+            gate_events,
             claim=claim,
             required_operation_ids=required_operation_ids,
             delivery_policy=delivery_policy,
@@ -186,6 +199,10 @@ def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
         )
         if outcome is None:
             continue
+        if pending and outcome.type == "run.delivery.requested":
+            _apply_delivery_request(runtime, pending)
+            events[:] = runtime.event_log.read_all()
+            continue
         appended = runtime.event_writer.append(outcome)
         events.append(appended)
         if appended.type == "run.delivery.requested":
@@ -193,6 +210,19 @@ def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
 
 
 def _apply_delivery_request(runtime: Any, request: ZfEvent) -> None:
+    import hashlib
+
+    from zf.core.state.locks import locked_path
+    from zf.runtime.goal_delivery_recovery import recover_delivery_receipt
+
+    identity = str((request.payload or {}).get("delivery_operation_id") or request.id)
+    lock_id = hashlib.sha256(identity.encode()).hexdigest()[:24]
+    with locked_path(runtime.state_dir / "locks" / f"goal-delivery-{lock_id}.lock"):
+        if not recover_delivery_receipt(runtime, request):
+            _execute_delivery_request(runtime, request)
+
+
+def _execute_delivery_request(runtime: Any, request: ZfEvent) -> None:
     payload = request.payload if isinstance(request.payload, dict) else {}
     claim_id = str(payload.get("claim_id") or "")
     operation_id = str(payload.get("delivery_operation_id") or "")
@@ -264,6 +294,10 @@ def _apply_delivery_request(runtime: Any, request: ZfEvent) -> None:
             },
         ))
     except Exception as exc:
+        from zf.runtime.goal_delivery_recovery import recover_delivery_receipt
+
+        if recover_delivery_receipt(runtime, request):
+            return
         runtime.event_writer.append(ZfEvent(
             type="run.delivery.failed",
             actor="zf-cli",

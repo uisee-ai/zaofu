@@ -20,6 +20,10 @@ from zf.runtime.orchestrator_agent_operations import (
 from zf.runtime.orchestrator_agent_recovery import (
     request_orchestrator_agent_checkpoint_respawn,
 )
+from zf.runtime.orchestrator_agent_role import (
+    configured_orchestrator_role,
+    orchestrator_instance_id,
+)
 from zf.runtime.transport import transport_error_diagnostics
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
@@ -79,7 +83,7 @@ def dispatch_orchestrator_agent_operation(
             trace_id=prepared.workflow_run_id,
         )
         runtime._send_transport_task(
-            "orchestrator",
+            orchestrator_instance_id(runtime),
             briefing_path,
             prompt,
             context,
@@ -142,10 +146,11 @@ def dispatch_orchestrator_agent_operation(
 
 
 def orchestrator_checkpoint_busy(runtime: Any, *, exclude_operation_id: str = "") -> bool:
+    role_instance = orchestrator_instance_id(runtime)
     return any(
         row.get("operation_id") != exclude_operation_id
         and row.get("operation_type") == "orchestrator_agent_semantic"
-        and row.get("role_instance") == "orchestrator"
+        and row.get("role_instance") == role_instance
         and row.get("status") in {"reserved", "running", "suspended"}
         for row in reduce_workflow_operations(runtime.event_log.read_all()).values()
     )
@@ -153,13 +158,13 @@ def orchestrator_checkpoint_busy(runtime: Any, *, exclude_operation_id: str = ""
 
 def dispatch_pending_orchestrator_checkpoint(runtime: Any) -> None:
     """Drain one durable request, including after restart or a lost wake."""
-    role = runtime._find_role_by_name("orchestrator")
+    role = configured_orchestrator_role(runtime)
     if role is None:
         return
     events = runtime.event_log.read_all()
     operations = reduce_workflow_operations(events)
     if any(row.get("operation_type") == "orchestrator_agent_semantic"
-           and row.get("role_instance") == "orchestrator"
+           and row.get("role_instance") == orchestrator_instance_id(runtime)
            and row.get("status") in {"reserved", "running", "suspended"}
            for row in operations.values()):
         return

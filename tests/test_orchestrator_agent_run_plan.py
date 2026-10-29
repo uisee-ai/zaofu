@@ -417,6 +417,16 @@ def test_pre_impl_admits_execution_plan_and_routes_required_context(
         runtime.state_dir, admitted["execution_plan_ref"]
     ).payload
     assert execution_plan["schema_version"] == "orchestrator-execution-plan.v1"
+    assert execution_plan["effective_config_ref"]["sha256"] == (
+        execution_plan["identity"]["effective_config_digest"]
+    )
+    admitted_event = next(
+        event for event in runtime.event_log.read_all()
+        if event.type == "orchestrator.run_plan.admitted"
+    )
+    assert admitted_event.payload["effective_config_digest"] == (
+        execution_plan["identity"]["effective_config_digest"]
+    )
     assert execution_plan["context_routes"][0]["required_sources"][0][
         "source_id"
     ] == "plan-port-requirement_spec"
