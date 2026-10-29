@@ -101,3 +101,9 @@ Run blocked 期间 typed Impl 已接纳但进度事件被 Run 生命周期门禁
 Reader fanout 的 typed blocking 聚合只读取已接纳 envelope 所绑定的不可变 control result；临时 `result.json` 保留诊断用途，不能在结果拒收后成为 gap plan 的语义来源。已接纳的 rejected verdict 仍可携带有效缺口；后续临时报告也不能覆盖已接纳正文。
 
 周期恢复根据 kernel 的 `fanout.child.failed`（`worker_noop_or_terminal_missing`）与同一 fanout/child/run 的最后派发绑定，将尚未终止的 reader operation 标记 blocked。已有新派发、新 operation 事件、终态或不同 operation family 不被旧失败覆盖。该步骤在“所有 fanout 已终止”的快速退出之前执行，重启可幂等补齐历史遗漏。相关回归见 `tests/test_reader_terminal_authority.py`。
+
+### 增量批次与完整候选冻结
+
+Task Pipeline 新 generation 可只包含增量任务；其全部完成不代表 Run 完成。候选冻结前必须遍历同一 Run 每个 Task 的最新 generation context：全部 done，或 cancelled 且有 Kernel supersession 和后续已接纳替代 generation。其他 Run 的未完成任务不阻塞。然后仍执行既有精确集成收据、活动执行与 session 归档门禁。
+
+对历史误派，运行时仅取消由 `candidate-freeze-receipt.v1` 的 candidate.ready 直接触发、且同 Run 仍有未完成任务的活动 reader fanout。复用既有 fanout、operation、worker 取消路径，保留 Planner、其他 Run 和 legacy 非冻结触发。原候选收据保留为历史记录；不宣告其覆盖完整交付。回归：`tests/test_candidate_freeze_run_scope.py`。

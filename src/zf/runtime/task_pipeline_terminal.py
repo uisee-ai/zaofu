@@ -167,8 +167,13 @@ def reconcile_task_pipeline_freeze(
 ) -> list[WorkflowRuntimeDecision]:
     """Freeze a quiescent generation once all exact Task receipts are current."""
 
+    from zf.runtime.task_pipeline_freeze_scope import reconcile_incomplete_freeze_scope
+
+    blocked_runs = reconcile_incomplete_freeze_scope(runtime, generation_contexts)
     generations: dict[str, dict[str, Any]] = {}
     for task_id, context in generation_contexts.items():
+        if str(context.get("workflow_run_id") or "") in blocked_runs:
+            continue
         generation_id = str(context.get("generation_id") or "")
         if not generation_id:
             continue
