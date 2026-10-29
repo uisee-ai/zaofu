@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 恢复状态一致性与上游契约阻塞分类
 
@@ -46,3 +46,24 @@ R7：继续派发发现 task_map 之外的 8 个继承端口还缺少 P02 新任
 操作记录：首次按原始 base 重发 gap 时，ProductAcceptance exact prior lineage 正确拒绝（evt-ec5fb691795f），原因是上一次增量包已接纳。改为以已接纳版本为前版生成独立修复工件；期间历史 stage cap escalation 使 Run blocked，通过 zf goal set --status active（evt-2b3b64e36cda）恢复，无预算重置。evt-2a523a3f4ee9 / Package 6a4045063a40e651a4c084ef9c2db4e1dc06179c84f5aead0802e18281d30681 已接纳/审批；它修正 task_map，R7 继续修正整个 package，不能将中间版本当最终恢复成功。
 
 P12A 已通过 zf recover task-impl 恢复 g3/p5（evt-b20a2130c69d），实际 hook 匹配正确 Task Workspace；09:23 UTC 已发生测试文件写入与 runtime/browser 执行，先前工作目录拒绝消失。部署回归曾因跨 worktree conftest/import-root 断言拒绝测试收集；把本轮新测试部署到同一源码目录后 4 passed，加已有 main 定向 47 passed。
+
+## 完成证据（2026-10-29 09:29 UTC）
+
+实现提交：
+
+- d399f8d fix: reconcile task retries and preserve contract gap replanning
+- 59d574f fix: retire task stage sessions during Codex context recycling
+- 7cd41d2 fix: rebind recovery placements and gap task input partitions
+- 371fa71 fix: preserve gap task read partitions across inherited plan ports
+
+本任务完成范围是 R1–R7 的运行时修复、部署、受控恢复；不代表整个 PRD 或上游业务补齐完成。
+
+最后一批定向 81 passed；sentinel 50 passed / 1 skipped；部署目录 package/acceptance/read-scope 定向 27 passed。此前两批定向 141、59、124 passed 及 flow smoke 10 passed，存在重叠，不把它们求和当作唯一测试数。未运行 full pytest / real-provider 全套 E2E。
+
+完整修正版 task_map proposal evt-376717bf93e2，Package eeb49df1f662f05849ad4a1751c1456a46000e0d2ce7100c7899d4aa946f590d，经正常 kernel 接纳和 zf plan approve。逐值核对业务 task bodies、Product Acceptance 和所有继承端口正文未改变；保留必需 ports，仅更新版本来源、身份和只读分区。13 ports × 35 tasks 的 455 项解析全部通过。
+
+当前 watcher PID 1773301 ready；原 Run workflow-0ea133e63454375e 保留。P12A checkpoint op-resume-3e395076c51f264c78479fe2 通过 zf recover workflow 应用，保留 g3 operation，派发 p6（evt-5e18945e97c2）；P02-PUBLISH-CONTRACT 派发 evt-a6c8cfe6e3f0，角色 prd-dev-lane-1，与 P12A 的 prd-dev-lane-0 并行。Dashboard HTTP 200。
+
+业务后续：P02-CLEAN-R1 等待上游发布契约任务通过独立 Verify/集成；P03/P16B 的上游契约缺口仍需相应恢复/增量计划，不能把 TaskStore in_progress 等同于 worker 正在运行。35 项当前计划中已有 11 项 done；本次恢复不自发宣告新产品任务 passed/done。
+
+部署到主运行目录仅复制本批干净源文件及受检查的插入补丁，保留现有未提交修改；本轮提交在独立 wip 分支，未 merge / push。跨 worktree 导入错误、一次 lineage 拒绝及发布早于 Run 激活的拒绝均保留记录，不删除历史失败证据。
