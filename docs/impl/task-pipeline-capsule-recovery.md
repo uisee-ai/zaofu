@@ -10,6 +10,8 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 
 Completion Audit 将 Task Pipeline 任务退回队列前，按 task/dispatch 精确中断原 operation，并通过既有 operation settlement 关闭原 attempt；不能只清空 TaskStore 的 dispatch 而留下 running operation。中断保留请求哈希和阶段代际，可由 `zf recover workflow` 的 operation checkpoint 从原断点恢复。旧 dispatch 的重试事件不能中断新 operation。
 
+Codex context recycle 的 registry clear 同时清除当前槽位及其拥有的 Task-stage provider session，防止下一次 activate 从耐久 binding 复活超限会话。保留 binding、工作目录、placement 和原始 transcript，旧 session 继续进入 retired fence，新 session 通过 provider 观测绑定。重复 clear 不重复增加 rotation；其他槽位拥有的 binding 不受影响。
+
 `upstream_contract_gap` 不等于人工证据缺失。合同列有未来人工验收义务时，带证据的上游契约阻塞仍交给已有语义重规划入口；人工门禁须有显式 manual/external 分类，或绑定人工命令的结构化失败证据。不得从合同中存在人工证据字段推断本次失败必须人工处理。
 
 验证：tests/test_task_pipeline_capsule.py 覆盖派发入口与真实 briefing/transport 调用边界；tests/test_task_context_recovery.py 覆盖分类与 Run Manager 重规划排除；保留 pipeline、TaskDoc、result submit 和 flow mock E2E 回归。
