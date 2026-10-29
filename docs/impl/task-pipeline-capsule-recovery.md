@@ -46,6 +46,8 @@ Task 尚未 done 不代表 Impl/Verify worker 仍有执行义务。watchdog 对�
 
 新建必读声明合并 ref、摘要、selector、读取限制、访问范围和保留策略均相同的 Plan 端口别名；完整 Package 端口保留。既有 attempt 的不可变 policy 与读取账本不改写，独立 Verify 的证据权限也不与 Impl 共享。`tests/test_plan_read_aliases.py` 覆盖同内容别名与各项不等价边界。
 
+大任务输入可拆成多个显式 Package 端口。Task Map 顶层 `required_plan_ports` 保留完整全局矩阵；单任务补充端口由既有 `evidence_contract.required_plan_ports` 声明，并由同任务 `plan_input_selection` 选择。准入前核对每项任务声明与实际 Package 端口绑定，读取仍校验 ref、摘要及文件上限。任务级声明不再要求重复列入全局必读，因此独立全局验证不会仅因某任务需要一个副本，就被迫消费所有任务副本；有任务身份的消费者仍承担该任务声明的必读。Planner/Critic 必须确保真正的全局义务仍在完整矩阵中。`tests/test_task_local_plan_ports.py` 覆盖真实 Package 准备、Impl/Task Verify 选择、全局消费者及缺失/篡改拒绝。旧 Package 和已派发读取账本不改写；新声明依赖消费者代码重载。
+
 Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须在 zf.yaml 的 `project.scripts.setup` 声明可重复执行的环境准备入口；Candidate integrator 会在精确候选提交上执行该配置，再运行 rolling smoke。运行时不猜测项目使用 Node 或某个固定脚本。
 
 修复集成阻塞后使用 `zf recover task-integration --operation <id> --reason '<修复证据>'` 预览，加 `--apply` 才执行。入口检查当前代际、原 needs_review 事件、已接纳的 Verify 通过结果、无活跃 operation/attempt 及非终态 Run/Task；apply 通过 WorkflowOperationService 追加 supersede 事实，原失败证据不变。既有 reconciler 派发下一 integration generation，重新执行 setup、rolling smoke 与 Candidate CAS；保留已通过的 Impl/Verify，不发新的产品成功事件。重复请求幂等，新的阶段代际或更新集成操作使旧恢复请求失效。

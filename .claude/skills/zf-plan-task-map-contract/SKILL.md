@@ -181,7 +181,7 @@ For an explicitly reviewed task-local consumption contract, a Task Map entry
 may declare `evidence_contract.plan_input_selection` with exactly
 `schema_version: "task-plan-input-selection.v1"` and nonempty
 `implementation` and `task-verify` port-name lists. Each list must include
-`task_execution_input` and only names bound as required ports by the same
+`task_execution_input` and only names bound by the same
 Package; `task_execution_input` must use the task-scoped schema above and
 include a partition for each consuming Task. The Package must also
 bind the original `execution_spec`, `task_map`, `acceptance_matrix`, `test_matrix`, and `real_e2e_matrix` as
@@ -193,6 +193,16 @@ the Package for Plan Critic and Candidate Verify. Independently reconcile all
 mandatory rows, risks and cross-task obligations before approving the revision.
 Omitting the selection retains full reads; do not alter an admitted Plan or
 reuse its approval for this new contract.
+
+Keep whole-file hydration limits separate from selected partition size. When
+complete task inputs exceed one artifact's limit, emit separately bound ports
+and declare each in its consumer Task's `evidence_contract.required_plan_ports`.
+The task selection may reference these ports without adding them to the Task
+Map's global `required_plan_ports`. Every declared task port must resolve to an
+exact Package ref/digest before admission. Global verification keeps the complete
+canonical matrices; do not make every task's duplicated input globally required
+merely to make it selectable. Preserve genuinely global obligations in the
+global matrices, and audit per-role selected reads and bytes before submission.
 
 ## Source Provenance Contract
 

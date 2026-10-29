@@ -93,12 +93,6 @@ def current_plan_port_sources(
     package_required = _declared_required_ports(
         package.get("required_ports")
     )
-    missing_declarations = sorted(set(declared) - set(package_required))
-    if missing_declarations:
-        raise ArtifactReadError(
-            "current Plan Artifact Package does not bind task required ports: "
-            + ", ".join(missing_declarations)
-        )
     required = list(dict.fromkeys([*package_required, *declared]))
     ports = {
         str(item.get("logical_name") or ""): item
@@ -106,6 +100,12 @@ def current_plan_port_sources(
         for item in package.get(group, [])
         if isinstance(item, Mapping)
     }
+    missing_declarations = sorted(set(declared) - set(ports))
+    if missing_declarations:
+        raise ArtifactReadError(
+            "current Plan Artifact Package does not bind task required ports: "
+            + ", ".join(missing_declarations)
+        )
     missing = [name for name in required if name not in ports]
     if missing:
         raise ArtifactReadError(
