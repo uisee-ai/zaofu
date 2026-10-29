@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现: ccf31ae2 feat: simplify workflow stage presentation
 
 # Workflow 主图语义与视觉收敛
 
