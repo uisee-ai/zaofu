@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `30fe6cd fix: prevent delta generations from freezing unfinished runs`
 
 # 增量 generation 不得绕过同 Run 未完成任务冻结候选
 
@@ -9,3 +9,5 @@
 - 聚焦回归、sentinel、mock E2E，部署并核实 -> verify: 无新增错误 candidate.ready，八路误派终止，规划持续。
 
 验证：4 个 RED 复现跨 generation/Run 缺陷；8 个 scope 用例及既有真实冻结、reader 取消路径覆盖通过。定向 92 passed；dev-verify --base a31b961 --tests tests/test_candidate_freeze_run_scope.py 自动闭包 121 passed（含八槽 Verify mock E2E）；sentinel 50 passed / 1 skipped；flow mock E2E 10 passed。真实状态只读预演：38 个 managed task contexts，仅匹配 fanout-prd-lanes-verify-evt-f7836541 的 8 个 children，不匹配 Planner。
+
+实运行：watcher 3120775；session.started evt-72a3544844ac 保留正在运行的 worker。fanout.cancelled evt-f6820eb93eee 以 candidate_freeze_incomplete_run_scope 收敛唯一误派 fanout；8 个 operation 全部 cancelled，Planner 同一 operation 持续 running。主运行目录部署后 24 passed。候选历史收据与已完成任务保留；不宣告新计划批准或剩余任务完成。
