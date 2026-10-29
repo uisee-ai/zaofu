@@ -1,5 +1,7 @@
 # Task Pipeline 上下文发布与恢复
 
+Task Pipeline 已耗尽局部返工且明确发出 `semantic_triage_required=true` 时，Run Manager 必须创建有界语义诊断动作，不能再用旧 `strict_triggers.rework_attempts_gte` 的零值或更高阈值丢弃该事实。未显式标记的历史失败仍按原阈值与证据数量判断。诊断只请求 agent 裁决；不增加返工预算、不自动接纳新计划，不放行人工资格证据门。`tests/test_required_semantic_triage.py` 覆盖默认配置的真实 tick 接线和幂等。
+
 Task Pipeline 在准备新的 provider operation 前，通过 TaskStore 重新读取当前 Task，核对其计算出的合同版本与派发快照一致，再经 write_task_doc 原子写入任务说明投影并进行 freshness 检查。发布失败或版本不一致时停止派发，沿现有 dispatch deferred/cooldown 路径处理，不生成产品失败结果。
 
 投影刷新不回写 TaskContract，不修改已接纳计划、验收、任务状态或工作树代码。新的 task.doc.published 事件记录 dispatch、来源事件和三种版本。
