@@ -861,6 +861,28 @@ def _validate_orchestration_blocking_pilot_tiers(config: ZfConfig) -> None:
             )
 
 
+def _validate_orchestration_oa_profile(config: ZfConfig) -> None:
+    """Reject an explicit OA profile that cannot be resolved at startup."""
+
+    profile = str(
+        getattr(config.workflow.orchestration, "oa_profile", "") or ""
+    ).strip()
+    if not profile:
+        return
+    if any(
+        profile in {
+            str(getattr(role, "name", "") or "").strip(),
+            str(getattr(role, "instance_id", "") or "").strip(),
+        }
+        for role in config.roles
+    ):
+        return
+    raise ConfigError(
+        "workflow.orchestration.oa_profile must match a configured role "
+        "name or instance_id: " + profile
+    )
+
+
 def _build_workflow_orchestration(
     data: object,
 ) -> WorkflowOrchestrationConfig:
@@ -3233,6 +3255,7 @@ def load_config(path: Path) -> ZfConfig:
     for warn in validate_role_event_names(cfg.roles):
         print(f"Warning: {warn}", file=sys.stderr)
     _validate_orchestration_blocking_pilot_tiers(cfg)
+    _validate_orchestration_oa_profile(cfg)
     cfg.config_sources = list(raw.get("_config_profile_sources", []) or [])
     return cfg
 

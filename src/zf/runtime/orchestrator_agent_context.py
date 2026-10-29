@@ -86,7 +86,11 @@ def build_orchestrator_agent_context(
         input_mode = "execution"
         execution_ref = write_immutable_json_sidecar(
             runtime.state_dir,
-            build_execution_context(runtime, workflow_run_id=workflow_run_id, payload=payload),
+            build_execution_context(
+                runtime,
+                workflow_run_id=workflow_run_id,
+                payload={**dict(payload), "effective_config_ref": effective_config_ref},
+            ),
             root="orchestrator-agent/execution-contexts",
             kind="orchestrator_execution_context",
             schema_version="orchestrator-execution-context.v1",

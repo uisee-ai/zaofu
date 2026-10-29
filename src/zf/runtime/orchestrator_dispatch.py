@@ -71,6 +71,7 @@ from zf.runtime.rework_feedback import (
     hydrate_rework_feedback,
     write_rework_feedback,
 )
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 from zf.runtime.rework_dispatch_context import (
     TASK_REF_SCOPE_REJECTION_REASON,
     ReworkDispatchContextMixin,
@@ -751,10 +752,10 @@ class DispatchMixin(
                     latest_dispatched=latest_dispatched,
                     route_role_name_pool=True,
                 )
-                if role is None or role.name == "orchestrator":
+                if role is None or is_configured_orchestrator_role(self.config, role):
                     self._emit_dispatch_skipped(
                         task=task,
-                        role=role if role and role.name != "orchestrator" else None,
+                        role=role if role and not is_configured_orchestrator_role(self.config, role) else None,
                         reason="reassign_role_unresolved",
                     )
                     continue
@@ -1731,7 +1732,7 @@ class DispatchMixin(
         """
         out: list[str] = []
         for role in self.config.roles:
-            if role.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             if event_type not in role.triggers:
                 continue
@@ -4627,7 +4628,7 @@ class DispatchMixin(
         if role is None:
             return False
         stages = {str(s) for s in (getattr(role, "stages", None) or [])}
-        return "meta" in stages or getattr(role, "name", "") == "orchestrator"
+        return "meta" in stages or is_configured_orchestrator_role(self.config, role)
 
     def _rework_trigger_valid_for_task_state(
         self,
@@ -4753,7 +4754,7 @@ class DispatchMixin(
             return None
 
         role = self._evidence_reissue_role(task, trigger_event, triage)
-        if role is None or role.name == "orchestrator":
+        if role is None or is_configured_orchestrator_role(self.config, role):
             self._emit_triage_blocked(
                 task,
                 trigger_event,

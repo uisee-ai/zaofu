@@ -39,6 +39,16 @@ def _write_config(tmp_path: Path, workflow: str) -> Path:
             "  - name: reader",
             "    backend: mock",
             "    role_kind: reader",
+            *(
+                [
+                    "  - name: oa-primary",
+                    "    instance_id: oa-primary",
+                    "    backend: mock",
+                    "    role_kind: reader",
+                ]
+                if "oa_profile: oa-primary" in workflow
+                else []
+            ),
             "",
         )),
         encoding="utf-8",
@@ -107,6 +117,15 @@ def test_orchestration_config_rejects_unknown_frontier_owner(tmp_path: Path) -> 
             tmp_path,
             """orchestration:
   normal_frontier_owner: supervisor""",
+        ))
+
+
+def test_orchestration_config_rejects_missing_oa_profile(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oa_profile"):
+        load_config(_write_config(
+            tmp_path,
+            """orchestration:
+  oa_profile: missing-oa""",
         ))
 
 

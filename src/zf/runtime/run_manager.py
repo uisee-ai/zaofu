@@ -85,6 +85,7 @@ from zf.runtime.workflow_frontier_owner import (
     normal_frontier_owner,
     run_manager_may_consume_normal_frontier,
 )
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 from zf.runtime.recovery_context import write_task_recovery_context
 from zf.runtime.run_manager_router import (
     ACTION_POLICIES,
@@ -932,7 +933,7 @@ def build_run_manager_projection(
             threshold=triage_threshold,
             stale_seconds=_DIAGNOSIS_REQUEST_STALE_SECONDS,
             advisor_available=any(
-                str(getattr(role, "name", "") or "") == "orchestrator"
+                is_configured_orchestrator_role(config, role)
                 for role in getattr(config, "roles", []) or []
             ),
             resident_advisor=resident_agent,
@@ -10032,7 +10033,7 @@ def _pending_candidate_recovery_actions(
         threshold=threshold,
         stale_seconds=_DIAGNOSIS_REQUEST_STALE_SECONDS,
         advisor_available=any(
-            str(getattr(role, "name", "") or "") == "orchestrator"
+            is_configured_orchestrator_role(config, role)
             for role in getattr(config, "roles", []) or []
         ),
         resident_advisor=resident_agent,

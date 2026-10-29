@@ -69,6 +69,36 @@ def configured_orchestrator_role(runtime: Any) -> Any | None:
     return configured_orchestrator_role_from_config(runtime.config)
 
 
+def is_configured_orchestrator_role(config_or_runtime: Any, role: Any) -> bool:
+    """Return whether ``role`` is the semantic OA profile.
+
+    The 194 fallback is the literal ``orchestrator`` role.  An explicit
+    profile may name a logical role (all of its replicas are OA roles) or one
+    concrete instance.  Keeping this predicate in one place prevents an OA
+    profile such as ``oa-primary`` from being treated as an ordinary worker.
+    """
+
+    config = getattr(config_or_runtime, "config", config_or_runtime)
+    orchestration = getattr(
+        getattr(config, "workflow", None), "orchestration", None
+    )
+    profile = str(
+        getattr(orchestration, "oa_profile", "") or ""
+    ).strip() or LEGACY_ORCHESTRATOR_ROLE
+    role_name = str(getattr(role, "name", "") or "").strip()
+    instance_id = str(getattr(role, "instance_id", "") or "").strip()
+    if profile == LEGACY_ORCHESTRATOR_ROLE:
+        return role_name == LEGACY_ORCHESTRATOR_ROLE
+    roles = getattr(config, "roles", ()) or ()
+    profile_is_role = any(
+        str(getattr(candidate, "name", "") or "").strip() == profile
+        for candidate in roles
+    )
+    if profile_is_role:
+        return role_name == profile
+    return instance_id == profile
+
+
 def orchestrator_instance_id(runtime: Any) -> str:
     role = configured_orchestrator_role(runtime)
     if role is not None:
@@ -84,6 +114,7 @@ __all__ = [
     "LEGACY_ORCHESTRATOR_ROLE",
     "configured_orchestrator_role",
     "configured_orchestrator_role_from_config",
+    "is_configured_orchestrator_role",
     "orchestrator_instance_id",
     "orchestrator_profile_name",
 ]

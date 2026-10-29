@@ -28,6 +28,7 @@ from zf.runtime.workflow_operation import (
     TERMINAL_OPERATION_STATUSES,
     reduce_workflow_operations,
 )
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 _INACTIVE_LIFECYCLE_STATES = frozenset({"dormant", "suspended"})
@@ -516,7 +517,7 @@ class RoleLifecycleRuntimeMixin:
         for role in self.all_roles():
             if not self._role_is_on_demand(role):
                 continue
-            if role.name in {"orchestrator", "run-manager"}:
+            if is_configured_orchestrator_role(self.config, role) or role.name == "run-manager":
                 continue
             try:
                 alive = self.transport.is_alive(role.instance_id)
@@ -676,7 +677,7 @@ class RoleLifecycleRuntimeMixin:
                     task_ids.append(task.id)
                 continue
             if (
-                role.name != "orchestrator"
+                not is_configured_orchestrator_role(self.config, role)
                 and self._role_supports_task_skills(role, task)
             ):
                 task_ids.append(task.id)

@@ -8,6 +8,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.runtime.event_window import read_runtime_events
 from zf.runtime.housekeeping import apply_worker_state_changed_event
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 _TASK_GENERATION_GUARDED_STATES = frozenset({
@@ -175,7 +176,7 @@ class WorkerStateRuntimeMixin:
         out = {
             role.instance_id: "idle"
             for role in self.config.roles
-            if role.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, role)
         }
         try:
             events = _events_after_latest_graceful_stop(list(

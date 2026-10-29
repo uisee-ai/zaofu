@@ -11,6 +11,7 @@ from zf.core.feature.schema import Feature
 from zf.core.skills.provenance import SkillLockEntry
 from zf.core.task.schema import Task
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 @dataclass
@@ -104,7 +105,7 @@ def generate_role_instructions(
     sections.append("")
 
     # Role identity
-    if role.name == "orchestrator":
+    if is_configured_orchestrator_role(config, role):
         sections.append("## Role: Orchestrator")
         sections.append("You are the orchestrator. You read events, kanban state, and worker output")
         sections.append("to make dispatch and recovery decisions. You do NOT write code.")
@@ -991,7 +992,7 @@ def generate_task_briefing(
     # kernel falls back to a 4-min wall-clock stuck timer (cangjie r-next-9
     # B-NEW-15 false-positive case) and proactive dispatch can't sense
     # idle workers.
-    if role.name != "orchestrator":
+    if not is_configured_orchestrator_role(config, role):
         lines.append(_render_worker_heartbeat_instructions(role))
         lines.append("")
         # ZF-TR-NESTED-GUARD-001 (doc 40 §6 I55): recursion guard for

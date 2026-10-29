@@ -73,6 +73,7 @@ from zf.runtime.git_capture import (
     capture_git_diff_context,
 )
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 from zf.runtime.orchestrator_agent_reactor import OrchestratorAgentReactorMixin
 from zf.runtime.product_delivery import ingest_task_map_to_kanban
 from zf.runtime.provider_operation_stop import (
@@ -1762,7 +1763,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
     def _has_implementation_writer_role(self) -> bool:
         writer_names = {"dev", "developer", "builder", "writer", "implementer"}
         for role in getattr(self.config, "roles", []) or []:
-            if str(getattr(role, "name", "") or "") == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             kind = str(getattr(role, "role_kind", "") or "auto").lower()
             name = str(getattr(role, "name", "") or "").lower()
@@ -4569,7 +4570,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         instances = {
             role.instance_id
             for role in getattr(self.config, "roles", [])
-            if role.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, role)
         }
         if not instances:
             return

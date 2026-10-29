@@ -584,6 +584,39 @@ def test_run_manager_owner_fence_blocks_wrc_owned_frontier(
     assert blocked[0].payload["owner"] == "wrc"
 
 
+def test_wrc_consumes_wrc_owned_frontier_once(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    config = _config()
+    config.workflow.orchestration.normal_frontier_owner = "wrc"
+    _seed(state_dir, log, writer, config=config)
+    from types import SimpleNamespace
+    from zf.runtime.workflow_frontier_consumer import consume_wrc_normal_frontier
+
+    runtime = SimpleNamespace(
+        state_dir=state_dir,
+        config=config,
+        event_log=log,
+        event_writer=writer,
+        project_root=tmp_path,
+    )
+
+    first = consume_wrc_normal_frontier(runtime)
+    second = consume_wrc_normal_frontier(runtime)
+
+    assert len(first) == 1
+    assert first[0].action == "dispatch"
+    assert second == []
+    dispatches = [
+        event for event in log.read_all()
+        if event.type == "workflow.invoke.requested"
+    ]
+    assert len(dispatches) == 1
+    assert dispatches[0].actor == "wrc"
+    assert dispatches[0].payload["normal_frontier_owner"] == "wrc"
+
+
 def test_reserved_continuation_reuses_existing_workflow_invoke_runtime(
     tmp_path: Path,
 ) -> None:

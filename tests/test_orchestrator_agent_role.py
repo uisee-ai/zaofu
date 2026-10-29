@@ -10,6 +10,7 @@ from zf.runtime.orchestrator_agent_role import (
     configured_orchestrator_role,
     configured_orchestrator_role_from_config,
     orchestrator_instance_id,
+    is_configured_orchestrator_role,
 )
 
 
@@ -56,3 +57,11 @@ def test_config_only_resolver_keeps_legacy_fallback_fail_closed() -> None:
     runtime = _runtime()
 
     assert configured_orchestrator_role_from_config(runtime.config) is None
+
+
+def test_explicit_profile_excludes_all_logical_role_replicas() -> None:
+    runtime = _runtime(profile="oa-primary")
+    replica = RoleConfig(name="oa-primary", instance_id="oa-primary-2")
+
+    assert is_configured_orchestrator_role(runtime.config, runtime.config.roles[0])
+    assert is_configured_orchestrator_role(runtime.config, replica)

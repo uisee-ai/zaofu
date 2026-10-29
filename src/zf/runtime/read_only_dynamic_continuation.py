@@ -103,6 +103,7 @@ def execute_read_only_continuation(
     causation_id: str = "",
     after_reserve: Callable[[], None] | None = None,
     project_root: Path | None = None,
+    dispatch_actor: str = "run-manager",
 ) -> DynamicContinuationResult:
     """Reserve and publish one existing read-only execution pattern."""
 
@@ -379,7 +380,7 @@ def execute_read_only_continuation(
             )
         dispatch = writer.emit(
             "workflow.invoke.requested",
-            actor="run-manager",
+            actor=str(dispatch_actor or "run-manager"),
             task_id=str(action_body["task_id"]),
             causation_id=(admitted.id if admitted is not None else causation_id) or None,
             correlation_id=str(action_body["workflow_run_id"]),
@@ -430,6 +431,7 @@ def execute_read_only_continuation(
                     "sha256": str(action_body["trigger_checkpoint_digest"]),
                 }],
                 "semantic_attempt_consumed": False,
+                "normal_frontier_owner": str(dispatch_actor or "run-manager"),
             },
         )
         final_reason, _, _ = _currentness_preflight(
