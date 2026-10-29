@@ -38,6 +38,8 @@ Task 尚未 done 不代表 Impl/Verify worker 仍有执行义务。watchdog 对�
 
 Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须在 zf.yaml 的 `project.scripts.setup` 声明可重复执行的环境准备入口；Candidate integrator 会在精确候选提交上执行该配置，再运行 rolling smoke。运行时不猜测项目使用 Node 或某个固定脚本。
 
+启动入口在保留显式 `ZF_CLI_CMD` 的同时，始终把当前 harness 解释器所在目录前置到 PATH；由 workflow launcher 启动时也执行此步骤。否则 launcher 已设置 CLI 会跳过环境初始化，Candidate 的裸 `python3` 可能落到系统解释器，与 worker 的验证环境不同。项目显式指定的解释器和 Candidate 自有 `.venv/bin` 优先级不变；这不替代项目的版本锁定与 setup。回归 `tests/test_cli_command.py` 用独立子进程验证实际命令解析，并检查显式 CLI 保留及重复初始化幂等。
+
 修复集成阻塞后使用 `zf recover task-integration --operation <id> --reason '<修复证据>'` 预览，加 `--apply` 才执行。入口检查当前代际、原 needs_review 事件、已接纳的 Verify 通过结果、无活跃 operation/attempt 及非终态 Run/Task；apply 通过 WorkflowOperationService 追加 supersede 事实，原失败证据不变。既有 reconciler 派发下一 integration generation，重新执行 setup、rolling smoke 与 Candidate CAS；保留已通过的 Impl/Verify，不发新的产品成功事件。重复请求幂等，新的阶段代际或更新集成操作使旧恢复请求失效。
 
 验证：`tests/test_task_pipeline_worker_liveness.py` 覆盖实际 watchdog 调用；`tests/test_task_pipeline_integration_retry.py` 覆盖 CLI、拒绝分支、代际投影和无 provider 的真实 git Candidate 集成恢复。
