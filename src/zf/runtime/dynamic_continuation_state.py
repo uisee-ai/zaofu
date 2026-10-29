@@ -92,7 +92,7 @@ def currentness_preflight(
         ancestor = operations.get(str(ancestor.get("parent_operation_id") or ""))
     from zf.runtime.dynamic_continuation_lifecycle import capacity_error
 
-    capacity_reason = capacity_error(state_dir, operations, action, operation_id(action))
+    capacity_reason = capacity_error(state_dir, operations, action, operation_id(action), events=events)
     if capacity_reason:
         return capacity_reason, "", {}
     fragment_id = str(action.get("fragment_id") or "")
@@ -109,6 +109,15 @@ def currentness_preflight(
         config=config,
         proposal_budget=action.get("budgets"),
     )
+    from zf.core.cost.tracker import CostTracker
+    from zf.runtime.operation_usage_attribution import apply_parent_budget
+
+    try:
+        budget = apply_parent_budget(budget, events=events,
+            records=CostTracker(state_dir / "cost.jsonl").usage_records(),
+            root_id=str(action.get("parent_operation_id") or ""), state_dir=state_dir)
+    except (OSError, ValueError, TypeError):
+        budget.update(usage_known=False, available=False)
     if pending:
         return "pending_operator_or_control_action", pending_digest, budget
     if not budget.get("usage_known", True):

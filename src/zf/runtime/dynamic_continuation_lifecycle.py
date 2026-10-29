@@ -56,7 +56,7 @@ def result_lifecycle_issues(events: list[ZfEvent], operation_id: str, *, success
     return issues
 
 
-def capacity_error(state_dir: Path, operations: Mapping[str, dict], action: Mapping, operation_id: str) -> str:
+def capacity_error(state_dir: Path, operations: Mapping[str, dict], action: Mapping, operation_id: str, *, events: list[ZfEvent] | None = None) -> str:
     """Reserve sibling work against one parent ceiling under its caller lock.
 
     Physical worker slots remain owned by the existing global scheduler. An
@@ -67,6 +67,8 @@ def capacity_error(state_dir: Path, operations: Mapping[str, dict], action: Mapp
     if type(limit) is not int or limit < 1:
         return "bounded_max_children_required"
     used = 0
+    from zf.runtime.dynamic_cancellation_receipts import cancelled_tree_released
+
     for child in operations.values():
         if child.get("parent_operation_id") != action.get("parent_operation_id") or child.get("operation_type") != "dynamic_read_only_workflow":
             continue
@@ -83,7 +85,7 @@ def capacity_error(state_dir: Path, operations: Mapping[str, dict], action: Mapp
             child.get("status") == "settled" and child.get("admitted_call_result_ref")
         ) or (
             child.get("status") == "superseded" and not child.get("dispatch_id")
-        )
+        ) or cancelled_tree_released(operations, child, events or [])
         if not released:
             used += count
     count = int(action.get("reserved_child_count") or 1)

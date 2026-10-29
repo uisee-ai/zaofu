@@ -129,3 +129,7 @@ Preparation: Requirement -> FlowSpec -> Proposal -> 已接纳 Run
 后续工作需独立验收：跨路线真实 Provider canary、物理取消确认和精确父子费用归属、
 方法自动从快照重建受限会话、任意多节点 fragment、经验驱动的模板晋升。
 当前没有将这些项标记为完成。
+
+后续七项实施及 §9.2–9.6 条款评估见
+[194 后续闭合报告](194-followup-closure.md)。其中机制补强与 pilot 已执行，
+完整宿主／跨路线资格和收益结论仍为 HOLD；请勿继续沿用本报告的“尚未执行后续批次”状态。

@@ -776,6 +776,7 @@ class StreamJsonTransport(TransportAdapter):
                     "duration_ms": getattr(m, "duration_ms", 0),
                     "is_error": getattr(m, "is_error", False),
                     "backend": context.backend or "claude-code",
+                    "usage_scope": "exclusive",  # This provider call, excluding harness child calls.
                 }
                 if observed_model:
                     payload["model"] = observed_model
