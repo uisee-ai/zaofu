@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -131,8 +132,9 @@ def test_stage_retrigger_idempotent_and_generational(tmp_path: Path) -> None:
     assert len(redriven) == 1
 
 
+@pytest.mark.parametrize("guidance", ["", "Keep accepted work; restore the explicit predecessor mapping."])
 def test_stage_replan_new_generation_reopens_run_and_parent_once(
-    tmp_path: Path,
+    tmp_path: Path, guidance: str,
 ) -> None:
     svc = _service(tmp_path)
     stage = SimpleNamespace(
@@ -205,6 +207,7 @@ def test_stage_replan_new_generation_reopens_run_and_parent_once(
         payload={
             "escalation_event_id": escalation.id,
             "approval_ref": "operator:test",
+            "reason": guidance,
         },
     )
     replay = svc._execute_action(
@@ -214,6 +217,7 @@ def test_stage_replan_new_generation_reopens_run_and_parent_once(
         payload={
             "escalation_event_id": escalation.id,
             "approval_ref": "operator:test",
+            "reason": guidance,
         },
     )
 
@@ -234,6 +238,12 @@ def test_stage_replan_new_generation_reopens_run_and_parent_once(
         and event.payload.get("stage_replan_generation") == generation
     ]
     assert len(triggers) == 1
+    feedback = triggers[0].payload["rework_feedback"]
+    assert any(x["message"] == "task map admission rejected" for x in feedback)
+    if guidance:
+        assert any(x["message"] == guidance and x["category"] == "operator_recovery_guidance" for x in feedback)
+    else:
+        assert len(feedback) == 1
     assert triggers[0].payload["rework_attempt"] == 1
     assert triggers[0].payload["operator_authorized"] is True
     assert events.index(goal_update) < events.index(triggers[0])

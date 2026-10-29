@@ -399,6 +399,17 @@ class RecoveryActionsMixin:
                 f"new stage generation rejected: {note}",
                 409,
             )
+        guidance = str(payload.get("reason") or "").strip()
+        if guidance:
+            stage_trigger.payload["rework_feedback"] = [
+                *stage_trigger.payload.get("rework_feedback", []),
+                {
+                    "severity": "high",
+                    "category": "operator_recovery_guidance",
+                    "message": guidance,
+                    "source_event_id": requested.id,
+                },
+            ]
         if "repair_target" in payload:
             from zf.runtime.reader_repair_target import bind_reader_repair_target
 
