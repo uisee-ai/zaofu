@@ -6,7 +6,7 @@ const assert = {
     if (JSON.stringify([...a]) !== JSON.stringify([...b])) throw new Error("Collections differ");
   },
 };
-import { workflowSummaryIds, expandedNodeIds, GraphLayoutCache, graphPositions, relatedNodes, type SdlcNode, type SdlcEdge } from "../src/components/workflow/sdlcGraphModel.js";
+import { workflowSummaryIds, workflowSummaryPositions, expandedNodeIds, GraphLayoutCache, graphPositions, relatedNodes, type SdlcNode, type SdlcEdge } from "../src/components/workflow/sdlcGraphModel.js";
 
 const nodes: SdlcNode[] = ["A", "B", "C"].map(id => ({ id, kind: "task", label: id, status: "pending", views: ["modules"], data: {} }));
 const edges: SdlcEdge[] = ["A", "B"].map(id => ({ id, source: id, target: "C", relation: "depends_on", views: ["modules"] }));
@@ -59,4 +59,14 @@ test("stage summary hides compiler details without deleting the full graph", () 
   assert.deepEqual(workflowSummaryIds(all), new Set(["workflow:stage:plan", "operation:planner"]));
   assert.equal(all.length, 3);
   assert.equal(workflowSummaryIds(all.slice(1)).size, 2);
+});
+
+test("summary puts the connected stage path left to right and keeps unrelated stages separate", () => {
+  const stages = ["scan", "plan", "impl", "unlinked"].map(id => ({ ...nodes[0], id, label: id, kind: "workflow" }));
+  const links = [{ ...edges[0], source: "scan", target: "plan" }, { ...edges[1], source: "plan", target: "impl" }];
+  const layout = workflowSummaryPositions(stages, links);
+  assert.ok(layout.get("scan")!.x < layout.get("plan")!.x);
+  assert.ok(layout.get("plan")!.x < layout.get("impl")!.x);
+  assert.ok(layout.get("unlinked")!.y > layout.get("scan")!.y);
+  assert.deepEqual(layout, workflowSummaryPositions([...stages].reverse(), [...links].reverse()));
 });

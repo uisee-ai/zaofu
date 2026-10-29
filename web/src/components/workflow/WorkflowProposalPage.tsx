@@ -181,6 +181,13 @@ function WorkflowProposalWorkbench({
   const effectiveConfig = asRecord(detail?.artifacts.effective_config);
   const yaml = textValue(effectiveConfig.yaml);
   const submitted = Boolean(detail?.lifecycle.submitted || detail?.links.run_id);
+  const objective = textValue(detail?.requirement.objective) || textValue(current?.objective);
+  const acceptance = asStringArray(detail?.requirement.acceptance);
+  const boundTask = textValue(current?.task_id);
+  const sourceTask = new URLSearchParams(location.search).get("task") || "";
+  const runId = textValue(detail?.links.run_id);
+  const loopUrl = new URLSearchParams({ project: projectId, page: "behavior-loop", request: selectedId,
+    ...(boundTask ? { task: boundTask } : {}), ...(runId ? { expected_run: runId } : {}) });
 
   function selectRequest(id: string) {
     if (reviewBusy.current) return;
@@ -200,6 +207,12 @@ function WorkflowProposalWorkbench({
       {needsAnswers && <button className="icon-button" type="button" disabled={Boolean(busyAction)} onClick={() => setPanel("review")}>Answer Questions</button>}
       <button aria-label="Refresh workflows" className="icon-button" type="button" disabled={Boolean(busyAction)} onClick={() => { void loadRequests(); void loadDetail(); }}><RefreshCw size={16} /></button>
     </header>
+    {detail && <section className="workflow-goal-context" aria-label="Goal context">
+      <div><small>Goal / Requirement</small><strong>{objective || "目标尚未确认"}</strong></div>
+      <div className="workflow-goal-meta"><span>Task：{boundTask || "未绑定"}</span>{sourceTask && sourceTask !== boundTask && <span>来源 Task：{sourceTask}（关联未确认）</span>}<span>Run：{runId || "尚未启动"}</span>
+        {acceptance.length > 0 && <details><summary>验收条件 · {acceptance.length}</summary><ul>{acceptance.map((item, index) => <li key={index}>{item}</li>)}</ul></details>}
+        {runId && <a href={`/?${loopUrl}`}>查看 Loop Timeline</a>}</div>
+    </section>}
     {error && <div className="workflow-proposal-notice tone-error" role="alert">{error}</div>}
     {feedback && <div className={`workflow-proposal-notice ${feedback.ok ? "tone-ok" : "tone-error"}`} data-testid="workflow-proposal-feedback"><strong>{feedback.status}</strong><span>{feedback.reason || decisionFeedback(feedback)}</span></div>}
     {loading ? <WorkflowEmpty title="Loading workflows" /> : !requests.length ? <WorkflowEmpty title="No workflows" /> : !detail ? <WorkflowEmpty title="Loading workflow" /> :

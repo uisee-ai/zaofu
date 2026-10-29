@@ -73,6 +73,34 @@ export function graphPositions(nodes: SdlcNode[], edges: SdlcEdge[]): Map<string
   }));
 }
 
+/** Keep the connected stage path prominent; detached or folded routes stay separate. */
+export function workflowSummaryPositions(nodes: SdlcNode[], edges: SdlcEdge[]): Map<string, { x: number; y: number }> {
+  const remaining = new Set(nodes.map(node => node.id));
+  const groups: string[][] = [];
+  while (remaining.size) {
+    const root = remaining.values().next().value as string;
+    const queue = [root]; const group: string[] = []; remaining.delete(root);
+    while (queue.length) {
+      const id = queue.shift()!; group.push(id);
+      for (const edge of edges) {
+        const next = edge.source === id ? edge.target : edge.target === id ? edge.source : "";
+        if (next && remaining.delete(next)) queue.push(next);
+      }
+    }
+    groups.push(group.sort());
+  }
+  groups.sort((a, b) => b.length - a.length || a[0].localeCompare(b[0]));
+  const main = new Set(groups[0] ?? []);
+  const mainNodes = nodes.filter(node => main.has(node.id));
+  const base = graphPositions(mainNodes, edges);
+  const result = new Map<string, { x: number; y: number }>();
+  for (const [id, position] of base) result.set(id, { x: position.y * 1.55, y: position.x * 0.65 });
+  const bottom = Math.max(0, ...[...result.values()].map(position => position.y)) + 200;
+  nodes.filter(node => !main.has(node.id)).sort((a, b) => a.label.localeCompare(b.label))
+    .forEach((node, index) => result.set(node.id, { x: index * 310, y: bottom }));
+  return result;
+}
+
 /** Status, labels and selection don't change the fixed-size dependency layout. */
 export class GraphLayoutCache {
   private key = "";

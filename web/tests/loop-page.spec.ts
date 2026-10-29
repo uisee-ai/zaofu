@@ -236,7 +236,7 @@ test("Loop owns its request, bounds attempt DOM, and fits a 368px container", as
   await page.goto("/?page=behavior-loop&project=loop-browser-test");
   const loopPage = page.getByTestId("loop-page-v2");
   await expect(loopPage).toBeVisible({ timeout: 90_000 });
-  await expect(loopPage.getByText("875 attempts", { exact: false })).toBeVisible();
+  await expect(loopPage.getByText("875 legacy records", { exact: false })).toBeVisible();
   const timelineTypography = await loopPage.getByTestId("loop-task-row").first().evaluate((row) => ({
     label: getComputedStyle(row.querySelector<HTMLElement>(".loop-v2-timeline-label")!).fontWeight,
     meta: getComputedStyle(row.querySelector<HTMLElement>(".loop-v2-timeline-meta")!).fontWeight,
@@ -255,12 +255,12 @@ test("Loop owns its request, bounds attempt DOM, and fits a 368px container", as
   await page.getByTestId("loop-member").click();
   const drawer = page.getByTestId("loop-attempt-drawer");
   await expect(drawer).toBeVisible();
-  await expect(drawer.getByTestId("loop-attempt-count")).toHaveText("Showing 100 of 875 attempts");
+  await expect(drawer.getByTestId("loop-attempt-count")).toHaveText("Showing 100 of 875 records");
   await expect(drawer.getByTestId("loop-attempt-row")).toHaveCount(100);
   expect(await drawer.locator("*").count()).toBeLessThan(600);
 
   await drawer.getByTestId("loop-attempt-load-more").click();
-  await expect(drawer.getByTestId("loop-attempt-count")).toHaveText("Showing 200 of 875 attempts");
+  await expect(drawer.getByTestId("loop-attempt-count")).toHaveText("Showing 200 of 875 records");
   await expect(drawer.getByTestId("loop-attempt-row")).toHaveCount(200);
 
   await page.getByTestId("loop-task-row").getByRole("button", { name: /TASK-HIGH-CHURN/ }).click();
@@ -379,7 +379,7 @@ test("Loop timeline aligns time, selects original attempts and keeps unknown dur
   await timeline.getByRole("button", { name: /^Attempt 1 ·/ }).click();
   await expect(drawer).toContainText("Duration unknown");
   await expect(drawer).toContainText("Start unknown");
-  await drawer.getByRole("button", { name: "View all 3 attempts" }).click();
+  await drawer.getByRole("button", { name: "View all 3 records" }).click();
   await expect(drawer.getByTestId("loop-attempt-row")).toHaveCount(3);
   await timeline.getByRole("button", { name: "Compress gaps" }).click();
   await expect(timeline).toContainText("Compressed scale");
@@ -394,6 +394,40 @@ test("Loop timeline aligns time, selects original attempts and keeps unknown dur
   await page.screenshot({ path: testInfo.outputPath("loop-mobile.png") });
   view.tasks = [];
   await page.reload();
-  await expect(timeline).toContainText("No attempts recorded yet");
+  await expect(timeline).toContainText("No observed attempts or related events in this run");
   await expect(page.getByTestId("loop-time-axis")).toHaveCount(0);
+});
+
+test("identity-bound attempts, unpaired events and admitted plan remain distinct", async ({ page }, testInfo) => {
+  await installLoopStreamHarness(page);
+  await mockLoopBootstrap(page);
+  const legacy = loopViewWithAttempts(2);
+  const task = { ...legacy.tasks[0], attempts: [{ ...legacy.tasks[0].attempts[0], attempt_id: "att-1" }],
+    counted: 1, fails: 1, source: "identity-bound events", signals: [
+      { task_id: "TASK-HIGH-CHURN", type: "web.action.completed", ts: "2026-08-20T00:04:00Z", seq: 4, reason: "unpaired" },
+      { task_id: "TASK-HIGH-CHURN", type: "worker.context.compact.failed", ts: "2026-08-20T00:05:00Z", seq: 5, reason: "unpaired" },
+    ] };
+  const view = { ...legacy, timeline: { tasks: [task], attempt_count: 1, failed_attempt_count: 1,
+    signal_count: 2, source: "identity-bound events", coverage: "observed_only", baseline: {
+      event_id: "admitted-1", seq: 9, task_map_ref: "artifact:plan", task_map_digest: "a".repeat(64),
+      task_ids: ["TASK-HIGH-CHURN", "TASK-NOT-OBSERVED"],
+    } } };
+  await page.route("**/api/projects/*/loop-view", route => route.fulfill({ json: view }));
+  await page.goto("/?page=behavior-loop&project=loop-browser-test&request=req-1&expected_run=wrong-run&task=TASK-HIGH-CHURN");
+  await expect(page.getByRole("alert")).toContainText("不一致");
+  await expect(page.getByTestId("loop-attempt-drawer")).toHaveCount(0);
+  await page.goto("/?page=behavior-loop&project=loop-browser-test&request=req-1&expected_run=run-loop-browser-test&task=TASK-HIGH-CHURN");
+  const timeline = page.getByTestId("loop-timeline");
+  await expect(timeline).toContainText("Observed attempts 1");
+  await expect(timeline).toContainText("Failed attempts 1");
+  await expect(timeline).toContainText("Other events 2");
+  const comparison = page.getByTestId("loop-plan-comparison");
+  await comparison.locator("summary").click();
+  await expect(comparison).toContainText("TASK-NOT-OBSERVED");
+  await expect(comparison).toContainText("尚未观察到尝试");
+  await expect(comparison).toContainText("ETA 和成本预测未显示");
+  await expect(page.getByTestId("loop-attempt-drawer")).toContainText("web.action.completed");
+  await expect(page.getByRole("link", { name: "返回 Workflow" })).toHaveAttribute("href", /request=req-1/);
+  await timeline.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("identity-timeline.png") });
 });

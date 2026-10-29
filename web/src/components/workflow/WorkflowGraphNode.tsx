@@ -22,7 +22,7 @@ function WorkflowGraphNode({ data }: NodeProps<GraphNode>) {
     <strong title={node.label}>{node.label}</strong>
     <div className="sdlc-card-meta">
       <span className="sdlc-provider" title={provider ? binding.source === "provider_usage" ? "Observed provider" : "Configured provider" : "No provider observation"}>
-        <i />{provider || String(node.data.role_instance || node.kind)}
+        {provider || node.data.role_instance ? <><i />{provider || String(node.data.role_instance)}</> : null}
       </span>
       <span className={`sdlc-card-status ${active ? "is-active" : success ? "is-success" : failed ? "is-failed" : ""}`} title={statusLabels[node.status] || node.status}>
         <Icon size={13} aria-hidden="true" />{node.status.replaceAll("_", " ")}

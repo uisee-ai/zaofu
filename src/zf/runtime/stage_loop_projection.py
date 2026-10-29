@@ -23,7 +23,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 
 SCHEMA_VERSION = "loop-view.v1"
-LOOP_VIEW_CACHE_REVISION = "3"
+LOOP_VIEW_CACHE_REVISION = "4"
 
 PUMP_TYPES = frozenset({
     "orchestrator.round.complete",
@@ -606,6 +606,7 @@ def build_loop_view(
 ) -> dict[str, Any]:
     state_dir = Path(state_dir)
     events = list(events) if events is not None else _read_events(state_dir, config=config)
+    all_events = events
     all_event_count = len(events)
     run_id, events = _latest_run_events(events)
     run_scoped = len(events) != all_event_count
@@ -618,6 +619,17 @@ def build_loop_view(
         else _attempts_from_events(events)
     promise = _promise(events, project_root)
     business_delivery_active = _has_business_delivery(events)
+    from zf.runtime.loop_timeline_projection import build_loop_timeline
+    # The legacy business view tolerates unscoped records for a single run.
+    # Identity-bound comparisons must not assign those records to that run.
+    if run_id:
+        from zf.runtime.run_scope import event_run_id, run_aliases
+        aliases = run_aliases(event for _, event in all_events)
+        timeline_events = [(seq, event) for seq, event in events
+                           if event_run_id(event, aliases=aliases) == run_id]
+    else:
+        timeline_events = events
+    timeline = build_loop_timeline(timeline_events)
     ctx = {
         "counts": counts,
         "tasks": tasks,
@@ -660,6 +672,7 @@ def build_loop_view(
         "backflows": _stage_backflows(events),
         "subscriber_chains": _subscriber_chains(events),
         "tasks": tasks,
+        "timeline": timeline,
         "loops": loops,
         "faults": _faults(counts),
         "companions": _companions(counts),

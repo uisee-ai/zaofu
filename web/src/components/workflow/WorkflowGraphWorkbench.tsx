@@ -9,10 +9,11 @@ import { asRecord, asRecordArray } from "../../app/shared";
 import PlanReviewReader from "../delivery-trace/PlanReviewReader";
 import PlanArtifactChat from "./PlanArtifactChat";
 import { workflowNodeTypes } from "./WorkflowGraphNode";
+import WorkflowExecutionTimeline from "./WorkflowExecutionTimeline";
 import { X, Code, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
-import { activeStatus, expandedNodeIds, GraphLayoutCache, graphViews, relatedNodes, statusLabels, workflowSummaryIds, type GraphView } from "./sdlcGraphModel";
+import { activeStatus, expandedNodeIds, GraphLayoutCache, graphViews, relatedNodes, statusLabels, workflowSummaryIds, workflowSummaryPositions, type GraphView } from "./sdlcGraphModel";
 
-const graphFitOptions = { padding: 0.22, maxZoom: 0.8, minZoom: 0 };
+const graphFitOptions = { padding: 0.22, maxZoom: 0.8, minZoom: 0.6 };
 
 export default function WorkflowGraphWorkbench({ projectId, requestId, revision, onAction, actionReady, onOpenRaw, recentEvents, liveState }: {
   projectId: string; requestId: string; revision: string;
@@ -32,6 +33,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [fullStructure, setFullStructure] = useState(false);
+  const [showAllNodes, setShowAllNodes] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState(new Set<string>());
   const [asOf, setAsOf] = useState(0);
@@ -73,20 +75,28 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     const expanded = expandedNodeIds(graph.nodes, graph.edges, collapsed);
     const summary = view === "workflow" && !fullStructure ? workflowSummaryIds(graph.nodes) : null;
     const needle = search.trim().toLowerCase();
-    const nodes = graph.nodes.filter(n => (n.views.includes(view) || n.id === selected) && expanded.has(n.id) && (!reachable || reachable.has(n.id))
+    const candidates = graph.nodes.filter(n => (n.views.includes(view) || n.id === selected) && expanded.has(n.id) && (!reachable || reachable.has(n.id))
       && (!summary || summary.has(n.id) || n.id === selected)
       && (!status || n.status === status) && (!needle || `${n.id} ${n.label} ${JSON.stringify(n.data)}`.toLowerCase().includes(needle)));
+    const priority = (n: typeof candidates[number]) => n.id === selected ? 0 :
+      ["requirement", "goal", "run", "preparation"].includes(n.kind) ? 1 :
+      ["failed", "blocked", "evidence_missing", "running", "in_progress"].includes(n.status) ? 2 :
+      ["task", "module", "claim", "workflow"].includes(n.kind) ? 3 : 4;
+    const nodes = showAllNodes || needle || reachable || candidates.length <= 40 ? candidates :
+      [...candidates].sort((a, b) => priority(a) - priority(b) || a.label.localeCompare(b.label)).slice(0, 40);
     const ids = new Set(nodes.map(n => n.id));
-    return { nodes, edges: graph.edges.filter(e => e.views.includes(view) && ids.has(e.source) && ids.has(e.target)) };
-  }, [graph, view, direction, selected, collapsed, search, status, fullStructure]);
+    return { nodes, edges: graph.edges.filter(e => e.views.includes(view) && ids.has(e.source) && ids.has(e.target)), hidden: candidates.length - nodes.length };
+  }, [graph, view, direction, selected, collapsed, search, status, fullStructure, showAllNodes]);
   const layoutScope = JSON.stringify([projectId, requestId, view, direction,
-    direction === "all" ? "" : selected, [...collapsed].sort(), search.trim().toLowerCase(), status, fullStructure, asOf]);
+    direction === "all" ? "" : selected, [...collapsed].sort(), search.trim().toLowerCase(), status, fullStructure, showAllNodes, asOf]);
   useEffect(() => {
     // Explicit navigation gets a compact layout; live polls preserve dragged nodes and the viewport.
     if (positionScope.current !== layoutScope) {
       positions.current.clear(); positionScope.current = layoutScope;
     }
-    const layout = layoutCache.current.get(filtered.nodes, filtered.edges);
+    const layout = view === "workflow" && !fullStructure
+      ? workflowSummaryPositions(filtered.nodes, filtered.edges)
+      : layoutCache.current.get(filtered.nodes, filtered.edges);
     for (const n of filtered.nodes) {
       const key = `${view}:${n.id}`;
       if (!positions.current.has(key)) {
@@ -103,7 +113,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
       data: { node: n },
     })));
     setCanvasScope(layoutScope);
-  }, [filtered, selected, view, layoutScope]);
+  }, [filtered, selected, view, layoutScope, fullStructure]);
   const activeNodes = useMemo(() => new Set(filtered.nodes.filter(n => activeStatus(n.status)).map(n => n.id)), [filtered.nodes]);
   const canvasEdges: Edge[] = filtered.edges.map(e => ({ ...e, type: "default",
     label: fullStructure || e.source === selected || e.target === selected ? e.event || e.relation : undefined,
@@ -154,19 +164,22 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
       {error && <p role="alert">{error} <button type="button" onClick={() => void refresh()}>Retry</button></p>}
       {!graph && !error && <p>正在读取流程与运行关系…</p>}
       {graph && <>
+        {view === "workflow" && !fullStructure && <div className="sdlc-summary-note">阶段概览：部分角色、事件和连接已折叠。 <button type="button" onClick={() => setFullStructure(true)}>展开流程结构</button></div>}
+        {view !== "timeline" && Boolean(filtered.hidden) && <div className="sdlc-summary-note" role="status">为保持可读性，仅显示 40 个重点节点；{filtered.hidden} 个节点已折叠，连接可能不完整。 <button type="button" onClick={() => setShowAllNodes(true)}>显示全部</button></div>}
+        {view !== "timeline" && showAllNodes && <div className="sdlc-summary-note"><button type="button" onClick={() => setShowAllNodes(false)}>返回重点节点</button></div>}
         {showTools && <div className="sdlc-toolbar">
           {view === "workflow" && <button type="button" aria-pressed={fullStructure} onClick={() => setFullStructure(!fullStructure)}>{fullStructure ? "返回阶段与执行概览" : "展开角色、汇聚与事件结构"}</button>}
-          <label>Search <input aria-label="搜索图节点" placeholder="Module, task, agent or ID" value={search} onChange={e => setSearch(e.target.value)} /></label>
+          {view !== "timeline" && <><label>Search <input aria-label="搜索图节点" placeholder="Module, task, agent or ID" value={search} onChange={e => setSearch(e.target.value)} /></label>
           <label>Status <select aria-label="图节点状态" value={status} onChange={e => setStatus(e.target.value)}><option value="">All</option>{[...new Set(graph.nodes.map(n => n.status))].sort().map(s => <option key={s} value={s}>{statusLabels[s] || s}</option>)}</select></label>
-          <label>Relations <select aria-label="图关系范围" value={direction} onChange={e => setDirection(e.target.value as typeof direction)}><option value="all">All</option><option value="upstream">Upstream</option><option value="downstream">Downstream</option></select></label>
+          <label>Relations <select aria-label="图关系范围" value={direction} onChange={e => setDirection(e.target.value as typeof direction)}><option value="all">All</option><option value="upstream">Upstream</option><option value="downstream">Downstream</option></select></label></>}
           <label>History <input aria-label="回放事件序号" type="number" min="1" max={graph.scope.head_seq} value={cursor} onChange={e => setCursor(e.target.value)} /></label>
           <button type="button" onClick={() => setAsOf(Math.min(graph.scope.head_seq, Math.max(0, Number(cursor) || 0)))}>回放</button>
           <button type="button" onClick={() => { setAsOf(0); setCursor(""); }}>回到实时</button>
         </div>}
         <div className={`sdlc-body${selectedNode ? " has-inspector" : ""}`}>
-          {partial && (view !== "workflow" || Boolean(search.trim())) ? <p role="status">正在读取完整运行关系…</p> : <div className="sdlc-canvas" data-testid="workflow-graph-canvas">
+          {partial && (view !== "workflow" || Boolean(search.trim())) ? <p role="status">正在读取完整运行关系…</p> : view === "timeline" && "timeline" in graph ? <WorkflowExecutionTimeline graph={graph} onSelect={pick} /> : <div className="sdlc-canvas" data-testid="workflow-graph-canvas">
             <ReactFlow key={canvasScope} nodes={canvasNodes} edges={canvasEdges} nodeTypes={workflowNodeTypes} onNodesChange={onNodesChange} onNodeClick={(_, node) => pick(node.id)} fitView fitViewOptions={graphFitOptions} minZoom={0} onlyRenderVisibleElements nodesConnectable={false} deleteKeyCode={null} aria-label="Workflow 关系图">
-              <FitResizedCanvas /><Controls showInteractive={false} fitViewOptions={graphFitOptions} /><MiniMap pannable zoomable maskColor="var(--surface)" nodeColor="var(--text-tertiary)" style={{ width: 130, height: 85 }} />
+              <FitResizedCanvas focusId={filtered.nodes.length > 12 ? filtered.nodes.find(n => ["goal", "requirement"].includes(n.kind))?.id || filtered.nodes[0]?.id || "" : ""} /><Controls showInteractive={false} fitViewOptions={{ ...graphFitOptions, minZoom: 0 }} /><MiniMap pannable zoomable maskColor="var(--surface)" nodeColor="var(--text-tertiary)" style={{ width: 130, height: 85 }} />
             </ReactFlow>
             {!filtered.nodes.length && <p className="sdlc-empty">{graph.nodes.length ? "No nodes match these filters." : "The graph will appear as this workflow is prepared."}</p>}
           </div>}
@@ -179,6 +192,10 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
           {inspectedNode && <aside className="sdlc-inspector" aria-label="图节点详情">
             <button className="sdlc-close" type="button" aria-label="Close node details" onClick={() => { setSelected(""); const url = new URL(location.href); url.searchParams.delete("node"); history.replaceState(null, "", url); }}><X size={16} /></button>
             <h3>{inspectedNode.label}</h3><p>{statusLabels[inspectedNode.status] || inspectedNode.status}</p><code>{inspectedNode.id}</code>
+            {["failed", "blocked", "rejected", "evidence_missing"].includes(inspectedNode.status) && <div className="sdlc-failure-summary">
+              <strong>需要关注</strong><p>{String(inspectedNode.data.reason || asRecord(inspectedNode.data.failure).reason || "具体原因尚未观测；请查看关联记录与证据。")}</p>
+            </div>}
+            {graph.scope.run_id && !asOf && <p><a href={`/?${new URLSearchParams({ project: projectId, page: "behavior-loop", request: requestId, expected_run: graph.scope.run_id, workflow_node: selected, ...(inspectedNode.data.task_id ? { task: String(inspectedNode.data.task_id) } : {}) })}`}>在 Loop Timeline 中查看</a></p>}
             {inspectedNode.kind === "operation" && <div><p>Agent：{String(inspectedNode.data.role_instance || "未绑定")} · Attempt：{String(inspectedNode.data.active_attempt_id || "未观测")}</p>
               <p>Provider：{String(asRecord(inspectedNode.data.agent_binding).backend || "未观测")} · 模型：{String(asRecord(inspectedNode.data.agent_binding).model || "未观测")} · {asRecord(inspectedNode.data.agent_binding).source === "provider_usage" ? "实际用量记录" : "配置快照"}</p>
               <h4>最近活动</h4>{asRecordArray(inspectedNode.data.recent_activity).slice(-5).map(e => {
@@ -191,9 +208,9 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
             })}<details><summary>来源与执行证据</summary><pre>{JSON.stringify(inspectedNode.data, null, 2)}</pre></details>
           </aside>}
         </div>
-        <footer className="sdlc-footer"><span>{partial ? "已加载的流程结构" : `${filtered.nodes.length} / ${graph.nodes.length} nodes · ${filtered.edges.length} relations`} · R{graph.scope.revision} · Event {graph.scope.source_seq}</span>
+        <footer className="sdlc-footer"><span>{partial ? "已加载的流程结构" : view === "timeline" && "timeline" in graph ? `${graph.analysis?.intervals?.length ?? 0} operations` : `${filtered.nodes.length} / ${graph.nodes.length} nodes · ${filtered.edges.length} relations`} · R{graph.scope.revision} · Event {graph.scope.source_seq}</span>
           <span>{asOf ? "Historical snapshot" : "Live updates · checks every 30s"}</span></footer>
-        {showTools && <details className="sdlc-directory"><summary>Node directory</summary><div aria-label="图节点目录">{filtered.nodes.map(n => <button key={n.id} type="button" aria-pressed={selected === n.id} onClick={() => pick(n.id)} title={n.id}>{n.label}<small>{statusLabels[n.status] || n.status}</small></button>)}</div></details>}
+        {showTools && view !== "timeline" && <details className="sdlc-directory"><summary>Node directory</summary><div aria-label="图节点目录">{filtered.nodes.map(n => <button key={n.id} type="button" aria-pressed={selected === n.id} onClick={() => pick(n.id)} title={n.id}>{n.label}<small>{statusLabels[n.status] || n.status}</small></button>)}</div></details>}
         {plans.length > 0 && <details className="sdlc-plans"><summary>PRD / Plan documents · {plans.length}</summary>{plans.map(p => <button type="button" key={p.plan_id} onClick={() => setPlanId(p.plan_id)}>PRD / Plan Preview · {p.status}</button>)}</details>}
         {preview && <section className="sdlc-plan" aria-label="Workflow PRD Plan Preview">
           <header className="sdlc-plan-toolbar"><strong>Plan Preview</strong>
@@ -208,7 +225,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   </section>;
 }
 
-function FitResizedCanvas() {
+function FitResizedCanvas({ focusId }: { focusId: string }) {
   const width = useStore(state => state.width);
   const height = useStore(state => state.height);
   const initialized = useNodesInitialized();
@@ -220,7 +237,7 @@ function FitResizedCanvas() {
     const changed = previous.current !== size;
     previous.current = size;
     // On narrow canvases, keep cards readable; the fit control still shows the whole graph.
-    if (changed) void fitView({ ...graphFitOptions, minZoom: width <= 600 ? 0.65 : 0, duration: 150 });
-  }, [width, height, initialized, fitView]);
+    if (changed) void fitView({ ...graphFitOptions, ...(focusId ? { nodes: [{ id: focusId }] } : {}), minZoom: 0.6, duration: 150 });
+  }, [width, height, initialized, fitView, focusId]);
   return null;
 }

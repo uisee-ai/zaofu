@@ -29,6 +29,69 @@ async function open(page: Page) {
   await expect(page.getByTestId("workflow-graph-canvas")).toBeVisible();
 }
 
+test("timeline shows observed stage operations and preserves unknown times", async ({ page }) => {
+  await setup(page);
+  await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ status: 404 }));
+  const graph = { ...full("A"), nodes: [
+    { id: "workflow:stage:impl", kind: "workflow", label: "Implementation", status: "running", views: ["workflow"], data: { stage_id: "impl" } },
+    { id: "workflow:stage:verify", kind: "workflow", label: "Verification", status: "pending", views: ["workflow"], data: { stage_id: "verify" } },
+    ...["a", "b", "c"].map(id => ({ id: `operation:${id}`, kind: "operation", label: `Agent ${id}`, status: "running", views: ["timeline"], data: { parent_stage_id: "impl" } })),
+  ], analysis: { intervals: [
+    { operation_id: "a", task_id: "TASK-1", role: "dev-1", status: "settled", start_ms: 1000000, end_ms: 1060000, duration_ms: 60000 },
+    { operation_id: "b", task_id: "TASK-1", role: "dev-2", status: "running", start_ms: 1030000, end_ms: null, duration_ms: null },
+    { operation_id: "c", task_id: "TASK-2", role: "verify", status: "pending", start_ms: null, end_ms: null, duration_ms: null },
+  ] } };
+  await page.route("**/workflow-requests/A/graph?*", route => route.fulfill({ json: graph }));
+  await open(page);
+  await page.getByRole("button", { name: "Timeline", exact: true }).click();
+  const timeline = page.getByTestId("workflow-execution-timeline");
+  await expect(timeline).toContainText("Implementation");
+  await expect(timeline).toContainText("Verification");
+  await expect(timeline.getByTestId("workflow-execution-row")).toHaveCount(3);
+  await expect(timeline).toContainText("结束时间未观测");
+  await expect(timeline).toContainText("开始时间未观测");
+  await expect(timeline).toContainText("尚无已观测操作");
+  await expect(timeline.getByRole("button", { name: "压缩空档" })).toHaveAttribute("aria-pressed", "true");
+  await timeline.getByRole("button", { name: "真实时间" }).click();
+  await expect(timeline).toContainText("横轴按真实时间比例");
+  await timeline.getByTestId("workflow-execution-row").first().getByRole("button", { name: "详情", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "图节点详情" })).toContainText("Agent a");
+  await expect(page.locator(".sdlc-footer")).toContainText("3 operations");
+  await expect(page.getByTestId("workflow-event-timeline")).toHaveCount(0);
+});
+
+test("large real-sized graphs remain readable and disclose omitted relationships", async ({ page }, testInfo) => {
+  await setup(page);
+  await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ status: 404 }));
+  const large = { ...full("A"), nodes: [{ id: "root", kind: "requirement", label: "Readable goal", status: "confirmed", views: ["modules"], data: {} },
+    ...Array.from({ length: 120 }, (_, index) => ({ id: `task:${index}`, kind: "task", label: `Task ${index}`,
+      status: index === 0 ? "failed" : "pending", views: ["modules"], data: {} }))] };
+  await page.route("**/workflow-requests/A/graph?*", route => route.fulfill({ json: large }));
+  await open(page);
+  await page.getByRole("button", { name: "Task", exact: true }).click();
+  await expect(page.getByText(/仅显示 40 个重点节点/)).toBeVisible();
+  await expect(page.getByText(/81 个节点已折叠/)).toBeVisible();
+  const goal = page.locator('.react-flow__node[data-id="root"]');
+  await expect(goal).toBeVisible();
+  const box = await goal.boundingBox();
+  expect(box?.width).toBeGreaterThan(120);
+  await page.screenshot({ path: testInfo.outputPath("large-goal-graph.png") });
+  await page.getByRole("button", { name: "显示全部", exact: true }).click();
+  await expect(page.getByRole("button", { name: "返回重点节点" })).toBeVisible();
+});
+
+test("task context selects an exact bound request and explicit request takes precedence", async ({ page }) => {
+  await setup(page);
+  await page.route("**/api/projects/*/workflow-requests", route => route.fulfill({ json: { items: [
+    { ...request("A"), task_id: "other" }, { ...request("B"), task_id: "TASK-1", status: "running" },
+  ] } }));
+  await page.route("**/workflow-requests/B/graph/structure?*", route => route.fulfill({ json: structure("B") }));
+  await page.goto("/tests/inbox-workflow.html?surface=graph-refresh&task=TASK-1");
+  await expect(page.getByLabel("Select workflow")).toHaveValue("B");
+  await page.goto("/tests/inbox-workflow.html?surface=graph-refresh&task=TASK-1&request=A");
+  await expect(page.getByLabel("Select workflow")).toHaveValue("A");
+});
+
 for (const status of [404, 503]) {
   test(`unavailable structure (${status}) falls back once to the original complete graph`, async ({ page }) => {
     await setup(page);

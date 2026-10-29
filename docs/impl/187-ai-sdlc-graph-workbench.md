@@ -86,6 +86,10 @@ Raw 阻塞候选的真实 Codex 验证见 [2026-10-26 Raw Chat 修复](../record
 
 ## 状态与数据限制
 
+- Workflow 概览优先呈现目标、已绑定 Task、Run 和主要阶段；大图默认限制可见节点，明确提示折叠可能造成关系不完整，并允许展开。Timeline 按阶段展示实际 Operation 的 Task、执行者和已观测区间，保留阶段及操作详情入口；缺少开始或结束时间时明确显示未知，不推算跨度。可在真实时间和明确标示的不等比例压缩空档之间切换。Loop Timeline 负责查看 Task 尝试及反馈循环。
+- Loop 的 `timeline` 是附加只读投影：仅以带 Task 和 Attempt 身份的启动及匹配终态形成已观测尝试，非匹配记录保留为事件信号，计数是已观测下界。存在 Run 时，只采用身份可归属该 Run 的事件；旧业务视图对单 Run 的无归属事件兼容不用于新时间线。既有 `tasks` 和业务环卡维持原投影口径，可能包含 Fanout 成员，不能与新时间线数字直接比较。Workflow 与 Loop 的链接携带 Run 身份；当前 Loop 与目标 Run 不一致时明确提示，不把当前数据当作目标 Run。
+- Plan vs actual 仅在当前范围事件含内核准入的任务清单引用、摘要与任务 ID 时比较事件所记录的任务身份；不重新校验引用文件，这不是耗时或成本基线，也不代表任务已验收。缺少可信时间及成本依据时不展示偏差、ETA 或成本预测。投影读取仍经 EventLog 与指标索引；为此所需身份事件从账本补充 payload，并受现有源指纹和缓存约束。
+
 - Task 绿色完成要求当前代内的内核 `task.done.accepted`，或同 Run、同代次 `run.goal.completed` 中明确列出的 `completed_task_ids`，同时 canonical Task 已置 done；Worker 自述仅显示已报告。复用 Goal Coverage 的已接纳结果、目标提交和代次校验，过期验证不计入当前闭合。TaskStore 中的提交链接只提供追溯。
 - 历史模式按事件游标读取，无法重建的 Task 历史状态显示未知。需求与配置取已绑定 Proposal，不重建旧准备修订；后续编辑当前 `zf.yaml` 不改写旧 Run 图。
 - 下游影响表示已声明关系可达；未声明业务依赖仍待 Agent/人工评估。
