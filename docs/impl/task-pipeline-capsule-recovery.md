@@ -113,3 +113,7 @@ Task Pipeline 新 generation 可只包含增量任务；其全部完成不代表
 ## Planner 执行失败的接纳
 
 Plan producer 的 pinned pre-submit evaluator 仅对实际候选执行完整 Plan 端口检查。明确 execution_status=failed 且 workflow-read normalizer 确认为执行失败的报告使用类型化失败校验，仍须有 summary 和合法 findings；提交继续经过原有凭据、operation 身份、读证据与不可变结果接纳。失败不能成为成功候选，普通语义拒绝仍需完整 Plan。artifact_production 继续要求显式执行失败语义，不能凭负面审查结论省略正式产物。验证见 tests/test_plan_failure_submit.py 与 tests/test_result_submit.py。
+
+## 已接纳扫描的完整语义交接
+
+blocking/warning reader 聚合不读取 scratch。verification-result.v1 是精简的类型化验证合同；其 gap_tasks、plan_reconciliation 等完整报告从已接纳 envelope.source_event_ids 绑定的原始 ledger occurrence 读取，并核对 operation/request/fanout/child 身份。类型化控制结果优先，后续未接纳事件不能覆盖已接纳报告。原有 fanout-aggregate-rebuild 同时支持当前 discovery 的 completed/failed 聚合；只重算终结 child 的投影，不重新扫描，也不把失败改成通过。验证：tests/test_rescan_report_handoff.py、tests/test_reader_terminal_authority.py、tests/test_control_actions_recovery.py。

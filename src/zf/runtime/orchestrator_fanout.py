@@ -5687,6 +5687,11 @@ class FanoutCoordinationMixin(
             or (
                 not source_is_blocked_success
                 and source.type != expected_success_event
+                and not (
+                    source.type == "flow.discovery.failed"
+                    and config.get("failure_event") == source.type
+                    and expected_success_event == "flow.discovery.completed"
+                )
             )
             or (
                 not source_is_blocked_success

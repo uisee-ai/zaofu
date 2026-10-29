@@ -517,7 +517,7 @@ class RecoveryActionsMixin:
         if (
             aggregate_event is None
             or (
-                aggregate_event.type != "flow.discovery.completed"
+                aggregate_event.type not in {"flow.discovery.completed", "flow.discovery.failed"}
                 and schema_failure_event is None
             )
         ):
@@ -525,7 +525,7 @@ class RecoveryActionsMixin:
                 requested,
                 action,
                 requested_action,
-                "aggregate rebuild only accepts flow.discovery.completed, "
+                "aggregate rebuild only accepts flow.discovery.completed/failed, "
                 "its goal.closure.identity.invalid event, or a discriminator "
                 "that blocked goal.closure.synthesized",
                 409,
@@ -649,7 +649,12 @@ class RecoveryActionsMixin:
             if schema_failure_event is not None
             else aggregate_event.type
         )
-        if aggregate_config and expected_success_event != observed_success_event:
+        expected_source_event = (
+            str(aggregate_config.get("failure_event") or "")
+            if aggregate_event.type == "flow.discovery.failed"
+            else expected_success_event
+        )
+        if aggregate_config and expected_source_event != observed_success_event:
             return self._recovery_failed(
                 requested,
                 action,

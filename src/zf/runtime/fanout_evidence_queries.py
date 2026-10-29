@@ -310,7 +310,7 @@ class FanoutEvidenceQueriesMixin:
             if not isinstance(child, dict):
                 continue
             from zf.runtime.call_result_admission import result_protocol_mode
-            from zf.runtime.call_result_runtime import hydrate_admitted_control_result
+            from zf.runtime.admitted_fanout_report import admitted_fanout_report
 
             descriptor = child.get("admitted_call_result_ref")
             mode = result_protocol_mode(getattr(self, "config", None), {
@@ -321,7 +321,7 @@ class FanoutEvidenceQueriesMixin:
                     continue
                 # Scratch result.json is diagnostic, never typed authority.
                 # Even a later rejected submission must not replace this body.
-                report = hydrate_admitted_control_result(self.state_dir, descriptor)
+                report = admitted_fanout_report(self, descriptor)
                 payloads.append({**child, "report": report})
                 continue
             payload = dict(child)
