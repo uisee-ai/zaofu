@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 持续监工：重派草稿身份与复用 worker 的恢复选择
 
@@ -15,3 +15,16 @@
 S4（恢复中发现）：P12A 当前 g3 已超过 max_rework_attempts=2，恢复 CLI 仍返回 requested，调度器静默维持 blocked。step -> verify: CLI 预览/执行明确检查配置额度；操作员额外一次授权必须带 approval_ref，绑定原已接纳结果和恰好下一 generation；缺失/伪造/过期授权不能越过预算，正常校验层保留。本次依据用户此前“需要人工批准的，你来批准”及持续修复授权，只批准 P12A g3→g4 一次，原因是两次基础设施阻塞已有可复现修复和验证，不修改全局配置额度。
 
 S4 验证：定向 86 passed；dev-verify plan/run --base 7725d3f --tests tests/test_operator_retry_extra_generation.py 的 21 文件闭包 196 passed，包含 8-slot mock verify 与 OA/WRC dispatch E2E；sentinel 50 passed / 1 skipped。未声明 full pytest 或完整真实产品验收。
+
+## 修复批次闭环（持续监工仍继续）
+
+- 7725d3f fix: bind recovery drafts and worker ownership to current attempts
+- db85b82 fix: make exhausted implementation recovery explicit and bounded
+
+部署目录回归第一批 60 passed，第二批 62 passed。主运行目录保留其余 dirty 修改；source worktree 提交仅本轮路径，无 merge/push。
+
+11:15 UTC：P02-PUBLISH-CONTRACT 在 HEAD 549474dc538d45403c9ff6367b1e09a148ef6f74 上 smoke 1/runtime 57/browser 2 通过，结果 evt-0fa231bf2d28 获内核接纳，TaskRef 更新与 impl.self_check.completed 已发生。11:18 UTC：P02 Verify 经 checkpoint op-resume-1879a795f4f6156c59fad62e 恢复至 p2（evt-8b9c56e548d3），绑定 attempt ta-bdb7609868ca216e3a5b。
+
+P12A 的额外一次授权 evt-5451f86a8af7 明确绑定 g3 的已接纳 blocked 结果及 g4；不改全局额度。11:18 UTC 已派发 g4/p7（evt-0b8cdd7038e7），operation wop-impl-tp-P12A-745b3240199676ab-impl-re-8b2676fc0298；scratch marker 和 self_check.attempt_id 均为 ta-42f8c07c02503c9c1713。watcher 2228537 ready，两个阶段并行。
+
+本条 done 只表示本轮恢复缺陷的实现、验证和部署完成。独立 Verify、集成与整个产品交付尚在运行，持续监工继续；不得把 worker 自测当作产品已验收。
