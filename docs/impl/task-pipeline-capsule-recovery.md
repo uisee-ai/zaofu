@@ -59,3 +59,9 @@ Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role
 `verify_task_capsule` 的派发调用显式传入 expected_dispatch_id/expected_role_instance，核对 manifest 的 dispatch_id、active_dispatch_id、任务与角色，以及 task.md 的头部和 Runtime Binding。先校验当前合同，再准备 operation；只有需要实际派发时才发布文档，运行中/终态 operation 的幂等重入不重写文档。准备 briefing 后、交付 transport 前再检查一次，覆盖准备期间投影被替换的情况。briefing 显式列出 operation、dispatch 和 attempt 身份。发送成功后沿原路径更新 canonical TaskStore 并记录派发事件；发送失败不伪造 in_progress 或已发送事实。
 
 验证：`tests/test_task_pipeline_capsule.py` 在真实派发函数和 briefing/文档生成器、隔离的 provider transport 边界核对 Impl/Verify 首派、g2 重派及失败分支，并注入 manifest/正文/角色陈旧。它证明派发上下文一致性，不代表真实多 provider 并行或完整产品验收通过。
+
+## 重派位置与增量输入分区
+
+同一个 operation 的 request placement 不随重派变化。Hook 必须用当前 active_attempt_id、dispatch_id、lease_id、workflow/task 身份绑定 kernel 的 task.attempt.started，再核对派发位置；不能因 request 的首次 placement 不同而退回旧 role 目录，也不能仅删除 placement 校验。tests/test_hook_redrive_placement.py 覆盖真实写入守卫入口及伪造/过期身份拒绝。
+
+Gap amend 删除被替代任务、追加新任务后，原 task_input_policy 的数组位置不再有效。生成器按 task_id 重绑已有读取路径，新增任务只继承显式 parent/supersedes 的分区并添加自身合同；缺少来源分区时拒绝，不授予整份计划。source_refs/amend 是生成器维护的共享来源元数据。保留完整覆盖校验与不可变原始工件，通过新 amend/package 和正常批准发布修正版。tests/test_gap_input_policy_rebinding.py 覆盖替代、位置移动、只读依赖、重复生成与缺失来源。

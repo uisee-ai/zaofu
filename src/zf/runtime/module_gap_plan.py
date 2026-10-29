@@ -349,6 +349,12 @@ def build_gap_task_map_amend(
         out["amend"]["goal_kind"] = goal_kind
     if gap_category:
         out["amend"]["gap_category"] = gap_category
+    from zf.runtime.gap_input_policy import rebind_gap_input_policy
+
+    rebind_gap_input_policy(
+        base_task_map, out, gap_tasks=gap_tasks,
+        replacements=_replacement_ids_by_superseded(gap_tasks),
+    )
     return out
 
 

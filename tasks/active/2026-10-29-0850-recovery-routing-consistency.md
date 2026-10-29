@@ -16,3 +16,25 @@
 dev-verify plan --base 94e1ea9 已运行；共享 reactor 导入闭包推荐全量 248 文件。按 AGENTS.md 的领域闭包规则，改用上述实际调用链、共享 operation/attempt 契约与确定性流程验证，未宣称全量验证。
 
 第一批实现 d399f8d 已部署。08:45 UTC P12A 恢复同 operation，重规划 reader 已派发；再次触发 critical 时立即产出 workflow.operation.interrupted、task.attempt.superseded 和 task.requeued，状态一致性现场验证成功。随后发现 R4，原代码新增回归 1 failed；修复后 session/registry/context/transport/pipeline 与 mock E2E 定向 59 passed。
+
+## 增量计划操作员复核
+
+审核对象：plan evt-7580cf4fa1f2，Package af280fcdd0f1100be8d34196dc4f3c53e09c0150587556581d702ff2fe966cb9，gap-amends/evt-3f91b5364a0d/task_map.json。本轮只审核由独立 discovery 产生的 P02 增量，不宣称重新审核整份 PRD。
+
+- 与已批准来源比较：34→35 个任务，只将 P02 替换为 P02-PUBLISH-CONTRACT、P02-CLEAN-R1；其余仅五个消费者的依赖指向替代任务。P02 原 12 条 acceptance_criteria 逐值相同，原必需 Plan ports 保留。
+- 生产者与时序：schedule owner 补齐版本化业务发布 API/验证器、清单/用途/配置复核与原子提交；独立 Task Verify、集成后才解锁 clean owner。两者写域互斥，前置五任务已有完成证据；共享发布事务未拆给多个 owner。
+- 反例：clean 用途撤权而 schedule 用途仍有效，或清单成员改变但主索引不变时不得出现正式 artifact/outbox 或下载；新增 RECHECK/ATOMIC AC 和 runtime/browser 命令覆盖。保留 copy、旧租约、幂等、回滚兼容性回归。
+- TDD：具名生产入口反例 RED→实现→同断言 GREEN；独立 Verify 复验 exact commit。既有 candidate/manual 义务保持未来阶段待验，不能算本片通过。
+- 非阻断机械警告：增量 digest 的两任务没有 assembly/root owner；完整图的 F00/装配任务仍保留，该补丁不新增根文件写入。
+- 边界：P03/P16B 的业务实现和最终 qualification 未通过，待上游接口交付后继续各自受控恢复/增量计划；不将本次 approve 当作全部缺陷已关闭。
+
+按用户已授予的代审批权限批准此范围，未代替未来 Verify/Judge 或人工资格证据。
+
+## 第二轮恢复暴露的边界
+
+- R5：P12A p4 的合法 task workspace 被 Hook 拒绝，原因是 request 保留 p2 placement。step -> verify: 用当前 attempt 的 kernel 事实证明 p4，真实 write guard 放行；错误 attempt/lease/dispatch/run/op/placement 与非 kernel 事实拒绝。
+- R6：P02 的 34→35 任务 amend 原样复制 34 项分区，导致 $.tasks[34].task_id 无读取归属。step -> verify: 按 task_id 重绑，不改变业务任务和 AC；实际部署解析器对重建的 35 个任务全覆盖通过。
+
+R5/R6 修复前新增回归 2 failed；修复后定向调用链 122 passed，新增负例与幂等测试 4 passed。P12A g3 受控 retry 预览允许，尚未直接修改任何 Task 状态。
+
+第二轮最终定向 124 passed，sentinel 50 passed / 1 skipped；dev-verify plan --base 59d574f 再次因共享 gap/hook 调用闭包推荐 broad deterministic，按 AGENTS.md 保持领域定向层级，包含 gap bridge、Goal gap、Hook 接收/写入守卫、受控 retry 与 flow smoke，未宣称全量通过。
