@@ -690,11 +690,64 @@ def _run_rolling_smoke(
             source_event_id=source_event_id,
         )
         refs.append(descriptor)
+        _restore_rolling_smoke_producer_paths(
+            worktree,
+            target_commit=target_commit,
+            producer_paths=command.get("producer_paths"),
+        )
         if evidence.get("exit_code") != 0:
             raise CandidateIncrementalError(
                 f"rolling smoke failed: {command['id']}"
             )
     return refs, registry_digest
+
+
+def _restore_rolling_smoke_producer_paths(
+    worktree: Path,
+    *,
+    target_commit: str,
+    producer_paths: Any,
+) -> None:
+    """Keep declared smoke outputs out of the candidate source diff.
+
+    Verification commands may materialize their durable output in a tracked
+    producer path. The command receipt is the immutable evidence for that
+    run; the candidate must retain the exact committed target tree so later
+    integration can distinguish test output from an implementation change.
+    Undeclared tracked changes remain visible to the cleanliness gate.
+    """
+
+    if not isinstance(producer_paths, list):
+        return
+    paths = [
+        str(path).strip().lstrip("./")
+        for path in producer_paths
+        if isinstance(path, str) and str(path).strip()
+    ]
+    paths = [
+        path for path in paths
+        if not path.startswith("/") and ".." not in Path(path).parts
+    ]
+    if not paths:
+        return
+    tracked = _git(
+        worktree,
+        "ls-tree",
+        "-r",
+        "--name-only",
+        target_commit,
+        "--",
+        *paths,
+    ).splitlines()
+    tracked = [path.strip() for path in tracked if path.strip()]
+    if not tracked:
+        return
+    try:
+        _git(worktree, "checkout", target_commit, "--", *tracked)
+    except RuntimeError as exc:
+        raise CandidateIncrementalError(
+            f"rolling smoke producer restore failed: {exc}"
+        ) from exc
 
 
 def _validate_receipt(
