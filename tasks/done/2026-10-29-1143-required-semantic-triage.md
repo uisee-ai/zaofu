@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `77f7b9e fix: route required semantic triage independently of legacy thresholds`
 
 # 显式语义耗尽事件不能被旧阈值静默丢弃
 
@@ -11,3 +11,5 @@
 本批只修复诊断路由。人工门决策、产品修复、独立复验及持续监工另行继续。
 
 验证记录：新增回归 RED 4 failed / 1 passed；修复后 focused 104 passed。已检查 `dev-verify.py plan --base dev`，继承批次已独立验证，本次以 ecb0344 为增量基线运行影响闭包：912 passed / 7 skipped；sentinel 50 passed / 1 skipped；Flow smoke 10 passed。未运行全量 pytest 或真实 provider E2E。
+
+部署后模块回归 61 passed；补齐主目录此前漏同步的 d399f8d 人工门测试夹具（原断言误将 upstream_contract_gap 当作 manual_evidence_required）。新进程真实事件预览出现 P12A 唯一 triage。操作员按持续监工/修复授权调用受控 `run_manager_tick(action_filter={"orchestrator-rework-triage"})`，一次 applied、零 blocked/failed，产生 `evt-decfaf945338 orchestrator.rework.triage.requested`，实际 orchestrator 已开始处理。人工资格门未批准，产品失败未改成通过。运行中 watcher 未重启，常驻进程后续维护窗口仍需加载补丁；本次受控 tick 已加载修复。
