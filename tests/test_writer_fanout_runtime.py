@@ -35,6 +35,7 @@ from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.orchestrator_fanout import _writer_task_dependencies_satisfied
+from zf.runtime.workflow_artifact_refs import canonical_workflow_artifact_refs
 from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.fanout import FanoutChild, FanoutContext
 from zf.runtime.candidates import CandidateRebuilder, CandidateResult, CandidateTask
@@ -96,6 +97,39 @@ class _FanoutPayloadProbe(WriterFanoutDataMixin):
             for child in manifest.get("children", [])
             if isinstance(child, dict)
         ]
+
+
+def test_workflow_artifact_refs_follow_current_plan_package() -> None:
+    stale_package = "artifacts/plan-packages/stale.json"
+    current_package = "artifacts/plan-packages/current.json"
+    stale_claim = "artifacts/goal-closure/claim-sets/stale.json"
+    current_claim = "artifacts/goal-closure/claim-sets/current.json"
+    task_map = "artifacts/fanouts/current/planner/artifacts/plan/task_map.json"
+    source_index = "artifacts/fanouts/current/planner/artifacts/plan/source_index.json"
+
+    refs = canonical_workflow_artifact_refs(
+        [
+            "docs/plans/prd.md",
+            stale_package,
+            stale_claim,
+            task_map,
+            source_index,
+        ],
+        scalar_refs={
+            "plan_artifact_package_ref": current_package,
+            "goal_claim_set_ref": current_claim,
+            "task_map_ref": task_map,
+            "source_index_ref": source_index,
+        },
+    )
+
+    assert refs == [
+        "docs/plans/prd.md",
+        task_map,
+        source_index,
+        current_package,
+        current_claim,
+    ]
 
 
 def _replace_task_contract(

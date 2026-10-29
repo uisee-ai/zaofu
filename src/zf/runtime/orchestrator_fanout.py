@@ -82,6 +82,7 @@ from zf.runtime.lane_stage_handoff import (
     per_lane_flow_for_handoff_target,
     per_lane_flow_match,
 )
+from zf.runtime.workflow_artifact_refs import build_workflow_ref_bundle
 from zf.runtime.plan_admission import (
     emit_plan_admission_cancel,
     emit_task_map_admitted,
@@ -7821,6 +7822,10 @@ class FanoutCoordinationMixin(
             "workflow_input_manifest_ref",
             "workflow_prompt_ref",
             "workflow_run_id",
+            "task_map_ref",
+            "source_index_ref",
+            "plan_artifact_package_ref",
+            "goal_claim_set_ref",
             "source_inventory_ref",
             "capability_matrix_ref",
             "acceptance_matrix_ref",
@@ -7831,41 +7836,10 @@ class FanoutCoordinationMixin(
         )
 
         def _workflow_ref_bundle(*sources: dict) -> dict:
-            bundle: dict = {}
-            source_refs: dict = {}
-            artifact_refs: list = []
-            for source in sources:
-                if not isinstance(source, dict):
-                    continue
-                for key in workflow_ref_keys:
-                    value = str(source.get(key) or "").strip()
-                    if value and key not in bundle:
-                        bundle[key] = value
-                raw_source_refs = source.get("source_refs")
-                if isinstance(raw_source_refs, dict):
-                    source_refs.update({
-                        str(k): str(v)
-                        for k, v in raw_source_refs.items()
-                        if str(v or "").strip()
-                    })
-                raw_artifact_refs = source.get("artifact_refs")
-                if isinstance(raw_artifact_refs, list):
-                    artifact_refs.extend(raw_artifact_refs)
-            if source_refs:
-                bundle["source_refs"] = source_refs
-            if artifact_refs:
-                seen: set[str] = set()
-                deduped: list = []
-                for item in artifact_refs:
-                    key = (
-                        json.dumps(item, sort_keys=True, ensure_ascii=False)
-                        if isinstance(item, dict) else str(item or "")
-                    )
-                    if key and key not in seen:
-                        seen.add(key)
-                        deduped.append(item)
-                bundle["artifact_refs"] = deduped
-            return bundle
+            return build_workflow_ref_bundle(
+                sources,
+                workflow_ref_keys=workflow_ref_keys,
+            )
 
         task_instruction = str(
             task_payload.get("instruction")
