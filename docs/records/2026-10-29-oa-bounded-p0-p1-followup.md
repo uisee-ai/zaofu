@@ -3,7 +3,7 @@
 > 日期：2026-10-29
 > 状态：已完成
 > 基线：`dev@3812a291`（194/195 与前一批 bounded OA 已合入）
-> 实现提交：`2419f0d0 feat: close bounded OA p0 p1 gaps`；profile actor seam follow-up included in the next commit.
+> 实现提交：`2419f0d0 feat: close bounded OA p0 p1 gaps`；`3fb3caff fix: route configured OA actor seams`。
 
 ## 本批闭合项
 
