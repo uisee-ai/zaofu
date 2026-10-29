@@ -60,6 +60,8 @@ Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须�
 
 ## 派发身份与合同版本分别验证
 
+Task Pipeline 激活 provider 时显式选择当前 briefing 的 typed-result 完成协议。角色启动早于本次 dispatch 发布，角色说明不再从 TaskStore 上一阶段的 active_dispatch_id 和 role.publishes 生成旧 emit 命令或并列的完成 payload；结果 scratch、operation、提交命令及可用预检均由当前 briefing 的 Output Contract 提供。Legacy 激活保留原事件协议。`tests/test_task_pipeline_role_instructions.py` 经过真实 Task-stage 绑定、按需激活与说明生成入口，覆盖 Impl/Verify、尚无 Task 投影和 Legacy 回归；不提前改写 TaskStore 身份。已启动 provider 继续以当前 briefing 为准，消费者重载后新激活才生成更新说明。
+
 Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role_instance；使用当前 canonical Task 的副本渲染，不提前更新 TaskStore 的 active_dispatch_id，也不改变合同版本。稳定 capsule revision 不应承担每次派发身份的校验职责。
 
 `verify_task_capsule` 的派发调用显式传入 expected_dispatch_id/expected_role_instance，核对 manifest 的 dispatch_id、active_dispatch_id、任务与角色，以及 task.md 的头部和 Runtime Binding。先校验当前合同，再准备 operation；只有需要实际派发时才发布文档，运行中/终态 operation 的幂等重入不重写文档。准备 briefing 后、交付 transport 前再检查一次，覆盖准备期间投影被替换的情况。briefing 显式列出 operation、dispatch 和 attempt 身份。发送成功后沿原路径更新 canonical TaskStore 并记录派发事件；发送失败不伪造 in_progress 或已发送事实。

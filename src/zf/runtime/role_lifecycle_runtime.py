@@ -249,6 +249,7 @@ class RoleLifecycleRuntimeMixin:
         task_id: str | None = None,
         spawn_cwd: Path | None = None,
         skill_runtime_root: Path | None = None,
+        completion_via_briefing: bool = False,
     ) -> bool:
         """Start one on-demand role before any dispatch state is mutated.
 
@@ -359,6 +360,7 @@ class RoleLifecycleRuntimeMixin:
                     role,
                     task_id=task_id,
                     skill_entries=materialized,
+                    completion_via_briefing=completion_via_briefing,
                 )
                 self._get_spawn_coordinator().spawn(
                     role,
@@ -471,6 +473,7 @@ class RoleLifecycleRuntimeMixin:
         *,
         task_id: str | None,
         skill_entries: list,
+        completion_via_briefing: bool = False,
     ) -> None:
         from zf.runtime.injection import generate_role_instructions
 
@@ -487,6 +490,7 @@ class RoleLifecycleRuntimeMixin:
             skill_entries=skill_entries,
             state_dir_ref=self.state_dir,
             project_root=self.project_root,
+            completion_via_briefing=completion_via_briefing,
         )
         instructions_dir = self.state_dir / "instructions"
         instructions_dir.mkdir(parents=True, exist_ok=True)
