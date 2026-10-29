@@ -8,6 +8,7 @@ from zf.core.config.schema import (
 )
 from zf.runtime.orchestrator_agent_role import (
     configured_orchestrator_role,
+    configured_orchestrator_role_from_config,
     orchestrator_instance_id,
 )
 
@@ -43,3 +44,15 @@ def test_missing_explicit_profile_fails_closed() -> None:
 
     assert configured_orchestrator_role(runtime) is None
     assert orchestrator_instance_id(runtime) == "missing-oa"
+
+
+def test_config_only_resolver_matches_profile_name_and_instance() -> None:
+    runtime = _runtime(profile="oa-primary-1")
+
+    assert configured_orchestrator_role_from_config(runtime.config).name == "oa-primary"
+
+
+def test_config_only_resolver_keeps_legacy_fallback_fail_closed() -> None:
+    runtime = _runtime()
+
+    assert configured_orchestrator_role_from_config(runtime.config) is None

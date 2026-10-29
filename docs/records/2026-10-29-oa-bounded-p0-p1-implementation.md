@@ -60,3 +60,11 @@ Run Manager 只在显式启用、Run 活跃、generation 当前、Impl 已 settl
 ## 运行边界
 
 本批代码已合入 `dev`，但没有修改活跃 FMS 的配置、账本、进程或 Provider rollout。A/B 使用确定性 mock Runtime，证明调度、上下文和幂等行为；真实 Provider 语义质量、FMS 产品完成率和线上收益仍需独立 canary 验证。
+
+## 194 合并后的 P0/P1 补齐
+
+- 194/195 合并提交：`de7387c3 feat: integrate staged workflow and OA frontier contracts`。
+- P1 增量语义审查改为复用 `oa_profile` 的统一 resolver；显式 profile 按 role name 或 instance id 解析，缺失时 fail-closed，不再硬编码 `orchestrator`。
+- 新增最新控制器样例：`examples/prod/controller/prd-task-pipeline-v4-oa-bounded.yaml`。该样例同时声明 V4 blocking Task Pipeline、195 `oa_profile` 与 `normal_frontier_owner`，以及 P0/P1 的 `pre_impl` / `semantic_failure` 有界动作。
+- `normal_frontier_owner: run_manager` 仍是兼容默认值；WRC consumer 尚未完成前，不能把 `wrc` 配置宣称为正常路径已迁移。
+- 配置验证：`zf validate --path examples/prod/controller/prd-task-pipeline-v4-oa-bounded.yaml --cold-start` 的 `config_valid` 通过；cold-start 的仓库目录/状态目录失败属于示例文件不在项目根运行的预期环境条件。

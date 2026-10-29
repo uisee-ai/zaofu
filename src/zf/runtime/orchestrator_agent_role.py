@@ -24,6 +24,30 @@ def orchestrator_profile_name(runtime: Any) -> str:
     ).strip() or LEGACY_ORCHESTRATOR_ROLE
 
 
+def configured_orchestrator_role_from_config(config: Any) -> Any | None:
+    """Resolve the semantic OA role when only config is available.
+
+    Run Manager's bounded semantic review is a config-only projection. It must
+    use the same explicit profile/instance binding as transport and checkpoint
+    operations, and fail closed when an explicit profile is missing.
+    """
+
+    orchestration = getattr(
+        getattr(config, "workflow", None), "orchestration", None
+    )
+    profile = str(getattr(orchestration, "oa_profile", "") or "").strip()
+    profile = profile or LEGACY_ORCHESTRATOR_ROLE
+    roles = getattr(config, "roles", ()) or ()
+    for role in roles:
+        if str(getattr(role, "name", "") or "") == profile:
+            return role
+    if profile != LEGACY_ORCHESTRATOR_ROLE:
+        for role in roles:
+            if str(getattr(role, "instance_id", "") or "") == profile:
+                return role
+    return None
+
+
 def configured_orchestrator_role(runtime: Any) -> Any | None:
     """Return the configured OA role, with the 194 fallback.
 
@@ -42,7 +66,7 @@ def configured_orchestrator_role(runtime: Any) -> Any | None:
         finder = getattr(runtime, "_find_role_by_instance", None)
         if callable(finder):
             return finder(profile)
-    return None
+    return configured_orchestrator_role_from_config(runtime.config)
 
 
 def orchestrator_instance_id(runtime: Any) -> str:
@@ -59,6 +83,7 @@ def orchestrator_instance_id(runtime: Any) -> str:
 __all__ = [
     "LEGACY_ORCHESTRATOR_ROLE",
     "configured_orchestrator_role",
+    "configured_orchestrator_role_from_config",
     "orchestrator_instance_id",
     "orchestrator_profile_name",
 ]

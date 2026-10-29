@@ -60,6 +60,20 @@ def test_run_manager_observes_and_requests_one_exact_checkpoint(tmp_path):
     assert _pending(runtime) == []
 
 
+def test_review_uses_configured_oa_profile_instance(tmp_path):
+    runtime, _ = _case(tmp_path)
+    runtime.config.workflow.orchestration.oa_profile = "dev-a"
+
+    assert len(_pending(runtime)) == 1
+
+
+def test_review_fails_closed_for_missing_oa_profile(tmp_path):
+    runtime, _ = _case(tmp_path)
+    runtime.config.workflow.orchestration.oa_profile = "missing-oa"
+
+    assert _pending(runtime) == []
+
+
 @pytest.mark.parametrize("change", ["disabled", "paused", "done", "successor", "settled_verify", "other_generation", "other_run", "passed"])
 def test_ordinary_progress_or_out_of_scope_does_not_wake_oa(tmp_path, change):
     runtime, identity = _case(tmp_path)

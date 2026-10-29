@@ -7,6 +7,7 @@ from typing import Any
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
 from zf.runtime.orchestrator_agent_policy import _effective_policy, checkpoint_policy
+from zf.runtime.orchestrator_agent_role import configured_orchestrator_role_from_config
 from zf.runtime.run_contract import stable_json_sha256
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
@@ -24,7 +25,7 @@ def pending_execution_reviews(
     policies = [config.workflow.orchestration, *config.workflow.orchestration.flow_policies.values()]
     if not any(getattr(policy, "review_blocked_tasks", False) for policy in policies):
         return []
-    if not any(role.name == "orchestrator" for role in config.roles):
+    if configured_orchestrator_role_from_config(config) is None:
         return []
     contexts = task_pipeline_generation_contexts(events)
     operations = normalize_task_pipeline_operation_semantics(
