@@ -6,12 +6,16 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.orchestrator import Orchestrator
-from zf.runtime.task_contract_snapshot import write_task_contract_snapshot
+from zf.runtime.task_contract_snapshot import write_task_contract_snapshot, build_task_contract_snapshot
+from zf.core.task.schema import Task, TaskContract
+from zf.core.task.store import TaskStore
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.artifact_read_ledger import read_attempt_artifact
+from zf.runtime.plan_artifact_package import build_plan_artifact_package
+from zf.runtime.run_contract import write_run_contract_snapshot
 
-def test_replan_reader_preserves_current_plan_over_failed_task_snapshot(
+def _dispatched_replan(
     tmp_path: Path,
 ) -> None:
     state_dir = tmp_path / ".zf"
@@ -32,6 +36,8 @@ def test_replan_reader_preserves_current_plan_over_failed_task_snapshot(
                 target_ref="candidate/${pdd_id}",
                 aggregate=FanoutAggregateConfig(
                     mode="wait_for_all",
+                    child_success_event="flow.discovery.child.completed",
+                    child_failure_event="flow.discovery.child.failed",
                     success_event="flow.discovery.completed",
                     failure_event="flow.discovery.failed",
                 ),
@@ -50,32 +56,23 @@ def test_replan_reader_preserves_current_plan_over_failed_task_snapshot(
             "task_id": "TASK-PRD-ROOT",
         },
     )
-    contract_snapshot = write_task_contract_snapshot(
-        state_dir,
-        {
-            "schema_version": "task-contract-snapshot.v1",
-            "workflow_run_id": "workflow-1",
-            "task_id": "GAP-CURRENT",
-            "contract_revision": "contract-revision-1",
-            "task_map_generation": "generation-1",
-            "base_commit": "base123",
-            "task_ref": "task/GAP-CURRENT",
-            "plan_artifact_package_id": "planpkg-old",
-            "plan_artifact_package_ref": "old-package.json",
-            "plan_artifact_package_digest": "old-digest",
-            "acceptance_criteria": [{
-                "acceptance_id": "GAP-CURRENT-AC1",
-                "statement": "materialize the missing predecessor slice",
-                "verification_owner": "task_verify",
-                "verification_tier": "task_non_smoke",
-            }],
-        },
-    )
-    package = write_immutable_json_sidecar(state_dir, root="artifacts/test-plan-package", kind="plan_artifact_package", schema_version="plan-artifact-package.v1", created_by="test", payload={"schema_version": "plan-artifact-package.v1"})
+    task = Task(id="GAP-CURRENT", status="in_progress", contract=TaskContract(
+        acceptance_criteria=[{"acceptance_id": "GAP-CURRENT-AC1", "statement": "materialize the missing predecessor slice", "verification_owner": "task_verify", "verification_tier": "task_non_smoke"}],
+        verification="true", evidence_contract={"workflow_run_id": "workflow-1", "source_refs": {
+            "task_map_generation": "generation-1", "plan_artifact_package_id": "planpkg-old",
+            "plan_artifact_package_ref": "old-package.json", "plan_artifact_package_digest": "old-digest",
+        }},
+    ))
+    TaskStore(state_dir / "kanban.json").add(task)
+    original_body = build_task_contract_snapshot(task, workflow_run_id="workflow-1", task_map_generation_id="generation-1", base_commit="base123", task_ref="task/GAP-CURRENT")
+    contract_snapshot = write_task_contract_snapshot(state_dir, original_body)
+    run_contract = write_run_contract_snapshot(state_dir, {"schema_version": "run-contract.v1", "workflow": {"kind": "prd"}})
+    package_body = build_plan_artifact_package(workflow_run_id="workflow-1", flow_kind="prd", producer_stage_id="plan", run_contract=run_contract, plan_revision="generation-2", task_map_generation="generation-2", produced=[])
+    package = write_immutable_json_sidecar(state_dir, root="artifacts/test-plan-package", kind="plan_artifact_package", schema_version="plan-artifact-package.v1", created_by="test", payload=package_body)
     writer.emit("plan.artifact_package.admitted", payload={
         "workflow_run_id": "workflow-1", "package_slot": "execution_plan", "status": "admitted",
         "task_map_generation": "generation-2", "plan_revision": "generation-2",
-        "package_id": "planpkg-current", "package_ref": package["ref"], "package_digest": package["sha256"],
+        "package_id": ("planpkg-" + package["sha256"]), "package_ref": package["ref"], "package_digest": package["sha256"],
     })
     current_candidate = writer.emit(
         "candidate.ready",
@@ -98,7 +95,7 @@ def test_replan_reader_preserves_current_plan_over_failed_task_snapshot(
         correlation_id="workflow-1",
         payload={
             "schema_version": "semantic-replan-request.v1",
-            "plan_artifact_package_id": "planpkg-current",
+            "plan_artifact_package_id": ("planpkg-" + package["sha256"]),
             "plan_artifact_package_ref": package["ref"],
             "plan_artifact_package_digest": package["sha256"],
             "workflow_run_id": "workflow-1",
@@ -106,7 +103,7 @@ def test_replan_reader_preserves_current_plan_over_failed_task_snapshot(
             "task_id": "GAP-CURRENT",
             "task_map_ref": "artifacts/plan/task-map.json",
             "task_map_generation": "generation-2",
-            "contract_revision": "contract-revision-1",
+            "contract_revision": original_body["contract_revision"],
             "task_ref": "task/GAP-CURRENT",
             "contract_snapshot_ref": contract_snapshot["ref"],
             "contract_snapshot_digest": contract_snapshot["sha256"],
@@ -180,8 +177,11 @@ def test_replan_reader_preserves_current_plan_over_failed_task_snapshot(
     assert "--json-path '$'" in briefing
 
 
-    assert child_payload["plan_artifact_package_id"] == "planpkg-current"
+    assert child_payload["plan_artifact_package_id"] == ("planpkg-" + package["sha256"])
     assert child_payload["task_map_generation"] == "generation-2"
-    assert child_payload["contract_snapshot_ref"] == contract_snapshot["ref"]
-    assert child_payload["contract_revision"] == "contract-revision-1"
-    assert manifest["plan_artifact_package_id"] == "planpkg-current"
+    assert manifest["plan_artifact_package_id"] == ("planpkg-" + package["sha256"])
+    return state_dir, log, orch, child_payload, contract_snapshot, transport
+
+
+def test_replan_reader_preserves_current_plan_over_failed_task_snapshot(tmp_path):
+    _dispatched_replan(tmp_path)

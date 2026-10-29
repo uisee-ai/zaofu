@@ -35,11 +35,14 @@ def prepare_reader_contract_target(runtime: Any, child: Any) -> None:
 
         validate_goal_closure_dispatch_snapshots(runtime.state_dir, payload)
         return
+    from zf.runtime.rescan_contract_authority import uses_rescan_authority, prepare_rescan_contract
+
+    rescan = uses_rescan_authority(payload)
     descriptor = contract_descriptor_from_payload(payload)
     task_id = str(payload.get("task_id") or "")
     task = runtime.task_store.get(task_id) if task_id else None
     expected = {"task_id": task_id}
-    if task is not None:
+    if task is not None and not rescan:
         expected.update(current_task_contract_identity(
             task,
             task_map_ref=str(payload.get("task_map_ref") or ""),
@@ -57,6 +60,8 @@ def prepare_reader_contract_target(runtime: Any, child: Any) -> None:
         descriptor,
         expected=expected,
     )
+    if rescan:
+        snapshot, descriptor = prepare_rescan_contract(runtime, payload, snapshot, descriptor)
     target = build_target_snapshot(
         descriptor,
         target_commit=str(payload.get("target_commit") or child.target_ref or ""),
@@ -80,14 +85,6 @@ def prepare_reader_contract_target(runtime: Any, child: Any) -> None:
             source_event_id=str(payload.get("trigger_event_id") or ""),
         )
     snapshot_identity = contract_snapshot_identity_fields(snapshot)
-    if payload.get("output_profile_id") == "global-rescan":
-        # The failed task snapshot is evidence for a new plan. It must not
-        # replace the current admitted plan that the rescan evaluates.
-        for key in (
-            "task_map_generation", "plan_artifact_package_id",
-            "plan_artifact_package_ref", "plan_artifact_package_digest",
-        ):
-            snapshot_identity.pop(key, None)
     payload.update({
         **snapshot_identity,
         "target_snapshot": target,

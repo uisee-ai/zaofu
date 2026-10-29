@@ -92,3 +92,5 @@ Task Pipeline 通过同 Run 的 integration.queue.integrated 收据提供当前�
 Reader hydration 同样区分全局重扫描与任务验证：global-rescan 中旧失败合同的 generation/package 是证据，不覆盖请求已绑定的当前 Plan 身份；普通 reader 的任务验证仍继承并校验 snapshot。tests/test_reader_replan_plan_binding.py 覆盖真实 Orchestrator 注册、派发、不可变输入和必读命令，避免仅验证上游请求正确却遗漏下游身份覆盖。
 
 Run blocked 期间 typed Impl 已接纳但进度事件被 Run 生命周期门禁拦截时，显式恢复 active 后，Task Pipeline 的 TaskRef 恢复入口补跑原机械门禁。要求当前 generation、settled/passed operation、已接纳 control result 精确绑定 source event、无更新/活跃 operation、任务非终态；cancelled/completed Run 不适用。结果按 TaskRef 门禁真实 updated/rejected 追加并按 trigger 去重，保留原拒绝和 resume 事件；不生成 Impl/Verify/Task 成功事实。tests/test_blocked_impl_result_recovery.py 覆盖入口、拒绝分支和重建进程幂等。
+
+有已接纳 package 的 global-rescan 使用 gap attempt domain 和独立的扫描权威快照（仍为 task-contract-snapshot.v1）。它从原任务合同继承验收内容，绑定当前 Plan generation/package，生成 rescan contract revision，并保存原合同 ref/digest；TaskStore 与原快照不变。Reader 的模板、target snapshot 和结果均绑定这个扫描快照。结果门禁检查原任务合同仍当前、源任务未取消、扫描快照与目标吻合，以及当前已接纳 package；不按原任务的旧 generation 覆盖扫描身份。普通 Task Verify/Candidate Verify 规则不变。tests/test_rescan_contract_authority.py 验证完整派发到接纳，并拒绝合同、计划、目标、domain 变化。

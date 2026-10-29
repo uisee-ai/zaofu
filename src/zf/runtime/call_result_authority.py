@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
 from zf.core.task.store import TaskStore
+from zf.runtime.rescan_contract_authority import rescan_currentness_issues
 from zf.runtime.call_result_adapters import AdaptedControlResult
 from zf.runtime.call_result_envelope import (
     CallResultEnvelopeError,
@@ -60,6 +61,9 @@ class CallResultAuthorityMixin:
                 contract_ref=contract_ref,
                 contract_digest=contract_digest,
             )
+
+        if operation.get("output_profile_id") == "global-rescan" and (operation.get("result_identity") or {}).get("plan_artifact_package_id"):
+            return rescan_currentness_issues(self, envelope, operation)
 
         task = TaskStore(self.state_dir / "kanban.json").get(task_id)
         if task is None:
