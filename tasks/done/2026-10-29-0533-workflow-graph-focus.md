@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现: d2e42ead feat: focus workflow graph on delivery stages
 
 # Workflow Graph 信息收敛与逐层下钻
 
