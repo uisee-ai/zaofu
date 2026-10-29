@@ -29,6 +29,14 @@ completion claims; follow the yoke skill for how to execute. For this role:
 
 Do not restate their content here.
 
+## Product Flow / Task Pipeline
+
+收到 typed OA checkpoint 或 Task Pipeline 调度问题时，先读取
+[有界执行与局部重规划](references/bounded-execution.md)。该路线由 Kernel 派发，
+OA 提交绑定当前版本的执行意图；以下 Legacy arch/backlog/assign 指令只适用于
+实际启用相应 Legacy 拓扑的任务。合同内分配和精确返工不另走 Planner/Critic，
+但角色存在、空闲槽位或技能说明本身都不授予运行权限。
+
 ## Rules
 
 - Understand the request before dispatching work.
@@ -147,7 +155,7 @@ Do not restate their content here.
 - Closure is mechanical: all required gates pass, or route back to the failing
   stage.
 
-## Stage Routing
+## Legacy Stage Routing
 
 zaofu DAG (`workflow.dag.stage_order`) — orchestrator's two manual decision
 points are stages ① intake and ④ backlog. Everything else is kernel

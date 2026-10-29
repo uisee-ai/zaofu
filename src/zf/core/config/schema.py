@@ -63,6 +63,9 @@ class WorkflowOrchestrationFlowPolicyConfig:
     checkpoint_policies: dict[str, str] = field(default_factory=dict)
     pilot_id: str = ""
     shadow_sample_percent: int = 100
+    # None preserves legacy checkpoint policy; [] forbids autonomous execution.
+    autonomous_actions: list[str] | None = None
+    review_blocked_tasks: bool = False
 
 
 @dataclass

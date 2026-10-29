@@ -91,6 +91,9 @@ def normalize_run_orchestration_plan(value: Mapping[str, Any]) -> dict[str, Any]
         raise OrchestratorAgentContractError("graph.edges must form an acyclic DAG")
     delegation_units: set[str] = set()
     for row in _object_list(body, "delegation"):
+        rank = row.get("dispatch_rank")
+        if rank is not None and (type(rank) is not int or rank < 0):
+            raise OrchestratorAgentContractError("delegation.dispatch_rank must be a nonnegative integer")
         work_unit_id = _required_string(row, "work_unit_id", "delegation")
         if work_unit_id not in unit_ids:
             raise OrchestratorAgentContractError(

@@ -53,6 +53,14 @@ def build_orchestrator_agent_context(
     from zf.runtime.orchestrator_agent_policy import checkpoint_risk_signals
 
     risk_signals = checkpoint_risk_signals(checkpoint, payload)
+    from zf.runtime.orchestrator_agent_execution_policy import (
+        EXECUTION_CHECKPOINTS, bounded_actions, build_execution_context,
+    )
+
+    execution_mode = (
+        checkpoint in EXECUTION_CHECKPOINTS
+        and bounded_actions(runtime.config, str(payload.get("flow_kind") or "")) is not None
+    )
     input_mode = (
         "compact"
         if (
@@ -73,6 +81,19 @@ def build_orchestrator_agent_context(
         effective_config_ref=effective_config_ref,
         effective_config_summary_ref=effective_config_summary_ref,
     )
+    execution_ref = {}
+    if execution_mode:
+        input_mode = "execution"
+        execution_ref = write_immutable_json_sidecar(
+            runtime.state_dir,
+            build_execution_context(runtime, workflow_run_id=workflow_run_id, payload=payload),
+            root="orchestrator-agent/execution-contexts",
+            kind="orchestrator_execution_context",
+            schema_version="orchestrator-execution-context.v1",
+            created_by="orchestrator-agent-context",
+            source_event_id=source_event_id,
+        )
+        _append_descriptor(sources, source_id="execution-context", kind="execution_context", descriptor=execution_ref)
     input_body = {
         "schema_version": CHECKPOINT_INPUT_SCHEMA,
         "input_mode": input_mode,
@@ -111,6 +132,7 @@ def build_orchestrator_agent_context(
             ),
         },
         "objective": _checkpoint_objective(checkpoint),
+        "flow_kind": str(payload.get("flow_kind") or ""),
         "risk_signals": list(risk_signals),
         "checkpoint_context": {
             key: str(payload.get(key) or "")
@@ -156,6 +178,8 @@ def build_orchestrator_agent_context(
             "terminal_self_approval": False,
         },
     }
+    if execution_ref:
+        input_body["execution_context_ref"] = execution_ref
     input_ref = write_immutable_json_sidecar(
         runtime.state_dir,
         input_body,
@@ -247,6 +271,10 @@ def build_orchestrator_agent_context(
             "allow_truncated": False,
         }
         for source in required_sources
+        if input_mode != "execution" or source["source_id"] in {
+            "checkpoint-input", "execution-context", "effective-config",
+            "semantic-failure-input", "task-recovery-context",
+        }
     ]
     read_policy = build_input_consumption_policy(
         workflow_run_id=workflow_run_id,

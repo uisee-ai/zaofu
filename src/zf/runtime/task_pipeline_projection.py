@@ -688,6 +688,7 @@ def _project_operation(
         "workspace_generation": int(row.get("workspace_generation") or 0),
         "status": str(row.get("status") or ""),
         "semantic_verdict": str(row.get("semantic_verdict") or ""),
+        "control_result_ref": dict(row.get("admitted_control_result_ref") or {}),
         "role_instance": str(row.get("role_instance") or ""),
         "current_worker": str(row.get("role_instance") or "") if active else "",
         "current_worker_source": "workflow_operation" if active else "",

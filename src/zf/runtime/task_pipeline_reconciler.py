@@ -199,6 +199,10 @@ class TaskPipelineReconciler:
             candidates = [
                 view for view in task_views if view["stage"] in ready_stages
             ]
+            # Soft order only among already-ready tasks; preserve bounded rework fairness.
+            candidates.sort(key=lambda view: (oa_delegations or {}).get(
+                view["task_id"], {}
+            ).get(stage_name, {}).get("dispatch_rank", float("inf")))
             if stage_name == "impl":
                 candidates = _bounded_rework_order(candidates)
             fresh_impl_dispatched = 0
@@ -251,6 +255,7 @@ class TaskPipelineReconciler:
                         "work_unit_id": str(delegation["work_unit_id"]),
                         "preferred_roles": preferred,
                         "selected_role": role,
+                        "dispatch_rank": delegation.get("dispatch_rank"),
                         "reason": ("oa_preferred" if role in preferred
                                    else "oa_preferred_unavailable_or_incompatible"),
                     }
