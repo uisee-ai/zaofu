@@ -6,6 +6,51 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
+_MAX_GAP_LINEAGE_DEPTH = 32
+
+
+def _gap_map_lineage_contains(
+    *,
+    state_dir: Path,
+    project_root: Path,
+    ref: str,
+    expected_digest: str,
+) -> bool:
+    """Accept a gap map only when its bounded amend chain reaches the plan map."""
+
+    from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
+
+    current = str(ref or "").strip()
+    seen: set[str] = set()
+    for _ in range(_MAX_GAP_LINEAGE_DEPTH):
+        if not current or current in seen:
+            return False
+        seen.add(current)
+        descriptor = materialize_attempt_source_ref(
+            state_dir=state_dir,
+            project_root=project_root,
+            ref=current,
+            source_id="gap-plan:lineage",
+            kind="task_map",
+        )
+        if not descriptor:
+            return False
+        if descriptor.get("sha256") == expected_digest:
+            return True
+        path = state_dir / str(descriptor.get("ref") or "")
+        try:
+            import json
+
+            body = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return False
+        amend = body.get("amend") if isinstance(body, Mapping) else None
+        if not isinstance(amend, Mapping):
+            return False
+        current = str(amend.get("supersedes_task_map_ref") or "").strip()
+    return False
+
+
 def rebind_inherited_gap_acceptance(
     *,
     state_dir: Path,
@@ -45,7 +90,12 @@ def rebind_inherited_gap_acceptance(
         previous.get("workflow_run_id") != workflow_run_id
         or previous.get("flow_kind") != flow_kind
         or not amendment_base
-        or amendment_base.get("sha256") != prior_map.get("sha256")
+        or not _gap_map_lineage_contains(
+            state_dir=state_dir,
+            project_root=project_root,
+            ref=str(payload.get("amend_of") or ""),
+            expected_digest=str(prior_map.get("sha256") or ""),
+        )
         or not payload.get("supersedes_task_map_generation")
         or payload["supersedes_task_map_generation"] != previous.get("task_map_generation")
     ):

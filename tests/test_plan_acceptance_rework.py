@@ -91,3 +91,25 @@ def test_gap_plan_rejects_changed_base_artifact(tmp_path):
     (args["state_dir"] / "r1.json").write_text('{"tasks": []}')
     with pytest.raises(ProductAcceptanceError, match="exact prior plan lineage"):
         prepare_plan_artifact_package(events=[event], payload=gap, **args)
+
+
+def test_gap_plan_accepts_bounded_amend_chain_to_prior_plan(tmp_path):
+    args, event, gap, _ = _prepare(tmp_path)
+    first = args["state_dir"] / "r2.json"
+    first.write_text(json.dumps({
+        "tasks": [{"task_id": "T1", "acceptance_criteria": ["Exact JSON"]}],
+        "amend": {"supersedes_task_map_ref": "r1.json"},
+    }))
+    second = args["state_dir"] / "r3.json"
+    second.write_text(json.dumps({
+        "tasks": [{"task_id": "T1", "acceptance_criteria": ["Exact JSON"]}],
+        "amend": {"supersedes_task_map_ref": "r2.json"},
+    }))
+    package, _, claim = prepare_plan_artifact_package(
+        events=[event], payload={**gap, "amend_of": "r3.json"}, **args
+    )
+    assert claim["goal_claim_continuity"]["status"] == "passed"
+    assert not any(
+        port["logical_name"] == "product_acceptance_spec"
+        for port in package["inherited"]
+    )
