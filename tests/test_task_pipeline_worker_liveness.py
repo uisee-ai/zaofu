@@ -3,11 +3,13 @@ from pathlib import Path
 import pytest
 
 from tests.test_capture_logs_watchdog import _AliveControllableTransport
+from tests.test_heartbeat_sweep import _heartbeat
 from zf.core.config.schema import ProjectConfig, RoleConfig, SessionConfig, ZfConfig
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.state.session import SessionStore
+from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
@@ -109,3 +111,47 @@ def test_new_running_stage_with_cleared_pin_remains_visible(tmp_path):
     writer.append(ZfEvent(type="workflow.operation.requested", task_id="T1", payload=identity))
     writer.append(ZfEvent(type="workflow.operation.started", task_id="T1", payload=identity))
     assert runtime._active_task_for_instance("verify-1").id == "T1"
+
+
+@pytest.mark.parametrize("status", ["settled", "blocked", "failed", "cancelled", "superseded"])
+@pytest.mark.parametrize("dispatch_pin", ["dispatch-1", ""])
+def test_heartbeat_sweep_does_not_recover_terminal_stage(tmp_path, status, dispatch_pin):
+    runtime, transport, _, _ = runtime_case(tmp_path, status=status)
+    runtime.task_store.update("T1", active_dispatch_id=dispatch_pin)
+    registry = RoleSessionRegistry(
+        runtime.state_dir / "role_sessions.yaml", project_root=str(tmp_path),
+    )
+    _heartbeat(registry, "verify-1", state="busy", age_seconds=1000, current_task_id="T1")
+
+    runtime._run_heartbeat_sweep()
+
+    assert not any(e.type in {"worker.probe.silent", "worker.stuck", "task.requeued"}
+                   for e in runtime.event_log.read_all())
+    assert transport.spawn_calls == []
+    assert transport.terminate_calls == []
+    assert runtime.task_store.get("T1").status == "in_progress"
+
+
+@pytest.mark.parametrize("replacement", ["pipeline", "legacy"])
+def test_heartbeat_sweep_keeps_new_assignment_after_terminal_stage(tmp_path, replacement):
+    runtime, _, writer, identity = runtime_case(tmp_path, status="settled")
+    # Prime the terminal evidence cache before a later dispatch arrives.
+    assert runtime._active_task_for_instance("verify-1") is None
+    new = {"assignee": "verify-1", "dispatch_id": "dispatch-2"}
+    if replacement == "pipeline":
+        new = {**identity, **new, "operation_id": "op-2"}
+        writer.append(ZfEvent(type="workflow.operation.requested", task_id="T1", payload=new))
+        writer.append(ZfEvent(type="workflow.operation.started", task_id="T1", payload=new))
+    writer.append(ZfEvent(type="task.dispatched", task_id="T1", payload=new))
+    runtime.task_store.update("T1", active_dispatch_id="dispatch-2")
+    registry = RoleSessionRegistry(
+        runtime.state_dir / "role_sessions.yaml", project_root=str(tmp_path),
+    )
+    _heartbeat(registry, "verify-1", state="busy", age_seconds=1000, current_task_id="T1")
+
+    runtime._run_heartbeat_sweep()
+
+    stuck = [e for e in runtime.event_log.read_all() if e.type == "worker.stuck"]
+    assert len(stuck) == 1
+    assert stuck[0].task_id == "T1"
+    assert stuck[0].payload["dispatch_id"] == "dispatch-2"

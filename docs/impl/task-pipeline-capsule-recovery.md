@@ -25,6 +25,8 @@ Plan 审批去重同时绑定任务集合与产物摘要（优先 Package digest
 
 ## Task Workspace 写入与阻塞后的恢复
 
+心跳巡检与 pane 存活巡检使用相同的 Task Pipeline 终态归属证据。任务状态因等待集成或上游资料仍为 in_progress 时，已结束的 operation 不再承担心跳义务；active_dispatch_id 清空也不会恢复该义务。后续新的运行中 operation 或 legacy 派发仍接受正常存活检测。`tests/test_task_pipeline_worker_liveness.py` 覆盖真实 heartbeat sweep，避免空闲 lane 被反复误重启。
+
 Task Pipeline writer 的 hook 从当前 running operation 与精确匹配的 kernel dispatch 读取工作目录；同时匹配角色、task、dispatch、task-map generation、workspace generation 和 placement epoch。不能由 hook cwd 自行授权。当前任务的合同路径限制与现有结果 scratch 能力继续生效。事件索引纳入 task.pipeline.stage.dispatched；完成后的旧任务目录不再获得运行中授权。legacy role workdir 仍按原路径处理。
 
 复用 Task-stage 会话时，CompositeTransport 必须转发底层生命周期快照，供重绑定入口核对实际进程 cwd。同一 binding 的旧角色目录不能因为路由层丢失快照而被继续复用；确认无活跃 attempt/operation 后，原重绑定流程终止闲置槽位并在 Task Workspace 激活。没有目录观测能力的 adapter 不伪造 cwd。tests/test_task_pipeline_transport_binding.py 覆盖真实重绑定入口、同目录复用及按实例路由。
