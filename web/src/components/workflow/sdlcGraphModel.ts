@@ -1,6 +1,6 @@
 export type GraphView = "lifecycle" | "modules" | "workflow" | "trace" | "delivery" | "timeline";
 export interface SdlcNode { id: string; kind: string; label: string; status: string; views: GraphView[]; data: Record<string, unknown> }
-export interface SdlcEdge { id: string; source: string; target: string; relation: string; views: GraphView[]; event?: string }
+export interface SdlcEdge { id: string; source: string; target: string; relation: string; views: GraphView[]; event?: string; collapsedVia?: string[] }
 export interface SdlcGraph {
   scope: { request_id: string; revision: number; run_id: string; proposal_digest: string; source_seq: number; head_seq: number; historical: boolean };
   nodes: SdlcNode[]; edges: SdlcEdge[]; diagnostics: string[];
@@ -16,7 +16,7 @@ export interface SdlcStructure extends Pick<SdlcGraph, "scope" | "nodes" | "edge
   generation: string;
 }
 export type WorkflowGraphResult = SdlcGraph | SdlcStructure;
-export const graphViews: [GraphView, string][] = [["lifecycle", "Lifecycle"], ["modules", "Task"], ["workflow", "Dag"], ["trace", "Trace"], ["delivery", "Delivery"], ["timeline", "Timeline"]];
+export const graphViews: [GraphView, string][] = [["workflow", "Graph"], ["timeline", "Timeline"], ["lifecycle", "Lifecycle"], ["modules", "Task"], ["trace", "Trace"], ["delivery", "Delivery"]];
 export const statusLabels: Record<string, string> = {
   unknown: "未知", draft: "草稿", pending: "等待", running: "执行中", in_progress: "执行中", reserved: "已预留", requested: "排队中",
   settled: "操作结束", accepted: "内核已接纳", reported: "已报告", failed: "失败", blocked: "阻塞", evidence_missing: "缺少接纳证据",
@@ -29,10 +29,41 @@ export const activeStatus = (status: string) => ["running", "in_progress", "disp
 export function workflowSummaryIds(nodes: SdlcNode[]): Set<string> {
   const hasStages = nodes.some(n => n.id.startsWith("workflow:stage:"));
   return new Set(nodes.filter(n => !hasStages || (
-    !["fanout", "agent", "attempt", "run_anchor"].includes(n.kind)
-    && (n.kind !== "workflow" || !["role_stage", "aggregate_stage", "external_event"].includes(
-      String((n.data.definition as Record<string, unknown> | undefined)?.type)))
+    n.id.startsWith("workflow:stage:") || n.id.startsWith("workflow:terminal:")
   )).map(n => n.id));
+}
+
+/** Fold only paths through known compiled workflow nodes, never infer dependencies. */
+export function workflowSummaryEdges(nodes: SdlcNode[], edges: SdlcEdge[], visible: Set<string>): SdlcEdge[] {
+  const workflow = new Set(nodes.filter(node => node.kind === "workflow").map(node => node.id));
+  const outgoing = new Map<string, SdlcEdge[]>();
+  for (const edge of edges) if (edge.views.includes("workflow") && workflow.has(edge.source) && workflow.has(edge.target)) {
+    const list = outgoing.get(edge.source) ?? []; list.push(edge); outgoing.set(edge.source, list);
+  }
+  const result = edges.filter(edge => edge.views.includes("workflow") && visible.has(edge.source) && visible.has(edge.target));
+  const connected = new Set(result.map(edge => `${edge.source}\0${edge.target}`));
+  for (const source of visible) {
+    if (!workflow.has(source)) continue;
+    const queue: Array<{ id: string; path: string[] }> = [{ id: source, path: [] }];
+    const visited = new Set([source]);
+    for (let i = 0; i < queue.length; i++) {
+      const current = queue[i];
+      for (const edge of outgoing.get(current.id) ?? []) {
+        const target = edge.target;
+        if (target === source) continue;
+        if (visible.has(target)) {
+          const key = `${source}\0${target}`;
+          if (current.path.length && !connected.has(key)) {
+            result.push({ id: `folded:${source}:${target}`, source, target, relation: "折叠路径", views: ["workflow"], collapsedVia: current.path });
+            connected.add(key);
+          }
+        } else if (!visited.has(target)) {
+          visited.add(target); queue.push({ id: target, path: [...current.path, target] });
+        }
+      }
+    }
+  }
+  return result;
 }
 
 export function expandedNodeIds(nodes: SdlcNode[], edges: SdlcEdge[], collapsed: Set<string>): Set<string> {
@@ -90,14 +121,16 @@ export function workflowSummaryPositions(nodes: SdlcNode[], edges: SdlcEdge[]): 
     groups.push(group.sort());
   }
   groups.sort((a, b) => b.length - a.length || a[0].localeCompare(b[0]));
-  const main = new Set(groups[0] ?? []);
-  const mainNodes = nodes.filter(node => main.has(node.id));
-  const base = graphPositions(mainNodes, edges);
   const result = new Map<string, { x: number; y: number }>();
-  for (const [id, position] of base) result.set(id, { x: position.y * 1.55, y: position.x * 0.65 });
-  const bottom = Math.max(0, ...[...result.values()].map(position => position.y)) + 200;
-  nodes.filter(node => !main.has(node.id)).sort((a, b) => a.label.localeCompare(b.label))
-    .forEach((node, index) => result.set(node.id, { x: index * 310, y: bottom }));
+  let top = 0;
+  for (const group of groups) {
+    const members = new Set(group);
+    const base = graphPositions(nodes.filter(node => members.has(node.id)), edges);
+    const ys = [...base.values()].map(position => position.x * 0.65);
+    const minY = Math.min(0, ...ys); const maxY = Math.max(0, ...ys);
+    for (const [id, position] of base) result.set(id, { x: position.y * 1.55, y: top + position.x * 0.65 - minY });
+    top += maxY - minY + 200;
+  }
   return result;
 }
 

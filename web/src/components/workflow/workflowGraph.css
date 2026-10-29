@@ -18,6 +18,8 @@
 .sdlc-views { display:flex; flex:1; min-width:0; gap:6px; overflow-x:auto; border-bottom:1px solid var(--line); }
 .sdlc-views button { flex-shrink:0; border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; padding:11px 9px; line-height:1.5; white-space:nowrap; }
 .sdlc-views button[aria-pressed=true] { border-color:var(--brand); background:transparent; font-weight:var(--font-weight-medium); }
+.sdlc-more-views { display:flex; align-items:center; margin-left:8px; }.sdlc-more-views select { max-width:150px; padding:6px; border:1px solid var(--line); border-radius:7px; color:var(--text-secondary); background:var(--panel); font-size:var(--text-12); }
+.sdlc-card-summary { display:block; margin-top:6px; color:var(--text-tertiary); font-size:var(--text-11); }
 .sdlc-main { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; padding:10px 16px; overflow:auto; }
 .sdlc-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; flex-shrink:0; }
 .sdlc-heading-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
@@ -29,7 +31,7 @@
 .sdlc-toolbar label { display:grid; gap:4px; min-width:0; font-size:var(--text-11); color:var(--text-secondary); }
 .sdlc-toolbar input { width:170px; max-width:100%; }.sdlc-toolbar input[type=number] { width:90px; }
 .sdlc-toolbar input,.sdlc-toolbar select { padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--canvas); color:var(--text); }
-.sdlc-body { position:relative; flex:1; min-height:0; min-width:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.sdlc-body { position:relative; flex:1; min-height:180px; min-width:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
 .sdlc-canvas { height:100%; min-width:0; background:var(--canvas); color:var(--text); position:relative; }
 .sdlc-canvas .react-flow { --xy-background-color:var(--canvas); --xy-edge-stroke:var(--text-tertiary); --xy-controls-button-background-color:var(--panel); --xy-controls-button-color:var(--text); --xy-controls-button-border-color:var(--line); --xy-minimap-background-color:var(--panel); }
 .sdlc-node { width:260px; padding:0; border:0; background:transparent; color:var(--text); }

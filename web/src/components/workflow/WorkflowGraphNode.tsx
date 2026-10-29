@@ -3,7 +3,7 @@ import { Check, Circle, CircleAlert, LoaderCircle } from "lucide-react";
 import { asRecord } from "../../app/shared";
 import { activeStatus, statusLabels, type SdlcNode } from "./sdlcGraphModel";
 
-type GraphNode = Node<{ node: SdlcNode }, "workflowCard">;
+type GraphNode = Node<{ node: SdlcNode; horizontal?: boolean }, "workflowCard">;
 
 function WorkflowGraphNode({ data }: NodeProps<GraphNode>) {
   const node = data.node;
@@ -17,9 +17,10 @@ function WorkflowGraphNode({ data }: NodeProps<GraphNode>) {
   const Icon = active ? LoaderCircle : success ? Check : failed ? CircleAlert : Circle;
   const goal = node.kind === "requirement";
   return <div className={`sdlc-card sdlc-provider-${tone}${goal ? " sdlc-goal" : ""}`}>
-    <Handle type="target" position={Position.Top} />
+    <Handle type="target" position={data.horizontal ? Position.Left : Position.Top} />
     <div className="sdlc-card-kind">{goal ? "Goal" : node.kind}</div>
     <strong title={node.label}>{node.label}</strong>
+    {node.id.startsWith("workflow:stage:") && Array.isArray(node.data.roles) && node.data.roles.length > 0 && <small className="sdlc-card-summary">{node.data.roles.length} 个配置角色</small>}
     <div className="sdlc-card-meta">
       <span className="sdlc-provider" title={provider ? binding.source === "provider_usage" ? "Observed provider" : "Configured provider" : "No provider observation"}>
         {provider || node.data.role_instance ? <><i />{provider || String(node.data.role_instance)}</> : null}
@@ -28,7 +29,7 @@ function WorkflowGraphNode({ data }: NodeProps<GraphNode>) {
         <Icon size={13} aria-hidden="true" />{node.status.replaceAll("_", " ")}
       </span>
     </div>
-    <Handle type="source" position={Position.Bottom} />
+    <Handle type="source" position={data.horizontal ? Position.Right : Position.Bottom} />
   </div>;
 }
 

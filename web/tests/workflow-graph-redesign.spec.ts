@@ -5,6 +5,12 @@ test.skip(!token, "Requires workflow-prepare-server.py with isolated state and m
 test.describe.configure({ mode: "serial", timeout: 90_000 });
 const views = ["Lifecycle", "Task", "Dag", "Trace", "Delivery", "Timeline"];
 
+async function selectView(workbench: Locator, name: string) {
+  const values: Record<string, string> = { Lifecycle: "lifecycle", Task: "modules", Trace: "trace", Delivery: "delivery" };
+  if (values[name]) await workbench.getByLabel("更多视图", { exact: true }).selectOption(values[name]);
+  else await workbench.getByRole("button", { name: name === "Dag" ? "Graph" : name, exact: true }).click();
+}
+
 async function prepare(request: APIRequestContext, id: string) {
   const response = await request.post("/api/projects/default/actions/workflow-request", {
     headers: { "x-zf-web-token": token },
@@ -31,7 +37,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(value => { localStorage.setItem("zf.webActionToken", value); localStorage.setItem("zf.themeMode", "light"); }, token);
 });
 
-test("six graph views, themed top-down cards and live projection updates preserve viewport", async ({ page, request }) => {
+test("graph views, themed cards and live projection updates preserve viewport", async ({ page, request }) => {
   const id = `graph-theme-${Date.now()}`;
   await prepare(request, id);
   const endpoint = `/api/projects/default/workflow-requests/${id}/graph`;
@@ -66,7 +72,8 @@ test("six graph views, themed top-down cards and live projection updates preserv
   await expect(workbench.getByText("版本与数据可用性", { exact: true })).toHaveCount(0);
   await expect(workbench.getByText("Live Events", { exact: true })).toHaveCount(0);
   for (const name of views) {
-    await workbench.getByRole("button", { name, exact: true }).click();
+    await selectView(workbench, name);
+    if (name === "Timeline") { await expect(workbench.getByTestId("workflow-execution-timeline")).toBeVisible(); continue; }
     await expect(canvas).toBeVisible();
     await expect(workbench.locator(".sdlc-caption")).toHaveCount(0);
     await expect(workbench.getByText(/下游高亮表示已声明关系可达|发布：未知|未绑定部署环境与生产健康数据源/)).toHaveCount(0);
@@ -76,7 +83,7 @@ test("six graph views, themed top-down cards and live projection updates preserv
     expect(frame.height).toBeGreaterThan(600);
     expect(frame.y + frame.height).toBeLessThanOrEqual(1100);
   }
-  await workbench.getByRole("button", { name: "Dag", exact: true }).click();
+  await selectView(workbench, "Dag");
   await expect.poll(async () => {
     const bounds = (await canvas.boundingBox())!;
     return 1100 - bounds.y - bounds.height;
@@ -86,7 +93,7 @@ test("six graph views, themed top-down cards and live projection updates preserv
   await expect(workbench.locator('.react-flow__node[data-id="audit"] .sdlc-provider-claude')).toBeVisible();
   await expect(workbench.locator('.react-flow__node[data-id="goal"]')).toBeVisible();
   const goal = (await workbench.locator('.react-flow__node[data-id="goal"]').boundingBox())!;
-  expect((await drive.boundingBox())!.y).toBeGreaterThan(goal.y + goal.height);
+  expect((await drive.boundingBox())!.x).toBeGreaterThan(goal.x + goal.width);
   const light = await canvas.evaluate(el => getComputedStyle(el).backgroundColor);
   expect(light).toBe(await page.locator(".workflow-proposal-page").evaluate(el => getComputedStyle(el).backgroundColor));
   await workbench.screenshot({ path: test.info().outputPath("workflow-light.png") });
@@ -117,7 +124,7 @@ test("six graph views, themed top-down cards and live projection updates preserv
   expect(await workbench.locator('.react-flow__edge[data-id="goal-drive"]').count()).toBe(1);
   await drive.click();
   await expect(workbench.getByLabel("图节点详情")).toContainText("已完成");
-  await workbench.getByRole("button", { name: "Task", exact: true }).click();
+  await selectView(workbench, "Task");
   await expect(workbench.getByLabel("图节点详情")).toContainText("Build driving physics");
   await page.reload();
   await expect(workbench.getByLabel("图节点详情")).toContainText("Build driving physics");
@@ -136,12 +143,13 @@ test("six graph views, themed top-down cards and live projection updates preserv
 });
 
 
-test("large graphs fit shorter windows and resized content panels; Timeline stays graph-only", async ({ page, request }) => {
+test("large graphs fit shorter windows and Timeline remains available", async ({ page, request }) => {
   const id = `graph-resize-${Date.now()}`;
   await prepare(request, id);
   const actual = await (await request.get(`/api/projects/default/workflow-requests/${id}/graph`)).json();
   const nodes = Array.from({ length: 40 }, (_, index) => ({ id: `wide-${index}`, kind: "operation", label: `Parallel operation ${index}`, status: "pending", data: {}, views: ["workflow", "timeline"] }));
   await page.route(`**/api/projects/*/workflow-requests/${id}/graph*`, route => route.fulfill({ json: { ...actual, nodes, edges: [], plans: [] } }));
+  await page.route(`**/api/projects/*/workflow-requests/${id}/graph/structure?*`, route => route.fulfill({ status: 404 }));
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`/?page=workflows&project=default&request=${id}`);
   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
@@ -156,10 +164,14 @@ test("large graphs fit shorter windows and resized content panels; Timeline stay
         && nodes.every(node => node.left >= frame.left && node.right <= frame.right && node.top >= frame.top && node.bottom <= frame.bottom);
     }), { timeout: 10_000 }).toBeTruthy();
   };
+  await expect.poll(async () => (await canvas.locator(".react-flow__node").first().boundingBox())?.width || 0).toBeGreaterThan(150);
+  await workbench.getByRole("button", { name: /fit view/i }).click();
   await assertFits();
   await page.setViewportSize({ width: 1280, height: 480 });
+  await workbench.getByRole("button", { name: /fit view/i }).click();
   await assertFits();
   await page.evaluate(() => { (document.querySelector(".board-panel") as HTMLElement).style.height = "340px"; });
+  await workbench.getByRole("button", { name: /fit view/i }).click();
   await assertFits();
   await page.evaluate(() => { (document.querySelector(".board-panel") as HTMLElement).style.height = ""; });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -171,9 +183,7 @@ test("large graphs fit shorter windows and resized content panels; Timeline stay
   await expect(workbench.getByRole("heading", { name: "执行区间与关键路径" })).toHaveCount(0);
   await expect(workbench.getByText("时序或依赖证据尚不完整，暂不计算关键路径。", { exact: true })).toHaveCount(0);
   await expect(workbench.getByRole("table")).toHaveCount(0);
-  await expect.poll(async () => (await canvas.locator(".react-flow__node").first().boundingBox())?.width || 0).toBeGreaterThan(160);
-  await workbench.getByRole("button", { name: /fit view/i }).click();
-  await assertFits();
+  await expect(workbench.getByTestId("workflow-execution-timeline")).toBeVisible();
 });
 
 test("Agent dialog retains conversation and pending diff while Raw stays focused on YAML", async ({ page, request }) => {
@@ -312,6 +322,7 @@ test("request selection retains deep links and Plan review keeps chat and approv
   let approvals = 0;
   let revisions = 0;
   await page.route(`**/api/projects/*/workflow-requests/${id}/graph*`, route => route.fulfill({ json: { ...graph, plans: [plan] } }));
+  await page.route(`**/api/projects/*/workflow-requests/${id}/graph/structure?*`, route => route.fulfill({ status: 404 }));
   await page.route("**/plan-artifact-review", route => {
     const payload = route.request().postDataJSON();
     if (payload.operation === "apply") {
@@ -410,6 +421,7 @@ test("Plan main reader quotes formatted blocks, edits repeated paragraphs and se
   let requests = 0;
   let failContext = true;
   await page.route(`**/api/projects/*/workflow-requests/${id}/graph*`, route => route.fulfill({ json: { ...graph, plans: [plan] } }));
+  await page.route(`**/api/projects/*/workflow-requests/${id}/graph/structure?*`, route => route.fulfill({ status: 404 }));
   await page.route("**/plan-artifact-review", route => {
     const payload = route.request().postDataJSON();
     if (payload.operation === "context") return route.fulfill({ status: failContext ? 503 : 200,

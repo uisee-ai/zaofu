@@ -29,6 +29,96 @@ async function open(page: Page) {
   await expect(page.getByTestId("workflow-graph-canvas")).toBeVisible();
 }
 
+test("stage graph folds declared paths and opens observed execution details", async ({ page }, testInfo) => {
+  await setup(page);
+  await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ status: 404 }));
+  const stage = (id: string, status: string) => ({ id: `workflow:stage:${id}`, kind: "workflow", label: id, status,
+    views: ["workflow"], data: { stage_id: id, roles: [{ name: "developer" }] } });
+  const graph = { ...full("A"), nodes: [stage("scan", "completed"), stage("impl", "failed"),
+    { id: "run:A", kind: "run", label: "run-A", status: "running", views: ["workflow"], data: {} },
+    { id: "workflow:aggregate:scan", kind: "workflow", label: "aggregate", status: "completed", views: ["workflow"], data: {} },
+    { id: "operation:impl-1", kind: "operation", label: "dev-lane-1", status: "running", views: ["workflow", "timeline"], data: { parent_stage_id: "impl", task_id: "TASK-1" } },
+    { id: "attempt:one", kind: "attempt", label: "attempt one", status: "running", views: ["workflow"], data: {} }],
+    edges: [{ id: "to-aggregate", source: "workflow:stage:scan", target: "workflow:aggregate:scan", relation: "aggregate", views: ["workflow"] },
+      { id: "to-impl", source: "workflow:aggregate:scan", target: "workflow:stage:impl", relation: "triggers", views: ["workflow"] }] };
+  await page.route("**/workflow-requests/A/graph?*", route => route.fulfill({ json: graph }));
+  await open(page);
+  const navigation = page.getByRole("navigation", { name: "Workflow graph views" });
+  await expect(navigation.getByRole("button")).toHaveCount(2);
+  await expect(navigation.getByLabel("更多视图", { exact: true })).toBeVisible();
+  await expect(page.getByText("Run 状态：执行中", { exact: true })).toBeVisible();
+  await expect(page.locator(".react-flow__node")).toHaveCount(2);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await expect(page.getByText("折叠路径", { exact: true })).toBeVisible();
+  await expect(page.getByText("dev-lane-1", { exact: true })).toHaveCount(0);
+  await page.locator('.react-flow__node[data-id="workflow:stage:impl"]').click();
+  const details = page.getByRole("complementary", { name: "图节点详情" });
+  await expect(details).toContainText("已配置角色：developer");
+  await expect(details).toContainText("已观测：1 个操作 · 1 个关联 Task");
+  await expect(details).toContainText("TASK-1");
+  await expect(details).toContainText("具体原因尚未观测");
+  await page.screenshot({ path: testInfo.outputPath("focused-workflow-graph.png") });
+  await details.getByRole("button", { name: /dev-lane-1/ }).click();
+  await expect(details).toContainText("dev-lane-1");
+  await expect(details.getByRole("link", { name: "在 Loop Timeline 中查看" })).toHaveAttribute("href", /expected_run=run-A/);
+  await navigation.getByLabel("更多视图", { exact: true }).selectOption("modules");
+  expect(new URL(page.url()).searchParams.get("graph")).toBe("modules");
+  await page.reload();
+  await expect(navigation.getByLabel("更多视图", { exact: true })).toHaveValue("modules");
+  await expect(page.getByRole("complementary", { name: "图节点详情" })).toContainText("dev-lane-1");
+});
+
+test("stage summary does not truncate large declared stage chains", async ({ page }) => {
+  await setup(page);
+  await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ status: 404 }));
+  const nodes = Array.from({ length: 48 }, (_, i) => ({ id: `workflow:stage:${i}`, kind: "workflow", label: `Stage ${i}`,
+    status: "pending", views: ["workflow"], data: { stage_id: String(i) } }));
+  const edges = nodes.slice(1).map((node, i) => ({ id: `edge:${i}`, source: nodes[i].id, target: node.id, relation: "next", views: ["workflow"] }));
+  await page.route("**/workflow-requests/A/graph?*", route => route.fulfill({ json: { ...full("A"), nodes, edges } }));
+  await open(page);
+  await expect(page.locator(".sdlc-footer")).toContainText("48 个阶段/终态 · 47 条已显示关系");
+  await expect(page.getByText(/仅显示 40 个重点节点/)).toHaveCount(0);
+});
+
+test("partial stage details load execution only on request", async ({ page }) => {
+  await setup(page);
+  const partial = structure("A");
+  const node = { ...partial.nodes[0], data: { stage_id: "impl", roles: [{ name: "dev" }] } };
+  partial.nodes = [node];
+  let fullReads = 0;
+  await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ json: partial }));
+  await page.route("**/workflow-requests/A/graph/node?*", route => route.fulfill({ json: { scope: scope("A", 10), node } }));
+  await page.route("**/workflow-requests/A/graph?*", route => {
+    fullReads++;
+    const ops = [["finished", "settled"], ["running", "running"], ["blocked", "blocked"], ["cancelled", "cancelled"]].map(([id, status]) => ({ id: `operation:${id}`, kind: "operation", label: id, status, views: ["workflow"], data: { parent_stage_id: "impl", task_id: "TASK-1" } }));
+    return route.fulfill({ json: { ...full("A"), nodes: [node, ...ops] } });
+  });
+  await open(page);
+  await page.locator('.react-flow__node[data-id="workflow:stage:A"]').click();
+  const details = page.getByRole("complementary", { name: "图节点详情" });
+  await expect(details).toContainText("已配置角色：dev");
+  await expect(details).toContainText("执行与 Task 详情尚未加载");
+  expect(fullReads).toBe(0);
+  await details.getByRole("button", { name: "加载阶段运行详情" }).click();
+  await expect(details).toContainText("已观测：4 个操作 · 1 个关联 Task");
+  await expect(details.getByLabel("阶段执行摘要").getByRole("button").first()).toContainText("blocked");
+  await details.getByText("查看其他 1 个操作").click();
+  await expect(details.getByLabel("阶段执行摘要").getByRole("button", { name: /finished/ })).toBeVisible();
+  expect(fullReads).toBe(1);
+});
+
+test("legacy secondary view links remain reachable", async ({ page }) => {
+  await setup(page);
+  await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ status: 404 }));
+  await page.route("**/workflow-requests/A/graph?*", route => route.fulfill({ json: full("A") }));
+  for (const view of ["lifecycle", "modules", "trace", "delivery"]) {
+    await page.goto(`/tests/inbox-workflow.html?surface=graph-refresh&request=A&graph=${view}`);
+    await page.locator("#root").evaluate(element => { element.style.height = "100vh"; });
+    await expect(page.getByLabel("更多视图", { exact: true })).toHaveValue(view);
+    await expect(page.getByTestId("workflow-graph-canvas")).toBeVisible();
+  }
+});
+
 test("timeline shows observed stage operations and preserves unknown times", async ({ page }) => {
   await setup(page);
   await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ status: 404 }));
@@ -68,7 +158,7 @@ test("large real-sized graphs remain readable and disclose omitted relationships
       status: index === 0 ? "failed" : "pending", views: ["modules"], data: {} }))] };
   await page.route("**/workflow-requests/A/graph?*", route => route.fulfill({ json: large }));
   await open(page);
-  await page.getByRole("button", { name: "Task", exact: true }).click();
+  await page.getByLabel("更多视图", { exact: true }).selectOption("modules");
   await expect(page.getByText(/仅显示 40 个重点节点/)).toBeVisible();
   await expect(page.getByText(/81 个节点已折叠/)).toBeVisible();
   const goal = page.locator('.react-flow__node[data-id="root"]');
@@ -107,6 +197,8 @@ for (const status of [404, 503]) {
       return route.fulfill({ json: full("A") });
     });
     await open(page);
+    await expect(page.getByText("Structure A", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "展开流程结构" }).click();
     await expect(page.getByText("Full task A", { exact: true })).toBeVisible();
     expect(structures).toBe(1);
     expect(details).toBe(1);
@@ -158,7 +250,7 @@ test("stale selected-node detail refreshes the structure before retrying", async
   await open(page);
   await page.locator('.react-flow__node[data-id="workflow:stage:A"]').click();
   await expect(page.getByRole("complementary", { name: "图节点详情" }).getByText("Structure A", { exact: true })).toBeVisible();
-  await expect(page.locator(".sdlc-footer")).toContainText("Event 11");
+  await expect(page.locator(".sdlc-footer")).toHaveAttribute("title", /Event 11/);
   expect(structures).toBe(2);
   expect(nodes).toBe(2);
   expect(details).toBe(0);
@@ -241,7 +333,7 @@ test("a changed generation reloads structure and retries once before showing ful
   await open(page);
   await page.getByRole("button", { name: "加载完整运行图和计划" }).click();
   await expect(page.getByRole("button", { name: "Review", exact: true })).toBeVisible();
-  await expect(page.locator(".sdlc-footer")).toContainText("Event 11");
+  await expect(page.locator(".sdlc-footer")).toHaveAttribute("title", /Event 11/);
   expect(structures).toBe(2);
   expect(details).toBe(2);
   await expect(page.getByRole("alert")).toHaveCount(0);

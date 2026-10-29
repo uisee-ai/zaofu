@@ -1,8 +1,14 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 const project = process.env.ZF_GRAPH_PROJECT_ID || "";
 const requestId = process.env.ZF_GRAPH_REQUEST_ID || "";
 test.skip(!project || !requestId, "Requires an explicitly selected isolated Workflow Run.");
+
+async function selectView(workbench: Locator, name: string) {
+  const values: Record<string, string> = { Lifecycle: "lifecycle", Task: "modules", Trace: "trace", Delivery: "delivery" };
+  if (values[name]) await workbench.getByLabel("更多视图", { exact: true }).selectOption(values[name]);
+  else await workbench.getByRole("button", { name: name === "Dag" ? "Graph" : name, exact: true }).click();
+}
 
 test("real Workflow graph shows bound execution, every lens, stable selection and mobile layout", async ({ page, request }) => {
   test.setTimeout(120_000);
@@ -19,11 +25,11 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   await expect(workbench).toBeVisible();
   await expect(workbench.getByTestId("workflow-graph-canvas")).toBeVisible({ timeout: 30_000 });
   for (const name of ["Lifecycle", "Task", "Dag", "Trace", "Delivery", "Timeline"]) {
-    await workbench.getByRole("button", { name, exact: true }).click();
-    await expect(workbench.getByTestId("workflow-graph-canvas")).toBeVisible();
+    await selectView(workbench, name);
+    await expect(workbench.getByTestId(name === "Timeline" ? "workflow-execution-timeline" : "workflow-graph-canvas")).toBeVisible();
     expect(new URL(page.url()).searchParams.has("graph")).toBeTruthy();
   }
-  await workbench.getByRole("button", { name: "Dag", exact: true }).click();
+  await selectView(workbench, "Dag");
   await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
   await workbench.getByRole("button", { name: /fit view/i }).click();
   await workbench.screenshot({ path: test.info().outputPath("workflow-execution.png") });
@@ -40,7 +46,7 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   if (task) expect(selected).toBe(task.id);
   await workbench.getByLabel("搜索图节点").clear();
   for (const name of ["Task", "Trace", "Dag"]) {
-    await workbench.getByRole("button", { name, exact: true }).click();
+    await selectView(workbench, name);
     await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText(selected!);
   }
   await page.reload();
@@ -59,7 +65,7 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   if (graph.nodes.some((n: { kind: string; status: string }) => n.kind === "operation" && n.status === "running")) {
     await expect.poll(async () => (await (await request.get(endpoint)).json()).scope.source_seq,
       { timeout: 60_000, intervals: [2000] }).toBeGreaterThan(graph.scope.source_seq);
-    await expect(workbench.locator(".sdlc-footer")).not.toContainText(`Event ${graph.scope.source_seq}`);
+    await expect(workbench.locator(".sdlc-footer")).not.toHaveAttribute("title", `R${graph.scope.revision} · Event ${graph.scope.source_seq}`);
   }
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
@@ -211,7 +217,7 @@ test("completed fanout updates aggregate and role structure nodes", async ({ pag
   await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
   await expect(workbench).toBeVisible();
-  await workbench.getByRole("button", { name: "Dag", exact: true }).click();
+  await selectView(workbench, "Dag");
   await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
   await workbench.getByRole("button", { name: "Graph filters", exact: true }).click();
   await workbench.getByRole("button", { name: "展开角色、汇聚与事件结构", exact: true }).click();
@@ -253,7 +259,7 @@ test("terminal Run, Tasks and Goal coverage agree with kernel evidence", async (
   await expect(workbench).toBeVisible({ timeout: 30_000 });
   await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
   for (const [view, file] of [["Task", "modules-terminal.png"], ["Dag", "workflow-terminal.png"], ["Delivery", "delivery-terminal.png"]]) {
-    await workbench.getByRole("button", { name: view, exact: true }).click();
+    await selectView(workbench, view);
     await workbench.getByRole("button", { name: /fit view/i }).click();
     await workbench.screenshot({ path: test.info().outputPath(file) });
   }
