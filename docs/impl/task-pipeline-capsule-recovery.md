@@ -109,3 +109,7 @@ Task Pipeline 新 generation 可只包含增量任务；其全部完成不代表
 对历史误派，运行时仅取消由 `candidate-freeze-receipt.v1` 的 candidate.ready 直接触发、且同 Run 仍有未完成任务的活动 reader fanout。复用既有 fanout、operation、worker 取消路径，保留 Planner、其他 Run 和 legacy 非冻结触发。原候选收据保留为历史记录；不宣告其覆盖完整交付。回归：`tests/test_candidate_freeze_run_scope.py`。
 
 完整 Run 收尾时，冻结收集每个当前 Task 自身 generation 的集成收据和 session 归档；新 Plan 的身份不改写历史 Task 收据。所有收据必须通过原有摘要、TaskRef、rolling smoke 和候选分支祖先校验。冻结使用最后一个真实集成提交和其 candidate_generation，按最新 Plan generation 发布；最后完成的任务可以来自较早代，仍应只冻结一次。回归：`tests/test_candidate_freeze_receipts.py`。
+
+## Planner 执行失败的接纳
+
+Plan producer 的 pinned pre-submit evaluator 仅对实际候选执行完整 Plan 端口检查。明确 execution_status=failed 且 workflow-read normalizer 确认为执行失败的报告使用类型化失败校验，仍须有 summary 和合法 findings；提交继续经过原有凭据、operation 身份、读证据与不可变结果接纳。失败不能成为成功候选，普通语义拒绝仍需完整 Plan。artifact_production 继续要求显式执行失败语义，不能凭负面审查结论省略正式产物。验证见 tests/test_plan_failure_submit.py 与 tests/test_result_submit.py。
