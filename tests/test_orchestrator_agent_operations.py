@@ -235,6 +235,34 @@ def test_checkpoint_operation_is_stable_and_all_sources_are_required(
     assert {"effective-config", "requirement", "checkpoint-input"} <= source_ids
 
 
+def test_checkpoint_operation_uses_explicit_oa_profile(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+    profile = RoleConfig(
+        name="oa-primary",
+        instance_id="oa-primary-1",
+        backend="mock",
+        triggers=[CHECKPOINT_REQUESTED],
+    )
+    runtime.config.roles.append(profile)
+    runtime.config.workflow.orchestration.oa_profile = profile.name
+    roles = runtime.config.roles
+    runtime._find_role_by_name = lambda name: next(
+        (role for role in roles if role.name == name), None
+    )
+    runtime._find_role_by_instance = lambda instance: next(
+        (role for role in roles if role.instance_id == instance), None
+    )
+
+    prepared = _request(runtime)
+
+    assert prepared.role_instance == profile.instance_id
+    operation = load_workflow_operation(
+        runtime.event_log, prepared.operation_id,
+    )
+    assert operation is not None
+    assert operation["role_instance"] == profile.instance_id
+
+
 def test_low_risk_shadow_checkpoint_skip_is_stable(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
     runtime.config.workflow.orchestration.shadow_sample_percent = 0
@@ -548,6 +576,34 @@ def test_runtime_dispatches_checkpoint_with_product_briefing(tmp_path: Path) -> 
     assert prepared.operation_id in briefing_path.read_text(encoding="utf-8")
     assert "typed Orchestrator Agent semantic checkpoint" in prompt
     assert load_workflow_operation(log, prepared.operation_id)["status"] == "running"
+
+
+def test_runtime_dispatches_explicit_oa_profile_instance(tmp_path: Path) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    config = _config()
+    config.roles[0].name = "oa-primary"
+    config.roles[0].instance_id = "oa-primary-1"
+    config.workflow.orchestration.oa_profile = "oa-primary"
+    transport = RecordingTransport()
+    runtime = Orchestrator(
+        state_dir,
+        config,
+        transport,
+        project_root=tmp_path,
+    )
+    prepared = _request(runtime)
+    checkpoint = next(
+        event for event in log.read_all() if event.type == CHECKPOINT_REQUESTED
+    )
+
+    dispatch_orchestrator_agent_operation(
+        runtime,
+        runtime._find_role_by_name("oa-primary"),
+        checkpoint,
+    )
+
+    assert transport.sent[0][0] == "oa-primary-1"
+    assert prepared.role_instance == "oa-primary-1"
 
 
 def test_checkpoint_pane_death_requeues_same_operation_after_respawn(

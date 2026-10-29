@@ -81,6 +81,10 @@ from zf.runtime.execution_policy_routing import (
     execution_route_catalog_for_role,
     pending_execution_route_actions,
 )
+from zf.runtime.workflow_frontier_owner import (
+    normal_frontier_owner,
+    run_manager_may_consume_normal_frontier,
+)
 from zf.runtime.recovery_context import write_task_recovery_context
 from zf.runtime.run_manager_router import (
     ACTION_POLICIES,
@@ -490,6 +494,28 @@ def _run_manager_tick_unlocked(
         config=config,
         project_root=project_root,
     )
+    owner_blocked = projection.get("normal_frontier_owner_blocked")
+    if isinstance(owner_blocked, Mapping):
+        events = _read_events(state_dir, event_log=event_log)
+        fingerprint = str(owner_blocked.get("fingerprint") or "")
+        if fingerprint and not any(
+            event.type == "workflow.normal_frontier.owner_blocked"
+            and isinstance(event.payload, Mapping)
+            and str(event.payload.get("fingerprint") or "") == fingerprint
+            for event in events
+        ):
+            writer.emit(
+                "workflow.normal_frontier.owner_blocked",
+                actor="run-manager",
+                payload=dict(owner_blocked),
+                causation_id=started.id,
+            )
+            projection = build_run_manager_projection(
+                state_dir,
+                events=_read_events(state_dir, event_log=event_log),
+                config=config,
+                project_root=project_root,
+            )
     closeout_events = _emit_run_completed_closeout_if_ready(
         writer,
         projection=projection,
@@ -1176,15 +1202,34 @@ def build_run_manager_projection(
         *attention_actions,
     ]
     dynamic_continuation_actions = []
+    normal_frontier_owner_blocked: dict[str, Any] | None = None
     if (
         not base_pending_actions
         and completion_profile.get("status") != "complete"
     ):
-        dynamic_continuation_actions = pending_read_only_continuation_actions(
+        projected_dynamic_actions = pending_read_only_continuation_actions(
             state_dir,
             config=config,
             events=events,
         )
+        if run_manager_may_consume_normal_frontier(config):
+            dynamic_continuation_actions = projected_dynamic_actions
+        elif projected_dynamic_actions:
+            fragment_ids = sorted({
+                str(action.get("fragment_id") or "")
+                for action in projected_dynamic_actions
+                if str(action.get("fragment_id") or "")
+            })
+            fingerprint = hashlib.sha256(
+                json.dumps(fragment_ids, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            normal_frontier_owner_blocked = {
+                "schema_version": "workflow-normal-frontier-owner.v1",
+                "owner": normal_frontier_owner(config),
+                "blocked_by": "run_manager_owner_fence",
+                "fragment_ids": fragment_ids,
+                "fingerprint": fingerprint,
+            }
     selectable_actions = [
         *base_pending_actions,
         *dynamic_continuation_actions,
@@ -1394,6 +1439,7 @@ def build_run_manager_projection(
             "by_problem_class": dict(sorted(by_problem_class.items())),
         },
         "pending_actions": pending_actions,
+        "normal_frontier_owner_blocked": normal_frontier_owner_blocked,
         "summary": {
             "pending_actions": len(pending_actions),
             "executable_actions": sum(

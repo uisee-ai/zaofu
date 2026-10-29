@@ -857,6 +857,8 @@ def _build_workflow_orchestration(
         "pilot_id",
         "shadow_sample_percent",
         "flow_policies",
+        "oa_profile",
+        "normal_frontier_owner",
         "max_plan_revisions",
         "no_progress_limit",
     }
@@ -913,6 +915,15 @@ def _build_workflow_orchestration(
         raise ConfigError(
             "workflow.orchestration revision limits must be >= 1"
         )
+    oa_profile = str(data.get("oa_profile") or "").strip()
+    normal_frontier_owner = str(
+        data.get("normal_frontier_owner") or "run_manager"
+    ).strip().lower()
+    if normal_frontier_owner not in {"run_manager", "wrc"}:
+        raise ConfigError(
+            "workflow.orchestration.normal_frontier_owner must be "
+            "run_manager or wrc"
+        )
     return WorkflowOrchestrationConfig(
         mode=root.mode,
         checkpoints=root.checkpoints,
@@ -920,6 +931,8 @@ def _build_workflow_orchestration(
         pilot_id=root.pilot_id,
         shadow_sample_percent=root.shadow_sample_percent,
         flow_policies=flow_policies,
+        oa_profile=oa_profile,
+        normal_frontier_owner=normal_frontier_owner,
         max_plan_revisions=max_plan_revisions,
         no_progress_limit=no_progress_limit,
     )
