@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — c18c677 fix: preserve runtime Python path with an explicit CLI command
 
 # 重启后运行时 PATH 与候选集成恢复
 
@@ -26,3 +26,12 @@ datal / workflow-0ea133e63454375e 的 P17-SCHEDULE-R1 与 P01C 独立 Verify 通
 定向回归：test_cli_command、test_cli_start、test_workflow_runtime_start、test_task_pipeline_integration_retry、test_task_pipeline_v4_runtime_noise_mock_e2e 共 74 passed；test_cli_restart、test_cli_web、test_candidate_incremental、test_candidates 共 74 passed。premerge sentinel：50 passed，1 skipped。
 
 dev-verify plan 把共享 CLI 入口扩展到 141 个文件并建议全量 deterministic；依据 AGENTS.md 的小范围变更禁止无依据全量测试规则，本次执行上述直接入口、候选与恢复闭包，而未执行全量 suite。
+
+## 真实恢复结果（2026-10-29 UTC）
+
+- 06:03 正常 stop/start，保留原 Run；新 watcher 1010549 / epoch 232f93632c28426095f8e1cb398f6a01 ready。新 Autoresearch 子进程 PATH 前缀为 harness .venv/bin，python3 --version = 3.11.14。
+- 06:04:34 task-integration 受控请求 evt-043581994cac；P17-SCHEDULE-R1 06:04:47 smoke、integration 通过并由内核 task.done，candidate head 61e27f66c3f158353afd1bc7413882d545217385。
+- 06:05:11 受控请求 evt-84730ca98451；P01C 06:05:20 smoke、integration 通过并由内核 task.done，candidate head 6d5d2056184cd98e9cd8c22122729b79b168fc34。
+- 后续 P12A、P03、P02 自动派发到三个 Impl lane。8/8 容量配置保留，实际并发由依赖决定。
+
+部署说明：实现已提交在 wip/codex-20261029-runtime-path；主 dev 工作区有其他未提交工作，未做合并。只将本提交的 src/zf/runtime/cli_command.py 补丁部署到现有 runtime 源码，cmp 确认内容相同，再受控重启。未 push，未改业务合同/账本/任务完成状态。原失败历史保留。本记录证明两个集成断点恢复，不代表整份 PRD 已验收完成。
