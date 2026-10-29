@@ -16,6 +16,8 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 
 规划失败可能携带上一版本的 task_map/package 与失败任务 ID。批量恢复不得据此把 reader 的 Plan 协议失败当成实施失败并重发 task_map.ready。workflow_resume 将显式 plan_artifact_package_protocol、plan_candidate_review_identity、plan_candidate_preflight 继续交给 stage replan；原有实施失败/候选运行时恢复保持原路径。tests/test_plan_failure_batch_resume.py 覆盖带继承身份的实际恢复投影入口。
 
+清理无活跃租约的旧 operation 时，若同一 Run、同一父任务下另有 running operation 且持有有效 TaskAttempt 租约，只取消旧操作，不把父任务改为 blocked；恢复收据记录该活跃 operation。不同 Run、不同父任务或过期租约不授予豁免。`tests/test_workflow_resume_parent_liveness.py` 通过正式恢复入口覆盖父级 Planner 和下游子任务继续执行的情况。
+
 Plan 审批去重同时绑定任务集合与产物摘要（优先 Package digest，其次 Plan digest）。任务 ID 不变而 Package 更新时必须能产生新的审批单；同一版本仍保持去重。旧 plan.minting.suppressed 只记录当时的阻挡事实，重入时按当前未决审批和摘要重新判断，不能永久锁住新版本。tests/test_plan_approval_identity.py 覆盖新版本、同版本、已决阻挡和历史任务集合指纹的恢复。
 
 
