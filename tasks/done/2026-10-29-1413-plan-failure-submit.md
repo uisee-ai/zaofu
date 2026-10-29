@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 6ef3f89 fix: admit planner execution failures without successful plan ports
 
 # Planner 执行失败的结果接纳
 
@@ -9,4 +9,4 @@
 - 检查失败 schema -> verify: 空 summary / 非数组 findings 仍拒绝；artifact_production 的显式失败约定保留。
 - 部署并恢复同一现场 operation -> verify: 记录真实接纳与结算事件；不伪造成功，不改 TaskStore。
 
-验证：7 项回归覆盖失败报告与正常成功门禁；定向调用链 137 passed；dev-verify 按本补丁路径计算影响闭包（完整 --base dev 含继承的已验证批次，未重复全量套件）；premerge sentinel 50 passed, 1 skipped。现场部署待核实。
+验证：7 项回归覆盖失败报告与正常成功门禁；定向调用链 137 passed；dev-verify 按本补丁路径计算影响闭包（完整 --base dev 含继承的已验证批次，未重复全量套件）；premerge sentinel 50 passed, 1 skipped。影响闭包 435 passed（含 mock E2E），部署目录 42 passed。现场 watcher 3321307 保留工作会话重启；原始失败 scratch 预检通过，接纳 evt-946b0ae432e2，canonical prd.plan.child.failed evt-b88e4b2012e3；未改变产品任务状态或伪造成功。
