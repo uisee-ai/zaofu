@@ -117,3 +117,7 @@ Plan producer 的 pinned pre-submit evaluator 仅对实际候选执行完整 Pla
 ## 已接纳扫描的完整语义交接
 
 blocking/warning reader 聚合不读取 scratch。verification-result.v1 是精简的类型化验证合同；其 gap_tasks、plan_reconciliation 等完整报告从已接纳 envelope.source_event_ids 绑定的原始 ledger occurrence 读取，并核对 operation/request/fanout/child 身份。类型化控制结果优先，后续未接纳事件不能覆盖已接纳报告。原有 fanout-aggregate-rebuild 同时支持当前 discovery 的 completed/failed 聚合；只重算终结 child 的投影，不重新扫描，也不把失败改成通过。验证：tests/test_rescan_report_handoff.py、tests/test_reader_terminal_authority.py、tests/test_control_actions_recovery.py。
+
+## Plan 重生成后的增量派发范围
+
+writer loader 在事件未提供 task_ids 时消费 canonical Task Map amend.resume_scope=gap_tasks_only 与非空 gap_task_ids，先选择增量再核对批次共同基线。事件显式选择仍保留；未知任务继续拒绝，空增量声明不能降级为全量派发。历史任务的base_commit不因新候选而重写，普通完整map仍要求一致基线。替代旧任务仍须Planner明确amend.superseded_task_ids，runtime不根据名称猜测。验证：tests/test_amend_dispatch_selection.py。
