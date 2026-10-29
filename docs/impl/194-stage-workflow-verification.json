@@ -604,5 +604,6 @@
     "Initial automatic full fallback was interrupted and is not completion evidence.",
     "Final supplemental runs cover subsequent source changes.",
     "Skill validation uses ZaoFu metadata/materialization; the generic validator rejects repository-specific frontmatter extensions."
-  ]
+  ],
+  "implementation_commit": "3ff0b9a66d73c9be46688bc0b94bfedbfd33fe9e"
 }

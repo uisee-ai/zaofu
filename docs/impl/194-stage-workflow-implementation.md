@@ -2,6 +2,7 @@
 
 日期：2026-10-29。基线：`50ae24e535d083168f7167515fffd05482f2e1df`。
 工作分支：`wip/codex-20261029-design-194`。
+实现提交：`3ff0b9a6 feat: harden staged workflow recovery and bounded continuation`。六项任务已归档至 `tasks/done/`。
 设计输入：本地 `docs/design/194-stage-templates-and-dynamic-agent-workflows.md`，
 SHA256 `3c49d9c77af4cbe76d16410b756c77ba7a3e622d4645e28d0909b1263a5266cb`。
 
