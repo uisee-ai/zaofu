@@ -6,7 +6,7 @@ const assert = {
     if (JSON.stringify([...a]) !== JSON.stringify([...b])) throw new Error("Collections differ");
   },
 };
-import { workflowSummaryEdges, workflowSummaryIds, workflowSummaryPositions, expandedNodeIds, GraphLayoutCache, graphPositions, relatedNodes, type SdlcNode, type SdlcEdge } from "../src/components/workflow/sdlcGraphModel.js";
+import { workflowNodeLabel, isWaitingAuxiliaryStage, workflowSummaryEdges, workflowSummaryIds, workflowSummaryPositions, expandedNodeIds, GraphLayoutCache, graphPositions, relatedNodes, type SdlcNode, type SdlcEdge } from "../src/components/workflow/sdlcGraphModel.js";
 
 const nodes: SdlcNode[] = ["A", "B", "C"].map(id => ({ id, kind: "task", label: id, status: "pending", views: ["modules"], data: {} }));
 const edges: SdlcEdge[] = ["A", "B"].map(id => ({ id, source: id, target: "C", relation: "depends_on", views: ["modules"] }));
@@ -61,6 +61,25 @@ test("stage summary hides compiler details without deleting the full graph", () 
   assert.equal(workflowSummaryIds(all.slice(1)).size, 2);
 });
 
+test("built-in stage names preserve custom labels and unknown identities", () => {
+  const stage = (id: string, label = id): SdlcNode => ({ ...nodes[0], id: `workflow:stage:${id}`, kind: "workflow", label, status: "pending" });
+  assert.equal(workflowNodeLabel(stage("prd-lanes-final")), "最终验收");
+  assert.equal(workflowNodeLabel(stage("prd-lanes-verify")), "验证");
+  assert.equal(workflowNodeLabel(stage("issue-lanes-impl")), "修复");
+  assert.equal(workflowNodeLabel(stage("flow-plan")), "规划");
+  assert.equal(workflowNodeLabel(stage("prd-plan", "Custom planner")), "Custom planner");
+  assert.equal(workflowNodeLabel(stage("my-plan")), "my-plan");
+  assert.equal(workflowNodeLabel({ ...nodes[0], id: "workflow:terminal:done", label: "terminal done" }), "结束门禁");
+});
+
+test("only the known waiting discovery stage may be folded", () => {
+  const discovery: SdlcNode = { ...nodes[0], id: "workflow:stage:prd-post-verify-discovery", kind: "workflow", label: "prd-post-verify-discovery", status: "pending", data: { definition: { trigger: "flow.discovery.requested" } } };
+  assert.equal(isWaitingAuxiliaryStage(discovery), true);
+  for (const status of ["running", "failed", "blocked", "unknown", "completed"]) assert.equal(isWaitingAuxiliaryStage({ ...discovery, status }), false);
+  assert.equal(isWaitingAuxiliaryStage({ ...discovery, data: { definition: { trigger: "custom.requested" } } }), false);
+  assert.equal(isWaitingAuxiliaryStage({ ...discovery, id: "workflow:stage:custom-post-verify-discovery" }), false);
+});
+
 test("folded edges follow declared workflow paths through branches and cycles only", () => {
   const ids = ["workflow:stage:A", "workflow:stage:B", "workflow:stage:C", "workflow:stage:D", "workflow:role:X", "workflow:role:Y", "operation:Z"];
   const graph: SdlcNode[] = ids.map(id => ({ ...nodes[0], id, kind: id.startsWith("operation:") ? "operation" : "workflow", views: ["workflow"] }));
@@ -72,6 +91,8 @@ test("folded edges follow declared workflow paths through branches and cycles on
   const merged = workflowSummaryEdges(graph, [...links, { ...direct, views: [...direct.views] }], workflowSummaryIds(graph));
   assert.equal(merged.filter(e => e.source === ids[0] && e.target === ids[1]).length, 1);
   assert.equal(merged.find(e => e.target === ids[1])?.id, "direct");
+  const hiddenStage = workflowSummaryEdges(graph, [...links, { id: "b-to-d", source: ids[1], target: ids[3], relation: "declared", views: ["workflow"] }], new Set([ids[0], ids[3]]));
+  assert.equal(hiddenStage.some(edge => edge.source === ids[0] && edge.target === ids[3]), false);
 });
 
 test("summary puts the connected stage path left to right and keeps unrelated stages separate", () => {

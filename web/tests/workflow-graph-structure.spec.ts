@@ -29,6 +29,78 @@ async function open(page: Page) {
   await expect(page.getByTestId("workflow-graph-canvas")).toBeVisible();
 }
 
+test("standard stages use readable names and waiting discovery remains available", async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  await setup(page);
+  await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ status: 404 }));
+  const stage = (id: string, status: string) => ({ id: `workflow:stage:${id}`, kind: "workflow", label: id, status, views: ["workflow"], data: { stage_id: id, definition: { type: "fanout_stage" } } });
+  const graph = { ...full("A", 1), nodes: [stage("prd-scan", "completed"), stage("prd-lanes-final", "pending"), stage("prd-post-verify-discovery", "pending"),
+    { id: "workflow:terminal:done", kind: "workflow", label: "terminal done", status: "pending", views: ["workflow"], data: { definition: { type: "terminal_gate" } } }], edges: [] };
+  await page.route("**/workflow-requests/A/graph?*", route => route.fulfill({ json: graph }));
+  await open(page);
+  await expect(page.locator('.react-flow__node[data-id="workflow:stage:prd-scan"]')).toContainText("需求扫描");
+  await expect(page.locator('.react-flow__node[data-id="workflow:stage:prd-lanes-final"]')).toContainText("最终验收");
+  const gate = page.locator('.react-flow__node[data-id="workflow:terminal:done"]');
+  await expect(gate).toContainText("结束门禁");
+  await expect(gate).toContainText("等待");
+  expect((await gate.boundingBox())!.width).toBeLessThan((await page.locator('.react-flow__node[data-id="workflow:stage:prd-scan"]').boundingBox())!.width);
+  const discovery = page.locator('.react-flow__node[data-id="workflow:stage:prd-post-verify-discovery"]');
+  await expect(discovery).toHaveCount(0);
+  await expect(page.getByLabel("其他阶段")).toContainText("验证后扫描 · 等待");
+  await page.getByRole("button", { name: "展开其他阶段" }).click();
+  await expect(discovery).toBeVisible();
+  await discovery.click();
+  await expect(page.getByRole("complementary", { name: "图节点详情" })).toContainText("workflow:stage:prd-post-verify-discovery");
+  await page.getByRole("button", { name: "Close node details" }).click();
+  await page.getByRole("button", { name: "收起其他阶段" }).click();
+  graph.nodes[2].status = "failed"; graph.scope.head_seq = 2; graph.scope.source_seq = 2;
+  await page.getByRole("button", { name: "Graph event", exact: true }).click();
+  await expect(discovery).toContainText("失败");
+  await expect(page.getByLabel("其他阶段")).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("readable-workflow-mobile.png") });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto("/tests/inbox-workflow.html?surface=graph-refresh&request=A&node=workflow%3Aterminal%3Adone");
+  await page.locator("#root").evaluate(element => { element.style.height = "100vh"; });
+  await expect(page.getByRole("complementary", { name: "图节点详情" })).toContainText("结束门禁");
+  await expect(page.getByRole("complementary", { name: "图节点详情" })).toContainText("等待");
+  for (const [status, label] of [["failed", "失败"], ["done", "已完成"], ["unknown", "未知"]]) {
+    graph.nodes[3].status = status;
+    await page.reload();
+    await expect(gate).toContainText(label);
+    await expect(page.getByRole("complementary", { name: "图节点详情" })).toContainText(label);
+  }
+  graph.nodes[2].status = "pending";
+  await page.goto("/tests/inbox-workflow.html?surface=graph-refresh&request=A&node=workflow%3Astage%3Aprd-post-verify-discovery");
+  await page.locator("#root").evaluate(element => { element.style.height = "100vh"; });
+  await expect(discovery).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "图节点详情" })).toContainText("验证后扫描");
+});
+
+test("long goal expands exactly and resets when the workflow changes", async ({ page }) => {
+  await setup(page);
+  const longGoal = "交付😀可验证功能。".repeat(25);
+  await page.route("**/api/projects/*/workflow-requests/*", route => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    return route.fulfill({ json: { result: request(id), requirement: { objective: id === "A" ? longGoal : "短目标" }, proposal: {}, artifacts: {}, lifecycle: {}, links: {} } });
+  });
+  await page.route("**/workflow-requests/*/graph/structure?*", route => route.fulfill({ status: 404 }));
+  await page.route("**/workflow-requests/*/graph?*", route => route.fulfill({ json: full(new URL(route.request().url()).pathname.split("/").at(-2)!) }));
+  await open(page);
+  const goal = page.getByLabel("Goal context");
+  await expect(goal.getByRole("button", { name: "展开目标" })).toHaveAttribute("aria-expanded", "false");
+  await expect(goal.locator("strong")).not.toHaveText(longGoal);
+  await goal.getByRole("button", { name: "展开目标" }).click();
+  await expect(goal.locator("strong")).toHaveText(longGoal);
+  await page.getByLabel("Select workflow").selectOption("B");
+  await expect(goal.locator("strong")).toHaveText("短目标");
+  await expect(goal.getByRole("button", { name: /目标/ })).toHaveCount(0);
+  await page.getByLabel("Select workflow").selectOption("A");
+  await expect(goal.getByRole("button", { name: "展开目标" })).toBeVisible();
+  await expect(goal.locator("strong")).not.toHaveText(longGoal);
+});
+
 test("stage graph folds declared paths and opens observed execution details", async ({ page }, testInfo) => {
   await setup(page);
   await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ status: 404 }));

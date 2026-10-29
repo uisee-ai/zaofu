@@ -25,6 +25,29 @@ export const statusLabels: Record<string, string> = {
 };
 export const activeStatus = (status: string) => ["running", "in_progress", "dispatched"].includes(status);
 
+// These are presentation aliases for the built-in profiles, not stage inference.
+const stageLabels: Record<string, string> = {
+  "prd-scan": "需求扫描", "prd-plan": "规划", "prd-lanes-impl": "实施", "prd-lanes-verify": "验证", "prd-lanes-final": "最终验收",
+  "issue-triage": "问题分析", "issue-lanes-impl": "修复", "issue-lanes-verify": "验证", "issue-lanes-final": "最终验收",
+  "flow-scan": "扫描", "flow-plan": "规划", "flow-lanes-impl": "实施", "flow-lanes-verify": "验证", "flow-lanes-final": "最终验收",
+  "flow-verify-bridge": "验证衔接", "flow-module-parity-scan": "模块对账", "flow-final-judge": "最终验收",
+  "prd-post-verify-discovery": "验证后扫描", "issue-post-verify-discovery": "验证后扫描", "refactor-post-verify-discovery": "验证后扫描",
+};
+export function workflowNodeLabel(node: SdlcNode): string {
+  if (node.id === "workflow:terminal:done" && node.label === "terminal done") return "结束门禁";
+  if (!node.id.startsWith("workflow:stage:")) return node.label;
+  const stageId = node.id.slice("workflow:stage:".length);
+  return node.label === stageId ? stageLabels[stageId] || node.label : node.label;
+}
+
+export function isWaitingAuxiliaryStage(node: SdlcNode): boolean {
+  const id = node.id.slice("workflow:stage:".length);
+  if (!node.id.startsWith("workflow:stage:") || !["prd-post-verify-discovery", "issue-post-verify-discovery", "refactor-post-verify-discovery"].includes(id) || node.status !== "pending") return false;
+  const definition = node.data.definition;
+  const trigger = definition && typeof definition === "object" ? (definition as Record<string, unknown>).trigger : undefined;
+  return trigger === undefined || trigger === "flow.discovery.requested";
+}
+
 /** Keep the stage path readable; the complete compiler graph remains selectable. */
 export function workflowSummaryIds(nodes: SdlcNode[]): Set<string> {
   const hasStages = nodes.some(n => n.id.startsWith("workflow:stage:"));
@@ -57,7 +80,7 @@ export function workflowSummaryEdges(nodes: SdlcNode[], edges: SdlcEdge[], visib
             result.push({ id: `folded:${source}:${target}`, source, target, relation: "折叠路径", views: ["workflow"], collapsedVia: current.path });
             connected.add(key);
           }
-        } else if (!visited.has(target)) {
+        } else if (!target.startsWith("workflow:stage:") && !target.startsWith("workflow:terminal:") && !visited.has(target)) {
           visited.add(target); queue.push({ id: target, path: [...current.path, target] });
         }
       }

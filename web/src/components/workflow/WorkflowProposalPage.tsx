@@ -42,6 +42,7 @@ function WorkflowProposalWorkbench({
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentAnchor, setAgentAnchor] = useState<HTMLDivElement | null>(null);
   const [panel, setPanel] = useState<"review" | "raw" | null>(null);
+  const [goalExpanded, setGoalExpanded] = useState(false);
   const pageRoot = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const element = pageRoot.current;
@@ -74,7 +75,7 @@ function WorkflowProposalWorkbench({
     return () => { mounted.current = false; };
   }, []);
 
-  useEffect(() => { setBusyAction(""); setFeedback(null); }, [selectedId]);
+  useEffect(() => { setBusyAction(""); setFeedback(null); setGoalExpanded(false); }, [selectedId]);
 
   async function execute(
     action:
@@ -182,6 +183,9 @@ function WorkflowProposalWorkbench({
   const yaml = textValue(effectiveConfig.yaml);
   const submitted = Boolean(detail?.lifecycle.submitted || detail?.links.run_id);
   const objective = textValue(detail?.requirement.objective) || textValue(current?.objective);
+  const objectiveChars = Array.from(objective);
+  const longObjective = objectiveChars.length > 140;
+  const displayedObjective = !goalExpanded && longObjective ? `${objectiveChars.slice(0, 140).join("")}…` : objective;
   const acceptance = asStringArray(detail?.requirement.acceptance);
   const boundTask = textValue(current?.task_id);
   const sourceTask = new URLSearchParams(location.search).get("task") || "";
@@ -208,7 +212,7 @@ function WorkflowProposalWorkbench({
       <button aria-label="Refresh workflows" className="icon-button" type="button" disabled={Boolean(busyAction)} onClick={() => { void loadRequests(); void loadDetail(); }}><RefreshCw size={16} /></button>
     </header>
     {detail && <section className="workflow-goal-context" aria-label="Goal context">
-      <div><small>Goal / Requirement</small><strong>{objective || "目标尚未确认"}</strong></div>
+      <div><small>Goal / Requirement</small><strong>{displayedObjective || "目标尚未确认"}</strong>{longObjective && <button className="workflow-goal-toggle" type="button" aria-expanded={goalExpanded} onClick={() => setGoalExpanded(value => !value)}>{goalExpanded ? "收起目标" : "展开目标"}</button>}</div>
       <div className="workflow-goal-meta"><span>Task：{boundTask || "未绑定"}</span>{sourceTask && sourceTask !== boundTask && <span>来源 Task：{sourceTask}（关联未确认）</span>}<span>Run：{runId || "尚未启动"}</span>
         {acceptance.length > 0 && <details><summary>验收条件 · {acceptance.length}</summary><ul>{acceptance.map((item, index) => <li key={index}>{item}</li>)}</ul></details>}
         {runId && <a href={`/?${loopUrl}`}>查看 Loop Timeline</a>}</div>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { statusLabels, type SdlcGraph, type SdlcNode } from "./sdlcGraphModel";
+import { statusLabels, workflowNodeLabel, type SdlcGraph, type SdlcNode } from "./sdlcGraphModel";
 import { durationLabel, timelineModel } from "../delivery-trace/loopTimelineModel";
 
 type Interval = SdlcGraph["analysis"]["intervals"][number];
@@ -52,7 +52,7 @@ export default function WorkflowExecutionTimeline({ graph, onSelect }: { graph: 
     {start !== null && end !== null && <div className="sdlc-execution-axis"><span>{time(start)}</span><span>{time(end)}</span></div>}
     {!groups.length && <p className="sdlc-execution-empty">尚无阶段或执行记录。</p>}
     {visible.map(group => <section className="sdlc-execution-group" key={group.id}>
-      <div className="sdlc-execution-stage"><strong>{group.node?.label || group.id}</strong><span>{group.node ? statusLabels[group.node.status] || group.node.status : "阶段未绑定"} · {groups.find(item => item.id === group.id)?.entries.length || 0} 个操作</span>
+      <div className="sdlc-execution-stage"><strong>{group.node ? workflowNodeLabel(group.node) : group.id}</strong><span>{group.node ? statusLabels[group.node.status] || group.node.status : "阶段未绑定"} · {groups.find(item => item.id === group.id)?.entries.length || 0} 个操作</span>
         {group.node && <button type="button" onClick={() => onSelect(group.node!.id)}>阶段详情</button>}</div>
       {group.entries.map(({ interval, node }) => {
         const startTime = validTime(interval.start_ms) ? interval.start_ms : null;

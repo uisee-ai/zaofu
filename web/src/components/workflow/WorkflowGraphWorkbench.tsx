@@ -12,7 +12,7 @@ import { workflowNodeTypes } from "./WorkflowGraphNode";
 import WorkflowExecutionTimeline from "./WorkflowExecutionTimeline";
 import WorkflowStageDetails from "./WorkflowStageDetails";
 import { X, Code, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
-import { activeStatus, expandedNodeIds, GraphLayoutCache, graphViews, relatedNodes, statusLabels, workflowSummaryEdges, workflowSummaryIds, workflowSummaryPositions, type GraphView } from "./sdlcGraphModel";
+import { activeStatus, expandedNodeIds, GraphLayoutCache, graphViews, isWaitingAuxiliaryStage, relatedNodes, statusLabels, workflowNodeLabel, workflowSummaryEdges, workflowSummaryIds, workflowSummaryPositions, type GraphView } from "./sdlcGraphModel";
 
 const graphFitOptions = { padding: 0.22, maxZoom: 0.8, minZoom: 0.6 };
 
@@ -34,6 +34,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [fullStructure, setFullStructure] = useState(false);
+  const [showOtherStages, setShowOtherStages] = useState(false);
   const [showAllNodes, setShowAllNodes] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState(new Set<string>());
@@ -76,6 +77,9 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     const expanded = expandedNodeIds(graph.nodes, graph.edges, collapsed);
     const summary = view === "workflow" && !fullStructure ? workflowSummaryIds(graph.nodes) : null;
     const needle = search.trim().toLowerCase();
+    if (summary && !showOtherStages && !needle && !status && direction === "all") {
+      for (const node of graph.nodes) if (node.id !== selected && isWaitingAuxiliaryStage(node)) summary.delete(node.id);
+    }
     const candidates = graph.nodes.filter(n => (n.views.includes(view) || n.id === selected) && expanded.has(n.id) && (!reachable || reachable.has(n.id))
       && (!summary || needle || summary.has(n.id) || n.id === selected)
       && (!status || n.status === status) && (!needle || `${n.id} ${n.label} ${JSON.stringify(n.data)}`.toLowerCase().includes(needle)));
@@ -89,9 +93,9 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     const ids = new Set(nodes.map(n => n.id));
     const edges = stageSummary && !needle && !reachable && !status ? workflowSummaryEdges(graph.nodes, graph.edges, ids) : graph.edges.filter(e => e.views.includes(view) && ids.has(e.source) && ids.has(e.target));
     return { nodes, edges, hidden: candidates.length - nodes.length };
-  }, [graph, view, direction, selected, collapsed, search, status, fullStructure, showAllNodes]);
+  }, [graph, view, direction, selected, collapsed, search, status, fullStructure, showAllNodes, showOtherStages]);
   const layoutScope = JSON.stringify([projectId, requestId, view, direction,
-    direction === "all" ? "" : selected, [...collapsed].sort(), search.trim().toLowerCase(), status, fullStructure, showAllNodes, asOf]);
+    direction === "all" ? "" : selected, [...collapsed].sort(), search.trim().toLowerCase(), status, fullStructure, showAllNodes, showOtherStages, asOf]);
   useEffect(() => {
     // Explicit navigation gets a compact layout; live polls preserve dragged nodes and the viewport.
     if (positionScope.current !== layoutScope) {
@@ -112,7 +116,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
       position: positions.current.get(`${view}:${n.id}`) || layout.get(n.id) || { x: 0, y: 0 },
       selected: n.id === selected,
       type: "workflowCard",
-      className: `sdlc-node sdlc-status-${n.status}`,
+      className: `sdlc-node sdlc-status-${n.status}${n.id === "workflow:terminal:done" ? " sdlc-terminal-node" : ""}`,
       data: { node: n, horizontal: view === "workflow" && !fullStructure },
     })));
     setCanvasScope(layoutScope);
@@ -135,6 +139,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const plans = graph && "plans" in graph ? graph.plans : [];
   const preview = plans.find(p => p.plan_id === planId);
   const pendingPlan = plans.find(p => p.status === "pending");
+  const otherStages = graph?.nodes.filter(node => isWaitingAuxiliaryStage(node) && (showOtherStages || node.id !== selected)) ?? [];
   function chooseView(id: GraphView) {
     if (id !== "workflow" && partial) loadFull();
     setView(id); const url = new URL(location.href); url.searchParams.set("graph", id); history.replaceState(null, "", url);
@@ -173,6 +178,10 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
       {!graph && !error && <p>正在读取流程与运行关系…</p>}
       {graph && <>
         {view === "workflow" && !fullStructure && <div className="sdlc-summary-note">{graph.nodes.some(node => node.id.startsWith("workflow:stage:")) ? "阶段概览：角色和执行详情已折叠；标记的路径经过原有折叠结构，条件请查看完整结构。" : "未提供阶段结构，显示当前可用的图节点。"} <button type="button" onClick={() => setFullStructure(true)}>展开流程结构</button></div>}
+        {view === "workflow" && !fullStructure && !search.trim() && !status && direction === "all" && otherStages.length > 0 && <div className="sdlc-other-stages" aria-label="其他阶段">
+          <span>其他阶段：{otherStages.map(node => `${workflowNodeLabel(node)} · ${statusLabels[node.status] || node.status}`).join("、")}</span>
+          <button type="button" aria-expanded={showOtherStages} onClick={() => setShowOtherStages(value => !value)}>{showOtherStages ? "收起其他阶段" : "展开其他阶段"}</button>
+        </div>}
         {view !== "timeline" && Boolean(filtered.hidden) && <div className="sdlc-summary-note" role="status">为保持可读性，仅显示 40 个重点节点；{filtered.hidden} 个节点已折叠，连接可能不完整。 <button type="button" onClick={() => setShowAllNodes(true)}>显示全部</button></div>}
         {view !== "timeline" && showAllNodes && <div className="sdlc-summary-note"><button type="button" onClick={() => setShowAllNodes(false)}>返回重点节点</button></div>}
         {showTools && <div className="sdlc-toolbar">
@@ -187,7 +196,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
         <div className={`sdlc-body${selectedNode ? " has-inspector" : ""}`}>
           {partial && (view !== "workflow" || Boolean(search.trim())) ? <p role="status">正在读取完整运行关系…</p> : view === "timeline" && "timeline" in graph ? <WorkflowExecutionTimeline graph={graph} onSelect={pick} /> : <div className="sdlc-canvas" data-testid="workflow-graph-canvas">
             <ReactFlow key={canvasScope} nodes={canvasNodes} edges={canvasEdges} nodeTypes={workflowNodeTypes} onNodesChange={onNodesChange} onNodeClick={(_, node) => pick(node.id)} fitView fitViewOptions={graphFitOptions} minZoom={0} onlyRenderVisibleElements nodesConnectable={false} deleteKeyCode={null} aria-label="Workflow 关系图">
-              <FitResizedCanvas focusId={filtered.nodes.length > 12 ? filtered.nodes.find(n => ["goal", "requirement"].includes(n.kind))?.id || filtered.nodes[0]?.id || "" : ""} /><Controls showInteractive={false} fitViewOptions={{ ...graphFitOptions, minZoom: 0 }} /><MiniMap pannable zoomable maskColor="var(--surface)" nodeColor="var(--text-tertiary)" style={{ width: 130, height: 85 }} />
+              <FitResizedCanvas focusId={filtered.nodes.some(n => n.id === selected) ? selected : filtered.nodes.length > 12 ? filtered.nodes.find(n => ["goal", "requirement"].includes(n.kind))?.id || filtered.nodes[0]?.id || "" : ""} /><Controls showInteractive={false} fitViewOptions={{ ...graphFitOptions, minZoom: 0 }} /><MiniMap pannable zoomable maskColor="var(--surface)" nodeColor="var(--text-tertiary)" style={{ width: 130, height: 85 }} />
             </ReactFlow>
             {!filtered.nodes.length && <p className="sdlc-empty">{graph.nodes.length ? "No nodes match these filters." : "The graph will appear as this workflow is prepared."}</p>}
           </div>}
@@ -199,7 +208,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
           </aside>}
           {inspectedNode && <aside className="sdlc-inspector" aria-label="图节点详情">
             <button className="sdlc-close" type="button" aria-label="Close node details" onClick={() => { setSelected(""); const url = new URL(location.href); url.searchParams.delete("node"); history.replaceState(null, "", url); }}><X size={16} /></button>
-            <h3>{inspectedNode.label}</h3><p>{statusLabels[inspectedNode.status] || inspectedNode.status}</p><code>{inspectedNode.id}</code>
+            <h3>{workflowNodeLabel(inspectedNode)}</h3><p>{statusLabels[inspectedNode.status] || inspectedNode.status}</p><code>{inspectedNode.id}</code>
             {["failed", "blocked", "rejected", "evidence_missing"].includes(inspectedNode.status) && <div className="sdlc-failure-summary">
               <strong>需要关注</strong><p>{String(inspectedNode.data.reason || asRecord(inspectedNode.data.failure).reason || "具体原因尚未观测；请查看关联记录与证据。")}</p>
             </div>}
