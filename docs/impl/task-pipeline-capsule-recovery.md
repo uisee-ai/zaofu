@@ -107,3 +107,5 @@ Reader fanout 的 typed blocking 聚合只读取已接纳 envelope 所绑定的�
 Task Pipeline 新 generation 可只包含增量任务；其全部完成不代表 Run 完成。候选冻结前必须遍历同一 Run 每个 Task 的最新 generation context：全部 done，或 cancelled 且有 Kernel supersession 和后续已接纳替代 generation。其他 Run 的未完成任务不阻塞。然后仍执行既有精确集成收据、活动执行与 session 归档门禁。
 
 对历史误派，运行时仅取消由 `candidate-freeze-receipt.v1` 的 candidate.ready 直接触发、且同 Run 仍有未完成任务的活动 reader fanout。复用既有 fanout、operation、worker 取消路径，保留 Planner、其他 Run 和 legacy 非冻结触发。原候选收据保留为历史记录；不宣告其覆盖完整交付。回归：`tests/test_candidate_freeze_run_scope.py`。
+
+完整 Run 收尾时，冻结收集每个当前 Task 自身 generation 的集成收据和 session 归档；新 Plan 的身份不改写历史 Task 收据。所有收据必须通过原有摘要、TaskRef、rolling smoke 和候选分支祖先校验。冻结使用最后一个真实集成提交和其 candidate_generation，按最新 Plan generation 发布；最后完成的任务可以来自较早代，仍应只冻结一次。回归：`tests/test_candidate_freeze_receipts.py`。
