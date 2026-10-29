@@ -99,6 +99,23 @@ def is_configured_orchestrator_role(config_or_runtime: Any, role: Any) -> bool:
     return instance_id == profile
 
 
+def is_configured_orchestrator_actor(config_or_runtime: Any, actor: Any) -> bool:
+    """Return whether an actor string identifies the semantic OA role."""
+
+    config = getattr(config_or_runtime, "config", config_or_runtime)
+    actor_id = str(actor or "").strip()
+    if not actor_id:
+        return False
+    return any(
+        is_configured_orchestrator_role(config, role)
+        and actor_id in {
+            str(getattr(role, "name", "") or "").strip(),
+            str(getattr(role, "instance_id", "") or "").strip(),
+        }
+        for role in getattr(config, "roles", ()) or ()
+    )
+
+
 def orchestrator_instance_id(runtime: Any) -> str:
     role = configured_orchestrator_role(runtime)
     if role is not None:
@@ -115,6 +132,7 @@ __all__ = [
     "configured_orchestrator_role",
     "configured_orchestrator_role_from_config",
     "is_configured_orchestrator_role",
+    "is_configured_orchestrator_actor",
     "orchestrator_instance_id",
     "orchestrator_profile_name",
 ]

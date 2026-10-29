@@ -9,6 +9,7 @@ from zf.core.config.schema import (
 from zf.runtime.orchestrator_agent_role import (
     configured_orchestrator_role,
     configured_orchestrator_role_from_config,
+    is_configured_orchestrator_actor,
     orchestrator_instance_id,
     is_configured_orchestrator_role,
 )
@@ -65,3 +66,5 @@ def test_explicit_profile_excludes_all_logical_role_replicas() -> None:
 
     assert is_configured_orchestrator_role(runtime.config, runtime.config.roles[0])
     assert is_configured_orchestrator_role(runtime.config, replica)
+    assert is_configured_orchestrator_actor(runtime.config, "oa-primary-1")
+    assert not is_configured_orchestrator_actor(runtime.config, "reader")

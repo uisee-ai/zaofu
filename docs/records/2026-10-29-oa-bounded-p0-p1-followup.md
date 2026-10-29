@@ -3,7 +3,7 @@
 > 日期：2026-10-29
 > 状态：已完成
 > 基线：`dev@3812a291`（194/195 与前一批 bounded OA 已合入）
-> 实现提交：`2419f0d0 feat: close bounded OA p0 p1 gaps`
+> 实现提交：`2419f0d0 feat: close bounded OA p0 p1 gaps`；profile actor seam follow-up included in the next commit.
 
 ## 本批闭合项
 
@@ -30,7 +30,7 @@ execution context sidecar 保存 effective config ref/digest。Decision admissio
 
 ## 验证证据
 
-- focused / mock E2E：`213 passed`。
+- focused / mock E2E：`237 passed`。
 - serial tier：`10 passed`。
 - `bash scripts/dev-premerge-gate.sh`：`50 passed, 1 skipped`。
 - `bash scripts/run-flow-smoke.sh`：`10 passed`。
