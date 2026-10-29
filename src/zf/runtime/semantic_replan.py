@@ -247,6 +247,12 @@ def _semantic_replan_anchor(
         if event.type not in _ANCHOR_EVENT_TYPES:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if (
+            anchor.get("workflow_run_id")
+            and payload.get("workflow_run_id")
+            and payload["workflow_run_id"] != anchor["workflow_run_id"]
+        ):
+            continue
         event_pdd = str(payload.get("pdd_id") or payload.get("feature_id") or "")
         if pdd_id and event_pdd and event_pdd != pdd_id:
             continue
@@ -373,6 +379,7 @@ def _semantic_replan_anchor(
                     "target_ref": continuation_commit,
                 })
                 break
+    integrated_candidate = _bind_current_plan_and_candidate(anchor, events)
     if (
         not anchor.get("continuation_commit")
         and anchor.get("candidate_head_commit")
@@ -396,7 +403,9 @@ def _semantic_replan_anchor(
             anchor["target_ref"] = failed_base
             anchor["handoff_kind"] = "task_base_recovery"
         else:
-            anchor["target_ref"] = anchor["candidate_ref"]
+            anchor["target_ref"] = (
+                candidate_head if integrated_candidate else anchor["candidate_ref"]
+            )
     elif not anchor.get("continuation_commit"):
         # A task-scoped replan can happen before the writer fanout has emitted
         # candidate.ready. The task snapshot still pins the integrated task
@@ -409,6 +418,47 @@ def _semantic_replan_anchor(
     anchor["supersedes_task_ids"] = [task_id] if task_id else []
     anchor["affected_task_ids"] = [task_id] if task_id else []
     return anchor
+
+
+def _bind_current_plan_and_candidate(
+    anchor: dict[str, Any], events: list[ZfEvent],
+) -> bool:
+    """Bind replan inputs without rewriting the failed task's contract snapshot."""
+    from zf.runtime.plan_artifact_package import (
+        plan_artifact_package_binding,
+        reduce_plan_artifact_packages,
+    )
+
+    run_id = str(anchor.get("workflow_run_id") or "")
+    if not run_id:
+        return False
+    current = reduce_plan_artifact_packages(events, workflow_run_id=run_id)["current"]
+    if current:
+        source = next((e for e in events if e.id == current.get("source_event_id")), None)
+        if source is not None:
+            for key in ("task_map_ref", "source_index_ref"):
+                if source.payload.get(key):
+                    anchor[key] = source.payload[key]
+            anchor.update(plan_artifact_package_binding(events, current))
+    if anchor.get("continuation_commit"):
+        return False
+    for event in reversed(events):
+        p = event.payload
+        if (
+            event.type == "integration.queue.integrated"
+            and p.get("workflow_run_id") == run_id
+            and p.get("status") == "integrated"
+            and p.get("receipt_ref")
+            and p.get("candidate_branch")
+            and p.get("candidate_head")
+        ):
+            anchor.update({
+                "candidate_ref": p["candidate_branch"],
+                "candidate_head_commit": p["candidate_head"],
+                "candidate_event_id": event.id,
+            })
+            return True
+    return False
 
 
 def _git_commit_is_ancestor(

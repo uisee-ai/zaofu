@@ -79,3 +79,12 @@ Gap amend 删除被替代任务、追加新任务后，原 task_input_policy 的
 生命周期查询对已证明 terminal 的 Task Pipeline dispatch，即使 TaskStore 已清空 active_dispatch_id，也不再把它当作该 worker 的执行责任。保留 Task in_progress 以等待其他阶段，不影响另一任务在同一物理槽位执行；新的 legacy 派发继续覆盖旧终态事实。
 
 恢复预览会检查当前 Flow 的返工上限，耗尽时明确拒绝，不能仅追加一个永远不会派发的请求。经操作员明确审核的额外一次恢复可使用 `zf recover task-impl --operation <id> --reason <修复证据> --authorize-extra-attempt --approval-ref <批准来源>` 预览，再加 `--apply`。批准只绑定当前已接纳 blocked 结果、原 operation 和恰好下一代 Impl；通过 kernel 请求账本重放。它不修改 YAML 全局额度，不重开终态 operation，不替未来代际授权，正常 Verify/集成及后续预算仍生效。
+
+
+## 重规划输入与失败证据分别绑定
+
+语义重规划从当前 Run 已接纳的 Plan Artifact Package 及其 source event 取得 task_map、generation、package 和 Claim Set；失败 Task 的旧 package 不能覆盖当前规划身份，未接纳草稿也不能抢占。失败任务的合同 revision、snapshot ref/digest 保留为根因证据，不修改 TaskStore 合同。
+
+Task Pipeline 通过同 Run 的 integration.queue.integrated 收据提供当前候选，扫描目标固定为 candidate_head 提交，避免使用早期 Plan 的 HEAD 或可移动分支。其他 Run 与失败集成不参与选择。显式 partial continuation 仍优先；若已集成候选不包含失败任务的 base，沿已有 task_base_recovery 路径保留更新的任务基线。legacy candidate.ready 兼容路径不变。
+
+验证：tests/test_semantic_replan_current_target.py 通过真实 run_manager_tick 入口检查 discovery 事件、跨 Run 隔离、未接纳草稿、失败集成、任务基线保护以及原合同不变；原 rework triage 回归覆盖 partial continuation。
