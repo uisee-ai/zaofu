@@ -67,3 +67,9 @@ Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role
 Gap amend 删除被替代任务、追加新任务后，原 task_input_policy 的数组位置不再有效。生成器按 task_id 重绑已有读取路径，新增任务只继承显式 parent/supersedes 的分区并添加自身合同；缺少来源分区时拒绝，不授予整份计划。source_refs/amend 是生成器维护的共享来源元数据。保留完整覆盖校验与不可变原始工件，通过新 amend/package 和正常批准发布修正版。tests/test_gap_input_policy_rebinding.py 覆盖替代、位置移动、只读依赖、重复生成与缺失来源。
 
 增量计划的读取契约覆盖整个 Plan Artifact Package。继承的 acceptance/execution/source/test 等端口也必须给 gap task 绑定显式 parent/supersedes 分区；只变更读取元数据，不改验收语义，不把验证证据变成 passed。生成新不可变 sidecar，记录原 ref/digest，并保留源分区覆盖。Package 接纳前逐端口检查新任务的输入分区，避免在 Impl 派发时才发现缺失。Product Acceptance 的 exact prior lineage 校验保持生效。验证：tests/test_gap_package_input_partitions.py 从 prepare_plan_artifact_package 入口覆盖多个继承端口、旧工件不变与缺失父分区拒绝。
+
+## 重派结果草稿与复用槽位
+
+同一 operation 可以跨多个 attempt 重派，稳定的签名 scratch 路径不表示可复用上一 attempt 的结果。草稿准备入口记录 attempt 元数据；同 attempt 保留编辑，跨 attempt 将原始草稿写入不可变 retired-result-drafts 工件并生成新模板。旧版本无元数据时，仅 Impl self_check 中相同 attempt_id 可证明同次重放；其余情况保留旧草稿后重新准备，不能重标旧的通过证据。Impl 与 Verify 的执行卡共用此规则。
+
+生命周期查询对已证明 terminal 的 Task Pipeline dispatch，即使 TaskStore 已清空 active_dispatch_id，也不再把它当作该 worker 的执行责任。保留 Task in_progress 以等待其他阶段，不影响另一任务在同一物理槽位执行；新的 legacy 派发继续覆盖旧终态事实。
