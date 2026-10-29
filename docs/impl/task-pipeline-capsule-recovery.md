@@ -88,3 +88,5 @@ Gap amend 删除被替代任务、追加新任务后，原 task_input_policy 的
 Task Pipeline 通过同 Run 的 integration.queue.integrated 收据提供当前候选，扫描目标固定为 candidate_head 提交，避免使用早期 Plan 的 HEAD 或可移动分支。其他 Run 与失败集成不参与选择。显式 partial continuation 仍优先；若已集成候选不包含失败任务的 base，沿已有 task_base_recovery 路径保留更新的任务基线。legacy candidate.ready 兼容路径不变。
 
 验证：tests/test_semantic_replan_current_target.py 通过真实 run_manager_tick 入口检查 discovery 事件、跨 Run 隔离、未接纳草稿、失败集成、任务基线保护以及原合同不变；原 rework triage 回归覆盖 partial continuation。
+
+Reader hydration 同样区分全局重扫描与任务验证：global-rescan 中旧失败合同的 generation/package 是证据，不覆盖请求已绑定的当前 Plan 身份；普通 reader 的任务验证仍继承并校验 snapshot。tests/test_reader_replan_plan_binding.py 覆盖真实 Orchestrator 注册、派发、不可变输入和必读命令，避免仅验证上游请求正确却遗漏下游身份覆盖。
