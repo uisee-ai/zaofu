@@ -8009,7 +8009,7 @@ class FanoutCoordinationMixin(
         candidate_preflight_section = [
             "## Candidate-ready preflight",
             "",
-            "Before emitting `dev.build.done`, run the lane verification named by the task contract and any root checks required by this repository's candidate quality gates. Candidate integration may block `candidate.ready` until those gates pass.",
+            "Before emitting `dev.build.done`, run the lane verification named by the task contract. Candidate integration may block `candidate.ready` until those gates pass; report command receipts only for commands declared by the task contract.",
             "For Node.js/TypeScript refactors, package or workspace changes require a frozen lockfile install plus root typecheck/test where available, not only package-local tests.",
             "Contract fixtures must be exact golden fixtures: assert complete fields, complete lists, offsets, fallback/ignored behavior, and snake_case/camelCase parity where the source system supports both. Shape-only fixture checks are not enough.",
             "",
