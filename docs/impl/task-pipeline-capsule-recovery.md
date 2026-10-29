@@ -123,3 +123,5 @@ blocking/warning reader 聚合不读取 scratch。verification-result.v1 是精�
 writer loader 在事件未提供 task_ids 时消费 canonical Task Map amend.resume_scope=gap_tasks_only 与非空 gap_task_ids，先选择增量再核对批次共同基线。事件显式选择仍保留；未知任务继续拒绝，空增量声明不能降级为全量派发。历史任务的base_commit不因新候选而重写，普通完整map仍要求一致基线。替代旧任务仍须Planner明确amend.superseded_task_ids，runtime不根据名称猜测。验证：tests/test_amend_dispatch_selection.py。
 
 经授权的 stage-replan-new-generation 将非空 operator reason 追加到 rework_feedback，标记 operator_recovery_guidance 并绑定 control.action.requested event。保留原始失败诊断，不以操作员说明替换历史事实；无说明和幂等重放维持原行为。该入口仍要求真实阶段上限升级与 approval_ref。tests/test_control_actions_recovery.py 覆盖传递及幂等。
+
+Gap-only plan package rebind 对继承端口保留 task-specific scope，同时将端口中已存在的 workflow_run_id、plan_revision、task_map_generation 加入 shared_paths。它只修复新增包身份叶子的显式覆盖，不读取未声明字段，不改变普通全量计划的 fail-closed 校验。

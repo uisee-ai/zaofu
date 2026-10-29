@@ -31,7 +31,20 @@ def rebind_gap_port_partitions(
         if not isinstance(policy, dict) or not isinstance(policy.get("tasks"), list):
             raise ValueError("invalid inherited task_input_policy")
         partitions = {row["task_id"]: row["paths"] for row in policy["tasks"]}
+        # Package identity is shared by every task. Older inherited ports
+        # partitioned the business body but omitted identity leaves added by a
+        # later package generation; gap rebinding must carry those fields in
+        # the shared partition instead of rejecting an otherwise valid delta.
+        shared = list(policy.get("shared_paths") or [])
         changed = False
+        assigned = set(shared)
+        for key in ("workflow_run_id", "plan_revision", "task_map_generation"):
+            path = f"$.{key}"
+            if key in body and path not in assigned:
+                shared.append(path)
+                assigned.add(path)
+                changed = True
+        policy["shared_paths"] = shared
         for gap in gaps:
             task_id = gap["task_id"]
             if task_id in partitions:
