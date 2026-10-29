@@ -14,7 +14,7 @@ from zf.runtime.task_pipeline_operator_retry import request_impl_retry
 
 def register_recover_task_impl(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
-        "task-impl", help="Preview or request retry after a blocked Impl repair"
+        "task-impl", help="Preview or request Impl retry after blocked Impl or rejected Verify"
     )
     parser.add_argument("--state-dir", default=None)
     parser.add_argument("--operation", required=True)

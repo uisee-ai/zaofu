@@ -1,4 +1,4 @@
-"""Explicit operator intent for retrying a settled, blocked Impl operation."""
+"""Explicit operator intent for retrying a settled Impl or rejected Verify."""
 
 from __future__ import annotations
 
@@ -24,8 +24,9 @@ def _retryable_operation(
     events: list[ZfEvent],
 ) -> tuple[dict[str, Any], ZfEvent]:
     operation = operations.get(operation_id)
-    if not operation or operation.get("task_pipeline_stage") != "impl":
-        raise ValueError("target must be a Task Pipeline Impl operation")
+    if not operation or operation.get("task_pipeline_stage") not in {"impl", "verify"}:
+        raise ValueError("target must be a Task Pipeline Impl or Verify operation")
+    stage = operation["task_pipeline_stage"]
     task_id = str(operation.get("task_id") or "")
     context = contexts.get(task_id, {})
     if not context or any(
@@ -35,9 +36,11 @@ def _retryable_operation(
         raise ValueError("operation does not belong to the current task generation")
     if (
         operation.get("status") != "settled"
-        or operation.get("semantic_verdict") not in {"blocked", "failed"}
+        or operation.get("semantic_verdict") not in (
+            {"blocked", "failed", "rejected"} if stage == "verify" else {"blocked", "failed"}
+        )
     ):
-        raise ValueError("only a settled, admitted blocked Impl result can be retried")
+        raise ValueError("only a settled, admitted blocked Impl or rejected Verify can be retried")
     from zf.runtime.run_admission import fold_terminal_run_scope
 
     aliases, terminal_runs = fold_terminal_run_scope(events)
@@ -56,12 +59,15 @@ def _retryable_operation(
             other.get("task_id") == task_id
             and other.get("workflow_run_id") == operation.get("workflow_run_id")
             and other.get("task_map_generation") == operation.get("task_map_generation")
-            and other.get("task_pipeline_stage") == "impl"
+            and other.get("task_pipeline_stage") in {"impl", stage}
             and other.get("operation_id") != operation_id
-            and int(other.get("operation_generation") or 0)
-            >= int(operation.get("operation_generation") or 0)
+            and (
+                int(other.get("operation_generation") or 0) > int(operation.get("operation_generation") or 0)
+                or (other.get("task_pipeline_stage") == stage
+                    and int(other.get("operation_generation") or 0) == int(operation.get("operation_generation") or 0))
+            )
         ):
-            raise ValueError("a newer Impl operation already owns the task")
+            raise ValueError("a newer operation already owns the task")
     source_id = (operation.get("admitted_control_result_ref") or {}).get(
         "source_event_id"
     )
@@ -69,10 +75,30 @@ def _retryable_operation(
     if (
         not operation.get("call_result_admitted_event_id")
         or source is None
-        or source.type != "dev.blocked"
+        or source.type != ("task.pipeline.verify.completed" if stage == "verify" else "dev.blocked")
         or source.payload.get("operation_id") != operation_id
     ):
         raise ValueError("blocked result lacks an admitted canonical source")
+    if stage == "verify":
+        impls = [row for row in operations.values() if (
+            row.get("task_pipeline_stage") == "impl"
+            and all(row.get(k) == operation.get(k) for k in (
+                "task_id", "workflow_run_id", "task_map_generation", "operation_generation"
+            ))
+        )]
+        if len(impls) != 1 or impls[0].get("status") != "settled" or impls[0].get("semantic_verdict") != "passed":
+            raise ValueError("rejected Verify must follow the current passed Impl")
+        impl = impls[0]
+        impl_source_id = (impl.get("admitted_control_result_ref") or {}).get("source_event_id")
+        impl_source = next((e for e in events if e.id == impl_source_id), None)
+        if (
+            not impl.get("call_result_admitted_event_id")
+            or impl_source is None or impl_source.type != "dev.build.done"
+            or impl_source.payload.get("operation_id") != impl.get("operation_id")
+            or not source.payload.get("target_commit")
+            or source.payload["target_commit"] != impl_source.payload.get("source_commit")
+        ):
+            raise ValueError("rejected Verify target must match the admitted Impl commit")
     return operation, source
 
 
