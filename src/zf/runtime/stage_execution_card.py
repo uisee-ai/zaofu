@@ -301,6 +301,14 @@ def prepare_fanout_result_guidance(
         f"the enum value, and put rationale in `{result_prefix}summary` or "
         f"`{result_prefix}findings`.",
     ]
+    if semantic_submit and str(child_payload.get("output_profile_id") or "") == "plan-synth":
+        guidance.extend([
+            "Plan Synth status fields are intentionally distinct: top-level "
+            "`status` is only `completed` or `failed`; nested `report.status` "
+            "is only `passed`, `failed`, `blocked`, or `suspended`. A successful "
+            "review therefore uses `status: completed`, `report.status: passed`, "
+            "and `recommendation: approve`.",
+        ])
     if not semantic_submit:
         guidance.append(
             "`fanout_id`, `stage_id`, `child_id`, `run_id`, `role_instance`, "

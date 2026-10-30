@@ -17,7 +17,7 @@ workflow:
         pilot_id: bounded-execution-pilot
         checkpoints: [pre_impl, semantic_failure]
         checkpoint_policies:
-          pre_impl: blocking
+          pre_impl: shadow
           semantic_failure: blocking
         autonomous_actions: [delegate, continue, rework]
         review_blocked_tasks: true
@@ -28,6 +28,16 @@ workflow:
 autonomous_actions 省略/null 沿用原 checkpoint 策略；空列表关闭直接执行动作。
 review_blocked_tasks 默认 false，启用必须声明 autonomous_actions 与 semantic_failure。
 未启用的 flow 与 Legacy 路线保持原行为；shadow 意见仍不能改变执行。
+在 C 路线中，`pre_impl` 建议保持 shadow：WRC 继续消费已接纳的 Task Map 正常前沿，
+OA 只记录执行计划建议；只有 `semantic_failure` 才能阻塞或触发有界修订。把
+`pre_impl` 配成 blocking 会重新把正常派发变成 OA 的全局等待点，只有需要强审计的
+高风险部署才应显式启用该门。
+
+生产 Codex controller 的 reader/planner 默认使用可通过 `ZF_CODEX_MODEL` 覆盖的
+`gpt-6.1-sol`、`medium` reasoning 和 120k 上下文
+上限。真实 provider 会重复发送 briefing、artifact refs 和工具回执；所有角色默认
+使用 `high` 容易在 typed result 提交前触发 operation token budget。专门的高风险角色
+可以按角色显式提升，但应通过独立 canary 重新测量提交率、尾延迟和 token 消耗。
 
 ## 输入与执行
 

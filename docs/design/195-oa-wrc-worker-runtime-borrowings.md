@@ -134,14 +134,24 @@ exact target 和既有 gate。
 
 ## 交付与验证入口
 
-- `zf-prd-v5.yaml`：当前 v5-production PRD 配置；以 `5.0.0` 标识本次配置修订，继续使用
+- `zf-prd-v5.yaml`：当前 v5-production PRD 配置；以 `5.0.1` 标识本次配置修订，继续使用
   `prd-flow-v4-task-pipeline` 的运行时 profile，使用 Codex backend、8 个 Impl lane
   和 8 个 Verify lane，固定 blocking。C 路线将
   `normal_frontier_owner` 设为 `wrc`：WRC facade 消费已接纳的 Task Pipeline
-  ready-set，Run Manager 只保留异常恢复 owner；未接纳或非 blocking 输入
+  ready-set，Run Manager 只保留异常恢复 owner；生产 PRD 的 `pre_impl` 使用
+  shadow 观察，避免 OA 变成正常派发的全局等待点；仅 semantic failure 保持
+  blocking。未接纳或非 blocking 输入
   fail-closed，不回落 legacy dispatcher。这个配置切换只对新 Run/generation
   生效，不能在活跃 Run 中途切换 owner。Shadow 观察必须使用独立 canary
   controller，不能通过生产配置环境变量覆盖。
+
+  v5.0.1 同时把 PrdFlow reader/planner/critic/worker 的默认 Codex model 设为
+  `gpt-6.1-sol`（可用 `ZF_CODEX_MODEL` 覆盖）、reasoning effort 设为 `medium`，并把默认上下文上限收窄到 120k。这个默认是有界执行保护：真实
+  fanout 会在每轮重放 briefing、artifact refs 和工具回执，统一使用 `high` 会在
+  typed result 提交前耗尽 operation token budget；需要高推理的专门角色仍可显式覆盖。
+  本次真实 Codex qualification 还修复了跨 checkout 的 yoke skill 同名候选误报，
+  但仍发现 planner/critic 结果提交和真实 provider 尾延迟必须独立纳入 canary，
+  不能用 mock 通过替代。
 - `src/zf/runtime/worker_execution_envelope.py`：envelope 构造、digest 和机械校验；
 - `src/zf/runtime/task_pipeline_dispatch.py`：将 envelope 接入实际 stage dispatch；
 - `src/zf/runtime/task_pipeline_briefing.py`：把同一 envelope 交给 worker；
@@ -165,3 +175,21 @@ HOLD，不能把 mock 结果升级为生产 E2E 证明。
 
 真实 Provider E2E、物理进程取消确认和跨路线收益仍以 194 的资格条件为准，不能由
 本批 deterministic/mock 测试替代。
+
+## v5 OA 的 skill 闭包
+
+v5 的 `orchestrator` role 只声明两个直接 skill：
+
+- `zf-yoke-orchestrator-role-context`：限定 OA 只能消费已接纳的 Requirement、Plan、
+  Task Map 和 semantic checkpoint，输出 shadow/admitted delegation 或 bounded
+  rework 意图；不直接创建进程、不写 canonical state，也不替代 WRC 的容量、lease、
+  evidence 和 dispatch 决策。
+- `zf-harness-state-sync`：规定 OA 通过 `zf emit`、controlled action 和 sidecar
+  refs 回报 task/feature、role/instance、phase、dispatch、evidence 和 blocker，禁止
+  直接编辑 `events.jsonl`、`kanban.json`、`session.yaml` 或 `feature_list.json`。
+
+`zf-yoke-orchestrator-role-context` 的依赖闭包还包含 `diagnosis` 与
+`context-hygiene`，两者按需加载：前者让 OA 消费 Run Manager/Autoresearch 的诊断
+结论，后者约束长会话的上下文压缩、外部化和 resume。Planner、Plan Critic、Impl
+和 Verify skills 不属于 OA 闭包，分别由对应 stage worker 加载。这样 OA 的权限面
+保持窄，模型只负责语义判断，确定性 Kernel/WRC 仍是唯一正常执行状态机。
