@@ -1,6 +1,6 @@
 # 有界、无损的上下文交付与返工预算优化
 
-> 状态: active
+> 状态: done — `3747c45b` fix: preserve required context with paged reads and budget warnings
 
 用户批准实施 1–4 项优化，要求不丢失上下文信息。来源为
 2026-10-30 Kanban 完整生命周期验证：返工 Operation 在 1,572,266 / 1,500,000
@@ -91,3 +91,6 @@ token/费用降幅。回放报告 `report.json` 留存，临时恢复的 runtime
 
 此验证证明上下文交付、调用接线和硬预算回归，不证明原 Kanban 全生命周期
 已经最终 done；原真实运行的 blocked 记录不改写。
+
+实现后残留审计：本批实现 commit 后 worktree 干净；仅本任务归档另行提交。
+最后的 artifact batch/capsule 提示语回归为 31 passed。
