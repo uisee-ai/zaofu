@@ -212,6 +212,11 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
             edge(fid, cid, "delegates", views=["workflow", "trace"])
             if child.get("task_id"):
                 edge("task:" + child["task_id"], cid, "execution", views=["workflow", "trace"])
+    from zf.runtime.workflow_budget_projection import operation_budget_observations
+
+    budget_observations = operation_budget_observations(
+        [e for _, e in event_rows], run_id=scope["run_id"],
+    )
     for operation in operations.values():
         requested = min(
             (requested_events[event_id] for event_id in operation.get("source_event_ids", [])
@@ -227,6 +232,12 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
         configured = next((r for r in compiled.get("roles", []) if operation.get("role_instance")
                            in {r.get("name"), r.get("instance_id")}), {})
         usage = next((e for e in reversed(activity) if e.type == "agent.usage"), None)
+        operation["budget_observation"] = budget_observations.get(operation["operation_id"], {})
+        operation["context_observation"] = ({
+            "context_usage_ratio": usage.payload.get("context_usage_ratio"),
+            "context_window_tokens": usage.payload.get("context_window_tokens"),
+            "source_event_id": usage.id,
+        } if usage else {})
         operation["agent_binding"] = {
             "backend": usage.payload.get("backend") if usage else configured.get("backend", ""),
             "model": usage.payload.get("model") if usage else configured.get("model", ""),

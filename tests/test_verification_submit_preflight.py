@@ -119,7 +119,8 @@ def test_candidate_preflight_uses_full_product_contract(tmp_path, error):
     assert not (runtime.state_dir / "product-acceptance/reports").exists()
 
 
-def test_verifier_preflight_cli_keeps_binding_for_corrected_submit(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("submit_immediately", [False, True])
+def test_verifier_preflight_cli_keeps_binding_for_corrected_submit(tmp_path, monkeypatch, capsys, submit_immediately):
     from zf.cli.main import build_parser
 
     runtime, prepared, service, credential_path, semantic = _running_verify(tmp_path, "candidate-verify")
@@ -138,15 +139,24 @@ def test_verifier_preflight_cli_keeps_binding_for_corrected_submit(tmp_path, mon
     args = build_parser().parse_args([
         "result", "validate", "--operation", prepared.operation_id,
         "--scratch", "--state-dir", str(runtime.state_dir),
+        *(["--submit"] if submit_immediately else []),
     ])
     before = [e.id for e in runtime.event_log.read_all()]
     assert args.func(args) == 1
     captured = capsys.readouterr()
     assert captured.out, captured.err
     assert json.loads(captured.out)["status"] == "failed"
+    assert before == [e.id for e in runtime.event_log.read_all()]
     scratch.write_text(json.dumps(semantic))
     assert args.func(args) == 0
-    assert json.loads(capsys.readouterr().out)["status"] == "passed"
+    output = json.loads(capsys.readouterr().out)
+    if submit_immediately:
+        assert output["status"] == "admitted"
+        assert output["canonical_event_type"] == "verify.child.completed"
+        assert len([e for e in runtime.event_log.read_all() if e.type == "verify.child.completed"]) == 1
+        assert args.func(args) == 1  # Consumed capability cannot double-admit.
+        return
+    assert output["status"] == "passed"
     assert before == [e.id for e in runtime.event_log.read_all()]
     submitted = service.submit(operation_id=prepared.operation_id, use_operation_scratch=True,
         role_instance="verify-1", credential=credential_path.read_text().strip())

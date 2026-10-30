@@ -3,6 +3,11 @@ import { expect, test } from '@playwright/test';
 const scope = { request_id: 'A', revision: 1, run_id: 'run-A', proposal_digest: 'A', source_seq: 10, head_seq: 10, historical: false, execution_started: true };
 const stage = (id: string) => ({ id: `workflow:stage:${id}`, kind: 'workflow', label: id, status: 'running', views: ['workflow'], data: { stage_id: id, roles: [{ name: 'configured-only' }] } });
 const op = (id: string, role: string, task: string, ts: string) => ({ id: `operation:${id}`, kind: 'operation', label: role, status: 'running', views: ['workflow', 'timeline'], data: { role_instance: role, workflow_run_id: 'run-A', task_id: task, parent_stage_id: 'impl', last_event_at: ts, active_attempt_id: id, recent_activity: [{ id, type: 'codex.hook.pre_tool_use', ts, payload: { tool_name: 'Bash', tool_input: { file_path: 'src/login.ts', api_key: 'secret-command' } } }] } });
+const budgetObservation = {
+  source_event_id: 'budget', total_tokens: 1510948, input_tokens: 51770,
+  cache_read_tokens: 1456256, output_tokens: 2922, total_usd: null, unpriced_entries: 21,
+  elapsed_seconds: 334, limits: { token_budget: 1500000, timeout_seconds: 600 },
+};
 const graph = { scope, diagnostics: [], capabilities: {}, versions: [], timeline: [], plans: [], analysis: { intervals: [] }, nodes: [
   stage('plan'), stage('impl'),
   { id: 'run:run-A', kind: 'run', label: 'run-A', status: 'running', views: ['workflow'], data: {} },
@@ -14,7 +19,7 @@ const graph = { scope, diagnostics: [], capabilities: {}, versions: [], timeline
   { id: 'task:2', kind: 'task', label: '验证登录', status: 'pending', views: ['modules'], data: { task_id: 'TASK-2' } },
   { id: 'task:3', kind: 'task', label: '独立任务', status: 'pending', views: ['modules'], data: { task_id: 'TASK-3' } },
   { id: 'module:1', kind: 'module', label: '隐藏模块', status: 'pending', views: ['modules'], data: {} },
-  op('old', 'dev-1', 'TASK-1', '2026-01-01T01:00:00Z'), { ...op('new', 'dev-1', 'TASK-1', '2026-01-01T02:00:00Z'), data: { ...op('new', 'dev-1', 'TASK-1', '2026-01-01T02:00:00Z').data, plan_id: 'P1' } },
+  op('old', 'dev-1', 'TASK-1', '2026-01-01T01:00:00Z'), { ...op('new', 'dev-1', 'TASK-1', '2026-01-01T02:00:00Z'), data: { ...op('new', 'dev-1', 'TASK-1', '2026-01-01T02:00:00Z').data, plan_id: 'P1', budget_observation: budgetObservation, context_observation: { context_usage_ratio: 0.31, context_window_tokens: 258400 } } },
   op('second', 'dev-2', 'TASK-2', '2026-01-01T03:00:00Z'), op('third', 'dev-3', 'TASK-3', '2026-01-01T04:00:00Z'),
 ], edges: [
   { id: 'role-operation', source: 'workflow:role:orchestrator', target: 'operation:orchestration', relation: 'executes', views: ['workflow'] },
@@ -112,6 +117,11 @@ test('observed worker records, task relations and cross-view navigation', async 
   await impl.getByRole('button', { name: /dev-1/ }).click();
   const inspector = page.getByRole('complementary', { name: '图节点详情' });
   await expect(inspector).toContainText('operation:new');
+  await expect(inspector.getByLabel('执行预算用量')).toContainText('1,510,948 / 1,500,000 tokens');
+  await expect(inspector.getByLabel('执行预算用量')).toContainText('非缓存输入：51,770 · 缓存读取：1,456,256 · 输出：2,922');
+  await expect(inspector.getByLabel('执行预算用量')).toContainText('金额：未知（21 条未定价）');
+  await expect(inspector.getByLabel('执行预算用量')).not.toContainText('$0');
+  await expect(inspector).toContainText('最近上下文占用：31.0%');
   await expect(inspector.getByRole('button', { name: '打开 PRD / Plan Preview' })).toHaveCount(0);
   await inspector.getByRole('button', { name: '在任务 Graph 查看 Task' }).click();
   await expect(nav.getByRole('button', { name: '任务 Graph' })).toHaveAttribute('aria-pressed', 'true');

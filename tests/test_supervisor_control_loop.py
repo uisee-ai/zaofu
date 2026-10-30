@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from zf.runtime.supervisor_attention import build_attention_items
 from zf.runtime.supervisor_control_loop import build_supervisor_control_loop_events
 
@@ -307,7 +309,13 @@ def test_control_loop_stateful_only_conditions_stay_triage_first() -> None:
     assert messages == []
 
 
-def test_control_loop_routes_human_gate_to_feishu() -> None:
+@pytest.mark.parametrize("configured", [False, True])
+def test_control_loop_routes_human_gate_to_feishu(monkeypatch, configured) -> None:
+    monkeypatch.setenv("ZF_OWNER_VISIBLE_CHAT", "oc_test")
+    if not configured:
+        monkeypatch.delenv("ZF_OWNER_VISIBLE_CHAT")
+        for route in ("OWNER", "APPROVAL", "ALERT", "PROGRESS"):
+            monkeypatch.delenv(f"ZF_OWNER_VISIBLE_{route}_CHAT", raising=False)
     events = build_supervisor_control_loop_events(
         {
             "attention_items": [
@@ -340,10 +348,11 @@ def test_control_loop_routes_human_gate_to_feishu() -> None:
     assert messages[0].payload["handled_by"] == "run-manager"
     assert messages[0].payload["source"] == "supervisor"
     assert messages[0].payload["human_action_required"] is True
-    assert messages[0].payload["delivery_targets"] == ["web", "channel", "feishu"]
+    assert messages[0].payload["delivery_targets"] == ["web", "channel", *(["feishu"] if configured else [])]
 
 
-def test_control_loop_sends_run_manager_human_decision_to_feishu() -> None:
+def test_control_loop_sends_run_manager_human_decision_to_feishu(monkeypatch) -> None:
+    monkeypatch.setenv("ZF_OWNER_VISIBLE_CHAT", "oc_test")
     events = build_supervisor_control_loop_events(
         {
             "attention_items": [

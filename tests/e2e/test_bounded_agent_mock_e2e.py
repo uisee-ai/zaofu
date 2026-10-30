@@ -58,21 +58,20 @@ def test_bounded_required_reads_cli_uses_immutable_operation_policy(tmp_path, mo
     monkeypatch.setenv("ZF_ARTIFACT_PURPOSE", manifest.get("read_purpose", ""))
     capsys.readouterr()
     command = ["artifact", "read", "--attempt", manifest["attempt_id"], "--state-dir", str(state)]
-    assert main([*command, "--required"]) == 1
-    assert "bounded pages" in capsys.readouterr().err
     from zf.runtime.artifact_read_ledger import active_read_ledger_path, required_read_satisfied
 
     ledger = active_read_ledger_path(state, manifest["attempt_id"])
-    assert not ledger.exists()
-    for required in child["required_reads"]:
-        start = 0
-        while start is not None:
-            assert main([*command, "--source", required["source_id"],
-                         "--artifact", required["artifact_id"], "--json-path", required["json_path"],
-                         "--page-start", str(start), "--page-size", "4096"]) == 0
-            page = json.loads(capsys.readouterr().out)
-            assert len(page["content"]) <= 4096
-            start = page["next_page_start"]
+    cursor = ""
+    while True:
+        assert main([*command, "--required", "--cursor", cursor]) == 0
+        raw = capsys.readouterr().out
+        assert len(raw) <= 8192
+        page = json.loads(raw)
+        cursor = page["next_cursor"]
+        if not cursor:
+            break
+        partial = [json.loads(line) for line in ledger.read_text().splitlines()]
+        assert not all(required_read_satisfied(partial, row) for row in child["required_reads"])
     reads = [json.loads(line) for line in ledger.read_text().splitlines()]
     assert all(required_read_satisfied(reads, row) for row in child["required_reads"])
 

@@ -93,7 +93,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--attempt", required=True, help="Attempt or dispatch id")
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
-    read_cmd.add_argument("--required", action="store_true", help="Read all kernel-required slices in one invocation")
+    read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded batches")
+    read_cmd.add_argument("--cursor", default="", help="Continue a required-read batch using its next_cursor")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
     read_cmd.add_argument("--max-chars", type=int, default=0)
@@ -207,6 +208,8 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         if required:
             if args.source or args.artifact or args.json_path != "$" or args.max_items or args.max_chars or getattr(args, "page_start", None) is not None:
                 raise ValueError("--required cannot be combined with source, artifact or slice overrides")
+        elif getattr(args, "cursor", ""):
+            raise ValueError("--cursor requires --required")
         elif not args.source or not args.artifact:
             raise ValueError("artifact read requires --source and --artifact, or --required")
         context = resolve_project_context(
@@ -238,6 +241,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
 
             print(required_read_output(
                 context.state_dir, manifest=manifest, rows=rows, identity=identity,
+                cursor=getattr(args, "cursor", ""), page_size=getattr(args, "page_size", 8192),
             ))
             return 0
         result = read_attempt_artifact(

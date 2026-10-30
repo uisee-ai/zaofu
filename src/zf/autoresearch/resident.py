@@ -516,6 +516,9 @@ def run_resident_once(
         # got no lifecycle at all (run-manager staled them one by one). A
         # timeout surfaces as LOOP_FAILED (rc=124) and the resident moves on.
         timeout_s = _loop_runner_timeout_s(action.budget_cap)
+        resident_worktree = Path(worktree_root) / action.loop_request_id
+        from zf.autoresearch.runtime_cleanup import stop_experiment_runtime
+
         try:
             proc = runner(
                 action.command,
@@ -535,7 +538,8 @@ def run_resident_once(
                     f"(budget_cap={action.budget_cap or {}})"
                 ),
             )
-        resident_worktree = Path(worktree_root) / action.loop_request_id
+        finally:
+            runtime_cleanup = stop_experiment_runtime(resident_worktree, runner=runner)
         archive_outcome = _archive_resident_run(
             state_dir=Path(state_dir),
             worktree=resident_worktree,
@@ -550,16 +554,23 @@ def run_resident_once(
             and archive_outcome.get("status") in {"archived", "not_required"}
             else LOOP_FAILED
         )
-        worktree_outcome = _finalize_resident_worktree(
-            worktree=resident_worktree,
-            loop_request_id=action.loop_request_id,
-            archive_required=resident_worktree.exists(),
-            archive_manifest=(
-                Path(str(archive_outcome["manifest"]))
-                if archive_ready
-                else None
-            ),
-        )
+        if runtime_cleanup["status"] == "retained":
+            event_type = LOOP_FAILED
+            worktree_outcome = {"status": "retained", "reason": "runtime_cleanup_failed",
+                                "worktree": str(resident_worktree),
+                                "event_type": "autoresearch.worktree.retained"}
+        else:
+            worktree_outcome = _finalize_resident_worktree(
+                worktree=resident_worktree,
+                loop_request_id=action.loop_request_id,
+                archive_required=resident_worktree.exists(),
+                archive_manifest=(
+                    Path(str(archive_outcome["manifest"]))
+                    if archive_ready
+                    else None
+                ),
+            )
+        worktree_outcome["runtime_cleanup"] = runtime_cleanup
         worktree_outcome["archive"] = archive_outcome
         writer.append(ZfEvent(
             type=event_type,

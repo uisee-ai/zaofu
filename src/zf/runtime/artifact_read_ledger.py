@@ -632,8 +632,8 @@ def render_attempt_source_briefing(
     ]
     if required:
         lines.extend([
-            f"- Preferred single-call read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
-            "  It returns every required slice and records each read. Consume the complete output; "
+            f"- Preferred bounded batch: `{cli_command} artifact read --attempt {attempt_id} --required`.",
+            "  Consume the complete output. For required-read-page.v1, repeat this command with `--cursor <next_cursor>` until next_cursor is null. Only delivered ranges count; "
             "do not repeat individual reads unless the tool output was truncated or a read failed.",
             "- If an output is too large or truncated, read that exact source and JSON path "
             "with `--page-start 0 --page-size 8192`. Read and consume every page, using "
