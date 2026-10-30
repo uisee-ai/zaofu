@@ -43,6 +43,7 @@ def admission_catalog(config: Any, project_root: Path) -> dict[str, Any]:
     for skill_path in Path(project_root).glob("skills/*/SKILL.md"):
         skills.add(skill_path.parent.name)
     execution = execution_profile_catalog_projection(config)
+    from zf.runtime.workflow_registered_controller import controller_catalog
     from zf.runtime.workflow_proposal_projection import completion_profile
     workflow = getattr(config, "workflow", None)
     metadata_by_kind = dict(getattr(workflow, "flow_metadata_by_kind", {}) or {})
@@ -76,6 +77,7 @@ def admission_catalog(config: Any, project_root: Path) -> dict[str, Any]:
         "configured_role_skills": {str(role.instance_id or role.name): list(role.skills)
                                   for role in getattr(config, "roles", []) or []},
         "configured_completion_by_family": completion_by_family,
+        "registered_controllers": controller_catalog(),
     }
 
 
@@ -94,6 +96,7 @@ def admission_contract(catalog: Mapping[str, Any]) -> dict[str, Any]:
         "allowed_completion_profiles": sorted(catalog["completion_profiles"]),
         "configured_role_skills": catalog.get("configured_role_skills", {}),
         "configured_completion_by_family": catalog.get("configured_completion_by_family", {}),
+        "registered_controllers": catalog.get("registered_controllers", {}),
     }
 
 
@@ -117,7 +120,16 @@ def synthesis_prompt(
     return (
         "Use the zf-workflow-synthesis method. Return exactly one JSON object "
         "with no prose or code fence. Do not emit expanded config, handlers, "
-        "approval, submit, or task objects. If the owner explicitly requests PRD v4, "
+        "approval, submit, or task objects. For a requested registered controller (including V5), "
+        "select its exact controller_id and controller_digest in short_flow_spec.parameters, "
+        "and supply verification_commands appropriate to this project's acceptance. This selects "
+        "the full registered configuration, including its profiles/roles/completion policy; "
+        "those selected capabilities need not already exist in the current project. Use the "
+        "selected entry's completion_profile. Keep its lane/pipeline defaults; do not combine "
+        "this selection with task_pipeline overrides. Do not ask how to install a controller "
+        "that is already registered. Project identity, PRD/target paths and Git baseline are "
+        "bound by the compiler, followed by explicit Apply config and Approve & Run. "
+        "If the owner explicitly requests PRD v4, "
         "short_flow_spec.parameters can include task_pipeline with exactly profile "
         "(prd-flow-v4-task-pipeline), mode (shadow or blocking), impl_capacity, "
         "verify_capacity and max_active_task_pipelines, plus lanes large enough for "

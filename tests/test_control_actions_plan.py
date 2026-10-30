@@ -37,6 +37,7 @@ def _exec(service, log, action: str, payload: dict) -> dict:
 
 def test_plan_approve_emits_operator_event(tmp_path: Path):
     service, log = _service(tmp_path)
+    log.append(ZfEvent(type="plan.approval.requested", payload={"plan_id": "evt-abc123"}))
     result = _exec(service, log, "plan-approve", {"plan_id": "evt-abc123"})
     assert result.get("ok") is True
     approved = [e for e in log.read_all() if e.type == "plan.approved"]
@@ -47,6 +48,7 @@ def test_plan_approve_emits_operator_event(tmp_path: Path):
 
 def test_plan_reject_requires_reason(tmp_path: Path):
     service, log = _service(tmp_path)
+    log.append(ZfEvent(type="plan.approval.requested", payload={"plan_id": "evt-abc123"}))
     result = _exec(service, log, "plan-reject", {"plan_id": "evt-abc123"})
     assert result.get("ok") is False
     assert not [e for e in log.read_all() if e.type == "plan.rejected"]

@@ -20,6 +20,8 @@ spec:
     # briefing/context and can exhaust the per-operation token budget before
     # the typed result is submitted.  A caller can still raise the effort for
     # a dedicated role override or a separate canary profile.
+    stuck_threshold_seconds: 600
+    lifecycle: {mode: on_demand, idle_seconds: 600}
     model: ${ZF_CODEX_MODEL:-gpt-6.1-sol}
     model_reasoning_effort: medium
     contextWindowTokens: ${ZF_CODEX_CONTEXT_WINDOW_TOKENS:-120000}
@@ -56,7 +58,7 @@ spec:
       maxIntegrationQueue: 2
     workerLifecycle:
       mode: on_demand
-      idleSeconds: 120
+      idleSeconds: 600
     affinity:
       implRework: prefer_previous_session
       verifyIndependence: different_role
@@ -87,6 +89,8 @@ metadata:
       description: Production PRD controller with WRC blocking frontier, bounded OA checkpoints, and worker execution envelopes.
       intent: build
       backend: codex
+      roles: 29
+      assembly: project-bound-v1
       recommended_for: [build, prd]
       preferred: true
       order: 160
@@ -194,7 +198,7 @@ spec:
         profile_allowlist: [bounded-direct-v1]
       lifecycle:
         mode: resident
-      stuck_threshold_seconds: 900
+      stuck_threshold_seconds: 600
       spawn_ready_timeout_seconds: 240
       triggers:
         - dispatch.silent_stall
@@ -225,6 +229,14 @@ spec:
       ship_target_branch: dev
       auto_ship_on_judge_passed: false
   workflow:
+    execution_profiles:
+      bounded-direct-v1:
+        strategy: direct
+        limits:
+          timeout_seconds: 600
+          max_usage_samples: 60
+          token_budget: 1500000
+          cost_budget_usd: 8
     harness_profile: strict
     # Plan admission remains automatic; enable this explicitly when an
     # operator approval gate is required for a particular deployment.

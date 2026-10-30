@@ -161,6 +161,15 @@ class FanoutDispatchLivenessMixin:
                 self.transport.terminate(role.instance_id)
             if self.transport.is_alive(role.instance_id):
                 raise RuntimeError("reader provider process still alive after termination")
+            from zf.runtime.provider_usage_reconciliation import reconcile_provider_usage_tail
+
+            tail = reconcile_provider_usage_tail(
+                state_dir=self.state_dir, project_root=self.project_root,
+                config=self.config, event_log=self.event_writer.event_log,
+                included_roles={role.instance_id}, capture_phase="session_boundary",
+            )
+            if tail.failed_roles:
+                raise RuntimeError("provider usage tail reconciliation failed")
         except Exception as exc:  # noqa: BLE001
             self.event_writer.append(ZfEvent(
                 type="worker.recycle.failed",

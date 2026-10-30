@@ -148,6 +148,11 @@ def build_workflow_proposal(
         descriptor=synthesis_result_ref,
         flow_kind=flow_kind,
     )
+    if (short_spec.get("parameters") or {}).get("controller_id"):
+        from zf.runtime.workflow_registered_controller import bound_controller_candidate
+        candidate_path = bound_controller_candidate(
+            state_dir, request, base_path, candidate_path, synthesis_result_ref, flow_kind,
+        )
     if str(short_spec.get("flow_family") or "") == "Workflow":
         generated_path = _materialize_generic_candidate(
             Path(state_dir),
@@ -855,11 +860,13 @@ def materialize_synthesized_workflow_candidate(
     if str(short_spec.get("flow_family") or "") != "Workflow":
         from zf.core.config.loader import ConfigError
         from zf.runtime.workflow_controller_candidate import materialize_controller_candidate
+        from zf.runtime.workflow_requests import hydrate_workflow_requirement
 
         try:
             return materialize_controller_candidate(
                 base_path=base_path, request_id=str(request.get("request_id") or ""),
                 short_spec=short_spec,
+                requirement=hydrate_workflow_requirement(Path(state_dir), dict(request)),
             )
         except (OSError, ValueError, ConfigError, yaml.YAMLError) as exc:
             raise WorkflowProposalError(str(exc)) from exc

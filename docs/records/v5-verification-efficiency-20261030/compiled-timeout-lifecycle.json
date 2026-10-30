@@ -1,0 +1,244 @@
+{
+  "operation_limits": {
+    "max_children": 0,
+    "max_depth": 0,
+    "timeout_seconds": 600.0,
+    "max_usage_samples": 60,
+    "token_budget": 1500000,
+    "cost_budget_usd": 8.0
+  },
+  "roles": [
+    {
+      "id": "research_root",
+      "kind": "reader",
+      "flow": "",
+      "lifecycle": "on_demand",
+      "idle_seconds": 900.0,
+      "stuck_seconds": 900.0
+    },
+    {
+      "id": "source_researcher",
+      "kind": "reader",
+      "flow": "",
+      "lifecycle": "on_demand",
+      "idle_seconds": 900.0,
+      "stuck_seconds": 900.0
+    },
+    {
+      "id": "product_analyst",
+      "kind": "reader",
+      "flow": "",
+      "lifecycle": "on_demand",
+      "idle_seconds": 900.0,
+      "stuck_seconds": 900.0
+    },
+    {
+      "id": "technical_analyst",
+      "kind": "reader",
+      "flow": "",
+      "lifecycle": "on_demand",
+      "idle_seconds": 900.0,
+      "stuck_seconds": 900.0
+    },
+    {
+      "id": "risk_critic",
+      "kind": "reader",
+      "flow": "",
+      "lifecycle": "on_demand",
+      "idle_seconds": 900.0,
+      "stuck_seconds": 900.0
+    },
+    {
+      "id": "synthesizer",
+      "kind": "reader",
+      "flow": "",
+      "lifecycle": "on_demand",
+      "idle_seconds": 900.0,
+      "stuck_seconds": 900.0
+    },
+    {
+      "id": "orchestrator",
+      "kind": "reader",
+      "flow": "",
+      "lifecycle": "resident",
+      "idle_seconds": 900.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "product-scan",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "tech-scan",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "planner",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "plan-critic",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "flow-discovery",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "judge-prd",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "dev-lane-0",
+      "kind": "writer",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "dev-lane-1",
+      "kind": "writer",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "dev-lane-2",
+      "kind": "writer",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "dev-lane-3",
+      "kind": "writer",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "dev-lane-4",
+      "kind": "writer",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "dev-lane-5",
+      "kind": "writer",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "dev-lane-6",
+      "kind": "writer",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "dev-lane-7",
+      "kind": "writer",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "verify-lane-0",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "verify-lane-1",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "verify-lane-2",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "verify-lane-3",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "verify-lane-4",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "verify-lane-5",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "verify-lane-6",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    },
+    {
+      "id": "verify-lane-7",
+      "kind": "reader",
+      "flow": "prd",
+      "lifecycle": "on_demand",
+      "idle_seconds": 600.0,
+      "stuck_seconds": 600.0
+    }
+  ]
+}

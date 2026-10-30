@@ -149,7 +149,9 @@ class WorkflowConfigApplyService:
             )
         _validate_no_inline_secrets(content)
         try:
-            load_config(candidate_path)
+            candidate_config = load_config(candidate_path)
+            from zf.runtime.workflow_controller_skills import validate_controller_skill_packages
+            validate_controller_skill_packages(candidate_config, self.project_root)
         except Exception as exc:
             raise WorkflowConfigApplyError(
                 "candidate_config_invalid",
@@ -229,6 +231,7 @@ class WorkflowConfigApplyService:
         actor: str,
     ) -> WorkflowConfigApplyOutcome:
         replay = self._idempotency_record(idempotency_key)
+        resume_pending = bool(replay and replay.get("status") == "checkpoint_pending")
         if replay:
             if (
                 replay.get("proposal_digest") != expected_proposal_digest
@@ -238,12 +241,25 @@ class WorkflowConfigApplyService:
                     "idempotency_conflict",
                     "workflow config apply idempotency key was reused",
                 )
+        if replay and not resume_pending:
             current_digest = _file_digest(target)
             if current_digest != target_digest:
                 raise WorkflowConfigApplyError(
                     "applied_config_drift",
                     "previously applied workflow config has drifted",
                 )
+            config_commit = self._checkpoint(base_digest, target_digest, expected_proposal_digest)
+            if config_commit and not replay.get("config_commit"):
+                from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+                receipt = dict(hydrate_sidecar_ref(self.state_dir, replay["receipt_ref"]).payload)
+                receipt.update(config_commit=config_commit, prior_receipt_ref=replay["receipt_ref"])
+                replay["receipt_ref"] = write_immutable_json_sidecar(
+                    self.state_dir, receipt, root="workflow/config-apply-receipts",
+                    kind="workflow_config_apply_receipt", schema_version=WORKFLOW_CONFIG_APPLY_RECEIPT_SCHEMA,
+                    created_by="workflow-config-apply", source_event_id=source_event_id,
+                )
+                replay["config_commit"] = config_commit
+                self._write_idempotency_record(idempotency_key, replay)
             return WorkflowConfigApplyOutcome(
                 status="applied",
                 reason="workflow config apply replayed",
@@ -256,17 +272,22 @@ class WorkflowConfigApplyService:
                 replayed=True,
             )
         current_digest = _file_digest(target)
-        if current_digest != base_digest:
+        if current_digest != base_digest and not (resume_pending and current_digest == target_digest):
             raise WorkflowConfigApplyError(
                 "base_config_stale",
                 "project zf.yaml no longer matches the approved proposal base",
             )
+        self._write_idempotency_record(idempotency_key, {
+            "status": "checkpoint_pending", "proposal_digest": expected_proposal_digest,
+            "target_config_digest": target_digest,
+        })
         atomic_write_text(target, content)
         if _file_digest(target) != target_digest:
             raise WorkflowConfigApplyError(
                 "config_write_verification_failed",
                 "applied workflow config digest verification failed",
             )
+        config_commit = self._checkpoint(base_digest, target_digest, expected_proposal_digest)
         receipt = {
             "schema_version": WORKFLOW_CONFIG_APPLY_RECEIPT_SCHEMA,
             "proposal_id": str(proposal.get("proposal_id") or ""),
@@ -276,6 +297,7 @@ class WorkflowConfigApplyService:
             "base_config_digest": base_digest,
             "target_config_digest": target_digest,
             "config_ref": str(target),
+            "config_commit": config_commit,
             "approval_ref": str(
                 payload.get("approval_ref")
                 or payload.get("approval_id")
@@ -301,6 +323,7 @@ class WorkflowConfigApplyService:
                 "proposal_digest": expected_proposal_digest,
                 "target_config_digest": target_digest,
                 "receipt_ref": receipt_ref,
+                "config_commit": config_commit,
             },
         )
         return WorkflowConfigApplyOutcome(
@@ -313,6 +336,14 @@ class WorkflowConfigApplyService:
             config_ref=str(target),
             receipt_ref=receipt_ref,
         )
+
+    def _checkpoint(self, base_digest: str, target_digest: str, proposal_digest: str) -> str:
+        from zf.runtime.workflow_config_checkpoint import checkpoint_config
+        try:
+            return checkpoint_config(self.project_root, base_digest=base_digest,
+                                     target_digest=target_digest, proposal_digest=proposal_digest)
+        except (OSError, ValueError) as exc:
+            raise WorkflowConfigApplyError("config_checkpoint_required", str(exc)) from exc
 
     def _require_current_proposal(
         self,

@@ -154,6 +154,16 @@ def write_task_pipeline_briefing(
         "",
         "## Read Order (authoritative)",
         "",
+        *([
+            "1. Consume this stage card once, then the exact Controlled Artifact Inputs "
+            "batch and every next_cursor page. These pin the contract, target and required sources.",
+            "2. Do not reread task/source/progress projections or unchanged skills to "
+            "reconstruct fields already consumed. Read an exact source only if context is missing.",
+            "3. Report task_context_stale on identity disagreement; never substitute "
+            "another contract/target. Kernel admission rechecks this operation's identity.",
+            f"Diagnostic projections (read only if needed): `{task_doc_path(state_dir, task.id)}`, "
+            f"`{task_source_path(state_dir, task.id)}`, `{task_progress_path(state_dir, task.id)}`.",
+        ] if stage == "verify" else [
         f"1. Read the kernel-managed task document `{task_doc_path(state_dir, task.id)}`.",
         f"2. Read semantic source `{task_source_path(state_dir, task.id)}` and "
         f"progress `{task_progress_path(state_dir, task.id)}`.",
@@ -161,7 +171,8 @@ def write_task_pipeline_briefing(
         "briefing and Compact Execution Context; report task_context_stale on disagreement.",
         "4. Complete the exact Controlled Artifact Inputs reads below before work; "
         "reading task.md does not replace the required artifact read ledger.",
-        "5. Keep kernel projections read-only and submit only this operation's "
+        ]),
+        "Keep kernel projections read-only and submit only this operation's "
         "typed result through the Output Contract below.",
         "",
         "## Stage Contract",

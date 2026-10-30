@@ -1,0 +1,8 @@
+{
+  "source_commit": "b33b6b9ff9a7af1f721d008365944b35a012459c",
+  "controller_sha256": "09ee788ffa88cce3b51e2c334eb6cfc683c1a324f835d9977748b4ab9438ef07",
+  "project_root": "/tmp/zf-hello-prd-20261030-060443/project",
+  "web_port": 8002,
+  "browser_image": "mcp/playwright:latest",
+  "provider_cli": "codex-cli 0.162.1"
+}

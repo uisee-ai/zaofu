@@ -76,3 +76,13 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert "orchestrator.semantic.checkpoint.requested" in orchestrator.triggers
     assert orchestrator.backend == "codex"
     assert orchestrator.execution.default_profile == "bounded-direct-v1"
+    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.timeout_seconds == 600
+    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.token_budget == 1500000
+    assert task_pipeline["worker_lifecycle"]["idle_seconds"] == 600
+    for role in config.roles:
+        if role.flow_kind != "prd" and role.instance_id != "orchestrator":
+            continue  # Collaboration/research routes retain their separate policies.
+        assert role.stuck_threshold_seconds == 600, role.instance_id
+        if role.lifecycle.mode == "on_demand":
+            assert role.lifecycle.idle_seconds == 600, role.instance_id
+    assert orchestrator.lifecycle.mode == "resident"

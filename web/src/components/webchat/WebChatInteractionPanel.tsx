@@ -92,6 +92,7 @@ export function WebChatInteractionPanel({
       aria-label={title}
       className={`webchat-interaction-panel ${mode}`}
       data-interaction-kind={interaction.kind}
+      data-plan-request-id={String(interaction.request.request_event_id || "") || undefined}
       data-testid={`webchat-interaction-${mode}`}
     >
       <header>

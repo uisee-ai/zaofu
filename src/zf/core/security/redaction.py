@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import re
 from dataclasses import replace
 from functools import lru_cache
@@ -61,11 +64,37 @@ def _sensitive_key(key: object) -> bool:
     )
 
 
+_NUMERIC_TOKEN_FIELDS = frozenset({"token_budget", "context_window_tokens", "max_tokens"})
+
+
+def _redact_secret_assignment(match: re.Match[str]) -> str:
+    key, separator, value = match.groups()
+    if key.lower() in _NUMERIC_TOKEN_FIELDS and re.fullmatch(r"[0-9]+", value):
+        return match.group(0)
+    return f"{key}{separator}[REDACTED_SECRET]"
+
+
+def _redact_jwt(match: re.Match[str]) -> str:
+    # Dotted test/module names are not JWTs. A token has a JOSE header;
+    # explicitly labelled credentials remain redacted even if malformed.
+    prefix = match.string[max(0, match.start() - 24):match.start()]
+    if re.search(r"(?i)(?:jwt|bearer)[\s:=]+$", prefix):
+        return "[REDACTED_JWT]"
+    try:
+        header = match.group(0).split(".", 1)[0]
+        decoded = json.loads(base64.urlsafe_b64decode(header + "=" * (-len(header) % 4)))
+        if isinstance(decoded, dict) and ("alg" in decoded or decoded.get("typ") == "JWT"):
+            return "[REDACTED_JWT]"
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        pass
+    return match.group(0)
+
+
 def redact_text(text: str) -> str:
     redacted = _PRIVATE_KEY_RE.sub("[REDACTED_PRIVATE_KEY]", text)
-    redacted = _JWT_RE.sub("[REDACTED_JWT]", redacted)
+    redacted = _JWT_RE.sub(_redact_jwt, redacted)
     redacted = _API_KEY_RE.sub("[REDACTED_API_KEY]", redacted)
-    redacted = _ENV_SECRET_RE.sub(r"\1\2[REDACTED_SECRET]", redacted)
+    redacted = _ENV_SECRET_RE.sub(_redact_secret_assignment, redacted)
     return redacted
 
 

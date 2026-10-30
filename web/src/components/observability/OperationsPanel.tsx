@@ -62,6 +62,14 @@ export function OperationsPanel({ projectId }: { projectId?: string }) {
         <div className="inline-heading"><h3>Delivery Boundary</h3><span className="muted">unchanged</span></div>
         <p className="muted">Delivery Graph, Run Graph, Fanout DAG, gates, and evidence remain in Delivery. This panel only exposes process health and provider capability.</p>
       </section>
+      <section className="subsection" data-testid="owner-delivery-health">
+        <div className="inline-heading"><h3>通知投递</h3></div>
+        {!data.owner_delivery?.available ? <p className="muted">投递状态不可用。</p>
+          : !data.owner_delivery.routes.some((route) => route.status === "failed") ? <p className="muted">暂无未恢复的投递失败。</p>
+            : <ul>{data.owner_delivery.routes.filter((route) => route.status === "failed").map((route) => (
+              <li key={`${route.target}:${route.route}`}>{route.target} / {route.route}：{route.reason || "投递失败"}（累计 {route.failure_count} 次）</li>
+            ))}</ul>}
+      </section>
       <section className="subsection">
         <div className="inline-heading"><h3>Provider Telemetry</h3><span className="muted">{capabilities.length} routes observed</span></div>
         {capabilities.length === 0 ? <p className="muted">No provider route has been observed yet.</p> : (

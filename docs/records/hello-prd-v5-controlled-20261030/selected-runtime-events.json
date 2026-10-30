@@ -1,0 +1,892 @@
+[
+  {
+    "id": "evt-1207df7a3a4f",
+    "ts": "2026-10-30T07:36:57.632445+00:00",
+    "type": "workflow.config.change.applied",
+    "actor": "web",
+    "task_id": null,
+    "origin": "",
+    "payload": {}
+  },
+  {
+    "id": "evt-b3d6d03aacdb",
+    "ts": "2026-10-30T07:36:59.052712+00:00",
+    "type": "workflow.request.approved",
+    "actor": "web",
+    "task_id": "",
+    "origin": "",
+    "payload": {
+      "status": "approved"
+    }
+  },
+  {
+    "id": "evt-5e084e71d874",
+    "ts": "2026-10-30T07:36:59.054790+00:00",
+    "type": "workflow.submit.accepted",
+    "actor": "zf-cli",
+    "task_id": "TASK-FC280E",
+    "origin": "",
+    "payload": {}
+  },
+  {
+    "id": "evt-74613b6246d7",
+    "ts": "2026-10-30T07:36:59.070171+00:00",
+    "type": "runtime.start.requested",
+    "actor": "kernel",
+    "task_id": null,
+    "origin": "",
+    "payload": {}
+  },
+  {
+    "id": "evt-11a96992e7c0",
+    "ts": "2026-10-30T07:37:04.529679+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "research_root",
+      "instance_id": "research_root",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-cd101d3a32bf",
+    "ts": "2026-10-30T07:37:04.556950+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "source_researcher",
+      "instance_id": "source_researcher",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-1cfed111909d",
+    "ts": "2026-10-30T07:37:04.578556+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "product_analyst",
+      "instance_id": "product_analyst",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-9a478365eb16",
+    "ts": "2026-10-30T07:37:04.604435+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "technical_analyst",
+      "instance_id": "technical_analyst",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-5620239046e3",
+    "ts": "2026-10-30T07:37:04.634015+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "risk_critic",
+      "instance_id": "risk_critic",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-c04709309b63",
+    "ts": "2026-10-30T07:37:04.697388+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "synthesizer",
+      "instance_id": "synthesizer",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-50d34961d65b",
+    "ts": "2026-10-30T07:37:09.847744+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "product-scan",
+      "instance_id": "product-scan",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-26bbdc15e48d",
+    "ts": "2026-10-30T07:37:09.876731+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "tech-scan",
+      "instance_id": "tech-scan",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-024fda62d050",
+    "ts": "2026-10-30T07:37:09.915135+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "planner",
+      "instance_id": "planner",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-d0167178064c",
+    "ts": "2026-10-30T07:37:09.960739+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "plan-critic",
+      "instance_id": "plan-critic",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-a7b5e491ed56",
+    "ts": "2026-10-30T07:37:10.008806+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "flow-discovery",
+      "instance_id": "flow-discovery",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-851055aa9003",
+    "ts": "2026-10-30T07:37:10.085235+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "judge-prd",
+      "instance_id": "judge-prd",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-06c89a474c4e",
+    "ts": "2026-10-30T07:37:10.151374+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "dev-lane-0",
+      "instance_id": "dev-lane-0",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-5be4b36b3f3a",
+    "ts": "2026-10-30T07:37:10.199993+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "dev-lane-1",
+      "instance_id": "dev-lane-1",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-5d7c72c27569",
+    "ts": "2026-10-30T07:37:10.307081+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "dev-lane-2",
+      "instance_id": "dev-lane-2",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-721accdb2f3a",
+    "ts": "2026-10-30T07:37:10.381115+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "dev-lane-3",
+      "instance_id": "dev-lane-3",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-b361587ab74e",
+    "ts": "2026-10-30T07:37:10.448294+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "dev-lane-4",
+      "instance_id": "dev-lane-4",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-483107ec69c4",
+    "ts": "2026-10-30T07:37:10.504083+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "dev-lane-5",
+      "instance_id": "dev-lane-5",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-ba09a286b0de",
+    "ts": "2026-10-30T07:37:10.544747+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "dev-lane-6",
+      "instance_id": "dev-lane-6",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-aeb1c1c303d2",
+    "ts": "2026-10-30T07:37:10.591192+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "dev-lane-7",
+      "instance_id": "dev-lane-7",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-7ddd573311ae",
+    "ts": "2026-10-30T07:37:10.643057+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "verify-lane-0",
+      "instance_id": "verify-lane-0",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-fb0c6a10c06c",
+    "ts": "2026-10-30T07:37:10.720860+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "verify-lane-1",
+      "instance_id": "verify-lane-1",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-dc5fb638f4bd",
+    "ts": "2026-10-30T07:37:10.895121+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "verify-lane-2",
+      "instance_id": "verify-lane-2",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-0f4f73c9904f",
+    "ts": "2026-10-30T07:37:11.000359+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "verify-lane-3",
+      "instance_id": "verify-lane-3",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-44776c3fad6a",
+    "ts": "2026-10-30T07:37:11.145196+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "verify-lane-4",
+      "instance_id": "verify-lane-4",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-1d60c9fdbfa7",
+    "ts": "2026-10-30T07:37:11.260075+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "verify-lane-5",
+      "instance_id": "verify-lane-5",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-5e2dde4c4555",
+    "ts": "2026-10-30T07:37:11.514312+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "verify-lane-6",
+      "instance_id": "verify-lane-6",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-42e024404d2c",
+    "ts": "2026-10-30T07:37:11.620101+00:00",
+    "type": "role.lifecycle.dormant",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "",
+    "payload": {
+      "role": "verify-lane-7",
+      "instance_id": "verify-lane-7",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-f611df23c044",
+    "ts": "2026-10-30T07:37:24.458364+00:00",
+    "type": "role.lifecycle.ready",
+    "actor": "orchestrator",
+    "task_id": "TASK-FC280E",
+    "origin": "kernel",
+    "payload": {
+      "role": "product-scan",
+      "instance_id": "product-scan"
+    }
+  },
+  {
+    "id": "evt-265c8d4e4539",
+    "ts": "2026-10-30T07:37:30.257792+00:00",
+    "type": "role.lifecycle.ready",
+    "actor": "orchestrator",
+    "task_id": "TASK-FC280E",
+    "origin": "kernel",
+    "payload": {
+      "role": "tech-scan",
+      "instance_id": "tech-scan"
+    }
+  },
+  {
+    "id": "evt-3d5ec02aec6f",
+    "ts": "2026-10-30T07:39:02.534076+00:00",
+    "type": "prd.scan.child.completed",
+    "actor": "tech-scan",
+    "task_id": "TASK-FC280E",
+    "origin": "",
+    "payload": {
+      "role_instance": "tech-scan",
+      "stage_id": "prd-scan",
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "operation_id": "wop-prd-scan-tech-scan-trig-evt-213cab9d-1386aea68ade",
+      "status": "completed"
+    }
+  },
+  {
+    "id": "evt-592d9ee9aa94",
+    "ts": "2026-10-30T07:40:13.382496+00:00",
+    "type": "prd.scan.child.completed",
+    "actor": "product-scan",
+    "task_id": "TASK-FC280E",
+    "origin": "",
+    "payload": {
+      "role_instance": "product-scan",
+      "stage_id": "prd-scan",
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "operation_id": "wop-prd-scan-product-scan-trig-evt-213cab9d-ebd206c10cd2",
+      "status": "completed"
+    }
+  },
+  {
+    "id": "evt-d3a27568acc7",
+    "ts": "2026-10-30T07:40:14.807840+00:00",
+    "type": "prd.scan.completed",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "stage_id": "prd-scan",
+      "status": "completed",
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23"
+    }
+  },
+  {
+    "id": "evt-2abab398ddab",
+    "ts": "2026-10-30T07:40:20.199106+00:00",
+    "type": "role.lifecycle.ready",
+    "actor": "orchestrator",
+    "task_id": "TASK-FC280E",
+    "origin": "kernel",
+    "payload": {
+      "role": "planner",
+      "instance_id": "planner"
+    }
+  },
+  {
+    "id": "evt-86f8f046da10",
+    "ts": "2026-10-30T07:42:52.685110+00:00",
+    "type": "prd.plan.child.completed",
+    "actor": "planner",
+    "task_id": "TASK-FC280E",
+    "origin": "",
+    "payload": {
+      "role_instance": "planner",
+      "stage_id": "prd-plan",
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "operation_id": "wop-prd-plan-planner-trig-evt-d3a27568-06a7ada3ed93",
+      "status": "completed"
+    }
+  },
+  {
+    "id": "evt-40cf2a279ac1",
+    "ts": "2026-10-30T07:43:00.275559+00:00",
+    "type": "role.lifecycle.ready",
+    "actor": "orchestrator",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "role": "plan-critic",
+      "instance_id": "plan-critic"
+    }
+  },
+  {
+    "id": "evt-36bb6106183b",
+    "ts": "2026-10-30T07:45:07.228789+00:00",
+    "type": "task_map.ready",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "stage_id": "prd-plan",
+      "status": "completed",
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "source_commit": "",
+      "task_map_generation": "501628768d7f04b2aadfef83ee5de3c8aa36c4e743cdf0bf3a3a63e333b14b34"
+    }
+  },
+  {
+    "id": "evt-9ea5c553655a",
+    "ts": "2026-10-30T07:47:16.005280+00:00",
+    "type": "orchestrator.semantic.decision.applied",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "operation_id": "wop-orchestrator-agent-pre_impl-checkpoint-revision-501628768d7f-4da1690e3fe3",
+      "status": "applied"
+    }
+  },
+  {
+    "id": "evt-18353ab41889",
+    "ts": "2026-10-30T07:47:17.552980+00:00",
+    "type": "task.pipeline.generation.admitted",
+    "actor": "zf-cli",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "stage_id": "prd-lanes-impl",
+      "task_map_generation": "501628768d7f04b2aadfef83ee5de3c8aa36c4e743cdf0bf3a3a63e333b14b34"
+    }
+  },
+  {
+    "id": "evt-88e372dcae56",
+    "ts": "2026-10-30T07:47:21.809114+00:00",
+    "type": "role.lifecycle.ready",
+    "actor": "orchestrator",
+    "task_id": "HELLO-001",
+    "origin": "kernel",
+    "payload": {
+      "role": "dev-lane-0",
+      "instance_id": "dev-lane-0"
+    }
+  },
+  {
+    "id": "evt-eb8cd362a192",
+    "ts": "2026-10-30T07:47:22.999642+00:00",
+    "type": "task.pipeline.stage.dispatched",
+    "actor": "orchestrator",
+    "task_id": "HELLO-001",
+    "origin": "kernel",
+    "payload": {
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "stage_id": "impl",
+      "task_map_generation": "501628768d7f04b2aadfef83ee5de3c8aa36c4e743cdf0bf3a3a63e333b14b34",
+      "operation_id": "wop-impl-tp-HELLO-001-95d3f7c73d0c03eb-im-7338812c3be7",
+      "role_instance": "dev-lane-0",
+      "source_branch": "worker/task-pipeline/HELLO-001-c87aee2fd09a/g1",
+      "role": "dev-lane-0"
+    }
+  },
+  {
+    "id": "evt-b89f7a35ec1e",
+    "ts": "2026-10-30T07:51:24.519013+00:00",
+    "type": "dev.build.done",
+    "actor": "dev-lane-0",
+    "task_id": "HELLO-001",
+    "origin": "",
+    "payload": {
+      "role_instance": "dev-lane-0",
+      "source_branch": "worker/task-pipeline/HELLO-001-c87aee2fd09a/g1",
+      "stage_id": "impl",
+      "task_map_generation": "501628768d7f04b2aadfef83ee5de3c8aa36c4e743cdf0bf3a3a63e333b14b34",
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "operation_id": "wop-impl-tp-HELLO-001-95d3f7c73d0c03eb-im-7338812c3be7",
+      "status": "completed",
+      "source_commit": "272aadc1a28128431a14adb9168fcca944923791",
+      "changed_files": [
+        "hello.py",
+        "tests/test_hello.py"
+      ],
+      "reason": "标准库 CLI 实现默认及具名问候；unittest 通过子进程检查两条命令的完整 stdout 和退出码。基线 31e7444 无入口，新增测试在该基线两项失败（退出码 2），提交后验收命令运行 2 项均通过、退出码 0；两条直接命令均输出预期并退出 0。后续交独立 Task Verify。"
+    }
+  },
+  {
+    "id": "evt-4ba399efa89c",
+    "ts": "2026-10-30T07:51:38.209817+00:00",
+    "type": "role.lifecycle.ready",
+    "actor": "orchestrator",
+    "task_id": "HELLO-001",
+    "origin": "kernel",
+    "payload": {
+      "role": "verify-lane-0",
+      "instance_id": "verify-lane-0"
+    }
+  },
+  {
+    "id": "evt-31b0466a9e6b",
+    "ts": "2026-10-30T07:51:40.406447+00:00",
+    "type": "task.pipeline.stage.dispatched",
+    "actor": "orchestrator",
+    "task_id": "HELLO-001",
+    "origin": "kernel",
+    "payload": {
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "stage_id": "verify",
+      "task_map_generation": "501628768d7f04b2aadfef83ee5de3c8aa36c4e743cdf0bf3a3a63e333b14b34",
+      "operation_id": "wop-verify-tp-HELLO-001-95d3f7c73d0c03eb-ve-c7b7433da37e",
+      "role_instance": "verify-lane-0",
+      "source_branch": "worker/task-pipeline/HELLO-001-c87aee2fd09a/g1",
+      "role": "verify-lane-0"
+    }
+  },
+  {
+    "id": "evt-d59b26633ab5",
+    "ts": "2026-10-30T07:53:57.749758+00:00",
+    "type": "role.lifecycle.suspended",
+    "actor": "orchestrator",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "role": "dev-lane-0",
+      "instance_id": "dev-lane-0",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-80d2e287b725",
+    "ts": "2026-10-30T07:54:15.316435+00:00",
+    "type": "role.lifecycle.suspended",
+    "actor": "orchestrator",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "role": "tech-scan",
+      "instance_id": "tech-scan",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-592e6aa0eac5",
+    "ts": "2026-10-30T07:55:40.077503+00:00",
+    "type": "role.lifecycle.suspended",
+    "actor": "orchestrator",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "role": "product-scan",
+      "instance_id": "product-scan",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-4bc9bca87860",
+    "ts": "2026-10-30T07:57:14.510962+00:00",
+    "type": "workflow.budget.exceeded",
+    "actor": "zf-cli",
+    "task_id": "TASK-FC280E",
+    "origin": "kernel",
+    "payload": {
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "exceeded_dimensions": [
+        "tokens"
+      ],
+      "limits": {
+        "timeout_seconds": 900.0,
+        "max_usage_samples": 60,
+        "token_budget": 1500000,
+        "cost_budget_usd": 8.0
+      },
+      "measurement": {
+        "meter_available": true,
+        "elapsed_seconds": 334.009,
+        "usage_samples": 21,
+        "total_tokens": 1510948,
+        "total_usd": 0.0,
+        "unpriced_entries": 21,
+        "cost_fail_closed": false,
+        "baseline": {
+          "schema_version": "workflow-budget-meter.v1",
+          "meter_available": true,
+          "instance_id": "verify-lane-0",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_creation_1h_tokens": 0,
+          "cache_read_tokens": 0,
+          "total_tokens": 0,
+          "total_usd": 0.0,
+          "estimated_usd": 0.0,
+          "provider_reported_usd": 0.0,
+          "billed_usd": 0.0,
+          "unpriced_entries": 0,
+          "partial_entries": 0,
+          "entries": 0,
+          "catalog_digests": [],
+          "pricing_rate_keys": [],
+          "latest_usage_ref": "",
+          "pricing_formula_version": "deterministic-token-cost.v1"
+        },
+        "current": {
+          "schema_version": "workflow-budget-meter.v1",
+          "meter_available": true,
+          "instance_id": "verify-lane-0",
+          "input_tokens": 51770,
+          "output_tokens": 2922,
+          "cache_creation_tokens": 0,
+          "cache_creation_1h_tokens": 0,
+          "cache_read_tokens": 1456256,
+          "total_tokens": 1510948,
+          "total_usd": 0.0,
+          "estimated_usd": 0.0,
+          "provider_reported_usd": 0.0,
+          "billed_usd": 0.0,
+          "unpriced_entries": 21,
+          "partial_entries": 0,
+          "entries": 21,
+          "catalog_digests": [],
+          "pricing_rate_keys": [],
+          "latest_usage_ref": "evt-e30cf9612a78",
+          "pricing_formula_version": "deterministic-token-cost.v1"
+        }
+      }
+    }
+  },
+  {
+    "id": "evt-474e72f627b4",
+    "ts": "2026-10-30T07:57:17.297908+00:00",
+    "type": "run.goal.blocked",
+    "actor": "zf-cli",
+    "task_id": "TASK-FC280E",
+    "origin": "kernel",
+    "payload": {
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "exceeded_dimensions": [
+        "tokens"
+      ],
+      "limits": {
+        "timeout_seconds": 900.0,
+        "max_usage_samples": 60,
+        "token_budget": 1500000,
+        "cost_budget_usd": 8.0
+      },
+      "measurement": {
+        "meter_available": true,
+        "elapsed_seconds": 334.009,
+        "usage_samples": 21,
+        "total_tokens": 1510948,
+        "total_usd": 0.0,
+        "unpriced_entries": 21,
+        "cost_fail_closed": false,
+        "baseline": {
+          "schema_version": "workflow-budget-meter.v1",
+          "meter_available": true,
+          "instance_id": "verify-lane-0",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_creation_1h_tokens": 0,
+          "cache_read_tokens": 0,
+          "total_tokens": 0,
+          "total_usd": 0.0,
+          "estimated_usd": 0.0,
+          "provider_reported_usd": 0.0,
+          "billed_usd": 0.0,
+          "unpriced_entries": 0,
+          "partial_entries": 0,
+          "entries": 0,
+          "catalog_digests": [],
+          "pricing_rate_keys": [],
+          "latest_usage_ref": "",
+          "pricing_formula_version": "deterministic-token-cost.v1"
+        },
+        "current": {
+          "schema_version": "workflow-budget-meter.v1",
+          "meter_available": true,
+          "instance_id": "verify-lane-0",
+          "input_tokens": 51770,
+          "output_tokens": 2922,
+          "cache_creation_tokens": 0,
+          "cache_creation_1h_tokens": 0,
+          "cache_read_tokens": 1456256,
+          "total_tokens": 1510948,
+          "total_usd": 0.0,
+          "estimated_usd": 0.0,
+          "provider_reported_usd": 0.0,
+          "billed_usd": 0.0,
+          "unpriced_entries": 21,
+          "partial_entries": 0,
+          "entries": 21,
+          "catalog_digests": [],
+          "pricing_rate_keys": [],
+          "latest_usage_ref": "evt-e30cf9612a78",
+          "pricing_formula_version": "deterministic-token-cost.v1"
+        }
+      },
+      "status": "blocked",
+      "reason": "workflow_budget_exceeded:tokens"
+    }
+  },
+  {
+    "id": "evt-64ae93ec8afa",
+    "ts": "2026-10-30T07:57:18.032313+00:00",
+    "type": "task.attempt.failed",
+    "actor": "orchestrator",
+    "task_id": "HELLO-001",
+    "origin": "kernel",
+    "payload": {
+      "workflow_run_id": "prepare-TASK-FC280E-35d3f2786e69bf23",
+      "operation_id": "wop-verify-tp-HELLO-001-95d3f7c73d0c03eb-ve-c7b7433da37e",
+      "status": "failed",
+      "reason": "workflow_budget_exceeded:tokens"
+    }
+  },
+  {
+    "id": "evt-2a3af1c076ae",
+    "ts": "2026-10-30T07:58:12.003679+00:00",
+    "type": "role.lifecycle.suspended",
+    "actor": "orchestrator",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "role": "planner",
+      "instance_id": "planner",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  },
+  {
+    "id": "evt-66618d1c1144",
+    "ts": "2026-10-30T08:00:21.389041+00:00",
+    "type": "role.lifecycle.suspended",
+    "actor": "orchestrator",
+    "task_id": null,
+    "origin": "kernel",
+    "payload": {
+      "role": "plan-critic",
+      "instance_id": "plan-critic",
+      "preserve_session": true,
+      "preserve_workdir": true
+    }
+  }
+]

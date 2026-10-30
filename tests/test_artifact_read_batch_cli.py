@@ -124,19 +124,23 @@ def test_large_required_read_must_be_delivered_in_complete_pages(tmp_path, monke
         payload={"dispatch_id": "attempt-1", "required_reads": [requirement]},
     ))
     common = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state)]
-    assert main([*common, "--required"]) == 1
-    assert "bounded pages" in capsys.readouterr().err
     ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
-    assert not ledger.exists()
-    first = [*common, "--source", "large", "--artifact", "large", "--json-path", "$.facts"]
-    assert main(first) == 1
-    assert "exceeds" in capsys.readouterr().err
-    assert not ledger.exists()
-    start = 0
-    while start is not None:
-        assert main([*first, "--page-start", str(start), "--page-size", "4096"]) == 0
-        start = json.loads(capsys.readouterr().out)["next_page_start"]
-    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
     from zf.runtime.artifact_read_ledger import required_read_satisfied
 
-    assert required_read_satisfied(rows, requirement)
+    cursor, contents = "", []
+    while True:
+        assert main([*common, "--required", "--cursor", cursor]) == 0
+        output = capsys.readouterr().out
+        assert len(output) <= 8192
+        page = json.loads(output)
+        contents.extend(item["content"] for item in page["items"])
+        rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+        cursor = page["next_cursor"]
+        assert required_read_satisfied(rows, requirement) is (cursor is None)
+        if not cursor:
+            break
+    assert "".join(contents) == "中" * 10000
+    before = ledger.read_bytes()
+    assert main([*common, "--required", "--cursor", "bad:0:0"]) == 1
+    assert "cursor" in capsys.readouterr().err
+    assert ledger.read_bytes() == before

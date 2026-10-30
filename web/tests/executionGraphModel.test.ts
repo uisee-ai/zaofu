@@ -18,4 +18,8 @@ const compiledStage: SdlcNode = { id: 'workflow:stage:impl', kind: 'workflow', l
 const roleEdges = ['old', 'other-stage'].map((target, index) => ({ id: String(index), source: 'workflow:role:dev', target, relation: 'executes', views: ['workflow' as const] }));
 const unmapped = unmappedRoleOperationIds('workflow:role:dev', [...nodes, compiledStage], roleEdges);
 if (unmapped.length !== 1 || unmapped[0] !== 'other-stage') throw new Error('role view must not duplicate records already shown in a compiled stage');
+const pipeline = node('pipeline', 'dev', 'TASK-3', '2026-01-06', 'verify');
+pipeline.data.compiled_stage_id = 'impl';
+if (stageWorkers([pipeline], 'impl').length !== 1 || stageWorkers([pipeline], 'verify').length) throw new Error('admitted pipeline container must own the execution record');
+if (unmappedRoleOperationIds('workflow:role:dev', [pipeline, compiledStage], [{ ...roleEdges[0], target: pipeline.id }]).length) throw new Error('pipeline worker must not be duplicated as an unmapped role');
 console.log('executionGraphModel tests passed');

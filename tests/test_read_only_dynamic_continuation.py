@@ -146,6 +146,11 @@ def _seed(
         request={"prompt": "parent research"},
         task_id="TASK-DYN-1",
     )
+    from zf.runtime.dynamic_checkpoint import create_checkpoint
+
+    checkpoint = create_checkpoint(state_dir, log.read_all(), workflow_run_id=run_id,
+                                   parent_operation_id="parent-op-1", task_id="TASK-DYN-1",
+                                   task_map_generation="GEN-1")
     payload = {
         "schema_version": "operation-plan-fragment.v1",
         "mode": "read_only",
@@ -161,8 +166,8 @@ def _seed(
         },
         "trigger_checkpoint": {
             "checkpoint_id": "CK-1",
-            "ref": "artifacts/checkpoints/ck-1.json",
-            "sha256": "b" * 64,
+            "ref": checkpoint["ref"],
+            "sha256": checkpoint["sha256"],
         },
         "nodes": [{
             "node_id": "research-1",
@@ -188,6 +193,91 @@ def _seed(
     assert len(actions) == 1
     assert actions[0]["source_event_id"] == proposal.id
     return actions[0]
+
+
+@pytest.mark.parametrize("fault,reason", [
+    ("missing", "trigger_checkpoint_invalid"),
+    ("digest", "trigger_checkpoint_invalid"),
+    ("run", "trigger_checkpoint_identity_mismatch"),
+    ("parent", "trigger_checkpoint_identity_mismatch"),
+    ("generation", "trigger_checkpoint_identity_mismatch"),
+    ("task", "parent_operation_task_mismatch"),
+])
+def test_dynamic_continuation_rejects_unbound_checkpoint_and_task(tmp_path, fault, reason):
+    from zf.runtime.sidecar_refs import write_sidecar_json
+
+    state, log, writer = _state(tmp_path)
+    config = _config()
+    action = _seed(state, log, writer, config=config)
+    if fault == "missing":
+        action["trigger_checkpoint_ref"] = "artifacts/checkpoints/missing.json"
+    elif fault == "digest":
+        action["trigger_checkpoint_digest"] = "f" * 64
+    elif fault == "task":
+        action["task_id"] = "TASK-OTHER"
+    else:
+        from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+        body = hydrate_sidecar_ref(state, {"ref": action["trigger_checkpoint_ref"],
+                                          "sha256": action["trigger_checkpoint_digest"]}).payload
+        body.update({key: action[key] for key in (
+            "workflow_run_id", "parent_operation_id", "task_id", "task_map_generation")})
+        body[{"run": "workflow_run_id", "parent": "parent_operation_id",
+              "generation": "task_map_generation"}[fault]] = "different"
+        ref = write_sidecar_json(state, "artifacts/checkpoints/wrong.json", body,
+                                 kind="dynamic_checkpoint", schema_version="dynamic-checkpoint.v1",
+                                 created_by="test")
+        action["trigger_checkpoint_ref"] = ref["ref"]
+        action["trigger_checkpoint_digest"] = ref["sha256"]
+    result = execute_read_only_continuation(state, config=config, event_log=log,
+                                            writer=writer, action=action)
+    assert result.reason == reason
+    assert not any(event.type == "workflow.invoke.requested" for event in log.read_all())
+
+
+def test_artifact_checkpoint_cli_produces_consumable_current_scope(tmp_path, monkeypatch, capsys):
+    import json
+    from types import SimpleNamespace
+    from zf.cli.main import main
+
+    state, log, writer = _state(tmp_path)
+    config = _config()
+    action = _seed(state, log, writer, config=config)
+    monkeypatch.setattr("zf.cli.artifact.resolve_project_context",
+                        lambda **kwargs: SimpleNamespace(state_dir=state, config=config))
+    monkeypatch.setattr("zf.cli.artifact.event_log_from_project", lambda *args, **kwargs: log)
+    args = ["artifact", "checkpoint", "--run", action["workflow_run_id"],
+            "--parent-operation", action["parent_operation_id"], "--task", action["task_id"],
+            "--generation", action["task_map_generation"], "--state-dir", str(state)]
+    assert main(args) == 0
+    ref = json.loads(capsys.readouterr().out)
+    action["trigger_checkpoint_ref"] = ref["ref"]
+    action["trigger_checkpoint_digest"] = ref["sha256"]
+    assert execute_read_only_continuation(state, config=config, event_log=log,
+                                          writer=writer, action=action).status == "dispatched"
+    args[args.index("--task") + 1] = "TASK-OTHER"
+    assert main(args) == 1
+    assert "not current" in capsys.readouterr().err
+
+
+def test_goal_parent_can_delegate_to_explicit_child_task(tmp_path):
+    from zf.runtime.dynamic_checkpoint import create_checkpoint
+
+    state, log, writer = _state(tmp_path)
+    config = _config()
+    action = _seed(state, log, writer, config=config)
+    WorkflowOperationService(state_dir=state, event_log=log, event_writer=writer).ensure_operation(
+        workflow_run_id=action["workflow_run_id"], operation_id="goal-parent", operation_type="workflow",
+        request={"scope": "goal"}, child_task_ids=[action["task_id"]],
+    )
+    action["parent_operation_id"] = "goal-parent"
+    ref = create_checkpoint(state, log.read_all(), workflow_run_id=action["workflow_run_id"],
+                            parent_operation_id="goal-parent", task_id=action["task_id"],
+                            task_map_generation=action["task_map_generation"])
+    action["trigger_checkpoint_ref"] = ref["ref"]
+    action["trigger_checkpoint_digest"] = ref["sha256"]
+    result = execute_read_only_continuation(state, config=config, event_log=log,
+                                            writer=writer, action=action)
+    assert result.status == "dispatched"
 
 
 def test_concurrent_reservation_dispatches_once(tmp_path: Path) -> None:
@@ -600,6 +690,7 @@ def test_wrc_consumes_wrc_owned_frontier_once(
         event_log=log,
         event_writer=writer,
         project_root=tmp_path,
+        _dispatch_globally_paused=lambda: False,
     )
 
     first = consume_wrc_normal_frontier(runtime)
