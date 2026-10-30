@@ -1441,6 +1441,14 @@ def test_run_manager_executes_candidate_rework_controlled_action(
     _append_candidate_rework_fixture(log)
     task_map_path = state_dir / "artifacts" / "CJMIN-RM" / "task_map.json"
     task_map_path.parent.mkdir(parents=True)
+    source_index = {"sources": [{
+        "source_key": "web",
+        "task_ids": ["CJMIN-WEB-001"],
+        "source_ref": "hermes-agent/web",
+    }]}
+    (task_map_path.parent / "source_index.json").write_text(
+        json.dumps(source_index), encoding="utf-8",
+    )
     task_map_path.write_text(
         json.dumps({
             "schema_version": "task-map.v1",
@@ -1528,6 +1536,10 @@ def test_run_manager_executes_candidate_rework_controlled_action(
     )
     assert rework_ready[-1].payload["workflow_run_id"] == "workflow-run-rm"
     assert rework_ready[-1].payload["flow_kind"] == "refactor"
+    amended_source_ref = amended[-1].payload["source_index_ref"]
+    assert rework_ready[-1].payload["source_index_ref"] == amended_source_ref
+    assert amended_source_ref != ".zf/artifacts/CJMIN-RM/source_index.json"
+    assert json.loads((state_dir / amended_source_ref).read_text()) == source_index
     assert rework_ready[-1].payload["task_map_digest"] == amended[-1].payload[
         "task_map_digest"
     ]
