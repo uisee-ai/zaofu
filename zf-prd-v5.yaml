@@ -12,11 +12,11 @@ metadata:
 spec:
   flowProfile: prd-flow-v4-task-pipeline
   topology: fanout
-  lanes: 2
-  backend: claude-code
+  lanes: 8
+  backend: codex
   roleDefaults:
     model_reasoning_effort: high
-    contextWindowTokens: ${ZF_CLAUDE_CONTEXT_WINDOW_TOKENS:-200000}
+    contextWindowTokens: ${ZF_CODEX_CONTEXT_WINDOW_TOKENS:-200000}
   prdRef: ${ZF_PRD_REF:-docs/prd/TODO.md}
   targetRoot: .
   qualityFloor: product-demo
@@ -36,17 +36,17 @@ spec:
     # belongs to a separate canary controller and must not be enabled by an
     # environment override on the production profile.
     mode: blocking
-    maxActiveTaskPipelines: 4
+    maxActiveTaskPipelines: 16
     maxReworkAttempts: 2
     pools:
       impl:
-        capacity: 2
-        roleInstances: [dev-lane-0, dev-lane-1]
+        capacity: 8
+        roleInstances: [dev-lane-0, dev-lane-1, dev-lane-2, dev-lane-3, dev-lane-4, dev-lane-5, dev-lane-6, dev-lane-7]
       verify:
-        capacity: 2
-        roleInstances: [verify-lane-0, verify-lane-1]
+        capacity: 8
+        roleInstances: [verify-lane-0, verify-lane-1, verify-lane-2, verify-lane-3, verify-lane-4, verify-lane-5, verify-lane-6, verify-lane-7]
     backpressure:
-      maxUnverifiedTasks: 3
+      maxUnverifiedTasks: 8
       maxIntegrationQueue: 2
     workerLifecycle:
       mode: on_demand
@@ -76,11 +76,11 @@ metadata:
   name: zaofu-prd-v5-production
   zaofu:
     catalog:
-      id: zaofu-prd-v5-production-claude
-      label: ZaoFu PRD Workflow v5 Production
+      id: zaofu-prd-v5-production-codex
+      label: ZaoFu PRD Workflow v5 Production (Codex)
       description: Production PRD controller with WRC blocking frontier, bounded OA checkpoints, and worker execution envelopes.
       intent: build
-      backend: claude-code
+      backend: codex
       recommended_for: [build, prd]
       preferred: true
       order: 160
@@ -93,7 +93,7 @@ spec:
     name: zaofu
     state_dir: .zf
   orchestrator:
-    backend: claude-code
+    backend: codex
     max_turns: 80
     wake_min_interval_s: 5
   roles:
@@ -102,9 +102,9 @@ spec:
     - name: orchestrator
       instance_id: orchestrator
       role_kind: reader
-      backend: claude-code
+      backend: codex
       model_reasoning_effort: high
-      context_window_tokens: ${ZF_CLAUDE_CONTEXT_WINDOW_TOKENS:-200000}
+      context_window_tokens: ${ZF_CODEX_CONTEXT_WINDOW_TOKENS:-200000}
       permission_mode: bypass
       transport: tmux
       execution:
@@ -137,7 +137,7 @@ spec:
     workdirs:
       provision_paths: [.venv, web/node_modules]
     run_manager:
-      backend: claude-code
+      backend: codex
     git:
       candidate_base_ref: dev
       ship_target_branch: dev
