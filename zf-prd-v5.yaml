@@ -1,4 +1,4 @@
-# ZaoFu PRD workflow configuration v5.0.0.
+# ZaoFu PRD workflow configuration v5.0.1.
 #
 # This is the versioned PRD controller for the 194 + 195 runtime contract:
 # plan/task-map admission stays semantic, the blocking Task Pipeline owns
@@ -8,15 +8,23 @@ apiVersion: zaofu.dev/v1
 kind: PrdFlow
 metadata:
   name: zaofu-prd/v5-production
-  version: "5.0.0"
+  version: "5.0.1"
 spec:
   flowProfile: prd-flow-v4-task-pipeline
   topology: fanout
   lanes: 8
   backend: codex
   roleDefaults:
-    model_reasoning_effort: high
-    contextWindowTokens: ${ZF_CODEX_CONTEXT_WINDOW_TOKENS:-200000}
+    # Reader/planner/critic and lane workers use a bounded default.  Codex
+    # high reasoning on every fanout child repeatedly replays the large
+    # briefing/context and can exhaust the per-operation token budget before
+    # the typed result is submitted.  A caller can still raise the effort for
+    # a dedicated role override or a separate canary profile.
+    stuck_threshold_seconds: 600
+    lifecycle: {mode: on_demand, idle_seconds: 600}
+    model: ${ZF_CODEX_MODEL:-gpt-6.1-sol}
+    model_reasoning_effort: medium
+    contextWindowTokens: ${ZF_CODEX_CONTEXT_WINDOW_TOKENS:-120000}
   prdRef: ${ZF_PRD_REF:-docs/prd/TODO.md}
   targetRoot: .
   qualityFloor: product-demo
@@ -50,7 +58,7 @@ spec:
       maxIntegrationQueue: 2
     workerLifecycle:
       mode: on_demand
-      idleSeconds: 120
+      idleSeconds: 600
     affinity:
       implRework: prefer_previous_session
       verifyIndependence: different_role
@@ -81,6 +89,8 @@ metadata:
       description: Production PRD controller with WRC blocking frontier, bounded OA checkpoints, and worker execution envelopes.
       intent: build
       backend: codex
+      roles: 29
+      assembly: project-bound-v1
       recommended_for: [build, prd]
       preferred: true
       order: 160
@@ -88,7 +98,7 @@ spec:
   profile_sources:
     - examples/prod/controller/common/profiles.yaml
   uses: [prod-runtime/v1, kanban-collaboration/v1]
-  version: "5.0"
+  version: "5.0.1"
   project:
     name: zaofu
     state_dir: .zf
@@ -97,6 +107,82 @@ spec:
     max_turns: 80
     wake_min_interval_s: 5
   roles:
+    # kanban-collaboration/v1 supplies the research topology, but its
+    # historical role definitions use claude-code.  Override every inherited
+    # research role here so this production controller has one provider
+    # contract and never starts a Claude pane on a Codex-only host.
+    - name: research_root
+      instance_id: research_root
+      role_kind: reader
+      backend: codex
+      model_reasoning_effort: high
+      permission_mode: bypass
+      transport: tmux
+      lifecycle: {mode: on_demand}
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      budget_usd: 25
+      skills: [source-verification, zf-project-suggest, zf-research-adaptive-root]
+    - name: source_researcher
+      instance_id: source_researcher
+      role_kind: reader
+      backend: codex
+      model_reasoning_effort: high
+      permission_mode: bypass
+      transport: tmux
+      lifecycle: {mode: on_demand}
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      budget_usd: 25
+      skills: [source-verification, zf-project-suggest]
+    - name: product_analyst
+      instance_id: product_analyst
+      role_kind: reader
+      backend: codex
+      model_reasoning_effort: high
+      permission_mode: bypass
+      transport: tmux
+      lifecycle: {mode: on_demand}
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      budget_usd: 25
+      skills: [zf-project-suggest]
+    - name: technical_analyst
+      instance_id: technical_analyst
+      role_kind: reader
+      backend: codex
+      model_reasoning_effort: high
+      permission_mode: bypass
+      transport: tmux
+      lifecycle: {mode: on_demand}
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      budget_usd: 25
+      skills: [source-verification, zf-cr]
+    - name: risk_critic
+      instance_id: risk_critic
+      role_kind: reader
+      backend: codex
+      model_reasoning_effort: high
+      permission_mode: bypass
+      transport: tmux
+      lifecycle: {mode: on_demand}
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      budget_usd: 25
+      skills: [zf-yoke-critic-role-context]
+    - name: synthesizer
+      instance_id: synthesizer
+      role_kind: reader
+      backend: codex
+      model_reasoning_effort: high
+      permission_mode: bypass
+      transport: tmux
+      lifecycle: {mode: on_demand}
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      budget_usd: 25
+      skills: [zf-project-suggest]
     # OA owns semantic checkpoints and re-planning proposals. Kernel/WRC owns
     # normal frontier dispatch, leases, workspace, evidence, and terminal state.
     - name: orchestrator
@@ -112,7 +198,7 @@ spec:
         profile_allowlist: [bounded-direct-v1]
       lifecycle:
         mode: resident
-      stuck_threshold_seconds: 900
+      stuck_threshold_seconds: 600
       spawn_ready_timeout_seconds: 240
       triggers:
         - dispatch.silent_stall
@@ -143,6 +229,14 @@ spec:
       ship_target_branch: dev
       auto_ship_on_judge_passed: false
   workflow:
+    execution_profiles:
+      bounded-direct-v1:
+        strategy: direct
+        limits:
+          timeout_seconds: 600
+          max_usage_samples: 60
+          token_budget: 1500000
+          cost_budget_usd: 8
     harness_profile: strict
     # Plan admission remains automatic; enable this explicitly when an
     # operator approval gate is required for a particular deployment.
@@ -161,8 +255,11 @@ spec:
           pilot_id: oa-wrc-prd-v5
           checkpoints: [pre_impl, semantic_failure]
           checkpoint_policies:
-            pre_impl: blocking
+            # WRC is the normal frontier owner.  pre_impl remains sampled
+            # advisory telemetry; only semantic failures may block/rework.
+            pre_impl: shadow
             semantic_failure: blocking
+          shadow_sample_percent: 100
           autonomous_actions: [delegate, continue, rework]
           review_blocked_tasks: true
         research:

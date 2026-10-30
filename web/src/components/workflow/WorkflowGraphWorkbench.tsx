@@ -12,7 +12,7 @@ import WorkflowExecutionTimeline from "./WorkflowExecutionTimeline";
 import WorkflowStageDetails from "./WorkflowStageDetails";
 import WorkflowOperationDetails from "./WorkflowOperationDetails";
 import WorkflowTaskDetails from "./WorkflowTaskDetails";
-import { unmappedRoleOperationIds } from "./executionGraphModel";
+import { operationStage, unmappedRoleOperationIds } from "./executionGraphModel";
 import { executionContext, unassignedExecutionGroup } from "./executionContextModel";
 import { X, Code, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
 import { activeStatus, expandedNodeIds, GraphLayoutCache, graphViews, isWaitingAuxiliaryStage, relatedNodes, statusLabels, workflowNodeLabel, workflowSummaryEdges, workflowSummaryIds, workflowSummaryPositions, type GraphView } from "./sdlcGraphModel";
@@ -88,12 +88,12 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     const summary = view === "workflow" && !fullStructure ? workflowSummaryIds(graph.nodes) : null;
     if (summary && !structureOnly) {
       const stages = new Set(graph.nodes.filter(n => n.id.startsWith("workflow:stage:")).map(n => String(n.data.stage_id || n.id.slice("workflow:stage:".length))));
-      const operations = new Map(graph.nodes.filter(n => n.kind === "operation" && n.data.role_instance && !stages.has(String(n.data.parent_stage_id || ""))).map(n => [n.id, n]));
+      const operations = new Map(graph.nodes.filter(n => n.kind === "operation" && n.data.role_instance && !stages.has(operationStage(n))).map(n => [n.id, n]));
       for (const edge of graph.edges) if (edge.relation === "executes" && edge.source.startsWith("workflow:role:") && operations.has(edge.target)) summary.add(edge.source);
     }
     const needle = search.trim().toLowerCase();
     if (summary && !needle && !status && direction === "all") {
-      for (const node of graph.nodes) if (node.id !== selected && isWaitingAuxiliaryStage(node) && !graph.nodes.some(item => item.kind === "operation" && item.data.role_instance && item.data.parent_stage_id === node.data.stage_id && item.data.workflow_run_id === graph.scope.run_id)) summary.delete(node.id);
+      for (const node of graph.nodes) if (node.id !== selected && isWaitingAuxiliaryStage(node) && !graph.nodes.some(item => item.kind === "operation" && item.data.role_instance && operationStage(item) === node.data.stage_id && item.data.workflow_run_id === graph.scope.run_id)) summary.delete(node.id);
     }
     const candidates = graph.nodes.filter(n => (n.views.includes(view) || n.id === selected) && (view !== "modules" || (taskMode === "dependencies" ? n.kind === "task" : ["requirement", "goal", "claim", "task"].includes(n.kind))) && expanded.has(n.id) && (!reachable || reachable.has(n.id)) && (!focused || focused.has(n.id))
       && (!summary || needle || summary.has(n.id) || (n.id === selected && n.kind !== "operation"))

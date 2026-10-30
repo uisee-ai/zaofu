@@ -127,24 +127,26 @@ def test_large_required_read_must_be_delivered_in_complete_pages(tmp_path, monke
     ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
     from zf.runtime.artifact_read_ledger import required_read_satisfied
 
-    cursor = None
-    contents = []
+    cursor, contents = "", []
     while True:
-        assert main([*common, "--required", *(["--cursor", cursor] if cursor else [])]) == 0
-        output = capsys.readouterr()
-        assert len(output.out.rstrip("\n")) <= 8192
-        page = json.loads(output.out)
-        contents.append(page["items"][0]["content"])
-        cursor = page["next_cursor"]
+        assert main([*common, "--required", "--cursor", cursor]) == 0
+        output = capsys.readouterr().out
+        assert len(output.encode("utf-8")) <= 8192
+        page = json.loads(output)
+        contents.extend(item["content"] for item in page["items"])
         rows = [json.loads(line) for line in ledger.read_text().splitlines()]
-        if cursor is None:
+        cursor = page["next_cursor"]
+        assert required_read_satisfied(rows, requirement) is (cursor is None)
+        if not cursor:
             break
-        assert not required_read_satisfied(rows, requirement)
     assert "".join(contents) == "中" * 10000
-    assert required_read_satisfied(rows, requirement)
+    before = ledger.read_bytes()
+    assert main([*common, "--required", "--cursor", "bad:0:0"]) == 1
+    assert "cursor" in capsys.readouterr().err
+    assert ledger.read_bytes() == before
 
 
-@pytest.mark.parametrize("fault", ["", "tampered", "changed_attempt", "changed_requirement", "gap"])
+@pytest.mark.parametrize("fault", ["", "tampered", "changed_attempt", "changed_requirement", "pinned_digest", "gap"])
 def test_required_pages_keep_aliases_bound_and_reject_incomplete_consumption(tmp_path, fault):
     from zf.cli.artifact_required_read import prepare_required_read
     from zf.runtime.artifact_output_delivery import emit_artifact_output
@@ -182,6 +184,8 @@ def test_required_pages_keep_aliases_bound_and_reject_incomplete_consumption(tmp
         manifest = {**manifest, "attempt_id": "attempt-2"}
     elif fault == "changed_requirement":
         requirements = requirements[:1]
+    elif fault == "pinned_digest":
+        requirements[0]["artifact_sha256"] = "0" * 64
     if fault not in ("", "gap"):
         with pytest.raises(ValueError):
             required_read_output(state, manifest=manifest, rows=requirements, identity=identity,
@@ -192,7 +196,7 @@ def test_required_pages_keep_aliases_bound_and_reject_incomplete_consumption(tmp
     while page["next_cursor"]:
         output = required_read_output(state, manifest=manifest, rows=requirements, identity=identity,
                                       cursor=page["next_cursor"])
-        assert len(output) <= 8192
+        assert len(output.encode("utf-8")) <= 8192
         page = json.loads(output)
         assert len(page["items"][0]["aliases"]) == 1
         contents.append(page["items"][0]["content"])

@@ -8,12 +8,15 @@ export function workflowStartActions(detail: WorkflowRequestDetail): { action: s
     || lifecycle.submitted || links.run_id) return [];
   const binding = { request_id: request.request_id, proposal_ref: proposalRef, proposal_digest: digest };
   const actions = [];
+  // Replay exact apply to finish an interrupted checkpoint and detect drift.
   if (proposal.change_mode === "config_change") {
     if (!(proposal.validation_result_ref as Record<string, unknown> | undefined)?.ref) return [];
     actions.push({ action: "workflow-config-apply", payload: {
       establish_delivery_baseline: true,
       ...binding, proposal_id: proposal.proposal_id, validation_result_ref: proposal.validation_result_ref,
-      approval_ref: `web:workflow-proposal:${request.request_id}:${digest}`, idempotency_key: `workflow-config-apply:${digest}`,
+      // The service derives its stable Apply key from the proposal digest.
+      // Leave HTTP retries fresh so they revalidate instead of replaying a cached response.
+      approval_ref: `web:workflow-proposal:${request.request_id}:${digest}`,
     } });
   }
   actions.push({ action: "workflow-submit", payload: {

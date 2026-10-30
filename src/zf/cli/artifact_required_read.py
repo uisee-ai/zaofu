@@ -32,6 +32,9 @@ def prepare_required_read(
     groups: dict[tuple[str, str, str], dict[str, Any]] = {}
     receipts: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for row, preview in zip(rows, previews, strict=True):
+        expected = row.get("artifact_sha256") or row.get("sha256")
+        if expected and expected != preview["read"]["artifact_sha256"]:
+            raise ValueError("required artifact digest differs from the pinned policy")
         source = {"source_id": row["source_id"], "artifact_id": row["artifact_id"],
                   "json_path": row.get("json_path", "$")}
         key = (preview["read"]["artifact_sha256"], source["json_path"], preview["content"])

@@ -212,6 +212,11 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
             edge(fid, cid, "delegates", views=["workflow", "trace"])
             if child.get("task_id"):
                 edge("task:" + child["task_id"], cid, "execution", views=["workflow", "trace"])
+    from zf.runtime.workflow_budget_projection import operation_budget_observations
+
+    budget_observations = operation_budget_observations(
+        [e for _, e in event_rows], run_id=scope["run_id"],
+    )
     for operation in operations.values():
         requested = min(
             (requested_events[event_id] for event_id in operation.get("source_event_ids", [])
@@ -227,6 +232,13 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
         configured = next((r for r in compiled.get("roles", []) if operation.get("role_instance")
                            in {r.get("name"), r.get("instance_id")}), {})
         usage = next((e for e in reversed(activity) if e.type == "agent.usage"), None)
+        operation["budget_observation"] = budget_observations.get(operation["operation_id"], {})
+        operation["context_observation"] = ({
+            "context_usage_ratio": usage.payload.get("context_usage_ratio"),
+            "context_window_tokens": usage.payload.get("model_context_window")
+            or usage.payload.get("context_window_tokens"),
+            "source_event_id": usage.id,
+        } if usage else {})
         operation["agent_binding"] = {
             "backend": usage.payload.get("backend") if usage else configured.get("backend", ""),
             "model": usage.payload.get("model") if usage else configured.get("model", ""),
@@ -234,11 +246,14 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
             "source": "provider_usage" if usage else "config_snapshot" if configured else "unknown",
             "source_event_id": usage.id if usage else "",
         }
+    from zf.runtime.sdlc_workflow_states import bind_pipeline_containers
+
+    bind_pipeline_containers(nodes, operations, event_rows)
     stage_operations: dict[str, list[dict]] = {}
     for oid, operation in operations.items():
         op = node("operation:" + oid, "operation", operation.get("role_instance") or oid,
                   views=["workflow", "trace", "timeline"], **operation)
-        stage = "workflow:stage:" + operation.get("parent_stage_id", "")
+        stage = "workflow:stage:" + (operation.get("compiled_stage_id") or operation.get("parent_stage_id", ""))
         role = "workflow:role:" + operation.get("role_instance", "")
         parent = stage if stage in nodes else role if role in nodes else run
         stage_operations.setdefault(parent, []).append(operation)
@@ -261,9 +276,10 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
             nodes[parent]["status"] = next((s for s in ("running", "blocked", "failed", "reserved", "requested", "cancelled", "superseded") if s in states), "settled")
         nodes[parent]["data"]["operation_ids"] = [r["operation_id"] for r in rows]
 
-    from zf.runtime.sdlc_workflow_states import project_structure_states
+    from zf.runtime.sdlc_workflow_states import project_pipeline_container_states, project_structure_states
 
     project_structure_states(nodes, operations, event_rows)
+    project_pipeline_container_states(nodes, event_rows, scope["run_id"])
     if execution_only:
         # The execution overview needs observed Operations, not event/attempt
         # nodes, Plan bodies, coverage analysis or the full timeline.

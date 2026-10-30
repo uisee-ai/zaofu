@@ -134,7 +134,12 @@ def render_plan_synth_validation_section(
     return [
         *scratch_lines,
         "Write your actual review summary and explicitly choose status and recommendation "
-        "in both the result and report. Empty verdict fields are not a completed review.",
+        "in both the result and report. The two status fields have different contracts: "
+        "top-level `status` is execution status (`completed` or `failed`); "
+        "`report.status` is the semantic verdict (`passed`, `failed`, `blocked`, "
+        "or `suspended`). For a successful review use top-level `status: completed`, "
+        "`report.status: passed`, and `recommendation: approve`. Empty verdict fields "
+        "are not a completed review.",
         "",
         "Finding severity is an exact enum: use only `info`, `low`, `medium`, "
         "`high`, or `critical`. Record a non-blocking residual risk as `info` "

@@ -29,7 +29,11 @@ export function observedWorkers(nodes: SdlcNode[]): ObservedWorker[] {
 }
 
 export function stageWorkers(nodes: SdlcNode[], stageId: string): ObservedWorker[] {
-  return observedWorkers(nodes.filter(node => node.data.parent_stage_id === stageId));
+  return observedWorkers(nodes.filter(node => operationStage(node) === stageId));
+}
+
+export function operationStage(node: SdlcNode): string {
+  return String(node.data.compiled_stage_id || node.data.parent_stage_id || '');
 }
 
 /** Display only an activity name and time; never expose raw tool input on a card. */
@@ -51,6 +55,6 @@ export function workerActivity(node: SdlcNode): { label: string; time: string } 
 /** A role node can own observed operations outside compiled stage containers. */
 export function unmappedRoleOperationIds(roleId: string, nodes: SdlcNode[], edges: SdlcEdge[]): string[] {
   const stages = new Set(nodes.filter(node => node.id.startsWith('workflow:stage:')).map(node => String(node.data.stage_id || node.id.slice('workflow:stage:'.length))));
-  const operations = new Set(nodes.filter(node => node.kind === 'operation' && node.data.role_instance && !stages.has(String(node.data.parent_stage_id || ''))).map(node => node.id));
+  const operations = new Set(nodes.filter(node => node.kind === 'operation' && node.data.role_instance && !stages.has(operationStage(node))).map(node => node.id));
   return edges.filter(edge => edge.relation === 'executes' && edge.source === roleId && operations.has(edge.target)).map(edge => edge.target);
 }

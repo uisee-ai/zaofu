@@ -36,7 +36,16 @@ project constraints. Treat every allowlist as closed.
    capacity. Preserve independent verification; ask about decision-critical
    mode or limits rather than guessing. Shadow is observation, not execution.
    This produces a reviewed config candidate, never an applied config or Run.
+   若用户指定目录 `registered_controllers` 中的完整版本（例如 V5），使用
+   `parameters.controller_id` 和对应的 `controller_digest`，并给出适配当前项目验收的
+   `verification_commands`。不要复制 YAML 或改写运行时状态；不要附带 `task_pipeline`
+   或改变该控制器的 lanes。该选择进入完整配置替换的 Preview / Apply config / Approve & Run。
+   编译器保留项目身份、状态目录、session 和本地 skill sources，绑定 Requirement 的项目内
+   PRD/target 和当前 Git 分支；装配已安装控制器技能及内联 Profile，保留 V5 的阻塞门禁、
+   独立验证、生命周期和预算。缺少业务路径/检查命令时问具体问题，不反问如何安装已注册控制器。
 4. Request only registered roles, skills, and execution profiles.
+   选中完整控制器时，使用该条目的 roles/skills/profiles 和 completion_profile；它们是待批准
+   配置的能力，不要求先存在于当前项目。未选中时仍只使用当前配置的 allowlist。
    `allowed_skills` 表示已安装，不等于已装配；用 `configured_role_skills` 核对选中路线的实际
    角色绑定。确需新增能力时提出阻塞问题与配置变更要求，不能把希望使用的 skills 当作已启用。
 5. State rationale, assumptions, open questions, completion profile, and risk

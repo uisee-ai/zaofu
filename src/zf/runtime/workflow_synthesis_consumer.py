@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -38,7 +39,13 @@ def consume_workflow_synthesis_operations(
         event_log=writer.event_log,
         event_writer=writer,
     )
-    with locked_path(lock, timeout_seconds=0.1):
+    lease = ExitStack()
+    try:
+        lease.enter_context(locked_path(lock, timeout_seconds=0.1))
+    except TimeoutError:
+        lease.close()
+        return 0  # Another consumer owns this tick; retry on the next wake.
+    with lease:
         # Web may locate these canonical events through a disposable index.
         # Read under the consumer lease; admission and writes remain canonical.
         operations = reduce_workflow_operations(

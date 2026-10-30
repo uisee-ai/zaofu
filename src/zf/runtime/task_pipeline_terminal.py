@@ -790,6 +790,23 @@ def _release_archived_task_stage_slot(
                     ))
                     return False
 
+    from zf.runtime.provider_usage_reconciliation import reconcile_provider_usage_tail
+
+    tail = reconcile_provider_usage_tail(
+        state_dir=runtime.state_dir, project_root=runtime.project_root,
+        config=getattr(runtime, "config", None), event_log=runtime.event_writer.event_log,
+        included_roles={role_instance}, capture_phase="session_boundary",
+    )
+    if tail.failed_roles:
+        runtime.event_writer.append(ZfEvent(
+            type="kernel.housekeeping.failed", actor="orchestrator", origin="kernel",
+            task_id=task_id, payload={"step": "task_pipeline_slot_usage_reconciliation",
+                                     "role_instance": role_instance, "binding_key": binding_key,
+                                     "exc_type": "ProviderUsageTailError",
+                                     "exc_repr": "provider usage tail reconciliation failed"},
+        ))
+        return False
+
     released_at = _now_iso()
     registry.update_instance_meta(
         role_instance,

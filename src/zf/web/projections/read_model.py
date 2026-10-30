@@ -1212,6 +1212,9 @@ def operator_inbox(
         HUMAN_ESCALATION_ACKNOWLEDGED,
         HUMAN_ESCALATION_REQUESTED,
         HUMAN_ESCALATION_SENT,
+        INBOX_ALL_READ,
+        INBOX_ITEM_READ,
+        OWNER_VISIBLE_MESSAGE_REQUESTED,
         RUN_MANAGER_HUMAN_DECISION_APPLIED,
         RUN_MANAGER_HUMAN_DECISION_REJECTED,
         build_operator_inbox,
@@ -1220,6 +1223,9 @@ def operator_inbox(
         PLAN_APPROVAL_REQUESTED,
         PLAN_APPROVED,
         PLAN_REJECTED,
+    )
+    from zf.runtime.run_manager import (
+        RUN_COMPLETED, _POST_TERMINAL_WORK_EVENTS, _PROGRESS_SUCCESS_EVENTS,
     )
 
     types = [
@@ -1235,33 +1241,29 @@ def operator_inbox(
         HUMAN_ESCALATION_ACKNOWLEDGED,
         RUN_MANAGER_HUMAN_DECISION_APPLIED,
         RUN_MANAGER_HUMAN_DECISION_REJECTED,
+        INBOX_ITEM_READ,
+        INBOX_ALL_READ,
+        OWNER_VISIBLE_MESSAGE_REQUESTED,
+        "channel.question.opened",
+        "channel.question.updated",
+        "channel.question.resolved",
+        "channel.question.merged",
+        "kanban.agent.plan.requested",
+        "kanban.agent.plan.answered",
     ]
+    types.extend([RUN_COMPLETED, "run.goal.updated", *_POST_TERMINAL_WORK_EVENTS, *_PROGRESS_SUCCESS_EVENTS])
     events = hydrate_events(
         state_dir,
         types=types,
-        type_prefixes=["runtime.attention."],
+        type_prefixes=["runtime.attention.", "channel.member."],
         config=config,
         require_fresh=True,
-        slim=True,
+        slim=False,
     )
     if not events:
         return None
-    # Approval payloads carry bound artifact refs that are intentionally not
-    # part of the compact index payload.  Hydrate only those decision events
-    # so Plan Preview and owner checkpoint routing see the authoritative body.
-    hydrated_approvals: dict[str, ZfEvent] = {}
-    for event in events:
-        if event.type not in {PLAN_APPROVAL_REQUESTED, GENERIC_APPROVAL_REQUESTED}:
-            continue
-        hydrated = hydrate_event_by_id(state_dir, event.id, config=config)
-        if hydrated is not None:
-            hydrated_approvals[event.id] = hydrated[1]
-    if hydrated_approvals:
-        events = [hydrated_approvals.get(event.id, event) for event in events]
-    # Owner checkpoint approvals historically did not copy the candidate refs
-    # into their slim payload.  Hydrate only the bound synth source event so
-    # the projection can backfill a truthful preview without scanning the raw
-    # event log or changing the normal slim inbox path.
+    # Owner checkpoint approvals can refer to a separate synth source event.
+    # Hydrate that event to backfill the bound preview.
     source_events: list[ZfEvent] = []
     for event in events:
         payload = event.payload if isinstance(event.payload, dict) else {}

@@ -823,9 +823,11 @@ def _admit_result(
     requested_roles = _strings(result.get("requested_roles"))
     requested_skills = _strings(result.get("requested_skills"))
     requested_profiles = _strings(result.get("requested_profiles"))
-    _require_subset("role", requested_roles, catalog["roles"])
-    _require_subset("skill", requested_skills, catalog["skills"])
-    _require_subset("profile", requested_profiles, catalog["profiles"])
+    from zf.runtime.workflow_registered_controller import admit_capabilities
+    try:
+        admit_capabilities(parameters, flow_family, catalog, requested_roles, requested_skills, requested_profiles)
+    except ValueError as exc:
+        raise WorkflowSynthesisError(str(exc)) from exc
     completion = result.get("completion_profile") or {}
     if not isinstance(completion, Mapping):
         raise WorkflowSynthesisError(
@@ -972,19 +974,6 @@ def _replay_settled_synthesis(
         request_projection=projection,
         replayed=True,
     )
-
-
-def _require_subset(
-    label: str,
-    requested: list[str],
-    allowed: set[str],
-) -> None:
-    unknown = sorted(set(requested) - set(allowed))
-    if unknown:
-        raise WorkflowSynthesisError(
-            f"workflow synthesis requested unknown {label}(s): "
-            + ", ".join(unknown)
-        )
 
 
 __all__ = [

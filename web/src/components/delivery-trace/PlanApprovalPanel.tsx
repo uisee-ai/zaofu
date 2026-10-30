@@ -31,7 +31,7 @@ import { INBOX_VIEWS as VIEW_OPTIONS, inboxItemsForView, inboxStatusLabel, type 
 
 
 
-type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "channel_decision" | "kanban_question" | "runtime_attention" | "approval" | "run_delivery";
+type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "channel_decision" | "kanban_question" | "owner_attention" | "approval";
 
 const KIND_OPTIONS: Array<{ value: InboxKindFilter; label: string }> = [
   { value: "all", label: "All types" },
@@ -39,17 +39,16 @@ const KIND_OPTIONS: Array<{ value: InboxKindFilter; label: string }> = [
   { value: "human_decision", label: "Human Decision" },
   { value: "channel_decision", label: "Channel Decision" },
   { value: "kanban_question", label: "Kanban Question" },
-  { value: "runtime_attention", label: "Runtime Attention" },
+  { value: "owner_attention", label: "Needs review" },
   { value: "approval", label: "Approval" },
-  { value: "run_delivery", label: "Run Delivery" },
 ];
 
-export function PlanApprovalPanel(props: { projectId: string; autoOpenPlanId?: string | null }) {
+export function PlanApprovalPanel(props: { projectId: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void }) {
   return <OperatorInboxPanel key={props.projectId} {...props} />;
 }
 
 function OperatorInboxPanel(
-  { projectId, autoOpenPlanId }: { projectId: string; autoOpenPlanId?: string | null },
+  { projectId, autoOpenPlanId, onInboxUpdate }: { projectId: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void },
 ) {
   const { t } = useUiPreferences();
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -69,7 +68,7 @@ function OperatorInboxPanel(
   const [previewLoading, setPreviewLoading] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
-  const [view, setView] = useState<InboxView>("all");
+  const [view, setView] = useState<InboxView>("decisions");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [kindFilter, setKindFilter] = useState<InboxKindFilter>("all");
   const [query, setQuery] = useState("");
@@ -82,7 +81,13 @@ function OperatorInboxPanel(
   const inboxRequestGate = useRef(new LatestRequestGate());
   const inboxRequest = useRef<AbortController | null>(null);
   const previewRequestGate = useRef(new LatestRequestGate());
+  const readingItems = useRef(new Set<string>());
+  const linkedPlanRead = useRef("");
+  const updateCallback = useRef(onInboxUpdate);
+  updateCallback.current = onInboxUpdate;
   const currentPreviewItem = resolvePlanPreviewItem(preview, inbox?.items || [], previewItem);
+  const previewRequestId = preview?.requested_event_id || previewItem?.created_event_id || "";
+  const boundPreviewItem = currentPreviewItem?.created_event_id === previewRequestId ? currentPreviewItem : null;
   const previewOwnerDecision = preview?.actions?.approve === "replan-approve"
     || currentPreviewItem?.owner_route === "plan_synth_owner_decision";
 
@@ -141,10 +146,12 @@ function OperatorInboxPanel(
       const inboxData = await getOperatorInbox(projectId || undefined, controller.signal);
       if (current()) {
         setInbox(inboxData);
+        updateCallback.current?.(inboxData);
       }
     } catch (error) {
       if (current()) {
         setLoadError(error instanceof Error ? error.message : String(error));
+        updateCallback.current?.(null);
       }
     } finally {
       if (current()) {
@@ -197,12 +204,16 @@ function OperatorInboxPanel(
     return () => previewRequestGate.current.invalidate();
   }, [autoOpenPlanId, projectId]);
 
-  const act = async (action: "plan-approve" | "plan-reject", planId: string) => {
+  const act = async (action: "plan-approve" | "plan-reject", planId: string, requestEventId?: string) => {
+    if (!requestEventId) {
+      setActionError("The request is unavailable. Refresh Inbox before deciding.");
+      return;
+    }
     setBusy(`${action}:${planId}`);
     setActionError("");
     setActionNotice("");
     try {
-      const payload: Record<string, unknown> = { plan_id: planId };
+      const payload: Record<string, unknown> = { plan_id: planId, request_event_id: requestEventId };
       if (action === "plan-reject") payload.reason = rejectReason[planId] || "";
       const result = await postAction(action, payload, projectId || undefined);
       if (result.ok === false) setActionError(result.reason || `${action} failed`);
@@ -234,23 +245,37 @@ function OperatorInboxPanel(
     }
   };
 
-  const markRead = async (item?: OperatorInboxItem) => {
-    if (busy) return;
-    setBusy(item ? `read:${item.id}` : "read:all");
+  const markRead = async (item?: OperatorInboxItem, retainSelection = false) => {
+    if (item && (!item.unread || readingItems.current.has(item.id))) return;
+    if (!item && busy) return;
+    if (item) readingItems.current.add(item.id);
+    else setBusy("read:all");
     setActionError("");
-    if (unreadOnly) setRetainedReadId(!item || item.id === selectedItem?.id ? selectedItem?.id || "" : "");
+    if (unreadOnly) setRetainedReadId(item ? (retainSelection || item.id === selectedItem?.id ? item.id : "") : selectedItem?.id || "");
     try {
       const result = await postAction(item ? "inbox-item-read" : "inbox-all-read",
-        item ? { item_id: item.id } : {}, projectId || undefined);
+        item ? { item_id: item.id, read_version: item.read_version } : {
+          items: (inbox?.pending || []).filter((entry) => entry.unread && entry.read_version)
+            .map((entry) => ({ item_id: entry.id, read_version: entry.read_version })),
+        }, projectId || undefined);
       if (!alive.current) return;
       if (result.ok === false) setActionError(result.reason || "Mark read failed");
       else await refresh();
     } catch (reason) {
       if (alive.current) setActionError(String(reason));
     } finally {
-      if (alive.current) setBusy("");
+      if (item) readingItems.current.delete(item.id);
+      else if (alive.current) setBusy("");
     }
   };
+
+  useEffect(() => {
+    if (!autoOpenPlanId || linkedPlanRead.current === autoOpenPlanId || !inbox) return;
+    const item = inbox.pending.find((entry) => entry.plan_id === autoOpenPlanId);
+    if (!item) return;
+    linkedPlanRead.current = autoOpenPlanId;
+    if (item.unread) void markRead(item);
+  }, [autoOpenPlanId, inbox]);
 
   const moveSelection = useCallback((direction: 1 | -1) => {
     if (!filteredItems.length) return;
@@ -296,11 +321,11 @@ function OperatorInboxPanel(
         const reasonKey = inboxItemReasonKey(item);
         setRejectReason((current) => ({ ...current, [reasonKey]: value }));
       }}
-      onSelect={() => { if (selectedItem?.id !== item.id) setRetainedReadId(""); queueFocus.current = document.activeElement as HTMLElement; setSelectedId(item.id); setMobileDetail(true); if (window.matchMedia("(max-width: 760px)").matches) requestAnimationFrame(() => detailPane.current?.focus()); }}
+      onSelect={() => { if (selectedItem?.id !== item.id) setRetainedReadId(""); queueFocus.current = document.activeElement as HTMLElement; setSelectedId(item.id); setMobileDetail(true); if (item.unread) void markRead(item, true); if (window.matchMedia("(max-width: 760px)").matches) requestAnimationFrame(() => detailPane.current?.focus()); }}
       onRead={() => void markRead(item)}
       onPreview={() => item.plan_id && void openPreview(String(item.plan_id), item)}
-      onApprove={() => item.plan_id && void act("plan-approve", String(item.plan_id))}
-      onReject={() => item.plan_id && void act("plan-reject", String(item.plan_id))}
+      onApprove={() => item.plan_id && void act("plan-approve", String(item.plan_id), item.created_event_id)}
+      onReject={() => item.plan_id && void act("plan-reject", String(item.plan_id), item.created_event_id)}
       onRepair={() => openPlanEditor(item)}
       onAction={(action) => void actOnItem(item, action)}
     />
@@ -323,7 +348,7 @@ function OperatorInboxPanel(
           <button type="button" className="inbox-header-control" aria-label={t("Refresh")} onClick={() => void refresh()} disabled={inboxRefreshing}><RefreshCw size={15} aria-hidden="true" /></button>
         </div>
           <div className="operator-inbox-mode" aria-label="Inbox display view">
-            {VIEW_OPTIONS.filter(option => ["all", "decisions", "resolved"].includes(option.value)).map((option) => (
+            {VIEW_OPTIONS.filter(option => ["decisions", "resolved"].includes(option.value)).map((option) => (
               <button
                 key={option.value}
                 type="button"
@@ -334,10 +359,6 @@ function OperatorInboxPanel(
                 {t(option.label)}
               </button>
             ))}
-            <select className="inbox-more-views" aria-label="More inbox views" value={["runtime_attention", "notification", "automation"].includes(view) ? view : ""} onChange={event => { setRetainedReadId(""); if (event.target.value) setView(event.target.value as InboxView); }}>
-              <option value="">More</option>
-              {VIEW_OPTIONS.filter(option => ["runtime_attention", "notification", "automation"].includes(option.value)).map(option => <option key={option.value} value={option.value}>{t(option.label)}</option>)}
-            </select>
           </div>
         {searchOpen && <div className="operator-inbox-tools">
           <label className="operator-inbox-search">
@@ -415,22 +436,24 @@ function OperatorInboxPanel(
           onApprove={() => {
             if (!preview) return;
             if (previewOwnerDecision) {
-              if (currentPreviewItem) void actOnItem(currentPreviewItem, "replan-approve");
+              if (boundPreviewItem) void actOnItem(boundPreviewItem, "replan-approve");
             } else {
-              void act("plan-approve", preview.plan_id);
+              void act("plan-approve", preview.plan_id, previewRequestId);
             }
           }}
           onReject={() => {
             if (!preview) return;
             if (previewOwnerDecision) {
-              if (currentPreviewItem) void actOnItem(currentPreviewItem, "replan-reject", rejectReason[preview.plan_id] || "");
+              if (boundPreviewItem) void actOnItem(boundPreviewItem, "replan-reject", rejectReason[preview.plan_id] || "");
             } else {
-              void act("plan-reject", preview.plan_id);
+              void act("plan-reject", preview.plan_id, previewRequestId);
             }
           }}
           onRepair={() => setPreviewEditing(true)}
           ownerDecision={previewOwnerDecision}
-          decisionReady={!previewOwnerDecision || Boolean(currentPreviewItem?.proposal_ref && currentPreviewItem?.eval_ref)}
+          decisionReady={previewOwnerDecision
+            ? Boolean(boundPreviewItem?.proposal_ref && boundPreviewItem?.eval_ref)
+            : Boolean(previewRequestId)}
           actionKey={currentPreviewItem?.id || preview?.plan_id || ""}
         />
       ) : null}
@@ -489,10 +512,14 @@ function InboxRow({
           <div className="operator-inbox-title-line">
             <span className="operator-inbox-kind">{t(kindLabel(item.kind))}</span>
             <strong className="operator-inbox-title">{item.title || kindLabel(item.kind)}</strong>
-            <span className={`badge ${item.status === "pending" ? "badge-warn" : ""}`}>{inboxStatusLabel(item)}</span>
+            <span className={`badge ${item.status === "pending" ? "badge-warn" : ""}`}>{t(inboxStatusLabel(item))}</span>
             <time className="muted">{formatDateTime(item.created_ts || item.resolved_ts)}</time>
           </div>
           <p>{item.summary || inboxItemPrimaryRef(item) || "Operator action requested."}</p>
+          {item.verification_required && item.status === "pending" ? (
+            <p className="muted">{t("Review the original context to determine the available action.")}</p>
+          ) : null}
+          {item.resolution ? <p>{t("Decision result")}: {item.resolution}</p> : null}
           <details className="operator-inbox-source"><summary>Source and records</summary><div className="operator-inbox-meta-line">
             {inboxItemPrimaryRef(item) ? <span className="mono">{inboxItemPrimaryRef(item)}</span> : null}
             {item.stage_id ? <span>stage {item.stage_id}</span> : null}
@@ -558,6 +585,7 @@ function InboxRowActions({
   onAction: (action: string) => void;
 }) {
   const { t } = useUiPreferences();
+  if (item.status !== "pending") return null;
   if (item.owner_route === "plan_synth_owner_decision" && item.plan_id) {
     const actions = (item.actions ?? [])
       .map((action) => ({
@@ -697,6 +725,7 @@ function kindLabel(kind: string): string {
   if (kind === "human_decision") return "Human Decision";
   if (kind === "channel_decision") return "Channel Decision";
   if (kind === "kanban_question") return "Kanban Question";
+  if (kind === "owner_attention") return "Needs review";
   if (kind === "runtime_attention") return "Runtime Attention";
   if (kind === "approval") return "Approval";
   if (kind === "run_delivery") return "Run Delivery";
