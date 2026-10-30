@@ -235,7 +235,8 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
         operation["budget_observation"] = budget_observations.get(operation["operation_id"], {})
         operation["context_observation"] = ({
             "context_usage_ratio": usage.payload.get("context_usage_ratio"),
-            "context_window_tokens": usage.payload.get("context_window_tokens"),
+            "context_window_tokens": usage.payload.get("model_context_window")
+            or usage.payload.get("context_window_tokens"),
             "source_event_id": usage.id,
         } if usage else {})
         operation["agent_binding"] = {
