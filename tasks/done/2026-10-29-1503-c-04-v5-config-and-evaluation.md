@@ -1,6 +1,6 @@
 # C-04 v5 WRC blocking 配置与评估
 
-> 状态: proposed
+> 状态: done — `b40b5251 feat: make WRC the blocking frontier owner`
 
 ## 目标
 
@@ -18,3 +18,15 @@
 2. end-to-end -> verify: plan/task-map admission -> WRC dispatch -> worker result -> verify/integration handoff 可重放。
 3. rollback fence -> verify: 新 generation 才能切换 owner；旧 run 不在 owner 切换中混合派发。
 4. 报告 mock 与真实 provider 证据边界，不把 cold-start provider 未认证误报为 E2E 通过。
+
+## 实施记录
+
+实现提交：`b40b5251 feat: make WRC the blocking frontier owner`。`zf-prd-v5.yaml`
+默认 `normal_frontier_owner=wrc`、Task Pipeline blocking，并更新 195 设计说明与
+资格边界。
+
+验证：v5 config cold-start 结构/配置 5/5；focused 77 + 135 + 58 passed；
+structure 17 passed；`bash scripts/dev-premerge-gate.sh` 51 passed；
+`bash scripts/run-flow-smoke.sh` 10 passed。广域 deterministic 13325 passed、
+20 skipped、28 deselected；5 个失败来自 checkout 缺失的既有 export/prompt fixture，
+未由本批引入；真实 provider 因未认证保持 qualification HOLD。

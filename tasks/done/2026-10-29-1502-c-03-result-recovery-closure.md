@@ -1,6 +1,6 @@
 # C-03 WRC result admission 与异常恢复闭合
 
-> 状态: proposed
+> 状态: done — `b40b5251 feat: make WRC the blocking frontier owner`
 
 ## 目标
 
@@ -18,3 +18,12 @@
 2. stage failure / lease expiry -> verify: typed failure 与 recovery owner 可重放，按既有 retry/rework 上限处理。
 3. unknown / old generation -> verify: hold 或 stale rejection，不进入 integration/terminal。
 4. focused lifecycle、recovery、generation 与 mock E2E 通过；真实 provider 仍单独标记 qualification。
+
+## 实施记录
+
+实现提交：`b40b5251 feat: make WRC the blocking frontier owner`。沿用 194/195 已有
+typed result、lease、generation、wake/recovery 与 `unknown_is_not_idle` 合同；本批
+补齐 owner 字段贯通和 WRC blocking 路由，没有新增第二套恢复状态机。
+
+验证：Task Pipeline result、generation、attempt recovery、worker liveness、
+worker envelope 与 mock E2E focused tests 通过。

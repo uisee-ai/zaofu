@@ -1,6 +1,6 @@
 # C-01 WRC 正常前沿 owner 护栏
 
-> 状态: proposed
+> 状态: done — `b40b5251 feat: make WRC the blocking frontier owner`
 
 ## 目标
 
@@ -18,3 +18,12 @@
 2. owner=wrc 且无 admitted generation / 非 blocking policy -> verify: 不产生 worker 派发，写入幂等 owner-blocked 诊断。
 3. owner=run_manager -> verify: 194 continuation 与现有 blocking 路径不变。
 4. unknown owner -> verify: loader 与 runtime 均 fail-closed。
+
+## 实施记录
+
+实现提交：`b40b5251 feat: make WRC the blocking frontier owner`。WRC owner 下由
+consumer 统一返回 managed fence；未 admission 或非 blocking 输入写入幂等
+`workflow.normal_frontier.owner_blocked`，Run Manager 的原有 owner fence 保持。
+
+验证：`tests/test_wrc_frontier_consumer.py`、`tests/test_read_only_dynamic_continuation.py`
+及 `tests/test_orchestrator_agent_contracts.py` 通过。
