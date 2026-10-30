@@ -42,8 +42,21 @@ token-gated `workflow-config-apply` 在精确批准、原配置摘要与验证�
 Apply，因此旧版已写入但未 checkpoint 的 receipt 也能补全；原 receipt 保留并由新 receipt 引用。
 交付启动的干净基线检查保持生效，不把任意脏 `zf.yaml` 加入忽略名单。
 
+## Raw 审核修订与恢复
+
+注册包的首次选择仍要求候选与装配结果精确一致。后续 Raw 修订通过不可变
+`workflow-preview-review.v1` 工件绑定原提案、Request revision、配置摘要和字段补丁；
+提案编译器在 `compiler_inputs.preview_review_ref` 保留该来源，再从原候选重建补丁结果，
+逐字验证新候选。Controller ID、包摘要与项目验证命令必须保持原合成绑定；不能用任意
+candidate 或删除 controller 身份绕过检查。字段白名单、类型、preflight 与能力闭包继续生效。
+
+model / lanes 等审核修改属于配置修订，不改写注册包的首次选择参数。连续修订从上一次
+不可变候选开始，保留此前修改。Apply 中断后，同一 review 仅继续它已产生的下一 revision；
+不会再递增 Request，也不会自动应用配置或启动 Run。新的候选仍需精确配置批准和启动批准。
+
 ## 验证
 
+- `tests/test_workflow_review_controller.py`：注册控制器 model / lanes 修订、连续修改、旧补丁与篡改拒绝、中断重试及配置批准边界。
 - `tests/test_workflow_registered_controller.py`：真实合成/提案/配置 Apply 代码路径，能力隔离、
   Profile 摘要变化、候选篡改、路径隔离、项目适配，以及受控入口的 mock E2E。
 - 现有 controller candidate、synthesis、proposal、config apply/consumer、Kanban preparation、
