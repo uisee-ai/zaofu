@@ -25,7 +25,9 @@ task/source/progress 三份投影。evaluator skill 明确先查 hook 索引，�
 V5 PRD 阶段角色的无进展阈值、on-demand 空闲阈值、`bounded-direct-v1` operation 期限均为
 600 秒。Task Pipeline 的 `workerLifecycle.idleSeconds` 单独设置为 600，防止覆盖 reader 默认值。
 常驻 OA 保持 resident；协作 Research 路线、心跳、启动等待、锁等待及全 Run 期限保留各自策略。
-150 万单操作 token 上限不变，不将缓存输入排除出累计处理量，不虚构模型价格。
+v5 显式设置 operation 与 Run 的 `token_budget: 0`，关闭原 150 万单操作与 1,000 万
+Run 累计 token 上限。仍保留 600 秒单操作期限、60 次 usage sample 上限及 operation/Run
+金额上限（8/40 美元）。用量继续完整记账，缓存输入仍属于累计处理量，不虚构模型价格。
 
 Task Pipeline 释放旧 stage session，以及 reader 跨任务/派发切换时，先确认 Provider 停止，
 再用旧 session binding 补采尾部用量，通过 EventWriter 与幂等 CostTracker 入账后才轮换身份。
