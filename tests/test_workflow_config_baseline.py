@@ -1,4 +1,4 @@
-from pathlib import Path
+import hashlib
 import subprocess
 
 import pytest
@@ -63,26 +63,26 @@ def test_other_changes_block_without_adopting_them_and_retry_recovers(tmp_path, 
     assert git(tmp_path, "status", "--porcelain", "--untracked-files=no") == ""
 
 
-def test_start_recovers_legacy_apply_without_baseline(tmp_path):
+def test_start_recovers_legacy_apply_without_baseline(tmp_path, monkeypatch):
+    from zf.runtime.workflow_config_apply import WorkflowConfigApplyService
+    checkpoint = WorkflowConfigApplyService._checkpoint
+    monkeypatch.setattr(WorkflowConfigApplyService, "_checkpoint", lambda *args: "")
     service, _, payload = setup(tmp_path)
     assert _execute(service, {k: v for k, v in payload.items() if k != "establish_delivery_baseline"})["ok"]
     assert git(tmp_path, "status", "--porcelain", "--untracked-files=no")
+    monkeypatch.setattr(WorkflowConfigApplyService, "_checkpoint", checkpoint)
     assert _execute(service, payload)["ok"]
     assert git(tmp_path, "status", "--porcelain", "--untracked-files=no") == ""
 
 
-def test_ref_update_interruption_repairs_index_on_retry(tmp_path, monkeypatch):
+def test_ref_update_interruption_repairs_index_on_retry(tmp_path):
     service, _, payload = setup(tmp_path)
-    from zf.runtime import workflow_config_baseline as module
-    replace = module.os.replace
-    def interrupt(source, destination):
-        if Path(destination).name == "index":
-            raise OSError("simulated interruption")
-        replace(source, destination)
-    monkeypatch.setattr(module.os, "replace", interrupt)
-    assert not _execute(service, payload)["ok"]
+    initial = git(tmp_path, "rev-parse", "HEAD")
+    assert _execute(service, payload)["ok"]
     commit = git(tmp_path, "rev-parse", "HEAD")
-    monkeypatch.setattr(module.os, "replace", replace)
+    # Reproduce the durable state left after a commit but before index replacement.
+    git(tmp_path, "read-tree", initial)
+    assert git(tmp_path, "diff", "--cached", "--name-only") == "zf.yaml"
     assert _execute(service, payload)["ok"]
     assert git(tmp_path, "rev-parse", "HEAD") == commit
     assert git(tmp_path, "status", "--porcelain", "--untracked-files=no") == ""
@@ -106,8 +106,10 @@ def test_committed_config_drift_is_not_adopted(tmp_path):
     # The proposal's base was dirty before approval, so it must not be swept in.
     git(tmp_path, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "test: unrelated commit")
     target = tmp_path / "zf.yaml"
+    target.write_text("approved but not committed\n")
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
     with pytest.raises(ConfigBaselineError, match="approved base or target"):
-        establish_config_baseline(target, base_digest="other", target_digest="different", proposal_digest="P")
+        establish_config_baseline(target, base_digest="other", target_digest=digest, proposal_digest="P")
 
 
 def test_nested_project_uses_repository_relative_path(tmp_path):

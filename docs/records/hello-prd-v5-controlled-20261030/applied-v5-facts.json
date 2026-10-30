@@ -1,0 +1,310 @@
+{
+  "project": "hello-v5-final",
+  "state_dir": ".zf-hello-v5-final",
+  "roles": [
+    {
+      "id": "research_root",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "direct-v1"
+    },
+    {
+      "id": "source_researcher",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "direct-v1"
+    },
+    {
+      "id": "product_analyst",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "direct-v1"
+    },
+    {
+      "id": "technical_analyst",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "direct-v1"
+    },
+    {
+      "id": "risk_critic",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "direct-v1"
+    },
+    {
+      "id": "synthesizer",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "direct-v1"
+    },
+    {
+      "id": "orchestrator",
+      "lifecycle": "resident",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "product-scan",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "tech-scan",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "planner",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "plan-critic",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "flow-discovery",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "judge-prd",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "dev-lane-0",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "dev-lane-1",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "dev-lane-2",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "dev-lane-3",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "dev-lane-4",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "dev-lane-5",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "dev-lane-6",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "dev-lane-7",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "verify-lane-0",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "verify-lane-1",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "verify-lane-2",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "verify-lane-3",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "verify-lane-4",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "verify-lane-5",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "verify-lane-6",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    },
+    {
+      "id": "verify-lane-7",
+      "lifecycle": "on_demand",
+      "transport": "tmux",
+      "profile": "bounded-direct-v1"
+    }
+  ],
+  "flow_metadata": {
+    "flow_kind": "prd",
+    "quality_floor": "product-demo",
+    "evidence_policy": "strict_refs",
+    "environment_policy": "",
+    "projection_policy": "control_room",
+    "delivery_policy": "ship_candidate",
+    "post_verify_discovery": "product_completeness",
+    "result_protocol": {
+      "mode": "blocking",
+      "semantic_submit_profiles": {
+        "workflow-read": "blocking",
+        "plan-synth": "blocking",
+        "implementation": "blocking",
+        "task-verify": "blocking",
+        "candidate-verify": "blocking",
+        "thin-judge-goal-closure": "blocking"
+      }
+    },
+    "artifact_package": {
+      "mode": "blocking",
+      "package_slot": "execution_plan",
+      "required_ports": [
+        "requirement_spec",
+        "goal_claim_set",
+        "task_map",
+        "planning_result",
+        "product_acceptance_spec"
+      ],
+      "conditional_ports": [
+        "accepted_plan",
+        "plan_critique",
+        "project_adapter"
+      ]
+    },
+    "product_acceptance": {
+      "mode": "blocking"
+    },
+    "prd_ref": "docs/prd/hello-world.md",
+    "target_root": ".",
+    "stack": "",
+    "controller_profile": "prd-flow-v4-task-pipeline",
+    "task_pipeline": {
+      "schema_version": "task-pipeline-controller-profile.v1",
+      "profile_id": "prd-flow-v4-task-pipeline",
+      "flow_kind": "prd",
+      "mode": "blocking",
+      "max_active_task_pipelines": 16,
+      "max_rework_attempts": 2,
+      "pools": {
+        "impl": {
+          "capacity": 8,
+          "role_instances": [
+            "dev-lane-0",
+            "dev-lane-1",
+            "dev-lane-2",
+            "dev-lane-3",
+            "dev-lane-4",
+            "dev-lane-5",
+            "dev-lane-6",
+            "dev-lane-7"
+          ],
+          "skills": [],
+          "capabilities": [],
+          "worker_profiles": []
+        },
+        "verify": {
+          "capacity": 8,
+          "role_instances": [
+            "verify-lane-0",
+            "verify-lane-1",
+            "verify-lane-2",
+            "verify-lane-3",
+            "verify-lane-4",
+            "verify-lane-5",
+            "verify-lane-6",
+            "verify-lane-7"
+          ],
+          "skills": [],
+          "capabilities": [],
+          "worker_profiles": []
+        }
+      },
+      "integration_admission": {
+        "default": "verify_admitted",
+        "risk_review": {
+          "enabled": false,
+          "for_risks": [
+            "high",
+            "critical"
+          ],
+          "timeout_seconds": 180,
+          "max_turns": 1,
+          "budget_usd": 1.0,
+          "fallback": "fail_closed"
+        }
+      },
+      "backpressure": {
+        "max_unverified_tasks": 8,
+        "max_integration_queue": 2
+      },
+      "worker_lifecycle": {
+        "mode": "on_demand",
+        "idle_seconds": 120
+      },
+      "affinity": {
+        "impl_rework": "prefer_previous_session",
+        "verify_independence": "different_role",
+        "session_binding": "task_stage",
+        "cross_task_context": "fresh"
+      },
+      "candidate": {
+        "integration": "incremental_serial_cas",
+        "integration_capacity": 1,
+        "rolling_smoke": "required",
+        "incremental_event": "integration.queue.integrated",
+        "freeze_event": "candidate.ready",
+        "delivery_event": "run.delivery.completed",
+        "partial_candidate_auto_ship": "forbidden",
+        "final_verify_target": "frozen_exact_commit"
+      },
+      "profile_digest": "0285972afefac6af24c3feead41aaaf5f5b6d712721d5ea798f2e7e18fdb9c60"
+    }
+  },
+  "plan_approval": false,
+  "auto_ship": false,
+  "branch": "main",
+  "checks": [
+    "python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'"
+  ]
+}

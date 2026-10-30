@@ -20,6 +20,7 @@ from zf.core.events import ZfEvent
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.writer import EventWriter
 from zf.core.security.redaction import redact_obj
+from zf.runtime.workflow_task_binding import project_request_task_id
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_delivery import (
     apply_flow_submit,
@@ -408,6 +409,7 @@ def build_workflow_request_router(
         )
         effective_result = {
             **result,
+            "task_id": project_request_task_id(context.state_dir, result),
             "status": _request_status(result, admission, operation),
             "run_id": str(admission.get("run_id") or result.get("run_id") or ""),
             "queue_position": int(admission.get("queue_position") or 0),
@@ -481,6 +483,7 @@ def build_workflow_request_router(
                 )
                 items.append({
                     **value,
+                    "task_id": project_request_task_id(context.state_dir, value),
                     "status": _request_status(value, admission, operation),
                     "run_id": str(
                         admission.get("run_id")

@@ -92,6 +92,7 @@ def test_oa_delegation_reaches_transport_and_restart_does_not_redispatch(
             payload={
                 **context,
                 "schema_version": "task-pipeline-generation.v1",
+                "frontier_owner": "wrc",
                 "task_ids": task_ids,
             },
         )

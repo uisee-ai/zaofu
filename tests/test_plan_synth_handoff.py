@@ -18,13 +18,31 @@ from zf.runtime.plan_synth_handoff import (
     build_plan_handoff_input_refs,
     build_plan_synth_call_payload,
     render_plan_synth_completion_command,
+    render_plan_synth_validation_section,
 )
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.stage_execution_card import (
     compact_fanout_stage_context,
     compact_stage_context,
+    prepare_fanout_result_guidance,
     prepare_result_file_command,
 )
+
+
+def test_plan_synth_guidance_distinguishes_execution_and_report_status() -> None:
+    section = "\n".join(render_plan_synth_validation_section("zf result submit --scratch"))
+    assert "top-level `status` is execution status (`completed` or `failed`)" in section
+    assert "`report.status` is the semantic verdict (`passed`, `failed`, `blocked`, or `suspended`)" in section
+    guidance, semantic_submit, _ = prepare_fanout_result_guidance(
+        child_payload={
+            "output_profile_id": "plan-synth",
+            "semantic_result_submit_mode": "blocking",
+            "operation_id": "operation-1",
+        },
+        has_contract_snapshot=False,
+    )
+    assert semantic_submit is True
+    assert any("Plan Synth status fields are intentionally distinct" in line for line in guidance)
 
 
 def test_plan_synth_completion_command_round_trips_shell_sensitive_json(

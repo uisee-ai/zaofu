@@ -45,6 +45,8 @@ def consume_normal_frontier(
     }
     managed = task_pipeline_managed_task_ids(runtime)
     managed.update(candidates)
+    if runtime._dispatch_globally_paused():
+        return [], managed
     if not task_pipeline_any_blocking(runtime.config):
         _emit_owner_blocked_once(
             runtime,

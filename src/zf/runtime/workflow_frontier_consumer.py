@@ -22,6 +22,8 @@ def consume_wrc_normal_frontier(runtime: Any) -> list[WorkflowRuntimeDecision]:
 
     if normal_frontier_owner(runtime.config) != "wrc":
         return []
+    if runtime._dispatch_globally_paused():
+        return []
     actions = pending_read_only_continuation_actions(
         runtime.state_dir,
         config=runtime.config,

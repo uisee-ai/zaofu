@@ -195,7 +195,6 @@ import {
   pageLoadsDeliveryFeatures,
   pageLoadsSnapshot,
   pageOwnsBootstrapResource,
-  pagePollsOperatorInbox,
   projectionNeedsFresh,
   snapshotLoadKindForPage,
 } from "./pageLoadPolicy";
@@ -223,6 +222,8 @@ const LOCAL_AGENT_STREAM_EVENTS = new Set([
 ]);
 const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id", "v", "request", "expected_run", "workflow_node"]);
 const PAGE_QUERY_KEYS: Partial<Record<PageId, ReadonlySet<string>>> = {
+  project: new Set(["agent", "agent_thread", "agent_request"]),
+  channels: new Set(["thread", "question"]),
   workflows: new Set(["request", "graph", "node"]),
   inbox: new Set(["plan"]),
   settings: new Set(["settings"]),
@@ -638,7 +639,8 @@ export function App() {
   // still-pending proposals once they aged past the event window, silently
   // removing the operator's Accept entry point. Fetch the durable projection.
   const [kanbanPendingProposals, setKanbanPendingProposals] = useState<PendingKanbanProposal[]>([]);
-  const [inboxPendingCount, setInboxPendingCount] = useState(0);
+  const [inboxPendingCount, setInboxPendingCount] = useState<number | null>(null);
+  const inboxCountEpoch = useRef(0);
   const [selectedChannelId, setSelectedChannelId] = useState(initial.channel);
   const [channelDetail, setChannelDetail] = useState<ChannelDetail | null>(null);
   const [channelLoadError, setChannelLoadError] = useState<string | null>(null);
@@ -1062,26 +1064,22 @@ export function App() {
     };
   }, [activeProjectId]);
 
-  // Operator Inbox pending count → nav badge. Polled; read-only projection.
+  // The navigation badge follows unread decisions on every project page.
   useEffect(() => {
+    inboxCountEpoch.current += 1;
     if (!activeProjectId) {
-      setInboxPendingCount(0);
+      setInboxPendingCount(null);
       return undefined;
     }
-    if (!pagePollsOperatorInbox(page)) {
-      return undefined;
-    }
+    setInboxPendingCount(null);
     let cancelled = false;
     const pull = async () => {
+      const ticket = ++inboxCountEpoch.current;
       try {
         const inbox = await getOperatorInbox(activeProjectId || undefined);
-        if (!cancelled) {
-          setInboxPendingCount((inbox?.pending ?? []).filter((item) => (
-            item.actionability === "human_required"
-          )).length);
-        }
+        if (!cancelled && ticket === inboxCountEpoch.current) setInboxPendingCount(inbox.summary.unread ?? 0);
       } catch {
-        /* read-only; CLI remains the fallback surface */
+        if (!cancelled && ticket === inboxCountEpoch.current) setInboxPendingCount(null);
       }
     };
     void pull();
@@ -1090,7 +1088,7 @@ export function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [activeProjectId, page]);
+  }, [activeProjectId]);
 
   useEffect(() => {
     const current = new URLSearchParams(window.location.search);
@@ -2224,7 +2222,10 @@ export function App() {
               onOpenProjection={(kind, id) => void openProjection(kind, id)}
             />
           ) : page === "inbox" ? (
-            <PlanApprovalPanel projectId={activeProjectId} autoOpenPlanId={initial.plan} />
+            <PlanApprovalPanel projectId={activeProjectId} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
+              inboxCountEpoch.current += 1;
+              setInboxPendingCount(inbox?.summary.unread ?? null);
+            }} />
           ) : page === "channels" ? (
               <ChannelRoute
                 actionReady={actionGate.actionReady}

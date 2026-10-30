@@ -15,6 +15,10 @@ function activityDescription(event: Record<string, unknown>): { title: string; d
 
 export default function WorkflowOperationDetails({ node, projectId, taskNode, nodes, edges, onTask, onOperation }: { node: SdlcNode; projectId: string; taskNode?: SdlcNode; nodes: SdlcNode[]; edges: SdlcEdge[]; onTask: (id: string) => void; onOperation: (id: string) => void }) {
   const binding = asRecord(node.data.agent_binding);
+  const budget = asRecord(node.data.budget_observation);
+  const limits = asRecord(budget.limits);
+  const context = asRecord(node.data.context_observation);
+  const count = (value: unknown) => typeof value === 'number' ? value.toLocaleString() : '未知';
   const source = binding.source === 'provider_usage' ? '实际用量记录' : binding.source === 'config_snapshot' ? '配置快照' : '来源未知';
   const activities = asRecordArray(node.data.recent_activity);
   const traceId = typeof node.data.trace_id === 'string' ? node.data.trace_id.trim() : '';
@@ -26,6 +30,14 @@ export default function WorkflowOperationDetails({ node, projectId, taskNode, no
     <p>Agent：{String(node.data.role_instance || '未绑定')} · Attempt：{String(node.data.active_attempt_id || '未观测')}</p>
     <p>Task：{taskNode?.label || String(node.data.task_id || '未关联')}</p>
     <p>Provider：{String(binding.backend || '未观测')} · 模型：{String(binding.model || '未观测')} · {source}</p>
+    {Boolean(budget.source_event_id) && <div aria-label="执行预算用量">
+      <p>累计处理：{count(budget.total_tokens)} / {count(limits.token_budget)} tokens</p>
+      <p>非缓存输入：{count(budget.input_tokens)} · 缓存读取：{count(budget.cache_read_tokens)} · 输出：{count(budget.output_tokens)}</p>
+      <p>缓存写入：{count(budget.cache_creation_tokens)} · 1h 缓存写入：{count(budget.cache_creation_1h_tokens)}</p>
+      <p>金额：{typeof budget.total_usd === 'number' ? `$${budget.total_usd.toFixed(4)}` : '未知'}{Number(budget.unpriced_entries) > 0 && `（${budget.unpriced_entries} 条未定价）`}</p>
+      <p>耗时：{count(budget.elapsed_seconds)} / {count(limits.timeout_seconds)} 秒 · 累计处理量包含缓存输入，各轮相加。</p>
+    </div>}
+    {typeof context.context_usage_ratio === 'number' && <p>最近上下文占用：{(context.context_usage_ratio * 100).toFixed(1)}% · 窗口：{count(context.context_window_tokens)} tokens</p>}
     {taskNode && <button type="button" onClick={() => onTask(taskNode.id)}>在任务 Graph 查看 Task</button>}
     <p><a href={`/?${traceParams}`}>{traceId ? '查看关联 Trace' : '查看 Traces 列表'}</a>{!traceId && ' · 当前执行记录未提供 Trace ID'}</p>
     {related.length > 0 && <><h4>已记录的父子执行</h4>{related.map(({ edge, other }) => <button type="button" key={edge.id} onClick={() => onOperation(other.id)}>{edge.target === node.id ? '父执行' : '子执行'} · {other.label}</button>)}</>}

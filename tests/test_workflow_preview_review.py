@@ -592,9 +592,11 @@ def test_preview_apply_holds_preparation_consumer_lease(setup, monkeypatch):
     observed = []
 
     def compile_during_consumer_tick(*args, **kwargs):
-        with pytest.raises(TimeoutError):
-            consume_workflow_synthesis_operations(state_dir=service.state_dir,
-                project_root=service.project_root, config=load_config(service.config_path), writer=service.writer)
+        def unexpected_read():
+            pytest.fail("consumer must not read operations while preview holds its lease")
+        assert consume_workflow_synthesis_operations(state_dir=service.state_dir,
+            project_root=service.project_root, config=load_config(service.config_path), writer=service.writer,
+            read_operation_events=unexpected_read) == 0
         observed.append(True)
         return original(*args, **kwargs)
 

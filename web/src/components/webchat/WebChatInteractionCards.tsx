@@ -48,7 +48,7 @@ export function WebChatInteractionCards({
           );
         }
         return (
-          <article className="webchat-interaction-record active" key={key}>
+          <article className="webchat-interaction-record active" key={key} data-plan-request-id={String(interaction.request.request_event_id || "") || undefined}>
             <span className="webchat-interaction-icon" aria-hidden="true">
               {interaction.kind === "ask_user" ? <HelpCircle size={16} /> : <ShieldCheck size={16} />}
             </span>

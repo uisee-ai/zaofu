@@ -16,7 +16,9 @@ calls.length = 0;
 const failed = await startWorkflow(detail, async action => { calls.push(action); return { ...ok(action), ok: false }; });
 if (failed.ok || calls.join() !== "workflow-config-apply") throw new Error("Failed apply must never submit");
 const applied = { ...detail, lifecycle: { config_applied: true } } as WorkflowRequestDetail;
-if (workflowStartActions(applied).map(x => x.action).join() !== "workflow-config-apply,workflow-submit") throw new Error("Retry must recover an applied but uncommitted config baseline");
+if (workflowStartActions(applied).map(x => x.action).join() !== "workflow-config-apply,workflow-submit") throw new Error("Retry must revalidate exact apply before submitting");
+if (workflowStartActions(applied)[0].payload.idempotency_key) throw new Error("HTTP retries must not bypass config revalidation using a cached action response");
+if (workflowStartActions(applied)[0].payload.proposal_digest !== "digest") throw new Error("Retry must retain the exact Apply identity");
 for (const blocked of [
   { ...detail, proposal: { ...detail.proposal, approval_status: "blocked" } },
   { ...detail, lifecycle: { submitted: true } },

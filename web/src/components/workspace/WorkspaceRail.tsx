@@ -11,7 +11,7 @@ interface RailNavItem {
   id: PageId;
   icon: LucideIcon;
   label: string;
-  badge?: number;
+  badge?: number | "?";
 }
 
 const COLLAPSED_KEY = "zf.sidebarCollapsed.v1";
@@ -46,7 +46,7 @@ export function WorkspaceRail({
   activeProjectId: string;
   channels: ChannelSummary[];
   channelsLoaded: boolean;
-  inboxPendingCount?: number;
+  inboxPendingCount?: number | null;
   liveState: LiveState;
   onAddProject: () => void;
   onNewChannel: () => void;
@@ -149,7 +149,7 @@ export function WorkspaceRail({
   // Monitoring = what the system is doing (delivery + deep-dive).
   const workspaceNav: RailNavItem[] = [
     { id: "project", icon: Home, label: "Overview" },
-    { id: "inbox", icon: Inbox, label: "Inbox", badge: inboxPendingCount },
+    { id: "inbox", icon: Inbox, label: "Inbox", badge: inboxPendingCount === null ? "?" : inboxPendingCount },
     { id: "board", icon: ListTodo, label: "Tasks" },
     { id: "workflows", icon: GitFork, label: "Workflows" },
     { id: "agents", icon: Bot, label: "Agents" },

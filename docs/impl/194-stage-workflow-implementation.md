@@ -130,6 +130,12 @@ Preparation: Requirement -> FlowSpec -> Proposal -> 已接纳 Run
 方法自动从快照重建受限会话、任意多节点 fragment、经验驱动的模板晋升。
 当前没有将这些项标记为完成。
 
+### 动态 checkpoint 与恢复边界
+
+受控续行使用 `zf artifact checkpoint --run <run> --parent-operation <operation> --task <task> --generation <generation>` 生成不可变 checkpoint 描述符。命令检查当前 Plan Package generation、父 operation 的 Run、请求摘要与 Task 归属；产出的 `ref` 和 `sha256` 填入 fragment 的 `trigger_checkpoint`。续行接纳时重新验证摘要和身份。历史上只有占位路径、未保存正文的 proposal 不可继续派发，需要重新生成 checkpoint 后提议。
+
+阶段定义快照在写入前按实际 JSON 编码大小检查 sidecar 可读取上限，避免生成不能恢复的定义。方法资源本身仍遵守原有单包限制；若总快照超限，需缩小方法资源并重新提交。
+
 后续七项实施及 §9.2–9.6 条款评估见
 [194 后续闭合报告](194-followup-closure.md)。其中机制补强与 pilot 已执行，
 完整宿主／跨路线资格和收益结论仍为 HOLD；请勿继续沿用本报告的“尚未执行后续批次”状态。

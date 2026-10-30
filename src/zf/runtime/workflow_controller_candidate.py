@@ -13,6 +13,7 @@ from zf.core.state.atomic_io import atomic_write_text
 
 def materialize_controller_candidate(
     *, base_path: Path, request_id: str, short_spec: Mapping[str, Any],
+    requirement: Mapping[str, Any] | None = None,
 ) -> Path:
     """Materialize bounded Flow inputs; never write canonical config.
 
@@ -23,6 +24,12 @@ def materialize_controller_candidate(
     """
     family = str(short_spec.get("flow_family") or "")
     parameters = short_spec.get("parameters") or {}
+    if parameters.get("controller_id"):
+        from zf.runtime.workflow_registered_controller import assemble_controller
+        documents = assemble_controller(
+            base_path=base_path, short_spec=short_spec, requirement=requirement or {},
+        )
+        return _write_candidate(base_path, request_id, documents)
     if family not in {"IssueFlow", "PrdFlow", "RefactorFlow"} or "lanes" not in parameters:
         return base_path
     lanes = parameters["lanes"]
@@ -71,6 +78,10 @@ def materialize_controller_candidate(
             "integrationAdmission": {},
             "candidate": {},
         }
+    return _write_candidate(base_path, request_id, documents)
+
+
+def _write_candidate(base_path: Path, request_id: str, documents: list) -> Path:
     content = yaml.safe_dump_all(documents, sort_keys=False, allow_unicode=True)
     digest = hashlib.sha256(content.encode()).hexdigest()
     request_digest = hashlib.sha256(request_id.encode()).hexdigest()[:12]
@@ -86,7 +97,12 @@ def materialize_controller_candidate(
     try:
         # Resolve profiles relative to the canonical config directory and keep
         # all normal schema/topology gates before a proposal can be approved.
-        load_config(candidate)
+        config = load_config(candidate)
+        if config.runtime.skills.strict:
+            from zf.core.skills import validate_skill_sources
+            problems = validate_skill_sources(config=config, project_root=base_path.parent)
+            if problems:
+                raise ValueError("controller skill validation failed: " + "; ".join(problems))
     except Exception:
         if not existed:
             candidate.unlink()

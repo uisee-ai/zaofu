@@ -53,7 +53,7 @@ def test_v5_approved_config_starts_from_clean_delivery_baseline(monkeypatch, wor
         config_path = root / "zf.yaml"
         config_path.write_text(yaml.safe_dump_all(documents, sort_keys=False))
         config = load_config(config_path)
-        assert config.version == "5.0"
+        assert config.version == "5.0.1"
         assert config.workflow.flow_metadata["task_pipeline"]["mode"] == "blocking"
         assert {role.backend for role in config.roles} <= {"codex", "claude-code"}
         (root / "requirement.md").write_text("实现 CSV 导出；验证表头和空列表输出；python -m unittest -q。\n")
@@ -111,7 +111,7 @@ def test_v5_approved_config_starts_from_clean_delivery_baseline(monkeypatch, wor
             proposal = load_workflow_proposal(state, prepared["proposal_ref"])
             assert proposal["change_mode"] == "config_change", proposal
             snapshot = hydrate_sidecar_ref(state, proposal["effective_config_ref"]).payload
-            assert snapshot["config"]["version"] == "5.0"
+            assert snapshot["config"]["version"] == "5.0.1"
             assert snapshot["config"]["workflow"]["_flow_metadata"]["task_pipeline"]["mode"] == "blocking"
             binding = {key: prepared[key] for key in ("request_id", "proposal_ref", "proposal_digest")}
             applied = action("workflow-config-apply", {

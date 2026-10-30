@@ -10,6 +10,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from zf.core.events import ZfEvent
+from zf.runtime.channel_projection import admitted_channel_question_events
 from zf.runtime.operator_plan_preview import (
     PLAN_APPROVAL_REQUESTED,
     PLAN_APPROVED,
@@ -25,6 +27,7 @@ from zf.runtime.operator_inbox_decisions import (
     kanban_question_item,
     kanban_question_item_id,
 )
+from zf.runtime.operator_inbox_read import inbox_item_version, put_inbox_item, record_inbox_read
 
 GENERIC_APPROVAL_REQUESTED = "approval.requested"
 GENERIC_APPROVAL_RESOLVED = "approval.resolved"
@@ -40,13 +43,14 @@ INBOX_ALL_READ = "inbox.all.read"
 OWNER_VISIBLE_MESSAGE_REQUESTED = "owner.visible_message.requested"
 
 OPERATOR_INBOX_SCHEMA_VERSION = "operator-inbox.v2"
-_HIDDEN_VISIBLE_STATUSES = {"acknowledged"}
+_HIDDEN_VISIBLE_STATUSES: set[str] = set()
 _ACTION_REQUIRED_KINDS = {
     "plan_approval",
     "approval",
     "human_decision",
     "channel_decision",
     "kanban_question",
+    "owner_attention",
 }
 
 
@@ -63,6 +67,11 @@ def build_operator_inbox(
     """
 
     events = list(events)
+    channel_events = [
+        ZfEvent.from_dict(event) if isinstance(event, dict) else event
+        for event in events
+    ]
+    channel_admissions = admitted_channel_question_events(channel_events)
     events_by_id = {
         _event_id(event): event for event in events if _event_id(event)
     }
@@ -72,21 +81,20 @@ def build_operator_inbox(
     plan_request_keys: dict[str, str] = {}
     latest_plan_keys: dict[str, str] = {}
     suppressed_acknowledged = 0
-    read_items: set[str] = set()
-    read_all_at = ""
+    read_versions: dict[str, set[str]] = {}
     for event in events:
         etype = _etype(event)
         payload = _payload(event)
         event_id = _event_id(event)
         ts = _event_ts(event)
 
-        if etype == INBOX_ITEM_READ:
-            item_id = str(payload.get("item_id") or "").strip()
-            if item_id:
-                read_items.add(item_id)
+        if (etype in {"channel.question.opened", "channel.question.updated",
+                      "channel.question.resolved", "channel.question.merged"}
+            and event_id not in channel_admissions):
             continue
-        if etype == INBOX_ALL_READ:
-            read_all_at = ts or read_all_at
+
+        if etype in {INBOX_ITEM_READ, INBOX_ALL_READ}:
+            record_inbox_read(etype, payload, items, read_versions)
             continue
 
         if etype == "channel.question.opened":
@@ -94,7 +102,7 @@ def build_operator_inbox(
                 continue
             item = channel_decision_item(event=event, payload=payload)
             key = str(item["id"])
-            items[key] = item
+            put_inbox_item(items, key, item)
             bind_channel_question_aliases(
                 channel_question_aliases,
                 payload,
@@ -106,14 +114,24 @@ def build_operator_inbox(
             key = channel_question_key(channel_question_aliases, payload)
             existing = items.get(key)
             if existing is not None:
+                previous_version = inbox_item_version(existing)
                 existing["title"] = str(
                     payload.get("header") or existing.get("title") or ""
                 )
                 existing["summary"] = str(
                     payload.get("question") or existing.get("summary") or ""
                 )
+                for source, target in (
+                    ("options", "decision_options"),
+                    ("allow_other", "allow_other"),
+                    ("recommended_answer", "recommended_answer"),
+                ):
+                    if source in payload:
+                        existing[target] = payload[source]
                 existing["latest_event_id"] = event_id
                 existing["last_seen_at"] = ts
+                if inbox_item_version(existing) != previous_version:
+                    existing["version_event_id"] = event_id
             continue
 
         if etype in {"channel.question.resolved", "channel.question.merged"}:
@@ -149,13 +167,13 @@ def build_operator_inbox(
                     prior["resolved_event_id"] = event_id
                     prior["resolved_ts"] = ts
                     prior["resolution"] = f"revision {revision} requested"
-            items[key] = kanban_question_item(
+            put_inbox_item(items, key, kanban_question_item(
                 event=event,
                 payload=payload,
                 request=request,
                 request_id=request_id,
                 revision=revision,
-            )
+            ))
             latest_plan_keys[request_id] = key
             plan_request_keys[event_id] = key
             plan_request_keys[f"{request_id}:{revision}"] = key
@@ -180,28 +198,23 @@ def build_operator_inbox(
                 existing["resolution"] = str(payload.get("answer") or "answered")
             continue
 
-        if etype == OWNER_VISIBLE_MESSAGE_REQUESTED and (
-            payload.get("message_kind") == "run_terminal_delivery"
-            or payload.get("delivery_class") == "run_terminal"
-        ):
-            message_id = str(payload.get("message_id") or event_id).strip()
-            if not message_id:
-                continue
-            key = f"run-delivery:{message_id}"
-            if key in items:
-                _merge_duplicate_item(
-                    items[key],
-                    _run_delivery_item(event=event, payload=payload),
-                )
-            else:
-                items[key] = _run_delivery_item(event=event, payload=payload)
+        if etype == OWNER_VISIBLE_MESSAGE_REQUESTED:
+            # Older owner alerts can be the only evidence of an outstanding
+            # human request. Keep them visible for reconciliation, without
+            # inventing an approval action or importing terminal reports.
+            if (payload.get("human_action_required") is True
+                and payload.get("message_kind") != "run_terminal_delivery"
+                and payload.get("delivery_class") != "run_terminal"):
+                key = _attention_item_id(payload, event_id, attention_aliases)
+                if key not in items:
+                    put_inbox_item(items, key, _owner_attention_item(event=event, payload=payload, key=key))
             continue
 
         if etype == PLAN_APPROVAL_REQUESTED:
             plan_id = str(payload.get("plan_id") or "")
             if not plan_id:
                 continue
-            items[_plan_item_id(plan_id)] = _plan_approval_item(
+            put_inbox_item(items, _plan_item_id(plan_id), _plan_approval_item(
                 state_dir,
                 event=event,
                 payload=payload,
@@ -210,7 +223,7 @@ def build_operator_inbox(
                 resolved_event_id="",
                 resolved_ts="",
                 reject_reason="",
-            )
+            ))
             continue
 
         if etype in {PLAN_APPROVED, PLAN_REJECTED}:
@@ -220,12 +233,15 @@ def build_operator_inbox(
             key = _plan_item_id(plan_id)
             existing = items.get(key)
             if existing is None:
-                existing = _resolved_plan_placeholder(
-                    event=event,
-                    payload=payload,
-                    status="approved" if etype == PLAN_APPROVED else "rejected",
-                )
-                items[key] = existing
+                # Automatic and request-less decisions are not human Inbox
+                # history; the source events remain available elsewhere.
+                continue
+            if etype == PLAN_APPROVED and payload.get("semantic_control"):
+                # Agent adoption is not the Owner approval required by this request.
+                continue
+            if etype == PLAN_APPROVED and payload.get("auto"):
+                items.pop(key, None)
+                continue
             existing["status"] = "approved" if etype == PLAN_APPROVED else "rejected"
             existing["resolved_event_id"] = event_id
             existing["resolved_ts"] = ts
@@ -234,6 +250,10 @@ def build_operator_inbox(
             continue
 
         if etype == GENERIC_APPROVAL_REQUESTED:
+            if payload.get("owner_route") == "owner_visible_delivery":
+                # The original human request, if any, is projected above.
+                # A failed delivery route is not itself an approval.
+                continue
             approval_ref = _approval_ref(payload, event_id)
             payload = _owner_preview_payload(
                 payload,
@@ -241,14 +261,14 @@ def build_operator_inbox(
                 state_dir=state_dir,
                 project_root=project_root,
             )
-            items[_generic_item_id(approval_ref)] = _generic_approval_item(
+            put_inbox_item(items, _generic_item_id(approval_ref), _generic_approval_item(
                 event=event,
                 payload=payload,
                 approval_ref=approval_ref,
                 status="pending",
                 state_dir=state_dir,
                 project_root=project_root,
-            )
+            ))
             continue
 
         if etype in {
@@ -262,15 +282,7 @@ def build_operator_inbox(
             key = _generic_item_id(approval_ref)
             existing = items.get(key)
             if existing is None:
-                existing = _generic_approval_item(
-                    event=event,
-                    payload=payload,
-                    approval_ref=approval_ref,
-                    status="resolved",
-                    state_dir=state_dir,
-                    project_root=project_root,
-                )
-                items[key] = existing
+                continue
             existing["status"] = _generic_resolution_status(etype, payload)
             existing["resolved_event_id"] = event_id
             existing["resolved_ts"] = ts
@@ -281,12 +293,15 @@ def build_operator_inbox(
             token = _human_decision_token(payload, event_id)
             if not token:
                 continue
-            items[_human_item_id(token)] = _human_decision_item(
+            key = _human_item_id(token)
+            if key in items and items[key].get("status") != "pending":
+                continue
+            put_inbox_item(items, key, _human_decision_item(
                 event=event,
                 payload=payload,
                 decision_token=token,
                 status="pending",
-            )
+            ))
             continue
 
         if etype in {
@@ -310,10 +325,13 @@ def build_operator_inbox(
                     status="resolved",
                 )
                 items[key] = existing
-            existing["status"] = _human_resolution_status(etype)
+            existing["status"] = _human_resolution_status(etype, payload)
             existing["resolved_event_id"] = event_id
             existing["resolved_ts"] = ts
-            existing["resolution"] = str(payload.get("decision") or payload.get("next_route") or "")
+            existing["resolution"] = str(
+                payload.get("reason") or payload.get("controlled_action_status")
+                or payload.get("decision") or payload.get("next_route") or ""
+            )
             continue
 
         if etype.startswith("runtime.attention."):
@@ -337,8 +355,38 @@ def build_operator_inbox(
             # projections and only enters this inbox after human.escalate.
             continue
 
+    if any(item.get("kind") == "human_decision" and item.get("status") == "pending" for item in items.values()):
+        from zf.runtime.run_manager import (
+            RUN_COMPLETED, _PROGRESS_SUCCESS_EVENTS, _human_escalations_by_token, _pending_human_decisions,
+        )
+
+        current_tokens = {row["decision_token"] for row in _pending_human_decisions(channel_events)}
+        known_tokens = _human_escalations_by_token(channel_events)
+        event_positions = {event.id: index for index, event in enumerate(channel_events)}
+        for item in items.values():
+            token = str(item.get("decision_token") or "")
+            if (item.get("kind") == "human_decision" and item.get("status") == "pending"
+                and token in known_tokens and token not in current_tokens):
+                source = known_tokens[token]
+                source_event = events_by_id.get(str(source.get("event_id") or ""))
+                run_id = str(source.get("run_id") or source.get("workflow_run_id")
+                             or _correlation_id(source_event) or "")
+                source_index = event_positions.get(str(source.get("event_id") or ""), -1)
+                same_run_progress = bool(run_id and source_index >= 0 and any(
+                    event.type in _PROGRESS_SUCCESS_EVENTS | {RUN_COMPLETED}
+                    and run_id == str(_payload(event).get("run_id") or _payload(event).get("workflow_run_id")
+                                      or event.correlation_id or "")
+                    for event in channel_events[source_index + 1:]
+                ))
+                if same_run_progress:
+                    item["status"] = "superseded"
+                    item["resolution"] = "Run Manager 已确认该决定不再待处理"
+                else:
+                    item["verification_required"] = True
+                    item["actions"] = []
+
     ordered_all = sorted(
-        (_decorate_item(item, read_items=read_items, read_all_at=read_all_at) for item in items.values()),
+        (_decorate_item(item, read_versions=read_versions) for item in items.values()),
         key=lambda item: (item.get("status") != "pending", item.get("created_ts") or ""),
     )
     hidden = [item for item in ordered_all if _hide_from_inbox(item)]
@@ -375,7 +423,7 @@ def build_operator_inbox(
             "kanban_questions": sum(1 for item in ordered if item.get("kind") == "kanban_question"),
             "run_deliveries": sum(1 for item in ordered if item.get("kind") == "run_delivery"),
             "suppressed_acknowledged": suppressed_acknowledged + len(hidden),
-            "unread": sum(1 for item in ordered if item.get("unread")),
+            "unread": sum(1 for item in pending if item.get("unread")),
         },
         "items": ordered,
         "pending": pending,
@@ -393,22 +441,10 @@ def _hide_from_inbox(item: dict[str, Any]) -> bool:
     return str(item.get("status") or "") in _HIDDEN_VISIBLE_STATUSES
 
 
-def _merge_duplicate_item(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
-    existing["dedupe_count"] = _int_or_none(existing.get("dedupe_count")) or 1
-    existing["dedupe_count"] += 1
-    existing["latest_event_id"] = incoming.get("created_event_id") or existing.get("latest_event_id") or ""
-    existing["last_seen_at"] = incoming.get("created_ts") or existing.get("last_seen_at") or ""
-    existing["summary"] = incoming.get("summary") or existing.get("summary") or ""
-    existing["title"] = incoming.get("title") or existing.get("title") or ""
-    if incoming.get("status") == "escalated":
-        existing["status"] = "escalated"
-
-
 def _decorate_item(
     item: dict[str, Any],
     *,
-    read_items: set[str],
-    read_all_at: str,
+    read_versions: dict[str, set[str]],
 ) -> dict[str, Any]:
     decorated = dict(item)
     status = str(decorated.get("status") or "")
@@ -421,10 +457,11 @@ def _decorate_item(
     decorated.setdefault("source_role", _source_role_for_item(decorated))
     decorated.setdefault("owner_route", _owner_route_for_item(decorated))
     decorated.setdefault("group_key", _group_key_for_item(decorated))
-    created_ts = str(decorated.get("created_ts") or "")
+    version = inbox_item_version(decorated)
+    decorated["read_version"] = version
     decorated["unread"] = (
-        str(decorated.get("id") or "") not in read_items
-        and not (read_all_at and created_ts and created_ts <= read_all_at)
+        status == "pending"
+        and version not in read_versions.get(str(decorated.get("id") or ""), set())
     )
 
     if status != "pending":
@@ -599,39 +636,6 @@ def _plan_approval_item(
     }
 
 
-def _resolved_plan_placeholder(
-    *,
-    event: Any,
-    payload: dict[str, Any],
-    status: str,
-) -> dict[str, Any]:
-    plan_id = str(payload.get("plan_id") or "")
-    return {
-        "id": _plan_item_id(plan_id),
-        "kind": "plan_approval",
-        "status": status,
-        "title": "Plan Ready",
-        "summary": f"plan {plan_id}",
-        "created_event_id": "",
-        "created_ts": "",
-        "resolved_event_id": _event_id(event),
-        "resolved_ts": _event_ts(event),
-        "source_role": _source_role(event, payload),
-        "source_actor": _actor(event),
-        "approval_ref": f"plan:{plan_id}",
-        "plan_id": plan_id,
-        "stage_id": str(payload.get("stage_id") or ""),
-        "trace_id": str(payload.get("trace_id") or _correlation_id(event) or ""),
-        "pdd_id": str(payload.get("pdd_id") or ""),
-        "task_count": _int_or_none(payload.get("task_count")),
-        "refs": {},
-        "preview": {"available": False, "api_path": f"/plans/{plan_id}/preview"},
-        "actions": [],
-        "reject_reason": str(payload.get("reason") or ""),
-        "policy": {"agent_can_propose_plan_approve": False},
-    }
-
-
 def _generic_approval_item(
     *,
     event: Any,
@@ -654,11 +658,19 @@ def _generic_approval_item(
         "source_role": _source_role(event, payload),
         "source_actor": _actor(event),
         "approval_ref": approval_ref,
-        "actions": [
-            {"action": str(payload.get("approve_action") or ""), "label": "Approve", "requires_token": True},
-            {"action": str(payload.get("reject_action") or ""), "label": "Reject", "requires_token": True},
-        ],
+        "actions": [],
     }
+    if (payload.get("owner_route") == "plan_synth_owner_decision"
+        and payload.get("proposal_ref") and payload.get("eval_ref")):
+        item["actions"] = [
+            {"action": action, "label": label, "requires_token": True}
+            for key, action, label in (
+                ("approve_action", "replan-approve", "Approve"),
+                ("reject_action", "replan-reject", "Reject"),
+            ) if payload.get(key) == action
+        ]
+    if not item["actions"]:
+        item.update({"verification_required": True, "deep_link": "?page=runtime", "deep_link_label": "Open runtime"})
     for key in (
         "checkpoint_id",
         "workflow_run_id",
@@ -748,69 +760,31 @@ def _owner_preview_payload(
     }
 
 
-def _run_delivery_item(
+def _owner_attention_item(
     *,
     event: Any,
     payload: dict[str, Any],
+    key: str,
 ) -> dict[str, Any]:
-    run_id = str(payload.get("run_id") or "")
-    message_id = str(payload.get("message_id") or _event_id(event))
     return {
-        "id": f"run-delivery:{message_id}",
-        "kind": "run_delivery",
+        "id": key,
+        "kind": "owner_attention",
         "status": "pending",
-        "title": str(payload.get("title") or "Run delivery"),
-        "summary": str(payload.get("summary") or run_id),
+        "title": str(payload.get("title") or "Owner request needs review"),
+        "summary": str(payload.get("summary") or "Check the original owner request"),
         "created_event_id": _event_id(event),
         "created_ts": _event_ts(event),
         "resolved_event_id": "",
         "resolved_ts": "",
         "source_role": _source_role(event, payload),
         "source_actor": _actor(event),
-        "message_id": message_id,
-        "run_id": run_id,
-        "goal_id": str(payload.get("goal_id") or ""),
-        "terminal_status": str(payload.get("terminal_status") or ""),
-        "task_counts": dict(payload.get("task_counts") or {}),
-        "claim_counts": dict(payload.get("claim_counts") or {}),
-        "gap_count": _int_or_none(payload.get("gap_count")) or 0,
-        "next_action": str(payload.get("next_action") or ""),
-        "refs": {
-            "dossier_ref": str(payload.get("dossier_ref") or ""),
-            "dossier_markdown_ref": str(
-                payload.get("dossier_markdown_ref") or ""
-            ),
-            "completion_receipt_ref": str(
-                payload.get("completion_receipt_ref") or ""
-            ),
-        },
-        "deep_link": str(payload.get("web_deep_link") or ""),
-        "actions": [],
-    }
-
-
-def _attention_item(
-    *,
-    event: Any,
-    payload: dict[str, Any],
-    attention_id: str,
-) -> dict[str, Any]:
-    return {
-        "id": f"attention:{attention_id}",
-        "kind": "runtime_attention",
-        "status": "pending",
-        "title": str(payload.get("title") or "Runtime attention"),
-        "summary": str(payload.get("summary") or payload.get("reason") or _etype(event)),
-        "created_event_id": _event_id(event),
-        "created_ts": _event_ts(event),
-        "resolved_event_id": "",
-        "resolved_ts": "",
-        "source_role": _source_role(event, payload),
-        "source_actor": _actor(event),
-        "attention_id": attention_id,
+        "run_id": str(payload.get("run_id") or ""),
+        "attention_id": str(payload.get("attention_id") or ""),
         "fingerprint": str(payload.get("fingerprint") or ""),
-        "source_event_id": str(payload.get("source_event_id") or ""),
-        "actions": [{"action": "attention-ack", "label": "Ack", "requires_token": True}],
+        "verification_required": True,
+        "deep_link": "?page=runtime",
+        "deep_link_label": "Open runtime",
+        "actions": [],
     }
 
 
@@ -862,6 +836,10 @@ def _human_decision_item(
     decision_token: str,
     status: str,
 ) -> dict[str, Any]:
+    explicit_contract = any(
+        str(payload.get(key) or "").strip()
+        for key in ("checkpoint_id", "approval_command")
+    )
     return {
         "id": _human_item_id(decision_token),
         "kind": "human_decision",
@@ -878,12 +856,16 @@ def _human_decision_item(
         "approval_ref": f"human:{decision_token}",
         "checkpoint_id": str(payload.get("checkpoint_id") or ""),
         "fingerprint": str(payload.get("fingerprint") or ""),
+        "run_id": str(payload.get("run_id") or payload.get("workflow_run_id") or ""),
+        "verification_required": not explicit_contract,
+        "deep_link": "?page=runtime",
+        "deep_link_label": "Open runtime",
         "actions": [
             {"action": "human-decision-approve-controlled-action", "label": "Approve", "requires_token": True},
             {"action": "human-decision-request-autoresearch", "label": "Diagnose", "requires_token": True},
             {"action": "human-decision-dismiss", "label": "Dismiss", "requires_token": True},
             {"action": "human-decision-safe-halt", "label": "Halt", "requires_token": True},
-        ],
+        ] if explicit_contract else [],
         "policy": {
             "mutation_path": "human.escalation.acknowledged -> run_manager_tick",
             "agent_can_approve": False,
@@ -925,12 +907,17 @@ def _human_decision_token(payload: dict[str, Any], fallback: str) -> str:
     return raw
 
 
-def _human_resolution_status(etype: str) -> str:
+def _human_resolution_status(etype: str, payload: dict[str, Any]) -> str:
     if etype == RUN_MANAGER_HUMAN_DECISION_REJECTED:
         return "rejected"
     if etype == RUN_MANAGER_HUMAN_DECISION_APPLIED:
+        status = str(payload.get("controlled_action_status") or "")
+        if status in {"failed", "blocked", "rejected", "unsupported", "error"}:
+            return "failed"
+        if payload.get("decision") == "request_autoresearch" and payload.get("autoresearch_requested") is False:
+            return "failed"
         return "applied"
-    return "acknowledged"
+    return "processing"
 
 
 def _plan_item_id(plan_id: str) -> str:

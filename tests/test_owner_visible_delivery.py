@@ -178,7 +178,9 @@ def test_owner_visible_delivery_missing_route_falls_back_to_operator_inbox(
     assert "approval.requested" in types
     inbox = build_operator_inbox(tmp_path / ".zf", events)
     assert inbox["summary"]["action_required_pending"] == 1
-    assert inbox["pending"][0]["approval_ref"] == "owner-visible:omsg-1"
+    assert inbox["pending"][0]["kind"] == "owner_attention"
+    assert inbox["pending"][0]["verification_required"] is True
+    assert inbox["pending"][0]["actions"] == []
 
 
 def test_owner_visible_inbox_projects_pending_and_failed(tmp_path: Path) -> None:

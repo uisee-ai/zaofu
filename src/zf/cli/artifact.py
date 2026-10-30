@@ -104,6 +104,14 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
     read_cmd.set_defaults(func=_run_attempt_read)
 
+    checkpoint = sub.add_parser("checkpoint", help="Create an immutable dynamic continuation checkpoint")
+    checkpoint.add_argument("--run", required=True)
+    checkpoint.add_argument("--parent-operation", required=True)
+    checkpoint.add_argument("--task", required=True)
+    checkpoint.add_argument("--generation", required=True)
+    checkpoint.add_argument("--state-dir", default=None)
+    checkpoint.set_defaults(func=_run_dynamic_checkpoint)
+
     catalog = sub.add_parser(
         "catalog",
         help="Query rebuildable artifact metadata and lineage",
@@ -151,7 +159,25 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _run_help(args: argparse.Namespace) -> int:
-    print("usage: zf artifact {manifest create|list|read|catalog} ...")
+    print("usage: zf artifact {manifest create|list|read|checkpoint|catalog} ...")
+    return 0
+
+
+def _run_dynamic_checkpoint(args: argparse.Namespace) -> int:
+    from zf.runtime.dynamic_checkpoint import create_checkpoint
+
+    try:
+        context = resolve_project_context(explicit_state_dir=args.state_dir)
+        events = event_log_from_project(context.state_dir, config=context.config).read_all()
+        descriptor = create_checkpoint(
+            context.state_dir, events, workflow_run_id=args.run,
+            parent_operation_id=args.parent_operation, task_id=args.task,
+            task_map_generation=args.generation,
+        )
+    except (ConfigError, ValueError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(descriptor, ensure_ascii=False, sort_keys=True))
     return 0
 
 
@@ -183,10 +209,10 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         if required:
             if args.source or args.artifact or args.json_path != "$" or args.max_items or args.max_chars or getattr(args, "page_start", None) is not None:
                 raise ValueError("--required cannot be combined with source, artifact or slice overrides")
+        elif getattr(args, "cursor", ""):
+            raise ValueError("--cursor requires --required")
         elif not args.source or not args.artifact:
             raise ValueError("artifact read requires --source and --artifact, or --required")
-        if not required and getattr(args, "cursor", None) is not None:
-            raise ValueError("--cursor requires --required")
         context = resolve_project_context(
             explicit_state_dir=getattr(args, "state_dir", None),
         )
@@ -217,7 +243,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
 
             output, receipts = prepare_required_read(
                 context.state_dir, manifest=manifest, rows=rows, identity=identity,
-                cursor=getattr(args, "cursor", None), page_bytes=args.page_bytes,
+                cursor=getattr(args, "cursor", None) or None, page_bytes=args.page_bytes,
             )
             emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
             return 0

@@ -73,6 +73,7 @@ from zf.runtime.control_actions_emit import ActionEmitMixin
 from zf.runtime.control_actions_evolution import EvolutionActionsMixin
 from zf.runtime.control_actions_execution_route import ExecutionRouteActionsMixin
 from zf.runtime.control_actions_extension_router import dispatch_extension_action
+from zf.runtime.operator_inbox_guard import execute_inbox_replan
 from zf.runtime.channel_profile_registration import ChannelProfileRegistrationActionsMixin
 from zf.runtime.control_actions_workflow_resume import WorkflowResumeActionsMixin
 from zf.runtime.control_actions_candidate_rework import CandidateReworkActionsMixin
@@ -446,11 +447,9 @@ class ControlledActionService(
                 payload=payload,
             )
         if action in {"replan-approve", "replan-defer", "replan-reject"}:
-            return self._replan_owner_decision(
-                requested=requested,
-                action=action,
-                requested_action=requested_action,
-                payload=payload,
+            return execute_inbox_replan(
+                self, requested=requested, action=action, requested_action=requested_action,
+                payload=payload, handler=self._replan_owner_decision,
             )
         if action == "idea-to-product":
             return self._idea_to_product(

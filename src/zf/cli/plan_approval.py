@@ -136,43 +136,25 @@ def _run(args: argparse.Namespace) -> int:
             print(f"  approve: zf plan approve {plan_id}")
         return 0
 
-    pending_ids = {str(p.get("plan_id")) for p in _pending(events)}
-    if args.plan_id not in pending_ids:
+    from zf.runtime.plan_approval_state import decide_pending_plan
+
+    decision_payload: dict = {"plan_id": args.plan_id}
+    if args.plan_cmd == "reject":
+        decision_payload["reason"] = args.reason
+    writer = EventWriter(log)
+    result, _reason = decide_pending_plan(
+        writer,
+        state_dir=state_dir,
+        plan_id=args.plan_id,
+        event_type="plan.approved" if args.plan_cmd == "approve" else "plan.rejected",
+        payload=decision_payload,
+    )
+    if result is None:
         print(f"plan {args.plan_id} is not awaiting review; it was decided or does not exist.")
         return 1
-    requested = next(
-        (item for item in _pending(events) if str(item.get("plan_id")) == args.plan_id),
-        {},
-    )
-    decision_payload = {"plan_id": args.plan_id}
-    for key in (
-        "stage_id",
-        "trace_id",
-        "pdd_id",
-        "feature_id",
-        "task_map_ref",
-        "digest_ref",
-        "task_count",
-    ):
-        if requested.get(key):
-            decision_payload[key] = requested[key]
-    writer = EventWriter(log)
     if args.plan_cmd == "approve":
-        writer.append(ZfEvent(
-            type="plan.approved",
-            actor="operator",
-            payload=decision_payload,
-            causation_id=args.plan_id,
-        ))
         print(f"plan {args.plan_id} approved - fanout will start on the next kernel wake.")
         return 0
-    decision_payload["reason"] = args.reason
-    writer.append(ZfEvent(
-        type="plan.rejected",
-        actor="operator",
-        payload=decision_payload,
-        causation_id=args.plan_id,
-    ))
     print(f"plan {args.plan_id} rejected - synthesis will replan with the supplied reason.")
     return 0
 
