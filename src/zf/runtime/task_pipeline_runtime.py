@@ -222,6 +222,7 @@ def admit_task_pipeline_generation(
         or ""
     ).strip()
     policy = task_pipeline_policy(runtime.config, flow_kind=flow_kind) or {}
+    from zf.runtime.workflow_frontier_owner import normal_frontier_owner
     pdd_id = str(
         trigger_payload.get("pdd_id")
         or trigger_payload.get("feature_id")
@@ -246,6 +247,7 @@ def admit_task_pipeline_generation(
         payload={
             "schema_version": TASK_PIPELINE_GENERATION_SCHEMA,
             "generation_id": prepared.generation_id,
+            "frontier_owner": normal_frontier_owner(runtime.config),
             "workflow_run_id": prepared.workflow_run_id,
             "flow_kind": flow_kind,
             "request_kind": str(
@@ -300,7 +302,18 @@ def prepare_task_pipeline_dispatch(
     # cannot acquire dispatch authority merely because its projection failed.
     blocking = True
     try:
-        from zf.runtime.workflow_frontier_owner import normal_frontier_owner
+        from zf.runtime.workflow_frontier_owner import generation_owner_error, normal_frontier_owner
+
+        event_log = getattr(runtime, "event_log", None)
+        if event_log is not None and (normal_frontier_owner(runtime.config) == "wrc"
+                                      or task_pipeline_any_blocking(runtime.config)):
+            owner_error = generation_owner_error(
+                runtime.config, event_log.read_all(), task_store=getattr(runtime, "task_store", None),
+            )
+            if owner_error:
+                managed = task_pipeline_managed_task_ids(runtime)
+                managed.update(candidate_ids)
+                raise TaskPipelineRuntimeError(owner_error)
 
         if normal_frontier_owner(runtime.config) == "wrc":
             from zf.runtime.wrc_frontier_consumer import consume_normal_frontier

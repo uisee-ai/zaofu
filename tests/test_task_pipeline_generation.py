@@ -398,6 +398,7 @@ def test_generation_admission_persists_plan_package_identity(
     )
 
     assert event is not None
+    assert event.payload["frontier_owner"] == "run_manager"
     assert event.payload["plan_artifact_package_id"] == _PACKAGE_ID
     assert event.payload["plan_artifact_package_ref"] == _PACKAGE_REF
     assert event.payload["plan_artifact_package_digest"] == _PACKAGE_DIGEST

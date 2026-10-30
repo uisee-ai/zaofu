@@ -113,6 +113,11 @@ def _seed(state_dir: Path, writer: EventWriter) -> None:
         request={"prompt": "inspect current delivery gaps"},
         task_id="TASK-DYNAMIC-RESEARCH",
     )
+    from zf.runtime.dynamic_checkpoint import create_checkpoint
+
+    checkpoint = create_checkpoint(state_dir, writer.event_log.read_all(), workflow_run_id=run_id,
+                                   parent_operation_id="parent-research-op", task_id="TASK-DYNAMIC-RESEARCH",
+                                   task_map_generation="GEN-DYNAMIC-1")
     proposal = {
         "schema_version": "operation-plan-fragment.v1",
         "mode": "read_only",
@@ -128,8 +133,8 @@ def _seed(state_dir: Path, writer: EventWriter) -> None:
         },
         "trigger_checkpoint": {
             "checkpoint_id": "CHECKPOINT-DYNAMIC-1",
-            "ref": "artifacts/checkpoints/dynamic-1.json",
-            "sha256": "b" * 64,
+            "ref": checkpoint["ref"],
+            "sha256": checkpoint["sha256"],
         },
         "nodes": [{
             "node_id": "research-wave",
