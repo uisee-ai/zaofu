@@ -60,7 +60,7 @@ import type {
   WebChatRuntime,
   WebChatSearchResult,
 } from "./types";
-import { cachedGetJson, clearGetCache } from "./queryClient";
+import { cachedGetJson, clearGetCache } from "./queryClient.js";
 
 async function requestJson<T>(
   path: string,
@@ -373,6 +373,7 @@ export async function initWorkspaceProject(payload: {
   if (!response.ok && response.status >= 500) {
     throw new Error(String(data.reason || `workspace init returned ${response.status}`));
   }
+  if (response.ok && data.ok !== false) clearGetCache("/api/workspace/projects");
   return data;
 }
 

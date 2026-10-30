@@ -126,7 +126,7 @@ def test_admission_blocks_invalid_config_and_partial_state(tmp_path: Path) -> No
     assert partial_result["missing_truth_files"] == ["kanban.json"]
 
 
-def test_implicit_init_generates_multi_config_without_workflow_request(
+def test_implicit_init_generates_v5_config_without_workflow_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -153,8 +153,9 @@ def test_implicit_init_generates_multi_config_without_workflow_request(
 
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["kind"] == "multi"
-    assert body["config_generated"] == "typed_flow_spec"
+    assert body["kind"] == "prd"
+    assert body["config_generated"] == "registered_controller"
+    assert body["controller_id"] == "zaofu-prd-v5-production-codex"
     config = load_config(target / "zf.yaml")
     assert config.project.name == "delivery-harness"
     assert config.project.description == "Durable project context"
@@ -211,7 +212,8 @@ def test_implicit_init_generates_multi_config_without_workflow_request(
         timeout=10,
         check=True,
     ).stdout == ""
-    assert set(config.workflow.kind_routes) >= {"issue", "prd", "feat", "refactor"}
+    assert config.version == "5.0.1"
+    assert config.workflow.kind_routes["prd"].pattern_id == "prd-scan"
     event_types = {
         event.type for event in EventLog(Path(body["state_dir"]) / "events.jsonl").read_all()
     }

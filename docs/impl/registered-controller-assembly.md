@@ -19,6 +19,20 @@ Request → Synthesis → Proposal → Apply config → Approve & Run，不另�
 
 ## 项目适配和批准
 
+Dashboard 的 Add/Open Project、Initialize Project 在未指定 kind/preset 且没有现成
+`zf.yaml` 时，默认从注册目录加载 `zf-prd-v5.yaml`，通过共享 Project Init 入口生成项目
+配置。HTTP 响应以 `config_generated=registered_controller` 和 `controller_id` 标识来源。
+模板缺失时拒绝初始化，不回退到旧 multi-kind 草稿；已有配置和显式 kind/preset 仍按原路径处理。
+
+初始化保留 v5 的 8 lanes、blocking Task Pipeline、on_demand、质量门和预算设置；项目名称、
+说明、state_dir、session、Provider/mixed 选择、当前 Git 分支和检测/声明的技术栈检查绑定到
+新项目。非 Codex 或 mixed 项目不继承 Codex 专用 model，等待后续明确模型修订。profiles 和
+启用技能的依赖闭包物化到项目本地，支持移动项目或删除初始化所用 worktree。初始化仅创建
+项目及其干净 Git 基线，不创建需求或启动 Workflow；需求及启动仍经过原有澄清和批准流程。
+初始化成功后客户端清除项目列表读缓存，使新项目立即出现在选择器中，避免旧列表把选择退回
+原项目。回归入口：`tests/test_project_controller_init.py`、`tests/test_project_admission.py`、
+`web/tests/projectInitCache.test.ts`、`web/tests/project-wizard.spec.ts`。
+
 候选替换完整控制器配置，保留现有项目名称、workspace、状态目录、session、本地 skill sources
 以及 workdir provision paths。只把项目缺少的控制器技能及其依赖冻结到状态目录内的内容寻址包，
 避免已安装技能重名；包是配置依赖的必需工件，不能当作可删除投影。Apply 会核验完整 manifest、

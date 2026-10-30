@@ -1302,7 +1302,7 @@ def create_app(
                     "inspection": admission_inspection,
                 }, status_code=409)
         if implicit_admission and not (root / "zf.yaml").exists():
-            flow_kind = "multi"
+            flow_kind = "prd"
         if flow_kind and flow_kind not in {"multi", "issue", "prd", "refactor"}:
             return JSONResponse({
                 "ok": False,
