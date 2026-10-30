@@ -115,3 +115,25 @@ def test_review_descriptor_digest_cannot_be_forged(preview):
     with pytest.raises(ValueError):
         review.apply({**draft, "sha256": "0" * 64})
     assert load_workflow_request(review.state_dir, binding["request_id"])["revision"] == binding["revision"]
+
+
+def test_review_still_rechecks_registered_package_at_compile_time(preview, monkeypatch):
+    import zf.runtime.workflow_registered_controller as controller
+    review, binding = preview
+    draft = draft_for(review, binding)
+    carry = review._carry_synthesis
+    catalog = controller.controller_catalog
+
+    def change_after_synthesis(*args):
+        result = carry(*args)
+        changed = catalog()
+        for entry in changed.values():
+            entry["digest"] = "0" * 64
+        monkeypatch.setattr(controller, "controller_catalog", lambda: changed)
+        return result
+
+    monkeypatch.setattr(review, "_carry_synthesis", change_after_synthesis)
+    with pytest.raises(ValueError, match="stale"):
+        review.apply(draft)
+    assert not any(e.type == "web.action.completed" and e.payload.get("preview_review_digest") == draft["sha256"]
+                   for e in review.writer.event_log.read_all())

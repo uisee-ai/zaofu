@@ -120,15 +120,18 @@ def bound_controller_candidate(
     from zf.runtime.workflow_proposal import (
         WorkflowProposalError, cleanup_synthesized_workflow_candidate, materialize_synthesized_workflow_candidate,
     )
-    if preview_review_ref is not None:
-        from zf.runtime.workflow_review_controller import bound_reviewed_controller_candidate
-        return bound_reviewed_controller_candidate(
-            state_dir, request, base_path, candidate_path, synthesis_result_ref, preview_review_ref,
-        )
     generated = materialize_synthesized_workflow_candidate(
         state_dir, request=request, base_config_path=base_path,
         synthesis_result_ref=synthesis_result_ref, flow_kind=flow_kind,
     )
+    if preview_review_ref is not None:
+        from zf.runtime.workflow_review_controller import bound_reviewed_controller_candidate
+        try:
+            return bound_reviewed_controller_candidate(
+                state_dir, request, base_path, candidate_path, synthesis_result_ref, preview_review_ref,
+            )
+        finally:
+            cleanup_synthesized_workflow_candidate(generated, base_config_path=base_path)
     if candidate_path != base_path and candidate_path.read_bytes() != generated.read_bytes():
         cleanup_synthesized_workflow_candidate(generated, base_config_path=base_path)
         raise WorkflowProposalError("config candidate does not match the admitted registered controller")
