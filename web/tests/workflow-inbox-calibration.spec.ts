@@ -55,8 +55,8 @@ test("Workflow keeps provider, status, readable mobile nodes and an explicit ful
   await expect(canvas).toBeVisible({ timeout: 30_000 });
   await expect(page.getByLabel("Select workflow")).toHaveCount(0);
   await expect(page.locator(".workflow-proposal-toolbar")).not.toContainText("Align the workspace");
-  const review = page.getByRole("button", { name: "Review", exact: true });
-  await expect(review).toBeVisible();
+  await expect(page.locator(".sdlc-plans")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Workflow PRD Plan Preview" })).toHaveCount(0);
   await expect(page.getByText("Plan is ready. Review it before implementation continues.")).toHaveCount(0);
   const card = canvas.locator(".sdlc-card").first();
   await expect(card).toContainText("claude-code");
@@ -67,15 +67,9 @@ test("Workflow keeps provider, status, readable mobile nodes and an explicit ful
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await expect(card).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  const reviewBox = (await review.boundingBox())!, liveBox = (await page.locator(".sdlc-live").boundingBox())!;
-  expect(reviewBox.x).toBeGreaterThan(liveBox.x + liveBox.width);
-  expect(Math.abs((reviewBox.y + reviewBox.height / 2) - (liveBox.y + liveBox.height / 2))).toBeLessThan(2);
   await expect.poll(async () => (await canvas.locator(".react-flow__node").first().boundingBox())?.width || 0).toBeGreaterThan(160);
   await page.getByRole("button", { name: /fit view/i }).click();
   await expect.poll(() => canvas.locator(".react-flow__node").count()).toBe(40);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await review.click();
-  await expect(page.getByRole("region", { name: "Workflow PRD Plan Preview" })).toBeVisible();
-  await page.getByRole("button", { name: "关闭预览" }).click();
   expect(writes).toEqual([]); expect(errors).toEqual([]);
 });

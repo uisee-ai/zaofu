@@ -6,7 +6,7 @@ const assert = {
     if (JSON.stringify([...a]) !== JSON.stringify([...b])) throw new Error("Collections differ");
   },
 };
-import { workflowSummaryIds, expandedNodeIds, GraphLayoutCache, graphPositions, relatedNodes, type SdlcNode, type SdlcEdge } from "../src/components/workflow/sdlcGraphModel.js";
+import { workflowNodeLabel, isWaitingAuxiliaryStage, workflowSummaryEdges, workflowSummaryIds, workflowSummaryPositions, expandedNodeIds, GraphLayoutCache, graphPositions, relatedNodes, type SdlcNode, type SdlcEdge } from "../src/components/workflow/sdlcGraphModel.js";
 
 const nodes: SdlcNode[] = ["A", "B", "C"].map(id => ({ id, kind: "task", label: id, status: "pending", views: ["modules"], data: {} }));
 const edges: SdlcEdge[] = ["A", "B"].map(id => ({ id, source: id, target: "C", relation: "depends_on", views: ["modules"] }));
@@ -56,7 +56,54 @@ test("stage summary hides compiler details without deleting the full graph", () 
     { ...nodes[0], id: "workflow:role:planner", kind: "workflow", data: { definition: { type: "role_stage" } } },
     { ...nodes[0], id: "operation:planner", kind: "operation" },
   ];
-  assert.deepEqual(workflowSummaryIds(all), new Set(["workflow:stage:plan", "operation:planner"]));
+  assert.deepEqual(workflowSummaryIds(all), new Set(["workflow:stage:plan"]));
   assert.equal(all.length, 3);
   assert.equal(workflowSummaryIds(all.slice(1)).size, 2);
+});
+
+test("built-in stage names preserve custom labels and unknown identities", () => {
+  const stage = (id: string, label = id): SdlcNode => ({ ...nodes[0], id: `workflow:stage:${id}`, kind: "workflow", label, status: "pending" });
+  assert.equal(workflowNodeLabel(stage("prd-lanes-final")), "最终验收");
+  assert.equal(workflowNodeLabel(stage("prd-lanes-verify")), "验证");
+  assert.equal(workflowNodeLabel(stage("issue-lanes-impl")), "修复");
+  assert.equal(workflowNodeLabel(stage("flow-plan")), "规划");
+  assert.equal(workflowNodeLabel(stage("prd-plan", "Custom planner")), "Custom planner");
+  assert.equal(workflowNodeLabel(stage("my-plan")), "my-plan");
+  assert.equal(workflowNodeLabel({ ...nodes[0], id: "workflow:terminal:done", label: "terminal done" }), "结束门禁");
+});
+
+test("only the known waiting discovery stage may be folded", () => {
+  const discovery: SdlcNode = { ...nodes[0], id: "workflow:stage:prd-post-verify-discovery", kind: "workflow", label: "prd-post-verify-discovery", status: "pending", data: { definition: { trigger: "flow.discovery.requested" } } };
+  assert.equal(isWaitingAuxiliaryStage(discovery), true);
+  for (const status of ["running", "failed", "blocked", "unknown", "completed"]) assert.equal(isWaitingAuxiliaryStage({ ...discovery, status }), false);
+  assert.equal(isWaitingAuxiliaryStage({ ...discovery, data: { definition: { trigger: "custom.requested" } } }), false);
+  assert.equal(isWaitingAuxiliaryStage({ ...discovery, id: "workflow:stage:custom-post-verify-discovery" }), false);
+});
+
+test("folded edges follow declared workflow paths through branches and cycles only", () => {
+  const ids = ["workflow:stage:A", "workflow:stage:B", "workflow:stage:C", "workflow:stage:D", "workflow:role:X", "workflow:role:Y", "operation:Z"];
+  const graph: SdlcNode[] = ids.map(id => ({ ...nodes[0], id, kind: id.startsWith("operation:") ? "operation" : "workflow", views: ["workflow"] }));
+  const links: SdlcEdge[] = [[0, 4], [4, 1], [4, 5], [5, 2], [5, 4], [0, 6], [6, 3]].map(([a, b], i) => ({ id: `edge-${i}`, source: ids[a], target: ids[b], relation: "declared", views: ["workflow"] }));
+  const result = workflowSummaryEdges(graph, links, workflowSummaryIds(graph));
+  assert.deepEqual(new Set(result.map(e => `${e.source}->${e.target}`)), new Set([`${ids[0]}->${ids[1]}`, `${ids[0]}->${ids[2]}`]));
+  assert.ok(result.every(e => (e.collapsedVia?.length || 0) > 0));
+  const direct = { id: "direct", source: ids[0], target: ids[1], relation: "declared", views: ["workflow"] as const };
+  const merged = workflowSummaryEdges(graph, [...links, { ...direct, views: [...direct.views] }], workflowSummaryIds(graph));
+  assert.equal(merged.filter(e => e.source === ids[0] && e.target === ids[1]).length, 1);
+  assert.equal(merged.find(e => e.target === ids[1])?.id, "direct");
+  const hiddenStage = workflowSummaryEdges(graph, [...links, { id: "b-to-d", source: ids[1], target: ids[3], relation: "declared", views: ["workflow"] }], new Set([ids[0], ids[3]]));
+  assert.equal(hiddenStage.some(edge => edge.source === ids[0] && edge.target === ids[3]), false);
+});
+
+test("summary puts the connected stage path left to right and keeps unrelated stages separate", () => {
+  const stages = ["scan", "plan", "impl", "final", "done", "unlinked"].map(id => ({ ...nodes[0], id, label: id, kind: "workflow" }));
+  const links = [{ ...edges[0], source: "scan", target: "plan" }, { ...edges[1], source: "plan", target: "impl" }, { ...edges[0], id: "last", source: "final", target: "done" }];
+  const layout = workflowSummaryPositions(stages, links);
+  assert.ok(layout.get("scan")!.x < layout.get("plan")!.x);
+  assert.ok(layout.get("plan")!.x < layout.get("impl")!.x);
+  assert.ok(layout.get("unlinked")!.y > layout.get("scan")!.y);
+  assert.ok(layout.get("final")!.x < layout.get("done")!.x);
+  assert.equal(layout.get("final")!.y, layout.get("done")!.y);
+  assert.ok(layout.get("unlinked")!.y > layout.get("final")!.y);
+  assert.deepEqual(layout, workflowSummaryPositions([...stages].reverse(), [...links].reverse()));
 });

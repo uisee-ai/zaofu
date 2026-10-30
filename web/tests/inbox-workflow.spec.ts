@@ -23,7 +23,7 @@ async function routes(page: Page) {
 
 async function openRaw(page: Page) {
   const graph = page.getByRole("region", { name: "Workflow 图工作台" });
-  await graph.getByRole("button", { name: "Dag", exact: true }).click();
+  await graph.getByRole("button", { name: "执行 Graph", exact: true }).click();
   await graph.getByRole("button", { name: "Raw", exact: true }).click();
   await expect(page.getByTestId("workflow-start")).toBeVisible();
 }
@@ -248,11 +248,12 @@ for (const action of ["replan-approve", "replan-reject"]) test(`Inbox owner prev
   expect(actions[0]).toMatchObject({ action, payload: { approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" } });
 });
 
-test("Board and List retain blockers and outcomes while diagnostics stay in detail", async ({ page }) => {
+test("Board summarizes blockers while List retains details and outcomes", async ({ page }) => {
   await page.goto("/tests/inbox-workflow.html?surface=board");
   const card = page.locator('[data-task-id="TASK-1"]');
   await expect(card).toContainText("Ship checkout");
-  await expect(card).toContainText("Waiting for owner");
+  await expect(card).toContainText("Blocked");
+  await expect(card).not.toContainText("Waiting for owner");
   await expect(card.locator(".task-assignee-avatar")).toHaveAttribute("title", "@dev-1");
   await expect(card).not.toContainText(/internal-|Internal verify|secret-skill|rework|ctx|fanout/);
   await expect(page.locator('[data-task-id="TASK-2"]')).toContainText("cancelled");

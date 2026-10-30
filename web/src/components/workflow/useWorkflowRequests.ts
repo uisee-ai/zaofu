@@ -45,7 +45,10 @@ export function useWorkflowRequests(projectId: string, reviewBusy: MutableRefObj
       if (!listGate.current.isCurrent(ticket) || controller.signal.aborted) return;
       setRequests(page.items);
       if (!page.items.some((item) => textValue(item.request_id) === selection.current)) {
-        setSelectedId(textValue(page.items[0]?.request_id));
+        const taskId = new URLSearchParams(window.location.search).get("task") || "";
+        const matches = taskId ? page.items.filter(item => textValue(item.task_id) === taskId) : [];
+        const chosen = matches.find(item => ["running", "submitted"].includes(textValue(item.status))) ?? matches[0] ?? page.items[0];
+        setSelectedId(textValue(chosen?.request_id));
       }
       setListError("");
     } catch (reason) {

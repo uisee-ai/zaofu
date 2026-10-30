@@ -221,7 +221,7 @@ const LOCAL_AGENT_STREAM_EVENTS = new Set([
   "kanban.agent.message.delta",
   "channel.message.stream.delta",
 ]);
-const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id", "v"]);
+const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id", "v", "request", "expected_run", "workflow_node"]);
 const PAGE_QUERY_KEYS: Partial<Record<PageId, ReadonlySet<string>>> = {
   workflows: new Set(["request", "graph", "node"]),
   inbox: new Set(["plan"]),
