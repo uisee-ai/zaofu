@@ -463,12 +463,6 @@ _HUMAN_DECISION_ACTIONS = {
     # the badge forever). Consumers ignore unknown decision values safely.
     "human-decision-dismiss",
 }
-_HUMAN_DECISION_BY_ACTION = {
-    "human-decision-approve-controlled-action": "approve_controlled_action",
-    "human-decision-request-autoresearch": "request_autoresearch",
-    "human-decision-safe-halt": "safe_halt",
-    "human-decision-dismiss": "dismissed",
-}
 _ACTION_ALIASES = {
     "dispatch",
     "dispatch-task",
@@ -6076,7 +6070,9 @@ def _web_action(
         return response
 
     if canonical_action in _HUMAN_DECISION_ACTIONS:
-        response = _handle_human_decision_action(
+        from zf.web.human_decision_action import submit_human_decision
+
+        response = submit_human_decision(
             writer,
             requested=requested,
             action=canonical_action,
@@ -6868,83 +6864,6 @@ def _handle_worker_runtime_action(
         "event_id": worker_event.id,
         "instance_id": instance_id,
     }
-
-
-def _handle_human_decision_action(
-    writer: EventWriter,
-    *,
-    requested: ZfEvent,
-    action: str,
-    requested_action: str,
-    payload: dict,
-    project_id: str = "",
-) -> dict:
-    decision_token = _human_decision_token_from_payload(payload)
-    decision = _HUMAN_DECISION_BY_ACTION[action]
-    task_id = _task_id_from_payload(payload)
-    acknowledged = writer.emit(
-        "human.escalation.acknowledged",
-        actor="web",
-        task_id=task_id,
-        causation_id=requested.id,
-        correlation_id=requested.correlation_id,
-        payload={
-            "schema_version": "human-escalation-acknowledged.v1",
-            "decision_token": decision_token,
-            "decision": decision,
-            "source": str(payload.get("source") or "operator-inbox"),
-            "surface": "web",
-            "project_id": project_id,
-            "approval_ref": str(payload.get("approval_ref") or ""),
-            "checkpoint_id": str(payload.get("checkpoint_id") or ""),
-            "fingerprint": str(payload.get("fingerprint") or ""),
-            "created_event_id": str(payload.get("created_event_id") or ""),
-        },
-    )
-    completion_payload = {
-        "action": action,
-        "requested_action": requested_action,
-        "status": "acknowledged",
-        "event_type": "human.escalation.acknowledged",
-        "event_id": acknowledged.id,
-        "decision_token": decision_token,
-        "decision": decision,
-        "project_id": project_id,
-    }
-    writer.emit(
-        "runtime.action.completed",
-        actor="web",
-        task_id=task_id,
-        causation_id=acknowledged.id,
-        correlation_id=acknowledged.correlation_id,
-        payload=completion_payload,
-    )
-    writer.emit(
-        "web.action.completed",
-        actor="web",
-        task_id=task_id,
-        causation_id=acknowledged.id,
-        correlation_id=acknowledged.correlation_id,
-        payload=completion_payload,
-    )
-    return {
-        "_status_code": 202,
-        "ok": True,
-        "status": "acknowledged",
-        "action": action,
-        "requested_action": requested_action,
-        "event_type": "human.escalation.acknowledged",
-        "event_id": acknowledged.id,
-        "decision_token": decision_token,
-        "decision": decision,
-    }
-
-
-def _human_decision_token_from_payload(payload: dict) -> str:
-    raw = str(payload.get("decision_token") or payload.get("approval_ref") or "")
-    if raw.startswith("human:"):
-        raw = raw.removeprefix("human:")
-    return raw
 
 
 def _handle_assignment_propose(

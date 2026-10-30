@@ -38,6 +38,15 @@ class OpsActionsMixin:
                 status="invalid_payload",
             )
         event_type = "inbox.item.read" if action == "inbox-item-read" else "inbox.all.read"
+        read_fields: dict[str, Any] = {}
+        if action == "inbox-item-read" and payload.get("read_version"):
+            read_fields["read_version"] = str(payload["read_version"])
+        if action == "inbox-all-read" and isinstance(payload.get("items"), list):
+            read_fields["items"] = [
+                {"item_id": str(item.get("item_id") or ""),
+                 "read_version": str(item.get("read_version") or "")}
+                for item in payload["items"] if isinstance(item, dict)
+            ]
         event = self.writer.emit(
             event_type,
             actor=self.actor,
@@ -46,6 +55,7 @@ class OpsActionsMixin:
             payload=redact_obj({
                 "schema_version": event_type + ".v0",
                 "item_id": item_id,
+                **read_fields,
                 "source": self.source,
                 "surface": self.surface,
             }),

@@ -462,6 +462,23 @@ export function OrchestratorPanel({
   const [headlessThreadKey, setHeadlessThreadKey] = useState(() => (
     storedActiveKanbanThread(localStorage, headlessProjectId)
   ));
+  const inboxTarget = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("agent") === "open" ? {
+      project: params.get("project") || "",
+      thread: params.get("agent_thread") || "",
+      request: params.get("agent_request") || "",
+    } : { project: "", thread: "", request: "" };
+  }, []);
+  const inboxThreadSelected = useRef(false);
+  const inboxRequestFocused = useRef(false);
+  useEffect(() => {
+    if (inboxThreadSelected.current || !visible || !inboxTarget.thread
+      || (inboxTarget.project && inboxTarget.project !== headlessProjectId)) return;
+    inboxThreadSelected.current = true;
+    setHeadlessThreadKey(inboxTarget.thread);
+    localStorage?.setItem(kanbanThreadStorageKey(headlessProjectId), inboxTarget.thread);
+  }, [visible, inboxTarget, headlessProjectId, localStorage]);
   const composerDraft = useKanbanComposerDraft(headlessProjectId, headlessThreadKey);
   const headlessPlanDiscussion = composerDraft.planDiscussion;
   const setHeadlessPlanDiscussion = composerDraft.setPlanDiscussion;
@@ -496,6 +513,7 @@ export function OrchestratorPanel({
   const [headlessHistoryLoading, setHeadlessHistoryLoading] = useState(false);
   const [headlessHistoryReady, setHeadlessHistoryReady] = useState(false);
   const [headlessHistoryError, setHeadlessHistoryError] = useState("");
+  const [inboxTargetUnavailable, setInboxTargetUnavailable] = useState(false);
   const [headlessSplitThreadKey, setHeadlessSplitThreadKey] = useState("");
   const [backendMenuOpen, setBackendMenuOpen] = useState(false);
   const headlessInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -2073,6 +2091,26 @@ export function OrchestratorPanel({
       setHeadlessHasNewBelow(true);
     }
   }, [headlessHistoryLoading, headlessHistoryReady, headlessScrollSignature, headlessPinnedToBottom]);
+  useEffect(() => {
+    if (!visible || !inboxTarget.request || inboxRequestFocused.current || !headlessHistoryReady
+      || (inboxTarget.project && inboxTarget.project !== headlessProjectId)
+      || (inboxTarget.thread && inboxTarget.thread !== headlessThreadKey)) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const target = headlessThreadRef.current?.querySelector<HTMLElement>(
+        `[data-plan-request-id="${CSS.escape(inboxTarget.request)}"]`,
+      );
+      if (!target) {
+        setInboxTargetUnavailable(true);
+        return;
+      }
+      setInboxTargetUnavailable(false);
+      inboxRequestFocused.current = true;
+      target.scrollIntoView({ block: "center" });
+      target.querySelector<HTMLElement>("button, input, textarea")?.focus({ preventScroll: true });
+      setHeadlessPinnedToBottom(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [visible, inboxTarget, headlessHistoryReady, headlessProjectId, headlessThreadKey, headlessScrollSignature, pendingDurableInteractions]);
   function showLatestHeadless() {
     setHeadlessPinnedToBottom(true);
     setHeadlessHasNewBelow(false);
@@ -2292,6 +2330,11 @@ export function OrchestratorPanel({
             {headlessHistoryError ? (
               <div className="headless-composer-alert" role="alert">
                 History unavailable: {headlessHistoryError}
+              </div>
+            ) : null}
+            {inboxTargetUnavailable && inboxTarget.thread === headlessThreadKey ? (
+              <div className="headless-composer-alert" role="status">
+                This question is not in the current history. Load earlier messages or return to Inbox to check its status.
               </div>
             ) : null}
             <WebChatInteractionCards

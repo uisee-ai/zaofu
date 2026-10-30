@@ -59,6 +59,9 @@ def _plan_events(events: Iterable[Any], plan_id: str) -> tuple[Any | None, Any |
         if _etype(event) == PLAN_APPROVAL_REQUESTED or is_owner_preview:
             requested = event
             resolved = None
+        elif (_etype(event) == PLAN_APPROVED and payload.get("semantic_control")
+              and requested is not None and _etype(requested) == PLAN_APPROVAL_REQUESTED):
+            continue
         elif _etype(event) in {PLAN_APPROVED, PLAN_REJECTED}:
             resolved = event
     return requested, resolved
