@@ -1133,6 +1133,7 @@ export interface OperationsObservability {
   schema_version: string;
   project_id: string;
   scope: { kind: string; note: string };
+  owner_delivery?: { available: boolean; routes: Array<{ target: string; route: string; status: string; failure_count: number; reason: string; last_at: string }> };
   provider_telemetry: {
     requested_mode: string;
     updated_at: string;
@@ -3121,6 +3122,9 @@ export interface OperatorOutputPage {
 export interface OperatorInboxItem {
   id: string;
   unread?: boolean;
+  read_version?: string;
+  resolution?: string;
+  verification_required?: boolean;
   kind: string;
   status: string;
   title: string;

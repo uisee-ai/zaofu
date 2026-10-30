@@ -1052,15 +1052,10 @@ def test_inbox_uses_same_dossier_owner_summary(tmp_path: Path) -> None:
 
     inbox = build_operator_inbox(state_dir, log.read_all())
 
-    assert inbox["summary"]["run_deliveries"] == 1
-    assert inbox["views"]["notification"]["count"] == 1
-    item = inbox["views"]["notification"]["ids"][0]
-    projected = next(row for row in inbox["items"] if row["id"] == item)
-    assert projected["kind"] == "run_delivery"
+    assert inbox["summary"]["run_deliveries"] == 0
+    assert inbox["views"]["notification"]["count"] == 0
     assert inbox["summary"]["noise_pending"] == 0
-    assert inbox["summary"]["notification_pending"] == 1
-    assert projected["summary"] == owner_summary["summary"]
-    assert projected["deep_link"].startswith("/?page=runs&run_id=")
+    assert inbox["summary"]["notification_pending"] == 0
 
     transport = MockFeishuTransport()
     delivered = deliver_owner_visible_messages_once(

@@ -19,7 +19,7 @@ export function inboxItemsForView(
     if (view === "all") return true;
     if (view === "unread") return item.unread === true || item.id === retainedReadId;
     if (view === "resolved") return item.status !== "pending" || item.category === "resolved";
-    if (view === "decisions") return item.status === "pending" && item.actionability === "human_required";
+    if (view === "decisions") return (item.status === "pending" && item.actionability === "human_required") || item.status === "processing";
     if (view === "runtime_attention") return item.status === "pending" && item.category === "runtime_attention";
     if (view === "notification") return item.status === "pending" && (item.category === "notification" || item.kind === "run_delivery");
     return item.status === "pending" && item.category === "automation_diagnostic";
@@ -27,6 +27,9 @@ export function inboxItemsForView(
 }
 
 export function inboxStatusLabel(item: OperatorInboxItem): string {
+  if (item.verification_required && item.status === "pending") return "Needs review";
+  if (item.status === "processing") return "Decision submitted";
+  if (item.status === "failed") return "Action failed";
   if (item.status !== "pending") return item.status;
   if (item.actionability === "human_required") return "Needs action";
   if (item.actionability === "informational") return "Update";

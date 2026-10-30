@@ -9,6 +9,7 @@ B14) or feeds synth replan (rejected, B14-S6).
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.plan_approval_state import decide_pending_plan
 
 
 class PlanApprovalActionsMixin:
@@ -52,13 +53,18 @@ class PlanApprovalActionsMixin:
         }
         if reason:
             event_payload["reason"] = reason
-        event = self.writer.emit(
-            event_type,
-            actor="operator",
-            causation_id=plan_id,
-            correlation_id=requested.correlation_id,
+        event, error = decide_pending_plan(
+            self.writer,
+            state_dir=self.state_dir,
+            plan_id=plan_id,
+            event_type=event_type,
             payload=event_payload,
+            correlation_id=requested.correlation_id,
+            expected_request_id=str(payload.get("request_event_id") or ""),
         )
+        if event is None:
+            return {"_status_code": 409, "ok": False, "status": "stale_decision",
+                    "action": action, "reason": error}
         self._completed(
             requested=requested,
             event=event,

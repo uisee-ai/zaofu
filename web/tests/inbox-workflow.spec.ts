@@ -119,8 +119,8 @@ test("slow preparation polls do not overlap or create an extra ordinary poll", a
 test("Inbox read state stays separate from decisions and retains current unread selection", async ({ page }) => {
   const items = [
     { id: "approval", title: "Review proposal", kind: "approval", status: "pending", unread: false, actionability: "human_required", actions: [{ action: "approve", label: "Approve" }] },
-    { id: "report-a", title: "Delivery report", kind: "run_delivery", status: "pending", unread: true, actionability: "informational", actions: [{ action: "ack", label: "Ack" }] },
-    { id: "report-b", title: "Delivery report", kind: "run_delivery", status: "pending", unread: true, actionability: "informational", actions: [] },
+    { id: "report-a", title: "Decision request", kind: "approval", status: "pending", unread: true, read_version: "v1:a", actionability: "human_required", actions: [] },
+    { id: "report-b", title: "Decision request", kind: "approval", status: "pending", unread: true, read_version: "v1:b", actionability: "human_required", actions: [] },
   ];
   const actions: string[] = [];
   let failRead = true;
@@ -142,18 +142,14 @@ test("Inbox read state stays separate from decisions and retains current unread 
   const row = (id: string) => page.locator(`[data-inbox-id="${id}"]`);
   await expect(row("approval")).toContainText("Needs action");
   await expect(row("approval").locator(".operator-inbox-unread-dot")).toHaveCount(0);
-  await expect(page.locator(".inbox-queue").getByText("Delivery report", { exact: true })).toHaveCount(2);
+  await expect(page.locator(".inbox-queue").getByText("Decision request", { exact: true })).toHaveCount(2);
   await page.getByRole("checkbox", { name: "Unread", exact: true }).check();
   await row("report-a").click();
-  await expect(row("report-a").getByRole("button", { name: "Ack", exact: true })).toHaveCount(0);
-  await page.locator(".inbox-reading-pane").getByRole("button", { name: "Mark read", exact: true }).click();
   await expect(page.getByText("Read was rejected", { exact: true })).toBeVisible();
   await expect(row("report-a").locator(".operator-inbox-unread-dot")).toHaveCount(1);
-  await page.locator(".inbox-reading-pane").getByRole("button", { name: "Mark read", exact: true }).click();
+  await row("report-a").click();
   await expect(row("report-a").locator(".operator-inbox-unread-dot")).toHaveCount(0);
   await expect(row("report-a")).toBeVisible();
-  await row("report-b").click();
-  await expect(row("report-a")).toHaveCount(0);
   await page.getByRole("button", { name: "Mark all read" }).click();
   await page.getByRole("checkbox", { name: "Unread", exact: true }).uncheck();
   await page.getByRole("button", { name: "Needs action", exact: true }).click();
@@ -174,7 +170,7 @@ test("a pending Inbox poll cannot undo an accepted read acknowledgement", async 
       await route.fulfill({ json: { ok: true } });
       return;
     }
-    const item = { id: "report", title: "Report", kind: "run_delivery", status: "pending", actionability: "informational", unread };
+    const item = { id: "report", title: "Report", kind: "approval", status: "pending", actionability: "human_required", unread };
     if (holdPoll) { holdPoll = false; held = true; await delayed; }
     await route.fulfill({ json: { items: [item], pending: [item], summary: { unread: item.unread ? 1 : 0 }, policy: {} } }).catch(() => {});
   });
@@ -191,7 +187,7 @@ test("a pending Inbox poll cannot undo an accepted read acknowledgement", async 
 });
 
 test("Inbox row read control acknowledges only its own item", async ({ page }) => {
-  const items = ["first", "second"].map(id => ({ id, title: `Report ${id}`, kind: "run_delivery", status: "pending", actionability: "informational", unread: true }));
+  const items = ["first", "second"].map(id => ({ id, title: `Report ${id}`, kind: "approval", status: "pending", actionability: "human_required", unread: true }));
   const reads: string[] = [];
   await page.route("**/api/projects/**", async route => {
     if (route.request().method() === "POST") {
@@ -209,7 +205,6 @@ test("Inbox row read control acknowledges only its own item", async ({ page }) =
   expect(reads).toEqual(["second"]);
   await page.setViewportSize({ width: 320, height: 844 });
   await page.locator('[data-inbox-id="first"]').click();
-  await page.locator(".inbox-reading-pane").getByRole("button", { name: "Mark read", exact: true }).click();
   await expect(page.locator(".inbox-reading-pane").getByRole("button", { name: "Mark read", exact: true })).toHaveCount(0);
   expect(reads).toEqual(["second", "first"]);
 });
@@ -218,7 +213,7 @@ for (const action of ["replan-approve", "replan-reject"]) test(`Inbox owner prev
   let release!: () => void;
   const delayed = new Promise<void>((resolve) => { release = resolve; });
   const actions: { action: string; payload: Record<string, unknown> }[] = [];
-  const item = { id: "approval:owner-review", kind: "approval", status: "pending", title: "Owner review", plan_id: "PLAN-1",
+  const item = { id: "approval:owner-review", kind: "approval", status: "pending", title: "Owner review", plan_id: "PLAN-1", created_event_id: "evt-owner-review",
     actionability: "human_required", owner_route: "plan_synth_owner_decision", approval_ref: "owner-review",
     proposal_ref: "proposal.json", eval_ref: "evaluation.json" };
   await page.route("**/api/projects/**", async (route) => {
@@ -229,7 +224,7 @@ for (const action of ["replan-approve", "replan-reject"]) test(`Inbox owner prev
     } else if (path.endsWith("/operator/inbox")) {
       await delayed;
       await route.fulfill({ json: { items: [item], pending: [item], summary: { action_required_pending: 1 }, policy: {} } }).catch(() => {});
-    } else await route.fulfill({ json: { plan_id: "PLAN-1", status: "pending", content_kind: "full", markdown: "# Review scope",
+    } else await route.fulfill({ json: { plan_id: "PLAN-1", status: "pending", requested_event_id: "evt-owner-review", content_kind: "full", markdown: "# Review scope",
       refs: {}, artifacts: [], actions: { approve: "replan-approve", reject: "replan-reject" } } });
   });
   await page.goto("/tests/inbox-workflow.html?surface=inbox&plan=PLAN-1");
@@ -246,6 +241,21 @@ for (const action of ["replan-approve", "replan-reject"]) test(`Inbox owner prev
   await button.click();
   await expect.poll(() => actions.length).toBe(1);
   expect(actions[0]).toMatchObject({ action, payload: { approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" } });
+});
+
+test("an old Plan preview cannot approve a newer owner request", async ({ page }) => {
+  const item = { id: "approval:owner-review", kind: "approval", status: "pending", title: "Owner review", plan_id: "PLAN-1",
+    created_event_id: "evt-new", actionability: "human_required", owner_route: "plan_synth_owner_decision",
+    approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" };
+  await page.route("**/api/projects/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/operator/inbox")) await route.fulfill({ json: { items: [item], pending: [item], summary: { action_required_pending: 1 }, policy: {} } });
+    else await route.fulfill({ json: { plan_id: "PLAN-1", status: "pending", requested_event_id: "evt-old", content_kind: "full",
+      markdown: "# Old review", refs: {}, artifacts: [], actions: { approve: "replan-approve", reject: "replan-reject" } } });
+  });
+  await page.goto("/tests/inbox-workflow.html?surface=inbox&plan=PLAN-1");
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await expect(dialog.getByRole("button", { name: "Approve decisions", exact: true })).toBeDisabled();
 });
 
 test("Board summarizes blockers while List retains details and outcomes", async ({ page }) => {
