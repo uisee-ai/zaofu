@@ -1,0 +1,58 @@
+{
+  "product-scan": {
+    "tokens": 280381,
+    "samples": 8
+  },
+  "tech-scan": {
+    "tokens": 676579,
+    "samples": 11
+  },
+  "planner": {
+    "tokens": 1242823,
+    "samples": 17
+  },
+  "plan-critic": {
+    "tokens": 2535241,
+    "samples": 28
+  },
+  "orchestrator": {
+    "tokens": 847151,
+    "samples": 15
+  },
+  "dev-lane-0": {
+    "tokens": 1214259,
+    "samples": 13
+  },
+  "verify-lane-0": {
+    "tokens": 653344,
+    "samples": 9
+  },
+  "verify-lane-1": {
+    "tokens": 368446,
+    "samples": 3
+  },
+  "verify-lane-2": {
+    "tokens": 402130,
+    "samples": 4
+  },
+  "verify-lane-3": {
+    "tokens": 669833,
+    "samples": 3
+  },
+  "verify-lane-4": {
+    "tokens": 333330,
+    "samples": 3
+  },
+  "verify-lane-5": {
+    "tokens": 652695,
+    "samples": 3
+  },
+  "verify-lane-6": {
+    "tokens": 595517,
+    "samples": 3
+  },
+  "verify-lane-7": {
+    "tokens": 586721,
+    "samples": 3
+  }
+}

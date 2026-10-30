@@ -1,6 +1,6 @@
 # V5 验证上下文与运行时收尾
 
-关联：[实施任务](../../tasks/active/2026-10-30-0903-v5-verification-efficiency-and-runtime-closeout.md)、
+关联：[实施任务](../../tasks/done/2026-10-30-0903-v5-verification-efficiency-and-runtime-closeout.md)、
 [受控装配](registered-controller-assembly.md)、[前次真实运行](../records/2026-10-30-hello-prd-v5-controlled-assembly.md)。
 
 ## 必读输入与验证提交

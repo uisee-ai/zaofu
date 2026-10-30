@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # V5 验证上下文、运行时可靠性与闭环修复
 
@@ -35,6 +35,15 @@
 - 不修改既有 Run 的预算、事件与完成状态；语义策略由 skill/profile 提供，Kernel 只校验确定性合同。
 - 实现提交后记录短 hash，再归档已完成任务；不自动合并或 push。
 
+## 实现提交
+
+- `0e0321bd fix: bound V5 verification reads and harden runtime closeout`
+- `d64c7d80 fix: project provider context window into workflow details`
+- `9a44ad6f fix: reconcile provider usage before session retirement`
+
+本任务关闭的是上述 9 项修复，不代表原 Hello World 全流程任务完成；原 smoke 任务保持 defer。
+[完整实测、剩余阻塞与清理记录](../../docs/records/2026-10-30-v5-verification-efficiency-e2e.md)。
+
 ## 进度
 
 - 9 项实现及直接调用方已完成；Task Verify 真实接纳，整轮最终因 Run 总预算而阻塞，不能认定完整交付闭环。
@@ -47,3 +56,6 @@
 - Docker Playwright 的 workflow-execution-graph 15 项通过，包含累计 tokens、缓存、金额未知及上下文占用分离断言。
 - 实验遗留 rmar-0cd86772ce2b 已由其 worktree 内的 zf stop --fast --include-run-manager 停止；原 PID 111354/112615 已消失，候选文件保留。
 - 真实测试项目 hello-v5-optimized，Task TASK-626329；创建及提交经 8002 浏览器受控动作完成。
+
+- 尾部对账最终验证：87 passed；相关 mock E2E 11 passed；sentinel 51 passed；dev-verify flow-smoke 10 passed。新增对账修复未再跑真实 Provider 整轮，已明确记录。
+- 临时服务、runtime 与浏览器已停止，状态私有归档后清理，8001 保持监听；worktree 保留待独立合并。

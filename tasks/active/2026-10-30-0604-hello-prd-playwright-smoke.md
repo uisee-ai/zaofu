@@ -1,6 +1,6 @@
 # Hello World PRD 真实浏览器闭环验证
 
-> 状态: defer；V5 入口已实现并重测，真实 Run 因 Verify 单操作 150 万 token 上限阻塞；待用户选择保持预算优化上下文或批准新预算提案后重测。
+> 状态: defer；V5 入口与 Task Verify 单操作预算问题已修复，最新真实 Run 在固定 8-lane 候选验证期间触发 1000 万总预算；待批准总预算/fanout 适配方案后，以新 Run 验证 Discovery、Judge 和最终交付。
 
 用户授权：通过 Playwright 创建任务、提交并执行最小 Hello World PRD。基线为 dev / b33b6b9f，固定使用 zf-prd-v5 对应的完整 PRD 路线。
 
@@ -62,3 +62,11 @@
 - 独立核验 Impl 源提交 272aadc1 两条命令和 2 项测试均通过；该提交不等同于已交付候选。
 - 图归属及阻塞状态已经 Playwright 断言，相关后端 60 / 50 项、前端 model/build、sentinel 通过（集合有重叠）。
 - 详见 [续测报告与证据](../../docs/records/2026-10-30-hello-prd-v5-controlled-assembly.md)。
+
+
+## 2026-10-30 效率修复续测
+
+- Task TASK-626329 的 Task Verify 约 95 秒正式接纳，3 次必读分页，Provider 最终 453075 tokens。
+- 候选 198eb416 已冻结，独立检查两条 CLI 和 3 项 unittest 通过。
+- 候选 8-lane 验证期间 Run 总预算触发 blocked，没有 Discovery/Judge/最终交付，不标记本 smoke 任务 done。
+- [本轮完整记录](../../docs/records/2026-10-30-v5-verification-efficiency-e2e.md)；[已完成修复任务](../done/2026-10-30-0903-v5-verification-efficiency-and-runtime-closeout.md)。

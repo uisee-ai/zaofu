@@ -1,0 +1,22 @@
+{
+  "role": "verify-lane-0",
+  "samples": 6,
+  "totals": {
+    "input_tokens": 43385,
+    "output_tokens": 1873,
+    "cache_read_tokens": 196480,
+    "cache_creation_tokens": 0,
+    "cache_creation_1h_tokens": 0
+  },
+  "tool_calls": 20,
+  "required_read_calls": 3,
+  "combined_validate_submit": true,
+  "observed_meter_total_tokens": 241738,
+  "provider_final_total_tokens": 453075,
+  "provider_final_input_tokens_including_cache": 450020,
+  "provider_final_cache_read_tokens": 399616,
+  "provider_final_output_tokens": 3055,
+  "elapsed_seconds": 95.454,
+  "status": "admitted",
+  "final_capture_gap_tokens": 211337
+}
