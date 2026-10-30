@@ -91,6 +91,7 @@ def build_workflow_proposal(
     base_config_path: Path,
     candidate_config_path: Path | None = None,
     synthesis_result_ref: Mapping[str, Any] | None = None,
+    preview_review_ref: Mapping[str, Any] | None = None,
     preflight: Mapping[str, Any] | None = None,
     flow_kind: str = "",
     actor: str = "zf-cli",
@@ -143,15 +144,13 @@ def build_workflow_proposal(
         raise WorkflowProposalError("workflow proposal config input is missing")
 
     synthesis, short_spec, short_spec_ref = _synthesis_input(
-        state_dir,
-        request=request,
-        descriptor=synthesis_result_ref,
-        flow_kind=flow_kind,
+        state_dir, request=request, descriptor=synthesis_result_ref, flow_kind=flow_kind,
     )
     if (short_spec.get("parameters") or {}).get("controller_id"):
         from zf.runtime.workflow_registered_controller import bound_controller_candidate
         candidate_path = bound_controller_candidate(
             state_dir, request, base_path, candidate_path, synthesis_result_ref, flow_kind,
+            preview_review_ref=preview_review_ref,
         )
     if str(short_spec.get("flow_family") or "") == "Workflow":
         generated_path = _materialize_generic_candidate(
@@ -278,6 +277,7 @@ def build_workflow_proposal(
         or _flow_purpose(flow_kind or str(request.get("kind") or ""))
     )
     compiler_inputs = {
+        **({"preview_review_ref": dict(preview_review_ref)} if preview_review_ref else {}),
         "controller_catalog_digest": stable_json_digest(
             {"flow_documents": source_docs}
         ),
