@@ -15,6 +15,21 @@ Method detail and task-verification contracts are available through its
 dependencies. Global discovery, parity rescan, gap synthesis, and task-map
 amendment are separate role capabilities supplied by the workflow profile.
 
+
+## Context consumption
+
+- Start with the current stage card and its controlled required-read batch. Consume
+  every `next_cursor` page; identical authorized aliases share content, not authority.
+- Read this role method once per unchanged skill digest. Load dependency references
+  only for the current stage's verification method; do not concatenate all skills,
+  briefing, task docs and global plans into a truncated tool response.
+- Do not reread `task.md`, `source.md`, `progress.md` merely to reconstruct fields
+  already present in the pinned contract. For missing context, retrieve the exact
+  authorized source/slice. Mandatory acceptance and independent verification remain required.
+- Prefer the rendered `result validate ... --submit` command when provided. A failed
+  validation returns diagnostics without consuming submission; successful preflight
+  goes through normal Kernel admission in that invocation.
+
 ## Dependency Triggers
 
 - Always use `yoke/verify-review` for independent review order and evidence
@@ -74,26 +89,17 @@ amendment are separate role capabilities supplied by the workflow profile.
 7. Record `reused_command_receipt_ids`, newly executed probes, exact findings,
    affected criteria, reproducible command ids, evidence refs, and the
    recommended semantic owner.
-   保存探针证据时先复用当前回合已持久化的工具结果：通过 briefing 中的 CLI 和 state dir
-   查询 `zf events --type <provider>.hook.post_tool_use --last 5 --json --state-dir <state_dir>`
-   （provider取本回合的codex或claude）。优先加 `--actor <role_instance>` 在取last之前
-   筛选；hook 顶层 `task_id` 可能为空，不能因 `--task` 查询为空便认定工具证据不存在。
-   应核对 `causation_id` 对应的当前派发；已知事件ID时用 `--id <event_id>` 读取原始事件。
-   短输出或空 stdout 可能仅保存在事件正文中，没有 raw_output 不等于采集失败；
-   若契约明确要求 sidecar 而实际没有，报告该具体约束，不伪造引用。避免反复输出查询自身的
-   历史大结果；确需扩大last时在调用端只输出待核验事件。核对工具结果事件的 actor、
-   Run、派发因果、实际命令、输出和退出码。仅引用确实存在且属于本次验证的
-   `event:<event_id>`，或该事件给出的原始输出 sidecar ref；保留截断输出的完整 sidecar。
+   保存探针证据时复用当前回合持久化的工具结果。先查询一次
+   `zf events --index --type <provider>.hook.post_tool_use --actor <role_instance> --last 5 --json --state-dir <state_dir>`，
+   只返回事件索引，再用 `--id <event_id>` 读取必要原始结果及 raw_output 引用。
+   核对 actor、Run、派发 causation、命令与退出码；hook task_id 可能为空。
+   当前上下文中已完整消费的正文不重复读取，保留 ID/ref 与校验事实复用。
+   短输出可能只在事件正文中，没有 sidecar 不代表采集失败；若契约要求 sidecar
+   却缺失，应报告具体约束，不能伪造引用。截断的输出必须消费完整 sidecar。
    核验 PRD 独立评审、Owner 确认、计划批准等前置流程证据时，注意事件可能早于 Task 创建，
    `task_id` 为空；`--task` 精确筛选不能证明这些事件不存在。优先按已绑定 ID/ref 查询，
    或按事件类型定位后核对 channel/thread、PRD ref/digest、计划代际及先后顺序；
    不把其他版本的评审、成员签字或仅有命令退出码当作所需批准。
-   建立一次证据索引：先用 `zf events --index --json` 加精确type/actor/task筛选，
-   只输出ID、身份、工具输入预览和raw_output引用；再用不带`--index`的`--id`读取
-   所选事件完整正文及sidecar。索引不是完整证据，不能直接用预览签收验收。
-   按事件类型、actor、当前派发因果定位 ID，再读取必要事件正文与
-   raw_output ref。不要为找一个命令的收据反复拉取 last 100/200 的 hook 历史；查询自身
-   也产生 hook 输出，递归读取会迅速放大上下文。找到原始命令后保留其 ID/ref 复用。
    预算紧张时先收敛已完成检查的矩阵并预校验；证据确实缺失则如实阻断，不反复扩展
    历史查询直到预算耗尽，不省略独立验收或伪造通过。
    将实际发现、命令及这些引用写进已授权的 result scratch。不得虚构事件或引用其他回合，

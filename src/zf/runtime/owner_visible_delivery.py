@@ -128,6 +128,7 @@ def deliver_owner_visible_messages_once(
     routing: RoutingConfig,
     target: str = "feishu",
     max_attempts: int = 1,
+    require_explicit_target: bool = False,
 ) -> OwnerVisibleDeliveryResult:
     """Deliver pending owner-visible messages for one target.
 
@@ -159,7 +160,7 @@ def deliver_owner_visible_messages_once(
     )
     for event in requested:
         payload = event.payload if isinstance(event.payload, dict) else {}
-        if not _wants_target(payload, target):
+        if (require_explicit_target and target not in _delivery_targets(payload)) or not _wants_target(payload, target):
             skipped += 1
             continue
         if runtime_stopped and not _stopped_runtime_delivery_allowed(payload):

@@ -1,0 +1,10 @@
+{"at":"2026-10-30T06:07:31.731Z","method":"POST","path":"/api/workspace/onboarding","status":200}
+{"at":"2026-10-30T06:07:31.963Z","method":"POST","path":"/api/workspace/projects/validate-path","status":200}
+{"at":"2026-10-30T06:07:42.355Z","method":"POST","path":"/api/workspace/projects/init","status":201}
+{"at":"2026-10-30T06:07:42.421Z","method":"POST","path":"/api/workspace/projects/project-b8ad9c68/touch","status":200}
+{"at":"2026-10-30T06:08:30.229Z","method":"POST","path":"/api/projects/project-b8ad9c68/actions/chat-orchestrator","status":202}
+{"at":"2026-10-30T06:13:16.011Z","method":"POST","path":"/api/projects/project-b8ad9c68/webchat/turns/eec39f3f-bcda-4e0e-a4db-4ad7f2d1bf98/control","status":200}
+{"at":"2026-10-30T06:13:42.824Z","method":"POST","path":"/api/projects/project-b8ad9c68/actions/chat-orchestrator","status":202}
+{"at":"2026-10-30T06:15:12.847Z","method":"POST","path":"/api/projects/project-b8ad9c68/actions/chat-orchestrator","status":202}
+{"at":"2026-10-30T06:16:13.576Z","method":"POST","path":"/api/projects/project-b8ad9c68/actions/create-task","status":201}
+{"at":"2026-10-30T06:16:13.703Z","method":"POST","path":"/api/projects/project-b8ad9c68/webchat/interactions/proposal-038ca695b2303173c036faf8%3Af4190eaa-dcce-45fb-9565-14cbe9a93ffe/answer","status":200}

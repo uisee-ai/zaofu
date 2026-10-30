@@ -1028,7 +1028,8 @@ def test_projection_failure_preserves_terminal_and_retries(
     assert retried.failed == 0
 
 
-def test_inbox_uses_same_dossier_owner_summary(tmp_path: Path) -> None:
+def test_inbox_uses_same_dossier_owner_summary(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ZF_OWNER_VISIBLE_CHAT", "ou-owner")
     state_dir, log, writer = _state(tmp_path)
     for event in _completion_events(state_dir):
         log.append(event)

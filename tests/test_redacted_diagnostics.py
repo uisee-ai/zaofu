@@ -50,6 +50,19 @@ def test_redact_obj_recurses_nested_structures():
     assert "[REDACTED_SECRET]" in json.dumps(redacted)
 
 
+def test_numeric_budgets_and_test_names_remain_readable_without_exposing_secrets():
+    import base64
+
+    header = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').decode().rstrip("=")
+    token = header + ".c3ludGhldGljLXBheWxvYWQ.c3ludGhldGljLXNpZ25hdHVyZQ"
+    safe = "token_budget: 1500000\ncontext_window_tokens: 200000\nmax_tokens: 1024\n"
+    test_name = "test_hello.HelloCommandTests.test_default_output"
+    assert redact_text(safe + test_name) == safe + test_name
+    assert redact_text(token) == "[REDACTED_JWT]"
+    assert "123456" not in redact_text("ACCESS_TOKEN=123456 PASSWORD=123456")
+    assert "secret-value" not in redact_text("token_budget: secret-value")
+
+
 def test_redact_obj_preserves_non_secret_token_capability_flags():
     redacted = redact_obj({
         "requires_token": True,

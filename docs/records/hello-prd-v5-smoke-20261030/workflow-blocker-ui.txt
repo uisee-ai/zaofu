@@ -1,0 +1,83 @@
+Workflows
+synced
+Z
+ZaoFu
+WORKSPACE
+hello-prd-v5-smoke
+Overview
+Inbox
+Tasks
+Workflows
+Agents
+Automations
+MONITORING
+Delivery
+Loop
+Traces
+CHANNELS
+Open Channels
+New Channel
+SYSTEM SETTINGS
+Settings
+
+completed: task TASK-5CB1FC created through controlled action
+
+Workflow
+Answer Questions
+Goal / Requirement
+在项目根目录以 Python 标准库交付 hello.py，并以 unittest 验证两种命令及退出码；仅一个实现任务，不增加额外功能。固定使用 ZaoFu PRD Workflow v5 Production (Codex)，zaofu-prd-v5-production-c…
+展开目标
+Task：未绑定
+Run：尚未启动
+验收条件 · 4
+执行 Graph
+任务 Graph
+Timeline
+Filters
+Raw
+执行记录
+聚合
+展开记录
+相同角色与 Task 的记录聚合
+查看运行结果 查看全图
+React Flow
+
+The graph will appear as this workflow is prepared.
+
+已加载的流程结构 · R2 · Event 420
+Live updates · checks every 30s
+Workflow Details
+Revision 2 · Preview
+Raw YAML
+在项目根目录以 Python 标准库交付 hello.py，并以 unittest 验证两种命令及退出码；仅一个实现任务，不增加额外功能。固定使用 ZaoFu PRD Workflow v5 Production (Codex)，zaofu-prd-v5-production-codex / zf-prd-v5.yaml，保留 Scan、Plan、Plan Critic、OA pre_impl、Impl、独立 Task Verify、Candidate Verify、Discovery、Judge 和 Kernel 交付；不得切换 light 或直接派发。沿用模板默认 8 条 lane、impl/verify 池各 8、最多 16 个活动 Task Pipeline、worker on-demand 空闲 120 秒及默认模型和推理强度，不要求并行任务；plan_approval=false。先完整预览配置，适配本项目路径、验证和 Git 引用，并确认 PRD 在各工作树可读；由 Owner 单独确认启动。
+clarifying
+synthesis settled
+Readiness
+Needs clarification
+0 blockers / 0 warnings / 0 info
+Requirement revision
+Clarify request
+clarifying
+Objective
+Target root
+Acceptance
+Constraints
+CLARIFICATION
+1 OF 1
+当前合成合同无法绑定指定的 v5 模板，模板所需的 bounded-direct-v1 也不在当前允许的执行 Profile 目录中；如何通过受控配置流程引入并验证完整 v5 配置，生成符合该需求的预览？
+当前合成合同无法绑定指定的 v5 模板，模板所需的 bounded-direct-v1 也不在当前允许的执行 Profile 目录中；如何通过受控配置流程引入并验证完整 v5 配置，生成符合该需求的预览？
+Required to continue
+Save & prepare proposal
+Requirements
+confirmed requirement
+Acceptance
+python hello.py 精确输出 Hello, world!，退出码为 0。
+python hello.py --name ZaoFu 精确输出 Hello, ZaoFu!，退出码为 0。
+仅使用 Python 标准库，unittest 自动化测试实际执行并检查上述两种调用。
+从项目根目录运行 python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover("tests",pattern="test_hello.py"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'，退出码为 0。
+Constraints
+增加额外功能
+增加额外实现任务
+切换 light 或直接派发
+Advanced audit details
+diagnostics, bindings, roles and FlowSpec

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import hashlib
 import json
 from pathlib import Path
@@ -948,3 +949,20 @@ def test_proposal_materialization_failure_has_bounded_retries(
         "inspect proposal materialization failure"
     )
     assert agent.calls == 1
+
+
+def test_consumer_lock_contention_defers_without_reporting_failure(tmp_path):
+    from zf.core.state.locks import locked_path
+
+    config, state, writer, _ = _context(tmp_path)
+    queued = enqueue_workflow_synthesis(
+        state_dir=state, project_root=tmp_path, config=config, writer=writer,
+        request_id="req-synth", actor="test", backend="mock",
+    )
+    before = [e.id for e in writer.event_log.read_all()]
+    with locked_path(state / "projections/workflow-synthesis-consumer.guard"):
+        assert consume_workflow_synthesis_operations(
+            state_dir=state, project_root=tmp_path, config=config, writer=writer,
+        ) == 0
+    assert before == [e.id for e in writer.event_log.read_all()]
+    assert load_workflow_operation(writer.event_log, queued.operation_id)["status"] == "requested"

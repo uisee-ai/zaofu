@@ -1,4 +1,5 @@
 import { relatedNodes, statusLabels, type SdlcEdge, type SdlcNode, type WorkflowGraphResult } from './sdlcGraphModel.js';
+import { operationStage } from './executionGraphModel.js';
 
 export function observedRunStatus(run: SdlcNode): string {
   if (['done', 'completed', 'failed', 'blocked', 'cancelled', 'abandoned'].includes(run.status) && !run.data.terminal_event_id) return '终态证据未观测';
@@ -38,7 +39,7 @@ export function executionContext(graph: WorkflowGraphResult, visibleNodes: SdlcN
   if (runId && graph.scope.execution_started !== false) {
     for (const operation of graph.nodes) {
       if (operation.kind !== 'operation' || !operation.data.role_instance || operation.data.workflow_run_id !== runId) continue;
-      const stage = `workflow:stage:${String(operation.data.parent_stage_id || '')}`;
+      const stage = `workflow:stage:${operationStage(operation)}`;
       if (visible.has(stage)) observed.add(stage);
       else {
         let mapped = false;
