@@ -615,3 +615,8 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
     assert captured["contract_snapshot_digest"] == captured[
         "task_contract_snapshot_digest"
     ]
+    envelope = captured["worker_execution_envelope"]
+    assert envelope["schema_version"] == "worker-execution-envelope.v1"
+    assert envelope["identity"]["operation_id"] == expected_operation.operation_id
+    assert envelope["lifecycle"]["unknown_is_not_idle"] is True
+    assert envelope["wake_contract"]["idle_probe_event"] == "worker.probe.idle"

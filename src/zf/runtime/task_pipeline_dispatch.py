@@ -198,6 +198,13 @@ def dispatch_task_pipeline_stage(
         attempt_rows=attempt_rows,
     )
     role_config_digest = _role_config_digest(runtime, role, task)
+    from zf.runtime.execution_profiles import resolve_execution_profile
+
+    execution_profile = resolve_execution_profile(
+        runtime.config,
+        role_instance=role.instance_id,
+        contract=getattr(task, "contract", None),
+    )
     binding = _activate_task_stage_binding(
         runtime,
         role=role,
@@ -245,6 +252,7 @@ def dispatch_task_pipeline_stage(
         "workspace_generation": workspace_generation,
         "placement_epoch": placement_epoch,
         "pipeline_key": operation_identity.pipeline_key,
+        "operation_id": operation_identity.operation_id,
         "task_stage_session_binding": str(binding.get("binding_key") or ""),
         "role_instance": role.instance_id,
         "attempt_id": scheduler_attempt_id,
@@ -312,6 +320,18 @@ def dispatch_task_pipeline_stage(
             else None
         ))
         operation_payload["rework_feedback"] = rework_feedback
+
+    from zf.runtime.worker_execution_envelope import (
+        build_worker_execution_envelope,
+    )
+
+    operation_payload["worker_execution_envelope"] = (
+        build_worker_execution_envelope(
+            payload=operation_payload,
+            role=role,
+            execution_profile=execution_profile,
+        )
+    )
 
     from zf.runtime.call_result_runtime import prepare_call_operation
     from zf.runtime.task_pipeline_capsule import (
@@ -388,6 +408,10 @@ def dispatch_task_pipeline_stage(
         workspace_generation=workspace_generation,
         placement_epoch=placement_epoch,
         task_stage_session_binding=str(binding.get("binding_key") or ""),
+        worker_envelope_digest=str(
+            operation_payload["worker_execution_envelope"].get("envelope_digest")
+            or ""
+        ),
     )
     from zf.runtime.task_pipeline_capsule import verify_pipeline_delivery_capsule
 
