@@ -81,7 +81,9 @@ def test_v5_selection_preserves_policy_and_applies_only_exact_approved_candidate
     assert config.runtime.git.auto_ship_on_judge_passed is False
     assert config.runtime.workdirs.provision_paths == []
     assert config.workflow.orchestration.normal_frontier_owner == "wrc"
-    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.timeout_seconds == 600
+    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.timeout_seconds == 0
+    assert config.workflow.run_limits.timeout_seconds == 0
+    assert config.workflow.flow_metadata["task_pipeline"]["worker_lifecycle"]["idle_seconds"] == 600
     assert config.workflow.flow_metadata["task_pipeline"]["mode"] == "blocking"
     assert config.workflow.flow_metadata["task_pipeline"]["pools"]["impl"]["capacity"] == 8
     assert config.quality_gates["static"].required_checks == result["short_flow_spec"]["parameters"]["verification_commands"]
