@@ -159,3 +159,75 @@ def test_source_change_while_complete_graph_builds_never_publishes_mixed_generat
     response = client.get(url, headers={"X-ZF-Structure-Generation": partial["generation"]})
     assert response.status_code in {409, 503}
     assert "nodes" not in response.json()
+
+
+def test_execution_summary_is_generation_bound_lightweight_and_read_only(setup, monkeypatch):
+    client, service, binding = setup
+    request_id = binding['request_id']
+    service.writer.append(ZfEvent(type='plan.approval.requested', origin='kernel', payload={
+        'request_id': request_id, 'plan_id': 'PLAN-1',
+    }))
+    before = service.writer.event_log.read_all()
+    preview = Mock(wraps=workflow_workbench_sources.build_plan_preview)
+    monkeypatch.setattr(workflow_workbench_sources, 'build_plan_preview', preview)
+    url = f'/api/projects/default/workflow-requests/{request_id}/graph'
+    structure = client.get(url + '/structure')
+    assert structure.status_code == 200
+    generation = structure.json()['generation']
+    response = client.get(url + '/execution', headers={'X-ZF-Structure-Generation': generation})
+    assert response.status_code == 200, response.text
+    summary = response.json()
+    assert summary['schema_version'] == 'sdlc-workbench-execution.v1'
+    assert summary['partial'] and summary['execution_summary'] and summary['generation'] == generation
+    assert summary['scope'] == structure.json()['scope']
+    assert 'plans' not in summary and 'timeline' not in summary and 'analysis' not in summary
+    assert summary['pending_plan_ids'] == ['PLAN-1']
+    assert all(node['kind'] in {'workflow', 'operation', 'task', 'run_anchor', 'run', 'preparation', 'requirement'} for node in summary['nodes'])
+    preview.assert_not_called()
+    assert client.get(url + '/execution', headers={'X-ZF-Structure-Generation': generation, 'If-None-Match': response.headers['etag']}).status_code == 304
+    assert service.writer.event_log.read_all() == before
+    service.writer.append(ZfEvent(type='worker.progress', origin='kernel', payload={'request_id': request_id}))
+    assert client.get(url + '/execution', headers={'X-ZF-Structure-Generation': generation}).status_code == 409
+    assert client.get(url + '/execution').status_code == 422
+
+
+def test_execution_summary_pending_plan_follows_approval_ledger(setup):
+    client, service, binding = setup
+    request_id = binding['request_id']
+    url = f'/api/projects/default/workflow-requests/{request_id}/graph'
+    def summary():
+        structure = client.get(url + '/structure').json()
+        return client.get(url + '/execution', headers={'X-ZF-Structure-Generation': structure['generation']}).json()
+    service.writer.append(ZfEvent(type='plan.approval.requested', origin='kernel', payload={
+        'request_id': request_id, 'plan_id': 'P1', 'approval_ref': 'approval-a',
+    }))
+    assert summary()['pending_plan_ids'] == ['P1']
+    service.writer.append(ZfEvent(type='approval.resolved', origin='kernel', payload={
+        'request_id': request_id, 'approval_ref': 'approval-a', 'resolution': 'approved',
+    }))
+    assert summary()['pending_plan_ids'] == []
+    service.writer.append(ZfEvent(type='plan.approval.requested', origin='kernel', payload={
+        'request_id': request_id, 'plan_id': 'P1', 'approval_ref': 'approval-b',
+    }))
+    assert summary()['pending_plan_ids'] == ['P1']
+
+
+def test_execution_summary_preserves_operation_and_stage_evidence_without_attempt_nodes():
+    from tests.test_sdlc_graph import sources
+    from zf.runtime.sdlc_graph import build_sdlc_graph
+    events = [
+        ZfEvent(id='request', type='workflow.operation.requested', payload={'workflow_run_id': 'run-a', 'operation_id': 'O1', 'parent_stage_id': 'build'}),
+        ZfEvent(id='start', type='workflow.operation.started', payload={'workflow_run_id': 'run-a', 'operation_id': 'O1', 'role_instance': 'dev-1', 'active_attempt_id': 'A1'}),
+        ZfEvent(id='tool', type='codex.hook.pre_tool_use', causation_id='start', payload={'tool_name': 'Read', 'tool_input': {'file_path': 'src/app.py'}}),
+        ZfEvent(id='end', type='workflow.operation.failed', origin='kernel', payload={'workflow_run_id': 'run-a', 'operation_id': 'O1'}),
+    ]
+    source = sources(events=list(enumerate(events, 1)))
+    summary = build_sdlc_graph(source, execution_only=True)
+    full = build_sdlc_graph(source)
+    selected = {node['id']: node for node in summary['nodes']}
+    complete = {node['id']: node for node in full['nodes']}
+    assert selected['operation:O1'] == complete['operation:O1']
+    assert selected['workflow:stage:build']['status'] == complete['workflow:stage:build']['status'] == 'failed'
+    assert selected['operation:O1']['data']['recent_activity'][0]['id'] == 'tool'
+    assert not any(node['kind'] in {'attempt', 'evidence', 'fanout', 'agent'} for node in summary['nodes'])
+    assert any(edge['source'] == 'workflow:stage:build' and edge['target'] == 'operation:O1' for edge in summary['edges'])

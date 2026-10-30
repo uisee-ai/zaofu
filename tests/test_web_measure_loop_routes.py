@@ -85,6 +85,26 @@ def test_measure_loop_endpoint_is_read_only(client: TestClient, state_dir: Path)
     assert before == after
 
 
+def test_loop_view_api_separates_attempts_and_auxiliary_events(state_dir: Path) -> None:
+    log = event_log_from_project(state_dir, config=None, warn=False)
+    log.append(ZfEvent(type="task_map.admitted", origin="kernel", id="map-ok", payload={
+        "task_map_ref": "artifacts/task-map.json", "task_map_digest": "a" * 64, "task_ids": ["T1"],
+    }))
+    log.append(ZfEvent(type="task.attempt.started", origin="kernel", task_id="T1", payload={"attempt_id": "a1"}))
+    log.append(ZfEvent(type="web.action.failed", task_id="T1"))
+    log.append(ZfEvent(type="task.attempt.failed", origin="kernel", task_id="T1", payload={"attempt_id": "a1"}))
+    client = _loop_only_client(state_dir)
+    first = client.get("/api/projects/default/loop-view")
+    second = client.get("/api/projects/default/loop-view")
+    assert first.status_code == second.status_code == 200
+    for response in (first, second):
+        timeline = response.json()["timeline"]
+        assert timeline["attempt_count"] == timeline["failed_attempt_count"] == 1
+        assert timeline["signal_count"] == 1
+        assert timeline["tasks"][0]["signals"][0]["type"] == "web.action.failed"
+        assert timeline["baseline"]["event_id"] == "map-ok"
+
+
 def test_loop_view_endpoint(client: TestClient) -> None:
     response = client.get("/api/projects/default/loop-view")
 

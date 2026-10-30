@@ -3424,6 +3424,8 @@ export interface LoopViewPromiseItem {
 }
 
 export interface LoopViewAttempt {
+  attempt_id?: string;
+  record_kind?: "attempt" | "signal";
   started_ts: string;
   role: string;
   terminal: { type: string; ts: string; reason?: string; seq?: number } | null;
@@ -3439,6 +3441,7 @@ export interface LoopViewTask {
   fails: number;
   counted: number;
   source: string;
+  signals?: Array<{ task_id: string; type: string; ts: string; seq: number; reason: string }>;
 }
 
 export interface LoopViewLoop {
@@ -3485,6 +3488,15 @@ export interface LoopViewProjection {
     warn: boolean;
   }>;
   tasks: LoopViewTask[];
+  timeline?: {
+    tasks: LoopViewTask[];
+    attempt_count: number;
+    failed_attempt_count: number;
+    signal_count: number;
+    source: string;
+    coverage: string;
+    baseline?: { event_id: string; seq: number; task_map_ref: string; task_map_digest: string; task_ids: string[] } | null;
+  };
   backflows: Array<{ from_stage: string; to_stage: string; kind: string; count: number }>;
   subscriber_chains: Array<{ topic: string; seq: number; subscriber: string; result: string; result_seq: number }>;
   loops: Record<string, LoopViewLoop>;

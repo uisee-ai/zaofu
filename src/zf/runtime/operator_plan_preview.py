@@ -25,16 +25,8 @@ PLAN_REJECTED = "plan.rejected"
 PLAN_PREVIEW_SCHEMA_VERSION = "operator-plan-preview.v1"
 
 
-def build_plan_preview(
-    state_dir: Path,
-    events: Iterable[Any],
-    *,
-    plan_id: str,
-    project_root: Path | None = None,
-) -> dict[str, Any]:
-    """Return a full-screen-ready markdown preview for one plan approval."""
-
-    events = list(events)
+def _plan_events(events: Iterable[Any], plan_id: str) -> tuple[Any | None, Any | None]:
+    """Select approval occurrences identically for the summary and full preview."""
     requested: Any | None = None
     resolved: Any | None = None
     for event in events:
@@ -69,6 +61,36 @@ def build_plan_preview(
             resolved = None
         elif _etype(event) in {PLAN_APPROVED, PLAN_REJECTED}:
             resolved = event
+    return requested, resolved
+
+
+def pending_plan_ids(events: Iterable[Any]) -> list[str]:
+    """Return pending Plan identities without opening any artifact bodies."""
+    events = list(events)
+    identities = []
+    for event in events:
+        payload = _payload(event)
+        if _etype(event) == PLAN_APPROVAL_REQUESTED or (
+            _etype(event) == "approval.requested"
+            and str(payload.get("owner_route") or "") == "plan_synth_owner_decision"
+            and payload.get("plan_preview")
+        ):
+            identity = str(payload.get("plan_id") or _event_id(event))
+            if identity not in identities:
+                identities.append(identity)
+    return [identity for identity in identities if (pair := _plan_events(events, identity))[0] is not None and pair[1] is None]
+
+
+def build_plan_preview(
+    state_dir: Path,
+    events: Iterable[Any],
+    *,
+    plan_id: str,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    """Return a full-screen-ready markdown preview for one plan approval."""
+    events = list(events)
+    requested, resolved = _plan_events(events, plan_id)
     if requested is None and resolved is None:
         return {
             "schema_version": PLAN_PREVIEW_SCHEMA_VERSION,

@@ -10,6 +10,7 @@ from zf.runtime.plan_modules import plan_modules
 from zf.runtime.candidate_result_binding import same_task_map_generation
 from zf.runtime.goal_coverage_graph import build_goal_coverage_graph
 from zf.runtime.run_admission import request_admission_view
+from zf.runtime.operator_plan_preview import pending_plan_ids
 from zf.runtime.workflow_operation import reduce_workflow_operations
 from zf.runtime.sdlc_graph_timeline import build_timeline
 from zf.runtime.workflow_trace_fanout import build_fanout_runs
@@ -36,7 +37,7 @@ def activity_event(event) -> dict:
     return result
 
 
-def build_sdlc_graph(source: dict[str, Any]) -> dict[str, Any]:
+def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) -> dict[str, Any]:
     nodes: dict[str, dict] = {}
     edges: dict[tuple, dict] = {}
     diagnostics = list(source["diagnostics"])
@@ -263,6 +264,42 @@ def build_sdlc_graph(source: dict[str, Any]) -> dict[str, Any]:
     from zf.runtime.sdlc_workflow_states import project_structure_states
 
     project_structure_states(nodes, operations, event_rows)
+    if execution_only:
+        # The execution overview needs observed Operations, not event/attempt
+        # nodes, Plan bodies, coverage analysis or the full timeline.
+        for _, event in event_rows:
+            if event.type in RUN_TERMINAL and event.origin == "kernel":
+                for identity in (run, "workflow:terminal:done"):
+                    if identity in nodes:
+                        nodes[identity]["status"] = RUN_TERMINAL[event.type]
+                        nodes[identity]["data"]["terminal_event_id"] = event.id
+        admission = request_admission_view(
+            [event for _, event in event_rows if event.type not in RUN_TERMINAL or event.origin == "kernel"],
+            request_id=scope["request_id"], run_id=scope["run_id"],
+        )
+        if admission.get("active"):
+            nodes[run]["status"] = admission["status"]
+            nodes[run]["data"].pop("terminal_event_id", None)
+            terminal = nodes.get("workflow:terminal:done")
+            if terminal is not None:
+                terminal["status"] = "pending"
+                terminal["data"].pop("terminal_event_id", None)
+        selected = {identity: item for identity, item in nodes.items() if item["kind"] in {
+            "workflow", "operation", "task", "run_anchor", "run", "preparation", "requirement",
+        }}
+        # Task state/contract needs the admitted Plan; keep only its label and id
+        # in this projection and read the full graph before opening Task detail.
+        for item in selected.values():
+            if item["kind"] in {"task", "run_anchor"}:
+                item["data"] = {"task_id": item["data"].get("task_id", "")}
+                item["status"] = "unknown"
+            elif item["kind"] == "requirement":
+                item["data"] = {"revision": scope["revision"]}
+        links = [edge for edge in edges.values() if edge["source"] in selected and edge["target"] in selected]
+        return {"schema_version": "sdlc-workbench-execution.v1", "partial": True,
+                "execution_summary": True, "scope": scope, "nodes": list(selected.values()),
+                "edges": links, "diagnostics": diagnostics,
+                "pending_plan_ids": pending_plan_ids(event for _, event in event_rows)}
     timeline = []
     for seq, event in event_rows:
         p = event.payload

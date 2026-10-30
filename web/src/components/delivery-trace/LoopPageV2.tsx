@@ -2,7 +2,7 @@
 // Design lineage: doc130 (stage-loop contract), doc131 §3.3/§8 (promise,
 // spine), 2026-07 five-run dry-run (mock v12 + gen3 reference prototypes).
 // Canonical Loop product view. Legacy BehaviorLoopPage was retired by design 150.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { LoopViewLoop, RecentEvent } from "../../api/types";
 import type { LiveState } from "../../app/sharedTypes";
@@ -133,15 +133,30 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
   const { error, view } = useLoopViewResource({ liveEvents, liveState, projectId });
   const [openLoop, setOpenLoop] = useState<string>("");
   const [openTask, setOpenTask] = useState<string | null>(null);
+  const focusedLink = useRef("");
+  const params = new URLSearchParams(window.location.search);
+  const expectedRun = params.get("expected_run") || "";
+  const linkedRequest = params.get("request") || "";
+  const linkedTask = params.get("task") || "";
+  const linkedNode = params.get("workflow_node") || "";
+  const wrongRun = Boolean(expectedRun && view && view.run.run_id !== expectedRun);
 
   const jumpToTask = (taskId: string) => {
-    const index = view?.tasks.findIndex((task) => task.id === taskId) ?? -1;
+    const tasks = view?.timeline?.tasks ?? view?.tasks ?? [];
+    const index = tasks.findIndex((task) => task.id === taskId);
     if (index < 0) return;
-    const key = timelineTaskKey(view!.tasks[index]);
+    const key = timelineTaskKey(tasks[index]);
     setOpenTask(key);
     document.getElementById(`loop-row-${encodeURIComponent(key)}`)?.scrollIntoView({ block: "center", behavior: "instant" });
   };
   useEffect(() => setOpenTask(null), [projectId, view?.run.run_id, view?.run.first_ts]);
+  useEffect(() => {
+    if (!view || wrongRun || !linkedTask) return;
+    const scope = `${projectId}:${view.run.run_id}:${linkedTask}`;
+    if (focusedLink.current === scope) return;
+    const task = (view.timeline?.tasks ?? view.tasks).find(item => item.id === linkedTask);
+    if (task) { focusedLink.current = scope; setOpenTask(timelineTaskKey(task)); }
+  }, [view, wrongRun, linkedTask, projectId]);
 
   useEffect(() => {
     // archived run defaults to post-mortem: all cards expanded is too loud;
@@ -187,6 +202,12 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
           <span className="muted">convergence, rework, and recovery</span>
         </div>
       </div>
+
+      {linkedRequest && <div className="loop-context" role={wrongRun ? "alert" : undefined}>
+        {wrongRun ? `所选 Workflow 的 Run ${expectedRun} 与当前 Loop 的 ${run.run_id || "未知 Run"} 不一致；以下数据不代表所选 Run。` :
+          `Workflow：${linkedRequest}${linkedTask ? ` · Task：${linkedTask}` : ""}`}
+        <a href={`/?${new URLSearchParams({ project: projectId || "", page: "workflows", request: linkedRequest, ...(linkedTask ? { task: linkedTask } : {}), ...(linkedNode ? { node: linkedNode } : {}) })}`}>返回 Workflow</a>
+      </div>}
 
       {view.scope.kind === "project_recovery" ? (
         <div style={card} data-testid="loop-project-recovery-scope">
@@ -328,6 +349,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
             {" "}· zero-state: absent families render no chip · click = expand card
           </span>
         </div>
+        {view.timeline && <p className="muted">业务卡片保留历史投影口径，包含 Fanout 成员；下方时间线只统计可识别的任务尝试，两者不可直接比较。</p>}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
           {Object.values(loops).map((loop) => (
             <span key={loop.id} className="loopv2-bchip" style={{ position: "relative" }}>
@@ -406,7 +428,8 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
                   {(loops[openLoop].members ?? []).map((m) => (
                     <button key={m.id} type="button" data-testid="loop-member"
                       onClick={() => jumpToTask(m.id)}
-                      title="click → jump to its timeline row and open the attempt projection"
+                      disabled={!(view.timeline?.tasks ?? view.tasks).some(task => task.id === m.id)}
+                      title={(view.timeline?.tasks ?? view.tasks).some(task => task.id === m.id) ? "click → jump to its timeline row" : "时间线中未观测到此成员"}
                       style={{
                         font: "inherit", fontSize: 11, padding: "1px 8px", borderRadius: 999,
                         border: `1px solid ${TONE.line}`, background: "var(--panel)",
