@@ -6361,7 +6361,9 @@ class FanoutCoordinationMixin(
             )
             if stale_reason:
                 continue
-            timeout_seconds = self._fanout_timeout_seconds(str(manifest.get("stage_id") or ""))
+            timeout_seconds = self._fanout_timeout_seconds(
+                str(manifest.get("stage_id") or ""), manifest=manifest,
+            )
             if timeout_seconds <= 0:
                 continue
             dispatches = [
@@ -7077,14 +7079,9 @@ class FanoutCoordinationMixin(
             reason=f"fanout child {fanout_id}/{child_id} terminal",
             task_id=task_id,
         )
-    def _fanout_timeout_seconds(self, stage_id: str) -> int:
-        # E6(prd-goal e2e finding-15):stage 未配 timeout 时 sweep 直接
-        # 跳过 → fanout 起后永不终局(zombie ×2 实弹,还挡 G1 idle
-        # 判定)。"fanout 起必有终局":未配置走保守地板。
-        for stage in getattr(self.config.workflow, "stages", []):
-            if stage.id == stage_id:
-                return int(stage.timeout_seconds or DEFAULT_FANOUT_TIMEOUT_S)
-        return DEFAULT_FANOUT_TIMEOUT_S
+    def _fanout_timeout_seconds(self, stage_id: str, *, manifest: dict | None = None) -> int:
+        from zf.runtime.stage_definition_binding import fanout_timeout_seconds
+        return fanout_timeout_seconds(self, stage_id, manifest, DEFAULT_FANOUT_TIMEOUT_S)
     def _finalize_fanout_synth(self, event: ZfEvent) -> None:
         payload = event.payload if isinstance(event.payload, dict) else {}
         fanout_id = str(payload.get("fanout_id") or "")

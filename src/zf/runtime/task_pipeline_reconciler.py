@@ -199,6 +199,10 @@ class TaskPipelineReconciler:
             candidates = [
                 view for view in task_views if view["stage"] in ready_stages
             ]
+            # Soft order only among already-ready tasks; preserve bounded rework fairness.
+            candidates.sort(key=lambda view: (oa_delegations or {}).get(
+                view["task_id"], {}
+            ).get(stage_name, {}).get("dispatch_rank", float("inf")))
             if stage_name == "impl":
                 candidates = _bounded_rework_order(candidates)
             fresh_impl_dispatched = 0
@@ -251,6 +255,7 @@ class TaskPipelineReconciler:
                         "work_unit_id": str(delegation["work_unit_id"]),
                         "preferred_roles": preferred,
                         "selected_role": role,
+                        "dispatch_rank": delegation.get("dispatch_rank"),
                         "reason": ("oa_preferred" if role in preferred
                                    else "oa_preferred_unavailable_or_incompatible"),
                     }
@@ -533,10 +538,19 @@ def task_pipeline_policy_partitions(
                 f"{admitted_profile_id!r} does not match configured {profile_id!r}"
             )
         if admitted_profile_digest and admitted_profile_digest != profile_digest:
-            raise ValueError(
-                f"Task {normalized_task_id} admitted profile_digest does not "
-                "match the configured Task Pipeline policy"
+            from zf.runtime.task_pipeline_legacy_binding import bind_legacy_scoped_pool
+
+            bound = bind_legacy_scoped_pool(
+                config, policy, flow_kind=flow_kind,
+                admitted_digest=admitted_profile_digest,
             )
+            if bound is None:
+                raise ValueError(
+                    f"Task {normalized_task_id} admitted profile_digest does not "
+                    "match the configured Task Pipeline policy"
+                )
+            policy = bound
+            profile_digest = admitted_profile_digest
         key = (flow_kind, profile_id, profile_digest)
         groups.setdefault(key, []).append(normalized_task_id)
         policies[key] = policy
@@ -610,6 +624,16 @@ def _task_view(
     external_gate_satisfied: bool = False,
     impl_rework_request: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    # A request superseded before dispatch is not a semantic rework and must
+    # not consume the configured rework budget, despite using a fresh identity.
+    repair_offset = sum(
+        1 for operation in operations
+        if operation.get("status") == "superseded"
+        and operation.get("reason") == "missing_flow_kind_before_dispatch"
+    )
+    configured_rework = int(policy.get("max_rework_attempts") or 0)
+    if repair_offset:
+        policy = {**policy, "max_rework_attempts": configured_rework + repair_offset}
     blockers = [
         dependency
         for dependency in task.get("blocked_by", [])
@@ -661,29 +685,31 @@ def _task_view(
                 impl_rework_request=impl_rework_request,
             )
         verify = current_by_stage.get("verify")
+        impl = current_by_stage.get("impl")
+        exhausted = impl if impl is not None and not _semantic_passed(impl) else verify
         max_rework = int(policy.get("max_rework_attempts") or 0)
         if (
             stage == "blocked"
-            and verify is not None
-            and str(verify.get("status") or "") == "settled"
-            and not _semantic_passed(verify)
-            and int(verify.get("operation_generation") or 1) > max_rework
+            and exhausted is not None
+            and str(exhausted.get("status") or "") == "settled"
+            and not _semantic_passed(exhausted)
+            and int(exhausted.get("operation_generation") or 1) > max_rework
         ):
             blockers.append("semantic_rework_exhausted")
-            control_ref = verify.get("admitted_control_result_ref")
+            control_ref = exhausted.get("admitted_control_result_ref")
             semantic_blocker = {
-                "stage": "verify",
-                "operation_id": str(verify.get("operation_id") or ""),
+                "stage": _operation_stage(exhausted),
+                "operation_id": str(exhausted.get("operation_id") or ""),
                 "operation_generation": int(
-                    verify.get("operation_generation") or 1
+                    exhausted.get("operation_generation") or 1
                 ),
                 "semantic_verdict": str(
-                    verify.get("semantic_verdict") or ""
+                    exhausted.get("semantic_verdict") or ""
                 ),
-                "max_rework_attempts": max_rework,
+                "max_rework_attempts": configured_rework,
                 "source_event_id": str(
-                    verify.get("call_result_admitted_event_id")
-                    or verify.get("last_event_id")
+                    exhausted.get("call_result_admitted_event_id")
+                    or exhausted.get("last_event_id")
                     or ""
                 ),
                 "control_result_ref": (
@@ -720,7 +746,7 @@ def _task_view(
         "blockers": blockers,
         "required_capabilities": list(task.get("required_capabilities") or []),
         "next_operation_generation": next_generation,
-        "rework_count": rework_count,
+        "rework_count": max(0, rework_count - repair_offset),
         "semantic_blocker": semantic_blocker,
         "impl_rework_request": (
             dict(impl_rework_request)
@@ -743,6 +769,9 @@ def _derive_stage(
         return "impl_ready", 1, 0
     impl_generation = int(impl.get("operation_generation") or 1)
     impl_status = str(impl.get("status") or "")
+    if (impl_status == "superseded"
+            and impl.get("reason") == "missing_flow_kind_before_dispatch"):
+        return "impl_ready", impl_generation + 1, max(0, impl_generation - 1)
     if impl_status == "requested":
         return "impl_ready", impl_generation, max(0, impl_generation - 1)
     if impl_status in _ACTIVE_OPERATION_STATUSES:

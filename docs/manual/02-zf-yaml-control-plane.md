@@ -282,6 +282,9 @@ spec:
 合法 profile ID 只有 `issue-flow-v4-task-pipeline`、`prd-flow-v4-task-pipeline` 和
 `refactor-flow-v4-task-pipeline`。仓库 canary 位于
 `examples/prod/controller/*-task-pipeline-v4-canary*.yaml`，均为 `preferred: false`。
+多 Flow 配置会为角色和 Task Pipeline 池引用统一加 Flow 前缀，池配置摘要绑定展开后的名称。
+旧版已准入代次若仅因池名称未加前缀而产生摘要差异，运行时会验证旧摘要和角色的一一对应，
+保留原准入摘要并记录绑定来源；其他策略漂移继续阻断，不能直接改写摘要。
 v4 实现已完成但 rollout 仍 NO-GO；不要把 `shadow` 误解为已经接管业务调度，也不要在
 active Run 中热改 mode/profile。
 

@@ -16,6 +16,7 @@ from zf.core.config.schema import RoleConfig
 from zf.core.task.contract_validation import validate_task_contract
 from zf.runtime.pause_lifecycle import is_dispatch_paused
 from zf.runtime.recovery_sufficiency import build_artifact_recovery_refs
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 class DispatchEvidenceQueriesMixin:
@@ -23,7 +24,7 @@ class DispatchEvidenceQueriesMixin:
         roles = self.all_roles() if hasattr(self, "all_roles") else self.config.roles
         workers = [
             role for role in roles
-            if role.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, role)
             and role.instance_id not in getattr(self, "_hard_cap_exceeded", set())
         ]
         return max(1, len(workers))
@@ -78,7 +79,7 @@ class DispatchEvidenceQueriesMixin:
                 if role.name == preferred and "task.assigned" in role.triggers:
                     return role.name
         for role in self.config.roles:
-            if role.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             if "task.assigned" in role.triggers:
                 return role.name

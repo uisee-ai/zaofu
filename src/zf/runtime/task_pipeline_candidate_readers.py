@@ -12,6 +12,11 @@ from zf.runtime.task_pipeline_reconciler import task_pipeline_blocking
 
 
 def candidate_reader_stages(runtime: Any, event: ZfEvent) -> list[WorkflowStageConfig]:
+    from zf.runtime.stage_definition_binding import bound_stage
+
+    frozen = bound_stage(runtime, event.payload or {})
+    if frozen is not None:
+        return [frozen] if frozen.trigger == event.type else []
     return [
         frozen_candidate_reader_stage(runtime, stage, event)
         for stage in runtime.config.workflow.stages

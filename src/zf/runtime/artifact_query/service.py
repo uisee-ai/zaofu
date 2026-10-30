@@ -342,10 +342,12 @@ class ArtifactQueryService(ArtifactObjectViewMixin):
             )
         required_reads = self._required_reads(events, attempt_id)
         read_rows = self._read_rows(attempt_id)
+        from zf.runtime.artifact_read_ledger import required_read_satisfied
+
         missing = [
             row
             for row in required_reads
-            if not any(self._read_matches(item, row) for item in read_rows)
+            if not required_read_satisfied(read_rows, row)
         ]
         result = self.catalog_list(
             context=context,

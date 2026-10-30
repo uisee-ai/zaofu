@@ -196,7 +196,7 @@ class LifecycleEvidenceQueriesMixin:
             if assigned == instance_id or dispatched == instance_id:
                 terminal = self._terminal_task_pipeline_assignments()
                 terminal_dispatch = terminal.get((task.id, instance_id))
-                if terminal_dispatch and terminal_dispatch == task.active_dispatch_id:
+                if terminal_dispatch and task.active_dispatch_id in {"", terminal_dispatch}:
                     continue
                 return task
         return None

@@ -81,6 +81,11 @@ from zf.runtime.execution_policy_routing import (
     execution_route_catalog_for_role,
     pending_execution_route_actions,
 )
+from zf.runtime.workflow_frontier_owner import (
+    normal_frontier_owner,
+    run_manager_may_consume_normal_frontier,
+)
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 from zf.runtime.recovery_context import write_task_recovery_context
 from zf.runtime.run_manager_router import (
     ACTION_POLICIES,
@@ -490,6 +495,28 @@ def _run_manager_tick_unlocked(
         config=config,
         project_root=project_root,
     )
+    owner_blocked = projection.get("normal_frontier_owner_blocked")
+    if isinstance(owner_blocked, Mapping):
+        events = _read_events(state_dir, event_log=event_log)
+        fingerprint = str(owner_blocked.get("fingerprint") or "")
+        if fingerprint and not any(
+            event.type == "workflow.normal_frontier.owner_blocked"
+            and isinstance(event.payload, Mapping)
+            and str(event.payload.get("fingerprint") or "") == fingerprint
+            for event in events
+        ):
+            writer.emit(
+                "workflow.normal_frontier.owner_blocked",
+                actor="run-manager",
+                payload=dict(owner_blocked),
+                causation_id=started.id,
+            )
+            projection = build_run_manager_projection(
+                state_dir,
+                events=_read_events(state_dir, event_log=event_log),
+                config=config,
+                project_root=project_root,
+            )
     closeout_events = _emit_run_completed_closeout_if_ready(
         writer,
         projection=projection,
@@ -906,12 +933,18 @@ def build_run_manager_projection(
             threshold=triage_threshold,
             stale_seconds=_DIAGNOSIS_REQUEST_STALE_SECONDS,
             advisor_available=any(
-                str(getattr(role, "name", "") or "") == "orchestrator"
+                is_configured_orchestrator_role(config, role)
                 for role in getattr(config, "roles", []) or []
             ),
             resident_advisor=resident_agent,
         ),
     ]
+    from zf.runtime.orchestrator_agent_execution_review import pending_execution_reviews
+
+    rework_triage_actions.extend(pending_execution_reviews(
+        state_dir=state_dir, config=config, events=events,
+        excluded_task_ids={str(action.get("task_id") or "") for action in rework_triage_actions},
+    ))
     rework_triage_actions = [
         enrich_semantic_replan_action(
             action,
@@ -1176,15 +1209,34 @@ def build_run_manager_projection(
         *attention_actions,
     ]
     dynamic_continuation_actions = []
+    normal_frontier_owner_blocked: dict[str, Any] | None = None
     if (
         not base_pending_actions
         and completion_profile.get("status") != "complete"
     ):
-        dynamic_continuation_actions = pending_read_only_continuation_actions(
+        projected_dynamic_actions = pending_read_only_continuation_actions(
             state_dir,
             config=config,
             events=events,
         )
+        if run_manager_may_consume_normal_frontier(config):
+            dynamic_continuation_actions = projected_dynamic_actions
+        elif projected_dynamic_actions:
+            fragment_ids = sorted({
+                str(action.get("fragment_id") or "")
+                for action in projected_dynamic_actions
+                if str(action.get("fragment_id") or "")
+            })
+            fingerprint = hashlib.sha256(
+                json.dumps(fragment_ids, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            normal_frontier_owner_blocked = {
+                "schema_version": "workflow-normal-frontier-owner.v1",
+                "owner": normal_frontier_owner(config),
+                "blocked_by": "run_manager_owner_fence",
+                "fragment_ids": fragment_ids,
+                "fingerprint": fingerprint,
+            }
     selectable_actions = [
         *base_pending_actions,
         *dynamic_continuation_actions,
@@ -1394,6 +1446,7 @@ def build_run_manager_projection(
             "by_problem_class": dict(sorted(by_problem_class.items())),
         },
         "pending_actions": pending_actions,
+        "normal_frontier_owner_blocked": normal_frontier_owner_blocked,
         "summary": {
             "pending_actions": len(pending_actions),
             "executable_actions": sum(
@@ -5669,6 +5722,7 @@ def _execute_controlled_run_action(
             state_dir=state_dir,
             writer=writer,
             config=config,
+            project_root=project_root,
             action=action,
             causation_id=causation_id,
         )
@@ -5770,6 +5824,7 @@ def _execute_read_only_dynamic_continuation(
     config: ZfConfig,
     action: dict[str, Any],
     causation_id: str,
+    project_root: Path | None = None,
 ) -> str:
     planned = writer.emit(
         RUN_MANAGER_ACTION_PLANNED,
@@ -5789,6 +5844,7 @@ def _execute_read_only_dynamic_continuation(
         writer=writer,
         action=action,
         causation_id=planned.id,
+        project_root=project_root,
     )
     result_payload = {
         **_action_payload(action),
@@ -5892,6 +5948,9 @@ def _execute_orchestrator_triage_request(
         payload={
             "schema_version": "orchestrator.rework-triage.request.v1",
             "problem_class": "semantic",
+            **{key: action[key] for key in (
+                "target_operation_id", "target_stage_id", "task_map_generation",
+            ) if key in action},
             "workflow_run_id": str(action.get("workflow_run_id") or ""),
             "flow_kind": str(action.get("flow_kind") or ""),
             "stage_id": str(action.get("stage_id") or ""),
@@ -9211,7 +9270,10 @@ def _pending_semantic_event_actions(
         if not event_is_recovery_actionable(event.type, event_payload):
             continue
         if (
-            event.type in {"task.rework.capped", "candidate.rework.capped"}
+            event.type in {
+                "task.rework.capped", "candidate.rework.capped",
+                "task.pipeline.semantic_rework.exhausted",
+            }
             and is_semantic_triage_cap(
                 event,
                 threshold=triage_threshold,
@@ -9471,6 +9533,16 @@ def _semantic_event_diagnostic_action(
         if event.type == "run.goal.completion.blocked"
         else {}
     )
+    if event.type == "run.delivery.blocked" and payload.get("effect_state") == "unknown":
+        blocker_recovery = {
+            "suggested_action_kind": "reconcile_delivery_effect",
+            "action_policy": "needs_diagnosis",
+            "intervention_class": "diagnose",
+            "recommended_actions": [
+                "inspect_exact_ship_request_and_git_receipt",
+                "resolve_unknown_effect_before_retry",
+            ],
+        }
     suggested_action_kind = str(
         blocker_recovery.get("suggested_action_kind")
         or spec.suggested_action_kind
@@ -10050,7 +10122,7 @@ def _pending_candidate_recovery_actions(
         threshold=threshold,
         stale_seconds=_DIAGNOSIS_REQUEST_STALE_SECONDS,
         advisor_available=any(
-            str(getattr(role, "name", "") or "") == "orchestrator"
+            is_configured_orchestrator_role(config, role)
             for role in getattr(config, "roles", []) or []
         ),
         resident_advisor=resident_agent,

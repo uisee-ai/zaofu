@@ -30,7 +30,9 @@ class _PlanSynthHarness(PlanSynthRuntimeMixin):
         )
         self.config = ZfConfig(
             project=ProjectConfig(name="preflight"),
-            roles=[self.role],
+            roles=[self.role, RoleConfig(
+                name="dev", instance_id="dev", backend="mock", role_kind="writer",
+            )],
             workflow=WorkflowConfig(
                 flow_metadata={"flow_kind": "issue"},
                 stages=[WorkflowStageConfig(

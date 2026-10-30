@@ -8,6 +8,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.runtime.event_window import read_runtime_events
 from zf.runtime.housekeeping import apply_worker_state_changed_event
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 _TASK_GENERATION_GUARDED_STATES = frozenset({
@@ -92,6 +93,7 @@ class WorkerStateRuntimeMixin:
         task_id: str = "",
         force: bool = False,
         extra_payload: dict[str, Any] | None = None,
+        require_persisted: bool = False,
     ) -> None:
         """Record a restart-safe worker state transition.
 
@@ -121,14 +123,15 @@ class WorkerStateRuntimeMixin:
             )
         ):
             return
-        _fold_worker_transition(
-            self._last_worker_state,
-            self._last_worker_task_id,
-            instance_id=instance_id,
-            state=new_state,
-            task_id=task_id,
-            generation_override=force,
-        )
+        if not require_persisted:
+            _fold_worker_transition(
+                self._last_worker_state,
+                self._last_worker_task_id,
+                instance_id=instance_id,
+                state=new_state,
+                task_id=task_id,
+                generation_override=force,
+            )
         try:
             payload = {
                 "instance_id": instance_id,
@@ -149,6 +152,12 @@ class WorkerStateRuntimeMixin:
                 task_id=task_id or None,
                 payload=payload,
             ))
+            if require_persisted:
+                _fold_worker_transition(
+                    self._last_worker_state, self._last_worker_task_id,
+                    instance_id=instance_id, state=new_state, task_id=task_id,
+                    generation_override=force,
+                )
             try:
                 registry = RoleSessionRegistry(
                     self.state_dir / "role_sessions.yaml",
@@ -158,6 +167,8 @@ class WorkerStateRuntimeMixin:
             except Exception:
                 pass
         except Exception:
+            if require_persisted:
+                raise
             pass
 
     def worker_health(self: Any) -> dict[str, str]:
@@ -165,7 +176,7 @@ class WorkerStateRuntimeMixin:
         out = {
             role.instance_id: "idle"
             for role in self.config.roles
-            if role.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, role)
         }
         try:
             events = _events_after_latest_graceful_stop(list(

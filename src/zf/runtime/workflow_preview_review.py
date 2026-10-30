@@ -211,7 +211,7 @@ class WorkflowPreviewReview:
             if str(doc["kind"]).lower().removesuffix("flow") != family:
                 continue
             spec = doc.get("spec") or {}
-            role_inputs = flow_input_roles(docs, index, family)
+            role_inputs = flow_input_roles(docs, index, family, config_path=candidate_path)
             fields.update(config_review_fields(index, spec, role_names=list(role_inputs),
                 family=family, inherited_skills=role_inputs))
         return {

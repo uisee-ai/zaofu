@@ -28,6 +28,7 @@ from zf.runtime.workflow_operation import (
     TERMINAL_OPERATION_STATUSES,
     reduce_workflow_operations,
 )
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 _INACTIVE_LIFECYCLE_STATES = frozenset({"dormant", "suspended"})
@@ -249,6 +250,7 @@ class RoleLifecycleRuntimeMixin:
         task_id: str | None = None,
         spawn_cwd: Path | None = None,
         skill_runtime_root: Path | None = None,
+        completion_via_briefing: bool = False,
     ) -> bool:
         """Start one on-demand role before any dispatch state is mutated.
 
@@ -359,6 +361,7 @@ class RoleLifecycleRuntimeMixin:
                     role,
                     task_id=task_id,
                     skill_entries=materialized,
+                    completion_via_briefing=completion_via_briefing,
                 )
                 self._get_spawn_coordinator().spawn(
                     role,
@@ -471,6 +474,7 @@ class RoleLifecycleRuntimeMixin:
         *,
         task_id: str | None,
         skill_entries: list,
+        completion_via_briefing: bool = False,
     ) -> None:
         from zf.runtime.injection import generate_role_instructions
 
@@ -487,6 +491,7 @@ class RoleLifecycleRuntimeMixin:
             skill_entries=skill_entries,
             state_dir_ref=self.state_dir,
             project_root=self.project_root,
+            completion_via_briefing=completion_via_briefing,
         )
         instructions_dir = self.state_dir / "instructions"
         instructions_dir.mkdir(parents=True, exist_ok=True)
@@ -516,7 +521,7 @@ class RoleLifecycleRuntimeMixin:
         for role in self.all_roles():
             if not self._role_is_on_demand(role):
                 continue
-            if role.name in {"orchestrator", "run-manager"}:
+            if is_configured_orchestrator_role(self.config, role) or role.name == "run-manager":
                 continue
             try:
                 alive = self.transport.is_alive(role.instance_id)
@@ -676,7 +681,7 @@ class RoleLifecycleRuntimeMixin:
                     task_ids.append(task.id)
                 continue
             if (
-                role.name != "orchestrator"
+                not is_configured_orchestrator_role(self.config, role)
                 and self._role_supports_task_skills(role, task)
             ):
                 task_ids.append(task.id)

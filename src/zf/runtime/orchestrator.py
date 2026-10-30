@@ -99,6 +99,7 @@ from zf.core.cost.tracker import CostTracker
 from zf.core.memory.store import MemoryStore
 from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 if TYPE_CHECKING:
@@ -430,7 +431,7 @@ class WorkflowRuntimeCoordinator(
         self._stuck_detectors: dict[str, StuckDetector] = {
             r.instance_id: StuckDetector(stale_threshold=r.stuck_threshold_seconds)
             for r in self.config.roles
-            if r.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, r)
         }
         self._stuck_already_reported: set[str] = set()
         # G-RESUME-4: watchdog counts consecutive is_alive=False results
@@ -719,7 +720,7 @@ class WorkflowRuntimeCoordinator(
         from zf.runtime.backend_session_reader import get_reader_for_backend
         self._session_readers: dict[str, object] = {}
         for r in self.config.roles:
-            if r.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, r):
                 continue
             reader = get_reader_for_backend(r.backend)
             if reader is not None and r.backend not in self._session_readers:
@@ -918,6 +919,11 @@ class WorkflowRuntimeCoordinator(
         if periodic_sweep:
             periodic.run_context_sweep(self)
         self._safe_housekeeping("budget_sweep", self._run_budget_sweep)
+        from zf.runtime.workflow_frontier_consumer import (
+            consume_wrc_normal_frontier,
+        )
+
+        decisions.extend(consume_wrc_normal_frontier(self))
         decisions.extend(self._dispatch_ready())
         decisions.extend(self._sweep_feature_liveness())
         # G-EVT-2: drain any transport-side events (e.g. StreamJsonTransport's
@@ -2097,6 +2103,16 @@ class WorkflowRuntimeCoordinator(
             return False
         if task.status != "in_progress":
             return False
+        try:
+            terminal_dispatch = self._terminal_task_pipeline_assignments().get(
+                (task.id, instance_id),
+            )
+        except Exception:
+            terminal_dispatch = None
+        if terminal_dispatch and task.active_dispatch_id in {"", terminal_dispatch}:
+            # Task status can remain in_progress after a blocked result or
+            # while awaiting integration; the ended stage no longer owes heartbeats.
+            return False
         if (task.assigned_to or "") == instance_id:
             return True
         try:
@@ -2414,6 +2430,8 @@ class WorkflowRuntimeCoordinator(
           `_on_*` handlers fire. This preserves backward compatibility with
           configs that don't yet use the three-layer architecture.
         """
+        from zf.runtime.orchestrator_agent_role import configured_orchestrator_role
+
         decisions: list[WorkflowRuntimeDecision] = []
         if pushed is not None:
             recent = pushed
@@ -2426,6 +2444,10 @@ class WorkflowRuntimeCoordinator(
             offset = self._load_offset()
             recent, new_offset = self.event_log.read_from_offset(offset)
 
+        # Keep 194 Layer 2 authority activation tied to the legacy role's
+        # presence. ``oa_profile`` binds semantic checkpoint transport but
+        # does not silently promote a registered profile to a second state
+        # machine.
         layer2_active = self._find_role_by_name("orchestrator") is not None
         reacted_tasks: set[str] = set()
         # doc 66 §14.0: enter Layer 2 batch — per-event _notify_orchestrator_agent
@@ -2609,7 +2631,7 @@ class WorkflowRuntimeCoordinator(
                         terminal_decision is not None
                         and terminal_decision.action == "block"
                     ):
-                        orch_role = self._find_role_by_name("orchestrator")
+                        orch_role = configured_orchestrator_role(self)
                         will_dispatch = (
                             orch_role is not None
                             and (
@@ -2648,7 +2670,7 @@ class WorkflowRuntimeCoordinator(
                 # if state changes are needed.
                 # Note: _notify_orchestrator_agent applies the orchestrator
                 # role's triggers filter — events not in triggers are no-op.
-                orch_role = self._find_role_by_name("orchestrator")
+                orch_role = configured_orchestrator_role(self)
                 will_dispatch = (
                     orch_role is not None
                     and (not orch_role.triggers or event.type in orch_role.triggers)
@@ -4645,7 +4667,9 @@ class WorkflowRuntimeCoordinator(
         event (e.g. loop.started, agent.usage). Only events the orchestrator
         role explicitly subscribes to via `triggers` reach Layer 2.
         """
-        orch_role = self._find_role_by_name("orchestrator")
+        from zf.runtime.orchestrator_agent_role import configured_orchestrator_role
+
+        orch_role = configured_orchestrator_role(self)
         if orch_role is None:
             return
         # B6a (R25 ISSUE-006 根因①): telemetry 噪音硬性不唤 Layer 2 —
@@ -4840,7 +4864,11 @@ class WorkflowRuntimeCoordinator(
                 task_id=primary.task_id,
                 trace_id=primary.correlation_id,
             )
-            self._send_transport_task("orchestrator", briefing_path, prompt, context)
+            from zf.runtime.orchestrator_agent_role import orchestrator_instance_id
+
+            self._send_transport_task(
+                orchestrator_instance_id(self), briefing_path, prompt, context
+            )
         except Exception as exc:
             payload = {
                 "trigger_event_id": primary.id,

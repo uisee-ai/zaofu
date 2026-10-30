@@ -317,7 +317,13 @@ class DurableCallWorkflowMixin:
                 task_id=task_id,
                 reason="workflow invoke rejected: open questions",
             )
-        stage = self._workflow_stage_by_id(pattern_id)
+        from zf.runtime.stage_definition_binding import bound_stage
+
+        try:
+            stage = bound_stage(self, payload) or self._workflow_stage_by_id(pattern_id)
+        except ValueError as exc:
+            self._emit_workflow_invoke_rejected(event, str(exc), task_id=task_id, pattern_id=pattern_id)
+            return WorkflowRuntimeDecision(action="block", task_id=task_id, reason=str(exc))
         if stage is None:
             self._emit_workflow_invoke_rejected(
                 event,

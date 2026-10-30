@@ -118,6 +118,7 @@ def dispatch_fixture(tmp_path, monkeypatch):
             },
             generation_context={
                 "workflow_run_id": "run-1",
+                "flow_kind": "prd",
                 "task_map_generation": "map-new",
                 "generation_admitted_event_id": "evt-admitted",
                 **package,
@@ -146,6 +147,7 @@ def test_running_or_settled_operation_does_not_rewrite_capsule(
     assert (doc.read_bytes() if doc.exists() else None) == previous
     assert asdict(runtime.task_store.get(task.id)) == before
     assert len(prepared) == 1
+    assert prepared[0]["payload"]["flow_kind"] == "prd"
 
 
 def test_dispatch_rejects_snapshot_mismatch_before_operation(dispatch_fixture):
@@ -226,6 +228,8 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         assert "## Read Order (authoritative)" in briefing.read_text()
         assert str(task_doc_path(runtime.state_dir, task.id).resolve()) in briefing.read_text()
         assert "Controlled Artifact Inputs" in briefing.read_text()
+        assert "## Worker Execution Envelope" in briefing.read_text()
+        assert context.worker_envelope_digest
         sent.append(context)
         return context
 

@@ -20,6 +20,7 @@ from zf.runtime.actions_pending import (
     PendingActionsStore,
 )
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 if TYPE_CHECKING:
     from zf.core.task.schema import Task
@@ -450,7 +451,7 @@ class AgentViewRuntimeMixin:
     def _autoscale_parent_templates(self) -> dict[str, RoleConfig]:
         templates: dict[str, RoleConfig] = {}
         for role in self.config.roles:
-            if role.name == "orchestrator" or self._is_autoscaled_instance(role.instance_id):
+            if is_configured_orchestrator_role(self.config, role) or self._is_autoscaled_instance(role.instance_id):
                 continue
             templates.setdefault(role.name, role)
         return templates

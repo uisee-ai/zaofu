@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **69** 个顶层命令 family、**302** 条可寻址命令路径。
+当前共 **69** 个顶层命令 family、**303** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -706,6 +706,7 @@ Inspect event traces
 |---|---|
 | `zf trace` | Inspect event traces |
 | `zf trace delivery` | Feature-level idea->ship delivery trace |
+| `zf trace dispatch` | Current Task Pipeline scheduling summary |
 | `zf trace drift` | Planned-vs-actual drift report |
 | `zf trace execution-graph` | Planned task-map joined with actual runtime |
 | `zf trace export` | Export Delivery telemetry or a Goal completion receipt |

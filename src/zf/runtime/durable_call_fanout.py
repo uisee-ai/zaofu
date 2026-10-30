@@ -759,7 +759,8 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                 )
                 continue
             stage_id = str(manifest.get("stage_id") or "")
-            stage = self._fanout_stage_by_id(stage_id)
+            from zf.runtime.stage_definition_binding import stage_for_payload
+            stage = stage_for_payload(self, stage_id, manifest.get("trigger_payload") or {})
             if stage is None:
                 continue
             context = FanoutContext(

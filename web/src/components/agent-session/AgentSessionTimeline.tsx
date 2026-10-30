@@ -30,7 +30,7 @@ import { segmentRunParts, type ToolRunSegment } from "./toolGrouping";
 import { cleanToolTitle, iconForToolName } from "./toolIcon";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { runStartTimestamp, toolCallCount } from "./liveRunIndicator";
-import { ApproveInteractionActions, PlanInteractionForm } from "./AgentInteractionControls";
+import { ApproveInteractionActions, PlanInteractionForm, PlanQuestionDraftScope } from "./AgentInteractionControls";
 import { AgentThreadNavigation } from "./AgentThreadNavigation";
 import {
   contributionReferencePresentation,
@@ -155,6 +155,7 @@ export function AgentSessionTimeline({
             {chatPanes.map((thread, index) => thread ? (
               <Fragment key={thread.id}>
                 {index === 1 ? <SplitDivider onResize={setSplitPercent} /> : null}
+                <PlanQuestionDraftScope.Provider value={JSON.stringify([conversation.projectId, conversation.id, thread.id])}>
                 <ThreadPane
                   actionBusyId={actionBusyId}
                   compact={compact}
@@ -183,6 +184,7 @@ export function AgentSessionTimeline({
                   showRunProvider={showRunProvider}
                   thread={thread}
                 />
+                </PlanQuestionDraftScope.Provider>
               </Fragment>
             ) : null)}
             {showPreview && previewPart ? (

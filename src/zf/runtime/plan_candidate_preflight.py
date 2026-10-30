@@ -129,7 +129,12 @@ def evaluate_plan_candidate_preflight(
             dict(task_map),
             require_task_verification=True,
         )
-        for message in validation.errors:
+        from zf.runtime.task_map_required_ports import plan_input_declaration_errors
+
+        binding_errors = plan_input_declaration_errors(
+            dict(task_map), available_ports=available | _KERNEL_DERIVED_PORTS,
+        )
+        for message in dict.fromkeys([*validation.errors, *binding_errors]):
             _error(errors, "task_map_invalid", "task_map", message)
         for diagnostic in validation.summary.get("goal_coverage", {}).get(
             "diagnostics", []
@@ -156,6 +161,11 @@ def evaluate_plan_candidate_preflight(
                 )
             if task_items:
                 policy = writer_policy or {}
+                from zf.runtime.plan_candidate_role_preflight import writer_role_errors
+
+                errors.extend(writer_role_errors(
+                    task_items, flow_kind=flow_kind, policy=policy,
+                ))
                 for message in writer_task_map_policy_errors(
                     task_items,
                     candidate_quality_source=str(

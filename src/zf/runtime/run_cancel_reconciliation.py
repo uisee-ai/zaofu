@@ -45,6 +45,9 @@ def reconcile_cancelled_run_resources(
         return []
     if trigger_event is None:
         runtime._run_cancel_resources_reconciled = True
+        from zf.runtime.cancelled_run_workers import reconcile_pending_stops
+
+        reconcile_pending_stops(runtime, events)
     if trigger_event is not None and not any(
         event.id and event.id == trigger_event.id for event in events
     ):
@@ -157,7 +160,7 @@ def _close_cancelled_run(
     )
     for operation in reduce_workflow_operations(events).values():
         if (
-            str(operation.get("status") or "") not in _OPERATION_ACTIVE_STATUSES
+            str(operation.get("status") or "") not in _OPERATION_ACTIVE_STATUSES | {"cancelled"}
             or not _same_run(
                 run_id,
                 str(operation.get("workflow_run_id") or ""),

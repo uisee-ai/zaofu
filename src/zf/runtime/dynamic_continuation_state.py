@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -71,7 +72,8 @@ def currentness_preflight(
     for key, value in expected.items():
         if str(current_package.get(key) or "") != value:
             return f"stale_plan_artifact_package_{key}", "", {}
-    parent = reduce_workflow_operations(events).get(
+    operations = reduce_workflow_operations(events)
+    parent = operations.get(
         str(action.get("parent_operation_id") or ""),
     )
     if not parent:
@@ -80,6 +82,19 @@ def currentness_preflight(
         return "parent_operation_run_mismatch", "", {}
     if str(parent.get("status") or "") in TERMINAL_OPERATION_STATUSES:
         return "parent_operation_terminal", "", {}
+    ancestor = parent
+    seen = set()
+    while ancestor:
+        ancestor_id = str(ancestor.get("operation_id") or "")
+        if ancestor_id in seen or ancestor.get("operation_type") == "dynamic_read_only_workflow":
+            return "dynamic_depth_exceeded", "", {}
+        seen.add(ancestor_id)
+        ancestor = operations.get(str(ancestor.get("parent_operation_id") or ""))
+    from zf.runtime.dynamic_continuation_lifecycle import capacity_error
+
+    capacity_reason = capacity_error(state_dir, operations, action, operation_id(action), events=events)
+    if capacity_reason:
+        return capacity_reason, "", {}
     fragment_id = str(action.get("fragment_id") or "")
     if any(
         event.type in FRAGMENT_TERMINALS
@@ -94,8 +109,19 @@ def currentness_preflight(
         config=config,
         proposal_budget=action.get("budgets"),
     )
+    from zf.core.cost.tracker import CostTracker
+    from zf.runtime.operation_usage_attribution import apply_parent_budget
+
+    try:
+        budget = apply_parent_budget(budget, events=events,
+            records=CostTracker(state_dir / "cost.jsonl").usage_records(),
+            root_id=str(action.get("parent_operation_id") or ""), state_dir=state_dir)
+    except (OSError, ValueError, TypeError):
+        budget.update(usage_known=False, available=False)
     if pending:
         return "pending_operator_or_control_action", pending_digest, budget
+    if not budget.get("usage_known", True):
+        return "budget_usage_unknown", pending_digest, budget
     if not bool(budget.get("available", True)):
         return "budget_exhausted", pending_digest, budget
     return "", pending_digest, budget
@@ -166,7 +192,9 @@ def matching_dispatch_event(
 
 
 def budget_digest(budget: Mapping[str, Any]) -> str:
-    return _digest(dict(budget))
+    body = dict(budget)
+    body.setdefault("usage_known", True)
+    return _digest(body)
 
 
 def emit_fragment_once(
@@ -299,19 +327,24 @@ def _budget_snapshot(
     cap = getattr(config, "global_budget_usd", None)
     enforcement = bool(getattr(config, "budget_enforcement_enabled", True))
     spent = 0.0
+    usage_known = True
     if cap is not None:
         try:
             from zf.core.cost.tracker import CostTracker
 
-            spent = float(CostTracker(state_dir / "cost.jsonl").total_usd())
+            usage = CostTracker(state_dir / "cost.jsonl").usage_totals()
+            spent = float(usage["total_usd"])
+            usage_known = math.isfinite(spent) and spent >= 0 and not (
+                usage.get("unpriced_entries") or usage.get("partial_entries")
+            )
         except Exception:
-            spent = 0.0
+            usage_known = False
     proposal = (
         dict(proposal_budget)
         if isinstance(proposal_budget, Mapping)
         else {}
     )
-    remaining = None if cap is None else max(0.0, float(cap) - spent)
+    remaining = None if cap is None or not usage_known else max(0.0, float(cap) - spent)
     available = not (
         enforcement
         and cap is not None
@@ -320,12 +353,13 @@ def _budget_snapshot(
     return {
         "schema_version": "continuation-budget-snapshot.v1",
         "global_cap_usd": None if cap is None else float(cap),
-        "spent_usd": round(spent, 6) if cap is not None else None,
+        "spent_usd": round(spent, 6) if cap is not None and usage_known else None,
         "remaining_usd": (
             round(remaining, 6) if remaining is not None else None
         ),
         "enforcement_enabled": enforcement,
-        "available": available,
+        "available": available and usage_known,
+        "usage_known": usage_known,
         "proposal": proposal,
     }
 

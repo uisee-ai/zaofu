@@ -63,6 +63,9 @@ class WorkflowOrchestrationFlowPolicyConfig:
     checkpoint_policies: dict[str, str] = field(default_factory=dict)
     pilot_id: str = ""
     shadow_sample_percent: int = 100
+    # None preserves legacy checkpoint policy; [] forbids autonomous execution.
+    autonomous_actions: list[str] | None = None
+    review_blocked_tasks: bool = False
 
 
 @dataclass
@@ -77,6 +80,12 @@ class WorkflowOrchestrationConfig(WorkflowOrchestrationFlowPolicyConfig):
     flow_policies: dict[str, WorkflowOrchestrationFlowPolicyConfig] = field(
         default_factory=dict,
     )
+    # Optional semantic OA role binding. Empty preserves the 194
+    # ``orchestrator`` role fallback; this does not activate authority.
+    oa_profile: str = ""
+    # Normal frontier ownership is an explicit migration contract. The
+    # current default keeps the 194 Run Manager continuation path.
+    normal_frontier_owner: str = "run_manager"
     max_plan_revisions: int = 2
     no_progress_limit: int = 2
 

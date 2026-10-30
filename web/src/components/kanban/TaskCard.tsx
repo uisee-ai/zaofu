@@ -165,10 +165,9 @@ export function TaskCard({
       onPointerDown={(event) => onPointerDown(event, task.id)}>
       <button className="task-open" type="button" onClick={() => onSelect(task.id)}>
         <span className="task-title">{task.title || task.id}</span>
-        {(effectiveTerminal || attention.label) && <span className="task-chip-row">{effectiveTerminal
+        {(effectiveTerminal || (currentColumn !== "blocked" && attention.label)) && <span className="task-chip-row">{effectiveTerminal
           ? <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
           : <span className={`badge badge-${attention.tone}`}>{attention.label}</span>}</span>}
-        {!effectiveTerminal && attention.label && task.blocked_reason && <span className="blocked-note" title={task.blocked_reason}>{task.blocked_reason}</span>}
         <span className="task-footer">
           <span className="task-id mono" title={task.id}>{task.id}</span>
           <span className="task-priority-icon" title={`${t("Priority")} P${priority}`} aria-label={`${t("Priority")} P${priority}`}><PriorityIcon size={13} aria-hidden="true" /></span>

@@ -624,7 +624,7 @@ class FanoutRecoveryRuntimeMixin:
             if (
                 operation is None
                 or str(operation.get("status") or "")
-                in TERMINAL_OPERATION_STATUSES
+                in TERMINAL_OPERATION_STATUSES - {"cancelled"}
             ):
                 continue
             request_hash = str(operation.get("request_hash") or "").strip()

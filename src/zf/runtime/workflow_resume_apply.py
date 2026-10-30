@@ -508,9 +508,23 @@ def _apply_operation_checkpoint(
     if cancelled is not None:
         emitted.append(cancelled.id)
     parent_task_id = checkpoint.parent_task_id or checkpoint.task_id
+    attempts = _task_attempt_rows(state_dir)
+    live_sibling_id = next((
+        str(row.get("operation_id") or "")
+        for row in operations.values()
+        if checkpoint.workflow_run_id
+        and row.get("operation_id") != checkpoint.operation_id
+        and row.get("workflow_run_id") == checkpoint.workflow_run_id
+        and (row.get("parent_task_id") or row.get("task_id")) == parent_task_id
+        and row.get("status") == "running"
+        and _live_operation_attempt(
+            attempts, operation_id=str(row.get("operation_id") or ""),
+            now_epoch=datetime.now(timezone.utc).timestamp(),
+        ) is not None
+    ), "")
     if checkpoint.safe_resume_action == "cancel_stale_operation" and parent_task_id:
         task = store.get(parent_task_id)
-        if task is not None and task.status == "in_progress":
+        if task is not None and task.status == "in_progress" and not live_sibling_id:
             store.update(
                 parent_task_id,
                 status="blocked",
@@ -541,6 +555,7 @@ def _apply_operation_checkpoint(
             "checkpoint_kind": "workflow_operation",
             "mode": checkpoint.safe_resume_action,
             "cancelled_event_id": cancelled.id if cancelled is not None else "",
+            "live_sibling_operation_id": live_sibling_id,
         },
         causation_id=cancelled.id if cancelled is not None else planned.id,
         correlation_id=checkpoint.workflow_run_id or None,

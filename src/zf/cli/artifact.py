@@ -97,6 +97,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
     read_cmd.add_argument("--max-chars", type=int, default=0)
+    read_cmd.add_argument("--page-start", type=int, default=None, help="Start character offset for a bounded complete-read page")
+    read_cmd.add_argument("--page-size", type=int, default=8192, help="Characters per page, 1..8192")
     read_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
     read_cmd.set_defaults(func=_run_attempt_read)
 
@@ -177,7 +179,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
     try:
         required = getattr(args, "required", False)
         if required:
-            if args.source or args.artifact or args.json_path != "$" or args.max_items or args.max_chars:
+            if args.source or args.artifact or args.json_path != "$" or args.max_items or args.max_chars or getattr(args, "page_start", None) is not None:
                 raise ValueError("--required cannot be combined with source, artifact or slice overrides")
         elif not args.source or not args.artifact:
             raise ValueError("artifact read requires --source and --artifact, or --required")
@@ -206,17 +208,11 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                 args.attempt,
                 state_dir=context.state_dir, operation_id=identity["operation_id"],
             )
-            for row in rows:
-                result = read_attempt_artifact(
-                    context.state_dir, manifest=manifest,
-                    source_id=row["source_id"], artifact_id=row["artifact_id"],
-                    json_path=row.get("json_path", "$"),
-                    actor=identity["actor"], role=identity["role"],
-                    provider=identity["provider"], purpose=identity["purpose"],
-                )
-                print(json.dumps({"source_id": row["source_id"], "artifact_id": row["artifact_id"],
-                                  "json_path": row.get("json_path", "$"), "content": result["content"]},
-                                 ensure_ascii=False))
+            from zf.cli.artifact_required_read import required_read_output
+
+            print(required_read_output(
+                context.state_dir, manifest=manifest, rows=rows, identity=identity,
+            ))
             return 0
         result = read_attempt_artifact(
             context.state_dir,
@@ -226,15 +222,29 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             json_path=args.json_path,
             max_items=max(0, int(args.max_items or 0)),
             max_chars=max(0, int(args.max_chars or 0)),
+            page_start=getattr(args, "page_start", None),
+            page_size=getattr(args, "page_size", 8192),
             actor=identity["actor"],
             role=identity["role"],
             provider=identity["provider"],
             purpose=identity["purpose"],
+            record=False,
         )
+        if getattr(args, "page_start", None) is None and len(result["content"]) > 8192:
+            raise ValueError("artifact output exceeds 8192 characters; use --page-start and --page-size")
+        from zf.runtime.artifact_read_ledger import append_artifact_read
+        append_artifact_read(context.state_dir, result["read"])
     except (ConfigError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    print(result["content"])
+    if getattr(args, "page_start", None) is not None:
+        row = result["read"]
+        print(json.dumps({"content": result["content"], "page_start": row["page_start"],
+                          "page_end": row["page_end"], "page_total": row["page_total"],
+                          "next_page_start": row["page_end"] if row["page_end"] < row["page_total"] else None},
+                         ensure_ascii=False))
+    else:
+        print(result["content"])
     return 0
 
 

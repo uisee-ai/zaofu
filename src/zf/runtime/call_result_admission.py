@@ -218,6 +218,15 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         currentness_issues.extend(
             self._task_result_currentness_issues(envelope, adapted, operation or {})
         )
+        from zf.runtime.dynamic_continuation_lifecycle import SUCCESS_VERDICTS, result_lifecycle_issues
+
+        currentness_issues.extend(result_lifecycle_issues(
+            self.event_log.read_all(), operation_identity["operation_id"],
+            successful=(
+                envelope["execution"]["status"] == "completed"
+                and _semantic_verdict(adapted.payload) in SUCCESS_VERDICTS
+            ),
+        ))
         issues.extend(currentness_issues)
         if adapted.schema_version == "goal-closure-result.v1":
             issues.extend(self._goal_closure_issues(adapted.payload))

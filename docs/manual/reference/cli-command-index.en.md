@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **302** addressable command paths.
+The parser currently exposes **69** top-level families and **303** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -706,6 +706,7 @@ Inspect event traces
 |---|---|
 | `zf trace` | Inspect event traces |
 | `zf trace delivery` | Feature-level idea->ship delivery trace |
+| `zf trace dispatch` | Current Task Pipeline scheduling summary |
 | `zf trace drift` | Planned-vs-actual drift report |
 | `zf trace execution-graph` | Planned task-map joined with actual runtime |
 | `zf trace export` | Export Delivery telemetry or a Goal completion receipt |

@@ -713,6 +713,8 @@ def _build_orchestration_flow_policy(
         "checkpoint_policies",
         "pilot_id",
         "shadow_sample_percent",
+        "autonomous_actions",
+        "review_blocked_tasks",
     }
     unknown = sorted(str(key) for key in data if str(key) not in known)
     if unknown:
@@ -812,12 +814,28 @@ def _build_orchestration_flow_policy(
         raise ConfigError(
             f"{path}.pilot_id requires one blocking checkpoint"
         )
+    actions = data.get("autonomous_actions")
+    if actions is not None:
+        if (not isinstance(actions, list)
+                or any(not isinstance(item, str) for item in actions)
+                or set(actions) - {"delegate", "continue", "rework"}
+                or len(actions) != len(set(actions))):
+            raise ConfigError(f"{path}.autonomous_actions must list unique delegate/continue/rework actions")
+        if mode != "semantic_control":
+            raise ConfigError(f"{path}.autonomous_actions requires semantic_control")
+    review_blocked = data.get("review_blocked_tasks", False)
+    if not isinstance(review_blocked, bool):
+        raise ConfigError(f"{path}.review_blocked_tasks must be boolean")
+    if review_blocked and (actions is None or "semantic_failure" not in checkpoints):
+        raise ConfigError(f"{path}.review_blocked_tasks requires autonomous_actions and semantic_failure")
     return WorkflowOrchestrationFlowPolicyConfig(
         mode=mode,
         checkpoints=checkpoints,
         checkpoint_policies=policies,
         pilot_id=pilot_id,
         shadow_sample_percent=shadow_sample_percent,
+        autonomous_actions=actions,
+        review_blocked_tasks=review_blocked,
     )
 
 
@@ -843,6 +861,28 @@ def _validate_orchestration_blocking_pilot_tiers(config: ZfConfig) -> None:
             )
 
 
+def _validate_orchestration_oa_profile(config: ZfConfig) -> None:
+    """Reject an explicit OA profile that cannot be resolved at startup."""
+
+    profile = str(
+        getattr(config.workflow.orchestration, "oa_profile", "") or ""
+    ).strip()
+    if not profile:
+        return
+    if any(
+        profile in {
+            str(getattr(role, "name", "") or "").strip(),
+            str(getattr(role, "instance_id", "") or "").strip(),
+        }
+        for role in config.roles
+    ):
+        return
+    raise ConfigError(
+        "workflow.orchestration.oa_profile must match a configured role "
+        "name or instance_id: " + profile
+    )
+
+
 def _build_workflow_orchestration(
     data: object,
 ) -> WorkflowOrchestrationConfig:
@@ -856,7 +896,11 @@ def _build_workflow_orchestration(
         "checkpoint_policies",
         "pilot_id",
         "shadow_sample_percent",
+        "autonomous_actions",
+        "review_blocked_tasks",
         "flow_policies",
+        "oa_profile",
+        "normal_frontier_owner",
         "max_plan_revisions",
         "no_progress_limit",
     }
@@ -875,6 +919,8 @@ def _build_workflow_orchestration(
                 "checkpoint_policies",
                 "pilot_id",
                 "shadow_sample_percent",
+                "autonomous_actions",
+                "review_blocked_tasks",
             )
             if key in data
         },
@@ -913,13 +959,26 @@ def _build_workflow_orchestration(
         raise ConfigError(
             "workflow.orchestration revision limits must be >= 1"
         )
+    oa_profile = str(data.get("oa_profile") or "").strip()
+    normal_frontier_owner = str(
+        data.get("normal_frontier_owner") or "run_manager"
+    ).strip().lower()
+    if normal_frontier_owner not in {"run_manager", "wrc"}:
+        raise ConfigError(
+            "workflow.orchestration.normal_frontier_owner must be "
+            "run_manager or wrc"
+        )
     return WorkflowOrchestrationConfig(
         mode=root.mode,
         checkpoints=root.checkpoints,
         checkpoint_policies=root.checkpoint_policies,
         pilot_id=root.pilot_id,
         shadow_sample_percent=root.shadow_sample_percent,
+        autonomous_actions=root.autonomous_actions,
+        review_blocked_tasks=root.review_blocked_tasks,
         flow_policies=flow_policies,
+        oa_profile=oa_profile,
+        normal_frontier_owner=normal_frontier_owner,
         max_plan_revisions=max_plan_revisions,
         no_progress_limit=no_progress_limit,
     )
@@ -3196,6 +3255,7 @@ def load_config(path: Path) -> ZfConfig:
     for warn in validate_role_event_names(cfg.roles):
         print(f"Warning: {warn}", file=sys.stderr)
     _validate_orchestration_blocking_pilot_tiers(cfg)
+    _validate_orchestration_oa_profile(cfg)
     cfg.config_sources = list(raw.get("_config_profile_sources", []) or [])
     return cfg
 

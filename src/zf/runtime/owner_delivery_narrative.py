@@ -27,6 +27,7 @@ from zf.runtime.orchestrator_agent_policy import (
     checkpoint_policy,
     orchestration_flow_kind,
 )
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import load_workflow_operation
 
@@ -57,7 +58,7 @@ def prepare_owner_delivery_narrative_operation(
         flow_kind=flow_kind,
     )
     if not policy or not any(
-        str(role.name) == "orchestrator" for role in config.roles
+        is_configured_orchestrator_role(config, role) for role in config.roles
     ):
         return None
     run_id = str(dossier.get("run_id") or terminal.correlation_id or "")

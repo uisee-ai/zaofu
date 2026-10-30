@@ -514,8 +514,13 @@ def test_doc152_package_currentness_and_restart_closure(tmp_path: Path) -> None:
         "plan-port-requirement_spec",
         "plan-port-goal_claim_set",
         "plan-port-task_map",
-        "plan-port-planning_result",
     }
+    manifest = hydrate_sidecar_ref(
+        state_dir, current_call_payload["attempt_source_manifest"],
+    ).payload
+    sources = {item["source_id"]: item for item in manifest["sources"]}
+    assert sources["plan-port-task_map"]["ref"] == sources["plan-port-planning_result"]["ref"]
+    assert sources["plan-port-task_map"]["sha256"] == sources["plan-port-planning_result"]["sha256"]
     mark_call_operation_started(
         runtime,
         current_operation,

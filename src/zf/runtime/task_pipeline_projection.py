@@ -17,6 +17,9 @@ from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.core.state.task_attempts import TaskAttemptStore
 from zf.core.task.store import TaskStore
 from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+from zf.runtime.task_pipeline_execution_status import (
+    attach_execution_status, normalize_task_pipeline_operation_semantics,
+)
 from zf.runtime.task_pipeline_reconciler import (
     TaskPipelineReconciler,
     task_pipeline_policy_partitions,
@@ -31,43 +34,6 @@ _ACTIVE_OPERATION_STATUSES = frozenset({
 _ACTIVE_ATTEMPT_STATUSES = frozenset({"prepared", "delivering", "sent"})
 _TERMINAL_TASK_STATUSES = frozenset({"done", "cancelled"})
 _STAGE_ORDER = {"impl": 1, "verify": 2, "acceptance_review": 3, "integration": 4}
-
-
-def normalize_task_pipeline_operation_semantics(
-    state_dir: Path,
-    operations: Iterable[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    """Recover a missing implementation verdict from its immutable result.
-
-    Older ``dev.build.done`` producers stored ``passed`` under
-    ``self_check.verdict`` while admission recorded ``pending`` at the
-    operation level.  The sidecar is the durable semantic body, so the
-    projection can derive the effective verdict without mutating events.
-    """
-
-    normalized: list[dict[str, Any]] = []
-    for raw in operations:
-        row = dict(raw)
-        stage = str(row.get("stage") or row.get("task_pipeline_stage") or "")
-        verdict = str(row.get("semantic_verdict") or "").strip().lower()
-        descriptor = row.get("admitted_control_result_ref")
-        if stage == "impl" and verdict == "pending" and isinstance(descriptor, Mapping):
-            try:
-                from zf.runtime.sidecar_refs import hydrate_sidecar_ref
-
-                body = hydrate_sidecar_ref(
-                    Path(state_dir), dict(descriptor)
-                ).payload
-            except Exception:
-                body = None
-            if isinstance(body, Mapping):
-                effective = str(body.get("verdict") or "").strip()
-                if not effective and isinstance(body.get("self_check"), Mapping):
-                    effective = str(body["self_check"].get("verdict") or "").strip()
-                if effective:
-                    row["semantic_verdict"] = effective
-        normalized.append(row)
-    return normalized
 
 
 def read_task_pipeline_projection(
@@ -272,6 +238,7 @@ def build_task_pipeline_projection(
         (_project_operation(row, attempt_rows) for row in operation_rows),
         key=_projected_operation_order,
     )
+    attach_execution_status(projected_tasks, projected_operations, event_rows)
     projected_attempts = sorted(
         (_project_attempt(row) for row in attempt_rows),
         key=lambda row: str(row.get("attempt_id") or ""),
@@ -721,6 +688,7 @@ def _project_operation(
         "workspace_generation": int(row.get("workspace_generation") or 0),
         "status": str(row.get("status") or ""),
         "semantic_verdict": str(row.get("semantic_verdict") or ""),
+        "control_result_ref": dict(row.get("admitted_control_result_ref") or {}),
         "role_instance": str(row.get("role_instance") or ""),
         "current_worker": str(row.get("role_instance") or "") if active else "",
         "current_worker_source": "workflow_operation" if active else "",

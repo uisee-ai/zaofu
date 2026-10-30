@@ -229,6 +229,29 @@ def test_projection_prefers_current_task_over_archived_duplicate() -> None:
     assert projection["queues"]["external_gate_waiting"] == ["TASK-A"]
 
 
+def test_projection_distinguishes_task_run_and_operation_after_recovery_request():
+    task = Task(id="TASK-A", title="Task A", status="in_progress")
+    events = [_event("goal-start", "run.goal.started", payload={"run_id": "run-1"}),
+              _generation(), *_operation_events(terminal=True),
+              _event("goal-blocked", "run.goal.blocked", payload={"run_id": "run-1"}),
+              _event("repair-applied", "run.manager.action.verify.passed",
+                     payload={"workflow_run_id": "run-1"})]
+    projection = build_task_pipeline_projection(policy=_policy(), tasks=[task], events=events)
+    row = projection["tasks"][0]
+    assert row["task_status"] == "in_progress"
+    assert row["run_status"] == "blocked"
+    assert row["run_status_event_id"] == "goal-blocked"
+    assert row["last_operation_status"] == "settled"
+    assert row["last_operation_event_id"] == "operation-settled"
+    assert row["active_operation_count"] == 0
+    assert not row["current_worker"]
+    events.append(_event("goal-resumed", "run.goal.updated",
+                         payload={"run_id": "run-1", "status": "active"}))
+    resumed = build_task_pipeline_projection(policy=_policy(), tasks=[task], events=events)
+    assert resumed["tasks"][0]["run_status"] == "active"
+    assert task.status == "in_progress"  # Projection never updates TaskStore.
+
+
 def test_projection_combines_concurrent_flow_policy_partitions() -> None:
     issue_policy = _policy()
     issue_policy.update({

@@ -70,6 +70,7 @@ def run_generic_workflow_complex_scenario(
     *,
     provider_verifier: ProviderVerifier | None = None,
     provider_backend: str = "mock",
+    report_transform: Callable[[int, Mapping[str, Any]], Mapping[str, Any]] | None = None,
     objective: str = (
         "Research the delivery question and provide a verified report."
     ),
@@ -257,6 +258,7 @@ def run_generic_workflow_complex_scenario(
             "schema_version": "research-report.v1",
             "title": "Initial report",
             "findings": ["Only one evidence family was independently confirmed."],
+            **(dict(report_transform(1, {})) if report_transform else {}),
         },
     )
     synth_result_v1 = _append_stage_result(
@@ -630,6 +632,7 @@ def run_generic_workflow_complex_scenario(
                 "Independent source family one supports the conclusion.",
                 "Independent source family two corroborates the conclusion.",
             ],
+            **(dict(report_transform(2, {})) if report_transform else {}),
         },
     )
     synth_result_v2 = _append_stage_result(

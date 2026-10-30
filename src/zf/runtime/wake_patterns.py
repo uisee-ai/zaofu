@@ -59,6 +59,14 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "task.done.evidence",
     "task.created",
     "feature.liveness.blocked",
+    # Task Pipeline result edges are provider-independent completion
+    # notifications.  They must wake the existing Kernel/WRC route directly
+    # so the next ready stage does not wait for an unrelated tick.
+    "task.pipeline.generation.admitted",
+    "task.pipeline.verify.completed",
+    "task.pipeline.verify.failed",
+    "task.pipeline.acceptance.completed",
+    "task.pipeline.acceptance.failed",
     # Kernel-reactor liveness routes. These handlers mutate runtime state
     # or bridge bounded fanout work, so emitted events must wake run_once
     # instead of waiting for an unrelated periodic tick.

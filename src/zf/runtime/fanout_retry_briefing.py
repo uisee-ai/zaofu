@@ -52,7 +52,9 @@ def write_blocking_reader_retry_briefing(
         or not str(child_payload.get("operation_id") or "").strip()
     ):
         return None
-    stage = runtime._fanout_stage_by_id(str(manifest.get("stage_id") or ""))
+    from zf.runtime.stage_definition_binding import bound_stage
+
+    stage = bound_stage(runtime, manifest.get("trigger_payload") or {}) or runtime._fanout_stage_by_id(str(manifest.get("stage_id") or ""))
     aggregate = getattr(stage, "aggregate", None) if stage else None
     if aggregate is None:
         return None

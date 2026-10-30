@@ -7,7 +7,7 @@ import json
 import os
 import re
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -31,6 +31,7 @@ _APPLY_PAYLOAD_FIELDS = frozenset({
     "approval_ref",
     "config_ref",
     "decision_token",
+    "establish_delivery_baseline",
     "idempotency_key",
     "project_id",
     "proposal_digest",
@@ -62,6 +63,7 @@ class WorkflowConfigApplyOutcome:
     config_ref: str
     receipt_ref: dict[str, Any]
     replayed: bool = False
+    delivery_baseline_ref: dict[str, Any] = field(default_factory=dict)
 
 
 class WorkflowConfigApplyError(ValueError):
@@ -162,7 +164,7 @@ class WorkflowConfigApplyService:
         with locked_path(target):
             self._require_current_proposal(proposal)
             target = self._target_config(payload)
-            return self._apply_locked(
+            outcome = self._apply_locked(
                 payload=payload,
                 proposal=proposal,
                 target=target,
@@ -175,8 +177,32 @@ class WorkflowConfigApplyService:
                 source_event_id=source_event_id,
                 actor=actor,
             )
+            if payload.get("establish_delivery_baseline"):
+                from zf.runtime.workflow_config_baseline import (
+                    ConfigBaselineError, establish_config_baseline,
+                )
+                try:
+                    baseline = establish_config_baseline(
+                        target, base_digest=base_digest, target_digest=target_digest,
+                        proposal_digest=expected_proposal_digest,
+                    )
+                except ConfigBaselineError as exc:
+                    raise WorkflowConfigApplyError("config_delivery_baseline_blocked", str(exc)) from exc
+                baseline_ref = write_immutable_json_sidecar(
+                    self.state_dir,
+                    {**baseline, "config_apply_receipt_ref": outcome.receipt_ref,
+                     "target_config_digest": target_digest},
+                    root="workflow/config-baseline-receipts",
+                    kind="workflow_config_baseline_receipt",
+                    schema_version="workflow-config-baseline-receipt.v1",
+                    created_by="workflow-config-apply", source_event_id=source_event_id,
+                )
+                outcome = replace(outcome, delivery_baseline_ref=baseline_ref)
+            return outcome
 
     def _validate_payload(self, payload: Mapping[str, Any]) -> None:
+        if "establish_delivery_baseline" in payload and not isinstance(payload["establish_delivery_baseline"], bool):
+            raise WorkflowConfigApplyError("apply_payload_invalid", "establish_delivery_baseline must be boolean")
         unknown = sorted(set(payload) - _APPLY_PAYLOAD_FIELDS)
         if unknown:
             raise WorkflowConfigApplyError(

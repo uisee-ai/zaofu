@@ -11,6 +11,7 @@ from zf.core.feature.schema import Feature
 from zf.core.skills.provenance import SkillLockEntry
 from zf.core.task.schema import Task
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 @dataclass
@@ -95,6 +96,7 @@ def generate_role_instructions(
     skill_entries: list[SkillLockEntry] | None = None,
     state_dir_ref: Path | str | None = None,
     project_root: Path | str | None = None,
+    completion_via_briefing: bool = False,
 ) -> str:
     """Generate CLAUDE.md content for a role."""
     sections: list[str] = []
@@ -104,7 +106,7 @@ def generate_role_instructions(
     sections.append("")
 
     # Role identity
-    if role.name == "orchestrator":
+    if is_configured_orchestrator_role(config, role):
         sections.append("## Role: Orchestrator")
         sections.append("You are the orchestrator. You read events, kanban state, and worker output")
         sections.append("to make dispatch and recovery decisions. You do NOT write code.")
@@ -215,7 +217,20 @@ def generate_role_instructions(
     sections.append(f"- `{cli_cmd} kanban` — view task board")
     sections.append("")
 
-    if task is None:
+    if completion_via_briefing:
+        sections.extend([
+            "## Completion Protocol",
+            "",
+            "Use the current dispatch briefing's Output Contract, prefilled "
+            "result scratch, and exact `zf result submit` command. Follow its "
+            "pre-submit validation instructions when provided. The Kernel "
+            "supplies result identity and selects the canonical completion event.",
+            "Role startup precedes dispatch publication: do not derive a "
+            "completion command from role publishes or a previous Task dispatch. "
+            "Do not emit terminal completion events directly.",
+            "",
+        ])
+    elif task is None:
         protocol = infer_completion_protocol(role)
         _append_configured_completion_contract(sections, config, role, protocol)
         if sections[-1] != "":
@@ -239,7 +254,8 @@ def generate_role_instructions(
         sections.append("")
 
         # Completion protocol
-        _add_completion_protocol(sections, role, task, config=config)
+        if not completion_via_briefing:
+            _add_completion_protocol(sections, role, task, config=config)
 
     return "\n".join(sections)
 
@@ -991,7 +1007,7 @@ def generate_task_briefing(
     # kernel falls back to a 4-min wall-clock stuck timer (cangjie r-next-9
     # B-NEW-15 false-positive case) and proactive dispatch can't sense
     # idle workers.
-    if role.name != "orchestrator":
+    if not is_configured_orchestrator_role(config, role):
         lines.append(_render_worker_heartbeat_instructions(role))
         lines.append("")
         # ZF-TR-NESTED-GUARD-001 (doc 40 §6 I55): recursion guard for

@@ -29,7 +29,40 @@ completion claims; follow the yoke skill for how to execute. For this role:
 
 Do not restate their content here.
 
-## Rules
+## Product Flow / Task Pipeline：按已配置检查点工作
+
+先读取当前 orchestration mode、route、run contract、已接纳执行计划和本次
+checkpoint。`exception_advisor`、Product Flow 和 Task Pipeline 使用本节；下面的
+Legacy Rules / Stage Routing 仅适用于明确启用 Layer 2 decision maker 的 safe-team。
+没有语义决策缺口时沿用已接纳路线，不增加一次分类或规划 turn。
+
+Preparation 的 Requirement → FlowSpec 由 `zf-workflow-synthesis` 方法负责。
+Run 内 OA 消费已确认需求，提出路线、任务映射或有界修订；不重复创建 intake，
+不通过 legacy assign 绕过 Pipeline，也不直接改变合同权威或 canonical stores。
+
+决策时按以下依据组织提交给当前 checkpoint 的结果，沿用其已有 schema：
+
+- 对齐本次合同的验收责任、依赖与写入范围；选择已注册且能力匹配的最小路线。
+  直接执行适合一个清晰工作单元；固定 fanout 适合已知独立分工；有界动态 fanout
+  适合检查后才显现的证据缺口。并行数本身不是收益。
+- 绑定模板 ID、输入 refs/digests、generation 和精确 target；解释选择理由。
+  不存在匹配能力时提交能力缺口，不静默降低 Verify/Critic 或完成要求。
+- 委派只携带目标、必要输入、范围、输出合同、预算/停止条件和失败反馈方式。
+  使用现有 source manifest / required reads / context routes；摘要保留原始证据引用，
+  专业上下文只发给需要它的角色。共享基线和本地证据分别读取。
+- 阶段 Owner 可针对缺口提出一个已注册的只读 pattern，遵守父级容量、深度和预算。
+  内部 work unit 仍是 operation；新增交付承诺、改变 AC 或依赖时才请求 Task Map 修订。
+  Verify 优先复用同 target、同输入/命令 digest 的已接纳证据，Thin Judge 不重复运行测试。
+- 维护当前计划、已接纳证据、未决问题和下一步停止条件。修订须说明真实 delta、
+  受影响证据和可保留工作；旧 generation 的成功不能自动复制到新计划。
+  没有新信息且达到配置上限时提交阻塞/诊断，不反复派发相同工作。
+
+shadow/advisory 只产出建议与可比较记录；blocking 缺失有效结果时保持等待。
+Kernel/WRC 接纳身份与证据、固定定义、管理容量并实际派发；Run Manager 决定恢复。
+父阶段返回、子工作结束和结果被接纳是不同事实；required child 未成功接纳或必需
+delivery 未 settled 时不得宣称 Goal 完成。未知交付副作用先核对回执，不能要求盲重试。
+
+## Legacy Rules
 
 - Understand the request before dispatching work.
 - Do not forward ambiguity downstream as "figure it out".
@@ -147,7 +180,7 @@ Do not restate their content here.
 - Closure is mechanical: all required gates pass, or route back to the failing
   stage.
 
-## Stage Routing
+## Legacy Stage Routing
 
 zaofu DAG (`workflow.dag.stage_order`) — orchestrator's two manual decision
 points are stages ① intake and ④ backlog. Everything else is kernel

@@ -361,6 +361,9 @@ def read_attempt_artifact(
     json_path: str = "$",
     max_items: int = 0,
     max_chars: int = 0,
+    page_start: int | None = None,
+    page_size: int = 0,
+    record: bool = True,
     actor: str = "",
     role: str = "",
     provider: str = "",
@@ -434,9 +437,27 @@ def read_attempt_artifact(
             selected = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             selected = raw.decode("utf-8", errors="replace")
+    if page_start is not None and (page_start < 0 or not 1 <= page_size <= 8192 or max_items or max_chars):
+        raise ArtifactReadError("paged reads require a non-negative start, size 1..8192, and no limits")
+    limited_items = bool(
+        max_items > 0 and isinstance(selected, (list, Mapping)) and len(selected) > max_items
+    )
     selected = _limit_items(selected, max_items=max_items)
     encoded = _encode_selected(selected)
-    truncated = False
+    truncated = limited_items
+    page_meta: dict[str, Any] = {}
+    if page_start is not None:
+        total = len(encoded)
+        if page_start >= total:
+            raise ArtifactReadError("page start is outside the selected content")
+        page_end = min(total, page_start + page_size)
+        page_meta = {
+            "page_start": page_start, "page_end": page_end, "page_total": total,
+            "selected_sha256": hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+            "selected_bytes": len(encoded.encode("utf-8")),
+        }
+        encoded = encoded[page_start:page_end]
+        truncated = page_start > 0 or page_end < total
     if max_chars > 0 and len(encoded) > max_chars:
         encoded = encoded[:max_chars]
         truncated = True
@@ -463,8 +484,10 @@ def read_attempt_artifact(
         "consumer_purpose": read_purpose,
         "occurrence_id": str(source.get("occurrence_id") or ""),
         "read_at": datetime.now(timezone.utc).isoformat(),
+        **page_meta,
     }
-    append_artifact_read(state_dir, row)
+    if record:
+        append_artifact_read(state_dir, row)
     return {"content": encoded, "read": row}
 
 
@@ -562,8 +585,7 @@ def validate_required_reads(
         if not isinstance(item, Mapping):
             issues.append({"field": f"required_reads[{index}]", "code": "invalid_policy"})
             continue
-        match = next((row for row in rows if _read_matches(row, item)), None)
-        if match is None:
+        if not required_read_satisfied(rows, item):
             issues.append({
                 "field": f"required_reads[{index}]",
                 "code": "required_read_missing",
@@ -613,6 +635,10 @@ def render_attempt_source_briefing(
             f"- Preferred single-call read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
             "  It returns every required slice and records each read. Consume the complete output; "
             "do not repeat individual reads unless the tool output was truncated or a read failed.",
+            "- If an output is too large or truncated, read that exact source and JSON path "
+            "with `--page-start 0 --page-size 8192`. Read and consume every page, using "
+            "the returned `next_page_start` until it is null. The ledger accepts pages "
+            "only when they cover the entire selected input without gaps.",
         ])
         lines.extend(["- Required reads for this attempt:"])
         for item in required:
@@ -849,6 +875,8 @@ def _parse_ledger(raw: bytes, *, expected_attempt_id: str) -> list[dict[str, Any
 
 
 def _read_matches(row: Mapping[str, Any], requirement: Mapping[str, Any]) -> bool:
+    if "page_start" in row:
+        return False
     if str(row.get("status") or "read") != "read":
         return False
     for field in ("source_id", "artifact_id"):
@@ -868,6 +896,46 @@ def _read_matches(row: Mapping[str, Any], requirement: Mapping[str, Any]) -> boo
         if required_value and int(row.get(field) or 0) != required_value:
             return False
     return True
+
+
+def required_read_satisfied(rows: Iterable[Mapping[str, Any]], requirement: Mapping[str, Any]) -> bool:
+    """Accept a whole read or complete, gap-free pages of one selected value."""
+    rows = list(rows)
+    if any(_read_matches(row, requirement) for row in rows):
+        return True
+    if int(requirement.get("max_items") or 0) or int(requirement.get("max_chars") or 0):
+        return False
+    groups: dict[tuple[str, int, int], list[tuple[int, int]]] = {}
+    for row in rows:
+        if "page_start" not in row or str(row.get("status") or "") != "read":
+            continue
+        if any(str(row.get(key) or "") != str(requirement.get(key) or "")
+               for key in ("source_id", "artifact_id")):
+            continue
+        digest_expected = str(requirement.get("artifact_sha256") or requirement.get("sha256") or "")
+        if digest_expected and digest_expected != str(row.get("artifact_sha256") or ""):
+            continue
+        if str(row.get("json_path") or "$") != str(requirement.get("json_path") or "$"):
+            continue
+        try:
+            start, end, total = (int(row[key]) for key in ("page_start", "page_end", "page_total"))
+            size = int(row.get("returned_bytes") or 0)
+            selected_bytes = int(row.get("selected_bytes") or 0)
+        except (ValueError, TypeError, KeyError):
+            continue
+        digest = str(row.get("selected_sha256") or "")
+        if len(digest) != 64 or start < 0 or end <= start or end > total or size <= 0 or selected_bytes < total:
+            continue
+        groups.setdefault((digest, total, selected_bytes), []).append((start, end))
+    for (_, total, selected_bytes), pages in groups.items():
+        end = 0
+        for start, stop in sorted(pages):
+            if start > end:
+                break
+            end = max(end, stop)
+        if end == total and selected_bytes >= int(requirement.get("min_returned_bytes") or 1):
+            return True
+    return False
 
 
 def _safe_component(value: str) -> str:

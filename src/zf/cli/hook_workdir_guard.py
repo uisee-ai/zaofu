@@ -352,7 +352,18 @@ def evaluate_workdir_write_guard(
     tool_name = str(event_payload.get("tool_name") or "")
     cwd = Path(str(event_payload.get("cwd") or assigned_root))
     task_id = active_task_id_for_actor(event_log, actor)
-    allowed_workdirs = {assigned_root}
+    if pipeline is None and has_pipeline_assignment:
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
+        unresolved_pipeline = any(
+            row.get("status") == "running"
+            and row.get("role_instance") == actor
+            and row.get("task_pipeline_stage")
+            for row in reduce_workflow_operations(events).values()
+        )
+    else:
+        unresolved_pipeline = False
+    allowed_workdirs = set() if unresolved_pipeline else {assigned_root}
     project_roots = {Path(project_root), state_dir.parent}
     offending: list[str] = []
     for operation, raw_target in write_target_operations(tool_name, tool_input):
@@ -399,6 +410,9 @@ def evaluate_workdir_write_guard(
         task_id=task_id or None,
         payload={
             "reason": "outside_assigned_workdir",
+            "failure_class": (
+                "workspace_binding_mismatch" if unresolved_pipeline else "scope_violation"
+            ),
             "worker": actor,
             "origin_event": event_type,
             "tool_name": tool_name,
@@ -409,13 +423,13 @@ def evaluate_workdir_write_guard(
                 else "provider_write"
             ),
             "offending_paths": sorted(set(offending))[:10],
-            "assigned_workdir": str(assigned_root),
+            "assigned_workdir": "" if unresolved_pipeline else str(assigned_root),
         },
         causation_id=causation_id,
     ))
     print(
         "ZaoFu blocked this write: use the assigned writer workdir only: "
-        + str(assigned_root)
+        + ("unresolved task pipeline assignment" if unresolved_pipeline else str(assigned_root))
         + ". The only state-dir exception is the exact current result scratch "
         "declared by the Kernel. For handoff artifacts, write a workdir-relative "
         "file and emit that ref; the kernel relocates it into runtime artifact storage.",

@@ -127,6 +127,15 @@ class TestOrphanDetection:
         assert topo.dead_end_roles() == []
         assert topo.orphan_events() == []
 
+    def test_product_orchestrator_semantic_checkpoint_is_external(self):
+        orchestrator = RoleConfig(
+            name="orchestrator",
+            triggers=["orchestrator.semantic.checkpoint.requested"],
+        )
+        topo = WorkflowTopology.from_config(_make_config(orchestrator))
+
+        assert topo.dead_end_roles() == []
+
 
 class TestAsciiRender:
     def test_render_returns_string(self):
