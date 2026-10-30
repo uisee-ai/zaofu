@@ -13,12 +13,14 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     config = load_config(source)
     documents = list(yaml.safe_load_all(source.read_text(encoding="utf-8")))
 
-    assert config.version == "5.0"
+    assert config.version == "5.0.1"
     assert documents[0]["metadata"]["name"] == "zaofu-prd/v5-production"
     assert documents[1]["metadata"]["name"] == "zaofu-prd-v5-production"
     assert documents[1]["metadata"]["zaofu"]["catalog"]["preferred"] is True
     assert documents[0]["spec"]["backend"] == "codex"
     assert documents[0]["spec"]["lanes"] == 8
+    assert documents[0]["spec"]["roleDefaults"]["model"] == "${ZF_CODEX_MODEL:-gpt-6.1-sol}"
+    assert documents[0]["spec"]["roleDefaults"]["model_reasoning_effort"] == "medium"
     assert documents[1]["metadata"]["zaofu"]["catalog"]["backend"] == "codex"
     assert config.project.name == "zaofu"
     assert config.workflow.harness_profile == "strict"
@@ -26,6 +28,29 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert config.workflow.orchestration.normal_frontier_owner == "wrc"
     assert config.orchestrator.backend == "codex"
     assert config.runtime.run_manager.backend == "codex"
+    assert {role.backend for role in config.roles} == {"codex"}
+    assert {
+        next(role for role in config.roles if role.instance_id == instance).model_reasoning_effort
+        for instance in {"product-scan", "tech-scan", "planner", "plan-critic", "dev-lane-0", "verify-lane-0"}
+    } == {"medium"}
+    assert {
+        role.name for role in config.roles
+        if role.name in {
+            "research_root",
+            "source_researcher",
+            "product_analyst",
+            "technical_analyst",
+            "risk_critic",
+            "synthesizer",
+        }
+    } == {
+        "research_root",
+        "source_researcher",
+        "product_analyst",
+        "technical_analyst",
+        "risk_critic",
+        "synthesizer",
+    }
     assert config.runtime.run_manager.resident_agent.enabled is True
     assert config.runtime.run_manager.resident_agent.session_mode == "dedicated"
     assert config.runtime.workdirs.mode == "worktree"
@@ -39,6 +64,11 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert task_pipeline["backpressure"]["max_unverified_tasks"] == 8
     assert task_pipeline["worker_lifecycle"]["mode"] == "on_demand"
     assert task_pipeline["candidate"]["final_verify_target"] == "frozen_exact_commit"
+
+    prd_policy = config.workflow.orchestration.flow_policies["prd"]
+    assert prd_policy.checkpoint_policies["pre_impl"] == "shadow"
+    assert prd_policy.checkpoint_policies["semantic_failure"] == "blocking"
+    assert prd_policy.shadow_sample_percent == 100
 
     orchestrator = next(
         role for role in config.roles if role.name == "orchestrator"
