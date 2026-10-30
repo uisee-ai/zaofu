@@ -295,6 +295,19 @@ def prepare_call_operation(
         if controlled_inputs:
             payload["input_refs"] = controlled_inputs
 
+    from zf.runtime.critical_context import critical_context_sources
+
+    critical_sources = critical_context_sources(
+        runtime.state_dir, runtime.event_log.read_all(), workflow_run_id,
+    )
+    if critical_sources:
+        critical_ids = {source["source_id"] for source in critical_sources}
+        payload["input_refs"] = [
+            *(item for item in (payload.get("input_refs") or [])
+              if not isinstance(item, dict) or item.get("source_id") not in critical_ids),
+            *critical_sources,
+        ]
+
     source_manifest, source_descriptor = CanonicalHandoffResolver(
         state_dir=runtime.state_dir,
         project_root=runtime.project_root,

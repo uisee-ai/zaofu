@@ -257,6 +257,15 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
     from zf.runtime import call_result_runtime
 
     runtime, task, _, _, dispatch = dispatch_fixture
+    feedback = [{
+        "rework_item_id": "RW-01", "reason": "大整数边界必须保留；不省略用户约束",
+        "evidence_refs": ["evidence/full-failure.log"],
+        "reproduction_commands": ["python -m unittest tests.test_boundary"],
+    }, {
+        "rework_item_id": "RW-02", "reason": "大指数失败是独立问题",
+        "evidence_refs": ["evidence/exponent.log"],
+    }]
+    monkeypatch.setattr("zf.runtime.task_pipeline_runtime._verify_rework_feedback", lambda *a, **kw: feedback.copy())
     runtime.task_store.update(task.id, active_dispatch_id=old_dispatch, assigned_to="previous-role")
     before = asdict(runtime.task_store.get(task.id))
     original = call_result_runtime.prepare_call_operation
@@ -286,6 +295,14 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
         assert str(doc.resolve()) in briefing.read_text()
         assert str((doc.parent / "source.md").resolve()) in briefing.read_text()
         assert str((doc.parent / "progress.md").resolve()) in briefing.read_text()
+        text = briefing.read_text()
+        assert f"cost --operation {context.operation_id} --json" in text
+        compact = json.loads(text.split("## Compact Execution Context", 1)[1].split("```json\n", 1)[1].split("```", 1)[0])
+        assert "attempt_id" not in compact  # exact identity remains in header
+        assert f"- attempt_id: `{context.attempt_id}`" in text
+        if generation > 1:
+            recovered = json.loads(text.split("## Rework Feedback", 1)[1].split("```json\n", 1)[1].split("```", 1)[0])
+            assert recovered == feedback
         assert asdict(runtime.task_store.get(task.id)) == before
         sent.append(context)
         if send_fails:

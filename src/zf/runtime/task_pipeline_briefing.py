@@ -136,7 +136,24 @@ def write_task_pipeline_briefing(
         f"\"current_task_id\":\"{task.id}\",\"state\":\"busy\","
         "\"last_action_ts\":\"<ISO8601 UTC>\"}'"
     )
+    budget_command = f"{zf_cli_cmd()} cost --operation {prepared.operation_id} --json"
     state_dir = Path(runtime.state_dir).resolve()
+    # These exact values are already delivered in the header/envelope. Keep
+    # distinct values (including unexpected mismatches) visible for diagnosis.
+    delivered = {
+        "task_id": str(task.id), "operation_id": prepared.operation_id,
+        "dispatch_id": payload.get("dispatch_id") or "",
+        "attempt_id": payload.get("attempt_id") or "",
+        "operation_generation": payload["operation_generation"],
+        "placement_epoch": payload["placement_epoch"],
+        "workdir": str(workspace.project_path),
+        "target_commit": payload.get("target_commit") or workspace.base_commit,
+        "instruction": _task_instruction(task),
+    }
+    display = {
+        key: value for key, value in display.items()
+        if key not in delivered or delivered[key] != value
+    }
     lines = [
         f"Active task: {task.id}",
         "",
@@ -164,6 +181,34 @@ def write_task_pipeline_briefing(
         "5. Keep kernel projections read-only and submit only this operation's "
         "typed result through the Output Contract below.",
         "",
+        "## Critical Constraints and Recovery",
+        "",
+        "Keep the critical-* required sources available: original user messages and "
+        "answers, approved Flow configuration, plus the current contract and rework "
+        "feedback. Approved configuration takes precedence over earlier configuration "
+        "preferences. Summaries cannot replace these full sources. After compaction "
+        "or resume, re-read their current versions before continuing. Recover older "
+        "evidence through its exact ref/digest; a version mismatch requires the full "
+        "authoritative source or an explicit unavailable report, never a guessed summary.",
+        "",
+        "## Budget and Continuation",
+        "",
+        "Read operation headroom before work, then with each heartbeat:",
+        "```bash",
+        budget_command,
+        "```",
+        "Use the configured tool permissions. If this diagnostic is unavailable, "
+        "record that limitation and continue; the kernel budget guard remains active.",
+        "Budget includes fresh input, cached input and output across all turns. "
+        "A low context-window ratio does not imply sufficient operation budget. "
+        "Unknown pricing is not free usage; usage samples are not model calls.",
+        "At warning_level >= 50, preserve a continuation note within the allowed "
+        "task scope: current operation/attempt/dispatch, contract/source digests, "
+        "HEAD and dirty paths, decisions, every open acceptance/rework item, "
+        "exact command results and full evidence refs, and next action. "
+        "Update it at >= 80. Checkpointing does not complete or pause an attempt; "
+        "continue required work within the existing gates and limits.",
+        "",
         "## Stage Contract",
         "",
         *[f"- {item}" for item in stage_instructions],
@@ -184,6 +229,16 @@ def write_task_pipeline_briefing(
         lines.extend([
             "## Rework Feedback",
             "",
+            "After the current required reads, reproduce these failures first. "
+            "Inspect affected code and its callers; retain all acceptance criteria "
+            "and run their required checks before handoff. Do not repeat global "
+            "repository/skill discovery solely because this is a new attempt.",
+            "Current required reads are still mandatory. Use the deduplicated "
+            "--required pages once; aliases already have independent receipts. "
+            "Prior receipts and continuation summaries cannot replace current "
+            "source bodies. Keep the prior session/history and full evidence "
+            "available for recovery; do not discard them to lower token usage.",
+            "",
             "```json",
             json.dumps(feedback, ensure_ascii=False, indent=2),
             "```",
@@ -192,6 +247,8 @@ def write_task_pipeline_briefing(
     lines.extend([
         *_render_worker_execution_envelope(payload),
         "## Compact Execution Context",
+        "",
+        "Exact duplicate fields are in the dispatch header and Task instruction above.",
         "",
         "```json",
         json.dumps(display, ensure_ascii=False, indent=2, sort_keys=True),
@@ -202,6 +259,7 @@ def write_task_pipeline_briefing(
         "Approximately every 60 seconds, or before a long tool call, run:",
         "```bash",
         heartbeat,
+        budget_command,
         "```",
         "",
         "## Recursion Guard (required)",

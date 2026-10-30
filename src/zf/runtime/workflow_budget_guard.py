@@ -100,6 +100,16 @@ def enforce_active_workflow_budgets(
         )
         exceeded = _exceeded_dimensions(run_limits, measurement)
         if not exceeded:
+            from zf.runtime.workflow_budget_status import emit_budget_warning
+
+            warning = emit_budget_warning(
+                runtime, events=events, scope="run", scope_id=entry.run_id,
+                workflow_run_id=entry.run_id, task_id=entry.task_id,
+                limits=run_limits, measurement=measurement,
+                causation_id=budget_revision_event_id or admitted.id,
+            )
+            if warning is not None:
+                emitted.append(warning)
             continue
         blocked_runs.add(entry.run_id)
         emitted.extend(_trip_run(
@@ -140,6 +150,18 @@ def enforce_active_workflow_budgets(
         )
         exceeded = _exceeded_dimensions(limits, measurement)
         if not exceeded:
+            from zf.runtime.workflow_budget_status import emit_budget_warning
+
+            warning = emit_budget_warning(
+                runtime, events=events, scope="operation",
+                scope_id=str(operation.get("operation_id") or ""),
+                workflow_run_id=workflow_run_id,
+                task_id=str(operation.get("task_id") or ""),
+                limits=limits, measurement=measurement,
+                causation_id=str(operation.get("started_event_id") or ""),
+            )
+            if warning is not None:
+                emitted.append(warning)
             continue
         task_id = str(
             operation.get("parent_task_id")
@@ -407,6 +429,13 @@ def _measurement(
     )
     return {
         "meter_available": available,
+        **{
+            key: max(0, int(current.get(key) or 0) - int(baseline_map.get(key) or 0))
+            for key in (
+                "input_tokens", "cache_read_tokens", "cache_creation_tokens",
+                "cache_creation_1h_tokens", "output_tokens", "partial_entries",
+            )
+        },
         "elapsed_seconds": round(elapsed_seconds, 3),
         "usage_samples": max(
             0,

@@ -784,6 +784,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "workflow.operation.superseded",
     "workflow.operation.interrupted",
     "workflow.budget.exceeded",
+    "workflow.budget.warning",
     "provider.operation.summary.recorded",
     "workflow.operation.cancelled",
     "workflow.fragment.proposed",
