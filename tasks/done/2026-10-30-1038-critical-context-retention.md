@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现提交: 383bf88d fix: retain critical workflow context with verifiable artifact delivery
 
 # 关键上下文常驻与来源绑定
 
@@ -16,7 +17,7 @@
 
 ## 交付
 
-实施与验证已完成，待记录本地实现提交；不 push、不 merge。
+实施与验证已完成；实现提交已记录于首段。不 push、不 merge。
 
 - 最终直接调用/共享契约闭包 103 passed，sentinel 51 passed；其余层级见报告。
 - 真实 Codex：TASK-F156CC / prepare-TASK-F156CC-a64b94daeb40e095，

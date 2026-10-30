@@ -1,22 +1,23 @@
-> 状态: active
+> 状态: done
+> 实现提交: 383bf88d fix: retain critical workflow context with verifiable artifact delivery
 
-# 区分产出与交付回执
+# 历史正文版本化恢复
 
 来源：用户批准按建议 1–3 建立 backlog、在 context-delivery worktree 实施并真实验证。
 
 ## 范围
 
-CLI 输出完成后才记录已产出证据；单独标记 Provider 交付可见性，未知不能等同已送达。按 UTF-8 字节预算限制 required 分页，支持明确的页面预算。
+保留完整正文与来源版本，以引用支持按需读取；恢复失败或版本不符时回退完整权威来源，不能静默依赖摘要。复用现有不可变 sidecar 和读取权限，不引入自动清空历史。
 
 ## 验收
 
-- 模拟 BrokenPipe/截断/Unicode/分页边界 -> verify: 不产生虚假已交付结论、完整内容可重组；真实 Provider 输出与收据摘要逐项比对。
+- 删除/替换恢复缓存及版本不一致 -> verify: 完整读取或明确失败，不能接受摘要替代；真实 workflow 执行至任务完成并归档证据。
 - focused 测试、影响闭包、sentinel 与 mock E2E -> verify: 全部通过，记录明确测试层级。
 - 使用当前分支源码、zf-prd-v5 和隔离状态真实运行 -> verify: Ask User → 回答 → 匹配 workflow → Raw 修改 → 批准 → 启动 → task 完成，保留证据与清理记录。
 
 ## 交付
 
-实施与验证已完成，待记录本地实现提交；不 push、不 merge。
+实施与验证已完成；实现提交已记录于首段。不 push、不 merge。
 
 - 最终直接调用/共享契约闭包 103 passed，sentinel 51 passed；其余层级见报告。
 - 真实 Codex：TASK-F156CC / prepare-TASK-F156CC-a64b94daeb40e095，
