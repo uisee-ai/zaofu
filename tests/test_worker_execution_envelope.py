@@ -55,9 +55,21 @@ def test_build_and_normalize_worker_execution_envelope_is_replayable() -> None:
     )
     assert envelope["schema_version"] == SCHEMA_VERSION
     assert envelope["routing"]["skills"] == ["worker"]
+    assert envelope["routing"]["frontier_owner"] == "run_manager"
     assert envelope["lifecycle"]["unknown_is_not_idle"] is True
     assert envelope["wake_contract"]["idle_probe_event"] == "worker.probe.idle"
     assert envelope["envelope_digest"] == envelope_digest(envelope)
+    assert normalize_worker_execution_envelope(envelope) == envelope
+
+
+def test_worker_execution_envelope_preserves_wrc_frontier_owner() -> None:
+    payload = _payload()
+    payload["frontier_owner"] = "wrc"
+    envelope = build_worker_execution_envelope(
+        payload=payload, role=_role(), execution_profile=_profile()
+    )
+
+    assert envelope["routing"]["frontier_owner"] == "wrc"
     assert normalize_worker_execution_envelope(envelope) == envelope
 
 

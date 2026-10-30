@@ -300,6 +300,15 @@ def prepare_task_pipeline_dispatch(
     # cannot acquire dispatch authority merely because its projection failed.
     blocking = True
     try:
+        from zf.runtime.workflow_frontier_owner import normal_frontier_owner
+
+        if normal_frontier_owner(runtime.config) == "wrc":
+            from zf.runtime.wrc_frontier_consumer import consume_normal_frontier
+
+            return consume_normal_frontier(
+                runtime,
+                candidate_task_ids=candidate_ids,
+            )
         blocking = task_pipeline_any_blocking(runtime.config)
         event_log = getattr(runtime, "event_log", None)
         contexts = task_pipeline_generation_contexts(

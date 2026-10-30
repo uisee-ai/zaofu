@@ -12,6 +12,7 @@ from zf.runtime.task_contract_snapshot import (
     snapshot_payload_fields,
 )
 from zf.runtime.transport import DispatchContext
+from zf.runtime.workflow_frontier_owner import normal_frontier_owner
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
 
 
@@ -241,6 +242,7 @@ def dispatch_task_pipeline_stage(
     )
     operation_payload: dict[str, Any] = {
         "workflow_run_id": workflow_run_id,
+        "frontier_owner": normal_frontier_owner(runtime.config),
         "flow_kind": str(generation_context.get("flow_kind") or ""),
         "trace_id": workflow_run_id,
         "task_id": task_id,

@@ -67,6 +67,7 @@ def build_worker_execution_envelope(
             "execution_profile_digest": str(
                 getattr(execution_profile, "profile_digest", "") or ""
             ).strip(),
+            "frontier_owner": str(payload.get("frontier_owner") or "run_manager").strip(),
             "skills": sorted({
                 str(skill).strip()
                 for skill in (getattr(role, "skills", ()) or ())
@@ -142,6 +143,10 @@ def normalize_worker_execution_envelope(
         "execution_profile_digest",
     ):
         _required_string(routing, key, f"routing.{key}")
+    if routing.get("frontier_owner") not in {"run_manager", "wrc"}:
+        raise WorkerExecutionEnvelopeError(
+            "routing.frontier_owner must be 'run_manager' or 'wrc'"
+        )
     if not isinstance(routing.get("skills"), list) or any(
         not isinstance(skill, str) or not skill.strip()
         for skill in routing["skills"]
