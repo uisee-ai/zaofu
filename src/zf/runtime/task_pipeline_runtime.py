@@ -852,7 +852,7 @@ def _activate_task_stage_binding(
         role,
         task_id=str(task.id),
         spawn_cwd=project_path,
-        skill_runtime_root=workspace_root,
+        skill_runtime_root=workspace_root, completion_via_briefing=True,
     )
     try:
         snapshot = runtime.transport.lifecycle_snapshot(role.instance_id)

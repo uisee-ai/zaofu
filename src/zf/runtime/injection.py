@@ -95,6 +95,7 @@ def generate_role_instructions(
     skill_entries: list[SkillLockEntry] | None = None,
     state_dir_ref: Path | str | None = None,
     project_root: Path | str | None = None,
+    completion_via_briefing: bool = False,
 ) -> str:
     """Generate CLAUDE.md content for a role."""
     sections: list[str] = []
@@ -215,7 +216,20 @@ def generate_role_instructions(
     sections.append(f"- `{cli_cmd} kanban` — view task board")
     sections.append("")
 
-    if task is None:
+    if completion_via_briefing:
+        sections.extend([
+            "## Completion Protocol",
+            "",
+            "Use the current dispatch briefing's Output Contract, prefilled "
+            "result scratch, and exact `zf result submit` command. Follow its "
+            "pre-submit validation instructions when provided. The Kernel "
+            "supplies result identity and selects the canonical completion event.",
+            "Role startup precedes dispatch publication: do not derive a "
+            "completion command from role publishes or a previous Task dispatch. "
+            "Do not emit terminal completion events directly.",
+            "",
+        ])
+    elif task is None:
         protocol = infer_completion_protocol(role)
         _append_configured_completion_contract(sections, config, role, protocol)
         if sections[-1] != "":
@@ -239,7 +253,8 @@ def generate_role_instructions(
         sections.append("")
 
         # Completion protocol
-        _add_completion_protocol(sections, role, task, config=config)
+        if not completion_via_briefing:
+            _add_completion_protocol(sections, role, task, config=config)
 
     return "\n".join(sections)
 
