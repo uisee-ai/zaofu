@@ -35,4 +35,7 @@ function WorkflowGraphNode({ data }: NodeProps<GraphNode>) {
   </div>;
 }
 
-export const workflowNodeTypes = { workflowCard: WorkflowGraphNode };
+import { WorkflowExecutionStageNode } from "./WorkflowExecutionStageNode";
+import { WorkflowExecutionContextNode } from "./WorkflowExecutionContextNode";
+
+export const workflowNodeTypes = { workflowCard: WorkflowGraphNode, executionStage: WorkflowExecutionStageNode, executionContext: WorkflowExecutionContextNode };

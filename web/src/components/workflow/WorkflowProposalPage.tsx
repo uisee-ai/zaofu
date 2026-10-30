@@ -228,7 +228,7 @@ function WorkflowProposalWorkbench({
         <main className="workflow-graph-main">
           <Suspense fallback={<p>Loading graph…</p>}>
             <WorkflowGraphWorkbench key={`${projectId}:${selectedId}`} projectId={projectId} requestId={selectedId}
-              revision={`${detail.result?.revision}:${detail.result?.proposal_digest}`} onAction={onAction} actionReady={actionReady}
+              revision={`${detail.result?.revision}:${detail.result?.proposal_digest}`} goalObjective={objective}
               recentEvents={recentEvents} liveState={liveState}
               onOpenRaw={() => setPanel("raw")} />
           </Suspense>

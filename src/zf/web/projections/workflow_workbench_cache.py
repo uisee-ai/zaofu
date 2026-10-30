@@ -22,7 +22,7 @@ from zf.web.projections.workflow_workbench_sources import read_workbench_sources
 
 # Change when cached graph or Plan projection semantics change.  The version
 # participates in the storage key and ETag, isolating older running servers.
-CACHE_VERSION = "workflow-workbench.v3"
+CACHE_VERSION = "workflow-workbench.v4"
 
 
 class WorkbenchSourceChanged(RuntimeError):
@@ -89,7 +89,8 @@ def _references(value, context) -> set[str]:
 def read_workbench_projection(context, project_id: str, request_id: str, as_of: int,
                               detail: Callable, *, if_none_match: str | None = None,
                               structure_only: bool = False,
-                              structure_node_id: str | None = None) -> tuple[dict, str] | JSONResponse:
+                              structure_node_id: str | None = None,
+                              execution_only: bool = False) -> tuple[dict, str] | JSONResponse:
     request = load_workflow_request(context.state_dir, request_id)
     if not request:
         return JSONResponse({"ok": False, "status": "not_found"}, status_code=404)
@@ -98,6 +99,8 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                       request.get("proposal_digest"), as_of]
     if structure_node_id is not None:
         identity_parts.extend(["structure-node-v1", structure_node_id])
+    elif execution_only:
+        identity_parts.append("execution-v1")
     elif structure_only:
         identity_parts.append("structure-v1")
     identity = json.dumps(identity_parts, sort_keys=True)
@@ -168,7 +171,7 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                     body = json.loads(response.body)
                 else:
                     body = response
-                if structure_only:
+                if structure_only or execution_only:
                     from zf.web.projections.workflow_workbench_structure import read_structure_sources
                     inputs = read_structure_sources(context, body, as_of=as_of, all_events=events)
                 else:
@@ -180,7 +183,7 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                 "replan.requested", "goal.claim_set.pinned", "task.pipeline.generation.admitted",
                 "task_map.materialization.committed", "task_map.admitted",
             }]
-            discovered = _references(body if structure_only else [
+            discovered = _references(body if structure_only or execution_only else [
                 body, inputs["plans"], inputs["versions"], inputs["goal_claim_set"], artifact_events,
             ], context)
             added = discovered - dependencies
@@ -195,13 +198,15 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                     if raw is None:
                         return JSONResponse({"ok": False, "status": "node_not_found"}, status_code=404)
                     value = redact_obj(raw, memoize=True)
+                elif execution_only:
+                    value = redact_obj(build_sdlc_graph(inputs, execution_only=True), memoize=True)
                 else:
                     value = redact_obj(build_sdlc_graph(inputs), memoize=True)
             if graph_failures or before != version():
                 continue
             try:
                 read_model.set_cached_projection(context.state_dir, key,
-                    kind="workflow-workbench-structure" if structure_only else "workflow-workbench",
+                    kind="workflow-workbench-execution" if execution_only else "workflow-workbench-structure" if structure_only else "workflow-workbench",
                     source_seq=value["scope"]["head_seq"], payload={
                         "fingerprint": before, "dependencies": sorted(dependencies), "value": value,
                     })

@@ -215,3 +215,21 @@ YAML完整结构中的role节点也关联真实Operation：有running操作时�
 CallResult协议修正可保留不可变CallRequest的初始attempt身份；TaskAttempt收尾以Kernel已接纳的fanout.child.completed为执行关联，核对来源结果、Task、Run和Operation后精确匹配实际dispatch。迟到旧结果不能关闭新重试；shadow租约过期可按既有恢复入口补记成功，保留旧失败事件及诊断历史。
 
 当前generation的Kernel run.goal.completed也为其pdd_id/feature_id顶层需求任务提供接受证据，和运行时对需求容器的收尾一致；仍要求Run、generation与Kernel来源匹配，不凭TaskStore done字段涂绿。
+
+执行 Graph 默认按编译阶段展示已观测角色与执行记录，并按角色和 Task 聚合重试；计数不代表当前存活进程。卡片显示绑定的 Task 和最近观测到的活动，展开阶段可查看所有执行记录。无关联或未观测时明确显示未知，模型来源区分运行用量、配置快照与未知。为显示执行信息，已启动的运行在结构预览加载后自动读取同代完整图，未启动的预览仍按需读取；读取失败时保留结构并提供重试。
+
+任务 Graph 聚焦目标、Claim 和 Task，关系直接使用图中已有声明和依赖，不推断未声明的链路。两种视图可从已关联的执行记录和 Task 互相跳转；Timeline 和完整流程结构仍可访问。所有内容均为只读投影，不改变 Kernel、Task 或事件真值。
+
+执行图支持聚合角色与 Task，或逐条展开已观测的 Operation；展开阶段可在卡片内查看全部记录。Task 详情列出可选择的关联执行，依赖图和 Claim 覆盖图分开展示；任务上下游仅沿已声明的依赖边定位。Worker 详情按事件顺序展示已有的最近活动，缺失的信息保持未知，不从任务名称推断当前行为。
+
+已启动 Run 的执行图先读取 `/graph/structure`，再读取绑定相同 structure generation 的 `/graph/execution` 摘要。摘要从同一 Run 的事件和 TaskStore 投影构建，只包含结构、Operation 和任务标识，不装载 Plan、完整事件图、Timeline 或 Goal Coverage；任务状态和详细 Task 合同仍由完整图提供。摘要采用单独缓存与 ETag，跨代请求返回 409，前端允许刷新后重试；旧服务不支持摘要时回退完整图。切换 Task Graph、Timeline 或打开完整计划后读取既有完整图。摘要和完整图均为只读视图，不改变状态、准入或审批。
+
+执行 Graph 将需求或已验证绑定的 Goal、Run、阶段和 Run 结果放在同一画布。完整图的 Goal 必须匹配 Goal Coverage 的 Run 与 Goal 身份；轻量摘要不装载 Coverage，因此显示需求并标明 Goal 身份未加载或未绑定。阶段间路径来自编译图，Run 与阶段或独立角色的点线只表示基于同 Run Operation 的执行归属，并不表示派发因果。结果卡片只有在 Run 投影携带内核终态事件时才显示对应终态；结束门禁与结果仅在共享该事件时连接。未启动、尚未观测结束及缺失终态证据保持不同状态。该布局不改变任何内核状态或事件。
+
+实际 Operation 如果由 Run 直接持有、但其阶段和角色均无编译节点，执行图将其放入“未归属阶段”，仍可打开原始执行记录；不补造阶段或派发关系。无编译阶段的运行也保留 Goal、Run 与结果上下文。
+
+执行摘要复用 Plan Preview 的事件归约，只携带待审阅 Plan ID，不读取计划正文。Workflow 页面不显示 PRD / Plan 列表或预览，计划审阅与审批通过 Inbox 现有入口进行，摘要不构成审批授权。执行图默认不显示运行状态横幅、说明文字和等待阶段提示；完整结构按需读取，失败与时间证据可在执行详情查看。单任务的依赖视图显示任务概览和可展开的已声明 Claim，映射不代表验收通过；多任务依赖图仍只使用已声明关系。查看运行结果可定位到结果卡片，轮询不重置用户视角。
+
+Operation 详情可跳转由已有 `delegates` 边记录的父子执行；缺失目标节点时不补造关系，也不把 Run 归属或阶段顺序解释成派发证据。
+
+Workflow 工作台只提供执行 Graph、任务 Graph 和 Timeline。旧 Lifecycle、Trace、Delivery 图链接回退执行 Graph，保留 Request 与已选节点；底层事件和投影不变。Operation 详情仅在记录明确提供 Trace ID 时链接到对应 Trace，否则链接到项目 Traces 列表并说明没有绑定身份；Delivery 继续通过独立页面查看，不推断 Feature 或 Goal 归属。

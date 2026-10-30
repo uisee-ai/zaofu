@@ -1,27 +1,30 @@
 export type GraphView = "lifecycle" | "modules" | "workflow" | "trace" | "delivery" | "timeline";
 export interface SdlcNode { id: string; kind: string; label: string; status: string; views: GraphView[]; data: Record<string, unknown> }
-export interface SdlcEdge { id: string; source: string; target: string; relation: string; views: GraphView[]; event?: string; collapsedVia?: string[] }
+export interface SdlcEdge { id: string; source: string; target: string; relation: string; views: GraphView[]; event?: string; collapsedVia?: string[]; presentation?: "goal" | "scope" | "outcome" }
 export interface SdlcGraph {
-  scope: { request_id: string; revision: number; run_id: string; proposal_digest: string; source_seq: number; head_seq: number; historical: boolean };
+  scope: { request_id: string; revision: number; run_id: string; proposal_digest: string; source_seq: number; head_seq: number; historical: boolean; execution_started?: boolean };
   nodes: SdlcNode[]; edges: SdlcEdge[]; diagnostics: string[];
   capabilities: Record<string, { status: string; reason?: string }>;
+  goal_coverage?: { identity?: { goal_id?: string; workflow_run_id?: string } };
   plans: import("../../api/types").PlanPreview[];
   versions: { ref: string; digest: string; seq: number; event_id: string; admitted: boolean }[];
   timeline: { seq: number; id: string; ts: string; type: string; task_id?: string; actor?: string; origin: string; payload: Record<string, unknown> }[];
   analysis: { intervals: { operation_id: string; task_id: string; role: string; status: string; start_ms: number | null; end_ms: number | null; duration_ms: number | null; queue_wait_ms: number | null }[]; critical_path: { status: string; node_ids: string[]; duration_ms: number | null; method: string } };
 }
 export interface SdlcStructure extends Pick<SdlcGraph, "scope" | "nodes" | "edges" | "diagnostics"> {
-  schema_version: "sdlc-workbench-structure.v1";
+  schema_version: "sdlc-workbench-structure.v1" | "sdlc-workbench-execution.v1";
+  execution_summary?: boolean;
+  pending_plan_ids?: string[];
   partial: true;
   generation: string;
 }
 export type WorkflowGraphResult = SdlcGraph | SdlcStructure;
-export const graphViews: [GraphView, string][] = [["workflow", "Graph"], ["timeline", "Timeline"], ["lifecycle", "Lifecycle"], ["modules", "Task"], ["trace", "Trace"], ["delivery", "Delivery"]];
+export const graphViews: [GraphView, string][] = [["workflow", "执行 Graph"], ["modules", "任务 Graph"], ["timeline", "Timeline"]];
 export const statusLabels: Record<string, string> = {
   unknown: "未知", draft: "草稿", pending: "等待", running: "执行中", in_progress: "执行中", reserved: "已预留", requested: "排队中",
   settled: "操作结束", accepted: "内核已接纳", reported: "已报告", failed: "失败", blocked: "阻塞", evidence_missing: "缺少接纳证据",
   done: "已完成", confirmed: "已确认", approved: "已批准", rejected: "已拒绝", proposed: "待确认", cancelled: "已取消", queued: "排队中",
-  stale: "证据已过期", closed: "已闭环", open: "未闭环", mapped: "已有任务映射", uncovered: "尚未覆盖", passed: "已通过", completed: "已结束", aggregating: "汇聚中", superseded: "已被替代",
+  paused: "已暂停", abandoned: "已放弃", dispatched: "已派发", stale: "证据已过期", closed: "已闭环", open: "未闭环", mapped: "已有任务映射", uncovered: "尚未覆盖", passed: "已通过", completed: "已结束", aggregating: "汇聚中", superseded: "已被替代",
 };
 export const activeStatus = (status: string) => ["running", "in_progress", "dispatched"].includes(status);
 

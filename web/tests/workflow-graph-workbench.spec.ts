@@ -5,9 +5,8 @@ const requestId = process.env.ZF_GRAPH_REQUEST_ID || "";
 test.skip(!project || !requestId, "Requires an explicitly selected isolated Workflow Run.");
 
 async function selectView(workbench: Locator, name: string) {
-  const values: Record<string, string> = { Lifecycle: "lifecycle", Task: "modules", Trace: "trace", Delivery: "delivery" };
-  if (values[name]) await workbench.getByLabel("更多视图", { exact: true }).selectOption(values[name]);
-  else await workbench.getByRole("button", { name: name === "Dag" ? "Graph" : name, exact: true }).click();
+  if (name === "Task") await workbench.getByRole("button", { name: "任务 Graph", exact: true }).click();
+  else await workbench.getByRole("button", { name: name === "Dag" ? "执行 Graph" : name, exact: true }).click();
 }
 
 test("real Workflow graph shows bound execution, every lens, stable selection and mobile layout", async ({ page, request }) => {
@@ -24,7 +23,7 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
   await expect(workbench).toBeVisible();
   await expect(workbench.getByTestId("workflow-graph-canvas")).toBeVisible({ timeout: 30_000 });
-  for (const name of ["Lifecycle", "Task", "Dag", "Trace", "Delivery", "Timeline"]) {
+  for (const name of ["Task", "Dag", "Timeline"]) {
     await selectView(workbench, name);
     await expect(workbench.getByTestId(name === "Timeline" ? "workflow-execution-timeline" : "workflow-graph-canvas")).toBeVisible();
     expect(new URL(page.url()).searchParams.has("graph")).toBeTruthy();
@@ -45,7 +44,7 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   expect(selected).toBeTruthy();
   if (task) expect(selected).toBe(task.id);
   await workbench.getByLabel("搜索图节点").clear();
-  for (const name of ["Task", "Trace", "Dag"]) {
+  for (const name of ["Task", "Dag"]) {
     await selectView(workbench, name);
     await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText(selected!);
   }
@@ -71,86 +70,6 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
   await page.screenshot({ path: test.info().outputPath("workflow-mobile.png"), fullPage: true });
   await test.info().attach("graph-source", { body: JSON.stringify(graph), contentType: "application/json" });
-});
-
-test("Plan reader retains unchanged attachments across graph polls and reloads changed bindings", async ({ page, request }) => {
-  test.setTimeout(60_000);
-  const endpoint = `/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`;
-  const graph = await (await request.get(endpoint)).json();
-  const ports = ["task_map", "execution_spec", "source_inventory"];
-  const plan = graph.plans.find((p: { artifacts?: { name: string }[] }) =>
-    ports.every(name => p.artifacts?.some(a => a.name === name)));
-  test.skip(!plan, "Requires a Plan with all three bound review ports.");
-  let polls = 0;
-  const loads: string[] = [];
-  await page.route(`**${endpoint}*`, route => {
-    polls += 1;
-    return route.fulfill({ json: { ...graph, plans: [plan] } });
-  });
-  page.on("request", req => {
-    if (req.method() === "GET" && ports.some(name => req.url().endsWith(`/plans/${plan.plan_id}/artifacts/${name}`))) loads.push(req.url());
-  });
-  await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
-  await page.locator(".sdlc-plans summary").click();
-  await page.getByRole("button", { name: `PRD / Plan Preview · ${plan.status}`, exact: true }).click();
-  const reader = page.getByRole("region", { name: "计划审阅内容" });
-  await expect(reader.getByRole("heading", { name: "本次交付与审批范围" })).toBeVisible({ timeout: 30_000 });
-  const firstPoll = polls;
-  await expect.poll(() => polls, { timeout: 20_000 }).toBeGreaterThanOrEqual(firstPoll + 3);
-  expect(loads).toHaveLength(3);
-  await expect(reader.getByText("正在读取同版规格…")).toHaveCount(0);
-  // Only the graph response is a fixture; artifact reads still use the bound API.
-  plan.artifacts.find((a: { name: string }) => a.name === "task_map").sha256 = "changed-binding-fixture";
-  await expect.poll(() => loads.length, { timeout: 20_000 }).toBe(6);
-  await expect(reader.getByRole("heading", { name: "本次交付与审批范围" })).toBeVisible();
-});
-
-test("Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels", async ({ page, request }) => {
-  test.setTimeout(90_000);
-  const endpoint = `/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`;
-  const graph = await (await request.get(endpoint)).json();
-  test.skip(!graph.plans.length, "Requires a bound Plan to test its review panel.");
-  const plan = { ...graph.plans[0], status: "pending",
-    artifacts: graph.plans[0].artifacts.filter((a: { name: string }) => a.name !== "accepted_plan") };
-  const before = "这是待审阅的长需求段落，修改仅生成候选，不能直接批准执行。".repeat(20);
-  const after = before + "按钮文案为归零。";
-  await page.addInitScript(() => localStorage.setItem("zf.webActionToken", "intercepted-layout-fixture"));
-  await page.route(`**${endpoint}*`, route => route.fulfill({ json: { ...graph, plans: [plan] } }));
-  await page.route(`**/api/projects/${project}/plan-artifact-review`, async route => {
-    const input = route.request().postDataJSON();
-    expect(["context", "discuss"]).toContain(input.operation);
-    expect(input.name).toBe(plan.artifacts[0].name);
-    await route.fulfill({ json: input.operation === "context"
-      ? { ok: true, body: before, digest: "fixture", editable: true }
-      : { ok: true, answer: "局部修改候选", before, after, preview: graph.plans[0].markdown + "\n" + after, draft_ref: { ref: "fixture-only" } } });
-  });
-  await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
-  await page.locator(".sdlc-plans summary").click();
-  await page.getByRole("button", { name: "PRD / Plan Preview · pending", exact: true }).click();
-  const source = page.getByTestId("plan-review-source");
-  await expect(source).toHaveText(before, { timeout: 30_000 });
-  await source.evaluate(element => {
-    const range = document.createRange(); range.selectNodeContents(element);
-    const selected = window.getSelection()!; selected.removeAllRanges(); selected.addRange(range);
-    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-  });
-  await page.getByLabel("Plan artifact discussion").fill("仅修改引用片段");
-  await page.getByRole("button", { name: "修改文档片段", exact: true }).click();
-  const diff = page.getByTestId("plan-review-diff");
-  await expect(diff).toContainText("按钮文案为归零");
-  await expect(page.getByRole("button", { name: "确认计划并继续", exact: true })).toBeDisabled();
-  for (const width of [1600, 390]) {
-    await page.setViewportSize({ width, height: 1000 });
-    await diff.scrollIntoViewIfNeeded();
-    const size = await diff.boundingBox();
-    expect(size!.width).toBeLessThanOrEqual(width);
-    const panel = await page.getByRole("region", { name: "PRD Plan Agent Chat" }).boundingBox();
-    expect(size!.width).toBeLessThanOrEqual(panel!.width);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
-    await page.screenshot({ path: test.info().outputPath(`plan-diff-fixture-${width}.png`) });
-  }
-  await page.getByRole("button", { name: "放弃修改", exact: true }).last().click();
-  await expect(diff).toHaveCount(0);
 });
 
 test("explicit graph filters compact the layout while polls retain the viewport", async ({ page, request }) => {
