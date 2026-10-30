@@ -37,7 +37,11 @@
 
 ## 进度
 
-- 9 项实现及直接调用方已完成，真实 Provider 复测进行中；尚未认定最终闭环。
+- 9 项实现及直接调用方已完成；Task Verify 真实接纳，整轮最终因 Run 总预算而阻塞，不能认定完整交付闭环。
+- B4 实测增补：Provider 尾部 211337 tokens 在 session 切换时漏采，补上退出后、身份轮换前的幂等对账；87 项 provider/生命周期/候选/计量回归通过。
+- 单任务 Verify：3 次必读分页、20 个工具调用、95.454 秒，validate --submit 正式接纳；Provider 最终 453075 tokens，runtime 当时只采到 241738，不能混用这两个数。
+- 固定 8-lane 候选验证期间触发 10000000 Run 总预算（观测 10035887）；Discovery/Judge 未执行。后续编排优化留在本地 proposed backlog，不擅自增预算或缩减门禁。
+- 冻结候选 198eb416 已独立验证两条 CLI 与 3 项 unittest 全部通过；不替代最终交付门禁。
 - 定向后端回归：384 passed、1 skipped；追加控制器 12 passed，预算/Graph 55 passed，最后一次受影响调用方 76 passed（集合有重叠，不累加）。
 - 六组 deterministic mock E2E：17 passed、6 deselected；Web build/typecheck/unit 和 premerge 51 sentinels 通过。
 - Docker Playwright 的 workflow-execution-graph 15 项通过，包含累计 tokens、缓存、金额未知及上下文占用分离断言。

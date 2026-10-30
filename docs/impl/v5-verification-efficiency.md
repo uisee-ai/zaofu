@@ -27,6 +27,11 @@ V5 PRD 阶段角色的无进展阈值、on-demand 空闲阈值、`bounded-direct
 常驻 OA 保持 resident；协作 Research 路线、心跳、启动等待、锁等待及全 Run 期限保留各自策略。
 150 万单操作 token 上限不变，不将缓存输入排除出累计处理量，不虚构模型价格。
 
+Task Pipeline 释放旧 stage session，以及 reader 跨任务/派发切换时，先确认 Provider 停止，
+再用旧 session binding 补采尾部用量，通过 EventWriter 与幂等 CostTracker 入账后才轮换身份。
+只补采正在退出的角色；失败保留旧身份供重试，append 成功而 cost 写入失败也可重放补账。
+该对账修复不会重写已终止的 Run 预算 verdict；周期门禁与最终尾部统计仍是不同观测时点。
+
 Workflow operation 详情展示 Kernel 预算事件绑定的累计处理量、非缓存输入、缓存读写、输出、
 期限与金额。未定价或仅部分定价时总金额为未知；最近上下文占用单列，不与多回合累计 tokens 混用。
 
