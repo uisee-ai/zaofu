@@ -197,6 +197,7 @@ def init_flow_project(
     workspace_register: bool | None = None,
     with_instruction_docs: bool = True,
     notes: str = "",
+    controller_id: str = "",
 ) -> dict[str, Any]:
     """Single implementation of kind-based project init, shared by
     `zf project init` and the Web wizard (doc 125 §4/§8). Raises ValueError /
@@ -285,7 +286,18 @@ def init_flow_project(
     config_target_root = target_root
     if kind == "prd" and not config_target_root:
         config_target_root = "."
-    if kind == "multi":
+    if controller_id:
+        from zf.cli.project_controller import draft_project_controller
+
+        if kind != "prd":
+            raise ValueError("registered project controller requires kind=prd")
+        docs = draft_project_controller(
+            controller_id=controller_id, project_root=project_root, project_name=name,
+            project_description=description, backend=backend, verify_backend=verify_backend,
+            state_dir=state_dir, lanes=lanes, source_ref=config_source_ref,
+            target_root=config_target_root, stack=stack, surface=surface,
+        )
+    elif kind == "multi":
         docs = draft_multi_kind_project_spec(
             backend=backend,
             verify_backend=verify_backend,
@@ -317,9 +329,12 @@ def init_flow_project(
         yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
-    from zf.core.profile.apply import materialize_config_skills
+    from zf.core.profile.apply import materialize_config_skills, materialize_flow_assets
 
-    materialized_assets = materialize_config_skills(yaml_path, project_root)
+    materialized_assets = (
+        materialize_flow_assets(controller_id, project_root, config_path=yaml_path)
+        if controller_id else materialize_config_skills(yaml_path, project_root)
+    )
     result = ProjectInitializer(workspace=workspace).initialize(
         cwd=project_root,
         force=force,

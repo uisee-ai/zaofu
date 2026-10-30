@@ -364,9 +364,10 @@ def _copy_flow_skills(source_path: Path, config_path: Path, target_root: Path) -
         if source_dir is None:
             continue
         dest = target_skills / skill
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(source_dir, dest)
+        if source_dir.resolve() != dest.resolve():
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(source_dir, dest)
         copied.append(str(dest.relative_to(target_root)))
         try:
             meta = read_skill_metadata(source_dir / "SKILL.md", expected_name=skill)
@@ -380,7 +381,7 @@ def _copy_flow_skills(source_path: Path, config_path: Path, target_root: Path) -
 
 
 def _source_skill_roots(source_path: Path) -> list[Path]:
-    roots = [source_path.parent / "../../../skills", source_path.parent / "../../skills"]
+    roots = [source_path.parent / "skills", source_path.parent / "../../../skills", source_path.parent / "../../skills"]
     return [root.resolve() for root in roots if root.exists()]
 
 

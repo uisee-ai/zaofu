@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from zf.cli.flow import draft_flow_spec, draft_multi_kind_project_spec
+from zf.cli.project_controller import DEFAULT_PROJECT_CONTROLLER, draft_project_controller
 from zf.core.config.backend_identity import canonical_backend_id
 from zf.core.workflow.request_policy import default_lanes_for_kind
 from zf.core.workspace.onboarding import (
@@ -29,6 +30,7 @@ class ProjectInitConfigDraft:
     strictness: str
     parity_scope: tuple[str, ...]
     documents: list[dict[str, Any]]
+    controller_id: str = ""
 
     @property
     def mixed_enabled(self) -> bool:
@@ -87,7 +89,8 @@ def draft_project_init_config(
         lanes = int(lanes_raw) if lanes_raw else 0
     except (TypeError, ValueError) as exc:
         raise ValueError("lanes must be an integer") from exc
-    if not lanes and flow_kind != "multi":
+    controller_id = DEFAULT_PROJECT_CONTROLLER if inherit_onboarding and flow_kind == "prd" else ""
+    if not lanes and flow_kind != "multi" and not controller_id:
         lanes = default_lanes_for_kind(flow_kind)
 
     parity_scope_raw = payload.get("parity_scope") or payload.get("parityScope") or []
@@ -115,7 +118,14 @@ def draft_project_init_config(
         "strictness": str(payload.get("strictness") or "standard"),
         "parity_scope": parity_scope,
     }
-    if flow_kind == "multi":
+    if controller_id:
+        documents = draft_project_controller(
+            controller_id=controller_id, project_root=root, project_name=project_name,
+            project_description=project_description, backend=backend, verify_backend=verify_backend,
+            state_dir=common["state_dir"], lanes=lanes,
+            stack=str(payload.get("stack") or ""), surface=str(payload.get("surface") or ""),
+        )
+    elif flow_kind == "multi":
         documents = draft_multi_kind_project_spec(**common)
     else:
         documents = draft_flow_spec(
@@ -148,6 +158,7 @@ def draft_project_init_config(
         strictness=common["strictness"],
         parity_scope=parity_scope,
         documents=documents,
+        controller_id=controller_id,
     )
 
 
