@@ -94,6 +94,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
     read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded, deduplicated pages")
+    read_cmd.add_argument("--page-bytes", type=int, default=8192, help="Required output UTF-8 budget including metadata; 1024..8192 bytes")
     read_cmd.add_argument("--cursor", default=None, help="Continue a bound --required page")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
@@ -211,12 +212,14 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                 args.attempt,
                 state_dir=context.state_dir, operation_id=identity["operation_id"],
             )
-            from zf.cli.artifact_required_read import required_read_output
+            from zf.cli.artifact_required_read import prepare_required_read
+            from zf.runtime.artifact_output_delivery import emit_artifact_output
 
-            print(required_read_output(
+            output, receipts = prepare_required_read(
                 context.state_dir, manifest=manifest, rows=rows, identity=identity,
-                cursor=getattr(args, "cursor", None),
-            ))
+                cursor=getattr(args, "cursor", None), page_bytes=args.page_bytes,
+            )
+            emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
             return 0
         result = read_attempt_artifact(
             context.state_dir,
@@ -236,19 +239,24 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         )
         if getattr(args, "page_start", None) is None and len(result["content"]) > 8192:
             raise ValueError("artifact output exceeds 8192 characters; use --page-start and --page-size")
-        from zf.runtime.artifact_read_ledger import append_artifact_read
-        append_artifact_read(context.state_dir, result["read"])
-    except (ConfigError, ValueError) as exc:
+
+    except (ConfigError, ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     if getattr(args, "page_start", None) is not None:
         row = result["read"]
-        print(json.dumps({"content": result["content"], "page_start": row["page_start"],
+        output = json.dumps({"content": result["content"], "page_start": row["page_start"],
                           "page_end": row["page_end"], "page_total": row["page_total"],
                           "next_page_start": row["page_end"] if row["page_end"] < row["page_total"] else None},
-                         ensure_ascii=False))
+                         ensure_ascii=False)
     else:
-        print(result["content"])
+        output = result["content"]
+    from zf.runtime.artifact_output_delivery import emit_artifact_output
+    try:
+        emit_artifact_output(context.state_dir, output, [result["read"]], sys.stdout)
+    except OSError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 

@@ -4,7 +4,7 @@ Task Pipeline 在准备新的 provider operation 前，通过 TaskStore 重新�
 
 投影刷新不回写 TaskContract，不修改已接纳计划、验收、任务状态或工作树代码。新的 task.doc.published 事件记录 dispatch、来源事件和三种版本。
 
-上下文压缩或换会话后，read ledger 只证明已消费，不能证明当前仍理解正文。worker 方法允许先核对续跑说明与来源摘要，再经原受控读取入口按需补读当前任务的条款、接口和验收；减少重复读取不是禁止恢复语义。已有必读声明仍须完整满足，不因方法修订改写账本或旧 policy。
+上下文压缩或换会话后，read ledger 证明来源与已产出范围；Provider 交付需单独观测，两者都不能证明当前仍理解正文。worker 方法允许先核对续跑说明与来源摘要，再经原受控读取入口按需补读当前任务的条款、接口和验收；减少重复读取不是禁止恢复语义。已有必读声明仍须完整满足，不因方法修订改写账本或旧 policy。
 
 worker 发现任务说明、briefing、快照之间版本冲突时，以 implementation result 的 failure_class/blocker_kind=task_context_stale 报告具体版本和证据。该类型进入 harness 修复分支，不消耗产品重规划重试。真实 upstream_contract_gap 仍进入语义重规划；本修复不依赖自由文本猜测、不重写历史失败事件。
 
@@ -67,3 +67,12 @@ Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role
 `verify_task_capsule` 的派发调用显式传入 expected_dispatch_id/expected_role_instance，核对 manifest 的 dispatch_id、active_dispatch_id、任务与角色，以及 task.md 的头部和 Runtime Binding。先校验当前合同，再准备 operation；只有需要实际派发时才发布文档，运行中/终态 operation 的幂等重入不重写文档。准备 briefing 后、交付 transport 前再检查一次，覆盖准备期间投影被替换的情况。briefing 显式列出 operation、dispatch 和 attempt 身份。发送成功后沿原路径更新 canonical TaskStore 并记录派发事件；发送失败不伪造 in_progress 或已发送事实。
 
 验证：`tests/test_task_pipeline_capsule.py` 在真实派发函数和 briefing/文档生成器、隔离的 provider transport 边界核对 Impl/Verify 首派、g2 重派及失败分支，并注入 manifest/正文/角色陈旧。它证明派发上下文一致性，不代表真实多 provider 并行或完整产品验收通过。
+
+
+### 完整来源重读
+
+恢复 briefing 只重新列出当前 active dispatch 且仍存活 attempt 的受控读取入口；
+旧 attempt 的账本不能替代当前约束。原始问答、批准配置与当前未完成 AC/返工项
+通过完整来源恢复，历史输出通过精确 ref/digest 获取。版本副本校验失败时回退
+有效原文，全部不可用则停止推断。当前实现不自动删除历史或触发 Provider compaction。
+细节见 [读取面](task-pipeline-capsule-read-path.md#产出交付与版本恢复2026-10-30)。

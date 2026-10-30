@@ -1066,3 +1066,32 @@ Task Pipeline 工作树，与 respawn 的 cwd 解析一致；终态 attempt 不�
 新增回归先复现8项失败，修复后聚焦闭包162项通过（包含v4 runtime-noise mock E2E），
 premerge sentinel 51项通过。验证选择器对这3处代码选出200个文件并升级全套；本轮实际
 执行上述读取门禁、恢复/硬上限、角色生命周期和v4模拟闭包，未执行全仓或产品E2E。
+
+
+## 2026-10-30 Kanban 问答草稿与批准配置交付基线
+
+`AskUserQuestion` 的 Plan 卡片将未提交选项、Other 文本和题号保存到浏览器本地，
+按 Project、Conversation、Thread、请求事件、请求 ID、revision/digest 隔离。
+问题内容变化不复用旧草稿；提交失败保留，收到成功响应或已回答投影后清除。
+它只保存 UI 草稿，不代替 durable interaction，也不会在刷新时自动提交。
+
+Raw YAML 页的 `Start Workflow` 对 `config_change` 提案始终调用幂等
+`workflow-config-apply`，显式携带 `establish_delivery_baseline: true`，成功后再 submit。
+单独 apply 不传此字段时仍仅应用配置。批准绑定、候选摘要、配置 CAS、秘密检查保持不变。
+配置应用收据先落盘；随后 Git 基线只提交批准的 `zf.yaml`，使用独立 index、Git index
+锁和分支 CAS，不运行项目 hooks，不推送。要求已跟踪的配置在 HEAD/index 中等于批准的
+base 或 target，其他 tracked 改动一律拒绝；未跟踪配置、detached HEAD 和忙碌 index
+也不自动处理。非 Git 项目记录 `not_required`。原交付 preflight 继续检查脏改动。
+
+基线收据以 `delivery_baseline_ref` 绑定到 `workflow.config.change.applied` 事件及 API
+响应，包含 commit、提案 digest、配置 digest 和 apply 收据引用。若配置已应用但基线
+失败，处理其他改动后可重试同一提案；若 ref 更新后 index 替换失败，释放 Git 锁后重试会
+恢复 index，不重复提交；强杀留下的 Git index 锁仍需确认旧进程退出后处理。提交后再出现的其他改动仍由 submit preflight 拦截。
+
+验证入口：`tests/test_workflow_config_baseline.py`、
+`web/tests/kanban-question-recovery.spec.ts`、`tests/e2e/test_prd_v5_config_start.py`。
+Preview 的角色字段读取复用 loader 的 `profile_sources` 和环境展开，避免 v5 的
+`uses` 在预览入口变成未知 profile；保留原始文档编号及继承的技能。
+v5 启动测试明确从 `zf-prd-v5.yaml` 生成隔离项目的唯一控制面 `zf.yaml`，核对版本 5.0
+及 blocking Task Pipeline，使用本地 Provider CLI 桩、真实 watcher/tmux，终点为
+`workflow.invoke.accepted` 与首个 `task.attempt.sent`；不宣称真实 Provider 完成交付。

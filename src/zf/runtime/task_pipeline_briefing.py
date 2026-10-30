@@ -181,6 +181,16 @@ def write_task_pipeline_briefing(
         "5. Keep kernel projections read-only and submit only this operation's "
         "typed result through the Output Contract below.",
         "",
+        "## Critical Constraints and Recovery",
+        "",
+        "Keep the critical-* required sources available: original user messages and "
+        "answers, approved Flow configuration, plus the current contract and rework "
+        "feedback. Approved configuration takes precedence over earlier configuration "
+        "preferences. Summaries cannot replace these full sources. After compaction "
+        "or resume, re-read their current versions before continuing. Recover older "
+        "evidence through its exact ref/digest; a version mismatch requires the full "
+        "authoritative source or an explicit unavailable report, never a guessed summary.",
+        "",
         "## Budget and Continuation",
         "",
         "Read operation headroom before work, then with each heartbeat:",

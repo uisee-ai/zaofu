@@ -242,9 +242,10 @@ function WorkflowProposalWorkbench({
               <p>{effectiveConfig.yaml_source === "compiled_snapshot" ? "Compiled configuration snapshot · original YAML unavailable · secrets redacted" : "Version-bound configuration · secrets redacted"}</p>
               {yaml ? <pre tabIndex={0} data-review-field="yaml">{yaml}</pre> : <p>{submitted || effectiveConfig.status === "unreadable" ? "The bound configuration snapshot is unavailable." : "YAML will be available after clarification and workflow preparation."}</p>}
               {submitted && <p>This run uses an immutable snapshot. Changes require a new reviewed proposal.</p>}
+              {!submitted && yaml && detail.proposal.change_mode === "config_change" && <p>Starting commits only this approved zf.yaml to the local Git baseline. Other tracked changes must be resolved first.</p>}
               {!submitted && yaml && <button type="button" className="primary" data-testid="workflow-start"
                 disabled={!actionReady || Boolean(busyAction) || !workflowStartActions(detail).length}
-                title={!actionReady ? actionState : "Apply this exact configuration if needed, then start its workflow"}
+                title={!actionReady ? actionState : "Apply and commit this exact approved configuration, then start its workflow"}
                 onClick={() => void start()}>{busyAction === "workflow-start" ? "Starting…" : "Start Workflow"}</button>}
               <button type="button" data-workflow-agent-trigger aria-expanded={agentOpen} onClick={() => setAgentOpen(!agentOpen)}>Agent</button>
               {(needsAnswers || submitted || !yaml) && <button type="button" disabled={Boolean(busyAction)} onClick={() => setPanel("review")}>{needsAnswers ? "Answer Questions" : submitted ? "Run Controls" : "Prepare Workflow"}</button>}

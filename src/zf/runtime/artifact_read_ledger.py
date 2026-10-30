@@ -116,6 +116,8 @@ def build_attempt_source_manifest(
             "access_scope": access_scope,
             "retention": retention,
         }
+        if isinstance(raw.get("recovery_ref"), Mapping):
+            row["recovery_ref"] = dict(raw["recovery_ref"])
         normalized.append(row)
     manifest = {
         "schema_version": SOURCE_MANIFEST_SCHEMA,
@@ -239,6 +241,9 @@ def source_manifest_from_payload(
             )
             if source:
                 sources.append(source)
+    from zf.runtime.artifact_source_versions import pin_source_versions
+
+    pin_source_versions(state_dir, sources)
     manifest = build_attempt_source_manifest(
         workflow_run_id=workflow_run_id,
         task_id=task_id,
@@ -416,15 +421,13 @@ def read_attempt_artifact(
         )
     ref = str(source.get("ref") or "")
     path = _manifest_ref_path(state_dir, ref)
-    if not path.exists() or not path.is_file():
-        raise ArtifactReadError(f"artifact ref missing: {ref}")
-    raw = path.read_bytes()
+    from zf.runtime.artifact_source_versions import read_source_version
+
+    try:
+        raw, recovery_mode = read_source_version(state_dir, dict(source))
+    except (OSError, ValueError, KeyError) as exc:
+        raise ArtifactReadError(str(exc)) from exc
     digest = hashlib.sha256(raw).hexdigest()
-    expected = str(source.get("sha256") or "")
-    if expected and digest != expected:
-        raise ArtifactReadError(
-            f"artifact hash mismatch for {ref}: expected {expected}, got {digest}"
-        )
     selected: Any
     if json_path != "$":
         try:
@@ -464,6 +467,8 @@ def read_attempt_artifact(
     row = {
         "schema_version": ARTIFACT_READ_SCHEMA,
         "status": "read",
+        "production_status": "generated",
+        "provider_delivery_status": "unknown",
         "workflow_run_id": str(manifest.get("workflow_run_id") or ""),
         "task_id": str(manifest.get("task_id") or ""),
         "attempt_id": str(manifest.get("attempt_id") or ""),
@@ -472,6 +477,7 @@ def read_attempt_artifact(
         "artifact_id": artifact_id,
         "artifact_ref": ref,
         "artifact_sha256": digest,
+        "recovery_mode": recovery_mode,
         "json_path": json_path,
         "bytes": len(raw),
         "returned_bytes": len(encoded.encode("utf-8")),
@@ -531,6 +537,11 @@ def seal_read_ledger(state_dir: Path, attempt_id: str) -> dict[str, Any]:
                     separators=(",", ":"),
                 )
                 rows_by_body.setdefault(body, row)
+        from zf.runtime.artifact_output_delivery import observe_artifact_delivery
+
+        enriched = observe_artifact_delivery(state_dir, list(rows_by_body.values()))
+        rows_by_body = {json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")): row
+                        for row in enriched}
         ordered = sorted(
             rows_by_body.items(),
             key=lambda item: (str(item[1].get("read_at") or ""), item[0]),
@@ -634,8 +645,13 @@ def render_attempt_source_briefing(
         lines.extend([
             f"- Preferred deduplicated read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
             "  It delivers every required slice, sharing identical bodies while recording each source. "
+            "Large responses use required-artifact-page.v2: consume every items[].content fragment. "
             "If the response has `next_cursor`, continue the same command with `--cursor <next_cursor>` "
             "until it is null. Consume every page; do not repeat individual reads after a complete bundle.",
+            "- Required pages default to 8192 UTF-8 bytes including metadata, not tokens. "
+            "If the tool output budget is smaller, use --page-bytes 2048; consume pages "
+            "separately and leave room for tool wrappers. CLI receipts prove production; "
+            "provider delivery may remain unknown and never proves understanding.",
             "- If an output is too large or truncated, read that exact source and JSON path "
             "with `--page-start 0 --page-size 8192`. Read and consume every page, using "
             "the returned `next_page_start` until it is null. The ledger accepts pages "

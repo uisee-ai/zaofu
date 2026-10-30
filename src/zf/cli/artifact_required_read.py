@@ -7,17 +7,19 @@ import json
 from pathlib import Path
 from typing import Any
 
-from zf.runtime.artifact_read_ledger import append_artifact_read, read_attempt_artifact
+from zf.runtime.artifact_read_ledger import read_attempt_artifact
 from zf.runtime.call_result_envelope import canonical_json_sha256
 
-PAGE_CHARS = 8192
-PAGE_SCHEMA = "required-artifact-page.v1"
+PAGE_BYTES = 8192
+PAGE_SCHEMA = "required-artifact-page.v2"
 
 
-def required_read_output(
+def prepare_required_read(
     state_dir: Path, *, manifest: dict[str, Any], rows: list[dict[str, Any]],
-    identity: dict[str, Any], cursor: str | None = None,
-) -> str:
+    identity: dict[str, Any], cursor: str | None = None, page_bytes: int = PAGE_BYTES,
+) -> tuple[str, list[dict[str, Any]]]:
+    if not 1024 <= page_bytes <= PAGE_BYTES:
+        raise ValueError("--page-bytes must be between 1024 and 8192")
     # Authenticate every alias and validate every digest before returning any
     # content or recording consumption, including on continuation pages.
     previews = [read_attempt_artifact(
@@ -39,58 +41,73 @@ def required_read_output(
             groups[key] = {**source, "content": preview["content"]}
         receipts.setdefault(key, []).append(preview["read"])
     output = "\n".join(json.dumps(row, ensure_ascii=False) for row in groups.values())
-    if cursor is None and len(output) <= PAGE_CHARS:
+    if cursor is None and len(output.encode("utf-8")) + 1 <= page_bytes:
         # Keep the small-bundle CLI format compatible with existing consumers.
-        for preview in previews:
-            append_artifact_read(state_dir, preview["read"])
-        return output
+        return output, [preview["read"] for preview in previews]
     bundle_digest = canonical_json_sha256({
         "manifest": manifest, "requirements": rows, "groups": list(groups.values()),
     })
     index, start = _position(cursor, bundle_digest, list(groups.values()))
-    key = list(groups)[index]
-    group = groups[key]
-    content = group["content"]
-    selected_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    items: list[dict[str, Any]] = []
+    emitted: list[dict[str, Any]] = []
+    keys = list(groups)
 
-    def render(end: int) -> str:
-        position = (index, end) if end < len(content) else (index + 1, 0)
-        continuation = (
-            _cursor(bundle_digest, *position) if position[0] < len(groups) else None
-        )
+    def render(extra: dict[str, Any] | None, position: tuple[int, int]) -> str:
+        continuation = _cursor(bundle_digest, *position) if position[0] < len(groups) else None
         return json.dumps({
             "schema_version": PAGE_SCHEMA,
             "attempt_id": str(manifest.get("attempt_id") or ""),
             "bundle_digest": bundle_digest,
-            "item": {**group, "content": content[start:end],
-                     "page_start": start, "page_end": end, "page_total": len(content),
-                     "selected_sha256": selected_sha256},
+            "items": [*items, *([extra] if extra is not None else [])],
             "next_cursor": continuation,
             "complete": continuation is None,
         }, ensure_ascii=False)
 
-    # Bound serialized output, including escaped text, aliases and the cursor.
-    low, high = start, min(len(content), start + PAGE_CHARS)
-    while low < high:
-        middle = (low + high + 1) // 2
-        if len(render(middle)) <= PAGE_CHARS:
-            low = middle
-        else:
-            high = middle - 1
-    end = low
-    output = render(end)
-    if len(output) > PAGE_CHARS or (end == start and content):
+    # Fill a page with complete small items and at most one partial tail. This
+    # avoids a provider round trip per tiny source without dropping any body.
+    while index < len(keys):
+        key = keys[index]
+        group = groups[key]
+        content = group["content"]
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        def item(end: int) -> dict[str, Any]:
+            return {**group, "content": content[start:end],
+                    "page_start": start, "page_end": end, "page_total": len(content),
+                    "selected_sha256": digest}
+
+        def position(end: int) -> tuple[int, int]:
+            return (index, end) if end < len(content) else (index + 1, 0)
+
+        end = len(content)
+        if len(render(item(end), position(end)).encode("utf-8")) + 1 > page_bytes:
+            low, high = start, min(len(content), start + page_bytes)
+            while low < high:
+                middle = (low + high + 1) // 2
+                if len(render(item(middle), position(middle)).encode("utf-8")) + 1 <= page_bytes:
+                    low = middle
+                else:
+                    high = middle - 1
+            end = low
+            if end == start:
+                if items:
+                    break  # Preserve room for the continuation identity.
+                raise ValueError("required page metadata exceeds output bound")
+        items.append(item(end))
+        for receipt in receipts[key]:
+            emitted.append({
+                **receipt, "returned_bytes": len(content[start:end].encode("utf-8")),
+                "truncated": start > 0 or end < len(content),
+                "page_start": start, "page_end": end, "page_total": len(content),
+                "selected_sha256": digest, "selected_bytes": len(content.encode("utf-8")),
+            })
+        index, start = position(end)
+        if start:
+            break
+    output = render(None, (index, start))
+    if len(output.encode("utf-8")) + 1 > page_bytes:
         raise ValueError("required page metadata exceeds output bound")
-    for receipt in receipts[key]:
-        append_artifact_read(state_dir, {
-            **receipt,
-            "returned_bytes": len(content[start:end].encode("utf-8")),
-            "truncated": start > 0 or end < len(content),
-            "page_start": start, "page_end": end, "page_total": len(content),
-            "selected_sha256": selected_sha256,
-            "selected_bytes": len(content.encode("utf-8")),
-        })
-    return output
+    return output, emitted
 
 
 def _cursor(bundle_digest: str, index: int, offset: int) -> str:

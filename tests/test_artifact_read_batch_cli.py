@@ -134,7 +134,7 @@ def test_large_required_read_must_be_delivered_in_complete_pages(tmp_path, monke
         output = capsys.readouterr()
         assert len(output.out.rstrip("\n")) <= 8192
         page = json.loads(output.out)
-        contents.append(page["item"]["content"])
+        contents.append(page["items"][0]["content"])
         cursor = page["next_cursor"]
         rows = [json.loads(line) for line in ledger.read_text().splitlines()]
         if cursor is None:
@@ -146,7 +146,14 @@ def test_large_required_read_must_be_delivered_in_complete_pages(tmp_path, monke
 
 @pytest.mark.parametrize("fault", ["", "tampered", "changed_attempt", "changed_requirement", "gap"])
 def test_required_pages_keep_aliases_bound_and_reject_incomplete_consumption(tmp_path, fault):
-    from zf.cli.artifact_required_read import required_read_output
+    from zf.cli.artifact_required_read import prepare_required_read
+    from zf.runtime.artifact_output_delivery import emit_artifact_output
+    import io
+
+    def required_read_output(state, **kwargs):
+        output, receipts = prepare_required_read(state, **kwargs)
+        emit_artifact_output(state, output, receipts, io.StringIO())
+        return output
     from zf.runtime.artifact_read_ledger import required_read_satisfied
 
     state = tmp_path / ".runtime"
@@ -167,7 +174,7 @@ def test_required_pages_keep_aliases_bound_and_reject_incomplete_consumption(tmp
     ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
     output = required_read_output(state, manifest=manifest, rows=requirements, identity=identity)
     page = json.loads(output)
-    contents = [page["item"]["content"]]
+    contents = [page["items"][0]["content"]]
     prefix = ledger.read_bytes()
     if fault == "tampered":
         path.write_text('{"facts":"changed"}')
@@ -187,8 +194,8 @@ def test_required_pages_keep_aliases_bound_and_reject_incomplete_consumption(tmp
                                       cursor=page["next_cursor"])
         assert len(output) <= 8192
         page = json.loads(output)
-        assert len(page["item"]["aliases"]) == 1
-        contents.append(page["item"]["content"])
+        assert len(page["items"][0]["aliases"]) == 1
+        contents.append(page["items"][0]["content"])
     assert "".join(contents) == text
     rows = [json.loads(line) for line in ledger.read_text().splitlines()]
     if fault == "gap":

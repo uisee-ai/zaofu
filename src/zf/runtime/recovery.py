@@ -104,6 +104,12 @@ def build_recovery_briefing(
     sections.append("## Recovery Read Order")
     sections.append(_render_recovery_read_order(state_dir, task))
     sections.append("")
+    from zf.core.events.factory import event_log_from_project
+    from zf.runtime.critical_context import recovery_required_inputs
+
+    sections.append(recovery_required_inputs(
+        state_dir, event_log_from_project(state_dir, config=config).read_all(), task, role,
+    ))
 
     # Section 1: shared memory
     sections.append("## Shared Memory")

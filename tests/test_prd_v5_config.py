@@ -46,3 +46,15 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert "orchestrator.semantic.checkpoint.requested" in orchestrator.triggers
     assert orchestrator.backend == "codex"
     assert orchestrator.execution.default_profile == "bounded-direct-v1"
+
+
+def test_v5_preview_resolves_profile_sources_and_inherited_skills():
+    from zf.runtime.workflow_review_fields import flow_input_roles, config_review_fields
+    source = Path(__file__).parents[1] / "zf-prd-v5.yaml"
+    documents = list(yaml.safe_load_all(source.read_text()))
+    roles = flow_input_roles(documents, 0, "prd", config_path=source)
+    assert "zf-prd-plan-synth" in roles["planner"]
+    assert "zf-yoke-dev-worker-role-context" in roles["impl"]
+    fields = config_review_fields(0, documents[0]["spec"], role_names=list(roles), family="prd", inherited_skills=roles)
+    assert fields["config.0.taskPipeline"]["value"]["mode"] == "blocking"
+    assert fields["config.0.roleSkillBundles.planner"]["value"] == roles["planner"]

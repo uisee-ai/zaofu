@@ -10,10 +10,10 @@ Task Pipeline派发先发布当前task capsule，再生成briefing并发送promp
 
 `zf artifact read --attempt <id> --required` 先分别校验全部来源/别名的授权、
 摘要与允许范围，再按工件摘要、JSON selector 和正文精确去重。小批量继续返回
-JSONL；大批量不再因总输出超过 8192 字符而拒绝，返回 `required-artifact-page.v1`：
-`item.content` 为本页正文，`item.aliases` 为独立授权来源，`next_cursor` 为续页游标。
+JSONL；大批量不再因总输出超过 8192 UTF-8 字节而拒绝，返回 `required-artifact-page.v2`：
+`items[].content` 为本页各片段正文，`items[].aliases` 为各自独立授权来源，`next_cursor` 为续页游标。
 使用原命令加 `--cursor <next_cursor>` 直到值为 null。每页包含 metadata/转义后的
-序列化输出不超过 8192 字符；逐页消费，不把所有页重新拼为一个超长工具输出。
+序列化输出不超过 8192 UTF-8 字节；逐页消费，不把所有页重新拼为一个超长工具输出。
 
 游标绑定当前 attempt manifest、必读声明及整批正文摘要。变更来源、变更必读范围、
 旧 attempt 或越权别名拒绝交付。每个来源只登记实际返回页的范围，缺页不能满足
@@ -44,3 +44,39 @@ Task Pipeline briefing 保留当前身份、完整失败项、合同/来源入�
 证明语义可恢复。完整原文、历史和证据保留，续跑说明帮助定位，不替代正文或
 本次验收。验证范围见 `tests/test_artifact_read_batch_cli.py`、
 `tests/test_task_pipeline_capsule.py`、`tests/test_workflow_budget_status.py`。
+
+
+## 产出、交付与版本恢复（2026-10-30）
+
+`zf artifact read --required` 先准备内容，再将完整 stdout 写出并 flush，最后记读取证据。
+写入/flush 失败不产生成功产出收据。`production_status=generated` 表示只生成了正文，
+`stdout_flushed` 表示 CLI 成功输出。两者都不能证明模型收到或理解。
+封存账本时，只有当前 RoleSessionRegistry 绑定的 Codex transcript 中，时间不早于本次
+读取、完整输出逐字匹配的 `function_call_output` 字符串或
+`custom_tool_call_output` 的 `input_text` blocks，才标记 `observed_in_transcript` 并绑定
+Provider session/call 和不可变输出 witness。已封存的历史观察可跨 session rotation 验证；
+它不代表新会话已读或记住。无可见 transcript、截断和其他 Provider 保持 `unknown`。现有读取门
+验证来源及完整产出范围，不把这项观测当作语义理解或跨 Provider 交付保证。
+
+分页按序列化 UTF-8 字节（含换行）限制，默认 8192，`--page-bytes 1024..8192` 可缩小。
+字节预算不是模型 token 预算；工具 wrapper 和外层截断仍需留余量。每页独立调用，
+完整 cursor 和别名鉴权规则不变。输出正文另存不可变 sidecar，账本绑定摘要。
+
+实际 `prepare_call_operation` 从该 Run 的批准绑定事件和父任务来源事件派生
+`critical-*` 必读来源，保留原始用户消息、Ask User 回答、批准后 Flow YAML（包括
+Raw lane/model）及完整配置快照 ref。模型仍须对照当前 Task Contract、全部 AC 和返工
+正文，不能用规划摘要覆盖原要求。旧路径没有来源绑定时明确标记 unavailable。
+
+Source manifest 同时绑定全文版本副本。读取优先校验权威原文；缺失或变更时只接受同
+SHA-256 的完整版本副本。副本损坏但原文有效时读取原文；两者不可用时明确失败。
+权限和 JSON selector 在恢复前验证，不因恢复扩大读取范围。摘要不进入正文恢复链。
+
+本批次实施、任务范围与三轮实弹证据见
+[验证报告](../records/2026-10-30-1042-context-delivery-e2e.md)。
+
+### 减少小正文引起的模型往返
+
+v2 在同一字节预算中装入多个小正文，末项可为较大正文的一个片段。cursor 绑定整个
+manifest、requirements、内容和下一项/偏移；每个来源仍独立鉴权、记账和检验完整范围。
+2026-10-30 首次实弹的相同 Impl 输入由 16 次单项输出变为 9 页，16 个 requirement
+逐字节重组一致。该结果说明读取往返减少，不直接证明整个任务 token 必然同比下降。
