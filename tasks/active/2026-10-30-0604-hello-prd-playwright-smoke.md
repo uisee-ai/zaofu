@@ -1,6 +1,6 @@
 # Hello World PRD 真实浏览器闭环验证
 
-> 状态: active；用户已批准补齐 V5 受控装配入口并重跑真实浏览器验收。
+> 状态: defer；V5 入口已实现并重测，真实 Run 因 Verify 单操作 150 万 token 上限阻塞；待用户选择保持预算优化上下文或批准新预算提案后重测。
 
 用户授权：通过 Playwright 创建任务、提交并执行最小 Hello World PRD。基线为 dev / b33b6b9f，固定使用 zf-prd-v5 对应的完整 PRD 路线。
 
@@ -50,3 +50,15 @@
 - 新隔离根目录 `/tmp/zf-hello-v5-assembly-20261030-0654/`，第二项目 `project-v2-aa435286`，Task `TASK-FC280E`，Request `prepare-TASK-FC280E-35d3f2786e69bf23`。首次失败项目与事件保留用于审计。
 - 验证：controller / checkpoint / config-apply 32 passed；修订后 request / catalog / V5 / registered-controller 63 passed；synthesis / proposal / prepare / Web / intake mock E2E 67 passed；sentinel 51 passed；前端 build / typecheck / model tests 通过。
 - 并发测试曾触发 enqueue 小于 1 秒的计时断言；移除目录重复解析后，按串行运行该边界整组通过，未放宽断言。真实 Provider 结果独立记录，不据此宣称交付完成。
+
+
+## 续测结论
+
+- 入口实现：`e2bad542 feat: assemble registered controllers through workflow approval`。
+- 图修复：`1ec1c5cf fix: bind task pipeline graph stages to admitted generations`。
+- 已实证 Scan → Plan → Critic → OA pre_impl → Impl → 独立 Task Verify，按需激活和空闲休眠生效。
+- Task Verify 实际运行 2 项测试通过；提交证据前累计 1,510,948 tokens 超过已批准的 1,500,000，Kernel 阻塞操作与 Run。
+- Candidate Verify / Discovery / Judge 未执行，无交付终态；不归档为 done。
+- 独立核验 Impl 源提交 272aadc1 两条命令和 2 项测试均通过；该提交不等同于已交付候选。
+- 图归属及阻塞状态已经 Playwright 断言，相关后端 60 / 50 项、前端 model/build、sentinel 通过（集合有重叠）。
+- 详见 [续测报告与证据](../../docs/records/2026-10-30-hello-prd-v5-controlled-assembly.md)。
