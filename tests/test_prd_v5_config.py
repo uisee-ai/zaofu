@@ -77,7 +77,11 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert orchestrator.backend == "codex"
     assert orchestrator.execution.default_profile == "bounded-direct-v1"
     assert config.workflow.execution_profiles["bounded-direct-v1"].limits.timeout_seconds == 600
-    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.token_budget == 1500000
+    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.token_budget == 0
+    assert config.workflow.run_limits.token_budget == 0
+    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.cost_budget_usd == 8
+    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.max_usage_samples == 60
+    assert config.workflow.run_limits.cost_budget_usd == 40
     assert task_pipeline["worker_lifecycle"]["idle_seconds"] == 600
     for role in config.roles:
         if role.flow_kind != "prd" and role.instance_id != "orchestrator":
@@ -98,3 +102,28 @@ def test_v5_preview_resolves_profile_sources_and_inherited_skills():
     fields = config_review_fields(0, documents[0]["spec"], role_names=list(roles), family="prd", inherited_skills=roles)
     assert fields["config.0.taskPipeline"]["value"]["mode"] == "blocking"
     assert fields["config.0.roleSkillBundles.planner"]["value"] == roles["planner"]
+
+
+def test_v5_runtime_does_not_block_on_previous_token_caps(tmp_path):
+    from tests.test_workflow_budget_guard import _runtime, _start_operation, _epoch
+    from zf.runtime.workflow_budget_guard import enforce_active_workflow_budgets
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    config = load_config(Path(__file__).parents[1] / "zf-prd-v5.yaml")
+    runtime, transport = _runtime(
+        tmp_path,
+        operation_limits=config.workflow.execution_profiles["bounded-direct-v1"].limits,
+        run_limits=config.workflow.run_limits,
+    )
+    operation_id, _ = _start_operation(runtime)
+    operation = load_workflow_operation(runtime.event_log, operation_id)
+    runtime.cost_tracker.record_usage(
+        "dev", 100_000, 1000, cache_read_tokens=10_000_000,
+        instance_id="dev", source_event_id="v5-unlimited-usage",
+    )
+    emitted = enforce_active_workflow_budgets(
+        runtime, now_epoch=_epoch(operation["started_at"]) + 1,
+    )
+    assert not any(event.type == "workflow.budget.exceeded" for event in emitted)
+    assert not transport.terminated
+    assert load_workflow_operation(runtime.event_log, operation_id)["status"] == "running"

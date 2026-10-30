@@ -15,11 +15,8 @@ spec:
   lanes: 8
   backend: codex
   roleDefaults:
-    # Reader/planner/critic and lane workers use a bounded default.  Codex
-    # high reasoning on every fanout child repeatedly replays the large
-    # briefing/context and can exhaust the per-operation token budget before
-    # the typed result is submitted.  A caller can still raise the effort for
-    # a dedicated role override or a separate canary profile.
+    # Medium reasoning limits repeated context processing across fanout
+    # children. A caller can raise effort for a dedicated role override.
     stuck_threshold_seconds: 600
     lifecycle: {mode: on_demand, idle_seconds: 600}
     model: ${ZF_CODEX_MODEL:-gpt-6.1-sol}
@@ -235,8 +232,10 @@ spec:
         limits:
           timeout_seconds: 600
           max_usage_samples: 60
-          token_budget: 1500000
+          token_budget: 0  # Disable the operation token cap; keep other limits.
           cost_budget_usd: 8
+    run_limits:
+      token_budget: 0  # Override the inherited aggregate Run token cap.
     harness_profile: strict
     # Plan admission remains automatic; enable this explicitly when an
     # operator approval gate is required for a particular deployment.
