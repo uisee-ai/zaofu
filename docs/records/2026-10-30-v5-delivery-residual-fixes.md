@@ -1,8 +1,9 @@
 # V5 残余问题实施记录
 
 状态：B01–B07 已验证完成，真实 Provider 已完成交付并通过 Kernel Goal 终态门禁。
+实现提交：`bb58f246 fix: close v5 delivery gaps and preserve live graph progress`。
 
-关联：[实施任务](../../tasks/active/2026-10-30-1518-v5-delivery-residual-fixes.md)、[实现说明](../impl/v5-verification-efficiency.md)。
+关联：[实施任务](../../tasks/done/2026-10-30-1518-v5-delivery-residual-fixes.md)、[实现说明](../impl/v5-verification-efficiency.md)。
 
 ## 复现与修复
 

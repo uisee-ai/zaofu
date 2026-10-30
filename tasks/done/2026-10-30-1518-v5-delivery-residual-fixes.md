@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `bb58f246 fix: close v5 delivery gaps and preserve live graph progress`
 
 # V5 真实交付残余问题修复
 
@@ -34,3 +34,9 @@ flow smoke 10 passed，host mock 1 passed，Web typecheck/unit/build/bundle 通�
 Kernel 已 ship 至临时项目 main 并发出 run.goal.completed；独立交付检查通过，临时环境已清理。
 技能 canonical 与两份分发副本字节一致。
 详见 [实施记录](../../docs/records/2026-10-30-v5-delivery-residual-fixes.md)。
+
+## 完成记录
+
+实现提交：`bb58f246 fix: close v5 delivery gaps and preserve live graph progress`。
+实现后完整工作区审计无残留；B01–B07 验收证据及真实终态见实施记录。
+本批只在当前 worktree 提交与归档，未合并或推送 dev。
