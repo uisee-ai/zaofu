@@ -28,12 +28,12 @@ def _config_json_default(value):
     return str(value)
 
 
-def fingerprint(state_dir: Path, paths: list[Path], config=None) -> str:
+def fingerprint(state_dir: Path, paths: list[Path], config=None, *, include_events: bool = True) -> str:
     digest = hashlib.sha256(str(state_dir.resolve()).encode())
     digest.update(_decoder_identity(config).encode())
     if config is not None:
         digest.update(json.dumps(config, sort_keys=True, default=_config_json_default).encode())
-    inputs = [segment.path for segment in list_event_segments(state_dir)] + paths
+    inputs = ([segment.path for segment in list_event_segments(state_dir)] if include_events else []) + paths
     for path in sorted(set(inputs)):
         digest.update(str(path).encode())
         try:

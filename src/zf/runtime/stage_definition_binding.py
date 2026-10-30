@@ -173,5 +173,6 @@ def fanout_timeout_seconds(
     stage = bound_stage(runtime, (manifest or {}).get("trigger_payload") or {})
     if stage is None:
         stage = next((s for s in runtime.config.workflow.stages if s.id == stage_id), None)
-    # Every fanout needs a deadline, including legacy definitions without one.
-    return int(stage.timeout_seconds or default) if stage else default
+    # A declared zero disables execution age limits, not liveness checks.
+    # Unknown legacy stages retain the fallback until their definition resolves.
+    return int(stage.timeout_seconds) if stage else default

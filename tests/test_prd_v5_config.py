@@ -76,7 +76,8 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert "orchestrator.semantic.checkpoint.requested" in orchestrator.triggers
     assert orchestrator.backend == "codex"
     assert orchestrator.execution.default_profile == "bounded-direct-v1"
-    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.timeout_seconds == 600
+    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.timeout_seconds == 0
+    assert config.workflow.run_limits.timeout_seconds == 0
     assert config.workflow.execution_profiles["bounded-direct-v1"].limits.token_budget == 0
     assert config.workflow.run_limits.token_budget == 0
     assert config.workflow.execution_profiles["bounded-direct-v1"].limits.cost_budget_usd == 8
@@ -104,7 +105,7 @@ def test_v5_preview_resolves_profile_sources_and_inherited_skills():
     assert fields["config.0.roleSkillBundles.planner"]["value"] == roles["planner"]
 
 
-def test_v5_runtime_does_not_block_on_previous_token_caps(tmp_path):
+def test_v5_runtime_does_not_block_on_previous_token_or_time_caps(tmp_path):
     from tests.test_workflow_budget_guard import _runtime, _start_operation, _epoch
     from zf.runtime.workflow_budget_guard import enforce_active_workflow_budgets
     from zf.runtime.workflow_operation import load_workflow_operation
@@ -122,7 +123,7 @@ def test_v5_runtime_does_not_block_on_previous_token_caps(tmp_path):
         instance_id="dev", source_event_id="v5-unlimited-usage",
     )
     emitted = enforce_active_workflow_budgets(
-        runtime, now_epoch=_epoch(operation["started_at"]) + 1,
+        runtime, now_epoch=_epoch(operation["started_at"]) + 86_400,
     )
     assert not any(event.type == "workflow.budget.exceeded" for event in emitted)
     assert not transport.terminated

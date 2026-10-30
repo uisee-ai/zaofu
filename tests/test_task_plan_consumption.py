@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import pytest
 
@@ -146,3 +147,32 @@ def test_resolve_payload_binds_selected_sources_and_read_requirements(case):
     with pytest.raises(ArtifactReadError, match="not allowed"):
         read_attempt_artifact(state, manifest=manifest, source_id="plan-port-task_execution_input",
                               artifact_id="task_execution_input", json_path="$.tasks[1]")
+
+
+def test_discovery_handoff_reads_whole_plan_for_parent_without_partition(case):
+    state, resolver, identity, _ = case
+    manifest, _ = resolver.resolve_payload(
+        payload={**identity, "workflow_run_id": "run", "output_profile_id": "workflow-read",
+                 "canonical_success_event": "flow.discovery.child.completed"},
+        workflow_run_id="run", task_id="PARENT", attempt_id="discovery", dispatch_id="d",
+    )
+    source = next(s for s in manifest["sources"] if s["source_id"] == "plan-port-execution_spec")
+    assert source["allowed_paths"] == ["$"]
+    result = read_attempt_artifact(state, manifest=manifest, source_id=source["source_id"],
+                                  artifact_id=source["artifact_id"], json_path="$")
+    assert [r["task_id"] for r in json.loads(result["content"])["tasks"]] == ["T1", "T2"]
+
+
+@pytest.mark.parametrize("fault", ["digest", "generation", "run"])
+def test_discovery_handoff_rejects_wrong_plan_identity(case, fault):
+    _, resolver, identity, _ = case
+    identity = dict(identity)
+    if fault == "digest": identity["plan_artifact_package_digest"] = "0" * 64
+    if fault == "generation": identity["task_map_generation"] = "other"
+    with pytest.raises(ArtifactReadError):
+        resolver.resolve_payload(
+            payload={**identity, "workflow_run_id": "run", "output_profile_id": "workflow-read",
+                     "canonical_success_event": "flow.discovery.child.completed"},
+            workflow_run_id="other" if fault == "run" else "run", task_id="PARENT",
+            attempt_id="discovery-invalid", dispatch_id="d",
+        )

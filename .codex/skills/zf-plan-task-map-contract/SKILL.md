@@ -194,6 +194,18 @@ mandatory rows, risks and cross-task obligations before approving the revision.
 Omitting the selection retains full reads; do not alter an admitted Plan or
 reuse its approval for this new contract.
 
+For new plans, assess the read amplification before submitting: count unique
+required input bytes and provider page turns for Impl, Task Verify, and each
+Candidate Verify lane. Prefer the reviewed task-local selection above when it
+removes unrelated global material. Keep full candidate obligations and their
+sources bound. A tiny task should have a correspondingly concise execution
+input; do not expand a two-file change into repeated copies of the same task
+contract, command matrix, and acceptance prose across every supplemental port.
+Use canonical IDs/refs for repeated tables while keeping each required assertion
+and task-specific dependency explicit. Critic reconciles coverage, not a target
+word count; reducing lane count or removing gates is a separate owner decision.
+
+
 Keep whole-file hydration limits separate from selected partition size. When
 complete task inputs exceed one artifact's limit, emit separately bound ports
 and declare each in its consumer Task's `evidence_contract.required_plan_ports`.

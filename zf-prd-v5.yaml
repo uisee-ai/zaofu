@@ -230,11 +230,12 @@ spec:
       bounded-direct-v1:
         strategy: direct
         limits:
-          timeout_seconds: 600
+          timeout_seconds: 0  # Execution age is unlimited; role liveness remains checked.
           max_usage_samples: 60
           token_budget: 0  # Disable the operation token cap; keep other limits.
           cost_budget_usd: 8
     run_limits:
+      timeout_seconds: 0
       token_budget: 0  # Override the inherited aggregate Run token cap.
     harness_profile: strict
     # Plan admission remains automatic; enable this explicitly when an

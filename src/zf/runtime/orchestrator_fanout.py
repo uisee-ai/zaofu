@@ -6364,8 +6364,6 @@ class FanoutCoordinationMixin(
             timeout_seconds = self._fanout_timeout_seconds(
                 str(manifest.get("stage_id") or ""), manifest=manifest,
             )
-            if timeout_seconds <= 0:
-                continue
             dispatches = [
                 event for event in events
                 if event.type == "fanout.child.dispatched"
@@ -6456,7 +6454,7 @@ class FanoutCoordinationMixin(
                     # full stage timeout (R15: a frozen scan reader stranded the
                     # fanout ~26min before the 30min budget would have fired).
                     stale_reason = ""
-                    if now - dispatch_epoch >= timeout_seconds:
+                    if timeout_seconds > 0 and now - dispatch_epoch >= timeout_seconds:
                         stale_reason = "timeout"
                     else:
                         idle_threshold = self._fanout_child_idle_threshold(child)
@@ -6490,7 +6488,8 @@ class FanoutCoordinationMixin(
                         timed_out.append(child)
                         timed_out_reason[child_id] = stale_reason
                 elif (
-                    fanout_epoch is not None
+                    timeout_seconds > 0
+                    and fanout_epoch is not None
                     and self._now() - fanout_epoch >= timeout_seconds
                 ):
                     # No dispatch event to retry from → time it out directly so
@@ -6669,12 +6668,23 @@ class FanoutCoordinationMixin(
         any_failed = any(
             str(child.get("status") or "") == "failed" for child in children
         )
-        if any_failed and strategy in {
+        if effective_timeout > 0 and any_failed and strategy in {
             "all_approve_or_one_rejects",
             "any_failed_fail",
         }:
             effective_timeout = min(effective_timeout, _SYNTH_DECIDED_TIMEOUT_S)
-        if self._now() - self._event_epoch(dispatched[-1]) < effective_timeout:
+        dispatch_epoch = self._event_epoch(dispatched[-1])
+        now = self._now()
+        timed_out = effective_timeout > 0 and now - dispatch_epoch >= effective_timeout
+        idle_threshold = self._fanout_child_idle_threshold(synth)
+        idle = (
+            idle_threshold > 0
+            and now - self._fanout_child_last_activity(synth, events, dispatch_epoch) >= idle_threshold
+            and not self._fanout_child_idle_grace_active(
+                synth, dispatch_epoch=dispatch_epoch, idle_threshold=idle_threshold, now=now,
+            )
+        )
+        if not timed_out and not idle:
             return
         failure_event = self.event_writer.append(ZfEvent(
             type="fanout.synth.completed",
@@ -6693,10 +6703,10 @@ class FanoutCoordinationMixin(
                 "status": "failed",
                 "recommendation": "reject",
                 "reason": "synth_timeout",
+                "liveness_reason": "timeout" if timed_out else "idle",
                 "summary": (
-                    f"synth produced no terminal event within "
-                    f"{timeout_seconds}s of dispatch; failing the aggregate "
-                    "so the stage converges instead of hanging (R23)"
+                    f"synth exceeded its {effective_timeout}s execution limit"
+                    if timed_out else f"synth has no worker activity for {idle_threshold}s"
                 ),
             },
             correlation_id=str(manifest.get("trace_id") or ""),

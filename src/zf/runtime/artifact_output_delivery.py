@@ -55,7 +55,7 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
         registry = RoleSessionRegistry(state_dir / "role_sessions.yaml", state_dir.parent)
     except (OSError, ValueError, yaml.YAMLError):
         registry = None
-    observations: dict[str, list[tuple[str, str, str, str]]] = {}
+    observations: dict[str, list[tuple[str, str, str, str, str]]] = {}
     bodies: dict[str, str] = {}
     result = []
     for original in rows:
@@ -73,6 +73,7 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
                 if (observed["session_id"] == row["provider_session_id"]
                         and observed["call_id"] == row["provider_call_id"]
                         and hashlib.sha256(body.encode()).hexdigest() == row["output_sha256"]
+                        and observed["output"] in _observable_outputs(observed.get("raw_output", observed["output"]))
                         and "\n" + body + "\n" in "\n" + observed["output"] + "\n"):
                     result.append(row)
                     continue
@@ -98,7 +99,7 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
                 if hashlib.sha256(body.encode()).hexdigest() != digest:
                     raise ValueError("artifact output digest mismatch")
                 bodies[digest] = body
-            for session_id, call_id, timestamp, text in observations[actor]:
+            for session_id, call_id, timestamp, text, raw_text in observations[actor]:
                 if datetime.fromisoformat(timestamp) < datetime.fromisoformat(row["read_at"]):
                     continue
                 # Tool wrappers add timing/exit metadata. Require the entire
@@ -107,7 +108,7 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
                     observed = write_immutable_json_sidecar(
                         state_dir, {"schema_version": "provider-output-observation.v1",
                                     "session_id": session_id, "call_id": call_id,
-                                    "timestamp": timestamp, "output": text},
+                                    "timestamp": timestamp, "output": text, "raw_output": raw_text},
                         root="provider-output-observations", kind="provider_output_observation",
                         schema_version="provider-output-observation.v1", created_by="read-ledger-seal",
                     )
@@ -121,7 +122,34 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
     return result
 
 
-def _codex_outputs(path: Path, expected_session_id: str) -> list[tuple[str, str, str, str]]:
+def _observable_outputs(output: str) -> list[str]:
+    texts = [output]
+    # functions.exec may print exec_command's JSON result. Decode only its
+    # output field, never arguments or arbitrary strings echoed by the worker.
+    for line in output.splitlines():
+        try:
+            envelope = json.loads(line)
+        except ValueError:
+            continue
+        # Promise.allSettled results can be printed directly or as {i, result}.
+        # Peel only these result containers, never arbitrary object fields.
+        for _ in range(2):
+            if not isinstance(envelope, dict):
+                break
+            if envelope.get("status") == "fulfilled" and "value" in envelope:
+                envelope = envelope["value"]
+            elif "result" in envelope and set(envelope) <= {"i", "result"}:
+                envelope = envelope["result"]
+            else:
+                break
+        if (isinstance(envelope, dict) and envelope.get("chunk_id")
+                and isinstance(envelope.get("output"), str)
+                and "wall_time_seconds" in envelope):
+            texts.append(envelope["output"])
+    return texts
+
+
+def _codex_outputs(path: Path, expected_session_id: str) -> list[tuple[str, str, str, str, str]]:
     outputs = []
     session_id = ""
     try:
@@ -148,7 +176,8 @@ def _codex_outputs(path: Path, expected_session_id: str) -> list[tuple[str, str,
                                            and block.get("type") == "input_text"
                                            and isinstance(block.get("text"), str))
                     if isinstance(output, str):
-                        outputs.append((session_id, payload["call_id"], entry["timestamp"], output))
+                        outputs.extend((session_id, payload["call_id"], entry["timestamp"], text, output)
+                                       for text in _observable_outputs(output))
     except OSError:
         return []
     return outputs

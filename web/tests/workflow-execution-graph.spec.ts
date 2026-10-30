@@ -32,6 +32,73 @@ const graph = { scope, diagnostics: [], capabilities: {}, versions: [], timeline
 
 const executionSummary = { ...graph, schema_version: 'sdlc-workbench-execution.v1', partial: true, execution_summary: true, generation: 'one' };
 
+test('slow execution reads finish while newer structures coalesce into one follow-up', async ({ page }) => {
+  let generation = 1, structures = 0, reads = 0;
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/projects/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    const request = { request_id: 'A', objective: 'A', status: 'proposed', revision: 1, proposal_digest: 'A' };
+    if (path.endsWith('/workflow-requests')) return route.fulfill({ json: { items: [request] } });
+    if (path.endsWith('/graph/structure')) {
+      structures++;
+      return route.fulfill({ json: { schema_version: 'sdlc-workbench-structure.v1', partial: true, generation: String(generation), scope: { ...scope, source_seq: generation, head_seq: generation }, nodes: graph.nodes.slice(0, 2), edges: [graph.edges[1]], diagnostics: [] } });
+    }
+    if (path.endsWith('/graph/execution')) {
+      reads++;
+      const requested = route.request().headers()['x-zf-structure-generation'];
+      if (reads === 1) await delayed;
+      return route.fulfill({ json: { ...executionSummary, generation: requested, scope: { ...scope, source_seq: Number(requested), head_seq: Number(requested) } } }).catch(() => {});
+    }
+    if (path.includes('/workflow-requests/')) return route.fulfill({ json: { result: request, requirement: {}, proposal: {}, artifacts: {}, lifecycle: {}, links: {} } });
+    return route.fulfill({ json: { ok: true, fields: {} } });
+  });
+  await page.goto('/tests/inbox-workflow.html?surface=graph-refresh');
+  await page.locator('#root').evaluate(el => { el.style.height = '100vh'; });
+  await expect.poll(() => reads).toBe(1);
+  for (generation = 2; generation <= 3; generation++) {
+    await page.getByRole('button', { name: 'Graph event', exact: true }).click();
+    await expect.poll(() => structures).toBe(generation);
+    await page.waitForTimeout(100);
+    expect(reads).toBe(1);
+  }
+  release();
+  await expect.poll(() => reads).toBe(2);
+  await expect(page.locator('.react-flow__node[data-id="workflow:stage:impl"]')).toContainText('3 个已观测角色');
+  await expect(page.locator('.sdlc-footer')).toHaveAttribute('title', /Event 3/);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('structure to live execution keeps every stage and context node visible', async ({ page }) => {
+  let generation = 1;
+  let executionReads = 0;
+  await page.route('**/api/projects/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    const request = { request_id: 'A', objective: 'A', status: 'proposed', revision: 1, proposal_digest: 'A' };
+    if (path.endsWith('/workflow-requests')) return route.fulfill({ json: { items: [request] } });
+    if (path.endsWith('/graph/structure')) return route.fulfill({ json: { schema_version: 'sdlc-workbench-structure.v1', partial: true, generation: String(generation), scope: { ...scope, head_seq: generation }, nodes: graph.nodes.slice(0, 2), edges: [graph.edges[1]], diagnostics: [] } });
+    if (path.endsWith('/graph/execution')) {
+      executionReads++;
+      return route.fulfill({ json: { ...executionSummary, generation: String(generation), scope: { ...scope, head_seq: generation } } });
+    }
+    if (path.includes('/workflow-requests/')) return route.fulfill({ json: { result: request, requirement: {}, proposal: {}, artifacts: {}, lifecycle: {}, links: {} } });
+    return route.fulfill({ json: { ok: true, fields: {} } });
+  });
+  await page.goto('/tests/inbox-workflow.html?surface=graph-refresh');
+  await page.locator('#root').evaluate(el => { el.style.height = '100vh'; });
+  for (let i = 1; i <= 3; i++) {
+    await expect.poll(() => executionReads).toBe(i);
+    await expect(page.locator('.execution-context-run')).toBeVisible();
+    const nodes = page.locator('.react-flow__node');
+    expect(await nodes.count()).toBeGreaterThan(4);
+    for (const node of await nodes.all()) await expect(node).toBeVisible();
+    if (i < 3) {
+      generation++;
+      await page.getByRole('button', { name: 'Graph event', exact: true }).click();
+    }
+  }
+});
+
 test('Workflow does not display Plan documents or preview even after loading the full graph', async ({ page }) => {
   let fullReads = 0;
   await page.route('**/api/projects/**', route => {
