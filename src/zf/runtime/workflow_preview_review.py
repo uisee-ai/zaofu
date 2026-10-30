@@ -583,6 +583,7 @@ class WorkflowPreviewReview:
                     preflight=report,
                     flow_kind=self._flow_kind(ctx),
                     synthesis_result_ref=synthesis_ref,
+                    preview_review_ref=descriptor,
                     actor="web-owner",
                     writer=self.writer,
                 )
@@ -660,7 +661,7 @@ class WorkflowPreviewReview:
         for change in changes:
             if change["field"].startswith("config."):
                 key = change["field"].split(".")[-1]
-                if key in {"lanes", "strictness"}:
+                if key in {"lanes", "strictness"} and not parameters.get("controller_id"):
                     short_spec.setdefault("parameters", {})[key] = change["after"]
                 if key == "lanes":
                     # Lane expansion is compiler-owned. A smaller approved lane

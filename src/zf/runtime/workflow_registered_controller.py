@@ -115,10 +115,16 @@ def admit_capabilities(
 def bound_controller_candidate(
     state_dir: Path, request: Mapping[str, Any], base_path: Path, candidate_path: Path,
     synthesis_result_ref: Mapping[str, Any] | None, flow_kind: str,
+    *, preview_review_ref: Mapping[str, Any] | None = None,
 ) -> Path:
     from zf.runtime.workflow_proposal import (
         WorkflowProposalError, cleanup_synthesized_workflow_candidate, materialize_synthesized_workflow_candidate,
     )
+    if preview_review_ref is not None:
+        from zf.runtime.workflow_review_controller import bound_reviewed_controller_candidate
+        return bound_reviewed_controller_candidate(
+            state_dir, request, base_path, candidate_path, synthesis_result_ref, preview_review_ref,
+        )
     generated = materialize_synthesized_workflow_candidate(
         state_dir, request=request, base_config_path=base_path,
         synthesis_result_ref=synthesis_result_ref, flow_kind=flow_kind,
