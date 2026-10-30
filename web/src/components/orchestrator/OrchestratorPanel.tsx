@@ -1,4 +1,5 @@
 // OrchestratorPanel + exclusive closure, extracted verbatim from App.tsx (P1 split).
+import { clearQuestionDraft, planQuestionDraftKey } from "../common/questionDraft";
 import { OPERATOR_BACKENDS } from "../../app/sharedTypes";
 import type { ActionResponse, RecentEvent, Snapshot, WebChatArtifact, WebChatChildActivity, WebChatInteraction, WebChatQueueItem, WebChatRuntime } from "../../api/types";
 import { referencedTaskId, withImplicitTaskReference } from "./kanbanTaskReference";
@@ -1460,6 +1461,9 @@ export function OrchestratorPanel({
       setHeadlessPlanDiscussion(null);
     }
     setHeadlessProposalRunning(key);
+    const clearDraft = () => clearQuestionDraft(planQuestionDraftKey(
+      JSON.stringify([headlessProjectId, headlessConversationId, headlessThreadKey]), request,
+    ));
     try {
       const selectedOption = request.options.find(
         (option) => option.id === response.optionId,
@@ -1510,6 +1514,7 @@ export function OrchestratorPanel({
           setOperatorError(actionFailureReason(result));
           return;
         }
+        clearDraft();
         if (durableInteraction) {
           await answerWebChatInteraction(
             headlessProjectId,
@@ -1549,6 +1554,7 @@ export function OrchestratorPanel({
             currentness: durableInteraction.currentness || {},
           },
         );
+        clearDraft();
         await refreshWebChatResources();
         setOperatorError("");
         return;

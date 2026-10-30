@@ -1897,6 +1897,7 @@ class ProductActionsMixin:
                     "target_config_digest": outcome.target_config_digest,
                     "config_ref": outcome.config_ref,
                     "receipt_ref": outcome.receipt_ref,
+                    "delivery_baseline_ref": outcome.delivery_baseline_ref,
                     "replayed": outcome.replayed,
                     "source_event_id": event.id,
                 },
@@ -1924,6 +1925,7 @@ class ProductActionsMixin:
                 "event_type": terminal.type,
                 "event_id": terminal.id,
                 "receipt_ref": outcome.receipt_ref,
+                "delivery_baseline_ref": outcome.delivery_baseline_ref,
                 "replayed": outcome.replayed,
             }
         status = "requested" if action != "workflow-config-propose" else "proposed"
