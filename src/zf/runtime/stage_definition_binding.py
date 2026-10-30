@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from zf.core.config import schema
-from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.call_result_envelope import canonical_json_bytes, write_immutable_json_sidecar
 from zf.runtime.run_contract import stable_json_sha256
-from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.sidecar_refs import DEFAULT_HYDRATE_LIMIT_BYTES, hydrate_sidecar_ref
 from zf.runtime.workflow_operation import load_workflow_operation
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
 
@@ -42,10 +42,12 @@ def pin_stage_definition(
         state_dir=state_dir, project_root=project_root, config=config, roles=bound_roles,
     )
     profiles = _profile_definitions(config, bound_roles)
+    definition = {"schema_version": SCHEMA, "stage": asdict(stage), "role_digests": roles,
+                  "method_packages": methods, "execution_profiles": profiles}
+    if len(canonical_json_bytes(definition)) > DEFAULT_HYDRATE_LIMIT_BYTES:
+        raise ValueError("stage definition exceeds recoverable snapshot limit")
     return write_immutable_json_sidecar(
-        state_dir,
-        {"schema_version": SCHEMA, "stage": asdict(stage), "role_digests": roles,
-         "method_packages": methods, "execution_profiles": profiles},
+        state_dir, definition,
         root="workflow-definitions", kind="stage_definition", schema_version=SCHEMA,
         created_by="kernel",
     )

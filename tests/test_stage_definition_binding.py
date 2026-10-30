@@ -10,6 +10,24 @@ from zf.runtime.read_only_dynamic_continuation import execute_read_only_continua
 from zf.runtime.stage_definition_binding import pin_stage_definition, restore_stage_definition
 
 
+@pytest.mark.parametrize("size,accepted", [(2 * 1024 * 1024, True), (4 * 1024 * 1024, False)])
+def test_method_snapshot_must_fit_hydration_limit(tmp_path, size, accepted):
+    state, _, _ = _state(tmp_path)
+    config = _config()
+    root = tmp_path / "skills/method"
+    root.mkdir(parents=True)
+    (root / "SKILL.md").write_text("---\nname: method\ndescription: Inspect evidence\n---\n")
+    (root / "evidence.txt").write_bytes(b"x" * size)
+    config.roles[0].skills = ["method"]
+    if accepted:
+        ref = pin_stage_definition(state, config, "research-wave", project_root=tmp_path)
+        assert restore_stage_definition(state, config, ref).id == "research-wave"
+    else:
+        with pytest.raises(ValueError, match="recoverable snapshot limit"):
+            pin_stage_definition(state, config, "research-wave", project_root=tmp_path)
+        assert not list((state / "artifacts/workflow-definitions").glob("*.json"))
+
+
 @pytest.mark.parametrize("damage", ["update", "remove", "dependency"])
 def test_method_resources_are_retained_and_changes_fail_closed(tmp_path, damage):
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref

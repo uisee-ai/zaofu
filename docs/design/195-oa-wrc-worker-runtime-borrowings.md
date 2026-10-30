@@ -132,6 +132,8 @@ exact target 和既有 gate。
 重试、token/费用、尾延迟、人工介入、重复副作用和最终集成成功率；mock 通过不
 代表真实 Provider 资格。
 
+Task Pipeline 新 generation 在 admission 事件中固定 `frontier_owner`；运行和恢复前核对当前配置。历史 generation 若无该字段，按同代派发事件确定 owner；更早没有 owner 字段的派发归属于当时的 Run Manager 路线。无可用派发证据时保持阻塞，不能猜测或静默迁移。WRC 派发遵守全局暂停，暂停期间仍保留 legacy dispatch fence。
+
 ## 交付与验证入口
 
 - `zf-prd-v5.yaml`：当前 v5-production PRD 配置；以 `5.0.0` 标识本次配置修订，继续使用

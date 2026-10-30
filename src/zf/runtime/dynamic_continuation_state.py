@@ -56,6 +56,11 @@ def currentness_preflight(
     action: Mapping[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
     workflow_run_id = str(action.get("workflow_run_id") or "")
+    from zf.runtime.workflow_frontier_owner import generation_owner_error
+
+    owner_error = generation_owner_error(config, events, workflow_run_id=workflow_run_id)
+    if owner_error:
+        return owner_error, "", {}
     current_package = reduce_plan_artifact_packages(
         events,
         workflow_run_id=workflow_run_id,
@@ -90,6 +95,16 @@ def currentness_preflight(
             return "dynamic_depth_exceeded", "", {}
         seen.add(ancestor_id)
         ancestor = operations.get(str(ancestor.get("parent_operation_id") or ""))
+    permitted_tasks = {str(parent.get("task_id") or "")} | {
+        str(task_id) for task_id in parent.get("child_task_ids") or []
+    }
+    if str(action.get("task_id") or "") not in permitted_tasks:
+        return "parent_operation_task_mismatch", "", {}
+    from zf.runtime.dynamic_checkpoint import checkpoint_error
+
+    checkpoint_reason = checkpoint_error(state_dir, action, parent)
+    if checkpoint_reason:
+        return checkpoint_reason, "", {}
     from zf.runtime.dynamic_continuation_lifecycle import capacity_error
 
     capacity_reason = capacity_error(state_dir, operations, action, operation_id(action), events=events)
