@@ -53,6 +53,24 @@ def test_policy_revocation_rejects_old_decision(tmp_path):
     assert apply_orchestrator_agent_decision(runtime, event)["reason"] == "execution_authority_changed"
 
 
+def test_effective_config_snapshot_mismatch_rejects_old_decision(tmp_path):
+    from zf.runtime.orchestrator_agent_execution_policy import execution_decision_rejection
+
+    runtime, prepared = _bounded(tmp_path)
+    event = _submit_rework(runtime, prepared)
+    request = {
+        "checkpoint": "semantic_failure",
+        "checkpoint_input_ref": prepared.context.input_ref,
+        "effective_config_ref": {"ref": "wrong/config.json", "sha256": "b" * 64},
+        "effective_config_digest": "b" * 64,
+    }
+    assert execution_decision_rejection(
+        runtime,
+        decision=event.payload["orchestration_decision"],
+        request=request,
+    ) == "execution_authority_changed"
+
+
 def test_local_replan_remains_available_without_direct_execution_grant(tmp_path):
     runtime, prepared = _bounded(tmp_path, [])
     result = apply_orchestrator_agent_decision(runtime, _submit_rework(runtime, prepared, action="return_to_plan"))

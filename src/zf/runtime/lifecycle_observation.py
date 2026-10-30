@@ -22,6 +22,7 @@ from zf.runtime.owner_channel_liveness import (
 )
 from zf.runtime.remediation_cascade import SAFE_HALTED_EVENT
 from zf.runtime.provider_usage_reconciliation import build_disk_usage_event
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 if TYPE_CHECKING:
     from zf.core.config.schema import RoleConfig
@@ -46,7 +47,7 @@ class LifecycleObservationMixin:
         restarts or the underlying counter resets."""
         drift_roles, global_drift = self._recent_drift_refresh_scope()
         for role in self.config.roles:
-            if role.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             instance_id = role.instance_id
             drift_present = (
@@ -266,7 +267,11 @@ class LifecycleObservationMixin:
             if role is None:
                 continue
             name = str(getattr(role, "name", ""))
-            if name and name != "orchestrator" and name not in seen:
+            if (
+                name
+                and not is_configured_orchestrator_role(self.config, role)
+                and name not in seen
+            ):
                 seen.add(name)
                 expected.append(name)
         return expected
@@ -288,7 +293,7 @@ class LifecycleObservationMixin:
         recycle can otherwise immediately put the fresh worker back into
         pending_recycle before it has produced a new turn.
         """
-        if str(getattr(role, "name", "") or "") == "orchestrator":
+        if is_configured_orchestrator_role(getattr(self, "config", None), role):
             attempt_identity, attempt_lookup_complete = {}, True
         else:
             attempt_identity, attempt_lookup_complete = (

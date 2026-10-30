@@ -73,6 +73,7 @@ from zf.runtime.git_capture import (
     capture_git_diff_context,
 )
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_actor, is_configured_orchestrator_role
 from zf.runtime.orchestrator_agent_reactor import OrchestratorAgentReactorMixin
 from zf.runtime.product_delivery import ingest_task_map_to_kanban
 from zf.runtime.provider_operation_stop import (
@@ -1496,7 +1497,12 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
     def _is_orchestrator_final_manifest(self, event: ZfEvent, manifest: Any) -> bool:
         actor = str(event.actor or "").strip()
         role = str(getattr(manifest, "role", "") or "").strip()
-        return actor == "orchestrator" or role == "orchestrator"
+        return (
+            actor == "orchestrator"
+            or role == "orchestrator"
+            or is_configured_orchestrator_actor(self.config, actor)
+            or is_configured_orchestrator_actor(self.config, role)
+        )
 
     def _is_plan_only_task(self, task: Task) -> bool:
         contract = getattr(task, "contract", None)
@@ -1762,7 +1768,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
     def _has_implementation_writer_role(self) -> bool:
         writer_names = {"dev", "developer", "builder", "writer", "implementer"}
         for role in getattr(self.config, "roles", []) or []:
-            if str(getattr(role, "name", "") or "") == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             kind = str(getattr(role, "role_kind", "") or "auto").lower()
             name = str(getattr(role, "name", "") or "").lower()
@@ -2573,7 +2579,10 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
             return self._reject_evidence_contract_violation(event, task)
 
         actor = event.actor or ""
-        trusted_actor = actor in {"zf-cli", "orchestrator"}
+        trusted_actor = (
+            actor in {"zf-cli", "orchestrator"}
+            or is_configured_orchestrator_actor(self.config, actor)
+        )
         if trusted_actor:
             return self._reject_evidence_contract_violation(event, task)
         if self._lifecycle_event_already_handed_off(event):
@@ -3039,7 +3048,9 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
             or str(payload.get("role") or "").strip()
             or str(nested.get("role") or "").strip()
         )
-        if actor == "orchestrator":
+        if actor == "orchestrator" or is_configured_orchestrator_actor(
+            self.config, actor
+        ):
             return None
         expected = str(getattr(task, "assigned_to", "") or "").strip()
         if actor and expected:
@@ -4569,7 +4580,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         instances = {
             role.instance_id
             for role in getattr(self.config, "roles", [])
-            if role.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, role)
         }
         if not instances:
             return

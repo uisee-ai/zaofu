@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from zf.core.workflow.flow_metadata import normalize_flow_kind
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 class FlowRoleBindingError(ValueError):
@@ -62,7 +63,7 @@ def role_configs_for_flow(config: Any, flow_kind: str) -> list[Any]:
     if len(configured_flow_kinds(config)) <= 1:
         return [
             role for role in roles
-            if str(getattr(role, "name", "") or "") != "orchestrator"
+            if not is_configured_orchestrator_role(config, role)
         ]
     return []
 

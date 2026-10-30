@@ -86,6 +86,12 @@ def build_execution_context(
         "schema_version": "orchestrator-execution-context.v1",
         "workflow_run_id": workflow_run_id,
         "flow_kind": str(payload.get("flow_kind") or ""),
+        "effective_config_ref": dict(payload.get("effective_config_ref") or {}),
+        "effective_config_digest": str(
+            (payload.get("effective_config_ref") or {}).get("sha256") or ""
+            if isinstance(payload.get("effective_config_ref"), Mapping)
+            else payload.get("effective_config_digest") or ""
+        ),
         "autonomous_actions": bounded_actions(runtime.config, str(payload.get("flow_kind") or "")),
         "task_map_generation": payload.get("task_map_generation", ""),
         "plan_artifact_package_ref": payload["plan_artifact_package_ref"],
@@ -117,6 +123,23 @@ def execution_decision_rejection(
     if descriptor is None:
         return "execution_authority_missing" if configured is not None else ""
     context = hydrate_sidecar_ref(runtime.state_dir, descriptor).payload
+    expected_config_ref = request.get("effective_config_ref")
+    expected_config_ref = (
+        expected_config_ref if isinstance(expected_config_ref, Mapping) else {}
+    )
+    context_config_ref = context.get("effective_config_ref")
+    context_config_ref = (
+        context_config_ref if isinstance(context_config_ref, Mapping) else {}
+    )
+    if (
+        str(context_config_ref.get("ref") or "")
+        != str(expected_config_ref.get("ref") or "")
+        or str(context_config_ref.get("sha256") or "")
+        != str(expected_config_ref.get("sha256") or "")
+        or str(context.get("effective_config_digest") or "")
+        != str(request.get("effective_config_digest") or "")
+    ):
+        return "execution_authority_changed"
     if context.get("autonomous_actions") != configured:
         return "execution_authority_changed"
     action = str(decision.get("decision") or "")

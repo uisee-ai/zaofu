@@ -99,6 +99,7 @@ from zf.core.cost.tracker import CostTracker
 from zf.core.memory.store import MemoryStore
 from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 if TYPE_CHECKING:
@@ -430,7 +431,7 @@ class WorkflowRuntimeCoordinator(
         self._stuck_detectors: dict[str, StuckDetector] = {
             r.instance_id: StuckDetector(stale_threshold=r.stuck_threshold_seconds)
             for r in self.config.roles
-            if r.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, r)
         }
         self._stuck_already_reported: set[str] = set()
         # G-RESUME-4: watchdog counts consecutive is_alive=False results
@@ -719,7 +720,7 @@ class WorkflowRuntimeCoordinator(
         from zf.runtime.backend_session_reader import get_reader_for_backend
         self._session_readers: dict[str, object] = {}
         for r in self.config.roles:
-            if r.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, r):
                 continue
             reader = get_reader_for_backend(r.backend)
             if reader is not None and r.backend not in self._session_readers:
@@ -918,6 +919,11 @@ class WorkflowRuntimeCoordinator(
         if periodic_sweep:
             periodic.run_context_sweep(self)
         self._safe_housekeeping("budget_sweep", self._run_budget_sweep)
+        from zf.runtime.workflow_frontier_consumer import (
+            consume_wrc_normal_frontier,
+        )
+
+        decisions.extend(consume_wrc_normal_frontier(self))
         decisions.extend(self._dispatch_ready())
         decisions.extend(self._sweep_feature_liveness())
         # G-EVT-2: drain any transport-side events (e.g. StreamJsonTransport's

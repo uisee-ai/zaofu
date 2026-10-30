@@ -14,6 +14,7 @@ from zf.core.state.session import SessionStore
 from zf.core.task.schema import Task
 from zf.core.workflow.topology import WorkflowEventSets
 from zf.runtime.transport import TransportAdapter
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 _STAGE_PROGRESS_EVENTS = WorkflowEventSets.baseline().stage_progress_events
@@ -573,7 +574,7 @@ class GracefulShutdown:
         logs_dir = self.state_dir / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         for role in self.config.roles:
-            if role.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             try:
                 output = self.transport.capture_log(role.name, lines=2000)

@@ -42,6 +42,7 @@ from zf.runtime.remediation_cascade import (
 from zf.runtime.recovery_sufficiency import run_recovery_sufficiency_gate
 from zf.runtime.repair_action_fanout_runtime import RepairActionFanoutRuntimeMixin
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 if TYPE_CHECKING:
     from zf.runtime.spawn_coordinator import SpawnCoordinator
@@ -441,7 +442,7 @@ class LifecycleManagerMixin(
         # regenerating respawn attempts; only capture survives for diagnosis.
         safe_halted = self._runtime_safe_halted()
         for role in self._runtime_active_role_configs():
-            if role.name == "orchestrator" or watchdog_should_skip(self, role):
+            if is_configured_orchestrator_role(self.config, role) or watchdog_should_skip(self, role):
                 continue
             if self._last_worker_state.get(role.instance_id) == "blocked_human":
                 continue
@@ -1446,7 +1447,7 @@ class LifecycleManagerMixin(
             # E1 fix: orchestrator gets cost tracking (above) but no
             # recycle — Layer 2 state is in its Claude session, hot-swap
             # would lose the orchestration train of thought.
-            if role.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             # LH-0.T4 / doc 59: warning, compact, and hard-cap are
             # distinct. Warning checkpoints recovery facts; compact and
