@@ -81,6 +81,8 @@ metadata:
       description: Production PRD controller with WRC blocking frontier, bounded OA checkpoints, and worker execution envelopes.
       intent: build
       backend: codex
+      roles: 29
+      assembly: project-bound-v1
       recommended_for: [build, prd]
       preferred: true
       order: 160

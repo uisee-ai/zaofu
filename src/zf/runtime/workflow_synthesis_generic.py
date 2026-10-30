@@ -11,9 +11,10 @@ from zf.core.workflow.generic_workflow import (
     build_registered_template_spec,
 )
 from zf.core.workflow.bounded_agent import PARAMETERS as BOUNDED_PARAMETERS, TEMPLATE as BOUNDED_TEMPLATE
+from zf.runtime.workflow_registered_controller import CONTROLLER_PARAMETERS
 
 
-FLOW_PARAMETER_KEYS = frozenset({
+FLOW_PARAMETER_KEYS = CONTROLLER_PARAMETERS | frozenset({
     "artifact_kind",
     "artifact_name",
     "collector_roles",
@@ -36,7 +37,7 @@ _GENERIC_PARAMETER_KEYS = frozenset({
     "synthesizer_role",
     "verifier_role",
 })
-_CONTROLLER_PARAMETER_KEYS = frozenset({
+_CONTROLLER_PARAMETER_KEYS = CONTROLLER_PARAMETERS | frozenset({
     "lanes",
     "strictness",
     "pattern_id",
