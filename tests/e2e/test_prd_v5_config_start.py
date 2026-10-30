@@ -113,6 +113,8 @@ def test_v5_approved_config_starts_from_clean_delivery_baseline(monkeypatch, wor
             snapshot = hydrate_sidecar_ref(state, proposal["effective_config_ref"]).payload
             assert snapshot["config"]["version"] == "5.0.1"
             assert snapshot["config"]["workflow"]["_flow_metadata"]["task_pipeline"]["mode"] == "blocking"
+            assert snapshot["config"]["workflow"]["execution_profiles"]["bounded-direct-v1"]["limits"]["timeout_seconds"] == 0
+            assert snapshot["config"]["workflow"]["run_limits"]["timeout_seconds"] == 0
             binding = {key: prepared[key] for key in ("request_id", "proposal_ref", "proposal_digest")}
             applied = action("workflow-config-apply", {
                 **binding, "proposal_id": proposal["proposal_id"], "validation_result_ref": proposal["validation_result_ref"],

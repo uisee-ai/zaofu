@@ -144,13 +144,19 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
         positions.current.set(key, pos);
       }
     }
-    setCanvasNodes(filtered.nodes.map(n => ({ id: n.id,
+    setCanvasNodes(previous => {
+      const measured = new Map(previous.map(node => [node.id, node.measured]));
+      // Live projections replace data, but unchanged DOM sizes may not emit a
+      // new ResizeObserver entry. Retain measured sizes so nodes stay visible.
+      return filtered.nodes.map(n => ({ id: n.id,
+      measured: measured.get(n.id),
       position: positions.current.get(`${view}:${n.id}`) || layout.get(n.id) || { x: 0, y: 0 },
       selected: n.id === selected,
       type: overview && n.data.context_kind ? "executionContext" : overview && (n.id.startsWith("workflow:stage:") || n.id.startsWith("workflow:role:") || n.data.unassigned_execution) ? "executionStage" : "workflowCard",
       className: `sdlc-node sdlc-status-${n.status}${n.id === "workflow:terminal:done" ? " sdlc-terminal-node" : ""}`,
       data: { node: n, horizontal: view === "workflow" && !fullStructure, allNodes: graph?.nodes || [], operationIds: n.data.unassigned_execution ? n.data.operation_ids : graph && view === "workflow" && !fullStructure && n.id.startsWith("workflow:role:") ? unmappedRoleOperationIds(n.id, graph.nodes, graph.edges) : [], partial: structureOnly, mode: executionMode, onSelect: pick },
-    })));
+      }));
+    });
     setCanvasScope(layoutScope);
   }, [filtered, selected, view, layoutScope, fullStructure, graph, structureOnly, pick, executionMode]);
   const focusIds = selected && filtered.nodes.some(n => n.id === selected) ? [selected] :

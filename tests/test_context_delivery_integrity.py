@@ -185,3 +185,35 @@ def test_packed_pages_preserve_small_sources_large_tails_and_alias_receipts(tmp_
     assert multi and contents == expected
     assert all(required_read_satisfied(receipts, r) for r in requirements)
     assert not required_read_satisfied([r for r in receipts if r.get("page_start") != 0], requirements[2])
+
+
+@pytest.mark.parametrize("fault", ["", "truncated", "unrelated_field"])
+@pytest.mark.parametrize("wrapper", ["command", "settled", "indexed_settled", "arguments"])
+def test_codex_exec_json_envelope_preserves_exact_output_witness(tmp_path, fault, wrapper):
+    row = {"schema_version": "artifact-read.v1", "attempt_id": "a", "consumer_actor": "dev",
+           "consumer_provider": "codex", "read_at": "2026-10-30T10:00:00+00:00"}
+    body = '{"content":"原文\\n第二行", "next_cursor":null}'
+    emit_artifact_output(tmp_path, body, [row], io.StringIO())
+    rows = [json.loads(line) for line in active_read_ledger_path(tmp_path, "a").read_text().splitlines()]
+    sid = str(uuid4());path = tmp_path / "provider.jsonl"
+    RoleSessionRegistry(tmp_path / "role_sessions.yaml", tmp_path.parent).bind_codex_session("dev", sid, session_path=path)
+    envelope = {"chunk_id":"chunk", "exit_code":0, "output":body + "\n", "wall_time_seconds":0.2}
+    if fault == "truncated": envelope["output"] = body[:12]
+    if fault == "unrelated_field": envelope["arguments"] = envelope.pop("output")
+    if wrapper in {"settled", "indexed_settled"}:
+        envelope = {"status": "fulfilled", "value": envelope}
+    if wrapper == "indexed_settled": envelope = {"i": 1, "result": envelope}
+    if wrapper == "arguments": envelope = {"arguments": envelope}
+    path.write_text("\n".join(json.dumps(x) for x in [
+        {"type":"session_meta","payload":{"id":sid}},
+        {"type":"response_item","timestamp":"2026-10-30T10:00:01+00:00","payload":{
+            "type":"custom_tool_call_output","call_id":"call-exec","output":[{
+                "type":"input_text","text":json.dumps(envelope,ensure_ascii=True)}]}},
+    ]))
+    observed = observe_artifact_delivery(tmp_path, rows)[0]
+    expected = "unknown" if fault or wrapper == "arguments" else "observed_in_transcript"
+    assert observed["provider_delivery_status"] == expected
+    if expected == "observed_in_transcript":
+        from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+        witness = hydrate_sidecar_ref(tmp_path, observed["provider_observation_ref"]).payload
+        assert body in witness["output"]

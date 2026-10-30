@@ -23,6 +23,15 @@ amendment are separate role capabilities supplied by the workflow profile.
 - Read this role method once per unchanged skill digest. Load dependency references
   only for the current stage's verification method; do not concatenate all skills,
   briefing, task docs and global plans into a truncated tool response.
+- When a required batch spans many pages, use a bounded tool call to consume a
+  few sequential CLI cursor pages together when its output budget can carry all
+  bodies (for example, three 8 KiB pages with an explicit 24 KiB output budget).
+  Preserve every page in the returned tool output; do not replace bodies with
+  digests, discard output, or pipe it to a summary. Stop at the bounded page
+  count and keep the exact next cursor. Each CLI read retains its own receipt.
+  Avoid one model round trip for each tiny page and avoid restarting page one
+  after inspecting the manifest. Provider output truncation still requires
+  consuming the missing body, never assuming it was delivered.
 - Do not reread `task.md`, `source.md`, `progress.md` merely to reconstruct fields
   already present in the pinned contract. For missing context, retrieve the exact
   authorized source/slice. Mandatory acceptance and independent verification remain required.
