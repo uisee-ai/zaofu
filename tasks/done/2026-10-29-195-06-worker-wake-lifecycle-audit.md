@@ -1,4 +1,4 @@
-> 状态: proposed
+> 状态: done — c205ffe8 feat: add worker execution envelope and wake routing
 
 # 195-06 Worker Wake 与生命周期对账
 
@@ -26,3 +26,10 @@
 ## 非目标
 
 不更改真实 provider 的取消时延和不把 periodic sweep 改成第二 scheduler。
+
+## 实施记录
+
+- 将 Task Pipeline generation、verify completed/failed、acceptance completed/failed 加入既有 `WAKE_PATTERNS`，让 typed stage result 直接唤醒 Kernel/WRC；没有增加 polling service。
+- envelope 校验 known event 与 wake surface 一致，并保持 `unknown_is_not_idle=true`、unknown state 为 hold；既有 idle probe、stuck 和 respawn failure 路由保留。
+- 验证：`uv run pytest tests/test_wake_surface.py tests/test_worker_execution_envelope.py tests/test_task_pipeline_capsule.py tests/test_task_pipeline_generation.py tests/test_task_pipeline_briefing.py tests/test_wire_reactor_registry.py tests/test_task_pipeline_worker_liveness.py -q --no-cov` -> 84 passed。
+- dev-verify deterministic 广域运行记录 13,319 passed、20 skipped、28 deselected；5 个失败来自当前 checkout 缺失 `tools/export-public.sh` 和 prompt fixture，与本批变更无关；real-provider/host tier 未执行。

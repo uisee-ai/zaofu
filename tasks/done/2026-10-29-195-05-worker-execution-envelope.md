@@ -1,4 +1,4 @@
-> 状态: proposed
+> 状态: done — c205ffe8 feat: add worker execution envelope and wake routing
 
 # 195-05 Worker Execution Envelope
 
@@ -25,3 +25,9 @@ worktree、result contract、resume 和 wake 语义冻结为一个可校验的
 ## 非目标
 
 不把 raw CoT 写入 envelope；不改变默认 `normal_frontier_owner`；不启动真实 Provider。
+
+## 实施记录
+
+- 新增 `worker-execution-envelope.v1` 的构造、稳定 digest 和 fail-closed 校验，绑定 identity、routing、workspace、result contract、resume 与 wake contract。
+- Task Pipeline operation payload、`task.pipeline.stage.dispatched` 和 worker briefing 使用同一 envelope；transport context 传递 envelope digest。
+- 验证：`uv run pytest tests/test_worker_execution_envelope.py tests/test_task_pipeline_briefing.py tests/test_task_pipeline_capsule.py tests/test_task_pipeline_generation.py tests/test_watcher_wake_worthy.py tests/test_proactive_idle_dispatch.py -q --no-cov` -> 59 passed；扩展 lifecycle/wake 闭包 -> 84 passed；ruff、compileall 通过。
