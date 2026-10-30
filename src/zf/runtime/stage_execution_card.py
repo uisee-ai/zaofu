@@ -571,6 +571,7 @@ def prepare_profiled_stage_result(
         ])
     elif profile_id in {"task-verify", "candidate-verify"}:
         command = render_result_validate_command(command) + " --submit"
+        operation_id = str(child_payload.get("operation_id") or "").strip()
         lines.extend([
             "- Once the result scratch and evidence are ready, run the Success command below. "
             "It preflights schema, pinned contract and Product Acceptance, then submits "
@@ -578,7 +579,21 @@ def prepare_profiled_stage_result(
             "- On rejection, correct this same scratch using structured diagnostics. "
             "Submission still checks current authority, target and evidence; preflight "
             "alone is not admission or a product verdict. Do not repeat completed reads/tests.",
+            "",
+            "Success command:",
+            "```bash",
+            command,
+            "```",
         ])
+        if operation_id:
+            lines.append(
+                f"The atomic command above performs the `result submit --operation "
+                f"{operation_id}` operation after validation."
+            )
+        lines.append(
+            "The validation portion does not consume the submit capability; "
+            "`--submit` invokes it atomically only after preflight passes."
+        )
     else:
         lines.extend([
             "- Terminal submit rule: once the required artifacts and prefilled "
