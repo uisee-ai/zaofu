@@ -135,7 +135,8 @@ exact target 和既有 gate。
 ## 交付与验证入口
 
 - `zf-prd-v5.yaml`：当前 v5-production PRD 配置；以 `5.0.0` 标识本次配置修订，继续使用
-  `prd-flow-v4-task-pipeline` 的运行时 profile，固定 blocking。C 路线将
+  `prd-flow-v4-task-pipeline` 的运行时 profile，使用 Codex backend、8 个 Impl lane
+  和 8 个 Verify lane，固定 blocking。C 路线将
   `normal_frontier_owner` 设为 `wrc`：WRC facade 消费已接纳的 Task Pipeline
   ready-set，Run Manager 只保留异常恢复 owner；未接纳或非 blocking 输入
   fail-closed，不回落 legacy dispatcher。这个配置切换只对新 Run/generation
