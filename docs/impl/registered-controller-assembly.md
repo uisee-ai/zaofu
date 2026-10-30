@@ -51,3 +51,18 @@ Apply，因此旧版已写入但未 checkpoint 的 receipt 也能补全；原 re
 - 真实 Provider / Playwright 的首次阻塞记录保留在
   [原验收报告](../records/2026-10-30-hello-prd-v5-playwright-smoke.md)，续跑另存证据，不能用 mock
   通过替代真实 Scan / Plan / Impl / Verify / Judge 交付结论。
+
+
+## Task Pipeline 的图归属
+
+V5 Task Pipeline 的 operation 使用 `impl` / `verify` 等阶段名，编译 DAG 容器可能是
+`prd-lanes-impl`。图通过 Kernel `task.pipeline.generation.admitted` 中的 Run、generation、
+`stage_id` 精确关联，新增只读 `compiled_stage_id` 与来源事件，保留 operation 原始
+`parent_stage_id`。不按角色名猜测或改写事件/调度状态。
+
+Task Verify 属于该 generation 的任务流水线；后续 Candidate Verify 仍是独立阶段。
+单个 Impl 调用结束不代表流水线结束；对应 generation 的 Kernel `candidate.ready` 才闭合
+这个容器。后端完整图与轻量 execution summary、前端阶段卡和 Run 归属共用这份绑定。
+验证包含跨 Run / generation / worker 声明拒绝、冻结边界，以及真实浏览器阻塞状态断言。
+
+续测结果见 [V5 受控装配真实验收记录](../records/2026-10-30-hello-prd-v5-controlled-assembly.md)。

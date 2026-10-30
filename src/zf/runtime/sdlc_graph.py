@@ -234,11 +234,14 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
             "source": "provider_usage" if usage else "config_snapshot" if configured else "unknown",
             "source_event_id": usage.id if usage else "",
         }
+    from zf.runtime.sdlc_workflow_states import bind_pipeline_containers
+
+    bind_pipeline_containers(nodes, operations, event_rows)
     stage_operations: dict[str, list[dict]] = {}
     for oid, operation in operations.items():
         op = node("operation:" + oid, "operation", operation.get("role_instance") or oid,
                   views=["workflow", "trace", "timeline"], **operation)
-        stage = "workflow:stage:" + operation.get("parent_stage_id", "")
+        stage = "workflow:stage:" + (operation.get("compiled_stage_id") or operation.get("parent_stage_id", ""))
         role = "workflow:role:" + operation.get("role_instance", "")
         parent = stage if stage in nodes else role if role in nodes else run
         stage_operations.setdefault(parent, []).append(operation)
@@ -261,9 +264,10 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
             nodes[parent]["status"] = next((s for s in ("running", "blocked", "failed", "reserved", "requested", "cancelled", "superseded") if s in states), "settled")
         nodes[parent]["data"]["operation_ids"] = [r["operation_id"] for r in rows]
 
-    from zf.runtime.sdlc_workflow_states import project_structure_states
+    from zf.runtime.sdlc_workflow_states import project_pipeline_container_states, project_structure_states
 
     project_structure_states(nodes, operations, event_rows)
+    project_pipeline_container_states(nodes, event_rows, scope["run_id"])
     if execution_only:
         # The execution overview needs observed Operations, not event/attempt
         # nodes, Plan bodies, coverage analysis or the full timeline.
