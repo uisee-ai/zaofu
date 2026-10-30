@@ -1,12 +1,22 @@
 from pathlib import Path
 
+import yaml
+
 from zf.core.config.loader import load_config
 
 
-def test_versioned_prd_v5_config_loads_the_blocking_pipeline() -> None:
-    config = load_config(Path(__file__).parents[1] / "zf-prd-v5.yaml")
+def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ZF_TASK_PIPELINE_MODE", "shadow")
+    source = Path(__file__).parents[1] / "zf-prd-v5.yaml"
+    config = load_config(source)
+    documents = list(yaml.safe_load_all(source.read_text(encoding="utf-8")))
 
     assert config.version == "5.0"
+    assert documents[0]["metadata"]["name"] == "zaofu-prd/v5-production"
+    assert documents[1]["metadata"]["name"] == "zaofu-prd-v5-production"
+    assert documents[1]["metadata"]["zaofu"]["catalog"]["preferred"] is True
     assert config.project.name == "zaofu"
     assert config.workflow.harness_profile == "strict"
     assert config.workflow.orchestration.oa_profile == "orchestrator"

@@ -7,7 +7,7 @@
 apiVersion: zaofu.dev/v1
 kind: PrdFlow
 metadata:
-  name: zaofu-prd/v5
+  name: zaofu-prd/v5-production
   version: "5.0.0"
 spec:
   flowProfile: prd-flow-v4-task-pipeline
@@ -32,9 +32,10 @@ spec:
     candidate-verify: blocking
     thin-judge-goal-closure: blocking
   taskPipeline:
-    # Blocking is the production PRD route. Set ZF_TASK_PIPELINE_MODE=shadow
-    # for an explicitly registered observation run.
-    mode: ${ZF_TASK_PIPELINE_MODE:-blocking}
+    # Production C route: WRC owns the normal frontier. Shadow observation
+    # belongs to a separate canary controller and must not be enabled by an
+    # environment override on the production profile.
+    mode: blocking
     maxActiveTaskPipelines: 4
     maxReworkAttempts: 2
     pools:
@@ -72,17 +73,17 @@ spec:
 apiVersion: zaofu.dev/v1
 kind: ZfConfig
 metadata:
-  name: zaofu-prd-v5
+  name: zaofu-prd-v5-production
   zaofu:
     catalog:
-      id: zaofu-prd-v5-claude
-      label: ZaoFu PRD Workflow v5
-      description: Versioned PRD controller with blocking Task Pipeline, bounded OA checkpoints, and worker execution envelopes.
+      id: zaofu-prd-v5-production-claude
+      label: ZaoFu PRD Workflow v5 Production
+      description: Production PRD controller with WRC blocking frontier, bounded OA checkpoints, and worker execution envelopes.
       intent: build
       backend: claude-code
       recommended_for: [build, prd]
-      preferred: false
-      order: 150
+      preferred: true
+      order: 160
 spec:
   profile_sources:
     - examples/prod/controller/common/profiles.yaml

@@ -134,13 +134,13 @@ exact target 和既有 gate。
 
 ## 交付与验证入口
 
-- `zf-prd-v5.yaml`：当前 PRD 生产配置；以 `5.0.0` 标识本次配置修订，继续使用
-  `prd-flow-v4-task-pipeline` 的运行时 profile，默认 blocking，允许通过
-  `ZF_TASK_PIPELINE_MODE=shadow` 进行显式观察运行。C 路线将
+- `zf-prd-v5.yaml`：当前 v5-production PRD 配置；以 `5.0.0` 标识本次配置修订，继续使用
+  `prd-flow-v4-task-pipeline` 的运行时 profile，固定 blocking。C 路线将
   `normal_frontier_owner` 设为 `wrc`：WRC facade 消费已接纳的 Task Pipeline
   ready-set，Run Manager 只保留异常恢复 owner；未接纳或非 blocking 输入
   fail-closed，不回落 legacy dispatcher。这个配置切换只对新 Run/generation
-  生效，不能在活跃 Run 中途切换 owner。
+  生效，不能在活跃 Run 中途切换 owner。Shadow 观察必须使用独立 canary
+  controller，不能通过生产配置环境变量覆盖。
 - `src/zf/runtime/worker_execution_envelope.py`：envelope 构造、digest 和机械校验；
 - `src/zf/runtime/task_pipeline_dispatch.py`：将 envelope 接入实际 stage dispatch；
 - `src/zf/runtime/task_pipeline_briefing.py`：把同一 envelope 交给 worker；
