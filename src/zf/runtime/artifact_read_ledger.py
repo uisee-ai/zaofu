@@ -632,9 +632,10 @@ def render_attempt_source_briefing(
     ]
     if required:
         lines.extend([
-            f"- Preferred single-call read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
-            "  It returns every required slice and records each read. Consume the complete output; "
-            "do not repeat individual reads unless the tool output was truncated or a read failed.",
+            f"- Preferred deduplicated read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
+            "  It delivers every required slice, sharing identical bodies while recording each source. "
+            "If the response has `next_cursor`, continue the same command with `--cursor <next_cursor>` "
+            "until it is null. Consume every page; do not repeat individual reads after a complete bundle.",
             "- If an output is too large or truncated, read that exact source and JSON path "
             "with `--page-start 0 --page-size 8192`. Read and consume every page, using "
             "the returned `next_page_start` until it is null. The ledger accepts pages "

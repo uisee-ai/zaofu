@@ -2828,6 +2828,20 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             producer_kind="kernel",
             required_scope_any=("pdd_id", "trace_id"),
         ),
+        EventProblemSpec(
+            event_type="workflow.budget.warning",
+            event_class="projection_only",
+            problem_class="workflow_progress",
+            source="workflow_runtime",
+            severity="low",
+            title="Workflow budget headroom warning",
+            action_policy="informational",
+            intervention_class="observe",
+            producer_kind="kernel",
+            notification_policy="trace_only",
+            recovery_policy="none",
+            dedupe_key_fields=("scope", "scope_id", "warning_level"),
+        ),
         *(
             EventProblemSpec(
                 event_type=event_type,

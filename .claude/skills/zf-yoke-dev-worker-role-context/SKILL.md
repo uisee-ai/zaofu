@@ -35,6 +35,25 @@ methodology family — do not restate their content here:
 If a method skill and this role context appear to conflict, follow this role
 context for runtime truth, task scope, and completion claims.
 
+## 按阶段加载方法
+
+依赖声明保证方法全文可用，不表示开工前逐包读完。先读本角色边界和当前
+briefing，再按下表触发；同一会话中已完整读过且版本未变的方法不必重复加载。
+压缩/换会话后按当前工作阶段补读所需方法，不能以摘要替代遗忘的规则。
+
+| 当前动作 | 必须加载的方法 |
+|---|---|
+| 实现或修改行为、复现 bug | `tdd-evidence`，先按当前合同得到最小可执行反馈 |
+| 开始多文件/多切片实现 | `incremental-delivery`；单文件单函数最小变更不强制加载 |
+| 出现非预期测试/构建失败，原因未明 | `debugging-triage` |
+| 依赖外部库/API、协议或版本事实 | `source-verification`；仓内行为以源码和测试为准 |
+| 第一次写 Git 引用或提交之前 | `git-evidence`；显式路径、保护并行改动等硬规则始终有效 |
+| 准备最终 handoff | `zf-harness-done-contract` |
+
+返工先核对新身份、合同版本和全部失败项，完成当前 attempt 的必读工件后，
+针对失败项读取相关代码/测试并复现。保留所有未变约束、验收项和证据引用；
+不要把返工重新扩成全仓扫描，或再次一次性读取所有方法包。
+
 ## Rules
 
 - Work only inside the assigned scope.
@@ -64,10 +83,12 @@ context for runtime truth, task scope, and completion claims.
   read` commands (or the authenticated `--required` batch), using its exact
   attempt id, source id, artifact id, and JSON path. Reading the backing path with `cat`, `jq`, or an editor may help
   exploration but does not satisfy the runtime read ledger.
-- 必需工件正文首次完整读取后，避免无目的重复读取；批量 `--required` 返回 JSONL，各行的 `content`
-  是正文字符串，`aliases` 表示已分别鉴权、校验和记账的相同内容来源，无需再读。
-  超过 CLI 输出上限时，使用原命令的 `--page-start` / `--page-size`，按返回的
-  `next_page_start` 完整续读；不要用 shell 循环把所有页再拼成超大输出。
+- 必需工件正文首次完整读取后，避免无目的重复读取；小批量 `--required` 返回 JSONL，
+  各行 `content` 是正文，`aliases` 表示已分别鉴权、校验和记账的相同内容来源。
+  大批量返回 `required-artifact-page.v1`，读取 `item.content`，用同一命令加
+  `--cursor <next_cursor>` 完整续读到 `next_cursor=null`；不要退回逐个别名重读。
+  单项分页才使用 `--page-start` / `--page-size` 和 `next_page_start`。
+  不要用 shell 循环把所有页再拼成超大输出。
   单项未分页 stdout 本身就是正文；分页响应的 `content` 才是正文。
   输出被截断时只补缺失部分，不重跑整个集合；索引、摘要及旧尝试的读取收据不能
   代替当前必需正文。完成读取后按合同先跑最小可执行检查，保存实际首次反馈。
@@ -78,6 +99,11 @@ context for runtime truth, task scope, and completion claims.
 - 在合同允许的路径维护续跑说明，绑定当前合同/工件摘要、HEAD、已理解的约束、
   AC 与检查进度、下一步；重派时重新核对绑定。它帮助恢复语义理解，不替代原文、
   命令收据或独立 Verify，也不把旧尝试的成功声明移作本次通过。
+- 按 briefing 的 `zf cost --operation ... --json` 在开工和心跳时检查剩余额度。
+  50% 预警开始固化续跑说明，80% 更新完整失败项、约束、修改和证据映射；
+  这两个水位是准备恢复的信号，不是提前结束/自报 blocked 的理由。
+  缓存 token 仍计入预算；未定价费用不能解释为免费。不要仅凭 context window
+  占用低认定余量充足，不靠裁掉合同、删除历史或换 attempt 重置额度来继续。
 - 检查点是继续实施的依据，不是结束当前 attempt 的理由。合同范围内的代码、测试、
   固定验证入口尚未写完，或刚完成一次薄切片提交时，继续实现和复跑；不能仅因
   “本轮未完成”提交失败/阻塞结果。未完成项只有在确有外部依赖、权限、环境、合同

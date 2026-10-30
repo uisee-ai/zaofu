@@ -93,7 +93,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--attempt", required=True, help="Attempt or dispatch id")
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
-    read_cmd.add_argument("--required", action="store_true", help="Read all kernel-required slices in one invocation")
+    read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded, deduplicated pages")
+    read_cmd.add_argument("--cursor", default=None, help="Continue a bound --required page")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
     read_cmd.add_argument("--max-chars", type=int, default=0)
@@ -183,6 +184,8 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                 raise ValueError("--required cannot be combined with source, artifact or slice overrides")
         elif not args.source or not args.artifact:
             raise ValueError("artifact read requires --source and --artifact, or --required")
+        if not required and getattr(args, "cursor", None) is not None:
+            raise ValueError("--cursor requires --required")
         context = resolve_project_context(
             explicit_state_dir=getattr(args, "state_dir", None),
         )
@@ -212,6 +215,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
 
             print(required_read_output(
                 context.state_dir, manifest=manifest, rows=rows, identity=identity,
+                cursor=getattr(args, "cursor", None),
             ))
             return 0
         result = read_attempt_artifact(

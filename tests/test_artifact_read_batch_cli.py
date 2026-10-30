@@ -1,4 +1,4 @@
-"""One tool round trip preserves all scoped artifact consumption evidence."""
+"""Bounded batch reads preserve every scoped artifact consumption receipt."""
 import hashlib
 import json
 
@@ -124,19 +124,73 @@ def test_large_required_read_must_be_delivered_in_complete_pages(tmp_path, monke
         payload={"dispatch_id": "attempt-1", "required_reads": [requirement]},
     ))
     common = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state)]
-    assert main([*common, "--required"]) == 1
-    assert "bounded pages" in capsys.readouterr().err
     ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
-    assert not ledger.exists()
-    first = [*common, "--source", "large", "--artifact", "large", "--json-path", "$.facts"]
-    assert main(first) == 1
-    assert "exceeds" in capsys.readouterr().err
-    assert not ledger.exists()
-    start = 0
-    while start is not None:
-        assert main([*first, "--page-start", str(start), "--page-size", "4096"]) == 0
-        start = json.loads(capsys.readouterr().out)["next_page_start"]
-    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
     from zf.runtime.artifact_read_ledger import required_read_satisfied
 
+    cursor = None
+    contents = []
+    while True:
+        assert main([*common, "--required", *(["--cursor", cursor] if cursor else [])]) == 0
+        output = capsys.readouterr()
+        assert len(output.out.rstrip("\n")) <= 8192
+        page = json.loads(output.out)
+        contents.append(page["item"]["content"])
+        cursor = page["next_cursor"]
+        rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+        if cursor is None:
+            break
+        assert not required_read_satisfied(rows, requirement)
+    assert "".join(contents) == "中" * 10000
     assert required_read_satisfied(rows, requirement)
+
+
+@pytest.mark.parametrize("fault", ["", "tampered", "changed_attempt", "changed_requirement", "gap"])
+def test_required_pages_keep_aliases_bound_and_reject_incomplete_consumption(tmp_path, fault):
+    from zf.cli.artifact_required_read import required_read_output
+    from zf.runtime.artifact_read_ledger import required_read_satisfied
+
+    state = tmp_path / ".runtime"
+    path = state / "artifacts" / "plan.json"
+    path.parent.mkdir(parents=True)
+    text = '中文 "quoted" \\ newline\n' * 1000
+    path.write_text(json.dumps({"facts": text}, ensure_ascii=False))
+    sources = [{"source_id": name, "artifact_id": name, "ref": "artifacts/plan.json",
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "allowed_paths": ["$.facts"]}
+               for name in ("plan-port-task_map", "oa-route-task_map")]
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1", dispatch_id="attempt-1",
+        sources=sources, metadata={"read_purpose": "implementation"},
+    )
+    requirements = [{"source_id": s["source_id"], "artifact_id": s["artifact_id"],
+                     "artifact_sha256": s["sha256"], "json_path": "$.facts"} for s in sources]
+    identity = {"actor": "dev", "role": "dev", "provider": "codex", "purpose": "implementation"}
+    ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
+    output = required_read_output(state, manifest=manifest, rows=requirements, identity=identity)
+    page = json.loads(output)
+    contents = [page["item"]["content"]]
+    prefix = ledger.read_bytes()
+    if fault == "tampered":
+        path.write_text('{"facts":"changed"}')
+    elif fault == "changed_attempt":
+        manifest = {**manifest, "attempt_id": "attempt-2"}
+    elif fault == "changed_requirement":
+        requirements = requirements[:1]
+    if fault not in ("", "gap"):
+        with pytest.raises(ValueError):
+            required_read_output(state, manifest=manifest, rows=requirements, identity=identity,
+                                 cursor=page["next_cursor"])
+        assert ledger.read_bytes() == prefix
+        assert not (state / "artifacts/attempts/attempt-2/read-ledger.active.jsonl").exists()
+        return
+    while page["next_cursor"]:
+        output = required_read_output(state, manifest=manifest, rows=requirements, identity=identity,
+                                      cursor=page["next_cursor"])
+        assert len(output) <= 8192
+        page = json.loads(output)
+        assert len(page["item"]["aliases"]) == 1
+        contents.append(page["item"]["content"])
+    assert "".join(contents) == text
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+    if fault == "gap":
+        rows = [row for row in rows if row["page_start"] != 0]
+    assert all(required_read_satisfied(rows, r) for r in requirements) == (fault != "gap")
