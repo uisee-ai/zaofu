@@ -190,6 +190,7 @@ def write_task_pipeline_briefing(
             "",
         ])
     lines.extend([
+        *_render_worker_execution_envelope(payload),
         "## Compact Execution Context",
         "",
         "```json",
@@ -229,6 +230,26 @@ def write_task_pipeline_briefing(
         payload=payload,
     )
     return briefing_path
+
+
+def _render_worker_execution_envelope(payload: Mapping[str, Any]) -> list[str]:
+    envelope = payload.get("worker_execution_envelope")
+    if not isinstance(envelope, Mapping):
+        return []
+    from zf.runtime.worker_execution_envelope import normalize_worker_execution_envelope
+
+    normalized = normalize_worker_execution_envelope(envelope)
+    return [
+        "## Worker Execution Envelope",
+        "",
+        "The following dispatch snapshot is immutable for this operation. Do not",
+        "replace its role, target, profile, result contract, or lifecycle state.",
+        "",
+        "```json",
+        json.dumps(normalized, ensure_ascii=False, indent=2, sort_keys=True),
+        "```",
+        "",
+    ]
 
 
 def verification_result_template(

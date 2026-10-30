@@ -57,6 +57,12 @@ EXTERNAL_EVENTS: frozenset[str] = frozenset({
     # triage request and consumes the proposal record outside the role graph.
     "orchestrator.rework.triage.requested",
     "orchestrator.rework.triage.recorded",
+    # Product Flow semantic-control bridge events are emitted by the Kernel
+    # checkpoint planner and consumed by the configured OA role. They are
+    # external to the role-to-role graph, just like the exception bridge above.
+    "orchestrator.semantic.checkpoint.requested",
+    "orchestrator.semantic.failure.requested",
+    "orchestrator.semantic.rework.requested",
     # LH-3 Tri-State (suspended is published by review/test but the
     # clarification.needed flow is initiated by arch, so list here)
     "clarification.needed",

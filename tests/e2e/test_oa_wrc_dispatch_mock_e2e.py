@@ -41,6 +41,7 @@ def test_oa_delegation_reaches_transport_and_restart_does_not_redispatch(
         policy["max_active_task_pipelines"] = 16
         policy["backpressure"]["max_unverified_tasks"] = 8
     config = seed.config
+    config.workflow.orchestration.normal_frontier_owner = "wrc"
     config.project.workspace = str(tmp_path)
     config.project.state_dir = str(seed.state_dir)
     config.workflow.flow_metadata = {
@@ -119,6 +120,12 @@ def test_oa_delegation_reaches_transport_and_restart_does_not_redispatch(
     )
     assert [row[0] for row in transport.sent] == expected, failures
     receipt = next(e for e in events if e.type == "task.pipeline.stage.dispatched")
+    assert receipt.payload["frontier_owner"] == "wrc"
+    assert any(
+        e.type == "workflow.normal_frontier.wrc.reconciled"
+        and e.payload["owner"] == "wrc"
+        for e in events
+    )
     assert receipt.payload["orchestration_assignment"]["reason"] == "oa_preferred"
     assert receipt.payload["orchestration_assignment"]["execution_plan_ref"]
     assert "Active task: TASK-1" in transport.sent[0][1].read_text()

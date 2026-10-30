@@ -172,6 +172,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "task.pipeline.stage.dispatched",
     "task.pipeline.stage.dispatch_deferred",
     "task.pipeline.stage.waiting",
+    "workflow.normal_frontier.wrc.reconciled",
     "task.pipeline.external_gate.satisfied",
     "task.pipeline.verify.completed",
     "task.pipeline.verify.failed",

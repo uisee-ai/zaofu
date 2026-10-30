@@ -228,6 +228,8 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         assert "## Read Order (authoritative)" in briefing.read_text()
         assert str(task_doc_path(runtime.state_dir, task.id).resolve()) in briefing.read_text()
         assert "Controlled Artifact Inputs" in briefing.read_text()
+        assert "## Worker Execution Envelope" in briefing.read_text()
+        assert context.worker_envelope_digest
         sent.append(context)
         return context
 

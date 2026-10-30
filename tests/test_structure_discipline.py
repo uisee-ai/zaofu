@@ -473,6 +473,11 @@ _KNOWN_OVERSIZED_SOURCE_FILES = {
     "src/zf/runtime/injection.py",
     "src/zf/runtime/long_horizon.py",
     "src/zf/runtime/product_delivery.py",
+    # Task Pipeline admission/reconciliation/dispatch grew past the soft
+    # limit while the WRC owner seam was added. Split trigger: the next
+    # Task Pipeline owner, admission, or dispatch behavior change moves the
+    # reconciler/runtime selection into sibling modules.
+    "src/zf/runtime/task_pipeline_runtime.py",
     # Package admission, inheritance, and reduction remain one artifact
     # contract. Split trigger: the next package-currentness or port-inheritance
     # rule extracts the reducer from plan_artifact_package.py.
