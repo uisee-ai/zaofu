@@ -18,11 +18,12 @@ from zf.web.projections import read_model
 from zf.web.projections.projection_failures import collect_projection_failures
 from zf.web.projections.source_cache import fingerprint, task_paths
 from zf.web.projections.workflow_workbench_sources import read_workbench_sources
+from zf.web.projections.workflow_workbench_snapshot import capture_snapshot, snapshot_is_prefix
 
 
 # Change when cached graph or Plan projection semantics change.  The version
 # participates in the storage key and ETag, isolating older running servers.
-CACHE_VERSION = "workflow-workbench.v4"
+CACHE_VERSION = "workflow-workbench.v5"
 
 
 class WorkbenchSourceChanged(RuntimeError):
@@ -86,14 +87,8 @@ def _references(value, context) -> set[str]:
     return paths
 
 
-def read_workbench_projection(context, project_id: str, request_id: str, as_of: int,
-                              detail: Callable, *, if_none_match: str | None = None,
-                              structure_only: bool = False,
-                              structure_node_id: str | None = None,
-                              execution_only: bool = False) -> tuple[dict, str] | JSONResponse:
-    request = load_workflow_request(context.state_dir, request_id)
-    if not request:
-        return JSONResponse({"ok": False, "status": "not_found"}, status_code=404)
+def _cache_key(context, project_id, request_id, request, as_of, *,
+               structure_only=False, structure_node_id=None, execution_only=False):
     identity_parts = [str(context.project_root.resolve()), project_id, request_id,
                       request.get("run_id"), request.get("revision"),
                       request.get("proposal_digest"), as_of]
@@ -104,21 +99,78 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
     elif structure_only:
         identity_parts.append("structure-v1")
     identity = json.dumps(identity_parts, sort_keys=True)
-    key = CACHE_VERSION + ":" + hashlib.sha256(identity.encode()).hexdigest()
-    dependencies = _references(request, context)
+    return CACHE_VERSION + ":" + hashlib.sha256(identity.encode()).hexdigest()
 
-    def version() -> str:
-        return fingerprint(context.state_dir, _paths(context, dependencies, request_id), context.config)
+
+def _side_fingerprint(context, dependencies, request_id, config_fingerprint):
+    files = fingerprint(context.state_dir, _paths(context, dependencies, request_id), include_events=False)
+    return hashlib.sha256((config_fingerprint + files).encode()).hexdigest()
+
+
+def load_structure_snapshot(context, project_id, request_id, as_of, generation):
+    request = load_workflow_request(context.state_dir, request_id)
+    if not request:
+        return None
+    key = _cache_key(context, project_id, request_id, request, as_of, structure_only=True)
+    source = read_model.get_cached_projection(context.state_dir, key + ":source")
+    if not source or source.get("generation") != generation:
+        return None
+    snapshot = source.get("event_snapshot")
+    if isinstance(snapshot, dict):
+        bound = {**snapshot, "source_dependencies": source.get("dependencies", []),
+                 "source_fingerprint": source.get("side_fingerprint")}
+        if structure_snapshot_is_current(context, request_id, bound):
+            return bound
+    return None
+
+
+def structure_snapshot_is_current(context, request_id, snapshot):
+    """An in-flight read keeps its binding even if a newer cache entry appears."""
+    config_fingerprint = fingerprint(context.state_dir, [], context.config, include_events=False)
+    current = _side_fingerprint(context, set(snapshot["source_dependencies"]), request_id, config_fingerprint)
+    return current == snapshot["source_fingerprint"] and snapshot_is_prefix(snapshot)
+
+
+def read_workbench_projection(context, project_id: str, request_id: str, as_of: int,
+                              detail: Callable, *, if_none_match: str | None = None,
+                              structure_only: bool = False,
+                              structure_node_id: str | None = None,
+                              execution_only: bool = False,
+                              event_snapshot: dict | None = None) -> tuple[dict, str] | JSONResponse:
+    request = load_workflow_request(context.state_dir, request_id)
+    if not request:
+        return JSONResponse({"ok": False, "status": "not_found"}, status_code=404)
+    key = _cache_key(context, project_id, request_id, request, as_of,
+                     structure_only=structure_only, structure_node_id=structure_node_id,
+                     execution_only=execution_only)
+    if event_snapshot is not None:
+        if not snapshot_is_prefix(event_snapshot):
+            raise WorkbenchSourceChanged()
+    dependencies = _references(request, context)
+    # The resolved config is fixed for this request. Serialize it once rather
+    # than at every dependency probe and graph-build retry.
+    config_fingerprint = fingerprint(context.state_dir, [], context.config, include_events=False)
+
+    def side_version() -> str:
+        return _side_fingerprint(context, dependencies, request_id, config_fingerprint)
+
+    def version(snapshot=None) -> str:
+        snapshot = snapshot or event_snapshot
+        ledger = (snapshot["ledger_fingerprint"] if snapshot is not None
+                  else fingerprint(context.state_dir, []))
+        return hashlib.sha256((side_version() + ledger).encode()).hexdigest()
 
     def tag(current):
         return '"' + hashlib.sha256((key + current).encode()).hexdigest() + '"'
 
-    def receipt(current):
+    def receipt(current, snapshot, side_fingerprint):
         # Conditional reads must not deserialize a multi-MB graph just to
         # discover that the browser already has this exact source generation.
         try:
             read_model.set_cached_projection(context.state_dir, key + ":source", kind="workflow-workbench-source",
-                source_seq=0, payload={"fingerprint": current, "dependencies": sorted(dependencies)})
+                source_seq=0, payload={"fingerprint": current, "dependencies": sorted(dependencies),
+                    "event_snapshot": snapshot, "side_fingerprint": side_fingerprint,
+                    "generation": tag(current)})
         except (sqlite3.Error, OSError):
             pass
 
@@ -142,7 +194,7 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
         dependencies.update(cached.get("dependencies") or [])
         current = version()
         if cached.get("fingerprint") == current and current == version():
-            receipt(current)
+            receipt(current, cached["event_snapshot"], cached["side_fingerprint"])
             return cached["value"], tag(current)
         return None
 
@@ -156,14 +208,23 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
             return cached
         # A newly discovered external ref needs a before/after check on a
         # subsequent build; metadata observed only after reading is insufficient.
-        events, event_version = None, ""
+        events, snapshot = None, event_snapshot
         for _attempt in range(3):
-            before = version()
+            if events is None:
+                capture_side = side_version()
+                read = event_log_from_project(context.state_dir, config=context.config).read_all
+                if snapshot is None:
+                    events, snapshot = capture_snapshot(context, read)
+                else:
+                    events = read()[:snapshot["head_seq"]]
+                    if len(events) != snapshot["head_seq"] or not snapshot_is_prefix(snapshot):
+                        raise WorkbenchSourceChanged()
+                if capture_side != side_version():
+                    events, snapshot = None, event_snapshot
+                    continue
+            before = version(snapshot)
+            side_before = side_version()
             with collect_projection_failures() as failures:
-                current_events = fingerprint(context.state_dir, [], context.config)
-                if events is None or event_version != current_events:
-                    events = event_log_from_project(context.state_dir, config=context.config).read_all()
-                    event_version = current_events
                 response = detail(project_id, request_id, events=events)
                 if isinstance(response, JSONResponse):
                     if response.status_code != 200:
@@ -187,8 +248,11 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                 body, inputs["plans"], inputs["versions"], inputs["goal_claim_set"], artifact_events,
             ], context)
             added = discovered - dependencies
+            changed = before != version(snapshot)
             dependencies.update(discovered)
-            if failures or added or before != version():
+            if failures or added or changed:
+                if changed:
+                    events, snapshot = None, event_snapshot
                 continue
             with collect_projection_failures() as graph_failures:
                 if structure_only:
@@ -202,16 +266,18 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                     value = redact_obj(build_sdlc_graph(inputs, execution_only=True), memoize=True)
                 else:
                     value = redact_obj(build_sdlc_graph(inputs), memoize=True)
-            if graph_failures or before != version():
+            if graph_failures or before != version(snapshot) or not snapshot_is_prefix(snapshot):
+                events, snapshot = None, event_snapshot
                 continue
             try:
                 read_model.set_cached_projection(context.state_dir, key,
                     kind="workflow-workbench-execution" if execution_only else "workflow-workbench-structure" if structure_only else "workflow-workbench",
                     source_seq=value["scope"]["head_seq"], payload={
                         "fingerprint": before, "dependencies": sorted(dependencies), "value": value,
+                        "event_snapshot": snapshot, "side_fingerprint": side_before,
                     })
             except (sqlite3.Error, OSError):
                 pass  # Canonical reads remain usable when the disposable DB fails.
-            receipt(before)
+            receipt(before, snapshot, side_before)
             return value, tag(before)
     raise WorkbenchSourceChanged()

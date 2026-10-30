@@ -10,6 +10,39 @@ from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
+def bind_task_requirement_origin(payload: dict, events: Iterable[Any]) -> dict:
+    """Bind explicit refs or the legacy Web message causation before Task creation."""
+    by_id = {event.id: event for event in events}
+    refs = payload.get("originating_message_event_ids")
+    if refs is not None and (not isinstance(refs, list) or not refs
+                            or any(not isinstance(ref, str) or not ref for ref in refs)):
+        raise ValueError("originating_message_event_ids must be nonempty message refs")
+    if refs is None:
+        origin = str(payload.get("originating_message_event_id") or payload.get("causation_id") or "")
+        event = by_id.get(origin)
+        if event is None or event.type != "user.message":
+            if payload.get("originating_message_event_id"):
+                raise ValueError("original user input event unavailable")
+            return payload  # Legacy/non-chat callers need not invent provenance.
+        refs = [origin]
+    bound = dict(payload)
+    for ref in refs:
+        event = by_id.get(ref)
+        if event is None or event.type != "user.message":
+            raise ValueError("original user input must reference a user.message")
+        for key, event_key in (("project_id", "project_id"), ("conversation_id", "conversation_id"),
+                               ("thread_id", "thread_key")):
+            expected = bound.get(key) or (bound.get("thread_key") if key == "thread_id" else "")
+            actual = event.payload.get(event_key, "")
+            if expected and expected != actual:
+                raise ValueError("original user input belongs to another origin")
+            if actual:
+                bound[key] = actual
+    bound["originating_message_event_ids"] = list(dict.fromkeys(refs))
+    bound["originating_message_event_id"] = refs[0]
+    return bound
+
+
 def critical_context_sources(
     state_dir: Path, events: Iterable[Any], workflow_run_id: str,
 ) -> list[dict[str, Any]]:
@@ -36,6 +69,9 @@ def critical_context_sources(
         for key in ("project_id", "conversation_id"):
             if request.get(key) and request[key] != event.payload.get(key):
                 raise ValueError("critical user input belongs to another origin")
+        thread = request.get("thread_key") or request.get("thread_id")
+        if thread and thread != event.payload.get("thread_key"):
+            raise ValueError("critical user input belongs to another origin")
         message = event.payload.get("message", "")
         raw_output = (event.payload.get("refs") or {}).get("raw_output")
         if isinstance(raw_output, dict):

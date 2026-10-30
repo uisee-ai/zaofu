@@ -106,3 +106,15 @@ def test_diagnostics_collector_writes_redacted_jsonl(tmp_path: Path):
     assert data["trace_id"] == "trace/one"
     assert "secret-value" not in json.dumps(data)
     assert "abc123" not in json.dumps(data)
+
+
+def test_inline_numeric_budgets_preserve_chinese_and_markdown_punctuation():
+    for text in (
+        "使用 token_budget=0、timeout_seconds=0；保留空闲检测。",
+        "`token_budget=0`，并保留完整验证。", "(max_tokens=1024). Next step.",
+        "context_window_tokens: 200000。不要丢失后续正文。",
+    ):
+        assert redact_text(text) == text
+    for value in ("123456", "0abc", "0-secret", "secret-value"):
+        assert value not in redact_text(f"ACCESS_TOKEN={value}。后续正文")
+    assert "0-secret" not in redact_text("token_budget=0-secret")

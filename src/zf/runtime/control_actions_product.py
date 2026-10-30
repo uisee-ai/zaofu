@@ -77,6 +77,15 @@ class ProductActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
+        from zf.runtime.critical_context import bind_task_requirement_origin
+
+        try:
+            payload = bind_task_requirement_origin(payload, self.writer.event_log.read_all())
+        except ValueError as exc:
+            return self._failed(
+                requested=requested, action=action, requested_action=requested_action,
+                task_id=None, reason=str(exc), status_code=422, status="invalid_origin",
+            )
         title = str(payload.get("title") or "").strip()
         if not title:
             return self._failed(
@@ -296,12 +305,11 @@ class ProductActionsMixin:
                         "turn_id": str(payload.get("run_id") or ""),
                         "backend": str(payload.get("backend") or ""),
                         "originating_message_event_id": str(
-                            payload.get("causation_id")
-                            or payload.get(
-                                "originating_message_event_id"
-                            )
+                            payload.get("originating_message_event_id")
+                            or payload.get("causation_id")
                             or event.id
                         ),
+                        "originating_message_event_ids": payload.get("originating_message_event_ids", []),
                     },
                 )
             )

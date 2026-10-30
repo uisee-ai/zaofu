@@ -126,3 +126,37 @@ def test_task_contract_payload_normalizes_invalid_container_types(
     assert task.contract.validation == {}
     assert task.contract.fanout_force is False
     assert task.contract.wave == 2
+
+
+def test_create_task_causation_binds_original_requirement_for_critical_context(tmp_path):
+    from zf.runtime.critical_context import critical_context_sources
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    state, writer, service = _runtime(tmp_path)
+    origin = writer.emit('user.message', actor='user', payload={
+        'project_id':'P', 'conversation_id':'C', 'thread_key':'main',
+        'message':'完整原始需求，保留全部约束。',
+    })
+    result = _execute(service, writer, 'create-task', {
+        'task_id':'T-SOURCE', 'title':'Minimal requirement', 'project_id':'P',
+        'conversation_id':'C', 'thread_id':'main', 'causation_id':origin.id,
+    })
+    assert result['ok'], result
+    created = next(e for e in writer.event_log.read_all() if e.type == 'task.created')
+    assert created.payload['request']['originating_message_event_ids'] == [origin.id]
+    writer.emit('config.run_contract.request_bound', actor='kernel', task_id='T-SOURCE', payload={'run_id':'R'})
+    sources = critical_context_sources(state, writer.event_log.read_all(), 'R')
+    body = hydrate_sidecar_ref(state, next(s for s in sources if s['source_id']=='critical-user-and-config')).payload
+    assert body['original_user_inputs'][0]['message'] == origin.payload['message']
+
+
+def test_create_task_rejects_foreign_explicit_requirement_before_mutation(tmp_path):
+    state, writer, service = _runtime(tmp_path)
+    origin = writer.emit('user.message', actor='user', payload={
+        'project_id':'foreign', 'conversation_id':'C', 'message':'foreign requirement',
+    })
+    result = _execute(service, writer, 'create-task', {
+        'task_id':'T-FOREIGN', 'title':'Rejected requirement', 'project_id':'P',
+        'conversation_id':'C', 'originating_message_event_ids':[origin.id],
+    })
+    assert not result['ok']
+    assert TaskStore(state / 'kanban.json').get('T-FOREIGN') is None

@@ -69,8 +69,12 @@ _NUMERIC_TOKEN_FIELDS = frozenset({"token_budget", "context_window_tokens", "max
 
 def _redact_secret_assignment(match: re.Match[str]) -> str:
     key, separator, value = match.groups()
-    if key.lower() in _NUMERIC_TOKEN_FIELDS and re.fullmatch(r"[0-9]+", value):
-        return match.group(0)
+    if key.lower() in _NUMERIC_TOKEN_FIELDS:
+        numeric = re.match(r"[0-9]+(?=$|[`、，。；：）)\]}])", value)
+        if numeric:
+            # Inline prose/Markdown is not part of the numeric setting. Scan
+            # the remaining text again so a following real secret stays hidden.
+            return key + separator + numeric[0] + redact_text(value[numeric.end():])
     return f"{key}{separator}[REDACTED_SECRET]"
 
 

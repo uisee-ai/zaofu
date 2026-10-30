@@ -280,16 +280,25 @@ class FanoutEvidenceQueriesMixin:
     def _fanout_child_last_activity(
         self, child: dict, events: list[ZfEvent], baseline_epoch: float
     ) -> float:
-        """Epoch of the child's last sign of life: the most recent event it is
-        the actor of (agent.usage / worker.state.changed / its own results),
-        floored at the dispatch epoch so a freshly-dispatched child that has not
-        emitted anything yet is not treated as instantly idle.
-        """
+        """Latest worker activity; kernel bookkeeping cannot renew liveness."""
+        from zf.runtime.housekeeping import is_worker_activity_event
+
         role_instance = str(child.get("role_instance") or "")
         latest = baseline_epoch
         if role_instance:
             for event in events:
-                if event.actor == role_instance:
+                if (
+                    event.actor == role_instance
+                    and (
+                        # Usage is kernel-observed provider activity. Unlike
+                        # state mirrors, it remains evidence with kernel origin.
+                        is_worker_activity_event(event.type)
+                        or (
+                            event.origin != "kernel"
+                            and event.type in {"worker.heartbeat", "worker.progress", "phase.progressed"}
+                        )
+                    )
+                ):
                     epoch = self._event_epoch(event)
                     if epoch > latest:
                         latest = epoch
