@@ -56,5 +56,28 @@ def test_real_preview_reads_task_map_decisions_without_changing_action_questions
     assert preview["decision_review"]["items"][0]["decision_id"] == "Q1"
     section = next(s for s in preview["review_packet"]["sections"] if s["id"] == "decisions")
     assert section["status"] == "ready"
+    assert section["counts"] == preview["decision_review"]["counts"]
+    assert section["counts"]["follow_up"] == 1
+    assert section["counts"]["blocking"] == 0
     assert "确认库存来源" in preview["review_dossier_markdown"]
     assert preview["actions"]["approve"] == "plan-approve"
+
+
+def test_impact_description_does_not_override_explicit_nonblocking_register(tmp_path):
+    from tests.test_plan_review_packet import _packet
+    from zf.runtime.plan_review_packet import build_review_packet
+
+    _, kwargs = _packet(tmp_path, ["R1"], ["R1"])
+    path = tmp_path / "decisions.json"
+    path.write_text(json.dumps({"decisions": [{
+        "decision_id": "Q-FUTURE", "status": "pending", "blocking": False,
+        "blocking_impact": "Only needed before the later reporting stage",
+    }]}))
+    kwargs["artifacts"].append({
+        "name": "decision_register", "ref": str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    })
+    packet = build_review_packet(tmp_path, **kwargs, markdown="# Plan", preview_bundle={})
+    section = next(s for s in packet["sections"] if s["id"] == "decisions")
+    assert section["status"] == "ready"
+    assert section["counts"] == {"pending": 1, "blocking": 0}
