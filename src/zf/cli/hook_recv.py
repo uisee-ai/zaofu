@@ -777,6 +777,21 @@ def run(args: argparse.Namespace) -> int:
                     "message_type": "tool_response",
                 },
             )
+            refs = event_payload.get("refs")
+            raw_ref = refs.get("raw_output") if isinstance(refs, dict) else None
+            if isinstance(raw_ref, dict):
+                # The complete redacted output remains in the sidecar. Keep a
+                # single byte-bounded head/tail preview in the occurrence log.
+                encoded = str(event_payload["tool_response"]).encode("utf-8")
+                half = max(1, _tool_response_threshold_bytes() // 2)
+                if len(encoded) > 2 * half:
+                    event_payload["tool_response"] = (
+                        encoded[:half].decode("utf-8", errors="ignore")
+                        + "\n[... output stored in sidecar ...]\n"
+                        + encoded[-half:].decode("utf-8", errors="ignore")
+                    )
+                for key in ("preview", "head", "tail"):
+                    raw_ref.pop(key, None)
         except Exception:
             threshold = _tool_response_threshold_bytes()
             if len(text) > threshold:
