@@ -25,6 +25,7 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 替代任务显式重述唯一前序任务已批准的验证命令时，仅当除生产者和冒烟标记外的命令字段完全一致、生产者已指向替代任务且标记缺省，才继承前序 `rolling_smoke: true`。新命令、改动过的合同字段及显式标记均不推断；滚动冒烟准入检查不变。`tests/test_module_gap_plan.py` 覆盖保留、改动与显式关闭。
 
 缺口产物使用 `verification.commands` 提交结构化命令时，转换为唯一的 Task Map `validation.commands`，保留命令 ID、owner 和验收关联；若同时提供的两个结构化命令表冲突，拒绝合并，不以旧任务命令静默覆盖新命令。
+缺口验收的结构化 `description` 与合同快照采用相同的文本语义；转换时保留原对象，不能误判为空验收。
 
 Gap task 转为 task_map 时，结构化验收对象完整保留 ID、必需性、验证责任、层级及命令引用；面向人阅读的 acceptance 仅提取条款正文。最终产品验收仍由原 owner 签收，不能把字典序列化成普通字符串后按默认 task_verify 处理。
 

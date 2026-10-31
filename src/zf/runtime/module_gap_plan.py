@@ -922,7 +922,8 @@ def _acceptance(raw: dict[str, Any]) -> list[str]:
     if not isinstance(values, list):
         return _string_list(values)
     return _string_list([
-        item.get("statement") or item.get("text") or item.get("criterion") or item.get("title") or ""
+        item.get("statement") or item.get("text") or item.get("criterion")
+        or item.get("description") or item.get("acceptance") or item.get("title") or ""
         if isinstance(item, dict) else item
         for item in values
     ])

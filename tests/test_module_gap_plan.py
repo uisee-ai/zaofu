@@ -393,6 +393,18 @@ def test_gap_amend_preserves_structured_acceptance_and_owner() -> None:
     ]
 
 
+def test_gap_amend_accepts_structured_criterion_description() -> None:
+    criteria = [{"id": "AC", "description": "real acceptance", "mandatory": True}]
+    gap = {"task_id": "NEW", "claim_paths": ["src/**"], "acceptance_criteria": criteria,
+           "verify_commands": ["npm test"], "source_refs": ["event:gap"]}
+    amended = build_gap_task_map_amend(
+        {"schema_version": "task-map.v1", "tasks": []},
+        gap_tasks=[gap], supersedes_task_map_ref="base.json",
+    )
+    assert amended["tasks"][0]["acceptance"] == ["real acceptance"]
+    assert amended["tasks"][0]["acceptance_criteria"] == criteria
+
+
 def test_gap_amend_preserves_structured_verification_commands() -> None:
     base = {"schema_version": "task-map.v1", "tasks": [{
         "task_id": "OLD", "title": "old", "owner_role": "dev", "wave": 1,
