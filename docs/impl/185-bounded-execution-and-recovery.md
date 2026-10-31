@@ -172,6 +172,9 @@ CLI 契约来自本机 `~/workspace/kimi-code` 的 `commands.ts`、`run-v2-print
    提交重试或延时。实际tmux/PTY探针验证Unicode、换行与单次提交字节完整；这不是模型验收。
 2. `zf artifact read --attempt <id> --required` 在一次CLI调用中读取Kernel声明的全部必需片段，
    每项仍经角色凭证、路径权限和摘要检查，分别记录read ledger，不删除必读正文或放宽完成门禁。
+   当前操作和必读声明的事件扫描可跳过明确无声明的规范 hook 遥测正文；签名、非规范
+   JSON、含必读声明或有歧义的行完整解码。凭证先验证，操作状态、来源摘要和每页回执
+   仍逐次核对；日志轮转时回退完整读取。
    禁止同时传入source/artifact/截断覆盖。briefing推荐批读，保留逐项命令用于失败或输出截断时补读。
 
 改进的CLI/读取安全、tmux、reader实际caller和bounded mock E2E闭包：237 passed；sentinel51 passed。
