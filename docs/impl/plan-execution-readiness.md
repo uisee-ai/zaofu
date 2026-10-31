@@ -86,12 +86,36 @@ Planner/Critic 的[人工审阅方法](../../skills/zf-plan-execution-readiness/
 `execution_spec.shared.human_review` 与 `tasks[].body.human_review`；Task Map
 仍是唯一派发合同。语义完整性由 Agent 评审，不新增 Kernel 业务判断。
 
-Web Plan Preview 提供审批概览、模块规格、验收场景、完整原文四种阅读视图。
+Web Plan Preview 提供审批概览、模块规格、页面与设计、验收场景、待决事项、覆盖审查、
+完整原文和来源原文。左侧导航及模块查找用于按产品阅读；工程上下文按需展开。
+原文提供真实章节索引、正文搜索定位、连续/分页阅读及下载，视图/任务/来源/章节
+保存于当前 Plan 的 URL fragment。手机界面保留相同入口与独立滚动区域。
 只请求当前 Plan 已绑定的 task_map/execution_spec/source_inventory 附件 API；
+覆盖/场景视图按需增加 source_index、coverage_ledger、acceptance_matrix、test_matrix。
 服务端既有路径与 SHA-256 校验继续生效。没有新端口或业务写请求，原文下载保留。
 旧 Plan 可以按任务查看 AC、命令、页面、依赖与待决事项；缺少独立规格/场景明确显示，
 不自动推断字段、生成测试结果或声称需求覆盖。附件错误、未知任务及错 AC 引用可见，
 切换项目/Plan 或关闭 Preview 会取消旧请求，避免迟到数据污染。
+
+模块切换以 Task ID 重建正文，避免静态 Markdown 渲染器保留上一个任务。
+页面支持多个 task_ids，人工场景兼容 name 和同版 source_ids，正式验收矩阵单独显示。
+决定登记从摘要校验通过的 Task Map 读取，通过 `decision_review` 返回内容、读取状态和
+total/pending/blocking/follow_up/resolved/unknown 分类；blocking 是显式阻塞数，
+可与其他分类重叠。原有 `owner_decision_items`、`decision_count` 和审批 action 不变。
+读取失败明确展示，不能拿审批问题列表的零值代表完整登记已关闭。
+
+覆盖审查每页最多 25 条，支持搜索和未分配、待决定、引用缺口、未验证筛选。
+从同版来源链接到 Task、AC、命令及原始证据状态；未读取工件与无效 ID 分别提示。
+只为已绑定附件提供可读链接，未绑定路径显示原始引用，不开放任意文件读取。
+参考图 ID 与设计/实现/视觉验收状态照录；阅读器不生成设计或推断截图位置。
+版本比较需在同一项目内输入另一个 Plan ID，且两者有一致的非空 trace_id 或 pdd_id；
+校验并读取两版已绑定来源/覆盖工件，列出条款增删、正文、状态、Task/AC/命令分配变化。
+比较不涵盖完整规格正文差异或实时执行状态；缺工件、摘要错误和身份不明均显式失败。
+
+采用变更时，先构建 web 静态资源，再重启使用新代码的 Web/API 消费者并刷新浏览器。
+Planner/Critic 新会话须从同步后的 skill 分发副本加载方法；在途会话不会自动获得新方法。
+不需重启已有 workflow 来阅读旧 Plan，也不会因此修订已批准 Plan。
+ls 的已知语义错配及后续受控纠偏见[审阅记录](../records/2026-10-31-ls-plan-coverage-review.md)。
 
 该改进不会改写已接纳 Plan，也不会给旧 Plan 自动补出新生成的业务规格。
 完善既有 Plan 的语义内容仍需受控修订、独立评审及人类审批。规划命令与场景都是
@@ -104,3 +128,8 @@ Web Plan Preview 提供审批概览、模块规格、验收场景、完整原文
 `playwright test --config=playwright.plan-review.config.ts`。该配置仅选择阅读器相关
 浏览器用例，单 worker，断言等待 60 秒/用例 120 秒（含 12,000 行压力样本）属于功能测试启动预算，不是产品
 性能验收指标。fixture 使用隔离临时状态，退出发出 `simulation.done` 并清理。
+
+覆盖引用编辑测试时，将临时 API 的 `ZF_WEB_ACTION_TOKEN` 设为 fixture 使用的
+`plan-agent-fixture-token`；只在该隔离测试服务使用。Docker 将源码与 node_modules
+只读挂载，测试输出设为容器内 `/tmp/zf-prd-review-results`，避免 UID 差异导致写入失败。
+本批验证范围与已复现的基线失败见[验证记录](../records/2026-10-31-prd-reader-validation.md)。
