@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `59924f21 fix: scope task workflow projections to the current generation`
 
 # P2：Task Pipeline 返工仍显示旧 Verify 阶段
 
