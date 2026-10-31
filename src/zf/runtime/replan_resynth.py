@@ -36,6 +36,7 @@ _REPLAN_SEMANTIC_PASSTHROUGH_KEYS = (
     "candidate_base_commit",
     "previous_plan_candidate_refs",
     "required_actions",
+    "orchestrator_decision_ref",
     "orchestration_delta",
     "orchestration_delta_ref",
     "orchestration_delta_digest",
