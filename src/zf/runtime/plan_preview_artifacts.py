@@ -191,7 +191,7 @@ def bind_plan_approval_preview(
         **approval_payload,
         "plan_preview_bundle_ref": str(bundle.get("ref") or ""),
         "plan_preview_bundle_digest": str(bundle.get("sha256") or ""),
-        "plan_content_profile": str(trigger_payload.get("plan_content_profile") or "derived_plan_full"),
+        "plan_content_profile": str(trigger_payload.get("plan_content_profile") or "derived_plan"),
         "authority_refs": list(trigger_payload.get("authority_refs") or []),
     }
 
