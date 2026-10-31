@@ -85,3 +85,28 @@ def test_hook_writer_uses_full_read_for_json_escaped_event_ids(tmp_path, monkeyp
     monkeypatch.setattr(log, 'read_all', lambda: calls.append(True) or read_all())
     assert HookEventWriter(log)._event_by_id(parent.id) == parent
     assert calls == [True]
+
+
+def test_workdir_guard_preserves_write_boundary_without_loading_full_ledger(tmp_path, monkeypatch):
+    from zf.cli import hook_workdir_guard
+
+    state = tmp_path / '.zf'
+    assigned = state / 'workdirs' / 'dev' / 'project'
+    assigned.mkdir(parents=True)
+    log = EventLog(state / 'events.jsonl')
+    writer = EventWriter(log)
+    log.append(ZfEvent(type='codex.hook.post_tool_use', payload={'tool_response': 'x' * 10000}))
+    monkeypatch.setattr(log, 'read_all', lambda: (_ for _ in ()).throw(AssertionError('full read')))
+    monkeypatch.setattr(hook_workdir_guard, 'is_authorized_result_scratch_target', lambda *a, **k: False)
+
+    def check(target):
+        return hook_workdir_guard.evaluate_workdir_write_guard(
+            state_dir=state, project_root=tmp_path, event_type='codex.hook.pre_tool_use',
+            actor='dev', event_payload={'cwd': str(assigned), 'tool_name': 'Write',
+                                        'tool_input': {'file_path': str(target)}},
+            event_log=log, event_writer=writer, causation_id=None,
+            should_check_actor=lambda actor: True, active_task_id_for_actor=lambda *args: '',
+        )
+
+    assert check(assigned / 'inside.py') == 0
+    assert check(tmp_path / 'outside.py') == 2
