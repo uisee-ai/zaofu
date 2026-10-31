@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：`5462925f fix: pin usage observations across plan review replay`
 
 # Critic 延迟派发的用量快照重放
 
