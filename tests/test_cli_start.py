@@ -852,7 +852,7 @@ workflow:
         changed["roles"].append({"name": "verify", "backend": "mock"})
         (project_dir / "zf.yaml").write_text(yaml.dump(changed), encoding="utf-8")
 
-        result = main(["restart", "--dry-run"])
+        result = main(["restart"])
 
         assert result == 1
         captured = capsys.readouterr()

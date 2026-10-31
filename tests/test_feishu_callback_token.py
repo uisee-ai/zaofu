@@ -11,6 +11,7 @@ from zf.cli.feishu import _handle_event_data
 from zf.cli.main import main
 from zf.core.config.project_context import resolve_project_context
 from zf.core.events.log import EventLog
+from zf.core.events.model import ZfEvent
 from zf.integrations.feishu.callback_token import (
     attach_action_token,
     sign_action,
@@ -129,6 +130,9 @@ def _project(tmp_path, monkeypatch, *, require_signed):
     }
     (tmp_path / "zf.yaml").write_text(yaml.dump(config))
     main(["init"])
+    EventLog(tmp_path / ".zf" / "events.jsonl").append(ZfEvent(
+        type="plan.approval.requested", payload={"plan_id": "plan-7"},
+    ))
     return tmp_path
 
 
