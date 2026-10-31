@@ -1,5 +1,7 @@
 """A Critic can report an execution failure without claiming unread evidence."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from tests.test_result_submit import _runtime
@@ -8,6 +10,8 @@ from zf.runtime.artifact_read_ledger import (
 )
 from zf.runtime.call_result_runtime import prepare_call_operation, mark_call_operation_started
 from zf.runtime.orchestrator_fanout import FanoutCoordinationMixin
+from zf.runtime.plan_synth_runtime import PlanSynthRuntimeMixin
+from zf.runtime.stage_failure_replan import _semantic_failure
 from zf.runtime.result_submit import (
     ResultSubmitError,
     SemanticResultSubmitService,
@@ -76,10 +80,18 @@ def test_failed_critic_records_incomplete_input_without_passing(tmp_path, partia
     monkeypatch.setattr(runtime, '_fanout_identity_stale_reason', lambda _: ('', ''), raising=False)
     monkeypatch.setattr(runtime, '_fanout_flow_identity_payload', lambda *a, **k: {}, raising=False)
     monkeypatch.setattr(runtime, '_fanout_aggregate_started', lambda _: True, raising=False)
+    monkeypatch.setattr(runtime, '_finalize_fanout_synth',
+        lambda e: FanoutCoordinationMixin._finalize_fanout_synth(runtime, e), raising=False)
+    monkeypatch.setattr('zf.runtime.call_result_runtime.admit_runtime_call_result', lambda *a, **k:
+        SimpleNamespace(repair_requested=False, status='admitted', admitted=True,
+                        envelope_ref=admitted.payload['envelope_ref'],
+                        control_result_ref=admitted.payload['control_result_ref']))
     monkeypatch.setattr('zf.runtime.research_delivery.settle_research_delivery', lambda *a: None)
-    FanoutCoordinationMixin._finalize_fanout_synth(runtime, canonical)
+    PlanSynthRuntimeMixin._handle_fanout_synth_completed(runtime, canonical)
     events = runtime.event_log.read_all()
-    assert any(e.type == 'prd.plan.failed' for e in events)
+    failed = next(e for e in events if e.type == 'prd.plan.failed')
+    assert failed.payload['failure_class'] == 'reader_execution_failure'
+    assert not _semantic_failure(failed.payload)
     assert not any(e.type == 'task_map.ready' for e in events)
 
 
