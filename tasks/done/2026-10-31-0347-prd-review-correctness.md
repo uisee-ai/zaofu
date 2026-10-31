@@ -1,6 +1,6 @@
 # PRD 审阅正确性与需求责任对账
 
-> 状态: active
+> 状态: done
 
 批准依据：用户已明确授权本批次先建 backlog 后实施，无需再次审批。
 
@@ -19,3 +19,5 @@
 实施验证：相关后端/API/mock E2E 94 passed；Docker Playwright 25 passed；sentinel 51 passed；前端 build/typecheck/unit 通过。
 扩展 dev-verify：858 passed / 1 skipped / 1 failed，失败为基线已复现的 Feishu 无待审请求审批测试，未放宽 gate。
 完整命令、范围与基线复现见 `docs/records/2026-10-31-prd-reader-validation.md`。未修改 ls 冻结 Plan，未部署或重启真实 workflow。
+
+实现提交：`b23a6c92 feat: add product-focused PRD review and traceability`。
