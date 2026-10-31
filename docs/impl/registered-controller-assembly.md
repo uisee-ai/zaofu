@@ -84,10 +84,43 @@ model / lanes 等审核修改属于配置修订，不改写注册包的首次选
 不可变候选开始，保留此前修改。Apply 中断后，同一 review 仅继续它已产生的下一 revision；
 不会再递增 Request，也不会自动应用配置或启动 Run。新的候选仍需精确配置批准和启动批准。
 
+Preview 同时暴露实际编译角色的 `config.<document>.roles.<name>.model` 与
+`model_reasoning_effort`。一个审核补丁可分别设置 Planner、Impl、Verify/Judge。
+对于 Flow 生成的角色，编译器会跳过同名手写角色，因此受控补丁物化该角色原有的技能、
+权限、事件及生命周期后，仅改变指定模型字段；不允许通过此入口添加角色或改拓扑。
+`tests/test_workflow_review_roles.py` 对比整个编译角色合同与工作流，防止模型调整丢失行为。
+
 ## 验证
 
 人工 Plan 审批策略、独立 Candidate Verify 宽度，以及运行中的 owner Requirement 修订，
 见 [V5 保真与验证约束](v5-fidelity-owner-revision-and-verification.md)。
+
+### Git 基线与准备恢复
+
+声明 `metadata.zaofu.catalog.assembly: project-bound-v1` 的项目在调用选路模型前
+检查 Git 仓库、命名分支与有效 HEAD；注册控制器装配再次检查。无 Git 的只读路线
+不因共享入口而被强加提交要求。Git 确定性缺项会终止当前准备尝试，并给出修复动作，
+不会重复消费模型或盲重试三次。
+
+非空项目保留原文件。`zf project git-baseline --root ROOT --paths-file FILES.json
+--exclude dataset` 只预览显式源文件清单，输出文件内容摘要、分支、忽略项与清单摘要。
+文件选择由项目指令和 agent 判断；受控 `project-git-baseline` action 或
+`zf project git-baseline --root ROOT --apply --manifest MANIFEST.json` 执行批准的清单。
+它自动排除配置中的 state_dir，拒绝陈旧摘要、越界、符号链接、凭据和已有暂存内容，
+使用独立 index 且只提交批准路径。同一基线重复执行不产生第二次提交，不启动 Run。
+
+`zf workflow prepare --request ID --retry-failed` 为失败准备创建新的 operation；新尝试
+引用旧尝试，只有相同 Request revision / Requirement digest 的 failed/blocked 绑定可被
+替换。旧失败保留在事件账本，已经准入的语义结果在当前 catalog 和能力检查后重新绑定；
+不伪造需求修订。重复点击复用当前尝试。配置审批与启动审批不因恢复而省略。
+
+Web 列表、详情和 CLI 共用 preparation 投影：`preparation_blocked`、
+`preparation_failed`、`synthesis_queued`、`synthesis_running` 与真正 `proposed`
+分开显示；失败原因进入 blockers，排队反馈不宣称 YAML 已准备完成。
+
+- `tests/test_project_git_baseline.py`：真实 CLI/受控 action、精确提交与拒绝路径。
+- `tests/test_workflow_prepare_recovery.py`：非空无 Git 项目、准入后装配失败、基线恢复、
+  同 Request 新尝试和一次模型调用的真实提案装配回归。
 
 - `tests/test_workflow_review_controller.py`：注册控制器 model / lanes 修订、连续修改、旧补丁与篡改拒绝、中断重试及配置批准边界。
 - `tests/test_workflow_registered_controller.py`：真实合成/提案/配置 Apply 代码路径，能力隔离、

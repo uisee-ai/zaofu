@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **304** addressable command paths.
+The parser currently exposes **69** top-level families and **305** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -512,6 +512,7 @@ Project-scoped review and insight commands
 | Command | Parser description |
 |---|---|
 | `zf project` | Project-scoped review and insight commands |
+| `zf project git-baseline` | Preview or apply an exact initial Git file manifest |
 | `zf project init` | Initialize a project container for issue/prd/refactor workflow intake |
 | `zf project review-spine` | Review project design/delivery/runtime spine |
 | `zf project review-spine propose` | Create a pending proposal from a spine review corrective action |

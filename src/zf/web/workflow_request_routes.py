@@ -30,6 +30,8 @@ from zf.runtime.workflow_intake import build_flow_intake
 from zf.web.projections.request_util import _request_json
 from zf.web.projections.workflow_yaml import project_workflow_yaml
 from zf.web.projections.workspace import _resolve_api_project
+from zf.runtime.workflow_git_readiness import preparation_git_diagnostics
+from zf.runtime.workflow_preparation_view import preparation_view
 
 
 def workflow_request_strings(value: object) -> list[str]:
@@ -415,6 +417,9 @@ def build_workflow_request_router(
             "queue_position": int(admission.get("queue_position") or 0),
             "run_admission": admission,
         }
+        preparation = preparation_view(effective_result, operation,
+                                       git_blockers=preparation_git_diagnostics(context.project_root))
+        effective_result["status"] = preparation["status"]
         body = redact_obj({
             "ok": True,
             "status": effective_result.get("status"),
@@ -424,6 +429,7 @@ def build_workflow_request_router(
             "artifacts": artifacts,
             "lifecycle": lifecycle,
             "operation": operation,
+            "preparation": preparation,
             "links": {
                 "intake_ref": str(
                     manifest.get("intake_json_ref")
@@ -458,6 +464,7 @@ def build_workflow_request_router(
         from zf.runtime.run_admission import build_run_admission_projection, request_admission_view
 
         admission_projection = build_run_admission_projection(events)
+        git_blockers = preparation_git_diagnostics(context.project_root)
         items: list[dict[str, Any]] = []
         for path in root.glob("*.json") if root.exists() else ():
             try:
@@ -481,10 +488,15 @@ def build_workflow_request_router(
                     config=context.config,
                     events=events,
                 )
+                projected = {**value, "status": _request_status(value, admission, operation),
+                             "run_id": str(admission.get("run_id") or value.get("run_id") or "")}
+                preparation = preparation_view(projected, operation,
+                                               git_blockers=git_blockers)
                 items.append({
                     **value,
                     "task_id": project_request_task_id(context.state_dir, value),
-                    "status": _request_status(value, admission, operation),
+                    "status": preparation["status"],
+                    "preparation": preparation,
                     "run_id": str(
                         admission.get("run_id")
                         or value.get("run_id")
@@ -640,7 +652,7 @@ def build_workflow_request_router(
             except ValueError as exc:
                 return JSONResponse({"ok": False, "status": "preparation_blocked", "reason": str(exc)}, status_code=409)
             if prepared is not None:
-                return JSONResponse({**prepared, "result": prepared}, status_code=202)
+                return JSONResponse({**prepared, "result": prepared}, status_code=202 if prepared.get("ok") else 409)
         synthesis_ref = (
             dict(current.get("synthesis_ref"))
             if isinstance(current.get("synthesis_ref"), dict)

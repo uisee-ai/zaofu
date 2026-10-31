@@ -339,8 +339,9 @@ def _git_delivery_baseline_diagnostics(
         project_root,
     ) or project_root
     delivery_git_root = _target_git_root(target_root, project_root)
-    if delivery_git_root is None:
-        return []
+    from zf.runtime.workflow_git_readiness import git_baseline_diagnostics
+    if blockers := git_baseline_diagnostics(delivery_git_root or target_root):
+        return blockers
     try:
         target_pathspec = os.path.relpath(target_root, delivery_git_root)
     except ValueError:

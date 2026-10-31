@@ -28,6 +28,9 @@ KNOWN_STOP_REASONS = frozenset({
 
 def classify_provider_stop(payload: dict[str, Any] | None = None, *, status: str = "") -> str:
     data = payload or {}
+    error = data.get("error")
+    if isinstance(error, dict) and error.get("codex_error_info") == "cyber_policy":
+        return "provider_policy_rejected"
     text = " ".join(
         str(value)
         for value in (
@@ -68,3 +71,21 @@ def classify_provider_stop(payload: dict[str, Any] | None = None, *, status: str
     if data.get("terminal_event"):
         return "completed_with_terminal_event"
     return "completed_without_terminal_event"
+
+
+def provider_stop_action(reason: str) -> str:
+    """Map provider-stop facts to the existing deterministic recovery routes."""
+    if reason in {
+        "auth_error", "hook_review_required", "tool_permission_blocked",
+        "provider_policy_rejected",
+    }:
+        return "suspend"
+    if reason == "rate_limited":
+        return "cooldown"
+    if reason == "context_limit":
+        return "recycle"
+    if reason in {
+        "completed_without_terminal_event", "pending_todos", "timeout", "transport_error",
+    }:
+        return "requeue"
+    return "observe"

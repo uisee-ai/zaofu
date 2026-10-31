@@ -80,7 +80,7 @@ from zf.runtime.provider_operation_stop import (
     emit_provider_stop_recovery,
     recover_provider_stopped_operation,
 )
-from zf.runtime.provider_stop import classify_provider_stop
+from zf.runtime.provider_stop import classify_provider_stop, provider_stop_action
 from zf.runtime.rework_triage import ReworkTriageResult
 from zf.runtime.task_map import (
     build_task_map_from_ingest_plan,
@@ -149,7 +149,7 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
     ("codex.hook.pre_tool_use", "_on_codex_hook_pre_tool_use"),
     ("codex.hook.post_tool_use", "_on_codex_hook_post_tool_use"),
     ("codex.hook.stop", "_on_codex_hook_stop"),
-    ("provider.turn.closed", "_on_codex_hook_session_start"),
+    ("provider.turn.closed", "_on_provider_turn_closed"),
     ("worker.completed", "_on_worker_completed"),
     ("agent.api_blocked", "_on_agent_api_blocked"),
     ("agent.timeout", "_on_agent_timeout"),
@@ -4774,6 +4774,14 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         """
         return None
 
+    def _on_provider_turn_closed(
+        self, event: ZfEvent,
+    ) -> WorkflowRuntimeDecision | None:
+        from zf.runtime.provider_turn_error import bind_failed_task_pipeline_turn
+
+        bound = bind_failed_task_pipeline_turn(self, event)
+        return self._recover_provider_stop(bound) if bound is not None else None
+
     def _on_codex_hook_session_start(
         self, event: ZfEvent,
     ) -> WorkflowRuntimeDecision | None:
@@ -5045,23 +5053,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
             )
         return None
 
-    @staticmethod
-    def _provider_stop_action(reason: str) -> str:
-        if reason in {"auth_error", "hook_review_required", "tool_permission_blocked"}:
-            return "suspend"
-        if reason == "rate_limited":
-            return "cooldown"
-        if reason == "context_limit":
-            return "recycle"
-        if reason in {
-            "completed_without_terminal_event",
-            "pending_todos",
-            "timeout",
-            "provider_policy_rejected",
-            "transport_error",
-        }:
-            return "requeue"
-        return "observe"
+    _provider_stop_action = staticmethod(provider_stop_action)
 
     def _emit_goal_limited_status(
         self,

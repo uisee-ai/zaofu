@@ -552,7 +552,7 @@ class WorkflowRequestActionsMixin:
                 requested_action=requested_action, task_id=payload.get("task_id"),
                 reason=str(exc), status_code=409, status="synthesis_enqueue_failed")
         if prepared is not None:
-            return {"_status_code": 202, "action": action, "requested_action": requested_action,
+            return {"_status_code": 202 if prepared.get("ok") else 409, "action": action, "requested_action": requested_action,
                     "origin_binding": dict(request_projection.get("origin_binding") or {}),
                     "workflow_input_manifest_ref": str(intake["workflow_input_manifest_ref"]),
                     **prepared}

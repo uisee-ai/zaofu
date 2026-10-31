@@ -23,6 +23,36 @@ ALLOWED_FLOW_FAMILIES = frozenset({
     "RefactorFlow",
     "Workflow",
 })
+RESULT_KEYS = frozenset({
+    "schema_version",
+    "request_id",
+    "request_revision",
+    "requirement_ref",
+    "requirement_digest",
+    "selected_flow_family",
+    "short_flow_spec",
+    "decision_rationale",
+    "assumptions",
+    "open_questions",
+    "requested_roles",
+    "requested_skills",
+    "requested_profiles",
+    "completion_profile",
+    "risk_hints",
+})
+FLOW_SPEC_KEYS = frozenset({
+    "flow_family",
+    "intent",
+    "parameters",
+    "purpose",
+    "template",
+})
+COMPLETION_KEYS = frozenset({
+    "id",
+    "delivery_policy",
+    "completion_threshold",
+    "required_artifacts",
+})
 
 
 def admission_catalog(config: Any, project_root: Path) -> dict[str, Any]:
@@ -168,6 +198,9 @@ def safe_component(value: str) -> str:
 
 __all__ = [
     "ALLOWED_FLOW_FAMILIES",
+    "COMPLETION_KEYS",
+    "FLOW_SPEC_KEYS",
+    "RESULT_KEYS",
     "WORKFLOW_SYNTHESIS_RESULT_SCHEMA",
     "admission_catalog",
     "normalized_strings",

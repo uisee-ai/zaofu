@@ -73,6 +73,7 @@ from zf.runtime.control_actions_emit import ActionEmitMixin
 from zf.runtime.control_actions_evolution import EvolutionActionsMixin
 from zf.runtime.control_actions_execution_route import ExecutionRouteActionsMixin
 from zf.runtime.control_actions_extension_router import dispatch_extension_action
+from zf.runtime.control_actions_project_git import ProjectGitActionsMixin
 from zf.runtime.operator_inbox_guard import execute_inbox_replan
 from zf.runtime.channel_profile_registration import ChannelProfileRegistrationActionsMixin
 from zf.runtime.control_actions_workflow_resume import WorkflowResumeActionsMixin
@@ -113,6 +114,7 @@ from zf.runtime.control_actions_helpers import (  # noqa: F401 — re-export mov
 
 
 class ControlledActionService(
+    ProjectGitActionsMixin,
     ProposalExecutionActionsMixin,
     ChannelProfileRegistrationActionsMixin,
     ChannelConsensusActionsMixin,

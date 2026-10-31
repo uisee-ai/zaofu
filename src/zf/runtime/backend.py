@@ -338,6 +338,13 @@ class CodexAdapter(BackendAdapter):
                 "--config",
                 f'model_reasoning_effort="{session_effort}"',
             ])
+        # Native auto-compaction can run during a turn; the harness /compact
+        # action requires idle. Budget it before the hard-cap recycle without
+        # overriding Codex's model-reported context window.
+        compact_tokens = max(
+            1, int(role.context_window_tokens * role.context_compact_threshold),
+        )
+        cmd.extend(["-c", f"model_auto_compact_token_limit={compact_tokens}"])
         if (
             provider_session is not None
             and provider_session.max_parallel_agents is not None
