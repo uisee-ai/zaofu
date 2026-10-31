@@ -67,3 +67,7 @@ PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧
 权威 `run.goal.completed` 已携带交付结果；Run Manager 不再为其补发旧式
 `run.completed`（`not_shipped/not_requested`）记录。旧式 Judge 完成但未开启自动
 交付的兼容路径保持原行为，避免用全局 auto-ship 开关覆盖 Goal 的实际交付事实。
+
+运行脊柱只读投影在 `run.goal.blocked` 后收到同一 Run 的 `run.goal.updated`
+且状态为 `active` 或 `running` 时，显示恢复执行并清除旧终态提示；已完成的 Run
+不会因此重新打开。投影版本升级后从事件账本重建一次，随后继续按游标增量消费。
