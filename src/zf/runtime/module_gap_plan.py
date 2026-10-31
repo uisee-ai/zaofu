@@ -433,6 +433,7 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
     ).strip()
     claim_paths = _claim_paths(raw)
     acceptance = _acceptance(raw)
+    criteria = raw.get("acceptance_criteria") or raw.get("acceptance")
     verification = _verification(raw)
     verification_read_paths = _string_list(raw.get("verification_read_paths"))
     source_refs = _string_list(raw.get("source_refs"))
@@ -477,7 +478,7 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
             or "Goal gap claim paths generated from verifier source_refs."
         ),
         "acceptance": acceptance,
-        "acceptance_criteria": acceptance,
+        "acceptance_criteria": deepcopy(criteria) if isinstance(criteria, list) else acceptance,
         "verification": verification,
         "verify_commands": verification,
         "verification_read_paths": verification_read_paths,
@@ -561,6 +562,15 @@ def _inherit_replacement_mechanical_identity(
                 *_string_list(parent.get("exclusive_files")),
                 *_string_list(parent.get("shared_files")),
             ]))
+    elif len(superseded) == 1:
+        # The producer may restate an unchanged predecessor command while
+        # omitting its already-approved rolling-smoke marker.
+        from zf.runtime.gap_replacement_validation import inherit_unchanged_smoke_marker
+
+        item["validation"] = inherit_unchanged_smoke_marker(
+            item["validation"], parent.get("validation"), inherited_task_id,
+            _task_id(item),
+        )
     return item
 
 
@@ -896,7 +906,14 @@ def _claim_paths(raw: dict[str, Any]) -> list[str]:
 
 
 def _acceptance(raw: dict[str, Any]) -> list[str]:
-    return _string_list(raw.get("acceptance") or raw.get("acceptance_criteria"))
+    values = raw.get("acceptance") or raw.get("acceptance_criteria")
+    if not isinstance(values, list):
+        return _string_list(values)
+    return _string_list([
+        item.get("statement") or item.get("text") or item.get("criterion") or item.get("title") or ""
+        if isinstance(item, dict) else item
+        for item in values
+    ])
 
 
 def _verification(raw: dict[str, Any]) -> list[str]:

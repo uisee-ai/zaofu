@@ -433,6 +433,11 @@ class WorkflowPreviewReview:
             path = self._candidate_config(ctx, changes)
             try:
                 compiled = load_config(path)
+                from zf.runtime.workflow_approval_requirements import enforce_approval_requirements
+                try:
+                    enforce_approval_requirements(compiled, ctx["proposal"].get("run_parameters") or {})
+                except ValueError as exc:
+                    raise PreviewReviewError("approval_requirement_conflict", str(exc), 422) from exc
                 if any(key in field for field in fields for key in (".roleSkillBundles.", ".role_skill_bundles.")) and (
                     {role.name: list(role.skills) for role in compiled.roles} == ctx["compiled_role_skills"]
                 ):

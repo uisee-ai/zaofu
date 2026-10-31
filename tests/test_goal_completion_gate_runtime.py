@@ -136,8 +136,9 @@ def test_orchestrator_records_blocked_claim_without_completing(tmp_path: Path) -
     assert "run.goal.completed" not in types
 
 
+@pytest.mark.parametrize("pipeline_retry", [False, True])
 def test_orchestrator_reuses_blocked_claim_after_verify_closes_feedback(
-    tmp_path: Path,
+    tmp_path: Path, pipeline_retry: bool,
 ) -> None:
     orchestrator, log = _orchestrator(tmp_path)
     target = "a" * 40
@@ -155,6 +156,7 @@ def test_orchestrator_reuses_blocked_claim_after_verify_closes_feedback(
             "task_id": "T-1",
             "dispatch_id": "dispatch-1",
             "finding_ids": ["finding-1"],
+            "task_map_generation": "gen-1",
         },
     )
     log.append(rework)
@@ -169,13 +171,16 @@ def test_orchestrator_reuses_blocked_claim_after_verify_closes_feedback(
     log.append(ZfEvent(
         type="task.dispatched",
         task_id="T-1",
-        causation_id=rework.id,
+        causation_id="plan-trigger" if pipeline_retry else rework.id,
         correlation_id="R-RESUME",
         payload={
             "workflow_run_id": "R-RESUME",
             "task_id": "T-1",
             "dispatch_id": "dispatch-1",
-            "rework_request_event_id": rework.id,
+            "task_map_generation": "gen-1",
+            **({"task_pipeline_stage": "impl",
+                "rework_feedback": [{"blocking_event_id": rework.id}]}
+               if pipeline_retry else {"rework_request_event_id": rework.id}),
         },
     ))
     log.append(ZfEvent(

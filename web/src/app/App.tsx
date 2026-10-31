@@ -1111,7 +1111,8 @@ export function App() {
     }
     if (page === "channels") params.set("channel", selectedChannelId);
     if (selectedTaskId && (page !== "board" || taskDrawerOpen)) params.set("task", selectedTaskId);
-    window.history.replaceState(null, "", `?${params.toString()}`);
+    const planLocation = page === "inbox" && params.has("plan") ? window.location.hash : "";
+    window.history.replaceState(null, "", `?${params.toString()}${planLocation}`);
   }, [activeProjectId, page, selectedChannelId, selectedTaskId, statusFilter, taskDrawerOpen, viewMode]);
 
   useEffect(() => {

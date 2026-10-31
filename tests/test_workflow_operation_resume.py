@@ -548,12 +548,15 @@ def test_legacy_cancelled_restart_operation_gets_bounded_redrive(
 
 def _seed_budget_blocked_task_pipeline_operation(
     tmp_path: Path,
+    *,
+    dimension: str = "tokens",
 ) -> tuple[Path, EventLog, str]:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
     log = EventLog(state_dir / "events.jsonl")
     writer = EventWriter(log)
+    writer.append(ZfEvent(type="run.goal.started", actor="operator", correlation_id="run-budget-1", payload={"run_id": "run-budget-1"}))
     service = WorkflowOperationService(
         state_dir=state_dir,
         event_log=log,
@@ -566,6 +569,7 @@ def _seed_budget_blocked_task_pipeline_operation(
         request={
             "task_pipeline_stage": "impl",
             "operation_generation": 1,
+            "operation_limits": {"max_usage_samples": 60, "cost_budget_usd": 8},
         },
         task_id="TASK-BUDGET",
     )
@@ -586,8 +590,8 @@ def _seed_budget_blocked_task_pipeline_operation(
             "scope": "operation",
             "scope_id": "op-budget-impl",
             "workflow_run_id": "run-budget-1",
-            "exceeded_dimensions": ["tokens"],
-            "measurement": {"total_tokens": 120},
+            "exceeded_dimensions": [dimension],
+            "measurement": {"total_tokens": 120, "usage_samples": 60},
         },
     ))
     service.block(
@@ -595,16 +599,78 @@ def _seed_budget_blocked_task_pipeline_operation(
         request_hash=ensured.request_hash,
         workflow_run_id="run-budget-1",
         task_id="TASK-BUDGET",
-        reason="workflow_budget_exceeded:tokens",
+        reason=f"workflow_budget_exceeded:{dimension}",
         causation_id=exceeded.id,
         correlation_id="run-budget-1",
         details={
             "budget_scope": "operation",
             "budget_scope_id": "op-budget-impl",
-            "exceeded_dimensions": ["tokens"],
+            "exceeded_dimensions": [dimension],
         },
     )
     return state_dir, log, ensured.request_hash
+
+
+@pytest.mark.parametrize("amended_limit", [0, 120])
+def test_sample_budget_amendment_is_scoped_and_enforced_after_redrive(tmp_path, monkeypatch, amended_limit):
+    from argparse import Namespace
+    from zf.cli.goal import _run_set
+    from zf.runtime.workflow_budget_guard import _operation_limits, _exceeded_dimensions
+
+    state_dir, log, _ = _seed_budget_blocked_task_pipeline_operation(tmp_path, dimension="usage_samples")
+    monkeypatch.setattr("zf.cli.goal._context", lambda _args: Namespace(state_dir=state_dir, config=_config()))
+    args = Namespace(objective="", status="active", reason="owner approved", state_dir=None,
+                     operation="op-budget-impl", operation_max_usage_samples=60)
+    assert _run_set(args) == 1
+    assert build_workflow_resume_projection(state_dir, _config())["operation_checkpoints"] == []
+    args.operation_max_usage_samples = -1
+    assert _run_set(args) == 2
+    args.operation = "other-operation"
+    args.operation_max_usage_samples = amended_limit
+    assert _run_set(args) == 1
+    args.operation = "op-budget-impl"
+    args.operation_max_usage_samples = amended_limit
+    assert _run_set(args) == 0
+    before_redrive = log.read_all()
+    blocked_operation = reduce_workflow_operations(before_redrive)["op-budget-impl"]
+    assert _operation_limits(state_dir, blocked_operation, events=before_redrive)["max_usage_samples"] == 60
+    checkpoint = build_workflow_resume_projection(state_dir, _config())["operation_checkpoints"][0]
+    assert checkpoint["safe_resume_action"] == "redrive_budget_amended_task_pipeline_operation"
+    assert apply_workflow_resume(state_dir, _config(), checkpoint_id=checkpoint["checkpoint_id"])["applied"] == 1
+    events = log.read_all()
+    operation = reduce_workflow_operations(events)["op-budget-impl"]
+    limits = _operation_limits(state_dir, operation, events=events)
+    assert limits["max_usage_samples"] == amended_limit
+    assert limits["cost_budget_usd"] == 8
+    assert "usage_samples" not in _exceeded_dimensions(limits, {"meter_available": True, "usage_samples": 119})
+    if amended_limit:
+        assert "usage_samples" in _exceeded_dimensions(limits, {"meter_available": True, "usage_samples": 120})
+    else:
+        assert "usage_samples" not in _exceeded_dimensions(limits, {"meter_available": True, "usage_samples": 10000})
+
+
+def test_sample_amendment_can_cover_only_the_current_run(tmp_path, monkeypatch):
+    from argparse import Namespace
+    from zf.cli.goal import _run_set
+    from zf.runtime.workflow_budget_guard import _operation_limits
+
+    state_dir, log, _ = _seed_budget_blocked_task_pipeline_operation(tmp_path, dimension="usage_samples")
+    monkeypatch.setattr("zf.cli.goal._context", lambda _args: Namespace(state_dir=state_dir, config=_config()))
+    args = Namespace(objective="", status="active", reason="owner disabled sample cap", state_dir=None,
+                     operation="op-budget-impl", operation_max_usage_samples=0, all_run_operations=True)
+    assert _run_set(args) == 0
+    checkpoint = build_workflow_resume_projection(state_dir, _config())["operation_checkpoints"][0]
+    assert apply_workflow_resume(state_dir, _config(), checkpoint_id=checkpoint["checkpoint_id"])["applied"] == 1
+    service = WorkflowOperationService(state_dir=state_dir, event_log=log, event_writer=EventWriter(log))
+    for run_id, operation_id in [("run-budget-1", "op-same-run"), ("run-other", "op-other-run")]:
+        service.ensure_operation(workflow_run_id=run_id, operation_id=operation_id,
+                                 operation_type="task-stage", task_id="another-task",
+                                 request={"operation_limits": {"max_usage_samples": 60, "cost_budget_usd": 8}})
+    events = log.read_all()
+    operations = reduce_workflow_operations(events)
+    assert _operation_limits(state_dir, operations["op-same-run"], events=events)["max_usage_samples"] == 0
+    assert _operation_limits(state_dir, operations["op-other-run"], events=events)["max_usage_samples"] == 60
+    assert _operation_limits(state_dir, operations["op-same-run"], events=events)["cost_budget_usd"] == 8
 
 
 def test_budget_blocked_task_pipeline_redrives_after_owner_amendment(

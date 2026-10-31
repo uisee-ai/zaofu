@@ -15,6 +15,7 @@ from zf.runtime.workflow_registered_controller import CONTROLLER_PARAMETERS
 
 
 FLOW_PARAMETER_KEYS = CONTROLLER_PARAMETERS | frozenset({
+    "approval_requirements",
     "artifact_kind",
     "artifact_name",
     "collector_roles",
@@ -38,6 +39,7 @@ _GENERIC_PARAMETER_KEYS = frozenset({
     "verifier_role",
 })
 _CONTROLLER_PARAMETER_KEYS = CONTROLLER_PARAMETERS | frozenset({
+    "approval_requirements",
     "lanes",
     "strictness",
     "pattern_id",

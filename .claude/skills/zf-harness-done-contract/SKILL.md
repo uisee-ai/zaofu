@@ -63,6 +63,12 @@ Before submitting the completion claim:
 
 ## Evidence Quality
 
+本片合同包含运行/部署交付时，提交同版指南：精确准备/启动/就绪命令、配置与测试
+身份取得、初始化、关联 AC/command 的旅程及自有资源清理。恢复验证按合同要求。
+不嵌入秘密；自检收据与独立 Verify 分开。后继不能依赖私聊或未声明的本机准备。
+库和文档任务按实际入口交付，不默认增加 Compose；指南属于其他任务时保留其
+owner 与依赖，不跨越写入范围代做。
+
 The handoff must make these facts recoverable without replaying chat:
 
 - what changed or what artifact was produced;

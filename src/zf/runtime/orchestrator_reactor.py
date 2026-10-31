@@ -4547,9 +4547,6 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
             decision = decide_promotion(
                 task_id=task.id,
                 spec_ref=spec_ref,
-                has_acceptance_evidence=bool(
-                    getattr(contract, "verification_tiers", []) or []
-                ),
             )
             self.event_writer.append(ZfEvent(
                 type=decision.event_type,
@@ -4560,6 +4557,8 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
                     "spec_ref": decision.spec_ref,
                     "source_event_id": event.id,
                 },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
             ))
         except Exception:
             pass

@@ -42,6 +42,7 @@ def assembly(tmp_path):
     result["short_flow_spec"]["parameters"] = {
         "controller_id": CONTROLLER, "controller_digest": entry["digest"],
         "verification_commands": ["python -m unittest discover -s tests -v"],
+        "approval_requirements": {"plan": "not_requested", "source_quotes": []},
     }
     result["requested_profiles"] = ["bounded-direct-v1"]
     result["completion_profile"] = entry["completion_profile"]

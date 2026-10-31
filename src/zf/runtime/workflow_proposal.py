@@ -174,7 +174,8 @@ def build_workflow_proposal(
         candidate_path = generated_path
     if not candidate_path.is_file():
         raise WorkflowProposalError("workflow proposal config input is missing")
-    config = load_config(candidate_path)
+    from zf.runtime.workflow_approval_requirements import load_approval_bound_config
+    config = load_approval_bound_config(candidate_path, short_spec.get("parameters") or {})
     from zf.runtime.workflow_graph_snapshot import compile_proposal_graph
     rendered = redact_config(renderable_config_to_primitive(config))
     source_docs = _flow_documents(candidate_path)

@@ -573,8 +573,11 @@ def validate_shared_action_payload(
         if stage is None:
             return f"execution pattern {pattern_id!r} is not declared in zf.yaml"
     if action == "stage-replan-new-generation":
-        if not _required_text(payload, "escalation_event_id"):
+        repaired_failure = _required_text(payload, "repaired_failure_event_id")
+        if not repaired_failure and not _required_text(payload, "escalation_event_id"):
             return "escalation_event_id is required"
+        if repaired_failure and not _required_text(payload, "reason"):
+            return "reader repair reason is required"
         if not _required_text(payload, "approval_ref"):
             return "approval_ref is required"
     if action == "research-start":

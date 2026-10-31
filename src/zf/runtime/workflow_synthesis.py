@@ -14,6 +14,9 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_request_routing import synthesis_request_is_ready
 from zf.runtime.workflow_synthesis_support import (
     ALLOWED_FLOW_FAMILIES,
+    COMPLETION_KEYS as _COMPLETION_KEYS,
+    FLOW_SPEC_KEYS as _FLOW_SPEC_KEYS,
+    RESULT_KEYS as _RESULT_KEYS,
     WORKFLOW_SYNTHESIS_RESULT_SCHEMA,
     admission_catalog as _admission_catalog,
     admission_contract,
@@ -43,36 +46,6 @@ from zf.runtime.workflow_requests import (
 
 WORKFLOW_SYNTHESIS_OPERATION_TYPE = "workflow_synthesis"
 WORKFLOW_SYNTHESIS_PROPOSAL_RETRY_LIMIT = 3
-_RESULT_KEYS = frozenset({
-    "schema_version",
-    "request_id",
-    "request_revision",
-    "requirement_ref",
-    "requirement_digest",
-    "selected_flow_family",
-    "short_flow_spec",
-    "decision_rationale",
-    "assumptions",
-    "open_questions",
-    "requested_roles",
-    "requested_skills",
-    "requested_profiles",
-    "completion_profile",
-    "risk_hints",
-})
-_FLOW_SPEC_KEYS = frozenset({
-    "flow_family",
-    "intent",
-    "parameters",
-    "purpose",
-    "template",
-})
-_COMPLETION_KEYS = frozenset({
-    "id",
-    "delivery_policy",
-    "completion_threshold",
-    "required_artifacts",
-})
 
 
 class WorkflowSynthesisError(ValueError):
@@ -836,6 +809,9 @@ def _admit_result(
     from zf.runtime.workflow_registered_controller import admit_capabilities
     try:
         admit_capabilities(parameters, flow_family, catalog, requested_roles, requested_skills, requested_profiles)
+        from zf.runtime.workflow_approval_requirements import validate_approval_requirements
+        validate_approval_requirements(parameters, hydrate_workflow_requirement(state_dir, dict(request)),
+                                       required=bool(parameters.get("controller_id")))
     except ValueError as exc:
         raise WorkflowSynthesisError(str(exc)) from exc
     completion = result.get("completion_profile") or {}

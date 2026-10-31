@@ -272,6 +272,20 @@ class RecoveryActionsMixin:
     def _stage_replan_new_generation_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        if payload.get("repaired_failure_event_id"):
+            from zf.core.state.locks import locked_path
+            from zf.runtime.reader_stage_recovery import repaired_reader_stage_trigger
+            with locked_path(self.state_dir / "locks" / "reader-stage-recovery"):
+                try:
+                    trigger = repaired_reader_stage_trigger(
+                        self.state_dir, self.config, self.writer.event_log.read_all(), payload, requested)
+                except ValueError as exc:
+                    return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+                emitted = self.writer.append(trigger)
+                return self._recovery_ok(requested, emitted, action, requested_action, {
+                    "stage_trigger_event_id": emitted.id,
+                    "repaired_failure_event_id": payload["repaired_failure_event_id"],
+                })
         escalation_event_id = str(
             payload.get("escalation_event_id") or ""
         ).strip()

@@ -200,10 +200,59 @@ def test_manual_external_gate_preempts_auto_resume_and_diagnosis() -> None:
     assert actions[0]["checkpoint_id"] == "manual-gate"
 
 
+def test_cross_task_superseded_replan_is_redriven_once() -> None:
+    blocked = ZfEvent(id="failed-a", type="dev.blocked", task_id="A")
+    triage = ZfEvent(id="triage-a", type="task.rework.triage.completed", task_id="A",
+                     payload={"recommended_action": "request_replan", "retryable": False,
+                              "failed_event_id": "failed-a"})
+    events = [blocked, triage]
+    original = pending_immediate_replan_actions(events)[0]
+    events.extend([
+        ZfEvent(type="run.manager.action.applied", payload={"checkpoint_id": original["checkpoint_id"]}),
+        ZfEvent(id="request-a", type="flow.discovery.requested", payload={
+            "schema_version": "semantic-replan-request.v1", "task_id": "A", "rework_of": "failed-a",
+            "handoff_kind": "task_base_recovery", "workflow_run_id": "run-1"}),
+        ZfEvent(type="fanout.started", payload={"fanout_id": "fanout-a", "trigger_event_id": "request-a"}),
+        ZfEvent(id="request-b", type="flow.discovery.requested", payload={
+            "schema_version": "semantic-replan-request.v1", "task_id": "B",
+            "handoff_kind": "task_base_recovery", "workflow_run_id": "run-1"}),
+        ZfEvent(type="fanout.started", payload={"fanout_id": "fanout-b", "trigger_event_id": "request-b"}),
+        ZfEvent(id="cancel-a", type="fanout.cancelled", payload={
+            "fanout_id": "fanout-a", "superseded_by": "fanout-b", "reason": "superseded_by_latest_fanout"}),
+    ])
+    redrive = pending_immediate_replan_actions(events)
+    assert len(redrive) == 1
+    assert redrive[0]["checkpoint_id"] != original["checkpoint_id"]
+    assert redrive[0]["request_id"] != original["request_id"]
+    assert "cancel-a" in redrive[0]["source_event_ids"]
+    events.append(ZfEvent(type="run.manager.action.applied", payload={"checkpoint_id": redrive[0]["checkpoint_id"]}))
+    assert pending_immediate_replan_actions(events) == []
+
+    events.pop()
+    events[-3].payload["workflow_run_id"] = "other-run"
+    assert pending_immediate_replan_actions(events) == []
+    events[-3].payload["workflow_run_id"] = "run-1"
+    events.append(ZfEvent(type="task.done", task_id="A"))
+    assert pending_immediate_replan_actions(events) == []
+    events.pop()
+    events[-3].payload["task_id"] = "A"
+    assert pending_immediate_replan_actions(events) == []
+
+
 def test_first_unsatisfiable_contract_routes_to_semantic_replan(
     tmp_path: Path,
 ) -> None:
+    from zf.runtime.run_contract import write_run_contract
+    from zf.runtime.sidecar_refs import write_sidecar_json
+
     state_dir, log, writer = _state(tmp_path)
+    proposal = write_sidecar_json(
+        state_dir, "artifacts/proposal.json",
+        {"request_id": "sim-run", "requirement_spec_ref": "requirements/r3.json",
+         "requirement_spec_digest": "d" * 64},
+        kind="workflow_proposal", schema_version="workflow-proposal.v1", created_by="test",
+    )
+    write_run_contract(state_dir, {"workflow": {"proposal_ref": proposal}})
     store = TaskStore(state_dir / "kanban.json")
     store.add(Task(
         id="TASK-ASSEMBLY",
@@ -213,6 +262,7 @@ def test_first_unsatisfiable_contract_routes_to_semantic_replan(
         contract=TaskContract(
             feature_id="PRD-SIM",
             behavior="produce passing browser evidence",
+            evidence_contract={"workflow_run_id": "sim-run"},
         ),
     ))
     task_map = state_dir / "artifacts" / "PRD-SIM" / "task_map.json"
@@ -245,6 +295,11 @@ def test_first_unsatisfiable_contract_routes_to_semantic_replan(
             "source_index_ref": "artifacts/PRD-SIM/source_index.json",
             "target_ref": "main",
         },
+    )
+    writer.emit(
+        "fanout.started", actor="zf-cli", correlation_id="other-task-trace",
+        payload={"fanout_id": "other-fanout", "pdd_id": "PRD-SIM",
+                 "workflow_run_id": "sim-run", "trace_id": "other-task-trace"},
     )
     blocked = writer.emit(
         "dev.blocked",
@@ -355,6 +410,9 @@ def test_first_unsatisfiable_contract_routes_to_semantic_replan(
     assert len(requests) == 1
     assert requests[0].payload["task_id"] == "TASK-ASSEMBLY"
     assert requests[0].payload["task_map_ref"] == str(task_map)
+    assert requests[0].payload["requirement_spec_ref"] == "requirements/r3.json"
+    assert requests[0].payload["requirement_spec_digest"] == "d" * 64
+    assert requests[0].payload["trace_id"] != "other-task-trace"
     assert blocked.id in requests[0].payload["failure_event_ids"]
 
     second = run_manager_tick(

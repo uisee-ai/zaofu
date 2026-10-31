@@ -2,9 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Code, Download } from "lucide-react";
 import { MarkdownText } from "../agent-session/MarkdownText";
 import { planMarkdownPages } from "./planMarkdownPages";
+import { planDocumentSections } from "./planDocumentSections";
 
-export default function PlanMarkdownDocument({ content, reviewContent = "" }: { content: string; reviewContent?: string }) {
+export default function PlanMarkdownDocument({ content, reviewContent = "", initialAnchor = "", onAnchorChange }: { content: string; reviewContent?: string; initialAnchor?: string; onAnchorChange?: (anchor: string) => void }) {
   const pages = useMemo(() => planMarkdownPages(content), [content]);
+  const sections = useMemo(() => planDocumentSections(content), [content]);
+  const [search, setSearch] = useState("");
+  const [anchor, setAnchor] = useState(initialAnchor);
   const [selectedPage, setPage] = useState(0);
   const [showSource, setShowSource] = useState(false);
   const [continuous, setContinuous] = useState(true);
@@ -14,6 +18,15 @@ export default function PlanMarkdownDocument({ content, reviewContent = "" }: { 
   useEffect(() => {
     scrollPane.current?.scrollTo({ top: 0 });
   }, [index, content, continuous]);
+  useEffect(() => { setAnchor(initialAnchor); }, [initialAnchor]);
+  useEffect(() => {
+    if (anchor && continuous) scrollPane.current?.querySelector(`[data-plan-anchor="${CSS.escape(anchor)}"]`)?.scrollIntoView({ block: "start" });
+  }, [anchor, continuous, content]);
+  const jump = (value: string) => {
+    setContinuous(true); setShowSource(false); setAnchor(value);
+    onAnchorChange?.(value);
+    requestAnimationFrame(() => scrollPane.current?.querySelector(`[data-plan-anchor="${CSS.escape(value)}"]`)?.scrollIntoView({ block: "start" }));
+  };
   const download = (includeReview = false) => {
     const downloadContent = includeReview && reviewContent
       ? `${reviewContent.trimEnd()}\n\n---\n\n${content}`
@@ -65,9 +78,11 @@ export default function PlanMarkdownDocument({ content, reviewContent = "" }: { 
       </nav>
       <details className="plan-document-outline">
         <summary>章节索引</summary>
+        <label>搜索正文<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
+        <p>{sections.filter(section => section.content.toLowerCase().includes(search.toLowerCase())).length} 个匹配章节</p>
         <ol>
           {reviewContent ? <li><button type="button" onClick={() => { setContinuous(true); scrollPane.current?.scrollTo({ top: 0 }); }}>人工审批摘要</button></li> : null}
-          {pages.map((page, pageIndex) => <li key={`${page.title}-${pageIndex}`}><button type="button" onClick={() => { setContinuous(false); setPage(pageIndex); }}>{pageIndex + 1}. {page.title}</button></li>)}
+          {sections.filter(section => section.content.toLowerCase().includes(search.toLowerCase())).map(section => <li key={section.key}><button type="button" onClick={() => jump(section.anchor)}>{section.title}</button></li>)}
         </ol>
       </details>
       <div key={index} ref={scrollPane} className="plan-preview-markdown-pane" role="region" aria-label="计划正文" tabIndex={0}>
@@ -75,11 +90,12 @@ export default function PlanMarkdownDocument({ content, reviewContent = "" }: { 
           ? showSource
             ? <pre className="plan-preview-markdown plan-document-source">{content}</pre>
             : <>
-              {reviewContent ? <MarkdownText className="plan-preview-markdown plan-review-dossier" content={reviewContent} /> : null}
-              {reviewContent ? <hr className="plan-review-divider" /> : null}
-              {pages.map((page, pageIndex) => page.plain
-                ? <pre key={pageIndex} className="plan-preview-markdown plan-document-source">{page.source}</pre>
-                : <MarkdownText key={pageIndex} className="plan-preview-markdown" content={page.markdown} />)}
+              {reviewContent ? <details className="plan-review-card"><summary>人工审批摘要与工程审计</summary><MarkdownText className="plan-preview-markdown plan-review-dossier" content={reviewContent} /></details> : null}
+              {sections.map(section => <section key={section.key} data-plan-anchor={section.anchor}>
+                {planMarkdownPages(section.content).map((page, pageIndex) => page.plain
+                  ? <pre key={pageIndex} className="plan-preview-markdown plan-document-source">{page.source}</pre>
+                  : <MarkdownText key={`${section.key}:${pageIndex}`} className="plan-preview-markdown" content={page.markdown} />)}
+              </section>)}
             </>
           : <>
             {current.plain && !showSource && <p className="muted" role="status">当前段以原文显示；全文可下载。</p>}

@@ -363,6 +363,7 @@ def read_attempt_artifact(
     manifest: Mapping[str, Any],
     source_id: str,
     artifact_id: str,
+    artifact_sha256: str = "",
     json_path: str = "$",
     max_items: int = 0,
     max_chars: int = 0,
@@ -374,7 +375,8 @@ def read_attempt_artifact(
     provider: str = "",
     purpose: str = "",
 ) -> dict[str, Any]:
-    source = _find_source(manifest, source_id=source_id, artifact_id=artifact_id)
+    source = _find_source(manifest, source_id=source_id, artifact_id=artifact_id,
+                          artifact_sha256=artifact_sha256)
     read_purpose = str(purpose or manifest.get("read_purpose") or "").strip()
     try:
         require_artifact_access(
@@ -645,12 +647,12 @@ def render_attempt_source_briefing(
         lines.extend([
             f"- Preferred deduplicated read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
             "  It delivers every required slice, sharing identical bodies while recording each source. "
-            "Large responses use required-artifact-page.v2: consume every items[].content fragment. "
+            "All responses use required-artifact-page.v2: consume every items[].content fragment. "
             "If the response has `next_cursor`, continue the same command with `--cursor <next_cursor>` "
             "until it is null. Consume every page; do not repeat individual reads after a complete bundle.",
             "- Required pages default to 8192 UTF-8 bytes including metadata, not tokens. "
             "If the tool output budget is smaller, use --page-bytes 2048; consume pages "
-            "separately and leave room for tool wrappers. CLI receipts prove production; "
+            "separately and leave room for tool wrappers. Return each raw page unchanged; do not filter fields or batch pages into a summary. CLI receipts prove production; "
             "provider delivery may remain unknown and never proves understanding.",
             "- If an output is too large or truncated, read that exact source and JSON path "
             "with `--page-start 0 --page-size 8192`. Read and consume every page, using "
@@ -821,12 +823,20 @@ def _find_source(
     *,
     source_id: str,
     artifact_id: str,
+    artifact_sha256: str = "",
 ) -> dict[str, Any]:
+    matches = []
     for item in manifest.get("sources") if isinstance(manifest.get("sources"), list) else []:
         if not isinstance(item, Mapping):
             continue
-        if str(item.get("source_id") or "") == source_id and str(item.get("artifact_id") or "") == artifact_id:
-            return dict(item)
+        if (str(item.get("source_id") or "") == source_id
+                and str(item.get("artifact_id") or "") == artifact_id
+                and (not artifact_sha256 or item.get("sha256") == artifact_sha256)):
+            matches.append(dict(item))
+    if len(matches) > 1:
+        raise ArtifactReadError(f"ambiguous source: {source_id}/{artifact_id}; use the pinned required read")
+    if matches:
+        return matches[0]
     raise ArtifactReadError(f"source not found: {source_id}/{artifact_id}")
 
 

@@ -240,6 +240,7 @@ def _identity_from_started(
     target_ref = str(payload.get("target_ref") or "")
     pdd_id = str(payload.get("pdd_id") or "")
     feature_id = str(payload.get("feature_id") or "")
+    recovery_task_id = _task_base_recovery_id(payload)
     logical_key = _logical_key(
         stage_id=stage_id,
         target_ref=target_ref,
@@ -247,6 +248,8 @@ def _identity_from_started(
         pdd_id=pdd_id,
         feature_id=feature_id,
     )
+    if recovery_task_id:
+        logical_key += "|task-base-recovery:" + recovery_task_id
     return FanoutIdentity(
         fanout_instance_id=fanout_id,
         fanout_id=fanout_id,
@@ -264,6 +267,25 @@ def _identity_from_started(
         attempt=_first_payload_int(payload, "attempt", "wave_attempt", "fanout_attempt"),
         started_event_id=event.id,
     )
+
+
+def _task_base_recovery_id(payload: dict[str, Any]) -> str:
+    """Keep independent task recovery scans separate under one parent run."""
+    children = payload.get("expected_children")
+    if not isinstance(children, list):
+        return ""
+    task_ids: set[str] = set()
+    for child in children:
+        if not isinstance(child, dict) or not isinstance(child.get("payload"), dict):
+            continue
+        child_payload = child["payload"]
+        trigger = child_payload.get("trigger_payload")
+        if not isinstance(trigger, dict) or trigger.get("handoff_kind") != "task_base_recovery":
+            continue
+        task_id = str(trigger.get("task_id") or "").strip()
+        if task_id:
+            task_ids.add(task_id)
+    return next(iter(task_ids)) if len(task_ids) == 1 else ""
 
 
 def _logical_key(

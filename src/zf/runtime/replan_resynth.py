@@ -162,6 +162,11 @@ def build_replan_resynth_event(
         if value not in (None, "", [], {}):
             payload[key] = value
     _bind_current_plan_package(payload, plan=plan, events=events)
+    # Owner-approved requirement amendments outrank the historical launch input.
+    # These values come from a controlled Plan decision, not a worker result.
+    if source_type == "plan.rejected" and source_payload.get("requirement_amendment_ref"):
+        for key in ("requirement_amendment_ref", "requirement_spec_ref", "requirement_spec_digest"):
+            payload[key] = source_payload[key]
     for key in (
         "failed_task_ids",
         "task_ids",

@@ -23,7 +23,10 @@ for (const action of ["replan-approve", "replan-reject"]) {
     });
     const actions: { name: string; payload: Record<string, unknown> }[] = [];
     await page.route("**/actions/*", async (route) => {
-      actions.push({ name: route.request().url().split("/").pop()!, payload: route.request().postDataJSON().payload });
+      const name = route.request().url().split("/").pop()!;
+      if (name !== "inbox-item-read") {
+        actions.push({ name, payload: route.request().postDataJSON().payload });
+      }
       await route.fulfill({ json: { ok: true } });
     });
     await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
@@ -51,10 +54,11 @@ test("complete Plan, bound matrix and summary remain distinct without writes", a
   const project = snapshot.project.project_id;
   const mutations: string[] = [];
   page.on("request", (req) => {
-    if (req.method() !== "GET" && req.url().includes("/api/")) mutations.push(req.url());
+    if (req.method() !== "GET" && req.url().includes("/api/") && !req.url().endsWith("/actions/inbox-item-read")) mutations.push(req.url());
   });
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-complete`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await dialog.getByRole("button", { name: "工程上下文", exact: true }).click();
   await expect(dialog.getByText("完整 Plan", { exact: true })).toBeVisible();
   const tail = dialog.getByText("END-OF-FULL-PLAN", { exact: true });
   await tail.scrollIntoViewIfNeeded();
@@ -154,7 +158,7 @@ test("long Plan renders headings and tables instead of raw Markdown", async ({ p
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
   await expect(dialog.getByRole("heading", { name: "格式化长计划", exact: true })).toBeVisible();
-  await expect(dialog.locator(".plan-preview-markdown table").first()).toBeVisible();
+  await expect(dialog.locator(".plan-preview-markdown-pane > section table").first()).toBeVisible();
   await dialog.getByTitle("切换到章节分页").click();
   let rows = 0;
   const next = dialog.getByRole("button", { name: "下一页" });

@@ -10,6 +10,20 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 
 故障修复后，监工核验当前 operation 已停止、说明投影与快照一致，再通过现有受控恢复动作/CLI 恢复。已批准 Task Map 的修订仍须通过正式 Planner/Critic、Plan Preview 和新 package 接纳；重启进程不等于恢复 Run，也不等于批准新计划。
 
+`zf restart --dry-run` 全量重启预览只报告将执行的 stop/start，不调用实际停止或启动入口；该预览不证明 provider 连接或运行态已恢复。`tests/test_cli_restart.py` 通过真实 CLI 入口阻断对这两个入口的调用。
+
+单角色 `zf restart <role> --dry-run` 同样只报告计划，不重启角色、改写角色状态或追加合同检查事件。任务级语义恢复复扫按原任务身份隔离：同一父 Run 和候选提交下不同任务的复扫不得互相替代；同一任务的后续代仍按原规则替代旧代。实际 provider 断连后仍需通过正常角色恢复链恢复派发，不能把预览当作恢复。
+
+对于修复前已发生的跨任务错误替代，Run Manager 仅在账本能绑定原失败、原复扫请求、取消事件和同 Run 的另一任务替代请求时，以取消事件为幂等依据重发原语义复扫；已产生后续进展或已重发的任务不重复派发，同任务正常换代不触发此恢复。
+
+若原恢复案卷仍等待被取消复扫的效果，先用匹配的请求和取消事件收口为 effect.failed，重新开放该案卷；只有通过正常恢复案卷准入后才可重发，不直接改写案卷或清除历史事件。
+
+替代任务显式重述唯一前序任务已批准的验证命令时，仅当除生产者和冒烟标记外的命令字段完全一致、生产者已指向替代任务且标记缺省，才继承前序 `rolling_smoke: true`。新命令、改动过的合同字段及显式标记均不推断；滚动冒烟准入检查不变。`tests/test_module_gap_plan.py` 覆盖保留、改动与显式关闭。
+
+Gap task 转为 task_map 时，结构化验收对象完整保留 ID、必需性、验证责任、层级及命令引用；面向人阅读的 acceptance 仅提取条款正文。最终产品验收仍由原 owner 签收，不能把字典序列化成普通字符串后按默认 task_verify 处理。
+
+任务级语义复扫从当前 Run 固定的、摘要校验后的批准方案恢复需求文件引用和摘要，并要求方案 request_id 与 Run 一致；引用随受控请求传递至任务图修订。复扫追踪使用本次请求身份，不从其他任务 fanout 继承 trace。原需求读取和强制目标连续性校验保持有效。
+
 显式派发基准存在时，TaskRef 的文件范围由该基准到提交目标的 Git 差异确定，兼容 legacy `base_git_head` 与 v4 `base_commit`。局部返工或仅清理工作树的结果可以报告本轮没有新增文件，但不能据此清空此前尚未集成的任务文件；缺少显式基准的 legacy 空交接保持原有只读组装语义。候选集成消费完整范围，保留合同路径准入；不得只拼入最后一次修复文件，导致已经独立验证的入口、依赖清单或 smoke 脚本丢失。`tests/test_task_ref_rework_integration.py` 通过真实 TaskRef 与增量 candidate 入口覆盖完整实施、局部修复、空变更重交及滚动 smoke。
 
 验证：tests/test_task_pipeline_capsule.py 覆盖派发入口与真实 briefing/transport 调用边界；tests/test_task_context_recovery.py 覆盖分类与 Run Manager 重规划排除；保留 pipeline、TaskDoc、result submit 和 flow mock E2E 回归。
@@ -53,6 +67,10 @@ Task 尚未 done 不代表 Impl/Verify worker 仍有执行义务。watchdog 对�
 Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须在 zf.yaml 的 `project.scripts.setup` 声明可重复执行的环境准备入口；Candidate integrator 会在精确候选提交上执行该配置，再运行 rolling smoke。运行时不猜测项目使用 Node 或某个固定脚本。
 
 修复集成阻塞后使用 `zf recover task-integration --operation <id> --reason '<修复证据>'` 预览，加 `--apply` 才执行。入口检查当前代际、原 needs_review 事件、已接纳的 Verify 通过结果、无活跃 operation/attempt 及非终态 Run/Task；apply 通过 WorkflowOperationService 追加 supersede 事实，原失败证据不变。既有 reconciler 派发下一 integration generation，重新执行 setup、rolling smoke 与 Candidate CAS；保留已通过的 Impl/Verify，不发新的产品成功事件。重复请求幂等，新的阶段代际或更新集成操作使旧恢复请求失效。
+
+Task Pipeline operation 因 `usage_samples` 达限时，Owner 可针对该 operation 显式修订采样上限：`zf goal set --status active --operation <id> --operation-max-usage-samples <非负整数> --reason '<批准依据>'`。零表示取消该上限；非零值必须高于阻断时的累计采样数，不修改其他 operation 或冻结请求。之后用 `zf recover workflow --dry-run --json` 检查对应 checkpoint，再以 `--resume-pending --checkpoint-id <id>` 受控恢复。运行时只接受该 operation 的预算阻断之后、由正式恢复链准入的修订；继续沿用原计量基线，并在达到修订后非零上限时再次阻断。美元定价未知不等于零成本；不可通过此入口修订美元限额。
+
+Owner 明确要求对同一 Run 后续 operation 一并修改时，可在上述命令增加 `--all-run-operations`；受控恢复准入后同一 Run 的 operation 使用该采样上限，其他 Run 和其他预算维度不受影响。原冻结请求和历史用量记录不改写。
 
 验证：`tests/test_task_pipeline_worker_liveness.py` 覆盖实际 watchdog 调用；`tests/test_task_pipeline_integration_retry.py` 覆盖 CLI、拒绝分支、代际投影和无 provider 的真实 git Candidate 集成恢复。
 

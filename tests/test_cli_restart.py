@@ -14,6 +14,20 @@ from zf.core.events import EventLog, ZfEvent
 from zf.core.state.role_sessions import RoleSessionRegistry
 
 
+def _simulate_role_restart(monkeypatch, role: str) -> int:
+    # Use the dry transport while exercising the real restart state machine.
+    import zf.cli.restart as restart
+
+    original = restart._restart_role
+
+    def run_with_mock_transport(*args):
+        return original(*args[:-1], False)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(restart, "_restart_role", run_with_mock_transport)
+        return main(["restart", role, "--dry-run"])
+
+
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -37,6 +51,17 @@ class TestRestart:
             main(["restart", "--help"])
         assert exc.value.code == 0
 
+    def test_full_restart_dry_run_does_not_stop_or_start(
+        self, project_dir: Path, monkeypatch, capsys,
+    ) -> None:
+        def forbidden(_args):
+            pytest.fail("dry-run must not stop or start a harness")
+
+        monkeypatch.setattr("zf.cli.stop.run", forbidden)
+        monkeypatch.setattr("zf.cli.start.run", forbidden)
+        assert main(["restart", "--dry-run"]) == 0
+        assert "would stop and restart" in capsys.readouterr().out
+
     def test_restart_role_dry_run(self, project_dir: Path, capsys):
         # Start first so there's a session context
         main(["start", "--dry-run"])
@@ -44,6 +69,27 @@ class TestRestart:
         assert result == 0
         captured = capsys.readouterr()
         assert "dev" in captured.out.lower()
+
+    def test_role_dry_run_does_not_restart_or_write_events(self, project_dir, monkeypatch):
+        def forbidden(*args, **kwargs):
+            pytest.fail("role dry-run must not restart a worker")
+
+        monkeypatch.setattr("zf.cli.restart.WorkflowRuntimeCoordinator.restart_role_instance", forbidden)
+        log = project_dir / ".zf" / "events.jsonl"
+        before = log.read_bytes() if log.exists() else b""
+        assert main(["restart", "dev", "--dry-run"]) == 0
+        assert (log.read_bytes() if log.exists() else b"") == before
+
+    def test_restart_dry_runs_do_not_write_contract_warning(self, project_dir, monkeypatch):
+        monkeypatch.setattr(
+            "zf.runtime.run_contract.evaluate_run_contract_resume_policy",
+            lambda *args, **kwargs: {"status": "WARN"},
+        )
+        log = project_dir / ".zf" / "events.jsonl"
+        before = log.read_bytes() if log.exists() else b""
+        assert main(["restart", "dev", "--dry-run"]) == 0
+        assert main(["restart", "--dry-run"]) == 0
+        assert (log.read_bytes() if log.exists() else b"") == before
 
     def test_restart_propagates_exact_cli_command(
         self,
@@ -62,9 +108,9 @@ class TestRestart:
         result = main(["restart", "nonexistent", "--dry-run"])
         assert result != 0
 
-    def test_restart_emits_event(self, project_dir: Path):
+    def test_restart_emits_event(self, project_dir: Path, monkeypatch):
         main(["start", "--dry-run"])
-        main(["restart", "dev", "--dry-run"])
+        _simulate_role_restart(monkeypatch, "dev")
         events = (project_dir / ".zf" / "events.jsonl").read_text()
         assert "worker.restarted" in events
 
@@ -80,7 +126,7 @@ class TestRestart:
         main(["init"])
         main(["start", "--dry-run"])
 
-        result = main(["restart", "dev", "--dry-run"])
+        result = _simulate_role_restart(monkeypatch, "dev")
 
         assert result == 0
         state_dir = tmp_path / "runtime-state"
@@ -133,7 +179,7 @@ class TestRestart:
             },
         ))
 
-        assert main(["restart", "judge-issue", "--dry-run"]) == 0
+        assert _simulate_role_restart(monkeypatch, "judge-issue") == 0
 
         refreshed = RoleSessionRegistry(
             state_dir / "role_sessions.yaml",
@@ -201,7 +247,7 @@ class TestRestart:
             },
         ))
 
-        assert main(["restart", "judge-issue", "--dry-run"]) == 0
+        assert _simulate_role_restart(monkeypatch, "judge-issue") == 0
 
         refreshed = RoleSessionRegistry(
             state_dir / "role_sessions.yaml",

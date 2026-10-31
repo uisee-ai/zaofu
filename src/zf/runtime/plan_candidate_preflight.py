@@ -131,6 +131,12 @@ def evaluate_plan_candidate_preflight(
             errors=errors,
         )
         if prior_task_map:
+            from zf.runtime.plan_requirement_amendment import amended_task_map_baseline
+            try:
+                prior_task_map = amended_task_map_baseline(state_dir,
+                    str(trigger.get("workflow_run_id") or trigger.get("trace_id") or ""), prior_task_map)
+            except (OSError, ValueError) as exc:
+                _error(errors, "owner_amendment_invalid", "requirement_amendment_ref", str(exc))
             errors.extend(_mandatory_goal_claim_contract_errors(
                 previous=prior_task_map,
                 current=task_map,
