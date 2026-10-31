@@ -27,3 +27,8 @@ Reader 恢复次数耗尽时，内核写入 `fanout.child.failed` 后、评估�
 产物、任务、Run 身份，生成新 `rework_of` 代际，同源重复恢复被拒绝。
 未注册事件及新增 writer trigger 不因这项支持而获准。
 Run 激活与重触发都保留审计，不清零原 Run 成本、不修改既有操作的终态。
+
+`zf plan inspect-execution` 与运行时共用 `flow_metadata_for`：多 Flow 使用
+flow_metadata_by_kind 的指定条目，单 Flow 回退到编译后的 flow_metadata。
+检查工具不得因单 Flow 缺 by-kind 容器而把已启用的 Task Pipeline 误报为 off；
+它仍只报告事实，不批准 Plan、不派发任务，也不创建运行状态。
