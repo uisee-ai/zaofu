@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — e9e18f51 fix: preserve structured evidence in result projections
 
 # 结构化证据引用提交失败
 
@@ -9,6 +9,6 @@ Owner 已授权监工记录并修复运行问题。dl 的 pre_impl Orchestrator 
 - 从真实 Orchestrator 提交入口验证 -> verify: 有效 read ledger 下结果被接纳、operation settled，hydration 保留证据描述符。
 - 完成调用闭包和 mock E2E、sentinel 后提交归档、合并并清理本 worktree；用受控提交入口恢复原决策，再继续 Plan 审批与实施。
 
-实现说明：[结构化证据兼容投影](../docs/impl/typed-evidence-projection.md)。
+实现说明：[结构化证据兼容投影](../../docs/impl/typed-evidence-projection.md)。
 
-验证：原版 5 failed；修复后新回归 5 passed，dev-verify 自动 50 文件调用闭包（包含 mock E2E）835 passed，sentinel 51 passed；Ruff 与 diff check 通过。真实 dl 原 scratch 的 10 条结构化引用完整保留；只读复现证据 /tmp/zf-typed-evidence-live-repro-20261031.json。自动测试日志 /tmp/zf-typed-evidence-verification-20261031.log。未运行 full pytest 或新增真实 provider E2E。
+验证：原版 5 failed；修复后新回归 5 passed，dev-verify 自动 50 文件调用闭包（包含 mock E2E）835 passed，sentinel 51 passed、flow smoke 7 passed；Ruff 与 diff check 通过。真实 dl 原 scratch 的 10 条结构化引用完整保留；只读复现证据 /tmp/zf-typed-evidence-live-repro-20261031.json。自动测试日志 /tmp/zf-typed-evidence-verification-20261031.log。未运行 full pytest 或新增真实 provider E2E。
