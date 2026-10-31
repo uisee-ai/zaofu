@@ -17,6 +17,7 @@ from typing import Any, Mapping
 
 from zf.core.state.atomic_io import atomic_write_text
 
+from zf.runtime.gap_replay_claims import repair_replayed_goal_claims
 from zf.runtime.module_gap_replacement import (
     bind_replacement_group as _bind_replacement_group,
     completed_task_ref_dependencies as _completed_task_ref_dependencies,
@@ -36,12 +37,8 @@ class ModuleGapPlanValidationResult:
     summary: dict[str, Any] = field(default_factory=dict)
 
     def to_check(self) -> dict[str, Any]:
-        return {
-            "name": "module_gap_plan_validate",
-            "passed": self.passed,
-            "errors": list(self.errors),
-            "summary": dict(self.summary),
-        }
+        return {"name": "module_gap_plan_validate", "passed": self.passed,
+                "errors": list(self.errors), "summary": dict(self.summary)}
 
 
 def gap_tasks_from_rework_summary(summary: Any) -> list[dict[str, Any]]:
@@ -374,6 +371,10 @@ def build_gap_task_map_amend(
     for raw in gap_tasks:
         task_id = _task_id(raw)
         if task_id in existing_ids:
+            existing = next(task for task in tasks if _task_id(task) == task_id)
+            proposed = _gap_task_to_task_map_item(raw, wave=_int_value(existing.get("wave"), default=next_wave))
+            if repair_replayed_goal_claims(existing, proposed, has_lineage=bool(_task_contract_list(raw, "supersedes_task_ids"))):
+                appended.append(task_id)
             continue
         tasks.append(_gap_task_to_task_map_item(raw, wave=next_wave))
         existing_ids.add(task_id)

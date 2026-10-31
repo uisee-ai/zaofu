@@ -421,6 +421,39 @@ def test_gap_amend_preserves_explicit_goal_claim_mapping() -> None:
     assert validate_task_map_payload(amended).summary["goal_coverage"]["diagnostics"] == []
 
 
+def test_gap_replay_repairs_missing_goal_claims_only_for_identical_successor() -> None:
+    base = {
+        "schema_version": "task-map.v1",
+        "goal_claims": [{"goal_claim_id": "GOAL-A", "text": "goal", "mandatory": True}],
+        "tasks": [{"task_id": "OLD", "title": "old", "owner_role": "dev", "wave": 1,
+                   "allowed_paths": ["src/**"], "allowed_paths_reason": "slice",
+                   "acceptance": ["works"]}],
+    }
+    gap = {"task_id": "NEW", "claim_paths": ["src/**"], "acceptance": ["works"],
+           "verify_commands": ["npm test"], "source_refs": ["event:gap", "git:" + "a" * 40],
+           "base_commit": "a" * 40, "supersedes_task_ids": ["OLD"], "goal_claim_ids": ["GOAL-A"]}
+    first = build_gap_task_map_amend(base, gap_tasks=[gap], supersedes_task_map_ref="base.json")
+    first["tasks"][0].pop("goal_claim_ids")  # historical conversion defect
+    corrected = build_gap_task_map_amend(first, gap_tasks=[gap], supersedes_task_map_ref="first.json")
+    assert corrected["tasks"][0]["goal_claim_ids"] == ["GOAL-A"]
+    assert corrected["amend"]["gap_task_ids"] == ["NEW"]
+    assert validate_task_map_payload(corrected).summary["goal_coverage"]["diagnostics"] == []
+    assert "goal_claim_ids" not in first["tasks"][0]
+    replay = build_gap_task_map_amend(corrected, gap_tasks=[gap], supersedes_task_map_ref="corrected.json")
+    assert replay["amend"]["gap_task_ids"] == []
+
+    changed = {**gap, "acceptance": ["different behavior"]}
+    with pytest.raises(ValueError, match="replay.*mismatch"):
+        build_gap_task_map_amend(first, gap_tasks=[changed], supersedes_task_map_ref="first.json")
+    for field, value in (("claim_paths", ["other/**"]), ("verify_commands", ["other test"]),
+                         ("source_refs", ["event:other"])):
+        with pytest.raises(ValueError, match="replay.*mismatch"):
+            build_gap_task_map_amend(first, gap_tasks=[{**gap, field: value}], supersedes_task_map_ref="first.json")
+    with pytest.raises(ValueError, match="goal claim mismatch"):
+        build_gap_task_map_amend(corrected, gap_tasks=[{**gap, "goal_claim_ids": ["GOAL-B"]}],
+                                 supersedes_task_map_ref="corrected.json")
+
+
 def test_gap_amend_preserves_structured_verification_commands() -> None:
     base = {"schema_version": "task-map.v1", "tasks": [{
         "task_id": "OLD", "title": "old", "owner_role": "dev", "wave": 1,
