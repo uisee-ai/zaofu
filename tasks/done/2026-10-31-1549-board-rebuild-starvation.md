@@ -41,3 +41,7 @@ Docker Playwright 真实项目预览通过：94 张卡片、0 page errors，生�
 
 限制：该修复恢复投影更新；未解除主流程的 Critic usage_samples 预算阻塞，
 也未把历史 in_progress 任务卡片等同于当前活跃 operation。
+
+后续正式端口发现多项目缓存淘汰导致刷新仍滞后，已由
+[双项目缓存补充修复](2026-10-31-1611-board-project-cache.md) 完成。
+最终部署与独立双项目验证以该记录为准。
