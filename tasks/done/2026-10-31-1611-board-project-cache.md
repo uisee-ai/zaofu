@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # P2：并行查看多个项目使看板匹配缓存持续失效
 
@@ -31,3 +31,13 @@
   dl 快照 16:18:09 UTC / seq 25667、ready，94 卡片，0 page errors。
   证据：dl `artifacts/supervision/board-project-cache-browser-8002.json`、
   `board-project-cache-8002.png`、`board-project-cache-preview-2026-10-31.json`。
+
+实现：`ac603c19 fix: preserve bounded board indexes across project switches`；
+代码合并：`d4731914 fix: retain board progress during concurrent project viewing`。
+
+正式 Web 已固定部署 d4731914。停止 8002 预览、重启正式 Web 后，Docker 双项目
+测试确认新部署独立生成 16:20:32 UTC / seq 25670 的 ready 快照，94 卡片，
+0 page errors；生成时间晚于新进程启动，没有复用预览快照冒充部署验证。
+证据：dl `artifacts/supervision/board-project-cache-browser-8001.json`、
+`board-project-cache-web-restart-2026-10-31.json`。
+主 runtime PID 3273412 保持不变，Critic 的预算阻塞尚未恢复。
