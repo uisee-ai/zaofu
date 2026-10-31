@@ -28,6 +28,13 @@ Plan Critic 使用 `plan-synth` 结果时，只有明确声明
 仍不能绕过读取校验。回归：`tests/test_plan_synth_failure_reads.py`。
 准入后的 Critic 结果将该失败分类传递至 fanout 聚合和阶段失败事件，供
 恢复流程区分执行失败与计划内容被否决；历史事件不被改写。
+Critic 执行失败时，恢复从该次派发绑定的不可变 source manifest 与
+plan-synth contract 对账当前子结果及工件引用；新引用优先于旧触发的候选，
+并保留原有读取范围和 access scope。身份、摘要或来源不匹配时不猜测当前
+候选，也不回退到旧候选。回归：`tests/test_plan_synth_recovery_refs.py`。
+新代次受控动作可显式指定紧邻的失败 Critic 检查点；必须核对 Run、阶段、
+因果链和已准入结果，并拒绝已被更新候选取代的检查点。Planner 自报读取失败
+时直接保留该执行失败分类，不误报缺少计划候选。
 
 显式指定受影响 task ids 的返修，必读上下文保留全部任务的状态、依赖、合同身份、
 交付/阻塞事实及受影响任务完整正文。全量 canonical TaskStore 快照独立封存并

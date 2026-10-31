@@ -252,7 +252,7 @@ def build_plan_handoff_input_refs(
         })
         input_refs.append(source)
     previous_refs = payload.get("previous_plan_candidate_refs")
-    if previous_refs in (None, []):
+    if previous_refs is None:
         previous_refs = trigger.get("previous_plan_candidate_refs")
     if previous_refs not in (None, []) and not isinstance(previous_refs, list):
         raise ValueError("previous Plan candidate refs must be a list")
@@ -286,12 +286,20 @@ def build_plan_handoff_input_refs(
                 "previous Plan candidate digest mismatch for "
                 f"{ref!r}: expected {expected}, got {actual or 'missing'}"
             )
+        allowed_paths = descriptor.get("allowed_paths", ["$"])
+        if (not isinstance(allowed_paths, list) or not allowed_paths
+                or any(not isinstance(path, str) or not path.strip() for path in allowed_paths)):
+            raise ValueError("previous Plan candidate allowed_paths must be a non-empty string list")
+        access_scope = descriptor.get("access_scope", {})
+        if not isinstance(access_scope, Mapping):
+            raise ValueError("previous Plan candidate access_scope must be an object")
         source.update({
             "source_id": f"previous-plan-candidate-{index}",
             "artifact_id": str(
                 descriptor.get("artifact_id") or Path(ref).name
             ),
-            "allowed_paths": ["$"],
+            "allowed_paths": list(allowed_paths),
+            "access_scope": dict(access_scope),
         })
         identity = (
             str(source.get("source_id") or ""),

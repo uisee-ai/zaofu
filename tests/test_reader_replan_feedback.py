@@ -38,6 +38,22 @@ def test_operator_feedback_is_bound_to_new_generation_and_replay(tmp_path):
     assert len([e for e in svc.writer.event_log.read_all() if e.type == 'run.goal.updated']) == 1
 
 
+def test_explicit_candidate_checkpoint_is_bound_and_replay_safe(tmp_path, monkeypatch):
+    svc, _, payload, _ = setup_reader(tmp_path)
+    payload.pop('repair_target')
+    refs = [{'source_id': 'child-result-planner', 'ref': 'candidate', 'sha256': 'a' * 64}]
+    monkeypatch.setattr('zf.runtime.plan_synth_recovery_refs.resume_failed_critic_candidate',
+                        lambda state, events, source, synth_id: refs if synth_id == 'synth' else [])
+    payload['resume_candidate_synth_event_id'] = 'synth'
+    result = _apply(svc, payload)
+    assert result['ok'], result
+    trigger = next(e for e in svc.writer.event_log.read_all() if e.id == result['stage_trigger_event_id'])
+    assert trigger.payload['previous_plan_candidate_refs'] == refs
+    assert trigger.payload['resume_candidate_synth_event_id'] == 'synth'
+    assert _apply(svc, payload)['replayed']
+    assert not _apply(svc, {**payload, 'resume_candidate_synth_event_id': 'other'})['ok']
+
+
 @pytest.mark.parametrize('bad', ['text', None, [1], ['  '], [{'message': 'text'}]])
 def test_invalid_operator_feedback_cannot_reopen_run(tmp_path, bad):
     svc, _, payload, _ = setup_reader(tmp_path)
