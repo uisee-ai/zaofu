@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 91fb044b fix: validate reader findings before result admission
 
 # Reader findings 提交与投影合同一致性
 
