@@ -512,12 +512,12 @@ def append_artifact_read(state_dir: Path, row: Mapping[str, Any]) -> Path:
     return path
 
 
-def seal_read_ledger(state_dir: Path, attempt_id: str) -> dict[str, Any]:
+def seal_read_ledger(state_dir: Path, attempt_id: str, *, allow_empty: bool = False) -> dict[str, Any]:
     active = active_read_ledger_path(state_dir, attempt_id)
     with locked_path(active):
         attempt_dir = active.parent
         sealed_paths = sorted(attempt_dir.glob("read-ledger-*.jsonl"))
-        if not active.exists() and not sealed_paths:
+        if not active.exists() and not sealed_paths and not allow_empty:
             raise ArtifactReadError(f"active read ledger missing for {attempt_id}")
 
         # Output correction keeps the same attempt identity. The runtime may
