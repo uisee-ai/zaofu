@@ -36,9 +36,11 @@ def _irrelevant_hook(line: bytes) -> bool:
 class ArtifactContextEvents:
     """One CLI invocation's conservative event view and exact snapshot cache."""
 
-    def __init__(self, log: EventLog, *, preserve_run_aliases: bool = False) -> None:
+    def __init__(self, log: EventLog, *, preserve_run_aliases: bool = False,
+                 preserve_event_ids: tuple[str, ...] = ()) -> None:
         self.log = log
         self.preserve_run_aliases = preserve_run_aliases
+        self.preserve_event_ids = tuple(value.encode('ascii') for value in preserve_event_ids)
         self._signature: tuple | None = None
         self._events: tuple[ZfEvent, ...] = ()
 
@@ -71,6 +73,7 @@ class ArtifactContextEvents:
                         if (
                             self.log.signer is None
                             and _irrelevant_hook(line)
+                            and not any(event_id in line for event_id in self.preserve_event_ids)
                             and not (
                                 self.preserve_run_aliases
                                 and any(key in line for key in (

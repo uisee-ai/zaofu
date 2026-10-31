@@ -1,6 +1,6 @@
 """Hook attribution and terminal checks retain their evidence under telemetry filtering."""
 from zf.autoresearch.failure_signals import completed_run_quiesced
-from zf.cli.hook_context_events import hook_context_events
+from zf.cli.hook_context_events import HookEventWriter, hook_context_events
 from zf.cli.hook_dispatch_context import _latest_active_dispatch_for_actor
 from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.runtime.run_scope import run_aliases
@@ -49,3 +49,39 @@ def test_hook_view_preserves_dispatch_and_run_aliases_and_refreshes(tmp_path, mo
     refreshed = hook_context_events(log)
     assert len(refreshed) == before + 1
     assert completed_run_quiesced(refreshed) == completed_run_quiesced(log.read_all())
+
+
+def test_hook_writer_finds_last_parent_even_if_it_is_filtered_telemetry(tmp_path, monkeypatch):
+    log = EventLog(tmp_path / 'events.jsonl')
+    log.append(ZfEvent(id='evt-target', type='task.dispatched', correlation_id='old'))
+    log.append(ZfEvent(type='codex.hook.post_tool_use', payload={'tool_response': 'x' * 10000}))
+    log.append(ZfEvent(id='evt-target', type='codex.hook.post_tool_use', correlation_id='new'))
+    expected = next(e for e in reversed(log.read_all()) if e.id == 'evt-target')
+    log.index = None
+    monkeypatch.setattr(log, 'read_all', lambda: (_ for _ in ()).throw(AssertionError('full read')))
+    writer = HookEventWriter(log)
+    assert writer._event_by_id('evt-target') == expected
+    enriched = writer._enrich(ZfEvent(type='codex.hook.pre_tool_use', causation_id='evt-target'))
+    assert enriched.correlation_id == 'new'
+
+
+def test_hook_writer_verifies_signed_parent_events(tmp_path):
+    from zf.core.security.signing import EventSigner
+
+    log = EventLog(tmp_path / 'events.jsonl', signer=EventSigner(b'secret'))
+    log.append(ZfEvent(id='evt-target', type='task.dispatched', correlation_id='run'))
+    expected = log.read_all()[0]
+    log.index = None
+    assert HookEventWriter(log)._event_by_id('evt-target') == expected
+
+
+def test_hook_writer_uses_full_read_for_json_escaped_event_ids(tmp_path, monkeypatch):
+    log = EventLog(tmp_path / 'events.jsonl')
+    parent = ZfEvent(id='evt/target', type='task.dispatched', correlation_id='run')
+    log.append(parent)
+    log.index = None
+    calls = []
+    read_all = log.read_all
+    monkeypatch.setattr(log, 'read_all', lambda: calls.append(True) or read_all())
+    assert HookEventWriter(log)._event_by_id(parent.id) == parent
+    assert calls == [True]

@@ -53,7 +53,7 @@ from zf.cli.hook_workdir_guard import (
     write_target_paths as _write_target_paths,
 )
 from zf.runtime.provider_stop import classify_provider_stop
-from zf.cli.hook_context_events import hook_context_events
+from zf.cli.hook_context_events import HookEventWriter, hook_context_events
 from zf.runtime.result_submit import authorized_operation_workdir_write_scopes as _operation_write_scopes
 
 
@@ -821,7 +821,7 @@ def run(args: argparse.Namespace) -> int:
     except EventSigningConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
-    event_writer = EventWriter(event_log)
+    event_writer = HookEventWriter(event_log)
     completed_tail_quiesced = _completed_tail_quiesced(event_log)
     if completed_tail_quiesced and args.event == "provider.stop.check":
         return 0
