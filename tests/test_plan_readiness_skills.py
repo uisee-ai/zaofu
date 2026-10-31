@@ -40,7 +40,8 @@ def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role
     references = {
         "zf-plan-task-map-contract": ("review-ports.md",),
         "zf-plan-execution-readiness": ("execution-consistency.md", "human-review.md", "epic-refinement.md",
-                                        "bounded-spike.md", "cross-domain-obligations.md", "early-feedback.md"),
+                                        "bounded-spike.md", "cross-domain-obligations.md", "early-feedback.md",
+                                        "spec-design-readiness.md"),
         "tdd-evidence": ("cycle-evidence.md", "rework-preservation.md"),
         "verify-review": ("regression-and-integration.md", "independent-findings.md"),
     }
@@ -58,7 +59,8 @@ def test_new_method_distribution_matches_canonical_source():
     source = (root / "skills/zf-plan-execution-readiness/SKILL.md").read_bytes()
     for provider in (".codex", ".claude"):
         assert (root / provider / "skills/zf-plan-execution-readiness/SKILL.md").read_bytes() == source
-        for name in ("execution-consistency.md", "human-review.md", "epic-refinement.md", "epic-plan-example.json"):
+        for name in ("execution-consistency.md", "human-review.md", "epic-refinement.md", "epic-plan-example.json",
+                     "spec-design-readiness.md"):
             reference = Path("references") / name
             assert (
                 root / provider / "skills/zf-plan-execution-readiness" / reference

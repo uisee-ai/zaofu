@@ -71,6 +71,31 @@ Package 身份/摘要，并把 Impl/Task Verify 的必读路径设置为
 候选相关 sentinel/mock E2E 另列在任务完成记录。
 这些测试证明机械行为与兼容性，不证明真实模型计划质量或业务全链路已交付。
 
+## 产品规格与分批设计
+
+Planner/Critic 通过既有依赖物化加载
+[规格与设计就绪方法](../../skills/zf-plan-execution-readiness/references/spec-design-readiness.md)。
+产品规格保留有来源的用户故事、价值优先级、独立可演示结果与成功判据；
+技术设计先细化当前实施前沿需要的数据、接口、事务/幂等和 UI 状态。
+公共合同保留生产者、消费者、版本/同版锚点及使用前的决定关闭证据。
+原始效果图、候选模型、已采纳合同和执行证据分别记录，未定义指标不得猜测。
+
+Critic 在已有评审工件分别记录产品、设计、来源覆盖、执行验证、未决治理的结论、
+正文位置、反例和影响任务；有界返修必须说明复用的结论及未复审范围。
+这些是 Skill 方法，不是新 Task schema 或 Kernel 内容评分器。未来事项不共同
+阻塞首片；未知公共协议则不能由并行消费者各自猜测。
+
+Preview 仅传递显式的 `derived_plan_full` 声明。缺失声明时，审批绑定和可读正文
+使用 `derived_plan`（需核对完整性），没有正文/声明时沿用 `unknown`；
+全文可读不代表语义完整。显式摘要/完整声明和既有审批动作保持兼容。
+历史事件/Bundle 不被重写，也无法凭投影修复追认旧 `derived_plan_full` 的出处。
+Workflow Graph 的持久缓存代际升级，避免旧推断结果及 ETag 遮蔽新投影。
+
+采用本批代码需重启 Web/API 消费者；Skill 更新需在后续 Planner/Critic 会话重新
+物化。已有 ls Plan 必须走受控新版本修订才获得补充规格，不因更新 Skill 自动改变。
+本批切片验证、限制与 ls 修订交接见
+[验证记录](../records/2026-10-31-sdd-readiness-validation.md)。
+
 
 ## 同版 Plan 人工审阅
 

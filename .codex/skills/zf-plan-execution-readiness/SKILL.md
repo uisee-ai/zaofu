@@ -69,6 +69,9 @@ briefing中的 `Compiled planning execution facts` 是当前已加载配置的�
 
 ## 人工审阅与具体场景
 
+生成或评审 PRD／技术设计时，先按[规格与设计就绪](references/spec-design-readiness.md)
+区分产品故事、设计合同、当前实施前沿和未来决定；Critic 分项记录证据与审查范围。
+
 提交或评审 Plan 前，按[人工审阅方法](references/human-review.md)组织审批首页、
 模块规格、业务旅程与原子验收场景。阅读层绑定同一 Plan Package，不创建第二任务合同；
 旧计划缺少场景时如实报告，不把工程命令或通用 RED/GREEN 模板当作充分规格。
