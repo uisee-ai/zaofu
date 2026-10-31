@@ -68,6 +68,7 @@ def normalize_workflow_read_result(
 
     if result_semantics == "artifact_production" and (
         explicit_execution_failure
+        or (had_structured_report and execution_hint == "failed")
         or (
             (event.type.endswith(".failed") or execution_hint == "failed")
             and not artifact_output_present
