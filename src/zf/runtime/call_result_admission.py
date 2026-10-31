@@ -140,10 +140,12 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         if provider_summary_ref is not None:
             payload["provider_operation_summary_ref"] = provider_summary_ref
         policy = self._input_policy(payload, input_policy)
-        reader_failed = (
-            adapted.schema_version == "workflow-read-result.v1"
-            and adapted.payload.get("execution_status") == "failed"
-            and adapted.payload.get("verdict") == "abstained"
+        reader_failed = adapted.payload.get("execution_status") == "failed" and (
+            (adapted.schema_version == "workflow-read-result.v1"
+             and adapted.payload.get("verdict") == "abstained")
+            or (adapted.schema_version == "plan-synthesis-result.v1"
+                and adapted.payload.get("failure_class") == "reader_execution_failure"
+                and adapted.payload.get("verdict") == "rejected")
         )
         ledger_descriptor: dict[str, Any] = {}
         read_issues: list[dict[str, str]] = []
@@ -195,6 +197,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             actor=event.actor or "",
             task_id=str(event.task_id or payload.get("task_id") or ""),
             correlation_id=event.correlation_id or "",
+            execution_status="failed" if reader_failed else "",
         )
         issues = [dict(item) for item in adapted.issues]
         issues.extend(provider_summary_issues)
