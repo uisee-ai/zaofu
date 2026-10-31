@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 from zf.core.config.schema import ExecutionProfileConfig, RoleConfig
 from zf.runtime.execution_profiles import (
@@ -28,6 +28,8 @@ def render_execution_boundary(
     config: Any,
     role: RoleConfig,
     payload: dict,
+    *,
+    effective_limits: Mapping[str, Any] | None = None,
 ) -> list[str]:
     profile_id = str(
         payload.get("execution_profile_id")
@@ -55,6 +57,11 @@ def render_execution_boundary(
                 "reason": resolved.shadow_reason,
             }
     limits = profile.limits
+    effective = effective_limits if effective_limits is not None else {}
+    sample_limit = effective.get("max_usage_samples", limits.max_usage_samples)
+    timeout = effective.get("timeout_seconds", limits.timeout_seconds)
+    token_budget = effective.get("token_budget", limits.token_budget)
+    cost_budget = effective.get("cost_budget_usd", limits.cost_budget_usd)
     shadow_verdict = (
         str(shadow.get("verdict") or "")
         if isinstance(shadow, dict)
@@ -64,10 +71,10 @@ def render_execution_boundary(
         f"- profile_id: `{profile_id}`; digest: `{digest or '(not pinned)'}`; "
         f"mode: `{profile.strategy}/{profile.continuation}/{profile.collaboration}`; "
         f"access: `{profile.access}`; limits: max_children=`{limits.max_children}`, "
-        f"max_depth=`{limits.max_depth}`, timeout_seconds=`{limits.timeout_seconds:g}`, "
-        f"max_usage_samples=`{limits.max_usage_samples}`, "
-        f"token_budget=`{limits.token_budget}`, "
-        f"cost_budget_usd=`{limits.cost_budget_usd:g}`"
+        f"max_depth=`{limits.max_depth}`, timeout_seconds=`{timeout:g}`, "
+        f"max_usage_samples=`{sample_limit}`, "
+        f"token_budget=`{token_budget}`, "
+        f"cost_budget_usd=`{cost_budget:g}`"
     )
     if shadow_verdict:
         profile_line += f"; admission_shadow: `{shadow_verdict}`"
@@ -76,6 +83,8 @@ def render_execution_boundary(
         "",
         profile_line,
     ]
+    if effective_limits is not None:
+        lines.append("Limits above are the effective operation limits; the digest identifies the configured profile.")
     if (
         profile.strategy == "direct"
         and profile.collaboration == "single"
@@ -85,10 +94,10 @@ def render_execution_boundary(
             "Do not spawn or delegate to any provider-native sub-agent; "
             "execute this child directly in the current role session."
         )
-    if limits.max_usage_samples:
+    if sample_limit:
         lines.extend([
             (
-                f"Finish within `{limits.max_usage_samples}` usage samples; each "
+                f"Finish within `{sample_limit}` usage samples; each "
                 "tool round-trip counts. Reserve the final two samples for the "
                 "prefilled result and submit; stop when evidence is sufficient."
             ),

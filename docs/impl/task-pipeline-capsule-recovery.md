@@ -80,6 +80,8 @@ Task Pipeline operation 因 `usage_samples` 达限时，Owner 可针对该 opera
 
 Owner 明确要求对同一 Run 后续 operation 一并修改时，可在上述命令增加 `--all-run-operations`；受控恢复准入后同一 Run 的 operation 使用该采样上限，其他 Run 和其他预算维度不受影响。原冻结请求和历史用量记录不改写。
 
+Reader fanout 的新派发及受控重派在生成执行边界说明时，读取与预算守卫相同的 operation 有效限额（含已准入的同 Run 修订），不再把旧 profile 的采样数当作当前限制。profile digest 仍标识原配置；operation 身份或限额不可读取时拒绝派发，历史 briefing 不改写。
+
 验证：`tests/test_task_pipeline_worker_liveness.py` 覆盖实际 watchdog 调用；`tests/test_task_pipeline_integration_retry.py` 覆盖 CLI、拒绝分支、代际投影和无 provider 的真实 git Candidate 集成恢复。
 
 批量派发也受 `max_unverified_tasks` 剩余名额约束，每派发一个 fresh Impl 都占用名额；不能仅在批次开始检查一次阈值。Impl/Verify 池各有 8 个槽位不等于可以同时运行 16 个未验证任务。`tests/test_task_pipeline_parallel_backpressure.py` 覆盖 1 Verify + 7 Impl 并行与 8 Verify 排空，既有返工回归保持通过。

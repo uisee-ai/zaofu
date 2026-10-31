@@ -132,3 +132,18 @@ def operation_budget_status(
             "reset budgets or skip gates."
         ),
     }
+
+
+def effective_operation_limits(state_dir: Path, log: EventLog, operation_id: str) -> dict[str, Any]:
+    """Use the same admitted budget amendments as the runtime budget guard."""
+    from zf.runtime.artifact_context_events import ArtifactContextEvents
+    from zf.runtime.workflow_budget_guard import _operation_limits
+
+    events = ArtifactContextEvents(log, preserve_run_aliases=True).read_all()
+    operation = reduce_workflow_operations(events).get(operation_id)
+    if operation is None:
+        raise ValueError(f"unknown workflow operation: {operation_id}")
+    limits = _operation_limits(state_dir, operation, events=events)
+    if not limits:
+        raise ValueError(f"operation limits unavailable: {operation_id}")
+    return limits
