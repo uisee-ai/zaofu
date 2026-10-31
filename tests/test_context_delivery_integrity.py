@@ -13,6 +13,25 @@ from zf.runtime.artifact_read_ledger import (
 )
 
 
+@pytest.mark.parametrize("ref_kind", ["absolute", "legacy", "outside"])
+def test_controlled_read_preserves_validated_source_path(tmp_path, ref_kind):
+    state = tmp_path / "state"
+    path = state / "artifacts" / "source.txt"
+    path.parent.mkdir(parents=True)
+    path.write_text("original")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("private")
+    ref = {"absolute": str(path), "legacy": ".zf/artifacts/source.txt", "outside": str(outside)}[ref_kind]
+    manifest = {"attempt_id": "a", "sources": [{"source_id": "s", "artifact_id": "a", "ref": ref,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}]}
+    if ref_kind == "outside":
+        with pytest.raises(ValueError, match="escapes state_dir"):
+            read_attempt_artifact(state, manifest=manifest, source_id="s", artifact_id="a")
+    else:
+        result = read_attempt_artifact(state, manifest=manifest, source_id="s", artifact_id="a")
+        assert result["content"] == "original"
+
+
 @pytest.mark.parametrize("failure", ["write", "flush", "short"])
 def test_failed_stdout_has_no_read_receipt(tmp_path, failure):
     class Broken(io.StringIO):

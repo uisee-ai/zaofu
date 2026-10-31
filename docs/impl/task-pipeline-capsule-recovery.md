@@ -8,6 +8,8 @@ Task Pipeline 在准备新的 provider operation 前，通过 TaskStore 重新�
 
 结果准入对 UTF-8 NDJSON 读取账本逐行解析并同时计算字节数和摘要，不再套用普通 sidecar 的 4 MB 正文加载上限；仍逐条核对 attempt 身份和必读覆盖，校验失败时拒绝准入。普通 sidecar 的读取限制不变，已有封存账本无需重写。
 
+读取固定来源版本时复用已通过 state_dir 边界检查的路径，兼容状态目录内绝对路径及旧 `.zf/` 前缀；目录外路径仍拒绝，来源摘要与恢复副本的校验不变。
+
 worker 发现任务说明、briefing、快照之间版本冲突时，以 implementation result 的 failure_class/blocker_kind=task_context_stale 报告具体版本和证据。该类型进入 harness 修复分支，不消耗产品重规划重试。真实 upstream_contract_gap 仍进入语义重规划；本修复不依赖自由文本猜测、不重写历史失败事件。
 
 故障修复后，监工核验当前 operation 已停止、说明投影与快照一致，再通过现有受控恢复动作/CLI 恢复。已批准 Task Map 的修订仍须通过正式 Planner/Critic、Plan Preview 和新 package 接纳；重启进程不等于恢复 Run，也不等于批准新计划。
