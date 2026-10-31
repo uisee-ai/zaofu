@@ -57,6 +57,8 @@ PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧
 
 `zf plan review`优先展示Kernel按实际派发任务集生成的plan-digest。返工TaskMap包含历史
 任务，不应把完整历史集合重算成当前scope冲突；无digest的旧事件继续使用兼容检查。
+增量摘要的 assembly 在位检查读取绑定的完整任务图，其余范围和所有权检查仍限定本次
+派发任务；任务表显示明确的 owner instance。完整图不可读取时显式提示检查范围。
 
 
 跨generation gap完成时，当前Goal的终态只列本轮gap仍可能留下旧任务。对旧任务收尾

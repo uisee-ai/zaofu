@@ -3386,9 +3386,10 @@ class FanoutCoordinationMixin(
     def _write_plan_digest(self, plan_id: str, task_items: list, task_map_ref: str) -> str:
         """B-93-03: 落 plan-digest.md,返回相对 state_dir 的 digest_ref(失败返回 '')。"""
         try:
-            from zf.runtime.plan_digest import render_plan_digest
+            from zf.runtime.plan_digest import render_bound_plan_digest
 
-            md = render_plan_digest(task_items, plan_id=plan_id, task_map_ref=task_map_ref)
+            md = render_bound_plan_digest(task_items, plan_id=plan_id, task_map_ref=task_map_ref,
+                                          state_dir=self.state_dir, project_root=self.project_root)
             out_dir = self.state_dir / "artifacts" / "plan-digest"
             out_dir.mkdir(parents=True, exist_ok=True)
             safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in (plan_id or "plan"))
