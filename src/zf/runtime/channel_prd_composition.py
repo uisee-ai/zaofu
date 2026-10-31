@@ -31,7 +31,12 @@ def expand_prd_composition(
     digest_key = "artifact_digest" if file_source else "message_body_digest"
     identity = recipe.get("source_ref" if file_source else "source_message_id")
     digest = str(recipe.get("source_digest" if file_source else "source_message_digest") or "").removeprefix("sha256:")
-    kinds = {"channel_prd_source"} if file_source else {"requirement", "owner_input"}
+    # A conversation PRD draft is itself a bound semantic contribution.  It is
+    # a valid immutable source for a later synthesis, alongside the original
+    # requirement and owner input.  Restricting message sources to only those
+    # two kinds rejects the normal conversation flow after the draft has been
+    # produced by a member.
+    kinds = {"channel_prd_source"} if file_source else {"requirement", "owner_input", "contribution"}
     sources = [row for row in pack.get("semantic_source_documents") or []
                if isinstance(row, dict) and row.get(identity_key) == identity
                and row.get("kind") in kinds and row.get(digest_key) == digest and digest]

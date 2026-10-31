@@ -115,6 +115,22 @@ def test_attestation_expands_only_artifacts_in_the_attested_snapshot(tmp_path):
     assert "consumed_message_digests" not in body
 
 
+def test_contribution_message_can_be_selected_as_composition_source(tmp_path):
+    channel, request, body = fixture()
+    source = channel["context_packs"]["ctx"]["semantic_source_documents"][0]
+    source["kind"] = "contribution"
+    channel["context_packs"]["ctx"]["semantic_source_manifest"] = [
+        {key: value for key, value in source.items() if key != "content"}
+    ]
+
+    expanded, error = expand_prd_composition(
+        body, channel=channel, request=request, state_dir=tmp_path,
+    )
+
+    assert not error
+    assert "New decided rule." in expanded["prd_markdown"]
+
+
 @pytest.mark.parametrize("fault", ["", "digest", "anchors", "mixed", "foreign_kind"])
 def test_selected_file_composition_preserves_entire_source_and_requires_bound_identity(tmp_path, fault):
     channel, request, body = fixture()
