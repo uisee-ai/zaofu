@@ -53,6 +53,7 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "rework_attempt",
     "rework_source",
     "rework_feedback",
+    "operator_feedback",
     "diagnostics_ref",
     "plan_compile_gate",
     "artifact_gate",

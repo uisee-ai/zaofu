@@ -283,6 +283,12 @@ class RecoveryActionsMixin:
                 requested_action,
                 "escalation_event_id and approval_ref are required",
             )
+        from zf.runtime.reader_replan_feedback import bind_operator_feedback, operator_feedback
+
+        try:
+            feedback = operator_feedback(payload)
+        except ValueError as exc:
+            return self._recovery_failed(requested, action, requested_action, str(exc))
         events = self.writer.event_log.read_all()
         escalation = next(
             (event for event in events if event.id == escalation_event_id),
@@ -367,6 +373,11 @@ class RecoveryActionsMixin:
             None,
         )
         if existing_trigger is not None:
+            if feedback != operator_feedback(existing_trigger.payload):
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "stage generation already exists with different operator feedback", 409,
+                )
             if payload.get("repair_target") != existing_trigger.payload.get("reader_repair_target"):
                 return self._recovery_failed(
                     requested, action, requested_action,
@@ -403,6 +414,7 @@ class RecoveryActionsMixin:
                 f"new stage generation rejected: {note}",
                 409,
             )
+        bind_operator_feedback(stage_trigger, feedback, request_id=requested.id)
         if "repair_target" in payload:
             from zf.runtime.reader_repair_target import bind_reader_repair_target
 
