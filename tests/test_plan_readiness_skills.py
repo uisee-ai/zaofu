@@ -41,7 +41,8 @@ def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role
         "zf-plan-task-map-contract": ("review-ports.md",),
         "zf-plan-execution-readiness": ("execution-consistency.md", "human-review.md", "epic-refinement.md",
                                         "bounded-spike.md", "cross-domain-obligations.md", "early-feedback.md",
-                                        "spec-design-readiness.md"),
+                                        "spec-design-readiness.md", "spec-revision-review.md",
+                                        "delivery-validation.md"),
         "tdd-evidence": ("cycle-evidence.md", "rework-preservation.md"),
         "verify-review": ("regression-and-integration.md", "independent-findings.md"),
     }
@@ -60,7 +61,7 @@ def test_new_method_distribution_matches_canonical_source():
     for provider in (".codex", ".claude"):
         assert (root / provider / "skills/zf-plan-execution-readiness/SKILL.md").read_bytes() == source
         for name in ("execution-consistency.md", "human-review.md", "epic-refinement.md", "epic-plan-example.json",
-                     "spec-design-readiness.md"):
+                     "spec-design-readiness.md", "spec-revision-review.md", "delivery-validation.md"):
             reference = Path("references") / name
             assert (
                 root / provider / "skills/zf-plan-execution-readiness" / reference
@@ -121,7 +122,7 @@ def test_human_review_example_reaches_existing_task_scoped_reader():
     assert body["tasks"][0]["body"]["human_review"]["scenarios"][0]["acceptance_ids"]
 
 
-@pytest.mark.parametrize("name", ["zf-plan-execution-readiness", "zf-workflow-start-planner", "zf-harness-self-improve"])
+@pytest.mark.parametrize("name", ["zf-plan-execution-readiness", "zf-workflow-start-planner", "zf-harness-self-improve", "zf-verify-rescan-replan", "zf-harness-done-contract"])
 def test_operator_methods_keep_references_in_provider_materialization(tmp_path, name):
     root = Path(__file__).resolve().parents[1]
     source = root / "skills" / name

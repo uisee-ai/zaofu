@@ -29,7 +29,6 @@ from zf.runtime.role_context import (
     known_role_contexts,
 )
 from zf.runtime.spec_promote import (
-    SPEC_PROMOTE_COMPLETED,
     SPEC_PROMOTE_SKIPPED,
     SpecPromoteDecision,
     decide_promotion,
@@ -211,10 +210,11 @@ class TestSpecPromote:
         assert "spec.promote.completed" in KNOWN_EVENT_TYPES
         assert "spec.promote.skipped" in KNOWN_EVENT_TYPES
 
-    def test_promote_when_spec_ref_and_evidence_present(self) -> None:
+    def test_acceptance_does_not_prove_spec_promotion(self) -> None:
         d = decide_promotion(task_id="T", spec_ref="docs/spec.md")
-        assert d.event_type == SPEC_PROMOTE_COMPLETED
-        assert d.is_promotion is True
+        assert d.event_type == SPEC_PROMOTE_SKIPPED
+        assert d.reason == "promotion_not_verified"
+        assert d.is_promotion is False
 
     def test_skip_when_no_spec_ref(self) -> None:
         d = decide_promotion(task_id="T", spec_ref="")
