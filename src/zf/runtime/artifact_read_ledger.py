@@ -424,7 +424,7 @@ def read_attempt_artifact(
     from zf.runtime.artifact_source_versions import read_source_version
 
     try:
-        raw, recovery_mode = read_source_version(state_dir, dict(source))
+        raw, recovery_mode = read_source_version(state_dir, dict(source), path=path)
     except (OSError, ValueError, KeyError) as exc:
         raise ArtifactReadError(str(exc)) from exc
     digest = hashlib.sha256(raw).hexdigest()
