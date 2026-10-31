@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：`9ee0ba74 fix: bind approved plan and OA authority into replan inputs`
 
 # 返修 Plan 的权威输入接线
 
