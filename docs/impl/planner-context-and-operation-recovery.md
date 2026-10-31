@@ -28,6 +28,13 @@ Reader 恢复次数耗尽时，内核写入 `fanout.child.failed` 后、评估�
 未注册事件及新增 writer trigger 不因这项支持而获准。
 Run 激活与重触发都保留审计，不清零原 Run 成本、不修改既有操作的终态。
 
+停滞检测与派发可以观察到不同批次的事件：补发时原触发尚未消费，真正派发时
+原 fanout 已启动。Reader/Writer 派发入口因此按 `original_trigger_event_id`、
+事件类型、关联运行与完整载荷核对自动补发及原触发；同一来源在该 stage 已有
+fanout 时仅写幂等 `fanout.retrigger.suppressed`，不创建新 fanout 取消正常工作。
+两种消费顺序都适用。受控的新 rework/retrigger、不同载荷或其他 stage 保持独立，
+未处理过的原触发仍可由停滞恢复启动。见 `tests/test_stall_fanout_idempotence.py`。
+
 `zf plan inspect-execution` 与运行时共用 `flow_metadata_for`：多 Flow 使用
 flow_metadata_by_kind 的指定条目，单 Flow 回退到编译后的 flow_metadata。
 检查工具不得因单 Flow 缺 by-kind 容器而把已启用的 Task Pipeline 误报为 off；
