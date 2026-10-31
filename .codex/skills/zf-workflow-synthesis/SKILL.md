@@ -43,6 +43,11 @@ project constraints. Treat every allowlist as closed.
    编译器保留项目身份、状态目录、session 和本地 skill sources，绑定 Requirement 的项目内
    PRD/target 和当前 Git 分支；装配已安装控制器技能及内联 Profile，保留 V5 的阻塞门禁、
    独立验证、生命周期和预算。缺少业务路径/检查命令时问具体问题，不反问如何安装已注册控制器。
+   聊天来源若没有单独的 `source_ref`，但已有 confirmed Requirement 和完整
+   `task_input_binding`、`task_input_contract_ref/digest`，编译器会校验绑定并把完整
+   Requirement（含 objective、澄清回答及来源）物化为项目内不可变输入。无需用户另造 PRD 文件；
+   Task 输入投影本身不含完整 behavior，不可将其当成完整需求摘要。显式提供的源文件仍优先，
+   源缺失、越界或绑定损坏必须修复，不能用此路径掩盖。
 4. Request only registered roles, skills, and execution profiles.
    选中完整控制器时，使用该条目的 roles/skills/profiles 和 completion_profile；它们是待批准
    配置的能力，不要求先存在于当前项目。未选中时仍只使用当前配置的 allowlist。

@@ -76,6 +76,16 @@ def build_flow_preflight_report(
         state_dir=state_dir.resolve(),
     )
     diagnostics = list(inspect_report.get("diagnostics") or [])
+    # Match zf start before an owner approves a configuration that cannot boot.
+    from zf.core.skills import validate_skill_sources
+    diagnostics.extend({
+        "severity": "STOP" if config.runtime.skills.strict else "WARN",
+        "kind": "skill_binding_invalid",
+        "title": "角色技能绑定无法通过启动校验",
+        "message": problem,
+        "fix_it": "选择存在且适用于该角色和阶段的技能后重新预览。",
+        "safe_auto_fix": False,
+    } for problem in validate_skill_sources(config=config, project_root=project_root))
     static_results = run_preflight_checks(
         config,
         check_provider_auth=not allow_missing_env,

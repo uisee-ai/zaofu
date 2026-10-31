@@ -160,6 +160,40 @@ def _git(root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def _requirement_source(root: Path, requirement: Mapping[str, Any]) -> str:
+    if requirement.get("source_ref"):
+        return _project_path(root, requirement["source_ref"], field="source_ref", file=True)
+    if (requirement.get("schema_version") != "requirement-spec.v1"
+            or requirement.get("confirmed") is not True
+            or not requirement.get("task_input_binding")):
+        raise ValueError("registered controller requires Requirement source_ref or a confirmed Task binding")
+    from zf.runtime.workflow_request_acceptance import (
+        assert_task_workflow_input_coverage, task_workflow_input_contract_digest,
+    )
+    contract_ref = _project_path(
+        root, requirement.get("task_input_contract_ref"), field="task_input_contract_ref", file=True,
+    )
+    contract = json.loads((root / contract_ref).read_text(encoding="utf-8"))
+    if (not isinstance(contract, dict) or task_workflow_input_contract_digest(contract)
+            != requirement.get("task_input_contract_digest")):
+        raise ValueError("Task input contract digest mismatch")
+    assert_task_workflow_input_coverage(
+        binding=requirement["task_input_binding"], input_contract=contract, source_ref="",
+        source_refs=requirement.get("source_refs") or {},
+        artifact_refs=requirement.get("artifact_refs") or [],
+        acceptance=requirement.get("acceptance") or [], constraints=requirement.get("constraints") or [],
+        scope=requirement.get("scope") or [], project_root=root,
+    )
+    # The Task input projection alone omits behavior. Preserve the complete
+    # confirmed Requirement, including objective, answers, and canonical refs.
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+    descriptor = write_immutable_json_sidecar(
+        root, requirement, root="workflow/requirement-sources", kind="workflow_requirement_source",
+        schema_version="requirement-spec.v1", created_by="registered-controller-assembly",
+    )
+    return str(descriptor["ref"])
+
+
 def assemble_controller(
     *, base_path: Path, short_spec: Mapping[str, Any], requirement: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -197,9 +231,7 @@ def assemble_controller(
         if "skill_sources" in body:
             body["skill_sources"] = copy.deepcopy(sources)
     spec["skill_sources"] = sources
-    flow["spec"][_FAMILIES[entry["flow_family"]]] = _project_path(
-        root, requirement.get("source_ref"), field="source_ref", file=True,
-    )
+    flow["spec"][_FAMILIES[entry["flow_family"]]] = _requirement_source(root, requirement)
     flow["spec"]["targetRoot"] = _project_path(root, requirement.get("target_root"), field="target_root")
     if entry["flow_family"] == "RefactorFlow":
         flow["spec"]["sourceRoot"] = _project_path(root, requirement.get("source_root"), field="source_root")

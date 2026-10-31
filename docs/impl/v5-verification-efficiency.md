@@ -36,6 +36,8 @@ Planner 方法要求检查每角色的输入放大与完整语义覆盖；Verify
 
 中文/Markdown 内联数值预算（例如 `token_budget=0、timeout_seconds=0`）保留可读，
 后续正文继续执行秘密扫描，非数值可疑赋值及真实凭据仍脱敏。
+Flow YAML 的 `contextWindowTokens` 纯数字同样保留，与展开后的
+`context_window_tokens` 一致；不把上下文窗口大小当成访问凭据隐藏。
 
 ## 必读输入与验证提交
 
@@ -103,3 +105,12 @@ Workflow operation 详情展示 Kernel 预算事件绑定的累计处理量、�
 定向测试覆盖分页完整性、重复来源鉴权、预校验失败后修正提交、重复提交拒绝、无执行期限与空闲阈值配置展开、
 争锁退避、无飞书通知、脱敏、Web Task 绑定、预算展示和实验异常退出。真实浏览器/Provider
 复测结果另行记录；mock 通过不能替代最终交付证据。
+
+## Workflow 审批证据进入 Goal closure
+
+Judge 的 `closure-fact` 除 Plan 审批/派发顺序外，也投影同 Run 实际调用所绑定的
+`workflow.request.approved`、`workflow.submit.requested` 和 `workflow.invoke.requested`。
+Request ID、revision、Requirement digest 必须与 invocation 一致，审批必须发生在调用前；
+冲突 Run、旧 revision、晚到审批和缺失审批不能补成成功。保留原事件 ID、主体、顺序、
+Proposal/config 摘要，语义验收仍由 Judge 决定。受控 stage-retrigger 可以在补齐代码后
+生成新 closure identity 并重新裁决，旧拒绝与旧快照保留。[真实验证](../records/2026-10-31-kanban-judge-fidelity-e2e.md)。

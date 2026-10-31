@@ -154,6 +154,11 @@ class WorkflowConfigApplyService:
             candidate_config = load_config(candidate_path)
             from zf.runtime.workflow_controller_skills import validate_controller_skill_packages
             validate_controller_skill_packages(candidate_config, self.project_root)
+            if candidate_config.runtime.skills.strict:
+                from zf.core.skills import validate_skill_sources
+                problems = validate_skill_sources(config=candidate_config, project_root=self.project_root)
+                if problems:
+                    raise ValueError("skill validation failed: " + "; ".join(problems))
         except Exception as exc:
             raise WorkflowConfigApplyError(
                 "candidate_config_invalid",
