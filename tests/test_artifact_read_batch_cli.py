@@ -58,7 +58,8 @@ def test_required_read_batch_rejects_worker_slice_override(capsys):
     assert "cannot be combined" in capsys.readouterr().err
 
 
-def test_required_read_rechecks_operation_after_telemetry_filter(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize('required', [True, False])
+def test_read_rechecks_operation_after_telemetry_filter(tmp_path, monkeypatch, capsys, required):
     state = tmp_path / ".runtime"
     path = state / "artifacts" / "source.json"
     path.parent.mkdir(parents=True)
@@ -77,13 +78,19 @@ def test_required_read_rechecks_operation_after_telemetry_filter(tmp_path, monke
     writer.append(ZfEvent(type="task.dispatched", payload={"attempt_id": "attempt-1", "required_reads": [
         {"source_id": "s", "artifact_id": "s", "artifact_sha256": source["sha256"], "json_path": "$.facts"},
     ]}))
-    command = ["artifact", "read", "--attempt", "attempt-1", "--required", "--state-dir", str(state)]
-    assert main(command) == 0
-    assert json.loads(capsys.readouterr().out)["items"]
+    command = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state)]
+    command += ["--required"] if required else ["--source", "s", "--artifact", "s", "--json-path", "$.facts"]
+    with monkeypatch.context() as patch:
+        patch.setattr(EventLog, 'read_all', lambda self: (_ for _ in ()).throw(AssertionError('full telemetry replay')))
+        assert main(command) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output['items'] if required else output == ['value']
     ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
     before = ledger.read_bytes()
     writer.append(ZfEvent(type="workflow.operation.settled", payload={"operation_id": "op-1"}))
-    assert main(command) == 1
+    with monkeypatch.context() as patch:
+        patch.setattr(EventLog, 'read_all', lambda self: (_ for _ in ()).throw(AssertionError('full telemetry replay')))
+        assert main(command) == 1
     assert "no longer active" in capsys.readouterr().err
     assert ledger.read_bytes() == before
     assert EventLog(state / "events.jsonl").read_all()[-1].type == "artifact.read.denied"
