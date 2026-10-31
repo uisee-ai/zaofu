@@ -28,6 +28,10 @@ Reader 恢复次数耗尽时，内核写入 `fanout.child.failed` 后、评估�
 未注册事件及新增 writer trigger 不因这项支持而获准。
 Run 激活与重触发都保留审计，不清零原 Run 成本、不修改既有操作的终态。
 
+`flow.gap_plan.ready` 仅在内核记录对应 `task_map.amend.failed` 且尚无成功
+`task_map.amended` 时允许受控重触发；原计划内容不变，同源仅可重触发一次，
+新事件仍经过正常 Task Map 校验和准入。
+
 停滞检测与派发可以观察到不同批次的事件：补发时原触发尚未消费，真正派发时
 原 fanout 已启动。Reader/Writer 派发入口因此按 `original_trigger_event_id`、
 事件类型、关联运行与完整载荷核对自动补发及原触发；同一来源在该 stage 已有

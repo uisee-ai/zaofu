@@ -32,7 +32,7 @@ RECOVERY_ACTIONS = (
 
 _RETRIGGERABLE = frozenset({
     "task_map.ready", "candidate.ready", "lane.stage.completed", "flow.goal.closed",
-    "flow.discovery.requested", "flow.discovery.completed",
+    "flow.discovery.requested", "flow.discovery.completed", "flow.gap_plan.ready",
 })
 _UPSTREAM_LINEAGE_REBUILD_REASONS = frozenset({
     "blocking Goal closure has no current Plan Artifact Package",
@@ -226,8 +226,9 @@ class RecoveryActionsMixin:
             return self._recovery_failed(
                 requested, action, requested_action, "source_event_id is required",
             )
+        events = self.writer.event_log.read_all()
         source = None
-        for event in self.writer.event_log.read_all():
+        for event in events:
             if event.id == source_event_id:
                 source = event
                 break
@@ -245,7 +246,24 @@ class RecoveryActionsMixin:
                 requested, action, requested_action,
                 f"{source.type} is not a retriggerable driving event",
             )
-        for event in self.writer.event_log.read_all():
+        if source.type == "flow.gap_plan.ready":
+            if source.origin != "kernel":
+                return self._recovery_failed(
+                    requested, action, requested_action, "flow gap plan must originate from kernel",
+                )
+            outcomes = [
+                event.type for event in events
+                if event.type in {"task_map.amend.failed", "task_map.amended"}
+                and event.origin == "kernel"
+                and isinstance(event.payload, dict)
+                and event.payload.get("source_event_id") == source_event_id
+            ]
+            if "task_map.amend.failed" not in outcomes or "task_map.amended" in outcomes:
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "flow gap plan must have a failed, not already completed, amendment",
+                )
+        for event in events:
             body = event.payload if isinstance(event.payload, dict) else {}
             if str(body.get("redrive_of") or "") == source_event_id:
                 return self._recovery_failed(
