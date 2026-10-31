@@ -683,6 +683,25 @@ def test_reader_replan_supersession_is_plan_scoped_and_forward_only(
     ) == ""
 
 
+def test_replan_supersession_respects_task_recovery_identity(tmp_path: Path):
+    _, _, _, orch = _state(tmp_path)
+    current = {
+        "stage_id": "review-candidate", "pdd_id": "F-1", "feature_id": "F-1",
+        "aggregate_config": {"success_event": "task_map.ready"},
+        "trigger_payload": {"workflow_run_id": "run-1", "rework_attempt": 1,
+                            "handoff_kind": "task_base_recovery", "task_id": "IDENTITY"},
+        "children": [{"role_instance": "review-a"}],
+    }
+    later = {**current, "trigger_payload": {**current["trigger_payload"],
+                                             "rework_attempt": 2, "task_id": "DESIGN"}}
+    kwargs = {"fanout_id": "old", "manifest": current,
+              "manifests": [("old", current), ("new", later)],
+              "started_order": {"old": 0, "new": 1}}
+    assert orch._newer_reader_replan_fanout(**kwargs) == ""
+    later["trigger_payload"]["task_id"] = "IDENTITY"
+    assert orch._newer_reader_replan_fanout(**kwargs) == "new"
+
+
 def test_new_reader_fanout_repairs_terminal_child_stale_busy_projection(
     tmp_path: Path,
 ):

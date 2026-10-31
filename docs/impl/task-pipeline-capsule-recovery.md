@@ -12,6 +12,8 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 
 `zf restart --dry-run` 全量重启预览只报告将执行的 stop/start，不调用实际停止或启动入口；该预览不证明 provider 连接或运行态已恢复。`tests/test_cli_restart.py` 通过真实 CLI 入口阻断对这两个入口的调用。
 
+单角色 `zf restart <role> --dry-run` 同样只报告计划，不重启角色、改写角色状态或追加合同检查事件。任务级语义恢复复扫按原任务身份隔离：同一父 Run 和候选提交下不同任务的复扫不得互相替代；同一任务的后续代仍按原规则替代旧代。实际 provider 断连后仍需通过正常角色恢复链恢复派发，不能把预览当作恢复。
+
 显式派发基准存在时，TaskRef 的文件范围由该基准到提交目标的 Git 差异确定，兼容 legacy `base_git_head` 与 v4 `base_commit`。局部返工或仅清理工作树的结果可以报告本轮没有新增文件，但不能据此清空此前尚未集成的任务文件；缺少显式基准的 legacy 空交接保持原有只读组装语义。候选集成消费完整范围，保留合同路径准入；不得只拼入最后一次修复文件，导致已经独立验证的入口、依赖清单或 smoke 脚本丢失。`tests/test_task_ref_rework_integration.py` 通过真实 TaskRef 与增量 candidate 入口覆盖完整实施、局部修复、空变更重交及滚动 smoke。
 
 验证：tests/test_task_pipeline_capsule.py 覆盖派发入口与真实 briefing/transport 调用边界；tests/test_task_context_recovery.py 覆盖分类与 Run Manager 重规划排除；保留 pipeline、TaskDoc、result submit 和 flow mock E2E 回归。
