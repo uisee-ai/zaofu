@@ -826,6 +826,9 @@ def _admit_result(
     from zf.runtime.workflow_registered_controller import admit_capabilities
     try:
         admit_capabilities(parameters, flow_family, catalog, requested_roles, requested_skills, requested_profiles)
+        from zf.runtime.workflow_approval_requirements import validate_approval_requirements
+        validate_approval_requirements(parameters, hydrate_workflow_requirement(state_dir, dict(request)),
+                                       required=bool(parameters.get("controller_id")))
     except ValueError as exc:
         raise WorkflowSynthesisError(str(exc)) from exc
     completion = result.get("completion_profile") or {}

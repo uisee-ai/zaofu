@@ -45,7 +45,7 @@ def test_required_read_batch_preserves_authentication_slices_and_hashes(tmp_path
         assert not output.out
     else:
         assert result == 0, output.err
-        returned = [json.loads(line) for line in output.out.splitlines()]
+        returned = json.loads(output.out)["items"]
         assert len(returned) == 2
         assert all("中文" in row["content"] and "not-authorized" not in row["content"] for row in returned)
         rows = [json.loads(line) for line in ledger.read_text().splitlines()]
@@ -56,6 +56,45 @@ def test_required_read_batch_preserves_authentication_slices_and_hashes(tmp_path
 def test_required_read_batch_rejects_worker_slice_override(capsys):
     assert main(["artifact", "read", "--attempt", "unused", "--required", "--max-chars", "1"]) == 1
     assert "cannot be combined" in capsys.readouterr().err
+
+
+def test_required_read_selects_both_pinned_versions_of_the_same_logical_source(tmp_path, monkeypatch, capsys):
+    from zf.runtime.artifact_read_ledger import read_attempt_artifact, ArtifactReadError
+
+    state = tmp_path / ".runtime"
+    sources = []
+    for version in (1, 2):
+        path = state / "artifacts" / f"rework-{version}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"revision": version}))
+        sources.append({"source_id": "plan-rework-context", "artifact_id": "plan-rework-context.json",
+                        "ref": str(path.relative_to(state)), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+                                             dispatch_id="attempt-1", sources=sources,
+                                             metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest)
+    EventWriter(EventLog(state / "events.jsonl")).append(ZfEvent(
+        type="task.dispatched", actor="orchestrator", task_id="T1",
+        payload={"dispatch_id": "attempt-1", "required_reads": [
+            {"source_id": s["source_id"], "artifact_id": s["artifact_id"],
+             "artifact_sha256": s["sha256"], "json_path": "$"} for s in sources]},
+    ))
+    result = main(["artifact", "read", "--attempt", "attempt-1", "--required", "--state-dir", str(state)])
+    output = capsys.readouterr()
+    assert result == 0, output.err
+    assert [json.loads(row["content"])["revision"] for row in json.loads(output.out)["items"]] == [1, 2]
+    rows = [json.loads(line) for line in (state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl").read_text().splitlines()]
+    assert {r["artifact_sha256"] for r in rows} == {s["sha256"] for s in sources}
+    assert len({r["occurrence_id"] for r in rows}) == 2
+    with pytest.raises(ArtifactReadError, match="ambiguous"):
+        read_attempt_artifact(state, manifest=manifest, source_id="plan-rework-context",
+                              artifact_id="plan-rework-context.json", record=False)
+    manifest["sources"][1]["access_scope"] = {"visibility": "project", "actor": "other-worker"}
+    with pytest.raises(ArtifactReadError, match="not authorized"):
+        read_attempt_artifact(state, manifest=manifest, source_id="plan-rework-context",
+                              artifact_id="plan-rework-context.json", artifact_sha256=sources[1]["sha256"],
+                              actor="dev-1", record=False)
 
 
 @pytest.mark.parametrize("unauthorized_alias", [False, True])
@@ -94,7 +133,7 @@ def test_identical_ports_share_delivery_but_not_authorization_or_receipts(
         assert not output.out
     else:
         assert result == 0, output.err
-        delivered = json.loads(output.out)
+        delivered = json.loads(output.out)["items"][0]
         assert delivered["source_id"] == "task_map"
         assert delivered["aliases"][0]["source_id"] == "planning_result"
         assert delivered["content"] == "a" * 5000

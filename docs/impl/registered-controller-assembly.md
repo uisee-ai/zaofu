@@ -1,5 +1,11 @@
 # 注册控制器的受控配置装配
 
+Workflow preflight 与 Config Apply 复用 `zf start` 的技能来源/角色/阶段校验：
+`runtime.skills.strict` 下非法绑定阻止预览修改及配置写入；非 strict 保持启动时的警告语义。
+技能已安装并不代表适用于任何阶段。回归见
+`tests/test_workflow_preview_skill_admission.py`，真实失败与重试见
+[链路验证记录](../records/2026-10-31-kanban-judge-fidelity-e2e.md)。
+
 对应 [Hello World V5 验收任务](../../tasks/active/2026-10-30-0604-hello-prd-playwright-smoke.md)。
 
 `zf-prd-v5.yaml` 可以独立加载，但新项目原本只能由 Synthesis 调整已有 Flow 的 lanes / pool，
@@ -18,6 +24,16 @@ Request → Synthesis → Proposal → Apply config → Approve & Run，不另�
 - 完整控制器选择保留注册的 lanes/pipeline；与局部 pool 修改互斥。运行中的配置不热替换。
 
 ## 项目适配和批准
+
+聊天创建的 Task 可以没有独立 PRD 文件。其 Requirement 已确认且持有有效的
+`task_input_binding`、`task_input_contract_ref/digest` 时，装配器先校验项目路径、
+合同摘要、Task 身份和输入覆盖，再使用现有不可变 sidecar writer，将完整 Requirement
+保存到项目 `artifacts/workflow/requirement-sources/<digest>.json`，作为 Flow 输入。
+该快照包含 objective、澄清回答、验收、约束及来源引用；不能只使用省略 behavior 的
+Task 输入投影。显式 `source_ref` 保持优先，缺失或越界不会回退；已有快照内容冲突拒绝装配。
+这一步只准备被批准配置引用的输入，不审批配置、不启动 Run。
+回归入口：`tests/test_workflow_controller_chat_source.py`；真实复测见
+[Kanban → Judge 保真记录](../records/2026-10-31-kanban-judge-fidelity-e2e.md)。
 
 Dashboard 的 Add/Open Project、Initialize Project 在未指定 kind/preset 且没有现成
 `zf.yaml` 时，默认从注册目录加载 `zf-prd-v5.yaml`，通过共享 Project Init 入口生成项目
@@ -69,6 +85,9 @@ model / lanes 等审核修改属于配置修订，不改写注册包的首次选
 不会再递增 Request，也不会自动应用配置或启动 Run。新的候选仍需精确配置批准和启动批准。
 
 ## 验证
+
+人工 Plan 审批策略、独立 Candidate Verify 宽度，以及运行中的 owner Requirement 修订，
+见 [V5 保真与验证约束](v5-fidelity-owner-revision-and-verification.md)。
 
 - `tests/test_workflow_review_controller.py`：注册控制器 model / lanes 修订、连续修改、旧补丁与篡改拒绝、中断重试及配置批准边界。
 - `tests/test_workflow_registered_controller.py`：真实合成/提案/配置 Apply 代码路径，能力隔离、

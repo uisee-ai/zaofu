@@ -2141,7 +2141,9 @@ def _recovery_event_matches_attention(
         }
         if lane in values:
             return True
-    return not task_id and not lane
+    # Missing scope cannot make unrelated progress proof of recovery.
+    # Unscoped escalations require their explicit controlled acknowledgement.
+    return False
 
 
 def _event_task_id(event: ZfEvent) -> str:

@@ -65,7 +65,8 @@ amendment are separate role capabilities supplied by the workflow profile.
    不用标题、摘要或截断片段替代完整必读正文，也不要重复打印已完整读过的大段 Plan/PAS。
    单项 `zf artifact read --source ... --artifact ...` 的stdout就是正文，不是带`.content`
    字段的外壳；不要把正文JSON解析后再取不存在的`.content`而误判为空。`--required`
-   才按JSONL逐行输出source/artifact/json-path/content；保留已完整呈现的正文，不重复dump。
+   统一返回 `required-artifact-page.v2`；完整消费 `items[].content` 并按 `next_cursor`
+   续页到 null。原样返回每页及身份元数据，保留已完整呈现的正文，不重复dump。
    等待仍在运行的工具时采用与预计耗时相称的10—30秒等待（保持操作者可见的进度），
    避免连续1秒轮询：每次模型往返都重带上下文，空输出也会消耗累计预算。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
@@ -73,6 +74,10 @@ amendment are separate role capabilities supplied by the workflow profile.
    digest. Do not rerun that identical deterministic command merely to produce
    another receipt. A stale/different-target receipt is evidence only, not a
    reusable result.
+   命令原文是绑定合同经 JSON/YAML 解析后的字符串，不是展示转义。按 command ID
+   取值并直接传给执行 API（如 `subprocess.run(command, shell=True, ...)`），不要把
+   序列化展示手抄到另一层 shell 字符串。记录实际命令值/摘要；认定合同命令错误前，
+   先与冻结快照解码值逐字核对。转录错误应修正调用，不能要求 Planner 改动正确合同。
 4. Add independent acceptance, regression, integration, browser, provider, or
    packaging probes required by the task's risk and verification tier. Receipt
    reuse never waives semantic AC review or an independent high-risk probe.
