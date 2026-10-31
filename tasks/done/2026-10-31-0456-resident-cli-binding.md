@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：`f36453cb fix: bind resident manager commands to the active CLI`。
 
 # 常驻 Run Manager 使用启动时绑定的 CLI
 
