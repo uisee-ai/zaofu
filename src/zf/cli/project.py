@@ -41,6 +41,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Project-scoped review and insight commands",
     )
     sub = parser.add_subparsers(dest="project_cmd")
+    from zf.cli.project_git import register as register_git_baseline
+    register_git_baseline(sub)
 
     init = sub.add_parser(
         "init",

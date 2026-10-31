@@ -133,6 +133,7 @@ def enqueue_workflow_synthesis(
         operation_type=WORKFLOW_SYNTHESIS_OPERATION_TYPE,
         request=prepared["operation_request"],
         parent_stage_id="workflow-synthesis",
+        parent_operation_id=str((operation_context or {}).get("retry_of_operation_id") or ""),
         causation_id=causation_id,
         correlation_id=request_id,
     )
@@ -157,6 +158,7 @@ def enqueue_workflow_synthesis(
         request_hash=ensured.request_hash,
         actor=actor,
         writer=writer,
+        retry_of_operation_id=str((operation_context or {}).get("retry_of_operation_id") or ""),
     )
     if ensured.created:
         writer.append(ZfEvent(
@@ -230,6 +232,7 @@ def run_workflow_synthesis(
         operation_type=WORKFLOW_SYNTHESIS_OPERATION_TYPE,
         request=operation_request,
         parent_stage_id="workflow-synthesis",
+        parent_operation_id=str((operation_context or {}).get("retry_of_operation_id") or ""),
         causation_id=causation_id,
         correlation_id=request_id,
     )
@@ -318,9 +321,14 @@ def run_workflow_synthesis(
         },
     ))
     try:
+        from zf.runtime.workflow_synthesis_recovery import reusable_synthesis_candidate
+        reusable = reusable_synthesis_candidate(
+            state_dir, operation_context or {}, request=request, writer=writer,
+        )
         raw_result = (
             dict(candidate_result)
             if isinstance(candidate_result, Mapping)
+            else reusable if reusable is not None
             else _invoke_synthesis_agent(
                 state_dir=state_dir,
                 project_root=project_root,
@@ -586,7 +594,9 @@ def _prepare_synthesis_operation(
     operation_id = stable_operation_id(
         workflow_run_id=workflow_run_id,
         parent_stage_id="workflow-synthesis",
-        operation_key="select-flow",
+        operation_key=("select-flow:retry:" + str(operation_context["retry_of_operation_id"])
+                       if operation_context and operation_context.get("retry_of_operation_id")
+                       else "select-flow"),
         operation_type=WORKFLOW_SYNTHESIS_OPERATION_TYPE,
     )
     catalog = _admission_catalog(config, project_root)

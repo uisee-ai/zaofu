@@ -174,6 +174,8 @@ def assemble_controller(
     if _digest(documents) != entry["digest"]:
         raise ValueError("registered controller changed during assembly")
     root = base_path.parent
+    from zf.runtime.workflow_git_readiness import require_git_baseline
+    require_git_baseline(root)
     from zf.runtime.workflow_controller_skills import SOURCE_NAME, controller_skill_source
     base_config = load_config(base_path)
     package = controller_skill_source(root=root, base=base_config, template=load_config(path))

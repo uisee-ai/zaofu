@@ -577,6 +577,7 @@ _ACTION_ALIASES = {
     "research-adopt",
     "research.adopt",
     "workflow-request",
+    "project-git-baseline",
     "workflow.request",
     "task-workflow-start",
     "task.workflow.start",

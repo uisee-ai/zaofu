@@ -61,15 +61,16 @@ export function WorkflowClarificationPanel({
     allow_missing_env: true,
     expected_revision: requirementRevision,
     expected_requirement_digest: requirementDigest,
+    retry_failed: ["preparation_failed", "preparation_blocked"].includes(requestStatus),
   };
 
-  if (requestStatus === "ready" && !editing) {
+  if (["ready", "preparation_failed", "preparation_blocked"].includes(requestStatus) && !editing) {
     return (
       <section className="workflow-clarification compact" data-testid="workflow-ready-to-prepare">
         <div className="workflow-clarification-head">
           <div>
             <span className="eyebrow">Requirement revision</span>
-            <strong>Confirmed and ready</strong>
+            <strong>Requirement confirmed</strong>
           </div>
           <button type="button" disabled={!actionReady || busyAction !== ""}
             onClick={() => setEditing(true)}>修改需求与配置约束</button>
@@ -81,13 +82,13 @@ export function WorkflowClarificationPanel({
             onClick={() => onPrepare(preparePayload)}
           >
             <FileDiff aria-hidden="true" size={16} />
-            {busyAction === "workflow-prepare" ? "Preparing" : "Prepare proposal"}
+            {busyAction === "workflow-prepare" ? "Preparing" : requestStatus === "ready" ? "Prepare proposal" : "Recheck & retry preparation"}
           </button>
         </div>
       </section>
     );
   }
-  if (!["clarifying", "draft", "ready"].includes(requestStatus)) return null;
+  if (!["clarifying", "draft", "ready", "preparation_failed", "preparation_blocked"].includes(requestStatus)) return null;
 
   const clarificationPayload = {
     ...preparePayload,

@@ -44,6 +44,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Let the Web/runtime consumer run Synthesis",
     )
     prepare.add_argument("--allow-missing-env", action="store_true")
+    prepare.add_argument("--retry-failed", action="store_true", help="Create a new preparation attempt after repairing a failed one")
     prepare.add_argument("--state-dir")
     prepare.add_argument("--format", choices=["md", "json"], default="md")
     prepare.set_defaults(func=run_prepare)
@@ -56,7 +57,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     preview.set_defaults(func=run_preview)
 
 
-def request_preview(state_dir: Path, request_id: str) -> dict:
+def request_preview(state_dir: Path, request_id: str, *, project_root: Path | None = None) -> dict:
     request = load_workflow_request(state_dir, request_id)
     if not request:
         raise ValueError(f"Workflow Request not found: {request_id}")
@@ -81,12 +82,17 @@ def request_preview(state_dir: Path, request_id: str) -> dict:
         )
         or {}
     )
-    failed = operation.get("status") in {"failed", "blocked", "cancelled"}
+    from zf.runtime.workflow_preparation_view import preparation_view
+    from zf.runtime.workflow_git_readiness import preparation_git_diagnostics
+    preparation = preparation_view(request, operation, git_blockers=(
+        preparation_git_diagnostics(project_root) if project_root else []))
+    failed = preparation["status"] in {"preparation_failed", "preparation_blocked", "cancelled"}
     return redact_obj(
         {
             "ok": not failed,
             "operation": operation,
-            "status": operation["status"] if failed else request["status"],
+            "status": preparation["status"],
+            "preparation": preparation,
             "request_id": request_id,
             "request": request,
             "proposal": proposal,
@@ -111,6 +117,13 @@ def _print(result: dict, format: str) -> None:
         return
     request = result.get("request") or result
     print(f"Workflow {result.get('request_id', '')}: {result.get('status', '')}")
+    blockers = result.get("blockers") or (result.get("preparation") or {}).get("blockers") or []
+    for blocker in blockers:
+        print(f"- {blocker.get('message', '')} {blocker.get('fix_it', '')}".strip())
+    if not result.get("ok", True):
+        if not blockers and result.get("reason"):
+            print(result["reason"])
+        return
     for question in request.get("open_questions") or []:
         print(f"- {question}")
     if request.get("open_questions"):
@@ -127,8 +140,9 @@ def run_preview(args: argparse.Namespace) -> int:
         context = resolve_project_context(
             explicit_state_dir=args.state_dir, load_config_with_explicit=True
         )
-        _print(request_preview(context.state_dir, args.request), args.format)
-        return 0
+        result = request_preview(context.state_dir, args.request, project_root=context.project_root)
+        _print(result, args.format)
+        return 0 if result["ok"] else 1
     except ValueError as exc:
         print(f"Error: {exc}")
         return 1
@@ -146,6 +160,7 @@ def run_prepare(args: argparse.Namespace) -> int:
             "kind": args.kind,
             "backend": args.backend,
             "allow_missing_env": args.allow_missing_env,
+            "retry_failed": getattr(args, "retry_failed", False),
         }
         for key in ("source_root", "target_root"):
             if getattr(args, key):
@@ -257,7 +272,7 @@ def run_prepare(args: argparse.Namespace) -> int:
                 writer=writer,
                 request_id=result["request_id"],
             )
-        preview = request_preview(context.state_dir, result["request_id"])
+        preview = request_preview(context.state_dir, result["request_id"], project_root=context.project_root)
         _print(preview, args.format)
         return 0 if preview["ok"] else 1
     except ValueError as exc:

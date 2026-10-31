@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **69** 个顶层命令 family、**304** 条可寻址命令路径。
+当前共 **69** 个顶层命令 family、**305** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -512,6 +512,7 @@ Project-scoped review and insight commands
 | Command | Parser description |
 |---|---|
 | `zf project` | Project-scoped review and insight commands |
+| `zf project git-baseline` | Preview or apply an exact initial Git file manifest |
 | `zf project init` | Initialize a project container for issue/prd/refactor workflow intake |
 | `zf project review-spine` | Review project design/delivery/runtime spine |
 | `zf project review-spine propose` | Create a pending proposal from a spine review corrective action |
