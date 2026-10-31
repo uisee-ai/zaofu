@@ -11,6 +11,7 @@ _BUDGET_AMENDMENT_DIMENSIONS = {
     "wall_clock": ("timeout_seconds", "elapsed_seconds"),
     "tokens": ("token_budget", "total_tokens"),
     "usd": ("cost_budget_usd", "total_usd"),
+    "usage_samples": ("max_usage_samples", "usage_samples"),
 }
 
 
@@ -299,6 +300,10 @@ def find_task_pipeline_budget_amendment(
         if str(payload.get("source") or "") != "zf_goal_cli":
             continue
         patch = payload.get("run_limits_patch")
+        if "usage_samples" in (budget_payload.get("exceeded_dimensions") or []):
+            if str(payload.get("operation_budget_id") or "") != operation_id:
+                continue
+            patch = payload.get("operation_limits_patch")
         if not isinstance(patch, Mapping):
             continue
         if _budget_patch_covers_exceeded_dimensions(patch, budget_payload):
@@ -333,6 +338,8 @@ def _budget_patch_covers_exceeded_dimensions(
         except (TypeError, ValueError):
             return False
         if amended_limit < 0:
+            return False
+        if dimension == "usage_samples" and not amended_limit.is_integer():
             return False
         if amended_limit != 0 and amended_limit <= current_usage:
             return False

@@ -133,7 +133,7 @@ def enforce_active_workflow_budgets(
         workflow_run_id = str(operation.get("workflow_run_id") or "")
         if workflow_run_id in blocked_runs or workflow_run_id in terminal_runs:
             continue
-        limits = _operation_limits(runtime.state_dir, operation)
+        limits = _operation_limits(runtime.state_dir, operation, events=events)
         if not _has_limits(limits):
             continue
         role_instance = str(operation.get("role_instance") or "")
@@ -303,6 +303,8 @@ def _trip_run(
 def _operation_limits(
     state_dir: Path,
     operation: Mapping[str, Any],
+    *,
+    events: list[ZfEvent] | None = None,
 ) -> dict[str, float | int]:
     descriptor = operation.get("request_ref")
     if not isinstance(descriptor, Mapping):
@@ -314,11 +316,45 @@ def _operation_limits(
     request = body.get("request") if isinstance(body, Mapping) else None
     explicit = request.get("operation_limits") if isinstance(request, Mapping) else None
     if isinstance(explicit, Mapping) and _has_limits(_limits_dict(explicit)):
-        return _limits_dict(explicit)
-    execution = request.get("execution_profile") if isinstance(request, Mapping) else None
-    profile = execution.get("profile") if isinstance(execution, Mapping) else None
-    limits = profile.get("limits") if isinstance(profile, Mapping) else None
-    return _limits_dict(limits)
+        limits = _limits_dict(explicit)
+    else:
+        execution = request.get("execution_profile") if isinstance(request, Mapping) else None
+        profile = execution.get("profile") if isinstance(execution, Mapping) else None
+        profile_limits = profile.get("limits") if isinstance(profile, Mapping) else None
+        limits = _limits_dict(profile_limits)
+    if not events:
+        return limits
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+    from zf.runtime.workflow_operation_task_pipeline import (
+        find_task_pipeline_budget_amendment,
+    )
+
+    operation_id = str(operation.get("operation_id") or "")
+    workflow_run_id = str(operation.get("workflow_run_id") or "")
+    for index, event in enumerate(events):
+        payload = event.payload if isinstance(event.payload, Mapping) else {}
+        if (
+            event.type != "workflow.operation.redrive_admitted"
+            or event.origin != "kernel"
+            or payload.get("workflow_run_id") != workflow_run_id
+            or payload.get("recovery_decision_owner") != "operator_budget_amendment"
+        ):
+            continue
+        before_redrive = events[:index]
+        redrive_operation_id = str(payload.get("operation_id") or "")
+        previous = reduce_workflow_operations(before_redrive).get(redrive_operation_id)
+        amendment = find_task_pipeline_budget_amendment(before_redrive, previous or {})
+        if amendment is None or amendment.id != payload.get("recovery_decision_event_id"):
+            continue
+        if (
+            redrive_operation_id != operation_id
+            and amendment.payload.get("operation_budget_scope") != "run"
+        ):
+            continue
+        patch = amendment.payload.get("operation_limits_patch")
+        if isinstance(patch, Mapping) and "max_usage_samples" in patch:
+            limits["max_usage_samples"] = int(patch["max_usage_samples"])
+    return limits
 
 
 def _effective_run_limits(
