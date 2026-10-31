@@ -96,6 +96,8 @@ Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role
 
 Gap 计划重放时，若已有替代任务只缺失原 Gap 明确提供的目标映射，且替代谱系、验收、验证、范围和来源均一致，可在新任务图中补回映射并重新派发该任务；已有映射冲突或合同不一致时拒绝。旧任务图及其计划包保持不可变，新计划仍须通过完整谱系和验收准入。
 
+若替代任务沿用的不可变 task-scoped 输入仅有前序任务分片，读取器只在当前 gap 任务图声明唯一 supersedes、前序任务已退出当前图、继承端口和历史计划包均能证明该前序任务时，开放 shared 与该前序分片。来源 ID 明示 predecessor，briefing 提醒其为历史背景，当前任务合同和任务图决定范围、验证责任与验收；新产出端口、谱系缺失或歧义仍拒绝。Candidate Verify 继续读取完整输入，旧内容不改写。
+
 验证：`tests/test_task_pipeline_capsule.py` 在真实派发函数和 briefing/文档生成器、隔离的 provider transport 边界核对 Impl/Verify 首派、g2 重派及失败分支，并注入 manifest/正文/角色陈旧。它证明派发上下文一致性，不代表真实多 provider 并行或完整产品验收通过。
 
 
