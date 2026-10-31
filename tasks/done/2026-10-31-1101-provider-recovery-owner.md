@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `46b1a3c0` fix: retain run manager ownership of provider failures
 
 # P1：Provider 拒绝后的恢复责任被错误交给 workflow
 
@@ -11,7 +11,7 @@ Owner 要求监工遇到问题记录、修复并继续。本次追查 Verify 拒
 - 保留不可自动重试限制 → verify: `retryable=false`、任务 blocked、operation blocked；无新 provider 调用或换模型动作。
 - 修复旧错误派生字段 → verify: 常规 reconcile 按原终局证据修正 owner/class，重复执行无变化，旧事件与终局引用保留。
 - 隔离无关语义失败 → verify: 缺结构化原因、类别不一致、不同终局均保持 workflow owner。
-- [实现说明](../docs/impl/provider-turn-error-recovery.md) → verify: 定向影响闭包、恢复合同、sentinel 和 mock flow。
+- [实现说明](../../docs/impl/provider-turn-error-recovery.md) → verify: 定向影响闭包、恢复合同、sentinel 和 mock flow。
 
 基线 `2d6103e1`；`/tmp/zf-provider-owner-baseline-red-20261031.log` 为同一 worktree 切回原模块的复现，2 failed / 4 passed。
 修复不授权重试原始拒绝、不修改任务验收结论；Provider 案件由 Run Manager 接手，产品缺陷返工属于 OA 的语义处理范围。
