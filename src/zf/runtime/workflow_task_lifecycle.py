@@ -301,6 +301,10 @@ def settle_workflow_managed_task_from_run_terminal(
             event_writer.event_log.read_all(),
             workflow_run_id,
         ).parent_task_id
+    if terminal_event.type == "run.goal.blocked" and _blocked_goal_was_recovered(
+        event_writer, terminal_event, workflow_run_id,
+    ):
+        return None
     task = task_store.get(task_id) if task_id else None
     if (
         task is None
@@ -380,6 +384,33 @@ def settle_workflow_managed_task_from_run_terminal(
         task_id,
         **updates,
     )
+
+
+def _blocked_goal_was_recovered(
+    writer: EventWriter, terminal_event: ZfEvent, workflow_run_id: str,
+) -> bool:
+    """Do not let replay of an older blocked goal undo its later recovery."""
+    if not workflow_run_id:
+        return False
+    from zf.runtime.run_scope import event_run_id, run_aliases
+
+    events = writer.event_log.read_all()
+    aliases = run_aliases(events)
+    run_id = aliases.get(workflow_run_id, workflow_run_id)
+    seen_terminal = False
+    for event in events:
+        if event.id == terminal_event.id:
+            seen_terminal = True
+            continue
+        if not seen_terminal or event.type != "run.goal.updated":
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if (
+            str(payload.get("status") or "").strip() in {"active", "running"}
+            and event_run_id(event, aliases=aliases) == run_id
+        ):
+            return True
+    return False
 
 
 def reopen_workflow_managed_task_from_run_recovery(

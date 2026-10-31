@@ -26,6 +26,7 @@ from zf.runtime.workflow_task_lifecycle import (
     WORKFLOW_TASK_TERMINAL_SOURCE,
     activate_workflow_managed_task,
     complete_standalone_research_task,
+    reopen_workflow_managed_task_from_run_recovery,
     settle_workflow_managed_task_from_run_terminal,
 )
 
@@ -451,3 +452,44 @@ def test_run_goal_completion_closes_workflow_parent_task(tmp_path: Path) -> None
         terminal.id,
         "artifact:goal-dossier",
     ]
+
+
+def test_replayed_blocked_goal_cannot_undo_later_run_recovery(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(mark_workflow_managed_task(Task(id="FLOW-1", title="Deliver", status="in_progress")))
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    writer.emit("workflow.invoke.accepted", task_id="FLOW-1", correlation_id="run-1",
+                payload={"task_id": "FLOW-1", "workflow_run_id": "run-1"})
+    blocked = writer.emit("run.goal.blocked", correlation_id="run-1",
+                          payload={"workflow_run_id": "run-1", "reason": "prior failure"})
+    settle_workflow_managed_task_from_run_terminal(task_store=store, event_writer=writer, terminal_event=blocked)
+    recovery = writer.emit("run.goal.updated", correlation_id="run-1",
+                           payload={"workflow_run_id": "run-1", "status": "active"})
+    reopen_workflow_managed_task_from_run_recovery(task_store=store, event_writer=writer, recovery_event=recovery)
+    assert store.get("FLOW-1").status == "in_progress"
+
+    settle_workflow_managed_task_from_run_terminal(task_store=store, event_writer=writer, terminal_event=blocked)
+    assert store.get("FLOW-1").status == "in_progress"
+    assert store.get("FLOW-1").blocked_reason == ""
+
+    newer = writer.emit("run.goal.blocked", correlation_id="run-1",
+                        payload={"workflow_run_id": "run-1", "reason": "new failure"})
+    settle_workflow_managed_task_from_run_terminal(task_store=store, event_writer=writer, terminal_event=newer)
+    assert store.get("FLOW-1").blocked_reason == "new failure"
+
+
+def test_other_run_recovery_does_not_suppress_current_block(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(mark_workflow_managed_task(Task(id="FLOW-1", title="Deliver", status="in_progress")))
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    blocked = writer.emit("run.goal.blocked", task_id="FLOW-1", correlation_id="run-1",
+                          payload={"workflow_run_id": "run-1", "reason": "current failure"})
+    writer.emit("run.goal.updated", correlation_id="run-2",
+                payload={"workflow_run_id": "run-2", "status": "active"})
+
+    settle_workflow_managed_task_from_run_terminal(task_store=store, event_writer=writer, terminal_event=blocked)
+    assert store.get("FLOW-1").blocked_reason == "current failure"
