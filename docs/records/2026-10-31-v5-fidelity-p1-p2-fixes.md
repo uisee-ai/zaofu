@@ -6,7 +6,7 @@
 `wip/codex-20261031-v5-fidelity-e2e`，本轮起点 `2f72f850`。
 依据：[原始失败记录](2026-10-31-kanban-judge-fidelity-e2e.md)、
 [测试 Prompt](../runbooks/2026-10-31-0040-kanban-judge-fidelity-e2e-prompt.md)、
-[本轮任务](../../tasks/active/2026-10-31-0250-v5-fidelity-p1-p2.md)。
+[本轮任务](../../tasks/done/2026-10-31-0250-v5-fidelity-p1-p2.md)。
 实现边界见 [实现说明](../impl/v5-fidelity-owner-revision-and-verification.md)。
 
 ## 当前 HEAD 复核
