@@ -86,11 +86,16 @@ def test_failed_critic_records_incomplete_input_without_passing(tmp_path, partia
         SimpleNamespace(repair_requested=False, status='admitted', admitted=True,
                         envelope_ref=admitted.payload['envelope_ref'],
                         control_result_ref=admitted.payload['control_result_ref']))
+    candidate = {'ref': 'artifacts/fanouts/current.json', 'sha256': 'a' * 64,
+                 'source_id': 'child-result-planner', 'artifact_id': 'current.json'}
+    monkeypatch.setattr('zf.runtime.plan_synth_recovery_refs.failed_critic_candidate_refs',
+                        lambda *args: [candidate])
     monkeypatch.setattr('zf.runtime.research_delivery.settle_research_delivery', lambda *a: None)
     PlanSynthRuntimeMixin._handle_fanout_synth_completed(runtime, canonical)
     events = runtime.event_log.read_all()
     failed = next(e for e in events if e.type == 'prd.plan.failed')
     assert failed.payload['failure_class'] == 'reader_execution_failure'
+    assert failed.payload['previous_plan_candidate_refs'] == [candidate]
     assert not _semantic_failure(failed.payload)
     assert not any(e.type == 'task_map.ready' for e in events)
 

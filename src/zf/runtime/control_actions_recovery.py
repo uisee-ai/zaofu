@@ -405,6 +405,11 @@ class RecoveryActionsMixin:
             None,
         )
         if existing_trigger is not None:
+            if payload.get("resume_candidate_synth_event_id") != existing_trigger.payload.get("resume_candidate_synth_event_id"):
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "stage generation already exists with a different candidate checkpoint", 409,
+                )
             if feedback != operator_feedback(existing_trigger.payload):
                 return self._recovery_failed(
                     requested, action, requested_action,
@@ -447,6 +452,17 @@ class RecoveryActionsMixin:
                 409,
             )
         bind_operator_feedback(stage_trigger, feedback, request_id=requested.id)
+        if payload.get("resume_candidate_synth_event_id"):
+            from zf.runtime.plan_synth_recovery_refs import resume_failed_critic_candidate
+
+            try:
+                synth_id = str(payload["resume_candidate_synth_event_id"])
+                stage_trigger.payload["previous_plan_candidate_refs"] = resume_failed_critic_candidate(
+                    self.state_dir, events, source, synth_id,
+                )
+                stage_trigger.payload["resume_candidate_synth_event_id"] = synth_id
+            except ValueError as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
         if "repair_target" in payload:
             from zf.runtime.reader_repair_target import bind_reader_repair_target
 
