@@ -87,6 +87,55 @@ def test_hook_writer_uses_full_read_for_json_escaped_event_ids(tmp_path, monkeyp
     assert calls == [True]
 
 
+def test_reverse_parent_handles_escaped_ids_duplicates_partial_tail_and_large_lines(tmp_path):
+    path = tmp_path / 'events.jsonl'
+    log = EventLog(path)
+    log.index = None
+    with path.open('w') as f:
+        f.write(ZfEvent(id='evt-target', type='old').to_json() + '\n')
+        f.write(ZfEvent(type='noise', payload={'output': 'x' * (1024 * 1024 + 50)}).to_json() + '\n')
+        f.write('{"type":"new","id":"evt-\\u0074arget","ts":"2026-10-31T00:00:00Z","payload":{}}\n')
+        f.write('{"type":"partial","id":"evt-target"')
+    expected = next(e for e in reversed(log.read_all()) if e.id == 'evt-target')
+    assert expected.type == 'new'
+    assert HookEventWriter(log)._event_by_id('evt-target') == expected
+
+
+def test_reverse_parent_looks_in_archives_and_handles_rotation(tmp_path, monkeypatch):
+    path = tmp_path / 'events.jsonl'
+    archive = tmp_path / 'events'
+    archive.mkdir()
+    (archive / '2026-10-30.jsonl').write_text(ZfEvent(id='evt-target', type='archived').to_json() + '\n')
+    path.write_text(ZfEvent(id='other', type='current').to_json() + '\n')
+    log = EventLog(path)
+    log.index = None
+    assert HookEventWriter(log)._event_by_id('evt-target').type == 'archived'
+    from zf.cli import hook_context_events as module
+    original = module.list_archives
+    calls = []
+    def changed(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            path.rename(archive / '2026-10-31.jsonl')
+            path.write_text(ZfEvent(id='evt-target', type='new-current').to_json() + '\n')
+        return original(*args, **kwargs)
+    monkeypatch.setattr(module, 'list_archives', changed)
+    assert HookEventWriter(log)._event_by_id('evt-target').type == 'new-current'
+
+
+def test_reverse_parent_does_not_decode_unrelated_telemetry(tmp_path, monkeypatch):
+    log = EventLog(tmp_path / 'events.jsonl')
+    log.index = None
+    log.append(ZfEvent(id='evt-target', type='task.dispatched'))
+    for _ in range(100):
+        log.append(ZfEvent(type='codex.hook.post_tool_use', payload={'output': 'x' * 10000}))
+    decode = log.decode_line
+    calls = []
+    monkeypatch.setattr(log, 'decode_line', lambda line: calls.append(line) or decode(line))
+    assert HookEventWriter(log)._event_by_id('evt-target').id == 'evt-target'
+    assert len(calls) == 1
+
+
 def test_workdir_guard_preserves_write_boundary_without_loading_full_ledger(tmp_path, monkeypatch):
     from zf.cli import hook_workdir_guard
 
@@ -110,3 +159,18 @@ def test_workdir_guard_preserves_write_boundary_without_loading_full_ledger(tmp_
 
     assert check(assigned / 'inside.py') == 0
     assert check(tmp_path / 'outside.py') == 2
+
+
+def test_workdir_guard_skips_ledger_for_read_only_tools(tmp_path, monkeypatch):
+    from zf.cli import hook_context_events as module, hook_workdir_guard
+    log = EventLog(tmp_path / 'events.jsonl')
+    monkeypatch.setattr(module, 'hook_context_events',
+                        lambda *_: (_ for _ in ()).throw(AssertionError('unneeded ledger read')))
+    for name, args in [('Read', {'file_path': '/outside/file'}),
+                       ('Bash', {'command': 'zf artifact read --required'})]:
+        assert hook_workdir_guard.evaluate_workdir_write_guard(
+            state_dir=tmp_path, project_root=tmp_path, event_type='codex.hook.pre_tool_use',
+            actor='dev', event_payload={'tool_name': name, 'tool_input': args},
+            event_log=log, event_writer=EventWriter(log), causation_id=None,
+            should_check_actor=lambda actor: True, active_task_id_for_actor=lambda *args: '',
+        ) == 0
