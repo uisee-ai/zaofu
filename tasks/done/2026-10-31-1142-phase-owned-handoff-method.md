@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `e14c2631 fix: preserve phase ownership in agent handoffs`
 
 # P1：返工指令混淆任务与候选的验收责任
 
