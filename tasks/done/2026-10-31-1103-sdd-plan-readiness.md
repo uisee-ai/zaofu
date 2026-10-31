@@ -1,6 +1,8 @@
 # PRD／SDD 规格充分性与审查改进
 
-> 状态: active
+> 状态: done
+
+实现提交：`9cec14eb feat: strengthen PRD design readiness and truthful previews`。
 
 来源：用户批准“在新的 worktree 生成优化改进的 backlog，实施，完成后列出功能并删除 worktree”。
 基线：ZaoFu `8f174350`；本地 Spec Kit `7370e592` 的方法对照。
@@ -50,5 +52,5 @@ Docker 浏览器 7 项既有 + 1 项新增通过，前端构建/typecheck/unit �
 impact closure 1116 passed / 1 skipped / 1 failed，唯一飞书用例已在未改动
 dev 8f174350 重现；保留已知基线失败，不宣称全绿。
 在线 ls 未修改，已提供基于冻结版本的受控修订输入；采用时先核对最新版本。
-实现提交与归档状态在提交后填写；干净 worktree 删除由提交归档后的收尾执行，
-保留分支和全部提交，不隐式 merge/push。
+实现提交后审计无残留；本记录归档后执行干净 worktree 删除，保留分支
+`wip/codex-20261031-sdd-readiness` 和全部提交，不隐式 merge/push。
