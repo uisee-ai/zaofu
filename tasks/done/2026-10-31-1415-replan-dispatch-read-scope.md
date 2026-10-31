@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 分离返修合同读取范围与下游派发范围
 
@@ -13,3 +13,7 @@
 验证记录：当前 HEAD 回归先失败 1 项，修复后直接调用者 34 项通过；自动 impact closure 462 passed / 7 skipped、哨兵 51 passed、mock flow 10 passed。未运行 full pytest 或真实 Provider 测试。实际返修包只读重放从 941065 bytes / 1102580 pretty JSON chars 缩到 116274 bytes / 129013 chars；93 个派发任务/索引、完整快照和反馈不变，内联 2 个直接任务。运行态部署与后续受控恢复由监督记录继续跟踪，不把源码验证视为产品通过。
 
 实现说明：[Plan 生产失败准入](../../docs/impl/plan-producer-failure-admission.md)。
+
+实现提交：`54648888 fix: separate replan read scope from downstream dispatch`。7 个 skip 为既有内部循环事件唤醒检查的显式例外。源码、合并后验证及安全运行态部署/恢复均已完成。
+
+运行态：独立固定 checkout `7515359c`、PID 3273412；等待旧 OA 和 Planner 全部 settled 后切换，resident CLI 同步绑定。新受控 stage generation `evt-31131f97fb38` 与实际 Planner 派发 `evt-71d7396bc509` 已确认；必读快照仅内联 Foundation/Assembly 两项，93 个完整索引及93项派发范围保留。证据：dl/artifacts/supervision/read-scope-dispatch-proof-2026-10-31.json。产品 Plan 修订/审批与实现执行仍由监工继续跟踪，不计为此基础设施修复的产品验收通过。
