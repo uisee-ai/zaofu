@@ -1,6 +1,7 @@
 # SDD 规格生命周期与可复现交付
 
-> 状态: active
+> 状态: done
+> 实现提交: `8e0a2a81` feat: strengthen specification lifecycle and delivery reviews
 
 授权来源：用户「好，按照建议的，生成backlog 实施吧」。本批按前轮建议的四项实施，
 使用独立 worktree；基于当前 dev 接入上一轮已提交的 SDD readiness 成果。
