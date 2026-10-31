@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 197bce07 fix: preflight plan port sizes and retain operator replan feedback
 
 # Plan 工件大小预检与监工返修反馈
 
