@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：`fe834898 fix: preserve planner progress through context and operation recovery`。
 
 # Planner 上下文压缩与失败操作终止
 
@@ -18,7 +20,7 @@ Planner 用量，在 60 次采样时阻断整个 Run。
 wop-prd-plan-planner-trig-evt-7cf6aa0f-839d15ea6a02。修复后通过受控恢复路径继续，
 不清除成本记录、不伪造成功结果、不扩大产品外部事实。
 
-实现说明：[Reader 恢复](../docs/impl/planner-context-and-operation-recovery.md)。
+实现说明：[Reader 恢复](../../docs/impl/planner-context-and-operation-recovery.md)。
 复现：原 HEAD 上 operation 终态断言为 running；两项原生压缩启动参数回归失败。
 
 - 配置已注册 reader 的受控重触发 -> verify: 经 ControlledActionService.execute
