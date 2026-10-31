@@ -333,7 +333,9 @@ def evaluate_workdir_write_guard(
         return 0
     from zf.cli.hook_dispatch_context import active_task_pipeline_dispatch
 
-    events = event_log.read_all()
+    from zf.cli.hook_context_events import hook_context_events
+
+    events = hook_context_events(event_log)
     pipeline = active_task_pipeline_dispatch(events, actor)
     has_pipeline_assignment = any(
         event.type == "task.pipeline.stage.dispatched"
