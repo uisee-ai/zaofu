@@ -53,6 +53,7 @@ from zf.cli.hook_workdir_guard import (
     write_target_paths as _write_target_paths,
 )
 from zf.runtime.provider_stop import classify_provider_stop
+from zf.cli.hook_context_events import hook_context_events
 from zf.runtime.result_submit import authorized_operation_workdir_write_scopes as _operation_write_scopes
 
 
@@ -298,12 +299,12 @@ def _resolve_causation(
         cached = index.latest_dispatch_event_for_actor(actor)
         if cached is not None:
             if cached.type == "task.pipeline.stage.dispatched":
-                return _latest_active_dispatch_for_actor(event_log.read_all(), actor)
+                return _latest_active_dispatch_for_actor(hook_context_events(event_log), actor)
             if cached.type == "task.dispatched":
                 return cached.id
             if cached.type == "fanout.child.dispatched":
                 try:
-                    events = event_log.read_all()
+                    events = hook_context_events(event_log)
                 except Exception:
                     return cached.id
                 if _fanout_dispatch_is_active(events, cached):
@@ -314,14 +315,14 @@ def _resolve_causation(
                 # because this type was unknown here — every synth hook
                 # went orphan and the synth looked dead for 40min.
                 try:
-                    events = event_log.read_all()
+                    events = hook_context_events(event_log)
                 except Exception:
                     return cached.id
                 if _synth_dispatch_is_active(events, cached):
                     return cached.id
                 return _latest_active_dispatch_for_actor(events, actor)
     try:
-        return _latest_active_dispatch_for_actor(event_log.read_all(), actor)
+        return _latest_active_dispatch_for_actor(hook_context_events(event_log), actor)
     except Exception:
         return None
     return None
@@ -348,7 +349,7 @@ def _orphan_already_recorded(event_log: EventLog, *, session_id: str) -> bool:
     if not session_id:
         return False
     try:
-        for event in reversed(event_log.read_all()):
+        for event in reversed(hook_context_events(event_log)):
             if event.type != "hook.orphan_event":
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
@@ -484,7 +485,7 @@ _WRITE_TOOL_NAMES = frozenset({
 })
 def _active_task_id_for_actor(event_log: EventLog, actor: str) -> str:
     try:
-        events = event_log.read_all()
+        events = hook_context_events(event_log)
         active_event_id = _latest_active_dispatch_for_actor(events, actor)
         if not active_event_id:
             return ""
@@ -945,6 +946,6 @@ def _completed_tail_quiesced(event_log: EventLog) -> bool:
     try:
         from zf.autoresearch.failure_signals import completed_run_quiesced
 
-        return completed_run_quiesced(event_log.read_all())
+        return completed_run_quiesced(hook_context_events(event_log))
     except Exception:
         return False
