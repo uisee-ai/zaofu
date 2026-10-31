@@ -49,6 +49,18 @@ Before submitting the completion claim:
 7. Submit through the exact completion command/output profile from the
    briefing, once.
 
+### 按冻结阶段责任交接
+
+准备交付时，对照 AC 的 `verification_owner`、command id、写入范围和依赖产物，
+区分当前任务必须满足的检查与后续候选的整体验收。全量命令提前执行后，若缺少
+合同明确分配给后续任务的产物，应保留非零结果、缺口及其 Owner；不能把候选未完成
+当作当前任务已失败，也不能声称全量通过。当前任务自己的必需检查仍须通过；最终
+候选的 mandatory gate 保持原样，由后续 Owner 实际执行。
+
+若 briefing / 返工指令要求的阶段前置条件与冻结责任冲突，报告具体 AC、命令和产物
+归属供 OA 修订；不要自行把失败改成成功、跳过当前检查或扩大实现范围。达到重试上限
+时走既有语义恢复路径，保留可复用代码和证据，不重写已接纳的失败结果。
+
 ## Evidence Quality
 
 本片合同包含运行/部署交付时，提交同版指南：精确准备/启动/就绪命令、配置与测试

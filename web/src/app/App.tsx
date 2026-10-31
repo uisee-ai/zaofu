@@ -692,6 +692,7 @@ export function App() {
   const [projectWizardInspection, setProjectWizardInspection] = useState<WorkspaceProjectPathInspection | null>(null);
   const [projectWizardBusy, setProjectWizardBusy] = useState(false);
   const [projectWizardError, setProjectWizardError] = useState("");
+  const [projectSetupNotice, setProjectSetupNotice] = useState<{ projectId: string; message: string } | null>(null);
   const [showWelcome, setShowWelcome] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -1643,6 +1644,9 @@ export function App() {
       if (!projectId) throw new Error("project action did not return a project id");
       await loadWorkspaceProjects();
       switchProject(projectId);
+      if (recordValue(result.git_readiness)?.ready === false) {
+        setProjectSetupNotice({ projectId, message: "Project created. Workflow preparation needs a Git baseline: review an explicit source file list and exclusions with the Kanban Agent, then approve initialization and retry preparation." });
+      }
       setProjectWizardOpen(false);
     } catch (err) {
       setProjectWizardError(err instanceof Error ? err.message : String(err));
@@ -2180,6 +2184,10 @@ export function App() {
       </header>
 
       {error ? <div className="error-strip">{error}</div> : null}
+      {projectSetupNotice?.projectId === activeProjectId ? <div className="error-strip" role="status">
+        {projectSetupNotice.message}
+        <button type="button" onClick={() => setProjectSetupNotice(null)}>Dismiss</button>
+      </div> : null}
       <ReadProjectionNotice snapshot={snapshot} />
 
       <main className={`workspace ${terminalOpen && activeProjectId ? "has-web-terminal" : ""}`.trim()}>

@@ -198,3 +198,60 @@ def test_cli_exposes_actual_selection_despite_planned_stage_annotations(tmp_path
     assert criteria["AC-sign"]["required_by_verification_owner"] == []
     assert "verdict" not in report
     assert not (tmp_path / "state").exists()
+
+
+def test_cli_single_flow_reads_legacy_metadata_like_runtime(tmp_path, capsys):
+    from zf.cli.main import main
+
+    config = tmp_path / "zf.yaml"
+    config.write_text("""project:
+  name: single-flow
+  state_dir: state
+workflow:
+  _flow_metadata:
+    flow_kind: prd
+    task_pipeline:
+      mode: blocking
+""")
+    plan = tmp_path / "task_map.json"
+    plan.write_text(json.dumps({"tasks": [{"task_id": "a", "validation": {
+        "commands": [{"owner": "task_verify"}],
+    }}]}))
+    assert main(["plan", "inspect-execution", "--config", str(config),
+                 "--task-map", str(plan), "--flow-kind", "prd"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["verification"]["task_pipeline_mode"] == "blocking"
+    assert report["verification"]["independent_task_verify"] is True
+    assert "verify_wiring_unconfirmed" not in report["review_items"]
+    assert not (tmp_path / "state").exists()
+
+
+def test_cli_scoped_flow_metadata_takes_precedence(tmp_path, capsys):
+    from zf.cli.main import main
+
+    config = tmp_path / "zf.yaml"
+    config.write_text("""project:
+  name: multiple-flows
+  state_dir: state
+workflow:
+  _flow_metadata:
+    task_pipeline:
+      mode: off
+  _flow_metadata_by_kind:
+    prd:
+      flow_kind: prd
+      task_pipeline:
+        mode: blocking
+    issue:
+      flow_kind: issue
+      task_pipeline:
+        mode: off
+""")
+    plan = tmp_path / "task_map.json"
+    plan.write_text('{"tasks": []}')
+    for kind, expected in (("prd", True), ("issue", False)):
+        assert main(["plan", "inspect-execution", "--config", str(config),
+                     "--task-map", str(plan), "--flow-kind", kind]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert report["verification"]["independent_task_verify"] is expected
+    assert not (tmp_path / "state").exists()

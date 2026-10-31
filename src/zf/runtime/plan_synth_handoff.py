@@ -53,6 +53,7 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "rework_attempt",
     "rework_source",
     "rework_feedback",
+    "operator_feedback",
     "diagnostics_ref",
     "plan_compile_gate",
     "artifact_gate",
@@ -72,6 +73,7 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "source_commit",
     "candidate_base_commit",
     "required_actions",
+    "orchestrator_decision_ref",
     "orchestration_delta",
     "orchestration_delta_ref",
     "orchestration_delta_digest",
@@ -210,12 +212,28 @@ def build_plan_handoff_input_refs(
         if value not in (None, "", [], {}):
             rework_context[key] = value
     if len(rework_context) > 1:
+        from zf.runtime.plan_replan_authority_inputs import replan_authority_sources
+
+        input_refs.extend(replan_authority_sources(
+            state_dir=state_dir, project_root=project_root,
+            payload={**trigger, **{key: value for key, value in payload.items()
+                                   if value not in (None, "", [], {})}},
+            context=rework_context,
+        ))
         canonical_snapshot = _canonical_rework_task_snapshot(
             state_dir=state_dir,
             payload=payload,
             trigger=trigger,
         )
         if canonical_snapshot:
+            from zf.runtime.plan_rework_snapshot import bind_scoped_snapshot
+
+            canonical_snapshot, snapshot_ref = bind_scoped_snapshot(
+                state_dir, canonical_snapshot, context=rework_context,
+                source_event_id=source_event_id,
+            )
+            if snapshot_ref:
+                input_refs.append(snapshot_ref)
             rework_context["canonical_task_snapshot"] = canonical_snapshot
     if len(rework_context) > 1:
         source = write_immutable_json_sidecar(

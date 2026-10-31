@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from zf.runtime.workflow_synthesis_recovery import bind_workflow_synthesis_operation  # noqa: F401 — public API
 from zf.core.events import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.safety.path_guard import PathGuard, PathGuardError
@@ -612,57 +613,6 @@ def bind_workflow_synthesis_result(
             "synthesis_digest": str(synthesis_digest),
             "synthesis_revision": int(request_revision),
             "selected_flow_family": str(selected_flow_family),
-        },
-    )
-    return projection
-
-
-def bind_workflow_synthesis_operation(
-    state_dir: Path,
-    *,
-    request_id: str,
-    request_revision: int,
-    operation_id: str,
-    request_hash: str,
-    actor: str,
-    writer: EventWriter | None = None,
-) -> dict[str, Any]:
-    """Expose the durable synthesis owner on the request projection."""
-
-    projection = load_workflow_request(state_dir, request_id)
-    if not projection:
-        raise WorkflowRequestError(f"workflow request not found: {request_id}")
-    if int(projection.get("revision") or 0) != int(request_revision):
-        raise WorkflowRequestError(
-            "workflow synthesis operation targets a stale request revision"
-        )
-    existing_id = str(projection.get("synthesis_operation_id") or "")
-    existing_hash = str(projection.get("synthesis_request_hash") or "")
-    if existing_id and (
-        existing_id != operation_id or existing_hash != request_hash
-    ):
-        raise WorkflowRequestError(
-            "workflow request already has a different synthesis operation"
-        )
-    if existing_id == operation_id and existing_hash == request_hash:
-        return projection
-    projection = dict(projection)
-    projection.update({
-        "synthesis_operation_id": str(operation_id),
-        "synthesis_request_hash": str(request_hash),
-        "synthesis_operation_revision": int(request_revision),
-        "updated_at": _now_iso(),
-    })
-    _write_projection(state_dir, projection)
-    _emit(
-        writer,
-        "workflow.synthesis.operation.bound",
-        projection,
-        actor=actor,
-        extra={
-            "operation_id": str(operation_id),
-            "request_hash": str(request_hash),
-            "request_revision": int(request_revision),
         },
     )
     return projection

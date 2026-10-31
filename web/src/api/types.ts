@@ -191,6 +191,7 @@ export interface WorkflowRequestsPage {
 }
 
 export interface WorkflowRequestDetail {
+  preparation?: Record<string, unknown>;
   ok: boolean;
   status: string;
   result: Record<string, unknown>;

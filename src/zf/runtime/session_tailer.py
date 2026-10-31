@@ -260,6 +260,17 @@ class CodexSessionTailer(_BaseSessionTailer):
             turn_id = str(payload.get("turn_id") or "").strip()
             if not turn_id:
                 return
+            error_fields = {}
+            if payload.get("error"):
+                from zf.runtime.provider_stop import classify_provider_stop
+
+                reason = classify_provider_stop({"error": payload["error"]})
+                error_fields = {
+                    "provider_status": "failed",
+                    "provider_stop_reason": (
+                        "transport_error" if reason == "completed_without_terminal_event" else reason
+                    ),
+                }
             self._append(
                 "provider.turn.closed",
                 instance_id,
@@ -271,6 +282,7 @@ class CodexSessionTailer(_BaseSessionTailer):
                     "turn_id": turn_id,
                     "completed_at": payload.get("completed_at"),
                     "duration_ms": payload.get("duration_ms"),
+                    **error_fields,
                 },
             )
             return
