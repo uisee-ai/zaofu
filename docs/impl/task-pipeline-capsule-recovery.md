@@ -88,6 +88,8 @@ Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role
 
 `verify_task_capsule` 的派发调用显式传入 expected_dispatch_id/expected_role_instance，核对 manifest 的 dispatch_id、active_dispatch_id、任务与角色，以及 task.md 的头部和 Runtime Binding。先校验当前合同，再准备 operation；只有需要实际派发时才发布文档，运行中/终态 operation 的幂等重入不重写文档。准备 briefing 后、交付 transport 前再检查一次，覆盖准备期间投影被替换的情况。briefing 显式列出 operation、dispatch 和 attempt 身份。发送成功后沿原路径更新 canonical TaskStore 并记录派发事件；发送失败不伪造 in_progress 或已发送事实。
 
+操作员通过 `zf task-doc ingest` 调整合同其他字段时，未改动的结构化验收条款保留原始类型；该文本投影不支持编辑结构化条款，检测到变更时拒绝导入，避免丢失验收 ID 与验证责任。
+
 验证：`tests/test_task_pipeline_capsule.py` 在真实派发函数和 briefing/文档生成器、隔离的 provider transport 边界核对 Impl/Verify 首派、g2 重派及失败分支，并注入 manifest/正文/角色陈旧。它证明派发上下文一致性，不代表真实多 provider 并行或完整产品验收通过。
 
 
