@@ -609,6 +609,13 @@ def render_attempt_source_briefing(
         ),
     ]
     if required:
+        if any("-predecessor-" in str(row.get("source_id") or "") for row in required if isinstance(row, Mapping)):
+            lines.append(
+                "- Sources named `-predecessor-<task-id>` are historical predecessor "
+                "context. Apply the current task contract and current task map for "
+                "scope, verification ownership and acceptance; do not treat the "
+                "predecessor task's contract as the current one."
+            )
         lines.extend([
             f"- Preferred deduplicated read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
             "  It delivers every required slice, sharing identical bodies while recording each source. "
