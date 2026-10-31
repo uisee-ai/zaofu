@@ -55,7 +55,6 @@ _ANCHOR_KEYS = (
     "candidate_ref",
     "candidate_head_commit",
     "target_ref",
-    "trace_id",
     "task_map_generation",
     "plan_artifact_package_id",
     "plan_artifact_package_ref",
@@ -408,7 +407,31 @@ def _semantic_replan_anchor(
             anchor["handoff_kind"] = "task_base_recovery"
     anchor["supersedes_task_ids"] = [task_id] if task_id else []
     anchor["affected_task_ids"] = [task_id] if task_id else []
+    anchor.update(_admitted_requirement_identity(state_dir, anchor))
     return anchor
+
+
+def _admitted_requirement_identity(state_dir: Path, anchor: dict[str, Any]) -> dict[str, str]:
+    """Recover the requirement pinned by this Run's admitted proposal."""
+    from zf.runtime.run_contract import load_run_contract
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    contract = load_run_contract(state_dir) or {}
+    workflow = contract.get("workflow")
+    if not isinstance(workflow, dict) or not isinstance(workflow.get("proposal_ref"), dict):
+        return {}
+    try:
+        hydrated = hydrate_sidecar_ref(state_dir, workflow["proposal_ref"])
+    except (OSError, ValueError):
+        return {}
+    proposal = hydrated.payload if hydrated.ok else None
+    if not isinstance(proposal, dict) or not anchor.get("workflow_run_id"):
+        return {}
+    if str(proposal.get("request_id") or "") != str(anchor["workflow_run_id"]):
+        return {}
+    ref = str(proposal.get("requirement_spec_ref") or "")
+    digest = str(proposal.get("requirement_spec_digest") or "")
+    return {"requirement_spec_ref": ref, "requirement_spec_digest": digest} if ref and digest else {}
 
 
 def _git_commit_is_ancestor(
