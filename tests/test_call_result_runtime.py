@@ -1176,14 +1176,20 @@ def test_rework_of_scopes_new_operation(tmp_path: Path) -> None:
 
 def test_flow_plan_does_not_pin_planner_owned_generation(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
+    from tests.test_plan_artifact_package import _package
+    from zf.runtime.plan_artifact_package import write_plan_artifact_package
+
+    package = _package(runtime.state_dir)
+    package["workflow_run_id"] = "run-replan"
+    baseline = write_plan_artifact_package(runtime.state_dir, package)
     runtime.event_log.append(ZfEvent(
         type="plan.artifact_package.admitted",
         correlation_id="run-replan",
         payload={
             "workflow_run_id": "run-replan",
             "package_id": "planpkg-old",
-            "package_ref": "artifacts/plan-packages/old.json",
-            "package_digest": "old-package-digest",
+            "package_ref": baseline["ref"],
+            "package_digest": baseline["sha256"],
             "mode": "blocking",
             "status": "admitted",
         },
@@ -1197,8 +1203,8 @@ def test_flow_plan_does_not_pin_planner_owned_generation(tmp_path: Path) -> None
         "plan_revision": "revision-0002",
         "task_map_generation": "old-generation",
         "plan_artifact_package_id": "planpkg-old",
-        "plan_artifact_package_ref": "artifacts/plan-packages/old.json",
-        "plan_artifact_package_digest": "old-package-digest",
+        "plan_artifact_package_ref": baseline["ref"],
+        "plan_artifact_package_digest": baseline["sha256"],
         "rework_of": "evt-integration-failed",
     }
 
