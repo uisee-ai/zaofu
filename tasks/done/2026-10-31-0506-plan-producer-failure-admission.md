@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：`18027713 fix: admit incomplete planner results as execution failures`。
 
 # 允许 Planner 如实提交产物未完成的失败结果
 
