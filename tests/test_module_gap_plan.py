@@ -367,6 +367,32 @@ def test_replacement_inherits_only_unchanged_approved_smoke(change, expected) ->
         assert "rolling_smoke" not in new_command
 
 
+def test_gap_amend_preserves_structured_acceptance_and_owner() -> None:
+    from zf.runtime.task_contract_snapshot import normalize_acceptance_criteria
+    criteria = [
+        {"id": "TASK-AC", "statement": "task behavior", "mandatory": True,
+         "verification_owner": "task_verify", "verification_command_ids": ["RUNTIME"]},
+        {"id": "PRODUCT-AC", "statement": "product behavior", "mandatory": True,
+         "verification_owner": "candidate_verify", "verification_command_ids": ["DELIVERY"]},
+    ]
+    base = {"schema_version": "task-map.v1", "feature_id": "F-1", "tasks": [{
+        "task_id": "OLD", "title": "old", "owner_role": "dev", "wave": 1,
+        "allowed_paths": ["src/**"], "allowed_paths_reason": "slice", "acceptance": ["works"],
+    }]}
+    replacement = {"task_id": "NEW", "claim_paths": ["src/**"],
+                   "acceptance_criteria": criteria, "verify_commands": ["npm test"],
+                   "source_refs": ["event:gap"], "supersedes_task_ids": ["OLD"]}
+    amended = build_gap_task_map_amend(base, gap_tasks=[replacement], supersedes_task_map_ref="base.json")
+    result = next(t for t in amended["tasks"] if t["task_id"] == "NEW")
+    assert result["acceptance_criteria"] == criteria
+    assert result["acceptance"] == ["task behavior", "product behavior"]
+    assert result["acceptance_criteria"] is not criteria
+    normalized = normalize_acceptance_criteria(result["acceptance_criteria"], task_id="NEW", contract_revision="r1")
+    assert [(x["acceptance_id"], x["verification_owner"], x["verification_command_ids"]) for x in normalized] == [
+        ("TASK-AC", "task_verify", ["RUNTIME"]), ("PRODUCT-AC", "candidate_verify", ["DELIVERY"]),
+    ]
+
+
 def test_replacement_preserves_shared_validation_catalog_as_read_only() -> None:
     base_commit = "d" * 40
     base = {

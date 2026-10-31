@@ -433,6 +433,7 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
     ).strip()
     claim_paths = _claim_paths(raw)
     acceptance = _acceptance(raw)
+    criteria = raw.get("acceptance_criteria") or raw.get("acceptance")
     verification = _verification(raw)
     verification_read_paths = _string_list(raw.get("verification_read_paths"))
     source_refs = _string_list(raw.get("source_refs"))
@@ -477,7 +478,7 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
             or "Goal gap claim paths generated from verifier source_refs."
         ),
         "acceptance": acceptance,
-        "acceptance_criteria": acceptance,
+        "acceptance_criteria": deepcopy(criteria) if isinstance(criteria, list) else acceptance,
         "verification": verification,
         "verify_commands": verification,
         "verification_read_paths": verification_read_paths,
@@ -564,38 +565,13 @@ def _inherit_replacement_mechanical_identity(
     elif len(superseded) == 1:
         # The producer may restate an unchanged predecessor command while
         # omitting its already-approved rolling-smoke marker.
-        item["validation"] = _inherit_unchanged_smoke_marker(
+        from zf.runtime.gap_replacement_validation import inherit_unchanged_smoke_marker
+
+        item["validation"] = inherit_unchanged_smoke_marker(
             item["validation"], parent.get("validation"), inherited_task_id,
             _task_id(item),
         )
     return item
-
-
-def _inherit_unchanged_smoke_marker(
-    validation: dict[str, Any], parent_validation: Any,
-    parent_id: str, replacement_id: str,
-) -> dict[str, Any]:
-    result = deepcopy(validation)
-    if not isinstance(parent_validation, dict):
-        return result
-    commands = result.get("commands")
-    parents = parent_validation.get("commands")
-    if not isinstance(commands, list) or not isinstance(parents, list):
-        return result
-    ignored = {"rolling_smoke", "producer_task_id"}
-    for command in commands:
-        if not isinstance(command, dict) or "rolling_smoke" in command:
-            continue
-        if command.get("producer_task_id") != replacement_id:
-            continue
-        for old in parents:
-            if (isinstance(old, dict) and old.get("rolling_smoke") is True
-                    and old.get("producer_task_id") == parent_id
-                    and {k: v for k, v in old.items() if k not in ignored}
-                    == {k: v for k, v in command.items() if k not in ignored}):
-                command["rolling_smoke"] = True
-                break
-    return result
 
 
 def _matching_replacement_validation(
@@ -930,7 +906,14 @@ def _claim_paths(raw: dict[str, Any]) -> list[str]:
 
 
 def _acceptance(raw: dict[str, Any]) -> list[str]:
-    return _string_list(raw.get("acceptance") or raw.get("acceptance_criteria"))
+    values = raw.get("acceptance") or raw.get("acceptance_criteria")
+    if not isinstance(values, list):
+        return _string_list(values)
+    return _string_list([
+        item.get("statement") or item.get("text") or item.get("criterion") or item.get("title") or ""
+        if isinstance(item, dict) else item
+        for item in values
+    ])
 
 
 def _verification(raw: dict[str, Any]) -> list[str]:
