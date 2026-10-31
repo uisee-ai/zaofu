@@ -355,6 +355,8 @@ class FanoutDispatchLivenessMixin:
             and str(payload.get("backend") or "").strip() == "codex"
             and str(payload.get("turn_id") or "").strip()
         ):
+            if payload.get("provider_stop_reason") == "provider_policy_rejected":
+                return ""
             return str(
                 payload.get("instance_id")
                 or payload.get("role")
