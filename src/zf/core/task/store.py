@@ -98,12 +98,17 @@ class TaskStore:
     def _load_terminal_index(self) -> dict[str, str]:
         path = self._index_path
         if not path.exists():
-            return {}
+            return self.rebuild_terminal_index_from_archive()
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return {}
-        return data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return self.rebuild_terminal_index_from_archive()
+        if not isinstance(data, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in data.items()
+        ):
+            return self.rebuild_terminal_index_from_archive()
+        return data
 
     def _save_terminal_index(self, index: dict[str, str]) -> None:
         atomic_write_text(
@@ -146,6 +151,15 @@ class TaskStore:
         index = self._load_terminal_index()
         index[task_id] = date
         self._save_terminal_index(index)
+
+    def _archive_ids(self) -> set[str]:
+        ids: set[str] = set()
+        for path in list_archives(self._archive_dir, suffix=".json"):
+            for record in self._load_archive_file(path):
+                task_id = str(record.get("id") or record.get("task_id") or "")
+                if task_id:
+                    ids.add(task_id)
+        return ids
 
     # ---- record → Task ----
 
@@ -220,8 +234,10 @@ class TaskStore:
         with self._locked():
             raw = self._load_raw()
             existing_ids = {d["id"] for d in raw}
-            terminal_ids = set(self._load_terminal_index().keys())
+            terminal_ids = set(self._load_terminal_index().keys()) | self._archive_ids()
             known_ids = existing_ids | terminal_ids
+            if task.id in known_ids:
+                raise ValueError(f"task id already exists: {task.id}")
             for ref in task.blocked_by:
                 if ref not in known_ids:
                     raise ValueError(f"blocked_by reference not found: {ref}")
@@ -240,7 +256,7 @@ class TaskStore:
         with self._locked():
             raw = self._load_raw()
             existing_ids = {str(item.get("id") or "") for item in raw}
-            terminal_ids = set(self._load_terminal_index().keys())
+            terminal_ids = set(self._load_terminal_index().keys()) | self._archive_ids()
             batch_ids = set(ids)
             known_ids = existing_ids | terminal_ids | batch_ids
             for task in tasks:
