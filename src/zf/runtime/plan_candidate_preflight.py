@@ -63,6 +63,12 @@ def evaluate_plan_candidate_preflight(
         if isinstance(row, Mapping) and isinstance(row.get("report"), Mapping)
     ]
     errors: list[dict[str, str]] = []
+    from zf.runtime.workflow_read_result import workflow_read_finding_issues
+
+    for index, candidate in enumerate(candidates):
+        errors.extend(workflow_read_finding_issues(
+            candidate.get("findings", []), field=f"report[{index}].findings",
+        ))
     port_bodies = _plan_port_bodies(
         candidates,
         trigger=trigger,

@@ -126,13 +126,21 @@ def normalize_workflow_read_result(
             "field": "control_result.summary",
             "code": "missing_required",
         })
-    if not isinstance(report.get("findings"), list):
-        issues.append({
-            "field": "control_result.findings",
-            "code": "schema_invalid",
-            "message": "findings must be an array",
-        })
+    issues.extend(workflow_read_finding_issues(report.get("findings")))
     return report, issues
+
+
+def workflow_read_finding_issues(
+    findings: Any, *, field: str = "control_result.findings",
+) -> list[dict[str, str]]:
+    """Check the exact downstream finding contract before consuming a result."""
+    from zf.runtime.fanout import validate_fanout_report
+
+    validation = validate_fanout_report({"findings": findings}, child_id="reader")
+    return [
+        {"field": field, "code": "schema_invalid", "message": message}
+        for message in validation.diagnostics
+    ]
 
 
 def _subject_verdict(*, recommendation: str, status: str) -> str:
