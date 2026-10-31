@@ -180,6 +180,10 @@ def _restart_full(
     include_run_manager: bool = False,
 ) -> int:
     """Full restart: stop + start sequence."""
+    if dry_run:
+        print("Dry run: would stop and restart the harness session.")
+        return 0
+
     from zf.cli.stop import run as stop_run
     from zf.cli.start import run as start_run
 
