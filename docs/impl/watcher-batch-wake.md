@@ -14,6 +14,10 @@
 模拟终态仍先由 Kernel 结算 Task / 看板，成功后才写 simulation.done 并停止 watcher。
 不修改事件类型、业务状态所有权、任务依赖或并发配额；整轮协调自身的开销仍然存在。
 
+近期事件的 `EventLog.read_days` 对活动账本复用进程内追加折叠：文件不变时复用
+已解码结果，追加时只读取完整新增行，轮转或截断时重建；签名账本每次重验。历史
+归档仍按请求的日期范围读取，返回的事件及其载荷是独立副本，不改变事件权威。
+
 验证：`tests/test_watched_batch.py` 覆盖同批合并、观察/限流、失败不停止和追加边界；
 `tests/test_cli_start.py` 覆盖真实 CLI 接线；
 `tests/e2e/test_terminal_kanban_convergence_mock_e2e.py` 覆盖真实 Orchestrator / Store / Kanban
