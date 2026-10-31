@@ -27,7 +27,7 @@ from zf.runtime.execution_profiles import execution_profile_catalog
 
 
 _FAMILIES = {"IssueFlow": "issueRef", "PrdFlow": "prdRef", "RefactorFlow": "objectiveRef"}
-CONTROLLER_PARAMETERS = frozenset({"controller_id", "controller_digest", "verification_commands"})
+CONTROLLER_PARAMETERS = frozenset({"controller_id", "controller_digest", "verification_commands", "candidate_verify_width"})
 
 
 def _documents(path: Path) -> list[dict[str, Any]]:
@@ -95,6 +95,10 @@ def selected_controller(
     if "task_pipeline" in parameters or parameters.get("lanes", entry["lanes"]) != entry["lanes"]:
         raise ValueError("registered controller selection preserves its lanes and pipeline; use a separate config revision")
     commands = parameters.get("verification_commands")
+    width = parameters.get("candidate_verify_width")
+    if width is not None and (type(width) is not int or not 1 <= width <= int(entry["lanes"])
+                              or entry["task_pipeline"].get("mode") != "blocking"):
+        raise ValueError("candidate_verify_width must fit the registered blocking controller (1..lanes)")
     if (not isinstance(commands, list) or not 1 <= len(commands) <= 16
             or any(not isinstance(c, str) or not c.strip() or len(c) > 4096 or "\x00" in c for c in commands)):
         raise ValueError("registered controller requires 1..16 project verification_commands")
@@ -160,6 +164,40 @@ def _git(root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def _requirement_source(root: Path, requirement: Mapping[str, Any]) -> str:
+    if requirement.get("source_ref"):
+        return _project_path(root, requirement["source_ref"], field="source_ref", file=True)
+    if (requirement.get("schema_version") != "requirement-spec.v1"
+            or requirement.get("confirmed") is not True
+            or not requirement.get("task_input_binding")):
+        raise ValueError("registered controller requires Requirement source_ref or a confirmed Task binding")
+    from zf.runtime.workflow_request_acceptance import (
+        assert_task_workflow_input_coverage, task_workflow_input_contract_digest,
+    )
+    contract_ref = _project_path(
+        root, requirement.get("task_input_contract_ref"), field="task_input_contract_ref", file=True,
+    )
+    contract = json.loads((root / contract_ref).read_text(encoding="utf-8"))
+    if (not isinstance(contract, dict) or task_workflow_input_contract_digest(contract)
+            != requirement.get("task_input_contract_digest")):
+        raise ValueError("Task input contract digest mismatch")
+    assert_task_workflow_input_coverage(
+        binding=requirement["task_input_binding"], input_contract=contract, source_ref="",
+        source_refs=requirement.get("source_refs") or {},
+        artifact_refs=requirement.get("artifact_refs") or [],
+        acceptance=requirement.get("acceptance") or [], constraints=requirement.get("constraints") or [],
+        scope=requirement.get("scope") or [], project_root=root,
+    )
+    # The Task input projection alone omits behavior. Preserve the complete
+    # confirmed Requirement, including objective, answers, and canonical refs.
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+    descriptor = write_immutable_json_sidecar(
+        root, requirement, root="workflow/requirement-sources", kind="workflow_requirement_source",
+        schema_version="requirement-spec.v1", created_by="registered-controller-assembly",
+    )
+    return str(descriptor["ref"])
+
+
 def assemble_controller(
     *, base_path: Path, short_spec: Mapping[str, Any], requirement: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -179,10 +217,16 @@ def assemble_controller(
     package = controller_skill_source(root=root, base=base_config, template=load_config(path))
     base = renderable_config_to_primitive(base_config)
     flow = next(d for d in documents if d.get("kind") == entry["flow_family"])
+    if "candidate_verify_width" in parameters:
+        flow["spec"]["taskPipeline"].setdefault("candidate", {})["verifyWidth"] = parameters["candidate_verify_width"]
     config_docs = [d for d in documents if d.get("kind") == "ZfConfig"]
     if len(config_docs) != 1:
         raise ValueError("registered controller requires exactly one ZfConfig")
     spec = config_docs[0]["spec"]
+    from zf.runtime.workflow_approval_requirements import validate_approval_requirements
+    approval = validate_approval_requirements(parameters, requirement)
+    if approval.get("plan") == "required":
+        spec.setdefault("workflow", {})["plan_approval"] = True
     # Freeze the profile closure in the candidate so private validation and
     # later apply cannot depend on a checkout or mutable profile file.
     spec.pop("profile_sources", None)
@@ -197,9 +241,7 @@ def assemble_controller(
         if "skill_sources" in body:
             body["skill_sources"] = copy.deepcopy(sources)
     spec["skill_sources"] = sources
-    flow["spec"][_FAMILIES[entry["flow_family"]]] = _project_path(
-        root, requirement.get("source_ref"), field="source_ref", file=True,
-    )
+    flow["spec"][_FAMILIES[entry["flow_family"]]] = _requirement_source(root, requirement)
     flow["spec"]["targetRoot"] = _project_path(root, requirement.get("target_root"), field="target_root")
     if entry["flow_family"] == "RefactorFlow":
         flow["spec"]["sourceRoot"] = _project_path(root, requirement.get("source_root"), field="source_root")

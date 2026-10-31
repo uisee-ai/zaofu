@@ -78,6 +78,7 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "reason_codes",
     "operator_override",
     "owner_authorization",
+    "requirement_amendment_ref",
 )
 _TASK_DELIVERY_FACT_TYPES = frozenset({
     "candidate.ready",
@@ -166,14 +167,24 @@ def build_plan_handoff_input_refs(
 
     state_dir = Path(state_dir)
     project_root = Path(project_root)
+    from zf.runtime.plan_requirement_amendment import amendment_binding
     trigger = (
         payload.get("trigger_payload")
         if isinstance(payload.get("trigger_payload"), Mapping)
         else {}
     )
+    binding = amendment_binding(state_dir, str(payload.get("workflow_run_id")
+        or trigger.get("workflow_run_id") or payload.get("trace_id")
+        or trigger.get("trace_id") or ""))
+    payload = {**payload, **binding}
     input_refs: list[dict[str, Any]] = []
     seen_sources: set[tuple[str, str]] = set()
+    if binding:
+        input_refs.append({**binding["requirement_amendment_ref"],
+                           "source_id": "owner-requirement-amendment", "allowed_paths": ["$"]})
     for source_id, kind, key in _PLAN_SOURCE_CANDIDATES:
+        if binding and source_id in {"requirement", "goal-objective"} and key != "requirement_spec_ref":
+            continue  # Prior authority remains in the amendment/previous package.
         ref = str(payload.get(key) or trigger.get(key) or "").strip()
         if not ref:
             continue

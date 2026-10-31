@@ -33,6 +33,7 @@ def build_review_packet(
     artifact_map = {str(item.get("name") or ""): item for item in artifacts}
     json_values: dict[str, dict[str, Any]] = {}
     diagnostics: list[dict[str, Any]] = []
+    bodies: dict[str, str] = {}
     for name, item in artifact_map.items():
         try:
             body = read_preview_artifact(
@@ -47,9 +48,10 @@ def build_review_packet(
                 "evidence": [item["ref"]],
             })
             continue
+        bodies[name] = body
         if name.endswith((".json", "_matrix", "_ledger", "_spec", "_index")) or name in {
             "task_map", "source_index", "coverage_ledger", "acceptance_matrix",
-            "test_matrix", "product_acceptance_spec", "real_e2e_matrix",
+            "test_matrix", "product_acceptance_spec", "real_e2e_matrix", "decision_register", "planning_result",
         }:
             try:
                 value = json.loads(body)
@@ -135,6 +137,11 @@ def build_review_packet(
             "notes": notes or [],
         }
 
+    from zf.runtime.plan_decision_register import decision_readiness
+    decisions_ready, pending = decision_readiness(bodies, payload, decision_items, markdown)
+    if "decision_register" in artifact_map and "decision_register" not in bodies:
+        decisions_ready = False
+    blocking = sum(bool(item.get("blocking") is True or item.get("blocking_impact")) for item in pending)
     sections = [
         section(
             "prd", "PRD", "ready" if markdown and authority_refs else "partial",
@@ -180,11 +187,12 @@ def build_review_packet(
         ),
         _coverage_section("source_coverage", "来源条款映射", source_ids["requirements"], plan_ids["requirements"], artifact_map, refs_by_name),
         section(
-            "decisions", "Owner Decisions", "ready" if decision_items else "partial",
-            counts={"pending": len(decision_items)},
+            "decisions", "Owner Decisions", "ready" if decisions_ready else "partial",
+            counts={"pending": len(pending), "blocking": blocking},
             names=[name for name in ("decision_register", "planning_result") if name in artifact_map],
             refs=[refs_by_name.get(name, [""])[0] for name in ("decision_register", "planning_result")],
-            notes=["审批前必须逐项处理 blocking decision。" if decision_items else "未绑定结构化 decision register，请核对 Plan。"],
+            notes=[("审批前必须逐项处理 blocking decision。" if pending else "已绑定有效决策登记；当前无待决项。")
+                   if decisions_ready else "未绑定有效结构化 decision register，请核对 Plan。"],
         ),
         section(
             "provenance", "Provenance", "error" if any(item["code"] == "artifact_lineage_mismatch" for item in diagnostics) else "ready",
@@ -203,6 +211,7 @@ def build_review_packet(
         "diagnostics": diagnostics,
         "source_ids": source_ids,
         "plan_ids": plan_ids,
+        "owner_decision_items": pending,
         "missing_sections": missing,
         "policy": {"read_only": True, "missing_is_not_pass": True},
     }

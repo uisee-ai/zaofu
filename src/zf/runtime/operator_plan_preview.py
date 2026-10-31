@@ -362,6 +362,13 @@ def build_plan_preview(
                 "",
             ),
         )
+    if not authority_refs:
+        # The admitted Package already binds these authority ports and digests;
+        # source_index need not repeat the same refs as optional metadata.
+        authority_refs = list(dict.fromkeys(
+            item["ref"] for item in artifacts
+            if item["name"] in {"requirement_spec", "issue_spec"}
+        ))
     requirement_artifacts = [
         item for item in artifacts
         if str(item.get("name") or "").startswith("requirement_")
@@ -393,6 +400,7 @@ def build_plan_preview(
         decision_items=decision_items,
         preview_bundle=preview_bundle,
     )
+    decision_items = review_packet["owner_decision_items"]
     review_dossier = render_human_review_dossier(
         state_dir,
         project_root=project_root,
@@ -762,6 +770,12 @@ def _decision_items(payload: dict[str, Any], markdown: str) -> list[dict[str, An
     """
 
     items: dict[str, dict[str, Any]] = {}
+    from zf.runtime.plan_decision_register import decision_register_rows, pending_decisions
+    registered = decision_register_rows(markdown)
+    if registered is not None:
+        for item in pending_decisions(registered):
+            identity = str(item.get("decision_id") or item.get("id") or "")
+            items[identity] = {**item, "decision_id": identity}
     raw = payload.get("owner_decision_items")
     if isinstance(raw, list):
         for item in raw:
@@ -799,9 +813,9 @@ def _decision_items(payload: dict[str, Any], markdown: str) -> list[dict[str, An
         if not line.lstrip().startswith("|"):
             continue
         cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
-        if len(cells) < 2 or cells[0] in {"ID", "id", "---"} or set(cells[0]) <= {"-", ":"}:
+        if len(cells) < 2 or set(cells[0]) <= {"-", ":"}:
             continue
-        if not header and cells[0].lower() in {"id", "decision id"}:
+        if not header and cells[0].lower() in {"id", "decision id", "decision_id"}:
             header = [cell.lower() for cell in cells]
             continue
         decision_id = cells[0].strip()

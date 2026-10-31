@@ -15,6 +15,7 @@ import yaml
 
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.artifact_output_match import complete_output_observed, observable_outputs
 
 
 def emit_artifact_output(
@@ -63,6 +64,8 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
         if row.get("production_status") != "stdout_flushed":
             result.append(row)
             continue
+        row["provider_observation_scope"] = "historical_tool_output"
+        row["current_context_availability"] = "unknown"
         # A previously sealed observation survives session rotation. Its bound
         # immutable witness proves historical delivery, not current memory.
         witness = row.get("provider_observation_ref")
@@ -74,7 +77,7 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
                         and observed["call_id"] == row["provider_call_id"]
                         and hashlib.sha256(body.encode()).hexdigest() == row["output_sha256"]
                         and observed["output"] in _observable_outputs(observed.get("raw_output", observed["output"]))
-                        and "\n" + body + "\n" in "\n" + observed["output"] + "\n"):
+                        and complete_output_observed(body, observed["output"])):
                     result.append(row)
                     continue
             except (OSError, ValueError, KeyError, TypeError):
@@ -104,7 +107,7 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
                     continue
                 # Tool wrappers add timing/exit metadata. Require the entire
                 # exact output at line boundaries, never a prefix or summary.
-                if ("\n" + bodies[digest] + "\n") in ("\n" + text + "\n"):
+                if complete_output_observed(bodies[digest], text):
                     observed = write_immutable_json_sidecar(
                         state_dir, {"schema_version": "provider-output-observation.v1",
                                     "session_id": session_id, "call_id": call_id,
@@ -123,30 +126,7 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
 
 
 def _observable_outputs(output: str) -> list[str]:
-    texts = [output]
-    # functions.exec may print exec_command's JSON result. Decode only its
-    # output field, never arguments or arbitrary strings echoed by the worker.
-    for line in output.splitlines():
-        try:
-            envelope = json.loads(line)
-        except ValueError:
-            continue
-        # Promise.allSettled results can be printed directly or as {i, result}.
-        # Peel only these result containers, never arbitrary object fields.
-        for _ in range(2):
-            if not isinstance(envelope, dict):
-                break
-            if envelope.get("status") == "fulfilled" and "value" in envelope:
-                envelope = envelope["value"]
-            elif "result" in envelope and set(envelope) <= {"i", "result"}:
-                envelope = envelope["result"]
-            else:
-                break
-        if (isinstance(envelope, dict) and envelope.get("chunk_id")
-                and isinstance(envelope.get("output"), str)
-                and "wall_time_seconds" in envelope):
-            texts.append(envelope["output"])
-    return texts
+    return observable_outputs(output)
 
 
 def _codex_outputs(path: Path, expected_session_id: str) -> list[tuple[str, str, str, str, str]]:

@@ -16,7 +16,7 @@ PLAN_REVIEW_REF_FIELDS = (
     "plan_artifact_ref", "plan_artifact_digest", "plan_ref",
     "plan_artifact_package_ref", "plan_artifact_package_digest",
     "plan_preview_bundle_ref", "plan_preview_bundle_digest",
-    "requirement_spec_ref",
+    "requirement_spec_ref", "requirement_spec_digest",
     "source_index_ref", "workflow_run_id",
 )
 

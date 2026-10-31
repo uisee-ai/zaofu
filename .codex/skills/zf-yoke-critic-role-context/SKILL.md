@@ -67,6 +67,10 @@ AC 或风险。
 5. 每条 canonical command 是否能由下游从 repo root 按存储原文执行；若
    Planner 只能通过重写、补转义或“等价命令”证明它，必须 Reject。含多层
    shell/interpreter 转义的 inline program 应改为 task-owned 测试/脚本；
+   先按原始 JSON/YAML 格式解码 command 值，再判断 shell 实际接收的字符；
+   展示层的转义不等于命令中的字面反斜杠。声称“命令不能执行”须绑定可复核的
+   解码值及失败证据；必要时在已授权的隔离夹具中做最小验证，不能重写命令来证明它。
+   无法复核时明确缺少证据，不把目测怀疑写成已复现缺陷；新证据推翻旧 finding 时撤销误报；
 6. 每个 mandatory AC 的行为与 evidence 是否有明确 producer，producer 的
    `allowed_paths` 是否覆盖生成 evidence 所需的实现、runner 配置、spec、
    fixture 和输出登记路径；

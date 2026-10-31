@@ -63,6 +63,48 @@ def test_source_index_optional_authority_refs_preserve_preview(tmp_path, source_
     assert result["authority_refs"] == expected
 
 
+@pytest.mark.parametrize("tampered", [False, True])
+def test_package_requirement_is_authority_without_duplicate_source_index_metadata(tmp_path, tampered):
+    state, _, payload = _artifacts(tmp_path)
+    ref = "artifacts/requirement.json"
+    path = state / ref
+    path.write_text(json.dumps({"schema_version": "requirement-spec.v1", "objective": "Hello"}))
+    bundle = {"schema_version": "plan-preview-bundle.v1", "artifacts": [
+        {"name": "requirement_spec", "ref": ref, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}]}
+    bundle_path = state / "artifacts/preview.json"
+    bundle_path.write_text(json.dumps(bundle))
+    payload.update(plan_preview_bundle_ref="artifacts/preview.json",
+                   plan_preview_bundle_digest=hashlib.sha256(bundle_path.read_bytes()).hexdigest())
+    if tampered:
+        path.write_text("{}")
+    result = _preview(state, payload)
+    assert result["authority_refs"] == [ref]
+    if tampered:
+        assert result["review_packet"]["status"] == "blocked"
+    else:
+        section = next(s for s in result["review_packet"]["sections"] if s["id"] == "prd")
+        assert section["status"] == "ready"
+
+
+def test_preview_decision_count_matches_bound_structured_register(tmp_path):
+    state, _, payload = _artifacts(tmp_path)
+    markdown = "# Decision Register\n\n| decision_id | 状态 / 负责人 |\n| --- | --- |\n| D-R04 | resolved / Owner |\n"
+    (state / "artifacts/plan.md").write_text(markdown)
+    payload["plan_artifact_digest"] = hashlib.sha256(markdown.encode()).hexdigest()
+    path = state / "artifacts/tasks.json"
+    path.write_text(json.dumps({"tasks": [], "owner_decision_items": [
+        {"decision_id": "D-R04", "status": "resolved"}]}))
+    bundle_path = state / "artifacts/preview.json"
+    bundle_path.write_text(json.dumps({"schema_version": "plan-preview-bundle.v1", "artifacts": [
+        {"name": "task_map", "ref": payload["task_map_ref"], "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}]}))
+    payload.update(plan_preview_bundle_ref="artifacts/preview.json",
+                   plan_preview_bundle_digest=hashlib.sha256(bundle_path.read_bytes()).hexdigest())
+    result = _preview(state, payload)
+    assert result["decision_count"] == 0
+    assert result["owner_decision_items"] == []
+    assert "**待决事项**：`0` 项" in result["review_dossier_markdown"]
+
+
 def test_review_dossier_backfills_bound_decision_register(tmp_path):
     state, _, payload = _artifacts(tmp_path)
     full = (

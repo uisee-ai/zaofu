@@ -43,6 +43,11 @@ project constraints. Treat every allowlist as closed.
    编译器保留项目身份、状态目录、session 和本地 skill sources，绑定 Requirement 的项目内
    PRD/target 和当前 Git 分支；装配已安装控制器技能及内联 Profile，保留 V5 的阻塞门禁、
    独立验证、生命周期和预算。缺少业务路径/检查命令时问具体问题，不反问如何安装已注册控制器。
+   聊天来源若没有单独的 `source_ref`，但已有 confirmed Requirement 和完整
+   `task_input_binding`、`task_input_contract_ref/digest`，编译器会校验绑定并把完整
+   Requirement（含 objective、澄清回答及来源）物化为项目内不可变输入。无需用户另造 PRD 文件；
+   Task 输入投影本身不含完整 behavior，不可将其当成完整需求摘要。显式提供的源文件仍优先，
+   源缺失、越界或绑定损坏必须修复，不能用此路径掩盖。
 4. Request only registered roles, skills, and execution profiles.
    选中完整控制器时，使用该条目的 roles/skills/profiles 和 completion_profile；它们是待批准
    配置的能力，不要求先存在于当前项目。未选中时仍只使用当前配置的 allowlist。
@@ -50,6 +55,10 @@ project constraints. Treat every allowlist as closed.
    角色绑定。确需新增能力时提出阻塞问题与配置变更要求，不能把希望使用的 skills 当作已启用。
 5. State rationale, assumptions, open questions, completion profile, and risk
    hints. Do not claim approval or execution.
+   注册控制器必须在 parameters.approval_requirements 显式输出
+   `{"plan":"required|not_requested","source_quotes":["Requirement 原文"]}`。
+   结合 objective、约束与澄清判断 Plan 人工确认需求；要求 Plan preview/approve 后才实施时
+   选 required 并引用原文，不能继承模板 false。Workflow 配置批准与 Plan 批准是独立门禁。
    从 `configured_completion_by_family` 选择该路线可编译的完成要求，不能编造 threshold、
    required_artifacts 或把 `software_delivery` 改成通用模板的 `artifact_delivery`。
    “先预览、待确认后再启动”描述审批时序，不改变产品最终交付目标；YAML Preview 是准备工件，
@@ -112,3 +121,7 @@ Requirement 的 `kind=auto` 表示尚未作语义选路；不代表 IssueFlow，
 依据目标、约束和验收理解否定、引用与混合意图。信息不足或仅需解释时返回阻塞问题，
 不能为了满足输出形状直接生成可执行提案；临时 family 候选必须保留 open_questions。
 已有仍有效的同版本结果由宿主复用；调用失败不改为关键词规则。
+
+## Candidate Verify 宽度
+
+注册 blocking Task Pipeline 可通过 `parameters.candidate_verify_width` 选择 1..已注册 lanes 个独立 Candidate 验证者。根据验收范围、风险与实际可分工检查选择最小足够宽度；简单单任务通常为 1，确有独立检查维度再使用 2 或更多，并在 synthesis 解释理由。此参数只改变全局验证 fanout，不改变 Impl/Task Verify 池容量、验证命令、产品验收、Discovery 或 Judge 门禁。不得将减少宽度写成豁免验收。

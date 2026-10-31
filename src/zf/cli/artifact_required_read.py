@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from zf.runtime.artifact_read_ledger import read_attempt_artifact
 from zf.runtime.call_result_envelope import canonical_json_sha256
@@ -25,6 +26,7 @@ def prepare_required_read(
     previews = [read_attempt_artifact(
         state_dir, manifest=manifest,
         source_id=row["source_id"], artifact_id=row["artifact_id"],
+        artifact_sha256=str(row.get("artifact_sha256") or row.get("sha256") or ""),
         json_path=row.get("json_path", "$"), record=False,
         actor=identity["actor"], role=identity["role"],
         provider=identity["provider"], purpose=identity["purpose"],
@@ -43,10 +45,10 @@ def prepare_required_read(
         else:
             groups[key] = {**source, "content": preview["content"]}
         receipts.setdefault(key, []).append(preview["read"])
-    output = "\n".join(json.dumps(row, ensure_ascii=False) for row in groups.values())
-    if cursor is None and len(output.encode("utf-8")) + 1 <= page_bytes:
-        # Keep the small-bundle CLI format compatible with existing consumers.
-        return output, [preview["read"] for preview in previews]
+    # Small bundles use the same identity envelope as continuation pages. A
+    # fresh delivery id prevents an earlier read of identical text witnessing
+    # this read, even when both belong to the same resumed provider session.
+    delivery_id = str(uuid4())
     bundle_digest = canonical_json_sha256({
         "manifest": manifest, "requirements": rows, "groups": list(groups.values()),
     })
@@ -60,6 +62,7 @@ def prepare_required_read(
         return json.dumps({
             "schema_version": PAGE_SCHEMA,
             "attempt_id": str(manifest.get("attempt_id") or ""),
+            "delivery_id": delivery_id,
             "bundle_digest": bundle_digest,
             "items": [*items, *([extra] if extra is not None else [])],
             "next_cursor": continuation,
@@ -99,7 +102,9 @@ def prepare_required_read(
         items.append(item(end))
         for receipt in receipts[key]:
             emitted.append({
-                **receipt, "returned_bytes": len(content[start:end].encode("utf-8")),
+                **receipt, "delivery_id": delivery_id,
+                "bundle_digest": bundle_digest,
+                "returned_bytes": len(content[start:end].encode("utf-8")),
                 "truncated": start > 0 or end < len(content),
                 "page_start": start, "page_end": end, "page_total": len(content),
                 "selected_sha256": digest, "selected_bytes": len(content.encode("utf-8")),

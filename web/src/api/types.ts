@@ -3253,6 +3253,7 @@ export interface PlanPreview {
     diagnostics?: Array<{ code: string; severity: string; message: string; evidence?: string[] }>;
     source_ids?: Record<string, string[]>;
     plan_ids?: Record<string, string[]>;
+    owner_decision_items?: Array<Record<string, unknown>>;
     missing_sections?: string[];
     policy?: Record<string, unknown>;
   };
