@@ -23,7 +23,10 @@ for (const action of ["replan-approve", "replan-reject"]) {
     });
     const actions: { name: string; payload: Record<string, unknown> }[] = [];
     await page.route("**/actions/*", async (route) => {
-      actions.push({ name: route.request().url().split("/").pop()!, payload: route.request().postDataJSON().payload });
+      const name = route.request().url().split("/").pop()!;
+      if (name !== "inbox-item-read") {
+        actions.push({ name, payload: route.request().postDataJSON().payload });
+      }
       await route.fulfill({ json: { ok: true } });
     });
     await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);

@@ -463,7 +463,7 @@ def build_plan_preview(
         "content_profile": str(
             preview_bundle.get("content_profile")
             or payload.get("plan_content_profile")
-            or ("derived_plan_full" if markdown else "unknown")
+            or ("derived_plan" if markdown else "unknown")
         ),
         "authority_refs": authority_refs,
         "requirement_artifacts": requirement_artifacts,
