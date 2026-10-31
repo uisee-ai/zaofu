@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.plan_review_packet import build_review_packet, render_human_review_dossier
+from zf.runtime.plan_review_decisions import read_decision_review
 from zf.runtime.plan_preview_artifacts import (
     PLAN_REVIEW_REF_FIELDS,
     preview_artifact_path,
@@ -382,6 +383,9 @@ def build_plan_preview(
         }
         artifacts.append(item)
         requirement_artifacts.append(item)
+    decision_review = read_decision_review(
+        state_dir, project_root=project_root, artifacts=artifacts, action_items=decision_items,
+    )
     review_packet = build_review_packet(
         state_dir,
         project_root=project_root,
@@ -390,8 +394,9 @@ def build_plan_preview(
         authority_refs=authority_refs,
         markdown=markdown,
         task_map_summary=task_map_summary,
-        decision_items=decision_items,
+        decision_items=decision_review["items"],
         preview_bundle=preview_bundle,
+        decision_register_available=decision_review["available"],
     )
     review_dossier = render_human_review_dossier(
         state_dir,
@@ -400,7 +405,7 @@ def build_plan_preview(
         artifacts=artifacts,
         authority_refs=authority_refs,
         task_map_summary=task_map_summary,
-        decision_items=decision_items,
+        decision_items=decision_review["items"],
         status=status,
         review_packet=review_packet,
     )
@@ -480,6 +485,7 @@ def build_plan_preview(
             "repair_chat": "chat-orchestrator",
         },
         "owner_decision_items": decision_items,
+        "decision_review": decision_review,
         "action_payload": {key: payload[key] for key in (
             "proposal_ref", "eval_ref", "candidate_task_map_ref", "approval_ref",
             "checkpoint_id", "workflow_run_id", "fanout_id", "source_event_id",

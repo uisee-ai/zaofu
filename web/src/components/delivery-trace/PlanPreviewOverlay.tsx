@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Check, X, MessageSquare } from "lucide-react";
 import type { PlanPreview } from "../../api/types";
 import { MarkdownText } from "../agent-session/MarkdownText";
@@ -45,6 +45,7 @@ export function PlanPreviewOverlay({
   actionKey: string;
 }) {
   const modal = useRef<HTMLDialogElement>(null);
+  const [showContext, setShowContext] = useState(false);
   useEffect(() => { const element = modal.current; element?.showModal(); return () => element?.close(); }, []);
   const planId = preview?.plan_id || "";
   const disabled = Boolean(actionKey && busy.endsWith(`:${actionKey}`));
@@ -59,6 +60,7 @@ export function PlanPreviewOverlay({
           ) : null}
         </div>
         <div className="plan-preview-toolbar-actions">
+          <button type="button" className="delivery-action-button" aria-expanded={showContext} onClick={() => setShowContext(!showContext)}>工程上下文</button>
           <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || loading || preview.content_kind === "unavailable"}>
             <Check size={14} /> {ownerDecision ? "Approve decisions" : "Approve"}
           </button>
@@ -79,7 +81,7 @@ export function PlanPreviewOverlay({
           </button>
         </div>
       </div>
-      <div className="plan-preview-body">
+      <div className={`plan-preview-body${showContext ? "" : " plan-context-collapsed"}`}>
         <main className={`plan-preview-reader${editing ? " plan-preview-editing" : ""}`}>
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
@@ -89,7 +91,7 @@ export function PlanPreviewOverlay({
               : <PlanReviewReader key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} />)}
           </Suspense>}
         </main>
-        <aside className="plan-preview-context">
+        <aside className="plan-preview-context" hidden={!showContext}>
           <p className="muted">{editing ? "选中文字，点击「引用到 Agent」说明修改要求，检查 Diff 后 Apply。" : "点击上方「引用编辑」，可选段并通过 Agent 修改。"}</p>
           <dl className="plan-approval-meta">
             <div><dt>正文</dt><dd>{planContentKindLabel(preview)}</dd></div>
@@ -97,9 +99,13 @@ export function PlanPreviewOverlay({
             <div><dt>status</dt><dd>{preview?.status || "-"}</dd></div>
             <div><dt>stage</dt><dd>{preview?.stage_id || "-"}</dd></div>
             <div><dt>tasks</dt><dd>{preview?.task_count ?? preview?.task_map_summary?.task_count ?? "-"}</dd></div>
-            <div><dt>decisions</dt><dd>{preview?.decision_count ?? preview?.owner_decision_items?.length ?? 0}</dd></div>
+            <div><dt>本次审批问题</dt><dd>{preview?.decision_count ?? preview?.owner_decision_items?.length ?? 0}</dd></div>
+            <div><dt>全部决定登记</dt><dd>{preview?.decision_review?.available ? preview.decision_review.counts.total : "未绑定"}</dd></div>
+            <div><dt>待决定 / 明确阻塞</dt><dd>{preview?.decision_review?.available ? `${preview.decision_review.counts.pending} / ${preview.decision_review.counts.blocking}` : "未声明"}</dd></div>
+            <div><dt>已授权待落实</dt><dd>{preview?.decision_review?.available ? preview.decision_review.counts.follow_up : "未声明"}</dd></div>
             <div><dt>trace</dt><dd>{preview?.trace_id || "-"}</dd></div>
           </dl>
+          {preview?.decision_review?.error && <p role="alert">{preview.decision_review.error}</p>}
           {preview?.review_packet && <details open>
             <summary>SDD/TDD 审核包 · {preview.review_packet.status}</summary>
             <ul>

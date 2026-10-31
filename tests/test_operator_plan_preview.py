@@ -81,7 +81,7 @@ def test_review_dossier_backfills_bound_decision_register(tmp_path):
 
     assert result["decision_count"] == 1
     assert result["owner_decision_items"][0]["decision_id"] == "CR01"
-    assert "**待决事项**：`1` 项" in result["review_dossier_markdown"]
+    assert "**决定登记**：`1` 项" in result["review_dossier_markdown"]
     assert "Choose the clock contract?" in result["review_dossier_markdown"]
 
 
