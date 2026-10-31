@@ -936,6 +936,14 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                 if isinstance(candidate.get("trigger_payload"), dict)
                 else {}
             )
+            if (
+                trigger.get("handoff_kind") == "task_base_recovery"
+                or candidate_trigger.get("handoff_kind") == "task_base_recovery"
+            ) and (
+                trigger.get("handoff_kind") != candidate_trigger.get("handoff_kind")
+                or trigger.get("task_id") != candidate_trigger.get("task_id")
+            ):
+                continue
             try:
                 candidate_attempt = int(
                     candidate_trigger.get("rework_attempt") or 0
