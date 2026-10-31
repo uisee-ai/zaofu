@@ -393,6 +393,45 @@ def test_gap_amend_preserves_structured_acceptance_and_owner() -> None:
     ]
 
 
+def test_gap_amend_preserves_structured_verification_commands() -> None:
+    base = {"schema_version": "task-map.v1", "tasks": [{
+        "task_id": "OLD", "title": "old", "owner_role": "dev", "wave": 1,
+        "allowed_paths": ["src/**"], "allowed_paths_reason": "slice",
+        "acceptance": ["works"], "validation": {"commands": [
+            {"id": "OLD-CHECK", "command": "npm test", "producer_task_id": "OLD"},
+        ]},
+    }]}
+    commands = [
+        {"id": "OLD-CHECK", "command": "npm test", "owner": "task_verify", "producer_task_id": "NEW"},
+        {"id": "INTEGRATION", "command": "node --test tests/integration.js", "owner": "task_verify", "producer_task_id": "NEW"},
+    ]
+    replacement = {
+        "task_id": "NEW", "claim_paths": ["src/**", "tests/**"],
+        "acceptance_criteria": [{"id": "AC", "statement": "works", "verification_command_ids": ["INTEGRATION"]}],
+        "verify_commands": [row["command"] for row in commands],
+        "verification": {"commands": commands},
+        "base_commit": "a" * 40,
+        "source_refs": ["event:gap", "git:" + "a" * 40], "supersedes_task_ids": ["OLD"],
+    }
+    amended = build_gap_task_map_amend(base, gap_tasks=[replacement], supersedes_task_map_ref="base.json")
+    result = next(t for t in amended["tasks"] if t["task_id"] == "NEW")
+    assert result["validation"]["commands"] == commands
+    assert result["validation"]["commands"] is not commands
+    assert validate_task_map_payload(amended).passed
+
+
+def test_gap_amend_rejects_conflicting_structured_command_catalogs() -> None:
+    base = {"schema_version": "task-map.v1", "tasks": []}
+    gap = {
+        "task_id": "NEW", "claim_paths": ["src/**"], "acceptance": ["works"],
+        "verify_commands": ["npm test"], "source_refs": ["event:gap"],
+        "verification": {"commands": [{"id": "A", "command": "npm test"}]},
+        "validation": {"commands": [{"id": "B", "command": "npm test"}]},
+    }
+    with pytest.raises(ValueError, match="conflicting structured verification commands"):
+        build_gap_task_map_amend(base, gap_tasks=[gap], supersedes_task_map_ref="base.json")
+
+
 def test_replacement_preserves_shared_validation_catalog_as_read_only() -> None:
     base_commit = "d" * 40
     base = {

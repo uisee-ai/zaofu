@@ -524,6 +524,18 @@ def _inherit_replacement_mechanical_identity(
     """
 
     item = dict(raw)
+    structured_verification = item.get("verification")
+    if isinstance(structured_verification, dict) and isinstance(
+        structured_verification.get("commands"), list
+    ):
+        commands = structured_verification["commands"]
+        validation = item.get("validation")
+        if isinstance(validation, dict) and validation.get("commands") not in (None, commands):
+            raise ValueError(f"{_task_id(item)}: conflicting structured verification commands")
+        item["validation"] = {
+            **(validation if isinstance(validation, dict) else {}),
+            "commands": deepcopy(commands),
+        }
     superseded = _string_list(item.get("supersedes_task_ids"))
     inherited_task_id = (
         superseded[0]
