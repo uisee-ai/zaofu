@@ -1358,7 +1358,7 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
             events = []
     from zf.web.projections.events import _events_state
 
-    all_events, event_epoch, _ = _events_state(state_dir, config=config)
+    all_events, event_epoch, event_fingerprint = _events_state(state_dir, config=config)
     aliases = run_aliases(event for _, event in all_events)
     legacy_completed_closeout = _current_completed_run_closeout_for_projection(
         all_events
@@ -1383,6 +1383,7 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
     )
     task_event_groups = cached_group_task_events(
         tasks, all_events, _search_texts, source_key=(str(state_dir.resolve()), event_epoch),
+        source_fingerprint=event_fingerprint,
     )
     context_types = (_GLOBAL_FAILURE_EVENTS | _PLAN_FAILURE_SUPERSEDING_EVENTS
                      | _QUALITY_FAILURE_SUPERSEDING_EVENTS)
