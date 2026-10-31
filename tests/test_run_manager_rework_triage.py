@@ -200,6 +200,45 @@ def test_manual_external_gate_preempts_auto_resume_and_diagnosis() -> None:
     assert actions[0]["checkpoint_id"] == "manual-gate"
 
 
+def test_cross_task_superseded_replan_is_redriven_once() -> None:
+    blocked = ZfEvent(id="failed-a", type="dev.blocked", task_id="A")
+    triage = ZfEvent(id="triage-a", type="task.rework.triage.completed", task_id="A",
+                     payload={"recommended_action": "request_replan", "retryable": False,
+                              "failed_event_id": "failed-a"})
+    events = [blocked, triage]
+    original = pending_immediate_replan_actions(events)[0]
+    events.extend([
+        ZfEvent(type="run.manager.action.applied", payload={"checkpoint_id": original["checkpoint_id"]}),
+        ZfEvent(id="request-a", type="flow.discovery.requested", payload={
+            "schema_version": "semantic-replan-request.v1", "task_id": "A", "rework_of": "failed-a",
+            "handoff_kind": "task_base_recovery", "workflow_run_id": "run-1"}),
+        ZfEvent(type="fanout.started", payload={"fanout_id": "fanout-a", "trigger_event_id": "request-a"}),
+        ZfEvent(id="request-b", type="flow.discovery.requested", payload={
+            "schema_version": "semantic-replan-request.v1", "task_id": "B",
+            "handoff_kind": "task_base_recovery", "workflow_run_id": "run-1"}),
+        ZfEvent(type="fanout.started", payload={"fanout_id": "fanout-b", "trigger_event_id": "request-b"}),
+        ZfEvent(id="cancel-a", type="fanout.cancelled", payload={
+            "fanout_id": "fanout-a", "superseded_by": "fanout-b", "reason": "superseded_by_latest_fanout"}),
+    ])
+    redrive = pending_immediate_replan_actions(events)
+    assert len(redrive) == 1
+    assert redrive[0]["checkpoint_id"] != original["checkpoint_id"]
+    assert redrive[0]["request_id"] != original["request_id"]
+    assert "cancel-a" in redrive[0]["source_event_ids"]
+    events.append(ZfEvent(type="run.manager.action.applied", payload={"checkpoint_id": redrive[0]["checkpoint_id"]}))
+    assert pending_immediate_replan_actions(events) == []
+
+    events.pop()
+    events[-3].payload["workflow_run_id"] = "other-run"
+    assert pending_immediate_replan_actions(events) == []
+    events[-3].payload["workflow_run_id"] = "run-1"
+    events.append(ZfEvent(type="task.done", task_id="A"))
+    assert pending_immediate_replan_actions(events) == []
+    events.pop()
+    events[-3].payload["task_id"] = "A"
+    assert pending_immediate_replan_actions(events) == []
+
+
 def test_first_unsatisfiable_contract_routes_to_semantic_replan(
     tmp_path: Path,
 ) -> None:
