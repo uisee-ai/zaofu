@@ -227,7 +227,9 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             context.state_dir,
             manifest=manifest,
             event_log=event_log,
-            use_artifact_context=bool(required),
+            # Exact and bundled reads use the same operation-identity reducer.
+            # The conservative view retains all operation facts and signing checks.
+            use_artifact_context=True,
         )
         if required:
             from zf.runtime.artifact_read_requirements import required_reads_for_attempt
