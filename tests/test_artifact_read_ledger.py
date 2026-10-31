@@ -19,6 +19,32 @@ from zf.runtime.artifact_read_ledger import (
     seal_read_ledger,
     validate_required_reads,
 )
+from zf.runtime.sidecar_refs import build_sidecar_ref_descriptor
+
+
+def test_large_ledger_admission_verifies_contents_and_attempt(tmp_path: Path) -> None:
+    ref = "artifacts/attempts/attempt-1/read-ledger-large.jsonl"
+    path = tmp_path / ref
+    path.parent.mkdir(parents=True)
+    row = {"schema_version": "artifact-read.v1", "attempt_id": "attempt-1",
+           "source_id": "plan", "artifact_id": "map", "json_path": "$",
+           "returned_bytes": 1, "padding": "x" * 1024}
+    raw = (json.dumps(row) + "\n").encode() * 4000
+    assert len(raw) > 4 * 1024 * 1024
+    path.write_bytes(raw)
+    descriptor = build_sidecar_ref_descriptor(
+        kind="artifact_read_ledger", ref=ref, sha256=hashlib.sha256(raw).hexdigest(),
+        byte_count=len(raw), content_type="application/x-ndjson",
+        schema_version="artifact-read-ledger.v1", created_by="test", required=True,
+    )
+    policy = {"attempt_id": "attempt-1", "required_reads": [{"source_id": "plan", "artifact_id": "map"}]}
+    assert validate_required_reads(tmp_path, policy=policy, ledger_descriptor=descriptor) == []
+    issues = validate_required_reads(tmp_path, policy={**policy, "attempt_id": "other"}, ledger_descriptor=descriptor)
+    assert issues[0]["code"] == "invalid_ledger"
+    path.write_bytes(raw.replace(b'"padding": "x', b'"padding": "y', 1))
+    issues = validate_required_reads(tmp_path, policy=policy, ledger_descriptor=descriptor)
+    assert issues[0]["code"] == "invalid_ref"
+    assert "hash mismatch" in issues[0]["message"]
 
 
 def test_required_read_accepts_only_contiguous_complete_pages(tmp_path: Path) -> None:
