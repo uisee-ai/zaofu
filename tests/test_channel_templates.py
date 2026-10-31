@@ -952,6 +952,7 @@ def test_controlled_question_resolution_and_consensus_confirmation(
             "thread_id": "main",
             "artifact_ref": "channel-artifacts/ch-owner-controls/prd.md",
             "artifact_digest": "b" * 64,
+            "readiness_verdict": "ready",
             "proposed_by": "tech_leader",
             "required_signers": ["tech_leader"],
             "source": "test",
