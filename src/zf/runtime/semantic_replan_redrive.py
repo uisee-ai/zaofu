@@ -8,7 +8,7 @@ def _payload(event: ZfEvent) -> dict:
 
 
 def cross_task_replan_cancellation(
-    events: list[ZfEvent], task_id: str, failed_event_id: str,
+    events: list[ZfEvent], task_id: str, failed_event_id: str, *, request_id: str = "",
 ) -> str:
     requests = {
         event.id: event for event in events
@@ -23,6 +23,7 @@ def cross_task_replan_cancellation(
         if _payload(event).get("task_id") == task_id
         and _payload(event).get("rework_of") == failed_event_id
         and _payload(event).get("handoff_kind") == "task_base_recovery"
+        and (not request_id or _payload(event).get("request_id") == request_id)
     ]
     if not own:
         return ""
@@ -37,7 +38,8 @@ def cross_task_replan_cancellation(
             continue
         newer_request = requests.get(str(_payload(new).get("trigger_event_id") or ""))
         newer = _payload(newer_request) if newer_request else {}
-        if (newer.get("handoff_kind") == "task_base_recovery"
+        if (_payload(request).get("workflow_run_id")
+                and newer.get("handoff_kind") == "task_base_recovery"
                 and newer.get("task_id") and newer.get("task_id") != task_id
                 and newer.get("workflow_run_id") == _payload(request).get("workflow_run_id")):
             return event.id

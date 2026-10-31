@@ -16,6 +16,8 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 
 对于修复前已发生的跨任务错误替代，Run Manager 仅在账本能绑定原失败、原复扫请求、取消事件和同 Run 的另一任务替代请求时，以取消事件为幂等依据重发原语义复扫；已产生后续进展或已重发的任务不重复派发，同任务正常换代不触发此恢复。
 
+若原恢复案卷仍等待被取消复扫的效果，先用匹配的请求和取消事件收口为 effect.failed，重新开放该案卷；只有通过正常恢复案卷准入后才可重发，不直接改写案卷或清除历史事件。
+
 显式派发基准存在时，TaskRef 的文件范围由该基准到提交目标的 Git 差异确定，兼容 legacy `base_git_head` 与 v4 `base_commit`。局部返工或仅清理工作树的结果可以报告本轮没有新增文件，但不能据此清空此前尚未集成的任务文件；缺少显式基准的 legacy 空交接保持原有只读组装语义。候选集成消费完整范围，保留合同路径准入；不得只拼入最后一次修复文件，导致已经独立验证的入口、依赖清单或 smoke 脚本丢失。`tests/test_task_ref_rework_integration.py` 通过真实 TaskRef 与增量 candidate 入口覆盖完整实施、局部修复、空变更重交及滚动 smoke。
 
 验证：tests/test_task_pipeline_capsule.py 覆盖派发入口与真实 briefing/transport 调用边界；tests/test_task_context_recovery.py 覆盖分类与 Run Manager 重规划排除；保留 pipeline、TaskDoc、result submit 和 flow mock E2E 回归。
