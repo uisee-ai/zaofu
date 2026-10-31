@@ -503,6 +503,8 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
     root_owner_class = str(raw.get("root_owner_class") or "").strip()
     if root_owner_class:
         item["root_owner_class"] = root_owner_class
+    if "goal_claim_ids" in raw:
+        item["goal_claim_ids"] = _string_list(raw["goal_claim_ids"])
     base_commit = str(raw.get("base_commit") or "").strip()
     if base_commit:
         item["base_commit"] = base_commit

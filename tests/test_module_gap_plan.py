@@ -405,6 +405,22 @@ def test_gap_amend_accepts_structured_criterion_description() -> None:
     assert amended["tasks"][0]["acceptance_criteria"] == criteria
 
 
+def test_gap_amend_preserves_explicit_goal_claim_mapping() -> None:
+    base = {
+        "schema_version": "task-map.v1",
+        "goal_claims": [{"goal_claim_id": "GOAL-A", "text": "original goal", "mandatory": True}],
+        "tasks": [],
+    }
+    gap = {
+        "task_id": "NEW", "claim_paths": ["src/**"], "acceptance": ["works"],
+        "verify_commands": ["npm test"], "source_refs": ["event:gap"],
+        "goal_claim_ids": ["GOAL-A"],
+    }
+    amended = build_gap_task_map_amend(base, gap_tasks=[gap], supersedes_task_map_ref="base.json")
+    assert amended["tasks"][0]["goal_claim_ids"] == ["GOAL-A"]
+    assert validate_task_map_payload(amended).summary["goal_coverage"]["diagnostics"] == []
+
+
 def test_gap_amend_preserves_structured_verification_commands() -> None:
     base = {"schema_version": "task-map.v1", "tasks": [{
         "task_id": "OLD", "title": "old", "owner_role": "dev", "wave": 1,

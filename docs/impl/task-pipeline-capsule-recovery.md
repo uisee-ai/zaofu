@@ -26,6 +26,7 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 
 缺口产物使用 `verification.commands` 提交结构化命令时，转换为唯一的 Task Map `validation.commands`，保留命令 ID、owner 和验收关联；若同时提供的两个结构化命令表冲突，拒绝合并，不以旧任务命令静默覆盖新命令。
 缺口验收的结构化 `description` 与合同快照采用相同的文本语义；转换时保留原对象，不能误判为空验收。
+缺口任务显式声明的 `goal_claim_ids` 在转换时原样保留；目标覆盖是否充分由现有覆盖图和评审判断，运行时不替任务推断语义映射。
 
 Gap task 转为 task_map 时，结构化验收对象完整保留 ID、必需性、验证责任、层级及命令引用；面向人阅读的 acceptance 仅提取条款正文。最终产品验收仍由原 owner 签收，不能把字典序列化成普通字符串后按默认 task_verify 处理。
 
