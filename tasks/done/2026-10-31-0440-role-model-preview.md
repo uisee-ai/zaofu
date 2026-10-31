@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done；ee10c352 fix: preserve role behavior in model reviews and revision recovery
 
 # 按角色审查模型配置
 
