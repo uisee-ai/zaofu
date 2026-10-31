@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from zf.core.task.schema import Task
+from zf.core.task.pipeline_event_scope import task_pipeline_event_scope
 
 
 KANBAN_COLUMN_LABELS: dict[str, str] = {
@@ -175,7 +176,7 @@ def workflow_projection(
     keep emitting ``review.approved`` / ``test.passed`` / ``judge.passed``.
     """
 
-    event_items = [_event_obj(item) for item in events]
+    event_items = task_pipeline_event_scope(task, [_event_obj(item) for item in events])
     event_types = [_event_type(event) for event in event_items]
     status = str(task.status or "").strip().lower().replace("-", "_")
     phase_value = str(phase or "").strip().lower().replace("-", "_")
