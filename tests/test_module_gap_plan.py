@@ -336,6 +336,37 @@ def test_semantic_replan_rewrites_downstream_dependency_to_successor() -> None:
     assert validate_task_map_payload(amended).passed is True
 
 
+@pytest.mark.parametrize("change,expected", [
+    ({}, True),
+    ({"command": "npm test -- other"}, None),
+    ({"rolling_smoke": False}, False),
+    ({"timeout_seconds": 300}, None),
+])
+def test_replacement_inherits_only_unchanged_approved_smoke(change, expected) -> None:
+    parent_command = {
+        "id": "SMOKE", "command": "npm test -- foundation", "acceptance_ids": [],
+        "owner": "task_verify", "tier": "runtime", "deterministic": True,
+        "reusable": True, "timeout_seconds": 180, "producer_task_id": "OLD",
+        "rolling_smoke": True,
+    }
+    new_command = {k: v for k, v in parent_command.items() if k != "rolling_smoke"}
+    new_command.update({"producer_task_id": "NEW", **change})
+    base = {"schema_version": "task-map.v1", "feature_id": "F-1", "tasks": [{
+        "task_id": "OLD", "title": "old", "owner_role": "dev", "wave": 1,
+        "allowed_paths": ["src/**"], "allowed_paths_reason": "slice",
+        "acceptance": ["works"], "validation": {"commands": [parent_command]},
+    }]}
+    replacement = {"task_id": "NEW", "owner_role": "dev", "claim_paths": ["src/**"],
+                   "acceptance": ["works"], "verify_commands": [new_command["command"]],
+                   "source_refs": ["event:gap"], "supersedes_task_ids": ["OLD"],
+                   "validation": {"commands": [new_command]}}
+    amended = build_gap_task_map_amend(base, gap_tasks=[replacement], supersedes_task_map_ref="base.json")
+    result = next(t for t in amended["tasks"] if t["task_id"] == "NEW")
+    assert result["validation"]["commands"][0].get("rolling_smoke") is expected
+    if "rolling_smoke" not in change:
+        assert "rolling_smoke" not in new_command
+
+
 def test_replacement_preserves_shared_validation_catalog_as_read_only() -> None:
     base_commit = "d" * 40
     base = {
