@@ -26,6 +26,8 @@ Plan Critic 使用 `plan-synth` 结果时，只有明确声明
 报告均为非批准结果，才允许封存不完整读取账本并记录失败。结果仍以 rejected
 进入后续流程，不能发布 task map；完成的语义否决、矛盾的批准以及损坏账本
 仍不能绕过读取校验。回归：`tests/test_plan_synth_failure_reads.py`。
+准入后的 Critic 结果将该失败分类传递至 fanout 聚合和阶段失败事件，供
+恢复流程区分执行失败与计划内容被否决；历史事件不被改写。
 
 显式指定受影响 task ids 的返修，必读上下文保留全部任务的状态、依赖、合同身份、
 交付/阻塞事实及受影响任务完整正文。全量 canonical TaskStore 快照独立封存并

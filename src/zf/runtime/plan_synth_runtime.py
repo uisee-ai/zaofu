@@ -35,6 +35,7 @@ PLAN_SYNTH_HANDOFF_KEYS = (
     "reviewed_plan_candidate_digest",
 )
 PLAN_SYNTH_SEMANTIC_FIELDS = (
+    "failure_class",
     "artifact_refs",
     "evidence_refs",
     "findings",
