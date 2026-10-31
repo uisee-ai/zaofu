@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done；9be4a5cb fix: recover workflow preparation after missing Git baselines
 
 # 工作流准备的 Git 基线与失败恢复
 
@@ -32,6 +32,6 @@ simulation.done 已发出，临时 Web 已停止。
 风险评估：中等（Git 副作用、Operation/Request 绑定及 Web 投影跨边界）；仅替换失败且同需求
 绑定，显式文件清单与独立 Git index、摘要校验、真实 CLI/API/装配与浏览器回归覆盖。
 
-## 监工交接
+## 监工交接（独立后续执行，不计入四项修复完成）
 
 修复上线后恢复 `dl` 的既有 Task；使用 Owner 指定的 Astra/xhigh、Terra/xhigh、Sol/high，保留完整 v1.4 范围和独立 Verify/Judge。问题与处理证据持续记录，不能以减少验收或伪造通过解除阻塞。
