@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现: `ceed9e72 fix: preserve event consumption and current task state`
 
 # P1：日志轮转后的消费游标丢事件
 
@@ -33,4 +34,4 @@
 - Web typecheck / Web unit、改动 Python 文件 Ruff、git diff whitespace 检查通过。
 - 复现、命令、分层结果与基线失败分类见
   [实现和验证记录](../../docs/impl/review-state-consistency.md)。
-- 实现 commit 在归档时记录；本地提交，不 push。
+- 实现 commit：`ceed9e72 fix: preserve event consumption and current task state`；本地提交，不 push。
