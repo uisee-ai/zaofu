@@ -81,7 +81,7 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert config.workflow.execution_profiles["bounded-direct-v1"].limits.token_budget == 0
     assert config.workflow.run_limits.token_budget == 0
     assert config.workflow.execution_profiles["bounded-direct-v1"].limits.cost_budget_usd == 8
-    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.max_usage_samples == 60
+    assert config.workflow.execution_profiles["bounded-direct-v1"].limits.max_usage_samples == 0
     assert config.workflow.run_limits.cost_budget_usd == 40
     assert task_pipeline["worker_lifecycle"]["idle_seconds"] == 600
     for role in config.roles:
