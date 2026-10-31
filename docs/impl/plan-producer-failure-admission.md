@@ -26,3 +26,12 @@ incomplete`。这不是读取完成证明；账本摘要、格式、attempt 身�
 登记为 `canonical-task-snapshot` 来源，索引提供精确 JSON path 和摘要；Planner
 修改其他任务合同或解析未知 task id 前需读取该任务正文。未指定范围的重规划
 仍必读完整快照。此分区不改变任务、AC 或预算，也不允许用索引代替完整 task map。
+
+返修输入同时绑定已批准 Plan Package 正文及其 produced/inherited 端口。
+Package、OA 原裁决和 delta 是小体量必读来源；大端口按需受控读取，保持原摘要。
+OA apply → resynth → handoff 传递原裁决 descriptor，裁决引用的证据仅从该 OA
+操作原有不可变 source manifest 继承，保留访问范围。旧触发丢失 descriptor 时，
+仅允许相同 Run、Package、任务图 generation、失败指纹和任务范围的 canonical
+`orchestrator.replan_requested` marker 恢复；不匹配或歧义时拒绝猜测。
+这只补全输入接线，不修改历史 Plan、审批、验收门禁或预算。
+回归：`tests/test_replan_authority_inputs.py`，真实入口覆盖 OA apply 和 Plan handoff。
