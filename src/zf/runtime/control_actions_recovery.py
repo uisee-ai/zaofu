@@ -236,7 +236,11 @@ class RecoveryActionsMixin:
                 requested, action, requested_action,
                 f"source event {source_event_id} not found", 404,
             )
-        if source.type not in _RETRIGGERABLE:
+        registered_reader_trigger = any(
+            stage.topology == "fanout_reader" and stage.trigger == source.type
+            for stage in getattr(getattr(self.config, "workflow", None), "stages", [])
+        )
+        if source.type not in _RETRIGGERABLE and not registered_reader_trigger:
             return self._recovery_failed(
                 requested, action, requested_action,
                 f"{source.type} is not a retriggerable driving event",

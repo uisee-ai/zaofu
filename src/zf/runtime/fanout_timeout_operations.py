@@ -14,14 +14,15 @@ from zf.runtime.workflow_operation import (
 )
 
 
-def fail_timed_out_child_operations(
+def fail_reader_child_operations(
     runtime: Any,
     *,
     manifest: Mapping[str, Any],
     pending_children: list[str],
     causation_event: ZfEvent | None,
+    reason: str,
 ) -> list[ZfEvent]:
-    """Fail only running operations owned by the timed-out children."""
+    """Close live operations owned by mechanically failed reader children."""
 
     pending = {str(item) for item in pending_children if str(item)}
     if not pending:
@@ -78,7 +79,7 @@ def fail_timed_out_child_operations(
                 or payload.get("task_id")
                 or ""
             ),
-            reason="fanout_timeout",
+            reason=reason,
             causation_id=(
                 causation_event.id if causation_event is not None else ""
             ),
@@ -125,11 +126,12 @@ class FanoutTimeoutOperationsMixin:
         causation_id = (
             causation_event.id if causation_event is not None else None
         )
-        operation_failures = fail_timed_out_child_operations(
+        operation_failures = fail_reader_child_operations(
             self,
             manifest=manifest,
             pending_children=pending_children,
             causation_event=causation_event,
+            reason="fanout_timeout",
         )
         runtime_findings = [
             {
@@ -221,5 +223,5 @@ class FanoutTimeoutOperationsMixin:
 
 __all__ = [
     "FanoutTimeoutOperationsMixin",
-    "fail_timed_out_child_operations",
+    "fail_reader_child_operations",
 ]
