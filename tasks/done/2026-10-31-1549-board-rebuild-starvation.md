@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # P2：活跃项目看板重建长时间无法发布
 
@@ -33,3 +33,11 @@ Plan Critic 保持原进程、原模型和原输入。
   typecheck/unit 通过；deterministic 由上述四批精确闭包替代，没有运行 full pytest。
 - `npm run build` 通过，47 个 chunk，最大 460385 bytes；premerge sentinel 51 passed。
 - 真实数据预览：冷构建约 13 秒，热构建约 4 秒；保持 94 张卡片，稳定窗口完整生成通过。
+
+实现：`cfcfc55e fix: reuse board task matches across event appends`。
+Docker Playwright 真实项目预览通过：94 张卡片、0 page errors，生成时间从 14:32
+推进至 16:00；截图和回执位于 dl `artifacts/supervision/board-cache-8002.png`、
+`board-cache-browser-8002.json`。快照仍如实标记 refreshing，不将旧数据伪装为 ready。
+
+限制：该修复恢复投影更新；未解除主流程的 Critic usage_samples 预算阻塞，
+也未把历史 in_progress 任务卡片等同于当前活跃 operation。
