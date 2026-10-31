@@ -35,3 +35,10 @@ OA apply → resynth → handoff 传递原裁决 descriptor，裁决引用的证
 `orchestrator.replan_requested` marker 恢复；不匹配或歧义时拒绝猜测。
 这只补全输入接线，不修改历史 Plan、审批、验收门禁或预算。
 回归：`tests/test_replan_authority_inputs.py`，真实入口覆盖 OA apply 和 Plan handoff。
+
+Critic 首次准备请求时，执行评审中的用量观察也随 manifest 固定。同一操作因
+暂停或派发延迟再次准备时，若候选、策略、任务图等非用量事实完全一致，则复用
+原用量观察对应的不可变评审来源；新用量不会改变旧请求摘要。其他事实改变仍走
+request divergence 拒绝，新操作重新读取当前用量。原 manifest/评审摘要均需
+校验；这不是预算豁免，也不修改用量账本。入口及篡改回归：
+`tests/test_plan_review_replay.py`。
