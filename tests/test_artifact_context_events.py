@@ -26,6 +26,23 @@ def test_context_matches_ledger_while_skipping_irrelevant_hook_bodies(tmp_path: 
     assert reduce_workflow_operations(view.read_all())["op"]["status"] == "cancelled"
 
 
+def test_budget_view_preserves_hook_run_aliases(tmp_path: Path) -> None:
+    from zf.runtime.run_scope import run_aliases
+
+    log = EventLog(tmp_path / "events.jsonl")
+    log.append(ZfEvent(type="run.started", payload={"run_id": "canonical"}))
+    log.append(ZfEvent(
+        type="codex.hook.post_tool_use", correlation_id="canonical",
+        payload={"workflow_run_id": "alias", "tool_response": "output"},
+    ))
+    log.append(ZfEvent(type="codex.hook.post_tool_use", payload={"tool_response": "noise"}))
+    full = log.read_all()
+    selected = ArtifactContextEvents(log, preserve_run_aliases=True).read_all()
+    assert len(selected) == len(full) - 1
+    assert run_aliases(selected) == run_aliases(full)
+    assert run_aliases(selected)["alias"] == "canonical"
+
+
 def test_ambiguous_legacy_lines_and_partial_writes_are_not_skipped(tmp_path: Path) -> None:
     path = tmp_path / "events.jsonl"
     log = EventLog(path)

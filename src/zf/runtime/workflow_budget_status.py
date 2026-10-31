@@ -10,7 +10,7 @@ from typing import Any, Mapping
 from zf.core.cost.tracker import CostTracker
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
-from zf.runtime.workflow_operation import load_workflow_operation
+from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
 def budget_headroom(
@@ -88,8 +88,14 @@ def operation_budget_status(
         usage_meter_snapshot,
     )
 
+    from zf.runtime.artifact_context_events import ArtifactContextEvents
+
     log = EventLog(state_dir / "events.jsonl")
-    operation = load_workflow_operation(log, operation_id)
+    # Hook telemetry with explicit run identities can contribute aliases used
+    # by budget amendments; retain it while skipping other unambiguous hooks.
+    # Use one consistent ledger view for reduction and amendment lookup.
+    events = ArtifactContextEvents(log, preserve_run_aliases=True).read_all()
+    operation = reduce_workflow_operations(events).get(operation_id)
     if operation is None:
         raise ValueError("unknown workflow operation")
     if operation.get("status") != "running":
@@ -99,7 +105,7 @@ def operation_budget_status(
     runtime = SimpleNamespace(
         state_dir=state_dir, cost_tracker=CostTracker(state_dir / "cost.jsonl"),
     )
-    limits = _operation_limits(state_dir, operation, events=log.read_all())
+    limits = _operation_limits(state_dir, operation, events=events)
     measurement = _measurement(
         baseline=operation.get("budget_snapshot"),
         current=usage_meter_snapshot(

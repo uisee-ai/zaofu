@@ -36,8 +36,9 @@ def _irrelevant_hook(line: bytes) -> bool:
 class ArtifactContextEvents:
     """One CLI invocation's conservative event view and exact snapshot cache."""
 
-    def __init__(self, log: EventLog) -> None:
+    def __init__(self, log: EventLog, *, preserve_run_aliases: bool = False) -> None:
         self.log = log
+        self.preserve_run_aliases = preserve_run_aliases
         self._signature: tuple | None = None
         self._events: tuple[ZfEvent, ...] = ()
 
@@ -67,7 +68,16 @@ class ArtifactContextEvents:
                         if not line or not line.endswith(b"\n"):
                             break
                         remaining -= len(line)
-                        if self.log.signer is None and _irrelevant_hook(line):
+                        if (
+                            self.log.signer is None
+                            and _irrelevant_hook(line)
+                            and not (
+                                self.preserve_run_aliases
+                                and any(key in line for key in (
+                                    b'"run_id"', b'"workflow_run_id"', b'"trace_id"',
+                                ))
+                            )
+                        ):
                             continue
                         event = self.log.decode_line(line.decode("utf-8", errors="replace"))
                         if event is not None:
