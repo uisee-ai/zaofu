@@ -37,6 +37,17 @@ class TestRestart:
             main(["restart", "--help"])
         assert exc.value.code == 0
 
+    def test_full_restart_dry_run_does_not_stop_or_start(
+        self, project_dir: Path, monkeypatch, capsys,
+    ) -> None:
+        def forbidden(_args):
+            pytest.fail("dry-run must not stop or start a harness")
+
+        monkeypatch.setattr("zf.cli.stop.run", forbidden)
+        monkeypatch.setattr("zf.cli.start.run", forbidden)
+        assert main(["restart", "--dry-run"]) == 0
+        assert "would stop and restart" in capsys.readouterr().out
+
     def test_restart_role_dry_run(self, project_dir: Path, capsys):
         # Start first so there's a session context
         main(["start", "--dry-run"])
