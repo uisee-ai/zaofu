@@ -8,6 +8,7 @@ run and emits bounded observation/recommendation events through ``zf emit``.
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -172,6 +173,9 @@ def build_resident_run_manager_briefing(
     state_dir: Path,
     role: RoleConfig,
 ) -> str:
+    cli = zf_cli_cmd()
+    state_arg = shlex.quote(str(state_dir))
+    status_command = f"ZF_STATE_DIR={state_arg} {cli} status"
     payload_example = json.dumps(
         {
             "summary": "one-line observation",
@@ -209,7 +213,7 @@ def build_resident_run_manager_briefing(
         "  你可以作为 Run Manager 分派的 bounded repair worker 执行该修复。",
         "- 不自动 merge、不删除分支、不杀 tmux session、不重置 git。",
         "- 不替代 deterministic Run Manager tick、Supervisor、Autoresearch 或 Orchestrator。",
-        "- 需要记录观察时,只通过 `zf emit` 写事件。",
+        f"- 需要记录观察时,只通过 `{cli} emit` 写事件。",
         "- 每轮只做有界 one-shot 读取;不要启动 `Monitor`、`tail -f`、后台 `&`",
         "  或常驻 shell 循环。唤醒节奏由 Kernel tick 管理,provider 子进程不得越过角色生命周期。",
         "",
@@ -217,7 +221,7 @@ def build_resident_run_manager_briefing(
         "",
         "每 60-120 秒执行一轮:",
         "",
-        f"1. 运行 `ZF_STATE_DIR={state_dir} zf status`。",
+        f"1. 运行 `{status_command}`。",
         "2. 读取最近事件: `tail -n 120 \"$ZF_STATE_DIR/events.jsonl\"`。",
         "3. 若存在,读取 `projections/run_manager.json`、"
         "`projections/run_status_explain.json`、`projections/supervisor/snapshot.json`。",
@@ -226,12 +230,12 @@ def build_resident_run_manager_briefing(
         "5. 写一条观察事件,例如:",
         "",
         "```bash",
-        f"ZF_STATE_DIR={state_dir} zf emit run.manager.agent.observation "
-        f"--actor {role.instance_id} --state-dir {state_dir} "
-        f"--payload '{payload_example}'",
+        f"ZF_STATE_DIR={state_arg} {cli} emit run.manager.agent.observation "
+        f"--actor {shlex.quote(role.instance_id)} --state-dir {state_arg} "
+        f"--payload {shlex.quote(payload_example)}",
         "```",
         "",
-        "如果 `projections/run_manager.json` 或 `zf status` 显示 run 已经 passed/complete,",
+        f"如果 `projections/run_manager.json` 或 `{status_command}` 显示 run 已经 passed/complete,",
         "且之后没有 `verify.failed`、`judge.failed`、`run.failed`、新的",
         "`candidate.ready` 或人工 resume/reopen 信号,停止常规 proof-of-life 写入;",
         "只在发现 reopen/maintenance 需要动作时再写 observation 或 recommendation。",
@@ -272,7 +276,7 @@ def build_resident_run_manager_briefing(
         "- 若矛盾根因是配置/代码(如质量门命令不适配栈),优先",
         "  `recommended_route=human` 并写明修改建议,不要用流程动词硬推。",
         "",
-        "现在开始观察当前 run。先执行一次 `zf status` 和事件/projection 快照读取。",
+        f"现在开始观察当前 run。先执行一次 `{status_command}` 和事件/projection 快照读取。",
     ])
 
 
@@ -436,7 +440,7 @@ def rebind_preserved_resident_run_manager(
         "\n\n## Control-Plane Rebind\n\n"
         "ZF workflow/control-plane restarted while this dedicated Run Manager "
         "session was preserved. First tick mode is observe-only: reread "
-        "`zf status`, recent events, and projections before recommending any "
+        f"`{zf_cli_cmd()} status`, recent events, and projections before recommending any "
         "mutating action.\n"
     )
     briefing_path.write_text(prompt, encoding="utf-8")
