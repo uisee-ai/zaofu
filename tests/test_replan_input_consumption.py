@@ -62,6 +62,56 @@ def test_scoped_replan_retains_all_contracts_without_requiring_unaffected_bodies
     assert unscoped_body["canonical_task_snapshot"]["tasks"] == full["tasks"]
 
 
+def test_downstream_dispatch_scope_does_not_inline_all_contracts(tmp_path):
+    state = tmp_path / ".state"
+    state.mkdir()
+    store = TaskStore(state / "kanban.json")
+    task_ids = [f"T{index:03}" for index in range(93)]
+    for index, task_id in enumerate(task_ids):
+        store.add(Task(
+            id=task_id, title=f"Slice {index}", status="backlog",
+            blocked_by=[task_ids[index - 1]] if index else [],
+            contract=TaskContract(
+                feature_id="ROOT", contract_revision=f"revision-{index}",
+                acceptance_criteria=[f"AC-{index}: " + "evidence " * 1000],
+            ),
+        ))
+    payload = {"pdd_id": "ROOT", "rework_of": "failure-1",
+               "resume_scope": "failed_children_and_downstream",
+               "failed_task_ids": ["T000", "T092"], "task_ids": task_ids,
+               "downstream_task_ids": task_ids[1:-1] + ["UNKNOWN"]}
+    refs = build_plan_handoff_input_refs(
+        state_dir=state, project_root=tmp_path, payload=payload,
+    )
+    sources = {ref["source_id"]: ref for ref in refs}
+    context = hydrate_sidecar_ref(state, sources["plan-rework-context"]).payload
+    snapshot = context["canonical_task_snapshot"]
+    assert {t["task_id"] for t in snapshot["scoped_tasks"]} == {"T000", "T092"}
+    assert context["task_ids"] == task_ids
+    assert context["downstream_task_ids"] == payload["downstream_task_ids"]
+    assert snapshot["unresolved_task_ids"] == ["UNKNOWN"]
+    assert len(json.dumps(context, ensure_ascii=False)) < 100_000
+    full = hydrate_sidecar_ref(state, snapshot["full_snapshot_ref"]).payload
+    assert len(snapshot["tasks"]) == len(full["tasks"]) == 93
+    assert full["tasks"][50]["contract"]["acceptance_criteria"][0].startswith("AC-50:")
+    assert snapshot["tasks"][50]["full_task_json_path"] == "$.tasks[50]"
+    assert snapshot["tasks"][50]["blocked_by"] == ["T049"]
+    required = canonical_required_reads(
+        {"sources": refs, "handoff_authority_contract": {"attempt_domain": "plan"}},
+        output_profile_id="workflow-read",
+    )
+    assert {row["source_id"] for row in required} == {"plan-rework-context"}
+
+    # A downstream-only hint cannot define a narrower direct-failure read scope.
+    payload.pop("failed_task_ids")
+    fallback_refs = build_plan_handoff_input_refs(
+        state_dir=state, project_root=tmp_path, payload=payload,
+    )
+    fallback = next(ref for ref in fallback_refs if ref["source_id"] == "plan-rework-context")
+    body = hydrate_sidecar_ref(state, fallback).payload
+    assert len(body["canonical_task_snapshot"]["scoped_tasks"]) == 93
+
+
 def _reader(tmp_path: Path, *, partial_read: bool = False):
     runtime = _runtime(tmp_path)
     token = provision_role_submit_credential(runtime.state_dir, "planner").read_text().strip()

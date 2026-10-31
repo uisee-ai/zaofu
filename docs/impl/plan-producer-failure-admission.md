@@ -27,6 +27,12 @@ incomplete`。这不是读取完成证明；账本摘要、格式、attempt 身�
 修改其他任务合同或解析未知 task id 前需读取该任务正文。未指定范围的重规划
 仍必读完整快照。此分区不改变任务、AC 或预算，也不允许用索引代替完整 task map。
 
+当 `resume_scope=failed_children_and_downstream` 且已列出 `failed_task_ids`，
+正文只内联直接失败任务合同；下游派发范围仍完整保留在 `task_ids` 和
+`downstream_task_ids`，全部任务索引及未解析 ID 也保留。扩展派发范围不会自动
+要求重读全部下游合同，修改任何未内联合同前仍须读取其完整快照。没有直接失败
+任务或采用其他恢复模式时，沿用显式选择范围，避免推测语义读取边界。
+
 返修输入同时绑定已批准 Plan Package 正文及其 produced/inherited 端口。
 Package、OA 原裁决和 delta 是小体量必读来源；大端口按需受控读取，保持原摘要。
 OA apply → resynth → handoff 传递原裁决 descriptor，裁决引用的证据仅从该 OA
