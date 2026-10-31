@@ -206,6 +206,14 @@ def build_plan_handoff_input_refs(
             trigger=trigger,
         )
         if canonical_snapshot:
+            from zf.runtime.plan_rework_snapshot import bind_scoped_snapshot
+
+            canonical_snapshot, snapshot_ref = bind_scoped_snapshot(
+                state_dir, canonical_snapshot, context=rework_context,
+                source_event_id=source_event_id,
+            )
+            if snapshot_ref:
+                input_refs.append(snapshot_ref)
             rework_context["canonical_task_snapshot"] = canonical_snapshot
     if len(rework_context) > 1:
         source = write_immutable_json_sidecar(
