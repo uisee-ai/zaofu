@@ -33,3 +33,19 @@ def test_artifact_production_preserves_explicit_transport_failure() -> None:
     assert result["execution_status"] == "failed"
     assert result["verdict"] == "abstained"
     assert result["failure_class"] == "reader_execution_failure"
+
+
+def test_structured_artifact_producer_can_report_incomplete_outputs() -> None:
+    result, issues = normalize_workflow_read_result(ZfEvent(
+        type="prd.plan.child.failed",
+        payload={"report": {
+            "result_semantics": "artifact_production",
+            "execution_status": "failed",
+            "summary": "Draft saved; required task map could not be produced.",
+            "artifact_refs": ["artifacts/plan/draft.json"],
+            "recommendation": "needs_rework",
+        }},
+    ))
+    assert issues == []
+    assert result["execution_status"] == "failed"
+    assert result["verdict"] == "abstained"
