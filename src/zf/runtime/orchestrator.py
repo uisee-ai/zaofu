@@ -2433,16 +2433,7 @@ class WorkflowRuntimeCoordinator(
         from zf.runtime.orchestrator_agent_role import configured_orchestrator_role
 
         decisions: list[WorkflowRuntimeDecision] = []
-        if pushed is not None:
-            recent = pushed
-            # The watcher acknowledges its immutable batch boundary only
-            # after every callback has completed.
-            if consumed_offset is not None and consumed_offset < 0:
-                raise ValueError("consumed event offset must be non-negative")
-            new_offset = consumed_offset
-        else:
-            offset = self._load_offset()
-            recent, new_offset = self.event_log.read_from_offset(offset)
+        recent, new_offset = self._read_reaction_events(pushed, consumed_offset)
 
         # Keep 194 Layer 2 authority activation tied to the legacy role's
         # presence. ``oa_profile`` binds semantic checkpoint transport but

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from zf.core.events.model import ZfEvent
+from zf.core.events.offset import EventOffset, current_offset, read_tail
 from zf.core.state.locks import locked_path
 from zf.core.state.rotation import list_archives, rotate_if_needed
 
@@ -211,38 +212,18 @@ class EventLog:
             },
         )
 
-    def current_offset(self) -> int:
-        try:
-            return self.path.stat().st_size
-        except FileNotFoundError:
-            return 0
+    def current_offset(self) -> EventOffset:
+        return current_offset(self.path)
 
-    def read_from_offset(self, offset: int) -> tuple[list[ZfEvent], int]:
-        """Return events appended since `offset`, plus the new end offset.
+    def read_from_offset(
+        self, offset: int, *, through: int | None = None,
+    ) -> tuple[list[ZfEvent], EventOffset]:
+        """Read complete events, following bound offsets across lazy rotation.
 
-        Handles rotation: if the active file's current size is smaller than
-        `offset` (because the old content got moved to an archive), we start
-        from 0 of the new active file.
+        ``through`` pins a pushed watcher batch so callback appends remain
+        unconsumed. Bare legacy integers still address the active file only.
         """
-        if not self.path.exists():
-            return [], 0
-        current_size = self.path.stat().st_size
-        effective_offset = offset if offset <= current_size else 0
-        with self.path.open("rb") as f:
-            f.seek(effective_offset)
-            data = f.read()
-        # Only consume up to the last newline. A trailing line without a newline
-        # is a partial write: a large event (e.g. a 16KB scan report) is flushed
-        # in chunks, and a poll can read the file between chunks. Advancing the
-        # offset past such a line drops the event from the live stream forever —
-        # decode fails now and the next poll starts after it — even though a full
-        # re-read still sees it (why the manifest projector and live reactor can
-        # disagree). Leaving it unconsumed lets the next poll re-read it whole.
-        last_newline = data.rfind(b"\n")
-        if last_newline < 0:
-            return [], effective_offset
-        complete = data[: last_newline + 1]
-        new_offset = effective_offset + len(complete)
+        complete, new_offset = read_tail(self.path, offset, through=through)
         events: list[ZfEvent] = []
         for raw in complete.split(b"\n"):
             line = raw.decode("utf-8", "replace").strip()

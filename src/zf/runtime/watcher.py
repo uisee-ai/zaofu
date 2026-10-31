@@ -52,7 +52,7 @@ class EventWatcher:
         self.shutdown_marker = shutdown_marker
         self.stopped = False
         # Start from end of file (don't replay old events)
-        self._file_pos = self._get_file_size()
+        self._file_pos = self.event_log.current_offset()
         # P4 quiesce state — events still consumed, just at amplified
         # poll interval so safe-halt doesn't broadcast dispatch_skipped noise.
         self.quiesce_patterns = (
@@ -92,7 +92,7 @@ class EventWatcher:
                 self._quiesced = False
         if (
             self.on_batch_consumed is not None
-            and new_offset != previous_offset
+            and (events or new_offset != previous_offset)
         ):
             # Acknowledge only the immutable snapshot boundary returned by
             # read_from_offset(), and only after every callback in the batch
