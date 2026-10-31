@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现提交：`a8f7163b fix: bound replan inputs and admit reader execution failures`。
 
 # 有界返修输入与诚实失败交接
 
