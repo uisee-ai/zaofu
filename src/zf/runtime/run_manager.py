@@ -7436,6 +7436,31 @@ def _settle_pending_action_effects(
         effect_id = str(payload.get("effect_id") or "")
         if not effect_id or effect_id in terminal_by_id:
             continue
+        if str(payload.get("action") or "") == "semantic-replan-request":
+            from zf.runtime.semantic_replan_redrive import cross_task_replan_cancellation
+
+            cancelled_id = cross_task_replan_cancellation(
+                events, str(payload.get("task_id") or ""),
+                str(payload.get("source_event_id") or ""),
+                request_id=str(payload.get("request_id") or ""),
+            )
+            if cancelled_id:
+                writer.emit(
+                    RUN_MANAGER_ACTION_EFFECT_FAILED,
+                    actor="run-manager", causation_id=cancelled_id,
+                    correlation_id=pending.correlation_id,
+                    payload={
+                        "schema_version": "run-manager.action.effect.v1",
+                        **_action_payload(payload), "effect_id": effect_id,
+                        "effect_pending_event_id": pending.id,
+                        "observed_event_id": cancelled_id,
+                        "observed_event_type": "fanout.cancelled", "status": "failed",
+                        "reason": "task recovery scan was superseded by another task",
+                    },
+                )
+                terminal_by_id.add(effect_id)
+                settled += 1
+                continue
         recovery_event_type = {
             "goal_closure_identity_invalid": "flow.goal.closed",
             "goal_closure_aggregate_schema_failed": "goal.closure.synthesized",
