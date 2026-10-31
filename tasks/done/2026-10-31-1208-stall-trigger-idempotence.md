@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现提交：`1b69c62d fix: coalesce stall recovery with its original fanout trigger`。
 
 # 停滞补发与原触发的派发幂等
 
