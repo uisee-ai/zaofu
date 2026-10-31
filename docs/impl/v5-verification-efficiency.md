@@ -41,8 +41,9 @@ Flow YAML 的 `contextWindowTokens` 纯数字同样保留，与展开后的
 
 ## 必读输入与验证提交
 
-`zf artifact read --attempt <id> --required` 保留小结果的逐行 JSON 形式；超过有界输出时，
-返回 `required-artifact-page.v2`、`items` 和 `next_cursor`。将游标原样传给同一命令的
+`zf artifact read --attempt <id> --required` 统一返回 `required-artifact-page.v2`，
+包括小结果。通过 `items` 读取正文，保留 attempt、bundle digest 和每次读取唯一的
+`delivery_id`；将 `next_cursor` 原样传给同一命令的
 `--cursor`，直到游标为 null。`--page-bytes` 控制整个返回（含元数据和换行），范围 1024–8192 UTF-8 字节。
 每个来源独立鉴权并校验原始摘要；内容相同、切片相同的来源只交付一次正文，各自记录收据。
 游标绑定 attempt manifest、必读声明和内容；只记录当前实际交付范围，漏页不能通过完整消费门禁。

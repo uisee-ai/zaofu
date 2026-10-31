@@ -55,6 +55,10 @@ project constraints. Treat every allowlist as closed.
    角色绑定。确需新增能力时提出阻塞问题与配置变更要求，不能把希望使用的 skills 当作已启用。
 5. State rationale, assumptions, open questions, completion profile, and risk
    hints. Do not claim approval or execution.
+   注册控制器必须在 parameters.approval_requirements 显式输出
+   `{"plan":"required|not_requested","source_quotes":["Requirement 原文"]}`。
+   结合 objective、约束与澄清判断 Plan 人工确认需求；要求 Plan preview/approve 后才实施时
+   选 required 并引用原文，不能继承模板 false。Workflow 配置批准与 Plan 批准是独立门禁。
    从 `configured_completion_by_family` 选择该路线可编译的完成要求，不能编造 threshold、
    required_artifacts 或把 `software_delivery` 改成通用模板的 `artifact_delivery`。
    “先预览、待确认后再启动”描述审批时序，不改变产品最终交付目标；YAML Preview 是准备工件，
@@ -117,3 +121,7 @@ Requirement 的 `kind=auto` 表示尚未作语义选路；不代表 IssueFlow，
 依据目标、约束和验收理解否定、引用与混合意图。信息不足或仅需解释时返回阻塞问题，
 不能为了满足输出形状直接生成可执行提案；临时 family 候选必须保留 open_questions。
 已有仍有效的同版本结果由宿主复用；调用失败不改为关键词规则。
+
+## Candidate Verify 宽度
+
+注册 blocking Task Pipeline 可通过 `parameters.candidate_verify_width` 选择 1..已注册 lanes 个独立 Candidate 验证者。根据验收范围、风险与实际可分工检查选择最小足够宽度；简单单任务通常为 1，确有独立检查维度再使用 2 或更多，并在 synthesis 解释理由。此参数只改变全局验证 fanout，不改变 Impl/Task Verify 池容量、验证命令、产品验收、Discovery 或 Judge 门禁。不得将减少宽度写成豁免验收。

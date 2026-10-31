@@ -2819,15 +2819,6 @@ def load_config(path: Path) -> ZfConfig:
             for s in stage_dicts if isinstance(s, dict)
         }
         flow_metadata_raw = workflow_data.get("_flow_metadata")
-        task_pipeline_raw = (
-            flow_metadata_raw.get("task_pipeline")
-            if isinstance(flow_metadata_raw, dict)
-            else None
-        )
-        task_pipeline_blocking = bool(
-            isinstance(task_pipeline_raw, dict)
-            and str(task_pipeline_raw.get("mode") or "") == "blocking"
-        )
         rendered_pipeline_stages = bool(
             isinstance(flow_metadata_raw, dict)
             and flow_metadata_raw.get("rendered_pipeline_stages")
@@ -2839,7 +2830,15 @@ def load_config(path: Path) -> ZfConfig:
         merged_names = {
             str(getattr(r, "name", "") or "") for r in roles
         }
+        metadata_by_kind = _build_flow_metadata_by_kind(workflow_data.get("_flow_metadata_by_kind"))
         for pipeline_spec in pipelines:
+            pipeline_metadata = metadata_by_kind.get(pipeline_spec.flow_kind, flow_metadata_raw)
+            task_pipeline_raw = (
+                pipeline_metadata.get("task_pipeline") if isinstance(pipeline_metadata, dict) else None
+            )
+            task_pipeline_blocking = bool(
+                isinstance(task_pipeline_raw, dict) and task_pipeline_raw.get("mode") == "blocking"
+            )
             needed = set()
             for st in pipeline_spec.stages:
                 pattern = st.role_pattern or f"{st.stage_id}-lane-{{lane}}"
@@ -2869,6 +2868,10 @@ def load_config(path: Path) -> ZfConfig:
                 materialize_lane_pipeline_stages(
                     pipeline_spec,
                     task_pipeline_blocking=task_pipeline_blocking,
+                    candidate_verify_width=(
+                        task_pipeline_raw.get("candidate", {}).get("verify_width")
+                        if isinstance(task_pipeline_raw, dict) else None
+                    ),
                 ),
             )
             dag_data = workflow_data.setdefault("dag", {})

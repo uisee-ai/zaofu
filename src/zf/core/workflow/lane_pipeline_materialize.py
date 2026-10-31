@@ -79,6 +79,7 @@ def materialize_lane_pipeline_stages(
     spec: Any,
     *,
     task_pipeline_blocking: bool = False,
+    candidate_verify_width: int | None = None,
 ) -> list[dict[str, Any]]:
     """编译 candidate 级链。spec 须至少 1 个 stage(parse 层已保证)。"""
     stages: list[dict[str, Any]] = []
@@ -121,6 +122,11 @@ def materialize_lane_pipeline_stages(
     prev_success = "candidate.ready"
     final_trigger = "candidate.ready"
     for stage in spec.stages[1:]:
+        width = spec.lane_count
+        if candidate_verify_width is not None and stage.stage_id == "verify":
+            if not task_pipeline_blocking or not 1 <= candidate_verify_width <= spec.lane_count:
+                raise ValueError("candidate verify width requires blocking Task Pipeline and available verify roles")
+            width = candidate_verify_width
         stage_success, stage_failure = _stage_level_pair(stage.stage_id)
         success = LANE_STAGE_HANDOFF_SUCCESS_EVENT if per_lane else stage_success
         failure = LANE_STAGE_HANDOFF_FAILURE_EVENT if per_lane else stage_failure
@@ -130,7 +136,7 @@ def materialize_lane_pipeline_stages(
             "trigger": trigger,
             "flow_kind": str(getattr(spec, "flow_kind", "") or ""),
             "topology": "fanout_reader",
-            "roles": _lane_roles(stage, spec.lane_count),
+            "roles": _lane_roles(stage, width),
             "aggregate": {
                 "mode": "wait_for_all",
                 "child_success_event": stage.success_event,

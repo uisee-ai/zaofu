@@ -49,6 +49,10 @@ Before comparing anything, confirm which tree you are auditing:
 candidate commit 上只验收自己的 task contract；全产品验收由后续 discovery
 负责。任务级通过不是产品通过。保留原始 mandatory AC、command ID 和 owner，
 后续阶段的条款按结果协议记录 deferred，不得伪装 passed 或直接删除。
+生成 gap task 时，从已绑定 Task Map 继承未修改的 validation command 对象，
+保留 tier、deterministic、reusable、rolling_smoke 及摘要等执行属性，不能只抄
+command ID 和命令文本。只有已验证的缺口才授权具体差异；先按当前 Task Pipeline
+合同检查候选任务，不能以“语义不变”省略机器要求的元数据。
 
 Discovery 必须读取受控 manifest 中的 Plan ports 和本轮已准入的分片原始
 control result / envelope refs；核对 run、generation、candidate commit、

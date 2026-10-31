@@ -27,7 +27,7 @@ from zf.runtime.execution_profiles import execution_profile_catalog
 
 
 _FAMILIES = {"IssueFlow": "issueRef", "PrdFlow": "prdRef", "RefactorFlow": "objectiveRef"}
-CONTROLLER_PARAMETERS = frozenset({"controller_id", "controller_digest", "verification_commands"})
+CONTROLLER_PARAMETERS = frozenset({"controller_id", "controller_digest", "verification_commands", "candidate_verify_width"})
 
 
 def _documents(path: Path) -> list[dict[str, Any]]:
@@ -95,6 +95,10 @@ def selected_controller(
     if "task_pipeline" in parameters or parameters.get("lanes", entry["lanes"]) != entry["lanes"]:
         raise ValueError("registered controller selection preserves its lanes and pipeline; use a separate config revision")
     commands = parameters.get("verification_commands")
+    width = parameters.get("candidate_verify_width")
+    if width is not None and (type(width) is not int or not 1 <= width <= int(entry["lanes"])
+                              or entry["task_pipeline"].get("mode") != "blocking"):
+        raise ValueError("candidate_verify_width must fit the registered blocking controller (1..lanes)")
     if (not isinstance(commands, list) or not 1 <= len(commands) <= 16
             or any(not isinstance(c, str) or not c.strip() or len(c) > 4096 or "\x00" in c for c in commands)):
         raise ValueError("registered controller requires 1..16 project verification_commands")
@@ -213,10 +217,16 @@ def assemble_controller(
     package = controller_skill_source(root=root, base=base_config, template=load_config(path))
     base = renderable_config_to_primitive(base_config)
     flow = next(d for d in documents if d.get("kind") == entry["flow_family"])
+    if "candidate_verify_width" in parameters:
+        flow["spec"]["taskPipeline"].setdefault("candidate", {})["verifyWidth"] = parameters["candidate_verify_width"]
     config_docs = [d for d in documents if d.get("kind") == "ZfConfig"]
     if len(config_docs) != 1:
         raise ValueError("registered controller requires exactly one ZfConfig")
     spec = config_docs[0]["spec"]
+    from zf.runtime.workflow_approval_requirements import validate_approval_requirements
+    approval = validate_approval_requirements(parameters, requirement)
+    if approval.get("plan") == "required":
+        spec.setdefault("workflow", {})["plan_approval"] = True
     # Freeze the profile closure in the candidate so private validation and
     # later apply cannot depend on a checkout or mutable profile file.
     spec.pop("profile_sources", None)

@@ -86,6 +86,9 @@ model / lanes 等审核修改属于配置修订，不改写注册包的首次选
 
 ## 验证
 
+人工 Plan 审批策略、独立 Candidate Verify 宽度，以及运行中的 owner Requirement 修订，
+见 [V5 保真与验证约束](v5-fidelity-owner-revision-and-verification.md)。
+
 - `tests/test_workflow_review_controller.py`：注册控制器 model / lanes 修订、连续修改、旧补丁与篡改拒绝、中断重试及配置批准边界。
 - `tests/test_workflow_registered_controller.py`：真实合成/提案/配置 Apply 代码路径，能力隔离、
   Profile 摘要变化、候选篡改、路径隔离、项目适配，以及受控入口的 mock E2E。
