@@ -532,6 +532,7 @@ class FanoutCoordinationMixin(
                 aggregate=aggregate,
                 child_payload=child.payload,
                 skill_entries=skill_entries,
+                effective_operation_id=prepared_call.operation_id if prepared_call is not None else "",
             )
             prompt = build_task_prompt(
                 role.instance_id,
@@ -6876,6 +6877,7 @@ class FanoutCoordinationMixin(
                 manifest=manifest,
                 child=child,
                 run_id=run_id,
+                effective_operation_id=prepared_call.operation_id if prepared_call is not None else "",
             )
             identity_sources = (child, manifest, prepared_call)
         prompt = build_task_prompt(
@@ -8161,6 +8163,7 @@ class FanoutCoordinationMixin(
         manifest: dict,
         child: dict,
         run_id: str,
+        effective_operation_id: str = "",
     ) -> Path:
         from zf.runtime.fanout_retry_briefing import (
             write_blocking_reader_retry_briefing,
@@ -8174,6 +8177,7 @@ class FanoutCoordinationMixin(
             child=child,
             run_id=run_id,
             contract_handoff_keys=_CONTRACT_HANDOFF_KEYS,
+            effective_operation_id=effective_operation_id,
         )
         if blocking_briefing is not None:
             return blocking_briefing
