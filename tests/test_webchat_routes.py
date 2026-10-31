@@ -179,7 +179,16 @@ def test_queue_rejects_missing_thread_scope(client: tuple[TestClient, Path]) -> 
     assert "thread_id is required" in response.json()["detail"]
 
 
-def test_interaction_answer_route_is_revision_bound(client: tuple[TestClient, Path]) -> None:
+def test_interaction_answer_route_is_revision_bound(
+    client: tuple[TestClient, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from zf.web import server
+
+    resumed = []
+    def resume(_context, turn, interaction, **_kwargs):
+        resumed.append((turn, interaction))
+        return {"status": "queued"}
+    monkeypatch.setattr(server, "resume_durable_webchat_turn", resume)
     web, state = client
     turns = AgentTurnStore(state)
     turn = turns.submit(
@@ -197,6 +206,7 @@ def test_interaction_answer_route_is_revision_bound(client: tuple[TestClient, Pa
         json={"revision": 1, "response": {"answer": "a"}},
     )
     assert stale.status_code == 409
+    assert resumed == []
     answered = web.post(
         "/api/projects/default/webchat/interactions/question-1/answer",
         headers={"x-zf-web-token": "test-token"},
@@ -204,6 +214,7 @@ def test_interaction_answer_route_is_revision_bound(client: tuple[TestClient, Pa
     )
     assert answered.status_code == 200
     assert answered.json()["interaction"]["status"] == "answered"
+    assert len(resumed) == 1
 
 
 def test_interaction_answer_can_resolve_without_provider_resume(
