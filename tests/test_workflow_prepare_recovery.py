@@ -91,3 +91,18 @@ def test_failed_registered_assembly_recovers_without_second_provider_call(assemb
     assert final["requirement_spec_digest"] == current["requirement_spec_digest"]
     assert load_workflow_operation(writer.event_log, old_id)["status"] == "failed"
     assert not any(e.type == "workflow.invoke.requested" for e in writer.event_log.read_all())
+
+    # A genuine authorization/requirement change must leave recovery context behind.
+    from zf.runtime.workflow_requests import revise_workflow_request
+    from pathlib import Path
+    revised = revise_workflow_request(state, Path(final["workflow_input_manifest_ref"]),
+        actor="operator", expected_revision=final["revision"],
+        objective="Deliver the product with newly delegated execution approval", confirm=True, writer=writer)
+    reply.update(request_revision=revised["revision"], requirement_ref=revised["requirement_spec_ref"],
+                 requirement_digest=revised["requirement_spec_digest"])
+    next_attempt = prepare()
+    assert next_attempt["status"] == "synthesis_queued"
+    assert consume() == 1  # Supersede the settled operation from the prior revision.
+    assert consume() == 1
+    assert agent.calls == 2
+    assert load_workflow_request(state, request["request_id"])["status"] == "proposed"

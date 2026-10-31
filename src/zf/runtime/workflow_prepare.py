@@ -207,6 +207,9 @@ def prepare_request_revision(
         return {**common, "ok": False, "status": "preparation_blocked",
                 "blockers": blockers, "reason": blockers[0]["message"], "can_retry": True}
     context = dict(previous.get("operation_context") or {})
+    if previous.get("request_revision") != request.get("revision"):
+        context.pop("retry_of_operation_id", None)
+        context.pop("reusable_synthesis_result_ref", None)
     if previous.get("request_revision") == request.get("revision"):
         operation = previous["_operation"]
         status = operation["status"]

@@ -68,6 +68,12 @@ model / lanes 等审核修改属于配置修订，不改写注册包的首次选
 不可变候选开始，保留此前修改。Apply 中断后，同一 review 仅继续它已产生的下一 revision；
 不会再递增 Request，也不会自动应用配置或启动 Run。新的候选仍需精确配置批准和启动批准。
 
+Preview 同时暴露实际编译角色的 `config.<document>.roles.<name>.model` 与
+`model_reasoning_effort`。一个审核补丁可分别设置 Planner、Impl、Verify/Judge。
+对于 Flow 生成的角色，编译器会跳过同名手写角色，因此受控补丁物化该角色原有的技能、
+权限、事件及生命周期后，仅改变指定模型字段；不允许通过此入口添加角色或改拓扑。
+`tests/test_workflow_review_roles.py` 对比整个编译角色合同与工作流，防止模型调整丢失行为。
+
 ## 验证
 
 ### Git 基线与准备恢复

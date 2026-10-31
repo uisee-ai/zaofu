@@ -192,9 +192,12 @@ class WorkflowPreviewReview:
             )
         config_text = candidate_path.read_text()
         compiled_config = load_config(candidate_path)
+        from zf.runtime.workflow_review_roles import role_review_fields, role_review_inputs
+        role_inputs_by_name = role_review_inputs(compiled_config)
         docs = list(yaml.safe_load_all(config_text))
         for index, doc in enumerate(docs):
             if isinstance(doc, dict) and doc.get("kind") == "ZfConfig":
+                fields.update(role_review_fields(index, role_inputs_by_name))
                 plan_approval = (doc.get("spec", {}).get("workflow") or {}).get("plan_approval")
                 suffix = ".enabled" if isinstance(plan_approval, dict) else ""
                 fields[f"config.{index}.workflow.plan_approval{suffix}"] = {
@@ -226,6 +229,7 @@ class WorkflowPreviewReview:
             "config_digest": config_digest,
             "config_text": config_text,
             "compiled_role_skills": {role.name: list(role.skills) for role in compiled_config.roles},
+            "role_inputs": role_inputs_by_name,
         }
 
     def public_context(self, binding: dict) -> dict:
@@ -462,7 +466,7 @@ class WorkflowPreviewReview:
     def _candidate_config(self, ctx: dict, changes: list) -> Path:
         docs = list(yaml.safe_load_all(ctx["config_text"]))
         for change in changes:
-            docs = apply_config_field(docs, change["field"], change["after"])
+            docs = apply_config_field(docs, change["field"], change["after"], roles=ctx.get("role_inputs"))
         # Beside zf.yaml so relative config references preserve their meaning.
         path = self.project_root / f".zf-preview-{uuid.uuid4().hex}.yaml"
         atomic_write_text(

@@ -84,11 +84,15 @@ def config_review_fields(index: int, spec: dict, *, role_names: list[str], famil
     return result
 
 
-def apply_config_field(docs: list, field: str, value: Any) -> list:
+def apply_config_field(docs: list, field: str, value: Any, *, roles: dict | None = None) -> list:
     """Only called after the selected field has matched current server context."""
     result = deepcopy(docs)
     _, document, *keys = field.split(".")
     parent = result[int(document)]["spec"]
+    if keys[0] == "roles":
+        from zf.runtime.workflow_review_roles import apply_role_field
+        apply_role_field(parent, keys, value, roles or {})
+        return result
     for key in keys[:-1]:
         parent = parent.setdefault(key, {})
         if not isinstance(parent, dict):
