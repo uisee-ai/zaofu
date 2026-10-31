@@ -94,6 +94,8 @@ Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role
 
 操作员通过 `zf task-doc ingest` 调整合同其他字段时，未改动的结构化验收条款保留原始类型；该文本投影不支持编辑结构化条款，检测到变更时拒绝导入，避免丢失验收 ID 与验证责任。
 
+Gap 计划重放时，若已有替代任务只缺失原 Gap 明确提供的目标映射，且替代谱系、验收、验证、范围和来源均一致，可在新任务图中补回映射并重新派发该任务；已有映射冲突或合同不一致时拒绝。旧任务图及其计划包保持不可变，新计划仍须通过完整谱系和验收准入。
+
 验证：`tests/test_task_pipeline_capsule.py` 在真实派发函数和 briefing/文档生成器、隔离的 provider transport 边界核对 Impl/Verify 首派、g2 重派及失败分支，并注入 manifest/正文/角色陈旧。它证明派发上下文一致性，不代表真实多 provider 并行或完整产品验收通过。
 
 
