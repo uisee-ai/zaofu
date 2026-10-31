@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `71e447e2` fix: close failed provider turns without retrying policy refusals
 
 # P1：Codex 终止错误未回收 Task Pipeline
 
@@ -11,7 +11,7 @@ Owner 已授权监工记录、修复、验证并继续。现场正常停止 runt
 - 注册实际回收入口 → verify: run_once 阻塞精确 operation/task，attempt 不可自动重试，重复回放幂等。
 - 约束关联范围 → verify: 其他角色、旧 turn、晚于 close 的新 prompt、已终局 operation 均不受影响。
 - 保留恢复边界 → verify: 连接故障沿既有 Run Manager 路径；fanout 不自动重试明确策略拒绝。
-- 文档与回归 → verify: [实现说明](../docs/impl/provider-turn-error-recovery.md)、影响闭包、sentinel 和 deterministic mock E2E。
+- 文档与回归 → verify: [实现说明](../../docs/impl/provider-turn-error-recovery.md)、影响闭包、sentinel 和 deterministic mock E2E。
 
 基线 `f418662d`，原始回归 4 个行为断言失败（另有一个测试复制 API 错误已更正），
 证据 `/tmp/zf-provider-turn-error-red-20261031.log`。不修改产品 Verify 裁决或运行态 JSON。
