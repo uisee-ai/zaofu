@@ -626,6 +626,9 @@ def render_attempt_source_briefing(
             "If the tool output budget is smaller, use --page-bytes 2048; consume pages "
             "separately and leave room for tool wrappers. Return each raw page unchanged; do not filter fields or batch pages into a summary. CLI receipts prove production; "
             "provider delivery may remain unknown and never proves understanding.",
+            "- Wait for each page's complete tool response and consume it before requesting "
+            "another page; do not accumulate background page reads. If a response is "
+            "truncated, omitted, or lost, reread that exact page before continuing.",
             "- If an output is too large or truncated, read that exact source and JSON path "
             "with `--page-start 0 --page-size 8192`. Read and consume every page, using "
             "the returned `next_page_start` until it is null. The ledger accepts pages "
