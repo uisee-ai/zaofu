@@ -125,6 +125,30 @@ class FeatureStore:
             )
         with self._locked():
             raw = self._load_raw()
+            if any(d.get("id") == feature.id for d in raw):
+                raise ValueError(f"feature id already exists: {feature.id}")
+            for archive in list_archives(self._archive_dir, suffix=".json"):
+                if any(
+                    d.get("id") == feature.id
+                    for d in self._load_archive_file(archive)
+                ):
+                    raise ValueError(f"feature id already exists: {feature.id}")
+            raw.append(asdict(feature))
+            self._save_raw(raw)
+        return feature
+
+    def restore(self, feature: Feature) -> Feature:
+        """Restore a terminal feature through an explicit lifecycle action."""
+
+        if feature.status in TERMINAL_STATES:
+            raise ValueError("reopened feature must not be terminal")
+        with self._locked():
+            raw = self._load_raw()
+            for index, record in enumerate(raw):
+                if record.get("id") == feature.id:
+                    raw[index] = asdict(feature)
+                    self._save_raw(raw)
+                    return feature
             raw.append(asdict(feature))
             self._save_raw(raw)
         return feature

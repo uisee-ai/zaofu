@@ -34,6 +34,7 @@ from zf.runtime.workflow_task_input_artifacts import (
     materialize_channel_prd_reader_source,
     materialize_task_workflow_input,
 )
+from zf.runtime.workflow_paths import project_path
 
 def build_flow_intake(
     *,
@@ -65,9 +66,13 @@ def build_flow_intake(
     task_input_binding: dict[str, Any] | None = None,
     task_input_contract: dict[str, Any] | None = None,
     output: Path | None = None,
+    project_root: Path | None = None,
 ) -> dict[str, Any]:
     request_id = request_id or _unique_request_id(kind)
-    output_path = (output or Path("docs") / "intake" / f"{request_id}.md").expanduser()
+    output_path = Path(output or Path("docs") / "intake" / f"{request_id}.md").expanduser()
+    if project_root is not None:
+        root = Path(project_root).expanduser()
+        output_path = project_path(root, output_path if output_path.is_absolute() else root / output_path, field="output")
     project_root = _project_root_from_intake_path(output_path)
     backend = _resolve_intake_backend(project_root, backend)
     workflow_dir = project_root / "artifacts" / "workflow" / request_id
@@ -101,7 +106,6 @@ def build_flow_intake(
             WorkflowRequestError,
             load_workflow_request,
         )
-
         state_dir = _state_dir_for_config(project_root / "zf.yaml", config)
         existing = load_workflow_request(state_dir, request_id)
         if existing:
@@ -116,7 +120,6 @@ def build_flow_intake(
     intake_json_path.parent.mkdir(parents=True, exist_ok=True)
     intake_markdown_path.parent.mkdir(parents=True, exist_ok=True)
     workflow_dir.mkdir(parents=True, exist_ok=True)
-
     source_text = _read_text_ref(source_ref)
     objective_text = _compact_text(objective or source_text or source_ref)
     requested_kind = str(kind or "").strip().lower()
@@ -284,7 +287,6 @@ def build_flow_intake(
             register_workflow_intake,
             workflow_request_path,
         )
-
         state_dir = _state_dir_for_config(project_root / "zf.yaml", config)
         state_dir.mkdir(parents=True, exist_ok=True)
         writer = EventWriter(event_log_from_project(state_dir, config=config))
@@ -312,7 +314,6 @@ def build_flow_intake(
         )),
         "request_projection_ref": request_projection_ref,
     }
-
 
 def _normalize_request_kind(kind: str) -> str:
     value = str(kind or "").strip().lower()

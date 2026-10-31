@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from zf.core.events import ZfEvent
+from zf.core.safety import PathGuardError
 from zf.core.task.store import TaskStore
 from zf.runtime.control_actions_helpers import _required_text, _string_list
 from zf.runtime.sidecar_refs import SidecarRefError
@@ -37,6 +38,7 @@ from zf.runtime.workflow_task_request_rotation import (
 )
 from zf.runtime.workflow_request_identity import request_source_ref, stable_request_id
 from zf.runtime.workflow_runtime_start import ensure_submitted_workflow_runtime
+from zf.runtime.workflow_paths import project_path
 
 
 WORKFLOW_CONTROL_ACTIONS = frozenset({
@@ -266,11 +268,22 @@ class WorkflowRequestActionsMixin:
                 status_code=409,
                 status="project_initialization_required",
             )
-        config_ref = Path(
-            _required_text(payload, "config_ref") or self.project_root / "zf.yaml"
-        ).expanduser()
-        if not config_ref.is_absolute():
-            config_ref = self.project_root / config_ref
+        try:
+            config_ref = project_path(
+                self.project_root,
+                _required_text(payload, "config_ref") or self.project_root / "zf.yaml",
+                field="config_ref",
+            )
+        except PathGuardError as exc:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=None,
+                reason=str(exc),
+                status_code=422,
+                status="invalid_payload",
+            )
         if not config_ref.exists():
             return self._failed(
                 requested=requested,
@@ -465,6 +478,7 @@ class WorkflowRequestActionsMixin:
                     / "intake"
                     / f"{request_id}.md"
                 ),
+                project_root=self.project_root,
             )
         except (TaskWorkflowInputCoverageError, SidecarRefError) as exc:
             invalid_source = isinstance(exc, SidecarRefError)
@@ -568,6 +582,7 @@ class WorkflowRequestActionsMixin:
             requested_by=self.actor,
             reason=_required_text(payload, "reason") or "workflow request proposal",
             allow_missing_env=bool(payload.get("allow_missing_env")),
+            project_root=self.project_root,
         )
         ready = preview.get("status") != "STOP"
         return {
@@ -732,14 +747,25 @@ class WorkflowRequestActionsMixin:
                         status_code=409,
                         status="workflow_task_stale",
                     )
-        intake_path = Path(intake_ref).expanduser()
-        if not intake_path.is_absolute():
-            intake_path = self.project_root / intake_path
-        config_ref = Path(
-            _required_text(payload, "config_ref") or self.project_root / "zf.yaml"
-        ).expanduser()
-        if not config_ref.is_absolute():
-            config_ref = self.project_root / config_ref
+        try:
+            intake_path = project_path(
+                self.project_root, intake_ref, field="intake_ref"
+            )
+            config_ref = project_path(
+                self.project_root,
+                _required_text(payload, "config_ref") or self.project_root / "zf.yaml",
+                field="config_ref",
+            )
+        except PathGuardError as exc:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=task_id or None,
+                reason=str(exc),
+                status_code=422,
+                status="invalid_payload",
+            )
         result = apply_flow_submit(
             config_path=config_ref,
             intake_path=intake_path,
@@ -749,6 +775,7 @@ class WorkflowRequestActionsMixin:
             requested_by=self.actor,
             reason=_required_text(payload, "reason") or "workflow request proposal",
             allow_missing_env=bool(payload.get("allow_missing_env")),
+            project_root=self.project_root,
         )
         accepted = result.get("status") != "STOP"
         return {
