@@ -61,6 +61,15 @@ Package 身份/摘要，并把 Impl/Task Verify 的必读路径设置为
 
 ## 实施与验证边界
 
+同一份 Plan 中，任务专项验收和候选整体验收可以分属不同 Owner。OA 返工指令与
+Impl 交付必须沿用冻结 AC 的 `verification_owner` / command id / 产物归属，不能将
+候选全量命令提升为所有前置任务的交付前提。例如脚手架的专项检查已通过，但全量
+命令缺少由后续装配任务提供的入口：保留真实失败与后续 Owner，最终候选仍须通过该
+命令；当前任务自身缺失的必需产物或检查则仍阻塞。指令冲突由 OA 修订或受控重规划，
+不通过改写旧 verdict、扩大当前任务路径或增加重试预算处理。
+方法入口为 `zf-yoke-orchestrator-role-context` 与 `zf-harness-done-contract`；不新增
+Kernel 的项目语义判定，也不让 worker 自行豁免当前合同的失败。
+
 独立验证时点由实际 workflow 决定，不由 `task_verify` 标签决定。
 需要短反馈时评估已有 Task Pipeline，或在当前路线中使用可独立验收的小批次；
 不能将整个 PRD 的剩余 mandatory 义务静默丢弃。项目技术栈及
