@@ -29,4 +29,4 @@
 
 验证入口：`tests/test_optional_resource_limits.py`，以及 Autoresearch trigger/resident、
 provider session、result admission、workflow budget 和 Task Pipeline profile 的直接调用闭包。
-实施记录：[资源上限任务](../../tasks/active/2026-11-01-0011-optional-resource-limits.md)。
+实施记录：[资源上限任务](../../tasks/done/2026-11-01-0011-optional-resource-limits.md)。
