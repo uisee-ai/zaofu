@@ -209,7 +209,9 @@ def resolve_effective_provider_session(
             },
         },
         "limits": {
-            "harness_max_parallel_agents": MAX_PROVIDER_SESSION_PARALLEL_AGENTS,
+            "harness_max_parallel_agents": (
+                0 if max_parallel == 0 else MAX_PROVIDER_SESSION_PARALLEL_AGENTS
+            ),
         },
         "capability_snapshot": _ref_projection(capability_descriptor),
     }

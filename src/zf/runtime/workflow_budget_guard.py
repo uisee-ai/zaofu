@@ -315,7 +315,7 @@ def _operation_limits(
         return {}
     request = body.get("request") if isinstance(body, Mapping) else None
     explicit = request.get("operation_limits") if isinstance(request, Mapping) else None
-    if isinstance(explicit, Mapping) and _has_limits(_limits_dict(explicit)):
+    if isinstance(explicit, Mapping) and explicit:
         limits = _limits_dict(explicit)
     else:
         execution = request.get("execution_profile") if isinstance(request, Mapping) else None

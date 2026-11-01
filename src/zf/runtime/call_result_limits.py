@@ -11,7 +11,7 @@ def operation_parallel_ceiling(operation: Mapping[str, Any] | None) -> int:
         value = int(operation.get("provider_session_max_parallel_agents"))
     except (TypeError, ValueError):
         value = 6
-    return max(1, min(6, value))
+    return 0 if value == 0 else max(1, min(6, value))
 
 
 def operation_budget_ceiling(
@@ -20,7 +20,7 @@ def operation_budget_ceiling(
     operation = operation or {}
     explicit = operation.get("risk_review_budget_usd")
     if explicit not in (None, ""):
-        return _nonnegative_float(explicit)
+        return _nonnegative_float(explicit) or None
     snapshot = operation.get("budget_snapshot")
     if not isinstance(snapshot, Mapping):
         return None

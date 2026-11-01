@@ -213,16 +213,16 @@ class ProviderSessionConfig:
 
     effort: str = ""
     agent: str = ""
-    max_parallel_agents: int | None = None
+    max_parallel_agents: int | None = None  # 0: no harness result ceiling; provider default.
     native_delegation: bool | None = None
 
     def __post_init__(self) -> None:
         if self.native_delegation is not None and not isinstance(self.native_delegation, bool):
             raise ValueError("ProviderSessionConfig.native_delegation must be boolean")
         if self.max_parallel_agents is not None:
-            if self.max_parallel_agents < 1:
+            if self.max_parallel_agents < 0:
                 raise ValueError(
-                    "ProviderSessionConfig.max_parallel_agents must be >= 1"
+                    "ProviderSessionConfig.max_parallel_agents must be >= 0"
                 )
             if self.max_parallel_agents > 6:
                 raise ValueError(

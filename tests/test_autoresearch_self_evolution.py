@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -729,7 +731,8 @@ def test_resident_executes_optimizer_agent_request_with_own_terminal_types(
         assert event.payload["optimizer_request_key"] == "request-key-1"
 
 
-def test_resident_execute_respects_max_actions_per_tick(tmp_path):
+@pytest.mark.parametrize("action_limit,expected", [(0, 3), (1, 1)])
+def test_resident_execute_respects_max_actions_per_tick(tmp_path, action_limit, expected):
     state_dir = tmp_path / ".zf"
     log = EventLog(state_dir / "events.jsonl")
     for index in range(3):
@@ -751,13 +754,13 @@ def test_resident_execute_respects_max_actions_per_tick(tmp_path):
         execute=True,
         env={"ZF_AUTORESEARCH_RESIDENT": "authorized"},
         runner=_fake_runner,
-        max_actions_per_tick=1,
+        max_actions_per_tick=action_limit,
     )
 
-    assert len(actions) == 1
-    assert len(calls) == 1
+    assert len(actions) == expected
+    assert len(calls) == expected
     event_types = [event.type for event in log.read_all()]
-    assert event_types.count("autoresearch.loop.completed") == 1
+    assert event_types.count("autoresearch.loop.completed") == expected
     assert event_types.count("autoresearch.loop.requested") == 3
 
 

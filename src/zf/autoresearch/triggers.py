@@ -262,11 +262,11 @@ def decide_trigger_for_signal(
         return TriggerDecision(**base, decision="skipped", skip_reason="failure_class_not_eligible")
 
     accepted = _recent_accepted(history, now=current, window=timedelta(hours=1))
-    if len(accepted) >= policy.max_triggers_per_hour:
+    if policy.max_triggers_per_hour > 0 and len(accepted) >= policy.max_triggers_per_hour:
         return TriggerDecision(**base, decision="skipped", skip_reason="hourly_budget")
 
     daily = _recent_accepted(history, now=current, window=timedelta(days=1))
-    if len(daily) >= policy.max_daily_runs:
+    if policy.max_daily_runs > 0 and len(daily) >= policy.max_daily_runs:
         return TriggerDecision(**base, decision="skipped", skip_reason="daily_budget")
 
     cooldown = timedelta(minutes=policy.cooldown_minutes)
@@ -275,7 +275,7 @@ def decide_trigger_for_signal(
         if previous_problem != base["problem_fingerprint"]:
             continue
         ts = _parse_ts(previous.created_at)
-        if ts is not None and current - ts <= cooldown:
+        if policy.cooldown_minutes > 0 and ts is not None and current - ts <= cooldown:
             return TriggerDecision(
                 **{**base, "dedupe_decision": "cooldown_duplicate"},
                 decision="skipped",

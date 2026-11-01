@@ -399,19 +399,19 @@ def _compile_integration_admission(raw: object, profile_id: str) -> dict[str, An
         "for_risks": for_risks,
         "timeout_seconds": _bounded_int(
             risk.get("timeout_seconds", 180),
-            minimum=1,
+            minimum=0,
             maximum=3600,
             context=f"{context}.riskReview.timeoutSeconds",
         ),
         "max_turns": _bounded_int(
             risk.get("max_turns", 1),
-            minimum=1,
+            minimum=0,
             maximum=1,
             context=f"{context}.riskReview.maxTurns",
         ),
         "budget_usd": _bounded_float(
             risk.get("budget_usd", 1.0),
-            minimum=0.01,
+            minimum=0.0,
             maximum=100.0,
             context=f"{context}.riskReview.budgetUsd",
         ),
