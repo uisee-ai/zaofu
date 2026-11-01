@@ -1,6 +1,6 @@
 # PRD Spec v1 Synthesizer 合同
 
-> 状态: active
+> 状态: done — `945dd587 feat: add PRD spec contract and audience views`
 
 依据：`docs/design/197-prd-spec-contract-and-readable-views.md` §5、§7.1；当前 Channel synthesis prompt 与 `zf-channel-discussion-synthesizer`。
 
@@ -18,3 +18,12 @@
 ## 边界
 
 不在 Skill 或 Prompt 中判断商业价值、优先级正确性或文字说服力；不把 Provider、Workflow action、Docker 或内部事件写入产品正文。
+
+## 实施与验证记录
+
+实现提交：`945dd587 feat: add PRD spec contract and audience views`。
+
+- `uv run pytest tests/test_channel_prd_document.py tests/test_channel_prd_composition.py tests/test_channel_prd_file.py tests/test_channel_reply_turn.py tests/test_channel_templates.py::test_discussion_start_dispatches_participants_and_synthesis_once tests/test_web_channel_delivery.py -q --no-cov` -> 95 passed。
+- `uv run pytest tests/test_memory_rotate_concurrency.py tests/test_session_mutex.py tests/test_state_locks.py -q --no-cov -m serial` -> 10 passed。
+- `npm run typecheck && npm run test:unit && npm run build` -> passed。
+- `bash scripts/dev-premerge-gate.sh` -> 51 passed。

@@ -1,6 +1,6 @@
 # PRD Spec v1 Runtime 合同与分层导出
 
-> 状态: active
+> 状态: done — `945dd587 feat: add PRD spec contract and audience views`
 
 依据：`docs/design/197-prd-spec-contract-and-readable-views.md` §5、§6、§8；当前 `channel_prd_document`、PRD sidecar 和 preview API。
 
@@ -20,3 +20,12 @@
 ## 边界
 
 Runtime 只做 schema、ID、引用、digest、状态和证据存在性检查；不判断需求价值、优先级或推荐方案。
+
+## 实施与验证记录
+
+实现提交：`945dd587 feat: add PRD spec contract and audience views`。
+
+- `uv run pytest tests/test_channel_prd_document.py tests/test_channel_prd_composition.py tests/test_channel_prd_file.py tests/test_channel_reply_turn.py tests/test_channel_templates.py::test_discussion_start_dispatches_participants_and_synthesis_once tests/test_web_channel_delivery.py -q --no-cov` -> 95 passed。
+- `uv run pytest tests/test_memory_rotate_concurrency.py tests/test_session_mutex.py tests/test_state_locks.py -q --no-cov -m serial` -> 10 passed。
+- `npm run typecheck && npm run test:unit && npm run build` -> passed。
+- `bash scripts/dev-premerge-gate.sh` -> 51 passed。

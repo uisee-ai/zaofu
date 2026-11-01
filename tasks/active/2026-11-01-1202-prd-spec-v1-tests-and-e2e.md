@@ -19,3 +19,7 @@
 ## 边界
 
 不把 mock provider 结果报告为真实 Provider 资格；真实 Playwright 只在 deterministic/API/UI 变化需要时按仓库 Docker 规则执行。
+
+## 当前验证状态
+
+实现提交：`945dd587 feat: add PRD spec contract and audience views`。本任务的 PRD/Web focused、串行锁、Web unit/build 和 sentinel 验证已通过。仓库自动 `dev-verify.py run --base dev` 仍需恢复验证环境：其 `/usr/bin/python3` 没有 pytest；使用 `uv run pytest` 运行等价 broad selector 时，基线 generic workflow 测试在 `safe_sidecar_ref` 拒绝绝对 sidecar ref 处失败，该失败在 `dev` 基线独立复现。待基线修复或验证环境补齐后关闭本任务。
