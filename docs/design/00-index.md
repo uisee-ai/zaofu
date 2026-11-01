@@ -19,5 +19,6 @@
 | --- | --- | --- | --- |
 | 195 | [OA/WRC Worker Runtime：借鉴 Agent Runtime 的执行合同与唤醒语义](195-oa-wrc-worker-runtime-borrowings.md) | partial | 借鉴 Agent/Tower 的 profile、worker envelope、resume、push wake、unknown gate 和 CoT 边界；第一批机械合同已接入，真实 Provider 资格仍 HOLD。 |
 | 196 | [Inbox 人工决策中心与阅读状态](196-inbox-human-decision-center.md) | partial | 人工决策准入、已读计数和受控动作已实施；历史兼容及来源动作仍需核对。 |
+| 197 | [PRD/Spec 合同与分层阅读视图](197-prd-spec-contract-and-readable-views.md) | candidate | 对照 Spec Kit 与 OpenSpec 设计统一 PRD/Spec 正文、轻量 Runtime 合同校验、分层产物和产品/架构/开发阅读视图。 |
 
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。

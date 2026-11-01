@@ -87,6 +87,10 @@ def test_controlled_file_publication_preserves_full_body_and_requires_review(
                                            "evidence_refs": [selected["ref"]],
                                            "acceptance_ids": ["AC-1"], "status": "covered"}],
                  "acceptance_criteria": [{"id": "AC-1", "criterion": "Full source is preserved."}], "decision_log": []}
+    if not deferred:
+        synthesis["readiness"] = {"verdict": "ready", "implementation_start": True,
+                                   "gaps": [], "risks": [], "evidence_refs": [],
+                                   "reason": "The complete source is ready for Owner confirmation."}
     if deferred:
         synthesis.pop("prd_file")
         synthesis["prd_composition"] = {"source_ref": selected["ref"], "source_digest": selected["sha256"],

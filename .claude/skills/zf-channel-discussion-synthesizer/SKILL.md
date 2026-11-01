@@ -158,6 +158,23 @@ Task 创建和 Workflow 点火仍需 owner 单独发起。
 `decision_log` 逐项记录问题/决定、依据、理由、异议及处置；没有新决定可为空。
 这些映射与完整正文共同进入 canonical PRD、同版审查和下载文件。
 
+### `prd-spec.v1` 标准正文
+
+新撰写的正式 PRD 在结构化结果中声明 `spec_format: "prd-spec.v1"`，并提供
+`document_control`（`revision`、`status`、`owner`、`profile: lite|full`）。正文按以下
+顺序组织：Overview；Background and Problem；Goals、Non-goals and Scope；User Personas
+and Prioritized Scenarios；User Flow and Interaction；Functional Requirements；Business
+Rules、Permissions and State；Non-functional Requirements；Success Metrics；Acceptance
+Criteria；Dependencies、Assumptions、Risks and Open Questions。需要上线、迁移、回滚或运维
+责任时再添加 Rollout、Migration and Operations。
+
+每个 Requirement 只表达一个可观察行为，并至少有一个 Scenario（GIVEN/WHEN/THEN）和
+一个稳定 Acceptance ID。`success_metrics` 表达用户或业务结果，
+`non_functional_requirements` 表达可度量质量约束；两者不能用“高性能”“易用”等裸形容词
+替代。产品正文只写产品语义、边界和稳定 ID；Provider、Workflow action、命令、内部事件
+和实现选型进入 Design、Tasks 或 Evidence 附录。`prd_file`/`prd_composition` 仍可复用
+完整旧文档，但不应把旧文档误报成 `prd-spec.v1`。
+
 ## 原文直引要求
 
 逐项识别来源对表达和追溯的明确约束。如果来源要求“直接引用”“保留原文”或逐条引文，

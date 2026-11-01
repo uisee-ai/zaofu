@@ -1,13 +1,14 @@
 """Full author Markdown reaches the canonical PRD and same-version export."""
 import hashlib
 import json
+from copy import deepcopy
 
 import pytest
 
 from zf.core.events import EventLog, EventWriter
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_reply_contract import emit_structured_reply_events
-from zf.runtime.channel_prd_document import render_prd_document, validate_prd_document
+from zf.runtime.channel_prd_document import prd_view_index, render_prd_document, validate_prd_document
 
 
 def document():
@@ -23,6 +24,69 @@ def document():
         "dissent": [{"id": "D-01", "statement": "Expiry duration remains disputed.", "custom_evidence": {"minutes": [10, 15]}}],
         "open_questions": [],
     }
+
+
+def spec_document():
+    body = deepcopy(document())
+    body.update({
+        "spec_format": "prd-spec.v1",
+        "document_control": {
+            "revision": "r1", "status": "draft", "owner": "owner", "profile": "full",
+        },
+        "prd_markdown": """# Inventory PRD
+
+## 00. Document control
+Revision r1; owner owner.
+
+## 01. Overview
+Reserve inventory without overselling.
+
+## 02. Background and problem
+Concurrent reservations currently race.
+
+## 03. Goals, non-goals, and scope
+Goals: reserve safely. Non-goal: replace inventory accounting.
+
+## 04. User personas and prioritized scenarios
+P1: an operator reserves stock and verifies the result.
+
+## 05. User flow and interaction
+The operator submits a reservation and receives a result.
+
+## 06. Functional requirements
+### FR-001: Reserve atomically
+The system SHALL reserve available inventory once.
+
+#### Scenario: Concurrent reservation
+- GIVEN one unit remains
+- WHEN two clients reserve it concurrently
+- THEN exactly one reservation succeeds
+
+## 07. Business rules, permissions, and state
+Only authorized operators may reserve; expiration returns inventory.
+
+## 08. Non-functional requirements
+Reservation writes are auditable and deterministic.
+
+## 09. Success metrics
+Operators can complete a reservation without an oversell.
+
+## 10. Dependencies, assumptions, risks, and open questions
+The inventory source is authoritative; no open questions remain.
+
+## 10. Acceptance Criteria
+AC-1: Concurrent reservations cannot oversell.
+""",
+        "requirement_coverage": [{
+            "id": "REQ-1", "source_refs": ["source:PRD#reservation"],
+            "section": "Functional requirements", "acceptance_ids": ["AC-1"], "status": "covered",
+        }],
+        "acceptance_criteria": [{"id": "AC-1", "criterion": "Concurrent reservations cannot oversell."}],
+        "non_functional_requirements": [{"id": "NFR-1", "statement": "Reservation writes are auditable."}],
+        "success_metrics": [{"id": "SC-1", "statement": "Operators complete reservations without oversell."}],
+        "open_questions": [],
+    })
+    return body
 
 
 @pytest.mark.parametrize("missing", [False, True])
@@ -79,6 +143,38 @@ def test_full_document_reference_contract_rejects_incomplete_mapping(fault):
     assert validate_prd_document(body)
 
 
+def test_prd_spec_v1_accepts_standard_body_and_legacy_body_remains_valid():
+    assert validate_prd_document(spec_document()) == ""
+    assert validate_prd_document(document()) == ""
+
+
+@pytest.mark.parametrize("fault", ["format", "control", "section", "scenario", "metric", "duplicate"])
+def test_prd_spec_v1_rejects_structural_contract_defects(fault):
+    body = spec_document()
+    if fault == "format":
+        body["spec_format"] = "prd-spec.v0"
+    elif fault == "control":
+        body["document_control"].pop("owner")
+    elif fault == "section":
+        body["prd_markdown"] = body["prd_markdown"].replace("## 08. Non-functional requirements", "## 08. Quality")
+    elif fault == "scenario":
+        body["prd_markdown"] = body["prd_markdown"].replace("#### Scenario: Concurrent reservation", "#### Example: Concurrent reservation")
+    elif fault == "metric":
+        body["success_metrics"] = []
+    elif fault == "duplicate":
+        body["success_metrics"].append(dict(body["success_metrics"][0]))
+    error = validate_prd_document(body)
+    assert error
+    assert {
+        "format": "unsupported spec_format",
+        "control": "document_control.owner",
+        "section": "section: nfr",
+        "scenario": "Scenario heading",
+        "metric": "success_metrics",
+        "duplicate": "success_metrics id",
+    }[fault] in error
+
+
 def test_export_catalog_preserves_commands_unknown_fields_and_author_body():
     body = document()
     body["acceptance_criteria"][0]["risk_note"] = "Keep this uncommon acceptance evidence."
@@ -106,6 +202,20 @@ def test_export_catalog_preserves_commands_unknown_fields_and_author_body():
             assert key in markdown
             if isinstance(value, str):
                 assert value in markdown
+
+
+def test_export_catalog_includes_success_metrics_and_non_functional_requirements():
+    body = spec_document()
+    markdown = render_prd_document(body, channel_id="ch", thread_id="main", source_refs=[])
+    assert "成功指标" in markdown and "SC-1" in markdown
+    assert "非功能需求" in markdown and "NFR-1" in markdown
+
+
+def test_prd_view_index_keeps_one_revision_and_assigns_audience_sections():
+    views = prd_view_index(spec_document()["prd_markdown"])
+    assert "01. Overview" in views["product"]["sections"]
+    assert "07. Business rules, permissions, and state" in views["architecture"]["sections"]
+    assert "06. Functional requirements" in views["developer"]["sections"]
 
 
 def test_export_catalog_keeps_multiline_and_pipe_values_in_one_table_row():
