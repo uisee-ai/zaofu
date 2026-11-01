@@ -85,10 +85,10 @@ def start_autoresearch_resident_sidecar(
         interval_seconds = 10.0
     interval_seconds = max(interval_seconds, 0.1)
     try:
-        max_actions_per_tick = int(getattr(resident, "max_actions_per_tick", 1) or 1)
+        max_actions_per_tick = int(getattr(resident, "max_actions_per_tick", 1))
     except (TypeError, ValueError):
         max_actions_per_tick = 1
-    max_actions_per_tick = max(max_actions_per_tick, 1)
+    max_actions_per_tick = max(max_actions_per_tick, 0)
     worktree_root = Path(
         str(
             getattr(
