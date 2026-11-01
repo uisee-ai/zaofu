@@ -6470,16 +6470,15 @@ class FanoutCoordinationMixin(
                                 child, events, dispatch_epoch
                             )
                             if now - last_activity >= idle_threshold:
-                                # E5/F15(avbs-r5 首航 7 分钟误杀):thinking
-                                # backend 的长回合天然零事件,hook 沉默 ≠ 死亡。
-                                # 与 worker 侧 _provider_stuck_grace_active 对齐:
-                                # codex child 自派发起享 max(threshold, 900s)
-                                # 宽限,宽限外才按事件沉默判闲置。
+                                # An open provider turn may be quiet during compaction;
+                                # give it bounded grace from its last activity.
                                 if not self._fanout_child_idle_grace_active(
                                     child,
                                     dispatch_epoch=dispatch_epoch,
                                     idle_threshold=idle_threshold,
                                     now=now,
+                                    last_activity_epoch=last_activity,
+                                    events=events,
                                 ):
                                     stale_reason = "idle"
                     if not stale_reason:
@@ -6684,11 +6683,13 @@ class FanoutCoordinationMixin(
         now = self._now()
         timed_out = effective_timeout > 0 and now - dispatch_epoch >= effective_timeout
         idle_threshold = self._fanout_child_idle_threshold(synth)
+        last_activity = self._fanout_child_last_activity(synth, events, dispatch_epoch)
         idle = (
             idle_threshold > 0
-            and now - self._fanout_child_last_activity(synth, events, dispatch_epoch) >= idle_threshold
+            and now - last_activity >= idle_threshold
             and not self._fanout_child_idle_grace_active(
                 synth, dispatch_epoch=dispatch_epoch, idle_threshold=idle_threshold, now=now,
+                last_activity_epoch=last_activity, events=events,
             )
         )
         if not timed_out and not idle:

@@ -43,3 +43,7 @@ fanout 时仅写幂等 `fanout.retrigger.suppressed`，不创建新 fanout 取�
 flow_metadata_by_kind 的指定条目，单 Flow 回退到编译后的 flow_metadata。
 检查工具不得因单 Flow 缺 by-kind 容器而把已启用的 Task Pipeline 误报为 off；
 它仍只报告事实，不批准 Plan、不派发任务，也不创建运行状态。
+
+### Reader / Synth 的活跃回合闲置宽限
+
+Fanout 的 Codex reader 和 synth 在派发后有尚未关闭的 provider turn 时，若压缩上下文等操作暂时不产生 hook，以最后一次实际活动开始计算有界闲置宽限：最多为当前闲置阈值的四倍。该 turn 必须属于当前角色并开始于本次派发之后；关闭、回收或旧派发的 turn 不获得此宽限。阶段显式执行超时仍优先生效，持续沉默超过宽限仍按 idle 失败并走既有恢复。事件由现有读取窗口重建，不重复读取整个事件账本。
