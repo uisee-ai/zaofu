@@ -233,6 +233,8 @@ def build_workflow_operation_resume_checkpoints(
     event_list = list(events if events is not None else _read_events(Path(state_dir)))
     from zf.runtime.terminal_reader_operation import terminal_reader_event
 
+    from zf.runtime.synth_budget_recovery import pending_synth_budget_amendment
+
     operations = reduce_workflow_operations(event_list)
     attempts = _task_attempt_rows(Path(state_dir))
     now = datetime.now(timezone.utc).timestamp()
@@ -290,6 +292,13 @@ def build_workflow_operation_resume_checkpoints(
                 "owner amended every exceeded budget dimension after the "
                 "operation was blocked"
             )
+        elif (
+            status == "suspended"
+            and pending_synth_budget_amendment(event_list, operation) is not None
+            and newer_live_attempt is None
+        ):
+            action = "redrive_interrupted_budget_synth_operation"
+            reason = "budget-amended synth was stopped before its transport restart"
         elif status == "suspended" and newer_live_attempt is not None:
             action = "no_action"
             reason = (

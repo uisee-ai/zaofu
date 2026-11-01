@@ -28,6 +28,10 @@ def recover_unrecorded_reader_fanout_results(runtime) -> None:
             events = read_runtime_events(runtime.event_log, runtime.state_dir)
         except Exception:
             return
+    from zf.runtime.synth_budget_recovery import recover_pending_budget_synths
+
+    if recover_pending_budget_synths(runtime, events):
+        return
     if runtime._resume_unstarted_reader_fanouts(events):
         try:
             events = read_runtime_events(runtime.event_log, runtime.state_dir)

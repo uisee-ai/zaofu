@@ -221,3 +221,167 @@ def test_synth_recovery_does_not_bypass_amendment_or_currentness(
     )
     assert not runtime._recover_lost_fanout_synth_dispatches(log.read_all())
     assert len(runtime.transport.sent) == sent
+
+
+@pytest.mark.parametrize(
+    "case", ["cancelled", "interrupted", "semantic_reject", "revoked"]
+)
+def test_budget_recovery_reopens_only_mechanical_carrier_failure(
+    tmp_path, monkeypatch, case
+):
+    from zf.runtime.fanout_recovery_runtime import (
+        recover_unrecorded_reader_fanout_results,
+    )
+    from zf.runtime.workflow_operation import interrupt_active_workflow_operations
+
+    state, log, runtime, dispatch = _blocked_synth(tmp_path, monkeypatch)
+    op_id = dispatch.payload["operation_id"]
+    p = dispatch.payload
+    runtime.event_writer.append(
+        ZfEvent(
+            type="fanout.cancelled",
+            actor="zf-cli",
+            origin="kernel",
+            payload={
+                "fanout_id": p["fanout_id"],
+                "reason": "workflow_run_terminal:run.goal.blocked",
+            },
+            correlation_id="trace-product",
+        )
+    )
+    lost = runtime.event_writer.append(
+        ZfEvent(
+            type="fanout.child.dispatch_lost",
+            actor="zf-cli",
+            origin="kernel",
+            payload={**p, "child_id": "synth", "semantic_attempt_consumed": False},
+            correlation_id="trace-product",
+        )
+    )
+    failure = runtime.event_writer.append(
+        ZfEvent(
+            type="fanout.synth.completed",
+            actor="zf-cli",
+            origin="kernel",
+            payload={
+                **p,
+                "status": "failed",
+                "recommendation": "reject",
+                "failure_class": "worker_noop_or_terminal_missing",
+                "reason": "provider_turn_closed_without_synth_result_recovery_exhausted",
+                **(
+                    {"report": {"findings": ["real critic rejected"]}}
+                    if case == "semantic_reject"
+                    else {}
+                ),
+            },
+            causation_id=lost.id,
+            correlation_id="trace-product",
+        )
+    )
+    assert (
+        _run_set(
+            Namespace(
+                objective="",
+                status="active",
+                reason="owner approved",
+                operation=op_id,
+                operation_max_usage_samples=0,
+            )
+        )
+        == 0
+    )
+
+    def resume():
+        cp = next(
+            c
+            for c in build_workflow_resume_projection(state, runtime.config)[
+                "operation_checkpoints"
+            ]
+            if c["operation_id"] == op_id
+        )
+        assert (
+            apply_workflow_resume(
+                state, runtime.config, checkpoint_id=cp["checkpoint_id"]
+            )["applied"]
+            == 1
+        )
+        return cp
+
+    resume()
+    if case == "interrupted":
+        interrupt_active_workflow_operations(
+            state_dir=state,
+            event_log=log,
+            event_writer=runtime.event_writer,
+            reason="graceful_stop",
+        )
+        assert (
+            resume()["safe_resume_action"]
+            == "redrive_interrupted_budget_synth_operation"
+        )
+    if case == "revoked":
+        runtime.event_writer.append(
+            ZfEvent(
+                type="run.goal.blocked",
+                actor="operator",
+                payload={"run_id": "trace-product"},
+                correlation_id="trace-product",
+            )
+        )
+    sent = len(runtime.transport.sent)
+    recover_unrecorded_reader_fanout_results(runtime)
+    if case in {"revoked", "semantic_reject"}:
+        assert len(runtime.transport.sent) == sent
+        assert (
+            runtime._fanout_manifest(p["fanout_id"])["aggregate"]["status"]
+            == "cancelled"
+        )
+        return
+    assert len(runtime.transport.sent) == sent + 1
+    assert reduce_workflow_operations(log.read_all())[op_id]["status"] == "running"
+    assert runtime._fanout_manifest(p["fanout_id"])["aggregate"]["status"] == "started"
+    assert runtime._fanout_manifest(p["fanout_id"])["synth"]["status"] == "dispatched"
+    # Historical no-result failure must not poison a new tick or replay after restart.
+    assert not runtime._resume_unrecorded_reader_synth_results(log.read_all())
+    recover_unrecorded_reader_fanout_results(runtime)
+    assert len(runtime.transport.sent) == sent + 1
+    assert not any(
+        e.type == "fanout.aggregate.completed" and e.causation_id == failure.id
+        for e in log.read_all()
+    )
+
+    completed = runtime.event_writer.append(
+        ZfEvent(
+            type="fanout.synth.completed",
+            actor="task-map-synth",
+            correlation_id="trace-product",
+            payload={
+                **{
+                    k: p[k]
+                    for k in ("fanout_id", "stage_id", "role_instance", "run_id")
+                },
+                "status": "completed",
+                "recommendation": "approve",
+                "summary": "new review completed",
+                "report": {
+                    "child_id": "synth",
+                    "status": "passed",
+                    "summary": "new review completed",
+                    "findings": [],
+                    "recommendation": "approve",
+                    "pdd_id": "PDD-1",
+                    "feature_id": "PDD-1",
+                    "task_map_ref": ".zf/artifacts/PDD-1/task_map.json",
+                    "source_index_ref": ".zf/artifacts/PDD-1/source_index.json",
+                    "artifact_refs": ["docs/product-prd.md"],
+                    "evidence_refs": [".zf/artifacts/PDD-1/source_index.json"],
+                },
+            },
+        )
+    )
+    runtime.run_once(events=[completed])
+    assert any(e.type == "task_map.ready" for e in log.read_all())
+    assert (
+        runtime._fanout_manifest(p["fanout_id"])["aggregate"]["status"] == "completed"
+    )

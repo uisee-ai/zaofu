@@ -82,6 +82,7 @@ class PlanSynthRuntimeMixin:
                 fanout_id = str(payload.get("fanout_id") or "")
                 if fanout_id:
                     dispatches.setdefault(fanout_id, []).append(event)
+                    terminal.discard(fanout_id)
                 continue
             if event.type == "fanout.synth.completed":
                 fanout_id = str(payload.get("fanout_id") or "")
