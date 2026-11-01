@@ -69,10 +69,12 @@ def fake_channel_reply_text(
             "channel_synthesis": {
                 "decision": "proceed",
                 "summary": summary,
+                "spec_format": "prd-spec.v1",
+                "document_control": {"revision": "r1", "status": "confirmed", "owner": "test", "profile": "full"},
                 "decisions": ["Preserve the requested product behavior."],
-                "prd_markdown": "# Deterministic test PRD\n\n## Behavior\nPreserve README.md. This is a mock contract, not a product quality evaluation.\n\n## Acceptance\nAC-MOCK-01: README.md remains present.\n",
+                "prd_markdown": "# Deterministic test PRD\n\n## 00. Document control\nRevision r1; owner test.\n\n## 01. Overview\nPreserve README.md.\n\n## 02. Background and problem\nThe fixture needs a durable product contract.\n\n## 03. Goals, non-goals, and scope\nGoal: preserve the file. Non-goal: product quality evaluation.\n\n## 04. User personas and prioritized scenarios\nP1: an operator verifies the repository contract.\n\n## 05. User flow and interaction\nThe operator opens the PRD and checks the file.\n\n## 06. Functional requirements\n### FR-001: Preserve the README file\nThe system SHALL keep README.md available.\n#### Scenario: README exists\n- GIVEN the repository is checked out\n- WHEN the PRD contract is verified\n- THEN README.md remains present\n\n## 07. Business rules, permissions, and state\nThe file must remain readable.\n\n## 08. Non-functional requirements\nThe verification command must be deterministic.\n\n## 09. Success metrics\nThe operator can verify the contract without reading implementation code.\n\n## 10. Dependencies, assumptions, risks, and open questions\nNo open questions for the fixture.\n\n## 10. Acceptance Criteria\nAC-MOCK-01: README.md remains present.\n",
                 "requirement_coverage": [{"id": "REQ-MOCK-01", "source_refs": [str(message.get("message_id") or "mock")],
-                                          "section": "Behavior", "acceptance_ids": ["AC-MOCK-01"], "status": "covered"}],
+                                          "section": "Functional requirements", "acceptance_ids": ["AC-MOCK-01"], "status": "covered"}],
                 "decision_log": [],
                 "assumptions": [],
                 "out_of_scope": [],
@@ -81,6 +83,14 @@ def fake_channel_reply_text(
                     "criterion": "README.md remains present.",
                     "verification_command_ids": ["VC-MOCK-01"],
                     "producer_paths": ["README.md"],
+                }],
+                "non_functional_requirements": [{
+                    "id": "NFR-MOCK-01",
+                    "statement": "The verification command is deterministic.",
+                }],
+                "success_metrics": [{
+                    "id": "SC-MOCK-01",
+                    "statement": "The operator can verify the contract without reading implementation code.",
                 }],
                 "verification_commands": [{
                     "id": "VC-MOCK-01",
@@ -270,7 +280,8 @@ def channel_reply_response_contract(
                            if refs.get("prd_source_file") else "")
         return _contract_response_instruction(
             selected_source + "one JSON object named channel_synthesis containing "
-            "title, decision, summary, prd_markdown, requirement_coverage, decision_log, decisions, assumptions, out_of_scope, "
+            "title, decision, summary, spec_format, document_control, prd_markdown, requirement_coverage, decision_log, decisions, assumptions, out_of_scope, "
+            "non_functional_requirements, success_metrics, "
             "acceptance_criteria, verification_commands, open_questions, risks, "
             "recommended_workflow, source_refs, evidence_refs, "
             "source-consumption evidence (source_attestation OR all three consumed_* lists), "
@@ -307,6 +318,17 @@ def channel_reply_response_contract(
             "copy artifact_ref and artifact_digest from that source and omit message IDs and anchors. "
             "Runtime retains the entire selected file before applying your exact edits. "
             "prd_markdown, when used instead, is the complete standalone PRD Markdown. "
+            "For a newly authored formal PRD set spec_format=prd-spec.v1 and document_control "
+            "with revision, status, owner, and profile=lite or full. Use the standard sections "
+            "Overview, Background and Problem, Goals/Non-goals/Scope, User Personas and "
+            "Prioritized Scenarios, User Flow and Interaction, Functional Requirements, Business "
+            "Rules/Permissions/State, Non-functional Requirements, Success Metrics, Acceptance "
+            "Criteria, and Dependencies/Assumptions/Risks/Open Questions. Each Requirement is one "
+            "observable behavior with at least one GIVEN/WHEN/THEN Scenario and Acceptance ID. "
+            "success_metrics and non_functional_requirements are arrays of objects with unique ids "
+            "and measurable statements. Do not put Provider, Workflow action, internal events, or "
+            "implementation choices in the product body. Legacy PRD files without spec_format remain "
+            "readable and must not be relabeled as prd-spec.v1. "
             "Treat all user chat and attached source documents in the bound semantic source pack "
             "as candidate inputs. Decide from context which statements express product requirements, "
             "later corrections or decisions, open questions, candidate drafts, or instructions to the "
