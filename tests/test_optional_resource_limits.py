@@ -1,6 +1,8 @@
 """Explicit unlimited settings survive configuration, dispatch and admission."""
 from datetime import datetime, timezone
 from pathlib import Path
+from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +19,7 @@ from zf.runtime.research_fanout_artifact import materialize_research_fanout_arti
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_budget_guard import _exceeded_dimensions, _operation_limits
 from zf.runtime.workflow_operation import load_workflow_operation
+from zf.runtime.task_pipeline_reconciler import task_pipeline_policy_partitions
 from tests.test_autoresearch_triggers import _signal
 from tests.test_call_result_admission import _runtime as admission_runtime, _persisted_verification_payload
 from tests.test_call_result_runtime import _runtime as call_runtime
@@ -115,3 +118,36 @@ def test_research_artifact_uses_admitted_root_limit(tmp_path, limit, available):
     event.payload["provider_native_max_children"] = 0
     result = materialize_research_fanout_artifact(tmp_path, manifest=manifest, synth_event=event)
     assert (result["provider_operation_summary_status"] == "available") is available
+
+
+@pytest.mark.parametrize("change", [None, "enabled", "capacity", "default", "fallback", "partial", "identity"])
+def test_existing_generation_accepts_only_inactive_default_limit_opt_out(change):
+    old = _compile()
+    raw = _task_pipeline()
+    raw["integrationAdmission"]["riskReview"].update(timeoutSeconds=0, maxTurns=0, budgetUsd=0)
+    policy = _compile(raw)
+    configured_digest = policy["profile_digest"]
+    risk = policy["integration_admission"]["risk_review"]
+    if change == "enabled":
+        risk["enabled"] = True
+    elif change == "capacity":
+        policy["pools"]["impl"]["capacity"] += 1
+    elif change == "default":
+        policy["integration_admission"]["default"] = "risk_review"
+    elif change == "fallback":
+        risk["fallback"] = "verify_admitted"
+    elif change == "partial":
+        risk["max_turns"] = 1
+    context = {"flow_kind": "prd", "profile_id": old["profile_id"],
+               "profile_digest": "0" * 64 if change == "identity" else old["profile_digest"]}
+    config = SimpleNamespace(workflow=SimpleNamespace(flow_metadata={"task_pipeline": policy}))
+    original = deepcopy(policy)
+    if change is not None:
+        with pytest.raises(ValueError, match="admitted profile_digest"):
+            task_pipeline_policy_partitions(config, {"T1": context})
+    else:
+        partition = task_pipeline_policy_partitions(config, {"T1": context})[0]
+        assert partition["profile_digest"] == old["profile_digest"]
+        assert partition["policy"]["integration_admission"]["risk_review"] == risk
+        assert partition["policy"]["policy_binding_resolution"]["configured_profile_digest"] == configured_digest
+    assert policy == original

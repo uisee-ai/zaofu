@@ -1,4 +1,4 @@
-"""Resolve the pre-namespace multi-Flow pool bug for already admitted runs."""
+"""Exact compatibility bindings for already admitted Task Pipeline policies."""
 
 from __future__ import annotations
 
@@ -6,6 +6,40 @@ import hashlib
 import json
 from copy import deepcopy
 from typing import Any, Mapping
+
+
+def bind_disabled_risk_limit_opt_out(
+    policy: Mapping[str, Any], *, admitted_digest: str,
+) -> dict[str, Any] | None:
+    """Bind an inactive default-to-zero edit without changing admitted identity.
+
+    Only the historical 180s/1-turn/$1 defaults may become all-zero while
+    review stays disabled. Reconstructing the complete old digest proves
+    every other policy field is unchanged; active gates cannot use this path.
+    """
+    historical = deepcopy(dict(policy))
+    configured_digest = str(historical.pop("profile_digest", ""))
+    admission = historical.get("integration_admission") or {}
+    risk = admission.get("risk_review") or {}
+    if admission.get("default") != "verify_admitted" or risk.get("enabled") is not False:
+        return None
+    fields = ("timeout_seconds", "max_turns", "budget_usd")
+    if any(risk.get(field) != 0 for field in fields):
+        return None
+    risk.update(timeout_seconds=180, max_turns=1, budget_usd=1.0)
+    digest = hashlib.sha256(json.dumps(
+        historical, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    if digest != admitted_digest:
+        return None
+    bound = deepcopy(dict(policy))
+    bound["profile_digest"] = admitted_digest
+    bound["policy_binding_resolution"] = {
+        "kind": "disabled_risk_default_limit_opt_out",
+        "admitted_profile_digest": admitted_digest,
+        "configured_profile_digest": configured_digest,
+    }
+    return bound
 
 
 def bind_legacy_scoped_pool(

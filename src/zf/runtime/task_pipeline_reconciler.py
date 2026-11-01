@@ -538,12 +538,19 @@ def task_pipeline_policy_partitions(
                 f"{admitted_profile_id!r} does not match configured {profile_id!r}"
             )
         if admitted_profile_digest and admitted_profile_digest != profile_digest:
-            from zf.runtime.task_pipeline_legacy_binding import bind_legacy_scoped_pool
+            from zf.runtime.task_pipeline_legacy_binding import (
+                bind_disabled_risk_limit_opt_out,
+                bind_legacy_scoped_pool,
+            )
 
             bound = bind_legacy_scoped_pool(
                 config, policy, flow_kind=flow_kind,
                 admitted_digest=admitted_profile_digest,
             )
+            if bound is None:
+                bound = bind_disabled_risk_limit_opt_out(
+                    policy, admitted_digest=admitted_profile_digest,
+                )
             if bound is None:
                 raise ValueError(
                     f"Task {normalized_task_id} admitted profile_digest does not "
