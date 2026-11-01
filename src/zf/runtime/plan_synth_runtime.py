@@ -148,6 +148,13 @@ class PlanSynthRuntimeMixin:
                 latest_dispatch,
             ):
                 continue
+            from zf.runtime.synth_budget_recovery import recover_budget_amended_synth
+
+            budget_recovery = recover_budget_amended_synth(self, latest_dispatch, events)
+            if budget_recovery is not None:
+                if budget_recovery:
+                    return True
+                continue
             lost_event = self._reader_dispatch_lost_event_after(
                 lost_by_role.get(role_instance, []),
                 latest_index,
