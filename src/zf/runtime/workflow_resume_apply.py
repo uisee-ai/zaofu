@@ -357,6 +357,7 @@ def _apply_operation_checkpoint(
         )
     redrive_actions = {
         "redrive_interrupted_reader_operation",
+        "redrive_interrupted_budget_synth_operation",
         "redrive_interrupted_task_pipeline_operation",
         "redrive_cancelled_interrupted_task_pipeline_operation",
         "redrive_budget_amended_task_pipeline_operation",
@@ -419,6 +420,13 @@ def _apply_operation_checkpoint(
                 checkpoint=checkpoint,
                 applied=False,
                 reason="budget amendment is missing, stale, or out of scope",
+            )
+    if checkpoint.safe_resume_action == "redrive_interrupted_budget_synth_operation":
+        from zf.runtime.synth_budget_recovery import pending_synth_budget_amendment
+        if pending_synth_budget_amendment(writer.event_log.read_all(), current) is None:
+            return WorkflowResumeApplyResult(
+                checkpoint=checkpoint, applied=False,
+                reason="pending synth budget amendment no longer valid",
             )
     if checkpoint.safe_resume_action == "cancel_terminal_reader_operation":
         from zf.runtime.terminal_reader_operation import terminal_reader_event
