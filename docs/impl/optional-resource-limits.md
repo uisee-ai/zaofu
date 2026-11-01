@@ -21,6 +21,12 @@
 旧 Run、Operation 及 Task Pipeline profile 的冻结身份不因配置文件变化自动改写。
 既有 blocked operation 必须沿自己的受控恢复路径处理。
 
+兼容已准入 Task Pipeline：仅当风险审查仍关闭、三个额度从历史默认
+180 秒/1 轮/1 USD 全部变为 0，且还原这些默认值后的完整摘要精确等于
+已准入摘要时，运行时可绑定同一个旧身份。此变更没有执行效果，绑定结果
+通过 `policy_binding_resolution` 同时记录配置和已准入摘要。启用审查、
+修改其他策略或部分改值仍拒绝；原事件、任务代际和 Operation 请求不改写。
+
 验证入口：`tests/test_optional_resource_limits.py`，以及 Autoresearch trigger/resident、
 provider session、result admission、workflow budget 和 Task Pipeline profile 的直接调用闭包。
 实施记录：[资源上限任务](../../tasks/active/2026-11-01-0011-optional-resource-limits.md)。
