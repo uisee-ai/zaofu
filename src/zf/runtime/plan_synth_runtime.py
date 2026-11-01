@@ -160,6 +160,7 @@ class PlanSynthRuntimeMixin:
                 lost_by_role.get(role_instance, []),
                 latest_index,
                 events=events, dispatch_event=latest_dispatch,
+                state_dir=self.state_dir,
             )
             if lost_event is None:
                 continue

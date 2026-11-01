@@ -1950,10 +1950,18 @@ class LifecycleManagerMixin(
         try:
             snapshot_ref = str(fanout_child.get("snapshot_ref") or "")
             prompt = build_task_prompt(role.instance_id, path, "fanout_child")
+            prompt += (
+                f"\nCurrent runtime CLI: `{zf_cli_cmd()}`. Use it with the same arguments "
+                "instead of older executable paths in the original briefing. "
+                "The original request identity and required reads remain unchanged."
+            )
             context = self._dispatch_context(
                 role=role,
                 briefing_path=path,
                 trace_id=str(fanout_child.get("trace_id") or "") or None,
+                operation_id=str(fanout_child.get("operation_id") or ""),
+                dispatch_id=str(fanout_child.get("run_id") or ""),
+                run_id=str(fanout_child.get("workflow_run_id") or ""),
             )
             self._send_transport_task(role.instance_id, path, prompt, context)
             self.event_writer.append(ZfEvent(
@@ -1968,6 +1976,9 @@ class LifecycleManagerMixin(
                     "run_id": str(fanout_child.get("run_id") or ""),
                     "briefing_path": str(path),
                     "snapshot_ref": snapshot_ref,
+                    "recovered_dispatch_event_id": str(fanout_child.get("event_id") or ""),
+                    "operation_id": str(fanout_child.get("operation_id") or ""),
+                    "request_hash": str(fanout_child.get("request_hash") or ""),
                 },
                 correlation_id=str(fanout_child.get("trace_id") or "") or None,
             ))

@@ -841,6 +841,7 @@ workflow:
         self,
         project_dir: Path,
         capsys,
+        monkeypatch,
     ):
         assert main(["start", "--dry-run", "--skip-workflow-inspect"]) == 0
         contract_ref = project_dir / ".zf" / "config" / "run-contract.json"
@@ -852,7 +853,11 @@ workflow:
         changed["roles"].append({"name": "verify", "backend": "mock"})
         (project_dir / "zf.yaml").write_text(yaml.dump(changed), encoding="utf-8")
 
-        result = main(["restart", "--dry-run"])
+        def forbidden_restart(*_args, **_kwargs):
+            pytest.fail("strict contract drift must block before stopping workers")
+
+        monkeypatch.setattr("zf.cli.restart._restart_full", forbidden_restart)
+        result = main(["restart"])
 
         assert result == 1
         captured = capsys.readouterr()

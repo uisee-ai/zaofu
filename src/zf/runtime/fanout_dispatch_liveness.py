@@ -228,7 +228,16 @@ class FanoutDispatchLivenessMixin:
         *,
         events: list[ZfEvent],
         dispatch_event: ZfEvent,
+        state_dir: Path,
     ) -> ZfEvent | None:
+        from zf.runtime.reader_respawn_continuation import (
+            reader_recovery_fence, reader_respawn_in_progress,
+        )
+
+        role_instance = str(dispatch_event.payload.get("role_instance") or "")
+        if role_instance and reader_respawn_in_progress(state_dir, role_instance):
+            return None
+        dispatch_index = reader_recovery_fence(events, dispatch_event, dispatch_index)
         # A protocol correction continues this exact attempt. Its source turn's
         # stop is no longer evidence that the child disappeared. A later stop
         # or transport loss still follows the existing bounded recovery path.
