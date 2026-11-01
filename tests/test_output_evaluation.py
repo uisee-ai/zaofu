@@ -145,6 +145,47 @@ def test_matrix_covers_new_requirements_identified_from_owner_chat():
     assert _valid_matrix(report, inventory, decisions)
 
 
+def test_matrix_covers_multiple_criteria_from_one_owner_decision():
+    from zf.runtime.output_evaluation import _valid_matrix
+
+    inventory = {"criteria": [{"criterion_id": "R1"}]}
+    decisions = {"decision_deltas": [{"criterion_id": ["R2", "R3"], "source": "owner-message"}]}
+    report = {"matrix": [
+        {"criterion_id": "R1", "result": "PASS", "target_location": "section 1"},
+        {"criterion_id": "R2", "result": "PASS", "target_location": "section 2"},
+        {"criterion_id": "R3", "result": "PASS", "target_location": "section 3"},
+    ]}
+    assert _valid_matrix(report, inventory, decisions)
+
+
+def test_channel_deferred_decision_may_have_no_requirement_criterion(tmp_path):
+    from dataclasses import replace
+
+    class DeferredDecisionBackend(FakeBackend):
+        def run_turn(self, **kwargs):
+            turn = super().run_turn(**kwargs)
+            if len(self.calls) == 2:
+                return replace(turn, reply=json.dumps({
+                    "decision_deltas": [{
+                        "criterion_id": [], "validity": {
+                            "status": "deferred_not_authorized_product_change",
+                        },
+                    }],
+                    "read_scope": [], "unread_scope": [],
+                }))
+            return turn
+
+    result = evaluate_output(
+        state_dir=tmp_path,
+        writer=EventWriter(EventLog(tmp_path / "events.jsonl")),
+        item=EvaluationInput(kind="prd_output", objective="评估输出",
+                             source_text="必须保留权限", target_text="保留权限",
+                             context={"channel_id": "ch", "thread_id": "main"}),
+        request_id=str(uuid.uuid4()), backend=DeferredDecisionBackend(),
+    )
+    assert result["verdict"] == "PASS"
+
+
 def test_owner_added_requirement_cannot_be_dropped_from_final_evaluation(tmp_path):
     from dataclasses import replace
 

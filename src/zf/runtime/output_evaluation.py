@@ -98,8 +98,17 @@ def _valid_matrix(report: dict[str, Any] | None, inventory: dict[str, Any], deci
             return False
         ids.append(criterion_id)
     source_ids = {row["criterion_id"] for row in inventory["criteria"]}
-    source_ids.update(str(row["criterion_id"]) for row in (decisions or {}).get("decision_deltas", [])
-                      if isinstance(row, dict) and isinstance(row.get("criterion_id"), str) and row["criterion_id"].strip())
+    for row in (decisions or {}).get("decision_deltas", []):
+        if not isinstance(row, dict):
+            continue
+        value = row.get("criterion_id")
+        if isinstance(value, str) and value.strip():
+            source_ids.add(value.strip())
+        elif isinstance(value, list):
+            source_ids.update(
+                item.strip() for item in value
+                if isinstance(item, str) and item.strip()
+            )
     return len(ids) == len(set(ids)) and source_ids.issubset(ids)
 
 
@@ -301,9 +310,27 @@ def evaluate_output(
             session_id or inventory_turn.provider_session_id,
             lambda value: isinstance(value, dict)
             and isinstance(value.get("decision_deltas"), list)
-            and (not channel_prd or all(isinstance(row, dict)
-                 and isinstance(row.get("criterion_id"), str) and row["criterion_id"].strip()
-                 for row in value["decision_deltas"]))
+            and (not channel_prd or all(
+                isinstance(row, dict)
+                and (
+                    (isinstance(row.get("criterion_id"), str)
+                     and row["criterion_id"].strip())
+                    or (
+                        isinstance(row.get("criterion_id"), list)
+                        and all(isinstance(item, str) and item.strip()
+                                for item in row["criterion_id"])
+                        and (
+                            bool(row["criterion_id"])
+                            or "deferred" in str(
+                                (row.get("validity") or {}).get("status")
+                                if isinstance(row.get("validity"), dict)
+                                else row.get("validity") or ""
+                            ).lower()
+                        )
+                    )
+                )
+                for row in value["decision_deltas"]
+            ))
             and isinstance(value.get("read_scope"), list)
             and isinstance(value.get("unread_scope"), list),
         )

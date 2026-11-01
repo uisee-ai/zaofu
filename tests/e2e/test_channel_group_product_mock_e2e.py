@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,6 +50,13 @@ def _runtime(tmp_path: Path) -> tuple[Path, EventLog, EventWriter, ControlledAct
         (ROOT / "zf.yaml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    # Delivery workflow admission requires a committed project baseline.  The
+    # isolated mock product project is otherwise an empty temporary directory.
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "channel-group@test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Channel Group E2E"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "test: initialize channel group fixture"], cwd=tmp_path, check=True)
     log = EventLog(state_dir / "events.jsonl")
     writer = EventWriter(log)
     service = ControlledActionService(

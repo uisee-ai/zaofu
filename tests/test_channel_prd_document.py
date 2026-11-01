@@ -33,6 +33,22 @@ def spec_document():
         "document_control": {
             "revision": "r1", "status": "draft", "owner": "owner", "profile": "full",
         },
+        "user_stories": [{
+            "id": "US-1", "title": "Reserve inventory", "priority": "P1",
+            "persona": "operator", "value": "Reserve without overselling.",
+            "independent_test": "Run AC-1 against concurrent requests.",
+            "acceptance_ids": ["AC-1"],
+        }],
+        "edge_cases": [{
+            "id": "EC-1", "trigger": "No inventory remains",
+            "expected_behavior": "The request is rejected without changing stock.",
+            "acceptance_ids": ["AC-1"],
+        }],
+        "key_entities": [{
+            "id": "ENT-1", "name": "Inventory reservation",
+            "purpose": "Represents one held unit.", "lifecycle": "requested -> active -> expired",
+            "constraints": ["cannot oversell"],
+        }],
         "prd_markdown": """# Inventory PRD
 
 ## 00. Document control
@@ -50,10 +66,13 @@ Goals: reserve safely. Non-goal: replace inventory accounting.
 ## 04. User personas and prioritized scenarios
 P1: an operator reserves stock and verifies the result.
 
-## 05. User flow and interaction
+## 05. User stories and independent tests
+US-1: The operator reserves inventory; independent test: run AC-1 concurrently.
+
+## 06. User flow and interaction
 The operator submits a reservation and receives a result.
 
-## 06. Functional requirements
+## 07. Functional requirements
 ### FR-001: Reserve atomically
 The system SHALL reserve available inventory once.
 
@@ -62,20 +81,29 @@ The system SHALL reserve available inventory once.
 - WHEN two clients reserve it concurrently
 - THEN exactly one reservation succeeds
 
-## 07. Business rules, permissions, and state
+## 08. Business rules, permissions, and state
 Only authorized operators may reserve; expiration returns inventory.
 
-## 08. Non-functional requirements
+## 09. Edge cases and error scenarios
+When no inventory remains, the request is rejected without changing stock.
+
+## 10. Key entities and contracts
+Inventory reservation moves from requested to active to expired.
+
+## 11. Non-functional requirements
 Reservation writes are auditable and deterministic.
 
-## 09. Success metrics
+## 12. Success metrics
 Operators can complete a reservation without an oversell.
 
-## 10. Dependencies, assumptions, risks, and open questions
+## 13. Dependencies, assumptions, risks, and open questions
 The inventory source is authoritative; no open questions remain.
 
-## 10. Acceptance Criteria
+## 14. Acceptance Criteria
 AC-1: Concurrent reservations cannot oversell.
+
+## 15. Implementation Companion / Handoff
+The control plane, data plane, and event-driven boundary are separate. Long-running work is asynchronous. Web/API exposes controlled actions and read-only projections. Canonical business state is stored separately from the append-only event ledger and immutable evidence artifacts/sidecars. Every state transition records actor, reason, request ID, and correlation ID. Direct writes are rejected, projections remain read-only, events and artifacts are immutable, and recovery evidence is required.
 """,
         "requirement_coverage": [{
             "id": "REQ-1", "source_refs": ["source:PRD#reservation"],
@@ -83,7 +111,12 @@ AC-1: Concurrent reservations cannot oversell.
         }],
         "acceptance_criteria": [{"id": "AC-1", "criterion": "Concurrent reservations cannot oversell."}],
         "non_functional_requirements": [{"id": "NFR-1", "statement": "Reservation writes are auditable."}],
-        "success_metrics": [{"id": "SC-1", "statement": "Operators complete reservations without oversell."}],
+        "success_metrics": [{
+            "id": "SC-1", "statement": "Operators complete reservations without oversell.",
+            "baseline": "TBD (owner decision required)", "target": "TBD (owner decision required)",
+            "measurement_method": "Run AC-1 and inspect oversell count.", "owner": "verify",
+            "measurement_timing": "At each verification run.", "status": "NOT_RUN",
+        }],
         "open_questions": [],
     })
     return body
@@ -148,6 +181,14 @@ def test_prd_spec_v1_accepts_standard_body_and_legacy_body_remains_valid():
     assert validate_prd_document(document()) == ""
 
 
+def test_prd_spec_v1_accepts_standalone_goals_heading():
+    body = spec_document()
+    body["prd_markdown"] = body["prd_markdown"].replace(
+        "## 03. Goals, non-goals, and scope", "## Goals"
+    )
+    assert validate_prd_document(body) == ""
+
+
 @pytest.mark.parametrize("fault", ["format", "control", "section", "scenario", "metric", "duplicate"])
 def test_prd_spec_v1_rejects_structural_contract_defects(fault):
     body = spec_document()
@@ -156,7 +197,7 @@ def test_prd_spec_v1_rejects_structural_contract_defects(fault):
     elif fault == "control":
         body["document_control"].pop("owner")
     elif fault == "section":
-        body["prd_markdown"] = body["prd_markdown"].replace("## 08. Non-functional requirements", "## 08. Quality")
+        body["prd_markdown"] = body["prd_markdown"].replace("## 11. Non-functional requirements", "## 11. Quality")
     elif fault == "scenario":
         body["prd_markdown"] = body["prd_markdown"].replace("#### Scenario: Concurrent reservation", "#### Example: Concurrent reservation")
     elif fault == "metric":
@@ -173,6 +214,40 @@ def test_prd_spec_v1_rejects_structural_contract_defects(fault):
         "metric": "success_metrics",
         "duplicate": "success_metrics id",
     }[fault] in error
+
+
+@pytest.mark.parametrize("field", ["user_stories", "edge_cases", "key_entities"])
+def test_full_prd_requires_audience_contract_sections(field):
+    body = spec_document()
+    body.pop(field)
+    error = validate_prd_document(body)
+    assert f"requires non-empty {field}" in error
+
+
+def test_full_prd_requires_normative_requirements_and_measured_metrics():
+    body = spec_document()
+    body["prd_markdown"] = body["prd_markdown"].replace("The system SHALL", "The system should")
+    assert "MUST or SHALL" in validate_prd_document(body)
+
+    body = spec_document()
+    body["success_metrics"][0].pop("measurement_method")
+    assert "requires measurement_method" in validate_prd_document(body)
+
+
+def test_full_prd_requires_executable_architecture_boundary():
+    body = spec_document()
+    body["prd_markdown"] = body["prd_markdown"].replace("append-only event ledger", "event history")
+    error = validate_prd_document(body)
+    assert "append-only event ledger" in error
+
+
+def test_full_prd_accepts_chinese_control_and_data_plane_terms():
+    body = spec_document()
+    body["prd_markdown"] = body["prd_markdown"].replace(
+        "The control plane, data plane, and event-driven boundary",
+        "控制面、数据面和事件驱动边界",
+    )
+    assert validate_prd_document(body) == ""
 
 
 def test_export_catalog_preserves_commands_unknown_fields_and_author_body():
@@ -214,8 +289,8 @@ def test_export_catalog_includes_success_metrics_and_non_functional_requirements
 def test_prd_view_index_keeps_one_revision_and_assigns_audience_sections():
     views = prd_view_index(spec_document()["prd_markdown"])
     assert "01. Overview" in views["product"]["sections"]
-    assert "07. Business rules, permissions, and state" in views["architecture"]["sections"]
-    assert "06. Functional requirements" in views["developer"]["sections"]
+    assert "08. Business rules, permissions, and state" in views["architecture"]["sections"]
+    assert "07. Functional requirements" in views["developer"]["sections"]
 
 
 def test_export_catalog_keeps_multiline_and_pipe_values_in_one_table_row():

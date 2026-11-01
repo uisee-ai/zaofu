@@ -12,15 +12,34 @@ PRD_SPEC_FORMAT = "prd-spec.v1"
 _PRD_SPEC_SECTIONS = {
     "overview": ("overview", "purpose why now", "产品概述"),
     "background": ("background and problem", "background problem", "背景与问题"),
-    "goals": ("goals non goals and scope", "goals and non goals", "目标与非目标"),
+    "goals": (
+        "goals",
+        "goals non goals and scope",
+        "goals non goals scope",
+        "goals and non goals",
+        "目标与非目标",
+    ),
     "users": ("user personas and prioritized scenarios", "user personas and scenarios", "user journeys", "用户与场景"),
+    "stories": ("user stories and independent tests", "user stories", "用户故事"),
     "flow": ("user flow and interaction", "user flow", "用户流程与交互"),
     "requirements": ("functional requirements", "requirements", "功能需求"),
-    "rules": ("business rules permissions and state", "business rules and state", "业务规则与状态"),
+    "rules": (
+        "business rules permissions and state",
+        "business rules permissions state",
+        "business rules and state",
+        "业务规则与状态",
+    ),
+    "edges": ("edge cases and error scenarios", "edge cases", "error scenarios", "边界情况", "异常场景"),
+    "entities": ("key entities and contracts", "key entities", "entities and contracts", "关键实体"),
     "nfr": ("non functional requirements", "non functional", "非功能需求"),
     "success": ("success metrics", "success criteria", "成功指标", "成功标准"),
     "acceptance": ("acceptance criteria", "acceptance", "验收标准", "验收"),
-    "dependencies": ("dependencies assumptions risks and open questions", "dependencies and risks", "依赖与风险"),
+    "dependencies": (
+        "dependencies assumptions risks and open questions",
+        "dependencies assumptions risks open questions",
+        "dependencies and risks",
+        "依赖与风险",
+    ),
 }
 
 _PRD_VIEW_SECTIONS = {
@@ -118,6 +137,10 @@ def _validate_prd_spec_v1(body: dict[str, Any]) -> str:
         error = _validate_id_items(field, values)
         if error:
             return error
+    if control["profile"] == "full":
+        error = _validate_full_profile(body, headings, requirement_headings)
+        if error:
+            return error
     acceptance = body.get("acceptance_criteria")
     if not isinstance(acceptance, list) or not acceptance:
         return "prd-spec.v1 requires acceptance_criteria"
@@ -126,6 +149,100 @@ def _validate_prd_spec_v1(body: dict[str, Any]) -> str:
         return error
     if not isinstance(body.get("open_questions"), list):
         return "prd-spec.v1 open_questions must be a list"
+    return ""
+
+
+def _validate_full_profile(
+    body: dict[str, Any],
+    headings: list[tuple[int, str]],
+    requirement_headings: list[str],
+) -> str:
+    """Enforce the audience and independent-test contract of a full PRD."""
+    declared_acceptance_ids = {
+        str(item.get("id") or "")
+        for item in body.get("acceptance_criteria") or []
+        if isinstance(item, dict)
+    }
+    for field, required in (
+        ("user_stories", ("id", "title", "priority", "persona", "value", "independent_test", "acceptance_ids")),
+        ("edge_cases", ("id", "trigger", "expected_behavior")),
+        ("key_entities", ("id", "name", "purpose", "lifecycle", "constraints")),
+    ):
+        values = body.get(field)
+        if not isinstance(values, list) or not values:
+            return f"prd-spec.v1 full profile requires non-empty {field}"
+        seen: set[str] = set()
+        for item in values:
+            if not isinstance(item, dict):
+                return f"prd-spec.v1 {field} entries must be objects"
+            identity = item.get("id")
+            if not isinstance(identity, str) or not identity.strip() or identity in seen:
+                return f"prd-spec.v1 {field} id must be non-empty and unique"
+            seen.add(identity)
+            for key in required:
+                value = item.get(key)
+                if key in {"constraints", "acceptance_ids"}:
+                    if (
+                        not isinstance(value, list)
+                        or not value
+                        or any(not isinstance(entry, str) or not entry.strip() for entry in value)
+                    ):
+                        return f"prd-spec.v1 {field} {identity} requires non-empty {key}"
+                    if key == "acceptance_ids" and not set(value) <= declared_acceptance_ids:
+                        return f"prd-spec.v1 {field} {identity} references undeclared acceptance_ids"
+                elif not isinstance(value, str) or not value.strip():
+                    return f"prd-spec.v1 {field} {identity} requires {key}"
+            if field == "edge_cases":
+                acceptance_ids = item.get("acceptance_ids") or item.get("affected_acceptance_ids")
+                if (
+                    not isinstance(acceptance_ids, list)
+                    or not acceptance_ids
+                    or any(not isinstance(entry, str) or not entry.strip() for entry in acceptance_ids)
+                ):
+                    return f"prd-spec.v1 edge_cases {identity} requires acceptance_ids or affected_acceptance_ids"
+                if not set(acceptance_ids) <= declared_acceptance_ids:
+                    return f"prd-spec.v1 edge_cases {identity} references undeclared acceptance_ids"
+
+    markdown = body["prd_markdown"]
+    requirement_count = len(requirement_headings)
+    scenario_count = sum(1 for _, title in headings if _is_scenario_heading(title))
+    normative_count = len(re.findall(r"\b(?:MUST|SHALL)\b", markdown, re.IGNORECASE))
+    if scenario_count < requirement_count:
+        return "prd-spec.v1 full profile requires a named Scenario for every requirement"
+    if normative_count < requirement_count:
+        return "prd-spec.v1 full profile requires MUST or SHALL for every requirement"
+    architecture_error = _validate_architecture_contract(markdown)
+    if architecture_error:
+        return architecture_error
+    for field in ("success_metrics",):
+        for item in body.get(field) or []:
+            for key in ("baseline", "target", "measurement_method", "owner", "measurement_timing", "status"):
+                if not isinstance(item.get(key), str) or not item[key].strip():
+                    return f"prd-spec.v1 {field} {item.get('id') or '<unknown>'} requires {key}"
+    return ""
+
+
+def _validate_architecture_contract(markdown: str) -> str:
+    """Require the executable architecture boundary of a full PRD."""
+    text = markdown.lower()
+    checks = (
+        ("control-plane/data-plane boundary", (
+            r"control\s*plane", r"data\s*plane", r"控制面", r"数据面",
+        )),
+        ("event-driven boundary", (r"event[- ]driven", r"事件驱动")),
+        ("asynchronous long-running work", (r"asynchronous", r"异步")),
+        ("controlled actions and read-only projections", (r"controlled action", r"受控动作")),
+        ("controlled actions and read-only projections", (r"read[- ]only projection", r"只读投影")),
+        ("canonical business state", (r"canonical\s+(?:business\s+)?state", r"canonical store")),
+        ("append-only event ledger", (r"append[- ]only", r"event ledger", r"事件账本")),
+        ("independent evidence artifacts or sidecars", (r"evidence artifact", r"sidecar", r"证据制品", r"证据 sidecar")),
+        ("state transition identity and causation", (r"actor", r"reason", r"request id", r"correlation id")),
+        ("direct-write rejection", (r"direct write", r"直接写", r"拒绝.*写入")),
+        ("recovery evidence", (r"recovery evidence", r"恢复验证", r"恢复证据")),
+    )
+    for label, alternatives in checks:
+        if not any(re.search(pattern, text, re.IGNORECASE) for pattern in alternatives):
+            return f"prd-spec.v1 full profile requires explicit {label} contract"
     return ""
 
 

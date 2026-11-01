@@ -16,6 +16,11 @@ def expand_prd_composition(
     """Resolve only this request's immutable source; never read an author path."""
     if "prd_composition" not in synthesis:
         return synthesis, ""
+    if request.get("prd_document_contract") == "full.v1" and not request.get("prd_source_file"):
+        return synthesis, (
+            "full.v1 requires standalone prd_markdown when no verified "
+            "prd_source_file is bound"
+        )
     if "prd_markdown" in synthesis:
         return synthesis, "provide either prd_markdown or prd_composition, not both"
     recipe = synthesis["prd_composition"]

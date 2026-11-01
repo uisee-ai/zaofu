@@ -220,3 +220,5 @@ def test_repair_keeps_the_original_immutable_file_selection(tmp_path, monkeypatc
     react_channel_synthesis_repair_requested(host, repair)
     assert routed[0].payload["refs"]["prd_source_file"] == original.payload["prd_source_file"]
     assert routed[0].payload["refs"]["prd_document_contract"] == "full.v1"
+    assert "complete standalone" in routed[0].payload["text"]
+    assert "Do not use prd_composition" in routed[0].payload["text"]

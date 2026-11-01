@@ -71,8 +71,30 @@ def fake_channel_reply_text(
                 "summary": summary,
                 "spec_format": "prd-spec.v1",
                 "document_control": {"revision": "r1", "status": "confirmed", "owner": "test", "profile": "full"},
+                "user_stories": [{
+                    "id": "US-MOCK-01",
+                    "title": "Verify the repository contract",
+                    "priority": "P1",
+                    "persona": "operator",
+                    "value": "The operator can verify the contract.",
+                    "independent_test": "Run VC-MOCK-01 and inspect the result.",
+                    "acceptance_ids": ["AC-MOCK-01"],
+                }],
+                "edge_cases": [{
+                    "id": "EC-MOCK-01",
+                    "trigger": "README.md is absent",
+                    "expected_behavior": "The verification fails with a clear missing-file result.",
+                    "acceptance_ids": ["AC-MOCK-01"],
+                }],
+                "key_entities": [{
+                    "id": "ENT-MOCK-01",
+                    "name": "README file",
+                    "purpose": "The durable artifact being verified.",
+                    "lifecycle": "checked out -> verified",
+                    "constraints": ["must exist"],
+                }],
                 "decisions": ["Preserve the requested product behavior."],
-                "prd_markdown": "# Deterministic test PRD\n\n## 00. Document control\nRevision r1; owner test.\n\n## 01. Overview\nPreserve README.md.\n\n## 02. Background and problem\nThe fixture needs a durable product contract.\n\n## 03. Goals, non-goals, and scope\nGoal: preserve the file. Non-goal: product quality evaluation.\n\n## 04. User personas and prioritized scenarios\nP1: an operator verifies the repository contract.\n\n## 05. User flow and interaction\nThe operator opens the PRD and checks the file.\n\n## 06. Functional requirements\n### FR-001: Preserve the README file\nThe system SHALL keep README.md available.\n#### Scenario: README exists\n- GIVEN the repository is checked out\n- WHEN the PRD contract is verified\n- THEN README.md remains present\n\n## 07. Business rules, permissions, and state\nThe file must remain readable.\n\n## 08. Non-functional requirements\nThe verification command must be deterministic.\n\n## 09. Success metrics\nThe operator can verify the contract without reading implementation code.\n\n## 10. Dependencies, assumptions, risks, and open questions\nNo open questions for the fixture.\n\n## 10. Acceptance Criteria\nAC-MOCK-01: README.md remains present.\n",
+                "prd_markdown": "# Deterministic test PRD\n\n## 00. Document control\nRevision r1; owner test.\n\n## 01. Overview\nPreserve README.md.\n\n## 02. Background and problem\nThe fixture needs a durable product contract.\n\n## 03. Goals, non-goals, and scope\nGoal: preserve the file. Non-goal: product quality evaluation.\n\n## 04. User personas and prioritized scenarios\nP1: an operator verifies the repository contract.\n\n## 05. User stories and independent tests\nUS-MOCK-01: As an operator, I can verify the repository contract. Independent test: run VC-MOCK-01.\n\n## 06. User flow and interaction\nThe operator opens the PRD and checks the file.\n\n## 07. Functional requirements\n### FR-001: Preserve the README file\nThe system SHALL keep README.md available.\n#### Scenario: README exists\n- GIVEN the repository is checked out\n- WHEN the PRD contract is verified\n- THEN README.md remains present\n\n## 08. Business rules, permissions, and state\nThe file must remain readable.\n\n## 09. Edge cases and error scenarios\nIf README.md is absent, verification reports the missing file.\n\n## 10. Key entities and contracts\nREADME file: the durable artifact being verified.\n\n## 11. Non-functional requirements\nThe verification command must be deterministic.\n\n## 12. Success metrics\nThe operator can verify the contract without reading implementation code.\n\n## 13. Dependencies, assumptions, risks, and open questions\nNo open questions for the fixture.\n\n## 14. Acceptance Criteria\nAC-MOCK-01: README.md remains present.\n\n## 15. Implementation Companion / Handoff\nThe control plane, data plane, and event-driven boundary are separate. Long-running work is asynchronous. Web/API exposes controlled actions and read-only projections. Canonical business state is separate from the append-only event ledger and immutable evidence artifacts/sidecars. Every state transition records actor, reason, request ID, and correlation ID. Direct writes are rejected, projections remain read-only, events and artifacts are immutable, and recovery evidence is required.\n",
                 "requirement_coverage": [{"id": "REQ-MOCK-01", "source_refs": [str(message.get("message_id") or "mock")],
                                           "section": "Functional requirements", "acceptance_ids": ["AC-MOCK-01"], "status": "covered"}],
                 "decision_log": [],
@@ -91,6 +113,12 @@ def fake_channel_reply_text(
                 "success_metrics": [{
                     "id": "SC-MOCK-01",
                     "statement": "The operator can verify the contract without reading implementation code.",
+                    "baseline": "TBD (owner decision required)",
+                    "target": "TBD (owner decision required)",
+                    "measurement_method": "Run VC-MOCK-01 and record the result.",
+                    "owner": "verify",
+                    "measurement_timing": "At each verification run.",
+                    "status": "NOT_RUN",
                 }],
                 "verification_commands": [{
                     "id": "VC-MOCK-01",
@@ -276,32 +304,26 @@ def channel_reply_response_contract(
     if refs.get("adaptive_next_round_id"):
         return _channel_contribution_response_contract(adaptive_next_pass=True)
     if refs.get("synthesis_request_id"):
-        selected_source = ("Selected immutable prd_source_file: " + json.dumps(refs["prd_source_file"]) + ". "
-                           if refs.get("prd_source_file") else "")
-        return _contract_response_instruction(
-            selected_source + "one JSON object named channel_synthesis containing "
-            "title, decision, summary, spec_format, document_control, prd_markdown, requirement_coverage, decision_log, decisions, assumptions, out_of_scope, "
-            "non_functional_requirements, success_metrics, "
-            "acceptance_criteria, verification_commands, open_questions, risks, "
-            "recommended_workflow, source_refs, evidence_refs, "
-            "source-consumption evidence (source_attestation OR all three consumed_* lists), "
-            "classification, dissent, confidence, readiness, and next_round. "
-            "Your deliverable now is the complete standalone PRD, not a decision draft, "
-            "outline, or recommendation that a later workflow write the PRD. Keep only the summary field concise; never omit required answer or artifact content. "
-            "Non-goals/out_of_scope describe sourced product exclusions only. A request to discuss or "
-            "write the PRD now and wait for approval before implementation is an authorization boundary; "
-            "put it in readiness/next steps, never exclude implementation or workflow delivery from the product. "
-            "PRD readiness itself does not authorize task creation or workflow execution. "
-            "A read_only agent can publish through this structured reply: Runtime writes the artifact. "
-            "Do not request filesystem write permission merely to publish a PRD. "
-            "If request refs include prd_source_file, its complete verified body is supplied as "
-            "kind=channel_prd_source in context_pack.semantic_source_documents. Read that body completely; "
-            "do not call tools to reopen the file. "
-            "You may return prd_file:{ref,sha256} matching it exactly instead of retyping the body; "
-            "the remaining contract, source coverage, independent review and Owner gates still apply. "
-            "A local file link or success summary alone is not a published PRD. "
-            "Provide exactly one of prd_file, prd_markdown or prd_composition. For a long existing PRD, "
-            "prefer prd_composition to preserve its complete source without retyping it: "
+        selected_source = (
+            "Selected immutable prd_source_file: "
+            + json.dumps(refs["prd_source_file"])
+            + ". "
+            if refs.get("prd_source_file")
+            else ""
+        )
+        source_selection = (
+            "A verified PRD file source is bound. You may use prd_file or "
+            "prd_composition only when that file is already a complete formal PRD; "
+            "otherwise return the complete standalone prd_markdown. "
+            if refs.get("prd_source_file")
+            else "No verified PRD file source is bound for this conversation. "
+            "You MUST return the complete standalone prd_markdown. Do not return "
+            "prd_file or prd_composition, and never compose a conversation contribution "
+            "or analysis draft. "
+        )
+        source_reuse = (
+            "Provide exactly one body form allowed by the source-selection rule above. For a verified "
+            "complete PRD file, composition may preserve its complete source without retyping it: "
             "{source_message_id, source_message_digest, start_anchor, end_anchor, "
             "edits:[{old,new}], appendix_markdown}. Select one requirement/owner_input document "
             "from semantic_source_documents and copy its message_id and message_body_digest exactly. "
@@ -317,18 +339,72 @@ def channel_reply_response_contract(
             "For kind=channel_prd_source use prd_composition:{source_ref,source_digest,edits,appendix_markdown}; "
             "copy artifact_ref and artifact_digest from that source and omit message IDs and anchors. "
             "Runtime retains the entire selected file before applying your exact edits. "
+            if refs.get("prd_source_file")
+            else "Provide exactly prd_markdown as the body form. Do not include prd_file or "
+            "prd_composition in this response. "
+        )
+        return _contract_response_instruction(
+            selected_source + source_selection + "one JSON object named channel_synthesis containing " +
+            "title, decision, summary, spec_format, document_control, prd_markdown, requirement_coverage, decision_log, decisions, assumptions, out_of_scope, "
+            "user_stories, edge_cases, key_entities, implementation_companion, "
+            "non_functional_requirements, success_metrics, "
+            "acceptance_criteria, verification_commands, open_questions, risks, "
+            "recommended_workflow, source_refs, evidence_refs, "
+            "source-consumption evidence (source_attestation OR all three consumed_* lists), "
+            "classification, dissent, confidence, readiness, and next_round. "
+            "dissent MUST be a JSON array; when unresolved dissent has a status and items, "
+            "encode that envelope as one array item rather than an object. "
+            "Your deliverable now is the complete standalone PRD, not a decision draft, "
+            "outline, or recommendation that a later workflow write the PRD. Keep only the summary field concise; never omit required answer or artifact content. "
+            "Non-goals/out_of_scope describe sourced product exclusions only. A request to discuss or "
+            "write the PRD now and wait for approval before implementation is an authorization boundary; "
+            "put it in readiness/next steps, never exclude implementation or workflow delivery from the product. "
+            "PRD readiness itself does not authorize task creation or workflow execution. "
+            "A read_only agent can publish through this structured reply: Runtime writes the artifact. "
+            "Do not request filesystem write permission merely to publish a PRD. "
+            "If request refs include prd_source_file, its complete verified body is supplied as "
+            "kind=channel_prd_source in context_pack.semantic_source_documents. Read that body completely; "
+            "do not call tools to reopen the file. "
+            "You may return prd_file:{ref,sha256} matching it exactly instead of retyping the body; "
+            "the remaining contract, source coverage, independent review and Owner gates still apply. "
+            "A local file link or success summary alone is not a published PRD. " +
+            source_reuse +
             "prd_markdown, when used instead, is the complete standalone PRD Markdown. "
             "For a newly authored formal PRD set spec_format=prd-spec.v1 and document_control "
             "with revision, status, owner, and profile=lite or full. Use the standard sections "
             "Overview, Background and Problem, Goals/Non-goals/Scope, User Personas and "
-            "Prioritized Scenarios, User Flow and Interaction, Functional Requirements, Business "
-            "Rules/Permissions/State, Non-functional Requirements, Success Metrics, Acceptance "
-            "Criteria, and Dependencies/Assumptions/Risks/Open Questions. Each Requirement is one "
-            "observable behavior with at least one GIVEN/WHEN/THEN Scenario and Acceptance ID. "
-            "success_metrics and non_functional_requirements are arrays of objects with unique ids "
-            "and measurable statements. Do not put Provider, Workflow action, internal events, or "
-            "implementation choices in the product body. Legacy PRD files without spec_format remain "
-            "readable and must not be relabeled as prd-spec.v1. "
+            "Prioritized Scenarios, User Stories and Independent Tests, User Flow and Interaction, "
+            "Functional Requirements, Business Rules/Permissions/State, Edge Cases and Error "
+            "Scenarios, Key Entities and Contracts, Non-functional Requirements, Success Metrics, "
+            "Acceptance Criteria, Dependencies/Assumptions/Risks/Open Questions, and a traceability "
+            "appendix. Make the audience contract explicit: a product manager can review value and "
+            "scope, an architect can review boundaries/entities/rules, and a senior developer can "
+            "run the acceptance and verification paths. Add a separate implementation companion or "
+            "handoff appendix for schemas, JSON manifests, state enums, commands, and other design "
+            "details; keep product sections focused on user-visible behavior and outcomes. "
+            "user_stories must be an array of objects with unique id, title, priority, persona, value, "
+            "independent_test, and acceptance_ids. Each story must be independently testable and map "
+            "to at least one requirement or acceptance. edge_cases must name the trigger, expected "
+            "behavior, and affected requirement/acceptance (use acceptance_ids or affected_acceptance_ids "
+            "consistently). key_entities must have a stable unique id and name purpose, lifecycle, and "
+            "constraints. Each Requirement is one observable behavior, uses normative MUST or SHALL "
+            "language, has one or more named `#### Scenario: <stable-name>` blocks, and each scenario "
+            "has GIVEN/WHEN/THEN lines plus an Acceptance ID. Split compound requirements instead of "
+            "hiding multiple behaviors in one paragraph. "
+            "For an executable full PRD, state the architecture boundary explicitly: separate control plane, data plane, and event-driven work; make long-running work asynchronous; define Web/API as controlled actions plus read-only projections; separate canonical business state, the append-only occurrence/causation event ledger, and immutable evidence artifacts/sidecars; bind every state transition to actor, reason, request ID, and correlation ID; and add acceptance evidence for direct-write rejection, projection read-only behavior, event/artifact immutability, and recovery. "
+            "success_metrics and non_functional_requirements are arrays of objects with unique ids and "
+            "measurable statements. Every success metric also declares baseline, target, measurement_method, "
+            "owner, measurement_timing, and status. When source material does not provide a value, write "
+            "an explicit `TBD (owner decision required)` marker with the decision needed; never invent a "
+            "number or claim a measurement has run. Do not put Provider, Workflow action, internal events, "
+            "or implementation choices in the product body. Legacy PRD files without spec_format remain "
+            "readable and must not be relabeled as prd-spec.v1. For Spec Kit compatibility, preserve "
+            "independent User Stories, their priority rationale, independent tests, explicit edge cases, "
+            "key entities, and a test-first verification plan; do not treat P0/P1/P2 scope labels as a "
+            "substitute for User Stories. For OpenSpec handoff, include a clearly labeled companion "
+            "mapping with Purpose and, when a change is requested, ADDED/MODIFIED/REMOVED Requirements "
+            "using named Requirement and Scenario blocks. This mapping is a handoff artifact and must "
+            "not silently change product scope. "
             "Treat all user chat and attached source documents in the bound semantic source pack "
             "as candidate inputs. Decide from context which statements express product requirements, "
             "later corrections or decisions, open questions, candidate drafts, or instructions to the "
@@ -340,11 +416,19 @@ def channel_reply_response_contract(
             "Every row must have direct evidence_refs; source_refs alone are not evidence. Research rows "
             "(id beginning RES- or kind=research) must also contain adopted_conclusion and applicability_limit. "
             "Every deferred or gap item must also contain a non-empty reason. "
-            "Match each source requirement to a real PRD section and acceptance; state exclusions explicitly. "
+            "Match each source requirement to a real PRD section and acceptance; section must be the exact "
+            "heading title (for example `Functional Requirements`), never a combined list of requirement IDs "
+            "or a prose description. State exclusions explicitly. "
             "decision_log contains question/decision, rationale, source_refs, and dissent disposition. "
             "Carry forward every Owner decision from question_ledger, including resolution=deferred. "
             "Deferred means postponed in this round, not approved, out of scope, or permission to implement. "
             "Preserve the question ID, resolved_event_id, answer, impact and a reopening condition in the PRD. "
+            "For every resolved Owner decision, preserve the exact selected behavior in the applicable "
+            "functional requirement, scenario, edge case, acceptance criterion, and OpenSpec handoff; "
+            "never replace a chosen error/status rule with an alternative, optional outcome, or weaker "
+            "paraphrase. Preserve exact numeric, length, normalization, ordering, and fallback values "
+            "when the decision supplies them. Before returning, self-check that each valid decision delta "
+            "has a concrete clause and acceptance mapping, and that no later section contradicts it. "
             "Do not re-ask a deferred question without new evidence and an explicit explanation of why it must reopen. "
             "Use deferred coverage and readiness gaps for affected work; open_questions is for decisions needed now. "
             "A draft with deferred items can enter independent review while implementation_start stays false. "
@@ -427,9 +511,18 @@ def channel_reply_response_contract(
         state == "phase1_blind"
         and phase1_trigger_message_id == str(request.get("message_id") or "")
     )
+    # A manually mentioned member in an active conversation is still part of
+    # the current discussion. Keep the reply typed so the completion path
+    # records a durable contribution for the synthesizer.
+    active_mentioned_member = (
+        state == "active"
+        and str(request.get("routing_reason") or "") == "mention"
+        and str(request.get("target_member_id") or "")
+        in set(session.get("roster") or [])
+    )
     if is_current_blind_reply or state == "phase2_relay" or (
         request.get("target_member_id") and request.get("target_member_id") == channel.get("leader_member_id")
-    ):
+    ) or active_mentioned_member:
         return _channel_contribution_response_contract()
     return ""
 

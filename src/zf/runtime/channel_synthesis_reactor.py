@@ -136,6 +136,13 @@ def react_channel_synthesis_repair_requested(
                     f"@{target_member_id} Correct synthesis contract revision "
                     f"{revision}. Return one complete channel_synthesis JSON "
                     "object; do not abbreviate or continue the old fragment. "
+                    "For full.v1 + prd-spec.v1, return the complete standalone "
+                    "prd_markdown. Do not use prd_composition for a conversation "
+                    "analysis or incomplete draft; composition is allowed only "
+                    "for an already complete formal PRD file source. Ensure the "
+                    "outer JSON object is closed. Requirement coverage section "
+                    "values must be exact Markdown heading titles, not requirement "
+                    "ID lists. "
                     f"Contract diagnostic: {contract_error}. Invalid reply "
                     f"evidence: {invalid_reply_ref.get('ref') or 'unavailable'}."
                 ),

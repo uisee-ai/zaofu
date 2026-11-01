@@ -122,6 +122,29 @@ def project_discussion_attention(
             if isinstance(item, dict)
             and current_session_item(item, time_keys=("ts",))
         ]
+        latest_synthesis_at = max(
+            (
+                str(item.get("ts") or item.get("created_at") or "")
+                for item in syntheses
+            ),
+            default="",
+        )
+        new_structured_contribution = any(
+            isinstance(item, dict)
+            and str(item.get("thread_id") or "main") == thread_id
+            and str(item.get("contract_status") or "") == "structured"
+            and str(
+                item.get("updated_at")
+                or item.get("created_at")
+                or item.get("ts")
+                or ""
+            ) > latest_synthesis_at
+            for item in (
+                channel.get("contributions", {}).values()
+                if isinstance(channel.get("contributions"), dict)
+                else channel.get("contributions") or []
+            )
+        )
         consensus = channel["consensus"].get(thread_id)
         if not isinstance(consensus, dict):
             consensus = {}
@@ -394,7 +417,7 @@ def project_discussion_attention(
                         and not visible_owner_questions
                         and not open_questions
                         and not latest_synthesis_status
-                        and not syntheses
+                        and (not syntheses or new_structured_contribution)
                         and not consensus
                     )
                 )

@@ -338,6 +338,8 @@ def _emit_synthesis_locked(
         synthesis, validation_error = expand_prd_composition(
             synthesis, channel=channel, request=request, state_dir=state_dir,
         )
+    from zf.runtime.channel_contract_artifacts import normalize_synthesis_contract
+    synthesis = normalize_synthesis_contract(synthesis)
     validation_error = validation_error or validate_prd_quality_contract(
         synthesis, required_version=required_prd_quality_contract(
             writer.event_log.read_all(), channel_id=channel_id, thread_id=thread_id,
