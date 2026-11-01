@@ -236,7 +236,10 @@ def find_task_pipeline_budget_amendment(
     blocked_event_id = str(operation.get("last_event_id") or "").strip()
     if (
         str(operation.get("status") or "") != "blocked"
-        or not str(operation.get("task_pipeline_stage") or "").strip()
+        or (
+            not str(operation.get("task_pipeline_stage") or "").strip()
+            and operation.get("operation_type") != "fanout_synth"
+        )
         or not str(operation.get("reason") or "").startswith(
             "workflow_budget_exceeded:"
         )

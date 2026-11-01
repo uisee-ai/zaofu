@@ -281,10 +281,14 @@ def build_workflow_operation_resume_checkpoints(
             action = "no_action"
             reason = "budget-blocked operation already has a live TaskAttempt"
         elif budget_amendment is not None:
-            action = "redrive_budget_amended_task_pipeline_operation"
+            action = (
+                "redrive_budget_amended_task_pipeline_operation"
+                if task_pipeline_stage
+                else "redrive_budget_amended_synth_operation"
+            )
             reason = (
                 "owner amended every exceeded budget dimension after the "
-                "Task Pipeline operation was blocked"
+                "operation was blocked"
             )
         elif status == "suspended" and newer_live_attempt is not None:
             action = "no_action"
