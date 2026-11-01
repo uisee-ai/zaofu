@@ -249,13 +249,13 @@ def test_auth_error_suspends_task_for_operator(tmp_path: Path) -> None:
     assert any(e.type == "human.escalate" for e in events)
 
 
-def test_provider_policy_rejection_requeues_task(tmp_path: Path) -> None:
+def test_provider_policy_rejection_blocks_task(tmp_path: Path) -> None:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     store = TaskStore(state_dir / "kanban.json")
     store.add(Task(
         id="T1",
-        title="retry provider policy rejection",
+        title="surface provider policy rejection",
         status="in_progress",
         assigned_to="dev",
     ))
@@ -269,13 +269,13 @@ def test_provider_policy_rejection_requeues_task(tmp_path: Path) -> None:
     ))
 
     assert decision is not None
-    assert decision.action == "dispatch"
+    assert decision.action == "block"
     task = store.get("T1")
     assert task is not None
-    assert task.status == "backlog"
+    assert task.status == "blocked"
     events = EventLog(state_dir / "events.jsonl").read_all()
     recovered = [event for event in events if event.type == "provider.stop.recovery"]
-    assert recovered[-1].payload["action"] == "requeue"
+    assert recovered[-1].payload["action"] == "suspend"
 
 
 def test_rate_limit_updates_run_goal_usage_limited(tmp_path: Path) -> None:

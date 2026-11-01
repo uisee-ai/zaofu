@@ -116,6 +116,10 @@ commit.
    - do not remove the worktree here. Final merge and cleanup belong to
      `zf-harness-commit-push` running from the designated `dev` merge-owner
      checkout.
+   - 如果用户本次已授权 merge，归档及上述审计完成后，将 worktree、branch、
+     source_head 交给 `zf-harness-commit-push` 继续执行合并、验证和自动清理；
+     不止步于 merge-ready 报告，也不重复请求已有的合并或正常清理授权。
+     用户仅要求执行 backlog 或 commit 时，仍保留 worktree，等待后续合并授权。
 10. Report:
    - implementation commit, archive commit, and branch;
    - task files moved to `tasks/done/`;

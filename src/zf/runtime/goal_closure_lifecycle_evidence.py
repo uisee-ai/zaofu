@@ -8,6 +8,57 @@ from zf.core.events.model import ZfEvent
 from zf.runtime.run_scope import run_aliases
 
 
+def workflow_lifecycle_evidence(
+    events: list[ZfEvent], *, workflow_run_id: str,
+) -> list[dict[str, Any]]:
+    """Bind observed approval to the invoked Request revision, never infer it."""
+    aliases = run_aliases(events)
+    run = aliases.get(workflow_run_id, workflow_run_id)
+
+    def scoped(body: Mapping[str, Any], *, required: bool = False) -> bool:
+        values = [aliases.get(str(body[key]), str(body[key])) for key in (
+            "workflow_run_id", "run_id", "trace_id",
+        ) if body.get(key)]
+        return (bool(values) or not required) and all(value == run for value in values)
+
+    invocation = next((
+        (position, event) for position, event in enumerate(events)
+        if event.type == "workflow.invoke.requested" and scoped(event.payload, required=True)
+    ), None)
+    if invocation is None:
+        return []
+    position, invoked = invocation
+    binding = invoked.payload
+    if not all(binding.get(key) for key in (
+        "request_id", "request_revision", "requirement_spec_digest",
+    )):
+        return []
+    rows = []
+    for index, event in enumerate(events[:position + 1]):
+        body = event.payload
+        if event.type not in {
+            "workflow.request.approved", "workflow.submit.requested", "workflow.invoke.requested",
+        } or not scoped(body):
+            continue
+        revision_key = "revision" if event.type == "workflow.request.approved" else "request_revision"
+        if (body.get("request_id") != binding["request_id"]
+                or body.get(revision_key) != binding["request_revision"]
+                or body.get("requirement_spec_digest") != binding["requirement_spec_digest"]):
+            continue
+        selected = {key: body[key] for key in (
+            "request_id", "workflow_run_id", "run_id", "revision", "request_revision", "status",
+            "requirement_spec_ref", "requirement_spec_digest", "workflow_proposal_ref",
+            "workflow_proposal_digest", "effective_config_ref", "effective_config_digest",
+            "requested_by", "origin_binding",
+        ) if key in body}
+        rows.append({
+            "event_id": event.id, "event_type": event.type, "ledger_position": index,
+            "ts": event.ts, "actor": event.actor, "origin": event.origin,
+            "causation_id": event.causation_id, "payload": selected,
+        })
+    return rows
+
+
 def plan_lifecycle_evidence(
     events: list[ZfEvent],
     *,

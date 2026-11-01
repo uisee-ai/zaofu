@@ -23,14 +23,13 @@ def pin_source_versions(state_dir: Path, sources: list[dict[str, Any]]) -> None:
         )
 
 
-def read_source_version(state_dir: Path, source: dict[str, Any]) -> tuple[bytes, str]:
+def read_source_version(state_dir: Path, source: dict[str, Any], *, path: Path) -> tuple[bytes, str]:
     """Prefer the full authoritative ref; recover only the exact pinned version.
 
     A broken recovery copy cannot prevent a valid original read. A changed
     original cannot silently become the content of an older attempt.
     """
     expected = source.get("sha256")
-    path = sidecar_path(state_dir, source["ref"])
     try:
         raw = path.read_bytes()
         if not expected or hashlib.sha256(raw).hexdigest() == expected:

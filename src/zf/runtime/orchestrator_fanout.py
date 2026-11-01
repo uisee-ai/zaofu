@@ -39,6 +39,7 @@ from zf.runtime.fanout_failure_findings import (
 from zf.runtime.fanout_result_identity import bind_blocking_writer_result_identity
 from zf.runtime.fanout_retrigger_guard import (
     suppress_completed_generation,
+    suppress_handled_stall_trigger,
     suppress_stale_task_pipeline_generation,
 )
 from zf.runtime.generic_workflow_fanout import (
@@ -2526,6 +2527,8 @@ class FanoutCoordinationMixin(
             if self._fanout_started(stage.id, event.id):
                 started_any = True
                 continue
+            if suppress_handled_stall_trigger(self, trigger_event=event, stage_id=stage.id):
+                continue
             aggregate_success_event = str(
                 getattr(getattr(stage, "aggregate", None), "success_event", "")
                 or ""
@@ -3485,6 +3488,8 @@ class FanoutCoordinationMixin(
 
         for stage in stages:
             if self._fanout_started(stage.id, event.id):
+                continue
+            if suppress_handled_stall_trigger(self, trigger_event=event, stage_id=stage.id):
                 continue
             if self._equivalent_rework_fanout_started(stage.id, event):
                 continue

@@ -43,6 +43,7 @@ def decide_pending_plan(
     payload: dict[str, Any],
     correlation_id: str | None = None,
     expected_request_id: str = "",
+    project_root: Path | None = None,
 ) -> tuple[ZfEvent | None, str]:
     """Serialize operator decisions and bind them to an open Plan request."""
     if event_type not in {"plan.approved", "plan.rejected"}:
@@ -64,6 +65,13 @@ def decide_pending_plan(
         if expected_request_id and pending.id != expected_request_id:
             return None, "plan approval request has changed"
         request = pending.payload if isinstance(pending.payload, dict) else {}
+        if event_type == "plan.rejected" and payload.get("plan_review_ref"):
+            from zf.runtime.plan_requirement_amendment import authorize_plan_review
+            try:
+                payload = {**payload, **authorize_plan_review(
+                    state_dir, project_root or state_dir.parent, writer, pending, payload["plan_review_ref"])}
+            except (OSError, ValueError) as exc:
+                return None, str(exc)
         bound = {
             key: request[key]
             for key in ("stage_id", "trace_id", "pdd_id", "feature_id", "task_map_ref",

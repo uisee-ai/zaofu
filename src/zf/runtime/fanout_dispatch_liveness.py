@@ -355,6 +355,8 @@ class FanoutDispatchLivenessMixin:
             and str(payload.get("backend") or "").strip() == "codex"
             and str(payload.get("turn_id") or "").strip()
         ):
+            if payload.get("provider_stop_reason") == "provider_policy_rejected":
+                return ""
             return str(
                 payload.get("instance_id")
                 or payload.get("role")
@@ -524,7 +526,7 @@ class FanoutDispatchLivenessMixin:
         run_id = str(child.get("run_id") or "")
         task_id = str(child.get("task_id") or "")
         trace_id = str(manifest.get("trace_id") or "")
-        self.event_writer.append(ZfEvent(
+        failed = self.event_writer.append(ZfEvent(
             type="fanout.child.failed",
             actor="zf-cli",
             task_id=task_id or None,
@@ -544,6 +546,12 @@ class FanoutDispatchLivenessMixin:
             causation_id=lost_event.id,
             correlation_id=trace_id,
         ))
+        from zf.runtime.fanout_timeout_operations import fail_reader_child_operations
+
+        fail_reader_child_operations(
+            self, manifest=manifest, pending_children=[child_id],
+            causation_event=failed, reason=f"{loss_reason}_recovery_exhausted",
+        )
         self._release_fanout_worker_if_terminal(
             role_instance=role_instance,
             fanout_id=fanout_id,

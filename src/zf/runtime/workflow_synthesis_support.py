@@ -23,6 +23,36 @@ ALLOWED_FLOW_FAMILIES = frozenset({
     "RefactorFlow",
     "Workflow",
 })
+RESULT_KEYS = frozenset({
+    "schema_version",
+    "request_id",
+    "request_revision",
+    "requirement_ref",
+    "requirement_digest",
+    "selected_flow_family",
+    "short_flow_spec",
+    "decision_rationale",
+    "assumptions",
+    "open_questions",
+    "requested_roles",
+    "requested_skills",
+    "requested_profiles",
+    "completion_profile",
+    "risk_hints",
+})
+FLOW_SPEC_KEYS = frozenset({
+    "flow_family",
+    "intent",
+    "parameters",
+    "purpose",
+    "template",
+})
+COMPLETION_KEYS = frozenset({
+    "id",
+    "delivery_policy",
+    "completion_threshold",
+    "required_artifacts",
+})
 
 
 def admission_catalog(config: Any, project_root: Path) -> dict[str, Any]:
@@ -124,11 +154,24 @@ def synthesis_prompt(
         "select its exact controller_id and controller_digest in short_flow_spec.parameters, "
         "and supply verification_commands appropriate to this project's acceptance. This selects "
         "the full registered configuration, including its profiles/roles/completion policy; "
-        "those selected capabilities need not already exist in the current project. Use the "
-        "selected entry's completion_profile. Keep its lane/pipeline defaults; do not combine "
+        "those selected capabilities need not already exist in the current project. Use "
+        "parameters.approval_requirements with exactly plan (required or not_requested) and "
+        "source_quotes (verbatim strings from this Requirement). Always explicitly assess Plan "
+        "human review for registered controllers. If the owner asks to review/approve the Plan "
+        "before implementation, choose required and cite that instruction; Workflow approval "
+        "alone is a separate gate. Do not infer no Plan approval from a template default. "
+        "Use the selected entry's completion_profile. Keep its lane/pipeline defaults; do not combine "
         "this selection with task_pipeline overrides. Do not ask how to install a controller "
         "that is already registered. Project identity, PRD/target paths and Git baseline are "
         "bound by the compiler, followed by explicit Apply config and Approve & Run. "
+        "For a confirmed Task-bound Requirement without source_ref, the compiler validates "
+        "task_input_contract_ref/digest/binding and snapshots the entire Requirement as the "
+        "project-local input, including its objective and clarification answers. Do not ask "
+        "the owner to invent a separate PRD file when these canonical inputs are present. "
+        "For registered blocking Task Pipeline controllers, candidate_verify_width (1..registered lanes) "
+        "selects the independent global Candidate Verify fanout only; task pools and all acceptance "
+        "gates remain intact. Choose the smallest width justified by distinct risks/coverage; a "
+        "single simple contract normally needs one independent verifier. Explain the choice. "
         "If the owner explicitly requests PRD v4, "
         "short_flow_spec.parameters can include task_pipeline with exactly profile "
         "(prd-flow-v4-task-pipeline), mode (shadow or blocking), impl_capacity, "
@@ -155,6 +198,9 @@ def safe_component(value: str) -> str:
 
 __all__ = [
     "ALLOWED_FLOW_FAMILIES",
+    "COMPLETION_KEYS",
+    "FLOW_SPEC_KEYS",
+    "RESULT_KEYS",
     "WORKFLOW_SYNTHESIS_RESULT_SCHEMA",
     "admission_catalog",
     "normalized_strings",

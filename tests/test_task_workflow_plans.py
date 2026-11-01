@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,15 @@ from zf.runtime.watcher import EventWatcher
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _init_delivery_baseline(root: Path) -> None:
+    subprocess.run(['git', 'init', '-q', '--initial-branch=main', str(root)], check=True)
+    subprocess.run([
+        'git', '-C', str(root), '-c', 'user.name=Test',
+        '-c', 'user.email=test@example.invalid', '-c', 'core.hooksPath=/dev/null',
+        'commit', '--allow-empty', '-qm', 'chore: initialize test baseline',
+    ], check=True)
 
 
 class _RecordingTransport:
@@ -391,6 +401,8 @@ def test_each_executable_task_workflow_option_requires_approve_then_starts(
     option_id: str,
     expected_route: str,
 ) -> None:
+    if option_id == 'delivery':
+        _init_delivery_baseline(tmp_path)
     monkeypatch.setattr(
         "zf.runtime.preflight._probe_provider_auth",
         lambda _backend: (True, "mocked authenticated provider"),
@@ -562,6 +574,7 @@ def test_task_workflow_start_runs_delivery_request_and_submit(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    _init_delivery_baseline(tmp_path)
     monkeypatch.setattr(
         "zf.runtime.preflight._probe_provider_auth",
         lambda _backend: (True, "mocked authenticated provider"),

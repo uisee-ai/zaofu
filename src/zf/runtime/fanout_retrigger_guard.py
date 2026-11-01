@@ -13,6 +13,60 @@ from zf.runtime.task_pipeline_contexts import (
 from zf.runtime.writer_fanout_generation import completed_writer_generation
 
 
+def suppress_handled_stall_trigger(
+    runtime: Any, *, trigger_event: ZfEvent, stage_id: str,
+) -> bool:
+    """Coalesce a structural recovery with its exact original trigger."""
+    events = runtime.event_log.read_all()
+    by_id = {event.id: event for event in events}
+    original_id = str(trigger_event.payload.get("original_trigger_event_id") or "")
+    original = (
+        by_id.get(original_id)
+        if trigger_event.actor == "zf-stall-redispatch"
+        else trigger_event
+    )
+    if original is None or original.actor == "zf-stall-redispatch":
+        return False
+
+    def is_recovery(event: ZfEvent) -> bool:
+        body = dict(event.payload)
+        if (event.actor != "zf-stall-redispatch" or event.type != original.type
+                or event.correlation_id != original.correlation_id
+                or event.task_id != original.task_id
+                or body.get("original_trigger_event_id") != original.id):
+            return False
+        for key in ("original_trigger_event_id", "redispatch_attempt", "redispatch_fingerprint"):
+            body.pop(key, None)
+        # The detector may fill the configured route for a legacy trigger.
+        if "flow_kind" not in original.payload:
+            body.pop("flow_kind", None)
+        return body == original.payload
+
+    if trigger_event is not original and not is_recovery(trigger_event):
+        return False
+    family = {original.id, *(event.id for event in events if is_recovery(event))}
+    handled = next((event for event in events if (
+        event.type == "fanout.started" and event.payload.get("stage_id") == stage_id
+        and event.payload.get("trigger_event_id") in family - {trigger_event.id}
+    )), None)
+    if handled is None:
+        return False
+    reason = "stall_trigger_already_handled"
+    if not any(event.type == "fanout.retrigger.suppressed"
+               and event.payload.get("stage_id") == stage_id
+               and event.payload.get("trigger_event_id") == trigger_event.id
+               and event.payload.get("reason") == reason for event in events):
+        runtime.event_writer.append(ZfEvent(
+            type="fanout.retrigger.suppressed", actor="zf-cli", origin="kernel",
+            payload={"stage_id": stage_id, "trigger_event_id": trigger_event.id,
+                     "original_trigger_event_id": original.id, "reason": reason,
+                     "handled_trigger_event_id": handled.payload["trigger_event_id"],
+                     "handled_fanout_id": handled.payload.get("fanout_id", "")},
+            causation_id=trigger_event.id, correlation_id=trigger_event.correlation_id,
+        ))
+    return True
+
+
 def suppress_stale_task_pipeline_generation(
     runtime: Any,
     *,

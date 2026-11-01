@@ -191,6 +191,7 @@ export interface WorkflowRequestsPage {
 }
 
 export interface WorkflowRequestDetail {
+  preparation?: Record<string, unknown>;
   ok: boolean;
   status: string;
   result: Record<string, unknown>;
@@ -3253,6 +3254,7 @@ export interface PlanPreview {
     diagnostics?: Array<{ code: string; severity: string; message: string; evidence?: string[] }>;
     source_ids?: Record<string, string[]>;
     plan_ids?: Record<string, string[]>;
+    owner_decision_items?: Array<Record<string, unknown>>;
     missing_sections?: string[];
     policy?: Record<string, unknown>;
   };
@@ -3298,6 +3300,12 @@ export interface PlanPreview {
     options?: Array<{ option_id?: string; label?: string }>;
   }>;
   decision_count?: number;
+  decision_review?: {
+    items: Array<Record<string, unknown>>;
+    counts: Record<string, number>;
+    available: boolean;
+    error: string;
+  };
   actions?: Record<string, string>;
   policy?: Record<string, unknown>;
 }

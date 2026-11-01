@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.fanout_identity import build_fanout_identity_projection
+from zf.runtime.task_pipeline_contexts import latest_task_pipeline_generation_context
 
 CASE_FILE_REL_PATH = "projections/recovery_case_file.json"
 
@@ -50,10 +52,16 @@ def build_case_file(
     ``instance_states`` 来自 role_sessions(instance → busy/idle/...)。"""
 
     events = list(events)
-    child_last: dict[str, tuple[float, str, str]] = {}
+    child_last: dict[str, tuple[float, str, str, ZfEvent]] = {}
+    stale_fanouts = {
+        str(item["fanout_id"])
+        for item in build_fanout_identity_projection(events)["stale"]
+    }
+    pipeline_contexts: dict[str, dict[str, Any] | None] = {}
     fanout_terminal: set[str] = set()
     queued: dict[str, dict[str, float]] = {}
     dispatched_children: dict[str, set[str]] = {}
+    task_inflight: dict[tuple[str, str], set[str]] = {}
     open_escalations: list[dict[str, Any]] = []
     acked: set[str] = set()
     last_budget: dict[str, Any] = {}
@@ -66,6 +74,8 @@ def build_case_file(
         fanout_id = str(payload.get("fanout_id") or "")
         child_id = str(payload.get("child_id") or "")
         task_id = str(payload.get("task_id") or event.task_id or "")
+        if etype.startswith("fanout.") and fanout_id in stale_fanouts:
+            continue
         if etype == "fanout.child.queued" and fanout_id and child_id:
             queued.setdefault(fanout_id, {})[child_id] = _epoch(event)
         elif etype == "fanout.child.dispatched":
@@ -73,13 +83,15 @@ def build_case_file(
                 dispatched_children.setdefault(fanout_id, set()).add(child_id)
                 queued.get(fanout_id, {}).pop(child_id, None)
             if task_id:
-                child_last[task_id] = (_epoch(event), "inflight", child_id)
+                child_last[task_id] = (_epoch(event), "inflight", child_id, event)
+                task_inflight.setdefault((task_id, fanout_id), set()).add(child_id)
         elif etype in _CHILD_TERMINAL:
             if fanout_id and child_id:
                 dispatched_children.get(fanout_id, set()).discard(child_id)
             state = "completed" if etype.endswith("completed") else "failed"
             if task_id:
-                child_last[task_id] = (_epoch(event), state, child_id)
+                child_last[task_id] = (_epoch(event), state, child_id, event)
+                task_inflight.get((task_id, fanout_id), set()).discard(child_id)
         elif etype in _FANOUT_TERMINAL and fanout_id:
             fanout_terminal.add(fanout_id)
             queued.pop(fanout_id, None)
@@ -109,6 +121,7 @@ def build_case_file(
     ]
 
     contradictions: list[dict[str, Any]] = []
+    continuations: list[dict[str, Any]] = []
     for task in tasks:
         if not isinstance(task, Mapping):
             continue
@@ -117,6 +130,34 @@ def build_case_file(
         assignee = str(task.get("assigned_to") or "")
         worker_state = str(instance_states.get(assignee, "") or "")
         last = child_last.get(tid)
+        last_event = last[3] if last else None
+        last_payload = last_event.payload if last_event else {}
+        last_fanout = str(last_payload.get("fanout_id") or "")
+        run_id = str(last_payload.get("workflow_run_id") or (
+            last_event.correlation_id if last_event else ""
+        ) or "")
+        if run_id and run_id not in pipeline_contexts:
+            pipeline_contexts[run_id] = latest_task_pipeline_generation_context(
+                events, workflow_run_id=run_id,
+            )
+        context = pipeline_contexts.get(run_id) or {}
+        parent_ids = {
+            str(context[key]) for key in ("parent_task_id", "pdd_id", "feature_id")
+            if context.get(key)
+        }
+        handed_off = bool(
+            last_fanout and context.get("fanout_id") == last_fanout
+            and parent_ids == {tid} and context.get("generation_id")
+            and context.get("task_map_generation") and context.get("task_ids")
+        )
+        if handed_off and status == "in_progress":
+            continuations.append({
+                "task": tid, "fanout_id": last_fanout,
+                "source_event_id": last_event.id,
+                "workflow_run_id": run_id,
+                "generation_admitted_event_id": context["generation_admitted_event_id"],
+                "task_map_generation": context["task_map_generation"],
+            })
         # ★ wip_without_carrier:任务号称进行中,承接它的 child 已终局,
         #   worker 也不忙——两头脱节,谁都不会推进(07-17 UISSE 实弹)
         if (
@@ -124,6 +165,11 @@ def build_case_file(
             and last is not None
             and last[1] in ("failed", "completed")
             and worker_state not in ("busy", "active")
+            and not handed_off
+            and not (
+                last_fanout not in fanout_terminal
+                and task_inflight.get((tid, last_fanout))
+            )
         ):
             contradictions.append({
                 "kind": "wip_without_carrier",
@@ -132,6 +178,10 @@ def build_case_file(
                     "kanban": status,
                     "child": f"{last[1]}:{last[2]}",
                     "worker": f"{assignee}:{worker_state or 'unknown'}",
+                    "source_event_id": last_event.id,
+                    "fanout_id": last_fanout,
+                    "workflow_run_id": run_id,
+                    "workflow_generation": str(last_payload.get("workflow_generation") or ""),
                 },
             })
         # ready_but_starved:可派而久不派
@@ -169,6 +219,7 @@ def build_case_file(
         "generated_at_epoch": now_epoch,
         "stillness": dict(stillness or {}),
         "contradictions": contradictions,
+        "continuations": continuations,
         "current_state": {
             "budget_config_usd": budget_cfg,
             "last_budget_exceeded": last_budget or None,

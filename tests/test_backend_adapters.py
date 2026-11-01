@@ -117,3 +117,21 @@ class TestHeadlessProviderPermissionDefaults:
                 "sandbox": "danger-full-access",
             }
             assert claude_permission_mode_for_profile(profile, env={}) == "bypassPermissions"
+
+
+class TestCodexNativeCompaction:
+    def test_compacts_before_harness_recycle_without_overriding_model_window(self):
+        role = RoleConfig(name="planner", backend="codex")
+        for resume in (False, True):
+            command = CodexAdapter().build_command(
+                role, session_id="session-1", is_resume=resume,
+            )
+            assert "model_auto_compact_token_limit=140000" in command
+            assert not any(item.startswith("model_context_window=") for item in command)
+            if resume:
+                assert command[-2:] == ["resume", "session-1"]
+
+    def test_uses_configured_role_compaction_budget(self):
+        role = RoleConfig(name="planner", backend="codex", context_window_tokens=400_000,
+                          context_compact_threshold=0.65)
+        assert "model_auto_compact_token_limit=260000" in CodexAdapter().build_command(role)

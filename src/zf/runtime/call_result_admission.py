@@ -140,14 +140,23 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         if provider_summary_ref is not None:
             payload["provider_operation_summary_ref"] = provider_summary_ref
         policy = self._input_policy(payload, input_policy)
+        reader_failed = (
+            adapted.schema_version == "workflow-read-result.v1"
+            and adapted.payload.get("execution_status") == "failed"
+            and adapted.payload.get("verdict") == "abstained"
+        )
         ledger_descriptor: dict[str, Any] = {}
+        read_issues: list[dict[str, str]] = []
         if policy:
-            ledger_descriptor = self._ensure_sealed_ledger(payload, policy)
+            ledger_descriptor = self._ensure_sealed_ledger(payload, policy, allow_empty=reader_failed)
             if ledger_descriptor:
+                read_issues = validate_required_reads(
+                    self.state_dir, policy=policy, ledger_descriptor=ledger_descriptor,
+                )
                 payload.update({
                     "read_ledger_ref": str(ledger_descriptor.get("ref") or ""),
                     "read_ledger_digest": str(ledger_descriptor.get("sha256") or ""),
-                    "input_consumption_status": "satisfied",
+                    "input_consumption_status": "incomplete" if read_issues else "satisfied",
                 })
         from zf.runtime.task_pipeline_call_result import (
             bind_integration_acceptance_ledger,
@@ -206,6 +215,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
                 "goal-closure-result.v1",
             },
             require_read_proof=bool(policy),
+            allow_incomplete_reads=reader_failed,
         ))
         issues.extend(self._control_result_identity_issues(envelope, adapted))
         currentness_issues = self._operation_result_currentness_issues(
@@ -249,11 +259,10 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
                 }
             )
         if policy and ledger_descriptor:
-            issues.extend(validate_required_reads(
-                self.state_dir,
-                policy=policy,
-                ledger_descriptor=ledger_descriptor,
-            ))
+            issues.extend(
+                issue for issue in read_issues
+                if not (reader_failed and issue.get("code") == "required_read_missing")
+            )
         elif policy:
             issues.append({
                 "field": "input_consumption.read_ledger_ref",
@@ -625,6 +634,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         self,
         payload: Mapping[str, Any],
         policy: Mapping[str, Any],
+        *, allow_empty: bool = False,
     ) -> dict[str, Any]:
         descriptor = payload.get("read_ledger_ref")
         if isinstance(descriptor, Mapping):
@@ -633,7 +643,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         if not attempt_id:
             return {}
         try:
-            return seal_read_ledger(self.state_dir, attempt_id)
+            return seal_read_ledger(self.state_dir, attempt_id, allow_empty=allow_empty)
         except ArtifactReadError:
             return {}
 

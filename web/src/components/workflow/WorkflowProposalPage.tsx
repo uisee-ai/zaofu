@@ -9,6 +9,7 @@ import { WorkflowPreviewReview } from "./WorkflowPreviewReview";
 import { WorkflowProposalDetail } from "./WorkflowProposalDetail";
 import { useWorkflowRequests } from "./useWorkflowRequests";
 import { startWorkflow, workflowStartActions } from "./workflowStartModel";
+import { preparationFeedback } from "./workflowProposalModel";
 const WorkflowGraphWorkbench = lazy(() => import("./WorkflowGraphWorkbench"));
 
 interface WorkflowProposalPageProps {
@@ -241,6 +242,7 @@ function WorkflowProposalWorkbench({
             {panel === "raw" ? <section className="workflow-raw-yaml" data-testid="workflow-yaml-preview">
               <p>{effectiveConfig.yaml_source === "compiled_snapshot" ? "Compiled configuration snapshot · original YAML unavailable · secrets redacted" : "Version-bound configuration · secrets redacted"}</p>
               {yaml ? <pre tabIndex={0} data-review-field="yaml">{yaml}</pre> : <p>{submitted || effectiveConfig.status === "unreadable" ? "The bound configuration snapshot is unavailable." : "YAML will be available after clarification and workflow preparation."}</p>}
+              {!yaml && asRecordArray(asRecord(detail.preparation).blockers).map((blocker, index) => <p role="alert" key={index}>{textValue(blocker.message)} {textValue(blocker.fix_it)}</p>)}
               {submitted && <p>This run uses an immutable snapshot. Changes require a new reviewed proposal.</p>}
               {!submitted && yaml && detail.proposal.change_mode === "config_change" && <p>Starting commits only this approved zf.yaml to the local Git baseline. Other tracked changes must be resolved first.</p>}
               {!submitted && yaml && <button type="button" className="primary" data-testid="workflow-start"
@@ -280,7 +282,7 @@ function workflowRequestFeedback(
     || blockers.map((item) => textValue(item.message) || textValue(item.title)).filter(Boolean).join("; ")
     || (action === "workflow-clarify" && status === "clarifying"
       ? `Answers saved. ${remainingQuestions} clarification question${remainingQuestions === 1 ? "" : "s"} remain.`
-      : response.ok === true ? "Proposal prepared." : "Request still needs clarification.");
+      : preparationFeedback(status, response.ok === true));
   return {
     ok: response.ok === true,
     status: status || (response.ok === true ? "completed" : "failed"),

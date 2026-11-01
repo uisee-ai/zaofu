@@ -67,7 +67,7 @@ def create_test_app():
     atexit.register(writer.append, ZfEvent(
         type="simulation.done", actor="fixture", payload={"purpose": "plan-preview-e2e"},
     ))
-    for plan_id, plan_ref in [("evt-preview-complete", "artifacts/full-plan.md"), ("evt-preview-missing", "artifacts/missing.md"), ("evt-preview-digest", ""), ("evt-preview-long", "artifacts/long-plan.md"), ("evt-preview-rich", "artifacts/rich-plan.md")]:
+    for plan_id, plan_ref in [("evt-preview-complete", "artifacts/full-plan.md"), ("evt-preview-missing", "artifacts/missing.md"), ("evt-preview-digest", ""), ("evt-preview-long", "artifacts/long-plan.md"), ("evt-preview-rich", "artifacts/rich-plan.md"), ("evt-preview-undeclared", "artifacts/full-plan.md")]:
         content_profile = "summary_only" if plan_id == "evt-preview-digest" else "derived_plan_full"
         writer.append(ZfEvent(type="plan.approval.requested", actor="fixture", payload={
             "plan_id": plan_id, "task_count": 1, "task_map_ref": "artifacts/task-map.json",
@@ -75,7 +75,7 @@ def create_test_app():
             "plan_artifact_digest": hashlib.sha256((long_plan if plan_id == "evt-preview-long" else rich_plan if plan_id == "evt-preview-rich" else full).encode()).hexdigest(),
             "digest_ref": "artifacts/digest.md", "plan_artifact_package_ref": descriptor["ref"],
             "plan_artifact_package_digest": descriptor["sha256"],
-            "plan_content_profile": content_profile,
+            **({"plan_content_profile": content_profile} if plan_id != "evt-preview-undeclared" else {}),
         }))
     from tests.plan_human_review_fixture import add_human_review_fixture
 

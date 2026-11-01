@@ -840,7 +840,11 @@ def _compatibility_projection(field: str, payload: Mapping[str, Any]) -> dict[st
         or result.get("evidence_refs")
         or []
     )
-    evidence_refs = list(dict.fromkeys([*evidence_refs, *artifact_evidence]))
+    unique_evidence: list[Any] = []
+    for ref in [*evidence_refs, *artifact_evidence]:
+        if ref not in unique_evidence:
+            unique_evidence.append(ref)
+    evidence_refs = unique_evidence
     return {
         "status": "completed",
         "summary": str(result.get("summary") or ""),

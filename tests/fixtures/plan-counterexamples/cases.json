@@ -601,6 +601,84 @@
       "expected_critic_verdict": "reject",
       "required_finding": "独立健康检查不读会话状态，不应等待过期功能；移除无依据的依赖。",
       "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "overview_keyword_owner",
+      "source_requirement": "组织总览展示车辆总数、分布及跨项目趋势。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "BEHAVIOR",
+            "text": "交付组织总览",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "producer",
+            "title": "车辆目录 CRUD",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "BEHAVIOR"
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": true,
+      "error_contains": "",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "总览的聚合查询与页面呈现未分配；车辆目录不生产总览输出。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "duration_keyword_owner",
+      "source_requirement": "安装结果提交和修正时记录设备累计时长，拒绝非法修正且原状态不变。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "BEHAVIOR",
+            "text": "交付安装结果累计时长",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "producer",
+            "title": "设备时长统计报表",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "BEHAVIOR"
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": true,
+      "error_contains": "",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "安装结果写入与修正事务未分配；统计报表不生产安装结果字段。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
     }
   ]
 }

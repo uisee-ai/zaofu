@@ -99,7 +99,7 @@ def operation_budget_status(
     runtime = SimpleNamespace(
         state_dir=state_dir, cost_tracker=CostTracker(state_dir / "cost.jsonl"),
     )
-    limits = _operation_limits(state_dir, operation)
+    limits = _operation_limits(state_dir, operation, events=log.read_all())
     measurement = _measurement(
         baseline=operation.get("budget_snapshot"),
         current=usage_meter_snapshot(

@@ -15,6 +15,7 @@ from zf.runtime.semantic_replan import (
     SEMANTIC_REPLAN_ACTION,
     SEMANTIC_REPLAN_SAFE_ACTION,
 )
+from zf.runtime.semantic_replan_redrive import cross_task_replan_cancellation
 from zf.runtime.execution_policy_routing import recorded_execution_route_action
 
 
@@ -175,14 +176,21 @@ def pending_immediate_replan_actions(
             task_id,
             triage.id,
         )
-        if (
-            _has_later_task_progress(events, index, task_id)
-            or _action_completed(events, checkpoint_id)
-        ):
+        if _has_later_task_progress(events, index, task_id):
             continue
+        cancelled_id = ""
+        if _action_completed(events, checkpoint_id):
+            cancelled_id = cross_task_replan_cancellation(events, task_id, failed_event_id)
+            if not cancelled_id:
+                continue
+            checkpoint_id = _stable_id(
+                "ortriage-replan-redrive", task_id, triage.id, cancelled_id,
+            )
+            if _action_completed(events, checkpoint_id):
+                continue
         failed_payload = _payload(failed_event) if failed_event is not None else {}
         evidence_ids = list(dict.fromkeys(
-            item for item in (failed_event_id, triage.id) if item
+            item for item in (failed_event_id, triage.id, cancelled_id) if item
         ))
         fingerprint = str(
             failed_payload.get("failure_fingerprint")
@@ -214,6 +222,7 @@ def pending_immediate_replan_actions(
                 "semantic-replan",
                 task_id,
                 failed_event_id or triage.id,
+                *([cancelled_id] if cancelled_id else []),
             ),
             "task_id": task_id,
             "recorded_event_id": triage.id,

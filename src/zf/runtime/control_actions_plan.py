@@ -53,6 +53,8 @@ class PlanApprovalActionsMixin:
         }
         if reason:
             event_payload["reason"] = reason
+        if action == "plan-reject" and isinstance(payload.get("plan_review_ref"), dict):
+            event_payload["plan_review_ref"] = payload["plan_review_ref"]
         event, error = decide_pending_plan(
             self.writer,
             state_dir=self.state_dir,
@@ -61,6 +63,7 @@ class PlanApprovalActionsMixin:
             payload=event_payload,
             correlation_id=requested.correlation_id,
             expected_request_id=str(payload.get("request_event_id") or ""),
+            project_root=self.project_root,
         )
         if event is None:
             return {"_status_code": 409, "ok": False, "status": "stale_decision",

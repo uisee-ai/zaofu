@@ -61,7 +61,7 @@ def run(args: argparse.Namespace) -> int:
     if args.role:
         if not _run_contract_restart_allowed(
             config,
-            event_log,
+            None if dry_run else event_log,
             state_dir,
             context.project_root,
             context.config_path,
@@ -80,7 +80,7 @@ def run(args: argparse.Namespace) -> int:
     else:
         if not _run_contract_restart_allowed(
             config,
-            event_log,
+            None if dry_run else event_log,
             state_dir,
             context.project_root,
             context.config_path,
@@ -140,6 +140,10 @@ def _restart_role(
         print(f"Error: Role '{role_name}' not found. Available: {[r.name for r in config.roles]}", file=sys.stderr)
         return 1
 
+    if dry_run:
+        print(f"Dry run: would restart role: {role_name}")
+        return 0
+
     orchestrator = WorkflowRuntimeCoordinator(
         state_dir,
         config,
@@ -180,6 +184,10 @@ def _restart_full(
     include_run_manager: bool = False,
 ) -> int:
     """Full restart: stop + start sequence."""
+    if dry_run:
+        print("Dry run: would stop and restart the harness session.")
+        return 0
+
     from zf.cli.stop import run as stop_run
     from zf.cli.start import run as start_run
 

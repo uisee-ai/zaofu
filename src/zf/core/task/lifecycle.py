@@ -27,6 +27,7 @@ from typing import Iterable
 
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task
+from zf.core.task.pipeline_event_scope import task_pipeline_event_scope
 
 
 # Phase-progress events emitted by workers, ordered as they typically
@@ -75,10 +76,19 @@ def derive_phase(
         return None
     latest: str | None = None
     target_id = task.id
-    for event in events:
+    for event in task_pipeline_event_scope(task, events):
         if event.task_id != target_id:
             continue
         phase = _PHASE_BY_EVENT.get(event.type)
+        if (
+            event.type == "task.pipeline.stage.dispatched"
+            and event.origin == "kernel"
+            and (not task.active_dispatch_id
+                 or event.payload.get("dispatch_id") == task.active_dispatch_id)
+        ):
+            phase = {"impl": "impl_running", "verify": "test_running"}.get(
+                event.payload.get("task_pipeline_stage")
+            )
         if phase is not None:
             latest = phase
     return latest

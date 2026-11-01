@@ -532,6 +532,7 @@ def _apply_return_to_plan(
         task_map_generation=payload["task_map_generation"],
         plan_artifact_package_ref=package_ref,
         plan_artifact_package_digest=package_digest,
+        **replan_resynth.replan_semantic_context(payload),
     )
     resynth = replan_resynth.build_replan_resynth_event(
         plan=plan,

@@ -207,6 +207,14 @@ text.
 
 ## Human Review Before Approval
 
+For product specification and technical-design sufficiency, apply
+`zf-plan-execution-readiness/references/spec-design-readiness.md`: organize
+user stories by value with observable success criteria, resolve the contracts
+needed by the current implementation frontier, and retain later obligations.
+Reuse authoritative source bodies through precise refs; an index alone is not
+a synthesized specification. Critic reports each review dimension and its
+actual scope before making an explicit content-completeness claim.
+
 For the standard PRD Plan, apply `zf-plan-execution-readiness` and its
 `references/human-review.md` before submission. Lead the accepted Plan with
 user goals, scope/conditional scope, phase outcomes and owner decisions;

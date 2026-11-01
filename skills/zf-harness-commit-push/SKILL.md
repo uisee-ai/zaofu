@@ -96,7 +96,7 @@ this skill.
    - `push_only`: push the requested ref but do not merge or clean a worktree;
    - `direct_dev`: commit/push on `dev`; there is no source worktree closeout;
    - `merge_to_dev`: capture `source_worktree`, `source_branch`, and
-     `source_head`, then continue through merge, verification, and closeout;
+     `source_head`, then continue through merge, verification, and automatic closeout;
    - do not infer merge or remote mutation from a commit-only request.
 7. Merge / push:
    - only the designated `dev` merge owner may land a work branch;
@@ -111,6 +111,9 @@ this skill.
      on conflict, abort the merge and retain the source worktree and branch;
    - run the required post-merge verification and re-run the dev pre-merge
      sentinel gate on the merged `dev` checkout;
+   - 合并及合并后验证通过，自动触发第 8 步；合并授权包含本次 source worktree
+     的正常清理，不再单独询问是否删除。用户明确要求保留 worktree 时保留并报告。
+     此触发不依赖 push；仅 commit、仅 push、合并冲突或验证失败均不触发删除。
    - push only when explicitly requested. If no upstream exists, use
      `git push -u origin HEAD`; never force-push;
    - deleting a remote work branch is also a remote mutation and requires an
@@ -118,6 +121,8 @@ this skill.
 8. Close out a landed worktree:
    - perform cleanup from the designated `dev` merge-owner checkout, never from
      an agent session whose current workspace is the source worktree;
+   - 只清理本次记录的 `source_worktree` / `source_branch`；删除前重新确认其分支
+     和 HEAD 仍分别为记录的 `source_branch` / `source_head`。不批量删除其他 worktree。
    - confirm `source_head` is reachable from `dev` with
      `git merge-base --is-ancestor <source_head> dev`. For an explicitly
      requested cherry-pick, prove patch equivalence instead of relying on hash
@@ -126,12 +131,19 @@ this skill.
      is green;
    - inspect the source with
      `git -C <source_worktree> status --short --untracked-files=all`;
+   - 同时用 `git -C <source_worktree> ls-files --others --ignored --exclude-standard`
+     检查被忽略的文件；若含未归档 backlog、候选代码或待保留资料，保留 worktree
+     并报告。只有确认可丢弃的缓存、构建产物等才可随 worktree 删除。
    - confirm no tmux pane or active agent/process still uses the source path;
    - if any commit, staged change, tracked modification, untracked path, or
      active user remains, retain both worktree and branch and report
      `closeout=merged_not_closed` with exact blockers;
    - otherwise run `git worktree remove <source_worktree>`,
      `git branch -d <source_branch>`, and `git worktree prune`;
+   - 逐项检查命令结果，再用 `git worktree list --porcelain`、路径是否存在及
+     `git show-ref --verify refs/heads/<source_branch>` 核实删除结果。仅全部成功才报告
+     `closeout=complete`；任一步失败则报告 `closeout=merged_not_closed`、实际已完成项、
+     残留项和原因，不强制删除。
    - run `python scripts/worktree-doctor.py --base-branch dev` when available
      and report any remaining stale or dirty entries;
    - if cleanup was requested for an already-landed worktree, run this same
@@ -300,6 +312,7 @@ Final response should include:
 - validation run and result;
 - unrelated dirty files intentionally left out;
 - source worktree/branch, cleanup result, and exact blockers when retained;
+- `worktree_removed`、`branch_deleted`，以及保留时的具体原因（含用户要求保留）；
 - `closeout=complete|merged_not_closed|not_applicable`;
 - diff risk level when the fallback applied.
 

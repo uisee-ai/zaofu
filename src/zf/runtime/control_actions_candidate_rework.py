@@ -374,6 +374,10 @@ class CandidateReworkActionsMixin:
             **scope_payload,
         }
         event_payload.update(replan_semantic_context(payload))
+        from zf.runtime.plan_requirement_amendment import amendment_binding
+        owner_binding = amendment_binding(self.state_dir, str(
+            payload.get("workflow_run_id") or payload.get("trace_id") or ""))
+        event_payload.update(owner_binding)
         replan = self.writer.emit(
             "orchestrator.replan_requested",
             actor="zf-cli",
@@ -383,7 +387,7 @@ class CandidateReworkActionsMixin:
         )
         emitted = [replan.id]
         resynth = _build_resynth_event(
-            {**payload, **scope_payload},
+            {**payload, **scope_payload, **owner_binding},
             state_dir=self.state_dir,
             config=self.config or ZfConfig(),
         )

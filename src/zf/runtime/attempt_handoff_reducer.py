@@ -472,6 +472,26 @@ def _request_id(
         candidate = str(value or "").strip()
         if candidate in handoffs:
             return candidate
+    # Task pipeline retries bind the request inside typed feedback instead of
+    # changing dispatch causation (which still points at the admitted Plan).
+    if event.type == "task.dispatched" and payload.get("task_pipeline_stage") == "impl":
+        feedback = payload.get("rework_feedback")
+        if isinstance(feedback, list):
+            for item in feedback:
+                if not isinstance(item, Mapping):
+                    continue
+                request_id = str(item.get("blocking_event_id") or "")
+                handoff = handoffs.get(request_id)
+                if (
+                    handoff is not None
+                    and handoff["status"] == "published"
+                    and handoff["task_id"] == _task_id(event, payload)
+                    and all(
+                        handoff.get(key) and handoff[key] == payload.get(key)
+                        for key in ("workflow_run_id", "task_map_generation")
+                    )
+                ):
+                    return request_id
     return ""
 
 

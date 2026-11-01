@@ -467,6 +467,9 @@ def prepare_plan_artifact_package(
     """Build Claim Set and Package from explicit caller refs only."""
 
     event_list = list(events)
+    from zf.runtime.plan_requirement_amendment import amendment_binding, amended_claim_set_baseline
+    owner_binding = amendment_binding(state_dir, workflow_run_id, events=event_list)
+    payload = {**payload, **owner_binding}
     mode = artifact_package_mode(metadata)
     if mode == "off":
         return {}, {}, {"mode": mode, "status": "off"}
@@ -524,6 +527,13 @@ def prepare_plan_artifact_package(
         flow_kind=flow_kind,
         required_ports=required_ports,
     )
+    if owner_binding:
+        name = "issue_spec" if flow_kind == "issue" else "requirement_spec"
+        explicit_ports[name] = {
+            "logical_name": name, "artifact_kind": name,
+            "schema_version": "requirement-spec.v1", "producer_stage_id": producer_stage_id,
+            "ref": owner_binding["requirement_spec_ref"], "sha256": owner_binding["requirement_spec_digest"],
+        }
     explicit_ports["goal_claim_set"] = {
         "logical_name": "goal_claim_set",
         "artifact_kind": "goal_claim_set",
@@ -575,7 +585,7 @@ def prepare_plan_artifact_package(
             if isinstance(hydrated_claim.payload, Mapping):
                 previous_claim_set = hydrated_claim.payload
         continuity = mandatory_claim_continuity(
-            previous_claim_set,
+            amended_claim_set_baseline(state_dir, workflow_run_id, previous_claim_set),
             claim_set,
             claim_waivers=_goal_claim_waivers(payload),
             active_waiver_refs=_active_goal_claim_waiver_refs(

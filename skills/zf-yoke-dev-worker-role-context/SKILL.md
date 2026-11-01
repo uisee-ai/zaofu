@@ -78,14 +78,22 @@ briefing，再按下表触发；同一会话中已完整读过且版本未变的
 - Execute each declared command exactly as stored. Do not repair quoting,
   escaping, paths, or arguments and then claim the rewritten command under the
   original command id; report a Planner/contract blocker instead.
+- “As stored” means the decoded command string, not JSON/YAML display escaping.
+  After required reads, parse the bound contract snapshot, select the command
+  by ID, and pass that value directly to the execution API (for example,
+  `subprocess.run(command, shell=True, ...)`). Do not manually transcribe its
+  serialized representation into another shell string. Record the executed
+  value/digest; before blaming the contract, compare it with the snapshot's
+  decoded value. A transcription failure requires correcting the invocation,
+  not rewriting the contract or reporting an upstream blocker.
 - Before editing, inspect the briefing's Controlled Artifact Inputs and consume
   every declared `required_reads` row through literal sanctioned `zf artifact
   read` commands (or the authenticated `--required` batch), using its exact
   attempt id, source id, artifact id, and JSON path. Reading the backing path with `cat`, `jq`, or an editor may help
   exploration but does not satisfy the runtime read ledger.
-- 必需工件正文首次完整读取后，避免无目的重复读取；小批量 `--required` 返回 JSONL，
-  各行 `content` 是正文，`aliases` 表示已分别鉴权、校验和记账的相同内容来源。
-  大批量返回 `required-artifact-page.v2`，一页可含多个来源，读取每个 `items[].content`，用同一命令加
+- 必需工件正文首次完整读取后，避免无目的重复读取；`--required` 统一返回
+  `required-artifact-page.v2`，`aliases` 表示已分别鉴权、校验和记账的相同内容来源。
+  一页可含多个来源，读取每个 `items[].content`，用同一命令加
   `--cursor <next_cursor>` 完整续读到 `next_cursor=null`；不要退回逐个别名重读。
   单项分页才使用 `--page-start` / `--page-size` 和 `next_page_start`。
   不要用 shell 循环把所有页再拼成超大输出。

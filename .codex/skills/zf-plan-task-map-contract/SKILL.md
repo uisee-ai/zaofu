@@ -177,6 +177,19 @@ artifact and digest remain authoritative. This is an input artifact, not another
 task contract. By default existing ports retain full reads; do not wrap
 fixed-schema acceptance/test matrices or silently discard requirements.
 
+For shared design contracts, identify producer/consumers, the contract version
+or same-package anchor, and each consumer's required inputs, outputs and failure
+semantics. Keep the authoritative body once; selected inputs must expose its
+binding and the consumer's applicable obligations, not only a sibling Task name.
+Link current prerequisite decisions to their producer, affected Task IDs,
+latest use point and closure evidence in the existing Decision Register.
+Reflect real producer dependencies in `blocked_by`; a prose promise is not an
+automatic dispatch gate. A design-producing Task may establish its owned
+contract before its own implementation/Verify where authorized, but downstream
+consumers cannot independently invent the unresolved shared protocol.
+Preserve future mandatory scope without blocking unrelated ready work. These
+are authoring/review obligations inside existing ports, not new Task fields.
+
 For an explicitly reviewed task-local consumption contract, a Task Map entry
 may declare `evidence_contract.plan_input_selection` with exactly
 `schema_version: "task-plan-input-selection.v1"` and nonempty

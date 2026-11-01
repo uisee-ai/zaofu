@@ -143,8 +143,12 @@ def build_canonical_required_reads(
                 or source_id in {
                     "goal-objective",
                     "requirement",
+                    "owner-requirement-amendment",
                     "review-artifact",
                     "plan-rework-context",
+                    "plan-rework-package",
+                    "plan-rework-decision",
+                    "plan-rework-delta",
                     "plan-execution-review",
                     "workflow-input",
                     "workflow-prompt",

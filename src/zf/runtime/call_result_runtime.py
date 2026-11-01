@@ -308,6 +308,11 @@ def prepare_call_operation(
             *critical_sources,
         ]
 
+    if output_profile_id == "plan-synth":
+        from zf.runtime.plan_review_replay import pin_replayed_review_usage
+
+        pin_replayed_review_usage(runtime, payload=payload, operation_id=operation_id)
+
     source_manifest, source_descriptor = CanonicalHandoffResolver(
         state_dir=runtime.state_dir,
         project_root=runtime.project_root,

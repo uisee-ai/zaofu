@@ -22,6 +22,15 @@ def _resolve_run_objective_ref(
     """Resolve the immutable objective artifact for one workflow run."""
 
     scoped_payloads = [payload]
+    # A controlled owner amendment is later Run authority; the original
+    # Workflow approval remains evidence of the historical launch only.
+    for event in reversed(events):
+        body = event.payload if isinstance(event.payload, dict) else {}
+        if (event.type == "plan.rejected" and event.actor == "operator"
+                and str(body.get("via") or "").startswith("controlled-action:")
+                and str(body.get("workflow_run_id") or body.get("trace_id") or "") == workflow_run_id
+                and body.get("requirement_amendment_ref") and body.get("requirement_spec_ref")):
+            return str(body["requirement_spec_ref"])
     for event in reversed(events):
         body = event.payload if isinstance(event.payload, dict) else {}
         identities = {

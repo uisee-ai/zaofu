@@ -118,3 +118,10 @@ def test_inline_numeric_budgets_preserve_chinese_and_markdown_punctuation():
     for value in ("123456", "0abc", "0-secret", "secret-value"):
         assert value not in redact_text(f"ACCESS_TOKEN={value}。后续正文")
     assert "0-secret" not in redact_text("token_budget=0-secret")
+
+
+def test_flow_context_window_count_survives_yaml_preview_redaction():
+    safe = "roleDefaults:\n  contextWindowTokens: 200000\n"
+    assert redact_text(safe) == safe
+    assert "200000-secret" not in redact_text("contextWindowTokens: 200000-secret")
+    assert "123456" not in redact_text("ACCESS_TOKEN: 123456")

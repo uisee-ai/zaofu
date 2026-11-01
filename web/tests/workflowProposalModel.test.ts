@@ -1,6 +1,7 @@
 import {
   diagnosticSeverity,
   readinessPresentation,
+  preparationFeedback,
   stageLevels,
   stagesForCurrentFlow,
   workflowViewForRequest,
@@ -11,6 +12,11 @@ function assert(condition: unknown, message: string): void {
 }
 
 function testLifecycleBuckets(): void {
+  assert(workflowViewForRequest({ status: "preparation_failed" }) === "decision", "failed preparation needs repair");
+  assert(workflowViewForRequest({ status: "synthesis_queued" }) === "active", "queued preparation is in progress");
+  assert(preparationFeedback("synthesis_queued", true).includes("not ready yet"), "enqueue must not claim a proposal exists");
+  assert(preparationFeedback("proposed", true) === "Proposal prepared.", "materialized proposals are ready");
+  assert(readinessPresentation({ blockerCount: 0, requestStatus: "preparation_failed", runStatus: "", terminal: "" }).tone === "error", "failed operation cannot look ready");
   assert(workflowViewForRequest({ status: "proposed" }) === "decision", "proposals need a decision");
   assert(workflowViewForRequest({ status: "clarifying" }) === "decision", "clarification needs a decision");
   assert(workflowViewForRequest({ status: "running" }) === "active", "running workflows are active");

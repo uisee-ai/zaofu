@@ -49,6 +49,7 @@ _POOL_KEYS = frozenset({
     "worker_profiles",
 })
 _CANDIDATE_ALIASES = {
+    "verifyWidth": "verify_width",
     "integrationCapacity": "integration_capacity",
     "rollingSmoke": "rolling_smoke",
     "incrementalEvent": "incremental_event",
@@ -58,6 +59,7 @@ _CANDIDATE_ALIASES = {
     "finalVerifyTarget": "final_verify_target",
 }
 _CANDIDATE_KEYS = frozenset({
+    "verify_width",
     "integration",
     "integration_capacity",
     "rolling_smoke",
@@ -142,6 +144,9 @@ def compile_task_pipeline_profile(
         values.get("integration_admission"), selected
     )
     candidate = _compile_candidate(values.get("candidate"), selected)
+    if "verify_width" in candidate:
+        if mode != "blocking" or candidate["verify_width"] > len(default_verify_roles):
+            raise TaskPipelineProfileError("candidate.verifyWidth requires blocking mode and must fit the configured verify roles")
     if admission["risk_review"]["enabled"] and "acceptance_review" not in pools:
         raise TaskPipelineProfileError(
             f"{selected}: enabled risk_review requires acceptance_review pool"
@@ -458,6 +463,13 @@ def _compile_candidate(raw: object, profile_id: str) -> dict[str, Any]:
         "partial_candidate_auto_ship": "forbidden",
         "final_verify_target": "frozen_exact_commit",
     }
+    if "verify_width" in values:
+        if type(values["verify_width"]) is not int:
+            raise TaskPipelineProfileError(f"{context}.verifyWidth must be an integer")
+        result["verify_width"] = _bounded_int(
+            values["verify_width"], minimum=1, maximum=32,
+            context=f"{context}.verifyWidth",
+        )
     for key, expected in required.items():
         if result[key] != expected:
             raise TaskPipelineProfileError(f"{context}.{key} must be {expected!r}")

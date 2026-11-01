@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.plan_review_packet import build_review_packet, render_human_review_dossier
+from zf.runtime.plan_review_decisions import read_decision_review
 from zf.runtime.plan_preview_artifacts import (
     PLAN_REVIEW_REF_FIELDS,
     preview_artifact_path,
@@ -362,6 +363,13 @@ def build_plan_preview(
                 "",
             ),
         )
+    if not authority_refs:
+        # The admitted Package already binds these authority ports and digests;
+        # source_index need not repeat the same refs as optional metadata.
+        authority_refs = list(dict.fromkeys(
+            item["ref"] for item in artifacts
+            if item["name"] in {"requirement_spec", "issue_spec"}
+        ))
     requirement_artifacts = [
         item for item in artifacts
         if str(item.get("name") or "").startswith("requirement_")
@@ -382,6 +390,9 @@ def build_plan_preview(
         }
         artifacts.append(item)
         requirement_artifacts.append(item)
+    decision_review = read_decision_review(
+        state_dir, project_root=project_root, artifacts=artifacts, action_items=decision_items,
+    )
     review_packet = build_review_packet(
         state_dir,
         project_root=project_root,
@@ -390,9 +401,22 @@ def build_plan_preview(
         authority_refs=authority_refs,
         markdown=markdown,
         task_map_summary=task_map_summary,
-        decision_items=decision_items,
+        decision_items=decision_review["items"],
         preview_bundle=preview_bundle,
+        decision_register_available=decision_review["available"],
     )
+    if decision_review["available"]:
+        from zf.runtime.plan_decision_register import pending_decisions
+        registered = {
+            str(item.get("decision_id") or item.get("id") or ""): item
+            for item in decision_review["items"]
+        }
+        # A bound register can close a displayed question, not create new ones.
+        decision_items = [item for item in decision_items if pending_decisions([
+            registered.get(str(item.get("decision_id") or item.get("id") or ""), item)
+        ])]
+    else:
+        decision_items = review_packet["owner_decision_items"]
     review_dossier = render_human_review_dossier(
         state_dir,
         project_root=project_root,
@@ -400,7 +424,7 @@ def build_plan_preview(
         artifacts=artifacts,
         authority_refs=authority_refs,
         task_map_summary=task_map_summary,
-        decision_items=decision_items,
+        decision_items=decision_review["items"],
         status=status,
         review_packet=review_packet,
     )
@@ -458,7 +482,7 @@ def build_plan_preview(
         "content_profile": str(
             preview_bundle.get("content_profile")
             or payload.get("plan_content_profile")
-            or ("derived_plan_full" if markdown else "unknown")
+            or ("derived_plan" if markdown else "unknown")
         ),
         "authority_refs": authority_refs,
         "requirement_artifacts": requirement_artifacts,
@@ -480,6 +504,7 @@ def build_plan_preview(
             "repair_chat": "chat-orchestrator",
         },
         "owner_decision_items": decision_items,
+        "decision_review": decision_review,
         "action_payload": {key: payload[key] for key in (
             "proposal_ref", "eval_ref", "candidate_task_map_ref", "approval_ref",
             "checkpoint_id", "workflow_run_id", "fanout_id", "source_event_id",
@@ -762,6 +787,12 @@ def _decision_items(payload: dict[str, Any], markdown: str) -> list[dict[str, An
     """
 
     items: dict[str, dict[str, Any]] = {}
+    from zf.runtime.plan_decision_register import decision_register_rows, pending_decisions
+    registered = decision_register_rows(markdown)
+    if registered is not None:
+        for item in pending_decisions(registered):
+            identity = str(item.get("decision_id") or item.get("id") or "")
+            items[identity] = {**item, "decision_id": identity}
     raw = payload.get("owner_decision_items")
     if isinstance(raw, list):
         for item in raw:
@@ -799,9 +830,9 @@ def _decision_items(payload: dict[str, Any], markdown: str) -> list[dict[str, An
         if not line.lstrip().startswith("|"):
             continue
         cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
-        if len(cells) < 2 or cells[0] in {"ID", "id", "---"} or set(cells[0]) <= {"-", ":"}:
+        if len(cells) < 2 or set(cells[0]) <= {"-", ":"}:
             continue
-        if not header and cells[0].lower() in {"id", "decision id"}:
+        if not header and cells[0].lower() in {"id", "decision id", "decision_id"}:
             header = [cell.lower() for cell in cells]
             continue
         decision_id = cells[0].strip()

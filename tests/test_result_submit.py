@@ -225,7 +225,7 @@ def _plan_candidate() -> dict:
     }
 
 
-def _running_plan_candidate_operation(tmp_path: Path):
+def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str = ""):
     runtime = _runtime(tmp_path)
     runtime.config.workflow.flow_metadata["result_protocol"][
         "semantic_submit_profiles"
@@ -241,6 +241,7 @@ def _running_plan_candidate_operation(tmp_path: Path):
         "attempt_domain": "plan",
         "canonical_success_event": "issue.triage.child.completed",
         "canonical_failure_event": "issue.triage.child.failed",
+        "result_semantics": result_semantics,
         "plan_candidate_validation": {
             "schema_version": "plan-candidate-validation-context.v1",
             "manifest": {

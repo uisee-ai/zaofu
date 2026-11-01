@@ -241,6 +241,40 @@ def test_effect_settlement_requires_matching_task(tmp_path):
     assert _settle_pending_action_effects(log.read_all(), writer) == 1
 
 
+def test_cross_task_cancel_reopens_semantic_replan_effect_once(tmp_path):
+    from zf.core.events.log import EventLog
+    from zf.core.events.writer import EventWriter
+    from zf.runtime.run_manager import _settle_pending_action_effects
+
+    log = EventLog(tmp_path / "events.jsonl")
+    writer = EventWriter(log)
+    pending = _event("run.manager.action.effect.pending", "case", effect_id="effect",
+                     action="semantic-replan-request", source_event_id="failed-a",
+                     request_id="request-key-a")
+    log.append(pending)
+    for event in [
+        ZfEvent(id="request-a", type="flow.discovery.requested", payload={
+            "schema_version": "semantic-replan-request.v1", "request_id": "request-key-a",
+            "task_id": "TASK-1", "rework_of": "failed-a", "workflow_run_id": "workflow-1",
+            "handoff_kind": "task_base_recovery"}),
+        ZfEvent(type="fanout.started", payload={"fanout_id": "a", "trigger_event_id": "request-a"}),
+        ZfEvent(id="request-b", type="flow.discovery.requested", payload={
+            "schema_version": "semantic-replan-request.v1", "task_id": "TASK-2",
+            "workflow_run_id": "workflow-1", "handoff_kind": "task_base_recovery"}),
+        ZfEvent(type="fanout.started", payload={"fanout_id": "b", "trigger_event_id": "request-b"}),
+        ZfEvent(id="cancel-a", type="fanout.cancelled", payload={
+            "fanout_id": "a", "superseded_by": "b", "reason": "superseded_by_latest_fanout"}),
+    ]:
+        log.append(event)
+    assert _settle_pending_action_effects(log.read_all(), writer) == 1
+    assert _settle_pending_action_effects(log.read_all(), writer) == 0
+    case = build_recovery_case_projection(log.read_all())["cases"][0]
+    assert case["status"] == "open"
+    assert case["consecutive_failures"] == 1
+    failed = [event for event in log.read_all() if event.type == "run.manager.action.effect.failed"]
+    assert failed[0].payload["observed_event_id"] == "cancel-a"
+
+
 def test_effect_timeout_reopens_case_once(tmp_path):
     from datetime import datetime, timedelta, timezone
     from zf.core.events.log import EventLog

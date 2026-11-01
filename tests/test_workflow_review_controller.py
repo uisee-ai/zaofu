@@ -16,12 +16,18 @@ from zf.runtime.workflow_synthesis_consumer import consume_workflow_synthesis_op
 
 
 @pytest.fixture
-def preview(assembly):
+def preview(assembly, request):
     base, state, _, result, writer = assembly
+    required_approval = bool(getattr(request, "param", False))
+    objective = "Deliver Hello with V5"
+    if required_approval:
+        objective += ". Plan requires my approval before implementation."
+        result["short_flow_spec"]["parameters"]["approval_requirements"] = {
+            "plan": "required", "source_quotes": ["Plan requires my approval before implementation."]}
     service = ControlledActionService(state, writer, config=load_config(base), project_root=base.parent,
                                      actor="operator", source="kanban-agent", surface="web")
     queued = _execute(service, "workflow-request", {
-        "request_id": "v5-raw", "kind": "auto", "objective": "Deliver Hello with V5",
+        "request_id": "v5-raw", "kind": "auto", "objective": objective,
         "source_ref": "prd.md", "target_root": ".", "backend": "mock", "synthesis_backend": "mock",
         "allow_missing_env": True, "acceptance": ["Hello and unittest pass"],
     })
@@ -137,3 +143,10 @@ def test_review_still_rechecks_registered_package_at_compile_time(preview, monke
         review.apply(draft)
     assert not any(e.type == "web.action.completed" and e.payload.get("preview_review_digest") == draft["sha256"]
                    for e in review.writer.event_log.read_all())
+
+
+@pytest.mark.parametrize("preview", [True], indirect=True)
+def test_required_plan_approval_cannot_be_disabled_by_raw_agent(preview):
+    review, binding = preview
+    with pytest.raises(PreviewReviewError, match="approval"):
+        draft_for(review, binding, ".workflow.plan_approval", False)

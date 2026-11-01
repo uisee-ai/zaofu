@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
-from zf.runtime.goal_closure_lifecycle_evidence import plan_lifecycle_evidence
+from zf.runtime.goal_closure_lifecycle_evidence import plan_lifecycle_evidence, workflow_lifecycle_evidence
 from zf.runtime.run_scope import resolve_run_for_event, run_aliases
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
@@ -80,6 +80,8 @@ def build_closure_identity(
         candidate_head_commit=candidate_head,
         package_identity=package_identity,
     )
+    from zf.runtime.plan_requirement_amendment import current_owner_amendment
+    amendment = current_owner_amendment(state_dir, workflow_run_id, events=events)
     closure_source = {
         "schema_version": "closure-source.v1",
         "workflow_run_id": workflow_run_id,
@@ -91,6 +93,10 @@ def build_closure_identity(
         **product_acceptance_identity,
         "source_event_type": source_event.type,
         "source_payload": _stable_source_payload(payload),
+        **({"owner_requirement_amendment": amendment} if amendment else {}),
+        "workflow_lifecycle_evidence": workflow_lifecycle_evidence(
+            events, workflow_run_id=workflow_run_id,
+        ),
         "plan_lifecycle_evidence": plan_lifecycle_evidence(
             events,
             workflow_run_id=workflow_run_id,

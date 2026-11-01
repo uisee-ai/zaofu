@@ -55,6 +55,14 @@ class PlanArtifactReview:
             raise PreviewReviewError("plan_not_pending", "该计划已进入执行，请通过运行中的重新规划入口变更")
         contract = {"plan_id": ctx["plan_id"], "artifact": ctx["artifact"], "digest": ctx["digest"],
                     "body": ctx["body"], "quote": quote, "mode": mode, "message": message}
+        from zf.runtime.plan_requirement_amendment import review_contract_context, validate_contract_changes
+        try:
+            contract_context = review_contract_context(
+                self.state_dir, self.project_root, self.writer.event_log.read_all(), ctx["preview"])
+        except (OSError, ValueError) as exc:
+            raise PreviewReviewError("invalid_contract_binding", str(exc), 409) from exc
+        if contract_context:
+            contract["bound_contract"] = contract_context
         source = self.writer.emit("user.message", actor="web", payload={
             "source": "plan-artifact-preview", "target": "kanban-agent", "runtime_delivery": "headless",
             "conversation_id": f"plan-review:{ctx['plan_id']}", "message": message,
@@ -68,6 +76,12 @@ class PlanArtifactReview:
                      "discuss 模式省略 replacement；revise 模式保留引用外所有内容。"
                      "chat 模式根据用户意图讨论、追问或修改：只在用户明确要求局部修改且信息充分时返回 replacement，"
                      "否则仅返回 answer。replacement 必须是引用片段的完整替换文本，不包含引用外内容。"
+                     "若有 bound_contract，修改时必须同时返回 contract_changes={requirement:[],claims:[]}。"
+                     "判断引用修改是否改变产品要求；纯措辞修改返回空列表。产品要求变化时，requirement 列出"
+                     "所有受影响的原始 Requirement 文本叶子 {path,before,after}，path 使用 /objective、"
+                     "/acceptance/N、/constraints/N、/scope/N 或 /clarification_answers/N/answer；"
+                     "claims 列出受影响强制条款 {goal_claim_id,before,after}，只改文字，不删条款或弱化验收责任。"
+                     "before 必须逐字来自绑定版本，其他约束保持；这些正式合同差异与文档差异一起由用户 Apply。"
                      "禁止写文件、批准或启动执行。\n"
                      + json.dumps(contract, ensure_ascii=False)), scope="project",
             thread_key=f"plan-review:{ctx['plan_id']}:{ctx['digest']}",
@@ -78,7 +92,7 @@ class PlanArtifactReview:
             reply = json.loads(result.reply)
         except (ValueError, TypeError) as exc:
             raise PreviewReviewError("invalid_reply", "Agent 输出不是审阅 JSON", 422) from exc
-        if not isinstance(reply, dict) or not isinstance(reply.get("answer"), str) or set(reply) - {"answer", "replacement"}:
+        if not isinstance(reply, dict) or not isinstance(reply.get("answer"), str) or set(reply) - {"answer", "replacement", "contract_changes"}:
             raise PreviewReviewError("invalid_reply", "Agent 输出不符合局部审阅合同", 422)
         ctx = self.context({**payload, "digest": ctx["digest"]})
         draft_ref, after = None, ""
@@ -88,19 +102,28 @@ class PlanArtifactReview:
             replacement = reply["replacement"]
             if not isinstance(replacement, str) or len(replacement) > 100_000:
                 raise PreviewReviewError("invalid_patch", "替换片段必须为有界文本", 422)
+            changes = reply.get("contract_changes", {"requirement": [], "claims": []})
+            try:
+                if contract_context and "contract_changes" not in reply:
+                    raise ValueError("请明确声明本次修改对 Requirement 和强制条款的影响")
+                validate_contract_changes(contract_context, changes)
+            except ValueError as exc:
+                raise PreviewReviewError("invalid_contract_change", str(exc), 422) from exc
             after = ctx["body"][:start] + replacement + ctx["body"][end:]
             draft_ref = write_immutable_json_sidecar(self.state_dir, {
                 "schema_version": SCHEMA, "plan_id": ctx["plan_id"], "name": ctx["name"],
                 "digest": ctx["digest"], "artifact": ctx["artifact"], "quote": quote,
                 "replacement": replacement, "body": after, "answer": reply["answer"],
                 "source_event_id": source.id,
+                "contract_context": contract_context, "contract_changes": changes,
             }, root="workflow/plan-reviews", kind="plan_artifact_review", schema_version=SCHEMA,
                created_by="plan-artifact-review", source_event_id=source.id)
         self.writer.emit("kanban.agent.reply", actor="web", causation_id=source.id, payload={
             "source": "plan-artifact-preview", "answer": reply["answer"], "review_ref": draft_ref,
             "plan_id": ctx["plan_id"], "mutates_task_state": False})
         return {"ok": True, "answer": reply["answer"], "draft_ref": draft_ref,
-                "before": quote["text"], "after": reply.get("replacement", ""), "preview": after}
+                "before": quote["text"], "after": reply.get("replacement", ""), "preview": after,
+                "contract_changes": reply.get("contract_changes", {})}
 
     def apply(self, descriptor: dict) -> dict:
         draft = hydrate_sidecar_ref(self.state_dir, descriptor).payload
@@ -124,7 +147,8 @@ class PlanArtifactReview:
             reason = (f"{reason_marker}\n用户已确认局部修订。读取不可变审阅工件 {descriptor['ref']} "
                       f"(sha256={descriptor['sha256']})，其中 body 是修订后完整文档。"
                       "仅替换 quote 指定片段，其他内容保持不变；更新相关计划与验收映射后重新提交预览，禁止直接接纳。")
-            payload = {**preview.get("action_payload", {}), "plan_id": ctx["plan_id"], "reason": reason}
+            payload = {**preview.get("action_payload", {}), "plan_id": ctx["plan_id"], "reason": reason,
+                       "plan_review_ref": descriptor}
             requested = self.writer.emit("web.action.requested", actor="web", payload={
                 "action": action, "payload": payload, "plan_review_ref": descriptor})
             result = ControlledActionService(self.state_dir, self.writer, config=self.config,

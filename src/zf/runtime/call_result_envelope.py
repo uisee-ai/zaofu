@@ -378,6 +378,7 @@ def validate_call_result_envelope(
     *,
     require_target_snapshot: bool = False,
     require_read_proof: bool = False,
+    allow_incomplete_reads: bool = False,
 ) -> list[dict[str, str]]:
     """Return stable, machine-readable protocol issues."""
 
@@ -440,7 +441,12 @@ def validate_call_result_envelope(
             for field in ("read_ledger_ref", "read_ledger_digest"):
                 if not str(consumption.get(field) or "").strip():
                     issues.append(_issue(f"input_consumption.{field}", "missing_required"))
-            if str(consumption.get("status") or "") != "satisfied":
+            allowed_statuses = {"satisfied"}
+            if (allow_incomplete_reads and isinstance(execution, Mapping)
+                    and execution.get("status") == "failed" and isinstance(control, Mapping)
+                    and control.get("schema_version") == "workflow-read-result.v1"):
+                allowed_statuses.add("incomplete")
+            if str(consumption.get("status") or "") not in allowed_statuses:
                 issues.append(_issue("input_consumption.status", "not_satisfied"))
     return issues
 

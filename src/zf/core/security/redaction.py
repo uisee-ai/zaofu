@@ -64,7 +64,7 @@ def _sensitive_key(key: object) -> bool:
     )
 
 
-_NUMERIC_TOKEN_FIELDS = frozenset({"token_budget", "context_window_tokens", "max_tokens"})
+_NUMERIC_TOKEN_FIELDS = frozenset({"token_budget", "context_window_tokens", "contextwindowtokens", "max_tokens"})
 
 
 def _redact_secret_assignment(match: re.Match[str]) -> str:

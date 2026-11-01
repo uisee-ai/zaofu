@@ -202,17 +202,37 @@ def prepare_request_revision(
             "open_questions": request.get("open_questions", []),
             "missing_required_fields": request.get("missing_required_fields", []),
         }
+    from zf.runtime.workflow_git_readiness import preparation_git_diagnostics
+    if blockers := preparation_git_diagnostics(project_root):
+        return {**common, "ok": False, "status": "preparation_blocked",
+                "blockers": blockers, "reason": blockers[0]["message"], "can_retry": True}
+    context = dict(previous.get("operation_context") or {})
+    if previous.get("request_revision") != request.get("revision"):
+        context.pop("retry_of_operation_id", None)
+        context.pop("reusable_synthesis_result_ref", None)
     if previous.get("request_revision") == request.get("revision"):
         operation = previous["_operation"]
-        return {
-            **common,
-            "status": "synthesis_queued",
-            "synthesis_operation_id": operation["operation_id"],
-            "synthesis_request_hash": operation["request_hash"],
-            "operation_status": operation["status"],
-            "operation_ref": f"/api/projects/{project_id}/workflow-operations/{operation['operation_id']}",
-        }
-    context = dict(previous.get("operation_context") or {})
+        status = operation["status"]
+        if status in {"failed", "blocked"} and payload.get("retry_failed") is True:
+            context["retry_of_operation_id"] = operation["operation_id"]
+            context.pop("reusable_synthesis_result_ref", None)
+            if operation.get("admitted_call_result_ref"):
+                context["reusable_synthesis_result_ref"] = operation["admitted_call_result_ref"]
+        else:
+            terminal = status in {"failed", "blocked", "cancelled", "superseded"}
+            return {
+                **common,
+                "ok": not terminal,
+                "status": ("preparation_failed" if terminal else
+                           "proposed" if request.get("proposal_ref") else
+                           "synthesis_running" if status in {"running", "settled"} else "synthesis_queued"),
+                "reason": str(operation.get("reason") or "") if terminal else "",
+                "can_retry": status in {"failed", "blocked"},
+                "synthesis_operation_id": operation["operation_id"],
+                "synthesis_request_hash": operation["request_hash"],
+                "operation_status": status,
+                "operation_ref": f"/api/projects/{project_id}/workflow-operations/{operation['operation_id']}",
+            }
     context.update(
         {
             key: value
