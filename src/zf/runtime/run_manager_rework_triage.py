@@ -893,7 +893,17 @@ def triage_action_preflight(
         failures.append("missing_failure_fingerprint")
     if action == TRIAGE_REQUEST_ACTION:
         threshold = int(payload.get("triage_threshold") or 3)
-        if int(payload.get("failure_count") or 0) < threshold:
+        # A current, admitted Impl result is a review of one concrete failure,
+        # not a retry-exhaustion triage. Its producer binds the request to the
+        # task, operation and generation; the checkpoint rechecks freshness.
+        execution_review = (
+            payload.get("failure_class") == "settled_impl_requires_semantic_review"
+            and payload.get("source_event_type") == "workflow.call.result.admitted"
+            and bool(payload.get("target_operation_id"))
+            and bool(payload.get("task_map_generation"))
+            and int(payload.get("failure_count") or 0) >= 1
+        )
+        if not execution_review and int(payload.get("failure_count") or 0) < threshold:
             failures.append("failure_count_below_semantic_triage_threshold")
         if not _string_list(payload.get("source_event_ids")):
             failures.append("missing_failure_evidence")

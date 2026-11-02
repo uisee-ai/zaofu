@@ -46,6 +46,42 @@ def test_contract_mutation_after_review_invalidates_execution(tmp_path):
     assert outcome["reason"] == "execution_target_changed:TASK-1"
 
 
+def test_user_goal_change_after_review_rejects_old_decision(tmp_path):
+    from zf.core.events.model import ZfEvent
+
+    runtime, prepared = _bounded(tmp_path)
+    event = _submit_rework(runtime, prepared)
+    runtime.event_writer.append(ZfEvent(
+        type="run.goal.updated", correlation_id="run-semantic-1",
+        payload={"run_id": "run-semantic-1", "objective": "Updated user decision"},
+    ))
+    assert apply_orchestrator_agent_decision(runtime, event)["reason"] == "execution_goal_changed"
+
+
+def test_other_run_goal_change_does_not_invalidate_execution(tmp_path):
+    from zf.core.events.model import ZfEvent
+
+    runtime, prepared = _bounded(tmp_path)
+    event = _submit_rework(runtime, prepared)
+    runtime.event_writer.append(ZfEvent(
+        type="run.goal.updated", correlation_id="other-run",
+        payload={"run_id": "other-run", "objective": "Unrelated decision"},
+    ))
+    assert apply_orchestrator_agent_decision(runtime, event)["applied"] is True
+
+
+def test_status_only_goal_update_does_not_invalidate_execution(tmp_path):
+    from zf.core.events.model import ZfEvent
+
+    runtime, prepared = _bounded(tmp_path)
+    event = _submit_rework(runtime, prepared)
+    runtime.event_writer.append(ZfEvent(
+        type="run.goal.updated", correlation_id="run-semantic-1",
+        payload={"run_id": "run-semantic-1", "status": "active"},
+    ))
+    assert apply_orchestrator_agent_decision(runtime, event)["applied"] is True
+
+
 def test_policy_revocation_rejects_old_decision(tmp_path):
     runtime, prepared = _bounded(tmp_path)
     event = _submit_rework(runtime, prepared)
