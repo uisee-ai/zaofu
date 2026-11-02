@@ -246,3 +246,7 @@ review 和 Thin Judge/Goal closure 有各自范围；不得把 Impl 的
 `plan_input_selection` 当作 Judge 或全局验收的输入删减授权。必要共享约束、
 异常路径、跨任务影响有缺口时给出具体 ref/selector 与补充目标；历史批准、
 Impl 自检和目录可见性都不能代替独立验收结论。
+
+对关系/章节索引的命中需回读当前 Judge 授权正文；未命中或 complete=false 不证明
+无遗漏。恢复时检查 `artifact recover` 的身份和版本状态，不能将 Impl/Verify 消费
+历史当作 Judge 当前记忆，也不能凭恢复包越过受控准入或重新绑定。

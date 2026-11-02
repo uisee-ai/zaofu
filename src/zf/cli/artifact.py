@@ -88,12 +88,21 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     index_cmd = sub.add_parser("index", help="Browse authorized attempt input locators without consuming bodies")
     index_cmd.add_argument("--attempt", required=True)
     index_cmd.add_argument("--query", default="", help="Literal filter over source, artifact, path and ref")
+    index_cmd.add_argument("--relation-id", default="", help="Exact declared Task, REQ, AC or dependency id")
+    index_cmd.add_argument("--navigate", action="store_true", help="Include declared relations and Markdown section locators")
     index_cmd.add_argument("--cursor", default=None)
     index_cmd.add_argument("--limit", type=int, default=10)
     index_cmd.add_argument("--state-dir", default=None)
     from zf.cli.artifact_input_index import run_input_index
 
     index_cmd.set_defaults(func=run_input_index)
+    recover_cmd = sub.add_parser("recover", help="Reconstruct authorized current inputs without granting execution authority")
+    recover_cmd.add_argument("--attempt", required=True)
+    recover_cmd.add_argument("--cursor", default=None)
+    recover_cmd.add_argument("--state-dir", default=None)
+    from zf.cli.artifact_input_recovery import run_input_recovery
+
+    recover_cmd.set_defaults(func=run_input_recovery)
 
     read_cmd = sub.add_parser(
         "read",

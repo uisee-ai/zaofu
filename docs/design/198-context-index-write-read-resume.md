@@ -607,3 +607,46 @@ SELECT rowid FROM d WHERE d MATCH '"库存冻结"';
 尚未交付：正文 FTS/中文召回基准、真实 Provider token 节约证明和实际 delta canary。
 触发条件仍为精确/关系定位不足，以及 Provider 保留/压缩恢复资格通过；不以索引
 命中或宿主 I/O 减少推断模型 token 节约。
+
+## 16. 第二批实施：关系、发布与恢复（2026-11-02）
+
+基于第一批 `24990423`，在独立分支 `wip/codex-20261102-context-198-followup` 接续。
+本节覆盖第二批限定范围，不能将其等同于原 C1–C8 全部完成。
+
+| 能力 | 本批增加 | 仍需满足的条件 |
+| --- | --- | --- |
+| C3 关系导航 | 授权 selector 的固定快照内提取显式 `task_id(s)`、`requirement_id(s)`、`acceptance_id(s)`、`blocked_by/depends_on`、`source_ref(s)/image_ref(s)` 的字符串引用；Markdown 标题提供绑定版本的字符分页位置。`artifact index --relation-id AC-7` 精确定位，`--navigate` 展开，`--query` 也匹配声明 ID 和标题。 | 仅提取明确字段；正文散文中的 ID、图片区域含义及跨材料语义覆盖由生产者声明和 Critic 判断，不由提取器猜测。FTS 仍待精确/关系检索不足的证据。 |
+| C5 发布生命周期 | 既有 Artifact Catalog catch-up 在同一 SQLite 事务中生成发布导航并推进事件水位；缓存绑定 digest、schema/extractor，损坏可重建。Plan Package current/history/rejected 和取消事实仍由原 reducer 产生；旧 attempt 展示 superseded/rejected/unadmitted，不静默改绑。 | 只索引白名单产物，通用正文预览预算超限显示 unavailable；自定义发布物、任意笔记写入、全局 tombstone 仍未引入。 |
+| C6 恢复编排 | 实际 worker recovery briefing 与 Run Manager 恢复上下文均附当前任务输入恢复包；校验 canonical TaskAttempt、operation、dispatch 和 manifest。新增受 capability 保护的 `artifact recover --attempt <id>`，展示授权输入、当前检查点、自己角色的历史缺读和补读命令。 | 当前记忆始终 unknown；历史已读不省略重建必读。包不能授予 lease/执行权；已替代 package 要受控重新绑定。真实 Provider compaction 保留资格未验证。 |
+| C7 消费入口 | Task Inputs 展开关系/章节，展示导航不完整、发布生命周期、重新绑定提示和 worker 恢复命令。API 支持同项目的定位参数。 | 未生成模型 token/cache 收益数据，语义覆盖图仍依赖生产者声明。 |
+
+导航最多 512 项、20,000 个结构化节点，超限显式 `complete=false`；目录、发布导航、恢复包
+整响应保持 8192 UTF-8 字节预算并分页。精确关系命中只提供父授权 selector 和字段位置，
+不把子字段路径变成新的读取权限；标题定位只使用既有 `--page-start/--page-size`。
+目录和恢复包均不追加正文 read receipt，Verify/Judge 不能继承 Impl 的消费证据。
+
+发布导航使用已有 `artifact_reducer_projection` 有界缓存（最多 256 条），事务中断不能留下
+已提交的新水位或半发布目录。只见草稿 sidecar 时不产生 catalog occurrence。查询先验证
+occurrence 权限再给标题、计数和游标；相同 digest 不合并权限。API：
+`GET /api/artifacts/catalog/{identity}/navigation`（支持项目前缀）、
+`GET /api/projects/{project_id}/attempts/{attempt_id}/inputs?navigate=true&relation_id=AC-7`。
+导航结果本身不是当前 attempt 的来源绑定，后续正文仍经原 capability/manifest 路径读取。
+
+恢复输入不是新的状态机。无法确认当前身份、operation 已结束、manifest 不一致或检查点
+损坏时，返回 unavailable 或省略无效检查点；当前旧包被替代时给出 controlled rebind 建议，
+不会发布恢复事件、换 session、申请 lease 或修改 canonical stores。
+
+代码与测试：
+[导航提取](../../src/zf/runtime/artifact_navigation.py)、
+[发布投影](../../src/zf/runtime/artifact_query/navigation.py)、
+[生命周期](../../src/zf/runtime/artifact_input_lifecycle.py)、
+[恢复包](../../src/zf/runtime/artifact_input_recovery.py)、
+[发布原子性与 ACL](../../tests/test_artifact_publication_navigation.py)、
+[恢复调用链](../../tests/test_artifact_input_recovery.py)。
+本批验证命令与结果见对应 tasks 记录。
+
+应用时重启旧 runtime/Web Python 消费者并重建 Web；Catalog projector v4 会重建旧投影，
+不修改事件或已发布 manifest。新派发的 selector 快照才包含关系/章节导航；旧 manifest
+保留原目录和受控正文入口，不伪称已有导航。旧游标遇到版本/查询/生命周期变化后从首页
+重新定位。C4 保持第一批能力；C1 完整成本基线、C2 全角色真实资格、C8 实际 delta canary
+仍按原设计独立验证，不以本批自动化测试代替。

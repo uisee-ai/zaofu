@@ -30,6 +30,7 @@ CLAUDE_AGGREGATOR_ALLOWED_TOOLS: tuple[str, ...] = (
     "Bash(zf trace show *)",
     "Bash(zf artifact list *)",
     "Bash(zf artifact index *)",
+    "Bash(zf artifact recover *)",
     "Bash(zf artifact read *)",
     "Bash(zf result submit *)",
     "Bash(cat .zf/artifacts/*)",
@@ -56,6 +57,7 @@ def claude_aggregator_allowed_tools(config: ZfConfig | None) -> tuple[str, ...]:
             "trace show",
             "artifact list",
             "artifact index",
+            "artifact recover",
             "artifact read",
             "result submit",
         )

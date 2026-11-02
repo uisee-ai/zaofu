@@ -198,3 +198,7 @@ to perform a meaningful independent evaluation.
 缩减验收。Candidate Verify 仍按其完整包政策读取，不套用 Task Verify 的选择。
 压缩/换会话后先核对 task/attempt/target/ref/digest，再补读当前不再掌握的正文；
 `--resume` 只适用于仍能使用当前会话已交付材料时，不是记忆或理解证明。
+
+恢复时使用当前 Verify attempt 的 `artifact recover`；检查点、Impl 历史已读和关系
+命中都不能抵扣独立 Verify 必读。声明关系只定位授权正文；superseded/rejected 输入
+必须交回受控重绑定路径，不能自行切到新包继续验收。

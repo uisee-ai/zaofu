@@ -42,12 +42,15 @@ def input_index(
     *, manifest: dict[str, Any], required: list[dict[str, Any]] | None,
     identity: dict[str, str], reads: list[dict[str, Any]],
     query: str = "", cursor: str | None = None, limit: int = 10,
+    relation_id: str = "", navigate: bool = False,
+    lifecycle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Literal locator lookup; no global search, body loading or ACL union."""
-    if not 1 <= limit <= 50 or len(query) > 256:
+    if not 1 <= limit <= 50 or max(len(query), len(relation_id)) > 256:
         raise ValueError("input index requires limit 1..50 and query at most 256 characters")
     from zf.runtime.artifact_read_ledger import required_read_satisfied
     from zf.runtime.cli_command import zf_cli_cmd
+    from zf.runtime.artifact_navigation import matching_navigation
 
     attempt = str(manifest.get("attempt_id") or "")
     items = []
@@ -64,9 +67,11 @@ def input_index(
             if "$" not in allowed and path not in allowed:
                 continue
             locator = f"{source['source_id']} {source['artifact_id']} {path} {source['ref']}"
-            if query.casefold() not in locator.casefold():
-                continue
+            locator_match = query.casefold() in locator.casefold()
             snapshot = next((s for s in source.get("read_selections", []) if s.get("json_path") == path), {})
+            navigation = snapshot.get("navigation") or {}
+            matches = matching_navigation(navigation, relation_id=relation_id,
+                query="" if locator_match else query)
             policy = next((row for row in requirements if row.get("json_path", "$") == path), None)
             occurrence_reads = [r for r in reads if r.get("status") == "read"
                 and r.get("attempt_id") == attempt and r.get("source_id") == source["source_id"]
@@ -74,7 +79,7 @@ def input_index(
                 and r.get("occurrence_id") == source.get("occurrence_id") and r.get("json_path", "$") == path]
             args = ["artifact", "read", "--attempt", attempt, "--source", source["source_id"],
                     "--artifact", source["artifact_id"], "--json-path", path]
-            items.append({
+            item = {
                 "source_id": source["source_id"], "artifact_id": source["artifact_id"],
                 "occurrence_id": source.get("occurrence_id", ""), "ref": source["ref"],
                 "sha256": source["sha256"], "json_path": path,
@@ -86,9 +91,24 @@ def input_index(
                 "selected_sha256": snapshot.get("selected_sha256"),
                 "snapshot_status": "pinned" if snapshot else "legacy",
                 "read_command": f"{zf_cli_cmd()} {shlex.join(args)}", "cost": read_cost(occurrence_reads),
-            })
+                "navigation_count": len(navigation.get("entries", [])),
+                "navigation_complete": navigation.get("complete"),
+                "locator_id": canonical_json_sha256([source.get("occurrence_id"), source["source_id"], source["artifact_id"], path]),
+            }
+            if locator_match and not relation_id:
+                items.append(item)
+            if navigate or relation_id or (query and not locator_match):
+                for entry in matches:
+                    child = {**item, "navigation": entry,
+                        "locator_id": canonical_json_sha256([item["locator_id"], entry])}
+                    if entry["kind"] == "section":
+                        # Leave room for multibyte text and the read envelope.
+                        size = min(1024, max(1, entry["section_end"] - entry["page_start"]))
+                        child["read_command"] += f" --page-start {entry['page_start']} --page-size {size}"
+                    items.append(child)
     binding = canonical_json_sha256({"manifest": manifest, "requirements": required,
-                                    "identity": identity, "query": query})
+                                    "identity": identity, "query": query, "relation_id": relation_id,
+                                    "navigate": navigate, "lifecycle": lifecycle})
     start = 0
     if cursor:
         try:
@@ -108,6 +128,8 @@ def input_index(
         "read_purpose": str(manifest.get("read_purpose") or ""),
         "manifest_sha256": canonical_json_sha256(manifest),
         "scope": "authorized_attempt_inputs", "query_mode": "literal_locator",
+        "relation_id": relation_id, "lifecycle": lifecycle or {"status": "unknown"},
+        "recovery_command": f"{zf_cli_cmd()} artifact recover --attempt {shlex.quote(attempt)}",
         "total": len(items), "items": [], "next_cursor": None,
         "coverage": "manifest_only", "body_read_evidence": False,
         "required_policy_status": "available" if required is not None else "unknown",

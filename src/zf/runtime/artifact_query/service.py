@@ -19,6 +19,7 @@ from zf.runtime.artifact_query.models import (
     SourceSnapshot,
 )
 from zf.runtime.artifact_query.object_view import ArtifactObjectViewMixin
+from zf.runtime.artifact_query.navigation import ArtifactNavigationMixin
 from zf.runtime.artifact_query.extractors import iter_catalog_descriptors
 from zf.runtime.artifact_query.store import (
     EXTRACTOR_VERSION,
@@ -61,7 +62,7 @@ class ArtifactQueryError(ValueError):
     """A query cannot be answered without violating its requested mode."""
 
 
-class ArtifactQueryService(ArtifactObjectViewMixin):
+class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
     def __init__(
         self,
         *,
@@ -311,9 +312,10 @@ class ArtifactQueryService(ArtifactObjectViewMixin):
 
     def attempt_inputs(
         self, attempt_id: str, *, context: QueryContext,
-        query: str = "", cursor: str | None = None,
+        query: str = "", cursor: str | None = None, relation_id: str = "", navigate: bool = False,
     ) -> dict[str, Any]:
         from zf.runtime.artifact_input_index import input_index, load_attempt_source_manifest
+        from zf.runtime.artifact_input_lifecycle import input_lifecycle
         from zf.runtime.artifact_read_requirements import ArtifactReadRequirementError, required_reads_for_attempt
 
         manifest = load_attempt_source_manifest(self.state_dir, attempt_id)
@@ -330,7 +332,8 @@ class ArtifactQueryService(ArtifactObjectViewMixin):
             manifest=manifest, required=required,
             identity={"actor": context.actor, "role": context.role, "purpose": context.purpose},
             reads=self._read_rows(attempt_id), query=query, cursor=cursor,
-            limit=min(context.limit, 50),
+            limit=min(context.limit, 50), relation_id=relation_id, navigate=navigate,
+            lifecycle=input_lifecycle(manifest, events),
         )
 
     def attempt_inspect(

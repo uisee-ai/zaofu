@@ -506,6 +506,9 @@ def _project_record(
         else {}
     )
     for descriptor in iter_catalog_descriptors(state_dir, payload):
+        from .navigation import project_descriptor_navigation
+
+        project_descriptor_navigation(conn, state_dir, descriptor, record.seq)
         inserted = catalog_store._insert_descriptor(
             conn,
             project_root=project_root,

@@ -124,3 +124,10 @@ Workers do not mark tasks, candidates, or goals done themselves.
 - `yoke/tdd-evidence` - test-first and bug-reproduction method.
 - `yoke/incremental-delivery` - thin implementation/test/commit loop.
 - `yoke/git-evidence` - commit, worktree, and evidence discipline.
+
+### 输入恢复与版本
+
+换会话/压缩后先使用 briefing 中的 `artifact recover --attempt <id>` 查看当前绑定、
+授权目录和检查点，再补读必需正文。历史已读不证明当前记忆；旧 package 要求 rebind
+时走受控恢复，不自行修改 manifest 或执行状态。可用 `artifact index --relation-id <id>`
+定位声明的 REQ/AC，关系命中不能替代正文消费和结果证据。

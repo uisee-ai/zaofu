@@ -55,3 +55,27 @@ test("unavailable required policy is shown as unknown", async ({ page }) => {
   await page.locator("summary").click();
   await expect(page.locator("details")).toContainText("必读政策不可用");
 });
+
+test("relations and stale lifecycle explain bounded recovery without silently rebinding", async ({ page }) => {
+  await page.route("**/api/projects/*/attempts/*/inputs?*", route => {
+    const expanded = new URL(route.request().url()).searchParams.get("navigate") === "true";
+    return route.fulfill({ json: { ...body("PINNED"),
+      lifecycle: { status: "superseded", requires_rebind: true },
+      recovery_command: "zf artifact recover --attempt same-attempt",
+      items: [{ ...entry("PINNED"), locator_id: "base" }, ...(expanded ? [{ ...entry("PINNED"),
+        locator_id: "relation", navigation_complete: false,
+        navigation: { kind: "relation", id: "AC-7", relation: "acceptance", field_pointer: "/acceptance_ids/0" } }] : [])],
+    } });
+  });
+  await page.goto("/tests/task-inputs.html");
+  await expect(page.getByTestId("task-input-panel")).toContainText("已被新版本替代");
+  await expect(page.getByRole("alert")).toContainText("需要受控重新绑定");
+  await page.getByText("展开关系与章节").click();
+  const relation = page.locator("details").filter({ has: page.locator("summary", { hasText: "AC-7" }) });
+  await relation.locator("summary").click();
+  await expect(relation).toContainText("/acceptance_ids/0");
+  await expect(relation).toContainText("导航达到提取上限");
+  await page.getByTestId("input-recovery-entry").locator("summary").click();
+  await expect(page.getByTestId("input-recovery-entry")).toContainText("artifact recover --attempt same-attempt");
+  await expect(page.getByTestId("input-recovery-entry")).toContainText("不授予执行权限");
+});

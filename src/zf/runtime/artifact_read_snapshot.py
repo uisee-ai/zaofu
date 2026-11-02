@@ -37,6 +37,7 @@ def pin_read_selections(
 ) -> None:
     """Write blocks before the source manifest is published or capability-bound."""
     from zf.runtime.artifact_source_versions import read_source_version
+    from zf.runtime.artifact_navigation import build_navigation
 
     for source in manifest.get("sources", []):
         allowed = source.get("allowed_paths") or ["$"]
@@ -74,6 +75,7 @@ def pin_read_selections(
                 "selected_sha256": hashlib.sha256(content.encode()).hexdigest(),
                 "selected_bytes": len(content.encode()), "selected_chars": len(content),
                 "chunks": chunks,
+                "navigation": build_navigation(content),
             })
         source["read_selections"] = selections
 

@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **69** 个顶层命令 family、**307** 条可寻址命令路径。
+当前共 **69** 个顶层命令 family、**308** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -40,6 +40,7 @@ Artifact manifest helpers
 | `zf artifact manifest` | Artifact manifest commands |
 | `zf artifact manifest create` | Create a deterministic artifact manifest JSON |
 | `zf artifact read` | Read one attempt input and append read evidence |
+| `zf artifact recover` | Reconstruct authorized current inputs without granting execution authority |
 
 ## `zf attach`
 
