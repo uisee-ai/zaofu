@@ -1,6 +1,8 @@
-> 状态: active
+> 状态: done
 
 # 局部重规划的断点恢复闭环验证
+
+实现：`8822c42b fix: freeze complete run frontier after partial replans`。
 
 用户批准先在隔离环境验证恢复闭环；实际 DL 的监工、审批和恢复保持暂停。
 
