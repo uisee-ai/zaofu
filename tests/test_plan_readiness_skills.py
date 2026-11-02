@@ -70,6 +70,13 @@ def test_new_method_distribution_matches_canonical_source():
             ).read_bytes()
 
 
+def test_task_map_contract_distribution_matches_canonical_source():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "skills/zf-plan-task-map-contract/SKILL.md").read_bytes()
+    for provider in (".codex", ".claude"):
+        assert (root / provider / "skills/zf-plan-task-map-contract/SKILL.md").read_bytes() == source
+
+
 @pytest.mark.parametrize("name", ["zf-channel-discussion-synthesizer", "zf-requirement-reconciliation"])
 def test_reconciliation_distribution_matches_source(name):
     root = Path(__file__).resolve().parents[1]

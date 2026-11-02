@@ -63,6 +63,12 @@ briefing中的 `Compiled planning execution facts` 是当前已加载配置的�
 CLI read receipt 只证明页面已产出，不证明模型已接收、阅读或理解；无法恢复完整交付时
 报告 reader 执行失败，不以收据覆盖或旧版 verdict 冒充本次独立审查。
 
+若必读清单包含 `scoped_plan_review.json` 以及旧、新 Task Map 或补充规格的指定分区，
+先核对范围声明、旧新合同、原始需求/验收、前置与下游责任；完整 Task Map、全局
+来源与固定矩阵仍要按本次清单审阅。逐项判断声明是否遗漏语义影响，范围不明或需要
+更多上下文时，通过受控 artifact read 展开获授权的完整原文。历史 Critic 的通过记录
+只证明旧版本曾被审阅，不能代替本次独立 verdict 或产品 Verify。
+
 先读当前需求 authority，再对每个 AC 内部的条款审查，不能只统计顶层 AC。
 每条应能定位：来源 → 可观察结果 → 行为生产者 → 验证 owner/tier/command →
 最早可验证阶段。输入、状态变化、拒绝条件、失败后的观察结果不明确时补规格。

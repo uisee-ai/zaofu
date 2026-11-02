@@ -609,6 +609,13 @@ def render_attempt_source_briefing(
         ),
     ]
     if required:
+        if (any(str(row.get("artifact_id") or "") == "scoped_plan_review.json" for row in required if isinstance(row, Mapping))
+                and any(str(row.get("source_id") or "").startswith("baseline-plan-port-") for row in required if isinstance(row, Mapping))):
+            lines.append(
+                "- Local Plan review: the scope certificate is a claim, not approval. Compare old and new "
+                "contracts, affected prerequisites/consumers, requirements and verification ownership; "
+                "expand any authorized source if needed and independently decide the current verdict."
+            )
         if any("-predecessor-" in str(row.get("source_id") or "") for row in required if isinstance(row, Mapping)):
             lines.append(
                 "- Sources named `-predecessor-<task-id>` are historical predecessor "

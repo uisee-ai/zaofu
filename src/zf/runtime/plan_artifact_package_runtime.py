@@ -139,6 +139,9 @@ def admit_synthesized_plan_package(
         or trace_id
     ).strip()
     try:
+        from zf.runtime.plan_local_review_output import validate_local_review_output
+
+        validate_local_review_output(runtime, event=event, payload=payload)
         metadata = flow_metadata_for(runtime.config, payload=payload)
         identity = _admit(
             runtime,
