@@ -107,6 +107,8 @@ Workflow operation 详情展示 Kernel 预算事件绑定的累计处理量、�
   trigger、loop 和实验 seed；同时保留 Run/Task、故障类别与来源事件。路径字符串供定位，
   原描述符保留 digest、访问范围和 retention，读取仍需按原 state_dir 验证；不把 sidecar
   正文复制进事件，不把旧格式字符串或不识别的对象提升为带校验的 sidecar。
+  无显式 Run 时，诊断请求沿用当前 operation precondition 中已绑定的 Run 和 generation；
+  不从其他上下文猜测，显式 Run 与前置条件不一致时也不借用另一 Run 的 generation。
 
 ## 验证边界
 

@@ -34,6 +34,7 @@ def test_run_manager_evidence_survives_diagnostic_handoff(tmp_path):
     request = ZfEvent(id="rm-request", type="run.manager.autoresearch.requested", payload={
         "request_id": "request", "workflow_run_id": "run-1", "run_id": "run-1",
         "trace_id": "trace-1", "recovery_case_id": "case-1", "task_id": "TASK-1",
+        "task_map_generation": "generation-1",
         "failure_class": "no_progress_breaker", "source_event_ids": ["evt-original"],
         "source_ref": "events.jsonl#evt-original", "context_ref": context,
         "read_set_ref": read_set,
@@ -53,6 +54,7 @@ def test_run_manager_evidence_survives_diagnostic_handoff(tmp_path):
         assert payload["run_id"] == "run-1"
         assert payload["trace_id"] == "trace-1"
         assert payload["recovery_case_id"] == "case-1"
+        assert payload["task_map_generation"] == "generation-1"
         assert payload["failure_class"] == "no_progress_breaker"
         assert payload["source_event_ids"] == ["evt-original"]
     assert seed["task_id"] == "TASK-1"

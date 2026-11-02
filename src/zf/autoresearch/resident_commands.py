@@ -50,6 +50,7 @@ def _command_for_request(
             "source_state_dir": str(state_dir.resolve()),
             **{key: payload[key] for key in (
                 "source_event_id", "source_event_ids", "workflow_run_id", "run_id", "trace_id", "task_id",
+                "task_map_generation",
                 "recovery_case_id", "failure_class", "fingerprint", "evidence_paths",
                 "evidence_refs", "handoff_ref", "source_insight_ref", "context_ref", "read_set_ref",
             ) if key in payload},
