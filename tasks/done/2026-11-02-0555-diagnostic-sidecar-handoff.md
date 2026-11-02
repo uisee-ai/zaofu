@@ -1,6 +1,6 @@
 # Autoresearch 诊断引用与身份端到端传递
 
-> 状态: active
+> 状态: done；实现 `65758ba6 fix: preserve diagnostic evidence through autoresearch`
 
 ## 证据
 
