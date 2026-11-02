@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `1c7aaa1d fix: release superseded fanout synth operations and workers`
 
 # P2：被替代的 reader fanout 未回收 synth operation 与 provider
 
@@ -25,4 +25,12 @@
 
 验证：dev-verify 自动层及补充直接调用方共 668 passed / 7 skipped；
 pre-merge sentinel 53 passed；三个流程 mock E2E 10 passed。
-不是全量 pytest 或真实 provider E2E。现场部署验收待合并后完成。
+不是全量 pytest 或真实 provider E2E。合并后哨兵 53 passed、取消回归 15 passed；serial 筛选无命中。
+
+部署：`b3e514a5`，runtime PID 734450，Web PID 734717。
+`evt-e37368699de6` 将旧 synth operation 取消；`evt-984f9c0c41aa`
+确认 provider 停止，旧 Critic PID 4145380 已退出。当前 Planner PID 478975
+及 OA/RM/AR 进程、原请求身份和两个读账前缀均保持。
+Web `/health` 返回 ok=true / b3e514a5。证据保存在 DL
+`artifacts/supervision/stale-synth-deployment-2026-11-02.json`。
+这不是产品 task 完成或 Critic 审查通过。
