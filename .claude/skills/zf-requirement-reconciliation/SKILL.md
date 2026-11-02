@@ -69,3 +69,44 @@ Planner 的草稿可保留未来问题；受影响任务只有形成完整合同
 
 在既有报告中指出本次核对的来源版本、保留/转化/延期项、仍阻塞的具体动作与责任人。
 评审者核对实际正文及决定证据。加载本 Skill 或覆盖表字段齐全，不代表语义对账通过。
+
+## PRD 五项质量闭环
+
+适用于 Channel 的 conversation 与 multi_lens，以及后续 Planner/Critic。沿既有
+`decision_log`、`requirement_coverage`、`verification_commands` 和
+`implementation_companion` 保存清单；不建立平行需求或 Task Store。
+
+1. **来源与兼容基线**：在 companion.source_baseline 中逐项写旧版本、接口/Schema、
+   部署环境、来源 ref/digest、核验人/方法、结果与缺口。明确区分“来源已读”、
+   “artifact 可读”和“事实已核验”。一个路径、摘要、目标架构或作者声明不能证明
+   v1.3 等旧系统的部署/兼容事实。缺资料先由具备访问能力的成员核验；确实取不到时
+   列责任人、最迟需要时点与受影响范围，不伪造稳定 artifact。
+2. **Owner 决策**：对适用的质量阈值、SLO、容量、部署、数据驻留、灾备与留存，记录
+   授权消息/问题 ID、原始回答、决定者、影响行为、最迟决定阶段、暂行假设、允许继续
+   范围和重访条件。没有批准的数值保持 TBD；不擅自把“暂缓”改成 MUST 或非目标。
+   错误码、Unicode 字符长度、normalization、fallback 等已定约束在正文、场景、AC、
+   companion 中逐项核对，不能用“或其他结果”稀释原决定。
+3. **独立评审**：按来源和风险检查资深开发、安全等职责是否覆盖；要求独立视角时
+   记录真实 member/reviewer、职责、检查范围、同版 PRD ref/digest、发现与处置。
+   邀请、角色名、签字数量或作者自评都不能代替实际 review。缺角色走现有受控邀请/
+   注册，不授予额外权限；缺证据如实标未完成。首次 synthesis 只列当前版本的评审
+   计划，不能要求尚未产生的文档先完成签收。
+4. **验收数据与证据**：在 companion.acceptance_data_plan 中按 AC ID 记录数据来源/
+   版本、真实/批准脱敏/mock/未知类别、授权/脱敏要求、环境、命令、负责人、预期观察、
+   producer_paths 与执行阶段。引用既有 verification_commands ID，不再复制命令目录。
+   未执行写 NOT_RUN；环境/授权阻塞说明责任与恢复条件。声称通过时必须有对应版本、
+   运行结果及证据 ref/digest，不能由计划、空路径或 mock 冒充真实产品验证。
+5. **质量清单与交接**：作者自检标明身份，独立 reviewer 对原文及当前版本形成自己的
+   checklist。检查价值/范围与阅读体验、独立故事、原子需求和各自场景、可度量结果、
+   权限/状态/异常、关键实体、依赖/风险、来源与决定一致性；不能靠全篇词数或场景数
+   宣布逐条覆盖。companion.handoff 写来源/Requirement/AC/命令到当前 PRD 和后续
+   plan/tasks 的索引、生产者、触发条件与状态。ZaoFu canonical PRD、prd-plan.md、
+   task_map.json/source_index.json 可映射 Spec-kit 的 spec/plan/tasks；固定文件名
+   不是质量门槛。OpenSpec 保留 Requirement/Scenario，只有变更才区分
+   ADDED/MODIFIED/REMOVED。Spec-kit analyze 在 tasks 生成后运行，assess 是可选扩展。
+
+产品正文说明 what/why、用户可见行为与有来源的约束；实现设计在 companion。
+不能给所有产品强加 ZaoFu 控制面、事件账本或某技术栈。已有架构约束也不能因分层丢失。
+分别报告文档质量、来源忠实度、规划就绪度、实施授权和产品验证；文档质量 PASS 可以与
+真实产品验证 NOT_RUN 并存。checklist 的完成标记表示需求已审查，不表示功能已实现。
+独立评估的版本化方法与输入一起冻结；作者的自检不能替代该评估。

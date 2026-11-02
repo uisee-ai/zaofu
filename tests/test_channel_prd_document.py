@@ -234,11 +234,10 @@ def test_full_prd_requires_normative_requirements_and_measured_metrics():
     assert "requires measurement_method" in validate_prd_document(body)
 
 
-def test_full_prd_requires_executable_architecture_boundary():
+def test_full_prd_does_not_require_a_particular_system_architecture():
     body = spec_document()
-    body["prd_markdown"] = body["prd_markdown"].replace("append-only event ledger", "event history")
-    error = validate_prd_document(body)
-    assert "append-only event ledger" in error
+    body["prd_markdown"] = body["prd_markdown"].split("## 15. Implementation Companion")[0]
+    assert validate_prd_document(body) == ""
 
 
 def test_full_prd_accepts_chinese_control_and_data_plane_terms():

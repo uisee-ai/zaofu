@@ -144,6 +144,12 @@ Task 创建和 Workflow 点火仍需 owner 单独发起。
 
 ## 完整 PRD 与可追溯评估
 
+执行 `zf-requirement-reconciliation` 的“五项质量闭环”：把来源基线、独立评审覆盖、
+验收数据计划及阶段交接索引放进 `implementation_companion`；Owner 决策沿用
+`decision_log`。`prd_quality_checklist` 记录维度、检查范围、位置/证据、状态与发现，
+作者生成的清单必须标为自检。不得把未发生的独立评审或真实数据验证写成已通过。
+Runtime 会把上述清单和 companion 导出到同版 Markdown；无需复制整份 JSON。
+
 `summary` 是摘要，完整产品说明必须写入 `prd_markdown`，两者不能互相替代。
 长篇既有 PRD 可以改用 `prd_composition`：绑定当前完整来源的 message id/digest，
 以唯一的起止原文锚点选取完整正文，以互不重叠、唯一精确匹配的 `old`/`new` 修改

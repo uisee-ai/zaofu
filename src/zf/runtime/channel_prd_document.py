@@ -211,38 +211,11 @@ def _validate_full_profile(
         return "prd-spec.v1 full profile requires a named Scenario for every requirement"
     if normative_count < requirement_count:
         return "prd-spec.v1 full profile requires MUST or SHALL for every requirement"
-    architecture_error = _validate_architecture_contract(markdown)
-    if architecture_error:
-        return architecture_error
     for field in ("success_metrics",):
         for item in body.get(field) or []:
             for key in ("baseline", "target", "measurement_method", "owner", "measurement_timing", "status"):
                 if not isinstance(item.get(key), str) or not item[key].strip():
                     return f"prd-spec.v1 {field} {item.get('id') or '<unknown>'} requires {key}"
-    return ""
-
-
-def _validate_architecture_contract(markdown: str) -> str:
-    """Require the executable architecture boundary of a full PRD."""
-    text = markdown.lower()
-    checks = (
-        ("control-plane/data-plane boundary", (
-            r"control\s*plane", r"data\s*plane", r"控制面", r"数据面",
-        )),
-        ("event-driven boundary", (r"event[- ]driven", r"事件驱动")),
-        ("asynchronous long-running work", (r"asynchronous", r"异步")),
-        ("controlled actions and read-only projections", (r"controlled action", r"受控动作")),
-        ("controlled actions and read-only projections", (r"read[- ]only projection", r"只读投影")),
-        ("canonical business state", (r"canonical\s+(?:business\s+)?state", r"canonical store")),
-        ("append-only event ledger", (r"append[- ]only", r"event ledger", r"事件账本")),
-        ("independent evidence artifacts or sidecars", (r"evidence artifact", r"sidecar", r"证据制品", r"证据 sidecar")),
-        ("state transition identity and causation", (r"actor", r"reason", r"request id", r"correlation id")),
-        ("direct-write rejection", (r"direct write", r"直接写", r"拒绝.*写入")),
-        ("recovery evidence", (r"recovery evidence", r"恢复验证", r"恢复证据")),
-    )
-    for label, alternatives in checks:
-        if not any(re.search(pattern, text, re.IGNORECASE) for pattern in alternatives):
-            return f"prd-spec.v1 full profile requires explicit {label} contract"
     return ""
 
 
@@ -348,17 +321,34 @@ def render_prd_document(synthesis: dict[str, Any], *, channel_id: str, thread_id
         *_catalog_table("非功能需求", synthesis.get("non_functional_requirements", [])),
         *_catalog_table("验证命令", synthesis.get("verification_commands", [])),
         *_catalog_table("非目标", synthesis.get("out_of_scope", [])),
+        *(["## 质量与阶段交接清单",
+            "以下清单是同版 PRD 的评审与阶段交接记录；状态由评审者依据证据填写，"
+            "不等于产品实现已通过。",
+            *_catalog_table("质量清单", synthesis.get("prd_quality_checklist", [])),
+            *_companion_catalog(synthesis.get("implementation_companion"))]
+           if synthesis.get("prd_quality_checklist") or synthesis.get("implementation_companion") else []),
         "## Provenance",
         f"- Channel: `{channel_id}`", f"- Thread: `{thread_id}`",
         *[f"- Source: `{ref}`" for ref in source_refs], "",
     ])
 
 
-def _catalog_table(title: str, values: list[Any]) -> list[str]:
+def _companion_catalog(companion: Any) -> list[str]:
+    if not isinstance(companion, dict):
+        return _catalog_table("实现伴随与交接", companion)
+    titles = {"source_baseline": "来源与兼容基线", "review_coverage": "独立评审覆盖",
+              "acceptance_data_plan": "验收数据与证据计划", "handoff": "阶段交接索引"}
+    return [line for key, value in companion.items()
+            for line in _catalog_table(titles.get(key, key), value)]
+
+
+def _catalog_table(title: str, values: Any) -> list[str]:
     """Render every declared field without copying a second JSON envelope."""
     lines = ["", f"### {title}", ""]
     if not values:
         return [*lines, "无。", ""]
+    if not isinstance(values, list):
+        values = [values]
     rows = [item if isinstance(item, dict) else {"value": item} for item in values]
     fields = list(dict.fromkeys(key for row in rows for key in row))
     if not fields:

@@ -15,10 +15,12 @@ from zf.web.headless_agent import HeadlessTurnResult
 class FakeBackend:
     backend_id = "fake-readonly"
 
-    def __init__(self, *, malformed: bool = False, matrix_mode: str = "normal") -> None:
+    def __init__(self, *, malformed: bool = False, matrix_mode: str = "normal", omit_quality: bool = False) -> None:
         self.calls: list[dict] = []
         self.malformed = malformed
         self.matrix_mode = matrix_mode
+        self.omit_quality = omit_quality
+        self.quality_ids = []
 
     def available(self) -> bool:
         return True
@@ -27,6 +29,8 @@ class FakeBackend:
         self.calls.append(kwargs)
         kwargs["on_session_id"]("provider-fresh-1")
         if len(self.calls) == 1:
+            manifest = json.loads(kwargs["prompt"].split("MANIFEST:\n")[1].split("\nSOURCE:")[0])
+            self.quality_ids = [row["criterion_id"] for row in manifest.get("review_method", {}).get("criteria", [])]
             criteria = [] if "SOURCE:\n\n" in kwargs["prompt"] else [
                 {"criterion_id": "R1", "source_location": "line 1",
                  "expected": "Must preserve permission", "importance": "P1",
@@ -46,8 +50,13 @@ class FakeBackend:
                 row = {"criterion_id": "R2", "result": "PASS", "target_location": "line 1"}
             elif self.matrix_mode == "fail_matrix":
                 row["result"] = "FAIL"
-            reply = json.dumps({"verdict": "PASS", "matrix": [row],
+            quality_rows = [] if self.omit_quality else [
+                {"criterion_id": key, "result": "PASS", "target_location": "fixture companion",
+                 "reason": "Deterministic contract fixture; not real semantic verification."}
+                for key in self.quality_ids]
+            reply = json.dumps({"verdict": "PASS", "matrix": [row, *quality_rows],
                                 "findings": [], "coverage": {"read": ["line 1"]},
+                                "planning_readiness": {"verdict": "ready", "gaps": [], "reason": "Contract fixture only"},
                                 "product_verification": "未执行"})
         return HeadlessTurnResult(ok=True, status="completed", backend=self.backend_id,
                                   thread_id=kwargs["thread_id"], provider_session_id="provider-fresh-1",
@@ -202,7 +211,7 @@ def test_owner_added_requirement_cannot_be_dropped_from_final_evaluation(tmp_pat
     item = EvaluationInput(kind="prd_output", objective="评估输出", source_text="必须保留权限",
                            decision_text="Owner 另外要求支持撤销", target_text="保留权限，但没有撤销",
                            context={"channel_id": "ch", "thread_id": "main"})
-    assert item.manifest()["method_version"].endswith(".v3")
+    assert item.manifest()["method_version"].endswith(".v4")
     result = evaluate_output(state_dir=tmp_path, writer=writer, item=item,
                              request_id=str(uuid.uuid4()), backend=backend)
     assert result["verdict"] == "INDETERMINATE"
