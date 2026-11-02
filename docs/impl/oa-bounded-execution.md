@@ -70,6 +70,10 @@ Run Manager 仅对显式启用策略、活跃 Run、当前 generation、已结�
 operation key，也必须进入失败结算；已被接受的活跃诊断继续按原活性窗口处理。
 状态解释展示实际选中的后续操作；当诊断槽被其他 Autoresearch 请求占用时，
 在 `pending_execution.diagnosis_wait` 列出等待原因和关联请求 ID。
+被同一 Run 的后续 reopen 替代、且尚未桥接到 Autoresearch 的历史终态诊断，
+不会继续占用单飞诊断槽；该判断复用 invocation 入口的相同来源/顺序校验。
+已经桥接、排队或启动的请求仍保持占槽，直到存在其终态，其他 Run 的 reopen
+和缺失来源都不推定请求失效；历史事件保持不变。
 
 历史 `human.escalate` 若没有 checkpoint 和审批命令，仍阻止运行完成；
 无进展熔断的 `needs_diagnosis` 可先创建只产出诊断建议的请求，避免等待
