@@ -1,22 +1,24 @@
-> 状态: active
+> 状态: done
+> 实现: `96020efe feat: close PRD quality review gaps`
+> 完成范围: ZaoFu 平台能力与确定性验证；真实模型/浏览器和 DL 外部证据仍按文末记录待验证。
 
-# Spec-kit/OpenSpec 质量清单与阶段交接
+# 来源与 v1.3 兼容基线的证据分级
 
 ## 来源与边界
 
-原问题 5：生成并审核 Spec-kit checklist、spec/plan/tasks 交接。
+原问题 1：补齐并核验 v1.3 兼容基线和稳定 artifact。
 用户已授权按 1–5 生成 backlog 并实施。设计依据：`docs/design/197-prd-spec-contract-and-readable-views.md`。
 
 本项完成指 ZaoFu 方法、实际调用与验证能力完成；DL v1.3 实物基线、产品数值/部署批准、真实数据授权及产品测试证据仍需实际取得，不能据平台实现标为已完成。
 
 ## 实施范围
 
-独立评估使用版本化质量清单，与源需求清单分离并逐项输出；PRD 附录保留来源基线、验收数据计划与交接索引。映射 canonical PRD → prd-plan/task_map/source_index；plan/tasks 尚未生成时记录后续生产者与触发条件，不要求虚构 spec.md 等固定文件。
+在方法与评估中区分来源已读、内容可读、事实已核验；基线逐项记录版本、接口/Schema、环境、来源 ref/digest、核验方法与未取得证据。不得将目标设计或作者自述作为旧系统事实。
 
 ## 验收
 
-- 全文评估有源需求但遗漏通用质量检查 -> verify: 独立评估必须覆盖冻结质量 ID，报告绑定相同 PRD 与方法摘要
-- PRD 导出及 Task 交接 -> verify: 同版 Markdown 保留 companion；原有 artifact refs/digests/AC 命令编译与 stale 保护回归通过
+- 来源 refs 存在但缺部署/版本证据 -> verify: 评估方法要求列证据缺口，不推导基线已核验
+- 冻结评估方法与输入 -> verify: manifest/input-bundle 保存完整方法及摘要，三个阶段使用同一份方法
 
 ## 验证记录
 

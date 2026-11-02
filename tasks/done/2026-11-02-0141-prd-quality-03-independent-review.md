@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+> 实现: `96020efe feat: close PRD quality review gaps`
+> 完成范围: ZaoFu 平台能力与确定性验证；真实模型/浏览器和 DL 外部证据仍按文末记录待验证。
 
 # 独立开发与安全视角的实际评审覆盖
 

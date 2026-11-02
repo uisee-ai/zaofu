@@ -1,22 +1,24 @@
-> 状态: active
+> 状态: done
+> 实现: `96020efe feat: close PRD quality review gaps`
+> 完成范围: ZaoFu 平台能力与确定性验证；真实模型/浏览器和 DL 外部证据仍按文末记录待验证。
 
-# 真实数据验收计划与结果证据分离
+# Owner 决策与阶段就绪度对账
 
 ## 来源与边界
 
-原问题 4：使用真实或批准的脱敏数据验证 AC 并绑定证据。
+原问题 2：冻结质量阈值、SLO、容量、部署、驻留、灾备、留存策略。
 用户已授权按 1–5 生成 backlog 并实施。设计依据：`docs/design/197-prd-spec-contract-and-readable-views.md`。
 
 本项完成指 ZaoFu 方法、实际调用与验证能力完成；DL v1.3 实物基线、产品数值/部署批准、真实数据授权及产品测试证据仍需实际取得，不能据平台实现标为已完成。
 
 ## 实施范围
 
-为每条 AC 计划数据来源、脱敏/授权、环境、命令、结果观察、负责人、证据产物与阶段；缺数据或未执行明确记录。复用 verification_commands、producer_paths 与独立评估报告，不把测试计划冒充真实通过。
+在既有 decision_log/readiness 中记录决定者、原始授权、影响范围、最迟决定阶段、假设与重访条件；未获批准的产品数值保持 TBD。独立评估检查全文/场景/AC 是否准确继承已定规则。移除对所有 full PRD 强制 ZaoFu 架构词汇的错误门禁。
 
 ## 验收
 
-- 文档质量满足而产品测试未执行 -> verify: 报告允许质量 PASS / product_verification=未执行，并明确该结果不授予实施权限
-- 质量 checklist 缺项或 FAIL -> verify: 机械合同拒绝遗漏，不能以总体 PASS 掩盖失败条目
+- 通用完整 PRD 无 ZaoFu 架构术语 -> verify: 机械校验通过，保留结构/ID 引用校验
+- Owner 延后决定与 404/Unicode 精确规则 -> verify: 方法分别要求保留授权边界与精确语义，报告区分质量、规划、实施授权和产品验证
 
 ## 验证记录
 
@@ -37,12 +39,3 @@
 - DL 旧版本部署/Schema/接口证据、产品阈值与策略批准、独立开发/安全真实签收及真实/脱敏数据验收仍须按实际产物完成。
 
 恢复条件：Docker 能拉取指定镜像、Codex 登录可用；启动隔离 API/UI（监听 0.0.0.0，端口 8002+），通过 Playwright 继续 conversation/multi_lens 真实场景。产品验证还需取得上述外部事实和数据授权。
-
-恢复后先运行已有隔离浏览器 smoke（此 fixture 为 mock，不代替真实 Codex 语义测试）：
-
-```bash
-PYTHONPATH=src:. .venv/bin/python tests/e2e/channel_collaboration_browser_fixture.py --root /tmp/zf-prd-quality-browser-<UTC> --port 8002
-docker run --rm --network host -v "$PWD":/work -w /work/web -e ZF_WEB_BASE_URL=http://127.0.0.1:8002 -e ZF_COLLABORATION_BROWSER_FIXTURE=1 mcp/playwright:latest sh -lc 'ZF_E2E_CHROMIUM_EXECUTABLE_PATH=$(find /ms-playwright -path "*/chrome-linux64/chrome" | head -n 1) node node_modules/@playwright/test/cli.js test tests/channel-owner-deferral.spec.ts'
-```
-
-前置：构建 web/dist 并安装项目 Web 测试依赖。结束后 SIGTERM fixture，核对 simulation.done 并清理本次临时目录和进程。

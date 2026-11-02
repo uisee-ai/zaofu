@@ -1,22 +1,24 @@
-> 状态: active
+> 状态: done
+> 实现: `96020efe feat: close PRD quality review gaps`
+> 完成范围: ZaoFu 平台能力与确定性验证；真实模型/浏览器和 DL 外部证据仍按文末记录待验证。
 
-# Owner 决策与阶段就绪度对账
+# Spec-kit/OpenSpec 质量清单与阶段交接
 
 ## 来源与边界
 
-原问题 2：冻结质量阈值、SLO、容量、部署、驻留、灾备、留存策略。
+原问题 5：生成并审核 Spec-kit checklist、spec/plan/tasks 交接。
 用户已授权按 1–5 生成 backlog 并实施。设计依据：`docs/design/197-prd-spec-contract-and-readable-views.md`。
 
 本项完成指 ZaoFu 方法、实际调用与验证能力完成；DL v1.3 实物基线、产品数值/部署批准、真实数据授权及产品测试证据仍需实际取得，不能据平台实现标为已完成。
 
 ## 实施范围
 
-在既有 decision_log/readiness 中记录决定者、原始授权、影响范围、最迟决定阶段、假设与重访条件；未获批准的产品数值保持 TBD。独立评估检查全文/场景/AC 是否准确继承已定规则。移除对所有 full PRD 强制 ZaoFu 架构词汇的错误门禁。
+独立评估使用版本化质量清单，与源需求清单分离并逐项输出；PRD 附录保留来源基线、验收数据计划与交接索引。映射 canonical PRD → prd-plan/task_map/source_index；plan/tasks 尚未生成时记录后续生产者与触发条件，不要求虚构 spec.md 等固定文件。
 
 ## 验收
 
-- 通用完整 PRD 无 ZaoFu 架构术语 -> verify: 机械校验通过，保留结构/ID 引用校验
-- Owner 延后决定与 404/Unicode 精确规则 -> verify: 方法分别要求保留授权边界与精确语义，报告区分质量、规划、实施授权和产品验证
+- 全文评估有源需求但遗漏通用质量检查 -> verify: 独立评估必须覆盖冻结质量 ID，报告绑定相同 PRD 与方法摘要
+- PRD 导出及 Task 交接 -> verify: 同版 Markdown 保留 companion；原有 artifact refs/digests/AC 命令编译与 stale 保护回归通过
 
 ## 验证记录
 
