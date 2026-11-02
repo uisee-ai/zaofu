@@ -1311,6 +1311,31 @@ def build_run_manager_projection(
         pending_actions=pending_actions,
         completion_profile=completion_profile,
     )
+    # A no-progress diagnosis remains first in the queue, but cannot be sent
+    # while another Autoresearch request occupies the single-flight slot.
+    # Allow a separate, current Impl result to reach OA for semantic review;
+    # do not bypass a human gate, execute a replan, or clear the diagnosis.
+    selected = continuation.get("next_operation")
+    if (
+        isinstance(selected, dict)
+        and selected.get("failure_class") == "no_progress_breaker"
+        and _autoresearch_inflight_request_ids(events)
+        and not _run_manager_reflect_enabled(config, None)
+    ):
+        review = next((
+            action for action in pending_actions
+            if action.get("action") == "orchestrator-rework-triage"
+            and action.get("failure_class") == "settled_impl_requires_semantic_review"
+            and _pending_action_readiness(action) == "ready_to_execute"
+            and not _action_seen(events, action)
+        ), None)
+        if review is not None:
+            continuation = build_run_continuation_projection(
+                events,
+                goal=goal,
+                pending_actions=[review, *(a for a in pending_actions if a is not review)],
+                completion_profile=completion_profile,
+            )
     monitor = build_run_monitor_projection(
         state_dir,
         events=events,
@@ -1346,6 +1371,7 @@ def build_run_manager_projection(
         no_progress=no_progress,
         repair_merge_queue=merge_queue,
         wait_hints=wait_hints,
+        continuation=continuation,
     )
     retrospective_md = build_retrospective_markdown(projection={
         "summary": {
@@ -2260,10 +2286,18 @@ def build_run_status_explain_projection(
     no_progress: dict[str, Any],
     repair_merge_queue: dict[str, Any],
     wait_hints: dict[str, Any],
+    continuation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Explain the current run state from existing read-only projections."""
 
-    pending_action = next((item for item in pending_actions if isinstance(item, dict)), None)
+    next_operation = (continuation or {}).get("next_operation") or {}
+    selected_key = str(next_operation.get("operation_key") or "") if isinstance(next_operation, dict) else ""
+    pending_action = next((
+        item for item in pending_actions
+        if isinstance(item, dict) and selected_key and item.get("operation_key") == selected_key
+    ), None)
+    if pending_action is None:
+        pending_action = next((item for item in pending_actions if isinstance(item, dict)), None)
     event_list = list(events or [])
     pending_execution = _pending_execution_summary(event_list, pending_actions)
     explanation = _status_explain_decision(
@@ -5952,6 +5986,7 @@ def _execute_orchestrator_triage_request(
             "problem_class": "semantic",
             **{key: action[key] for key in (
                 "target_operation_id", "target_stage_id", "task_map_generation",
+                "run_goal_objective_event_id",
             ) if key in action},
             "workflow_run_id": str(action.get("workflow_run_id") or ""),
             "flow_kind": str(action.get("flow_kind") or ""),
@@ -11843,6 +11878,11 @@ def _action_seen(events: list[ZfEvent], action: dict[str, Any]) -> bool:
                 RUN_MANAGER_RESIDENT_PROMPTED,
             }
         ):
+            if (
+                event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+                and _diagnosis_action_request_stalled(events, action)
+            ):
+                continue
             return True
         if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED and str(
             payload.get("checkpoint_id")
@@ -12415,6 +12455,12 @@ def _pending_execution_summary(
     elif pending_actions:
         status = "pending_but_not_auto_ready"
         reason = "pending actions require diagnosis, human decision, or preflight repair"
+    diagnosis = next((
+        action for action in pending_actions
+        if action.get("failure_class") == "no_progress_breaker"
+        and _pending_action_readiness(action) == "needs_diagnosis"
+    ), None)
+    inflight = sorted(_autoresearch_inflight_request_ids(events)) if diagnosis else []
     return {
         "schema_version": "run-manager.pending-execution.v1",
         "status": status,
@@ -12426,6 +12472,11 @@ def _pending_execution_summary(
         "last_tick_actions_applied": applied,
         "last_tick_actions_blocked": blocked,
         "last_tick_actions_failed": failed,
+        "diagnosis_wait": (
+            {"reason": "autoresearch_inflight", "request_ids": inflight,
+             "checkpoint_id": str(diagnosis.get("checkpoint_id") or "")}
+            if diagnosis and inflight else {}
+        ),
     }
 
 

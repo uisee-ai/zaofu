@@ -16,6 +16,25 @@ from zf.runtime.workflow_operation import reduce_workflow_operations
 EXECUTION_CHECKPOINTS = frozenset({"pre_impl", "semantic_failure"})
 
 
+def run_goal_objective_snapshot(events, workflow_run_id: str) -> dict[str, str]:
+    """Bind a semantic review to the latest objective of its own run."""
+    from zf.core.security.redaction import redact_obj
+    from zf.runtime.run_scope import events_for_run
+
+    objective = ""
+    event_id = ""
+    if not workflow_run_id:
+        return {"objective": objective, "objective_event_id": event_id}
+    for event in events_for_run(events, run_id=workflow_run_id):
+        if event.type not in {"run.goal.started", "run.goal.updated"}:
+            continue
+        payload = event.payload if isinstance(event.payload, Mapping) else {}
+        if payload.get("objective"):
+            objective = str(payload["objective"])
+            event_id = str(event.id or "")
+    return {"objective": str(redact_obj(objective)), "objective_event_id": event_id}
+
+
 def bounded_actions(config: Any, flow_kind: str) -> list[str] | None:
     return getattr(_effective_policy(config, flow_kind), "autonomous_actions", None)
 
@@ -94,6 +113,13 @@ def build_execution_context(
         ),
         "autonomous_actions": bounded_actions(runtime.config, str(payload.get("flow_kind") or "")),
         "task_map_generation": payload.get("task_map_generation", ""),
+        "goal_objective_event_id": (
+            str(payload["run_goal_objective_event_id"])
+            if "run_goal_objective_event_id" in payload
+            else run_goal_objective_snapshot(
+                runtime.event_log.read_all(), workflow_run_id,
+            )["objective_event_id"]
+        ),
         "plan_artifact_package_ref": payload["plan_artifact_package_ref"],
         "plan_artifact_package_digest": payload["plan_artifact_package_digest"],
         "task_bindings": bindings,
@@ -142,6 +168,12 @@ def execution_decision_rejection(
         return "execution_authority_changed"
     if context.get("autonomous_actions") != configured:
         return "execution_authority_changed"
+    if checkpoint == "semantic_failure" and "goal_objective_event_id" in context:
+        current_goal = run_goal_objective_snapshot(
+            runtime.event_log.read_all(), context["workflow_run_id"],
+        )
+        if current_goal["objective_event_id"] != context["goal_objective_event_id"]:
+            return "execution_goal_changed"
     action = str(decision.get("decision") or "")
     # These routes do not grant direct execution or weaken an approval gate.
     if action in {"return_to_plan", "escalate", "halt", "clarify", "block", "revise"}:

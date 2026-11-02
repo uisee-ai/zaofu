@@ -15,7 +15,11 @@ def _case(tmp_path, *, failure_class="none"):
     policy = runtime.config.workflow.orchestration
     policy.autonomous_actions = ["rework", "continue"]
     policy.review_blocked_tasks = True
-    context = {"workflow_run_id": "run-semantic-1", "flow_kind": "prd", "task_map_generation": "g1"}
+    package = next(event.payload for event in runtime.event_log.read_all()
+                   if event.type == "plan.artifact_package.admitted")
+    context = {"workflow_run_id": "run-semantic-1", "flow_kind": "prd", "task_map_generation": "g1",
+               "plan_artifact_package_ref": package["package_ref"],
+               "plan_artifact_package_digest": package["package_digest"]}
     runtime.event_writer.append(ZfEvent(type="run.goal.started", payload={"run_id": "run-semantic-1"}))
     runtime.event_writer.append(ZfEvent(type="task.pipeline.generation.admitted", payload={
         **context, "schema_version": "task-pipeline-generation.v1", "task_ids": ["TASK-1"],
@@ -58,6 +62,228 @@ def test_run_manager_observes_and_requests_one_exact_checkpoint(tmp_path):
     assert _pending(runtime) == []
     runtime.event_writer.append(ZfEvent(type="worker.heartbeat", task_id="TASK-1"))
     assert _pending(runtime) == []
+
+
+def test_first_settled_impl_failure_is_reviewed_by_run_manager_tick(tmp_path):
+    from zf.runtime.run_manager import run_manager_tick
+
+    runtime, _ = _case(tmp_path)
+    result = run_manager_tick(
+        state_dir=runtime.state_dir,
+        writer=runtime.event_writer,
+        config=runtime.config,
+        project_root=runtime.project_root,
+        event_log=runtime.event_log,
+        spawn_repairs=False,
+    )
+    requests = [event for event in runtime.event_log.read_all()
+                if event.type == "orchestrator.semantic.failure.requested"]
+    assert result.actions_applied == 1
+    assert len(requests) == 1
+    assert requests[0].payload["target_operation_id"] == "impl-1"
+    run_manager_tick(
+        state_dir=runtime.state_dir,
+        writer=runtime.event_writer,
+        config=runtime.config,
+        project_root=runtime.project_root,
+        event_log=runtime.event_log,
+        spawn_repairs=False,
+    )
+    assert len([event for event in runtime.event_log.read_all()
+                if event.type == "orchestrator.semantic.failure.requested"]) == 1
+
+
+def test_busy_diagnosis_does_not_starve_independent_oa_review(tmp_path):
+    from zf.runtime.run_manager import run_manager_tick
+
+    runtime, _ = _case(tmp_path)
+    for _ in range(3):
+        runtime.event_writer.append(ZfEvent(
+            type="run.manager.action.failed", actor="run-manager",
+            payload={"checkpoint_id": "other-recovery", "failure_class": "other_failure",
+                     "reason": "other recovery made no progress"},
+        ))
+    runtime.event_writer.append(ZfEvent(
+        type="run.manager.autoresearch.requested", actor="run-manager",
+        payload={"request_id": "other-diagnosis", "checkpoint_id": "other-checkpoint"},
+    ))
+    projection = build_run_manager_projection(runtime.state_dir, config=runtime.config,
+                                              project_root=runtime.project_root)
+    assert projection["pending_actions"][0]["failure_class"] == "no_progress_breaker"
+    assert projection["continuation"]["next_operation"]["action"] == "orchestrator-rework-triage"
+    assert projection["status_explain"]["next_auto_action"] == "request_orchestrator_triage"
+    assert projection["status_explain"]["pending_execution"]["diagnosis_wait"]["reason"] == "autoresearch_inflight"
+    assert "other-diagnosis" in projection["status_explain"]["pending_execution"]["diagnosis_wait"]["request_ids"]
+    result = run_manager_tick(
+        state_dir=runtime.state_dir, writer=runtime.event_writer, config=runtime.config,
+        project_root=runtime.project_root, event_log=runtime.event_log, spawn_repairs=False,
+    )
+    assert result.actions_applied == 1
+    assert len([event for event in runtime.event_log.read_all()
+                if event.type == "orchestrator.semantic.failure.requested"]) == 1
+
+
+def test_busy_diagnosis_does_not_bypass_owner_decision(tmp_path):
+    runtime, _ = _case(tmp_path)
+    for _ in range(3):
+        runtime.event_writer.append(ZfEvent(
+            type="run.manager.action.failed", actor="run-manager",
+            payload={"checkpoint_id": "other-recovery", "failure_class": "other_failure",
+                     "reason": "other recovery made no progress"},
+        ))
+    runtime.event_writer.append(ZfEvent(
+        type="run.manager.autoresearch.requested", actor="run-manager",
+        payload={"request_id": "other-diagnosis", "checkpoint_id": "other-checkpoint"},
+    ))
+    runtime.event_writer.append(ZfEvent(
+        type="human.escalate", actor="run-manager", correlation_id="run-semantic-1",
+        payload={"run_id": "run-semantic-1", "decision_token": "owner-decision",
+                 "blocking_scope": "run", "reason": "owner decision required"},
+    ))
+    projection = build_run_manager_projection(runtime.state_dir, config=runtime.config,
+                                              project_root=runtime.project_root)
+    assert projection["continuation"]["next_operation"] is None
+
+
+def test_first_failure_review_can_route_targeted_pipeline_rework(tmp_path):
+    from tests.test_orchestrator_agent_semantic_failure import _submit_rework
+    from tests.test_task_pipeline_reconciler import _policy, _task
+    from zf.runtime.orchestrator_agent_decision_apply import apply_orchestrator_agent_decision
+    from zf.runtime.run_manager import run_manager_tick
+    from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+    from zf.runtime.task_pipeline_reconciler import TaskPipelineReconciler
+    from zf.runtime.task_pipeline_rework import derive_impl_rework_requests
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    runtime, _ = _case(tmp_path)
+    run_manager_tick(state_dir=runtime.state_dir, writer=runtime.event_writer,
+                     config=runtime.config, project_root=runtime.project_root,
+                     event_log=runtime.event_log, spawn_repairs=False)
+    request = next(event for event in runtime.event_log.read_all()
+                   if event.type == "orchestrator.semantic.failure.requested")
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    outcome = apply_orchestrator_agent_decision(runtime, _submit_rework(runtime, prepared))
+    assert outcome["applied"] is True
+    events = runtime.event_log.read_all()
+    retries = derive_impl_rework_requests(
+        events=events, generation_contexts=task_pipeline_generation_contexts(events),
+        operation_rows=reduce_workflow_operations(events).values(),
+    )
+    assert retries["TASK-1"]["operation_id"] == "impl-1"
+    assert retries["TASK-1"]["fault"] == "task_pipeline_oa_rework"
+    policy = _policy()
+    policy["max_rework_attempts"] = 2
+    projection = TaskPipelineReconciler().reconcile(
+        policy=policy,
+        tasks=[_task("TASK-1", priority=1), _task("DOWNSTREAM", priority=2, blocked_by=["TASK-1"])],
+        operations=reduce_workflow_operations(events).values(), attempts=[],
+        impl_rework_requests=retries,
+    )
+    assert [row["task_id"] for row in projection["dispatchable"]["impl"]] == ["TASK-1"]
+    assert projection["dispatchable"]["impl"][0]["operation_generation"] == "2"
+
+
+def test_first_failure_review_includes_latest_same_run_user_goal(tmp_path):
+    from zf.runtime.run_manager import run_manager_tick
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    runtime, _ = _case(tmp_path)
+    latest = runtime.event_writer.append(ZfEvent(
+        type="run.goal.updated", correlation_id="run-semantic-1",
+        payload={"run_id": "run-semantic-1", "objective": "Use local test users; preserve final acceptance."},
+    ))
+    runtime.event_writer.append(ZfEvent(
+        type="run.goal.updated", correlation_id="other-run",
+        payload={"run_id": "other-run", "objective": "Unrelated project decision."},
+    ))
+    # Keep the current run as the latest top-level goal while retaining the
+    # other-run event in the shared ledger.
+    runtime.event_writer.append(ZfEvent(
+        type="run.goal.updated", correlation_id="run-semantic-1",
+        payload={"run_id": "run-semantic-1", "status": "active"},
+    ))
+    run_manager_tick(state_dir=runtime.state_dir, writer=runtime.event_writer,
+                     config=runtime.config, project_root=runtime.project_root,
+                     event_log=runtime.event_log, spawn_repairs=False)
+    request = next(event for event in runtime.event_log.read_all()
+                   if event.type == "orchestrator.semantic.failure.requested")
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    source = next(item for item in prepared.context.source_manifest["sources"]
+                  if item["source_id"] == "semantic-failure-input")
+    failure_input = hydrate_sidecar_ref(runtime.state_dir, source).payload
+    assert failure_input["run_goal"]["objective"] == "Use local test users; preserve final acceptance."
+    assert failure_input["run_goal"]["objective_event_id"] == latest.id
+    assert "Unrelated project decision" not in str(failure_input)
+
+
+def test_changed_user_goal_requeues_a_rejected_review_once(tmp_path):
+    from tests.test_orchestrator_agent_semantic_failure import _submit_rework
+    from zf.runtime.orchestrator_agent_decision_apply import apply_orchestrator_agent_decision
+    from zf.runtime.run_manager import run_manager_tick
+
+    runtime, _ = _case(tmp_path)
+    def tick():
+        return run_manager_tick(state_dir=runtime.state_dir, writer=runtime.event_writer,
+                                config=runtime.config, project_root=runtime.project_root,
+                                event_log=runtime.event_log, spawn_repairs=False)
+
+    tick()
+    request = next(event for event in runtime.event_log.read_all()
+                   if event.type == "orchestrator.semantic.failure.requested")
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    decision = _submit_rework(runtime, prepared)
+    runtime.event_writer.append(ZfEvent(
+        type="run.goal.updated", correlation_id="run-semantic-1",
+        payload={"run_id": "run-semantic-1", "objective": "Updated user decision"},
+    ))
+    assert apply_orchestrator_agent_decision(runtime, decision)["reason"] == "execution_goal_changed"
+    assert len(_pending(runtime)) == 1
+    tick()
+    tick()
+    requests = [event for event in runtime.event_log.read_all()
+                if event.type == "orchestrator.semantic.failure.requested"]
+    assert len(requests) == 2
+    assert requests[0].payload["request_id"] != requests[1].payload["request_id"]
+
+
+def test_goal_change_while_building_checkpoint_cannot_mix_snapshots(tmp_path, monkeypatch):
+    from tests.test_orchestrator_agent_semantic_failure import _submit_rework
+    from zf.runtime import orchestrator_agent_semantic_failure as semantic
+    from zf.runtime.orchestrator_agent_decision_apply import apply_orchestrator_agent_decision
+    from zf.runtime.run_manager import run_manager_tick
+
+    runtime, _ = _case(tmp_path)
+    run_manager_tick(state_dir=runtime.state_dir, writer=runtime.event_writer,
+                     config=runtime.config, project_root=runtime.project_root,
+                     event_log=runtime.event_log, spawn_repairs=False)
+    request = next(event for event in runtime.event_log.read_all()
+                   if event.type == "orchestrator.semantic.failure.requested")
+    write = semantic.write_immutable_json_sidecar
+
+    def write_then_change_goal(*args, **kwargs):
+        ref = write(*args, **kwargs)
+        if kwargs.get("kind") == "semantic_failure_input":
+            runtime.event_writer.append(ZfEvent(
+                type="run.goal.updated", correlation_id="run-semantic-1",
+                payload={"run_id": "run-semantic-1", "objective": "New decision during checkpoint"},
+            ))
+        return ref
+
+    monkeypatch.setattr(semantic, "write_immutable_json_sidecar", write_then_change_goal)
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    decision = _submit_rework(runtime, prepared)
+    assert apply_orchestrator_agent_decision(runtime, decision)["reason"] == "execution_goal_changed"
+
+
+@pytest.mark.parametrize("field", ["target_operation_id", "task_map_generation", "source_event_type"])
+def test_first_failure_triage_requires_exact_execution_binding(tmp_path, field):
+    from zf.runtime.run_manager_rework_triage import triage_action_preflight
+
+    runtime, _ = _case(tmp_path)
+    action = _pending(runtime)[0]
+    assert triage_action_preflight(action["action"], action)["status"] == "passed"
+    action[field] = ""
+    assert triage_action_preflight(action["action"], action)["status"] == "blocked"
 
 
 def test_review_uses_configured_oa_profile_instance(tmp_path):

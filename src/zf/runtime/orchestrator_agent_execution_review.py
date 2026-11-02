@@ -5,7 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.task.store import TaskStore
-from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
+from zf.runtime.orchestrator_agent_execution_policy import (
+    operation_bindings,
+    run_goal_objective_snapshot,
+)
 from zf.runtime.orchestrator_agent_policy import _effective_policy, checkpoint_policy
 from zf.runtime.orchestrator_agent_role import configured_orchestrator_role_from_config
 from zf.runtime.run_contract import stable_json_sha256
@@ -34,8 +37,19 @@ def pending_execution_reviews(
     store = TaskStore(state_dir / "kanban.json")
     actions = []
     goals = {}
+    goal_event_ids = {}
     latest_by_run = {}
     by_id = {event.id: event for event in events}
+    stale_operations = {
+        str(event.payload.get("operation_id") or "") for event in events
+        if event.type == "orchestrator.semantic.decision.rejected"
+        and event.payload.get("reason") == "execution_goal_changed"
+    }
+    stale_requests = {
+        str(event.causation_id or "") for event in events
+        if event.type == "orchestrator.semantic.checkpoint.requested"
+        and str(event.payload.get("operation_id") or "") in stale_operations
+    }
     for task_id, context in contexts.items():
         if task_id in excluded_task_ids:
             continue
@@ -48,6 +62,7 @@ def pending_execution_reviews(
         run_id = str(context.get("workflow_run_id") or "")
         if run_id not in goals:
             goals[run_id] = build_run_goal_projection(events, run_id=run_id)
+            goal_event_ids[run_id] = run_goal_objective_snapshot(events, run_id)["objective_event_id"]
             latest_by_run[run_id] = operation_bindings(events, run_id, set(contexts))
         goal = goals[run_id]
         if goal.get("status") not in {"active", "running"}:
@@ -80,17 +95,20 @@ def pending_execution_reviews(
         source_id = str(impl.get("call_result_admitted_event_id") or "")
         if source_id not in by_id:
             continue
+        goal_event_id = goal_event_ids[run_id]
         request_id = "oa-execution-review-" + stable_json_sha256({
             "run": run_id, "generation": context.get("task_map_generation"),
-            "operation": impl["operation_id"], "result": result_ref,
+            "operation": impl["operation_id"], "result": result_ref, "goal_event_id": goal_event_id,
         })[:24]
-        if any(
-            event.type in {"orchestrator.semantic.failure.requested", "orchestrator.rework.triage.requested"}
+        previous_requests = [
+            event for event in events
+            if event.type in {"orchestrator.semantic.failure.requested", "orchestrator.rework.triage.requested"}
             and (event.payload.get("request_id") == request_id or (
                 event.payload.get("workflow_run_id") == run_id
                 and source_id in event.payload.get("failure_event_ids", [])
-            )) for event in events
-        ):
+            ))
+        ]
+        if any(event.id not in stale_requests for event in previous_requests):
             continue
         actions.append({
             "schema_version": "run-manager.pending-action.v1",
@@ -101,6 +119,8 @@ def pending_execution_reviews(
             "stage_id": "impl", "target_stage_id": "impl",
             "target_operation_id": impl["operation_id"],
             "task_map_generation": context.get("task_map_generation", ""),
+            "run_goal_objective_event_id": goal_event_id,
+            "request_revision": goal_event_id,
             "role": impl.get("role_instance", ""),
             "fingerprint": request_id, "failure_count": 1,
             "failure_class": "settled_impl_requires_semantic_review",

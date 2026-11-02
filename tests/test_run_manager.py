@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from zf.core.config.schema import (
     FanoutAggregateConfig,
     ProjectConfig,
@@ -3031,8 +3033,9 @@ def test_run_manager_does_not_diagnose_informational_attention(
     )
 
 
+@pytest.mark.parametrize("bind_operation_key", [False, True])
 def test_run_manager_marks_stale_autoresearch_diagnosis_as_failed(
-    tmp_path: Path,
+    tmp_path: Path, bind_operation_key: bool,
 ) -> None:
     state_dir, log, writer = _state(tmp_path)
     _write_supervisor_attention(state_dir)
@@ -3053,6 +3056,7 @@ def test_run_manager_marks_stale_autoresearch_diagnosis_as_failed(
             "checkpoint_id": pending["checkpoint_id"],
             "fingerprint": pending["fingerprint"],
             "safe_resume_action": "diagnose_attention",
+            "operation_key": pending["operation_key"] if bind_operation_key else "",
         },
     ))
 
