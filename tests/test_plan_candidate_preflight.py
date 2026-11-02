@@ -804,6 +804,24 @@ def test_invalid_candidate_fails_before_plan_critic_dispatch(tmp_path) -> None:
     )
 
 
+def test_failed_planner_is_not_misreported_as_missing_candidate(tmp_path) -> None:
+    harness = _PlanSynthHarness(tmp_path, reports=[{"child_id": "planner", "report": {
+        "status": "failed", "execution_status": "failed", "verdict": "abstained",
+        "failure_class": "reader_execution_failure", "summary": "Input delivery truncated.",
+        "recommendation": "needs_rework", "findings": [{"severity": "high", "message": "Input delivery truncated."}],
+    }}])
+    harness._dispatch_fanout_synth("fanout-plan", {
+        "fanout_id": "fanout-plan", "trace_id": "run-plan", "stage_id": "issue-triage",
+        "trigger_event_id": "evt-input", "trigger_payload": {"flow_kind": "issue", "issue_ref": "docs/issue.md"},
+        "aggregate_config": {"success_event": "task_map.ready", "failure_event": "issue.plan.failed", "synth_role": "plan-critic"},
+        "children": [],
+    }, "wait_for_all", "plan-critic")
+    assert not harness.critic_dispatch_attempted
+    assert harness.finalized.payload["failure_class"] == "reader_execution_failure"
+    assert "Input delivery truncated." in str(harness.finalized.payload["report"])
+    assert not harness.finalized.payload.get("plan_candidate_preflight_ref")
+
+
 def test_plan_candidate_preflight_accepts_closed_matrix_registry(tmp_path) -> None:
     result = evaluate_plan_candidate_preflight(
         state_dir=tmp_path / ".zf",

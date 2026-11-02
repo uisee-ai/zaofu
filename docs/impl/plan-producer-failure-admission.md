@@ -21,6 +21,21 @@ incomplete`。这不是读取完成证明；账本摘要、格式、attempt 身�
 仍校验，非法账本不能借失败路径通过。完成的 reader 结论，包括语义拒绝，
 继续要求完整必读覆盖。回归：`tests/test_replan_input_consumption.py`。
 
+Plan Critic 使用 `plan-synth` 结果时，只有明确声明
+`execution_status: failed`、`failure_class: reader_execution_failure`，且顶层和
+报告均为非批准结果，才允许封存不完整读取账本并记录失败。结果仍以 rejected
+进入后续流程，不能发布 task map；完成的语义否决、矛盾的批准以及损坏账本
+仍不能绕过读取校验。回归：`tests/test_plan_synth_failure_reads.py`。
+准入后的 Critic 结果将该失败分类传递至 fanout 聚合和阶段失败事件，供
+恢复流程区分执行失败与计划内容被否决；历史事件不被改写。
+Critic 执行失败时，恢复从该次派发绑定的不可变 source manifest 与
+plan-synth contract 对账当前子结果及工件引用；新引用优先于旧触发的候选，
+并保留原有读取范围和 access scope。身份、摘要或来源不匹配时不猜测当前
+候选，也不回退到旧候选。回归：`tests/test_plan_synth_recovery_refs.py`。
+新代次受控动作可显式指定紧邻的失败 Critic 检查点；必须核对 Run、阶段、
+因果链和已准入结果，并拒绝已被更新候选取代的检查点。Planner 自报读取失败
+时直接保留该执行失败分类，不误报缺少计划候选。
+
 显式指定受影响 task ids 的返修，必读上下文保留全部任务的状态、依赖、合同身份、
 交付/阻塞事实及受影响任务完整正文。全量 canonical TaskStore 快照独立封存并
 登记为 `canonical-task-snapshot` 来源，索引提供精确 JSON path 和摘要；Planner

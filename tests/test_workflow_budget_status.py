@@ -63,6 +63,24 @@ def test_unpriced_cost_headroom_is_unknown(tmp_path):
     assert not transport.terminated
 
 
+def test_operation_headroom_ignores_unrelated_hook_telemetry(tmp_path):
+    runtime, _ = _runtime(
+        tmp_path, operation_limits=ExecutionProfileLimitsConfig(token_budget=1000),
+    )
+    operation_id, _ = _start_operation(runtime)
+    runtime.cost_tracker.record_usage("dev", 200, 10, model="unknown-model", provider="openai")
+    before = operation_budget_status(runtime.state_dir, runtime.config, operation_id)
+    runtime.event_writer.append(ZfEvent(
+        type="codex.hook.post_tool_use", actor="dev",
+        payload={"tool_response": "unrelated output" * 1000},
+    ))
+    after = operation_budget_status(runtime.state_dir, runtime.config, operation_id)
+    assert after["limits"] == before["limits"]
+    assert after["dimensions"] == before["dimensions"]
+    assert after["warning_level"] == before["warning_level"]
+    assert after["pricing_status"] == "unpriced"
+
+
 def test_cost_operation_cli_is_read_only_and_rejects_settled_identity(tmp_path, monkeypatch, capsys):
     runtime, _ = _runtime(
         tmp_path, operation_limits=ExecutionProfileLimitsConfig(token_budget=1000),

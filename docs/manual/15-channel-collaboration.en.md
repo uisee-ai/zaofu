@@ -193,6 +193,7 @@ conversation / clarification / multi_lens
 Required invariants:
 
 - the complete PRD body lives in a sanctioned artifact/sidecar;
+- the readiness artifact must carry a `ready`, `needs_owner`, or `needs_multi_lens` verdict; an `unassessed` PRD cannot be Owner-confirmed;
 - events carry identity, revision, digest, preview/ref, and causation;
 - revision updates use currentness/CAS so an old revision cannot replace a newer confirmed result;
 - only Owner confirm creates the canonical PRD;

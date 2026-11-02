@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import os
+from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -35,6 +37,28 @@ _READ_ALL_CACHE: dict[tuple, tuple] = {}
 # decode just the tail. Keyed by (path, signer, allow_unsigned) — stable
 # across appends.
 _READ_ALL_FOLD: dict[tuple, dict] = {}
+# Recent-day consumers repeatedly read the active file independently of
+# read_all. Cache that file separately so appends only decode the new tail.
+_READ_ACTIVE_FOLD: dict[tuple, dict] = {}
+
+
+def _copy_events(events: tuple[ZfEvent, ...] | list[ZfEvent]) -> list[ZfEvent]:
+    """Keep read_days callers from mutating cached occurrences or payloads."""
+    return [replace(event, payload=deepcopy(event.payload)) for event in events]
+
+
+def _boundary_marker(path: Path, offset: int) -> bytes | None:
+    """Remember the old complete-line boundary across truncate-and-regrow."""
+    if offset <= 0:
+        return b""
+    length = min(offset, 128)
+    try:
+        with path.open("rb") as handle:
+            handle.seek(offset - length)
+            marker = handle.read(length)
+    except OSError:
+        return None
+    return marker if len(marker) == length else None
 
 
 class EventLog:
@@ -441,8 +465,63 @@ class EventLog:
                 suffix=".jsonl",
             ):
                 events.extend(self._parse_file(f))
-        events.extend(self._parse_file(self.path))
+        events.extend(self._read_active_cached())
         return events
+
+    def _read_active_cached(self) -> list[ZfEvent]:
+        # Signed reads must reverify the actual bytes, even when file metadata
+        # was deliberately preserved after tampering.
+        if self.signer is not None:
+            return self._parse_file(self.path)
+        try:
+            stat = self.path.stat()
+        except OSError:
+            return []
+        key = (str(self.path.resolve()), self.allow_unsigned)
+        identity = (stat.st_dev, stat.st_ino)
+        entry = _READ_ACTIVE_FOLD.get(key)
+        if entry is not None and entry["identity"] == identity:
+            if entry["size"] == stat.st_size and entry["mtime"] == stat.st_mtime_ns:
+                return _copy_events(entry["events"])
+            if (
+                stat.st_size > entry["size"]
+                and stat.st_size >= entry["consumed"]
+                and _boundary_marker(self.path, entry["consumed"]) == entry["marker"]
+            ):
+                tail, consumed = self._parse_tail(self.path, entry["consumed"], stat.st_size)
+                try:
+                    after = self.path.stat()
+                except OSError:
+                    _READ_ACTIVE_FOLD.pop(key, None)
+                    return []
+                if (after.st_dev, after.st_ino) != identity or after.st_size < stat.st_size:
+                    _READ_ACTIVE_FOLD.pop(key, None)
+                    return self._parse_file(self.path)
+                if not consumed:
+                    # A partial line or transient read failure must be retried.
+                    return _copy_events(entry["events"])
+                events = entry["events"] + tuple(tail) if tail else entry["events"]
+                marker = _boundary_marker(self.path, entry["consumed"] + consumed)
+                if marker is None:
+                    return _copy_events(events)
+                _READ_ACTIVE_FOLD[key] = {
+                    "identity": identity, "size": stat.st_size, "mtime": stat.st_mtime_ns,
+                    "consumed": entry["consumed"] + consumed, "events": events, "marker": marker,
+                }
+                return _copy_events(events)
+        events, consumed = self._parse_file_consumed(self.path)
+        if not consumed and stat.st_size:
+            return events
+        marker = _boundary_marker(self.path, consumed)
+        if marker is None:
+            return events
+        while len(_READ_ACTIVE_FOLD) >= 8 and key not in _READ_ACTIVE_FOLD:
+            _READ_ACTIVE_FOLD.pop(next(iter(_READ_ACTIVE_FOLD)))
+        _READ_ACTIVE_FOLD[key] = {
+            "identity": identity, "size": stat.st_size, "mtime": stat.st_mtime_ns,
+            "consumed": consumed, "events": tuple(events), "marker": marker,
+        }
+        return _copy_events(events)
 
     def get_causation_chain(self, event_id: str) -> list[ZfEvent]:
         """Return the causal ancestors of an event in chronological order.

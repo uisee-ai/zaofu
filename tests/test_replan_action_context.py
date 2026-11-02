@@ -17,6 +17,7 @@ def test_candidate_action_keeps_current_review_context(tmp_path: Path, monkeypat
     writer = EventWriter(EventLog(tmp_path / "events.jsonl"))
     writer.append(ZfEvent(type="prd.scan.completed", correlation_id="run-1", payload={
         "previous_plan_candidate_refs": [{"ref": "old-plan.json", "sha256": "a" * 64}],
+        "reason": "previous unrelated stage failure",
     }))
     service = ControlledActionService(tmp_path, writer, config=config, actor="operator")
     if recover_marker_only:
@@ -43,5 +44,7 @@ def test_candidate_action_keeps_current_review_context(tmp_path: Path, monkeypat
         e for e in events if e.type == "prd.scan.completed" and e.payload.get("rework_of") == "failure-1"
     ]
     assert len(triggers) == 1
+    assert "reason" not in triggers[0].payload
+    assert triggers[0].payload["rework_source"] == "integration.failed"
     for key, value in context.items():
         assert triggers[0].payload.get(key) == value

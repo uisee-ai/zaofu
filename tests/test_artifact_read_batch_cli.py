@@ -58,6 +58,59 @@ def test_required_read_batch_rejects_worker_slice_override(capsys):
     assert "cannot be combined" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize('required', [True, False])
+def test_read_rechecks_operation_after_telemetry_filter(tmp_path, monkeypatch, capsys, required):
+    state = tmp_path / ".runtime"
+    path = state / "artifacts" / "source.json"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"facts":["value"]}')
+    source = {"source_id": "s", "artifact_id": "s", "ref": "artifacts/source.json",
+              "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "allowed_paths": ["$.facts"]}
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+                                             dispatch_id="attempt-1", sources=[source],
+                                             metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest, operation_id="op-1")
+    writer = EventWriter(EventLog(state / "events.jsonl"))
+    for event_type in ("workflow.operation.requested", "workflow.operation.started"):
+        writer.append(ZfEvent(type=event_type, payload={"operation_id": "op-1", "active_attempt_id": "attempt-1"}))
+    writer.append(ZfEvent(type="codex.hook.post_tool_use", payload={"tool_response": "x" * 100_000}))
+    writer.append(ZfEvent(type="task.dispatched", payload={"attempt_id": "attempt-1", "required_reads": [
+        {"source_id": "s", "artifact_id": "s", "artifact_sha256": source["sha256"], "json_path": "$.facts"},
+    ]}))
+    command = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state)]
+    command += ["--required"] if required else ["--source", "s", "--artifact", "s", "--json-path", "$.facts"]
+    with monkeypatch.context() as patch:
+        patch.setattr(EventLog, 'read_all', lambda self: (_ for _ in ()).throw(AssertionError('full telemetry replay')))
+        assert main(command) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output['items'] if required else output == ['value']
+    ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
+    before = ledger.read_bytes()
+    writer.append(ZfEvent(type="workflow.operation.settled", payload={"operation_id": "op-1"}))
+    with monkeypatch.context() as patch:
+        patch.setattr(EventLog, 'read_all', lambda self: (_ for _ in ()).throw(AssertionError('full telemetry replay')))
+        assert main(command) == 1
+    assert "no longer active" in capsys.readouterr().err
+    assert ledger.read_bytes() == before
+    assert EventLog(state / "events.jsonl").read_all()[-1].type == "artifact.read.denied"
+
+
+def test_invalid_credential_is_rejected_before_context_scan(tmp_path, monkeypatch, capsys):
+    state = tmp_path / ".runtime"
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+                                             dispatch_id="attempt-1", sources=[],
+                                             metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest, operation_id="op-1")
+    monkeypatch.setenv("ZF_ROLE_NAME", "impostor")
+    monkeypatch.setattr("zf.runtime.artifact_context_events.ArtifactContextEvents.read_all",
+                        lambda self: (_ for _ in ()).throw(AssertionError("unauthorized scan")))
+    assert main(["artifact", "read", "--attempt", "attempt-1", "--required", "--state-dir", str(state)]) == 1
+    assert "does not match" in capsys.readouterr().err
+    assert EventLog(state / "events.jsonl").read_all()[-1].type == "artifact.read.denied"
+
+
 def test_required_read_selects_both_pinned_versions_of_the_same_logical_source(tmp_path, monkeypatch, capsys):
     from zf.runtime.artifact_read_ledger import read_attempt_artifact, ArtifactReadError
 

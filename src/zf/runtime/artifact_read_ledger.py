@@ -23,24 +23,22 @@ from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import (
     SidecarRefError,
     build_sidecar_ref_descriptor,
-    hydrate_sidecar_ref,
     safe_sidecar_ref,
     sidecar_path,
 )
 from zf.runtime import semantic_replan_handoff
+from zf.runtime.artifact_read_ledger_validation import (
+    ARTIFACT_READ_SCHEMA, ArtifactReadError, _parse_ledger, _read_matches,
+    required_read_satisfied, validate_required_reads,
+)
 
 
 SOURCE_MANIFEST_SCHEMA = "attempt-source-manifest.v1"
-ARTIFACT_READ_SCHEMA = "artifact-read.v1"
 READ_POLICY_SCHEMA = "input-consumption-policy.v1"
 READ_LEDGER_SCHEMA = "artifact-read-ledger.v1"
 _ATTEMPT_REF_RE = re.compile(
     r"^artifacts/attempts/(?P<attempt>[^/]+)/read-ledger\.active\.jsonl$"
 )
-
-
-class ArtifactReadError(ValueError):
-    """A controlled artifact read or its evidence contract failed."""
 
 
 def build_attempt_source_manifest(
@@ -426,7 +424,7 @@ def read_attempt_artifact(
     from zf.runtime.artifact_source_versions import read_source_version
 
     try:
-        raw, recovery_mode = read_source_version(state_dir, dict(source))
+        raw, recovery_mode = read_source_version(state_dir, dict(source), path=path)
     except (OSError, ValueError, KeyError) as exc:
         raise ArtifactReadError(str(exc)) from exc
     digest = hashlib.sha256(raw).hexdigest()
@@ -574,39 +572,6 @@ def seal_read_ledger(state_dir: Path, attempt_id: str, *, allow_empty: bool = Fa
         )
 
 
-def validate_required_reads(
-    state_dir: Path,
-    *,
-    policy: Mapping[str, Any],
-    ledger_descriptor: Mapping[str, Any],
-) -> list[dict[str, str]]:
-    try:
-        hydrated = hydrate_sidecar_ref(state_dir, dict(ledger_descriptor))
-    except Exception as exc:  # descriptor errors become admission issues
-        return [{"field": "input_consumption.read_ledger_ref", "code": "invalid_ref", "message": str(exc)}]
-    raw = hydrated.payload
-    if not isinstance(raw, str):
-        return [{"field": "input_consumption.read_ledger_ref", "code": "invalid_ledger"}]
-    attempt_id = str(policy.get("attempt_id") or "")
-    try:
-        rows = _parse_ledger(raw.encode("utf-8"), expected_attempt_id=attempt_id)
-    except ArtifactReadError as exc:
-        return [{"field": "input_consumption.read_ledger_ref", "code": "invalid_ledger", "message": str(exc)}]
-    issues: list[dict[str, str]] = []
-    required = policy.get("required_reads")
-    for index, item in enumerate(required if isinstance(required, list) else []):
-        if not isinstance(item, Mapping):
-            issues.append({"field": f"required_reads[{index}]", "code": "invalid_policy"})
-            continue
-        if not required_read_satisfied(rows, item):
-            issues.append({
-                "field": f"required_reads[{index}]",
-                "code": "required_read_missing",
-                "message": f"{item.get('source_id')}/{item.get('artifact_id')} {item.get('json_path') or '$'}",
-            })
-    return issues
-
-
 def active_read_ledger_path(state_dir: Path, attempt_id: str) -> Path:
     rel = f"artifacts/attempts/{_safe_component(attempt_id)}/read-ledger.active.jsonl"
     return sidecar_path(state_dir, rel)
@@ -644,6 +609,13 @@ def render_attempt_source_briefing(
         ),
     ]
     if required:
+        if any("-predecessor-" in str(row.get("source_id") or "") for row in required if isinstance(row, Mapping)):
+            lines.append(
+                "- Sources named `-predecessor-<task-id>` are historical predecessor "
+                "context. Apply the current task contract and current task map for "
+                "scope, verification ownership and acceptance; do not treat the "
+                "predecessor task's contract as the current one."
+            )
         lines.extend([
             f"- Preferred deduplicated read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
             "  It delivers every required slice, sharing identical bodies while recording each source. "
@@ -654,6 +626,9 @@ def render_attempt_source_briefing(
             "If the tool output budget is smaller, use --page-bytes 2048; consume pages "
             "separately and leave room for tool wrappers. Return each raw page unchanged; do not filter fields or batch pages into a summary. CLI receipts prove production; "
             "provider delivery may remain unknown and never proves understanding.",
+            "- Wait for each page's complete tool response and consume it before requesting "
+            "another page; do not accumulate background page reads. If a response is "
+            "truncated, omitted, or lost, reread that exact page before continuing.",
             "- If an output is too large or truncated, read that exact source and JSON path "
             "with `--page-start 0 --page-size 8192`. Read and consume every page, using "
             "the returned `next_page_start` until it is null. The ledger accepts pages "
@@ -882,87 +857,6 @@ def _encode_selected(value: Any) -> str:
     if isinstance(value, str):
         return value
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
-
-
-def _parse_ledger(raw: bytes, *, expected_attempt_id: str) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for index, line in enumerate(raw.decode("utf-8").splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise ArtifactReadError(f"invalid read ledger line {index}") from exc
-        if not isinstance(row, dict) or row.get("schema_version") != ARTIFACT_READ_SCHEMA:
-            raise ArtifactReadError(f"invalid read ledger row {index}")
-        if expected_attempt_id and str(row.get("attempt_id") or "") != expected_attempt_id:
-            raise ArtifactReadError(f"attempt identity mismatch on ledger line {index}")
-        rows.append(row)
-    return rows
-
-
-def _read_matches(row: Mapping[str, Any], requirement: Mapping[str, Any]) -> bool:
-    if "page_start" in row:
-        return False
-    if str(row.get("status") or "read") != "read":
-        return False
-    for field in ("source_id", "artifact_id"):
-        if str(requirement.get(field) or "") != str(row.get(field) or ""):
-            return False
-    digest = str(requirement.get("artifact_sha256") or requirement.get("sha256") or "")
-    if digest and digest != str(row.get("artifact_sha256") or ""):
-        return False
-    if str(requirement.get("json_path") or "$") != str(row.get("json_path") or "$"):
-        return False
-    if int(row.get("returned_bytes") or 0) < int(requirement.get("min_returned_bytes") or 1):
-        return False
-    if bool(row.get("truncated")) and not bool(requirement.get("allow_truncated", False)):
-        return False
-    for field in ("max_items", "max_chars"):
-        required_value = int(requirement.get(field) or 0)
-        if required_value and int(row.get(field) or 0) != required_value:
-            return False
-    return True
-
-
-def required_read_satisfied(rows: Iterable[Mapping[str, Any]], requirement: Mapping[str, Any]) -> bool:
-    """Accept a whole read or complete, gap-free pages of one selected value."""
-    rows = list(rows)
-    if any(_read_matches(row, requirement) for row in rows):
-        return True
-    if int(requirement.get("max_items") or 0) or int(requirement.get("max_chars") or 0):
-        return False
-    groups: dict[tuple[str, int, int], list[tuple[int, int]]] = {}
-    for row in rows:
-        if "page_start" not in row or str(row.get("status") or "") != "read":
-            continue
-        if any(str(row.get(key) or "") != str(requirement.get(key) or "")
-               for key in ("source_id", "artifact_id")):
-            continue
-        digest_expected = str(requirement.get("artifact_sha256") or requirement.get("sha256") or "")
-        if digest_expected and digest_expected != str(row.get("artifact_sha256") or ""):
-            continue
-        if str(row.get("json_path") or "$") != str(requirement.get("json_path") or "$"):
-            continue
-        try:
-            start, end, total = (int(row[key]) for key in ("page_start", "page_end", "page_total"))
-            size = int(row.get("returned_bytes") or 0)
-            selected_bytes = int(row.get("selected_bytes") or 0)
-        except (ValueError, TypeError, KeyError):
-            continue
-        digest = str(row.get("selected_sha256") or "")
-        if len(digest) != 64 or start < 0 or end <= start or end > total or size <= 0 or selected_bytes < total:
-            continue
-        groups.setdefault((digest, total, selected_bytes), []).append((start, end))
-    for (_, total, selected_bytes), pages in groups.items():
-        end = 0
-        for start, stop in sorted(pages):
-            if start > end:
-                break
-            end = max(end, stop)
-        if end == total and selected_bytes >= int(requirement.get("min_returned_bytes") or 1):
-            return True
-    return False
 
 
 def _safe_component(value: str) -> str:

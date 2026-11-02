@@ -646,6 +646,10 @@ def plan_reader_stage_replan(
                 or failure_event.type
             ),
         }]
+    if failure_payload.get("failure_class") == "reader_execution_failure":
+        # Old trigger refs describe an earlier candidate. Reuse only the
+        # current Critic's verified bindings, if recovery could establish them.
+        origin_payload["previous_plan_candidate_refs"] = []
     for key in (
         *_CANONICAL_INPUT_KEYS,
         "target_ref",
@@ -672,7 +676,9 @@ def plan_reader_stage_replan(
             continue
         value = failure_payload.get(key)
         if value not in (None, "", [], {}) and (
-            key in _CANONICAL_INPUT_KEYS or not origin_payload.get(key)
+            key in _CANONICAL_INPUT_KEYS
+            or key == "previous_plan_candidate_refs"
+            or not origin_payload.get(key)
         ):
             origin_payload[key] = value
     source_event_ids = {

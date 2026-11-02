@@ -87,6 +87,10 @@ def test_controlled_file_publication_preserves_full_body_and_requires_review(
                                            "evidence_refs": [selected["ref"]],
                                            "acceptance_ids": ["AC-1"], "status": "covered"}],
                  "acceptance_criteria": [{"id": "AC-1", "criterion": "Full source is preserved."}], "decision_log": []}
+    if not deferred:
+        synthesis["readiness"] = {"verdict": "ready", "implementation_start": True,
+                                   "gaps": [], "risks": [], "evidence_refs": [],
+                                   "reason": "The complete source is ready for Owner confirmation."}
     if deferred:
         synthesis.pop("prd_file")
         synthesis["prd_composition"] = {"source_ref": selected["ref"], "source_digest": selected["sha256"],
@@ -216,3 +220,5 @@ def test_repair_keeps_the_original_immutable_file_selection(tmp_path, monkeypatc
     react_channel_synthesis_repair_requested(host, repair)
     assert routed[0].payload["refs"]["prd_source_file"] == original.payload["prd_source_file"]
     assert routed[0].payload["refs"]["prd_document_contract"] == "full.v1"
+    assert "complete standalone" in routed[0].payload["text"]
+    assert "Do not use prd_composition" in routed[0].payload["text"]

@@ -222,19 +222,21 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         )
         from zf.runtime.artifact_read_ledger import read_attempt_artifact
 
+        event_log = event_log_from_project(context.state_dir, config=context.config)
         identity = authorize_artifact_read_from_environment(
             context.state_dir,
             manifest=manifest,
-            event_log=event_log_from_project(
-                context.state_dir,
-                config=context.config,
-            ),
+            event_log=event_log,
+            # Exact and bundled reads use the same operation-identity reducer.
+            # The conservative view retains all operation facts and signing checks.
+            use_artifact_context=True,
         )
         if required:
             from zf.runtime.artifact_read_requirements import required_reads_for_attempt
+            from zf.runtime.artifact_context_events import artifact_context_events
 
             rows = required_reads_for_attempt(
-                event_log_from_project(context.state_dir, config=context.config).read_all(),
+                artifact_context_events(event_log),
                 args.attempt,
                 state_dir=context.state_dir, operation_id=identity["operation_id"],
             )

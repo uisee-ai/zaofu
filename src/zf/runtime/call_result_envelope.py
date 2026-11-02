@@ -444,7 +444,9 @@ def validate_call_result_envelope(
             allowed_statuses = {"satisfied"}
             if (allow_incomplete_reads and isinstance(execution, Mapping)
                     and execution.get("status") == "failed" and isinstance(control, Mapping)
-                    and control.get("schema_version") == "workflow-read-result.v1"):
+                    and control.get("schema_version") in {
+                        "workflow-read-result.v1", "plan-synthesis-result.v1",
+                    }):
                 allowed_statuses.add("incomplete")
             if str(consumption.get("status") or "") not in allowed_statuses:
                 issues.append(_issue("input_consumption.status", "not_satisfied"))

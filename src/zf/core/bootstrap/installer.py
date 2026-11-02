@@ -68,14 +68,18 @@ def install_bootstrap_feature(
             status="cancelled",
         )
 
-    feature_store.add(Feature(
+    feature = Feature(
         id=BOOTSTRAP_FEATURE_ID,
         title=BOOTSTRAP_FEATURE_TITLE,
         description=BOOTSTRAP_FEATURE_DESCRIPTION,
         status="active",
         priority=1,
         user_message="(auto-installed by zf init bootstrap ritual)",
-    ))
+    )
+    if existing is not None and overwrite:
+        feature_store.restore(feature)
+    else:
+        feature_store.add(feature)
 
     for task in materialize_bootstrap_tasks():
         # Skip if exists from a previous partial install (idempotent at task level too)

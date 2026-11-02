@@ -144,6 +144,12 @@ Task 创建和 Workflow 点火仍需 owner 单独发起。
 
 ## 完整 PRD 与可追溯评估
 
+执行 `zf-requirement-reconciliation` 的“五项质量闭环”：把来源基线、独立评审覆盖、
+验收数据计划及阶段交接索引放进 `implementation_companion`；Owner 决策沿用
+`decision_log`。`prd_quality_checklist` 记录维度、检查范围、位置/证据、状态与发现，
+作者生成的清单必须标为自检。不得把未发生的独立评审或真实数据验证写成已通过。
+Runtime 会把上述清单和 companion 导出到同版 Markdown；无需复制整份 JSON。
+
 `summary` 是摘要，完整产品说明必须写入 `prd_markdown`，两者不能互相替代。
 长篇既有 PRD 可以改用 `prd_composition`：绑定当前完整来源的 message id/digest，
 以唯一的起止原文锚点选取完整正文，以互不重叠、唯一精确匹配的 `old`/`new` 修改
@@ -157,6 +163,23 @@ Task 创建和 Workflow 点火仍需 owner 单独发起。
 其他状态提供具体 `reason`，不得将未覆盖项静默删除。
 `decision_log` 逐项记录问题/决定、依据、理由、异议及处置；没有新决定可为空。
 这些映射与完整正文共同进入 canonical PRD、同版审查和下载文件。
+
+### `prd-spec.v1` 标准正文
+
+新撰写的正式 PRD 在结构化结果中声明 `spec_format: "prd-spec.v1"`，并提供
+`document_control`（`revision`、`status`、`owner`、`profile: lite|full`）。正文按以下
+顺序组织：Overview；Background and Problem；Goals、Non-goals and Scope；User Personas
+and Prioritized Scenarios；User Flow and Interaction；Functional Requirements；Business
+Rules、Permissions and State；Non-functional Requirements；Success Metrics；Acceptance
+Criteria；Dependencies、Assumptions、Risks and Open Questions。需要上线、迁移、回滚或运维
+责任时再添加 Rollout、Migration and Operations。
+
+每个 Requirement 只表达一个可观察行为，并至少有一个 Scenario（GIVEN/WHEN/THEN）和
+一个稳定 Acceptance ID。`success_metrics` 表达用户或业务结果，
+`non_functional_requirements` 表达可度量质量约束；两者不能用“高性能”“易用”等裸形容词
+替代。产品正文只写产品语义、边界和稳定 ID；Provider、Workflow action、命令、内部事件
+和实现选型进入 Design、Tasks 或 Evidence 附录。`prd_file`/`prd_composition` 仍可复用
+完整旧文档，但不应把旧文档误报成 `prd-spec.v1`。
 
 ## 原文直引要求
 

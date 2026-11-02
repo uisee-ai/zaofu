@@ -17,6 +17,7 @@ from typing import Any, Mapping
 
 from zf.core.state.atomic_io import atomic_write_text
 
+from zf.runtime.gap_replay_claims import repair_replayed_goal_claims
 from zf.runtime.module_gap_replacement import (
     bind_replacement_group as _bind_replacement_group,
     completed_task_ref_dependencies as _completed_task_ref_dependencies,
@@ -36,12 +37,8 @@ class ModuleGapPlanValidationResult:
     summary: dict[str, Any] = field(default_factory=dict)
 
     def to_check(self) -> dict[str, Any]:
-        return {
-            "name": "module_gap_plan_validate",
-            "passed": self.passed,
-            "errors": list(self.errors),
-            "summary": dict(self.summary),
-        }
+        return {"name": "module_gap_plan_validate", "passed": self.passed,
+                "errors": list(self.errors), "summary": dict(self.summary)}
 
 
 def gap_tasks_from_rework_summary(summary: Any) -> list[dict[str, Any]]:
@@ -374,6 +371,10 @@ def build_gap_task_map_amend(
     for raw in gap_tasks:
         task_id = _task_id(raw)
         if task_id in existing_ids:
+            existing = next(task for task in tasks if _task_id(task) == task_id)
+            proposed = _gap_task_to_task_map_item(raw, wave=_int_value(existing.get("wave"), default=next_wave))
+            if repair_replayed_goal_claims(existing, proposed, has_lineage=bool(_task_contract_list(raw, "supersedes_task_ids"))):
+                appended.append(task_id)
             continue
         tasks.append(_gap_task_to_task_map_item(raw, wave=next_wave))
         existing_ids.add(task_id)
@@ -503,6 +504,8 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
     root_owner_class = str(raw.get("root_owner_class") or "").strip()
     if root_owner_class:
         item["root_owner_class"] = root_owner_class
+    if "goal_claim_ids" in raw:
+        item["goal_claim_ids"] = _string_list(raw["goal_claim_ids"])
     base_commit = str(raw.get("base_commit") or "").strip()
     if base_commit:
         item["base_commit"] = base_commit
@@ -524,6 +527,18 @@ def _inherit_replacement_mechanical_identity(
     """
 
     item = dict(raw)
+    structured_verification = item.get("verification")
+    if isinstance(structured_verification, dict) and isinstance(
+        structured_verification.get("commands"), list
+    ):
+        commands = structured_verification["commands"]
+        validation = item.get("validation")
+        if isinstance(validation, dict) and validation.get("commands") not in (None, commands):
+            raise ValueError(f"{_task_id(item)}: conflicting structured verification commands")
+        item["validation"] = {
+            **(validation if isinstance(validation, dict) else {}),
+            "commands": deepcopy(commands),
+        }
     superseded = _string_list(item.get("supersedes_task_ids"))
     inherited_task_id = (
         superseded[0]
@@ -910,7 +925,8 @@ def _acceptance(raw: dict[str, Any]) -> list[str]:
     if not isinstance(values, list):
         return _string_list(values)
     return _string_list([
-        item.get("statement") or item.get("text") or item.get("criterion") or item.get("title") or ""
+        item.get("statement") or item.get("text") or item.get("criterion")
+        or item.get("description") or item.get("acceptance") or item.get("title") or ""
         if isinstance(item, dict) else item
         for item in values
     ])

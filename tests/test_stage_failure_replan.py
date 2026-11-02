@@ -358,7 +358,9 @@ def test_replan_preserves_complete_previous_plan_candidate_refs() -> None:
     }]
     origin = ZfEvent(
         type="issue.requested",
-        payload={"issue_ref": "docs/issues/TODO.md"},
+        payload={"issue_ref": "docs/issues/TODO.md", "previous_plan_candidate_refs": [{
+            "ref": "plan-synth/child-results/older.json", "sha256": "b" * 64,
+        }]},
     )
     failure = _failure(findings=[{
         "severity": "high",
@@ -374,6 +376,19 @@ def test_replan_preserves_complete_previous_plan_candidate_refs() -> None:
 
     assert replan is not None
     assert replan.payload["previous_plan_candidate_refs"] == candidate_refs
+
+
+def test_failed_critic_without_verified_current_refs_does_not_reuse_older_candidate() -> None:
+    origin = ZfEvent(type="issue.requested", payload={
+        "issue_ref": "docs/issues/TODO.md", "previous_plan_candidate_refs": [{
+            "ref": "plan-synth/child-results/older.json", "sha256": "b" * 64,
+        }],
+    })
+    failure = _failure(reason="Critic could not consume inputs")
+    failure.payload["failure_class"] = "reader_execution_failure"
+    replan, _ = plan_reader_stage_replan(_config(), [origin, failure], failure)
+    assert replan is not None
+    assert replan.payload["previous_plan_candidate_refs"] == []
 
 
 def test_replan_recovers_plan_package_identity_from_rejected_trigger() -> None:

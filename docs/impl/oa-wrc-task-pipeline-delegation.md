@@ -146,6 +146,8 @@ Impl handoff 和 Verify 使用 `<provider>.hook.post_tool_use`，按角色和派
 失败。完整正文和已有 `refs.raw_output` 是证据；索引仅用于定位。短输出或空
 stdout 可仅内联于事件，没有 sidecar 不代表工具未执行；若当前契约明确要求
 额外 sidecar，则必须核对允许的证据形式并如实报告约束，不补造引用。
+大输出已外置时，hook 事件仅保留按字节限制的首尾预览及完整 sidecar 引用，
+引用不再重复携带预览、开头和结尾；完整脱敏正文仍可通过引用校验和读取。
 
 
 ### 已终局 reader 的恢复清理

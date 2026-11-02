@@ -78,7 +78,7 @@ def _seed(root, bounded):
     else:
         # Baseline has no admitted OA delegation; same read-pack measured above.
         cfg.workflow.orchestration = WorkflowOrchestrationConfig()
-    context = {**vars(loaded), "flow_kind": "prd", "dispatch_base_commit": head,
+    context = {**vars(loaded), "flow_kind": "prd", "frontier_owner": "run_manager", "dispatch_base_commit": head,
                "profile_id": policy["profile_id"], "profile_digest": policy["profile_digest"]}
     for tid in ["A", "B", "C"]:
         TaskStore(seed.state_dir / "kanban.json").add(Task(id=tid, title=tid, status="backlog",

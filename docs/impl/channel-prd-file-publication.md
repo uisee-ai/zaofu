@@ -206,3 +206,36 @@ Owner 消息及其文本／JSON 附件作为未预分类的决定证据交给独
 仍保持先读取来源、再读取决定、最后评估目标的阶段隔离。PRD 预览从同版不可变来源
 清单展示已验证的 Owner 消息、文本附件与 Agent 需求映射；不可读取时明确提示。用户可
 返回讨论补充或修正，不直接修改已发布 PRD。
+
+## PRD 质量方法与阶段证据
+
+`prd_quality_prompt.py` 为新撰写 PRD 提供来源基线、Owner 决定、独立评审、验收数据
+计划及阶段交接方法；`channel_reply_prompt.py` 直接接入 author/consensus prompt，
+未绑定 Skill 的历史 conversation 群也能获得这些要求。Skill 方法源为
+`skills/zf-requirement-reconciliation/SKILL.md`，参与者、synthesizer 和 Planner
+沿同一方法工作。Markdown 导出保留 `prd_quality_checklist` 和
+`implementation_companion`，未知扩展字段也不丢失。
+
+独立评估的 manifest/input-bundle 冻结完整 `review_method` 与
+`review_method_digest`。源清单仅提炼用户要求，预留 `PRD-Q1..Q8` 用于方法清单，
+不混进来源。最终 matrix 必须覆盖两组 ID 及 Owner 新增需求；遗漏按既有单次合同
+repair 处理，仍不合法则评估失败，不给 PASS。report 的 `quality_checklist` 是同一
+matrix 的质量行视图，`document_quality` 与 `source_fidelity` 按逐项结论归并；
+`planning_readiness` 是评估者建议，`product_verification` 单独记录真实执行状态。
+以上都绑定现有 input/report ref/digest，复用同一下载/API 与后续评估反馈路径。
+
+评估只接收请求发生前的成员快照和同版 consensus 事件；不同 PRD、错误摘要或晚到
+签收不混入。新建 PRD 模板增加独立 `dev_reviewer`，与 `security_reviewer` 一样
+read_only、默认启用、允许显式禁用；原有群不自动改变 roster。缺 reviewer 时仍使用
+现有邀请/注册流程，不自动扩大权限或绕过 Owner。
+
+这是质量评审和可追溯交接能力，不表示 DL 已有 v1.3 部署证据、已批准所有阈值、已提供
+真实脱敏数据或已完成产品验收。外部事实缺失在清单中保持未核验/NOT_RUN，按影响阶段
+处理；未来 plan/tasks/运行证据不阻塞首份 PRD。通用 full PRD 机械校验保留结构与 ID
+关系，架构合理性由来源和独立评审判断。
+
+回归入口：`tests/test_prd_quality_review.py`、`tests/test_channel_prd_document.py`、
+`tests/test_channel_prd_evaluation_reactor.py`、`tests/test_output_evaluation.py`、
+`tests/test_channel_templates.py`；下游同版 Task/Workflow 闭环沿用
+`tests/test_channel_prd_task_contract.py` 和
+`tests/e2e/test_channel_group_product_mock_e2e.py`。

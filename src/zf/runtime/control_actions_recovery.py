@@ -32,7 +32,7 @@ RECOVERY_ACTIONS = (
 
 _RETRIGGERABLE = frozenset({
     "task_map.ready", "candidate.ready", "lane.stage.completed", "flow.goal.closed",
-    "flow.discovery.requested", "flow.discovery.completed",
+    "flow.discovery.requested", "flow.discovery.completed", "flow.gap_plan.ready",
 })
 _UPSTREAM_LINEAGE_REBUILD_REASONS = frozenset({
     "blocking Goal closure has no current Plan Artifact Package",
@@ -226,8 +226,9 @@ class RecoveryActionsMixin:
             return self._recovery_failed(
                 requested, action, requested_action, "source_event_id is required",
             )
+        events = self.writer.event_log.read_all()
         source = None
-        for event in self.writer.event_log.read_all():
+        for event in events:
             if event.id == source_event_id:
                 source = event
                 break
@@ -245,7 +246,24 @@ class RecoveryActionsMixin:
                 requested, action, requested_action,
                 f"{source.type} is not a retriggerable driving event",
             )
-        for event in self.writer.event_log.read_all():
+        if source.type == "flow.gap_plan.ready":
+            if source.origin != "kernel":
+                return self._recovery_failed(
+                    requested, action, requested_action, "flow gap plan must originate from kernel",
+                )
+            outcomes = [
+                event.type for event in events
+                if event.type in {"task_map.amend.failed", "task_map.amended"}
+                and event.origin == "kernel"
+                and isinstance(event.payload, dict)
+                and event.payload.get("source_event_id") == source_event_id
+            ]
+            if "task_map.amend.failed" not in outcomes or "task_map.amended" in outcomes:
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "flow gap plan must have a failed, not already completed, amendment",
+                )
+        for event in events:
             body = event.payload if isinstance(event.payload, dict) else {}
             if str(body.get("redrive_of") or "") == source_event_id:
                 return self._recovery_failed(
@@ -387,6 +405,11 @@ class RecoveryActionsMixin:
             None,
         )
         if existing_trigger is not None:
+            if payload.get("resume_candidate_synth_event_id") != existing_trigger.payload.get("resume_candidate_synth_event_id"):
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "stage generation already exists with a different candidate checkpoint", 409,
+                )
             if feedback != operator_feedback(existing_trigger.payload):
                 return self._recovery_failed(
                     requested, action, requested_action,
@@ -429,6 +452,17 @@ class RecoveryActionsMixin:
                 409,
             )
         bind_operator_feedback(stage_trigger, feedback, request_id=requested.id)
+        if payload.get("resume_candidate_synth_event_id"):
+            from zf.runtime.plan_synth_recovery_refs import resume_failed_critic_candidate
+
+            try:
+                synth_id = str(payload["resume_candidate_synth_event_id"])
+                stage_trigger.payload["previous_plan_candidate_refs"] = resume_failed_critic_candidate(
+                    self.state_dir, events, source, synth_id,
+                )
+                stage_trigger.payload["resume_candidate_synth_event_id"] = synth_id
+            except ValueError as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
         if "repair_target" in payload:
             from zf.runtime.reader_repair_target import bind_reader_repair_target
 

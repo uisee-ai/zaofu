@@ -1,14 +1,24 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock
+from types import SimpleNamespace
 import json
 import os
+import subprocess
 
 import pytest
 
 from zf.core.events import EventLog, EventWriter
 from zf.runtime import workflow_runtime_start as runtime
 from zf.runtime.workflow_runtime_start import ensure_project_runtime
+
+
+@pytest.fixture(autouse=True)
+def isolated_subprocess_module(monkeypatch):
+    # Patching the shared stdlib module mutates subprocess for every thread.
+    monkeypatch.setattr(runtime, 'subprocess', SimpleNamespace(
+        Popen=subprocess.Popen, DEVNULL=subprocess.DEVNULL, STDOUT=subprocess.STDOUT,
+    ))
 
 
 def _context(tmp_path):

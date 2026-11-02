@@ -212,6 +212,42 @@ def test_codex_headless_uses_codex_cli_auth_probe(monkeypatch):
     assert _probe_provider_auth("codex-headless") == (True, "authenticated")
 
 
+def test_codex_auth_probe_accepts_configured_model_provider_command(
+    tmp_path, monkeypatch,
+):
+    config_home = tmp_path / ".codex"
+    config_home.mkdir()
+    (config_home / "config.toml").write_text(
+        """
+model_provider = "cpa"
+
+[model_providers.cpa]
+name = "cpa"
+
+[model_providers.cpa.auth]
+command = "cpa"
+args = ["credential"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(config_home))
+    monkeypatch.setattr("zf.runtime.preflight.shutil.which", lambda command: command)
+
+    def run(command, **kwargs):
+        if command[:2] == ["codex", "login"]:
+            return SimpleNamespace(returncode=1, stdout="not logged in", stderr="")
+        assert command == ["cpa", "credential"]
+        return SimpleNamespace(returncode=0, stdout="credential-present", stderr="")
+
+    monkeypatch.setattr("zf.runtime.preflight.subprocess.run", run)
+
+    assert _probe_provider_auth("codex-headless") == (
+        True,
+        "configured model-provider credentials (cpa)",
+    )
+
+
 def test_real_environment_does_not_require_api_key_after_provider_auth(
     monkeypatch,
 ):

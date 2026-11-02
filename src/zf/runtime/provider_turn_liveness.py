@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,14 @@ def active_codex_turn(
         events = read_runtime_events(event_log, state_dir)
     except Exception:
         return None
+
+    return active_codex_turn_from_events(events, instance_id)
+
+
+def active_codex_turn_from_events(
+    events: Iterable[ZfEvent], instance_id: str,
+) -> dict[str, object] | None:
+    """Reconstruct an open turn from an already loaded event window."""
 
     active: dict[tuple[str, str], ZfEvent] = {}
     recycling_turns: set[tuple[str, str]] | None = None
@@ -128,4 +137,4 @@ def _parse_event_ts(value: object) -> datetime | None:
     return parsed
 
 
-__all__ = ["active_codex_turn"]
+__all__ = ["active_codex_turn", "active_codex_turn_from_events"]

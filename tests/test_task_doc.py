@@ -506,6 +506,48 @@ def test_task_doc_ingest_updates_contract_and_clears_dispatch(tmp_path: Path) ->
     assert updated.contract.acceptance_criteria == ["new acceptance"]
 
 
+def test_task_doc_ingest_preserves_structured_acceptance(tmp_path: Path) -> None:
+    from zf.core.task.store import TaskStore
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    store = TaskStore(state_dir / "kanban.json")
+    acceptance = [{"id": "A1", "statement": "must pass", "mandatory": True}]
+    task = Task(id="TASK-STRUCTURED", title="structured", contract=TaskContract(
+        behavior="x", verification="true", scope=["src/a.py"],
+        acceptance_criteria=acceptance,
+    ))
+    store.add(task)
+    doc = write_task_doc(state_dir, task).path
+    doc.write_text(doc.read_text().replace("  - `src/a.py`", "  - `src/b.py`"))
+
+    ingest_task_doc(state_dir, task.id)
+    updated = store.get(task.id)
+    assert updated.contract.scope == ["src/b.py"]
+    assert updated.contract.acceptance_criteria == acceptance
+
+
+def test_task_doc_ingest_rejects_edited_structured_acceptance(tmp_path: Path) -> None:
+    import pytest
+    from zf.core.task.store import TaskStore
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    store = TaskStore(state_dir / "kanban.json")
+    acceptance = [{"id": "A1", "statement": "must pass", "mandatory": True}]
+    task = Task(id="TASK-STRUCTURED", title="structured", contract=TaskContract(
+        behavior="x", verification="true", scope=["src/a.py"],
+        acceptance_criteria=acceptance,
+    ))
+    store.add(task)
+    doc = write_task_doc(state_dir, task).path
+    doc.write_text(doc.read_text().replace("must pass", "may pass"))
+
+    with pytest.raises(ValueError, match="structured acceptance"):
+        ingest_task_doc(state_dir, task.id)
+    assert store.get(task.id).contract.acceptance_criteria == acceptance
+
+
 def test_task_doc_cli_rejects_worker_ingest_without_operator_ack(
     tmp_path: Path,
     monkeypatch,

@@ -671,6 +671,21 @@ def test_sample_amendment_can_cover_only_the_current_run(tmp_path, monkeypatch):
     assert _operation_limits(state_dir, operations["op-same-run"], events=events)["max_usage_samples"] == 0
     assert _operation_limits(state_dir, operations["op-other-run"], events=events)["max_usage_samples"] == 60
     assert _operation_limits(state_dir, operations["op-same-run"], events=events)["cost_budget_usd"] == 8
+    from zf.runtime.workflow_budget_status import effective_operation_limits
+    from zf.runtime.fanout_execution_boundary import render_execution_boundary
+    from zf.core.config.schema import RoleConfig
+
+    same = effective_operation_limits(state_dir, log, "op-same-run")
+    other = effective_operation_limits(state_dir, log, "op-other-run")
+    assert same["max_usage_samples"] == 0
+    assert other["max_usage_samples"] == 60
+    role = RoleConfig(name="reader", instance_id="reader")
+    briefing = "\n".join(render_execution_boundary(_config(), role, {}, effective_limits=same))
+    assert "max_usage_samples=`0`" in briefing
+    assert "Finish within" not in briefing
+    assert "cost_budget_usd=`8`" in briefing
+    other_briefing = "\n".join(render_execution_boundary(_config(), role, {}, effective_limits=other))
+    assert "Finish within `60` usage samples" in other_briefing
 
 
 def test_budget_blocked_task_pipeline_redrives_after_owner_amendment(

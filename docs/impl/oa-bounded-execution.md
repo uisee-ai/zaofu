@@ -63,6 +63,17 @@ Run Manager 仅对显式启用策略、活跃 Run、当前 generation、已结�
 和其他代次不触发。以 Run/generation/operation/结果摘要去重；相同输入已有请求
 不因心跳或重启再次请求。不伪造 exhaustion，不增加返工额度。
 
+首次已准入的失败 Impl 是独立审查，不套用重复失败的 exhaustion 次数门槛；
+仍须绑定当前 Run、Task Map generation、operation 和结果来源，并在 OA checkpoint
+再次核对目标。其他 Autoresearch 已占用诊断槽位时，独立的 OA 语义审查可以继续；
+原诊断和熔断仍保留，人工决策门和受控重规划不被绕过。已超时的诊断即使携带
+operation key，也必须进入失败结算；已被接受的活跃诊断继续按原活性窗口处理。
+状态解释展示实际选中的后续操作；当诊断槽被其他 Autoresearch 请求占用时，
+在 `pending_execution.diagnosis_wait` 列出等待原因和关联请求 ID。
+失败输入携带同一 Run 的最新用户目标及来源事件，和 execution-context 使用同一快照。
+审查后用户目标变化时拒绝旧 OA 决策，按新目标重新排队一次；其他 Run 的更新不影响
+当前决策。历史未绑定目标事件的检查点保持重放兼容。
+
 ## 只读观测
 
 ```bash

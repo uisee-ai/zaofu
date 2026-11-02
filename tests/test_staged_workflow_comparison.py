@@ -35,7 +35,12 @@ def test_timeout_kills_provider_descendants_in_shared_group(tmp_path):
     result = run_process([sys.executable, "-u", "-c", code], cwd=tmp_path, timeout=.2)
     pid = int(result["stdout"].strip())
     state = Path(f"/proc/{pid}/stat")
-    assert not state.exists() or state.read_text().split()[2] == "Z"
+    try:
+        process_state = state.read_text().split()[2]
+    except (FileNotFoundError, ProcessLookupError):
+        # The child can disappear between observing /proc and reading it.
+        return
+    assert process_state == "Z"
 
 
 def test_unknown_and_nonfinite_metrics_never_promote():

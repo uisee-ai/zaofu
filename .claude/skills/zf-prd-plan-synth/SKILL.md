@@ -30,6 +30,15 @@ configured workflow separates PRD authoring. They do not add `prd-author`,
 
 ## PRD Author Output
 
+Channel PRD 输入先消费同版 `implementation_companion` 的来源基线、评审覆盖、验收数据
+计划和 handoff 索引，以及独立评估报告（如已提供）。复核报告的 PRD ref/digest；旧版
+checklist 不证明新版通过。执行 `zf-requirement-reconciliation` 的五项质量闭环。
+将已定 Requirement/AC/命令映射到 `prd-plan.md`、`task_map.json` 和 `source_index.json`，
+记录尚未生成项的生产者、触发条件和范围；这些是 Spec-kit spec/plan/tasks 的阶段对应，
+不另建第二份 Task Store。完整 plan/tasks 产生后由 Critic 做跨工件对账；首次 PRD 不以
+未来文件、可选 assess 扩展或固定文件名为准入条件。TBD 仅阻塞其影响的当前动作，
+产品验证未执行不得转写为通过，独立评估也不能代替 Owner 执行授权。
+
 Write `prd.md` before emitting `prd.ready`. The PRD must be a durable artifact
 under the project root, normally `docs/prds/` or `docs/plans/`. Do not emit a
 memory-only PRD or mention the path only in prose.

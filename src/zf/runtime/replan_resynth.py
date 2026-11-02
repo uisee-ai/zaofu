@@ -103,6 +103,9 @@ def build_replan_resynth_event(
         trace_id=str(getattr(plan, "trace_id", "") or ""),
     )
     payload = dict(base_payload)
+    # The previous trigger's reason describes its own stage, not this replan.
+    # Current context is carried by rework_source, feedback and classification.
+    payload.pop("reason", None)
     source_event = _event_by_id(
         events,
         str(getattr(plan, "source_event_id", "") or ""),
