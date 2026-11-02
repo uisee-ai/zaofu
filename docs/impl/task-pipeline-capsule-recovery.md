@@ -16,6 +16,10 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 
 `zf restart --dry-run` 全量重启预览只报告将执行的 stop/start，不调用实际停止或启动入口；该预览不证明 provider 连接或运行态已恢复。`tests/test_cli_restart.py` 通过真实 CLI 入口阻断对这两个入口的调用。
 
+控制面单独重载时，已启用的 Autoresearch resident 同样经正常单实例锁检查并恢复；
+如已有进程持锁则不启动重复 consumer。保留 worker 及其 attempt，不重启 provider；
+重载本身不证明诊断任务已执行或已完成。`tests/test_cli_start.py` 覆盖 CLI 启动入口。
+
 单角色 `zf restart <role> --dry-run` 同样只报告计划，不重启角色、改写角色状态或追加合同检查事件。任务级语义恢复复扫按原任务身份隔离：同一父 Run 和候选提交下不同任务的复扫不得互相替代；同一任务的后续代仍按原规则替代旧代。实际 provider 断连后仍需通过正常角色恢复链恢复派发，不能把预览当作恢复。
 
 对于修复前已发生的跨任务错误替代，Run Manager 仅在账本能绑定原失败、原复扫请求、取消事件和同 Run 的另一任务替代请求时，以取消事件为幂等依据重发原语义复扫；已产生后续进展或已重发的任务不重复派发，同任务正常换代不触发此恢复。

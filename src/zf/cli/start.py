@@ -1317,15 +1317,9 @@ def run(args: argparse.Namespace) -> int:
         # 9. Update session state
         session_store.update(runtime_state="active")
 
-        if (foreground or dry_run) and not control_plane_only:
+        if foreground or dry_run:
             from zf.runtime.autoresearch_resident_sidecar import (
                 start_autoresearch_resident_sidecar,
-            )
-            from zf.runtime.feishu_inbound_sidecar import (
-                start_feishu_inbound_sidecar,
-            )
-            from zf.runtime.feishu_projection_sidecar import (
-                start_feishu_projection_sidecar,
             )
 
             autoresearch_resident_sidecar = start_autoresearch_resident_sidecar(
@@ -1335,6 +1329,15 @@ def run(args: argparse.Namespace) -> int:
                 event_log=event_log,
                 dry_run=dry_run,
             )
+
+        if (foreground or dry_run) and not control_plane_only:
+            from zf.runtime.feishu_inbound_sidecar import (
+                start_feishu_inbound_sidecar,
+            )
+            from zf.runtime.feishu_projection_sidecar import (
+                start_feishu_projection_sidecar,
+            )
+
             feishu_inbound_sidecar = start_feishu_inbound_sidecar(
                 config=config,
                 state_dir=state_dir,

@@ -308,6 +308,23 @@ def project_dir(tmp_path: Path, monkeypatch):
 
 
 class TestZfStart:
+    def test_control_plane_reload_recovers_enabled_autoresearch_sidecar(
+        self, project_dir: Path, monkeypatch,
+    ):
+        import zf.cli.start as start_mod
+
+        config_path = project_dir / "zf.yaml"
+        config = yaml.safe_load(config_path.read_text())
+        config["runtime"] = {"autoresearch_resident": {"enabled": True}}
+        config_path.write_text(yaml.safe_dump(config))
+        monkeypatch.setattr(start_mod, "_initialize_start_transport", lambda *args, **kwargs: True)
+
+        assert main(["start", "--dry-run", "--control-plane-only", "--skip-workflow-inspect"]) == 0
+        from zf.core.events.log import EventLog
+        events = EventLog(project_dir / ".zf" / "events.jsonl").read_all()
+        assert any(event.type == "autoresearch.resident_sidecar.started"
+                   and event.payload.get("dry_run") is True for event in events)
+
     def test_start_registered_in_cli(self):
         """zf start should be a recognized command."""
         with pytest.raises(SystemExit) as exc_info:
