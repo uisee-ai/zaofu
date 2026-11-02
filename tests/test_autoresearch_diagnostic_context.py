@@ -104,6 +104,33 @@ def test_explicit_stuck_exercise_remains_opt_in(tmp_path):
     assert resolve_scenario("controlled-stuck-recovery").requires_worker_stuck_injection
 
 
+def test_incident_guidance_queries_archived_source_events(tmp_path, monkeypatch, capsys):
+    from zf.cli.main import main
+    from zf.core.events.log import EventLog
+
+    seed = resolve_scenario("incident-reproduction").seed_text
+    assert "zf events --id" in seed
+    assert "source_state_dir" in seed
+    assert "archive" in seed.lower()
+
+    state = tmp_path / "source-state"
+    state.mkdir()
+    log = EventLog(state / "events.jsonl")
+    log.append(ZfEvent(id="evt-archived", type="human.escalate", payload={"reason": "incident"}))
+    (state / "events").mkdir()
+    log.path.rename(state / "events" / "2026-10-31.jsonl")
+    log.append(ZfEvent(id="evt-current", type="worker.heartbeat"))
+    before = log.path.read_bytes()
+
+    sandbox = tmp_path / "experiment"
+    sandbox.mkdir()
+    monkeypatch.chdir(sandbox)
+    assert main(["events", "--id", "evt-archived", "--state-dir", str(state), "--json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert [event["id"] for event in result["data"]["events"]] == ["evt-archived"]
+    assert log.path.read_bytes() == before
+
+
 def test_loop_forwards_context_to_actual_runner(tmp_path, monkeypatch):
     import zf.autoresearch.loop_iteration as iteration
     (tmp_path / "zf.yaml").write_text(
