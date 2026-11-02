@@ -70,6 +70,11 @@ Run Manager 仅对显式启用策略、活跃 Run、当前 generation、已结�
 operation key，也必须进入失败结算；已被接受的活跃诊断继续按原活性窗口处理。
 状态解释展示实际选中的后续操作；当诊断槽被其他 Autoresearch 请求占用时，
 在 `pending_execution.diagnosis_wait` 列出等待原因和关联请求 ID。
+
+历史 `human.escalate` 若没有 checkpoint 和审批命令，仍阻止运行完成；
+无进展熔断的 `needs_diagnosis` 可先创建只产出诊断建议的请求，避免等待
+无法操作的旧通知形成死结。带明确 checkpoint 或审批命令的人工关卡仍阻止
+该诊断路径；此例外不批准任务、不执行恢复，也不解除任何人工升级。
 失败输入携带同一 Run 的最新用户目标及来源事件，和 execution-context 使用同一快照。
 审查后用户目标变化时拒绝旧 OA 决策，按新目标重新排队一次；其他 Run 的更新不影响
 当前决策。历史未绑定目标事件的检查点保持重放兼容。
@@ -95,6 +100,12 @@ API：`/api/task-pipeline/summary`、`/api/projects/{project_id}/task-pipeline/s
 可用 workflow_run_id 查询参数限制 Run。复用现有访问控制。
 Task 生命周期计数保持原意，execution_statuses 单列 active/blocked/ready/waiting/done。
 capacity 明确是项目共享容量，摘要不预留槽位，不作为可直接写入的 runtime truth。
+
+Run Manager 的 `monitor.task_evidence` 对在途任务分别展示最近派发、活动与结果
+信号的事件 ID、时间及事件中已有的 Run/attempt ID；缺少标识时留空，缺少信号为
+null。它只按明确的 task ID 关联，可能引用历史 Run/attempt，结果信号也可能是
+阻塞或 worker 自报，不能充当当前代独立验收。没有 heartbeat 或结果均不直接触发
+停止、重试或判定任务完成；resident 应结合执行摘要和合同作语义判断。
 
 ## 验证
 

@@ -275,6 +275,50 @@ def test_bounded_human_gate_diagnosis_can_replace_legacy_bare_notice() -> None:
     )
 
 
+def test_no_progress_diagnosis_does_not_deadlock_on_bare_notice() -> None:
+    events = _events()
+    action = {
+        "action": "diagnose-attention", "safe_resume_action": "diagnose_attention",
+        "checkpoint_id": "no-progress-diagnosis", "failure_class": "no_progress_breaker",
+        "policy_decision": {"decision": "needs_diagnosis"},
+    }
+    actions = enrich_continuation_actions(
+        [action], run_id="RUN-1", generation="GEN-1",
+        current_progress_digest=progress_digest(events),
+    )
+    bare = {"event_id": "old-escalation", "blocking_scope": "run"}
+    completion = {"status": "incomplete", "pending_human_decisions": [bare]}
+    projection = build_run_continuation_projection(
+        events, goal=_goal(), pending_actions=actions,
+        completion_profile=completion,
+    )
+    assert projection["next_operation"]["checkpoint_id"] == "no-progress-diagnosis"
+    assert completion["pending_human_decisions"] == [bare]
+
+    for explicit in (
+        {**bare, "checkpoint_id": "human-approval-gate"},
+        {**bare, "approval_command": "zf approve gate"},
+    ):
+        blocked = build_run_continuation_projection(
+            events, goal=_goal(), pending_actions=actions,
+            completion_profile={
+                "status": "incomplete", "pending_human_decisions": [bare, explicit],
+            },
+        )
+        assert blocked["next_operation"] is None
+
+    action["policy_decision"] = {"decision": "auto_decide"}
+    other_policy = enrich_continuation_actions(
+        [action], run_id="RUN-1", generation="GEN-1",
+        current_progress_digest=progress_digest(events),
+    )
+    blocked = build_run_continuation_projection(
+        events, goal=_goal(), pending_actions=other_policy,
+        completion_profile=completion,
+    )
+    assert blocked["next_operation"] is None
+
+
 def test_explicit_human_gate_blocks_repair_diagnosis() -> None:
     events = _events()
     actions = enrich_continuation_actions(
