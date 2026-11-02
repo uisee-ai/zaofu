@@ -97,6 +97,8 @@ def test_failed_critic_records_incomplete_input_without_passing(tmp_path, partia
     assert failed.payload['failure_class'] == 'reader_execution_failure'
     assert failed.payload['previous_plan_candidate_refs'] == [candidate]
     assert not _semantic_failure(failed.payload)
+    from zf.runtime.failure_kind import failure_kind_from_payload
+    assert failure_kind_from_payload(failed.payload) == 'infra'
     assert not any(e.type == 'task_map.ready' for e in events)
 
 
