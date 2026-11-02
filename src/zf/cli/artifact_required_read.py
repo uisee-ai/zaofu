@@ -18,6 +18,7 @@ PAGE_SCHEMA = "required-artifact-page.v2"
 def prepare_required_read(
     state_dir: Path, *, manifest: dict[str, Any], rows: list[dict[str, Any]],
     identity: dict[str, Any], cursor: str | None = None, page_bytes: int = PAGE_BYTES,
+    resume: bool = False,
 ) -> tuple[str, list[dict[str, Any]]]:
     if not 1024 <= page_bytes <= PAGE_BYTES:
         raise ValueError("--page-bytes must be between 1024 and 8192")
@@ -52,7 +53,16 @@ def prepare_required_read(
     bundle_digest = canonical_json_sha256({
         "manifest": manifest, "requirements": rows, "groups": list(groups.values()),
     })
-    index, start = _position(cursor, bundle_digest, list(groups.values()))
+    if resume:
+        from zf.cli.artifact_required_resume import resume_position
+
+        index, start = resume_position(
+            state_dir, manifest=manifest, identity=identity,
+            bundle_digest=bundle_digest, groups=list(groups.values()),
+            receipts=list(receipts.values()),
+        )
+    else:
+        index, start = _position(cursor, bundle_digest, list(groups.values()))
     items: list[dict[str, Any]] = []
     emitted: list[dict[str, Any]] = []
     keys = list(groups)
@@ -103,6 +113,7 @@ def prepare_required_read(
         for receipt in receipts[key]:
             emitted.append({
                 **receipt, "delivery_id": delivery_id,
+                "operation_id": identity.get("operation_id", ""),
                 "bundle_digest": bundle_digest,
                 "returned_bytes": len(content[start:end].encode("utf-8")),
                 "truncated": start > 0 or end < len(content),

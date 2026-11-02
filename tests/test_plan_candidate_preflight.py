@@ -308,8 +308,29 @@ def test_valid_candidate_delivers_execution_facts_to_actual_critic_caller(tmp_pa
     source = next(r for r in captured["input_refs"] if r["source_id"] == "plan-execution-review")
     assert hydrate_sidecar_ref(harness.state_dir, source).payload["graph"]["task_count"] == 1
     usage = hydrate_sidecar_ref(harness.state_dir, source).payload["usage_observations"]
-    assert usage["groups"][0]["total_tokens"] == 120
-    assert usage["groups"][0]["estimated_usd"] is None
+    assert usage["total_tokens"] == 120
+    detail = next(r for r in captured["input_refs"] if r["source_id"] == "plan-execution-usage")
+    assert detail["sha256"] == usage["detail_sha256"]
+    assert hydrate_sidecar_ref(harness.state_dir, detail).payload["groups"][0]["estimated_usd"] is None
+
+
+def test_candidate_preflight_rejects_another_runs_baseline(tmp_path):
+    from tests.test_plan_artifact_package import _package
+    from zf.runtime.plan_artifact_package import write_plan_artifact_package
+
+    state = tmp_path / ".zf"
+    state.mkdir()
+    descriptor = write_plan_artifact_package(state, _package(state))
+    result = evaluate_plan_candidate_preflight(
+        state_dir=state, project_root=tmp_path,
+        reports=[{"child_id": "planner", "report": {"task_map": _task_map(),
+                  "source_index": _source_index(), "plan_md": "# Plan"}}],
+        manifest={"stage_id": "issue-triage", "trigger_payload": {
+            "flow_kind": "issue", "workflow_run_id": "other-run",
+            "plan_artifact_package_ref": descriptor["ref"],
+            "plan_artifact_package_digest": descriptor["sha256"]}}, metadata={"flow_kind": "issue"},
+    )
+    assert "canonical_plan_package_unreadable" in {item["code"] for item in result["errors"]}
 
 
 def test_plan_candidate_preflight_validates_product_acceptance_before_critic(

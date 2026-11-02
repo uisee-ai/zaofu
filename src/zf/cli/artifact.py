@@ -96,6 +96,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded, deduplicated pages")
     read_cmd.add_argument("--page-bytes", type=int, default=8192, help="Required output UTF-8 budget including metadata; 1024..8192 bytes")
     read_cmd.add_argument("--cursor", default=None, help="Continue a bound --required page")
+    read_cmd.add_argument("--resume", action="store_true", help="Resume observed pages in the current provider session")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
     read_cmd.add_argument("--max-chars", type=int, default=0)
@@ -206,6 +207,8 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 def _run_attempt_read(args: argparse.Namespace) -> int:
     try:
         required = getattr(args, "required", False)
+        if getattr(args, "resume", False) and (not required or getattr(args, "cursor", None)):
+            raise ValueError("--resume requires --required and cannot be combined with --cursor")
         if required:
             if args.source or args.artifact or args.json_path != "$" or args.max_items or args.max_chars or getattr(args, "page_start", None) is not None:
                 raise ValueError("--required cannot be combined with source, artifact or slice overrides")
@@ -246,6 +249,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             output, receipts = prepare_required_read(
                 context.state_dir, manifest=manifest, rows=rows, identity=identity,
                 cursor=getattr(args, "cursor", None) or None, page_bytes=args.page_bytes,
+                resume=getattr(args, "resume", False),
             )
             emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
             return 0

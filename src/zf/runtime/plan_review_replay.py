@@ -40,3 +40,25 @@ def pin_replayed_review_usage(
     for key in ("ref", "sha256", "byte_count"):
         if key in old_source:
             new_source[key] = old_source[key]
+        else:
+            new_source.pop(key, None)
+    old_usage = [source for source in manifest.get("sources", [])
+                 if source.get("source_id") == "plan-execution-usage"]
+    if len(old_usage) > 1:
+        raise ValueError("ambiguous pinned plan execution usage")
+    if old_usage:
+        detail = old.get("usage_observations") or {}
+        if (detail.get("detail_ref") != old_usage[0].get("ref")
+                or detail.get("detail_sha256") != old_usage[0].get("sha256")):
+            raise ValueError("pinned plan execution usage differs from review")
+        hydrate_sidecar_ref(runtime.state_dir, dict(old_usage[0]))
+    # Usage is a single frozen observation: pin both its summary and its
+    # optional detail source, including upgrades of requests created before
+    # the detail was separated from the required review body.
+    refs = payload.get("input_refs", [])
+    refs[:] = [source for source in refs if not isinstance(source, Mapping)
+               or source.get("source_id") != "plan-execution-usage"]
+    if old_usage:
+        position = next(i for i, source in enumerate(refs)
+                        if isinstance(source, Mapping) and source.get("source_id") == "plan-execution-review")
+        refs.insert(position, dict(old_usage[0]))

@@ -835,8 +835,9 @@ def test_budget_amendment_before_block_does_not_authorize_redrive(
 
 @pytest.mark.parametrize("reason", ["fast_stop", "graceful_stop"])
 @pytest.mark.parametrize("started", [False, True])
+@pytest.mark.parametrize("operation_type", ["fanout_reader_child", "fanout_synth"])
 def test_stopped_reader_resumes_same_request_without_repeating_settled_sibling(
-    tmp_path: Path, reason: str, started: bool,
+    tmp_path: Path, reason: str, started: bool, operation_type: str,
 ) -> None:
     state_dir = tmp_path / "state"
     state_dir.mkdir()
@@ -847,7 +848,7 @@ def test_stopped_reader_resumes_same_request_without_repeating_settled_sibling(
     )
     kwargs = dict(
         workflow_run_id="run-1", operation_id="reader-1",
-        operation_type="fanout_reader_child",
+        operation_type=operation_type,
         request={"candidate_head": "a" * 40}, task_id="FLOW-1",
     )
     requested = service.ensure_operation(**kwargs)
