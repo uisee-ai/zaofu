@@ -229,6 +229,11 @@ def _apply_autoresearch_controller_overrides(
     )
     data["global_budget_usd"] = cfg.budget_usd
 
+    # The outer Autoresearch process owns diagnosis and consumption. Starting
+    # another executing resident inside an experiment can recursively create
+    # worktrees and provider runs when the inner workflow reports a failure.
+    data.setdefault("runtime", {}).setdefault("autoresearch_resident", {})["enabled"] = False
+
     workflow = data.setdefault("workflow", {})
     flow_metadata = workflow.get("_flow_metadata")
     if isinstance(flow_metadata, dict):

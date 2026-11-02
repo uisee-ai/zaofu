@@ -60,6 +60,7 @@ from zf.runtime.repair_dispatch import pending_repair_dispatches
 from zf.runtime.pane_probe import build_runtime_pane_probe
 from zf.runtime.problem_taxonomy import problem_envelope_from_action
 from zf.runtime.run_manager_advisor import build_replan_advisor_projection
+from zf.runtime.run_manager_progress import task_evidence_signals
 from zf.runtime.run_manager_reports import (
     build_regression_backlog_candidates,
     build_retrospective_markdown,
@@ -2033,6 +2034,9 @@ def build_run_monitor_projection(
         "current_phase": _derive_phase(events),
         "lane_occupancy": dict(sorted(lane_counts.items())),
         "in_flight_tasks": display_in_flight,
+        "task_evidence": task_evidence_signals(
+            events, (str(item.get("task_id") or "") for item in in_flight[-50:]),
+        ),
         "residual_in_flight_tasks": residual_in_flight,
         "open_attention": display_open_attention,
         "residual_open_attention": residual_open_attention,
@@ -5158,6 +5162,11 @@ def _emit_autoresearch_request(
             human=False,
         )
         return False
+    precondition = action.get("operation_precondition")
+    precondition = precondition if isinstance(precondition, dict) else {}
+    bound_run_id = str(
+        action.get("workflow_run_id") or action.get("run_id") or precondition.get("run_id") or ""
+    )
     payload = {
         "schema_version": "run-manager.autoresearch-request.v2",
         "request_id": request_id,
@@ -5175,8 +5184,13 @@ def _emit_autoresearch_request(
         "fanout_id": str(action.get("fanout_id") or ""),
         "pdd_id": str(action.get("pdd_id") or ""),
         "stage_id": str(action.get("stage_id") or ""),
-        "workflow_run_id": str(action.get("workflow_run_id") or ""),
-        "run_id": str(action.get("run_id") or ""),
+        "workflow_run_id": bound_run_id,
+        "run_id": str(action.get("run_id") or bound_run_id),
+        "task_map_generation": str(
+            action.get("task_map_generation")
+            or (precondition.get("generation") if bound_run_id and precondition.get("run_id") == bound_run_id else "")
+            or ""
+        ),
         "trace_id": str(action.get("trace_id") or ""),
         "failure_scope": str(action.get("failure_scope") or ""),
         "plan_admission_incident_id": str(action.get("plan_admission_incident_id") or ""),
@@ -5986,7 +6000,7 @@ def _execute_orchestrator_triage_request(
             "problem_class": "semantic",
             **{key: action[key] for key in (
                 "target_operation_id", "target_stage_id", "task_map_generation",
-                "run_goal_objective_event_id",
+                "run_goal_objective_event_id", "active_attempt_id",
             ) if key in action},
             "workflow_run_id": str(action.get("workflow_run_id") or ""),
             "flow_kind": str(action.get("flow_kind") or ""),
@@ -12649,6 +12663,8 @@ def _autoresearch_inflight_request_ids(events: list[ZfEvent]) -> set[str]:
     }
     requested: set[str] = set()
     terminal: set[str] = set()
+    bridged: set[str] = set()
+    terminal_diagnoses: dict[str, ZfEvent] = {}
     request_by_checkpoint: dict[str, str] = {}
     for event in events:
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -12656,6 +12672,11 @@ def _autoresearch_inflight_request_ids(events: list[ZfEvent]) -> set[str]:
             request_id = _autoresearch_result_request_id(event, payload)
             if request_id:
                 requested.add(request_id)
+                if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED:
+                    if str(payload.get("operation_key") or "").startswith("terminal-diagnosis:"):
+                        terminal_diagnoses[request_id] = event
+                else:
+                    bridged.add(request_id)
                 checkpoint_id = str(payload.get("checkpoint_id") or "")
                 if checkpoint_id:
                     request_by_checkpoint[checkpoint_id] = request_id
@@ -12669,7 +12690,19 @@ def _autoresearch_inflight_request_ids(events: list[ZfEvent]) -> set[str]:
             )
             if request_id:
                 terminal.add(request_id)
-    return requested - terminal
+    inflight = requested - terminal
+    # The invocation bridge already refuses an unbridged terminal diagnosis
+    # after the same run reopens. Do not reserve a slot for that impossible
+    # invocation, but retain any request with a real downstream lifecycle.
+    from zf.runtime.autoresearch_invocation import run_manager_autoresearch_request_superseded
+
+    for request_id in inflight - bridged:
+        request = terminal_diagnoses.get(request_id)
+        if request is not None and run_manager_autoresearch_request_superseded(
+            request, events=events,
+        ):
+            inflight.remove(request_id)
+    return inflight
 
 
 def _autoresearch_proposal_refs(payload: dict[str, Any]) -> dict[str, Any]:

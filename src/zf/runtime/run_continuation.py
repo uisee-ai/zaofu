@@ -325,10 +325,17 @@ def _materializes_legacy_human_gate(action: dict[str, Any]) -> bool:
     return (
         str(action.get("action") or "") == "diagnose-attention"
         and str(action.get("safe_resume_action") or "") == "diagnose_attention"
-        and str(action.get("failure_class") or "") in {
-            "candidate_rework_exhausted_unresolved",
-            "human_attention_delivery",
-        }
+        and (
+            str(action.get("failure_class") or "") in {
+                "candidate_rework_exhausted_unresolved",
+                "human_attention_delivery",
+            }
+            or (
+                str(action.get("failure_class") or "") == "no_progress_breaker"
+                and isinstance(action.get("policy_decision"), dict)
+                and action["policy_decision"].get("decision") == "needs_diagnosis"
+            )
+        )
     )
 
 

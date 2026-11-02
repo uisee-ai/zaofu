@@ -991,7 +991,6 @@ class FanoutCoordinationMixin(
         events: list[ZfEvent],
     ) -> bool:
         """Replay reader synth verdicts whose aggregate terminal was missed."""
-        event_order = {event.id: index for index, event in enumerate(events)}
         latest_dispatch = {
             str(event.payload.get("fanout_id") or ""): index
             for index, event in enumerate(events)
@@ -1014,7 +1013,7 @@ class FanoutCoordinationMixin(
                 completed_synth_sources.add((fanout_id, str(event.causation_id)))
 
         recovered = False
-        for event in events:
+        for index, event in enumerate(events):
             if event.type != "fanout.synth.completed":
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
@@ -1023,7 +1022,7 @@ class FanoutCoordinationMixin(
                 continue
             if fanout_id in completed_fanouts:
                 continue
-            if event_order[event.id] < latest_dispatch.get(fanout_id, -1):
+            if index < latest_dispatch.get(fanout_id, -1):
                 continue
             if (fanout_id, event.id) in completed_synth_sources:
                 continue
@@ -6882,12 +6881,13 @@ class FanoutCoordinationMixin(
             if prepared_call is not None and not prepared_call.should_dispatch:
                 return False
             task_item = {}
+            from zf.runtime.fanout_retry_briefing import reader_retry_operation_id
             briefing_path = self._write_fanout_retry_briefing(
                 role=role,
                 manifest=manifest,
                 child=child,
                 run_id=run_id,
-                effective_operation_id=prepared_call.operation_id if prepared_call is not None else "",
+                effective_operation_id=reader_retry_operation_id(manifest, child, previous_dispatch, prepared_call),
             )
             identity_sources = (child, manifest, prepared_call)
         prompt = build_task_prompt(
