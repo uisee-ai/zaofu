@@ -60,6 +60,7 @@ from zf.runtime.repair_dispatch import pending_repair_dispatches
 from zf.runtime.pane_probe import build_runtime_pane_probe
 from zf.runtime.problem_taxonomy import problem_envelope_from_action
 from zf.runtime.run_manager_advisor import build_replan_advisor_projection
+from zf.runtime.run_manager_progress import task_evidence_signals
 from zf.runtime.run_manager_reports import (
     build_regression_backlog_candidates,
     build_retrospective_markdown,
@@ -2033,6 +2034,9 @@ def build_run_monitor_projection(
         "current_phase": _derive_phase(events),
         "lane_occupancy": dict(sorted(lane_counts.items())),
         "in_flight_tasks": display_in_flight,
+        "task_evidence": task_evidence_signals(
+            events, (str(item.get("task_id") or "") for item in in_flight[-50:]),
+        ),
         "residual_in_flight_tasks": residual_in_flight,
         "open_attention": display_open_attention,
         "residual_open_attention": residual_open_attention,

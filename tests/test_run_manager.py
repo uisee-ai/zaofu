@@ -2511,6 +2511,47 @@ def test_run_manager_unknown_gap_diagnoses_tripped_no_progress(
     assert requests[0].payload["failure_class"] == "no_progress_breaker"
 
 
+def test_no_progress_diagnosis_keeps_bare_human_escalation_pending(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    for index in range(3):
+        log.append(ZfEvent(
+            id=f"rm-action-failed-{index}",
+            type=RUN_MANAGER_ACTION_FAILED,
+            actor="run-manager",
+            payload={"checkpoint_id": "stalled", "reason": "no downstream event"},
+        ))
+    log.append(ZfEvent(
+        id="bare-escalation", type="human.escalate", actor="orchestrator",
+        payload={"reason": "human review remains required"},
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_config(),
+        project_root=tmp_path, event_log=log, spawn_repairs=False,
+    )
+    second = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_config(),
+        project_root=tmp_path, event_log=log, spawn_repairs=False,
+    )
+    events = log.read_all()
+    requests = [e for e in events if e.type == RUN_MANAGER_AUTORESEARCH_REQUESTED]
+    projection = build_run_manager_projection(
+        state_dir, events=events, config=_config(), project_root=tmp_path,
+    )
+
+    assert result.autoresearch_requested == 1
+    assert second.autoresearch_requested == 0
+    assert len(requests) == 1
+    assert requests[0].payload["failure_class"] == "no_progress_breaker"
+    assert any(
+        item["event_id"] == "bare-escalation"
+        for item in projection["completion_profile"]["blocking_human_decisions"]
+    )
+    assert not any(e.type in {"task.done", "goal.completed"} for e in events)
+
+
 def test_no_progress_diagnosis_preempts_ready_resume_action(tmp_path: Path) -> None:
     state_dir, log, _writer = _state(tmp_path)
     _append_repair_failed_children_fixture(log)
@@ -4717,6 +4758,37 @@ def test_run_monitor_reports_blocked_when_completion_has_nonhuman_blockers(
 
     assert monitor["state"] == "blocked"
     assert monitor["in_flight_tasks"][0]["task_id"] == "TASK-A"
+
+
+def test_run_monitor_distinguishes_task_activity_from_result_signals(
+    tmp_path: Path,
+) -> None:
+    state_dir, _log, _writer = _state(tmp_path)
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(Task(id="TASK-A", title="active", status="in_progress"))
+    store.add(Task(id="TASK-B", title="other", status="in_progress"))
+    events = [
+        ZfEvent(id="dispatch-a", type="task.pipeline.stage.dispatched", task_id="TASK-A"),
+        ZfEvent(id="result-b", type="dev.build.done", task_id="TASK-B", payload={
+            "workflow_run_id": "old-run", "attempt_id": "old-attempt",
+        }),
+        ZfEvent(id="unknown-result", type="dev.build.done"),
+        ZfEvent(id="heartbeat-a", type="worker.heartbeat", task_id="TASK-A"),
+    ]
+
+    monitor = build_run_monitor_projection(state_dir, events=events, pending_actions=[])
+    evidence = monitor["task_evidence"]
+    assert evidence["TASK-A"]["dispatch"]["event_id"] == "dispatch-a"
+    assert evidence["TASK-A"]["activity"]["event_id"] == "heartbeat-a"
+    assert evidence["TASK-A"]["result_signal"] is None
+    assert evidence["TASK-B"]["result_signal"]["event_id"] == "result-b"
+    assert evidence["TASK-B"]["result_signal"]["workflow_run_id"] == "old-run"
+    assert evidence["TASK-B"]["result_signal"]["attempt_id"] == "old-attempt"
+    assert evidence["TASK-B"]["activity"] is None
+    assert evidence["TASK-A"]["activity"]["ts"] == events[-1].ts
+
+    projection = build_run_manager_projection(state_dir, events=events, config=_config())
+    assert projection["monitor"]["task_evidence"] == evidence
 
 
 def test_run_monitor_includes_open_workflow_attempt_and_plan_phase(

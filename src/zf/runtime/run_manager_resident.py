@@ -234,6 +234,9 @@ def build_resident_run_manager_briefing(
         "2. 读取最近事件: `tail -n 120 \"$ZF_STATE_DIR/events.jsonl\"`。",
         "3. 若存在,读取 `projections/run_manager.json`、"
         "`projections/run_status_explain.json`、`projections/supervisor/snapshot.json`。",
+        "   对在途任务核对 `monitor.task_evidence` 的派发、活动和结果信号时间及事件引用；"
+        "heartbeat 或读取不证明交付。信号仅按 task 关联，不代表当前 Run、attempt 或独立验收；"
+        "没有信号是未知，需结合 operation、合同及证据判断。",
         "4. 判断是否只是正常等待、是否有确定性 action、是否需要 repair worker、"
         "autoresearch 深诊断、reflect 或人工介入。",
         "5. 写一条观察事件,例如:",

@@ -16,6 +16,7 @@ class TestRenderBoard:
         result = render_board(tasks, use_color=False)
         assert "Active Board" in result
         assert "delivery history lives in `zf trace delivery`" in result
+        assert "Columns show task lifecycle; pipeline execution: `zf trace dispatch`" in result
         assert "Build auth" in result
         assert "backlog" in result.lower()
 
