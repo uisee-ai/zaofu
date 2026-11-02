@@ -76,6 +76,8 @@ operation key，也必须进入失败结算；已被接受的活跃诊断继续�
 任务结算后可清除 Task 的 active dispatch；失败审查改从当前已结算 operation 传递
 原 attempt 身份。旧请求因缺少 attempt 被拒绝时，只在已找到同一 operation 的真实
 attempt 且旧请求未携带该字段时重发一次；保留原拒绝，其他原因不自动重试。
+绑定具体已结算 operation 的失败检查点使用该 operation 实际执行角色，而不是
+用任务合同中的历史 owner 覆盖实际派发角色；未绑定 operation 的旧检查点保持回退。
 
 ## 只读观测
 

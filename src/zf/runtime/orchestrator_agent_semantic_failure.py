@@ -52,12 +52,15 @@ def request_semantic_failure_checkpoint(
     if task is None or str(task.status) in {"done", "cancelled"}:
         raise SemanticFailureCheckpointError("target_task_not_current")
     events = runtime.event_log.read_all()
+    bound_operation: Mapping[str, Any] = {}
     if payload.get("target_operation_id"):
         from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
+        from zf.runtime.workflow_operation import reduce_workflow_operations
 
         current = operation_bindings(events, str(payload.get("workflow_run_id") or ""), {task_id}).get(task_id, {})
         if current.get("operation_id") != payload["target_operation_id"] or current.get("status") != "settled":
             raise SemanticFailureCheckpointError("target_operation_stale")
+        bound_operation = reduce_workflow_operations(events).get(str(payload["target_operation_id"]), {})
     workflow_run_id, package = _current_plan_package(
         events,
         preferred_run_id=str(
@@ -100,7 +103,8 @@ def request_semantic_failure_checkpoint(
     if not active_attempt_id:
         raise SemanticFailureCheckpointError("target_attempt_missing")
     target_role = str(
-        getattr(getattr(task, "contract", None), "owner_instance", "")
+        bound_operation.get("role_instance")
+        or getattr(getattr(task, "contract", None), "owner_instance", "")
         or getattr(task, "assigned_to", "")
         or payload.get("role")
         or ""

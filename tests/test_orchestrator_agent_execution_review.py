@@ -64,6 +64,35 @@ def test_settled_attempt_survives_cleared_task_dispatch_id(tmp_path):
     assert prepared.context.input_body["checkpoint_context"]["target_attempt_id"] == "lease-task-1"
 
 
+def test_semantic_review_targets_the_settled_operation_role(tmp_path):
+    from tests.test_orchestrator_agent_semantic_failure import _submit_rework
+    from zf.runtime.orchestrator_agent_decision_apply import apply_orchestrator_agent_decision
+    from zf.runtime.run_manager import run_manager_tick
+    from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+    from zf.runtime.task_pipeline_rework import derive_impl_rework_requests
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    runtime, _ = _case(tmp_path, minimal_admitted=True)
+    task = runtime.task_store.get("TASK-1")
+    runtime.task_store.update("TASK-1", active_dispatch_id="", contract=replace(
+        task.contract, owner_role="dev-b", owner_instance="dev-b",
+    ))
+    run_manager_tick(state_dir=runtime.state_dir, writer=runtime.event_writer,
+                     config=runtime.config, project_root=runtime.project_root,
+                     event_log=runtime.event_log, spawn_repairs=False)
+    request = next(event for event in runtime.event_log.read_all()
+                   if event.type == "orchestrator.semantic.failure.requested")
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    assert prepared.context.input_body["checkpoint_context"]["target_role_instance"] == "dev-a"
+    assert apply_orchestrator_agent_decision(runtime, _submit_rework(runtime, prepared))["applied"]
+    events = runtime.event_log.read_all()
+    retries = derive_impl_rework_requests(
+        events=events, generation_contexts=task_pipeline_generation_contexts(events),
+        operation_rows=reduce_workflow_operations(events).values(),
+    )
+    assert retries["TASK-1"]["fault"] == "task_pipeline_oa_rework"
+
+
 def test_rejected_missing_attempt_review_is_reissued_once(tmp_path):
     from zf.runtime.run_manager import run_manager_tick
 
