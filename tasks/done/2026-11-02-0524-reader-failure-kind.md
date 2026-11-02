@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done；00b7f2af `fix: route reader execution failures through repair recovery`
 
 # P2：Reader 执行弃权误消耗 Plan 语义返工次数
 
@@ -21,3 +21,10 @@ infra。受控修复预览拒绝它，Kernel 反而按语义失败消耗第二�
 闭包 518 passed；并发 serial 10 passed；premerge sentinel 53 passed。
 dev-verify 映射扩张为 230 个测试文件，按 AGENTS 的影响闭包执行上述精确集合；
 automatic run 使用 --skip-tier deterministic，不宣称全量或真实 Provider E2E。
+
+已合并 dev 并部署 0ff4b571。合并后 sentinel 53 passed、重点回归 23 passed。
+真实旧失败事件只读重放现在分类为 infra、自动重规划返回 infrastructure_failure；
+已启动的新 Planner 与原 Critic 均保持 running，原 Critic hash/attempt/读取账本前缀
+及五个角色进程启动时间保持，旧 Verify 拒绝仍 blocked。恢复入口已由受控动作
+测试覆盖，不重放已经被新 Planner 取代的旧失败。
+证据：DL artifacts/supervision/reader-failure-kind-deployment-2026-11-02.json。
