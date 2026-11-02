@@ -22,6 +22,19 @@ briefing 要求等待每一页完整返回并消费后再请求下一页，不�
 required-read gate。续页不是摘要；将各唯一正文的页按范围拼接，必须逐字等于
 原选定切片。缓存只合并同批相同内容，不跨 attempt 伪造已读状态。
 
+同一 operation 的 Codex 会话恢复后，如果游标丢失，可显式执行
+`zf artifact read --attempt <id> --required --resume`。该命令重新鉴权全部来源，
+核对冻结清单、operation、角色、当前注册的 session、完整输出和连续页段后，
+从首个没有同会话 transcript 观察证据的位置继续；已完整交付则返回空 items。
+身份不匹配、无可核验 transcript、截断或其他 provider 会从头读取。该功能不
+推断模型记忆：只有确定之前内容仍可使用时才选用，压缩或不确定时应从头重读。
+历史收据不会跨 operation 或 attempt 继承，原来源与原读取门仍保持可用。
+
+Plan Critic 的 `plan-execution-review` 保留用量范围、限制、分组数量与 token 汇总；
+逐 operation/attempt 的完整用量组以 `plan-execution-usage` 来源按需读取，仍有
+摘要绑定。重放同一审查会同时固定首次快照的摘要和明细；旧版内嵌数据的请求继续
+使用原请求，不因升级而改变身份。此变更不移除计划、原始需求或合同的必读要求。
+
 ## 返工读取与预算
 
 Task Pipeline briefing 保留当前身份、完整失败项、合同/来源入口及完成协议，

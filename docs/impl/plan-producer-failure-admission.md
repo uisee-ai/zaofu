@@ -57,3 +57,37 @@ Critic 首次准备请求时，执行评审中的用量观察也随 manifest 固
 request divergence 拒绝，新操作重新读取当前用量。原 manifest/评审摘要均需
 校验；这不是预算豁免，也不修改用量账本。入口及篡改回归：
 `tests/test_plan_review_replay.py`。
+
+## 局部重规划的独立 Critic 输入
+
+Planner 可在明确 `task_ids` 的受控 replan 中交付 `scoped_plan_review.json`，
+声明受影响任务、旧新 Task Map、Plan Package 和可分区补充规格的摘要及来源；
+合同见 `zf-plan-task-map-contract`。这份声明是本次 Critic 的必读输入，不能
+代替其独立 verdict、原始需求、完整候选 Task Map、固定矩阵或最终产品验收。
+
+`prepare_call_operation` 只在同 Run 当前已准入 Package、前次独立 Critic 的
+已准入结果、完整读取策略和绑定同一 Provider session 的完整 transcript 交付
+证据、原需求摘要、当前 kernel trigger 和 fanout 身份均匹配时尝试选择局部读取。
+交付观察只证明历史输出，不证明模型理解或当前记忆；目前仅已有 Codex transcript
+观察能力，Claude 和无可核验交付证据的历史审查回退完整读取。Task Map 的全局部分、未声明任务、任务集合、非选中
+Plan 端口和选中端口的 shared/未影响分区必须逐值或逐摘要一致；从新旧依赖图
+闭包加入前置及下游任务，并把旧 Task Map 对应任务、旧新补充规格 shared 和
+相应分区写入新的不可变读取策略。原完整来源仍可由 Critic 按需展开。显式
+要求完整读取始终优先；缺失、歧义、全局变化、已失效 Package、先前只有局部
+读取或任何校验失败，原必读清单原样保留。
+
+同一 operation 重放若再次携带此前派发投影的 `required_reads`，先对照不可变
+request 和读取策略；仅完全一致且确认为已生成的局部策略时，才恢复为原始输入
+重新派生，避免误把派发投影当作新的显式读取要求。新的显式要求保留，并继续经过
+既有 request divergence 检查。
+
+局部声明中的任务必须与原 kernel replan 触发事件的非空 `task_ids` 完全一致；
+这些 ID 沿既有任务图发布路径选择实施任务，其他已完成任务及证据不由此重开。
+范围声明、读取收据及新 verdict 分别留痕，机械一致性不判断业务语义，也不复用
+旧 verdict。真实派发入口、缺页准入、旧证据和完整读取回退见
+`tests/test_plan_local_review.py`；任务保留及 writer 入口见
+`tests/test_writer_fanout_runtime.py::test_scoped_replan_preserves_unselected_completed_task_evidence`。
+
+局部审查结果进入 Plan Package 前，还必须绑定已准入的当前 Critic 结果和派发的
+operation；当前基线、需求、最终 Task Map、Plan 端口和计划正文与受审候选不一致
+时拒绝准入。该校验不会替代 Critic 的独立语义判断。

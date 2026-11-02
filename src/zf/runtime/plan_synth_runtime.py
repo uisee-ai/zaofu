@@ -283,6 +283,15 @@ class PlanSynthRuntimeMixin:
         role = next(iter(self._fanout_roles([role_instance])), None)
         if role is None or not briefing_path.is_file():
             return False
+        operation_id = str(payload.get("operation_id") or "")
+        operation = None
+        if operation_id:
+            from zf.runtime.workflow_operation import load_workflow_operation
+
+            operation = load_workflow_operation(self.event_log, operation_id)
+            if (not operation or operation.get("request_hash") != payload.get("request_hash")
+                    or operation.get("status") not in {"requested", "reserved", "running"}):
+                return False
         self._set_worker_state(
             role_instance,
             "idle",
@@ -307,10 +316,25 @@ class PlanSynthRuntimeMixin:
             briefing_path,
             prompt_kind="fanout_synth",
         )
+        prompt += (
+            " This is recovery of the same pending operation: continue from the "
+            "available session and frozen candidate, and re-read any source you "
+            "cannot still use. Reconcile unfinished tool calls and external "
+            "effects before retrying; report uncertainty if their outcome cannot "
+            "be established safely. For a lost required-read cursor in this "
+            "Codex operation, use `zf artifact read --attempt <attempt-id> "
+            "--required --resume` only if the earlier pages are still available; "
+            "otherwise reread them."
+        )
         dispatch_context = self._dispatch_context(
             role=role,
             briefing_path=briefing_path,
             trace_id=trace_id,
+            task_id=str(payload.get("task_id") or "") or None,
+            parent_task_id=str(payload.get("parent_task_id") or "") or None,
+            run_id=str(payload.get("workflow_run_id") or "") or None,
+            operation_id=operation_id or None,
+            dispatch_id=run_id,
         )
         try:
             self._send_transport_task(
@@ -339,6 +363,18 @@ class PlanSynthRuntimeMixin:
                 correlation_id=trace_id,
             ))
             return False
+        if operation and operation.get("status") in {"requested", "reserved"}:
+            from zf.runtime.workflow_operation import WorkflowOperationService
+
+            WorkflowOperationService(
+                state_dir=self.state_dir, event_log=self.event_log, event_writer=self.event_writer,
+            ).mark_started(
+                operation_id=operation_id, request_hash=str(payload.get("request_hash") or ""),
+                workflow_run_id=str(payload.get("workflow_run_id") or ""),
+                task_id=str(payload.get("task_id") or ""), dispatch_id=run_id,
+                role_instance=role_instance, active_attempt_id=str(payload.get("attempt_id") or ""),
+                causation_id=lost_event.id, correlation_id=trace_id,
+            )
         lost = self.event_writer.append(ZfEvent(
             type="fanout.child.dispatch_lost",
             actor="zf-cli",

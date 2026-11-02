@@ -40,6 +40,16 @@ _INTEGER_REQUEST_KEYS = frozenset({
 })
 
 
+def starts_new_redrive_epoch(event: ZfEvent, operation: Mapping[str, Any],
+                            operation_id: str, request_hash: str) -> bool:
+    """A newly admitted replay may start the same dispatch once again."""
+    body = event.payload if isinstance(event.payload, Mapping) else {}
+    return (operation.get("status") in {"requested", "reserved"}
+            and event.type == "workflow.operation.redrive_admitted"
+            and body.get("operation_id") == operation_id
+            and body.get("request_hash") == request_hash)
+
+
 def task_pipeline_operation_seed(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "task_pipeline_stage": str(payload.get("task_pipeline_stage") or ""),

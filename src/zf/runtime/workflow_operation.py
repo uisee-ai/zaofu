@@ -26,6 +26,7 @@ from zf.runtime.workflow_operation_task_pipeline import (
     admit_task_pipeline_redrive,
     apply_call_result_admission,
     apply_task_pipeline_operation_event,
+    starts_new_redrive_epoch,
     task_pipeline_operation_seed,
     task_pipeline_request_fields,
     task_pipeline_request_hash_body,
@@ -1136,6 +1137,10 @@ class WorkflowOperationService:
         if parent_task_id:
             emitted_body.setdefault("parent_task_id", parent_task_id)
         for event in reversed(events):
+            if event_type == "workflow.operation.started" and starts_new_redrive_epoch(
+                event, existing_operation, operation_id, request_hash,
+            ):
+                break
             if event.type != event_type:
                 continue
             existing_body = event.payload if isinstance(event.payload, dict) else {}

@@ -218,6 +218,47 @@ Use canonical IDs/refs for repeated tables while keeping each required assertion
 and task-specific dependency explicit. Critic reconciles coverage, not a target
 word count; reducing lane count or removing gates is a separate owner decision.
 
+### Optional scope evidence for an incremental Critic
+
+Only for a replan with a current admitted Plan Package and a prior independent
+Critic verdict, the Planner may include `scoped_plan_review.json` in
+`artifact_refs`. It is a semantic scope claim for the new Critic, not a new
+Task schema, approval, or verification result. Omit it if any global requirement,
+shared contract, task membership, unrelated task, or non-scoped Plan port
+changed, or if the evidence cannot establish the complete impact. In that case
+the Critic consumes the normal complete inputs.
+
+The existing controlled replan trigger must explicitly carry the same nonempty
+`task_ids` as the changed tasks. Do not add or change this dispatch scope inside
+the certificate. Prerequisites and downstream consumers are reviewed as context;
+their presence alone does not authorize reopening them as implementation tasks.
+
+The JSON object uses `schema_version: "scoped-plan-review.v1"`, the current
+`workflow_run_id`, `baseline_package_sha256`, `baseline_task_map_sha256`,
+`candidate_task_map_sha256`, a nonempty `affected_task_ids` list, and
+`evidence_refs` containing at least one exact controlled source id or ref for
+the original requirement. Set `scope_complete` and
+`verification_responsibility_preserved` to true only after comparing the old
+and new contracts, dependency consumers, source/acceptance mappings and
+verification ownership. `ports` is a nonempty list of objects with
+`logical_name`, `baseline_sha256`, and `candidate_sha256`; each selected port
+must be a complete `task-scoped-plan-input.v1` in both versions. Copy exact
+SHA-256 digests from pinned baseline descriptors and the final candidate files.
+
+Keep the complete Task Map, requirement, original sources and fixed-schema
+matrices bound and available. Supply an explicit candidate descriptor with its
+ref and SHA-256 for every unchanged baseline port; the kernel-derived Task Map
+and Goal Claim Set are exceptions, and `planning_result` may be omitted only
+when the baseline derives it from the Task Map. The runtime mechanically
+checks identity, prior admitted Critic evidence, unchanged global content,
+unaffected tasks and partition bodies, and adds prerequisite/downstream
+partitions. If any proof is missing or inconsistent it retains full reads.
+The prior full reads must have complete historical provider-output evidence
+bound to that Critic session; currently only Codex transcript observation is
+implemented. An unavailable or unsupported observation falls back to full
+reads. Historical delivery does not prove comprehension or current memory.
+The new Critic still performs an independent review and can expand any source.
+
 
 Keep whole-file hydration limits separate from selected partition size. When
 complete task inputs exceed one artifact's limit, emit separately bound ports

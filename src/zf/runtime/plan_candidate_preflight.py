@@ -374,6 +374,9 @@ def _canonical_prior_task_map(
                 state_dir,
                 {"ref": package_ref, "sha256": package_digest},
             )
+            workflow_run_id = str(trigger.get("workflow_run_id") or trigger.get("trace_id") or "")
+            if workflow_run_id and package.get("workflow_run_id") != workflow_run_id:
+                raise ValueError("canonical Plan Package belongs to another workflow run")
             descriptor = next(
                 (
                     dict(port)

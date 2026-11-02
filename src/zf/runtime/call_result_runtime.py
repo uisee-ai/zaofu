@@ -309,8 +309,11 @@ def prepare_call_operation(
         ]
 
     if output_profile_id == "plan-synth":
-        from zf.runtime.plan_review_replay import pin_replayed_review_usage
+        from zf.runtime.plan_review_replay import pin_replayed_review_usage, remove_replayed_scoped_read_projection
 
+        remove_replayed_scoped_read_projection(
+            runtime, payload=payload, operation_id=operation_id, attempt_id=attempt_id,
+        )
         pin_replayed_review_usage(runtime, payload=payload, operation_id=operation_id)
 
     source_manifest, source_descriptor = CanonicalHandoffResolver(
@@ -352,6 +355,20 @@ def prepare_call_operation(
             else ()
         ),
     )
+    if output_profile_id == "plan-synth" and any(
+        isinstance(source, Mapping) and source.get("artifact_id") == "scoped_plan_review.json"
+        for source in source_manifest.get("sources", [])
+    ):
+        from zf.runtime.plan_local_review_policy import scope_critic_reads
+
+        required_reads = scope_critic_reads(
+            runtime.state_dir, events=runtime.event_log.read_all(), manifest=source_manifest,
+            required=required_reads,
+            explicit=explicit_required_reads if isinstance(explicit_required_reads, list) else [],
+            critic_role=str(payload.get("role_instance") or ""),
+            fanout_id=str(payload.get("fanout_id") or ""), stage_id=stage_id,
+            plan_revision=str(payload.get("plan_revision") or ""),
+        )
     if required_reads:
         payload["required_reads"] = required_reads
         policy = build_input_consumption_policy(

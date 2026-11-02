@@ -320,7 +320,7 @@ def build_workflow_operation_resume_checkpoints(
             )
         elif (
             status == "suspended"
-            and str(operation.get("operation_type") or "") == "fanout_reader_child"
+            and str(operation.get("operation_type") or "") in {"fanout_reader_child", "fanout_synth"}
             and str(operation.get("reason") or "") in {"graceful_stop", "fast_stop"}
         ):
             action = "redrive_interrupted_reader_operation"
