@@ -52,6 +52,7 @@ def request_semantic_failure_checkpoint(
     if task is None or str(task.status) in {"done", "cancelled"}:
         raise SemanticFailureCheckpointError("target_task_not_current")
     events = runtime.event_log.read_all()
+    current: dict[str, Any] = {}
     if payload.get("target_operation_id"):
         from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
 
@@ -92,6 +93,7 @@ def request_semantic_failure_checkpoint(
     )
     active_attempt_id = str(
         getattr(task, "active_dispatch_id", "")
+        or current.get("active_attempt_id")
         or payload.get("active_attempt_id")
         or payload.get("dispatch_id")
         or latest_failure_payload.get("attempt_id")

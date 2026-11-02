@@ -79,6 +79,8 @@ operation key，也必须进入失败结算；已被接受的活跃诊断继续�
 Plan 包校验，不能用全局最新包误拒绝仍生效的任务。任务自身重新准入、包摘要不符
 或 Run 不符仍拒绝旧请求/结果；非任务范围的 Plan 检查点继续使用全局最新包。
 对应回归在 `tests/test_orchestrator_agent_plan_binding.py`。
+Impl 结算后 Task 的活跃 dispatch 可以清空；OA 从已核对仍为当前且 settled 的
+目标 operation 取回 attempt 绑定，不依赖任务继续占有执行槽位。
 
 ## 只读观测
 
