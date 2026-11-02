@@ -4822,6 +4822,34 @@ def test_run_monitor_distinguishes_task_activity_from_result_signals(
     assert projection["monitor"]["task_evidence"] == evidence
 
 
+def test_run_monitor_keeps_usage_sample_time_separate_from_ledger_time(
+    tmp_path: Path,
+) -> None:
+    state_dir, _log, _writer = _state(tmp_path)
+    store = TaskStore(state_dir / "kanban.json")
+    for task_id in ("TASK-A", "TASK-B", "TASK-C"):
+        store.add(Task(id=task_id, title="active", status="in_progress"))
+    events = [
+        ZfEvent(id="usage-a", type="agent.usage", task_id="TASK-A",
+                ts="2026-11-02T06:29:30Z",
+                payload={"usage_timestamp": "2026-11-01T08:37:46Z"}),
+        ZfEvent(id="heartbeat-a", type="task.attempt.heartbeat", task_id="TASK-A",
+                ts="2026-11-02T06:29:31Z", payload={"source_event_id": "usage-a"}),
+        ZfEvent(id="usage-b", type="agent.usage", task_id="TASK-B",
+                ts="2026-11-02T06:29:30Z",
+                payload={"usage_timestamp": "2026-11-01T06:59:33Z"}),
+        ZfEvent(id="heartbeat-c", type="task.attempt.heartbeat", task_id="TASK-C",
+                payload={"source_event_id": "usage-a"}),
+    ]
+
+    evidence = build_run_monitor_projection(state_dir, events=events, pending_actions=[])["task_evidence"]
+    assert evidence["TASK-A"]["activity"]["ts"] == "2026-11-02T06:29:31Z"
+    assert evidence["TASK-A"]["activity"]["usage_sample_ts"] == "2026-11-01T08:37:46Z"
+    assert evidence["TASK-A"]["activity"]["source_usage_event_id"] == "usage-a"
+    assert evidence["TASK-B"]["activity"]["usage_sample_ts"] == "2026-11-01T06:59:33Z"
+    assert "usage_sample_ts" not in evidence["TASK-C"]["activity"]
+
+
 def test_run_monitor_includes_open_workflow_attempt_and_plan_phase(
     tmp_path: Path,
 ) -> None:
