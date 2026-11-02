@@ -393,6 +393,106 @@ def test_gap_amend_preserves_structured_acceptance_and_owner() -> None:
     ]
 
 
+def test_gap_amend_accepts_structured_criterion_description() -> None:
+    criteria = [{"id": "AC", "description": "real acceptance", "mandatory": True}]
+    gap = {"task_id": "NEW", "claim_paths": ["src/**"], "acceptance_criteria": criteria,
+           "verify_commands": ["npm test"], "source_refs": ["event:gap"]}
+    amended = build_gap_task_map_amend(
+        {"schema_version": "task-map.v1", "tasks": []},
+        gap_tasks=[gap], supersedes_task_map_ref="base.json",
+    )
+    assert amended["tasks"][0]["acceptance"] == ["real acceptance"]
+    assert amended["tasks"][0]["acceptance_criteria"] == criteria
+
+
+def test_gap_amend_preserves_explicit_goal_claim_mapping() -> None:
+    base = {
+        "schema_version": "task-map.v1",
+        "goal_claims": [{"goal_claim_id": "GOAL-A", "text": "original goal", "mandatory": True}],
+        "tasks": [],
+    }
+    gap = {
+        "task_id": "NEW", "claim_paths": ["src/**"], "acceptance": ["works"],
+        "verify_commands": ["npm test"], "source_refs": ["event:gap"],
+        "goal_claim_ids": ["GOAL-A"],
+    }
+    amended = build_gap_task_map_amend(base, gap_tasks=[gap], supersedes_task_map_ref="base.json")
+    assert amended["tasks"][0]["goal_claim_ids"] == ["GOAL-A"]
+    assert validate_task_map_payload(amended).summary["goal_coverage"]["diagnostics"] == []
+
+
+def test_gap_replay_repairs_missing_goal_claims_only_for_identical_successor() -> None:
+    base = {
+        "schema_version": "task-map.v1",
+        "goal_claims": [{"goal_claim_id": "GOAL-A", "text": "goal", "mandatory": True}],
+        "tasks": [{"task_id": "OLD", "title": "old", "owner_role": "dev", "wave": 1,
+                   "allowed_paths": ["src/**"], "allowed_paths_reason": "slice",
+                   "acceptance": ["works"]}],
+    }
+    gap = {"task_id": "NEW", "claim_paths": ["src/**"], "acceptance": ["works"],
+           "verify_commands": ["npm test"], "source_refs": ["event:gap", "git:" + "a" * 40],
+           "base_commit": "a" * 40, "supersedes_task_ids": ["OLD"], "goal_claim_ids": ["GOAL-A"]}
+    first = build_gap_task_map_amend(base, gap_tasks=[gap], supersedes_task_map_ref="base.json")
+    first["tasks"][0].pop("goal_claim_ids")  # historical conversion defect
+    corrected = build_gap_task_map_amend(first, gap_tasks=[gap], supersedes_task_map_ref="first.json")
+    assert corrected["tasks"][0]["goal_claim_ids"] == ["GOAL-A"]
+    assert corrected["amend"]["gap_task_ids"] == ["NEW"]
+    assert validate_task_map_payload(corrected).summary["goal_coverage"]["diagnostics"] == []
+    assert "goal_claim_ids" not in first["tasks"][0]
+    replay = build_gap_task_map_amend(corrected, gap_tasks=[gap], supersedes_task_map_ref="corrected.json")
+    assert replay["amend"]["gap_task_ids"] == []
+
+    changed = {**gap, "acceptance": ["different behavior"]}
+    with pytest.raises(ValueError, match="replay.*mismatch"):
+        build_gap_task_map_amend(first, gap_tasks=[changed], supersedes_task_map_ref="first.json")
+    for field, value in (("claim_paths", ["other/**"]), ("verify_commands", ["other test"]),
+                         ("source_refs", ["event:other"])):
+        with pytest.raises(ValueError, match="replay.*mismatch"):
+            build_gap_task_map_amend(first, gap_tasks=[{**gap, field: value}], supersedes_task_map_ref="first.json")
+    with pytest.raises(ValueError, match="goal claim mismatch"):
+        build_gap_task_map_amend(corrected, gap_tasks=[{**gap, "goal_claim_ids": ["GOAL-B"]}],
+                                 supersedes_task_map_ref="corrected.json")
+
+
+def test_gap_amend_preserves_structured_verification_commands() -> None:
+    base = {"schema_version": "task-map.v1", "tasks": [{
+        "task_id": "OLD", "title": "old", "owner_role": "dev", "wave": 1,
+        "allowed_paths": ["src/**"], "allowed_paths_reason": "slice",
+        "acceptance": ["works"], "validation": {"commands": [
+            {"id": "OLD-CHECK", "command": "npm test", "producer_task_id": "OLD"},
+        ]},
+    }]}
+    commands = [
+        {"id": "OLD-CHECK", "command": "npm test", "owner": "task_verify", "producer_task_id": "NEW"},
+        {"id": "INTEGRATION", "command": "node --test tests/integration.js", "owner": "task_verify", "producer_task_id": "NEW"},
+    ]
+    replacement = {
+        "task_id": "NEW", "claim_paths": ["src/**", "tests/**"],
+        "acceptance_criteria": [{"id": "AC", "statement": "works", "verification_command_ids": ["INTEGRATION"]}],
+        "verify_commands": [row["command"] for row in commands],
+        "verification": {"commands": commands},
+        "base_commit": "a" * 40,
+        "source_refs": ["event:gap", "git:" + "a" * 40], "supersedes_task_ids": ["OLD"],
+    }
+    amended = build_gap_task_map_amend(base, gap_tasks=[replacement], supersedes_task_map_ref="base.json")
+    result = next(t for t in amended["tasks"] if t["task_id"] == "NEW")
+    assert result["validation"]["commands"] == commands
+    assert result["validation"]["commands"] is not commands
+    assert validate_task_map_payload(amended).passed
+
+
+def test_gap_amend_rejects_conflicting_structured_command_catalogs() -> None:
+    base = {"schema_version": "task-map.v1", "tasks": []}
+    gap = {
+        "task_id": "NEW", "claim_paths": ["src/**"], "acceptance": ["works"],
+        "verify_commands": ["npm test"], "source_refs": ["event:gap"],
+        "verification": {"commands": [{"id": "A", "command": "npm test"}]},
+        "validation": {"commands": [{"id": "B", "command": "npm test"}]},
+    }
+    with pytest.raises(ValueError, match="conflicting structured verification commands"):
+        build_gap_task_map_amend(base, gap_tasks=[gap], supersedes_task_map_ref="base.json")
+
+
 def test_replacement_preserves_shared_validation_catalog_as_read_only() -> None:
     base_commit = "d" * 40
     base = {

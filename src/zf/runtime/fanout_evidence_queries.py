@@ -752,6 +752,8 @@ class FanoutEvidenceQueriesMixin:
         dispatch_epoch: float,
         idle_threshold: float,
         now: float,
+        last_activity_epoch: float | None = None,
+        events: list[ZfEvent] | None = None,
     ) -> bool:
         """E5/F15: thinking backend 的闲置宽限(与 worker 侧
         _provider_stuck_grace_active 同语义)。
@@ -759,7 +761,8 @@ class FanoutEvidenceQueriesMixin:
         codex xhigh 深读大文件的单回合可安静 5-15 分钟且零事件输出;
         avbs-r5 实测 reader 默认 300s 阈值在派发后 429s 即被误杀(pane
         实际存活)。宽限 = 自派发起 max(idle_threshold, 配置宽限);
-        宽限外仍按事件沉默判闲置(真死的 child 最终会被收割)。
+        宽限外，已打开的 Codex 回合按最后活动额外获得有界宽限；
+        真死的 child 最终仍会被收割。
         131-P2-3:宽限值走 workflow.attempt_lease_grace_s(出厂 900s)。
         """
         role_instance = str(child.get("role_instance") or "")
@@ -778,4 +781,13 @@ class FanoutEvidenceQueriesMixin:
         except (TypeError, ValueError):
             pass
         grace = max(float(idle_threshold), lease_grace)
-        return (now - dispatch_epoch) < grace
+        if (now - dispatch_epoch) < grace:
+            return True
+        if getattr(role, "backend", "") != "codex" or events is None or last_activity_epoch is None:
+            return False
+        from zf.runtime.fanout_idle_liveness import codex_turn_within_idle_grace
+
+        return codex_turn_within_idle_grace(
+            events, instance_id=role_instance, dispatch_epoch=dispatch_epoch,
+            last_activity_epoch=last_activity_epoch, idle_threshold=idle_threshold, now=now,
+        )

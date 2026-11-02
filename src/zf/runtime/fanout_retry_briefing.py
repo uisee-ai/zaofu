@@ -21,6 +21,7 @@ def write_blocking_reader_retry_briefing(
     child: dict,
     run_id: str,
     contract_handoff_keys: tuple[str, ...],
+    effective_operation_id: str = "",
 ) -> Path | None:
     """Reuse the durable reader briefing for a blocking operation retry."""
 
@@ -80,6 +81,7 @@ def write_blocking_reader_retry_briefing(
         aggregate=aggregate,
         child_payload=child_payload,
         skill_entries=[],
+        effective_operation_id=effective_operation_id,
     )
 
 

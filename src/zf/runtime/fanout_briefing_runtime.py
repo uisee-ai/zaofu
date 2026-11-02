@@ -63,6 +63,7 @@ class FanoutBriefingMixin:
         aggregate,
         child_payload: dict | None = None,
         skill_entries: list | None = None,
+        effective_operation_id: str = "",
     ) -> Path:
         import json
         import shlex
@@ -107,10 +108,15 @@ class FanoutBriefingMixin:
             else {}
         )
         task_id = fanout_task_id(child_payload, trigger_payload)
+        effective_limits = None
+        if effective_operation_id:
+            from zf.runtime.workflow_budget_status import effective_operation_limits
+            effective_limits = effective_operation_limits(self.state_dir, self.event_log, effective_operation_id)
         execution_boundary_lines = render_execution_boundary(
             getattr(self, "config", None),
             role,
             child_payload,
+            effective_limits=effective_limits,
         )
         from zf.runtime.injection import _render_recursion_guard
 

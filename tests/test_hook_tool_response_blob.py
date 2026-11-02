@@ -65,6 +65,26 @@ def test_large_tool_response_externalizes_and_keeps_tail(tmp_path: Path, monkeyp
     assert raw not in (state_dir / "events.jsonl").read_text(encoding="utf-8")
 
 
+def test_hook_response_keeps_one_bounded_preview_and_hydratable_ref(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    raw = "开始\n" + "结果内容" * 8000 + "\n12 passed in 3.21s"
+    _invoke(state_dir, {
+        "session_id": "s1", "hook_event_name": "PostToolUse",
+        "tool_name": "bash", "tool_input": {"command": "pytest -q"},
+        "tool_response": raw,
+    }, monkeypatch)
+    event = _hook_event(state_dir)
+    preview = event.payload["tool_response"]
+    ref = event.payload["refs"]["raw_output"]
+    assert len(preview.encode("utf-8")) <= 2200
+    assert "开始" in preview and "12 passed in 3.21s" in preview
+    assert not {"preview", "head", "tail"}.intersection(ref)
+    assert hydrate_sidecar_ref(state_dir, ref).payload == raw
+
+
 def test_green_check_hydrates_externalized_response(tmp_path: Path, monkeypatch) -> None:
     from zf.core.config.schema import ProjectConfig, RoleConfig, SessionConfig, ZfConfig
     from zf.core.events.model import ZfEvent

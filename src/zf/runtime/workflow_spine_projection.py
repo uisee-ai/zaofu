@@ -25,7 +25,7 @@ from zf.runtime.terminal_events import (
     task_attempt_terminal_state,
 )
 
-SPINE_SCHEMA_VERSION = "shadow-spine.v1"
+SPINE_SCHEMA_VERSION = "shadow-spine.v2"
 
 _ATTEMPT_START_EVENTS = frozenset({
     "task.dispatched",
@@ -488,7 +488,7 @@ def refresh_spine_projections(state_dir: Path, event_log) -> dict[str, Any]:
             counters[event.type] = counters.get(event.type, 0) + 1
         health["last_event_ts"] = event.ts
         # P0-4:run 级里程碑(按 pdd 聚合,回答"这个 run 走到哪了")
-        if event.type in _RUN_MILESTONE_EVENTS:
+        if event.type in _RUN_MILESTONE_EVENTS or event.type == "run.goal.updated":
             run_identity = str(
                 payload.get("pdd_id")
                 or payload.get("feature_id")
@@ -498,6 +498,17 @@ def refresh_spine_projections(state_dir: Path, event_log) -> dict[str, Any]:
                 or ""
             )
             if run_identity:
+                if event.type == "run.goal.updated":
+                    entry = runs.setdefault("runs", {}).get(run_identity)
+                    if (
+                        not isinstance(entry, dict)
+                        or entry.get("status") != "blocked"
+                        or str(payload.get("status") or "").strip()
+                        not in {"active", "running"}
+                    ):
+                        continue
+                    entry["status"] = "running"
+                    entry.pop("terminal_event_id", None)
                 run_entry = runs.setdefault("runs", {}).setdefault(run_identity, {
                     "milestones": 0,
                 })

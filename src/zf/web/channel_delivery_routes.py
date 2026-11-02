@@ -260,6 +260,7 @@ def build_channel_delivery_router(
             readiness = {"ref": ready_doc.ref, "digest": ready_doc.sha256,
                          **{key: ready.get(key) for key in ("verdict", "implementation_start", "reason", "gaps", "risks")}}
         from zf.web.channel_prd_sources import prd_source_view
+        from zf.runtime.channel_prd_document import prd_view_index
 
         synthesis = body.get("synthesis") if isinstance(body.get("synthesis"), dict) else {}
         return {"schema_version": "channel-prd-preview.v1", "channel_id": channel["channel_id"],
@@ -267,6 +268,11 @@ def build_channel_delivery_router(
                 "artifact_digest": doc.sha256, "title": str(body.get("title") or "PRD"),
                 "markdown": markdown, "byte_count": doc.byte_count, "readiness": readiness,
                 "sources": prd_source_view(Path(context.state_dir), channel, events, thread_id, synthesis),
+                "spec_format": synthesis.get("spec_format") if isinstance(synthesis.get("spec_format"), str) else "",
+                "document_control": synthesis.get("document_control") if isinstance(synthesis.get("document_control"), dict) else {},
+                "success_metrics": synthesis.get("success_metrics") if isinstance(synthesis.get("success_metrics"), list) else [],
+                "non_functional_requirements": synthesis.get("non_functional_requirements") if isinstance(synthesis.get("non_functional_requirements"), list) else [],
+                "read_views": prd_view_index(markdown),
                 "requirement_coverage": synthesis.get("requirement_coverage") if isinstance(synthesis.get("requirement_coverage"), list) else []}
 
     return router

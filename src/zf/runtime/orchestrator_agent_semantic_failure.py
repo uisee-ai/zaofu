@@ -111,9 +111,13 @@ def request_semantic_failure_checkpoint(
         or payload.get("trigger_event_type")
         or "semantic-recovery"
     )
+    from zf.runtime.orchestrator_agent_execution_policy import run_goal_objective_snapshot
+
+    goal_snapshot = run_goal_objective_snapshot(events, workflow_run_id)
     failure_body = {
         "schema_version": SEMANTIC_FAILURE_INPUT_SCHEMA,
         "workflow_run_id": workflow_run_id,
+        "run_goal": goal_snapshot,
         "request_event_id": event.id,
         "failure_fingerprint": str(payload.get("failure_fingerprint") or ""),
         "target": {
@@ -161,6 +165,7 @@ def request_semantic_failure_checkpoint(
         "target_stage_id": target_stage,
         "target_attempt_id": active_attempt_id,
         "target_role_instance": target_role,
+        "run_goal_objective_event_id": goal_snapshot["objective_event_id"],
         "artifact_refs": artifact_refs,
     }
     return request_orchestrator_agent_checkpoint(

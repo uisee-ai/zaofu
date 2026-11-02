@@ -336,6 +336,19 @@ class ChannelConsensusActionsMixin:
             readiness_verdict = str(
                 consensus.get("readiness_verdict") or "unassessed"
             )
+            if readiness_verdict == "unassessed":
+                return self._failed(
+                    requested=requested,
+                    action=action,
+                    requested_action=requested_action,
+                    task_id=_task_id_from_payload(payload),
+                    reason=(
+                        "Channel PRD readiness must be assessed before Owner "
+                        "confirmation"
+                    ),
+                    status_code=409,
+                    status="readiness_unassessed",
+                )
             if (
                 readiness_verdict in {"needs_owner", "needs_multi_lens"}
                 and not bool(payload.get("accept_readiness_risk"))

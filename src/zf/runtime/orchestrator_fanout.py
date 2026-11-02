@@ -532,6 +532,7 @@ class FanoutCoordinationMixin(
                 aggregate=aggregate,
                 child_payload=child.payload,
                 skill_entries=skill_entries,
+                effective_operation_id=prepared_call.operation_id if prepared_call is not None else "",
             )
             prompt = build_task_prompt(
                 role.instance_id,
@@ -3395,9 +3396,10 @@ class FanoutCoordinationMixin(
     def _write_plan_digest(self, plan_id: str, task_items: list, task_map_ref: str) -> str:
         """B-93-03: 落 plan-digest.md,返回相对 state_dir 的 digest_ref(失败返回 '')。"""
         try:
-            from zf.runtime.plan_digest import render_plan_digest
+            from zf.runtime.plan_digest import render_bound_plan_digest
 
-            md = render_plan_digest(task_items, plan_id=plan_id, task_map_ref=task_map_ref)
+            md = render_bound_plan_digest(task_items, plan_id=plan_id, task_map_ref=task_map_ref,
+                                          state_dir=self.state_dir, project_root=self.project_root)
             out_dir = self.state_dir / "artifacts" / "plan-digest"
             out_dir.mkdir(parents=True, exist_ok=True)
             safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in (plan_id or "plan"))
@@ -6477,16 +6479,15 @@ class FanoutCoordinationMixin(
                                 child, events, dispatch_epoch
                             )
                             if now - last_activity >= idle_threshold:
-                                # E5/F15(avbs-r5 首航 7 分钟误杀):thinking
-                                # backend 的长回合天然零事件,hook 沉默 ≠ 死亡。
-                                # 与 worker 侧 _provider_stuck_grace_active 对齐:
-                                # codex child 自派发起享 max(threshold, 900s)
-                                # 宽限,宽限外才按事件沉默判闲置。
+                                # An open provider turn may be quiet during compaction;
+                                # give it bounded grace from its last activity.
                                 if not self._fanout_child_idle_grace_active(
                                     child,
                                     dispatch_epoch=dispatch_epoch,
                                     idle_threshold=idle_threshold,
                                     now=now,
+                                    last_activity_epoch=last_activity,
+                                    events=events,
                                 ):
                                     stale_reason = "idle"
                     if not stale_reason:
@@ -6691,11 +6692,13 @@ class FanoutCoordinationMixin(
         now = self._now()
         timed_out = effective_timeout > 0 and now - dispatch_epoch >= effective_timeout
         idle_threshold = self._fanout_child_idle_threshold(synth)
+        last_activity = self._fanout_child_last_activity(synth, events, dispatch_epoch)
         idle = (
             idle_threshold > 0
-            and now - self._fanout_child_last_activity(synth, events, dispatch_epoch) >= idle_threshold
+            and now - last_activity >= idle_threshold
             and not self._fanout_child_idle_grace_active(
                 synth, dispatch_epoch=dispatch_epoch, idle_threshold=idle_threshold, now=now,
+                last_activity_epoch=last_activity, events=events,
             )
         )
         if not timed_out and not idle:
@@ -6884,6 +6887,7 @@ class FanoutCoordinationMixin(
                 manifest=manifest,
                 child=child,
                 run_id=run_id,
+                effective_operation_id=prepared_call.operation_id if prepared_call is not None else "",
             )
             identity_sources = (child, manifest, prepared_call)
         prompt = build_task_prompt(
@@ -8169,6 +8173,7 @@ class FanoutCoordinationMixin(
         manifest: dict,
         child: dict,
         run_id: str,
+        effective_operation_id: str = "",
     ) -> Path:
         from zf.runtime.fanout_retry_briefing import (
             write_blocking_reader_retry_briefing,
@@ -8182,6 +8187,7 @@ class FanoutCoordinationMixin(
             child=child,
             run_id=run_id,
             contract_handoff_keys=_CONTRACT_HANDOFF_KEYS,
+            effective_operation_id=effective_operation_id,
         )
         if blocking_briefing is not None:
             return blocking_briefing

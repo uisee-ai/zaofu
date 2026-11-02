@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from zf.web.server import create_app
 
 from tests.test_channel_prd_task_contract import _ready_prd_fixture, _task_payload, _execute
+from tests.test_controller_rendered_fanout_runtime import _init_repo
 from zf.core.config.loader import load_config
 from zf.core.task.store import TaskStore
 from zf.runtime.channel_execution_approval import channel_start_authorization_error
@@ -59,6 +60,7 @@ def test_owner_execution_is_bound_to_current_exact_proposal(tmp_path: Path, faul
 
 def test_controlled_start_accepts_later_owner_approval_and_preserves_prd(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("zf.runtime.preflight._probe_provider_auth", lambda _: (True, "mock auth"))
+    _init_repo(tmp_path)
     state, writer, service, task, payload = _prepared(tmp_path)
     prd_path = state / task.contract.source_ref
     before = prd_path.read_bytes()

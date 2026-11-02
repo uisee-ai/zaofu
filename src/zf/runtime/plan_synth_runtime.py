@@ -35,6 +35,7 @@ PLAN_SYNTH_HANDOFF_KEYS = (
     "reviewed_plan_candidate_digest",
 )
 PLAN_SYNTH_SEMANTIC_FIELDS = (
+    "failure_class",
     "artifact_refs",
     "evidence_refs",
     "findings",
@@ -463,6 +464,31 @@ class PlanSynthRuntimeMixin:
                 is_plan_synth
                 and str(getattr(stage, "attempt_domain", "") or "") == "plan"
             ):
+                failed_readers = [
+                    report.get("report") for report in reports
+                    if isinstance(report.get("report"), dict)
+                    and report["report"].get("execution_status") == "failed"
+                    and report["report"].get("failure_class") == "reader_execution_failure"
+                ]
+                if failed_readers:
+                    findings = [finding for report in failed_readers
+                                for finding in (report.get("findings") or [])
+                                if isinstance(finding, dict)]
+                    summary = str(failed_readers[0].get("summary") or "Plan reader execution failed")
+                    failure_event = self.event_writer.append(ZfEvent(
+                        type="fanout.synth.completed", actor="zf-cli",
+                        payload={"fanout_id": fanout_id, "trace_id": trace_id,
+                                 "stage_id": stage_id, "role_instance": role.instance_id,
+                                 "run_id": run_id, "status": "failed", "recommendation": "reject",
+                                 "failure_class": "reader_execution_failure", "summary": summary,
+                                 "report": {"child_id": "synth", "status": "failed",
+                                            "recommendation": "reject", "summary": summary,
+                                            "findings": findings}},
+                        causation_id=str(manifest.get("trigger_event_id") or "") or None,
+                        correlation_id=trace_id,
+                    ))
+                    self._finalize_fanout_synth(failure_event)
+                    return
                 from zf.core.workflow.flow_metadata import flow_metadata_for
                 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
                 from zf.runtime.plan_candidate_preflight import (
@@ -775,6 +801,13 @@ class PlanSynthRuntimeMixin:
                     (outcome.envelope_ref or {}).get("sha256") or ""
                 ),
             }
+            if payload.get("failure_class") == "reader_execution_failure":
+                from zf.runtime.artifact_context_events import artifact_context_events
+                from zf.runtime.plan_synth_recovery_refs import failed_critic_candidate_refs
+
+                payload["previous_plan_candidate_refs"] = failed_critic_candidate_refs(
+                    self.state_dir, artifact_context_events(self.event_log), payload,
+                )
             event = replace(event, payload=payload)
         from zf.runtime.plan_synth_owner_checkpoint import (
             apply_plan_synth_owner_checkpoint,

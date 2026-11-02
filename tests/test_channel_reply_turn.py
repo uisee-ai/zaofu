@@ -212,6 +212,10 @@ def test_fake_synthesis_is_task_compilable() -> None:
     contract = json.loads(reply.splitlines()[-1])["channel_synthesis"]
     criterion = contract["acceptance_criteria"][0]
     command = contract["verification_commands"][0]
+    assert contract["spec_format"] == "prd-spec.v1"
+    assert contract["document_control"]["profile"] == "full"
+    assert contract["success_metrics"][0]["id"] == "SC-MOCK-01"
+    assert contract["non_functional_requirements"][0]["id"] == "NFR-MOCK-01"
     assert criterion["id"] == "AC-MOCK-01"
     assert criterion["verification_command_ids"] == ["VC-MOCK-01"]
     assert command["acceptance_ids"] == ["AC-MOCK-01"]

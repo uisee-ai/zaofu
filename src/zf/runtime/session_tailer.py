@@ -133,22 +133,26 @@ class _BaseSessionTailer:
         if size == offset:
             return offset
         try:
-            with path.open("r", encoding="utf-8", errors="replace") as f:
+            with path.open("rb") as f:
                 f.seek(offset)
                 data = f.read(size - offset)
-                new_offset = f.tell()
         except OSError:
             return offset
         # Process complete lines only; keep any trailing partial line
         # by pushing offset back to the start of it.
         lines = data.splitlines(keepends=True)
+        consumed = 0
         for line in lines:
-            if not line.endswith("\n"):
-                # Partial trailing line — rewind so next poll picks it up.
-                new_offset -= len(line.encode("utf-8"))
+            if not line.endswith(b"\n"):
+                # Partial trailing line — leave its bytes for the next poll.
                 break
-            self._emit_from_line(instance_id, line.strip())
-        return new_offset
+            consumed += len(line)
+            try:
+                decoded = line.rstrip(b"\r\n").decode("utf-8")
+            except UnicodeDecodeError:
+                decoded = line.rstrip(b"\r\n").decode("utf-8", errors="replace")
+            self._emit_from_line(instance_id, decoded.strip())
+        return offset + consumed
 
     def _emit_from_line(self, instance_id: str, raw: str) -> None:
         raise NotImplementedError

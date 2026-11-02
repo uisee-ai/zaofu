@@ -6,6 +6,10 @@ Task Pipeline 在准备新的 provider operation 前，通过 TaskStore 重新�
 
 上下文压缩或换会话后，read ledger 证明来源与已产出范围；Provider 交付需单独观测，两者都不能证明当前仍理解正文。worker 方法允许先核对续跑说明与来源摘要，再经原受控读取入口按需补读当前任务的条款、接口和验收；减少重复读取不是禁止恢复语义。已有必读声明仍须完整满足，不因方法修订改写账本或旧 policy。
 
+结果准入对 UTF-8 NDJSON 读取账本逐行解析并同时计算字节数和摘要，不再套用普通 sidecar 的 4 MB 正文加载上限；仍逐条核对 attempt 身份和必读覆盖，校验失败时拒绝准入。普通 sidecar 的读取限制不变，已有封存账本无需重写。
+
+读取固定来源版本时复用已通过 state_dir 边界检查的路径，兼容状态目录内绝对路径及旧 `.zf/` 前缀；目录外路径仍拒绝，来源摘要与恢复副本的校验不变。
+
 worker 发现任务说明、briefing、快照之间版本冲突时，以 implementation result 的 failure_class/blocker_kind=task_context_stale 报告具体版本和证据。该类型进入 harness 修复分支，不消耗产品重规划重试。真实 upstream_contract_gap 仍进入语义重规划；本修复不依赖自由文本猜测、不重写历史失败事件。
 
 故障修复后，监工核验当前 operation 已停止、说明投影与快照一致，再通过现有受控恢复动作/CLI 恢复。已批准 Task Map 的修订仍须通过正式 Planner/Critic、Plan Preview 和新 package 接纳；重启进程不等于恢复 Run，也不等于批准新计划。
@@ -19,6 +23,10 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 若原恢复案卷仍等待被取消复扫的效果，先用匹配的请求和取消事件收口为 effect.failed，重新开放该案卷；只有通过正常恢复案卷准入后才可重发，不直接改写案卷或清除历史事件。
 
 替代任务显式重述唯一前序任务已批准的验证命令时，仅当除生产者和冒烟标记外的命令字段完全一致、生产者已指向替代任务且标记缺省，才继承前序 `rolling_smoke: true`。新命令、改动过的合同字段及显式标记均不推断；滚动冒烟准入检查不变。`tests/test_module_gap_plan.py` 覆盖保留、改动与显式关闭。
+
+缺口产物使用 `verification.commands` 提交结构化命令时，转换为唯一的 Task Map `validation.commands`，保留命令 ID、owner 和验收关联；若同时提供的两个结构化命令表冲突，拒绝合并，不以旧任务命令静默覆盖新命令。
+缺口验收的结构化 `description` 与合同快照采用相同的文本语义；转换时保留原对象，不能误判为空验收。
+缺口任务显式声明的 `goal_claim_ids` 在转换时原样保留；目标覆盖是否充分由现有覆盖图和评审判断，运行时不替任务推断语义映射。
 
 Gap task 转为 task_map 时，结构化验收对象完整保留 ID、必需性、验证责任、层级及命令引用；面向人阅读的 acceptance 仅提取条款正文。最终产品验收仍由原 owner 签收，不能把字典序列化成普通字符串后按默认 task_verify 处理。
 
@@ -62,6 +70,12 @@ Task 尚未 done 不代表 Impl/Verify worker 仍有执行义务。watchdog 对�
 
 新建必读声明合并 ref、摘要、selector、读取限制、访问范围和保留策略均相同的 Plan 端口别名；完整 Package 端口保留。既有 attempt 的不可变 policy 与读取账本不改写，独立 Verify 的证据权限也不与 Impl 共享。`tests/test_plan_read_aliases.py` 覆盖同内容别名与各项不等价边界。
 
+Provider hook 判定活跃派发、终态与孤儿上下文时，共享同一次无签名账本快照的保守视图：仅过滤无法携带 Run 关联或必读声明的普通工具前后遥测，保留别名、操作与终态事件；签名账本仍逐条验证，追加或轮转使缓存失效。事件原文不改写，写入权限和当前派发身份仍按原门禁判定。
+无签名账本的安全字符父事件 ID 可从快照末尾向前查找最近匹配；转义 ID、
+轮转和签名场景仍执行完整校验。明确没有写入目标的工具调用不再重复读取写入
+边界上下文；有写入目标或可能修改的 shell 命令仍执行原授权检查。
+单源和批量 artifact 分页读取均通过相同的保守 operation 事件视图校验有效 attempt；分片授权、签名、终态拒绝和读取收据规则不变。
+
 大任务输入可拆成多个显式 Package 端口。Task Map 顶层 `required_plan_ports` 保留完整全局矩阵；单任务补充端口由既有 `evidence_contract.required_plan_ports` 声明，并由同任务 `plan_input_selection` 选择。准入前核对每项任务声明与实际 Package 端口绑定，读取仍校验 ref、摘要及文件上限。任务级声明不再要求重复列入全局必读，因此独立全局验证不会仅因某任务需要一个副本，就被迫消费所有任务副本；有任务身份的消费者仍承担该任务声明的必读。Planner/Critic 必须确保真正的全局义务仍在完整矩阵中。`tests/test_task_local_plan_ports.py` 覆盖真实 Package 准备、Impl/Task Verify 选择、全局消费者及缺失/篡改拒绝。旧 Package 和已派发读取账本不改写；新声明依赖消费者代码重载。
 
 Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须在 zf.yaml 的 `project.scripts.setup` 声明可重复执行的环境准备入口；Candidate integrator 会在精确候选提交上执行该配置，再运行 rolling smoke。运行时不猜测项目使用 Node 或某个固定脚本。
@@ -71,6 +85,8 @@ Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须�
 Task Pipeline operation 因 `usage_samples` 达限时，Owner 可针对该 operation 显式修订采样上限：`zf goal set --status active --operation <id> --operation-max-usage-samples <非负整数> --reason '<批准依据>'`。零表示取消该上限；非零值必须高于阻断时的累计采样数，不修改其他 operation 或冻结请求。之后用 `zf recover workflow --dry-run --json` 检查对应 checkpoint，再以 `--resume-pending --checkpoint-id <id>` 受控恢复。运行时只接受该 operation 的预算阻断之后、由正式恢复链准入的修订；继续沿用原计量基线，并在达到修订后非零上限时再次阻断。美元定价未知不等于零成本；不可通过此入口修订美元限额。
 
 Owner 明确要求对同一 Run 后续 operation 一并修改时，可在上述命令增加 `--all-run-operations`；受控恢复准入后同一 Run 的 operation 使用该采样上限，其他 Run 和其他预算维度不受影响。原冻结请求和历史用量记录不改写。
+
+Reader fanout 的新派发及受控重派在生成执行边界说明时，读取与预算守卫相同的 operation 有效限额（含已准入的同 Run 修订），不再把旧 profile 的采样数当作当前限制。profile digest 仍标识原配置；operation 身份或限额不可读取时拒绝派发，历史 briefing 不改写。
 
 验证：`tests/test_task_pipeline_worker_liveness.py` 覆盖实际 watchdog 调用；`tests/test_task_pipeline_integration_retry.py` 覆盖 CLI、拒绝分支、代际投影和无 provider 的真实 git Candidate 集成恢复。
 
@@ -83,6 +99,12 @@ Task Pipeline 激活 provider 时显式选择当前 briefing 的 typed-result �
 Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role_instance；使用当前 canonical Task 的副本渲染，不提前更新 TaskStore 的 active_dispatch_id，也不改变合同版本。稳定 capsule revision 不应承担每次派发身份的校验职责。
 
 `verify_task_capsule` 的派发调用显式传入 expected_dispatch_id/expected_role_instance，核对 manifest 的 dispatch_id、active_dispatch_id、任务与角色，以及 task.md 的头部和 Runtime Binding。先校验当前合同，再准备 operation；只有需要实际派发时才发布文档，运行中/终态 operation 的幂等重入不重写文档。准备 briefing 后、交付 transport 前再检查一次，覆盖准备期间投影被替换的情况。briefing 显式列出 operation、dispatch 和 attempt 身份。发送成功后沿原路径更新 canonical TaskStore 并记录派发事件；发送失败不伪造 in_progress 或已发送事实。
+
+操作员通过 `zf task-doc ingest` 调整合同其他字段时，未改动的结构化验收条款保留原始类型；该文本投影不支持编辑结构化条款，检测到变更时拒绝导入，避免丢失验收 ID 与验证责任。
+
+Gap 计划重放时，若已有替代任务只缺失原 Gap 明确提供的目标映射，且替代谱系、验收、验证、范围和来源均一致，可在新任务图中补回映射并重新派发该任务；已有映射冲突或合同不一致时拒绝。旧任务图及其计划包保持不可变，新计划仍须通过完整谱系和验收准入。
+
+若替代任务沿用的不可变 task-scoped 输入仅有前序任务分片，读取器只在当前 gap 任务图声明唯一 supersedes、前序任务已退出当前图、继承端口和历史计划包均能证明该前序任务时，开放 shared 与该前序分片。来源 ID 明示 predecessor，briefing 提醒其为历史背景，当前任务合同和任务图决定范围、验证责任与验收；新产出端口、谱系缺失或歧义仍拒绝。Candidate Verify 继续读取完整输入，旧内容不改写。
 
 验证：`tests/test_task_pipeline_capsule.py` 在真实派发函数和 briefing/文档生成器、隔离的 provider transport 边界核对 Impl/Verify 首派、g2 重派及失败分支，并注入 manifest/正文/角色陈旧。它证明派发上下文一致性，不代表真实多 provider 并行或完整产品验收通过。
 

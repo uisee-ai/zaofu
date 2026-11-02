@@ -426,6 +426,8 @@ def test_plan_rework_pins_complete_previous_candidate_refs(
         }],
     )
 
+    candidate_refs[0]["allowed_paths"] = ["$.approved"]
+    candidate_refs[0]["access_scope"] = {"purpose": "plan-review"}
     refs = build_plan_handoff_input_refs(
         state_dir=state_dir,
         project_root=project_root,
@@ -441,6 +443,8 @@ def test_plan_rework_pins_complete_previous_candidate_refs(
         item for item in refs
         if item["source_id"].startswith("previous-plan-candidate-")
     ]
+    assert previous[0]["allowed_paths"] == ["$.approved"]
+    assert previous[0]["access_scope"] == {"purpose": "plan-review"}
     assert len(previous) == len(candidate_refs)
     assert {
         item["kind"] for item in previous
@@ -480,6 +484,17 @@ def test_plan_rework_rejects_previous_candidate_digest_drift(
                 }],
             },
         )
+
+
+def test_explicit_empty_candidate_refs_do_not_revive_nested_old_refs(tmp_path: Path) -> None:
+    state_dir = tmp_path / '.zf'
+    state_dir.mkdir()
+    refs = build_plan_handoff_input_refs(state_dir=state_dir, project_root=tmp_path,
+        payload={'rework_of': 'evt-failure', 'previous_plan_candidate_refs': [],
+                 'trigger_payload': {'previous_plan_candidate_refs': [{
+                     'ref': 'missing-old.json', 'sha256': 'a' * 64,
+                 }]}})
+    assert not any(item['source_id'].startswith('previous-plan-candidate-') for item in refs)
 
 
 def test_plan_synth_large_child_body_is_immutable_ref_not_inline(
