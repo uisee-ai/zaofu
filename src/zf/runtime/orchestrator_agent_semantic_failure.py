@@ -90,8 +90,8 @@ def request_semantic_failure_checkpoint(
         else {}
     )
     active_attempt_id = str(
-        getattr(task, "active_dispatch_id", "")
-        or payload.get("active_attempt_id")
+        payload.get("active_attempt_id")
+        or getattr(task, "active_dispatch_id", "")
         or payload.get("dispatch_id")
         or latest_failure_payload.get("attempt_id")
         or latest_failure_payload.get("dispatch_id")

@@ -5986,7 +5986,7 @@ def _execute_orchestrator_triage_request(
             "problem_class": "semantic",
             **{key: action[key] for key in (
                 "target_operation_id", "target_stage_id", "task_map_generation",
-                "run_goal_objective_event_id",
+                "run_goal_objective_event_id", "active_attempt_id",
             ) if key in action},
             "workflow_run_id": str(action.get("workflow_run_id") or ""),
             "flow_kind": str(action.get("flow_kind") or ""),
