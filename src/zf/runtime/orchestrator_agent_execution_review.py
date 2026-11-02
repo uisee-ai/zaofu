@@ -50,6 +50,12 @@ def pending_execution_reviews(
         if event.type == "orchestrator.semantic.checkpoint.requested"
         and str(event.payload.get("operation_id") or "") in stale_operations
     }
+    missing_attempt_requests = {
+        str(event.payload.get("source_event_id") or event.causation_id or "")
+        for event in events
+        if event.type == "orchestrator.semantic.checkpoint.rejected"
+        and event.payload.get("reason") == "target_attempt_missing"
+    }
     for task_id, context in contexts.items():
         if task_id in excluded_task_ids:
             continue
@@ -96,9 +102,12 @@ def pending_execution_reviews(
         if source_id not in by_id:
             continue
         goal_event_id = goal_event_ids[run_id]
+        attempt_id = str(impl.get("active_attempt_id") or impl.get("dispatch_id")
+                         or task.active_dispatch_id or "")
         request_id = "oa-execution-review-" + stable_json_sha256({
             "run": run_id, "generation": context.get("task_map_generation"),
             "operation": impl["operation_id"], "result": result_ref, "goal_event_id": goal_event_id,
+            "attempt_id": attempt_id,
         })[:24]
         previous_requests = [
             event for event in events
@@ -108,7 +117,12 @@ def pending_execution_reviews(
                 and source_id in event.payload.get("failure_event_ids", [])
             ))
         ]
-        if any(event.id not in stale_requests for event in previous_requests):
+        if any(
+            event.id not in stale_requests
+            and not (attempt_id and event.id in missing_attempt_requests
+                     and not event.payload.get("active_attempt_id"))
+            for event in previous_requests
+        ):
             continue
         actions.append({
             "schema_version": "run-manager.pending-action.v1",
@@ -118,9 +132,10 @@ def pending_execution_reviews(
             "task_id": task_id, "workflow_run_id": run_id, "flow_kind": flow,
             "stage_id": "impl", "target_stage_id": "impl",
             "target_operation_id": impl["operation_id"],
+            "active_attempt_id": attempt_id,
             "task_map_generation": context.get("task_map_generation", ""),
             "run_goal_objective_event_id": goal_event_id,
-            "request_revision": goal_event_id,
+            "request_revision": f"{goal_event_id}:{attempt_id}",
             "role": impl.get("role_instance", ""),
             "fingerprint": request_id, "failure_count": 1,
             "failure_class": "settled_impl_requires_semantic_review",
