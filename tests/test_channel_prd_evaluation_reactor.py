@@ -120,6 +120,12 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
         writer.emit("channel.consensus.signed", actor=member, correlation_id=channel_id,
                     payload={"channel_id": channel_id, "thread_id": thread,
                              "artifact_ref": ref, "artifact_digest": digest})
+    writer.emit("channel.member.invitation.decided", actor="web", correlation_id=channel_id,
+                payload={"channel_id": channel_id, "thread_id": thread_id,
+                         "member_id": "qa", "proposal_id": "qa-invitation", "decision": "approved"})
+    writer.emit("channel.member.added", actor="web", correlation_id=channel_id,
+                payload={"channel_id": channel_id, "member_id": "dev", "channel_role": "dev_reviewer",
+                         "provider": "codex", "permission_profile": "read_only"})
     request = writer.emit("channel.prd_evaluation.requested", actor="web",
                           correlation_id=channel_id, payload={
                               "request_id": str(uuid.uuid4()), "channel_id": channel_id,
@@ -127,13 +133,18 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
                               "artifact_ref": descriptor["ref"],
                               "artifact_digest": descriptor["sha256"], "role": "full"})
     for admitted_channel, admitted_thread, decision in [
-        (channel_id, thread_id, "approved"),
+        (channel_id, thread_id, "rejected"),
         (channel_id, "other", "rejected"),
         ("other-channel", thread_id, "rejected"),
     ]:
         writer.emit("channel.member.invitation.decided", actor="web", correlation_id=admitted_channel,
                     payload={"channel_id": admitted_channel, "thread_id": admitted_thread,
                              "member_id": "qa", "proposal_id": "qa-invitation", "decision": decision})
+    writer.emit("channel.member.added", actor="web", correlation_id=channel_id,
+                payload={"channel_id": channel_id, "member_id": "late-security", "channel_role": "security_reviewer"})
+    writer.emit("channel.consensus.signed", actor="late-review", correlation_id=channel_id,
+                payload={"channel_id": channel_id, "thread_id": thread_id,
+                         "artifact_ref": descriptor["ref"], "artifact_digest": descriptor["sha256"]})
     host = SimpleNamespace(state_dir=state, event_log=log, event_writer=writer)
     called = threading.Event()
     captured = []
@@ -183,10 +194,12 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
     assert '"implementation_start": true' in captured[0].target_text
     assert "保留异议" in captured[0].target_text
     evidence = json.loads(captured[0].evidence_text)
+    assert [(row["member_id"], row["channel_role"]) for row in evidence["review_members"]] == [("dev", "dev_reviewer")]
     assert evidence["readiness"]["implementation_start"] is True
     assert evidence["readiness_descriptor"]["sha256"] == readiness_descriptor["sha256"]
     assert [row["actor"] for row in evidence["version_bound_events"]] == ["same-version"]
-    assert [row["payload"]["decision"] for row in evidence["channel_membership_events"]] == ["approved"]
+    assert [row["payload"]["decision"] for row in evidence["channel_membership_events"]
+            if row["type"] == "channel.member.invitation.decided"] == ["approved"]
     assert evidence["channel_membership_events"][0]["actor"] == "web"
     decision_rows = json.loads(captured[0].decision_text)
     admission_rows = [row for row in decision_rows if row.get("kind") == "channel_membership_event"]

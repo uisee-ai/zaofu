@@ -21,6 +21,7 @@ from zf.core.config.schema import (
     ZfConfig,
 )
 from zf.core.events.model import ZfEvent
+from zf.core.events.writer import EventWriter
 from zf.runtime.backend import get_adapter
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.injection import generate_role_instructions
@@ -34,6 +35,14 @@ RUN_MANAGER_RESIDENT_RESTART_FAILED = "run.manager.resident.restart_failed"
 RUN_MANAGER_RESIDENT_PRESERVED = "run.manager.resident.preserved"
 RUN_MANAGER_RESIDENT_REBOUND = "run.manager.resident.rebound"
 _PRESERVED_MARKER = "run-manager-resident-preserved.json"
+
+
+def _append_event(event_sink: Any, event: ZfEvent) -> ZfEvent:
+    if isinstance(event_sink, EventWriter):
+        return event_sink.append(event)
+    if not hasattr(event_sink, "read_all"):
+        return event_sink.append(event)
+    return EventWriter(event_sink, default_origin="kernel").append(event)
 
 
 def resident_run_manager_enabled(config: ZfConfig) -> bool:
@@ -328,7 +337,7 @@ def spawn_resident_run_manager(
 
     session_mode = resident_run_manager_session_mode(config)
     tmux_session = resident_run_manager_tmux_session(config)
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type="run.manager.resident.spawned",
         actor="zf-cli",
         payload={
@@ -367,7 +376,7 @@ def spawn_resident_run_manager(
     else:
         prompted = False
 
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type="run.manager.resident.prompted",
         actor="zf-cli",
         payload={
@@ -446,7 +455,7 @@ def rebind_preserved_resident_run_manager(
     briefing_path.write_text(prompt, encoding="utf-8")
 
     tmux_session = resident_run_manager_tmux_session(config)
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type=RUN_MANAGER_RESIDENT_REBOUND,
         actor="zf-cli",
         payload={
@@ -481,7 +490,7 @@ def rebind_preserved_resident_run_manager(
     elif dry_run:
         prompted = bool(config.runtime.run_manager.resident_agent.prompt_on_start)
 
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type="run.manager.resident.prompted",
         actor="zf-cli",
         payload={

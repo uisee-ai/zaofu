@@ -25,6 +25,7 @@ from zf.core.events.factory import (
     build_event_signer,
     event_log_from_project,
 )
+from zf.core.events.writer import EventWriter
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.core.state.session import SessionStore
 from zf.core.skills import validate_skill_sources
@@ -45,6 +46,17 @@ from zf.runtime.cli_command import set_default_zf_cli_cmd, zf_cli_cmd
 from zf.runtime.process_guard import SingleOwnerProcessGuard
 from zf.runtime.spawn_coordinator import SpawnCoordinator
 from zf.runtime.flow_roles import initial_role_configs
+
+
+def _append_event(event_sink, event: ZfEvent) -> ZfEvent:
+    """Keep start-time event writes behind the canonical writer boundary."""
+
+    if isinstance(event_sink, EventWriter):
+        return event_sink.append(event)
+    if hasattr(event_sink, "read_all"):
+        return EventWriter(event_sink, default_origin="kernel").append(event)
+    # Small fakes used by unit tests expose only append().
+    return event_sink.append(event)
 
 
 def _run_autoresearch_trigger_scan(
@@ -276,7 +288,7 @@ def _record_ready_worker_state(
     )
     state_changed = previous != "idle"
     if state_changed:
-        event_log.append(event)
+        _append_event(event_log, event)
     registry.record_heartbeat(instance_id, {
         "instance_id": instance_id,
         "state": "idle",
@@ -308,7 +320,7 @@ def _record_dormant_worker_state(
             "preserve_workdir": role.lifecycle.preserve_workdir,
         },
     )
-    event_log.append(now)
+    _append_event(event_log, now)
     registry.update_instance_meta(
         role.instance_id,
         lifecycle_state="dormant",
@@ -323,7 +335,7 @@ def _record_dormant_worker_state(
         "last_action_ts": now.ts,
         "source": "role.lifecycle.dormant",
     })
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type="worker.state.changed",
         actor=role.instance_id,
         payload={
@@ -462,7 +474,7 @@ def _emit_render_lock_drift_warning(
     try:
         lock = json.loads(lock_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, TypeError):
-        event_log.append(ZfEvent(
+        _append_event(event_log, ZfEvent(
             type="config.render_lock.drift_detected",
             actor="zf-cli",
             payload={
@@ -486,7 +498,7 @@ def _emit_render_lock_drift_warning(
         drift_reasons.append("config sha256 changed")
     if not drift_reasons:
         return
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type="config.render_lock.drift_detected",
         actor="zf-cli",
         payload={
@@ -551,7 +563,7 @@ def _write_run_contract_snapshot(
     strict = strict_run_contract_drift(previous, contract, strict=strict)
     diagnostics = run_contract_drift_diagnostics(previous, contract, strict=strict)
     if diagnostics:
-        event_log.append(ZfEvent(
+        _append_event(event_log, ZfEvent(
             type="config.run_contract.drift_detected",
             actor="zf-cli",
             payload={
@@ -565,7 +577,7 @@ def _write_run_contract_snapshot(
             return False
     snapshot = write_run_contract_snapshot(state_dir, contract)
     path = write_run_contract(state_dir, contract)
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type="config.run_contract.written",
         actor="zf-cli",
         payload={
@@ -602,7 +614,7 @@ def _run_startup_orchestrator_catchup(orchestrator, event_log) -> None:
         _run_orchestrator_idle_tick(orchestrator)
     except Exception as exc:
         try:
-            event_log.append(ZfEvent(
+            _append_event(event_log, ZfEvent(
                 type="orchestrator.tick.failed",
                 actor="zf-cli",
                 payload={
@@ -891,16 +903,19 @@ def run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             try:
-                event_log_from_project(state_dir, config=config).append(ZfEvent(
-                    type="env.preflight.failed",
-                    actor="zf-cli",
-                    payload={
-                        "check": check.name,
-                        "detail": check.detail,
-                        "hard": False,
-                        "problem_class": "environment",
-                    },
-                ))
+                _append_event(
+                    event_log_from_project(state_dir, config=config),
+                    ZfEvent(
+                        type="env.preflight.failed",
+                        actor="zf-cli",
+                        payload={
+                            "check": check.name,
+                            "detail": check.detail,
+                            "hard": False,
+                            "problem_class": "environment",
+                        },
+                    ),
+                )
             except Exception:
                 pass
     promote_last_known_good(
@@ -962,7 +977,6 @@ def run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
-        from zf.core.events.writer import EventWriter
         from zf.runtime.research_generation import (
             reconcile_stale_research_generations,
         )
@@ -1064,7 +1078,7 @@ def run(args: argparse.Namespace) -> int:
                 and not control_plane_only
             ):
                 plan = workdir_manager.prepare(role)
-                event_log.append(ZfEvent(
+                _append_event(event_log, ZfEvent(
                     type="workdir.prepared",
                     actor="zf-cli",
                     payload=asdict(plan),
@@ -1105,7 +1119,7 @@ def run(args: argparse.Namespace) -> int:
                 )
                 upsert_skills_lockfile(state_dir=state_dir, entries=skill_entries)
                 if materialized is not None:
-                    event_log.append(ZfEvent(
+                    _append_event(event_log, ZfEvent(
                         type="skills.materialized",
                         actor="zf-cli",
                         payload=materialized.to_payload(),
@@ -1262,7 +1276,7 @@ def run(args: argparse.Namespace) -> int:
                 state_dir,
                 hydration_report,
             )
-            event_log.append(ZfEvent(
+            _append_event(event_log, ZfEvent(
                 type="briefing.hydration.checked",
                 actor="zf-cli",
                 payload={
@@ -1273,7 +1287,7 @@ def run(args: argparse.Namespace) -> int:
                 },
             ))
         except Exception as exc:
-            event_log.append(ZfEvent(
+            _append_event(event_log, ZfEvent(
                 type="briefing.hydration.failed",
                 actor="zf-cli",
                 payload={
@@ -1291,7 +1305,7 @@ def run(args: argparse.Namespace) -> int:
         # Semantics: session.started = "tmux session / transport up";
         # loop.started = "reactor reading events". Splitting the two so
         # `--no-watch` does not falsely claim the reactor is running.
-        event_log.append(ZfEvent(
+        _append_event(event_log, ZfEvent(
             type="session.started",
             actor="zf-cli",
             payload={
@@ -1417,7 +1431,7 @@ def run(args: argparse.Namespace) -> int:
                 _run_orchestrator_idle_tick(orchestrator)
             except Exception as exc:
                 try:
-                    event_log.append(ZfEvent(
+                    _append_event(event_log, ZfEvent(
                         type="orchestrator.tick.failed",
                         actor="zf-cli",
                         payload={
@@ -1455,7 +1469,7 @@ def run(args: argparse.Namespace) -> int:
         )
 
         if dry_run:
-            event_log.append(ZfEvent(type="loop.started", actor="zf-cli"))
+            _append_event(event_log, ZfEvent(type="loop.started", actor="zf-cli"))
             watcher.poll_once()
             print(f"Started harness (dry-run). Session: {session_name}")
             print(f"  Roles: {[r.name for r in startup_roles]}")
@@ -1476,7 +1490,7 @@ def run(args: argparse.Namespace) -> int:
 
         if foreground:
             print("  Watcher: running in foreground (Ctrl+C to stop)")
-            event_log.append(ZfEvent(type="loop.started", actor="zf-cli"))
+            _append_event(event_log, ZfEvent(type="loop.started", actor="zf-cli"))
             from zf.runtime.workflow_runtime_start import mark_runtime_ready
 
             mark_runtime_ready(state_dir)

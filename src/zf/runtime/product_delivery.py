@@ -1075,28 +1075,39 @@ def _upsert_delivery_feature(
     existing = store.get(feature_id)
     title = _delivery_feature_title(task_map, refs)
     if existing is None:
-        feature = store.add(Feature(
-            id=feature_id,
-            title=title,
-            description=str(task_map.get("description") or "").strip(),
-            status="active",
-            user_message=title,
-        ))
-        if writer is not None:
-            writer.emit(
-                "feature.created",
-                actor=actor,
-                payload={
-                    "feature_id": feature_id,
-                    "source": "product_delivery_task_map",
-                    "task_map_ref": refs.get("task_map_ref", ""),
-                    "source_index_ref": refs.get("source_index_ref", ""),
-                    "coverage_report_ref": refs.get("coverage_report_ref", ""),
-                },
-                causation_id=causation_id,
-                correlation_id=correlation_id,
-            )
-        return {"status": "created", "feature_id": feature.id}
+        try:
+            feature = store.add(Feature(
+                id=feature_id,
+                title=title,
+                description=str(task_map.get("description") or "").strip(),
+                status="active",
+                user_message=title,
+            ))
+        except ValueError as exc:
+            # The read above is intentionally outside the store lock. A
+            # concurrent delivery may win the add; re-read the canonical
+            # record and continue through the idempotent update path.
+            if "feature id already exists" not in str(exc):
+                raise
+            existing = store.get(feature_id)
+        else:
+            if writer is not None:
+                writer.emit(
+                    "feature.created",
+                    actor=actor,
+                    payload={
+                        "feature_id": feature_id,
+                        "source": "product_delivery_task_map",
+                        "task_map_ref": refs.get("task_map_ref", ""),
+                        "source_index_ref": refs.get("source_index_ref", ""),
+                        "coverage_report_ref": refs.get("coverage_report_ref", ""),
+                    },
+                    causation_id=causation_id,
+                    correlation_id=correlation_id,
+                )
+            return {"status": "created", "feature_id": feature.id}
+        if existing is None:
+            raise RuntimeError(f"feature add conflicted but record is missing: {feature_id}")
     if existing.status in FEATURE_TERMINAL:
         return {
             "status": "terminal_existing",

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events import EventWriter
+from zf.runtime.prd_quality_prompt import prd_review_method
 from zf.runtime.sidecar_refs import write_sidecar_json
 from zf.web.headless_agent import CodexHeadlessBackend, HeadlessBackend
 
@@ -53,6 +54,7 @@ class EvaluationInput:
             self.source_text, self.target_text, self.decision_text, self.evidence_text,
         )):
             raise ValueError("evaluation input exceeds the bounded text contract")
+        method = prd_review_method() if self.kind == "prd_output" and (self.context or {}).get("channel_id") else {}
         return {
             "schema_version": SCHEMA,
             "kind": self.kind,
@@ -66,9 +68,12 @@ class EvaluationInput:
             "target": {"ref": self.target_ref, "sha256": digest_text(self.target_text),
                        "revision": self.target_revision, "chars": len(self.target_text)},
             "context": dict(self.context or {}),
-            "method_version": ("channel-full-test-and-prd-evaluation-prompts.v3"
+            "method_version": ("channel-full-test-and-prd-evaluation-prompts.v4"
                                if self.kind == "prd_output" and (self.context or {}).get("channel_id")
                                else "channel-full-test-and-prd-evaluation-prompts.v2"),
+            **({"review_method": method,
+                "review_method_digest": digest_text(json.dumps(method, ensure_ascii=False, sort_keys=True))}
+               if method else {}),
         }
 
 
@@ -80,7 +85,8 @@ def _json_reply(reply: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _valid_matrix(report: dict[str, Any] | None, inventory: dict[str, Any], decisions: dict[str, Any] | None = None) -> bool:
+def _valid_matrix(report: dict[str, Any] | None, inventory: dict[str, Any], decisions: dict[str, Any] | None = None,
+                  method: dict[str, Any] | None = None) -> bool:
     if not isinstance(report, dict) or not isinstance(report.get("matrix"), list):
         return False
     rows = report["matrix"]
@@ -98,8 +104,18 @@ def _valid_matrix(report: dict[str, Any] | None, inventory: dict[str, Any], deci
             return False
         ids.append(criterion_id)
     source_ids = {row["criterion_id"] for row in inventory["criteria"]}
-    source_ids.update(str(row["criterion_id"]) for row in (decisions or {}).get("decision_deltas", [])
-                      if isinstance(row, dict) and isinstance(row.get("criterion_id"), str) and row["criterion_id"].strip())
+    source_ids.update(row["criterion_id"] for row in (method or {}).get("criteria", []))
+    for row in (decisions or {}).get("decision_deltas", []):
+        if not isinstance(row, dict):
+            continue
+        value = row.get("criterion_id")
+        if isinstance(value, str) and value.strip():
+            source_ids.add(value.strip())
+        elif isinstance(value, list):
+            source_ids.update(
+                item.strip() for item in value
+                if isinstance(item, str) and item.strip()
+            )
     return len(ids) == len(set(ids)) and source_ids.issubset(ids)
 
 
@@ -128,6 +144,14 @@ def _stage_prompt(stage: str, item: EvaluationInput, manifest: dict[str, Any], *
     identity = json.dumps(visible_manifest, ensure_ascii=False, sort_keys=True)
     channel_prd = item.kind == "prd_output" and bool((item.context or {}).get("channel_id"))
     if stage == "inventory":
+        method_guidance = ""
+        if channel_prd:
+            method_guidance = (
+                "这是 Channel PRD 评估。MANIFEST.review_method 是本轮冻结的方法工件；"
+                "inventory.criteria 仅提炼 SOURCE，不得包含预留的 PRD-Q* 方法标准；"
+                "目标评估阶段才将方法标准与来源标准分别逐项检查。"
+                "这些方法标准检查证据与诚实性，不提供任何产品事实。\n"
+            )
         return (
             "你是与作者、群内成员和已有 reviewer 隔离的只读评估者。现在只能建立评估标准，"
             "不得读取或推测目标产物。请先逐段读取全部来源；输出单个 JSON 对象，字段 "
@@ -142,7 +166,7 @@ def _stage_prompt(stage: str, item: EvaluationInput, manifest: dict[str, Any], *
             "参考规则列为必需标准；阅读参考资料不等于要求回答逐条复述整份资料。"
             "事实核对的简短答复不必展开未被询问的相关动作，除非省略会改变结论。"
             "不要使用 Markdown 代码围栏。\n"
-            f"MANIFEST:\n{identity}\nSOURCE:\n{item.source_text}"
+            f"{method_guidance}MANIFEST:\n{identity}\nSOURCE:\n{item.source_text}"
         )
     if stage == "decisions":
         conversation_guidance = (
@@ -170,7 +194,10 @@ def _stage_prompt(stage: str, item: EvaluationInput, manifest: dict[str, Any], *
         "输出单个 JSON 对象：verdict=PASS/FAIL/INDETERMINATE，matrix 为逐项结论数组，"
         "每行必须含 criterion_id、result=PASS/FAIL/INDETERMINATE、target_location、reason；"
         "逐项覆盖全部冻结 criterion_id，不能改名或遗漏；"
-        + ("还须逐项覆盖决定阶段新增的需求 criterion_id；" if channel_prd else "") +
+        + ("还须逐项覆盖决定阶段新增的需求 criterion_id 与 MANIFEST.review_method.criteria 的全部 PRD-Q*；"
+           "输出 planning_readiness 对象，包含 verdict=ready/needs_owner/needs_evidence、reason、gaps；"
+           "它是评估者的建议，不能改写 canonical readiness 或授予执行权。"
+           if channel_prd else "") +
         "findings 为含严重度及来源/目标定位的数组，coverage 为实际检查与未查范围，"
         "score 为可选的辅助分数，product_verification 为通过/失败/未执行/阻塞。"
         "缺来源的 PRD/Markdown 只能判内部结构，整体来源覆盖为 INDETERMINATE；"
@@ -201,7 +228,7 @@ def evaluate_output(
     timeout_s: float = 1800,
     causation_id: str = "",
 ) -> dict[str, Any]:
-    """Run two fresh-context turns; persist stage one before revealing target."""
+    """Freeze source and decisions before revealing the target in a third turn."""
     manifest = item.manifest()
     channel_prd = item.kind == "prd_output" and bool((item.context or {}).get("channel_id"))
     backend = backend or CodexHeadlessBackend()
@@ -287,6 +314,11 @@ def evaluate_output(
             raise ValueError("source-free review invented source criteria")
         if inventory["unread_scope"]:
             raise ValueError("source inventory left original source unread")
+        if channel_prd:
+            method_ids = {row["criterion_id"] for row in manifest["review_method"]["criteria"]}
+            inventory_ids = {str(row.get("criterion_id")) for row in inventory["criteria"]}
+            if method_ids & inventory_ids:
+                raise ValueError("source inventory reused a reserved PRD quality criterion id")
         inventory_ref = write_sidecar_json(
             state_dir, f"{base}/source-inventory.json", inventory,
             kind="evaluation_source_inventory", schema_version=SCHEMA,
@@ -301,12 +333,35 @@ def evaluate_output(
             session_id or inventory_turn.provider_session_id,
             lambda value: isinstance(value, dict)
             and isinstance(value.get("decision_deltas"), list)
-            and (not channel_prd or all(isinstance(row, dict)
-                 and isinstance(row.get("criterion_id"), str) and row["criterion_id"].strip()
-                 for row in value["decision_deltas"]))
+            and (not channel_prd or all(
+                isinstance(row, dict)
+                and (
+                    (isinstance(row.get("criterion_id"), str)
+                     and row["criterion_id"].strip())
+                    or (
+                        isinstance(row.get("criterion_id"), list)
+                        and all(isinstance(item, str) and item.strip()
+                                for item in row["criterion_id"])
+                        and (
+                            bool(row["criterion_id"])
+                            or "deferred" in str(
+                                (row.get("validity") or {}).get("status")
+                                if isinstance(row.get("validity"), dict)
+                                else row.get("validity") or ""
+                            ).lower()
+                        )
+                    )
+                )
+                for row in value["decision_deltas"]
+            ))
             and isinstance(value.get("read_scope"), list)
             and isinstance(value.get("unread_scope"), list),
         )
+        if channel_prd:
+            for row in decisions["decision_deltas"]:
+                ids = row["criterion_id"]
+                if method_ids.intersection(ids if isinstance(ids, list) else [ids]):
+                    raise ValueError("decision inventory reused a reserved PRD quality criterion id")
         decision_ref = write_sidecar_json(
             state_dir, f"{base}/decision-delta-inventory.json", decisions,
             kind="evaluation_decision_inventory", schema_version=SCHEMA,
@@ -321,9 +376,16 @@ def evaluate_output(
             session_id or decision_turn.provider_session_id,
             lambda value: isinstance(value, dict)
             and value.get("verdict") in {"PASS", "FAIL", "INDETERMINATE"}
-            and _valid_matrix(value, inventory, decisions if channel_prd else None)
+            and _valid_matrix(value, inventory, decisions if channel_prd else None, manifest.get("review_method"))
             and isinstance(value.get("findings"), list)
             and isinstance(value.get("coverage"), (dict, list))
+            and (not channel_prd or (
+                isinstance(value.get("planning_readiness"), dict)
+                and value["planning_readiness"].get("verdict") in {"ready", "needs_owner", "needs_evidence"}
+                and isinstance(value["planning_readiness"].get("gaps"), list)
+                and isinstance(value["planning_readiness"].get("reason"), str)
+                and bool(value["planning_readiness"]["reason"].strip())
+            ))
             and value.get("product_verification") in {"通过", "失败", "未执行", "阻塞"},
         )
         verdict = str(report["verdict"])
@@ -350,6 +412,18 @@ def evaluate_output(
         report["decision_inventory_digest"] = decision_ref["sha256"]
         report["provider_session_id"] = session_id or report_turn.provider_session_id
         report["backend"] = backend.backend_id
+        if channel_prd:
+            method_ids = {row["criterion_id"] for row in manifest["review_method"]["criteria"]}
+            quality_rows = [row for row in report["matrix"] if row["criterion_id"] in method_ids]
+            quality_results = {row["result"] for row in quality_rows}
+            report["quality_checklist"] = quality_rows
+            report["document_quality"] = ("FAIL" if "FAIL" in quality_results else
+                                          "INDETERMINATE" if "INDETERMINATE" in quality_results else "PASS")
+            source_results = {row["result"] for row in report["matrix"] if row["criterion_id"] not in method_ids}
+            report["source_fidelity"] = ("INDETERMINATE" if not item.source_text.strip() or decisions.get("unread_scope") else
+                                         "FAIL" if "FAIL" in source_results else
+                                         "INDETERMINATE" if "INDETERMINATE" in source_results else "PASS")
+            report["review_method_digest"] = manifest["review_method_digest"]
         report_ref = write_sidecar_json(
             state_dir, f"{base}/report.json", report,
             kind="evaluation_report", schema_version=SCHEMA,

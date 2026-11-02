@@ -33,7 +33,8 @@ def _evaluation_target(body: dict[str, Any]) -> str:
             f"{json.dumps(handoff, ensure_ascii=False, sort_keys=True)}")
 
 
-def _version_evidence(host: Any, document: dict[str, Any], events: list[ZfEvent]) -> str:
+def _version_evidence(host: Any, document: dict[str, Any], events: list[ZfEvent],
+                      *, history: list[ZfEvent] | None = None) -> str:
     descriptor = {"ref": document.get("readiness_ref"),
                   "sha256": document.get("readiness_digest"),
                   "content_type": "application/json"}
@@ -48,11 +49,19 @@ def _version_evidence(host: Any, document: dict[str, Any], events: list[ZfEvent]
         for key in ("channel_id", "thread_id", "revision")
     ) or readiness.get("schema_version") != "channel-prd-readiness.v1":
         raise ValueError("canonical PRD readiness version is inconsistent")
+    history = history if history is not None else host.event_log.read_all()
+    roster = project_channel(Path(host.state_dir), document["channel_id"], events=history) or {}
+    members = [{key: row.get(key) for key in (
+        "member_id", "channel_role", "profile_id", "profile_revision", "provider", "status",
+        "role_context_ref", "profile_snapshot_ref", "profile_snapshot_digest",
+    )} for row in roster.get("members", [])]
     return json.dumps({"readiness_descriptor": descriptor, "readiness": readiness,
+                       "review_members": members,
+                       "review_roster": ((roster.get("discussions") or {}).get(document["thread_id"]) or {}).get("review_roster", []),
                        "channel_membership_events": [
                            {"event_id": row.id, "type": row.type, "actor": row.actor,
                             "ts": row.ts, "causation_id": row.causation_id, "payload": row.payload}
-                           for row in host.event_log.read_all()
+                           for row in history
                            if row.type in {"channel.member.invitation.proposed", "channel.member.invitation.decided",
                                            "channel.member.invited", "channel.member.added", "channel.member.add.rejected",
                                            "channel.member.removed"}
@@ -90,6 +99,12 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
     body = document.get("body") if isinstance(document, dict) else {}
     synthesis = body.get("synthesis") if isinstance(body, dict) else {}
     events = host.event_log.read_all()
+    # A queued evaluation must not silently acquire later invitations,
+    # signatures or source decisions. Freeze evidence at its request event.
+    request_index = next((i for i, row in enumerate(events) if row.id == event.id), -1)
+    if request_index < 0:
+        raise ValueError("PRD evaluation request event is unavailable")
+    events = events[:request_index + 1]
     synthesis_request_id = next((str(row.payload.get("request_id") or "") for row in events
                                  if row.id == prd.get("event_id")
                                  and row.type == "channel.synthesis.proposed"), "")
@@ -115,7 +130,7 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
         and (row.payload or {}).get("artifact_ref") == prd["artifact_ref"]
         and str((row.payload or {}).get("artifact_digest") or "").removeprefix("sha256:")
         == str(prd["artifact_digest"]).removeprefix("sha256:")]
-    evidence = json.loads(_version_evidence(host, document, version_events))
+    evidence = json.loads(_version_evidence(host, document, version_events, history=events))
     evidence["digest_binding"] = {
         "canonical_artifact": {"ref": prd["artifact_ref"],
                                "sha256": str(prd["artifact_digest"]).removeprefix("sha256:"),
