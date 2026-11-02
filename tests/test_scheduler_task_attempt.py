@@ -289,6 +289,60 @@ def test_enforce_does_not_renew_lease_with_partial_or_stale_identity(
     assert "lease_renewal:lease_id_mismatch" in rejected.payload["reason"]
 
 
+@pytest.mark.parametrize("event_type", ["worker.heartbeat", "agent.usage"])
+@pytest.mark.parametrize("terminal_status", ["failed", "succeeded", "expired"])
+def test_terminal_attempt_does_not_emit_heartbeat_for_late_activity(
+    tmp_path: Path, event_type: str, terminal_status: str,
+) -> None:
+    runtime, _, state_dir = _runtime(tmp_path, mode="shadow")
+    context = _send(runtime, state_dir, dispatch_id="disp-1")
+    assert context is not None
+    store = TaskAttemptStore(state_dir / "task_attempts.json")
+    store.update(context.attempt_id, status=terminal_status, updated_at="2026-11-01T00:00:00+00:00")
+    before = store.get(context.attempt_id)
+    source = ZfEvent(
+        type=event_type, actor="dev", task_id="TASK-1",
+        payload=dispatch_attempt_payload(context),
+    )
+
+    renew_task_attempt_lease(runtime, source)
+
+    assert store.get(context.attempt_id) == before
+    assert not any(
+        event.type == "task.attempt.heartbeat"
+        and event.payload.get("source_event_id") == source.id
+        for event in runtime.event_log.read_all()
+    )
+
+
+def test_attempt_finishing_during_heartbeat_does_not_emit_renewal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, state_dir = _runtime(tmp_path, mode="shadow")
+    context = _send(runtime, state_dir, dispatch_id="disp-1")
+    assert context is not None
+    original = TaskAttemptStore.renew_lease
+
+    def settle_before_renew(self, attempt_id, **kwargs):
+        self.update(attempt_id, status="failed", updated_at="2026-11-01T00:00:00+00:00")
+        return original(self, attempt_id, **kwargs)
+
+    monkeypatch.setattr(TaskAttemptStore, "renew_lease", settle_before_renew)
+    source = ZfEvent(
+        type="agent.usage", actor="dev", task_id="TASK-1",
+        payload=dispatch_attempt_payload(context),
+    )
+    renew_task_attempt_lease(runtime, source)
+
+    store = TaskAttemptStore(state_dir / "task_attempts.json")
+    assert store.get(context.attempt_id)["status"] == "failed"
+    assert not any(
+        event.type == "task.attempt.heartbeat"
+        and event.payload.get("source_event_id") == source.id
+        for event in runtime.event_log.read_all()
+    )
+
+
 def test_disk_usage_renews_unique_reader_attempt_without_task_store_row(
     tmp_path: Path,
 ) -> None:
