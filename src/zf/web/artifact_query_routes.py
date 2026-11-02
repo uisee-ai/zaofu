@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -16,6 +17,7 @@ def build_artifact_query_router(
     state_dir: Path,
     project_root: Path,
     config: ZfConfig | None,
+    resolve_ctx: Callable[[str], Any] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -132,6 +134,24 @@ def build_artifact_query_router(
                 mode="canonical",
             ),
         ))
+
+    @router.get("/api/attempts/{attempt_id}/inputs")
+    @router.get("/api/projects/{project_id}/attempts/{attempt_id}/inputs")
+    def attempt_inputs(attempt_id: str, query: str = "", cursor: str | None = None, limit: int = 10, project_id: str = "") -> JSONResponse:
+        if project_id:
+            if resolve_ctx is None:
+                raise HTTPException(404, "unknown project")
+            context = resolve_ctx(project_id)
+            query_service = ArtifactQueryService(state_dir=context.state_dir, project_root=context.project_root, config=context.config)
+        else:
+            query_service = service()
+        try:
+            result = query_service.attempt_inputs(attempt_id,
+                context=query_service.context(actor="web", purpose="attempt-inspect", mode="canonical", limit=limit),
+                query=query, cursor=cursor)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return JSONResponse(result)
 
     @router.get("/api/runs/{run_id}/plan-package-advisory")
     def plan_package_advisory(run_id: str) -> JSONResponse:

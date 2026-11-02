@@ -248,3 +248,12 @@ remain Kernel-owned.
 The briefing/runtime fills immutable run/task/contract/target bindings. Do not
 invent a different contract revision or claim a receipt for a command you did
 not run on the reported source commit.
+
+## Task 范围输入导航
+
+先用本次 briefing 的 `zf artifact index --attempt <id>` 定位来源/selector；
+`--query` 只过滤定位元数据，未命中不代表项目没有该需求。消费当前任务、必要共享
+接口和前置产物正文；不要因并行 lane 共用 Plan 就逐份通读其他任务。完成全部
+required reads 后按需扩读已授权来源；范围缺口通过受控 replan/补充绑定处理。
+写后保留来源 ref/digest、AC/检查证据和下一步到现有 handoff/checkpoint，按原提交
+协议发布；不能把未准入草稿当作下游输入，也不能直接修改目录或运行时状态。

@@ -188,3 +188,13 @@ When Candidate Verify receives a current `product_acceptance_spec`:
 Runtime owns schema validation, result admission/repair, attempt accounting,
 affinity routing, stale/replay checks, and terminal state. This Skill owns how
 to perform a meaningful independent evaluation.
+
+## Task 范围与独立证据
+
+以当前 attempt 输入索引定位本任务的 contract、原始约束、目标版本、验证命令和
+依赖接口，完整消费 required reads；索引/命中摘要不算正文已读。Impl 自检用于
+确定复核线索，不能替代 Verify 自己运行检查并绑定当前 target 的证据。共享
+规则必须保留失败语义、权限、边界值和跨任务接口反例；不因本任务切片较小而
+缩减验收。Candidate Verify 仍按其完整包政策读取，不套用 Task Verify 的选择。
+压缩/换会话后先核对 task/attempt/target/ref/digest，再补读当前不再掌握的正文；
+`--resume` 只适用于仍能使用当前会话已交付材料时，不是记忆或理解证明。

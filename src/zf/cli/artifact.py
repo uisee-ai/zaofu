@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -85,6 +84,16 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     list_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
     list_cmd.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     list_cmd.set_defaults(func=_run_attempt_list)
+
+    index_cmd = sub.add_parser("index", help="Browse authorized attempt input locators without consuming bodies")
+    index_cmd.add_argument("--attempt", required=True)
+    index_cmd.add_argument("--query", default="", help="Literal filter over source, artifact, path and ref")
+    index_cmd.add_argument("--cursor", default=None)
+    index_cmd.add_argument("--limit", type=int, default=10)
+    index_cmd.add_argument("--state-dir", default=None)
+    from zf.cli.artifact_input_index import run_input_index
+
+    index_cmd.set_defaults(func=run_input_index)
 
     read_cmd = sub.add_parser(
         "read",
@@ -379,25 +388,9 @@ def _run_catalog_lineage(args: argparse.Namespace) -> int:
 
 
 def _load_attempt_source_manifest(state_dir: Path, attempt_id: str) -> dict[str, Any]:
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", str(attempt_id)).strip("-._") or "attempt"
-    root = state_dir / "artifacts" / "attempts" / safe / "source-manifests"
-    manifests: list[dict[str, Any]] = []
-    for path in sorted(root.glob("*.json")):
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(value, dict) and str(value.get("attempt_id") or "") == str(attempt_id):
-            manifests.append(value)
-    if not manifests:
-        raise ValueError(f"attempt source manifest not found: {attempt_id}")
-    canonical = {
-        json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        for item in manifests
-    }
-    if len(canonical) != 1:
-        raise ValueError(f"attempt has divergent source manifests: {attempt_id}")
-    return manifests[0]
+    from zf.runtime.artifact_input_index import load_attempt_source_manifest
+
+    return load_attempt_source_manifest(state_dir, attempt_id)
 
 
 def _run_manifest_create(args: argparse.Namespace) -> int:

@@ -246,3 +246,10 @@ def test_codex_goal_closure_judge_stays_headless_safe():
         backend="claude-code", permission_mode="bypass",
     )
     assert apply_goal_closure_judge_policy(config, cc).permission_mode == "allowlist"
+
+
+def test_aggregator_index_uses_the_actual_cli_command(monkeypatch):
+    monkeypatch.setenv("ZF_CLI_CMD", "uv run zf")
+    tools = claude_aggregator_allowed_tools(_config())
+    assert "Bash(uv run zf artifact index *)" in tools
+    assert "Bash(uv run zf artifact read *)" in tools

@@ -853,3 +853,12 @@ Use with the task map:
 - during replan: explain what changed, and reference the amendment artifact;
 - include `decision_map_ref` in plan/replan summaries when available;
 - keep dependencies and dispatch constraints in `task_map.json`.
+
+## Task 输入切片的语义对账（设计 198）
+
+批准 `plan_input_selection` 前，将原始条款、来源版本/定位、AC、命令和验证责任
+对应到 shared context 或本 Task partition。检查共享接口与前置依赖、异常与
+权限规则、边界值和跨任务反例，不能仅写章节标题或把不利约束排到别的 Task。
+选择理由与被排除范围写入现有 rationale/输入正文；没有适合字段时写该工件
+说明，不新增 Task schema。分别审 Impl 与 Verify 的消费需要；独立 Verify
+需自行核验目标和证据。完整 Plan/Candidate/Goal 覆盖政策保持不变。

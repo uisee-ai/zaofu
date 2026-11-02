@@ -7,6 +7,7 @@ import { Hash, Wrench } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import type { DetailTab, ProjectionKind } from "../../app/sharedTypes";
 import { EventTable, ExecutionRoutePanel, KeyValuePanel, PreBlock, TablePage, asRecord, asRecordArray, asStringArray, csvList, formatAge, numberValue, recordValue, stringify, textValue } from "../../app/shared";
+import { TaskInputPanel } from "./TaskInputPanel";
 import { previewProfileForRef } from "../agent-session/previewRegistry";
 
 type TaskActionHandler = (action: string, payload?: Record<string, unknown>) => void;
@@ -182,6 +183,7 @@ function handoffTone(summary: Record<string, unknown>): "ok" | "warn" | "err" | 
 
 
 export function TaskDetail({
+  projectId,
   actionReady,
   actionResult,
   actionState,
@@ -202,6 +204,7 @@ export function TaskDetail({
   timelineError,
   timelineLoading,
 }: {
+  projectId?: string;
   actionReady: boolean;
   actionResult: ActionResponse | null;
   actionState: string;
@@ -309,7 +312,7 @@ export function TaskDetail({
             traceId={timelineTraceId}
           />
         ) : null}
-        {tab === "Evidence" ? <TaskEvidencePanel detail={detail} diff={diff} /> : null}
+        {tab === "Evidence" ? <TaskEvidencePanel detail={detail} diff={diff} projectId={projectId} /> : null}
         {tab === "Advanced" ? (
           <TaskAdvancedPanel detail={detail} skillsSummary={skillsSummary} task={task} />
         ) : null}
@@ -422,9 +425,12 @@ function TaskActivityPanel({
 }
 
 
-function TaskEvidencePanel({ detail, diff }: { detail: TaskDetailModel | null; diff: TaskDiff | null }) {
+function TaskEvidencePanel({ detail, diff, projectId }: { detail: TaskDetailModel | null; diff: TaskDiff | null; projectId?: string }) {
+  const operation = asRecord(detail?.task_run_panel?.active_operation);
+  const attemptId = textValue(detail?.task?.active_dispatch_id) || textValue(operation.attempt_id);
   return (
     <div className="task-evidence-view" data-testid="task-evidence-view">
+      <TaskInputPanel key={`${projectId}:${detail?.task?.id}:${attemptId}`} attemptId={attemptId} projectId={projectId} />
       <ArtifactLedgerPanel detail={detail} />
       <section className="subsection">
         <h3>Git</h3>

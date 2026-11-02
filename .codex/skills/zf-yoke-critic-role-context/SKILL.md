@@ -237,3 +237,12 @@ Before emitting a verdict, check:
   address them without coming back to ask for clarification
 - when emitting `gate.failed`, ensure the payload has both the structured
   verdict and a human-readable `summary` so reissue briefings render correctly
+
+## Judge 输入范围
+
+按当前 profile 的必读政策从 `artifact index --attempt <id>` 定位合同、目标版本
+与独立 Verify 结果，核对证据是否属于当前 Task/target。Integration acceptance
+review 和 Thin Judge/Goal closure 有各自范围；不得把 Impl 的
+`plan_input_selection` 当作 Judge 或全局验收的输入删减授权。必要共享约束、
+异常路径、跨任务影响有缺口时给出具体 ref/selector 与补充目标；历史批准、
+Impl 自检和目录可见性都不能代替独立验收结论。

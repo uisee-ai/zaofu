@@ -309,6 +309,30 @@ class ArtifactQueryService(ArtifactObjectViewMixin):
         result["task_id"] = task_id
         return result
 
+    def attempt_inputs(
+        self, attempt_id: str, *, context: QueryContext,
+        query: str = "", cursor: str | None = None,
+    ) -> dict[str, Any]:
+        from zf.runtime.artifact_input_index import input_index, load_attempt_source_manifest
+        from zf.runtime.artifact_read_requirements import ArtifactReadRequirementError, required_reads_for_attempt
+
+        manifest = load_attempt_source_manifest(self.state_dir, attempt_id)
+        events = self._events()
+        operation_id = next((str(event.payload["operation_id"]) for event in reversed(events)
+            if isinstance(event.payload, dict) and event.payload.get("operation_id")
+            and attempt_id in {event.payload.get(key) for key in ("attempt_id", "active_attempt_id", "dispatch_id")}), "")
+        try:
+            required = required_reads_for_attempt(events, attempt_id,
+                state_dir=self.state_dir, operation_id=operation_id)
+        except ArtifactReadRequirementError:
+            required = None  # Unknown policy must never appear as all-optional.
+        return input_index(
+            manifest=manifest, required=required,
+            identity={"actor": context.actor, "role": context.role, "purpose": context.purpose},
+            reads=self._read_rows(attempt_id), query=query, cursor=cursor,
+            limit=min(context.limit, 50),
+        )
+
     def attempt_inspect(
         self,
         attempt_id: str,
