@@ -1,6 +1,6 @@
 # 保留诊断请求已绑定的 Run 和 Task Map 代次
 
-> 状态: active
+> 状态: done；实现 `9861f2f5 fix: bind diagnostics to the active run generation`
 
 ## 证据
 
