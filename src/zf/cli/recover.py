@@ -30,6 +30,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     register_recover_task_impl(nested)
     from zf.cli.recover_task_integration import register_recover_task_integration
     register_recover_task_integration(nested)
+    from zf.cli.recover_oa_review import register_recover_oa_review
+    register_recover_oa_review(nested)
 
     workflow = nested.add_parser(
         "workflow",

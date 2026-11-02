@@ -78,6 +78,10 @@ operation key，也必须进入失败结算；已被接受的活跃诊断继续�
 attempt 且旧请求未携带该字段时重发一次；保留原拒绝，其他原因不自动重试。
 绑定具体已结算 operation 的失败检查点使用该 operation 实际执行角色，而不是
 用任务合同中的历史 owner 覆盖实际派发角色；未绑定 operation 的旧检查点保持回退。
+若旧检查点因目标角色错误升级，操作员可用 `zf recover oa-review --escalation
+<event-id> --reason <reason>` 预览并追加 `--apply` 请求一次新的 OA 审查。
+恢复要求原升级和决策已准入、同一已结算 operation 的 attempt 一致且角色确有偏差；
+保留旧结论，新检查点仍须独立决策，不直接派发返工或修改冻结合同。
 
 ## 只读观测
 
