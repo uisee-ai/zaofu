@@ -1,3 +1,4 @@
+from zf.runtime.artifact_input_page import expand_input_items
 import json
 
 from zf.runtime.artifact_navigation import build_navigation
@@ -37,16 +38,16 @@ def test_task_scoped_relation_navigation_is_bound_and_does_not_read_body(tmp_pat
     body = {"shared": {}, "tasks": [{"task_id": f"T{i}", "body": {
         "requirement_ids": [f"REQ-{i}"], "acceptance_ids": [f"AC-{i}"]}} for i in range(100)]}
     manifest, required, _ = published(tmp_path, body=body)
-    result = input_index(manifest=manifest, required=required, identity=IDENTITY, reads=[], relation_id="AC-7")
+    result = input_index(state_dir=tmp_path, manifest=manifest, required=required, identity=IDENTITY, reads=[], relation_id="AC-7")
     assert result["total"] == 1
-    item = result["items"][0]
+    item = expand_input_items(result)[0]
     assert item["navigation"]["id"] == "AC-7"
     assert item["json_path"] == "$.tasks[7]"  # Child pointer is navigation, not expanded read authority.
     assert item["read_command"].endswith("'$.tasks[7]'")
-    assert input_index(manifest=manifest, required=required, identity=IDENTITY, reads=[], relation_id="AC-8")["total"] == 0
-    page = input_index(manifest=manifest, required=required, identity=IDENTITY, reads=[], navigate=True, limit=1)
+    assert input_index(state_dir=tmp_path, manifest=manifest, required=required, identity=IDENTITY, reads=[], relation_id="AC-8")["total"] == 0
+    page = input_index(state_dir=tmp_path, manifest=manifest, required=required, identity=IDENTITY, reads=[], navigate=True, limit=1)
     with pytest.raises(ValueError, match="stale"):
-        input_index(manifest=manifest, required=required, identity=IDENTITY, reads=[], cursor=page["next_cursor"])
+        input_index(state_dir=tmp_path, manifest=manifest, required=required, identity=IDENTITY, reads=[], cursor=page["next_cursor"])
     assert not active_read_ledger_path(tmp_path, "a").exists()
 
 
@@ -59,7 +60,7 @@ def test_reordered_array_and_unicode_section_read_keep_published_selection(tmp_p
     body['tasks'].reverse()
     body['shared'] = '# 已改变\n'
     (tmp_path / 'artifacts/input.json').write_text(json.dumps(body))
-    result = input_index(manifest=manifest, required=required, identity=IDENTITY, reads=[], query='表单')
+    result = input_index(state_dir=tmp_path, manifest=manifest, required=required, identity=IDENTITY, reads=[], query='表单')
     section = result['items'][0]['navigation']
     selection = open_selection(tmp_path, manifest=manifest, row=required[0], identity=IDENTITY)
     assert selection.read(section['page_start'], section['section_end']) == '## 表单\n字段\n'
@@ -77,7 +78,7 @@ def test_generated_section_command_reads_a_bounded_unicode_page(tmp_path, monkey
         'tasks': [{} for _ in range(8)]})
     _grant(tmp_path, monkeypatch, manifest=manifest)
     monkeypatch.setenv('ZF_CLI_CMD', 'zf')
-    item = input_index(manifest=manifest, required=required, identity=IDENTITY, reads=[], query='表单')['items'][0]
+    item = expand_input_items(input_index(state_dir=tmp_path, manifest=manifest, required=required, identity=IDENTITY, reads=[], query='表单'))[0]
     assert main(shlex.split(item['read_command'])[1:] + ['--state-dir', str(tmp_path)]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result['content'].startswith('# 表单\n')
@@ -105,4 +106,4 @@ def test_relation_cli_and_web_route_share_authorized_navigation(tmp_path, monkey
     assert cli['total'] == 1 and cli['items'][0]['navigation']['id'] == 'AC-7'
     assert client.get('/api/attempts/a/inputs?relation_id=AC-8').json()['total'] == 0
     expanded = client.get('/api/attempts/a/inputs?navigate=true').json()
-    assert len({row['locator_id'] for row in expanded['items']}) == expanded['total'] == 4
+    assert len({row['locator_id'] for row in expand_input_items(expanded)}) == expanded['total'] == 4

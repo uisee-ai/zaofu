@@ -12,12 +12,28 @@ interface InputEntry {
   cost: { produced_body_bytes: number; repeated_exact_range_bytes: number; read_count: number };
 }
 interface InputIndex {
+  schema_version?: string; sources?: InputEntry[];
   attempt_id: string; task_id: string; read_purpose: string; total: number;
-  items: InputEntry[]; next_cursor: string | null;
+  items: (InputEntry & { source?: number })[]; next_cursor: string | null;
   lifecycle?: { status: string; requires_rebind?: boolean };
   recovery_command?: string;
   navigation_complete?: boolean | null;
 }
+function expandIndex(data: InputIndex): InputIndex {
+  const items = data.items.map(item => {
+    if (data.schema_version !== "attempt-input-index.v2") return item;
+    const source = data.sources?.[item.source!];
+    if (!source) throw new Error("Input source metadata missing");
+    const nav = item.navigation;
+    const command = nav?.kind === "section" && "page_start" in nav && "section_end" in nav
+      ? source.read_command + ` --page-start ${nav.page_start} --page-size ${Math.min(1024, Math.max(1, Number(nav.section_end) - Number(nav.page_start)))}`
+      : source.read_command;
+    return { ...source, navigation: nav, read_command: command,
+      locator_id: `${source.locator_id}:${JSON.stringify(nav ?? null)}` };
+  });
+  return { ...data, items };
+}
+
 const bytes = (value: number | null) => value == null ? "unknown" : `${value.toLocaleString()} B`;
 
 export function TaskInputPanel({ attemptId, projectId }: { attemptId: string; projectId?: string }) {
@@ -28,7 +44,7 @@ export function TaskInputPanel({ attemptId, projectId }: { attemptId: string; pr
   const [reload, setReload] = useState(0);
   const [result, setResult] = useState<{ key: string; value?: InputIndex; error?: string } | null>(null);
   const prefix = projectId ? `/api/projects/${encodeURIComponent(projectId)}` : "/api";
-  const params = new URLSearchParams({ query, limit: "10" });
+  const params = new URLSearchParams({ query, limit: "50" });
   if (navigate) params.set("navigate", "true");
   if (cursor) params.set("cursor", cursor);
   const path = `${prefix}/attempts/${encodeURIComponent(attemptId)}/inputs?${params}`;
@@ -37,7 +53,7 @@ export function TaskInputPanel({ attemptId, projectId }: { attemptId: string; pr
     if (!attemptId) return;
     const controller = new AbortController();
     void cachedGetJson<InputIndex>(path, { signal: controller.signal, bypassCache: true })
-      .then(value => { if (!controller.signal.aborted) setResult({ key, value }); })
+      .then(value => { if (!controller.signal.aborted) setResult({ key, value: expandIndex(value) }); })
       .catch(error => { if (!controller.signal.aborted) setResult({ key, error: String(error) }); });
     return () => controller.abort();
   }, [attemptId, key, path]);

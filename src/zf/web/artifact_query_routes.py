@@ -154,7 +154,7 @@ def build_artifact_query_router(
 
     @router.get("/api/attempts/{attempt_id}/inputs")
     @router.get("/api/projects/{project_id}/attempts/{attempt_id}/inputs")
-    def attempt_inputs(attempt_id: str, query: str = "", cursor: str | None = None, limit: int = 10,
+    def attempt_inputs(attempt_id: str, query: str = "", cursor: str | None = None, limit: int = 50,
                        project_id: str = "", relation_id: str = "", navigate: bool = False) -> JSONResponse:
         if project_id:
             if resolve_ctx is None:

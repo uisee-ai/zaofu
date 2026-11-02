@@ -329,6 +329,7 @@ class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
         except ArtifactReadRequirementError:
             required = None  # Unknown policy must never appear as all-optional.
         return input_index(
+            state_dir=self.state_dir,
             manifest=manifest, required=required,
             identity={"actor": context.actor, "role": context.role, "purpose": context.purpose},
             reads=self._read_rows(attempt_id), query=query, cursor=cursor,

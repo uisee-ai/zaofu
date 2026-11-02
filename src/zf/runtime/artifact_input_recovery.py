@@ -62,7 +62,7 @@ def build_input_recovery(
     # The embedded index stays paginated; the recovery response itself, including
     # checkpoint metadata and command envelope, has the same byte budget.
     for limit in range(4, 0, -1):
-        result["inputs"] = input_index(manifest=manifest, required=required, identity=dict(identity), reads=own_reads,
+        result["inputs"] = input_index(state_dir=state_dir, manifest=manifest, required=required, identity=dict(identity), reads=own_reads,
             cursor=cursor, limit=limit, lifecycle=lifecycle)
         result["next_cursor"] = result["inputs"]["next_cursor"]
         if len(json.dumps(result, ensure_ascii=False).encode()) + 1 <= 8192:

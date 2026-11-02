@@ -1,3 +1,4 @@
+from zf.runtime.artifact_input_page import expand_input_items
 import json
 
 import pytest
@@ -73,7 +74,7 @@ def test_history_never_proves_current_memory_or_another_roles_consumption(tmp_pa
     other = build_input_recovery(state_dir=tmp_path, manifest=manifest,
         identity={**IDENTITY, 'actor': 'verify-1', 'role': 'verify'}, events=[], required=rows, reads=receipts)
     assert other['historical_missing'] == 2
-    assert all(i['read_status'] == 'missing' for i in other['inputs']['items'])
+    assert all(i['read_status'] == 'missing' for i in expand_input_items(other['inputs']))
     assert not active_read_ledger_path(tmp_path, 'a').exists()
 
 

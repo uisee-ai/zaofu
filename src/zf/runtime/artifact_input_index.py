@@ -11,7 +11,7 @@ from typing import Any
 from zf.runtime.artifact_access import artifact_access_allowed
 from zf.runtime.call_result_envelope import canonical_json_sha256
 
-INDEX_SCHEMA = "attempt-input-index.v1"
+INDEX_SCHEMA = "attempt-input-index.v2"
 INDEX_BYTES = 8192
 
 
@@ -41,16 +41,18 @@ def load_attempt_source_manifest(state_dir: Path, attempt_id: str) -> dict[str, 
 def input_index(
     *, manifest: dict[str, Any], required: list[dict[str, Any]] | None,
     identity: dict[str, str], reads: list[dict[str, Any]],
-    query: str = "", cursor: str | None = None, limit: int = 10,
+    query: str = "", cursor: str | None = None, limit: int = 50,
     relation_id: str = "", navigate: bool = False,
-    lifecycle: dict[str, Any] | None = None,
+    lifecycle: dict[str, Any] | None = None, state_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Literal locator lookup; no global search, body loading or ACL union."""
+    """Literal lookup; pinned reconstruction only, no global search or ACL union."""
     if not 1 <= limit <= 50 or max(len(query), len(relation_id)) > 256:
         raise ValueError("input index requires limit 1..50 and query at most 256 characters")
     from zf.runtime.artifact_read_ledger import required_read_satisfied
     from zf.runtime.cli_command import zf_cli_cmd
-    from zf.runtime.artifact_navigation import matching_navigation
+    from zf.runtime.artifact_navigation_shards import query_navigation
+    from zf.runtime.artifact_input_page import pack_input_items
+    from zf.runtime.artifact_read_snapshot import open_selection
     from zf.runtime.artifact_role_inputs import role_input_view
 
     attempt = str(manifest.get("attempt_id") or "")
@@ -72,9 +74,17 @@ def input_index(
             locator_match = query.casefold() in locator.casefold()
             snapshot = next((s for s in source.get("read_selections", []) if s.get("json_path") == path), {})
             navigation = snapshot.get("navigation") or {}
-            navigation_states.append(navigation.get("complete"))
-            matches = matching_navigation(navigation, relation_id=relation_id,
-                query="" if locator_match else query)
+            matches = []
+            if navigate or relation_id or (query and not locator_match):
+                def pinned_text():
+                    if state_dir is None:
+                        raise ValueError('pinned navigation recovery requires state_dir')
+                    return open_selection(state_dir, manifest=manifest, identity=identity, row={
+                        'source_id': source['source_id'], 'artifact_id': source['artifact_id'],
+                        'artifact_sha256': source['sha256'], 'json_path': path}).read()
+                navigation, matches = query_navigation(state_dir, navigation, relation_id=relation_id,
+                    query='' if locator_match else query, fallback=pinned_text)
+            navigation_states.append(navigation.get('complete'))
             policy = next((row for row in requirements if row.get("json_path", "$") == path), None)
             occurrence_reads = [r for r in reads if r.get("status") == "read"
                 and r.get("attempt_id") == attempt and r.get("source_id") == source["source_id"]
@@ -94,22 +104,14 @@ def input_index(
                 "selected_sha256": snapshot.get("selected_sha256"),
                 "snapshot_status": "pinned" if snapshot else "legacy",
                 "read_command": f"{zf_cli_cmd()} {shlex.join(args)}", "cost": read_cost(occurrence_reads),
-                "navigation_count": len(navigation.get("entries", [])),
+                "navigation_count": navigation.get("entry_count", len(navigation.get("entries", []))),
                 "navigation_complete": navigation.get("complete"),
                 "locator_id": canonical_json_sha256([source.get("occurrence_id"), source["source_id"], source["artifact_id"], path]),
             }
             if locator_match and not relation_id:
-                items.append(item)
-            if navigate or relation_id or (query and not locator_match):
-                for entry in matches:
-                    child = {**item, "navigation": entry,
-                        "locator_id": canonical_json_sha256([item["locator_id"], entry])}
-                    if entry["kind"] == "section":
-                        # Leave room for multibyte text and the read envelope.
-                        size = min(1024, max(1, entry["section_end"] - entry["page_start"]))
-                        child["read_command"] += f" --page-start {entry['page_start']} --page-size {size}"
-                    items.append(child)
-    binding = canonical_json_sha256({"manifest": manifest, "requirements": required,
+                items.append((item, None))
+            items.extend((item, entry) for entry in matches)
+    binding = canonical_json_sha256({"schema": INDEX_SCHEMA, "manifest": manifest, "requirements": required,
                                     "identity": identity, "query": query, "relation_id": relation_id,
                                     "navigate": navigate, "lifecycle": lifecycle})
     start = 0
@@ -142,7 +144,7 @@ def input_index(
     }
     end = min(len(items), start + limit)
     while True:
-        result["items"] = items[start:end]
+        result["sources"], result["items"] = pack_input_items(items[start:end])
         result["next_cursor"] = (base64.urlsafe_b64encode(json.dumps([binding, end]).encode()).decode()
                                  if end < len(items) else None)
         if len(json.dumps(result, ensure_ascii=False).encode()) + 1 <= INDEX_BYTES:

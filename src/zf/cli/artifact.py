@@ -91,7 +91,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     index_cmd.add_argument("--relation-id", default="", help="Exact declared Task, REQ, AC or dependency id")
     index_cmd.add_argument("--navigate", action="store_true", help="Include declared relations and Markdown section locators")
     index_cmd.add_argument("--cursor", default=None)
-    index_cmd.add_argument("--limit", type=int, default=10)
+    index_cmd.add_argument("--limit", type=int, default=50)
     index_cmd.add_argument("--state-dir", default=None)
     from zf.cli.artifact_input_index import run_input_index
 

@@ -30,7 +30,7 @@ def run_input_index(args: argparse.Namespace) -> int:
             state_dir=context.state_dir, operation_id=identity["operation_id"])
         query = ArtifactQueryService(state_dir=context.state_dir, project_root=context.project_root, config=context.config)
         from zf.runtime.artifact_input_lifecycle import input_lifecycle
-        result = input_index(manifest=manifest, required=required, identity=identity,
+        result = input_index(state_dir=context.state_dir, manifest=manifest, required=required, identity=identity,
             reads=query._read_rows(args.attempt), query=args.query, cursor=args.cursor, limit=args.limit,
             relation_id=args.relation_id, navigate=args.navigate, lifecycle=input_lifecycle(manifest, events))
     except (ConfigError, OSError, ValueError) as exc:

@@ -7,6 +7,41 @@ const entry = (source: string) => ({ source_id: source, artifact_id: "task.json"
 const body = (source: string, next: string | null = null) => ({ attempt_id: "same-attempt", task_id: "T7",
   read_purpose: "implementation", total: 2, items: [entry(source)], next_cursor: next });
 
+test("v2 compact pages expand source metadata and retain tail locators", async ({ page }) => {
+  await page.route("**/api/projects/*/attempts/*/inputs?*", route => {
+    const url = new URL(route.request().url());
+    expect(url.searchParams.get("limit")).toBe("50");
+    const next = url.searchParams.has("cursor");
+    const source = url.pathname.includes("/second/") ? "SECOND" : "COMPACT";
+    return route.fulfill({ json: { ...body(source), schema_version: "attempt-input-index.v2",
+      sources: [entry(source)], total: 1000, next_cursor: next ? null : "page-2",
+      navigation_complete: true, items: [{ source: 0, navigation: {
+        kind: "relation", id: next ? "AC-999" : "AC-0", relation: "acceptance",
+        field_pointer: next ? "/tasks/999/acceptance_ids/0" : "/tasks/0/acceptance_ids/0",
+      } }],
+    } });
+  });
+  await page.goto("/tests/task-inputs.html");
+  await expect(page.locator("summary")).toContainText("COMPACT");
+  await page.getByRole("button", { name: "下一页" }).click();
+  await expect(page.locator("summary")).toContainText("AC-999");
+  await page.locator("summary").click();
+  await expect(page.locator("details")).toContainText("/tasks/999/acceptance_ids/0");
+  await expect(page.locator("pre")).toContainText("--json-path '$.tasks[7]'");
+  await page.getByRole("button", { name: "切换项目" }).click();
+  await expect(page.locator("summary")).toContainText("SECOND");
+  await expect(page.getByTestId("task-input-panel")).not.toContainText("COMPACT");
+});
+
+test("malformed compact source reference displays a recoverable error", async ({ page }) => {
+  await page.route("**/api/projects/*/attempts/*/inputs?*", route => route.fulfill({ json: {
+    ...body("BROKEN"), schema_version: "attempt-input-index.v2", sources: [], items: [{ source: 0 }],
+  } }));
+  await page.goto("/tests/task-inputs.html");
+  await expect(page.getByRole("alert")).toContainText("Input source metadata missing");
+  await expect(page.getByRole("button", { name: "刷新输入" })).toBeVisible();
+});
+
 test("task inputs paginate, explain pinned ranges, filter, and isolate project changes", async ({ page }) => {
   await page.route("**/api/projects/*/attempts/*/inputs?*", async route => {
     const url = new URL(route.request().url());

@@ -7,14 +7,14 @@ from fastapi.testclient import TestClient
 from tests.test_artifact_query_service import _service, _append
 from zf.runtime.sidecar_refs import write_sidecar_json
 from zf.runtime.artifact_query.store import projection_db_path, get_reducer_projection
-from zf.runtime.artifact_navigation import NAVIGATION_SCHEMA
+from zf.runtime.artifact_navigation_shards import SHARD_SCHEMA as NAVIGATION_SCHEMA
 from zf.web.server import create_app
 
 
 def test_publication_navigation_authorized_versioned_rebuildable_and_bounded(tmp_path):
     root, state, service = _service(tmp_path)
     descriptor = write_sidecar_json(state, 'artifacts/task.json', {'task_id': 'T1',
-        'requirement_ids': [f'REQ-{i}' for i in range(120)]}, kind='task_map',
+        'requirement_ids': [f'REQ-{i}' for i in range(1000)]}, kind='task_map',
         schema_version='test.v1', created_by='dev-1')
     # Draft sidecars are never promoted to published catalog entries.
     assert service.artifact_navigation(descriptor['sha256'], context=service.context())['total'] == 0
@@ -25,14 +25,14 @@ def test_publication_navigation_authorized_versioned_rebuildable_and_bounded(tmp
         subject_id=descriptor['sha256'], source_snapshot_key=NAVIGATION_SCHEMA)
     assert cached['status'] == 'ready'  # Built by publication catch-up, not first navigation query.
     result = service.artifact_navigation(identity, context=service.context(limit=2))
-    assert result['total'] == 121 and result['next_cursor']
+    assert result['total'] == 1001 and result['next_cursor']
     assert result['body_read_evidence'] is result['authorizes_attempt_input'] is False
     assert len(json.dumps(result).encode()) <= 8192
     assert len(service.artifact_navigation(identity, context=service.context(limit=2), cursor=result['next_cursor'])['items']) == 2
     with pytest.raises(ValueError, match='stale'):
         service.artifact_navigation(identity, context=service.context(limit=2), query='REQ-1', cursor=result['next_cursor'])
     client = TestClient(create_app(state, project_root=root))
-    assert client.get(f'/api/artifacts/catalog/{identity}/navigation?query=REQ-119').json()['total'] == 1
+    assert client.get(f'/api/artifacts/catalog/{identity}/navigation?query=REQ-999').json()['total'] == 1
     # A damaged or missing disposable projection is reconstructed from the same digest.
     with sqlite3.connect(projection_db_path(state)) as conn:
         conn.execute("UPDATE artifact_reducer_projection SET payload_json='{}' WHERE projection_kind='artifact-navigation'")

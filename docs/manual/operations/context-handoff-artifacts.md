@@ -182,3 +182,22 @@ Provider input/cache/output 与估算、上报、账单费用来自该 operation
 其合成样例仅测显式定位和权限边界，不能证明真实项目语义召回。
 工作记录证据用 `artifact work-record show --operation <id> --evidence <从 0 开始的序号>`
 读取固定副本；续页同样必须绑定返回的 digest。
+
+
+## 完整导航与紧凑分页
+
+`zf artifact index --attempt <id> --relation-id AC-999` 在当前授权 selector 内精确查找显式关系；
+`--query` 只搜索目录元数据、关系 ID 和章节标题，不搜索正文语义。`--navigate` 展开导航。
+新快照使用完整分片导航，旧版截断索引按原固定 digest 重建；损坏时只恢复该固定版本，
+不能读取变更后的原文替代。不可恢复会报错，不返回“完整但无结果”。
+
+CLI/API 返回 `attempt-input-index.v2`：每个 `items[]` 的 `source` 是本页 `sources[]` 下标，
+`navigation` 是位置；ref、digest、read_command 等来源信息每页每个授权来源只交付一次。
+每页默认最多 50 项，整响应含换行不超过 8192 UTF-8 字节；继续携带 `next_cursor` 查询，
+直到空游标。不同 occurrence/selector 即使 digest 相同也不合并。关系位置不扩大读取权限。
+`navigation_complete=false` 表示受支持的标识符/位置长度等限制阻止了完整导航，须核对固定原文。
+
+应用升级需重启 runtime/Web Python 消费者并重建前端；旧客户端需适配 v2 来源引用。
+不重写历史 manifest 或事件；旧游标失效后从首页查询。导航、恢复与分页本身都不生成正文回执。
+用 `scripts/eval-context-inputs.py retrieval --tasks 1000` 运行完整集合回归；该结果不代表自然语言、
+视觉理解或真实 Provider token/cache 收益。

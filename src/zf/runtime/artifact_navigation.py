@@ -73,7 +73,7 @@ def build_navigation(content: str) -> dict[str, Any]:
             "authority": "navigation_only", "extractor": "declared-fields-and-markdown-headings.v1"}
 
 
-def _headings(content: str) -> tuple[list[dict[str, Any]], bool]:
+def _headings(content: str, *, entry_limit: int | None = MAX_ENTRIES) -> tuple[list[dict[str, Any]], bool]:
     entries: list[dict[str, Any]] = []
     offset = 0
     fence = ""
@@ -98,18 +98,18 @@ def _headings(content: str) -> tuple[list[dict[str, Any]], bool]:
             elif underline and previous and previous[0].strip():
                 heading = (previous[0].strip(), 1 if underline[1][0] == "=" else 2, previous[1], previous[2])
             if heading:
-                if len(entries) >= MAX_ENTRIES or len(heading[0]) > 256:
+                if (entry_limit is not None and len(entries) >= entry_limit) or len(heading[0]) > 256:
                     complete = False
                 else:
                     entries.append({"kind": "section", "title": heading[0], "level": heading[1],
                                     "page_start": heading[2], "line": heading[3], "section_end": len(content)})
             previous = (stripped, offset, number) if not heading else None
         offset += len(line)
-    for index, entry in enumerate(entries):
-        for following in entries[index + 1:]:
-            if following["level"] <= entry["level"]:
-                entry["section_end"] = following["page_start"]
-                break
+    open_sections = []
+    for entry in entries:
+        while open_sections and open_sections[-1]['level'] >= entry['level']:
+            open_sections.pop()['section_end'] = entry['page_start']
+        open_sections.append(entry)
     return entries, complete
 
 

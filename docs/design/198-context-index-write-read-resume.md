@@ -685,3 +685,30 @@ occurrence 权限再给标题、计数和游标；相同 digest 不合并权限�
 本批 [离线检索评测](../records/2026-11-02-context-198-production-evaluation.md) 实测显式定位
 16/17 命中，权限/负例无误命中；Candidate 末尾关系因导航上限漏检，已在空结果显示
 导航不完整。完整检索和真实业务语义召回仍需后续评测，不由本批确定性测试宣称通过。
+
+
+## 18. 第四批实施：完整检索与紧凑交付（2026-11-02）
+
+第三批的 16/17 只统计非空命中，既漏掉尾部 Task，也漏报共享来源/图片集合不完整。
+本批在 `0c11ebd7` 上实施三项已批准 backlog，修正索引和评测口径。
+
+- [分片索引](../../src/zf/runtime/artifact_navigation_shards.py) 遍历完整声明关系/章节，
+  16 个 ID 哈希桶、每片最多 128 项/192 KiB，最后发布绑定 selected digest 的目录。
+  精确 ID 只读对应桶；子串导航扫描各片。依旧只解释声明字段，不承担语义推断。
+- 新 selector 快照与 publication 导航使用分片；旧 512 项轻量提取器保留给 Plan 预检。
+  旧 manifest 的截断导航从固定快照恢复，缓存复用而不重写 manifest；缺片/坏片回到
+  同 digest 固定正文，恢复失败显式错误。先授权 occurrence/selector，后读取分片。
+- [分页协议](../../src/zf/runtime/artifact_input_page.py) 升级为 `attempt-input-index.v2`：
+  `sources[]` 保存每页共享元数据，`items[].source` 引用本页来源，`navigation` 保存位置。
+  不按内容 digest 合并权限。默认最多 50 条、整响应 8192 字节；游标绑定协议、输入、身份、查询。
+  CLI/API、恢复包、Web 均消费 v2；目录不能形成正文回执或扩大 required-read 权限。
+- [严格评测](../../scripts/eval-context-inputs.py) 对全部 Task/AC 及共享引用的独立位置集合
+  计算 missing/unexpected/duplicate/incomplete，而非仅看非空。100 和 1000 Task 分别通过
+  1805/1805、18005/18005 次查询，3 个 profile 的集合精度/召回均为 1。
+  [完整前后报告](../records/2026-11-02-context-198-retrieval-evaluation.md) 同时记录构建成本上升，
+  以及完整结果与旧截断结果不可直接只比总字节的限制。
+
+应用时重启 runtime/Web 并重建前端；外部 v1 客户端需适配来源引用，旧游标从首页重取。
+不需要重建历史 manifest，不新增 canonical schema、调度状态、配置或阅读豁免。
+指标仅覆盖合成声明关系、ACL 与固定版本恢复；正文 FTS/中文语义召回、视觉评审、
+8+8 并行资格、真实 Provider 成本及实际 delta canary 不由本批离线结果证明。

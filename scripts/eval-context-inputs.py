@@ -170,80 +170,172 @@ def benchmark() -> dict:
             'note': '宿主离线观测，未输出给 worker，不生成正文回执，不证明 token 节约。'}
 
 
-def retrieval() -> dict:
+def score_locations(expected: set[tuple], actual: list[tuple], *, complete: bool = True) -> dict:
+    """Compare full location sets, preserving distinct references and duplicates."""
+    from collections import Counter
+    observed = Counter(actual)
+    found = set(observed)
+    matched = len(expected & found)
+    missing, unexpected = len(expected-found), len(found-expected)
+    duplicates = sum(count-1 for count in observed.values())
+    return {'expected':len(expected), 'returned':len(actual), 'matched':matched,
+            'missing':missing, 'unexpected':unexpected, 'duplicates':duplicates,
+            'precision':matched/len(found) if found else (1.0 if not expected else 0.0),
+            'recall':matched/len(expected) if expected else 1.0, 'complete':complete,
+            'passed':not (missing or unexpected or duplicates) and complete}
+
+
+def retrieval(count: int = 100) -> dict:
+    """Exhaustive Task/AC fixtures with independent expected location sets."""
+    import inspect
+    import hashlib
     from zf.runtime.artifact_input_index import input_index
     from zf.runtime.artifact_read_ledger import source_manifest_from_payload
     from zf.runtime.artifact_read_snapshot import open_selection
-    from zf.runtime.artifact_source_versions import read_source_version
-    outcomes = []
+    from zf.runtime.artifact_navigation import build_navigation
+
+    if not 1 <= count <= 10000:
+        raise ValueError('offline corpus size must be 1..10000')
+    signature = inspect.signature(input_index)
     with tempfile.TemporaryDirectory(prefix='zf-context-retrieval-') as directory:
         state = Path(directory)
-        body = sample_bundle()['task_execution_input']
-        path = state / 'plan.json'
-        path.write_text(json.dumps(body, ensure_ascii=False))
-        source_size = path.stat().st_size
-        for profile, role in [('implementation','dev'),('task-verify','verify'),('candidate-verify','verify')]:
-            scoped = profile != 'candidate-verify'
-            allowed = ['$.shared','$.tasks[1]'] if scoped else ['$']
-            manifest, _ = source_manifest_from_payload(state_dir=state,project_root=state,
-                payload={'input_refs':[{'source_id':'plan','ref':'plan.json','allowed_paths':allowed,
-                                       'access_scope':{'roles':[role]}}]},
-                workflow_run_id='offline',task_id='T1',attempt_id=profile,dispatch_id=profile)
-            source = manifest['sources'][0]
-            required = [{'source_id':'plan','artifact_id':source['artifact_id'],
-                         'artifact_sha256':source['sha256'],'json_path':selector} for selector in allowed]
-            identity={'actor':profile,'role':role,'purpose':profile}
-            cases=[('task','T1',False),('acceptance','AC-1',False),('source','source.md#exception',False),
-                   ('image','screen.png#empty',False),('shared','source.md#shared',False)]
-            if not scoped:
-                # Large full-input navigation is intentionally capped, so report
-                # navigation misses instead of treating an absent hit as no scope.
-                cases.append(('last_task','T99',False))
-            for category, query, _ in cases:
-                start=perf_counter()
-                cursor=None; rows=[]; response_bytes=0; complete=all(s.get('navigation',{}).get('complete',False) for s in source['read_selections'])
-                while True:
-                    page=input_index(manifest=manifest,required=required,identity=identity,reads=[],
-                        relation_id=query,navigate=True,cursor=cursor,limit=10)
-                    response_bytes+=len(json.dumps(page,ensure_ascii=False).encode())
-                    rows.extend(page['items']);cursor=page['next_cursor']
-                    complete &= all(row.get('navigation_complete',True) for row in page['items'])
-                    if cursor is None:break
-                outcomes.append({'profile':profile,'category':category,'query':query,'expected':'hit',
-                    'matched':bool(rows),'locators':len(rows),'output_bytes':response_bytes,
-                    'host_ms':(perf_counter()-start)*1000,'navigation_complete':complete})
-            for category, query, test_identity, expected in [
-                ('out_of_scope_task','T2',identity,'miss' if scoped else 'hit'),
-                ('unknown_id','AC-UNKNOWN',identity,'miss'),
-                ('acl','T1',{**identity,'role':'unrelated'},'miss')]:
-                page=input_index(manifest=manifest,required=required,identity=test_identity,reads=[],relation_id=query,navigate=True)
-                outcomes.append({'profile':profile,'category':category,'query':query,'expected':expected,
-                                 'matched':bool(page['items']),'locators':len(page['items'])})
-            page=input_index(manifest=manifest,required=required,identity=identity,reads=[],query='重复请求',navigate=True)
-            outcomes.append({'profile':profile,'category':'natural_language','query':'重复请求',
-                             'expected':'unsupported','matched':bool(page['items']),
-                             'note':'正文含此要求；当前索引只支持显式定位，不是全文/语义搜索。'})
-            if scoped:
-                read = open_selection(state,manifest=manifest,row=required[1],identity=identity)
-                content=read.read()
-                # Invalidate only reconstructible blocks and the original ref;
-                # the pinned source version must preserve exact historical input.
-                for selection in source['read_selections']:
-                    for chunk in selection['chunks']:
-                        (state/chunk['ref']).unlink(missing_ok=True)
-                path.write_text('{"changed":true}')
-                recovered=open_selection(state,manifest=manifest,row=required[1],identity=identity).read()
-                outcomes.append({'profile':profile,'category':'pinned_recovery','expected':'exact',
-                                 'matched':recovered==content,'body_bytes':len(content.encode())})
-                original,_=read_source_version(state,source,path=path)
-                path.write_bytes(original)
-        positives=[row for row in outcomes if row['expected']=='hit']
-        negatives=[row for row in outcomes if row['expected']=='miss']
-        return {'schema_version':'context-retrieval-eval.v1','tasks':100,'source_bytes':source_size,
-                'positive_hits':sum(row['matched'] for row in positives),'positive_cases':len(positives),
-                'unexpected_negative_hits':sum(row['matched'] for row in negatives),'negative_cases':len(negatives),
-                'outcomes':outcomes,'provider_invoked':False,'semantic_qualification':'not_run',
-                'limits':['合成固定样例；不能代替实际项目语义召回。','全文导航存在 512 项上限；未命中不证明没有需求。']}
+        body = sample_bundle(count)['task_execution_input']
+        path = state/'plan.json'
+        path.write_text(json.dumps(body,ensure_ascii=False))
+        source_bytes=path.stat().st_size
+        fixture_digest=hashlib.sha256(path.read_bytes()).hexdigest()
+        start=perf_counter()
+        # One fixture producer prepares all selectors. Each simulated role sees
+        # only its declared subset; real credential/CLI admission has separate tests.
+        all_paths=['$','$.shared',*[f'$.tasks[{i}]' for i in range(count)]]
+        base,_=source_manifest_from_payload(state_dir=state,project_root=state,
+            payload={'input_refs':[{'source_id':'plan','ref':'plan.json','allowed_paths':all_paths}]},
+            workflow_run_id='offline',task_id='T0',attempt_id='offline',dispatch_id='offline')
+        build_ms=(perf_counter()-start)*1000
+        source=base['sources'][0]
+        snapshots={item['json_path']:item for item in source['read_selections']}
+        profiles={}
+        failures=[]
+        budgets=[]
+        navigation_shapes=set()
+        for profile,role in [('implementation','dev'),('task-verify','verify'),('candidate-verify','verify')]:
+            stats={key:0 for key in ('queries','passed','expected','returned','matched','missing','unexpected','duplicates','incomplete','output_bytes','pages')}
+            stats['query_host_ms']=0.0
+            stats['shared_queries']=[]
+            profiles[profile]=stats
+            candidate=profile=='candidate-verify'
+            indexes=[None] if candidate else range(count)
+            for number in indexes:
+                paths=['$'] if candidate else ['$.shared',f'$.tasks[{number}]']
+                current_source={**source,'allowed_paths':paths,'read_selections':[snapshots[p] for p in paths],
+                                'access_scope':{'roles':[role]}}
+                manifest={**base,'task_id':'T0' if candidate else f'T{number}',
+                          'sources':[current_source]}
+                required=[{'source_id':'plan','artifact_id':source['artifact_id'],
+                           'artifact_sha256':source['sha256'],'json_path':p} for p in paths]
+                identity={'actor':profile,'role':role,'purpose':profile}
+                selected_numbers=range(count) if candidate else [number]
+
+                # The oracle comes from fixture positions, independently of the
+                # extractor, its limit, page ordering and matching function.
+                gold={}
+                def add(identifier, relation, pointer, selector):
+                    gold.setdefault(identifier,set()).add(('plan',selector,'relation',relation,identifier,pointer))
+                for i in selected_numbers:
+                    selector='$' if candidate else f'$.tasks[{i}]'
+                    prefix=f'/tasks/{i}' if candidate else ''
+                    add(f'T{i}','task',prefix+'/task_id',selector)
+                    add(f'AC-{i}','acceptance',prefix+'/body/acceptance_ids/0',selector)
+                    add('source.md#exception','source',prefix+'/body/source_refs/0',selector)
+                    add('screen.png#empty','source',prefix+'/body/source_refs/2',selector)
+                    add('screen.png#empty','image',prefix+'/body/image_refs/0',selector)
+                add('source.md#shared','source','/shared/source_refs/0' if candidate else '/source_refs/0',
+                    '$' if candidate else '$.shared')
+
+                def run_query(identifier, *, who=None, expected=None):
+                    expect=gold.get(identifier,set()) if expected is None else expected
+                    rows=[];cursor=None;seen=set();output_bytes=pages=0;complete=True
+                    started=perf_counter()
+                    while True:
+                        kwargs=dict(manifest=manifest,required=required,identity=who or identity,reads=[],
+                                    relation_id=identifier,navigate=True,cursor=cursor,limit=50)
+                        if 'state_dir' in signature.parameters:kwargs['state_dir']=state
+                        page=input_index(**kwargs)
+                        navigation_shapes.add(page['schema_version'])
+                        byte_count=len((json.dumps(page,ensure_ascii=False)+'\n').encode())
+                        budgets.append(byte_count)
+                        output_bytes+=byte_count;pages+=1
+                        complete &= page.get('navigation_complete') is not False
+                        for item in page['items']:
+                            parent=page['sources'][item['source']] if page.get('schema_version')=='attempt-input-index.v2' else item
+                            entry=item.get('navigation') or {}
+                            rows.append((parent['source_id'],parent['json_path'],entry.get('kind'),
+                                         entry.get('relation'),entry.get('id'),entry.get('field_pointer')))
+                        cursor=page['next_cursor']
+                        if cursor is None:break
+                        if cursor in seen:raise ValueError('pagination loop')
+                        seen.add(cursor)
+                    metrics=score_locations(expect,rows,complete=complete)
+                    stats['queries']+=1;stats['passed']+=metrics['passed']
+                    for key in ('expected','returned','matched','missing','unexpected','duplicates'):
+                        stats[key]+=metrics[key]
+                    stats['incomplete']+=not complete
+                    stats['output_bytes']+=output_bytes;stats['pages']+=pages
+                    stats['query_host_ms']+=(perf_counter()-started)*1000
+                    if not metrics['passed'] and len(failures)<20:
+                        failures.append({'profile':profile,'task':number,'query':identifier,**metrics})
+                    if candidate and identifier in ('source.md#exception','screen.png#empty'):
+                        stats['shared_queries'].append({'query':identifier,'output_bytes':output_bytes,'pages':pages,**metrics})
+
+                for identifier in gold:run_query(identifier)
+                run_query('UNKNOWN',expected=set())
+                run_query('T0',who={**identity,'role':'unauthorized'},expected=set())
+                if not candidate:
+                    run_query(f'T{(number+1)%count}',expected=set()) if count>1 else None
+            stats['precision']=stats['matched']/(stats['matched']+stats['unexpected']) if stats['matched']+stats['unexpected'] else 1.0
+            stats['recall']=stats['matched']/stats['expected'] if stats['expected'] else 1.0
+
+        # Original text query remains a separate unsupported capability, outside
+        # the exact-ID score denominator.
+        natural=[]
+        kwargs=dict(manifest=manifest,required=required,identity=identity,reads=[],query='重复请求',navigate=True,limit=50)
+        if 'state_dir' in signature.parameters:kwargs['state_dir']=state
+        page=input_index(**kwargs)
+        natural.append({'query':'重复请求','known_in_body':True,'supported':False,'matched':bool(page['items'])})
+        # Test historical snapshot reconstruction after original and shard loss.
+        from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+        snapshot=snapshots['$']
+        old_content=open_selection(state,manifest=manifest,row=required[0],identity=identity).read()
+        nav=snapshot['navigation']
+        if nav.get('index_ref'):
+            root=hydrate_sidecar_ref(state,nav['index_ref']).payload
+            for pages in root['buckets'].values():
+                for descriptor in pages:(state/descriptor['ref']).unlink(missing_ok=True)
+        (state/source['ref']).write_text('changed version')
+        recover_kwargs=dict(manifest=manifest,required=required,identity=identity,reads=[],relation_id=f'T{count-1}',navigate=True,limit=50)
+        if 'state_dir' in signature.parameters:recover_kwargs['state_dir']=state
+        recovered=input_index(**recover_kwargs)
+        # Legacy inline truncated manifests are rebuilt without mutation by the
+        # new runtime; the old baseline faithfully remains truncated.
+        snapshot['navigation']=build_navigation(old_content)
+        before_legacy=canonical_json_sha256(manifest)
+        legacy=input_index(**recover_kwargs)
+        compatibility={'damaged_or_missing_shards_tail_hit':recovered['total']==1,
+            'legacy_tail_hit':legacy['total']==1,'legacy_manifest_unchanged':before_legacy==canonical_json_sha256(manifest)}
+        all_passed=all(p['queries']==p['passed'] for p in profiles.values())
+        shared_costs=profiles['candidate-verify']['shared_queries']
+        return {'schema_version':'context-retrieval-eval.v2','tasks':count,
+            'fixture_digest':fixture_digest,
+            'source_bytes':source_bytes,'build_all_fixture_selectors_ms':build_ms,'profiles':profiles,
+            'transport_schemas':sorted(navigation_shapes),'failed_examples':failures,
+            'failed_queries':sum(p['queries']-p['passed'] for p in profiles.values()),
+            'passed_queries':sum(p['passed'] for p in profiles.values()),
+            'total_queries':sum(p['queries'] for p in profiles.values()),
+            'max_page_bytes':max(budgets),'byte_budget_passed':max(budgets)<=8192,
+            'shared_query_cost_passed':all(row['output_bytes']<source_bytes for row in shared_costs),
+            'exact_lookup_passed':all_passed,'compatibility':compatibility,'natural_language':natural,
+            'provider_invoked':False,'semantic_qualification':'not_run',
+            'qualification_scope':'synthetic_declared_scope_with_independent_location_sets'}
 
 
 def main() -> None:
@@ -252,14 +344,14 @@ def main() -> None:
     p = sub.add_parser('prepare'); p.add_argument('--output', type=Path, required=True)
     p = sub.add_parser('score'); p.add_argument('--grader', type=Path, required=True); p.add_argument('--findings', type=Path, required=True)
     sub.add_parser('benchmark')
-    sub.add_parser('retrieval')
+    p = sub.add_parser('retrieval'); p.add_argument('--tasks', type=int, default=100)
     args = parser.parse_args()
     if args.command == 'prepare':
         result = prepare(args.output)
     elif args.command == 'score':
         result = score(json.loads(args.grader.read_text()), json.loads(args.findings.read_text()))
     elif args.command == 'retrieval':
-        result = retrieval()
+        result = retrieval(args.tasks)
     else:
         result = benchmark()
     print(json.dumps(result, ensure_ascii=False, indent=2))

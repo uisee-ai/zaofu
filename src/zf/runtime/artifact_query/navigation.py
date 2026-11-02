@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from zf.runtime.artifact_navigation import NAVIGATION_SCHEMA, build_navigation
+from zf.runtime.artifact_navigation_shards import SHARD_SCHEMA as NAVIGATION_SCHEMA, publish_navigation, query_navigation
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 # Do not index provider transcripts, diagnostic reasoning, or arbitrary logs.
@@ -29,7 +29,7 @@ def _build(state_dir: Path, descriptor: Mapping[str, Any]) -> dict[str, Any]:
         from zf.runtime.artifact_read_ledger import _encode_selected
 
         hydrated = hydrate_sidecar_ref(state_dir, dict(descriptor))
-        nav = build_navigation(_encode_selected(hydrated.payload))
+        nav = publish_navigation(state_dir, _encode_selected(hydrated.payload))
         return {**nav, "source_sha256": _key(descriptor), "status": "ready"}
     except (OSError, ValueError, KeyError):
         return {"schema_version": NAVIGATION_SCHEMA, "source_sha256": _key(descriptor),
@@ -83,7 +83,6 @@ class ArtifactNavigationMixin:
     def artifact_navigation(self, identity: str, *, context, query: str = "", cursor: str | None = None):
         """Discover published navigation; current worker reads still require a manifest."""
         import base64
-        from zf.runtime.artifact_navigation import matching_navigation
         from zf.runtime.call_result_envelope import canonical_json_sha256
         if len(query) > 256:
             raise ValueError("navigation query exceeds 256 characters")
@@ -101,7 +100,13 @@ class ArtifactNavigationMixin:
         descriptor = {"ref": locator["ref"], "sha256": obj["sha256"],
                       "content_type": locator.get("content_type") or "application/json"}
         nav = published_navigation(self.state_dir, descriptor)
-        rows = matching_navigation(nav, query=query)
+        if nav['status'] == 'ready':
+            from zf.runtime.artifact_read_ledger import _encode_selected
+            def pinned_text():
+                return _encode_selected(hydrate_sidecar_ref(self.state_dir, descriptor).payload)
+            nav, rows = query_navigation(self.state_dir, nav, query=query, fallback=pinned_text)
+        else:
+            rows = []
         binding = canonical_json_sha256([identity, obj["sha256"], query, context.actor, context.role,
             context.purpose, NAVIGATION_SCHEMA, [(o["occurrence_id"], o["access_scope"]) for o in item["occurrences"]]])
         start = 0

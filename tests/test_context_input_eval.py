@@ -47,11 +47,23 @@ def test_host_benchmark_reports_prepared_pages_without_claiming_provider_savings
     assert result['provider_usage'] is None
 
 
-def test_retrieval_evaluation_reports_real_navigation_limit_and_acl_results():
-    result=module.retrieval()
-    assert result['positive_hits']==16 and result['positive_cases']==17
-    assert result['unexpected_negative_hits']==0
-    miss=next(row for row in result['outcomes'] if row['category']=='last_task')
-    assert not miss['matched'] and miss['navigation_complete'] is False
-    assert all(row['matched'] for row in result['outcomes'] if row['category']=='pinned_recovery')
-    assert all(not row['matched'] for row in result['outcomes'] if row['category']=='natural_language')
+def test_retrieval_qualification_requires_complete_sets_and_bounded_output():
+    result=module.retrieval(100)
+    assert result['passed_queries']==result['total_queries']==1805
+    assert result['failed_queries']==0 and result['exact_lookup_passed']
+    assert result['byte_budget_passed'] and result['shared_query_cost_passed']
+    assert all(result['compatibility'].values())
+    candidate=result['profiles']['candidate-verify']
+    assert [row['returned'] for row in candidate['shared_queries']]==[100,200]
+    assert all(row['recall']==row['precision']==1 for row in result['profiles'].values())
+    assert result['natural_language'][0]['matched'] is False
+    assert result['semantic_qualification']=='not_run' and result['provider_invoked'] is False
+
+
+def test_location_score_rejects_missing_wrong_duplicate_and_truncated_results():
+    expected={('T1','/task_id'),('T2','/task_id')}
+    assert module.score_locations(expected,list(expected))['passed']
+    for actual,complete in [([('T1','/task_id')],True),
+            ([('T1','/task_id'),('wrong','/task_id')],True),
+            ([*expected,('T1','/task_id')],True),(list(expected),False)]:
+        assert module.score_locations(expected,actual,complete=complete)['passed'] is False

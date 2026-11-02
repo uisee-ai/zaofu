@@ -41,5 +41,6 @@
 - `... score --grader <grader.json> --findings <findings.json>` 只评分显式 findings 与证据绑定，报告漏报/误报；不通过关键词猜测语义，不是模型资格或 Plan 准入。真实评审还需记录 provider/model/session、独立性、原始输出和人工抽查。
 - `... benchmark` 仅测宿主快照/导航构建与分页准备时间和字节，不调用 Provider，不生成 worker 正文读取回执，不证明 token 节约。
 
-`... retrieval` 测量 Impl/Task Verify/Candidate 的显式 Task、AC、来源、图片查询及 ACL、固定版本恢复；
-报告完整导航达到上限造成的漏检，和自然语言正文查询的能力边界。它不调用 Provider。
+`... retrieval --tasks 100` / `--tasks 1000` 对 Impl/Task Verify/Candidate 的全部 Task/AC、来源、图片定位与独立预期集合对账；统计缺项、错项、重复项、完整性、精度/召回率及累计输出。非空结果不能证明查询通过；完整引用结果需遍历所有游标页。自然语言正文查询单列为未支持，不纳入精确定位分母。它不调用 Provider。
+
+`artifact index` 的 v2 页面用 `sources[item.source]` 解析来源，item.navigation 保存字段/章节位置。每页独立携带所需来源元数据；读取命令仍使用父授权 selector。看到 `navigation_complete=false` 时应核对固定原文，不能把未命中判为无需求；目录不产生必读回执。
