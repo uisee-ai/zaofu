@@ -29,7 +29,8 @@ def stop_cancelled_dispatch(
         return False
     latest_dispatch = None
     for event in reversed(events):
-        if event.type not in {"fanout.child.dispatched", "task.dispatched", "workflow.operation.started"}:
+        if event.type not in {"fanout.child.dispatched", "fanout.synth.dispatched",
+                              "task.dispatched", "workflow.operation.started"}:
             continue
         payload = event.payload or {}
         instance = payload.get("role_instance") or payload.get("assignee")

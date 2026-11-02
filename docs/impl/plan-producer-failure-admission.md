@@ -69,3 +69,10 @@ Critic 首次准备请求时，执行评审中的用量观察也随 manifest 固
 request divergence 拒绝，新操作重新读取当前用量。原 manifest/评审摘要均需
 校验；这不是预算豁免，也不修改用量账本。入口及篡改回归：
 `tests/test_plan_review_replay.py`。
+
+同一 Plan 被新 fanout 替代后，reader 回收包括子角色及 aggregate 的 synth。
+旧 synth operation 通过原有取消服务终止；provider 只有在其最新派发仍对应
+旧 attempt 时才停止，确认退出后才释放角色。后续同角色新派发不受旧取消影响。
+请求、读取账本与已有审查结果保留，取消不构成 Critic 通过。
+回归：`tests/test_superseded_synth_closeout.py` 覆盖 Orchestrator sweep、
+重复恢复、当前操作保留和角色复用。

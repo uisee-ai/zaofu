@@ -591,7 +591,11 @@ class FanoutRecoveryRuntimeMixin:
             return
         operation_ids: set[str] = set()
         operation_children: dict[str, dict] = {}
-        for child in manifest.get("children", []) or []:
+        readers = list(manifest.get("children", []) or [])
+        synth = manifest.get("synth")
+        if isinstance(synth, dict):
+            readers.append(synth)
+        for child in readers:
             if not isinstance(child, dict):
                 continue
             child_payload = (
