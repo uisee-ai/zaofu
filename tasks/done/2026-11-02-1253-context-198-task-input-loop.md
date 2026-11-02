@@ -1,6 +1,6 @@
 # 198：任务范围上下文索引与读写恢复闭环
 
-> 状态: active
+> 状态: done
 
 来源：[设计 198](../../docs/design/198-context-index-write-read-resume.md)。
 用户已授权“基于198生成backlog 在新的worktree 实施”。基线 `869f7aa0`，
@@ -40,7 +40,8 @@
 
 ## 完成记录
 
-已完成 C1–C8 本批授权范围，等待实现 commit 后登记 hash 并归档。
+实施 commit：`8a31b087 feat: add task-scoped input indexes and pinned read snapshots`。
+已完成 C1–C8 本批授权范围并归档。
 
 实际验证：
 
