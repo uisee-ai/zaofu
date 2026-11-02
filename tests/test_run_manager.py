@@ -4210,6 +4210,37 @@ def test_failure_closeout_activation_waits_for_active_autoresearch(
     )
 
 
+def test_diagnosis_request_carries_bound_run_and_generation(tmp_path: Path) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    action = {
+        "action": "diagnose-attention", "safe_resume_action": "diagnose_attention",
+        "checkpoint_id": "diagnosis", "fingerprint": "failure",
+        "operation_precondition": {"run_id": "run-1", "generation": "generation-1"},
+    }
+    assert _emit_autoresearch_request(
+        state_dir=state_dir, writer=writer, action=action,
+        projection={"run_context_bundle": {"refs": {}}},
+        project_root=tmp_path, causation_id="tick",
+    )
+    event = next(e for e in log.read_all() if e.type == RUN_MANAGER_AUTORESEARCH_REQUESTED)
+    assert event.payload["workflow_run_id"] == "run-1"
+    assert event.payload["run_id"] == "run-1"
+    assert event.payload["task_map_generation"] == "generation-1"
+
+    other_action = {**action, "checkpoint_id": "other", "workflow_run_id": "run-2"}
+    other_root = tmp_path / "other"
+    other_root.mkdir()
+    other_state, other_log, other_writer = _state(other_root)
+    assert _emit_autoresearch_request(
+        state_dir=other_state, writer=other_writer, action=other_action,
+        projection={"run_context_bundle": {"refs": {}}},
+        project_root=other_root, causation_id="tick",
+    )
+    other = next(e for e in other_log.read_all() if e.type == RUN_MANAGER_AUTORESEARCH_REQUESTED)
+    assert other.payload["workflow_run_id"] == "run-2"
+    assert other.payload["task_map_generation"] == ""
+
+
 def test_active_autoresearch_serializes_distinct_diagnosis_requests(
     tmp_path: Path,
 ) -> None:

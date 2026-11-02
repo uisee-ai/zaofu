@@ -5162,6 +5162,11 @@ def _emit_autoresearch_request(
             human=False,
         )
         return False
+    precondition = action.get("operation_precondition")
+    precondition = precondition if isinstance(precondition, dict) else {}
+    bound_run_id = str(
+        action.get("workflow_run_id") or action.get("run_id") or precondition.get("run_id") or ""
+    )
     payload = {
         "schema_version": "run-manager.autoresearch-request.v2",
         "request_id": request_id,
@@ -5179,8 +5184,13 @@ def _emit_autoresearch_request(
         "fanout_id": str(action.get("fanout_id") or ""),
         "pdd_id": str(action.get("pdd_id") or ""),
         "stage_id": str(action.get("stage_id") or ""),
-        "workflow_run_id": str(action.get("workflow_run_id") or ""),
-        "run_id": str(action.get("run_id") or ""),
+        "workflow_run_id": bound_run_id,
+        "run_id": str(action.get("run_id") or bound_run_id),
+        "task_map_generation": str(
+            action.get("task_map_generation")
+            or (precondition.get("generation") if bound_run_id and precondition.get("run_id") == bound_run_id else "")
+            or ""
+        ),
         "trace_id": str(action.get("trace_id") or ""),
         "failure_scope": str(action.get("failure_scope") or ""),
         "plan_admission_incident_id": str(action.get("plan_admission_incident_id") or ""),

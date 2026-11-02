@@ -218,6 +218,7 @@ def build_loop_request_payload(
         "source_event_id": source_event_id,
         "source_event_ids": _string_list(trigger_payload.get("source_event_ids")),
         "workflow_run_id": _clean_str(trigger_payload.get("workflow_run_id")),
+        "task_map_generation": _clean_str(trigger_payload.get("task_map_generation")),
         "run_id": _clean_str(trigger_payload.get("run_id")),
         "trace_id": _clean_str(trigger_payload.get("trace_id")),
         "recovery_case_id": _clean_str(trigger_payload.get("recovery_case_id")),

@@ -213,6 +213,7 @@ def build_invocation_request_from_run_manager_event(
             "failure_signal_ids": source_event_ids,
             "source_event_ids": source_event_ids,
             "workflow_run_id": str(payload.get("workflow_run_id") or ""),
+            "task_map_generation": str(payload.get("task_map_generation") or ""),
             "run_id": str(payload.get("run_id") or ""),
             "trace_id": str(payload.get("trace_id") or ""),
             "failure_class": str(payload.get("failure_class") or ""),
@@ -480,6 +481,7 @@ def _copy_request_identity(source: dict[str, Any], target: dict[str, Any]) -> No
     for key in (
         "recovery_case_id",
         "workflow_run_id",
+        "task_map_generation",
         "run_id",
         "trace_id",
         "failure_scope",
