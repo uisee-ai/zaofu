@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done；实现：`c553a633 fix: retry temporarily unavailable dashboard projections`
 
 # Dashboard 短暂投影不可用的 GET 重试
 
@@ -24,4 +24,4 @@ Docker Playwright 注入一次 503 后仅 2 次请求恢复 200，Delivery activ
 pageerror。证据已存 DL 的 `artifacts/supervision/web-projection-retry-2026-11-02.*`。
 临时 8002 UI 已停止，独立模拟账本记录 simulation.done。未运行 backend 全量测试。
 
-实现 commit 待补。
+本修复只恢复投影读取，不改变产品验收或工作流审批。
