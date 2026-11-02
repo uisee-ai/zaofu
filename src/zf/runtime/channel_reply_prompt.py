@@ -7,6 +7,7 @@ from typing import Any
 
 from zf.core.security.redaction import redact_obj
 from zf.runtime.channel_reply_stream import CHANNEL_CONTRACT_MARKER
+from zf.runtime.prd_quality_prompt import PRD_AUTHOR_GUIDANCE
 
 
 def fake_channel_reply_text(
@@ -273,6 +274,10 @@ def channel_reply_response_contract(
             "before producing this object. Independently check source-to-PRD coverage, factual accuracy, "
             "internal consistency, role-specific risks, and executable acceptance criteria. Cite source "
             "and PRD sections in evidence_refs and summarize omissions; digest equality alone is not quality. "
+            "State your actual role, checked clauses, counterexamples and remaining evidence gaps. "
+            "Senior development checks implementability, state/error boundaries and reproducible AC; "
+            "security checks access, data residency/retention, privacy and negative paths where applicable. "
+            "Do not claim another independent reviewer has checked these just because that role is listed. "
             + target_binding + feedback_instruction
         )
     if refs.get("question_dedup_request_id"):
@@ -346,7 +351,7 @@ def channel_reply_response_contract(
         return _contract_response_instruction(
             selected_source + source_selection + "one JSON object named channel_synthesis containing " +
             "title, decision, summary, spec_format, document_control, prd_markdown, requirement_coverage, decision_log, decisions, assumptions, out_of_scope, "
-            "user_stories, edge_cases, key_entities, implementation_companion, "
+            "user_stories, edge_cases, key_entities, implementation_companion, prd_quality_checklist, "
             "non_functional_requirements, success_metrics, "
             "acceptance_criteria, verification_commands, open_questions, risks, "
             "recommended_workflow, source_refs, evidence_refs, "
@@ -391,7 +396,7 @@ def channel_reply_response_contract(
             "language, has one or more named `#### Scenario: <stable-name>` blocks, and each scenario "
             "has GIVEN/WHEN/THEN lines plus an Acceptance ID. Split compound requirements instead of "
             "hiding multiple behaviors in one paragraph. "
-            "For an executable full PRD, state the architecture boundary explicitly: separate control plane, data plane, and event-driven work; make long-running work asynchronous; define Web/API as controlled actions plus read-only projections; separate canonical business state, the append-only occurrence/causation event ledger, and immutable evidence artifacts/sidecars; bind every state transition to actor, reason, request ID, and correlation ID; and add acceptance evidence for direct-write rejection, projection read-only behavior, event/artifact immutability, and recovery. "
+            + PRD_AUTHOR_GUIDANCE + " " +
             "success_metrics and non_functional_requirements are arrays of objects with unique ids and "
             "measurable statements. Every success metric also declares baseline, target, measurement_method, "
             "owner, measurement_timing, and status. When source material does not provide a value, write "

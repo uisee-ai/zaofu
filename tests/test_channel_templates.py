@@ -218,7 +218,7 @@ def test_prd_template_persists_version_digest_roles_and_discussion(
         "writer_scope": ["docs/design/**", "docs/impl/**"],
     }
     members = {member["channel_role"]: member for member in channel["members"]}
-    assert set(members) == {"product_pm", "arch", "critic", "synthesizer"}
+    assert set(members) == {"product_pm", "arch", "critic", "synthesizer", "dev_reviewer"}
     assert all(
         member["permission_profile"] == "read_only"
         for member in members.values()
@@ -455,7 +455,7 @@ def test_channel_setup_plan_normalizes_optional_disabled_roles_alias() -> None:
         },
     }
     assert "disabled_roles" not in payload["overrides"]
-    assert details["member_count"] == 4
+    assert details["member_count"] == 5
     assert details["moderator_member_id"] == "product_pm"
     assert details["leader_member_id"] == "product_pm"
     assert details["default_responder_id"] == "synthesizer"

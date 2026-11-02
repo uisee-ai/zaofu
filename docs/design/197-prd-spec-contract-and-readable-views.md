@@ -277,8 +277,10 @@ conversation / clarification / multi_lens
   -> revise, sync or archive
 ```
 
-草案可以包含 `needs_owner` 或 `deferred`，但不能进入 Task/Workflow。Owner Confirm 只
-确认具体 revision；后续修改必须生成新 revision 并重新绑定来源、评审和确认。
+草案可以包含 `needs_owner` 或 `deferred`。受影响的实施仍受 readiness 与授权约束；
+经现有受控路径明确接受风险并批准的规划范围可进入 Task，不能因此执行未定产品行为。
+Owner Confirm 只确认具体 revision；后续修改必须生成新 revision 并重新绑定来源、
+评审和确认。
 
 ## 10. 验收标准
 
@@ -300,7 +302,8 @@ conversation / clarification / multi_lens
 
 ### Traceability
 
-- 每条 Requirement 至少有一个 Scenario、Acceptance、Task 和验证证据。
+- PRD 阶段每条 Requirement 至少绑定 Scenario、Acceptance 和证据计划；Plan/Task 阶段
+  再绑定实际 Task，实施验证后补实际证据，不能要求未来结果先于首次 PRD 存在。
 - 每个 Success Metric 和非功能需求都有来源、责任人或验证入口；无法验证的指标保留为
   Open Question，不得伪装成已确认目标。
 - 每个 Task 都能回溯到确认的 PRD revision。
@@ -322,3 +325,40 @@ conversation / clarification / multi_lens
 3. Web 是否默认使用三个阅读视图，还是先提供正文与“技术/证据附录”两层？
 4. Spec Kit/OpenSpec 的外部 CLI 校验是否只作为 CI/Skill 工具，还是允许在 Owner Confirm
    前作为可选增强检查？
+
+## 13. 质量评估与五项闭环（2026-11-02）
+
+来源覆盖的高分不等于完整 PRD 质量通过。Channel 独立评估保留三阶段隔离：先来源、
+再 Owner 决定、最后目标全文。在首次读取目标前冻结 `prd-quality-review.v1` 方法及摘要，
+与来源标准分别保存。最终 matrix 同时覆盖来源/有效决定 ID 和八项质量维度：来源基线、
+Owner 决策、独立评审、验收数据计划、阶段交接、产品阅读体验、可测试需求/异常、可度量结果。
+方法在 prompt/skill 中定义；Runtime 仅检查 ID 覆盖、结果枚举和证据绑定，不判断产品
+阈值、架构选型或语义正确性。
+
+以下五项是方法和产物职责，不建立新状态机：
+
+| 闭环 | 同版产物 | 验证责任 |
+| --- | --- | --- |
+| 旧版本与稳定 artifact | companion.source_baseline | 区分已读/可读/已核验，记录版本、接口、环境、ref/digest、核验结果/缺口 |
+| 产品阈值与策略 | decision_log + readiness | 记录真实 Owner 来源、影响范围、最迟决定时点；未知值保留 TBD |
+| 独立开发与安全 | companion.review_coverage + 同版 review 事件 | 核对实际职责、独立性、检查内容与发现，邀请/签名不证明质量 |
+| 真实/脱敏数据验收 | companion.acceptance_data_plan + verification_commands | AC、数据授权、环境、命令、负责人、producer_paths、执行阶段；未执行不冒充通过 |
+| Checklist 与交接 | prd_quality_checklist + companion.handoff | 作者自检与独立结论分开；对齐 PRD、prd-plan、task_map/source_index 的阶段关系 |
+
+PRD 模板默认提供开发和安全两个独立可选角色；Owner 可通过模板 override 明确关闭。
+历史群的成员不自动变更，缺角色沿既有受控邀请/注册补充。评估成员与签收证据冻结至
+评估请求发生时，且签收 ref/digest 必须对应被评估版本；后来的邀请或签字不能追补旧报告。
+
+报告分别给出 document_quality、source_fidelity、planning_readiness 和
+product_verification；规划建议不改 canonical readiness，不授予实施权限。
+质量 PASS 可与真实产品验证“未执行”并存；同版 ref/digest 只能证明身份，不能证明事实。
+full PRD 不再强制包含 ZaoFu 控制面/事件账本等架构术语；有来源的架构约束仍须保留并评审。
+Markdown 导出包含 checklist 和 companion，产品正文不重复整份合同 JSON。
+
+Spec-kit checklist 检查需求质量，不等同功能测试；analyze 在 tasks 产生后做跨工件
+对账，assess 是可选扩展。ZaoFu 产物可通过索引映射 spec/plan/tasks，无需固定外部文件名。
+OpenSpec 的变更 companion 使用命名 Requirement/Scenario 和适用的 delta 类型；
+这不等于已通过其 CLI strict 校验。方法实现见
+`skills/zf-requirement-reconciliation/SKILL.md`、
+`src/zf/runtime/prd_quality_prompt.py` 与
+[Channel PRD 发布说明](../impl/channel-prd-file-publication.md)。

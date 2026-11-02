@@ -16,7 +16,7 @@ from zf.runtime.channel_contracts import (
 )
 
 
-TEMPLATE_VERSION = "2026-07-31.1"
+TEMPLATE_VERSION = "2026-11-02.1"
 WRITER_PROFILES = {
     "artifact_writer",
     "project_writer",
@@ -91,6 +91,11 @@ CHANNEL_TEMPLATES: dict[str, dict[str, Any]] = {
                     "zf-channel-discussion-participant",
                     "zf-channel-security-review",
                 ),
+                optional=True,
+            ),
+            _member(
+                "dev_reviewer",
+                skills=("zf-channel-discussion-participant",),
                 optional=True,
             ),
         ],
