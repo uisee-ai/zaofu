@@ -1,6 +1,6 @@
 # 隔离诊断应使用归档感知的原事件查询
 
-> 状态: active
+> 状态: done；实现 `421d5db4 fix: resolve archived events during incident diagnosis`
 
 ## 证据
 
