@@ -37,14 +37,27 @@ def task_evidence_signals(
         task_id: {signal: None for signal in _SIGNAL_TYPES}
         for task_id in task_ids if task_id
     }
+    usage_samples: dict[str, tuple[str, str]] = {}
     for event in events:
         signal = _TYPE_TO_SIGNAL.get(event.type)
         if not signal or event.task_id not in result:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
-        result[event.task_id][signal] = {
+        sample_ts = payload.get("usage_timestamp")
+        if event.type == "agent.usage" and isinstance(sample_ts, str) and sample_ts:
+            usage_samples[event.id] = (event.task_id, sample_ts)
+        evidence: dict[str, Any] = {
             "event_id": event.id, "type": event.type, "ts": event.ts,
             "workflow_run_id": str(payload.get("workflow_run_id") or ""),
             "attempt_id": str(payload.get("attempt_id") or ""),
         }
+        source_id = (
+            event.id if event.type == "agent.usage"
+            else str(payload.get("source_event_id") or "")
+        )
+        source_usage = usage_samples.get(source_id)
+        if signal == "activity" and source_usage and source_usage[0] == event.task_id:
+            evidence["usage_sample_ts"] = source_usage[1]
+            evidence["source_usage_event_id"] = source_id
+        result[event.task_id][signal] = evidence
     return result

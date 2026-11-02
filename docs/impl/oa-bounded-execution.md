@@ -107,7 +107,9 @@ capacity 明确是项目共享容量，摘要不预留槽位，不作为可直�
 
 Run Manager 的 `monitor.task_evidence` 对在途任务分别展示最近派发、活动与结果
 信号的事件 ID、时间及事件中已有的 Run/attempt ID；缺少标识时留空，缺少信号为
-null。它只按明确的 task ID 关联，可能引用历史 Run/attempt，结果信号也可能是
+null。活动信号的 `ts` 是账本记录时间；直接用量或同任务来源用量可查时，
+`usage_sample_ts` 与 `source_usage_event_id` 指向 provider 原采样时间及事件，
+缺失来源时不推测采样时间。它只按明确的 task ID 关联，可能引用历史 Run/attempt，结果信号也可能是
 阻塞或 worker 自报，不能充当当前代独立验收。没有 heartbeat 或结果均不直接触发
 停止、重试或判定任务完成；resident 应结合执行摘要和合同作语义判断。
 
