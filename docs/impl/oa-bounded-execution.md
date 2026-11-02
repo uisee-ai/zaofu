@@ -74,6 +74,12 @@ operation key，也必须进入失败结算；已被接受的活跃诊断继续�
 审查后用户目标变化时拒绝旧 OA 决策，按新目标重新排队一次；其他 Run 的更新不影响
 当前决策。历史未绑定目标事件的检查点保持重放兼容。
 
+局部 Plan 更新可能保留其他 Task 的旧代次。此时 semantic_failure 的请求、结果提交
+和决策准入都按目标 Task 最近一次 `task.pipeline.generation.admitted` 绑定的不可变
+Plan 包校验，不能用全局最新包误拒绝仍生效的任务。任务自身重新准入、包摘要不符
+或 Run 不符仍拒绝旧请求/结果；非任务范围的 Plan 检查点继续使用全局最新包。
+对应回归在 `tests/test_orchestrator_agent_plan_binding.py`。
+
 ## 只读观测
 
 ```bash
