@@ -385,6 +385,9 @@ class CanonicalHandoffResolver:
             )
             generation_bound_package = (
                 task_bound_profile or candidate_bound_profile
+                # Plan inputs pin an admitted baseline; the plan output may
+                # replace it after review rather than execute its Task state.
+                or authority_contract.get("attempt_domain") == "plan"
             )
             current_package = (
                 admitted_plan_artifact_package_for_generation(
@@ -394,6 +397,10 @@ class CanonicalHandoffResolver:
                 if generation_bound_package
                 else reduced.get("current")
             )
+            if (not current_package and authority_contract.get("attempt_domain") == "plan"
+                    and not (reduced.get("current") or {}).get("task_map_generation")):
+                # Legacy package admissions did not record generation identity.
+                current_package = reduced.get("current")
             current_package = (
                 current_package if isinstance(current_package, Mapping) else {}
             )
