@@ -17,6 +17,8 @@ from zf.runtime.workflow_runtime import WorkflowRuntimeCoordinator
 def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("restart", help="Restart the harness or a single role")
     parser.add_argument("role", nargs="?", default=None, help="Role to restart (omit for full restart)")
+    parser.add_argument("--resume-failed-synth", default="", metavar="EVENT_ID",
+                        help="Resume this exact kernel synth transport failure with its original inputs")
     parser.add_argument("--dry-run", action="store_true", help="Record commands without executing tmux")
     parser.add_argument(
         "--state-dir",
@@ -38,6 +40,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def run(args: argparse.Namespace) -> int:
     dry_run = getattr(args, "dry_run", False)
+    resume_failure = str(getattr(args, "resume_failed_synth", "") or "")
+    if resume_failure and not args.role:
+        print("Error: --resume-failed-synth requires a role", file=sys.stderr)
+        return 1
     set_default_zf_cli_cmd()
 
     try:
@@ -76,6 +82,7 @@ def run(args: argparse.Namespace) -> int:
             state_dir,
             context.project_root,
             dry_run,
+            **({"resume_failed_synth": resume_failure} if resume_failure else {}),
         )
     else:
         if not _run_contract_restart_allowed(
@@ -133,6 +140,8 @@ def _restart_role(
     state_dir: Path,
     project_root: Path,
     dry_run: bool,
+    *,
+    resume_failed_synth: str = "",
 ) -> int:
     """Restart a single role's pane."""
     role = next((r for r in config.roles if r.name == role_name), None)
@@ -150,7 +159,8 @@ def _restart_role(
         transport,
         project_root=project_root,
     )
-    decision = orchestrator.restart_role_instance(role)
+    restart_options = {"resume_failed_synth": resume_failed_synth} if resume_failed_synth else {}
+    decision = orchestrator.restart_role_instance(role, **restart_options)
     if decision.action == "respawn_in_progress":
         print(f"Restart already in progress for role: {role_name}")
         return 0
@@ -166,6 +176,7 @@ def _restart_role(
                 "role": role_name,
                 "recovery_action": decision.action,
                 "recovery_reason": decision.reason,
+                "resume_failed_synth": resume_failed_synth,
             },
         ))
 

@@ -982,7 +982,9 @@ class LifecycleManagerMixin(
             reason="worker cancelled by repair action",
         )
 
-    def restart_role_instance(self, role: "RoleConfig") -> "WorkflowRuntimeDecision":
+    def restart_role_instance(
+        self, role: "RoleConfig", *, resume_failed_synth: str = "",
+    ) -> "WorkflowRuntimeDecision":
         """Restart one role through the same recovery path as the watchdog.
 
         A CLI/operator restart is still a provider-session replacement.  It
@@ -1006,6 +1008,7 @@ class LifecycleManagerMixin(
             ),
             inject_idle_prompt=not force_fresh_session,
             force_fresh_session=force_fresh_session,
+            resume_failed_synth=resume_failed_synth,
         )
 
     def _respawn_instance(
@@ -1015,6 +1018,7 @@ class LifecycleManagerMixin(
         recovery_reason: str = "watchdog",
         inject_idle_prompt: bool = True,
         force_fresh_session: bool = False,
+        resume_failed_synth: str = "",
     ) -> "WorkflowRuntimeDecision":
         """Serialize replacement of one provider session across processes.
 
@@ -1031,6 +1035,7 @@ class LifecycleManagerMixin(
             recovery_reason=recovery_reason,
             inject_idle_prompt=inject_idle_prompt,
             force_fresh_session=force_fresh_session,
+            resume_failed_synth=resume_failed_synth,
         )
 
     def _respawn_instance_with_lease(
