@@ -1,6 +1,6 @@
 # 198 第二批：关系导航、发布生命周期与恢复输入
 
-> 状态: active
+> 状态: done — `2bed8583` feat: add input relation navigation and recovery lifecycle
 
 来源：[设计 198](../../docs/design/198-context-index-write-read-resume.md)。用户批准“继续生成backlog实现”。
 基线 `24990423`（第一批已提交，尚未合入 dev），独立分支
@@ -37,7 +37,7 @@
 
 ## 验证与完成记录
 
-四项限定范围已验收，实现提交后再记录 hash 并归档。新增实现均有实际调用方：
+四项限定范围已验收并提交；实现后工作树完整性审计无残留。新增实现均有实际调用方：
 `source_manifest_from_payload -> pin_read_selections -> build_navigation`、
 `ArtifactQueryService -> catalog catch-up transaction / navigation`、
 `Orchestrator._inject_recovery_briefing -> build_recovery_briefing -> input recovery`、
