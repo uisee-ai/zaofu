@@ -2511,6 +2511,47 @@ def test_run_manager_unknown_gap_diagnoses_tripped_no_progress(
     assert requests[0].payload["failure_class"] == "no_progress_breaker"
 
 
+def test_no_progress_diagnosis_keeps_bare_human_escalation_pending(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    for index in range(3):
+        log.append(ZfEvent(
+            id=f"rm-action-failed-{index}",
+            type=RUN_MANAGER_ACTION_FAILED,
+            actor="run-manager",
+            payload={"checkpoint_id": "stalled", "reason": "no downstream event"},
+        ))
+    log.append(ZfEvent(
+        id="bare-escalation", type="human.escalate", actor="orchestrator",
+        payload={"reason": "human review remains required"},
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_config(),
+        project_root=tmp_path, event_log=log, spawn_repairs=False,
+    )
+    second = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_config(),
+        project_root=tmp_path, event_log=log, spawn_repairs=False,
+    )
+    events = log.read_all()
+    requests = [e for e in events if e.type == RUN_MANAGER_AUTORESEARCH_REQUESTED]
+    projection = build_run_manager_projection(
+        state_dir, events=events, config=_config(), project_root=tmp_path,
+    )
+
+    assert result.autoresearch_requested == 1
+    assert second.autoresearch_requested == 0
+    assert len(requests) == 1
+    assert requests[0].payload["failure_class"] == "no_progress_breaker"
+    assert any(
+        item["event_id"] == "bare-escalation"
+        for item in projection["completion_profile"]["blocking_human_decisions"]
+    )
+    assert not any(e.type in {"task.done", "goal.completed"} for e in events)
+
+
 def test_no_progress_diagnosis_preempts_ready_resume_action(tmp_path: Path) -> None:
     state_dir, log, _writer = _state(tmp_path)
     _append_repair_failed_children_fixture(log)
@@ -4169,6 +4210,37 @@ def test_failure_closeout_activation_waits_for_active_autoresearch(
     )
 
 
+def test_diagnosis_request_carries_bound_run_and_generation(tmp_path: Path) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    action = {
+        "action": "diagnose-attention", "safe_resume_action": "diagnose_attention",
+        "checkpoint_id": "diagnosis", "fingerprint": "failure",
+        "operation_precondition": {"run_id": "run-1", "generation": "generation-1"},
+    }
+    assert _emit_autoresearch_request(
+        state_dir=state_dir, writer=writer, action=action,
+        projection={"run_context_bundle": {"refs": {}}},
+        project_root=tmp_path, causation_id="tick",
+    )
+    event = next(e for e in log.read_all() if e.type == RUN_MANAGER_AUTORESEARCH_REQUESTED)
+    assert event.payload["workflow_run_id"] == "run-1"
+    assert event.payload["run_id"] == "run-1"
+    assert event.payload["task_map_generation"] == "generation-1"
+
+    other_action = {**action, "checkpoint_id": "other", "workflow_run_id": "run-2"}
+    other_root = tmp_path / "other"
+    other_root.mkdir()
+    other_state, other_log, other_writer = _state(other_root)
+    assert _emit_autoresearch_request(
+        state_dir=other_state, writer=other_writer, action=other_action,
+        projection={"run_context_bundle": {"refs": {}}},
+        project_root=other_root, causation_id="tick",
+    )
+    other = next(e for e in other_log.read_all() if e.type == RUN_MANAGER_AUTORESEARCH_REQUESTED)
+    assert other.payload["workflow_run_id"] == "run-2"
+    assert other.payload["task_map_generation"] == ""
+
+
 def test_active_autoresearch_serializes_distinct_diagnosis_requests(
     tmp_path: Path,
 ) -> None:
@@ -4717,6 +4789,65 @@ def test_run_monitor_reports_blocked_when_completion_has_nonhuman_blockers(
 
     assert monitor["state"] == "blocked"
     assert monitor["in_flight_tasks"][0]["task_id"] == "TASK-A"
+
+
+def test_run_monitor_distinguishes_task_activity_from_result_signals(
+    tmp_path: Path,
+) -> None:
+    state_dir, _log, _writer = _state(tmp_path)
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(Task(id="TASK-A", title="active", status="in_progress"))
+    store.add(Task(id="TASK-B", title="other", status="in_progress"))
+    events = [
+        ZfEvent(id="dispatch-a", type="task.pipeline.stage.dispatched", task_id="TASK-A"),
+        ZfEvent(id="result-b", type="dev.build.done", task_id="TASK-B", payload={
+            "workflow_run_id": "old-run", "attempt_id": "old-attempt",
+        }),
+        ZfEvent(id="unknown-result", type="dev.build.done"),
+        ZfEvent(id="heartbeat-a", type="worker.heartbeat", task_id="TASK-A"),
+    ]
+
+    monitor = build_run_monitor_projection(state_dir, events=events, pending_actions=[])
+    evidence = monitor["task_evidence"]
+    assert evidence["TASK-A"]["dispatch"]["event_id"] == "dispatch-a"
+    assert evidence["TASK-A"]["activity"]["event_id"] == "heartbeat-a"
+    assert evidence["TASK-A"]["result_signal"] is None
+    assert evidence["TASK-B"]["result_signal"]["event_id"] == "result-b"
+    assert evidence["TASK-B"]["result_signal"]["workflow_run_id"] == "old-run"
+    assert evidence["TASK-B"]["result_signal"]["attempt_id"] == "old-attempt"
+    assert evidence["TASK-B"]["activity"] is None
+    assert evidence["TASK-A"]["activity"]["ts"] == events[-1].ts
+
+    projection = build_run_manager_projection(state_dir, events=events, config=_config())
+    assert projection["monitor"]["task_evidence"] == evidence
+
+
+def test_run_monitor_keeps_usage_sample_time_separate_from_ledger_time(
+    tmp_path: Path,
+) -> None:
+    state_dir, _log, _writer = _state(tmp_path)
+    store = TaskStore(state_dir / "kanban.json")
+    for task_id in ("TASK-A", "TASK-B", "TASK-C"):
+        store.add(Task(id=task_id, title="active", status="in_progress"))
+    events = [
+        ZfEvent(id="usage-a", type="agent.usage", task_id="TASK-A",
+                ts="2026-11-02T06:29:30Z",
+                payload={"usage_timestamp": "2026-11-01T08:37:46Z"}),
+        ZfEvent(id="heartbeat-a", type="task.attempt.heartbeat", task_id="TASK-A",
+                ts="2026-11-02T06:29:31Z", payload={"source_event_id": "usage-a"}),
+        ZfEvent(id="usage-b", type="agent.usage", task_id="TASK-B",
+                ts="2026-11-02T06:29:30Z",
+                payload={"usage_timestamp": "2026-11-01T06:59:33Z"}),
+        ZfEvent(id="heartbeat-c", type="task.attempt.heartbeat", task_id="TASK-C",
+                payload={"source_event_id": "usage-a"}),
+    ]
+
+    evidence = build_run_monitor_projection(state_dir, events=events, pending_actions=[])["task_evidence"]
+    assert evidence["TASK-A"]["activity"]["ts"] == "2026-11-02T06:29:31Z"
+    assert evidence["TASK-A"]["activity"]["usage_sample_ts"] == "2026-11-01T08:37:46Z"
+    assert evidence["TASK-A"]["activity"]["source_usage_event_id"] == "usage-a"
+    assert evidence["TASK-B"]["activity"]["usage_sample_ts"] == "2026-11-01T06:59:33Z"
+    assert "usage_sample_ts" not in evidence["TASK-C"]["activity"]
 
 
 def test_run_monitor_includes_open_workflow_attempt_and_plan_phase(

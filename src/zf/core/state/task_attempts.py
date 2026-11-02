@@ -316,13 +316,14 @@ class TaskAttemptStore:
         updated_at: str,
         lease_expires_at: str,
     ) -> dict[str, Any] | None:
+        """Return a row only when an active attempt's lease was renewed."""
         with locked_path(self.path):
             data = self._load_unlocked()
             row = data["attempts"].get(attempt_id)
             if not isinstance(row, dict):
                 return None
             if row.get("status") not in _ACTIVE_STATUSES:
-                return dict(row)
+                return None
             row["updated_at"] = updated_at
             row["lease_expires_at"] = lease_expires_at
             self._save_unlocked(data)

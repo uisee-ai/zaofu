@@ -345,6 +345,10 @@ def test_autoresearch_invocation_request_accepts_l1_and_bridges_to_trigger(
             "trigger_reason": "pane mismatch and bug signature",
             "fingerprint": "bug:dispatch-loop",
             "evidence_paths": ["records/ar-001.md"],
+            "workflow_run_id": "run-1",
+            "failure_class": "no_progress_breaker",
+            "source_event_ids": ["evt-original"],
+            "context_ref": {"ref_schema_version": "sidecar-ref.v1", "ref": "diagnostics/context.json", "sha256": "a" * 64},
         },
     )
     log.append(event)
@@ -366,6 +370,9 @@ def test_autoresearch_invocation_request_accepts_l1_and_bridges_to_trigger(
     assert len(loop_requests) == 0
     assert triggers[0].payload["invocation_id"] == "arinv-001"
     assert triggers[0].payload["apply_policy"] == "proposal_only"
+    assert triggers[0].payload["context_ref"] == event.payload["context_ref"]
+    assert triggers[0].payload["workflow_run_id"] == "run-1"
+    assert triggers[0].payload["source_event_ids"] == ["evt-original"]
 
 
 def test_autoresearch_invocation_is_kernel_owned_with_layer2_active(

@@ -12,6 +12,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from zf.autoresearch.diagnostic_refs import diagnostic_sidecar_refs
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
@@ -215,6 +216,15 @@ def build_loop_request_payload(
         "invocation_id": _clean_str(trigger_payload.get("invocation_id")),
         "source": _clean_str(trigger_payload.get("source") or "autoresearch.trigger.accepted"),
         "source_event_id": source_event_id,
+        "source_event_ids": _string_list(trigger_payload.get("source_event_ids")),
+        "workflow_run_id": _clean_str(trigger_payload.get("workflow_run_id")),
+        "task_map_generation": _clean_str(trigger_payload.get("task_map_generation")),
+        "run_id": _clean_str(trigger_payload.get("run_id")),
+        "trace_id": _clean_str(trigger_payload.get("trace_id")),
+        "recovery_case_id": _clean_str(trigger_payload.get("recovery_case_id")),
+        "task_id": _clean_str(trigger_payload.get("task_id")),
+        "failure_class": _clean_str(trigger_payload.get("failure_class")),
+        **diagnostic_sidecar_refs(trigger_payload),
         "mode": mode,
         "source_insight_ref": _clean_str(trigger_payload.get("source_insight_ref")),
         "handoff_ref": _clean_str(trigger_payload.get("handoff_ref")),

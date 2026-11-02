@@ -41,6 +41,7 @@ def render_board(tasks: list[Task], *, use_color: bool = True) -> str:
     lines.append(
         "Active Board (runtime kanban; delivery history lives in `zf trace delivery`)"
     )
+    lines.append("Columns show task lifecycle; pipeline execution: `zf trace dispatch`.")
     lines.append("")
 
     # Header

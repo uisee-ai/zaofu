@@ -20,6 +20,10 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 
 `zf restart --dry-run` 全量重启预览只报告将执行的 stop/start，不调用实际停止或启动入口；该预览不证明 provider 连接或运行态已恢复。`tests/test_cli_restart.py` 通过真实 CLI 入口阻断对这两个入口的调用。
 
+控制面单独重载时，已启用的 Autoresearch resident 同样经正常单实例锁检查并恢复；
+如已有进程持锁则不启动重复 consumer。保留 worker 及其 attempt，不重启 provider；
+重载本身不证明诊断任务已执行或已完成。`tests/test_cli_start.py` 覆盖 CLI 启动入口。
+
 单角色 `zf restart <role> --dry-run` 同样只报告计划，不重启角色、改写角色状态或追加合同检查事件。任务级语义恢复复扫按原任务身份隔离：同一父 Run 和候选提交下不同任务的复扫不得互相替代；同一任务的后续代仍按原规则替代旧代。实际 provider 断连后仍需通过正常角色恢复链恢复派发，不能把预览当作恢复。
 
 对于修复前已发生的跨任务错误替代，Run Manager 仅在账本能绑定原失败、原复扫请求、取消事件和同 Run 的另一任务替代请求时，以取消事件为幂等依据重发原语义复扫；已产生后续进展或已重发的任务不重复派发，同任务正常换代不触发此恢复。
@@ -87,6 +91,8 @@ Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须�
 修复集成阻塞后使用 `zf recover task-integration --operation <id> --reason '<修复证据>'` 预览，加 `--apply` 才执行。入口检查当前代际、原 needs_review 事件、已接纳的 Verify 通过结果、无活跃 operation/attempt 及非终态 Run/Task；apply 通过 WorkflowOperationService 追加 supersede 事实，原失败证据不变。既有 reconciler 派发下一 integration generation，重新执行 setup、rolling smoke 与 Candidate CAS；保留已通过的 Impl/Verify，不发新的产品成功事件。重复请求幂等，新的阶段代际或更新集成操作使旧恢复请求失效。
 
 Task Pipeline operation 因 `usage_samples` 达限时，Owner 可针对该 operation 显式修订采样上限：`zf goal set --status active --operation <id> --operation-max-usage-samples <非负整数> --reason '<批准依据>'`。零表示取消该上限；非零值必须高于阻断时的累计采样数，不修改其他 operation 或冻结请求。之后用 `zf recover workflow --dry-run --json` 检查对应 checkpoint，再以 `--resume-pending --checkpoint-id <id>` 受控恢复。运行时只接受该 operation 的预算阻断之后、由正式恢复链准入的修订；继续沿用原计量基线，并在达到修订后非零上限时再次阻断。美元定价未知不等于零成本；不可通过此入口修订美元限额。
+
+Reader fanout 因派发丢失复用同一 operation 时，重试 briefing 使用该 operation 经准入修订后的有效预算。仅当先前派发与 fanout、child、角色和已知 trace 一致时，才复用其 operation 身份；缺少身份的旧派发不跨任务借用其他 operation 的预算。冻结配置与历史事件不被改写。
 
 Owner 明确要求对同一 Run 后续 operation 一并修改时，可在上述命令增加 `--all-run-operations`；受控恢复准入后同一 Run 的 operation 使用该采样上限，其他 Run 和其他预算维度不受影响。原冻结请求和历史用量记录不改写。
 

@@ -10,7 +10,7 @@ from zf.runtime.orchestrator_agent_semantic_failure import request_semantic_fail
 from zf.runtime.run_manager import build_run_manager_projection, _execute_orchestrator_triage_request
 
 
-def _case(tmp_path, *, failure_class="none"):
+def _case(tmp_path, *, failure_class="none", minimal_admitted=False):
     runtime = _runtime(tmp_path)
     policy = runtime.config.workflow.orchestration
     policy.autonomous_actions = ["rework", "continue"]
@@ -34,8 +34,11 @@ def _case(tmp_path, *, failure_class="none"):
                 "role_instance": "dev-a", "active_attempt_id": "lease-task-1"}
     for kind in ("workflow.operation.requested", "workflow.operation.started",
                  "workflow.call.result.admitted", "workflow.operation.settled"):
+        body = {**identity, "semantic_verdict": "failed", "control_result_ref": result_ref}
+        if minimal_admitted and kind == "workflow.call.result.admitted":
+            body.pop("active_attempt_id")
         runtime.event_writer.append(ZfEvent(type=kind, task_id="TASK-1", payload={
-            **identity, "semantic_verdict": "failed", "control_result_ref": result_ref,
+            **body,
         }))
     return runtime, identity
 
@@ -43,6 +46,119 @@ def _case(tmp_path, *, failure_class="none"):
 def _pending(runtime):
     return pending_execution_reviews(state_dir=runtime.state_dir, config=runtime.config,
                                      events=runtime.event_log.read_all())
+
+
+def test_settled_attempt_survives_cleared_task_dispatch_id(tmp_path):
+    from zf.runtime.run_manager import run_manager_tick
+
+    runtime, _ = _case(tmp_path, minimal_admitted=True)
+    runtime.task_store.update("TASK-1", active_dispatch_id="")
+    result = run_manager_tick(state_dir=runtime.state_dir, writer=runtime.event_writer,
+                              config=runtime.config, project_root=runtime.project_root,
+                              event_log=runtime.event_log, spawn_repairs=False)
+    assert result.actions_applied == 1
+    request = next(event for event in runtime.event_log.read_all()
+                   if event.type == "orchestrator.semantic.failure.requested")
+    assert request.payload["active_attempt_id"] == "lease-task-1"
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    assert prepared.context.input_body["checkpoint_context"]["target_attempt_id"] == "lease-task-1"
+
+
+@pytest.mark.parametrize("request_attempt_present", [True, False])
+def test_semantic_review_targets_the_settled_operation_role(tmp_path, request_attempt_present):
+    from tests.test_orchestrator_agent_semantic_failure import _submit_rework
+    from zf.runtime.orchestrator_agent_decision_apply import apply_orchestrator_agent_decision
+    from zf.runtime.run_manager import run_manager_tick
+    from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+    from zf.runtime.task_pipeline_rework import derive_impl_rework_requests
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    runtime, _ = _case(tmp_path, minimal_admitted=True)
+    task = runtime.task_store.get("TASK-1")
+    runtime.task_store.update("TASK-1", active_dispatch_id="", contract=replace(
+        task.contract, owner_role="dev-b", owner_instance="dev-b",
+    ))
+    run_manager_tick(state_dir=runtime.state_dir, writer=runtime.event_writer,
+                     config=runtime.config, project_root=runtime.project_root,
+                     event_log=runtime.event_log, spawn_repairs=False)
+    request = next(event for event in runtime.event_log.read_all()
+                   if event.type == "orchestrator.semantic.failure.requested")
+    if not request_attempt_present:
+        request = replace(request, payload={
+            key: value for key, value in request.payload.items() if key != "active_attempt_id"
+        })
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    assert prepared.context.input_body["checkpoint_context"]["target_role_instance"] == "dev-a"
+    assert prepared.context.input_body["checkpoint_context"]["target_attempt_id"] == "lease-task-1"
+    assert apply_orchestrator_agent_decision(runtime, _submit_rework(runtime, prepared))["applied"]
+    events = runtime.event_log.read_all()
+    retries = derive_impl_rework_requests(
+        events=events, generation_contexts=task_pipeline_generation_contexts(events),
+        operation_rows=reduce_workflow_operations(events).values(),
+    )
+    assert retries["TASK-1"]["fault"] == "task_pipeline_oa_rework"
+
+
+def test_rejected_missing_attempt_review_is_reissued_once(tmp_path):
+    from zf.runtime.run_manager import run_manager_tick
+
+    runtime, _ = _case(tmp_path, minimal_admitted=True)
+    runtime.task_store.update("TASK-1", active_dispatch_id="")
+    old = dict(_pending(runtime)[0])
+    old.pop("active_attempt_id", None)
+    old["request_id"] = old["checkpoint_id"] = "legacy-missing-attempt"
+    old["request_revision"] = ""
+    _execute_orchestrator_triage_request(writer=runtime.event_writer, action=old,
+        causation_id=old["source_event_id"], state_dir=runtime.state_dir, config=runtime.config)
+    original = next(e for e in runtime.event_log.read_all()
+                    if e.type == "orchestrator.semantic.failure.requested")
+    runtime.event_writer.append(ZfEvent(
+        type="orchestrator.semantic.checkpoint.rejected", task_id="TASK-1",
+        causation_id=original.id,
+        payload={"source_event_id": original.id, "reason": "target_attempt_missing"},
+    ))
+    assert len(_pending(runtime)) == 1
+    for _ in range(2):
+        run_manager_tick(state_dir=runtime.state_dir, writer=runtime.event_writer,
+                         config=runtime.config, project_root=runtime.project_root,
+                         event_log=runtime.event_log, spawn_repairs=False)
+    requests = [e for e in runtime.event_log.read_all()
+                if e.type == "orchestrator.semantic.failure.requested"]
+    assert len(requests) == 2
+    assert requests[1].payload["active_attempt_id"] == "lease-task-1"
+    assert request_semantic_failure_checkpoint(runtime, requests[1]).checkpoint == "semantic_failure"
+
+
+@pytest.mark.parametrize("reason", ["target_operation_stale", "current_plan_package_missing"])
+def test_other_checkpoint_rejections_do_not_replay_the_request(tmp_path, reason):
+    runtime, _ = _case(tmp_path, minimal_admitted=True)
+    runtime.task_store.update("TASK-1", active_dispatch_id="")
+    action = _pending(runtime)[0]
+    _execute_orchestrator_triage_request(writer=runtime.event_writer, action=action,
+        causation_id=action["source_event_id"], state_dir=runtime.state_dir, config=runtime.config)
+    original = next(e for e in runtime.event_log.read_all()
+                    if e.type == "orchestrator.semantic.failure.requested")
+    runtime.event_writer.append(ZfEvent(
+        type="orchestrator.semantic.checkpoint.rejected", task_id="TASK-1",
+        causation_id=original.id, payload={"source_event_id": original.id, "reason": reason},
+    ))
+    assert _pending(runtime) == []
+
+
+def test_bound_missing_attempt_rejection_does_not_retry_forever(tmp_path):
+    runtime, _ = _case(tmp_path, minimal_admitted=True)
+    runtime.task_store.update("TASK-1", active_dispatch_id="")
+    action = _pending(runtime)[0]
+    _execute_orchestrator_triage_request(writer=runtime.event_writer, action=action,
+        causation_id=action["source_event_id"], state_dir=runtime.state_dir, config=runtime.config)
+    original = next(e for e in runtime.event_log.read_all()
+                    if e.type == "orchestrator.semantic.failure.requested")
+    runtime.event_writer.append(ZfEvent(
+        type="orchestrator.semantic.checkpoint.rejected", task_id="TASK-1",
+        causation_id=original.id,
+        payload={"source_event_id": original.id, "reason": "target_attempt_missing"},
+    ))
+    assert _pending(runtime) == []
 
 
 def test_run_manager_observes_and_requests_one_exact_checkpoint(tmp_path):

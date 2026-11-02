@@ -70,9 +70,27 @@ Run Manager 仅对显式启用策略、活跃 Run、当前 generation、已结�
 operation key，也必须进入失败结算；已被接受的活跃诊断继续按原活性窗口处理。
 状态解释展示实际选中的后续操作；当诊断槽被其他 Autoresearch 请求占用时，
 在 `pending_execution.diagnosis_wait` 列出等待原因和关联请求 ID。
+被同一 Run 的后续 reopen 替代、且尚未桥接到 Autoresearch 的历史终态诊断，
+不会继续占用单飞诊断槽；该判断复用 invocation 入口的相同来源/顺序校验。
+已经桥接、排队或启动的请求仍保持占槽，直到存在其终态，其他 Run 的 reopen
+和缺失来源都不推定请求失效；历史事件保持不变。
+
+历史 `human.escalate` 若没有 checkpoint 和审批命令，仍阻止运行完成；
+无进展熔断的 `needs_diagnosis` 可先创建只产出诊断建议的请求，避免等待
+无法操作的旧通知形成死结。带明确 checkpoint 或审批命令的人工关卡仍阻止
+该诊断路径；此例外不批准任务、不执行恢复，也不解除任何人工升级。
 失败输入携带同一 Run 的最新用户目标及来源事件，和 execution-context 使用同一快照。
 审查后用户目标变化时拒绝旧 OA 决策，按新目标重新排队一次；其他 Run 的更新不影响
 当前决策。历史未绑定目标事件的检查点保持重放兼容。
+任务结算后可清除 Task 的 active dispatch；失败审查改从当前已结算 operation 传递
+原 attempt 身份。旧请求因缺少 attempt 被拒绝时，只在已找到同一 operation 的真实
+attempt 且旧请求未携带该字段时重发一次；保留原拒绝，其他原因不自动重试。
+绑定具体已结算 operation 的失败检查点使用该 operation 实际执行角色，而不是
+用任务合同中的历史 owner 覆盖实际派发角色；未绑定 operation 的旧检查点保持回退。
+若旧检查点因目标角色错误升级，操作员可用 `zf recover oa-review --escalation
+<event-id> --reason <reason>` 预览并追加 `--apply` 请求一次新的 OA 审查。
+恢复要求原升级和决策已准入、同一已结算 operation 的 attempt 一致且角色确有偏差；
+保留旧结论，新检查点仍须独立决策，不直接派发返工或修改冻结合同。
 
 局部 Plan 更新可能保留其他 Task 的旧代次。此时 semantic_failure 的请求、结果提交
 和决策准入都按目标 Task 最近一次 `task.pipeline.generation.admitted` 绑定的不可变
@@ -101,6 +119,14 @@ API：`/api/task-pipeline/summary`、`/api/projects/{project_id}/task-pipeline/s
 可用 workflow_run_id 查询参数限制 Run。复用现有访问控制。
 Task 生命周期计数保持原意，execution_statuses 单列 active/blocked/ready/waiting/done。
 capacity 明确是项目共享容量，摘要不预留槽位，不作为可直接写入的 runtime truth。
+
+Run Manager 的 `monitor.task_evidence` 对在途任务分别展示最近派发、活动与结果
+信号的事件 ID、时间及事件中已有的 Run/attempt ID；缺少标识时留空，缺少信号为
+null。活动信号的 `ts` 是账本记录时间；直接用量或同任务来源用量可查时，
+`usage_sample_ts` 与 `source_usage_event_id` 指向 provider 原采样时间及事件，
+缺失来源时不推测采样时间。它只按明确的 task ID 关联，可能引用历史 Run/attempt，结果信号也可能是
+阻塞或 worker 自报，不能充当当前代独立验收。没有 heartbeat 或结果均不直接触发
+停止、重试或判定任务完成；resident 应结合执行摘要和合同作语义判断。
 
 ## 验证
 
