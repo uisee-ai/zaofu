@@ -1,6 +1,6 @@
 # 历史人工升级阻断无进展诊断
 
-> 状态: active
+> 状态: done；实现 `4749850a fix: expose supervision evidence and unblock diagnosis`
 
 ## 证据
 

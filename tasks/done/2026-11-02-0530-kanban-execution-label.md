@@ -1,6 +1,6 @@
 # Kanban 看板说明任务状态与执行状态
 
-> 状态: active
+> 状态: done；实现 `4749850a fix: expose supervision evidence and unblock diagnosis`
 
 ## 证据
 

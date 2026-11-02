@@ -1,6 +1,6 @@
 # Run Manager 区分活动与任务交付证据
 
-> 状态: active
+> 状态: done；实现 `4749850a fix: expose supervision evidence and unblock diagnosis`
 
 ## 证据
 
