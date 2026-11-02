@@ -12653,6 +12653,8 @@ def _autoresearch_inflight_request_ids(events: list[ZfEvent]) -> set[str]:
     }
     requested: set[str] = set()
     terminal: set[str] = set()
+    bridged: set[str] = set()
+    terminal_diagnoses: dict[str, ZfEvent] = {}
     request_by_checkpoint: dict[str, str] = {}
     for event in events:
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -12660,6 +12662,11 @@ def _autoresearch_inflight_request_ids(events: list[ZfEvent]) -> set[str]:
             request_id = _autoresearch_result_request_id(event, payload)
             if request_id:
                 requested.add(request_id)
+                if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED:
+                    if str(payload.get("operation_key") or "").startswith("terminal-diagnosis:"):
+                        terminal_diagnoses[request_id] = event
+                else:
+                    bridged.add(request_id)
                 checkpoint_id = str(payload.get("checkpoint_id") or "")
                 if checkpoint_id:
                     request_by_checkpoint[checkpoint_id] = request_id
@@ -12673,7 +12680,19 @@ def _autoresearch_inflight_request_ids(events: list[ZfEvent]) -> set[str]:
             )
             if request_id:
                 terminal.add(request_id)
-    return requested - terminal
+    inflight = requested - terminal
+    # The invocation bridge already refuses an unbridged terminal diagnosis
+    # after the same run reopens. Do not reserve a slot for that impossible
+    # invocation, but retain any request with a real downstream lifecycle.
+    from zf.runtime.autoresearch_invocation import run_manager_autoresearch_request_superseded
+
+    for request_id in inflight - bridged:
+        request = terminal_diagnoses.get(request_id)
+        if request is not None and run_manager_autoresearch_request_superseded(
+            request, events=events,
+        ):
+            inflight.remove(request_id)
+    return inflight
 
 
 def _autoresearch_proposal_refs(payload: dict[str, Any]) -> dict[str, Any]:
