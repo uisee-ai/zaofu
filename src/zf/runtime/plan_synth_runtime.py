@@ -801,12 +801,17 @@ class PlanSynthRuntimeMixin:
                     (outcome.envelope_ref or {}).get("sha256") or ""
                 ),
             }
-            if payload.get("failure_class") == "reader_execution_failure":
+            if payload.get("failure_class") == "reader_execution_failure" or (
+                control_result.get("execution_status") == "completed"
+                and control_result.get("verdict") == "rejected"
+            ):
                 from zf.runtime.artifact_context_events import artifact_context_events
                 from zf.runtime.plan_synth_recovery_refs import failed_critic_candidate_refs
 
                 payload["previous_plan_candidate_refs"] = failed_critic_candidate_refs(
-                    self.state_dir, artifact_context_events(self.event_log), payload,
+                    self.state_dir, artifact_context_events(self.event_log),
+                    {**payload, "execution_status": control_result.get("execution_status"),
+                     "verdict": control_result.get("verdict")},
                 )
             event = replace(event, payload=payload)
         from zf.runtime.plan_synth_owner_checkpoint import (

@@ -55,21 +55,29 @@ def _failure():
     }
 
 
-@pytest.mark.parametrize('partial_read', [False, True])
-def test_failed_critic_records_incomplete_input_without_passing(tmp_path, partial_read, monkeypatch):
+@pytest.mark.parametrize('mode', ['unread', 'partial', 'semantic_rejection'])
+def test_failed_critic_preserves_checkpoint_without_passing(tmp_path, mode, monkeypatch):
     runtime, prepared, service, token, ref = _setup(tmp_path)
-    if partial_read:
+    if mode != 'unread':
         read_attempt_artifact(runtime.state_dir,
             manifest={'attempt_id': 'attempt-plan-synth', 'sources': [ref]},
-            source_id=ref['source_id'], artifact_id=ref['artifact_id'], page_start=0, page_size=5)
+            source_id=ref['source_id'], artifact_id=ref['artifact_id'], page_start=0,
+            page_size=8192 if mode == 'semantic_rejection' else 5)
+    semantic = _failure()
+    if mode == 'semantic_rejection':
+        semantic = {'status': 'completed', 'execution_status': 'completed',
+                    'recommendation': 'reject', 'summary': 'Revise the current candidate.',
+                    'report': {'status': 'failed', 'recommendation': 'reject',
+                               'summary': 'Revise the current candidate.',
+                               'findings': [{'severity': 'high', 'message': 'Missing consumer evidence.'}]}}
     submitted = service.submit(operation_id=prepared.operation_id, role_instance='plan-critic',
-                               credential=token, semantic_result=_failure())
+                               credential=token, semantic_result=semantic)
     assert submitted.canonical_event_type == 'fanout.synth.completed'
     events = runtime.event_log.read_all()
     admitted = next(e for e in events if e.type == 'workflow.call.result.admitted')
     envelope = hydrate_sidecar_ref(runtime.state_dir, admitted.payload['envelope_ref']).payload
-    assert envelope['execution']['status'] == 'failed'
-    assert envelope['input_consumption']['status'] == 'incomplete'
+    assert envelope['execution']['status'] == ('completed' if mode == 'semantic_rejection' else 'failed')
+    assert envelope['input_consumption']['status'] == ('satisfied' if mode == 'semantic_rejection' else 'incomplete')
     result = hydrate_sidecar_ref(runtime.state_dir, admitted.payload['control_result_ref']).payload
     assert result['verdict'] != 'passed'
     canonical = next(e for e in events if e.id == submitted.canonical_event_id)
@@ -94,11 +102,14 @@ def test_failed_critic_records_incomplete_input_without_passing(tmp_path, partia
     PlanSynthRuntimeMixin._handle_fanout_synth_completed(runtime, canonical)
     events = runtime.event_log.read_all()
     failed = next(e for e in events if e.type == 'prd.plan.failed')
-    assert failed.payload['failure_class'] == 'reader_execution_failure'
     assert failed.payload['previous_plan_candidate_refs'] == [candidate]
-    assert not _semantic_failure(failed.payload)
-    from zf.runtime.failure_kind import failure_kind_from_payload
-    assert failure_kind_from_payload(failed.payload) == 'infra'
+    if mode == 'semantic_rejection':
+        assert _semantic_failure(failed.payload)
+    else:
+        assert failed.payload['failure_class'] == 'reader_execution_failure'
+        assert not _semantic_failure(failed.payload)
+        from zf.runtime.failure_kind import failure_kind_from_payload
+        assert failure_kind_from_payload(failed.payload) == 'infra'
     assert not any(e.type == 'task_map.ready' for e in events)
 
 
