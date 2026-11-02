@@ -6,6 +6,8 @@ Owner 已授权恢复 blocked Task、经 OA 拉起修复并持续监工。
 真实请求 evt-5d7836f84717 被 evt-2e128efa73eb 以 target_generation_stale 拒绝。
 DL-FOUNDATION 生效代次 77a994dd 的包仍有效，但全局包已经进入 4e6df815。
 当前 HEAD 的隔离复现证实相同拒绝。结果提交与决定准入也存在同类全局绑定错误。
+部署后真实请求进一步复现 target_attempt_missing：结算后的 Task 已清除 dispatch，
+但 operation 仍保存精确 attempt。补充从已验证当前性的 settled operation 恢复绑定。
 
 ## 验收
 

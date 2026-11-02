@@ -44,6 +44,18 @@ def test_retained_task_review_and_result_use_its_admitted_package(tmp_path):
     assert admission.admitted, admission.reason
 
 
+def test_settled_task_without_active_dispatch_uses_operation_attempt(tmp_path):
+    from zf.runtime.orchestrator_agent_decision_apply import apply_orchestrator_agent_decision
+
+    runtime, _ = _case(tmp_path)
+    runtime.task_store.update("TASK-1", active_dispatch_id=None)
+    request = _review(runtime)
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    assert prepared.context.input_body["checkpoint_context"]["target_attempt_id"] == "lease-task-1"
+    outcome = apply_orchestrator_agent_decision(runtime, _submit_rework(runtime, prepared))
+    assert outcome["applied"], outcome
+
+
 def test_task_readmission_invalidates_pending_decision(tmp_path):
     runtime, _ = _case(tmp_path)
     prepared = request_semantic_failure_checkpoint(runtime, _review(runtime))
