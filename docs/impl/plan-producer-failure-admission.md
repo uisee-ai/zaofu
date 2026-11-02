@@ -28,6 +28,12 @@ Plan Critic 使用 `plan-synth` 结果时，只有明确声明
 仍不能绕过读取校验。回归：`tests/test_plan_synth_failure_reads.py`。
 准入后的 Critic 结果将该失败分类传递至 fanout 聚合和阶段失败事件，供
 恢复流程区分执行失败与计划内容被否决；历史事件不被改写。
+`reader_execution_failure` 按基础设施失败归类，不自动发起语义重规划，
+也不计入后续语义失败的历史次数。已存在的返工 lineage 不重置。
+修复输入交付或执行配置后，通过 `stage-replan-new-generation` 的
+`repaired_failure_event_id`、`approval_ref`、`reason` 合同受控恢复；
+显式 failure_kind、原失败、读取账本和审批门禁保持有效。
+回归：`tests/test_reader_failure_kind_recovery.py`。
 Critic 执行失败时，恢复从该次派发绑定的不可变 source manifest 与
 plan-synth contract 对账当前子结果及工件引用；新引用优先于旧触发的候选，
 并保留原有读取范围和 access scope。身份、摘要或来源不匹配时不猜测当前

@@ -50,8 +50,10 @@ def failure_kind_from_payload(payload: object) -> str:
     if (
         payload.get("control_result_schema") == "verification-result.v1"
         and payload.get("semantic_verdict") in {"blocked", "abstain", "abstained"}
-    ) or payload.get("failure_class") == "worker_noop_or_terminal_missing":
-        # A verifier unable to certify evidence has not rejected the product.
+    ) or payload.get("failure_class") in {
+        "worker_noop_or_terminal_missing", "reader_execution_failure",
+    }:
+        # An unfinished reader has not rejected the product or Plan content.
         return FAILURE_KIND_INFRA
     return ""
 

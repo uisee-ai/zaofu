@@ -580,6 +580,8 @@ def plan_reader_stage_replan(
             continue
         if event.id == failure_event.id:
             continue
+        if failure_kind_from_payload(event.payload) == FAILURE_KIND_INFRA:
+            continue
         prior_failures += 1
     # A reader child can emit its configured success_event before downstream
     # writer admission rejects the same Plan candidate.  Preserve the durable
