@@ -1,5 +1,9 @@
 # Task Pipeline 上下文发布与恢复
 
+局部重规划保留代码、合同代次及下游调度的完整 mock 链路与候选冻结修复，见
+[断点恢复闭环验证](recovery-closure-validation.md)。冻结须覆盖同一 Run 全部当前任务，
+不能仅因修订任务完成就忽略沿用旧代次的下游任务。
+
 Task Pipeline 在准备新的 provider operation 前，通过 TaskStore 重新读取当前 Task，核对其计算出的合同版本与派发快照一致，再经 write_task_doc 原子写入任务说明投影并进行 freshness 检查。发布失败或版本不一致时停止派发，沿现有 dispatch deferred/cooldown 路径处理，不生成产品失败结果。
 
 投影刷新不回写 TaskContract，不修改已接纳计划、验收、任务状态或工作树代码。新的 task.doc.published 事件记录 dispatch、来源事件和三种版本。
