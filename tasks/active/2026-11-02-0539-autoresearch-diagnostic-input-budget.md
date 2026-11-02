@@ -17,3 +17,4 @@ LS 的历史诊断 `ar-stage-replan-a1992dd5b6b40c11`、`ar-stage-replan-9412553
 
 - 默认 `LoopConfig -> run_iteration -> AutoresearchRunConfig` 使用 PRD Flow，`incident-reproduction` 的 seed 包含原事件上下文与独立复现/验证要求；四次预算失败发生在内层 Planner/tech-scan。既有预算 guard 明确把 cache_read 纳入 token 用量，不能称其为计费错误或仅凭用量改预算口径。
 - 需要验证是否可利用已注册的适配路线和有界上下文完成同等的故障复现与独立验证；在取得等价证据前不改默认流程或降低门禁。
+- 后续实际诊断 `rmar-bd116d51bd21` 的隔离 Planner 再次因 operation token 超限失败（1,563,452 / 1,500,000，其中 cache_read 1,504,384，usage_samples 12；终态 `evt-0b75f3618336`）。诊断引用链的结构化丢失已单独修复，但它不能证明预算问题的因果或成本改善。

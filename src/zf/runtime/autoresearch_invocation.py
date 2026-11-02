@@ -11,6 +11,7 @@ import hashlib
 from collections import Counter
 from typing import Any
 
+from zf.autoresearch.diagnostic_refs import diagnostic_sidecar_refs, valid_diagnostic_sidecar
 from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.runtime.recovery_case import recovery_case_id_from_payload
@@ -173,7 +174,11 @@ def build_invocation_request_from_run_manager_event(
     source_event_ids = _string_list(payload.get("source_event_ids"))
     evidence_paths = _string_list(payload.get("evidence_paths"))
     for key in ("source_ref", "context_ref"):
-        value = str(payload.get(key) or "").strip()
+        raw = payload.get(key)
+        if isinstance(raw, dict):
+            value = str(raw.get("ref") or "").strip() if valid_diagnostic_sidecar(raw) else ""
+        else:
+            value = str(raw or "").strip()
         if value:
             evidence_paths.append(value)
     return ZfEvent(
@@ -206,14 +211,16 @@ def build_invocation_request_from_run_manager_event(
             "attention_id": str(payload.get("attention_id") or ""),
             "fingerprint": str(payload.get("fingerprint") or request_id),
             "failure_signal_ids": source_event_ids,
+            "source_event_ids": source_event_ids,
+            "workflow_run_id": str(payload.get("workflow_run_id") or ""),
+            "run_id": str(payload.get("run_id") or ""),
+            "trace_id": str(payload.get("trace_id") or ""),
+            "failure_class": str(payload.get("failure_class") or ""),
             "evidence_paths": evidence_paths,
+            **diagnostic_sidecar_refs(payload),
             "mode": str(payload.get("mode") or payload.get("research_mode") or "debug"),
             "insight_type": str(payload.get("insight_type") or ""),
-            "source_insight_ref": str(
-                payload.get("source_insight_ref")
-                or payload.get("context_ref")
-                or "projections/run_manager.json#run_context_bundle"
-            ),
+            "source_insight_ref": _diagnostic_source_ref(payload),
             "expected_output": (
                 _string_list(payload.get("expected_output"))
                 or ["diagnosis_report", "reproduction_steps", "patch_or_resume_proposal"]
@@ -234,7 +241,7 @@ def build_invocation_request_from_run_manager_event(
             "safe_resume_action": str(payload.get("safe_resume_action") or ""),
             "checkpoint_id": str(payload.get("checkpoint_id") or ""),
             "projection_ref": {
-                "run_manager": str(payload.get("context_ref") or "projections/run_manager.json#run_context_bundle"),
+                "run_manager": _diagnostic_source_ref(payload),
             },
         }),
     )
@@ -452,6 +459,13 @@ def _sha1(value: str) -> str:
     return hashlib.sha1(value.encode("utf-8")).hexdigest()
 
 
+def _diagnostic_source_ref(source: dict[str, Any]) -> str:
+    value = source.get("source_insight_ref") or source.get("context_ref")
+    if isinstance(value, dict):
+        value = value.get("ref") if valid_diagnostic_sidecar(value) else ""
+    return str(value or "projections/run_manager.json#run_context_bundle")
+
+
 def _copy_request_identity(source: dict[str, Any], target: dict[str, Any]) -> None:
     request_id = str(
         source.get("run_manager_request_id")
@@ -474,10 +488,14 @@ def _copy_request_identity(source: dict[str, Any], target: dict[str, Any]) -> No
         "original_trigger_event_id",
         "stage_id",
         "fanout_id",
+        "task_id",
+        "failure_class",
+        "source_event_ids",
     ):
         value = source.get(key)
         if value not in (None, "", [], {}):
             target[key] = value
+    target.update(diagnostic_sidecar_refs(source))
 
 
 __all__ = [

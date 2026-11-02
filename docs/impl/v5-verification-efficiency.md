@@ -103,6 +103,10 @@ Workflow operation 详情展示 Kernel 预算事件绑定的累计处理量、�
 - 标准 Autoresearch 路线生成的隔离实验 `zf.yaml` 显式禁用内层 Autoresearch resident；实验仍可记录
   诊断请求，但只由外层消费者管理实验，避免实验失败递归启动新的诊断和 provider。父项目
   配置不变；此隔离不放宽实验的验收、预算或停止清理规则。
+- Run Manager 诊断的 `context_ref`、`read_set_ref` 保持 `sidecar-ref.v1` 对象穿过 invocation、
+  trigger、loop 和实验 seed；同时保留 Run/Task、故障类别与来源事件。路径字符串供定位，
+  原描述符保留 digest、访问范围和 retention，读取仍需按原 state_dir 验证；不把 sidecar
+  正文复制进事件，不把旧格式字符串或不识别的对象提升为带校验的 sidecar。
 
 ## 验证边界
 

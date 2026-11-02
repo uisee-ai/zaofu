@@ -49,9 +49,9 @@ def _command_for_request(
             "diagnostic_request_id": request_id,
             "source_state_dir": str(state_dir.resolve()),
             **{key: payload[key] for key in (
-                "source_event_id", "source_event_ids", "workflow_run_id", "task_id",
+                "source_event_id", "source_event_ids", "workflow_run_id", "run_id", "trace_id", "task_id",
                 "recovery_case_id", "failure_class", "fingerprint", "evidence_paths",
-                "evidence_refs", "handoff_ref", "source_insight_ref",
+                "evidence_refs", "handoff_ref", "source_insight_ref", "context_ref", "read_set_ref",
             ) if key in payload},
         }, ensure_ascii=False),
     ]
