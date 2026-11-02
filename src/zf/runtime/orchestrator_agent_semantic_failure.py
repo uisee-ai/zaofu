@@ -15,7 +15,7 @@ from zf.runtime.orchestrator_agent_policy import (
     checkpoint_policy,
     orchestration_flow_kind,
 )
-from zf.runtime.plan_artifact_package import reduce_plan_artifact_packages
+from zf.runtime.orchestrator_agent_plan_binding import current_checkpoint_plan_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
@@ -60,6 +60,7 @@ def request_semantic_failure_checkpoint(
             raise SemanticFailureCheckpointError("target_operation_stale")
     workflow_run_id, package = _current_plan_package(
         events,
+        task_id=task_id,
         preferred_run_id=str(
             payload.get("workflow_run_id")
             or payload.get("trace_id")
@@ -203,6 +204,7 @@ def _current_plan_package(
     events: list[ZfEvent],
     *,
     preferred_run_id: str,
+    task_id: str = "",
 ) -> tuple[str, dict[str, Any]]:
     run_ids: list[str] = []
     if preferred_run_id:
@@ -216,10 +218,11 @@ def _current_plan_package(
     if not preferred_run_id and len(run_ids) != 1:
         return "", {}
     for run_id in run_ids:
-        current = reduce_plan_artifact_packages(
+        current = current_checkpoint_plan_package(
             events,
             workflow_run_id=run_id,
-        ).get("current")
+            task_id=task_id,
+        )
         if isinstance(current, Mapping) and current:
             return run_id, dict(current)
     return "", {}
