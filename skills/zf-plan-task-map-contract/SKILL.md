@@ -862,3 +862,10 @@ Use with the task map:
 选择理由与被排除范围写入现有 rationale/输入正文；没有适合字段时写该工件
 说明，不新增 Task schema。分别审 Impl 与 Verify 的消费需要；独立 Verify
 需自行核验目标和证据。完整 Plan/Candidate/Goal 覆盖政策保持不变。
+
+### 输入切片生产和反例预检
+
+按 [任务输入生产方法](references/task-input-production.md) 生成 shared/owned、来源、
+AC、图片状态与依赖义务。提交前用 `zf plan inspect-inputs --bundle <本地映射 JSON>`
+逐任务核验声明；Critic 必须独立从原始材料审查语义遗漏。离线评测标准答案不得进入
+Reviewer 上下文；真实 Provider 资格需另外记录，不能用结构检查代替。

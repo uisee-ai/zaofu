@@ -147,3 +147,47 @@ test("late artifact fetch cannot contaminate the next Plan", async ({ page, requ
   await expect(dialog.getByText("修正库存", { exact: true })).toHaveCount(0);
   await expect(dialog.getByRole("status").filter({ hasText: "未取得同版任务明细" })).toBeVisible();
 });
+
+test("task input review uses bound preview declarations without granting approval", async ({ page, request }) => {
+  const mutations: string[] = [];
+  page.on("request", req => { if (req.method() !== "GET" && req.url().includes("/api/") && !req.url().endsWith("/actions/inbox-item-read")) mutations.push(req.url()); });
+  const dialog = await openReview(page, request);
+  await dialog.getByRole("button", { name: "任务输入", exact: true }).click();
+  const panel = dialog.getByRole("region", { name: "任务输入审查" });
+  await expect(panel).toContainText("2 个匹配任务");
+  await expect(panel).toContainText("任务输入未绑定");
+  await expect(panel).toContainText("引用齐全不代表语义完整或验收通过");
+  await panel.getByLabel("精确任务 ID").fill("T-STOCK");
+  await panel.getByRole("button", { name: "查看任务输入" }).click();
+  await expect(panel).toContainText("1 个匹配任务");
+  await expect(panel.getByRole("heading", { name: /T-LEGACY/ })).toHaveCount(0);
+  await panel.locator("summary", { hasText: "候选整体验证" }).click();
+  await expect(panel).toContainText("保持该角色既有必读政策");
+  await panel.locator("summary", { hasText: "来源去向" }).click();
+  await expect(panel).toContainText("REQ-MISSING");
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "完整规划示例" })).toBeVisible();
+  expect(mutations).toEqual([]);
+});
+
+test("late input review response cannot contaminate another Plan", async ({ page, request }) => {
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/plans/evt-preview-review/input-review?*", async route => {
+    const response = await route.fetch();
+    await delayed;
+    await route.fulfill({ response }).catch(() => {});
+  });
+  const dialog = await openReview(page, request);
+  await dialog.getByRole("button", { name: "任务输入", exact: true }).click();
+  await expect(dialog.getByText("正在读取本版输入声明…")).toBeVisible();
+  await dialog.getByRole("button", { name: "Close preview" }).click();
+  await page.getByTestId("inbox-queue-item").filter({ hasText: "evt-preview-digest" }).click();
+  await page.locator(".inbox-reading-pane").getByRole("button", { name: "Preview", exact: true }).click();
+  await dialog.getByRole("button", { name: "任务输入", exact: true }).click();
+  release();
+  const panel = dialog.getByRole("region", { name: "任务输入审查" });
+  await expect(panel).toContainText("输入审查不可用");
+  await expect(panel.getByRole("heading", { name: /T-STOCK/ })).toHaveCount(0);
+  await expect(panel).toContainText("请查看同版原始工件");
+});

@@ -116,3 +116,14 @@ def test_reader_policy_is_resolved_from_operation_sidecar_not_marked_optional(tm
     resolved = query.attempt_inputs("a", context=query.context())
     assert resolved["required_policy_status"] == "available"
     assert all(item["required"] for item in resolved["items"])
+
+
+def test_empty_query_result_keeps_authorized_navigation_incompleteness_visible(tmp_path):
+    from tests.test_artifact_read_snapshot import published, IDENTITY
+    manifest,required,_=published(tmp_path)
+    for source in manifest['sources']:
+        for selection in source['read_selections']:
+            selection['navigation']['complete']=False
+    from zf.runtime.artifact_input_index import input_index
+    result=input_index(manifest=manifest,required=required,identity=IDENTITY,reads=[],query='unmatched')
+    assert result['items']==[] and result['navigation_complete'] is False

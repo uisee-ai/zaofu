@@ -113,7 +113,11 @@ def project_handoff_summary(
         next_required_action=next_required_action,
         task_events=task_events or [],
     )
+    from zf.runtime.artifact_input_recovery import current_task_input_recovery
+    recovery_inputs = current_task_input_recovery(state_dir,
+        list(index.events) if index is not None else rows, task)
     return redact_obj({
+        "work_record": recovery_inputs.get("work_record", {"status": "unavailable", "authorizes_execution": False}),
         "schema_version": "handoff-summary.v1",
         "generated_at": now.isoformat(),
         "task_id": task_id,

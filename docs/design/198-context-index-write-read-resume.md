@@ -650,3 +650,38 @@ occurrence 权限再给标题、计数和游标；相同 digest 不合并权限�
 保留原目录和受控正文入口，不伪称已有导航。旧游标遇到版本/查询/生命周期变化后从首页
 重新定位。C4 保持第一批能力；C1 完整成本基线、C2 全角色真实资格、C8 实际 delta canary
 仍按原设计独立验证，不以本批自动化测试代替。
+
+## 17. 第三批实施：生产、成本与使用入口（2026-11-02）
+
+基于第二批 `1a1989cc`，分支 `wip/codex-20261102-context-198-production`。
+五项已批准任务分别覆盖以下范围：
+
+| 项目 | 本批实际入口 | 限定范围 |
+| --- | --- | --- |
+| C1 成本基线 | `artifact costs`、input-costs API、Task Inputs 成本面板；既有 execution usage，CLI 导航观测及正文读原因，离线 host benchmark | 分开字节/宿主时间/operation input-cache-output/估算和账单；比较绑定材料、合同、Package、选择和必读政策。在线索引构建成本未逐次归因，历史未观测不计零。 |
+| C2 生产与覆盖评测 | `plan inspect-inputs` 与共享 Plan input-review；生产方法、100 Task 样例、独立 blind/grader、显式 findings 评分 | 结构预检检查成员、引用、依赖和声明；反例保留 ID 而遗漏正文，需 Critic 语义审查。离线测试只证明框架，不证明真实模型质量。 |
+| C2/C3 角色入口 | 首次派发共同 briefing 按 digest-bound manifest 解释 profile，给出 index/recover/costs；记录命令在交付方法中 | 区分 Impl/Task Verify、任务集成评审、Candidate/Goal；不增加 judge selection，不继承其他角色回执，不扩大 ACL。 |
+| C5/C6 工作记录 | 当前 result-submit 凭据下的 `artifact work-record publish/show`；实际 recovery/handoff 消费 | Task/operation/attempt/dispatch/canonical lease/workdir/input 校验，不可变 sidecar 先于事件；幂等包含证据 digest。worker 陈述没有独立 Verify 或完成权，正式提交能力不被消费。 |
+| C7 审查页面 | Plan Preview → 任务输入，Task Inputs → 查看输入成本 | 只读绑定版本，分页/任务过滤，排除与未知可见；图片定位来自声明，视觉和遗漏需独立判断。 |
+
+[生产与评测方法](../../skills/zf-plan-task-map-contract/references/task-input-production.md)、
+[操作手册](../manual/operations/context-handoff-artifacts.md)、
+[预检实现](../../src/zf/runtime/plan_input_review.py)、
+[工作记录](../../src/zf/runtime/work_record.py)、
+[离线评测脚本](../../scripts/eval-context-inputs.py)。
+五项任务的实际验证层级和实现提交记录在本批 tasks 中。
+
+新事件 `artifact.input.observed` 记录导航交付观测，`worker.work_record.published` 绑定阶段
+语义 sidecar；二者均不驱动 Task 终态或调度。没有新增 canonical Task schema、配置开关、
+状态机或全局 Memory。应用需重启 runtime/Web、重建前端；旧 manifest 保持固定版本，
+缺失 profile/观测显式未知，不回填或重写历史。离线评测不会自动调用 Provider。
+
+尚未交付：真实 Provider 盲评质量和 token/cache 成本资格、8+8 并行 qualification、
+正文 FTS/中文召回，以及 C8 实际 delta canary。触发条件沿原设计；本批静态反例、
+宿主耗时或 mock 成功不能证明这些资格已通过。
+
+后续验证启动约束（用户 2026-11-02 明确）：第三批、第四批全部完成后，才进行真实 Provider 验证；当前仅运行确定性和离线检索评测。
+
+本批 [离线检索评测](../records/2026-11-02-context-198-production-evaluation.md) 实测显式定位
+16/17 命中，权限/负例无误命中；Candidate 末尾关系因导航上限漏检，已在空结果显示
+导航不完整。完整检索和真实业务语义召回仍需后续评测，不由本批确定性测试宣称通过。

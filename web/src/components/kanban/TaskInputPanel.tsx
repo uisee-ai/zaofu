@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { TaskInputCosts } from "./TaskInputCosts";
 import { cachedGetJson } from "../../api/queryClient";
 
 interface InputEntry {
@@ -15,6 +16,7 @@ interface InputIndex {
   items: InputEntry[]; next_cursor: string | null;
   lifecycle?: { status: string; requires_rebind?: boolean };
   recovery_command?: string;
+  navigation_complete?: boolean | null;
 }
 const bytes = (value: number | null) => value == null ? "unknown" : `${value.toLocaleString()} B`;
 
@@ -46,6 +48,7 @@ export function TaskInputPanel({ attemptId, projectId }: { attemptId: string; pr
       {attemptId && <button type="button" onClick={() => { setCursor(null); setReload(value => value + 1); }}>刷新输入</button>}
     </div>
     {!attemptId ? <p className="empty-text">当前任务没有绑定的派发输入。</p> : <>
+      <TaskInputCosts key={`${projectId}:${attemptId}`} attemptId={attemptId} projectId={projectId} />
       <p className="muted">仅显示此派发授权的输入目录；目录、历史回执均不证明当前已理解正文。Provider token/cache 未观测。</p>
       <form onSubmit={event => { event.preventDefault(); setQuery(draft); setCursor(null); }}>
         <label>来源 / 路径 / 需求 ID / 章节 <input aria-label="输入定位" value={draft} maxLength={256} onChange={event => setDraft(event.target.value)} /></label>
@@ -62,6 +65,7 @@ export function TaskInputPanel({ attemptId, projectId }: { attemptId: string; pr
           <p>在绑定此派发的 worker 会话中查看恢复清单。检查点和历史已读均不代表当前记忆，也不授予执行权限。</p>
           <pre className="text-block">{data.recovery_command}</pre>
         </details>}
+        {data.navigation_complete === false && <p role="alert">授权范围的导航未完整建立；未命中仍需核对固定原文。</p>}
         {!data.items.length && <p className="empty-text">没有匹配的授权输入；不代表项目没有相关需求。</p>}
         {data.items.map(item => <details key={item.locator_id ?? `${item.occurrence_id}:${item.json_path}`}>
           <summary><span className="mono">{item.source_id} · {item.json_path}{item.navigation && ` · ${item.navigation.id ?? item.navigation.title}`}</span> — {item.required == null ? "必读政策未知" : item.required ? "必读" : "按需"} · {bytes(item.selected_bytes)}</summary>

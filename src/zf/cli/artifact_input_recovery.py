@@ -2,6 +2,7 @@
 import argparse
 import json
 import sys
+from time import perf_counter
 
 from zf.core.config.loader import ConfigError
 from zf.core.config.project_context import resolve_project_context
@@ -15,6 +16,7 @@ from zf.runtime.artifact_read_requirements import required_reads_for_attempt
 
 
 def run_input_recovery(args: argparse.Namespace) -> int:
+    started = perf_counter()
     try:
         context = resolve_project_context(explicit_state_dir=args.state_dir)
         manifest = load_attempt_source_manifest(context.state_dir, args.attempt)
@@ -34,5 +36,8 @@ def run_input_recovery(args: argparse.Namespace) -> int:
     except (ConfigError, OSError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps(result, ensure_ascii=False))
+    output = json.dumps(result, ensure_ascii=False)
+    print(output, flush=True)
+    from zf.runtime.artifact_input_costs import record_input_observation
+    record_input_observation(log, manifest, identity, kind="recovery", output=output, elapsed_ms=(perf_counter()-started)*1000)
     return 0

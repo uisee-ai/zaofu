@@ -299,6 +299,22 @@ class SemanticResultSubmitService:
             adapters=self.registry,
         )
 
+    def authorize_running_operation(
+        self, operation_id: str, *, role_instance: str, credential: str,
+    ) -> tuple[dict[str, Any], Mapping[str, Any]]:
+        """Authorize nonterminal work records with the existing submit binding.
+
+        This does not consume the final-result capability or admit a result.
+        """
+        operation = load_workflow_operation(self.event_log, operation_id)
+        if operation is None or operation.get("status") != "running":
+            raise ResultSubmitError("operation_not_running", "work record requires a running operation")
+        request = self._request_body(operation).get("request")
+        if not isinstance(request, Mapping):
+            raise ResultSubmitError("request_invalid", "operation request body is missing")
+        self._authorize(operation=operation, request=request, role_instance=role_instance, credential=credential)
+        return dict(operation), request
+
     def validate_plan_candidate(
         self,
         *,

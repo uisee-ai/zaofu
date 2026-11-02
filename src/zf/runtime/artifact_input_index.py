@@ -51,9 +51,11 @@ def input_index(
     from zf.runtime.artifact_read_ledger import required_read_satisfied
     from zf.runtime.cli_command import zf_cli_cmd
     from zf.runtime.artifact_navigation import matching_navigation
+    from zf.runtime.artifact_role_inputs import role_input_view
 
     attempt = str(manifest.get("attempt_id") or "")
     items = []
+    navigation_states = []
     for source in manifest.get("sources", []):
         if not artifact_access_allowed(source.get("access_scope"),
                 actor=identity.get("actor", ""), role=identity.get("role", ""), purpose=identity.get("purpose", "")):
@@ -70,6 +72,7 @@ def input_index(
             locator_match = query.casefold() in locator.casefold()
             snapshot = next((s for s in source.get("read_selections", []) if s.get("json_path") == path), {})
             navigation = snapshot.get("navigation") or {}
+            navigation_states.append(navigation.get("complete"))
             matches = matching_navigation(navigation, relation_id=relation_id,
                 query="" if locator_match else query)
             policy = next((row for row in requirements if row.get("json_path", "$") == path), None)
@@ -129,6 +132,8 @@ def input_index(
         "manifest_sha256": canonical_json_sha256(manifest),
         "scope": "authorized_attempt_inputs", "query_mode": "literal_locator",
         "relation_id": relation_id, "lifecycle": lifecycle or {"status": "unknown"},
+        "role_input": role_input_view(manifest),
+        "navigation_complete": (all(navigation_states) if navigation_states and None not in navigation_states else None),
         "recovery_command": f"{zf_cli_cmd()} artifact recover --attempt {shlex.quote(attempt)}",
         "total": len(items), "items": [], "next_cursor": None,
         "coverage": "manifest_only", "body_read_evidence": False,

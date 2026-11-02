@@ -103,12 +103,22 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     from zf.cli.artifact_input_recovery import run_input_recovery
 
     recover_cmd.set_defaults(func=run_input_recovery)
+    costs = sub.add_parser("costs", help="Inspect attempt input costs without inferring provider savings")
+    costs.add_argument("--attempt", required=True)
+    costs.add_argument("--state-dir", default=None)
+    costs.add_argument("--compare", help="Compare a compatible prior costs JSON report")
+    from zf.cli.artifact_input_costs import run_input_costs
+
+    costs.set_defaults(func=run_input_costs)
+    from zf.cli.work_record import register as register_work_record
+    register_work_record(sub)
 
     read_cmd = sub.add_parser(
         "read",
         help="Read one attempt input and append read evidence",
     )
     read_cmd.add_argument("--attempt", required=True, help="Attempt or dispatch id")
+    read_cmd.add_argument("--reason", choices=["initial", "recovery", "retry", "unspecified"], default="unspecified")
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
     read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded, deduplicated pages")
@@ -223,6 +233,8 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 
 
 def _run_attempt_read(args: argparse.Namespace) -> int:
+    from time import perf_counter
+    started = perf_counter()
     try:
         required = getattr(args, "required", False)
         if getattr(args, "resume", False) and (not required or getattr(args, "cursor", None)):
@@ -269,6 +281,8 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                 cursor=getattr(args, "cursor", None) or None, page_bytes=args.page_bytes,
                 resume=getattr(args, "resume", False),
             )
+            for row in receipts:
+                row.update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
             emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
             return 0
         result = read_attempt_artifact(
@@ -303,6 +317,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         output = result["content"]
     from zf.runtime.artifact_output_delivery import emit_artifact_output
     try:
+        result["read"].update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
         emit_artifact_output(context.state_dir, output, [result["read"]], sys.stdout)
     except OSError as exc:
         print(f"Error: {exc}", file=sys.stderr)

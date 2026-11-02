@@ -79,3 +79,42 @@ test("relations and stale lifecycle explain bounded recovery without silently re
   await expect(page.getByTestId("input-recovery-entry")).toContainText("artifact recover --attempt same-attempt");
   await expect(page.getByTestId("input-recovery-entry")).toContainText("不授予执行权限");
 });
+
+test("input costs load on demand, explain unknown billing and isolate project", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/projects/*/attempts/*/inputs?*", route => route.fulfill({ json: body("PINNED") }));
+  await page.route("**/api/projects/*/attempts/*/input-costs", route => {
+    calls++;
+    return route.fulfill({ json: {
+      actor: route.request().url().includes("/second/") ? "verify-2" : "dev-1",
+      produced_body_bytes: 2048, repeated_exact_body_bytes: 1024, read_deliveries: 2,
+      source_bytes: 10000, selected_bytes: 1024, host_read_ms: 1.5,
+      read_bytes_by_reason: { initial: 1024, recovery: 1024 },
+      navigation: { observed_calls: 1, output_bytes: 800, host_ms: 2 },
+      provider_usage: { input_tokens: 100, output_tokens: 50, cache_read_tokens: 200,
+        estimated_usd: null, provider_reported_usd: null, billed_usd: null },
+    } });
+  });
+  await page.goto("/tests/task-inputs.html");
+  await expect(page.getByTestId("task-input-panel")).toContainText("PINNED");
+  expect(calls).toBe(0);
+  await page.getByRole("button", { name: "查看输入成本" }).click();
+  const panel = page.getByTestId("task-input-costs");
+  await expect(panel).toContainText("消费者 dev-1");
+  await expect(panel).toContainText("恢复 1024 B");
+  await expect(panel).toContainText("账单 $未观测");
+  await expect(panel).toContainText("不能按正文字节推算 token 节约");
+  await page.getByRole("button", { name: "切换项目" }).click();
+  await expect(panel).not.toContainText("消费者 dev-1");
+  await page.getByRole("button", { name: "查看输入成本" }).click();
+  await expect(panel).toContainText("消费者 verify-2");
+});
+
+test("empty lookup warns when authorized navigation was truncated", async ({ page }) => {
+  await page.route("**/api/projects/*/attempts/*/inputs?*", route => route.fulfill({ json: {
+    ...body(""), items: [], total: 0, navigation_complete: false,
+  } }));
+  await page.goto("/tests/task-inputs.html");
+  await expect(page.getByRole("alert")).toContainText("导航未完整建立");
+  await expect(page.getByTestId("task-input-panel")).toContainText("不代表项目没有相关需求");
+});

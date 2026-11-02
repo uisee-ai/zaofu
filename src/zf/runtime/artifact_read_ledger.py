@@ -595,14 +595,15 @@ def render_attempt_source_briefing(
     from zf.runtime.cli_command import zf_cli_cmd
 
     cli_command = zf_cli_cmd()
+    from zf.runtime.artifact_role_inputs import render_role_input_entry
     lines = [
         "## Controlled Artifact Inputs",
         "",
         f"- source_manifest_ref: `{ref}`",
         f"- attempt_id: `{attempt_id}`",
         f"- Index: `{cli_command} artifact index --attempt {attempt_id}`. "
-        "Locators only, not read evidence; --query / --cursor.",
-        "- Read required inputs with the exact commands below.",
+        "Locators only, not read evidence.",
+        render_role_input_entry(payload, state_dir),
         (
             "- Run one literal command per tool call; no variables, aliases, "
             "loops, pipes, redirections, substitutions, or compound commands "

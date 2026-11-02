@@ -336,6 +336,14 @@ class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
             lifecycle=input_lifecycle(manifest, events),
         )
 
+    def attempt_input_costs(self, attempt_id: str, *, context: QueryContext) -> dict[str, Any]:
+        from zf.runtime.artifact_input_index import load_attempt_source_manifest
+        from zf.runtime.artifact_input_costs import input_cost_report
+        return input_cost_report(state_dir=self.state_dir,
+            manifest=load_attempt_source_manifest(self.state_dir, attempt_id),
+            identity={"actor": context.actor, "role": context.role, "purpose": context.purpose},
+            events=self._events(), reads=self._read_rows(attempt_id))
+
     def attempt_inspect(
         self,
         attempt_id: str,

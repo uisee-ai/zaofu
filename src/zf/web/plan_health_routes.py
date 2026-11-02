@@ -129,4 +129,25 @@ def build_plan_health_router(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return PlainTextResponse(content, headers={"X-Content-Type-Options": "nosniff"})
 
+    @router.get("/api/projects/{project_id}/plans/{plan_id}/input-review")
+    def plan_input_review(project_id: str, plan_id: str, task: str = "", offset: int = 0, limit: int = 5) -> dict:
+        ctx = resolve_ctx(project_id)
+        if ctx is None:
+            raise HTTPException(404, "unknown project")
+        from zf.core.events.factory import event_log_from_project
+        from zf.runtime.operator_plan_preview import build_plan_preview
+        from zf.runtime.plan_preview_artifacts import read_preview_artifact
+        from zf.runtime.plan_input_review import inspect_plan_inputs, PORTS
+        import json
+        try:
+            events = event_log_from_project(ctx.state_dir, config=ctx.config).read_all()
+            preview = build_plan_preview(ctx.state_dir, events, plan_id=plan_id, project_root=ctx.project_root)
+            bindings = preview.get("artifacts", [])
+            artifacts = {row["name"]: json.loads(read_preview_artifact(row["ref"], state_dir=ctx.state_dir,
+                project_root=ctx.project_root, digest=row["sha256"])) for row in bindings if row["name"] in PORTS}
+            report = inspect_plan_inputs(artifacts, task_id=task, offset=offset, limit=limit, bindings=bindings, plan_id=plan_id)
+            return report
+        except (OSError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     return router

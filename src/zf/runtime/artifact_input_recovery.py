@@ -51,8 +51,13 @@ def build_input_recovery(
         "instructions": "History and checkpoints do not prove current memory. Revalidate identity, workdir and lease; "
                         "consume all required bodies needed after compaction/session change. Use --resume only while current-session material remains available.",
     }
+    from zf.runtime.work_record import current_work_record
+    result["work_record"] = current_work_record(state_dir, events, manifest, identity.get("actor", ""))
+    if result["work_record"].get("status") == "bound":
+        op = shlex.quote(str(result["work_record"]["operation_id"]))
+        result["commands"]["work_record_read"] = f"{prefix} work-record show --operation {op}"
     if not lifecycle["requires_rebind"]:
-        result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required"
+        result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required --reason recovery"
     result["next_action"] = "request_controlled_rebind" if lifecycle["requires_rebind"] else "reconstruct_required_inputs"
     # The embedded index stays paginated; the recovery response itself, including
     # checkpoint metadata and command envelope, has the same byte budget.
