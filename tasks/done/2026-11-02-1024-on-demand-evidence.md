@@ -1,6 +1,6 @@
 # 可追溯的按需证据读取和增量恢复
 
-> 状态: active
+> 状态: done；实现：`c86f1d0c fix: preserve interrupted plan review context`，`035af25b feat: constrain scoped plan review to verified evidence`
 
 ## 问题与目标
 
