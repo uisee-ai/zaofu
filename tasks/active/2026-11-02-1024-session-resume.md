@@ -20,3 +20,9 @@ LS 恢复中已结算 operation、活动 session 和工作树容易混淆；复�
 - 当前仅覆盖受控停止后的 reader / fanout synth operation 和其原有请求重驱；活跃租约、已结算同级及幂等重驱有确定性测试。现有会话定位不能证明任意任务的计划、合同和工作树基线仍匹配。
 - 控制面自身的目标交付对未知副作用保守处理，有 `tests/test_goal_delivery_recovery.py` 覆盖；但 Provider 内任意工具调用是否完成无法由恢复提示机械保证。不得将提示词当作无重复副作用证明。
 - 未完成：为各类可恢复写操作建立冻结合同/计划/工作区身份和 Provider 工具调用终结证据，无法证明时阻止自动重发并给出受控人工核对路径；再补跨变更、活跃租约、未知工具结果和真实调用方组合测试。真实 Provider E2E 尚未运行。
+
+## 本次验证发现的既有问题
+
+- `scripts/dev-verify.py run --base dev --workers 4 --keep-going`：14,066 通过、20 跳过、7 失败；串行层 10 通过。`test_feishu_channel_progress_card.py::test_confirm_click_is_wired_to_real_controlled_action` 在原始 dev 基线同样失败，需另行排查飞书受控动作的确认行为。
+- `test_channel_group_product_mock_e2e.py::test_channel_prd_evaluation_task_workflow_run_and_receipt_continuation` 在原始 dev 也失败：mock 流程启动检查依赖未登录的 Claude。需使 mock 环境不依赖真实 Provider 登录，或明确分离真实 Provider 层。
+- 新 worktree 中四项 `test_export_public.py` 因未被 Git 跟踪的 `tools/export-public.sh` 缺失而失败；`test_prompt_source_closure.py` 因未跟踪的 `prompt/2026-08-05-1559-kanban-agent-five-workflow-real-e2e.md` 缺失而失败。需修复新 checkout 的测试依赖闭包，不把本地忽略文件当成可分发输入。
