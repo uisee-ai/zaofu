@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — a20c9b33 fix: route blocked task reviews with current goals
 
 # OA 阻塞发现、分诊、修复与恢复闭环
 
