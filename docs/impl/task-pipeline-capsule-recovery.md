@@ -88,6 +88,8 @@ Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须�
 
 Task Pipeline operation 因 `usage_samples` 达限时，Owner 可针对该 operation 显式修订采样上限：`zf goal set --status active --operation <id> --operation-max-usage-samples <非负整数> --reason '<批准依据>'`。零表示取消该上限；非零值必须高于阻断时的累计采样数，不修改其他 operation 或冻结请求。之后用 `zf recover workflow --dry-run --json` 检查对应 checkpoint，再以 `--resume-pending --checkpoint-id <id>` 受控恢复。运行时只接受该 operation 的预算阻断之后、由正式恢复链准入的修订；继续沿用原计量基线，并在达到修订后非零上限时再次阻断。美元定价未知不等于零成本；不可通过此入口修订美元限额。
 
+Reader fanout 因派发丢失复用同一 operation 时，重试 briefing 使用该 operation 经准入修订后的有效预算。仅当先前派发与 fanout、child、角色和已知 trace 一致时，才复用其 operation 身份；缺少身份的旧派发不跨任务借用其他 operation 的预算。冻结配置与历史事件不被改写。
+
 Owner 明确要求对同一 Run 后续 operation 一并修改时，可在上述命令增加 `--all-run-operations`；受控恢复准入后同一 Run 的 operation 使用该采样上限，其他 Run 和其他预算维度不受影响。原冻结请求和历史用量记录不改写。
 
 Reader fanout 的新派发及受控重派在生成执行边界说明时，读取与预算守卫相同的 operation 有效限额（含已准入的同 Run 修订），不再把旧 profile 的采样数当作当前限制。profile digest 仍标识原配置；operation 身份或限额不可读取时拒绝派发，历史 briefing 不改写。
