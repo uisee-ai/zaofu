@@ -1,15 +1,15 @@
-# C2/C3：角色输入入口统一
+# C1：输入成本与交付基线
 
-> 状态: active
+> 状态: done
 
 用户已批准“拆分成上面说的5项backlog 继续实施”。基线 `1a1989cc`，本批分支 `wip/codex-20261102-context-198-production`。
 来源：[设计 198](../../docs/design/198-context-index-write-read-resume.md)。
 
-在首次派发与恢复的共同 briefing 路径给出角色输入范围、必读政策、目录及受控补读命令。Impl/Task Verify 沿用已批准选择；任务评审、Candidate 与 Goal 按实际 profile 解释，保持既有必读义务。
+关联当前 attempt 的授权来源、读取与输出账本、operation usage；新增有界成本报告和对照入口，区分来源/选择/索引/交付字节、重复页、恢复、独立角色、Provider 实测与未知。不得按字节比例伪造 token 归因。
 
-- [x] 同 Task 的 Impl/Verify/任务评审 -> verify: 来自绑定 manifest/profile，Verify 不继承 Impl 回执；首次 briefing 与恢复入口一致。
-- [x] Candidate/Goal 与旧版输入 -> verify: 明示候选/目标范围和未知信息，不因角色显示名推断成单 Task，也不擅加 judge selection。
-- [x] CLI/实际 dispatch caller -> verify: 可用当前凭据定位必读，目录不扩大 ACL，不重复灌入整份正文。
+- [x] 当前 attempt 多页/重复/别名 -> verify: 去重口径明确，其他 actor/attempt 不混入；导航不会生成正文回执。
+- [x] operation usage 有/无/重复样本 -> verify: 有证据才显示实测 input/cache/output，估算费用与 Provider 上报分离，未知不记 0。
+- [x] 同材料及验收范围前后对照 -> verify: 身份/选择/验收绑定不兼容时拒绝收益比较；CLI/API/Task Inputs 可查看报告。
 
 ## 验证与完成记录
 
@@ -30,4 +30,4 @@
 - manual docs currentness、技能三份同步及 git diff 检查通过。无真实 Provider / host E2E；运行中不变更 FMS/ls。
 - 影响闭包排除了既有环境传感器 `tests/e2e/test_channel_group_product_mock_e2e.py::test_channel_prd_evaluation_task_workflow_run_and_receipt_continuation`：前批已在 pristine dev 869f7aa0 复现本机 Claude 未登录导致 409。本批不调整该基线，不将此项记为通过。
 
-实现提交：在实现 commit 后由归档记录写入。
+实现提交：`a33fdd3b feat: add task input production review and recovery accounting`。

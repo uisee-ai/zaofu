@@ -1,6 +1,6 @@
 # C5/C6：结构化工作记录与恢复
 
-> 状态: active
+> 状态: done
 
 用户已批准“拆分成上面说的5项backlog 继续实施”。基线 `1a1989cc`，本批分支 `wip/codex-20261102-context-198-production`。
 来源：[设计 198](../../docs/design/198-context-index-write-read-resume.md)。
@@ -30,4 +30,4 @@
 - manual docs currentness、技能三份同步及 git diff 检查通过。无真实 Provider / host E2E；运行中不变更 FMS/ls。
 - 影响闭包排除了既有环境传感器 `tests/e2e/test_channel_group_product_mock_e2e.py::test_channel_prd_evaluation_task_workflow_run_and_receipt_continuation`：前批已在 pristine dev 869f7aa0 复现本机 Claude 未登录导致 409。本批不调整该基线，不将此项记为通过。
 
-实现提交：在实现 commit 后由归档记录写入。
+实现提交：`a33fdd3b feat: add task input production review and recovery accounting`。
