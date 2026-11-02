@@ -1,6 +1,7 @@
 # 检索公共元数据去重与分页
 
-> 状态: active
+> 状态: done
+> 实现提交: 87b49487 fix: complete task input navigation and compact retrieval pages
 
 来源：[设计 198](../../docs/design/198-context-index-write-read-resume.md) 及第三批评测。基线 `0c11ebd7`。
 

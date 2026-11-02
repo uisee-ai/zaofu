@@ -1,12 +1,13 @@
-# 完整召回、精度与输出成本评测
+# 完整索引与尾部精确定位
 
-> 状态: active
+> 状态: done
+> 实现提交: 87b49487 fix: complete task input navigation and compact retrieval pages
 
 来源：[设计 198](../../docs/design/198-context-index-write-read-resume.md) 及第三批评测。基线 `0c11ebd7`。
 
-- [x] 独立预期集合与实际集合对账 -> verify: 统计遗漏、误项、重复、截断、精度/召回率及整查询输出；人工注入缺项/错项会判失败，不能仅凭非空结果通过。
-- [x] 100/1000 Task 多角色查询与边界样例 -> verify: 已授权明确 Task/AC 精确定位、共享引用结果完整率 100%；自然语言能力边界单列，旧版作为真实对照。
-- [x] 可复现实测与任务归档 -> verify: 报告前后同材料/查询/权限与逐项结果、构建/查询耗时及字节；不把宿主收益作为 Provider token 收益。
+- [x] 分块建立完整显式关系/章节索引，固定版本及可恢复引用 -> verify: 100/1000 Task 的头/中/尾、所有 Task/AC 与共享来源完整命中，单页仍受字节预算约束。
+- [x] 角色/occurrence/selector 授权及旧 manifest -> verify: ACL 先于索引读取，相同 digest 不合并权限；旧版截断索引可以从固定原文恢复，不静默换版本或伪报完整。
+- [x] 派发/目录/恢复生产调用链 -> verify: CLI/API 实际调用新索引，缺块/坏块/中断显式处理；索引不生成正文回执，不改变 required reads。
 
 本批不启用全文/向量检索或实际 delta，不修改 FMS/ls 运行状态。真实 Provider 资格另行按第三、第四批完成后的约定执行；本批只做确定性和离线检索。
 
