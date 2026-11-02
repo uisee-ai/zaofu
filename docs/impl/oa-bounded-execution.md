@@ -81,6 +81,9 @@ Plan 包校验，不能用全局最新包误拒绝仍生效的任务。任务自
 对应回归在 `tests/test_orchestrator_agent_plan_binding.py`。
 Impl 结算后 Task 的活跃 dispatch 可以清空；OA 从已核对仍为当前且 settled 的
 目标 operation 取回 attempt 绑定，不依赖任务继续占有执行槽位。
+`return_to_plan` 的后续触发同样绑定已接纳 OA 决定的 Plan 包，不能重新替换为
+全局最新包。恢复扫描会识别历史触发与该不可变基线不一致的情况；去重键包含 OA
+基线和决定引用，使正确触发恰好补发一次。普通 candidate replan 仍使用最新包。
 
 ## 只读观测
 
