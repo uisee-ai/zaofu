@@ -1,6 +1,6 @@
 # 历史诊断请求的因果当前性对账
 
-> 状态: active
+> 状态: done；实现 `6b4fff28 fix: release obsolete unbridged diagnostic requests`
 
 ## 事实与边界
 
