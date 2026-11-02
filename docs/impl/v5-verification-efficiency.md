@@ -109,6 +109,9 @@ Workflow operation 详情展示 Kernel 预算事件绑定的累计处理量、�
   正文复制进事件，不把旧格式字符串或不识别的对象提升为带校验的 sidecar。
   无显式 Run 时，诊断请求沿用当前 operation precondition 中已绑定的 Run 和 generation；
   不从其他上下文猜测，显式 Run 与前置条件不一致时也不借用另一 Run 的 generation。
+- `incident-reproduction` 方法要求按来源 state 和事件 ID 使用 `zf events` 查询；该入口包含
+  轮转归档。`events.jsonl#<event-id>` 是逻辑 ledger 引用，不能因活动文件中缺少事件就认定
+  原始证据不存在。仍按原 state 校验 sidecar 描述符与摘要，不改变源数据或省略验收。
 
 ## 验证边界
 

@@ -18,3 +18,5 @@ LS 的历史诊断 `ar-stage-replan-a1992dd5b6b40c11`、`ar-stage-replan-9412553
 - 默认 `LoopConfig -> run_iteration -> AutoresearchRunConfig` 使用 PRD Flow，`incident-reproduction` 的 seed 包含原事件上下文与独立复现/验证要求；四次预算失败发生在内层 Planner/tech-scan。既有预算 guard 明确把 cache_read 纳入 token 用量，不能称其为计费错误或仅凭用量改预算口径。
 - 需要验证是否可利用已注册的适配路线和有界上下文完成同等的故障复现与独立验证；在取得等价证据前不改默认流程或降低门禁。
 - 后续实际诊断 `rmar-bd116d51bd21` 的隔离 Planner 再次因 operation token 超限失败（1,563,452 / 1,500,000，其中 cache_read 1,504,384，usage_samples 12；终态 `evt-0b75f3618336`）。诊断引用链的结构化丢失已单独修复，但它不能证明预算问题的因果或成本改善。
+- 针对 `rmar-bd116d51bd21` 实际追溯：最初 Planner 的 `fanout.child.failed evt-8d685599a90a` 为 abstained，称源事件不在活动文件；事件实际在源 state 的归档中，执行 `zf events --id evt-b728d435b9c5 --state-dir <源state> --json` 可从隔离实验工作树读到。后续重规划 operation 才触发 token 上限。场景方法已补充归档感知查询，但其真实模型效果和预算能否通过仍待验证。
+- 该诊断二次 Planner 的 briefing 39,268 字节、5 项 required / 22 项来源；12 条 usage 样本的 operation 增量包括 54,251 fresh input、1,504,384 cache read、4,817 output（subscription，未计价）。不能把缓存量直接解释为账单、断言全部由某个文件导致，或把必读数与最终验收范围等同。
