@@ -1,6 +1,6 @@
 # 终态任务尝试不应产生虚假续租心跳
 
-> 状态: active
+> 状态: done — `5eeecdc7 fix: suppress heartbeat for terminal attempts`
 
 ## 证据
 
@@ -11,3 +11,8 @@ LS 的已失败 attempt `ta-405ffa44a2333c1a5d43` 与 `ta-b9bf7ab4f5f624450e78` 
 1. 重现已终结 attempt 收到 usage/heartbeat -> verify: 不续租、不发新的 attempt 心跳，原用量和终态保持可查询。
 2. 活动 attempt 收到合法身份的心跳 -> verify: 租约更新且恰好生成关联来源的心跳；错误身份及竞态下终态不获续租。
 3. 运行相关模块、调用方、store 及运行时事件契约验证 -> verify: 定向回归、影响闭包、sentinel 和 mock E2E 通过；部署后核对真实监控及在途 Planner。
+
+## 验证
+
+- 影响闭包 739 passed、串行 4 passed、premerge sentinel 53 passed、flow smoke 10 passed；合并后定向 35 passed。
+- LS 控制面加载后，重读原有历史样本 `evt-1a62516861e0`、`evt-1322bacb8d41`，未生成相应的 terminal attempt 心跳；原始用量和已失败状态保留。Planner 原会话保留，但业务计划仍未完成。
