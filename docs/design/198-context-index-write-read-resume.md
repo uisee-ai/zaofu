@@ -712,3 +712,9 @@ occurrence 权限再给标题、计数和游标；相同 digest 不合并权限�
 不需要重建历史 manifest，不新增 canonical schema、调度状态、配置或阅读豁免。
 指标仅覆盖合成声明关系、ACL 与固定版本恢复；正文 FTS/中文语义召回、视觉评审、
 8+8 并行资格、真实 Provider 成本及实际 delta canary 不由本批离线结果证明。
+
+
+第三、第四批归档后完成 [真实 Provider 配对盲评](../records/2026-11-02-context-198-provider-evaluation.md)：
+`gpt-6.1-terra / high` 在全 100 Task 与 T1+shared 两种输入下均通过 5/5 个合成案例，
+输入 token 71,353 → 15,915。它补充了真实调用证据，但没有完成生产全角色/8+8、视觉、
+冷缓存账单或实际 delta 资格；此前“待真实 Provider”仅对这次有限盲评解除。
