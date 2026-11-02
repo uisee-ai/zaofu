@@ -7,6 +7,10 @@ OA 决定 evt-0725b33d8f79 被接纳并应用为 return_to_plan，目标 DL-FOUN
 精确基线为 77a994dd / 802b81ab。重规划生成器却把触发 evt-ec8175478249
 替换成全局基线 4e6df815 / e24218ed，导致 Planner 在进入模型前失败：
 `replan OA decision differs from baseline identity`。该结构故障随后触发 Run 阻塞。
+修正触发后，真实预注册还复现全局包 currentness 误拒绝；补充 Plan-domain 按输入
+基线代次验证，并将回归推进到 prepare_call_operation 实际入口。
+只读预览也证实 Owner stage recovery 会再次替换基线；同批改为取同 Run、
+同决定引用的 Kernel 重规划记录。测试覆盖授权恢复之后的完整 operation 预注册。
 
 ## 验收
 

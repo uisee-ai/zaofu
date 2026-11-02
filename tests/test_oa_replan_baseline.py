@@ -42,6 +42,67 @@ def test_return_to_plan_reader_can_consume_retained_task_authority(tmp_path):
     assert "plan-rework-decision" in {r["source_id"] for r in refs}
 
 
+def _preregister(runtime, trigger, **identity):
+    from zf.runtime.call_result_runtime import prepare_call_operation
+
+    refs = build_plan_handoff_input_refs(
+        state_dir=runtime.state_dir, project_root=runtime.project_root, payload=trigger.payload,
+    )
+    return prepare_call_operation(
+        runtime, payload={**trigger.payload, "role_instance": "planner", "attempt_domain": "plan",
+            "input_refs": refs, "fanout_id": "fanout-scoped-replan", "child_id": "planner",
+            "canonical_success_event": "prd.plan.child.completed",
+            "canonical_failure_event": "prd.plan.child.failed", **identity},
+        operation_type="fanout_reader_child", operation_key="scoped-planner",
+        stage_id="prd-plan", task_id="", dispatch_id="scoped-planner-attempt",
+    )
+
+
+def test_retained_baseline_passes_actual_reader_operation_preregistration(tmp_path):
+    runtime, _marker, trigger = _replan(tmp_path)
+    prepared = _preregister(runtime, trigger)
+    assert prepared.operation_id
+
+
+@pytest.mark.parametrize("identity", [
+    {"task_map_generation": "unadmitted"},
+    {"plan_artifact_package_digest": "wrong-digest"},
+])
+def test_reader_preregistration_rejects_unproven_baseline(tmp_path, identity):
+    from zf.runtime.artifact_read_ledger import ArtifactReadError
+
+    runtime, _marker, trigger = _replan(tmp_path)
+    with pytest.raises(ArtifactReadError):
+        _preregister(runtime, trigger, **identity)
+
+
+def test_authorized_stage_recovery_restores_exact_oa_marker_baseline(tmp_path):
+    from zf.runtime.stage_failure_replan import plan_reader_stage_replan
+
+    runtime, _marker, trigger = _replan(tmp_path)
+    runtime.config.workflow.stages = [SimpleNamespace(
+        id="prd-plan", flow_kind="prd", topology="fanout_reader", attempt_domain="plan",
+        trigger=trigger.type, failure_event="", aggregate=SimpleNamespace(failure_event="prd.plan.failed"),
+    )]
+    runtime.event_writer.append(ZfEvent(type="fanout.started", payload={
+        "workflow_run_id": "run-semantic-1", "stage_id": "prd-plan",
+        "fanout_id": "failed-replan", "trigger_event_id": trigger.id,
+    }))
+    failure = runtime.event_writer.append(ZfEvent(type="prd.plan.failed", payload={
+        **trigger.payload, "fanout_id": "failed-replan", "trigger_event_id": trigger.id,
+        "failure_class": "harness_failure", "task_map_generation": "g2",
+        "plan_artifact_package_id": "new-package", "plan_artifact_package_ref": "new-package.json",
+        "plan_artifact_package_digest": "new-digest",
+    }))
+    recovered, reason = plan_reader_stage_replan(
+        runtime.config, runtime.event_log.read_all(), failure,
+        authorized_generation="owner-approved-recovery",
+    )
+    assert recovered is not None, reason
+    assert recovered.payload["task_map_generation"] == "g1"
+    assert _preregister(runtime, recovered).operation_id
+
+
 def test_wrong_historical_binding_is_repaired_once_without_replaying_correct_trigger(tmp_path):
     runtime, marker, trigger = _replan(tmp_path)
     events = runtime.event_log.read_all()
