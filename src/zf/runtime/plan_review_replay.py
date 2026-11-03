@@ -24,6 +24,14 @@ def remove_replayed_scoped_read_projection(
     if not isinstance(descriptor, Mapping) or descriptor.get("sha256") != request.get("read_policy_digest"):
         return
     policy = hydrate_sidecar_ref(runtime.state_dir, dict(descriptor)).payload
+    if (policy.get("attempt_id") == attempt_id and policy.get("required_reads") == projected
+            and any(isinstance(row, Mapping) and row.get("artifact_id") == "unchanged-plan-review.json"
+                    for row in projected)):
+        from zf.runtime.plan_local_review_output import _scoped_policy
+
+        if _scoped_policy(runtime, operation):
+            payload.pop("required_reads", None)
+            return
     scoped_sources = {
         str(row.get("source_id") or "") for row in projected if isinstance(row, Mapping)
         and str(row.get("source_id") or "").startswith("child-artifact-")

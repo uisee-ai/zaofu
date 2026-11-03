@@ -3348,6 +3348,8 @@ def test_plan_candidate_briefing_validates_before_submit(
     assert briefing.count("result validate") == 1
     assert briefing.count("result submit") == 1
     assert briefing.index("result validate") < briefing.index("result submit")
+    assert "--summary" in briefing
+    assert "omit `--summary`" in briefing
     assert "does not consume the submit capability" in briefing
     assert "Effective Plan Admission Policy (kernel-pinned)" in briefing
     assert "maximum scope paths per task: `12`" in briefing

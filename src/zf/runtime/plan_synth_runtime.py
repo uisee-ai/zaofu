@@ -33,6 +33,7 @@ PLAN_SYNTH_HANDOFF_KEYS = (
     "plan_synth_contract_ref",
     "plan_synth_contract_digest",
     "reviewed_plan_candidate_digest",
+    "plan_review_optimization",
 )
 PLAN_SYNTH_SEMANTIC_FIELDS = (
     "failure_class",

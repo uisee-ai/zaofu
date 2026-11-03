@@ -1,5 +1,9 @@
 # Plan 生产失败的结果准入
 
+Plan 候选机械预检使用与 writer fanout 相同的 task_ids、继承和 wave 选择，
+在 Critic 派发前拒绝所选任务声明多个派发基线。预检不更改任务合同或选择基线；
+Planner 必须交付可准入的候选，独立 Critic 继续承担语义审查。
+
 Planner 的结构化结果以 `execution_status` 区分产物是否完成。生产失败可以保留
 草稿及诊断，并通过签定的 child failure event 接纳；不要求失败声明具备完整
 task map、product acceptance spec 等成功 Plan 产物，也不将失败转换为通过。
@@ -110,3 +114,38 @@ request 和读取策略；仅完全一致且确认为已生成的局部策略时
 局部审查结果进入 Plan Package 前，还必须绑定已准入的当前 Critic 结果和派发的
 operation；当前基线、需求、最终 Task Map、Plan 端口和计划正文与受审候选不一致
 时拒绝准入。该校验不会替代 Critic 的独立语义判断。
+
+计划候选已发布 `task_map.ready` 后若在 writer 准入失败，新一代重规划不会
+继承更早 trigger 的 `previous_plan_candidate_refs`；失败事件明确提供的当前候选
+引用仍可使用，当前 Task Map 和 Plan Package 身份仍按既有规则绑定。
+
+## 跨版本审查与当前上下文闭包
+
+`prepare_call_operation` 可以生成绑定旧版审查与新旧摘要的结构差异，供当前 Critic
+通过受控索引按需定位。差异与旧 verdict 都是辅助证据，不能凭此删除当前原文必读。
+此前仅凭差异移除整份端口的路径已关闭；没有可核验的影响范围时维持完整读取。
+
+仅当 Planner 的 `scoped_plan_review.v1` 与同一 Run 当前准入包、独立旧 Critic、
+kernel replan 触发的非空 task_ids、旧新 Task Map 及计划端口一致，且共享和范围外
+内容没有变化，才选择局部上下文。核验旧新依赖图，必读 shared 及受影响任务、
+前置和下游消费者的旧新正文；完整原始需求、候选 Task Map、source_index、
+coverage_ledger、source_inventory 和其他固定矩阵仍必读。来源索引与覆盖账本
+按声明机械对账：每项来源唯一且有出处、处置和任务归属，受影响任务的来源与
+验收 ID 均能沿账本回到对应来源；未知引用、缺失、重复、截断、相关未决或不明
+影响一律回退完整策略。无关任务的未来决定不因局部审查自动阻塞。
+
+范围内有图像，或存在未映射图像时，目前不能用文本读取回执证明本角色实际看过图，
+因此回退完整策略及正常视觉审查。人工/Agent 仍需从原始内容独立判断映射的语义、
+异常、图片状态和共享规则；结构和 ID 对齐不能证明这些语义完备。索引不完整或
+无命中时应回读已授权原文，不能推断需求不存在。
+
+策略、manifest、来源摘要和本次 attempt 绑定；每个必读 selector 必须有当前 attempt
+完整读取回执，缺页不能准入。旧 Provider 输出见证只证明历史交付，不证明压缩或
+切换后仍被理解。冻结中的既有请求不会原地改策略；旧的无范围差量策略与新保护
+不兼容时应通过受控恢复生成新操作，不得伪造回执。决策和验证与 TaskStore、事件
+和 sidecar 权威边界保持原样。
+
+先前 LS 副本曾将 32 项必读压至 16 项，但该实验未保障相关未变原文，不能视为当前
+安全策略的性能或质量证明。LS 当前无非空任务范围证明且共享字段发生变化，新策略
+应回退完整读取；真实 Provider 对照和视觉阅读资格仍待验证。`context_delivery` 的
+Provider session 差量仍是 shadow，与上述局部审查选择是不同机制。

@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
+
 from zf.core.config.schema import (
     FanoutAggregateConfig,
     ProjectConfig,
@@ -119,6 +121,80 @@ def _source_index() -> dict:
             "source_excerpt": "The command succeeds.",
         }],
     }
+
+
+@pytest.mark.parametrize(("selector", "expect_conflict"), [
+    ({}, True),
+    ({"task_ids": ["TASK-1"]}, False),
+    ({"task_ids": ["TASK-1", "TASK-2"]}, True),
+    ({"wave": 1}, False),
+])
+def test_plan_preflight_matches_writer_selected_baselines(tmp_path, selector, expect_conflict):
+    task_map = _task_map()
+    first = task_map["tasks"][0]
+    first.update(base_commit="a" * 40, source_refs=["git:" + "a" * 40], wave=1)
+    second = json.loads(json.dumps(first))
+    second.update(task_id="TASK-2", title="Second task", goal_claim_ids=[],
+                  allowed_paths=["src/second.py", "tests/test_second.py"], wave=2,
+                  base_commit="b" * 40, source_refs=["git:" + "b" * 40])
+    second["validation"]["commands"][0].update(
+        id="test-second", command="pytest -q tests/test_second.py", acceptance_ids=["AC-2"])
+    second["acceptance_criteria"][0].update(id="AC-2", verification_command_ids=["test-second"])
+    task_map["tasks"].append(second)
+    index = _source_index()
+    index["tasks"].append({**index["tasks"][0], "task_id": "TASK-2"})
+    result = evaluate_plan_candidate_preflight(
+        state_dir=tmp_path / ".zf", project_root=tmp_path,
+        reports=[{"report": {"task_map": task_map, "source_index": index, "plan_md": "# Plan"}}],
+        manifest={"trigger_payload": {"flow_kind": "issue", "issue_ref": "docs/issue.md", **selector}},
+        metadata={"flow_kind": "issue"},
+    )
+    errors = [e for e in result["errors"] if e["code"] == "writer_fanout_base_conflict"]
+    assert bool(errors) is expect_conflict
+    if errors:
+        assert "conflicting base_commit values" in errors[0]["message"]
+
+
+def test_writer_selection_preserves_gap_successor_and_fails_closed():
+    from zf.runtime.writer_fanout_admission import select_writer_task_items
+
+    tasks = [{"task_id": "NEW-1", "supersedes_task_ids": ["OLD-1"], "base_commit": "a" * 40},
+             {"task_id": "NEW-2", "base_commit": "b" * 40}]
+    data = {"resume_scope": "gap_tasks_only", "tasks": tasks}
+    selected, requested, _, _ = select_writer_task_items(data, tasks, {"task_ids": ["OLD-1"]})
+    assert requested == ["NEW-1"]
+    assert [task["task_id"] for task in selected] == ["NEW-1"]
+    with pytest.raises(RuntimeError, match="missing requested task_id"):
+        select_writer_task_items(data, tasks, {"task_ids": ["unknown"]})
+
+
+def test_conflicting_writer_bases_fail_before_critic_dispatch(tmp_path):
+    task_map = _task_map()
+    first = task_map["tasks"][0]
+    first.update(base_commit="a" * 40, source_refs=["git:" + "a" * 40])
+    second = json.loads(json.dumps(first))
+    second.update(task_id="TASK-2", title="Second task", goal_claim_ids=[],
+                  allowed_paths=["src/second.py", "tests/test_second.py"],
+                  base_commit="b" * 40, source_refs=["git:" + "b" * 40])
+    second["validation"]["commands"][0].update(
+        id="test-second", command="pytest -q tests/test_second.py", acceptance_ids=["AC-2"])
+    second["acceptance_criteria"][0].update(id="AC-2", verification_command_ids=["test-second"])
+    task_map["tasks"].append(second)
+    index = _source_index()
+    index["tasks"].append({**index["tasks"][0], "task_id": "TASK-2"})
+    harness = _PlanSynthHarness(tmp_path, [{"child_id": "planner", "report": {
+        "task_map": task_map, "source_index": index, "plan_md": "# Plan",
+    }}])
+    harness._dispatch_fanout_synth("fanout-plan", {
+        "fanout_id": "fanout-plan", "trace_id": "run", "stage_id": "issue-triage",
+        "trigger_event_id": "evt-input", "trigger_payload": {"flow_kind": "issue"},
+        "aggregate_config": {"success_event": "task_map.ready", "synth_role": "plan-critic"},
+        "children": [],
+    }, "wait_for_all", "plan-critic")
+    assert not harness.critic_dispatch_attempted
+    assert harness.finalized.payload["failure_class"] == "plan_candidate_preflight"
+    assert any(item.get("code") == "writer_fanout_base_conflict"
+               for item in harness.finalized.payload["report"]["findings"])
 
 
 def _plan_ports() -> list[dict]:

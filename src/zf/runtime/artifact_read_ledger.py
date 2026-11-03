@@ -611,6 +611,13 @@ def render_attempt_source_briefing(
         ),
     ]
     if required:
+        if any(isinstance(row, Mapping) and row.get("source_id") == "plan-structural-delta"
+               for row in payload.get("input_refs", [])):
+            lines.append(
+                "- The indexed Plan structural delta is an optional navigation aid, not an approval "
+                "or a substitute for current required source text. Review the requirements, shared "
+                "rules, affected tasks, dependencies and verification ownership independently."
+            )
         if (any(str(row.get("artifact_id") or "") == "scoped_plan_review.json" for row in required if isinstance(row, Mapping))
                 and any(str(row.get("source_id") or "").startswith("baseline-plan-port-") for row in required if isinstance(row, Mapping))):
             lines.append(

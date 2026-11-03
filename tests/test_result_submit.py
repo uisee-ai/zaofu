@@ -736,6 +736,56 @@ def test_result_validate_cli_is_registered() -> None:
     assert args.operation == "operation-1"
 
 
+@pytest.mark.parametrize("status", ["passed", "failed"])
+def test_result_validate_summary_bounds_output_and_preserves_verdict(tmp_path, monkeypatch, capsys, status):
+    from zf.cli import result as result_cli
+
+    outcome = {
+        "schema_version": "plan-candidate-preflight.v1",
+        "status": status,
+        "errors": [{"code": "issue", "field": "task", "message": "x" * 5000} for _ in range(30)],
+        "execution_review": {"large": "y" * 1_000_000},
+    }
+    context = SimpleNamespace(state_dir=tmp_path, config=None)
+    monkeypatch.setattr(result_cli, "resolve_project_context", lambda **_: context)
+    monkeypatch.setattr(result_cli, "event_log_from_project", lambda *_, **__: EventLog(tmp_path / "events.jsonl"))
+    monkeypatch.setattr(result_cli, "credential_from_environment", lambda: ("planner", "credential"))
+
+    class Service:
+        def __init__(self, **_kwargs):
+            pass
+
+        def validate_plan_candidate(self, **_kwargs):
+            return outcome
+
+    monkeypatch.setattr(result_cli, "SemanticResultSubmitService", Service)
+    args = build_parser().parse_args(["result", "validate", "--operation", "op", "--scratch", "--summary"])
+    assert args.func(args) == (0 if status == "passed" else 1)
+    raw = capsys.readouterr().out
+    summary = json.loads(raw)
+    assert len(raw.encode()) < 12_000
+    assert summary["status"] == status
+    assert summary["error_count"] == 30
+    assert summary["errors_omitted"] == 18
+    assert len(summary["errors"][0]["message"]) == 512
+    assert summary["details_truncated"] is True
+    assert "without --summary" in summary["full_report"]
+
+    args = build_parser().parse_args(["result", "validate", "--operation", "op", "--scratch"])
+    assert args.func(args) == (0 if status == "passed" else 1)
+    assert json.loads(capsys.readouterr().out) == outcome
+
+
+def test_result_validation_summary_handles_missing_or_unstructured_errors():
+    from zf.cli.result import _validation_summary
+
+    assert _validation_summary({"status": "failed", "errors": None})["error_count"] is None
+    summary = _validation_summary({"status": "failed", "errors": ["a" * 2000]})
+    assert summary["status"] == "failed"
+    assert summary["error_count"] == 1
+    assert len(summary["errors"][0]["message"]) == 512
+
+
 def test_result_submit_cli_accepts_operation_scratch() -> None:
     args = build_parser().parse_args([
         "result",

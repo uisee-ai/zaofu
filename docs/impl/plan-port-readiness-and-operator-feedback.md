@@ -11,6 +11,11 @@ Plan producer 的结果预检与 Critic 派发前检查共用 `plan_candidate_po
 完整来源与验收义务仍由 Planner/Critic 管理。遇到过大的补充规范，应消除重复表述，
 使用已有显式端口与按任务输入合同；不能通过删减需求或改写已接纳证据消除超限。
 
+`zf result validate --summary` 为模型提供有界预检结果：保留原状态、错误数量及最多
+12 条错误的 code、field、message（单字段最多 512 字符），并标明省略数量及完整报告
+获取方式。Planner 简报使用该选项；去掉它可重新运行同一验证命令查看完整结果。
+摘要仅改变 CLI 输出，不改变预检、准入或 Critic 必读工件；默认 CLI 输出仍是完整报告。
+
 `stage-replan-new-generation` 的原升级事件、Run 身份、授权引用及幂等约束保持不变。
 该受控动作可额外接受 `operator_feedback: list[str]`。条目必须是非空字符串；
 坏输入在恢复 Run 之前拒绝。新代际保留原失败诊断，再附加 operator 提供的文本与
