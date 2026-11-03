@@ -371,3 +371,10 @@ roles) emits the goal lifecycle: `run.goal.started`, `run.goal.updated`,
 `run.goal.quiescent.entered` / `run.goal.quiescent.exited` when the loop idles.
 Goal closure is the `run.goal.completed` signal, so a replan is truly done only
 when a clean rescan lets the loop reach it instead of `run.goal.blocked`.
+
+### 声明可导航关系
+
+生产 Task 切片时按已注册 schema 保留 requirement_ids、acceptance_ids、blocked_by/depends_on
+及 source_refs/image_refs 等显式关系；不要为导航添加 schema 不接受的字段。语义映射由
+Planner/Critic 对账，不能依赖运行时从散文猜测；目前导航只提取这些字段中的字符串引用。
+章节/关系目录只定位固定版本，导航不完整时继续核查获准正文，不将无命中视为无需求。

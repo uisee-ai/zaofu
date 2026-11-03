@@ -67,6 +67,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     from zf.cli.plan_execution import register as register_execution
 
     register_execution(sub)
+    from zf.cli.plan_input_review import register as register_input_review
+    register_input_review(sub)
+
     review = sub.add_parser("review", help="List plans awaiting review with digest and checklist")
     review.add_argument("--workflow-run-id", default=None)
     review.set_defaults(func=_run)

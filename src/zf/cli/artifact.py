@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -86,11 +85,40 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     list_cmd.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     list_cmd.set_defaults(func=_run_attempt_list)
 
+    index_cmd = sub.add_parser("index", help="Browse authorized attempt input locators without consuming bodies")
+    index_cmd.add_argument("--attempt", required=True)
+    index_cmd.add_argument("--query", default="", help="Literal filter over source, artifact, path and ref")
+    index_cmd.add_argument("--relation-id", default="", help="Exact declared Task, REQ, AC or dependency id")
+    index_cmd.add_argument("--navigate", action="store_true", help="Include declared relations and Markdown section locators")
+    index_cmd.add_argument("--cursor", default=None)
+    index_cmd.add_argument("--limit", type=int, default=50)
+    index_cmd.add_argument("--state-dir", default=None)
+    from zf.cli.artifact_input_index import run_input_index
+
+    index_cmd.set_defaults(func=run_input_index)
+    recover_cmd = sub.add_parser("recover", help="Reconstruct authorized current inputs without granting execution authority")
+    recover_cmd.add_argument("--attempt", required=True)
+    recover_cmd.add_argument("--cursor", default=None)
+    recover_cmd.add_argument("--state-dir", default=None)
+    from zf.cli.artifact_input_recovery import run_input_recovery
+
+    recover_cmd.set_defaults(func=run_input_recovery)
+    costs = sub.add_parser("costs", help="Inspect attempt input costs without inferring provider savings")
+    costs.add_argument("--attempt", required=True)
+    costs.add_argument("--state-dir", default=None)
+    costs.add_argument("--compare", help="Compare a compatible prior costs JSON report")
+    from zf.cli.artifact_input_costs import run_input_costs
+
+    costs.set_defaults(func=run_input_costs)
+    from zf.cli.work_record import register as register_work_record
+    register_work_record(sub)
+
     read_cmd = sub.add_parser(
         "read",
         help="Read one attempt input and append read evidence",
     )
     read_cmd.add_argument("--attempt", required=True, help="Attempt or dispatch id")
+    read_cmd.add_argument("--reason", choices=["initial", "recovery", "retry", "unspecified"], default="unspecified")
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
     read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded, deduplicated pages")
@@ -205,6 +233,8 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 
 
 def _run_attempt_read(args: argparse.Namespace) -> int:
+    from time import perf_counter
+    started = perf_counter()
     try:
         required = getattr(args, "required", False)
         if getattr(args, "resume", False) and (not required or getattr(args, "cursor", None)):
@@ -251,6 +281,8 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                 cursor=getattr(args, "cursor", None) or None, page_bytes=args.page_bytes,
                 resume=getattr(args, "resume", False),
             )
+            for row in receipts:
+                row.update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
             emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
             return 0
         result = read_attempt_artifact(
@@ -285,6 +317,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         output = result["content"]
     from zf.runtime.artifact_output_delivery import emit_artifact_output
     try:
+        result["read"].update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
         emit_artifact_output(context.state_dir, output, [result["read"]], sys.stdout)
     except OSError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -379,25 +412,9 @@ def _run_catalog_lineage(args: argparse.Namespace) -> int:
 
 
 def _load_attempt_source_manifest(state_dir: Path, attempt_id: str) -> dict[str, Any]:
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", str(attempt_id)).strip("-._") or "attempt"
-    root = state_dir / "artifacts" / "attempts" / safe / "source-manifests"
-    manifests: list[dict[str, Any]] = []
-    for path in sorted(root.glob("*.json")):
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(value, dict) and str(value.get("attempt_id") or "") == str(attempt_id):
-            manifests.append(value)
-    if not manifests:
-        raise ValueError(f"attempt source manifest not found: {attempt_id}")
-    canonical = {
-        json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        for item in manifests
-    }
-    if len(canonical) != 1:
-        raise ValueError(f"attempt has divergent source manifests: {attempt_id}")
-    return manifests[0]
+    from zf.runtime.artifact_input_index import load_attempt_source_manifest
+
+    return load_attempt_source_manifest(state_dir, attempt_id)
 
 
 def _run_manifest_create(args: argparse.Namespace) -> int:

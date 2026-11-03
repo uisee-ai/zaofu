@@ -24,7 +24,7 @@ from zf.runtime.artifact_query.store_rows import (
 
 CATALOG_SCHEMA_VERSION = "artifact-catalog.v2"
 EXTRACTOR_VERSION = "sidecar-descriptor-extractor.v4"
-CATALOG_PROJECTOR_VERSION = "artifact-catalog-projector.v3"
+CATALOG_PROJECTOR_VERSION = "artifact-catalog-projector.v4"
 MAX_REDUCER_PROJECTIONS = 256
 MAX_REDUCER_PAYLOAD_BYTES = 2_000_000
 MAX_WAL_BYTES = 8 * 1024 * 1024

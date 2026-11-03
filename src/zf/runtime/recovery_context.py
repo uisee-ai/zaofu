@@ -95,11 +95,14 @@ def build_task_recovery_context(
         if isinstance(event.payload, dict)
     )
     attempt = recovery_attempt_facts(state_dir, task, run_id=run_id)
+    from zf.runtime.artifact_input_recovery import current_task_input_recovery
+
     return redact_obj({
         "schema_version": RECOVERY_CONTEXT_SCHEMA_VERSION,
         "is_derived_projection": True,
         "request_id": request_id,
         "attempt_identity": attempt,
+        "input_recovery": current_task_input_recovery(state_dir, events, task),
         "maintenance_checkpoint": maintenance_checkpoint_facts(
             state_dir, task_events, task_id=task_id, attempt_facts=attempt,
         ),

@@ -752,6 +752,9 @@ def create_app(
         state_dir=state_dir,
         project_root=project_root,
         config=config,
+        resolve_ctx=lambda project_id: _resolve_api_project(project_id,
+            default_project_id=default_project_id, default_state_dir=state_dir,
+            default_config=config, default_project_root=project_root),
     ))
     from zf.web.channel_delivery_routes import build_channel_delivery_router
 

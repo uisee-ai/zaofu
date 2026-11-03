@@ -2083,6 +2083,7 @@ export function App() {
 
   const taskDetailView = (
     <TaskDetail
+      projectId={activeProjectId || undefined}
       actionReady={actionGate.actionReady}
       actionResult={actionResult}
       actionState={actionGate.actionState}

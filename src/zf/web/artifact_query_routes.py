@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -16,6 +17,7 @@ def build_artifact_query_router(
     state_dir: Path,
     project_root: Path,
     config: ZfConfig | None,
+    resolve_ctx: Callable[[str], Any] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -96,6 +98,23 @@ def build_artifact_query_router(
             ),
         ))
 
+    @router.get("/api/artifacts/catalog/{identity}/navigation")
+    @router.get("/api/projects/{project_id}/artifacts/catalog/{identity}/navigation")
+    def artifact_navigation(identity: str, query: str = "", cursor: str | None = None, project_id: str = "") -> JSONResponse:
+        if project_id:
+            if resolve_ctx is None:
+                raise HTTPException(404, "unknown project")
+            context = resolve_ctx(project_id)
+            query_service = ArtifactQueryService(state_dir=context.state_dir, project_root=context.project_root, config=context.config)
+        else:
+            query_service = service()
+        try:
+            return JSONResponse(query_service.artifact_navigation(identity,
+                context=query_service.context(actor="web", purpose="catalog", mode="canonical", limit=20),
+                query=query, cursor=cursor))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @router.get("/api/tasks/{task_id}/artifacts")
     def task_artifacts(task_id: str, limit: int = 200) -> JSONResponse:
         query = service()
@@ -132,6 +151,41 @@ def build_artifact_query_router(
                 mode="canonical",
             ),
         ))
+
+    @router.get("/api/attempts/{attempt_id}/inputs")
+    @router.get("/api/projects/{project_id}/attempts/{attempt_id}/inputs")
+    def attempt_inputs(attempt_id: str, query: str = "", cursor: str | None = None, limit: int = 50,
+                       project_id: str = "", relation_id: str = "", navigate: bool = False) -> JSONResponse:
+        if project_id:
+            if resolve_ctx is None:
+                raise HTTPException(404, "unknown project")
+            context = resolve_ctx(project_id)
+            query_service = ArtifactQueryService(state_dir=context.state_dir, project_root=context.project_root, config=context.config)
+        else:
+            query_service = service()
+        try:
+            result = query_service.attempt_inputs(attempt_id,
+                context=query_service.context(actor="web", purpose="attempt-inspect", mode="canonical", limit=limit),
+                query=query, cursor=cursor, relation_id=relation_id, navigate=navigate)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return JSONResponse(result)
+
+    @router.get("/api/attempts/{attempt_id}/input-costs")
+    @router.get("/api/projects/{project_id}/attempts/{attempt_id}/input-costs")
+    def attempt_input_costs(attempt_id: str, project_id: str = "") -> JSONResponse:
+        if project_id:
+            if resolve_ctx is None:
+                raise HTTPException(404, "unknown project")
+            ctx = resolve_ctx(project_id)
+            query = ArtifactQueryService(state_dir=ctx.state_dir, project_root=ctx.project_root, config=ctx.config)
+        else:
+            query = service()
+        try:
+            return JSONResponse(query.attempt_input_costs(attempt_id,
+                context=query.context(actor="web", purpose="attempt-inspect", mode="canonical")))
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @router.get("/api/runs/{run_id}/plan-package-advisory")
     def plan_package_advisory(run_id: str) -> JSONResponse:

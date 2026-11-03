@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from zf.runtime.artifact_read_ledger import read_attempt_artifact
+from zf.runtime.artifact_read_snapshot import open_selection
 from zf.runtime.call_result_envelope import canonical_json_sha256
 
 PAGE_BYTES = 8192
@@ -22,36 +21,31 @@ def prepare_required_read(
 ) -> tuple[str, list[dict[str, Any]]]:
     if not 1024 <= page_bytes <= PAGE_BYTES:
         raise ValueError("--page-bytes must be between 1024 and 8192")
-    # Authenticate every alias and validate every digest before returning any
-    # content or recording consumption, including on continuation pages.
-    previews = [read_attempt_artifact(
-        state_dir, manifest=manifest,
-        source_id=row["source_id"], artifact_id=row["artifact_id"],
-        artifact_sha256=str(row.get("artifact_sha256") or row.get("sha256") or ""),
-        json_path=row.get("json_path", "$"), record=False,
-        actor=identity["actor"], role=identity["role"],
-        provider=identity["provider"], purpose=identity["purpose"],
-    ) for row in rows]
+    # Authorize every occurrence before exposing metadata or content. New
+    # manifests carry immutable selection digests; legacy inputs retain full reads.
+    previews = [open_selection(state_dir, manifest=manifest, row=row, identity=identity)
+                for row in rows]
     groups: dict[tuple[str, str, str], dict[str, Any]] = {}
     receipts: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for row, preview in zip(rows, previews, strict=True):
         expected = row.get("artifact_sha256") or row.get("sha256")
-        if expected and expected != preview["read"]["artifact_sha256"]:
+        if expected and expected != preview.receipt["artifact_sha256"]:
             raise ValueError("required artifact digest differs from the pinned policy")
         source = {"source_id": row["source_id"], "artifact_id": row["artifact_id"],
                   "json_path": row.get("json_path", "$")}
-        key = (preview["read"]["artifact_sha256"], source["json_path"], preview["content"])
+        key = (preview.receipt["artifact_sha256"], source["json_path"], preview.digest)
         if key in groups:
             groups[key].setdefault("aliases", []).append(source)
         else:
-            groups[key] = {**source, "content": preview["content"]}
-        receipts.setdefault(key, []).append(preview["read"])
+            groups[key] = {**source, "selection": preview}
+        receipts.setdefault(key, []).append(preview.receipt)
     # Small bundles use the same identity envelope as continuation pages. A
     # fresh delivery id prevents an earlier read of identical text witnessing
     # this read, even when both belong to the same resumed provider session.
     delivery_id = str(uuid4())
     bundle_digest = canonical_json_sha256({
-        "manifest": manifest, "requirements": rows, "groups": list(groups.values()),
+        "manifest": manifest, "requirements": rows, "selections": list(groups),
+        "identity": identity,
     })
     if resume:
         from zf.cli.artifact_required_resume import resume_position
@@ -62,7 +56,7 @@ def prepare_required_read(
             receipts=list(receipts.values()),
         )
     else:
-        index, start = _position(cursor, bundle_digest, list(groups.values()))
+        index, start = _position(cursor, bundle_digest, list(groups.values())) if groups or cursor else (0, 0)
     items: list[dict[str, Any]] = []
     emitted: list[dict[str, Any]] = []
     keys = list(groups)
@@ -84,20 +78,21 @@ def prepare_required_read(
     while index < len(keys):
         key = keys[index]
         group = groups[key]
-        content = group["content"]
-        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        selection = group["selection"]
+        digest = selection.digest
+        public = {k: v for k, v in group.items() if k != "selection"}
 
         def item(end: int) -> dict[str, Any]:
-            return {**group, "content": content[start:end],
-                    "page_start": start, "page_end": end, "page_total": len(content),
+            return {**public, "content": selection.read(start, end),
+                    "page_start": start, "page_end": end, "page_total": selection.chars,
                     "selected_sha256": digest}
 
         def position(end: int) -> tuple[int, int]:
-            return (index, end) if end < len(content) else (index + 1, 0)
+            return (index, end) if end < selection.chars else (index + 1, 0)
 
-        end = len(content)
+        end = min(selection.chars, start + page_bytes)
         if len(render(item(end), position(end)).encode("utf-8")) + 1 > page_bytes:
-            low, high = start, min(len(content), start + page_bytes)
+            low, high = start, end
             while low < high:
                 middle = (low + high + 1) // 2
                 if len(render(item(middle), position(middle)).encode("utf-8")) + 1 <= page_bytes:
@@ -113,12 +108,13 @@ def prepare_required_read(
         for receipt in receipts[key]:
             emitted.append({
                 **receipt, "delivery_id": delivery_id,
+                "recovery_mode": selection.receipt["recovery_mode"],
                 "operation_id": identity.get("operation_id", ""),
                 "bundle_digest": bundle_digest,
-                "returned_bytes": len(content[start:end].encode("utf-8")),
-                "truncated": start > 0 or end < len(content),
-                "page_start": start, "page_end": end, "page_total": len(content),
-                "selected_sha256": digest, "selected_bytes": len(content.encode("utf-8")),
+                "returned_bytes": len(selection.read(start, end).encode("utf-8")),
+                "truncated": start > 0 or end < selection.chars,
+                "page_start": start, "page_end": end, "page_total": selection.chars,
+                "selected_sha256": digest, "selected_bytes": selection.byte_count,
             })
         index, start = position(end)
         if start:
@@ -151,7 +147,7 @@ def _position(
     if (
         type(index) is not int or type(offset) is not int
         or not 0 <= index < len(groups) or offset < 0
-        or offset >= max(1, len(groups[index]["content"]))
+        or offset >= max(1, groups[index]["selection"].chars)
     ):
         raise ValueError("required-read cursor is outside the selected bundle")
     return index, offset

@@ -537,6 +537,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "workflow.config.change.rejected",
     "workflow.config.change.failed",
     "artifact.read.denied",
+    "artifact.input.observed", "worker.work_record.published",
     "workflow.child.completed", "workflow.child.failed",
     "review.child.completed", "review.child.failed",
     "research.child.completed", "research.child.failed",

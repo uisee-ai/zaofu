@@ -54,8 +54,11 @@ def resume_position(
                     and row.get("provider_session_id") == session]
         bodies: dict[str, Any] = {}
         for index, (group, aliases) in enumerate(zip(groups, receipts, strict=True)):
-            content = group["content"]
-            digest = hashlib.sha256(content.encode()).hexdigest()
+            selection = group.get("selection")
+            content = group.get("content", "")  # Legacy direct callers.
+            total = selection.chars if selection else len(content)
+            digest = selection.digest if selection else hashlib.sha256(content.encode()).hexdigest()
+            byte_count = selection.byte_count if selection else len(content.encode())
             ranges_by_alias: list[list[tuple[int, int]]] = []
             for alias in aliases:
                 ranges: list[tuple[int, int]] = []
@@ -65,9 +68,9 @@ def resume_position(
                     if any(row.get(k) != alias.get(k) for k in fields):
                         continue
                     start, end = row.get("page_start"), row.get("page_end")
-                    if (type(start) is not int or type(end) is not int or not 0 <= start < end <= len(content)
-                            or row.get("page_total") != len(content) or row.get("selected_sha256") != digest
-                            or row.get("selected_bytes") != len(content.encode())):
+                    if (type(start) is not int or type(end) is not int or not 0 <= start < end <= total
+                            or row.get("page_total") != total or row.get("selected_sha256") != digest
+                            or row.get("selected_bytes") != byte_count):
                         continue
                     output_digest = row["output_sha256"]
                     if output_digest not in bodies:
@@ -82,7 +85,7 @@ def resume_position(
                         if (any(s.get("source_id") == alias["source_id"] and s.get("artifact_id") == alias["artifact_id"]
                                 and s.get("json_path") == alias["json_path"] for s in sources)
                                 and item.get("page_start") == start and item.get("page_end") == end
-                                and item.get("content") == content[start:end]):
+                                and item.get("content") == (selection.read(start, end) if selection else content[start:end])):
                             ranges.append((start, end))
                             break
                 ranges_by_alias.append(ranges)
@@ -95,7 +98,7 @@ def resume_position(
                     end = max(end, stop)
                 ends.append(end)
             position = min(ends, default=0)
-            if position < len(content):
+            if position < total:
                 return index, position
         return len(groups), 0
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):

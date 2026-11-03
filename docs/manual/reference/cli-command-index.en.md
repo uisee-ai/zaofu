@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **306** addressable command paths.
+The parser currently exposes **69** top-level families and **313** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -35,10 +35,16 @@ Artifact manifest helpers
 | `zf artifact catalog list` | List artifact objects |
 | `zf artifact catalog show` | Show one artifact identity |
 | `zf artifact checkpoint` | Create an immutable dynamic continuation checkpoint |
+| `zf artifact costs` | Inspect attempt input costs without inferring provider savings |
+| `zf artifact index` | Browse authorized attempt input locators without consuming bodies |
 | `zf artifact list` | List immutable inputs available to one provider attempt |
 | `zf artifact manifest` | Artifact manifest commands |
 | `zf artifact manifest create` | Create a deterministic artifact manifest JSON |
 | `zf artifact read` | Read one attempt input and append read evidence |
+| `zf artifact recover` | Reconstruct authorized current inputs without granting execution authority |
+| `zf artifact work-record` | Publish or read current worker progress without completing a task |
+| `zf artifact work-record publish` | No parser summary. |
+| `zf artifact work-record show` | No parser summary. |
 
 ## `zf attach`
 
@@ -474,6 +480,7 @@ Review, approve, or reject a plan
 | `zf plan` | Review, approve, or reject a plan |
 | `zf plan approve` | Approve a plan and unlock writer fanout |
 | `zf plan inspect-execution` | Inspect plan execution facts without approval or dispatch |
+| `zf plan inspect-inputs` | Inspect declared task input coverage without approving semantic completeness |
 | `zf plan reject` | Reject a plan and request synthesis replan |
 | `zf plan review` | List plans awaiting review with digest and checklist |
 

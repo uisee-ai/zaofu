@@ -107,9 +107,13 @@ def build_recovery_briefing(
     from zf.core.events.factory import event_log_from_project
     from zf.runtime.critical_context import recovery_required_inputs
 
-    sections.append(recovery_required_inputs(
-        state_dir, event_log_from_project(state_dir, config=config).read_all(), task, role,
-    ))
+    recovery_events = event_log_from_project(state_dir, config=config).read_all()
+    sections.append(recovery_required_inputs(state_dir, recovery_events, task, role))
+    from zf.runtime.artifact_input_recovery import current_task_input_recovery, render_input_recovery
+
+    sections.append(render_input_recovery(current_task_input_recovery(
+        state_dir, recovery_events, task, actor=role,
+    )))
 
     # Section 1: shared memory
     sections.append("## Shared Memory")

@@ -124,3 +124,24 @@ Workers do not mark tasks, candidates, or goals done themselves.
 - `yoke/tdd-evidence` - test-first and bug-reproduction method.
 - `yoke/incremental-delivery` - thin implementation/test/commit loop.
 - `yoke/git-evidence` - commit, worktree, and evidence discipline.
+
+### 输入恢复与版本
+
+换会话/压缩后先使用 briefing 中的 `artifact recover --attempt <id>` 查看当前绑定、
+授权目录和检查点，再补读必需正文。历史已读不证明当前记忆；旧 package 要求 rebind
+时走受控恢复，不自行修改 manifest 或执行状态。可用 `artifact index --relation-id <id>`
+定位声明的 REQ/AC，关系命中不能替代正文消费和结果证据。
+
+## 阶段工作记录与恢复
+
+长任务在完成一组证据、出现未决事项或准备换会话时，可用当前 operation 的
+`zf artifact work-record publish --operation <id> --file <workdir 内 JSON> --request-id <唯一 ID>`
+发布非终态记录。JSON 严格包含 completed_actions、pending、next_step、evidence_files；
+前三者为动作列表、未决列表、下一步字符串，证据为工作区内相对路径列表。
+不写凭据；测试日志不能包装成独立 Verify 结论。
+
+命令使用现有 result-submit 凭据，核验 current Task/attempt/lease/workdir/input 版本；
+完整 sidecar 先写入，再发布事件。同一 request-id 必须保持记录和证据内容不变。
+新会话先用 briefing 的 recover 入口，再用 `artifact work-record show --operation <id>`
+按 digest/next_page_start 回读当前记录。历史陈述不证明当前理解，不豁免 required reads。
+记录不消费正式 result submit、不完成 Task，也不授予执行权限；仍按原交付合同提交结果。

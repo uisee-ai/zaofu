@@ -1,0 +1,380 @@
+{
+  "runs": [
+    {
+      "mode": "full",
+      "returncode": 0,
+      "elapsed_s": 8.593,
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "high",
+      "provider_cli": "codex-cli 0.163.0",
+      "session_ids": [
+        "01a19ea9-d7dd-7e12-aef3-edbddad80378"
+      ],
+      "prompt_bytes": 229239,
+      "prompt_sha256": "378706e8a15f82285061151a887f6da0bf4376ddd368e70b12c6c5e181c24fc9",
+      "events_sha256": "89f1d5302a5ef0eb14b5d16b4573068c83182b3f2f88557fdd4e5f8d3e93a7e7",
+      "usage": [
+        {
+          "input_tokens": 71353,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 397,
+          "reasoning_output_tokens": 0
+        }
+      ],
+      "tool_items": [],
+      "input_view": "all_100_tasks",
+      "source_fixture_digest": "634b07f1bfa156d98c1a41d709c4d17adda7d021d17ec88799ee9d39eee6c9e6",
+      "findings": {
+        "evaluation_digest": "634b07f1bfa156d98c1a41d709c4d17adda7d021d17ec88799ee9d39eee6c9e6",
+        "cases": [
+          {
+            "case_id": "case-01",
+            "findings": [
+              {
+                "task_id": "T1",
+                "category": "shared_rule",
+                "source_ref": "source.md#shared",
+                "source_quote": "所有修改必须保留审计记录，记录操作者和原值。",
+                "explanation": "shared 只有来源引用，T1 正文也未保留审计记录及记录操作者和原值的要求。"
+              }
+            ]
+          },
+          {
+            "case_id": "case-02",
+            "findings": [
+              {
+                "task_id": "T1",
+                "category": "exception",
+                "source_ref": "source.md#exception",
+                "source_quote": "重复请求必须返回首次结果，不得再次扣减。",
+                "explanation": "T1 正文未规定重复请求返回首次结果及不得再次扣减；来源引用不能替代正文。"
+              }
+            ]
+          },
+          {
+            "case_id": "case-03",
+            "findings": [
+              {
+                "task_id": "T1",
+                "category": "dependency",
+                "source_ref": "api.md#dependency",
+                "source_quote": "T1 使用 T0 提供的版本化库存接口；版本冲突返回 409。",
+                "explanation": "T1 正文未保留对 T0 版本化库存接口的依赖，也未规定版本冲突返回 409。"
+              }
+            ]
+          },
+          {
+            "case_id": "case-04",
+            "findings": [
+              {
+                "task_id": "T1",
+                "category": "image_state",
+                "source_ref": "screen.png#empty",
+                "source_quote": "空库存页面显示补货入口，禁止显示可出库按钮。",
+                "explanation": "T1 正文未描述空库存时的补货入口和禁止显示可出库按钮；图片引用不能替代正文。"
+              }
+            ]
+          },
+          {
+            "case_id": "case-05",
+            "findings": []
+          }
+        ],
+        "provider_provenance": {
+          "model": "gpt-6.1-terra",
+          "reasoning_effort": "high",
+          "session_ids": [
+            "01a19ea9-d7dd-7e12-aef3-edbddad80378"
+          ]
+        }
+      },
+      "score": {
+        "schema_version": "context-input-rubric-score.v1",
+        "evaluation_digest": "634b07f1bfa156d98c1a41d709c4d17adda7d021d17ec88799ee9d39eee6c9e6",
+        "matched_findings": 4,
+        "unexpected_findings": 0,
+        "missed_findings": 0,
+        "exact_cases": 5,
+        "total_cases": 5,
+        "scoring_scope": "explicit_rubric_findings",
+        "semantic_qualification": "requires_independent_review",
+        "provider_provenance": {
+          "model": "gpt-6.1-terra",
+          "reasoning_effort": "high",
+          "session_ids": [
+            "01a19ea9-d7dd-7e12-aef3-edbddad80378"
+          ]
+        }
+      },
+      "started_at_utc": "2026-11-02T23:48:13.165580+00:00",
+      "raw_events_jsonl": "{\"type\":\"thread.started\",\"thread_id\":\"01a19ea9-d7dd-7e12-aef3-edbddad80378\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"evaluation_digest\\\":\\\"634b07f1bfa156d98c1a41d709c4d17adda7d021d17ec88799ee9d39eee6c9e6\\\",\\\"cases\\\":[{\\\"case_id\\\":\\\"case-01\\\",\\\"findings\\\":[{\\\"task_id\\\":\\\"T1\\\",\\\"category\\\":\\\"shared_rule\\\",\\\"source_ref\\\":\\\"source.md#shared\\\",\\\"source_quote\\\":\\\"所有修改必须保留审计记录，记录操作者和原值。\\\",\\\"explanation\\\":\\\"shared 只有来源引用，T1 正文也未保留审计记录及记录操作者和原值的要求。\\\"}]},{\\\"case_id\\\":\\\"case-02\\\",\\\"findings\\\":[{\\\"task_id\\\":\\\"T1\\\",\\\"category\\\":\\\"exception\\\",\\\"source_ref\\\":\\\"source.md#exception\\\",\\\"source_quote\\\":\\\"重复请求必须返回首次结果，不得再次扣减。\\\",\\\"explanation\\\":\\\"T1 正文未规定重复请求返回首次结果及不得再次扣减；来源引用不能替代正文。\\\"}]},{\\\"case_id\\\":\\\"case-03\\\",\\\"findings\\\":[{\\\"task_id\\\":\\\"T1\\\",\\\"category\\\":\\\"dependency\\\",\\\"source_ref\\\":\\\"api.md#dependency\\\",\\\"source_quote\\\":\\\"T1 使用 T0 提供的版本化库存接口；版本冲突返回 409。\\\",\\\"explanation\\\":\\\"T1 正文未保留对 T0 版本化库存接口的依赖，也未规定版本冲突返回 409。\\\"}]},{\\\"case_id\\\":\\\"case-04\\\",\\\"findings\\\":[{\\\"task_id\\\":\\\"T1\\\",\\\"category\\\":\\\"image_state\\\",\\\"source_ref\\\":\\\"screen.png#empty\\\",\\\"source_quote\\\":\\\"空库存页面显示补货入口，禁止显示可出库按钮。\\\",\\\"explanation\\\":\\\"T1 正文未描述空库存时的补货入口和禁止显示可出库按钮；图片引用不能替代正文。\\\"}]},{\\\"case_id\\\":\\\"case-05\\\",\\\"findings\\\":[]}]}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":71353,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":397,\"reasoning_output_tokens\":0}}\n",
+      "raw_stderr": "",
+      "material_sha256": "83afce01e9ba085ccc22b1ee2c6a4be7517f8b6d35cbd64e82653579e75a5cf0",
+      "command_contract": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--json",
+        "--model",
+        "gpt-6.1-terra",
+        "-c",
+        "model_reasoning_effort=\"high\"",
+        "--disable",
+        "shell_tool",
+        "--disable",
+        "unified_exec",
+        "--disable",
+        "multi_agent",
+        "--sandbox",
+        "read-only",
+        "--output-schema",
+        "<schema.json>",
+        "--output-last-message",
+        "<findings.json>",
+        "-C",
+        "<isolated-temp-dir>",
+        "-"
+      ]
+    },
+    {
+      "mode": "scoped",
+      "returncode": 0,
+      "elapsed_s": 7.485,
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "high",
+      "provider_cli": "codex-cli 0.163.0",
+      "session_ids": [
+        "01a19ea9-f9a0-78f3-8c06-229778374a44"
+      ],
+      "prompt_bytes": 6084,
+      "prompt_sha256": "ba7366ed4b27c41206766957510f19c805575ad8e44bd1daec4b75dc8d53c595",
+      "events_sha256": "ab8eda26931be6383e6c9b54358bd7e62eac6f9dec4c3960abaa5fe0ef871cc2",
+      "usage": [
+        {
+          "input_tokens": 15915,
+          "cached_input_tokens": 14080,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 393,
+          "reasoning_output_tokens": 0
+        }
+      ],
+      "tool_items": [],
+      "input_view": "shared_and_owned_T1",
+      "source_fixture_digest": "634b07f1bfa156d98c1a41d709c4d17adda7d021d17ec88799ee9d39eee6c9e6",
+      "findings": {
+        "evaluation_digest": "634b07f1bfa156d98c1a41d709c4d17adda7d021d17ec88799ee9d39eee6c9e6",
+        "cases": [
+          {
+            "case_id": "case-01",
+            "findings": [
+              {
+                "task_id": "T1",
+                "category": "shared_rule",
+                "source_ref": "source.md#shared",
+                "source_quote": "所有修改必须保留审计记录，记录操作者和原值。",
+                "explanation": "shared 正文只有来源引用，未保留审计记录及记录操作者和原值的要求。"
+              }
+            ]
+          },
+          {
+            "case_id": "case-02",
+            "findings": [
+              {
+                "task_id": "T1",
+                "category": "exception",
+                "source_ref": "source.md#exception",
+                "source_quote": "重复请求必须返回首次结果，不得再次扣减。",
+                "explanation": "T1 正文未规定重复请求返回首次结果且不得再次扣减；来源引用不能证明正文覆盖。"
+              }
+            ]
+          },
+          {
+            "case_id": "case-03",
+            "findings": [
+              {
+                "task_id": "T1",
+                "category": "dependency",
+                "source_ref": "api.md#dependency",
+                "source_quote": "T1 使用 T0 提供的版本化库存接口；版本冲突返回 409。",
+                "explanation": "T1 正文未保留对 T0 版本化库存接口的依赖及版本冲突返回 409 的要求。"
+              }
+            ]
+          },
+          {
+            "case_id": "case-04",
+            "findings": [
+              {
+                "task_id": "T1",
+                "category": "image_state",
+                "source_ref": "screen.png#empty",
+                "source_quote": "空库存页面显示补货入口，禁止显示可出库按钮。",
+                "explanation": "T1 正文未规定空库存页面的补货入口及禁止显示可出库按钮；图片引用不能证明正文覆盖。"
+              }
+            ]
+          },
+          {
+            "case_id": "case-05",
+            "findings": []
+          }
+        ],
+        "provider_provenance": {
+          "model": "gpt-6.1-terra",
+          "reasoning_effort": "high",
+          "session_ids": [
+            "01a19ea9-f9a0-78f3-8c06-229778374a44"
+          ]
+        }
+      },
+      "score": {
+        "schema_version": "context-input-rubric-score.v1",
+        "evaluation_digest": "634b07f1bfa156d98c1a41d709c4d17adda7d021d17ec88799ee9d39eee6c9e6",
+        "matched_findings": 4,
+        "unexpected_findings": 0,
+        "missed_findings": 0,
+        "exact_cases": 5,
+        "total_cases": 5,
+        "scoring_scope": "explicit_rubric_findings",
+        "semantic_qualification": "requires_independent_review",
+        "provider_provenance": {
+          "model": "gpt-6.1-terra",
+          "reasoning_effort": "high",
+          "session_ids": [
+            "01a19ea9-f9a0-78f3-8c06-229778374a44"
+          ]
+        }
+      },
+      "started_at_utc": "2026-11-02T23:48:21.763441+00:00",
+      "raw_events_jsonl": "{\"type\":\"thread.started\",\"thread_id\":\"01a19ea9-f9a0-78f3-8c06-229778374a44\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"evaluation_digest\\\":\\\"634b07f1bfa156d98c1a41d709c4d17adda7d021d17ec88799ee9d39eee6c9e6\\\",\\\"cases\\\":[{\\\"case_id\\\":\\\"case-01\\\",\\\"findings\\\":[{\\\"task_id\\\":\\\"T1\\\",\\\"category\\\":\\\"shared_rule\\\",\\\"source_ref\\\":\\\"source.md#shared\\\",\\\"source_quote\\\":\\\"所有修改必须保留审计记录，记录操作者和原值。\\\",\\\"explanation\\\":\\\"shared 正文只有来源引用，未保留审计记录及记录操作者和原值的要求。\\\"}]},{\\\"case_id\\\":\\\"case-02\\\",\\\"findings\\\":[{\\\"task_id\\\":\\\"T1\\\",\\\"category\\\":\\\"exception\\\",\\\"source_ref\\\":\\\"source.md#exception\\\",\\\"source_quote\\\":\\\"重复请求必须返回首次结果，不得再次扣减。\\\",\\\"explanation\\\":\\\"T1 正文未规定重复请求返回首次结果且不得再次扣减；来源引用不能证明正文覆盖。\\\"}]},{\\\"case_id\\\":\\\"case-03\\\",\\\"findings\\\":[{\\\"task_id\\\":\\\"T1\\\",\\\"category\\\":\\\"dependency\\\",\\\"source_ref\\\":\\\"api.md#dependency\\\",\\\"source_quote\\\":\\\"T1 使用 T0 提供的版本化库存接口；版本冲突返回 409。\\\",\\\"explanation\\\":\\\"T1 正文未保留对 T0 版本化库存接口的依赖及版本冲突返回 409 的要求。\\\"}]},{\\\"case_id\\\":\\\"case-04\\\",\\\"findings\\\":[{\\\"task_id\\\":\\\"T1\\\",\\\"category\\\":\\\"image_state\\\",\\\"source_ref\\\":\\\"screen.png#empty\\\",\\\"source_quote\\\":\\\"空库存页面显示补货入口，禁止显示可出库按钮。\\\",\\\"explanation\\\":\\\"T1 正文未规定空库存页面的补货入口及禁止显示可出库按钮；图片引用不能证明正文覆盖。\\\"}]},{\\\"case_id\\\":\\\"case-05\\\",\\\"findings\\\":[]}]}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":15915,\"cached_input_tokens\":14080,\"cache_write_input_tokens\":0,\"output_tokens\":393,\"reasoning_output_tokens\":0}}\n",
+      "raw_stderr": "",
+      "material_sha256": "6426932b66793aff236d233dcb65ab67461ec3ed5d57118f82505252c16d95c3",
+      "command_contract": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--json",
+        "--model",
+        "gpt-6.1-terra",
+        "-c",
+        "model_reasoning_effort=\"high\"",
+        "--disable",
+        "shell_tool",
+        "--disable",
+        "unified_exec",
+        "--disable",
+        "multi_agent",
+        "--sandbox",
+        "read-only",
+        "--output-schema",
+        "<schema.json>",
+        "--output-last-message",
+        "<findings.json>",
+        "-C",
+        "<isolated-temp-dir>",
+        "-"
+      ]
+    }
+  ],
+  "schema_version": "context-input-real-provider-eval.v1",
+  "source_head": "3043e3dd74c04fae47596ece95a69cbba6051bbf",
+  "readiness": {
+    "batch_3": "0c11ebd7",
+    "batch_4": "3043e3dd",
+    "provider_started_after_both_archived": true
+  },
+  "scoring_fixture": "scripts/eval-context-inputs.py prepare; deterministic seed 198",
+  "scope": "synthetic_T1_shared_owned_semantic_review_not_full_runtime_E2E",
+  "prompt_prefix": "你是独立的只读评审。下面是匿名评测材料，只核对 review_task=T1 的 shared 和 owned 正文。其他 Task 的正文不能替代 T1 应保留的要求。检查 original_material 每条规定是否完整保留；仅存在来源/AC ID 不足以证明正文覆盖。将真实遗漏归为 exception/shared_rule/image_state/dependency，逐项引用原始 source_quote 并解释缺失。没有遗漏 findings=[]，不得按案例数量猜测缺陷。只输出指定 JSON。不调用工具，不读取文件，不访问 grader，不修改任何状态。保持 evaluation_digest 原值。",
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "evaluation_digest",
+      "cases"
+    ],
+    "properties": {
+      "evaluation_digest": {
+        "type": "string"
+      },
+      "cases": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "case_id",
+            "findings"
+          ],
+          "properties": {
+            "case_id": {
+              "type": "string"
+            },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "task_id",
+                  "category",
+                  "source_ref",
+                  "source_quote",
+                  "explanation"
+                ],
+                "properties": {
+                  "task_id": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string"
+                  },
+                  "source_ref": {
+                    "type": "string"
+                  },
+                  "source_quote": {
+                    "type": "string"
+                  },
+                  "explanation": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "projection_method": {
+    "common": [
+      "case_id",
+      "review_task",
+      "original_material"
+    ],
+    "plan_ports": [
+      "task_execution_input"
+    ],
+    "full": "all 100 tasks plus shared",
+    "scoped": "same shared plus exact task_id=T1; no summarization; same four original text statements",
+    "grader_delivered": false
+  },
+  "operator_crosscheck": {
+    "reviewer": "implementation supervising agent; not an independent human",
+    "cases_checked": 5,
+    "source_quotes_checked": 4,
+    "result": "both outputs bind each missing field to the original statement and leave the complete control empty",
+    "qualification_limit": "one pair of synthetic runs; scorer still reports requires_independent_review"
+  },
+  "limitations": [
+    "no actual image was supplied; image_state is a textual requirement",
+    "not end-to-end production artifact-read/receipt or 8+8 qualification",
+    "shared provider prefix cache observed in second run; no cold-cache causal latency/cost claim",
+    "requested model and provider CLI usage reported; no billing USD observed"
+  ]
+}

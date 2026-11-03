@@ -250,18 +250,18 @@ def source_manifest_from_payload(
         sources=sources,
         metadata=manifest_metadata,
     )
+    required_reads = canonical_required_reads(
+        manifest,
+        output_profile_id=str(payload.get("output_profile_id") or ""),
+        explicit=(payload.get("required_reads")
+                  if isinstance(payload.get("required_reads"), list) else ()),
+    )
+    from zf.runtime.artifact_read_snapshot import pin_read_selections
+
+    pin_read_selections(state_dir, manifest, required_reads)
     if payload.get("_context_delivery_enabled", True):
         from zf.runtime.context_delivery import attach_context_sections
 
-        required_reads = canonical_required_reads(
-            manifest,
-            output_profile_id=str(payload.get("output_profile_id") or ""),
-            explicit=(
-                payload.get("required_reads")
-                if isinstance(payload.get("required_reads"), list)
-                else ()
-            ),
-        )
         manifest = attach_context_sections(
             manifest,
             output_profile_id=str(payload.get("output_profile_id") or ""),
@@ -595,13 +595,15 @@ def render_attempt_source_briefing(
     from zf.runtime.cli_command import zf_cli_cmd
 
     cli_command = zf_cli_cmd()
+    from zf.runtime.artifact_role_inputs import render_role_input_entry
     lines = [
         "## Controlled Artifact Inputs",
         "",
         f"- source_manifest_ref: `{ref}`",
         f"- attempt_id: `{attempt_id}`",
-        f"- List: `{cli_command} artifact list --attempt <attempt-id>`.",
-        "- Read required inputs with the exact commands below.",
+        f"- Index: `{cli_command} artifact index --attempt {attempt_id}`. "
+        "Locators only, not read evidence.",
+        render_role_input_entry(payload, state_dir),
         (
             "- Run one literal command per tool call; no variables, aliases, "
             "loops, pipes, redirections, substitutions, or compound commands "
@@ -625,10 +627,9 @@ def render_attempt_source_briefing(
             )
         lines.extend([
             f"- Preferred deduplicated read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
-            "  It delivers every required slice, sharing identical bodies while recording each source. "
-            "All responses use required-artifact-page.v2: consume every items[].content fragment. "
-            "If the response has `next_cursor`, continue the same command with `--cursor <next_cursor>` "
-            "until it is null. Consume every page; do not repeat individual reads after a complete bundle.",
+            "  Consume every items[].content in required-artifact-page.v2. Identical bodies share output; "
+            "each source is recorded. Follow `--cursor <next_cursor>` until null. "
+            "Do not reread complete aliases.",
             "- Required pages default to 8192 UTF-8 bytes including metadata, not tokens. "
             "If the tool output budget is smaller, use --page-bytes 2048; consume pages "
             "separately and leave room for tool wrappers. Return each raw page unchanged; do not filter fields or batch pages into a summary. CLI receipts prove production; "

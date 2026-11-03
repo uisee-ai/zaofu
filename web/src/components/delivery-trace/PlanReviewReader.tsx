@@ -4,13 +4,14 @@ import { MarkdownText } from "../agent-session/MarkdownText";
 import PlanMarkdownDocument from "./PlanMarkdownDocument";
 import PlanSourceReader from "./PlanSourceReader";
 import PlanTraceReader from "./PlanTraceReader";
+import PlanInputReviewPanel from "./PlanInputReviewPanel";
 import { DecisionList, PlanSourceContext, SourceRefs } from "./PlanReviewDetails";
 import { buildPlanReview, relatedTasks, strings, text } from "./planReviewModel";
 import { usePlanArtifacts } from "./usePlanArtifacts";
 import "./planReader.css";
 
-type View = "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "original" | "sources";
-const views: [View, string][] = [["overview", "审批概览"], ["modules", "模块规格"], ["pages", "页面与设计"], ["scenarios", "验收场景"], ["decisions", "待决事项"], ["coverage", "覆盖审查"], ["original", "完整原文"], ["sources", "来源原文"]];
+type View = "inputs" | "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "original" | "sources";
+const views: [View, string][] = [["overview", "审批概览"], ["modules", "模块规格"], ["pages", "页面与设计"], ["scenarios", "验收场景"], ["decisions", "待决事项"], ["coverage", "覆盖审查"], ["inputs", "任务输入"], ["original", "完整原文"], ["sources", "来源原文"]];
 
 export default function PlanReviewReader({ preview, projectId }: { preview: PlanPreview; projectId: string }) {
   const readLocation = () => {
@@ -91,6 +92,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
               <SourceRefs refs={[text(p.source_ref)].filter(Boolean)} {...sourceProps} />
             </article>)}
           </>}
+          {view === "inputs" && <PlanInputReviewPanel key={`${projectId}:${preview.plan_id}`} preview={preview} projectId={projectId} />}
           {!loading && view === "coverage" && <PlanTraceReader artifacts={artifacts} preview={preview} projectId={projectId} onTask={selectTask} />}
           {!loading && (view === "modules" || view === "scenarios") && <>
             {location.task && !selected && <p role="alert">本版未找到任务 {location.task}，请选择已绑定任务。</p>}

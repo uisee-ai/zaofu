@@ -268,7 +268,8 @@ def test_attempt_source_briefing_renders_literal_runtime_cli(monkeypatch) -> Non
         "attempt_id": "attempt-1",
     })
 
-    assert f"`{command} artifact list --attempt <attempt-id>`" in briefing
+    assert f"`{command} artifact index --attempt attempt-1`" in briefing
+    assert "not read evidence" in briefing
     assert "Run one literal command per tool call" in briefing
     assert "loops, pipes, redirections" in briefing
 

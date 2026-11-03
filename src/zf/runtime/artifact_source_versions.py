@@ -38,7 +38,11 @@ def read_source_version(state_dir: Path, source: dict[str, Any], *, path: Path) 
         pass
     descriptor = source.get("recovery_ref")
     if isinstance(descriptor, dict):
-        payload = hydrate_sidecar_ref(state_dir, descriptor).payload
+        # Recovery bodies can exceed the generic preview limit. The published
+        # descriptor pins both their size and digest; never accept an unbounded
+        # reader or a size supplied by the requesting worker.
+        payload = hydrate_sidecar_ref(state_dir, descriptor,
+            max_bytes=int(descriptor.get("byte_count") or 0)).payload
         raw = base64.b64decode(payload["body_base64"], validate=True)
         if payload.get("sha256") == expected and hashlib.sha256(raw).hexdigest() == expected:
             return raw, "pinned_full_version"
