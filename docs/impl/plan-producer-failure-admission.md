@@ -1,5 +1,9 @@
 # Plan 生产失败的结果准入
 
+Plan 候选机械预检使用与 writer fanout 相同的 task_ids、继承和 wave 选择，
+在 Critic 派发前拒绝所选任务声明多个派发基线。预检不更改任务合同或选择基线；
+Planner 必须交付可准入的候选，独立 Critic 继续承担语义审查。
+
 Planner 的结构化结果以 `execution_status` 区分产物是否完成。生产失败可以保留
 草稿及诊断，并通过签定的 child failure event 接纳；不要求失败声明具备完整
 task map、product acceptance spec 等成功 Plan 产物，也不将失败转换为通过。

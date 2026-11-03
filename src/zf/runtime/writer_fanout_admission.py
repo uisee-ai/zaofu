@@ -121,6 +121,37 @@ def writer_fanout_dispatch_base_commit(
     return task_bases[0] if task_bases else str(fallback or "").strip()
 
 
+def select_writer_task_items(
+    data: dict[str, Any],
+    task_items: list[dict[str, Any]],
+    payload: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], list[str], int | None, str]:
+    """Apply the same task selection for preflight and writer fanout."""
+    requested = _string_list(payload.get("task_ids"))
+    wave = _optional_int(payload.get("wave"))
+    resume_scope = str(
+        data.get("resume_scope") or payload.get("resume_scope") or ""
+    ).strip()
+    requested = _canonical_replan_task_ids(
+        data=data, task_items=task_items,
+        requested_task_ids=requested, resume_scope=resume_scope,
+    )
+    if requested:
+        allowed = set(requested)
+        available = {str(item.get("task_id") or "") for item in task_items}
+        missing = sorted(allowed - available)
+        if missing:
+            raise RuntimeError(
+                "writer fanout task_map missing requested task_id(s): " + ", ".join(missing)
+            )
+        selected = [item for item in task_items if str(item.get("task_id") or "") in allowed]
+        return selected, requested, wave, resume_scope
+    if wave is not None:
+        selected = [item for item in task_items if _optional_int(item.get("wave")) == wave]
+        return selected, requested, wave, resume_scope
+    return task_items, requested, wave, resume_scope
+
+
 def bind_writer_task_dispatch_owner(
     *,
     task: Task,
@@ -303,31 +334,10 @@ def load_writer_task_map(
     )
     if policy_errors:
         raise WriterTaskMapPolicyError(policy_errors, all_items)
-    requested_task_ids = _string_list(payload.get("task_ids"))
     completed_task_ids = _string_list(payload.get("completed_task_ids"))
-    wave = _optional_int(payload.get("wave"))
-    event_resume_scope = str(payload.get("resume_scope") or "").strip()
-    task_map_resume_scope = str(data.get("resume_scope") or "").strip()
-    resume_scope = task_map_resume_scope or event_resume_scope
-    requested_task_ids = _canonical_replan_task_ids(
-        data=data,
-        task_items=all_items,
-        requested_task_ids=requested_task_ids,
-        resume_scope=resume_scope,
+    items, requested_task_ids, wave, resume_scope = select_writer_task_items(
+        data, all_items, payload,
     )
-    items = all_items
-    if requested_task_ids:
-        allowed = set(requested_task_ids)
-        available_ids = {str(item.get("task_id") or "") for item in all_items}
-        missing_requested_ids = sorted(allowed - available_ids)
-        if missing_requested_ids:
-            raise RuntimeError(
-                "writer fanout task_map missing requested task_id(s): "
-                + ", ".join(missing_requested_ids)
-            )
-        items = [item for item in all_items if str(item.get("task_id") or "") in allowed]
-    elif wave is not None:
-        items = [item for item in all_items if _optional_int(item.get("wave")) == wave]
     validate_writer_task_items(items)
     if pipeline_spec is not None and not (
         resume_scope == "gap_tasks_only" and requested_task_ids

@@ -662,9 +662,20 @@ def plan_reader_stage_replan(
                 or failure_event.type
             ),
         }]
-    if failure_payload.get("failure_class") == "reader_execution_failure":
+    rejected_id = str(
+        failure_payload.get("trigger_event_id") or failure_event.causation_id or ""
+    ).strip()
+    rejected_plan = next((
+        event for event in events
+        if event.id == rejected_id and event.type == "task_map.ready"
+        and _same_run(event, failure_run_id)
+    ), None)
+    if (
+        failure_payload.get("failure_class") == "reader_execution_failure"
+        or (failure_payload.get("failure_scope") == "plan_admission" and rejected_plan is not None)
+    ):
         # Old trigger refs describe an earlier candidate. Reuse only the
-        # current Critic's verified bindings, if recovery could establish them.
+        # failed candidate's supplied bindings, if recovery established them.
         origin_payload["previous_plan_candidate_refs"] = []
     for key in (
         *_CANONICAL_INPUT_KEYS,
