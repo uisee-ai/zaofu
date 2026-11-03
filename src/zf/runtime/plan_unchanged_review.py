@@ -1,7 +1,6 @@
-"""Evidence-bound reuse of unchanged Plan inputs during a new Critic review.
+"""Produce optional evidence-bound Plan differences for independent review.
 
-The old verdict is evidence, never the new verdict. Changed inputs and current
-Task Map remain mandatory; all original sources remain readable by the critic.
+Differences are navigation aids, never authority to omit current raw context.
 """
 from __future__ import annotations
 
@@ -17,7 +16,7 @@ from zf.runtime.plan_local_review_policy import (
 )
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
-EVIDENCE_ID = "child-artifact-unchanged-review"
+EVIDENCE_ID = "plan-structural-delta"
 EVIDENCE_ARTIFACT = "unchanged-plan-review.json"
 EVIDENCE_SCHEMA = "unchanged-plan-review.v1"
 
@@ -288,61 +287,3 @@ def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic
     if len(json.dumps(evidence, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > 900 * 1024:
         return None
     return evidence
-
-
-def scope_unchanged_reads(state_dir: Path, *, events: Sequence[ZfEvent], manifest: Mapping[str, Any],
-                          required: list[dict[str, Any]], explicit: list[dict[str, Any]],
-                          fanout: str, stage: str, critic_role: str, plan_revision: str) -> list[dict[str, Any]]:
-    """Skip only exact fully witnessed prior ports after rechecking immutable evidence."""
-    try:
-        if explicit:
-            return required
-        sources = manifest.get("sources") or []
-        evidence_sources = [s for s in sources if isinstance(s, Mapping) and s.get("source_id") == EVIDENCE_ID
-                            and s.get("artifact_id") == EVIDENCE_ARTIFACT]
-        if len(evidence_sources) != 1:
-            return required
-        source = evidence_sources[0]
-        if not _has_full_read(required, source):
-            return required
-        evidence = hydrate_sidecar_ref(state_dir, dict(source)).payload
-        actual = build_evidence(state_dir, events=events, sources=sources, run=str(manifest.get("workflow_run_id") or ""),
-                                fanout=fanout, stage=stage, trigger_id=str(manifest.get("source_event_id") or ""),
-                                critic_role=critic_role)
-        if not actual or evidence != actual:
-            return required
-        contract_sources = [s for s in sources if isinstance(s, Mapping) and s.get("source_id") == "plan-synth-contract"]
-        if len(contract_sources) != 1:
-            return required
-        contract = hydrate_sidecar_ref(state_dir, dict(contract_sources[0])).payload
-        if (contract.get("workflow_run_id") != actual["workflow_run_id"] or contract.get("fanout_id") != fanout
-                or contract.get("stage_id") != stage or contract.get("trigger_event_id") != actual["trigger_event_id"]
-                or contract.get("target_ref") != actual["target_ref"]
-                or not plan_revision or contract.get("plan_revision") != plan_revision):
-            return required
-        bindings = contract.get("source_bindings") or []
-        if not any(isinstance(binding, Mapping)
-                   and binding.get("child_id") == actual["candidate_child_id"]
-                   and binding.get("source_id") == actual["candidate_report_source_id"]
-                   and binding.get("artifact_id") == actual["candidate_report_artifact_id"]
-                   and binding.get("sha256") == actual["candidate_report_sha256"]
-                   for binding in contract.get("child_bindings", [])):
-            return required
-        selected = [*actual["unchanged_ports"], *actual["changed_ports"]]
-        if any(not _has_full_read(required, next(x for x in sources if x.get("source_id") == item["source_id"]))
-               for item in selected):
-            return required
-        protected = [s for s in sources if isinstance(s, Mapping) and (
-            s.get("source_id") in {"plan-rework-package", "requirement", "goal-objective"}
-            or str(s.get("source_id") or "").startswith(("child-result-", "critical-"))
-            or s.get("sha256") == actual["candidate_task_map_sha256"])]
-        if any(not _has_full_read(required, s) for s in protected if s.get("source_id") != "plan-rework-package"):
-            return required
-        if not all(any(isinstance(b, Mapping) and all(b.get(k) == s.get(k) for k in ("source_id", "artifact_id", "ref", "sha256"))
-                       for b in bindings) for s in [source, *[s for s in protected if not str(s.get("source_id") or "").startswith("critical-")],
-                           *[next(x for x in sources if x.get("source_id") == r["source_id"]) for r in selected]]):
-            return required
-        ids = {r["source_id"] for r in selected}
-        return [row for row in required if not (row.get("source_id") in ids and row.get("json_path") == "$")]
-    except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, StopIteration):
-        return required

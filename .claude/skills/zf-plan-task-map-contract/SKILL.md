@@ -259,6 +259,23 @@ implemented. An unavailable or unsupported observation falls back to full
 reads. Historical delivery does not prove comprehension or current memory.
 The new Critic still performs an independent review and can expand any source.
 
+For scoped review, the current `source_index`, `coverage_ledger`, and
+`source_inventory` must be bound Plan ports and remain full required inputs.
+Reconcile every declared source ID with one disposition, affected task owners,
+source refs, and acceptance IDs; mark unknown or truncated mappings as unknown.
+Compare old/new task partitions and include affected prerequisites and consumers.
+A related image or an image whose owner is unknown requires full review until
+current-role visual evidence can be verified; an image ID or OCR is not a view.
+Use `artifact index` to locate bound originals, follow all pages and treat an
+incomplete navigation result as a request to inspect the authoritative source.
+Do not narrow review solely because an old Critic saw a source or a structural
+diff is replayable. Old/new shared rules, affected task bodies, original
+requirement and fixed matrices remain required; missing scope evidence or any
+unresolved relevant ownership falls back to the existing complete-read policy.
+After session rotation or compaction, use the current attempt's pinned policy,
+read receipts and authorized recovery paths; previous output is historical
+observation, not proof of current model comprehension.
+
 
 Keep whole-file hydration limits separate from selected partition size. When
 complete task inputs exceed one artifact's limit, emit separately bound ports

@@ -237,6 +237,31 @@ def _scope(
         baseline_task_ids.update(old_port["tasks"][int(path[8:-1])]["task_id"] for path in paths[0][1:])
         replacements[str(new_source["source_id"])] = (new_source, paths[1])
         replacements[str(old_source["source_id"])] = (old_source, paths[0])
+    # Reconcile the producer's declared source/acceptance ownership for the
+    # entire dependency closure. This is a structural completeness check, not
+    # a semantic verdict; the Critic still reads the authoritative material.
+    coverage_sources = {}
+    for name in ("source_index", "coverage_ledger", "source_inventory"):
+        port = candidate_ports.get(name)
+        if not port:
+            return required
+        source = one(lambda s: str(s.get("source_id") or "").startswith("child-artifact-")
+                     and s.get("ref") == port.get("ref") and s.get("sha256") == port.get("sha256")
+                     and bound(s))
+        if not _has_full_read(required, source):
+            return required
+        coverage_sources[name] = read(source)
+    inventory = coverage_sources["source_inventory"]
+    if (inventory.get("schema_version") != "source-inventory.v1"
+            or any(body.get("complete") is False for body in coverage_sources.values())):
+        return required
+    from zf.runtime.plan_scope_coverage import declared_coverage_complete
+
+    if not declared_coverage_complete(
+        new_map, coverage_sources["source_index"], coverage_sources["coverage_ledger"], inventory,
+        affected=baseline_task_ids,
+    ):
+        return required
     if any(not _has_full_read(required, source) for name, (source, _) in replacements.items()
            if name.startswith("child-artifact-")):
         return required

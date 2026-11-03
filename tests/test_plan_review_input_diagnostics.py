@@ -22,4 +22,12 @@ def test_fallback_reason_does_not_claim_unobserved_cause():
     assert review_diagnostics({'sources': []}, before=rows, after=rows, explicit=True)['reason'] == 'explicit_required_reads'
     assert review_diagnostics({'sources': []}, before=rows, after=rows, explicit=False)['reason'] == 'no_baseline_package'
     manifest = {'sources': [{'source_id': 'plan-rework-package'}]}
-    assert review_diagnostics(manifest, before=rows, after=rows, explicit=False)['reason'] == 'prior_evidence_or_binding_unavailable'
+    assert review_diagnostics(manifest, before=rows, after=rows, explicit=False)['reason'] == 'impact_scope_unavailable'
+
+
+def test_scoped_replacement_can_add_rows_without_being_misreported_as_full():
+    original = {'source_id': 'A', 'artifact_id': 'a', 'artifact_sha256': 'a' * 64, 'json_path': '$'}
+    after = [{**original, 'json_path': '$.shared'}, {**original, 'json_path': '$.tasks[0]'}]
+    result = review_diagnostics({'sources': []}, before=[original], after=after, explicit=False)
+    assert result['mode'] == 'incremental'
+    assert result['after']['unknown_rows'] == 2

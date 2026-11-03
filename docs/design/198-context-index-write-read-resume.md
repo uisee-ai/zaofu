@@ -721,7 +721,12 @@ occurrence 权限再给标题、计数和游标；相同 digest 不合并权限�
 
 ## 19. Plan Critic 的跨版本证据输入
 
-Plan replan 的实际差量读取另见 [计划准入实现](../impl/plan-producer-failure-admission.md#跨计划版本的受控差量审查)。它绑定旧独立审查见证、当前候选和完整 JSON 差异，
-保留需求、Task Map、未证明输入和 Critic 的独立裁决；不足时回退完整读取。
-此路径不声称 Provider 保留原文，也不启用本设计 C8 的 Provider session 差量交付。
-LS 现场材料仅在隔离副本中验证了选择和回放，尚无该场景真实 Provider 质量和成本结论。
+Plan replan 的范围阅读见 [计划准入实现](../impl/plan-producer-failure-admission.md#跨版本审查与当前上下文闭包)。旧审核及可重放差异只用于导航，不单独授权减少
+当前原文。只有对当前准入包、任务范围、声明来源/验收、依赖闭包和必读证据完成
+核对，才能选择受影响旧新分区；共享或全局变化、未映射/相关视觉内容及不确定性
+均回退完整输入。身份、策略与本次消费由 runtime 机械验证；实际语义完整性仍由
+Planner/Critic 和独立评测负责，历史输出不能证明模型当前理解。
+
+此前 LS 将 32 项必读压至 16 项的纯结构差异实验未证明上下文完整性，不是当前
+安全策略的效果指标。实际 Provider 质量及视觉资格仍未完成，本设计 C8 的
+Provider session 差量交付继续为 shadow。

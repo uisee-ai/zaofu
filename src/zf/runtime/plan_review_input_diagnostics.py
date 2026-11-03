@@ -31,16 +31,24 @@ def review_diagnostics(manifest: Mapping[str, Any], *, before: list[dict[str, An
                        after: list[dict[str, Any]], explicit: bool) -> dict[str, Any]:
     sources = manifest.get('sources') or []
     ids = {str(s.get('source_id') or '') for s in sources if isinstance(s, Mapping)}
-    if len(after) < len(before):
-        mode, reason = 'incremental', 'verified_prior_evidence_and_delta'
+    def full_identity(row: Mapping[str, Any]) -> tuple[str, str, str] | None:
+        if (row.get('json_path') or '$') != '$':
+            return None
+        return (str(row.get('source_id') or ''), str(row.get('artifact_id') or ''),
+                str(row.get('artifact_sha256') or ''))
+
+    full_before = {full_identity(row) for row in before} - {None}
+    full_after = {full_identity(row) for row in after} - {None}
+    if full_before - full_after:
+        mode, reason = 'incremental', 'verified_scoped_review_and_required_context'
     elif explicit:
         mode, reason = 'full', 'explicit_required_reads'
     elif 'plan-rework-package' not in ids:
         mode, reason = 'full', 'no_baseline_package'
-    elif 'child-artifact-unchanged-review' not in ids:
-        mode, reason = 'full', 'prior_evidence_or_binding_unavailable'
+    elif 'scoped_plan_review.json' not in {str(s.get('artifact_id') or '') for s in sources if isinstance(s, Mapping)}:
+        mode, reason = 'full', 'impact_scope_unavailable'
     else:
-        mode, reason = 'full', 'proof_not_eligible_or_no_reduction'
+        mode, reason = 'full', 'impact_scope_ineligible_or_explicit_reads'
     return {'schema_version': 'plan-review-input-diagnostics.v1', 'strategy': 'cross_version_evidence',
             'mode': mode, 'reason': reason,
             'before': input_size(manifest, before), 'after': input_size(manifest, after)}

@@ -361,26 +361,6 @@ def prepare_call_operation(
     )
     full_plan_reads = list(required_reads) if output_profile_id == "plan-synth" else []
     if output_profile_id == "plan-synth" and any(
-        isinstance(source, Mapping) and source.get("source_id") == "child-artifact-unchanged-review"
-        for source in source_manifest.get("sources", [])
-    ):
-        from zf.runtime.plan_unchanged_review import scope_unchanged_reads
-
-        required_reads = scope_unchanged_reads(
-            runtime.state_dir, events=runtime.event_log.read_all(), manifest=source_manifest,
-            required=required_reads,
-            explicit=explicit_required_reads if isinstance(explicit_required_reads, list) else [],
-            fanout=str(payload.get("fanout_id") or ""), stage=stage_id,
-            critic_role=str(payload.get("role_instance") or ""), plan_revision=str(payload.get("plan_revision") or ""),
-        )
-    if output_profile_id == "plan-synth":
-        from zf.runtime.plan_review_input_diagnostics import review_diagnostics
-
-        payload["plan_review_optimization"] = review_diagnostics(
-            source_manifest, before=full_plan_reads, after=required_reads,
-            explicit=bool(explicit_required_reads),
-        )
-    if output_profile_id == "plan-synth" and any(
         isinstance(source, Mapping) and source.get("artifact_id") == "scoped_plan_review.json"
         for source in source_manifest.get("sources", [])
     ):
@@ -393,6 +373,13 @@ def prepare_call_operation(
             critic_role=str(payload.get("role_instance") or ""),
             fanout_id=str(payload.get("fanout_id") or ""), stage_id=stage_id,
             plan_revision=str(payload.get("plan_revision") or ""),
+        )
+    if output_profile_id == "plan-synth":
+        from zf.runtime.plan_review_input_diagnostics import review_diagnostics
+
+        payload["plan_review_optimization"] = review_diagnostics(
+            source_manifest, before=full_plan_reads, after=required_reads,
+            explicit=bool(explicit_required_reads),
         )
     if required_reads:
         payload["required_reads"] = required_reads

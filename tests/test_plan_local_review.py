@@ -90,6 +90,11 @@ def _policy_fixture(state, scenario=""):
             schema_version=body.get("schema_version", "fixture.v1"), created_by="test")
 
     old_map, new_map, old_port, new_port = _inputs()
+    for task_map in (old_map, new_map):
+        for task in task_map["tasks"]:
+            task_id = task["task_id"]
+            task["source_refs"] = [f"requirements.md#{task_id}"]
+            task["acceptance_criteria"] = [{"id": f"AC-{task_id}"}]
     if scenario == "large_changed_port":
         old_port["shared"]["large"] = new_port["shared"]["large"] = "x" * 50000
     if scenario == "global_map": new_map["goal_claims"] = ["changed"]
@@ -100,6 +105,30 @@ def _policy_fixture(state, scenario=""):
     old_port_ref, new_port_ref = save(old_port, "old-port"), save(new_port, "new-port")
     unchanged = save({"schema_version": "planning.v1", "value": "same"}, "planning")
     requirement = save({"schema_version": "requirement.v1", "body": "original acceptance"}, "requirement")
+    index_body = {"schema_version": "source-index.v1", "tasks": [
+        {"task_id": key, "source_refs": [f"requirements.md#{key}"], "acceptance_ids": [f"AC-{key}"]}
+        for key in ("A", "B", "C")], "traceability": [
+        {"source_id": f"REQ-{key}", "source_ref": f"requirements.md#{key}"} for key in ("A", "B", "C")]}
+    ledger_body = {"schema_version": "coverage-ledger.v1", "entries": [
+        {"source_id": f"REQ-{key}", "disposition": "covered", "task_ids": [key],
+         "acceptance_ids": [f"AC-{key}"]} for key in ("A", "B", "C")]}
+    inventory_body = {"schema_version": "source-inventory.v1", "pages": [
+        {"id": "image-c", "task_ids": ["C"], "reference_images": ["design.png#empty"]}]}
+    if scenario == "coverage_missing": ledger_body["entries"].pop(0)
+    if scenario == "coverage_pending": ledger_body["entries"][1].update(disposition="pending_decision", reason="undecided")
+    if scenario == "coverage_pending_unrelated": ledger_body["entries"][2].update(disposition="pending_decision", reason="undecided")
+    if scenario == "coverage_unknown": ledger_body["entries"][1].update(disposition="unrecognized", reason="unknown")
+    if scenario == "source_misowned": ledger_body["entries"][0]["task_ids"] = ["C"]
+    if scenario == "acceptance_unlinked": ledger_body["entries"][0]["acceptance_ids"] = []
+    if scenario == "index_missing_acceptance": index_body["tasks"][0]["acceptance_ids"] = []
+    if scenario == "index_truncated": index_body["complete"] = False
+    if scenario == "inventory_incomplete": inventory_body["complete"] = False
+    if scenario == "visual_affected": inventory_body["pages"][0]["task_ids"] = ["A"]
+    if scenario == "visual_unmapped": inventory_body["pages"][0]["task_ids"] = []
+    if scenario == "visual_asset_unmapped": inventory_body["visual_assets"] = ["design.svg"]
+    index_ref = save(index_body, "source-index")
+    ledger_ref = save(ledger_body, "coverage-ledger")
+    inventory_ref = save(inventory_body, "source-inventory")
     new_planning = (save({"schema_version": "planning.v1", "value": "changed"}, "new-planning")
                     if scenario == "global_port" else unchanged)
     new_requirement = (save({"schema_version": "requirement.v1", "body": "new global acceptance"}, "new-requirement")
@@ -109,7 +138,8 @@ def _policy_fixture(state, scenario=""):
                 "ref": ref["ref"], "sha256": ref["sha256"]}
     package = build_plan_artifact_package(workflow_run_id="run-1", flow_kind="prd", producer_stage_id="plan",
         run_contract=_run_contract(state), plan_revision="old-rev", task_map_generation="old-gen",
-        produced=[port("task_map", old_map_ref), port("execution_spec", old_port_ref), port("planning_result", unchanged)])
+        produced=[port("task_map", old_map_ref), port("execution_spec", old_port_ref), port("planning_result", unchanged),
+                  port("source_index", index_ref), port("coverage_ledger", ledger_ref), port("source_inventory", inventory_ref)])
     package_ref = write_plan_artifact_package(state, package)
     cert = save({"schema_version": "scoped-plan-review.v1", "workflow_run_id": "run-1", "scope_complete": True,
         "verification_responsibility_preserved": True, "baseline_package_sha256": package_ref["sha256"],
@@ -118,7 +148,8 @@ def _policy_fixture(state, scenario=""):
         "baseline_sha256": old_port_ref["sha256"], "candidate_sha256": new_port_ref["sha256"]}]}, "certificate")
     report = save({"schema_version": "fanout-child-result.v1", "task_map_ref": new_map_ref["ref"],
         "role_instance": "planner", "child_id": "planner", "dispatch_id": "new-planner-attempt",
-        "plan_ports": [port("execution_spec", new_port_ref), port("planning_result", new_planning)]}, "report")
+        "plan_ports": [port("execution_spec", new_port_ref), port("planning_result", new_planning),
+                       port("source_index", index_ref), port("coverage_ledger", ledger_ref), port("source_inventory", inventory_ref)]}, "report")
 
     def source(source_id, artifact_id, ref):
         return {**ref, "source_id": source_id, "artifact_id": artifact_id, "allowed_paths": ["$"]}
@@ -126,7 +157,10 @@ def _policy_fixture(state, scenario=""):
         source("child-artifact-planner-1", "task_map.json", new_map_ref),
         source("child-artifact-planner-2", "execution_spec.json", new_port_ref),
         source("child-artifact-planner-3", "planning.json", new_planning),
-        source("child-artifact-planner-4", "scoped_plan_review.json", cert)]
+        source("child-artifact-planner-4", "scoped_plan_review.json", cert),
+        source("child-artifact-planner-5", "source_index.json", index_ref),
+        source("child-artifact-planner-6", "coverage_ledger.json", ledger_ref),
+        source("child-artifact-planner-7", "source_inventory.json", inventory_ref)]
     requirement_source = source("requirement", "requirement.json", new_requirement)
     old_requirement_source = source("requirement", "requirement.json", requirement)
     requested_tasks = [] if scenario == "no_dispatch_scope" else ["A"]
@@ -146,7 +180,7 @@ def _policy_fixture(state, scenario=""):
     required = canonical_required_reads(manifest, output_profile_id="plan-synth")
 
     old_children = [source(f"child-artifact-old-{index}", f"old-{index}.json", ref)
-                    for index, ref in enumerate((old_map_ref, old_port_ref, unchanged))]
+                    for index, ref in enumerate((old_map_ref, old_port_ref, unchanged, index_ref, ledger_ref, inventory_ref))]
     old_report_ref = save({"schema_version": "fanout-child-result.v1", "role_instance": "old-planner",
                            "child_id": "planner", "dispatch_id": "old-planner-attempt"}, "old-report")
     old_report = source("child-result-old-planner", "old-report.json", old_report_ref)
@@ -236,7 +270,10 @@ def _policy_fixture(state, scenario=""):
 
 
 @pytest.mark.parametrize("scenario", ["global_map", "outside_map", "outside_port", "shared_port", "global_port",
-                                      "global_requirement", "no_dispatch_scope", "prior_scoped", "prior_truncated"])
+                                      "global_requirement", "no_dispatch_scope", "prior_scoped", "prior_truncated",
+                                      "coverage_missing", "coverage_pending", "coverage_unknown", "source_misowned", "acceptance_unlinked",
+                                      "index_missing_acceptance", "index_truncated", "inventory_incomplete",
+                                      "visual_affected", "visual_unmapped", "visual_asset_unmapped"])
 def test_local_critic_policy_keeps_full_input_when_change_is_not_proved_local(tmp_path, scenario):
     manifest, required, events = _policy_fixture(tmp_path, scenario)
     assert _scope_policy(tmp_path, events=events, manifest=manifest, required=required, explicit=[], critic_role="critic") == required
@@ -254,6 +291,15 @@ def test_local_critic_policy_preserves_full_authority_and_compares_both_versions
     assert ("child-artifact-planner-1", "$") in selected
     assert ("child-artifact-planner-4", "$") in selected
     assert ("requirement", "$") in selected
+    for source in ("child-artifact-planner-5", "child-artifact-planner-6", "child-artifact-planner-7"):
+        assert (source, "$") in selected
+
+
+def test_pending_decision_for_unrelated_task_does_not_expand_review(tmp_path):
+    manifest, required, events = _policy_fixture(tmp_path, "coverage_pending_unrelated")
+    scoped = _scope_policy(tmp_path, events=events, manifest=manifest, required=required, explicit=[], critic_role="critic")
+    assert scoped != required
+    assert ("child-artifact-planner-2", "$.tasks[1]") in {(r["source_id"], r["json_path"]) for r in scoped}
 
 
 def test_local_critic_accepts_admitted_nested_approve_report(tmp_path):
@@ -387,6 +433,8 @@ def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, mo
     assert replay.request_hash == prepared.request_hash
     policy = hydrate_sidecar_ref(runtime.state_dir, payload["input_consumption_policy_ref"]).payload
     selected = {(row["source_id"], row["json_path"]) for row in policy["required_reads"]}
+    assert payload["plan_review_optimization"]["mode"] == "incremental"
+    assert payload["plan_review_optimization"]["reason"] == "verified_scoped_review_and_required_context"
     assert ("child-artifact-planner-2", "$") not in selected
     assert ("child-artifact-planner-2", "$.tasks[0]") in selected
     assert ("baseline-plan-port-task_map", "$.tasks[0]") in selected
@@ -404,9 +452,19 @@ def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, mo
     with pytest.raises(ValueError, match="result was not admitted"):
         validate_local_review_output(runtime, event=result, payload={})
     assert admit_runtime_call_result(runtime, result, mode="blocking", dispatch_correction=False).repair_requested
+    missing = next(row for row in policy["required_reads"]
+                   if row["source_id"] == "child-artifact-planner-2" and row["json_path"] == "$.tasks[1]")
     for row in policy["required_reads"]:
+        if row is missing:
+            continue
         read_attempt_artifact(runtime.state_dir, manifest=pinned_manifest, source_id=row["source_id"],
                               artifact_id=row["artifact_id"], json_path=row["json_path"])
+    ledger = seal_read_ledger(runtime.state_dir, "new-attempt")
+    assert any(issue.get("code") == "required_read_missing"
+               for issue in validate_required_reads(runtime.state_dir, policy=policy, ledger_descriptor=ledger))
+    assert admit_runtime_call_result(runtime, result, mode="blocking", dispatch_correction=False).repair_requested
+    read_attempt_artifact(runtime.state_dir, manifest=pinned_manifest, source_id=missing["source_id"],
+                          artifact_id=missing["artifact_id"], json_path=missing["json_path"])
     ledger = seal_read_ledger(runtime.state_dir, "new-attempt")
     assert validate_required_reads(runtime.state_dir, policy=policy, ledger_descriptor=ledger) == []
     assert admit_runtime_call_result(runtime, result, mode="blocking", dispatch_correction=False).admitted
