@@ -66,6 +66,46 @@ def test_signed_append_does_not_commit_a_complete_unterminated_envelope(tmp_path
     assert [event.type for event in log.read_all()] == ["after.interruption"]
 
 
+def test_failed_append_is_isolated_before_next_event(tmp_path: Path, monkeypatch):
+    import builtins
+
+    path = tmp_path / "events.jsonl"
+    log = EventLog(path)
+    log.append(ZfEvent(type="previous"))
+    original_open = builtins.open
+
+    class InterruptedWriter:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.handle.close()
+
+        def write(self, value):
+            self.handle.write(value[:40])
+            self.handle.flush()
+            raise OSError(28, "No space left on device")
+
+    def fail_event_write(file, mode="r", *args, **kwargs):
+        handle = original_open(file, mode, *args, **kwargs)
+        if Path(file) == path and mode == "a":
+            return InterruptedWriter(handle)
+        return handle
+
+    with monkeypatch.context() as patch:
+        patch.setattr(builtins, "open", fail_event_write)
+        with pytest.raises(OSError, match="No space left"):
+            log.append(ZfEvent(type="interrupted"))
+    preserved = path.read_bytes()
+    log.append(ZfEvent(type="after.interruption"))
+
+    assert path.read_bytes().startswith(preserved)
+    assert [event.type for event in log.read_all()] == ["previous", "after.interruption"]
+
+
 def test_read_all_empty_file(tmp_path: Path):
     path = tmp_path / "events.jsonl"
     path.touch()
