@@ -1,6 +1,6 @@
 # 事件账本追加中断后的行边界保护
 
-> 状态: active
+> 状态: done；实现：`6c3c8ac8 fix: isolate interrupted event log appends`
 
 LS 在磁盘耗尽时 `events.jsonl` 出现 3 条部分写入后直接拼接下一条完整事件的损坏行；完整后续事件因行级 JSON 解析而丢失。已有原始账本只读保留，此任务修复未来 `EventLog.append` 遇到未终止尾行时的处理，不对历史残片推断业务结论或直接改写状态。
 
