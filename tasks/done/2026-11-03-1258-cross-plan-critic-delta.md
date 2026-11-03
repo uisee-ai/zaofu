@@ -1,6 +1,6 @@
 # 跨计划版本 Critic 差量审查
 
-> 状态: active
+> 状态: done；实现：`a0490566 feat: review plan revisions using verified deltas`
 
 来源：设计 198、LS Run `prepare-TASK-90D92C-e4eaededbd2b74fe` 的全量阅读放大及用户授权。以 dev `e50cb492` 为基线，在独立 worktree 实施；不改写正在运行或已中断 attempt 的输入合同。
 
