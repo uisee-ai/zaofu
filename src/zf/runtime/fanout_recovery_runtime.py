@@ -28,6 +28,10 @@ def recover_unrecorded_reader_fanout_results(runtime) -> None:
             events = read_runtime_events(runtime.event_log, runtime.state_dir)
         except Exception:
             return
+    from zf.runtime.synth_budget_recovery import recover_pending_budget_synths
+
+    if recover_pending_budget_synths(runtime, events):
+        return
     if runtime._resume_unstarted_reader_fanouts(events):
         try:
             events = read_runtime_events(runtime.event_log, runtime.state_dir)
@@ -587,7 +591,11 @@ class FanoutRecoveryRuntimeMixin:
             return
         operation_ids: set[str] = set()
         operation_children: dict[str, dict] = {}
-        for child in manifest.get("children", []) or []:
+        readers = list(manifest.get("children", []) or [])
+        synth = manifest.get("synth")
+        if isinstance(synth, dict):
+            readers.append(synth)
+        for child in readers:
             if not isinstance(child, dict):
                 continue
             child_payload = (

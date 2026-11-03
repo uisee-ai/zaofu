@@ -386,7 +386,9 @@ def test_failed_critic_without_verified_current_refs_does_not_reuse_older_candid
     })
     failure = _failure(reason="Critic could not consume inputs")
     failure.payload["failure_class"] = "reader_execution_failure"
-    replan, _ = plan_reader_stage_replan(_config(), [origin, failure], failure)
+    replan, _ = plan_reader_stage_replan(
+        _config(), [origin, failure], failure, authorized_generation="owner-repair",
+    )
     assert replan is not None
     assert replan.payload["previous_plan_candidate_refs"] == []
 

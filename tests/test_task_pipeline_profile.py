@@ -251,7 +251,7 @@ def test_enabled_risk_review_requires_dedicated_skill_and_one_turn() -> None:
 
     assert compiled["integration_admission"]["risk_review"]["max_turns"] == 1
     value["integrationAdmission"]["riskReview"]["maxTurns"] = 2
-    with pytest.raises(ValueError, match="between 1 and 1"):
+    with pytest.raises(ValueError, match="between 0 and 1"):
         _compile(value)
 
 

@@ -28,6 +28,12 @@ Plan Critic 使用 `plan-synth` 结果时，只有明确声明
 仍不能绕过读取校验。回归：`tests/test_plan_synth_failure_reads.py`。
 准入后的 Critic 结果将该失败分类传递至 fanout 聚合和阶段失败事件，供
 恢复流程区分执行失败与计划内容被否决；历史事件不被改写。
+`reader_execution_failure` 按基础设施失败归类，不自动发起语义重规划，
+也不计入后续语义失败的历史次数。已存在的返工 lineage 不重置。
+修复输入交付或执行配置后，通过 `stage-replan-new-generation` 的
+`repaired_failure_event_id`、`approval_ref`、`reason` 合同受控恢复；
+显式 failure_kind、原失败、读取账本和审批门禁保持有效。
+回归：`tests/test_reader_failure_kind_recovery.py`。
 Critic 执行失败时，恢复从该次派发绑定的不可变 source manifest 与
 plan-synth contract 对账当前子结果及工件引用；新引用优先于旧触发的候选，
 并保留原有读取范围和 access scope。身份、摘要或来源不匹配时不猜测当前
@@ -41,6 +47,12 @@ plan-synth contract 对账当前子结果及工件引用；新引用优先于旧
 登记为 `canonical-task-snapshot` 来源，索引提供精确 JSON path 和摘要；Planner
 修改其他任务合同或解析未知 task id 前需读取该任务正文。未指定范围的重规划
 仍必读完整快照。此分区不改变任务、AC 或预算，也不允许用索引代替完整 task map。
+
+当 `resume_scope=failed_children_and_downstream` 且已列出 `failed_task_ids`，
+正文只内联直接失败任务合同；下游派发范围仍完整保留在 `task_ids` 和
+`downstream_task_ids`，全部任务索引及未解析 ID 也保留。扩展派发范围不会自动
+要求重读全部下游合同，修改任何未内联合同前仍须读取其完整快照。没有直接失败
+任务或采用其他恢复模式时，沿用显式选择范围，避免推测语义读取边界。
 
 返修输入同时绑定已批准 Plan Package 正文及其 produced/inherited 端口。
 Package、OA 原裁决和 delta 是小体量必读来源；大端口按需受控读取，保持原摘要。
@@ -57,6 +69,13 @@ Critic 首次准备请求时，执行评审中的用量观察也随 manifest 固
 request divergence 拒绝，新操作重新读取当前用量。原 manifest/评审摘要均需
 校验；这不是预算豁免，也不修改用量账本。入口及篡改回归：
 `tests/test_plan_review_replay.py`。
+
+同一 Plan 被新 fanout 替代后，reader 回收包括子角色及 aggregate 的 synth。
+旧 synth operation 通过原有取消服务终止；provider 只有在其最新派发仍对应
+旧 attempt 时才停止，确认退出后才释放角色。后续同角色新派发不受旧取消影响。
+请求、读取账本与已有审查结果保留，取消不构成 Critic 通过。
+回归：`tests/test_superseded_synth_closeout.py` 覆盖 Orchestrator sweep、
+重复恢复、当前操作保留和角色复用。
 
 ## 局部重规划的独立 Critic 输入
 

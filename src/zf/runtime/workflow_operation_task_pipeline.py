@@ -32,6 +32,7 @@ TASK_PIPELINE_REQUEST_KEYS = (
     "risk_review_timeout_seconds",
     "risk_review_max_turns",
     "risk_review_budget_usd",
+    "provider_session_max_parallel_agents",
 )
 _INTEGER_REQUEST_KEYS = frozenset({
     "operation_generation",
@@ -91,7 +92,12 @@ def task_pipeline_request_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key in TASK_PIPELINE_REQUEST_KEYS:
         value = payload.get(key)
-        if value in (None, "", 0):
+        if value in (None, "") or (
+            value == 0 and key not in {
+                "risk_review_timeout_seconds", "risk_review_max_turns",
+                "risk_review_budget_usd", "provider_session_max_parallel_agents",
+            }
+        ):
             continue
         result[key] = _int_value(value) if key in _INTEGER_REQUEST_KEYS else str(value)
     return result
@@ -240,7 +246,10 @@ def find_task_pipeline_budget_amendment(
     blocked_event_id = str(operation.get("last_event_id") or "").strip()
     if (
         str(operation.get("status") or "") != "blocked"
-        or not str(operation.get("task_pipeline_stage") or "").strip()
+        or (
+            not str(operation.get("task_pipeline_stage") or "").strip()
+            and operation.get("operation_type") != "fanout_synth"
+        )
         or not str(operation.get("reason") or "").startswith(
             "workflow_budget_exceeded:"
         )

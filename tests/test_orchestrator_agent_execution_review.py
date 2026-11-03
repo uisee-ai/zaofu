@@ -64,7 +64,8 @@ def test_settled_attempt_survives_cleared_task_dispatch_id(tmp_path):
     assert prepared.context.input_body["checkpoint_context"]["target_attempt_id"] == "lease-task-1"
 
 
-def test_semantic_review_targets_the_settled_operation_role(tmp_path):
+@pytest.mark.parametrize("request_attempt_present", [True, False])
+def test_semantic_review_targets_the_settled_operation_role(tmp_path, request_attempt_present):
     from tests.test_orchestrator_agent_semantic_failure import _submit_rework
     from zf.runtime.orchestrator_agent_decision_apply import apply_orchestrator_agent_decision
     from zf.runtime.run_manager import run_manager_tick
@@ -82,8 +83,13 @@ def test_semantic_review_targets_the_settled_operation_role(tmp_path):
                      event_log=runtime.event_log, spawn_repairs=False)
     request = next(event for event in runtime.event_log.read_all()
                    if event.type == "orchestrator.semantic.failure.requested")
+    if not request_attempt_present:
+        request = replace(request, payload={
+            key: value for key, value in request.payload.items() if key != "active_attempt_id"
+        })
     prepared = request_semantic_failure_checkpoint(runtime, request)
     assert prepared.context.input_body["checkpoint_context"]["target_role_instance"] == "dev-a"
+    assert prepared.context.input_body["checkpoint_context"]["target_attempt_id"] == "lease-task-1"
     assert apply_orchestrator_agent_decision(runtime, _submit_rework(runtime, prepared))["applied"]
     events = runtime.event_log.read_all()
     retries = derive_impl_rework_requests(

@@ -3955,15 +3955,15 @@ def _build_runtime(
         )
     try:
         autoresearch_resident_max_actions = int(
-            autoresearch_resident_raw.get("max_actions_per_tick", 1) or 1
+            autoresearch_resident_raw.get("max_actions_per_tick", 1)
         )
     except (TypeError, ValueError) as exc:
         raise ConfigError(
             "runtime.autoresearch_resident.max_actions_per_tick must be an integer"
         ) from exc
-    if autoresearch_resident_max_actions <= 0:
+    if autoresearch_resident_max_actions < 0:
         raise ConfigError(
-            "runtime.autoresearch_resident.max_actions_per_tick must be > 0"
+            "runtime.autoresearch_resident.max_actions_per_tick must be >= 0"
         )
     autoresearch_resident_backend = str(
         autoresearch_resident_raw.get("self_repair_backend", "") or ""

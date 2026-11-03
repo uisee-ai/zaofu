@@ -15,7 +15,7 @@ from zf.runtime.orchestrator_agent_policy import (
     checkpoint_policy,
     orchestration_flow_kind,
 )
-from zf.runtime.plan_artifact_package import reduce_plan_artifact_packages
+from zf.runtime.orchestrator_agent_plan_binding import current_checkpoint_plan_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
@@ -52,6 +52,7 @@ def request_semantic_failure_checkpoint(
     if task is None or str(task.status) in {"done", "cancelled"}:
         raise SemanticFailureCheckpointError("target_task_not_current")
     events = runtime.event_log.read_all()
+    current: dict[str, Any] = {}
     bound_operation: Mapping[str, Any] = {}
     if payload.get("target_operation_id"):
         from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
@@ -63,6 +64,7 @@ def request_semantic_failure_checkpoint(
         bound_operation = reduce_workflow_operations(events).get(str(payload["target_operation_id"]), {})
     workflow_run_id, package = _current_plan_package(
         events,
+        task_id=task_id,
         preferred_run_id=str(
             payload.get("workflow_run_id")
             or payload.get("trace_id")
@@ -95,6 +97,7 @@ def request_semantic_failure_checkpoint(
     active_attempt_id = str(
         payload.get("active_attempt_id")
         or getattr(task, "active_dispatch_id", "")
+        or current.get("active_attempt_id")
         or payload.get("dispatch_id")
         or latest_failure_payload.get("attempt_id")
         or latest_failure_payload.get("dispatch_id")
@@ -207,6 +210,7 @@ def _current_plan_package(
     events: list[ZfEvent],
     *,
     preferred_run_id: str,
+    task_id: str = "",
 ) -> tuple[str, dict[str, Any]]:
     run_ids: list[str] = []
     if preferred_run_id:
@@ -220,10 +224,11 @@ def _current_plan_package(
     if not preferred_run_id and len(run_ids) != 1:
         return "", {}
     for run_id in run_ids:
-        current = reduce_plan_artifact_packages(
+        current = current_checkpoint_plan_package(
             events,
             workflow_run_id=run_id,
-        ).get("current")
+            task_id=task_id,
+        )
         if isinstance(current, Mapping) and current:
             return run_id, dict(current)
     return "", {}

@@ -83,6 +83,7 @@ class PlanSynthRuntimeMixin:
                 fanout_id = str(payload.get("fanout_id") or "")
                 if fanout_id:
                     dispatches.setdefault(fanout_id, []).append(event)
+                    terminal.discard(fanout_id)
                 continue
             if event.type == "fanout.synth.completed":
                 fanout_id = str(payload.get("fanout_id") or "")
@@ -149,10 +150,18 @@ class PlanSynthRuntimeMixin:
                 latest_dispatch,
             ):
                 continue
+            from zf.runtime.synth_budget_recovery import recover_budget_amended_synth
+
+            budget_recovery = recover_budget_amended_synth(self, latest_dispatch, events)
+            if budget_recovery is not None:
+                if budget_recovery:
+                    return True
+                continue
             lost_event = self._reader_dispatch_lost_event_after(
                 lost_by_role.get(role_instance, []),
                 latest_index,
                 events=events, dispatch_event=latest_dispatch,
+                state_dir=self.state_dir,
             )
             if lost_event is None:
                 continue

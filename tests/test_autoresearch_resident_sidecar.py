@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -89,9 +90,11 @@ def test_build_autoresearch_resident_command_uses_current_zf_cli(monkeypatch):
     ]
 
 
+@pytest.mark.parametrize("action_limit", [0, 2])
 def test_autoresearch_resident_sidecar_starts_authorized_and_stops(
     tmp_path: Path,
     monkeypatch,
+    action_limit: int,
 ):
     monkeypatch.setenv("ZF_CLI_CMD", "zf")
     started = {}
@@ -115,7 +118,7 @@ def test_autoresearch_resident_sidecar_starts_authorized_and_stops(
             autoresearch_resident=RuntimeAutoresearchResidentConfig(
                 enabled=True,
                 interval_seconds=1.5,
-                max_actions_per_tick=2,
+                max_actions_per_tick=action_limit,
                 worktree_root=str(tmp_path / "worktrees"),
             ),
         ),
@@ -134,7 +137,7 @@ def test_autoresearch_resident_sidecar_starts_authorized_and_stops(
     assert "--execute" in started["command"]
     assert "1.5" in started["command"]
     assert "--max-actions-per-tick" in started["command"]
-    assert "2" in started["command"]
+    assert started["command"][started["command"].index("--max-actions-per-tick") + 1] == str(action_limit)
     assert started["cwd"] == str(tmp_path)
     assert started["env"]["ZF_AUTORESEARCH_RESIDENT"] == "authorized"
     assert sidecar.pid_path.exists()

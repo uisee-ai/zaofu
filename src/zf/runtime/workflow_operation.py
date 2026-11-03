@@ -1134,6 +1134,10 @@ class WorkflowOperationService:
         )
         parent_task_id = str(existing_operation.get("parent_task_id") or "")
         emitted_body = dict(payload)
+        if event_type == "workflow.operation.started":
+            # Reader replay retains its pinned attempt and dispatch identity.
+            # A controlled redrive still creates a new start occurrence.
+            emitted_body["redrive_count"] = int(existing_operation.get("redrive_count") or 0)
         if parent_task_id:
             emitted_body.setdefault("parent_task_id", parent_task_id)
         for event in reversed(events):
@@ -1152,10 +1156,12 @@ class WorkflowOperationService:
                     occurrence = (
                         str(payload.get("active_attempt_id") or ""),
                         str(payload.get("dispatch_id") or ""),
+                        emitted_body["redrive_count"],
                     )
                     existing_occurrence = (
                         str(existing_body.get("active_attempt_id") or ""),
                         str(existing_body.get("dispatch_id") or ""),
+                        int(existing_body.get("redrive_count") or 0),
                     )
                     if occurrence != existing_occurrence:
                         continue

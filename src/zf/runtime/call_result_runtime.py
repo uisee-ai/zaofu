@@ -580,6 +580,15 @@ def prepare_call_operation(
             "context_inheritance": dict(context_inheritance),
             "context_renderer_version": CONTEXT_RENDERER_VERSION,
         })
+    # Freeze the configured ceiling, never a worker-supplied result field. Omit
+    # unspecified settings so historical requests keep their original identity.
+    role_config = next((
+        role for role in getattr(runtime.config, "roles", [])
+        if role_instance in {role.instance_id, role.name}
+    ), None)
+    provider_session = getattr(role_config, "provider_session", None)
+    if provider_session is not None and provider_session.max_parallel_agents is not None:
+        request["provider_session_max_parallel_agents"] = provider_session.max_parallel_agents
     service = workflow_operation_service(runtime)
     ensured = service.ensure_operation(
         workflow_run_id=workflow_run_id,
