@@ -223,6 +223,39 @@ def test_synth_recovery_does_not_bypass_amendment_or_currentness(
     assert len(runtime.transport.sent) == sent
 
 
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_revoked_budget_redrive_cannot_fall_through_to_reader_restart(
+    tmp_path, monkeypatch, interrupted
+):
+    from zf.runtime.synth_budget_recovery import recover_budget_amended_synth
+
+    state, log, runtime, dispatch = _blocked_synth(tmp_path, monkeypatch)
+    op_id = dispatch.payload["operation_id"]
+    assert _run_set(Namespace(objective="", status="active", reason="owner approved",
+        operation=op_id, operation_max_usage_samples=0)) == 0
+    checkpoint = next(c for c in build_workflow_resume_projection(state, runtime.config)[
+        "operation_checkpoints"] if c["operation_id"] == op_id)
+    assert apply_workflow_resume(state, runtime.config,
+        checkpoint_id=checkpoint["checkpoint_id"])["applied"] == 1
+    if interrupted:
+        service = WorkflowOperationService(state_dir=state, event_log=log,
+            event_writer=runtime.event_writer)
+        service.interrupt(operation_id=op_id, request_hash=dispatch.payload["request_hash"],
+            workflow_run_id="trace-product", task_id="", reason="graceful_stop")
+        checkpoint = next(c for c in build_workflow_resume_projection(state, runtime.config)[
+            "operation_checkpoints"] if c["operation_id"] == op_id)
+        assert apply_workflow_resume(state, runtime.config,
+            checkpoint_id=checkpoint["checkpoint_id"])["applied"] == 1
+    runtime.event_writer.append(ZfEvent(type="run.goal.blocked", actor="operator",
+        payload={"run_id": "trace-product"}, correlation_id="trace-product"))
+    sent = len(runtime.transport.sent)
+    assert recover_budget_amended_synth(runtime, dispatch, log.read_all()) is False
+    runtime.event_writer.append(ZfEvent(type="worker.launch_artifact.written", actor="zf-cli",
+        payload={"instance_id": dispatch.payload["role_instance"], "launch_attempt": 2}))
+    assert not runtime._recover_lost_fanout_synth_dispatches(log.read_all())
+    assert len(runtime.transport.sent) == sent
+
+
 @pytest.mark.parametrize(
     "case", ["cancelled", "interrupted", "semantic_reject", "revoked"]
 )

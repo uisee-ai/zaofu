@@ -12,6 +12,12 @@ Runtime 在 fanout 当前性、无已准入结果检查后，核对 kernel redri
 `workflow.operation.started` 按 attempt、dispatch、受控 redrive_count 去重。
 相同恢复不会重复启动，非预算拒绝、失效修订或已过时 fanout 不适用。
 
+普通停机后的 reader 重放没有待执行的 Owner 预算 redrive 时，仍交回原 reader 恢复路径。
+若预算 redrive 已准入但尚未成功 started，修订失效仍阻断恢复，即使中间发生再次停机；
+不能因缺少有效修订而绕入普通 provider 重启路径。已成功 started 的历史预算恢复不阻塞
+之后的普通停机重放。`test_stopped_plan_synth_redrives_existing_operation_after_provider_restart`
+及预算撤销回归共同验证这两条路径的边界。
+
 验证：`tests/test_synth_budget_recovery.py` 经 CLI、恢复入口、实际 synth Runtime
 调用者及 mock transport 覆盖成功、范围、拒绝、失效、身份和幂等性。
 实施记录：[任务](../../tasks/active/2026-11-01-0042-critic-budget-recovery.md)。

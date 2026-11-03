@@ -41,7 +41,18 @@ def recover_budget_amended_synth(
     redrive = events[redrive_index]
     amendment = pending_synth_budget_amendment(events, operation)
     if amendment is None:
-        return False
+        # Ordinary stop/restart belongs to reader recovery. Keep this gate only
+        # when an owner budget redrive has not yet reached a successful start;
+        # a revoked amendment must never fall through to ordinary recovery.
+        for event in reversed(events[:redrive_index + 1]):
+            if event.payload.get("operation_id") != operation_id:
+                continue
+            if event.type == "workflow.operation.started":
+                break
+            if (event.type == "workflow.operation.redrive_admitted"
+                    and event.payload.get("recovery_decision_owner") == "operator_budget_amendment"):
+                return False
+        return None
     fanout_id = str(payload.get("fanout_id") or "")
     if runtime._fanout_identity_stale_reason(fanout_id)[0]:
         return False
