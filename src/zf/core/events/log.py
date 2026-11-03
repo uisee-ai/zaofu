@@ -104,8 +104,20 @@ class EventLog:
             rotate_if_needed(self.path, self._archive_dir)
             self._rotate_by_size_if_needed()
             line = self._encode(event)
+            prefix = ""
+            try:
+                with self.path.open("rb") as previous:
+                    previous.seek(0, os.SEEK_END)
+                    if previous.tell():
+                        previous.seek(-1, os.SEEK_END)
+                        if previous.read(1) != b"\n":
+                            # Keep the unknown tail uncommitted even if it is
+                            # complete JSON without its terminating newline.
+                            prefix = "!\n"
+            except FileNotFoundError:
+                pass
             with open(self.path, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
+                f.write(prefix + line + "\n")
         if self.index is not None:
             try:
                 self.index.observe(event)

@@ -29,6 +29,43 @@ def test_append_and_read_all(tmp_path: Path):
     assert [e.type for e in events] == ["a", "b", "c"]
 
 
+@pytest.mark.parametrize("fragment", [
+    b'{"type":"interrupted","payload":',
+    b'{"type":"interrupted","payload":{"message":"\xe4\xb8',
+    b'{"type":"uncommitted","payload":{}}',
+])
+def test_append_preserves_interrupted_tail_without_accepting_it(tmp_path: Path, fragment: bytes):
+    path = tmp_path / "events.jsonl"
+    log = EventLog(path)
+    first = ZfEvent(type="previous")
+    log.append(first)
+    with path.open("ab") as handle:
+        handle.write(fragment)
+    original = path.read_bytes()
+    offset = len(first.to_json().encode("utf-8")) + 1
+    assert log.read_from_offset(offset) == ([], offset)
+
+    log.append(ZfEvent(type="after.interruption"))
+
+    assert path.read_bytes().startswith(original)
+    assert [event.type for event in log.read_all()] == ["previous", "after.interruption"]
+    tail, _ = log.read_from_offset(offset)
+    assert [event.type for event in tail] == ["after.interruption"]
+
+
+def test_signed_append_does_not_commit_a_complete_unterminated_envelope(tmp_path: Path):
+    from zf.core.security.signing import EventSigner
+
+    path = tmp_path / "events.jsonl"
+    log = EventLog(path, signer=EventSigner(b"test-secret"))
+    incomplete = log._encode(ZfEvent(type="uncommitted")).encode("utf-8")
+    path.write_bytes(incomplete)
+    log.append(ZfEvent(type="after.interruption"))
+
+    assert path.read_bytes().startswith(incomplete)
+    assert [event.type for event in log.read_all()] == ["after.interruption"]
+
+
 def test_read_all_empty_file(tmp_path: Path):
     path = tmp_path / "events.jsonl"
     path.touch()
