@@ -92,6 +92,21 @@ attempt 且旧请求未携带该字段时重发一次；保留原拒绝，其他
 恢复要求原升级和决策已准入、同一已结算 operation 的 attempt 一致且角色确有偏差；
 保留旧结论，新检查点仍须独立决策，不直接派发返工或修改冻结合同。
 
+局部 Plan 更新可能保留其他 Task 的旧代次。此时 semantic_failure 的请求、结果提交
+和决策准入都按目标 Task 最近一次 `task.pipeline.generation.admitted` 绑定的不可变
+Plan 包校验，不能用全局最新包误拒绝仍生效的任务。任务自身重新准入、包摘要不符
+或 Run 不符仍拒绝旧请求/结果；非任务范围的 Plan 检查点继续使用全局最新包。
+对应回归在 `tests/test_orchestrator_agent_plan_binding.py`。
+Impl 结算后 Task 的活跃 dispatch 可以清空；OA 从已核对仍为当前且 settled 的
+目标 operation 取回 attempt 绑定，不依赖任务继续占有执行槽位。
+`return_to_plan` 的后续触发同样绑定已接纳 OA 决定的 Plan 包，不能重新替换为
+全局最新包。恢复扫描会识别历史触发与该不可变基线不一致的情况；去重键包含 OA
+基线和决定引用，使正确触发恰好补发一次。普通 candidate replan 仍使用最新包。
+Plan-domain 的工件预注册也按输入声明的已准入代次核对历史包；Plan 输出仍需经过
+后续审查和准入，读取基线不等于授予任务执行权限。未准入代次和摘要不符继续拒绝。
+Owner 授权的 stage recovery 从同 Run、同 OA 决定引用的 Kernel 重规划记录恢复
+基线，避免沿用旧错误触发中的包身份；历史未记录代次的包保留原兼容校验。
+
 ## 只读观测
 
 ```bash

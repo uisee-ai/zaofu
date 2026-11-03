@@ -14,6 +14,7 @@ rework_of / rework_attempt / rework_feedback=findings),reader fanout
 from __future__ import annotations
 
 from typing import Any
+from types import SimpleNamespace
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.plan_artifact_package import (
@@ -106,6 +107,19 @@ def _bind_current_plan_package_identity(
 
     if not workflow_run_id:
         return
+    decision_ref = payload.get("orchestrator_decision_ref")
+    if decision_ref:
+        from zf.runtime.replan_resynth import _bind_current_plan_package
+
+        for event in reversed(events):
+            if (event.type == "orchestrator.replan_requested" and event.origin == "kernel"
+                    and _event_run_id(event) == workflow_run_id
+                    and event.payload.get("classification") == "oa_semantic_return_to_plan"
+                    and event.payload.get("orchestrator_decision_ref") == decision_ref):
+                _bind_current_plan_package(
+                    payload, plan=SimpleNamespace(**event.payload), events=events,
+                )
+                return
     projection = reduce_plan_artifact_packages(
         events,
         workflow_run_id=workflow_run_id,
@@ -565,6 +579,8 @@ def plan_reader_stage_replan(
         if not _same_replan_scope(event, failure_event):
             continue
         if event.id == failure_event.id:
+            continue
+        if failure_kind_from_payload(event.payload) == FAILURE_KIND_INFRA:
             continue
         prior_failures += 1
     # A reader child can emit its configured success_event before downstream

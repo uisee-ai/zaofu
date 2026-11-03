@@ -17,6 +17,7 @@ from zf.runtime.candidate_rework_evidence import (
     plan_rejection_required_actions,
 )
 from zf.runtime.plan_artifact_package import (
+    admitted_plan_artifact_package_for_generation,
     plan_artifact_package_binding,
     reduce_plan_artifact_packages,
 )
@@ -68,6 +69,7 @@ def append_replan_resynth_once(
             str(payload.get("pdd_id") or payload.get("feature_id") or ""),
             str(payload.get("rework_of") or ""),
             int(payload.get("rework_attempt") or 0),
+            _oa_replan_binding(payload),
         )
 
     key = identity(event)
@@ -242,6 +244,19 @@ def _bind_current_plan_package(
         workflow_run_id=workflow_run_id,
     )
     current = projection.get("current")
+    if _oa_replan_binding(payload):
+        current = admitted_plan_artifact_package_for_generation(
+            projection,
+            task_map_generation=str(getattr(plan, "task_map_generation", "") or ""),
+        )
+        if not current or any(
+            str(getattr(plan, field, "") or "") != str(current.get(key) or "")
+            for field, key in (
+                ("plan_artifact_package_ref", "package_ref"),
+                ("plan_artifact_package_digest", "package_digest"),
+            )
+        ):
+            raise ValueError("OA replan baseline is not the pinned admitted package")
     if not isinstance(current, dict) or not current:
         if str(getattr(plan, "source_event_type", "") or "") != "plan.rejected":
             return
@@ -251,6 +266,21 @@ def _bind_current_plan_package(
     for key in _GOAL_CLAIM_SET_IDENTITY_KEYS:
         payload.pop(key, None)
     payload.update(plan_artifact_package_binding(package_events, current))
+
+
+def _oa_replan_binding(payload: Mapping) -> tuple[str, ...]:
+    """An admitted OA decision keeps its exact baseline across follow-through."""
+    classification = payload.get("replan_classification") or payload.get("classification")
+    decision_ref = payload.get("orchestrator_decision_ref")
+    if classification != "oa_semantic_return_to_plan" or not isinstance(decision_ref, Mapping):
+        return ()
+    return (
+        str(payload.get("task_map_generation") or ""),
+        str(payload.get("plan_artifact_package_ref") or ""),
+        str(payload.get("plan_artifact_package_digest") or ""),
+        str(decision_ref.get("ref") or ""),
+        str(decision_ref.get("sha256") or ""),
+    )
 
 
 def _resynth_trigger(config: object, *, flow_kind: str) -> str:
@@ -373,6 +403,9 @@ def plan_missing_replan_resynth_events(
                 later.type == desired.type
                 and str(later_payload.get("rework_of") or "") == desired_rework_of
             ):
+                if (_oa_replan_binding(desired.payload)
+                        and _oa_replan_binding(later_payload) != _oa_replan_binding(desired.payload)):
+                    continue
                 advanced = True
                 break
             if later.type in {"task_map.ready", "candidate.ready"}:

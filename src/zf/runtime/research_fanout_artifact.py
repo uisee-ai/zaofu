@@ -102,6 +102,7 @@ def materialize_research_fanout_artifact(
             or ""
         ).strip(),
         source_event_id=synth_event.id,
+        max_parallel_agents=_native_parallel_limit(manifest),
     )
     evidence_refs = _string_refs(
         synth_raw.get("evidence_refs"),
@@ -310,6 +311,7 @@ def _provider_summary_ref(
     fanout_id: str,
     role_instance: str,
     source_event_id: str,
+    max_parallel_agents: int = 4,
 ) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
     raw = _first_present(
         synth_raw,
@@ -342,9 +344,20 @@ def _provider_summary_ref(
         source_payload={"provider_operation_summary": normalized},
         workflow_run_id=workflow_run_id,
         operation_id=operation_id,
-        max_parallel_agents=4,
+        max_parallel_agents=max_parallel_agents,
         source_event_id=source_event_id,
     )
+
+
+def _native_parallel_limit(manifest: Mapping[str, Any]) -> int:
+    """Read the admitted research root's limit, not its result's claim."""
+    children = manifest.get("children") or []
+    if len(children) == 1 and isinstance(children[0], Mapping):
+        payload = children[0].get("payload") or {}
+        value = payload.get("provider_native_max_children") if isinstance(payload, Mapping) else None
+        if type(value) is int and value >= 0:
+            return value
+    return 4
 
 
 def _provider_session_id(

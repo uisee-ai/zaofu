@@ -14,8 +14,12 @@ from zf.runtime.stage_failure_replan import reader_stage_lineage_payload
 from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
 
 
-def bound_prior_reader_operation_id(manifest: dict, child: dict, dispatch: ZfEvent) -> str:
-    """Reuse limits only for the reader child that owned this dispatch."""
+def reader_retry_operation_id(
+    manifest: dict, child: dict, dispatch: ZfEvent, prepared_call: Any,
+) -> str:
+    """Use the prepared operation or the reader child that owned this dispatch."""
+    if prepared_call is not None:
+        return prepared_call.operation_id
     payload = dispatch.payload if isinstance(dispatch.payload, dict) else {}
     if manifest.get("topology") != "fanout_reader":
         return ""

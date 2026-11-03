@@ -103,7 +103,7 @@ def validate_provider_session_config(
         raise ValueError(
             f"role {role.name!r}: role.agent and provider_session.agent conflict"
         )
-    if session.max_parallel_agents is not None:
+    if session.max_parallel_agents not in (None, 0):
         if not caps.provider_session_parallelism:
             raise ValueError(
                 f"role {role.name!r} backend={role.backend!r} does not support "
@@ -347,7 +347,7 @@ class CodexAdapter(BackendAdapter):
         cmd.extend(["-c", f"model_auto_compact_token_limit={compact_tokens}"])
         if (
             provider_session is not None
-            and provider_session.max_parallel_agents is not None
+            and provider_session.max_parallel_agents not in (None, 0)
         ):
             cmd.extend([
                 "-c",

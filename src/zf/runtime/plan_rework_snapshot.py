@@ -24,6 +24,14 @@ def bind_scoped_snapshot(
     if not selected:
         # An unscoped replan still requires the complete current snapshot.
         return snapshot, {}
+    inline_ids = selected
+    if (
+        context.get("resume_scope") == "failed_children_and_downstream"
+        and context.get("failed_task_ids")
+    ):
+        # Dispatch includes downstream consumers; their complete contracts remain
+        # addressable without making the whole dispatch closure a required read.
+        inline_ids = {str(task_id) for task_id in context["failed_task_ids"]}
     descriptor = write_immutable_json_sidecar(
         state_dir, snapshot, root="plan-synth/task-snapshots",
         kind="canonical_task_snapshot", schema_version="canonical-task-snapshot.v1",
@@ -47,11 +55,13 @@ def bind_scoped_snapshot(
         "schema_version": "canonical-task-index.v1",
         "tasks": index,
         "full_snapshot_ref": source,
-        "scoped_tasks": [task for task in tasks if task["task_id"] in selected],
+        "scoped_tasks": [task for task in tasks if task["task_id"] in inline_ids],
         "unresolved_task_ids": sorted(selected - {task["task_id"] for task in tasks}),
         "read_scope": (
-            "The index covers every current task; scoped_tasks contains complete explicitly "
-            "affected tasks. Read full_snapshot_ref through canonical-task-snapshot at "
+            "The index covers every current task. For failed_children_and_downstream, "
+            "scoped_tasks contains complete directly failed tasks; otherwise it contains "
+            "all explicitly selected tasks. Dispatch scope is unchanged. Read "
+            "full_snapshot_ref through canonical-task-snapshot at "
             "full_task_json_path before changing another task's contract or resolving an "
             "unknown task id. Unchanged contracts remain authoritative; this index is not "
             "a replacement task map or evidence of a passed result."
