@@ -31,7 +31,9 @@ from zf.runtime.task_map import (
     validate_task_map_payload,
 )
 from zf.runtime.writer_fanout_admission import (
+    select_writer_task_items,
     validate_writer_task_items,
+    writer_fanout_dispatch_base_commit,
     writer_task_map_policy_errors,
     writer_task_items,
 )
@@ -176,6 +178,15 @@ def evaluate_plan_candidate_preflight(
                     str(exc),
                 )
             if task_items:
+                try:
+                    selected, _, _, _ = select_writer_task_items(dict(task_map), task_items, trigger)
+                except (RuntimeError, ValueError) as exc:
+                    _error(errors, "writer_fanout_task_selection_invalid", "task_map.tasks", str(exc))
+                else:
+                    try:
+                        writer_fanout_dispatch_base_commit(selected)
+                    except ValueError as exc:
+                        _error(errors, "writer_fanout_base_conflict", "task_map.tasks", str(exc))
                 policy = writer_policy or {}
                 from zf.runtime.plan_candidate_role_preflight import writer_role_errors
 
