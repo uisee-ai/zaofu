@@ -551,7 +551,7 @@ def prepare_profiled_stage_result(
     plan_candidate_validation = child_payload.get("plan_candidate_validation")
     if isinstance(plan_candidate_validation, Mapping):
         lines.extend(_render_plan_candidate_policy(plan_candidate_validation))
-        validate_command = render_result_validate_command(command)
+        validate_command = render_result_validate_command(command) + " --summary"
         lines.extend([
             "- Plan candidate rule: after authoring, run only the pre-submit "
             "validation command below. It uses the same runtime evaluator as "
@@ -562,6 +562,8 @@ def prepare_profiled_stage_result(
             "other audit, search, test, or readback.",
             "- On validation or submission rejection, follow structured "
             "diagnostics only; do not reverse-engineer the harness.",
+            "- The validation output is bounded; omit `--summary` from the same "
+            "command to inspect the complete report when needed.",
             "",
             "Plan candidate pre-submit validation:",
             "```bash",
