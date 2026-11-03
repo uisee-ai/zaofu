@@ -114,3 +114,7 @@ request 和读取策略；仅完全一致且确认为已生成的局部策略时
 局部审查结果进入 Plan Package 前，还必须绑定已准入的当前 Critic 结果和派发的
 operation；当前基线、需求、最终 Task Map、Plan 端口和计划正文与受审候选不一致
 时拒绝准入。该校验不会替代 Critic 的独立语义判断。
+
+计划候选已发布 `task_map.ready` 后若在 writer 准入失败，新一代重规划不会
+继承更早 trigger 的 `previous_plan_candidate_refs`；失败事件明确提供的当前候选
+引用仍可使用，当前 Task Map 和 Plan Package 身份仍按既有规则绑定。

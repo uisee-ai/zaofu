@@ -393,6 +393,46 @@ def test_failed_critic_without_verified_current_refs_does_not_reuse_older_candid
     assert replan.payload["previous_plan_candidate_refs"] == []
 
 
+def test_plan_admission_failure_does_not_inherit_older_candidate_refs() -> None:
+    origin = ZfEvent(type="issue.requested", payload={
+        "issue_ref": "docs/issues/TODO.md",
+        "previous_plan_candidate_refs": [{"ref": "older.json", "sha256": "a" * 64}],
+    })
+    ready = ZfEvent(id="evt-current", type="task_map.ready", payload={
+        "task_map_ref": "artifacts/current/task_map.json",
+        "plan_artifact_package_id": "current-package",
+        "plan_artifact_package_ref": "artifacts/plan-packages/current.json",
+        "plan_artifact_package_digest": "b" * 64,
+    })
+    failure = ZfEvent(type="issue.triage.failed", causation_id=ready.id, payload={
+        "failure_scope": "plan_admission", "trigger_event_id": ready.id,
+        "task_map_ref": "artifacts/current/task_map.json", "reason": "writer base conflict",
+    })
+    result, _ = plan_reader_stage_replan(_config(), [origin, ready, failure], failure,
+                                         authorized_generation="operator-review")
+    assert result is not None
+    assert result.payload["previous_plan_candidate_refs"] == []
+    assert result.payload["task_map_ref"] == "artifacts/current/task_map.json"
+    assert result.payload["plan_artifact_package_ref"] == "artifacts/plan-packages/current.json"
+
+
+def test_plan_admission_failure_keeps_explicit_current_candidate_refs() -> None:
+    origin = ZfEvent(type="issue.requested", payload={
+        "issue_ref": "docs/issues/TODO.md",
+        "previous_plan_candidate_refs": [{"ref": "older.json", "sha256": "a" * 64}],
+    })
+    ready = ZfEvent(id="evt-current", type="task_map.ready", payload={})
+    refs = [{"ref": "current.json", "sha256": "b" * 64}]
+    failure = ZfEvent(type="issue.triage.failed", causation_id=ready.id, payload={
+        "failure_scope": "plan_admission", "trigger_event_id": ready.id,
+        "previous_plan_candidate_refs": refs, "reason": "writer base conflict",
+    })
+    result, _ = plan_reader_stage_replan(_config(), [origin, ready, failure], failure,
+                                         authorized_generation="operator-review")
+    assert result is not None
+    assert result.payload["previous_plan_candidate_refs"] == refs
+
+
 def test_replan_recovers_plan_package_identity_from_rejected_trigger() -> None:
     origin = ZfEvent(
         type="issue.requested",
