@@ -1,6 +1,6 @@
 # 计划预检对齐实施派发基线
 
-> 状态: active
+> 状态: done；实现：`b3c3e398 fix: reject incompatible writer bases before plan review`
 
 LS Run `prepare-TASK-90D92C-e4eaededbd2b74fe` 的 Planner 候选同时包含 `66e1319` 与 `9cc4fd9` 两个任务基线。现有 Plan 预检未报告冲突，Critic 完成 3 小时审查并批准后，writer fanout 准入才拒绝；原 Run 随重规划上限耗尽进入 blocked。该任务仅修复可复用的机械预检缺口，不修改运行态、既有计划或豁免语义审查。
 
