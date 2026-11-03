@@ -1,6 +1,6 @@
 # 按需审查上下文完整性保障
 
-> 状态: active
+> 状态: done；实现：`a6589f61 fix: preserve scoped review context on plan changes`
 
 来源：设计 198 与用户批准的五道保障；接续 `a0490566`，不得改写已有 attempt 或凭旧 session 推断当前记忆。语义适用范围由 Planner/Critic 的证据决定；Kernel 只验证绑定、集合、权限、版本和消费，不新建 Task 真相。
 
