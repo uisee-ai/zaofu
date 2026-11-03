@@ -110,3 +110,35 @@ request 和读取策略；仅完全一致且确认为已生成的局部策略时
 局部审查结果进入 Plan Package 前，还必须绑定已准入的当前 Critic 结果和派发的
 operation；当前基线、需求、最终 Task Map、Plan 端口和计划正文与受审候选不一致
 时拒绝准入。该校验不会替代 Critic 的独立语义判断。
+
+## 跨计划版本的受控差量审查
+
+在有当前已准入 Plan Package 的受控 replan 中，`prepare_call_operation` 在发布
+source manifest 和读取策略前尝试生成 `unchanged-plan-review.v1` 证据。它绑定旧包、
+旧独立 Critic 的已准入结论与完整 Provider 观察、当前触发事件、当前 Task Map、
+Planner 结果以及逐端口的新旧摘要。只有同一 Run、同一 Critic 角色、未修改的权威
+需求、合法的 kernel 触发或可核实的受控 replan 动作链满足条件时才尝试；候选及
+旧包取自现有不可变 sidecar。不能由 provider session 的存在推定当前记忆。
+
+已完整见证的逐端口相同内容不再自动注入；有完整旧见证的 JSON 端口可在原始文件
+摘要验证、拒绝重复键和非有限数、完整结构差异可重放为当前值、差异比正文小且
+证据预算内时，以完整旧值/新值差异替代整份必读。差异不推断语义等价：新 Critic
+必须自行审查全部变更、原始要求、当前 Task Map、共享义务及其相互影响，必要时
+按原 capability 回读未变端口的原文。任务 Map、当前需求、Planner 报告和没有充分
+证据或差异过大的材料继续完整读取；文本材料保持原政策。明确指定的必读优先，
+旧 attempt 不被修改。内容去重不合并来源权限。
+派发事件的 `plan_review_optimization` 提供当前策略、粗粒度回退原因、必读项数量、
+去重选择字节和未知项数；缺失的大小标记 unknown，不能视为零或 Provider token。
+
+差量证据进入新 plan-synth contract 和新 attempt 的不可变 manifest，证据本身为
+必读；生成失败或身份、旧证据、摘要、范围不一致时维持原完整策略。结果准入继续
+绑定本次 operation、来源、证据及精确候选，不能借旧结论自动批准新版本。会话轮换
+不使历史 Provider 观察变成当前记忆；当前仅支持可核验的 Codex 历史见证，其他
+Provider 按完整策略处理。`context_delivery` 的 Provider session 差量仍为 shadow，
+本机制不改变该模式，不声称当前 Provider 必然保留旧正文。
+
+针对 LS 停止状态的隔离副本，使用真实旧事件、已封存账本、来源和本次候选重建：
+12 个端口摘要相同、4 个 JSON 端口可重放；以原有快照去重估算必读正文从
+14,232,866 bytes 变为 3,573,707 bytes，另有 135,787 bytes 的证据 sidecar。
+这不计选择渲染和工具封装，也不是 token、质量、账单或真实 Provider 运行证明。
+实际使用前仍须核对原始身份/设计合同及跨任务要求；不因此更改任何进行中的策略。

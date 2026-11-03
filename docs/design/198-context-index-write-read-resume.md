@@ -718,3 +718,10 @@ occurrence 权限再给标题、计数和游标；相同 digest 不合并权限�
 `gpt-6.1-terra / high` 在全 100 Task 与 T1+shared 两种输入下均通过 5/5 个合成案例，
 输入 token 71,353 → 15,915。它补充了真实调用证据，但没有完成生产全角色/8+8、视觉、
 冷缓存账单或实际 delta 资格；此前“待真实 Provider”仅对这次有限盲评解除。
+
+## 19. Plan Critic 的跨版本证据输入
+
+Plan replan 的实际差量读取另见 [计划准入实现](../impl/plan-producer-failure-admission.md#跨计划版本的受控差量审查)。它绑定旧独立审查见证、当前候选和完整 JSON 差异，
+保留需求、Task Map、未证明输入和 Critic 的独立裁决；不足时回退完整读取。
+此路径不声称 Provider 保留原文，也不启用本设计 C8 的 Provider session 差量交付。
+LS 现场材料仅在隔离副本中验证了选择和回放，尚无该场景真实 Provider 质量和成本结论。

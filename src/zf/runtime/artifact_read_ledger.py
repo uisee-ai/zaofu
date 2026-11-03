@@ -611,6 +611,12 @@ def render_attempt_source_briefing(
         ),
     ]
     if required:
+        if any(isinstance(row, Mapping) and row.get("artifact_id") == "unchanged-plan-review.json" for row in required):
+            lines.append(
+                "- The prior independent review, unchanged ports and complete structural changes are evidence, not your verdict. "
+                "Review every change, the current Task Map, other changed inputs, requirements and shared obligations; "
+                "read any authorized unchanged source whenever it is needed to assess their interactions."
+            )
         if (any(str(row.get("artifact_id") or "") == "scoped_plan_review.json" for row in required if isinstance(row, Mapping))
                 and any(str(row.get("source_id") or "").startswith("baseline-plan-port-") for row in required if isinstance(row, Mapping))):
             lines.append(

@@ -22,7 +22,30 @@ def _scoped_policy(runtime: Any, operation: Mapping[str, Any] | None) -> bool:
               and str(row.get("json_path") or "").startswith("$.tasks[")}
     full = {str(row.get("source_id") or "") for row in rows
             if isinstance(row, Mapping) and row.get("json_path") == "$"}
-    return bool(scoped - full)
+    if scoped - full:
+        return True
+    evidence_rows = [row for row in rows if isinstance(row, Mapping)
+                     and row.get("source_id") == "child-artifact-unchanged-review"
+                     and row.get("json_path") == "$"]
+    if len(evidence_rows) != 1:
+        return False
+    manifest_ref = request.get("source_manifest_ref")
+    if not isinstance(manifest_ref, Mapping):
+        from zf.runtime.artifact_read_ledger import _safe_component
+
+        digest = str(request.get("source_manifest_digest") or "")
+        attempt = _safe_component(str(request.get("active_attempt_id") or ""))
+        if not digest:
+            raise ValueError("unchanged review manifest is unavailable")
+        manifest_ref = {"ref": f"artifacts/attempts/{attempt}/source-manifests/{digest}.json", "sha256": digest}
+    manifest = hydrate_sidecar_ref(runtime.state_dir, dict(manifest_ref)).payload
+    sources = [source for source in manifest.get("sources", []) if isinstance(source, Mapping)
+               and source.get("source_id") == "child-artifact-unchanged-review"]
+    if len(sources) != 1:
+        raise ValueError("unchanged review evidence is ambiguous")
+    evidence = hydrate_sidecar_ref(runtime.state_dir, dict(sources[0])).payload
+    return any(isinstance(port, Mapping) and port.get("source_id") not in full
+               for port in [*evidence.get("unchanged_ports", []), *evidence.get("changed_ports", [])])
 
 
 def validate_local_review_output(runtime: Any, *, event: ZfEvent, payload: Mapping[str, Any]) -> None:
@@ -90,7 +113,7 @@ def validate_local_review_output(runtime: Any, *, event: ZfEvent, payload: Mappi
             raise ValueError("local review candidate source is missing or ambiguous")
         return found[0]
 
-    cert_source = one(lambda source: source.get("artifact_id") == "scoped_plan_review.json"
+    cert_source = one(lambda source: source.get("artifact_id") in {"scoped_plan_review.json", "unchanged-plan-review.json"}
                       and source.get("source_id") in full)
     report_source = one(lambda source: str(source.get("source_id") or "").startswith("child-result-"))
     cert = hydrate_sidecar_ref(runtime.state_dir, dict(cert_source)).payload

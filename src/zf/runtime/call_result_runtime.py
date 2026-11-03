@@ -315,6 +315,10 @@ def prepare_call_operation(
             runtime, payload=payload, operation_id=operation_id, attempt_id=attempt_id,
         )
         pin_replayed_review_usage(runtime, payload=payload, operation_id=operation_id)
+        from zf.runtime.plan_unchanged_review import attach_unchanged_review
+
+        attach_unchanged_review(runtime, payload=payload, stage=stage_id, trigger_id=causation_id,
+                                operation_id=operation_id)
 
     source_manifest, source_descriptor = CanonicalHandoffResolver(
         state_dir=runtime.state_dir,
@@ -355,6 +359,27 @@ def prepare_call_operation(
             else ()
         ),
     )
+    full_plan_reads = list(required_reads) if output_profile_id == "plan-synth" else []
+    if output_profile_id == "plan-synth" and any(
+        isinstance(source, Mapping) and source.get("source_id") == "child-artifact-unchanged-review"
+        for source in source_manifest.get("sources", [])
+    ):
+        from zf.runtime.plan_unchanged_review import scope_unchanged_reads
+
+        required_reads = scope_unchanged_reads(
+            runtime.state_dir, events=runtime.event_log.read_all(), manifest=source_manifest,
+            required=required_reads,
+            explicit=explicit_required_reads if isinstance(explicit_required_reads, list) else [],
+            fanout=str(payload.get("fanout_id") or ""), stage=stage_id,
+            critic_role=str(payload.get("role_instance") or ""), plan_revision=str(payload.get("plan_revision") or ""),
+        )
+    if output_profile_id == "plan-synth":
+        from zf.runtime.plan_review_input_diagnostics import review_diagnostics
+
+        payload["plan_review_optimization"] = review_diagnostics(
+            source_manifest, before=full_plan_reads, after=required_reads,
+            explicit=bool(explicit_required_reads),
+        )
     if output_profile_id == "plan-synth" and any(
         isinstance(source, Mapping) and source.get("artifact_id") == "scoped_plan_review.json"
         for source in source_manifest.get("sources", [])

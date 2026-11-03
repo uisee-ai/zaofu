@@ -300,11 +300,23 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
     synth = next(e for e in events if e.id == admissions[0].payload.get("source_event_id")
                  and e.type == "fanout.synth.completed")
     body = synth.payload
-    if (body.get("status") != "completed" or body.get("recommendation") != "approve"
+    report = body.get("report") if isinstance(body.get("report"), Mapping) else {}
+    top_recommendation = body.get("recommendation")
+    report_recommendation = report.get("recommendation")
+    # Semantic submit events can carry the verdict inside the canonical
+    # report. Reject conflicts; the admitted control result is checked below.
+    approved = ("approve" in (top_recommendation, report_recommendation)
+                and top_recommendation in (None, "", "approve")
+                and report_recommendation in (None, "", "approve")
+                and (not report or report.get("status") == "passed"))
+    if (body.get("status") != "completed" or not approved
             or not body.get("plan_synth_contract_digest")
             or body.get("reviewed_plan_candidate_digest") != body.get("plan_synth_contract_digest")):
         raise ValueError("baseline has no approved exact Critic result")
-    admission = [e for e in events if e.type == "workflow.call.result.admitted" and e.origin == "kernel"
+    admission = [e for e in events if e.type == "workflow.call.result.admitted"
+                 and e.actor == "zf-cli"
+                 and (e.origin == "kernel" or (not e.origin
+                      and body.get("semantic_submit_admission_event_id") == e.id))
                  and e.payload.get("source_event_id") == synth.id
                  and e.payload.get("workflow_run_id") == run
                  and e.payload.get("operation_id") == body.get("operation_id")]
@@ -341,17 +353,11 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
             or consumption.get("read_ledger_ref") != ledger_ref.get("ref")
             or consumption.get("read_ledger_digest") != ledger_ref.get("sha256")):
         raise ValueError("baseline Critic ledger binding differs")
-    ledger = hydrate_sidecar_ref(state_dir, dict(ledger_ref)).payload
-    if not isinstance(ledger, str):
-        raise ValueError("baseline Critic ledger is not text")
-    from zf.runtime.artifact_read_ledger_validation import _parse_ledger
+    from zf.runtime.plan_prior_ledger import prior_observed_rows
     from zf.runtime.artifact_output_delivery import observe_artifact_delivery
 
-    recorded = [row for row in _parse_ledger(ledger.encode(), expected_attempt_id=str(body.get("attempt_id") or ""))
-                if row.get("provider_delivery_status") == "observed_in_transcript"
-                and row.get("provider_session_id") == session
-                and row.get("consumer_provider") == "codex"
-                and row.get("consumer_actor") == identity.get("producer_role")]
+    recorded = prior_observed_rows(state_dir, ledger_ref, attempt_id=str(body.get("attempt_id") or ""),
+                                   session_id=session, actor=str(identity.get("producer_role") or ""))
     checked = observe_artifact_delivery(state_dir, recorded)
     observed = [row for original, row in zip(recorded, checked, strict=True)
                 if row.get("provider_delivery_status") == "observed_in_transcript"
@@ -371,8 +377,20 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
     dispatch = [e for e in events if e.type == "fanout.synth.dispatched" and e.origin == "kernel"
                 and e.payload.get("operation_id") == body.get("operation_id")
                 and e.payload.get("attempt_id") == body.get("attempt_id")]
-    if len(dispatch) != 1:
+    if not dispatch:
         raise ValueError("baseline Critic dispatch is ambiguous")
+    # A controlled provider-turn recovery can redispatch the exact same
+    # attempt. It must point to the previous dispatch and preserve every
+    # pinned field; ambiguous or changed retries keep the full-read policy.
+    retry_metadata = {"attempt", "recovery_kind", "retry_of_event_id", "semantic_attempt_consumed"}
+    original = {k: v for k, v in dispatch[0].payload.items() if k not in retry_metadata}
+    for previous, retry in zip(dispatch, dispatch[1:]):
+        if (retry.payload.get("retry_of_event_id") != previous.id
+                or retry.payload.get("recovery_kind") != "provider_turn_closed"
+                or type(retry.payload.get("attempt")) is not int or retry.payload["attempt"] < 1
+                or retry.payload.get("semantic_attempt_consumed") is not False
+                or {k: v for k, v in retry.payload.items() if k not in retry_metadata} != original):
+            raise ValueError("baseline Critic redispatch differs")
     if dispatch[0].payload.get("role_instance") != identity.get("producer_role"):
         raise ValueError("baseline Critic role differs from dispatch")
     if (dispatch[0].payload.get("plan_synth_contract_digest") != body.get("plan_synth_contract_digest")
@@ -434,4 +452,6 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
                 or not _independent_producer(events, contract, report, identity["producer_role"])):
             raise ValueError("baseline Critic is not independent of its producer")
     return {**previous, "_critic_source_bindings": contract["source_bindings"],
-            "_critic_required_reads": policy["required_reads"], "_critic_observed_reads": observed}
+            "_critic_required_reads": policy["required_reads"], "_critic_observed_reads": observed,
+            "_critic_control": control, "_critic_control_ref": control_ref,
+            "_critic_role": identity.get("producer_role")}

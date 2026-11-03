@@ -90,6 +90,8 @@ def _policy_fixture(state, scenario=""):
             schema_version=body.get("schema_version", "fixture.v1"), created_by="test")
 
     old_map, new_map, old_port, new_port = _inputs()
+    if scenario == "large_changed_port":
+        old_port["shared"]["large"] = new_port["shared"]["large"] = "x" * 50000
     if scenario == "global_map": new_map["goal_claims"] = ["changed"]
     if scenario == "outside_map": new_map["tasks"][2]["title"] = "changed"
     if scenario == "outside_port": new_port["tasks"][2]["body"]["evidence"] = "changed"
@@ -210,7 +212,7 @@ def _policy_fixture(state, scenario=""):
         "attempt_id": "old-attempt", "attempt_source_manifest": previous_manifest,
         "plan_synth_contract_ref": old_contract["ref"], "plan_synth_contract_digest": old_contract["sha256"],
         "input_consumption_policy_ref": old_policy, "role_instance": "plan-critic"})
-    admitted_result = ZfEvent(type="workflow.call.result.admitted", origin="kernel", payload={"source_event_id": synth.id,
+    admitted_result = ZfEvent(type="workflow.call.result.admitted", actor="zf-cli", origin="kernel", payload={"source_event_id": synth.id,
         "workflow_run_id": "run-1", "operation_id": "old-operation", "control_result_ref": control,
         "envelope_ref": envelope_ref, "read_ledger_ref": ledger})
     admitted_package = ZfEvent(type="plan.artifact_package.admitted", origin="kernel", causation_id="old-synth", payload={
@@ -254,7 +256,61 @@ def test_local_critic_policy_preserves_full_authority_and_compares_both_versions
     assert ("requirement", "$") in selected
 
 
-@pytest.mark.parametrize("problem", ["missing_approval", "wrong_manifest", "explicit_full", "tampered_certificate",
+def test_local_critic_accepts_admitted_nested_approve_report(tmp_path):
+    manifest, required, events = _policy_fixture(tmp_path)
+    previous = next(e for e in events if e.id == "old-synth")
+    previous.payload.pop("recommendation")
+    previous.payload["report"] = {"status": "passed", "recommendation": "approve"}
+    scoped = _scope_policy(tmp_path, events=events, manifest=manifest, required=required, explicit=[], critic_role="critic")
+    assert ("child-artifact-planner-2", "$") not in {(r["source_id"], r["json_path"]) for r in scoped}
+
+
+def test_local_critic_accepts_legacy_zf_cli_admission_origin(tmp_path):
+    manifest, required, events = _policy_fixture(tmp_path)
+    admission = next(e for e in events if e.type == "workflow.call.result.admitted")
+    admission.origin = ""
+    next(e for e in events if e.id == "old-synth").payload["semantic_submit_admission_event_id"] = admission.id
+    scoped = _scope_policy(tmp_path, events=events, manifest=manifest, required=required, explicit=[], critic_role="critic")
+    assert ("child-artifact-planner-2", "$") not in {(r["source_id"], r["json_path"]) for r in scoped}
+
+
+def test_local_critic_rejects_unbound_legacy_admission(tmp_path):
+    manifest, required, events = _policy_fixture(tmp_path)
+    next(e for e in events if e.type == "workflow.call.result.admitted").origin = ""
+    assert _scope_policy(tmp_path, events=events, manifest=manifest, required=required, explicit=[], critic_role="critic") == required
+
+
+@pytest.mark.parametrize("problem", [None, "retry_link", "changed_contract", "consumed", "wrong_recovery", "bad_attempt"])
+def test_local_critic_accepts_only_exact_controlled_prior_redispatch(tmp_path, problem):
+    from zf.core.events.model import ZfEvent
+
+    manifest, required, events = _policy_fixture(tmp_path)
+    original = next(e for e in events if e.type == "fanout.synth.dispatched")
+    retry = ZfEvent(type=original.type, origin="kernel", payload={**deepcopy(original.payload),
+        "attempt": 1, "recovery_kind": "provider_turn_closed", "retry_of_event_id": original.id,
+        "semantic_attempt_consumed": False})
+    if problem == "retry_link": retry.payload["retry_of_event_id"] = "unrelated"
+    if problem == "changed_contract": retry.payload["plan_synth_contract_digest"] = "a" * 64
+    if problem == "consumed": retry.payload["semantic_attempt_consumed"] = True
+    if problem == "wrong_recovery": retry.payload["recovery_kind"] = "other"
+    if problem == "bad_attempt": retry.payload["attempt"] = True
+    events.append(retry)
+    scoped = _scope_policy(tmp_path, events=events, manifest=manifest, required=required, explicit=[], critic_role="critic")
+    assert (scoped == required) is (problem is not None)
+
+
+@pytest.mark.parametrize("report", [
+    {"status": "passed", "recommendation": "reject"},
+    {"status": "failed", "recommendation": "approve"},
+    {"status": "passed", "recommendation": "abstain"},
+])
+def test_local_critic_rejects_conflicting_nested_verdict(tmp_path, report):
+    manifest, required, events = _policy_fixture(tmp_path)
+    next(e for e in events if e.id == "old-synth").payload["report"] = report
+    assert _scope_policy(tmp_path, events=events, manifest=manifest, required=required, explicit=[], critic_role="critic") == required
+
+
+@pytest.mark.parametrize("problem", ["missing_approval", "untrusted_admission_actor", "wrong_manifest", "explicit_full", "tampered_certificate",
                                       "wrong_trigger_scope", "untrusted_previous", "certificate_not_required",
                                       "truncated_candidate", "truncated_requirement", "same_current_role",
                                       "missing_producer_dispatch", "missing_prior_ledger", "missing_prior_session",
@@ -263,6 +319,7 @@ def test_local_critic_policy_falls_back_for_unproved_inputs(tmp_path, problem):
     manifest, required, events = _policy_fixture(tmp_path)
     explicit = []
     if problem == "missing_approval": events = [e for e in events if e.type != "workflow.call.result.admitted"]
+    if problem == "untrusted_admission_actor": next(e for e in events if e.type == "workflow.call.result.admitted").actor = "worker"
     if problem == "wrong_manifest": manifest["workflow_run_id"] = "other-run"
     if problem == "explicit_full": explicit = [{"source_id": "child-artifact-planner-2", "json_path": "$"}]
     if problem == "wrong_trigger_scope": next(e for e in events if e.id == "trigger").payload["task_ids"] = ["C"]
@@ -287,7 +344,8 @@ def test_local_critic_policy_falls_back_for_unproved_inputs(tmp_path, problem):
                               critic_role="planner" if problem == "same_current_role" else "critic") == required
 
 
-def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, monkeypatch):
+@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered"])
+def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, monkeypatch, prior_format):
     from tests.test_call_result_runtime import _runtime
     from zf.runtime.artifact_read_ledger import active_read_ledger_path, read_attempt_artifact, render_attempt_source_briefing, seal_read_ledger
     from zf.runtime.artifact_read_ledger_validation import validate_required_reads
@@ -299,6 +357,17 @@ def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, mo
 
     runtime = _runtime(tmp_path)
     manifest, _, events = _policy_fixture(runtime.state_dir)
+    if prior_format == "legacy_recovered":
+        previous = next(e for e in events if e.id == "old-synth")
+        previous.payload.pop("recommendation")
+        previous.payload["report"] = {"status": "passed", "recommendation": "approve"}
+        admission = next(e for e in events if e.type == "workflow.call.result.admitted")
+        admission.origin = ""
+        previous.payload["semantic_submit_admission_event_id"] = admission.id
+        dispatch = next(e for e in events if e.type == "fanout.synth.dispatched")
+        events.append(ZfEvent(type=dispatch.type, origin="kernel", payload={**deepcopy(dispatch.payload),
+            "attempt": 1, "recovery_kind": "provider_turn_closed", "retry_of_event_id": dispatch.id,
+            "semantic_attempt_consumed": False}))
     for event in events:
         runtime.event_writer.append(event)
     store = TaskStore(runtime.state_dir / "kanban.json")
