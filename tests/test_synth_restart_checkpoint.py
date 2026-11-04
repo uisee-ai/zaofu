@@ -147,3 +147,33 @@ def test_requested_synth_reopen_rejects_unbound_redrive(tmp_path, fault):
                        origin='user' if fault == 'untrusted_origin' else 'kernel', payload=payload))
     with pytest.raises(ValueError, match='blocked, terminal'):
         reopen_synth_restart_checkpoint(runtime, role, failure.id)
+
+
+@pytest.mark.parametrize('backend', ['codex', 'claude-code'])
+def test_operator_synth_resume_briefing_uses_safe_provider_read_guidance(tmp_path, monkeypatch, backend):
+    state, log, runtime, role, dispatch, _before, failure = failed_synth(tmp_path)
+    role.backend = backend
+    alive = [True]
+    monkeypatch.setattr(runtime.transport, 'terminate', lambda _: alive.__setitem__(0, False), raising=False)
+    monkeypatch.setattr(runtime.transport, 'is_alive', lambda _: alive[0])
+    monkeypatch.setattr(runtime, '_wait_role_ready', lambda _: True)
+    monkeypatch.setattr('zf.cli.restart.WorkflowRuntimeCoordinator', lambda *a, **kw: runtime)
+    monkeypatch.setattr(runtime, '_get_spawn_coordinator', lambda: SimpleNamespace(
+        spawn=lambda *a, **kw: alive.__setitem__(0, True)))
+    monkeypatch.setenv('ZF_CLI_CMD', '/current/zf')
+    assert _restart_role(role.name, runtime.config, runtime.transport, log, state, tmp_path,
+                         False, resume_failed_synth=failure.id) == 0
+    prompt = runtime.transport.sent[-1][2]
+    assert 'cannot still use' in prompt
+    if backend == 'codex':
+        assert f'/current/zf artifact read --attempt {dispatch.payload["attempt_id"]} --required --resume' in prompt
+        assert 'only if' in prompt
+    else:
+        assert '--required --resume' not in prompt
+
+
+def test_unknown_attempt_guidance_never_invents_resume_cursor():
+    from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+    prompt = reader_continuation_guidance(attempt_id='', backend='codex', cli='/current/zf')
+    assert 'cannot still use' in prompt
+    assert '--required --resume' not in prompt

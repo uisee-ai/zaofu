@@ -763,3 +763,7 @@ request hash、Run 与 attempt 的内核受控 redrive 才为该次有界传输�
 失败事件的受控重启恢复；仅当匹配 suspended 来源的 redrive 已被接纳时允许从
 `requested` 继续，并在 briefing 实际发出后才记为 started。拒绝语义拒绝、已准入
 结果、错误 attempt 或未受信恢复决定；历史失败事件不会删除。
+
+手动重开或回收 reader 时，恢复简报也提供同一 attempt 的安全续读入口；Codex 的
+`--resume` 只在 earlier pages 仍可用时使用，其他 Provider 或缺失 attempt 时不生成
+该命令。已经发送的旧简报不会被追写或自动替换。
