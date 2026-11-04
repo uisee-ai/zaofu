@@ -184,11 +184,12 @@ def events_for_run(
     *,
     run_id: str,
     include_legacy_single_run: bool = True,
+    _aliases: dict[str, str] | None = None,
 ) -> list[ZfEvent]:
     """Return a replay-stable run view, excluding ambiguous unscoped facts."""
 
     rows = list(events)
-    aliases = run_aliases(rows)
+    aliases = _aliases if _aliases is not None else run_aliases(rows)
     canonical = aliases.get(str(run_id or "").strip(), "")
     if not canonical:
         return []
