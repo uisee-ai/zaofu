@@ -1085,3 +1085,4 @@ class TestBootTmuxErrorFailClosed:
         # 锁文件已被显式清理;能再次拿锁 = 没有僵尸持锁。
         assert not (state_dir / "loop.lock").exists()
         assert killed_sessions, "boot cleanup must kill created tmux sessions"
+        assert all(command[-1].startswith("=") for command in killed_sessions)

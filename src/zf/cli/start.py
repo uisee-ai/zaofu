@@ -1521,7 +1521,7 @@ def run(args: argparse.Namespace) -> int:
         session_name = str(getattr(config.session, "tmux_session", "") or "")
         for name in {session_name, f"{session_name}-run-manager"} - {""}:
             _subprocess.run(
-                ["tmux", "kill-session", "-t", name],
+                ["tmux", "kill-session", "-t", f"={name}"],
                 capture_output=True,
                 check=False,
             )

@@ -177,13 +177,13 @@ class TmuxSession:
         return True
 
     def kill_session(self) -> None:
-        self._run(["tmux", "kill-session", "-t", self.session_name], check=False)
+        self._run(["tmux", "kill-session", "-t", f"={self.session_name}"], check=False)
 
     def has_session(self) -> bool:
         if self.dry_run:
             return False
         result = self._run(
-            ["tmux", "has-session", "-t", self.session_name],
+            ["tmux", "has-session", "-t", f"={self.session_name}"],
             check=False,
         )
         return result.returncode == 0
