@@ -1,6 +1,6 @@
 # 暂停 Run 重启时保护 reader 检查点
 
-> 状态: active
+> 状态: done · 实施: `915ce26c` fix: preserve paused reader recovery checkpoints
 
 ## 真实复现
 
@@ -21,3 +21,14 @@
 也可能沿用暂停前计时立即失败。为暂停状态跳过扫描，恢复后以最近恢复时间
 提供新的有界窗口；child、synth 和其他 Run 分别验证。该策略重置窗口，不是
 精确扣除已消耗预算，语义和界限应在文档中说明。
+
+## 验证记录
+
+- reader、synth、Run admission、operation、fanout 恢复与超时闭包及预算测试：
+  `344 passed`；补充 EventLog/恢复合同 `84 passed`、串行 `10 passed`、
+  sentinel `53 passed`、mock flow `10 passed`。
+- 真实隔离 PRD：两路 scan 不重跑；Planner 和 Critic 各在暂停并重启后
+  恢复原 request、attempt、Codex session，Planner 结果准入、Critic 派发。
+  超过配置超时的长暂停仅以可控时钟验证，并非真实等待。
+- 全量 deterministic 未完成：首个失败在 dev 基线同样复现，测试依赖
+  本机 Claude 登录；不将聚焦测试描述为全量通过。
