@@ -2365,14 +2365,15 @@ def build_run_goal_projection(
 
     from zf.runtime.run_scope import (
         events_for_run,
-        known_run_ids,
-        resolve_run_for_event,
-        resolve_run_id,
+        event_run_id,
+        run_aliases,
     )
 
     all_events = list(events)
+    aliases = run_aliases(all_events)
+    known = set(aliases.values())
     requested_run_id = str(run_id or "").strip()
-    selected_run_id = resolve_run_id(all_events, requested_run_id)
+    selected_run_id = aliases.get(requested_run_id, "")
     if not selected_run_id and not requested_run_id:
         for event in reversed(all_events):
             if event.type not in {
@@ -2382,15 +2383,16 @@ def build_run_goal_projection(
                 "run.goal.blocked",
             }:
                 continue
-            selected_run_id = resolve_run_for_event(all_events, event)
+            selected_run_id = event_run_id(event, aliases=aliases)
+            if not selected_run_id and len(known) == 1:
+                selected_run_id = next(iter(known))
             if selected_run_id:
                 break
     if not selected_run_id and not requested_run_id:
-        known = known_run_ids(all_events)
         if len(known) == 1:
             selected_run_id = next(iter(known))
     scoped_events = (
-        events_for_run(all_events, run_id=selected_run_id)
+        events_for_run(all_events, run_id=selected_run_id, _aliases=aliases)
         if selected_run_id
         else ([] if requested_run_id else all_events)
     )
@@ -2453,6 +2455,7 @@ def build_run_goal_projection(
     handoff = reduce_attempt_handoffs(
         all_events,
         workflow_run_id=selected_run_id,
+        _aliases=aliases,
     )
     if terminal_event is not None:
         from zf.runtime.goal_completion_authority import scope_handoff_snapshot
