@@ -155,3 +155,64 @@ def test_heartbeat_sweep_keeps_new_assignment_after_terminal_stage(tmp_path, rep
     assert len(stuck) == 1
     assert stuck[0].task_id == "T1"
     assert stuck[0].payload["dispatch_id"] == "dispatch-2"
+
+
+@pytest.mark.parametrize('status', ['settled', 'blocked', 'failed', 'cancelled', 'superseded'])
+@pytest.mark.parametrize('pin', ['', 'dispatch-1'])
+def test_terminal_pipeline_assignment_is_not_expected_for_drift(tmp_path, monkeypatch, status, pin):
+    runtime, _, writer, _ = runtime_case(tmp_path, status=status)
+    runtime.task_store.update('T1', active_dispatch_id=pin)
+    for i in range(12):
+        writer.append(ZfEvent(type=f'other.progress.{i}', actor='other'))
+    monkeypatch.setattr(runtime, '_drift_role_is_live', lambda role: False)
+    runtime._check_drift()
+    assert not [e for e in runtime.event_log.read_all()
+                if e.type == 'worker.drift.detected' and e.payload.get('signal') == 'node_skip'
+                and e.payload.get('affected_role') == 'verify']
+
+
+@pytest.mark.parametrize('replacement', ['pipeline', 'legacy'])
+def test_drift_keeps_new_live_assignment_after_terminal_pipeline(tmp_path, monkeypatch, replacement):
+    runtime, _, writer, identity = runtime_case(tmp_path, status='failed')
+    new = {'assignee': 'verify-1', 'role_instance': 'verify-1', 'dispatch_id': 'dispatch-2'}
+    if replacement == 'pipeline':
+        new = {**identity, **new, 'operation_id': 'op-2'}
+        writer.append(ZfEvent(type='workflow.operation.requested', task_id='T1', payload=new))
+        writer.append(ZfEvent(type='workflow.operation.started', task_id='T1', payload=new))
+    writer.append(ZfEvent(type='task.dispatched', task_id='T1', payload=new))
+    runtime.task_store.update('T1', active_dispatch_id='dispatch-2')
+    for i in range(12):
+        writer.append(ZfEvent(type=f'other.progress.{i}', actor='other'))
+    monkeypatch.setattr(runtime, '_drift_role_is_live', lambda role: False)
+    runtime._check_drift()
+    assert [e for e in runtime.event_log.read_all()
+            if e.type == 'worker.drift.detected' and e.payload.get('signal') == 'node_skip'
+            and e.payload.get('affected_role') == 'verify']
+
+
+def test_terminal_assignment_does_not_hide_another_live_task(tmp_path, monkeypatch):
+    runtime, _, writer, _ = runtime_case(tmp_path, status='failed')
+    runtime.task_store.update('T1', active_dispatch_id='')
+    runtime.task_store.add(Task(id='T2', status='in_progress', assigned_to='verify-1',
+                                active_dispatch_id='new-task-dispatch'))
+    for i in range(12):
+        writer.append(ZfEvent(type=f'other.progress.{i}', actor='other'))
+    monkeypatch.setattr(runtime, '_drift_role_is_live', lambda role: False)
+    runtime._check_drift()
+    assert [e for e in runtime.event_log.read_all()
+            if e.type == 'worker.drift.detected' and e.payload.get('signal') == 'node_skip'
+            and e.payload.get('affected_role') == 'verify']
+
+
+def test_drift_does_not_hide_work_when_terminal_evidence_is_unavailable(tmp_path, monkeypatch):
+    runtime, _, writer, _ = runtime_case(tmp_path, status='running')
+    for i in range(12):
+        writer.append(ZfEvent(type=f'other.progress.{i}', actor='other'))
+    def unavailable():
+        raise OSError('cannot read terminal evidence')
+    monkeypatch.setattr(runtime, '_terminal_task_pipeline_assignments', unavailable)
+    monkeypatch.setattr(runtime, '_drift_role_is_live', lambda role: False)
+    runtime._check_drift()
+    assert [e for e in runtime.event_log.read_all()
+            if e.type == 'worker.drift.detected' and e.payload.get('signal') == 'node_skip'
+            and e.payload.get('affected_role') == 'verify']

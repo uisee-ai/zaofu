@@ -245,6 +245,11 @@ class LifecycleObservationMixin:
             tasks = self.task_store.list_all()
         except Exception:
             return []
+        try:
+            terminal_assignments = self._terminal_task_pipeline_assignments()
+        except Exception:
+            # Missing evidence must not hide a genuinely inactive worker.
+            terminal_assignments = {}
         expected: list[str] = []
         seen: set[str] = set()
         for task in tasks:
@@ -256,7 +261,16 @@ class LifecycleObservationMixin:
             assignee = task.assigned_to or ""
             if not assignee:
                 continue
-            if self._heartbeat_worker_finished_current_dispatch(assignee):
+            terminal_dispatch = terminal_assignments.get((task.id, assignee))
+            if terminal_dispatch and task.active_dispatch_id in {"", terminal_dispatch}:
+                # The provider operation has ended; the task may remain open
+                # for handoff/review without requiring an active worker turn.
+                continue
+            try:
+                worker_finished = self._heartbeat_worker_finished_current_dispatch(assignee)
+            except Exception:
+                worker_finished = False
+            if worker_finished:
                 # The writer already emitted a result (dev.build.done) for this
                 # task and is awaiting review/integration — legitimately idle in
                 # later stages, not "expected active". Without this, node-skip
