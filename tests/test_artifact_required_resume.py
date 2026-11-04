@@ -14,7 +14,8 @@ from zf.runtime.artifact_read_ledger import build_attempt_source_manifest, write
 
 
 @pytest.mark.parametrize("witness", ["observed", "missing", "wrong_session", "truncated",
-                                      "wrong_bundle", "wrong_operation", "wrong_actor", "gap", "tampered_output"])
+                                      "wrong_bundle", "wrong_operation", "wrong_actor", "gap", "tampered_output",
+                                      "compacted_event", "compacted_transcript", "compacted_before_delivery"])
 def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_path, monkeypatch, capsys, witness):
     state = tmp_path / "state"
     source_path = state / "artifacts" / "input.json"
@@ -57,16 +58,25 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
     transcript = tmp_path / "codex.jsonl"
     RoleSessionRegistry(state / "role_sessions.yaml", tmp_path).bind_codex_session("dev-1", sid, session_path=transcript)
     if witness != "missing":
-        transcript.write_text("\n".join(json.dumps(x) for x in [
+        rows = [
             {"type": "session_meta", "payload": {"id": str(uuid4()) if witness == "wrong_session" else sid}},
             {"timestamp": (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat(), "type": "response_item",
              "payload": {"type": "function_call_output", "call_id": "call-1",
                          "output": first_raw[:50] if witness == "truncated" else first_raw}},
-        ]) + "\n")
+        ]
+        if witness in {"compacted_transcript", "compacted_before_delivery"}:
+            seconds = 2 if witness == "compacted_transcript" else 0.5
+            compact = {"timestamp": (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat(),
+                       "type": "compacted", "payload": {}}
+            rows.insert(1 if witness == "compacted_before_delivery" else len(rows), compact)
+        transcript.write_text("\n".join(json.dumps(x) for x in rows) + "\n")
+    if witness == "compacted_event":
+        writer.append(ZfEvent(type="worker.context.compacted", actor="dev-1", task_id="T1",
+                              ts=(datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()))
 
     assert main([*command, "--resume"]) == 0
     resumed = json.loads(capsys.readouterr().out)
-    assert resumed["items"][0]["page_start"] == (first["items"][0]["page_end"] if witness == "observed" else 0)
+    assert resumed["items"][0]["page_start"] == (first["items"][0]["page_end"] if witness in {"observed", "compacted_before_delivery"} else 0)
 
 
 def test_resume_requires_matching_operation_and_gap_free_pages(tmp_path, monkeypatch, capsys):
@@ -123,7 +133,8 @@ def test_resume_requires_matching_operation_and_gap_free_pages(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize("missing_alias", [False, True])
-def test_resume_requires_independent_receipts_for_identical_aliases(tmp_path, monkeypatch, capsys, missing_alias):
+@pytest.mark.parametrize("different_source", [False, True])
+def test_resume_requires_independent_receipts_for_identical_aliases(tmp_path, monkeypatch, capsys, missing_alias, different_source):
     from zf.runtime.artifact_read_ledger import active_read_ledger_path
 
     state = tmp_path / "state"
@@ -133,6 +144,11 @@ def test_resume_requires_independent_receipts_for_identical_aliases(tmp_path, mo
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     sources = [{"source_id": name, "artifact_id": "a", "ref": "artifacts/input.json",
                 "sha256": digest, "allowed_paths": ["$.body"]} for name in ("first", "second")]
+    if different_source:
+        second = state / "artifacts" / "input2.json"
+        second.write_text(json.dumps({"body": "x" * 10000, "other": "different"}))
+        sources[1]["ref"] = "artifacts/input2.json"
+        sources[1]["sha256"] = hashlib.sha256(second.read_bytes()).hexdigest()
     manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
         dispatch_id="attempt-1", sources=sources, metadata={"read_purpose": "implementation"})
     write_attempt_source_manifest(state, manifest)
@@ -160,3 +176,39 @@ def test_resume_requires_independent_receipts_for_identical_aliases(tmp_path, mo
     assert main([*cmd, "--resume"]) == 0
     page = json.loads(capsys.readouterr().out)
     assert page["items"][0]["page_start"] == (0 if missing_alias else first["items"][0]["page_end"])
+
+
+def test_sealed_historical_witness_without_current_transcript_restarts_safely(tmp_path, monkeypatch, capsys):
+    from zf.runtime.artifact_read_ledger import seal_read_ledger
+
+    state = tmp_path / "state"
+    source = state / "artifacts" / "input.json"
+    source.parent.mkdir(parents=True)
+    source.write_text(json.dumps({"body": "x" * 10000}))
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1", dispatch_id="attempt-1",
+        sources=[{"source_id": "s", "artifact_id": "a", "ref": "artifacts/input.json",
+                  "sha256": hashlib.sha256(source.read_bytes()).hexdigest(), "allowed_paths": ["$.body"]}],
+        metadata={"read_purpose": "implementation"},
+    )
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest, operation_id="op-1")
+    writer = EventWriter(EventLog(state / "events.jsonl"))
+    for typ in ("workflow.operation.requested", "workflow.operation.started"):
+        writer.append(ZfEvent(type=typ, payload={"operation_id": "op-1", "active_attempt_id": "attempt-1"}))
+    writer.append(ZfEvent(type="task.dispatched", payload={"attempt_id": "attempt-1", "required_reads": [
+        {"source_id": "s", "artifact_id": "a", "json_path": "$.body"}]}))
+    command = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state), "--required"]
+    sid, transcript = str(uuid4()), tmp_path / "codex.jsonl"
+    RoleSessionRegistry(state / "role_sessions.yaml", tmp_path).bind_codex_session("dev-1", sid, session_path=transcript)
+    assert main(command) == 0
+    page = capsys.readouterr().out.strip()
+    transcript.write_text("\n".join(json.dumps(row) for row in [
+        {"type": "session_meta", "payload": {"id": sid}},
+        {"timestamp": (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat(), "type": "response_item",
+         "payload": {"type": "function_call_output", "call_id": "1", "output": page}},
+    ]) + "\n")
+    seal_read_ledger(state, "attempt-1")
+    transcript.unlink()
+    assert main([*command, "--resume"]) == 0
+    assert json.loads(capsys.readouterr().out)["items"][0]["page_start"] == 0

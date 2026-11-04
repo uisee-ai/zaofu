@@ -22,6 +22,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 def resume_position(
     state_dir: Path, *, manifest: dict[str, Any], identity: dict[str, Any],
     bundle_digest: str, groups: list[dict[str, Any]], receipts: list[list[dict[str, Any]]],
+    event_log: Any = None,
 ) -> tuple[int, int]:
     """Return the first gap; unavailable or inconsistent evidence starts over."""
     attempt = str(manifest.get("attempt_id") or "")
@@ -32,6 +33,14 @@ def resume_position(
         registry = RoleSessionRegistry(state_dir / "role_sessions.yaml", state_dir.parent)
         session = str(registry.get(identity["actor"]) or "")
         if not session:
+            return 0, 0
+        from zf.cli.artifact_resume_boundary import continuation_boundary, _epoch
+
+        boundary = continuation_boundary(
+            event_log=event_log, transcript=registry.get_path(identity["actor"]),
+            actor=identity["actor"], session_id=session,
+        )
+        if boundary is None:
             return 0, 0
         active = active_read_ledger_path(state_dir, attempt)
         paths = sorted(active.parent.glob("read-ledger-*.jsonl"))
@@ -52,6 +61,19 @@ def resume_position(
         observed = observe_artifact_delivery(state_dir, candidates)
         observed = [row for row in observed if row.get("provider_delivery_status") == "observed_in_transcript"
                     and row.get("provider_session_id") == session]
+        if boundary:
+            retained = []
+            for row in observed:
+                witness = row.get("provider_observation_ref")
+                if not isinstance(witness, dict):
+                    continue
+                try:
+                    delivered = hydrate_sidecar_ref(state_dir, witness).payload
+                    if _epoch(delivered.get("timestamp")) > boundary:
+                        retained.append(row)
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+            observed = retained
         bodies: dict[str, Any] = {}
         for index, (group, aliases) in enumerate(zip(groups, receipts, strict=True)):
             selection = group.get("selection")
@@ -83,7 +105,9 @@ def resume_position(
                     for item in page.get("items", []):
                         sources = [item, *item.get("aliases", [])]
                         if (any(s.get("source_id") == alias["source_id"] and s.get("artifact_id") == alias["artifact_id"]
-                                and s.get("json_path") == alias["json_path"] for s in sources)
+                                and s.get("json_path") == alias["json_path"]
+                                and (not s.get("artifact_sha256") or s["artifact_sha256"] == alias["artifact_sha256"])
+                                for s in sources)
                                 and item.get("page_start") == start and item.get("page_end") == end
                                 and item.get("content") == (selection.read(start, end) if selection else content[start:end])):
                             ranges.append((start, end))

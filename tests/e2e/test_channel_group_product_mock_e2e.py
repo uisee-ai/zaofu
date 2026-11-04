@@ -554,6 +554,13 @@ def test_channel_prd_evaluation_task_workflow_run_and_receipt_continuation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # This product-flow fixture simulates the workflow workers. Its generated
+    # config may still name real providers in auxiliary roles; do not make the
+    # simulated flow depend on the host user's CLI login state.
+    monkeypatch.setattr(
+        "zf.runtime.preflight._probe_provider_auth",
+        lambda backend: (True, f"simulated authentication for {backend}"),
+    )
     state_dir, log, writer, service, channel_id = _run_multilens_to_consensus(
         tmp_path, monkeypatch
     )

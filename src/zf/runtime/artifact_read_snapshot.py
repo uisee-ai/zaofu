@@ -8,11 +8,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
-import json
 from pathlib import Path
 from typing import Any, Mapping
 
 from zf.runtime.artifact_access import artifact_access_allowed
+from zf.runtime.artifact_text_codec import decode_artifact_text
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, sidecar_path
 
@@ -23,12 +23,7 @@ SNAPSHOT_SCHEMA = "artifact-selected-text.v1"
 def selected_text(raw: bytes, json_path: str) -> str:
     from zf.runtime.artifact_read_ledger import _encode_selected, _select_json_path
 
-    try:
-        body = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        if json_path != "$":
-            raise ValueError("json_path requires a JSON artifact")
-        body = raw.decode("utf-8", errors="replace")
+    body = decode_artifact_text(raw, json_path)
     return _encode_selected(_select_json_path(body, json_path))
 
 
@@ -71,6 +66,7 @@ def pin_read_selections(
                                "ref": descriptor["ref"], "sha256": descriptor["sha256"]})
             selections.append({
                 "schema_version": SNAPSHOT_SCHEMA, "json_path": path,
+                "selection_fidelity": "lossless-text.v1",
                 "source_sha256": source["sha256"], "source_bytes": len(raw),
                 "selected_sha256": hashlib.sha256(content.encode()).hexdigest(),
                 "selected_bytes": len(content.encode()), "selected_chars": len(content),
@@ -169,6 +165,20 @@ def open_selection(
             or type(snapshot.get("selected_bytes")) is not int or snapshot["selected_bytes"] < snapshot["selected_chars"]
             or len(str(snapshot.get("selected_sha256", ""))) != 64):
         raise ValueError("invalid selected-text snapshot binding")
+    fidelity = snapshot.get("selection_fidelity")
+    if fidelity not in (None, "lossless-text.v1"):
+        raise ValueError("unknown selected-text fidelity version")
+    if fidelity is None:
+        # Older caches can contain float rounding or replacement characters.
+        # Verify against the pinned full source before trusting their blocks.
+        from zf.runtime.artifact_source_versions import read_source_version
+
+        raw, _ = read_source_version(state_dir, source, path=sidecar_path(state_dir, source["ref"]))
+        verified = selected_text(raw, path)
+        if (hashlib.sha256(verified.encode()).hexdigest() != snapshot["selected_sha256"]
+                or len(verified) != snapshot["selected_chars"]
+                or len(verified.encode()) != snapshot["selected_bytes"]):
+            raise ValueError("legacy selected-text selection differs from pinned source")
     position = 0
     for chunk in snapshot.get("chunks", []):
         if (chunk.get("start") != position or type(chunk.get("end")) is not int

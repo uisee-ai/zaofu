@@ -6741,6 +6741,22 @@ class FanoutCoordinationMixin(
             briefing_path,
             prompt_kind="fanout_child",
         )
+        if (
+            str(manifest.get("topology") or "") == "fanout_reader"
+            and provider_session_replaced and recovery_decision_event is not None
+            and not fresh_operation
+        ):
+            from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+
+            original_payload = previous_dispatch.payload.get("payload") or {}
+            attempt_id = str(
+                getattr(prepared_call, "attempt_id", "")
+                or original_payload.get("attempt_id")
+                or previous_dispatch.payload.get("attempt_id") or ""
+            )
+            prompt += reader_continuation_guidance(
+                attempt_id=attempt_id, backend=role.backend, cli=zf_cli_cmd(),
+            )
         try:
             dispatch_context = self._send_scoped_transport_task(
                 role,

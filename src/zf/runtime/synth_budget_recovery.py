@@ -11,6 +11,7 @@ from zf.runtime.call_result_runtime import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.injection import build_task_prompt
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
 from zf.runtime.workflow_operation import (
     operation_request_hash,
     reduce_workflow_operations,
@@ -132,6 +133,9 @@ def recover_budget_amended_synth(
         f"\nOwner budget continuation: {amendment.id}. Current runtime CLI: `{cli}`. "
         "Use this CLI with the same arguments instead of any older executable paths "
         "in the original briefing. Request identity and required reads remain unchanged."
+    )
+    prompt += reader_continuation_guidance(
+        attempt_id=prepared.attempt_id, backend=role.backend, cli=cli,
     )
     if (manifest.get("aggregate") or {}).get("status") == "cancelled":
         runtime.event_writer.append(

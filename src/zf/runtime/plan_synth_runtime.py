@@ -8,6 +8,8 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.injection import build_task_prompt
+from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
 from zf.runtime.run_admission import RunDispatchBlocked, build_run_admission_projection
 
 
@@ -334,15 +336,9 @@ class PlanSynthRuntimeMixin:
             briefing_path,
             prompt_kind="fanout_synth",
         )
-        prompt += (
-            " This is recovery of the same pending operation: continue from the "
-            "available session and frozen candidate, and re-read any source you "
-            "cannot still use. Reconcile unfinished tool calls and external "
-            "effects before retrying; report uncertainty if their outcome cannot "
-            "be established safely. For a lost required-read cursor in this "
-            "Codex operation, use `zf artifact read --attempt <attempt-id> "
-            "--required --resume` only if the earlier pages are still available; "
-            "otherwise reread them."
+        prompt += reader_continuation_guidance(
+            attempt_id=str(payload.get("attempt_id") or run_id),
+            backend=role.backend, cli=zf_cli_cmd(),
         )
         dispatch_context = self._dispatch_context(
             role=role,
