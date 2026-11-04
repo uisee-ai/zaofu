@@ -1969,6 +1969,10 @@ class LifecycleManagerMixin(
                 run_id=str(fanout_child.get("workflow_run_id") or ""),
             )
             self._send_transport_task(role.instance_id, path, prompt, context)
+            if fanout_child.get("recovery_kind") == "operator_synth_checkpoint":
+                from zf.runtime.synth_restart_checkpoint import mark_reopened_synth_started
+
+                mark_reopened_synth_started(self, role, fanout_child)
             self.event_writer.append(ZfEvent(
                 type="worker.recovery.injected",
                 actor=role.instance_id,
