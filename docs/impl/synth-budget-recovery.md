@@ -36,3 +36,8 @@ Runtime 在 fanout 当前性、无已准入结果检查后，核对 kernel redri
 仅有 Run 级 `--token-budget` 修订不会授权或修改 operation 预算；具名修订
 经绑定的 kernel redrive 准入后只作用于该 operation，其他维度和其他操作保持原值。
 两层预算均继续独立生效，累计用量和冻结请求不重置。
+
+同一具名修订也适用于预算阻塞的 `fanout_reader_child`（例如 Planner）。
+受控恢复校验 Run、fanout、role、request hash 和原活动 attempt；只在未有
+权威结果时续派原操作。预算 redrive 已准入但尚未完成派发时如再次停机，
+恢复仍须追溯并核验原具名授权，不得退回普通重启路径绕过预算。

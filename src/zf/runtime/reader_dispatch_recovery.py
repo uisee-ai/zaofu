@@ -30,7 +30,10 @@ class ReaderDispatchRecoveryMixin:
         lost_events_by_role: dict[str, list[tuple[int, ZfEvent]]] = {}
         dispatch_lost_count: dict[tuple[str, str], int] = {}
         pending_loss: dict[tuple[str, str], ZfEvent] = {}
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
         admission = build_run_admission_projection(events)
+        operations = reduce_workflow_operations(events)
         for index, event in enumerate(events):
             payload = event.payload if isinstance(event.payload, dict) else {}
             if event.type == "fanout.child.dispatched":
@@ -129,6 +132,36 @@ class ReaderDispatchRecoveryMixin:
                     events,
                     latest_dispatch,
                 ):
+                    continue
+                from zf.runtime.synth_budget_recovery import pending_reader_budget_amendment
+
+                operation = operations.get(str(latest_dispatch.payload.get("operation_id") or ""), {})
+                amendment = pending_reader_budget_amendment(events, operation)
+                if amendment is not None:
+                    dispatch_payload = latest_dispatch.payload
+                    nested = dispatch_payload.get("payload")
+                    nested = nested if isinstance(nested, dict) else {}
+                    if operation.get("status") not in {"requested", "suspended"} or any((
+                        str(operation.get("workflow_run_id") or "") != workflow_run_id,
+                        str(operation.get("role_instance") or "") != role_instance,
+                        str(dispatch_payload.get("role_instance") or "") != role_instance,
+                        str(operation.get("request_hash") or "") != str(
+                            dispatch_payload.get("request_hash") or nested.get("request_hash") or ""
+                        ),
+                        str(operation.get("active_attempt_id") or "") != str(
+                            nested.get("attempt_id") or dispatch_payload.get("attempt_id") or ""
+                        ),
+                    )):
+                        continue
+                    self._set_worker_state(
+                        role_instance, "idle", reason="owner_budget_amended", force=True
+                    )
+                    if self._retry_fanout_child(
+                        manifest=manifest, child=child, previous_dispatch=latest_dispatch,
+                        attempt=len(child_dispatches), provider_session_replaced=True,
+                        recovery_decision_event=amendment,
+                    ):
+                        return True
                     continue
                 lost_event = self._reader_dispatch_lost_event_after(
                     lost_events_by_role.get(role_instance, []),

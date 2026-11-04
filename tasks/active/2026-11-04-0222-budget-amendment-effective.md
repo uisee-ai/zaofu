@@ -15,3 +15,11 @@
    修改可审计并能继续；超出新有限额度仍然阻塞。
 4. 预算 guard、operation、恢复、EventLog 相关测试和 premerge sentinel -> verify:
    通过并记录真实与模拟范围。
+
+## Planner reader 补充
+
+干净真实 Run 的 Planner 在约 156.8 万累计 token 后阻塞，原有具名预算
+恢复仅覆盖 Task Pipeline 和 synth，无法恢复普通 `fanout_reader_child`。
+扩展该受控路径，保留 Run、fanout、role、request/attempt 身份，验证授权
+后、传输前再次停机及身份不符时拒绝派发。真实 Run `workflow-ab0566812a516ab8`
+通过具名有限额度恢复原 Planner，扫描未重跑；后续继续验证结果与 Critic。

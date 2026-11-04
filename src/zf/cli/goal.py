@@ -172,7 +172,7 @@ def _run_set(args: argparse.Namespace) -> int:
         )
         if find_task_pipeline_budget_amendment([*events, candidate], operation) is not candidate:
             print(
-                "Error: operation is not eligible or sample limit does not cover the blocked budget",
+                "Error: operation is not eligible or the named limit does not cover the blocked budget",
                 file=sys.stderr,
             )
             return 1

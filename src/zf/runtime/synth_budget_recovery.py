@@ -178,11 +178,11 @@ def recover_budget_amended_synth(
     return True
 
 
-def pending_synth_budget_amendment(
+def pending_reader_budget_amendment(
     events: list[ZfEvent], operation: dict[str, Any]
 ) -> ZfEvent | None:
-    """Follow only an admitted budget redrive interrupted before transport start."""
-    if operation.get("operation_type") != "fanout_synth":
+    """Follow only an admitted reader budget redrive interrupted before transport start."""
+    if operation.get("operation_type") not in {"fanout_synth", "fanout_reader_child"}:
         return None
     original_events = events
     operation_id = operation.get("operation_id")
@@ -223,6 +223,14 @@ def pending_synth_budget_amendment(
             return None
         events, operation = before, previous
     return find_task_pipeline_budget_amendment(original_events, operation)
+
+
+def pending_synth_budget_amendment(
+    events: list[ZfEvent], operation: dict[str, Any]
+) -> ZfEvent | None:
+    if operation.get("operation_type") != "fanout_synth":
+        return None
+    return pending_reader_budget_amendment(events, operation)
 
 
 def _carrier_recoverable(
