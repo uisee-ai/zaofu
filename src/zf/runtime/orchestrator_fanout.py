@@ -55,6 +55,7 @@ from zf.runtime.fanout_recovery_runtime import (
     recover_unrecorded_reader_fanout_results,
     task_has_active_writer_fanout_dispatch,
 )
+from zf.runtime.reader_dispatch_recovery import ReaderDispatchRecoveryMixin
 from zf.runtime.reader_fanout_recovery_snapshot import event_log_snapshot_token
 from zf.runtime.fanout_timeout_operations import FanoutTimeoutOperationsMixin
 from zf.runtime.durable_call_fanout import DurableCallFanoutMixin
@@ -369,6 +370,7 @@ def _contract_handoff_ref_fields(
     return list(_PRD_STAGE_LOOSE_FALLBACK.get(success_event, ()))
 
 class FanoutCoordinationMixin(
+    ReaderDispatchRecoveryMixin,
     DurableCallFanoutMixin,
     FanoutBriefingMixin,
     FanoutDispatchLivenessMixin,
@@ -645,187 +647,6 @@ class FanoutCoordinationMixin(
                 event_type="fanout.child.failed", causation_id=causation_id,
             ))
             return True
-
-    def _recover_lost_reader_fanout_dispatches(
-        self,
-        events: list[ZfEvent],
-        *,
-        recovery_snapshot=None,
-    ) -> bool:
-        """Retry reader children whose dispatched provider session was replaced.
-
-        Reader fanout children often have no kanban task id, so a watcher
-        restart or context refresh can leave the manifest at ``dispatched``
-        while the worker pane/session has been refreshed back to idle. Treat
-        explicit session replacement events or a provider turn that closes
-        without a canonical child result as infrastructure loss. Rerun within
-        the bounded recovery allowance, then fail explicitly instead of
-        leaving the child dispatched until its wall-clock budget expires.
-        """
-        terminal_statuses = {"completed", "failed", "timed_out", "cancelled"}
-        event_index = {event.id: index for index, event in enumerate(events)}
-        dispatches: dict[tuple[str, str], list[ZfEvent]] = {}
-        terminal_children: set[tuple[str, str]] = set()
-        lost_events_by_role: dict[str, list[tuple[int, ZfEvent]]] = {}
-        dispatch_lost_count: dict[tuple[str, str], int] = {}
-        for index, event in enumerate(events):
-            payload = event.payload if isinstance(event.payload, dict) else {}
-            if event.type == "fanout.child.dispatched":
-                fanout_id = str(payload.get("fanout_id") or "")
-                child_id = str(payload.get("child_id") or "")
-                if fanout_id and child_id:
-                    dispatches.setdefault((fanout_id, child_id), []).append(event)
-                continue
-            if event.type in {"fanout.child.completed", "fanout.child.failed"}:
-                fanout_id = str(payload.get("fanout_id") or "")
-                child_id = str(payload.get("child_id") or "")
-                if fanout_id and child_id:
-                    terminal_children.add((fanout_id, child_id))
-                continue
-            if event.type == "fanout.child.dispatch_lost":
-                fanout_id = str(payload.get("fanout_id") or "")
-                child_id = str(payload.get("child_id") or "")
-                if fanout_id and child_id:
-                    key = (fanout_id, child_id)
-                    dispatch_lost_count[key] = dispatch_lost_count.get(key, 0) + 1
-                continue
-            role_instance = self._reader_dispatch_lost_role(event)
-            if role_instance:
-                lost_events_by_role.setdefault(role_instance, []).append((index, event))
-
-        if recovery_snapshot is not None:
-            manifests = recovery_snapshot.manifests
-        else:
-            fanout_root = self.state_dir / "fanouts"
-            if not fanout_root.exists():
-                return False
-            manifests = (
-                (path.parent.name, self._fanout_manifest(path.parent.name))
-                for path in fanout_root.glob("*/manifest.json")
-            )
-        for fanout_id, manifest in manifests:
-            if not manifest or manifest.get("topology") != "fanout_reader":
-                continue
-            aggregate = (
-                manifest.get("aggregate")
-                if isinstance(manifest.get("aggregate"), dict)
-                else {}
-            )
-            if (
-                str(manifest.get("status") or "") in terminal_statuses
-                or str(aggregate.get("status") or "") in terminal_statuses
-            ):
-                continue
-            if recovery_snapshot is None:
-                stale_reason, _superseded_by = (
-                    self._fanout_identity_stale_reason(fanout_id)
-                )
-            else:
-                stale_reason, _superseded_by = (
-                    self._fanout_identity_stale_reason(
-                        fanout_id,
-                        currentness=recovery_snapshot.currentness,
-                    )
-                )
-            if stale_reason:
-                continue
-            max_retries = int(
-                (manifest.get("aggregate_config") or {}).get("max_retries") or 0
-            )
-            allowed_recoveries = max(1, max_retries)
-            for child in manifest.get("children", []) or []:
-                if not isinstance(child, dict):
-                    continue
-                if str(child.get("status") or "") != "dispatched":
-                    continue
-                child_id = str(child.get("child_id") or "")
-                role_instance = str(child.get("role_instance") or "")
-                if not child_id or not role_instance:
-                    continue
-                key = (fanout_id, child_id)
-                if key in terminal_children:
-                    continue
-                child_dispatches = dispatches.get(key, [])
-                if not child_dispatches:
-                    continue
-                latest_dispatch = child_dispatches[-1]
-                latest_index = event_index.get(latest_dispatch.id, -1)
-                if latest_index < 0:
-                    continue
-                if self._fanout_dispatch_has_authoritative_result(
-                    events,
-                    latest_dispatch,
-                ):
-                    continue
-                lost_event = self._reader_dispatch_lost_event_after(
-                    lost_events_by_role.get(role_instance, []),
-                    latest_index,
-                    events=events, dispatch_event=latest_dispatch,
-                    state_dir=self.state_dir,
-                )
-                if lost_event is None:
-                    continue
-                lost_index = event_index.get(lost_event.id, latest_index)
-                activity_index = (
-                    latest_index
-                    if lost_event.type == "cost.usage.capture_miss"
-                    else lost_index
-                )
-                if self._reader_role_has_activity_after_dispatch(
-                    events,
-                    role_instance,
-                    activity_index,
-                ):
-                    continue
-                provider_turn_closed = lost_event.type == "provider.turn.closed"
-                loss_reason = (
-                    "provider_turn_closed_without_child_result"
-                    if provider_turn_closed
-                    else "reader_worker_session_replaced_after_dispatch"
-                )
-                dispatch_lost_event = self.event_writer.append(ZfEvent(
-                    type="fanout.child.dispatch_lost",
-                    actor="zf-cli",
-                    task_id=str(child.get("task_id") or "") or None,
-                    payload={
-                        "fanout_id": fanout_id,
-                        "trace_id": str(manifest.get("trace_id") or ""),
-                        "stage_id": str(manifest.get("stage_id") or ""),
-                        "child_id": child_id,
-                        "run_id": str(child.get("run_id") or ""),
-                        "role_instance": role_instance,
-                        "task_id": str(child.get("task_id") or ""),
-                        "reason": loss_reason,
-                        "lost_signal_event_id": lost_event.id,
-                        "lost_signal_type": lost_event.type,
-                    },
-                    causation_id=lost_event.id,
-                    correlation_id=str(manifest.get("trace_id") or ""),
-                ))
-                self._set_worker_state(
-                    role_instance,
-                    "idle",
-                    reason=loss_reason,
-                    force=True,
-                )
-                if dispatch_lost_count.get(key, 0) >= allowed_recoveries:
-                    self._fail_exhausted_reader_fanout_dispatch(
-                        manifest=manifest,
-                        child=child,
-                        lost_event=lost_event,
-                        loss_reason=loss_reason,
-                    )
-                    return True
-                self._retry_fanout_child(
-                    manifest=manifest,
-                    child=child,
-                    previous_dispatch=latest_dispatch,
-                    attempt=len(child_dispatches),
-                    provider_session_replaced=True,
-                    recovery_decision_event=dispatch_lost_event,
-                )
-                return True
-        return False
 
     def _reader_role_has_activity_after_dispatch(
         self,
@@ -6340,11 +6161,32 @@ class FanoutCoordinationMixin(
             events = self.event_log.read_all()
         except Exception:
             return
+        from zf.runtime.run_admission import build_run_admission_projection
+
+        admission = build_run_admission_projection(events)
+        resume_epochs: dict[str, float] = {}
+        for event in events:
+            if event.type == "run.resumed" and isinstance(event.payload, dict):
+                run_id = str(
+                    event.payload.get("workflow_run_id")
+                    or event.payload.get("run_id") or ""
+                )
+                if run_id:
+                    resume_epochs[run_id] = self._event_epoch(event)
         for manifest_path in root.glob("*/manifest.json"):
             fanout_id = manifest_path.parent.name
             manifest = self._fanout_manifest(fanout_id)
             if not manifest:
                 continue
+            trigger = manifest.get("trigger_payload")
+            run_id = str(
+                (trigger.get("workflow_run_id") if isinstance(trigger, dict) else "")
+                or manifest.get("trace_id") or ""
+            )
+            run = admission.runs.get(run_id)
+            if run is not None and run.status != "running":
+                continue
+            resume_epoch = resume_epochs.get(run_id, 0.0)
             aggregate = (
                 manifest.get("aggregate")
                 if isinstance(manifest.get("aggregate"), dict)
@@ -6396,6 +6238,8 @@ class FanoutCoordinationMixin(
             fanout_epoch = (
                 self._event_epoch(fanout_started[0]) if fanout_started else None
             )
+            if fanout_epoch is not None:
+                fanout_epoch = max(fanout_epoch, resume_epoch)
             from zf.runtime.fanout_timeout_policy import close_expired_queued_wait
 
             now = self._now()
@@ -6460,7 +6304,7 @@ class FanoutCoordinationMixin(
                 )
                 if child_dispatches:
                     last_dispatch = child_dispatches[-1]
-                    dispatch_epoch = self._event_epoch(last_dispatch)
+                    dispatch_epoch = max(self._event_epoch(last_dispatch), resume_epoch)
                     # Two independent staleness signals: the stage budget (time
                     # since dispatch) and per-child liveness (time since the
                     # child's last sign of life). A reader that engages then
@@ -6520,6 +6364,7 @@ class FanoutCoordinationMixin(
                     manifest=manifest,
                     events=events,
                     timeout_seconds=timeout_seconds,
+                    resume_epoch=resume_epoch,
                 )
                 continue
             pending_children = [str(child.get("child_id") or "") for child in timed_out]
@@ -6647,6 +6492,7 @@ class FanoutCoordinationMixin(
         manifest: dict,
         events: list[ZfEvent],
         timeout_seconds: int,
+        resume_epoch: float = 0.0,
     ) -> None:
         """R23: the timeout sweep only walked manifest children, so a fanout
         whose children were all terminal but whose synth never completed
@@ -6687,7 +6533,7 @@ class FanoutCoordinationMixin(
             "any_failed_fail",
         }:
             effective_timeout = min(effective_timeout, _SYNTH_DECIDED_TIMEOUT_S)
-        dispatch_epoch = self._event_epoch(dispatched[-1])
+        dispatch_epoch = max(self._event_epoch(dispatched[-1]), resume_epoch)
         now = self._now()
         timed_out = effective_timeout > 0 and now - dispatch_epoch >= effective_timeout
         idle_threshold = self._fanout_child_idle_threshold(synth)
