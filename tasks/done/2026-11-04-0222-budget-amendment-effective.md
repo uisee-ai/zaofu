@@ -1,6 +1,6 @@
 # 预算修订实际应用于恢复的原操作
 
-> 状态: active
+> 状态: done · 实施: `47802c8f` fix: scope token budget recovery to named operations；`3f72529e` fix: resume budget amended reader operations；`ce0a80d6` fix: renew scheduler delivery on synth budget replay
 
 真实 Critic 达到 operation tokens 上限后，恢复投影错误地接受 Run 级
 `--token-budget` 修订作为单个 operation 的恢复授权；但两层预算必须独立。
@@ -30,4 +30,17 @@
 已失败的旧 dispatch id；shadow 继续执行，enforce 会拒绝。修复后按获准的
 redrive 事件生成新 scheduler dispatch id，保留 operation 与读取 attempt；
 测试 shadow/enforce 均能产生新的已发送 TaskAttempt。真实结果 `evt-668ad13c35fd`
-在该补充修复之前已准入，故补充修复的真实 Provider 重演仍未执行。
+在该补充修复之前已准入；后续使用模拟工作流、真实 enforce 调度及一次真实
+Codex 应答复验新派发通过，未重跑完整真实 Critic。
+
+
+## 验证记录
+
+- 真实隔离 Run 中 Planner 与 Critic 各经具名有限 token 修订继续原操作，
+  Planner 与 Critic 结果均准入、两次都保留原 session，scan 未重跑；Critic
+  结果的机械必读账本 `satisfied`。真实 Critic 提交时仍使用旧调度身份。
+- 补充修复后，enforce 调度实际创建新的 scheduler attempt 并调用一次真实
+  Codex；该测试的工作流载体为 mock，Provider 仅作简单应答。shadow/enforce
+  调度单测、相关闭包 `374 passed`、sentinel `53 passed`、mock flow
+  `10 passed`；与真实全链路适用范围分开报告。
+- 全量 deterministic 未完成，原 dev 基线存在依赖 Claude 登录的同一失败。
