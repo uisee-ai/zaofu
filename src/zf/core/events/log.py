@@ -304,28 +304,28 @@ class EventLog:
             snapshot_size = path.stat().st_size
         except FileNotFoundError:
             return [], 0
+        # Bound reads to the size observed before opening. A concurrent
+        # append is picked up on the next fold, and an unterminated final row
+        # remains unconsumed. Streaming avoids retaining another full copy of
+        # large archived ledgers and their split byte strings in memory.
+        events: list[ZfEvent] = []
+        consumed = 0
         try:
-            with path.open("rb") as f:
-                data = f.read(snapshot_size)
+            with path.open("rb") as stream:
+                while consumed < snapshot_size:
+                    raw = stream.readline(snapshot_size - consumed)
+                    if not raw or not raw.endswith(b"\n"):
+                        break
+                    consumed += len(raw)
+                    line = raw.decode("utf-8", "replace").strip()
+                    if not line:
+                        continue
+                    ev = self._decode(line)
+                    if ev is not None:
+                        events.append(ev)
         except FileNotFoundError:
             return [], 0
-        # Decode only the bytes present when the read began. If the active log
-        # is being appended concurrently, this prevents readers from chasing a
-        # moving EOF. A trailing newline-less row may be a partial write; leave
-        # it for a later read, matching read_from_offset().
-        last_newline = data.rfind(b"\n")
-        if last_newline < 0:
-            return [], 0
-        data = data[: last_newline + 1]
-        events: list[ZfEvent] = []
-        for raw in data.split(b"\n"):
-            line = raw.decode("utf-8", "replace").strip()
-            if not line:
-                continue
-            ev = self._decode(line)
-            if ev is not None:
-                events.append(ev)
-        return events, len(data)
+        return events, consumed
 
     def _parse_tail(self, path: Path, offset: int, snapshot_size: int) -> tuple[list[ZfEvent], int]:
         """Decode only bytes [offset, snapshot_size) — the appended tail."""
