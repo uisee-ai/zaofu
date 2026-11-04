@@ -1,6 +1,6 @@
 # 修复独立运行的混合 Provider 验证脚本
 
-> 状态: active
+> 状态: done · 实施: `186783c3` fix: make hybrid provider drill evidence explicit
 
 真实验证发现 `tests/e2e/generic_workflow_real_provider_drill.py` 复用 pytest 的模拟
 场景，但独立运行时未装配 autouse 模拟控制面，试图启动没有 session.yaml 的
@@ -19,3 +19,12 @@
 答案、来源引用或证据内容。保留拒绝并改进合成证据、将两条原始记录纳入读取合同；
 不得要求模型伪造通过。输出 schema 约束 verdict、action 与 claim 状态，但允许
 有效拒绝和 gap，失败时保留模型结果及用量摘要以便审查。
+
+## 验证记录
+
+- `tests/test_multiflow_runner_cleanup.py` 与
+  `tests/e2e/test_generic_workflow_complex_mock_e2e.py` 共 12 项通过；补充
+  证据源回归 1 项通过。
+- 脚本入口真实 Codex `gpt-6.1-sol`：旧空洞报告被拒绝并保存诊断；
+  加入两份可追溯合成记录后，真实 Verify 通过，18,661 输入 / 840 输出 token。
+  控制面与 replan 是模拟，只证明一次真实 Verify，未宣称真实产品端到端。
