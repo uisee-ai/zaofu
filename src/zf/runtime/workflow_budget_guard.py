@@ -352,8 +352,11 @@ def _operation_limits(
         ):
             continue
         patch = amendment.payload.get("operation_limits_patch")
-        if isinstance(patch, Mapping) and "max_usage_samples" in patch:
-            limits["max_usage_samples"] = int(patch["max_usage_samples"])
+        if isinstance(patch, Mapping):
+            if "max_usage_samples" in patch:
+                limits["max_usage_samples"] = int(patch["max_usage_samples"])
+            if redrive_operation_id == operation_id and "token_budget" in patch:
+                limits["token_budget"] = int(patch["token_budget"])
     return limits
 
 

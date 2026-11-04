@@ -703,7 +703,8 @@ def test_budget_blocked_task_pipeline_redrives_after_owner_amendment(
             "run_id": "run-budget-1",
             "workflow_run_id": "run-budget-1",
             "status": "active",
-            "run_limits_patch": {"token_budget": 0},
+            "operation_budget_id": "op-budget-impl",
+            "operation_limits_patch": {"token_budget": 0},
         },
     ))
 
@@ -751,7 +752,8 @@ def test_budget_blocked_operation_rejects_wrong_run_or_partial_amendment(
             "run_id": "run-other",
             "workflow_run_id": "run-other",
             "status": "active",
-            "run_limits_patch": {"token_budget": 0},
+            "operation_budget_id": "op-budget-impl",
+            "operation_limits_patch": {"token_budget": 0},
         },
     ))
     writer.append(ZfEvent(
@@ -763,7 +765,8 @@ def test_budget_blocked_operation_rejects_wrong_run_or_partial_amendment(
             "run_id": "run-budget-1",
             "workflow_run_id": "run-budget-1",
             "status": "active",
-            "run_limits_patch": {"cost_budget_usd": 1000},
+            "operation_budget_id": "op-budget-impl",
+            "operation_limits_patch": {"cost_budget_usd": 1000},
         },
     ))
 
@@ -790,7 +793,8 @@ def test_budget_amendment_before_block_does_not_authorize_redrive(
             "run_id": "run-budget-1",
             "workflow_run_id": "run-budget-1",
             "status": "active",
-            "run_limits_patch": {"token_budget": 0},
+            "operation_budget_id": "op-budget-impl",
+            "operation_limits_patch": {"token_budget": 0},
         },
     ))
     service = WorkflowOperationService(

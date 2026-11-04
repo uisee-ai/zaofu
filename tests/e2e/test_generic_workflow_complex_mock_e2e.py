@@ -459,7 +459,7 @@ def run_generic_workflow_complex_scenario(
         created_by="scoper",
         body={
             "schema_version": "research-scope.v1",
-            "question": "Which two independent evidence families close the claim?",
+            "question": "In this synthetic fixture, do independent warehouse and carrier records agree that 42 parcels were delivered?",
         },
     )
     _append_stage_result(
@@ -495,8 +495,11 @@ def run_generic_workflow_complex_scenario(
             body={
                 "schema_version": "research-evidence.v1",
                 "collector": role,
-                "source_family": f"independent-family-{index}",
-                "finding": f"corroborated-evidence-{index}",
+                "source_family": ("warehouse dispatch ledger" if index == 1 else "carrier delivery ledger"),
+                "synthetic_fixture": True,
+                "independence": ("Warehouse system records dispatches independently of the carrier system" if index == 1 else "Carrier system records delivery scans independently of the warehouse system"),
+                "record_id": ("warehouse-dispatch-2026-01" if index == 1 else "carrier-delivery-2026-01"),
+                "observation": ("The warehouse ledger records 42 parcels dispatched for batch B-42" if index == 1 else "The carrier ledger records 42 parcels delivered for batch B-42"),
             },
         )
         evidence_v2.append(evidence)
@@ -627,10 +630,13 @@ def run_generic_workflow_complex_scenario(
         created_by="synthesizer",
         body={
             "schema_version": "research-report.v1",
-            "title": "Verified report",
+            "title": "Synthetic fixture: delivery records for batch B-42",
+            "question": "Do independently produced warehouse and carrier records agree on the delivery count?",
+            "conclusion": "Yes: the warehouse dispatched 42 parcels and the carrier recorded 42 deliveries for batch B-42.",
             "findings": [
-                "Independent source family one supports the conclusion.",
-                "Independent source family two corroborates the conclusion.",
+                f"Warehouse dispatch ledger warehouse-dispatch-2026-01: 42 parcels; evidence {evidence_v2[0]['ref']}",
+                f"Carrier delivery ledger carrier-delivery-2026-01: 42 deliveries; evidence {evidence_v2[1]['ref']}",
+                "The fixture declares independently maintained warehouse and carrier systems; these are synthetic records, not external facts.",
             ],
             **(dict(report_transform(2, {})) if report_transform else {}),
         },
@@ -678,7 +684,10 @@ def run_generic_workflow_complex_scenario(
             source_id="synthesize",
             artifact_id="report.json",
             kind="report/markdown",
-        )],
+        ), *[
+            _source(evidence, source_id=f"evidence-{index}", artifact_id=f"evidence-{index}.json", kind="research/evidence")
+            for index, evidence in enumerate(evidence_v2, start=1)
+        ]],
         consume=provider_verifier is None,
     )
     binding = build_execution_binding(
@@ -729,6 +738,8 @@ def run_generic_workflow_complex_scenario(
             {
                 "requirement": requirement_v2,
                 "report": report_v2,
+                "evidence_1": evidence_v2[0],
+                "evidence_2": evidence_v2[1],
                 "goal_claim_set": {
                     "ref": claim_event_v2.payload["goal_claim_set_ref"],
                     "sha256": claim_event_v2.payload[
@@ -1009,4 +1020,18 @@ def test_generic_workflow_preserves_bilingual_goal_across_parallel_lanes(
         "verify",
     ]
     assert result["semantic_replan_count"] == 1
+    assert result["dossier_status"] == "ready"
+
+
+def test_provider_verifier_receives_traceable_independent_fixture_evidence(tmp_path):
+    def verify(_project, state, sources, expected):
+        assert {"report", "evidence_1", "evidence_2"} <= set(sources)
+        report = json.loads((state / sources["report"]["ref"]).read_text())
+        records = [json.loads((state / sources[f"evidence_{i}"]["ref"]).read_text()) for i in (1, 2)]
+        assert all(record["synthetic_fixture"] for record in records)
+        assert records[0]["source_family"] != records[1]["source_family"]
+        assert all(sources[f"evidence_{i}"]["ref"] in " ".join(report["findings"]) for i in (1, 2))
+        return expected
+
+    result = run_generic_workflow_complex_scenario(tmp_path, provider_verifier=verify)
     assert result["dossier_status"] == "ready"

@@ -149,3 +149,16 @@ coverage_ledger、source_inventory 和其他固定矩阵仍必读。来源索引
 安全策略的性能或质量证明。LS 当前无非空任务范围证明且共享字段发生变化，新策略
 应回退完整读取；真实 Provider 对照和视觉阅读资格仍待验证。`context_delivery` 的
 Provider session 差量仍是 shadow，与上述局部审查选择是不同机制。
+
+暂停的 Run 在控制面重启后保持派发围栏：reader child 与 synth 的丢失恢复
+扫描不会在 Run 暂停、排队或终止期间消耗恢复预算或写失败终态。reader 的
+同一丢失信号即使遇到派发被拒，也只记录一次；只有实际产生新的 child 派发
+后才计入恢复次数。恢复 Run 后仍由原有受控派发路径核验操作身份和请求。
+对已成功重派后出现的新丢失信号，既有有界失败策略继续生效。
+回归：`tests/test_paused_reader_restart_recovery.py`、
+`tests/test_reader_respawn_continuation.py`。
+
+Fanout 超时扫描同样遵守 Run 状态围栏：暂停期间不发布超时、失败或重试；
+恢复后以最近的 `run.resumed` 时间作为计时下限，为尚未完成的 child、排队
+等待与 synth 提供新的有界计时窗口。该窗口从恢复时重新计算，并非精确扣除
+暂停前已使用的时长；后续仍按配置的超时及 idle 上限收敛。

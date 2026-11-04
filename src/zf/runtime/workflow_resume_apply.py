@@ -358,10 +358,12 @@ def _apply_operation_checkpoint(
     redrive_actions = {
         "redrive_interrupted_reader_operation",
         "redrive_interrupted_budget_synth_operation",
+        "redrive_interrupted_budget_reader_operation",
         "redrive_interrupted_task_pipeline_operation",
         "redrive_cancelled_interrupted_task_pipeline_operation",
         "redrive_budget_amended_task_pipeline_operation",
         "redrive_budget_amended_synth_operation",
+        "redrive_budget_amended_reader_operation",
     }
     current_status = str(current.get("status") or "")
     live_attempt = _live_operation_attempt(
@@ -388,6 +390,7 @@ def _apply_operation_checkpoint(
         and checkpoint.safe_resume_action not in {
             "redrive_budget_amended_task_pipeline_operation",
             "redrive_budget_amended_synth_operation",
+            "redrive_budget_amended_reader_operation",
         }
     ) or (
         current_status == "cancelled"
@@ -402,6 +405,7 @@ def _apply_operation_checkpoint(
         checkpoint.safe_resume_action in {
             "redrive_budget_amended_task_pipeline_operation",
             "redrive_budget_amended_synth_operation",
+            "redrive_budget_amended_reader_operation",
         }
     ):
         from zf.runtime.workflow_operation_task_pipeline import (
@@ -421,12 +425,16 @@ def _apply_operation_checkpoint(
                 applied=False,
                 reason="budget amendment is missing, stale, or out of scope",
             )
-    if checkpoint.safe_resume_action == "redrive_interrupted_budget_synth_operation":
-        from zf.runtime.synth_budget_recovery import pending_synth_budget_amendment
-        if pending_synth_budget_amendment(writer.event_log.read_all(), current) is None:
+    if checkpoint.safe_resume_action in {
+        "redrive_interrupted_budget_synth_operation",
+        "redrive_interrupted_budget_reader_operation",
+    }:
+        from zf.runtime.synth_budget_recovery import pending_reader_budget_amendment
+
+        if pending_reader_budget_amendment(writer.event_log.read_all(), current) is None:
             return WorkflowResumeApplyResult(
                 checkpoint=checkpoint, applied=False,
-                reason="pending synth budget amendment no longer valid",
+                reason="pending reader budget amendment no longer valid",
             )
     if checkpoint.safe_resume_action == "cancel_terminal_reader_operation":
         from zf.runtime.terminal_reader_operation import terminal_reader_event
@@ -457,6 +465,7 @@ def _apply_operation_checkpoint(
             checkpoint.safe_resume_action in {
                 "redrive_budget_amended_task_pipeline_operation",
                 "redrive_budget_amended_synth_operation",
+                "redrive_budget_amended_reader_operation",
             }
         )
         redriven = service.admit_redrive(

@@ -248,7 +248,7 @@ def find_task_pipeline_budget_amendment(
         str(operation.get("status") or "") != "blocked"
         or (
             not str(operation.get("task_pipeline_stage") or "").strip()
-            and operation.get("operation_type") != "fanout_synth"
+            and operation.get("operation_type") not in {"fanout_synth", "fanout_reader_child"}
         )
         or not str(operation.get("reason") or "").startswith(
             "workflow_budget_exceeded:"
@@ -318,11 +318,9 @@ def find_task_pipeline_budget_amendment(
             continue
         if str(payload.get("source") or "") != "zf_goal_cli":
             continue
-        patch = payload.get("run_limits_patch")
-        if "usage_samples" in (budget_payload.get("exceeded_dimensions") or []):
-            if str(payload.get("operation_budget_id") or "") != operation_id:
-                continue
-            patch = payload.get("operation_limits_patch")
+        if str(payload.get("operation_budget_id") or "") != operation_id:
+            continue
+        patch = payload.get("operation_limits_patch")
         if not isinstance(patch, Mapping):
             continue
         if _budget_patch_covers_exceeded_dimensions(patch, budget_payload):

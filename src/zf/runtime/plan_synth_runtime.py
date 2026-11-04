@@ -8,7 +8,7 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.injection import build_task_prompt
-from zf.runtime.run_admission import RunDispatchBlocked
+from zf.runtime.run_admission import RunDispatchBlocked, build_run_admission_projection
 
 
 PLAN_SYNTH_HANDOFF_KEYS = (
@@ -73,6 +73,7 @@ class PlanSynthRuntimeMixin:
     ) -> bool:
         """Re-send a synth briefing lost when its provider session restarted."""
 
+        admission = build_run_admission_projection(events)
         event_index = {event.id: index for index, event in enumerate(events)}
         dispatches: dict[str, list[ZfEvent]] = {}
         terminal: set[str] = set()
@@ -143,6 +144,13 @@ class PlanSynthRuntimeMixin:
                 int((manifest.get("aggregate_config") or {}).get("max_retries") or 0),
             )
             latest_dispatch = synth_dispatches[-1]
+            workflow_run_id = str(
+                latest_dispatch.payload.get("workflow_run_id")
+                or manifest.get("trace_id") or ""
+            )
+            run = admission.runs.get(workflow_run_id)
+            if run is not None and run.status != "running":
+                continue
             latest_index = event_index.get(latest_dispatch.id, -1)
             if latest_index < 0:
                 continue
