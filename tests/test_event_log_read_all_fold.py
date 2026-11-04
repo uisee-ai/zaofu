@@ -221,3 +221,46 @@ def test_read_days_cache_does_not_share_mutable_occurrences(log: EventLog) -> No
     again = log.read_days(1)[-1]
     assert again.type == "nested"
     assert again.payload["items"][0]["value"] == "original"
+
+
+def test_parse_snapshot_defers_concurrent_append(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "events.jsonl"
+    before = ZfEvent(type="before", payload={"message": "完整"})
+    after = ZfEvent(type="after")
+    path.write_text(before.to_json() + "\n", encoding="utf-8")
+    original_size = path.stat().st_size
+    original_open = Path.open
+    appended = False
+
+    def open_with_append(self, *args, **kwargs):
+        nonlocal appended
+        if self == path and args and args[0] == "rb" and not appended:
+            appended = True
+            with original_open(self, "ab") as stream:
+                stream.write((after.to_json() + "\n").encode())
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", open_with_append)
+    log = EventLog(path)
+    rows, consumed = log._parse_file_consumed(path)
+    assert rows == [before]
+    assert consumed == original_size
+    assert [event.type for event in log._parse_file(path)] == ["before", "after"]
+
+
+def test_signed_archive_is_reverified_on_each_read(tmp_path: Path) -> None:
+    from zf.core.security.signing import EventSigner
+
+    path = tmp_path / "events.jsonl"
+    log = EventLog(path, signer=EventSigner(b"secret"))
+    log.append(ZfEvent(type="judge.passed"))
+    archive_dir = tmp_path / "events"
+    archive_dir.mkdir()
+    archive = archive_dir / "2026-11-03.jsonl"
+    path.rename(archive)
+    assert [event.type for event in log.read_days(2)] == ["judge.passed"]
+    before = archive.stat()
+    archive.write_text(archive.read_text().replace("judge.passed", "judge.failed"))
+    os.utime(archive, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert archive.stat().st_size == before.st_size
+    assert log.read_days(2) == []
