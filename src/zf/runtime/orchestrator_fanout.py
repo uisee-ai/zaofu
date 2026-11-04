@@ -664,34 +664,11 @@ class FanoutCoordinationMixin(
         """
         terminal_statuses = {"completed", "failed", "timed_out", "cancelled"}
         event_index = {event.id: index for index, event in enumerate(events)}
-        dispatches: dict[tuple[str, str], list[ZfEvent]] = {}
-        terminal_children: set[tuple[str, str]] = set()
-        lost_events_by_role: dict[str, list[tuple[int, ZfEvent]]] = {}
-        dispatch_lost_count: dict[tuple[str, str], int] = {}
-        for index, event in enumerate(events):
-            payload = event.payload if isinstance(event.payload, dict) else {}
-            if event.type == "fanout.child.dispatched":
-                fanout_id = str(payload.get("fanout_id") or "")
-                child_id = str(payload.get("child_id") or "")
-                if fanout_id and child_id:
-                    dispatches.setdefault((fanout_id, child_id), []).append(event)
-                continue
-            if event.type in {"fanout.child.completed", "fanout.child.failed"}:
-                fanout_id = str(payload.get("fanout_id") or "")
-                child_id = str(payload.get("child_id") or "")
-                if fanout_id and child_id:
-                    terminal_children.add((fanout_id, child_id))
-                continue
-            if event.type == "fanout.child.dispatch_lost":
-                fanout_id = str(payload.get("fanout_id") or "")
-                child_id = str(payload.get("child_id") or "")
-                if fanout_id and child_id:
-                    key = (fanout_id, child_id)
-                    dispatch_lost_count[key] = dispatch_lost_count.get(key, 0) + 1
-                continue
-            role_instance = self._reader_dispatch_lost_role(event)
-            if role_instance:
-                lost_events_by_role.setdefault(role_instance, []).append((index, event))
+        from zf.runtime.reader_loss_progress import reader_loss_history, reader_loss_progress
+
+        dispatches, terminal_children, lost_events_by_role, dispatch_lost_count = (
+            reader_loss_history(events, self._reader_dispatch_lost_role)
+        )
 
         if recovery_snapshot is not None:
             manifests = recovery_snapshot.manifests
@@ -783,6 +760,9 @@ class FanoutCoordinationMixin(
                     if provider_turn_closed
                     else "reader_worker_session_replaced_after_dispatch"
                 )
+                read_checkpoint, made_progress = reader_loss_progress(
+                    self.state_dir, events, latest_dispatch, lost_event,
+                )
                 dispatch_lost_event = self.event_writer.append(ZfEvent(
                     type="fanout.child.dispatch_lost",
                     actor="zf-cli",
@@ -798,6 +778,8 @@ class FanoutCoordinationMixin(
                         "reason": loss_reason,
                         "lost_signal_event_id": lost_event.id,
                         "lost_signal_type": lost_event.type,
+                        "semantic_attempt_consumed": False,
+                        **read_checkpoint,
                     },
                     causation_id=lost_event.id,
                     correlation_id=str(manifest.get("trace_id") or ""),
@@ -808,7 +790,7 @@ class FanoutCoordinationMixin(
                     reason=loss_reason,
                     force=True,
                 )
-                if dispatch_lost_count.get(key, 0) >= allowed_recoveries:
+                if dispatch_lost_count.get(key, 0) >= allowed_recoveries and not made_progress:
                     self._fail_exhausted_reader_fanout_dispatch(
                         manifest=manifest,
                         child=child,
