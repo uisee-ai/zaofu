@@ -1110,3 +1110,7 @@ Provider operation 已终态、且 task/role/dispatch/generation 与最后一次
 派发精确匹配时，任务可以继续等待交接；该 assignment 不要求 worker 再产生活动，
 因此不应持续报 node-skip。新的 Pipeline/legacy 派发、同一角色的其他活动任务或
 终态证据不可用时仍保留正常告警；本规则只影响观察信号，不更新任务或准入状态。
+
+Codex 会话用量读取逐行扫描完整 JSONL，仅保留最新可用 metadata 和用量，
+不把 provider 会话整份载入内存，也不根据历史读取推断当前上下文。活动尾部
+的不完整 JSON 行继续跳过；文件追加、替换或截断后下一次扫描重新核对。
