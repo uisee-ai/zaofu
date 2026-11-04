@@ -533,44 +533,44 @@ class CodexSessionReader(BackendSessionReader):
         model_provider: str = "openai"
         latest_rate_limits: dict = {}
         try:
-            text = session_path.read_text(encoding="utf-8", errors="replace")
+            with session_path.open("r", encoding="utf-8", errors="replace") as stream:
+                for line in stream:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("type") == "session_meta":
+                        payload = obj.get("payload") or {}
+                        if isinstance(payload, dict):
+                            session_id = str(payload.get("id") or session_id)
+                            model_provider = str(
+                                payload.get("model_provider") or model_provider
+                            )
+                        continue
+                    if obj.get("type") == "turn_context":
+                        payload = obj.get("payload") or {}
+                        if isinstance(payload, dict):
+                            latest_model = str(payload.get("model") or latest_model)
+                        continue
+                    if obj.get("type") != "event_msg":
+                        continue
+                    payload = obj.get("payload") or {}
+                    if payload.get("type") != "token_count":
+                        continue
+                    info = payload.get("info")
+                    if not isinstance(info, dict):
+                        continue
+                    latest_info = info
+                    rate_limits = payload.get("rate_limits")
+                    latest_rate_limits = (
+                        dict(rate_limits) if isinstance(rate_limits, dict) else {}
+                    )
+                    latest_ts = obj.get("timestamp", "")
         except OSError:
             return None
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if obj.get("type") == "session_meta":
-                payload = obj.get("payload") or {}
-                if isinstance(payload, dict):
-                    session_id = str(payload.get("id") or session_id)
-                    model_provider = str(
-                        payload.get("model_provider") or model_provider
-                    )
-                continue
-            if obj.get("type") == "turn_context":
-                payload = obj.get("payload") or {}
-                if isinstance(payload, dict):
-                    latest_model = str(payload.get("model") or latest_model)
-                continue
-            if obj.get("type") != "event_msg":
-                continue
-            payload = obj.get("payload") or {}
-            if payload.get("type") != "token_count":
-                continue
-            info = payload.get("info")
-            if not isinstance(info, dict):
-                continue
-            latest_info = info
-            rate_limits = payload.get("rate_limits")
-            latest_rate_limits = (
-                dict(rate_limits) if isinstance(rate_limits, dict) else {}
-            )
-            latest_ts = obj.get("timestamp", "")
         if latest_info is None:
             return None
         last_usage = latest_info.get("last_token_usage") or {}

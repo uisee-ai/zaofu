@@ -1,6 +1,6 @@
 # 已留待阶段交接的任务不重复报告 worker node-skip
 
-> 状态: active
+> 状态: done · a961d26e fix: avoid stale drift alerts for terminal assignments
 
 LS 的 `LS-DESIGN-TEMPLATES-R2` 保留 `dev.blocked` 交接证据，启动时产生
 `task.requeue.skipped`，当前无 active_dispatch_id；此后 `dev-lane-0` 的
@@ -18,4 +18,4 @@ LS 的 `LS-DESIGN-TEMPLATES-R2` 保留 `dev.blocked` 交接证据，启动时产
 LS 的 operation `wop-impl-tp-LS-DESIGN-TEMPLATES-R2-5aed2a-811c528b4361`
 已 settled，dispatch / role / task map generation 与上次派发一致；任务仍待后续
 交接。修复前终态组合 10 例复现误报，修复后调用方闭包 92 项通过；新 pipeline、
-legacy 派发、同角色其他任务及证据不可用仍报警。合并部署与现场确认尚待完成。
+legacy 派发、同角色其他任务及证据不可用仍报警。已合入 dev d5ba7dd8；2026-11-04 08:05 UTC 控制面重载产生 loop.started evt-5adc4f87730e，原 Critic 进程保持运行。此后至 08:08 UTC 未再产生该误报，Web HTTP 200；在途任务未被修改。
