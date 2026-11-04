@@ -41,3 +41,8 @@ Runtime 在 fanout 当前性、无已准入结果检查后，核对 kernel redri
 受控恢复校验 Run、fanout、role、request hash 和原活动 attempt；只在未有
 权威结果时续派原操作。预算 redrive 已准入但尚未完成派发时如再次停机，
 恢复仍须追溯并核验原具名授权，不得退回普通重启路径绕过预算。
+
+预算 redrive 保留原 workflow operation 和输入读取 attempt，但为本次调度派发
+使用与 redrive 事件绑定的新 dispatch id。旧 scheduler TaskAttempt 已失败时，
+不得把同一个 dispatch id 交给 transport 再次认领；shadow 与 enforce 均应能
+生成新 TaskAttempt。新调度身份不改变原请求摘要、必读回执和累积用量。

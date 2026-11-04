@@ -122,6 +122,9 @@ def test_cli_resume_and_runtime_redispatch_preserve_synth_request(
         assert updated[key] == original[key]
     assert len(runtime.transport.sent) == sent + 1
     assert runtime.transport.sent[-1][3].operation_id == op_id
+    dispatch_id = runtime.transport.sent[-1][3].dispatch_id
+    assert dispatch_id != dispatch.payload["run_id"]
+    assert updated["dispatch_id"] == dispatch_id
     assert "/new/runtime/python -E -m zf.cli.main" in runtime.transport.sent[-1][2]
     assert (
         _operation_limits(state, updated, events=log.read_all())["max_usage_samples"]
@@ -465,3 +468,35 @@ def test_named_token_amendment_does_not_change_another_operation(tmp_path, monke
     operation = reduce_workflow_operations(log.read_all())[op_id]
     other = {**operation, "operation_id": "another-operation"}
     assert _operation_limits(state, other, events=log.read_all())["token_budget"] == 1000
+
+
+@pytest.mark.parametrize("attempt_mode", ["shadow", "enforce"])
+def test_budget_redrive_claims_fresh_scheduler_delivery(tmp_path, monkeypatch, attempt_mode):
+    from dataclasses import replace
+    from pathlib import Path
+    from zf.runtime.task_attempt_runtime import (
+        fail_task_attempt_delivery, mark_task_attempt_sent, prepare_task_attempt,
+    )
+
+    state, log, runtime, dispatch = _blocked_synth(tmp_path, monkeypatch)
+    op_id = dispatch.payload["operation_id"]
+    runtime.config.workflow.task_attempt.mode = attempt_mode
+    initial_context = replace(runtime.transport.sent[-1][3], task_id="T-SYNTH")
+    previous = prepare_task_attempt(runtime, context=initial_context,
+                                    briefing_path=Path(dispatch.payload["briefing_path"]))
+    mark_task_attempt_sent(runtime, previous)
+    fail_task_attempt_delivery(runtime, previous, error=RuntimeError("budget stopped prior delivery"))
+    assert _run_set(Namespace(objective="", status="active", reason="continue",
+                              operation=op_id, operation_max_usage_samples=120)) == 0
+    cp = next(c for c in build_workflow_resume_projection(state, runtime.config)["operation_checkpoints"]
+              if c["operation_id"] == op_id)
+    assert apply_workflow_resume(state, runtime.config, checkpoint_id=cp["checkpoint_id"])["applied"] == 1
+    make_context = runtime._dispatch_context
+    monkeypatch.setattr(runtime, "_dispatch_context", lambda **kw: replace(make_context(**kw), task_id="T-SYNTH"))
+    assert runtime._recover_lost_fanout_synth_dispatches(log.read_all())
+    events = log.read_all()
+    sent = [e for e in events if e.type == "task.attempt.sent"]
+    assert len(sent) == 2
+    assert sent[0].payload["attempt_id"] != sent[1].payload["attempt_id"]
+    assert sent[0].payload["operation_id"] == sent[1].payload["operation_id"] == op_id
+    assert not [e for e in events if e.type == "task.attempt.shadow_mismatch"]

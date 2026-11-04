@@ -23,3 +23,11 @@
 扩展该受控路径，保留 Run、fanout、role、request/attempt 身份，验证授权
 后、传输前再次停机及身份不符时拒绝派发。真实 Run `workflow-ab0566812a516ab8`
 通过具名有限额度恢复原 Planner，扫描未重跑；后续继续验证结果与 Critic。
+
+## 调度派发身份补充
+
+真实 Critic 从预算阻塞恢复后出现 `task.attempt.shadow_mismatch`，原因是重用
+已失败的旧 dispatch id；shadow 继续执行，enforce 会拒绝。修复后按获准的
+redrive 事件生成新 scheduler dispatch id，保留 operation 与读取 attempt；
+测试 shadow/enforce 均能产生新的已发送 TaskAttempt。真实结果 `evt-668ad13c35fd`
+在该补充修复之前已准入，故补充修复的真实 Provider 重演仍未执行。

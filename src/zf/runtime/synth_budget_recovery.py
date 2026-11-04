@@ -113,6 +113,9 @@ def recover_budget_amended_synth(
         should_dispatch=True,
         ensure_status="requested",
     )
+    # The immutable call attempt stays pinned, while each authorized redrive
+    # needs a fresh scheduler delivery identity after the prior attempt failed.
+    dispatch_id = f"{run_id}-budget-{redrive.id}"
     context = runtime._dispatch_context(
         role=role,
         briefing_path=briefing,
@@ -121,7 +124,7 @@ def recover_budget_amended_synth(
         parent_task_id=prepared.parent_task_id,
         run_id=prepared.workflow_run_id,
         operation_id=operation_id,
-        dispatch_id=run_id,
+        dispatch_id=dispatch_id,
     )
     cli = zf_cli_cmd()
     prompt = build_task_prompt(role.instance_id, briefing, prompt_kind="fanout_synth")
@@ -153,7 +156,7 @@ def recover_budget_amended_synth(
         runtime,
         prepared,
         task_id=prepared.task_id,
-        dispatch_id=run_id,
+        dispatch_id=dispatch_id,
         causation_id=redrive.id,
         correlation_id=prepared.workflow_run_id,
     )
@@ -167,6 +170,7 @@ def recover_budget_amended_synth(
             payload={
                 **payload,
                 "retry_of_event_id": dispatch.id,
+                "dispatch_id": dispatch_id,
                 "recovery_kind": "operator_budget_amendment",
                 "recovery_cli_cmd": cli,
                 "semantic_attempt_consumed": False,
