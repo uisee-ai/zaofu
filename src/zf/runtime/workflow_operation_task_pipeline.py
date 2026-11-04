@@ -318,11 +318,9 @@ def find_task_pipeline_budget_amendment(
             continue
         if str(payload.get("source") or "") != "zf_goal_cli":
             continue
-        patch = payload.get("run_limits_patch")
-        if "usage_samples" in (budget_payload.get("exceeded_dimensions") or []):
-            if str(payload.get("operation_budget_id") or "") != operation_id:
-                continue
-            patch = payload.get("operation_limits_patch")
+        if str(payload.get("operation_budget_id") or "") != operation_id:
+            continue
+        patch = payload.get("operation_limits_patch")
         if not isinstance(patch, Mapping):
             continue
         if _budget_patch_covers_exceeded_dimensions(patch, budget_payload):

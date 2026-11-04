@@ -44,6 +44,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "--operation", default="", help="Budget-blocked Task Pipeline operation"
     )
     set_cmd.add_argument("--operation-max-usage-samples", type=int, default=None)
+    set_cmd.add_argument("--operation-token-budget", type=int, default=None)
     set_cmd.add_argument(
         "--all-run-operations", action="store_true",
         help="Apply the sample limit to all operations in this Run",
@@ -102,22 +103,27 @@ def _run_set(args: argparse.Namespace) -> int:
         return 2
     operation_id = str(getattr(args, "operation", "") or "").strip()
     sample_limit = getattr(args, "operation_max_usage_samples", None)
+    token_limit = getattr(args, "operation_token_budget", None)
+    operation_patch = {
+        key: value for key, value in {
+            "max_usage_samples": sample_limit,
+            "token_budget": token_limit,
+        }.items() if value is not None
+    }
     all_operations = bool(getattr(args, "all_run_operations", False))
-    if all_operations and not operation_id:
-        print("Error: --all-run-operations requires --operation", file=sys.stderr)
+    if all_operations and (not operation_id or sample_limit is None or token_limit is not None):
+        print("Error: --all-run-operations requires a sample-only operation amendment", file=sys.stderr)
         return 2
-    if bool(operation_id) != (sample_limit is not None):
-        print(
-            "Error: --operation and --operation-max-usage-samples must be provided together",
-            file=sys.stderr,
-        )
+    if bool(operation_id) != bool(operation_patch):
+        print("Error: --operation and operation limits must be provided together", file=sys.stderr)
         return 2
-    if sample_limit is not None and (
-        sample_limit < 0 or status != "active" or run_limits_patch
+    if operation_patch and (
+        any(value < 0 for value in operation_patch.values())
+        or status != "active" or run_limits_patch
         or not str(getattr(args, "reason", "") or "").strip()
     ):
         print(
-            "Error: operation amendment requires --status active, a nonnegative sample limit, an approval reason, and no run limit patch",
+            "Error: operation amendment requires --status active, nonnegative limits, an approval reason, and no run limit patch",
             file=sys.stderr,
         )
         return 2
@@ -150,7 +156,7 @@ def _run_set(args: argparse.Namespace) -> int:
         payload["reason"] = str(args.reason)
     if operation_id:
         payload["operation_budget_id"] = operation_id
-        payload["operation_limits_patch"] = {"max_usage_samples": sample_limit}
+        payload["operation_limits_patch"] = operation_patch
         if all_operations:
             payload["operation_budget_scope"] = "run"
         from zf.runtime.workflow_operation import reduce_workflow_operations

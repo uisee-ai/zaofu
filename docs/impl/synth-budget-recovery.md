@@ -29,3 +29,10 @@ Runtime 在 fanout 当前性、无已准入结果检查后，核对 kernel redri
 与新派发事件重新打开载体，原失败保留在 ledger；结果重放以最近派发为边界，
 不会再次重放此前的退出失败。若预算 redrive 已获准但尚未启动就遇到显式停机，
 恢复检查点按原预算授权和请求继续，停机前已经 running 的调用不适用这条补偿。
+
+因 token 达限阻塞时，Owner 必须显式指定目标 operation：`zf goal set --status active
+--operation <id> --operation-token-budget <非负整数> --reason '<批准依据>'`。
+非零值必须高于阻断时的累计 token；零表示取消该 operation 的 token 上限。
+仅有 Run 级 `--token-budget` 修订不会授权或修改 operation 预算；具名修订
+经绑定的 kernel redrive 准入后只作用于该 operation，其他维度和其他操作保持原值。
+两层预算均继续独立生效，累计用量和冻结请求不重置。
