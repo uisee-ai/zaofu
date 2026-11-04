@@ -1120,3 +1120,6 @@ Codex 会话用量读取逐行扫描完整 JSONL，仅保留最新可用 metadat
 
 Run Manager 的单次 goal projection 也在当前完整事件快照内复用身份映射，
 包括目标选择和 handoff scope；下一次投影重新构建，不跨调用缓存事件身份。
+
+Run 别名投影对既无显式身份、又不能形成既有 correlation 或 anchor 的事件
+避免构造候选身份；它们仍参与相同的账本遍历，既有和新建 Run 的绑定规则不变。
