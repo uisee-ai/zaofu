@@ -501,10 +501,14 @@ def build_workflow_resume_checkpoints(
     inflight_fanouts, unroutable_keys = _filing_guard_indexes(event_list)
     checkpoints: list[WorkflowResumeCheckpoint] = []
     checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config))
+    task_event_index = _index_events_for_tasks(
+        event_list, {task.id for task in task_list if isinstance(task.id, str) and task.id}
+    )
     for task in task_list:
         if task.status in {"done", "cancelled"}:
             continue
-        task_events = _events_for_task(event_list, task.id)
+        task_events = (list(task_event_index.get(task.id, [])) if isinstance(task.id, str)
+                       else _events_for_task(event_list, task.id))
         ref_checkpoint = _task_ref_repair_checkpoint(task, task_events)
         if ref_checkpoint is not None:
             checkpoints.append(ref_checkpoint)
@@ -2518,6 +2522,33 @@ def _stage_from_event(event_type: str) -> str:
     if event_type.startswith("judge."):
         return "judge"
     return event_type.rsplit(".", 1)[0]
+
+
+def _index_events_for_tasks(
+    events: list[ZfEvent], task_ids: set[str],
+) -> dict[str, list[ZfEvent]]:
+    """Index this snapshot using the same exact task matching as recovery."""
+    index: dict[str, list[ZfEvent]] = {}
+    if not task_ids:
+        return index
+    for event in events:
+        if event.task_id:
+            if isinstance(event.task_id, str) and event.task_id in task_ids:
+                index.setdefault(event.task_id, []).append(event)
+            continue
+        payload = event.payload
+        if not isinstance(payload, dict):
+            continue
+        candidates = {
+            str(payload.get(key) or "")
+            for key in ("task_id", "source_task_id", "target_task_id", "active_task_id")
+        }
+        nested = payload.get("task")
+        if isinstance(nested, dict):
+            candidates.add(str(nested.get("id") or ""))
+        for task_id in candidates & task_ids:
+            index.setdefault(task_id, []).append(event)
+    return index
 
 
 def _events_for_task(events: list[ZfEvent], task_id: str) -> list[ZfEvent]:
