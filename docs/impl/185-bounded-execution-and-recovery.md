@@ -1103,3 +1103,10 @@ Preview 的角色字段读取复用 loader 的 `profile_sources` 和环境展开
 v5 启动测试明确从 `zf-prd-v5.yaml` 生成隔离项目的唯一控制面 `zf.yaml`，核对版本 5.0.1
 及 blocking Task Pipeline，使用本地 Provider CLI 桩、真实 watcher/tmux，终点为
 `workflow.invoke.accepted` 与首个 `task.attempt.sent`；不宣称真实 Provider 完成交付。
+
+## 漂移观察与终态 Pipeline assignment
+
+Provider operation 已终态、且 task/role/dispatch/generation 与最后一次 Pipeline
+派发精确匹配时，任务可以继续等待交接；该 assignment 不要求 worker 再产生活动，
+因此不应持续报 node-skip。新的 Pipeline/legacy 派发、同一角色的其他活动任务或
+终态证据不可用时仍保留正常告警；本规则只影响观察信号，不更新任务或准入状态。
