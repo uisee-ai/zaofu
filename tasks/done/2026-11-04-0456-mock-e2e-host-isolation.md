@@ -1,6 +1,7 @@
 # Mock Channel E2E 隔离宿主 Provider 认证
 
-> 状态: active
+> 状态: done
+> 实现: `f13fa274 fix: preserve artifact values across resumed reads`
 
 ## 复现与验收
 

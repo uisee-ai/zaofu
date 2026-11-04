@@ -1,6 +1,7 @@
 # 固定版本工件读取不静默改变数据
 
-> 状态: active
+> 状态: done
+> 实现: `f13fa274 fix: preserve artifact values across resumed reads`
 
 ## 复现与范围
 
