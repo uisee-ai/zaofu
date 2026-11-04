@@ -47,6 +47,7 @@ def reduce_attempt_handoffs(
     events: list[ZfEvent],
     *,
     workflow_run_id: str = "",
+    _aliases: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Derive a replay-stable shadow snapshot from canonical events."""
 
@@ -59,7 +60,7 @@ def reduce_attempt_handoffs(
     if workflow_run_id:
         from zf.runtime.run_scope import events_for_run
 
-        events = events_for_run(events, run_id=workflow_run_id)
+        events = events_for_run(events, run_id=workflow_run_id, _aliases=_aliases)
 
     handoffs: dict[str, dict[str, Any]] = {}
     findings: dict[str, dict[str, Any]] = {}

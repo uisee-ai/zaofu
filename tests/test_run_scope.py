@@ -91,3 +91,25 @@ def test_conflicting_event_does_not_union_two_canonical_runs() -> None:
 
     assert aliases["workflow-A"] == "workflow-A"
     assert aliases["workflow-B"] == "workflow-B"
+
+
+def test_goal_projection_reuses_identity_mapping_without_cross_call_cache(monkeypatch) -> None:
+    from zf.runtime import run_scope
+    from zf.runtime.run_manager import build_run_goal_projection
+
+    original = run_scope.run_aliases
+    calls = []
+    def count(rows):
+        calls.append(True)
+        return original(rows)
+    monkeypatch.setattr(run_scope, "run_aliases", count)
+    events = [ZfEvent(type="run.goal.started", correlation_id="run-a",
+                      payload={"run_id": "run-a", "objective": "ship"})]
+    result = build_run_goal_projection(events, run_id="run-a")
+    assert result["run_id"] == "run-a"
+    assert result["status"] == "active"
+    assert len(calls) == 1
+    events.append(ZfEvent(type="run.goal.completed", correlation_id="run-a",
+                          payload={"run_id": "run-a"}))
+    assert build_run_goal_projection(events, run_id="run-a")["status"] == "complete"
+    assert len(calls) == 2
