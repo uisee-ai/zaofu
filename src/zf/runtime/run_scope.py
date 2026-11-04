@@ -58,27 +58,37 @@ def run_aliases(events: Iterable[ZfEvent]) -> dict[str, str]:
     aliases: dict[str, str] = {}
     for event in rows:
         payload = _payload(event)
-        explicit = tuple(
-            str(value or "").strip()
-            for value in (
-                payload.get("run_id"),
-                payload.get("workflow_run_id"),
-                payload.get("trace_id"),
-            )
-            if str(value or "").strip()
-        )
         correlation_id = str(getattr(event, "correlation_id", "") or "").strip()
-        correlation_is_run_alias = bool(
-            correlation_id
-            and (
-                explicit
-                or correlation_id in aliases
-                or event.type in _CORRELATION_RUN_ANCHOR_EVENTS
+        if not (payload.get("run_id") or payload.get("workflow_run_id") or payload.get("trace_id")):
+            # Most ledger records have no explicit run identity. They can
+            # contribute only an already-known correlation or an anchor.
+            if not correlation_id or (
+                correlation_id not in aliases
+                and event.type not in _CORRELATION_RUN_ANCHOR_EVENTS
+            ):
+                continue
+            identities = (correlation_id,)
+        else:
+            explicit = tuple(
+                str(value or "").strip()
+                for value in (
+                    payload.get("run_id"),
+                    payload.get("workflow_run_id"),
+                    payload.get("trace_id"),
+                )
+                if str(value or "").strip()
             )
-        )
-        identities = explicit + (
-            (correlation_id,) if correlation_is_run_alias else ()
-        )
+            correlation_is_run_alias = bool(
+                correlation_id
+                and (
+                    explicit
+                    or correlation_id in aliases
+                    or event.type in _CORRELATION_RUN_ANCHOR_EVENTS
+                )
+            )
+            identities = explicit + (
+                (correlation_id,) if correlation_is_run_alias else ()
+            )
         if not identities:
             continue
         # An event may be malformed or stale and carry identities from two

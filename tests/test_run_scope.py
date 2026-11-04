@@ -113,3 +113,17 @@ def test_goal_projection_reuses_identity_mapping_without_cross_call_cache(monkey
                           payload={"run_id": "run-a"}))
     assert build_run_goal_projection(events, run_id="run-a")["status"] == "complete"
     assert len(calls) == 2
+
+
+def test_correlation_without_explicit_identity_requires_anchor_or_existing_alias() -> None:
+    events = [
+        ZfEvent(type="worker.heartbeat", correlation_id="unrelated"),
+        ZfEvent(type="run.goal.started", correlation_id="run-a"),
+        ZfEvent(type="worker.heartbeat", correlation_id="run-a"),
+        ZfEvent(type="task.dispatched", correlation_id="trace-a",
+                payload={"workflow_run_id": "run-a"}),
+        ZfEvent(type="worker.heartbeat", correlation_id="trace-a"),
+        ZfEvent(type="worker.heartbeat", correlation_id="unrelated-2",
+                payload={"run_id": "  "}),
+    ]
+    assert run_aliases(events) == {"run-a": "run-a", "trace-a": "run-a"}
