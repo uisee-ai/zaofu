@@ -132,3 +132,42 @@ def test_dispatch_events_survive_assignment_projection_crash(tmp_path: Path) -> 
     # Event-first: the assign + dispatch events were appended before the crash.
     assert "task.assigned" in types
     assert "task.dispatched" in types
+
+
+def test_resume_event_index_preserves_task_matching_and_order():
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.workflow_resume import _events_for_task, _index_events_for_tasks
+
+    events = [
+        ZfEvent(type="a", task_id="T-1", payload={"task_id": "T-2"}),
+        ZfEvent(type="b", payload={"task_id": "T-1", "source_task_id": "T-1", "target_task_id": "T-2"}),
+        ZfEvent(type="c", payload={"active_task_id": 7, "task": {"id": "T-2"}}),
+        ZfEvent(type="d", payload={"task": {"id": "T-1"}, "note": "T-2"}),
+        ZfEvent(type="e", payload={"nested": {"task_id": "T-1"}}),
+    ]
+    ids = {"T-1", "T-2", "7", "missing"}
+    index = _index_events_for_tasks(events, ids)
+    for task_id in ids:
+        assert index.get(task_id, []) == _events_for_task(events, task_id)
+    assert [e.type for e in index["T-1"]] == ["a", "b", "d"]
+    assert [e.type for e in index["T-2"]] == ["b", "c"]
+
+
+def test_resume_event_index_matches_legacy_over_mixed_histories():
+    import random
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.workflow_resume import _events_for_task, _index_events_for_tasks
+
+    rng = random.Random(198)
+    ids = {"T-1", "T-2", "7", "missing"}
+    values = [None, "", "T-1", "T-2", 7, False, {"id": "T-1"}]
+    for _ in range(100):
+        events = [
+            ZfEvent(type="event", task_id=rng.choice([None, "", "T-1", "T-2", 7]),
+                    payload={key: rng.choice(values) for key in
+                             ("task_id", "source_task_id", "target_task_id", "active_task_id", "task")
+                             if rng.random() < 0.4})
+            for _ in range(40)
+        ]
+        index = _index_events_for_tasks(events, ids)
+        assert all(index.get(task_id, []) == _events_for_task(events, task_id) for task_id in ids)
