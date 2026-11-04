@@ -730,3 +730,26 @@ Planner/Critic 和独立评测负责，历史输出不能证明模型当前理�
 此前 LS 将 32 项必读压至 16 项的纯结构差异实验未证明上下文完整性，不是当前
 安全策略的效果指标。实际 Provider 质量及视觉资格仍未完成，本设计 C8 的
 Provider session 差量交付继续为 shadow。
+
+## 20. 保真读取、同会话续读与精确重叠（2026-11-04）
+
+- [工件正文解码](../../src/zf/runtime/artifact_text_codec.py) 严格校验 UTF-8、
+  重复 JSON 键和非有限数；不能无损解释的输入明确失败，不写入成功回执。JSON
+  小数保留精确十进制值。旧 selector 快照先与固定原始来源重新计算和对账，不符则
+  拒绝；新快照在绑定的 manifest 内声明保真版本。JSON 的空白和数值拼写可能规范化，
+  合同保证所选值和文本交付，不保证 JSON 原始字节格式。
+- [必读分页](../../src/zf/cli/artifact_required_read.py) 对每个 occurrence 和
+  selector 独立授权及核对固定来源摘要；所选文本的 digest、字符数及字节数均相同
+  才共享正文，所有来源各自产生回执，别名携带各自的来源摘要。没有新跨来源重叠时
+  继续采用旧 bundle 身份；新发现重叠导致旧游标不兼容时必须重新读取。此优化不会
+  将包含 `plan_md` 的完整报告自动拆字段，不能把完整报告和独立文件视为同一正文。
+- [续读边界](../../src/zf/cli/artifact_resume_boundary.py) 要求当前 Codex session
+  及 transcript 可核验，并排除已知压缩边界之前的页；身份、operation、bundle、
+  每个来源回执、输出正文和无缺口区间均须匹配。证据缺失、session 变化或已知压缩
+  后从缺口重读。历史输出与单次事实回忆均不能证明模型完整理解或仍持有所有上下文；
+  对未知的 Provider 内部压缩亦无法提供保证。Claude 等未提供相应 transcript 证明的
+  Provider 不使用此续读捷径。
+- 真实 Codex 分页中断、同会话重启及单条事实回忆的限定证据见
+  [本轮验证记录](../records/2026-11-04-context-198-resume-integrity.md)。该演练并非
+  LS 控制面完整重启，也不是完整 Critic、真实 Replan 或真实业务需求的语义覆盖证明。
+  完整报告的无损字段复用、独立覆盖盲评和变更计划真实复评仍是活动任务。

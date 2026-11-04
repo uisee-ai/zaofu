@@ -279,6 +279,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             output, receipts = prepare_required_read(
                 context.state_dir, manifest=manifest, rows=rows, identity=identity,
                 cursor=getattr(args, "cursor", None) or None, page_bytes=args.page_bytes,
+                event_log=event_log,
                 resume=getattr(args, "resume", False),
             )
             for row in receipts:

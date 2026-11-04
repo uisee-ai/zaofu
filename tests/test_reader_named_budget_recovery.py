@@ -69,6 +69,7 @@ def test_named_budget_amendment_resumes_original_planner_reader(tmp_path, monkey
     after = reduce_workflow_operations(log.read_all())[operation_id]
     assert after["status"] == "running"
     assert len(transport.sent) == count + 1
+    assert "cannot still use" in transport.sent[-1][2]
     for key in ("request_hash", "request_ref", "active_attempt_id", "lease_id"):
         assert after[key] == before[key]
     assert _operation_limits(state, after, events=log.read_all())["token_budget"] == 3000

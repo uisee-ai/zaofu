@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a1a4f9-776d-7d72-846d-9b9f63dc2191"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Reserve funds before confirming the order."}}
+{"type":"turn.completed","usage":{"input_tokens":101247,"cached_input_tokens":85376,"cache_write_input_tokens":0,"output_tokens":190,"reasoning_output_tokens":18}}

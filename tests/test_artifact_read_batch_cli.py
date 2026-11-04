@@ -297,3 +297,76 @@ def test_required_pages_keep_aliases_bound_and_reject_incomplete_consumption(tmp
     if fault == "gap":
         rows = [row for row in rows if row["page_start"] != 0]
     assert all(required_read_satisfied(rows, r) for r in requirements) == (fault != "gap")
+
+
+@pytest.mark.parametrize("fault", ["", "different", "unauthorized", "tampered"])
+def test_cross_source_identical_selected_text_keeps_occurrence_evidence(tmp_path, fault):
+    from zf.cli.artifact_required_read import prepare_required_read
+
+    state = tmp_path / ".runtime"
+    first = state / "artifacts" / "report.json"
+    second = state / "artifacts" / "plan.md"
+    first.parent.mkdir(parents=True)
+    content = "中文 plan requirement\n" * 40
+    first.write_text(json.dumps({"plan": content, "other": "keep"}, ensure_ascii=False))
+    second.write_text(content + ("changed" if fault == "different" else ""))
+    sources = [
+        {"source_id": "report", "artifact_id": "report", "ref": "artifacts/report.json",
+         "sha256": hashlib.sha256(first.read_bytes()).hexdigest(), "allowed_paths": ["$.plan"]},
+        {"source_id": "plan", "artifact_id": "plan", "ref": "artifacts/plan.md",
+         "sha256": hashlib.sha256(second.read_bytes()).hexdigest(), "allowed_paths": ["$"]},
+    ]
+    if fault == "unauthorized":
+        sources[1]["access_scope"] = {"visibility": "project", "actor": "someone-else"}
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+        dispatch_id="attempt-1", sources=sources, metadata={"read_purpose": "implementation"},
+    )
+    requirements = [{"source_id": source["source_id"], "artifact_id": source["artifact_id"],
+                     "artifact_sha256": source["sha256"], "json_path": path}
+                    for source, path in zip(sources, ("$.plan", "$"), strict=True)]
+    if fault == "tampered":
+        second.write_text("different source after manifest")
+    identity = {"actor": "dev", "role": "dev", "provider": "codex", "purpose": "implementation"}
+    if fault in {"unauthorized", "tampered"}:
+        with pytest.raises(ValueError):
+            prepare_required_read(state, manifest=manifest, rows=requirements, identity=identity)
+        return
+    output, receipts = prepare_required_read(state, manifest=manifest, rows=requirements, identity=identity)
+    items = json.loads(output)["items"]
+    assert len(receipts) == 2
+    assert {receipt["artifact_sha256"] for receipt in receipts} == {source["sha256"] for source in sources}
+    if fault == "different":
+        assert len(items) == 2
+        assert "aliases" not in items[0]
+    else:
+        assert len(items) == 1
+        assert items[0]["content"] == content
+        assert items[0]["artifact_sha256"] == sources[0]["sha256"]
+        assert items[0]["aliases"][0]["artifact_sha256"] == sources[1]["sha256"]
+
+
+def test_existing_bundle_identity_is_stable_without_cross_source_overlap(tmp_path):
+    from zf.cli.artifact_required_read import prepare_required_read
+    from zf.runtime.artifact_read_snapshot import open_selection
+    from zf.runtime.call_result_envelope import canonical_json_sha256
+
+    state = tmp_path / "state"
+    path = state / "artifacts" / "input.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"body": "x" * 10000}))
+    source = {"source_id": "s", "artifact_id": "a", "ref": "artifacts/input.json",
+              "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "allowed_paths": ["$.body"]}
+    manifest = build_attempt_source_manifest(workflow_run_id="r", task_id="t", attempt_id="a",
+        dispatch_id="a", sources=[source], metadata={"read_purpose": "implementation"})
+    rows = [{"source_id": "s", "artifact_id": "a", "artifact_sha256": source["sha256"], "json_path": "$.body"}]
+    identity = {"actor": "dev", "role": "dev", "provider": "codex", "purpose": "implementation"}
+    preview = open_selection(state, manifest=manifest, row=rows[0], identity=identity)
+    previous_digest = canonical_json_sha256({"manifest": manifest, "requirements": rows,
+        "selections": [(source["sha256"], "$.body", preview.digest)], "identity": identity})
+    first, _ = prepare_required_read(state, manifest=manifest, rows=rows, identity=identity)
+    page = json.loads(first)
+    assert page["bundle_digest"] == previous_digest
+    second, _ = prepare_required_read(state, manifest=manifest, rows=rows, identity=identity,
+                                       cursor=page["next_cursor"])
+    assert json.loads(second)["items"][0]["page_start"] == page["items"][0]["page_end"]

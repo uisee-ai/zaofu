@@ -47,3 +47,23 @@ def reader_recovery_fence(
         ):
             return index
     return dispatch_index
+
+
+def reader_continuation_guidance(*, attempt_id: str, backend: str, cli: str) -> str:
+    """Offer a bounded read continuation without asserting current memory."""
+    import shlex
+
+    text = (
+        " Continue the same pending operation from the available session and "
+        "frozen inputs. Re-read any source you cannot still use; historical "
+        "delivery alone does not prove current context after compaction. "
+        "Reconcile unfinished tool calls and external effects before retrying."
+    )
+    if backend == "codex" and attempt_id:
+        attempt = shlex.quote(attempt_id)
+        text += (
+            f" For a lost required-read cursor, use `{cli} artifact read --attempt "
+            f"{attempt} --required --resume` only if the earlier pages are still "
+            "available in this session; otherwise reread the necessary pages."
+        )
+    return text

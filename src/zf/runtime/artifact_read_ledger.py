@@ -428,18 +428,13 @@ def read_attempt_artifact(
     except (OSError, ValueError, KeyError) as exc:
         raise ArtifactReadError(str(exc)) from exc
     digest = hashlib.sha256(raw).hexdigest()
-    selected: Any
-    if json_path != "$":
-        try:
-            decoded = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ArtifactReadError("json_path requires a JSON artifact") from exc
-        selected = _select_json_path(decoded, json_path)
-    else:
-        try:
-            selected = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            selected = raw.decode("utf-8", errors="replace")
+    from zf.runtime.artifact_text_codec import decode_artifact_text
+
+    try:
+        decoded = decode_artifact_text(raw, json_path)
+    except ValueError as exc:
+        raise ArtifactReadError(str(exc)) from exc
+    selected = _select_json_path(decoded, json_path)
     if page_start is not None and (page_start < 0 or not 1 <= page_size <= 8192 or max_items or max_chars):
         raise ArtifactReadError("paged reads require a non-negative start, size 1..8192, and no limits")
     limited_items = bool(
@@ -869,9 +864,9 @@ def _limit_items(value: Any, *, max_items: int) -> Any:
 
 
 def _encode_selected(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    from zf.runtime.artifact_text_codec import encode_selected
+
+    return encode_selected(value)
 
 
 def _safe_component(value: str) -> str:

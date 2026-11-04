@@ -17,7 +17,7 @@ PAGE_SCHEMA = "required-artifact-page.v2"
 def prepare_required_read(
     state_dir: Path, *, manifest: dict[str, Any], rows: list[dict[str, Any]],
     identity: dict[str, Any], cursor: str | None = None, page_bytes: int = PAGE_BYTES,
-    resume: bool = False,
+    resume: bool = False, event_log: Any = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     if not 1024 <= page_bytes <= PAGE_BYTES:
         raise ValueError("--page-bytes must be between 1024 and 8192")
@@ -27,13 +27,22 @@ def prepare_required_read(
                 for row in rows]
     groups: dict[tuple[str, str, str], dict[str, Any]] = {}
     receipts: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    content_keys: dict[tuple[str, int, int], tuple[str, str, str]] = {}
     for row, preview in zip(rows, previews, strict=True):
         expected = row.get("artifact_sha256") or row.get("sha256")
         if expected and expected != preview.receipt["artifact_sha256"]:
             raise ValueError("required artifact digest differs from the pinned policy")
         source = {"source_id": row["source_id"], "artifact_id": row["artifact_id"],
+                  "artifact_sha256": preview.receipt["artifact_sha256"],
                   "json_path": row.get("json_path", "$")}
-        key = (preview.receipt["artifact_sha256"], source["json_path"], preview.digest)
+        # The emitted contract is selected text. Only byte-identical selected
+        # bodies may share it; authorization and receipts remain per occurrence.
+        content_key = (preview.digest, preview.chars, preview.byte_count)
+        # Retain the original group key when no new overlap is found, so
+        # compatible in-flight bundle digests and cursors remain valid.
+        key = content_keys.setdefault(content_key, (
+            preview.receipt["artifact_sha256"], source["json_path"], preview.digest,
+        ))
         if key in groups:
             groups[key].setdefault("aliases", []).append(source)
         else:
@@ -53,7 +62,7 @@ def prepare_required_read(
         index, start = resume_position(
             state_dir, manifest=manifest, identity=identity,
             bundle_digest=bundle_digest, groups=list(groups.values()),
-            receipts=list(receipts.values()),
+            receipts=list(receipts.values()), event_log=event_log,
         )
     else:
         index, start = _position(cursor, bundle_digest, list(groups.values())) if groups or cursor else (0, 0)
