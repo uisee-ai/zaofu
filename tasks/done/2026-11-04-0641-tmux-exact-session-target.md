@@ -1,6 +1,7 @@
 # tmux 会话生命周期使用精确名称
 
-> 状态: active
+> 状态: done
+> 实现: `e650332a fix: target tmux sessions by exact name`
 
 LS 启动时配置目标 `zf-ls`，tmux 按前缀把 `zf-ls-control...` 当成目标，
 启动清理误杀启动者自身；保留原 Run 和所有现有会话。
@@ -18,4 +19,5 @@ LS 启动时配置目标 `zf-ls`，tmux 按前缀把 `zf-ls-control...` 当成�
 - 修复前 deterministic 复现前缀误杀；独立宿主 tmux 探针证明前缀匹配。
 - mock CLI/transport/启动调用方 87 passed；真实 tmux 1 passed；sentinel 53 passed、
   mock flow 10 passed。完整 deterministic suite 未运行。
-- LS 真正恢复属于合并部署后的验收，尚待执行，任务保持 active。
+- 合并后 LS 控制面已启动并记录 `loop.started`，原 Run/operation 保留；
+  后续发现的 Critic 恢复顺序缺陷由独立任务跟踪。

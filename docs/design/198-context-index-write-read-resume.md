@@ -753,3 +753,13 @@ Provider session 差量交付继续为 shadow。
   [本轮验证记录](../records/2026-11-04-context-198-resume-integrity.md)。该演练并非
   LS 控制面完整重启，也不是完整 Critic、真实 Replan 或真实业务需求的语义覆盖证明。
   完整报告的无损字段复用、独立覆盖盲评和变更计划真实复评仍是活动任务。
+
+### 已中断 Critic 的恢复顺序
+
+重启后若同一 reader operation 仍是 `suspended`，旧派发的 worker launch 或历史
+失联次数不能在 checkpoint 决定之前把 fanout 判为失败。只有绑定相同 operation、
+request hash、Run 与 attempt 的内核受控 redrive 才为该次有界传输重试建立新边界；
+正常失败上限仍生效。对于已经产生的无语义 synth transport 失败，可通过明确指定
+失败事件的受控重启恢复；仅当匹配 suspended 来源的 redrive 已被接纳时允许从
+`requested` 继续，并在 briefing 实际发出后才记为 started。拒绝语义拒绝、已准入
+结果、错误 attempt 或未受信恢复决定；历史失败事件不会删除。

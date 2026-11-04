@@ -393,6 +393,7 @@ class LifecycleEvidenceQueriesMixin:
                 "snapshot_ref": str(payload.get("snapshot_ref") or ""),
                 "task_id": str(payload.get("task_id") or event.task_id or ""),
                 "retry_of_run_id": str(payload.get("retry_of_run_id") or ""),
+                "recovery_kind": str(payload.get("recovery_kind") or ""),
                 "attempt": payload.get("attempt"),
                 "operation_id": str(payload.get("operation_id") or ""),
                 "request_hash": str(payload.get("request_hash") or ""),

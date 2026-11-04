@@ -96,3 +96,54 @@ def test_resume_flag_cannot_apply_to_full_restart(capsys):
     from zf.cli.main import main
     assert main(["restart", "--resume-failed-synth", "evt-failure"]) == 1
     assert "requires a role" in capsys.readouterr().err
+
+
+def test_exact_failed_synth_reopens_after_interrupted_operation_redrive(tmp_path, monkeypatch):
+    from zf.core.events import EventWriter
+    from zf.runtime.workflow_operation import WorkflowOperationService
+    from zf.runtime.workflow_resume import build_workflow_resume_projection
+    from zf.runtime.workflow_resume_apply import apply_workflow_resume
+
+    state, log, runtime, role, dispatch, before, failure = failed_synth(tmp_path)
+    identity = dispatch.payload
+    service = WorkflowOperationService(state_dir=state, event_log=log, event_writer=EventWriter(log))
+    service.interrupt(operation_id=identity['operation_id'], request_hash=identity['request_hash'],
+                      workflow_run_id=identity['workflow_run_id'], task_id='', reason='graceful_stop')
+    checkpoint = next(c for c in build_workflow_resume_projection(state, runtime.config)['operation_checkpoints']
+                      if c['operation_id'] == identity['operation_id'])
+    assert apply_workflow_resume(state, runtime.config, checkpoint_id=checkpoint['checkpoint_id'])['applied'] == 1
+    alive = [True]
+    monkeypatch.setattr(runtime.transport, 'terminate', lambda _: alive.__setitem__(0, False), raising=False)
+    monkeypatch.setattr(runtime.transport, 'is_alive', lambda _: alive[0])
+    monkeypatch.setattr(runtime, '_wait_role_ready', lambda _: True)
+    monkeypatch.setattr('zf.cli.restart.WorkflowRuntimeCoordinator', lambda *a, **kw: runtime)
+    monkeypatch.setattr(runtime, '_get_spawn_coordinator', lambda: SimpleNamespace(
+        spawn=lambda *a, **kw: alive.__setitem__(0, True)))
+    assert _restart_role(role.name, runtime.config, runtime.transport, log, state, tmp_path,
+                         False, resume_failed_synth=failure.id) == 0
+    operation = reduce_workflow_operations(log.read_all())[identity['operation_id']]
+    assert operation['status'] == 'running'
+    assert operation['request_hash'] == before['request_hash']
+    assert operation['active_attempt_id'] == before['active_attempt_id']
+    assert runtime.transport.sent[-1][3].operation_id == identity['operation_id']
+
+
+@pytest.mark.parametrize('fault', ['untrusted_origin', 'wrong_attempt', 'wrong_owner'])
+def test_requested_synth_reopen_rejects_unbound_redrive(tmp_path, fault):
+    from zf.core.events import EventWriter
+    from zf.runtime.workflow_operation import WorkflowOperationService
+
+    state, log, runtime, role, dispatch, _before, failure = failed_synth(tmp_path)
+    p = dispatch.payload
+    WorkflowOperationService(state_dir=state, event_log=log, event_writer=EventWriter(log)).interrupt(
+        operation_id=p['operation_id'], request_hash=p['request_hash'],
+        workflow_run_id=p['workflow_run_id'], task_id='', reason='graceful_stop')
+    payload = {'operation_id': p['operation_id'], 'request_hash': p['request_hash'],
+               'workflow_run_id': p['workflow_run_id'],
+               'source_attempt_id': 'wrong' if fault == 'wrong_attempt' else p['run_id'],
+               'recovery_decision_owner': 'other' if fault == 'wrong_owner' else 'kernel_replay',
+               'recovery_from_status': 'suspended'}
+    log.append(ZfEvent(type='workflow.operation.redrive_admitted', actor='zf-cli',
+                       origin='user' if fault == 'untrusted_origin' else 'kernel', payload=payload))
+    with pytest.raises(ValueError, match='blocked, terminal'):
+        reopen_synth_restart_checkpoint(runtime, role, failure.id)

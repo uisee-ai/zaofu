@@ -80,7 +80,9 @@ class PlanSynthRuntimeMixin:
         dispatches: dict[str, list[ZfEvent]] = {}
         terminal: set[str] = set()
         lost_by_role: dict[str, list[tuple[int, ZfEvent]]] = {}
-        recovery_count: dict[str, int] = {}
+        recovery_losses: dict[str, list[int]] = {}
+        redrives: dict[str, list[tuple[int, ZfEvent]]] = {}
+        operations = None
         for index, event in enumerate(events):
             payload = event.payload if isinstance(event.payload, dict) else {}
             if event.type == "fanout.synth.dispatched":
@@ -100,7 +102,12 @@ class PlanSynthRuntimeMixin:
             ):
                 fanout_id = str(payload.get("fanout_id") or "")
                 if fanout_id:
-                    recovery_count[fanout_id] = recovery_count.get(fanout_id, 0) + 1
+                    recovery_losses.setdefault(fanout_id, []).append(index)
+                continue
+            if event.type == "workflow.operation.redrive_admitted" and event.origin == "kernel":
+                operation_id = str(payload.get("operation_id") or "")
+                if operation_id:
+                    redrives.setdefault(operation_id, []).append((index, event))
                 continue
             role_instance = self._reader_dispatch_lost_role(event)
             if role_instance:
@@ -153,6 +160,28 @@ class PlanSynthRuntimeMixin:
             run = admission.runs.get(workflow_run_id)
             if run is not None and run.status != "running":
                 continue
+            operation_id = str(latest_dispatch.payload.get("operation_id") or "")
+            replay_boundary = -1
+            if operation_id:
+                from zf.runtime.workflow_operation import reduce_workflow_operations
+
+                if operations is None:
+                    operations = reduce_workflow_operations(events)
+                operation = operations.get(operation_id)
+                if (not operation or operation.get("request_hash") != latest_dispatch.payload.get("request_hash")
+                        or operation.get("status") not in {"requested", "reserved", "running"}):
+                    # A stopped operation awaits an explicit checkpoint decision;
+                    # an old launch signal must not fail its fanout meanwhile.
+                    continue
+                for index, event in redrives.get(operation_id, []):
+                    if (event.payload.get("request_hash") == operation.get("request_hash")
+                            and event.payload.get("workflow_run_id") == operation.get("workflow_run_id")
+                            and event.payload.get("source_attempt_id") == (
+                                latest_dispatch.payload.get("attempt_id") or latest_dispatch.payload.get("run_id")
+                            )
+                            and event.payload.get("recovery_decision_owner") == "kernel_replay"
+                            and event.payload.get("recovery_from_status") == "suspended"):
+                        replay_boundary = index
             latest_index = event_index.get(latest_dispatch.id, -1)
             if latest_index < 0:
                 continue
@@ -188,7 +217,7 @@ class PlanSynthRuntimeMixin:
                 activity_index,
             ):
                 continue
-            recovery_attempts = recovery_count.get(fanout_id, 0)
+            recovery_attempts = sum(index > replay_boundary for index in recovery_losses.get(fanout_id, []))
             if recovery_attempts >= allowed_recoveries:
                 self._fail_lost_fanout_synth_dispatch(
                     manifest=manifest,

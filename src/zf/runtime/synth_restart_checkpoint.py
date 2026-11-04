@@ -62,8 +62,20 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str) ->
             or runtime._fanout_identity_stale_reason(fanout_id)[0]):
         raise ValueError("failed synth carrier is no longer current")
     operation = reduce_workflow_operations(events).get(d.get("operation_id"), {})
+    pending_replay = operation.get("status") == "requested" and any(
+        event.type == "workflow.operation.redrive_admitted"
+        and event.origin == "kernel"
+        and event.payload.get("operation_id") == d.get("operation_id")
+        and event.payload.get("request_hash") == d.get("request_hash")
+        and event.payload.get("workflow_run_id") == d.get("workflow_run_id")
+        and event.payload.get("source_attempt_id") == d.get("run_id")
+        and event.payload.get("recovery_decision_owner") == "kernel_replay"
+        and event.payload.get("recovery_from_status") == "suspended"
+        and events.index(event) > events.index(failure)
+        for event in events
+    )
     if (operation.get("operation_type") != "fanout_synth"
-            or operation.get("status") != "running"
+            or (operation.get("status") != "running" and not pending_replay)
             or runtime._fanout_dispatch_has_authoritative_result(events, dispatch)):
         raise ValueError("operation is blocked, terminal, or already has an admitted result")
     run = build_run_admission_projection(events).runs.get(operation.get("workflow_run_id"))
@@ -96,3 +108,29 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str) ->
         task_id=dispatch.task_id, payload={**d, **recovery, "retry_of_event_id": dispatch.id},
         causation_id=failure_id, correlation_id=dispatch.correlation_id,
     ))
+
+
+def mark_reopened_synth_started(runtime: Any, role: Any, fanout_child: dict) -> None:
+    """Mark a validated replay started only after its briefing was delivered."""
+    event_id = str(fanout_child.get("event_id") or "")
+    events = runtime.event_log.read_all()
+    dispatch = next((event for event in reversed(events) if event.id == event_id), None)
+    if (dispatch is None or dispatch.type != "fanout.synth.dispatched"
+            or dispatch.origin != "kernel" or dispatch.actor != "zf-cli"
+            or dispatch.payload.get("role_instance") != role.instance_id
+            or dispatch.payload.get("recovery_kind") != "operator_synth_checkpoint"):
+        return
+    body = dispatch.payload
+    operation = reduce_workflow_operations(events).get(body.get("operation_id"), {})
+    if operation.get("status") != "requested":
+        return
+    from zf.runtime.workflow_operation import WorkflowOperationService
+
+    WorkflowOperationService(state_dir=runtime.state_dir, event_log=runtime.event_log,
+                             event_writer=runtime.event_writer).mark_started(
+        operation_id=body["operation_id"], request_hash=body["request_hash"],
+        workflow_run_id=body["workflow_run_id"], task_id=str(body.get("task_id") or ""),
+        dispatch_id=body["run_id"], role_instance=role.instance_id,
+        active_attempt_id=str(body.get("attempt_id") or body["run_id"]),
+        causation_id=dispatch.id, correlation_id=dispatch.correlation_id,
+    )
