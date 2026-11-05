@@ -40,3 +40,11 @@
 P05 discovery 的两个 gap 已产出，但 `evt-f4ddc8ae440b` task_map.amend.failed：P05-ALIGN-smoke 缺 deterministic/reusable 声明；当前不能称为自动修复完成。P07B 另报上游动态插件加载缺口，待其正式结果和有界恢复。P16B 发布契约的新 attempt 已实际读取来源，尚无 build/Verify 成果；briefing 共有 586 个必读切片，输入范围性能需作为后续改进评估，不在本批放宽阅读门禁。
 
 源码修复工作树已提交并清洁；实际控制面使用主工作区中经字节比对加载的补丁，未 merge 或 push。产品任务仍由后台 runtime 推进，此 active 记录不冒充四项产品全部完成。
+
+## 2026-11-05 23:43 UTC 监工恢复
+
+P16B-PUBLISH-CONTRACT-R2已由evt-62a5eeb3735d集成done，总19 done；隐私尚未实现，evt-c5c3d7a533e6以跨入口授权反例失败。原worker提交f95ede0，未冒充像素/浏览器验收。
+
+P07B旧orphan升级evt-4f29b137ac9b造成全局quiescent，后续Task Pipeline新结果未唤醒Run Manager；用户恢复授权经evt-e42948353dbf生效。框架修复1fd2eb5a补事件识别和EventLog窗口增量缓存，详见done/2026-11-05-2335-supervision-read-window.md。当前已实际派发隐私discovery，scope/审批边界由独立阅读和反例复验判定。
+
+P05/P07B两个被拒gap重复修复align动态导入，应合并一个公共前置，再分别续接sample/fusion；补齐rolling-smoke deterministic/reusable，保留原AC、SDD与输入分片。不得同时派发两个拥有align相同写范围的任务。

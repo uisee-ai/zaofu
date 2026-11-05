@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 监工恢复：事件窗口增量读取
 
@@ -17,3 +17,7 @@ RED：新增回归1 failed / 5 passed（稳定读取仍全量解码）。仅缓�
 验证：EventLog/归档/签名/Watcher/生命周期闭包103 passed；Task Pipeline静默/实际tick服务/升级收敛/operation闭包58 passed。sentinel 50 passed / 1 skipped，flow mock 10 passed；未运行全量pytest。生产账本只读基准：17193事件首次1.033s，重复0.0003/0.0002s。
 
 操作员受控唤醒后：evt-44764cd97c4d退出quiescent，evt-74175aaa2572启动Run Manager，evt-7029e54721ab自动请求隐私discovery，evt-dbd6bedb2001实际派发。此为操作恢复证据，代码补丁加载验证另行记录。
+
+实现提交：1fd2eb5a fix: keep task pipeline recovery awake and fold event window reads。
+
+加载证据：evt-5cc4831a7ccc，watcher 3559503→3592258；所有旧pane/PID保持，discovery operation wop-prd-post-verify-discovery-prd-flow-discovery-trig-evt-7029-86609a406ea7持续running。当前quiescent=False，Dashboard HTTP200；临时诊断进程已退出。产品仍19 done，后续语义修复由active产品任务继续追踪，本项不宣称产品完成。
