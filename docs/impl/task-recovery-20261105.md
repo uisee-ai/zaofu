@@ -38,3 +38,11 @@ Reader 已声明新任务的 `supersedes_task_ids` 时，flow discovery bridge �
 ## Candidate replan 使用同一引用规则
 
 `replan_resynth` 与 reader stage retry 均调用 `plan_source_binding.bind_admitted_plan_source_refs`，从当前已接纳 Plan Package 的 source event 绑定 map/index 的 ref 与 digest。避免重合成沿用最早 scan/Planner trigger 的旧路径。只读回归覆盖两个实际入口；未接纳草稿、缺失新摘要及显式空 index 保持既定约束。
+
+## 历史替代的准入对账
+
+writer adoption 在物化本轮后继后，通过 `task_map_supersession_history` 读取当前 Map 的有限 amendment 引用链。只有同 workflow run 的 kernel `task_map.amended`、匹配的历史文件 SHA256、显式替代边和已经物化的当前后继共同成立，才补入历史替代。缺失/损坏引用、无事件、跨 run、无法闭合的后继链均不授权取消；仍有活跃派发的旧任务也保持原状。
+
+随后复用原有 TaskStore / task_doc / EventWriter 路径：先更新保留任务依赖，再取消旧节点。取消事件记录历史证据 ID，并绑定当前 workflow run，供 Task Pipeline 的 supersession/归档检查消费。不读取 Planner 自由文字作为控制指令，不因旧 ID 不在新图就推断可删除，也不重开 done。
+
+历史节点已经 cancelled 时，仍可据同样证明迁移滞留依赖，并补齐当前 run/Map 的替代见证；同图重放不重复追加见证，不修改 cancelled 状态。

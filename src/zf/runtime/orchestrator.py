@@ -3878,17 +3878,25 @@ class WorkflowRuntimeCoordinator(
         # Keep a replacement crash-safe: first make the successor addressable,
         # then migrate retained dependency edges, and only then archive the old
         # task. A gap-only resume still dispatches only its requested tasks.
+        from zf.runtime.task_map_supersession_history import historical_supersession_proofs
+
+        history = historical_supersession_proofs(
+            loaded=loaded, events=self.event_log.read_all(), task_store=self.task_store,
+            state_dir=self.state_dir, project_root=self.project_root,
+        )
         reconcile_retained_task_dependencies(
             task_store=self.task_store,
             event_writer=self.event_writer,
             loaded=loaded,
             state_dir=self.state_dir,
             project_root=self.project_root,
+            historical_proofs=history,
         )
         apply_explicit_task_supersedes(
             task_store=self.task_store,
             event_writer=self.event_writer,
             loaded=loaded,
+            historical_proofs=history,
         )
 
     @staticmethod
