@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 验收规格身份字段读取范围
 
@@ -13,3 +13,5 @@
 验证：实际打包回归 RED 1 failed / 12 passed；完善 required_ports 测试夹具后，输入范围、Package、继承、Artifact ledger/capability 和 writer 调用闭包 99 passed。sentinel 50 passed / 1 skipped，flow mock 10 passed。初次闭包命令含不存在的测试文件，未执行；已更正后得到上述结果。
 
 只读生产实证：对已批准 package 36b2b573 的 36 个 PAS task 分区及 candidate 全量读取通过；两个 R2 任务的实际 current_plan_port_sources 各 12 个端口可读取，原包 SHA256 验证通过。未改运行态工件或任何任务状态。
+
+实现提交：64cff8fa fix: include bound acceptance identities in task input reads。
