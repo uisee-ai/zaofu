@@ -782,6 +782,9 @@ def _admit_result(
             "short FlowSpec lanes must be an integer between 1 and 64"
         )
     pipeline = parameters.get("task_pipeline")
+    critic_enabled = parameters.get("plan_critic_enabled")
+    if "plan_critic_enabled" in parameters and (flow_family != "PrdFlow" or type(critic_enabled) is not bool):
+        raise WorkflowSynthesisError("plan_critic_enabled requires PrdFlow and a boolean")
     if pipeline is not None:
         from zf.runtime.workflow_task_pipeline_inputs import validate_prd_task_pipeline
         try:

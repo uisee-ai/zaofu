@@ -99,6 +99,7 @@ _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "judgeRole", "judge_role",
 })
 _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
+    "planCriticEnabled", "plan_critic_enabled",
     "topology",  # 批D: fanout(默认)| light(单 lane goal 环)
     "prdRef", "prd_ref",
     "targetRef", "target_ref",
@@ -1500,6 +1501,11 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         raise WorkflowProfileError(
             f"PrdFlow: unknown param(s) {unknown} (fail-closed)"
         )
+    if "planCriticEnabled" in params and "plan_critic_enabled" in params:
+        raise WorkflowProfileError("PrdFlow.planCriticEnabled aliases are ambiguous")
+    plan_critic_enabled = _pick(params, "planCriticEnabled", "plan_critic_enabled", default=True)
+    if not isinstance(plan_critic_enabled, bool):
+        raise WorkflowProfileError("PrdFlow.planCriticEnabled must be a boolean")
     lanes = int(_pick(params, "lanes", "laneCount", "lane_count", default=2))
     backend = str(_pick(params, "backend", default="codex"))
     verify_backend = str(_pick(
@@ -1596,7 +1602,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
             role_defaults=role_defaults,
             skills=_role_skills(bundles, plan_role),
         ),
-        _controller_role(
+        *([_controller_role(
             plan_critic_role,
             backend=backend,
             role_kind="reader",
@@ -1605,7 +1611,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
                 _role_skills(bundles, plan_critic_role)
                 or _role_skills(bundles, "plan-critic")
             ),
-        ),
+        )] if plan_critic_enabled else []),
         _controller_role(
             discovery_role,
             backend=backend,
@@ -1655,7 +1661,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
                 "failure_event": "prd.plan.failed",
                 "child_success_event": "prd.plan.child.completed",
                 "child_failure_event": "prd.plan.child.failed",
-                "synth_role": plan_critic_role,
+                **({"synth_role": plan_critic_role} if plan_critic_enabled else {}),
             },
         },
     ]

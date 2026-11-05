@@ -127,3 +127,11 @@ Request ID、revision、Requirement digest 必须与 invocation 一致，审批�
 冲突 Run、旧 revision、晚到审批和缺失审批不能补成成功。保留原事件 ID、主体、顺序、
 Proposal/config 摘要，语义验收仍由 Judge 决定。受控 stage-retrigger 可以在补齐代码后
 生成新 closure identity 并重新裁决，旧拒绝与旧快照保留。[真实验证](../records/2026-10-31-kanban-judge-fidelity-e2e.md)。
+
+## PRD 计划阶段的可选独立审核
+
+`PrdFlow.spec.planCriticEnabled` 缺省为 `true`，保留既有 Planner → Plan Critic
+行为。显式设为 `false` 时，Planner 完成计划与来源对账后，由无 synth 的 reader
+聚合发布任务图；下游 writer 入口仍执行计划包准入，并依配置执行人工计划审批。
+该模式没有独立的计划语义审核，任务独立 Verify 和最终候选验收仍各自生效。
+流程目录应展示实际聚合角色，避免默认路线隐藏 Plan Critic。
