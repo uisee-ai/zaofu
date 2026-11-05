@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # Reader stage 恢复引用一致性
 
@@ -11,3 +11,5 @@ P16B 恢复发现已接纳 Run Plan 与原任务派发分属不同代际，这�
 实现说明见 [task-recovery](../../docs/impl/task-recovery-20261105.md)。不修改 canonical TaskStore，不放宽包身份门禁。
 
 验证：上述定向104 passed；dev-verify contract 50 passed / 1 skipped；mock E2E 10 passed。与首批相同，自动扩大为全套的 deterministic/serial 层由定向调用闭包替代。已部署此独立模块到现有运行源码；受控规划恢复调用新代码，无需中断三个在途 worker。受控授权事件 evt-aefbdf7f3628，代际 stage-replan-b58909c053ce2bd964dc。
+
+实现提交：`68b58b09 fix: bind reader retries to admitted plan map references`。产品增量规划尚未验收，不包含在本条完成声明中。
