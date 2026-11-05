@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 3ee8bf72 fix: bind candidate replans to admitted map sources
 
 # Plan 重合成绑定当前输入
 
@@ -11,3 +11,5 @@
 新增 public build_replan_resynth_event 回归先 2 failed / 2 passed，再与 stage/candidate/control recovery/race 测试共 130 passed。自动 sentinel 50 passed / 1 skipped，flow mock 10 passed；收据 `/tmp/zf-task-recovery-20261105/resynth-verification.json`。测试文件名首次两次查询错误未运行测试，已修正命令后取得上述有效结果。
 
 操作纠正另记：首次重放给 previous_plan_candidate_refs 错传字符串，准入在 provider 执行前正确拒绝；更正为 ref/sha256 描述符。第二次受控请求 `evt-8539e0dc7f76` map 与当前包一致。该操作错误不是放松 schema 的理由。
+
+运行验证：`evt-bc38a48ef7dc` 已将纠正后的请求派发给 prd-planner，fanout `fanout-prd-plan-evt-8539e0dc`。产品规划/实施仍由 active product-recovery 跟踪，不因成功派发而归档产品任务。
