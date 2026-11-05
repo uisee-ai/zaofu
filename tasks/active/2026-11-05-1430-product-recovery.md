@@ -19,3 +19,10 @@
 - P16B Reader 已产出两个串行任务；`65f1103e` 修正 bridge 历史 ID 污染。第一次受控重放被源分片校验拒绝，第二次将 parent 绑定当前 Plan 节点后，`evt-253ba4414ad1` 应用成功，新 Plan Package `5f47133546cc1dc038f5938c56a0e8f88a342aae4de1b3cc42c8683ec11a0d60` 待批。未批准：独立语义检查发现矩阵正文仍引用旧任务，且旧 P16B/下游依赖尚未对账。需修订完整端口，不能将 task_input_policy 能读等同于 SDD 语义一致。
 
 当前产品记录保持 active；不把已提交、已入包或重试派发计为通过。完整 canonical 证据在产品 `.zf-datal`，不提交运行态到 ZaoFu 源码。
+
+## 2026-11-05 15:25 UTC 检查点
+
+- P04 已闭环：最终提交 `a01a019f6da1298845cfea0b1387bc3ff355050b`，最终 runtime 49 / smoke 1 / Docker browser 1 / build 通过；独立 Verify 实测 8 路并发、延迟重放、撤权、跨项目、异体冲突及事务回滚通过。`evt-93d426a257bc` task.done，候选已集成，P05 依赖解除后自动派发。当前 done 17。
+- P06 最终提交 `fbc368022015d4e0d0b76eaa78d2c1db6c9944e1`，代码实现 `ab8cd67`；最终 runtime 51 / smoke 1 / Docker browser 1 / build / Ruff 通过，`evt-6ec7bcb9c7ff` dev.build.done。独立 Verify operation `wop-verify-tp-P06-5b75f4ff257b7885-verify-r-92ffb606cb2b` 正在执行，尚未计为通过。
+- P16B：shadow Orchestrator 评审 `evt-23c0f9388e99` 为 revise；本 session 按既有授权正式拒绝 `evt-28f97747d17a`，通过受控动作修复描述符与重合成来源，当前 Planner 已实际执行 `evt-bc38a48ef7dc` / `fanout-prd-plan-evt-8539e0dc`。完整端口修订须经预校验、Critic 和批准，旧 canonical P16B/下游残留仍需正常 adoption 对账。尚无隐私实现通过结论。
+- `evt-d169779bf04f` 使用现有 source-repair actuator 只重启控制面。watcher 3843158 → 320573，重启前后的所有 pane/PID 完全相同，P04 Verify/P06 Impl/Planner 三项 operation 保持 running，没有 task requeue；`evt-179d5b314a9f` loop.started。实际 watcher 已加载本轮四个框架实现提交，未重启 Dashboard 或 worker。执行前现有 actuator 5 项与 control-plane-only 3 项测试通过。
