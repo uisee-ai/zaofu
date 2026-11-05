@@ -75,11 +75,12 @@ def quiescent_now(
 ) -> QuiescentStatus:
     if not _enabled(config):
         return QuiescentStatus(quiescent=False, reason="disabled")
+    rows = list(events)
     escalate: ZfEvent | None = None
     woke_after = False
     progress = _progress_events()
     inflight_fanouts: set[str] = set()
-    for event in events:
+    for event in rows:
         payload = event.payload if isinstance(event.payload, dict) else {}
         fanout_id = str(payload.get("fanout_id") or "")
         if event.type == "fanout.started" and fanout_id:
@@ -94,7 +95,16 @@ def quiescent_now(
             continue
         if escalate is None:
             continue
-        if event.type in progress or event.type in _WAKE_EVENT_TYPES:
+        pipeline_fact = bool(payload.get("workflow_run_id")) and (
+            (event.origin == "kernel" and event.type in {"task.dispatched", "task.done"})
+            or (
+                event.type in {"dev.build.done", "dev.blocked", "task.pipeline.verify.completed"}
+                and payload.get("operation_id") and payload.get("control_result_ref")
+            )
+        )
+        if event.type in progress or event.type in _WAKE_EVENT_TYPES or pipeline_fact:
+            # A fresh admitted failure needs recovery too; this is a wake,
+            # never a success verdict or automatic dismissal of escalation.
             woke_after = True
     if escalate is None:
         return QuiescentStatus(quiescent=False, reason="no_escalate")
@@ -105,6 +115,14 @@ def quiescent_now(
         # (含待派发 child)→ 静默会暂停派发扫描,潜在互锁。有活干
         # 就不静默;E6 超时地板保证 zombie 不会把此闸永久钉开。
         return QuiescentStatus(quiescent=False, reason="inflight_fanouts")
+    from zf.runtime.workflow_operation import reduce_workflow_operations, TERMINAL_OPERATION_STATUSES
+
+    if any(
+        op.get("operation_type") == "task-stage"
+        and op.get("status") not in TERMINAL_OPERATION_STATUSES
+        for op in reduce_workflow_operations(rows).values()
+    ):
+        return QuiescentStatus(quiescent=False, reason="inflight_task_operations")
     age = now_epoch - _event_epoch(escalate)
     if age < _GRACE_SECONDS:
         return QuiescentStatus(quiescent=False, reason="grace_window")

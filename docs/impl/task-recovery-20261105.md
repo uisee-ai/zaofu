@@ -52,3 +52,9 @@ writer adoption 在物化本轮后继后，通过 `task_map_supersession_history
 Plan Package 会给原生 product_acceptance_spec.v1 绑定 schema/run/flow/revision/generation，而生产者分区基于绑定前正文。输入范围计算将这五个具名标量身份作为机械共享字段读取；原始语义路径仍按显式 task_input_policy 检查完整覆盖。其他 schema、对象型身份或遗漏的业务内容继续拒绝。读取侧不重写不可变工件、摘要、已批准 Plan 或已有 TaskAttempt，既有包无需重新生成即可使用同一已批准内容。
 
 本修复接纳主工作区已运行的显式 task_input_policy 读取支持及其原有测试作为直接依赖，未接纳其余未提交改动。新增回归走实际 prepare_plan_artifact_package -> current_plan_port_sources，修改前 1 failed / 12 passed。
+
+## 监工控制面事件窗口开销
+
+`EventLog.read_days` 保留原有归档窗口选择，按文件身份、大小/时间和签名策略缓存完整行，并只解码追加尾部。轮转、删除、截断或同大小重写失效；半行不前进。缓存最多16个文件/验证策略组合，仅供读取，不影响 EventWriter、事件顺序或规范状态。实况生命周期usage扫描反复解析112MB日志，控制进程心跳可用但恢复tick落后，需以真正派发和tick恢复验证效果。
+
+Task Pipeline 静默门禁同时识别 kernel task.dispatched/task.done、绑定 operation 与 control_result_ref 的实现/验证结果，以及非终局 task-stage operation。失败只唤醒恢复，不等于通过、自动消除升级或扩大重试配额；心跳与无绑定worker自报仍不唤醒。旧P07B孤儿升级导致后续P16B结果未触发RM，已新增真实tick_services入口回归。
