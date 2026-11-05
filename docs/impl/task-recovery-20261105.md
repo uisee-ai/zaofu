@@ -30,3 +30,7 @@ P16B 的历史 Task 派发包与当前 Run Plan 包不同，属于 gap-only 多�
 后续发现 `stage_failure_replan` 仅更新 Plan 包/generation 却保留旧 task_map/source_index。修复从当前已接纳包的 source_event_id 同步读取 map/index 和对应摘要；不存在的新摘要不会继承旧值，未接纳草稿不构成来源。回归先 RED 后 GREEN；104 项 stage/run-manager/controlled-action 测试通过。任务见 `tasks/done/2026-11-05-1410-stage-replan-map-binding.md`。
 
 当前全量 Plan 已有 P16B-RELEASE-CONTRACT 和 P16B-PRIVACY-R1，但 canonical 队列没有这两项且旧 P16B 仍被下游引用。受控规划需对账任务创建、替代和下游依赖，不能重复生成未物化的空 gap 集，也不能把不存在于当前 Map 的旧 ID 当作直接 supersede 目标。
+
+## Discovery 替代图优先级
+
+Reader 已声明新任务的 `supersedes_task_ids` 时，flow discovery bridge 使用该显式替代图；显式空数组表示追加，不再混入恢复请求继承的历史 ID。没有任务级声明的旧结果仍使用 envelope。任务是否存在、基线是否合法、图是否闭合继续由原准入检查负责；本修复不把历史节点自动签认为当前节点。实证为 `evt-4e10a21d6f6e`，修复回归涵盖当前节点、追加、兼容路线和未知节点拒绝。
