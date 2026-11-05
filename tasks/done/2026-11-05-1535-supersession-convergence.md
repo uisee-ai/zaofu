@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 历史替代状态对账
 
@@ -11,3 +11,5 @@ P16B 已在历史 amendment 声明替代，但 canonical 旧任务与下游边�
 实际 Orchestrator 回归先 1 failed / 5 passed；新增后继未解析负例、历史已取消节点见证及重复应用无新增事件后，与 gap/Task Pipeline integration/mock E2E/fallback 测试合计 95 passed。变更仅为机械状态对账，不解释业务 AC 或解析 Planner 的自由文字。
 
 最终验证：上述影响闭包 95 passed；新增幂等断言后定向 8 passed；dev-verify sentinel 50 passed / 1 skipped、flow mock 10 passed。receipt: /tmp/zf-task-recovery-20261105/supersession-final-verification.json。按仓库规则执行影响闭包，未运行全量 pytest。
+
+实现提交：3381b333 fix: reconcile evidenced historical task replacements。产品续接另见 active/2026-11-05-1430-product-recovery.md。
