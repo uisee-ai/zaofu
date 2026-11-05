@@ -34,3 +34,9 @@
 - OA shadow `evt-856f84b38bf7` 正确指出打包后的 PAS 三个身份字段漏入输入范围；首次派发 `evt-d235e594d944` 被拒。`64cff8fa` 修复机械身份共享读取，保留原包摘要及业务分区 fail-closed，两个任务各 12 端口与 36 个任务分区只读校验通过。
 - 两次仅重载控制面：`evt-b3080405645f` watcher 320573→591756、`evt-583dcc8b5b18` 591756→654755。各次重启前后旧 pane/PID 保留，P07B 活跃 operation 未重建。P16B 发布契约于 `evt-270f653910a1` 实际派发，operation `wop-impl-tp-P16B-PUBLISH-CONTRACT-R2-84be-4767b962404e`；privacy 依赖发布契约，尚未实现完成。
 - 后续 P05 新发现 align 生产 Registry 动态加载 ImportError/404；独立 discovery 已复现并建议上游加载修复再采样续接，属于后续任务新发现，不归咎已完成的 P04。本记录保持 active，不能把新任务已派发计为产品通过。
+
+## 后续观察边界
+
+P05 discovery 的两个 gap 已产出，但 `evt-f4ddc8ae440b` task_map.amend.failed：P05-ALIGN-smoke 缺 deterministic/reusable 声明；当前不能称为自动修复完成。P07B 另报上游动态插件加载缺口，待其正式结果和有界恢复。P16B 发布契约的新 attempt 已实际读取来源，尚无 build/Verify 成果；briefing 共有 586 个必读切片，输入范围性能需作为后续改进评估，不在本批放宽阅读门禁。
+
+源码修复工作树已提交并清洁；实际控制面使用主工作区中经字节比对加载的补丁，未 merge 或 push。产品任务仍由后台 runtime 推进，此 active 记录不冒充四项产品全部完成。
