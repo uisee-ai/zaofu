@@ -1,6 +1,6 @@
 # Task Pipeline 断点修复（2026-11-05）
 
-本批任务见 `tasks/active/2026-11-05-1400-task-recovery.md`（完成后归档到 tasks/done 同名文件）。
+本批任务见 `tasks/done/2026-11-05-1400-task-recovery.md`。
 
 ## 修复边界
 
