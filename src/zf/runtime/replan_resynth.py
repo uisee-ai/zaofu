@@ -20,6 +20,7 @@ from zf.runtime.plan_artifact_package import (
     plan_artifact_package_binding,
     reduce_plan_artifact_packages,
 )
+from zf.runtime.plan_source_binding import bind_admitted_plan_source_refs
 
 
 _PLAN_PACKAGE_PAYLOAD_KEYS = (
@@ -242,6 +243,7 @@ def _bind_current_plan_package(
     for key in _GOAL_CLAIM_SET_IDENTITY_KEYS:
         payload.pop(key, None)
     payload.update(plan_artifact_package_binding(package_events, current))
+    bind_admitted_plan_source_refs(payload, current, package_events)
 
 
 def _resynth_trigger(config: object, *, flow_kind: str) -> str:

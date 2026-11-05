@@ -34,3 +34,7 @@ P16B 的历史 Task 派发包与当前 Run Plan 包不同，属于 gap-only 多�
 ## Discovery 替代图优先级
 
 Reader 已声明新任务的 `supersedes_task_ids` 时，flow discovery bridge 使用该显式替代图；显式空数组表示追加，不再混入恢复请求继承的历史 ID。没有任务级声明的旧结果仍使用 envelope。任务是否存在、基线是否合法、图是否闭合继续由原准入检查负责；本修复不把历史节点自动签认为当前节点。实证为 `evt-4e10a21d6f6e`，修复回归涵盖当前节点、追加、兼容路线和未知节点拒绝。
+
+## Candidate replan 使用同一引用规则
+
+`replan_resynth` 与 reader stage retry 均调用 `plan_source_binding.bind_admitted_plan_source_refs`，从当前已接纳 Plan Package 的 source event 绑定 map/index 的 ref 与 digest。避免重合成沿用最早 scan/Planner trigger 的旧路径。只读回归覆盖两个实际入口；未接纳草稿、缺失新摘要及显式空 index 保持既定约束。

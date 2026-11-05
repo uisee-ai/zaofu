@@ -20,6 +20,7 @@ from zf.runtime.plan_artifact_package import (
     plan_artifact_package_binding,
     reduce_plan_artifact_packages,
 )
+from zf.runtime.plan_source_binding import bind_admitted_plan_source_refs
 
 # stage 级 replan 上限:超过即该升级 human,不许无限重合成
 # (r5 教训:机械重试无界 = 烧钱活锁)。
@@ -116,18 +117,7 @@ def _bind_current_plan_package_identity(
     for key in _GOAL_CLAIM_SET_IDENTITY_KEYS:
         payload.pop(key, None)
     payload.update(plan_artifact_package_binding(events, current))
-    source = next((event for event in events
-                   if event.id == current.get("source_event_id")), None)
-    if source is not None:
-        for ref_key, digest_key in (
-            ("task_map_ref", "task_map_digest"),
-            ("source_index_ref", "source_index_digest"),
-        ):
-            if ref_key in source.payload:
-                payload[ref_key] = source.payload[ref_key]
-                payload.pop(digest_key, None)
-                if source.payload.get(digest_key):
-                    payload[digest_key] = source.payload[digest_key]
+    bind_admitted_plan_source_refs(payload, current, events)
 
 
 def _payload_target_ref(payload: dict[str, Any]) -> str:
