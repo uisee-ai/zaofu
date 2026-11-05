@@ -46,3 +46,9 @@ writer adoption 在物化本轮后继后，通过 `task_map_supersession_history
 随后复用原有 TaskStore / task_doc / EventWriter 路径：先更新保留任务依赖，再取消旧节点。取消事件记录历史证据 ID，并绑定当前 workflow run，供 Task Pipeline 的 supersession/归档检查消费。不读取 Planner 自由文字作为控制指令，不因旧 ID 不在新图就推断可删除，也不重开 done。
 
 历史节点已经 cancelled 时，仍可据同样证明迁移滞留依赖，并补齐当前 run/Map 的替代见证；同图重放不重复追加见证，不修改 cancelled 状态。
+
+## PAS 打包后身份字段的输入范围
+
+Plan Package 会给原生 product_acceptance_spec.v1 绑定 schema/run/flow/revision/generation，而生产者分区基于绑定前正文。输入范围计算将这五个具名标量身份作为机械共享字段读取；原始语义路径仍按显式 task_input_policy 检查完整覆盖。其他 schema、对象型身份或遗漏的业务内容继续拒绝。读取侧不重写不可变工件、摘要、已批准 Plan 或已有 TaskAttempt，既有包无需重新生成即可使用同一已批准内容。
+
+本修复接纳主工作区已运行的显式 task_input_policy 读取支持及其原有测试作为直接依赖，未接纳其余未提交改动。新增回归走实际 prepare_plan_artifact_package -> current_plan_port_sources，修改前 1 failed / 12 passed。

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 from pathlib import Path
+import re
 
 SCHEMA_VERSION = "task-scoped-plan-input.v1"
 
 
 def task_input_paths(body: Any, *, task_id: str, candidate: bool = False) -> list[str]:
     """Keep legacy inputs whole; select only producer-declared partitions."""
+    if isinstance(body, Mapping) and "task_input_policy" in body:
+        return _declared_input_paths(body, task_id=task_id, candidate=candidate)
     if not isinstance(body, Mapping) or body.get("schema_version") != SCHEMA_VERSION:
         return ["$"]
     if set(body) != {"schema_version", "shared", "tasks"}:
@@ -31,6 +34,83 @@ def task_input_paths(body: Any, *, task_id: str, candidate: bool = False) -> lis
     if task_id not in positions:
         raise ValueError(f"task-scoped input has no partition for {task_id!r}")
     return ["$.shared", f"$.tasks[{positions[task_id]}]"]
+
+
+def _declared_input_paths(body: Mapping[str, Any], *, task_id: str, candidate: bool) -> list[str]:
+    """Validate explicit partitions without changing the artifact's native schema."""
+    from zf.runtime.artifact_read_ledger import _select_json_path
+
+    policy = body["task_input_policy"]
+    if (
+        not isinstance(policy, Mapping)
+        or set(policy) != {"schema_version", "shared_paths", "tasks"}
+        or policy.get("schema_version") != "task-input-policy.v1"
+        or not isinstance(policy["tasks"], list)
+    ):
+        raise ValueError("invalid task_input_policy")
+
+    def paths(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            raise ValueError("task input paths must be a list")
+        for path in value:
+            if (
+                not isinstance(path, str)
+                or not re.fullmatch(r"\$(?:\.[A-Za-z0-9_-]+|\[\d+\])*", path)
+                or path.startswith("$.task_input_policy")
+            ):
+                raise ValueError("invalid task input JSON path")
+            _select_json_path(body, path)
+        if len(value) != len(set(value)):
+            raise ValueError("task input paths must be unique")
+        return value
+
+    shared = list(paths(policy["shared_paths"]))
+    # Package admission stamps these mechanical identities after the producer
+    # partitions its semantic body. Include their original bytes in every read;
+    # do not rewrite the immutable artifact or infer any business partition.
+    if body.get("schema_version") == "product_acceptance_spec.v1":
+        for key in ("schema_version", "workflow_run_id", "flow_kind",
+                    "plan_revision", "task_map_generation"):
+            if key not in body:
+                continue
+            if not isinstance(body[key], str) or not body[key].strip():
+                raise ValueError(f"Product Acceptance identity {key} must be a string")
+            path = f"$.{key}"
+            if path not in shared:
+                shared.append(path)
+    partitions: dict[str, list[str]] = {}
+    assigned = set(shared)
+    for row in policy["tasks"]:
+        if not isinstance(row, Mapping) or set(row) != {"task_id", "paths"}:
+            raise ValueError("task input row requires task_id and paths")
+        key = row["task_id"]
+        if not isinstance(key, str) or not key.strip() or key in partitions:
+            raise ValueError("task input ids must be non-empty and unique")
+        partitions[key] = paths(row["paths"])
+        if not partitions[key]:
+            raise ValueError("task input partition must not be empty")
+        assigned.update(partitions[key])
+
+    def check_coverage(value: Any, path: str) -> None:
+        if path in assigned:
+            return
+        if isinstance(value, Mapping) and value:
+            for key, child in value.items():
+                if path == "$" and key == "task_input_policy":
+                    continue
+                check_coverage(child, f"{path}.{key}")
+        elif isinstance(value, list) and value:
+            for index, child in enumerate(value):
+                check_coverage(child, f"{path}[{index}]")
+        else:
+            raise ValueError(f"task input policy leaves unassigned content at {path}")
+
+    check_coverage(body, "$")
+    if candidate:
+        return ["$"]
+    if task_id not in partitions:
+        raise ValueError(f"task input policy has no partition for {task_id!r}")
+    return list(dict.fromkeys([*shared, *partitions[task_id]]))
 
 
 def current_plan_port_sources(
@@ -122,7 +202,9 @@ def current_plan_port_sources(
             paths[name] = task_input_paths(body, task_id=task_id, candidate=candidate)
             kinds[name] = (
                 "task_scoped_plan_input"
-                if isinstance(body, Mapping) and body.get("schema_version") == SCHEMA_VERSION
+                if isinstance(body, Mapping) and (
+                    body.get("schema_version") == SCHEMA_VERSION or "task_input_policy" in body
+                )
                 else str(ports[name].get("artifact_kind") or name)
             )
         except ValueError as exc:
