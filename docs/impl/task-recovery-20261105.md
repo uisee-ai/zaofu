@@ -22,3 +22,11 @@ operation 已终结且任务 active_dispatch_id 清空时，旧 assigned_to 不�
 - P06：取消任意模型名生成固定几何的成功路径；注册 adapter/输入加载/执行回执。无已批准真实模型时保持人工待处理，不签收真实推理验收。
 - P18：PAUSE_REQUESTED 允许当前有效 attempt 报告失败；取消只终结当前 attempt，历史记录逐字段保留。
 - P16B：原隐私任务缺少 schedule 私有中间结果和发布/读取守卫接口，先由受控 replan 明确上游契约，再实现脱敏、审核、导出与撤权。普通内部 copy 不被追溯判定为隐私实现失败。
+
+## Reader stage 重试的引用一致性
+
+P16B 的历史 Task 派发包与当前 Run Plan 包不同，属于 gap-only 多代任务共存。首次操作将任务包作为 Run 规划包，被 preregistration 正确拒绝，未执行 reader。已纠正此恢复请求；没有放宽包准入规则。
+
+后续发现 `stage_failure_replan` 仅更新 Plan 包/generation 却保留旧 task_map/source_index。修复从当前已接纳包的 source_event_id 同步读取 map/index 和对应摘要；不存在的新摘要不会继承旧值，未接纳草稿不构成来源。回归先 RED 后 GREEN；104 项 stage/run-manager/controlled-action 测试通过。任务见 `tasks/active/2026-11-05-1410-stage-replan-map-binding.md`（完成后归档同名到 done）。
+
+当前全量 Plan 已有 P16B-RELEASE-CONTRACT 和 P16B-PRIVACY-R1，但 canonical 队列没有这两项且旧 P16B 仍被下游引用。受控规划需对账任务创建、替代和下游依赖，不能重复生成未物化的空 gap 集，也不能把不存在于当前 Map 的旧 ID 当作直接 supersede 目标。

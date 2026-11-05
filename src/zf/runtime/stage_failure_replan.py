@@ -116,6 +116,18 @@ def _bind_current_plan_package_identity(
     for key in _GOAL_CLAIM_SET_IDENTITY_KEYS:
         payload.pop(key, None)
     payload.update(plan_artifact_package_binding(events, current))
+    source = next((event for event in events
+                   if event.id == current.get("source_event_id")), None)
+    if source is not None:
+        for ref_key, digest_key in (
+            ("task_map_ref", "task_map_digest"),
+            ("source_index_ref", "source_index_digest"),
+        ):
+            if ref_key in source.payload:
+                payload[ref_key] = source.payload[ref_key]
+                payload.pop(digest_key, None)
+                if source.payload.get(digest_key):
+                    payload[digest_key] = source.payload[digest_key]
 
 
 def _payload_target_ref(payload: dict[str, Any]) -> str:
