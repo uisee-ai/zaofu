@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 65f1103e fix: honor explicit discovery replacement graphs
 
 # 保留 Discovery 的显式替代决定
 
@@ -10,3 +10,7 @@
 - 实际 Orchestrator 入口 -> verify: 新回归先 3 failed / 1 passed；修复后与 gap runtime/graph 测试 56 passed。
 
 测试闭包：module gap runtime、module gap graph、reader stage replan、控制动作、sentinel 和确定性 flow mock。自动 planner 因 Orchestrator 广域路由升级全套；按 AGENTS 仅执行本次明确闭包，不把 focused 当全量验证。
+
+最终验证：`pytest tests/test_discovery_replacement_authority.py tests/test_module_gap_plan_runtime.py tests/test_module_gap_plan.py tests/test_stage_failure_replan.py tests/test_stage_replan_map_binding.py -q --no-cov` → 94 passed。`dev-verify.py run --base dev --skip-tier deterministic --skip-tier serial` → sentinel 50 passed / 1 skipped，flow smoke 10 passed；收据 `/tmp/zf-task-recovery-20261105/discovery-verification.json`。此前控制动作闭包见 stage-replan 归档；本补丁未改控制服务。
+
+框架修复完成不等于 P16B 产品完成；其修订重放、历史节点对账和执行结果继续记在 product-recovery active 任务。
