@@ -130,9 +130,13 @@ v5 改动仅项目/状态/技能路径与会话绑定、适用 Python 静态命�
 | REAL-01 | 第一轮 Web TestClient 的准备器读取宿主 WorkspaceRegistry，尝试加载 LS 配置；该配置因未知参数在 loader 阶段拒绝 | 验证驱动设置独立 `ZF_WORKSPACE_HOME`，保留原始错误；首轮经 CLI `simulation.done` 和 `stop --include-run-manager` 退出，再建干净项目 | 第二轮未出现跨项目加载；不是修复或运行 LS 业务 |
 | REVIEW-01 | 最后入口审计发现 RM 建议的三个诊断/修复分支未经过受控动作的共同准入 | 先复现 9 个失败反例，再补当前 case/human/precondition 检查；相关组 236 passed，sentinel 53 passed | 用现有 source_repair_restart_actuator 重载隔离控制面；新 runtime-load 回执证明新消费者已加载，原 Worker 会话保留 |
 | REAL-02 | 真实 Worker 17:35:43 建立求助，直到 17:38:44 的 RM 周期扫描才建立 OA 路由，首跳多等待约 180 秒 | 复现“只有 REQUESTED、尚无 RM sweep”的回归失败；主循环复用持久化 reconcile 并加共用锁，使 reactive/periodic 不重复发布路由和关闭回执 | 修复组 249 passed；原请求已由周期兜底派发，原延迟如实保留，不将后续代码重载当作该次延迟已消失 |
+| REAL-03 | 业务完成后执行正常 stop，发现三次控制面重载留下的旧 Autoresearch sidecar；父进程持有的 flock 随父进程退出而释放，新启动覆盖仍活跃的旧 pidfile | 宿主反例先复现重启后 PID 改变；sidecar 继承 singleton lock，控制面退出不释放其活跃锁；跨进程停止精确匹配完整 resident 参数及 state dir，避免仅凭共享 worktree 路径识别进程 | 调用闭包 67 passed；真实 SIGKILL／systemd 重启保留同一 sidecar，正常 stop 检查整个进程组退出。旧版本遗留的三个进程按原启动事件和精确参数由操作员清理，不能宣称新代码自动找回了被覆盖的旧 pidfile |
 
 第二轮项目 `/tmp/zf-200-real-20261106T171651Z-8qffn5an`，需求摘要与首轮相同；
-正式 request `workflow-4ef709e12ce26efd`。Scan 两个真实 Codex 子角色及 Planner 已交付，独立 Plan Critic 正在执行。
+正式 request `workflow-4ef709e12ce26efd`。Scan、Plan、Plan Critic、Impl、任务 Verify、8 路候选 Verify、Discovery 与 Judge 均已正式交付。
+Kernel 于 18:20:22 UTC 产生 `run.goal.completed`（`evt-f6dac67e0122`）；候选 `6661dc6` 经受控交付形成隔离项目 dev 提交 `b9219864`。
+外部冻结脚本分别对候选和实际交付提交执行 8 个 CLI 行为检查及 7 个 unittest，均通过。
+运行期业务能力使用已加载的 `115e450d`；REAL-03 为收尾时发现的后续生命周期修复，另由真实宿主回归验证，不伪称完整业务重新跑过该修订。
 本次操作员为部署已验证修复重载过控制面，不能把这一操作描述为无人干预的宿主自动恢复；
 宿主自动恢复资格由前述独立 systemd 故障注入测试证明。
 

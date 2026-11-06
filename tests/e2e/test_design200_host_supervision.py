@@ -30,7 +30,8 @@ def _until(predicate, seconds=30):
     raise AssertionError("host lifecycle condition not observed")
 
 
-def test_host_recovers_unique_runtime_and_respects_pause():
+@pytest.mark.parametrize("resident_enabled", [False, True])
+def test_host_recovers_unique_runtime_and_respects_pause(resident_enabled):
     if not shutil.which("tmux") or not shutil.which("systemd-run"):
         pytest.skip("tmux and user systemd required")
     if subprocess.run(["systemctl", "--user", "is-system-running"], capture_output=True).returncode:
@@ -44,7 +45,9 @@ def test_host_recovers_unique_runtime_and_respects_pause():
     session = unit + "-workers"
     config = {"version": "1", "project": {"name": unit, "state_dir": ".test-state"},
               "session": {"tmux_session": session},
-              "runtime": {"run_manager": {"enabled": False}, "autoresearch_resident": {"enabled": False}},
+              "runtime": {"run_manager": {"enabled": False}, "autoresearch_resident": {
+                  "enabled": resident_enabled, "max_actions_per_tick": 0,
+                  "worktree_root": str(root / "repair-worktrees")}},
               "roles": [{"name": "worker", "backend": "mock"}]}
     (root / "zf.yaml").write_text(yaml.safe_dump(config))
     SessionStore(state / "session.yaml").create(project_root=str(root))
@@ -79,6 +82,8 @@ def test_host_recovers_unique_runtime_and_respects_pause():
         _until(lambda: len(loops()) == 1)
         first = pid()
         assert first > 1
+        sidecar_path = state / "processes" / "autoresearch-resident.pid.json"
+        sidecar_pid = json.loads(sidecar_path.read_text())["pid"] if resident_enabled else None
         os.kill(first, signal.SIGKILL)
         _until(lambda: len(loops()) == 2)
         second = pid()
@@ -86,19 +91,45 @@ def test_host_recovers_unique_runtime_and_respects_pause():
         guard = json.loads((state / "processes" / "watcher.pid.json").read_text())
         assert guard["owner_pid"] == second
         assert all(e.payload.get("runtime_load_ref") for e in loops())
+        if resident_enabled:
+            assert json.loads(sidecar_path.read_text())["pid"] == sidecar_pid
+            started = [e for e in EventLog(state / "events.jsonl").read_all()
+                       if e.type == "autoresearch.resident_sidecar.started"]
+            assert len(started) == 1, "control-plane restart duplicated a live resident"
         run(cli + ["emit", "loop.pause_requested", "--actor", "operator"])
         os.kill(second, signal.SIGKILL)
         _until(lambda: pid() == 0)
         time.sleep(2)
         assert len(loops()) == 2 and pid() == 0
+        if resident_enabled:
+            from zf.runtime.autoresearch_resident_sidecar import _process_group_alive
+
+            run(cli + ["stop", "--include-run-manager"])
+            assert not _process_group_alive(sidecar_pid), "normal stop left its resident tree alive"
     finally:
         run(["systemctl", "--user", "stop", unit], check=False)
         run(cli + ["emit", "simulation.done", "--actor", "operator"], check=False)
         run(cli + ["stop", "--include-run-manager"], check=False)
+        # Clean even a red regression's superseded pidfile owners. Only this
+        # isolated test's recorded processes and exact state dir are eligible.
+        for event in EventLog(state / "events.jsonl").read_all():
+            if event.type != "autoresearch.resident_sidecar.started":
+                continue
+            child = int(event.payload.get("pid") or 0)
+            try:
+                command = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
+                if str(state).encode() in command and os.getpgid(child) == child:
+                    os.killpg(child, signal.SIGTERM)
+            except OSError:
+                pass
         run(["tmux", "kill-session", "-t", session], check=False)
         run(["systemctl", "--user", "reset-failed", unit], check=False)
         evidence = Path("/tmp/zf-200-verification-20261106")
         evidence.mkdir(exist_ok=True)
-        (evidence / "host-supervision.json").write_text(json.dumps({"root": str(root), "unit": unit,
-            "loops": [json.loads(e.to_json()) for e in loops()], "calls": calls}, ensure_ascii=False, indent=2))
+        receipt = "sidecar-host-supervision.json" if resident_enabled else "host-supervision.json"
+        sidecar_events = [json.loads(e.to_json()) for e in EventLog(state / "events.jsonl").read_all()
+                          if e.type.startswith("autoresearch.resident_sidecar.")]
+        (evidence / receipt).write_text(json.dumps({"root": str(root), "unit": unit,
+            "loops": [json.loads(e.to_json()) for e in loops()], "sidecar_events": sidecar_events,
+            "calls": calls}, ensure_ascii=False, indent=2))
         shutil.rmtree(root)
