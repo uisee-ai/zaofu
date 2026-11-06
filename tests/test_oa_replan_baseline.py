@@ -64,6 +64,22 @@ def test_retained_baseline_passes_actual_reader_operation_preregistration(tmp_pa
     assert prepared.operation_id
 
 
+@pytest.mark.parametrize("mutation", [{}, {"task_map_generation": "unadmitted"},
+                                      {"plan_artifact_package_digest": "wrong"}])
+def test_discovery_reader_keeps_its_admitted_baseline(tmp_path, mutation):
+    from zf.runtime.artifact_read_ledger import ArtifactReadError
+
+    runtime, _marker, trigger = _replan(tmp_path)
+    identity = {"role_instance": "flow-discovery", "attempt_domain": "gap",
+                "canonical_success_event": "flow.discovery.child.completed",
+                "canonical_failure_event": "flow.discovery.child.failed", **mutation}
+    if mutation:
+        with pytest.raises(ArtifactReadError):
+            _preregister(runtime, trigger, **identity)
+    else:
+        assert _preregister(runtime, trigger, **identity).operation_id
+
+
 @pytest.mark.parametrize("identity", [
     {"task_map_generation": "unadmitted"},
     {"plan_artifact_package_digest": "wrong-digest"},

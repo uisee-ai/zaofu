@@ -200,3 +200,9 @@ LS-v1 的既有配置启用了 `planCriticEnabled: false`，依赖此前尚未�
 原因是否过时由操作员判断，runtime 不解析描述猜测业务状态，不自动批准计划。
 动作只写 acknowledgement，由 RM 消费后关闭等待；不改旧事件、任务或验收结论。
 回归覆盖缺绑定/授权/理由、错误事件、重复提交，以及实际 RM 消费后的等待清除。
+
+恢复实跑还发现 Discovery 将旧执行代次的已准入计划包与最新待审核包比较，造成
+`stale or missing plan_artifact_package_id`，角色启动前即被拒绝。Discovery 现在
+与 Plan/任务执行保持一致，按声明的已准入 generation 查找完整包身份；未知代次、
+错误 digest 继续拒绝。不采用尚未批准的新计划，不删除版本门。回归经过真实
+`prepare_call_operation` 调用链，覆盖保留基线与错误绑定。
