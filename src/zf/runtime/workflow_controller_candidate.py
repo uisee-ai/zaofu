@@ -30,6 +30,8 @@ def materialize_controller_candidate(
             base_path=base_path, short_spec=short_spec, requirement=requirement or {},
         )
         return _write_candidate(base_path, request_id, documents)
+    if "plan_critic_enabled" in parameters and "lanes" not in parameters:
+        raise ValueError("plan_critic_enabled requires explicit existing lanes")
     if family not in {"IssueFlow", "PrdFlow", "RefactorFlow"} or "lanes" not in parameters:
         return base_path
     lanes = parameters["lanes"]
@@ -40,6 +42,16 @@ def materialize_controller_candidate(
     if len(matches) != 1 or not isinstance(matches[0].get("spec"), dict):
         raise ValueError("controller synthesis requires exactly one existing selected Flow")
     spec = matches[0]["spec"]
+    critic_enabled = parameters.get("plan_critic_enabled")
+    if "plan_critic_enabled" in parameters and (family != "PrdFlow" or type(critic_enabled) is not bool):
+        raise ValueError("plan_critic_enabled requires PrdFlow and a boolean")
+    critic_keys = [key for key in ("planCriticEnabled", "plan_critic_enabled") if key in spec]
+    if len(critic_keys) > 1:
+        raise ValueError("controller Flow has ambiguous plan critic aliases")
+    critic_key = critic_keys[0] if critic_keys else "planCriticEnabled"
+    critic_changed = critic_enabled is not None and spec.get(critic_key, True) != critic_enabled
+    if critic_changed:
+        spec[critic_key] = critic_enabled
     pipeline = parameters.get("task_pipeline")
     if pipeline is not None:
         from zf.runtime.workflow_task_pipeline_inputs import validate_prd_task_pipeline
@@ -55,7 +67,7 @@ def materialize_controller_candidate(
         raise ValueError("controller Flow has ambiguous lane aliases")
     key = lane_keys[0] if lane_keys else "lanes"
     if spec.get(key) == lanes and pipeline is None:
-        return base_path
+        return _write_candidate(base_path, request_id, documents) if critic_changed else base_path
     if spec.get("taskPipeline") or spec.get("task_pipeline"):
         raise ValueError("Task Pipeline resizing requires an explicit pool/config revision, not lanes alone")
     spec[key] = lanes

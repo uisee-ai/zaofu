@@ -219,6 +219,11 @@ def assemble_controller(
     package = controller_skill_source(root=root, base=base_config, template=load_config(path))
     base = renderable_config_to_primitive(base_config)
     flow = next(d for d in documents if d.get("kind") == entry["flow_family"])
+    if "plan_critic_enabled" in parameters:
+        value = parameters["plan_critic_enabled"]
+        if short_spec["flow_family"] != "PrdFlow" or type(value) is not bool:
+            raise ValueError("plan_critic_enabled requires PrdFlow and a boolean")
+        flow["spec"]["planCriticEnabled"] = value
     if "candidate_verify_width" in parameters:
         flow["spec"]["taskPipeline"].setdefault("candidate", {})["verifyWidth"] = parameters["candidate_verify_width"]
     config_docs = [d for d in documents if d.get("kind") == "ZfConfig"]

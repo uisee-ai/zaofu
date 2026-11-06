@@ -331,6 +331,10 @@ def _stage_roles(stages: list[Any]) -> list[str]:
             value = str(role or "").strip()
             if value and value not in roles:
                 roles.append(value)
+        aggregate = getattr(stage, "aggregate", None)
+        synth_role = str(getattr(aggregate, "synth_role", "") or "").strip()
+        if synth_role and synth_role not in roles:
+            roles.append(synth_role)
     return roles
 
 

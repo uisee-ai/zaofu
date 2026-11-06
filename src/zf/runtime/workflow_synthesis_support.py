@@ -177,8 +177,11 @@ def synthesis_prompt(
         "(prd-flow-v4-task-pipeline), mode (shadow or blocking), impl_capacity, "
         "verify_capacity and max_active_task_pipelines, plus lanes large enough for "
         "both pools. Preserve requested capacities. Ask when the mode or a decision-critical "
-        "limit is unknown; shadow is observation, not actual scheduling. This only "
-        "prepares a reviewed candidate and never applies configuration or starts a Run. Contract:\n"
+        "limit is unknown; shadow is observation, not actual scheduling. "
+        "When an owner explicitly requires no dedicated PRD Plan Critic, set "
+        "parameters.plan_critic_enabled to false and keep requested Plan approval; "
+        "otherwise omit it to preserve the existing configuration. "
+        "This only prepares a reviewed candidate and never applies configuration or starts a Run. Contract:\n"
         + json.dumps(contract, ensure_ascii=False, sort_keys=True)
     )
 
