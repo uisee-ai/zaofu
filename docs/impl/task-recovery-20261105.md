@@ -64,3 +64,9 @@ Task Pipeline 静默门禁同时识别 kernel task.dispatched/task.done、绑定
 `fanout.synth.completed` 的正文可以仅通过 `control_result_ref` 存储。恢复事件不能假设源事件顶层含最新 `task_map_ref`，否则当前 package 身份会搭配旧图。reader replan 与 candidate resynth 现在经配置 `state_dir` 验证当前 immutable package，检查运行/代次，并从 produced/inherited 中取 task_map/source_index 及摘要。缺失或损坏拒绝恢复；当前包无可选 source_index 时移除旧索引。纯事件投影调用保留旧兼容路径，真实 runtime caller 必须传入state_dir。
 
 本次不修改已经派发的 Planner 输入或包，不将运行时补丁等同于产品验收。详见任务 `2026-11-06-0005-replan-package-port-binding.md` 与持续 active 产品恢复记录。
+
+## 2026-11-06：增量派发保留新前置
+
+候选修订保留 `failed_task_ids` 与 `downstream_task_ids` 作为上一代诊断。对于明确的 `task-map-amend.v1 / gap_tasks_only`，只有触发选择精确等于该诊断并且失败集合与声明被替代集合相同，writer 才改用该计划批准的 `amend.gap_task_ids`。这样不会漏掉新公共前置，也不会把未修订下游重新纳入本次续作。明确的新任务子集及无关选择沿用原逻辑，声明任务缺失仍由 admission 拒绝。
+
+本轮草稿实物验证从错误17项收敛为5项：align加载前置→采样/融合；资源读取守卫→隐私。尚需独立Critic与计划批准；这不是任务实现或产品验收证据。记录：`2026-11-06-0015-gap-diagnostic-selection.md`。
