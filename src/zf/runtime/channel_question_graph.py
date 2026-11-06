@@ -1,4 +1,4 @@
-"""Mechanical question-graph validation and frontier projections."""
+"""Question graphs/frontiers; see docs/impl/channel-merge-dependencies.md."""
 
 from __future__ import annotations
 
@@ -145,6 +145,29 @@ def validate_question_graph(
         if error:
             return error
     return ""
+
+
+def validate_question_merge_graph(
+    questions: Iterable[dict[str, Any]],
+    *,
+    merge_map: dict[str, str],
+) -> str:
+    """Check post-merge waits before writes, without changing historical replay."""
+    effective = []
+    for question in questions:
+        question_id = str(question.get("question_id") or "")
+        status = str(question.get("status") or "")
+        dependencies = question.get("depends_on")
+        if question_id in merge_map or status == "merged":
+            target = merge_map.get(question_id) or str(question.get("merged_into") or "")
+            if not target:
+                return f"question_merge_target_required:{question_id}"
+            # A merged question settles only when its canonical target settles.
+            dependencies = [target]
+        elif status == "resolved":
+            dependencies = []
+        effective.append({**question, "depends_on": dependencies})
+    return validate_question_graph(effective)
 
 
 def question_frontier(
@@ -317,4 +340,5 @@ __all__ = [
     "question_frontier",
     "question_graph_digest",
     "validate_question_graph",
+    "validate_question_merge_graph",
 ]
