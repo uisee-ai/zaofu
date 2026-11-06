@@ -125,7 +125,8 @@ def test_fresh_reactor_delivers_missed_guidance_once(running, monkeypatch):
     from zf.runtime.orchestrator_agent_role import configured_orchestrator_role_from_config
     r = running
     _request(r)
-    reconcile_assistance(state_dir=r.state_dir, writer=r.event_writer, config=r.config)
+    # Fresh requests must be routed by the reactor, without first waiting for
+    # the periodic (300-second) supervisor / Run Manager sweep.
     sent = []
     monkeypatch.setattr("zf.runtime.orchestrator_agent_transport.orchestrator_checkpoint_busy", lambda _: False)
     monkeypatch.setattr("zf.runtime.orchestrator.build_orchestrator_briefing", lambda **kw: _render_rework_triage_contract(kw["trigger_event"]))
@@ -139,3 +140,19 @@ def test_fresh_reactor_delivers_missed_guidance_once(running, monkeypatch):
     dispatch_pending_assistance(r)
     assert len(sent) == 1
     assert "只读求助" in sent[0][1].read_text()
+
+
+def test_reactive_and_periodic_reconciliation_publish_once(running):
+    from concurrent.futures import ThreadPoolExecutor
+    r = running
+    request = _request(r)
+    def reconcile(_):
+        return reconcile_assistance(state_dir=r.state_dir, writer=r.event_writer, config=r.config)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        assert sum(workers.map(reconcile, range(4))) == 1
+    _answer(r, request["request_id"])
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        assert sum(workers.map(reconcile, range(4))) == 1
+    events = r.event_log.read_all()
+    assert sum(e.type == "orchestrator.rework.triage.requested" for e in events) == 1
+    assert sum(e.type == "worker.assistance.closed" for e in events) == 1

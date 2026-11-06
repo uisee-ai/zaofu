@@ -129,8 +129,40 @@ v5 改动仅项目/状态/技能路径与会话绑定、适用 Python 静态命�
 | --- | --- | --- | --- |
 | REAL-01 | 第一轮 Web TestClient 的准备器读取宿主 WorkspaceRegistry，尝试加载 LS 配置；该配置因未知参数在 loader 阶段拒绝 | 验证驱动设置独立 `ZF_WORKSPACE_HOME`，保留原始错误；首轮经 CLI `simulation.done` 和 `stop --include-run-manager` 退出，再建干净项目 | 第二轮未出现跨项目加载；不是修复或运行 LS 业务 |
 | REVIEW-01 | 最后入口审计发现 RM 建议的三个诊断/修复分支未经过受控动作的共同准入 | 先复现 9 个失败反例，再补当前 case/human/precondition 检查；相关组 236 passed，sentinel 53 passed | 用现有 source_repair_restart_actuator 重载隔离控制面；新 runtime-load 回执证明新消费者已加载，原 Worker 会话保留 |
+| REAL-02 | 真实 Worker 17:35:43 建立求助，直到 17:38:44 的 RM 周期扫描才建立 OA 路由，首跳多等待约 180 秒 | 复现“只有 REQUESTED、尚无 RM sweep”的回归失败；主循环复用持久化 reconcile 并加共用锁，使 reactive/periodic 不重复发布路由和关闭回执 | 修复组 249 passed；原请求已由周期兜底派发，原延迟如实保留，不将后续代码重载当作该次延迟已消失 |
 
 第二轮项目 `/tmp/zf-200-real-20261106T171651Z-8qffn5an`，需求摘要与首轮相同；
 正式 request `workflow-4ef709e12ce26efd`。Scan 两个真实 Codex 子角色及 Planner 已交付，独立 Plan Critic 正在执行。
 本次操作员为部署已验证修复重载过控制面，不能把这一操作描述为无人干预的宿主自动恢复；
 宿主自动恢复资格由前述独立 systemd 故障注入测试证明。
+
+## 设计覆盖与证据层级
+
+下表区分软件实现/确定性回归、真实宿主和真实模型结果；已有能力以回归保留，不重复实现。
+200 §6 的问题分类是职责合同，不承诺每种未知业务故障都能自动修复；未知原因、缺权限和缺证据必须有当前 owner 与合法出口。
+
+| 200 范围 | 实现及实际消费者 | 已有验证／本轮增加的验证 | 资格边界 |
+| --- | --- | --- | --- |
+| §1–3、§10 决策/执行分工 | Agent 方法、受控动作、WRC 唯一 owner；语义结论不直接写 Store | OA admission/execution policy、fault matrix、skill materialization 回归 | 模型实际遵从性按每次运行采证 |
+| §4.1/4.2/4.4 共同准入及迁移 | RM pending、建议、operator 复用 case/human/currentness；保留 operation-v2 fence | `test_run_manager_action_admission`、`test_workflow_redrive_race`、`test_task_pipeline_oa_rework` | 不删除 legacy，也不迁移活跃 generation owner |
+| §4.3 满载及公平性 | 既有分池/背压/返工交替；只读 OA/RM 不新增 Impl writer | `test_task_pipeline_capacity_recovery`、`test_task_pipeline_reconciler`、`test_worker_assistance` | 容量证明为确定性调度；单任务真实 canary 不代表 8+8 实机吞吐 |
+| §5/6/7 失败与诊断 | v5 unknown → 固定输入 → 当前 RM 责任；typed known policy 保留 | `test_failure_diagnosis_routing`、`test_provider_stop`、`test_task_context_recovery` | 未用关键词猜测项目数据库修复方案；模型根因正确性须实际探针 |
+| §5.1 共享故障 | 关联准入、required sidecar、共同动作锁与资源版本/步骤 fence | `test_recovery_association`：实际 SQLite 修复一次、八个消费探针、7/1 分别结算 | 修复工具及 Agent 关联决定是 fixture；不是八个真实模型的 DB 排障证明 |
+| §6.1 监督与接管 | 独立 host-check + 已安装 transient systemd；请求 timeout/task 等待；异步 reflect | `test_design200_host_supervision`、`test_host_lifecycle`、resident obligations/reflection 回归 | 仅为隔离宿主安装；未给正式 dev 安装服务 |
+| §8 当前 attempt 求助 | request/read CLI → RM reconcile → OA 实际派发或 resident → 当前 Worker 读取 | `test_worker_assistance`，真实 canary 持续采证 | 不改合同、不转移 lease；重派建议仍需既有受控交接 |
+| §8.3 最小请求合同 | 上文信息映射；固定问题、输入 digest、身份、owner、期限、结果类型 | immutable evidence、wrong responder、旧 attempt、迟到、消费者不可用回归 | 缺少当前必需事实拒绝；保留 legacy 的明确兼容读取 |
+| §9.1/9.3 步骤与效果 | recovery_step 通用前置结果消费；RM effect reconcile；暂停时钟 | `test_recovery_step_admission`、handoff effects、triage caller | 诊断/普通进展不是结案；未知副作用不能盲重试 |
+| §9.2 问题延续 | Agent 关联已准入失败 → 当前 Pipeline failure accounting/projection | association 真实 consumer 测试；跨任务/代次计数且不改旧 operation | 历史 pass 与旧权限不继承；无依据关联拒绝 |
+| §9.4 证据适用 | 显式 effect_bindings；既有 exact-commit/contract/package admission | effect binding 负例、candidate currentness、scoped verify、acceptance replan 回归 | 报告/事件/schema 通过不等于产品验收充分 |
+| §11/13 迁移及交付 | 每个新模块接入 CLI、RM tick 或 Orchestrator；startup code/config/skill 回执 | CLI start 测试、实际重载与 host 回执、成对性能 | 源码提交、加载、业务效果分别记录 |
+| §12、§15 兼容与硬/软约束 | legacy cancelled 不满足产物依赖；质量 lint 去语言启发式；环境准备显式；方法约束声明 | discriminator、TaskMap、dependency、hook/预算和 skill 影响闭包 | 未支持字段不宣称强制执行，不提高 v5 配额 |
+
+### 199 的后续对账方法
+
+199 原实施记录的 14/15/2 是历史批次结论，本轮不改写它。
+本轮新增加载回执（R01）、共享资源协调（R13）、运行中求助（R02/R03/R04）、
+跨版本失败关联（B04）、存储拒绝和成对基准（C03/C04）、真实宿主（A05/B02/R10），
+以及真实 v5 业务运行证据（R05/R09/R11/R15/B06）。
+R07/R08 的复杂 DAG/语义矛盾评测、R14 的多 Provider/网络数据库集中故障、
+任意外部 shell exactly-once、所有未来修复 handler 的全故障窗口，不由这一最小运行证明。
+最终完成度应按本批八个验收包及上述证据层级分别报告，不能将一条 CSV 成功升级成 199/200 全部场景的生产保证。

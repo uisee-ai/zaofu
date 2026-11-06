@@ -125,7 +125,13 @@ def read_assistance(*, state_dir: Path, writer: EventWriter, request_id: str) ->
 
 
 def reconcile_assistance(*, state_dir: Path, writer: EventWriter, config: Any) -> int:
-    """Durable replay/timeout processing, called by the existing RM tick."""
+    """One reconciliation owner across reactive and periodic consumers."""
+    with locked_path(state_dir / "locks" / "assistance-reconciliation"):
+        return _reconcile_assistance(state_dir=state_dir, writer=writer, config=config)
+
+
+def _reconcile_assistance(*, state_dir: Path, writer: EventWriter, config: Any) -> int:
+    """Durable replay/timeout processing; no model call runs under this lock."""
     events = writer.event_log.read_all()
     closed = {e.payload.get("request_id") for e in events if e.type == CLOSED}
     count = 0
@@ -241,6 +247,10 @@ def dispatch_pending_assistance(runtime) -> None:
     if role is None:
         return
     events = runtime.event_log.read_all()
+    closed = {e.payload.get("request_id") for e in events if e.type == CLOSED}
+    if any(e.type == REQUESTED and e.payload.get("request_id") not in closed for e in events):
+        reconcile_assistance(state_dir=runtime.state_dir, writer=runtime.event_writer, config=runtime.config)
+        events = runtime.event_log.read_all()
     handled = {e.payload.get("request_id") for e in events
                if e.type in {CLOSED, "worker.assistance.dispatching"}}
     for event in events:
