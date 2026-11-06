@@ -48,9 +48,9 @@ def test_append_preserves_interrupted_tail_without_accepting_it(tmp_path: Path, 
     log.append(ZfEvent(type="after.interruption"))
 
     assert path.read_bytes().startswith(original)
-    assert [event.type for event in log.read_all()] == ["previous", "after.interruption"]
+    assert [event.type for event in log.read_all()] == ["previous", "event.malformed", "after.interruption"]
     tail, _ = log.read_from_offset(offset)
-    assert [event.type for event in tail] == ["after.interruption"]
+    assert [event.type for event in tail] == ["event.malformed", "after.interruption"]
 
 
 def test_signed_append_does_not_commit_a_complete_unterminated_envelope(tmp_path: Path):
@@ -63,7 +63,7 @@ def test_signed_append_does_not_commit_a_complete_unterminated_envelope(tmp_path
     log.append(ZfEvent(type="after.interruption"))
 
     assert path.read_bytes().startswith(incomplete)
-    assert [event.type for event in log.read_all()] == ["after.interruption"]
+    assert [event.type for event in log.read_all()] == ["event.malformed", "after.interruption"]
 
 
 def test_failed_append_is_isolated_before_next_event(tmp_path: Path, monkeypatch):
@@ -103,7 +103,7 @@ def test_failed_append_is_isolated_before_next_event(tmp_path: Path, monkeypatch
     log.append(ZfEvent(type="after.interruption"))
 
     assert path.read_bytes().startswith(preserved)
-    assert [event.type for event in log.read_all()] == ["previous", "after.interruption"]
+    assert [event.type for event in log.read_all()] == ["previous", "event.malformed", "after.interruption"]
 
 
 def test_read_all_empty_file(tmp_path: Path):
@@ -113,13 +113,13 @@ def test_read_all_empty_file(tmp_path: Path):
     assert log.read_all() == []
 
 
-def test_read_all_skips_invalid_lines(tmp_path: Path):
+def test_read_all_preserves_unknown_integrity_for_invalid_lines(tmp_path: Path):
     path = tmp_path / "events.jsonl"
     ev = ZfEvent(type="valid")
     path.write_text(ev.to_json() + "\n" + "NOT JSON\n" + ev.to_json() + "\n")
     log = EventLog(path)
     events = log.read_all()
-    assert len(events) == 2
+    assert [event.type for event in events] == ["valid", "event.malformed", "valid"]
 
 
 def test_query_by_type(tmp_path: Path):
@@ -257,9 +257,9 @@ def test_signed_log_rejects_tampered_payload(tmp_path: Path):
     obj = _json.loads(raw)
     obj["event"]["type"] = "review.approved"
     (tmp_path / "events.jsonl").write_text(_json.dumps(obj) + "\n")
-    # Read should silently drop the tampered event (no crash) — count goes to 0
+    # Reject the untrusted occurrence and preserve an integrity diagnostic.
     events = log.read_all()
-    assert events == []
+    assert [e.type for e in events] == ["event.malformed"]
 
 
 def test_unsigned_log_still_works_for_backwards_compat(tmp_path: Path):
@@ -306,7 +306,7 @@ def test_signed_log_read_cache_is_isolated_by_signing_key(tmp_path: Path):
     assert [event.type for event in EventLog(path, signer=good).read_all()] == [
         "judge.passed",
     ]
-    assert EventLog(path, signer=bad).read_all() == []
+    assert [e.type for e in EventLog(path, signer=bad).read_all()] == ["event.malformed"]
 
 
 def test_persisted_event_index_payload_is_not_truth(tmp_path: Path):

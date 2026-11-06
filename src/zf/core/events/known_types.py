@@ -590,6 +590,8 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "stage.report.evidence_missing",
     "task.rework.continuation_injected",
     "diagnosis.requested", "diagnosis.completed", "diagnosis.failed",
+    "worker.assistance.requested", "worker.assistance.dispatching", "worker.assistance.closed",
+    "recovery.association.admitted",
     "fanout.slot.assigned", "fanout.slot.released",
     "fanout.assignment.override", "fanout.aggregate.started",
     "fanout.aggregate.completed", "fanout.aggregate.rebuild.requested",

@@ -935,6 +935,9 @@ class WorkflowRuntimeCoordinator(
         from zf.runtime.orchestrator_agent_transport import dispatch_pending_orchestrator_checkpoint
 
         dispatch_pending_orchestrator_checkpoint(self)
+        from zf.runtime.worker_assistance import dispatch_pending_assistance
+
+        dispatch_pending_assistance(self)
         # doc 69 S-f: emit delivery.phase.* milestones for active features
         # (deterministic, idempotent; counts kernel verdicts, never re-judges).
         self._safe_housekeeping("phase_milestones", self._emit_phase_milestones)
@@ -4811,104 +4814,9 @@ class WorkflowRuntimeCoordinator(
             drained.append(also)
         return drained
 
-    def _fire_orchestrator_turn(
-        self, orch_role: RoleConfig, triggers: list[ZfEvent]
-    ) -> None:
-        """Send one Layer 2 turn covering `triggers` (most recent is primary)."""
-        if not triggers:
-            return
-        from zf.runtime.orchestrator_agent_transport import orchestrator_checkpoint_busy
-
-        primary = triggers[-1]
-        if primary.type == "orchestrator.semantic.checkpoint.requested":
-            from zf.runtime.orchestrator_agent_transport import (
-                dispatch_orchestrator_agent_operation,
-            )
-
-            dispatch_orchestrator_agent_operation(self, orch_role, primary)
-            return
-        if orchestrator_checkpoint_busy(self):
-            for trigger in triggers:
-                self._add_layer2_pending(trigger)
-            return
-        # Regenerate progress.md so Layer 2 sees fresh narrative state.
-        try:
-            regenerate_progress(self.state_dir)
-        except Exception:
-            pass  # progress.md is optional; never block dispatch on it
-        also_triggered = [e.type for e in triggers[:-1]]
-        briefing = build_orchestrator_briefing(
-            state_dir=self.state_dir,
-            config=self.config,
-            trigger_event=primary,
-            also_triggered=also_triggered,
-        )
-        briefings_dir = self.state_dir / "briefings"
-        briefings_dir.mkdir(parents=True, exist_ok=True)
-        ts_safe = primary.ts.replace(":", "-").replace(".", "-")
-        evid_short = primary.id.replace("evt-", "")[:12]
-        briefing_path = briefings_dir / f"orchestrator-{ts_safe}-{evid_short}.md"
-        briefing_path.write_text(briefing, encoding="utf-8")
-        extra = f" (+{len(also_triggered)} coalesced)" if also_triggered else ""
-        prompt = (
-            f"You are the orchestrator agent. New events have fired{extra} and you "
-            f"need to decide what to do next.\n"
-            f"Read the briefing at {briefing_path} for the full system state and trigger details. "
-            f"Make ONE round of decisions via tool calls, then exit."
-        )
-        try:
-            self._record_skill_provenance(role=orch_role, task_id=primary.task_id)
-            context = self._dispatch_context(
-                role=orch_role,
-                briefing_path=briefing_path,
-                task_id=primary.task_id,
-                trace_id=primary.correlation_id,
-            )
-            from zf.runtime.orchestrator_agent_role import orchestrator_instance_id
-
-            self._send_transport_task(
-                orchestrator_instance_id(self), briefing_path, prompt, context
-            )
-        except Exception as exc:
-            payload = {
-                "trigger_event_id": primary.id,
-                "error": str(exc),
-            }
-            payload.update(transport_error_diagnostics(exc))
-            self.event_writer.append(ZfEvent(
-                type="orchestrator.dispatch_failed",
-                actor="zf-cli",
-                payload=payload,
-            ))
-            if str(payload.get("dead_reason") or "") == "pane_dead":
-                self.event_writer.append(ZfEvent(
-                    type="worker.respawn.requested",
-                    actor="zf-cli",
-                    payload={
-                        "role": "orchestrator",
-                        "instance_id": "orchestrator",
-                        "trigger_event_id": primary.id,
-                        "reason": "pane_dead_dispatch_failed",
-                        "source_event_type": "orchestrator.dispatch_failed",
-                        "source": "dispatch_failure_recovery",
-                    },
-                    causation_id=primary.id,
-                    correlation_id=primary.correlation_id,
-                ))
-                self.event_writer.append(ZfEvent(
-                    type="orchestrator.dispatch.retry_requested",
-                    actor="zf-cli",
-                    payload={
-                        "role": "orchestrator",
-                        "assignee": "orchestrator",
-                        "trigger_event_id": primary.id,
-                        "reason": "retry_after_pane_respawn",
-                        "source": "dispatch_failure_recovery",
-                        "max_attempts": 1,
-                    },
-                    causation_id=primary.id,
-                    correlation_id=primary.correlation_id,
-                ))
+    def _fire_orchestrator_turn(self, orch_role: RoleConfig, triggers: list[ZfEvent]) -> None:
+        from zf.runtime.orchestrator_advisory_dispatch import dispatch_advisory_turn
+        dispatch_advisory_turn(self, orch_role, triggers)
 
     def _flush_layer2_batch(self) -> None:
         """End-of-batch flush: fire ONE turn covering everything accumulated

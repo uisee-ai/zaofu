@@ -8,26 +8,14 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.recovery_step import IDENTITY_FIELDS, admitted_recovery_continuation
 
 
 RECOVERY_CASE_SCHEMA_VERSION = "recovery-case.v1"
 RECOVERY_CASE_PROJECTION_SCHEMA_VERSION = "recovery-cases.v1"
 RECOVERY_METRICS_SCHEMA_VERSION = "recovery-metrics.v1"
-_ACTIVE_STATUSES = frozenset({"applied", "diagnosing", "verifying"})
+_ACTIVE_STATUSES = frozenset({"action_planned", "applied", "diagnosing", "verifying"})
 _TERMINAL_STATUSES = frozenset({"resolved", "superseded", "waiting", "blocked"})
-_PROGRESS_EVENTS = frozenset({
-    "task_map.ready",
-    "task_map.amended",
-    "fanout.child.completed",
-    "fanout.aggregate.completed",
-    "dev.build.done",
-    "verify.passed",
-    "flow.discovery.completed",
-    "flow.goal.closed",
-    "module.parity.closed",
-    "judge.passed",
-    "run.goal.completed",
-})
 
 
 def recovery_case_id_from_payload(
@@ -148,7 +136,7 @@ def converge_recovery_actions(
         reason = ""
         if case_id in seen:
             reason = "duplicate_pending_action"
-        elif status in _ACTIVE_STATUSES:
+        elif status in _ACTIVE_STATUSES and not admitted_recovery_continuation(event_list, action, state):
             reason = "active_effect"
         elif status in _TERMINAL_STATUSES:
             reason = f"case_{status}"
@@ -186,6 +174,7 @@ def recovery_action_admission(
 ) -> dict[str, Any]:
     """Re-check one action immediately before its external side effect."""
 
+    events = list(events)
     bound = bind_recovery_case(action)
     case_id = bound["recovery_case_id"]
     projection = build_recovery_case_projection(events)
@@ -201,7 +190,7 @@ def recovery_action_admission(
     status = str(state.get("status") or "open")
     failures = int(state.get("consecutive_failures") or 0)
     reason = ""
-    if status in _ACTIVE_STATUSES:
+    if status in _ACTIVE_STATUSES and not admitted_recovery_continuation(events, action, state):
         reason = "active_effect"
     elif status in _TERMINAL_STATUSES:
         reason = f"case_{status}"
@@ -246,6 +235,7 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
         if event_type == "run.manager.action.planned":
             case["action_count"] += 1
             case["status"] = "action_planned"
+            case["continuation_expected_events"] = []
         elif event_type == "run.manager.action.applied":
             case["status"] = "applied"
         elif event_type in {
@@ -257,6 +247,17 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
             case["status"] = "diagnosing"
         elif event_type == "run.manager.action.effect.pending":
             case["status"] = "verifying"
+            case["pending_action"] = str(payload.get("action") or "")
+            case["pending_request_id"] = str(payload.get("request_id") or "")
+            case["pending_checkpoint_id"] = str(payload.get("checkpoint_id") or "")
+            case["pending_event_id"] = event.id
+            case["step_bindings"] = {
+                key: payload[key] for key in IDENTITY_FIELDS if payload.get(key)
+            }
+            case["continuation_expected_events"] = payload.get("continuation_expected_events") or (
+                ["orchestrator.rework.triage.recorded"]
+                if payload.get("action") == "orchestrator-rework-triage" else []
+            )
         elif event_type in {
             "run.manager.action.verify.passed",
             "run.manager.action.effect.passed",
@@ -264,7 +265,11 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
             if event_type == "run.manager.action.verify.passed" and (
                 payload.get("effect_expected_events")
                 or payload.get("effect_required_sequence")
-                or payload.get("action") in {"semantic-replan-request", "worker-lifecycle-recover"}
+                or payload.get("action") in {
+                    "semantic-replan-request", "worker-lifecycle-recover",
+                    "orchestrator-rework-triage",
+                    "orchestrator-triage-advice-apply",
+                }
             ):
                 case["status"] = "verifying"
             else:
@@ -300,11 +305,8 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
             if next_route in {"failed", "human_escalate", "repair_worker", "proposal_review"}:
                 case["status"] = "open"
             else:
-                case["status"] = "resolved"
-                case["consecutive_failures"] = 0
-        elif event_type in _PROGRESS_EVENTS and case["status"] != "verifying":
-            case["status"] = "resolved"
-            case["consecutive_failures"] = 0
+                case["status"] = "verifying"
+        # Generic task/plan progress is never fault-specific effect evidence.
 
     rows = sorted(cases.values(), key=lambda item: str(item["recovery_case_id"]))
     counts: dict[str, int] = {}

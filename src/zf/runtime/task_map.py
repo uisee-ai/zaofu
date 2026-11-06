@@ -192,8 +192,6 @@ def validate_task_map_payload(
                 relative_roots=_relative_path_roots(payload),
             ):
                 errors.append(f"{task_id}.{field_name} {error}")
-            for error in _verification_level_errors(command):
-                errors.append(f"{task_id}.{field_name} {error}")
         if _string_list(raw.get("allowed_paths")) and not str(
             raw.get("allowed_paths_reason") or raw.get("scope_reason") or ""
         ).strip():
@@ -728,16 +726,6 @@ def _shell_tokens_with_quote_state(command: str) -> list[tuple[str, bool]]:
     return tokens
 
 
-# C2(prd-goal e2e finding-2/14,验证层级错配):切片任务的 verification
-# 在隔离 task 分支上执行,系统级命令(安装整包/入口冒烟)只有集成后的
-# candidate 才可能通过——挂错层 = 结构性必败 + 返工路由永远错位
-# (3 轮同指纹实弹)。W1 原来只查文件引用,此处补命令类别维度。
-_SYSTEM_LEVEL_COMMAND_PATTERNS = (
-    re.compile(r"pip3?\s+install\s+(-e\b|\.($|\s)|--editable\b)"),
-    re.compile(r"python3?\s+-m\s+pip\s+install\s+(-e\b|\.($|\s)|--editable\b)"),
-)
-
-
 def _shared_convention_errors(
     data: dict[str, Any],
     task_items: list[dict[str, Any]],
@@ -788,19 +776,6 @@ def _shared_convention_errors(
                     f"test_path_prefix={prefix!r}"
                 )
     return out
-
-
-def _verification_level_errors(command: str) -> list[str]:
-    text = str(command or "")
-    for pattern in _SYSTEM_LEVEL_COMMAND_PATTERNS:
-        if pattern.search(text):
-            return [
-                "uses a system-level command (package install) that cannot "
-                "succeed on an isolated task slice; move it to the "
-                "integration/test stage checks: "
-                f"{text[:120]!r}"
-            ]
-    return []
 
 
 def _verification_scope_errors(

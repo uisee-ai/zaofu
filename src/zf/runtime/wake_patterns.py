@@ -98,6 +98,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # completed 唤醒结论消费(rework feedback / needs_owner 升级)。
     "diagnosis.requested",
     "diagnosis.completed",
+    "worker.assistance.requested",
     # Run 11 fix: task.assigned must wake Layer 1 so _dispatch_ready
     # can send the briefing to the assigned worker. Without this the
     # task sat in backlog forever after Layer 2 called `zf kanban assign`.
@@ -142,6 +143,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "run.manager.action.effect.pending",
     "run.manager.action.effect.passed",
     "run.manager.action.effect.failed",
+    "run.manager.reflect.completed",
     # Run Manager may settle an action effect during its periodic service
     # transaction before EventWatcher observes that effect.  A completed tick
     # is the restart-safe level trigger that re-evaluates blocked run claims.
@@ -152,6 +154,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # Controlled run-cancel actions emit this outside run_once. Wake
     # housekeeping immediately so resource reconciliation cannot wait on tick.
     "run.cancelled",
+    "run.resumed",
     "fanout.cancelled",
     "flow.discovery.failed",
     "task.done.blocked",

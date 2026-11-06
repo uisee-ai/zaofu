@@ -171,6 +171,9 @@ def build_task_pipeline_projection(
         generation_contexts=contexts,
         operation_rows=operation_rows,
     )
+    from zf.runtime.recovery_association import inherited_failure_operations
+
+    inherited_failures = inherited_failure_operations(state_dir, event_rows, contexts)
     policy_partitions: list[dict[str, Any]] = []
     if compiled_policy_by_task:
         scheduler, policy_partitions = _partitioned_scheduler_projection(
@@ -182,6 +185,7 @@ def build_task_pipeline_projection(
             external_gate_satisfied_task_ids=external_gate_satisfied_ids,
             oa_delegations=oa_delegations,
             preferred_role_instances=preferred_role_instances,
+            inherited_failures=inherited_failures,
         )
     else:
         scheduler = _scheduler_projection(
@@ -193,6 +197,7 @@ def build_task_pipeline_projection(
             external_gate_satisfied_task_ids=external_gate_satisfied_ids,
             oa_delegations=oa_delegations,
             preferred_role_instances=preferred_role_instances,
+            inherited_failures=inherited_failures,
         )
     selected_policies = [
         dict(row["policy"])
@@ -353,6 +358,7 @@ def _scheduler_projection(
     external_gate_satisfied_task_ids: Iterable[str] = (),
     oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
     preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
+    inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     if not policy:
         return {}
@@ -372,6 +378,7 @@ def _scheduler_projection(
         external_gate_satisfied_task_ids=external_gate_satisfied_task_ids,
         oa_delegations=oa_delegations,
         preferred_role_instances=preferred_role_instances,
+        inherited_failures=inherited_failures,
     )
 
 
@@ -414,6 +421,7 @@ def _partitioned_scheduler_projection(
     external_gate_satisfied_task_ids: Iterable[str] = (),
     oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
     preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
+    inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     task_by_id = {
         str(getattr(task, "id", "") or _mapping_value(task, "id")): task
@@ -446,6 +454,7 @@ def _partitioned_scheduler_projection(
             policy=task_policy,
             oa_delegations=oa_delegations,
             preferred_role_instances=preferred_role_instances,
+            inherited_failures=inherited_failures,
             tasks=[task_by_id[task_id] for task_id in task_ids],
             operations=operations,
             attempts=attempts,
@@ -636,6 +645,8 @@ def _project_task(
         "generation_id": str(context.get("generation_id") or ""),
         "blocked_by": sorted(str(item) for item in raw.get("blocked_by", [])),
         "blockers": list(scheduler_view.get("blockers") or []),
+        "semantic_failure_count": int(scheduler_view.get("semantic_failure_count") or 0),
+        "semantic_blocker": dict(scheduler_view.get("semantic_blocker") or {}),
         "risk_class": str(contract.get("risk_class") or ""),
         "integration_admission_profile": str(
             contract.get("integration_admission_profile") or ""

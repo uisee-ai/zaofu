@@ -39,9 +39,9 @@ def writer_task_dependencies_satisfied(
     *,
     completed_task_ids: set[str] | None = None,
 ) -> bool:
-    """Return whether all writer task dependencies are terminal."""
+    """Require admitted completion; cancellation does not fulfill an input."""
 
-    terminal_statuses = {"done", "cancelled", "superseded"}
+    terminal_statuses = {"done"}
     completed_task_ids = completed_task_ids or set()
     for dependency_id in writer_task_dependency_ids(task_item):
         if dependency_id in completed_task_ids:

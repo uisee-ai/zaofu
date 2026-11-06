@@ -240,19 +240,24 @@ def build_run_continuation_projection(
     phase = "terminal" if terminal_status else _latest_phase(scoped_events)
     next_operation: dict[str, Any] | None = None
     pending_human = completion_profile.get("pending_human_decisions")
-    blocking_human = _blocking_human_decisions(pending_human)
-    selected = pending_actions[0] if pending_actions else None
-    may_materialize_human_gate = bool(
-        selected
-        and _materializes_legacy_human_gate(selected)
-        and blocking_human
-        and not any(_is_actionable_human_contract(item) for item in blocking_human)
-    )
-    if (
-        not terminal_status
-        and selected is not None
-        and (not blocking_human or may_materialize_human_gate)
-    ):
+    selected = None
+    # A failed mutation preflight may still explicitly route to read-only
+    # diagnosis. Prefer executable work, then preserve that diagnostic exit.
+    candidates = sorted(pending_actions, key=lambda row: (
+        (row.get("preflight") or {}).get("status") == "blocked"
+    ))
+    for candidate in candidates:
+        preflight = candidate.get("preflight") or {}
+        admission = candidate.get("recovery_admission") or {}
+        decision = (candidate.get("policy_decision") or {}).get("decision")
+        if admission.get("status") == "blocked" or (
+            preflight.get("status") == "blocked" and decision != "needs_diagnosis"
+        ):
+            continue
+        if not human_decisions_block_action(pending_human, candidate):
+            selected = candidate
+            break
+    if not terminal_status and selected is not None:
         next_operation = {
             key: selected.get(key)
             for key in (
@@ -310,6 +315,53 @@ def _blocking_human_decisions(value: Any) -> list[dict[str, Any]]:
     ]
 
 
+def human_decisions_block_action(value: Any, action: dict[str, Any]) -> bool:
+    blockers = blocking_decisions_for_action(value, action)
+    return bool(blockers) and not (
+        _materializes_legacy_human_gate(action)
+        and not any(_is_actionable_human_contract(item) for item in blockers)
+    )
+
+
+def blocking_decisions_for_action(
+    value: Any, action: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Narrow explicit task gates; ambiguous and run-wide gates stay closed.
+
+    A task id on a run gate does not authorize narrowing that gate. Dependencies
+    are supplied from TaskStore by the caller, never inferred from prose.
+    """
+    task_id = str(action.get("task_id") or "")
+    related = {task_id, *map(str, action.get("blocked_by") or [])}
+    blockers = []
+    for decision in _blocking_human_decisions(value):
+        scope = str(decision.get("blocking_scope") or "run").strip().lower()
+        owner = str(decision.get("task_id") or "")
+        if scope == "task" and owner and task_id and owner not in related:
+            continue
+        blockers.append(decision)
+    return blockers
+
+
+def bind_action_dependencies(
+    actions: list[dict[str, Any]], tasks: Iterable[Any],
+) -> list[dict[str, Any]]:
+    """Attach the canonical dependency closure without mutating task contracts."""
+    dependencies = {task.id: set(task.blocked_by or []) for task in tasks}
+    result = []
+    for action in actions:
+        task_id = str(action.get("task_id") or "")
+        pending = list(dependencies.get(task_id, ()))
+        related: set[str] = set()
+        while pending:
+            dependency = pending.pop()
+            if dependency not in related:
+                related.add(dependency)
+                pending.extend(dependencies.get(dependency, ()))
+        result.append({**action, "blocked_by": sorted(related)})
+    return result
+
+
 def _is_manual_evidence_gate(action: dict[str, Any]) -> bool:
     return (
         str(action.get("safe_resume_action") or "") == "blocked_external_gate"
@@ -350,7 +402,7 @@ def _is_actionable_human_contract(decision: dict[str, Any]) -> bool:
     present.
     """
 
-    return any(
+    return bool(decision.get("explicit_decision_token")) or any(
         str(decision.get(key) or "").strip()
         for key in ("checkpoint_id", "approval_command")
     )

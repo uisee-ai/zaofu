@@ -1,0 +1,146 @@
+{
+  "scope": "actual isolated systemd/tmux host; mock worker backend",
+  "unit": "zf-200-host-vwp0dj74",
+  "loops": [
+    {
+      "type": "loop.started",
+      "id": "evt-8b3da1f886c9",
+      "ts": "2026-11-06T17:00:26.230479+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "runtime_load_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "runtime-load",
+          "ref": "diagnostics/runtime-load/ea68f4d4b106483e819b3dc5c33c5b88.json",
+          "sha256": "a9ac90f16ab3a23fc53ac8e41f37008d40450962df4b3072e0269756a6c814b5",
+          "byte_count": 1903,
+          "content_type": "application/json",
+          "schema_version": "runtime-load.v1",
+          "encoding": "utf-8",
+          "created_by": "zf-cli",
+          "source_event_id": "",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "effective_config_sha256": "8a5ab7947408d4af781aad39f4f534da0bc8c336313b46a14a021b644d024d91",
+        "pid": 191859
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "loop.started",
+      "id": "evt-3b7d7c383203",
+      "ts": "2026-11-06T17:00:29.422227+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "runtime_load_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "runtime-load",
+          "ref": "diagnostics/runtime-load/4a4dc72a59264b35a50e8b86d286721b.json",
+          "sha256": "af38669b681ad374412080681095b5cafddbc744b150b10959153b2b6da4266b",
+          "byte_count": 1903,
+          "content_type": "application/json",
+          "schema_version": "runtime-load.v1",
+          "encoding": "utf-8",
+          "created_by": "zf-cli",
+          "source_event_id": "",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "effective_config_sha256": "8a5ab7947408d4af781aad39f4f534da0bc8c336313b46a14a021b644d024d91",
+        "pid": 191950
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    }
+  ],
+  "observations": [
+    {
+      "command": [
+        "systemctl",
+        "--user",
+        "show",
+        "zf-200-host-vwp0dj74",
+        "-p",
+        "MainPID",
+        "--value"
+      ],
+      "returncode": 0,
+      "stdout": "191859\n"
+    },
+    {
+      "command": [
+        "systemctl",
+        "--user",
+        "show",
+        "zf-200-host-vwp0dj74",
+        "-p",
+        "MainPID",
+        "--value"
+      ],
+      "returncode": 0,
+      "stdout": "191950\n"
+    },
+    {
+      "command": [
+        "systemctl",
+        "--user",
+        "show",
+        "zf-200-host-vwp0dj74",
+        "-p",
+        "MainPID",
+        "--value"
+      ],
+      "returncode": 0,
+      "stdout": "0\n"
+    },
+    {
+      "command": [
+        "systemctl",
+        "--user",
+        "show",
+        "zf-200-host-vwp0dj74",
+        "-p",
+        "MainPID",
+        "--value"
+      ],
+      "returncode": 0,
+      "stdout": "0\n"
+    },
+    {
+      "command": [
+        "systemctl",
+        "--user",
+        "stop",
+        "zf-200-host-vwp0dj74"
+      ],
+      "returncode": 0,
+      "stdout": ""
+    },
+    {
+      "command": [
+        "systemctl",
+        "--user",
+        "reset-failed",
+        "zf-200-host-vwp0dj74"
+      ],
+      "returncode": 0,
+      "stdout": ""
+    }
+  ],
+  "test_result": "1 passed in 12.25s",
+  "cleanup": "test finally stopped transient unit and worker session and removed root"
+}

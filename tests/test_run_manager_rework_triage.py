@@ -1500,6 +1500,12 @@ def test_run_manager_requests_and_applies_precise_rework_advice(
     assert len(assignments) == 1
     assert reworks[0].actor == "run-manager"
     assert reworks[0].payload["recommended_action"] == "precise_rework"
+    from zf.runtime.recovery_case import build_recovery_case_projection
+
+    cases = build_recovery_case_projection(log.read_all())["cases"]
+    original = next(case for case in cases if case["recovery_case_id"] == request.payload["recovery_case_id"])
+    assert original["status"] == "verifying"
+    assert original["pending_action"] == "orchestrator-triage-advice-apply"
     assert not any(event.type == "human.escalate" for event in log.read_all())
     assert not any(
         event.type == "orchestrator.replan_requested" for event in log.read_all()

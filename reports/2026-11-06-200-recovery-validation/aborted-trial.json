@@ -1,0 +1,49 @@
+{
+  "root": "/tmp/zf-200-real-20261106T170450Z-dm64b2x4",
+  "status": "aborted",
+  "reason": "test driver used host WorkspaceRegistry; isolated ZF_WORKSPACE_HOME in retry",
+  "events": [
+    {
+      "type": "simulation.done",
+      "id": "evt-221b4c460e24",
+      "ts": "2026-11-06T17:16:34.536377+00:00",
+      "actor": null,
+      "task_id": null,
+      "payload": {
+        "outcome": "aborted",
+        "reason": "canary workspace registry not isolated",
+        "scenario": "design200-real-trial-1"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "worker"
+    },
+    {
+      "type": "loop.shutdown_requested",
+      "id": "evt-abeab1343b90",
+      "ts": "2026-11-06T17:16:35.461893+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {},
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "loop.stopped",
+      "id": "evt-ae1fe807b7a4",
+      "ts": "2026-11-06T17:16:35.991792+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {},
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": ""
+    }
+  ],
+  "tmux_check": {
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "no server running on /tmp/zf-200-real-20261106T170450Z-dm64b2x4/tmux/tmux-1001/default\n"
+  }
+}

@@ -1377,6 +1377,7 @@ class RuntimeRunManagerResidentAgentConfig:
     model: str = ""
     model_reasoning_effort: str = ""
     prompt_on_start: bool = True
+    response_timeout_seconds: int = 600
     # shared: resident pane joins session.tmux_session.
     # dedicated: resident pane uses tmux_session or derives
     # "<session.tmux_session>-run-manager".
@@ -1384,6 +1385,8 @@ class RuntimeRunManagerResidentAgentConfig:
     tmux_session: str = ""
 
     def __post_init__(self) -> None:
+        if type(self.response_timeout_seconds) is not int or self.response_timeout_seconds <= 0:
+            raise ValueError("resident_agent.response_timeout_seconds must be a positive integer")
         self.model_reasoning_effort = _normalize_model_reasoning_effort(
             self.model_reasoning_effort,
             owner="RuntimeRunManagerResidentAgentConfig",

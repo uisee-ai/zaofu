@@ -228,7 +228,7 @@ def build_resident_run_manager_briefing(
         "",
         "## Observe Loop",
         "",
-        "每 60-120 秒执行一轮:",
+        "收到绑定请求或 runtime 按配置唤醒时，执行一次有界观察；无待办可以 idle:",
         "",
         f"1. 运行 `{status_command}`。",
         "2. 读取最近事件: `tail -n 120 \"$ZF_STATE_DIR/events.jsonl\"`。",
@@ -256,12 +256,23 @@ def build_resident_run_manager_briefing(
         "## Decision Discipline",
         "",
         "- 如果只是 worker 正在正常执行,结论写 `status=watching`,不要打断。",
-        "- 建议 resume/rework 前必须依次核对三点(任一命中 → 建议 wait 并写明依据):",
-        "  ① 该任务是否已有完成证据(task.done/test.passed/judge.passed 等 closeout 事件,"
-        "不论新旧——完成证据早于 stall 信号仍然算完成);",
-        "  ② 所在 fanout 聚合是否未收拢、是否有兄弟 child 在飞——等待中的流不是停滞;",
-        "  ③ 同一 checkpoint 是否已有 workflow.resume.gate_unroutable 前科——"
-        "unroutable 是确定性事实,重复建议只会产生 no-op。",
+        "- 建议 resume/rework 前核对当前 run、task、operation、attempt、合同与目标版本。",
+        "  ① 旧完成证据只在仍适用且没有后续失败/失效时复用；不能用旧通过覆盖新失败。",
+        "  ② 兄弟 child 在飞不能证明当前 child 正常；分别检查当前载体、lease、结果和聚合依赖。",
+        "  ③ workflow.resume.gate_unroutable 只说明当时前提不满足；前提改变后重新核验，",
+        "  前提未变则不重复同一动作。等待必须列出 owner、缺失项、作用域、唤醒条件和复查安排。",
+        "- 每个绑定 request_id 交付指定产物或说明缺失信息和下一责任方；历史观察不履行新请求。",
+        "- 已知机械恢复交 runtime；产品/合同问题移交已配置 OA；未知运行故障才申请诊断。",
+        "  沿原案卷携带证据、已尝试方案与待回答问题，不重复分诊或互相等待。",
+        "- 修复说明包含失败身份与证据、原因/假设、本次变化、保留成果、允许路径、验证和失败出口。",
+        "  同根因且代码、输入、环境、合同、策略均未变时，不重复派发；瞬时故障按策略退避。",
+        "- 发出请求、故障消除、Task 完成分别核验；处理器中断只恢复未完成处理步骤。",
+        "- worker_guidance 只读求助按固定 sidecar、原 request_id 和 proposal_only 回答；不能同时启动新写入者。",
+        "- 当前诊断输出绑定 request_id、证据、下一动作/owner；不得只观察代替 expected_output。",
+        "- 多任务共享故障须以 zf recover associate 提交资源/版本、member_case_ids、唯一修复 owner、证据与理由；",
+        "  资源修复不批量关闭任务。跨版本延续用 problem_continuation 和 failure_operation_ids，不改旧身份。",
+        "- 外部副作用响应丢失先查询原操作；不能靠新 repair_step_id、case 或 attempt 盲重试。",
+
         "- 如果发现已知 deterministic recovery 可以走,写"
         " `run.manager.agent.recommendation`,说明 action 名、证据 refs、预期 downstream event。",
         "- 如果是 harness bug、candidate hygiene/gate bug、projection/action bug,优先写"

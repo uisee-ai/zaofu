@@ -65,6 +65,14 @@ def plan_digest_checklist(
     items = list(task_items or [])
     assemblies = [i for i in (assembly_context_items if assembly_context_items is not None else items) if _is_assembly(i)]
     root_owners = [i for i in items if _root_paths(i)]
+    root_path_owners: dict[str, set[str]] = defaultdict(set)
+    for item in root_owners:
+        for path in _root_paths(item):
+            root_path_owners[path].add(str(item.get("task_id") or "?"))
+    root_conflicts = [
+        f"{path}: {', '.join(sorted(owners))}"
+        for path, owners in sorted(root_path_owners.items()) if len(owners) > 1
+    ]
     missing_verify = [
         str(i.get("task_id") or "?")
         for i in items
@@ -100,9 +108,9 @@ def plan_digest_checklist(
          "ok": assembly_ok,
          "detail": assembly_detail},
         {"key": "root_owner_unique", "label": "根文件唯一 owner",
-         "ok": len(root_owners) <= 1,
-         "detail": "唯一" if len(root_owners) <= 1
-                   else "多任务持根路径: " + ", ".join(str(i.get("task_id")) for i in root_owners)},
+         "ok": not root_conflicts,
+         "detail": "各根路径 owner 唯一" if not root_conflicts
+                   else "同根路径多 owner: " + "; ".join(root_conflicts)},
         {"key": "verification_present", "label": "每任务有 verification",
          "ok": not missing_verify,
          "detail": "齐" if not missing_verify else "缺: " + ", ".join(missing_verify)},
@@ -183,7 +191,8 @@ def render_plan_digest(
             f"{'✓' if _is_assembly(i) or _root_paths(i) else '-'} | "
             f"{paths or '—'} | {verify} |"
         )
-    lines += ["", "## Checklist（机械预检）", ""]
+    lines += ["", "## Checklist（机械预检）", "",
+              "以下是路径与结构摘要，不替代计划准入；层级路径冲突、显式政策和证据以实际准入结果为准。", ""]
     for c in plan_digest_checklist(
         items,
         allowed_owner_roles=allowed_owner_roles,

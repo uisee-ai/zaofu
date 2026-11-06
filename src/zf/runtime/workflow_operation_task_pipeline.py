@@ -453,6 +453,20 @@ def admit_task_pipeline_redrive(
         and budget_amendment is not None
         and budget_amendment.id == recovery_decision_event_id
     )
+    # RM and restart replay may observe the same interrupted attempt. The
+    # attempt, not the decision-maker identity, owns this one recovery effect.
+    # Explicit compatibility and budget amendments retain their own admission.
+    if (source_attempt_id and not compatibility_proof_digest
+            and operation_status == "requested"
+            and decision_owner in {"run_manager", "kernel_replay"}):
+        if any(
+            event.type == "workflow.operation.redrive_admitted"
+            and event.payload.get("operation_id") == operation_id
+            and event.payload.get("source_attempt_id") == source_attempt_id
+            and event.payload.get("recovery_decision_owner") in {"run_manager", "kernel_replay"}
+            for event in events
+        ):
+            return None
     if (
         operation_status not in {"suspended", "requested"}
         and not legacy_cancelled_restart

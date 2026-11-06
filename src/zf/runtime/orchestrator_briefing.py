@@ -574,6 +574,9 @@ def _render_rework_triage_contract(event: ZfEvent) -> str:
         return ""
     payload = event.payload if isinstance(event.payload, dict) else {}
     request_id = str(payload.get("request_id") or "")
+    if payload.get("request_kind") == "worker_guidance":
+        from zf.runtime.worker_assistance import assistance_briefing
+        return assistance_briefing(payload, actor=str(payload.get("owner_instance") or "orchestrator"))
     task_id = str(event.task_id or payload.get("task_id") or "")
     recovery_scope = str(payload.get("recovery_scope") or "task")
     pdd_id = str(payload.get("pdd_id") or "")

@@ -95,7 +95,7 @@ Product Flow 中，Kernel 根据 topology/profile 做快乐路径机械派发。
 | `backends` | 多副本时按副本指定 backend,长度必须等于 `replicas` |
 | `model` | 留空表示使用 provider CLI 默认模型 |
 | `permission_mode` | `bypass`、`allowlist`、`default` 或 `restricted` |
-| `allowed_tools` | allowlist 模式下的工具白名单 |
+| `allowed_tools` | 支持该能力的 provider 在 allowlist 模式下使用；Codex 没有等价原生工具白名单 |
 | `transport` | 默认 `tmux`;`stream-json` 也是有效 transport，适用于已注册的 headless/自动化路径 |
 | `replicas` | 静态副本数 |
 | `role_kind` | `auto`、`writer`、`reader`;配合 workdir/git isolation |
@@ -117,6 +117,11 @@ Product Flow 中，Kernel 根据 topology/profile 做快乐路径机械派发。
 - Codex 自动化场景通常使用 `permission_mode: bypass`,避免交互式 approval 挂起。
   `default` / `restricted` 对应更保守的 provider 权限姿态,需要结合具体后端能力验证。
 - 多副本 dev/test 应优先显式设置 `replicas`,不要复制多个同名 role。
+
+角色 `constraints.blocked_paths` 和 `constraints.max_steps` 当前是传给 Agent 的方法约束，
+没有独立的禁写拦截器或步骤计数执行器；不要用它们代替硬权限边界。
+Task/operation scope hook、受控动作授权和已准入的 operation/run 预算另有机械消费者，
+也不等于任意 shell 的 OS 沙箱。配置与 briefing 中出现字段只证明声明或交付，不能证明强制执行。
 
 ### 3.1 Role-scoped Provider session 与按需生命周期
 

@@ -157,6 +157,9 @@ def start_autoresearch_resident_sidecar(
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             text=True,
+            # The child must retain the singleton lock if its controller dies.
+            # Otherwise restart can overwrite the still-live resident's pidfile.
+            pass_fds=(lock_handle.fileno(),),
             # Own process group: the resident spawns loop subprocesses which
             # spawn inner test runners (2h timeouts). `zf stop` runs in a
             # different process and can only clean the whole tree via
@@ -313,15 +316,16 @@ def _wait_for_process_group_exit(pgid: int, timeout: float) -> bool:
 
 def _pidfile_process_matches(pid: int, expected_command: list[str]) -> bool:
     """Guard against pid reuse: only treat the live process as ours when its
-    cmdline still contains the distinctive tail of the recorded command."""
+    argv still has the recorded invocation, including its exact state dir."""
     try:
-        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
+        argv = [part for part in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0") if part]
     except OSError:
         return False
-    token = next(
-        (part for part in reversed(expected_command) if str(part).strip()), "",
-    )
-    return bool(token) and str(token).encode() in cmdline
+    # Provider/uv wrappers may exec a different Python entrypoint. Preserve
+    # the complete resident argument tail, never just a shared worktree root.
+    start = expected_command.index("autoresearch") if "autoresearch" in expected_command else 0
+    expected = [str(part).encode() for part in expected_command[start:]]
+    return bool(expected) and argv[-len(expected):] == expected
 
 
 def stop_autoresearch_resident_sidecar_by_pidfile(

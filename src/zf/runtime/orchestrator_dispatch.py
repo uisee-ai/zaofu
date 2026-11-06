@@ -5002,6 +5002,10 @@ class DispatchMixin(
             triage,
             reason=triage.notes or triage.recommended_action,
         )
+        if triage.recommended_action == "request_diagnosis":
+            # Run Manager owns this durable diagnostic request. Unknown cause
+            # is not an assertion that a human decision is required.
+            return
         try:
             self.event_writer.append(ZfEvent(
                 type="human.escalate",

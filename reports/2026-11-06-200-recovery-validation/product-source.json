@@ -1,0 +1,25 @@
+{
+  "candidate_commit": "6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+  "files": [
+    {
+      "path": "export_csv.py",
+      "git_blob": "cb0c38df2b728d238d6ee12e2cef3d492ceb8a16",
+      "sha256": "796650c5ccb919c3156a9a60f29360293ed782b0578de3649dea3f799309799f"
+    },
+    {
+      "path": "tests/test_export_csv.py",
+      "git_blob": "1beb734d57be3437ecd60a702c6a3285146bb5e0",
+      "sha256": "22c9c3910a97ef77858d6a338fb86293a1d05f47faffda6a053c5614933a4307"
+    },
+    {
+      "path": "tests/run_acceptance.py",
+      "git_blob": "7d290f0a56ae0bd1101635dba953367a28ce2c56",
+      "sha256": "4e74122fa1ae16433fa8637d7ad3ff9182612773a7c390dcee7bb0388d09ce06"
+    },
+    {
+      "path": "requirement.md",
+      "git_blob": "7780550a3002c7e95179556fca979ec0a86988a1",
+      "sha256": "ab9293b2501bb4d5ff4dd0877780fa9411ec5c5b86d4b022ff82a8d3a479b9d6"
+    }
+  ]
+}

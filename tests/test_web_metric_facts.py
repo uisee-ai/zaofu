@@ -58,7 +58,7 @@ def test_core_all_fields_match_across_append_recovery_and_replay(state):
     append(state, "worker.stuck", offset=1900)
     assert views.core(state) == oracle(state)
     # Simulate restart from persisted SQL, with no source reads on a cache hit.
-    assert facts.load_meta(state, "core")["count"] == len(kinds) + 1
+    assert facts.load_meta(state, "core")["count"] == len(kinds) + 2  # includes ledger integrity diagnostic
 
 
 def test_normal_append_reads_only_new_bytes_and_task_changes_do_not_replay_events(state, monkeypatch):

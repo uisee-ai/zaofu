@@ -49,7 +49,10 @@ def normalize_task_pipeline_operation_semantics(
         stage = str(row.get("stage") or row.get("task_pipeline_stage") or "")
         verdict = str(row.get("semantic_verdict") or "").strip().lower()
         descriptor = row.get("admitted_control_result_ref")
-        if stage == "impl" and verdict == "pending" and isinstance(descriptor, Mapping):
+        if isinstance(descriptor, Mapping) and (
+            (stage == "impl" and verdict == "pending")
+            or verdict in {"failed", "blocked", "rejected", "reject", "revise"}
+        ):
             try:
                 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
@@ -59,10 +62,13 @@ def normalize_task_pipeline_operation_semantics(
             except Exception:
                 body = None
             if isinstance(body, Mapping):
+                row["failure_class"] = str(body.get("failure_class") or "none")
                 effective = str(body.get("verdict") or "").strip()
                 if not effective and isinstance(body.get("self_check"), Mapping):
                     effective = str(body["self_check"].get("verdict") or "").strip()
-                if effective:
+                if effective and verdict == "pending":
                     row["semantic_verdict"] = effective
+            elif verdict in {"failed", "blocked", "rejected", "reject", "revise"}:
+                row["failure_class"] = "input_unavailable"
         normalized.append(row)
     return normalized

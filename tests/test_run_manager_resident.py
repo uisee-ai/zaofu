@@ -928,6 +928,7 @@ def test_resident_briefing_contains_wait_semantics_rules(tmp_path) -> None:
         state_dir=tmp_path / ".zf",
         role=role,
     )
-    assert "完成证据早于 stall 信号仍然算完成" in briefing
-    assert "等待中的流不是停滞" in briefing
+    assert "不能用旧通过覆盖新失败" in briefing
+    assert "完成证据早于 stall 信号仍然算完成" not in briefing
+    assert "兄弟 child 在飞不能证明当前 child 正常" in briefing
     assert "workflow.resume.gate_unroutable" in briefing

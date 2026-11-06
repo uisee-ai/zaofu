@@ -553,6 +553,8 @@ def reconcile_task_pipeline_runtime(
         delegation = admitted_pipeline_delegations(
             runtime, generation_contexts=group_contexts, policy=policy,
         )
+        from zf.runtime.recovery_association import inherited_failure_operations
+
         projection = TaskPipelineReconciler().reconcile(
             policy=policy,
             tasks=tasks,
@@ -566,6 +568,7 @@ def reconcile_task_pipeline_runtime(
             ),
             impl_rework_requests=impl_rework_requests,
             oa_delegations=delegation,
+            inherited_failures=inherited_failure_operations(state_dir, events, group_contexts),
             preferred_role_instances=task_pipeline_preferred_roles(
                 runtime,
                 generation_contexts=group_contexts,

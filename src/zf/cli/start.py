@@ -1297,6 +1297,8 @@ def run(args: argparse.Namespace) -> int:
                 },
             ))
 
+        from zf.runtime.load_receipt import runtime_load_payload
+
         # 8. Emit session.started here; loop.started is emitted only when
         # the watcher actually starts running (foreground mode).
         #
@@ -1311,6 +1313,7 @@ def run(args: argparse.Namespace) -> int:
             payload={
                 "control_plane_only": control_plane_only,
                 "workers_preserved": control_plane_only,
+                **runtime_load_payload(config=config, state_dir=state_dir, project_root=project_root),
             },
         ))
 
@@ -1472,7 +1475,8 @@ def run(args: argparse.Namespace) -> int:
         )
 
         if dry_run:
-            _append_event(event_log, ZfEvent(type="loop.started", actor="zf-cli"))
+            _append_event(event_log, ZfEvent(type="loop.started", actor="zf-cli", payload=
+                runtime_load_payload(config=config, state_dir=state_dir, project_root=project_root)))
             watcher.poll_once()
             print(f"Started harness (dry-run). Session: {session_name}")
             print(f"  Roles: {[r.name for r in startup_roles]}")
@@ -1493,7 +1497,8 @@ def run(args: argparse.Namespace) -> int:
 
         if foreground:
             print("  Watcher: running in foreground (Ctrl+C to stop)")
-            _append_event(event_log, ZfEvent(type="loop.started", actor="zf-cli"))
+            _append_event(event_log, ZfEvent(type="loop.started", actor="zf-cli", payload=
+                runtime_load_payload(config=config, state_dir=state_dir, project_root=project_root)))
             from zf.runtime.workflow_runtime_start import mark_runtime_ready
 
             mark_runtime_ready(state_dir)

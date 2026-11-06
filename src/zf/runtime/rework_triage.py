@@ -295,6 +295,15 @@ def classify_rework_trigger(
         )
 
     explicit_failure_class = str(payload.get("failure_class") or "").strip()
+    agent_diagnosis = getattr(
+        getattr(getattr(config, "workflow", None), "orchestration", None),
+        "normal_frontier_owner", "",
+    ) == "wrc"
+    if agent_diagnosis and explicit_failure_class in {"unknown", "ambiguous", "candidate_integration_conflict"}:
+        return _result(
+            "unknown", gate or event.type, "run_manager", "request_diagnosis",
+            "the observed failure does not establish its root cause or a plan change",
+        )
     context_failure = execution_context_failure(payload)
     if context_failure:
         return _result(
@@ -424,6 +433,15 @@ def classify_rework_trigger(
             "judge",
             "request_evidence_reissue",
             "terminal done claim is blocked by missing evidence",
+        )
+
+    if agent_diagnosis and event.type in {"dev.failed", "dev.blocked", "candidate.conflict"}:
+        if explicit_failure_class in {"product_issue", "semantic", "test_failed_real"}:
+            return _result("product_issue", gate or event.type, "dev", "dispatch_rework",
+                           "producer supplied a structured semantic failure")
+        return _result(
+            "unknown", gate or event.type, "run_manager", "request_diagnosis",
+            "free-form failure text is diagnostic input, not a root-cause verdict",
         )
 
     if (

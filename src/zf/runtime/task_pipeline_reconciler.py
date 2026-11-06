@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from zf.core.state.atomic_io import atomic_write_text
+from zf.runtime.task_pipeline_failure_accounting import is_semantic_failure, semantic_failures
 
 
 TASK_PIPELINE_SHADOW_SCHEMA = "task-pipeline-shadow.v1"
@@ -31,6 +32,7 @@ class TaskPipelineReconciler:
         impl_rework_requests: Mapping[str, Mapping[str, Any]] | None = None,
         preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
         oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+        inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         normalized_tasks = sorted(
             (_task_row(task) for task in tasks),
@@ -99,6 +101,7 @@ class TaskPipelineReconciler:
                     task["id"] in external_gate_satisfied_ids
                 ),
                 impl_rework_request=normalized_rework_requests.get(task["id"]),
+                inherited_failures=(inherited_failures or {}).get(task["id"], []),
             )
             for task in normalized_tasks
             if task["status"] not in {"done", "cancelled"}
@@ -382,8 +385,11 @@ def refresh_task_pipeline_projection(
     )
 
     contexts = task_pipeline_generation_contexts(events)
+    from zf.runtime.recovery_association import inherited_failure_operations
+
     projection = TaskPipelineReconciler().reconcile(
         policy=selected_policy,
+        inherited_failures=inherited_failure_operations(Path(orchestrator.state_dir), events, contexts),
         tasks=tasks,
         operations=reduce_workflow_operations(events).values(),
         attempts=task_attempt_store(orchestrator).current_rows(),
@@ -630,17 +636,11 @@ def _task_view(
     policy: Mapping[str, Any],
     external_gate_satisfied: bool = False,
     impl_rework_request: Mapping[str, Any] | None = None,
+    inherited_failures: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    # A request superseded before dispatch is not a semantic rework and must
-    # not consume the configured rework budget, despite using a fresh identity.
-    repair_offset = sum(
-        1 for operation in operations
-        if operation.get("status") == "superseded"
-        and operation.get("reason") == "missing_flow_kind_before_dispatch"
-    )
     configured_rework = int(policy.get("max_rework_attempts") or 0)
-    if repair_offset:
-        policy = {**policy, "max_rework_attempts": configured_rework + repair_offset}
+    failures = semantic_failures([*operations, *(inherited_failures or [])])
+    policy = {**policy, "semantic_failure_count": len(failures)}
     blockers = [
         dependency
         for dependency in task.get("blocked_by", [])
@@ -700,7 +700,8 @@ def _task_view(
             and exhausted is not None
             and str(exhausted.get("status") or "") == "settled"
             and not _semantic_passed(exhausted)
-            and int(exhausted.get("operation_generation") or 1) > max_rework
+            and is_semantic_failure(exhausted)
+            and len(failures) > max_rework
         ):
             blockers.append("semantic_rework_exhausted")
             control_ref = exhausted.get("admitted_control_result_ref")
@@ -714,6 +715,9 @@ def _task_view(
                     exhausted.get("semantic_verdict") or ""
                 ),
                 "max_rework_attempts": configured_rework,
+                "failure_count": len(failures),
+                "failure_event_ids": [str(row.get("call_result_admitted_event_id") or row.get("last_event_id") or "") for row in failures
+                                      if row.get("call_result_admitted_event_id") or row.get("last_event_id")],
                 "source_event_id": str(
                     exhausted.get("call_result_admitted_event_id")
                     or exhausted.get("last_event_id")
@@ -753,7 +757,8 @@ def _task_view(
         "blockers": blockers,
         "required_capabilities": list(task.get("required_capabilities") or []),
         "next_operation_generation": next_generation,
-        "rework_count": max(0, rework_count - repair_offset),
+        "rework_count": min(rework_count, len(failures)),
+        "semantic_failure_count": len(failures),
         "semantic_blocker": semantic_blocker,
         "impl_rework_request": (
             dict(impl_rework_request)
@@ -803,7 +808,7 @@ def _derive_stage(
     if requested_generation == impl_generation and (
         operator_retry or (impl_status == "settled" and _semantic_passed(impl))
     ):
-        if impl_generation <= max_rework:
+        if int(policy.get("semantic_failure_count") or 0) <= max_rework:
             return "impl_rework_ready", impl_generation + 1, impl_generation
         return "blocked", impl_generation, impl_generation
     if impl_status != "settled" or not _semantic_passed(impl):
@@ -831,7 +836,9 @@ def _derive_stage(
     if verify_status != "settled":
         return "verify_ready", verify_generation, max(0, verify_generation - 1)
     if not _semantic_passed(verify):
-        if verify_generation <= max_rework:
+        if not is_semantic_failure(verify):
+            return "blocked", verify_generation, 0
+        if int(policy.get("semantic_failure_count") or 0) <= max_rework:
             return (
                 "impl_rework_ready",
                 verify_generation + 1,
@@ -958,7 +965,7 @@ def _derive_post_verification_stage(
             review.get("semantic_verdict") or ""
         ).strip().lower()
         if review_verdict == "revise":
-            if allow_impl_rework and verify_generation <= max_rework:
+            if allow_impl_rework and int(policy.get("semantic_failure_count") or 0) <= max_rework:
                 return (
                     "impl_rework_ready",
                     verify_generation + 1,

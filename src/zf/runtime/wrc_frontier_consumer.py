@@ -45,6 +45,9 @@ def consume_normal_frontier(
     }
     managed = task_pipeline_managed_task_ids(runtime)
     managed.update(candidates)
+    if any(event.type == "event.malformed" and event.payload.get("ledger_integrity") == "unknown" for event in runtime.event_log.read_all()):
+        _emit_owner_blocked_once(runtime, reason="event_ledger_integrity_unknown", task_ids=sorted(managed))
+        return [], managed
     if runtime._dispatch_globally_paused():
         return [], managed
     if not task_pipeline_any_blocking(runtime.config):

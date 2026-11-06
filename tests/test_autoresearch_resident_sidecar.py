@@ -342,3 +342,15 @@ def test_stop_by_pidfile_never_signals_a_reused_pid(tmp_path: Path):
 
     assert stop_autoresearch_resident_sidecar_by_pidfile(state_dir) is False
     assert not pid_file.exists()  # stale record cleared
+
+
+@pytest.mark.parametrize("actual_state,expected", [("/tmp/ours", True), ("/tmp/other", False)])
+def test_pidfile_identity_binds_state_not_shared_worktree_root(monkeypatch, actual_state, expected):
+    from zf.runtime.autoresearch_resident_sidecar import _pidfile_process_matches
+
+    recorded = ["zf", "autoresearch", "resident", "--state-dir", "/tmp/ours",
+                "--worktree-root", "/tmp/shared-repairs"]
+    actual = ["/python", "/venv/bin/zf", *recorded[1:]]
+    actual[actual.index("--state-dir") + 1] = actual_state
+    monkeypatch.setattr(Path, "read_bytes", lambda self: b"\0".join(p.encode() for p in actual)+b"\0")
+    assert _pidfile_process_matches(123, recorded) is expected

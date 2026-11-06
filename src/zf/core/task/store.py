@@ -528,16 +528,14 @@ class TaskStore:
     def ready(self) -> list[Task]:
         """Backlog tasks whose entire blocked_by chain is resolved.
 
-        Resolution uses active tasks (done/cancelled in-place) plus the
-        terminal index (archived tasks). This lets us keep kanban.json
-        small without losing dependency resolution for follow-up tasks.
+        Resolve required inputs from admitted done tasks, including archives.
+        A cancelled/superseded producer needs an approved dependency revision;
+        terminal status alone does not supply its promised artifact.
         """
         tasks = self.list_all()
-        terminal_active = {
-            t.id for t in tasks if t.status in TERMINAL_STATES
-        }
-        terminal_archived = set(self._load_terminal_index().keys())
-        terminal = terminal_active | terminal_archived
+        dependencies = {dependency for task in tasks if task.status == "backlog" for dependency in task.blocked_by}
+        terminal = {dependency for dependency in dependencies
+                    if (producer := self.get(dependency)) is not None and producer.status == "done"}
         return [
             t for t in tasks
             if t.status == "backlog" and all(b in terminal for b in t.blocked_by)
