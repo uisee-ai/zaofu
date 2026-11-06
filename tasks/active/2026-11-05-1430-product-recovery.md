@@ -48,3 +48,9 @@ P16B-PUBLISH-CONTRACT-R2已由evt-62a5eeb3735d集成done，总19 done；隐私�
 P07B旧orphan升级evt-4f29b137ac9b造成全局quiescent，后续Task Pipeline新结果未唤醒Run Manager；用户恢复授权经evt-e42948353dbf生效。框架修复1fd2eb5a补事件识别和EventLog窗口增量缓存，详见done/2026-11-05-2335-supervision-read-window.md。当前已实际派发隐私discovery，scope/审批边界由独立阅读和反例复验判定。
 
 P05/P07B两个被拒gap重复修复align动态导入，应合并一个公共前置，再分别续接sample/fusion；补齐rolling-smoke deterministic/reusable，保留原AC、SDD与输入分片。不得同时派发两个拥有align相同写范围的任务。
+
+## 2026-11-06 00:08 UTC 续接
+
+隐私discovery evt-b4b592afb436确认跨入口读取缺口，提案evt-add55f7a38eb因rolling smoke缺失被拒。三个有界诊断经operator受控合并，request evt-d4e7a1a88317 -> action evt-72036c0b8d96 -> trigger evt-e219a23e642f，Planner operation wop-prd-plan-prd-planner-trig-evt-e219a23e-re-f18c218112eb正在执行。目标五项：一个align加载公共前置、采样续作、融合续作、资源读取守卫、隐私续作；19 done保留。候选a94e4b489983551efca5a4795db93fd5f11c8c24，原149+44条款与跨域义务保持。
+
+监工发现trigger顶层图仍为旧引用，原因是已接纳synth使用sidecar正文。框架6b602f0d修复真实runtime包端口绑定，evt-93433d55b9f5只重载控制面。当前在飞Planner仍持不可变原请求，但其必读previous-plan-candidate-1/2确实提供当前图12d8b087/package36b2b573，读取消息确认五项范围。批准前必须核验完整输出、writer续作选择与当前候选，不以回归测试代替计划验收。

@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 恢复计划引用绑定已接纳包
 
@@ -12,3 +12,7 @@
 RED：增加state_dir传递后7个行为回归失败，证明旧引用残留且损坏包被忽略。测试初次环境错误及API参数错误不计行为RED。日志位于/tmp/zf-supervision-20261105-2332/ports-red-behavior.log。
 
 验证：87 passed（包/源引用/retry/受控入口），134 passed（resume/candidate/agent控制闭包及mock），sentinel 50 passed / 1 skipped，flow smoke 10 passed，Ruff与diff-check通过。dev-verify plan选择722文件全量确定性层，按AGENTS改用上述明确影响闭包，run执行flow-smoke；未运行全量pytest。真实状态只读演算返回当前12d8b087任务图和29f9e86e索引，未写规范状态。
+
+实现提交：6b602f0d fix: bind recovery sources to admitted plan package ports。
+
+加载证据：evt-93433d55b9f5补记控制面重载，watcher 3592258→3707138，原Planner operation持续running，所有旧pane/PID保留，Dashboard HTTP200。主工作区仅应用明确源码补丁，保留三个caller的已有差异；没有merge/push。当前Planner仍需独立审查和正式批准，本任务done不代表产品done。
