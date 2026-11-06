@@ -66,11 +66,12 @@ def test_retained_baseline_passes_actual_reader_operation_preregistration(tmp_pa
 
 @pytest.mark.parametrize("mutation", [{}, {"task_map_generation": "unadmitted"},
                                       {"plan_artifact_package_digest": "wrong"}])
-def test_discovery_reader_keeps_its_admitted_baseline(tmp_path, mutation):
+@pytest.mark.parametrize("profile", ["workflow-read", "global-rescan"])
+def test_discovery_reader_keeps_its_admitted_baseline(tmp_path, mutation, profile):
     from zf.runtime.artifact_read_ledger import ArtifactReadError
 
     runtime, _marker, trigger = _replan(tmp_path)
-    identity = {"role_instance": "flow-discovery", "attempt_domain": "gap",
+    identity = {"role_instance": "flow-discovery", "attempt_domain": "gap", "output_profile_id": profile,
                 "canonical_success_event": "flow.discovery.child.completed",
                 "canonical_failure_event": "flow.discovery.child.failed", **mutation}
     if mutation:

@@ -390,7 +390,7 @@ class CanonicalHandoffResolver:
                 or authority_contract.get("attempt_domain") == "plan"
                 # Discovery diagnoses its admitted execution generation;
                 # a newer package awaiting review is not its baseline.
-                or (profile == "workflow-read" and payload.get("canonical_success_event")
+                or (profile in {"workflow-read", "global-rescan"} and payload.get("canonical_success_event")
                     == "flow.discovery.child.completed")
             )
             current_package = (
