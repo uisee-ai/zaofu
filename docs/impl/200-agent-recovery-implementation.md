@@ -206,3 +206,5 @@ LS-v1 的既有配置启用了 `planCriticEnabled: false`，依赖此前尚未�
 与 Plan/任务执行保持一致，按声明的已准入 generation 查找完整包身份；未知代次、
 错误 digest 继续拒绝。不采用尚未批准的新计划，不删除版本门。回归经过真实
 `prepare_call_operation` 调用链，覆盖保留基线与错误绑定。
+LS 的语义恢复使用 `global-rescan` 输出合同；同一 Discovery 事件的普通
+`workflow-read` 和 `global-rescan` 两条路径均需保留该代次绑定，回归分别覆盖。
