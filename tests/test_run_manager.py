@@ -3465,12 +3465,17 @@ def test_run_manager_invokes_reflect_before_autoresearch_for_diagnosis(
         reflect_fn=fake_reflect,
     )
 
+    from tests.test_run_manager_reflection import _wait
+    _wait(lambda: any(e.type == RUN_MANAGER_REFLECT_COMPLETED for e in log.read_all()))
+    followup = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_reflect_config(),
+        project_root=tmp_path, event_log=log, spawn_repairs=False, reflect_fn=fake_reflect,
+    )
     events = log.read_all()
     requested = [event for event in events if event.type == RUN_MANAGER_REFLECT_REQUESTED]
     completed = [event for event in events if event.type == RUN_MANAGER_REFLECT_COMPLETED]
     assert result.reflect_requested == 1
-    assert result.reflect_completed == 1
-    assert result.autoresearch_requested == 1
+    assert result.autoresearch_requested + followup.autoresearch_requested == 1
     assert len(requested) == 1
     assert len(completed) == 1
     assert requested[0].payload["checkpoint_id"].startswith("attention-diagnosis-")
@@ -3662,10 +3667,11 @@ def test_run_manager_consumes_agent_recommendation_to_reflect(
         ),
     )
 
+    from tests.test_run_manager_reflection import _wait
+    _wait(lambda: any(e.type == RUN_MANAGER_REFLECT_COMPLETED for e in log.read_all()))
     events = log.read_all()
     assert result.agent_recommendations_consumed == 1
     assert result.reflect_requested == 1
-    assert result.reflect_completed == 1
     assert any(event.type == RUN_MANAGER_REFLECT_COMPLETED for event in events)
     consumed = [
         event for event in events

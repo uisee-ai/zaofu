@@ -148,7 +148,7 @@ def converge_recovery_actions(
         reason = ""
         if case_id in seen:
             reason = "duplicate_pending_action"
-        elif status in _ACTIVE_STATUSES:
+        elif status in _ACTIVE_STATUSES and not _admitted_triage_continuation(event_list, action, state):
             reason = "active_effect"
         elif status in _TERMINAL_STATUSES:
             reason = f"case_{status}"
@@ -186,6 +186,7 @@ def recovery_action_admission(
 ) -> dict[str, Any]:
     """Re-check one action immediately before its external side effect."""
 
+    events = list(events)
     bound = bind_recovery_case(action)
     case_id = bound["recovery_case_id"]
     projection = build_recovery_case_projection(events)
@@ -201,7 +202,7 @@ def recovery_action_admission(
     status = str(state.get("status") or "open")
     failures = int(state.get("consecutive_failures") or 0)
     reason = ""
-    if status in _ACTIVE_STATUSES:
+    if status in _ACTIVE_STATUSES and not _admitted_triage_continuation(events, action, state):
         reason = "active_effect"
     elif status in _TERMINAL_STATUSES:
         reason = f"case_{status}"
@@ -215,6 +216,31 @@ def recovery_action_admission(
         "case_status": status,
         "consecutive_failures": failures,
     }
+
+
+def _admitted_triage_continuation(
+    events: Iterable[ZfEvent], action: Mapping[str, Any], state: Mapping[str, Any],
+) -> bool:
+    """A bound advice result advances its handoff; it is not a second repair."""
+    if state.get("pending_action") != "orchestrator-rework-triage":
+        return False
+    request_id = state.get("pending_request_id")
+    if not request_id or action.get("request_id") != request_id:
+        return False
+    if action.get("action") not in {
+        "orchestrator-triage-advice-apply", "semantic-replan-request", "diagnose-attention",
+        "candidate-rework-apply", "execution-route-switch",
+    }:
+        return False
+    if str(action.get("task_id") or "") != str(state.get("task_id") or ""):
+        return False
+    return any(
+        event.id == action.get("recorded_event_id")
+        and event.type == "orchestrator.rework.triage.recorded"
+        and event.payload.get("request_id") == request_id
+        and str(event.task_id or event.payload.get("task_id") or "") in {"", state.get("task_id")}
+        for event in events
+    )
 
 
 def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
@@ -257,6 +283,8 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
             case["status"] = "diagnosing"
         elif event_type == "run.manager.action.effect.pending":
             case["status"] = "verifying"
+            case["pending_action"] = str(payload.get("action") or "")
+            case["pending_request_id"] = str(payload.get("request_id") or "")
         elif event_type in {
             "run.manager.action.verify.passed",
             "run.manager.action.effect.passed",
@@ -264,7 +292,11 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
             if event_type == "run.manager.action.verify.passed" and (
                 payload.get("effect_expected_events")
                 or payload.get("effect_required_sequence")
-                or payload.get("action") in {"semantic-replan-request", "worker-lifecycle-recover"}
+                or payload.get("action") in {
+                    "semantic-replan-request", "worker-lifecycle-recover",
+                    "orchestrator-rework-triage",
+                    "orchestrator-triage-advice-apply",
+                }
             ):
                 case["status"] = "verifying"
             else:

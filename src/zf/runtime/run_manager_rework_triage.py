@@ -92,6 +92,8 @@ def pending_rework_triage_actions(
         recorded = _matching_recorded(events, request_id)
         if recorded is not None:
             action = _recorded_advice_action(recorded, capped, request_id, fingerprint)
+            if request is not None and _payload(request).get("recovery_case_id"):
+                action["recovery_case_id"] = _payload(request)["recovery_case_id"]
         elif request is not None:
             if _event_age_seconds(request, now) < stale_seconds:
                 continue

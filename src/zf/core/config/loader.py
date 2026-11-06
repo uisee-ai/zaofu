@@ -3936,6 +3936,9 @@ def _build_runtime(
         resident_raw.get("tmux_session", "") or ""
     ).strip()
     resident_enabled = _bool_value(resident_raw.get("enabled"), default=False)
+    resident_response_timeout = resident_raw.get("response_timeout_seconds", 600)
+    if type(resident_response_timeout) is not int or resident_response_timeout <= 0:
+        raise ConfigError("runtime.run_manager.resident_agent.response_timeout_seconds must be a positive integer")
     if resident_enabled and not run_manager_backend:
         raise ConfigError(
             "runtime.run_manager.backend is required when "
@@ -4205,6 +4208,7 @@ def _build_runtime(
             ),
             resident_agent=RuntimeRunManagerResidentAgentConfig(
                 enabled=resident_enabled,
+                response_timeout_seconds=resident_response_timeout,
                 transport=resident_transport,
                 instance_id=resident_instance_id,
                 model=str(resident_raw.get("model", "") or "").strip(),

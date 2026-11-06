@@ -40,7 +40,7 @@ def test_kept_events_still_wake():
 def test_wake_list_changes_are_explicit():
     # 快照锁:数量带 ±0 容差——增删唤醒源必须改本测试(显式决策)。
     assert len(WAKE_PATTERNS) == len(set(WAKE_PATTERNS))  # 无重复
-    assert len(WAKE_PATTERNS) == 189, (
+    assert len(WAKE_PATTERNS) == 191, (
         f"WAKE_PATTERNS={len(WAKE_PATTERNS)}; 唤醒面变更需同步本快照"
         f"(K2 基线 103-7=96;B14 plan 审核门显式 +3:plan.approval.requested /"
         f" plan.approved / plan.rejected —— 均 workflow 控制事件需唤醒"
@@ -97,7 +97,7 @@ def test_wake_list_changes_are_explicit():
             f"Channel PRD independent evaluation dispatch "
             f"+1:channel.prd_evaluation.requested → 184; Task Pipeline "
             f"generation and typed verify/acceptance completion edges +5 "
-            f"→ 189"
+            f"→ 189; durable RM reflection completion and controlled run resume +2 → 191"
         )
 
 

@@ -1077,20 +1077,22 @@ class WorkflowOperationService:
         compatibility_proof_digest: str = "",
         compatibility_request_ref: Mapping[str, Any] | None = None,
     ) -> ZfEvent | None:
-        """Admit one Run Manager decision for same-operation redrive."""
-        return admit_task_pipeline_redrive(
-            self,
-            operation_id=operation_id,
-            request_hash=request_hash,
-            workflow_run_id=workflow_run_id,
-            task_id=task_id,
-            source_attempt_id=source_attempt_id,
-            recovery_decision_event_id=recovery_decision_event_id,
-            reason=reason,
-            recovery_decision_owner=recovery_decision_owner,
-            compatibility_proof_digest=compatibility_proof_digest,
-            compatibility_request_ref=compatibility_request_ref,
-        )
+        """Serialize recovery owners on the same operation admission guard."""
+        lock_path = self.state_dir / "projections" / "workflow-operations" / f"{_safe_component(operation_id)}.guard"
+        with locked_path(lock_path):
+            return admit_task_pipeline_redrive(
+                self,
+                operation_id=operation_id,
+                request_hash=request_hash,
+                workflow_run_id=workflow_run_id,
+                task_id=task_id,
+                source_attempt_id=source_attempt_id,
+                recovery_decision_event_id=recovery_decision_event_id,
+                reason=reason,
+                recovery_decision_owner=recovery_decision_owner,
+                compatibility_proof_digest=compatibility_proof_digest,
+                compatibility_request_ref=compatibility_request_ref,
+            )
 
     def fail(
         self,

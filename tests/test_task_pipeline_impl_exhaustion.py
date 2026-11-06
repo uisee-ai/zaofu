@@ -12,7 +12,7 @@ from zf.runtime.task_pipeline_semantic_exhaustion import (
 )
 
 
-def _projection(*, generation=4, verdict="blocked", repair=True, prior_verify=False):
+def _projection(*, generation=4, verdict="blocked", repair=True, prior_verify=False, prior_failures=2):
     operations = [{
         "task_id": "A", "task_pipeline_stage": "impl", "status": "settled",
         "operation_generation": generation, "operation_id": "impl-current",
@@ -20,6 +20,11 @@ def _projection(*, generation=4, verdict="blocked", repair=True, prior_verify=Fa
         "call_result_admitted_event_id": "impl-admitted",
         "admitted_control_result_ref": {"ref": "result.json", "sha256": "a" * 64},
     }]
+    operations.extend({
+        "task_id": "A", "task_pipeline_stage": "impl", "status": "settled",
+        "operation_generation": index + 1, "operation_id": f"impl-failed-{index}",
+        "semantic_verdict": "blocked", "call_result_admitted_event_id": f"failure-{index}",
+    } for index in range(prior_failures))
     if repair:
         operations.append({
             "task_id": "A", "task_pipeline_stage": "impl", "status": "superseded",
@@ -54,11 +59,11 @@ def test_exhausted_impl_exposes_current_result(prior_verify):
 
 
 @pytest.mark.parametrize("generation,verdict,expected", [
-    (3, "blocked", "impl_rework_ready"),  # Unsent repair retains its credit.
+    (3, "blocked", "impl_rework_ready"),  # Only two actual failed results.
     (4, "passed", "verify_ready"),
 ])
 def test_nonexhausted_or_successful_impl_does_not_escalate(generation, verdict, expected):
-    view = _projection(generation=generation, verdict=verdict)["tasks"][0]
+    view = _projection(generation=generation, verdict=verdict, prior_failures=1)["tasks"][0]
     assert view["stage"] == expected
     assert view["semantic_blocker"] == {}
 
@@ -78,7 +83,7 @@ def test_impl_exhaustion_reaches_run_manager_once_across_restart(tmp_path):
     actions = pending_rework_triage_actions(events, threshold=3, stale_seconds=300)
     assert len(actions) == 1
     assert actions[0]["action"] == "orchestrator-rework-triage"
-    assert actions[0]["failure_event_ids"] == ["impl-admitted"]
+    assert set(actions[0]["failure_event_ids"]) == {"impl-admitted", "failure-0", "failure-1"}
     assert actions[0]["flow_kind"] == "prd"
     from zf.runtime.run_manager import _pending_semantic_event_actions
 

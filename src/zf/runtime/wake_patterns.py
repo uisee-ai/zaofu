@@ -142,6 +142,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "run.manager.action.effect.pending",
     "run.manager.action.effect.passed",
     "run.manager.action.effect.failed",
+    "run.manager.reflect.completed",
     # Run Manager may settle an action effect during its periodic service
     # transaction before EventWatcher observes that effect.  A completed tick
     # is the restart-safe level trigger that re-evaluates blocked run claims.
@@ -152,6 +153,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # Controlled run-cancel actions emit this outside run_once. Wake
     # housekeeping immediately so resource reconciliation cannot wait on tick.
     "run.cancelled",
+    "run.resumed",
     "fanout.cancelled",
     "flow.discovery.failed",
     "task.done.blocked",

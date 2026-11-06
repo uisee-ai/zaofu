@@ -249,6 +249,7 @@ def test_parse_snapshot_defers_concurrent_append(tmp_path: Path, monkeypatch) ->
 
 
 def test_signed_archive_is_reverified_on_each_read(tmp_path: Path) -> None:
+    from datetime import datetime, timedelta, timezone
     from zf.core.security.signing import EventSigner
 
     path = tmp_path / "events.jsonl"
@@ -256,7 +257,8 @@ def test_signed_archive_is_reverified_on_each_read(tmp_path: Path) -> None:
     log.append(ZfEvent(type="judge.passed"))
     archive_dir = tmp_path / "events"
     archive_dir.mkdir()
-    archive = archive_dir / "2026-11-03.jsonl"
+    archive_day = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+    archive = archive_dir / f"{archive_day.isoformat()}.jsonl"
     path.rename(archive)
     assert [event.type for event in log.read_days(2)] == ["judge.passed"]
     before = archive.stat()

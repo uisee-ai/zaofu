@@ -343,6 +343,8 @@ def test_verify_rejection_at_rework_cap_exposes_semantic_blocker() -> None:
         policy=policy,
         tasks=[_task("A", priority=1)],
         operations=[
+            {**_operation("A", "verify", "settled", generation=1), "semantic_verdict": "blocked"},
+            {**_operation("A", "verify", "settled", generation=2), "semantic_verdict": "blocked"},
             _operation("A", "impl", "settled", generation=3),
             verify,
         ],
@@ -358,6 +360,8 @@ def test_verify_rejection_at_rework_cap_exposes_semantic_blocker() -> None:
         "operation_generation": 3,
         "semantic_verdict": "blocked",
         "max_rework_attempts": 2,
+        "failure_count": 3,
+        "failure_event_ids": ["evt-verify-admitted"],
         "source_event_id": "evt-verify-admitted",
         "control_result_ref": {
             "ref": "artifacts/verify/A.json",
@@ -459,6 +463,8 @@ def test_semantic_rework_exhaustion_event_is_idempotent(tmp_path: Path) -> None:
                 "operation_generation": 3,
                 "semantic_verdict": "blocked",
                 "max_rework_attempts": 2,
+                "failure_count": 3,
+                "failure_event_ids": ["evt-verify-admitted"],
                 "source_event_id": "evt-verify-admitted",
                 "control_result_ref": {
                     "ref": "artifacts/verify/A.json",
@@ -493,7 +499,7 @@ def test_semantic_rework_exhaustion_event_is_idempotent(tmp_path: Path) -> None:
     assert event.type == "task.pipeline.semantic_rework.exhausted"
     assert event.task_id == "A"
     assert event.payload["owner_route"] == "run_manager"
-    assert event.payload["semantic_triage_contract_version"] == 1
+    assert event.payload["semantic_triage_contract_version"] == 2
     assert event.payload["semantic_triage_required"] is True
     assert event.payload["failure_count"] == 3
     assert event.payload["retry_count"] == 2
@@ -535,6 +541,8 @@ def test_semantic_rework_exhaustion_upgrades_legacy_event_once(
                 "operation_generation": 3,
                 "semantic_verdict": "blocked",
                 "max_rework_attempts": 2,
+                "failure_count": 3,
+                "failure_event_ids": ["evt-verify-admitted"],
                 "source_event_id": "evt-verify-admitted",
                 "control_result_ref": {"sha256": "a" * 64},
             },
@@ -559,7 +567,7 @@ def test_semantic_rework_exhaustion_upgrades_legacy_event_once(
     )
 
     assert len(upgraded) == 1
-    assert upgraded[0].payload["semantic_triage_contract_version"] == 1
+    assert upgraded[0].payload["semantic_triage_contract_version"] == 2
     assert replay == []
 
 

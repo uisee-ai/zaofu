@@ -279,7 +279,10 @@ def build_workflow_operation_resume_checkpoints(
                 str(operation.get("last_event_at") or "")
             ),
         )
-        if budget_amendment is not None and live_attempt is not None:
+        if operation.get("operation_type") == "run_manager_reflect":
+            action = "no_action"
+            reason = "Run Manager owns durable reflection reconciliation; no TaskAttempt lease is expected"
+        elif budget_amendment is not None and live_attempt is not None:
             action = "no_action"
             reason = "budget-blocked operation already has a live TaskAttempt"
         elif budget_amendment is not None:

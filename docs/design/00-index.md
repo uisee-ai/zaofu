@@ -5,7 +5,7 @@
 
 ## 编号与状态
 
-当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 198。
+当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 199。
 117 为历史保留编号，不复用。
 后续新增前仍需核对目录、索引及历史引用，避免重号。
 
@@ -21,5 +21,6 @@
 | 196 | [Inbox 人工决策中心与阅读状态](196-inbox-human-decision-center.md) | partial | 人工决策准入、已读计数和受控动作已实施；历史兼容及来源动作仍需核对。 |
 | 197 | [PRD/Spec 合同与分层阅读视图](197-prd-spec-contract-and-readable-views.md) | candidate | 对照 Spec Kit 与 OpenSpec 设计统一 PRD/Spec 正文、轻量 Runtime 合同校验、分层产物和产品/架构/开发阅读视图。 |
 | 198 | [上下文索引、写后读取与恢复闭环](198-context-index-write-read-resume.md) | partial | 已接入任务输入索引、固定选择分页、恢复和消费可视化；全文搜索与实际差量交付保留后续资格条件。 |
+| 199 | [Worker 失败恢复与角色交付闭环](199-worker-failure-recovery-and-role-handoff.md) | partial | 分层恢复、逐请求义务、异步诊断、作用域准入和 WRC 去重；实现证据与剩余验收见配套实施记录。 |
 
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。

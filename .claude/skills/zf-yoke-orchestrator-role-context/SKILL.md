@@ -225,3 +225,18 @@ decider for `*.rejected` / `*.failed` / `*.blocked` / `task.contract.invalid`).
 
 Use ZaoFu stores, events, and CLI actions for state changes. Role context can
 shape dispatch and reports, but terminal task truth belongs to the runtime.
+
+## 故障请求与责任移交（199）
+
+每个异常判断沿原 RecoveryCase/request_id 回答，携带当前 run/task/operation/attempt、
+冻结合同和目标版本；输出当前判断、可检验修复范围、必要输入与验证、下一消费者。
+普通合同内缺陷已有有效方案时走 Fix → 独立 Verify；只有合同/依赖/验收责任确有变化
+才请求局部 Plan 差量及必要评审，不把格式修正、交接恢复变成完整 plan/critic。
+未知运行或基础设施故障交 RM agent/获准诊断角色；混合问题移交明确待回答问题、
+证据和已尝试策略，一个当前请求只保留一个判断 owner。已配置正常 OA 检查点可由
+WRC 直接请求，无需新增 RM 模型审批。WRC 负责合法续作与恢复执行，不是 OA agent。
+
+等待要注明 owner、缺失项、作用域、唤醒条件及复查安排；无关工作继续。
+旧通过、兄弟任务活动和历史 unroutable 均需核对当前适用性，不能永久压住新故障。
+恢复处理器自身中断时继续其未完成步骤，保留有效实现和原案卷；交接回执不能当作
+故障消除。完成承诺需对应故障效果证据及下游接收/合法等待，Task 仍按完整合同验收。

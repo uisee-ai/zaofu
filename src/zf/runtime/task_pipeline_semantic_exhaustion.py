@@ -8,7 +8,7 @@ from zf.core.events.model import ZfEvent
 
 
 EVENT_TYPE = "task.pipeline.semantic_rework.exhausted"
-SEMANTIC_TRIAGE_CONTRACT_VERSION = 1
+SEMANTIC_TRIAGE_CONTRACT_VERSION = 2
 
 
 def reconcile_task_pipeline_semantic_exhaustion(
@@ -71,9 +71,9 @@ def reconcile_task_pipeline_semantic_exhaustion(
                 semantic_verdict or "unknown",
                 str(control_result_ref.get("sha256") or "")[:12],
             )),
-            "failure_count": max_rework_attempts + 1,
-            "retry_count": max_rework_attempts,
-            "failure_event_ids": [source_event_id] if source_event_id else [],
+            "failure_count": int(blocker.get("failure_count") or 0),
+            "retry_count": max(0, int(blocker.get("failure_count") or 0) - 1),
+            "failure_event_ids": list(blocker.get("failure_event_ids") or ([source_event_id] if source_event_id else [])),
             "semantic_triage_required": True,
             "reason": "semantic_rework_exhausted",
             "last_reason": (
