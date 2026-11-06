@@ -82,4 +82,4 @@ Task Pipeline 静默门禁同时识别 kernel task.dispatched/task.done、绑定
 真实故障 evt-55bf5d9b6b6a：三个失败、一个下游被替代，却因旧等值检查而保留十八项
 诊断选择，漏掉唯一 PostgreSQL 前置。现有 gap-only 准入分支因此未生效，错误报根
 脚手架无 owner。修复选择边界即可；无需扩大已完成 F00 的写域或修改计划字节。
-对应任务：`tasks/active/2026-11-06-0645-gap-downstream-selection.md`（完成后归档到 done）。
+对应任务：`tasks/done/2026-11-06-0645-gap-downstream-selection.md`。

@@ -72,3 +72,14 @@ Planner已于evt-138b3c2bfd3d提交38项完整图，独立Critic于evt-ecae7962f
 自动续接触及既有candidate cap evt-d7b970dfa681；没有改上限或清空计数。受控动作evt-6e0dbdc66401批准一次针对D1/D2的修订，保留五个task_id及其原替代链、完整269 AC/27决定。新trigger evt-b12738184e5a实际绑定当前package31a1d5ac与598b269e图，任务选择恰五项、resume_scope=gap_tasks_only，包含10个摘要绑定的当前源端口描述符；这同时是6b602f0d修复的真实恢复路径证据。
 
 00:41:44实际派发Planner evt-ba239bae113f，operation wop-prd-plan-prd-planner-trig-evt-b1273818-re-61b10a598bfa；OA旧检查点审查亦在飞。当前继续等待本次修订和独立Critic，再按授权审核同版。完整产品尚未通过；real-model/hardware资格依然未签收。运行态、审批与恢复操作全部经既有EventWriter/CLI/ControlledActionService，未手改canonical任务状态。
+
+
+## 2026-11-06 06:46 UTC Compose修复已实际派发
+
+Registry独立Verify evt-0adeacf1a8ae、集成evt-233b8be68069、done evt-3bcaf0030219，完成数20。后继sample/fusion因共享runtime.database Docker bridge连接失败停止；guard独立Verify通过evt-1ade7aeed16d，但候选rolling smoke 180秒超时evt-1347824dc56b，未done。不得把候选工作树的失败尝试beaf7c5当已准入candidate，权威candidate ref仍90183c9。
+
+用户指定Compose PG由监工启动。datal-supervisor-pg在host网络127.0.0.1:47087 healthy、真实SQL读写通过，配置位于产品diagnostics/postgres-compose-20261106；凭据文件0600，不进入git或日志。公共测试启动器还需正式实现适配。
+
+受控恢复Plan evt-714ea87f268f已由Planner/Critic完成，package ad1ccf42、图badf6a4e，但首次writer准入误读diagnostic scope。fb28e659修复 failed⊆superseded⊆diagnosis选择边界（见done任务），原图/包不改。evt-699722f72e62重放、evt-03e35b21c5c8委托批准、evt-f6a11f53e373接纳5新任务。旧四任务被正常替代，20done不变，当前有效图39子任务。
+
+06:45:34 F00-POSTGRES-COMPOSE-R1已实际派发evt-cf9921995df4，Impl operation wop-impl-tp-F00-POSTGRES-COMPOSE-R1-f39b3-05eb99feeffc、基线90183c9。其通过独立Verify/集成后解锁P05-SAMPLE-R2、P07B-FUSION-R2和P16B-RESOURCE-READ-GUARD-R2；privacy-R4继续等guard。不能把规划通过、数据库启动、已派发算产品完成。源码修复在独立worktree本地提交，主运行目录仅同步本次helper；未merge/push。
