@@ -386,6 +386,7 @@ class RecoveryActionsMixin:
             self.config,
             events,
             source,
+            state_dir=self.state_dir,
             authorized_generation=generation,
             generation_source_event_id=escalation.id,
             authorization_event_id=requested.id,

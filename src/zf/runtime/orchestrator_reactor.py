@@ -487,7 +487,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         from zf.runtime.stage_failure_replan import plan_reader_stage_replan
 
         events = read_runtime_events(self.event_log, self.state_dir)
-        replan_event, note = plan_reader_stage_replan(self.config, events, event)
+        replan_event, note = plan_reader_stage_replan(self.config, events, event, state_dir=self.state_dir)
         if replan_event is None:
             if note == "cap_exhausted":
                 from zf.runtime.escalation_terminal import converge_stage_replan_cap

@@ -483,7 +483,7 @@ def build_workflow_resume_checkpoints(
     reconciler = WorkflowGraphReconciler()
     inflight_fanouts, unroutable_keys = _filing_guard_indexes(event_list)
     checkpoints: list[WorkflowResumeCheckpoint] = []
-    checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config))
+    checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config, state_dir=state_dir))
     for task in task_list:
         if task.status in {"done", "cancelled"}:
             continue
@@ -2408,6 +2408,8 @@ def _reader_stage_replan_checkpoints(
     events: list[ZfEvent],
     tasks: list[Task],
     config: object,
+    *,
+    state_dir: Path,
 ) -> list[WorkflowResumeCheckpoint]:
     try:
         from zf.runtime.stage_failure_replan import (
@@ -2427,7 +2429,7 @@ def _reader_stage_replan_checkpoints(
     for event in events:
         if event.type not in stage_by_failure:
             continue
-        replan_event, note = plan_reader_stage_replan(config, events, event)
+        replan_event, note = plan_reader_stage_replan(config, events, event, state_dir=state_dir)
         if replan_event is None:
             continue
         stage, _selection = reader_stage_for_failure(config, events, event)

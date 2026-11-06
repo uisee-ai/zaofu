@@ -602,6 +602,7 @@ def _apply_checkpoint(
             emitted,
             config=config,
             events=events,
+            state_dir=state_dir,
         )
 
     if checkpoint.safe_resume_action == "needs_rework_dispatch":
@@ -703,6 +704,7 @@ def _apply_stage_replan(
     *,
     config: object,
     events: list[ZfEvent] | None,
+    state_dir: Path | None = None,
 ) -> WorkflowResumeApplyResult:
     if config is None:
         return WorkflowResumeApplyResult(
@@ -730,7 +732,7 @@ def _apply_stage_replan(
         )
     from zf.runtime.stage_failure_replan import plan_reader_stage_replan
 
-    replan_event, note = plan_reader_stage_replan(config, event_list, failure_event)
+    replan_event, note = plan_reader_stage_replan(config, event_list, failure_event, state_dir=state_dir)
     if replan_event is None:
         applied = writer.append(ZfEvent(
             type=WORKFLOW_RESUME_APPLIED_EVENT,

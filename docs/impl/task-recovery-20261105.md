@@ -58,3 +58,9 @@ Plan Package 会给原生 product_acceptance_spec.v1 绑定 schema/run/flow/revi
 `EventLog.read_days` 保留原有归档窗口选择，按文件身份、大小/时间和签名策略缓存完整行，并只解码追加尾部。轮转、删除、截断或同大小重写失效；半行不前进。缓存最多16个文件/验证策略组合，仅供读取，不影响 EventWriter、事件顺序或规范状态。实况生命周期usage扫描反复解析112MB日志，控制进程心跳可用但恢复tick落后，需以真正派发和tick恢复验证效果。
 
 Task Pipeline 静默门禁同时识别 kernel task.dispatched/task.done、绑定 operation 与 control_result_ref 的实现/验证结果，以及非终局 task-stage operation。失败只唤醒恢复，不等于通过、自动消除升级或扩大重试配额；心跳与无绑定worker自报仍不唤醒。旧P07B孤儿升级导致后续P16B结果未触发RM，已新增真实tick_services入口回归。
+
+## 2026-11-06：恢复引用必须取已接纳包端口
+
+`fanout.synth.completed` 的正文可以仅通过 `control_result_ref` 存储。恢复事件不能假设源事件顶层含最新 `task_map_ref`，否则当前 package 身份会搭配旧图。reader replan 与 candidate resynth 现在经配置 `state_dir` 验证当前 immutable package，检查运行/代次，并从 produced/inherited 中取 task_map/source_index 及摘要。缺失或损坏拒绝恢复；当前包无可选 source_index 时移除旧索引。纯事件投影调用保留旧兼容路径，真实 runtime caller 必须传入state_dir。
+
+本次不修改已经派发的 Planner 输入或包，不将运行时补丁等同于产品验收。详见任务 `2026-11-06-0005-replan-package-port-binding.md` 与持续 active 产品恢复记录。

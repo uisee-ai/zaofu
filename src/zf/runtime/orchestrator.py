@@ -1751,6 +1751,7 @@ class WorkflowRuntimeCoordinator(
             for replan_event in replan_resynth.plan_missing_replan_resynth_events(
                 events,
                 config=self.config,
+                state_dir=self.state_dir,
             ):
                 replan_resynth.append_replan_resynth_once(self.event_writer, self.state_dir, replan_event)
             events = read_runtime_events(self.event_log, self.state_dir)
@@ -1806,6 +1807,7 @@ class WorkflowRuntimeCoordinator(
             plan=plan,
             events=events,
             config=self.config,
+            state_dir=self.state_dir,
         )
         if event is not None:
             replan_resynth.append_replan_resynth_once(self.event_writer, self.state_dir, event)

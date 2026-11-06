@@ -14,6 +14,7 @@ rework_of / rework_attempt / rework_feedback=findings),reader fanout
 from __future__ import annotations
 
 from typing import Any
+from pathlib import Path
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.plan_artifact_package import (
@@ -102,6 +103,7 @@ def _bind_current_plan_package_identity(
     *,
     events: list[ZfEvent],
     workflow_run_id: str,
+    state_dir: Path | None = None,
 ) -> None:
     """Keep stage replans on the canonical admitted package for the run."""
 
@@ -117,7 +119,7 @@ def _bind_current_plan_package_identity(
     for key in _GOAL_CLAIM_SET_IDENTITY_KEYS:
         payload.pop(key, None)
     payload.update(plan_artifact_package_binding(events, current))
-    bind_admitted_plan_source_refs(payload, current, events)
+    bind_admitted_plan_source_refs(payload, current, events, state_dir=state_dir)
 
 
 def _payload_target_ref(payload: dict[str, Any]) -> str:
@@ -431,6 +433,7 @@ def plan_reader_stage_replan(
     events: list[ZfEvent],
     failure_event: ZfEvent,
     *,
+    state_dir: Path | None = None,
     authorized_generation: str = "",
     generation_source_event_id: str = "",
     authorization_event_id: str = "",
@@ -705,6 +708,7 @@ def plan_reader_stage_replan(
         origin_payload,
         events=events,
         workflow_run_id=failure_run_id,
+        state_dir=state_dir,
     )
     if target_ref:
         origin_payload.setdefault("target_ref", target_ref)
