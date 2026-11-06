@@ -1,6 +1,7 @@
 # 199-01：作用域等待与可执行队列选择
 
-> 状态: active
+> 状态: done
+> 实现: `8666bfdf fix: make recovery scoped, durable, and nonblocking`
 
 来源：[199](../../docs/design/199-worker-failure-recovery-and-role-handoff.md)；关联 A04；R04/R10/R11；C02。
 
@@ -20,4 +21,4 @@
 
 - 实施：已修复队首饥饿、任务及依赖门禁；agent/operator 执行前复核当前 gate、案卷和前提；未知审批有拒绝回执。
 - 对应验证：`tests/test_run_continuation_scope.py tests/test_run_manager_scoped_selection.py tests/test_run_manager_action_admission.py`；最终命令/结果见 [实施记录](../../docs/impl/199-worker-recovery-implementation.md)。
-- 本轮关闭的是上述工作包验收，199尚存缺口不计作完成；针对性回归及调用方检查通过；广域验证无新增失败、仍有6项隔离复现的基线失败，详见实施记录；等待实现提交。
+- 本轮关闭的是上述工作包验收，199尚存缺口不计作完成；针对性回归及调用方检查通过；广域验证无新增失败、仍有6项隔离复现的基线失败，详见实施记录；实现与验证证据已记录；真实 Provider/宿主及完整199剩余义务按覆盖矩阵单独跟踪。

@@ -1,6 +1,7 @@
 # 199-03：逐请求责任与 resident 活性
 
-> 状态: active
+> 状态: done
+> 实现: `8666bfdf fix: make recovery scoped, durable, and nonblocking`
 
 来源：[199](../../docs/design/199-worker-failure-recovery-and-role-handoff.md)；关联 A01；B05；R12。
 
@@ -20,4 +21,4 @@
 
 - 实施：按当前 request ID、receiver、expected_output 对账义务；历史观察不能履行新请求；暂停时长排除，重发不重置期限，超时有既有恢复出口。
 - 对应验证：`tests/test_resident_request_obligations.py tests/test_run_manager_resident.py`；最终命令/结果见 [实施记录](../../docs/impl/199-worker-recovery-implementation.md)。
-- 本轮关闭的是上述工作包验收，199尚存缺口不计作完成；针对性回归及调用方检查通过；广域验证无新增失败、仍有6项隔离复现的基线失败，详见实施记录；等待实现提交。
+- 本轮关闭的是上述工作包验收，199尚存缺口不计作完成；针对性回归及调用方检查通过；广域验证无新增失败、仍有6项隔离复现的基线失败，详见实施记录；实现与验证证据已记录；真实 Provider/宿主及完整199剩余义务按覆盖矩阵单独跟踪。
