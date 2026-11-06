@@ -64,3 +64,11 @@ Planner已于evt-138b3c2bfd3d提交38项完整图，独立Critic于evt-ecae7962f
 尚不批准：监工独立查明PAS-AUTH-P07B-local/PAS-AUTH-P16B-local标注task_verify却要求后续P20 candidate runtime/browser全部收据，形成阶段倒置。此前Critic会话还指出privacy实际owner需明确接入原始ingest/explore别名的集成验证；此项待正式报告核定。不能删除候选验收来消除倒置。
 
 00:22 Critic上下文0.95超过0.9硬阈值180秒，被正常回收并以新session恢复同一operation（evt-1fed343fb726/evt-5666cf5740f6，semantic_attempt_consumed=false）。未修改预算、重试上限或业务状态。当前Critic仍运行；root等待正式结果后按两处验收绑定有界返修，保留5任务范围/完整端口/独立审查与批准。Run Manager00:29仍tick完成；workflow-synthesis-consumer曾出现短暂guard锁超时，尚未导致当前审查停止，记录观察。
+
+## 2026-11-06 00:42 UTC 有界验收返修已派发
+
+新Critic正式approve evt-6e635a22fae7；当前package为31a1d5ac1fcc49389b4e58c6b45cb47b2b06c56cde5d52cb56af28e1db35bf27，TaskMap摘要598b269ece2d58f4d5078168783977b20cdaf7814200258bde75d7718744ef23。监工未采纳其“无阻断”结论：两条PAS的future-receipt倒置有逐字段证据；按用户既有授权对plan evt-4ee3756df8f9正式reject evt-864c5fc9f175，同时要求privacy真实owner的原始别名接入验证（D2）。尚未批准或adopt，19 done不变。
+
+自动续接触及既有candidate cap evt-d7b970dfa681；没有改上限或清空计数。受控动作evt-6e0dbdc66401批准一次针对D1/D2的修订，保留五个task_id及其原替代链、完整269 AC/27决定。新trigger evt-b12738184e5a实际绑定当前package31a1d5ac与598b269e图，任务选择恰五项、resume_scope=gap_tasks_only，包含10个摘要绑定的当前源端口描述符；这同时是6b602f0d修复的真实恢复路径证据。
+
+00:41:44实际派发Planner evt-ba239bae113f，operation wop-prd-plan-prd-planner-trig-evt-b1273818-re-61b10a598bfa；OA旧检查点审查亦在飞。当前继续等待本次修订和独立Critic，再按授权审核同版。完整产品尚未通过；real-model/hardware资格依然未签收。运行态、审批与恢复操作全部经既有EventWriter/CLI/ControlledActionService，未手改canonical任务状态。
