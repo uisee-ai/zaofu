@@ -388,6 +388,10 @@ class CanonicalHandoffResolver:
                 # Plan inputs pin an admitted baseline; the plan output may
                 # replace it after review rather than execute its Task state.
                 or authority_contract.get("attempt_domain") == "plan"
+                # Discovery diagnoses its admitted execution generation;
+                # a newer package awaiting review is not its baseline.
+                or (profile == "workflow-read" and payload.get("canonical_success_event")
+                    == "flow.discovery.child.completed")
             )
             current_package = (
                 admitted_plan_artifact_package_for_generation(
