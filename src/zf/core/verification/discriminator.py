@@ -104,148 +104,6 @@ def _drop_foreign_virtualenv(env: dict[str, str], workspace: Path) -> None:
         env.pop("VIRTUAL_ENV", None)
 
 
-def _provision_web_node_modules(workspace: Path) -> dict[str, str]:
-    """Best-effort Web dependency provision for git worktree verification.
-
-    Git worktrees do not include ignored ``web/node_modules``. Contract
-    verification often runs ``npm --prefix web ...`` inside task refs, so reuse
-    the already-installed dependencies from the source checkout when available.
-    """
-    web_dir = workspace / "web"
-    if (
-        not (web_dir / "package.json").exists()
-        or not (web_dir / "package-lock.json").exists()
-    ):
-        return {"status": "skipped", "reason": "no_web_package"}
-
-    target = web_dir / "node_modules"
-    target_tsc = target / ".bin" / "tsc"
-    if target_tsc.exists():
-        return {"status": "present", "target": str(target)}
-
-    source_roots: list[Path] = []
-    for raw in (os.environ.get("ZF_PROJECT_ROOT", ""), os.getcwd()):
-        if not raw:
-            continue
-        try:
-            candidate = Path(raw).resolve()
-        except OSError:
-            continue
-        if candidate == workspace.resolve() or candidate in source_roots:
-            continue
-        source_roots.append(candidate)
-
-    for source_root in source_roots:
-        source = source_root / "web" / "node_modules"
-        source_tsc = source / ".bin" / "tsc"
-        if not source_tsc.exists():
-            continue
-        if target.exists() and not target.is_symlink():
-            return {
-                "status": "blocked",
-                "reason": "target_node_modules_exists_without_tsc",
-                "target": str(target),
-            }
-        try:
-            if target.is_symlink():
-                target.unlink()
-            target.symlink_to(source, target_is_directory=True)
-        except OSError as exc:
-            return {
-                "status": "blocked",
-                "reason": type(exc).__name__,
-                "target": str(target),
-                "source": str(source),
-            }
-        return {
-            "status": "linked",
-            "target": str(target),
-            "source": str(source),
-        }
-
-    return {
-        "status": "missing",
-        "reason": "source_node_modules_missing",
-        "target": str(target),
-    }
-
-
-def _verification_needs_web_python_extra(command: str) -> bool:
-    normalized = " ".join((command or "").split())
-    return any(
-        marker in normalized
-        for marker in (
-            "zf web",
-            "full_stack_validation.py",
-            "/api/actions/",
-            "chat-orchestrator",
-        )
-    )
-
-
-def _provision_web_python_extra(
-    workspace: Path,
-    *,
-    command: str,
-    timeout_seconds: int,
-) -> dict[str, Any]:
-    """Prepare optional Python Web deps for isolated worktree verification."""
-    if not _verification_needs_web_python_extra(command):
-        return {"status": "skipped", "reason": "command_not_web"}
-    pyproject = workspace / "pyproject.toml"
-    if not pyproject.exists():
-        return {"status": "skipped", "reason": "no_pyproject"}
-    try:
-        text = pyproject.read_text(encoding="utf-8")
-    except OSError as exc:
-        return {"status": "blocked", "reason": type(exc).__name__}
-    if "web =" not in text:
-        return {"status": "skipped", "reason": "no_web_extra"}
-
-    probe = [
-        "uv",
-        "run",
-        "--extra",
-        "web",
-        "python",
-        "-c",
-        "import fastapi, uvicorn, websockets",
-    ]
-    started = time.monotonic()
-    try:
-        result = subprocess.run(
-            probe,
-            capture_output=True,
-            text=True,
-            cwd=str(workspace),
-            env=_verification_command_env(workspace),
-            timeout=timeout_seconds,
-        )
-        payload = command_evidence(
-            command=" ".join(probe),
-            exit_code=result.returncode,
-            stdout=result.stdout or "",
-            stderr=result.stderr or "",
-        )
-    except subprocess.TimeoutExpired as exc:
-        payload = command_evidence(
-            command=" ".join(probe),
-            exit_code=None,
-            stdout=exc.stdout or "",
-            stderr=exc.stderr or "",
-            timed_out=True,
-        )
-    except Exception as exc:
-        payload = command_evidence(
-            command=" ".join(probe),
-            exit_code=None,
-            error=str(exc),
-        )
-    payload["status"] = "ready" if payload.get("passed") else "failed"
-    payload["duration_ms"] = int((time.monotonic() - started) * 1000)
-    return payload
-
-
 def _codex_vendor_tool_paths(node_modules_root: Path) -> list[Path]:
     """Return tool directories bundled with the globally installed Codex CLI."""
     codex_node_modules = (
@@ -305,53 +163,6 @@ def _verification_syntax_check(command: str) -> dict[str, Any] | None:
         "stderr": (result.stderr or "").strip()[:400],
         "command_preview": command[:200],
     }
-
-
-def _verification_preflight(
-    *,
-    command: str,
-    workspace: Path,
-    timeout_seconds: int,
-) -> dict[str, Any] | None:
-    if "pnpm" not in command:
-        return None
-    if not (workspace / "pnpm-lock.yaml").is_file():
-        return None
-    if (workspace / "node_modules").exists():
-        return None
-    started = time.monotonic()
-    try:
-        result = subprocess.run(
-            "pnpm install --frozen-lockfile",
-            shell=True,
-            capture_output=True,
-            text=True,
-            cwd=str(workspace),
-            env=_verification_command_env(workspace),
-            timeout=timeout_seconds,
-        )
-        payload = command_evidence(
-            command="pnpm install --frozen-lockfile",
-            exit_code=result.returncode,
-            stdout=result.stdout or "",
-            stderr=result.stderr or "",
-        )
-    except subprocess.TimeoutExpired as exc:
-        payload = command_evidence(
-            command="pnpm install --frozen-lockfile",
-            exit_code=None,
-            stdout=exc.stdout or "",
-            stderr=exc.stderr or "",
-            timed_out=True,
-        )
-    except Exception as exc:
-        payload = command_evidence(
-            command="pnpm install --frozen-lockfile",
-            exit_code=None,
-            error=str(exc),
-        )
-    payload["duration_ms"] = int((time.monotonic() - started) * 1000)
-    return payload
 
 
 def _latest_expected_red_evidence(
@@ -774,36 +585,8 @@ class ContractD(BaseDiscriminator):
                 ),
             )
 
-        preflight = _verification_preflight(
-            command=shell_command,
-            workspace=workspace,
-            timeout_seconds=self.DEFAULT_TIMEOUT_SECONDS,
-        )
-        if preflight is not None and not preflight.get("passed"):
-            return DiscriminatorResult(
-                d_name=self.name,
-                passed=False,
-                evidence={
-                    "behavior_set": True,
-                    "verification_set": True,
-                    "verification_tiers": verification_tiers,
-                    "validation": (
-                        validation_result.evidence if validation_result else {}
-                    ),
-                    "validation_kind": validation_spec.get("kind", ""),
-                    "verification_preflight": preflight,
-                    "verification_passed": False,
-                },
-                reason="verification preflight failed",
-            )
-
-        web_python_dependencies = _provision_web_python_extra(
-            workspace,
-            command=shell_command,
-            timeout_seconds=self.DEFAULT_TIMEOUT_SECONDS,
-        )
-        web_dependencies = _provision_web_node_modules(workspace)
-
+        # Environment preparation belongs in the admitted contract command.
+        # Command keywords do not authorize installs or cross-worktree links.
         # Run verification command
         try:
             result = subprocess.run(
@@ -821,8 +604,6 @@ class ContractD(BaseDiscriminator):
                 evidence={
                     "verification_passed": False,
                     "timeout_seconds": self.DEFAULT_TIMEOUT_SECONDS,
-                    "web_python_dependencies": web_python_dependencies,
-                    "web_dependencies": web_dependencies,
                     "validation": (
                         validation_result.evidence if validation_result else {}
                     ),
@@ -835,8 +616,6 @@ class ContractD(BaseDiscriminator):
                 d_name=self.name, passed=False,
                 evidence={
                     "error": str(e),
-                    "web_python_dependencies": web_python_dependencies,
-                    "web_dependencies": web_dependencies,
                     "validation": (
                         validation_result.evidence if validation_result else {}
                     ),
@@ -886,9 +665,6 @@ class ContractD(BaseDiscriminator):
                 "validation_passed": (
                     validation_result.passed if validation_result else None
                 ),
-                "verification_preflight": preflight,
-                "web_python_dependencies": web_python_dependencies,
-                "web_dependencies": web_dependencies,
                 "verification_passed": result.returncode == 0,
                 "verification_command": verification_command,
                 "verification_shell_command": shell_command,
@@ -909,13 +685,7 @@ class ContractD(BaseDiscriminator):
 
 
 class ContractQualityD(BaseDiscriminator):
-    """Fail closed on generic Sprint Contracts in strict harness presets.
-
-    ContractD answers "does the declared verification execute?". This
-    discriminator answers "is the declared contract specific enough to be
-    meaningful?". It intentionally uses conservative heuristics so legacy
-    projects can keep it disabled while harness presets can opt in.
-    """
+    """Structural contract lint; semantic sufficiency belongs to reviewers."""
 
     name = "ContractQualityD"
 
@@ -963,7 +733,7 @@ class ContractQualityD(BaseDiscriminator):
         acceptance = _norm(getattr(contract, "acceptance", ""))
         scope = [str(item).strip() for item in getattr(contract, "scope", []) or []]
 
-        if len(behavior) < 12 or behavior in self._GENERIC_BEHAVIOR:
+        if not behavior or behavior in self._GENERIC_BEHAVIOR:
             issues.append("contract.behavior is too generic")
         if acceptance in self._GENERIC_ACCEPTANCE:
             issues.append("contract.acceptance is too generic")
@@ -972,18 +742,14 @@ class ContractQualityD(BaseDiscriminator):
         if not scope or scope in (["."], ["./"], ["*"], ["**/*"]):
             issues.append("contract.scope is missing or repo-wide")
 
-        # A practical specificity check: behavior should mention at least two
-        # word-like tokens so "login works" passes but "x" does not.
-        behavior_tokens = [part for part in behavior.replace("_", " ").split() if part]
-        if len(behavior_tokens) < 2:
-            issues.append("contract.behavior lacks object/action detail")
-
         if issues:
             return DiscriminatorResult(
                 d_name=self.name,
                 passed=False,
                 evidence={
                     "issues": issues,
+                    "assessment": "structural_lint",
+                    "semantic_quality": "not_assessed",
                     "behavior": getattr(contract, "behavior", ""),
                     "acceptance": getattr(contract, "acceptance", ""),
                     "verification": getattr(contract, "verification", ""),
@@ -995,6 +761,8 @@ class ContractQualityD(BaseDiscriminator):
             d_name=self.name,
             passed=True,
             evidence={
+                "assessment": "structural_lint",
+                "semantic_quality": "not_assessed",
                 "behavior": getattr(contract, "behavior", ""),
                 "acceptance": getattr(contract, "acceptance", ""),
                 "verification": getattr(contract, "verification", ""),

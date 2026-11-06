@@ -84,7 +84,7 @@ def test_rotation_triggers_full_rebuild(log: EventLog) -> None:
     assert [e.type for e in events] == ["task.dispatched", "dev.build.done", "run.started"]
 
 
-def test_non_json_lines_skipped_same_as_full_parse(log: EventLog) -> None:
+def test_corrupt_complete_lines_surface_same_as_full_parse(log: EventLog) -> None:
     log.read_all()
     with log.path.open("a") as fh:
         fh.write("this-is-not-json\n")
@@ -92,7 +92,7 @@ def test_non_json_lines_skipped_same_as_full_parse(log: EventLog) -> None:
     folded = log.read_all()
     fresh = _fresh_read(log)
     assert [e.type for e in folded] == [e.type for e in fresh]
-    assert "event.malformed" not in [e.type for e in folded]
+    assert "event.malformed" in [e.type for e in folded]
 
 
 def test_truncation_falls_back_to_full_rebuild(log: EventLog) -> None:
@@ -180,7 +180,7 @@ def test_read_days_cache_isolated_by_signing_key(tmp_path: Path) -> None:
     bad = EventLog(path, signer=EventSigner(b"bad"))
     good.append(ZfEvent(type="judge.passed"))
     assert [e.type for e in good.read_days(1)] == ["judge.passed"]
-    assert bad.read_days(1) == []
+    assert [e.type for e in bad.read_days(1)] == ["event.malformed"]
 
 
 def test_signed_read_days_detects_same_metadata_tampering(tmp_path: Path) -> None:
@@ -194,7 +194,7 @@ def test_signed_read_days_detects_same_metadata_tampering(tmp_path: Path) -> Non
     path.write_text(path.read_text().replace("judge.passed", "judge.failed"))
     os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
     assert path.stat().st_size == before.st_size
-    assert log.read_days(1) == []
+    assert [e.type for e in log.read_days(1)] == ["event.malformed"]
 
 
 def test_read_days_retries_a_transient_empty_tail(log: EventLog, monkeypatch) -> None:
@@ -265,4 +265,4 @@ def test_signed_archive_is_reverified_on_each_read(tmp_path: Path) -> None:
     archive.write_text(archive.read_text().replace("judge.passed", "judge.failed"))
     os.utime(archive, ns=(before.st_atime_ns, before.st_mtime_ns))
     assert archive.stat().st_size == before.st_size
-    assert log.read_days(2) == []
+    assert [e.type for e in log.read_days(2)] == ["event.malformed"]

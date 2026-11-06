@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **313** addressable command paths.
+The parser currently exposes **69** top-level families and **316** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -542,7 +542,10 @@ Recover deterministic runtime state from append-only events
 | Command | Parser description |
 |---|---|
 | `zf recover` | Recover deterministic runtime state from append-only events |
+| `zf recover assistance` | Attempt-bound read-only guidance |
+| `zf recover associate` | Admit evidence-bound recovery case relationships |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
+| `zf recover host-check` | Read-only host restart eligibility (exit 1 means do not restart) |
 | `zf recover oa-review` | Re-review a proven OA role-binding defect |
 | `zf recover task-impl` | Preview or request retry after a blocked Impl repair |
 | `zf recover task-integration` | Retry integration after a reviewed repair |

@@ -59,7 +59,7 @@ from zf.autoresearch.self_repair import (
 from zf.runtime.repair_dispatch import pending_repair_dispatches
 from zf.runtime.pane_probe import build_runtime_pane_probe
 from zf.runtime.pause_lifecycle import is_dispatch_paused
-from zf.runtime.run_manager_action_admission import action_gate_reason
+from zf.runtime.run_manager_action_admission import action_gate_reason, serialized_recovery_action
 from zf.runtime.problem_taxonomy import problem_envelope_from_action
 from zf.runtime.run_manager_advisor import build_replan_advisor_projection
 from zf.runtime.run_manager_progress import task_evidence_signals
@@ -352,6 +352,10 @@ def _run_manager_tick_unlocked(
     )
     events = _read_events(state_dir, event_log=event_log)
     if _settle_pending_action_effects(events, writer):
+        events = _read_events(state_dir, event_log=event_log)
+    from zf.runtime.worker_assistance import reconcile_assistance
+
+    if auto_execute and reconcile_assistance(state_dir=state_dir, writer=writer, config=config):
         events = _read_events(state_dir, event_log=event_log)
     if reconcile_reserved_read_only_continuations(
         state_dir,
@@ -950,7 +954,13 @@ def build_run_manager_projection(
         events,
         task_store=TaskStore(state_dir / "kanban.json"),
     )
+    from zf.runtime.failure_diagnosis_routing import pending_failure_diagnoses
+    from zf.runtime.worker_assistance import pending_assistance_actions
+
+    failure_diagnoses = pending_failure_diagnoses(state_dir, events, config)
     rework_triage_actions = [
+        *pending_assistance_actions(events),
+        *failure_diagnoses,
         *immediate_replan_actions,
         *pending_rework_triage_actions(
             events,
@@ -1154,6 +1164,9 @@ def build_run_manager_projection(
         action for action in candidate_action_candidates
         if (
             not _candidate_rework_shadowed_by_workflow(action, workflow_actions)
+            and str(action.get("source_event_id") or "") not in {
+                str(item.get("source_event_id") or "") for item in failure_diagnoses
+            }
             and str(action.get("fanout_id") or "") not in triage_owned_fanouts
             and not (
                 set(_string_list(action.get("failed_task_ids")))
@@ -4639,8 +4652,30 @@ def _consume_agent_recommendations(
         if _agent_recommendation_seen(events, event):
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
+        from zf.runtime.recovery_step import bind_recommendation_to_request
+        try:
+            payload = bind_recommendation_to_request(events, event, payload)
+        except ValueError as exc:
+            writer.emit(RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED, actor="run-manager",
+                causation_id=event.id, payload={"source_event_id": event.id,
+                    "status": "blocked", "reason": str(exc)})
+            consumed += 1
+            actions_blocked += 1
+            continue
         action = _action_from_agent_recommendation(event, payload)
         route = _recommendation_route(payload)
+        if route in {"autoresearch", "reflect", "repair"}:
+            current_events = writer.event_log.read_all()
+            gate = action_gate_reason(state_dir, current_events, action, _pending_human_decisions(current_events))
+            if not gate and not _operation_precondition_holds(current_events, action):
+                gate = "operation_precondition_changed"
+            if gate:
+                writer.emit(RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED, actor="run-manager",
+                    causation_id=event.id, payload={"source_event_id": event.id, "route": route,
+                        "status": "deferred", "reason": gate})
+                consumed += 1
+                actions_blocked += 1
+                continue
         status = "consumed"
         reason = ""
         downstream_event_ids: list[str] = []
@@ -5049,6 +5084,10 @@ def _action_from_agent_recommendation(
         "contract_revision",
         "recovery_case_id",
         "operation_precondition",
+        "request_id", "recorded_event_id", "target_commit", "active_attempt_id",
+        "plan_artifact_package_digest", "continuation_expected_events",
+        "effect_bindings", "effect_expected_events", "effect_required_sequence",
+        "shared_repair_association_id", "resource_id", "resource_version", "repair_step_id",
     ):
         if payload.get(key) is not None:
             action[key] = payload.get(key)
@@ -5691,6 +5730,7 @@ def _emit_run_completed_closeout_if_ready(
     return 1
 
 
+@serialized_recovery_action
 def _execute_controlled_run_action(
     *,
     state_dir: Path,
@@ -7072,7 +7112,9 @@ def _execute_resident_agent_reprompt(
     action: dict[str, Any],
     causation_id: str,
 ) -> str:
-    if str(action.get("semantic_triage_request_id") or ""):
+    if not action.get("recovery_context_ref") and (
+        action.get("semantic_triage_request_id") or (action.get("request_id") and action.get("expected_output"))
+    ):
         context_ref = _write_recovery_context_for_action(
             state_dir=state_dir,
             writer=writer,
@@ -7257,6 +7299,9 @@ def _resident_briefing_path(
 
 
 def _resident_action_focus_prompt(action: dict[str, Any]) -> str:
+    if action.get("request_kind") == "worker_guidance":
+        from zf.runtime.worker_assistance import assistance_briefing
+        return assistance_briefing(action, actor=str(action.get("instance_id") or "run-manager"))
     checkpoint_id = str(action.get("checkpoint_id") or "").strip()
     failure_class = str(action.get("failure_class") or "").strip()
     title = str(action.get("title") or "").strip()
@@ -7288,8 +7333,8 @@ def _resident_action_focus_prompt(action: dict[str, Any]) -> str:
         lines.append(f"- 本次请求 request_id: `{request_id}`；响应必须回传该 ID，并交付 expected_output。旧观察或其他请求结果不能履行本次义务。")
     lines.extend([
         "",
-        "请优先围绕 Current Focus 做一次观察,输出 "
-        "`run.manager.agent.observation` 或 `run.manager.agent.recommendation`。",
+        "围绕 Current Focus 完成所要求的诊断或修复交付；expected_output 是交付合同。"
+        "只有没有指定交付时才能仅输出观察。建议须引用证据、说明下一步骤和负责人；修复须使用明确获准的 repair task。",
     ])
     semantic_request_id = str(action.get("semantic_triage_request_id") or "").strip()
     if semantic_request_id:
@@ -7459,6 +7504,8 @@ def _post_verify_action(
             "effect_expected_events": action.get("effect_expected_events")
             or ["task.done", "task.done.accepted"],
         }
+    if action.get("action") == "orchestrator-rework-triage":
+        action = {**action, "continuation_expected_events": ["orchestrator.rework.triage.recorded"]}
     expected = {
         str(value) for value in action.get("expected_downstream_events") or []
         if str(value).strip()
@@ -7648,10 +7695,10 @@ def _settle_pending_action_effects(
             )
         )
         timeout = int(payload.get("effect_timeout_seconds") or 0)
-        timed_out = timeout > 0 and (
-            (_event_age_seconds(pending, datetime.now(timezone.utc)) or 0)
-            >= timeout
-        )
+        from zf.runtime.pause_lifecycle import active_request_age_seconds
+        timed_out = timeout > 0 and active_request_age_seconds(
+            events, created_at=datetime.fromisoformat(pending.ts), now=datetime.now(timezone.utc),
+        ) >= timeout
         if observed is None and not timed_out:
             continue
         passed = observed is not None and observed.type in expected
@@ -7713,6 +7760,10 @@ def _effect_event_matches_scope(
     payload: dict[str, Any],
 ) -> bool:
     body = event.payload if isinstance(event.payload, dict) else {}
+    from zf.runtime.recovery_step import effect_bindings_match
+
+    if not effect_bindings_match(event, payload):
+        return False
     from zf.runtime.workflow_resume_effects import (
         matches_resume_admission, resume_admission_effect,
     )
@@ -11100,6 +11151,14 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
 
 def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
     return {
+        **{key: str(action.get(key) or "") for key in (
+            "shared_repair_association_id", "resource_id", "resource_version", "repair_step_id",
+        )},
+        "target_commit": str(action.get("target_commit") or ""),
+        "contract_revision": str(action.get("contract_revision") or ""),
+        "active_attempt_id": str(action.get("active_attempt_id") or ""),
+        "continuation_expected_events": _string_list(action.get("continuation_expected_events")),
+        **({"effect_bindings": action["effect_bindings"]} if "effect_bindings" in action else {}),
         "action": str(action.get("action") or ""),
         "checkpoint_id": str(action.get("checkpoint_id") or ""),
         "safe_resume_action": str(action.get("safe_resume_action") or ""),

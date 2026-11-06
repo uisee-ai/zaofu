@@ -1,7 +1,6 @@
-"""批C(判据前置):C1 共享约定单源 / C2 验证层级校验。
+"""Task Map structural admission and explicit shared path conventions.
 
-回归钉:prd-goal e2e 的原始 task_map(textstat,含 `pip install -e`
-切片验证)重放必须被拒——用真实事故做验收标准。
+Installation applicability is decided by the plan and environment contract.
 """
 from __future__ import annotations
 
@@ -23,21 +22,20 @@ def _task(task_id: str, paths: list[str], verification: list[str]) -> dict:
 
 # ---------- C2:验证层级 ----------
 
-def test_c2_editable_install_in_slice_task_rejected() -> None:
+def test_c2_editable_install_is_not_a_global_admission_ban() -> None:
     payload = {"tasks": [_task(
         "PKG-1", ["app/pyproject.toml"],
         ["cd app && python -m pip install -e ."],
     )]}
     result = validate_task_map_payload(payload)
-    assert not result.passed
-    assert any("system-level command" in e for e in result.errors)
+    assert result.passed, result.errors
 
 
-def test_c2_pip_install_dot_rejected_and_plain_pytest_allowed() -> None:
+def test_c2_install_and_plain_pytest_are_structurally_allowed() -> None:
     bad = validate_task_map_payload({"tasks": [_task(
         "PKG-1", ["app/pyproject.toml"], ["pip install ."],
     )]})
-    assert any("system-level command" in e for e in bad.errors)
+    assert bad.passed, bad.errors
     ok = validate_task_map_payload({"tasks": [_task(
         "CORE-1", ["app/src/core.py", "app/tests/test_core.py"],
         ["pytest app/tests/test_core.py -q"],
@@ -45,7 +43,7 @@ def test_c2_pip_install_dot_rejected_and_plain_pytest_allowed() -> None:
     assert not any("system-level command" in e for e in ok.errors)
 
 
-def test_c2_regression_pin_original_textstat_task_map_rejected() -> None:
+def test_c2_installation_experience_does_not_decide_all_project_applicability() -> None:
     # 归档 task_map 是 rescope 后终版;原始切片验证串取自当轮 rescope
     # 日志(reports/2026-07-06-prd-goal-mode-e2e.md finding-2 现场)。
     payload = {"tasks": [
@@ -56,9 +54,7 @@ def test_c2_regression_pin_original_textstat_task_map_rejected() -> None:
               ["cd app && python -m pip install -e . && textstat --help"]),
     ]}
     result = validate_task_map_payload(payload)
-    assert not result.passed
-    hits = [e for e in result.errors if "system-level command" in e]
-    assert len(hits) >= 2  # 两个切片任务的 install 验证都被拒
+    assert result.passed, result.errors
 
 
 # ---------- C1:共享约定单源 ----------

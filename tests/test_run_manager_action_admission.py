@@ -78,3 +78,32 @@ def test_unknown_operator_approval_is_rejected_once_with_receipt(tmp_path):
     receipts = [e for e in log.read_all() if e.type == "run.manager.human_decision.rejected"]
     assert len(receipts) == 1
     assert receipts[0].payload["reason"] == "matching escalation not found"
+
+
+@pytest.mark.parametrize("route,consumer", [
+    ("autoresearch", "_emit_autoresearch_request"),
+    ("reflect", "_maybe_invoke_run_manager_reflect"),
+    ("repair", "_emit_repair_acceptance_from_agent"),
+])
+@pytest.mark.parametrize("blocker", ["active_case", "human_gate", "stale_precondition"])
+def test_diagnostic_recommendation_routes_cannot_bypass_common_admission(tmp_path, route, consumer, blocker):
+    from zf.runtime.run_manager import _consume_agent_recommendations
+    state, log, writer = _state(tmp_path)
+    extra = {}
+    if blocker == "active_case":
+        writer.emit("run.manager.action.applied", payload={"recovery_case_id": "rcase-one"})
+        extra["recovery_case_id"] = "rcase-one"
+    elif blocker == "human_gate":
+        writer.emit("human.escalate", task_id="T2", payload={
+            "decision_token": "approval", "blocking_scope": "task", "reason": "owner approval required"})
+    else:
+        extra["operation_precondition"] = {"generation": "outdated-g1"}
+    recommendation = _recommend(writer, recommended_route=route, **extra)
+    with patch(f"zf.runtime.run_manager.{consumer}", return_value=True) as effect, \
+            patch("zf.runtime.run_manager._run_manager_reflect_enabled", return_value=True), \
+            patch("zf.runtime.run_manager._run_manager_source_repair_enabled", return_value=True):
+        _consume_agent_recommendations(state_dir=state, writer=writer, config=_config(),
+            project_root=tmp_path, events=log.read_all(), causation_id=recommendation.id, reflect_fn=None)
+        effect.assert_not_called()
+    receipt = [e for e in log.read_all() if e.type == "run.manager.agent.recommendation.consumed"][-1]
+    assert receipt.payload["status"] == "deferred"

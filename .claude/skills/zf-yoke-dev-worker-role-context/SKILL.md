@@ -269,3 +269,18 @@ required reads 后按需扩读已授权来源；范围缺口通过受控 replan/
 合同或依赖不成立才移交 OA。再次执行注明本次相对失败的变化、保留成果、修复范围、
 原失败探针和回归方法；环境修复先验原探针，代码修复仍交独立 Verify。远端结果未知
 先核对原操作，不能把本地缺少回执当作未执行而盲目重试。
+
+## 运行中求助（200）
+
+在当前合同内无法选择下一步、但 attempt 仍有效时，使用 briefing 给出的
+`zf recover assistance request`，携带 operation/attempt/lease、当前 actor、明确问题、
+`--evidence-ref` 和已尝试方法 `--tried`。执行策略向 `--owner orchestrator` 求助，
+环境/Provider/运行诊断向 `--owner run_manager` 求助。收到 request_id 后使用
+`zf recover assistance read --request-id <id>`；正常 heartbeat 和原 lease 义务不取消。
+只读指导不授权第二写入者。`controlled_handoff_required` 表示先按现有受控结果协议
+结算旧 attempt，再执行获准重派/计划修订；不能自己改 Store、预算、合同或 scope。
+响应过期、缺少输入或 owner 不可用时准确报告原请求，不把等待当作成功。
+
+环境安装、准备与验证命令由当前合同明确声明；不能假定 ContractD 会因为出现
+pnpm/Web 关键词而安装依赖或链接另一工作区。路径/工具提示不等于 OS 隔离，仍需
+遵守当前授权；无法在授权内完成则报告所缺能力。

@@ -77,7 +77,7 @@ def test_signed_and_rotated_events_preserve_verification_and_order(tmp_path: Pat
     before = path.stat()
     path.write_text(path.read_text().replace("workflow.operation.started", "workflow.operation.blocked"))
     os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
-    assert [e.type for e in view.read_all()] == ["workflow.operation.requested"]
+    assert [e.type for e in view.read_all()] == ["workflow.operation.requested", "event.malformed"]
 
 
 def test_reader_operation_policy_sidecar_remains_authoritative(tmp_path: Path) -> None:

@@ -178,24 +178,26 @@ class EventLog:
         return json.dumps(envelope, ensure_ascii=False)
 
     def _decode(self, line: str) -> ZfEvent | None:
-        """Decode one JSONL line. Returns None for non-JSON (silently
-        skipped). Schema-invalid payloads (valid JSON but wrong shape)
+        """Decode one complete JSONL line. Invalid JSON, signatures or schema
         return a synthetic ``event.malformed`` ZfEvent in-memory so
         callers of ``read_all`` can surface the corruption; nothing is
         written back to disk, so repeated reads stay idempotent."""
         try:
             obj = json.loads(line)
-        except json.JSONDecodeError:
-            return None
+        except json.JSONDecodeError as exc:
+            return self._malformed(line, exc)
         if isinstance(obj, dict) and "event" in obj and "sig" in obj:
             # Signed envelope. Verify if we have a signer; else accept as-is.
             event_dict = obj["event"]
             event_json = json.dumps(event_dict, ensure_ascii=False, sort_keys=False)
             if self.signer is not None and not self.signer.verify(event_json, obj["sig"]):
                 # Try the canonical encoding the signer would produce
-                fresh_json = ZfEvent.from_dict(event_dict).to_json()
+                try:
+                    fresh_json = ZfEvent.from_dict(event_dict).to_json()
+                except (TypeError, KeyError, ValueError) as exc:
+                    return self._malformed(line, exc)
                 if not self.signer.verify(fresh_json, obj["sig"]):
-                    return None
+                    return self._malformed(line, ValueError("event signature verification failed"))
             try:
                 return ZfEvent.from_dict(event_dict)
             except (TypeError, KeyError) as e:
@@ -238,12 +240,17 @@ class EventLog:
         event from the same bad line, keeping counts bounded and avoiding
         append-during-decode recursion.
         """
+        import hashlib
+
         return ZfEvent(
+            id="malformed-" + hashlib.sha256(line.encode("utf-8", errors="replace")).hexdigest()[:24],
+            ts="1970-01-01T00:00:00+00:00",
             type="event.malformed",
             actor="zf-cli",
             payload={
                 "line": line[:200],
                 "error": str(error),
+                "ledger_integrity": "unknown",
             },
         )
 

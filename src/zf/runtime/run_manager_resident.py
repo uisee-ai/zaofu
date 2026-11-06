@@ -267,6 +267,12 @@ def build_resident_run_manager_briefing(
         "- 修复说明包含失败身份与证据、原因/假设、本次变化、保留成果、允许路径、验证和失败出口。",
         "  同根因且代码、输入、环境、合同、策略均未变时，不重复派发；瞬时故障按策略退避。",
         "- 发出请求、故障消除、Task 完成分别核验；处理器中断只恢复未完成处理步骤。",
+        "- worker_guidance 只读求助按固定 sidecar、原 request_id 和 proposal_only 回答；不能同时启动新写入者。",
+        "- 当前诊断输出绑定 request_id、证据、下一动作/owner；不得只观察代替 expected_output。",
+        "- 多任务共享故障须以 zf recover associate 提交资源/版本、member_case_ids、唯一修复 owner、证据与理由；",
+        "  资源修复不批量关闭任务。跨版本延续用 problem_continuation 和 failure_operation_ids，不改旧身份。",
+        "- 外部副作用响应丢失先查询原操作；不能靠新 repair_step_id、case 或 attempt 盲重试。",
+
         "- 如果发现已知 deterministic recovery 可以走,写"
         " `run.manager.agent.recommendation`,说明 action 名、证据 refs、预期 downstream event。",
         "- 如果是 harness bug、candidate hygiene/gate bug、projection/action bug,优先写"

@@ -975,6 +975,12 @@ workflow:
         lines = [line for line in events_file.read_text().strip().split("\n") if line.strip()]
         event_types = [json.loads(line)["type"] for line in lines]
         assert "loop.started" in event_types
+        from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+        loaded = next(json.loads(line) for line in lines if json.loads(line)["type"] == "loop.started")
+        receipt = hydrate_sidecar_ref(project_dir / ".zf", loaded["payload"]["runtime_load_ref"]).payload
+        assert receipt["effective_config_sha256"] == loaded["payload"]["effective_config_sha256"]
+        assert receipt["loaded_consumers"] and receipt["source_tree_sha256"]
+        assert receipt["state_dir"] == str((project_dir / ".zf").resolve())
 
     def test_start_warns_when_render_lock_drifted(self, project_dir: Path):
         lock = project_dir / ".zf" / "config" / "render-lock.json"

@@ -35,3 +35,22 @@ def test_failed_required_sidecar_write_does_not_publish_operation(tmp_path, monk
         service.ensure_operation(workflow_run_id="run", operation_id="op", operation_type="agent",
                                  request={"prompt": "required fixed input"})
     assert not any(e.type == "workflow.operation.requested" for e in log.read_all())
+
+
+@pytest.mark.parametrize("line", ["broken-json\n", '{"payload":{}}\n'])
+def test_corrupt_ledger_prevents_recovery_side_effect(tmp_path, line):
+    from zf.runtime.run_manager_action_admission import action_gate_reason
+    state, log, _ = _state(tmp_path)
+    log.path.write_text(line)
+    assert action_gate_reason(state, log.read_all(), {"action": "worker-lifecycle-recover"}, []) == "event_ledger_integrity_unknown"
+
+
+def test_event_publish_failure_reuses_immutable_operation_input(tmp_path, monkeypatch):
+    state, log, writer = _state(tmp_path)
+    service = WorkflowOperationService(state_dir=state, event_log=log, event_writer=writer)
+    with monkeypatch.context() as fault:
+        fault.setattr(writer, "append", lambda *a, **kw: (_ for _ in ()).throw(OSError("event fsync failed")))
+        with pytest.raises(OSError):
+            service.ensure_operation(workflow_run_id="run", operation_id="op", operation_type="agent", request={"prompt": "fixed"})
+    service.ensure_operation(workflow_run_id="run", operation_id="op", operation_type="agent", request={"prompt": "fixed"})
+    assert len([e for e in log.read_all() if e.type == "workflow.operation.requested"]) == 1

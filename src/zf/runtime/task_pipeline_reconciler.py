@@ -32,6 +32,7 @@ class TaskPipelineReconciler:
         impl_rework_requests: Mapping[str, Mapping[str, Any]] | None = None,
         preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
         oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+        inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         normalized_tasks = sorted(
             (_task_row(task) for task in tasks),
@@ -100,6 +101,7 @@ class TaskPipelineReconciler:
                     task["id"] in external_gate_satisfied_ids
                 ),
                 impl_rework_request=normalized_rework_requests.get(task["id"]),
+                inherited_failures=(inherited_failures or {}).get(task["id"], []),
             )
             for task in normalized_tasks
             if task["status"] not in {"done", "cancelled"}
@@ -383,8 +385,11 @@ def refresh_task_pipeline_projection(
     )
 
     contexts = task_pipeline_generation_contexts(events)
+    from zf.runtime.recovery_association import inherited_failure_operations
+
     projection = TaskPipelineReconciler().reconcile(
         policy=selected_policy,
+        inherited_failures=inherited_failure_operations(Path(orchestrator.state_dir), events, contexts),
         tasks=tasks,
         operations=reduce_workflow_operations(events).values(),
         attempts=task_attempt_store(orchestrator).current_rows(),
@@ -631,9 +636,10 @@ def _task_view(
     policy: Mapping[str, Any],
     external_gate_satisfied: bool = False,
     impl_rework_request: Mapping[str, Any] | None = None,
+    inherited_failures: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     configured_rework = int(policy.get("max_rework_attempts") or 0)
-    failures = semantic_failures(operations)
+    failures = semantic_failures([*operations, *(inherited_failures or [])])
     policy = {**policy, "semantic_failure_count": len(failures)}
     blockers = [
         dependency

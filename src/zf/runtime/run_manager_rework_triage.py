@@ -17,6 +17,7 @@ from zf.runtime.semantic_replan import (
 )
 from zf.runtime.semantic_replan_redrive import cross_task_replan_cancellation
 from zf.runtime.execution_policy_routing import recorded_execution_route_action
+from zf.runtime.recovery_step import IDENTITY_FIELDS
 
 
 TRIAGE_REQUESTED = "orchestrator.rework.triage.requested"
@@ -94,6 +95,9 @@ def pending_rework_triage_actions(
             action = _recorded_advice_action(recorded, capped, request_id, fingerprint)
             if request is not None and _payload(request).get("recovery_case_id"):
                 action["recovery_case_id"] = _payload(request)["recovery_case_id"]
+                for key in IDENTITY_FIELDS:
+                    if _payload(request).get(key) and not action.get(key):
+                        action[key] = _payload(request)[key]
         elif request is not None:
             if _event_age_seconds(request, now) < stale_seconds:
                 continue

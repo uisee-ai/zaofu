@@ -133,13 +133,17 @@ def generate_role_instructions(
         sections.append(f"- Allowed paths: {', '.join(role.constraints.allowed_paths)}")
     if role.constraints.blocked_paths:
         sections.append(f"- Blocked paths (DO NOT modify): {', '.join(role.constraints.blocked_paths)}")
+        sections.append("  Role-level method constraint; this field alone is not an OS sandbox or write interceptor.")
     if role.constraints.max_steps:
         sections.append(f"- Max steps: {role.constraints.max_steps}")
+        sections.append("  Advisory method budget; runtime execution limits come from the admitted operation/run policy.")
     sections.append("")
 
     # Tools
     if role.allowed_tools:
         sections.append("## Allowed Tools")
+        if role.backend == "codex":
+            sections.append("Codex does not enforce this native tool allowlist; controlled-action permissions and task scope gates remain separate.")
         for tool in role.allowed_tools:
             sections.append(f"- {tool}")
         sections.append("")

@@ -240,3 +240,22 @@ WRC 直接请求，无需新增 RM 模型审批。WRC 负责合法续作与恢�
 旧通过、兄弟任务活动和历史 unroutable 均需核对当前适用性，不能永久压住新故障。
 恢复处理器自身中断时继续其未完成步骤，保留有效实现和原案卷；交接回执不能当作
 故障消除。完成承诺需对应故障效果证据及下游接收/合法等待，Task 仍按完整合同验收。
+
+## 当前步骤、共享故障和跨代问题（200）
+
+运行中 `worker_guidance` 只读求助按固定 sidecar 回答 `request_id`、guidance、
+recommended_action 和 `apply_policy=proposal_only`。回答不是重派授权；合同内建议
+回到当前 attempt，需要新写入者/改合同则走受控交接。诊断完成、修复完成、原探针
+通过、下游接手分别报告。改变测试/验证方法须说明原 AC 和独立复核，不能删断言过门。
+
+多个失败确属同一资源时，先给出资源身份、版本、原探针、member_case_ids 和唯一
+owner_case_id。使用 `zf recover associate --file <proposal.json> --actor <当前角色>`
+预览，再以 `--apply` 请求准入。kind=shared_resource 还需 resource_id、resource_version、
+repair_step_id；恢复动作携带返回的 shared_repair_association_id 及相同字段。
+此关联不授予新动作权限；公共资源恢复后各任务分别验证，不批量宣告通过。
+
+跨计划版本确实延续旧问题时，kind=problem_continuation，指定 target_case_id、
+failure_operation_ids；两类提案都需 workflow_run_id、member_case_ids、evidence_event_ids
+和 rationale。runtime 校验并继承真实语义失败，旧成功/权限不随关联沿用。
+同一问题要继续失败历史；仅错误字符串相同不足以关联。未知外部效果先查询对账，
+不得通过换 case/repair_step_id 绕过重复执行保护。

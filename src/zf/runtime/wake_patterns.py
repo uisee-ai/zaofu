@@ -98,6 +98,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # completed 唤醒结论消费(rework feedback / needs_owner 升级)。
     "diagnosis.requested",
     "diagnosis.completed",
+    "worker.assistance.requested",
     # Run 11 fix: task.assigned must wake Layer 1 so _dispatch_ready
     # can send the briefing to the assigned worker. Without this the
     # task sat in backlog forever after Layer 2 called `zf kanban assign`.
