@@ -54,3 +54,13 @@ P05/P07B两个被拒gap重复修复align动态导入，应合并一个公共前�
 隐私discovery evt-b4b592afb436确认跨入口读取缺口，提案evt-add55f7a38eb因rolling smoke缺失被拒。三个有界诊断经operator受控合并，request evt-d4e7a1a88317 -> action evt-72036c0b8d96 -> trigger evt-e219a23e642f，Planner operation wop-prd-plan-prd-planner-trig-evt-e219a23e-re-f18c218112eb正在执行。目标五项：一个align加载公共前置、采样续作、融合续作、资源读取守卫、隐私续作；19 done保留。候选a94e4b489983551efca5a4795db93fd5f11c8c24，原149+44条款与跨域义务保持。
 
 监工发现trigger顶层图仍为旧引用，原因是已接纳synth使用sidecar正文。框架6b602f0d修复真实runtime包端口绑定，evt-93433d55b9f5只重载控制面。当前在飞Planner仍持不可变原请求，但其必读previous-plan-candidate-1/2确实提供当前图12d8b087/package36b2b573，读取消息确认五项范围。批准前必须核验完整输出、writer续作选择与当前候选，不以回归测试代替计划验收。
+
+## 2026-11-06 00:34 UTC 监工检查点
+
+Planner已于evt-138b3c2bfd3d提交38项完整图，独立Critic于evt-ecae7962f12b派发。只读核验：原263个AC ID无缺失，新增6个缺口AC；149主项、20 AT、24 T12保留，5新任务唯一替代旧3项，P19/P20Q/P20依赖已在计划中重连。新增任务smoke皆显式deterministic/reusable。19个canonical done未改变。
+
+`a650d92a`修复旧diagnostic task_ids误覆盖增量选择（实物原选17并漏前置，修复后恰选5），evt-49cd99451453重载，watcher3707138→3776560，旧pane/PID与Critic operation保留。独立源码工作树归档HEAD dea193a1，未merge/push。
+
+尚不批准：监工独立查明PAS-AUTH-P07B-local/PAS-AUTH-P16B-local标注task_verify却要求后续P20 candidate runtime/browser全部收据，形成阶段倒置。此前Critic会话还指出privacy实际owner需明确接入原始ingest/explore别名的集成验证；此项待正式报告核定。不能删除候选验收来消除倒置。
+
+00:22 Critic上下文0.95超过0.9硬阈值180秒，被正常回收并以新session恢复同一operation（evt-1fed343fb726/evt-5666cf5740f6，semantic_attempt_consumed=false）。未修改预算、重试上限或业务状态。当前Critic仍运行；root等待正式结果后按两处验收绑定有界返修，保留5任务范围/完整端口/独立审查与批准。Run Manager00:29仍tick完成；workflow-synthesis-consumer曾出现短暂guard锁超时，尚未导致当前审查停止，记录观察。
