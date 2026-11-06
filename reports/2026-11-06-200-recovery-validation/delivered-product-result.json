@@ -1,0 +1,41 @@
+{
+  "commit": "b9219864fe5faf074286b878a7cc7669a7772d5a",
+  "checks": [
+    {
+      "check": "order",
+      "passed": true
+    },
+    {
+      "check": "escaping",
+      "passed": true
+    },
+    {
+      "check": "empty",
+      "passed": true
+    },
+    {
+      "check": "invalid_json",
+      "passed": true
+    },
+    {
+      "check": "non_array",
+      "passed": true
+    },
+    {
+      "check": "missing_field",
+      "passed": true
+    },
+    {
+      "check": "partial_output",
+      "passed": true
+    },
+    {
+      "check": "non_string",
+      "passed": true
+    }
+  ],
+  "discovered_tests": 7,
+  "test_output": "test_chinese_commas_quotes_and_newlines_round_trip (test_export_csv.ExportTests.test_chinese_commas_quotes_and_newlines_round_trip) ... ok\ntest_empty_list_emits_only_header (test_export_csv.ExportTests.test_empty_list_emits_only_header) ... ok\ntest_header_values_and_input_order (test_export_csv.ExportTests.test_header_values_and_input_order) ... ok\ntest_invalid_json_is_rejected (test_export_csv.ExportTests.test_invalid_json_is_rejected) ... ok\ntest_missing_fields_in_later_record_are_atomic (test_export_csv.ExportTests.test_missing_fields_in_later_record_are_atomic) ... ok\ntest_non_array_is_rejected (test_export_csv.ExportTests.test_non_array_is_rejected) ... ok\ntest_non_object_and_non_string_fields_are_rejected (test_export_csv.ExportTests.test_non_object_and_non_string_fields_are_rejected) ... ok\n\n----------------------------------------------------------------------\nRan 7 tests in 0.535s\n\nOK\n",
+  "export_csv_sha256": "796650c5ccb919c3156a9a60f29360293ed782b0578de3649dea3f799309799f",
+  "passed": true
+}

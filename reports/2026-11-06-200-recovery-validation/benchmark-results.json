@@ -1,0 +1,28 @@
+[
+  {
+    "label": "baseline",
+    "events": 4064,
+    "tasks": 16,
+    "iterations": 30,
+    "p50_ms": 247.85882595460862,
+    "p95_ms": 251.69716496020555,
+    "rss_peak_kib": 68936,
+    "allocation_peak_bytes": 862814,
+    "eventlog_reads": 30,
+    "pending_actions": 0,
+    "config_sha256": "f0f325f5311fb3a1e9a3e7e028a2aeeabb04729ae8c4b9390bf11c4e908e8ec1"
+  },
+  {
+    "label": "candidate",
+    "events": 4064,
+    "tasks": 16,
+    "iterations": 30,
+    "p50_ms": 251.18776760064065,
+    "p95_ms": 254.15280694141984,
+    "rss_peak_kib": 56720,
+    "allocation_peak_bytes": 876280,
+    "eventlog_reads": 30,
+    "pending_actions": 0,
+    "config_sha256": "f0f325f5311fb3a1e9a3e7e028a2aeeabb04729ae8c4b9390bf11c4e908e8ec1"
+  }
+]

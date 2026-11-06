@@ -1,0 +1,30 @@
+Workflow preparation consumer failed for /home/min/workspace/zaofu/ls-v1
+Traceback (most recent call last):
+  File "/home/min/workspace/zaofu-worktrees/design199-20261106/src/zf/core/config/kind_envelope.py", line 364, in assemble_envelope_stream
+    expansion = expand_prd_flow(flow_spec)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/min/workspace/zaofu-worktrees/design199-20261106/src/zf/core/config/workflow_profiles.py", line 1500, in expand_prd_flow
+    raise WorkflowProfileError(
+zf.core.config.workflow_profiles.WorkflowProfileError: PrdFlow: unknown param(s) ['planCriticEnabled'] (fail-closed)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/min/workspace/zaofu-worktrees/design199-20261106/src/zf/core/config/loader.py", line 2726, in load_config
+    raw, _envelope_profiles = assemble_envelope_stream(
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/min/workspace/zaofu-worktrees/design199-20261106/src/zf/core/config/kind_envelope.py", line 372, in assemble_envelope_stream
+    raise KindEnvelopeError(str(exc))
+zf.core.config.kind_envelope.KindEnvelopeError: PrdFlow: unknown param(s) ['planCriticEnabled'] (fail-closed)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/min/workspace/zaofu-worktrees/design199-20261106/src/zf/web/workflow_preparation_worker.py", line 78, in _consume
+    config = load_config(path)
+             ^^^^^^^^^^^^^^^^^
+  File "/home/min/workspace/zaofu-worktrees/design199-20261106/src/zf/core/config/loader.py", line 2731, in load_config
+    raise ConfigError(str(e))
+zf.core.config.loader.ConfigError: PrdFlow: unknown param(s) ['planCriticEnabled'] (fail-closed)
+warning: slow web request POST /api/actions/workflow-submit took 10.9s (status 202)
+{"root": "/tmp/zf-200-real-20261106T170450Z-dm64b2x4", "request_id": "workflow-b2f6662e9bcdbc1f", "runtime_start": {"ok": true, "status": "running", "pid": 244592, "launched": true, "log_ref": "/tmp/zf-200-real-20261106T170450Z-dm64b2x4/.canary-state/logs/workflow-runtime-start.log"}}

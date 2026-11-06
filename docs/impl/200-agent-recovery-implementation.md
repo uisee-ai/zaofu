@@ -1,6 +1,6 @@
 # 200：Agent 恢复职责与统一执行实施记录
 
-> 状态: active
+> 状态: done
 
 设计：[200](../design/200-agent-recovery-ownership-and-unified-runtime.md)；既有能力与剩余义务：[199 实施记录](199-worker-recovery-implementation.md)。
 授权：2026-11-06 在 199 worktree 实施全部 200，并以真实 Codex 和 v5 YAML 验证、修复、退出。
@@ -13,25 +13,29 @@
 
 ## 批次与覆盖
 
-任务均位于 `tasks/active/2026-11-06-1610-200-*.md`。
+本批八个任务按验证结果归档至 `tasks/done/2026-11-06-1610-200-*.md`。
 
 | 包 | 200 范围 | 199 追踪 | 当前状态 |
 | --- | --- | --- | --- |
-| 01 恢复步骤、效果与交接 | §3/4/8.3/9.1/9.3/9.4 | A01/A02/A04/A05/B01/B02/B04/C02/C05 | active |
-| 02 证据路由 | §5/6/7/15.3 | R04/R08/A03/B05/B06 | active |
-| 03 运行中求助 | §4.3/6.1/8 | R02/R03/R14/B01/B03 | active |
-| 04 共享故障与延续 | §5.1/9.2 | R13/R14/A02/B04/C02 | active |
-| 05 边界与方法 | §10/15 | R05/R06/R07/R08/R09/B05/B06/C01 | active |
-| 06 入口与加载回执 | §2/4.4/11/13 | R01/R10/R11/R12/R15/C05 | active |
-| 07 存储、监督与容量 | §4.2/4.3/6.1/12/13 | R14/A05/B02/C03/C04 | active |
-| 08 真实 v5 闭环与对账 | 全部验收和指标 | 全部 31 项 | active |
+| 01 恢复步骤、效果与交接 | §3/4/8.3/9.1/9.3/9.4 | A01/A02/A04/A05/B01/B02/B04/C02/C05 | done |
+| 02 证据路由 | §5/6/7/15.3 | R04/R08/A03/B05/B06 | done |
+| 03 运行中求助 | §4.3/6.1/8 | R02/R03/R14/B01/B03 | done |
+| 04 共享故障与延续 | §5.1/9.2 | R13/R14/A02/B04/C02 | done |
+| 05 边界与方法 | §10/15 | R05/R06/R07/R08/R09/B05/B06/C01 | done |
+| 06 入口与加载回执 | §2/4.4/11/13 | R01/R10/R11/R12/R15/C05 | done |
+| 07 存储、监督与容量 | §4.2/4.3/6.1/12/13 | R14/A05/B02/C03/C04 | done |
+| 08 真实 v5 闭环与对账 | 全部验收和指标 | 全部 31 项 | done |
 
 原 `backlogs/2026-11-06-0928-199-11..17` 已由本批次接续，标记 superseded，保留原始范围。
-编号计数不是完成度；当前没有新的工作包达到 done。
+八个工作包的已批准验收均完成；软件实现、真实宿主和真实模型证据分别签收。
+完整的 [199／200 逐项对账](../../reports/2026-11-06-200-recovery-validation/design-traceability.md) 保留未覆盖的实机资格边界，不能据 8/8 推导所有生产故障已验证。
 
 ## 问题与验证记录
 
-实现时持续填写：复现输入、实际入口、修复、验证命令、结果、残余限制。自动化和真实 Provider 结果分别记录。
+复现、入口、修复及结果见下文；去密证据、精确提交产物和检查脚本见 [验证报告](../../reports/2026-11-06-200-recovery-validation/README.md)。
+实现提交：`b1b39758 feat: bind agent recovery steps, guidance, and shared effects`；
+真实验证修复：`115e450d fix: route worker assistance without waiting for periodic recovery`、
+`768adb08 fix: retain resident ownership across controller restarts`。
 
 ## 执行入口迁移记录
 
@@ -51,13 +55,13 @@
 冻结具体配置、输入、验证脚本和采证窗口后才启动。证据归档后通过既有 stop 清理临时进程与状态。
 
 
-## 当前实现与合同映射（待最终验证签收）
+## 当前实现与合同映射
 
 | 信息/约束 | 字段与生产者 | 准入与实际消费者 | 缺失/失败处理 |
 | --- | --- | --- | --- |
 | 当前恢复步骤 | RM `effect.pending` 的 request/checkpoint、continuation_expected_events | recovery_step → recovery_case → RM executor | 旧结果、重复消费、身份冲突阻止新副作用；历史 correlation 可以是请求 ID，不猜成 Run |
 | RM 诊断结果 | 固定 recovery_context_ref、resident.prompted、agent.recommendation | bind_recommendation_to_request → 既有策略/共同动作准入 | 响应角色、原请求及版本不匹配拒绝；观察不能代替指定交付 |
-| 运行中求助 | `recover assistance request/read`、必需 sidecar、operation/attempt/lease | RM tick 路由；OA advisory dispatch；原 Worker read | 旧 attempt/失效 lease/过期答复拒绝；消费者不可用或超时产生 task scoped 等待 |
+| 运行中求助 | `recover assistance request/read`、必需 sidecar、operation/attempt/lease | reactive/periodic 共用 RM reconcile；OA advisory dispatch；原 Worker read | 旧 attempt/失效 lease/过期答复拒绝；消费者不可用或超时产生 task scoped 等待 |
 | 求助派发重放 | worker.assistance.dispatching、原 request_id | Orchestrator run_once 的 durable pending 扫描 | 忽略重复唤醒；已认领但发送效果未知不盲重发，保持超时接管义务 |
 | 同资源修复 | `recover associate` 提交 Agent 的关联判断；resource/version/repair_step、成员与 owner | 原子 sidecar + kernel association event；RM 共同锁/准入 | 同资源未证明效果时拒绝另一修复；换步骤 ID 不绕过在途修复；各 Task 不批量关闭 |
 | 问题跨版本延续 | problem_continuation + 原 admitted failure_operation_ids | 校验来源 case/run/generation；WRC 与 Pipeline 投影共同消费 | 只有真实语义失败计数；缺失/错误绑定拒绝，不改旧 operation 或继承旧权限 |
@@ -105,7 +109,7 @@ RM 实际 resident briefing 要求固定请求交付、共享故障关联及副�
 - 成对性能：各 5 次预热、30 次测量，4,064 事件、16 tasks，同 v5 配置；基线 2af8301f 的独立 source archive 与当前代码各在新进程运行。
   RM projection p50/p95：247.86/251.70ms → 251.19/254.15ms；峰值 RSS 68,936 → 56,720KiB；EventLog read_all 各 30 次。
   两端 pending_actions 均 0；符合预先冻结的 p95 ≤ 1.5×基线+20ms。此基准不代表真实 Provider 吞吐或所有故障风暴。
-- 原始可重放脚本/日志位于 `/tmp/zf-200-verification-20261106/`，最终签收时归档去密证据。
+- 原始驱动及选定日志已归档到验证报告；其中 source 路径保留本次运行值，重新启动真实 Provider 前需重新建立隔离目录。
 - 最后广域：`dev-verify.py run --base dev`，14,539 passed / 6 failed / 20 skipped（203.29s）。六项均为 199 已在隔离基线复现的失败：
   公开导出缺 `tools/export-public.sh` 的四项、缺内部 prompt 的一项，以及 Feishu 旧 fixture 未建立 PRD readiness 的一项。
   该广域命令仍非全绿；没有删除、跳过或修改这六项来制造通过。
@@ -121,7 +125,7 @@ RM 实际 resident briefing 要求固定请求交付、共享故障关联及副�
 v5 改动仅项目/状态/技能路径与会话绑定、适用 Python 静态命令、隔离 dev 的获准自动 ship；
 保留 WRC、blocking Pipeline、独立 Verify、串行 CAS、frozen_exact_commit、resident RM 和预算。
 正式入口为 workflow-request → 必要 config-apply → workflow-submit；不手写 Agent 结果或终态。
-使用真实 Codex 0.163.0，登录状态有效；运行进展及问题见下节，最终业务终态尚待核验。
+使用真实 Codex 0.163.0 / `gpt-6.1-sol`，最终业务终态、产物复验和退出清理已核验，详见下节。
 
 ### 真实试跑问题记录（按实际状态更新）
 
@@ -153,7 +157,7 @@ Kernel 于 18:20:22 UTC 产生 `run.goal.completed`（`evt-f6dac67e0122`）；�
 | §5/6/7 失败与诊断 | v5 unknown → 固定输入 → 当前 RM 责任；typed known policy 保留 | `test_failure_diagnosis_routing`、`test_provider_stop`、`test_task_context_recovery` | 未用关键词猜测项目数据库修复方案；模型根因正确性须实际探针 |
 | §5.1 共享故障 | 关联准入、required sidecar、共同动作锁与资源版本/步骤 fence | `test_recovery_association`：实际 SQLite 修复一次、八个消费探针、7/1 分别结算 | 修复工具及 Agent 关联决定是 fixture；不是八个真实模型的 DB 排障证明 |
 | §6.1 监督与接管 | 独立 host-check + 已安装 transient systemd；请求 timeout/task 等待；异步 reflect | `test_design200_host_supervision`、`test_host_lifecycle`、resident obligations/reflection 回归 | 仅为隔离宿主安装；未给正式 dev 安装服务 |
-| §8 当前 attempt 求助 | request/read CLI → RM reconcile → OA 实际派发或 resident → 当前 Worker 读取 | `test_worker_assistance`，真实 canary 持续采证 | 不改合同、不转移 lease；重派建议仍需既有受控交接 |
+| §8 当前 attempt 求助 | request/read CLI → RM reconcile → OA 实际派发或 resident → 当前 Worker 读取 | `test_worker_assistance`，真实求助、回答、读取和下游完成回执 | 不改合同、不转移 lease；重派建议仍需既有受控交接 |
 | §8.3 最小请求合同 | 上文信息映射；固定问题、输入 digest、身份、owner、期限、结果类型 | immutable evidence、wrong responder、旧 attempt、迟到、消费者不可用回归 | 缺少当前必需事实拒绝；保留 legacy 的明确兼容读取 |
 | §9.1/9.3 步骤与效果 | recovery_step 通用前置结果消费；RM effect reconcile；暂停时钟 | `test_recovery_step_admission`、handoff effects、triage caller | 诊断/普通进展不是结案；未知副作用不能盲重试 |
 | §9.2 问题延续 | Agent 关联已准入失败 → 当前 Pipeline failure accounting/projection | association 真实 consumer 测试；跨任务/代次计数且不改旧 operation | 历史 pass 与旧权限不继承；无依据关联拒绝 |
@@ -170,3 +174,15 @@ Kernel 于 18:20:22 UTC 产生 `run.goal.completed`（`evt-f6dac67e0122`）；�
 R07/R08 的复杂 DAG/语义矛盾评测、R14 的多 Provider/网络数据库集中故障、
 任意外部 shell exactly-once、所有未来修复 handler 的全故障窗口，不由这一最小运行证明。
 最终完成度应按本批八个验收包及上述证据层级分别报告，不能将一条 CSV 成功升级成 199/200 全部场景的生产保证。
+
+## 最终效果与清理
+
+- 从正式 invoke（17:16:54 UTC）到 `run.goal.completed`（18:20:22 UTC）为 **3,808.33 秒，约 63.5 分钟**。业务 Task 和根 Task 都为 done，19 个 operation 均 settled；真实 Impl 只启动一个 attempt。
+- Plan/Critic → Impl → 任务 Verify → 串行集成 → 8 路候选 Verify → Discovery → Judge → 本地交付全链完成。最终候选 `6661dc6`、实际交付 `b9219864` 分别通过外部冻结脚本的 8 个行为检查与 7 个 unittest。
+- Discovery 另运行 3 个独立测试／14 次 CLI 调用，零阻断缺口；Judge 关闭五条必需 claim，Kernel 决定最终完成。没有手写 passed、修改 canonical Store 或人工重派业务 Task。
+- OA 求助保留一个当前 operation/attempt/lease；原回答与后续关闭、完成分别留证。操作员部署修复时重载过控制面，这条业务运行不是“全程无人工介入恢复”的证明。
+- 收尾新增 sidecar 修复的调用闭包 67 passed、真实宿主回归 1 passed（14.22s）、sentinel 53 passed。广域 14,539/6/20 的结果发生在最终两项实跑修复之前；后两项按影响闭包复验，未再宣称全套通过。
+- 小任务开销仍高：Impl 721s，任务 Verify 156s，最慢候选 Verify 590s，Discovery 952s，Judge 298s。固定 8 路候选验证与较大必需输入带来读取及压缩开销；本轮证明功能闭环，不签收吞吐／费用优化。
+- usage 为订阅模式，397 条记录未定价；USD=0 不能证明零成本或实际金额预算覆盖。保留原 v5 限额，没有扩容、提高预算或删除必需证据换取成功。
+- 已 `simulation.done` → `stop --include-run-manager`，并核对所有归属进程、tmux 会话和隔离目录退出。REAL-03 旧进程清理单独留证；三个早期／实际业务临时项目均删除，宿主测试的 transient unit 亦停止。
+- 199 正文 SHA-256 仍为 `a5e8b17c629159db55436f71608bad324710d43e3ac3def00ed90acb870082eb`。199 开发 worktree 保留，仅本地提交；未合并到 ZaoFu dev，未 push。
