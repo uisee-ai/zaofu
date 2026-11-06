@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 已批准增量与历史故障选择分离
 
@@ -12,3 +12,7 @@
 行为RED：2 failed / 4 passed，旧逻辑遗漏前置且未校验缺失gap ID。GREEN后置断言曾误读不存在的resume_scope属性，已删除该测试错误，不修改产品数据结构迎合测试。
 
 验证：admission/范围/历史替代闭包70 passed，writer runtime/Task Pipeline入口与代次/materialization/mock闭包189 passed；sentinel 50 passed / 1 skipped，flow mock 10 passed，Ruff通过。dev-verify的722文件全量层按AGENTS不执行，改用明确影响闭包。使用真实已提交38项计划及原trigger在修复代码上调用load_writer_task_map，只读选出五项与两条前置链；未修改任务状态。
+
+实现提交：a650d92a fix: select approved gap tasks over inherited failure diagnostics。
+
+受控控制面重载evt-49cd99451453，保留Critic operation wop-prd-plan-synth-trig-evt-e219a23e-105079684eb4；部署前在主工作区实际loader只读验证五项选择。主工作区已有amend helper导致标准patch上下文冲突；只插入相同六行caller并校验helper字节，完整保留先前主工作区差异。Planner已提交，Critic尚在运行，本项不标记产品通过。
