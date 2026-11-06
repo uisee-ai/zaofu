@@ -31,14 +31,18 @@ def select_gap_from_diagnostic_scope(
 
     failed = ids(payload.get("failed_task_ids"))
     diagnosis = failed | ids(payload.get("downstream_task_ids", []))
+    superseded = ids(amend.get("superseded_task_ids"))
     # An explicit selection of new tasks (or an unrelated operator selection)
     # is not a diagnosis and must keep its existing admission behavior.
     if (
         not failed
-        or failed != ids(amend.get("superseded_task_ids"))
+        or not failed <= superseded <= diagnosis
         or set(requested_task_ids) != diagnosis
     ):
         return requested_task_ids, resume_scope
+    # A bounded amendment may also replace a diagnosed downstream consumer
+    # to rebind its prerequisite. Neither unrelated tasks nor an omitted
+    # failed task establish authority to replace the diagnostic selector.
     gap_ids = amend.get("gap_task_ids")
     if not ids(gap_ids) or len(gap_ids) != len(set(gap_ids)):
         raise RuntimeError("gap_tasks_only amendment requires unique non-empty gap_task_ids")

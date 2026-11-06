@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from zf.core.events.model import ZfEvent
+from zf.core.workflow.lane_pipeline import parse_lane_pipeline
 from zf.runtime.writer_fanout_admission import load_writer_task_map
 
 
@@ -24,11 +25,11 @@ def case(tmp_path):
     return tmp_path, data, payload
 
 
-def load(case):
+def load(case, *, pipeline_spec=None):
     root, data, payload = case
     path = root / 'task_map.json'
     path.write_text(json.dumps(data))
-    return load_writer_task_map(stage=SimpleNamespace(task_map=''), event=ZfEvent(type='task_map.ready', payload={**payload, 'task_map_ref': str(path)}), pdd_id='PRD', state_dir=root/'runtime', project_root=root)
+    return load_writer_task_map(stage=SimpleNamespace(task_map=''), event=ZfEvent(type='task_map.ready', payload={**payload, 'task_map_ref': str(path)}), pdd_id='PRD', state_dir=root/'runtime', project_root=root, pipeline_spec=pipeline_spec)
 
 
 def test_approved_gap_replaces_old_diagnostic_selector_and_includes_prerequisite(case):
@@ -59,3 +60,36 @@ def test_missing_declared_gap_task_is_rejected(case):
     case[1]['amend']['gap_task_ids'].append('ABSENT')
     with pytest.raises(RuntimeError, match='missing requested'):
         load(case)
+
+
+def test_gap_can_replace_a_failed_task_and_its_downstream(case):
+    data = case[1]
+    data['amend']['superseded_task_ids'].append('DOWNSTREAM')
+    data['amend']['gap_task_ids'].append('DOWNSTREAM-NEXT')
+    data['tasks'][2]['task_id'] = 'DOWNSTREAM-NEXT'
+    data['tasks'][2]['payload'] = {'supersedes_task_ids': ['DOWNSTREAM']}
+    data['workspace_root_owner_required'] = True
+    data['tasks'][3]['allowed_paths'] = []  # completed scaffold is read-only
+    spec = parse_lane_pipeline({
+        'id': 'prd-lanes', 'kind': 'lane_pipeline', 'trigger': 'task_map.ready',
+        'affinity_key': 'affinity_tag', 'lane_count': 8, 'assembly': 'none',
+        'stages': [{'id': 'impl'}, {'id': 'verify'}],
+        'final': {'when': 'all_tasks_verified', 'role': 'judge'},
+    })
+
+    result = load(case, pipeline_spec=spec)
+
+    assert result.requested_task_ids == ['PRE', 'NEXT', 'DOWNSTREAM-NEXT']
+    assert [item['task_id'] for item in result.task_items] == result.requested_task_ids
+
+
+def test_gap_cannot_replace_a_task_outside_the_diagnostic_scope(case):
+    case[1]['amend']['superseded_task_ids'].append('DONE')
+
+    assert load(case).requested_task_ids != ['PRE', 'NEXT']
+
+
+def test_gap_cannot_omit_a_failed_task_from_replacement(case):
+    case[2]['failed_task_ids'].append('DOWNSTREAM')
+
+    assert load(case).requested_task_ids != ['PRE', 'NEXT']

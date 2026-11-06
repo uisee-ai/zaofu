@@ -70,3 +70,16 @@ Task Pipeline 静默门禁同时识别 kernel task.dispatched/task.done、绑定
 候选修订保留 `failed_task_ids` 与 `downstream_task_ids` 作为上一代诊断。对于明确的 `task-map-amend.v1 / gap_tasks_only`，只有触发选择精确等于该诊断并且失败集合与声明被替代集合相同，writer 才改用该计划批准的 `amend.gap_task_ids`。这样不会漏掉新公共前置，也不会把未修订下游重新纳入本次续作。明确的新任务子集及无关选择沿用原逻辑，声明任务缺失仍由 admission 拒绝。
 
 本轮草稿实物验证从错误17项收敛为5项：align加载前置→采样/融合；资源读取守卫→隐私。尚需独立Critic与计划批准；这不是任务实现或产品验收证据。记录：`2026-11-06-0015-gap-diagnostic-selection.md`。
+
+## 2026-11-06 增量替代包含下游
+
+恢复事件中的 failed_task_ids / downstream_task_ids 是上一代诊断范围。若显式
+`task-map-amend.v1` 声明 `gap_tasks_only`，且请求集合精确等于诊断并集，选择器仅在
+`failed ⊆ superseded ⊆ diagnosis` 时使用批准的 `gap_task_ids`。这允许替代一个依赖
+发生变化的下游，但不允许包含无关任务或遗漏失败任务。显式新任务子集仍保留。
+其余 schema、路径、替代链、矩阵、审批和任务级验收继续按既有入口执行。
+
+真实故障 evt-55bf5d9b6b6a：三个失败、一个下游被替代，却因旧等值检查而保留十八项
+诊断选择，漏掉唯一 PostgreSQL 前置。现有 gap-only 准入分支因此未生效，错误报根
+脚手架无 owner。修复选择边界即可；无需扩大已完成 F00 的写域或修改计划字节。
+对应任务：`tasks/active/2026-11-06-0645-gap-downstream-selection.md`（完成后归档到 done）。
