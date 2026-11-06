@@ -150,6 +150,8 @@ class SurgeryActionsMixin:
     def _human_decision_dismiss_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        from zf.runtime.run_manager import _human_decision_event_token
+
         token = str(payload.get("decision_token") or "").strip()
         if not token:
             return self._surgery_failed(
@@ -160,7 +162,7 @@ class SurgeryActionsMixin:
         acknowledged = False
         for event in self.writer.event_log.read_all():
             event_payload = event.payload if isinstance(event.payload, dict) else {}
-            if str(event_payload.get("decision_token") or "") != token:
+            if _human_decision_event_token(event, event_payload) != token:
                 continue
             if event.type == "human.escalate":
                 open_escalation = event
@@ -176,6 +178,17 @@ class SurgeryActionsMixin:
                 requested, action, requested_action,
                 f"decision_token {token} already acknowledged", 409,
             )
+        explicit_token = str(open_escalation.payload.get("decision_token") or "")
+        if not explicit_token and (
+            str(payload.get("escalation_event_id") or "") != open_escalation.id
+            or not str(payload.get("approval_ref") or "").strip()
+            or not str(payload.get("reason") or "").strip()
+        ):
+            return self._surgery_failed(
+                requested, action, requested_action,
+                "legacy dismissal requires exact escalation_event_id, owner approval_ref, and reason",
+                403,
+            )
         emitted = self.writer.append(ZfEvent(
             type="human.escalation.acknowledged",
             actor=self.actor,
@@ -183,7 +196,9 @@ class SurgeryActionsMixin:
             payload={
                 "decision_token": token,
                 "status": "dismissed",
+                "decision": "dismissed",
                 "escalation_event_id": open_escalation.id,
+                "approval_ref": str(payload.get("approval_ref") or ""),
                 "reason": str(payload.get("reason") or "dismissed via controlled action"),
             },
             causation_id=requested.id,

@@ -186,3 +186,17 @@ R07/R08 的复杂 DAG/语义矛盾评测、R14 的多 Provider/网络数据库�
 - usage 为订阅模式，397 条记录未定价；USD=0 不能证明零成本或实际金额预算覆盖。保留原 v5 限额，没有扩容、提高预算或删除必需证据换取成功。
 - 已 `simulation.done` → `stop --include-run-manager`，并核对所有归属进程、tmux 会话和隔离目录退出。REAL-03 旧进程清理单独留证；三个早期／实际业务临时项目均删除，宿主测试的 transient unit 亦停止。
 - 199 正文 SHA-256 仍为 `a5e8b17c629159db55436f71608bad324710d43e3ac3def00ed90acb870082eb`。199 开发 worktree 保留，仅本地提交；未合并到 ZaoFu dev，未 push。
+
+## 后续部署：2026-11-06 LS-v1 恢复
+
+上述未合并状态是 canary 收尾时的记录；199/200 后续已通过 `a856ad0b` 合入 dev。
+LS-v1 的既有配置启用了 `planCriticEnabled: false`，依赖此前尚未进入 dev 的
+`bc8c62b8` 功能；恢复部署保留该显式配置，补入原实现，避免改变运行合同。
+
+另一恢复入口缺陷：历史 `human.escalate` 没有显式 decision_token 时，RM 投影
+按事件身份生成 token，但 `human-decision-dismiss` 只查 payload token，导致
+操作员无法通过该受控入口确认已经过时的等待。现在复用同一身份规则；历史格式
+额外要求精确 `escalation_event_id`、owner `approval_ref` 和非空理由。
+原因是否过时由操作员判断，runtime 不解析描述猜测业务状态，不自动批准计划。
+动作只写 acknowledgement，由 RM 消费后关闭等待；不改旧事件、任务或验收结论。
+回归覆盖缺绑定/授权/理由、错误事件、重复提交，以及实际 RM 消费后的等待清除。
