@@ -43,7 +43,7 @@ def authorize_work_record(service: SemanticResultSubmitService, operation_id: st
     manifest = load_attempt_source_manifest(service.state_dir, str(operation.get('active_attempt_id') or ''))
     if (manifest.get('task_id') != task.id or manifest.get('dispatch_id') != task.active_dispatch_id
             or manifest.get('workflow_run_id') != operation.get('workflow_run_id')
-            or input_lifecycle(manifest, service.event_log.read_all())['requires_rebind']):
+            or input_lifecycle(manifest, service.event_log.read_all(), state_dir=service.state_dir)['requires_rebind']):
         raise ValueError('work record input version needs controlled rebind')
     workdir = Path(str(request.get('workdir') or '')).resolve()
     if not request.get('workdir') or not workdir.is_dir():
@@ -175,7 +175,7 @@ def current_work_record(state_dir: Path, events: list, manifest: dict, actor: st
                     or binding.get('attempt_id') != manifest['attempt_id'] or binding.get('manifest_digest') != canonical_json_sha256(manifest)
                     or binding.get('canonical_attempt_id') != identity.get('attempt_id') or binding.get('lease_id') != identity.get('lease_id')
                     or binding.get('dispatch_id') != task.active_dispatch_id or not Path(binding.get('workdir','')).is_dir()
-                    or input_lifecycle(manifest, events)['requires_rebind']):
+                    or input_lifecycle(manifest, events, state_dir=state_dir)['requires_rebind']):
                 return unavailable
             for evidence in record['evidence_refs']:
                 hydrate_sidecar_ref(state_dir, evidence)

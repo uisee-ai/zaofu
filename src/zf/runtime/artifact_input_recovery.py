@@ -36,7 +36,7 @@ def build_input_recovery(
                  and all(not identity.get(key) or r.get(key) == identity[key]
                          for key in ("operation_id", "provider_session_id"))]
     missing = sum(not required_read_satisfied(own_reads, row) for row in visible)
-    lifecycle = input_lifecycle(manifest, events)
+    lifecycle = input_lifecycle(manifest, events, state_dir=state_dir)
     prefix = f"{zf_cli_cmd()} artifact"
     attempt = shlex.quote(str(manifest["attempt_id"]))
     result = {
