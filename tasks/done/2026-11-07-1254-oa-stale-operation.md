@@ -1,6 +1,6 @@
 # R33：OA 过期结果的 operation 收口与重放恢复
 
-> 状态: active
+> 状态: done — 41b41a0a fix: retire obsolete orchestrator operations after stale results
 
 授权：继续监工、修复阻塞。真实 evt-59d725c28a35 将 OA 旧计划结果判为 superseded，但 operation 仍 running，导致 worker assistance-1fdb10f4c42c783584b92464 已由 RM 路由却无法派发。
 
@@ -11,3 +11,5 @@
 - 记录 -> verify: 问题、OA/RM 未恢复原因、实现 commit、实际恢复证据写入 LS 监工记录；不 push。
 
 验证：结果入口先复现 RED（预期 superseded 实际 running），修复后新增/入口19通过；26文件影响闭包384通过；sentinel53、三流与噪声 mock E2E10通过。dev-verify 因通用 admission 依赖映射扩展至243测试文件而建议全量；按仓库“不得仅按数量触发全量”规则，显式 skip deterministic/serial 后以26文件闭包替代，全量与真实 Provider E2E未运行。实际状态只读预览精确选中1个旧 running+2个过期 requested，不修改当前包或任何业务 Task。部署及真实派发待验证。
+
+实际部署：dev79b26133/PID2995470，receipt21fb34c755344a09805a960808fb1438；13:00:14三条superseded与下一当前checkpoint真实started（evt-c8c2a2339d06）证明busy释放。活跃业务Worker及OA pane/PID保持，2个已终结任务由runtime正常归档/换槽。附件原求助因Worker失败后stale关闭，未宣称已答复；失败分类漏路由为后续R34。
