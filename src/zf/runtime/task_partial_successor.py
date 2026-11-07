@@ -1,5 +1,6 @@
 """Authorize a committed failed Impl as a successor's isolated starting point."""
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -39,29 +40,36 @@ def partial_successor_proof(
     predecessors = evidence.get("supersedes_task_ids")
     if not isinstance(predecessors, list) or len(predecessors) != 1:
         return {}
-    old = store.get(predecessors[0])
-    if old is None:
-        return {}
-    identity = current_task_contract_identity(old)
-    if identity.get("workflow_run_id") != workflow_run_id:
-        return {}
     events = runtime.event_log.read_all()
-    failures = {
-        e.id
-        for e in events
-        if e.type == "dev.blocked"
-        and e.task_id == old.id
-        and e.payload.get("source_commit") == partial_head
-    }
-    proof = task_pipeline_failure_continuation(
-        state_dir=state,
-        project_root=root,
-        events=events,
-        task_id=old.id,
-        workflow_run_id=workflow_run_id,
-        identity=identity,
-        failure_event_ids=failures,
-    )
+    old_id = predecessors[0]
+    visited = {task_id}
+    proof: dict = {}
+    # A later successor may have stopped before changing the inherited base.
+    # Follow only explicit single-parent links that retain this exact commit.
+    # The original admitted failure is still required; names are never lineage.
+    for _ in range(16):
+        if old_id in visited:
+            return {}
+        visited.add(old_id)
+        old = store.get(old_id)
+        if old is None:
+            return {}
+        identity = current_task_contract_identity(old)
+        if identity.get("workflow_run_id") != workflow_run_id:
+            return {}
+        failures = {e.id for e in events if e.type == "dev.blocked"
+                    and e.task_id == old.id and e.payload.get("source_commit") == partial_head}
+        proof = task_pipeline_failure_continuation(
+            state_dir=state, project_root=root, events=events, task_id=old.id,
+            workflow_run_id=workflow_run_id, identity=identity,
+            failure_event_ids=failures,
+        )
+        if proof.get("continuation_commit") == partial_head:
+            break
+        links = (old.contract.evidence_contract or {}).get("supersedes_task_ids")
+        if old.contract.source_ref != f"git:{partial_head}" or not isinstance(links, list) or len(links) != 1:
+            return {}
+        old_id = links[0]
     if proof.get("continuation_commit") != partial_head:
         return {}
     failure = next(e for e in events if e.id == proof["continuation_source_event_id"])
@@ -108,13 +116,64 @@ def partial_successor_workspace_base(
         candidate_head=candidate_head,
         workflow_run_id=workflow_run_id,
     ):
-        return partial_head
+        return _compose_partial_baseline(
+            Path(runtime.project_root), task_id=task_id,
+            partial_head=partial_head, candidate_head=candidate_head,
+        )
     from zf.runtime.task_pipeline_runtime import TaskPipelineRuntimeError
 
     raise TaskPipelineRuntimeError(
         "Task Pipeline workspace base diverged from the current Candidate: "
         f"dispatch_base={partial_head}, candidate_head={candidate_head}"
     )
+
+
+def _compose_partial_baseline(
+    root: Path, *, task_id: str, partial_head: str, candidate_head: str,
+) -> str:
+    """Build an unpublished merge object; never move a ref or edit a worktree.
+
+    Both immutable parents remain reachable. Candidate integration can still
+    identify the original bounded partial patches, while Impl sees dependencies
+    that completed after the failed attempt's original base was frozen.
+    """
+    from zf.runtime.git_capture import git_env
+    from zf.runtime.task_pipeline_runtime import TaskPipelineRuntimeError
+
+    env = git_env()
+
+    def run(*args: str, body: str | None = None) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                ["git", "-C", str(root), *args], input=body, capture_output=True,
+                text=True, timeout=30, check=False, env=env,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise TaskPipelineRuntimeError("partial baseline Git preparation failed") from exc
+
+    merged = run("merge-tree", "--write-tree", candidate_head, partial_head)
+    if merged.returncode or not merged.stdout.strip():
+        raise TaskPipelineRuntimeError(
+            "partial successor baseline conflict or merge-tree failure: "
+            f"candidate={candidate_head}, partial={partial_head}; "
+            "preserve both sources and request bounded conflict resolution"
+        )
+    tree = merged.stdout.splitlines()[0].strip()
+    dates = [run("show", "-s", "--format=%ct", parent)
+             for parent in (candidate_head, partial_head)]
+    if any(result.returncode for result in dates):
+        raise TaskPipelineRuntimeError("partial baseline parent timestamp is unavailable")
+    # Stable metadata makes repeated dispatch preparation resolve the same SHA.
+    stamp = f"{max(int(result.stdout.strip()) for result in dates)} +0000"
+    env.update(GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp)
+    commit = run(
+        "commit-tree", tree, "-p", candidate_head, "-p", partial_head,
+        body=f"chore: compose verified partial baseline for {task_id}\n\n"
+             f"Candidate: {candidate_head}\nPartial: {partial_head}\n",
+    )
+    if commit.returncode or not commit.stdout.strip():
+        raise TaskPipelineRuntimeError("partial baseline commit object could not be created")
+    return commit.stdout.strip()
 
 
 def apply_partial_successor_commit(

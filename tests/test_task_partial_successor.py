@@ -1,6 +1,8 @@
 """A failed partial Task can continue while unrelated Candidate work advances."""
 
 from types import SimpleNamespace
+from pathlib import Path
+from copy import deepcopy
 
 import pytest
 
@@ -71,12 +73,117 @@ def scenario(tmp_path, fault=""):
 
 def test_workspace_reuses_verified_partial_without_publishing_it(tmp_path):
     runtime, task, context, _, _, candidate, partial = scenario(tmp_path)
-    assert (
-        task_pipeline_workspace_base(runtime, task=task, generation_context=context)
-        == partial
-    )
+    combined = task_pipeline_workspace_base(runtime, task=task, generation_context=context)
+    assert git(tmp_path, "show", combined + ":concurrent.txt") == "other task"
+    assert git(tmp_path, "show", combined + ":product.txt") == "partial implementation"
+    assert git(tmp_path, "merge-base", "--is-ancestor", candidate, combined) == ""
+    assert git(tmp_path, "merge-base", "--is-ancestor", partial, combined) == ""
+    assert task_pipeline_workspace_base(runtime, task=task, generation_context=context) == combined
     assert git(tmp_path, "rev-parse", "candidate/FEATURE") == candidate
     assert git(tmp_path, "show", candidate + ":product.txt") == "base"
+
+
+def test_dependency_partial_conflict_does_not_publish_or_modify_worktree(tmp_path):
+    runtime, task, context, _, _, candidate, _ = scenario(tmp_path, "conflict")
+    before = git(tmp_path, "show-ref")
+    status = git(tmp_path, "status", "--porcelain")
+    with pytest.raises(TaskPipelineRuntimeError, match="partial.*conflict"):
+        task_pipeline_workspace_base(runtime, task=task, generation_context=context)
+    assert git(tmp_path, "show-ref") == before
+    assert git(tmp_path, "rev-parse", "HEAD") == candidate
+    assert git(tmp_path, "status", "--porcelain") == status
+
+
+@pytest.mark.parametrize("fault", ["", "base", "run", "cycle", "ambiguous", "missing_admission"])
+def test_repeated_successor_requires_explicit_same_base_lineage(tmp_path, fault):
+    runtime, task, context, _, _, candidate, partial = scenario(
+        tmp_path, "missing_admission" if fault == "missing_admission" else "")
+    store = TaskStore(runtime.state_dir / "kanban.json")
+    prior = deepcopy(task)
+    prior.id = "MIDDLE"
+    prior.key = "FEATURE:MIDDLE"
+    if fault == "base":
+        prior.contract.source_ref = "git:" + candidate
+    if fault == "run":
+        prior.contract.evidence_contract["workflow_run_id"] = "foreign-run"
+    if fault == "cycle":
+        prior.contract.evidence_contract["supersedes_task_ids"] = [task.id]
+    if fault == "ambiguous":
+        prior.contract.evidence_contract["supersedes_task_ids"] = ["PART", "OTHER"]
+    store.add(prior)
+    task.contract.evidence_contract["supersedes_task_ids"] = [prior.id]
+    store.update(task.id, contract=task.contract)
+    if fault:
+        with pytest.raises(TaskPipelineRuntimeError, match="base diverged"):
+            task_pipeline_workspace_base(runtime, task=task, generation_context=context)
+    else:
+        combined = task_pipeline_workspace_base(runtime, task=task, generation_context=context)
+        assert git(tmp_path, "show", combined + ":concurrent.txt") == "other task"
+        assert git(tmp_path, "show", combined + ":product.txt") == "partial implementation"
+        proof = partial_successor_proof(runtime, task_id=task.id, partial_head=partial,
+                                       candidate_head=candidate, workflow_run_id="run")
+        assert proof["supersedes_task_ids"] == [prior.id]
+        assert proof["partial_commits"] == [partial]
+
+
+@pytest.mark.parametrize("stage", ["impl", "verify"])
+def test_dispatch_composes_new_workspace_then_preserves_frozen_base(tmp_path, monkeypatch, stage):
+    from zf.core.config.schema import RoleConfig, RoleLifecycleConfig
+    from zf.runtime.task_pipeline_dispatch import dispatch_task_pipeline_stage
+
+    runtime, task, context, _, config, candidate, partial = scenario(tmp_path)
+    config.runtime.workdirs.enabled = True
+    config.runtime.workdirs.mode = "worktree"
+    config.runtime.workdirs.provision_paths = []
+    runtime.config = config
+    role = RoleConfig(name="dev", backend="mock", lifecycle=RoleLifecycleConfig(mode="on_demand"))
+    runtime._find_role_by_instance = lambda _: role
+    context["task_map_generation"] = "next-map"
+    captured = []
+
+    class SnapshotBoundary(Exception):
+        pass
+
+    def snapshot_boundary(*args, **kwargs):
+        captured.append(kwargs["workspace"])
+        raise SnapshotBoundary
+
+    monkeypatch.setattr("zf.runtime.task_pipeline_targets.prepare_contract_snapshot", snapshot_boundary)
+
+    def dispatch(current_stage):
+        with pytest.raises(SnapshotBoundary):
+            dispatch_task_pipeline_stage(runtime, policy={}, task=task,
+                assignment={"stage": current_stage, "role_instance": role.instance_id},
+                generation_context=context, operation_rows=[], attempt_rows=[])
+
+    dispatch("impl")
+    workspace = captured[-1]
+    project = Path(workspace.project_path)
+    frozen = git(project, "rev-parse", "HEAD")
+    assert git(project, "show", "HEAD:concurrent.txt") == "other task"
+    assert git(project, "show", "HEAD:product.txt") == "partial implementation"
+    assert workspace.base_commit == frozen
+    assert git(tmp_path, "merge-base", "--is-ancestor", partial, frozen) == ""
+    assert git(tmp_path, "rev-parse", "candidate/FEATURE") == candidate
+    (project / "gap.txt").write_text("worker delta\n")
+    git(project, "add", "--", "gap.txt")
+    git(project, "commit", "-qm", "work after frozen base")
+    worker_head = git(project, "rev-parse", "HEAD")
+    (project / "uncommitted.txt").write_text("in flight\n")
+
+    # A later Candidate conflicts with the old partial. Existing work must not
+    # even attempt to recompose; its frozen base and uncommitted data survive.
+    (tmp_path / "product.txt").write_text("later candidate edit\n")
+    git(tmp_path, "add", "--", "product.txt")
+    git(tmp_path, "commit", "-qm", "later candidate")
+    runtime.event_log.append(ZfEvent(type="candidate.updated", origin="kernel", payload={
+        "incremental": True, "workflow_run_id": "run",
+        "candidate_head": git(tmp_path, "rev-parse", "HEAD"),
+    }))
+    dispatch(stage)
+    assert captured[-1].base_commit == frozen
+    assert git(project, "rev-parse", "HEAD") == worker_head
+    assert (project / "uncommitted.txt").read_text() == "in flight\n"
 
 
 @pytest.mark.parametrize(
@@ -116,12 +223,24 @@ def test_partial_successor_does_not_relax_unproven_divergence(tmp_path, fault):
             task_pipeline_workspace_base(runtime, task=task, generation_context=context)
 
 
-@pytest.mark.parametrize("conflict", [False, True])
-def test_integration_preserves_candidate_partial_and_worker_delta(tmp_path, conflict):
+@pytest.mark.parametrize("conflict,compose,repeated", [
+    (False, False, False), (True, False, False), (False, True, False), (False, True, True),
+])
+def test_integration_preserves_candidate_partial_and_worker_delta(tmp_path, conflict, compose, repeated):
     runtime, task, context, writer, config, candidate, partial = scenario(
         tmp_path, "conflict" if conflict else ""
     )
-    git(tmp_path, "checkout", "-qb", "worker/next", partial)
+    if repeated:
+        store = TaskStore(runtime.state_dir / "kanban.json")
+        prior = deepcopy(task)
+        prior.id, prior.key = "MIDDLE", "FEATURE:MIDDLE"
+        store.add(prior)
+        task.contract.evidence_contract["supersedes_task_ids"] = [prior.id]
+        store.update(task.id, contract=task.contract)
+    workspace_base = task_pipeline_workspace_base(runtime, task=task, generation_context=context) if compose else partial
+    git(tmp_path, "checkout", "-qb", "worker/next", workspace_base)
+    if compose:
+        assert (tmp_path / "concurrent.txt").read_text() == "other task\n"
     (tmp_path / "gap.txt").write_text("completed gap\n")
     git(tmp_path, "add", "--", "gap.txt")
     git(tmp_path, "commit", "-qm", "complete gap")
@@ -136,7 +255,7 @@ def test_integration_preserves_candidate_partial_and_worker_delta(tmp_path, conf
             payload={
                 "source_commit": head,
                 "source_branch": "worker/next",
-                "base_git_head": partial,
+                "base_git_head": workspace_base,
                 "feature_id": "FEATURE",
                 "files_touched": ["gap.txt"],
             },

@@ -502,6 +502,9 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
+        def plan(self, **kwargs: object) -> SimpleNamespace:
+            return self.prepare(**kwargs)
+
         def prepare(self, **_kwargs: object) -> SimpleNamespace:
             return SimpleNamespace(
                 enabled=True,
