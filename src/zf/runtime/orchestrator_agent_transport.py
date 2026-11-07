@@ -161,6 +161,11 @@ def dispatch_pending_orchestrator_checkpoint(runtime: Any) -> None:
     role = configured_orchestrator_role(runtime)
     if role is None:
         return
+    from zf.runtime.orchestrator_agent_obsolete import reconcile_obsolete_checkpoint_operations
+
+    reconcile_obsolete_checkpoint_operations(
+        workflow_operation_service(runtime), role_instance=orchestrator_instance_id(runtime),
+    )
     events = runtime.event_log.read_all()
     operations = reduce_workflow_operations(events)
     if any(row.get("operation_type") == "orchestrator_agent_semantic"

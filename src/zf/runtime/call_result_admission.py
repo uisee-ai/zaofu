@@ -369,6 +369,13 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
                     causation_id=invalid.id,
                     correlation_id=event.correlation_id or "",
                 )
+            if (self.operation_service is not None and current_operation is not None
+                    and current_operation.get("operation_type") == "orchestrator_agent_semantic"):
+                from zf.runtime.orchestrator_agent_obsolete import reconcile_obsolete_checkpoint_operations
+
+                reconcile_obsolete_checkpoint_operations(
+                    self.operation_service, operation_id=key[0],
+                )
             return CallResultAdmissionOutcome(
                 status="superseded",
                 mode=mode,

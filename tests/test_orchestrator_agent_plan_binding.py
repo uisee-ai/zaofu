@@ -82,6 +82,8 @@ def test_task_readmission_rejects_result_submission(tmp_path):
     }))
     with pytest.raises(ResultSubmitError, match="stale_plan_artifact_package"):
         _submit_rework(runtime, prepared)
+    from zf.runtime.workflow_operation import load_workflow_operation
+    assert load_workflow_operation(runtime.event_log, prepared.operation_id)["status"] == "superseded"
 
 
 @pytest.mark.parametrize("mutation", [

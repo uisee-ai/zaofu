@@ -126,3 +126,7 @@ Task 替换关系校验。多层后继同样逐边证明；没有父包、正文
 入口为 ArtifactQueryService -> current_plan_port_sources；
 `tests/test_republished_plan_inputs.py` 经实际服务入口覆盖 Impl/Task Verify 与多层
 重发。该修复使已批准的同版重发可原地重试，不要求重新规划或复制完整需求正文。
+
+### OA 过期结果必须收口 operation（2026-11-07）
+
+`workflow.call.result.invalid` 的 `stale_call_result_superseded` 不等于 operation 已终止。OA 准入入口在拒绝过期包后，核验不可变 request、当前作用域包、结果 envelope 的 Run/request/attempt 绑定，通过 `WorkflowOperationService.supersede` 收口。每轮 pending checkpoint dispatch 也重放同一规则，修复历史遗留 running 占用；queued 且已过期的 checkpoint 不再付费派发。当前包、被保留 Task 的旧包、缺失或损坏证据及尚未提交结果的运行中 OA 均不自动退役；plan_candidate 沿用已有候选版本替代协议。该机制不修改业务 Task 状态，也不把过期结果当作通过或触发新 Planner。
