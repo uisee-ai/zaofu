@@ -66,3 +66,12 @@ flow_metadata_by_kind 的指定条目，单 Flow 回退到编译后的 flow_meta
 ### Reader / Synth 的活跃回合闲置宽限
 
 Fanout 的 Codex reader 和 synth 在派发后有尚未关闭的 provider turn 时，若压缩上下文等操作暂时不产生 hook，以最后一次实际活动开始计算有界闲置宽限：最多为当前闲置阈值的四倍。该 turn 必须属于当前角色并开始于本次派发之后；关闭、回收或旧派发的 turn 不获得此宽限。阶段显式执行超时仍优先生效，持续沉默超过宽限仍按 idle 失败并走既有恢复。事件由现有读取窗口重建，不重复读取整个事件账本。
+
+### 授权新代际与无进展计数
+
+Run Manager 的无进展计数按 Run 和失败指纹隔离。`stage-replan-new-generation`
+实际成功后，以 `runtime.action.completed`、新 trigger、目标重开和旧 escalation
+的绑定关系退役对应旧计数。只有请求、失败动作、缺少引用、跨 Run 或重放不清除；
+新代际再出现相同失败时重新累计，其他失败与审批门继续生效。历史事件保留不变，
+防止旧诊断长期占据队首，阻塞已有授权的后续恢复。回归见
+`tests/test_recovery_generation_progress.py`，涵盖真实受控恢复和 Run Manager 消费入口。
