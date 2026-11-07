@@ -273,14 +273,21 @@ class RecoveryActionsMixin:
         base = dict(source.payload if isinstance(source.payload, dict) else {})
         base["redrive_of"] = source_event_id
         base["rework_of"] = source_event_id  # 代际:retrigger 不是 replay
-        emitted = self.writer.append(ZfEvent(
+        trigger = ZfEvent(
             type=source.type,
             actor=self.actor,
             task_id=source.task_id,
             payload=base,
             causation_id=requested.id,
             correlation_id=source.correlation_id,
-        ))
+        )
+        from zf.runtime.reader_shadow_recovery import retain_shadow_as_observation
+
+        retain_shadow_as_observation(
+            trigger, events, approval_ref=str(payload.get("approval_ref") or ""),
+            request_id=requested.id,
+        )
+        emitted = self.writer.append(trigger)
         return self._recovery_ok(requested, emitted, action, requested_action, {
             "retriggered_event_id": emitted.id,
             "source_event_id": source_event_id,
@@ -452,6 +459,11 @@ class RecoveryActionsMixin:
                 409,
             )
         bind_operator_feedback(stage_trigger, feedback, request_id=requested.id)
+        from zf.runtime.reader_shadow_recovery import retain_shadow_as_observation
+
+        retain_shadow_as_observation(
+            stage_trigger, events, approval_ref=approval_ref, request_id=requested.id,
+        )
         if payload.get("resume_candidate_synth_event_id"):
             from zf.runtime.plan_synth_recovery_refs import resume_failed_critic_candidate
 
