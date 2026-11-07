@@ -147,3 +147,11 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Dataset 6acc3dc版本最终runtime为42pass/1fail，smoke同一受管观测失败；原Core三条完整快照已GREEN。失败来自以整段进程生命周期比对拒绝事务，独立recovery容量更新越过观测窗；不能把recovery_capacity列为豁免。5f7ae7f8826b补充测试只在私有测试副本观察真实writer：保留117表/52文件、7观察点，以PID/backend/schema/xmin/完整前后行逐字段证明后台事务独立，并要求非audit行不属于拒绝xid；原三条Core tick快照未删改。
 - 辅助观测开发中的变量遮蔽、表键及审计排序错误均留日志且不冒充产品RED。专项测试1pass；新5f7ae7f浏览器通过，完整runtime仍运行，必须新头全部原合同命令完成后再交独立Verify；旧6acc失败证据保留。
 - 空闲verify-lane0 pane736为重建后尚未收到新任务的Codex会话，无已观测provider身份，重复休眠拒绝未影响活动操作；未放宽身份保护或杀进程。诊断idle-verify-unobserved-1830.json。Dashboard200、监督PG健康；有效任务仍31done/14未完成。
+
+
+### 18:54 UTC：Dataset 新头全合同通过并进入独立 Verify
+
+- 5f7ae7f8826b9f3e97032e719b150111fc889da2的runtime43/43（585.93秒）、smoke3/3、Docker浏览器1/1、三delta与build均通过；runtime 20261107T183237-e7e45e24、browser 20261107T183234-0efc66df。新runtime和smoke各七完整快照点，117表、独立后台事务精确归因。归档脚本曾读取旧观察格式缺observed_at，worker修正证据整理而未改产品或丢原始日志；最终证据逐文件回读匹配、worktree/index干净。
+- 18:48:14 evt-dcaa270c4246准入 / evt-4ece72864cae dev.build.done；18:48:51 evt-72457f934f42独立Verify派发到pane740，op wop-verify-tp-P09A-DATASET-R3-b5b6afcf73736-b5f05fe351bf，attempt ta-8f5dac587b0d4fd6b9ce。监工提示当前attempt完整共享正文分页及观察器负例风险，未指定通过；独立判断尚未完成。
+- 两条Verify并行；旧verify-lane0身份未确认休眠拒绝没有挡住本次派发。Dataset Impl正常compact约113秒后续跑同一后台测试；媒体Verify也正常compact后续读。未触发强制回收活动任务。
+- 下一依赖：Dataset→P09B→(P09C与P10)，Media→Privacy R6；8/8为capacity，当前没有额外ready任务，未为填lane绕过依赖。完成仍31/45，后续产品集成与最终candidate验收保留。
