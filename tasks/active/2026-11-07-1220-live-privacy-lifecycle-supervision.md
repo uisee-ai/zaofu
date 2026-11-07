@@ -213,3 +213,12 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Privacy追加自动策略、撤权/审批失败与崩溃重试9pass；canonical别名/发布根与所有成员撤销、损坏冷存拒绝专项4pass；媒体适配器/格式专项6pass。浏览器先真实409输入不一致，后留存active未转cold，定位测试部署registry遗留引用；保留历史jobs引用，仅退役测试配置注册，两个真实UI旅程随后通过。
 - Privacy组合runtime 20261107T201650-c354cf84仍失败：前一媒体测试默认registry污染后续“无引用”资产测试。worker补齐测试隔离，媒体→留存组合11pass；原始失败/浏览器trace、截图与WebM归档。监工约75分钟提醒先形成最终源码提交再同头全合同验证，明确不得因时限删门禁/自报通过，诊断privacy-r6-final-gates-guidance.json。当前正在提交，正式同头结果未出。
 - 两路持续活动，20:00以后未发现新增orchestrator.tick.failed/dev.blocked/task.done/human.escalate；仍33/45完成，未把自检或浏览器局部通过计为独立Verify/集成完成。
+
+
+### 20:47 UTC：后继两项 Impl 正式准入、双路独立 Verify
+
+- P09B旧a2754d7最终runtime 20261107T202748-77604365实际7pass/2fail/exit1，worker曾口头误报完成，但交接复核自行纠正且未提交成功。原因是after_store/crash两个故障注入在单次tick的Core sweep退避下未执行，严格拒绝审计断言失败。321179dd9fbf5b787f6d007da8a1916cbff198ae加入真实队列等待+显式staged注入执行断言，完整表/文件快照不减。新同头runtime9pass/137.94秒（203504-c40e7220）、smoke1/13.17秒（203504-dba358c3）、browser1（203506-b8bf4966），均exit0；WebM436帧实际解码，四个DS版本、回滚原包SHA均核对。旧失败归档保留。
+- P09B evt-cb484c09bfd3准入、evt-137a2ffd59d5 dev.build.done；20:42:46独立Verify派发，op wop-verify-tp-P09B-95dc7c92284b47a9-verify--497445f55260 / attempt ta-b090b51b2c885a17a5c2 / prd-verify-lane-0 / pane745。监工补充完整分页、失败注入/并发CAS/完整状态边界独立审查提示，不指示通过。
+- Privacy最终提交5ea5e556e6931aaaa3a8bb4a8b91b069b705d153，44文件全部在允许目录。大提交守卫按清单与源码核实后使用其显式允许流程，未禁用hook。同头runtime46pass/470.33秒（203156-f6c83110）、smoke3（203157-4c64974b）、browser2（203158-840b11c2）、原4delta/build/lint均通过，命令digest/源码fixture配置绑定核对。只读事件查询叠加重定向被路径守卫拒绝，worker改为只读查询+原生工具存到任务目录，未改安全规则。
+- Privacy evt-bbf4e16980f8准入、evt-c898a01a2944 dev.build.done；20:46:02独立Verify派发，op wop-verify-tp-P16B-PRIVACY-R6-dfdc3357f4bd9-b93eb9953652 / attempt ta-7f66ec66f22a0eb3dbe4 / prd-verify-lane-1 / pane746。监工明确旧保护package、canonical别名/全成员撤权、项目策略owner与registry隔离反例、真实浏览器与历史失败保留，不代验不代签。
+- 两项均仅Impl完成，独立Verify与组合rolling未出结果，仍33done/2验证/10待依赖。配置context_hard_cap/recycle_hard_cap=0.9是上下文占比，不是90分钟墙钟期限；本轮未改任何预算或门禁。
