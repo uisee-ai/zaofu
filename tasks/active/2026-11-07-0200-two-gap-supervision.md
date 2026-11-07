@@ -43,3 +43,18 @@ Planner提交 `evt-8605c3d3196e`，42个有效任务、287条AC，旧274条全�
 固定提交图的loader复核发现：broad恢复诊断只选择13个旧失败替代/下游，遗漏3个明确声明的新增前置。显式选择批准gap与原下游并集共16项可通过原schema与pipeline准入。已授权机械选择器最小回归修复，必须保留显式子集与无关选择。首波真实可执行宽度为3（对齐真值、共享留存、媒体脱敏），容量仍为Impl8/Verify8；不以删除真实依赖凑满8。
 
 Dashboard HTTP200、Compose PG healthy；它们不是产品验收证据。视频编解码及真实浏览器WebM仍由新媒体任务和独立Verify执行。固定复核见 `/tmp/zf-supervision-20261107/submitted-review.log` 与 `writer-selection-analysis.json`。
+
+## 02:50Z 已批准并恢复三个并行 Impl
+
+第三项harness修复 `f3d4b175` 已提交、精确同步运行源码并于02:40:44Z重载（watcher3656958）；349项自动闭包、sentinel50通过/1skip，主运行源码实际loader也选16。归档见 `tasks/done/2026-11-07-0237-broad-gap-selection.md`。
+
+Critic提交 `evt-cee6ad122f5c` passed，无阻断fix_items；格式枚举提交错误已由Critic自行修正。保留非阻断旧说明措辞和真实外部资格待验限制，不等于产品通过。结果到ready约63秒、到approval request约72秒，时间线已闭合，不据此宣称结果丢失或已定位性能根因。
+
+本轮包 `678b9a2f447d84c5a01b33c4f6aee11e8f90e02fa079f51c11a441c571df65ef`；真实ready `evt-f48391760da0` 经loader复核16项、3前置齐全，审批包/ref/count一致，证据 `/tmp/zf-supervision-20261107/approval-review.json`。已根据用户既有委托执行 `zf plan approve evt-f48391760da0`，批准事件 `evt-909dadf0ebc6`。旧10月28日待审批项不属于本轮，未批准。
+
+真实派发：
+- 02:49:38 `evt-4754d9910dda`，P09A-ALIGN-TRUTH-R1 → prd-dev-lane-0。
+- 02:49:46 `evt-a389c37f63b3`，P16B-RETENTION-CONTRACT-R1 → prd-dev-lane-1。
+- 02:49:54 `evt-2bc81ad0e3c2`，P16B-MEDIA-REDACTION-R1 → prd-dev-lane-2。
+
+02:49:59规范状态：26done、3in_progress、14backlog（含父任务，即13待执行子任务）、15历史cancelled。有效总量42，当前无Verify worker；Impl/Verify容量8/8，图的首波真实宽度3。后续继续监工TDD、媒体编解码/真实WebM、独立Verify及候选集成，产品修复尚未完成。
