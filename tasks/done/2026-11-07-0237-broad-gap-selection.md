@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # Broad resume 保留批准的增量前置
 
@@ -48,4 +48,5 @@
 - `git diff --check` 通过；精确模块补丁对主checkout `git apply --check` 通过。
 - 记录均位于 `/tmp/zf-supervision-20261107/broad-selection-*.log`。
 
-代码尚未由监工提交或加载；因此本记录保持active，不宣称产品任务已完成。
+实现提交：`f3d4b175 fix: include approved prerequisites in broad recovery selection`。
+监工已精确同步main模块（前后SHA留档），通过受控重载请求 `evt-6bf88192fd2c` 加载；保留Critic会话和26done。本项仅代表harness修复完成，产品实施与独立验收仍在持续active记录中。

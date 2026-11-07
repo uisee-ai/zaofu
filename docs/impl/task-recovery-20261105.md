@@ -130,4 +130,4 @@ fresh recycle，尚未落盘的规划丢失。
 `gap_tasks_only` 仍只选批准的gap。显式新任务子集、无关选择、scope不匹配或无法
 证明的替代关系不扩展；broad恢复不借gap-only分支跳过完整图的根owner检查。
 本轮固定图原选13项，正确并集应为16项，新增3前置由DAG调度而非强制同时开跑。
-任务与验证记录：`tasks/active/2026-11-07-0237-broad-gap-selection.md`。
+任务与验证记录：`tasks/done/2026-11-07-0237-broad-gap-selection.md`。
