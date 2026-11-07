@@ -1,6 +1,6 @@
 # 连续后继任务继承原始输入
 
-> 状态: active — 用户授权监工发现阻塞后修复；范围限定为有证据的连续替换输入继承。
+> 状态: done — bd7d91ec fix: resolve inherited inputs through repeated task replacements。
 
 LS-v1 的 FMS13 → POLICY → POLICY-EVIDENCE 后继链仍引用原始 task_execution_input。当前解析器只读取直接前任分区，第二层前任不在原始输入内时失败；不能通过复制完整输入、猜测任务名或跳过必读解决。实际新提案另缺显式输入选择，先保持未准入。
 
@@ -17,3 +17,5 @@ LS-v1 的 FMS13 → POLICY → POLICY-EVIDENCE 后继链仍引用原始 task_exe
 - 两层/三层后继的真实HandoffResolver入口4项先红；当前4文件32 passed，含跨Run、歧义、非gap、无关祖先、输入变化及循环拒绝。初版新增测试把改变的输入同时带入当前包，实际上构成合法legacy输入，已修正fixture为当前旧输入与祖先新输入不一致；没有放宽生产验证。
 - 14文件输入/包/sidecar/账本/实际handoff与199 mock闭包120 passed；dev-verify自动18文件254 passed。sentinel53 passed；额外flow smoke见本轮日志。未跑全量pytest/真实Provider。
 - 解析器复用原来源检查，每层返回带摘要绑定的历史端口；原始输入ref/digest始终不变。层数保护32与现有包祖先上限一致，超过显式报错，不截断上下文。
+
+真实闭环：dev54fa54b1部署后，补正提案受控请求evt-5588a65bf01f，审批evt-f0ce88ea38e4，2026-11-07 11:48:14实际派发evt-4b166e51f440。FMS13→POLICY→POLICY-EVIDENCE的required_reads明确定位原FMS13 $.shared/$.tasks[11]，原摘要91dfc2bd不变；源码基线1ad75d35保留前任部分代码。现场凭证docs/records/2026-11-07-files-input-lineage-live-proof.json位于LS-v1。只证明恢复派发及输入来源，不把策略任务或产品记为已通过。
