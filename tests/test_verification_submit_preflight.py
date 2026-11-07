@@ -17,18 +17,22 @@ from zf.runtime.task_contract_snapshot import (
 )
 
 
-def _running_verify(tmp_path, profile):
+def _running_verify(tmp_path, profile, owner="task_verify"):
     runtime = _runtime(tmp_path)
     runtime.config.workflow.flow_metadata["result_protocol"]["semantic_submit_profiles"][profile] = "blocking"
     credential_path = provision_role_submit_credential(runtime.state_dir, "verify-1")
     package, spec = _package(runtime.state_dir)
     contract = _contract()
     contract.update(workflow_run_id=RUN_ID, task_map_generation=GENERATION)
+    contract["verification_owner"] = owner
+    contract["acceptance_criteria"][0]["verification_owner"] = owner
     descriptor = write_task_contract_snapshot(runtime.state_dir, contract)
     target = write_target_snapshot(runtime.state_dir, build_target_snapshot(
         descriptor, target_commit=TARGET, contract_snapshot=contract,
     ))
     semantic = _verification_result(contract, descriptor, target)
+    semantic["verification_owner"] = owner
+    semantic["requirement_results"][0]["verification_owner"] = owner
     semantic.update(workflow_run_id=RUN_ID, task_map_generation=GENERATION,
                     target_commit=TARGET, candidate_ref=CANDIDATE)
     semantic["probe_receipts"][0]["target_commit"] = TARGET
@@ -117,6 +121,51 @@ def test_candidate_preflight_uses_full_product_contract(tmp_path, error):
     assert any(x["code"] == "product_acceptance_invalid" for x in result["errors"])
     assert before == [e.id for e in runtime.event_log.read_all()]
     assert not (runtime.state_dir / "product-acceptance/reports").exists()
+
+
+@pytest.mark.parametrize("profile", ["task-verify", "candidate-verify"])
+def test_failed_candidate_execution_can_abstain_without_product_report(tmp_path, profile):
+    runtime, prepared, service, credential_path, semantic = _running_verify(
+        tmp_path, profile, owner="candidate_verify",
+    )
+    # A task-stage caller can also carry the candidate verification owner.
+    semantic.update(execution_status="failed", verdict="abstained",
+                    verification_owner="candidate_verify", failure_class="runner_environment")
+    semantic.pop("product_acceptance_report", None)
+    args = dict(operation_id=prepared.operation_id, role_instance="verify-1",
+                credential=credential_path.read_text().strip())
+    before = {p.relative_to(runtime.state_dir): p.read_bytes()
+              for p in runtime.state_dir.rglob("*") if p.is_file()}
+    result = service.validate_plan_candidate(**args, semantic_result=semantic)
+    assert result["status"] == "passed", result
+    assert before == {p.relative_to(runtime.state_dir): p.read_bytes()
+                      for p in runtime.state_dir.rglob("*") if p.is_file()}
+    submitted = service.submit(**args, semantic_result=semantic)
+    assert submitted.canonical_event_type == "verify.child.failed"
+    assert not any(e.type == "verify.child.completed" for e in runtime.event_log.read_all())
+    assert not (runtime.state_dir / "product-acceptance/reports").exists()
+
+
+@pytest.mark.parametrize("error", ["report", "ref", "invalid_status", "product_rejection"])
+def test_candidate_abstention_does_not_bypass_supplied_report_or_verdict_checks(tmp_path, error):
+    runtime, prepared, service, credential_path, semantic = _running_verify(tmp_path, "candidate-verify")
+    semantic.update(execution_status="failed", verdict="abstained", failure_class="runner_environment")
+    semantic.pop("product_acceptance_report")
+    if error == "report":
+        semantic["product_acceptance_report"] = {}
+    elif error == "ref":
+        semantic.update(product_acceptance_report_ref="missing.json", product_acceptance_report_digest="a" * 64)
+    elif error == "invalid_status":
+        semantic["execution_status"] = "blocked"
+    else:
+        semantic.update(execution_status="completed", verdict="rejected")
+    before = [e.id for e in runtime.event_log.read_all()]
+    result = service.validate_plan_candidate(
+        operation_id=prepared.operation_id, semantic_result=semantic,
+        role_instance="verify-1", credential=credential_path.read_text().strip(),
+    )
+    assert result["status"] == "failed"
+    assert before == [e.id for e in runtime.event_log.read_all()]
 
 
 @pytest.mark.parametrize("submit_immediately", [False, True])
