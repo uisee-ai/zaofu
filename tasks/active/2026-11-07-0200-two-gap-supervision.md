@@ -70,3 +70,11 @@ Critic提交 `evt-cee6ad122f5c` passed，无阻断fix_items；格式枚举提交
 随后 `zf recover task-impl` 请求 `evt-9f0f6e785db6`，未扩大重试cap。03:12:26真实派发 `evt-96e425b58653`，新operation `wop-impl-tp-P16B-RETENTION-CONTRACT-R1-b5-b59069436b02`。已核实 `impl-g2-p2.md` 的Task instruction和rework_feedback都含同一勘误；后续Verify按当前Task构建快照，能获得相同授权。其余两路未中断；留存功能仍待实现和验收。
 
 媒体另遇环境卡顿：锁定av16.0.1 wheel38.4MiB/Pillow12.0.0下载超过bootstrap300s；监工对官方同一wheel抽样，1MiB范围20s仅501180bytes（约25KB/s）。不能把bootstrap失败当功能RED。并行获取原版本、原hash的完整wheel，未降低哈希校验、未安装宿主浏览器、未改依赖版本。待环境修复后仍需重跑功能测试和真实Docker浏览器验收。
+
+## 03:20Z 媒体环境恢复与对齐上下文回收
+
+媒体下载已通过官方元数据+原锁摘要+ZIP CRC验证，清华镜像16路512KiB分段约70秒取得47.25MB。监工停止经PID/命令/cwd精确确认的重复网络installer3842392（未停止worker/provider），按bootstrap锁串行安装原锁的av/Pillow子集，再运行原bootstrap成功。完整锁直接--no-index缺少其余27包、普通find-links可能仍选原网络URL，故采用两步；原锁定版本和哈希不变。初次使用系统python3命中非3.11前置校验后改用项目指定3.11解释器；未绕过版本检查。
+
+安装与复现资产已持久化到 `/home/min/uisee/zaofu-echo/datal/diagnostics/media-codec-wheelhouse-20261107/`（含wheel、原PyPI JSON、hash、下载分段、安装及干预记录和恢复命令），不是发布依赖来源。av16.0.1/Pillow12.0.0及内置libavcodec62.11.100导入通过。worker已重跑原bootstrap，并取得实际codec行为RED：5失败/1通过，失败为已有占位decode拒绝MP4/JPEG/PNG/APNG及逐帧区域处理；此前bootstrap错误不作为功能RED。随后继续实现，尚未功能GREEN或浏览器验收。
+
+03:14:07对齐触发正常context hard-cap：ratio0.94持续180s、cap0.9，evt-0355e7198725；03:14:18 evt-46315bbb5803已恢复同任务、同operation和工作树，新pane646。已有实现提交和测试修改保留，无idle误判。完整输入读取较大导致回收的效率问题已记录；不通过提高阈值或跳过必读/门禁规避。
