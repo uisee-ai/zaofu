@@ -1,6 +1,6 @@
 # 退役已完成或被替代任务的历史诊断
 
-> 状态: active（用户授权持续监工、修复实际阻塞；本项来自 LS-v1 真实队列复现）
+> 状态: done — `bec58d6d fix: retire task diagnostics after canonical terminal events`
 
 ## 证据与原因
 
@@ -30,3 +30,7 @@ LS-v1 10:41 Run Manager projection 的8项pending诊断包含已完成FMS03/DETA
 - 22文件有界影响闭包415 passed，含真实RM projection、诊断/triage/router/attempt、EventLog和199 mock E2E。
 - dev-verify保守扩展347文件到全套；本改动限定两类Task失败，明确用上述有界闭包替代deterministic全套，`run --skip-tier deterministic`保留serial/contract/mock_e2e。serial 10、sentinel 53、flow smoke 10通过。未运行全量pytest或真实Provider测试。
 - 真实只读账本回放退役17个已终结的历史失败事件，待诊断只剩当前Q04协议输入故障；没有修改LS账本或TaskStore。旧队列最多10项，原含9个已解决/替代任务诊断。
+
+## 部署验证
+
+dev e1dd304e；合并后189 focused+53 sentinel通过。10:53仅控制面重载，watcher2692725→2737438，runtime-load 79291b296c00460f845be6b39b44bc87.json记录新代码；重载瞬间所有原pane/PID保留，随后Q04 Recovery Reader正常settled后归档（回执见LS记录），其他在途worker保留。10:55真实RM投影原8条已终结任务诊断全部消失，剩FMS02与更早GATEWAY01两条具有不同历史身份的诊断；本修复不把无精确终结证据的历史行强行标为解决，也不宣布当前产品阻塞已解除。新Q04和附件问题沿现有恢复/规划路径继续。
