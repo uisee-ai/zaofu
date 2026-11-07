@@ -1,6 +1,6 @@
 # Provider 弹窗导致假派发的恢复
 
-关联任务：[派发前拒绝 Provider 交互弹窗](../../tasks/active/2026-11-07-1326-provider-modal-dispatch.md)。
+关联任务：[派发前拒绝 Provider 交互弹窗](../../tasks/done/2026-11-07-1326-provider-modal-dispatch.md)。
 
 2026-11-07 额度恢复后，Core 可从保留 checkpoint 继续，但 Privacy Planner 的 provider 停在额度模型选择弹窗。tmux paste/Enter 没有提交任务而是选中了默认模型；operation 的 running 只证明派发路径执行，不证明模型已消费 briefing。实际 pane 显示旧结果和 Luna medium，无新读取。普通低额度 banner 本身不是阻塞。
 

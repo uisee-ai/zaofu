@@ -27,3 +27,10 @@
 - 一次已授权完整Plan修订经candidate-rework-apply执行：evt-df50590cc2ee/evt-64319b1a87db/evt-9120e6151125。保护29done、Core及Dataset链；当前包cec7940、Candidate4a99fd8不重置。新增任务必须具备真实smoke与原生必需端口，保留291AC/27决定；审批前重核Candidate。
 - 新Planner operation wop-prd-plan-prd-planner-trig-evt-64319b1a-re-4947fbe2d1c5最初假运行：额度模型选择弹窗吞掉派发、界面变为Luna。13:24恢复既定Astra high并通过TmuxTransport重投同一briefing，无新operation。已核实真实读取本轮briefing/plan-rework-context，不再仅以running为证据。修复任务见2026-11-07-1326-provider-modal-dispatch。
 - 操作证据在产品diagnostics/recovery-20261107-1220；未将运行态纳入源码提交。有效图仍43项/29done，14项未完成，当前Core Impl+Privacy Planner并行，8/8容量未改变。
+
+## 13:30 UTC 修复加载后观察
+
+- 弹窗派发守卫已提交c61aac0a，423项隔离/调用者测试、50passed/1skipped sentinel；源码精确同步main，控制面保留worker重载evt-b1b761917ad5，新watcher3112427。初次main组合出现未改10ms计时测试竞争（49pass/1fail），对应复跑33pass；已在修复归档如实记录。
+- Core仍同operation运行：本轮协议失效回退先3fail，再36pass；foundation回归已执行，worker继续补政策check副作用回滚的边界用例。runtime中间收据source3896ceb4不是最终验收；尚未独立Verify/集成。
+- Planner真实读取新skill，修改计划前检查candidate生命周期实现，目前provider正在正常压缩上下文。没有新quota failure或重建任务。
+- Dashboard HTTP200；有效43任务仍29done，8/8容量不变。持续监控记录不等于产品最终完成。

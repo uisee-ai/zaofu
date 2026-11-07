@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 派发前拒绝 Provider 交互弹窗
 
@@ -14,3 +14,9 @@ TDD RED：新增 5 项回归均失败（未识别模型弹窗、启动 ready 和
 验证规划：`dev-verify.py plan --base dev --paths <本次六文件> --tests <直接闭包>` 保守扩展为237个测试文件并建议全套。按AGENTS.md本次Provider单边界应先隔离mock，未执行整仓pytest；实际执行transport/readiness/pane/composite/task-binding等11文件84passed，另独立验证reader/writer fanout及task dispatch直接调用者。`dev-premerge-gate.sh` 50passed/1skipped；ruff check与diff --check通过。没有运行真实provider API测试；真实在途恢复观察另记。
 
 直接调用者验证：`pytest tests/test_reader_fanout_runtime.py tests/test_writer_fanout_runtime.py tests/test_task_pipeline_context_ownership.py tests/test_dispatch_inflight_wedge.py -q --no-cov -m "not host and not real_provider"` -> 339 passed。
+
+实现提交：`c61aac0a fix: reject task dispatch into provider modal prompts`。本次代码闭包为84+339=423项隔离/直接调用者测试，另sentinel50passed/1skipped。
+
+部署：确认main三源码与补丁前镜像一致后精确同步（未覆盖其他dirty文件），main组合首轮49passed/1failed；失败为既有10ms ready超时测试的诊断类别竞争，`wait_ready` AST与补丁前逐节点相同，复跑该项+本次guard及dispatch闭包33passed。没有改断言或阈值，该计时不稳定问题保留为后续测试基础设施改善，不隐瞒首轮失败。
+
+通过既有source_repair_restart_actuator发起保留worker的控制面重载，事件evt-b1b761917ad5。13:30:03 UTC新watcher PID3112427启动；13:30:33核实Core与Planner同operation仍running、provider panes仍在，Dashboard HTTP200。真实Planner已读取新briefing、返修上下文和043c348c gap skill。产品独立验收仍待后续，不属于本修复done声明。
