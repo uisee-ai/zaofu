@@ -366,4 +366,7 @@ worker 未理解指令。
 
 `zf recover task-verify --operation <id> --reason <具体修复与刷新范围>` 默认只重试 Verify，沿用同一目标和有效的旧 Impl 自检。如果运行时修复改变了派生快照，旧自检不能冒充新快照证据；操作员可加 `--restart-from-impl`，先 preview，再 `--apply`。此路径只接受当前、已准入的 failed+abstained Verify，要求标准写任务且已有成功的 Impl，无活动任务/暂停/契约漂移；verify_only 和产品裁决不可借此重开实施。
 
-恢复通过受控 supersede 保留历史事实，使下一代 Impl 在原工作区产生新证据，再正常独立验证。原回执、目标与产品代码不改写；旧自检不得直接用于新一代。恢复原因随派发反馈传递，环境失败不增加产品语义返工次数。重复相同模式请求幂等，已请求不同模式时拒绝覆盖。验收跟踪 tasks/active/2026-11-07-2135-verify-retry-evidence-refresh.md。
+恢复通过受控 supersede 保留历史事实，使下一代 Impl 在原工作区产生新证据，再正常独立验证。原回执、目标与产品代码不改写；旧自检不得直接用于新一代。恢复原因随派发反馈传递，环境失败不增加产品语义返工次数。重复相同模式请求幂等，已请求不同模式时拒绝覆盖。验收跟踪 tasks/done/2026-11-07-2135-verify-retry-evidence-refresh.md。
+
+
+R56/R58现场闭环（2026-11-07 22:12 UTC）：治理原产品提交和工作区均保留，新证据提交372ffb48与新快照完成绑定；Kernel自动派发下一代独立Verify，使用task_verify/task_non_smoke及原CHK-22，八项候选AC和E2E命令保持原文。真实dispatch为evt-92d290ecf838，恢复任务已归档；独立产品验证结果及最终身份E2E仍按各自阶段产生，不能用恢复成功替代。详见[路由修复](../../tasks/done/2026-11-07-2105-task-verification-route.md)与[自检刷新恢复](../../tasks/done/2026-11-07-2135-verify-retry-evidence-refresh.md)。
