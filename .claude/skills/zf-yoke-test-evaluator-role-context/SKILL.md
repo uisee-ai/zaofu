@@ -44,6 +44,15 @@ amendment are separate role capabilities supplied by the workflow profile.
    才按JSONL逐行输出source/artifact/json-path/content；保留已完整呈现的正文，不重复dump。
    等待仍在运行的工具时采用与预计耗时相称的10—30秒等待（保持操作者可见的进度），
    避免连续1秒轮询：每次模型往返都重带上下文，空输出也会消耗累计预算。
+   大量嵌套重复正文可使用可选 `--required --shared-bodies`（不与
+   `--deduplicate-content` 合用），在当前工具允许的情况下保存到自己的临时工作文件后，
+   按连续字符区间分页读取；每页控制在工具输出上限内，记录已完整消费的区间。
+   JSONL 的 `kind=body` 是正文定义；外层 `refs` 中的 `path`/`ref` 只将对应占位 null
+   替换为此前定义，业务正文里的同名键和字面 null 不变。`kind=source` 保留来源、
+   内容摘要及逐来源读取凭证。所有定义和来源都须完整消费，引用只可复用已读完的定义，
+   不得只读索引/hash、抽样或摘要来签收。工具成功写入read-ledger不证明模型已消费正文。
+   这是可逆展示，不改变 required_reads、权限、合同和验收门禁；老CLI不支持时继续用
+   原单项受控读取。遵守当前工具的写入边界和命令约束，不因保存输出而绕过守卫。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
    the briefing marks it reusable for the exact target commit and command
    digest. Do not rerun that identical deterministic command merely to produce

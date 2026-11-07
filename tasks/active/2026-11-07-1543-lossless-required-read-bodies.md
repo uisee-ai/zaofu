@@ -12,3 +12,5 @@
 - 现场恢复 -> verify: 先验证真实输入无损体积，再按原验证阶段受控恢复，不把执行失败当产品失败、不代发passed。
 
 验证：TDD 8 RED→18新旧CLI/呈现GREEN；权限/ledger/CLI/direct-call/任务输入合同闭包116 passed；sentinel 50 passed/1 skipped；ruff与diff检查通过。dev-verify 的CLI传递调用映射扩张至118测试文件并选择全量deterministic，已中断该不必要全量轮次，使用上述明确116项闭包；不宣称全量通过。现场恢复尚待验证。
+
+方法固化：Dev Worker/Test Evaluator canonical技能补充共享正文格式、完整连续分页及收据不等于消费的边界；同步两provider分发副本。现场Media Impl2已使用新格式，未改产品代码；独立Verify恢复尚待完成。
