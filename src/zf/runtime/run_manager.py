@@ -11740,6 +11740,11 @@ def _event_superseded_by_later_progress(
     events: list[ZfEvent],
     source_event: ZfEvent,
 ) -> bool:
+    from zf.runtime.task_failure_retirement import task_failure_retired
+
+    retired = task_failure_retired(events, source_event)
+    if retired is not None:
+        return retired
     source_payload = source_event.payload if isinstance(source_event.payload, dict) else {}
     source_run_id = str(
         source_payload.get("run_id")
