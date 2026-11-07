@@ -33,3 +33,13 @@ Planner已真实派发 `evt-b0f3d36451ca`，operation `wop-prd-plan-prd-planner-
 Planner operation仍running却触发idle上下文回收：`evt-7932592c37db`记录context=0.7206、idle=true；`evt-713edf329c02`/`evt-d51d0f05204e`替换会话，`evt-a60478908ff2`以idle_after_recycle跳过恢复。新pane重新读取相同briefing，原规划尚未落盘。已并行定位生命周期对reader活跃operation识别问题；不通过提高阈值或取消保护规避。
 
 媒体环境预检：宿主PATH无ffmpeg/ffprobe；已缓存Playwright镜像的ffmpeg为专用VP8录屏构建，不能替代通用MP4编解码。验收新Plan时必须确认依赖安装/复现责任及真实视频输入输出测试。
+
+## 02:36Z 修订完成与准入复核
+
+已完成两项harness修复并加载：`e20431d6`（gap准入失败的有界恢复）、`ec0ac08c`（重复active不挪动reader恢复代次）。控制面于02:17Z保留worker重载，新watcher PID3526542；02:21Z活跃Planner被正确识别为idle=false。
+
+Planner提交 `evt-8605c3d3196e`，42个有效任务、287条AC，旧274条全部保留；26done未重开。独立Critic operation `wop-prd-plan-synth-trig-evt-d89a3d5a-a230ca9cb24c` 正在评审，尚未批准。
+
+固定提交图的loader复核发现：broad恢复诊断只选择13个旧失败替代/下游，遗漏3个明确声明的新增前置。显式选择批准gap与原下游并集共16项可通过原schema与pipeline准入。已授权机械选择器最小回归修复，必须保留显式子集与无关选择。首波真实可执行宽度为3（对齐真值、共享留存、媒体脱敏），容量仍为Impl8/Verify8；不以删除真实依赖凑满8。
+
+Dashboard HTTP200、Compose PG healthy；它们不是产品验收证据。视频编解码及真实浏览器WebM仍由新媒体任务和独立Verify执行。固定复核见 `/tmp/zf-supervision-20261107/submitted-review.log` 与 `writer-selection-analysis.json`。

@@ -118,3 +118,16 @@ fresh recycle，尚未落盘的规划丢失。
 固定历史窗口 `evt-7932592c37db` 之前，旧查询为active_child=null/terminal，修复后
 识别原派发 `evt-b0f3d36451ca` 为active。证据与验证记录见
 `tasks/done/2026-11-07-0216-reader-activation-epoch.md`。
+
+## 2026-11-07：Broad resume 纳入明确批准的新前置
+
+当 amendment 与有效恢复 scope 都明确为 `failed_children_and_downstream`，且触发
+选择精确等于旧 `failed ∪ downstream` 诊断，并满足
+`failed ⊆ superseded ⊆ diagnosis`，writer 将 `amend.gap_task_ids` 并入原选择。
+随后仍由既有 canonical successor 映射、缺失ID/基线与完整 pipeline 门禁校验。
+这修复“一对多替代只选到末端、遗漏新增前置”的机械缺口，不新增语义依赖推断。
+
+`gap_tasks_only` 仍只选批准的gap。显式新任务子集、无关选择、scope不匹配或无法
+证明的替代关系不扩展；broad恢复不借gap-only分支跳过完整图的根owner检查。
+本轮固定图原选13项，正确并集应为16项，新增3前置由DAG调度而非强制同时开跑。
+任务与验证记录：`tasks/active/2026-11-07-0237-broad-gap-selection.md`。

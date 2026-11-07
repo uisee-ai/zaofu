@@ -15,7 +15,11 @@ def select_gap_from_diagnostic_scope(
     if (
         not isinstance(amend, Mapping)
         or amend.get("schema_version") != "task-map-amend.v1"
-        or amend.get("resume_scope") != "gap_tasks_only"
+        or amend.get("resume_scope") not in {"gap_tasks_only", "failed_children_and_downstream"}
+        or (
+            amend.get("resume_scope") == "failed_children_and_downstream"
+            and resume_scope != "failed_children_and_downstream"
+        )
         or resume_scope not in {
             "gap_tasks_only", "failed_children_only", "failed_children_and_downstream",
         }
@@ -45,5 +49,12 @@ def select_gap_from_diagnostic_scope(
     # failed task establish authority to replace the diagnostic selector.
     gap_ids = amend.get("gap_task_ids")
     if not ids(gap_ids) or len(gap_ids) != len(set(gap_ids)):
-        raise RuntimeError("gap_tasks_only amendment requires unique non-empty gap_task_ids")
+        raise RuntimeError(
+            f"{amend['resume_scope']} amendment requires unique non-empty gap_task_ids"
+        )
+    if amend["resume_scope"] == "failed_children_and_downstream":
+        # Retain the approved downstream continuation while adding its explicit
+        # new prerequisites. The caller still resolves successors and validates
+        # missing ids, base commits, and the full pipeline admission contract.
+        return list(dict.fromkeys([*requested_task_ids, *gap_ids])), resume_scope
     return list(gap_ids), "gap_tasks_only"

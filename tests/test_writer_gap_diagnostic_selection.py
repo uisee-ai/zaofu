@@ -93,3 +93,85 @@ def test_gap_cannot_omit_a_failed_task_from_replacement(case):
     case[2]['failed_task_ids'].append('DOWNSTREAM')
 
     assert load(case).requested_task_ids != ['PRE', 'NEXT']
+
+
+def test_broad_recovery_includes_approved_prerequisites_and_downstream(case):
+    case[1]['amend']['resume_scope'] = 'failed_children_and_downstream'
+
+    result = load(case)
+
+    assert result.requested_task_ids == ['NEXT', 'DOWNSTREAM', 'PRE']
+    assert [item['task_id'] for item in result.task_items] == ['PRE', 'NEXT', 'DOWNSTREAM']
+    assert 'DONE' not in result.requested_task_ids
+
+
+def test_broad_recovery_can_replace_a_diagnosed_downstream(case):
+    data = case[1]
+    data['amend']['resume_scope'] = 'failed_children_and_downstream'
+    data['amend']['superseded_task_ids'].append('DOWNSTREAM')
+    data['amend']['gap_task_ids'].append('DOWNSTREAM-NEXT')
+    data['tasks'][2]['task_id'] = 'DOWNSTREAM-NEXT'
+    data['tasks'][2]['payload'] = {'supersedes_task_ids': ['DOWNSTREAM']}
+
+    assert load(case).requested_task_ids == ['NEXT', 'DOWNSTREAM-NEXT', 'PRE']
+
+
+@pytest.mark.parametrize('selection', [['NEXT'], ['DONE'], ['OLD'], ['OLD', 'DOWNSTREAM', 'DONE']])
+def test_broad_recovery_does_not_expand_explicit_or_unrelated_selection(case, selection):
+    case[1]['amend']['resume_scope'] = 'failed_children_and_downstream'
+    case[2]['task_ids'] = selection
+
+    result = load(case)
+
+    assert 'PRE' not in result.requested_task_ids
+    assert set(result.requested_task_ids) == {('NEXT' if tid == 'OLD' else tid) for tid in selection}
+
+
+@pytest.mark.parametrize('scope', ['gap_tasks_only', 'failed_children_only', '', 'all'])
+def test_broad_amendment_does_not_override_a_different_event_scope(case, scope):
+    case[1]['amend']['resume_scope'] = 'failed_children_and_downstream'
+    case[2]['resume_scope'] = scope
+
+    if scope in {'gap_tasks_only', 'failed_children_only'}:
+        assert 'PRE' not in load(case).requested_task_ids
+    else:
+        with pytest.raises(RuntimeError, match='missing requested'):
+            load(case)
+
+
+@pytest.mark.parametrize('fault', ['no_diagnosis', 'omitted_failure', 'unrelated_supersede'])
+def test_broad_recovery_requires_exact_diagnosis_and_bounded_supersession(case, fault):
+    case[1]['amend']['resume_scope'] = 'failed_children_and_downstream'
+    if fault == 'no_diagnosis':
+        case[2].pop('failed_task_ids')
+    elif fault == 'omitted_failure':
+        case[2]['failed_task_ids'].append('DOWNSTREAM')
+    else:
+        case[1]['amend']['superseded_task_ids'].append('DONE')
+
+    assert 'PRE' not in load(case).requested_task_ids
+
+
+@pytest.mark.parametrize('gap_ids', [[], ['PRE', 'PRE'], ['ABSENT']])
+def test_broad_recovery_rejects_invalid_approved_gap_ids(case, gap_ids):
+    case[1]['amend']['resume_scope'] = 'failed_children_and_downstream'
+    case[1]['amend']['gap_task_ids'] = gap_ids
+
+    with pytest.raises(RuntimeError, match='gap_task_ids|missing requested'):
+        load(case)
+
+
+def test_broad_recovery_keeps_full_pipeline_root_owner_gate(case):
+    data = case[1]
+    data['amend']['resume_scope'] = 'failed_children_and_downstream'
+    data['workspace_root_owner_required'] = True
+    data['tasks'][3]['allowed_paths'] = []
+    spec = parse_lane_pipeline({
+        'id': 'prd-lanes', 'kind': 'lane_pipeline', 'trigger': 'task_map.ready',
+        'affinity_key': 'affinity_tag', 'lane_count': 8, 'assembly': 'none',
+        'stages': [{'id': 'impl'}, {'id': 'verify'}],
+        'final': {'when': 'all_tasks_verified', 'role': 'judge'},
+    })
+
+    with pytest.raises(ValueError, match='root|owner'):
+        load(case, pipeline_spec=spec)
