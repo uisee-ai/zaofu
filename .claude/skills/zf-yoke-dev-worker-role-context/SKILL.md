@@ -157,6 +157,17 @@ briefing，再按下表触发；同一会话中已完整读过且版本未变的
   integration boundary. The final assembly task additionally runs the declared
   product entrypoint and an assembled smoke across all contributing slices. It
   does not fabricate browser, Provider, or independent Verify verdicts.
+- 报告上游/合同阻塞前，绑定具体 AC、command owner/tier、缺失接口与最小复现，
+  说明为何它阻止本阶段必须完成的行为。自己尚未创建的实现或验证脚本（如 exit 127）
+  是实施基线，不单独构成外部阻塞；最终宿主/消费者尚未装配也不自动阻塞整个模块。
+  按当前已准入 Task Map 和实际接口确认责任，不用旧文档中的任务编号重建依赖。
+- 只在原合同允许时，继续自身持久化、事务、界面/API 和稳定端口，缺失外部实现时
+  对受影响操作显式拒绝。隔离样本只能证明所测局部行为，不能证明真实集成通过。
+  若本阶段 AC 本就要求真实来源或跨域接入，其缺失仍是阻塞；不得自行后移验收、
+  新增跨域 import、扩写权限，或用 fixture 消除门槛。
+- Owner 决定 pending 时列出实际受影响的语义与仍能独立实施的能力；先推进后者并
+  保存可复用代码/测试及剩余缺口。不暗设业务默认值、不把未决事项标已解决，也不因
+  部分能力完成宣告整个任务成功；精确缺口交当前求助/失败通道，不重复空跑。
 - Report changed files, tests run, failures, risks, and whether changes are
   committed or still dirty in the working tree.
 - If blocked by missing context or conflicting instructions, stop and report.

@@ -208,3 +208,13 @@ Reader 的失败仍保留原事件和证据，但在 stage replan 与 Run Manage
 LS-v1 观测到 OA 的嵌套来源引用不在本次 source manifest 内，CallResult 先接纳并结算，执行准入随后拒绝，角色已退出。现由 `orchestrator_directive_refs.py` 共享现有 ref/digest 白名单检查，`result validate` 和 `result submit` 在消耗 capability 之前反馈 schema/引用协议错误；原 operation 保持 running，可在同一 scratch 修正后重交。basis/reuse/invalidate 都不能凭正文中的子链接扩权，必须引用冻结 manifest 的直接来源，或申请受控输入修订。
 
 该预检只验证 authored schema 和冻结引用，不代表身份、当前目标、语义动作或产品门禁通过。执行时仍重新准入；历史已接纳但执行拒绝的结果保留原记录，通过现有受控诊断入口创建后继处理，不能改写旧决策或复活结算 operation。测试覆盖三类字段的未授权路径和错误digest、失败不结算、不消费、同operation修正、重复提交拒绝以及历史结果执行时防线。
+
+## 实施阻塞的阶段与责任复核
+
+Worker 与 OA 的语义分诊沿既有角色技能执行：关联当前 AC、命令阶段、接口和
+Owner，区分自有实现尚未编写、未来消费者尚未装配、真实外部依赖和未决业务选择。
+合同允许的独立能力继续开发；本阶段要求的真实来源缺失仍保持阻塞。允许的隔离
+样本不等于真实集成证据，不能自行改验收阶段、权限或依赖。历史文档中的任务编号
+须与当前已准入图核对。运行时继续只负责身份、证据、状态与受控恢复，不将这些
+产品语义判断编码为自动放行规则。方法变化不证明所有在途 provider 已重新加载；
+现场指导、答复送达、重新派发和独立验证需分别记录。
