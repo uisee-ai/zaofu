@@ -36,4 +36,4 @@ FMS-04 的 local 误将真实授权集成作为前置，成员能力也尚未补
 - 本 task 的完成只代表可信部分提交进入真实恢复分析。FMS-04 成员业务补齐、精确验收、集成以及最终产品认证/授权联调仍未完成，继续监工。
 - 归档文档检查 16 passed，门禁 53 passed。
 
-09:10 后续阻塞（另开修复，不归本提交解决）：新 attempt 的 artifact index/recover 被旧 fanout.cancelled evt-305bb2ba41af 错误标记 superseded，source_watermark 指向旧取消事件；已确认新工作目录及 worker git rev-parse 为 1b3ffa8。部分代码传递修复有效，但真实恢复尚需修复取消作用域。
+09:10 后续阻塞（另开修复，不归本提交解决）：新 attempt 的 artifact index/recover 返回 superseded；source_watermark 指向旧取消事件，但深入核查 reducer 证明取消不是根因：全局已换新包，任务恢复 reader 无法通过仅适用于在飞 Task Pipeline 的旧包绑定例外；已确认新工作目录及 worker git rev-parse 为 1b3ffa8。部分代码传递修复有效，但真实恢复尚需修复取消作用域。
