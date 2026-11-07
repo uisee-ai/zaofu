@@ -116,10 +116,26 @@ def evaluate_plan_candidate_preflight(
     if task_map:
         from zf.runtime.task_scoped_plan_inputs import task_input_paths
 
+        raw_tasks = task_map.get("tasks")
+        tasks = [task for task in raw_tasks if isinstance(task, Mapping)] if isinstance(raw_tasks, list) else []
+        local_ports_by_task = {}
+        for index, task in enumerate(tasks):
+            evidence = task.get("evidence_contract")
+            local = evidence.get("required_plan_ports") if isinstance(evidence, Mapping) else []
+            local_ports_by_task[index] = {
+                canonical_plan_port_name(item) for item in (local if isinstance(local, list) else [])
+                if isinstance(item, str)
+            }
+        local_ports = set().union(*local_ports_by_task.values())
         for name, body in port_bodies.items():
-            raw_tasks = task_map.get("tasks")
-            for task in raw_tasks if isinstance(raw_tasks, list) else []:
-                if not isinstance(task, Mapping):
+            try:
+                task_input_paths(body, task_id="", candidate=True)
+            except ValueError as exc:
+                _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}", str(exc))
+                continue
+            for index, task in enumerate(tasks):
+                if (name in local_ports and name not in required_with_source
+                        and name not in local_ports_by_task[index]):
                     continue
                 try:
                     task_input_paths(body, task_id=str(task.get("task_id") or task.get("id") or ""))

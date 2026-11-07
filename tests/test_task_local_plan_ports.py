@@ -138,3 +138,42 @@ def test_pre_submit_checks_task_local_bindings_before_critic(tmp_path, bind_loca
     else:
         assert result['status'] == 'failed'
         assert any('task_detail_t1' in str(error) for error in result['errors'])
+
+
+@pytest.mark.parametrize('fault', ['', 'missing_owned', 'duplicate', 'hidden', 'global'])
+def test_pre_submit_task_local_partition_scope(tmp_path, fault):
+    from tests.test_plan_candidate_preflight import _task_map, _source_index
+    from zf.runtime.plan_candidate_preflight import evaluate_plan_candidate_preflight
+
+    task_map = _task_map()
+    second = deepcopy(task_map['tasks'][0])
+    second.update(task_id='TASK-2', title='Implement second command',
+                  allowed_paths=['src/second.py', 'tests/test_second.py'])
+    second['acceptance_criteria'][0]['id'] = 'AC-2'
+    second['acceptance_criteria'][0]['verification_command_ids'] = ['test-second']
+    second['validation']['commands'][0].update(id='test-second', acceptance_ids=['AC-2'])
+    second['evidence_contract'] = {'required_plan_ports': ['task_detail_t2']}
+    task_map['tasks'].append(second)
+    source = _source_index()
+    source['tasks'].append({**deepcopy(source['tasks'][0]), 'task_id': 'TASK-2'})
+    body = {'schema_version': 'task-scoped-plan-input.v1', 'shared': {},
+            'tasks': [{'task_id': 'TASK-2', 'body': {'rule': 'required constraint'}}]}
+    if fault == 'missing_owned':
+        body['tasks'][0]['task_id'] = 'TASK-1'
+    elif fault == 'duplicate':
+        body['tasks'].append(deepcopy(body['tasks'][0]))
+    elif fault == 'hidden':
+        body['hidden'] = 'must never be silently omitted'
+        second.pop('evidence_contract')  # Unconsumed artifacts still need schema validation.
+    elif fault == 'global':
+        task_map['required_plan_ports'] = ['task_detail_t2']
+    report = {'task_map': task_map, 'source_index': source, 'source_index_ref': 'inline:index',
+              'plan_md': '# Plan\nTwo independent tasks.',
+              'plan_ports': [{'logical_name': 'task_detail_t2', 'body': body}]}
+    result = evaluate_plan_candidate_preflight(state_dir=tmp_path / 'state', project_root=tmp_path,
+        reports=[{'report': report}], manifest={'trigger_payload': {'flow_kind': 'prd', 'prd_ref': 'requirements.md'}},
+        metadata={'flow_kind': 'prd'})
+    if not fault:
+        assert result['status'] == 'passed', result['errors']
+    else:
+        assert any(e['code'] == 'task_scoped_input_invalid' for e in result['errors'])
