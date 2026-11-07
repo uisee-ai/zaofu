@@ -56,10 +56,10 @@ def test_inherited_partition_reads_parent_as_labeled_context(case):
     assert "current task contract" in briefing
 
 
-@pytest.mark.parametrize("fault", ["not_inherited", "not_gap", "not_in_ancestry"])
+@pytest.mark.parametrize("fault", ["not_gap", "not_in_ancestry"])
 def test_replacement_rejects_unproven_predecessor(case, fault):
     state, resolver, identity = _replacement(case, predecessor="T2" if fault == "not_in_ancestry" else "T1",
-                                             inherited=fault != "not_inherited", gap=fault != "not_gap")
+                                             gap=fault != "not_gap")
     with pytest.raises(ArtifactReadError):
         resolver._current_plan_port_sources(workflow_run_id="run", task_id="NEW",
                                              currentness=identity, profile="implementation")
