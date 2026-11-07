@@ -1,6 +1,8 @@
 # R51：按阶段与实际责任分诊实施阻塞
 
-> 状态: active
+> 状态: done
+
+实现提交：`4a648ab3 fix: distinguish implementation gaps from external blockers`。
 
 授权：用户要求持续监工 ls-v1，分析并修复阻塞、记录修复；本项只修正现有 worker/OA 方法，不修改预算、控制面、原合同或业务待定决定。
 
@@ -25,4 +27,4 @@
 
 ## 完成记录
 
-dev-verify plan/run：3个测试文件，41 passed / 1 skipped；Task Pipeline role instructions 5 passed。两技能元数据及4份分发字节一致。方法逐项复核覆盖03类误判和真实数据源缺失反例，不将结构测试当agent效果A/B。未改运行时、未覆盖LS两份既有dirty角色技能；在途06/07沿已收到具体指导继续，10原范围g2已派发。后续技能加载仍需实际观察。
+dev-verify plan/run：3个测试文件，41 passed / 1 skipped；Task Pipeline role instructions 5 passed。两技能元数据及4份分发字节一致。方法逐项复核覆盖03类误判和真实数据源缺失反例，不将结构测试当agent效果A/B。未改运行时、未覆盖LS两份既有dirty角色技能；在途06/07沿已收到具体指导继续，10原范围g2已派发。后续技能加载仍需实际观察。premerge sentinel 53 passed；首次元数据检查误传目录，改为 SKILL.md 文件后两项通过；首次 diff检查的EOF空行已修正。
