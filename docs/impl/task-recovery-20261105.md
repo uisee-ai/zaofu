@@ -221,3 +221,16 @@ read-ledger 写入之后，输出 JSONL 的 `body` 定义与 `source` 来源/收
 641正文/244来源的无损输入消费与摘要校验，继续独立验证。两Verify正常compact后续读，
 未再次强制回收。有效任务完成31/45，不能将输入恢复或Core局部通过等同于整体完成。
 操作记录见[持续监工](../../tasks/active/2026-11-07-1220-live-privacy-lifecycle-supervision.md)。
+
+### 已验证任务在集成失败后的代码修复
+
+`zf recover task-integration --operation <id> --reason <原因>` 仍只预演同提交的集成重试。
+若现场证据要求修复允许范围内的代码或测试夹具，使用
+`--rework-impl --approval-ref <审批证据>` 预演，再加 `--apply` 请求下一代 Impl。
+入口要求当前 blocked integration 的 canonical needs_review、同代次同提交的已准入
+Impl/Verify 通过结果、活动 run/task、无活动 attempt 或继任 operation。缺一项即拒绝。
+
+恢复只追加 `task.rework.requested`，不改写历史 Verify、TaskRef 或 candidate。
+审批只授权下一代；新 Impl 后必须再独立 Verify、再集成。旧请求不能重放到新代次，
+默认返工上限不改变。环境失败而无需改源码时应继续使用原集成重试模式。
+记录：[集成失败有界恢复](../../tasks/active/2026-11-07-1742-reviewed-integration-impl-rework.md)。

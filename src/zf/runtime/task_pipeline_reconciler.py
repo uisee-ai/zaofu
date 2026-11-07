@@ -773,7 +773,12 @@ def _derive_stage(
     if requested_generation == impl_generation and (
         operator_retry or (impl_status == "settled" and _semantic_passed(impl))
     ):
-        if impl_generation <= max_rework:
+        integration_rework_authorized = (
+            (impl_rework_request or {}).get("fault") == "task_pipeline_integration_rework"
+            and (impl_rework_request or {}).get("authorized_next_operation_generation") == impl_generation + 1
+            and bool((impl_rework_request or {}).get("approval_ref"))
+        )
+        if impl_generation <= max_rework or integration_rework_authorized:
             return "impl_rework_ready", impl_generation + 1, impl_generation
         return "blocked", impl_generation, impl_generation
     if impl_status != "settled" or not _semantic_passed(impl):

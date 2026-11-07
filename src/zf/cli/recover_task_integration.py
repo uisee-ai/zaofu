@@ -16,6 +16,9 @@ def register_recover_task_integration(subparsers: argparse._SubParsersAction) ->
     parser.add_argument("--operation", required=True)
     parser.add_argument("--reason", required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--rework-impl", action="store_true",
+                        help="Repair source through a new Impl and independent Verify, not integration-only retry")
+    parser.add_argument("--approval-ref", default="", help="Explicit approval for exactly one next Impl generation")
     parser.set_defaults(func=run)
 
 
@@ -31,9 +34,18 @@ def run(args: argparse.Namespace) -> int:
             context.config, log, context.state_dir, context.project_root, context.config_path,
         ):
             raise ValueError("run contract drift blocks recovery")
-        result = request_integration_retry(
+        action = request_integration_retry
+        extra = {}
+        if args.rework_impl:
+            from zf.runtime.task_pipeline_integration_rework import request_integration_impl_rework
+            action = request_integration_impl_rework
+            extra["approval_ref"] = args.approval_ref
+        elif args.approval_ref:
+            raise ValueError("approval_ref requires --rework-impl")
+        result = action(
             state_dir=context.state_dir, event_log=log, event_writer=EventWriter(log),
             operation_id=args.operation, reason=args.reason, apply=args.apply,
+            **extra,
         )
     except (ConfigError, ValueError, OSError) as exc:
         print(json.dumps({"status": "rejected", "reason": str(exc)}))
