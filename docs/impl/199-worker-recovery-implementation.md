@@ -229,3 +229,10 @@ work-record publish/show/replay；工作记录仍是未经独立核验的进度�
 LS FMS-04 的已准入 `dev.blocked` 带有已提交 `source_commit`，但原 semantic replan 仅识别 legacy `fanout.child.failed` 的 continuation，因而错误选择任务开工基线。现在 Task Pipeline 分支核验当前合同/代次、已结算 Impl 的结果准入及工件摘要、Kernel 派发身份/信封、对应任务分支的精确 Git commit 与基线祖先关系，将已提交部分交付作为 `partial_task_continuation` 提供给现有 Run Manager → Discovery 路径。
 
 这不是产品验收通过，也不重置失败或扩大可写范围。只把不可变 commit 作为扫描目标，不将工作树未提交文件带入；缺证据、篡改、跨 attempt/run/合同或更新 Impl 均不采信。原 task-base、candidate 和 legacy continuation 保留原有行为。本轮业务纠偏（隔离开发与最终身份授权集成责任）继续由语义角色负责。回归覆盖实际 `run_manager_tick` 调用入口，而非只检验独立帮助函数。
+
+
+### 任务恢复 Reader 的固定输入代次（2026-11-07）
+
+全局 Task Map 更新不自动废除未修改任务的原合同输入。Task Pipeline 当前 attempt 已有此例外；现在任务级恢复 Reader 也可读取 TaskStore 仍绑定的已准入历史包。证明必须同时包括当前合同/run/代次、存活的 task-domain fanout reader、完整 request 和 manifest 摘要、固定 target/package/result identity，以及同任务恢复来源；其他活跃 Impl/Verify、终止 operation、本 fanout 取消、任务终态、合同更新或摘要冲突均拒绝。
+
+Reader 不接管旧 Impl dispatch，也不要求 TaskStore 必须为 failed：流水线可以保持 task in_progress，同时其失败 operation 已结算。例外仅影响 artifact index/recover 的输入固定状态，不授权执行、重绑定或终态；凭据和结果准入继续由既有控制面负责。无关 fanout 的取消不构成本 Reader 的取消。公开 CLI 回归使用真实 WorkflowOperationService/policy，另用 LS 实际生命周期回放验证活跃时 pinned、结束后拒绝。
