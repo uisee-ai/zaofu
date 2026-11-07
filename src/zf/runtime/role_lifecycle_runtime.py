@@ -564,9 +564,14 @@ class RoleLifecycleRuntimeMixin:
         ):
             return False, "cooldown", {}
 
-        _heartbeat_at, heartbeat = registry.get_last_heartbeat(role.instance_id)
+        heartbeat_at, heartbeat = registry.get_last_heartbeat(role.instance_id)
         heartbeat = heartbeat or {}
         last_action = _epoch_from_value(heartbeat.get("last_action_ts"))
+        received_at = _epoch_from_value(heartbeat_at)
+        if last_action is not None and received_at is not None:
+            # Preserve genuinely older activity, but never let a worker clock
+            # move activity beyond the kernel receipt (including after restart).
+            last_action = min(received_at, last_action)
         if last_action is None:
             last_action = _epoch_from_value(meta.get("lifecycle_active_at"))
         if last_action is None:
