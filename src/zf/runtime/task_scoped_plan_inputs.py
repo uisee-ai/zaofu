@@ -104,6 +104,7 @@ def _bind_republished_input_parent(
 
 def _verify_predecessor_provenance(
     state_dir: Path, *, port: Mapping[str, Any], predecessor: str, workflow_run_id: str,
+    require_replacement_edge: bool = False,
 ) -> tuple[dict[str, Mapping[str, Any]], Mapping[str, Any]]:
     """Verify the inherited body and predecessor against the package ancestry."""
     from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
@@ -112,6 +113,7 @@ def _verify_predecessor_provenance(
     ref, digest = str(port.get("source_package_ref") or ""), str(port.get("source_package_digest") or "")
     seen: set[str] = set()
     first = True
+    traversed_maps = []
     while ref and digest and ref not in seen and len(seen) < 32:
         seen.add(ref)
         package = hydrate_plan_artifact_package(state_dir, {"ref": ref, "sha256": digest})
@@ -133,10 +135,22 @@ def _verify_predecessor_provenance(
         task_port = next((item for item in ports if isinstance(item, Mapping) and item.get("logical_name") == "task_map"), None)
         if task_port:
             task_map = hydrate_sidecar_ref(state_dir, {"ref": task_port["ref"], "sha256": task_port["sha256"]}).payload
-            if isinstance(task_map, Mapping) and any(
-                isinstance(task, Mapping) and str(task.get("task_id") or task.get("id") or "") == predecessor
-                for task in task_map.get("tasks", [])
-            ):
+            if not isinstance(task_map, Mapping) or not isinstance(task_map.get("tasks"), list):
+                raise ValueError("predecessor package has invalid task_map")
+            traversed_maps.append(task_map)
+            matches = [task for task in task_map["tasks"] if isinstance(task, Mapping)
+                       and str(task.get("task_id") or task.get("id") or "") == predecessor]
+            if len(matches) > 1:
+                raise ValueError("predecessor package has ambiguous task identity")
+            amend = task_map.get("amend") or {}
+            owns_edge = predecessor in amend.get("gap_task_ids", []) if isinstance(amend, Mapping) else False
+            if matches and (not require_replacement_edge or owns_edge):
+                if require_replacement_edge:
+                    from zf.runtime.gap_dependency_continuity import task_has_only_replayed_dependency_changes
+
+                    _task_map_predecessor(task_map, predecessor)
+                    if not task_has_only_replayed_dependency_changes(predecessor, list(reversed(traversed_maps))):
+                        raise ValueError("retained predecessor changed before its replacement")
                 return {str(item["logical_name"]): item for item in ports if isinstance(item, Mapping)}, package
         ref, digest = str(package.get("supersedes_package_ref") or ""), str(package.get("supersedes_package_digest") or "")
     raise ValueError("predecessor is absent from package ancestry")
@@ -156,17 +170,20 @@ def _predecessor_input_paths(
         if predecessor in seen:
             raise ValueError("replacement input ancestry contains a cycle")
         seen.add(predecessor)
+        try:
+            selected_paths = task_input_paths(body, task_id=predecessor)
+        except MissingTaskPartitionError:
+            selected_paths = None
         ports, predecessor_package = _verify_predecessor_provenance(
             state_dir, port=ports[name], predecessor=predecessor,
-            workflow_run_id=workflow_run_id,
+            workflow_run_id=workflow_run_id, require_replacement_edge=selected_paths is None,
         )
-        try:
-            return task_input_paths(body, task_id=predecessor), predecessor
-        except MissingTaskPartitionError:
-            ports[name] = _bind_republished_input_parent(
-                state_dir, package=predecessor_package, port=ports[name],
-            )
-            task_id = predecessor
+        if selected_paths is not None:
+            return selected_paths, predecessor
+        ports[name] = _bind_republished_input_parent(
+            state_dir, package=predecessor_package, port=ports[name],
+        )
+        task_id = predecessor
     raise ValueError("replacement input ancestry exceeds supported depth")
 
 

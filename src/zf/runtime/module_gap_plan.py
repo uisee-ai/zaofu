@@ -17,6 +17,7 @@ from typing import Any, Mapping
 
 from zf.core.state.atomic_io import atomic_write_text
 
+from zf.runtime.module_gap_task_declarations import preserve_gap_task_declarations
 from zf.runtime.gap_replay_claims import repair_replayed_goal_claims, require_replacement_goal_coverage
 from zf.runtime.gap_replacement_validation import (
     require_replacement_input_selection,
@@ -506,14 +507,9 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
             "supersedes_task_ids": _string_list(raw.get("supersedes_task_ids")),
         },
     }
-    root_owner_class = str(raw.get("root_owner_class") or "").strip()
-    if root_owner_class:
-        item["root_owner_class"] = root_owner_class
+    preserve_gap_task_declarations(item, raw)
     if "goal_claim_ids" in raw:
         item["goal_claim_ids"] = _string_list(raw["goal_claim_ids"])
-    base_commit = str(raw.get("base_commit") or "").strip()
-    if base_commit:
-        item["base_commit"] = base_commit
     validation = raw.get("validation")
     if isinstance(validation, dict):
         item["validation"] = deepcopy(validation)
