@@ -113,3 +113,18 @@ Align独立Verify复现重复frameidx的真实缺陷：两图像/CAN重复帧号
 main lifecycle已有4行idle_context_recycle调用与隔离base不同：仅应用本片hunk，原改动保留。同步记录 `interrupted-recycle-source-sync.json`；main新增回归+已有idle/capture/orphan组合39通过。重载前核对没有recycling/respawning，使用既有保留worker actuator，`evt-d5707a6f312d`；watcher4080706于03:56:49Z启动，三路原operation保留，Dashboard200。该检查不是已实现全局replacement barrier；不夸大优雅排空能力。
 
 对齐新 `impl-g2-p2.md` 第55行已实际包含 `--required --deduplicate-content`，证明新CLI能力接入正常派发；旧不可变简报未改。媒体第二轮浏览器通过且继续补齐track/临时目录等边界，最新实现提交后准备最终合同命令；留存7项初测通过但仍在跨consumer接线。当前26done/3Impl运行/13待执行，容量8/8，依赖限制仍有效。
+
+
+## 04:09Z context critical 审计误路由修复
+
+03:57暂停不是provider配额、旧token峰值或hook任意改状态。Retention03:56:46真实238379/258400=92.25%，Media03:56:35为232889/258400=90.13%。新watcher读取后发critical `evt-5e17288182b6`、`evt-50552a3bb3e2`，kernel `_on_context_critical`调用completion audit（固定actor=zf-cli，非另有CLI进程）。此前本地pending_recycle会跳过再次critical；重载清空本地状态后直接走audit，形成路由分歧。
+
+Audit以运行中任务缺完成证据产生retry `evt-907a810b5675`、`evt-95ba10386792`；继而operation.interrupted `evt-18bee3d16001`、`evt-ff9db8e65a09`、attempt superseded和Task backlog。suspended仍占pipeline活动位，RM未消费operation_checkpoints；两role失去活动Task后pending drain成idle。没有假称业务测试失败，也没有修改重试cap来掩盖。
+
+通过既有 `zf recover workflow --resume-pending --checkpoint-id ...`，分别dry-run并应用Media `op-resume-0fb2b84c9fe1a4b05a7819cb`、Retention `op-resume-93879ef04441df233706d609`；两项均applied1/rejected0。04:02:40真实派发Media `evt-74d963c52f0a`、attempt `ta-11389acd0d68f2c3fae4`；04:03:02 Retention `evt-250c84259ca6`、attempt `ta-4b031cd22c1de19a6234`。原operation/request、operation_generation、workspace_generation1及工作树保留；不是新规划或语义返工。留存archive/api.py合同勘误和两路dedup命令均仍在新简报。
+
+防复发提交 `23defb3e fix: keep pipeline context recovery with provider lifecycle`，归档 `fa1bcf0b`。helper按原critical账本位置证明kernel+task/run/dispatch/role对应running Impl/Verify，交给已有lifecycle硬回收；同时抑制旧critical派生的迟到retry/continuation，防止伤害新attempt。reader原判定不变，legacy/timeout仍审计，typed result admission仍是完成权威。没有新增自动无限redrive。初版reactor净增14行命中结构sentinel，改为既有两处guard薄聚合、净增0行后通过；未改结构基线。
+
+73focused、50sentinel通过1skip、10flow mock；真实两critical+两schedule只读helper均true。main精确hunk同步保留既有修改，并与main typed recovery briefing、reader、interrupted recycle及context mock组合66通过。加载请求 `evt-62910688ab26`，actuator4181034，重载前没有recycling/respawning。运行确认及后续结果继续记录，不能把提交本身当业务完成。
+
+对齐返工在原39runtime基础上补9项重复帧号/正常及歧义历史边界，48项实现侧通过，待最终HEAD与再次独立Verify。媒体已有两轮浏览器passed及WebM/trace，待当前attempt最终交付；留存仍在补跨consumer生命周期实现。有效42任务当前26done、3Impl在途、13待执行，容量仍8/8。
