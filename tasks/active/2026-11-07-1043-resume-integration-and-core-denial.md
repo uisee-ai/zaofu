@@ -49,3 +49,16 @@ Dataset flow.gap_plan产生的新增P09A-CORE-DENIAL-R1缺rolling_smoke标记，
 新Planner已正式派发：fanout.started evt-f6a156af7b60，workflow.operation.started evt-0471508c3ca2，fanout.child.dispatched evt-b6edee4f096a；fanout-prd-plan-evt-44b1c6e3，operation wop-prd-plan-prd-planner-trig-evt-44b1c6e3-re-20b8d53f5872。Privacy仍以原operation发送10:58:31 heartbeat evt-f10d5609f3b1，未取消或重开。当前29/42 done，剩余13个有效产品任务（另有父协调Task和历史cancelled不计）。
 
 本任务继续active：环境与运行时修复已生效，但Dataset的Plan/Critic/批准、Core前置实施和后继独立验证尚未完成。最终新图批准须重查candidate是否前移及Privacy合同/结果兼容，不直接复用本次请求预检代替审批。
+
+## 继续恢复（UTC 11:33）
+
+- 用户再次授权解决上述问题并继续。结构门已通过等价职责抽取修复：673bdade refactor: move repair dispatch classification to its owner，归档52faf6fd；main实际6964行，sentinel50 passed/1 skipped，组合41 passed，不放宽baseline/删除既有hook，不打断在途worker。
+- 新Planner完成后独立Critic正式通过 evt-6091a110bea2（提交准入evt-c16e3cc8f6a6），新ready evt-fc9dec8e8052，包cec7940bcafc36bf8a655e067712f26477607adf2594654403a1c939b554fb38，generation1ae92f472e1facf2c7ca02f051b49d7436838c5c1444b291ed36ab11c5c08f98。43tasks/291AC，原287AC正文、mandatory、owner/tier等逐项保留；27决定仅机械更新受影响task ids。
+- Critic预检先因顶层passed不属于completed/failed被拒，worker自行按结构诊断修正后通过，没有降低准入规则。非阻断历史文案D-REVIEW仍有42tasks/26done，D-BUDGET遥测旧叙述；当前批准以43tasks/29done及实际遥测为准，后续受控文案修订触发时整理，不修改不可变包。
+- 批准前重新核对candidate4a99、29done、Privacy原running operation；实际loader只选择13项（Core、DatasetR2及11下游），supersedes仅DatasetR1。已依用户既有委托经zf plan approve批准evt-f8ebca02761d。
+- generation admitted evt-785bc4c42030，选择不含Privacy。审批后Privacy Task全字段与审批前快照相等；旧代次context、历史package结果准入和当前candidate串行集成仍合法。既有相关回归4 passed；跨代并发CAS补偿仍可能fail-closed，本次正常单写者不触发该竞态。
+- Core真实派发evt-496a511d73a1，prd-dev-lane-1，operation wop-impl-tp-P09A-CORE-DENIAL-R1-65d9015ef-ddfde6203601。Privacy仍lane0，并行实施。DatasetR2应等待Core独立Verify/正式集成后解锁，不跳过依赖。
+- Privacy本轮上下文0.93触发hard-cap正常回收（evt-1a238c66e3c6/evt-213ec480f4f8/evt-d575c829d707），保留原task/operation/attempt/dispatch恢复，没有completion_audit误中断。
+- provider提示weekly quota<5%，尚未实际中断；不擅自换模型。
+
+审批、输入差异和并发保护证据：diagnostics/recovery-20261107-1043/dataset-plan-owner-review.json、dataset-plan-preapproval-snapshot.json、new-plan-inspect-execution.json。这里记录的是恢复链与规划准入完成，Core/Dataset业务修复仍待实际实施、独立验收和集成，不将它们标为done。
