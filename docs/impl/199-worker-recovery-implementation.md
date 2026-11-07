@@ -236,3 +236,12 @@ LS FMS-04 的已准入 `dev.blocked` 带有已提交 `source_commit`，但原 se
 全局 Task Map 更新不自动废除未修改任务的原合同输入。Task Pipeline 当前 attempt 已有此例外；现在任务级恢复 Reader 也可读取 TaskStore 仍绑定的已准入历史包。证明必须同时包括当前合同/run/代次、存活的 task-domain fanout reader、完整 request 和 manifest 摘要、固定 target/package/result identity，以及同任务恢复来源；其他活跃 Impl/Verify、终止 operation、本 fanout 取消、任务终态、合同更新或摘要冲突均拒绝。
 
 Reader 不接管旧 Impl dispatch，也不要求 TaskStore 必须为 failed：流水线可以保持 task in_progress，同时其失败 operation 已结算。例外仅影响 artifact index/recover 的输入固定状态，不授权执行、重绑定或终态；凭据和结果准入继续由既有控制面负责。无关 fanout 的取消不构成本 Reader 的取消。公开 CLI 回归使用真实 WorkflowOperationService/policy，另用 LS 实际生命周期回放验证活跃时 pinned、结束后拒绝。
+
+
+## 2026-11-07 并发任务的 gap 增量续接
+
+FMS04 现场暴露两项机械适配问题：字符串 verification.commands 是本地执行清单，不能和 validation.commands 对象目录做对象相等比较；旧任务读取授权仍有效时，其恢复增量也不能用旧全量 map 覆盖其他任务已准入的修改。
+
+转换只把包含命令对象的 alias 作为对象目录，冲突对象目录仍拒绝。跨计划版本的局部替换先核验源包，再验证当前包是同 Run 的后代、Run 合同未变、被替换任务逐项完全相同、requirement/execution/显式选择的输入摘要不变且内容可校验。通过后以当前已准入全量 map 为增量基线，同时记录正确的 supersedes generation；源事件及读取授权保持原身份。缺少显式替换集合、目标已变或输入无法证明时仍拒绝，不能自动扩展到全量 replan。
+
+回归覆盖命令元数据保留、严格冲突拒绝、真实 gap bridge 的串行独立增量保留和幂等、变更任务/未定界增量/篡改摘要拒绝。该逻辑仅处理机械基线合并；语义修复内容仍由恢复角色提出。

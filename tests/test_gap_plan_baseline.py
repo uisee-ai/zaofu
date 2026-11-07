@@ -47,3 +47,94 @@ def test_gap_baseline_rejects_unproven_authority(tmp_path, mutation):
         gap_plan_base_ref(state_dir=args["state_dir"], events=[event],
             payload={"workflow_run_id": "run-1", "task_map_generation": "g1", **mutation},
             fallback_ref="r1.json", required=True)
+
+
+def _two_packages(tmp_path, mutation=""):
+    from zf.runtime.plan_artifact_package import prepare_plan_artifact_package, package_event_payload
+    args, first, gap, old = _prepare(tmp_path)
+    state = args["state_dir"]
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    original = json.loads((state / "r1.json").read_text())
+    original["tasks"][0]["evidence_contract"] = {"plan_input_selection": {
+        "schema_version": "task-plan-input-selection.v1",
+        "implementation": ["task_execution_input"], "task-verify": ["task_execution_input"]}}
+    matrix_ports = ["execution_spec", "task_execution_input", "acceptance_matrix", "test_matrix", "real_e2e_matrix"]
+    original["required_plan_ports"] = matrix_ports
+    for name in ("r1", "r2"):
+        (state / f"{name}.json").write_text(json.dumps(original))
+    spec_port = next(p for p in old["produced"] if p["logical_name"] == "product_acceptance_spec")
+    spec = dict(hydrate_sidecar_ref(state, spec_port).payload)
+    for key in ("workflow_run_id", "flow_kind", "plan_revision", "task_map_generation"):
+        spec.pop(key, None)
+    old, descriptor, _ = prepare_plan_artifact_package(events=[], payload={
+        "task_map_ref": "r1.json", "task_map_generation": "g1", "requirement_spec_ref": "requirement.md",
+        "plan_ports": [{"logical_name": "product_acceptance_spec", "body": spec},
+                       *[{"logical_name": name, "body": {"status": "ready", "rows": []}} for name in matrix_ports]]}, **args)
+    first = ZfEvent(type="plan.artifact_package.admitted", correlation_id="run-1",
+        payload=package_event_payload(old, descriptor, status="admitted"))
+    body = json.loads((state / "r2.json").read_text())
+    body["tasks"].append({"task_id": "OTHER", "acceptance": ["Other task retained"],
+                          "acceptance_criteria": ["Other task retained"]})
+    if mutation == "task":
+        body["tasks"][0]["acceptance"].append("changed")
+    (state / "r2.json").write_text(json.dumps(body))
+    if mutation == "input":
+        gap["plan_ports"] = [{"logical_name": "execution_spec", "body": {"policy": "changed"}}]
+    package, descriptor, _ = prepare_plan_artifact_package(events=[first], payload=gap, **args)
+    second = ZfEvent(type="plan.artifact_package.admitted", correlation_id="run-1",
+        payload=package_event_payload(package, descriptor, status="admitted"))
+    return args, [first, second], old, package
+
+
+def _task_delta():
+    return {"task_id": "T1-FIX", "supersedes_task_ids": ["T1"], "owner_role": "dev",
+            "base_commit": "a" * 40, "claim_paths": ["src/**"], "acceptance": ["Exact JSON"],
+            "evidence_contract": {"plan_input_selection": {"schema_version": "task-plan-input-selection.v1",
+                "implementation": ["task_execution_input"], "task-verify": ["task_execution_input"]}},
+            "verify_commands": ["pytest"], "source_refs": ["requirement.md"]}
+
+
+def test_older_task_gap_rebases_on_current_full_map_without_losing_other_work(tmp_path, monkeypatch):
+    args, events, _, latest = _two_packages(tmp_path)
+    state = args["state_dir"]
+    log = EventLog(state / "events.jsonl")
+    for event in events:
+        log.append(event)
+    orch = Orchestrator(state, _config(state), _RecordingTransport())
+    ready = []
+    monkeypatch.setattr(orch, "_maybe_start_writer_fanout", ready.append)
+    event = ZfEvent(type="flow.gap_plan.ready", correlation_id="run-1", payload={
+        "workflow_run_id": "run-1", "pdd_id": "GOAL-1", "flow_kind": "prd",
+        "task_map_ref": "r1.json", "task_map_generation": "g1",
+        "plan_artifact_package_digest": events[0].payload["package_digest"],
+        "gap_tasks": [_task_delta()],
+    })
+    result = orch._bridge_gap_plan_ready_to_task_map(event)
+    assert result.action == "bridge", result
+    current = next(p for p in latest["produced"] if p["logical_name"] == "task_map")
+    assert ready[0].payload["amend_of"] == current["ref"]
+    assert ready[0].payload["supersedes_task_map_generation"] == "g2"
+    amended = json.loads((state / ready[0].payload["task_map_ref"]).read_text())
+    assert {t["task_id"] for t in amended["tasks"]} == {"T1-FIX", "OTHER"}
+    assert event.payload["task_map_generation"] == "g1"
+    orch._bridge_gap_plan_ready_to_task_map(event)
+    assert len(ready) == 1
+
+
+@pytest.mark.parametrize("mutation", ["task", "unscoped", "tampered", "binding", "input"])
+def test_cross_generation_gap_rejects_changed_or_unproven_targets(tmp_path, mutation):
+    from zf.runtime.gap_plan_baseline import gap_plan_amend_baseline
+    args, events, _, latest = _two_packages(tmp_path, mutation)
+    state = args["state_dir"]
+    gap = _task_delta()
+    payload = {"workflow_run_id": "run-1", "task_map_generation": "g1"}
+    if mutation == "unscoped":
+        gap.pop("supersedes_task_ids")
+    if mutation == "tampered":
+        port = next(p for p in latest["produced"] if p["logical_name"] == "task_map")
+        (state / port["ref"]).write_text('{"tasks": []}')
+    if mutation == "binding":
+        payload["plan_artifact_package_digest"] = "wrong"
+    with pytest.raises(ValueError):
+        gap_plan_amend_baseline(state_dir=state, events=events, payload=payload,
+            fallback_ref="r1.json", required=True, gap_tasks=[gap])
