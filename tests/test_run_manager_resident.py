@@ -170,6 +170,13 @@ def test_resident_run_manager_briefing_preserves_kernel_boundary(
     assert "provider 子进程不得越过角色生命周期" in briefing
     assert f"--state-dir {tmp_path / '.zf'}" in briefing
     assert "human.escalate" in briefing
+    assert "先按 source_ref 定位 recovery context" in briefing
+    assert "冻结必读 artifact 仍按原 policy 完整消费" in briefing
+    assert "投影不替代权威状态" in briefing
+    assert "核对 consumed、动作回执和实际下游效果" in briefing
+    assert "tail -n 120" not in briefing
+    assert "比原始事件流可靠" not in briefing
+    assert "影子档" not in briefing
 
 
 def test_resident_run_manager_events_are_known() -> None:

@@ -12,3 +12,10 @@
 `tests/test_run_manager_resident_cli.py` 以旧 CLI 位于 PATH、当前 CLI 带路径和参数
 的隔离环境实际执行生成的 status/emit 命令，覆盖普通与含引号的状态目录；
 `tests/test_run_manager_resident.py` 覆盖启动、保留、重绑定与恢复调用者。
+
+绑定诊断请求时，briefing 要求先读取 source_ref 和本案身份/证据，按未回答问题扩展
+相关正文，不再默认倾倒原始事件尾部及全局投影。通用方法位于
+[context-hygiene](../../yoke/context-hygiene/SKILL.md)。冻结必读输入保持完整分页消费；
+投影只是索引，事实仍以 canonical Store、事件账本和必要 sidecar 为准。
+建议由 runtime 按策略和受控准入消费；提交、动作回执、实际效果分别核验，
+不能一概描述为“影子模式”，也不代表 agent 有直接执行所有动作的权限。
