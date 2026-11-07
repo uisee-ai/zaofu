@@ -134,3 +134,13 @@ Task 替换关系校验。多层后继同样逐边证明；没有父包、正文
 ### 跨代际 gap 的显式输入比较（2026-11-07）
 
 旧 Task 的局部恢复以当前已准入完整图为修改基线，保留其他任务的新进展。除 Run、合同、不可变包祖先、原任务正文（或已证明的依赖替换）、共享约定和 Owner 决策外，始终核对 requirement_spec；其余输入按任务显式 plan_input_selection 的 Impl/Verify 联集校验摘要及正文。required_plan_ports 表示完整计划必须交付的输出，不表示每个任务都消费全局 execution_spec。未选择的全局执行说明更新不再误阻塞；已选择输入变化仍拒绝。没有显式选择的跨代际恢复保持拒绝。冻结旧包及结果不修改。回归由 tests/test_gap_plan_baseline.py 经真实 gap bridge 覆盖，验证保留当前图中无关任务和同源幂等。
+
+### 当前任务合同的必读覆盖（2026-11-07）
+
+Impl、Task Verify 和 Candidate Verify 对已绑定的 `contract` 快照读取完整 `$`。
+该对象已经是当前任务合同；只读 AC 和命令会漏掉 `evidence_contract`、输出及范围约束。
+计划输入仍按 `shared + 当前任务分区` 读取，不扩大成完整计划扫描。
+仍通过 Required Read CLI 分页及 digest/连续页校验；此规则只用于新声明，既有 attempt
+已冻结的 required-read policy 不回写。读取完成仅证明输入交付，不证明理解或验收通过。
+证据是否满足当前阶段合同由交接/Verify 方法逐项判断；不会自动将已有命令通过当成
+额外文件要求已满足，也不根据历史目录缺失自行篡改已接纳结果。

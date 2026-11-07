@@ -110,6 +110,9 @@ amendment are separate role capabilities supplied by the workflow profile.
    当前上下文中已完整消费的正文不重复读取，保留 ID/ref 与校验事实复用。
    短输出可能只在事件正文中，没有 sidecar 不代表采集失败；若契约要求 sidecar
    却缺失，应报告具体约束，不能伪造引用。截断的输出必须消费完整 sidecar。
+   对照当前 contract snapshot 的 `evidence_contract` 和声明输出逐项核验本阶段义务；
+   如接受等价证据，注明合同依据及对应关系。不能只检查 AC/命令就漏掉证据约束，
+   也不能因后续阶段证据尚不存在而拒绝当前任务。
    核验 PRD 独立评审、Owner 确认、计划批准等前置流程证据时，注意事件可能早于 Task 创建，
    `task_id` 为空；`--task` 精确筛选不能证明这些事件不存在。优先按已绑定 ID/ref 查询，
    或按事件类型定位后核对 channel/thread、PRD ref/digest、计划代际及先后顺序；

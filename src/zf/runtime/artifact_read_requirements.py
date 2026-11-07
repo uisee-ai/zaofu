@@ -63,19 +63,21 @@ def build_canonical_required_reads(
     rows = [dict(item) for item in explicit if isinstance(item, Mapping)]
     profile = str(output_profile_id or "").strip()
     required_paths: dict[str, tuple[str, ...]] = {}
+    # A task contract is already scoped. AC/command-only reads silently omit
+    # evidence obligations, output requirements and scope boundaries.
     if profile == "implementation":
         required_paths = {
-            "contract": ("$.acceptance_criteria", "$.verification_commands"),
+            "contract": ("$",),
         }
     elif profile == "task-verify":
         required_paths = {
-            "contract": ("$.acceptance_criteria", "$.verification_commands"),
+            "contract": ("$",),
             "target": ("$",),
             "impl-self-check": ("$",),
         }
     elif profile == "candidate-verify":
         required_paths = {
-            "contract": ("$.acceptance_criteria", "$.verification_commands"),
+            "contract": ("$",),
             "target": ("$",),
         }
         source_ids = {

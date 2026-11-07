@@ -35,6 +35,9 @@ event or editing truth files.
 Before submitting the completion claim:
 
 1. Compare the assigned scope with the actual diff and produced artifacts.
+   核对当前 contract snapshot 的 `evidence_contract`、声明的输出和测试义务，
+   逐项绑定本阶段交付的文件/ref；只有合同允许时才用其他持久化证据等价替代，
+   并记录对应关系。命令通过不自动满足另行声明的证据文件要求。
 2. Run the contract's focused checks exactly as stored plus the relevant
    build/typecheck command. A rewritten, re-escaped, or "equivalent" command is
    a different check and cannot produce a receipt for the declared command id.
