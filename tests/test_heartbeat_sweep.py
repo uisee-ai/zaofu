@@ -994,19 +994,19 @@ def test_stage_completion_releases_actor_and_usage_preserves_idle(
     assert payload["source"] == "agent.usage"
 
 
-def test_objective_action_ts_folds_into_liveness(tmp_path):
+def test_objective_action_ts_folds_into_liveness(tmp_path, monkeypatch):
     """ZF-LIVENESS-FOLD-01:零自觉心跳 + 新鲜客观动作 = 不判 stuck。
 
     07-17 UISSE 实弹:dev-lane-0 整轮 0 条 worker.heartbeat、499 条
     codex.hook 工具调用,被 α-3 判 stuck ×5 → escalate → quiescent。
-    活性必须 max(自觉心跳, last_action_ts 客观折算)。
+    客观活动必须通过真实写入路径刷新接收时间，而非信任任意自报时间。
     """
     from datetime import datetime, timedelta, timezone
 
     from zf.core.state.role_sessions import RoleSessionRegistry
     from zf.runtime.heartbeat_sweep import sweep_heartbeats
 
-    now = datetime(2026, 7, 17, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     reg = RoleSessionRegistry(tmp_path / "role_sessions.yaml", tmp_path)
     stale = (now - timedelta(seconds=900)).isoformat()
     fresh = (now - timedelta(seconds=30)).isoformat()
@@ -1014,13 +1014,50 @@ def test_objective_action_ts_folds_into_liveness(tmp_path):
         "last_heartbeat_at": stale,  # 自觉心跳 15 分钟前(远超 stuck 阈)
         "last_heartbeat_payload": {
             "state": "busy",
-            "last_action_ts": fresh,  # 客观动作 30 秒前
+            "last_action_ts": stale,
         },
     }
     reg._meta["dev-lane-1"] = {
         "last_heartbeat_at": stale,
         "last_heartbeat_payload": {"state": "busy", "last_action_ts": stale},
     }
+    reg._save()
+    monkeypatch.setattr("zf.core.state.role_sessions._now_iso", lambda: fresh)
+    from zf.runtime.housekeeping import apply_worker_activity_heartbeat
+
+    apply_worker_activity_heartbeat(reg, ZfEvent(
+        type="codex.hook.post_tool_use", actor="dev-lane-0", ts=fresh,
+    ))
     result = sweep_heartbeats(registry=reg, now=now)
     assert "dev-lane-0" not in result.stuck_instances  # 客观活性兜底
     assert "dev-lane-1" in result.stuck_instances       # 双时间戳都陈旧才判死
+
+
+@pytest.mark.parametrize("claimed", [
+    "2026-11-08T01:16:30Z", "2026-11-08T06:16:30+05:00",
+])
+def test_future_worker_clock_cannot_hide_silence(tmp_path, monkeypatch, claimed):
+    from zf.runtime.heartbeat_sweep import sweep_heartbeats
+
+    received = datetime(2026, 11, 7, 20, 16, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr("zf.core.state.role_sessions._now_iso", lambda: received.isoformat())
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    cfg = ZfConfig(
+        project=ProjectConfig(name="clock-test"),
+        session=SessionConfig(tmux_session="clock-test"),
+        roles=[RoleConfig(name="dev", backend="mock", instance_id="dev-1")],
+    )
+    orch = Orchestrator(state_dir, cfg, _NoopTransport())
+    event = ZfEvent(type="worker.heartbeat", actor="dev-1", ts=received.isoformat(),
+                   payload={"state": "busy", "last_action_ts": claimed})
+    orch._apply_housekeeping(event)
+    # Reload also covers existing persisted projections after a runtime restart.
+    registry = RoleSessionRegistry(state_dir / "role_sessions.yaml", tmp_path)
+    original = registry.path.read_bytes()
+    for age in (180, 240, 5 * 3600 + 30):
+        result = sweep_heartbeats(registry=registry, now=received + timedelta(seconds=age))
+        assert result.stuck_instances == ["dev-1"]
+        assert result.examined["dev-1"] == age
+    assert registry.get_last_heartbeat("dev-1")[1] == event.payload
+    assert registry.path.read_bytes() == original
