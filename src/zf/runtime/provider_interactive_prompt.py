@@ -19,6 +19,12 @@ def provider_interactive_prompt_marker(screen: str) -> str:
 
     text = (screen or "").lower()
     if (
+        "approaching rate limits" in text
+        and "switch to" in text
+        and "keep current model" in text
+    ):
+        return "quota_model_switch"
+    if (
         "contains shell syntax (" in text
         and "cannot be statically analyzed" in text
         and "do you want to proceed?" in text

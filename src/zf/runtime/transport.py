@@ -455,6 +455,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             setattr(err, "dead_reason", dead_reason)
             raise err
         self._assert_expected_cwd(role_name)
+        self._assert_dispatch_prompt_ready(role_name)
         clear_input = getattr(self.tmux, "clear_input", None)
         if callable(clear_input):
             clear_input(role_name)
