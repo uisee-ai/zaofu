@@ -229,3 +229,13 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - P09B Verify 20:48:00实际artifact read输出明确Warning truncated（289162 tokens）；其后用apply_patch从展示文本重建缓存，逐行JSON解析出现Unterminated string，却一度声称无截断。监工只读核查原hook与文件发现问题，按当前operation提示撤回结论、保留坏缓存、直接捕获CLI stdout再完整解析/refs摘要与分页。验证者已确认并改用required-inputs-direct.jsonl，未提交产品结论、未代写读取ledger。
 - Privacy Verify自行识别大输出截断，重定向时缓存父目录缺失，创建授权ignored目录后原CLI直接保存成功；未修改门禁。两者仍须完整分页及独立实测，缓存落盘不是完成读取。
 - 现有Impl/Verify源技能各补3行：进程层先捕获stdout、创建父目录、只输出大小/退出码；禁止用编辑补丁重建截断正文，逐行解析和refs/来源摘要后再分页。两provider副本同步、metadata不变、shared-body既有5测试通过、diffcheck通过；方法修正无runtime新规则。通用skill校验器不兼容既有ZaoFu扩展metadata的限制同18:58记录，不通过删除原metadata绕过。
+
+
+### 21:36 UTC：独立验证发现排队后授权缺口并自动返工
+
+- stdout方法8dafcaab已按唯一hunk部署main六技能文件及产品两源技能，保留全部既有差异；诊断stdout-capture-method-deployment.json。产品无对应.codex/.claude分发目录，预检时停止未写，随后仅同步实际源目录。P09B旧坏缓存首次差异在413369字符，原已读到255000处前缀与完整文件一致；依据provider transcript核对66个分页区间，完整覆盖0..941339无缺口。新901行、602正文/299来源全部摘要匹配。Privacy缓存945339字符、706正文/299来源，root只读核验和Verify自身还原均匹配，未代写读取ledger。
+- 两Verify均正常原生compact后接续，未回收活动operation。P09B独立3探针58.44秒通过：真实新增场景DS_1.1.0；撤权8读取/重放入口拒绝且全部业务表/字节不变；拒绝审计绑定目标job、重复sweep去重、等待助手无进展确实失败。152归档成员hash/size逐一核对，436帧WebM独立解码、历史ZIP摘要一致。正式Verify结果尚待提交，未计done。
+- Privacy独立4反例均失败：真实owner排队cold/delete后停用reviewer或移除creator privacy:manage，仍处置字节并改变资源状态。随后真实受管worker再次复现排队delete→reviewer失效→deleted/generation1/原文件消失（11.17秒）。确认产品Critical，非环境或夹具故障；原46 runtime未覆盖入队后的撤权时点。
+- 其余独立检查保留：canonical grant/review撤权加强到112非audit表及全部35/38存储文件摘要不变；退役registry输入后历史media job引用仍返回409并阻止删除。初组4fail/2pass、受管1fail、补充不变集3pass，总5fail/5pass。原七同头自检收据有效但不足以覆盖新增反例，未改写为失败来源或虚构原GREEN。
+- Verify拒收evt-278ca5a5dde4准入 / evt-161297710d44 task.pipeline.verify.completed，精确返工R6-QUEUED-RETENTION-AUTH：实际执行/重试/字节处置同一受控锁事务重验policy版本状态有效期及创建人/独立审批人当前权限，保留owner、引用、恢复和全部不变集。若privacy写域没有安全接缝需受控最小上游变更，禁止周期扫描/猴子补丁绕过。
+- 21:33:51内核自动派发g2-p2到新pane747，op wop-impl-tp-P16B-PRIVACY-R6-dfdc3357f4bd9-eb4bee24ac87 / attempt ta-f8970b1aa80ffe7f1aa5 / prd-dev-lane-0；复用原g1任务worktree、5ea5e55起点，brief impl-g2-p2.md。监工提供复现位置和直接捕获stdout方法，未改canonical或扩大allowed_scope。当前33done/1Verify/1返工Impl/10依赖等待，持续监工未结束。
