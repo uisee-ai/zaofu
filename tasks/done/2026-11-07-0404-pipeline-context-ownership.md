@@ -1,6 +1,8 @@
 # Task Pipeline 上下文回收归属修复
 
-> 状态: active
+> 状态: done
+
+实现提交：`23defb3e fix: keep pipeline context recovery with provider lifecycle`。
 
 ## 问题与边界
 
@@ -29,5 +31,5 @@ RED：新增 ownership 回归 3 failed / 11 passed。
 最终 focused + lifecycle/mock caller 闭包 73 passed；sentinel 50 passed / 1 skipped；flow mock E2E 10 passed。
 `dev-verify plan` 因 reactor 触发 205 文件的自动 broad selector；遵循仓库 full-suite 限制，run 明确跳过 deterministic/serial 自动全套，用上述六文件 focused 闭包替代，保留 sentinel/flow-smoke，未声称 full pytest。
 只读实况 replay：本次两 critical 与两 scheduled 共4个事件均匹配 kernel ownership，未调用 reactor 或写事件。
-证据目录 `/tmp/zf-supervision-20261107/pipeline-context-*`；待主会话审核与提交后登记实施 hash。
+证据目录 `/tmp/zf-supervision-20261107/pipeline-context-*`；主会话已审查并提交；组合验证与运行环境加载由0200监工任务追踪。
 本片不含主 checkout 尚未提交的 typed recovery briefing 接线，主会话另做组合验证。

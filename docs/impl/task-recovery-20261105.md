@@ -145,4 +145,4 @@ continuation schedule 同样不能重开后续代次。未知来源、跨 run、
 recycle，hold 到期仍通过原 lifecycle 回收和恢复 briefing，保留 operation、attempt、
 lease 和 dispatch 身份。本片不自动 redrive，不改变重试预算或 result admission。
 历史上已经被审计挂起的 operation 仍应使用精确 `recover workflow` checkpoint。
-任务与证据见 [上下文回收归属修复](../../tasks/active/2026-11-07-0404-pipeline-context-ownership.md)。
+任务与证据见 [上下文回收归属修复](../../tasks/done/2026-11-07-0404-pipeline-context-ownership.md)。
