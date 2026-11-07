@@ -215,3 +215,9 @@ read-ledger 写入之后，输出 JSONL 的 `body` 定义与 `source` 来源/收
 产品共享checkout的原配置差异未被本修复提交收编；确切前后文本与摘要在监工诊断目录保留。
 
 配置与回收语义验证68项通过；真实回收观察、后续独立验证和最终任务完成仍由监工继续追踪。
+
+17:22 UTC现场闭环：Core Audit经独立Verify新增7项探针及真实健康事务窗口验证后通过，
+内核集成到candidate `ee2e1d5`并自动派发Dataset R3。媒体Verify在原身份完成798672字符、
+641正文/244来源的无损输入消费与摘要校验，继续独立验证。两Verify正常compact后续读，
+未再次强制回收。有效任务完成31/45，不能将输入恢复或Core局部通过等同于整体完成。
+操作记录见[持续监工](../../tasks/active/2026-11-07-1220-live-privacy-lifecycle-supervision.md)。

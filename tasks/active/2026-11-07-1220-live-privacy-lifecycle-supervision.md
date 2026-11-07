@@ -118,3 +118,12 @@
 ### 16:52 UTC：两条独立Verify并行
 
 Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作者结果evt-21384f6a47c4 / evt-3109dd47e52a准入；Verify op wop-verify-tp-P09A-CORE-AUDIT-R1-bc2c099383-0c2d842a6ed6、attempt ta-fc1a78be57876f258bad在%734运行。Media恢复结果evt-66588eff0bf6 / evt-64ae26f9386d准入，原目标63cfeb09，新Verify op wop-verify-tp-P16B-MEDIA-LIFECYCLE-R1-2fa5e-d0e68faaccbc在%735运行。两者独立裁决未完成；done仍30。新600s回收等待下两名原Impl均成功原生compact并保留会话，未再次强制回收。Core Verify一条心跳误填未来17:00Z已提醒使用真实UTC，后续更正，不改历史。
+
+### 17:24 UTC：Core独立验证完成，Dataset自动接续
+
+- Core Verify新增7项独立探针全部通过，真实受管worker的7个窗口证实拒绝审计与两个健康表写入属于不同事务；业务表、schema、文件字节保持。审计真实RED为access_audit新增0行而非1行，环境下载失败未被算作RED。复用的5份同头收据与本轮独立执行分开记录。
+- evt-7da2c8cfd769在17:21:37正式Verify passed；evt-4d68f2747a85 / evt-8607a8e8021e在17:22:07集成candidate ee2e1d5ea1f1f12f12853e0bc88fb9a2cadad315，随后evt-ef5d98b8c904 task.done。完成31/45；尚余14项，不表示最终产品验收通过。
+- Dataset R3自动派发evt-1770da9fa235，attempt ta-529e5faa102ae772f17f、op wop-impl-tp-P09A-DATASET-R3-b5b6afcf73736-b22b68a71d5c，%737从新candidate启动。监工交接完整输入分页、旧失败补丁仅在允许范围复用、保留全部mandatory与快照、锁内原依赖恢复方法；未修改合同或代发状态。
+- Media独立Verify完整读取798672字符，641正文/244来源摘要全部匹配，正常compact后续读无重头；现开始真实独立竞态探针。原media62/retention48/smoke2/browser2收据复核不代替本轮独立结论。
+- 两Verify均曾将探针放到gitignored但不在allowed_paths的临时目录，guard正确拒绝；均自行移至允许且已忽略的evidence路径恢复。忽略规则不是写入授权，未修改guard或产品源码来隐藏临时文件。
+- 16:59单次workflow-synthesis-consumer锁超时evt-e6cee1596af1已记录；随后锁释放、RM tick和两路心跳继续，未重复发生。watcher33114/resident3972403各持唯一运行锁。详情见产品diagnostics/recovery-20261107-1220/verify-live-1705-observation.json。
