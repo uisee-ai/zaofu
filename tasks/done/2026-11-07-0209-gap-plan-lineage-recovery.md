@@ -1,6 +1,6 @@
 # 修复 LS-v1 增量计划跨代际证据绑定
 
-> 状态: active
+> 状态: done — `721cfcbd fix: bind gap recovery to its admitted plan generation`
 
 授权：用户要求继续监工 LS-v1，分析并修复阻塞，恢复后持续观察并记录。
 
