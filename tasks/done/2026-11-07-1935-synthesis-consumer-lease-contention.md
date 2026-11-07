@@ -1,6 +1,6 @@
 # Workflow Synthesis consumer 锁竞争分类
 
-> 状态: active
+> 状态: done — 9013de43 `fix: defer busy synthesis consumers without hiding execution failures`
 
 持续监工获授权修复卡点。现场evt-92c8b53fa5d8（19:14:53）及19:31:27重复出现
 workflow-synthesis-consumer.guard锁0.1秒获取超时；锁随后释放，任务继续。
@@ -21,3 +21,9 @@ orchestrator.tick.failed，制造失败信号。不可通过吞掉所有TimeoutE
 未运行全量pytest或真实provider。新增异常仅包装enter_context获取lease失败，
 lease内TimeoutError仍原样进入tick失败，Web不会因busy提前标记fingerprint。
 源码实机部署及保worker重载仍待完成，暂不标done。
+
+现场：主checkout严格preimage匹配同步两个source和新测试，主环境26通过。
+evt-9f538ee151ed经既有control-plane-only actuator保worker重载，新watcher1067017
+于19:38:36启动；PrivacyR6/P09B原operation与pane741/744均保持running，resident3972403未重建。
+19:39:33复核33done/2active/10待依赖、最新事件持续，记录consumer-contention-deployment.json。
+未人工持生产锁制造故障；竞争分流由真实锁测试及实际tick/Web调用者验证，后续继续观察自然运行。

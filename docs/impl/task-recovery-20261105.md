@@ -241,4 +241,4 @@ Workflow Synthesis 的 Web preparation host 和 runtime tick 共用consumer leas
 获取该lease超时使用 `WorkflowSynthesisConsumerBusy`（TimeoutError子类）表达另一host
 正在处理；runtime本轮延后，Web不将当前fingerprint标为已消费。lease内的事件读取、
 处理或provider错误仍按原失败路径报告，不能按异常基类吞掉全部TimeoutError。
-回归与现场记录：[consumer锁竞争](../../tasks/active/2026-11-07-1935-synthesis-consumer-lease-contention.md)。
+回归与现场记录：[consumer锁竞争](../../tasks/done/2026-11-07-1935-synthesis-consumer-lease-contention.md)。

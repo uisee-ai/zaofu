@@ -187,3 +187,11 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Privacy R6的[60000,90000)和[165000,210000)原工具正文实际10075/13188tokens截断；完整缓存存在，但后续读取未覆盖缺口。监工依据hook真实tool_response而非摘要确认，定点要求≤15k字符补读，保留当前attempt与已读进度。
 - P09B的[33000,78000)同样截断；既有[18000,48000)完整，补读body57–64仅覆盖[50175,59939)，因此精确要求[48000,63000)、[63000,78000)。head -c 24000字节约20582字符，与下一页18000有重叠，无首段缺口。
 - 两源技能再补2行保守方法：无可靠token计数每次≤15000字符、不合并多页，核对实际truncated后才标已读，按区间补缺口而非少量ID。metadata保持、源与两provider副本一致，唯一hunk部署保留main差异；非新增runtime门禁，未改原必读范围。
+
+
+### 19:39 UTC：Consumer正常锁竞争误报修复部署
+
+- 第二次19:31:27锁超时后定位：Web与runtime共享同一0.1秒consumer lease，Web正常延后，tick误发orchestrator.tick.failed。9013de43只包装lease进入失败为WorkflowSynthesisConsumerBusy，tick延后；正文内超时仍报失败，Web忙时不记fingerprint seen。未放宽全局锁/provider超时、未改canonical业务状态。
+- 真实锁竞争2RED/2GREEN→聚焦79GREEN；自动31文件524/7、sentinel50/1、flow mock10，主环境26通过。严格preimage部署保留main其它改动。
+- evt-9f538ee151ed控制面重载，watcher384744→1067017（19:38:36），两活动Impl operation/pane741/744不变，resident3972403保留。19:39:33仍33done/2running/10依赖等待，任务进度接续；修复任务归档done，后续自然运行继续监测，未声称已经穷尽所有超时来源。
+- 两worker分页缺口已分别补齐；Privacy原生compact74秒后续读，P09B也正常compact续读。保守分页方法已更新，未删减任何原始输入。
