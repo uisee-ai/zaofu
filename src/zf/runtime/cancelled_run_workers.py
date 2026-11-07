@@ -120,3 +120,30 @@ def reconcile_pending_stops(runtime: Any, events: list[ZfEvent]) -> None:
                 runtime, role_instance=role, dispatch_id=dispatch,
                 task_id=str(event.task_id or ""), events=events, cancellation=cancellation,
             )
+    _reconcile_cancelled_reader_dispatches(runtime, events)
+
+
+def _reconcile_cancelled_reader_dispatches(runtime: Any, events: list[ZfEvent]) -> None:
+    """A crash can follow fanout cancellation before the first stop receipt."""
+    cancellations = {str(e.payload.get("fanout_id") or ""): e for e in events
+                     if e.type == "fanout.cancelled" and e.origin == "kernel"}
+    latest: dict[str, ZfEvent] = {}
+    for event in events:
+        if event.type in {"fanout.child.dispatched", "fanout.synth.dispatched",
+                          "task.dispatched", "workflow.operation.started"}:
+            role = str(event.payload.get("role_instance") or event.payload.get("assignee") or "")
+            if role:
+                latest[role] = event
+    pending_fanouts = {str(e.payload.get("fanout_id") or "") for e in latest.values()
+                       if e.type in {"fanout.child.dispatched", "fanout.synth.dispatched"}}
+    for fanout_id in pending_fanouts & cancellations.keys():
+        if not fanout_id:
+            continue
+        manifest = runtime._fanout_manifest(fanout_id)
+        if not manifest or manifest.get("topology") != "fanout_reader":
+            continue
+        cancellation = cancellations[fanout_id]
+        runtime._cancel_superseded_reader_fanout_operations(
+            manifest=manifest, cancellation_event=cancellation,
+            reason=str(cancellation.payload.get("reason") or "fanout_cancelled"),
+        )

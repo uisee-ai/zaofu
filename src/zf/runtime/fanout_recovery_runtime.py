@@ -649,7 +649,7 @@ class FanoutRecoveryRuntimeMixin:
                 role_instance=str(operation.get("role_instance")
                                   or child.get("role_instance") or ""),
                 task_id=str(operation.get("task_id") or child.get("task_id") or ""),
-                dispatch_id=str(operation.get("dispatch_id") or child.get("run_id") or ""),
+                dispatch_id=str(child.get("run_id") or operation.get("dispatch_id") or ""),
                 events=self.event_log.read_all(),
                 cancellation=cancellation_event,
             )
