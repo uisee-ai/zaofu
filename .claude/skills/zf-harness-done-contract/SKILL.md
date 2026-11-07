@@ -38,6 +38,9 @@ Before submitting the completion claim:
    核对当前 contract snapshot 的 `evidence_contract`、声明的输出和测试义务，
    逐项绑定本阶段交付的文件/ref；只有合同允许时才用其他持久化证据等价替代，
    并记录对应关系。命令通过不自动满足另行声明的证据文件要求。
+   返工的代码修复清单不删除原合同已授权的强制证据交付义务；为本次结果刷新这些
+   证据，并保留历史来源。反馈若明确禁止所需输出，先列出冲突请求澄清；原合同未
+   授权的路径不能仅凭证据要求写入。不要把返工漏列的已授权输出误报为原合同范围缺口。
 2. Run the contract's focused checks exactly as stored plus the relevant
    build/typecheck command. A rewritten, re-escaped, or "equivalent" command is
    a different check and cannot produce a receipt for the declared command id.

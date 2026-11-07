@@ -311,6 +311,12 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
         assert str((doc.parent / "source.md").resolve()) in briefing.read_text()
         assert str((doc.parent / "progress.md").resolve()) in briefing.read_text()
         text = briefing.read_text()
+        if stage == "impl":
+            assert "do not remove required evidence outputs" in text
+            assert "never authorize out-of-scope writes" in text
+        else:
+            assert "Rework allowed_scope must cover the fix and its required evidence" in text
+            assert "do not omit outputs or expand" in text
         assert f"cost --operation {context.operation_id} --json" in text
         compact = json.loads(text.split("## Compact Execution Context", 1)[1].split("```json\n", 1)[1].split("```", 1)[0])
         assert "attempt_id" not in compact  # exact identity remains in header

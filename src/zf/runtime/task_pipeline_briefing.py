@@ -58,6 +58,10 @@ def write_task_pipeline_briefing(
         )
         stage_instructions = [
             "Implement only the admitted Task Contract in this Task Workspace.",
+            "Rework code paths do not remove required evidence outputs already "
+            "authorized by the admitted contract. Refresh those outputs for the "
+            "current result; evidence requirements never authorize out-of-scope writes. "
+            "Resolve an explicit write prohibition before proceeding.",
             "Commit task changes with explicit pathspecs before submission.",
             "Set target_commit and every self-check target to the exact HEAD.",
             "Do not update candidate/main refs or runtime truth directly.",
@@ -90,6 +94,9 @@ def write_task_pipeline_briefing(
             "and do not reject/block this Task for evidence that layer will produce.",
             "Attach durable evidence to every result adjudicated by this stage.",
             "For a product gap, submit verdict=rejected with exact rework_items.",
+            "Rework allowed_scope must cover the fix and its required evidence "
+            "updates within the admitted contract; do not omit outputs or expand "
+            "the contract's write authority.",
         ]
         if payload.get("external_evidence_bindings"):
             stage_instructions.append(
