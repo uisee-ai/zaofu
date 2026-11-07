@@ -91,3 +91,14 @@ Critic提交 `evt-cee6ad122f5c` passed，无阻断fix_items；格式枚举提交
 三份运行源码逐文件核实base SHA匹配后原子同步，记录 `/tmp/zf-supervision-20261107/artifact-dedup-source-sync.json`。通过现有actuator保留worker/state重载，事件 `evt-5986fed68147`，watcher4000675于03:42:00Z启动。原3个operation仍running，Dashboard200、Compose PG healthy。现有Verify简报早于补丁仍为旧命令，未改不可变派发输入；新命令用于后续正常生成简报。CLI使用实际`.venv/bin/zf`验证新flag成功；此前`python -m zf`因无__main__失败，不计成功验证。
 
 当前26done、2Impl+1独立Verify运行、13待执行子任务；capacity8/8不变，当前依赖图不能安全凑8个独立任务。根任务仍active，继续监督真实浏览器、跨owner留存、独立Verify及后续候选集成。
+
+
+## 03:46Z 浏览器首轮证据与中断回收恢复
+
+媒体浏览器真实报告 `app/evidence/privacy_media/browser/20261107T034042-aedf4e6a/`：Playwright1.62.0，1旅程passed/0unexpected，命令exit0；trace3971951B、WebM916345B、多张截图完整。覆盖真实媒体生成/播放推进/逐帧人工复核/版本修正与拒绝，fixture仍为synthetic且executor为implementation self-check，不能代替独立Verify或真实外部资格；worker继续补模型额外字段拒绝、修正后发布等探针。
+
+留存03:41:49 `evt-e069692e24f2` hardcap强制回收（最后token244612/258400=94.66%），03:41:50 `evt-72e00a7a5648`进入recycling；旧provider当时处于nativecompact，但没有compacted/new token证据，因此不能称压缩后仍误判峰值。该替换与03:42控制面重载重叠，新pane649只剩bash、无provider子进程、启动命令未提交/未完成ready；新watcher03:42:37 `evt-ed1646b39a66`仅记录dead。_start_recycle无respawn锁，actuator直接终止watcher；存在中断会话替换窗口。
+
+已通过 `zf restart prd-dev-lane-1` 现有角色级SessionLock入口恢复，未直接补键或写canonical状态。03:45:15 `evt-c3f08d742627`respawned、`evt-d77ab4e02b2c`restarted；新pane650启动provider并读取recovery简报。原operation仍为b59069436b02，代码/工作树/任务世代保留；其余Media/Verify不停。恢复简报复用旧dispatch内容仍为原必读命令，不能把新dedup flag已出现在所有旧简报当成事实。
+
+已授权下一片有界watchdog修复：真正重建runtime、从事件hydrate recycling且provider dead且活动obligation存在时，走现有带锁fresh-session恢复而不等普通300s活性超时；保留同进程在途互斥、safe_halt、terminal、门禁与重试保护。不以仅等待respawn锁宣称actuator已覆盖未持锁的context recycle。
