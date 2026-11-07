@@ -1,6 +1,6 @@
 # R31：恢复提案方法就绪检查与 LS 技能源同步
 
-> 状态: active
+> 状态: done — e815efde chore: align recovery task synthesis with admission contracts
 
 授权：继续监工 LS-v1、修复阻塞并记录。源码基线 bdbfdf59。
 
@@ -20,3 +20,5 @@ FILES、SHELL、VEHICLES Reader 均漏 plan_input_selection，分别被 evt-6182
 ## 验证
 
 2026-11-07 UTC：quick_validate 与两项 metadata 无告警；dev-verify 自动档 41 passed / 1 skipped；flow-role activation 实际调用闭包 23 passed。跳过为既有 sentinel 条件，不是本次失败。未跑全量/真实 Provider。
+
+部署：LS 两项技能源提交 ff4106b；新摘要 gap-task-synth 62dd06c1、verify-rescan-replan 8fa5ca27。5 份既有角色技能快照摘要保持不变，其他 3 项本地技能修改保持不变。正常后续 dispatch 的 role skill materialization 从 project_root/skills 解析；已有在途 attempt 未重写。部署回执位于 LS docs/records/2026-11-07-recovery-skill-source-deployment.json。premerge sentinel 53 passed。
