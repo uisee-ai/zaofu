@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：`427c644b fix: preserve input scope when returning a plan for repair`。
 
 # 计划退回的读取范围与任务正文交接
 
@@ -17,3 +19,12 @@ LS-v1 新候选 evt-d51d82f1bd48 已通过 result validate，但 34 份完整任
 - 日志：/tmp/zf-plan-review-scope-{plan,closure,tiers,sentinel,smoke}-20261107.*。
 - 真实交接审计：LS-v1 docs/records/2026-11-07-plan-handoff-audit.json；具体修订反馈：2026-11-07-plan-handoff-feedback.md。
 - 代码与方法已验证，部署后的受控退回/真实修订验证尚待完成，因此此时保持 active。
+
+
+## 最终真实验证（UTC 2026-11-07 03:58–04:00）
+
+- LS-v1 加载 dev 2475518b，Watcher PID 1421948；loop evt-b3fd4ad9df29，加载回执 diagnostics/runtime-load/79cde79d33ec485494e925a04ce59c84.json。
+- 受控恢复 evt-83ea802b1e15 后，32 项未完成合同全部绑定当前 a48ab08b Package / 6a4790a4 generation；两项历史完成保持 done，验收不减，原 map 全 34 项保留。
+- 实际 impl 派发：FMS-03-GAP-CONTRACT evt-6f2baaf3b785（03:58:52）、FMS-02-GAP-CORE evt-e12ad03d963a（03:58:58）、FMS-20-GAP-GATEWAY-02 evt-e4dbc860d145（03:59:06）；均有 workflow.operation.started / task.attempt.sent。
+- 三者基线均 cc6e4d7d，包含已完成两项；各自的不可变合同快照与新包一致。必读范围为 6 项：验收、命令、共享输入、本人完整任务输入、关键 workflow/user-config。其他 33 项的正文未被列为必读；完整包保留可检索。
+- 目前真实 worker 正在按 cursor 读取绑定输入，已产生本 attempt read-ledger；这是派发与上下文交接验证，不是业务任务验收完成。继续监工记录在 LS-v1 docs/records/2026-11-07-three-blockers-recovery.md。

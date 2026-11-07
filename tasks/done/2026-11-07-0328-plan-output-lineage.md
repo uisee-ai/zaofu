@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：`b1f028e3 fix: separate plan output lineage and preserve verified completion`。
 
 # 直接 Planner 汇总的新输出身份与断点恢复
 
@@ -19,3 +21,12 @@ LS-v1 已批准候选 evt-0aa140c4b5f4 通过任务正文迁移复核，首次�
 - 新增恢复/Store/Skill 定向 40 passed / 1 skipped；Store 扩展闭包 578 文件、7,108 passed / 2 skipped（206.54s）。串行 10、sentinel 53、mock flow 10 已通过，最终版本合并哨兵复跑 53 passed。
 - 真实 LS 产物副本预演通过 blocking 包准入，生成新 generation 6a4790a4、package a48ab08b；原数据未改，临时副本已清理。业务 34 项和所有验收矩阵保留。
 - 部署真实 Worker 验证仍待完成，保持 active。
+
+
+## 最终真实验证（UTC 2026-11-07 03:58–04:00）
+
+- LS-v1 加载 dev 2475518b，Watcher PID 1421948；loop evt-b3fd4ad9df29，加载回执 diagnostics/runtime-load/79cde79d33ec485494e925a04ce59c84.json。
+- 受控恢复 evt-83ea802b1e15 后，32 项未完成合同全部绑定当前 a48ab08b Package / 6a4790a4 generation；两项历史完成保持 done，验收不减，原 map 全 34 项保留。
+- 实际 impl 派发：FMS-03-GAP-CONTRACT evt-6f2baaf3b785（03:58:52）、FMS-02-GAP-CORE evt-e12ad03d963a（03:58:58）、FMS-20-GAP-GATEWAY-02 evt-e4dbc860d145（03:59:06）；均有 workflow.operation.started / task.attempt.sent。
+- 三者基线均 cc6e4d7d，包含已完成两项；各自的不可变合同快照与新包一致。必读范围为 6 项：验收、命令、共享输入、本人完整任务输入、关键 workflow/user-config。其他 33 项的正文未被列为必读；完整包保留可检索。
+- 目前真实 worker 正在按 cursor 读取绑定输入，已产生本 attempt read-ledger；这是派发与上下文交接验证，不是业务任务验收完成。继续监工记录在 LS-v1 docs/records/2026-11-07-three-blockers-recovery.md。
