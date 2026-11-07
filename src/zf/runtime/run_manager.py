@@ -1393,8 +1393,8 @@ def build_run_manager_projection(
     )
     # A no-progress diagnosis remains first in the queue, but cannot be sent
     # while another Autoresearch request occupies the single-flight slot.
-    # Allow a separate, current Impl result to reach OA for semantic review;
-    # do not bypass a human gate, execute a replan, or clear the diagnosis.
+    # Allow current task work with a separate available owner (OA review or
+    # resident diagnosis); retain human gates and the background diagnosis.
     selected = continuation.get("next_operation")
     if (
         isinstance(selected, dict)
@@ -1404,9 +1404,17 @@ def build_run_manager_projection(
     ):
         review = next((
             action for action in pending_actions
-            if action.get("action") == "orchestrator-rework-triage"
-            and action.get("failure_class") == "settled_impl_requires_semantic_review"
-            and _pending_action_readiness(action) == "ready_to_execute"
+            if (
+                action.get("action") == "orchestrator-rework-triage"
+                and action.get("failure_class") == "settled_impl_requires_semantic_review"
+                and _pending_action_readiness(action) == "ready_to_execute"
+                or action.get("task_id")
+                and _pending_action_readiness(action) == "needs_diagnosis"
+                and not resident_agent.get("requests")
+                and _resident_diagnosis_reprompt_action(action, resident_agent) is not None
+            )
+            and (action.get("recovery_admission") or {}).get("status") != "blocked"
+            and not action_gate_reason(state_dir, events, action, _pending_human_decisions(events))
             and not _action_seen(events, action)
         ), None)
         if review is not None:

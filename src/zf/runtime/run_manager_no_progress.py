@@ -29,6 +29,19 @@ def build_no_progress_projection(
     from zf.runtime.stage_replan_generation import completed_generation_source
 
     aliases = run_aliases(events)
+    dismissed: set[str] = set()
+    seen: dict[str, Any] = {}
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        source = seen.get(str(payload.get("escalation_event_id") or ""))
+        source_run = (event_run_id(source, aliases=aliases) or source.correlation_id) if source else ""
+        ack_run = event_run_id(event, aliases=aliases) or event.correlation_id
+        if (event.type == "human.escalation.acknowledged"
+                and event.origin == "kernel" and payload.get("status") == "dismissed"
+                and source is not None and source.type == "human.escalate"
+                and source_run and ack_run == source_run):
+            dismissed.add(source.id)
+        seen[event.id] = event
     counts: Counter[tuple[str, str]] = Counter()
     latest: dict[tuple[str, str], dict[str, Any]] = {}
     prior: dict[str, Any] = {}
@@ -42,7 +55,7 @@ def build_no_progress_projection(
             counts.pop(key, None)
             latest.pop(key, None)
         etype = str(getattr(event, "type", "") or "")
-        if etype not in NO_PROGRESS_EVENT_TYPES:
+        if etype not in NO_PROGRESS_EVENT_TYPES or event.id in dismissed:
             continue
         payload = getattr(event, "payload", None)
         payload = payload if isinstance(payload, dict) else {}

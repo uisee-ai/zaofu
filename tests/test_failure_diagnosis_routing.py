@@ -51,7 +51,8 @@ def test_structured_known_environment_failure_preserves_policy(config):
     assert not result.should_increment_retry
 
 
-def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tmp_path, config, monkeypatch):
+@pytest.mark.parametrize('background_diagnosis', [False, True, 'busy', 'unavailable', 'human'])
+def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tmp_path, config, monkeypatch, background_diagnosis):
     from zf.runtime.run_manager import run_manager_tick
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
     from zf.runtime.recovery_case import build_recovery_case_projection
@@ -68,10 +69,26 @@ def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tm
     monkeypatch.setattr("zf.runtime.run_manager._resident_pane_display", lambda _: {
         "ok": True, "current_command": "codex", "current_path": str(tmp_path)})
     monkeypatch.setattr("zf.runtime.run_manager._refresh_resident_briefing", lambda **kw: False)
+    if background_diagnosis == 'busy':
+        resident['requests'] = [{'request_id': 'busy-request', 'status': 'pending'}]
+    elif background_diagnosis == 'unavailable':
+        resident['status'] = 'not_spawned'
+    elif background_diagnosis == 'human':
+        writer.append(ZfEvent(type='human.escalate', task_id='T1', correlation_id='run-1',
+            payload={'blocking_scope': 'task', 'decision_token': 'owner-T1', 'reason': 'owner decision'}))
     sent = []
     monkeypatch.setattr("zf.runtime.run_manager._send_tmux_prompt", lambda target, prompt, **kw: sent.append(prompt) or {"ok": True})
+    if background_diagnosis:
+        monkeypatch.setattr("zf.runtime.run_manager.build_no_progress_projection", lambda *a, **kw: {
+            "status": "tripped", "items": [{"fingerprint": "historical", "event_id": failure.id, "count": 3}],
+        })
+        monkeypatch.setattr("zf.runtime.run_manager._autoresearch_inflight_request_ids", lambda _: {"background-request"})
+        monkeypatch.setattr("zf.runtime.run_manager._run_manager_reflect_enabled", lambda *a: False)
     run_manager_tick(state_dir=state, writer=writer, config=config, event_log=log, project_root=tmp_path, spawn_repairs=False)
     events = log.read_all()
+    if background_diagnosis in ('busy', 'unavailable', 'human'):
+        assert not sent
+        return
     assert len(sent) == 1 and "expected_output" in sent[0]
     pending = next(e for e in events if e.type == "run.manager.action.effect.pending")
     context = hydrate_sidecar_ref(state, pending.payload["recovery_context_ref"]).payload
