@@ -2926,6 +2926,9 @@ class FanoutCoordinationMixin(
             }
             self.event_writer.append(started)
             started_any = True
+            manifest = self._fanout_manifest(context.fanout_id)
+            if manifest and self._cancel_candidate_superseded_replan_fanout(manifest):
+                continue
             role_by_instance = {role.instance_id: role for role in roles}
             prepared_dispatches = self._preregister_reader_fanout_operations(
                 context=context,
@@ -6470,6 +6473,16 @@ class FanoutCoordinationMixin(
                 events = self.event_log.read_all()
             except Exception:
                 return False
+        from zf.runtime.reader_failure_supersession import reader_manifest_replacement_admission
+
+        replacement = reader_manifest_replacement_admission(events, manifest)
+        if replacement is not None:
+            self._cancel_superseded_fanout_manifest(
+                fanout_id=str(manifest.get("fanout_id") or ""), manifest=manifest,
+                reason="superseded_by_admitted_task_replacement",
+                superseded_by=replacement.id, source="superseded_reader_fanout_manifest_closeout",
+            )
+            return True
         ready = superseding_candidate_ready(
             events,
             rework_source=source,

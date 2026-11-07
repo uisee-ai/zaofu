@@ -989,7 +989,7 @@ def _manifest(state_dir: Path, fanout_id: str) -> dict:
     )
 
 
-def _durable_reader_state(tmp_path: Path):
+def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False):
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
@@ -1059,6 +1059,14 @@ def _durable_reader_state(tmp_path: Path):
             "workflow_run_id": "run-durable",
         },
     )
+    if rework_source:
+        source = ZfEvent(type="dev.blocked", task_id="T-VERIFY",
+                        correlation_id="run-durable")
+        log.append(source)
+        trigger.payload.update(rework_of=source.id, task_id="T-VERIFY",
+                               affected_task_ids=["T-VERIFY"])
+        trigger.correlation_id = "recovery-trace"
+        log.append(trigger)
     orch.run_once(events=[trigger])
     started = next(event for event in log.read_all() if event.type == "fanout.started")
     manifest = _manifest(state_dir, started.payload["fanout_id"])

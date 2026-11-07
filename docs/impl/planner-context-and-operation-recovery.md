@@ -192,6 +192,8 @@ Reader 的失败仍保留原事件和证据，但在 stage replan 与 Run Manage
 
 旧版本已产生的 blocked 不自动抹除；operator 必须核验替代关系，通过精确 `human-decision-dismiss` 和 `zf goal set --status active --reason ...` 恢复。该动作不代表产品验收通过，也不重写旧 attempt 或新任务合同。回归覆盖真实 Reactor 入口与 RM 终态收敛，见 `tests/test_reader_failure_supersession.py`。
 
+同一因果证明也用于 Reader pending/recovery 派发入口：WRC 已完整接纳后继且旧任务不在其中时，沿既有 `fanout.cancelled`、Operation cancel 和精确 dispatch 的 provider 停止通路退出旧诊断。仅拒绝旧结果不足以收口，否则 `provider.turn.closed` 会被误判为丢失交付并重派旧 Reader。判定合并 trigger 的 affected tasks 与各 child 的任务身份，任何未被承接的任务都阻止整组取消；不依靠“出现了新计划”猜测替代，也不生成通过结果。重启 tick 幂等及未准入、异 Run/原因、部分替代等反例见 `tests/test_reader_replacement_closeout.py`。
+
 
 ### 诊断通道互相独立与已关闭升级
 

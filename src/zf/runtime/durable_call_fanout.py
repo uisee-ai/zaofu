@@ -842,6 +842,11 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         events: list[ZfEvent],
         recovery_snapshot=None,
     ) -> tuple[str, str]:
+        from zf.runtime.reader_failure_supersession import reader_manifest_replacement_admission
+
+        replacement = reader_manifest_replacement_admission(events, manifest)
+        if replacement is not None:
+            return "superseded_by_admitted_task_replacement", replacement.id
         goal_claim_id = (
             recovery_snapshot.superseding_goal_claims.get(fanout_id, "")
             if recovery_snapshot is not None
