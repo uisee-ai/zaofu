@@ -1,6 +1,6 @@
 # R39：证据义务与可写范围一致性
 
-> 状态: active
+> 状态: done — 9626154e fix: reconcile planned evidence output permissions
 
 来源：用户授权持续监工、修复并记录问题；LS-v1 Grants 当前合同要求三份证据，但冻结写入范围不含其目录。只读 40 任务核对发现 32 项路径缺口，其中 done 16、backlog 15、in_progress 1，另 1 项 base_path 未明确。此统计不判定历史产品失败。
 
