@@ -5718,6 +5718,13 @@ class FanoutCoordinationMixin(
             **self._fanout_flow_identity_payload(manifest),
             **artifact_payload,
         }
+        if final_status == "completed" and success_event in {
+            "task_map.ready", "zaofu.refactor.plan.ready", "refactor.plan.ready",
+        }:
+            from zf.runtime.plan_artifact_package_runtime import plan_output_payload
+
+            artifact_payload = plan_output_payload(
+                manifest.get("trigger_payload") or {}, artifact_payload)
         if final_status == "completed":
             contract_failure = self._success_payload_contract_failure(
                 success_event,
