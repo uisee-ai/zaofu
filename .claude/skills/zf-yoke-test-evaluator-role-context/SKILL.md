@@ -54,6 +54,10 @@ amendment are separate role capabilities supplied by the workflow profile.
    替换为此前定义，业务正文里的同名键和字面 null 不变。`kind=source` 保留来源、
    内容摘要及逐来源读取凭证。所有定义和来源都须完整消费，引用只可复用已读完的定义，
    不得只读索引/hash、抽样或摘要来签收。工具成功写入read-ledger不证明模型已消费正文。
+   若自行复核 `content_sha256`，先按 `refs` 完整还原选中正文，再计算 UTF-8 摘要。
+   字符串使用原文；其他值使用 `json.dumps(value, ensure_ascii=False, indent=2, default=str)`，
+   保留原键顺序且不追加换行。不要 hash JSONL 行、压缩 JSON 或排序键后的重编码；
+   编码差异不表示来源损坏，按准确口径复核后仍不匹配才报告完整性问题。
    这是可逆展示，不改变 required_reads、权限、合同和验收门禁；老CLI不支持时继续用
    原单项受控读取。遵守当前工具的写入边界和命令约束，不因保存输出而绕过守卫。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when

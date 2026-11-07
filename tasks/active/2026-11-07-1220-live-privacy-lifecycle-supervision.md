@@ -155,3 +155,10 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - 18:48:14 evt-dcaa270c4246准入 / evt-4ece72864cae dev.build.done；18:48:51 evt-72457f934f42独立Verify派发到pane740，op wop-verify-tp-P09A-DATASET-R3-b5b6afcf73736-b5f05fe351bf，attempt ta-8f5dac587b0d4fd6b9ce。监工提示当前attempt完整共享正文分页及观察器负例风险，未指定通过；独立判断尚未完成。
 - 两条Verify并行；旧verify-lane0身份未确认休眠拒绝没有挡住本次派发。Dataset Impl正常compact约113秒后续跑同一后台测试；媒体Verify也正常compact后续读。未触发强制回收活动任务。
 - 下一依赖：Dataset→P09B→(P09C与P10)，Media→Privacy R6；8/8为capacity，当前没有额外ready任务，未为填lane绕过依赖。完成仍31/45，后续产品集成与最终candidate验收保留。
+
+
+### 18:58 UTC：共享正文摘要核对方法补充
+
+- Media Impl及Verify先后尝试自行重编码后得到假摘要不匹配；正文完整读取与原来源未受损。监工按原选中正文编码口径还原Verify g4的641正文/244来源，全部content_sha256匹配。通过当前operation提示准确格式，由Verify自行重算，未代写读取证据/产品裁决。
+- 在既有Impl/Verify技能补充4行：refs还原后字符串原文、结构化值UTF-8 JSON ensure_ascii=False/indent=2/default=str、保留键顺序、不加换行；不能hash压缩JSON/JSONL。仅澄清既有格式，不新增门禁、runtime规则或输入要求。源技能与两provider副本同步，保留共享main既有差异。
+- 验证：既有shared-body可逆/摘要测试5通过；技能metadata与原版一致、两provider副本等同源。通用skill-creator quick_validate因现有ZaoFu扩展字段auto_inject/dependencies/stages等拒绝（非本次新增），未删字段绕过；准确记录该验证限制。主repo及产品仅唯一4行hunk同步，详情shared-body-hash-method-deployment.json。Media Verify独立重算后确认244来源全匹配，继续探针。
