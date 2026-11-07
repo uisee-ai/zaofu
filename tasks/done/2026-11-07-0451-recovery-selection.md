@@ -1,6 +1,6 @@
 # 恢复队列已处理动作不得饿死后续动作
 
-> 状态: active
+> 状态: done — `2f8910ca` fix: keep delivered recovery actions from starving new work
 
 依据：LS-v1 持续监工授权“遇到问题修复并记录”；设计 [199](../../docs/design/199-worker-failure-recovery-and-role-handoff.md)。
 
@@ -30,3 +30,5 @@
 - `dev-verify run --base dev --skip-tier deterministic` 配合上述精确闭包：serial 10、sentinel 53、mock flow 10 通过。日志 `/tmp/zf-recovery-selection-closure-final-20261107.log`、`/tmp/zf-recovery-selection-tiers-final-20261107.log`。
 - 真实 LS 只读选择回放：已 seen 的旧队首切换至未处理下一诊断，四条原待办和案卷保留。证据在 LS `docs/records/2026-11-07-recovery-selection-replay.json`。未在真实状态目录执行修复代码中的动作。
 - LS 当前活跃 worker 不受此问题阻塞；本轮不为非阻断修复打断它们。软件合并后仍需在安全点加载常驻 Runtime，并记录真实效果；本任务保持 active，待加载核验后归档。
+
+- 05:07 通过既有 source-repair actuator 仅重载控制面，session.started evt-6f490b617f84、loop.started evt-d695f368f4cc；PID 1650845 的 runtime-load receipt 确认 da14f7fd，三个 worker pane/PID 保持、无重复派发。05:08 真实 projection 已选下一诊断。本轮选择器修复验证完成；下游消费者交接仍有独立缺口，续入 2026-11-07-0521-diagnosis-consumer，不称整条恢复链已修复。
