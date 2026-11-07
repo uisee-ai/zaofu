@@ -223,3 +223,9 @@ placement。没有新增目录猜测、cwd 回退或修改逻辑 request hash。
 验证覆盖实际 Task Pipeline 派发 caller，以及经过真实 request 正规化的公开
 work-record publish/show/replay；工作记录仍是未经独立核验的进度证据，不代表
 任务完成或产品验收。真实现场必须另记录补丁加载与目录解析效果。
+
+### Task Pipeline 部分交付的语义恢复基线（2026-11-07）
+
+LS FMS-04 的已准入 `dev.blocked` 带有已提交 `source_commit`，但原 semantic replan 仅识别 legacy `fanout.child.failed` 的 continuation，因而错误选择任务开工基线。现在 Task Pipeline 分支核验当前合同/代次、已结算 Impl 的结果准入及工件摘要、Kernel 派发身份/信封、对应任务分支的精确 Git commit 与基线祖先关系，将已提交部分交付作为 `partial_task_continuation` 提供给现有 Run Manager → Discovery 路径。
+
+这不是产品验收通过，也不重置失败或扩大可写范围。只把不可变 commit 作为扫描目标，不将工作树未提交文件带入；缺证据、篡改、跨 attempt/run/合同或更新 Impl 均不采信。原 task-base、candidate 和 legacy continuation 保留原有行为。本轮业务纠偏（隔离开发与最终身份授权集成责任）继续由语义角色负责。回归覆盖实际 `run_manager_tick` 调用入口，而非只检验独立帮助函数。
