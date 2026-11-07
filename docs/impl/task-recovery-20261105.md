@@ -83,3 +83,22 @@ Task Pipeline 静默门禁同时识别 kernel task.dispatched/task.done、绑定
 诊断选择，漏掉唯一 PostgreSQL 前置。现有 gap-only 准入分支因此未生效，错误报根
 脚手架无 owner。修复选择边界即可；无需扩大已完成 F00 的写域或修改计划字节。
 对应任务：`tasks/done/2026-11-06-0645-gap-downstream-selection.md`。
+
+## 2026-11-07：Gap 准入拒绝的恢复闭环
+
+`flow.gap_plan.ready` 只是增量提案，不代表 `task_map.amended` 已接纳。此前 reader
+恢复看到该提案即认定 `handled_by_gap_plan`，下游准入失败没有立即路由回生产者，
+实际出现留存 owner 冲突与对齐真值缺 rolling-smoke 两次停滞。
+
+恢复现在沿 `task_map.amend.failed -> gap source_event_id -> reader failure` 的明确
+因果链复用既有 stage retry。反馈携带原 gap 和准入拒绝事件引用，语义内容仍由 reader
+修订；没有扩大写域、删除条款或放宽 cap。额度耗尽复用既有升级路径，不能等 orphan
+计时器后才报告卡点。Run Manager projection/apply 同样可以消费有额度的修复。
+
+旧 amend 失败可只带 child trace；在明确 source_event_id 链下核对显式 canonical
+run 冲突，不能将 child trace 与 workflow ID 不等误当跨 run。待准入或已成功的 gap
+仍保留原恢复所有权。后续明确引用这次失败的 operator/planner 接管会抑制旧恢复；
+同 run 无关的新计划或只有 package supersedes 关系不足以宣称缺口已解决。
+
+实况追踪见 `tasks/active/2026-11-07-0200-two-gap-supervision.md`。本轮修复不把重新
+派发、环境连通或已提交局部代码等同产品完成；视频、留存和数据集仍须独立验收。

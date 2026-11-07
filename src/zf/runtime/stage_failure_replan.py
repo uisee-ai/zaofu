@@ -523,6 +523,9 @@ def plan_reader_stage_replan(
     )
     if superseding_success is not None:
         return None, "superseded_by_candidate_ready"
+    from zf.runtime.orchestrator_gap_admission import rejected_gap_admission
+
+    gap_repairs: list[dict[str, Any]] = []
     failure_seen = False
     for event in events:
         if event.id == failure_event.id:
@@ -535,7 +538,10 @@ def plan_reader_stage_replan(
             str(event.causation_id or "") == failure_event.id
             or str(payload.get("source_event_id") or "") == failure_event.id
         ) and _same_replan_scope(event, failure_event):
-            return None, "handled_by_gap_plan"
+            repair = rejected_gap_admission(events, event)
+            if repair is None:
+                return None, "handled_by_gap_plan"
+            gap_repairs.append(repair)
     # E4(prd-goal e2e finding-8):cap 曾数全量历史,后续 admission
     # 成功也不清零 → 每周期回声 escalate。只计"最近一次 stage 成功
     # 之后"的失败——成功即翻篇。
@@ -647,6 +653,22 @@ def plan_reader_stage_replan(
                 or failure_event.type
             ),
         }]
+    if gap_repairs:
+        origin_payload["gap_admission_repair"] = gap_repairs[-1]
+        prior_summary = origin_payload.get("rework_summary")
+        origin_payload["rework_summary"] = {
+            **(prior_summary if isinstance(prior_summary, dict) else {}),
+            "gap_admission_repairs": gap_repairs,
+        }
+        findings.extend({
+            "severity": "high", "category": "gap_admission",
+            "path": repair["gap_event_ref"],
+            "message": (
+                f"{repair['reason']} ({repair['rejection_event_ref']}). "
+                "Read the original gap proposal at the cited event; preserve its "
+                "semantic diagnosis and repair only the rejected admission shape."
+            ),
+        } for repair in gap_repairs)
     for key in (
         *_CANONICAL_INPUT_KEYS,
         "target_ref",

@@ -34,6 +34,7 @@ from zf.runtime.channel_synthesis_reactor import (
     react_channel_synthesis_repair_requested,
     react_channel_synthesis_requested,
 )
+from zf.runtime.orchestrator_gap_admission import GapAdmissionRecoveryMixin
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.durable_call_workflow import DurableCallWorkflowMixin
 from zf.runtime.feature_completion import close_feature_if_all_tasks_done
@@ -114,6 +115,7 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
     ("judge.failed", "_on_judge_failed"),
     ("discriminator.failed", "_on_discriminator_failed"),
     ("task.done.blocked", "_on_task_done_blocked"),
+    ("task_map.amend.failed", "_on_gap_admission_failed"),
     ("orchestrator.evidence_rework.requested", "_on_evidence_rework_requested"),
     ("orchestrator.semantic.failure.requested", "_on_orchestrator_semantic_failure_requested"),
     ("orchestrator.semantic.rework.requested", "_on_orchestrator_semantic_rework_requested"),
@@ -351,7 +353,9 @@ def _autoresearch_failure_class(fingerprint: str) -> str:
     return ""
 
 
-class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin):
+class EventReactorMixin(
+    OrchestratorAgentReactorMixin, DurableCallWorkflowMixin, GapAdmissionRecoveryMixin,
+):
     """Event handlers + state-machine transitions of Orchestrator.
     Mixin contract: relies on host Orchestrator's instance fields. Do
     not instantiate standalone."""
