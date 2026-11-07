@@ -67,10 +67,14 @@ def _two_packages(tmp_path, mutation="", selected_port="task_execution_input"):
     spec = dict(hydrate_sidecar_ref(state, spec_port).payload)
     for key in ("workflow_run_id", "flow_kind", "plan_revision", "task_map_generation"):
         spec.pop(key, None)
+    scoped_input = {"schema_version": "task-scoped-plan-input.v1", "shared": {"policy": "original"},
+                    "tasks": [{"task_id": task_id, "body": {"acceptance": "Exact JSON"}}
+                              for task_id in ("T1", "OTHER")]}
     old, descriptor, _ = prepare_plan_artifact_package(events=[], payload={
         "task_map_ref": "r1.json", "task_map_generation": "g1", "requirement_spec_ref": "requirement.md",
         "plan_ports": [{"logical_name": "product_acceptance_spec", "body": spec},
-                       *[{"logical_name": name, "body": {"status": "ready", "rows": []}} for name in matrix_ports]]}, **args)
+                       *[{"logical_name": name, "body": scoped_input if name == "task_execution_input"
+                          else {"status": "ready", "rows": []}} for name in matrix_ports]]}, **args)
     first = ZfEvent(type="plan.artifact_package.admitted", correlation_id="run-1",
         payload=package_event_payload(old, descriptor, status="admitted"))
     body = json.loads((state / "r2.json").read_text())
@@ -81,7 +85,9 @@ def _two_packages(tmp_path, mutation="", selected_port="task_execution_input"):
     (state / "r2.json").write_text(json.dumps(body))
     if mutation in {"input", "execution"}:
         changed_port = "execution_spec" if mutation == "execution" else selected_port
-        gap["plan_ports"] = [{"logical_name": changed_port, "body": {"policy": "changed"}}]
+        gap["plan_ports"] = [{"logical_name": changed_port, "body":
+            {**scoped_input, "shared": {"policy": "changed"}} if changed_port == "task_execution_input"
+            else {"policy": "changed"}}]
     package, descriptor, _ = prepare_plan_artifact_package(events=[first], payload=gap, **args)
     second = ZfEvent(type="plan.artifact_package.admitted", correlation_id="run-1",
         payload=package_event_payload(package, descriptor, status="admitted"))
