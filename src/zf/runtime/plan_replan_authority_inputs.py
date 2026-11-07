@@ -40,6 +40,10 @@ def replan_authority_sources(
     refs = [source(package_ref, package_digest, "plan-rework-package")]
     refs.extend(source(port["ref"], port["sha256"], f"baseline-plan-port-{port['logical_name']}")
                 for port in [*package["produced"], *package["inherited"]])
+    historical = payload.get("historical_orchestration_context") or {}
+    observation = historical.get("orchestrator_decision_ref")
+    if isinstance(observation, Mapping):
+        refs.append(source(observation["ref"], observation["sha256"], "plan-rework-observation"))
     authority = dict(payload)
     if not authority.get("orchestrator_decision_ref"):
         authority.update(_legacy_oa_authority(state_dir, payload, context, run_id, package_digest))

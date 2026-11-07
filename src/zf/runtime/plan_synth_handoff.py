@@ -54,6 +54,7 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "rework_source",
     "rework_feedback",
     "operator_feedback",
+    "historical_orchestration_context",
     "diagnostics_ref",
     "plan_compile_gate",
     "artifact_gate",

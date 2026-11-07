@@ -116,6 +116,14 @@ task_map 摘要及代次必须一致。此过程只修复证据绑定，不改�
 
 ## 只读观测
 
+Owner 授权的 reader new-generation / retrigger 遇到历史错误携带的 OA
+shadow 建议时，仅凭同 Run、相同不可变 descriptor 的 Kernel
+`orchestrator.semantic.decision.shadowed` 且 `applied=false` 回执，将其保留为
+`historical_orchestration_context`。Planner 仍能通过 manifest 读取该观察，
+但它不成为 return_to_plan 授权。已有正式 replan marker、未知来源、不同 Run
+或不同摘要均不走该修正；基线和历史工件的摘要校验保持。真实调用测试见
+`tests/test_reader_shadow_recovery.py`。
+
 ```bash
 zf trace dispatch --run-id RUN-ID --state-dir CONFIGURED-STATE
 zf trace execution-graph FEATURE-ID --summary --state-dir CONFIGURED-STATE
