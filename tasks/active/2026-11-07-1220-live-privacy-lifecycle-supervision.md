@@ -138,3 +138,12 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Dataset完成397正文/296来源读取，监工还原摘要全匹配；原bootstrap下载失败后worker在锁内按原SHA离线安装，3条拒绝事务RED→3GREEN、新共享合同5GREEN。继续真实绑定/撤权竞争/健康事务与完整gate，未计done。原66b092d已版本化suite .gitignore可逐字复用，不允许为临时文件新增隐藏规则；已澄清避免删除正常证据输出规则。
 - 旧Privacy R5孤儿pytest PID2455656：TaskStore cancelled、无活动operation、PPid1且无子进程，精确SIGTERM后确认退出，工作区未动。记录privacy-r5-orphan-test-cleanup.json。空闲verify-lane0重复休眠被身份保护拒绝，活动任务未受影响，暂作观察。
 - 本时点有效任务31done/2实施/12待依赖，共45；全部工作尚未完成。监工继续，不以恢复派发或局部GREEN冒充最终完成。
+
+
+### 18:38 UTC：媒体返工提交与 Dataset 观测边界闭合
+
+- Media g4完整消费789981字符、639正文/242来源，最终逐源hash匹配；旧大页截断缺口已补齐。新增真实ingest延迟超过100次tick的回归先在旧夹具RED，修复30秒monotonic截止+100ms间隔，保留COMPLETE/4资源注册/真实摘要及超时失败诊断。d494e8e4074e1d405d395e0970ac7f2918864908仅4文件，未合入新Core或更改产品。
+- 同头smoke2/runtime64/retention48/browser2及delta全部通过，浏览器实际Docker Chrome149/Playwright1.62。evt-34cc7cfecae7正式准入、evt-2bc136bc1708 dev.build.done，18:35:45 evt-e2d15fd06f7b派发独立Verify：wop-verify-tp-P16B-MEDIA-LIFECYCLE-R1-2fa5e-52dcf06d9054，attempt ta-2adc156d65f567db38bb，pane739。新Verify/组合rolling未通过前不计done。
+- Dataset 6acc3dc版本最终runtime为42pass/1fail，smoke同一受管观测失败；原Core三条完整快照已GREEN。失败来自以整段进程生命周期比对拒绝事务，独立recovery容量更新越过观测窗；不能把recovery_capacity列为豁免。5f7ae7f8826b补充测试只在私有测试副本观察真实writer：保留117表/52文件、7观察点，以PID/backend/schema/xmin/完整前后行逐字段证明后台事务独立，并要求非audit行不属于拒绝xid；原三条Core tick快照未删改。
+- 辅助观测开发中的变量遮蔽、表键及审计排序错误均留日志且不冒充产品RED。专项测试1pass；新5f7ae7f浏览器通过，完整runtime仍运行，必须新头全部原合同命令完成后再交独立Verify；旧6acc失败证据保留。
+- 空闲verify-lane0 pane736为重建后尚未收到新任务的Codex会话，无已观测provider身份，重复休眠拒绝未影响活动操作；未放宽身份保护或杀进程。诊断idle-verify-unobserved-1830.json。Dashboard200、监督PG健康；有效任务仍31done/14未完成。
