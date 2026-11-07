@@ -178,3 +178,10 @@ owner_decision_ids、lane_affinity、skills_required、explicit_non_goals、excl
 
 同批一对一替换多个任务时，只重绑定旧新节点和原入边；下游任务的外部前置仍属于该下游，
 不能传递到最早上游而制造额外串行或环。一个旧任务拆成多个后继时继续使用原拆分继承规则。
+
+
+### 已替代任务的迟到恢复失败
+
+Reader 的失败仍保留原事件和证据，但在 stage replan 与 Run Manager 升级收敛前，核对其精确 fanout→trigger→原失败因果。仅当同一 Run 的 `task_map.ready` 针对同一原失败声明完整替换，并且该 ready 对应的 WRC `task.pipeline.generation.admitted` 已接纳所有后继时，判为 `superseded_by_admitted_task_replacement`，不重派旧恢复、不将当前 Run 标为 blocked。新计划版本、运行中的其他 agent 或尚未准入的提案均不足以证明已替代。拆分后继未全部接纳、仍保留旧任务、覆盖不完整或跨 Run 都继续原失败处理。
+
+旧版本已产生的 blocked 不自动抹除；operator 必须核验替代关系，通过精确 `human-decision-dismiss` 和 `zf goal set --status active --reason ...` 恢复。该动作不代表产品验收通过，也不重写旧 attempt 或新任务合同。回归覆盖真实 Reactor 入口与 RM 终态收敛，见 `tests/test_reader_failure_supersession.py`。

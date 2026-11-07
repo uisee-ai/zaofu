@@ -457,6 +457,10 @@ def plan_reader_stage_replan(
     stage, selection = reader_stage_for_failure(config, events, failure_event)
     if stage is None:
         return None, selection
+    from zf.runtime.reader_failure_supersession import reader_failure_was_replaced
+
+    if reader_failure_was_replaced(events, failure_event):
+        return None, "superseded_by_admitted_task_replacement"
     trigger_type = str(getattr(stage, "trigger", "") or "")
     if not trigger_type:
         return None, "stage_has_no_trigger"
