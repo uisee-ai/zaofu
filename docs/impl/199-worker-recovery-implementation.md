@@ -56,6 +56,7 @@ WRC 确定性对账                         RM runtime 观察／选路
 | 问题 | 本轮修复与实际入口 | 证据 |
 | --- | --- | --- |
 | 队首不可执行、单任务人工等待阻止独立任务 | continuation 扫描可执行候选；TaskStore 传递依赖闭包；未知／run 作用域仍关闭 | `test_run_continuation_scope.py`、`test_run_manager_scoped_selection.py` |
+| 已处理诊断长期占据 next_operation，tick 去重后空转 | RM 保留未解决待办和效果案卷，默认选路与显式筛选均先复用执行器去重判定；已投递动作不再挡住后续请求，超时重试仍沿用既有资格 | `test_run_manager_seen_selection.py`，真实 projection/tick；LS-v1 监工 2026-11-07 复现 |
 | agent 建议入口缺少同等恢复门禁 | executor 复核暂停、人工 gate、当前案卷与 precondition；延期建议保留；无匹配审批显式拒绝 | `test_run_manager_action_admission.py`、`test_orchestrator_agent_execution_review.py` |
 | 旧 observation 被误当新请求响应 | resident 请求绑定 ID、接收者、预期事件和期限；重发不重置期限；暂停时长不计入 | `test_resident_request_obligations.py`、实际 RM projection/tick |
 | 分诊回执提前关闭故障 | request/advice 交接保留 effect pending；绑定同请求的正式建议可继续原案卷；兄弟任务完成不能结案 | `test_recovery_handoff_effects.py`、`test_run_manager_rework_triage.py` |
