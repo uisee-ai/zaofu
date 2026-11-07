@@ -4717,6 +4717,12 @@ def _consume_agent_recommendations(
         from zf.runtime.recovery_step import bind_recommendation_to_request
         try:
             payload = bind_recommendation_to_request(events, event, payload)
+            if (_recommendation_route(payload) == "controlled_action"
+                    and _controlled_action_name_from_recommendation(payload) == TRIAGE_REQUEST_ACTION):
+                from zf.runtime.resident_semantic_handoff import bind_resident_semantic_handoff
+                payload = bind_resident_semantic_handoff(
+                    state_dir=state_dir, config=config, events=events, payload=payload,
+                )
         except ValueError as exc:
             writer.emit(RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED, actor="run-manager",
                 causation_id=event.id, payload={"source_event_id": event.id,
@@ -5054,6 +5060,7 @@ def _controlled_action_name_from_recommendation(payload: dict[str, Any]) -> str:
         requested = requested.get("action") or requested.get("kind")
     requested_name = str(requested or "").strip()
     supported = {
+        TRIAGE_REQUEST_ACTION,
         "workflow-task-resume",
         "workflow-batch-resume",
         "worker-lifecycle-recover",
@@ -5077,6 +5084,7 @@ def _controlled_action_name_from_recommendation(payload: dict[str, Any]) -> str:
     if safe_action in _SAFE_BATCH_ACTIONS:
         return "workflow-batch-resume"
     safe_to_action = {
+        "request_orchestrator_triage": TRIAGE_REQUEST_ACTION,
         "worker_lifecycle_recover": "worker-lifecycle-recover",
         "repair_closeout_validate": "repair-closeout-validate",
         "fanout_aggregate_rebuild": "fanout-aggregate-rebuild",
@@ -5153,6 +5161,14 @@ def _action_from_agent_recommendation(
     ):
         if payload.get(key) is not None:
             action[key] = payload.get(key)
+    if action_name == TRIAGE_REQUEST_ACTION:
+        for key in (
+            "target_operation_id", "target_stage_id", "run_goal_objective_event_id",
+            "flow_kind", "role", "failure_count", "source_event_id", "source_event_type",
+            "source_event_ids", "failure_event_ids", "request_kind", "recovery_scope",
+        ):
+            if key in payload:
+                action[key] = payload[key]
     if payload.get("mutating_resume_supported") is not None:
         action["mutating_resume_supported"] = bool(payload.get("mutating_resume_supported"))
     expected_downstream = _string_list(payload.get("expected_downstream_events"))

@@ -257,6 +257,9 @@ def build_resident_run_manager_briefing(
         "",
         "- 如果只是 worker 正在正常执行,结论写 `status=watching`,不要打断。",
         "- 建议 resume/rework 前核对当前 run、task、operation、attempt、合同与目标版本。",
+        "  使用 recovery context 的 contract_identity.effective_revision；projection_revision 可能滞后，",
+        "  不能只据旧投影判合同漂移。planned_owner 是计划角色；实际 writer 查 assigned_to 和 attempt_identity。",
+        "  dependency_states 来自 TaskStore（含归档）；当前事件窗口没看到完成事件不能证明依赖未完成。",
         "  ① 旧完成证据只在仍适用且没有后续失败/失效时复用；不能用旧通过覆盖新失败。",
         "  ② 兄弟 child 在飞不能证明当前 child 正常；分别检查当前载体、lease、结果和聚合依赖。",
         "  ③ workflow.resume.gate_unroutable 只说明当时前提不满足；前提改变后重新核验，",
@@ -278,6 +281,9 @@ def build_resident_run_manager_briefing(
         "- 如果是 harness bug、candidate hygiene/gate bug、projection/action bug,优先写"
         " `run.manager.agent.recommendation` 且 `recommended_route=repair`,附带 bounded"
         " `repair_task_payload`、scope、verification 和 evidence refs。",
+        "- 当前已准入 Impl 失败经诊断确认须 OA 裁决时，绑定原 request_id 发 recommendation：",
+        "  recommended_route=controlled_action、action=orchestrator-rework-triage、task_id、target_operation_id、",
+        "  summary 与证据；runtime 复用已配置 OA 的当前失败审核入口，保留原案卷，不直接重派 Worker。",
         "- 如果诊断证据不足,写 `recommended_route=autoresearch` 或 `recommended_route=reflect`;不要空转。",
         "- 如果安全边界不清、需要 merge/restart/删除状态,发 `human.escalate`。",
         "- 每次建议必须引用 event id、projection ref 或命令输出摘要,不要只写主观判断。",
