@@ -131,3 +131,18 @@ fresh recycle，尚未落盘的规划丢失。
 证明的替代关系不扩展；broad恢复不借gap-only分支跳过完整图的根owner检查。
 本轮固定图原选13项，正确并集应为16项，新增3前置由DAG调度而非强制同时开跑。
 任务与验证记录：`tasks/done/2026-11-07-0237-broad-gap-selection.md`。
+
+## Task Pipeline context 回收归属（2026-11-07）
+
+`worker.context.critical` 是 provider 生命周期事实，不是未完成 Impl/Verify 的
+语义失败。`task_pipeline_context_recovery` 在原事件的 ledger 位置核对 running
+operation 的 task/run/dispatch/role 和 kernel 来源，再复用 reactor 的既有 ownership
+guard，避免完成审计先清除当前 Task/attempt。由该 critical 明确派生的旧 retry 或
+continuation schedule 同样不能重开后续代次。未知来源、跨 run、其他 stage 和 timeout
+继续原路径；reader guard 保持原判定。
+
+上下文阈值、hold 和 fresh recycle 不变。冷 runtime 的高水位样本仍进入 pending
+recycle，hold 到期仍通过原 lifecycle 回收和恢复 briefing，保留 operation、attempt、
+lease 和 dispatch 身份。本片不自动 redrive，不改变重试预算或 result admission。
+历史上已经被审计挂起的 operation 仍应使用精确 `recover workflow` checkpoint。
+任务与证据见 [上下文回收归属修复](../../tasks/active/2026-11-07-0404-pipeline-context-ownership.md)。
