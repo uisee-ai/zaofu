@@ -73,7 +73,7 @@ def _pinned_predecessor(state_dir: Path, ports: Mapping[str, Mapping[str, Any]],
 
 def _verify_predecessor_provenance(
     state_dir: Path, *, port: Mapping[str, Any], predecessor: str, workflow_run_id: str,
-) -> None:
+) -> dict[str, Mapping[str, Any]]:
     """Verify the inherited body and predecessor against the package ancestry."""
     from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -94,6 +94,11 @@ def _verify_predecessor_provenance(
         ):
             raise ValueError("predecessor source port is not inherited from its package")
         first = False
+        inherited_port = next((item for item in ports if isinstance(item, Mapping)
+                               and item.get("logical_name") == port.get("logical_name")), None)
+        if (inherited_port is None or inherited_port.get("ref") != port.get("ref")
+                or inherited_port.get("sha256") != port.get("sha256")):
+            raise ValueError("predecessor input changed in package ancestry")
         task_port = next((item for item in ports if isinstance(item, Mapping) and item.get("logical_name") == "task_map"), None)
         if task_port:
             task_map = hydrate_sidecar_ref(state_dir, {"ref": task_port["ref"], "sha256": task_port["sha256"]}).payload
@@ -101,9 +106,31 @@ def _verify_predecessor_provenance(
                 isinstance(task, Mapping) and str(task.get("task_id") or task.get("id") or "") == predecessor
                 for task in task_map.get("tasks", [])
             ):
-                return
+                return {str(item["logical_name"]): item for item in ports if isinstance(item, Mapping)}
         ref, digest = str(package.get("supersedes_package_ref") or ""), str(package.get("supersedes_package_digest") or "")
     raise ValueError("predecessor is absent from package ancestry")
+
+
+def _predecessor_input_paths(
+    state_dir: Path, *, ports: Mapping[str, Mapping[str, Any]], name: str,
+    body: Any, task_id: str, workflow_run_id: str,
+) -> tuple[list[str], str]:
+    """Follow explicit replacement edges without widening the original input."""
+    seen = {task_id}
+    for _ in range(32):
+        predecessor = _pinned_predecessor(state_dir, ports, task_id)
+        if predecessor in seen:
+            raise ValueError("replacement input ancestry contains a cycle")
+        seen.add(predecessor)
+        ports = _verify_predecessor_provenance(
+            state_dir, port=ports[name], predecessor=predecessor,
+            workflow_run_id=workflow_run_id,
+        )
+        try:
+            return task_input_paths(body, task_id=predecessor), predecessor
+        except MissingTaskPartitionError:
+            task_id = predecessor
+    raise ValueError("replacement input ancestry exceeds supported depth")
 
 
 def current_plan_port_sources(
@@ -215,12 +242,10 @@ def current_plan_port_sources(
             except MissingTaskPartitionError:
                 if candidate or profile not in {"implementation", "task-verify"} or name not in inherited_names:
                     raise
-                predecessor = _pinned_predecessor(state_dir, ports, task_id)
-                _verify_predecessor_provenance(
-                    state_dir, port=ports[name], predecessor=predecessor, workflow_run_id=workflow_run_id,
+                paths[name], predecessors[name] = _predecessor_input_paths(
+                    state_dir, ports=ports, name=name, body=body, task_id=task_id,
+                    workflow_run_id=workflow_run_id,
                 )
-                paths[name] = task_input_paths(body, task_id=predecessor)
-                predecessors[name] = predecessor
             kinds[name] = (
                 "task_scoped_plan_input"
                 if isinstance(body, Mapping) and body.get("schema_version") == SCHEMA_VERSION

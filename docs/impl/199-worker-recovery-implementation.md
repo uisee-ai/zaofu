@@ -275,3 +275,10 @@ FMS04 现场暴露两项机械适配问题：字符串 verification.commands 是
 Run Manager 的 task.attempt.failed 与 task.pipeline.verify.failed 诊断现在使用精确的事件顺序、Run 与 Task 身份匹配。后续 kernel task.done，或带正式替代图引用的 kernel task.superseded，退役该任务此前的失败诊断；旧事件保留，任务完成仍由原准入与集成路径负责。正式替代意味着责任已移交后继任务，不表示产品验收通过。
 
 同 Run 的其他任务成功、Plan 更新、仅实施完成或 attempt 成功不能替代任务终结；未知身份、worker/external 自报、较早终结也不能关闭当前失败。同任务在终结之后的新失败继续进入诊断队列。这样既避免已完成/替代任务填满有界诊断列表，也避免无关进展误清除真实故障。回归穿过实际 build_run_manager_projection 调用，额外覆盖队列超过10项时仍可看到当前未解决失败。
+
+
+## 连续替换任务的输入继承
+
+`current_plan_port_sources` 的 Impl/TaskVerify 路由沿不可变 Plan Package 中显式的单前任关系逐层寻找原始输入分区。每层检查同一 Run、sidecar摘要、替换声明一致、前任确实存在于包祖先以及继承输入ref/digest未变化；重复Task和超深链明确拒绝。找到分区后仍只交付原始shared和该任务段，并在source_id标明历史前任；当前Task合同继续是执行权威。Candidate整包读取与直接分区路径不变，不能凭任务名猜测或以多跳为由省略原始输入。
+
+真实触发：LS-v1 FMS13→POLICY→POLICY-EVIDENCE二次恢复。Reader的输入选择遗漏仍须语义产物明确修订；运行时不代填消费策略。实现回归见`tests/test_replacement_input_lineage.py`，接入现有HandoffResolver调用路径。
