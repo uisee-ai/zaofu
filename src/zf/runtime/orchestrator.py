@@ -3968,6 +3968,15 @@ class WorkflowRuntimeCoordinator(
             return False
         if old_ref != loaded.task_map_ref:
             return True
+        refs = evidence.get("source_refs")
+        refs = refs if isinstance(refs, dict) else {}
+        if same_workflow_run and any(
+            (incoming := str(getattr(loaded, key, "") or ""))
+            and incoming != str(refs.get(key) or "")
+            for key in ("plan_artifact_package_id", "plan_artifact_package_ref",
+                        "plan_artifact_package_digest", "task_map_generation")
+        ):
+            return True
         return str(getattr(task, "status", "") or "") in {
             "blocked",
             "failed",
