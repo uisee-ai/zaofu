@@ -3169,6 +3169,22 @@ class FanoutCoordinationMixin(
                     },
                 },
             )
+            from zf.runtime.plan_approval_replay import approved_equivalent_plan_id
+
+            approved_duplicate = approved_equivalent_plan_id(events, {
+                **base_payload, "plan_fingerprint": fingerprint,
+            })
+            if approved_duplicate:
+                # The original trigger owns execution; never approve or dispatch its replay.
+                if (fingerprint, approved_duplicate) not in suppressed:
+                    self.event_writer.append(ZfEvent(
+                        type="plan.minting.suppressed", actor="zf-cli",
+                        payload={**base_payload, "plan_fingerprint": fingerprint,
+                                 "duplicate_of": approved_duplicate,
+                                 "reason": "approved_plan_same_fingerprint"},
+                        causation_id=plan_id, correlation_id=trace_id,
+                    ))
+                return False
             duplicate_of = next(
                 (
                     pid for pid, fp in pending_fingerprints.items()

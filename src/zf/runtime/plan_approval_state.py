@@ -12,26 +12,14 @@ from zf.core.state.locks import locked_path
 def has_pending_plan_approval(
     events: Iterable[ZfEvent], *, workflow_run_id: str = "",
 ) -> bool:
-    pending: dict[str, set[str]] = {}
-    for event in events:
-        if event.type not in {"plan.approval.requested", "plan.approved", "plan.rejected"}:
-            continue
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        plan_id = str(payload.get("plan_id") or "")
-        if not plan_id:
-            continue
-        if event.type != "plan.approval.requested":
-            if event.type == "plan.approved" and payload.get("semantic_control") and plan_id in pending:
-                continue
-            pending.pop(plan_id, None)
-            continue
-        pending[plan_id] = {
-            str(payload.get("workflow_run_id") or ""),
-            str(payload.get("run_id") or ""),
-            str(payload.get("trace_id") or ""),
-            str(event.correlation_id or ""),
-        } - {""}
-    return any(not workflow_run_id or workflow_run_id in scope for scope in pending.values())
+    from zf.runtime.plan_approval_replay import pending_plan_requests
+
+    return any(
+        not workflow_run_id or workflow_run_id in {
+            str(event.payload.get(key) or '') for key in ('workflow_run_id', 'run_id', 'trace_id')
+        } | {str(event.correlation_id or '')}
+        for event in pending_plan_requests(events)
+    )
 
 
 def decide_pending_plan(

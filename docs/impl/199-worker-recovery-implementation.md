@@ -299,3 +299,8 @@ Plan候选预检与已存在的Task-local required_plan_ports协议对齐：显�
 跨代恢复的目标任务可能仅因前置任务正式拆分而发生 blocked_by/dependencies/wave 变化。现在沿已核验的不可变包链逐边检查：只有明确 goal_gap/module_parity_gap 的替换集合、完整移除的前任、后继一致的前任声明，以及既有依赖重接和 wave 算法精确重放结果才能延续。目标语义字段、输入绑定仍须一致；任意增删依赖、额外 wave 调整、隐藏中间语义修改仍拒绝。恢复产物使用最新完整图，Reader 的旧读取身份保持。测试覆盖实际 Orchestrator gap bridge 入口。
 
 LS-v1 FMS02 的旧 TODO 前置已正式拆为 PORT/IMPLEMENT，验收和代码范围未变；本修复消除其 target task changed 误判。后续提案仍须独立通过显式输入选择、证据写入范围与验收等门禁，不自动代填语义合同。
+
+
+## 已批准计划的重复触发
+
+相同v2完整计划指纹且Run、stage、PDD及包绑定一致的重复ready，在原计划已获owner批准后继续保持抑制；执行仍由原trigger负责，不为重复事件自动批准或再派发。Runtime idle与CLI pending共用只读归约，既有已重铸的同内容请求也不再形成等待。语义角色approval、自动approval、拒绝、旧短指纹、缺失/冲突身份及新内容不能退役另一个待审批请求。原事件账本不改写；这不推断不同旧计划已过期。
