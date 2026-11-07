@@ -23,17 +23,10 @@ from zf.runtime.plan_preview_artifacts import preview_artifact_path
 
 
 def _pending(events, workflow_run_id: str | None = None) -> list[dict]:
-    state: dict[str, dict] = {}
-    for event in events:
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        plan_id = str(payload.get("plan_id") or "")
-        if not plan_id:
-            continue
-        if event.type == "plan.approval.requested":
-            state[plan_id] = {**payload, "requested_ts": event.ts}
-        elif event.type in ("plan.approved", "plan.rejected"):
-            state.pop(plan_id, None)
-    pending = list(state.values())
+    from zf.runtime.plan_approval_replay import pending_plan_requests
+
+    pending = [{**event.payload, "requested_ts": event.ts}
+               for event in pending_plan_requests(events)]
     if workflow_run_id:
         pending = [
             item for item in pending
