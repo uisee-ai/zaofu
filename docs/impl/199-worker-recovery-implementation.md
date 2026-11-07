@@ -60,6 +60,7 @@ WRC 确定性对账                         RM runtime 观察／选路
 | 普通 RM 诊断无人承接，且成功提示后仍走诊断 fallback | run_manager_recovery 交现有 resident；绑定 request_id、响应事件和语义清单；run/task 上下文写入带摘要 sidecar；Codex 复用 Worker bracketed paste；已有请求形成有期限等待；送达后停止重复 fallback，原故障保留 effect pending | `test_run_manager_diagnosis_consumer.py`，实际 projection/tick，含旧 Autoresearch inflight、响应与效果分离 |
 | resident 误读合同/owner 投影，已诊断语义失败不能移交 OA | context 明列 effective/projection revision、计划 owner/实际 assignment、含归档的直接依赖状态；绑定 recommendation 复用当前准入 Impl 的既有 OA 审核，沿同 request/case 继续，旧 operation/禁用 OA/人工 gate 仍拒绝 | `test_resident_semantic_handoff.py`、`test_recovery_context.py`；LS 网关 evt-65bfaf042279 的实际诊断误报 |
 | 同请求诊断→OA 交接覆盖 required 上下文正文 | 恢复上下文复用不可变 JSON sidecar，每次事实快照按内容保存；新旧 descriptor 均可验，保留访问范围与原请求；不修饰已丢失的历史引用 | `test_recovery_context.py`、实际 `test_resident_semantic_handoff.py` RM tick；LS-v1 evt-d56d180e491d 覆盖复现 |
+| gap 的结构化验证命令在增量适配中被 str，AC 引用 ID 丢失 | 保留已有命令别名的结构化目录及元数据，复用 Task Map 校验；不一致目录与未知引用继续拒绝，旧字符串仍兼容 | `test_gap_command_catalog.py`，真实 flow.gap_plan.ready → contract；LS-v1 evt-150d66427514 |
 | agent 建议入口缺少同等恢复门禁 | executor 复核暂停、人工 gate、当前案卷与 precondition；延期建议保留；无匹配审批显式拒绝 | `test_run_manager_action_admission.py`、`test_orchestrator_agent_execution_review.py` |
 | 旧 observation 被误当新请求响应 | resident 请求绑定 ID、接收者、预期事件和期限；重发不重置期限；暂停时长不计入 | `test_resident_request_obligations.py`、实际 RM projection/tick |
 | 分诊回执提前关闭故障 | request/advice 交接保留 effect pending；绑定同请求的正式建议可继续原案卷；兄弟任务完成不能结案 | `test_recovery_handoff_effects.py`、`test_run_manager_rework_triage.py` |
