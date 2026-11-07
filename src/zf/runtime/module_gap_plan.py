@@ -18,6 +18,7 @@ from typing import Any, Mapping
 from zf.core.state.atomic_io import atomic_write_text
 
 from zf.runtime.gap_replay_claims import repair_replayed_goal_claims
+from zf.runtime.gap_replacement_validation import with_structured_gap_verification
 from zf.runtime.module_gap_replacement import (
     bind_replacement_group as _bind_replacement_group,
     completed_task_ref_dependencies as _completed_task_ref_dependencies,
@@ -526,19 +527,7 @@ def _inherit_replacement_mechanical_identity(
     to the explicitly named parent when no replacement identity is present.
     """
 
-    item = dict(raw)
-    structured_verification = item.get("verification")
-    if isinstance(structured_verification, dict) and isinstance(
-        structured_verification.get("commands"), list
-    ):
-        commands = structured_verification["commands"]
-        validation = item.get("validation")
-        if isinstance(validation, dict) and validation.get("commands") not in (None, commands):
-            raise ValueError(f"{_task_id(item)}: conflicting structured verification commands")
-        item["validation"] = {
-            **(validation if isinstance(validation, dict) else {}),
-            "commands": deepcopy(commands),
-        }
+    item = with_structured_gap_verification(raw)
     superseded = _string_list(item.get("supersedes_task_ids"))
     inherited_task_id = (
         superseded[0]
@@ -933,7 +922,15 @@ def _acceptance(raw: dict[str, Any]) -> list[str]:
 
 
 def _verification(raw: dict[str, Any]) -> list[str]:
-    commands = _string_list(raw.get("verify_commands") or raw.get("verification"))
+    source = raw.get("verify_commands") or raw.get("verification")
+    if isinstance(source, dict):
+        source = source.get("commands")
+    if isinstance(source, list):
+        source = [
+            row.get("command") or row.get("cmd") or "" if isinstance(row, dict) else row
+            for row in source
+        ]
+    commands = _string_list(source)
     if commands:
         return commands
     validation = raw.get("validation")

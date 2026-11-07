@@ -1,4 +1,4 @@
-"""Preserve approved command metadata for unchanged replacement gates."""
+"""Preserve explicit and approved verification metadata across gap adapters."""
 
 from copy import deepcopy
 from typing import Any
@@ -29,3 +29,28 @@ def inherit_unchanged_smoke_marker(
                 command["rolling_smoke"] = True
                 break
     return result
+
+
+def with_structured_gap_verification(raw: dict[str, Any]) -> dict[str, Any]:
+    """Adapt existing structured command aliases without losing their identities."""
+    item = dict(raw)
+    structured_verification = item.get("verification")
+    catalogs = []
+    if isinstance(structured_verification, dict):
+        catalogs.append(structured_verification.get("commands"))
+    catalogs.extend(
+        value for key in ("verification", "verify_commands")
+        if isinstance(value := item.get(key), list)
+        and any(isinstance(row, dict) for row in value)
+    )
+    for commands in catalogs:
+        if not isinstance(commands, list):
+            continue
+        validation = item.get("validation")
+        if isinstance(validation, dict) and validation.get("commands") not in (None, commands):
+            raise ValueError(f"{item.get('task_id') or item.get('id') or ''}: conflicting structured verification commands")
+        item["validation"] = {
+            **(validation if isinstance(validation, dict) else {}),
+            "commands": deepcopy(commands),
+        }
+    return item
