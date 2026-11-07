@@ -12,7 +12,7 @@ import yaml
 from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.core.task.store import TaskStore
-from zf.runtime.sidecar_refs import write_sidecar_json
+from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
 from zf.runtime.recovery_checkpoint import maintenance_checkpoint_facts
 
@@ -184,23 +184,23 @@ def write_task_recovery_context(
         failure_event_ids=failure_event_ids,
         request_id=request_id,
     )
-    return write_sidecar_json(
+    descriptor = write_immutable_json_sidecar(
         Path(state_dir),
-        f"diagnostics/recovery/{_safe_slug(request_id)}/context.json",
         payload,
+        root=f"recovery-context/{_safe_slug(request_id)}",
         kind="recovery_context",
         schema_version=RECOVERY_CONTEXT_SCHEMA_VERSION,
         created_by="run-manager",
         source_event_id=source_event_id,
-        access_scope={
-            "visibility": "project",
-            "actor": "run-manager",
-            "purpose": "semantic-recovery",
-        },
-        retention={"class": "audit_required"},
         required=True,
-        preview=f"recovery context for {task_id}",
     )
+    descriptor["access_scope"] = {
+        "visibility": "project",
+        "actor": "run-manager",
+        "purpose": "semantic-recovery",
+    }
+    descriptor["preview"] = f"recovery context for {task_id}"
+    return descriptor
 
 
 def _event_task_id(event: ZfEvent) -> str:
