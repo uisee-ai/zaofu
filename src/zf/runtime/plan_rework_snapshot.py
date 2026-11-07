@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.reader_replan_feedback import input_task_ids
 
 
 _CONTRACT_IDENTITY = (
@@ -16,11 +17,12 @@ def bind_scoped_snapshot(
     state_dir: Path, snapshot: dict[str, Any], *, context: Mapping[str, Any],
     source_event_id: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    explicit_inputs = set(input_task_ids(context))
     selected = {
         str(task_id)
         for key in ("failed_task_ids", "task_ids", "downstream_task_ids")
         for task_id in context.get(key, [])
-    }
+    } | explicit_inputs
     if not selected:
         # An unscoped replan still requires the complete current snapshot.
         return snapshot, {}
@@ -31,7 +33,7 @@ def bind_scoped_snapshot(
     ):
         # Dispatch includes downstream consumers; their complete contracts remain
         # addressable without making the whole dispatch closure a required read.
-        inline_ids = {str(task_id) for task_id in context["failed_task_ids"]}
+        inline_ids = {str(task_id) for task_id in context["failed_task_ids"]} | explicit_inputs
     descriptor = write_immutable_json_sidecar(
         state_dir, snapshot, root="plan-synth/task-snapshots",
         kind="canonical_task_snapshot", schema_version="canonical-task-snapshot.v1",
@@ -59,7 +61,7 @@ def bind_scoped_snapshot(
         "unresolved_task_ids": sorted(selected - {task["task_id"] for task in tasks}),
         "read_scope": (
             "The index covers every current task. For failed_children_and_downstream, "
-            "scoped_tasks contains complete directly failed tasks; otherwise it contains "
+            "scoped_tasks contains complete directly failed and explicit input tasks; otherwise it contains "
             "all explicitly selected tasks. Dispatch scope is unchanged. Read "
             "full_snapshot_ref through canonical-task-snapshot at "
             "full_task_json_path before changing another task's contract or resolving an "

@@ -7,6 +7,16 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 
 
+def input_task_ids(payload: Mapping[str, Any]) -> list[str]:
+    """Read priority only; never an instruction to narrow dispatch or acceptance."""
+    value = payload.get('input_task_ids', [])
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip() for item in value
+    ):
+        raise ValueError('input_task_ids must be a list of non-empty strings')
+    return sorted({item.strip() for item in value})
+
+
 def operator_feedback(payload: Mapping[str, Any]) -> list[str]:
     if 'operator_feedback' not in payload:
         return []
