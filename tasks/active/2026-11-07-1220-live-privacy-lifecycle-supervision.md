@@ -53,3 +53,53 @@
 ## 14:15 UTC 旧 pending operation 收口
 
 6b0417b3完成并通过538/7自动闭包、50/1 sentinel、10mock及main21。控制面重载evt-042d0e52eae9保留两Impl，新watcher3376581；旧Critic operation64319b1a已由正常runtime恢复为superseded，不再阻挡goal idle。两个当前Impl继续原operation/attempt，未绕过验证或重置候选。
+
+## 14:39 UTC 工具与环境恢复、后继接缝风险
+
+- Media在14:18:02的code-mode汇总调用挂住超过6分钟，无输出、无artifact CLI进程，源码仍干净。监工保存transcript摘要/operation后仅Escape中断工具等待，通过TmuxTransport在同一会话/attempt续跑；恢复提示限制每批至多4个短调用、只补缺失正文、禁止伪造已读。14:26以后恢复真实读取/心跳，后续原生compact1m57s完成。详见media-tool-stall-recovery.json及恢复prompt，未重建任务、未代发心跳。
+- Dataset因为输入体积触发自动provider轮换，pane716→717；operation/attempt/workdir保留，恢复现场三目录未丢。事件`worker.context.compact.failed`的具体error为`backend compact requires idle session`；不能把通用reason recycle_threshold_exceeded误解成重试cap耗尽。
+- Required Read只读体积核对：Media242声明/197物理去重切片约905968 JSON字符；Dataset193声明/158切片约552681字符。大头为共享task_map/execution_spec，已记录required-input-volume.json。现有批量输出截断后重复读取及补读过多，是实际恢复开销；后续producer修订应核对语义必需共享范围，不能由runtime自行删条款。
+- Dataset旧runtime在PyAV下载300s超时，未执行产品断言。监工持有原bootstrap.lock，确认本机wheelhouse中av16.0.1/Pillow12.0.0两wheel SHA256均在原requirements.lock允许集合；首轮offline+find-links仍优先索引URL失败，随后以精确file URI+require-hashes安装两包，再按原锁offline安装剩余27包成功。未改源码/lock/stamp，证据dataset-dependency-recovery.json。
+- Dataset发现具体接缝风险：冻结execution_spec要求仅access_audit追加deny，Core新协议固定job_denial_audit，且会话拒绝在consumer check之前。当前Core自身任务验收通过不代表该消费者接缝已通过；worker正保留原断言，用真实Registry/worker构造最小反例。不得删字段或放宽快照，也不得以跨owner数据库对象替换绕过接口边界。等待真实报告再由受控Discovery/Plan修补。
+
+
+## 15:08 UTC Dataset 实证阻塞及自动接续
+
+- Dataset R2 source66b092d3真实复现：tick只新增job_denial_audit而非access_audit；managed worker另有feature_worker_health变化。完整runtime33pass/5fail，最终smoke1pass/2fail；71个原始Dataset文件从6b80937逐字恢复，失败测试和证据保留，未放宽快照、未假定浏览器通过。evt-991617e801c5上报upstream_contract_gap，evt-3e1500a301d8路由request_replan；不重复相同合同。
+- Run Manager正常300秒扫描在15:04自动应用语义replan，evt-e201551ae12d请求Discovery，evt-c49d2ba351c8动作应用、evt-9eb2dc5df82b确认下游请求。新Discovery operation wop-prd-post-verify-discovery-prd-flow-discovery-trig-evt-e201-b145bf37a9d3真实读取失败代码/冻结计划/Core协议。无需人工重复触发；动作准入通过不代表产品修复完成。
+- 当前修订应保留30done、candidate046c36、在途Media身份；66b092d仅失败补丁复用源。必须解释Core审计接缝与consumer冻结约束，以及业务状态和运行健康状态的边界，不能直接删表放宽测试。
+- Media原bootstrap300秒网络超时后，监工按原锁、原bootstrap.lock和已验证wheel SHA256离线恢复环境，14:58:31完成；未改requirements.lock/stamp。随后原入口retention真实41pass/7fail进入TDD实现，15:07 privacy_media smoke2pass只是阶段自检，完整回归/独立Verify未完成。来源media-dependency-recovery.json。
+
+
+## 15:19 UTC 审计修订完整包恢复
+
+- Discovery独立探针evt-b7e35a717f32在accepted046c36的真实Registry/API/Core tick与隔离PG复现仅job_denial_audit变化、access deny=0，jobs/outbox不变。报告evt-8c37dcf99a89（聚合evt-8eba1653f9e2）提出Core审计存储前置→DatasetR3；保留原9mandatory/完整快照，明确健康记录与拒绝事务边界。
+- 监工检查报告发现两个新任务无rolling_smoke标记及新execution_spec分片；提示在报告已提交后才送达，随后旧Discovery正常context回收（676→718），未靠重复emit改写已冻结报告。内核evt-824d8b5cc77c拒绝amend，具体rolling_smoke_command_missing；不能把既有技能更新等同于agent落实成功。
+- 执行一次已授权完整Plan修订checkpoint operator-dataset-audit-full-plan-20261107，预演保护30done/Media原operation/candidate046c36，writer恢复范围仅DatasetR2及其下游。受控动作evt-360989ffc895 applied，触发evt-97e9645858cc；证据audit-replan-preview.json/audit-replan-action.json。未改全局cap/直接写canonical，未重启媒体，不将失败66b092d提升accepted。
+- 修订要求实际生产者消费者审计协议一致、可信持久绑定/审计记录内去重/调用前拒绝/故障回滚/非采用者兼容；两task真实smoke、完整新required ports、294原AC/27决定/9目标保留。新增原生task_input_policy要求完整正文责任分配及实际体积核对，不让worker自行略读。独立Critic与批准仍待完成。
+- Media全量阶段自检55passed、retention48passed，追加并发/读取子进程退出场景后继续最终同头gate。路径hook拒绝一次工作区外写入后worker使用自身允许目录恢复，未绕过隔离。仍未独立Verify，不计done。
+
+
+## 15:29 UTC 媒体独立 Verify 与 resident 重复消费修复
+
+- 事件时序校正：旧gap升级在15:16:23已将run标blocked（evt-36bcee56297f）；15:17完整修订受理后仍被该终态挡住，并非新Planner语义失败。通过CLI恢复active evt-548b4d4142de，15:20:28 Planner实际派发evt-88c3776d2af1，fanout-prd-plan-evt-d54a73b8；完整owner反馈确认保留。
+- Media最终63cfeb09abfd8845809faa743611ff54cded6efe，smoke2/runtime62/retention48/browser2和delta全绿，evt-c87953782fe6 dev.build.done、evt-62585643d53a typed admission。独立Verify已在pane726读取本轮task合同，尚无通过结论。30done未改变。
+- Autoresearch同一请求ar-stage-replan-f1e8bfa5c9d67400重复启动evt-71ea54ff069b/evt-465aea717e5f，一份准备阶段失败（evt-210b0a63f0e5），另一份3765376仍执行；不能将单份失败推断全部诊断已停。确有5个同state resident，登记3845151及其子任务保留；其余4个精确验证命令/启动身份且无子任务后SIGTERM清理。
+- 新修复14f1c502在实际resident CLI进程持有state-scoped flock，解决父watcher退出后旧consumer继续存活而启动锁失效。2个真实进程RED→18聚焦GREEN→84调用链闭包GREEN，sentinel50/1。主源码精确同步并main18通过；旧resident已请求SIGTERM正常完成当前tick后退出（不向进程组发信号），后续安全重启/实机互斥确认仍待完成。任务2026-11-07-1524保持active，不把源码提交等同于现场部署完成。
+
+### 15:45—16:00 UTC：验证输入和执行分流修复
+
+- Media Verify提交evt-cdc7b0115b92：execution failed / abstained，无产品缺陷清单；旧reconciler误转Impl2(evt-6e28e9769bfe)。监工固定保留63cfeb09产品源码与原证据，要求按当前身份读取后再独立验证，不将弃权记为通过。
+- 2bb03ccc新增可选`--required --shared-bodies`。244个旧切片1421665字符→797751字符（含来源收据）逐字节还原一致，未生成新读取证据；真实worker使用自己当前身份调用并按区间消费。TDD8red，相关闭包116pass，sentinel50pass/1skip，主CLI16pass。规划器因CLI传递引用选择过宽全量测试，主动中断(2160pass/14skip只是中断前计数)，不宣称全量通过。
+- 1d3e9f11修复Verify弃权不进入产品返工/语义耗尽。85闭包+3mock+50sentinel/1skip，主部署54项+新增行为回归。保留主checkout额外尝试授权差异，仅合入本次hunk；evt-88f11d1f209a安全控制进程重载后watcher4016326，现有worker/OA保持运行。
+- 新审计Plan经Critic evt-4231dedfcaeb通过、package af73ff457698b8a9f24d7f168dd1666573ed42f16200b682377312e36ecf1e30准入，9文件hash与监工初审一致。授权批准evt-8abc5a4d5503（这是被批准的plan id，决策事件另见ledger）；精确writer selection13项，30done/Media/Privacy排除。Core audit→Dataset R3，294旧AC保留+4新增，45有效任务，30done/15待完成。Core audit已在lane1启动。
+- Autoresearch旧3845151及loop3765376完成后退出，3972403新resident通过正式sidecar启动并持有execution lock，第二次flock被拒绝。14f1c502现场闭环、ea376714归档。未清理任何活跃任务worktree。
+- 所有修复仅本地分支commit，未merge/push。独立Verify/最终产品资格仍未完成。
+
+### 16:09 UTC：在途快照
+
+- OA本轮adopt准入evt-df4efaef76be，canonical evt-305407e13f4b，保持30done和受保护Media/Privacy分区。
+- 精确按新task_map过滤：done30/in_progress2/backlog13，共45；raw TaskStore额外有父PRD-WORKFLOW卡片backlog，不能计成第46个产品任务。
+- Core audit当前ta-273b9c7cea1a6e5d4243已核对201来源/切片与258正文定义，进入真实Registry/API/PG的RED准备。Media在原HEAD逐段读取，正常压缩上下文后从已读位置续读；有两小段工具截断被显式补读，未重跑整套输入。
+- cac28956将共享正文完整分页方法固化到两角色skill，canonical→Codex/Claude副本同步，主repo和产品skill一致；skill加载/adapter生成测试43通过1跳过。
+- 未发现新增额度错误/阻塞。Dashboard HTTP200，Postgres容器healthy，watcher4016326与resident3972403正常。
