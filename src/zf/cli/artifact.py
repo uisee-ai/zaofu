@@ -94,6 +94,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
     read_cmd.add_argument("--required", action="store_true", help="Read all kernel-required slices in one invocation")
+    read_cmd.add_argument("--deduplicate-content", action="store_true", help="With --required, share identical source slices while retaining each read receipt")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
     read_cmd.add_argument("--max-chars", type=int, default=0)
@@ -176,6 +177,9 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 def _run_attempt_read(args: argparse.Namespace) -> int:
     try:
         required = getattr(args, "required", False)
+        deduplicate = getattr(args, "deduplicate_content", False)
+        if deduplicate and not required:
+            raise ValueError("--deduplicate-content requires --required")
         if required:
             if args.source or args.artifact or args.json_path != "$" or args.max_items or args.max_chars:
                 raise ValueError("--required cannot be combined with source, artifact or slice overrides")
@@ -200,7 +204,9 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         )
         if required:
             from zf.runtime.artifact_read_requirements import required_reads_for_attempt
+            from zf.runtime.artifact_read_output import RequiredReadOutput
 
+            output = RequiredReadOutput(context.state_dir) if deduplicate else None
             rows = required_reads_for_attempt(
                 event_log_from_project(context.state_dir, config=context.config).read_all(),
                 args.attempt,
@@ -214,6 +220,9 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                     actor=identity["actor"], role=identity["role"],
                     provider=identity["provider"], purpose=identity["purpose"],
                 )
+                if output is not None:
+                    print(json.dumps(output.render(result), ensure_ascii=False))
+                    continue
                 print(json.dumps({"source_id": row["source_id"], "artifact_id": row["artifact_id"],
                                   "json_path": row.get("json_path", "$"), "content": result["content"]},
                                  ensure_ascii=False))

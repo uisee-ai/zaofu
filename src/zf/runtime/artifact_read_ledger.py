@@ -610,9 +610,12 @@ def render_attempt_source_briefing(
     ]
     if required:
         lines.extend([
-            f"- Preferred single-call read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
+            f"- Preferred single-call read: `{cli_command} artifact read --attempt {attempt_id} --required --deduplicate-content`.",
             "  It returns every required slice and records each read. Consume the complete output; "
             "do not repeat individual reads unless the tool output was truncated or a read failed.",
+            "  A content_ref reuses the earlier content_id body in this same output; "
+            "each source retains its own read receipt. If that body was truncated or absent, "
+            "use the exact individual read below. A fresh session must read the inputs again.",
         ])
         lines.extend(["- Required reads for this attempt:"])
         for item in required:

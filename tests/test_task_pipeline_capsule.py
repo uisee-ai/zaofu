@@ -188,9 +188,27 @@ def test_dispatch_rejects_canonical_contract_changed_since_selection(dispatch_fi
 def test_transport_receives_fresh_capsule_and_real_briefing(
     dispatch_fixture, monkeypatch
 ):
-    runtime, task, _, _, dispatch = dispatch_fixture
+    import hashlib
+    import json
+
+    runtime, task, snapshot, _, dispatch = dispatch_fixture
     from zf.runtime.task_doc import task_doc_path
 
+    # This transport case needs a real contract source, not the fixture's
+    # intentionally unresolved snapshot descriptor used by capsule-only tests.
+    contract_path = runtime.state_dir / "artifacts/snapshot.json"
+    contract_path.parent.mkdir(parents=True, exist_ok=True)
+    contract_path.write_text(json.dumps({
+        **snapshot, "acceptance_criteria": [{"id": "AC1", "text": "current"}],
+        "verification_commands": [],
+    }))
+    monkeypatch.setattr(
+        "zf.runtime.task_pipeline_targets.prepare_contract_snapshot",
+        lambda *a, **kw: (snapshot, {
+            "ref": "artifacts/snapshot.json",
+            "sha256": hashlib.sha256(contract_path.read_bytes()).hexdigest(),
+        }),
+    )
     write_task_doc(
         runtime.state_dir, Task(id=task.id, contract=TaskContract(behavior="old"))
     )
@@ -203,8 +221,22 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         operation.should_dispatch = True
         kwargs["payload"].update(
             semantic_result_submit_mode="blocking",
+            output_profile_id="implementation",
             operation_id=operation.operation_id,
             result_scratch_ref="tmp/result-submit/test/result.json",
+        )
+        from zf.runtime.artifact_read_ledger import (
+            canonical_required_reads, source_manifest_from_payload,
+        )
+        payload = kwargs["payload"]
+        manifest, descriptor = source_manifest_from_payload(
+            state_dir=runtime.state_dir, project_root=runtime.project_root,
+            payload=payload, workflow_run_id="run-1", task_id=task.id,
+            attempt_id=payload["attempt_id"], dispatch_id=payload["dispatch_id"],
+        )
+        payload["attempt_source_manifest_ref"] = descriptor["ref"]
+        payload["required_reads"] = canonical_required_reads(
+            manifest, output_profile_id="implementation",
         )
         return operation
 
@@ -226,6 +258,8 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         assert "## Read Order (authoritative)" in briefing.read_text()
         assert str(task_doc_path(runtime.state_dir, task.id).resolve()) in briefing.read_text()
         assert "Controlled Artifact Inputs" in briefing.read_text()
+        assert "--required --deduplicate-content" in briefing.read_text()
+        assert "content_ref" in briefing.read_text()
         sent.append(context)
         return context
 
