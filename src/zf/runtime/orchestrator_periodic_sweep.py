@@ -34,7 +34,10 @@ def run_replay_sweep(
     provider_turn_closed = any(
         event.type == "provider.turn.closed" for event in event_batch
     )
-    if event_batch and not provider_turn_closed:
+    repair_wake = any(event.type in {
+        "workflow.call.result.repair.requested", "codex.hook.stop", "claude.hook.stop",
+    } for event in event_batch)
+    if event_batch and not provider_turn_closed and not repair_wake:
         return
     if not event_batch:
         runtime._safe_housekeeping(
@@ -47,13 +50,23 @@ def run_replay_sweep(
         )
     runtime._safe_housekeeping(
         "reader_fanout_result_replay",
-        lambda: _recover_reader_results_and_goal(runtime),
+        lambda: _recover_reader_results_and_goal(
+            runtime, replay_readers=not event_batch or provider_turn_closed,
+        ),
     )
 
 
-def _recover_reader_results_and_goal(runtime: Any) -> None:
-    runtime._recover_unrecorded_reader_fanout_results()
-    runtime._reconcile_run_goal_completion()
+def _recover_reader_results_and_goal(runtime: Any, *, replay_readers: bool = True) -> None:
+    try:
+        if replay_readers:
+            runtime._recover_unrecorded_reader_fanout_results()
+            runtime._reconcile_run_goal_completion()
+    finally:
+        # The existing result replay also drains semantic-submit corrections;
+        # rejected submissions have no legacy terminal event to replay.
+        from zf.runtime.call_result_repair_reconciliation import reconcile_call_result_repairs
+
+        reconcile_call_result_repairs(runtime)
 
 
 def run_context_sweep(runtime: Any) -> None:

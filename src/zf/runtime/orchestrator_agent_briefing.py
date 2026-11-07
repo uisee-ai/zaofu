@@ -294,6 +294,11 @@ def build_orchestrator_agent_operation_briefing(
         "```bash",
         command,
         "```",
+        "A repair_pending/result_not_admitted response is not completion. "
+        "Follow the bounded correction for the same operation: consume missing "
+        "inputs or fix the existing scratch, then resubmit once for that repair round. "
+        "Never manufacture read receipts, change identity, or restart planning. "
+        "An admitted result must not be submitted again.",
         "",
     ])
 

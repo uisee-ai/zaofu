@@ -315,3 +315,14 @@ LS-v1 FMS02 的旧 TODO 前置已正式拆为 PORT/IMPLEMENT，验收和代码�
 `candidate-rework-apply` 的 retrigger 接受明确 `plan_ports` 描述符，经现有不可变 sidecar 写入/摘要解析后随 `task_map.ready` 交付。格式错误、重复端口、坏摘要以及覆盖 kernel 生成的 task_map/planning_result/goal_claim_set 均在发布前拒绝。输入内容仍由语义角色或获授权操作员编写；Runtime 不复制父任务来猜测来源，不替代 Owner 决定。
 
 Plan Package 准入对本次派发任务消费的 scoped input 检查直接分区或可证明的显式替换链，复用既有 lineage 验证。没有新分区也没有前任的新任务不再拖到 worker dispatch 才发现缺输入。完整输入结构仍检查；有明确消费选择时只要求 Impl/TaskVerify 实际选中的端口具备任务分区，整包矩阵保留。局部端口只要求声明消费者。增量选定集合之外的在途 Task 保持原绑定，不能借此改其合同。回归经过 ControlledActionService 和 prepare_plan_artifact_package 真实入口。
+
+
+## 语义结果拒收后的本操作协议修复
+
+SemanticResultSubmitService 拒收后只发布 repair.requested，不发布未准入的语义终结事件。现有结果重放入口现统一消费这类持久化纠正请求：待原 Provider turn 结束后，把精确字段问题和原 scratch 提交命令送回当前 resident operation；不等待 OA/RM 重规划，不增加语义返工次数，不开启第二套状态机或独立周期扫描。repair.requested 及 stop/turn.closed 可唤醒现有入口，idle 重放补足重启遗漏。
+
+派发前核对 operation/request hash/attempt/dispatch/Run、不可变 correction 摘要和角色占用；已接纳、过期、取消、暂停、已耗尽的结果不能重派。存在同角色其他活跃 operation 或新 Provider turn 时暂不抢派。同 correction 的派发收据抑制重放；传输失败不写成功收据，沿现有 housekeeping 错误通道暴露并保留重试意图。外部传输与事件写入仍非跨系统事务，不能将该收据机制称为任意进程崩溃下的严格 exactly-once。
+
+required_read_missing 的修复是由本次 worker 真实受控补读并消费全文/缺页，不是修改 required_reads、input_consumption 或 ledger。新读内容若改变判断须如实修订。Submit once 指每次准入尝试；repair_pending 仍可在本次操作的有界协议修复轮次中补正，admitted 后禁止重复提交。没有 task 的 OA 纠正不再伪造 Active task: (none)。
+
+LS-v1 R53 原因：OA 复用旧配置读取后被正确拒收，但新入口没有消费 correction、问题注册表又将其视为正常本地纠正，RM 无升级动作。监工指导仅恢复现有尝试；通用恢复由上述 Kernel 路径负责。测试通过真实 SemanticResultSubmitService 拒收、Orchestrator.run_once(stop) 派发及补读后同操作准入，另覆盖持久化重放、取消/暂停/身份变更和传输故障。

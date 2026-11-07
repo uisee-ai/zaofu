@@ -94,6 +94,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # Provider terminals may be emitted after the transport callback cycle.
     # Wake fanout reconciliation so a failed reader cannot strand its child.
     "workflow.operation.failed",
+    "workflow.call.result.repair.requested",
     # Tier-2 诊断(task 2026-07-06-0930):requested 唤醒诊断 stage 派发,
     # completed 唤醒结论消费(rework feedback / needs_owner 升级)。
     "diagnosis.requested",
@@ -386,6 +387,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
 # (observational)但硬性不唤 Layer 2 agent turn。一次 Layer 2 turn 是一次
 # 完整 agent 推理;hook 流速 > 推理吞吐时 cursor 永久积压(R25: 2.9h)。
 LAYER2_NOISE_EVENTS: frozenset[str] = frozenset({
+    "workflow.call.result.repair.requested",
     "codex.hook.session_start",
     "codex.hook.user_prompt_submit",
     "codex.hook.pre_tool_use",
