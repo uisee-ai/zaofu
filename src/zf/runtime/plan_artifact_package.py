@@ -847,10 +847,15 @@ def admit_plan_artifact_package_for_payload(
                 "sha256": reusable["package_digest"],
             },
         )
-        from zf.runtime.plan_output_lineage import assert_package_task_map_matches
+        from zf.runtime.plan_output_lineage import (
+            assert_package_explicit_ports_match, assert_package_task_map_matches,
+        )
 
         assert_package_task_map_matches(
             state_dir, project_root, current_body, payload)
+        assert_package_explicit_ports_match(
+            state_dir, project_root, current_body, payload,
+            flow_kind=flow_kind, producer_stage_id=producer_stage_id)
         current_mode = str(
             current_body.get("artifact_package_mode") or "shadow"
         )
