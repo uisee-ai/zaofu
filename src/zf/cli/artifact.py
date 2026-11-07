@@ -94,6 +94,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
     read_cmd.add_argument("--required", action="store_true", help="Read all kernel-required slices in one invocation")
+    read_cmd.add_argument("--shared-bodies", action="store_true", help="With --required, render lossless shared nested bodies and per-source receipts")
     read_cmd.add_argument("--deduplicate-content", action="store_true", help="With --required, share identical source slices while retaining each read receipt")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
@@ -177,7 +178,12 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 def _run_attempt_read(args: argparse.Namespace) -> int:
     try:
         required = getattr(args, "required", False)
+        shared = getattr(args, "shared_bodies", False)
+        if shared and not required:
+            raise ValueError("--shared-bodies requires --required")
         deduplicate = getattr(args, "deduplicate_content", False)
+        if shared and deduplicate:
+            raise ValueError("--shared-bodies cannot be combined with --deduplicate-content")
         if deduplicate and not required:
             raise ValueError("--deduplicate-content requires --required")
         if required:
@@ -212,6 +218,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                 args.attempt,
                 state_dir=context.state_dir, operation_id=identity["operation_id"],
             )
+            shared_results = []
             for row in rows:
                 result = read_attempt_artifact(
                     context.state_dir, manifest=manifest,
@@ -220,12 +227,20 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                     actor=identity["actor"], role=identity["role"],
                     provider=identity["provider"], purpose=identity["purpose"],
                 )
+                if shared:
+                    shared_results.append(result)
+                    continue
                 if output is not None:
                     print(json.dumps(output.render(result), ensure_ascii=False))
                     continue
                 print(json.dumps({"source_id": row["source_id"], "artifact_id": row["artifact_id"],
                                   "json_path": row.get("json_path", "$"), "content": result["content"]},
                                  ensure_ascii=False))
+            if shared:
+                from zf.runtime.artifact_shared_bodies import shared_body_records
+
+                for record in shared_body_records(shared_results):
+                    print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
             return 0
         result = read_attempt_artifact(
             context.state_dir,

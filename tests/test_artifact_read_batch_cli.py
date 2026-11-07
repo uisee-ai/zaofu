@@ -141,3 +141,52 @@ def test_deduplicate_flag_requires_batch(capsys):
     assert main(["artifact", "read", "--attempt", "unused", "--source", "a",
                  "--artifact", "a", "--deduplicate-content"]) == 1
     assert "requires --required" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("fault", ["", "denied_alias", "wrong_digest"])
+def test_shared_bodies_cli_keeps_authorized_cross_file_reads(tmp_path, monkeypatch, capsys, fault):
+    from tests.test_artifact_shared_bodies import decode
+
+    state = tmp_path / ".runtime"
+    common = {"text": "完整正文" * 100}
+    sources = []
+    values = [{"shared": common, "name": name} for name in ("first", "second")]
+    for name, value in zip(("first", "second"), values):
+        path = state / "artifacts" / f"{name}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"facts": value, "excluded": "not-authorized"}))
+        sources.append({"source_id": name, "artifact_id": name, "ref": f"artifacts/{name}.json",
+                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "allowed_paths": ["$.facts"]})
+    if fault == "denied_alias":
+        sources[1]["access_scope"] = {"actor": "another-actor"}
+    elif fault == "wrong_digest":
+        sources[1]["sha256"] = "f" * 64
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+                                             dispatch_id="attempt-1", sources=sources,
+                                             metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest)
+    EventWriter(EventLog(state / "events.jsonl")).append(ZfEvent(
+        type="task.dispatched", actor="orchestrator", task_id="T1",
+        payload={"dispatch_id": "attempt-1", "required_reads": [
+            {"source_id": item["source_id"], "artifact_id": item["artifact_id"],
+             "artifact_sha256": item["sha256"], "json_path": "$.facts"} for item in sources]},
+    ))
+    result = main(["artifact", "read", "--attempt", "attempt-1", "--required", "--shared-bodies",
+                   "--state-dir", str(state)])
+    output = capsys.readouterr()
+    ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+    if fault:
+        assert result == 1
+        assert not output.out
+        assert [r["source_id"] for r in rows if r["status"] == "read"] == ["first"]
+        return
+    assert result == 0, output.err
+    records = [json.loads(line) for line in output.out.splitlines()]
+    assert decode(records) == [json.dumps(v, ensure_ascii=False, indent=2) for v in values]
+    assert output.out.count(common["text"]) == 1
+    assert "not-authorized" not in output.out
+    assert {r["source_id"] for r in rows} == {"first", "second"}
+    receipts = {hashlib.sha256(line).hexdigest() for line in ledger.read_bytes().splitlines()}
+    assert all(r["read_receipt"]["row_sha256"] in receipts for r in records if r["kind"] == "source")

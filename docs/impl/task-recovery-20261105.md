@@ -176,3 +176,19 @@ state_dir 持有 `processes/autoresearch-resident-execution.lock` 非阻塞文�
 把旧进程的存活或一条 started 当作成功诊断。既有旧版 resident 不会热加载该保护，
 部署时先精确清理无子任务的重复旧进程，再在活动诊断安全结束后重启登记 resident。
 本次任务：[执行进程互斥修复](../../tasks/active/2026-11-07-1524-autoresearch-resident-process-lock.md)。
+
+### 2026-11-07：必读正文无损共享（可选 CLI 呈现）
+
+媒体独立 Verify 的必读结果包含大量跨文件重复子树；旧逐文件去重仍产生工具输出截断。
+`zf artifact read --attempt <attempt> --required --shared-bodies` 在正常逐来源授权、摘要校验和
+read-ledger 写入之后，输出 JSONL 的 `body` 定义与 `source` 来源/收据。
+重复正文只呈现一次；定义中的 `refs` 使用类型保真的数组路径指向此前定义，替换对应占位 null
+即可还原原值。来源的 `content_sha256` 对应原始 `_encode_selected` 正文，字段顺序、Unicode、
+纯文本及字面 null 不变。引用字段位于正文之外，业务数据中的同名字段不会被解释成引用。
+
+此选项不修改必读范围、冻结 manifest、准入 gate 或证明强度；不与 `--deduplicate-content`
+组合。CLI 在本次调用内收集已授权正文，任何来源失败均不输出共享展示，但保留真实读取收据。
+旧格式保持兼容。worker 应将输出保存在自身工作目录，分段消费全部定义与来源，确认工具输出
+没有截断；仅看到引用、摘要或 CLI 成功不等于已经阅读正文，亦不能替代独立验收。
+
+修复记录：[无损必读正文共享](../../tasks/active/2026-11-07-1543-lossless-required-read-bodies.md)。
