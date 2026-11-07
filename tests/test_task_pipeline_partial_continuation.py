@@ -31,9 +31,10 @@ def setup(tmp_path, fault=''):
     git(tmp_path, 'add', '--', 'product.txt')
     git(tmp_path, 'commit', '-qm', 'base')
     base = git(tmp_path, 'rev-parse', 'HEAD')
-    product.write_text('partial implementation\n')
-    git(tmp_path, 'add', '--', 'product.txt')
-    git(tmp_path, 'commit', '-qm', 'partial')
+    if fault != 'no_partial':
+        product.write_text('partial implementation\n')
+        git(tmp_path, 'add', '--', 'product.txt')
+        git(tmp_path, 'commit', '-qm', 'partial')
     head = git(tmp_path, 'rev-parse', 'HEAD')
     state, log, writer = _state(tmp_path)
     task_map = state / 'task-map.json'
