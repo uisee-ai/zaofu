@@ -103,3 +103,12 @@
 - Core audit当前ta-273b9c7cea1a6e5d4243已核对201来源/切片与258正文定义，进入真实Registry/API/PG的RED准备。Media在原HEAD逐段读取，正常压缩上下文后从已读位置续读；有两小段工具截断被显式补读，未重跑整套输入。
 - cac28956将共享正文完整分页方法固化到两角色skill，canonical→Codex/Claude副本同步，主repo和产品skill一致；skill加载/adapter生成测试43通过1跳过。
 - 未发现新增额度错误/阻塞。Dashboard HTTP200，Postgres容器healthy，watcher4016326与resident3972403正常。
+
+### 16:38 UTC：临时文件、提交工具与上下文回收
+
+- Media Impl2 evt-515df0e6f8aa/准入evt-98d9fe09040f通过，但task.ref evt-9ac8986c98fb发现两只未跟踪tmp文件，进入Impl3。两文件保全迁到既有gitignored evidence/runs目录，摘要不变；g3/ta-8479c000b4bf46b860e9的242源selector/digest/正文与同会话已读g2一致，重新产生当轮收据，源码仍63cfeb09，worktree clean。6c9b3cd1补充技能临时文件clean要求，43pass/1skip。
+- g3 shell动态写外部scratch被guard拒绝；原生apply_patch精准当前路径成功，未放宽guard。Impl profile不支持result validate，记录plan_candidate_validation_unavailable，正确动作是正式submit执行准入，不能宣称validate通过。
+- 16:32:10上下文ratio0.9185连续180s超过0.9触发强制回收：730→733，新会话仍g3/p3，source/草稿/ledger保存但需要重新消费正文。此为配置时序导致的重读开销，不是产品失败。监工交接现有草稿与证据，避免产品重写。
+- 产品zf.yaml仅16个PRD dev/verify lane显式drain_hold_seconds180→600；90%硬阈值、权限/backend、8/8容量、合同等有效字段逐项未变（仅role override来源metadata随显式配置变化）。候选配置先在/tmp解析；roleDefaults不能影响现有显式lane，最终使用逐lane覆盖且保留codex/bypass原值。68项context/hardcap/profile/recovery测试通过。证据context-drain-{before,after}.yaml及review.json保存于诊断目录；产品zf.yaml原本属共享checkout，未将其他既有配置变更纳入commit。
+- evt-eb46faf17e52受控保worker重载，watcher33114新epoch于16:38:48启动，Core Impl和Media Impl3身份均保留。回收仍有600s上限，没有禁用上下文保护或更改结果准入。
+- Core audit依赖下载重复卡住；监工等bootstrap锁释放后用当前锁文件hash匹配的本机wheel离线恢复，完整依赖安装exit0；证据core-audit-dependency-recovery.json。真RED为access_audit未新增(1fail/4pass)，首片30ed1e0后smoke5、runtime56→68→73/75逐步通过，access21、foundation53通过，继续最终提交及独立验证，未算done。

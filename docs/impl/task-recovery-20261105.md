@@ -204,3 +204,14 @@ read-ledger 写入之后，输出 JSONL 的 `body` 定义与 `source` 来源/收
 证据，再进入独立 Verify，绝不把弃权视为通过。
 
 记录：[验证弃权分流](../../tasks/done/2026-11-07-1558-verifier-abstention-routing.md)。
+
+### 上下文回收的现场配置边界
+
+本轮媒体worker在结果草稿已写好、尚未submit时，因ratio>0.9持续180秒被强制回收，
+新会话必须重新消费完整输入。运行配置已对PRD的16个Impl/Verify lane将
+`drain_hold_seconds`设为600秒，保留原context阈值、backend、权限、并行容量和验收合同。
+这是有界操作配置，不是取消上下文保护或token预算。覆盖角色时必须显式保留原backend，
+并对编译后的完整RoleConfig做逐字段比较；仅设置Flow roleDefaults可能不会覆盖已生成lane。
+产品共享checkout的原配置差异未被本修复提交收编；确切前后文本与摘要在监工诊断目录保留。
+
+配置与回收语义验证68项通过；真实回收观察、后续独立验证和最终任务完成仍由监工继续追踪。
