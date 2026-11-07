@@ -1,6 +1,6 @@
 # 自修复派发分类归属与 reactor 结构门
 
-任务：[2026-11-07-1120](../../tasks/active/2026-11-07-1120-reactor-repair-payload-extraction.md)。
+任务：[2026-11-07-1120](../../tasks/done/2026-11-07-1120-reactor-repair-payload-extraction.md)。
 
 2026-11-07 main 的结构门实测失败：`orchestrator_reactor.py` 6981 行超过冻结 cap 6977（1 failed / 15 passed / 1 skipped）。隔离分支缺少 main 两项既有兼容 hunk，单独在分支跑绿不能证明 main 修复完成。
 
