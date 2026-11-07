@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `14f1c502 fix: serialize autoresearch consumers in the resident process`
 
 # Autoresearch resident 执行进程单实例保护
 
@@ -14,3 +14,5 @@
 现场证据：datal/diagnostics/recovery-20261107-1220/autoresearch-duplicate-residents.json。源码隔离worktree实施，测试/实现/归档分别记录，不自动push/merge。
 
 验证：真实子进程回归先2fail（重复执行实际发生），实现后CLI/sidecar聚焦18passed；dev-verify --base dev完整计划含历史815文件，不重复已完成批次，按本次明确paths及直接调用链执行7文件闭包。首轮81pass/3fail因子命令PATH找不到python，使用现有venv PATH重跑84passed；sentinel50passed/1skipped，ruff/diff通过。未跑full pytest或新增真实provider E2E。部署与现有resident安全轮换仍待完成。
+
+现场闭环：旧resident3845151与loop3765376自然结束后，经sidecar入口启动3972403；真实execution.lock由新resident持有，第二个非阻塞flock被拒绝。第一次启动因操作shell PATH缺zf失败，保留事件evt-c3dfaf38ae9c；设置现有venv PATH后成功。证据resident-lock-live-verified.json。产品worker未中断。

@@ -175,7 +175,7 @@ state_dir 持有 `processes/autoresearch-resident-execution.lock` 非阻塞文�
 崩溃由 OS 释放。原 SIGTERM 当前 tick 收尾语义保持。父侧启动协调继续保留，不能
 把旧进程的存活或一条 started 当作成功诊断。既有旧版 resident 不会热加载该保护，
 部署时先精确清理无子任务的重复旧进程，再在活动诊断安全结束后重启登记 resident。
-本次任务：[执行进程互斥修复](../../tasks/active/2026-11-07-1524-autoresearch-resident-process-lock.md)。
+本次任务：[执行进程互斥修复](../../tasks/done/2026-11-07-1524-autoresearch-resident-process-lock.md)。
 
 ### 2026-11-07：必读正文无损共享（可选 CLI 呈现）
 
