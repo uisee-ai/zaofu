@@ -102,3 +102,14 @@ Critic提交 `evt-cee6ad122f5c` passed，无阻断fix_items；格式枚举提交
 已通过 `zf restart prd-dev-lane-1` 现有角色级SessionLock入口恢复，未直接补键或写canonical状态。03:45:15 `evt-c3f08d742627`respawned、`evt-d77ab4e02b2c`restarted；新pane650启动provider并读取recovery简报。原operation仍为b59069436b02，代码/工作树/任务世代保留；其余Media/Verify不停。恢复简报复用旧dispatch内容仍为原必读命令，不能把新dedup flag已出现在所有旧简报当成事实。
 
 已授权下一片有界watchdog修复：真正重建runtime、从事件hydrate recycling且provider dead且活动obligation存在时，走现有带锁fresh-session恢复而不等普通300s活性超时；保留同进程在途互斥、safe_halt、terminal、门禁与重试保护。不以仅等待respawn锁宣称actuator已覆盖未持锁的context recycle。
+
+
+## 03:57Z 独立验证有效拦截与中断回收修复加载
+
+Align独立Verify复现重复frameidx的真实缺陷：两图像/CAN重复帧号仍获201批准且worker发布，两个group ID相同并指向同一图像。正常对照通过，原39runtime/2smoke及历史归档摘要一致，但原用例漏掉唯一性。独立验证明确失败 `evt-7b940238ba02`，Kernel自动返工派发 `evt-55fe410f0266`，新Impl operation `wop-impl-tp-P09A-ALIGN-TRUTH-R1-6a29118ce-57e9b062f0e7`。无需监工直接改业务状态或代签通过；任务仍未done。
+
+新恢复缺陷修复 `60c80cdd fix: recover interrupted context recycling after watcher restart`，归档 `04c00a7f`。重建runtime从事件恢复recycling、无本地marker且provider dead、仍有活动Task/fanout时，走已有带锁fresh-session恢复，不空等300s；保留原operation/attempt/lease/dispatch/workdir及现有门禁。审查中删除本地recycling的无条件continue，避免回收失败后永远不恢复，专门增加失败→stale恢复回归。104focused、sentinel50通过1skip、flow smoke10通过；不宣称全套或真实provider E2E。
+
+main lifecycle已有4行idle_context_recycle调用与隔离base不同：仅应用本片hunk，原改动保留。同步记录 `interrupted-recycle-source-sync.json`；main新增回归+已有idle/capture/orphan组合39通过。重载前核对没有recycling/respawning，使用既有保留worker actuator，`evt-d5707a6f312d`；watcher4080706于03:56:49Z启动，三路原operation保留，Dashboard200。该检查不是已实现全局replacement barrier；不夸大优雅排空能力。
+
+对齐新 `impl-g2-p2.md` 第55行已实际包含 `--required --deduplicate-content`，证明新CLI能力接入正常派发；旧不可变简报未改。媒体第二轮浏览器通过且继续补齐track/临时目录等边界，最新实现提交后准备最终合同命令；留存7项初测通过但仍在跨consumer接线。当前26done/3Impl运行/13待执行，容量8/8，依赖限制仍有效。
