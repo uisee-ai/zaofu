@@ -254,3 +254,13 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - P09C原始输入2809533字节，1866正文/1119来源；P10原始1899840字节，1396正文/594来源。两者直接捕获stdout、摘要/引用还原成功；去重视图分别1110147/1068306字符且往返一致。两worker提出缩小输入，监工保持当前权威合同并允许可逆去重、不省略独有正文，避免为效率重启已派发任务。
 - 监工先看到Hook中P09C 8×150000、P10 4×300000字符调用均Warning truncated，误判为模型阅读缺口并要求补读。随后检查原始provider transcript，发现functions.exec内部实际收到完整输出并store，仅对模型text(slice)每次15000字符；Hook日志投影自己截断，与真实工具返回不同。只读逐页精确匹配磁盘，P09C至少0..135000、P10至少0..195000连续及后续小页均正确。明确撤回误报、通知从实际已读进度继续，两份retracted诊断保留完整因果。此处不能只靠Hook摘要判模型漏读；与此前P09B坏JSONL可直接复现的缺字是不同情形。
 - Privacy原生compact72秒正常续读；21:48 compact.failed仅因忙态拒绝/compact，并非任务失败。Watcher1067017、resident3972403存活，Dashboard200、Compose PG healthy、磁盘余189GB。34/45完成，三路Impl继续。
+
+
+### 22:19 UTC：Privacy 上游契约缺口正式阻塞并自动进入增量 Discovery
+
+- Privacy g2完整读完704正文/297来源后，在5ea5e55重跑原独立反例，5fail/5deselected/42.32秒：cold/delete×reviewer停用/creator移除privacy:manage，加真实受管worker排队删除后撤审批人。证据提交b767c8b仅5个privacy证据文件、干净工作树；原stdout/XML/hash与探针保留，产品未修复、未复用旧GREEN冒充本attempt。
+- 源码确认上游边界：privacy.checked仅排队/重排前调用；ingest enqueue固定插件、handle/retry不检privacy父策略；release锁不是回调，resource_lifecycle引用检查无授权注册入口。ingest未接入audit-denial，普通异常会改FAILED并确认队列，不能满足仅审计不变集。最小请求为ingest可信策略绑定和执行/重试同事务接缝，复用既有core typed-denial能力后由privacy接入；不越域SQL trigger/猴子补丁/伪装引用。
+- 22:13:35 evt-4b08c0ff84a1准入 / evt-f9f6f6dcab28 dev.blocked，22:13:43 evt-cf7f403e7b79 triage为design_issue/request_replan、不增加retry。首次提交带重定向被写守卫拦截，worker改原briefing授权命令成功，未关闭安全守卫。
+- 监工核对Run Manager快照先于阻塞、pending_immediate_replan_actions确有ortriage-immediate-replan-9f084b6ab0498833、latest_quiescent_run_terminal=None；未因数分钟等待贸然重启。22:16:54正常约五分钟检查周期自动evt-24fadfdaefb1 applied、evt-6826b9a40bdf action.verify.passed、evt-a8c5e462936e flow.discovery.requested，未手工写状态或重复请求。
+- Discovery op wop-prd-post-verify-discovery-prd-flow-discovery-trig-evt-a8c5-902550bdcfcb，fanout-prd-post-verify-discovery-evt-a8c5e462，role prd-flow-discovery/pane718，绑定当前候选79105167和当前task_map。监工按zf-gap-task-synth提供精确证据与最小边界，保持P09C/P10活动包和34已完成任务，只有terminal successor可supersede，失败privacy代码作为复用补丁非独立验收基线。
+- P09C/P10完整必读输入结束并进入实际源码/测试；P09C已运行真实quality统计404 RED，锁定缓存bootstrap可用。当前两路Impl与一Discovery并行，Privacy canonical仍显示in_progress但Impl operation已settled/blocked，不再误报三路Impl。有效任务仍34/45完成。
