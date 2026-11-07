@@ -247,3 +247,10 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - integration op wop-integration-tp-P09B-95dc7c92284b47a9-integra-54437834d055，evt-e477abffe69b集成、evt-589e79ce6ab2候选更新、evt-cb368c92a104 task.done。候选a4c6d4a3→79105167c1bc2002e378393e7dd7b69d0f50e083，包含a2754d7和321179d。实际组合候选rolling smoke 1pass/8deselected/17.77秒、exit0；receipt ab19ba0fe70bc1be9128ecb71a478da19d199327b099615adbb302321b2e780a.json绑定该HEAD，未以分支自检替代集成结果。
 - 完成数34/45、剩余11。21:42:12 P09C数据统计与质量报告自动派发至prd-dev-lane-1/pane748，op wop-impl-tp-P09C-a253354009a46226-impl-re-882ea2f436b9 / ta-8ef0932fc13746b8dfad；21:42:22 P10训练/checkpoint/实验比较派发至prd-dev-lane-2/pane749，op wop-impl-tp-P10-ef43185f100a4821-impl-rev-35836c1abfff / ta-dffb8bae2dda1bc4bfa1。两者基线均79105167，8/8配置未变，当前三个可运行Impl并行，余8依赖等待。
 - 监工向两个新operation补充进程stdout直接捕获、完整摘要/分页、既有精确锁轮子缓存、原合同同头Docker验收方法；诊断p09c-startup-guidance.json/p10-startup-guidance.json。Privacy g2继续完整受控输入读取，原Critical尚未关闭。
+
+
+### 22:00 UTC：输入读取效率与监工日志投影误判纠正
+
+- P09C原始输入2809533字节，1866正文/1119来源；P10原始1899840字节，1396正文/594来源。两者直接捕获stdout、摘要/引用还原成功；去重视图分别1110147/1068306字符且往返一致。两worker提出缩小输入，监工保持当前权威合同并允许可逆去重、不省略独有正文，避免为效率重启已派发任务。
+- 监工先看到Hook中P09C 8×150000、P10 4×300000字符调用均Warning truncated，误判为模型阅读缺口并要求补读。随后检查原始provider transcript，发现functions.exec内部实际收到完整输出并store，仅对模型text(slice)每次15000字符；Hook日志投影自己截断，与真实工具返回不同。只读逐页精确匹配磁盘，P09C至少0..135000、P10至少0..195000连续及后续小页均正确。明确撤回误报、通知从实际已读进度继续，两份retracted诊断保留完整因果。此处不能只靠Hook摘要判模型漏读；与此前P09B坏JSONL可直接复现的缺字是不同情形。
+- Privacy原生compact72秒正常续读；21:48 compact.failed仅因忙态拒绝/compact，并非任务失败。Watcher1067017、resident3972403存活，Dashboard200、Compose PG healthy、磁盘余189GB。34/45完成，三路Impl继续。
