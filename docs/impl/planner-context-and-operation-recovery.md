@@ -102,3 +102,14 @@ Run Manager 的无进展计数按 Run 和失败指纹隔离。`stage-replan-new-
 同日完成、重开、再次完成时，TaskStore.get 从当日归档末尾读取最新记录；索引缺失时
 也按最新日期和记录查找。历史归档不删除，避免恢复 CAS 后中断重试拿到旧 authority。
 `tests/test_task_store.py` 覆盖有/无终态索引；恢复测试覆盖 CAS 成功、审计追加前中断。
+
+同一路径的 Task Map 经受控包修复后，writer materialization 在同 Run replan 下还需
+比较 package id/ref/digest 和 generation。任一明确新身份变化都走既有合同 Authority
+CAS，不能仅按路径相同跳过 backlog / in_progress 任务。未选择的 done 不参与物化；
+同身份重复准入不刷新。见 `tests/test_writer_task_package_rebind.py`。
+
+若旧代码已准入代际、但任务绑定未刷新，普通重触发会先命中代际幂等保护。操作员
+可对其原 task_map.ready 使用 `stage-retrigger`，设置 `refresh_plan_bindings: true`
+及 `approval_ref`。仅接受当前同 Run、尚无任何 stage.dispatched 的冻结代际，核验
+Package 摘要与完整 Task Map 后，经 Authority CAS 更新该代际任务的四个版本字段。
+任务合同其他字段和状态不变；已派发、跨来源、终态任务或已被替代的代际一律拒绝。

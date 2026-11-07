@@ -280,6 +280,15 @@ class RecoveryActionsMixin:
                     base = repair_plan_output(self, source, payload, requested)
             except (ValueError, OSError) as exc:
                 return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+        elif payload.get("refresh_plan_bindings"):
+            from zf.core.state.locks import locked_path
+            from zf.runtime.plan_binding_recovery import refresh_plan_bindings
+
+            try:
+                with locked_path(self.state_dir / "locks" / "plan-output-recovery"):
+                    base = refresh_plan_bindings(self, source, payload, requested)
+            except (ValueError, OSError) as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
         elif payload.get("retain_completed_task_ids"):
             return self._recovery_failed(
                 requested, action, requested_action, "completion retention requires a Plan output repair")
