@@ -204,3 +204,12 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Privacy原smoke因新媒体review要求返回409，适配真实review后2pass；canonical绑定探针转绿。完整runtime 20261107T195125-f35fc9e2为30pass/2fail/357.37秒，失败均旧fixture在100次快速tick后真实ingest尚未完成，非已证实死锁。worker自行替换有截止时间等待，保留真实完成/失败断言，重跑未完成前不计通过。
 - Privacy自动项目留存API先真实404；实现通过现有ingest writer执行字节生命周期，Privacy只负责策略、独立审批、到期调度与撤销。新增旅程3pass/25.52秒；这不代替后续完整suite、Docker浏览器、Verify或组合rolling验收。
 - 19:39之后未发现新的orchestrator.tick.failed；Dashboard200、watcher1067017和resident3972403存活，两Impl继续原operation。有效33done/2实施/10待依赖，主监工任务保持active。
+
+
+### 20:29 UTC：浏览器真实失败修复与同提交验收准备
+
+- P09B真实生命周期worker补入夹具后，主/次/修订和回滚历史场景转绿；两个worker争抢expected head与推荐CAS专项通过。全量曾因versions_events跨测试残留报4≠1，补齐本插件fixture清理后9pass，保留严格计数。
+- P09B Docker浏览器先后捕获测试插件依赖未加载404、模块导入500、select/textarea可访问名称混入内容导致精确label等待；隔离依赖与名称修复后20261107T201931-0cc58ac4真实完整旅程1pass/27.7秒，含DS递增、差异、回滚、冻结包摘要和撤权。a2754d706c7aedcb4139b8521d06c01457fadb06提交38文件，限allowed目录；大提交hook经精确列表核实后正常显式重试，未禁用hook。当前同头smoke20261107T202749-3ade5619及browser20261107T202748-d600ab9b收据pass/exit0，完整runtime仍待最终结果，尚未Impl准入。
+- Privacy追加自动策略、撤权/审批失败与崩溃重试9pass；canonical别名/发布根与所有成员撤销、损坏冷存拒绝专项4pass；媒体适配器/格式专项6pass。浏览器先真实409输入不一致，后留存active未转cold，定位测试部署registry遗留引用；保留历史jobs引用，仅退役测试配置注册，两个真实UI旅程随后通过。
+- Privacy组合runtime 20261107T201650-c354cf84仍失败：前一媒体测试默认registry污染后续“无引用”资产测试。worker补齐测试隔离，媒体→留存组合11pass；原始失败/浏览器trace、截图与WebM归档。监工约75分钟提醒先形成最终源码提交再同头全合同验证，明确不得因时限删门禁/自报通过，诊断privacy-r6-final-gates-guidance.json。当前正在提交，正式同头结果未出。
+- 两路持续活动，20:00以后未发现新增orchestrator.tick.failed/dev.blocked/task.done/human.escalate；仍33/45完成，未把自检或浏览器局部通过计为独立Verify/集成完成。
