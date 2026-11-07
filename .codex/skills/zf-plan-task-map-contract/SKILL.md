@@ -466,6 +466,14 @@ the correct plan is to omit the placeholder entirely because the subtree owner
 will create real files; if the placeholder is itself a required deliverable,
 assign it and its acceptance check to that same subtree owner.
 
+声明证据文件时，同时指定实际生产阶段、写入者、可写路径及下游消费方式。
+当前片要求落盘的日志、结果、截图和状态快照，也必须落在该写入者的已授权路径；
+`evidence_contract` 只声明义务，不会自动授予路径权限。不要给所有任务共享的证据
+根目录；按任务/阶段划分互不重叠的范围。独立 Verify 的运行态报告走既有受控
+结果/工件入口，不靠扩大产品源代码权限。未来阶段的证据保留明确责任和触发条件。
+既有合同存在冲突时提交最小受控修订，保留 AC、命令与最终验收；不能把证据改成
+可选，也不能让 worker 通过不提交 Git 或换工具绕过写入限制。
+
 `evidence_contract` must be a JSON object (dict), never a list. The kernel
 contract layer only accepts dict values — `contract.update` ignores a non-dict
 `evidence_contract`, the minting path replaces a non-dict with `{}`, and the
