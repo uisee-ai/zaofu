@@ -1,6 +1,8 @@
 # R55：心跳自报未来时间不能延迟停滞判定
 
-> 状态: active
+> 状态: done
+
+实现：1f7b2a73 `fix: bound worker liveness by kernel receipt time`；dev合并f53ee990。
 
 授权：持续监工、分析修复阻塞并记录；基于 dev 0d5b735b，新 worktree 实施，不 push。
 
@@ -22,3 +24,9 @@
 - 现场部署和在途身份核对待完成；保持active。
 
 最终夹具调整后：heartbeat/lifecycle加design199恢复mock E2E共58 passed（/tmp/zf-r55-final-focused.log）。
+
+## 现场部署完成
+
+20:30:27 UTC核对：watcher从3988344切换到4108180，加载dev f53ee990，receipt为`.zf-ls-v1/diagnostics/runtime-load/09e7aae5110f4cac962a3999faf4fd82.json`。三个Impl的operation、attempt、dispatch、workdir、pane和PID逐项保持。记录在LS-v1 `docs/records/2026-11-07-r55-controlled-reload.json`，原始问题在`2026-11-07-r55-heartbeat-clock.json`。
+
+合并后58项与sentinel53项通过。代码及受控部署验收完成；业务仍28/41，未以本次修复冒充业务完成。现场worker已自行更正未来时间，不能宣称观察到真实静默自动恢复；边界行为由隔离回归证明。未push。上文待部署为历史步骤。
