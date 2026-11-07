@@ -1,6 +1,6 @@
 # 增量任务替换的目标映射连续性
 
-> 状态: active
+> 状态: done — 40881c9d `fix: reject task replacements that drop goal ownership`
 
 用户授权持续监工修复。FMS04后继的原验收仍在，但替换任务漏了原GOAL-04映射，gap入口仅验命令/结构，未阻止责任链接丢失。语义角色负责目标分配；Runtime只校验被移除前任的既有目标是否仍有明确承接，不自行发明分配。
 
