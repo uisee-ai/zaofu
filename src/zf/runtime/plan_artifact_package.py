@@ -644,6 +644,19 @@ def prepare_plan_artifact_package(
     )
     if input_errors:
         raise PlanArtifactPackageError("invalid task plan inputs: " + "; ".join(input_errors))
+    from zf.runtime.plan_candidate_input_lineage import validate_dispatch_input_partitions
+
+    try:
+        validate_dispatch_input_partitions(
+            state_dir=state_dir, task_map=task_map,
+            ports=[*explicit_ports.values(), *inherited], required_ports=list(required_ports),
+            trigger={"workflow_run_id": workflow_run_id,
+                     "plan_artifact_package_ref": previous.get("package_ref", ""),
+                     "plan_artifact_package_digest": previous.get("package_digest", "")},
+            task_ids=(list(payload["task_ids"]) if isinstance(payload.get("task_ids"), list) and payload["task_ids"] else None),
+        )
+    except ValueError as exc:
+        raise PlanArtifactPackageError(f"invalid task input partitions: {exc}") from exc
     from zf.runtime.plan_acceptance_rework import rebind_inherited_gap_acceptance
 
     rebind_inherited_gap_acceptance(
