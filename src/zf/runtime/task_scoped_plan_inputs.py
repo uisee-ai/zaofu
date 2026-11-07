@@ -45,6 +45,11 @@ def _pinned_predecessor(state_dir: Path, ports: Mapping[str, Mapping[str, Any]],
     if not port:
         raise ValueError("replacement input requires pinned task_map")
     task_map = hydrate_sidecar_ref(state_dir, {"ref": port.get("ref"), "sha256": port.get("sha256")}).payload
+    return _task_map_predecessor(task_map, task_id)
+
+
+def _task_map_predecessor(task_map: Any, task_id: str) -> str:
+    """Check an explicit replacement edge in a pinned or candidate Task Map."""
     if not isinstance(task_map, Mapping) or not isinstance(task_map.get("tasks"), list):
         raise ValueError("replacement input requires a valid task_map")
     tasks = [row for row in task_map["tasks"] if isinstance(row, Mapping)]
@@ -114,11 +119,14 @@ def _verify_predecessor_provenance(
 def _predecessor_input_paths(
     state_dir: Path, *, ports: Mapping[str, Mapping[str, Any]], name: str,
     body: Any, task_id: str, workflow_run_id: str,
+    initial_task_map: Mapping[str, Any] | None = None,
 ) -> tuple[list[str], str]:
     """Follow explicit replacement edges without widening the original input."""
     seen = {task_id}
     for _ in range(32):
-        predecessor = _pinned_predecessor(state_dir, ports, task_id)
+        predecessor = (_task_map_predecessor(initial_task_map, task_id)
+                       if initial_task_map is not None else _pinned_predecessor(state_dir, ports, task_id))
+        initial_task_map = None
         if predecessor in seen:
             raise ValueError("replacement input ancestry contains a cycle")
         seen.add(predecessor)

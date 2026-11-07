@@ -114,7 +114,7 @@ def evaluate_plan_candidate_preflight(
             )
 
     if task_map:
-        from zf.runtime.task_scoped_plan_inputs import task_input_paths
+        from zf.runtime.task_scoped_plan_inputs import MissingTaskPartitionError, task_input_paths
 
         raw_tasks = task_map.get("tasks")
         tasks = [task for task in raw_tasks if isinstance(task, Mapping)] if isinstance(raw_tasks, list) else []
@@ -139,6 +139,17 @@ def evaluate_plan_candidate_preflight(
                     continue
                 try:
                     task_input_paths(body, task_id=str(task.get("task_id") or task.get("id") or ""))
+                except MissingTaskPartitionError as exc:
+                    from zf.runtime.plan_candidate_input_lineage import inherited_candidate_input_paths
+
+                    try:
+                        inherited_candidate_input_paths(state_dir=state_dir, trigger=trigger,
+                            task_map=task_map, task_id=str(task.get("task_id") or task.get("id") or ""),
+                            name=name, body=body)
+                    except ValueError as lineage_error:
+                        _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}",
+                               f"{exc}; {lineage_error}")
+                        break
                 except ValueError as exc:
                     _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}", str(exc))
                     break
