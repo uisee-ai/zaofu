@@ -4,6 +4,20 @@ from copy import deepcopy
 from typing import Any
 
 
+def require_replacement_input_selection(raw: dict[str, Any], predecessors: list[dict[str, Any]]) -> None:
+    """An existing consumption contract requires an explicit successor decision."""
+    selected = [task for task in predecessors if isinstance(task.get("evidence_contract"), dict)
+                and task["evidence_contract"].get("plan_input_selection") is not None]
+    if not selected:
+        return
+    evidence = raw.get("evidence_contract")
+    if not isinstance(evidence, dict) or not isinstance(evidence.get("plan_input_selection"), dict):
+        raise ValueError(
+            f"{raw.get('task_id') or raw.get('id')}: replacement must explicitly review and declare "
+            "evidence_contract.plan_input_selection; omission would discard predecessor consumption policy"
+        )
+
+
 def inherit_unchanged_smoke_marker(
     validation: dict[str, Any], parent_validation: Any,
     parent_id: str, replacement_id: str,

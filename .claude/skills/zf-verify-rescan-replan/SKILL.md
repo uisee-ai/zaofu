@@ -59,6 +59,16 @@ candidate commit 上只验收自己的 task contract；全产品验收由后续 
 command ID 和命令文本。只有已验证的缺口才授权具体差异；先按当前 Task Pipeline
 合同检查候选任务，不能以“语义不变”省略机器要求的元数据。
 
+替代任务必须同时对账前驱的 `evidence_contract.plan_input_selection`。
+前驱已有消费声明时，每个替代任务都显式提交经过重新审核的声明；遗漏会退回
+全局端口必读，不能当作“沿用原设置”。按 `zf-plan-task-map-contract` 的方法核对
+新任务的来源、必选 AC、命令、接口、待决事项和验证责任是否完整落在所选输入中，
+记录唯一必读字节数及预计分页数。新增义务缺资料时扩大显式选择或补充有摘要的
+输入，不能由 runtime 猜测所需范围或无条件复制前驱声明。前驱分区仅是原需求
+证据，当前工作边界仍以新合同为准。保留完整原始端口供 Candidate/global Verify。
+新消费声明必须随新的 Plan artifact 走现有审核/准入流程；不得覆盖已准入的
+Task Map、attempt manifest、required-read policy，或伪造读取回执来缩短耗时。
+
 Discovery 必须读取受控 manifest 中的 Plan ports 和本轮已准入的分片原始
 control result / envelope refs；核对 run、generation、candidate commit、
 task、attempt、command identity，再执行 Plan 指定的全局验收命令。无法取得的
