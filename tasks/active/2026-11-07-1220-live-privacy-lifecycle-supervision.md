@@ -284,3 +284,12 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - owner审查确认仅P10替换为P10-SCHEDULE-DENIAL-R1→P10-TRAINING-R1；后者保留原7条mandatory AC和3条验证命令。上游精确Schedule三源码文件，不写Core/Access；包含savepoint回滚的锁寿命、真实失败元数据、完整不变集、审计写失败、正常调度/公平性/重启和并发双序验收。P09C/Ingest R1/Privacy R7的图中对象完全不变；加载器只选择两个新增任务，34done不重开。
 - 委托批准plan evt-fb434257e3f6，23:11:57 evt-a8f71ffaed79 plan.approved；审批前后三个受保护TaskStore对象完全相等。证据training-gap-plan-owner-review.json。新Schedule op wop-impl-tp-P10-SCHEDULE-DENIAL-R1-b690fa-745c21b6dccf / prd-dev-lane-1 / pane756已运行，监工仅补充当前scope、原失败证据与环境方法，未改canonical。
 - 当前有效47项，34done、13未完成；实际两路Impl（Ingest和Schedule）+一路独立Verify（Quality）。Ingest正在既有retention回归，Quality完整独有正文已读完并核对来源，尚无独立结论。训练和Privacy完整后继等待各自前置集成。全部完成仍未达成，持续监工。
+
+
+### 23:39 UTC：Ingest 真实锁环阻塞自动 Discovery，Quality 独立反例仍在验证
+
+- Ingest基线retention 5fail/22errors/21pass由单tick/紧循环假设造成；36fd78b保留原断言、仅改有界真实worker等待，48pass。最终807c9eda37f4a489d75557dc9886a7fad211212f仅测试与证据，smoke/runtime通过、生产delta失败，不冒充已实现策略接缝。所有源档与证据hash和最终HEAD核对；新诊断2fail保留。
+- 诊断严格区分旧未绑定job误改jobs/outbox（当前本片待实现要求，不独立证明Core缺口）与公开bind后的真实冲突。受信checker调用retention.authorized，core.jobs.tick先session SHARE后owner锁，access.provision真实入口反向owner→session UPDATE；第三连接pg_blocking_pids/pg_locks观察774↔819双向环，最终HEAD915↔958再次复现。线程同步只暂停真实锁后，LOCAL超时用于取证退出，不以超时单独推断死锁。完整报告app/evidence/retention/policy-r1/upstream-contract-gap.md。
+- 23:32:05 evt-2943b4b66c69 dev.blocked，23:32:11 evt-c2ff8fc312ec design_issue/request_replan、不增加retry。RM快照23:32:05略早于blocked，等待正常五分钟周期；23:37:04 evt-ff7dea1e8ac6 flow.discovery.requested自动触发。op wop-prd-post-verify-discovery-prd-flow-discovery-trig-evt-ff7d-fc27097e98f1 / pane755。监工按当前3648/d254图和candidate79105167提供独立复跑、最小通用Core边界或更小安全方案、Ingest完整续作提示，保护34done、P09C原包和活动Schedule/Training链；未手写canonical。
+- Quality独立探针复现previous-only-category-omitted、known-frozen-can-unconditionally-unknown：前版独有类别遗漏，已冻结实测CAN仍无条件unknown。三scope、多Clip计数/权限、乱序回滚、幂等和部分撤权完整状态检查通过。两次probe夹具/API选择问题（annotation_policy_changed、错误下载入口409）单列并修正，不算产品RED；新增实际清洗分母与CAN生产链验证、Docker浏览器/video仍在进行，尚无正式Verify裁决。越界cache写入被guard拦截后改允许evidence目录，未放宽scope。
+- 实际运行Schedule Impl、Quality Verify、Ingest gap Discovery；有效47任务34done/13剩余，原Ingest canonical in_progress但Impl已settled blocked，不能再计运行worker。Dashboard200、PG healthy、Watcher与唯一resident正常。
