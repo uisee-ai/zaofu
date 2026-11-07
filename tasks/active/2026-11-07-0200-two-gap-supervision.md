@@ -78,3 +78,16 @@ Critic提交 `evt-cee6ad122f5c` passed，无阻断fix_items；格式枚举提交
 安装与复现资产已持久化到 `/home/min/uisee/zaofu-echo/datal/diagnostics/media-codec-wheelhouse-20261107/`（含wheel、原PyPI JSON、hash、下载分段、安装及干预记录和恢复命令），不是发布依赖来源。av16.0.1/Pillow12.0.0及内置libavcodec62.11.100导入通过。worker已重跑原bootstrap，并取得实际codec行为RED：5失败/1通过，失败为已有占位decode拒绝MP4/JPEG/PNG/APNG及逐帧区域处理；此前bootstrap错误不作为功能RED。随后继续实现，尚未功能GREEN或浏览器验收。
 
 03:14:07对齐触发正常context hard-cap：ratio0.94持续180s、cap0.9，evt-0355e7198725；03:14:18 evt-46315bbb5803已恢复同任务、同operation和工作树，新pane646。已有实现提交和测试修改保留，无idle误判。完整输入读取较大导致回收的效率问题已记录；不通过提高阈值或跳过必读/门禁规避。
+
+
+## 03:42Z 对齐转独立 Verify；必读输出去重已加载
+
+对齐最终提交 `86a0b88064372d800a93de7d0e623e1b26050bd6`，Impl runtime39及smoke2通过；Kernel接纳 `evt-878c0028420c`。独立Verify真实派发 `evt-6537ab53fa4e`，operation `wop-verify-tp-P09A-ALIGN-TRUTH-R1-6a29118ce-042fc06b2826`；不以Impl自测代替Verify/Judge或task.done。
+
+媒体codec6及扩展runtime17通过，发现并修复Pillow合并相同APNG帧造成帧号/时长丢失；首轮Docker浏览器失败后worker自行修正，重跑中，尚未认定浏览器通过。留存补齐实现后首轮runtime7通过，仍需跨owner证据及最终handoff。
+
+上下文诊断确认Align241639/258400、Retention244012/258400为真实增长，无旧峰值误判；不能跳过fresh session必读。task_map/planning_result别名指向同文件同选区，机械重复可消除。已完成 `73af1209 fix: deduplicate required artifact output without skipping reads`，归档 `68d45784`。新显式flag仅同次输出复用正文，所有来源仍分别校验授权/磁盘摘要/选区并落完整收据；输出含行hash定位。88项focused闭包、sentinel50通过1skip，未跑全套；真实总输出Align减少15.23%、Retention15.21%，不能据此宣称context回收已消失。
+
+三份运行源码逐文件核实base SHA匹配后原子同步，记录 `/tmp/zf-supervision-20261107/artifact-dedup-source-sync.json`。通过现有actuator保留worker/state重载，事件 `evt-5986fed68147`，watcher4000675于03:42:00Z启动。原3个operation仍running，Dashboard200、Compose PG healthy。现有Verify简报早于补丁仍为旧命令，未改不可变派发输入；新命令用于后续正常生成简报。CLI使用实际`.venv/bin/zf`验证新flag成功；此前`python -m zf`因无__main__失败，不计成功验证。
+
+当前26done、2Impl+1独立Verify运行、13待执行子任务；capacity8/8不变，当前依赖图不能安全凑8个独立任务。根任务仍active，继续监督真实浏览器、跨owner留存、独立Verify及后续候选集成。
