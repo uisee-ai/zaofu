@@ -121,16 +121,14 @@ def test_stage_profiles_declare_only_their_canonical_required_inputs() -> None:
         output_profile_id="implementation",
     )
     assert [(row["source_id"], row["json_path"]) for row in impl] == [
-        ("contract", "$.acceptance_criteria"),
-        ("contract", "$.verification_commands"),
+        ("contract", "$"),
     ]
     verify = canonical_required_reads(
         manifest,
         output_profile_id="candidate-verify",
     )
     assert {(row["source_id"], row["json_path"]) for row in verify} == {
-        ("contract", "$.acceptance_criteria"),
-        ("contract", "$.verification_commands"),
+        ("contract", "$"),
         ("target", "$"),
         ("impl-self-check", "$"),
     }
