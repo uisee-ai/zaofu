@@ -24,6 +24,7 @@ def seed(
     verdict="abstained",
     execution="failed",
     missing_source=False,
+    missing_impl=False,
     mismatch="",
 ):
     monkeypatch.chdir(tmp_path)
@@ -63,7 +64,7 @@ def seed(
             },
         )
     )
-    for stage in ["verify"] if verify_only else ["impl", "verify"]:
+    for stage in ["verify"] if verify_only or missing_impl else ["impl", "verify"]:
         p = {
             **identity,
             "operation_id": stage,
@@ -127,7 +128,7 @@ def seed(
     return state, log, writer, task, descriptor
 
 
-def invoke(state, apply=False):
+def invoke(state, apply=False, restart_from_impl=False):
     parser = argparse.ArgumentParser()
     register(parser.add_subparsers())
     args = parser.parse_args(
@@ -141,9 +142,59 @@ def invoke(state, apply=False):
             "--reason",
             "input lifecycle repaired and regression checked",
             *(["--apply"] if apply else []),
+            *(["--restart-from-impl"] if restart_from_impl else []),
         ]
     )
     return args.func(args)
+
+
+def test_cli_can_refresh_impl_evidence_after_verify_execution_failure(tmp_path, monkeypatch, capsys):
+    state, log, _, task, _ = seed(tmp_path, monkeypatch)
+    before = log.path.read_bytes()
+    assert invoke(state, restart_from_impl=True) == 0
+    assert log.path.read_bytes() == before
+    assert json.loads(capsys.readouterr().out)["next_stage"] == "impl"
+    assert invoke(state, True, restart_from_impl=True) == 0
+    applied = log.path.read_bytes()
+    assert invoke(state, True, restart_from_impl=True) == 0
+    assert log.path.read_bytes() == applied
+    ops = reduce_workflow_operations(log.read_all())
+    assert ops["impl"]["semantic_verdict"] == "passed"
+    assert ops["verify"]["semantic_verdict"] == "abstained"
+    from types import SimpleNamespace
+    from zf.runtime.task_pipeline_runtime import _verify_rework_feedback
+    feedback = _verify_rework_feedback(
+        SimpleNamespace(state_dir=state), operation_rows=ops.values(),
+        task_id="T1", operation_generation=2,
+    )
+    assert feedback[0]["source"] == "operator_verify_impl_refresh"
+    assert feedback[0]["reason"] == "input lifecycle repaired and regression checked"
+    plan = TaskPipelineReconciler().reconcile(
+        policy=_policy(), tasks=[task], operations=ops.values(), attempts=[],
+    )
+    assert plan["dispatchable"]["verify"] == []
+    assert plan["dispatchable"]["impl"][0]["operation_generation"] == "3"
+    from zf.runtime.task_pipeline_verify_retry import verify_impl_generation
+    assert verify_impl_generation(
+        log.read_all(), task_id="T1", workflow_run_id="run",
+        task_map_generation="map", operation_generation=3,
+    ) == 3  # A new self-check is mandatory; do not relabel the old receipt.
+
+
+@pytest.mark.parametrize("fault", ["verify_only", "missing_impl", "failed_impl", "retry_mode"])
+def test_evidence_refresh_rejects_unsafe_restart_without_writes(tmp_path, monkeypatch, capsys, fault):
+    state, log, writer, _, _ = seed(
+        tmp_path, monkeypatch, verify_only=fault == "verify_only",
+        missing_impl=fault == "missing_impl",
+    )
+    if fault == "failed_impl":
+        writer.append(ZfEvent(type="workflow.operation.failed", task_id="T1",
+                             payload={"operation_id": "impl", "workflow_run_id": "run"}))
+    elif fault == "retry_mode":
+        assert invoke(state, True) == 0
+    before = log.path.read_bytes()
+    assert invoke(state, True, restart_from_impl=True) == 1
+    assert log.path.read_bytes() == before
 
 
 @pytest.mark.parametrize("verify_only", [False, True])
@@ -203,8 +254,9 @@ def test_cli_retries_only_verify_and_preserves_failure_and_impl(
         "operation_generation",
     ],
 )
+@pytest.mark.parametrize("restart_from_impl", [False, True])
 def test_rejects_unsafe_or_semantic_retries_without_writes(
-    tmp_path, monkeypatch, capsys, fault
+    tmp_path, monkeypatch, capsys, fault, restart_from_impl
 ):
     state, log, writer, task, descriptor = seed(
         tmp_path,
@@ -278,14 +330,14 @@ def test_rejects_unsafe_or_semantic_retries_without_writes(
             )
         )
     before = log.path.read_bytes()
-    assert invoke(state, True) == 1
+    assert invoke(state, True, restart_from_impl=restart_from_impl) == 1
     assert log.path.read_bytes() == before
     assert json.loads(capsys.readouterr().out)["status"] == "rejected"
 
 
 @pytest.mark.parametrize(
     "fault",
-    ["", "repeated_retry", "unauthorized", "new_impl", "contract", "target", "gap"],
+    ["", "repeated_retry", "refresh_impl", "unauthorized", "new_impl", "contract", "target", "gap"],
 )
 def test_retry_target_admission_reuses_only_authorized_exact_impl(
     tmp_path, monkeypatch, capsys, fault
@@ -357,7 +409,7 @@ def test_retry_target_admission_reuses_only_authorized_exact_impl(
             reason="unrelated replacement",
         )
     else:
-        assert invoke(state, True) == 0
+        assert invoke(state, True, restart_from_impl=fault == "refresh_impl") == 0
     if fault == "repeated_retry":
         from zf.runtime.task_pipeline_verify_retry import request_verify_retry
 
@@ -464,7 +516,22 @@ def test_retry_target_admission_reuses_only_authorized_exact_impl(
         contract_snapshot=contract,
         contract_descriptor=descriptor,
     )
-    if fault not in {"", "repeated_retry"}:
+    if fault == "refresh_impl":
+        # A route normalization changed the immutable snapshot, not the code.
+        descriptor = {"ref": "artifacts/new-contract.json", "sha256": "e" * 64}
+        args["contract_descriptor"] = descriptor
+        with pytest.raises((TaskPipelineWaiting, ValueError)):
+            prepare_verify_target(runtime, **args)
+        refreshed = {**body, "attempt_id": "impl-refresh-attempt",
+                     "contract_snapshot_ref": descriptor["ref"],
+                     "contract_snapshot_digest": descriptor["sha256"]}
+        checked = write_impl_self_check(state, refreshed, source_event_id="new-build", created_by="dev")
+        writer.append(ZfEvent(type="impl.self_check.completed", task_id="T1", payload={
+            **self_check_payload_fields(checked), "workflow_run_id": "run",
+            "task_map_generation": "map", "operation_generation": 3,
+            "target_commit": "a" * 40,
+        }))
+    if fault not in {"", "repeated_retry", "refresh_impl"}:
         with pytest.raises((TaskPipelineWaiting, ValueError)):
             prepare_verify_target(runtime, **args)
     else:

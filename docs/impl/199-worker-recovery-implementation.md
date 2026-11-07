@@ -360,4 +360,10 @@ worker 未理解指令。
 
 ## R57：验证执行失败与产品报告的边界（2026-11-07）
 
-`failed + abstained` 表示验证执行失败、没有产品裁决。Candidate owner 未提交产品报告时，Product Acceptance binder 不再要求杜撰完整报告；schema、身份、冻结快照、输入消费与准入检查仍照常运行。显式提供的报告或引用继续校验，completed/passed/rejected 的验收门不变。覆盖实际 SemanticResultSubmitService 只读预检与正式失败准入；现场恢复跟踪于 tasks/active/2026-11-07-2130-verifier-abstention-closeout.md。
+`failed + abstained` 表示验证执行失败、没有产品裁决。Candidate owner 未提交产品报告时，Product Acceptance binder 不再要求杜撰完整报告；schema、身份、冻结快照、输入消费与准入检查仍照常运行。显式提供的报告或引用继续校验，completed/passed/rejected 的验收门不变。覆盖实际 SemanticResultSubmitService 只读预检与正式失败准入；现场恢复跟踪于 tasks/done/2026-11-07-2130-verifier-abstention-closeout.md。
+
+## R58：恢复前刷新绑定旧快照的自检（2026-11-07）
+
+`zf recover task-verify --operation <id> --reason <具体修复与刷新范围>` 默认只重试 Verify，沿用同一目标和有效的旧 Impl 自检。如果运行时修复改变了派生快照，旧自检不能冒充新快照证据；操作员可加 `--restart-from-impl`，先 preview，再 `--apply`。此路径只接受当前、已准入的 failed+abstained Verify，要求标准写任务且已有成功的 Impl，无活动任务/暂停/契约漂移；verify_only 和产品裁决不可借此重开实施。
+
+恢复通过受控 supersede 保留历史事实，使下一代 Impl 在原工作区产生新证据，再正常独立验证。原回执、目标与产品代码不改写；旧自检不得直接用于新一代。恢复原因随派发反馈传递，环境失败不增加产品语义返工次数。重复相同模式请求幂等，已请求不同模式时拒绝覆盖。验收跟踪 tasks/active/2026-11-07-2135-verify-retry-evidence-refresh.md。

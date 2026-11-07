@@ -935,7 +935,18 @@ def _verify_rework_feedback(
         or body.get("findings")
         or []
     )
-    return [dict(item) for item in rows if isinstance(item, Mapping)]
+    feedback = [dict(item) for item in rows if isinstance(item, Mapping)]
+    from zf.runtime.task_pipeline_verify_retry import IMPL_REFRESH_REASON_PREFIX
+
+    reason = str(operation.get("reason") or "")
+    if operation.get("status") == "superseded" and reason.startswith(IMPL_REFRESH_REASON_PREFIX):
+        feedback.insert(0, {
+            "source": "operator_verify_impl_refresh",
+            "reason": reason.removeprefix(IMPL_REFRESH_REASON_PREFIX),
+            "source_operation_id": str(operation.get("operation_id") or ""),
+            "control_result_ref": dict(descriptor),
+        })
+    return feedback
 
 
 def _git(cwd: Path, *args: str) -> str:

@@ -822,6 +822,11 @@ def _derive_stage(
         return "verify_ready", impl_generation, max(0, impl_generation - 1)
     verify_generation = int(verify.get("operation_generation") or 1)
     verify_status = str(verify.get("status") or "")
+    from zf.runtime.task_pipeline_verify_retry import IMPL_REFRESH_REASON_PREFIX
+
+    if (verify_status == "superseded"
+            and str(verify.get("reason") or "").startswith(IMPL_REFRESH_REASON_PREFIX)):
+        return "impl_rework_ready", verify_generation + 1, 0
     if _verify_execution_retry(verify):
         return "verify_ready", verify_generation + 1, 0
     if verify_status == "requested":

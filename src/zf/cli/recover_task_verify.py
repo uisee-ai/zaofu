@@ -17,6 +17,10 @@ def register_recover_task_verify(subparsers: argparse._SubParsersAction) -> None
     parser.add_argument("--state-dir", default=None)
     parser.add_argument("--operation", required=True)
     parser.add_argument("--reason", required=True)
+    parser.add_argument(
+        "--restart-from-impl", action="store_true",
+        help="Refresh implementation evidence in the existing workspace before Verify",
+    )
     parser.add_argument("--apply", action="store_true")
     parser.set_defaults(func=run)
 
@@ -44,6 +48,7 @@ def run(args: argparse.Namespace) -> int:
             event_writer=EventWriter(log),
             operation_id=args.operation,
             reason=args.reason,
+            restart_from_impl=args.restart_from_impl,
             apply=args.apply,
         )
     except (ConfigError, ValueError, OSError) as exc:

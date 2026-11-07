@@ -14,3 +14,5 @@
 验证进度：RED 2 failed / 4 passed，首轮聚焦57 passed；补充最终候选门禁不可用not_applicable关闭的断言后6 passed。完整142文件闭包2239 passed / 1 failed，失败为当前dev也可复现的旧测试期望：4881ee20已要求保留verification字典（含scope），旧catalog用例仍要求压成字符串列表。仅修正该过期期望，生产保留逻辑不变。初次聚焦命令含不存在的test_verification_commands.py，未执行测试；纠正为真实路径后才记录57通过。
 
 过期断言校正后，catalog/declarations/新路由/实际targets调用/design199 mock E2E共22 passed；串行10 passed、sentinel53 passed。142文件闭包遵循仓库影响范围原则直接执行所有selected_tests，未采用planner因>80自动扩大为全仓；非full suite、无真实Provider E2E。日志/tmp/zf-r56-{red,focused,closure,baseline-catalog,final-contracts,serial}.log。全41项任务路由预演仅治理22发生变更，其他任务及原AC/命令未变。现场尚未部署，保持active。
+
+21:35现场更新：R56已通过47edd837实现、1c23654d合并部署，保持原会话冻结契约；R57已使旧Verify以failed+abstained准入。只读预演证实新路由快照仅owner/tier变化，但旧自检ref严格不匹配，R58补充受控刷新恢复。第4项真实正确路由派发尚待验证，继续active。

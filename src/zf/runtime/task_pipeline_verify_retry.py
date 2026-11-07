@@ -22,6 +22,7 @@ from zf.runtime.workflow_operation import (
 )
 
 REASON_PREFIX = "operator_verify_execution_retry: "
+IMPL_REFRESH_REASON_PREFIX = "operator_verify_impl_refresh: "
 
 
 def request_verify_retry(
@@ -32,9 +33,11 @@ def request_verify_retry(
     operation_id: str,
     reason: str,
     apply: bool = False,
+    restart_from_impl: bool = False,
 ) -> dict[str, Any]:
     if not reason.strip():
         raise ValueError("operator repair reason is required")
+    prefix = IMPL_REFRESH_REASON_PREFIX if restart_from_impl else REASON_PREFIX
     with locked_path(state_dir / "locks" / "task-pipeline-verify-retry.lock"):
         events = event_log.read_all()
         operations = reduce_workflow_operations(events)
@@ -56,8 +59,12 @@ def request_verify_retry(
                 event.type == "workflow.operation.superseded"
                 and event.origin == "kernel"
                 and event.payload.get("operation_id") == operation_id
-                and str(event.payload.get("reason") or "").startswith(REASON_PREFIX)
+                and str(event.payload.get("reason") or "").startswith(
+                    (REASON_PREFIX, IMPL_REFRESH_REASON_PREFIX)
+                )
             ):
+                if not str(event.payload.get("reason") or "").startswith(prefix):
+                    raise ValueError("a different recovery mode was already requested")
                 return {
                     "status": "already_requested",
                     "operation_id": operation_id,
@@ -157,11 +164,30 @@ def request_verify_retry(
             for row in TaskAttemptStore(state_dir / "task_attempts.json").current_rows()
         ):
             raise ValueError("TaskAttempt must settle before Verify retry")
+        if restart_from_impl:
+            from zf.runtime.task_pipeline_entry import task_pipeline_entry_mode
+
+            if task_pipeline_entry_mode(task) != "standard":
+                raise ValueError("implementation refresh requires a standard writer task")
+            impl = max(
+                (row for row in operations.values()
+                 if row.get("task_id") == task_id
+                 and row.get("workflow_run_id") == run_id
+                 and row.get("task_map_generation") == op.get("task_map_generation")
+                 and row.get("task_pipeline_stage") == "impl"),
+                key=lambda row: int(row.get("operation_generation") or 1),
+                default={},
+            )
+            if (impl.get("status") != "settled"
+                    or impl.get("semantic_verdict") != "passed"
+                    or not impl.get("call_result_admitted_event_id")):
+                raise ValueError("implementation refresh requires an admitted passing Impl")
         result = {
             "status": "preview",
             "operation_id": operation_id,
             "task_id": task_id,
             "next_operation_generation": generation + 1,
+            "next_stage": "impl" if restart_from_impl else "verify",
             "source_event_id": source.id,
             "target_commit": target,
             "reason": reason.strip(),
@@ -174,7 +200,7 @@ def request_verify_retry(
                 request_hash=str(op.get("request_hash") or ""),
                 workflow_run_id=run_id,
                 task_id=task_id,
-                reason=REASON_PREFIX + reason.strip(),
+                reason=prefix + reason.strip(),
                 causation_id=source.id,
                 correlation_id=run_id,
             )
