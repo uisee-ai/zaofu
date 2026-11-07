@@ -1,6 +1,6 @@
 # 并行任务恢复增量准入修复
 
-> 状态: active
+> 状态: done — af3ca69f `fix: retain concurrent work when admitting task recovery gaps`
 
 授权：用户要求持续监工 LS-v1，分析修复阻塞并记录；沿用本会话开发、合并和受控恢复授权。
 
@@ -11,7 +11,7 @@
 - [x] 复现对象目录 + 字符串执行列表被误判冲突；只适配真正对象目录，保留严格的对象目录冲突检查 -> verify: gap 单元与 runtime 入口测试，准入后命令身份/owner/tier 完整且字符串局部检查列表不被变造。
 - [x] 核对跨代 task 续接的全量基线；若任务合同未变，基于已准入的当前完整 map 合并局部 gap；若目标任务已变则拒绝旧结果 -> verify: 两个独立 gap 先后准入不回退其一；篡改包/未知代次/目标任务变化仍拒绝。
 - [x] 实现影响闭包、sentinel 和 deterministic mock E2E -> verify: dev-verify plan/run、聚焦测试与合并后检查。
-- [ ] 受控加载并重试原失败 gap -> verify: FMS04 部分代码/input selection 保留，TODO 改动不回退；记录根因、RM/OA 未闭合原因及真实派发证据。
+- [x] 受控加载并重试原失败 gap -> verify: FMS04 部分代码/input selection 保留，TODO 改动不回退；记录根因、RM/OA 未闭合原因及真实派发证据。
 
 
 ## 验证记录
@@ -21,3 +21,5 @@
 - dev-verify plan 选择 193 文件并升级为整个 deterministic suite；按仓库规则使用 bounded impact closure，run 仅跳过宽 deterministic tier，serial 10、sentinel 53、flow-smoke 10 passed。非 full suite / real-provider E2E。
 - fixture 修正失败、两个错误测试路径导致 exit 4 已在 LS 监工记录如实记录；未改变生产门禁。
 - 现场只读回放：35 -> 35，FMS04 -> FMS04-GAP-BUSINESS01；TODO 全部内容不变，其他变动为既有下游依赖重连；保留 1b3ffa8 与 input_selection。正式恢复待部署后验收。
+
+现场验收：LS-v1 FMS-04-GAP-BUSINESS-01 于 2026-11-07 10:03:53 UTC 派发 Impl（evt-ea9739bbd80f），base_commit/target_ref 均为 1b3ffa8aeaaffa053785eadf28532271536344a0。Round20 已完成增量准入与审批（evt-d9ddc55cd432 / evt-e9c5b1e923c1），Round21消除并发Candidate分叉的工作区拒绝。全量map保留35项及此前TODO变更。控制面加载c8d5b93e，回执72f78eb20653472198f618c2211419ba。正在执行的TODO Verify与FMS21 Reader pane/PID均保持；已结算FMS21旧Impl pane被正常回收。真实任务尚未完成，不将派发成功冒充产品验收或真实候选集成通过；后者当前由确定性集成/冲突回归证明，继续现场监工。
