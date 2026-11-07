@@ -170,3 +170,13 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - accepted ee2e1d5上重做真实组合得到7ceb52132732dbdae70365b01424b6e604269667，rolling smoke2pass/62deselected、10.49秒，收据7241dc8f…；evt-e32321aa3362集成、evt-dddd5233f1fe提升candidate、evt-d58e24945fb0完成。原dd5失败保留，不以单任务分支通过冒充组合通过。
 - 32/45done，13未完成；Privacy R6自动派发evt-850a32122ad1至pane741，op wop-impl-tp-P16B-PRIVACY-R6-dfdc3357f4bd9-2d81e56d098f，attempt ta-34e13d43142ec8966b6e，从新accepted7ceb521启动，沿原保护package/generation未重绑。Dataset独立Verify仍在实施审查和反例探针。
 - 集成失败有界Impl返工任务现已实机闭环，按e4b5b7a2/b6bb2ad1记录done并归档；主监工任务保持active。Dataset Verify本次busy compact命令拒绝后原生95秒compact成功，无活动operation回收或丢页。
+
+
+### 19:22 UTC：Dataset 集成完成、后继两路实施
+
+- Dataset独立Verify完整读取400正文/298来源；真实独立PG/受管worker测试10pass（156.30秒），29项归档/摘要/浏览器trace/分区隔离/观察器反例检查通过。缺writer收据、未知actor/PID/schema、同拒绝xid业务写入、其他表变化、单字节变化均被拒绝；原三条完整快照保留。4条任务AC通过，5条candidate AC保持not_applicable，未代签真实资格。
+- 非阻断Nit：final-evidence-5f7ae7f.json中final_runs.browser.receipt目录误写runs/，正确文件在browser/20261107T183234-0efc66df/receipt.json；归档entries和typed evidence_refs正确且逐字核对。独立报告记录纠正，不改写已绑定的历史证据。
+- evt-7a2d1e08e290准入 / evt-5dd62f24876d正式Verify完成；evt-e6931c0e6ef9集成 / evt-10261a0ce8d6候选更新 / evt-9b3ddd178b55 task.done。组合candidate a4c6d4a3e4478b47dd6c97c426ad953dce7353ef的dataset smoke3pass/40deselected、33.93秒，收据06acd2a75fda7997f172900aac66bc8307ebed12ec00df0e9148777ec22ad141。
+- P09B于19:20:20自动派发evt-36e49bcec628，op wop-impl-tp-P09B-95dc7c92284b47a9-impl-re-a6323607c70f、attempt ta-ccbacb3e4357fa3b6394、pane744，基线a4c6d4a3；与PrivacyR6 pane741并行。33/45完成，2实施/10依赖等待。
+- PrivacyR6当前完整输入937297字符，首次stdout被截断后自行保全1132222bytes缓存并分页补读；未将不完整读出当完成。两新worker收到当前基线、允许且ignored缓存、原锁内离线依赖和同头TDD/浏览器交接。
+- 19:14:53 workflow-synthesis consumer guard锁单次超时evt-92c8b53fa5d8；随后调度decision继续，lslocks无持锁者、未再现持续故障，Dataset完成与P09B派发均成功。仅记录观察，不重启健康任务；诊断synthesis-lock-timeout-1914.json。
