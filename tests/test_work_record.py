@@ -15,7 +15,7 @@ from zf.runtime.recovery import build_recovery_briefing
 from tests.test_artifact_read_snapshot import published
 
 
-def setup(state:Path):
+def setup(state:Path, *, canonical_request=False):
     manifest,required,_=published(state)
     workdir=state.parent/'work';workdir.mkdir()
     task=Task(id='T7',title='record',status='in_progress',assigned_to='dev-1',active_dispatch_id='a',execution_binding=TaskExecutionBinding(workflow_run_id='r'))
@@ -23,7 +23,14 @@ def setup(state:Path):
     attempts=TaskAttemptStore(state/'task_attempts.json')
     attempts.ensure_for_dispatch(run_id='r',task_id='T7',dispatch_id='a',role='dev',instance_id='dev-1',operation_id='op',
         briefing_ref='',created_at='2026-11-02T00:00:00+00:00',lease_expires_at='2099-01-01T00:00:00+00:00',max_attempts=3)
-    request=write_immutable_json_sidecar(state,{'request':{'role_instance':'dev-1','task_id':'T7','workdir':str(workdir),'task_pipeline_stage':'impl'}},
+    request_body={'role_instance':'dev-1','task_id':'T7','workdir':str(workdir),'task_pipeline_stage':'impl'}
+    if canonical_request:
+        from zf.runtime.workflow_operation import canonicalize_operation_request
+        request_body.update(task_map_generation='map-g1', operation_generation=1,
+                            workspace_generation=1, placement_epoch=1, task_stage_session_binding='binding')
+        request_body=canonicalize_operation_request(request_body)
+        assert 'workdir' not in request_body
+    request=write_immutable_json_sidecar(state,{'request':request_body},
         root='requests',kind='request',schema_version='request.v1',created_by='kernel')
     log=EventLog(state/'events.jsonl');writer=EventWriter(log)
     payload={'workflow_run_id':'r','operation_id':'op','active_attempt_id':'a','dispatch_id':'a','role_instance':'dev-1',

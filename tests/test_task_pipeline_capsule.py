@@ -193,6 +193,11 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
     runtime, task, _, _, dispatch = dispatch_fixture
     from zf.runtime.task_doc import task_doc_path
 
+    monkeypatch.setattr(
+        "zf.runtime.task_pipeline_runtime._activate_task_stage_binding",
+        lambda *a, **kw: {"binding_key": "task-stage-current"},
+    )
+
     write_task_doc(
         runtime.state_dir, Task(id=task.id, contract=TaskContract(behavior="old"))
     )
@@ -244,6 +249,16 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         "task.dispatched",
         "task.pipeline.stage.dispatched",
     ]
+    # Production request hashing deliberately removes workdir; the emitted
+    # kernel dispatch still pins the physical workspace for progress evidence.
+    from zf.runtime.work_record import _operation_workdir
+    from zf.runtime.workflow_operation import canonicalize_operation_request
+
+    payload = events[-1].payload
+    request = canonicalize_operation_request(payload)
+    assert "workdir" not in request
+    operation = {**payload, "active_attempt_id": payload["attempt_id"]}
+    assert _operation_workdir(events, operation, request) == runtime.project_root
 
 
 @pytest.mark.parametrize("old_dispatch,generation", [("", 1), ("tpd-old-p1", 2)])

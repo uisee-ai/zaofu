@@ -45,14 +45,52 @@ def authorize_work_record(service: SemanticResultSubmitService, operation_id: st
             or manifest.get('workflow_run_id') != operation.get('workflow_run_id')
             or input_lifecycle(manifest, service.event_log.read_all(), state_dir=service.state_dir)['requires_rebind']):
         raise ValueError('work record input version needs controlled rebind')
-    workdir = Path(str(request.get('workdir') or '')).resolve()
-    if not request.get('workdir') or not workdir.is_dir():
-        raise ValueError('operation has no available pinned workdir')
+    workdir = _operation_workdir(service.event_log.read_all(), operation, request)
     binding = {'workflow_run_id': manifest['workflow_run_id'], 'task_id': task.id,
         'operation_id': operation_id, 'attempt_id': manifest['attempt_id'], 'dispatch_id': task.active_dispatch_id,
         'canonical_attempt_id': identity['attempt_id'], 'lease_id': identity['lease_id'],
         'actor': role, 'workdir': str(workdir), 'manifest_digest': canonical_json_sha256(manifest)}
     return binding, manifest, workdir
+
+
+def _operation_workdir(events, operation, request) -> Path:
+    """Physical placement comes from the exact kernel dispatch, not request hashing."""
+    from zf.runtime.worker_execution_envelope import normalize_worker_execution_envelope
+
+    raw = str(request.get('workdir') or '')
+    dispatches = [event for event in events
+                  if event.type == 'task.pipeline.stage.dispatched' and event.origin == 'kernel'
+                  and event.payload.get('operation_id') == operation['operation_id']
+                  and event.payload.get('dispatch_id') == operation.get('dispatch_id')]
+    if dispatches:
+        event = dispatches[-1]
+        payload = event.payload
+        expected = {key: operation.get(key) for key in (
+            'workflow_run_id', 'task_id', 'operation_id', 'dispatch_id', 'lease_id', 'role_instance')}
+        expected['attempt_id'] = operation.get('active_attempt_id')
+        expected.update({key: request[key] for key in (
+            'task_map_generation', 'task_pipeline_stage', 'operation_generation',
+            'workspace_generation', 'placement_epoch', 'task_stage_session_binding') if key in request})
+        if event.task_id != expected['task_id'] or any(
+            value in (None, '') or str(payload.get(key)) != str(value) for key, value in expected.items()
+        ):
+            raise ValueError('work record dispatch identity mismatch')
+        envelope = normalize_worker_execution_envelope(payload.get('worker_execution_envelope'))
+        if not envelope.get('envelope_digest') or any(
+            str(payload.get(key)) != str(value) for key, value in envelope['identity'].items()
+        ) or envelope['routing']['role_instance'] != expected['role_instance']:
+            raise ValueError('work record dispatch envelope identity mismatch')
+        pinned = envelope['workspace']['workdir']
+        if payload.get('workdir') != pinned or (raw and Path(raw).resolve() != Path(pinned).resolve()):
+            raise ValueError('work record dispatch workdir mismatch')
+        if not Path(pinned).is_absolute():
+            raise ValueError('work record dispatch workdir must be absolute')
+        raw = pinned
+    elif request.get('task_stage_session_binding'):
+        raise ValueError('work record requires the current kernel dispatch')
+    if not raw or not Path(raw).is_dir():
+        raise ValueError('operation has no available pinned workdir')
+    return Path(raw).resolve()
 
 
 def _read_scoped(workdir: Path, file: Path, limit: int) -> bytes:

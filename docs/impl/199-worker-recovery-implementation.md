@@ -207,3 +207,19 @@ reflection 的持久化保证只读诊断可重放，不承诺模型调用只发
 方法产物符合性；统一停止/进度回执；存储与性能矩阵；真实 Provider/宿主 canary。
 各候选绑定上表未完成编号和可检查验收。真实 canary 在明确目标项目、Provider 与宿主策略后执行；
 本记录本身不授权部署或修改 LS 业务合同。
+## 2026-11-07 工作记录的物理目录绑定修复
+
+LS-v1 治理返工在工作记录 publish/show 时报告找不到 pinned workdir。真实
+WorkflowOperation request 的正规化会删除易变的 workdir，原测试手造含该字段的
+request，因而没有覆盖该接口与真实派发的合同。Worker 后来经正常结果提交进入
+Verify；这是辅助证据入口缺陷，没有把它误记为产品失败或新的实施重试。
+
+工作记录现在从当前 kernel `task.pipeline.stage.dispatched` 的摘要校验执行包
+解析物理目录；对齐 run/task/operation/attempt/dispatch/lease/role、任务代次与
+placement。没有新增目录猜测、cwd 回退或修改逻辑 request hash。旧派发、非内核
+事件、摘要/目录冲突均拒绝，原凭据、当前合同、未过期 lease 和文件范围检查保留。
+已有直接固定目录的非流水线请求仍兼容。
+
+验证覆盖实际 Task Pipeline 派发 caller，以及经过真实 request 正规化的公开
+work-record publish/show/replay；工作记录仍是未经独立核验的进度证据，不代表
+任务完成或产品验收。真实现场必须另记录补丁加载与目录解析效果。
