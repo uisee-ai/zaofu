@@ -261,3 +261,10 @@ FMS04 现场暴露两项机械适配问题：字符串 verification.commands 是
 已进入 Task Pipeline 的任务恢复不能把其他任务 gap amendment 所携带的部分分支当全局 Candidate。semantic_replan 原来只识别 candidate.ready，遗漏 v4 逐任务 candidate.updated；现在该路径清除继承的 Candidate 引用，核验同 Run/kernel 最新增量发布及不可变集成回执的摘要、身份、head 与当前 branch 祖先关系，固定到回执 commit。缺失或不可信则回到本任务固定 base，不采信其他任务部分工作；任务原包和合同代次保持不变。
 
 优先级保持：本任务已准入、已提交的失败部分交付优先；否则使用可核验的当前 Candidate；若 Candidate 不包含任务较新的 base，保留 base。legacy 非 Task Pipeline 路由保持既有行为。测试穿过 run_manager_tick 到恢复请求，覆盖跨 Run/非 kernel/缺失、篡改与冲突回执/分支移走，并保留旧部分续接回归。此修复不豁免 Q09 等业务决定，也不意味着恢复目标上的所有模块已验收。
+
+
+## 2026-11-07 增量替换的目标映射连续性
+
+原任务从 Task Map 移除时，gap 写入入口现在要求其显式 goal_claim_ids 在新图中仍有声明的负责者；可以由剩余原任务或语义角色指定的后继共同覆盖，允许一对多/多对一，Runtime 不自动填目标、不判定语义完成。缺失映射在发布工件和推进状态前拒绝，并返回确切丢失的目标ID；此前本就无映射的旧格式保持兼容。同合同重放补漏映射仍使用既有 gap_replay_claims。
+
+对于已经准入并执行中的遗漏，补映射会改变合同版本，必须按安全断点和正式增量准入处理；新门禁不反向废除活跃attempt。LS-v1 GOAL-04现场补映射已纯内存回放确认，其真正应用继续追踪到安全断点。证明目标仍有负责者不等于目标通过最终验收。
