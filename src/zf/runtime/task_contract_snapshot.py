@@ -305,7 +305,9 @@ def build_task_contract_snapshot(
         contract_revision=identity["contract_revision"],
         verification_tiers=list(getattr(contract, "verification_tiers", []) or []),
     )
-    verification_owner, verification_tier = _snapshot_verification_route(criteria)
+    verification_owner, verification_tier = _snapshot_verification_route(
+        criteria, commands=commands, task_id=identity["task_id"],
+    )
     all_command_ids = [str(item["id"]) for item in commands]
     for criterion in criteria:
         if criterion["verification_command_ids"]:
@@ -700,6 +702,9 @@ def _validate_target_snapshot(snapshot: Mapping[str, Any]) -> None:
 
 def _snapshot_verification_route(
     criteria: list[dict[str, Any]],
+    *,
+    commands: list[dict[str, Any]],
+    task_id: str,
 ) -> tuple[str, str]:
     mandatory = [
         item for item in criteria
@@ -709,12 +714,28 @@ def _snapshot_verification_route(
         str(item.get("verification_owner") or "task_verify")
         for item in mandatory
     }
-    owner = "candidate_verify" if owners == {"candidate_verify"} else "task_verify"
+    # Final AC ownership does not remove explicitly declared module checks.
+    # Imported producer evidence and Impl-only checks do not create that stage.
+    local_checks = [
+        item for item in commands
+        if item.get("owner") == "task_verify"
+        and str(item.get("producer_task_id") or task_id).strip() == task_id
+    ]
+    owner = (
+        "candidate_verify"
+        if owners == {"candidate_verify"} and not local_checks
+        else "task_verify"
+    )
     tiers = {
         str(item.get("verification_tier") or "task_non_smoke")
         for item in mandatory
         if str(item.get("verification_owner") or "task_verify") == owner
     }
+    if not tiers and owner == "task_verify":
+        tiers = {
+            canonical_verification_tier(item.get("tier") or "task_non_smoke")
+            for item in local_checks
+        }
     tier = next(iter(tiers)) if len(tiers) == 1 else "task_non_smoke"
     return owner, tier
 
