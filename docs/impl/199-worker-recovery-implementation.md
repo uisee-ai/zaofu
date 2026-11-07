@@ -326,3 +326,13 @@ SemanticResultSubmitService 拒收后只发布 repair.requested，不发布未�
 required_read_missing 的修复是由本次 worker 真实受控补读并消费全文/缺页，不是修改 required_reads、input_consumption 或 ledger。新读内容若改变判断须如实修订。Submit once 指每次准入尝试；repair_pending 仍可在本次操作的有界协议修复轮次中补正，admitted 后禁止重复提交。没有 task 的 OA 纠正不再伪造 Active task: (none)。
 
 LS-v1 R53 原因：OA 复用旧配置读取后被正确拒收，但新入口没有消费 correction、问题注册表又将其视为正常本地纠正，RM 无升级动作。监工指导仅恢复现有尝试；通用恢复由上述 Kernel 路径负责。测试通过真实 SemanticResultSubmitService 拒收、Orchestrator.run_once(stop) 派发及补读后同操作准入，另覆盖持久化重放、取消/暂停/身份变更和传输故障。
+
+## 部分实现恢复时的依赖基线
+
+显式后继复用已准入失败的部分实现时，原提交可能与最新 Candidate 分叉。新工作区在既有失败身份、同 Run、共同祖先与写入范围证明通过后，用 Git merge-tree 生成同时包含 Candidate 和部分实现的不可变双亲提交，再以它创建隔离工作区。稳定的父提交与时间戳使重复准备得到同一 SHA；不移动 Candidate/TaskRef/原 worker 分支，不把部分实现视为已完成。文本冲突或 Git 失败明确拒绝，不能由 Runtime 决定语义取舍。
+
+已存在工作区继续通过 TaskWorkspaceManager 的所有权与元数据核验使用持久化 base；后续 Impl 重试、独立 Verify 不因 Candidate 前进重组基线。原合同 dispatch_base 和部分实现来源仍保留，Candidate 集成按原证明重放部分补丁及当前 worker 增量，保留并发依赖并继续通过独立 Verify、rolling smoke 和 CAS。
+
+LS-v1 R54：车辆端口03已经完成，下游 consumer03却被派发到不含新端口的旧RTK部分实现提交。旧测试只证明最终集成不会丢并发文件，遗漏了实施阶段需要消费这些文件。回归新增实际 dispatch → TaskWorkspaceManager 创建/复用入口、双亲祖先与文件断言、冲突拒绝以及最终增量集成。部署不会原地重写既有在途工作区；现场恢复另行经安全断点和受控计划准入记录。
+
+连续后继在未改变继承代码基线前再次停止时，可以沿同 Run、同一个 source_ref 的显式单前任链追溯最初的准入失败；循环、歧义、缺失原始准入或基线变化拒绝，最多检查16层。最终仍逐项核对原始失败的 operation/attempt/dispatch、结果摘要、分支提交和当前后继覆盖全部部分补丁的范围，不能凭“恢复”标签采纳任意提交。

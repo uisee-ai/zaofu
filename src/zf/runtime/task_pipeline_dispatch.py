@@ -91,7 +91,18 @@ def dispatch_task_pipeline_stage(
     )
     from zf.runtime.task_pipeline_terminal import task_pipeline_workspace_base
 
+    # Once a workspace exists, prepare() validates and restores its persisted
+    # base. Do not compose a newer dependency tree underneath an in-flight
+    # implementation, a retry, or the independent verifier of its exact commit.
+    workspace_plan = workspace_manager.plan(
+        workflow_run_id=workflow_run_id, task_id=task_id,
+        task_map_generation=task_map_generation,
+        workspace_generation=workspace_generation,
+        base_ref=str(generation_context.get("dispatch_base_commit") or ""),
+    ) if entry_mode == "standard" else None
+    existing_workspace = bool(workspace_plan and Path(workspace_plan.workdir).exists())
     workspace_base = (
+        workspace_plan.base_commit if existing_workspace else
         task_pipeline_workspace_base(
             runtime,
             task=task,

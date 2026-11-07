@@ -51,7 +51,9 @@ def dispatch_fixture(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "zf.runtime.task_workspaces.TaskWorkspaceManager",
-        lambda **kw: SimpleNamespace(prepare=lambda **kw: workspace),
+        lambda **kw: SimpleNamespace(
+            plan=lambda **kw: workspace, prepare=lambda **kw: workspace,
+        ),
     )
     monkeypatch.setattr(
         "zf.runtime.task_pipeline_terminal.task_pipeline_workspace_base",
