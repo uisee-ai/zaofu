@@ -2065,48 +2065,10 @@ class WorkflowRuntimeCoordinator(
         registry: RoleSessionRegistry,
         instance_id: str,
     ) -> bool:
-        """Return false only for a confirmed stale handoff heartbeat."""
-        try:
-            _, payload = registry.get_last_heartbeat(instance_id)
-        except Exception:
-            return True
-        if not isinstance(payload, dict):
-            return True
-        current_task_id = str(
-            payload.get("current_task_id") or payload.get("task_id") or ""
-        ).strip()
-        if not current_task_id:
-            return True
-        fanout_id = str(payload.get("fanout_id") or "").strip()
-        child_id = str(payload.get("child_id") or "").strip()
-        if current_task_id.startswith("fanout:") or (fanout_id and child_id):
-            try:
-                active = self._active_fanout_child_for_instance(instance_id)
-            except Exception:
-                return True
-            if not active:
-                return False
-            if fanout_id and active.get("fanout_id") != fanout_id:
-                return False
-            if child_id and active.get("child_id") != child_id:
-                return False
-            return True
-        try:
-            tasks = self.task_store.list_all()
-        except Exception:
-            return True
-        task = next((t for t in tasks if t.id == current_task_id), None)
-        if task is None:
-            return False
-        if task.status != "in_progress":
-            return False
-        if (task.assigned_to or "") == instance_id:
-            return True
-        try:
-            latest_dispatched = self._latest_dispatched_per_task()
-        except Exception:
-            latest_dispatched = {}
-        return latest_dispatched.get(task.id, "") == instance_id
+        """Use actual work ownership before interpreting heartbeat silence."""
+        from zf.runtime.heartbeat_work_obligation import heartbeat_current_task_still_owned
+
+        return heartbeat_current_task_still_owned(self, registry, instance_id)
 
     def _heartbeat_worker_finished_current_dispatch(self, instance_id: str) -> bool:
         """True if the worker already produced a result for its current dispatch.

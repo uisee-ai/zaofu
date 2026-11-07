@@ -2201,8 +2201,12 @@ class LifecycleManagerMixin(
         heartbeat_age_s: float | None = None,
     ) -> "WorkflowRuntimeDecision":
         """Emit worker.stuck and try to recover the active task/worker."""
+        from zf.runtime.heartbeat_work_obligation import on_demand_work_obligation
         from zf.runtime.stuck_recovery_signal import emit_stuck_signal
 
+        if on_demand_work_obligation(self, role) is False:
+            return WorkflowRuntimeDecision(action="noop", role=role.instance_id,
+                                           reason="on-demand worker has no active work obligation")
         signal = emit_stuck_signal(
             self,
             role,
