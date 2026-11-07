@@ -195,3 +195,12 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - 真实锁竞争2RED/2GREEN→聚焦79GREEN；自动31文件524/7、sentinel50/1、flow mock10，主环境26通过。严格preimage部署保留main其它改动。
 - evt-9f538ee151ed控制面重载，watcher384744→1067017（19:38:36），两活动Impl operation/pane741/744不变，resident3972403保留。19:39:33仍33done/2running/10依赖等待，任务进度接续；修复任务归档done，后续自然运行继续监测，未声称已经穷尽所有超时来源。
 - 两worker分页缺口已分别补齐；Privacy原生compact74秒后续读，P09B也正常compact续读。保守分页方法已更新，未删减任何原始输入。
+
+
+### 20:03 UTC：后继功能真实 RED/GREEN 与环境恢复
+
+- Privacy R6 完成937297字符、704正文/297来源读取；P09B完成932225字符输入，两个原始工具截断区间均按完整范围补齐。原生compact正常继续同一operation。
+- P09B下载av/Pillow再次停顿后，worker仅终止自己的安装链，核对原锁和缓存SHA，使用UV_CONSTRAINT指向既有file URI/hash走原bootstrap；未更改requirements.lock/stamp，环境失败未算产品RED。实际版本发布POST404为RED（20261107T195158-fb033e40），新增实现后真实冻结包、发布及回滚首测1pass/16.26秒，仍需完整合同和独立验证。
+- Privacy原smoke因新媒体review要求返回409，适配真实review后2pass；canonical绑定探针转绿。完整runtime 20261107T195125-f35fc9e2为30pass/2fail/357.37秒，失败均旧fixture在100次快速tick后真实ingest尚未完成，非已证实死锁。worker自行替换有截止时间等待，保留真实完成/失败断言，重跑未完成前不计通过。
+- Privacy自动项目留存API先真实404；实现通过现有ingest writer执行字节生命周期，Privacy只负责策略、独立审批、到期调度与撤销。新增旅程3pass/25.52秒；这不代替后续完整suite、Docker浏览器、Verify或组合rolling验收。
+- 19:39之后未发现新的orchestrator.tick.failed；Dashboard200、watcher1067017和resident3972403存活，两Impl继续原operation。有效33done/2实施/10待依赖，主监工任务保持active。
