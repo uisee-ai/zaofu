@@ -14,3 +14,5 @@
 验证：TDD 8 RED→18新旧CLI/呈现GREEN；权限/ledger/CLI/direct-call/任务输入合同闭包116 passed；sentinel 50 passed/1 skipped；ruff与diff检查通过。dev-verify 的CLI传递调用映射扩张至118测试文件并选择全量deterministic，已中断该不必要全量轮次，使用上述明确116项闭包；不宣称全量通过。现场恢复尚待验证。
 
 方法固化：Dev Worker/Test Evaluator canonical技能补充共享正文格式、完整连续分页及收据不等于消费的边界；同步两provider分发副本。现场Media Impl2已使用新格式，未改产品代码；独立Verify恢复尚待完成。
+
+现场第二次交接：Impl2输入已完整消费并typed passed准入(evt-98d9fe09040f)，但两个未跟踪tmp文件触发task.ref.rejected(evt-9ac8986c98fb)，自动进入Impl3。这暴露新方法缺少临时文件clean闭环，补充skill要求授权且已忽略目录、交接前clean、保全移出不修改gitignore。继续保留原HEAD，不将环境问题冒充产品缺陷。
