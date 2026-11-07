@@ -140,6 +140,34 @@ class CandidateReworkActionsMixin:
                 "reason": "missing " + ", ".join(missing),
                 "emitted_event_ids": [],
             }
+        # New gap tasks may need newly authored input partitions. Pin supplied
+        # ports before publishing the amendment; never silently drop them.
+        plan_ports = []
+        if "plan_ports" in payload:
+            from zf.runtime.plan_artifact_package_ports import materialize_explicit_plan_ports
+
+            try:
+                if not isinstance(payload["plan_ports"], list) or not all(
+                    isinstance(port, dict) for port in payload["plan_ports"]
+                ):
+                    raise ValueError("plan_ports must be a descriptor list")
+                from zf.runtime.plan_artifact_ports import normalize_plan_ports
+
+                supplied = normalize_plan_ports(payload["plan_ports"])
+                if any(port["logical_name"] in {"task_map", "planning_result", "goal_claim_set"}
+                       for port in supplied):
+                    raise ValueError("rework input ports cannot replace kernel-derived plan outputs")
+                plan_ports = list(materialize_explicit_plan_ports(
+                    state_dir=self.state_dir,
+                    project_root=self.project_root or self.state_dir.parent,
+                    payload={"plan_ports": supplied,
+                             "stage_id": "candidate-rework",
+                             "source_event_id": str(payload.get("source_event_id") or "")},
+                    flow_kind="",
+                ).values())
+            except ValueError as exc:
+                return {"status": "rejected", "reason": f"invalid rework plan ports: {exc}",
+                        "emitted_event_ids": []}
         rework_summary = (
             payload.get("rework_summary")
             if isinstance(payload.get("rework_summary"), dict)
@@ -308,6 +336,8 @@ class CandidateReworkActionsMixin:
                     task_id for task_id in task_ids
                     if task_id not in set(failed_task_ids)
                 ]
+        if plan_ports:
+            event_payload["plan_ports"] = plan_ports
         if rework_paths:
             event_payload["rework_paths"] = rework_paths
         if gap_task_ids:

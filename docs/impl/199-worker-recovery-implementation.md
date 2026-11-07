@@ -309,3 +309,9 @@ LS-v1 FMS02 的旧 TODO 前置已正式拆为 PORT/IMPLEMENT，验收和代码�
 ## 有界计划的写入冲突预检
 
 候选预检复用实际writer加载顺序：完整Task Map结构、目标与矩阵仍校验全图，写入范围冲突按select_writer_task_items选出的本次派发集合检查。未选择的历史顺序任务共享路径，不再错误阻塞无关增量；全量或同时选中冲突任务仍拒绝，未知选择仍拒绝，base冲突仍按同一选择集核验。LS-v1 Q04五任务修订因此不会被两个已完成shell任务的历史路径重叠拦截；GOAL04和命令目录冲突仍须正式修订。
+
+## 增量恢复的新任务输入交付
+
+`candidate-rework-apply` 的 retrigger 接受明确 `plan_ports` 描述符，经现有不可变 sidecar 写入/摘要解析后随 `task_map.ready` 交付。格式错误、重复端口、坏摘要以及覆盖 kernel 生成的 task_map/planning_result/goal_claim_set 均在发布前拒绝。输入内容仍由语义角色或获授权操作员编写；Runtime 不复制父任务来猜测来源，不替代 Owner 决定。
+
+Plan Package 准入对本次派发任务消费的 scoped input 检查直接分区或可证明的显式替换链，复用既有 lineage 验证。没有新分区也没有前任的新任务不再拖到 worker dispatch 才发现缺输入。完整输入结构仍检查；有明确消费选择时只要求 Impl/TaskVerify 实际选中的端口具备任务分区，整包矩阵保留。局部端口只要求声明消费者。增量选定集合之外的在途 Task 保持原绑定，不能借此改其合同。回归经过 ControlledActionService 和 prepare_plan_artifact_package 真实入口。
