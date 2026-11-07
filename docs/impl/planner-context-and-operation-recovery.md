@@ -162,3 +162,15 @@ Planner/增量恢复和 Critic 应把每份证据对应的生产阶段、写入�
 方法位于 zf-plan-task-map-contract 与 execution-readiness 的 execution-consistency 参考，
 不新增项目专属 Runtime 推断或第二份任务合同。历史指定文件缺失与产品测试失败分别记录；
 修复未来范围不能补写历史验收证据。
+
+
+增量 gap writer 会保留提案显式提供的 description、source_excerpt/source_ref、
+owner_decision_ids、lane_affinity、skills_required、explicit_non_goals、exclusive_files
+及结构化 verification。仅携带本次提案内容，不猜测旧任务语义、不扩大权限；
+空值和无效值保留给现有准入检查，不能静默丢弃技能声明而绕过拒绝。
+发布后的 Task Map 经实际 writer_task_items 消费验证，源提案保持不变。
+
+
+当原输入没有后继分区，输入继承需跨过保留该任务的无关增量包，找到实际声明替换边的包。
+每一层仍核对不可变端口/ref/digest 与 Run；同时回放完整任务声明和已准入依赖改写。
+中间任务消失、歧义身份、语义漂移或输入变化均拒绝，不退回全局读取或跳过来源校验。
