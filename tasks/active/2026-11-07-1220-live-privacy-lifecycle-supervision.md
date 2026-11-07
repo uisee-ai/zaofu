@@ -222,3 +222,10 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Privacy最终提交5ea5e556e6931aaaa3a8bb4a8b91b069b705d153，44文件全部在允许目录。大提交守卫按清单与源码核实后使用其显式允许流程，未禁用hook。同头runtime46pass/470.33秒（203156-f6c83110）、smoke3（203157-4c64974b）、browser2（203158-840b11c2）、原4delta/build/lint均通过，命令digest/源码fixture配置绑定核对。只读事件查询叠加重定向被路径守卫拒绝，worker改为只读查询+原生工具存到任务目录，未改安全规则。
 - Privacy evt-bbf4e16980f8准入、evt-c898a01a2944 dev.build.done；20:46:02独立Verify派发，op wop-verify-tp-P16B-PRIVACY-R6-dfdc3357f4bd9-b93eb9953652 / attempt ta-7f66ec66f22a0eb3dbe4 / prd-verify-lane-1 / pane746。监工明确旧保护package、canonical别名/全成员撤权、项目策略owner与registry隔离反例、真实浏览器与历史失败保留，不代验不代签。
 - 两项均仅Impl完成，独立Verify与组合rolling未出结果，仍33done/2验证/10待依赖。配置context_hard_cap/recycle_hard_cap=0.9是上下文占比，不是90分钟墙钟期限；本轮未改任何预算或门禁。
+
+
+### 20:52 UTC：Verify正文缓存误重建纠正
+
+- P09B Verify 20:48:00实际artifact read输出明确Warning truncated（289162 tokens）；其后用apply_patch从展示文本重建缓存，逐行JSON解析出现Unterminated string，却一度声称无截断。监工只读核查原hook与文件发现问题，按当前operation提示撤回结论、保留坏缓存、直接捕获CLI stdout再完整解析/refs摘要与分页。验证者已确认并改用required-inputs-direct.jsonl，未提交产品结论、未代写读取ledger。
+- Privacy Verify自行识别大输出截断，重定向时缓存父目录缺失，创建授权ignored目录后原CLI直接保存成功；未修改门禁。两者仍须完整分页及独立实测，缓存落盘不是完成读取。
+- 现有Impl/Verify源技能各补3行：进程层先捕获stdout、创建父目录、只输出大小/退出码；禁止用编辑补丁重建截断正文，逐行解析和refs/来源摘要后再分页。两provider副本同步、metadata不变、shared-body既有5测试通过、diffcheck通过；方法修正无runtime新规则。通用skill校验器不兼容既有ZaoFu扩展metadata的限制同18:58记录，不通过删除原metadata绕过。
