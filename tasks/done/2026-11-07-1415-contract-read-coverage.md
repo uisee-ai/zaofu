@@ -1,6 +1,6 @@
 # R37：当前任务合同必读覆盖
 
-> 状态: active
+> 状态: done — dbe20c02 fix: preserve complete task contract read obligations
 
 授权：继续监工、修复阻塞并记录。基线 932b00f6。
 
