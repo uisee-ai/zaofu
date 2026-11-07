@@ -1,6 +1,8 @@
 # Gap 准入失败的无 Task 入口闭环
 
-> 状态: active
+> 状态: done
+
+实现提交：`f739a2ca fix: route taskless gap rejection through kernel recovery`。
 
 ## 故障与范围
 
@@ -28,7 +30,7 @@ Premerge sentinel: 50 passed / 1 skipped；flow mock E2E: 10 passed。
 证据 `/tmp/zf-supervision-20261107/gap-entry-*`。
 
 实施说明：[Task Pipeline 断点修复](../../docs/impl/task-recovery-20261105.md)。
-本批不提交，由主会话核验后统一记录实施 commit 并归档。
+主会话已核验并提交；实际运行恢复在1043任务记录。
 
 恢复基线由主会话在执行前重验：10:46 UTC Media/Retention 已正式集成，候选更新为
 `4a99fd888e87ce546b64385f256ec6764dd334eb`，保留29 done；不得沿用分析初期的27 done/3d405d2快照。

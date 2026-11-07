@@ -161,4 +161,4 @@ Layer 1/Layer 2 和重复输入，不再只直接调用 handler。对本轮旧�
 入口遗漏未产生该事件，不能伪造。已有 owner 授权可经 `candidate-rework-apply/replan`
 把已确认的两个 gap 及拒绝原因交给 Planner，限定修订范围，并保留接纳时全部 done（本轮最新29项）、当前
 候选和 Dataset 未准入实现作为复用来源，不把后者当作通过验收的基线。
-任务记录：[Gap 准入入口闭环](../../tasks/active/2026-11-07-1046-gap-admission-entrypoint.md)。
+任务记录：[Gap 准入入口闭环](../../tasks/done/2026-11-07-1046-gap-admission-entrypoint.md)。
