@@ -133,6 +133,7 @@ _KERNEL_LIVENESS_EVENTS = frozenset({
     "run.manager.autoresearch.requested",
     "task.continuation_scheduled",
     "task.retry_scheduled",
+    "task_map.amend.failed",
     "codex.hook.stop",
     "provider.turn.closed",
     "autoresearch.trigger.accepted",

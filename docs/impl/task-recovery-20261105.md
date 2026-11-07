@@ -146,3 +146,19 @@ recycle，hold 到期仍通过原 lifecycle 回收和恢复 briefing，保留 op
 lease 和 dispatch 身份。本片不自动 redrive，不改变重试预算或 result admission。
 历史上已经被审计挂起的 operation 仍应使用精确 `recover workflow` checkpoint。
 任务与证据见 [上下文回收归属修复](../../tasks/done/2026-11-07-0404-pipeline-context-ownership.md)。
+
+## 无 Task 的 gap 准入失败入口（2026-11-07）
+
+`task_map.amend.failed` 的 builtin 需要同时进入 wake patterns 和 Kernel liveness
+集合。仅在 registry 注册不足以覆盖真实调用：事件没有 task_id 时，Layer 1 的普通
+分支跳过 builtin，Layer 2 配置则将其交给 agent。现明确该事件仍是机械准入/恢复事实，
+两种模式都调用既有 gap 因果解析及 bounded reader replan；不改变 cap。
+
+回归从 EventWatcher 到 CLI batch、真实 `Orchestrator.run_once`，覆盖有额度/耗尽、
+Layer 1/Layer 2 和重复输入，不再只直接调用 handler。对本轮旧故障，源码补丁不代表
+自动重放已消费的失败；应由 operator 基于明确 source/checkpoint 做一次受控恢复。
+历史 reader cap 耗尽时 `stage-replan-new-generation` 需要真实 cap escalation；本次旧
+入口遗漏未产生该事件，不能伪造。已有 owner 授权可经 `candidate-rework-apply/replan`
+把已确认的两个 gap 及拒绝原因交给 Planner，限定修订范围，并保留接纳时全部 done（本轮最新29项）、当前
+候选和 Dataset 未准入实现作为复用来源，不把后者当作通过验收的基线。
+任务记录：[Gap 准入入口闭环](../../tasks/active/2026-11-07-1046-gap-admission-entrypoint.md)。
