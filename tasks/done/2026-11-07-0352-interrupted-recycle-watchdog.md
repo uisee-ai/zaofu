@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现提交：`60c80cdd fix: recover interrupted context recycling after watcher restart`。
 
 # 重启 watcher 接管中断的上下文回收
 
@@ -48,7 +50,7 @@ planner 实况：`dev-verify.py plan --base dev` 纳入分支历史并选出776�
 详细命令/退出码见 `interrupted-recycle-verify-run.log`。
 
 本片仅修改隔离 worktree 代码/测试/文档。0200任务未动；不自行 commit、同步、
-reload 或操作业务运行态。任务保持 active，等待主会话审查提交并记录commit。
+reload 或操作业务运行态。主会话已完成审查和实现提交；运行环境接入在0200监工任务记录。
 
 ## 明确延后
 

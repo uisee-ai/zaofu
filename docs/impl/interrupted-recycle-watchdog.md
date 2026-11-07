@@ -25,4 +25,4 @@ restart 的互斥仍由已有 respawn SessionLock 提供。
 完整重建并交付。本次未修改 native compact、context 阈值或 hard-cap 计时。
 
 验证及明确延后事项见
-[执行任务](../../tasks/active/2026-11-07-0352-interrupted-recycle-watchdog.md)。
+[执行任务](../../tasks/done/2026-11-07-0352-interrupted-recycle-watchdog.md)。
