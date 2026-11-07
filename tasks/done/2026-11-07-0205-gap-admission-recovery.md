@@ -1,6 +1,8 @@
 # Gap 准入失败进入有界恢复
 
-> 状态: active
+> 状态: done
+
+实现：`e20431d6 fix: recover rejected gap amendments through bounded reader retries`。
 
 来自用户2026-11-07修复卡顿并记录的明确授权；产品监工总记录见
 `tasks/active/2026-11-07-0200-two-gap-supervision.md`。

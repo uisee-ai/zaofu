@@ -106,4 +106,3 @@ class GapAdmissionRecoveryMixin:
         if failure is not None:
             return self._on_reader_stage_failure_replan(failure)
         return None
-
