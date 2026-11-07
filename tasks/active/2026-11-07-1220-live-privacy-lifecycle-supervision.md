@@ -112,3 +112,5 @@
 - 产品zf.yaml仅16个PRD dev/verify lane显式drain_hold_seconds180→600；90%硬阈值、权限/backend、8/8容量、合同等有效字段逐项未变（仅role override来源metadata随显式配置变化）。候选配置先在/tmp解析；roleDefaults不能影响现有显式lane，最终使用逐lane覆盖且保留codex/bypass原值。68项context/hardcap/profile/recovery测试通过。证据context-drain-{before,after}.yaml及review.json保存于诊断目录；产品zf.yaml原本属共享checkout，未将其他既有配置变更纳入commit。
 - evt-eb46faf17e52受控保worker重载，watcher33114新epoch于16:38:48启动，Core Impl和Media Impl3身份均保留。回收仍有600s上限，没有禁用上下文保护或更改结果准入。
 - Core audit依赖下载重复卡住；监工等bootstrap锁释放后用当前锁文件hash匹配的本机wheel离线恢复，完整依赖安装exit0；证据core-audit-dependency-recovery.json。真RED为access_audit未新增(1fail/4pass)，首片30ed1e0后smoke5、runtime56→68→73/75逐步通过，access21、foundation53通过，继续最终提交及独立验证，未算done。
+
+提交方法固化：zf-harness-done-contract补充原生精准scratch写入和仅当前profile支持时才调用validate；不把实际schema/证据错误当unsupported绕过。两provider副本同步，保留独立Verify责任。

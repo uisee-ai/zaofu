@@ -49,6 +49,18 @@ Before submitting the completion claim:
 7. Submit through the exact completion command/output profile from the
    briefing, once.
 
+## 提交工具与预校验边界
+
+结果 scratch 位于工作目录外时，只使用原生 Edit/Write 或 apply_patch 修改当前
+briefing 明确授权的精确路径；Python/heredoc/shell 动态写入不享有这个路径例外。
+被守卫拒绝时先改用授权工具，不放宽守卫、不改 canonical state、不重复动态写法。
+工作目录内的审计或读取临时文件另行保存，提交前保全证据并确认工作区 clean。
+
+仅在当前 briefing/profile 提供并支持 `zf result validate` 时执行预校验；它不是
+所有角色通用的提交前条件。如果明确返回 `plan_candidate_validation_unavailable`，
+记录其未执行事实，按 briefing 使用正式 `result submit` 的准入校验，不宣称预校验
+通过，也不重复调用不支持的入口。实际 schema/证据错误必须修复，不能用此例外绕过。
+
 ## Evidence Quality
 
 The handoff must make these facts recoverable without replaying chat:
