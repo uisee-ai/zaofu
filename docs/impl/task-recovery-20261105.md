@@ -234,3 +234,11 @@ Impl/Verify 通过结果、活动 run/task、无活动 attempt 或继任 operati
 审批只授权下一代；新 Impl 后必须再独立 Verify、再集成。旧请求不能重放到新代次，
 默认返工上限不改变。环境失败而无需改源码时应继续使用原集成重试模式。
 记录：[集成失败有界恢复](../../tasks/done/2026-11-07-1742-reviewed-integration-impl-rework.md)。
+
+## Consumer 锁竞争与真实执行超时
+
+Workflow Synthesis 的 Web preparation host 和 runtime tick 共用consumer lease。
+获取该lease超时使用 `WorkflowSynthesisConsumerBusy`（TimeoutError子类）表达另一host
+正在处理；runtime本轮延后，Web不将当前fingerprint标为已消费。lease内的事件读取、
+处理或provider错误仍按原失败路径报告，不能按异常基类吞掉全部TimeoutError。
+回归与现场记录：[consumer锁竞争](../../tasks/active/2026-11-07-1935-synthesis-consumer-lease-contention.md)。

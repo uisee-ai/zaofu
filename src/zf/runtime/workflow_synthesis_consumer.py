@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -13,6 +14,10 @@ from zf.runtime.workflow_operation import (
     reduce_workflow_operations,
 )
 from zf.runtime.workflow_requests import load_workflow_request
+
+
+class WorkflowSynthesisConsumerBusy(TimeoutError):
+    """Another host owns the consumer lease; retry without marking work failed."""
 
 
 def consume_workflow_synthesis_operations(
@@ -38,7 +43,11 @@ def consume_workflow_synthesis_operations(
         event_log=writer.event_log,
         event_writer=writer,
     )
-    with locked_path(lock, timeout_seconds=0.1):
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(locked_path(lock, timeout_seconds=0.1))
+        except TimeoutError as exc:
+            raise WorkflowSynthesisConsumerBusy(str(exc)) from exc
         # Web may locate these canonical events through a disposable index.
         # Read under the consumer lease; admission and writes remain canonical.
         operations = reduce_workflow_operations(
