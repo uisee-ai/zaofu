@@ -1,6 +1,6 @@
 # R38：OA 必读正文投递方法
 
-> 状态: active
+> 状态: done — 88e45c6a fix: deliver required bodies in orchestrator checkpoints
 
 授权：继续监工并修复。LS车辆失败OA在evt-d6e1f05c0248使用后台Python循环capture_output所有必读页，只输出字符计数和complete；随后开始查源码，正文是否消费不明。旧生成briefing仅要求read every，通过CLI读取不能证明模型消费。监工已通过worker.reply.requested evt-777d5f633f6f要求补齐正文后再裁决。
 
