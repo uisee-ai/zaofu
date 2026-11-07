@@ -180,3 +180,10 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - P09B于19:20:20自动派发evt-36e49bcec628，op wop-impl-tp-P09B-95dc7c92284b47a9-impl-re-a6323607c70f、attempt ta-ccbacb3e4357fa3b6394、pane744，基线a4c6d4a3；与PrivacyR6 pane741并行。33/45完成，2实施/10依赖等待。
 - PrivacyR6当前完整输入937297字符，首次stdout被截断后自行保全1132222bytes缓存并分页补读；未将不完整读出当完成。两新worker收到当前基线、允许且ignored缓存、原锁内离线依赖和同头TDD/浏览器交接。
 - 19:14:53 workflow-synthesis consumer guard锁单次超时evt-92c8b53fa5d8；随后调度decision继续，lslocks无持锁者、未再现持续故障，Dataset完成与P09B派发均成功。仅记录观察，不重启健康任务；诊断synthesis-lock-timeout-1914.json。
+
+
+### 19:28 UTC：后继任务分页缺口精确修复
+
+- Privacy R6的[60000,90000)和[165000,210000)原工具正文实际10075/13188tokens截断；完整缓存存在，但后续读取未覆盖缺口。监工依据hook真实tool_response而非摘要确认，定点要求≤15k字符补读，保留当前attempt与已读进度。
+- P09B的[33000,78000)同样截断；既有[18000,48000)完整，补读body57–64仅覆盖[50175,59939)，因此精确要求[48000,63000)、[63000,78000)。head -c 24000字节约20582字符，与下一页18000有重叠，无首段缺口。
+- 两源技能再补2行保守方法：无可靠token计数每次≤15000字符、不合并多页，核对实际truncated后才标已读，按区间补缺口而非少量ID。metadata保持、源与两provider副本一致，唯一hunk部署保留main差异；非新增runtime门禁，未改原必读范围。
