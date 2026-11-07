@@ -6,6 +6,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.schema import (
     FanoutAggregateConfig,
     ProjectConfig,
@@ -548,8 +550,10 @@ def test_admitted_goal_claim_cancels_residual_reader_fanout(
     )
 
 
+@pytest.mark.parametrize("new_generation", [False, True])
 def test_newer_reader_replan_attempt_supersedes_different_target(
     tmp_path: Path,
+    new_generation: bool,
 ):
     transport = _FlakyTransport(alive=False)
     state_dir, log, _transport, orch = _state_with_transport(tmp_path, transport)
@@ -583,6 +587,11 @@ def test_newer_reader_replan_attempt_supersedes_different_target(
         "target_ref": "task/TASK-1",
         "rework_attempt": 2,
     })
+    if new_generation:
+        current_manifest["trigger_payload"].update({
+            "rework_attempt": 1, "operator_authorized": True,
+            "operator_authorization_ref": "owner:approved", "stage_replan_generation": "next",
+        })
     for child in current_manifest["children"]:
         child["target_ref"] = "task/TASK-1"
     current_dir = state_dir / "fanouts" / current_fanout_id

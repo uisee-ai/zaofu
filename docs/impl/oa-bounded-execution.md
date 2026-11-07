@@ -116,6 +116,12 @@ task_map 摘要及代次必须一致。此过程只修复证据绑定，不改�
 
 ## 只读观测
 
+Reader 重启恢复按触发请求的 ledger 顺序判定计划替代；显式 owner 新代际或
+redrive 可以重置局部 attempt 计数，不能只靠 attempt 大小比较新旧。
+Run、stage、task-base recovery 范围仍须一致。恢复失联 reader 前核对同角色
+当前派发 owner；已有另一未交付 reader 时，不强制置 idle、不重复排入 briefing。
+测试见 `tests/test_reader_recovery_owner.py` 和 fanout hardening 的实际 housekeeping。
+
 Owner 授权的 reader new-generation / retrigger 遇到历史错误携带的 OA
 shadow 建议时，仅凭同 Run、相同不可变 descriptor 的 Kernel
 `orchestrator.semantic.decision.shadowed` 且 `applied=false` 回执，将其保留为
