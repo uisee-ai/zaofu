@@ -67,6 +67,7 @@ def gap_plan_amend_baseline(
     old, new = hydrate(source), hydrate(current)
     # Prove immutable lineage, including intermediate packages repaired before admission.
     cursor, seen = new, set()
+    ancestry = [new]
     while cursor.get("supersedes_package_digest") != source["package_digest"]:
         digest = str(cursor.get("supersedes_package_digest") or "")
         ref = str(cursor.get("supersedes_package_ref") or "")
@@ -74,6 +75,7 @@ def gap_plan_amend_baseline(
             raise PlanArtifactPackageError("gap amendment current package is not a descendant")
         seen.add(digest)
         cursor = hydrate_plan_artifact_package(state_dir, {"ref": ref, "sha256": digest})
+        ancestry.append(cursor)
         if cursor.get("workflow_run_id") != old.get("workflow_run_id"):
             raise PlanArtifactPackageError("gap amendment package lineage crosses runs")
     if old.get("run_contract_digest") != new.get("run_contract_digest"):
@@ -94,11 +96,20 @@ def gap_plan_amend_baseline(
         targets.update(ids)
     old_tasks = {row["task_id"]: row for row in before["tasks"]}
     new_tasks = {row["task_id"]: row for row in after["tasks"]}
+    maps = None
     selected = {"requirement_spec", "execution_spec"}
     for task_id in targets:
         task = old_tasks.get(task_id)
-        if task is None or task != new_tasks.get(task_id):
+        if task is None or task_id not in new_tasks:
             raise PlanArtifactPackageError("gap amendment target task changed: " + task_id)
+        if task != new_tasks[task_id]:
+            from zf.runtime.gap_dependency_continuity import task_has_only_replayed_dependency_changes
+
+            if maps is None:
+                maps = [before, *[hydrate_sidecar_ref(state_dir, ports(body)["task_map"]).payload
+                                  for body in reversed(ancestry)]]
+            if not task_has_only_replayed_dependency_changes(task_id, maps):
+                raise PlanArtifactPackageError("gap amendment target task changed: " + task_id)
         selection = (task.get("evidence_contract") or {}).get("plan_input_selection") or {}
         if not any(isinstance(values, list) and values for values in selection.values()):
             raise PlanArtifactPackageError("cross-generation gap needs explicit input selection: " + task_id)
