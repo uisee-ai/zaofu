@@ -17,7 +17,7 @@ from typing import Any, Mapping
 
 from zf.core.state.atomic_io import atomic_write_text
 
-from zf.runtime.gap_replay_claims import repair_replayed_goal_claims
+from zf.runtime.gap_replay_claims import repair_replayed_goal_claims, require_replacement_goal_coverage
 from zf.runtime.gap_replacement_validation import (
     require_replacement_input_selection,
     with_structured_gap_verification,
@@ -383,6 +383,7 @@ def build_gap_task_map_amend(
         tasks.append(_gap_task_to_task_map_item(raw, wave=next_wave))
         existing_ids.add(task_id)
         appended.append(task_id)
+    require_replacement_goal_coverage(base_tasks_by_id, tasks, superseded_task_ids)
     _raise_dependency_waves(tasks)
 
     source_refs = dict(base_task_map.get("source_refs") or {})
