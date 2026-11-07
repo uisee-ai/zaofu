@@ -4329,13 +4329,13 @@ class WorkflowRuntimeCoordinator(
         ))
         try:
             from zf.core.workflow.flow_metadata import flow_metadata_for
-            from zf.runtime.gap_plan_baseline import gap_plan_base_ref
+            from zf.runtime.gap_plan_baseline import gap_plan_amend_baseline
             from zf.runtime.plan_artifact_package import artifact_package_mode
 
             metadata = flow_metadata_for(self.config, payload=payload)
-            base_task_map_ref = gap_plan_base_ref(
+            base_task_map_ref, baseline_generation = gap_plan_amend_baseline(
                 state_dir=self.state_dir, events=self.event_log.read_all(),
-                payload=payload, fallback_ref=base_task_map_ref,
+                payload=payload, fallback_ref=base_task_map_ref, gap_tasks=gap_tasks,
                 required=artifact_package_mode(metadata) == "blocking",
             )
 
@@ -4373,9 +4373,7 @@ class WorkflowRuntimeCoordinator(
                 reason=f"task_map amend failed: {exc}",
             )
         gap_task_ids = list(amend.get("gap_task_ids") or [])
-        superseded_generation = str(
-            workflow_identity.get("task_map_generation") or ""
-        ).strip()
+        superseded_generation = baseline_generation
         task_map_digest = str(amend.get("task_map_digest") or "").strip()
         task_map_generation = str(
             amend.get("task_map_generation") or ""

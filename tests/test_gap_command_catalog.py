@@ -51,15 +51,20 @@ def test_unknown_command_reference_is_not_invented():
     assert not result.passed and any("MISSING" in e for e in result.errors)
 
 
-def test_real_gap_ready_entry_preserves_commands_in_dispatched_contract(tmp_path):
+@pytest.mark.parametrize("local_checklist", [False, True])
+def test_real_gap_ready_entry_preserves_commands_in_dispatched_contract(tmp_path, local_checklist):
     from tests.test_module_gap_plan_runtime import _state, _write_base_task_map
     state, log, transport, runtime = _state(tmp_path)
     ref = _write_base_task_map(state)
+    gap = _gap()
+    if local_checklist:
+        gap["validation"] = {"commands": gap.pop("verify_commands")}
+        gap["verification"] = {"commands": [gap["validation"]["commands"][0]["command"]]}
     event = ZfEvent(id="gap-ready", type="flow.gap_plan.ready", actor="zf-cli",
                     correlation_id="trace-gap", payload={
         "schema_version": "goal-gap-plan.v1", "pdd_id": "CANGJIE", "feature_id": "CANGJIE",
         "goal_id": "CANGJIE", "goal_kind": "prd", "gap_category": "product_completeness",
-        "trace_id": "trace-gap", "task_map_ref": ref, "gap_tasks": [_gap()],
+        "trace_id": "trace-gap", "task_map_ref": ref, "gap_tasks": [gap],
     })
     runtime.run_once(events=[event])
     runtime.run_once(events=[event])
@@ -75,3 +80,16 @@ def test_real_gap_ready_entry_preserves_commands_in_dispatched_contract(tmp_path
     amended = json.loads((state / ready.payload["task_map_ref"]).read_text())
     assert validate_task_map_payload(amended, require_task_verification=True).passed
     assert len(transport.sent) == 1
+
+
+def test_structured_catalog_and_local_string_checklist_are_complementary():
+    gap = _gap()
+    gap["validation"] = {"commands": gap.pop("verify_commands")}
+    gap["verification"] = {"commands": [gap["validation"]["commands"][0]["command"]],
+                           "scope": "isolated_branch"}
+    original = deepcopy(gap)
+    amended = build_gap_task_map_amend({"tasks": []}, gap_tasks=[gap], supersedes_task_map_ref="base.json")
+    assert validate_task_map_payload(amended, require_task_verification=True).passed
+    assert amended["tasks"][0]["validation"] == original["validation"]
+    assert amended["tasks"][0]["verification"] == original["verification"]["commands"]
+    assert gap == original

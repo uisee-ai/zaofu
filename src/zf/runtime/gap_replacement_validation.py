@@ -58,7 +58,7 @@ def with_structured_gap_verification(raw: dict[str, Any]) -> dict[str, Any]:
         and any(isinstance(row, dict) for row in value)
     )
     for commands in catalogs:
-        if not isinstance(commands, list):
+        if not isinstance(commands, list) or not any(isinstance(row, dict) for row in commands):
             continue
         validation = item.get("validation")
         if isinstance(validation, dict) and validation.get("commands") not in (None, commands):
