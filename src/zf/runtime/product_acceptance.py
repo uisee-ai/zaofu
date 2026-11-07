@@ -418,6 +418,17 @@ def bind_product_acceptance_report(
     if schema != "verification-result.v1" and not is_discovery:
         return adapted
     result = dict(getattr(adapted, "payload", {}) or {})
+    # An execution failure makes no product judgment. Admit its abstention
+    # without inventing a full evaluation; supplied reports still get checked.
+    if (
+        schema == "verification-result.v1"
+        and result.get("execution_status") == "failed"
+        and result.get("verdict") == "abstained"
+        and "product_acceptance_report" not in result
+        and "product_acceptance_report_ref" not in result
+        and "product_acceptance_report_digest" not in result
+    ):
+        return adapted
     # Discovery may report gaps or infrastructure failure without pretending
     # that a complete product evaluation ran. Only a successful closeout must
     # provide the full report; explicit reports still undergo validation.

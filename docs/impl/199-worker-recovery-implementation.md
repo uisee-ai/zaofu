@@ -357,3 +357,7 @@ Task Pipeline 构建冻结契约时，若当前任务明确配置自己生产的
 已有 operation 的冻结快照不能原地改写。部署后应依据真实失败/准入结果走受控恢复，
 保留已提交产品代码和最终验收证据要求，不能手改 worker verdict 或把路由缺陷归咎于
 worker 未理解指令。
+
+## R57：验证执行失败与产品报告的边界（2026-11-07）
+
+`failed + abstained` 表示验证执行失败、没有产品裁决。Candidate owner 未提交产品报告时，Product Acceptance binder 不再要求杜撰完整报告；schema、身份、冻结快照、输入消费与准入检查仍照常运行。显式提供的报告或引用继续校验，completed/passed/rejected 的验收门不变。覆盖实际 SemanticResultSubmitService 只读预检与正式失败准入；现场恢复跟踪于 tasks/active/2026-11-07-2130-verifier-abstention-closeout.md。
