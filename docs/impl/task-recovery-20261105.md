@@ -233,4 +233,4 @@ Impl/Verify 通过结果、活动 run/task、无活动 attempt 或继任 operati
 恢复只追加 `task.rework.requested`，不改写历史 Verify、TaskRef 或 candidate。
 审批只授权下一代；新 Impl 后必须再独立 Verify、再集成。旧请求不能重放到新代次，
 默认返工上限不改变。环境失败而无需改源码时应继续使用原集成重试模式。
-记录：[集成失败有界恢复](../../tasks/active/2026-11-07-1742-reviewed-integration-impl-rework.md)。
+记录：[集成失败有界恢复](../../tasks/done/2026-11-07-1742-reviewed-integration-impl-rework.md)。

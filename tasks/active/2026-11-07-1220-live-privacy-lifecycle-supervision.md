@@ -162,3 +162,11 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Media Impl及Verify先后尝试自行重编码后得到假摘要不匹配；正文完整读取与原来源未受损。监工按原选中正文编码口径还原Verify g4的641正文/244来源，全部content_sha256匹配。通过当前operation提示准确格式，由Verify自行重算，未代写读取证据/产品裁决。
 - 在既有Impl/Verify技能补充4行：refs还原后字符串原文、结构化值UTF-8 JSON ensure_ascii=False/indent=2/default=str、保留键顺序、不加换行；不能hash压缩JSON/JSONL。仅澄清既有格式，不新增门禁、runtime规则或输入要求。源技能与两provider副本同步，保留共享main既有差异。
 - 验证：既有shared-body可逆/摘要测试5通过；技能metadata与原版一致、两provider副本等同源。通用skill-creator quick_validate因现有ZaoFu扩展字段auto_inject/dependencies/stages等拒绝（非本次新增），未删字段绕过；准确记录该验证限制。主repo及产品仅唯一4行hunk同步，详情shared-body-hash-method-deployment.json。Media Verify独立重算后确认244来源全匹配，继续探针。
+
+
+### 19:10 UTC：媒体独立验收与真实组合集成闭合
+
+- Verify evt-67f901200ee7 / admission evt-b79e99cc8894正式通过：641正文/244来源完整、17独立探针、5份同头收据及3AC核对。当前g4独立证据未沿用g3产品结论；未改产品。
+- accepted ee2e1d5上重做真实组合得到7ceb52132732dbdae70365b01424b6e604269667，rolling smoke2pass/62deselected、10.49秒，收据7241dc8f…；evt-e32321aa3362集成、evt-dddd5233f1fe提升candidate、evt-d58e24945fb0完成。原dd5失败保留，不以单任务分支通过冒充组合通过。
+- 32/45done，13未完成；Privacy R6自动派发evt-850a32122ad1至pane741，op wop-impl-tp-P16B-PRIVACY-R6-dfdc3357f4bd9-2d81e56d098f，attempt ta-34e13d43142ec8966b6e，从新accepted7ceb521启动，沿原保护package/generation未重绑。Dataset独立Verify仍在实施审查和反例探针。
+- 集成失败有界Impl返工任务现已实机闭环，按e4b5b7a2/b6bb2ad1记录done并归档；主监工任务保持active。Dataset Verify本次busy compact命令拒绝后原生95秒compact成功，无活动operation回收或丢页。
