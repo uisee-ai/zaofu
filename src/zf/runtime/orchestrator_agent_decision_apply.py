@@ -374,33 +374,20 @@ def _operation_source_descriptors(
         return set()
     stored = hydrate_sidecar_ref(runtime.state_dir, dict(request_ref)).payload
     request = stored.get("request") if isinstance(stored, Mapping) else None
-    manifest_ref = request.get("source_manifest_ref") if isinstance(request, Mapping) else None
-    if not isinstance(manifest_ref, Mapping):
+    if not isinstance(request, Mapping):
         return set()
-    manifest = hydrate_sidecar_ref(runtime.state_dir, dict(manifest_ref)).payload
-    sources = manifest.get("sources") if isinstance(manifest, Mapping) else None
-    return {
-        (str(item.get("ref") or ""), str(item.get("sha256") or ""))
-        for item in sources if isinstance(item, Mapping)
-    } if isinstance(sources, list) else set()
+    from zf.runtime.orchestrator_directive_refs import operation_source_descriptors
+
+    return operation_source_descriptors(runtime.state_dir, request)
 
 
 def _directive_ref_rejection(
     directive: Mapping[str, Any],
     allowed_refs: set[tuple[str, str]],
 ) -> str:
-    for field in ("basis_refs", "reuse_refs", "invalidate_refs"):
-        values = directive.get(field)
-        for descriptor in values if isinstance(values, list) else []:
-            if not isinstance(descriptor, Mapping):
-                continue
-            key = (
-                str(descriptor.get("ref") or ""),
-                str(descriptor.get("sha256") or ""),
-            )
-            if key not in allowed_refs:
-                return f"directive_ref_outside_operation:{field}:{key[0]}"
-    return ""
+    from zf.runtime.orchestrator_directive_refs import directive_ref_rejection
+
+    return directive_ref_rejection(directive, allowed_refs)
 
 
 def _apply_return_to_plan(
