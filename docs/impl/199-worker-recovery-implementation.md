@@ -245,3 +245,12 @@ FMS04 现场暴露两项机械适配问题：字符串 verification.commands 是
 转换只把包含命令对象的 alias 作为对象目录，冲突对象目录仍拒绝。跨计划版本的局部替换先核验源包，再验证当前包是同 Run 的后代、Run 合同未变、被替换任务逐项完全相同、requirement/execution/显式选择的输入摘要不变且内容可校验。通过后以当前已准入全量 map 为增量基线，同时记录正确的 supersedes generation；源事件及读取授权保持原身份。缺少显式替换集合、目标已变或输入无法证明时仍拒绝，不能自动扩展到全量 replan。
 
 回归覆盖命令元数据保留、严格冲突拒绝、真实 gap bridge 的串行独立增量保留和幂等、变更任务/未定界增量/篡改摘要拒绝。该逻辑仅处理机械基线合并；语义修复内容仍由恢复角色提出。
+
+
+## 2026-11-07 部分提交与并发 Candidate 分叉
+
+失败 Impl 的部分提交进入 Reader 后，后继任务仍可能因 Candidate 上其他任务已集成而分叉。仅取消 workspace 祖先检查会扩大未验证代码入口，也不足以保证旧部分代码在后继完成时被携带。
+
+`task_partial_successor` 只接受同 Run 的明确单一前任、后继合同精确 git base、前任已准入且结算的失败结果、原始基线为当前 Candidate 祖先、不可变部分 branch 与所有提交路径在后继 scope 内的证明。工作区继续使用部分提交；候选不提前采纳失败代码。后继 Verify 通过后，现有 Candidate 集成从当前 head 按 patch-id/cherry-pick 合入前任部分提交和后继 delta，完整增加经证明的前任文件范围，避免 worker files_touched 仅含返工文件而漏导旧代码。滚动 smoke 和 CAS 保留；真实冲突停止集成且不覆盖 Candidate。回执 partial_base_replayed 标记此路径，adopted_base_commits 列出携带的部分提交。
+
+普通未知分叉、跨 Run、前任有更新 Impl、篡改 sidecar、移动前任 branch、scope 不完整仍拒绝；不把部分代码认定为原任务 done。
