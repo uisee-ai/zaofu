@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现提交：`73af1209 fix: deduplicate required artifact output without skipping reads`。
 
 # 必读输入的同源正文去重
 
@@ -60,4 +62,4 @@ caller→context compatibility→mock package 闭包；`dev-verify.py run --base
 `artifact-dedup-output-measure-compact.json`。选区数量不包括 briefing 中的
 首选批量命令。该结果仅证明机械重复减少，未宣称线上context回收循环已完全消失。
 
-本任务保持 active，待主会话审查、提交与记录 commit；本片不自行上线。
+主会话审查及实现提交完成；运行环境加载与业务持续监工在 0200 主任务中追踪。

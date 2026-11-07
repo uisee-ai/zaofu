@@ -30,4 +30,4 @@ Task Pipeline 和 fanout 共用 briefing renderer，优先推荐新批量命令�
 
 本变更不能消除大型 shared 语义材料，只减少机械重复；不用删字段或提高
 context hard cap 掩盖输入过大。实测结果和测试记录见
-[执行任务](../../tasks/active/2026-11-07-0334-artifact-batch-content-dedup.md)。
+[执行任务](../../tasks/done/2026-11-07-0334-artifact-batch-content-dedup.md)。
