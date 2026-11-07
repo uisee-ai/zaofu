@@ -15,3 +15,9 @@
 后续真实观察：Planner提交evt-1110803f8950后，Critic仍有额度模型弹窗。守卫阻止了误切模型，但`PlanSynthRuntimeMixin._dispatch_fanout_synth`的通用异常分支把它写成`fanout.synth.completed/status=failed/recommendation=reject`，间接消耗一次stage replan并重跑Planner。关联[恢复任务](../../tasks/done/2026-11-07-1348-synth-interactive-recovery.md)。
 
 新增处理只消费transport错误携带的`interactive_prompt_marker`：沿既有`fanout.child.dispatch_deferred`记录synth派发等待，同原因在既有60秒窗口内去重。没有发生Critic执行，不发语义失败；保留reader结果与已准备的operation。正常incomplete aggregate恢复扫描在弹窗解除后继续派发同一synth。原有schema、机械preflight和真实Critic拒绝不豁免，不自动确认弹窗、选择模型或提高重试上限。既有pane probe仍报告等待人工输入的环境状态。
+
+## 旧版本失败后遗留的 pending operation
+
+关联[回收任务](../../tasks/active/2026-11-07-1411-synth-pending-terminal-recovery.md)。旧通用异常路径还可能留下从未启动的 synth operation：fanout 已失败，operation 仍 requested，导致 goal idle 驱动一直判定有在途工作。正常 reader recovery sweep 现在可根据不可变请求中的 fanout 身份、同 run/stage/role/attempt 的内核 synth 失败及后续 aggregate 失败事件，通过 `WorkflowOperationService.supersede` 回收这一残留，不生成语义通过/失败结果，不重跑已结束 Planner。
+
+该回收限定 requested 且无 start/dispatch 证据；有派发、重新打开 aggregate、跨身份、worker 自报或请求 sidecar 无法验证时保留原状态。事件次序必须是请求 → synth 失败 → aggregate 失败。每轮至多收口一个，重复扫描幂等。当前合法运行的 Verify/Impl 由原生命周期继续处理。
