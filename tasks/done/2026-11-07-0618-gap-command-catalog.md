@@ -1,6 +1,6 @@
 # 保留增量任务的结构化验证命令
 
-> 状态: active
+> 状态: done；实现 `51ebe834` — `fix: preserve structured verification catalogs in gap amendments`
 
 依据：持续监工修复授权；[199](../../docs/design/199-worker-failure-recovery-and-role-handoff.md)。
 
@@ -23,3 +23,10 @@ LS-v1 FMS-13 discovery 提交两项 gap task，flow.gap_plan.ready evt-e822fbe66
 - 最终聚焦及 Reader caller 231 passed；188 文件影响闭包 2,718 passed（83.76 秒）。serial 10、最终 sentinel 53、mock flow 10 通过，ruff/diff check 通过。
 - 真实 LS 失败产物只读重建与验证通过，35 项候选 map，原命令 ID 和元数据保留；记录 LS docs/records/2026-11-07-gap-command-catalog-replay.json。尚未以此替代线上状态或 Q09 批准。
 - 待合并、加载和受控恢复。日志 /tmp/zf-gap-command-{focused,closure,gate}-v3-20261107.log，tiers/mock 日志同前缀。
+
+## 实际交付验收
+
+- dev 合并 1ebf91ff，控制面运行版本回执 d6d1e91430014ea68e8617640721f6b8；在飞 Worker pane/PID 保留。
+- 只重放 TODO 的失败 amendment：evt-bb16bd8e720a → task_map.amended evt-c81ed1ad2adf → task_map.ready evt-3beec210c3d2。原有命令身份与元数据准入成功。
+- 既有 approve 授权下审阅两个增量任务后，plan.approved evt-b8e0262aea7b；任务准入 evt-ffae3f1fdd47；06:47:05 TODO-PORT 实际派发 evt-c47342450904。未重跑 discovery，未重启在飞任务。Q09 的业务待决保留。
+- 证据：LS-v1 docs/records/2026-11-07-three-blockers-recovery.md 及 todo-gap-controlled-redrive.json。源码 worktree 已在合并验证后清理；本任务归档只关闭结构化命令恢复义务，不把业务完成数计为增加。

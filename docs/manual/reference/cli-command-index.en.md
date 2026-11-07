@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **316** addressable command paths.
+The parser currently exposes **69** top-level families and **317** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -549,6 +549,7 @@ Recover deterministic runtime state from append-only events
 | `zf recover oa-review` | Re-review a proven OA role-binding defect |
 | `zf recover task-impl` | Preview or request retry after a blocked Impl repair |
 | `zf recover task-integration` | Retry integration after a reviewed repair |
+| `zf recover task-verify` | Retry verify after an execution repair |
 | `zf recover workflow` | Inspect or resume pending workflow stage handoffs |
 
 ## `zf refs`

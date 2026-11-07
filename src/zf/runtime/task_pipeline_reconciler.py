@@ -822,6 +822,8 @@ def _derive_stage(
         return "verify_ready", impl_generation, max(0, impl_generation - 1)
     verify_generation = int(verify.get("operation_generation") or 1)
     verify_status = str(verify.get("status") or "")
+    if _verify_execution_retry(verify):
+        return "verify_ready", verify_generation + 1, 0
     if verify_status == "requested":
         return "verify_ready", verify_generation, max(0, verify_generation - 1)
     if verify_status in _ACTIVE_OPERATION_STATUSES:
@@ -855,6 +857,13 @@ def _derive_stage(
     )
 
 
+def _verify_execution_retry(verify: Mapping[str, Any]) -> bool:
+    from zf.runtime.task_pipeline_verify_retry import REASON_PREFIX
+
+    return (verify.get("status") == "superseded"
+            and str(verify.get("reason") or "").startswith(REASON_PREFIX))
+
+
 def _derive_verify_only_stage(
     current: Mapping[str, Mapping[str, Any]],
     *,
@@ -866,6 +875,8 @@ def _derive_verify_only_stage(
         return "verify_ready", 1, 0
     generation = int(verify.get("operation_generation") or 1)
     status = str(verify.get("status") or "")
+    if _verify_execution_retry(verify):
+        return "verify_ready", generation + 1, 0
     if status == "requested":
         return "verify_ready", generation, max(0, generation - 1)
     if status in _ACTIVE_OPERATION_STATUSES:

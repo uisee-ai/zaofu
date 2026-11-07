@@ -53,6 +53,27 @@ WRC 确定性对账                         RM runtime 观察／选路
 
 ## 已复现的问题与修复
 
+### 2026-11-07：Verify 执行失败后的续接
+
+LS-v1 网关已完成 Impl，但 Verify 因输入生命周期误报退出，准入结果是
+`execution_status=failed / verdict=abstained`，没有产品失败判定。
+修复输入绑定并重载控制面后，原 operation 已结算；现有 workflow resume 返回 no_action，
+Impl 和 integration 的恢复入口也不适用。WRC 保留失败事实是正确行为，
+缺口是 RM/OA 不能仅凭诊断或修复完成使已结算的 Verify 重新执行。
+
+新增 `zf recover task-verify --operation <id> --reason <repair-evidence>` 默认预览，
+显式 `--apply` 才通过 WorkflowOperationService 标记原 operation superseded，
+由正常 WRC 派发下一代 Verify。准入复核已绑定摘要的失败结果、source event、
+attempt/request 身份、当前 Task 合同、run、任务代次、精确 TaskRef 及无活跃 attempt。
+产品 fail/pass、暂停/终止、目标变化、旧代次或缺损证据均拒绝。
+原失败 sidecar、事件和已通过 Impl 保留；重复执行幂等。
+
+普通任务重试 Verify 时，只有连续的受控 Verify 重试链可以复用较早 Impl 的自检；
+继续验证自检与当前合同/目标完全一致，不能按“最近的成功”随意复用旧证据。
+verify_only 任务沿用同一受控入口，无须伪造 Impl。
+该入口是操作员恢复能力；尚不宣称 RM 已能自动证明补丁修复原故障并自动调用它。
+实际部署效果另记 LS-v1 监工记录，不以测试通过冒充产品通过。
+
 | 问题 | 本轮修复与实际入口 | 证据 |
 | --- | --- | --- |
 | 队首不可执行、单任务人工等待阻止独立任务 | continuation 扫描可执行候选；TaskStore 传递依赖闭包；未知／run 作用域仍关闭 | `test_run_continuation_scope.py`、`test_run_manager_scoped_selection.py` |
