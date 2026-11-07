@@ -152,3 +152,13 @@ OA 检查点 briefing 优先提供同 attempt 的 `artifact read --required` 分
 后台 capture_output 循环的计数不能代替正文；CLI 已读取不证明模型已理解。
 不更改 required/optional 来源、已冻结 policy 或准入判定。回归通过真实 OA operation
 与角色读取能力执行生成命令，验证分页正文与全部必读源一致。
+
+
+## 声明证据与写入范围对账
+
+Planner/增量恢复和 Critic 应把每份证据对应的生产阶段、写入者、路径及消费者写入既有评审，
+并检查允许写入范围。evidence_contract 不会自动扩大 operation 的写入权限；
+未提交文件也受 scope hook 检查。独立 Verify 的报告沿现有受控结果入口发布。
+方法位于 zf-plan-task-map-contract 与 execution-readiness 的 execution-consistency 参考，
+不新增项目专属 Runtime 推断或第二份任务合同。历史指定文件缺失与产品测试失败分别记录；
+修复未来范围不能补写历史验收证据。
