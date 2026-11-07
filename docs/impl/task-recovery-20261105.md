@@ -162,3 +162,17 @@ Layer 1/Layer 2 和重复输入，不再只直接调用 handler。对本轮旧�
 把已确认的两个 gap 及拒绝原因交给 Planner，限定修订范围，并保留接纳时全部 done（本轮最新29项）、当前
 候选和 Dataset 未准入实现作为复用来源，不把后者当作通过验收的基线。
 任务记录：[Gap 准入入口闭环](../../tasks/done/2026-11-07-1046-gap-admission-entrypoint.md)。
+
+## Autoresearch 执行进程互斥（2026-11-07）
+
+sidecar 启动锁由父 watcher 持有；父进程退出而 resident 存活时，启动锁不能证明
+消费者唯一。`autoresearch resident --execute` 因此在实际 CLI 进程内，对配置的
+state_dir 持有 `processes/autoresearch-resident-execution.lock` 非阻塞文件锁，覆盖
+单次执行或整个 watch 生命周期。同 state 的第二个执行 CLI 在读取/接纳动作前返回
+非零并报告 already running；只读预览和其它 state 不受影响。
+
+锁文件不删除，避免并发调用者锁定不同 inode；描述符不传给子命令，正常退出或进程
+崩溃由 OS 释放。原 SIGTERM 当前 tick 收尾语义保持。父侧启动协调继续保留，不能
+把旧进程的存活或一条 started 当作成功诊断。既有旧版 resident 不会热加载该保护，
+部署时先精确清理无子任务的重复旧进程，再在活动诊断安全结束后重启登记 resident。
+本次任务：[执行进程互斥修复](../../tasks/active/2026-11-07-1524-autoresearch-resident-process-lock.md)。
