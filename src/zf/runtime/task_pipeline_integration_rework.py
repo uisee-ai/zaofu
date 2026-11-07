@@ -48,9 +48,12 @@ def _target(operation_id: str, operations: Mapping[str, Mapping[str, Any]],
         row = matches[0]
         source_id = (row.get("admitted_control_result_ref") or {}).get("source_event_id")
         result = next((e for e in events if e.id == source_id), None)
+        admitted = next((e for e in events if e.id == row.get("call_result_admitted_event_id")), None)
         if (row.get("status") != "settled" or row.get("semantic_verdict") != "passed"
-                or not row.get("call_result_admitted_event_id") or result is None
-                or result.type != event_type or result.origin != "kernel" or result.task_id != task_id
+                or admitted is None or admitted.type != "workflow.call.result.admitted"
+                or admitted.task_id != task_id or admitted.payload.get("operation_id") != row.get("operation_id")
+                or (admitted.payload.get("control_result_ref") or {}).get("source_event_id") != source_id
+                or result is None or result.type != event_type or result.task_id != task_id
                 or any(result.payload.get(k) != row.get(k) for k in
                     ("operation_id", "workflow_run_id", "task_map_generation"))
                 or not result.payload.get(commit_key)):

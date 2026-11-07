@@ -18,7 +18,7 @@ def bind_results(writer, identity, target='same-head'):
         p = {**identity, 'operation_id': f'op-{stage}', 'task_pipeline_stage': stage}
         source = writer.append(ZfEvent(
             type='dev.build.done' if stage == 'impl' else 'task.pipeline.verify.completed',
-            task_id='T1', origin='kernel', payload={**p,
+            task_id='T1', payload={**p,
                 ('source_commit' if stage == 'impl' else 'target_commit'): target}))
         writer.append(ZfEvent(type='workflow.call.result.admitted', task_id='T1', payload={
             **p, 'semantic_verdict': 'passed', 'control_result_ref': {'source_event_id': source.id}}))

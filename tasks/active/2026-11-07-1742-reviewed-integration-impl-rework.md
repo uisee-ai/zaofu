@@ -23,3 +23,9 @@ rolling smoke 失败：固定100次紧循环耗尽时合法 ingest 尚在1秒轮
 聚焦闭包92通过。`dev-verify.py plan/run --base HEAD`覆盖本次差异及直接调用者，
 自动层333通过/7跳过、sentinel50通过/1跳过、flow mock E2E10通过。
 这是当前修复的影响闭包，未运行全量pytest，也不代表媒体产品集成已经通过。
+
+现场预演发现结果adapter的canonical结果事件origin为空；新校验误要求kernel来源而安全拒绝。
+用真实事件形态补RED后，改为核对已准入事件→control_result_ref→结果来源的身份/同头链，
+不依赖origin字符串。完整333/7+50/1+10层再次通过，主checkout新增12项通过；
+当前现场预演明确仅授权Media g3→g4。首次精确部署检查发现主checkout已有blocked-result replay，
+因此未覆盖文件，改以唯一hunk保留既有修改。原预演拒绝无canonical写入。
