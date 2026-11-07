@@ -76,9 +76,35 @@ def _task_map_predecessor(task_map: Any, task_id: str) -> str:
     return predecessor
 
 
+def _bind_republished_input_parent(
+    state_dir: Path, *, package: Mapping[str, Any], port: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Prove an explicit republication without rewriting its immutable package."""
+    from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
+
+    if port in package.get("inherited", []):
+        return dict(port)
+    ref = str(package.get("supersedes_package_ref") or "")
+    digest = str(package.get("supersedes_package_digest") or "")
+    if not ref or not digest:
+        raise ValueError("republished input has no pinned predecessor package")
+    parent = hydrate_plan_artifact_package(state_dir, {"ref": ref, "sha256": digest})
+    for field in ("workflow_run_id", "run_contract_digest"):
+        if not package.get(field) or parent.get(field) != package[field]:
+            raise ValueError("republished input predecessor identity mismatch: " + field)
+    matching = [item for group in ("produced", "inherited") for item in parent[group]
+                if item.get("logical_name") == port.get("logical_name")]
+    if len(matching) != 1 or any(
+        matching[0].get(field) != port.get(field)
+        for field in ("ref", "sha256", "schema_version")
+    ):
+        raise ValueError("republished input differs from pinned predecessor port")
+    return {**port, "source_package_ref": ref, "source_package_digest": digest}
+
+
 def _verify_predecessor_provenance(
     state_dir: Path, *, port: Mapping[str, Any], predecessor: str, workflow_run_id: str,
-) -> dict[str, Mapping[str, Any]]:
+) -> tuple[dict[str, Mapping[str, Any]], Mapping[str, Any]]:
     """Verify the inherited body and predecessor against the package ancestry."""
     from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -111,7 +137,7 @@ def _verify_predecessor_provenance(
                 isinstance(task, Mapping) and str(task.get("task_id") or task.get("id") or "") == predecessor
                 for task in task_map.get("tasks", [])
             ):
-                return {str(item["logical_name"]): item for item in ports if isinstance(item, Mapping)}
+                return {str(item["logical_name"]): item for item in ports if isinstance(item, Mapping)}, package
         ref, digest = str(package.get("supersedes_package_ref") or ""), str(package.get("supersedes_package_digest") or "")
     raise ValueError("predecessor is absent from package ancestry")
 
@@ -130,13 +156,16 @@ def _predecessor_input_paths(
         if predecessor in seen:
             raise ValueError("replacement input ancestry contains a cycle")
         seen.add(predecessor)
-        ports = _verify_predecessor_provenance(
+        ports, predecessor_package = _verify_predecessor_provenance(
             state_dir, port=ports[name], predecessor=predecessor,
             workflow_run_id=workflow_run_id,
         )
         try:
             return task_input_paths(body, task_id=predecessor), predecessor
         except MissingTaskPartitionError:
+            ports[name] = _bind_republished_input_parent(
+                state_dir, package=predecessor_package, port=ports[name],
+            )
             task_id = predecessor
     raise ValueError("replacement input ancestry exceeds supported depth")
 
@@ -239,7 +268,6 @@ def current_plan_port_sources(
     paths = {}
     kinds = {}
     predecessors: dict[str, str] = {}
-    inherited_names = {str(item.get("logical_name") or "") for item in package.get("inherited", [])}
     for name in required:
         try:
             body = hydrate_sidecar_ref(state_dir, {
@@ -248,8 +276,11 @@ def current_plan_port_sources(
             try:
                 paths[name] = task_input_paths(body, task_id=task_id, candidate=candidate)
             except MissingTaskPartitionError:
-                if candidate or profile not in {"implementation", "task-verify"} or name not in inherited_names:
+                if candidate or profile not in {"implementation", "task-verify"}:
                     raise
+                ports[name] = _bind_republished_input_parent(
+                    state_dir, package=package, port=ports[name],
+                )
                 paths[name], predecessors[name] = _predecessor_input_paths(
                     state_dir, ports=ports, name=name, body=body, task_id=task_id,
                     workflow_run_id=workflow_run_id,

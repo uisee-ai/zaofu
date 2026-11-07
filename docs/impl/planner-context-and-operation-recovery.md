@@ -113,3 +113,16 @@ CAS，不能仅按路径相同跳过 backlog / in_progress 任务。未选择的
 及 `approval_ref`。仅接受当前同 Run、尚无任何 stage.dispatched 的冻结代际，核验
 Package 摘要与完整 Task Map 后，经 Authority CAS 更新该代际任务的四个版本字段。
 任务合同其他字段和状态不变；已派发、跨来源、终态任务或已被替代的代际一律拒绝。
+
+### 重发未改输入的任务分区继承
+
+Planner 可在新 Plan 中显式列举原始输入的相同 ref/SHA，使包将该端口归为 produced。
+实际任务交接不再仅凭 produced/inherited 分类决定前驱分区是否可用：当后继缺自身
+分区时，沿当前不可变包的 supersedes 引用，核验同 Run、同 Run contract，以及
+端口 logical_name/ref/SHA/schema 完全相同，建立只读内存来源绑定，再走既有显式
+Task 替换关系校验。多层后继同样逐边证明；没有父包、正文或ref变化、跨Run/合同、
+前驱歧义均拒绝。冻结包、读取回执和输入正文不改写；Candidate/global读取范围不变。
+
+入口为 ArtifactQueryService -> current_plan_port_sources；
+`tests/test_republished_plan_inputs.py` 经实际服务入口覆盖 Impl/Task Verify 与多层
+重发。该修复使已批准的同版重发可原地重试，不要求重新规划或复制完整需求正文。
