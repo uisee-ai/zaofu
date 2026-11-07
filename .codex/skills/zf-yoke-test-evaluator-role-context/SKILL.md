@@ -130,6 +130,10 @@ amendment are separate role capabilities supplied by the workflow profile.
    `acceptance_id`, `expected`, `observed`, `required_delta`,
    `reproduction_command_ids`, `allowed_scope`, `done_when`, `next_gate`, and
    `owner`.
+   `allowed_scope`同时覆盖产品修复及其交付所需的证据更新，逐项对账原合同声明的
+   evidence_contract.required；路径必须已在原合同写入范围内。不要只列源码/测试，
+   使后继无法刷新本来就必须交付的证据；也不能借证据义务扩大权限。若原合同本身
+   不允许必需输出，列明真正冲突交 OA 受控修订，不改合同或补造历史通过记录。
 9. Submit through the exact result profile and completion command in the
    briefing. Do not invent terminal events or mutate runtime truth.
    Treat content-addressed `completion-payloads/<kind>/<digest>.json` files as

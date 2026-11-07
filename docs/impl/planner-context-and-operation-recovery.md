@@ -163,6 +163,12 @@ Planner/增量恢复和 Critic 应把每份证据对应的生产阶段、写入�
 不新增项目专属 Runtime 推断或第二份任务合同。历史指定文件缺失与产品测试失败分别记录；
 修复未来范围不能补写历史验收证据。
 
+Verify 生成返工 `allowed_scope` 时，同样对账产品修复及原合同授权的必需证据输出。
+Impl 的返工代码清单不删除原合同证据义务；Task Pipeline 初次派发及返工提示均说明
+此边界。显式写入禁令须澄清，原合同不允许的路径仍需受控修订，Runtime 不自动扩大
+scope 或改写已接纳反馈。方法归属 test-evaluator 与 done-contract 技能；既有已结算
+失败保持不可变，后续恢复保留原修复提交和独立验收。
+
 
 增量 gap writer 会保留提案显式提供的 description、source_excerpt/source_ref、
 owner_decision_ids、lane_affinity、skills_required、explicit_non_goals、exclusive_files
