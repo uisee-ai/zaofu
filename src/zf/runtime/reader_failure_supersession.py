@@ -5,34 +5,58 @@ from __future__ import annotations
 from zf.core.events.model import ZfEvent
 
 
+def reader_manifest_replacement_admission(events: list[ZfEvent], manifest: dict) -> ZfEvent | None:
+    trigger = manifest.get("trigger_payload") or {}
+    return reader_replacement_admission(
+        events, fanout_id=str(manifest.get("fanout_id") or ""),
+        workflow_run_id=str(trigger.get("workflow_run_id") or manifest.get("trace_id") or ""),
+        affected_task_ids={
+            str(child.get("task_id") or (child.get("payload") or {}).get("task_id") or "")
+            for child in manifest.get("children", []) if isinstance(child, dict)
+        } - {""},
+    )
+
+
 def reader_failure_was_replaced(events: list[ZfEvent], failure: ZfEvent) -> bool:
+    affected = set(_strings(failure.payload.get("affected_task_ids")))
+    task_id = str(failure.payload.get("task_id") or failure.task_id or "")
+    if task_id:
+        affected.add(task_id)
+    return reader_replacement_admission(
+        events, fanout_id=str(failure.payload.get("fanout_id") or ""),
+        workflow_run_id=_run_id(failure), affected_task_ids=affected,
+    ) is not None
+
+
+def reader_replacement_admission(
+    events: list[ZfEvent], *, fanout_id: str, workflow_run_id: str,
+    affected_task_ids: set[str] | None = None,
+) -> ZfEvent | None:
     """Require causal replacement plus WRC admission, not just a newer plan."""
-    fanout_id = str(failure.payload.get("fanout_id") or "")
     if not fanout_id:
-        return False
+        return None
     starts = [event for event in events if event.type == "fanout.started"
               and event.payload.get("fanout_id") == fanout_id]
     if len(starts) != 1:
-        return False
+        return None
     by_id = {event.id: event for event in events}
     trigger = by_id.get(str(starts[0].payload.get("trigger_event_id") or ""))
     if trigger is None:
-        return False
+        return None
     run_id = _run_id(trigger)
-    if not run_id or _run_id(failure) != run_id:
-        return False
+    if not run_id or workflow_run_id != run_id:
+        return None
     source_id = str(trigger.payload.get("rework_of") or "")
     source = by_id.get(source_id)
     if source is None or _run_id(source) != run_id:
-        return False
-    affected: set[str] = set()
-    for event in (trigger, failure):
-        affected.update(_strings(event.payload.get("affected_task_ids")))
-        task_id = str(event.payload.get("task_id") or event.task_id or "")
-        if task_id:
-            affected.add(task_id)
+        return None
+    affected = set(affected_task_ids or ())
+    affected.update(_strings(trigger.payload.get("affected_task_ids")))
+    task_id = str(trigger.payload.get("task_id") or trigger.task_id or "")
+    if task_id:
+        affected.add(task_id)
     if not affected:
-        return False
+        return None
     source_index = events.index(source)
     for admitted in events[source_index + 1:]:
         payload = admitted.payload
@@ -62,8 +86,8 @@ def reader_failure_was_replaced(events: list[ZfEvent], failure: ZfEvent) -> bool
             and successors <= admitted_ids
         }
         if affected <= replaced:
-            return True
-    return False
+            return admitted
+    return None
 
 
 def _run_id(event: ZfEvent) -> str:
