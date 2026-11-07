@@ -144,3 +144,11 @@ Impl、Task Verify 和 Candidate Verify 对已绑定的 `contract` 快照读取�
 已冻结的 required-read policy 不回写。读取完成仅证明输入交付，不证明理解或验收通过。
 证据是否满足当前阶段合同由交接/Verify 方法逐项判断；不会自动将已有命令通过当成
 额外文件要求已满足，也不根据历史目录缺失自行篡改已接纳结果。
+
+### OA 正文投递与读取收据（2026-11-07）
+
+OA 检查点 briefing 优先提供同 attempt 的 `artifact read --required` 分页入口；
+保留单源命令供补读。方法由 `yoke/context-hygiene` 约束：消费正文后继续下一页，
+后台 capture_output 循环的计数不能代替正文；CLI 已读取不证明模型已理解。
+不更改 required/optional 来源、已冻结 policy 或准入判定。回归通过真实 OA operation
+与角色读取能力执行生成命令，验证分页正文与全部必读源一致。

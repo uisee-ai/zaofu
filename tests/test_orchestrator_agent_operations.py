@@ -351,7 +351,7 @@ def test_selected_low_risk_shadow_uses_compact_checkpoint_pack(
         state_dir=runtime.state_dir,
         prepared=prepared,
     )
-    assert briefing.count("zf artifact read") == 3
+    assert briefing.count("zf artifact read") == 4  # Bundle, two required sources, optional recovery.
     assert "## Optional Canonical Inputs" in briefing
 
 
