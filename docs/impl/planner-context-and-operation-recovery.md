@@ -194,6 +194,8 @@ Reader 的失败仍保留原事件和证据，但在 stage replan 与 Run Manage
 
 同一因果证明也用于 Reader pending/recovery 派发入口：WRC 已完整接纳后继且旧任务不在其中时，沿既有 `fanout.cancelled`、Operation cancel 和精确 dispatch 的 provider 停止通路退出旧诊断。仅拒绝旧结果不足以收口，否则 `provider.turn.closed` 会被误判为丢失交付并重派旧 Reader。判定合并 trigger 的 affected tasks 与各 child 的任务身份，任何未被承接的任务都阻止整组取消；不依靠“出现了新计划”猜测替代，也不生成通过结果。重启 tick 幂等及未准入、异 Run/原因、部分替代等反例见 `tests/test_reader_replacement_closeout.py`。
 
+进程停止绑定 child 当前派发编号：Reader 重试可能仍复用 Operation 的首次 dispatch 字段，不能用它替代最新 child run。若取消事件已落账但进程尚未停止，恢复 sweep 重放已有 kernel `fanout.cancelled` 的资源收口；既有 latest-dispatch 核验保护同角色的新任务，已确认停止不再重复操作。
+
 
 ### 诊断通道互相独立与已关闭升级
 

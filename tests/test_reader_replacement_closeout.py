@@ -12,7 +12,7 @@ from tests.test_reader_fanout_runtime import _durable_reader_state
 from tests.test_fanout_hardening import _FlakyTransport, _state_with_transport
 
 
-@pytest.mark.parametrize("proof", ["complete", "unadmitted", "other_cause", "other_run", "partial", "retained", "not_kernel"])
+@pytest.mark.parametrize("proof", ["complete", "complete_retried", "complete_restart", "unadmitted", "other_cause", "other_run", "partial", "retained", "not_kernel"])
 def test_recovery_tick_closes_only_causally_replaced_reader(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, proof: str,
 ) -> None:
@@ -21,6 +21,14 @@ def test_recovery_tick_closes_only_causally_replaced_reader(
     )
     source = next(e for e in log.read_all() if e.type == "dev.blocked")
     writer = EventWriter(log, default_origin="kernel")
+    expected_sends = 1
+    if proof == "complete_retried":
+        closed = writer.append(ZfEvent(type="provider.turn.closed", actor="verify-1", payload={
+            "backend": "codex", "instance_id": "verify-1", "turn_id": "interrupted-turn",
+        }))
+        runtime.run_once(events=[closed])
+        expected_sends = 2
+        assert len(transport.sent) == expected_sends
     ready = writer.append(ZfEvent(
         type="task_map.ready", correlation_id="run-durable", payload={
             "workflow_run_id": "run-durable",
@@ -51,10 +59,16 @@ def test_recovery_tick_closes_only_causally_replaced_reader(
     writer.append(ZfEvent(type="provider.turn.closed", actor="verify-1",
                          payload={"backend": "codex", "instance_id": "verify-1",
                                   "provider_status": "completed", "turn_id": "old-turn"}))
+    if proof == "complete_restart":
+        with monkeypatch.context() as interrupted:
+            interrupted.setattr(runtime, "_cancel_superseded_reader_fanout_operations", lambda **kwargs: None)
+            runtime.run_once(events=[])
+        assert not stops
+        runtime = Orchestrator(state, config, transport)
     runtime.run_once(events=[])
     cancelled = [e for e in log.read_all() if e.type == "fanout.cancelled"
                  and e.payload.get("fanout_id") == child["fanout_id"]]
-    if proof != "complete":
+    if not proof.startswith("complete"):
         assert not cancelled
         assert not stops
         return
@@ -64,13 +78,14 @@ def test_recovery_tick_closes_only_causally_replaced_reader(
     assert stops == ["verify-1"]
     operation_id = child.get("operation_id") or child["payload"]["operation_id"]
     assert load_workflow_operation(log, operation_id)["status"] == "cancelled"
-    assert len(transport.sent) == 1
-    assert not any(e.type in {"fanout.child.dispatch_lost", "task.done", "review.approved",
+    assert len(transport.sent) == expected_sends
+    assert sum(e.type == "fanout.child.dispatch_lost" for e in log.read_all()) == expected_sends - 1
+    assert not any(e.type in {"task.done", "review.approved",
                              "review.rejected", "run.goal.blocked"} for e in log.read_all())
     restarted = Orchestrator(state, config, transport)
     restarted.run_once(events=[])
     assert stops == ["verify-1"]
-    assert len(transport.sent) == 1
+    assert len(transport.sent) == expected_sends
     assert sum(e.type == "fanout.cancelled" for e in log.read_all()) == 1
 
 
