@@ -191,7 +191,7 @@ read-ledger 写入之后，输出 JSONL 的 `body` 定义与 `source` 来源/收
 旧格式保持兼容。worker 应将输出保存在自身工作目录，分段消费全部定义与来源，确认工具输出
 没有截断；仅看到引用、摘要或 CLI 成功不等于已经阅读正文，亦不能替代独立验收。
 
-修复记录：[无损必读正文共享](../../tasks/active/2026-11-07-1543-lossless-required-read-bodies.md)。
+修复记录：[无损必读正文共享](../../tasks/done/2026-11-07-1543-lossless-required-read-bodies.md)。
 
 ### 2026-11-07：Verify 弃权与产品拒绝分离
 

@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `2bb03ccc feat: share complete required artifact bodies without losing provenance`
 
 # 必读工件的无损共享正文呈现
 
@@ -16,3 +16,5 @@
 方法固化：Dev Worker/Test Evaluator canonical技能补充共享正文格式、完整连续分页及收据不等于消费的边界；同步两provider分发副本。现场Media Impl2已使用新格式，未改产品代码；独立Verify恢复尚待完成。
 
 现场第二次交接：Impl2输入已完整消费并typed passed准入(evt-98d9fe09040f)，但两个未跟踪tmp文件触发task.ref.rejected(evt-9ac8986c98fb)，自动进入Impl3。这暴露新方法缺少临时文件clean闭环，补充skill要求授权且已忽略目录、交接前clean、保全移出不修改gitignore。继续保留原HEAD，不将环境问题冒充产品缺陷。
+
+现场闭环：16:50 Media Impl3恢复结果evt-66588eff0bf6/evt-64ae26f9386d准入，产品仍63cfeb09；新独立Verify wop-verify-tp-P16B-MEDIA-LIFECYCLE-R1-2fa5e-d0e68faaccbc已在%735启动，输入方法已交接。Core audit亦通过同一格式完成输入并进入独立Verify。关闭的是可逆读取呈现与恢复交接修复，不是两个产品任务或完整PRD的验收。中途temporary clean、guard工具、上下文回收均记录在持续监工任务中。
