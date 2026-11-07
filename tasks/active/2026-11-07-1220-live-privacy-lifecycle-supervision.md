@@ -239,3 +239,11 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - 其余独立检查保留：canonical grant/review撤权加强到112非audit表及全部35/38存储文件摘要不变；退役registry输入后历史media job引用仍返回409并阻止删除。初组4fail/2pass、受管1fail、补充不变集3pass，总5fail/5pass。原七同头自检收据有效但不足以覆盖新增反例，未改写为失败来源或虚构原GREEN。
 - Verify拒收evt-278ca5a5dde4准入 / evt-161297710d44 task.pipeline.verify.completed，精确返工R6-QUEUED-RETENTION-AUTH：实际执行/重试/字节处置同一受控锁事务重验policy版本状态有效期及创建人/独立审批人当前权限，保留owner、引用、恢复和全部不变集。若privacy写域没有安全接缝需受控最小上游变更，禁止周期扫描/猴子补丁绕过。
 - 21:33:51内核自动派发g2-p2到新pane747，op wop-impl-tp-P16B-PRIVACY-R6-dfdc3357f4bd9-eb4bee24ac87 / attempt ta-f8970b1aa80ffe7f1aa5 / prd-dev-lane-0；复用原g1任务worktree、5ea5e55起点，brief impl-g2-p2.md。监工提供复现位置和直接捕获stdout方法，未改canonical或扩大allowed_scope。当前33done/1Verify/1返工Impl/10依赖等待，持续监工未结束。
+
+
+### 21:46 UTC：P09B 独立验收与真实集成完成，两个后继并行启动
+
+- P09B 独立 Verify evt-0cf5e6e2b40c 于21:41:21通过：3项任务验收通过，3项候选级验收明确不适用，CR05待定未伪装完成。独立3探针58.44秒、152证据成员逐项校验、436帧浏览器视频和真实DS历史/撤权/审计反例已核对；报告verify-review.json摘要a546607ed2f97132ddf1887ad069e0adf7206c1a57a7f6b270ab6e5414509486。
+- integration op wop-integration-tp-P09B-95dc7c92284b47a9-integra-54437834d055，evt-e477abffe69b集成、evt-589e79ce6ab2候选更新、evt-cb368c92a104 task.done。候选a4c6d4a3→79105167c1bc2002e378393e7dd7b69d0f50e083，包含a2754d7和321179d。实际组合候选rolling smoke 1pass/8deselected/17.77秒、exit0；receipt ab19ba0fe70bc1be9128ecb71a478da19d199327b099615adbb302321b2e780a.json绑定该HEAD，未以分支自检替代集成结果。
+- 完成数34/45、剩余11。21:42:12 P09C数据统计与质量报告自动派发至prd-dev-lane-1/pane748，op wop-impl-tp-P09C-a253354009a46226-impl-re-882ea2f436b9 / ta-8ef0932fc13746b8dfad；21:42:22 P10训练/checkpoint/实验比较派发至prd-dev-lane-2/pane749，op wop-impl-tp-P10-ef43185f100a4821-impl-rev-35836c1abfff / ta-dffb8bae2dda1bc4bfa1。两者基线均79105167，8/8配置未变，当前三个可运行Impl并行，余8依赖等待。
+- 监工向两个新operation补充进程stdout直接捕获、完整摘要/分页、既有精确锁轮子缓存、原合同同头Docker验收方法；诊断p09c-startup-guidance.json/p10-startup-guidance.json。Privacy g2继续完整受控输入读取，原Critical尚未关闭。
