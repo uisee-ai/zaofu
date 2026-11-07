@@ -662,11 +662,16 @@ def _task_view(
             )
         verify = current_by_stage.get("verify")
         max_rework = int(policy.get("max_rework_attempts") or 0)
+        if (stage == "blocked" and verify is not None
+                and str(verify.get("status") or "") == "settled"
+                and _verifier_abstained(verify)):
+            blockers.append("verify_execution_failed")
         if (
             stage == "blocked"
             and verify is not None
             and str(verify.get("status") or "") == "settled"
             and not _semantic_passed(verify)
+            and not _verifier_abstained(verify)
             and int(verify.get("operation_generation") or 1) > max_rework
         ):
             blockers.append("semantic_rework_exhausted")
@@ -705,6 +710,7 @@ def _task_view(
             and verify is not None
             and str(verify.get("status") or "") == "settled"
             and not _semantic_passed(verify)
+            and not _verifier_abstained(verify)
         ):
             blockers.append("verify_only_verification_rejected")
         if stage == "admission_blocked":
@@ -794,6 +800,9 @@ def _derive_stage(
         return "blocked", verify_generation, max(0, verify_generation - 1)
     if verify_status != "settled":
         return "verify_ready", verify_generation, max(0, verify_generation - 1)
+    if _verifier_abstained(verify):
+        # No product verdict exists: recovery must repair execution conditions.
+        return "blocked", verify_generation, max(0, verify_generation - 1)
     if not _semantic_passed(verify):
         if verify_generation <= max_rework:
             return (
@@ -983,6 +992,10 @@ def _derive_post_verification_stage(
                     max(0, verify_generation - 1),
                 )
     return "integration_ready", verify_generation, max(0, verify_generation - 1)
+
+
+def _verifier_abstained(operation: Mapping[str, Any]) -> bool:
+    return str(operation.get("semantic_verdict") or "").strip().lower() == "abstained"
 
 
 def _semantic_passed(operation: Mapping[str, Any]) -> bool:

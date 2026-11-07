@@ -1276,3 +1276,23 @@ def test_orchestrator_does_not_legacy_dispatch_preapproval_pipeline_task(
         event.type == "task.dispatched"
         for event in EventLog(state_dir / "events.jsonl").read_all()
     )
+
+
+def test_verifier_abstention_never_dispatches_product_rework_or_exhaustion():
+    for cap in (0, 2):
+        for entry_mode in ("standard", "verify_only"):
+            policy = _policy()
+            policy["max_rework_attempts"] = cap
+            task = _task("A", priority=1)
+            task["task_pipeline_entry_mode"] = entry_mode
+            verify = {**_operation("A", "verify", "settled"), "semantic_verdict": "abstained"}
+            view = TaskPipelineReconciler().reconcile(
+                policy=policy, tasks=[task],
+                operations=[_operation("A", "impl", "settled"), verify], attempts=[],
+            )
+            row = view["tasks"][0]
+            assert row["stage"] == "blocked"
+            assert "verify_execution_failed" in row["blockers"]
+            assert "semantic_rework_exhausted" not in row["blockers"]
+            assert "verify_only_verification_rejected" not in row["blockers"]
+            assert row["semantic_blocker"] == {}

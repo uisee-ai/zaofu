@@ -192,3 +192,15 @@ read-ledger 写入之后，输出 JSONL 的 `body` 定义与 `source` 来源/收
 没有截断；仅看到引用、摘要或 CLI 成功不等于已经阅读正文，亦不能替代独立验收。
 
 修复记录：[无损必读正文共享](../../tasks/active/2026-11-07-1543-lossless-required-read-bodies.md)。
+
+### 2026-11-07：Verify 弃权与产品拒绝分离
+
+`verification-result.v1` 的 `execution_status=failed/verdict=abstained` 表示验证执行失败，
+没有产品否定结论。Task Pipeline 对 settled 弃权保持 blocked，并投影
+`verify_execution_failed`；不自动派发 Impl，不增加产品语义返工，也不报告
+`semantic_rework_exhausted` 或 verify-only 产品拒绝。真正 rejected 的原返工路径不变。
+恢复仍须先排除执行条件问题，再走受控恢复；此补丁没有添加无限自动重试、改写历史事件或
+给已派发 worker 追溯撤销。现场已误派的媒体 Impl 保留原 HEAD，并重用仍有效的 exact-head
+证据，再进入独立 Verify，绝不把弃权视为通过。
+
+记录：[验证弃权分流](../../tasks/active/2026-11-07-1558-verifier-abstention-routing.md)。
