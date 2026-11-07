@@ -335,24 +335,6 @@ def _autoresearch_repair_mode(config: object) -> str:
     return mode if mode in {"proposal_only", "bounded_repair"} else "proposal_only"
 
 
-def _autoresearch_failure_class(fingerprint: str) -> str:
-    for prefix in (
-        "task_ref_rejected",
-        "missing_task_ref_after_dev_build_done",
-        "fanout_timed_out",
-        "completion_snapshot_ref_missing",
-        "task_contract_invalid",
-    ):
-        if fingerprint.startswith(f"{prefix}:"):
-            return prefix
-    parts = fingerprint.split(":")
-    if len(parts) >= 2 and parts[0] == "failure":
-        return parts[1]
-    if parts and parts[0] == "stall":
-        return "stall"
-    return ""
-
-
 class EventReactorMixin(
     OrchestratorAgentReactorMixin, DurableCallWorkflowMixin, GapAdmissionRecoveryMixin,
 ):
@@ -6442,6 +6424,7 @@ class EventReactorMixin(
                 REPAIR_DISPATCH_EVENT,
                 SELF_REPAIR_SKILL,
                 decide_repair,
+                repair_dispatch_failure_class,
             )
 
             repair_mode = _autoresearch_repair_mode(self.config)
@@ -6476,7 +6459,7 @@ class EventReactorMixin(
                     "repair_task_payload": repair_task_payload,
                     "apply_policy": repair_mode,
                     "repair_mode": repair_mode,
-                    "failure_class": _autoresearch_failure_class(decision.fingerprint),
+                    "failure_class": repair_dispatch_failure_class(decision.fingerprint),
                     "repair_bucket": decision.bucket,
                     "recovery_case_id": str(payload.get("recovery_case_id") or ""),
                     "source_event_id": event.id,
