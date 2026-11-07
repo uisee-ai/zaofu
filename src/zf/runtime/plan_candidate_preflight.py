@@ -196,7 +196,6 @@ def evaluate_plan_candidate_preflight(
             task_items: list[dict[str, Any]] = []
             try:
                 task_items = writer_task_items(dict(task_map))
-                validate_writer_task_items(task_items)
             except (RuntimeError, ValueError) as exc:
                 _error(
                     errors,
@@ -210,6 +209,10 @@ def evaluate_plan_candidate_preflight(
                 except (RuntimeError, ValueError) as exc:
                     _error(errors, "writer_fanout_task_selection_invalid", "task_map.tasks", str(exc))
                 else:
+                    try:
+                        validate_writer_task_items(selected)
+                    except (RuntimeError, ValueError) as exc:
+                        _error(errors, "writer_fanout_task_map_invalid", "task_map.tasks", str(exc))
                     try:
                         writer_fanout_dispatch_base_commit(selected)
                     except ValueError as exc:
