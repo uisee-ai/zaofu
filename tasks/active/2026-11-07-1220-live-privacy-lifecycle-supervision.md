@@ -293,3 +293,13 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - 23:32:05 evt-2943b4b66c69 dev.blocked，23:32:11 evt-c2ff8fc312ec design_issue/request_replan、不增加retry。RM快照23:32:05略早于blocked，等待正常五分钟周期；23:37:04 evt-ff7dea1e8ac6 flow.discovery.requested自动触发。op wop-prd-post-verify-discovery-prd-flow-discovery-trig-evt-ff7d-fc27097e98f1 / pane755。监工按当前3648/d254图和candidate79105167提供独立复跑、最小通用Core边界或更小安全方案、Ingest完整续作提示，保护34done、P09C原包和活动Schedule/Training链；未手写canonical。
 - Quality独立探针复现previous-only-category-omitted、known-frozen-can-unconditionally-unknown：前版独有类别遗漏，已冻结实测CAN仍无条件unknown。三scope、多Clip计数/权限、乱序回滚、幂等和部分撤权完整状态检查通过。两次probe夹具/API选择问题（annotation_policy_changed、错误下载入口409）单列并修正，不算产品RED；新增实际清洗分母与CAN生产链验证、Docker浏览器/video仍在进行，尚无正式Verify裁决。越界cache写入被guard拦截后改允许evidence目录，未放宽scope。
 - 实际运行Schedule Impl、Quality Verify、Ingest gap Discovery；有效47任务34done/13剩余，原Ingest canonical in_progress但Impl已settled blocked，不能再计运行worker。Dashboard200、PG healthy、Watcher与唯一resident正常。
+
+
+### 23:59 UTC：Quality 两项返工自动启动，Core 最小前置批准并派发
+
+- P09C独立Verify evt-967abd384ab2于23:50:46拒收26a2e00：LOCAL-P09C失败，T14-068通过，3个candidate条款not_applicable。31项runtime正向/拒绝/不变性、18项Docker浏览器、2项真实生产者完成，123业务表及所有字节完整核对，53证据文件封存；原同头smoke1/runtime5/browser1收据复核未冒称重跑。真实clean产出分母2、有效率0.5、CAN1；原报告永久unknown缺计算路径，冻结dataset确缺clean-run时仍可准确未知，禁止反推原分母/冒认协议资格。另一必改为前版独有类别被差异树丢弃。浏览器trace/WebM实际解码，1280/1600、三scope、撤权清空/下载拒绝等通过，但不覆盖后端失败。
+- 内核23:51:10 evt-b83689931fa3自动派发P09C g2-p2，op wop-impl-tp-P09C-a253354009a46226-impl-re-3c1251f7fbf5 / ta-35470abaf3946c079f31 / pane758 / prd-dev-lane-0；完整P09C-R1/R2返工项在brief，仍原af73/d224合同。监工补充准确缺源边界、原反例及允许域，不代实现/代验。
+- Ingest Discovery独立当前candidate复现2fail/17.89秒，809↔812真实双向环；24证据hash、10源码档/8生产源与candidate吻合。evt-c4fe6147d7df提交后evt-8bc750a2af2e gap、evt-7fcb7d25d646 amended，新package5d02f0cfc3ce25e16c61f42f79f9ffee299f7335488623b02d8cb5c210a7260c，map gap-amends/evt-8bc750a2af2e/task_map.json。
+- 新图仅P16B-CORE-PRELOCK-R1→P16B-INGEST-POLICY-R2替代旧Ingest R1；Core继承已done Media生命周期前置，精确四Core文件及job_outcomes测试证据，通用受信前置锁/锁后重验、默认consumer与公平性/原子性/审计拒绝闭包；不写领域语义。Ingest原三AC/三命令保留，Privacy R7仅依赖重接/wave变化，P19/P20Q/P20仅依赖替换。加载器仅选两个新task，34done不重开，P09C/Schedule/Training图中对象完全不变。
+- 23:56:31 evt-bb0f51464e6d批准plan evt-d2da92ffe6b6；23:57:14 evt-252cee9ea5d4 Core派发，op wop-impl-tp-P16B-CORE-PRELOCK-R1-ecc60fa6-58d909861ecf / prd-dev-lane-2 / pane759。审批前后三个受保护TaskStore对象完全相等；owner review/core-prelock-gap-plan-owner-review.json保存。当前有效48项，34done/14未完成，Quality/Schedule/Core三路Impl。
+- 查询待批计划时另见2026-10-28旧evt-08b8e89f8928；只读对比发现旧图与现图完全不同，立即按事件时间判定历史项，不批准/不拒绝以免触发旧恢复，不将其误报本次增量。仅批准23:54:55当前evt-d2da92ffe6b6。后续监工必须按触发事件、candidate与图谱绑定选待批项，不能取pending列表第一项。
