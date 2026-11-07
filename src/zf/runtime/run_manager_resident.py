@@ -231,9 +231,14 @@ def build_resident_run_manager_briefing(
         "收到绑定请求或 runtime 按配置唤醒时，执行一次有界观察；无待办可以 idle:",
         "",
         f"1. 运行 `{status_command}`。",
-        "2. 读取最近事件: `tail -n 120 \"$ZF_STATE_DIR/events.jsonl\"`。",
-        "3. 若存在,读取 `projections/run_manager.json`、"
-        "`projections/run_status_explain.json`、`projections/supervisor/snapshot.json`。",
+        "2. 有绑定请求时先按 source_ref 定位 recovery context，核对 request_id、当前 run/task、",
+        "   operation/attempt、合同和 failure refs；按本案证据引用完整读取相关正文，长正文分页。",
+        "   无绑定请求时先查看投影的索引/摘要，定位需处理的具体问题。",
+        "3. 仅为尚未回答的问题扩展读取：按事件 id、task 和时间定位事件；",
+        "   对 projections/run_manager.json、projections/run_status_explain.json、",
+        "   projections/supervisor/snapshot.json 先查看键/索引，再选本案条目。",
+        "   不整批倾倒原始事件尾部或全局投影；输出截断须补读相关正文，",
+        "   不能把过滤或读取收据当作已理解。冻结必读 artifact 仍按原 policy 完整消费。",
         "   对在途任务核对 `monitor.task_evidence` 的派发、活动和结果信号时间及事件引用；"
         "其中 `ts` 是入账时间，`usage_sample_ts` 是来源用量采样时间；没有来源时间时不得推断为新活动。"
         "heartbeat 或读取不证明交付。信号仅按 task 关联，不代表当前 Run、attempt 或独立验收；"
@@ -292,8 +297,9 @@ def build_resident_run_manager_briefing(
         "## 恢复案卷(裁决卷宗)",
         "- `projections/recovery_case_file.json` 每 ~2 分钟更新:三表对账矛盾清单",
         "  (wip_without_carrier / queue_stuck / ready_but_starved)+ 静止断点 + 当前态快照",
-        "  (现预算、未决 escalation、quiescent)。**立案/裁决前先读它**——它是",
-        "  '为什么现在没有事情发生'的机械答案,比原始事件流可靠。",
+        "  (现预算、未决 escalation、quiescent)。它是诊断索引，可能滞后；",
+        "  只取本案条目，并用其引用核对 canonical Store、事件账本和必要 sidecar。",
+        "  投影不替代权威状态，未命中或窗口缺失不证明故障或依赖不存在。",
         "- 针对矛盾可用的恢复动词(经受控动作,前置条件不满足会被内核拒绝):",
         "  `task-requeue`(wip_without_carrier:任务挂进行中但承接 child 已死)、",
         "  `child-rebuild`(为死 child 走 rework 重建承接)、",
@@ -302,11 +308,12 @@ def build_resident_run_manager_briefing(
         "  `rescan-grant`(goal idle 驱动器弹尽后追加一轮)。",
         "  裁决输出:`run.manager.agent.recommendation` 带",
         "  `recommended_route=controlled_action`、`action=<动词>`、`action_payload={...}`、",
-        "  矛盾指纹与证据 refs。当前灰度为影子档:建议会被记录对照,不自动执行。",
+        "  矛盾指纹与证据 refs。runtime 按当前策略、身份和受控准入消费建议；",
+        "  建议提交不等于批准或执行成功，须核对 consumed、动作回执和实际下游效果。",
         "- 若矛盾根因是配置/代码(如质量门命令不适配栈),优先",
         "  `recommended_route=human` 并写明修改建议,不要用流程动词硬推。",
         "",
-        f"现在开始观察当前 run。先执行一次 `{status_command}` 和事件/projection 快照读取。",
+        f"现在开始观察当前 run。先执行一次 `{status_command}`，再按上述请求与引用定位证据。",
     ])
 
 
@@ -470,8 +477,8 @@ def rebind_preserved_resident_run_manager(
         "\n\n## Control-Plane Rebind\n\n"
         "ZF workflow/control-plane restarted while this dedicated Run Manager "
         "session was preserved. First tick mode is observe-only: reread "
-        f"`{zf_cli_cmd()} status`, recent events, and projections before recommending any "
-        "mutating action.\n"
+        f"`{zf_cli_cmd()} status`, then locate the current request's evidence by refs "
+        "as above before recommending any mutating action.\n"
     )
     briefing_path.write_text(prompt, encoding="utf-8")
 
