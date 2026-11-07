@@ -34,3 +34,10 @@
 - Core仍同operation运行：本轮协议失效回退先3fail，再36pass；foundation回归已执行，worker继续补政策check副作用回滚的边界用例。runtime中间收据source3896ceb4不是最终验收；尚未独立Verify/集成。
 - Planner真实读取新skill，修改计划前检查candidate生命周期实现，目前provider正在正常压缩上下文。没有新quota failure或重建任务。
 - Dashboard HTTP200；有效43任务仍29done，8/8容量不变。持续监控记录不等于产品最终完成。
+
+## 13:54 UTC 独立验证与Critic接棒
+
+- 用户再次明确要求持续实时监工直到全部完成，未降低门禁。Core Impl最终source f61ac152a07e30c07aaa29529253f69746b2a970，自检smoke4/runtime40/foundation53，evt-bef0232e5ad8提交；evt-cc534a058055派发独立Verify至lane0，operation wop-verify-tp-P09A-CORE-DENIAL-R1-65d9015ef-330a02f18344、attempt ta-456f8025c2844a2866a5，目前仍验证，未计done。
+- Privacy第一版44任务/294AC/27决定提交evt-1110803f8950，Critic额度弹窗被守卫阻止，但旧宽异常捕获误转prd.plan.failed evt-5a9d96a556ac，自动返工evt-14547e9bc437。确认不是语义否决；已修复为dispatch_deferred（90f76bd2），428自动闭包+244额外恢复/mock、sentinel50/1、main17。仅Escape解除旧模型弹窗，不更换模型。
+- 新Planner提交evt-6a0ab0625319后Critic派发evt-c8ff7cf517e4，当前真实执行Core Verify+Plan Critic。原29done仍保留。第一版审阅对账证据：原291AC无丢失，仅LOCAL-P16B新增R6 delta command关联；Core/Dataset两行完全一致；schema/matrix/task_input_paths无错误；新增前置与R6均具备smoke，完整IO/双连接/引用census具名场景；两已完成前置只转移新图allowed_paths说明，历史TaskStore未重写。须以第二版最终产物再核对。
+- P20Q/P20最终真实资格仍含外部数据/签定合同/J6B性能环境/Windows-Mac runner；已向用户异步询问已有访问路径，不阻塞当前独立开发验证、不伪造qualification通过。

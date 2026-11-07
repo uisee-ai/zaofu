@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # Critic 交互阻塞不得变成计划语义返工
 
@@ -14,3 +14,7 @@ TDD：测试入口import错误先修正（不计行为RED）；随后quota_model
 验证：dev-verify.py plan/run --base dev --paths（本次四文件）--tests tests/test_synth_interactive_deferral.py --tests tests/test_reader_fanout_runtime.py --no-parallel -> 自动12文件闭包428passed；额外reader/synth/recovery/preflight/stage-replan与channel PRD恢复mock E2E闭包244passed；sentinel50passed/1skipped，ruff及diff检查通过。均为隔离/确定性测试，未宣称真实provider E2E。
 
 真实因果：evt-9c14bbeb21c9错误synth终局→evt-5a9d96a556ac prd.plan.failed→evt-14547e9bc437 stage replan 2/2。已仅通过Escape解除Critic、Orchestrator、Discovery旧额度模型弹窗，保留Astra high；未修改retry cap、历史事件或已完成Planner工件。Core于evt-bef0232e5ad8完成Impl，evt-cc534a058055派给独立prd-verify-lane-0，源f61ac152a07e30c07aaa29529253f69746b2a970。
+
+实现提交：`90f76bd2 fix: defer synthesis while provider interaction blocks dispatch`。main仅同步经preimage逐字节核对的source/test，组合17passed。控制面保留worker重载evt-6be0bb5de2a6；新watcher3235695于13:52:27 UTC启动，Core Verify原operation/attempt仍运行，Planner单次提交evt-6a0ab0625319后，新Critic派发evt-c8ff7cf517e4，operation wop-prd-plan-synth-trig-evt-14547e9b-5b16a1fb1bf3，pane已收到正确briefing且保持Astra high。独立评审结论尚未产生，不把恢复派发当Plan批准。
+
+历史旧synth operation wop-prd-plan-synth-trig-evt-64319b1a-994e3c657bfe仍requested（原失败路径遗留，未实际执行）；新synth已能正常派发。保留诊断，后续核对最终quiescence，不伪造旧op完成或强制恢复旧fanout。

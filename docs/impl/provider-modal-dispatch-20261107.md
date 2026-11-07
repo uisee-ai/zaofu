@@ -12,6 +12,6 @@
 
 ## Critic 派发失败的恢复分类
 
-后续真实观察：Planner提交evt-1110803f8950后，Critic仍有额度模型弹窗。守卫阻止了误切模型，但`PlanSynthRuntimeMixin._dispatch_fanout_synth`的通用异常分支把它写成`fanout.synth.completed/status=failed/recommendation=reject`，间接消耗一次stage replan并重跑Planner。关联[恢复任务](../../tasks/active/2026-11-07-1348-synth-interactive-recovery.md)。
+后续真实观察：Planner提交evt-1110803f8950后，Critic仍有额度模型弹窗。守卫阻止了误切模型，但`PlanSynthRuntimeMixin._dispatch_fanout_synth`的通用异常分支把它写成`fanout.synth.completed/status=failed/recommendation=reject`，间接消耗一次stage replan并重跑Planner。关联[恢复任务](../../tasks/done/2026-11-07-1348-synth-interactive-recovery.md)。
 
 新增处理只消费transport错误携带的`interactive_prompt_marker`：沿既有`fanout.child.dispatch_deferred`记录synth派发等待，同原因在既有60秒窗口内去重。没有发生Critic执行，不发语义失败；保留reader结果与已准备的operation。正常incomplete aggregate恢复扫描在弹窗解除后继续派发同一synth。原有schema、机械preflight和真实Critic拒绝不豁免，不自动确认弹窗、选择模型或提高重试上限。既有pane probe仍报告等待人工输入的环境状态。
