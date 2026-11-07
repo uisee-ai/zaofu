@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现: `5f604210 fix: bind explicit task input scope to authorized recovery`
 
 # 授权恢复显式携带任务读取范围
 
