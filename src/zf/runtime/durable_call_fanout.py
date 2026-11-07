@@ -868,6 +868,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
             manifest=manifest,
             manifests=manifests,
             started_order=started_order,
+            trigger_order={event.id: index for index, event in enumerate(events)},
         )
         if superseded_by:
             return "superseded_by_newer_replan_attempt", superseded_by
@@ -880,6 +881,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         manifest: dict,
         manifests: list[tuple[str, dict | None]],
         started_order: dict[str, int],
+        trigger_order: dict[str, int] | None = None,
     ) -> str:
         aggregate_config = (
             manifest.get("aggregate_config")
@@ -902,7 +904,13 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
             return ""
         if attempt <= 0:
             return ""
-        current_order = started_order.get(fanout_id, -1)
+        def order(candidate_id: str, candidate: dict) -> int:
+            return (trigger_order or {}).get(
+                str(candidate.get("trigger_event_id") or ""),
+                started_order.get(candidate_id, -1),
+            )
+
+        current_order = order(fanout_id, manifest)
         if current_order < 0:
             return ""
 
@@ -929,7 +937,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         for candidate_id, candidate in manifests:
             if candidate_id == fanout_id or not candidate:
                 continue
-            if started_order.get(candidate_id, -1) <= current_order:
+            if order(candidate_id, candidate) <= current_order:
                 continue
             candidate_trigger = (
                 candidate.get("trigger_payload")
@@ -962,7 +970,19 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                 str(candidate.get("pdd_id") or ""),
                 str(candidate.get("feature_id") or ""),
             )
-            if candidate_attempt <= attempt or candidate_scope != scope:
+            owner_generation = bool(
+                candidate_trigger.get("operator_authorized") is True
+                and candidate_trigger.get("operator_authorization_ref")
+                and candidate_trigger.get("stage_replan_generation")
+                and candidate_trigger.get("stage_replan_generation")
+                != trigger.get("stage_replan_generation")
+            )
+            causal_redrive = candidate_trigger.get("redrive_of") == manifest.get("trigger_event_id") and bool(
+                candidate_trigger.get("redrive_of")
+            )
+            if candidate_scope != scope or (
+                candidate_attempt <= attempt and not owner_generation and not causal_redrive
+            ):
                 continue
             candidate_roles = {
                 str(child.get("role_instance") or "")
@@ -973,7 +993,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                 candidate_roles
             ):
                 continue
-            newer.append((candidate_attempt, candidate_id))
+            newer.append((order(candidate_id, candidate), candidate_id))
         return max(newer, default=(0, ""))[1]
 
     def _prepare_writer_fanout_child_operation(

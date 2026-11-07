@@ -118,6 +118,10 @@ class ReaderDispatchRecoveryMixin:
                 if not child_dispatches:
                     continue
                 latest_dispatch = child_dispatches[-1]
+                from zf.runtime.reader_recovery_owner import another_reader_owns_role
+
+                if another_reader_owns_role(events, latest_dispatch):
+                    continue
                 workflow_run_id = str(
                     latest_dispatch.payload.get("workflow_run_id")
                     or manifest.get("trace_id") or ""
