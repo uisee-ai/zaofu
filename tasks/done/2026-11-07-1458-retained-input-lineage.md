@@ -1,6 +1,6 @@
 # R41：跨无关增量包恢复保留任务的输入继承
 
-> 状态: active
+> 状态: done — 4881ee20 fix: preserve gap declarations and retained input lineage
 
 真实新 Grant 后继派发 evt-4d5159e077e6 被 invalid task input port 拒绝：继承查询遇到仅保留旧 Grant 的附件增量包，误把当前 amend 必须声明该旧任务当作前提。原输入与显式替换边仍在更早冻结包中。
 
@@ -14,3 +14,5 @@
 与 R40 同工作树验证合并，两个问题独立记录；不更改业务 AC、不放宽权限或重发全计划输入。
 
 验证：R40 首轮回归因测试预期异常类型不符修正为 RuntimeError 后通过；两次闭包命令引用不存在的测试文件未执行，已改为实际文件。最终20文件262 passed（含两个 deterministic mock E2E），sentinel53 passed。初始 sentinel 因模块从1000增至1002行失败，已将同属声明处理的既有可选字段代码移入新模块，未提高上限。dev-verify planner 自动闭包192文件触发全仓阈值，依 AGENTS 的测试域规则采用上述具体闭包，不运行全仓 pytest、不声称真实Provider E2E。真实 LS 两profile只读预检通过，原分区/ref/digest不变。
+
+收口证据：控制面加载95c82584，真实Grant15:01:20派发；新15项30profile通过且输入digest与冻结包字节保持。
