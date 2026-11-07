@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -21,6 +20,7 @@ from zf.runtime.run_manager_repair_router import (
     special_expected_downstream_events,
 )
 from zf.runtime.stage_replan_generation import STAGE_REPLAN_GENERATION_EXPECTED_EVENTS, stage_replan_generation_preflight
+from zf.runtime.run_manager_no_progress import NO_PROGRESS_EVENT_TYPES
 from zf.runtime.execution_policy_routing import (
     execution_route_expected_events,
     execution_route_preflight_for,
@@ -68,18 +68,7 @@ ACTION_POLICIES = frozenset({
 })
 SUPPORTED_BATCH_ACTIONS = SAFE_BATCH_ACTIONS | {"trigger_rework"}
 SUPPORTED_TASK_ACTIONS = SAFE_TASK_ACTIONS
-NO_PROGRESS_EVENT_TYPES = frozenset({
-    "task.dispatch_context.bound",
-    "fanout.child.stale_completion",
-    "run.manager.action.blocked",
-    "run.manager.action.failed",
-    "run.manager.action.verify.failed",
-    "run.manager.autoresearch.consumed",
-    "run.manager.human_decision.rejected",
-    "human.escalate",
-    "integration.failed",
-    "candidate.quality.failed",
-})
+
 
 
 @dataclass(frozen=True)
@@ -651,56 +640,11 @@ def intervention_class_for_decision(
 
 
 def build_no_progress_projection(
-    events: list[Any],
-    *,
-    threshold: int = 3,
+    events: list[Any], *, threshold: int = 3,
 ) -> dict[str, Any]:
-    counts: Counter[str] = Counter()
-    latest: dict[str, dict[str, Any]] = {}
-    for event in events:
-        etype = str(getattr(event, "type", "") or "")
-        if etype not in NO_PROGRESS_EVENT_TYPES:
-            continue
-        payload = getattr(event, "payload", None)
-        payload = payload if isinstance(payload, dict) else {}
-        status = str(payload.get("status") or payload.get("next_route") or "")
-        if etype == "run.manager.autoresearch.consumed" and status not in {"failed", "human_escalate"}:
-            continue
-        fp = _no_progress_fingerprint(
-            etype,
-            payload,
-            fallback=str(getattr(event, "id", "") or ""),
-        )
-        counts[fp] += 1
-        latest[fp] = {
-            "fingerprint": fp,
-            "count": counts[fp],
-            "event_id": str(getattr(event, "id", "") or ""),
-            "event_type": etype,
-            "checkpoint_id": str(payload.get("checkpoint_id") or ""),
-            "safe_resume_action": str(payload.get("safe_resume_action") or ""),
-            "action_policy": str(payload.get("action_policy") or ""),
-            "owner_route": str(payload.get("owner_route") or ""),
-            "failure_class": str(payload.get("failure_class") or ""),
-            "verify_condition": str(payload.get("verify_condition") or ""),
-            "reason": str(payload.get("reason") or payload.get("decision") or status),
-        }
-    tripped = [
-        row for row in latest.values()
-        if int(row.get("count") or 0) >= threshold
-    ]
-    tripped.sort(key=lambda item: (-int(item.get("count") or 0), str(item.get("event_id") or "")))
-    return {
-        "schema_version": "run-manager.no-progress.v1",
-        "is_derived_projection": True,
-        "threshold": threshold,
-        "status": "tripped" if tripped else "clear",
-        "summary": {
-            "fingerprints": len(counts),
-            "tripped": len(tripped),
-        },
-        "items": tripped,
-    }
+    from zf.runtime.run_manager_no_progress import build_no_progress_projection as build
+
+    return build(events, threshold=threshold, fingerprint_for=_no_progress_fingerprint)
 
 
 def recovery_closeout_contract_report(
