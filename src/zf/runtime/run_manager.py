@@ -570,12 +570,36 @@ def _run_manager_tick_unlocked(
     )
     selected_operation_key = str(next_operation.get("operation_key") or "")
     if action_filter is not None and not continuation.get("terminal"):
-        selected_operation_key = next((
-            str(action.get("operation_key") or "")
-            for action in projection.get("pending_actions", [])
+        events = _read_events(state_dir, event_log=event_log)
+        filtered_actions = [
+            action for action in projection.get("pending_actions", [])
             if isinstance(action, dict)
             and str(action.get("action") or "") in action_filter
-        ), "")
+            and not _action_seen(events, action)
+        ]
+        filtered_continuation = build_run_continuation_projection(
+            events,
+            goal=projection.get("goal") or {},
+            pending_actions=filtered_actions,
+            completion_profile=projection.get("completion_profile") or {},
+        )
+        selected_operation_key = str(
+            (filtered_continuation.get("next_operation") or {}).get("operation_key") or ""
+        )
+        # An explicit request for a stale/invalid action still needs a rejection
+        # receipt. Do not execute it, or turn a pending human gate into a retry.
+        if auto_execute and not selected_operation_key and not is_dispatch_paused(state_dir, events=events):
+            blocked = next((
+                action for action in filtered_actions
+                if (action.get("preflight") or {}).get("status") == "blocked"
+                and (action.get("policy_decision") or {}).get("decision") != "needs_diagnosis"
+            ), None)
+            if blocked is not None:
+                _emit_blocked_action(
+                    writer, blocked, causation_id=started.id,
+                    reason="filtered recovery action failed preflight",
+                )
+                actions_blocked += 1
     if auto_execute and selected_operation_key and not is_dispatch_paused(state_dir, events=events):
         for action in projection.get("pending_actions", []):
             if not isinstance(action, dict):
@@ -1348,7 +1372,9 @@ def build_run_manager_projection(
     continuation = build_run_continuation_projection(
         events,
         goal=goal,
-        pending_actions=pending_actions,
+        # Keep unresolved obligations visible, but do not select an action the
+        # executor will discard as already delivered. Later actions must run.
+        pending_actions=[a for a in pending_actions if not _action_seen(events, a)],
         completion_profile=completion_profile,
     )
     # A no-progress diagnosis remains first in the queue, but cannot be sent
