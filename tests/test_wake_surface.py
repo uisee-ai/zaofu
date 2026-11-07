@@ -40,7 +40,7 @@ def test_kept_events_still_wake():
 def test_wake_list_changes_are_explicit():
     # 快照锁:数量带 ±0 容差——增删唤醒源必须改本测试(显式决策)。
     assert len(WAKE_PATTERNS) == len(set(WAKE_PATTERNS))  # 无重复
-    assert len(WAKE_PATTERNS) == 192, (  # worker.assistance.requested wakes durable RM routing
+    assert len(WAKE_PATTERNS) == 193, (  # R53: durable protocol correction wakes Kernel only
         f"WAKE_PATTERNS={len(WAKE_PATTERNS)}; 唤醒面变更需同步本快照"
         f"(K2 基线 103-7=96;B14 plan 审核门显式 +3:plan.approval.requested /"
         f" plan.approved / plan.rejected —— 均 workflow 控制事件需唤醒"
@@ -97,7 +97,9 @@ def test_wake_list_changes_are_explicit():
             f"Channel PRD independent evaluation dispatch "
             f"+1:channel.prd_evaluation.requested → 184; Task Pipeline "
             f"generation and typed verify/acceptance completion edges +5 "
-            f"→ 189; durable RM reflection completion and controlled run resume +2 → 191"
+            f"→ 189; durable RM reflection completion and controlled run resume +2 → 191; "
+            f"worker.assistance.requested +1 → 192; semantic-submit protocol correction "
+            f"+1:workflow.call.result.repair.requested → 193 (LS-v1 R53)"
         )
 
 
@@ -126,6 +128,10 @@ def test_wake_classification_examples_are_locked():
     assert wake_event_category("memory.note") == WAKE_CATEGORY_PROJECTION_ONLY
     assert wake_event_category("gan.round.started") == WAKE_CATEGORY_BATCH_PROCESSED
     assert wake_event_category("hook.orphan_event") == WAKE_CATEGORY_OBSERVED_ONLY
+    assert (
+        wake_event_category("workflow.call.result.repair.requested")
+        == WAKE_CATEGORY_LAYER1_WAKE_LAYER2_NOISE
+    )
 
 
 def test_silent_stall_handler_registered():
