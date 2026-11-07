@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：`7debb71d fix: retire stale recovery failures after authorized generation`；合入 dev：`1b7f086a`。
 
 # 授权新代际后退役旧无进展计数
 
@@ -16,3 +18,10 @@ LS-v1 的 stage-replan-new-generation 已成功恢复，但 Run Manager no_progr
 - 首次 sentinel 发现 router 从 996 行超过结构上限，未合并；将完整计数投影移至 run_manager_no_progress.py（88 行），原 router 940 行，复跑全部自动层通过。
 - LS 真实事件只读重放确认旧 no_progress 由 tripped 变为 clear；业务恢复已由同一受控 tick 成功，部署等待当前 Planner 安全完成边界。
 - 日志：/tmp/zf-generation-progress-{direct,verify,serial}-20261107.log；自动回执 /tmp/zf-generation-progress-verify-20261107.json。
+
+
+## 部署核验
+
+LS-v1 03:25:48 实际加载 1b7f086a，runtime-load a1b5bf1e2781477f903414f1119672f2；
+03:26:36 Run Manager 投影 no_progress=clear。当前 Plan 已完成并批准；后续发现的新旧
+输出 Package 混绑另由 0328-plan-output-lineage 任务负责，不再混作本计数故障。

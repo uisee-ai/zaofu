@@ -75,3 +75,30 @@ Run Manager 的无进展计数按 Run 和失败指纹隔离。`stage-replan-new-
 新代际再出现相同失败时重新累计，其他失败与审批门继续生效。历史事件保留不变，
 防止旧诊断长期占据队首，阻塞已有授权的后续恢复。回归见
 `tests/test_recovery_generation_progress.py`，涵盖真实受控恢复和 Run Manager 消费入口。
+
+
+### 直接 Plan 汇总的输入/输出身份隔离
+
+无 Synth 的 reader aggregate 与 Synth 路径共用新输出身份规则：Task Map ref 变化时，
+不沿用输入的 generation、digest、Plan Package 或 Goal Claim Set 身份。下游仍须重新
+经过完整包准入。相同 generation 的包复用必须核对冻结 Task Map 正文；不一致直接
+拒绝，防止旧矩阵在稍后的任务选读阶段才报错。全文与摘要、私有临时路径不能互换。
+
+历史误绑定可通过已授权 `stage-retrigger` 提供 `repair_plan_output: true` 和
+`approval_ref` 修复。仅接受 kernel 的 `task_map.ready`，核验同 Run 的包摘要和实际
+正文不一致，保存旧身份作为观察证据，清除输出身份后沿用原完整产物重新准入、审批。
+不重新调用 Planner，不修改原 Task Map、port、事件或完成证据。
+
+可附 `retain_completed_task_ids` 保留被本次全量 replan 重开的完成任务：内核要求
+同一 map 的重开回执、精确前后 authority revision、归档 done、原 kernel 完成与集成
+回执、无后续派发，且除明确的来源/导航绑定外合同逐字段相同。语义保留决定来自
+操作员的 `approval_ref`；机械验证不代替判断。所有任务先核验，再经 TaskStore CAS
+恢复原完成时间和证据，并记录 `task.status_changed`，不制造新 `task.done`。
+完整 map 保留，仅以 `task_ids` 和已有 `resume_scope` 派发剩余任务。部分 CAS 已成功
+后重试可继续；有新 authority 或执行尝试即拒绝。回归入口见
+`tests/test_plan_output_lineage.py`，已有范围保留覆盖见
+`tests/test_writer_fanout_runtime.py::test_scoped_replan_preserves_unselected_completed_task_evidence`。
+
+同日完成、重开、再次完成时，TaskStore.get 从当日归档末尾读取最新记录；索引缺失时
+也按最新日期和记录查找。历史归档不删除，避免恢复 CAS 后中断重试拿到旧 authority。
+`tests/test_task_store.py` 覆盖有/无终态索引；恢复测试覆盖 CAS 成功、审计追加前中断。

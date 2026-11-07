@@ -218,6 +218,17 @@ Use canonical IDs/refs for repeated tables while keeping each required assertion
 and task-specific dependency explicit. Critic reconciles coverage, not a target
 word count; reducing lane count or removing gates is a separate owner decision.
 
+### Preserve completed work with an executable scope
+
+On recovery/replan, retain the complete Task Map and acceptance matrices. When
+completed tasks have unchanged acceptance, the controlled trigger must carry
+explicit `task_ids` for the remaining work and an existing `resume_scope`.
+A sentence saying “preserve completed tasks” is not an execution scope: a full
+replan can reopen terminal tasks. Reconcile prior completion/integration receipts
+and compare contracts before requesting that scope through the controlled
+replan action. Never declare new completion or remove acceptance to retain work.
+`input_task_ids` controls context reading only; it is never a dispatch filter.
+
 ### Optional scope evidence for an incremental Critic
 
 Only for a replan with a current admitted Plan Package and a prior independent

@@ -271,6 +271,18 @@ class RecoveryActionsMixin:
                     f"already retriggered by {event.id}", 409,
                 )
         base = dict(source.payload if isinstance(source.payload, dict) else {})
+        if payload.get("repair_plan_output"):
+            from zf.core.state.locks import locked_path
+            from zf.runtime.plan_output_recovery import repair_plan_output
+
+            try:
+                with locked_path(self.state_dir / "locks" / "plan-output-recovery"):
+                    base = repair_plan_output(self, source, payload, requested)
+            except (ValueError, OSError) as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+        elif payload.get("retain_completed_task_ids"):
+            return self._recovery_failed(
+                requested, action, requested_action, "completion retention requires a Plan output repair")
         base["redrive_of"] = source_event_id
         base["rework_of"] = source_event_id  # 代际:retrigger 不是 replay
         trigger = ZfEvent(
