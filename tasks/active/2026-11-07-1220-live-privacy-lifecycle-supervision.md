@@ -275,3 +275,12 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - P10原训练入口404→授权原型1GREEN；第二项先CR06夹具审批失败不计产品RED，补合成测试引用后进到prepare404。共享调度独立反例发现engine.claim先schedule permit写allow，后train recheck拒绝却catch/continue未回滚allow；无新attempt/全业务schema与字节不变，但新增schedule allow+train deny违反仅拒绝审计。callback在拒绝之后，无法在training写域修复。原型归档撤下后仍同样失败。54767d853e39454a8ad1555417b33fe90203fad0仅测试/证据，完整snapshot及原日志/JUnit/receipts归档；focused环境筛选运行明确不是全runtime证据。原同头smoke/runtime exit1，浏览器未执行，不宣称训练完成。
 - P10 22:46:05 evt-fcd622e47951准入 / evt-2a13807a332a dev.blocked，evt-bdf64e1c6ad6 request_replan不加retry；22:48:34 RM evt-ccbb96c5b98d自动applied、evt-49ed3a0d2494 discovery请求，绑定最新de09/b41ce6图。Discovery op wop-prd-post-verify-discovery-prd-flow-discovery-trig-evt-49ed-f197ab94c608 / pane718，监工提示仅Schedule修复→Training续作并保护ingest/Quality。
 - P10询问真实PyTorch环境后，监工未找到可用安装（uv仅残缺临时缓存），从官方CPU index在独立/tmp/zf-training-runner-20261107T2222/venv安装torch==2.5.1+cpu，不改项目锁。下载持续推进但仍未完成；准备了实际CPU训练/SGD动量+RNG checkpoint精确恢复验证脚本，尚未执行，不能称runner已可用或产品资格通过。
+
+
+### 23:14 UTC：Training 上游修复计划批准、三路恢复并行
+
+- PyTorch CPU隔离runner已完成：/tmp/zf-training-runner-20261107T2222/venv/bin/python，Python3.11.14/torch2.5.1+cpu，官方CPU index安装，不修改产品锁。23:00:56真实5步CPU SGD动量训练、step3模型/优化器/RNG checkpoint后恢复2步，与不中断训练逐参数torch.equal通过。脚本、安装日志、freeze、receipt与摘要manifest持久化到产品diagnostics/recovery-20261107-1220/training-runner-capability。仅证明合成环境能力，不算训练产品或硬件资格通过。
+- Training Discovery evt-af676db737ef独立复现1fail，122业务表/59文件保持一致，28归档摘要匹配，但允许与拒绝审计同时持久化。局部Schedule事务边界缺口确证，不能在Training写域修复。gap evt-bfc47c2cbc0d自动生成新版task_map，package3648ac3a6d0e82164f517021525f59c0355c0fed318b28eb01d49e55ba83ebf7 / generation d2549d6353b861d5c19bf7f9e29228082560b67b0c05aa7eb913fa043ae4089a。
+- owner审查确认仅P10替换为P10-SCHEDULE-DENIAL-R1→P10-TRAINING-R1；后者保留原7条mandatory AC和3条验证命令。上游精确Schedule三源码文件，不写Core/Access；包含savepoint回滚的锁寿命、真实失败元数据、完整不变集、审计写失败、正常调度/公平性/重启和并发双序验收。P09C/Ingest R1/Privacy R7的图中对象完全不变；加载器只选择两个新增任务，34done不重开。
+- 委托批准plan evt-fb434257e3f6，23:11:57 evt-a8f71ffaed79 plan.approved；审批前后三个受保护TaskStore对象完全相等。证据training-gap-plan-owner-review.json。新Schedule op wop-impl-tp-P10-SCHEDULE-DENIAL-R1-b690fa-745c21b6dccf / prd-dev-lane-1 / pane756已运行，监工仅补充当前scope、原失败证据与环境方法，未改canonical。
+- 当前有效47项，34done、13未完成；实际两路Impl（Ingest和Schedule）+一路独立Verify（Quality）。Ingest正在既有retention回归，Quality完整独有正文已读完并核对来源，尚无独立结论。训练和Privacy完整后继等待各自前置集成。全部完成仍未达成，持续监工。
