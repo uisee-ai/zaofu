@@ -69,7 +69,7 @@ def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tm
         "ok": True, "current_command": "codex", "current_path": str(tmp_path)})
     monkeypatch.setattr("zf.runtime.run_manager._refresh_resident_briefing", lambda **kw: False)
     sent = []
-    monkeypatch.setattr("zf.runtime.run_manager._send_tmux_prompt", lambda target, prompt: sent.append(prompt) or {"ok": True})
+    monkeypatch.setattr("zf.runtime.run_manager._send_tmux_prompt", lambda target, prompt, **kw: sent.append(prompt) or {"ok": True})
     run_manager_tick(state_dir=state, writer=writer, config=config, event_log=log, project_root=tmp_path, spawn_repairs=False)
     events = log.read_all()
     assert len(sent) == 1 and "expected_output" in sent[0]

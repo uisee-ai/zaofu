@@ -720,6 +720,7 @@ def _run_manager_tick_unlocked(
                         causation_id=started.id,
                     )
                     if status == "applied":
+                        diagnosis_satisfied = True
                         actions_applied += 1
                         applied_safe_actions.append("resident_agent_reprompt")
                     elif status == "blocked":
@@ -1349,6 +1350,19 @@ def build_run_manager_projection(
         events,
         pending_actions,
     )
+    # One bound diagnosis at a time; keep a derived wait, not a terminal
+    # blocked receipt that would permanently consume the queued action.
+    requests = resident_agent.get("requests") or []
+    if requests and _resident_agent_can_reprompt(resident_agent):
+        for action in pending_actions:
+            if _is_owned_resident_diagnosis(action):
+                admission = action.get("recovery_admission") or {}
+                if admission.get("status") != "blocked":
+                    action["diagnosis_wait"] = requests[0]
+                    action["recovery_admission"] = {
+                        **admission, "status": "blocked",
+                        "reason": "resident diagnosis awaits bound response or deadline",
+                    }
     recovery_metrics_events = events
     if current_run_id:
         from zf.runtime.run_scope import events_for_run
@@ -1936,6 +1950,13 @@ def _pending_resident_agent_actions(
         ],
         "route_registry": "run-manager-router.v1",
     }
+    original_prompt = next((e for e in events if e.id == prompt_event_id), None)
+    context = (original_prompt.payload or {}).get("diagnosis_context") if original_prompt else None
+    if can_reprompt and isinstance(context, dict) and context.get("request_kind") == "recovery_diagnosis":
+        action.update({key: context[key] for key in (
+            "request_kind", "recovery_context_ref", "read_set_ref",
+            "source_ref", "diagnosis_expected_output",
+        ) if key in context})
     if _action_seen(events, action):
         return []
     action["preflight"] = preflight_action(
@@ -1991,6 +2012,18 @@ def _resident_diagnosis_reprompt_action(
         "diagnosis_source_action": str(action.get("action") or ""),
         "suggested_route": "run_manager_resident_agent",
     }
+    if _is_owned_resident_diagnosis(action):
+        reprompt.update(
+            request_kind="recovery_diagnosis",
+            request_id="rmd-" + hashlib.sha256(checkpoint_id.encode()).hexdigest()[:16],
+            diagnosis_expected_output=_string_list(action.get("expected_output")),
+            expected_output=[RUN_MANAGER_AGENT_RECOMMENDATION],
+            continuation_expected_events=[RUN_MANAGER_AGENT_RECOMMENDATION],
+            effect_expected_events=action.get("effect_expected_events") or (
+                ["task.done", "task.done.accepted"] if action.get("task_id")
+                else ["flow.goal.closed"]
+            ),
+        )
     reprompt["preflight"] = preflight_action(
         action="resident-agent-reprompt",
         payload=reprompt,
@@ -2002,18 +2035,21 @@ def _resident_diagnosis_reprompt_action(
     return reprompt
 
 
+def _is_owned_resident_diagnosis(action: dict[str, Any]) -> bool:
+    return (
+        action.get("action") == "diagnose-attention"
+        and action.get("owner_route") == "run_manager"
+        and action.get("suggested_route") == "run_manager_recovery"
+    )
+
+
 def _diagnosis_action_may_reprompt_resident(action: dict[str, Any]) -> bool:
-    """Only reprompt resident agent for resident-agent health diagnosis.
-
-    Generic workflow/fanout attention still needs a concrete resume proposal;
-    merely proving the resident pane was prompted is not evidence that the
-    target worker or fanout child recovered.
-    """
-
-    failure_class = str(action.get("failure_class") or "")
-    if failure_class == "run_manager_resident_agent_stalled":
-        return True
-    return str(action.get("suggested_route") or "") == "run_manager_resident_agent"
+    """Deliver owned diagnoses; a delivery receipt never resolves the fault."""
+    return (
+        _is_owned_resident_diagnosis(action)
+        or action.get("failure_class") == "run_manager_resident_agent_stalled"
+        or action.get("suggested_route") == "run_manager_resident_agent"
+    )
 
 
 def build_run_monitor_projection(
@@ -7138,6 +7174,21 @@ def _execute_resident_agent_reprompt(
     action: dict[str, Any],
     causation_id: str,
 ) -> str:
+    if action.get("request_kind") == "recovery_diagnosis" and not action.get("recovery_context_ref"):
+        try:
+            refs = _write_run_manager_context_sidecars(
+                state_dir=state_dir, request_id=action["request_id"],
+                action=action, projection={}, project_root=project_root,
+                source_event_id=causation_id,
+            )
+        except Exception as exc:
+            _emit_blocked_action(writer, action, causation_id=causation_id,
+                                 reason=f"resident diagnosis context failed: {exc}")
+            return "blocked"
+        action = {
+            **action, **refs, "recovery_context_ref": refs["context_ref"],
+            "source_ref": str(refs["context_ref"].get("ref") or ""),
+        }
     if not action.get("recovery_context_ref") and (
         action.get("semantic_triage_request_id") or (action.get("request_id") and action.get("expected_output"))
     ):
@@ -7227,7 +7278,7 @@ def _execute_resident_agent_reprompt(
     focus = _resident_action_focus_prompt(action)
     if focus:
         prompt = prompt.rstrip() + "\n\n" + focus + "\n"
-    sent = _send_tmux_prompt(target, prompt)
+    sent = _send_tmux_prompt(target, prompt, backend=config.runtime.run_manager.backend)
     if not sent.get("ok"):
         writer.emit(
             RUN_MANAGER_ACTION_FAILED,
@@ -7257,6 +7308,12 @@ def _execute_resident_agent_reprompt(
             "request_id": str(action.get("request_id") or action.get("semantic_triage_request_id") or ""),
             "task_id": str(action.get("task_id") or ""),
             "expected_output": _string_list(action.get("expected_output")),
+            "diagnosis_context": {
+                key: action[key] for key in (
+                    "request_kind", "recovery_context_ref", "read_set_ref",
+                    "source_ref", "diagnosis_expected_output",
+                ) if key in action
+            } if action.get("request_kind") == "recovery_diagnosis" else {},
             "briefing_refreshed": briefing_refreshed,
         },
     )
@@ -7362,6 +7419,15 @@ def _resident_action_focus_prompt(action: dict[str, Any]) -> str:
         "围绕 Current Focus 完成所要求的诊断或修复交付；expected_output 是交付合同。"
         "只有没有指定交付时才能仅输出观察。建议须引用证据、说明下一步骤和负责人；修复须使用明确获准的 repair task。",
     ])
+    if action.get("request_kind") == "recovery_diagnosis":
+        lines.extend([
+            "- diagnosis_expected_output: " + ", ".join(_string_list(action.get("diagnosis_expected_output"))),
+            "- read_set_ref: `" + str((action.get("read_set_ref") or {}).get("ref") or "") + "`",
+            "读取 source_ref 的诊断上下文与 read_set_ref，按需核对原始证据和当前版本；旧故障可能已经失效。",
+            "通过 `zf emit run.manager.agent.recommendation` 返回 proposal_only 建议，payload 包含上述 request_id、",
+            "诊断交付内容、evidence_refs、recommended_route、下一动作/owner 和预期下游证据。",
+            "此响应只履行诊断请求；不得自行宣告原任务完成或改写规范状态。发出响应后结束本 turn。",
+        ])
     semantic_request_id = str(action.get("semantic_triage_request_id") or "").strip()
     if semantic_request_id:
         task_id = str(action.get("task_id") or "").strip()
@@ -7466,10 +7532,16 @@ def _resident_pane_display(target: str) -> dict[str, Any]:
     }
 
 
-def _send_tmux_prompt(target: str, prompt: str) -> dict[str, Any]:
+def _send_tmux_prompt(target: str, prompt: str, *, backend: str = "") -> dict[str, Any]:
     try:
-        from zf.runtime.tmux import tmux_env
+        from zf.runtime.tmux import TmuxSession, tmux_env
 
+        if backend == "codex":
+            session, window = target.split(":", 1)
+            tmux = TmuxSession(session)
+            tmux.clear_input(window)
+            tmux.send_paste(window, prompt)
+            return {"ok": True}
         env = tmux_env()
         paste = subprocess.run(
             ["tmux", "send-keys", "-t", target, prompt],
