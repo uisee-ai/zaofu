@@ -380,6 +380,12 @@ class SemanticResultSubmitService:
                 revision=_revision,
                 delivery=self._current_task_pipeline_delivery(_operation, request),
             )
+        if profile_id == "orchestrator-semantic-decision":
+            from zf.runtime.orchestrator_directive_refs import validate_orchestrator_submission
+
+            return validate_orchestrator_submission(
+                state_dir=self.state_dir, request=request, semantic=semantic,
+            )
         raise ResultSubmitError(
             "plan_candidate_validation_unavailable",
             "operation has no supported pre-submit validation profile",
@@ -406,6 +412,21 @@ class SemanticResultSubmitService:
             )
         )
         profile = self.registry.profile(profile_id, revision)
+        if profile_id == "orchestrator-semantic-decision":
+            from zf.runtime.orchestrator_directive_refs import validate_orchestrator_submission
+
+            validation = validate_orchestrator_submission(
+                state_dir=self.state_dir, request=request, semantic=semantic,
+            )
+            if validation["status"] != "passed":
+                raise ResultSubmitError(
+                    "orchestrator_directive_not_admitted",
+                    "; ".join(item["message"] for item in validation["errors"]),
+                    details={
+                        "status": "repair_required", "attempt_domain": "protocol_repair",
+                        "semantic_rework_cost": 0, "issues": validation["errors"],
+                    },
+                )
         if profile_id == _PLAN_SYNTH_PROFILE_ID:
             verdict_errors = plan_synth_verdict_errors(semantic)
             if verdict_errors:

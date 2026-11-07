@@ -202,3 +202,9 @@ Reader 的失败仍保留原事件和证据，但在 stage replan 与 Run Manage
 当历史 no-progress 诊断受 Autoresearch 单飞占用约束时，Run Manager 允许当前任务的只读诊断送到空闲 resident；继续沿用任务范围、人工门禁、恢复准入和单次消费检查。resident 已有待答请求、不可用或任务有人工门禁时不绕过；同理不得借此派发任意 replan/重试。原后台调查及队列保留，未把发送诊断当修复完成。
 
 精确 `human-decision-dismiss` 产生的 kernel `human.escalation.acknowledged(status=dismissed)` 会从 no-progress 当前投影中排除所绑定的单条升级。它不删除事件、不重置整个指纹/Run 的失败预算；其他未关闭升级仍计数，新失败仍可熔断。仅请求、非dismiss状态、跨Run引用及外部ack均不清理计数。
+
+## OA 指令引用的提交前校验（R50）
+
+LS-v1 观测到 OA 的嵌套来源引用不在本次 source manifest 内，CallResult 先接纳并结算，执行准入随后拒绝，角色已退出。现由 `orchestrator_directive_refs.py` 共享现有 ref/digest 白名单检查，`result validate` 和 `result submit` 在消耗 capability 之前反馈 schema/引用协议错误；原 operation 保持 running，可在同一 scratch 修正后重交。basis/reuse/invalidate 都不能凭正文中的子链接扩权，必须引用冻结 manifest 的直接来源，或申请受控输入修订。
+
+该预检只验证 authored schema 和冻结引用，不代表身份、当前目标、语义动作或产品门禁通过。执行时仍重新准入；历史已接纳但执行拒绝的结果保留原记录，通过现有受控诊断入口创建后继处理，不能改写旧决策或复活结算 operation。测试覆盖三类字段的未授权路径和错误digest、失败不结算、不消费、同operation修正、重复提交拒绝以及历史结果执行时防线。

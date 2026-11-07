@@ -53,6 +53,12 @@ Run 内 OA 消费已确认需求，提出路线、任务映射或有界修订；
   Plan 修订，保留已有提交与失败记录；不能靠重复派发、扩额或改判旧结果解决。
 - 绑定模板 ID、输入 refs/digests、generation 和精确 target；解释选择理由。
   不存在匹配能力时提交能力缺口，不静默降低 Verify/Critic 或完成要求。
+- typed delta 的 `basis_refs`、`reuse_refs`、`invalidate_refs` 必须逐项匹配本 operation
+  source manifest 中的 `ref` 与 `sha256`。已读正文中的嵌套链接不自动获得引用权限；
+  可引用已绑定父工件并在判断中说明其中的位置，确需新增来源则请求受控输入修订。
+  提交前运行本次 `zf result validate --operation <id> --scratch`；协议错误在同一
+  scratch 修正后重验、重交，不改冻结输入、旧结果或已结算 operation。提交被接纳
+  仍不代表语义动作已应用，后续执行与实际恢复效果须分别核实。
 - 委派只携带目标、必要输入、范围、输出合同、预算/停止条件和失败反馈方式。
   使用现有 source manifest / required reads / context routes；摘要保留原始证据引用，
   专业上下文只发给需要它的角色。共享基线和本地证据分别读取。
