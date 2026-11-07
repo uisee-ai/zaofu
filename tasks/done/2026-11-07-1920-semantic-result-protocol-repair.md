@@ -1,6 +1,6 @@
 # R53：语义结果拒收后自动恢复协议纠正
 
-> 状态: active
+> 状态: done — `7f6d42dc fix: resume rejected semantic results through protocol correction`
 
 用户已授权持续监工、分析修复阻塞并记录。基于 dev 65266d0c，单独 worktree 实施。
 
@@ -23,3 +23,6 @@ LS-v1 OA operation wop-orchestrator-agent-pre_impl-checkpoint-revision-2c2a36981
 - dev-verify plan 的自动规则因 >80 文件会升级整仓，本次遵守 AGENTS.md 的影响闭包要求，显式运行其全部 247 selected_tests；同时运行 dev-verify run --paths tests/test_call_result_repair_reconciliation.py，不把该小集合冒充完整闭包。
 - serial 10 passed；dev-premerge sentinel 53 passed；三流 mock E2E 10 passed。未运行全仓 pytest、host 或 real-provider E2E。
 - OA 现场本次由 operator evt-c59f989cbe05 指导恢复，evt-948add4f6618 已获准入；此事实不算尚未部署修复的自动恢复证据。
+
+- 最终聚焦 115 passed（含 wake 快照及边界分类），新增文档影响 8 passed。合并后 dev 聚焦 107 passed、sentinel 53 passed。完整影响闭包中唯一原失败已关闭，无新增未执行测试文件。
+- dev 合并 ebf5e59d，19:28 UTC 控制面重载 PID 3900120；加载收据 d3f4f24e1c8a4e34aa785287cccfb37b 明确同版源码，4 个在途 Task operation 的 attempt/dispatch/role/task 与全部既有 pane/PID 均保留。真实 OA 已由监工指导恢复，暂未发生部署后的自然协议拒收，不能声称已完成真实自动恢复演练。
