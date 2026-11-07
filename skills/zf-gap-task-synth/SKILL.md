@@ -58,6 +58,30 @@ Classify command paths before emitting the plan:
   only the rejected task-map shape. Do not rerun broad discovery merely to add
   a missing read claim.
 
+## 恢复提案就绪检查
+
+对新增的每个任务（包括不声明 `supersedes_task_ids` 的前置任务），在提交前
+同时对账执行输入、写入权限和验证责任：
+
+- 当前输入包使用按任务选择时，显式声明
+  `evidence_contract.plan_input_selection` 的 Impl/Verify 消费范围；按
+  `zf-verify-rescan-replan` 核对前驱需求及新增义务是否完整覆盖。新任务 ID
+  不等于新需求正文，使用受控前驱关系继承分区，不能省略选择或复制全量输入。
+- 逐项核对 `evidence_contract.required_artifacts` 与 `allowed_paths`。
+  本任务需生成的证据必须有精确写入范围；只读来源不扩为可写。若验收要求
+  发布控制面 Plan/input，由 Planner 经受控产物链路完成后再派发消费者，
+  不把控制面状态目录加入业务 worker 的写入范围。
+- 从已绑定合同继承完整 `verification_commands` 对象。新增命令显式声明
+  command ID、AC 对应、owner、tier 及确定性/可复用/超时属性；当当前合同要求
+  rolling smoke 时，选择实际能在 worker 和集成 Candidate 重跑的本地命令。
+  不能给需要外部环境的验收虚标 `rolling_smoke`，也不能删除原最终集成门。
+- 全图中共享 command ID 只表示同一验证义务；不同任务的 AC/owner 不同时，
+  选择唯一 ID，并同步验收映射及矩阵。不得用改名伪造已存在的执行收据。
+
+准入拒绝后，沿用原缺口证据，针对返回的具体字段修订当前草稿并复查以上
+关联面。若缺少上游输入或权限，报告具体责任者与所需产物；重复提交相同
+不完整提案不能构成恢复进展。
+
 ## Split-quality Preflight
 
 Before emitting a gap plan, read the effective workflow work-unit contract from
