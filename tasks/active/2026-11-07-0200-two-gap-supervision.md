@@ -58,3 +58,15 @@ Critic提交 `evt-cee6ad122f5c` passed，无阻断fix_items；格式枚举提交
 - 02:49:54 `evt-2bc81ad0e3c2`，P16B-MEDIA-REDACTION-R1 → prd-dev-lane-2。
 
 02:49:59规范状态：26done、3in_progress、14backlog（含父任务，即13待执行子任务）、15历史cancelled。有效总量42，当前无Verify worker；Impl/Verify容量8/8，图的首波真实宽度3。后续继续监工TDD、媒体编解码/真实WebM、独立Verify及候选集成，产品修复尚未完成。
+
+## 03:12Z 留存白名单勘误与媒体下载卡顿
+
+留存Impl暴露原Plan漏项：execution_spec要求 `/api/v1/archive/retention`，但该任务额外的 `scope_file_allowlist` 漏掉静态路由入口 `app/features/archive/api.py`。canonical scope虽已有archive/**，不能以此忽略更窄的明确语义约束。Planner/Critic及机械准入没有识别“路由要求与精确清单”矛盾，这是本轮新发现的规划缺陷；其余Align/Media写域独立复查未发现同类遗漏。
+
+真实复现提交 `6434a9c444b156e687e2591c650f8348d33ad080`，PG/plugin健康，runtime1通过2失败（两入口404），健康smoke1通过，不计产品GREEN。已准入blocked `evt-b7a0618c324b`。
+
+用户已委托监工修复与批准；等待operation/attempt settled后，通过 `zf kanban handoff` 同owner，仅追加规范contract.behavior的单文件勘误，明确补充archive/api.py用于既定API接线；原scope、AC、依赖、证据绑定和Plan不可变包均保留。这是明确语义清单修订，不伪称原Plan无缺陷。新authority `authority-r1959062ba07aa3b7734f4578`，handoff `evt-84f5e5b9e3ab`；理由/完整before-after/结果保存在 `/tmp/zf-supervision-20261107/retention-contract-*.json`、`retention-handoff-result.json`。
+
+随后 `zf recover task-impl` 请求 `evt-9f0f6e785db6`，未扩大重试cap。03:12:26真实派发 `evt-96e425b58653`，新operation `wop-impl-tp-P16B-RETENTION-CONTRACT-R1-b5-b59069436b02`。已核实 `impl-g2-p2.md` 的Task instruction和rework_feedback都含同一勘误；后续Verify按当前Task构建快照，能获得相同授权。其余两路未中断；留存功能仍待实现和验收。
+
+媒体另遇环境卡顿：锁定av16.0.1 wheel38.4MiB/Pillow12.0.0下载超过bootstrap300s；监工对官方同一wheel抽样，1MiB范围20s仅501180bytes（约25KB/s）。不能把bootstrap失败当功能RED。并行获取原版本、原hash的完整wheel，未降低哈希校验、未安装宿主浏览器、未改依赖版本。待环境修复后仍需重跑功能测试和真实Docker浏览器验收。
