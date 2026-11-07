@@ -47,6 +47,8 @@ def test_admission_rejects_same_generation_different_task_map(tmp_path):
     with pytest.raises(PlanArtifactPackageError, match="different canonical content"):
         admit_plan_artifact_package_for_payload(**kwargs)
     (svc.state_dir / "artifacts/new-map.json").write_text(json.dumps(package_task_map(svc.state_dir, package)))
+    # The fixture's new unbound input is a separate change, not an exact replay.
+    source.payload.pop("plan_ports")
     identity = admit_plan_artifact_package_for_payload(**kwargs)
     assert identity["plan_artifact_package_ref"] == source.payload["plan_artifact_package_ref"]
 
