@@ -1,6 +1,6 @@
 # R48：返工范围不得漏掉原合同强制证据
 
-> 状态: active
+> 状态: done — `71b97878 fix: preserve authorized evidence outputs during task rework`
 
 车辆FMS05-NOOP-NULL已修复为c6be7aa且本地回归通过，但Verify的rework_items.allowed_scope只列产品代码/测试。Impl将其理解为完整写入权限，16:16以scope_contract_gap结算失败evt-9dc5a253502f；原Task Contract本来已允许artifacts/verification/FMS-05/并强制三份文件。R39修复了任务生产者范围，遗漏了Verify返工生产者与Impl如何保留证据义务的提示。
 
@@ -14,3 +14,11 @@
 方法与实现说明：[证据与范围对账](../../docs/impl/planner-context-and-operation-recovery.md)。本轮不将新派发等同于产品修复闭环；源码修复、交付证据、Task完成分别记录。
 
 验证：dev-verify plan选11文件，run完整执行97 passed、1既有外部配置sensor skipped；补充Verify重试/OA返工/199 mock33 passed；sentinel53 passed；两技能三份分发一致且metadata有效。首次手工测试路径拼错未运行，改用计划器真实闭包后通过。受控恢复dry-run40任务，原scope/AC/命令/owner/tier/证据合同保持，22个done及当前在途逐字段未改；仅未执行下游一对一替换依赖。实际恢复与部署待合并后记录。
+
+## 部署与实际效果
+
+实现71b97878已合入dev ef6fedf0并通过受控控制面重载，见LS-v1/docs/records/2026-11-07-r48-controlled-reload.json。LS方法同步dd5f5e6；已存在的其他dirty技能未覆盖。恢复后的车辆Impl在16:54:57交付1fa1adede59ae1252d85ad609b048729d1b67d2f，dev.build.done evt-ecf86f6af01c、接纳evt-5186385dd987，原三份证据已实际刷新，保留空VIN无变化保存修复。
+
+独立Verify16:56:00派发evt-b9f60d668087，17:31:57接纳evt-bb29a0bb7d99（semantic_verdict=passed）；36分钟中约18–19分钟用于冻结输入读取，多次压缩和一次执行转义误判已如实记录。DELTA-05原合同命令正确，worker误加展示转义后已独立重跑通过；未改合同或删门禁。Verify确认CHK-05的11项测试/浏览器/API/PostgreSQL证据与代码对应，额外44项字段边界断言通过。
+
+17:32:23候选更新evt-c092cdd1547a，17:32:24 task.done evt-fbafc4bec1d8，批准图完成数23/40。FMS06/07/08已于17:33开始下游实施；最终候选真实跨域E2E责任保持，不把本次Task完成等同整个产品验收。现场证据与后续派发见LS-v1/docs/records/2026-11-07-r48-closeout.json和2026-11-07-three-blockers-recovery.md。
