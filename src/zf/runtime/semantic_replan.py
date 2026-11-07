@@ -372,6 +372,23 @@ def _semantic_replan_anchor(
                     "target_ref": continuation_commit,
                 })
                 break
+    if task is not None and identity and not anchor.get("continuation_commit"):
+        from zf.runtime.task_pipeline_failure_continuation import task_pipeline_failure_continuation
+
+        partial = task_pipeline_failure_continuation(
+            state_dir=state_dir, project_root=project_root or Path(state_dir).parent,
+            events=events, task_id=task_id, workflow_run_id=str(anchor.get("workflow_run_id") or ""),
+            identity=identity, failure_event_ids=failure_event_ids or set(),
+        )
+        if partial:
+            anchor.update({
+                **partial,
+                "previous_candidate_ref": str(anchor.get("candidate_ref") or ""),
+                "previous_candidate_head_commit": str(anchor.get("candidate_head_commit") or ""),
+                "candidate_ref": partial["continuation_ref"],
+                "candidate_head_commit": partial["continuation_commit"],
+                "target_ref": partial["continuation_commit"],
+            })
     if (
         not anchor.get("continuation_commit")
         and anchor.get("candidate_head_commit")

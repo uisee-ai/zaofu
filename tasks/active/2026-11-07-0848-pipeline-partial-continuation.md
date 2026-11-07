@@ -1,0 +1,27 @@
+# Task Pipeline 失败恢复保留已提交部分交付
+
+> 状态: active
+
+来源：用户授权持续监工、修复阻塞并记录；LS FMS-04 dev.blocked evt-6953b57083e2 明确 source_commit=1b3ffa8，semantic request evt-d24c06f6a0cd 却选择开工前 d14768b。当前 dev 1deb6b42 的 semantic_replan 仅消费 legacy fanout.child.failed continuation。
+
+范围：只补 Task Pipeline 已准入失败交付到 semantic recovery 的可信提交继承；不改业务判断、任务完成标准、失败事实或其他在飞任务。
+
+## 验收
+
+- 当前已准入 blocked Impl、身份/派发/request 绑定及真实 Git 提交核验 -> verify: Run Manager 实际入口生成 partial_task_continuation，target 为已提交部分交付。
+- 缺准入、跨 task/run/attempt/generation、篡改信封/工件摘要、提交不匹配或非当前操作 -> verify: 拒绝采用 worker 声称的提交，不读取任意目录/不携带未提交文件。
+- 原 legacy continuation、task-base 和候选分支行为保持 -> verify: 直接调用者、共享 Operation/Envelope/Store、恢复 mock E2E 与 sentinel 通过。
+- 合并 dev、控制面重载后受控重发 FMS-04 分析 -> verify: 新请求和实际读取锁定正确部分提交，原失败保留，其他 worker 不中断。
+
+## 现场约束
+
+FMS-04 的 local 误将真实授权集成作为前置，成员能力也尚未补全；恢复指导必须引用已批准隔离开发要求并保留候选层责任，不能只删脚本 exit 1。此业务纠偏交由语义分析/实施，当前软件修复只保留可信代码基线。
+
+## 已取得证据
+
+- 新测试首轮夹具误用 EnsureOperationResult.operation，13 个错误均为夹具；改用 request_hash 后当前 dev 基线 2 failed/11 passed，证实 partial 恢复丢失。
+- 初版修复 69 passed/1 failed：损坏 sidecar 应安全拒绝而非抛异常；修正后 70 passed。
+- 真实现场回放发现准入事件 origin 可为空、规范化结果使用 target_commit，初始夹具与真实生产者边界不符。改为调用实际 ControlResultAdapterRegistry，保留拒绝 worker 来源及其他身份/摘要证明；当前 71 passed。
+- 只读实机回放已输出 partial_task_continuation → 1b3ffa8，原 task base d14768b 与规划 provenance 保留；尚待合并、部署和受控新请求。
+
+- 自动影响闭包 58 个测试文件 1,001 passed；共享 Operation/Envelope/Result/Capsule 51 passed；sentinel 53 passed。所有验证使用当前 worktree 的 src，未运行 full pytest/真实 provider E2E。
