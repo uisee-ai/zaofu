@@ -203,4 +203,4 @@ read-ledger 写入之后，输出 JSONL 的 `body` 定义与 `source` 来源/收
 给已派发 worker 追溯撤销。现场已误派的媒体 Impl 保留原 HEAD，并重用仍有效的 exact-head
 证据，再进入独立 Verify，绝不把弃权视为通过。
 
-记录：[验证弃权分流](../../tasks/active/2026-11-07-1558-verifier-abstention-routing.md)。
+记录：[验证弃权分流](../../tasks/done/2026-11-07-1558-verifier-abstention-routing.md)。
