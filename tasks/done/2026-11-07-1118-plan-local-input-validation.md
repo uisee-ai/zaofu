@@ -1,6 +1,6 @@
 # 计划预检尊重任务专属输入的消费范围
 
-> 状态: active — 用户授权修复监工发现的真实阻塞。
+> 状态: done — `94c3fca7 fix: validate local plan input partitions only for declared consumers`
 
 LS-v1 Q04候选给五项任务增加q04_development_input，实际Handoff支持任务专属required_plan_ports；Plan预检却对每一个产出的分区输入要求全部37项Task都有分区，报FMS01缺分区。这是预检与实际消费协议不一致。其余51条旧矩阵/映射/来源/继承输入问题独立处理，不因本修复放行整个候选。
 
