@@ -67,11 +67,13 @@ Classify command paths before emitting the plan:
   `evidence_contract.plan_input_selection` 的 Impl/Verify 消费范围；按
   `zf-verify-rescan-replan` 核对前驱需求及新增义务是否完整覆盖。新任务 ID
   不等于新需求正文，使用受控前驱关系继承分区，不能省略选择或复制全量输入。
-- 逐项核对 `evidence_contract.required_artifacts` 与 `allowed_paths`。
+- 逐项核对 `evidence_contract.base_path` + `required` 解析出的产物路径
+  与 `allowed_paths`。
   本任务需生成的证据必须有精确写入范围；只读来源不扩为可写。若验收要求
   发布控制面 Plan/input，由 Planner 经受控产物链路完成后再派发消费者，
   不把控制面状态目录加入业务 worker 的写入范围。
-- 从已绑定合同继承完整 `verification_commands` 对象。新增命令显式声明
+- 从已绑定 Task Map 继承完整 `validation.commands[]` 对象
+  （落地 Task `contract.verification_commands`）。新增命令显式声明
   command ID、AC 对应、owner、tier 及确定性/可复用/超时属性；当当前合同要求
   rolling smoke 时，选择实际能在 worker 和集成 Candidate 重跑的本地命令。
   不能给需要外部环境的验收虚标 `rolling_smoke`，也不能删除原最终集成门。
