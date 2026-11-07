@@ -4320,6 +4320,15 @@ class WorkflowRuntimeCoordinator(
         ))
         try:
             from zf.core.workflow.flow_metadata import flow_metadata_for
+            from zf.runtime.gap_plan_baseline import gap_plan_base_ref
+            from zf.runtime.plan_artifact_package import artifact_package_mode
+
+            metadata = flow_metadata_for(self.config, payload=payload)
+            base_task_map_ref = gap_plan_base_ref(
+                state_dir=self.state_dir, events=self.event_log.read_all(),
+                payload=payload, fallback_ref=base_task_map_ref,
+                required=artifact_package_mode(metadata) == "blocking",
+            )
 
             amend = write_gap_task_map_amend_artifact(
                 state_dir=self.state_dir,
@@ -4330,10 +4339,7 @@ class WorkflowRuntimeCoordinator(
                 gap_tasks=gap_tasks,
                 gap_plan_ref=gap_plan_ref,
                 replacement_context=payload,
-                admission_metadata=flow_metadata_for(
-                    self.config,
-                    payload=payload,
-                ),
+                admission_metadata=metadata,
             )
         except Exception as exc:
             self.event_writer.append(ZfEvent(

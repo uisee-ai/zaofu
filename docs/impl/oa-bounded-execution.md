@@ -107,6 +107,13 @@ Plan-domain 的工件预注册也按输入声明的已准入代次核对历史�
 Owner 授权的 stage recovery 从同 Run、同 OA 决定引用的 Kernel 重规划记录恢复
 基线，避免沿用旧错误触发中的包身份；历史未记录代次的包保留原兼容校验。
 
+Discovery 的 gap amendment 同样按声明的已准入代次选择包内 task_map，不能将
+较新的计划路径与旧任务代次拼接。后续 gap-only Plan Package 从
+`supersedes_task_map_generation` 对应的历史包继承验收工件；Run、包摘要、前置
+task_map 摘要及代次必须一致。此过程只修复证据绑定，不改变任务内容或验收要求。
+回归覆盖 `tests/test_gap_plan_baseline.py` 的真实 bridge 调用与
+`tests/test_plan_acceptance_rework.py` 的新旧计划并存场景。
+
 ## 只读观测
 
 ```bash
