@@ -298,6 +298,11 @@ class RecoveryActionsMixin:
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
         if payload.get("repaired_failure_event_id"):
+            if "input_task_ids" in payload:
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "fixed-input repair cannot change input task scope; use an authorized new generation", 409,
+                )
             from zf.core.state.locks import locked_path
             from zf.runtime.reader_stage_recovery import repaired_reader_stage_trigger
             with locked_path(self.state_dir / "locks" / "reader-stage-recovery"):
@@ -322,10 +327,13 @@ class RecoveryActionsMixin:
                 requested_action,
                 "escalation_event_id and approval_ref are required",
             )
-        from zf.runtime.reader_replan_feedback import bind_operator_feedback, operator_feedback
+        from zf.runtime.reader_replan_feedback import (
+            bind_operator_feedback, input_task_ids, operator_feedback,
+        )
 
         try:
             feedback = operator_feedback(payload)
+            input_scope = input_task_ids(payload)
         except ValueError as exc:
             return self._recovery_failed(requested, action, requested_action, str(exc))
         events = self.writer.event_log.read_all()
@@ -412,6 +420,11 @@ class RecoveryActionsMixin:
             None,
         )
         if existing_trigger is not None:
+            if input_scope != input_task_ids(existing_trigger.payload):
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "stage generation already exists with a different input task scope", 409,
+                )
             if payload.get("resume_candidate_synth_event_id") != existing_trigger.payload.get("resume_candidate_synth_event_id"):
                 return self._recovery_failed(
                     requested, action, requested_action,
@@ -459,6 +472,9 @@ class RecoveryActionsMixin:
                 409,
             )
         bind_operator_feedback(stage_trigger, feedback, request_id=requested.id)
+        stage_trigger.payload.pop("input_task_ids", None)
+        if input_scope:
+            stage_trigger.payload["input_task_ids"] = input_scope
         from zf.runtime.reader_shadow_recovery import retain_shadow_as_observation
 
         retain_shadow_as_observation(

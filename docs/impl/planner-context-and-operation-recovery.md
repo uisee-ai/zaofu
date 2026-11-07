@@ -28,6 +28,19 @@ Reader 恢复次数耗尽时，内核写入 `fanout.child.failed` 后、评估�
 未注册事件及新增 writer trigger 不因这项支持而获准。
 Run 激活与重触发都保留审计，不清零原 Run 成本、不修改既有操作的终态。
 
+Owner 授权的 `stage-replan-new-generation` 可在 action payload 中提供
+`input_task_ids: ["TASK-A", "TASK-B"]`，明确需要完整读取的任务合同。该字段只影响
+Plan handoff 的读取范围，不替代 `task_ids`、依赖或验收。现有 scope 与明确失败任务
+仍保留；全部任务的身份、依赖和状态进入索引，完整合同通过不可变
+`canonical-task-snapshot` 侧车与 `full_task_json_path` 按需检索。未知 id 显式列出，
+修改其他任务前仍需读取其完整合同。未提供任何范围时保留全量读取。
+
+字段须为非空字符串列表，规范化后绑定到新触发事件和冻结 rework context。同代际
+重复请求范围不同则拒绝；后续新代际未提供该字段时不沿用上次操作员的范围。
+固定输入的 `repaired_failure_event_id` 重试不接受范围变更，需走授权新代际。
+已有活跃 operation 的 manifest 不会被改写。回归见
+`tests/test_reader_replan_feedback.py`、`tests/test_replan_input_consumption.py`。
+
 `flow.gap_plan.ready` 仅在内核记录对应 `task_map.amend.failed` 且尚无成功
 `task_map.amended` 时允许受控重触发；原计划内容不变，同源仅可重触发一次，
 新事件仍经过正常 Task Map 校验和准入。

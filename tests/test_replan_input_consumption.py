@@ -111,6 +111,17 @@ def test_downstream_dispatch_scope_does_not_inline_all_contracts(tmp_path):
     body = hydrate_sidecar_ref(state, fallback).payload
     assert len(body["canonical_task_snapshot"]["scoped_tasks"]) == 93
 
+    # Explicit additional context cannot hide known failed tasks or dispatch ids.
+    payload['failed_task_ids'] = ['T000']
+    payload['input_task_ids'] = ['T050']
+    scoped = build_plan_handoff_input_refs(
+        state_dir=state, project_root=tmp_path, payload=payload,
+    )
+    context_ref = next(ref for ref in scoped if ref['source_id'] == 'plan-rework-context')
+    body = hydrate_sidecar_ref(state, context_ref).payload
+    assert {t['task_id'] for t in body['canonical_task_snapshot']['scoped_tasks']} == {'T000', 'T050'}
+    assert body['task_ids'] == task_ids
+
 
 def _reader(tmp_path: Path, *, partial_read: bool = False):
     runtime = _runtime(tmp_path)
