@@ -18,6 +18,6 @@
 
 ## 旧版本失败后遗留的 pending operation
 
-关联[回收任务](../../tasks/active/2026-11-07-1411-synth-pending-terminal-recovery.md)。旧通用异常路径还可能留下从未启动的 synth operation：fanout 已失败，operation 仍 requested，导致 goal idle 驱动一直判定有在途工作。正常 reader recovery sweep 现在可根据不可变请求中的 fanout 身份、同 run/stage/role/attempt 的内核 synth 失败及后续 aggregate 失败事件，通过 `WorkflowOperationService.supersede` 回收这一残留，不生成语义通过/失败结果，不重跑已结束 Planner。
+关联[回收任务](../../tasks/done/2026-11-07-1411-synth-pending-terminal-recovery.md)。旧通用异常路径还可能留下从未启动的 synth operation：fanout 已失败，operation 仍 requested，导致 goal idle 驱动一直判定有在途工作。正常 reader recovery sweep 现在可根据不可变请求中的 fanout 身份、同 run/stage/role/attempt 的内核 synth 失败及后续 aggregate 失败事件，通过 `WorkflowOperationService.supersede` 回收这一残留，不生成语义通过/失败结果，不重跑已结束 Planner。
 
 该回收限定 requested 且无 start/dispatch 证据；有派发、重新打开 aggregate、跨身份、worker 自报或请求 sidecar 无法验证时保留原状态。事件次序必须是请求 → synth 失败 → aggregate 失败。每轮至多收口一个，重复扫描幂等。当前合法运行的 Verify/Impl 由原生命周期继续处理。

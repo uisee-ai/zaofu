@@ -41,3 +41,15 @@
 - Privacy第一版44任务/294AC/27决定提交evt-1110803f8950，Critic额度弹窗被守卫阻止，但旧宽异常捕获误转prd.plan.failed evt-5a9d96a556ac，自动返工evt-14547e9bc437。确认不是语义否决；已修复为dispatch_deferred（90f76bd2），428自动闭包+244额外恢复/mock、sentinel50/1、main17。仅Escape解除旧模型弹窗，不更换模型。
 - 新Planner提交evt-6a0ab0625319后Critic派发evt-c8ff7cf517e4，当前真实执行Core Verify+Plan Critic。原29done仍保留。第一版审阅对账证据：原291AC无丢失，仅LOCAL-P16B新增R6 delta command关联；Core/Dataset两行完全一致；schema/matrix/task_input_paths无错误；新增前置与R6均具备smoke，完整IO/双连接/引用census具名场景；两已完成前置只转移新图allowed_paths说明，历史TaskStore未重写。须以第二版最终产物再核对。
 - P20Q/P20最终真实资格仍含外部数据/签定合同/J6B性能环境/Windows-Mac runner；已向用户异步询问已有访问路径，不阻塞当前独立开发验证、不伪造qualification通过。
+
+## 14:13 UTC 同版批准与 Core 完成
+
+- 独立Critic evt-bb902248d04f通过，Plan包defc0f32、task_map generation03c1bc97。监工再次核对9个文件digest、原291AC、Core/Dataset合同、29done及实际writer仅选择生命周期/R6/P19/P20Q/P20，保存privacy-plan-owner-review.json后通过CLI批准evt-14ab55fb270b。Critic指出旧integration_contract文字/展示波次低风险历史残留；实际blocked_by和当前接续合同有效，记录而不篡改冻结Plan。
+- P16B-MEDIA-LIFECYCLE-R1 Impl已真实启动evt-72c26a0074ad，operation wop-impl-tp-P16B-MEDIA-LIFECYCLE-R1-2fa5e-4899e1a84cd2，保留独立工作区。
+- Core独立Verify evt-96396107f781通过4/4 AC；复核40 runtime、4 smoke、53基础回归收据，另跑真实HTTP、两worker、审计失败恢复/重启探针；产品代码未改。内核evt-f762e9b881dc将Core置done并集成candidate046c36d14b1e46517d9f51b5130759e762474723。
+- Dataset R2接棒evt-487c46050655，operation wop-impl-tp-P09A-DATASET-R2-e0f17d43d7842-4830d830f008，briefing target正确为046c36d；未丢在途合同或重新执行done。有效44任务30done/14未完成，两个Impl独立并行，8/8容量不变。
+- 旧fanout64319b1a异常留下requested synth operation，会妨碍goal idle收口；已复现并单独记录2026-11-07-1411修复，禁止重启旧Critic或直接改canonical。只读预演仅匹配旧项，当前任务保留。
+
+## 14:15 UTC 旧 pending operation 收口
+
+6b0417b3完成并通过538/7自动闭包、50/1 sentinel、10mock及main21。控制面重载evt-042d0e52eae9保留两Impl，新watcher3376581；旧Critic operation64319b1a已由正常runtime恢复为superseded，不再阻挡goal idle。两个当前Impl继续原operation/attempt，未绕过验证或重置候选。
