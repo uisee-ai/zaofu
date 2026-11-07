@@ -1,6 +1,6 @@
 # on-demand Verify 完成后的心跳归属
 
-本片修复 `worker.stuck` 的机械归属检查，不修改上下文阈值、心跳时限、恢复预算或业务验收。任务：[2026-11-07-1046](../../tasks/active/2026-11-07-1046-idle-verify-stuck-ownership.md)。
+本片修复 `worker.stuck` 的机械归属检查，不修改上下文阈值、心跳时限、恢复预算或业务验收。任务：[2026-11-07-1046](../../tasks/done/2026-11-07-1046-idle-verify-stuck-ownership.md)。
 
 ## 实况与原因
 

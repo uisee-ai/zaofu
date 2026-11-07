@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — a3816e1c fix: prevent idle verify workers from triggering safe halt
 
 # 按活动工作归属约束 on-demand 心跳卡死恢复
 
@@ -18,4 +18,4 @@ Media Verify 06:20 已通过，prd-verify-lane-1 后续空 current_task_id 的 b
 - Sentinel：50 passed / 1 skipped；相关 deterministic lifecycle/context E2E 包含于 focused，自动 flow smoke 10 passed。
 - dev-verify --base dev 选 784 文件，--base HEAD 选 175 文件，均升级 broad；以本片 focused 替代自动 deterministic/serial，其余 contract/mock_e2e 已执行。
 - 真 operation 事件有界回放：6 条原始事件；重建空 task busy mirror 后旧 guard=true、新 guard=false，无新 stuck/pause。并非完整 provider transcript 回放。
-- 未提交、同步或修改生产运行态；由主会话审阅、提交和归档。
+- 主会话已完成审阅和本地实现提交；主 checkout 加载与生产观察由1043恢复任务继续跟踪，本片测试不冒充真实 provider E2E。
