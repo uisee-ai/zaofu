@@ -387,3 +387,39 @@ def test_late_stale_completion_does_not_terminate_newer_run(tmp_path: Path) -> N
     assert child is not None
     assert child["run_id"] == "run-new"
     assert host._fanout_task_state_for_instance("dev-lane-1", "T1") == "active"
+
+
+@pytest.mark.parametrize("status", ["active", "running"])
+def test_repeated_active_update_preserves_current_reader_epoch(tmp_path: Path, status: str) -> None:
+    host = _Host(tmp_path / "events.jsonl")
+    run_id = "workflow-reader"
+    for event in (
+        ZfEvent(type="run.goal.blocked", payload={"workflow_run_id": run_id}),
+        ZfEvent(type="run.goal.updated", payload={"workflow_run_id": run_id, "status": "active"}),
+        _dispatched("live", "planner", "planner", workflow_run_id=run_id, task_id="PARENT"),
+        ZfEvent(type="run.goal.updated", payload={"workflow_run_id": run_id, "status": status}),
+    ):
+        host.event_log.append(event)
+    assert host._active_fanout_child_for_instance("planner")["fanout_id"] == "live"
+    assert host._fanout_task_state_for_instance("planner", "PARENT") == "active"
+    assert host._active_fanout_child_for_instance("other-role") is None
+
+
+@pytest.mark.parametrize("terminal", ["run.goal.blocked", "run.completed", "run.cancelled"])
+def test_new_terminal_epoch_still_fences_previous_reader_after_active_update(
+    tmp_path: Path, terminal: str,
+) -> None:
+    host = _Host(tmp_path / "events.jsonl")
+    run_id = "workflow-reader"
+    for event in (
+        ZfEvent(type="run.goal.blocked", payload={"workflow_run_id": run_id}),
+        ZfEvent(type="run.goal.updated", payload={"workflow_run_id": run_id, "status": "active"}),
+        _dispatched("old", "planner", "planner", workflow_run_id=run_id, task_id="OLD"),
+        ZfEvent(type=terminal, payload={"workflow_run_id": run_id}),
+        ZfEvent(type="run.goal.updated", payload={"workflow_run_id": run_id, "status": "active"}),
+        _dispatched("new", "planner", "planner", workflow_run_id=run_id, task_id="NEW"),
+    ):
+        host.event_log.append(event)
+    child = host._active_fanout_child_for_instance("planner")
+    assert (child["fanout_id"] if child else None) == ("new" if terminal == "run.goal.blocked" else None)
+    assert host._fanout_task_state_for_instance("planner", "OLD") == "terminal"

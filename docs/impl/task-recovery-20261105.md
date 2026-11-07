@@ -102,3 +102,19 @@ run 冲突，不能将 child trace 与 workflow ID 不等误当跨 run。待准�
 
 实况追踪见 `tasks/active/2026-11-07-0200-two-gap-supervision.md`。本轮修复不把重新
 派发、环境连通或已提交局部代码等同产品完成；视频、留存和数据集仍须独立验收。
+
+## 2026-11-07：重复激活不移动 reader 恢复代次
+
+生命周期查询将 `run.goal.blocked -> active` 作为该阻塞代次的恢复边界。过去每个
+后续 `active/running` 更新都会覆盖这个边界，令中间派发但仍在运行的 reader 变成
+“旧代次已终结”。当父 Task 为 backlog 时，reader 又被当作 idle，72%上下文触发
+fresh recycle，尚未落盘的规划丢失。
+
+`lifecycle_evidence_queries._terminal_run_scope` 现在只登记同一阻塞代次的首次
+恢复。重复激活幂等；新blocked代次仍要求新的恢复，completed/cancelled等硬终局仍
+不被active复活。真实context threshold与pending recycle入口、跨角色查询、reader
+正常终结后回收均有覆盖。没有修改上下文阈值或禁用hard-cap。
+
+固定历史窗口 `evt-7932592c37db` 之前，旧查询为active_child=null/terminal，修复后
+识别原派发 `evt-b0f3d36451ca` 为active。证据与验证记录见
+`tasks/active/2026-11-07-0216-reader-activation-epoch.md`。
