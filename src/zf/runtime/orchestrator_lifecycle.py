@@ -504,6 +504,14 @@ class LifecycleManagerMixin(
                     )
                     stale, stale_basis = self._worker_liveness_stale(role)
                     instance_state = getattr(self, "_instance_state", {})
+                    # Fast adoption is for a restarted watcher with no local
+                    # recycle marker. Local recycle failures retain the
+                    # existing stale-liveness recovery path below.
+                    interrupted_recycle = (
+                        role.instance_id not in instance_state
+                        and self._last_worker_state.get(role.instance_id)
+                        == "recycling"
+                    )
                     pending_recycle = (
                         instance_state.get(role.instance_id)
                         == "pending_recycle"
@@ -514,13 +522,14 @@ class LifecycleManagerMixin(
                     # must be replaced once its active obligation drains. If
                     # the pane is already gone, waiting for the normal worker
                     # heartbeat threshold only preserves a dead lease.
-                    if pending_recycle and (
+                    if (pending_recycle or interrupted_recycle) and (
                         active_task is not None or active_fanout is not None
                     ):
                         stale = True
                         stale_basis = (
-                            "pane_dead_during_pending_recycle_with_active_"
-                            "obligation"
+                            "pane_dead_during_interrupted_recycle_with_active_obligation"
+                            if interrupted_recycle else
+                            "pane_dead_during_pending_recycle_with_active_obligation"
                         )
                     if stale:
                         # Pending manifest recovery precedes normal respawn,
@@ -547,7 +556,15 @@ class LifecycleManagerMixin(
                                     f"evidence ({stale_basis})"
                                 ),
                             )
-                            decisions.append(self._respawn_instance(role))
+                            if interrupted_recycle:
+                                decisions.append(self._respawn_instance(
+                                    role,
+                                    recovery_reason="interrupted_context_recycle",
+                                    inject_idle_prompt=False,
+                                    force_fresh_session=True,
+                                ))
+                            else:
+                                decisions.append(self._respawn_instance(role))
                         # else: idle worker with no pending obligations —
                         # evidence only (the R18 completed-worker falsepos
                         # class); recovery happens at next dispatch/stuck.
