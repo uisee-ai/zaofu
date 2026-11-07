@@ -18,7 +18,8 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 def _prepare(tmp_path: Path):
     state = tmp_path / ".state"
     state.mkdir()
-    task_map = {"tasks": [{"task_id": "T1", "acceptance_criteria": ["Exact JSON"]}]}
+    task_map = {"tasks": [{"task_id": "T1", "acceptance": ["Exact JSON"],
+                           "acceptance_criteria": ["Exact JSON"]}]}
     for name in ("r1", "r2"):
         (state / f"{name}.json").write_text(json.dumps(task_map))
     (state / "requirement.md").write_text("Exact JSON\n")
@@ -91,3 +92,20 @@ def test_gap_plan_rejects_changed_base_artifact(tmp_path):
     (args["state_dir"] / "r1.json").write_text('{"tasks": []}')
     with pytest.raises(ProductAcceptanceError, match="exact prior plan lineage"):
         prepare_plan_artifact_package(events=[event], payload=gap, **args)
+
+
+def test_gap_plan_inherits_its_generation_after_a_newer_plan_is_admitted(tmp_path):
+    args, event, gap, previous = _prepare(tmp_path)
+    spec = dict(hydrate_sidecar_ref(args["state_dir"], _port(previous)).payload)
+    for key in ("workflow_run_id", "flow_kind", "plan_revision", "task_map_generation"):
+        spec.pop(key, None)
+    newer, descriptor, _ = prepare_plan_artifact_package(events=[], payload={
+        "task_map_ref": "r2.json", "task_map_generation": "g-newer",
+        "requirement_spec_ref": "requirement.md",
+        "plan_ports": [{"logical_name": "product_acceptance_spec", "body": spec}],
+    }, **args)
+    newer_event = ZfEvent(type="plan.artifact_package.admitted", correlation_id="run-1",
+        payload=package_event_payload(newer, descriptor, status="admitted"))
+    package, _, _ = prepare_plan_artifact_package(events=[event, newer_event], payload=gap, **args)
+    assert _port(package)["rebound_from_ref"] == _port(previous)["ref"]
+    assert package["supersedes_package_ref"] == event.payload["package_ref"]

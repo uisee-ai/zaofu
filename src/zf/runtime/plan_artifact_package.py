@@ -555,6 +555,14 @@ def prepare_plan_artifact_package(
     )
     previous = reduced.get("current")
     previous = previous if isinstance(previous, Mapping) else {}
+    if payload.get("resume_scope") == "gap_tasks_only" and payload.get("supersedes_task_map_generation"):
+        previous = admitted_plan_artifact_package_for_generation(
+            reduced, task_map_generation=str(payload["supersedes_task_map_generation"]),
+        )
+        if not previous:
+            from zf.runtime.product_acceptance import ProductAcceptanceError
+
+            raise ProductAcceptanceError("gap acceptance inheritance requires exact prior plan lineage")
     inherited: list[dict[str, Any]] = []
     continuity = mandatory_claim_continuity(None, claim_set)
     if previous and previous.get("package_ref") and previous.get("package_digest"):
