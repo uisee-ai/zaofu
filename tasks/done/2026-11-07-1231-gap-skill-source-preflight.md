@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # Discovery gap 技能方法与实际来源对齐
 
@@ -11,4 +11,6 @@
 
 验证：`dev-verify.py plan/run --base dev --paths` 精确五文件，`--tests tests/test_skill_provenance.py --no-parallel`；实际闭包为 instruction-stack contracts、skill provenance、structure discipline，39 passed / 2 skipped。另在自动清理的 `/tmp` 隔离目录调用真实 `materialize_role_skills`，以 `zf-goal-closure-replan-contract` 依赖链生成 Discovery 技能，确认项目源、dependency_of、manifest SHA 和三份分发逐字节一致；新 SHA 为 `043c348cd3d8802052b28d23e37fdee270943dc3b3e681055c751b6eaac6d3d9`。`git diff --check` 通过。无产品运行态写入。
 
-提交号由主会话提交后补充，当前不声明 done。
+实现提交：`26f37d37 fix: require complete gap task preflight in planning skills`。
+
+真实部署：产品源已升级；新 Planner dispatch `run-fanout-prd-plan-evt-64319b1a-prd-planner` 的 runtime/skills-manifest.json 确认 source_name=project、dependency_of=zf-yoke-planner-role-context、SHA 为上述043c348c；其 codex-home 副本逐字节一致。旧 Discovery 冻结副本保持860e487b。Planner已真实读取本轮 briefing；技能部署不代表新Plan或业务验收通过。

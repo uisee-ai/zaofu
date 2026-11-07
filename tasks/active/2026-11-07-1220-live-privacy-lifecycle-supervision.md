@@ -1,0 +1,29 @@
+> 状态: active
+
+# 持续监工 Core 拒绝协议与 Privacy 生命周期缺口
+
+用户要求继续实时监工；沿已授权的修复、审批与断点恢复流程处理问题。不得将agent运行或自检通过当作独立验收/产品完成。
+
+## 验收
+
+- 持续核对operation和业务证据 -> verify: 确认真正运行/终结，区分产品RED、环境失败及provider额度限制。
+- 对Privacy新阻塞核对Discovery与gap范围 -> verify: 正式追加共享生命周期前置，保留当前43图/29done、在途Core及未准入Privacy实现，不重新实施已完成工作；所有rolling smoke/输入分片完整。
+- 根据有效Plan/审批/受控恢复推进 -> verify: 不绕过独立Critic/Verify及候选集成，不直接修改canonical状态。
+- 保存卡点与修复证据 -> verify: 记录真实事件/commit/测试结果，不伪造终局。
+
+## 初始观察（2026-11-07 UTC 12:20）
+
+- 有效图43项，29done；canonical backlog13含父协调Task，in_progress2不等于两个Impl正在运行。当前Core Impl与Privacy Discovery各1个operation。
+- Core P09A-CORE-DENIAL-R1 / lane1仍运行：wop-impl-tp-P09A-CORE-DENIAL-R1-65d9015ef-ddfde6203601；12:18真实runtime自检16passed/6failed，失败集中队头拒绝公平性、重复拒绝/审计、恢复及多worker。属于实际行为RED，由当前worker在其写域内处理，不当环境错误或完成。
+- Privacy P16B-PRIVACY-R5于12:10:12上报dev.blocked evt-5e954dc31375：被测39ee4c2真实API/隔离PG复现两种媒体/原始留存提交顺序的后续请求均202而非409。根因超出本片write范围，涉及privacy_media生产入口和core/resource_lifecycle.py；failed source9b69f26a8c5336ff60fdba10c419505a52b09d94保留实现与证据，不作为accepted baseline。
+- Privacy还明确保留本片未完成项：旧approved()夹具缺媒体作业绑定导致smoke1fail/1pass，自动项目留存API/UI/受管编排及media-v1迁移未完成；上游修复后仍需完整runtime/browser。不能把这些都推给共享owner。
+- 自动Discovery operation wop-prd-post-verify-discovery-prd-flow-discovery-trig-evt-6cc4-9b02b3cc9cb9正在读取当前新包cec7940...及实际失败证据。无新dispatch.paused/worker.stuck/全局safe_halt。
+- Provider此前weekly quota<5%；当前仍有工具和心跳，未确认额度耗尽。不更换模型、提高预算或弱化门禁。
+
+## 额度恢复与断点续跑（UTC 13:27）
+
+- Core此前runtime22passed仅为中间证据，新增协议边界仍须验证；额度耗尽后保留原operation。用户确认额度恢复，受控恢复checkpoint `op-resume-6917ec8e7f23fd0b3264fff3` 产生evt-8c490eeee38d/evt-ee00b45aa6b6/evt-b9dd810a2b3a。发现run_terminal:blocked，依据同一授权通过`zf goal set --status active`恢复。13:18:19真实派发evt-8cbf98872091，attempt ta-5a73a51adc9d277b1406，p5，同一工作区。最新runtime新增用例通过，尚无独立Verify结论。
+- Privacy Discovery真实报告evt-a51e8a6939cf提出媒体生命周期前置→R6，但两task缺rolling_smoke，evt-4c6a5e3109fd拒绝，evt-d79af9d29e04报告cap耗尽。根因含实际项目技能源旧版（860e487b），主源码更新未部署。26f37d37方法修订已升级项目源及新Planner物化副本043c348c；不改变旧冻结报告、不提高cap。
+- 一次已授权完整Plan修订经candidate-rework-apply执行：evt-df50590cc2ee/evt-64319b1a87db/evt-9120e6151125。保护29done、Core及Dataset链；当前包cec7940、Candidate4a99fd8不重置。新增任务必须具备真实smoke与原生必需端口，保留291AC/27决定；审批前重核Candidate。
+- 新Planner operation wop-prd-plan-prd-planner-trig-evt-64319b1a-re-4947fbe2d1c5最初假运行：额度模型选择弹窗吞掉派发、界面变为Luna。13:24恢复既定Astra high并通过TmuxTransport重投同一briefing，无新operation。已核实真实读取本轮briefing/plan-rework-context，不再仅以running为证据。修复任务见2026-11-07-1326-provider-modal-dispatch。
+- 操作证据在产品diagnostics/recovery-20261107-1220；未将运行态纳入源码提交。有效图仍43项/29done，14项未完成，当前Core Impl+Privacy Planner并行，8/8容量未改变。

@@ -1,6 +1,6 @@
 # Discovery gap 方法与实际技能来源
 
-关联任务：`tasks/active/2026-11-07-1231-gap-skill-source-preflight.md`。
+关联任务：`tasks/done/2026-11-07-1231-gap-skill-source-preflight.md`。
 
 2026-11-07 Privacy Discovery 报告 `evt-a51e8a6939cf` 提出 MEDIA-LIFECYCLE-R1 → PRIVACY-R6，两个任务均缺显式 rolling smoke 标记。真实报告通过 `validate_module_gap_plan_payload` 的 gap 封套检查，但同一任务数组调用 `rolling_smoke_command_errors`（当前 required 策略）返回两条 missing。最终 `evt-4c6a5e3109fd` 拒绝 amendment；12:28:20 的 `human.escalate` / `evt-d79af9d29e04` 证明有界恢复入口已执行并报告 cap exhausted，不能继续增加无界重试。
 
