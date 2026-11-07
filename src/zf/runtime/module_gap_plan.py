@@ -18,7 +18,10 @@ from typing import Any, Mapping
 from zf.core.state.atomic_io import atomic_write_text
 
 from zf.runtime.gap_replay_claims import repair_replayed_goal_claims
-from zf.runtime.gap_replacement_validation import with_structured_gap_verification
+from zf.runtime.gap_replacement_validation import (
+    require_replacement_input_selection,
+    with_structured_gap_verification,
+)
 from zf.runtime.module_gap_replacement import (
     bind_replacement_group as _bind_replacement_group,
     completed_task_ref_dependencies as _completed_task_ref_dependencies,
@@ -529,6 +532,7 @@ def _inherit_replacement_mechanical_identity(
 
     item = with_structured_gap_verification(raw)
     superseded = _string_list(item.get("supersedes_task_ids"))
+    require_replacement_input_selection(item, [base_tasks_by_id[key] for key in superseded if key in base_tasks_by_id])
     inherited_task_id = (
         superseded[0]
         if len(superseded) == 1
