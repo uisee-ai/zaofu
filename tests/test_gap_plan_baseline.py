@@ -49,7 +49,7 @@ def test_gap_baseline_rejects_unproven_authority(tmp_path, mutation):
             fallback_ref="r1.json", required=True)
 
 
-def _two_packages(tmp_path, mutation=""):
+def _two_packages(tmp_path, mutation="", selected_port="task_execution_input"):
     from zf.runtime.plan_artifact_package import prepare_plan_artifact_package, package_event_payload
     args, first, gap, old = _prepare(tmp_path)
     state = args["state_dir"]
@@ -57,7 +57,8 @@ def _two_packages(tmp_path, mutation=""):
     original = json.loads((state / "r1.json").read_text())
     original["tasks"][0]["evidence_contract"] = {"plan_input_selection": {
         "schema_version": "task-plan-input-selection.v1",
-        "implementation": ["task_execution_input"], "task-verify": ["task_execution_input"]}}
+        "implementation": list(dict.fromkeys(["task_execution_input", selected_port])),
+        "task-verify": list(dict.fromkeys(["task_execution_input", selected_port]))}}
     matrix_ports = ["execution_spec", "task_execution_input", "acceptance_matrix", "test_matrix", "real_e2e_matrix"]
     original["required_plan_ports"] = matrix_ports
     for name in ("r1", "r2"):
@@ -78,8 +79,9 @@ def _two_packages(tmp_path, mutation=""):
     if mutation == "task":
         body["tasks"][0]["acceptance"].append("changed")
     (state / "r2.json").write_text(json.dumps(body))
-    if mutation == "input":
-        gap["plan_ports"] = [{"logical_name": "execution_spec", "body": {"policy": "changed"}}]
+    if mutation in {"input", "execution"}:
+        changed_port = "execution_spec" if mutation == "execution" else selected_port
+        gap["plan_ports"] = [{"logical_name": changed_port, "body": {"policy": "changed"}}]
     package, descriptor, _ = prepare_plan_artifact_package(events=[first], payload=gap, **args)
     second = ZfEvent(type="plan.artifact_package.admitted", correlation_id="run-1",
         payload=package_event_payload(package, descriptor, status="admitted"))
@@ -94,8 +96,9 @@ def _task_delta():
             "verify_commands": ["pytest"], "source_refs": ["requirement.md"]}
 
 
-def test_older_task_gap_rebases_on_current_full_map_without_losing_other_work(tmp_path, monkeypatch):
-    args, events, _, latest = _two_packages(tmp_path)
+@pytest.mark.parametrize("mutation", ["", "execution"])
+def test_older_task_gap_rebases_on_current_full_map_without_losing_other_work(tmp_path, monkeypatch, mutation):
+    args, events, _, latest = _two_packages(tmp_path, mutation)
     state = args["state_dir"]
     log = EventLog(state / "events.jsonl")
     for event in events:
@@ -138,3 +141,22 @@ def test_cross_generation_gap_rejects_changed_or_unproven_targets(tmp_path, muta
     with pytest.raises(ValueError):
         gap_plan_amend_baseline(state_dir=state, events=events, payload=payload,
             fallback_ref="r1.json", required=True, gap_tasks=[gap])
+
+
+def test_unselected_execution_spec_update_keeps_task_delta_rebasable(tmp_path):
+    from zf.runtime.gap_plan_baseline import gap_plan_amend_baseline
+    args, events, _, latest = _two_packages(tmp_path, "execution")
+    ref, generation = gap_plan_amend_baseline(state_dir=args["state_dir"], events=events,
+        payload={"workflow_run_id": "run-1", "task_map_generation": "g1"},
+        fallback_ref="r1.json", required=True, gap_tasks=[_task_delta()])
+    assert generation == "g2"
+    assert ref == next(p["ref"] for p in latest["produced"] if p["logical_name"] == "task_map")
+
+
+def test_selected_execution_spec_drift_remains_rejected(tmp_path):
+    from zf.runtime.gap_plan_baseline import gap_plan_amend_baseline
+    args, events, _, _ = _two_packages(tmp_path, "execution", selected_port="execution_spec")
+    with pytest.raises(PlanArtifactPackageError, match="selected input changed: execution_spec"):
+        gap_plan_amend_baseline(state_dir=args["state_dir"], events=events,
+            payload={"workflow_run_id": "run-1", "task_map_generation": "g1"},
+            fallback_ref="r1.json", required=True, gap_tasks=[_task_delta()])

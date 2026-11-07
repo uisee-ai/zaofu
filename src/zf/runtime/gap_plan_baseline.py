@@ -97,7 +97,9 @@ def gap_plan_amend_baseline(
     old_tasks = {row["task_id"]: row for row in before["tasks"]}
     new_tasks = {row["task_id"]: row for row in after["tasks"]}
     maps = None
-    selected = {"requirement_spec", "execution_spec"}
+    # Pin requirement authority; other inputs follow the task's declared consumers.
+    # Required Plan outputs alone do not make execution_spec a task input.
+    selected = {"requirement_spec"}
     for task_id in targets:
         task = old_tasks.get(task_id)
         if task is None or task_id not in new_tasks:

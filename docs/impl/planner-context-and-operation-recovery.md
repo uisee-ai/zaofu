@@ -130,3 +130,7 @@ Task 替换关系校验。多层后继同样逐边证明；没有父包、正文
 ### OA 过期结果必须收口 operation（2026-11-07）
 
 `workflow.call.result.invalid` 的 `stale_call_result_superseded` 不等于 operation 已终止。OA 准入入口在拒绝过期包后，核验不可变 request、当前作用域包、结果 envelope 的 Run/request/attempt 绑定，通过 `WorkflowOperationService.supersede` 收口。每轮 pending checkpoint dispatch 也重放同一规则，修复历史遗留 running 占用；queued 且已过期的 checkpoint 不再付费派发。当前包、被保留 Task 的旧包、缺失或损坏证据及尚未提交结果的运行中 OA 均不自动退役；plan_candidate 沿用已有候选版本替代协议。该机制不修改业务 Task 状态，也不把过期结果当作通过或触发新 Planner。
+
+### 跨代际 gap 的显式输入比较（2026-11-07）
+
+旧 Task 的局部恢复以当前已准入完整图为修改基线，保留其他任务的新进展。除 Run、合同、不可变包祖先、原任务正文（或已证明的依赖替换）、共享约定和 Owner 决策外，始终核对 requirement_spec；其余输入按任务显式 plan_input_selection 的 Impl/Verify 联集校验摘要及正文。required_plan_ports 表示完整计划必须交付的输出，不表示每个任务都消费全局 execution_spec。未选择的全局执行说明更新不再误阻塞；已选择输入变化仍拒绝。没有显式选择的跨代际恢复保持拒绝。冻结旧包及结果不修改。回归由 tests/test_gap_plan_baseline.py 经真实 gap bridge 覆盖，验证保留当前图中无关任务和同源幂等。
