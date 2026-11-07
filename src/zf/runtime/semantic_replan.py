@@ -372,6 +372,21 @@ def _semantic_replan_anchor(
                     "target_ref": continuation_commit,
                 })
                 break
+    if task is not None and identity and not anchor.get("continuation_commit") and any(
+        event.type == "task.pipeline.stage.dispatched"
+        and event.origin == "kernel"
+        and event.task_id == task_id
+        and event.payload.get("workflow_run_id") == identity.get("workflow_run_id")
+        for event in events
+    ):
+        # Map amendments can carry a different task's unaccepted partial ref.
+        # Only the v4 integration ledger owns this Run's published Candidate.
+        for key in ("candidate_ref", "candidate_head_commit", "candidate_event_id"):
+            anchor.pop(key, None)
+        anchor.update(_incremental_candidate_anchor(
+            state_dir, events, workflow_run_id=str(identity.get("workflow_run_id") or ""),
+            project_root=project_root or Path(state_dir).parent,
+        ))
     if task is not None and identity and not anchor.get("continuation_commit"):
         from zf.runtime.task_pipeline_failure_continuation import task_pipeline_failure_continuation
 
@@ -426,6 +441,50 @@ def _semantic_replan_anchor(
     anchor["affected_task_ids"] = [task_id] if task_id else []
     anchor.update(_admitted_requirement_identity(state_dir, anchor))
     return anchor
+
+
+def _incremental_candidate_anchor(
+    state_dir: Path, events: list[ZfEvent], *, workflow_run_id: str, project_root: Path,
+) -> dict[str, str]:
+    """Bind recovery reads to the latest proven incremental publication."""
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    latest = next((event for event in reversed(events)
+        if event.type == "candidate.updated" and event.origin == "kernel"
+        and event.payload.get("incremental") is True
+        and event.payload.get("workflow_run_id") == workflow_run_id), None)
+    if latest is None:
+        return {}
+    payload = latest.payload
+    descriptor = payload.get("receipt_ref")
+    if (payload.get("status") != "integrated" or not isinstance(descriptor, dict)
+            or descriptor.get("kind") != "task_integration_receipt"
+            or descriptor.get("sha256") != payload.get("receipt_digest")):
+        return {}
+    try:
+        receipt = hydrate_sidecar_ref(state_dir, descriptor).payload
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != "task-integration-receipt.v1":
+        return {}
+    bindings = {
+        "workflow_run_id": "workflow_run_id", "task_id": "task_id",
+        "task_map_generation": "task_map_generation", "candidate_branch": "candidate_branch",
+        "candidate_generation": "candidate_generation", "task_ref": "task_ref",
+        "task_commit": "task_commit", "integration_operation_id": "operation_id",
+        "new_candidate_head": "candidate_head",
+    }
+    if any(not payload.get(event_key) or receipt.get(key) != payload[event_key]
+           for key, event_key in bindings.items()):
+        return {}
+    if latest.task_id != payload["task_id"]:
+        return {}
+    head = str(payload["candidate_head"])
+    if _git_commit_is_ancestor(project_root, ancestor=head,
+            descendant=f"refs/heads/{payload['candidate_branch']}") is not True:
+        return {}
+    return {"candidate_ref": head, "candidate_head_commit": head,
+            "candidate_event_id": latest.id}
 
 
 def _admitted_requirement_identity(state_dir: Path, anchor: dict[str, Any]) -> dict[str, str]:

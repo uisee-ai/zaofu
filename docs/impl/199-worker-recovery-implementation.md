@@ -254,3 +254,10 @@ FMS04 现场暴露两项机械适配问题：字符串 verification.commands 是
 `task_partial_successor` 只接受同 Run 的明确单一前任、后继合同精确 git base、前任已准入且结算的失败结果、原始基线为当前 Candidate 祖先、不可变部分 branch 与所有提交路径在后继 scope 内的证明。工作区继续使用部分提交；候选不提前采纳失败代码。后继 Verify 通过后，现有 Candidate 集成从当前 head 按 patch-id/cherry-pick 合入前任部分提交和后继 delta，完整增加经证明的前任文件范围，避免 worker files_touched 仅含返工文件而漏导旧代码。滚动 smoke 和 CAS 保留；真实冲突停止集成且不覆盖 Candidate。回执 partial_base_replayed 标记此路径，adopted_base_commits 列出携带的部分提交。
 
 普通未知分叉、跨 Run、前任有更新 Impl、篡改 sidecar、移动前任 branch、scope 不完整仍拒绝；不把部分代码认定为原任务 done。
+
+
+## 2026-11-07 Task Pipeline 恢复的增量 Candidate 身份
+
+已进入 Task Pipeline 的任务恢复不能把其他任务 gap amendment 所携带的部分分支当全局 Candidate。semantic_replan 原来只识别 candidate.ready，遗漏 v4 逐任务 candidate.updated；现在该路径清除继承的 Candidate 引用，核验同 Run/kernel 最新增量发布及不可变集成回执的摘要、身份、head 与当前 branch 祖先关系，固定到回执 commit。缺失或不可信则回到本任务固定 base，不采信其他任务部分工作；任务原包和合同代次保持不变。
+
+优先级保持：本任务已准入、已提交的失败部分交付优先；否则使用可核验的当前 Candidate；若 Candidate 不包含任务较新的 base，保留 base。legacy 非 Task Pipeline 路由保持既有行为。测试穿过 run_manager_tick 到恢复请求，覆盖跨 Run/非 kernel/缺失、篡改与冲突回执/分支移走，并保留旧部分续接回归。此修复不豁免 Q09 等业务决定，也不意味着恢复目标上的所有模块已验收。
