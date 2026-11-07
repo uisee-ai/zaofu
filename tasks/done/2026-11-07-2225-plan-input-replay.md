@@ -1,6 +1,8 @@
 # R59：同代际重放不能静默忽略显式输入变化
 
-> 状态: active
+> 状态: done
+
+实现：6686fb97 fix: reject changed explicit inputs during plan replay。dev合并da763331 fix: preserve explicit plan inputs during replay。
 
 授权：持续监工LS-v1，发现并修复阻塞，记录恢复。本地dev 2f14f11f隔离实施、合并，不push。
 
@@ -17,3 +19,5 @@
 - planner 选择260个影响闭包文件，因为超过80便建议full suite；遵循仓库当前规则，保留全部260个选定文件执行 deterministic 闭包，不扩展为完整pytest。最终3709 passed / 1 deselected，425.26秒；不是完整pytest或真实provider E2E。
 - 真实LS输入复制到隔离临时目录：v2索引漂移被拒绝并指明新代际；v3完整新包相同输入重放通过，临时目录删除。详见LS docs/records/2026-11-07-r59-live-input-probe.json；不修改生产事件或冻结包。
 - v3正常准入后，核对全部显式端口、42项来源索引及旧41Task绑定后审批。2026-11-07 22:29:22 UTC 新生产者 FMS-12-GAP-VEHICLE-PORT-01 实际派发，operation wop-impl-tp-FMS-12-GAP-VEHICLE-PORT-01-2a-93ca348862e6；治理Verify保留。此为任务恢复，非产品完成。
+
+- 合并后46项聚焦与53项sentinel通过。22:38 UTC控制面已加载da763331，watcher111869→247526；治理Verify、车辆端口Impl与OA的在途operation/attempt/dispatch/工作区/pane/PID保持。flow-discovery正常结算，准入evt-7f7a24bd2b67。重载收据为LS docs/records/2026-11-07-r59-controlled-reload.json。
