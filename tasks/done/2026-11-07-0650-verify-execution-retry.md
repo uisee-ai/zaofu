@@ -1,6 +1,6 @@
 # 补齐 Verify 执行失败后的受控续接
 
-> 状态: active
+> 状态: done；实现 `52395e93` — `fix: retry failed verification execution without rerunning implementation`
 
 依据：持续监工修复授权；[199](../../docs/design/199-worker-failure-recovery-and-role-handoff.md)。
 
@@ -17,3 +17,11 @@
 - 首次影响闭包 1,718 passed/1 failed，生成 CLI 手册未同步；generator 更新两份命令目录后，最终 159 文件闭包 **1,728 passed**（61.86 秒）。
 - 最终 sentinel **53 passed**；serial **10 passed**；flow/runtime-noise mock **10 passed**。dev-verify 的按文件数升级全量已按 AGENTS.md 停止，采用其全部 selected_tests 显式影响闭包；未声称全量或真实 Provider 验证。
 - 真实 gateway preview 接受原 target 99f1eb98、下一代 Verify 3，尚未 apply；合并加载后继续验证实际派发。证据 /tmp/zf-verify-retry-{focused-v2,impact-v2,gate-v2,serial,mock}-20261107.log。
+
+## 实机效果验收
+
+dev 0dfc25f6，Watcher PID 2134687，runtime-load/0e2365303f8f4616acff7287ab2680a3.json 绑定该版本；控制面重载前后全部 Worker pane/PID 一致。public recover task-verify 07:04:53 请求 evt-d24d5a3c8061；07:05:04 WRC 实际派发 Verify g3 evt-8bc668d2c0c3 / wop-verify-tp-FMS-20-GAP-GATEWAY-02-be27e32-af1730c9e811。原 g2 Impl 仍 passed/settled；目标 99f1eb98 和自检摘要 7d085ed2f9dd07ca057cae9628d07726a41b30b833db273d6846249711cb541f 不变，恢复后无 Impl 重派。新 Verify 已开始读取。
+
+证据：LS-v1 docs/records/2026-11-07-gateway-verify-recovery-effect.json、2026-11-07-verify-retry-reload-after.json 和持续监工问题记录。合并后聚焦 64、sentinel 53、mock 10 通过；源 worktree 已按已合并、无活跃进程及仅缓存/空锁审计后删除。
+
+本任务关闭的是输入恢复/阶段续接的软件义务；不代表网关产品 Verify 已通过，也不代表 RM 已自主证明源码补丁效果。监工提供修复证据后请求受控动作的事实保留。
