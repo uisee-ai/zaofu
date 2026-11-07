@@ -1,6 +1,8 @@
 # 重复激活导致 reader 被误回收
 
-> 状态: active
+> 状态: done
+
+实现：`ec0ac08c fix: preserve reader epochs across repeated run activation`。
 
 用户2026-11-07授权持续监工、修复卡顿并记录。本任务来自现场新发现，非扩大产品范围。
 

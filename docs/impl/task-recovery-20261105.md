@@ -117,4 +117,4 @@ fresh recycle，尚未落盘的规划丢失。
 
 固定历史窗口 `evt-7932592c37db` 之前，旧查询为active_child=null/terminal，修复后
 识别原派发 `evt-b0f3d36451ca` 为active。证据与验证记录见
-`tasks/active/2026-11-07-0216-reader-activation-epoch.md`。
+`tasks/done/2026-11-07-0216-reader-activation-epoch.md`。
