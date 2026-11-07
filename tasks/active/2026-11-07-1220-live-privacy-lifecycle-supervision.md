@@ -127,3 +127,14 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Media独立Verify完整读取798672字符，641正文/244来源摘要全部匹配，正常compact后续读无重头；现开始真实独立竞态探针。原media62/retention48/smoke2/browser2收据复核不代替本轮独立结论。
 - 两Verify均曾将探针放到gitignored但不在allowed_paths的临时目录，guard正确拒绝；均自行移至允许且已忽略的evidence路径恢复。忽略规则不是写入授权，未修改guard或产品源码来隐藏临时文件。
 - 16:59单次workflow-synthesis-consumer锁超时evt-e6cee1596af1已记录；随后锁释放、RM tick和两路心跳继续，未重复发生。watcher33114/resident3972403各持唯一运行锁。详情见产品diagnostics/recovery-20261107-1220/verify-live-1705-observation.json。
+
+### 17:59 UTC：媒体组合smoke卡点与有界返工恢复
+
+- Media Verify evt-908ada24c515 / admission evt-9a388556b4be正式通过：三AC、12独立探针、原同头收据核对；未改产品。随后组合候选dd5ba27的rolling smoke真实1fail/1pass，evt-c78ce1754c45 needs_review，未提升accepted、未计done。失败收据5c3e3ea2062308210e71a36823b440d7251fda7a2dcc9ffd5bba128949625c45及原log/receipt已另存诊断。
+- 隔离诊断保持原测试失败：media_asset固定100次无间隔tick耗尽时有1合法QUEUED、Core轮转尚需0.622秒；追加34次带间隔tick共3.899秒后ingest COMPLETE、4资源REGISTERED。指向夹具固定次数与新Core一秒扫描语义不兼容，不授权删除断言或更改Core。诊断完整文件位于产品diagnostics/recovery-20261107-1220/media-integration-*。
+- e4b5b7a2新增 `recover task-integration --rework-impl --approval-ref`，经当前blocked integration、canonical失败来源、同代同头已准入Impl/Verify及无活动继任者核对，仅授权下一代。b6bb2ad1依据实机adapter事件origin为空的事实，改为验证准入引用链；1个真实形态RED后修复，无历史改写。聚焦92通过；影响闭包333/7+sentinel50/1+flow mock10两轮通过；main86+新12通过。默认同提交integration retry保持。
+- evt-072d207d592f保worker重载，新watcher384744于17:48:37启动；Dataset原operation和pane737保留，resident3972403不重建。evt-df7767806277受控请求仅Media g3→g4，evt-bdb6b68a039d在17:49:40实际派发op wop-impl-tp-P16B-MEDIA-LIFECYCLE-R1-2fa5e-11673ae4af3b、attempt ta-b944243c819be368155f、pane738。合同/旧task分支基线4a99fd8不改，禁止合入新Core导致越域；等待本片修复后新Verify和组合smoke。
+- Media新会话40k字符输入页发生真实11491token截断，监工精确提示补缺口并降到15k/页；现已恢复连续消费，未把ledger摘要截断误当工具原文截断。输入仍完整必读，不减免证据。
+- Dataset完成397正文/296来源读取，监工还原摘要全匹配；原bootstrap下载失败后worker在锁内按原SHA离线安装，3条拒绝事务RED→3GREEN、新共享合同5GREEN。继续真实绑定/撤权竞争/健康事务与完整gate，未计done。原66b092d已版本化suite .gitignore可逐字复用，不允许为临时文件新增隐藏规则；已澄清避免删除正常证据输出规则。
+- 旧Privacy R5孤儿pytest PID2455656：TaskStore cancelled、无活动operation、PPid1且无子进程，精确SIGTERM后确认退出，工作区未动。记录privacy-r5-orphan-test-cleanup.json。空闲verify-lane0重复休眠被身份保护拒绝，活动任务未受影响，暂作观察。
+- 本时点有效任务31done/2实施/12待依赖，共45；全部工作尚未完成。监工继续，不以恢复派发或局部GREEN冒充最终完成。
