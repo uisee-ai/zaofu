@@ -48,6 +48,13 @@ def _recommend(runtime, **changes):
 
 def test_tick_hands_bound_diagnosis_to_existing_semantic_checkpoint_once(tmp_path):
     runtime, _ = _diagnosed(tmp_path)
+    from zf.runtime.run_manager import _write_recovery_context_for_action
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    before = _write_recovery_context_for_action(
+        state_dir=runtime.state_dir, writer=runtime.event_writer,
+        action={"task_id": "TASK-1", "request_id": "diagnose-1"}, source_event_id="diagnosis",
+    )
+    before_payload = hydrate_sidecar_ref(runtime.state_dir, before).payload
     advice = _recommend(runtime)
     _tick(runtime)
     _tick(runtime)
@@ -55,6 +62,10 @@ def test_tick_hands_bound_diagnosis_to_existing_semantic_checkpoint_once(tmp_pat
     requests = [e for e in events if e.type == "orchestrator.semantic.failure.requested"]
     assert len(requests) == 1
     request = requests[0]
+    assert hydrate_sidecar_ref(runtime.state_dir, before).payload == before_payload
+    after = request.payload["recovery_context_ref"]
+    assert hydrate_sidecar_ref(runtime.state_dir, after).payload["request_id"] == "diagnose-1"
+    assert after["ref"] != before["ref"]
     assert request.payload["request_id"] == "diagnose-1"
     assert request.payload["recovery_case_id"] == "case-1"
     assert request.payload["target_operation_id"] == "impl-1"

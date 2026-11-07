@@ -215,3 +215,22 @@ def test_context_distinguishes_effective_contract_placement_and_archived_depende
     assert context["placement_identity"] == {"planned_owner": "dev-4", "assigned_to": "dev-2"}
     assert {r["task_id"]:r["status"] for r in context["dependency_states"]} == {"UPSTREAM": "done"}
     assert store.get("T").contract.contract_revision == "projection-old"
+
+
+def test_same_request_preserves_each_recovery_snapshot(tmp_path):
+    store = TaskStore(tmp_path / "kanban.json")
+    store.add(Task(id="T", title="before handoff"))
+    before = write_task_recovery_context(
+        tmp_path, [], task_id="T", request_id="same-request", source_event_id="diagnosis",
+    )
+    store.update("T", title="after handoff")
+    after = write_task_recovery_context(
+        tmp_path, [], task_id="T", request_id="same-request", source_event_id="triage",
+    )
+    assert hydrate_sidecar_ref(tmp_path, before).payload["task"]["title"] == "before handoff"
+    assert hydrate_sidecar_ref(tmp_path, after).payload["task"]["title"] == "after handoff"
+    assert before["ref"] != after["ref"]
+    assert before["access_scope"] == after["access_scope"] == {
+        "visibility": "project", "actor": "run-manager", "purpose": "semantic-recovery",
+    }
+    assert before["required"] and after["required"]

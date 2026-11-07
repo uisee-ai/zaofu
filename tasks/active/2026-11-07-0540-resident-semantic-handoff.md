@@ -24,3 +24,7 @@ RM 建议入口白名单又不支持已存在的 orchestrator-rework-triage，�
 - 直接调用链 113 passed，包含实际 RM tick → OA immutable input → OA 裁决 → pipeline 续作请求；旧 operation、其他 task、无原请求、禁用 OA、暂停、人工门禁均不派发。
 - `dev-verify plan --base dev --json` 的 381 文件影响闭包：5,046 passed / 7 skipped（135.52 秒）。按分域规则执行精确闭包，不称 full pytest。`dev-verify run --base dev --skip-tier deterministic`：serial 10、sentinel 53、mock flow 10 通过。
 - 日志 `/tmp/zf-rm-oa-direct-20261107.log`、`/tmp/zf-rm-oa-closure-20261107.log`、`/tmp/zf-rm-oa-tiers-20261107.log`。尚待合并与控制面加载；本轮当前网关已由监工受控续作，不能称真实 RM→OA 自主闭环已验证。
+
+## 实机进展（2026-11-07 05:56 UTC）
+
+720d3e08 已合并 dev c9e5a4aa，控制面已加载，10 个 Impl pane/PID 保持。FMS-03-GAP-IMPLEMENT 新失败 evt-0d9036ba1a62 → 请求 evt-83374ed7d5fc → 绑定建议 evt-053de972b022 → 消费 evt-48d19c67e8fb → OA checkpoint evt-82f6021a37f6，真实 RM→OA 交接成立；等待 OA 裁决和后继 Impl，暂保持 active。另发现同 request 的旧上下文被新交接覆盖，单列 0600-recovery-context-snapshot 修复，不将最新可读冒充历史完整。
