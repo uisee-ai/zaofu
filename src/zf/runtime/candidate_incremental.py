@@ -515,6 +515,11 @@ def _integrate_locked(
         integration_base_head,
         task_ref,
     )
+    if adopted_base_commits and not successor_base_adopted:
+        # Worker delta paths exclude the failed predecessor's committed files.
+        # The proof above checks every carried file against the successor scope.
+        for commit in adopted_base_commits:
+            declared_files.update(rebuilder._commit_files(commit))
     commits, skipped_commits = rebuilder._task_commits(
         integration_base_head,
         task_ref,
@@ -522,11 +527,15 @@ def _integrate_locked(
     )
     applied_commits: list[str] = []
     for commit in commits:
-        status = rebuilder._apply_task_commit(
-            worktree,
-            commit,
-            declared_files=declared_files,
-        )
+        if adopted_base_commits and not successor_base_adopted:
+            from zf.runtime.task_partial_successor import apply_partial_successor_commit
+            status = apply_partial_successor_commit(rebuilder, task_id=task_id, worktree=worktree, commit=commit)
+        else:
+            status = rebuilder._apply_task_commit(
+                worktree,
+                commit,
+                declared_files=declared_files,
+            )
         if status == "applied":
             applied_commits.append(commit)
         else:
@@ -582,6 +591,7 @@ def _integrate_locked(
         "successor_base_adopted": successor_base_adopted,
         "supersedes_task_ids": supersedes_task_ids,
         "adopted_base_commits": adopted_base_commits,
+        "partial_base_replayed": bool(adopted_base_commits and not successor_base_adopted),
         "new_candidate_head": new_head,
         "integration_strategy": "cherry-pick",
         "patch_identity": patch_identity,
@@ -934,6 +944,14 @@ def _select_integration_base(
         ancestor=expected_candidate_head,
         descendant=dispatch_base_commit,
     ):
+        from zf.runtime.task_partial_successor import partial_successor_proof
+        task = rebuilder.task_store.get(task_id)
+        run_id = str((task.contract.evidence_contract or {}).get("workflow_run_id") or "") if task else ""
+        proof = partial_successor_proof(rebuilder, task_id=task_id, partial_head=dispatch_base_commit,
+                                       candidate_head=expected_candidate_head, workflow_run_id=run_id)
+        if proof and _commit_is_ancestor(rebuilder.project_root, ancestor=dispatch_base_commit,
+                                        descendant=task_source_commit):
+            return expected_candidate_head, False, proof["supersedes_task_ids"], proof["partial_commits"]
         raise CandidateIncrementalError(
             "dispatch_base_commit diverges from current candidate head"
         )

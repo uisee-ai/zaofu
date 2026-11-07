@@ -254,9 +254,10 @@ def task_pipeline_workspace_base(
             "Task Pipeline workspace base lineage is not resolvable: "
             f"dispatch_base={fallback!r}, candidate_head={candidate_head!r}"
         )
-    raise TaskPipelineRuntimeError(
-        "Task Pipeline workspace base diverged from the current Candidate: "
-        f"dispatch_base={fallback}, candidate_head={candidate_head}"
+    from zf.runtime.task_partial_successor import partial_successor_workspace_base
+    return partial_successor_workspace_base(
+        runtime, task_id=task.id, partial_head=fallback,
+        candidate_head=candidate_head, workflow_run_id=workflow_run_id,
     )
 
 
