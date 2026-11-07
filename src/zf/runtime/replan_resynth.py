@@ -33,6 +33,7 @@ _GOAL_CLAIM_SET_IDENTITY_KEYS = (
     "goal_claim_set_digest",
 )
 _REPLAN_SEMANTIC_PASSTHROUGH_KEYS = (
+    "input_task_ids",
     "source_commit",
     "candidate_base_commit",
     "previous_plan_candidate_refs",
@@ -119,9 +120,10 @@ def build_replan_resynth_event(
         if source_event is not None and not isinstance(source_event, Mapping)
         else (source_event or {}).get("type", "")
     ).strip()
-    if source_type == "plan.rejected" or str(
+    plan_rejected = source_type == "plan.rejected" or str(
         getattr(plan, "source_event_type", "") or ""
-    ) == "plan.rejected":
+    ) == "plan.rejected"
+    if plan_rejected:
         feedback = list(dict.fromkeys([
             *plan_rejection_feedback(source_payload),
             *feedback,
@@ -162,6 +164,13 @@ def build_replan_resynth_event(
         value = getattr(plan, key, None)
         if value not in (None, "", [], {}):
             payload[key] = value
+    if plan_rejected:
+        from zf.runtime.reader_replan_feedback import input_task_ids
+
+        # A fresh operator review must not inherit an old read restriction.
+        payload.pop("input_task_ids", None)
+        if scope := input_task_ids(source_payload):
+            payload["input_task_ids"] = scope
     for key in _CANDIDATE_REWORK_IDENTITY_KEYS:
         value = getattr(plan, key, None)
         if value not in (None, "", [], {}):

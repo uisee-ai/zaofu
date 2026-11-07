@@ -79,6 +79,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     rj = sub.add_parser("reject", help="Reject a plan and request synthesis replan")
     rj.add_argument("plan_id")
     rj.add_argument("--reason", required=True)
+    rj.add_argument("--input-task", action="append", default=None,
+                    help="Prioritize a task's complete input on replan; repeat for more tasks")
     rj.set_defaults(func=_run)
 
 
@@ -144,6 +146,14 @@ def _run(args: argparse.Namespace) -> int:
     decision_payload: dict = {"plan_id": args.plan_id}
     if args.plan_cmd == "reject":
         decision_payload["reason"] = args.reason
+        if getattr(args, "input_task", None) is not None:
+            from zf.runtime.reader_replan_feedback import input_task_ids
+
+            try:
+                decision_payload["input_task_ids"] = input_task_ids({"input_task_ids": args.input_task})
+            except ValueError as exc:
+                print(f"Error: {exc}")
+                return 1
     writer = EventWriter(log)
     result, _reason = decide_pending_plan(
         writer,

@@ -41,6 +41,12 @@ Plan handoff 的读取范围，不替代 `task_ids`、依赖或验收。现有 s
 已有活跃 operation 的 manifest 不会被改写。回归见
 `tests/test_reader_replan_feedback.py`、`tests/test_replan_input_consumption.py`。
 
+普通计划退回也支持相同的读取提示：`zf plan reject <plan-id> --reason <反馈>
+--input-task <task-id>`，可重复 `--input-task`；受控 `plan-reject` payload 使用
+`input_task_ids`。范围绑定正式 `plan.rejected`，通过实际 resynth 和 handoff
+进入索引；不改变派发集合。未提供范围的新退回不继承上轮提示。
+`tests/test_plan_rejection_input_scope.py` 覆盖 CLI、受控动作和下游快照的完整路径。
+
 `flow.gap_plan.ready` 仅在内核记录对应 `task_map.amend.failed` 且尚无成功
 `task_map.amended` 时允许受控重触发；原计划内容不变，同源仅可重触发一次，
 新事件仍经过正常 Task Map 校验和准入。
