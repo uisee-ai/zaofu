@@ -91,5 +91,5 @@ def test_structured_catalog_and_local_string_checklist_are_complementary():
     amended = build_gap_task_map_amend({"tasks": []}, gap_tasks=[gap], supersedes_task_map_ref="base.json")
     assert validate_task_map_payload(amended, require_task_verification=True).passed
     assert amended["tasks"][0]["validation"] == original["validation"]
-    assert amended["tasks"][0]["verification"] == original["verification"]["commands"]
+    assert amended["tasks"][0]["verification"] == original["verification"]
     assert gap == original
