@@ -44,7 +44,8 @@ def build_task_recovery_context(
     """Build one bounded, redacted recovery view without rereading the log."""
 
     state_dir = Path(state_dir)
-    task = TaskStore(state_dir / "kanban.json").get(task_id) if task_id else None
+    store = TaskStore(state_dir / "kanban.json")
+    task = store.get(task_id) if task_id else None
     task_events = [event for event in events if _event_task_id(event) == task_id]
     from zf.runtime.task_run_binding import canonical_task_run
     from zf.runtime.run_scope import events_for_run
@@ -95,6 +96,17 @@ def build_task_recovery_context(
         if isinstance(event.payload, dict)
     )
     attempt = recovery_attempt_facts(state_dir, task, run_id=run_id)
+    from zf.runtime.task_contract_snapshot import effective_contract_revision
+
+    dependencies = []
+    for dependency_id in task.blocked_by if task is not None else []:
+        dependency = store.get(dependency_id)
+        dependencies.append({
+            "task_id": dependency_id,
+            "status": dependency.status if dependency is not None else "unknown",
+            "workflow_run_id": canonical_task_run(dependency, events)[0] if dependency is not None else "",
+            "source": "TaskStore.get (including terminal archive)",
+        })
     from zf.runtime.artifact_input_recovery import current_task_input_recovery
 
     return redact_obj({
@@ -102,6 +114,15 @@ def build_task_recovery_context(
         "is_derived_projection": True,
         "request_id": request_id,
         "attempt_identity": attempt,
+        "contract_identity": {
+            "effective_revision": effective_contract_revision(task) if task is not None else "",
+            "projection_revision": task.contract.contract_revision if task is not None else "",
+        },
+        "placement_identity": {
+            "planned_owner": task.contract.owner_instance if task is not None else "",
+            "assigned_to": task.assigned_to if task is not None else "",
+        },
+        "dependency_states": dependencies,
         "input_recovery": current_task_input_recovery(state_dir, events, task),
         "maintenance_checkpoint": maintenance_checkpoint_facts(
             state_dir, task_events, task_id=task_id, attempt_facts=attempt,

@@ -58,6 +58,7 @@ WRC 确定性对账                         RM runtime 观察／选路
 | 队首不可执行、单任务人工等待阻止独立任务 | continuation 扫描可执行候选；TaskStore 传递依赖闭包；未知／run 作用域仍关闭 | `test_run_continuation_scope.py`、`test_run_manager_scoped_selection.py` |
 | 已处理诊断长期占据 next_operation，tick 去重后空转 | RM 保留未解决待办和效果案卷，默认选路与显式筛选均先复用执行器去重判定；已投递动作不再挡住后续请求，超时重试仍沿用既有资格 | `test_run_manager_seen_selection.py`，真实 projection/tick；LS-v1 监工 2026-11-07 复现 |
 | 普通 RM 诊断无人承接，且成功提示后仍走诊断 fallback | run_manager_recovery 交现有 resident；绑定 request_id、响应事件和语义清单；run/task 上下文写入带摘要 sidecar；Codex 复用 Worker bracketed paste；已有请求形成有期限等待；送达后停止重复 fallback，原故障保留 effect pending | `test_run_manager_diagnosis_consumer.py`，实际 projection/tick，含旧 Autoresearch inflight、响应与效果分离 |
+| resident 误读合同/owner 投影，已诊断语义失败不能移交 OA | context 明列 effective/projection revision、计划 owner/实际 assignment、含归档的直接依赖状态；绑定 recommendation 复用当前准入 Impl 的既有 OA 审核，沿同 request/case 继续，旧 operation/禁用 OA/人工 gate 仍拒绝 | `test_resident_semantic_handoff.py`、`test_recovery_context.py`；LS 网关 evt-65bfaf042279 的实际诊断误报 |
 | agent 建议入口缺少同等恢复门禁 | executor 复核暂停、人工 gate、当前案卷与 precondition；延期建议保留；无匹配审批显式拒绝 | `test_run_manager_action_admission.py`、`test_orchestrator_agent_execution_review.py` |
 | 旧 observation 被误当新请求响应 | resident 请求绑定 ID、接收者、预期事件和期限；重发不重置期限；暂停时长不计入 | `test_resident_request_obligations.py`、实际 RM projection/tick |
 | 分诊回执提前关闭故障 | request/advice 交接保留 effect pending；绑定同请求的正式建议可继续原案卷；兄弟任务完成不能结案 | `test_recovery_handoff_effects.py`、`test_run_manager_rework_triage.py` |

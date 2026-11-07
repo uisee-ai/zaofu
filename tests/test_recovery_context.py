@@ -200,3 +200,18 @@ def test_recovery_context_unaccepted_request_does_not_inherit_old_evidence(
     assert context["activity"]["recent_events"] == []
     assert context["execution_boundary"]["binding_status"] == "unresolved"
     assert context["execution_boundary"]["authorizes_continuation"] is False
+
+
+def test_context_distinguishes_effective_contract_placement_and_archived_dependencies(tmp_path):
+    from zf.runtime.task_contract_snapshot import effective_contract_revision
+    store = TaskStore(tmp_path / "kanban.json")
+    store.add(Task(id="UPSTREAM", status="done"))
+    task = Task(id="T", assigned_to="dev-2", blocked_by=["UPSTREAM"],
+                contract=TaskContract(contract_revision="projection-old", owner_instance="dev-4"))
+    store.add(task)
+    context = build_task_recovery_context(tmp_path, [], task_id="T", request_id="request")
+    assert context["contract_identity"]["effective_revision"] == effective_contract_revision(store.get("T"))
+    assert context["contract_identity"]["projection_revision"] == "projection-old"
+    assert context["placement_identity"] == {"planned_owner": "dev-4", "assigned_to": "dev-2"}
+    assert {r["task_id"]:r["status"] for r in context["dependency_states"]} == {"UPSTREAM": "done"}
+    assert store.get("T").contract.contract_revision == "projection-old"

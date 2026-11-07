@@ -1,6 +1,6 @@
 # 普通恢复诊断交给可用的 Run Manager 消费者
 
-> 状态: active
+> 状态: done — `39627af6` fix: deliver recovery diagnoses to the resident consumer
 
 依据：持续监工授权；设计 [199](../../docs/design/199-worker-failure-recovery-and-role-handoff.md)。
 
@@ -26,3 +26,6 @@ LS-v1 已加载 da14f7fd；05:08 tick evt-a1f62b950321 选中 semantic-diagnosis
 - 最终 343 文件影响闭包：4,629 passed / 7 skipped（124.66 秒）；没有触发 full pytest。前一轮新增 backend 参数触发旧测试 mock 签名不匹配，已同步 mock 参数并回归。
 - `dev-verify run --base dev --skip-tier deterministic` 的 serial 10、sentinel 53、mock flow 10 全部通过。日志 `/tmp/zf-diagnosis-closure-v3-20261107.log`、`/tmp/zf-diagnosis-tiers-v3-20261107.log`。
 - 软件待合并 dev 和控制面重载；真实请求执行/回应尚待验证，本任务保持 active。
+
+- 已合并 dev a98f73dd，05:29:46 控制面加载，worker pane/PID 保持。05:40:37 evt-a5e5b4ef17c9 投递 rmd-90752e5f30073cd3，05:40:44 provider 接收完整请求，05:43:12 evt-818a6ebfe53c 同 ID 回应，05:45:41 evt-5fc4adcbb85e 消费成功。
+- 同 tick 05:45:46 evt-965dd655beeb 自动接续下一诊断 rmd-486b6820918c7474，无重复 Autoresearch。请求投递/响应/消费/下一条推进已真实验证。本轮缺口关闭，RM→OA 语义交接及有效合同读取独立进入 2026-11-07-0540-resident-semantic-handoff；不声称所有产品故障已解决。
