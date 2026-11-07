@@ -1,6 +1,6 @@
 # R57：允许验证执行失败如实放弃产品裁决
 
-> 状态: active
+> 状态: done — ec27ce76 fix: admit verifier abstention without a product report
 
 授权：继续监工 LS-v1、修复阻塞并记录。基于 dev 1c23654d 隔离实施，本地合并，不 push。
 
@@ -12,3 +12,5 @@
 4. 合并部署并现场复验 -> verify: 保持在途 worker 身份/工作区，原 scratch 由原 worker 重试，记录真实准入与后续恢复，不代写 worker 结果。
 
 验证：首轮 RED 2 failed / 12 passed，随后修正测试夹具的冻结 owner 与提交 owner 一致；聚焦实际预检、正式提交、typed admission、Candidate、Product Acceptance、design199 mock E2E 共84 passed。dev-verify自动62文件闭包1086 passed（74.46秒），结果见/tmp/zf-r57-closure.log；sentinel53 passed。代码待合并部署，现场准入尚待复验，保持active。
+
+现场：dev合并04729236；21:33重载保持全部3个在途operation/attempt/pane。原worker按通知evt-4d1cd954f09a重试同一scratch，canonical task.pipeline.verify.failed evt-b10be9abfe1c，准入evt-1db9b95d703c，原operation settled/abstained。没有伪造产品通过；R56的旧快照自检恢复另由R58处理。合并后22+53通过。复验记录：LS-v1 docs/records/2026-11-07-r57-live-verification.json。
