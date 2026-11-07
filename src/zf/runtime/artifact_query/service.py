@@ -334,7 +334,7 @@ class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
             identity={"actor": context.actor, "role": context.role, "purpose": context.purpose},
             reads=self._read_rows(attempt_id), query=query, cursor=cursor,
             limit=min(context.limit, 50), relation_id=relation_id, navigate=navigate,
-            lifecycle=input_lifecycle(manifest, events),
+            lifecycle=input_lifecycle(manifest, events, state_dir=self.state_dir),
         )
 
     def attempt_input_costs(self, attempt_id: str, *, context: QueryContext) -> dict[str, Any]:
