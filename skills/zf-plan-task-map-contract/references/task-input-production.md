@@ -8,6 +8,13 @@
 4. 提交前制作端口名到相对 JSON 文件的映射，运行 `zf plan inspect-inputs --bundle bundle.json --task T1`。按 next_offset 继续；缺失资料、未知引用、重复/多余切片和依赖错误均需解释或修复。预检不批准 Plan，也不修改原文件。
 5. Critic 独立从原始材料反向对账 shared + owned；逐条说明异常、共享规则、图片状态、依赖和验收责任是否保留。引用存在、结构合法或预检无问题都不能证明语义完整。
 
+任务分区不能只放作者目录中的 `complete_input_ref` 和摘要，而把实际正文留在未绑定文件。
+即使路径出现在 `artifact_refs`，也不证明它已进入下游 Plan Package 或授权 manifest。
+将完整来源、异常、用例和依赖正文放入该端口的 `shared` / `tasks[].body`；大型端口可通过
+既有 `plan_ports` 的 `{logical_name, ref, sha256}` 描述符交付，避免重复内嵌进结果正文。
+不要提高结果大小上限或删减正文。提交前从正式迁移后的工件与下游实际选择路径检查：
+离开作者工作目录后仍能读到完整正文和同版引用，才算交接成立。
+
 输入片段示例（正文自由字段属于输入材料，不能替代 canonical Task contract）：
 
 ```json

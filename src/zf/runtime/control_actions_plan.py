@@ -53,6 +53,14 @@ class PlanApprovalActionsMixin:
         }
         if reason:
             event_payload["reason"] = reason
+        if action == "plan-reject" and "input_task_ids" in payload:
+            from zf.runtime.reader_replan_feedback import input_task_ids
+
+            try:
+                event_payload["input_task_ids"] = input_task_ids(payload)
+            except ValueError as exc:
+                return {"_status_code": 400, "ok": False, "action": action,
+                        "reason": str(exc)}
         if action == "plan-reject" and isinstance(payload.get("plan_review_ref"), dict):
             event_payload["plan_review_ref"] = payload["plan_review_ref"]
         event, error = decide_pending_plan(
