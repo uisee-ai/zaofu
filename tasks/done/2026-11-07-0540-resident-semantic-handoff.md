@@ -1,6 +1,7 @@
 # 修复恢复事实输入与 RM→OA 语义交接
 
-> 状态: active
+> 状态: done
+> 实现: `720d3e08 fix: bind resident semantic handoffs to current recovery facts`
 
 依据：持续监工授权；[199](../../docs/design/199-worker-failure-recovery-and-role-handoff.md)。
 
@@ -28,3 +29,7 @@ RM 建议入口白名单又不支持已存在的 orchestrator-rework-triage，�
 ## 实机进展（2026-11-07 05:56 UTC）
 
 720d3e08 已合并 dev c9e5a4aa，控制面已加载，10 个 Impl pane/PID 保持。FMS-03-GAP-IMPLEMENT 新失败 evt-0d9036ba1a62 → 请求 evt-83374ed7d5fc → 绑定建议 evt-053de972b022 → 消费 evt-48d19c67e8fb → OA checkpoint evt-82f6021a37f6，真实 RM→OA 交接成立；等待 OA 裁决和后继 Impl，暂保持 active。另发现同 request 的旧上下文被新交接覆盖，单列 0600-recovery-context-snapshot 修复，不将最新可读冒充历史完整。
+
+## 实机验收与归档
+
+06:00:23 evt-a8cfaf80ab2d 提交精确返工；06:01:07 evt-13f59029cf4e 准入、evt-294548652d93 应用；06:01:14 evt-9192a31399df 自动派发 FMS-03-GAP-IMPLEMENT g2，op …cd04d9e4f72b。从失败到带指导续作 11 分 20.6 秒，监工未手动重派。RM→OA→WRC 本工作包成立；CHK-03 产品最终通过仍由实施/独立 Verify 负责。历史上下文覆盖另由 ef6330ac 修复。
