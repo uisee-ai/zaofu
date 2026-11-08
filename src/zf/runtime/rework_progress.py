@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from zf.core.events.model import ZfEvent
+from zf.runtime.run_scope import event_run_id, run_aliases
 
 
 _PROGRESS_EVENTS = frozenset({
@@ -20,6 +23,29 @@ _PROGRESS_EVENTS = frozenset({
     "candidate.ready",
     "run.goal.completed",
 })
+
+
+def recovery_terminal_matcher(
+    events: list[ZfEvent],
+) -> Callable[[ZfEvent, ZfEvent, str], bool]:
+    """Bind terminal proof to one snapshot, resolving run aliases only if needed."""
+    aliases: dict[str, str] | None = None
+
+    def matches(later: ZfEvent, source: ZfEvent, task_id: str) -> bool:
+        nonlocal aliases
+        if later.type == "task.done":
+            payload = later.payload if isinstance(later.payload, dict) else {}
+            if (later.origin != "kernel"
+                    or str(later.task_id or payload.get("task_id") or "") != task_id):
+                return False
+        elif later.type not in {"run.goal.completed", "run.goal.blocked"}:
+            return False
+        if aliases is None:
+            aliases = run_aliases(events)
+        scope = event_run_id(source, aliases=aliases)
+        return bool(scope and event_run_id(later, aliases=aliases) == scope)
+
+    return matches
 
 
 def has_later_task_progress(events: list[ZfEvent], start: int, task_id: str) -> bool:

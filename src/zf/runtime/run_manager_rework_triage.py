@@ -10,6 +10,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.runtime.manual_evidence_gate import pending_manual_evidence_gate_action
 from zf.runtime.rework_progress import has_later_task_progress as _has_later_task_progress
+from zf.runtime.rework_progress import recovery_terminal_matcher
 from zf.runtime.rework_triage import is_plan_level_task_contract_blocker
 from zf.runtime.semantic_replan import (
     SEMANTIC_REPLAN_ACTION,
@@ -308,6 +309,7 @@ def active_immediate_replan_task_ids(events: list[ZfEvent]) -> set[str]:
     """Keep old-contract recovery suppressed until a replacement is admitted."""
 
     active: set[str] = set()
+    terminal_matches = recovery_terminal_matcher(events)
     event_index = ReaderReplanIndex(events)
     events_by_id = event_index.by_id
     latest_by_task: dict[str, tuple[int, ZfEvent]] = {}
@@ -348,7 +350,7 @@ def active_immediate_replan_task_ids(events: list[ZfEvent]) -> set[str]:
         resolved = False
         for later in events[index + 1:]:
             later_payload = _payload(later)
-            if later.type in {"run.goal.completed", "run.goal.blocked"}:
+            if terminal_matches(later, failed_event or event, task_id):
                 resolved = True
                 break
             if later.type not in {

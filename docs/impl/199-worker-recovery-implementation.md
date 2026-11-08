@@ -515,3 +515,10 @@ LS-v1 实测周期刷新方法先复制约4.9万事件再消费最后50条。`Ev
 实际Watcher采样与175405条事件只读复现表明，两类立即replan投影对每条旧失败重新构造by_id并线性查找源位置；四次投影的152次替代核验约21秒。两个实际Run Manager入口现在各自构建已有ReaderReplanIndex，并传给failure_has_admitted_replacement。原完整事件、位置、精确失败因果、同run、kernel准入和全部后继覆盖规则保持；一次调用结束即丢弃，下次追加/变更事件重新索引，不使用跨调用缓存。
 
 任务及真实caller、负例与冻结快照回放见 `tasks/2026-11-08-2329-rm-replacement-index.md`。TaskStore读取成本另有测量但本轮不改；整体Watcher CPU仍需现场观察。
+
+
+### 2026-11-08 完成任务退出旧恢复抑制
+
+LS-v1的FMS16已正式task.done，RM旧immediate-replan抑制仍残留。`active_immediate_replan_task_ids` 现在消费同任务、同运行的kernel `task.done`；下一次新的失败/分诊仍建立新的抑制。运行级 `run.goal.completed/blocked` 只解除同运行的抑制，复用现有run_scope别名，不让其他运行终止本运行恢复。单次调用按需构造别名表；无法确定运行的终态保守不释放。原计划替代证明保留，普通派发或新计划提议不等于完成。
+
+这修正恢复路由的投影残留，不改写任务终态、补发完成事件或关闭业务Owner阻塞。真实证据、负例及回放见 `tasks/2026-11-08-2341-rm-terminal-suppression.md`。
