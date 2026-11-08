@@ -295,3 +295,9 @@ Discovery完成，不是task.done。Discovery发现产品缺口且有gap时等�
 - 独立复核b6c9d8候选，机械跨矩阵校验确有102错误、execution_spec缺9个当前任务原生正文；拒绝`evt-692a32048f10`，没有误操作Oct28旧pending。自动恢复触发历史累计第5次cap `evt-7a30af2f5d67`。基于用户已授权修复及实际复现，受控提交一次有界计划一致性修订：`evt-37810cdc3635`→`evt-8487e647691f`/`evt-0a2d5221aa8f`，保留原计数/全局上限和35 done、两在途快照；Planner已收到新briefing。修订仍需Critic/监工审查后才可批准，Ingest锁序产品修复尚未完成。
 
 现场完整证据在产品根`diagnostics/settled-recovery-20261108/`：部署前像/补丁/摘要，77项主树复验日志位于`/tmp/zf-supervision-20261107/settled-main-validation.log`；恢复结果、独立计划校验、受控修订payload和protected_before、latest.json共同保留恢复因果。所有历史失败保持原判；尚无新的产品验收通过，持续监工项保持active。
+
+### 2026-11-08 07:05 UTC 持续监工环境恢复
+
+Consumer已消费必读进入基线，但av16.0.1/Pillow12.0.0的PyPI下载再次超过bootstrap 300秒；这与此前媒体/Privacy/Dataset环境问题同源，不能记作产品RED。原锁哈希逐项匹配产品持久wheelhouse `diagnostics/media-codec-wheelhouse-20261107/`，监工在独立临时Python3.11环境验证原锁+`--require-hashes`+本地file URI约束，29包offline安装成功。临时环境已清理，worker venv未由监工并发修改，已指导worker释放自身旧bootstrap锁后按原验证命令重跑。约束及完整日志保存于`diagnostics/settled-recovery-20261108/{locked-local-media.txt,consumer-dependency-recovery.json,consumer-offline-environment-proof.log,consumer-bootstrap-guidance.json}`。现有依赖补给方式未自动传播至新worker，后续启动前应核对并复用已验证环境事实；本次不硬编码主机路径为产品默认值。
+
+本批验证日志/选取器规划/RED证据已从临时目录复制至产品持久目录`diagnostics/settled-recovery-20261108/verification/`并记录SHA256索引；当前恢复和计划修订尚在运行，未追加产品done。

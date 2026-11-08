@@ -19,3 +19,5 @@
 现场追加：Planner仍沿旧方法直接输出大段required正文，已发送本次原子缓存/分页指导，并把同一方法补入planner角色技能及两provider分发副本，防止后续计划阶段重复截断。
 
 06:55 UTC现场路径修复：Planner派生JSON写到app/evidence缓存被scope hook正确拒绝，已为既有artifacts/plan/**允许域配置本地忽略缓存并发送纠正指令；技能补充缓存/派生正文同时满足工作区、允许写域、git忽略三条件。未放宽scope hook。
+
+持续监工追加：Consumer baseline遭遇av/Pillow下载300秒超时，已验证持久wheelhouse原锁哈希及29包离线安装并交付worker按原流程恢复；不能计为产品RED。验证日志已持久化，产品任务继续运行。
