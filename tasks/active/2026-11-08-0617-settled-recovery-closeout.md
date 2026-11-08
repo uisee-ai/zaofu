@@ -41,3 +41,8 @@ R7已复现1 RED，修复生命周期及mock context-recycle E2E81 passed、Supe
 - R8 外部provider限额不走卡死重启：实际usage-limit与model chooser同屏时优先识别额度耗尽；活provider当前外部输入阻塞时，静默/heartbeat与context回收不得重排任务或反复换会话 -> verify: 原任务/断点保留，既有Pane Probe继续通知；提示解除后正常恢复检查，dead/unreadable pane与真实卡死不被豁免。真实额度不能由本地代码解除，等待账号额度恢复后才续跑。
 
 R8旧实现7 RED，调用闭包146 passed（含mock E2E）；未更换模型或预算，未假称额度已恢复。现场36done/candidate784a5de9与Consumer9504a88保留；因额度耗尽后的旧恢复逻辑，P11A/Consumer已被重排backlog，三个operation仍running而attempt已失败，safe-halt暂停派发。已记录受控恢复前置，等待额度确认后处理过期attempt并续跑。R5保持active。
+
+
+- R9 控制面重载保留恢复门禁：将既有control_plane_only传入运行时构造器 -> verify: 真实CLI重载不清blocked_human、不发dispatch.resumed；普通完整启动的恢复行为保持，维护暂停不受影响。现场R8重载意外清除暂停已如实记录，并通过evt-8351554be484追加恢复暂停；额度仍未恢复，不能宣称产品续跑。
+
+R9验证：实际CLI/start/restart、恢复级联、worker状态、外部限额保护、watcher暂停、事件合同及Task Pipeline runtime-noise mock E2E，10模块139 passed；sentinel50 passed/1 skipped。dev-verify针对三条改动路径建议因289文件阈值运行全套；按AGENTS按行为边界选择上述调用闭包，未执行全pytest或真实provider测试。

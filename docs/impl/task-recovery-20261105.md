@@ -355,3 +355,12 @@ R7提交`a5dd46a6`已精确部署，主checkout26 passed；受控重载`evt-8230
 R8修复：硬限额优先于同屏chooser；旧限额/登录/chooser文本若已被后续真实Working/Compacting状态取代，不作为当前阻塞。共享live prompt观察先核实provider进程仍活着；中心stuck入口（覆盖pane/heartbeat）以及硬上限回收、idle drain、重启后孤儿回收在当前外部输入阻塞期间等待，不重排Task、不消耗respawn次数、不旋转provider session。既有Pane Probe继续将这类外部依赖通知owner；不伪造心跳、额度、任务通过或修改预算/lease到期规则。提示解除后原硬上限/回收检查恢复，dead/unreadable pane及普通真卡顿不获豁免；既有safe-halt不会被自动清除。
 
 旧实现7场景RED；完整调用闭包146 passed，含真实Orchestrator的pane/heartbeat入口、context三条回收路径、提示解除后恢复与死进程负例、同一synth operation延迟后恢复、mock context-recycle E2E、Supervisor/事件合同。只测确定性与mock层，未消耗真实provider请求验证额度。仍需用户恢复额度，随后核对并通过受控恢复处理过期attempt与safe-halt，再观察新dispatch；本地修复不代表产品已续跑。
+
+
+### 2026-11-08 09:47 UTC：控制面重载不能解除恢复门禁
+
+R8提交`fd90498f`精确部署后主环境72 passed，重载`evt-a83ecf6d3cb1`将watcher更新为PID2560832/epoch ff2157eae7074ea4b37446fd796a6d01，三operation及attempt身份不变。但现场后验发现`evt-fd8c110e1146`自动dispatch.resumed：构造器未接收control-plane-only标志，将只重载控制面也当作解除safe-halt的人工重启。原重载意图声明保留暂停，实际未做到；保留此失败证据，不把重载成功等同恢复状态正确。
+
+终端仍明确usage limit，36done不变、没有新的真实派发。监工通过EventWriter追加`evt-8351554be484`恢复operator暂停，关联原暂停和意外resume，不重写旧事件或任务状态。R9只把既有control_plane_only启动标志传到实际WorkflowRuntimeCoordinator构造入口：该模式保留blocked_human与dispatch暂停；正常完整启动仍沿既有恢复行为，维护暂停规则不变。CLI入口回归旧代码1 failed/1 passed，覆盖真实start参数解析、构造器和账本投影，而非仅测试孤立函数。
+
+R9验证：实际CLI/start/restart、恢复级联、worker状态、外部限额保护、watcher暂停、事件合同及Task Pipeline runtime-noise mock E2E，10模块139 passed；sentinel50 passed/1 skipped。dev-verify针对三条改动路径建议因289文件阈值运行全套；按AGENTS按行为边界选择上述调用闭包，未执行全pytest或真实provider测试。

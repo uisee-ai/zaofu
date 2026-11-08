@@ -366,6 +366,7 @@ class WorkflowRuntimeCoordinator(
         transport: TransportAdapter,
         *,
         project_root: Path | None = None,
+        control_plane_only: bool = False,
     ) -> None:
         self.state_dir = state_dir
         self.config = config
@@ -583,7 +584,7 @@ class WorkflowRuntimeCoordinator(
             inst for inst, st in self._last_worker_state.items()
             if st == "blocked_human"
         ]
-        if blocked_instances:
+        if blocked_instances and not control_plane_only:
             import sys
             print(
                 f"⚠ zf start: clearing blocked_human on "
@@ -629,7 +630,8 @@ class WorkflowRuntimeCoordinator(
                     latest_pause = event
                     break
             if (
-                latest_pause is not None
+                not control_plane_only
+                and latest_pause is not None
                 and isinstance(latest_pause.payload, dict)
                 and latest_pause.payload.get("source") == "remediation_cascade"
             ):

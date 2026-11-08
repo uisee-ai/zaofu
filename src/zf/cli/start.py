@@ -1364,6 +1364,7 @@ def run(args: argparse.Namespace) -> int:
         )
         orchestrator = WorkflowRuntimeCoordinator(
             state_dir, config, transport, project_root=project_root,
+            control_plane_only=control_plane_only,
         )
         orchestrator._claude_session_tailer = claude_tailer
         orchestrator._codex_session_tailer = codex_tailer
