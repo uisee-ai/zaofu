@@ -18,11 +18,15 @@ def consume_durable_nonwake_hooks(runtime: Any) -> bool:
 
     The watcher deliberately leaves high-rate allow/post-tool Hook events for
     durable catch-up. They are occurrence and liveness facts, not a reason to
-    run replay, recovery, dispatch, or Layer 2. Persist only the immutable
+    run replay, recovery, dispatch, or Layer 2 for every batch. Defer at most
+    one maintenance cycle: sustained hooks must not starve periodic recovery.
+    Persist only the immutable
     boundary returned by ``read_from_offset``; callback appends remain beyond
     that cursor for the next cycle.
     """
 
+    deferred = getattr(runtime, "_nonwake_maintenance_deferred", False)
+    runtime._nonwake_maintenance_deferred = False
     offset = runtime._load_offset()
     recent, new_offset = runtime.event_log.read_from_offset(offset)
     if not recent:
@@ -39,7 +43,10 @@ def consume_durable_nonwake_hooks(runtime: Any) -> bool:
             runtime._apply_housekeeping(event)
         runtime._processed_event_ids.add(event.id)
     runtime._persist_offset(new_offset)
-    return runtime._load_offset() == new_offset
+    if runtime._load_offset() != new_offset or deferred:
+        return False
+    runtime._nonwake_maintenance_deferred = True
+    return True
 
 
 __all__ = ["consume_durable_nonwake_hooks"]
