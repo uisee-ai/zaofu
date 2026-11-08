@@ -23,3 +23,5 @@
 持续监工追加：Consumer baseline遭遇av/Pillow下载300秒超时，已验证持久wheelhouse原锁哈希及29包离线安装并交付worker按原流程恢复；不能计为产品RED。验证日志已持久化，产品任务继续运行。
 
 R1补充：新计划已接管但尚无新operation时，旧Verify恢复必须拒绝；增加当前run/map/package绑定检查。旧实现两个场景RED，修复后84 passed，50 sentinel/1 skipped，3 mock E2E。
+
+R3现场补充：Planner大端口交付必须用ref+sha256，不能用artifact_ref或将全部正文内联。既有运行时可用，已修正briefing遗漏并直接指导当前worker；42项调用方/预检/交接测试通过。R5仍在运行，不能标done。

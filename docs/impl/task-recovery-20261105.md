@@ -305,3 +305,9 @@ Consumer已消费必读进入基线，但av16.0.1/Pillow12.0.0的PyPI下载再�
 ### Verify恢复的当前代次围栏补充
 
 复核R1发现：只拒绝更高operation_generation不足以覆盖“新Plan已接管但新operation尚未创建”的窗口。旧代码在task_map_generation变化及package digest变化两个回归场景均仍列出旧Verify恢复点（2项RED）；现要求存在本任务当前generation准入，run/map generation/package digest与旧操作全部一致才允许续验。相关模块/恢复入口/Task Pipeline调用方84 passed，sentinel 50 passed/1 skipped，runtime-noise mock E2E 3 passed。不修改当前在途Training/Consumer/Planner的合同、attempt或读取规则。
+
+### 2026-11-08 07:38 UTC：Planner 大端口提交格式
+
+现场复现：briefing只展示内联body，Planner先用artifact_ref提交PAS/execution_spec未被识别，再内联完整正文触发1MiB结果限制。现有运行时已支持工作目录相对ref+原文件sha256，问题是指导遗漏而非限制不足。已发送精确协议指导，Planner保留完整正文，将9端口描述符结果降至6945字节；继续等待正式校验与独立Critic，不宣称计划批准。将同一说明补入生成briefing的plan_port_briefing.py；直接调用方及预检/交接42项测试通过，不改变schema、读域或大小限制。
+
+控制面07:29重载后，watcher epoch为7391c91e29c24a4aa44eac0c2916a118；Training Verify、Consumer Impl、Planner三operation及attempt未变，quiescent=false。Consumer当前提交9504a88，同HEAD全量复验仍在执行；完成数仍35。
