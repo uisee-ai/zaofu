@@ -1,6 +1,6 @@
 # 用量统计保留已释放 worker 的状态
 
-> 状态: active
+> 状态: done — `8dc63597` fix: preserve released worker state in late usage samples
 
 授权：持续监工、遇到问题修复并记录。LS-v1 的 FMS17、FMS03 已正式 blocked，内核释放角色为 idle；随后带旧 task_id 的磁盘用量统计又将心跳投影改为 busy，600 秒后触发 pane activity mismatch。只修复用量事实对已释放角色状态的错误覆盖，不修改任务、operation 或派发门禁。
 
@@ -12,3 +12,5 @@
 证据：evt-1cb69af98f00 idle → evt-096f74e28f7d usage；evt-67c58e8f655d 为另一旧任务 usage。根因是 usage_liveness 仅在缺 explicit_task_id 时读取/保留已有 idle，不能将 provider 计费当作重新派发。
 
 实现：[用量迟到说明](../docs/impl/usage-after-worker-release.md)。4项入口回归先RED，修复后6文件110 PASS；dev-verify解释影响后按187文件闭包运行2761 PASS（规划器因文件数建议全量，遵守AGENTS按影响闭包执行）；serial10、哨兵53、design199/redrive mock3通过，未跑完整pytest或真实provider E2E。现场两条真实usage分别在隔离临时registry重放，baseline busy、fixed idle，不修改live状态。
+
+dev 合并 ab665343，合并后定向37 PASS。13:53受控重载：Watcher2225162→2307461、Web2224368→2307854加载该版本，8个在途操作/attempt/dispatch/pane/pid保持一致，Web健康/UI200。历史已污染投影不通过冒充worker心跳或编辑YAML消除，不能据新代码断言旧告警已全部退场。记录LS-v1的docs/records/2026-11-08-usage-idle-liveness/。
