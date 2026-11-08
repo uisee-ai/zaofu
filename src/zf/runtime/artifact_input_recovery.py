@@ -16,6 +16,34 @@ from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
 from zf.runtime.recovery_checkpoint import maintenance_checkpoint_facts
 
 
+def _legacy_operation_binding(manifest: Mapping[str, Any], identity: Mapping[str, str], events: list) -> str:
+    """Bind old operation-less history only through a unique canonical attempt."""
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    operations = [op for op in reduce_workflow_operations(events).values()
+                  if op.get("active_attempt_id") == manifest.get("attempt_id")]
+    if len(operations) != 1:
+        return ""
+    operation = operations[0]
+    if (operation.get("operation_id") != identity.get("operation_id")
+            or operation.get("role_instance") != identity.get("actor")
+            or any(not manifest.get(key) or operation.get(key) != manifest[key]
+                   for key in ("task_id", "workflow_run_id", "dispatch_id"))):
+        return ""
+    return str(operation["operation_id"])
+
+
+def _history_operation_matches(row: Mapping[str, Any], manifest: Mapping[str, Any],
+                               identity: Mapping[str, str], legacy_operation: str) -> bool:
+    expected = identity.get("operation_id")
+    if not expected or row.get("operation_id") == expected:
+        return True
+    # This is a read-only history projection, never a current-session witness.
+    return bool(not row.get("operation_id") and legacy_operation == expected
+                and all(manifest.get(key) and row.get(key) == manifest[key]
+                        for key in ("workflow_run_id", "task_id", "dispatch_id")))
+
+
 def build_input_recovery(
     *, state_dir: Path, manifest: dict[str, Any], identity: Mapping[str, str],
     events: list, required: list[dict[str, Any]], reads: list[dict[str, Any]],
@@ -29,12 +57,16 @@ def build_input_recovery(
                and (not row.get("artifact_sha256") or row["artifact_sha256"] == digest)
                and ("$" in paths or row.get("json_path", "$") in paths)
                for sid, aid, digest, paths in allowed)]
+    legacy_operation = (_legacy_operation_binding(manifest, identity, events)
+                        if identity.get("operation_id") and any(not r.get("operation_id") for r in reads) else "")
     own_reads = [r for r in reads if r.get("consumer_actor") == identity.get("actor")
                  and r.get("consumer_role") == identity.get("role")
                  and r.get("consumer_purpose") == identity.get("purpose")
                  and r.get("attempt_id") == manifest.get("attempt_id")
-                 and all(not identity.get(key) or r.get(key) == identity[key]
-                         for key in ("operation_id", "provider_session_id"))]
+                 and (not identity.get("provider") or r.get("consumer_provider") == identity["provider"])
+                 and _history_operation_matches(r, manifest, identity, legacy_operation)
+                 and (not identity.get("provider_session_id")
+                      or r.get("provider_session_id") == identity["provider_session_id"])]
     missing = sum(not required_read_satisfied(own_reads, row) for row in visible)
     lifecycle = input_lifecycle(manifest, events, state_dir=state_dir)
     prefix = f"{zf_cli_cmd()} artifact"
