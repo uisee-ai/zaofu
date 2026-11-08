@@ -14,6 +14,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
 PRODUCT_ACCEPTANCE_SPEC_SCHEMA = "product_acceptance_spec.v1"
+
 PRODUCT_ACCEPTANCE_REPORT_SCHEMA = "product_acceptance_report.v1"
 PROVIDER_QUALIFICATION_RECEIPT_SCHEMA = "provider-qualification-receipt.v1"
 PRODUCT_ACCEPTANCE_PORT = "product_acceptance_spec"
@@ -31,6 +32,21 @@ PRODUCT_ACCEPTANCE_HANDOFF_KEYS = (
 
 class ProductAcceptanceError(ValueError):
     """A Product Acceptance artifact cannot be admitted mechanically."""
+
+
+def bind_product_acceptance_spec(
+    spec: Mapping[str, Any], *, workflow_run_id: str, flow_kind: str,
+    plan_revision: str, task_map_generation: str,
+) -> dict[str, Any]:
+    """Bind authored semantics to the package identity at admission or replay."""
+    return {
+        **spec,
+        "schema_version": PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
+        "workflow_run_id": workflow_run_id,
+        "flow_kind": flow_kind,
+        "plan_revision": plan_revision,
+        "task_map_generation": task_map_generation,
+    }
 
 
 def product_acceptance_handoff_payload(

@@ -56,9 +56,18 @@ def assert_package_explicit_ports_match(
             supplied[name] = {"ref": owner["requirement_spec_ref"],
                               "sha256": owner["requirement_spec_digest"]}
         for name, port in supplied.items():
-            if name not in current or canonical_json_sha256(
-                hydrate_sidecar_ref(state_dir, port).payload
-            ) != canonical_json_sha256(hydrate_sidecar_ref(state_dir, current[name]).payload):
+            body = hydrate_sidecar_ref(state_dir, port).payload
+            if name == "product_acceptance_spec" and isinstance(body, Mapping):
+                from zf.runtime.product_acceptance import bind_product_acceptance_spec
+
+                body = bind_product_acceptance_spec(body, **{
+                    key: package[key] for key in (
+                        "workflow_run_id", "flow_kind", "plan_revision", "task_map_generation",
+                    )
+                })
+            if name not in current or canonical_json_sha256(body) != canonical_json_sha256(
+                hydrate_sidecar_ref(state_dir, current[name]).payload
+            ):
                 raise PlanArtifactPackageError(
                     f"explicit plan port {name!r} differs from the admitted package; "
                     "changed input requires a new plan generation")
