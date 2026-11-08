@@ -602,6 +602,7 @@ def test_revised_generation_is_the_only_downstream_read_authority(
 )
 def test_pre_impl_rejects_unbounded_delegation_or_context(
     tmp_path: Path,
+    monkeypatch,
     mutation: str,
     reason: str,
 ) -> None:
@@ -624,10 +625,15 @@ def test_pre_impl_rejects_unbounded_delegation_or_context(
     else:
         decision["run_plan"]["identity"]["goal_id"] = "GOAL-OTHER"
 
-    outcome = apply_orchestrator_agent_decision(
-        runtime,
-        _submit(runtime, prepared, decision),
-    )
+    # Historical results admitted before preflight still face the apply-time gate.
+    with monkeypatch.context() as patch:
+        if mutation == "outside_source":
+            patch.setattr(
+                "zf.runtime.orchestrator_directive_refs.validate_orchestrator_submission",
+                lambda **kwargs: {"status": "passed"},
+            )
+        submitted = _submit(runtime, prepared, decision)
+    outcome = apply_orchestrator_agent_decision(runtime, submitted)
 
     assert outcome["status"] == "rejected"
     assert reason in outcome["reason"]

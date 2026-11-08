@@ -20,6 +20,7 @@ from zf.runtime.orchestrator_agent_policy import (
     checkpoint_policy,
     orchestration_flow_kind,
 )
+from zf.runtime.orchestrator_directive_refs import context_route_ref_errors
 from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
@@ -185,21 +186,9 @@ def validate_run_plan_admission(
         for row in source_manifest.get("sources") or []
         if isinstance(row, Mapping)
     }
-    for route in run_plan.get("context_routes") or []:
-        if not isinstance(route, Mapping):
-            continue
-        for descriptor in route.get("required_sources") or []:
-            if not isinstance(descriptor, Mapping):
-                continue
-            key = (
-                str(descriptor.get("ref") or ""),
-                str(descriptor.get("sha256") or ""),
-            )
-            if key not in allowed:
-                raise OrchestratorAgentContractError(
-                    "context route source is outside the checkpoint manifest: "
-                    + key[0]
-                )
+    errors = context_route_ref_errors(run_plan, allowed)
+    if errors:
+        raise OrchestratorAgentContractError(errors[0]["message"])
 
 
 def compile_run_plan_admission(

@@ -1,4 +1,4 @@
-"""Frozen source-manifest authority for OA directive references."""
+"""Frozen source-manifest authority for OA directives and context routes."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,6 +39,33 @@ def directive_ref_rejection(
     return ""
 
 
+def context_route_ref_errors(
+    run_plan: Mapping[str, Any], allowed_refs: set[tuple[str, str]],
+) -> list[dict[str, str]]:
+    errors = []
+    for route_index, route in enumerate(run_plan.get("context_routes") or []):
+        if not isinstance(route, Mapping):
+            continue
+        for source_index, descriptor in enumerate(route.get("required_sources") or []):
+            if not isinstance(descriptor, Mapping):
+                continue
+            key = (str(descriptor.get("ref") or ""), str(descriptor.get("sha256") or ""))
+            if key not in allowed_refs:
+                errors.append({
+                    "field": f"run_plan.context_routes[{route_index}].required_sources[{source_index}]",
+                    "code": "context_ref_outside_operation",
+                    "message": "context route source is outside the checkpoint manifest: " + key[0],
+                    "work_unit_id": str(route.get("work_unit_id") or ""),
+                    "required_change": (
+                        "Use an exact ref/sha256 from this operation's source manifest. "
+                        "Recheck copied routes against the current checkpoint; an older "
+                        "plan's sources are not automatically authorized. Repair the same "
+                        "scratch and rerun result validate/submit."
+                    ),
+                })
+    return errors
+
+
 def validate_orchestrator_submission(
     *, state_dir: Path, request: Mapping[str, Any], semantic: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -51,8 +78,11 @@ def validate_orchestrator_submission(
     else:
         delta = decision.get("delta") or {}
         directives = delta.get("directives") or []
-        if directives:
+        run_plan = decision.get("run_plan")
+        run_plan = run_plan if isinstance(run_plan, Mapping) else {}
+        if directives or run_plan:
             allowed_refs = operation_source_descriptors(state_dir, request)
+            errors.extend(context_route_ref_errors(run_plan, allowed_refs))
             for directive in directives:
                 reason = directive_ref_rejection(directive, allowed_refs)
                 if reason:
@@ -73,6 +103,6 @@ def validate_orchestrator_submission(
         "status": "failed" if errors else "passed",
         "profile_id": "orchestrator-semantic-decision",
         "profile_revision": str(request.get("output_profile_revision") or ""),
-        "validation_scope": "authored_schema_and_frozen_directive_refs",
+        "validation_scope": "authored_schema_and_frozen_directive_and_context_refs",
         "errors": errors,
     }
