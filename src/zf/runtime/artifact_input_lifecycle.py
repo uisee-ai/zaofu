@@ -38,6 +38,10 @@ def input_lifecycle(manifest: Mapping[str, Any], events: Sequence[Any], *,
                     return {**result, "reason": "current_task_generation_binding"}
                 if _current_recovery_reader_binding(state_dir, manifest, events):
                     return {**result, "reason": "current_recovery_reader_binding"}
+                from zf.runtime.plan_reader_input_binding import current_plan_reader_baseline
+
+                if current_plan_reader_baseline(state_dir, manifest, events):
+                    return {**result, "reason": "current_plan_reader_baseline"}
         except (OSError, ValueError):
             pass  # Unprovable or conflicting bindings remain closed.
         return {**result, "status": "superseded", "requires_rebind": True}
