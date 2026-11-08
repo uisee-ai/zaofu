@@ -1,6 +1,6 @@
 # Work record 使用当前派发 placement
 
-> 状态: active
+> 状态: done — `dd9537d9` fix: validate work records against current placement
 
 授权：用户要求持续监工、修复阻塞并记录。现场FMS15 operation已在placement 7执行，原不可变请求仍是placement 1；`artifact work-record publish`两次拒绝 dispatch identity mismatch。只读复现 `_operation_workdir`：run/task/operation/dispatch/lease/role/attempt与当前kernel派发一致，唯一被旧request覆盖的预期字段是placement_epoch=1，实际operation及dispatch=7。
 
