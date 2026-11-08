@@ -1,6 +1,6 @@
 # 咨询超时通知在正式失败交接后自动退出恢复门禁
 
-> 状态: active
+> 状态: done — `d654141f fix: retire expired assistance gates after admitted handoff`，已合并dev `ba78938e`。
 
 用户已授权持续监工、修复阻塞并记录。现场FMS13咨询超时产生legacy human.escalate，随后worker的blocked结果准入、operation settled、kernel分诊request_replan均存在，旧通知仍阻塞RM。运维已通过精确controlled dismissal恢复当前通知；本任务补确定性收尾证明，避免重复人工介入。
 
@@ -12,3 +12,5 @@
 参考[199](../docs/design/199-worker-failure-recovery-and-role-handoff.md)和[实现说明](../docs/impl/assistance-timeout-handoff-retirement.md)。
 
 验证：新增回归先2失败、24通过；实现后4个相关文件53通过。自动planner无errors/warnings，选择360个影响文件；其80文件阈值会改跑全套，按用户AGENTS改为原360文件4进程影响闭包：4875通过、7跳过（217.12秒），非完整pytest、非真实provider E2E。其他自动tier：serial10、sentinel53、flow-smoke10均通过。真实150323事件只读回放：修复前保留该超时阻塞、修复后只移除此通知；未写事件。当前现场已先由精确controlled dismissal恢复，14:51:27 Reader实际启动；尚不把此恢复归因为待部署新代码。
+
+合并后43项定向与53项哨兵通过。14:54受控重载Watcher/Web到ba78938e，14:55复核9个在途operation的attempt/dispatch/pane身份全部保持，真实FMS13 Reader未中断。当前单条阻塞已先由授权运维解除，因此在线验证证明代码加载和执行连续性；自动收尾行为由真实历史只读回放与确定性调用方测试证明，不夸大为新发生咨询的自然端到端验证。证据：ls-v1/docs/records/2026-11-08-assistance-timeout-recovery/。
