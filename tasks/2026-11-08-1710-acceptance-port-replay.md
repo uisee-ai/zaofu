@@ -1,6 +1,6 @@
 # Product Acceptance 计划包身份重绑的重放一致性
 
-> 状态: active
+> 状态: done — `074a1af7` fix: preserve acceptance port identity on plan replay
 
 持续监工授权修复。FMS03 Planner已正式提交evt-a8ecebe5bb0d，task_map.ready evt-54a60ef90df1首次包准入成功，但Writer重复准入因explicit product_acceptance_spec与系统重绑后的已准入值不同而拒绝，evt-52eedc48a598使审批失效。
 
@@ -13,4 +13,4 @@
 
 真实端口只读对账：仅plan_revision和task_map_generation两字段不同；统一绑定后的完整正文摘要d8338de952a2f228d2740ed8cb409582e0d38b3e47badbce1d4369b59a944534与已准入端口完全相等。并非放宽语义比较。
 
-实现说明：[身份重绑重放](../docs/impl/product-acceptance-port-replay.md)。待部署及受控ready重发。不声明产品E2E完成。
+实现说明：[身份重绑重放](../docs/impl/product-acceptance-port-replay.md)。代码合入daaa77bd并部署，受控新ready evt-ef071da45c4d在evt-a0d15435258c重新准入成功；随后的独立审批去重缺口由任务1724修复。最终审批evt-1c2e3287bd2a、代次准入evt-b78b6449c563，17:28:08实际Impl派发evt-d69ff70a615c。旧cancelled trigger仍退休，原Planner产物复用，完整正文和55任务图对账保持。执行身份wop-impl-tp-FMS-03-GAP-E2E-PORT-PROBE-02--08da2dabe99b；不声明FMS03产品完成或真实E2E通过。
