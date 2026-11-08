@@ -116,7 +116,12 @@ def build_plan_preview(
                            "plan_artifact_package_digest", "requirement_spec_ref")):
             bound_source = None
         else:
-            for key in PLAN_REVIEW_REF_FIELDS:
+            for key in (*PLAN_REVIEW_REF_FIELDS, "task_map_ref", "digest_ref"):
+                if not payload.get(key) and original.get(key):
+                    payload[key] = original[key]
+            # Semantic approval events may omit the PRD identity fields while
+            # task_map.ready remains the bound source of truth.
+            for key in ("stage_id", "flow_kind", "request_kind", "target_ref", "pdd_id", "task_count"):
                 if not payload.get(key) and original.get(key):
                     payload[key] = original[key]
             if not payload.get("plan_artifact_ref"):

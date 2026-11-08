@@ -50,6 +50,8 @@ from zf.runtime.channel_workflow_authority import (
 from zf.runtime.task_workflow_plans import (
     build_task_workflow_plan_request,
 )
+from zf.runtime.task_contract_authority import TaskContractAuthorityService
+from zf.runtime.task_contract_authority import current_authority_revision
 from zf.runtime.workflow_anchor import (
     bind_workflow_request_to_task,
     mark_workflow_managed_task,
@@ -685,7 +687,24 @@ class ProductActionsMixin:
                 status="invalid_payload",
             )
 
-        updated = store.update(task_id, **updates)
+        if "contract" in updates and current_authority_revision(task):
+            contract = updates.pop("contract")
+            mutation = TaskContractAuthorityService(
+                task_store=store,
+                event_writer=self.writer,
+                state_dir=self.state_dir,
+            ).replace(
+                task,
+                contract=contract,
+                task_updates=updates,
+                source="kanban-agent-update-task",
+                actor=self.actor,
+                causation_id=requested.id,
+                correlation_id=requested.correlation_id or "",
+            )
+            updated = mutation.task
+        else:
+            updated = store.update(task_id, **updates)
         if updated is None:
             return self._failed(
                 requested=requested,

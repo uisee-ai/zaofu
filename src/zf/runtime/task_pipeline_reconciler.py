@@ -662,11 +662,16 @@ def _task_view(
             )
         verify = current_by_stage.get("verify")
         max_rework = int(policy.get("max_rework_attempts") or 0)
+        if (stage == "blocked" and verify is not None
+                and str(verify.get("status") or "") == "settled"
+                and _verifier_abstained(verify)):
+            blockers.append("verify_execution_failed")
         if (
             stage == "blocked"
             and verify is not None
             and str(verify.get("status") or "") == "settled"
             and not _semantic_passed(verify)
+            and not _verifier_abstained(verify)
             and int(verify.get("operation_generation") or 1) > max_rework
         ):
             blockers.append("semantic_rework_exhausted")
@@ -705,6 +710,7 @@ def _task_view(
             and verify is not None
             and str(verify.get("status") or "") == "settled"
             and not _semantic_passed(verify)
+            and not _verifier_abstained(verify)
         ):
             blockers.append("verify_only_verification_rejected")
         if stage == "admission_blocked":
@@ -767,7 +773,17 @@ def _derive_stage(
     if requested_generation == impl_generation and (
         operator_retry or (impl_status == "settled" and _semantic_passed(impl))
     ):
-        if impl_generation <= max_rework:
+        extra_generation_authorized = (
+            (impl_rework_request or {}).get("fault") == "task_pipeline_operator_retry"
+            and (impl_rework_request or {}).get("authorized_next_operation_generation") == impl_generation + 1
+            and bool((impl_rework_request or {}).get("approval_ref"))
+        )
+        integration_rework_authorized = (
+            (impl_rework_request or {}).get("fault") == "task_pipeline_integration_rework"
+            and (impl_rework_request or {}).get("authorized_next_operation_generation") == impl_generation + 1
+            and bool((impl_rework_request or {}).get("approval_ref"))
+        )
+        if impl_generation <= max_rework or extra_generation_authorized or integration_rework_authorized:
             return "impl_rework_ready", impl_generation + 1, impl_generation
         return "blocked", impl_generation, impl_generation
     if impl_status != "settled" or not _semantic_passed(impl):
@@ -794,6 +810,9 @@ def _derive_stage(
         return "blocked", verify_generation, max(0, verify_generation - 1)
     if verify_status != "settled":
         return "verify_ready", verify_generation, max(0, verify_generation - 1)
+    if _verifier_abstained(verify):
+        # No product verdict exists: recovery must repair execution conditions.
+        return "blocked", verify_generation, max(0, verify_generation - 1)
     if not _semantic_passed(verify):
         if verify_generation <= max_rework:
             return (
@@ -985,6 +1004,10 @@ def _derive_post_verification_stage(
     return "integration_ready", verify_generation, max(0, verify_generation - 1)
 
 
+def _verifier_abstained(operation: Mapping[str, Any]) -> bool:
+    return str(operation.get("semantic_verdict") or "").strip().lower() == "abstained"
+
+
 def _semantic_passed(operation: Mapping[str, Any]) -> bool:
     verdict = str(operation.get("semantic_verdict") or "").strip().lower()
     return verdict in {"", "passed", "pass", "approved", "approve", "admit"}
@@ -1065,7 +1088,15 @@ def _select_role(
     preferred_role: str = "",
     delegation: Mapping[str, Any] | None = None,
 ) -> str:
-    roles = list(dict.fromkeys(str(item) for item in pool.get("role_instances", []) if str(item)))
+    # Preserve the declaration order from the effective YAML policy.  A flow
+    # may provide explicit, namespaced role instances (for example
+    # ``prd-dev-lane-0``) while the compiler also appends legacy defaults
+    # (``dev-lane-0``).  Sorting the merged set selects the legacy alias first
+    # and leaves the real runtime role absent, producing a misleading
+    # ``waiting_for_capability`` stall.
+    roles = list(dict.fromkeys(
+        str(item) for item in pool.get("role_instances", []) if str(item)
+    ))
     profiles = {
         str(item.get("role") or ""): set(
             str(value) for value in item.get("capabilities", []) if str(value)

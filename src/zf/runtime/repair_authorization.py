@@ -76,6 +76,24 @@ def auto_repair_authorized(env: dict[str, str] | None = None) -> bool:
     return str(src.get(AUTO_REPAIR_ENV) or "").strip().lower() == "authorized"
 
 
+def repair_dispatch_failure_class(fingerprint: str) -> str:
+    for prefix in (
+        "task_ref_rejected",
+        "missing_task_ref_after_dev_build_done",
+        "fanout_timed_out",
+        "completion_snapshot_ref_missing",
+        "task_contract_invalid",
+    ):
+        if fingerprint.startswith(f"{prefix}:"):
+            return prefix
+    parts = fingerprint.split(":")
+    if len(parts) >= 2 and parts[0] == "failure":
+        return parts[1]
+    if parts and parts[0] == "stall":
+        return "stall"
+    return ""
+
+
 def configured_repair_mode(config: object | None) -> str:
     policy = getattr(getattr(config, "autoresearch", None), "trigger_policy", None)
     mode = str(getattr(policy, "repair_mode", "") or "proposal_only").strip()

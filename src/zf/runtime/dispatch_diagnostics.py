@@ -253,6 +253,7 @@ def build_dispatch_notifications(
             "preferred_role": preferred_role,
             "reason": "no idle worker matches the task dispatch role",
         })
+    workflow_managed_ids = _workflow_managed_task_ids(state_dir)
     dispatch_index_by_task = _latest_dispatch_index_by_task(events)
     skipped_by_task: dict[str, int] = {}
     for idx, event in enumerate(events):
@@ -260,6 +261,8 @@ def build_dispatch_notifications(
             continue
         task_id = str(event.task_id or "")
         if not task_id:
+            continue
+        if task_id in workflow_managed_ids:
             continue
         if idx < dispatch_index_by_task.get(task_id, -1):
             continue
@@ -299,9 +302,33 @@ def _read_recent_events(
 
 def _ready_tasks(state_dir: Path) -> list[Task]:
     try:
-        return TaskStore(state_dir / "kanban.json").ready()
+        from zf.runtime.workflow_anchor import is_workflow_dispatch_managed_task
+
+        return [
+            task for task in TaskStore(state_dir / "kanban.json").ready()
+            if not is_workflow_dispatch_managed_task(task)
+        ]
     except Exception:
         return []
+
+
+def _workflow_managed_task_ids(state_dir: Path) -> set[str]:
+    """Return parent Flow tasks owned by the workflow runtime.
+
+    They are durable run anchors, not provider dispatch units. Including a
+    backlog anchor in dispatch diagnostics creates a false ready-task and
+    repeated-dispatch warning while its child pipeline is running.
+    """
+    try:
+        from zf.runtime.workflow_anchor import is_workflow_dispatch_managed_task
+
+        return {
+            task.id
+            for task in TaskStore(state_dir / "kanban.json").list_all_with_archive()
+            if is_workflow_dispatch_managed_task(task)
+        }
+    except Exception:
+        return set()
 
 
 def _active_task_by_assignee(state_dir: Path) -> dict[str, str]:
@@ -374,6 +401,7 @@ def _worker_state_from_events(
 def _assigned_without_dispatched(events: Iterable[ZfEvent]) -> dict[str, str]:
     assigned: dict[str, tuple[str, int]] = {}
     dispatched: dict[str, int] = {}
+    terminal: dict[str, int] = {}
     for idx, event in enumerate(events):
         payload = event.payload if isinstance(event.payload, dict) else {}
         task_id = str(event.task_id or payload.get("task_id") or "")
@@ -388,10 +416,22 @@ def _assigned_without_dispatched(events: Iterable[ZfEvent]) -> dict[str, str]:
             ), idx)
         elif event.type in {"task.dispatched", "fanout.child.dispatched"}:
             dispatched[task_id] = idx
+        elif event.type == "task.done":
+            # A recovery reassignment may be appended after the real task
+            # dispatch and before integration closes the task. Once the
+            # canonical terminal event is present, that historical assignment
+            # is no longer a live dispatch defect.
+            terminal[task_id] = idx
+        elif event.type == "task.status_changed":
+            if str(payload.get("to") or "").strip().lower() in {
+                "done", "cancelled",
+            }:
+                terminal[task_id] = idx
     return {
         task_id: assignee
         for task_id, (assignee, assigned_idx) in assigned.items()
         if dispatched.get(task_id, -1) < assigned_idx
+        and terminal.get(task_id, -1) < assigned_idx
     }
 
 

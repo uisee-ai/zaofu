@@ -103,6 +103,91 @@ def test_plan_preview_reads_digest_and_task_map(tmp_path: Path) -> None:
     assert preview["actions"]["repair_chat"] == "chat-orchestrator"
 
 
+def test_plan_preview_falls_back_to_bound_producer_markdown_ref(
+    tmp_path: Path,
+) -> None:
+    state_dir, log = _state(tmp_path)
+    markdown = state_dir / "artifacts" / "fanouts" / "f" / "planner" / "docs" / "plans" / "plan.md"
+    markdown.parent.mkdir(parents=True)
+    markdown.write_text("# Full Plan\n\n## Acceptance\n\n- AC-1\n", encoding="utf-8")
+    task_map = state_dir / "artifacts" / "fanouts" / "f" / "planner" / "artifacts" / "plan" / "task_map.json"
+    task_map.parent.mkdir(parents=True)
+    task_map.write_text(json.dumps({"tasks": [{"task_id": "T-1", "title": "Ship"}]}), encoding="utf-8")
+    log.append(ZfEvent(
+        id="evt-plan-2",
+        type="task_map.ready",
+        actor="zf-cli",
+        payload={
+            "task_map_ref": str(task_map.relative_to(state_dir)),
+            "artifact_refs": [
+                str(markdown.relative_to(state_dir)),
+                str(task_map.relative_to(state_dir)),
+            ],
+        },
+    ))
+    log.append(ZfEvent(
+        type="plan.approval.requested",
+        actor="zf-cli",
+        payload={
+            "plan_id": "evt-plan-2",
+            "plan_artifact_ref": "docs/plans/missing-synth-plan.md",
+            "task_map_ref": str(task_map.relative_to(state_dir)),
+        },
+    ))
+
+    preview = build_plan_preview(
+        state_dir, log.read_all(), plan_id="evt-plan-2", project_root=tmp_path,
+    )
+
+    assert preview["content_kind"] == "full_plan"
+    assert preview["refs"]["markdown_ref"] == str(markdown.relative_to(state_dir))
+    assert "## Acceptance" in preview["markdown"]
+
+
+def test_resolved_plan_without_request_keeps_bound_prd_preview(
+    tmp_path: Path,
+) -> None:
+    state_dir, log = _state(tmp_path)
+    markdown = state_dir / "artifacts" / "plans" / "prd.md"
+    task_map = state_dir / "artifacts" / "plans" / "task_map.json"
+    markdown.parent.mkdir(parents=True)
+    markdown.write_text("# PRD Plan\n", encoding="utf-8")
+    task_map.write_text(json.dumps({"tasks": [{"task_id": "T-PRD", "title": "PRD slice"}]}), encoding="utf-8")
+    log.append(ZfEvent(
+        id="evt-prd-plan",
+        type="task_map.ready",
+        actor="zf-cli",
+        payload={
+            "task_map_ref": str(task_map.relative_to(state_dir)),
+            "artifact_refs": [
+                str(markdown.relative_to(state_dir)),
+                str(task_map.relative_to(state_dir)),
+            ],
+            "stage_id": "prd-plan",
+            "pdd_id": "TASK-PRD",
+            "trace_id": "loshu-fms-prd-v4-test",
+        },
+    ))
+    log.append(ZfEvent(
+        type="plan.approved",
+        actor="orchestrator",
+        payload={"plan_id": "evt-prd-plan"},
+    ))
+
+    inbox = build_operator_inbox(state_dir, log.read_all(), project_root=tmp_path)
+    item = inbox["items"][0]
+
+    assert item["status"] == "approved"
+    assert item["preview"]["available"] is True
+    assert item["refs"]["task_map_ref"].endswith("artifacts/plans/task_map.json")
+
+    preview = build_plan_preview(
+        state_dir, log.read_all(), plan_id="evt-prd-plan", project_root=tmp_path,
+    )
+    assert preview["stage_id"] == "prd-plan"
+    assert preview["task_map_summary"]["task_count"] == 1
+
+
 def test_plan_preview_resolves_legacy_zf_alias_to_custom_state_dir(
     tmp_path: Path,
 ) -> None:

@@ -31,6 +31,7 @@ from zf.runtime.injection import (
 )
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.provider_context import has_provider_context_exhausted
+from zf.runtime.provider_interactive_prompt import live_provider_interactive_prompt_marker
 from zf.runtime.role_lifecycle_runtime import complete_respawn, watchdog_should_skip
 from zf.runtime.recovery import build_recovery_briefing
 from zf.runtime.remediation_cascade import (
@@ -277,7 +278,9 @@ class LifecycleManagerMixin(
         try:
             self.escalation.escalate(
                 f"task {task.id}: orphaned "
-                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)"
+                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)",
+                task_id=task.id,
+                metadata={"failure_class": "orphaned_task"},
             )
         except Exception:
             pass
@@ -504,6 +507,14 @@ class LifecycleManagerMixin(
                     )
                     stale, stale_basis = self._worker_liveness_stale(role)
                     instance_state = getattr(self, "_instance_state", {})
+                    # Fast adoption is for a restarted watcher with no local
+                    # recycle marker. Local recycle failures retain the
+                    # existing stale-liveness recovery path below.
+                    interrupted_recycle = (
+                        role.instance_id not in instance_state
+                        and self._last_worker_state.get(role.instance_id)
+                        == "recycling"
+                    )
                     pending_recycle = (
                         instance_state.get(role.instance_id)
                         == "pending_recycle"
@@ -514,13 +525,14 @@ class LifecycleManagerMixin(
                     # must be replaced once its active obligation drains. If
                     # the pane is already gone, waiting for the normal worker
                     # heartbeat threshold only preserves a dead lease.
-                    if pending_recycle and (
+                    if (pending_recycle or interrupted_recycle) and (
                         active_task is not None or active_fanout is not None
                     ):
                         stale = True
                         stale_basis = (
-                            "pane_dead_during_pending_recycle_with_active_"
-                            "obligation"
+                            "pane_dead_during_interrupted_recycle_with_active_obligation"
+                            if interrupted_recycle else
+                            "pane_dead_during_pending_recycle_with_active_obligation"
                         )
                     if stale:
                         # Pending manifest recovery precedes normal respawn,
@@ -547,7 +559,15 @@ class LifecycleManagerMixin(
                                     f"evidence ({stale_basis})"
                                 ),
                             )
-                            decisions.append(self._respawn_instance(role))
+                            if interrupted_recycle:
+                                decisions.append(self._respawn_instance(
+                                    role,
+                                    recovery_reason="interrupted_context_recycle",
+                                    inject_idle_prompt=False,
+                                    force_fresh_session=True,
+                                ))
+                            else:
+                                decisions.append(self._respawn_instance(role))
                         # else: idle worker with no pending obligations —
                         # evidence only (the R18 completed-worker falsepos
                         # class); recovery happens at next dispatch/stuck.
@@ -1356,6 +1376,8 @@ class LifecycleManagerMixin(
                 continue
             if age is None or age < 600.0:
                 continue
+            if live_provider_interactive_prompt_marker(self.transport, instance_id):
+                continue
             self._instance_state[instance_id] = "recycling"
             self._set_worker_state(
                 instance_id, "recycling",
@@ -1477,6 +1499,17 @@ class LifecycleManagerMixin(
                 and (self._now() - over_hard_cap) >= role.drain_hold_seconds
             )
             if force_recycle and current != "recycling":
+                if live_provider_interactive_prompt_marker(self.transport, role.instance_id):
+                    continue
+                from zf.runtime.native_compaction_recycle import defer_native_compaction_recycle
+
+                if defer_native_compaction_recycle(
+                    self,
+                    role,
+                    session_id=session_id_str,
+                    hard_cap_since=over_hard_cap,
+                ):
+                    continue
                 self._instance_state[role.instance_id] = "recycling"
                 self._set_worker_state(
                     role.instance_id, "recycling",
@@ -1603,22 +1636,16 @@ class LifecycleManagerMixin(
         command = str(getattr(caps, "compact_command", "") or "").strip()
         if not getattr(caps, "native_compact", False) or not command:
             return False
+        if bool(getattr(caps, "compact_requires_idle", False)):
+            # This path owns an active task. Defer to the existing drain/recycle
+            # policy; an unsent command is neither an attempt nor a failure.
+            return False
         attempts.add(role.instance_id)
         payload = dict(warning_payload)
         payload.update({
             "compact_command": command,
             "strategy": "compact_first",
         })
-        if bool(getattr(caps, "compact_requires_idle", False)):
-            self._emit_compact_failed(
-                role,
-                active_task,
-                payload,
-                reason="backend compact requires idle session",
-                causation_id=None,
-                correlation_id=None,
-            )
-            return False
         requested = self.event_writer.append(ZfEvent(
             type="worker.context.compact.requested",
             actor=role.instance_id,
@@ -1752,6 +1779,8 @@ class LifecycleManagerMixin(
         for instance_id, state in list(self._instance_state.items()):
             if state != "pending_recycle":
                 continue
+            if live_provider_interactive_prompt_marker(self.transport, instance_id):
+                continue
             is_idle = self.wip.can_accept(
                 instance_id,
                 self.task_store,
@@ -1781,6 +1810,10 @@ class LifecycleManagerMixin(
         recycling state so _check_pending doesn't re-trigger."""
         instance_id = role.instance_id
         try:
+            from zf.runtime.idle_context_recycle import hibernate_idle_context_recycle
+
+            if hibernate_idle_context_recycle(self, role):
+                return
             active_fanout = self._active_fanout_child_for_instance(instance_id)
             session_replacement = self._replace_provider_session_for_recycle(
                 role,
@@ -2184,8 +2217,18 @@ class LifecycleManagerMixin(
         heartbeat_age_s: float | None = None,
     ) -> "WorkflowRuntimeDecision":
         """Emit worker.stuck and try to recover the active task/worker."""
+        from zf.runtime.heartbeat_work_obligation import on_demand_work_obligation
         from zf.runtime.stuck_recovery_signal import emit_stuck_signal
 
+        if on_demand_work_obligation(self, role) is False:
+            return WorkflowRuntimeDecision(action="noop", role=role.instance_id,
+                                           reason="on-demand worker has no active work obligation")
+        blocker = live_provider_interactive_prompt_marker(self.transport, role.instance_id)
+        if blocker:
+            return WorkflowRuntimeDecision(
+                action="wait", role=role.instance_id,
+                reason=f"provider external input required: {blocker}",
+            )
         signal = emit_stuck_signal(
             self,
             role,

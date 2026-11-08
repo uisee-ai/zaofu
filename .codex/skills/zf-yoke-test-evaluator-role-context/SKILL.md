@@ -44,6 +44,32 @@ amendment are separate role capabilities supplied by the workflow profile.
    才按JSONL逐行输出source/artifact/json-path/content；保留已完整呈现的正文，不重复dump。
    等待仍在运行的工具时采用与预计耗时相称的10—30秒等待（保持操作者可见的进度），
    避免连续1秒轮询：每次模型往返都重带上下文，空输出也会消耗累计预算。
+   大量嵌套重复正文可使用可选 `--required --shared-bodies`（不与
+   `--deduplicate-content` 合用），在当前工具允许的情况下保存到自己的临时工作文件后，
+   按连续字符区间分页读取；每页控制在工具输出上限内，记录已完整消费的区间。
+   优先使用 `zf artifact read --attempt <本次attempt> --required --shared-bodies --output-file
+   app/evidence/<本任务域>/__pycache__/required-<本次attempt>.jsonl`，由CLI原子保存完整
+   正文且只输出路径/大小/hash；目标必须在当前工作目录内、已gitignore且尚不存在。
+   回执不是已阅读证明，继续按连续区间完整分页；未读完本身不是外部阻塞，不应因此
+   提交failed或要求删除必读来源。仅真实缺失、校验失败或执行通道错误才报告恢复问题。
+   批量输出应在进程层直接保存 stdout 到允许的缓存（先创建父目录），不要先向工具打印全量
+   再复制展示文本。可用 subprocess.run(..., stdout=缓存文件, check=True)；仅打印退出码和大小。
+   缓存须逐行解析并核对 refs/来源摘要；不可用编辑补丁重建截断正文，坏缓存保留诊断后重新获取。
+   没有可靠 token 计数时，每次最多输出 15000 个字符，不在同一工具调用合并多页；
+   检查真实截断提示后再标已读。补读按字符区间覆盖全部缺口，少量正文 ID 不能代替缺页。
+   临时文件须位于授权且已忽略的位置（先用 `git check-ignore` 核对）；交接前确认
+   `git status --short` 干净。误写到未忽略位置时保全后移出，不把读取缓存提交成产品
+   代码，不改 `.gitignore` 隐藏文件；移动超出工具权限时请求监工执行。
+   JSONL 的 `kind=body` 是正文定义；外层 `refs` 中的 `path`/`ref` 只将对应占位 null
+   替换为此前定义，业务正文里的同名键和字面 null 不变。`kind=source` 保留来源、
+   内容摘要及逐来源读取凭证。所有定义和来源都须完整消费，引用只可复用已读完的定义，
+   不得只读索引/hash、抽样或摘要来签收。工具成功写入read-ledger不证明模型已消费正文。
+   若自行复核 `content_sha256`，先按 `refs` 完整还原选中正文，再计算 UTF-8 摘要。
+   字符串使用原文；其他值使用 `json.dumps(value, ensure_ascii=False, indent=2, default=str)`，
+   保留原键顺序且不追加换行。不要 hash JSONL 行、压缩 JSON 或排序键后的重编码；
+   编码差异不表示来源损坏，按准确口径复核后仍不匹配才报告完整性问题。
+   这是可逆展示，不改变 required_reads、权限、合同和验收门禁；老CLI不支持时继续用
+   原单项受控读取。遵守当前工具的写入边界和命令约束，不因保存输出而绕过守卫。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
    the briefing marks it reusable for the exact target commit and command
    digest. Do not rerun that identical deterministic command merely to produce

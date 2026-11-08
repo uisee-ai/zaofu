@@ -464,7 +464,7 @@ def prepare_plan_artifact_package(
     metadata: Mapping[str, Any] | None = None,
     source_event_id: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Build Claim Set and Package from explicit caller refs only."""
+    """Build claims and package from explicit or admitted inherited refs."""
 
     event_list = list(events)
     mode = artifact_package_mode(metadata)
@@ -492,6 +492,21 @@ def prepare_plan_artifact_package(
         task_map_digest=payload.get("task_map_digest"),
         task_map_ref=task_map_ref,
     )
+    explicit_ports = materialize_explicit_plan_ports(
+        state_dir=state_dir,
+        project_root=project_root,
+        payload=payload,
+        flow_kind=flow_kind,
+        required_ports=required_ports,
+    )
+    reduced = reduce_plan_artifact_packages(event_list, workflow_run_id=workflow_run_id)
+    previous = reduced.get("current")
+    previous = previous if isinstance(previous, Mapping) else {}
+    prior_body = None
+    if previous.get("package_ref") and previous.get("package_digest"):
+        prior_body = hydrate_plan_artifact_package(state_dir, {
+            "ref": previous["package_ref"], "sha256": previous["package_digest"],
+        })
     objective_ref = str(
         payload.get("requirement_spec_ref")
         or payload.get("objective_ref")
@@ -500,6 +515,17 @@ def prepare_plan_artifact_package(
         or payload.get("issue_ref")
         or ""
     )
+    if not objective_ref:
+        requirement_port = "issue_spec" if flow_kind == "issue" else "requirement_spec"
+        inherited_ports = {
+            port["logical_name"]: port
+            for port in [*prior_body["produced"], *prior_body["inherited"]]
+        } if prior_body else {}
+        # A gap plan can omit the unchanged requirement ref. Use the same
+        # digest-verified port that the new package inherits, before checking
+        # mandatory claim continuity. Explicit replacement still takes priority.
+        requirement = explicit_ports.get(requirement_port) or inherited_ports.get(requirement_port) or {}
+        objective_ref = str(requirement.get("ref") or "")
     claim_set, claim_descriptor = pin_goal_claim_set_from_task_map(
         state_dir=state_dir,
         project_root=project_root,
@@ -509,13 +535,6 @@ def prepare_plan_artifact_package(
         task_map_generation=generation,
         objective_ref=objective_ref,
         source_event_id=source_event_id,
-    )
-    explicit_ports = materialize_explicit_plan_ports(
-        state_dir=state_dir,
-        project_root=project_root,
-        payload=payload,
-        flow_kind=flow_kind,
-        required_ports=required_ports,
     )
     explicit_ports["goal_claim_set"] = {
         "logical_name": "goal_claim_set",
@@ -532,22 +551,9 @@ def prepare_plan_artifact_package(
             "source_logical_name": "task_map",
             "adapter_version": "planning-result-task-map-adapter.v1",
         }
-    reduced = reduce_plan_artifact_packages(
-        event_list,
-        workflow_run_id=workflow_run_id,
-    )
-    previous = reduced.get("current")
-    previous = previous if isinstance(previous, Mapping) else {}
     inherited: list[dict[str, Any]] = []
     continuity = mandatory_claim_continuity(None, claim_set)
-    if previous and previous.get("package_ref") and previous.get("package_digest"):
-        prior_body = hydrate_plan_artifact_package(
-            state_dir,
-            {
-                "ref": previous["package_ref"],
-                "sha256": previous["package_digest"],
-            },
-        )
+    if prior_body is not None:
         prior_claim_port = next(
             (
                 port
@@ -617,6 +623,13 @@ def prepare_plan_artifact_package(
         state_dir=state_dir, project_root=project_root, payload=payload,
         workflow_run_id=workflow_run_id, flow_kind=flow_kind,
         explicit_ports=explicit_ports, inherited=inherited,
+    )
+    from zf.runtime.plan_gap_input_partitions import rebind_gap_port_partitions
+
+    rebind_gap_port_partitions(
+        state_dir=state_dir, task_map=task_map, payload=payload,
+        explicit_ports=explicit_ports, inherited=inherited,
+        source_event_id=source_event_id,
     )
     product_acceptance_port = next(
         (

@@ -349,6 +349,12 @@ def build_gap_task_map_amend(
         out["amend"]["goal_kind"] = goal_kind
     if gap_category:
         out["amend"]["gap_category"] = gap_category
+    from zf.runtime.gap_input_policy import rebind_gap_input_policy
+
+    rebind_gap_input_policy(
+        base_task_map, out, gap_tasks=gap_tasks,
+        replacements=_replacement_ids_by_superseded(gap_tasks),
+    )
     return out
 
 
@@ -409,7 +415,7 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
             or "Goal gap claim paths generated from verifier source_refs."
         ),
         "acceptance": acceptance,
-        "acceptance_criteria": acceptance,
+        "acceptance_criteria": deepcopy(raw.get("acceptance_criteria") or acceptance),
         "verification": verification,
         "verify_commands": verification,
         "verification_read_paths": verification_read_paths,
@@ -828,7 +834,14 @@ def _claim_paths(raw: dict[str, Any]) -> list[str]:
 
 
 def _acceptance(raw: dict[str, Any]) -> list[str]:
-    return _string_list(raw.get("acceptance") or raw.get("acceptance_criteria"))
+    values = raw.get("acceptance") or raw.get("acceptance_criteria")
+    if not isinstance(values, list):
+        return _string_list(values)
+    return _string_list([
+        item.get("statement") or item.get("text") or item.get("criterion") or ""
+        if isinstance(item, dict) else item
+        for item in values
+    ])
 
 
 def _verification(raw: dict[str, Any]) -> list[str]:

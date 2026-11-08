@@ -167,8 +167,13 @@ def reconcile_task_pipeline_freeze(
 ) -> list[WorkflowRuntimeDecision]:
     """Freeze a quiescent generation once all exact Task receipts are current."""
 
+    from zf.runtime.task_pipeline_freeze_scope import reconcile_incomplete_freeze_scope
+
+    blocked_runs = reconcile_incomplete_freeze_scope(runtime, generation_contexts)
     generations: dict[str, dict[str, Any]] = {}
     for task_id, context in generation_contexts.items():
+        if str(context.get("workflow_run_id") or "") in blocked_runs:
+            continue
         generation_id = str(context.get("generation_id") or "")
         if not generation_id:
             continue
@@ -180,12 +185,17 @@ def reconcile_task_pipeline_freeze(
     decisions: list[WorkflowRuntimeDecision] = []
     for generation_id, entry in sorted(generations.items()):
         context = entry["context"]
-        task_ids = sorted(set(entry["task_ids"]))
+        run_contexts = {
+            task_id: task_context for task_id, task_context in generation_contexts.items()
+            if task_context.get("workflow_run_id") == context.get("workflow_run_id")
+        }
+        task_ids = sorted(run_contexts)
         frozen = _freeze_generation(
             runtime,
             generation_id=generation_id,
             context=context,
             task_ids=task_ids,
+            task_contexts=run_contexts,
         )
         if frozen:
             decisions.append(WorkflowRuntimeDecision(
@@ -289,6 +299,7 @@ def _freeze_generation(
     generation_id: str,
     context: Mapping[str, Any],
     task_ids: list[str],
+    task_contexts: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> bool:
     events = runtime.event_log.read_all()
     workflow_run_id = str(context.get("workflow_run_id") or "")
@@ -299,78 +310,20 @@ def _freeze_generation(
         generation_id=generation_id,
     ):
         return False
-    integrated: list[tuple[ZfEvent, dict[str, Any], dict[str, Any]]] = []
-    completed_task_ids: list[str] = []
-    superseded: list[ZfEvent] = []
-    from zf.runtime.candidate_incremental import hydrate_task_integration_receipt
-    from zf.runtime.candidates import CandidateRebuilder
+    from zf.runtime.task_pipeline_freeze_receipts import collect_freeze_receipts
 
-    rebuilder = CandidateRebuilder(
-        state_dir=Path(runtime.state_dir),
-        project_root=Path(runtime.project_root),
-        config=runtime.config,
-        event_log=runtime.event_log,
+    collected = collect_freeze_receipts(
+        runtime, events=events, workflow_run_id=workflow_run_id, task_ids=task_ids,
+        task_contexts=task_contexts or {task_id: context for task_id in task_ids},
     )
-    for task_id in task_ids:
-        task = runtime.task_store.get(task_id)
-        if task is None:
-            return False
-        if str(task.status) == "cancelled":
-            supersession = _authorized_supersession_event(
-                events,
-                task_id=task_id,
-                context=context,
-            )
-            if supersession is None:
-                return False
-            superseded.append(supersession)
-            continue
-        if str(task.status) != "done":
-            return False
-        event = _latest_integration_event(
-            events,
-            task_id=task_id,
-            context=context,
-        )
-        if event is None:
-            return False
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        descriptor = payload.get("receipt_ref")
-        if not isinstance(descriptor, Mapping):
-            return False
-        try:
-            receipt = hydrate_task_integration_receipt(
-                rebuilder,
-                descriptor,
-                task_id=task_id,
-                workflow_run_id=workflow_run_id,
-                task_map_generation=task_map_generation,
-            )
-        except Exception:
-            return False
-        integrated.append((event, receipt, dict(descriptor)))
-        completed_task_ids.append(task_id)
-    if (
-        not integrated
-        or _generation_has_active_work(runtime, context, task_ids)
-        or not _generation_sessions_archived(
-            events,
-            workflow_run_id=workflow_run_id,
-            task_map_generation=task_map_generation,
-            task_ids=task_ids,
-        )
-    ):
+    if collected is None:
         return False
+    integrated, completed_task_ids, superseded = collected
 
     branches = {str(receipt.get("candidate_branch") or "") for _, receipt, _ in integrated}
-    candidate_generations = {
-        str(receipt.get("candidate_generation") or "")
-        for _, receipt, _ in integrated
-    }
-    if len(branches) != 1 or len(candidate_generations) != 1:
+    if len(branches) != 1:
         return False
     branch = next(iter(branches))
-    candidate_generation = next(iter(candidate_generations))
     candidate_head = _git(
         Path(runtime.project_root),
         "rev-parse",
@@ -385,6 +338,7 @@ def _freeze_generation(
     latest_receipt_head = str(latest_receipt.get("new_candidate_head") or "")
     if candidate_head != latest_receipt_head:
         return False
+    candidate_generation = str(latest_receipt.get("candidate_generation") or "")
     receipt_refs = [descriptor for _, _, descriptor in integrated]
     fanout_id = str(
         context.get("fanout_id")

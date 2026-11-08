@@ -569,7 +569,7 @@ def _build_resynth_event(
                 **replan_semantic_context(payload),
             },
         )
-        return build_replan_resynth_event(plan=plan, events=events, config=config)
+        return build_replan_resynth_event(plan=plan, events=events, config=config, state_dir=state_dir)
     except Exception:
         return None
 

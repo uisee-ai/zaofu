@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fcntl
 import signal
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,24 @@ from zf.autoresearch.resident import actions_json, run_resident_once
 
 
 def run_resident_cli(args: Any, *, state_dir: Path) -> int:
+    if not args.execute:
+        return _run_resident_loop(args, state_dir=state_dir)
+    # The launcher lock dies with the watcher; this lock belongs to the actual
+    # consumer, including orphaned residents and direct one-shot CLI calls.
+    lock_path = state_dir.resolve() / "processes" / "autoresearch-resident-execution.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f"Autoresearch resident already running for {state_dir}", file=sys.stderr)
+            return 1
+        # Never unlink: waiters must always contend on the same inode. Closing
+        # the non-inheritable descriptor releases ownership even after a crash.
+        return _run_resident_loop(args, state_dir=state_dir)
+
+
+def _run_resident_loop(args: Any, *, state_dir: Path) -> int:
     output_root = (
         args.output_root
         if args.output_root is not None

@@ -20,6 +20,7 @@ from zf.runtime.plan_artifact_package import (
     plan_artifact_package_binding,
     reduce_plan_artifact_packages,
 )
+from zf.runtime.plan_source_binding import bind_admitted_plan_source_refs
 
 
 _PLAN_PACKAGE_PAYLOAD_KEYS = (
@@ -84,6 +85,7 @@ def build_replan_resynth_event(
     plan: object,
     events: Sequence[ZfEvent],
     config: object,
+    state_dir: Path | None = None,
 ) -> ZfEvent | None:
     """Return the plan-synth trigger for a candidate-level replan."""
 
@@ -160,7 +162,7 @@ def build_replan_resynth_event(
         value = getattr(plan, key, None)
         if value not in (None, "", [], {}):
             payload[key] = value
-    _bind_current_plan_package(payload, plan=plan, events=events)
+    _bind_current_plan_package(payload, plan=plan, events=events, state_dir=state_dir)
     for key in (
         "failed_task_ids",
         "task_ids",
@@ -205,6 +207,7 @@ def _bind_current_plan_package(
     *,
     plan: object,
     events: Sequence[ZfEvent],
+    state_dir: Path | None = None,
 ) -> None:
     """Replace inherited identity with an admitted package for this run."""
 
@@ -242,6 +245,7 @@ def _bind_current_plan_package(
     for key in _GOAL_CLAIM_SET_IDENTITY_KEYS:
         payload.pop(key, None)
     payload.update(plan_artifact_package_binding(package_events, current))
+    bind_admitted_plan_source_refs(payload, current, package_events, state_dir=state_dir)
 
 
 def _resynth_trigger(config: object, *, flow_kind: str) -> str:
@@ -273,6 +277,7 @@ def plan_missing_replan_resynth_events(
     events: Sequence[ZfEvent],
     *,
     config: object,
+    state_dir: Path | None = None,
 ) -> list[ZfEvent]:
     """Repair a replan marker whose follow-through used another Flow trigger."""
 
@@ -338,6 +343,7 @@ def plan_missing_replan_resynth_events(
             plan=SimpleNamespace(**plan_data),
             events=events,
             config=config,
+            state_dir=state_dir,
         )
         if desired is None:
             continue

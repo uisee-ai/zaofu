@@ -31,6 +31,7 @@ export function useWorkflowGraph(projectId: string, requestId: string, revision:
     let fullRequested = false;
     let structureGeneration = "";
     let structureScope: SdlcStructure["scope"] | null = null;
+    let replacementScope: SdlcStructure["scope"] | null = null;
     let loadFullAfterStructure = false;
     let generationConflicts = 0;
     let structureFallbackUsed = false;
@@ -75,6 +76,13 @@ export function useWorkflowGraph(projectId: string, requestId: string, revision:
           if (isPartial && (!graph.generation || graph.schema_version !== "sdlc-workbench-structure.v1")) {
             throw new Error("Workflow graph structure generation missing");
           }
+          if (!structure && replacementScope && (isPartial
+            || graph.scope.revision !== replacementScope.revision
+            || graph.scope.run_id !== replacementScope.run_id
+            || graph.scope.proposal_digest !== replacementScope.proposal_digest
+            || graph.scope.head_seq < replacementScope.head_seq)) {
+            throw new Error("Workflow graph replacement scope mismatch");
+          }
           if (!structure && structureScope && (
             graph.scope.revision !== structureScope.revision || graph.scope.run_id !== structureScope.run_id
             || graph.scope.proposal_digest !== structureScope.proposal_digest
@@ -98,6 +106,7 @@ export function useWorkflowGraph(projectId: string, requestId: string, revision:
               // Once installed, the complete graph and all its details share
               // its own generation; future updates need no partial binding.
               fullRequested = true; structureGeneration = ""; structureScope = null;
+              replacementScope = null;
               generationConflicts = 0;
             }
             setState({ identity, graph, error: "", updatedAt: new Date().toLocaleTimeString() });
@@ -141,8 +150,12 @@ export function useWorkflowGraph(projectId: string, requestId: string, revision:
     requireFullRef.current = requestFull;
     const explicitRefresh = async () => {
       if (fullRequested && structureGeneration && generationConflicts) {
-        fullRequested = false; structureGeneration = ""; structureScope = null; etag = "";
-        loadFullAfterStructure = true; generationConflicts = 0;
+        // An explicit retry replaces the whole graph with one current snapshot.
+        // Keep request/run/proposal identity; never stitch newer details into
+        // the old structure or expose its Plans before replacement succeeds.
+        replacementScope = structureScope;
+        structureGeneration = ""; structureScope = null; etag = "";
+        loadFullAfterStructure = false; generationConflicts = 0;
       }
       forcePending = true;
       await refresh();

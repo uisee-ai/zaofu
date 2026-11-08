@@ -209,3 +209,5 @@ YAML完整结构中的role节点也关联真实Operation：有running操作时�
 CallResult协议修正可保留不可变CallRequest的初始attempt身份；TaskAttempt收尾以Kernel已接纳的fanout.child.completed为执行关联，核对来源结果、Task、Run和Operation后精确匹配实际dispatch。迟到旧结果不能关闭新重试；shadow租约过期可按既有恢复入口补记成功，保留旧失败事件及诊断历史。
 
 当前generation的Kernel run.goal.completed也为其pdd_id/feature_id顶层需求任务提供接受证据，和运行时对需求容器的收尾一致；仍要求Run、generation与Kernel来源匹配，不凭TaskStore done字段涂绿。
+
+完整图首次加载仍绑定结构代际，冲突后只自动刷新结构并重试一次。运行持续追加事件导致再次冲突时，显式 Retry 改为读取一份独立完整投影并整体替换；继续核对 Request、Run、提案修订/摘要及事件序号不倒退，失败时保留原结构且不展示新 Plan。单节点详情仍严格绑定结构代际，审批仍走既有受控入口。此路径复用已有完整图读取 API，不把新详情拼接到旧结构，也不以无限重试等待运行停写。浏览器回归见 `web/tests/workflow-graph-structure.spec.ts` 的 complete replacement 场景。

@@ -309,6 +309,16 @@ def load_writer_task_map(
     event_resume_scope = str(payload.get("resume_scope") or "").strip()
     task_map_resume_scope = str(data.get("resume_scope") or "").strip()
     resume_scope = task_map_resume_scope or event_resume_scope
+    from zf.runtime.writer_amend_selection import writer_amend_selection
+
+    requested_task_ids, resume_scope = writer_amend_selection(
+        data, requested_task_ids=requested_task_ids, resume_scope=resume_scope,
+    )
+    from zf.runtime.writer_gap_diagnostic_selection import select_gap_from_diagnostic_scope
+
+    requested_task_ids, resume_scope = select_gap_from_diagnostic_scope(
+        data, payload, requested_task_ids=requested_task_ids, resume_scope=resume_scope,
+    )
     requested_task_ids = _canonical_replan_task_ids(
         data=data,
         task_items=all_items,

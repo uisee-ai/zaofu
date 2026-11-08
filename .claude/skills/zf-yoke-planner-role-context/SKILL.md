@@ -36,6 +36,12 @@ authoritative when it differs from an older Skill example.
 
 ## Rules
 
+- 大体积受控必读优先使用 `zf artifact read --attempt <本次attempt> --required
+  --shared-bodies --output-file <本次合法缓存文件>`；先核实路径同时位于当前工作区、
+  本次允许写域并被 git 忽略，例如允许 `artifacts/plan/**` 时使用其内已忽略的
+  `__pycache__/`。派生JSON也须留在该写域，已有缓存保留并换新名。CLI原子保存完整正文，
+  stdout仅返回回执，再连续有界分页读取全部body定义及来源映射。回执和read-ledger
+  不证明模型已读；截断必须补读，尚未读完继续工作，不单独因此提交业务失败。
 - 在最终提交前加载 `zf-plan-execution-readiness`，记录条款级验收责任、切片可演示结果、
   阶段集成和条件决定的审查证据；机械数量检查不替代语义评估。
 - 对多章节或多份 authority，先建立来源单元到领域/模块/能力/旅程/需求/AC/task/test/

@@ -6,6 +6,7 @@ from zf.core.config.schema import ProjectConfig, ZfConfig
 from zf.core.events import EventLog, EventWriter
 from zf.core.task.store import TaskStore
 from zf.runtime.control_actions import ControlledActionService
+from zf.runtime.task_contract_authority import TaskContractAuthorityService
 
 
 def _runtime(
@@ -126,3 +127,44 @@ def test_task_contract_payload_normalizes_invalid_container_types(
     assert task.contract.validation == {}
     assert task.contract.fanout_force is False
     assert task.contract.wave == 2
+
+
+def test_update_task_uses_contract_authority_after_workflow_binding(
+    tmp_path: Path,
+) -> None:
+    state_dir, writer, service = _runtime(tmp_path)
+    created = _execute(service, writer, "create-task", {
+        "task_id": "TASK-AUTHORITY",
+        "title": "Update an authority-stamped contract",
+        "contract": {
+            "behavior": "Initial behavior.",
+            "verification": "Run the contract check.",
+        },
+    })
+    assert created["ok"] is True
+    store = TaskStore(state_dir / "kanban.json")
+    task = store.get("TASK-AUTHORITY")
+    assert task is not None
+    stamped = TaskContractAuthorityService(
+        task_store=store,
+        event_writer=writer,
+        state_dir=state_dir,
+    ).replace(
+        task,
+        contract=task.contract,
+        source="workflow-binding-test",
+        actor="web",
+    ).task
+    assert stamped.contract_authority_revision
+
+    updated = _execute(service, writer, "update-task", {
+        "task_id": task.id,
+        "contract": {"behavior": "Updated behavior."},
+    })
+
+    assert updated["ok"] is True
+    refreshed = store.get(task.id)
+    assert refreshed is not None
+    assert refreshed.contract.behavior == "Updated behavior."
+    assert refreshed.contract.verification == "Run the contract check."
+    assert refreshed.contract_authority_revision

@@ -75,6 +75,20 @@ checkpoint引用已进入Run Manager recovery context与worker resume packet/bri
 按当前完整Attempt身份筛选并重新校验sidecar摘要。旧身份、缺失/损坏或未捕获快照
 明确不可用，不自动恢复源码、不接纳旧结果、不授予执行权。
 
+Task Pipeline 的 Provider 恢复复用当前 canonical TaskAttempt 的原始 briefing，
+保留 `Active task`、必读工件、typed result 和当前 dispatch/operation 身份；不再拼接
+可能仍含上一阶段完成命令的通用角色指令。当前 attempt 不唯一、身份不符、briefing
+缺失或路径越出受管目录时拒绝恢复，不退回旧完成协议。此路径不创建新 attempt，
+也不延长租约或重置预算。回归见 `tests/test_task_pipeline_recovery_briefing.py`。
+
+原生 Plan 工件可携带 Planner 声明的 `task_input_policy`，格式为
+`{schema_version: "task-input-policy.v1", shared_paths: [JSON路径],
+tasks: [{task_id, paths: [JSON路径]}]}`。它保留原工件 schema 与完整正文，和包一起固定摘要；
+Kernel 只检查路径存在、任务唯一和原文没有未分配内容，语义分工由 Planner 审阅。
+Impl／Task Verify 必读共享正文与本任务分片；Candidate Verify 仍读全量。
+缺声明保留全量行为，声明错误或缺任务分片拒绝派发，不修改既有快照或放宽读取门禁。
+入口覆盖见 `tests/test_artifact_query_service.py` 与 `tests/test_declared_plan_input_paths.py`。
+
 - 旧进程终止异常、仍存活或存活状态未知时，禁止启动替代进程。必须终止调用成功且
   liveness 为 false 才允许恢复；失败回合的健康状态不能替代停止确认。Claude resume
   失败后改开新会话，也必须先终止前一个启动实例。
@@ -338,6 +352,19 @@ PRD在待审批、无writer运行时以SIGINT停止watcher，后续从原状态�
 派发前提交，是否改善实际验收仍以新运行记录为准。
 
 ## Task Map 后真实复核与产品验收边界
+
+增量 Task Map 可以省略未改变的 requirement 引用。Plan Artifact Package 准入先校验
+当前 Run 已接纳的前一份包及其端口摘要，再使用显式需求端口或继承的需求端口生成
+goal claims，最后执行 mandatory claim continuity。不能先丢弃需求中的 acceptance，
+再把缺失声明误判成产品范围被删除。显式替换需求仍优先，删除或改写必需目标仍拒绝；
+不通过复制旧 claim set 或 waiver 掩盖真正的目标变化。
+回归：`tests/test_plan_package_requirement_continuity.py`。
+
+Gap 转换也必须保留结构化 `acceptance_criteria`；用于阅读的 `acceptance` 摘要从
+statement/text 生成，不能将整条对象字符串化而丢失 owner/tier/command 绑定。
+回归：`tests/test_gap_structured_acceptance.py`。新增任务的 execution_spec 分片及
+来源/验收/测试矩阵由 gap producer 显式提供，方法见
+`skills/zf-gap-task-synth/SKILL.md`；Kernel 不替 agent 推断实施语义。
 
 PRD返修Critic `evt-af4d646ec77d` 明确评审需求覆盖、依赖、CLI装配、验证阶段和残余风险，
 引用Task Map/有效策略摘要；两任务串行、writer数量1且无写冲突，语义结论为沿用配置。

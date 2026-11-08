@@ -36,6 +36,8 @@ zf recover task-impl --operation <operation-id> --reason '<修复与验证证据
 
 Task 尚未 done 不代表 Impl/Verify worker 仍有执行义务。watchdog 对精确匹配的 Task Pipeline dispatch 和 operation 终态停止恢复该 worker，避免在等待集成时重启 provider 或重排 Task。新的活跃 operation 仍受监测，旧终态不能屏蔽下一次派发。
 
+按需角色在任务结束后触发上下文回收时，先复用休眠门禁检查角色占用、未结 operation、会话身份与未保存工作；满足条件则终止旧进程并更换恢复绑定，保持 suspended，下一次派发才启动新 provider。回收已要求替换进程，因此该路径不重复等待普通 idle_seconds；冷却、身份、证据及工作目录检查仍生效。终止失败保留原恢复身份并记录 worker.recycle.failed；活动任务与 fanout 继续原有换新及断点恢复。避免空白 Codex 尚未产生会话身份却立即被启动，随后按分钟拒绝休眠。`tests/test_idle_context_recycle.py` 覆盖回收入口、下次派发与拒绝/终止失败分支。
+
 Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须在 zf.yaml 的 `project.scripts.setup` 声明可重复执行的环境准备入口；Candidate integrator 会在精确候选提交上执行该配置，再运行 rolling smoke。运行时不猜测项目使用 Node 或某个固定脚本。
 
 修复集成阻塞后使用 `zf recover task-integration --operation <id> --reason '<修复证据>'` 预览，加 `--apply` 才执行。入口检查当前代际、原 needs_review 事件、已接纳的 Verify 通过结果、无活跃 operation/attempt 及非终态 Run/Task；apply 通过 WorkflowOperationService 追加 supersede 事实，原失败证据不变。既有 reconciler 派发下一 integration generation，重新执行 setup、rolling smoke 与 Candidate CAS；保留已通过的 Impl/Verify，不发新的产品成功事件。重复请求幂等，新的阶段代际或更新集成操作使旧恢复请求失效。

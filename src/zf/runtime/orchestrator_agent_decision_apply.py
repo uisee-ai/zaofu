@@ -537,6 +537,7 @@ def _apply_return_to_plan(
         plan=plan,
         events=runtime.event_log.read_all(),
         config=runtime.config,
+        state_dir=runtime.state_dir,
     )
     emitted = [marker.id]
     if resynth is not None:

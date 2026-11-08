@@ -35,6 +35,7 @@ _READ_ALL_CACHE: dict[tuple, tuple] = {}
 # decode just the tail. Keyed by (path, signer, allow_unsigned) — stable
 # across appends.
 _READ_ALL_FOLD: dict[tuple, dict] = {}
+_READ_DAYS_FOLD: dict[tuple, dict] = {}
 
 
 class EventLog:
@@ -440,9 +441,45 @@ class EventLog:
                 last_days=last_days - 1,
                 suffix=".jsonl",
             ):
-                events.extend(self._parse_file(f))
-        events.extend(self._parse_file(self.path))
+                events.extend(self._read_window_file(f))
+        events.extend(self._read_window_file(self.path))
         return events
+
+    def _read_window_file(self, path: Path) -> list[ZfEvent]:
+        """Fold complete appended rows without widening a read_days window."""
+        fingerprint = getattr(self.signer, "cache_fingerprint", None)
+        verifier = fingerprint() if callable(fingerprint) else self.signer
+        key = (str(path.resolve()), verifier, self.allow_unsigned)
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            _READ_DAYS_FOLD.pop(key, None)
+            return []
+        identity = (stat.st_dev, stat.st_ino)
+        version = (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        entry = _READ_DAYS_FOLD.get(key)
+        if entry is not None and entry["identity"] == identity:
+            if entry["version"] == version:
+                return list(entry["events"])
+            if stat.st_size > entry["version"][0]:
+                tail, consumed = self._parse_tail(path, entry["consumed"], stat.st_size)
+                rows = entry["events"] + tuple(tail)
+                consumed += entry["consumed"]
+            else:
+                parsed, consumed = self._parse_file_consumed(path)
+                rows = tuple(parsed)
+        else:
+            parsed, consumed = self._parse_file_consumed(path)
+            rows = tuple(parsed)
+        # Replace the complete entry atomically. Never share a mutable result
+        # list or advance past a partial JSONL row. Rotation changes the inode.
+        if key not in _READ_DAYS_FOLD and len(_READ_DAYS_FOLD) >= 16:
+            _READ_DAYS_FOLD.pop(next(iter(_READ_DAYS_FOLD)))
+        _READ_DAYS_FOLD[key] = {
+            "identity": identity, "version": version,
+            "consumed": consumed, "events": rows,
+        }
+        return list(rows)
 
     def get_causation_chain(self, event_id: str) -> list[ZfEvent]:
         """Return the causal ancestors of an event in chronological order.

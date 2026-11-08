@@ -232,6 +232,9 @@ def build_workflow_operation_resume_checkpoints(
 
     event_list = list(events if events is not None else _read_events(Path(state_dir)))
     from zf.runtime.terminal_reader_operation import terminal_reader_event
+    from zf.runtime.undispatched_pipeline_recovery import undispatched_pipeline_request
+
+    from zf.runtime.abstained_verify_recovery import recoverable_abstention
 
     operations = reduce_workflow_operations(event_list)
     attempts = _task_attempt_rows(Path(state_dir))
@@ -248,6 +251,8 @@ def build_workflow_operation_resume_checkpoints(
             and str(operation.get("reason") or "")
             == "workflow_resume_cancelled_interrupted_operation"
         )
+        abstained = recoverable_abstention(operation, event_list, Path(state_dir))
+        undispatched = undispatched_pipeline_request(operation, Path(state_dir), event_list)
         budget_amendment = find_task_pipeline_budget_amendment(
             event_list,
             operation,
@@ -255,6 +260,8 @@ def build_workflow_operation_resume_checkpoints(
         if (
             status not in {"requested", "reserved", "running", "suspended"}
             and not legacy_cancelled_restart
+            and not undispatched
+            and not abstained
             and budget_amendment is None
         ):
             continue
@@ -291,6 +298,15 @@ def build_workflow_operation_resume_checkpoints(
             reason = (
                 "operation has a newer live TaskAttempt after interruption"
             )
+        elif abstained:
+            action = "redrive_abstained_task_verification"
+            reason = "admitted verifier execution failed; one same-target retry is available"
+        elif undispatched and status == "cancelled":
+            action = "redrive_undispatched_task_pipeline_operation"
+            reason = "stale cleanup cancelled a pipeline request before any TaskAttempt existed"
+        elif undispatched:
+            action = "no_action"
+            reason = "pipeline request awaits scheduler dispatch; no TaskAttempt has existed"
         elif legacy_cancelled_restart:
             action = "redrive_cancelled_interrupted_task_pipeline_operation"
             reason = (
@@ -311,6 +327,7 @@ def build_workflow_operation_resume_checkpoints(
                 "graceful_stop",
                 "fast_stop",
                 "task_pipeline_attempt_lease_expired",
+                "completion_audit_retry",
             }
         ):
             action = "redrive_interrupted_task_pipeline_operation"
@@ -483,7 +500,7 @@ def build_workflow_resume_checkpoints(
     reconciler = WorkflowGraphReconciler()
     inflight_fanouts, unroutable_keys = _filing_guard_indexes(event_list)
     checkpoints: list[WorkflowResumeCheckpoint] = []
-    checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config))
+    checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config, state_dir=state_dir))
     for task in task_list:
         if task.status in {"done", "cancelled"}:
             continue
@@ -2408,6 +2425,8 @@ def _reader_stage_replan_checkpoints(
     events: list[ZfEvent],
     tasks: list[Task],
     config: object,
+    *,
+    state_dir: Path,
 ) -> list[WorkflowResumeCheckpoint]:
     try:
         from zf.runtime.stage_failure_replan import (
@@ -2427,7 +2446,7 @@ def _reader_stage_replan_checkpoints(
     for event in events:
         if event.type not in stage_by_failure:
             continue
-        replan_event, note = plan_reader_stage_replan(config, events, event)
+        replan_event, note = plan_reader_stage_replan(config, events, event, state_dir=state_dir)
         if replan_event is None:
             continue
         stage, _selection = reader_stage_for_failure(config, events, event)

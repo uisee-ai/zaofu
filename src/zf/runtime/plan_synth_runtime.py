@@ -700,6 +700,19 @@ class PlanSynthRuntimeMixin:
         except RunDispatchBlocked:
             return
         except Exception as exc:
+            blocker = getattr(exc, "interactive_prompt_marker", "")
+            if blocker:
+                # No critic turn ran: preserve planner results and retry dispatch.
+                self._emit_fanout_dispatch_deferred_once(
+                    fanout_id=fanout_id, trace_id=trace_id, stage_id=stage_id,
+                    child_id="synth", run_id=run_id, role_instance=role.instance_id,
+                    prompt_kind="fanout_synth", reason=f"provider_interactive:{blocker}",
+                    state=getattr(self, "_last_worker_state", {}).get(role.instance_id, "idle"),
+                    alive=bool(getattr(exc, "pane_alive", False)),
+                    dispatchable=False,
+                    causation_id=str(manifest.get("trigger_event_id") or "") or None,
+                )
+                return
             failure_event = self.event_writer.append(ZfEvent(
                 type="fanout.synth.completed",
                 actor="zf-cli",

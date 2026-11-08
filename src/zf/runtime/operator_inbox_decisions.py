@@ -132,6 +132,43 @@ def kanban_question_item(
     }
 
 
+def human_decision_item(
+    *,
+    event: Any,
+    payload: dict[str, Any],
+    decision_token: str,
+    status: str,
+    source_role: str,
+) -> dict[str, Any]:
+    return {
+        "id": f"human:{decision_token}",
+        "kind": "human_decision",
+        "status": status,
+        "title": "Run Manager Decision",
+        "summary": str(payload.get("reason") or payload.get("question") or "Run Manager needs an operator decision"),
+        "created_event_id": _event_id(event),
+        "created_ts": _event_ts(event),
+        "resolved_event_id": "",
+        "resolved_ts": "",
+        "source_role": source_role,
+        "source_actor": _actor(event),
+        "decision_token": decision_token,
+        "approval_ref": f"human:{decision_token}",
+        "checkpoint_id": str(payload.get("checkpoint_id") or ""),
+        "fingerprint": str(payload.get("fingerprint") or ""),
+        "actions": [
+            {"action": "human-decision-approve-controlled-action", "label": "Approve", "requires_token": True},
+            {"action": "human-decision-request-autoresearch", "label": "Diagnose", "requires_token": True},
+            {"action": "human-decision-dismiss", "label": "Dismiss", "requires_token": True},
+            {"action": "human-decision-safe-halt", "label": "Halt", "requires_token": True},
+        ],
+        "policy": {
+            "mutation_path": "human.escalation.acknowledged -> run_manager_tick",
+            "agent_can_approve": False,
+        },
+    }
+
+
 def _channel_question_aliases(payload: dict[str, Any]) -> list[str]:
     question_id = str(payload.get("question_id") or "").strip()
     channel_id = str(payload.get("channel_id") or "").strip()

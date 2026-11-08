@@ -20,6 +20,7 @@ from zf.runtime.operator_inbox_decisions import (
     bind_channel_question_aliases,
     channel_decision_item,
     channel_question_key,
+    human_decision_item as _human_decision_item,
     is_owner_question,
     kanban_plan_request,
     kanban_question_item,
@@ -71,6 +72,15 @@ def build_operator_inbox(
     channel_question_aliases: dict[str, str] = {}
     plan_request_keys: dict[str, str] = {}
     latest_plan_keys: dict[str, str] = {}
+    # Some semantic plan approvals are emitted without a preceding
+    # plan.approval.requested event.  The task_map.ready event is still the
+    # canonical source of the bound PRD artifacts, so retain it for the
+    # resolved-plan projection below.
+    plan_sources = {
+        _event_id(event): event
+        for event in events
+        if _etype(event) == "task_map.ready" and _event_id(event)
+    }
     suppressed_acknowledged = 0
     read_items: set[str] = set()
     read_all_at = ""
@@ -220,9 +230,16 @@ def build_operator_inbox(
             key = _plan_item_id(plan_id)
             existing = items.get(key)
             if existing is None:
+                source = plan_sources.get(plan_id)
+                source_payload = _payload(source) if source is not None else {}
+                # The resolution event wins for status/reason, while the
+                # task_map.ready payload supplies the durable artifact refs.
+                resolved_payload = {**source_payload, **payload}
                 existing = _resolved_plan_placeholder(
                     event=event,
-                    payload=payload,
+                    payload=resolved_payload,
+                    state_dir=state_dir,
+                    project_root=project_root,
                     status="approved" if etype == PLAN_APPROVED else "rejected",
                 )
                 items[key] = existing
@@ -285,6 +302,7 @@ def build_operator_inbox(
                 event=event,
                 payload=payload,
                 decision_token=token,
+                source_role=_source_role(event, payload),
                 status="pending",
             )
             continue
@@ -307,6 +325,7 @@ def build_operator_inbox(
                     event=event,
                     payload=payload,
                     decision_token=token,
+                    source_role=_source_role(event, payload),
                     status="resolved",
                 )
                 items[key] = existing
@@ -603,6 +622,8 @@ def _resolved_plan_placeholder(
     *,
     event: Any,
     payload: dict[str, Any],
+    state_dir: Path,
+    project_root: Path | None,
     status: str,
 ) -> dict[str, Any]:
     plan_id = str(payload.get("plan_id") or "")
@@ -624,8 +645,24 @@ def _resolved_plan_placeholder(
         "trace_id": str(payload.get("trace_id") or _correlation_id(event) or ""),
         "pdd_id": str(payload.get("pdd_id") or ""),
         "task_count": _int_or_none(payload.get("task_count")),
-        "refs": {},
-        "preview": {"available": False, "api_path": f"/plans/{plan_id}/preview"},
+        "refs": {
+            "digest_ref": str(payload.get("digest_ref") or ""),
+            "task_map_ref": str(payload.get("task_map_ref") or ""),
+        },
+        "preview": {
+            "available": plan_preview_available(
+                state_dir,
+                project_root=project_root,
+                refs=[
+                    str(payload.get("digest_ref") or ""),
+                    str(payload.get("task_map_ref") or ""),
+                    str(payload.get("plan_artifact_ref") or ""),
+                ],
+            ),
+            "api_path": f"/plans/{plan_id}/preview",
+            "fullscreen": True,
+            "scroll": True,
+        },
         "actions": [],
         "reject_reason": str(payload.get("reason") or ""),
         "policy": {"agent_can_propose_plan_approve": False},
@@ -853,42 +890,6 @@ def _attention_match_keys(payload: dict[str, Any], event_id: str) -> list[str]:
     if not keys and event_id:
         keys.append(f"attention:{event_id}")
     return keys
-
-
-def _human_decision_item(
-    *,
-    event: Any,
-    payload: dict[str, Any],
-    decision_token: str,
-    status: str,
-) -> dict[str, Any]:
-    return {
-        "id": _human_item_id(decision_token),
-        "kind": "human_decision",
-        "status": status,
-        "title": "Run Manager Decision",
-        "summary": str(payload.get("reason") or payload.get("question") or "Run Manager needs an operator decision"),
-        "created_event_id": _event_id(event),
-        "created_ts": _event_ts(event),
-        "resolved_event_id": "",
-        "resolved_ts": "",
-        "source_role": _source_role(event, payload),
-        "source_actor": _actor(event),
-        "decision_token": decision_token,
-        "approval_ref": f"human:{decision_token}",
-        "checkpoint_id": str(payload.get("checkpoint_id") or ""),
-        "fingerprint": str(payload.get("fingerprint") or ""),
-        "actions": [
-            {"action": "human-decision-approve-controlled-action", "label": "Approve", "requires_token": True},
-            {"action": "human-decision-request-autoresearch", "label": "Diagnose", "requires_token": True},
-            {"action": "human-decision-dismiss", "label": "Dismiss", "requires_token": True},
-            {"action": "human-decision-safe-halt", "label": "Halt", "requires_token": True},
-        ],
-        "policy": {
-            "mutation_path": "human.escalation.acknowledged -> run_manager_tick",
-            "agent_can_approve": False,
-        },
-    }
 
 
 def _plan_summary(payload: dict[str, Any]) -> str:

@@ -588,6 +588,8 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
         },
         generation_context={
             "workflow_run_id": "run-1",
+            "flow_kind": "prd",
+            "request_kind": "prd",
             "task_map_generation": "map-g1",
             "task_map_ref": "artifacts/plan/task-map.json",
             "source_index_ref": "artifacts/plan/source-index.json",
@@ -604,6 +606,8 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
     assert captured["plan_artifact_package_id"] == _PACKAGE_ID
     assert captured["plan_artifact_package_ref"] == _PACKAGE_REF
     assert captured["skills"] == ["base-worker", "can-domain"]
+    assert captured["flow_kind"] == "prd"
+    assert captured["request_kind"] == "prd"
     assert captured["plan_artifact_package_digest"] == _PACKAGE_DIGEST
     assert captured["task_contract_snapshot_ref"] == (
         "artifacts/task-contracts/task-1.json"

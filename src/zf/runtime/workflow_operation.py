@@ -1116,6 +1116,14 @@ class WorkflowOperationService:
                 str(existing_body.get("operation_id") or "") == operation_id
                 and str(existing_body.get("request_hash") or "") == request_hash
             ):
+                if (
+                    event_type == "workflow.operation.settled"
+                    and existing_operation.get("verification_recovery_count")
+                    and existing_operation.get("status") == "running"
+                    and (payload.get("admitted_call_result_ref") or {}).get("sha256")
+                    != (existing_body.get("admitted_call_result_ref") or {}).get("sha256")
+                ):
+                    continue
                 if event_type == "workflow.operation.started":
                     occurrence = (
                         str(payload.get("active_attempt_id") or ""),

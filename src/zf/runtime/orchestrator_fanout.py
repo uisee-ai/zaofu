@@ -100,7 +100,6 @@ from zf.runtime.writer_fanout_dependency_failure import (
 )
 from zf.runtime.task_contract_snapshot import (
     TaskContractSnapshotError,
-    build_target_snapshot,
     contract_snapshot_identity_fields,
     current_task_contract_identity,
     descriptor_from_payload as contract_descriptor_from_payload,
@@ -108,7 +107,6 @@ from zf.runtime.task_contract_snapshot import (
     hydrate_target_snapshot,
     target_descriptor_from_payload,
     target_payload_fields,
-    write_target_snapshot,
 )
 from zf.runtime.task_contract_authority_runtime import (
     bind_writer_dispatch_contract,
@@ -4176,72 +4174,9 @@ class FanoutCoordinationMixin(
         return typed_task_contract_handoff_enabled(self.config, task_item)
 
     def _prepare_reader_contract_target(self, child) -> None:
-        payload = child.payload if isinstance(child.payload, dict) else {}
-        if not (
-            str(payload.get("contract_snapshot_ref") or "").strip()
-            or str(payload.get("contract_snapshot_digest") or "").strip()
-        ):
-            return
-        if (
-            str(payload.get("closure_identity") or "").strip()
-            and str(payload.get("goal_claim_set_ref") or "").strip()
-        ):
-            from zf.runtime.goal_closure_identity import (
-                validate_goal_closure_dispatch_snapshots,
-            )
+        from zf.runtime.reader_contract_target import prepare_reader_contract_target
 
-            validate_goal_closure_dispatch_snapshots(self.state_dir, payload)
-            return
-        descriptor = contract_descriptor_from_payload(payload)
-        task_id = str(payload.get("task_id") or "")
-        task = self.task_store.get(task_id) if task_id else None
-        expected = {"task_id": task_id}
-        if task is not None:
-            expected.update(current_task_contract_identity(
-                task,
-                task_map_ref=str(payload.get("task_map_ref") or ""),
-            ))
-        task_ref_entry = self._task_ref_entry(task_id)
-        expected_task_ref = str(
-            task_ref_entry.get("task_ref")
-            or payload.get("task_ref")
-            or ""
-        )
-        if expected_task_ref:
-            expected["task_ref"] = expected_task_ref
-        snapshot = hydrate_task_contract_snapshot(
-            self.state_dir,
-            descriptor,
-            expected=expected,
-        )
-        target = build_target_snapshot(
-            descriptor,
-            target_commit=str(payload.get("target_commit") or child.target_ref or ""),
-            contract_snapshot=snapshot,
-        )
-        try:
-            target_descriptor = target_descriptor_from_payload(payload)
-            target = hydrate_target_snapshot(
-                self.state_dir,
-                target_descriptor,
-                expected={
-                    "contract_snapshot_ref": descriptor["ref"],
-                    "contract_snapshot_digest": descriptor["sha256"],
-                    "target_commit": str(target["target_commit"]),
-                },
-            )
-        except TaskContractSnapshotError:
-            target_descriptor = write_target_snapshot(
-                self.state_dir,
-                target,
-                source_event_id=str(payload.get("trigger_event_id") or ""),
-            )
-        payload.update({
-            **contract_snapshot_identity_fields(snapshot),
-            "target_snapshot": target,
-            "target_commit": str(target["target_commit"]),
-            **target_payload_fields(target_descriptor),
-        })
+        prepare_reader_contract_target(self, child)
 
     def _dispatch_writer_fanout_child(
         self,
@@ -5752,6 +5687,11 @@ class FanoutCoordinationMixin(
             or (
                 not source_is_blocked_success
                 and source.type != expected_success_event
+                and not (
+                    source.type == "flow.discovery.failed"
+                    and config.get("failure_event") == source.type
+                    and expected_success_event == "flow.discovery.completed"
+                )
             )
             or (
                 not source_is_blocked_success

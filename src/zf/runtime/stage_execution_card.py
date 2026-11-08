@@ -242,6 +242,7 @@ def prepare_result_file_command(
     operation_id: str,
     cli_command: str,
     semantic_template: Mapping[str, Any],
+    attempt_id: str = "",
 ) -> tuple[str, Path]:
     state_root = Path(state_dir).expanduser().resolve()
     scratch_ref = str(result_scratch_ref or "").strip()
@@ -250,7 +251,14 @@ def prepare_result_file_command(
     scratch = (state_root / scratch_ref).resolve()
     if state_root not in scratch.parents:
         raise ValueError("result_scratch_ref escapes state dir")
-    if not scratch.exists():
+    if attempt_id:
+        from zf.runtime.result_scratch_attempt import prepare_attempt_scratch
+
+        prepare_attempt_scratch(
+            state_dir=state_root, scratch=scratch, operation_id=operation_id,
+            attempt_id=attempt_id, template=semantic_template,
+        )
+    elif not scratch.exists():
         atomic_write_text(
             scratch,
             json.dumps(
@@ -477,6 +485,7 @@ def prepare_profiled_stage_result(
             )
         ),
         operation_id=str(child_payload["operation_id"]),
+        attempt_id=str(child_payload.get("attempt_id") or ""),
         cli_command=cli_command,
         semantic_template=semantic_body,
     )
@@ -612,6 +621,7 @@ def prepare_writer_execution_card(
             )
         ),
         operation_id=str(task_item["operation_id"]),
+        attempt_id=str(task_item.get("attempt_id") or ""),
         cli_command=cli_command,
         semantic_template={
             "schema_version": "implementation-result.v1",

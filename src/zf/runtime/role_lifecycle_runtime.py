@@ -546,6 +546,7 @@ class RoleLifecycleRuntimeMixin:
         role: RoleConfig,
         *,
         now: float,
+        require_idle_age: bool = True,
     ) -> tuple[bool, str, dict[str, Any]]:
         registry = self._role_lifecycle_registry()
         meta = registry.instance_meta().get(role.instance_id, {})
@@ -567,7 +568,7 @@ class RoleLifecycleRuntimeMixin:
         if last_action is None:
             return False, "idle_currentness_unproven", {}
         idle_seconds = max(0.0, now - last_action)
-        if idle_seconds < role.lifecycle.idle_seconds:
+        if require_idle_age and idle_seconds < role.lifecycle.idle_seconds:
             return False, "idle_threshold_not_reached", {
                 "idle_seconds": round(idle_seconds, 3),
             }

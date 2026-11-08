@@ -534,7 +534,7 @@ Recover deterministic runtime state from append-only events
 |---|---|
 | `zf recover` | Recover deterministic runtime state from append-only events |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
-| `zf recover task-impl` | Preview or request retry after a blocked Impl repair |
+| `zf recover task-impl` | Preview or request Impl retry after blocked Impl or rejected Verify |
 | `zf recover task-integration` | Retry integration after a reviewed repair |
 | `zf recover workflow` | Inspect or resume pending workflow stage handoffs |
 

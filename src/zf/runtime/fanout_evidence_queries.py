@@ -309,6 +309,21 @@ class FanoutEvidenceQueriesMixin:
         for child in manifest.get("children", []) or []:
             if not isinstance(child, dict):
                 continue
+            from zf.runtime.call_result_admission import result_protocol_mode
+            from zf.runtime.admitted_fanout_report import admitted_fanout_report
+
+            descriptor = child.get("admitted_call_result_ref")
+            mode = result_protocol_mode(getattr(self, "config", None), {
+                **(manifest.get("trigger_payload") or {}), **child,
+            })
+            if mode == "blocking" or (mode == "warning" and descriptor):
+                if not isinstance(descriptor, dict) or not descriptor.get("ref"):
+                    continue
+                # Scratch result.json is diagnostic, never typed authority.
+                # Even a later rejected submission must not replace this body.
+                report = admitted_fanout_report(self, descriptor)
+                payloads.append({**child, "report": report})
+                continue
             payload = dict(child)
             result_payload = self._read_fanout_child_result_payload(
                 str(manifest.get("fanout_id") or ""),

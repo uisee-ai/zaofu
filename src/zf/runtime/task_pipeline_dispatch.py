@@ -235,6 +235,12 @@ def dispatch_task_pipeline_stage(
     operation_payload: dict[str, Any] = {
         "workflow_run_id": workflow_run_id,
         "trace_id": workflow_run_id,
+        # Result protocol selection is scoped by Flow kind in composite
+        # configs.  Carry the admitted kind into the stage operation so the
+        # implementation/verify briefing receives the configured semantic
+        # submit contract instead of falling back to the legacy ``off`` mode.
+        "flow_kind": str(generation_context.get("flow_kind") or "").strip(),
+        "request_kind": str(generation_context.get("request_kind") or "").strip(),
         "task_id": task_id,
         "stage_id": stage,
         "task_pipeline_stage": stage,

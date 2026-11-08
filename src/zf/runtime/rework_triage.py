@@ -445,7 +445,7 @@ def classify_rework_trigger(
             "failure text points at harness/gate/rule behavior",
         )
 
-    if _contains_any(text, _ENVIRONMENT_MARKERS):
+    if _contains_any(_failure_diagnostic_text(payload), _ENVIRONMENT_MARKERS):
         return _result(
             "environment_issue",
             gate or "environment",
@@ -672,6 +672,21 @@ def _payload_text(payload: dict[str, Any]) -> str:
         return json.dumps(payload, ensure_ascii=False, sort_keys=True).lower()
     except (TypeError, ValueError):
         return str(payload).lower()
+
+
+def _failure_diagnostic_text(payload: dict[str, Any]) -> str:
+    """Read diagnostics, not commands, paths or successful probe metadata."""
+    fields = ("error", "reason", "message", "summary", "detail", "details", "known_gaps", "findings")
+    parts = [str(payload[key]) for key in fields if payload.get(key)]
+    for key in ("probe_receipts", "acceptance_results", "command_receipts"):
+        rows = payload.get(key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict) or row.get("status") in {"passed", "success", "succeeded"}:
+                continue
+            parts.extend(str(row[field]) for field in fields if row.get(field))
+    return " ".join(parts).lower()
 
 
 def _integration_plan_reason_text(payload: dict[str, Any]) -> str:
