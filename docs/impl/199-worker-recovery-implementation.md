@@ -434,3 +434,22 @@ R61 修正路由与操作级当前性。真实失败发生前的回放与恢复�
 历史 writer 终态缺少全部 Run 身份时，RM 仅在相同精确替代图 ref 已有 kernel `task.pipeline.generation.admitted` 且唯一 Run 无冲突时补足只读归属证明。实际取消可以先于 generation admitted，所以证明允许该精确 admission 稍后发生；终态仍必须排在原失败之后。不同图、多个 Run、非 kernel、身份冲突或没有正式取消均保留诊断。不会改写历史事件，也不把替代等同产品完成。
 
 LS-v1 Gateway 历史故障用于回放；Grants 在任务取消之后新派发的 discovery 失败及旧 root planner 故障不满足本规则，继续可见。真实 Orchestrator caller 回归见 `tests/test_writer_supersede_run_identity.py`，投影闭包见 `tests/test_task_failure_retirement.py`。
+
+
+### 2026-11-08：心跳的活跃任务归属
+
+LS-v1 中一次 `FMS-DB-READINESS-01` 拼写错误被 CLI 当作 legacy 心跳追加；
+租约层没有给未知任务续租，但 housekeeping 仍覆盖 lane 的活性归属，可能影响
+后续卡顿判断。worker 自行纠正并不消除入口缺口。
+
+`worker_heartbeat_binding` 在 `zf emit worker.heartbeat` 和实际
+`Orchestrator._apply_housekeeping` 的租约/活性写入前核对当前 TaskAttempt：
+任务 ID、current_task_id、角色以及显式 operation/attempt/lease/dispatch/run 必须一致。
+错误 CLI 返回非零且不追加心跳；已有错误事件保留，runtime 追加可因果追溯、
+可重放去重的 `task.attempt.result_rejected`，不续租、不覆盖活性、不清除停滞告警冷却。
+无 TaskAttempt 绑定的旧角色继续使用原协议；缺失身份字段仍由正确 CLI 自动补齐，
+不让 agent 自建新的身份事实。当前守卫不替代权限边界或合法 worker 的真实性证明。
+
+验证：`tests/test_worker_heartbeat_binding.py` 覆盖真实 CLI、自定义 state_dir、
+实际 housekeeping caller、错误身份及重放、正确续租和 legacy 兼容；
+本轮任务见 `tasks/2026-11-08-2004-heartbeat-binding.md`。

@@ -130,6 +130,17 @@ def run_emit(args: argparse.Namespace) -> int:
         return 1
     if getattr(args, "dispatch_id", None):
         payload["dispatch_id"] = args.dispatch_id
+    if args.type == "worker.heartbeat":
+        from zf.core.state.task_attempts import TaskAttemptStore
+        from zf.runtime.worker_heartbeat_binding import heartbeat_binding_error
+
+        error, _ = heartbeat_binding_error(
+            TaskAttemptStore(state_dir / "task_attempts.json"),
+            actor=str(args.actor or ""), task_id=str(args.task or ""), payload=payload,
+        )
+        if error:
+            print(f"Error: heartbeat binding rejected: {error}", file=sys.stderr)
+            return 2
     if args.task:
         attempt_binding_error = _autofill_task_attempt_identity(
             payload,

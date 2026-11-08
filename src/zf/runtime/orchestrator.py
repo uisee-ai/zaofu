@@ -3055,6 +3055,10 @@ class WorkflowRuntimeCoordinator(
 
     def _apply_housekeeping(self, event: ZfEvent) -> None:
         """Layer 1 mechanical state writes — never decisions."""
+        from zf.runtime.worker_heartbeat_binding import admit_worker_heartbeat
+
+        if not admit_worker_heartbeat(self, event):
+            return
         self._renew_task_attempt_lease(event)
         if event.type in {"run.goal.completed", "run.goal.blocked", "run.failed"}:
             try:
