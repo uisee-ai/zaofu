@@ -117,3 +117,46 @@ def test_current_review_requires_canonical_bound_event(tmp_path, monkeypatch):
     pending = _pending_semantic_event_actions(events)
     assert not any(a["failure_class"] == "candidate_integration_needs_review" for a in pending)
     assert any(a["failure_class"] == "workflow_operation_divergent" for a in pending)
+
+
+def _replace_task(writer, *, task_id="T1", run="run-1", origin="kernel", admit=True,
+                  replacement_ref="artifacts/replacement.json"):
+    writer.append(ZfEvent(type="task.superseded", task_id=task_id, origin=origin,
+        correlation_id=run, payload={
+            "workflow_run_id": run, "source": "writer_task_map_adoption",
+            "status": "cancelled", "superseded_by_task_map_ref": replacement_ref,
+        }))
+    if admit:
+        writer.append(ZfEvent(type="task.pipeline.generation.admitted", origin="kernel",
+            payload={"schema_version": "task-pipeline-generation.v1",
+                     "workflow_run_id": "run-1", "task_map_generation": "map-2",
+                     "task_ids": ["T2"], "task_map_ref": "artifacts/replacement.json"}))
+
+
+@pytest.mark.mock_e2e
+def test_admitted_task_replacement_retires_integration_diagnosis_without_rewriting_history(
+    tmp_path, monkeypatch,
+):
+    from zf.runtime.run_manager_integration_review import integration_review_sources
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    state, log, writer, cfg, calls, identity, source = setup_review(tmp_path, monkeypatch)
+    _replace_task(writer)
+    current, covered = integration_review_sources(log.read_all())
+    assert not current
+    assert identity["operation_id"] in covered
+    assert not _pending_semantic_event_actions(log.read_all())
+    _tick(state, log, writer, cfg, tmp_path)
+    assert not any(c[:2] == ["tmux", "send-keys"] for c in calls)
+    assert reduce_workflow_operations(log.read_all())[identity["operation_id"]]["status"] == "blocked"
+    assert not any(e.type in {"task.done", "workflow.operation.superseded"} for e in log.read_all())
+
+
+@pytest.mark.parametrize("invalid", [
+    {"task_id": "OTHER"}, {"run": "run-2"}, {"origin": "worker"},
+    {"admit": False}, {"replacement_ref": "artifacts/not-admitted.json"},
+])
+def test_unproven_task_replacement_keeps_integration_diagnosis(tmp_path, monkeypatch, invalid):
+    _, log, writer, _, _, _, source = setup_review(tmp_path, monkeypatch)
+    _replace_task(writer, **invalid)
+    assert _pending_semantic_event_actions(log.read_all())[0]["source_event_id"] == source.id
