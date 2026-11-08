@@ -1,6 +1,6 @@
 # 无预算长任务的续接记录方法修复
 
-> 状态: active
+> 状态: done — d41ca91b fix: preserve task continuation independently of budget
 
 用户已授权持续监工、修复并记录；本项来自 ls-v1 FMS13/16/17 实际运行，无新增预算、全量重规划或状态写权限。
 
@@ -22,3 +22,7 @@ FMS13 operation wop-impl-tp-FMS-13-GAP-E2E-PROBE-01-997ff-307cb437c728 运行约
 实际派发入口先8失败/10通过；修复后39定向通过。dev-verify 20文件闭包203通过/1跳过，包含199恢复mock及work record/budget合同；哨兵53通过。技能用仓内read_skill_metadata校验（支持本仓stages/dependencies等frontmatter），两Provider副本逐字节一致。未跑全套或真实Provider E2E。
 
 验证命令纠正：首次plan误用--format json，改为--json；一次在plan进程结束前读取输出导致JSONDecodeError，等待完成后正确读取。对名为serial的E2E误用-m serial得到2 deselected/exit5；该文件无serial标记，已纳入上述闭包并通过，不计作独立串行通过。上述均为operator命令问题，非产品回归。
+
+## 部署与真实入口
+
+实现已合入dev01cf17aa；Watcher3190424/Web3191224加载该版，3个在途身份/pane完全保留，健康/UI200。FMS17新Verify派发evt-d736572953ee已携带新简报，materialized Verify技能也包含无预算记录方法。FMS13已提交续跑清单1c6897f；FMS03当前Verify方法提示evt-cf489a8dc2a3已通过evt-7e0f165dfbe9送达。详见LS记录validation.json、controlled-reload.json、web-reload.json。技能同步仅应用本次差量，保留原项目差异。全量输入/compaction耗时与Watcher整体CPU不在本项关闭结论内。
