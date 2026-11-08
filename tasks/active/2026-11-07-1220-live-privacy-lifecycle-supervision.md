@@ -374,3 +374,19 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
   Core 尚未验收，Training 环境能力不替代产品验收，所有原 gate 保留。
   部署前像、补丁、测试日志、CLI 投影及恢复回执保存在产品项目
   `diagnostics/recovery-20261107-1220/undispatched-pipeline-recovery/`。
+
+### 2026-11-08 03:13 UTC：Core补充计划委托批准
+
+- 核实原35done未增加；Dataset g2与Training g1在真实改码/测试，Dataset smoke
+  4 pass（51.63秒），Training完整runtime仍运行，尚无独立验收结论。
+- Core独立Discovery于02:07结束，6组真实PG探针10fail/6pass，五域固定tick等待
+  缺口复现；不能将全部60失败预先归因夹具，也不能将26485d1升为验收基线。
+- 审查并按既有委托批准 `evt-419897d31129`（package `9cc96814`）：
+  `P16B-CONSUMER-WAITS-R1` → `P16B-CORE-PRELOCK-R2`，仅替换旧Core R1，
+  有效任务变为50（35完成，15剩余）。保留原Core三AC、四命令、12消费者完整
+  回归；测试前置五域原业务断言不变、真实状态有界等待、残留失败独立分类。
+- 校验35done与Dataset/Quality/Schedule/Training对象批准前后完全一致，两个新任务
+  写域不相交，其他节点仅必要依赖/波次调整。验收职责文字由terminal R2澄清为
+  既存P16B-INGEST-POLICY-R2，无删减；Core续作增加新目标重跑要求。
+- owner审查证据保存于产品项目 `diagnostics/recovery-20261107-1220/`
+  `core-consumer-plan-owner-review.json`；实际新增worker仍须以task.dispatched核实。
