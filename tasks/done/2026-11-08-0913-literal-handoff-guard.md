@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — c0427dac fix: distinguish literal handoff bodies from write targets
 
 # 修复字面量交接正文被误判为跨工作区写入
 
@@ -20,3 +20,5 @@ LS-v1 的 FMS-14-GAP-CONTINUE-02 在 2026-11-08 09:04:50 UTC 用单引号 heredo
 - runtime write guard、Codex hook routing、stale contract handoff mock E2E：15 passed。
 - `scripts/dev-premerge-gate.sh`：53 passed。未运行全量 pytest 或真实 Provider E2E。
 - LS 原事件：`evt-516606a1001b`（2026-11-08T09:04:50Z）。worker 在修复部署前已用原生工具自行恢复；不将该恢复归因于本次源码修复。
+
+实现已由 17e2eb19 合入 dev；合并后 hook/保护/路由 34 passed，sentinel 53 passed。每次 hook CLI 进程加载 dev 源码，无需中断现有 watcher；真实 LS 下次触发该 shell 形状的观察仍继续。
