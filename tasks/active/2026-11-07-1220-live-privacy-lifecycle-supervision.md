@@ -314,3 +314,11 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Quality确认公开clean API可按run ID取指标，但冻结Dataset仅绑定sample/alignment/annotation而无clean-run身份，不能从帧/segment猜原分母；R1仍需精确生产者/消费者契约缺口，协议资格和局部已知字段口径必须区分。R2先真实RED（旧vehicle2→新pedestrian1，构建/语义版本均遗漏旧类与可比标识），修前后键并集，同口径计数补零、异口径INCOMPARABLE/null delta；test_comparison 5pass/41.20秒，尚未完整交付。
 - Core 341来源hash一致、822正文定义完整读完；本地可逆辅助脚本错误自行修正，监工提示可用已验证视图继续、不要为压缩反复耗时，不缩减权威输入。已读608249字符语义视图及来源映射，开始实际Core/旧probe检查、原锁bootstrap完成，尚无RED/实现通过结论。
 - 00:35:46账本三Impl仍running、34done/48有效/14未完成，持续事件更新；无新的正式blocked/任务完成。Dashboard200。监工未改canonical、未合并或push。
+
+### 01:08 UTC：Schedule 进入独立 Verify，Quality 缺口自动 Discovery，Core 回归继续
+
+- Schedule最终667a0feba32369b2266c104e9eb7dab34a0d81c6同头runtime 74pass/212.02秒（20261108T003657-139cf266），Release闭包127pass、无fail/error/skip，包含28次实际观测；smoke3、delta、lint、build通过。旧569789b失败证据保留，不能用旧预提交GREEN替代。00:48:59 evt-860bbcc4228d dev.build.done；00:49:34 evt-8ff373ccf1eb派发独立Verify，op wop-verify-tp-P10-SCHEDULE-DENIAL-R1-b690fa-c07de94db3cf / ta-ce0c6e228f55ce9feb37 / pane760。仍绑定原3648/d254合同，不随Core增量图改写；尚无独立通过或集成。
+- Quality g2提交5d37200b126accf3f54fa040b0785f0310aa1e9a，继承26a2e00完整实现并修R2；同口径缺失类别计数补零，异口径保持INCOMPARABLE/null delta，未知测量不补零。同头smoke1/runtime10/Docker browser、build/lint通过；独立31API/18浏览器/2生产者复跑仍确认R1。00:50:38 evt-ed0e467f9129 blocked，00:52:19 evt-cbc3a7dae0e0 request_replan；RM 00:52:15快照早于triage，正常下一周期00:57:11 evt-d80050ca7ee0自动Discovery，不增加retry、不重复手工触发。
+- Discovery op wop-prd-post-verify-discovery-prd-flow-discovery-trig-evt-d800-1c83b4438d16 / pane755，按当前5d02图/79105167候选核对最小Dataset清洗来源冻结边。现有公开Clean run可返回原分母/决策与统计，Sources/Align有实测CAN字段；不可从样本/同segment猜clean run或将局部字段当全协议资格。监工要求保护34done、Core→Ingest R2→Privacy R7和活动Schedule Verify→Training链，完整复用Quality修复但不当已验收基线；当前尚未产生新待批方案。
+- Core实际公开bind/provision锁环RED 1fail/12.39秒后实现受信前置锁及锁后重验。现有扩展回归111pass，新增夹具隔离修正后36pass；随后全runtime154pass/2fail为audit-only默认兼容夹具，修正后focused40pass，全套重跑中，不能将局部GREEN称最终全通过。消费者bootstrap成功、foundation53pass、access21pass，Dataset43pass/584.51秒；先前30点长等待已结束，未据此误判死锁或重启任务。其余消费者继续执行，尚未提交或独立Verify。
+- 01:08:00账本实际Core Impl、Schedule Verify、Quality Discovery三路running；有效48项、34done、14未完成。完成数未因自测通过而增加，持续监工，无canonical直接修改、无合并或push。
