@@ -259,3 +259,28 @@ TaskAttempt（包括 expired）、事件账本没有对应 attempt/dispatch。�
 
 验证见 `tests/test_undispatched_pipeline_recovery.py`，现场持续记录见
 [监工记录](../../tasks/active/2026-11-07-1220-live-privacy-lifecycle-supervision.md)。
+
+## 已准入结果后的恢复边界（2026-11-08）
+
+Task Pipeline 最新派发已有已准入 settled 结果时，通用 orphan 检测停止计时；blocked
+与abstained仍由各自恢复owner负责，不冒认完成。新派发不能继承旧结果存活证明。
+人工批准Plan或受控task-impl重试可唤醒静默；未知worker噪声不会唤醒。原静默保护保留。
+
+`zf recover workflow --dry-run --json` 对已准入 failed/abstained Verify 提供
+`redrive_abstained_task_verification`。按checkpoint-id应用后，保留原operation、请求摘要、
+产品代次、target与历史账本，清除当前结果投影并由Kernel派发新attempt；每operation仅
+一次，不增加产品返工预算。须存在同代已通过Impl、相同目标及验证失败来源，禁止恢复
+产品rejected/passed、任务已终结、run终结、新代次或已有活跃attempt。重复失败需再诊断，
+不得无限重试；旧attempt结果仍由现有准入检查拒绝。
+
+`zf artifact read --attempt <id> --required --shared-bodies --output-file
+app/evidence/<domain>/__pycache__/required-<id>.jsonl` 将原有受控读取直接原子保存，
+stdout仅包含路径/大小/hash。仅允许当前目录内gitignored缓存且不可覆盖；全部来源成功
+后才发布缓存，失败保留真实ledger且不发布半成品。缓存回执不证明模型已读；必须继续
+完整分页，不能因未读完就自行结束。普通stdout接口兼容。
+
+Run Manager semantic-replan-request的效果是绑定同request_id/run的任务图产出或无gap
+Discovery完成，不是task.done。Discovery发现产品缺口且有gap时等待物化；没有gap的
+执行失败仍失败，同run其他attempt失败不结算此请求。计划审批、实现和最终验收继续
+经过各自gate。现场与验收记录见
+[恢复批次](../../tasks/active/2026-11-08-0617-settled-recovery-closeout.md)。

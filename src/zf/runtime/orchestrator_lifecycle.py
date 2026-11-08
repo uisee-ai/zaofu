@@ -277,7 +277,9 @@ class LifecycleManagerMixin(
         try:
             self.escalation.escalate(
                 f"task {task.id}: orphaned "
-                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)"
+                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)",
+                task_id=task.id,
+                metadata={"failure_class": "orphaned_task"},
             )
         except Exception:
             pass

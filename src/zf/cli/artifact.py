@@ -94,6 +94,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
     read_cmd.add_argument("--required", action="store_true", help="Read all kernel-required slices in one invocation")
+    read_cmd.add_argument("--output-file", help="Atomically save required reads to a fresh local gitignored cache; print only a receipt")
     read_cmd.add_argument("--shared-bodies", action="store_true", help="With --required, render lossless shared nested bodies and per-source receipts")
     read_cmd.add_argument("--deduplicate-content", action="store_true", help="With --required, share identical source slices while retaining each read receipt")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
@@ -178,6 +179,9 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 def _run_attempt_read(args: argparse.Namespace) -> int:
     try:
         required = getattr(args, "required", False)
+        output_file = getattr(args, "output_file", None)
+        if output_file and not required:
+            raise ValueError("--output-file requires --required")
         shared = getattr(args, "shared_bodies", False)
         if shared and not required:
             raise ValueError("--shared-bodies requires --required")
@@ -218,29 +222,32 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                 args.attempt,
                 state_dir=context.state_dir, operation_id=identity["operation_id"],
             )
-            shared_results = []
-            for row in rows:
-                result = read_attempt_artifact(
-                    context.state_dir, manifest=manifest,
-                    source_id=row["source_id"], artifact_id=row["artifact_id"],
-                    json_path=row.get("json_path", "$"),
-                    actor=identity["actor"], role=identity["role"],
-                    provider=identity["provider"], purpose=identity["purpose"],
-                )
-                if shared:
-                    shared_results.append(result)
-                    continue
-                if output is not None:
-                    print(json.dumps(output.render(result), ensure_ascii=False))
-                    continue
-                print(json.dumps({"source_id": row["source_id"], "artifact_id": row["artifact_id"],
-                                  "json_path": row.get("json_path", "$"), "content": result["content"]},
-                                 ensure_ascii=False))
-            if shared:
-                from zf.runtime.artifact_shared_bodies import shared_body_records
+            from zf.runtime.artifact_read_file_output import required_read_stream
 
-                for record in shared_body_records(shared_results):
-                    print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+            with required_read_stream(output_file) as sink:
+                shared_results = []
+                for row in rows:
+                    result = read_attempt_artifact(
+                        context.state_dir, manifest=manifest,
+                        source_id=row["source_id"], artifact_id=row["artifact_id"],
+                        json_path=row.get("json_path", "$"),
+                        actor=identity["actor"], role=identity["role"],
+                        provider=identity["provider"], purpose=identity["purpose"],
+                    )
+                    if shared:
+                        shared_results.append(result)
+                        continue
+                    if output is not None:
+                        print(json.dumps(output.render(result), ensure_ascii=False), file=sink)
+                        continue
+                    print(json.dumps({"source_id": row["source_id"], "artifact_id": row["artifact_id"],
+                                      "json_path": row.get("json_path", "$"), "content": result["content"]},
+                                     ensure_ascii=False), file=sink)
+                if shared:
+                    from zf.runtime.artifact_shared_bodies import shared_body_records
+
+                    for record in shared_body_records(shared_results):
+                        print(json.dumps(record, ensure_ascii=False, separators=(",", ":")), file=sink)
             return 0
         result = read_attempt_artifact(
             context.state_dir,
@@ -255,7 +262,7 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             provider=identity["provider"],
             purpose=identity["purpose"],
         )
-    except (ConfigError, ValueError) as exc:
+    except (ConfigError, ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     print(result["content"])

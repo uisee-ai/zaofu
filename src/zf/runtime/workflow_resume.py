@@ -234,6 +234,8 @@ def build_workflow_operation_resume_checkpoints(
     from zf.runtime.terminal_reader_operation import terminal_reader_event
     from zf.runtime.undispatched_pipeline_recovery import undispatched_pipeline_request
 
+    from zf.runtime.abstained_verify_recovery import recoverable_abstention
+
     operations = reduce_workflow_operations(event_list)
     attempts = _task_attempt_rows(Path(state_dir))
     now = datetime.now(timezone.utc).timestamp()
@@ -249,6 +251,7 @@ def build_workflow_operation_resume_checkpoints(
             and str(operation.get("reason") or "")
             == "workflow_resume_cancelled_interrupted_operation"
         )
+        abstained = recoverable_abstention(operation, event_list, Path(state_dir))
         undispatched = undispatched_pipeline_request(operation, Path(state_dir), event_list)
         budget_amendment = find_task_pipeline_budget_amendment(
             event_list,
@@ -258,6 +261,7 @@ def build_workflow_operation_resume_checkpoints(
             status not in {"requested", "reserved", "running", "suspended"}
             and not legacy_cancelled_restart
             and not undispatched
+            and not abstained
             and budget_amendment is None
         ):
             continue
@@ -294,6 +298,9 @@ def build_workflow_operation_resume_checkpoints(
             reason = (
                 "operation has a newer live TaskAttempt after interruption"
             )
+        elif abstained:
+            action = "redrive_abstained_task_verification"
+            reason = "admitted verifier execution failed; one same-target retry is available"
         elif undispatched and status == "cancelled":
             action = "redrive_undispatched_task_pipeline_operation"
             reason = "stale cleanup cancelled a pipeline request before any TaskAttempt existed"

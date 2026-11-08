@@ -47,6 +47,11 @@ amendment are separate role capabilities supplied by the workflow profile.
    大量嵌套重复正文可使用可选 `--required --shared-bodies`（不与
    `--deduplicate-content` 合用），在当前工具允许的情况下保存到自己的临时工作文件后，
    按连续字符区间分页读取；每页控制在工具输出上限内，记录已完整消费的区间。
+   优先使用 `zf artifact read --attempt <本次attempt> --required --shared-bodies --output-file
+   app/evidence/<本任务域>/__pycache__/required-<本次attempt>.jsonl`，由CLI原子保存完整
+   正文且只输出路径/大小/hash；目标必须在当前工作目录内、已gitignore且尚不存在。
+   回执不是已阅读证明，继续按连续区间完整分页；未读完本身不是外部阻塞，不应因此
+   提交failed或要求删除必读来源。仅真实缺失、校验失败或执行通道错误才报告恢复问题。
    批量输出应在进程层直接保存 stdout 到允许的缓存（先创建父目录），不要先向工具打印全量
    再复制展示文本。可用 subprocess.run(..., stdout=缓存文件, check=True)；仅打印退出码和大小。
    缓存须逐行解析并核对 refs/来源摘要；不可用编辑补丁重建截断正文，坏缓存保留诊断后重新获取。

@@ -10,9 +10,16 @@ from zf.runtime.artifact_read_ledger import build_attempt_source_manifest, write
 from tests.test_artifact_read_capability import _grant
 
 
+@pytest.mark.parametrize("to_file", [False, True])
 @pytest.mark.parametrize("fault", ["", "tampered", "missing_policy", "forged_identity"])
-def test_required_read_batch_preserves_authentication_slices_and_hashes(tmp_path, monkeypatch, capsys, fault):
+def test_required_read_batch_preserves_authentication_slices_and_hashes(tmp_path, monkeypatch, capsys, fault, to_file):
     state = tmp_path / ".runtime"
+    if to_file:
+        import subprocess
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        (tmp_path / ".gitignore").write_text("__pycache__/\n")
+        monkeypatch.chdir(tmp_path)
+    cache = tmp_path / "app/__pycache__/required.jsonl"
     sources = []
     for name in ("first", "second"):
         path = state / "artifacts" / f"{name}.json"
@@ -36,16 +43,22 @@ def test_required_read_batch_preserves_authentication_slices_and_hashes(tmp_path
         (state / "artifacts/first.json").write_text('{"facts": ["changed"]}')
     elif fault == "forged_identity":
         monkeypatch.setenv("ZF_ROLE_NAME", "impostor")
-    result = main(["artifact", "read", "--attempt", "attempt-1", "--required", "--state-dir", str(state)])
+    result = main(["artifact", "read", "--attempt", "attempt-1", "--required", "--state-dir", str(state)]
+                  + (["--output-file", str(cache)] if to_file else []))
     output = capsys.readouterr()
     ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
     if fault:
         assert result == 1
         assert not ledger.exists()
         assert not output.out
+        assert not cache.exists()
     else:
         assert result == 0, output.err
-        returned = [json.loads(line) for line in output.out.splitlines()]
+        if to_file:
+            receipt = json.loads(output.out)
+            assert receipt["model_consumption_proven"] is False
+            assert receipt["sha256"] == hashlib.sha256(cache.read_bytes()).hexdigest()
+        returned = [json.loads(line) for line in (cache.read_text() if to_file else output.out).splitlines()]
         assert len(returned) == 2
         assert all(set(row) == {"source_id", "artifact_id", "json_path", "content"} for row in returned)
         assert all("中文" in row["content"] and "not-authorized" not in row["content"] for row in returned)

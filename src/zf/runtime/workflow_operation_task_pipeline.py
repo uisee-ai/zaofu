@@ -54,6 +54,7 @@ def task_pipeline_operation_seed(payload: Mapping[str, Any]) -> dict[str, Any]:
         "semantic_verdict": "",
         "call_result_admitted_event_id": "",
         "redrive_count": 0,
+        "verification_recovery_count": 0,
         "redrive_source_attempt_ids": [],
         "compatibility_proof_digest": "",
     }
@@ -111,6 +112,14 @@ def apply_task_pipeline_operation_event(
         and payload.get("recovery_decision_owner") == "kernel_replay"
         and payload.get("recovery_from_status") == "cancelled"
     )
+    verifier_replay = (
+        row.get("status") == "settled" and row.get("semantic_verdict") == "abstained"
+        and row.get("task_pipeline_stage") == "verify"
+        and not row.get("verification_recovery_count")
+        and event.origin == "kernel" and payload.get("verification_execution_recovery") is True
+        and payload.get("recovery_decision_owner") == "kernel_replay"
+        and payload.get("recovery_from_status") == "settled"
+    )
     blocked_compatibility_replay = (
         row.get("status") == "blocked"
         and row.get("reason") in {
@@ -145,11 +154,18 @@ def apply_task_pipeline_operation_event(
         row.get("status") in {"suspended", "requested"}
         or cancelled_restart_replay
         or undispatched_replay
+        or verifier_replay
         or blocked_compatibility_replay
         or blocked_controlled_integration_retry
         or blocked_budget_amendment_replay
     ):
         row["status"] = "requested"
+        if verifier_replay:
+            row["verification_recovery_count"] = 1
+            row["semantic_verdict"] = ""
+            row["call_result_admitted_event_id"] = ""
+            row["admitted_call_result_ref"] = {}
+            row["admitted_control_result_ref"] = {}
         row["divergent"] = False
         row["redrive_count"] = int(row.get("redrive_count") or 0) + 1
         source_attempt_id = str(payload.get("source_attempt_id") or "")
@@ -428,6 +444,17 @@ def admit_task_pipeline_redrive(
         and recovery_payload.get("workflow_run_id") == workflow_run_id
         and undispatched_pipeline_request(operation, service.state_dir, events)
     )
+    from zf.runtime.abstained_verify_recovery import recoverable_abstention
+
+    verifier_replay = (
+        decision_owner == "kernel_replay" and recovery_decision is not None
+        and recovery_decision.type == "workflow.resume.planned"
+        and recovery_payload.get("safe_resume_action") == "redrive_abstained_task_verification"
+        and recovery_payload.get("operation_id") == operation_id
+        and recovery_payload.get("request_hash") == request_hash
+        and recovery_payload.get("workflow_run_id") == workflow_run_id
+        and recoverable_abstention(operation, events, service.state_dir)
+    )
     blocked_controlled_integration_retry = (
         operation_status == "blocked"
         and decision_owner == "controlled_action"
@@ -458,6 +485,7 @@ def admit_task_pipeline_redrive(
         operation_status not in {"suspended", "requested"}
         and not legacy_cancelled_restart
         and not undispatched_replay
+        and not verifier_replay
         and not blocked_compatibility_replay
         and not blocked_controlled_integration_retry
         and not blocked_budget_amendment_replay
@@ -519,6 +547,7 @@ def admit_task_pipeline_redrive(
             "recovery_effect_owner": "workflow_runtime_coordinator",
             "recovery_from_status": operation_status,
             "undispatched_recovery": undispatched_replay,
+            "verification_execution_recovery": verifier_replay,
             "reason": reason,
             "compatibility_proof_digest": compatibility_proof_digest,
             "compatibility_request_ref": dict(compatibility_request_ref or {}),

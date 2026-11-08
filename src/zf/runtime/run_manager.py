@@ -6021,8 +6021,9 @@ def _execute_semantic_replan_request(
     _post_verify_action(
         writer,
         {**action,
-         "effect_expected_events": ["task.done", "task.done.accepted"],
-         "effect_failure_events": ["dev.blocked", "flow.discovery.failed", "task.attempt.failed"]},
+         "effect_request_event_id": request.id,
+         "effect_expected_events": ["task_map.ready", "flow.discovery.completed"],
+         "effect_failure_events": ["flow.discovery.failed", "task_map.amend.failed"]},
         {"ok": True, "status": "applied", "emitted_event_ids": [request.id]},
         causation_id=outcome.id,
         state_dir=state_dir,
@@ -7424,6 +7425,17 @@ def _effect_event_matches_scope(
         return bool(request_id) and event.causation_id == request_id and str(
             body.get("instance_id") or event.actor or ""
         ) == str(payload.get("instance_id") or payload.get("role_instance") or "")
+    if payload.get("action") == "semantic-replan-request" and payload.get("effect_request_event_id"):
+        # A replan request completes at its own planning output, not product
+        # completion. Unrelated failures in the same run cannot settle it.
+        request_id = str(payload.get("request_id") or "")
+        if not request_id or body.get("request_id") != request_id:
+            return False
+        if body.get("workflow_run_id") != payload.get("workflow_run_id"):
+            return False
+        if event.type == "flow.discovery.failed" and int(body.get("gap_task_count") or 0) > 0:
+            return False  # wait for gap admission or its explicit failure
+        return True
     expected_task = str(payload.get("task_id") or "") if (
         payload.get("action") == "semantic-replan-request"
     ) else ""

@@ -34,6 +34,7 @@ _WAKE_EVENT_TYPES = frozenset({
     # (ZF-REVIEW-141-QW:07-16 实弹里 dismiss 落盘后 run 仍冬眠)
     "human.escalation.acknowledged",
     "run.goal.updated",
+    "plan.approved",
     "dispatch.resumed",
     "loop.resume_requested",
 })
@@ -102,7 +103,13 @@ def quiescent_now(
                 and payload.get("operation_id") and payload.get("control_result_ref")
             )
         )
-        if event.type in progress or event.type in _WAKE_EVENT_TYPES or pipeline_fact:
+        controlled_retry = (
+            event.type == "task.rework.requested" and event.origin == "kernel"
+            and payload.get("source") in {
+                "task_pipeline_operator_retry", "task_pipeline_integration_rework",
+            } and bool(payload.get("operation_id"))
+        )
+        if event.type in progress or event.type in _WAKE_EVENT_TYPES or pipeline_fact or controlled_retry:
             # A fresh admitted failure needs recovery too; this is a wake,
             # never a success verdict or automatic dismissal of escalation.
             woke_after = True

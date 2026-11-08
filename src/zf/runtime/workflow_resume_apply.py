@@ -361,6 +361,7 @@ def _apply_operation_checkpoint(
         "redrive_interrupted_task_pipeline_operation",
         "redrive_cancelled_interrupted_task_pipeline_operation",
         "redrive_undispatched_task_pipeline_operation",
+        "redrive_abstained_task_verification",
         "redrive_budget_amended_task_pipeline_operation",
     }
     current_status = str(current.get("status") or "")
@@ -383,7 +384,10 @@ def _apply_operation_checkpoint(
                 "was not applied"
             ),
         )
-    if current_status in {"settled", "failed", "superseded"} or (
+    if current_status in {"failed", "superseded"} or (
+        current_status == "settled"
+        and checkpoint.safe_resume_action != "redrive_abstained_task_verification"
+    ) or (
         current_status == "blocked"
         and checkpoint.safe_resume_action
         != "redrive_budget_amended_task_pipeline_operation"
@@ -435,6 +439,14 @@ def _apply_operation_checkpoint(
                 checkpoint=checkpoint, applied=False,
                 reason="pipeline request no longer has proof of no scheduler delivery",
             )
+    if checkpoint.safe_resume_action == "redrive_abstained_task_verification":
+        from zf.runtime.abstained_verify_recovery import recoverable_abstention
+
+        if not recoverable_abstention(current, operation_events, state_dir):
+            return WorkflowResumeApplyResult(
+                checkpoint=checkpoint, applied=False,
+                reason="verifier retry is no longer eligible or has already been consumed",
+            )
     planned = writer.append(ZfEvent(
         type=WORKFLOW_RESUME_PLANNED_EVENT,
         actor="zf-cli",
@@ -470,6 +482,8 @@ def _apply_operation_checkpoint(
             reason=(
                 "Owner budget amendment admitted a bounded operation redrive"
                 if budget_redrive
+                else "Controlled same-target verifier execution recovery"
+                if checkpoint.safe_resume_action == "redrive_abstained_task_verification"
                 else "Kernel replay restored a never-dispatched pipeline request"
                 if checkpoint.safe_resume_action == "redrive_undispatched_task_pipeline_operation"
                 else "Kernel replay admitted after explicit runtime restart"
