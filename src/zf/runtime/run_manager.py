@@ -10503,6 +10503,9 @@ def _pending_attention_diagnostic_actions(
             continue
         if _attention_is_informational(item):
             continue
+        from zf.runtime.task_pipeline_dispatch_attention import dispatch_attention_current
+        if dispatch_attention_current(item, events) is False:
+            continue
         route = str(item.get("suggested_route") or item.get("recommended_route") or "")
         owner_route = str(item.get("owner_route") or "")
         action_policy = str(item.get("action_policy") or "")

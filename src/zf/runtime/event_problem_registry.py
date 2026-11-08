@@ -1764,6 +1764,26 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             autoresearch_eligible=False,
             producer_kind="kernel",
         ),
+        # A deferred dispatch is a valid gate result. Only a causally bound
+        # Kernel cooldown promotes repeated failures into diagnostic attention.
+        EventProblemSpec(
+            event_type="task.pipeline.stage.dispatch_deferred",
+            event_class="expected_negative",
+            problem_class="workflow_progress",
+            failure_class="task_pipeline_dispatch_deferred",
+            source="task_pipeline_dispatch",
+            severity="high",
+            title="Task Pipeline repeatedly failed before dispatch",
+            owner_route="run_manager",
+            action_policy="needs_diagnosis",
+            intervention_class="diagnose",
+            suggested_route="run_manager_recovery",
+            suggested_action_kind="diagnose_task_pipeline_dispatch",
+            supervisor_attention="on_repeated",
+            producer_kind="kernel",
+            required_scope_any=("task_id",),
+            recovery_policy="run_manager_then_autoresearch",
+        ),
         EventProblemSpec(
             event_type="kernel.housekeeping.failed",
             event_class="abnormal",
