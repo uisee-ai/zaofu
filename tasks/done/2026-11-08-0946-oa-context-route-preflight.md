@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # OA 上下文引用在提交前校验
 
@@ -33,3 +33,6 @@ routes；Kernel apply 正确拒绝。监工此前误把 call-result 准入描述
 - 聚焦15 passed；`dev-verify.py plan/run --base dev` 选择46个测试文件，
   deterministic 771 passed / 7 skipped；sentinel 53 passed；mock flow 10 passed。
 - 未运行全量 pytest 或真实 Provider E2E。业务 worker 独立继续，不计作本修复验证。
+
+实现提交：`4b4205bf fix: validate orchestrator context refs before settlement`。
+补充文档检查8 passed。已完成限定范围，历史shadow仍保留拒绝；未push。
