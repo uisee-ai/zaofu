@@ -9578,11 +9578,21 @@ def _pending_semantic_event_actions(
     triage_threshold: int = 0,
 ) -> list[dict[str, Any]]:
     from zf.runtime.rework_triage import REWORK_TRIAGE_TRIGGER_EVENTS
+    from zf.runtime.run_manager_integration_review import (
+        bind_integration_review_action, integration_review_sources,
+    )
+
+    integration_sources, integration_operations = integration_review_sources(events)
 
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for idx, event in enumerate(events):
         event_payload = event.payload if isinstance(event.payload, dict) else {}
+        if (event.type == "workflow.operation.blocked"
+                and event_payload.get("operation_id") in integration_operations):
+            continue
+        if event.type == "integration.queue.needs_review" and event.id not in integration_sources:
+            continue
         if (
             event.type == "task.attempt.failed"
             and str(event_payload.get("identity_version") or "")
@@ -9701,7 +9711,9 @@ def _pending_semantic_event_actions(
             action = _unknown_actionable_event_diagnostic_action(event)
         else:
             continue
-        if _event_superseded_by_later_progress(events, event):
+        if event.id in integration_sources:
+            action = bind_integration_review_action(action, event, integration_sources[event.id])
+        elif _event_superseded_by_later_progress(events, event):
             continue
         fingerprint = str(action.get("fingerprint") or "")
         if fingerprint in seen:

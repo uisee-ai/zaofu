@@ -402,3 +402,21 @@ LS-v1 的实际触发为 CHK23 成功后改写 Git 跟踪的运行证据，集�
 却只能重跑同一失败。R60 补齐获授权操作员恢复路径，**并不代表 RM/OA 自动分诊已闭环**。
 原事件泛归 operation divergence、未转交语义修复的问题继续单独核验，业务修复判断
 由语义角色或获授权操作员提出。监工还修正了自身漏选 blocked/needs_review 的错误。
+
+## R61：当前集成故障必须有诊断消费者
+
+Candidate 的 `integration.queue.needs_review` 作为独立的当前故障输入，由 Run Manager
+resident 诊断入口消费。待办绑定原始 needs_review、operation/request hash、Run 和任务
+代际，要求 `diagnosis_report`、受控动作建议、证据和预期后继事件。它与同操作的
+`workflow.operation.blocked` 合并为一次诊断，不再将冒烟、环境或冲突故障统称为请求
+散列不一致；语义原因仍由 agent 诊断，Kernel 不推断业务修复。
+
+只有 canonical 事件且对应当前 blocked 集成才产生该待办。受控 supersede、settle、
+新代际或当前后继实施使旧待办退出；其他任务的进展不能掩盖它。发送诊断消息只是
+输入交付，必须得到结构化 recommendation，不能据此关闭产品失败。既有暂停、单个
+resident 请求占用、超时重投及诊断后受控动作检查继续适用。
+
+LS-v1 的回放表明旧逻辑已有 needs_diagnosis 待办，但 route 为空，resident 不接收，
+Autoresearch 又有其他未闭合请求，造成静默等待；R60 手动恢复后旧故障仍在队列。
+R61 修正路由与操作级当前性。真实失败发生前的回放与恢复后的回放分别验证“可交付
+一个诊断”和“旧故障不重派”；无人值守产品修复仍需真实新故障的完整后继证据。
