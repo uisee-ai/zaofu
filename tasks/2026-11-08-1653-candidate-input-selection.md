@@ -1,6 +1,6 @@
 # Plan 候选输入检查与派发选择一致
 
-> 状态: active
+> 状态: done — a32775ce fix: align plan input preflight with dispatch selection
 
 用户授权持续监工及修复阻塞。实测 FMS03 局部修订的 trigger.task_ids 仅含 FMS-03-GAP-E2E-PORT-PROBE-02，但预提交校验检查全部55任务以及各任务未消费的历史端口，产生7个旧任务分区错误；正常包准入已有 task_ids 与 plan_input_selection 过滤。
 
@@ -23,4 +23,4 @@
 - dev-verify 74文件影响闭包首轮9失败1160通过；均为旧谱系fixture未声明必读端口，补齐合同后所有9项安全拒绝保持。最终1169通过，76.04秒；非全量pytest/真实provider E2E。
 - 哨兵53通过；真实冻结30文件/55任务同一候选前7错、修复后0错，逐文件摘要不变。
 - 相关实现说明：[输入分区选择](../docs/impl/plan-candidate-input-selection.md)。
-- 部署及原Planner正式提交观察待监工记录；不改运行中候选/旧任务身份。
+- 合并 edae2889；部署Watcher 2874345/Web 2874271，5个在途operation/attempt/pane完全保留，Web health/UI 200。合并后21项定向通过。原Planner正式提交继续观察；不改运行中候选/旧任务身份。
