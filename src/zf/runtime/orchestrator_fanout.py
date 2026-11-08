@@ -6480,7 +6480,8 @@ class FanoutCoordinationMixin(
         if replacement is not None:
             self._cancel_superseded_fanout_manifest(
                 fanout_id=str(manifest.get("fanout_id") or ""), manifest=manifest,
-                reason="superseded_by_admitted_task_replacement",
+                reason=("superseded_by_recovered_plan_admission" if replacement.type == "task_map.admitted"
+                        else "superseded_by_admitted_task_replacement"),
                 superseded_by=replacement.id, source="superseded_reader_fanout_manifest_closeout",
             )
             return True

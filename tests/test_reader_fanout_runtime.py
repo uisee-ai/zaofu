@@ -989,7 +989,8 @@ def _manifest(state_dir: Path, fanout_id: str) -> dict:
     )
 
 
-def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False):
+def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False,
+                          plan_admission_source: bool = False):
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
@@ -1059,12 +1060,18 @@ def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False):
             "workflow_run_id": "run-durable",
         },
     )
-    if rework_source:
+    if rework_source or plan_admission_source:
         source = ZfEvent(type="dev.blocked", task_id="T-VERIFY",
                         correlation_id="run-durable")
+        if plan_admission_source:
+            source = ZfEvent(type="task_map.ready", origin="kernel", correlation_id="run-durable",
+                            payload={"workflow_run_id": "run-durable", "task_map_ref": "map.json",
+                                     "task_map_digest": "a" * 64})
         log.append(source)
         trigger.payload.update(rework_of=source.id, task_id="T-VERIFY",
                                affected_task_ids=["T-VERIFY"])
+        if plan_admission_source:
+            trigger.payload['plan_admission_incident_id'] = 'incident'
         trigger.correlation_id = "recovery-trace"
         log.append(trigger)
     orch.run_once(events=[trigger])
