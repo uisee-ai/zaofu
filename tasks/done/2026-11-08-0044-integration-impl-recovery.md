@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — cfe229d3 fix: allow reviewed integration failures to reenter implementation
 
 # R60 集成失败后的同任务实施修复
 
@@ -27,3 +27,11 @@ FMS23 的 Impl、Verify 均通过，但 rolling smoke 改写跟踪的证据文�
 - LS-v1 只读 preview：当前通过目标35b4a636和evt-d0213691bbcd匹配，next_stage=impl，next_generation=2；无状态写入。
 - 预览发现真实准入产生的完成事件origin为空；改为按已准入结果描述符核对原始完成事件，测试覆盖空origin，未降低摘要或身份校验。
 - 现场部署及新代际派发回执待合并后记录；不将产品集成完成计入本次代码验证。
+
+## 现场恢复完成（2026-11-08 00:51 UTC）
+
+实现cfe229d3合并dev 079073f5，合并后聚焦34 passed / sentinel53 passed。控制面247526→569715，加载079073f5；FMS13原operation/attempt/pane均保留。
+
+CLI受控supersede evt-8ca8d3186b39后，Kernel于00:50:18自动派发FMS23第2代Impl（evt-28c172cae354 / wop-impl-tp-FMS-23-GAP-EVIDENCE-01-2c95e8-5ab835db243f / ta-b2f76166cef193f5e0de）。实际简报含集成返修原因、原合同版本与原工作区，HEAD仍35b4a636且干净。没有手改产品源码、Task状态或原Verify裁决。
+
+此项完成指受控恢复入口及真实派发闭环。FMS23产品脚本修复与新Verify/集成仍由在途worker执行，不计作产品已完成。证据位于LS-v1 docs/records/2026-11-08-r60-{controlled-reload,applied,live-dispatched}.json。本批未push。
