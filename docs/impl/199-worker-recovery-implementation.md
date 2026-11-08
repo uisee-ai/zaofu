@@ -426,3 +426,11 @@ R61 修正路由与操作级当前性。真实失败发生前的回放与恢复�
 同一个失败任务可以拆成前置修复及终端后继。已经由某个 gap task 显式承接的旧 ID，不再由 envelope 自动分配给同 parent 的其他任务；未分配的 ID 才沿用旧回退。gap task 显式声明 `supersedes_task_ids: []` 时，enrichment 必须保留该声明，不能因 `parent_task_id` 与 envelope 替代集合相同便补入替代身份；否则会改写下游依赖，并令实际 Task Map 与审核稿/输入合同不一致。缺省字段仍兼容旧 parent 匹配和单任务 envelope 格式，终端后继明确声明替代关系。
 
 `candidate-rework-apply` 共用此转换。`tests/test_gap_explicit_replacement.py` 覆盖真实 ControlledActionService → gap artifact → task_map.ready，验证只有终端承接原节点及下游依赖，前置任务保持独立身份、输入对象不被修改。真实项目准入结果必须再次与审核稿对账；已生成但未批准的错误候选保留为历史证据，不原地修改。
+
+## 2026-11-08 替代终态的 Run 绑定与旧事件兼容
+
+实际 writer adoption caller 只传 `loaded`，没有 trigger；`task.superseded` 现在显式携带该已加载 Task Map 的 `workflow_run_id` 及 correlation，避免 EventWriter 的当前上下文把无关事件关联借给终态。TaskStore 取消仍走既有 writer 路径。
+
+历史 writer 终态缺少全部 Run 身份时，RM 仅在相同精确替代图 ref 已有 kernel `task.pipeline.generation.admitted` 且唯一 Run 无冲突时补足只读归属证明。实际取消可以先于 generation admitted，所以证明允许该精确 admission 稍后发生；终态仍必须排在原失败之后。不同图、多个 Run、非 kernel、身份冲突或没有正式取消均保留诊断。不会改写历史事件，也不把替代等同产品完成。
+
+LS-v1 Gateway 历史故障用于回放；Grants 在任务取消之后新派发的 discovery 失败及旧 root planner 故障不满足本规则，继续可见。真实 Orchestrator caller 回归见 `tests/test_writer_supersede_run_identity.py`，投影闭包见 `tests/test_task_failure_retirement.py`。

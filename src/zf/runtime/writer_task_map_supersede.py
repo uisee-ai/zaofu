@@ -52,10 +52,9 @@ def apply_explicit_task_supersedes(
             actor="zf-cli",
             task_id=task_id,
             causation_id=trigger_event.id if trigger_event is not None else None,
-            correlation_id=(
-                trigger_event.correlation_id if trigger_event is not None else None
-            ),
+            correlation_id=str(getattr(loaded, "workflow_run_id", "") or "") or None,
             payload={
+                "workflow_run_id": str(getattr(loaded, "workflow_run_id", "") or ""),
                 "source": "writer_task_map_adoption",
                 "superseded_by_task_map_ref": str(loaded.task_map_ref or ""),
                 "superseded_task_ids": task_ids,

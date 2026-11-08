@@ -15,7 +15,7 @@ def failure(kind="task.attempt.failed", task="T1", run="R1"):
 def terminal(kind="task.done", task="T1", run="R1", origin="kernel"):
     payload = {"task_id": task, "workflow_run_id": run}
     if kind == "task.superseded":
-        # Actual writer adoption carries Run identity in correlation_id.
+        # Run-bound terminal; legacy writer events are covered separately below.
         payload = {"source": "writer_task_map_adoption", "status": "cancelled",
                    "superseded_by_task_map_ref": "artifacts/task-map-v2.json"}
     return ZfEvent(type=kind, task_id=task, origin=origin, correlation_id=run, payload=payload)
@@ -77,3 +77,49 @@ def test_run_manager_projection_uses_task_terminal_retirement(tmp_path):
     projection = build_run_manager_projection(state, events=log.read_all(), config=_config())
     actions = [a for a in projection["pending_actions"] if a.get("failure_class") == "task_attempt_failed"]
     assert [a["task_id"] for a in actions] == ["CURRENT"]
+
+
+def _admission(run="R1", ref="artifacts/task-map-v2.json", origin="kernel"):
+    return ZfEvent(type="task.pipeline.generation.admitted", origin=origin,
+                   payload={"workflow_run_id": run, "task_map_ref": ref})
+
+
+def test_legacy_supersede_resolves_only_exact_admitted_map_run():
+    failed = failure()
+    ending = terminal("task.superseded", run="")
+    assert _pending_semantic_event_actions([failed, _admission(), ending]) == []
+
+
+@pytest.mark.parametrize("admissions", [
+    [], [_admission(run="R2")], [_admission(ref="artifacts/other-map.json")],
+    [_admission(origin="worker")], [_admission(run="")],
+    [_admission(), _admission(run="R2")],
+])
+def test_unproven_or_ambiguous_legacy_supersede_stays_visible(admissions):
+    failed = failure()
+    assert len(_pending_semantic_event_actions([
+        failed, *admissions, terminal("task.superseded", run="")])) == 1
+
+
+def test_writer_terminal_can_precede_exact_generation_admission():
+    assert _pending_semantic_event_actions([
+        failure(), terminal("task.superseded", run=""), _admission()]) == []
+
+
+def test_conflicting_or_different_terminal_run_cannot_borrow_map_identity():
+    for ending in [terminal("task.superseded", run="R2"),
+                   replace(terminal("task.superseded"), payload={
+                       **terminal("task.superseded").payload,
+                       "workflow_run_id": "R1", "run_id": "R2"})]:
+        assert len(_pending_semantic_event_actions([failure(), _admission(), ending])) == 1
+
+
+def test_projection_retires_legacy_failure_without_hiding_new_post_cancel_failure(tmp_path):
+    from tests.test_run_manager import _config, _state
+    state, log, _ = _state(tmp_path)
+    old, new = failure(), failure()
+    for event in [old, terminal("task.superseded", run=""), _admission(), new]:
+        log.append(event)
+    projection = build_run_manager_projection(state, events=log.read_all(), config=_config())
+    actions = [a for a in projection["pending_actions"] if a.get("failure_class") == "task_attempt_failed"]
+    assert [a["source_event_ids"] for a in actions] == [[new.id]]
