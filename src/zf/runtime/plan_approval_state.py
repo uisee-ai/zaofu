@@ -37,17 +37,10 @@ def decide_pending_plan(
     if event_type not in {"plan.approved", "plan.rejected"}:
         raise ValueError("invalid plan decision event")
     with locked_path(Path(state_dir) / "locks" / "plan-approval-decisions"):
-        pending: ZfEvent | None = None
-        for event in writer.event_log.read_all():
-            body = event.payload if isinstance(event.payload, dict) else {}
-            if str(body.get("plan_id") or "") != plan_id:
-                continue
-            if event.type == "plan.approval.requested":
-                pending = event
-            elif event.type in {"plan.approved", "plan.rejected"}:
-                if event.type == "plan.approved" and body.get("semantic_control") and pending is not None:
-                    continue
-                pending = None
+        from zf.runtime.plan_approval_replay import pending_plan_requests
+
+        pending = next((event for event in pending_plan_requests(writer.event_log.read_all())
+                        if str(event.payload.get("plan_id") or "") == plan_id), None)
         if pending is None:
             return None, "plan is not awaiting review"
         if expected_request_id and pending.id != expected_request_id:

@@ -1,4 +1,4 @@
-"""Read-only retirement of duplicate requests for an owner-approved plan."""
+"""Read-only retirement of duplicate approvals and superseded Plan packages."""
 from collections.abc import Iterable, Mapping
 import re
 from typing import Any
@@ -23,7 +23,40 @@ def _key(payload: Mapping[str, Any], correlation_id: str = '') -> tuple[str, ...
     ))
 
 
+def _package_key(payload: Mapping[str, Any], prefix: str) -> tuple[str, str, str] | None:
+    run = str(payload.get('workflow_run_id') or '')
+    ref = str(payload.get(prefix + 'ref') or '')
+    digest = str(payload.get(prefix + 'digest') or '')
+    if not run or not ref or not re.fullmatch(r'[0-9a-f]{64}', digest):
+        return None
+    return run, ref, digest
+
+
+def _superseded_packages(events: Iterable[ZfEvent]) -> set[tuple[str, str, str]]:
+    retired: set[tuple[str, str, str]] = set()
+    admitted: set[tuple[str, ...]] = set()
+    for event in events:
+        if event.origin != 'kernel':
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        key = _package_key(payload, 'package_')
+        slot = str(payload.get('package_slot') or '')
+        cause = str(event.causation_id or '')
+        if key is None or not slot or not cause:
+            continue
+        if event.type == 'plan.artifact_package.admitted' and payload.get('status') == 'admitted':
+            admitted.add((*key, slot, cause))
+            retired.discard(key)
+        elif event.type == 'plan.artifact_package.superseded' and payload.get('status') == 'superseded':
+            successor = _package_key(payload, 'superseded_by_package_')
+            if successor and successor != key and (*successor, slot, cause) in admitted:
+                retired.add(key)
+    return retired
+
+
 def _state(events: Iterable[ZfEvent]) -> tuple[dict[str, ZfEvent], dict[str, ZfEvent]]:
+    events = list(events)
+    retired = _superseded_packages(events)
     requests: dict[str, ZfEvent] = {}
     pending: dict[str, ZfEvent] = {}
     approved: set[str] = set()
@@ -43,7 +76,10 @@ def _state(events: Iterable[ZfEvent]) -> tuple[dict[str, ZfEvent], dict[str, ZfE
             if (event.type == 'plan.approved' and event.actor == 'operator'
                     and not payload.get('auto') and plan_id in requests):
                 approved.add(plan_id)
-    return pending, {pid: requests[pid] for pid in approved}
+    pending = {pid: event for pid, event in pending.items()
+               if _package_key(event.payload, 'plan_artifact_package_') not in retired}
+    return pending, {pid: requests[pid] for pid in approved
+                     if _package_key(requests[pid].payload, 'plan_artifact_package_') not in retired}
 
 
 def approved_equivalent_plan_id(events: Iterable[ZfEvent], payload: Mapping[str, Any]) -> str:
