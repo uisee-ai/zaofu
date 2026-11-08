@@ -11763,8 +11763,12 @@ def _event_superseded_by_later_progress(
     events: list[ZfEvent],
     source_event: ZfEvent,
 ) -> bool:
+    from zf.runtime.assistance_handoff_retirement import assistance_handoff_retired
     from zf.runtime.task_failure_retirement import task_failure_retired
 
+    handed_off = assistance_handoff_retired(events, source_event)
+    if handed_off is not None:
+        return handed_off
     retired = task_failure_retired(events, source_event)
     if retired is not None:
         return retired
