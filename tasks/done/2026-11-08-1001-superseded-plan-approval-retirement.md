@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 已替换计划不再保留审批等待
 
@@ -31,3 +31,6 @@ dev `12b2721f` 真实只读回放仍列6条 pending；每条均有同Run、同�
 - planner分类backend未自动附加门禁；按恢复/控制影响手动补sentinel53 passed、
   mock flow10 passed、串行恢复2+文档8共10 passed。
 - 无全量pytest、无真实Provider E2E，未push。
+
+实现提交：`e6d7e326 fix: retire approval waits for superseded plan packages`。
+限定范围已实现并验证；Owner未决未改变。
