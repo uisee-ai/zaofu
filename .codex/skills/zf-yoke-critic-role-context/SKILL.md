@@ -251,6 +251,13 @@ Impl 自检和目录可见性都不能代替独立验收结论。
 无遗漏。恢复时检查 `artifact recover` 的身份和版本状态，不能将 Impl/Verify 消费
 历史当作 Judge 当前记忆，也不能凭恢复包越过受控准入或重新绑定。
 
+`artifact recover` 的 `authorizes_execution=false` 表示报告本身不授予执行权限，
+不是对当前合法派发的否决；`current_memory=unknown` 和 `reconstruction_required`
+范围总数不会因读取变为已知或零。不要等这些字段变化或检查点自动出现。先核验当前
+身份/租约/版本及真实暂停要求，再补足缺失必读和遗忘正文，按当前角色推进检查；
+来源不可读或需要重绑定仍走受控恢复。历史收据不能证明当前理解。
+
+
 ## 任务输入切片审查
 
 批准 Impl/Verify 的任务范围输入前，按完整原始来源核对 shared + owned 是否保留异常、
