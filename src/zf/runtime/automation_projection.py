@@ -1079,10 +1079,16 @@ def _task_board_counts(
     ready_ids: set[str],
 ) -> dict[str, int]:
     counts: Counter[str] = Counter()
+    # derive_phase only consumes this task's events, including its dispatch
+    # anchors. Preserve their order and all generations for the existing fence.
+    events_by_task: dict[str, list[ZfEvent]] = defaultdict(list)
+    for event in events:
+        if event.task_id:
+            events_by_task[event.task_id].append(event)
     for task in tasks:
         projection = kanban_column_projection(
             task,
-            phase=derive_phase(task, events) if events else None,
+            phase=derive_phase(task, events_by_task.get(task.id, [])) if events else None,
             ready=task.id in ready_ids,
         )
         counts[projection.label] += 1
