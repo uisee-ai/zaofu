@@ -1,6 +1,6 @@
 # 大段必读输入的分页方法说明
 
-> 状态: active
+> 状态: done — a0bffe7e docs: clarify bounded artifact pagination methods
 
 用户授权：持续监工LS-v1，发现问题修复并记录。本项属于现有工具用法纠错，不变更任务验收。
 
@@ -21,3 +21,10 @@
 验证：既有读取CLI/分页/指令检查35 passed；dev-verify自动闭包41 passed、1 skipped；
 预合并哨兵53 passed；两个技能元数据有效且六份canonical/distribution文件一致。
 未跑全量pytest或真实provider E2E。现场项目差量部署和在途方法投递在合并后记录。
+
+交付：a0bffe7e合入dev c42f2bef；LS项目只应用本次差量、保留既有技能差异。
+FMS03 Impl与FMS13 Verify已读取正式方法反馈并采用精确分页。19:39:07新任务
+FMS-DB-READINESS-01实际派发evt-6f30ba2e30a9，其dev-lane-1材料化技能
+SHA256 df6af9e524dc7b5cb65ee2c9f4b0c26ef67d6bc39af4b58f8516947afb96295b匹配项目源。
+合并后24 passed、1 skipped。记录见LS docs/records/2026-11-08-read-page-method/。
+没有Python逻辑变更、没有控制面重启或既有attempt重派；不把方法投递视为理解或完整性能保证。
