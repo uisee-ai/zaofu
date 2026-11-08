@@ -129,7 +129,8 @@ def test_fresh_reactor_delivers_missed_guidance_once(running, monkeypatch):
     # the periodic (300-second) supervisor / Run Manager sweep.
     sent = []
     monkeypatch.setattr("zf.runtime.orchestrator_agent_transport.orchestrator_checkpoint_busy", lambda _: False)
-    monkeypatch.setattr("zf.runtime.orchestrator.build_orchestrator_briefing", lambda **kw: _render_rework_triage_contract(kw["trigger_event"]))
+    progress_calls = []
+    monkeypatch.setattr("zf.runtime.orchestrator.regenerate_progress", lambda *args: progress_calls.append(args))
     r._record_skill_provenance = lambda **kw: None
     r._dispatch_context = lambda **kw: {}
     r._send_transport_task = lambda *args: sent.append(args)
@@ -139,7 +140,17 @@ def test_fresh_reactor_delivers_missed_guidance_once(running, monkeypatch):
     dispatch_pending_assistance(r)
     dispatch_pending_assistance(r)
     assert len(sent) == 1
-    assert "只读求助" in sent[0][1].read_text()
+    assert progress_calls == []
+    text = sent[0][1].read_text()
+    assert "只读求助" in text
+    for forbidden in ("## Kanban", "## Memory", "## Current Health", "kanban assign", "feature add"):
+        assert forbidden not in text
+    assert "orchestrator.round.complete" in text
+    assert str(r.state_dir) in text
+    assert r.attempt["operation_id"] in text
+    assert "recovery_context_ref" in text
+    assert "proposal_only" in text
+    assert "bounded read-only request" in sent[0][2]
 
 
 def test_reactive_and_periodic_reconciliation_publish_once(running):
@@ -156,3 +167,25 @@ def test_reactive_and_periodic_reconciliation_publish_once(running):
     events = r.event_log.read_all()
     assert sum(e.type == "orchestrator.rework.triage.requested" for e in events) == 1
     assert sum(e.type == "worker.assistance.closed" for e in events) == 1
+
+
+def test_assistance_briefing_does_not_load_global_projections(running, monkeypatch):
+    from zf.runtime import orchestrator_briefing as briefing
+
+    r = running
+    request = _request(r)
+    reconcile_assistance(state_dir=r.state_dir, writer=r.event_writer, config=r.config)
+    event = next(e for e in r.event_log.read_all() if e.type == "orchestrator.rework.triage.requested")
+    def unrelated(*args, **kwargs):
+        raise AssertionError("advisory must not load unrelated global state")
+    for name in ("_render_features", "_render_kanban", "_render_events", "_render_memory", "_render_health"):
+        monkeypatch.setattr(briefing, name, unrelated)
+    text = briefing.build_orchestrator_briefing(state_dir=r.state_dir, config=r.config,
+        trigger_event=event, also_triggered=("worker.assistance.requested",))
+    assert request["request_id"] in text
+    ref = event.payload["recovery_context_ref"]
+    assert ref["ref"] in text and ref["sha256"] in text
+    for field in ("operation_id", "active_attempt_id", "lease_id", "workflow_run_id", "task_id"):
+        assert r.identity[field] in text
+    assert "orchestrator.rework.triage.recorded" in text
+    assert "orchestrator.round.complete" in text

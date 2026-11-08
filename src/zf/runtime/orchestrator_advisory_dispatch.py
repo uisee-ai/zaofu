@@ -30,11 +30,14 @@ def dispatch_advisory_turn(
 
     if not claim_assistance_dispatch(runtime, primary):
         return
-    # Regenerate progress.md so Layer 2 sees fresh narrative state.
-    try:
-        regenerate_progress(runtime.state_dir)
-    except Exception:
-        pass  # progress.md is optional; never block dispatch on it
+    guidance = (primary.type == "orchestrator.rework.triage.requested"
+                and primary.payload.get("request_kind") == "worker_guidance")
+    # Guidance consumes its immutable request, not a global narrative.
+    if not guidance:
+        try:
+            regenerate_progress(runtime.state_dir)
+        except Exception:
+            pass  # progress.md is optional; never block dispatch on it
     also_triggered = [e.type for e in triggers[:-1]]
     briefing = build_orchestrator_briefing(
         state_dir=runtime.state_dir,
@@ -52,7 +55,8 @@ def dispatch_advisory_turn(
     prompt = (
         f"You are the orchestrator agent. New events have fired{extra} and you "
         f"need to decide what to do next.\n"
-        f"Read the briefing at {briefing_path} for the full system state and trigger details. "
+        f"Read the briefing at {briefing_path} for "
+        f"{'the bounded read-only request' if guidance else 'the full system state and trigger details'}. "
         f"Make ONE round of decisions via tool calls, then exit."
     )
     try:

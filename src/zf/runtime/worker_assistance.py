@@ -7,7 +7,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-from zf.core.events import EventWriter
+from zf.core.events import EventWriter, ZfEvent
 from zf.core.state.locks import locked_path
 from zf.core.state.task_attempts import TaskAttemptStore
 from zf.core.task.store import TaskStore
@@ -214,6 +214,29 @@ def assistance_briefing(payload: dict[str, Any], *, actor: str) -> str:
         "不得编辑业务代码、改 canonical 状态或宣称独立验证通过。回答后结束 turn。",
         f"{zf_cli_cmd()} emit {ANSWER} --task {shlex.quote(str(payload['task_id']))} "
         f"--actor {shlex.quote(actor)} --payload {shlex.quote(json.dumps(answer, ensure_ascii=False))}",
+    ])
+
+
+def assistance_wake_briefing(*, state_dir: Path, event: ZfEvent) -> str:
+    """Deliver advisory identity and immutable refs without legacy write instructions."""
+    from zf.runtime.cli_command import zf_cli_cmd
+
+    return "\n".join([
+        f"# Orchestrator worker assistance — {event.ts}",
+        "", "## Trigger", f"- Event: `{event.id}` / `{event.type}`",
+        f"- Actor: `{event.actor}`; Task: `{event.task_id}`",
+        json.dumps(event.payload, ensure_ascii=False, indent=2),
+        "", "## Rework Semantic Triage Contract",
+        assistance_briefing(event.payload, actor=str(event.payload.get("owner_instance") or "orchestrator")),
+        "", "## Runtime Context",
+        f"- Runtime state dir: `{state_dir}`",
+        "- 固定 sidecar 路径相对于该 state dir；保留 ZF_STATE_DIR，不创建另一份状态。",
+        "- request_ref 指向原请求；按其 target_ref、result_identity 和证据引用按需检索，",
+        "  不把当前 OA 工作目录或历史会话记忆当成 Worker 的固定代码基线。",
+        "- Trigger 中的 attempt/lease 属于求助 Worker，仅用于关联，不授予 OA 写入权限。",
+        "- 回答绑定当前 request_id；缺少上游合同则明确缺口与责任人，不猜测或扩权。",
+        "", "## 完成协议",
+        f"提交建议后运行 `{zf_cli_cmd()} emit orchestrator.round.complete`，然后结束本轮。",
     ])
 
 
