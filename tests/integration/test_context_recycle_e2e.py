@@ -315,9 +315,9 @@ class TestBusyRecycleWaitsForIdle:
         assert transport.compact_calls == []
         assert "worker.context.compact.requested" not in types
         assert "worker.context.compacted" not in types
-        failed = [event for event in events if event.type == "worker.context.compact.failed"]
-        assert failed
-        assert failed[-1].payload["error"] == "backend compact requires idle session"
+        assert "worker.context.compact.failed" not in types
+        assert "worker.context.warning" in types
+        assert "arch" not in orch._context_compact_attempts()
         assert orch._instance_state["arch"] == "pending_recycle"
 
     def test_transport_compact_denial_does_not_emit_compacted(

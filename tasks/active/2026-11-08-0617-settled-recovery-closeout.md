@@ -33,3 +33,7 @@ R3共用提示补充：Critic现场再次选错缓存目录，已在Controlled A
 08:16 UTC R5现场进展：Training新Verify已正式passed/admitted，独立探针持久归档；随后candidate smoke因测试解释器配置缺失失败，已核实CPU PyTorch能力、补齐本地忽略配置并经既有recover task-integration重试，等待真实集成结果。Consumer 11个mandatory命令及74个旧失败用例通过，但额外Sources浏览器2pass/1fail仍保留，独立Verify尚未完成。Planner独立Critic拒绝F1历史定位/F2现行审批范围错误后，已受控启动一次限定新代修订；17个原冻结输入恢复至允许缓存，返修继续。35done不变，不能归档R5。详见docs/impl/task-recovery-20261105.md与产品持久diagnostics。
 
 08:17 UTC续报：Training原smoke重跑6 passed并正式集成，task.done evt-e323cb625282，candidate784a5de9，36done；P11A自动派发并与Consumer并行。新Planner正式提交后306项差异检查无失败，独立Critic仍待结论。R1恢复路径已有真实Verify→integration→done证据；R5的计划批准、Ingest修复及后续产品任务尚未完成，继续active。
+
+- R7 忙碌期压缩前置不满足不报执行失败：P11A的Codex尚未发送compact命令，却因idle-only能力记作compact.failed并触发Supervisor修复路由 -> verify: 保留容量warning及pending_recycle，不产生未执行命令的failed/compacted事件或消耗尝试；真正发送后拒绝/失败仍记录failed，硬上限和回收不变。
+
+R7已复现1 RED，修复生命周期及mock context-recycle E2E81 passed、Supervisor/事件27 passed、sentinel50 passed/1 skipped；只纠正未发送命令的事件语义。R5 Consumer实施准入evt-9f6689001697，独立Verify已派发；Sources超时证据显示持续进度，仍为失败且不能定性死锁。计划Critic仍在审查。

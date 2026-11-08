@@ -335,3 +335,11 @@ Planner上一版已消除102项跨矩阵错误并物化9个正文，但独立Cri
 08:17 UTC重试结果：原Training smoke 6 passed/9 deselected，回执`17df91f13d75b829d47205e0449d64affd115c4202d7b7828c196cd3475d0e96.json`；集成回执`17c097c649aec0ad72b0ba3e6ed94efab2163dc00e20100b58ef93f24ce8c6a0.json`、`task.done=evt-e323cb625282`。candidate实际推进至`784a5de95b125b3c296cc45db1e46e4df5da2832`，36done。下游P11A模型仓库/谱系/回滚自动派发`evt-e04306b6ef61`，attempt `ta-0b4d5296c84e541a74f4`，与Consumer并行；监工提前供给原锁哈希wheel及显式测试解释器配置，未修改任务合同或产品源码。
 
 新Planner提交`evt-ac37db233a5a`/准入`evt-5597aa6fcc3f`；冻结fanout 7742570b的独立差异核对306项无失败：Task记录、319AC/199命令、未变端口保持，历史选择器指向固定ref中真实存在的前身，当前D-REVIEW/集成契约及上游副本一致。此为差异复核而非重新完整产品验收；独立Critic `wop-prd-plan-synth-trig-evt-7742570b-c0c601218e0b`继续审查，尚未批准。已提供Training新done/P11A在途证据，审批必须保留冻结35done快照之后的正常进展。
+
+### 2026-11-08 08:38 UTC：Consumer交接与压缩前置误报
+
+Consumer在`9504a88`完成恢复读取，343个来源/856个共享正文核对；11条mandatory全部通过、full150/smoke6/旧失败重复74通过，146文件及历史归档成员哈希核验。实施结果`evt-9f6689001697`已准入，独立Verify操作`wop-verify-tp-P16B-CONSUMER-WAITS-R1-2a3175-339619ad819a`已派发，仍不能标任务done。额外Sources浏览器失败新归因：118次HTTP200查询持续推进，结束为RUNNING，注册73/发现201文件；没有当时PG阻塞采样，不足以证明死锁。失败trace/WebM不改判，证据副本`consumer-sources-progress-attribution.json`与SHA保存在产品diagnostics。
+
+P11A运行中出现`evt-bc9d45e07e18`：context ratio0.7215，Codex能力标记compact_requires_idle，尚未发送compact命令，代码却发出compact.failed，Supervisor据此产生repair_harness注意项。这是前置不满足被记成执行失败；任务仍运行。修复将idle-only能力检查前置于attempt消耗，继续现有warning/pending_recycle路径，不伪造failed/requested/compacted。真正transport拒绝、异常和恢复失败仍走原failed，硬上限与R6有界宽限保持。
+
+行为RED复现1 failed；修复后生命周期/阈值/硬上限/原生宽限/调用方及mock context-recycle E2E共81 passed，Supervisor注意项/事件合同27 passed，sentinel50 passed/1 skipped。未运行全pytest或真实provider能力测试；现场部署和后续观察仍单独记录。

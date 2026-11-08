@@ -1631,22 +1631,16 @@ class LifecycleManagerMixin(
         command = str(getattr(caps, "compact_command", "") or "").strip()
         if not getattr(caps, "native_compact", False) or not command:
             return False
+        if bool(getattr(caps, "compact_requires_idle", False)):
+            # This path owns an active task. Defer to the existing drain/recycle
+            # policy; an unsent command is neither an attempt nor a failure.
+            return False
         attempts.add(role.instance_id)
         payload = dict(warning_payload)
         payload.update({
             "compact_command": command,
             "strategy": "compact_first",
         })
-        if bool(getattr(caps, "compact_requires_idle", False)):
-            self._emit_compact_failed(
-                role,
-                active_task,
-                payload,
-                reason="backend compact requires idle session",
-                causation_id=None,
-                correlation_id=None,
-            )
-            return False
         requested = self.event_writer.append(ZfEvent(
             type="worker.context.compact.requested",
             actor=role.instance_id,
