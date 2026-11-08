@@ -9,12 +9,12 @@ from zf.runtime.worker_execution_envelope import build_worker_execution_envelope
 from tests.test_work_record import setup, publish
 
 
-def dispatch(log, record, *, fault=""):
+def dispatch(log, record, *, fault="", placement_epoch=1):
     payload = {
         "workflow_run_id": "r", "task_id": "T7", "operation_id": "op",
         "attempt_id": "a", "dispatch_id": "a", "lease_id": "operation-lease",
         "task_pipeline_stage": "impl", "task_map_generation": "map-g1",
-        "operation_generation": 1, "placement_epoch": 1,
+        "operation_generation": 1, "placement_epoch": placement_epoch,
         "workspace_generation": 1, "role_instance": "dev-1",
         "task_stage_session_binding": "binding",
         "workdir": str(record.parent), "source_branch": "task/T7",
@@ -78,3 +78,53 @@ def test_newer_conflicting_dispatch_cannot_resurrect_old_directory(tmp_path):
     dispatch(log, record, fault="directory")
     with pytest.raises(ValueError):
         publish(state, log, record, token)
+
+
+def place_current_operation(log, *, sent_fault=""):
+    identity = {"workflow_run_id": "r", "task_id": "T7", "operation_id": "op",
+                "attempt_id": "a", "dispatch_id": "a", "lease_id": "operation-lease"}
+    sent = {**identity, "placement_epoch": 7}
+    if sent_fault:
+        sent[sent_fault] = "foreign"
+    writer = EventWriter(log)
+    writer.append(ZfEvent(type="task.attempt.sent", task_id="T7", origin="kernel", payload=sent))
+    writer.append(ZfEvent(type="workflow.operation.started", task_id="T7", origin="kernel",
+        payload={**identity, "active_attempt_id": "a", "role_instance": "dev-1", "task_pipeline_stage": "impl"}))
+
+
+def test_relocated_operation_uses_current_placement_via_public_cli(tmp_path, monkeypatch, capsys):
+    from zf.cli.main import main
+    from zf.runtime.workflow_operation import load_workflow_operation
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    state = tmp_path / "state"
+    _, _, log, record, token = setup(state, canonical_request=True)
+    operation = load_workflow_operation(log, "op")
+    request = state / operation["request_ref"]["ref"]
+    before = request.read_bytes()
+    place_current_operation(log)
+    assert load_workflow_operation(log, "op")["placement_epoch"] == 7
+    dispatch(log, record, placement_epoch=7)
+    monkeypatch.setenv("ZF_ROLE_INSTANCE", "dev-1")
+    monkeypatch.setenv("ZF_RESULT_SUBMIT_TOKEN", token)
+    assert main(["artifact", "work-record", "publish", "--operation", "op", "--file", str(record),
+                 "--request-id", "one", "--state-dir", str(state)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert hydrate_sidecar_ref(state, result["work_record_ref"]).payload["authorizes_execution"] is False
+    assert publish(state, log, record, token)["replayed"]
+    assert main(["artifact", "work-record", "show", "--operation", "op", "--state-dir", str(state)]) == 0
+    assert json.loads(capsys.readouterr().out)["sha256"] == result["work_record_ref"]["sha256"]
+    assert request.read_bytes() == before
+
+
+@pytest.mark.parametrize("fault", ["old_dispatch", "workflow_run_id", "task_id", "dispatch_id", "lease_id"])
+def test_relocated_record_rejects_stale_or_unattested_placement(tmp_path, fault):
+    state = tmp_path / "state"
+    _, _, log, record, token = setup(state, canonical_request=True)
+    place_current_operation(log, sent_fault="" if fault == "old_dispatch" else fault)
+    # The stale request and stale dispatch agree: they must not override the
+    # current operation's epoch (7, or 0 when the sent witness is invalid).
+    dispatch(log, record, placement_epoch=1)
+    with pytest.raises(ValueError, match="placement|dispatch identity"):
+        publish(state, log, record, token)
+    assert not any(e.type == "worker.work_record.published" for e in log.read_all())
