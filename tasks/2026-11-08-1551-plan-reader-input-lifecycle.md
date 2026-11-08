@@ -1,6 +1,6 @@
 # Plan Reader 已准入历史基线的输入生命周期一致性
 
-> 状态: active
+> 状态: done — ad3a99db fix: preserve admitted plan reader input baselines
 
 用户授权持续监工修复。FMS03 OA return_to_plan 受控派发允许读取任务保留的历史已准入包，真实Planner却在artifact index/recover收到superseded、requires_rebind，abstained evt-3af8cfa13854/准入evt-578f938ea7f2。当前handoff预注册/结果准入与input_lifecycle判定不一致；不解除真正过期或未准入输入。
 
@@ -14,3 +14,7 @@
 回归先3失败12通过。真实155592条事件前缀只读回放证明运行期间新判断pinned，当前已settled的同一旧attempt仍superseded。自动恢复已经请求新Planner operation，部署后观察该正式后继，无须额外重复重派。
 
 验证：dev-verify run --base dev 选定16个影响测试文件195通过，sentinel53通过；另OA基线与199/replan checkpoint mock19通过。属于定向/影响闭包与mock验证，不是全套或真实provider E2E。
+
+交付：实现ad3a99db合并dev483e23e6，Watcher2688273/Web2688285加载该代码，9个在途operation身份及pane保持，Web健康/UI200。新Planner正式后继在自己凭据下重新执行index/recover，已实际得到pinned/current_plan_reader_baseline和bound；停止提交基于旧投影的失败，继续原修补。该现场证明不等同输入修补/产品任务已完成。记录见LS docs/records/2026-11-08-plan-reader-input-lifecycle/（包含provider实际输出）。
+
+审计主仓库8项既有候选均defer，保持具体触发条件；未push。
