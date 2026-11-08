@@ -8,4 +8,4 @@ LS-v1 监工发现：worker 使用引用 delimiter 的 heredoc 向分配工作�
 
 未引用 delimiter、命令替换、解释器、多个命令、提前结束及无法确定的形式继续走既有保守 shell 规则。该识别器不是通用 shell 解释器；原有复杂 shell 规则的完整性不由此保证。
 
-回归证据：`tests/test_hook_literal_handoff.py` 经 Codex/Claude 真实 hook 入口验证合法正文、越界目标及歧义命令；任务记录见 `tasks/2026-11-08-0913-literal-handoff-guard.md`（完成后归档至 `tasks/done/`）。
+回归证据：`tests/test_hook_literal_handoff.py` 经 Codex/Claude 真实 hook 入口验证合法正文、越界目标及歧义命令；任务记录见 `tasks/done/2026-11-08-0913-literal-handoff-guard.md`。
