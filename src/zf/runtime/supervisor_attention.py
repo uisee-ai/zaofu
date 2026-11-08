@@ -27,6 +27,7 @@ def build_attention_items(
     automation: dict[str, Any],
     failure_signals: list[Any],
     plan_integrity: dict[str, Any],
+    history_events: list[ZfEvent] | None = None,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for event in events:
@@ -51,6 +52,10 @@ def build_attention_items(
             item = _attention_from_replan_eval(event)
             if item:
                 items.append(item)
+    from zf.runtime.task_pipeline_dispatch_attention import dispatch_failure_attention_items
+    items.extend(dispatch_failure_attention_items(
+        history_events if history_events is not None else events, make_item=_attention_item,
+    ))
     items.extend(_attention_from_abnormal_event_registry(events))
     items.extend(_attention_from_missing_parity_scan_fanout(events))
     items.extend(_attention_from_repeated_runtime_failures(events))
@@ -248,6 +253,10 @@ def _attention_superseded_by_later_progress(
     item: dict[str, Any],
     events: list[ZfEvent],
 ) -> bool:
+    from zf.runtime.task_pipeline_dispatch_attention import dispatch_attention_current
+    dispatch_current = dispatch_attention_current(item, events)
+    if dispatch_current is not None:
+        return not dispatch_current
     source_ids = [
         str(value) for value in item.get("source_event_ids") or []
         if str(value).strip()
@@ -532,7 +541,10 @@ def _attention_from_repeated_runtime_failures(
 ) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, str], list[ZfEvent]] = {}
     for event in events:
-        if event.type not in EXPECTED_NEGATIVE_EVENT_TYPES:
+        if (event.type not in EXPECTED_NEGATIVE_EVENT_TYPES
+                or event.type == "task.pipeline.stage.dispatch_deferred"):
+            # This route needs causal cooldown + generation proof, not a
+            # task-name count that mixes stages, runs or obsolete generations.
             continue
         grouped.setdefault((event.type, _runtime_scope_key(event, prefer_task=True)), []).append(event)
 

@@ -1,0 +1,13 @@
+# Task Pipeline 重复派发异常的诊断入口
+
+监工LS-v1于2026-11-08发现：`task.pipeline.stage.dispatch_deferred`已经记录真实Git基线异常，Kernel三次失败后进入冷却，但Supervisor没有对应attention，RM没有绑定诊断输入。原有task_pipeline_predispatch_repair仅覆盖missing_flow_kind等特定机制，不能代替一般异常诊断。修复基线后业务恢复，历史事件保留。
+
+`event_problem_registry`将该事件列为expected_negative：单次拒绝可正确保护安全门禁；策略要求on_repeated诊断。`task_pipeline_dispatch_attention`只接受Kernel来源、正式generation准入绑定、当前Run/task/map/stage/operation代次以及明确causation指向该异常的Kernel cooldown。冷却已有计数证明重复，无新增总预算或重试上限。普通waiting、单次异常、不同任务或Run的冷却不触发。
+
+Supervisor调用该机械投影时提供完整事件历史，避免500条展示窗口吞掉未解决义务。attention包含原异常与冷却引用、完整作用域和既有diagnose-attention建议；RM原诊断路由负责后续判断，不在这里批准代码修复、改任务合同或绕过dispatch门禁。
+
+同scope后续实际stage.dispatched（有operation/attempt/dispatch绑定）、新代次准入或同任务已完成/被替代使旧异常退出待诊断。心跳、其他任务进度、其他Run/阶段的成功不能清除。RM读取迟到Supervisor快照时再次核验原事件是否仍待诊断；已启动的业务不会被旧快照重新诊断。
+
+测试`tests/test_task_pipeline_dispatch_attention.py`验证Supervisor真实snapshot入口跨500事件窗口、RM实际pending-action入口及正反例。修复前真实事件重放无attention；修复后阻塞时间切片产生一项diagnose-attention，而当前已派发的真实账本无待诊断。没有重新制造LS故障或宣称模型已自动修复；后续新异常自然触发仍需监工验证。
+
+任务记录：tasks/done/2026-11-08-1037-dispatch-deferred-diagnosis.md（实施期间位于tasks/active）。真实证据保存在LS-v1 docs/records/2026-11-08-dispatch-deferred-diagnosis/。对应设计199的队列/等待义务和有输入、有输出原则。

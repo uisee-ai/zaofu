@@ -151,6 +151,7 @@ def build_supervisor_snapshot(
         automation=automation,
         failure_signals=failure_signals,
         plan_integrity=plan_integrity,
+        history_events=all_events,
     )
     base_attention_items.extend(plan_insight_attention_items(plan_insights))
     base_attention_items.extend(pane_probe_attention_items(pane_probe))
