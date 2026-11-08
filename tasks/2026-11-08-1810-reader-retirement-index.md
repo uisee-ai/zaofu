@@ -1,6 +1,6 @@
 # Reader 恢复退休判定索引复用
 
-> 状态: active
+> 状态: done — `8b86756c` fix: reuse reader retirement proofs within recovery snapshots
 
 用户授权持续监工、修复阻塞并记录。LS-v1 当前约164564条事件，恢复checkpoint构建的只读cProfile为18.35秒，其中Reader替代证据7.64秒、活跃候选修复谱系3.92秒，反复构建相同事件索引。此耗时包含分析器开销，不等同单次实际Watcher周期。
 
@@ -13,4 +13,4 @@
 
 验证：6项新增回归（最初5项缺少索引参数失败，后增加启动歧义保护），既有跨Run/代次/准入边界带共享索引再跑。初轮定向65通过；最终253文件影响闭包3594通过7跳过（含199 mock），串行10，哨兵53。dev-verify因测试文件阈值建议全套，遵循仓库规则改为显式影响闭包；未执行全套pytest/真实Provider E2E。冻结164564事件与Task快照7条checkpoint完全一致，无分析器7.97→3.27秒。
 
-实现说明：[Reader恢复投影事件索引](../docs/impl/reader-replan-projection-index.md)。现场证据在LS-v1 docs/records/2026-11-08-resume-latency-analysis/。控制面部署尚待本提交合入后执行。
+实现说明：[Reader恢复投影事件索引](../docs/impl/reader-replan-projection-index.md)。现场证据在LS-v1 docs/records/2026-11-08-resume-latency-analysis/。实现合入dev `3ffbfdeb`；Watcher3093527/Web3094028加载该版本，5个在途operation/attempt/dispatch/pane完全保持，Web健康和UI200。合并后67项定向/199 mock通过，哨兵53通过。仅归档文档尚待本提交合入；未push。
