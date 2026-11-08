@@ -18,6 +18,7 @@ from zf.runtime.semantic_replan import (
 from zf.runtime.semantic_replan_redrive import cross_task_replan_cancellation
 from zf.runtime.execution_policy_routing import recorded_execution_route_action
 from zf.runtime.recovery_step import IDENTITY_FIELDS
+from zf.runtime.reader_failure_supersession import failure_has_admitted_replacement
 
 
 TRIAGE_REQUESTED = "orchestrator.rework.triage.requested"
@@ -158,6 +159,8 @@ def pending_immediate_replan_actions(
         ).strip().lower()
         failed_event_id = str(payload.get("failed_event_id") or "").strip()
         failed_event = events_by_id.get(failed_event_id)
+        if failure_has_admitted_replacement(events, failed_event, task_id):
+            continue
         is_manual_gate, manual_gate = pending_manual_evidence_gate_action(
             task_store, events, failed_event, triage
         )
@@ -321,6 +324,8 @@ def active_immediate_replan_task_ids(events: list[ZfEvent]) -> set[str]:
         failed_event = events_by_id.get(
             str(payload.get("failed_event_id") or "").strip()
         )
+        if failure_has_admitted_replacement(events, failed_event, task_id):
+            continue
         legacy_scope_blocker = (
             recommendation == "request_evidence_reissue"
             and failed_event is not None
