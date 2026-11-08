@@ -335,10 +335,11 @@ def test_plan_candidate_preflight_accepts_closed_plan_handoff(tmp_path) -> None:
 
 
 def test_missing_task_partition_is_rejected_before_critic(tmp_path):
+    task_map = {**_task_map(), "required_plan_ports": ["execution_spec"]}
     result = evaluate_plan_candidate_preflight(
         state_dir=tmp_path / "state", project_root=tmp_path,
         reports=[{"report": {
-            "task_map": _task_map(), "source_index": _source_index(),
+            "task_map": task_map, "source_index": _source_index(),
             "source_index_ref": "inline:source-index", "plan_md": "# Plan",
             "plan_ports": [{"logical_name": "execution_spec", "body": {
                 "schema_version": "task-scoped-plan-input.v1", "shared": {}, "tasks": [],
