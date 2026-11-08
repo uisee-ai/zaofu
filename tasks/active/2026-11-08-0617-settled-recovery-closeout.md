@@ -25,3 +25,5 @@
 R1补充：新计划已接管但尚无新operation时，旧Verify恢复必须拒绝；增加当前run/map/package绑定检查。旧实现两个场景RED，修复后84 passed，50 sentinel/1 skipped，3 mock E2E。
 
 R3现场补充：Planner大端口交付必须用ref+sha256，不能用artifact_ref或将全部正文内联。既有运行时可用，已修正briefing遗漏并直接指导当前worker；42项调用方/预检/交接测试通过。R5仍在运行，不能标done。
+
+R3共用提示补充：Critic现场再次选错缓存目录，已在Controlled Artifact Inputs生成入口提供完整output-file用法，覆盖全部角色；具体模型仍须完整消费缓存，禁止凭回执自证已读。

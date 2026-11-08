@@ -616,6 +616,13 @@ def render_attempt_source_briefing(
             "  A content_ref reuses the earlier content_id body in this same output; "
             "each source retains its own read receipt. If that body was truncated or absent, "
             "use the exact individual read below. A fresh session must read the inputs again.",
+            f"- For large inputs: `{cli_command} artifact read --attempt {attempt_id} "
+            "--required --shared-bodies --output-file <local-cache-file>`. "
+            "Choose a new, gitignored path containing `.cache` or `__pycache__` "
+            "inside the assigned workdir and permitted write scope; no symlinks "
+            "or runtime state paths. The CLI saves the full output atomically "
+            "and prints only its receipt. Read the saved bodies and source mappings "
+            "in bounded pages; a cache receipt does not prove model consumption.",
         ])
         lines.extend(["- Required reads for this attempt:"])
         for item in required:

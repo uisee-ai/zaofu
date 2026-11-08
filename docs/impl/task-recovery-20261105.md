@@ -311,3 +311,5 @@ Consumer已消费必读进入基线，但av16.0.1/Pillow12.0.0的PyPI下载再�
 现场复现：briefing只展示内联body，Planner先用artifact_ref提交PAS/execution_spec未被识别，再内联完整正文触发1MiB结果限制。现有运行时已支持工作目录相对ref+原文件sha256，问题是指导遗漏而非限制不足。已发送精确协议指导，Planner保留完整正文，将9端口描述符结果降至6945字节；继续等待正式校验与独立Critic，不宣称计划批准。将同一说明补入生成briefing的plan_port_briefing.py；直接调用方及预检/交接42项测试通过，不改变schema、读域或大小限制。
 
 控制面07:29重载后，watcher epoch为7391c91e29c24a4aa44eac0c2916a118；Training Verify、Consumer Impl、Planner三operation及attempt未变，quiescent=false。Consumer当前提交9504a88，同HEAD全量复验仍在执行；完成数仍35。
+
+07:42 UTC：独立Critic已派发。其仍受共用briefing的stdout首读建议影响，选用了非安全缓存目录而被CLI正确拒绝；已指导使用工作区内artifacts/plan/__pycache__。将完整缓存命令及路径约束补入所有角色共用Controlled Artifact Inputs提示，避免只更新三个角色技能而漏掉Critic。只修改提示，不改ledger/鉴权/读取语义；相关ledger、batch CLI、原子文件输出及fanout调用方测试41 passed。
