@@ -97,6 +97,13 @@ amendment are separate role capabilities supplied by the workflow profile.
    `not_applicable` 只表示当前阶段不签收该行，不改变 canonical mandatory 属性，
    不可计入候选/产品通过。核对 `tdd-evidence` 中条款、测试、实现前失败及实现后通过
    的绑定；环境失败不能证明功能 RED，缺证据时明确标记未认证 TDD。
+   对后续阶段验收命令，另查其程序生产者：若冻结合同把程序交付分给当前 Task，
+   独立审阅实现、真实调用/断言路径、前置输入及失败传播，用允许的预检/自测核验
+   程序已经可消费。固定退出的占位实现不因该命令属于 candidate_verify 就免责；
+   将发现绑定本任务的交付条款，保留后续 E2E 行的 not_applicable。不能以缺少最终
+   环境为由要求当前 Task 提前跑完 E2E，也不能只凭文件存在、脚本关键字或自测通过
+   断言真实验收成功。生产者属于后续任务或责任未明确时，记录 owner/合同缺口交 OA，
+   不扩大当前写域或凭推断新增拒绝条件。
 6. Separate verifier/environment execution failure from a product rejection.
    Only a successfully executed, evidence-backed rejection enters semantic
    rework.
