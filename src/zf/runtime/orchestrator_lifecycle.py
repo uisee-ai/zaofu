@@ -1496,6 +1496,15 @@ class LifecycleManagerMixin(
                 and (self._now() - over_hard_cap) >= role.drain_hold_seconds
             )
             if force_recycle and current != "recycling":
+                from zf.runtime.native_compaction_recycle import defer_native_compaction_recycle
+
+                if defer_native_compaction_recycle(
+                    self,
+                    role,
+                    session_id=session_id_str,
+                    hard_cap_since=over_hard_cap,
+                ):
+                    continue
                 self._instance_state[role.instance_id] = "recycling"
                 self._set_worker_state(
                     role.instance_id, "recycling",

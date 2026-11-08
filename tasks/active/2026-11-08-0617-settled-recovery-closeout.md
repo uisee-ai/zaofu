@@ -27,3 +27,5 @@ R1补充：新计划已接管但尚无新operation时，旧Verify恢复必须拒
 R3现场补充：Planner大端口交付必须用ref+sha256，不能用artifact_ref或将全部正文内联。既有运行时可用，已修正briefing遗漏并直接指导当前worker；42项调用方/预检/交接测试通过。R5仍在运行，不能标done。
 
 R3共用提示补充：Critic现场再次选错缓存目录，已在Controlled Artifact Inputs生成入口提供完整output-file用法，覆盖全部角色；具体模型仍须完整消费缓存，禁止凭回执自证已读。
+
+- R6 原生压缩与强制回收竞态：只为当前Codex session+高水位周期提供一次有界宽限 -> verify: 当前压缩不会被立即强杀；旧状态/普通活动不豁免，超期仍回收，新session不继承宽限。旧代码2个RED；生命周期91 passed，身份补充8 passed，sentinel50 passed/1 skipped，mock E2E3 passed。源码/断点保留，部署后继续观察；不替代R5产品验收。

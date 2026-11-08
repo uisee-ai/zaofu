@@ -313,3 +313,11 @@ Consumer已消费必读进入基线，但av16.0.1/Pillow12.0.0的PyPI下载再�
 控制面07:29重载后，watcher epoch为7391c91e29c24a4aa44eac0c2916a118；Training Verify、Consumer Impl、Planner三operation及attempt未变，quiescent=false。Consumer当前提交9504a88，同HEAD全量复验仍在执行；完成数仍35。
 
 07:42 UTC：独立Critic已派发。其仍受共用briefing的stdout首读建议影响，选用了非安全缓存目录而被CLI正确拒绝；已指导使用工作区内artifacts/plan/__pycache__。将完整缓存命令及路径约束补入所有角色共用Controlled Artifact Inputs提示，避免只更新三个角色技能而漏掉Critic。只修改提示，不改ledger/鉴权/读取语义；相关ledger、batch CLI、原子文件输出及fanout调用方测试41 passed。
+
+### 2026-11-08 07:44 UTC：原生压缩与强制回收竞态
+
+事件evt-863884b80408/evt-5bc8f7c75dff显示Consumer在context ratio 0.94超过600秒后被强制回收；监工此前连续观察到Compacting context，原生压缩尚未完成。采样确实越过阈值，不能把它误称纯陈旧采样。代码缺少在回收边界给已启动原生压缩有界完成机会。工作区/9504a88及所有验证证据保留，原operation/attempt不变，新pane %781已收到recovery briefing和精确断点补充。
+
+新增native_compaction_recycle.py并接入_check_context_thresholds实际force分支：只对可识别Codex当前状态行，按session+高水位周期给一次drain_hold_seconds宽限；不因重复观察续期。压缩状态消失后暂保留该界限等待新usage；低水位沿既有规则解除hard-cap标记。历史状态/普通Working/不可读pane不延后，过期仍回收；不发送虚假compacted事件。复现旧实现2 failed/5 passed；修复生命周期闭包91 passed，追加provider身份隔离8 passed；sentinel50 passed/1 skipped、相关mock E2E3 passed。未跑全pytest或真实provider能力测试。
+
+Sources额外浏览器失败已持久记录consumer-extra-browser-failure.json：固定9504a88，120秒导入RUNNING超时，2pass/1fail；保留trace/WebM及非零收据，尚无足够证据归因与Ingest死锁相同。五域mandatory smoke/runtime及delta、自有74个旧失败用例复验通过，并非全产品浏览器通过。独立Verify与计划Critic仍待完成。
