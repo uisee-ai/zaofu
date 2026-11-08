@@ -152,8 +152,27 @@ def converge_stage_replan_cap(
     writer: EventWriter,
     task_store: TaskStore,
 ) -> bool:
-    """Publish a stage-cap escalation and immediately converge its run."""
+    """Escalate the exhausted chain; only global plan caps converge the Run."""
 
+    from zf.runtime.reader_task_recovery_scope import ReaderTaskRecoveryScopes
+
+    scope = ReaderTaskRecoveryScopes(writer.event_log.read_all()).get(event)
+    if scope:
+        # Exhaust this recovery chain without terminalizing unrelated Run work.
+        escalation.escalate(
+            f"{event.type}: task recovery reader retry cap exhausted; operator review required",
+            task_id=scope[1], correlation_id=scope[0],
+            metadata={
+                "source_event_id": event.id, "workflow_run_id": scope[0],
+                "failure_class": "stage_replan_cap_exhausted", "failure_scope": "task",
+                "blocking_scope": "side",
+                "failed_operation_id": scope[2], "recovery_owner": "operator",
+                "allowed_actions": ["operator_review", "start_new_generation"],
+                "operator_required": True, "recoverable": True,
+                "max_auto_attempts": 0, "max_rescans": 0,
+            },
+        )
+        return True
     try:
         escalation.escalate(
             f"{event.type}: stage replan cap exhausted; "
