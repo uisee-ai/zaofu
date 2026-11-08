@@ -467,7 +467,9 @@ class LifecycleEvidenceQueriesMixin:
 
     def _latest_dispatch_event_for_task(self, task_id: str) -> ZfEvent | None:
         try:
-            events = self.event_log.read_days(1)
+            events = self.event_log.read_days(
+                1, event_types={"task.dispatched", "fanout.child.dispatched"},
+            )
         except Exception:
             return None
         for event in reversed(events):

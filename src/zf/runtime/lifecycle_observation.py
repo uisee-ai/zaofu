@@ -504,10 +504,7 @@ class LifecycleObservationMixin:
                 active_task = None
             if active_task is not None:
                 return str(getattr(active_task, "id", "") or "")
-        try:
-            fanout_events = self.event_log.read_days(1)
-        except Exception:
-            fanout_events = []
+        fanout_events = None
         for task in tasks:
             if str(getattr(task, "status", "") or "") not in {
                 "in_progress",
@@ -515,6 +512,14 @@ class LifecycleObservationMixin:
                 "testing",
             }:
                 continue
+            assignee = str(getattr(task, "assigned_to", "") or "")
+            if not assignee or assignee not in {instance_id, role_name}:
+                continue
+            if fanout_events is None:
+                try:
+                    fanout_events = self.event_log.read_days(1)
+                except Exception:
+                    fanout_events = []
             task_id = str(getattr(task, "id", "") or "")
             try:
                 if (
@@ -529,9 +534,7 @@ class LifecycleObservationMixin:
                     continue
             except Exception:
                 pass
-            assignee = str(getattr(task, "assigned_to", "") or "")
-            if assignee and assignee in {instance_id, role_name}:
-                return task_id
+            return task_id
         return ""
 
     def _context_threshold_payload(
