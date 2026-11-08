@@ -301,3 +301,7 @@ Discovery完成，不是task.done。Discovery发现产品缺口且有gap时等�
 Consumer已消费必读进入基线，但av16.0.1/Pillow12.0.0的PyPI下载再次超过bootstrap 300秒；这与此前媒体/Privacy/Dataset环境问题同源，不能记作产品RED。原锁哈希逐项匹配产品持久wheelhouse `diagnostics/media-codec-wheelhouse-20261107/`，监工在独立临时Python3.11环境验证原锁+`--require-hashes`+本地file URI约束，29包offline安装成功。临时环境已清理，worker venv未由监工并发修改，已指导worker释放自身旧bootstrap锁后按原验证命令重跑。约束及完整日志保存于`diagnostics/settled-recovery-20261108/{locked-local-media.txt,consumer-dependency-recovery.json,consumer-offline-environment-proof.log,consumer-bootstrap-guidance.json}`。现有依赖补给方式未自动传播至新worker，后续启动前应核对并复用已验证环境事实；本次不硬编码主机路径为产品默认值。
 
 本批验证日志/选取器规划/RED证据已从临时目录复制至产品持久目录`diagnostics/settled-recovery-20261108/verification/`并记录SHA256索引；当前恢复和计划修订尚在运行，未追加产品done。
+
+### Verify恢复的当前代次围栏补充
+
+复核R1发现：只拒绝更高operation_generation不足以覆盖“新Plan已接管但新operation尚未创建”的窗口。旧代码在task_map_generation变化及package digest变化两个回归场景均仍列出旧Verify恢复点（2项RED）；现要求存在本任务当前generation准入，run/map generation/package digest与旧操作全部一致才允许续验。相关模块/恢复入口/Task Pipeline调用方84 passed，sentinel 50 passed/1 skipped，runtime-noise mock E2E 3 passed。不修改当前在途Training/Consumer/Planner的合同、attempt或读取规则。

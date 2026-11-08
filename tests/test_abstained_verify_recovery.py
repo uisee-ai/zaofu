@@ -22,6 +22,17 @@ def seed(root, verdict="abstained"):
     log = EventLog(root / "events.jsonl")
     writer = EventWriter(log)
     svc = WorkflowOperationService(state_dir=root, event_log=log, event_writer=writer)
+    writer.append(
+        ZfEvent(
+            type="task.pipeline.generation.admitted",
+            payload={
+                "schema_version": "task-pipeline-generation.v1",
+                "workflow_run_id": "run-1",
+                "task_map_generation": "map-1",
+                "task_ids": ["T1"],
+            },
+        )
+    )
     identities = {}
     for stage in ["impl", "verify"]:
         op = "op-" + stage
@@ -95,6 +106,15 @@ def seed(root, verdict="abstained"):
             admitted_call_result_ref=ref,
         )
     return log, writer, svc, store, identities
+
+
+@pytest.mark.parametrize("field", ["task_map_generation", "plan_artifact_package_digest"])
+def test_new_plan_without_new_operation_invalidates_old_verifier_retry(tmp_path, field):
+    log, writer, _, _, _ = seed(tmp_path)
+    context = dict(log.read_all()[0].payload)
+    context[field] = "new-plan"
+    writer.append(ZfEvent(type="task.pipeline.generation.admitted", payload=context))
+    assert not build_workflow_operation_resume_checkpoints(tmp_path)
 
 
 def test_same_target_recovery_and_second_settlement(tmp_path):

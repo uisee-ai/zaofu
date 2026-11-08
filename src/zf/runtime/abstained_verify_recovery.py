@@ -52,6 +52,18 @@ def recoverable_abstention(
     task = TaskStore(state_dir / "kanban.json").get(str(operation.get("task_id") or ""))
     if task is None or task.status not in {"backlog", "in_progress"}:
         return False
+    from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+
+    context = task_pipeline_generation_contexts(events).get(task.id)
+    if not context or any(
+        context.get(key) != operation.get(key)
+        for key in (
+            "workflow_run_id",
+            "task_map_generation",
+            "plan_artifact_package_digest",
+        )
+    ):
+        return False
     if any(
         row.get("task_id") == task.id
         and row.get("status") in {"prepared", "delivering", "sent"}

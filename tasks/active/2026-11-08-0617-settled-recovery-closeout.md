@@ -21,3 +21,5 @@
 06:55 UTC现场路径修复：Planner派生JSON写到app/evidence缓存被scope hook正确拒绝，已为既有artifacts/plan/**允许域配置本地忽略缓存并发送纠正指令；技能补充缓存/派生正文同时满足工作区、允许写域、git忽略三条件。未放宽scope hook。
 
 持续监工追加：Consumer baseline遭遇av/Pillow下载300秒超时，已验证持久wheelhouse原锁哈希及29包离线安装并交付worker按原流程恢复；不能计为产品RED。验证日志已持久化，产品任务继续运行。
+
+R1补充：新计划已接管但尚无新operation时，旧Verify恢复必须拒绝；增加当前run/map/package绑定检查。旧实现两个场景RED，修复后84 passed，50 sentinel/1 skipped，3 mock E2E。
