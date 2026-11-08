@@ -332,6 +332,13 @@ def dispatch_task_pipeline_stage(
             if isinstance(assignment.get("impl_rework_request"), Mapping)
             else None
         ))
+        from zf.runtime.task_pipeline_integration_rework import integration_rework_feedback
+
+        rework_feedback.extend(integration_rework_feedback(
+            operation_rows, task_id=task_id, workflow_run_id=workflow_run_id,
+            task_map_generation=task_map_generation,
+            operation_generation=operation_generation - 1,
+        ))
         operation_payload["rework_feedback"] = rework_feedback
 
     from zf.runtime.worker_execution_envelope import (

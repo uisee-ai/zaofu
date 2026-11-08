@@ -1030,6 +1030,12 @@ def _derive_post_verification_stage(
                     max(0, verify_generation - 1),
                 )
             if status == "superseded":
+                from zf.runtime.task_pipeline_integration_retry import IMPL_REWORK_REASON_PREFIX
+
+                if str(integration.get("reason") or "").startswith(IMPL_REWORK_REASON_PREFIX):
+                    if allow_impl_rework:
+                        return "impl_rework_ready", integration_generation + 1, 0
+                    return "blocked", integration_generation, 0
                 return (
                     "integration_ready",
                     max(verify_generation, integration_generation + 1),

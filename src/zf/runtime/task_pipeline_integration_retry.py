@@ -1,6 +1,7 @@
 """Operator-authorized retry of a reviewed, failed Candidate integration."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from zf.core.events.log import EventLog
@@ -8,7 +9,8 @@ from zf.core.events.writer import EventWriter
 from zf.core.state.locks import locked_path
 from zf.core.state.task_attempts import TaskAttemptStore
 from zf.core.task.store import TaskStore
-from zf.runtime.run_admission import fold_terminal_run_scope
+from zf.runtime.pause_lifecycle import is_dispatch_paused
+from zf.runtime.run_admission import run_dispatch_block_reason
 from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
 from zf.runtime.workflow_operation import (
     TERMINAL_OPERATION_STATUSES,
@@ -17,14 +19,17 @@ from zf.runtime.workflow_operation import (
 )
 
 REASON_PREFIX = "operator_integration_retry: "
+IMPL_REWORK_REASON_PREFIX = "operator_integration_impl_rework: "
 
 
 def request_integration_retry(
     *, state_dir: Path, event_log: EventLog, event_writer: EventWriter,
     operation_id: str, reason: str, apply: bool = False,
+    restart_from_impl: bool = False,
 ) -> dict[str, Any]:
     if not reason.strip():
         raise ValueError("operator repair reason is required")
+    prefix = IMPL_REWORK_REASON_PREFIX if restart_from_impl else REASON_PREFIX
     with locked_path(state_dir / "locks" / "task-pipeline-integration-retry.lock"):
         events = event_log.read_all()
         operations = reduce_workflow_operations(events)
@@ -41,7 +46,11 @@ def request_integration_retry(
             if (event.type == "workflow.operation.superseded"
                 and event.origin == "kernel"
                 and event.payload.get("operation_id") == operation_id
-                and str(event.payload.get("reason") or "").startswith(REASON_PREFIX)):
+                and str(event.payload.get("reason") or "").startswith(
+                    (REASON_PREFIX, IMPL_REWORK_REASON_PREFIX)
+                )):
+                if not str(event.payload.get("reason") or "").startswith(prefix):
+                    raise ValueError("a different recovery mode was already requested")
                 return {"status": "already_requested", "operation_id": operation_id,
                         "event_id": event.id}
         if operation.get("status") != "blocked":
@@ -54,10 +63,12 @@ def request_integration_retry(
         )), None)
         if source is None:
             raise ValueError("blocked integration lacks a canonical needs_review event")
-        aliases, terminal_runs = fold_terminal_run_scope(events)
         run_id = str(operation.get("workflow_run_id") or "")
-        if aliases.get(run_id, run_id) in terminal_runs:
-            raise ValueError("terminal run cannot be retried")
+        if is_dispatch_paused(state_dir, events=events):
+            raise ValueError("dispatch is paused")
+        blocked = run_dispatch_block_reason(SimpleNamespace(event_log=event_log), run_id=run_id)
+        if blocked:
+            raise ValueError(blocked)
         task = TaskStore(state_dir / "kanban.json").get(task_id)
         if task is None or task.status not in {"backlog", "in_progress"}:
             raise ValueError("task is not eligible for integration retry")
@@ -92,14 +103,22 @@ def request_integration_retry(
             raise ValueError("TaskAttempt must settle before integration retry")
         result = {"status": "preview", "operation_id": operation_id, "task_id": task_id,
                   "next_operation_generation": generation + 1,
+                  "next_stage": "impl" if restart_from_impl else "integration",
                   "source_event_id": source.id, "reason": reason.strip()}
+        if restart_from_impl:
+            from zf.runtime.task_pipeline_integration_rework import validate_impl_rework
+
+            result["target_commit"] = validate_impl_rework(
+                state_dir, task=task, operation=operation, verify=verify, operations=current,
+                events=events,
+            )
         if apply:
             event = WorkflowOperationService(
                 state_dir=state_dir, event_log=event_log, event_writer=event_writer,
             ).supersede(
                 operation_id=operation_id, request_hash=str(operation.get("request_hash") or ""),
                 workflow_run_id=run_id, task_id=task_id,
-                reason=REASON_PREFIX + reason.strip(), causation_id=source.id,
+                reason=prefix + reason.strip(), causation_id=source.id,
                 correlation_id=run_id,
             )
             result.update(status="requested", event_id=event.id if event else "")

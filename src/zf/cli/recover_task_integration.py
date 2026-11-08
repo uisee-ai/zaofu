@@ -16,6 +16,8 @@ def register_recover_task_integration(subparsers: argparse._SubParsersAction) ->
     parser.add_argument("--operation", required=True)
     parser.add_argument("--reason", required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--restart-from-impl", action="store_true",
+                        help="Repair the same writer task before a fresh Verify and integration")
     parser.set_defaults(func=run)
 
 
@@ -34,6 +36,7 @@ def run(args: argparse.Namespace) -> int:
         result = request_integration_retry(
             state_dir=context.state_dir, event_log=log, event_writer=EventWriter(log),
             operation_id=args.operation, reason=args.reason, apply=args.apply,
+            restart_from_impl=args.restart_from_impl,
         )
     except (ConfigError, ValueError, OSError) as exc:
         print(json.dumps({"status": "rejected", "reason": str(exc)}))

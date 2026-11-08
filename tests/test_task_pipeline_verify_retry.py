@@ -77,10 +77,10 @@ def seed(
         )
         source = writer.append(
             ZfEvent(
-                type="task.pipeline.verify.failed"
+                type=("task.pipeline.verify.completed" if verdict == "passed" else "task.pipeline.verify.failed")
                 if stage == "verify"
                 else "dev.build.done",
-                origin="kernel",
+                origin="" if stage == "verify" and verdict == "passed" else "kernel",
                 task_id="T1",
                 payload=p,
             )
