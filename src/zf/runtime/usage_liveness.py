@@ -41,13 +41,12 @@ def apply_agent_usage_liveness(
     previous_task_id = ""
     previous_source = ""
     kernel_ts, previous = registry.get_last_heartbeat(instance_id)
-    if not explicit_task_id:
-        if isinstance(previous, dict):
-            previous_state = str(previous.get("state") or "").strip().lower()
-            previous_task_id = str(
-                previous.get("current_task_id") or previous.get("task_id") or ""
-            ).strip()
-            previous_source = str(previous.get("source") or "").strip()
+    if isinstance(previous, dict):
+        previous_state = str(previous.get("state") or "").strip().lower()
+        previous_task_id = str(
+            previous.get("current_task_id") or previous.get("task_id") or ""
+        ).strip()
+        previous_source = str(previous.get("source") or "").strip()
     if not task_id:
         task_id = _active_task_for_instance(
             instance_id,
@@ -55,13 +54,15 @@ def apply_agent_usage_liveness(
             events=fanout_events,
         )
     state = "busy" if task_id else "active"
-    if not explicit_task_id:
-        if previous_state in {"idle", "awaiting_review"} and (
-            not task_id or not previous_task_id or task_id == previous_task_id
-        ):
-            state = previous_state
-            task_id = previous_task_id or task_id
-        elif (
+    # A final provider accounting sample can still name the released task.
+    # Only a new dispatch/state transition may reactivate that role.
+    if previous_state in {"idle", "awaiting_review"} and (
+        not task_id or not previous_task_id or task_id == previous_task_id
+    ):
+        state = previous_state
+        task_id = previous_task_id or task_id
+    elif not explicit_task_id:
+        if (
             previous_task_id
             and previous_source in {
                 "task.dispatched",
