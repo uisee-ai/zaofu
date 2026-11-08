@@ -694,7 +694,11 @@ def _enriched_gap_tasks(payload: dict[str, Any]) -> list[dict[str, Any]]:
         for key in ("affected_tasks", "gate_changes")
         if _string_list(payload.get(key))
     }
-    aggregate_supersedes = _string_list(payload.get("supersedes_task_ids"))
+    declared_supersedes = set(_superseded_task_ids(tasks))
+    aggregate_supersedes = [
+        task_id for task_id in _string_list(payload.get("supersedes_task_ids"))
+        if task_id not in declared_supersedes
+    ]
     if not inherited and not inherited_lists and not aggregate_supersedes:
         return tasks
     enriched: list[dict[str, Any]] = []
@@ -707,9 +711,8 @@ def _enriched_gap_tasks(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 item.setdefault(key, value)
         for key, value in inherited_lists.items():
             item.setdefault(key, value)
-        if aggregate_supersedes and not _string_list(
-            item.get("supersedes_task_ids")
-        ):
+        # An explicit empty list marks a supporting task, not a replacement.
+        if aggregate_supersedes and "supersedes_task_ids" not in item:
             parent_task_id = str(item.get("parent_task_id") or "").strip()
             matched = [
                 task_id

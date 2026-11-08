@@ -420,3 +420,9 @@ LS-v1 的回放表明旧逻辑已有 needs_diagnosis 待办，但 route 为空�
 Autoresearch 又有其他未闭合请求，造成静默等待；R60 手动恢复后旧故障仍在队列。
 R61 修正路由与操作级当前性。真实失败发生前的回放与恢复后的回放分别验证“可交付
 一个诊断”和“旧故障不重派”；无人值守产品修复仍需真实新故障的完整后继证据。
+
+## 2026-11-08 恢复前置任务的显式非替代身份
+
+同一个失败任务可以拆成前置修复及终端后继。已经由某个 gap task 显式承接的旧 ID，不再由 envelope 自动分配给同 parent 的其他任务；未分配的 ID 才沿用旧回退。gap task 显式声明 `supersedes_task_ids: []` 时，enrichment 必须保留该声明，不能因 `parent_task_id` 与 envelope 替代集合相同便补入替代身份；否则会改写下游依赖，并令实际 Task Map 与审核稿/输入合同不一致。缺省字段仍兼容旧 parent 匹配和单任务 envelope 格式，终端后继明确声明替代关系。
+
+`candidate-rework-apply` 共用此转换。`tests/test_gap_explicit_replacement.py` 覆盖真实 ControlledActionService → gap artifact → task_map.ready，验证只有终端承接原节点及下游依赖，前置任务保持独立身份、输入对象不被修改。真实项目准入结果必须再次与审核稿对账；已生成但未批准的错误候选保留为历史证据，不原地修改。
