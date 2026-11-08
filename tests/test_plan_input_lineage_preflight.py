@@ -24,6 +24,7 @@ def _candidate(case, *, retained=False, fault=""):
     else:
         # A later, unrelated amendment retains this exact existing task.
         task_map['amend'] = {'kind': 'goal_gap', 'gap_task_ids': ['OTHER'], 'superseded_task_ids': ['OLD-OTHER']}
+    task_map['required_plan_ports'] = ['task_execution_input']
     body = deepcopy(hydrate_sidecar_ref(state, ports['task_execution_input']).payload)
     trigger = {**identity, 'workflow_run_id': 'run', 'flow_kind': 'prd', 'prd_ref': 'requirements.md'}
     if fault == 'run': trigger['workflow_run_id'] = 'other'

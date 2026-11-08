@@ -114,45 +114,27 @@ def evaluate_plan_candidate_preflight(
             )
 
     if task_map:
-        from zf.runtime.task_scoped_plan_inputs import MissingTaskPartitionError, task_input_paths
+        from zf.runtime.plan_candidate_input_lineage import validate_input_body_partitions
 
         raw_tasks = task_map.get("tasks")
         tasks = [task for task in raw_tasks if isinstance(task, Mapping)] if isinstance(raw_tasks, list) else []
-        local_ports_by_task = {}
-        for index, task in enumerate(tasks):
-            evidence = task.get("evidence_contract")
-            local = evidence.get("required_plan_ports") if isinstance(evidence, Mapping) else []
-            local_ports_by_task[index] = {
-                canonical_plan_port_name(item) for item in (local if isinstance(local, list) else [])
-                if isinstance(item, str)
-            }
-        local_ports = set().union(*local_ports_by_task.values())
+        try:
+            selected, _, _, _ = select_writer_task_items(
+                dict(task_map), writer_task_items(dict(task_map)), trigger,
+            )
+            selected_ids = {item["task_id"] for item in selected}
+            tasks = [task for task in tasks
+                     if str(task.get("task_id") or task.get("id") or "") in selected_ids]
+        except (RuntimeError, ValueError) as exc:
+            _error(errors, "writer_fanout_task_selection_invalid", "task_map.tasks", str(exc))
         for name, body in port_bodies.items():
             try:
-                task_input_paths(body, task_id="", candidate=True)
+                validate_input_body_partitions(
+                    state_dir=state_dir, task_map=task_map, tasks=tasks,
+                    name=name, body=body, required_ports=required_with_source, trigger=trigger,
+                )
             except ValueError as exc:
                 _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}", str(exc))
-                continue
-            for index, task in enumerate(tasks):
-                if (name in local_ports and name not in required_with_source
-                        and name not in local_ports_by_task[index]):
-                    continue
-                try:
-                    task_input_paths(body, task_id=str(task.get("task_id") or task.get("id") or ""))
-                except MissingTaskPartitionError as exc:
-                    from zf.runtime.plan_candidate_input_lineage import inherited_candidate_input_paths
-
-                    try:
-                        inherited_candidate_input_paths(state_dir=state_dir, trigger=trigger,
-                            task_map=task_map, task_id=str(task.get("task_id") or task.get("id") or ""),
-                            name=name, body=body)
-                    except ValueError as lineage_error:
-                        _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}",
-                               f"{exc}; {lineage_error}")
-                        break
-                except ValueError as exc:
-                    _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}", str(exc))
-                    break
         prior_task_map = _canonical_prior_task_map(
             trigger=trigger,
             state_dir=state_dir,
