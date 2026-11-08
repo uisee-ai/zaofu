@@ -19,6 +19,7 @@ from zf.runtime.semantic_replan_redrive import cross_task_replan_cancellation
 from zf.runtime.execution_policy_routing import recorded_execution_route_action
 from zf.runtime.recovery_step import IDENTITY_FIELDS
 from zf.runtime.reader_failure_supersession import failure_has_admitted_replacement
+from zf.runtime.reader_replan_index import ReaderReplanIndex
 
 
 TRIAGE_REQUESTED = "orchestrator.rework.triage.requested"
@@ -141,11 +142,10 @@ def pending_immediate_replan_actions(
     same contract.
     """
 
-    events_by_id = {event.id: event for event in events if event.id}
+    event_index = ReaderReplanIndex(events)
+    events_by_id = event_index.by_id
     latest_by_task: dict[str, tuple[int, ZfEvent]] = {}
-    for index, event in enumerate(events):
-        if event.type != "task.rework.triage.completed":
-            continue
+    for index, event in event_index.rows("task.rework.triage.completed"):
         payload = _payload(event)
         task_id = str(event.task_id or payload.get("task_id") or "").strip()
         if task_id:
@@ -158,8 +158,10 @@ def pending_immediate_replan_actions(
             payload.get("recommended_action") or ""
         ).strip().lower()
         failed_event_id = str(payload.get("failed_event_id") or "").strip()
-        failed_event = events_by_id.get(failed_event_id)
-        if failure_has_admitted_replacement(events, failed_event, task_id):
+        failed_event = events_by_id.get(failed_event_id) if failed_event_id else None
+        if failure_has_admitted_replacement(
+            events, failed_event, task_id, event_index=event_index,
+        ):
             continue
         is_manual_gate, manual_gate = pending_manual_evidence_gate_action(
             task_store, events, failed_event, triage
@@ -306,11 +308,10 @@ def active_immediate_replan_task_ids(events: list[ZfEvent]) -> set[str]:
     """Keep old-contract recovery suppressed until a replacement is admitted."""
 
     active: set[str] = set()
-    events_by_id = {event.id: event for event in events if event.id}
+    event_index = ReaderReplanIndex(events)
+    events_by_id = event_index.by_id
     latest_by_task: dict[str, tuple[int, ZfEvent]] = {}
-    for index, event in enumerate(events):
-        if event.type != "task.rework.triage.completed":
-            continue
+    for index, event in event_index.rows("task.rework.triage.completed"):
         payload = _payload(event)
         task_id = str(event.task_id or payload.get("task_id") or "").strip()
         if task_id:
@@ -321,10 +322,11 @@ def active_immediate_replan_task_ids(events: list[ZfEvent]) -> set[str]:
         recommendation = str(
             payload.get("recommended_action") or ""
         ).strip().lower()
-        failed_event = events_by_id.get(
-            str(payload.get("failed_event_id") or "").strip()
-        )
-        if failure_has_admitted_replacement(events, failed_event, task_id):
+        failed_event_id = str(payload.get("failed_event_id") or "").strip()
+        failed_event = events_by_id.get(failed_event_id) if failed_event_id else None
+        if failure_has_admitted_replacement(
+            events, failed_event, task_id, event_index=event_index,
+        ):
             continue
         legacy_scope_blocker = (
             recommendation == "request_evidence_reissue"

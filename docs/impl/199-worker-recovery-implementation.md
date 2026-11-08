@@ -508,3 +508,10 @@ LS-v1 实测周期刷新方法先复制约4.9万事件再消费最后50条。`Ev
 日志捕获等调用的最新派发查询只复制日窗口内的 `task.dispatched` 与 `fanout.child.dispatched`，保持原完整正文、任务ID优先序和逆序选择。用量任务归属仍优先使用现有活动任务解析；回退仅在存在状态及assignee匹配的任务时读取日事件。有候选时保留完整事件及运行别名/终态上下文，不缩减fanout语义输入。
 
 实际入口剖析、完整快照比较与stuck/用量/恢复调用验证见 `tasks/2026-11-08-2306-lifecycle-read-selection.md`。只消除无用复制和没有候选的回退扫描，不调整心跳或空闲判定阈值。
+
+
+### 2026-11-08 Run Manager替代核验复用同一事件索引
+
+实际Watcher采样与175405条事件只读复现表明，两类立即replan投影对每条旧失败重新构造by_id并线性查找源位置；四次投影的152次替代核验约21秒。两个实际Run Manager入口现在各自构建已有ReaderReplanIndex，并传给failure_has_admitted_replacement。原完整事件、位置、精确失败因果、同run、kernel准入和全部后继覆盖规则保持；一次调用结束即丢弃，下次追加/变更事件重新索引，不使用跨调用缓存。
+
+任务及真实caller、负例与冻结快照回放见 `tasks/2026-11-08-2329-rm-replacement-index.md`。TaskStore读取成本另有测量但本轮不改；整体Watcher CPU仍需现场观察。
