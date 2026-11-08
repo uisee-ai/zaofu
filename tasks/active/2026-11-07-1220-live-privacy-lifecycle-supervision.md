@@ -303,3 +303,14 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - 新图仅P16B-CORE-PRELOCK-R1→P16B-INGEST-POLICY-R2替代旧Ingest R1；Core继承已done Media生命周期前置，精确四Core文件及job_outcomes测试证据，通用受信前置锁/锁后重验、默认consumer与公平性/原子性/审计拒绝闭包；不写领域语义。Ingest原三AC/三命令保留，Privacy R7仅依赖重接/wave变化，P19/P20Q/P20仅依赖替换。加载器仅选两个新task，34done不重开，P09C/Schedule/Training图中对象完全不变。
 - 23:56:31 evt-bb0f51464e6d批准plan evt-d2da92ffe6b6；23:57:14 evt-252cee9ea5d4 Core派发，op wop-impl-tp-P16B-CORE-PRELOCK-R1-ecc60fa6-58d909861ecf / prd-dev-lane-2 / pane759。审批前后三个受保护TaskStore对象完全相等；owner review/core-prelock-gap-plan-owner-review.json保存。当前有效48项，34done/14未完成，Quality/Schedule/Core三路Impl。
 - 查询待批计划时另见2026-10-28旧evt-08b8e89f8928；只读对比发现旧图与现图完全不同，立即按事件时间判定历史项，不批准/不拒绝以免触发旧恢复，不将其误报本次增量。仅批准23:54:55当前evt-d2da92ffe6b6。后续监工必须按触发事件、candidate与图谱绑定选待批项，不能取pending列表第一项。
+
+
+### 2026-11-08 00:39 UTC：Schedule 同头失败纠正、Quality R2 转绿、Core 进入复现
+
+- Schedule首轮修复将每候选校验置于savepoint，公共/资源锁置于其外，最终审计复用真实Access判定，claim资源读取复用当前事务避免跨连接等待。现有58项、定向9→15项与Schedule Release 127项预提交通过；真实Dataset/Versions下载→入队→撤train grant探针只新增revision2 train deny，全业务/文件不变。569789b160a81fb507dccc0039b009ff09e1aad8提交58文件仅3生产源码，显式名单核对后提交，干净worktree。
+- 569789b最终smoke 3pass/21.51秒（20261108T002418-3e41a59c），runtime 73pass/1fail/212.73秒（002426-49d2ada9），release closure126pass/1fail/565.46秒。失败同因test_two_native_hosts_and_restart_only_append_denials_with_independent_health用health cycles当实际claim提交，2条deny尚未达到原4条要求；旧全套GREEN不覆盖最终失败。监工要求保留原失败与完整快照、不可减小断言或停health，诊断schedule-denial-r1-final-host-failure-guidance.json。
+- 定向修正以提交后通知绑定真实host、audit ID、backend PID与xmin，证明重启前后两窗口中每个host至少两次deny事务提交，保留>=4与完整不变集；生产代码未变。667a0feba32369b2266c104e9eb7dab34a0d81c6仅测试/证据提交，定向转绿，新同头smoke3pass，完整runtime与闭包正在重跑，尚未Impl准入或独立Verify。
+- Quality g2已完整读1119切片并核对全部摘要；向监工请求只读相关剩余正文，答复保持af73/d224冻结输入、已读不重复、允许可逆去重，不能改活动合同或伪造完成。无损正文仍约76万字符，读取/多次compact约36分钟，是后续输入分区优化证据，未以方法优化冒称产品进展。当前已进入源码。
+- Quality确认公开clean API可按run ID取指标，但冻结Dataset仅绑定sample/alignment/annotation而无clean-run身份，不能从帧/segment猜原分母；R1仍需精确生产者/消费者契约缺口，协议资格和局部已知字段口径必须区分。R2先真实RED（旧vehicle2→新pedestrian1，构建/语义版本均遗漏旧类与可比标识），修前后键并集，同口径计数补零、异口径INCOMPARABLE/null delta；test_comparison 5pass/41.20秒，尚未完整交付。
+- Core 341来源hash一致、822正文定义完整读完；本地可逆辅助脚本错误自行修正，监工提示可用已验证视图继续、不要为压缩反复耗时，不缩减权威输入。已读608249字符语义视图及来源映射，开始实际Core/旧probe检查、原锁bootstrap完成，尚无RED/实现通过结论。
+- 00:35:46账本三Impl仍running、34done/48有效/14未完成，持续事件更新；无新的正式blocked/任务完成。Dashboard200。监工未改canonical、未合并或push。
