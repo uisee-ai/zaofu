@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Collection
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -42,9 +43,15 @@ _READ_ALL_FOLD: dict[tuple, dict] = {}
 _READ_ACTIVE_FOLD: dict[tuple, dict] = {}
 
 
-def _copy_events(events: tuple[ZfEvent, ...] | list[ZfEvent]) -> list[ZfEvent]:
-    """Keep read_days callers from mutating cached occurrences or payloads."""
-    return [replace(event, payload=deepcopy(event.payload)) for event in events]
+def _copy_events(
+    events: tuple[ZfEvent, ...] | list[ZfEvent],
+    event_types: Collection[str] | None = None,
+) -> list[ZfEvent]:
+    """Copy selected bodies without hiding ledger-integrity diagnostics."""
+    return [
+        replace(event, payload=deepcopy(event.payload)) for event in events
+        if event_types is None or event.type in event_types or event.type == "event.malformed"
+    ]
 
 
 def _boundary_marker(path: Path, offset: int) -> bytes | None:
@@ -470,11 +477,16 @@ class EventLog:
             return events[-limit:]
         return events
 
-    def read_days(self, last_days: int = 1) -> list[ZfEvent]:
+    def read_days(
+        self, last_days: int = 1, *, event_types: Collection[str] | None = None,
+    ) -> list[ZfEvent]:
         """Read only the last N days of events.
 
         last_days=1 → today (active) only
         last_days=N → today + most recent (N-1) archive days
+
+        Optional type selection copies only relevant bodies, preserving their
+        full contents and order. Integrity diagnostics always remain visible.
         """
         events: list[ZfEvent] = []
         if last_days > 1:
@@ -483,15 +495,19 @@ class EventLog:
                 last_days=last_days - 1,
                 suffix=".jsonl",
             ):
-                events.extend(self._parse_file(f))
-        events.extend(self._read_active_cached())
+                archived = self._parse_file(f)
+                events.extend(archived if event_types is None else _copy_events(archived, event_types))
+        events.extend(self._read_active_cached(event_types=event_types))
         return events
 
-    def _read_active_cached(self) -> list[ZfEvent]:
+    def _read_active_cached(
+        self, *, event_types: Collection[str] | None = None,
+    ) -> list[ZfEvent]:
         # Signed reads must reverify the actual bytes, even when file metadata
         # was deliberately preserved after tampering.
         if self.signer is not None:
-            return self._parse_file(self.path)
+            events = self._parse_file(self.path)
+            return events if event_types is None else _copy_events(events, event_types)
         try:
             stat = self.path.stat()
         except OSError:
@@ -501,7 +517,7 @@ class EventLog:
         entry = _READ_ACTIVE_FOLD.get(key)
         if entry is not None and entry["identity"] == identity:
             if entry["size"] == stat.st_size and entry["mtime"] == stat.st_mtime_ns:
-                return _copy_events(entry["events"])
+                return _copy_events(entry["events"], event_types)
             if (
                 stat.st_size > entry["size"]
                 and stat.st_size >= entry["consumed"]
@@ -515,32 +531,33 @@ class EventLog:
                     return []
                 if (after.st_dev, after.st_ino) != identity or after.st_size < stat.st_size:
                     _READ_ACTIVE_FOLD.pop(key, None)
-                    return self._parse_file(self.path)
+                    events = self._parse_file(self.path)
+                    return events if event_types is None else _copy_events(events, event_types)
                 if not consumed:
                     # A partial line or transient read failure must be retried.
-                    return _copy_events(entry["events"])
+                    return _copy_events(entry["events"], event_types)
                 events = entry["events"] + tuple(tail) if tail else entry["events"]
                 marker = _boundary_marker(self.path, entry["consumed"] + consumed)
                 if marker is None:
-                    return _copy_events(events)
+                    return _copy_events(events, event_types)
                 _READ_ACTIVE_FOLD[key] = {
                     "identity": identity, "size": stat.st_size, "mtime": stat.st_mtime_ns,
                     "consumed": entry["consumed"] + consumed, "events": events, "marker": marker,
                 }
-                return _copy_events(events)
+                return _copy_events(events, event_types)
         events, consumed = self._parse_file_consumed(self.path)
         if not consumed and stat.st_size:
-            return events
+            return events if event_types is None else _copy_events(events, event_types)
         marker = _boundary_marker(self.path, consumed)
         if marker is None:
-            return events
+            return events if event_types is None else _copy_events(events, event_types)
         while len(_READ_ACTIVE_FOLD) >= 8 and key not in _READ_ACTIVE_FOLD:
             _READ_ACTIVE_FOLD.pop(next(iter(_READ_ACTIVE_FOLD)))
         _READ_ACTIVE_FOLD[key] = {
             "identity": identity, "size": stat.st_size, "mtime": stat.st_mtime_ns,
             "consumed": consumed, "events": tuple(events), "marker": marker,
         }
-        return _copy_events(events)
+        return _copy_events(events, event_types)
 
     def get_causation_chain(self, event_id: str) -> list[ZfEvent]:
         """Return the causal ancestors of an event in chronological order.

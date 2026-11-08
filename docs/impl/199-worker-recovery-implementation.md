@@ -473,3 +473,12 @@ lease/run 与当前操作一致。未知、终态、旧身份拒绝为有因果�
 `tests/test_worker_reply_binding.py` 从真实 Orchestrator 排队入口重现
 “请求先发生、目标后终止、回复再投递”，并覆盖错误身份、正常投递与重放、
 resident 兼容。任务见 `tasks/2026-11-08-2040-worker-reply-binding.md`。
+
+
+### 2026-11-08：操作请求扫描的正文复制按事件类型选择
+
+LS-v1监工只读剖析表明，worker-action处理器即使无待处理请求，也在每次调用中复制约4.8万条当日事件。三次调用8.83秒，其中正文深复制7.07秒；这是局部处理器证据，不等于整个Watcher的CPU剖析。
+
+`EventLog.read_days(..., event_types=...)`现在先选择再复制正文。实际`AgentViewRuntimeMixin`冷启动队列重建与每轮补偿扫描只选择请求和结果类型。原7日/1日窗口、事件顺序、完整payload、因果结果及队列重试语义保持；没有增加预算、放宽验收或改写事件。缓存仍保留全部事件，调用者得到独立副本，其他过滤集合或无过滤调用不丢数据。签名路径仍重验原字节，`event.malformed`无论过滤集合如何均返回。
+
+相关任务：`tasks/2026-11-08-2104-worker-action-event-selection.md`。真实数据只读前后对比与上线观察保存在LS-v1的`docs/records/2026-11-08-worker-action-scan-profile/`；整体调度延迟仍需上线实测。
