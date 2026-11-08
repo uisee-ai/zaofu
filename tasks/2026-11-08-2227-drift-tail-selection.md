@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — be84c2de `fix: bound drift event copying to the consumed tail`
 
 # 修复漂移巡检复制完整日事件的开销
 
@@ -7,7 +7,7 @@
 - [x] EventLog限定返回尾数且先选后复制 -> verify: cold/warm/append/partial/rotation、多日全序、payload隔离、签名损坏与零/负参数回归。
 - [x] drift与refresh实际调用入口使用尾50 -> verify: 旧drift落出窗口、新目标角色仍生效、只复制尾部且检测输入完整。
 - [x] 冻结生产事件完整正文/顺序、实际刷新结果一致 -> verify: 只读回放记录；局部性能与整个Watcher开销区分。
-- [ ] 文档、闭包测试/哨兵/mock E2E、提交/合并/受控加载与记录 -> verify: 保持在途operation/attempt/workdir，工作树收尾，保留主目录原修改。
+- [x] 文档、闭包测试/哨兵/mock E2E、提交/合并/受控加载与记录 -> verify: 保持在途operation/attempt/workdir，工作树收尾，保留主目录原修改。
 
 作用域：EventLog读投影、LifecycleObservation的两个尾50调用及其测试/说明。无窗口放宽、无canonical状态直写、无产品验收改动。开发授权来自持续监工修复请求；全套pytest/真实provider不默认执行。
 
@@ -16,3 +16,5 @@
 冻结49368事件对照：尾50完整正文/顺序一致，旧/新实际刷新方法输出一致（无刷新目标）；三次无profiler调用3.268014秒→0.001368秒，仅证明该入口。初次回归4RED；一次新增测试actor None/空字符串预期修正，另一次误填测试文件名未收集已纠正，均为开发测试问题。
 
 证据在LS-v1 docs/records/2026-11-08-drift-refresh-profile/。待受控加载验证后归档；不声明整个Watcher CPU已解决。
+
+交付：实现be84c2de合入dev 7cf360c7；合后34定向+53哨兵通过。22:33–22:34受控加载Watcher3603759与Web3604952，源码7cf360c7、health/UI200；FMS24 operation/attempt/dispatch/workdir/pane%1750/pid3600469全保持，Dev/Verify方法摘要不变。重载65秒后仍约97.4%单核CPU，因此只关闭本入口过量复制，不关闭整个Watcher开销。
