@@ -15,3 +15,5 @@
 2026-11-08 实现验证：R1–R4 已完成。定向新增行为16 passed；65文件影响闭包732 passed；sentinel 50 passed/1 skipped；Task Pipeline runtime-noise mock E2E 3 passed；instruction/skill/docs 40 passed/1 skipped。dev-verify --base dev及本批--paths规划已检查，选取器按文件数升级全量（483文件），按AGENTS改为直接模块/调用方/共享边界65文件定向闭包；未执行全pytest或真实provider测试。R5部署与现场恢复仍待完成，保持active。
 
 实现提交：`bf758afe fix: recover settled verifier failures and close recovery effects`。主环境77 passed；控制面重载后Training Verify与Consumer Impl g2实际dispatch，原子必读缓存已真实成功。R5已拉起两worker及有界计划修订Planner；新计划尚待产出/独立审查及批准，Ingest产品修复尚待实施，因此本任务不归档done。现场记录见docs/impl/task-recovery-20261105.md及产品diagnostics/settled-recovery-20261108/。
+
+现场追加：Planner仍沿旧方法直接输出大段required正文，已发送本次原子缓存/分页指导，并把同一方法补入planner角色技能及两provider分发副本，防止后续计划阶段重复截断。
