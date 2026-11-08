@@ -49,3 +49,6 @@ R9验证：实际CLI/start/restart、恢复级联、worker状态、外部限额�
 
 
 R9提交`d6e4486f fix: preserve recovery gates during control-plane reload`精确部署，主环境42 passed。受控重载`evt-4eee4f63ae93`后，09:51 UTC现场watcher PID2594113/epoch 2d8da519e7144b46ac108a4f5432b984；三operation及attempt身份逐项保持，最新派发事件仍为operator暂停`evt-8351554be484`，36done不变，Dashboard HTTP200。重载前后证据及部署前像保存在产品diagnostics/settled-recovery-20261108/reload-pause-*.json、verification/reload-pause-*.log。此为控制面修复验证；三个旧attempt失败/过期，产品没有实际续跑，仍待worker账号额度恢复后受控对账并继续，R5不标done。
+
+
+10:27 UTC R5续跑：用户确认额度已恢复，正式fast-stop/start及两个精确workflow恢复点已实施。恢复16lane原drain_hold_seconds=180后，22角色摘要全部匹配原activation，未放宽漂移校验。P11A新attempt ta-08923d694f571fdb8185、Consumer Verify新attempt ta-f4f11258c899cd51438a实际运行；36done、2in_progress。旧Critic墙钟超时后自动触发389aef82 Planner返修，最新冻结19文件SHA缓存与保护快照已交付，独立Critic/审批及后续产品验收仍待完成。详见docs/impl/task-recovery-20261105.md与产品diagnostics中的quota-restored-*记录。

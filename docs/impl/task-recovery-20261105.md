@@ -367,3 +367,16 @@ R9验证：实际CLI/start/restart、恢复级联、worker状态、外部限额�
 
 
 R9提交`d6e4486f fix: preserve recovery gates during control-plane reload`精确部署，主环境42 passed。受控重载`evt-4eee4f63ae93`后，09:51 UTC现场watcher PID2594113/epoch 2d8da519e7144b46ac108a4f5432b984；三operation及attempt身份逐项保持，最新派发事件仍为operator暂停`evt-8351554be484`，36done不变，Dashboard HTTP200。重载前后证据及部署前像保存在产品diagnostics/settled-recovery-20261108/reload-pause-*.json、verification/reload-pause-*.log。此为控制面修复验证；三个旧attempt失败/过期，产品没有实际续跑，仍待worker账号额度恢复后受控对账并继续，R5不标done。
+
+
+### 2026-11-08 10:27 UTC：用户确认额度恢复后的真实续跑
+
+用户明确确认Codex已重置且有额度，授权继续。执行正式`zf stop --fast`保留工作树/36done并产生可重放中断；随后分别用`recover workflow --resume-pending --checkpoint-id`恢复P11A与Consumer Verify，保留原operation/hash/产品代次，使用新attempt而非复用失败lease。恢复回执保存在产品diagnostics/settled-recovery-20261108/quota-restored-{p11a,consumer}-apply.json。
+
+完整启动首次遇到flow_role_activation_config_drift。逐项复核：当前六个非lane角色本已匹配；16个Impl/Verify lane的drain_hold_seconds由原180改为600，恢复180后22个角色的整个role_config_digest与原准入manifest全部一致。有效配置快照缺少新backends默认字段并非本次阻塞原因（原manifest解析后摘要已经包含默认值），不据此放宽schema/digest校验。已备份zf.yaml并仅恢复16处临时回收等待值；8+8容量、模型、权限、预算、任务合同均未改，R6/R8压缩与外部阻塞保护仍保留。证据quota-restored-config-reconciliation.json含前后SHA及22项比对。
+
+重启watcher PID2749529/epoch 5e07a5b1f09948fc9ba7f93632b822e8，operator恢复派发evt-7dfc2987270b。P11A于10:25真实派发impl-g1-p2（ta-08923d694f571fdb8185，pane %812）；Consumer在固定9504a88上派发verify-g2-p2（ta-f4f11258c899cd51438a，pane %811）。两终端均开始读取当前briefing/task.md并持续执行，额度恢复有新turn工具调用证据，不能仅凭历史usage-limit文本认为仍无额度。当前TaskStore为36done、2in_progress、13backlog（含父任务）；有效50项中仍14未完成。
+
+旧Critic在10:19:30、正式stop前因7200秒synth_timeout生成evt-6bc3cc89b7de→prd.plan.failed evt-b7cf6832b3b1，非对7742570b版的新语义否决。恢复后自动stage replan 2/2产生evt-389aef82b01a，Planner已实际运行（pane %807）。未覆盖历史失败或增加replan cap；最新7742570b冻结19文件逐字节复制到Planner允许忽略缓存，SHA索引quota-restored-planner-input-cache.json。指导其完整消费本attempt必读后复用已修订F1/F2正文、保留36done与两个在途任务、继续独立Critic及审批，避免退回旧版全量重写。三角色断点指导与新身份记录在quota-restored-guidance.json。额外Sources浏览器失败仍保留、不改判。
+
+Dashboard HTTP200。R5继续active；本次没有新的产品done，也没有声明计划已批准。记录待后续评估：全局暂停期间synth墙钟超时仍会产生计划失败及返修；本轮已走既有有界返修路径，不据此临时取消超时或伪造Critic通过。
