@@ -116,9 +116,11 @@ class LifecycleManagerMixin(
         """B18 (doc 93 §7.4): created 无认领无派发超 SLA →
         task.unclaimed.warning(幂等)。best-effort,不挡 tick。"""
         try:
-            from zf.runtime.new_task_shepherd import unclaimed_warnings
+            from zf.runtime.new_task_shepherd import (
+                UNCLAIMED_EVENT_TYPES, unclaimed_warnings,
+            )
 
-            events = list(self.event_log.read_days(1))
+            events = self.event_log.read_days(1, event_types=UNCLAIMED_EVENT_TYPES)
             for payload in unclaimed_warnings(
                 self.task_store.list_all(), events, now_ts=self._now(),
             ):

@@ -14,6 +14,11 @@ from typing import Any
 
 DEFAULT_UNCLAIMED_SLA_S = 600.0
 SHEPHERD_ASSIGNEE = "kanban-agent"
+_CLAIM_EVENTS = frozenset({
+    "task.dispatched", "fanout.child.dispatched",
+    "dev.build.done", "task.done.evidence",
+})
+UNCLAIMED_EVENT_TYPES = _CLAIM_EVENTS | {"task.created", "task.unclaimed.warning"}
 
 
 @dataclass(frozen=True)
@@ -91,10 +96,7 @@ def unclaimed_warnings(
                 continue
         elif etype == "task.unclaimed.warning":
             warned.add(task_id)
-        elif etype in (
-            "task.dispatched", "fanout.child.dispatched",
-            "dev.build.done", "task.done.evidence",
-        ):
+        elif etype in _CLAIM_EVENTS:
             claimed.add(task_id)
     open_ids = {
         str(getattr(t, "id", "") or "")

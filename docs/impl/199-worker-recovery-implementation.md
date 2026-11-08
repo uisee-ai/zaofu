@@ -482,3 +482,9 @@ LS-v1监工只读剖析表明，worker-action处理器即使无待处理请求�
 `EventLog.read_days(..., event_types=...)`现在先选择再复制正文。实际`AgentViewRuntimeMixin`冷启动队列重建与每轮补偿扫描只选择请求和结果类型。原7日/1日窗口、事件顺序、完整payload、因果结果及队列重试语义保持；没有增加预算、放宽验收或改写事件。缓存仍保留全部事件，调用者得到独立副本，其他过滤集合或无过滤调用不丢数据。签名路径仍重验原字节，`event.malformed`无论过滤集合如何均返回。
 
 相关任务：`tasks/2026-11-08-2104-worker-action-event-selection.md`。真实数据只读前后对比与上线观察保存在LS-v1的`docs/records/2026-11-08-worker-action-scan-profile/`；整体调度延迟仍需上线实测。
+
+### 2026-11-08：无人认领巡检复用事件类型选择
+
+后续只读剖析又在周期无人认领巡检复现同类成本：三次8.74秒，约8.52秒用于读取/复制约4.9万条当日事件，实际没有新告警。`LifecycleManagerMixin._check_unclaimed_new_tasks`现在通过现有`EventLog.read_days`只选择创建、既有告警和四种认领事件；认领集合与`unclaimed_warnings`共用。完整payload、原同日窗口、SLA、工作流任务排除、去重及异常行为不变。
+
+真实调用回归覆盖冷读、热读、追加认领、payload任务ID、四种认领、已告警/终态/工作流任务和无关大正文不复制；共享EventLog的签名与副本隔离合同保持。任务：`tasks/2026-11-08-2208-unclaimed-event-selection.md`。LS证据：`docs/records/2026-11-08-unclaimed-sweep-profile/`。局部改善仍不等于整个Watcher高CPU已修复。
