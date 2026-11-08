@@ -71,6 +71,13 @@ def _operation_workdir(events, operation, request) -> Path:
         expected.update({key: request[key] for key in (
             'task_map_generation', 'task_pipeline_stage', 'operation_generation',
             'workspace_generation', 'placement_epoch', 'task_stage_session_binding') if key in request})
+        if operation.get('task_pipeline_stage'):
+            # The immutable request may precede a relocation. The reducer binds
+            # the current epoch to matching kernel sent/start facts.
+            epoch = operation.get('placement_epoch')
+            if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch <= 0:
+                raise ValueError('work record requires an attested current placement')
+            expected['placement_epoch'] = epoch
         if event.task_id != expected['task_id'] or any(
             value in (None, '') or str(payload.get(key)) != str(value) for key, value in expected.items()
         ):
