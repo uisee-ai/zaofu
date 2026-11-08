@@ -1,6 +1,6 @@
 # 操作请求扫描只复制相关事件
 
-> 状态: active
+> 状态: done — `7bd51700` `fix: select worker action events before copying payloads`
 
 授权：持续监工LS-v1、修复阻塞并记录。实际只读剖析：同一worker-action处理器三次调用8.83秒，其中7.07秒复制事件正文；约48060条当日事件、无未处理请求。不是整个Watcher的剖析，不能据此宣称已定位全部CPU开销。
 
@@ -15,3 +15,5 @@
 验证：新增合同3 RED；最终135项EventLog/签名/半行轮转/Store/实际队列及Orchestrator调用闭包通过，自动哨兵53通过，三流mock E2E10通过。dev-verify plan因EventLog反向导入扩大至816文件全量；依据AGENTS本次两域有界行为闭包执行，run显式跳过broad deterministic与serial自动层，定向closure包含State锁测试，不声称全量或真实Provider E2E。
 
 生产快照只读对照：48145条事件选中182条，请求/结果逐事件内容和未处理请求序列均一致；预热后三调用旧2.5286秒、新0.01948秒。原cProfile测量包含额外采样开销，不能混为同一对照。整体Watcher延迟仍待上线观察。
+
+上线：合并f05143da，合并后40定向/53哨兵通过；Watcher3468736、Web3468976运行f05143da，健康200；唯一在途Impl的operation/attempt/dispatch/workdir/pane/PID保持。整体CPU/调度延迟观察继续，原问题记录与局部速度对照分开保存。未push。
