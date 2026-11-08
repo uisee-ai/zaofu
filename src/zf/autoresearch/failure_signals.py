@@ -23,7 +23,7 @@ from zf.runtime.event_problem_registry import (
     spec_for_event,
 )
 from zf.runtime.terminal_events import latest_quiescent_run_terminal
-from zf.runtime.fanout_identity import fanout_current_status
+from zf.runtime.fanout_identity import FanoutCurrentStatus, fanout_current_statuses
 
 
 _READONLY_GATE_SUCCESS = frozenset({
@@ -645,6 +645,7 @@ def detect_fanout_failures(
     aggregate_by_fanout: dict[str, dict[str, Any]] = {}
     context_by_fanout: dict[str, set[str]] = {}
     terminal_success_keys = _terminal_success_keys(events)
+    fanout_statuses = fanout_current_statuses(events)
     terminal_fanouts: set[str] = set()
     terminal_children: set[tuple[str, str]] = set()
     dispatched_children: set[tuple[str, str]] = set()
@@ -677,7 +678,7 @@ def detect_fanout_failures(
         fanout_id = str(payload.get("fanout_id") or "").strip()
         child_id = str(payload.get("child_id") or payload.get("child_run") or "").strip()
         if fanout_id and _fanout_is_stale_or_terminal(
-            events=events,
+            fanout_statuses=fanout_statuses,
             fanout_id=fanout_id,
             context_keys=context_by_fanout.get(fanout_id, set()),
             terminal_success_keys=terminal_success_keys,
@@ -793,7 +794,7 @@ def detect_fanout_failures(
         ):
             continue
         if _fanout_is_stale_or_terminal(
-            events=events,
+            fanout_statuses=fanout_statuses,
             fanout_id=fanout_id,
             context_keys=context_by_fanout.get(fanout_id, set()),
             terminal_success_keys=terminal_success_keys,
@@ -950,13 +951,13 @@ def _parse_event_ts(event: ZfEvent) -> datetime | None:
 
 def _fanout_is_stale_or_terminal(
     *,
-    events: list[ZfEvent],
+    fanout_statuses: dict[str, FanoutCurrentStatus],
     fanout_id: str,
     context_keys: set[str],
     terminal_success_keys: set[str],
 ) -> bool:
-    status = fanout_current_status(events, fanout_id)
-    if status.known and not status.current:
+    status = fanout_statuses.get(fanout_id)
+    if status is not None and status.known and not status.current:
         return True
     return bool(context_keys & terminal_success_keys)
 

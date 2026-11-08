@@ -104,11 +104,20 @@ def fanout_current_status(
     """
     if not fanout_id:
         return FanoutCurrentStatus(fanout_id="", known=False, current=True)
+    return fanout_current_statuses(events).get(
+        fanout_id, FanoutCurrentStatus(fanout_id=fanout_id, known=False, current=True),
+    )
+
+
+def fanout_current_statuses(
+    events: Iterable[ZfEvent],
+) -> dict[str, FanoutCurrentStatus]:
+    """Derive all known statuses once for consumers of one event snapshot."""
     projection = build_fanout_identity_projection(events)
+    statuses: dict[str, FanoutCurrentStatus] = {}
     for item in projection.get("instances", []) or []:
-        if str(item.get("fanout_id") or "") != fanout_id:
-            continue
-        return FanoutCurrentStatus(
+        fanout_id = str(item.get("fanout_id") or "")
+        statuses[fanout_id] = FanoutCurrentStatus(
             fanout_id=fanout_id,
             known=True,
             current=bool(item.get("current")),
@@ -116,7 +125,7 @@ def fanout_current_status(
             superseded_by=str(item.get("superseded_by") or ""),
             stale_reason=str(item.get("stale_reason") or ""),
         )
-    return FanoutCurrentStatus(fanout_id=fanout_id, known=False, current=True)
+    return statuses
 
 
 def current_sibling_instance(
@@ -388,5 +397,6 @@ __all__ = [
     "build_fanout_identity_projection",
     "current_sibling_instance",
     "fanout_current_status",
+    "fanout_current_statuses",
     "read_fanout_identities",
 ]
