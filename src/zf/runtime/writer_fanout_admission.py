@@ -105,6 +105,7 @@ def writer_fanout_dispatch_base_commit(
     task_items: list[dict[str, Any]],
     *,
     fallback: str = "",
+    independent_task_bases: bool = False,
 ) -> str:
     """Resolve the single candidate base shared by a writer fanout."""
 
@@ -114,6 +115,8 @@ def writer_fanout_dispatch_base_commit(
         if (base := task_map_successor_base_commit(item))
     ))
     if len(task_bases) > 1:
+        if independent_task_bases:
+            return str(fallback or "").strip()
         raise ValueError(
             "writer fanout tasks declare conflicting base_commit values: "
             + ", ".join(task_bases)
@@ -270,6 +273,7 @@ def load_writer_task_map(
     pipeline_spec: Any = None,
     candidate_quality_source: str = "auto",
     work_units_config: Any = None,
+    independent_task_bases: bool = False,
 ) -> LoadedWriterTaskMap:
     payload = _payload(event)
     event_task_map_ref = str(payload.get("task_map_ref") or "").strip()
@@ -393,6 +397,7 @@ def load_writer_task_map(
         dispatch_base_commit=writer_fanout_dispatch_base_commit(
             items,
             fallback=task_map_dispatch_base,
+            independent_task_bases=independent_task_bases,
         ),
         plan_artifact_package_id=str(
             payload.get("plan_artifact_package_id") or ""

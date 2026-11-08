@@ -214,7 +214,13 @@ def evaluate_plan_candidate_preflight(
                     except (RuntimeError, ValueError) as exc:
                         _error(errors, "writer_fanout_task_map_invalid", "task_map.tasks", str(exc))
                     try:
-                        writer_fanout_dispatch_base_commit(selected)
+                        writer_fanout_dispatch_base_commit(
+                            selected,
+                            independent_task_bases=(
+                                (metadata or {}).get("task_pipeline", {}).get("mode")
+                                == "blocking"
+                            ),
+                        )
                     except ValueError as exc:
                         _error(errors, "writer_fanout_base_conflict", "task_map.tasks", str(exc))
                 policy = writer_policy or {}
