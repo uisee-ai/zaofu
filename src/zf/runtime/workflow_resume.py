@@ -232,6 +232,7 @@ def build_workflow_operation_resume_checkpoints(
 
     event_list = list(events if events is not None else _read_events(Path(state_dir)))
     from zf.runtime.terminal_reader_operation import terminal_reader_event
+    from zf.runtime.undispatched_pipeline_recovery import undispatched_pipeline_request
 
     operations = reduce_workflow_operations(event_list)
     attempts = _task_attempt_rows(Path(state_dir))
@@ -248,6 +249,7 @@ def build_workflow_operation_resume_checkpoints(
             and str(operation.get("reason") or "")
             == "workflow_resume_cancelled_interrupted_operation"
         )
+        undispatched = undispatched_pipeline_request(operation, Path(state_dir), event_list)
         budget_amendment = find_task_pipeline_budget_amendment(
             event_list,
             operation,
@@ -255,6 +257,7 @@ def build_workflow_operation_resume_checkpoints(
         if (
             status not in {"requested", "reserved", "running", "suspended"}
             and not legacy_cancelled_restart
+            and not undispatched
             and budget_amendment is None
         ):
             continue
@@ -291,6 +294,12 @@ def build_workflow_operation_resume_checkpoints(
             reason = (
                 "operation has a newer live TaskAttempt after interruption"
             )
+        elif undispatched and status == "cancelled":
+            action = "redrive_undispatched_task_pipeline_operation"
+            reason = "stale cleanup cancelled a pipeline request before any TaskAttempt existed"
+        elif undispatched:
+            action = "no_action"
+            reason = "pipeline request awaits scheduler dispatch; no TaskAttempt has existed"
         elif legacy_cancelled_restart:
             action = "redrive_cancelled_interrupted_task_pipeline_operation"
             reason = (

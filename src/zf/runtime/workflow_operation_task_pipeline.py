@@ -101,6 +101,16 @@ def apply_task_pipeline_operation_event(
         == "kernel_replay"
         and str(payload.get("recovery_from_status") or "") == "cancelled"
     )
+    undispatched_replay = (
+        row.get("status") == "cancelled"
+        and row.get("reason") == "workflow_resume_cancelled_stale_operation"
+        and not row.get("started_event_id")
+        and not row.get("dispatch_id")
+        and event.origin == "kernel"
+        and payload.get("undispatched_recovery") is True
+        and payload.get("recovery_decision_owner") == "kernel_replay"
+        and payload.get("recovery_from_status") == "cancelled"
+    )
     blocked_compatibility_replay = (
         row.get("status") == "blocked"
         and row.get("reason") in {
@@ -134,6 +144,7 @@ def apply_task_pipeline_operation_event(
     if (
         row.get("status") in {"suspended", "requested"}
         or cancelled_restart_replay
+        or undispatched_replay
         or blocked_compatibility_replay
         or blocked_controlled_integration_retry
         or blocked_budget_amendment_replay
@@ -403,6 +414,20 @@ def admit_task_pipeline_redrive(
         and isinstance(recovery_decision.payload, dict)
         else {}
     )
+    from zf.runtime.undispatched_pipeline_recovery import undispatched_pipeline_request
+
+    undispatched_replay = (
+        operation_status == "cancelled"
+        and decision_owner == "kernel_replay"
+        and recovery_decision is not None
+        and recovery_decision.type == "workflow.resume.planned"
+        and recovery_payload.get("safe_resume_action")
+        == "redrive_undispatched_task_pipeline_operation"
+        and recovery_payload.get("operation_id") == operation_id
+        and recovery_payload.get("request_hash") == request_hash
+        and recovery_payload.get("workflow_run_id") == workflow_run_id
+        and undispatched_pipeline_request(operation, service.state_dir, events)
+    )
     blocked_controlled_integration_retry = (
         operation_status == "blocked"
         and decision_owner == "controlled_action"
@@ -432,6 +457,7 @@ def admit_task_pipeline_redrive(
     if (
         operation_status not in {"suspended", "requested"}
         and not legacy_cancelled_restart
+        and not undispatched_replay
         and not blocked_compatibility_replay
         and not blocked_controlled_integration_retry
         and not blocked_budget_amendment_replay
@@ -492,6 +518,7 @@ def admit_task_pipeline_redrive(
             "recovery_decision_owner": decision_owner,
             "recovery_effect_owner": "workflow_runtime_coordinator",
             "recovery_from_status": operation_status,
+            "undispatched_recovery": undispatched_replay,
             "reason": reason,
             "compatibility_proof_digest": compatibility_proof_digest,
             "compatibility_request_ref": dict(compatibility_request_ref or {}),

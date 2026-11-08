@@ -242,3 +242,20 @@ Workflow Synthesis 的 Web preparation host 和 runtime tick 共用consumer leas
 正在处理；runtime本轮延后，Web不将当前fingerprint标为已消费。lease内的事件读取、
 处理或provider错误仍按原失败路径报告，不能按异常基类吞掉全部TimeoutError。
 回归与现场记录：[consumer锁竞争](../../tasks/done/2026-11-07-1935-synthesis-consumer-lease-contention.md)。
+
+## 尚未派发的 Task Pipeline 请求恢复
+
+`zf recover workflow` 对只有 planned attempt 身份、但没有真实派发记录的 requested
+operation 返回 `no_action`，交给调度器继续等待；不能因为没有活跃 attempt 就将它当
+过期 worker 取消。对于历史恢复工具以 `workflow_resume_cancelled_stale_operation`
+取消的同类请求，提供 `redrive_undispatched_task_pipeline_operation` 检查点。
+
+投影、应用及 operation service 均校验没有 started/dispatch/result 身份、没有任何历史
+TaskAttempt（包括 expired）、事件账本没有对应 attempt/dispatch。状态文件损坏时拒绝。
+应用时再次检查当前状态与历史证据，service 要求同 run、operation、request hash 的
+`workflow.resume.planned` 决定；只接受 kernel replay。恢复保留原请求摘要与代次，通过
+既有 redrive 事件回到 requested，由正常调度器创建实际 attempt。手动取消、已启动、
+已有结果及已有历史派发的 operation 不在此恢复范围，不直接修改 TaskStore。
+
+验证见 `tests/test_undispatched_pipeline_recovery.py`，现场持续记录见
+[监工记录](../../tasks/active/2026-11-07-1220-live-privacy-lifecycle-supervision.md)。

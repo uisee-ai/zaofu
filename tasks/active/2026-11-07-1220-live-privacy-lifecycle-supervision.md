@@ -330,3 +330,31 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - step -> verify: 合法两目录实际validation.commands通过；任一未授权分量继续拒绝；Task Map/Writer/Gap准入直接调用闭包、sentinel和确定性mock通过后，精确前像部署并控制面保留worker重载，再核实受控恢复和新计划。尚未完成部署/恢复，不能标done。
 - 最终定向dev-verify闭包281pass（17测试文件）、新9例全过；第一轮新增父目录反例暴露旧标点清理会裁掉末尾`..`，已将PYTHONPATH解析置于普通token清理之前，保留该失败。sentinel50pass/1skip、计划审批mock2pass；未跑全仓pytest。`--base dev`全分支计划包含此前已验证的监工修复，执行使用本批显式3路径与直接调用测试，未重复旧全批。证据位于`/tmp/zf-supervision-20261107/pythonpath-*`，部署前持久化。
 - Schedule 01:26:33 evt-869f94ba8ac8独立通过、01:27:07 evt-595cbd5fb8ae task.done，35/48有效任务完成。Quality路径误拒绝01:25:56 evt-fd49507ceb21触发stage_replan_cap_exhausted并转operator，允许operator_review/start_new_generation；持续监工授权下拟在已验证修复后仅重新准入本次语义报告，不清失败历史、不伪造worker完成、不绕过Plan审批。
+
+### 2026-11-08 01:55 UTC：未派发请求恢复边界
+
+- `79d9b03b fix: validate Python search path components in task commands` 已精确前像部署；
+  281 闭包、50 sentinel/1 skip、2 mock、主环境 73 通过。控制面重载保留 worker。
+- 原 Quality gap 在运行被标为 blocked 后，使用现有 `zf goal set --status active`
+  恢复原 run，未新建 run；保留失败 `runs resume` invalid_transition 证据。
+  新计划 `72798304` 于 evt-7687f5958994 获委托批准，保留 35 done 与全部原验收义务。
+- Schedule 独立 Verify 通过并完成集成：candidate `0a74c2e`，有效 49 任务/35 done。
+  Core `26485d1` 专用 156 pass/7 smoke，完整消费者 410 测试/60 fail；正式 blocked
+  evt-99aa51a8558d，独立 Discovery 已启动，不能按局部 GREEN 验收。
+- Training 的请求从未实际派发；监工按旧 CLI checkpoint 取消 stale 后无法重新派发，
+  属恢复路径缺口。旧请求 `wop-impl-tp-P10-TRAINING-R1-2999f8db06c36-1a60e4d4a17b`
+  取消 evt-51c37c496c04，原 hash/generation 必须保持。修复先 RED 3 fail/4 pass，
+  增加历史 ledger/attempt、手动取消、损坏 store、应用竞态和伪造恢复决定拒绝覆盖。
+- 验收：未派发 requested 保持等待 -> verify: 不再产生 stale cancel；历史同类取消
+  通过受控 CLI 恢复 -> verify: 相同 hash/generation 回到 requested，真实派发由 Kernel
+  负责；有历史派发/结果/人工取消 -> verify: 不生成可应用 checkpoint。
+- Dataset 首次派发后仅完成输入获取，未完成全部正文消费就提交 failed；没有代码变更，
+  不能据此判定业务合同不可满足。监工续读提示因 operation 已终结被身份断言阻止，
+  未向旧会话发送；后续走原任务有界恢复，不删除必读来源、不增加业务拆分。
+
+- 本补丁验证完成：85 个直接/调用者/共享边界文件，1597 pass；针对当前修复的 25 项
+  再验通过，sentinel 50 pass/1 skip，Task Pipeline runtime-noise mock E2E 3 pass。
+  选择器因超过 80 文件自动扩大到全 deterministic suite，该次被主动终止，未计作通过；
+  随后按其列出的 85 文件运行完整影响闭包，66.70 秒通过。serial 筛选无匹配测试。
+- Dataset 原任务第二代重试请求 evt-b16aa7a65d6b 已由 `zf recover task-impl --apply`
+  受控提交；保留必读范围和原失败事实，当前不能称已恢复实际运行。
