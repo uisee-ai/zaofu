@@ -46,3 +46,6 @@ R8旧实现7 RED，调用闭包146 passed（含mock E2E）；未更换模型或�
 - R9 控制面重载保留恢复门禁：将既有control_plane_only传入运行时构造器 -> verify: 真实CLI重载不清blocked_human、不发dispatch.resumed；普通完整启动的恢复行为保持，维护暂停不受影响。现场R8重载意外清除暂停已如实记录，并通过evt-8351554be484追加恢复暂停；额度仍未恢复，不能宣称产品续跑。
 
 R9验证：实际CLI/start/restart、恢复级联、worker状态、外部限额保护、watcher暂停、事件合同及Task Pipeline runtime-noise mock E2E，10模块139 passed；sentinel50 passed/1 skipped。dev-verify针对三条改动路径建议因289文件阈值运行全套；按AGENTS按行为边界选择上述调用闭包，未执行全pytest或真实provider测试。
+
+
+R9提交`d6e4486f fix: preserve recovery gates during control-plane reload`精确部署，主环境42 passed。受控重载`evt-4eee4f63ae93`后，09:51 UTC现场watcher PID2594113/epoch 2d8da519e7144b46ac108a4f5432b984；三operation及attempt身份逐项保持，最新派发事件仍为operator暂停`evt-8351554be484`，36done不变，Dashboard HTTP200。重载前后证据及部署前像保存在产品diagnostics/settled-recovery-20261108/reload-pause-*.json、verification/reload-pause-*.log。此为控制面修复验证；三个旧attempt失败/过期，产品没有实际续跑，仍待worker账号额度恢复后受控对账并继续，R5不标done。

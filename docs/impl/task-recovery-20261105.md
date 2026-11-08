@@ -364,3 +364,6 @@ R8提交`fd90498f`精确部署后主环境72 passed，重载`evt-a83ecf6d3cb1`�
 终端仍明确usage limit，36done不变、没有新的真实派发。监工通过EventWriter追加`evt-8351554be484`恢复operator暂停，关联原暂停和意外resume，不重写旧事件或任务状态。R9只把既有control_plane_only启动标志传到实际WorkflowRuntimeCoordinator构造入口：该模式保留blocked_human与dispatch暂停；正常完整启动仍沿既有恢复行为，维护暂停规则不变。CLI入口回归旧代码1 failed/1 passed，覆盖真实start参数解析、构造器和账本投影，而非仅测试孤立函数。
 
 R9验证：实际CLI/start/restart、恢复级联、worker状态、外部限额保护、watcher暂停、事件合同及Task Pipeline runtime-noise mock E2E，10模块139 passed；sentinel50 passed/1 skipped。dev-verify针对三条改动路径建议因289文件阈值运行全套；按AGENTS按行为边界选择上述调用闭包，未执行全pytest或真实provider测试。
+
+
+R9提交`d6e4486f fix: preserve recovery gates during control-plane reload`精确部署，主环境42 passed。受控重载`evt-4eee4f63ae93`后，09:51 UTC现场watcher PID2594113/epoch 2d8da519e7144b46ac108a4f5432b984；三operation及attempt身份逐项保持，最新派发事件仍为operator暂停`evt-8351554be484`，36done不变，Dashboard HTTP200。重载前后证据及部署前像保存在产品diagnostics/settled-recovery-20261108/reload-pause-*.json、verification/reload-pause-*.log。此为控制面修复验证；三个旧attempt失败/过期，产品没有实际续跑，仍待worker账号额度恢复后受控对账并继续，R5不标done。
