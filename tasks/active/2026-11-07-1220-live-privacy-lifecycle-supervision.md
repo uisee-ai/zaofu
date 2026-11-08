@@ -358,3 +358,19 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
   随后按其列出的 85 文件运行完整影响闭包，66.70 秒通过。serial 筛选无匹配测试。
 - Dataset 原任务第二代重试请求 evt-b16aa7a65d6b 已由 `zf recover task-impl --apply`
   受控提交；保留必读范围和原失败事实，当前不能称已恢复实际运行。
+
+### 2026-11-08 01:58 UTC：恢复实际派发闭环
+
+- 修复提交 `bb6fea0a fix: recover pipeline requests cancelled before dispatch`；主环境
+  唯一上下文补丁部署（保留其他会话的既有修改），主环境 54 pass。控制面重载
+  evt-e4c472fd8396，watcher 3876940，保留 Dataset g2 与 Core Discovery。
+- Training 检查点 `op-resume-5a71b96668991f3b0af62fcc` 经 CLI 仅应用一次：
+  planned evt-94f0c72f8360、redrive evt-3772353acf3c、applied evt-dbfb2c978f05。
+  Kernel 在 01:57:29 真正派发 evt-d27755d2d86e，role prd-dev-lane-1；
+  原 operation/request hash/generation=1 保持，不是人为改 TaskStore 或宣称完成。
+- Dataset g2 于 01:55:07 实际派发 evt-3655f3759fb4，继续分页阅读必需正文；
+  worker 已明确读完后先做两帧Clean选一帧的真实数据库 RED，再实施。
+- 当前有效 49 任务/35 done/14 未完成，两个 Impl + 一个独立 Discovery 运行；
+  Core 尚未验收，Training 环境能力不替代产品验收，所有原 gate 保留。
+  部署前像、补丁、测试日志、CLI 投影及恢复回执保存在产品项目
+  `diagnostics/recovery-20261107-1220/undispatched-pipeline-recovery/`。
