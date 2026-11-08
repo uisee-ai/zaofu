@@ -5,6 +5,7 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+from zf.runtime.task_pipeline_terminal import _authorized_supersession_event
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
@@ -34,6 +35,10 @@ def integration_review_sources(
                 or any(op.get(k) != context.get(k) for k in (
                     "workflow_run_id", "task_map_generation",
                 ))):
+            continue
+        if _authorized_supersession_event(
+            events, task_id=task_id, context=context,
+        ) is not None:
             continue
         peers = [row for row in operations.values()
                  if row.get("task_id") == task_id
