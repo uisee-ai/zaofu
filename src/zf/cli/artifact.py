@@ -318,7 +318,8 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         output = result["content"]
     from zf.runtime.artifact_output_delivery import emit_artifact_output
     try:
-        result["read"].update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
+        result["read"].update(operation_id=identity.get("operation_id", ""),
+                              read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
         emit_artifact_output(context.state_dir, output, [result["read"]], sys.stdout)
     except OSError as exc:
         print(f"Error: {exc}", file=sys.stderr)
