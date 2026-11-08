@@ -80,8 +80,14 @@ def build_input_recovery(
         "reconstruction_required": len(visible), "checkpoint": checkpoint or {"status": "unavailable", "authorizes_continuation": False},
         "commands": {"index": f"{prefix} index --attempt {attempt}",
                      "recover": f"{prefix} recover --attempt {attempt}"},
-        "instructions": "History and checkpoints do not prove current memory. Revalidate identity, workdir and lease; "
-                        "consume all required bodies needed after compaction/session change. Use --resume only while current-session material remains available.",
+        "instructions": "This report is informational, not an execution permission or denial. "
+                        "authorizes_execution=false and current_memory=unknown remain unchanged after reads; "
+                        "reconstruction_required is the required-input scope count, not a remaining-read counter. "
+                        "Do not wait for true/zero or a checkpoint to appear. Execution remains governed by the "
+                        "current dispatch, identity, workdir, lease and runtime gates. Rebind when required; "
+                        "otherwise consume missing required bodies and reconstruct forgotten clauses/interfaces "
+                        "from their bound sources, then perform the next in-scope check. History/checkpoints "
+                        "never prove current memory. Use --resume only while current-session material remains available.",
     }
     from zf.runtime.work_record import current_work_record
     result["work_record"] = current_work_record(state_dir, events, manifest, identity.get("actor", ""))
