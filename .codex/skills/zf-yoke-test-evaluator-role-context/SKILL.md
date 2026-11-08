@@ -38,6 +38,11 @@ amendment are separate role capabilities supplied by the workflow profile.
 - Prefer the rendered `result validate ... --submit` command when provided. A failed
   validation returns diagnostics without consuming submission; successful preflight
   goes through normal Kernel admission in that invocation.
+- 长验证在完成一组检查、切换阶段或发现新问题时，将已核验的命令、退出码、目标版本、
+  发现与原始证据引用增量写入当前授权 result scratch 的既有对应字段；无预算或预警为零
+  时也适用。不等最终交付才大范围回查历史；未检查的条款不提前填通过，也不提前提交。
+  续跑只使用既有授权记录位置，不新增 scratch 字段、产品文件或写权限。记录帮助恢复，
+  不替代当前必读正文、独立检查或正式准入；无新进展不重复抄录。
 
 ## Dependency Triggers
 

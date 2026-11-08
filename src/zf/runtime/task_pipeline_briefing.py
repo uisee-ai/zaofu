@@ -220,11 +220,18 @@ def write_task_pipeline_briefing(
         "Budget includes fresh input, cached input and output across all turns. "
         "A low context-window ratio does not imply sufficient operation budget. "
         "Unknown pricing is not free usage; usage samples are not model calls.",
-        "At warning_level >= 50, preserve a continuation note within the allowed "
-        "task scope: current operation/attempt/dispatch, contract/source digests, "
-        "HEAD and dirty paths, decisions, every open acceptance/rework item, "
-        "exact command results and full evidence refs, and next action. "
-        "Update it at >= 80. Checkpointing does not complete or pause an attempt; "
+        "During long work, update authorized notes or declared result scratch "
+        "after a completed evidence group, phase change, or new unresolved finding, "
+        "even when no budget is configured. Preserve current identity, contract/source "
+        "digests, HEAD and dirty paths, decisions, open acceptance/rework items, "
+        "exact command results, full evidence refs, and next action through the "
+        "existing role-authorized format. Do not add scratch fields or write outside "
+        "the role's authority. Record evidence as it becomes available instead of "
+        "reconstructing it from broad history queries at handoff.",
+        "Budget warning levels 50 and 80 are additional reminders to refresh this "
+        "record, not prerequisites. This is recovery guidance, not a new required "
+        "artifact or completion gate. Required source reads and admission gates "
+        "remain unchanged. Checkpointing does not complete or pause an attempt; "
         "continue required work within the existing gates and limits.",
         "",
         "## Stage Contract",

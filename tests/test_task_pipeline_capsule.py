@@ -320,6 +320,10 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
             assert "Rework allowed_scope must cover the fix and its required evidence" in text
             assert "do not omit outputs or expand" in text
         assert f"cost --operation {context.operation_id} --json" in text
+        assert "even when no budget is configured" in text
+        assert "authorized notes or declared result scratch" in text
+        assert "Do not add scratch fields or write outside the role's authority" in text
+        assert "Required source reads and admission gates remain unchanged" in text
         compact = json.loads(text.split("## Compact Execution Context", 1)[1].split("```json\n", 1)[1].split("```", 1)[0])
         assert "attempt_id" not in compact  # exact identity remains in header
         assert f"- attempt_id: `{context.attempt_id}`" in text
