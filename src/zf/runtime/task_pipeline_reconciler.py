@@ -778,3 +778,378 @@ def _derive_stage(
             and (impl_rework_request or {}).get("authorized_next_operation_generation") == impl_generation + 1
             and bool((impl_rework_request or {}).get("approval_ref"))
         )
+        integration_rework_authorized = (
+            (impl_rework_request or {}).get("fault") == "task_pipeline_integration_rework"
+            and (impl_rework_request or {}).get("authorized_next_operation_generation") == impl_generation + 1
+            and bool((impl_rework_request or {}).get("approval_ref"))
+        )
+        if impl_generation <= max_rework or extra_generation_authorized or integration_rework_authorized:
+            return "impl_rework_ready", impl_generation + 1, impl_generation
+        return "blocked", impl_generation, impl_generation
+    if impl_status != "settled" or not _semantic_passed(impl):
+        return "blocked", impl_generation, max(0, impl_generation - 1)
+
+    verify = current.get("verify")
+    if (
+        verify is None
+        or int(verify.get("operation_generation") or 1) < impl_generation
+    ):
+        return "verify_ready", impl_generation, max(0, impl_generation - 1)
+    verify_generation = int(verify.get("operation_generation") or 1)
+    verify_status = str(verify.get("status") or "")
+    if verify_status == "requested":
+        return "verify_ready", verify_generation, max(0, verify_generation - 1)
+    if verify_status in _ACTIVE_OPERATION_STATUSES:
+        return "verify_active", verify_generation, max(0, verify_generation - 1)
+    if (
+        verify_status == "blocked"
+        and str(verify.get("reason") or "") == "request_hash_divergence"
+    ):
+        return "verify_ready", verify_generation, max(0, verify_generation - 1)
+    if verify_status in {"failed", "blocked"}:
+        return "blocked", verify_generation, max(0, verify_generation - 1)
+    if verify_status != "settled":
+        return "verify_ready", verify_generation, max(0, verify_generation - 1)
+    if _verifier_abstained(verify):
+        # No product verdict exists: recovery must repair execution conditions.
+        return "blocked", verify_generation, max(0, verify_generation - 1)
+    if not _semantic_passed(verify):
+        if verify_generation <= max_rework:
+            return (
+                "impl_rework_ready",
+                verify_generation + 1,
+                verify_generation,
+            )
+        return "blocked", verify_generation, verify_generation
+
+    return _derive_post_verification_stage(
+        current,
+        task=task,
+        policy=policy,
+        verification_generation=verify_generation,
+        allow_impl_rework=True,
+    )
+
+
+def _derive_verify_only_stage(
+    current: Mapping[str, Mapping[str, Any]],
+    *,
+    task: Mapping[str, Any],
+    policy: Mapping[str, Any],
+) -> tuple[str, int, int]:
+    verify = current.get("verify")
+    if verify is None:
+        return "verify_ready", 1, 0
+    generation = int(verify.get("operation_generation") or 1)
+    status = str(verify.get("status") or "")
+    if status == "requested":
+        return "verify_ready", generation, max(0, generation - 1)
+    if status in _ACTIVE_OPERATION_STATUSES:
+        return "verify_active", generation, max(0, generation - 1)
+    if (
+        status == "blocked"
+        and str(verify.get("reason") or "") == "request_hash_divergence"
+    ):
+        return "verify_ready", generation, max(0, generation - 1)
+    if status in {"failed", "blocked"}:
+        return "blocked", generation, max(0, generation - 1)
+    if status != "settled":
+        return "verify_ready", generation, max(0, generation - 1)
+    if not _semantic_passed(verify):
+        # A write-free audit cannot route a failed semantic verdict to Impl.
+        return "blocked", generation, max(0, generation - 1)
+    return _derive_post_verification_stage(
+        current,
+        task=task,
+        policy=policy,
+        verification_generation=generation,
+        allow_impl_rework=False,
+    )
+
+
+def _derive_post_verification_stage(
+    current: Mapping[str, Mapping[str, Any]],
+    *,
+    task: Mapping[str, Any],
+    policy: Mapping[str, Any],
+    verification_generation: int,
+    allow_impl_rework: bool,
+) -> tuple[str, int, int]:
+    verify_generation = max(1, int(verification_generation or 1))
+    max_rework = int(policy.get("max_rework_attempts") or 0)
+
+    admission = dict(policy.get("integration_admission") or {})
+    requested_profile = str(task.get("integration_admission_profile") or "")
+    effective_profile = requested_profile or str(admission.get("default") or "verify_admitted")
+    if effective_profile not in {"verify_admitted", "risk_review"}:
+        return "admission_blocked", verify_generation, max(0, verify_generation - 1)
+    if effective_profile == "risk_review":
+        risk_policy = dict(admission.get("risk_review") or {})
+        if (
+            not bool(risk_policy.get("enabled"))
+            or str(task.get("risk_class") or "")
+            not in set(risk_policy.get("for_risks") or [])
+            or "acceptance_review" not in dict(policy.get("pools") or {})
+        ):
+            return (
+                "admission_blocked",
+                verify_generation,
+                max(0, verify_generation - 1),
+            )
+        review = current.get("acceptance_review")
+        if (
+            review is None
+            or int(review.get("operation_generation") or 1) < verify_generation
+        ):
+            return (
+                "acceptance_review_ready",
+                verify_generation,
+                max(0, verify_generation - 1),
+            )
+        review_status = str(review.get("status") or "")
+        if review_status == "requested":
+            return (
+                "acceptance_review_ready",
+                verify_generation,
+                max(0, verify_generation - 1),
+            )
+        if review_status in _ACTIVE_OPERATION_STATUSES:
+            return (
+                "acceptance_review_active",
+                verify_generation,
+                max(0, verify_generation - 1),
+            )
+        if (
+            review_status == "blocked"
+            and str(review.get("reason") or "")
+            == "request_hash_divergence"
+        ):
+            return (
+                "acceptance_review_ready",
+                verify_generation,
+                max(0, verify_generation - 1),
+            )
+        if review_status in {"failed", "blocked"}:
+            return "blocked", verify_generation, max(0, verify_generation - 1)
+        if review_status != "settled":
+            return (
+                "acceptance_review_ready",
+                verify_generation,
+                max(0, verify_generation - 1),
+            )
+        review_verdict = str(
+            review.get("semantic_verdict") or ""
+        ).strip().lower()
+        if review_verdict == "revise":
+            if allow_impl_rework and verify_generation <= max_rework:
+                return (
+                    "impl_rework_ready",
+                    verify_generation + 1,
+                    verify_generation,
+                )
+            if not allow_impl_rework:
+                return (
+                    "replan_requested",
+                    verify_generation,
+                    max(0, verify_generation - 1),
+                )
+            return "blocked", verify_generation, verify_generation
+        if review_verdict == "replan":
+            return (
+                "replan_requested",
+                verify_generation,
+                max(0, verify_generation - 1),
+            )
+        if review_verdict == "block":
+            return "blocked", verify_generation, max(0, verify_generation - 1)
+        if review_verdict != "admit":
+            return "blocked", verify_generation, max(0, verify_generation - 1)
+    integration = current.get("integration")
+    if integration is not None:
+        integration_generation = int(
+            integration.get("operation_generation") or verify_generation
+        )
+        if integration_generation >= verify_generation:
+            status = str(integration.get("status") or "")
+            if status == "requested":
+                return (
+                    "integration_ready",
+                    integration_generation,
+                    max(0, verify_generation - 1),
+                )
+            if status in _ACTIVE_OPERATION_STATUSES:
+                return (
+                    "integration_active",
+                    integration_generation,
+                    max(0, verify_generation - 1),
+                )
+            if status == "settled" and _semantic_passed(integration):
+                return (
+                    "integrated",
+                    integration_generation,
+                    max(0, verify_generation - 1),
+                )
+            if status == "superseded":
+                return (
+                    "integration_ready",
+                    max(verify_generation, integration_generation + 1),
+                    max(0, verify_generation - 1),
+                )
+            if status in {"failed", "blocked", "settled"}:
+                return (
+                    "blocked",
+                    integration_generation,
+                    max(0, verify_generation - 1),
+                )
+    return "integration_ready", verify_generation, max(0, verify_generation - 1)
+
+
+def _verifier_abstained(operation: Mapping[str, Any]) -> bool:
+    return str(operation.get("semantic_verdict") or "").strip().lower() == "abstained"
+
+
+def _semantic_passed(operation: Mapping[str, Any]) -> bool:
+    verdict = str(operation.get("semantic_verdict") or "").strip().lower()
+    return verdict in {"", "passed", "pass", "approved", "approve", "admit"}
+
+
+def _bounded_rework_order(
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Alternate rework and fresh FIFO rows so neither class starves."""
+
+    rework = [row for row in candidates if int(row.get("rework_count") or 0) > 0]
+    fresh = [row for row in candidates if int(row.get("rework_count") or 0) == 0]
+    if not rework or not fresh:
+        return candidates
+    ordered: list[dict[str, Any]] = []
+    prefer_rework = candidates[0] in rework
+    while rework or fresh:
+        primary = rework if prefer_rework else fresh
+        secondary = fresh if prefer_rework else rework
+        if primary:
+            ordered.append(primary.pop(0))
+        elif secondary:
+            ordered.append(secondary.pop(0))
+        prefer_rework = not prefer_rework
+    return ordered
+
+
+def _operation_stage(operation: Mapping[str, Any]) -> str:
+    explicit = str(operation.get("task_pipeline_stage") or "").strip()
+    if explicit:
+        return explicit
+    parent = str(operation.get("parent_stage_id") or "").strip()
+    for stage in ("acceptance_review", "integration", "verify", "impl"):
+        if parent == stage or parent.endswith(f":{stage}") or parent.endswith(f"-{stage}"):
+            return stage
+    return ""
+
+
+def _entry_operation_stages(entry_mode: str) -> set[str]:
+    if entry_mode == "external_gate":
+        return {"integration"}
+    if entry_mode == "verify_only":
+        return {"verify", "acceptance_review", "integration"}
+    return {"impl", "verify", "acceptance_review", "integration"}
+
+
+def _operation_matches_task_entry(
+    operation: Mapping[str, Any],
+    tasks: Iterable[Mapping[str, Any]],
+    *,
+    external_gate_satisfied_ids: set[str],
+) -> bool:
+    task_id = str(operation.get("task_id") or "")
+    task = next(
+        (row for row in tasks if str(row.get("id") or "") == task_id),
+        None,
+    )
+    if task is None:
+        return True
+    mode = str(task.get("task_pipeline_entry_mode") or "standard")
+    if mode == "external_gate" and task_id not in external_gate_satisfied_ids:
+        return False
+    return _operation_stage(operation) in _entry_operation_stages(mode)
+
+
+def _operation_order(operation: Mapping[str, Any]) -> tuple[int, str]:
+    return (
+        int(operation.get("operation_generation") or 1),
+        str(operation.get("operation_id") or ""),
+    )
+
+
+def _select_role(
+    pool: Mapping[str, Any],
+    *,
+    required_capabilities: list[str],
+    used_roles: set[str],
+    preferred_role: str = "",
+    delegation: Mapping[str, Any] | None = None,
+) -> str:
+    # Preserve the declaration order from the effective YAML policy.  A flow
+    # may provide explicit, namespaced role instances (for example
+    # ``prd-dev-lane-0``) while the compiler also appends legacy defaults
+    # (``dev-lane-0``).  Sorting the merged set selects the legacy alias first
+    # and leaves the real runtime role absent, producing a misleading
+    # ``waiting_for_capability`` stall.
+    roles = list(dict.fromkeys(
+        str(item) for item in pool.get("role_instances", []) if str(item)
+    ))
+    profiles = {
+        str(item.get("role") or ""): set(
+            str(value) for value in item.get("capabilities", []) if str(value)
+        )
+        for item in pool.get("worker_profiles", [])
+        if isinstance(item, Mapping)
+    }
+    pool_capabilities = set(
+        str(item) for item in pool.get("capabilities", []) if str(item)
+    )
+    required = set(required_capabilities)
+    oa_preferred = list(delegation.get("preferred_roles") or []) if delegation else []
+    if delegation is not None:
+        roles = [role for role in roles if role in delegation.get("eligible_roles", [])]
+    ordered_roles = [
+        role
+        for role in [*oa_preferred, preferred_role, *roles]
+        if role and role in roles
+    ]
+    ordered_roles = list(dict.fromkeys(ordered_roles))
+    for role in ordered_roles:
+        if role in used_roles:
+            continue
+        capabilities = profiles.get(role, pool_capabilities)
+        if not required or required <= capabilities:
+            return role
+    return ""
+
+
+def _pool_role_instances(pool: Mapping[str, Any]) -> set[str]:
+    return {
+        str(item).strip()
+        for item in pool.get("role_instances", [])
+        if str(item).strip()
+    }
+
+
+def _digest(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+__all__ = [
+    "TASK_PIPELINE_SHADOW_SCHEMA",
+    "TaskPipelineReconciler",
+    "refresh_task_pipeline_projection",
+    "task_pipeline_blocking",
+    "task_pipeline_policy",
+    "task_pipeline_policy_partitions",
+]
