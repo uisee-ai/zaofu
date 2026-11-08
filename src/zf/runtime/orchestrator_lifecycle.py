@@ -31,6 +31,7 @@ from zf.runtime.injection import (
 )
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.provider_context import has_provider_context_exhausted
+from zf.runtime.provider_interactive_prompt import live_provider_interactive_prompt_marker
 from zf.runtime.role_lifecycle_runtime import complete_respawn, watchdog_should_skip
 from zf.runtime.recovery import build_recovery_briefing
 from zf.runtime.remediation_cascade import (
@@ -1375,6 +1376,8 @@ class LifecycleManagerMixin(
                 continue
             if age is None or age < 600.0:
                 continue
+            if live_provider_interactive_prompt_marker(self.transport, instance_id):
+                continue
             self._instance_state[instance_id] = "recycling"
             self._set_worker_state(
                 instance_id, "recycling",
@@ -1496,6 +1499,8 @@ class LifecycleManagerMixin(
                 and (self._now() - over_hard_cap) >= role.drain_hold_seconds
             )
             if force_recycle and current != "recycling":
+                if live_provider_interactive_prompt_marker(self.transport, role.instance_id):
+                    continue
                 from zf.runtime.native_compaction_recycle import defer_native_compaction_recycle
 
                 if defer_native_compaction_recycle(
@@ -1773,6 +1778,8 @@ class LifecycleManagerMixin(
             latest_dispatched = {}
         for instance_id, state in list(self._instance_state.items()):
             if state != "pending_recycle":
+                continue
+            if live_provider_interactive_prompt_marker(self.transport, instance_id):
                 continue
             is_idle = self.wip.can_accept(
                 instance_id,
@@ -2212,6 +2219,12 @@ class LifecycleManagerMixin(
         if on_demand_work_obligation(self, role) is False:
             return WorkflowRuntimeDecision(action="noop", role=role.instance_id,
                                            reason="on-demand worker has no active work obligation")
+        blocker = live_provider_interactive_prompt_marker(self.transport, role.instance_id)
+        if blocker:
+            return WorkflowRuntimeDecision(
+                action="wait", role=role.instance_id,
+                reason=f"provider external input required: {blocker}",
+            )
         signal = emit_stuck_signal(
             self,
             role,

@@ -8,7 +8,7 @@ from zf.runtime.tmux_readiness import build_tmux_readiness_error
 from tests.test_reader_fanout_runtime import _task_map_synth_orchestrator
 
 
-@pytest.mark.parametrize("marker", ["quota_model_switch", "login_required"])
+@pytest.mark.parametrize("marker", ["quota_model_switch", "login_required", "usage_limit_reached"])
 def test_synth_modal_defers_without_plan_rejection_and_recovers_same_operation(
     tmp_path, monkeypatch, marker,
 ):
@@ -19,7 +19,10 @@ def test_synth_modal_defers_without_plan_rejection_and_recovers_same_operation(
 
     def blocked(*args, **kwargs):
         raise build_tmux_readiness_error("task-map-synth", {
-            "failure_class": "provider_interactive_blocked",
+            "failure_class": (
+                "provider_quota_interactive" if marker == "usage_limit_reached"
+                else "provider_interactive_blocked"
+            ),
             "interactive_prompt_marker": marker,
             "current_command": "codex", "pane_alive": True,
         })

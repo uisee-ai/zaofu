@@ -37,3 +37,7 @@ R3共用提示补充：Critic现场再次选错缓存目录，已在Controlled A
 - R7 忙碌期压缩前置不满足不报执行失败：P11A的Codex尚未发送compact命令，却因idle-only能力记作compact.failed并触发Supervisor修复路由 -> verify: 保留容量warning及pending_recycle，不产生未执行命令的failed/compacted事件或消耗尝试；真正发送后拒绝/失败仍记录failed，硬上限和回收不变。
 
 R7已复现1 RED，修复生命周期及mock context-recycle E2E81 passed、Supervisor/事件27 passed、sentinel50 passed/1 skipped；只纠正未发送命令的事件语义。R5 Consumer实施准入evt-9f6689001697，独立Verify已派发；Sources超时证据显示持续进度，仍为失败且不能定性死锁。计划Critic仍在审查。
+
+- R8 外部provider限额不走卡死重启：实际usage-limit与model chooser同屏时优先识别额度耗尽；活provider当前外部输入阻塞时，静默/heartbeat与context回收不得重排任务或反复换会话 -> verify: 原任务/断点保留，既有Pane Probe继续通知；提示解除后正常恢复检查，dead/unreadable pane与真实卡死不被豁免。真实额度不能由本地代码解除，等待账号额度恢复后才续跑。
+
+R8旧实现7 RED，调用闭包146 passed（含mock E2E）；未更换模型或预算，未假称额度已恢复。现场36done/candidate784a5de9与Consumer9504a88保留；因额度耗尽后的旧恢复逻辑，P11A/Consumer已被重排backlog，三个operation仍running而attempt已失败，safe-halt暂停派发。已记录受控恢复前置，等待额度确认后处理过期attempt并续跑。R5保持active。

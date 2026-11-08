@@ -343,3 +343,15 @@ Consumer在`9504a88`完成恢复读取，343个来源/856个共享正文核对�
 P11A运行中出现`evt-bc9d45e07e18`：context ratio0.7215，Codex能力标记compact_requires_idle，尚未发送compact命令，代码却发出compact.failed，Supervisor据此产生repair_harness注意项。这是前置不满足被记成执行失败；任务仍运行。修复将idle-only能力检查前置于attempt消耗，继续现有warning/pending_recycle路径，不伪造failed/requested/compacted。真正transport拒绝、异常和恢复失败仍走原failed，硬上限与R6有界宽限保持。
 
 行为RED复现1 failed；修复后生命周期/阈值/硬上限/原生宽限/调用方及mock context-recycle E2E共81 passed，Supervisor注意项/事件合同27 passed，sentinel50 passed/1 skipped。未运行全pytest或真实provider能力测试；现场部署和后续观察仍单独记录。
+
+R7提交`a5dd46a6`已精确部署，主checkout26 passed；受控重载`evt-8230d0663ab4`后watcher PID2271632/epoch 8f83d89d71204b50bab0666a542d6019，P11A、Consumer Verify、Critic三operation/attempt逐项保持。
+
+### 2026-11-08 额度耗尽后的恢复误路由
+
+后续真实provider拒绝：终端出现“You’ve hit your usage limit”，提示Nov 14th, 2026 10:14 PM重试；不是此前仅余量低的提醒。三个worker仍链接同一账号文件，未观察到账户配置更新；这不能证明是否另外充值，已询问用户，未假定额度已恢复。禁止为继续运行而擅自更换模型或修改本地预算。
+
+现场静默恢复依次发出`evt-0de732f568a3`等worker.stuck，将P11A和Consumer从in_progress回写backlog并重启；provider readiness因同屏模型chooser被分类为provider_interactive_blocked。Critic attempt于08:59 lease_expired；Verify多次重启后产生respawn_success_circuit_opened、`evt-5b3579ebf9f0` dispatch.paused。当前36done、candidate784a5de9保留，P11A/Consumer工作树干净；三operation仍running而原attempt已失败，不能把界面running当实际执行。完整因果快照`diagnostics/settled-recovery-20261108/provider-quota-interruption.json`及工作树保存记录已落盘。
+
+R8修复：硬限额优先于同屏chooser；旧限额/登录/chooser文本若已被后续真实Working/Compacting状态取代，不作为当前阻塞。共享live prompt观察先核实provider进程仍活着；中心stuck入口（覆盖pane/heartbeat）以及硬上限回收、idle drain、重启后孤儿回收在当前外部输入阻塞期间等待，不重排Task、不消耗respawn次数、不旋转provider session。既有Pane Probe继续将这类外部依赖通知owner；不伪造心跳、额度、任务通过或修改预算/lease到期规则。提示解除后原硬上限/回收检查恢复，dead/unreadable pane及普通真卡顿不获豁免；既有safe-halt不会被自动清除。
+
+旧实现7场景RED；完整调用闭包146 passed，含真实Orchestrator的pane/heartbeat入口、context三条回收路径、提示解除后恢复与死进程负例、同一synth operation延迟后恢复、mock context-recycle E2E、Supervisor/事件合同。只测确定性与mock层，未消耗真实provider请求验证额度。仍需用户恢复额度，随后核对并通过受控恢复处理过期attempt与safe-halt，再观察新dispatch；本地修复不代表产品已续跑。

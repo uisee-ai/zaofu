@@ -55,6 +55,25 @@ def test_quota_model_chooser_is_not_a_passive_warning():
     assert provider_interactive_prompt_marker(BANNER) == ""
 
 
+def test_hard_quota_failure_takes_precedence_over_model_chooser():
+    screen = "■ You’ve hit your usage limit. Try again later.\n" + CHOOSER
+    assert provider_interactive_prompt_marker(screen) == "usage_limit_reached"
+    transport = TmuxTransport(Pane(screen))
+    assert not transport.wait_ready("planner", r"[›>]", timeout=1)
+    assert transport.readiness_diagnostics("planner")["failure_class"] == "provider_quota_interactive"
+
+
+def test_old_quota_error_does_not_mask_a_resumed_active_turn():
+    screen = "■ You’ve hit your usage limit.\n◦ Working (1m • esc to interrupt)"
+    assert provider_interactive_prompt_marker(screen) == ""
+
+
+@pytest.mark.parametrize("old_prompt", [CHOOSER, "Please sign in", "Do you trust the files?"])
+def test_historical_prompts_do_not_park_a_resumed_worker(old_prompt):
+    screen = old_prompt + "\n◦ Working (2m • esc to interrupt)"
+    assert provider_interactive_prompt_marker(screen) == ""
+
+
 def test_reused_provider_checks_current_modal_before_touching_input():
     pane = Pane(BANNER)
     transport = TmuxTransport(pane)
