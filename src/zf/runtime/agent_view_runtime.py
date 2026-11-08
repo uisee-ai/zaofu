@@ -84,7 +84,9 @@ class AgentViewRuntimeMixin:
             # projection went missing (cold start without prior state).
             try:
                 if not store.path.exists():
-                    events = self.event_log.read_days(7)
+                    events = self.event_log.read_days(
+                        7, event_types=_WORKER_ACTION_REQUESTS | _WORKER_ACTION_RESULTS,
+                    )
                     store.rebuild_from_events(events)
                 else:
                     store.load()
@@ -124,7 +126,9 @@ class AgentViewRuntimeMixin:
         # Best-effort sync: pull recently emitted request events into the
         # store so requests from before we initialized still surface.
         try:
-            recent_events = self.event_log.read_days(1)
+            recent_events = self.event_log.read_days(
+                1, event_types=_WORKER_ACTION_REQUESTS | _WORKER_ACTION_RESULTS,
+            )
             handled_request_ids = {
                 str(getattr(event, "causation_id", "") or "")
                 for event in recent_events
