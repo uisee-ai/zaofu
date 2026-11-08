@@ -469,12 +469,12 @@ def plan_reader_stage_replan(
         return None, selection
     from zf.runtime.reader_failure_supersession import reader_failure_was_replaced
 
-    if reader_failure_was_replaced(events, failure_event):
+    index = event_index or ReaderReplanIndex(events)
+    if reader_failure_was_replaced(events, failure_event, event_index=index):
         return None, "superseded_by_admitted_task_replacement"
     trigger_type = str(getattr(stage, "trigger", "") or "")
     if not trigger_type:
         return None, "stage_has_no_trigger"
-    index = event_index or ReaderReplanIndex(events)
     task_scopes = index.task_scopes
     failure_run_id = _event_run_id(failure_event)
     stage_flow_kind = _stage_flow_kind(stage, trigger_type)
@@ -489,7 +489,7 @@ def plan_reader_stage_replan(
 
     if (
         getattr(stage, "attempt_domain", "") != "plan"
-        and active_candidate_replan_owns_failure(config, events, failure_event)
+        and active_candidate_replan_owns_failure(config, events, failure_event, event_index=index)
     ):
         return None, "owned_by_active_candidate_replan"
     failure_payload = (
