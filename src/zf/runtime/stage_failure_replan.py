@@ -17,6 +17,7 @@ from typing import Any
 from types import SimpleNamespace
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.reader_task_recovery_scope import ReaderTaskRecoveryScopes
 from zf.runtime.plan_artifact_package import (
     plan_artifact_package_binding,
     reduce_plan_artifact_packages,
@@ -220,7 +221,11 @@ def _requires_changed_scan_input(
     return "scan" in stage_id or event_type.endswith(".scan.failed")
 
 
-def _same_replan_scope(event: ZfEvent, failure_event: ZfEvent) -> bool:
+def _same_replan_scope(
+    event: ZfEvent, failure_event: ZfEvent, task_scopes: ReaderTaskRecoveryScopes,
+) -> bool:
+    if task_scopes.get(event) != task_scopes.get(failure_event):
+        return False
     failure_run_id = _event_run_id(failure_event)
     if failure_run_id and _event_run_id(event) != failure_run_id:
         return False
@@ -464,6 +469,7 @@ def plan_reader_stage_replan(
     trigger_type = str(getattr(stage, "trigger", "") or "")
     if not trigger_type:
         return None, "stage_has_no_trigger"
+    task_scopes = ReaderTaskRecoveryScopes(events)
     failure_run_id = _event_run_id(failure_event)
     stage_flow_kind = _stage_flow_kind(stage, trigger_type)
     canonical_flow_kind = _canonical_run_flow_kind(events, failure_event)
@@ -494,7 +500,7 @@ def plan_reader_stage_replan(
             event.type == trigger_type
             and _same_run(event, failure_run_id)
             and isinstance(event.payload, dict)
-            and _same_replan_scope(event, failure_event)
+            and _same_replan_scope(event, failure_event, task_scopes)
         ):
             origin_payload = dict(event.payload)
     lineage = reader_stage_lineage_payload(
@@ -551,7 +557,7 @@ def plan_reader_stage_replan(
         if (
             str(event.causation_id or "") == failure_event.id
             or str(payload.get("source_event_id") or "") == failure_event.id
-        ) and _same_replan_scope(event, failure_event):
+        ) and _same_replan_scope(event, failure_event, task_scopes):
             return None, "handled_by_gap_plan"
     # E4(prd-goal e2e finding-8):cap 曾数全量历史,后续 admission
     # 成功也不清零 → 每周期回声 escalate。只计"最近一次 stage 成功
@@ -565,7 +571,7 @@ def plan_reader_stage_replan(
             if (
                 event.type == success_event
                 and _same_run(event, failure_run_id)
-                and _same_replan_scope(event, failure_event)
+                and _same_replan_scope(event, failure_event, task_scopes)
             ):
                 last_success_index = index
     prior_failures = 0
@@ -580,7 +586,7 @@ def plan_reader_stage_replan(
             or not _same_run(event, failure_run_id)
         ):
             continue
-        if not _same_replan_scope(event, failure_event):
+        if not _same_replan_scope(event, failure_event, task_scopes):
             continue
         if event.id == failure_event.id:
             continue
@@ -631,7 +637,7 @@ def plan_reader_stage_replan(
                 or not isinstance(event.payload, dict)
             ):
                 continue
-            if not _same_replan_scope(event, failure_event):
+            if not _same_replan_scope(event, failure_event, task_scopes):
                 continue
             target_ref = _payload_target_ref(event.payload)
             if target_ref:
