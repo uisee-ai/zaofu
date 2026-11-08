@@ -227,6 +227,10 @@ class AgentViewRuntimeMixin:
                 reason="unknown worker or empty message",
             )
             return None
+        from zf.runtime.worker_reply_binding import admit_worker_reply
+
+        if not admit_worker_reply(self, request, instance_id, payload):
+            return None
         task_id = str(payload.get("task_id") or self._active_task_id_for_worker(instance_id) or "")
         replies_dir = self.state_dir / "operator-replies"
         replies_dir.mkdir(parents=True, exist_ok=True)

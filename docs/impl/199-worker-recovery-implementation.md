@@ -453,3 +453,23 @@ LS-v1 中一次 `FMS-DB-READINESS-01` 拼写错误被 CLI 当作 legacy 心跳�
 验证：`tests/test_worker_heartbeat_binding.py` 覆盖真实 CLI、自定义 state_dir、
 实际 housekeeping caller、错误身份及重放、正确续租和 legacy 兼容；
 本轮任务见 `tasks/2026-11-08-2004-heartbeat-binding.md`。
+
+
+### 2026-11-08：定向回复在投递时重验 operation
+
+LS-v1 的操作员事实补充在排队期间目标已提交 blocked，旧回复入口仍按 lane
+发送“继续当前任务”，导致终态 worker 再次读取上下文并碰到正确的写域拒绝。
+`AgentViewRuntimeMixin` 现在在生成回复工件、调用 transport 前，核验显式
+operation_id 对应操作仍 running、实例不变，且请求中显式 task/attempt/dispatch/
+lease/run 与当前操作一致。未知、终态、旧身份拒绝为有因果关联的
+`worker.reply.failed`；原请求保留，队列重放不重复投递。已准入结果即使尚未写settled也拒绝迟到回复；合法当前回复沿用原投递协议，
+本次守卫不创建或改写TaskAttempt。
+
+无 operation 绑定的 resident/channel 对话仍沿用原协议；本守卫不把普通讨论
+变成新任务，也不替代受控恢复。需要继续已结束任务时必须走正常恢复/后继路径，
+不能靠定向回复隐式恢复。源请求未携带的旧 attempt 身份不能由本守卫推断，
+生产者需要精确约束重试代际时应同时提供 attempt/dispatch。
+
+`tests/test_worker_reply_binding.py` 从真实 Orchestrator 排队入口重现
+“请求先发生、目标后终止、回复再投递”，并覆盖错误身份、正常投递与重放、
+resident 兼容。任务见 `tasks/2026-11-08-2040-worker-reply-binding.md`。
