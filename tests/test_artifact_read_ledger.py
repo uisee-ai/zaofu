@@ -212,6 +212,8 @@ def test_attempt_source_briefing_shell_quotes_json_path(monkeypatch) -> None:
 
     assert "--json-path '$'`" in briefing
     assert "--json-path $`" not in briefing
+    assert "--required --deduplicate-content`" in briefing
+    assert "content_ref" in briefing and "fresh session" in briefing
 
 
 def test_required_read_records_and_seals_attempt_ledger(tmp_path: Path) -> None:

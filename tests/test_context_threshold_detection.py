@@ -780,3 +780,41 @@ class TestRunOnceContextPreflight:
         assert types.index("worker.recycled") < types.index("task.dispatched")
         assert orch._instance_state.get("dev") == "healthy"
         assert orch._last_worker_state.get("dev") == "busy"
+
+
+def test_repeated_goal_activation_does_not_recycle_busy_reader(
+    state_dir, claude_config, transport,
+):
+    """The workflow parent may be backlog; its reader is still live work."""
+    orch = Orchestrator(state_dir, claude_config, transport)
+    TaskStore(state_dir / "kanban.json").add(Task(id="PARENT", title="PRD", status="backlog"))
+    orch._session_readers = {"claude-code": _FakeReader(_make_usage(0.72))}
+    RoleSessionRegistry(state_dir / "role_sessions.yaml", project_root=str(state_dir.parent)).get_or_create("dev")
+    log = EventLog(state_dir / "events.jsonl")
+    for event in (
+        ZfEvent(type="run.goal.blocked", payload={"workflow_run_id": "workflow-1"}),
+        ZfEvent(type="run.goal.updated", payload={"workflow_run_id": "workflow-1", "status": "active"}),
+        ZfEvent(type="fanout.child.dispatched", task_id="PARENT", payload={
+            "workflow_run_id": "workflow-1", "run_id": "reader-run", "task_id": "PARENT",
+            "fanout_id": "plan-fanout", "child_id": "planner", "role_instance": "dev",
+        }),
+        ZfEvent(type="run.goal.updated", payload={"workflow_run_id": "workflow-1", "status": "active"}),
+    ):
+        log.append(event)
+    recycled = []
+    orch._start_recycle = lambda role: recycled.append(role.instance_id)
+    orch._check_context_thresholds()
+    orch._check_pending_recycles()
+    assert recycled == []
+    assert orch._instance_state["dev"] == "pending_recycle"
+    warning = next(e for e in reversed(log.read_all()) if e.type == "worker.context.warning")
+    assert warning.payload["idle"] is False
+    assert warning.payload["active_fanout"]["run_id"] == "reader-run"
+    # A matching terminal result releases the same reader; the fix is not a
+    # blanket ban on lifecycle recycling.
+    log.append(ZfEvent(type="fanout.child.completed", payload={
+        "workflow_run_id": "workflow-1", "run_id": "reader-run", "fanout_id": "plan-fanout",
+        "child_id": "planner", "role_instance": "dev",
+    }))
+    orch._check_pending_recycles()
+    assert recycled == ["dev"]

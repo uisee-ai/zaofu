@@ -3,6 +3,11 @@
 本改进将通用方法与机械事实分开：Planner/Critic 判断任务语义、SDD/TDD 充分性、
 真实依赖和反馈时点；Kernel 保持身份、摘要、范围和必要输入检查。
 
+验证命令的 POSIX `PYTHONPATH` 按冒号分隔逐项核对仓库路径范围。例如
+`PYTHONPATH=app:app/tools` 引用两个目录，不是名为 `app:app/tools` 的文件。
+裸目录名和带空格的引用目录也需核对；未声明的分量仍拒绝。此解析不扩大任务
+写入域，也不把其他含冒号的参数或环境变量自动解释成路径列表。
+
 ## 新项目默认值
 
 `zf flow draft` / 项目初始化生成的 runtime profile 启用
