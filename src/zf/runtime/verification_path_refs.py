@@ -105,6 +105,15 @@ def command_path_refs(command: str) -> list[str]:
 
 
 def _path_ref_candidates_from_shell_token(token: str) -> list[str]:
+    name, assignment, value = str(token).partition("=")
+    if assignment and name == "PYTHONPATH":
+        # POSIX Python search roots are separate inputs, not one colon-named
+        # file. Bare roots still denote directories and must be scope checked.
+        return [
+            part if "/" in part or part.startswith("$") else f"./{part}"
+            for part in value.split(":")
+            if part
+        ]
     cleaned = _clean_path_ref_token(token)
     if not cleaned or cleaned.startswith("-") or "://" in cleaned:
         return []

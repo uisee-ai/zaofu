@@ -322,3 +322,11 @@ Core audit ec31f71最终smoke5/runtime75/access21/foundation53+delta通过，作
 - Discovery op wop-prd-post-verify-discovery-prd-flow-discovery-trig-evt-d800-1c83b4438d16 / pane755，按当前5d02图/79105167候选核对最小Dataset清洗来源冻结边。现有公开Clean run可返回原分母/决策与统计，Sources/Align有实测CAN字段；不可从样本/同segment猜clean run或将局部字段当全协议资格。监工要求保护34done、Core→Ingest R2→Privacy R7和活动Schedule Verify→Training链，完整复用Quality修复但不当已验收基线；当前尚未产生新待批方案。
 - Core实际公开bind/provision锁环RED 1fail/12.39秒后实现受信前置锁及锁后重验。现有扩展回归111pass，新增夹具隔离修正后36pass；随后全runtime154pass/2fail为audit-only默认兼容夹具，修正后focused40pass，全套重跑中，不能将局部GREEN称最终全通过。消费者bootstrap成功、foundation53pass、access21pass，Dataset43pass/584.51秒；先前30点长等待已结束，未据此误判死锁或重启任务。其余消费者继续执行，尚未提交或独立Verify。
 - 01:08:00账本实际Core Impl、Schedule Verify、Quality Discovery三路running；有效48项、34done、14未完成。完成数未因自测通过而增加，持续监工，无canonical直接修改、无合并或push。
+
+### 01:28 UTC：Quality 增量路径列表误拒绝修复中
+
+- Discovery evt-0434d0635176提交最小Dataset→Quality两片；flow.gap_plan.ready evt-90efd07258be后task_map.amend.failed evt-27fbd93a9d06拒绝`PYTHONPATH=app:app/tools`，解析器把列表当单路径`app:app/tools`。原图和在途任务未改变。
+- 按持续监工修复授权，在隔离修复分支先复现：新增直接Task Map准入和解析回归3failed/4passed；实现只改`verification_path_refs.py`对POSIX PYTHONPATH逐分量解析，裸目录也保留路径检查，不放宽scope。额外覆盖隐藏目录、父目录、未授权绝对路径及普通冒号参数。文档同步到`docs/impl/plan-execution-readiness.md`。
+- step -> verify: 合法两目录实际validation.commands通过；任一未授权分量继续拒绝；Task Map/Writer/Gap准入直接调用闭包、sentinel和确定性mock通过后，精确前像部署并控制面保留worker重载，再核实受控恢复和新计划。尚未完成部署/恢复，不能标done。
+- 最终定向dev-verify闭包281pass（17测试文件）、新9例全过；第一轮新增父目录反例暴露旧标点清理会裁掉末尾`..`，已将PYTHONPATH解析置于普通token清理之前，保留该失败。sentinel50pass/1skip、计划审批mock2pass；未跑全仓pytest。`--base dev`全分支计划包含此前已验证的监工修复，执行使用本批显式3路径与直接调用测试，未重复旧全批。证据位于`/tmp/zf-supervision-20261107/pythonpath-*`，部署前持久化。
+- Schedule 01:26:33 evt-869f94ba8ac8独立通过、01:27:07 evt-595cbd5fb8ae task.done，35/48有效任务完成。Quality路径误拒绝01:25:56 evt-fd49507ceb21触发stage_replan_cap_exhausted并转operator，允许operator_review/start_new_generation；持续监工授权下拟在已验证修复后仅重新准入本次语义报告，不清失败历史、不伪造worker完成、不绕过Plan审批。
