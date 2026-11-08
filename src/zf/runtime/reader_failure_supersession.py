@@ -1,4 +1,4 @@
-"""Fence late recovery failures after their exact task replacements are admitted."""
+"""Share causal task replacement proof across recovery routing and readers."""
 
 from __future__ import annotations
 
@@ -55,18 +55,49 @@ def reader_replacement_admission(
     task_id = str(trigger.payload.get("task_id") or trigger.task_id or "")
     if task_id:
         affected.add(task_id)
-    if not affected:
+    return admitted_task_replacement(
+        events, source_event_id=source_id, workflow_run_id=run_id,
+        affected_task_ids=affected,
+    )
+
+
+def failure_has_admitted_replacement(
+    events: list[ZfEvent], failed_event: ZfEvent | None, task_id: str,
+) -> bool:
+    if failed_event is None or not task_id:
+        return False
+    return admitted_task_replacement(
+        events, source_event_id=failed_event.id,
+        workflow_run_id=_run_id(failed_event), affected_task_ids={task_id},
+    ) is not None
+
+
+def admitted_task_replacement(
+    events: list[ZfEvent], *, source_event_id: str, workflow_run_id: str,
+    affected_task_ids: set[str],
+) -> ZfEvent | None:
+    """Prove all affected tasks were replaced for this exact failed occurrence.
+
+    Run Manager uses the same proof before requesting a scan that reader
+    closeout uses afterward. A proposed map alone never retires recovery.
+    """
+    if not workflow_run_id or not affected_task_ids:
+        return None
+    by_id = {event.id: event for event in events}
+    source = by_id.get(source_event_id)
+    if source is None or _run_id(source) != workflow_run_id:
         return None
     source_index = events.index(source)
     for admitted in events[source_index + 1:]:
         payload = admitted.payload
         if (admitted.type != "task.pipeline.generation.admitted"
-                or admitted.origin != "kernel" or _run_id(admitted) != run_id
+                or admitted.origin != "kernel" or _run_id(admitted) != workflow_run_id
                 or payload.get("schema_version") != "task-pipeline-generation.v1"):
             continue
         ready = by_id.get(str(payload.get("trigger_event_id") or ""))
         if (ready is None or ready.type != "task_map.ready" or ready.origin != "kernel"
-                or _run_id(ready) != run_id or ready.payload.get("rework_of") != source_id):
+                or _run_id(ready) != workflow_run_id
+                or ready.payload.get("rework_of") != source_event_id):
             continue
         summary = ready.payload.get("rework_summary")
         gaps = summary.get("gap_tasks") if isinstance(summary, dict) else None
@@ -85,7 +116,7 @@ def reader_replacement_admission(
             if successors and "" not in successors and parent not in admitted_ids
             and successors <= admitted_ids
         }
-        if affected <= replaced:
+        if affected_task_ids <= replaced:
             return admitted
     return None
 
