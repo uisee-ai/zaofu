@@ -13,3 +13,5 @@
 验收按变更模块、直接调用方、共享Event/Store/recovery边界闭包执行，另跑sentinel与相关mock E2E；不依文件数量扩大到全pytest。部署仅精确前像/唯一上下文补丁，保留主树并发修改。完成实现后本地commit，不push、不merge。
 
 2026-11-08 实现验证：R1–R4 已完成。定向新增行为16 passed；65文件影响闭包732 passed；sentinel 50 passed/1 skipped；Task Pipeline runtime-noise mock E2E 3 passed；instruction/skill/docs 40 passed/1 skipped。dev-verify --base dev及本批--paths规划已检查，选取器按文件数升级全量（483文件），按AGENTS改为直接模块/调用方/共享边界65文件定向闭包；未执行全pytest或真实provider测试。R5部署与现场恢复仍待完成，保持active。
+
+实现提交：`bf758afe fix: recover settled verifier failures and close recovery effects`。主环境77 passed；控制面重载后Training Verify与Consumer Impl g2实际dispatch，原子必读缓存已真实成功。R5已拉起两worker及有界计划修订Planner；新计划尚待产出/独立审查及批准，Ingest产品修复尚待实施，因此本任务不归档done。现场记录见docs/impl/task-recovery-20261105.md及产品diagnostics/settled-recovery-20261108/。

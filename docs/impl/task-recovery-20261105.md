@@ -284,3 +284,14 @@ Discovery完成，不是task.done。Discovery发现产品缺口且有gap时等�
 执行失败仍失败，同run其他attempt失败不结算此请求。计划审批、实现和最终验收继续
 经过各自gate。现场与验收记录见
 [恢复批次](../../tasks/active/2026-11-08-0617-settled-recovery-closeout.md)。
+
+### 2026-11-08 06:43 UTC 现场恢复验证
+
+实现提交 `bf758afe`，共享主树以唯一前像补丁部署，主环境77项定向测试通过。控制面重载为PID1501615/epoch dc24d6dc203345c6a2111926e3028133，未关闭worker/resident；产品两份角色技能源也精确更新，当前attempt通过补充指令使用新入口。
+
+- Training原固定提交`b12222f3`的Verify保留operation/hash/generation，通过`op-resume-ff05716ab6e47f293a882b7b`受控续验；新attempt `ta-f922613c715d84614250`，实际dispatch `evt-58ee7aaae4cb`，已成功原子捕获2,036,777字节必读缓存并开始连续分页。缓存回执明确不证明模型已消费。
+- Consumer Waits受控Impl g2请求`evt-6bd83f920d5e`，新attempt `ta-cfc82ecbd39f6b42d527`、dispatch `evt-3de8a47ad467`；实际在读本次身份资料并开始分页，原五域测试写域和业务断言保持。
+- `run.goal.quiescent.exited`=`evt-9ec97c26b8f5`，不是仅修改UI状态。35 done不变。
+- 独立复核b6c9d8候选，机械跨矩阵校验确有102错误、execution_spec缺9个当前任务原生正文；拒绝`evt-692a32048f10`，没有误操作Oct28旧pending。自动恢复触发历史累计第5次cap `evt-7a30af2f5d67`。基于用户已授权修复及实际复现，受控提交一次有界计划一致性修订：`evt-37810cdc3635`→`evt-8487e647691f`/`evt-0a2d5221aa8f`，保留原计数/全局上限和35 done、两在途快照；Planner已收到新briefing。修订仍需Critic/监工审查后才可批准，Ingest锁序产品修复尚未完成。
+
+现场完整证据在产品根`diagnostics/settled-recovery-20261108/`：部署前像/补丁/摘要，77项主树复验日志位于`/tmp/zf-supervision-20261107/settled-main-validation.log`；恢复结果、独立计划校验、受控修订payload和protected_before、latest.json共同保留恢复因果。所有历史失败保持原判；尚无新的产品验收通过，持续监工项保持active。
