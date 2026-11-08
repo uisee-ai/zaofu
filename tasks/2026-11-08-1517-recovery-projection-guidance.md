@@ -1,6 +1,6 @@
 # 恢复投影不能被误当作永久执行阻塞
 
-> 状态: active
+> 状态: done — `cdc1794f fix: clarify input recovery projections do not deny execution`，已合并dev `8b9aef89`。
 
 用户授权持续监工、修复并记录。ls-v1 FMS19在evt-44716768ee8e明确把historical_missing=0、current_memory=unknown、reconstruction_required=7、authorizes_execution=false及checkpoint unavailable当作阻塞依据；当前artifact_input_recovery实现这些字段并不表示执行否决，相关测试证明读完后依然保持unknown/false/总数。
 
@@ -11,3 +11,5 @@
 关联[199](../docs/design/199-worker-failure-recovery-and-role-handoff.md)和[实现说明](../docs/impl/input-recovery-projection-guidance.md)。
 
 验证：针对恢复CLI/精确读取21项通过；dev-verify按18个映射文件运行142项通过、1项跳过，包含stale-contract模拟E2E；sentinel53项通过。只改方法与响应解释，身份/鉴权/生命周期和保守字段值未改。尚待现场部署与恢复效果观察。
+
+15:21 已部署控制面8b9aef89：Watcher 2606889、Web 2607787健康，7个在途operation的身份与pane保持；只将本次skills差量应用到ls-v1项目，保留既有本地差异。FMS19正式retry已受理evt-9b642b552e9c；尚未证明该轮产品返工完成。记录ls-v1/docs/records/2026-11-08-recovery-projection-guidance/。
