@@ -18,6 +18,7 @@ from types import SimpleNamespace
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.reader_task_recovery_scope import ReaderTaskRecoveryScopes
+from zf.runtime.reader_replan_index import ReaderReplanIndex
 from zf.runtime.plan_artifact_package import (
     plan_artifact_package_binding,
     reduce_plan_artifact_packages,
@@ -411,14 +412,15 @@ def reader_stage_lineage_payload(
     stage_id: str,
     correlation_id: str = "",
     fanout_id: str = "",
+    event_index: ReaderReplanIndex | None = None,
 ) -> dict[str, Any]:
     """Recover the durable parent payload across pattern-bridged replans."""
 
-    by_id = {event.id: event for event in events}
+    index = event_index or ReaderReplanIndex(events)
+    index.require_snapshot(events)
+    by_id = index.by_id
     lineage: dict[str, Any] = {}
-    for event in events:
-        if event.type != "fanout.started":
-            continue
+    for _, event in index.rows("fanout.started"):
         payload = event.payload if isinstance(event.payload, dict) else {}
         if fanout_id and str(payload.get("fanout_id") or "") != fanout_id:
             continue
@@ -452,6 +454,7 @@ def plan_reader_stage_replan(
     generation_source_event_id: str = "",
     authorization_event_id: str = "",
     authorization_ref: str = "",
+    event_index: ReaderReplanIndex | None = None,
 ) -> tuple[ZfEvent | None, str]:
     """返回 (待 append 的 replan 事件, 说明)。None = 不 replan(附原因)。
 
@@ -459,6 +462,8 @@ def plan_reader_stage_replan(
     - cap:同类 failure 达 STAGE_REPLAN_CAP 次后不再 replan(说明含
       "cap_exhausted",调用方据此升级 human)。
     """
+    if event_index is not None:
+        event_index.require_snapshot(events)
     stage, selection = reader_stage_for_failure(config, events, failure_event)
     if stage is None:
         return None, selection
@@ -469,7 +474,8 @@ def plan_reader_stage_replan(
     trigger_type = str(getattr(stage, "trigger", "") or "")
     if not trigger_type:
         return None, "stage_has_no_trigger"
-    task_scopes = ReaderTaskRecoveryScopes(events)
+    index = event_index or ReaderReplanIndex(events)
+    task_scopes = index.task_scopes
     failure_run_id = _event_run_id(failure_event)
     stage_flow_kind = _stage_flow_kind(stage, trigger_type)
     canonical_flow_kind = _canonical_run_flow_kind(events, failure_event)
@@ -495,10 +501,9 @@ def plan_reader_stage_replan(
     if not authorized_generation and failure_kind_from_payload(failure_payload) == FAILURE_KIND_INFRA:
         return None, "infrastructure_failure"
     origin_payload: dict[str, Any] = {}
-    for event in events:
+    for _, event in index.rows(trigger_type):
         if (
-            event.type == trigger_type
-            and _same_run(event, failure_run_id)
+            _same_run(event, failure_run_id)
             and isinstance(event.payload, dict)
             and _same_replan_scope(event, failure_event, task_scopes)
         ):
@@ -508,6 +513,7 @@ def plan_reader_stage_replan(
         stage_id=str(getattr(stage, "id", "") or ""),
         correlation_id=str(failure_event.correlation_id or ""),
         fanout_id=failure_fanout_id,
+        event_index=index,
     )
     if failure_fanout_id:
         if not lineage:
@@ -546,12 +552,9 @@ def plan_reader_stage_replan(
     )
     if superseding_success is not None:
         return None, "superseded_by_candidate_ready"
-    failure_seen = False
-    for event in events:
-        if event.id == failure_event.id:
-            failure_seen = True
-            continue
-        if not failure_seen or event.type not in _GAP_PLAN_READY_EVENTS:
+    failure_index = index.positions.get(failure_event.id, -1)
+    for position, event in index.ordered(_GAP_PLAN_READY_EVENTS):
+        if failure_index < 0 or position <= failure_index:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
         if (
@@ -567,19 +570,16 @@ def plan_reader_stage_replan(
     )
     last_success_index = -1
     if success_event:
-        for index, event in enumerate(events):
+        for position, event in index.rows(success_event):
             if (
                 event.type == success_event
                 and _same_run(event, failure_run_id)
                 and _same_replan_scope(event, failure_event, task_scopes)
             ):
-                last_success_index = index
+                last_success_index = position
     prior_failures = 0
-    failure_index = -1
-    for index, event in enumerate(events):
-        if event.id == failure_event.id:
-            failure_index = index
-        if index <= last_success_index:
+    for position, event in index.rows(failure_event.type):
+        if position <= last_success_index:
             continue
         if (
             event.type != failure_event.type
@@ -609,7 +609,7 @@ def plan_reader_stage_replan(
         return None, "stale_failure"
         # 本失败已 replan 过?(replay/echo 安全)
     if authorized_generation:
-        for event in events:
+        for _, event in index.rows(trigger_type):
             payload = event.payload if isinstance(event.payload, dict) else {}
             if (
                 event.type == trigger_type
@@ -619,7 +619,7 @@ def plan_reader_stage_replan(
                 return None, "generation_already_started"
         prior_failures = 0
     else:
-        for event in events:
+        for _, event in index.rows(trigger_type):
             if (
                 event.type == trigger_type
                 and str(event.causation_id or "") == failure_event.id
@@ -675,11 +675,11 @@ def plan_reader_stage_replan(
     rejected_id = str(
         failure_payload.get("trigger_event_id") or failure_event.causation_id or ""
     ).strip()
-    rejected_plan = next((
-        event for event in events
-        if event.id == rejected_id and event.type == "task_map.ready"
-        and _same_run(event, failure_run_id)
-    ), None)
+    rejected_plan = index.by_id.get(rejected_id)
+    if rejected_plan is not None and (
+        rejected_plan.type != "task_map.ready" or not _same_run(rejected_plan, failure_run_id)
+    ):
+        rejected_plan = None
     if (
         failure_payload.get("failure_class") == "reader_execution_failure"
         or (failure_payload.get("failure_scope") == "plan_admission" and rejected_plan is not None)

@@ -2448,10 +2448,15 @@ def _reader_stage_replan_checkpoints(
     from zf.runtime.run_scope import resolve_run_for_event
 
     out: list[WorkflowResumeCheckpoint] = []
+    from zf.runtime.reader_replan_index import ReaderReplanIndex
+
+    event_index = ReaderReplanIndex(events)
     for event in events:
         if event.type not in stage_by_failure:
             continue
-        replan_event, note = plan_reader_stage_replan(config, events, event)
+        replan_event, note = plan_reader_stage_replan(
+            config, events, event, event_index=event_index,
+        )
         if replan_event is None:
             continue
         stage, _selection = reader_stage_for_failure(config, events, event)
