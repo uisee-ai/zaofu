@@ -3090,22 +3090,6 @@ class FanoutCoordinationMixin(
         plan_id = trigger_event.id
         requested = False
         suppressed: set[tuple[str, str]] = set()
-        decided_plan_ids: set[str] = set()
-        pending_fingerprints: dict[str, str] = {}
-        for existing in events:
-            payload = (
-                existing.payload if isinstance(existing.payload, dict) else {}
-            )
-            pid = str(payload.get("plan_id") or "")
-            if not pid:
-                continue
-            if existing.type in ("plan.approved", "plan.rejected"):
-                if not (enabled and existing.type == "plan.approved" and payload.get("semantic_control")):
-                    decided_plan_ids.add(pid)
-            elif existing.type == "plan.approval.requested":
-                pending_fingerprints[pid] = str(
-                    payload.get("plan_fingerprint") or "",
-                )
         for existing in reversed(events):
             payload = (
                 existing.payload if isinstance(existing.payload, dict) else {}
@@ -3172,7 +3156,9 @@ class FanoutCoordinationMixin(
                     },
                 },
             )
-            from zf.runtime.plan_approval_replay import approved_equivalent_plan_id
+            from zf.runtime.plan_approval_replay import (
+                approved_equivalent_plan_id, pending_plan_requests,
+            )
 
             approved_duplicate = approved_equivalent_plan_id(events, {
                 **base_payload, "plan_fingerprint": fingerprint,
@@ -3190,10 +3176,10 @@ class FanoutCoordinationMixin(
                 return False
             duplicate_of = next(
                 (
-                    pid for pid, fp in pending_fingerprints.items()
-                    if fp and fp == fingerprint
-                    and pid != plan_id
-                    and pid not in decided_plan_ids
+                    str(event.payload["plan_id"])
+                    for event in pending_plan_requests(events)
+                    if event.payload.get("plan_fingerprint") == fingerprint
+                    and event.payload["plan_id"] != plan_id
                 ),
                 "",
             )
