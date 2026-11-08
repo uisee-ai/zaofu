@@ -189,13 +189,16 @@ def test_heartbeat_after_stuck_clears_dedup(state_dir, orch):
     recovery_event = ZfEvent(
         type="worker.heartbeat",
         actor="dev-1",
+        task_id="TASK-dev-1",
         payload={
             "instance_id": "dev-1",
+            "current_task_id": "TASK-dev-1",
             "state": "idle",
             "last_action_ts": datetime.now(timezone.utc).isoformat(),
         },
     )
     orch._apply_housekeeping(recovery_event)
+    assert _count_events(state_dir, "task.attempt.result_rejected") == 0
 
     # Now worker gets stuck again (age was reset by housekeeping; replant)
     _plant_stuck_heartbeat(state_dir, "dev-1", age_seconds=240)
