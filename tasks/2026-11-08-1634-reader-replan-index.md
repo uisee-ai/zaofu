@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `4b419853` fix: reuse reader recovery event indexes per projection
 
 # Reader 恢复投影重复全账本扫描
 
@@ -21,3 +21,5 @@
 实现说明：[Reader恢复投影事件索引](../docs/impl/reader-replan-projection-index.md)。
 
 当前验证：初始6项新API缺失失败，另1项入口测试配置错误已纠正；最终定向71通过（含199与replan mock），serial10通过。同一158708事件前缀3条checkpoint完全一致，14.12秒→7.60秒。295文件影响闭包4149通过、7跳过，sentinel53通过；未执行全套pytest/真实Provider E2E。
+
+合并dev `4582fa5e`，合并后21定向与53 sentinel通过；Watcher 2824406 / Web 2824298加载同一实现，8个在途operation/attempt/dispatch/pane保持，Web健康与UI200。完整记录在LS docs/records/2026-11-08-reader-replan-index/。归档后dev只领先文档；无push。
