@@ -11,3 +11,12 @@ LS-v1 的一次 Verify 切换到既有精确来源分页后，完整内容已到
 验证：新增15项行为回归先出现3项预期失败；修复后针对性39项通过。影响规划映射141文件，按精确文件闭包执行1505项通过，未执行全量pytest；planner 的按文件数扩展全套与仓库规则冲突，自动run仅执行串行10项和sentinel53项，另外执行design199及plan approve模拟E2E共3项通过。
 
 真实历史 attempt `ta-e4fcd1087053e9fd3a54`：51行中28行无operation，9项必读的历史缺失6→0，current_memory仍unknown、authorizes_execution仍false。证据保存在LS项目 `docs/records/2026-11-08-exact-read-recovery/`。首次监工回放误将实际配置角色verify-lane-0写成verify，得出9→9；核对原始行后纠正测量身份，未修改生产数据。
+
+## 两种分页的角色方法
+
+关联[分页说明修复](../../tasks/2026-11-08-1922-read-page-method.md)。现场多个Verify尝试
+`--required --page-bytes 30000/32768/65536`，被现有CLI正确拒绝。角色方法补充1024—8192
+字节的实际范围，以及大段中文可采用的既有精确字符分页。两种模式的单位、续读位置和
+游标不同：批量使用next_cursor；单项保持来源三元组，从完整page_end续接，并跟随
+next_page_start。仍逐页原样消费，内容丢失时补读原文，不更改授权、范围、账本或门禁。
+这只是方法补齐，不宣称减少了必读内容、证明当前理解或消除了全部读取/压缩耗时。

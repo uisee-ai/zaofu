@@ -72,6 +72,12 @@ amendment are separate role capabilities supplied by the workflow profile.
    字段的外壳；不要把正文JSON解析后再取不存在的`.content`而误判为空。`--required`
    统一返回 `required-artifact-page.v2`；完整消费 `items[].content` 并按 `next_cursor`
    续页到 null。原样返回每页及身份元数据，保留已完整呈现的正文，不重复dump。
+   `--required --page-bytes`仅允许1024—8192个UTF-8字节（含元数据，默认8192），不是token数；
+   不要调大到30000或65536。大段中文可使用已有单项精确分页：保持当前source/artifact/json-path，
+   从上一完整页的page_end接`--page-start <下一位置> --page-size 8192`，之后跟随next_page_start；
+   这里8192是字符。新来源从0开始，不猜偏移；已读内容丢失则补读实际缺口。给工具足够输出
+   预算并逐页完整消费，不能以截断或摘要替代正文。该方式沿用同一授权与账本，不减少必读；
+   无需切换时继续原cursor，不为切换重读已保留正文或完整别名。
    等待仍在运行的工具时采用与预计耗时相称的10—30秒等待（保持操作者可见的进度），
    避免连续1秒轮询：每次模型往返都重带上下文，空输出也会消耗累计预算。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
