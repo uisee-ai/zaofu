@@ -185,6 +185,9 @@ def write_target_operations(
     """Return normalized operation/path pairs for provider-native writes."""
 
     lower = tool_name.lower().strip()
+    if lower in {"bash", "shell"}:
+        target = _literal_handoff_target(str(tool_input.get("command") or ""))
+        return [("write", target)] if target else []
     if lower in {"write", "edit", "multiedit", "notebookedit"}:
         raw = (
             tool_input.get("file_path")
@@ -215,6 +218,32 @@ def write_target_operations(
                 if target:
                     operations.append((operation, target))
     return operations
+
+
+def _literal_handoff_target(command: str) -> str:
+    """Recognize one literal cat heredoc; everything else keeps shell guards.
+
+    Only a quoted delimiter and a plain literal target are accepted. The full
+    command must end at its first delimiter: bodies may contain inert code, but
+    commands after an early delimiter must never be hidden as document text.
+    """
+    header, newline, rest = command.partition("\n")
+    if not newline:
+        return ""
+    match = re.fullmatch(
+        r"[ \t]*cat[ \t]+>>?[ \t]*"
+        r"(?P<target>[A-Za-z0-9_./-]+|'[A-Za-z0-9_./ -]+'|\"[A-Za-z0-9_./ -]+\")"
+        r"[ \t]+<<[ \t]*(?P<quote>['\"])(?P<end>[A-Za-z_][A-Za-z_0-9]*)"
+        r"(?P=quote)[ \t]*",
+        header,
+    )
+    if match is None:
+        return ""
+    lines = rest.removesuffix("\n").split("\n")
+    delimiter = match.group("end")
+    if lines[-1] != delimiter or delimiter in lines[:-1]:
+        return ""
+    return shlex.split(match.group("target"))[0]
 
 
 def tool_input_digest(tool_input: dict) -> str:
@@ -390,7 +419,7 @@ def evaluate_workdir_write_guard(
             ) and operation in {"update", "write", "edit", "multiedit", "notebookedit"}:
                 continue
             offending.append(str(target))
-    if tool_name.lower() in {"bash", "shell"}:
+    if tool_name.lower() in {"bash", "shell"} and not targets:
         for project_path in project_roots:
             if (
                 mutating_shell
