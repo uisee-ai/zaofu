@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from functools import cache
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from zf.core.events.model import ZfEvent
 from zf.core.events.log import EventLog
@@ -22,6 +23,8 @@ def _retryable_operation(
     operations: Mapping[str, dict[str, Any]],
     contexts: Mapping[str, dict[str, Any]],
     events: list[ZfEvent],
+    *,
+    terminal_scope: Callable[[], tuple[dict[str, str], set[str]]] | None = None,
 ) -> tuple[dict[str, Any], ZfEvent]:
     operation = operations.get(operation_id)
     if not operation or operation.get("task_pipeline_stage") != "impl":
@@ -40,7 +43,9 @@ def _retryable_operation(
         raise ValueError("only a settled, admitted blocked Impl result can be retried")
     from zf.runtime.run_admission import fold_terminal_run_scope
 
-    aliases, terminal_runs = fold_terminal_run_scope(events)
+    aliases, terminal_runs = (
+        terminal_scope() if terminal_scope is not None else fold_terminal_run_scope(events)
+    )
     run_id = str(operation.get("workflow_run_id") or "")
     if aliases.get(run_id, run_id) in terminal_runs:
         raise ValueError("terminal run cannot be retried")
@@ -178,6 +183,14 @@ def operator_impl_retry_requests(
     operations: Mapping[str, dict[str, Any]],
     contexts: Mapping[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
+    # All retries in this projection see the same snapshot. Keep this lazy
+    # and local: a later invocation must observe new terminal/resume events.
+    @cache
+    def terminal_scope() -> tuple[dict[str, str], set[str]]:
+        from zf.runtime.run_admission import fold_terminal_run_scope
+
+        return fold_terminal_run_scope(events)
+
     requests = {}
     for event in events:
         p = event.payload
@@ -189,7 +202,8 @@ def operator_impl_retry_requests(
             continue
         try:
             operation, source = _retryable_operation(
-                str(p.get("operation_id") or ""), operations, contexts, events
+                str(p.get("operation_id") or ""), operations, contexts, events,
+                terminal_scope=terminal_scope,
             )
         except ValueError:
             continue

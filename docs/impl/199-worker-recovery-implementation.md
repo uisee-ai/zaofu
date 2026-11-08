@@ -495,3 +495,10 @@ LS-v1监工只读剖析表明，worker-action处理器即使无待处理请求�
 LS-v1 实测周期刷新方法先复制约4.9万事件再消费最后50条。`EventLog.read_days(limit=N)` 在类型选择后、active payload 复制前截取尾部，返回整个指定日窗口的最后N条；默认完整读取、签名验证、追加与轮换路径保持。`limit=0` 返回空，负数拒绝。完整性诊断仍参加类型选择及尾部排序。
 
 漂移检测和刷新入口使用 `read_days(1, limit=50)`，保持原“全部事件的末50条”语义，窗口外历史漂移不能重新触发刷新。生产事件回放与具体测试见 `tasks/2026-11-08-2227-drift-tail-selection.md`；这项局部优化不等同于整个Watcher CPU问题已经解决。
+
+
+### 2026-11-08 返工投影的终止快照复用
+
+实际Watcher栈定位到派发准备→流水线投影→operator retry反复归并同一完整事件快照；三次只读投影触发30次终止运行归并。`operator_impl_retry_requests` 仅在单次调用内按需复用该结果，下一次调用重新计算，CLI直接请求维持原有门禁与错误顺序。任务来源、代次、终态、活动后继、正式blocked收据等检查不变；不缓存跨事件快照的运行状态。
+
+验证入口是实际 `derive_impl_rework_requests` 及CLI/投影直接调用闭包，包含blocked→active、不可逆完成、无关run、无有效重试的反例。任务与证据见 `tasks/2026-11-08-2254-retry-snapshot-fold.md`，不把单一热点修复等同于整个控制面CPU问题消失。
