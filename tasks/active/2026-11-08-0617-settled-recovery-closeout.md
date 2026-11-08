@@ -29,3 +29,5 @@ R3现场补充：Planner大端口交付必须用ref+sha256，不能用artifact_r
 R3共用提示补充：Critic现场再次选错缓存目录，已在Controlled Artifact Inputs生成入口提供完整output-file用法，覆盖全部角色；具体模型仍须完整消费缓存，禁止凭回执自证已读。
 
 - R6 原生压缩与强制回收竞态：只为当前Codex session+高水位周期提供一次有界宽限 -> verify: 当前压缩不会被立即强杀；旧状态/普通活动不豁免，超期仍回收，新session不继承宽限。旧代码2个RED；生命周期91 passed，身份补充8 passed，sentinel50 passed/1 skipped，mock E2E3 passed。源码/断点保留，部署后继续观察；不替代R5产品验收。
+
+08:16 UTC R5现场进展：Training新Verify已正式passed/admitted，独立探针持久归档；随后candidate smoke因测试解释器配置缺失失败，已核实CPU PyTorch能力、补齐本地忽略配置并经既有recover task-integration重试，等待真实集成结果。Consumer 11个mandatory命令及74个旧失败用例通过，但额外Sources浏览器2pass/1fail仍保留，独立Verify尚未完成。Planner独立Critic拒绝F1历史定位/F2现行审批范围错误后，已受控启动一次限定新代修订；17个原冻结输入恢复至允许缓存，返修继续。35done不变，不能归档R5。详见docs/impl/task-recovery-20261105.md与产品持久diagnostics。

@@ -321,3 +321,13 @@ Consumer已消费必读进入基线，但av16.0.1/Pillow12.0.0的PyPI下载再�
 新增native_compaction_recycle.py并接入_check_context_thresholds实际force分支：只对可识别Codex当前状态行，按session+高水位周期给一次drain_hold_seconds宽限；不因重复观察续期。压缩状态消失后暂保留该界限等待新usage；低水位沿既有规则解除hard-cap标记。历史状态/普通Working/不可读pane不延后，过期仍回收；不发送虚假compacted事件。复现旧实现2 failed/5 passed；修复生命周期闭包91 passed，追加provider身份隔离8 passed；sentinel50 passed/1 skipped、相关mock E2E3 passed。未跑全pytest或真实provider能力测试。
 
 Sources额外浏览器失败已持久记录consumer-extra-browser-failure.json：固定9504a88，120秒导入RUNNING超时，2pass/1fail；保留trace/WebM及非零收据，尚无足够证据归因与Ingest死锁相同。五域mandatory smoke/runtime及delta、自有74个旧失败用例复验通过，并非全产品浏览器通过。独立Verify与计划Critic仍待完成。
+
+### 2026-11-08 08:16 UTC：续验接纳与集成环境修复
+
+07:52以受控control-plane-only重载部署`a52b8c5f`，新watcher PID2029325/epoch a088ea1a6eca4e66b3e46afce7b90404；三在途operation及attempt逐项核对未变，主checkout定向41项通过。Consumer后续原生压缩正常完成，会话及断点保留；这次完成本身不证明曾触发新增宽限分支。
+
+Training固定`b12222f3`的新Verify已被接纳：`evt-8231642c21ad`，settled=`evt-b43f787e93de`。独立探针覆盖真实暂停/恢复、指标去重、weights身份、比较及撤权全表/字节不变集；129张表、59个文件，拒绝路径只增加允许审计。4个本层AC通过，T14-075/076/077仍由最终candidate验收负责；旧abstained结果保留。忽略缓存内探针脚本/XML/观测结果已按SHA归档至产品`diagnostics/settled-recovery-20261108/training-independent-probe/`。
+
+随后集成`VC-P10-smoke`失败，未增加done：新candidate checkout缺少显式`ADL_TRAINING_PYTHON`或`app/.cache/training-runner.json`，6项测试均因环境前置缺失报错。监工核实同一Python3.11.14/PyTorch2.5.1+cpu解释器及CPU梯度计算，配置candidate本地忽略测试文件；不修改产品默认、源码或断言。失败回执`c8f445434f2f8fc672974b5b192414b143be3ece787bf718002f7b8a500159d0.json`及环境修复回执保留。`zf recover task-integration`先preview再apply，受控请求`evt-ce26634bd468`；新generation2集成`wop-integration-tp-P10-TRAINING-R1-2999f8db06c36-9c4971d37b14`实际开始，等待原smoke结果，不能把环境配置当产品通过。
+
+Planner上一版已消除102项跨矩阵错误并物化9个正文，但独立Critic发现两项高缺陷：F1全局替换污染历史parent/supersedes/固定ref选择器；F2当前D-REVIEW与集成契约仍残留45任务/298AC/旧gap审批范围。拒绝`evt-c8620a00f7d9`保留。根据用户修复授权，经既有stage-replan-new-generation受控动作形成`evt-7742570ba6e6`，只返修F1/F2，保护35done与在途任务、不提高全局cap；新Planner已派发。旧冻结包复制被写域hook拒绝，监工将17个文件18,751,243字节按源ref/SHA复制到其允许且忽略的本地输入缓存；worker逐字节核对后自行恢复输出并修订。没有改旧冻结工件或放宽hook，也没有把复制回执当已读或计划批准。过程记录位于同一diagnostics目录的plan-lineage-controlled-action.json、planner-prior-input-cache.json和planner-prior-input-guidance.json。
