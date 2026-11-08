@@ -1,6 +1,7 @@
 """Content fence for reusing an admitted Plan generation."""
 
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any, Mapping
 
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -30,22 +31,30 @@ def assert_package_task_map_matches(
 
 def assert_package_explicit_ports_match(
     state_dir: Path, project_root: Path, package: Mapping[str, Any], payload: Mapping[str, Any],
-    *, flow_kind: str, producer_stage_id: str,
+    *, flow_kind: str, producer_stage_id: str, events: Iterable | None = None,
 ) -> None:
     """A frozen generation may replay inputs, but cannot silently discard new ones."""
     from zf.runtime.call_result_envelope import canonical_json_sha256
     from zf.runtime.plan_artifact_package_ports import (
         PlanArtifactPackageError, materialize_explicit_plan_ports,
     )
+    from zf.runtime.plan_requirement_amendment import amendment_binding
 
     current = {port["logical_name"]: port
                for port in [*package.get("produced", []), *package.get("inherited", [])]}
     try:
+        owner = amendment_binding(state_dir, str(package.get("workflow_run_id") or ""), events=events)
         supplied = materialize_explicit_plan_ports(
             state_dir=state_dir, project_root=project_root,
-            payload={**payload, "stage_id": str(payload.get("stage_id") or producer_stage_id)},
+            payload={**payload, **owner, "stage_id": str(payload.get("stage_id") or producer_stage_id)},
             flow_kind=flow_kind, required_ports=current,
         )
+        # Match initial admission: an authorized Owner revision supersedes both
+        # old ref and inline requirement transports. Other ports stay fenced.
+        if owner:
+            name = "issue_spec" if flow_kind == "issue" else "requirement_spec"
+            supplied[name] = {"ref": owner["requirement_spec_ref"],
+                              "sha256": owner["requirement_spec_digest"]}
         for name, port in supplied.items():
             if name not in current or canonical_json_sha256(
                 hydrate_sidecar_ref(state_dir, port).payload

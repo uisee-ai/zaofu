@@ -57,6 +57,16 @@ def _superseded_packages(events: Iterable[ZfEvent]) -> set[tuple[str, str, str]]
 def _state(events: Iterable[ZfEvent]) -> tuple[dict[str, ZfEvent], dict[str, ZfEvent]]:
     events = list(events)
     retired = _superseded_packages(events)
+    # A plan_id identifies the exact ready event. Readmission needs a new
+    # trigger; approval cannot revive a package quarantined by that trigger.
+    aborted = {
+        str(event.payload.get('trigger_event_id') or '')
+        for event in events
+        if event.type == 'fanout.cancelled' and event.origin == 'kernel'
+        and event.payload.get('failure_scope') == 'plan_admission'
+        and event.causation_id
+        and event.causation_id == event.payload.get('trigger_event_id')
+    }
     requests: dict[str, ZfEvent] = {}
     pending: dict[str, ZfEvent] = {}
     approved: set[str] = set()
@@ -77,9 +87,11 @@ def _state(events: Iterable[ZfEvent]) -> tuple[dict[str, ZfEvent], dict[str, ZfE
                     and not payload.get('auto') and plan_id in requests):
                 approved.add(plan_id)
     pending = {pid: event for pid, event in pending.items()
-               if _package_key(event.payload, 'plan_artifact_package_') not in retired}
+               if pid not in aborted
+               and _package_key(event.payload, 'plan_artifact_package_') not in retired}
     return pending, {pid: requests[pid] for pid in approved
-                     if _package_key(requests[pid].payload, 'plan_artifact_package_') not in retired}
+                     if pid not in aborted
+                     and _package_key(requests[pid].payload, 'plan_artifact_package_') not in retired}
 
 
 def approved_equivalent_plan_id(events: Iterable[ZfEvent], payload: Mapping[str, Any]) -> str:
