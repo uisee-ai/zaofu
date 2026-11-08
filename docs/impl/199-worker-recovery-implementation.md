@@ -488,3 +488,10 @@ LS-v1监工只读剖析表明，worker-action处理器即使无待处理请求�
 后续只读剖析又在周期无人认领巡检复现同类成本：三次8.74秒，约8.52秒用于读取/复制约4.9万条当日事件，实际没有新告警。`LifecycleManagerMixin._check_unclaimed_new_tasks`现在通过现有`EventLog.read_days`只选择创建、既有告警和四种认领事件；认领集合与`unclaimed_warnings`共用。完整payload、原同日窗口、SLA、工作流任务排除、去重及异常行为不变。
 
 真实调用回归覆盖冷读、热读、追加认领、payload任务ID、四种认领、已告警/终态/工作流任务和无关大正文不复制；共享EventLog的签名与副本隔离合同保持。任务：`tasks/2026-11-08-2208-unclaimed-event-selection.md`。LS证据：`docs/records/2026-11-08-unclaimed-sweep-profile/`。局部改善仍不等于整个Watcher高CPU已修复。
+
+
+### 2026-11-08 漂移巡检尾部选择
+
+LS-v1 实测周期刷新方法先复制约4.9万事件再消费最后50条。`EventLog.read_days(limit=N)` 在类型选择后、active payload 复制前截取尾部，返回整个指定日窗口的最后N条；默认完整读取、签名验证、追加与轮换路径保持。`limit=0` 返回空，负数拒绝。完整性诊断仍参加类型选择及尾部排序。
+
+漂移检测和刷新入口使用 `read_days(1, limit=50)`，保持原“全部事件的末50条”语义，窗口外历史漂移不能重新触发刷新。生产事件回放与具体测试见 `tasks/2026-11-08-2227-drift-tail-selection.md`；这项局部优化不等同于整个Watcher CPU问题已经解决。

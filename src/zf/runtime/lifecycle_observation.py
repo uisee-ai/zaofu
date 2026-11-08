@@ -91,10 +91,10 @@ class LifecycleObservationMixin:
         roles: set[str] = set()
         global_drift = False
         try:
-            events = self.event_log.read_days(1)
+            events = self.event_log.read_days(1, limit=50)
         except Exception:
             return roles, False
-        for event in events[-50:]:
+        for event in events:
             if event.type != "worker.drift.detected":
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
@@ -125,7 +125,7 @@ class LifecycleObservationMixin:
         humans via Feishu) decide what to do with the signal."""
         import time as _time
         try:
-            recent = self.event_log.read_days(1)
+            recent = self.event_log.read_days(1, limit=50)
         except Exception:
             return
         # Take the last 50 events to keep the detector cheap. The detector
@@ -137,7 +137,7 @@ class LifecycleObservationMixin:
                 "task_id": e.task_id or "",
                 "actor": e.actor or "",
             }
-            for e in recent[-50:]
+            for e in recent
         ]
         expected_roles = self._active_drift_expected_roles()
         try:

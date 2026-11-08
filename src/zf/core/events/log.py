@@ -46,12 +46,17 @@ _READ_ACTIVE_FOLD: dict[tuple, dict] = {}
 def _copy_events(
     events: tuple[ZfEvent, ...] | list[ZfEvent],
     event_types: Collection[str] | None = None,
+    *,
+    limit: int | None = None,
 ) -> list[ZfEvent]:
-    """Copy selected bodies without hiding ledger-integrity diagnostics."""
-    return [
-        replace(event, payload=deepcopy(event.payload)) for event in events
-        if event_types is None or event.type in event_types or event.type == "event.malformed"
+    """Select a tail before copying bodies; retain integrity diagnostics in selection."""
+    selected = events if event_types is None else [
+        event for event in events
+        if event.type in event_types or event.type == "event.malformed"
     ]
+    if limit is not None:
+        selected = selected[-limit:] if limit else []
+    return [replace(event, payload=deepcopy(event.payload)) for event in selected]
 
 
 def _boundary_marker(path: Path, offset: int) -> bytes | None:
@@ -479,6 +484,7 @@ class EventLog:
 
     def read_days(
         self, last_days: int = 1, *, event_types: Collection[str] | None = None,
+        limit: int | None = None,
     ) -> list[ZfEvent]:
         """Read only the last N days of events.
 
@@ -486,8 +492,13 @@ class EventLog:
         last_days=N → today + most recent (N-1) archive days
 
         Optional type selection copies only relevant bodies, preserving their
-        full contents and order. Integrity diagnostics always remain visible.
+        full contents and order. Integrity diagnostics remain in that selection.
+        ``limit`` returns its last N events across the whole day window, including
+        diagnostics in that tail; zero returns none. Active bodies outside the
+        requested tail are not copied. The default retains the full window.
         """
+        if limit is not None and limit < 0:
+            raise ValueError("event tail limit must be non-negative")
         events: list[ZfEvent] = []
         if last_days > 1:
             for f in list_archives(
@@ -497,17 +508,23 @@ class EventLog:
             ):
                 archived = self._parse_file(f)
                 events.extend(archived if event_types is None else _copy_events(archived, event_types))
-        events.extend(self._read_active_cached(event_types=event_types))
+        events.extend(self._read_active_cached(event_types=event_types, limit=limit))
+        if limit is not None:
+            events = events[-limit:] if limit else []
         return events
 
     def _read_active_cached(
         self, *, event_types: Collection[str] | None = None,
+        limit: int | None = None,
     ) -> list[ZfEvent]:
         # Signed reads must reverify the actual bytes, even when file metadata
         # was deliberately preserved after tampering.
         if self.signer is not None:
             events = self._parse_file(self.path)
-            return events if event_types is None else _copy_events(events, event_types)
+            return (
+                events if event_types is None and limit is None
+                else _copy_events(events, event_types, limit=limit)
+            )
         try:
             stat = self.path.stat()
         except OSError:
@@ -517,7 +534,7 @@ class EventLog:
         entry = _READ_ACTIVE_FOLD.get(key)
         if entry is not None and entry["identity"] == identity:
             if entry["size"] == stat.st_size and entry["mtime"] == stat.st_mtime_ns:
-                return _copy_events(entry["events"], event_types)
+                return _copy_events(entry["events"], event_types, limit=limit)
             if (
                 stat.st_size > entry["size"]
                 and stat.st_size >= entry["consumed"]
@@ -532,32 +549,41 @@ class EventLog:
                 if (after.st_dev, after.st_ino) != identity or after.st_size < stat.st_size:
                     _READ_ACTIVE_FOLD.pop(key, None)
                     events = self._parse_file(self.path)
-                    return events if event_types is None else _copy_events(events, event_types)
+                    return (
+                        events if event_types is None and limit is None
+                        else _copy_events(events, event_types, limit=limit)
+                    )
                 if not consumed:
                     # A partial line or transient read failure must be retried.
-                    return _copy_events(entry["events"], event_types)
+                    return _copy_events(entry["events"], event_types, limit=limit)
                 events = entry["events"] + tuple(tail) if tail else entry["events"]
                 marker = _boundary_marker(self.path, entry["consumed"] + consumed)
                 if marker is None:
-                    return _copy_events(events, event_types)
+                    return _copy_events(events, event_types, limit=limit)
                 _READ_ACTIVE_FOLD[key] = {
                     "identity": identity, "size": stat.st_size, "mtime": stat.st_mtime_ns,
                     "consumed": entry["consumed"] + consumed, "events": events, "marker": marker,
                 }
-                return _copy_events(events, event_types)
+                return _copy_events(events, event_types, limit=limit)
         events, consumed = self._parse_file_consumed(self.path)
         if not consumed and stat.st_size:
-            return events if event_types is None else _copy_events(events, event_types)
+            return (
+                events if event_types is None and limit is None
+                else _copy_events(events, event_types, limit=limit)
+            )
         marker = _boundary_marker(self.path, consumed)
         if marker is None:
-            return events if event_types is None else _copy_events(events, event_types)
+            return (
+                events if event_types is None and limit is None
+                else _copy_events(events, event_types, limit=limit)
+            )
         while len(_READ_ACTIVE_FOLD) >= 8 and key not in _READ_ACTIVE_FOLD:
             _READ_ACTIVE_FOLD.pop(next(iter(_READ_ACTIVE_FOLD)))
         _READ_ACTIVE_FOLD[key] = {
             "identity": identity, "size": stat.st_size, "mtime": stat.st_mtime_ns,
             "consumed": consumed, "events": tuple(events), "marker": marker,
         }
-        return _copy_events(events, event_types)
+        return _copy_events(events, event_types, limit=limit)
 
     def get_causation_chain(self, event_id: str) -> list[ZfEvent]:
         """Return the causal ancestors of an event in chronological order.
