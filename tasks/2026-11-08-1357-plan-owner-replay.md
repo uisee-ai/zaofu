@@ -1,6 +1,6 @@
 # 修复 Owner 需求版本重放与失效审批
 
-> 状态: active
+> 状态: done — `514c4a5c` fix: preserve owner requirement authority across plan replay
 
 用户授权持续监工、修复阻塞并记录。FMS03 后继计划初次准入使用受控 Owner 需求修订；相同 task_map.ready 再处理时显式端口比较却使用原始 requirement，误报 changed input 并取消准入。审批请求没有随取消退场，CLI 仍接受批准，虽登记 Task generation，但包 reducer 正确隔离所有同 source 的已取消准入，最终卡在 implementation-initial handoff。
 
@@ -11,3 +11,5 @@
 现场：task_map.ready evt-3f43e35576fc；cancel evt-9c85f9ffdbf0；批准evt-473c564a5fc2；deferred evt-cf9ef9fd73b6。监工审批前核验了正文、scope和继承，但遗漏检查已有取消事件，本轮一并修正共享审批投影，不能把错误归为Worker代码失败。
 
 实现：[Owner重放与失效审批](../docs/impl/plan-owner-replay-and-aborted-approval.md)。新增8项先RED、4项保护例已通过；补充新Owner修订仍拒绝旧代的回归后，6文件56 PASS。dev-verify解释273文件影响闭包，执行3843 PASS；serial10、哨兵53、design199及Kanban审批mock3通过。未执行完整pytest或真实Provider E2E。现场相同source/package回放：baseline端口误拒绝且取消审批仍pending，fixed端口通过且审批退场；没有写准入事件或Task状态。
+
+dev合并2370b2a3，合并后41 PASS；14:03 Watcher2352134及Web2352094加载该版，7个在途operation/attempt/dispatch/pane/pid完全保留，Web200。ControlledActionService新trigger evt-3b1db4daa5ed，准入evt-961a00ffafa7，已有相同generation注册正常复用evt-701e12ea4a8c（未要求额外Plan审批；本次恢复携带已审核输出的operator授权）。14:05:15真实派发evt-3383bdca682f，FMS03后继原内容进入Impl，p12/ta-300248e8a2f857686184；旧cancel不删除。现场证据LS-v1 docs/records/2026-11-08-plan-owner-replay/live-dispatch-proof.json。任务开始实施不代表业务或Candidate已通过。
