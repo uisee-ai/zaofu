@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `0d4f7954` fix: route current integration failures to resident diagnosis
 
 # R61 当前集成阻塞的诊断派发闭环
 
@@ -20,3 +20,9 @@
 - dev-verify run --skip-tier deterministic仍执行serial10 passed、sentinels53 passed、flow mock E2E10 passed；deterministic层由上述完整影响闭包替代。未运行full pytest或真实provider测试层。
 - LS-v1历史事件只读回放：原故障仅1条needs_review诊断，route=run_manager_recovery；R60恢复后的当前事件投影为0条旧集成诊断。未制造现场新故障或伪造agent回复。
 - 一处测试误把终态blocked后cancel事件视为有效；canonical reducer实际忽略它，已改为断言无效cancel不能隐藏故障，未改变生命周期代码。
+
+## 真实加载与交付
+
+- 实现合并dev：`0c6ec981`；合并后focused 20 passed、sentinel 53 passed。
+- 受控重载569715→623026，runtime-load确认源版本0c6ec981；FMS23同一operation/attempt/dispatch/pane/PID保持，未中断在途实施。
+- 证据：LS-v1 `docs/records/2026-11-08-r61-controlled-reload.json`，verified=true。旧故障当前投影已由真实事件回放验证撤销；未把历史回放当作新故障的真实agent恢复。
