@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — bba6b583 fix: retire recovery after causal task replacement admission
 
 # 已准入接替任务应撤销旧失败的即时重规划义务
 
@@ -20,3 +20,5 @@ LS-v1 已在 09:17 准入新生产者/消费者，旧 FMS14-02 被 task.supersed
 - dev-verify计划列82个影响文件并因硬编码80门槛建议全量；遵照AGENTS不得仅按文件数启动全量，精确执行其82文件闭包：1583passed/7skipped；serial10pass，mock flow smoke10pass。
 - 初次sentinel因triage模块1006行而红；将新共享证明封装留在其责任模块后triage恢复992行，未放宽结构门禁。最终调用链120pass、sentinel53pass。
 - 本轮没有全量pytest或真实provider E2E。新增生产者仍由既有worker执行，源码修复不声称业务验收完成。
+
+实现合入 acb49323，合并后24+53通过。受控 actuator 将watcher1336747重载为1676250，source_revision确认acb49323；OA/Impl两项operation/attempt/pane及pane pid逐项不变，原reader继续到complete=true。真实重载记录位于LS的rm-recovery-retirement/controlled-reload.json。
