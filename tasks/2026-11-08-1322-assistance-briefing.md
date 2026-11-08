@@ -1,6 +1,6 @@
 # 只读 Worker 求助的有界 OA 简报
 
-> 状态: active
+> 状态: done — `1624e6a0` fix: bound worker assistance briefings to advisory scope
 
 用户已授权持续监工、修复问题并记录。现场 FMS13 求助 evt-d104ce6777c8，经 RM 27.646 秒转交，等待 OA 原检查点结束后于 13:17:08 派发。实际简报 407 行，包含全局 memory、Kanban、健康及旧式 kanban assign／改合同／派发指令，与只读 proposal_only 合同冲突；现有派发测试替换了真实简报 builder，未覆盖此问题。
 
