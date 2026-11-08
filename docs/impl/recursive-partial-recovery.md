@@ -1,0 +1,13 @@
+# 连续部分交付的恢复基线证明
+
+LS-v1 于2026-11-08在第二轮partial恢复发生dispatch_deferred：前一轮工作区base是未发布的Candidate+partial合成提交，不是下一轮Candidate的直接祖先。旧partial_successor_proof只接受线性Candidate base，第一次恢复通过，后继再次交付部分成果时被错误拒绝。
+
+`task_pipeline_terminal.task_pipeline_workspace_base`与`candidate_incremental._select_integration_base`共同使用`task_partial_successor.partial_successor_proof`。每层仍须提供同Run、明确单前驱、正式准入并settled的Impl失败、完整dispatch/envelope/result绑定及固定task branch。继承的合成base必须恰有两个父提交，第二父等于该任务获准source_ref；第一父须是当前Candidate祖先。递归验证上一轮partial，并以Git merge-tree重算树，排除带私自修改的合成提交。整条路径受16层限制，环与多前驱fail closed。
+
+返回补丁链按旧到新排列，只包含逐层正式交付的线性partial commits；合成merge及Candidate依赖提交不作为partial补丁。最终任务的scope必须覆盖全部继承改动。新工作区仍合成最新Candidate+partial，不移动ref，不提前发布；Candidate集成逐个重放获准partial补丁与当前worker增量，冲突保持拒绝，Verify/rolling smoke/CAS原有门禁不变。
+
+验证：`tests/test_task_partial_successor_recursive.py`覆盖二次交付、真实dispatch入口、Candidate集成、合成树/父提交篡改、缺失祖先准入、branch移动、跨Run、继承scope和冲突；原partial successor与mixed bases用例继续运行。此修复不引入新的代理决策或全局replan。
+
+监工边界：此次是worker启动前机械派发异常，记录为dispatch_deferred并进入重试冷却；它没有产生worker dev.blocked。OA没有代替Git证明的权限，RM现有任务失败路径也不能凭猜测批准基线。修复由operator查证并交付，不宣称OA/RM自动解决。现有task_pipeline_predispatch_repair只自动处理missing_flow_kind，未涵盖本次Git谱系错误；本项不通过绕开证明来提升活性。
+
+任务记录：`tasks/done/2026-11-08-1022-recursive-partial-recovery.md`（实施中记录位于tasks/active）。真实事件与Git预检保存在LS-v1 docs/records/2026-11-08-recursive-partial-recovery/，不是ZaoFu源代码。

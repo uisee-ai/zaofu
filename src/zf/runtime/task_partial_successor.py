@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from zf.core.events.model import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.runtime.task_contract_snapshot import current_task_contract_identity
 from zf.runtime.task_pipeline_failure_continuation import (
@@ -31,6 +32,20 @@ def partial_successor_proof(
     state = Path(runtime.state_dir)
     root = Path(runtime.project_root)
     store = TaskStore(state / "kanban.json")
+    return _partial_successor_proof(
+        state=state, root=root, store=store, events=runtime.event_log.read_all(),
+        task_id=task_id, partial_head=partial_head, candidate_head=candidate_head,
+        workflow_run_id=workflow_run_id, lineage=frozenset(),
+    )
+
+
+def _partial_successor_proof(
+    *, state: Path, root: Path, store: TaskStore, events: list[ZfEvent],
+    task_id: str, partial_head: str, candidate_head: str, workflow_run_id: str,
+    lineage: frozenset[str],
+) -> dict:
+    if task_id in lineage or len(lineage) >= 16:
+        return {}
     task = store.get(task_id)
     if task is None or task.contract.source_ref != f"git:{partial_head}":
         return {}
@@ -40,14 +55,13 @@ def partial_successor_proof(
     predecessors = evidence.get("supersedes_task_ids")
     if not isinstance(predecessors, list) or len(predecessors) != 1:
         return {}
-    events = runtime.event_log.read_all()
     old_id = predecessors[0]
-    visited = {task_id}
+    visited = set(lineage) | {task_id}
     proof: dict = {}
     # A later successor may have stopped before changing the inherited base.
     # Follow only explicit single-parent links that retain this exact commit.
     # The original admitted failure is still required; names are never lineage.
-    for _ in range(16):
+    for _ in range(16 - len(lineage)):
         if old_id in visited:
             return {}
         visited.add(old_id)
@@ -74,16 +88,35 @@ def partial_successor_proof(
         return {}
     failure = next(e for e in events if e.id == proof["continuation_source_event_id"])
     base = failure.payload["base_commit"]
+    inherited_commits: list[str] = []
     if _git(root, "merge-base", "--is-ancestor", base, candidate_head) is None:
-        return {}
+        # A previous recovery may itself have started from an unpublished
+        # composition. Prove both its ancestry and exact merged tree instead
+        # of treating arbitrary merge commits as authorized partial work.
+        parents = (_git(root, "show", "-s", "--format=%P", base) or "").split()
+        if (len(parents) != 2 or old.contract.source_ref != f"git:{parents[1]}"
+                or _git(root, "merge-base", "--is-ancestor", parents[0], candidate_head) is None):
+            return {}
+        inherited = _partial_successor_proof(
+            state=state, root=root, store=store, events=events, task_id=old.id,
+            partial_head=parents[1], candidate_head=parents[0],
+            workflow_run_id=workflow_run_id, lineage=frozenset(visited - {old.id}),
+        )
+        if not inherited:
+            return {}
+        merged = _git(root, "merge-tree", "--write-tree", *parents)
+        if not merged or merged.splitlines()[0] != _git(root, "rev-parse", f"{base}^{{tree}}"):
+            return {}
+        inherited_commits = inherited["partial_commits"]
     revision = f"{base}..{partial_head}"
     if _git(root, "rev-list", "--merges", revision) != "":
         return {}
     commits = _git(root, "rev-list", "--reverse", revision)
     if not commits or not task.contract.scope:
         return {}
+    partial_commits = list(dict.fromkeys([*inherited_commits, *commits.splitlines()]))
     paths = set()
-    for commit in commits.splitlines():
+    for commit in partial_commits:
         changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", commit)
         if changed is None:
             return {}
@@ -93,7 +126,7 @@ def partial_successor_proof(
     ):
         return {}
     return {
-        "partial_commits": commits.splitlines(),
+        "partial_commits": partial_commits,
         "partial_paths": sorted(paths),
         "supersedes_task_ids": predecessors,
         "failure_event_id": failure.id,
