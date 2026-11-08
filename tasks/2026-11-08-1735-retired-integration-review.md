@@ -1,6 +1,6 @@
 # 已正式替代的任务退出集成诊断来源
 
-> 状态: active
+> 状态: done — `745affc0` fix: retire integration diagnosis after admitted task replacement
 
 持续监工授权修复。FMS17 UI03 已在最新图准入并实际派发，旧 UI02 有 kernel task.superseded、TaskStore cancelled 和新 generation 准入证据。旧 integration operation 保留历史 blocked 是正确的，但 integration_review_sources 仍把 evt-6961dfc0234f 当当前诊断来源。不能靠清除历史事件或伪造旧operation成功收尾。
 
@@ -13,3 +13,5 @@
 当前完整_pending_semantic_event_actions输出前10项未出现旧UI诊断，因此不声称它已造成新的实际重派或当前UI阻塞；本次修复的是已复现的错误来源筛选。实现说明链接至 [集成诊断退休](../docs/impl/retired-integration-review.md)。
 
 验证：新增正式替代/否定边界回归先1失败15通过，修复后16通过（含实际RM tick mock）；63文件影响闭包1224通过7跳过，23.31秒，含199 mock E2E；串行10通过，哨兵53通过。冻结50条现场相关事件摘要5f0b0098c98808d36ea5382a5b01168aa15530648b972be2689ee53e5da16204，旧source由1到0，covered不变。未做全pytest或真实provider E2E。
+
+合入4089e857，合并后27项回归通过；17:39:22 Watcher2998317/Web2998227加载该版，5个worker和1个OA shadow的operation/attempt/pane全部保持，Web健康/UI200。现场完整账本只读检查current review来源为空，旧operation仍blocked且仍在covered，历史未改写。记录LS-v1 docs/records/2026-11-08-retired-integration-review/；产品45/55，后继还需独立Verify/集成，未宣称产品通过。
