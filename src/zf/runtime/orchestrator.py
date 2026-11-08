@@ -1873,9 +1873,12 @@ class WorkflowRuntimeCoordinator(
                     or stage.trigger != event.type
                 ):
                     continue
+                from zf.runtime.task_pipeline_fanout import task_pipeline_enabled_for_event
+
                 loaded = load_writer_task_map(
                     stage=stage,
                     event=event,
+                    independent_task_bases=task_pipeline_enabled_for_event(self, event),
                     pdd_id=pdd_id,
                     state_dir=self.state_dir,
                     project_root=self.project_root,
@@ -4654,10 +4657,12 @@ class WorkflowRuntimeCoordinator(
 
     def _load_writer_task_map(self, stage, event: ZfEvent, pdd_id: str) -> list[dict]:
         from zf.runtime.writer_fanout_admission import load_writer_task_map
+        from zf.runtime.task_pipeline_fanout import task_pipeline_enabled_for_event
 
         return load_writer_task_map(
             stage=stage,
             event=event,
+            independent_task_bases=task_pipeline_enabled_for_event(self, event),
             pdd_id=pdd_id,
             state_dir=self.state_dir,
             project_root=self.project_root,

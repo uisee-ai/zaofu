@@ -995,3 +995,22 @@ C01–C05 另统计有效配置与交付不一致次数、跨任务误取消、�
 完成本设计的实施验收，必须证明实际 runtime/CLI 入口已接入、调用方测试覆盖，且
 获准的通用真实 canary 从失败进入修复、独立验证并继续下游；LS-v1 业务完成不作本设计关闭条件。修复落地还需对账 R01 的加载与效果、
 R15 的交付可追溯性。新增字段、提示词或日志本身不算完成。
+
+### 部分成果消费者与依赖修复的不同恢复基线
+
+同一恢复图可能同时包含基于已发布 Candidate 的依赖修复，以及续接失败 Impl
+已提交部分成果的消费者。不能因它们同属一轮 Plan 就强制使用同一 Git 基线：
+前者不能携带尚未验收的消费者代码，后者也不能丢失其部分成果。
+
+阻塞 Task Pipeline 在既有 TaskMap `base_commit`/`source_refs` 检查后，逐任务
+解析精确 commit，并把该编译结果写入 `task.pipeline.generation.admitted` 的
+`task_dispatch_base_commits`。这不是新的任务合同；它是准入时固定的派发参数。
+重放对各 Task 派发与集成使用对应的基线；旧事件没有此字段时沿用原共享基线。
+字段存在却不完整或不是精确 commit 时拒绝回退，避免选到另一任务的未验收代码。
+非阻塞旧 fanout 仍要求共享基线，不能通过 Plan 声明开启新的调度能力。
+
+消费者需要合成最新 Candidate 与已准入 partial 时，继续经过既有
+`task_partial_successor` 的失败结果、唯一后继、Run、Git 来源和完整写域证明；
+组合工作区不发布 Candidate。独立 Verify、串行集成和 CAS 仍决定成果准入。
+测试入口：[独立恢复基线](../../tests/test_task_pipeline_mixed_bases.py)及
+[部分成果续接](../../tests/test_task_partial_successor.py)。

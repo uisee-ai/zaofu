@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -73,6 +73,7 @@ class TaskPipelineGenerationPreflight:
     generation_id: str
     profile_id: str
     profile_digest: str
+    task_dispatch_base_commits: dict[str, str] = field(default_factory=dict)
 
 
 def preflight_task_pipeline_generation(
@@ -97,6 +98,7 @@ def preflight_task_pipeline_generation(
     policy = task_pipeline_policy(runtime.config, flow_kind=flow_kind)
     if not policy or str(policy.get("mode") or "") != "blocking":
         return None
+    task_items = list(task_items)
     task_ids = tuple(sorted({
         str(item.get("task_id") or "").strip()
         for item in task_items
@@ -162,6 +164,15 @@ def preflight_task_pipeline_generation(
         or ""
     ).strip()
     dispatch_base_commit = _resolve_commit(runtime.project_root, base_ref)
+    from zf.runtime.writer_fanout_admission import writer_task_dispatch_base_commit
+
+    task_bases = {
+        str(item["task_id"]): _resolve_commit(
+            runtime.project_root,
+            writer_task_dispatch_base_commit(dict(item), fallback=dispatch_base_commit),
+        )
+        for item in task_items
+    }
     profile_digest = str(policy.get("profile_digest") or "")
     return TaskPipelineGenerationPreflight(
         task_ids=task_ids,
@@ -169,6 +180,7 @@ def preflight_task_pipeline_generation(
         task_map_generation=task_map_generation,
         **package_identity,
         dispatch_base_commit=dispatch_base_commit,
+        task_dispatch_base_commits=task_bases,
         generation_id=_generation_id(
             workflow_run_id=workflow_run_id,
             task_map_generation=task_map_generation,
@@ -275,6 +287,8 @@ def admit_task_pipeline_generation(
                 getattr(loaded, "source_index_ref", "") or ""
             ),
             "dispatch_base_commit": prepared.dispatch_base_commit,
+            **({"task_dispatch_base_commits": dict(prepared.task_dispatch_base_commits)}
+               if prepared.task_dispatch_base_commits else {}),
             "profile_id": prepared.profile_id,
             "profile_digest": prepared.profile_digest,
             "task_ids": list(prepared.task_ids),

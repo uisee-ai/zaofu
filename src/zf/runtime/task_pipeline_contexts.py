@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Iterable
+import re
 
 from zf.core.events.model import ZfEvent
 
@@ -83,10 +84,23 @@ def task_pipeline_generation_contexts(
             "generation_admitted_event_id": event.id,
             "generation_admitted_at": event.ts,
         }
+        bases = payload.get("task_dispatch_base_commits")
+        if bases is not None and (
+            not isinstance(bases, dict)
+            or set(bases) != set(payload.get("task_ids") or [])
+            or any(not isinstance(base, str) or not re.fullmatch(
+                r"[0-9a-f]{40}|[0-9a-f]{64}", base
+            ) for base in bases.values())
+        ):
+            raise ValueError("invalid admitted task dispatch bases")
         for raw_task_id in payload.get("task_ids") or []:
             task_id = str(raw_task_id or "").strip()
             if task_id:
                 contexts[task_id] = dict(context)
+                # Compiled from the admitted Task Map, not a new task contract.
+                # Legacy events retain their generation-wide baseline.
+                if bases is not None:
+                    contexts[task_id]["dispatch_base_commit"] = bases[task_id]
     return contexts
 
 

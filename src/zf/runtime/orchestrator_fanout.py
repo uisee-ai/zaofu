@@ -3361,6 +3361,7 @@ class FanoutCoordinationMixin(
                 loaded = load_writer_task_map(
                     stage=stage,
                     event=event,
+                    independent_task_bases=blocking_task_pipeline,
                     pdd_id=pdd_id,
                     state_dir=self.state_dir,
                     project_root=self.project_root,
