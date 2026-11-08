@@ -44,6 +44,10 @@ def build_orchestrator_briefing(
     also_triggered: list[str] | tuple[str, ...] = (),
 ) -> str:
     cli = zf_cli_cmd()
+    if (trigger_event.type == "orchestrator.rework.triage.requested"
+            and trigger_event.payload.get("request_kind") == "worker_guidance"):
+        from zf.runtime.worker_assistance import assistance_wake_briefing
+        return assistance_wake_briefing(state_dir=state_dir, event=trigger_event)
     sections: list[str] = []
     sections.append(f"# Orchestrator wake — {trigger_event.ts}")
     sections.append("")
