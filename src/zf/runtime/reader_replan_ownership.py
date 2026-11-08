@@ -3,12 +3,16 @@
 from typing import Any
 
 from zf.core.events import ZfEvent
+from zf.runtime.reader_replan_index import ReaderReplanIndex
 
 
 def active_candidate_replan_owns_failure(
-    config: Any, events: list[ZfEvent], failure: ZfEvent,
+    config: Any, events: list[ZfEvent], failure: ZfEvent, *,
+    event_index: ReaderReplanIndex | None = None,
 ) -> bool:
     """Use explicit repair lineage, not merely another busy agent in the Run."""
+    if event_index is not None:
+        event_index.require_snapshot(events)
     plan_stages = {
         str(stage.id): str(stage.trigger)
         for stage in getattr(config.workflow, "stages", [])
@@ -30,11 +34,15 @@ def active_candidate_replan_owns_failure(
     identity = scope(failure)
     if not all(identity):
         return False
-    failure_index = next((i for i, event in enumerate(events) if event.id == failure.id), -1)
+    failure_index = (event_index.positions.get(failure.id, -1) if event_index is not None
+                     else next((i for i, event in enumerate(events) if event.id == failure.id), -1))
     if failure_index < 0:
         return False
-    history = events[:failure_index]
-    by_id = {event.id: event for event in history}
+    history = ([event for position, event in event_index.ordered({
+        "orchestrator.replan_requested", "fanout.started", "fanout.aggregate.completed",
+        "fanout.cancelled", "fanout.timed_out",
+    }) if position < failure_index] if event_index is not None else events[:failure_index])
+    by_id = event_index.by_id if event_index is not None else {event.id: event for event in history}
     repairs: dict[tuple[str, str], ZfEvent] = {}
     active: set[str] = set()
     for event in history:
@@ -71,6 +79,8 @@ def active_candidate_replan_owns_failure(
             trigger = by_id.get(str(body.get("trigger_event_id") or ""))
             if trigger is None or trigger.type != trigger_type or scope(trigger) != identity:
                 continue
+            if event_index is not None and event_index.positions[trigger.id] >= failure_index:
+                continue  # The snapshot lookup must retain the historical prefix boundary.
             trigger_key = (str(trigger.payload.get("rework_of") or ""),
                            str(trigger.payload.get("rework_attempt") or ""))
             if trigger_key in repairs:

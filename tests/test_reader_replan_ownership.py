@@ -47,9 +47,12 @@ def _history():
     return [origin, repair, trigger, started, discovery_started, failure]
 
 
-def test_old_reader_failure_does_not_exhaust_active_candidate_replan():
+@pytest.mark.parametrize("indexed", [False, True])
+def test_old_reader_failure_does_not_exhaust_active_candidate_replan(indexed):
+    from zf.runtime.reader_replan_index import ReaderReplanIndex
     events = _history()
-    assert plan_reader_stage_replan(_config(), events, events[-1]) == (
+    assert plan_reader_stage_replan(_config(), events, events[-1],
+                                   event_index=ReaderReplanIndex(events) if indexed else None) == (
         None, "owned_by_active_candidate_replan",
     )
 
@@ -59,7 +62,9 @@ def test_old_reader_failure_does_not_exhaust_active_candidate_replan():
     "cancelled", "completed", "other_rework", "scoped_other_task", "future_repair",
     "conflicting_started_generation",
 ])
-def test_unrelated_or_terminal_repair_does_not_bypass_cap(change):
+@pytest.mark.parametrize("indexed", [False, True])
+def test_unrelated_or_terminal_repair_does_not_bypass_cap(change, indexed):
+    from zf.runtime.reader_replan_index import ReaderReplanIndex
     events = _history()
     failure = events[-1]
     if change == "other_run":
@@ -83,7 +88,8 @@ def test_unrelated_or_terminal_repair_does_not_bypass_cap(change):
         events = [events[0], failure, *events[1:-1]]
     elif change == "conflicting_started_generation":
         events[3].payload["task_map_generation"] = "different-generation"
-    assert plan_reader_stage_replan(_config(), events, failure) == (None, "cap_exhausted")
+    assert plan_reader_stage_replan(_config(), events, failure,
+                                   event_index=ReaderReplanIndex(events) if indexed else None) == (None, "cap_exhausted")
 
 
 def test_new_planner_own_failure_keeps_its_retry_cap():

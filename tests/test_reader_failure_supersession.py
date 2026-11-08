@@ -33,9 +33,12 @@ def scenario():
     return config, [source, trigger, started, ready, admitted, failure], failure
 
 
-def test_admitted_replacement_stops_old_reader_replan():
+@pytest.mark.parametrize('indexed', [False, True])
+def test_admitted_replacement_stops_old_reader_replan(indexed):
+    from zf.runtime.reader_replan_index import ReaderReplanIndex
     config, events, failure = scenario()
-    result, reason = plan_reader_stage_replan(config, events, failure)
+    result, reason = plan_reader_stage_replan(
+        config, events, failure, event_index=ReaderReplanIndex(events) if indexed else None)
     assert result is None
     assert reason == 'superseded_by_admitted_task_replacement'
 
@@ -43,7 +46,9 @@ def test_admitted_replacement_stops_old_reader_replan():
 @pytest.mark.parametrize('change', ['unadmitted', 'other_run', 'other_cause', 'other_task',
                                      'partial', 'not_kernel', 'wrong_trigger', 'partial_split', 'retained_old',
                                      'missing_source', 'failure_other_run'])
-def test_unproven_replacement_keeps_existing_recovery(change):
+@pytest.mark.parametrize('indexed', [False, True])
+def test_unproven_replacement_keeps_existing_recovery(change, indexed):
+    from zf.runtime.reader_replan_index import ReaderReplanIndex
     config, events, failure = scenario()
     ready, admitted = events[3:5]
     if change == 'unadmitted':
@@ -69,7 +74,8 @@ def test_unproven_replacement_keeps_existing_recovery(change):
         failure.payload['workflow_run_id'] = 'another-run'
     else:
         admitted.payload['trigger_event_id'] = 'another-ready'
-    result, _ = plan_reader_stage_replan(config, events, failure)
+    result, _ = plan_reader_stage_replan(
+        config, events, failure, event_index=ReaderReplanIndex(events) if indexed else None)
     assert result is not None
 
 
