@@ -846,7 +846,9 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
 
         replacement = reader_manifest_replacement_admission(events, manifest)
         if replacement is not None:
-            return "superseded_by_admitted_task_replacement", replacement.id
+            reason = ("superseded_by_recovered_plan_admission" if replacement.type == "task_map.admitted"
+                      else "superseded_by_admitted_task_replacement")
+            return reason, replacement.id
         goal_claim_id = (
             recovery_snapshot.superseding_goal_claims.get(fanout_id, "")
             if recovery_snapshot is not None

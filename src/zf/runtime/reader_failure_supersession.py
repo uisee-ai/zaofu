@@ -50,6 +50,12 @@ def reader_replacement_admission(
     source = by_id.get(source_id)
     if source is None or _run_id(source) != run_id:
         return None
+    from zf.runtime.plan_admission_reader_closeout import recovered_plan_admission
+
+    recovered = recovered_plan_admission(
+        events, source=source, trigger=trigger, workflow_run_id=run_id)
+    if recovered is not None:
+        return recovered
     affected = set(affected_task_ids or ())
     affected.update(_strings(trigger.payload.get("affected_task_ids")))
     task_id = str(trigger.payload.get("task_id") or trigger.task_id or "")
