@@ -77,12 +77,14 @@ def reader_replacement_admission(
 
 def failure_has_admitted_replacement(
     events: list[ZfEvent], failed_event: ZfEvent | None, task_id: str,
+    *, event_index: ReaderReplanIndex | None = None,
 ) -> bool:
     if failed_event is None or not task_id:
         return False
     return admitted_task_replacement(
         events, source_event_id=failed_event.id,
         workflow_run_id=_run_id(failed_event), affected_task_ids={task_id},
+        event_index=event_index,
     ) is not None
 
 
