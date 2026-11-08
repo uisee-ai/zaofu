@@ -191,6 +191,13 @@ def build_orchestrator_agent_operation_briefing(
                 "Graph/dependency changes require Planner revision and normal approval, "
                 "not new edges in this advisory execution plan."
             )
+            output_rules.append(
+                "- every `run_plan.context_routes[].required_sources[]` must use an "
+                "exact ref/sha256 from this checkpoint's canonical source manifest. "
+                "When reusing a prior plan, recheck every route against the current "
+                "manifest; previous source authority does not carry over automatically. "
+                "Repair invalid refs in the same scratch before resubmission."
+            )
         elif prepared.checkpoint in {"stage_barrier", "pre_closeout"}:
             output_rules.append(
                 "- include `orchestration-result.v1`; every input result ref "
