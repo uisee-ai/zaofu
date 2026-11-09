@@ -285,3 +285,23 @@ cancelled，沿既有provider.turn.closed路径只关闭对应turn，不发布�
 验证：2 RED→36 focused，reader/恢复/mock E2E闭包171 passed，
 dev-verify自动闭包528 passed，sentinel53 passed。首次自动验证8项CLI测试
 因PATH缺zf失败，补入现有venv/bin后整组重跑通过，未改生产行为或测试断言。
+
+
+### 实际八路验收与证据交付方法补齐
+
+2026-11-09 20:41:57 和 20:43:13 UTC，正式批准后的八个 Impl 实例均通过
+operation/attempt/任务分配、独立 pane/进程与新鲜心跳核对。同版 Plan 的完整
+Critic 已通过，14项差量正式准入；每片实际必读约0.20–0.26MB，全部完成读取并
+执行了行为 RED→GREEN。详情及现场 receipts 见关联 active task 的最新记录。
+后续 Impl 下降是任务转交独立 Verify；调度投影没有遗漏 ready Impl 或反压。
+
+现场证据交付暴露的方法缺口：外部只读合同与本地写日志混成单个 mutating shell
+会触发写域守卫；work-record 并非附件仓库，当前限制每列表16条、record16KiB、
+单证据64KiB且只支持UTF-8文本。旧技能未说明这些限制，导致多次重复入口失败。
+此次仅补齐开发方法与交接技能，同步两套分发副本；未放宽权限、增加预算、改写
+运行态或删除失败证据。大证据按已有合同入口保留，阶段记录分批发布并对账引用。
+
+P19已在正式任务中采用缓存修复，39a35a7上的23项自测覆盖冷checkout、并发、
+篡改拒绝及真实安装失败；独立Verify尚待完成，整个P0/P1批次不能提前归档done。
+
+交付方法补齐验证：dev-verify 文档/技能闭包41 passed、1 skipped；两项技能元数据与三份副本字节一致。此为方法/文档层验证，不替代产品独立Verify。
