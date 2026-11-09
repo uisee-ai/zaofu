@@ -1141,3 +1141,11 @@ Run 别名投影对既无显式身份、又不能形成既有 correlation 或 an
 恢复检查点对同一事件快照仅构建一次任务事件临时索引：显式 event.task_id
 优先，否则按允许的 payload 任务身份匹配；保持原顺序与单事件去重，下一次
 投影重新索引，未截取历史事件或改变跨任务范围。
+
+## 监工发现的空转谓词开销
+
+LS-v1 176827事件的一次实际终态对账对358个settled operation返回0新结算，却重复扫描全账本259次。`task_attempt_operation_settlement`现在先检查同任务/同operation/同Run候选中是否存在可结算attempt；全部已终态且不可恢复时直接返回。若存在活动attempt或shadow模式的lease_expired修复候选，仍完整核对正式admission、实际fanout dispatch和最新候选，不能过滤掉较新终态而误结算旧活动attempt。没有跨调用缓存，也不改变失败/租约规则。
+
+`is_dispatch_paused`只反向查最新暂停/恢复意图；三种pause及三种resume仍按账本出现顺序决定，时间戳不用于排序。空显式事件列表不触发磁盘回读。完整`project_pause_lifecycle`仍供Web/Supervisor展示，保持checkpoint、历史、恢复建议和脱敏合同。这样派发门禁不为一个布尔值构造整份展示投影。
+
+实际调用覆盖`reconcile_task_attempts`、Orchestrator/WRC/Task Pipeline派发，以及暂停后的恢复。真实冻结快照使用只读store逐项比较原/新结算结果与暂停结果；局部提速不等于整个Watcher CPU问题关闭。见[空转谓词任务](../../tasks/2026-11-09-0044-idle-predicates.md)。

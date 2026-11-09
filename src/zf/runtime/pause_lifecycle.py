@@ -120,8 +120,14 @@ def is_dispatch_paused(
     *,
     events: list[ZfEvent] | None = None,
 ) -> bool:
-    projection = project_pause_lifecycle(state_dir, events=events)
-    return bool(projection.get("paused"))
+    # Dispatch needs only the latest intent, not the Web history projection.
+    rows = events if events is not None else _read_events(Path(state_dir))
+    for event in reversed(rows):
+        if event.type in PAUSE_EVENT_TYPES:
+            return True
+        if event.type in RESUME_EVENT_TYPES:
+            return False
+    return False
 
 
 def active_request_age_seconds(
