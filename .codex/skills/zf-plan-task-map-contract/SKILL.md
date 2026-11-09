@@ -268,12 +268,19 @@ coverage-preserving package or request an explicit change of review strategy.
 Before submitting a candidate, run the execution card's `zf result validate`
 command and inspect `input_cost`: largest ports, distinct rendered bytes, full
 port page estimate, pinned limits, and tasks declaring local input selections.
-This draft observation excludes requirements/baseline/reports and does not yet
-apply verified local review. It is neither the final cost nor approval. For
-`review_required`, explain and repair amplification before submitting; use bound
-refs for unchanged content and keep full acceptance matrices. The final pinned
-manifest still enforces the configured limit. Never change a running attempt's
-policy or fabricate reads to make an existing attempt fit.
+The port-only figures exclude requirements/baseline/reports. Also inspect
+`input_cost.delivery_estimate` when available: it includes the authored report,
+resolved Markdown/artifacts, execution review and frozen producer context.
+Check its `unresolved_components` and remaining capacity separately: future
+Critic bindings, current-state context and scoped selections can change the
+cost. `incomplete_estimate` or a schema-valid result is not a budget pass.
+For either estimate's `review_required`, explain and repair amplification
+before submitting; use bound refs for unchanged content and keep full acceptance
+matrices. Compare a prior failed full manifest when available, including report
+and generated-context overhead; saving a few bytes in a port estimate does not
+prove the complete package fits. The final pinned manifest still enforces the
+configured limit. Never change a running attempt's policy or fabricate reads
+to make an existing attempt fit.
 
 Only for a replan with a current admitted Plan Package and a prior independent
 Critic verdict, the Planner may include `scoped_plan_review.json` in
