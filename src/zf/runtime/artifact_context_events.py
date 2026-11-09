@@ -43,6 +43,7 @@ class ArtifactContextEvents:
         self.preserve_event_ids = tuple(value.encode('ascii') for value in preserve_event_ids)
         self._signature: tuple | None = None
         self._events: tuple[ZfEvent, ...] = ()
+        self._archives: dict[Path, tuple[tuple, tuple[ZfEvent, ...]]] = {}
 
     def read_all(self) -> list[ZfEvent]:
         paths = [*list_archives(self.log._archive_dir, suffix=".jsonl"), self.log.path]
@@ -58,12 +59,20 @@ class ArtifactContextEvents:
             return list(self._events)
 
         events: list[ZfEvent] = []
-        for path, device, inode, _mtime, size in snapshots:
+        archives: dict[Path, tuple[tuple, tuple[ZfEvent, ...]]] = {}
+        for path, device, inode, mtime, size in snapshots:
             try:
                 with path.open("rb") as handle:
                     opened = os.fstat(handle.fileno())
                     if (opened.st_dev, opened.st_ino) != (device, inode):
                         return self.log.read_all()
+                    stamp = (device, inode, mtime, size)
+                    cached = self._archives.get(path) if self.log.signer is None else None
+                    if cached is not None and cached[0] == stamp:
+                        events.extend(cached[1])
+                        archives[path] = cached
+                        continue
+                    segment: list[ZfEvent] = []
                     remaining = size
                     while remaining:
                         line = handle.readline(remaining)
@@ -84,10 +93,14 @@ class ArtifactContextEvents:
                             continue
                         event = self.log.decode_line(line.decode("utf-8", errors="replace"))
                         if event is not None:
-                            events.append(event)
+                            segment.append(event)
+                    events.extend(segment)
+                    if self.log.signer is None and path != self.log.path:
+                        archives[path] = (stamp, tuple(segment))
             except FileNotFoundError:
                 return self.log.read_all()
         if self.log.signer is None:
+            self._archives = archives
             self._signature = signature
             self._events = tuple(events)
         return events

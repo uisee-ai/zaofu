@@ -175,3 +175,19 @@ P19-LOCKED-ENV-R1采用及独立Verify；环境验证不抵扣产品验收。
 pytest或真实provider E2E。
 
 Owner scope影响闭包364 passed（含三个mock E2E），serial10 passed、sentinel53 passed。
+
+## 读取期间活跃账本使历史分片反复扫描
+
+真实read-ledger中的每页host_elapsed_ms约4–14秒。ArtifactContextEvents原来只缓存
+整个账本快照，授权和required_reads之间追加一条事件，就重新扫描所有历史分片。
+新增回归先复现重复解码旧归档，修复为单次CLI内按path/device/inode/mtime/size
+缓存未变的unsigned归档；活动文件仍重新读取，签名账本不使用该缓存，分片替换
+或读取期间rotation仍走完整校验/回退。没有持久化授权缓存，没有改变必读清单。
+
+只读真实账本实验：旧版两次读取4.91/3.93秒；新版5.56/0.44秒（第二次确有活动
+追加），分别返回87692/87692及87692/87694条保留事件。两个样本负载不同，不能
+把此数值当普遍性能保证；确定性回归验证归档不重解码而新取消事件立即生效。
+证据位于diagnostics/parallel-task-admission-20261109/reader-view-before.json及
+reader-view-after.json。
+
+读取归档缓存影响闭包244 passed（含CLI授权与mock E2E），sentinel53 passed。
