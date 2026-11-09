@@ -9,13 +9,13 @@
 
 ## 验收
 
-- [ ] P0 输入：定位旧任务过量必读的具体来源/selector及版本 -> verify:
+- [x] P0 输入：定位旧任务过量必读的具体来源/selector及版本 -> verify:
   形成完整当前任务、必要共享/上游接口与来源映射，保持AC/命令；新绑定经
   原准入路径生效，旧attempt/已完成任务不被原地篡改，实测读取与首个RED反馈。
-- [ ] P0 Plan：修复端口预估漏算报告/上下文造成的重复提交 -> verify:
+- [x] P0 Plan：修复端口预估漏算报告/上下文造成的重复提交 -> verify:
   用实际失败包复现，新增针对性测试；本轮候选通过真实完整manifest预算门禁、
   独立Critic及同版批准，两个既定gap任务正式准入；不抬高预算或伪造局部范围。
-- [ ] P1 并行：对剩余任务的真实依赖、接口版本和写域作有据审查 -> verify:
+- [x] P1 并行：对剩余任务的真实依赖、接口版本和写域作有据审查 -> verify:
   P11B/P12C/P13等候选给出可/不可拆的条款理由；可执行差量保留旧新AC映射，
   经过独立评审和受控准入；记录ready数/实际并行数，无强行凑8或减弱集成验收。
 - [ ] P1 环境：将已验证的锁定依赖准备纳入正式可重放入口 -> verify:
@@ -138,3 +138,24 @@ cancelled，沿既有provider.turn.closed路径只关闭对应turn，不发布�
 验证：2 RED→36 focused，reader/恢复/mock E2E闭包171 passed，
 dev-verify自动闭包528 passed，sentinel53 passed。首次自动验证8项CLI测试
 因PATH缺zf失败，补入现有venv/bin后整组重跑通过，未改生产行为或测试断言。
+
+
+### 真实八路运行与后续监工（2026-11-09 21:25 UTC）
+
+- 新候选完整 Critic 通过（evt-65dcfe5a29a9，准入 evt-80024b037120），同版
+  plan evt-b47ee800d5a2 经授权批准 evt-6d5f41a44201；59 项完整任务映射中
+  14 项差量正式准入，未改写已完成或在途合同。
+- 20:41:57 与 20:43:13 UTC 均核实 8 个不同 Impl task/attempt/role/pane/process，
+  心跳身份及 canonical 分配匹配。八片实测必读 200643–255942 bytes，全部覆盖，
+  均已产生真实行为 RED→GREEN；配置、预测和读取回执未替代执行证据。
+- 后续正常交接独立 Verify；本批仍 active，P19 冷环境修复已正式采用并在
+  39a35a7 上通过23项，自测不替代尚待完成的独立 Verify。
+- 监工复现多路将外部合同读取与本地证据写入混在一个脚本而被写域守卫拒绝；
+  另有二进制记录解码失败、154个 evidence_files 超过每批16条限制。
+  补齐两个技能的方法说明并同步分发副本；保留现有守卫、预算与原始证据。
+- 现场 receipts 与异常记录位于 datal/diagnostics/parallel-task-admission-20261109/：
+  eight-impl-first-observation.json、eight-impl-second-observation.json、
+  eight-impl-actual-input-measurement.json、new-slice-behavior-observations.json、
+  supervisor-incidents.jsonl。持续监工，不把阶段交接误判为中断。
+
+交付方法补齐验证：dev-verify 文档/技能闭包41 passed、1 skipped；两项技能元数据与三份副本字节一致。此为方法/文档层验证，不替代产品独立Verify。

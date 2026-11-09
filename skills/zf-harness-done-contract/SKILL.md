@@ -158,6 +158,18 @@ Workers do not mark tasks, candidates, or goals done themselves.
 前三者为动作列表、未决列表、下一步字符串，证据为工作区内相对路径列表。
 不写凭据；测试日志不能包装成独立 Verify 结论。
 
+发布前核对当前 `src/zf/runtime/work_record.py::publish_work_record` 与 `_read_scoped`
+的机械限制：record JSON 至多 16 KiB，三个列表各至多 16 条，每条为非空字符串且
+至多 1024 字符，next_step 至多 2048 字符；单份证据至多 64 KiB，必须是工作区内
+普通 UTF-8 文本文件，不能是符号链接、敏感内容或二进制归档。request-id 至多
+128 字符。该入口是阶段检查点，不是无界附件上传入口。
+
+需要保存的证据超过单次限制时，按验收/命令划分批次，每批使用独立 request-id，
+保留全部事件与 sidecar 引用并在交接中对账；同一 ID 重试不能改内容。已随提交保存
+的完整历史证据可引用固定提交与路径，不必重复上传。二进制或超大原始文件沿合同
+允许的 Git/工件入口保留；不能为了发布成功删证据、修改原始字节/摘要、提额或把
+摘要冒充原文。若当前合同没有可用入口，记录确切限制并请求受控处理。
+
 命令使用现有 result-submit 凭据，核验 current Task/attempt/lease/workdir/input 版本；
 完整 sidecar 先写入，再发布事件。同一 request-id 必须保持记录和证据内容不变。
 新会话先用 briefing 的 recover 入口，再用 `artifact work-record show --operation <id>`
