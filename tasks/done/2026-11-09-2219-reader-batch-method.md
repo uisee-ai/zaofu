@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 监工修复：统一Impl/Verify有界多页读取方法
 
@@ -18,3 +18,6 @@ Verify技能上下文段允许少量批读、执行段却要求单页，遗漏�
 
 验证：dev-verify自动指令/技能/结构闭包41 passed、1 skipped；多页/CLI/交付回归48 passed；
 两项元数据通过，canonical/.codex/.claude逐字节一致。现场worker另确认四页输出无截断。
+
+实现：0bb0512c `chore: align worker methods with bounded multipage reads`。
+验收已完成，sentinel53 passed；仅方法与分发副本变更，无运行态/预算/合同更改。
