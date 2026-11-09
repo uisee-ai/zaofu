@@ -1,4 +1,4 @@
-"""Run Manager intents for opt-in, current, settled Impl semantic blockers."""
+"""Current settled Impl reviews: opt-in checkpoints or bound legacy advice."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,12 +21,13 @@ from zf.runtime.workflow_operation import reduce_workflow_operations
 def pending_execution_reviews(
     *, state_dir: Path, config: Any, events: list,
     excluded_task_ids: set[str] = frozenset(),
+    diagnosed_operation_ids: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Observe a failure, never fabricate an exhaustion or dispatch a worker."""
     from zf.runtime.run_manager import build_run_goal_projection
 
     policies = [config.workflow.orchestration, *config.workflow.orchestration.flow_policies.values()]
-    if not any(getattr(policy, "review_blocked_tasks", False) for policy in policies):
+    if not diagnosed_operation_ids and not any(getattr(policy, "review_blocked_tasks", False) for policy in policies):
         return []
     if configured_orchestrator_role_from_config(config) is None:
         return []
@@ -61,9 +62,15 @@ def pending_execution_reviews(
             continue
         flow = str(context.get("flow_kind") or "")
         policy = _effective_policy(config, flow)
-        if (not getattr(policy, "review_blocked_tasks", False)
-                or getattr(policy, "autonomous_actions", None) is None
-                or not checkpoint_policy(config, "semantic_failure", flow_kind=flow)):
+        semantic_checkpoint = checkpoint_policy(config, "semantic_failure", flow_kind=flow)
+        automatic_review = (getattr(policy, "review_blocked_tasks", False)
+                            and getattr(policy, "autonomous_actions", None) is not None
+                            and bool(semantic_checkpoint))
+        # A bound resident diagnosis may ask the existing legacy OA for advice.
+        # This does not opt into semantic checkpoints or autonomous execution.
+        advisory_handoff = (bool(diagnosed_operation_ids) and not semantic_checkpoint
+                            and policy.mode in {"exception_advisor", "semantic_control"})
+        if not automatic_review and not advisory_handoff:
             continue
         run_id = str(context.get("workflow_run_id") or "")
         if run_id not in goals:
@@ -85,6 +92,9 @@ def pending_execution_reviews(
         impl = max(impls, key=lambda row: int(row.get("operation_generation") or 0), default={})
         if impl.get("status") != "settled" or impl.get("semantic_verdict") not in {"failed", "blocked", "rejected"}:
             continue
+        diagnosed_advisory = advisory_handoff and impl.get("operation_id") in diagnosed_operation_ids
+        if not automatic_review and not diagnosed_advisory:
+            continue
         latest = latest_by_run[run_id].get(task_id, {})
         if latest.get("operation_id") != impl.get("operation_id"):
             continue
@@ -96,7 +106,9 @@ def pending_execution_reviews(
         except (OSError, ValueError):
             continue
         # Environment/provider/transport faults stay with their existing recovery owner.
-        if str(result.get("failure_class") or "none") not in {"none", "semantic", "product"}:
+        failure_class = str(result.get("failure_class") or "none")
+        if (failure_class not in {"none", "semantic", "product"}
+                and not (diagnosed_advisory and failure_class == "reader_execution_failure")):
             continue
         source_id = str(impl.get("call_result_admitted_event_id") or "")
         if source_id not in by_id:

@@ -7,8 +7,8 @@ from zf.runtime.orchestrator_agent_semantic_failure import request_semantic_fail
 from zf.runtime.recovery_case import build_recovery_case_projection
 
 
-def _diagnosed(tmp_path):
-    runtime, identity = _case(tmp_path)
+def _diagnosed(tmp_path, *, failure_class="none"):
+    runtime, identity = _case(tmp_path, failure_class=failure_class)
     writer = runtime.event_writer
     runtime.config.workflow.orchestration.normal_frontier_owner = "wrc"
     failed = writer.emit("dev.blocked", task_id="TASK-1", payload={
