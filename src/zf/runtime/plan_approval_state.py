@@ -78,10 +78,11 @@ def decide_pending_plan(
                         "digest_ref", "task_count", "workflow_run_id", "task_map_generation")
             if request.get(key) not in (None, "")
         }
-        return writer.emit(
-            event_type,
+        return writer.append(ZfEvent(
+            type=event_type,
+            origin="kernel",
             actor="operator",
             causation_id=plan_id,
             correlation_id=correlation_id,
             payload={**bound, **payload, "plan_id": plan_id, "request_event_id": pending.id},
-        ), ""
+        )), ""

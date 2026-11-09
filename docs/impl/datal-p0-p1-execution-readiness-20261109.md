@@ -191,3 +191,24 @@ Owner scope影响闭包364 passed（含三个mock E2E），serial10 passed、sen
 reader-view-after.json。
 
 读取归档缓存影响闭包244 passed（含CLI授权与mock E2E），sentinel53 passed。
+
+## 执行范围事件来源与八切片储备
+
+使用真实 `zf emit plan.rejected --actor operator` 测试复现：worker 来源声明仅凭
+actor/request 绑定即可被下游接纳为执行范围。修复为 CLI 在写账本前拒绝带
+`dispatch_task_ids` 的自报决定；受控 Plan 决定显式标记 kernel 来源，resynth
+同时检查来源、operator、原 pending 请求及 run/plan 绑定。普通历史决定不要求
+补写来源，只有新范围变更必须满足来源约束。未改写历史事件或在途任务。
+
+八切片草稿新增 P11B-METRICS-R1、P13-PRIORITY-R1，明确量化指标口径未定时
+UNKNOWN、P0 下一版本验证阻断等原始义务；与原六片写域隔离、前置已完成。
+完整草稿59任务，逐字保留原319 AC/199命令，新增25 AC/8命令。owner请求为
+原2gap+8新片+4集成父任务共14项，排除done/在途。预检通过不是正式准入。
+只读调度模拟验证当前两Impl存续及两者完成释放slot两种情形均有8路容量来源；
+真实状态仍2Impl+1Critic，本批保持active。最终批准前仍须核验新包语义、digest、
+真实冻结输入成本和原mandatory验收责任，禁止将模拟计数作为并发运行证据。
+
+来源校验：先复现CLI负例RED，修复后聚焦27 passed、影响闭包95 passed
+（包含三个mock E2E）、serial10 passed、sentinel53 passed。规划器按204文件
+数量升级全量，依仓库规则改为显式决策/重规划/CLI/Event来源及其mock调用闭包；
+未运行全量或真实provider E2E。

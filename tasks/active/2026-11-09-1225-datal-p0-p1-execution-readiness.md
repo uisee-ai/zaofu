@@ -79,3 +79,13 @@ Owner scope影响闭包364 passed（含三个mock E2E），serial10 passed、sen
   CLI内未变归档复用。保留实时取消、签名、替换/rotation校验，仍不改冻结输入。
 
 读取归档缓存影响闭包244 passed（含CLI授权与mock E2E），sentinel53 passed。
+
+- 八切片/十四项差量草稿已补齐并预检：59任务，原319 AC/199命令逐字保留。
+  新增量化指标与P0版本阻断独立行为，避免当前两Impl完成后只剩六片可派发。
+- 来源校验RED：worker自报operator可冒认新执行范围；CLI写前拦截、受控决定
+  kernel来源及resynth来源核验收口。仍须完成实际新Plan批准和真实8Impl验收。
+
+来源校验：先复现CLI负例RED，修复后聚焦27 passed、影响闭包95 passed
+（包含三个mock E2E）、serial10 passed、sentinel53 passed。规划器按204文件
+数量升级全量，依仓库规则改为显式决策/重规划/CLI/Event来源及其mock调用闭包；
+未运行全量或真实provider E2E。

@@ -105,13 +105,17 @@ def test_cli_can_request_an_explicit_new_dispatch_scope(tmp_path, monkeypatch):
                  '--dispatch-task', 'NEW', '--dispatch-task', 'INTEGRATE']) == 0
     rejected = next(e for e in log.read_all() if e.type == 'plan.rejected')
     assert rejected.payload['dispatch_task_ids'] == ['NEW', 'INTEGRATE']
+    assert rejected.origin == 'kernel'
+    assert _resynth(service, log, rejected).payload['task_ids'] == ['NEW', 'INTEGRATE']
 
 
-@pytest.mark.parametrize('actor,request_id', [('planner', 'bound'), ('operator', 'missing')])
-def test_resynth_rejects_unbound_scope_claims(tmp_path, actor, request_id):
+@pytest.mark.parametrize('actor,request_id,origin', [
+    ('planner', 'bound', 'kernel'), ('operator', 'missing', 'kernel'),
+    ('operator', 'bound', 'worker'), ('operator', 'bound', '')])
+def test_resynth_rejects_unbound_scope_claims(tmp_path, actor, request_id, origin):
     service, log = _service(tmp_path)
     pending = _pending(service, log)
-    event = ZfEvent(type='plan.rejected', actor=actor, payload={
+    event = ZfEvent(type='plan.rejected', actor=actor, origin=origin, payload={
         'plan_id': 'plan', 'workflow_run_id': 'run',
         'request_event_id': pending.id if request_id == 'bound' else request_id,
         'dispatch_task_ids': ['NEW']})
@@ -171,3 +175,19 @@ def test_backlog_with_live_operation_cannot_be_rebound(tmp_path):
         {'plan_id': 'plan', 'reason': 'refine', 'dispatch_task_ids': ['LIVE']})
     assert not result['ok'] and 'active or non-backlog' in result['reason']
     assert not any(e.type == 'plan.rejected' for e in log.read_all())
+
+
+def test_worker_emit_cannot_claim_owner_dispatch_scope(tmp_path, monkeypatch):
+    import json
+    from zf.cli.main import main
+
+    service, log = _service(tmp_path)
+    pending = _pending(service, log)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('ZF_STATE_DIR', str(service.state_dir))
+    assert main(['emit', 'plan.rejected', '--actor', 'operator', '--payload', json.dumps({
+        'plan_id': 'plan', 'workflow_run_id': 'run', 'request_event_id': pending.id,
+        'reason': 'claimed scope', 'dispatch_task_ids': ['NEW']})]) == 2
+    assert not any(e.type == 'plan.rejected' for e in log.read_all())
+    from zf.runtime.plan_approval_replay import pending_plan_requests
+    assert [e.id for e in pending_plan_requests(log.read_all())] == [pending.id]
