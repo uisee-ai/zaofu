@@ -35,7 +35,7 @@ def assert_package_explicit_ports_match(
     """A frozen generation may replay inputs, but cannot silently discard new ones."""
     from zf.runtime.call_result_envelope import canonical_json_sha256
     from zf.runtime.plan_artifact_package_ports import (
-        PlanArtifactPackageError, materialize_explicit_plan_ports,
+        PlanArtifactPackageError, bind_product_acceptance_identity, materialize_explicit_plan_ports,
     )
 
     current = {port["logical_name"]: port
@@ -47,9 +47,15 @@ def assert_package_explicit_ports_match(
             flow_kind=flow_kind, required_ports=current,
         )
         for name, port in supplied.items():
-            if name not in current or canonical_json_sha256(
-                hydrate_sidecar_ref(state_dir, port).payload
-            ) != canonical_json_sha256(hydrate_sidecar_ref(state_dir, current[name]).payload):
+            incoming = hydrate_sidecar_ref(state_dir, port).payload
+            if name == "product_acceptance_spec":
+                incoming = bind_product_acceptance_identity(
+                    incoming, workflow_run_id=package["workflow_run_id"], flow_kind=package["flow_kind"],
+                    plan_revision=package["plan_revision"], task_map_generation=package["task_map_generation"],
+                )
+            if name not in current or canonical_json_sha256(incoming) != canonical_json_sha256(
+                hydrate_sidecar_ref(state_dir, current[name]).payload
+            ):
                 raise PlanArtifactPackageError(
                     f"explicit plan port {name!r} differs from the admitted package; "
                     "changed input requires a new plan generation")

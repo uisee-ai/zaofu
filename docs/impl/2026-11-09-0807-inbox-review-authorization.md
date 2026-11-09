@@ -109,6 +109,35 @@ Task 进入 in_progress，产品与技术扫描实际派发。Inbox 同项关闭
 
 密钥、完整运行状态与原始 Provider trace 不进入 Git；本仓库保留方法、测试及证据位置。
 
+## 真实验收追加的 Plan 回放修复
+
+真实 Run 的第一轮规划已通过 Critic，但进入 `prd-lanes-impl` 时被机械内容围栏拒绝：
+`product_acceptance_spec differs from the admitted package`。逐字段比较表明语义正文完全相同，
+只有首次准入补齐的 `schema_version`、`workflow_run_id`、`flow_kind`、`plan_revision`、
+`task_map_generation` 在原始显式正文中缺失。运行时已自动重规划，原始证据未被改写。
+
+追加共享的 `bind_product_acceptance_identity`，首次准入与同代回放使用同一权威身份绑定，
+随后仍比较完整 canonical JSON digest。修改用户旅程、断言、入口、资格要求等语义正文仍拒绝；
+没有移除内容围栏，没有删除或修改已接纳包，也没有减少输入上下文。
+
+先补实际 admission 调用方回归：原代码 **1 failed / 10 passed**（原样语义回放被拒绝）。
+修复后 Plan 输入 / 输出 / Package / Ports / 产品验收 **50 passed**；再运行直接调用方
+Reader/Writer、Plan Review/Rework 和相关 mock E2E，**385 passed**。
+日志位于真实测试目录 `evidence/plan-replay-before-fix.log`、`plan-replay-after-fix.log`、
+`plan-replay-impact.log`。首次影响闭包命令误写不存在的 `test_fanout_writer.py`，未执行任何测试；
+更正为 `test_writer_fanout_admission.py`、`test_writer_fanout_runtime.py` 后得到上述结果。
+
+通过正常 `zf restart --include-run-manager` 加载修复，未直接编辑运行状态。重启首次遇到
+Web 父进程尚未回收已退出 watcher、PID guard 仍视为存活的问题；停止并重新启动该临时 API
+后，僵尸子进程正常回收，再以 `zf start` 启动，随后 `zf recover workflow --dry-run --json`
+返回一个 `redrive_interrupted_reader_operation` checkpoint；按该精确 checkpoint 调用
+`--resume-pending --checkpoint-id`，收到 applied=1、rejected=0，从原请求续接被中断的 Critic。
+该进程回收问题未在本次扩大修改。
+
+追加修复的 `dev-verify plan --base HEAD --tests tests/test_plan_input_replay.py` 保守展开到
+260 个文件；自动层保留回执，deterministic/serial 以已执行的 50 + 385 项闭包替代，
+未重复未变化的 Web 测试，也未启动整套 pytest。
+
 ## 后端闭包的复跑命令
 
 ```bash
