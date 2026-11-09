@@ -6527,6 +6527,7 @@ class FanoutCoordinationMixin(
         failure_event = self.event_writer.append(ZfEvent(
             type="fanout.synth.completed",
             actor="zf-cli",
+            origin="kernel",
             payload={
                 "fanout_id": fanout_id,
                 "trace_id": str(manifest.get("trace_id") or ""),
@@ -6541,6 +6542,9 @@ class FanoutCoordinationMixin(
                 "status": "failed",
                 "recommendation": "reject",
                 "reason": "synth_timeout",
+                "failure_class": "reader_execution_failure",
+                "failure_kind": "infra",
+                "semantic_attempt_consumed": False,
                 "liveness_reason": "timeout" if timed_out else "idle",
                 "summary": (
                     f"synth exceeded its {effective_timeout}s execution limit"

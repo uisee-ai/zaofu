@@ -381,6 +381,11 @@ def prepare_call_operation(
             source_manifest, before=full_plan_reads, after=required_reads,
             explicit=bool(explicit_required_reads),
         )
+        from zf.runtime.plan_review_inspection import review_scope_diagnostics
+        from zf.runtime.plan_review_input_budget import check_review_input_budget
+
+        payload["plan_review_optimization"]["scope"] = review_scope_diagnostics(runtime.state_dir, source_manifest)
+        check_review_input_budget(runtime.config, stage_id, payload["plan_review_optimization"])
     if required_reads:
         payload["required_reads"] = required_reads
         policy = build_input_consumption_policy(
@@ -742,6 +747,10 @@ def _pin_plan_candidate_validation_context(
             payload=trigger_payload,
         ),
         "writer_policy": plan_candidate_writer_policy(runtime.config),
+        "review_input_limits": {
+            key: int(getattr(getattr(stage, "aggregate", None), key, 0))
+            for key in ("review_input_max_bytes", "review_input_max_pages")
+        },
     }
 
 

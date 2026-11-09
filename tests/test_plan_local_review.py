@@ -390,7 +390,7 @@ def test_local_critic_policy_falls_back_for_unproved_inputs(tmp_path, problem):
                               critic_role="planner" if problem == "same_current_role" else "critic") == required
 
 
-@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered"])
+@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered", "native"])
 def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, monkeypatch, prior_format):
     from tests.test_call_result_runtime import _runtime
     from zf.runtime.artifact_read_ledger import active_read_ledger_path, read_attempt_artifact, render_attempt_source_briefing, seal_read_ledger
@@ -401,6 +401,22 @@ def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, mo
     from zf.runtime.call_result_runtime import admit_runtime_call_result, mark_call_operation_started, prepare_call_operation
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
+    if prior_format == "native":
+        original = _inputs
+
+        def native_inputs():
+            bodies = original()
+            for port in bodies[2:]:
+                port["schema_version"] = "execution-spec.v1"
+                port["task_input_policy"] = {
+                    "schema_version": "task-input-policy.v1",
+                    "shared_paths": ["$.schema_version", "$.shared"],
+                    "tasks": [{"task_id": row["task_id"], "paths": [f"$.tasks[{i}]"]}
+                              for i, row in enumerate(port["tasks"])],
+                }
+            return bodies
+
+        monkeypatch.setattr("tests.test_plan_local_review._inputs", native_inputs)
     runtime = _runtime(tmp_path)
     manifest, _, events = _policy_fixture(runtime.state_dir)
     if prior_format == "legacy_recovered":

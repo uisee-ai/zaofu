@@ -50,6 +50,11 @@ def scoped_port_paths(
     if (old_port.get("schema_version") != "task-scoped-plan-input.v1"
             or new_port.get("schema_version") != "task-scoped-plan-input.v1"
             or old_port.get("shared") != new_port.get("shared")):
+        if "task_input_policy" in old_port and "task_input_policy" in new_port:
+            from zf.runtime.plan_native_local_review import native_port_paths
+
+            return native_port_paths(old_port, new_port, changed=scope, reviewed=downstream,
+                                     task_ids_in_map=set(old_tasks))
         return None
     try:
         old_paths = ["$.shared"]

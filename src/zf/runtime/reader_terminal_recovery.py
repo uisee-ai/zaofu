@@ -11,9 +11,12 @@ def reconcile_exhausted_reader_operations(runtime: Any, events: list[ZfEvent]) -
     failures = [
         e
         for e in events
-        if e.type == "fanout.child.failed"
-        and e.origin == "kernel"
-        and e.payload.get("failure_class") == "worker_noop_or_terminal_missing"
+        if (e.type == "fanout.child.failed" and e.origin == "kernel"
+            and e.payload.get("failure_class") == "worker_noop_or_terminal_missing")
+        or (e.type == "fanout.synth.completed" and e.payload.get("status") == "failed"
+            and (e.origin == "kernel" or not e.origin and e.actor == "zf-cli")
+            and (e.payload.get("reason") == "synth_timeout"
+                 or e.payload.get("failure_class") == "worker_noop_or_terminal_missing"))
     ]
     if not failures:
         return False
@@ -21,24 +24,34 @@ def reconcile_exhausted_reader_operations(runtime: Any, events: list[ZfEvent]) -
     positions = {e.id: i for i, e in enumerate(events)}
     dispatches = {}
     for event in events:
-        if event.type == "fanout.child.dispatched":
+        if event.type in {"fanout.child.dispatched", "fanout.synth.dispatched"}:
             p = event.payload
-            dispatches[(p.get("fanout_id"), p.get("child_id"))] = event
+            child = "synth" if event.type == "fanout.synth.dispatched" else p.get("child_id")
+            dispatches[(p.get("fanout_id"), child)] = event
     for failed in reversed(failures):
         p = failed.payload
-        dispatched = dispatches.get((p.get("fanout_id"), p.get("child_id")))
+        is_synth = failed.type == "fanout.synth.completed"
+        child = "synth" if is_synth else p.get("child_id")
+        dispatched = dispatches.get((p.get("fanout_id"), child))
         if dispatched is None or positions[dispatched.id] > positions[failed.id]:
             continue
         if p.get("run_id") != dispatched.payload.get("run_id"):
             continue
         op = operations.get(str(dispatched.payload.get("operation_id") or ""))
-        if not op or op.get("operation_type") != "fanout_reader_child":
+        if not op or op.get("operation_type") != ("fanout_synth" if is_synth else "fanout_reader_child"):
+            continue
+        if is_synth and (
+            op.get("request_hash") != dispatched.payload.get("request_hash")
+            or op.get("active_attempt_id") != (dispatched.payload.get("attempt_id") or dispatched.payload.get("run_id"))
+        ):
             continue
         if op.get("status") not in {"running", "requested", "reserved", "suspended"}:
             continue
         if positions.get(str(op.get("last_event_id") or ""), -1) > positions[failed.id]:
             continue
-        workflow_operation_service(runtime).block(
+        service = workflow_operation_service(runtime)
+        settle = service.fail if is_synth else service.block
+        settle(
             operation_id=op["operation_id"],
             request_hash=op["request_hash"],
             workflow_run_id=op["workflow_run_id"],
@@ -47,9 +60,9 @@ def reconcile_exhausted_reader_operations(runtime: Any, events: list[ZfEvent]) -
             causation_id=failed.id,
             correlation_id=op["workflow_run_id"],
             details={
-                "failure_class": "worker_noop_or_terminal_missing",
+                "failure_class": p.get("failure_class") or "reader_execution_failure",
                 "fanout_id": p.get("fanout_id"),
-                "child_id": p.get("child_id"),
+                "child_id": child,
             },
         )
         return True

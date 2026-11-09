@@ -446,6 +446,7 @@ def validate_call_result_envelope(
                     and execution.get("status") == "failed" and isinstance(control, Mapping)
                     and control.get("schema_version") in {
                         "workflow-read-result.v1", "plan-synthesis-result.v1",
+                        "implementation-result.v1", "verification-result.v1",
                     }):
                 allowed_statuses.add("incomplete")
             if str(consumption.get("status") or "") not in allowed_statuses:

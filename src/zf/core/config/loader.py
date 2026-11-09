@@ -2004,6 +2004,12 @@ def _build_fanout_aggregate(data: object) -> FanoutAggregateConfig:
     retry = raw.get("retry") or {}
     if retry and not isinstance(retry, dict):
         raise ConfigError("workflow stage aggregate.retry must be a mapping")
+    review_limits = {}
+    for key in ("review_input_max_bytes", "review_input_max_pages"):
+        value = raw.get(key, 0)
+        if type(value) is not int or value < 0:
+            raise ConfigError(f"workflow stage aggregate.{key} must be a nonnegative integer")
+        review_limits[key] = value
     return FanoutAggregateConfig(
         mode=str(raw.get("mode") or "wait_for_all"),
         success_event=str(raw.get("success_event") or ""),
@@ -2027,6 +2033,7 @@ def _build_fanout_aggregate(data: object) -> FanoutAggregateConfig:
         quorum=int(raw.get("quorum") or 0),
         # B3 (R25 ISSUE-005): dedicated synth wait budget.
         synth_timeout_seconds=int(raw.get("synth_timeout_seconds") or 0),
+        **review_limits,
     )
 
 
