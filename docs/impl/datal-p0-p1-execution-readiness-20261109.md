@@ -336,3 +336,16 @@ P19仍等待正式独立结果准入，批次继续active。
 重试投影验证：130项聚焦通过（含Run准入及Verify重试），76项调用/投影/
 多Run/mock E2E闭包通过，dev-verify自动闭包120 passed，sentinel53 passed。
 未运行全量pytest或真实provider E2E；真实datal继续运行，产品验收单独跟踪。
+
+
+### P0/P1验收收口
+
+2026-11-09 22:03 UTC，P19正式独立Verify通过并集成：实现39a35a7、正式23项
+与独立9项探针通过；verdict evt-f4180a979cc9，准入evt-286fe9489792，
+done evt-28e7c39e43eb。至此本批输入、Plan、实际8Impl、冷环境四项验收齐备。
+详细证据及全部阶段记录已归档至
+[完成任务](../../tasks/done/2026-11-09-1225-datal-p0-p1-execution-readiness.md)。
+
+调度修复39390fa8已合入dev8c61467d，最终自动闭包128 passed，合并后212项
+回归/mock与53项sentinel通过。datal整体仍46 done、13未完成；本批归档不代表
+产品交付完成。Metrics单任务返工、Registry独立验收、Ingest实施继续监工。
