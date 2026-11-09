@@ -809,6 +809,7 @@ def build_workflow_batch_resume_checkpoints(
     completion_rejections: dict[str, WorkflowBatchResumeCheckpoint] = {}
     escalated_integration_ids: set[str] = set()
     escalations: list[WorkflowBatchResumeCheckpoint] = []
+    failure_inputs: list[ZfEvent] | None = None
 
     for event in event_list:
         payload = _payload(event)
@@ -837,21 +838,25 @@ def build_workflow_batch_resume_checkpoints(
             status = str(payload.get("status") or "completed")
             if status == "completed":
                 continue
+            if failure_inputs is None:
+                from zf.runtime.workflow_batch_failure_inputs import select_batch_failure_inputs
+
+                failure_inputs = select_batch_failure_inputs(event_list)
             candidate_trigger = _candidate_trigger_for_failed_fanout(
-                event_list,
+                failure_inputs,
                 event,
             )
             candidate_runtime_retry = (
                 candidate_trigger is not None
-                and _candidate_runtime_failure_only(event_list, event)
+                and _candidate_runtime_failure_only(failure_inputs, event)
             )
-            if _reader_stage_replan_owns_failed_batch(event_list, event):
+            if _reader_stage_replan_owns_failed_batch(failure_inputs, event):
                 if not candidate_runtime_retry:
                     continue
             anchor = _anchor_for_event(event, anchors)
             if candidate_trigger is not None:
                 candidate_trigger = _candidate_authority_event(
-                    event_list,
+                    failure_inputs,
                     candidate_trigger,
                 )
                 candidate_anchor = _payload(candidate_trigger)
