@@ -1,6 +1,6 @@
 # Z03b 本机 Codex 核验与累计期初基线
 
-> 状态: active
+> 状态: done
 
 来源：用户明确要求将 controller integration 集成后，用本机 Codex 统计 tokens 和消费；前一切片已合入 dev。
 
@@ -19,4 +19,13 @@
 - 实际 Keycloak/PostgreSQL/Docker Browser 与 ZaoFu CLI 联验通过；使用合成两次 turn，重放后 240 tokens 不重复。
 - 本机已只读核验真实累计 Codex 日志，确认 subscription、input 含 cache、reasoning 包含于 output；本地目录无匹配模型价格，金额未知。
 
-后续按本项第 4 条，在合入 dev 并验证后归档；不提前声称已完成合入。
+## 完成记录
+
+实现：`3ec83ebf feat: inspect local Codex usage and baseline existing sessions`。
+合入：`6d6cd9e6 feat: integrate native Codex usage inspection and spend baselines`。
+
+- 三流 mock E2E 10 passed，ruff 与 diff 检查通过；合入后在真实 dev 目录重跑聚焦 119 项和 sentinel 53 项均通过。
+- 2026-11-09 16:02 UTC 从 dev 执行 `zf controller codex-usage --limit 2`：匹配当前项目 18 个原生 Session；最近 Session 快照为 48,069,984 tokens，范围是从 2026-10-30 创建以来的累计值，含 cache，不是当天消耗。
+- 本机读取未发起模型请求、未读取认证文件、未上传任意原生历史；当前来源 subscription，目录无匹配模型价格，估算/实际账单为 null。
+- dev 原有 `docs/design/00-index.md` 和 `sima/zf.yaml` 未提交改动按原始 digest 验证保留。
+- 本项验收包含实际合入，因此归档放在合入后；没有以未合入状态提前标 done。父 Z01–Z04 继续保留剩余义务。

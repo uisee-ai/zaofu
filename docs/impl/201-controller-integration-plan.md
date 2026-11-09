@@ -17,4 +17,4 @@
 [Z03a](../../tasks/done/2026-11-09-1512-z03a-observation-connector.md) 已接线实际 CLI、事件来源、
 持久 outbox 和真实 Controller 联验；Z01/Z03 的完整剩余义务仍保留 active。
 
-后续本机 Codex 与累计基线见 [Z03b](../../tasks/active/2026-11-09-1549-z03b-native-codex-usage.md)。
+后续本机 Codex 与累计基线见 [Z03b](../../tasks/done/2026-11-09-1549-z03b-native-codex-usage.md)。
