@@ -298,3 +298,23 @@ def test_cli_preserves_run_contract_gate(case, monkeypatch):
     before = log.path.read_bytes()
     assert invoke(state, apply=True) == 1
     assert log.path.read_bytes() == before
+
+
+def test_explicit_extra_retry_remains_bound_to_one_next_generation(case):
+    from zf.runtime.task_pipeline_operator_retry import request_impl_retry
+
+    state, log, writer, _, _ = case
+    config = SimpleNamespace(workflow=SimpleNamespace(
+        flow_metadata={"task_pipeline": {"mode": "blocking", "max_rework_attempts": 0}},
+    ))
+    kwargs = dict(state_dir=state, event_log=log, event_writer=writer,
+                  operation_id="op-1", reason="repair verified", config=config)
+    with pytest.raises(ValueError, match="approval_ref"):
+        request_impl_retry(**kwargs, authorize_extra_attempt=True)
+    request_impl_retry(**kwargs, authorize_extra_attempt=True,
+                       approval_ref="operator:approved-once", apply=True)
+    replay = request_impl_retry(**kwargs, apply=True)
+    assert replay["status"] == "already_requested"
+    grants = [e for e in log.read_all() if e.type == "task.rework.requested"]
+    assert len(grants) == 1
+    assert grants[0].payload["authorized_next_operation_generation"] == 2

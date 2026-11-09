@@ -699,11 +699,26 @@ class WorkflowOperationService:
                 current_request,
             )
         )
-        if (
-            persisted_compatibility_hash != current_compatibility_hash
-            or current_compatibility_hash != current_request_hash
-        ):
+        if current_compatibility_hash != current_request_hash:
             return None
+        read_compatibility = None
+        if persisted_compatibility_hash != current_compatibility_hash:
+            from zf.runtime.task_pipeline_read_replay import read_policy_compatibility
+
+            read_compatibility = read_policy_compatibility(
+                persisted_request, current_request,
+            )
+            if read_compatibility is None:
+                return None
+            # Compare every other semantic field normally. The original hash
+            # remains authoritative; the proof binds the stricter current reads.
+            aligned_request = dict(current_request)
+            aligned_request["required_reads"] = persisted_request["required_reads"]
+            aligned_body = {**dict(current_request_body), "request": aligned_request}
+            if operation_request_hash(task_pipeline_request_hash_body(
+                aligned_body, aligned_request,
+            )) != persisted_compatibility_hash:
+                return None
         compatibility_body = {
             "schema_version": "task-pipeline-request-replay-compatibility.v1",
             "operation_id": str(existing.get("operation_id") or ""),
@@ -717,6 +732,8 @@ class WorkflowOperationService:
             ],
             "current_request": dict(current_request_body),
         }
+        if read_compatibility is not None:
+            compatibility_body["read_policy_compatibility"] = read_compatibility
         compatibility_descriptor = write_immutable_json_sidecar(
             self.state_dir,
             compatibility_body,

@@ -118,10 +118,20 @@ def current_rework_task_map_replay_candidates(
     latest_by_scope: dict[tuple[str, str], tuple[int, ZfEvent]] = {}
     unscoped: list[tuple[int, ZfEvent]] = []
     for index, event in enumerate(events):
-        if event.type != "task_map.ready":
-            continue
         payload = event.payload if isinstance(event.payload, dict) else {}
-        if not payload.get("rework_of"):
+        if (
+            event.type == "run.goal.updated"
+            and getattr(event, "origin", "") == "kernel"
+            and payload.get("status") == "active"
+            and payload.get("reason") == "authorized_stage_replan_new_generation"
+            and payload.get("stage_replan_generation")
+        ):
+            run_id = str(payload.get("workflow_run_id") or payload.get("run_id")
+                         or event.correlation_id or "").strip()
+            if run_id:
+                latest_by_scope = {scope: row for scope, row in latest_by_scope.items()
+                                   if scope[0] != run_id}
+        if event.type != "task_map.ready":
             continue
         generation = str(payload.get("task_map_generation") or "").strip()
         if generation and generation in superseded_generations:
@@ -143,7 +153,11 @@ def current_rework_task_map_replay_candidates(
         latest_by_scope[(workflow_run_id, pdd_id)] = (index, event)
 
     selected = [*latest_by_scope.values(), *unscoped]
-    return [event for _index, event in sorted(selected, key=lambda item: item[0])]
+    # A newer ordinary Task Map also retires an older rework map, but only
+    # rework maps belong to this recovery sweep. Do not resurrect old plans
+    # merely because their replacement did not carry a rework_of marker.
+    return [event for _index, event in sorted(selected, key=lambda item: item[0])
+            if event.payload.get("rework_of")]
 
 
 __all__ = [

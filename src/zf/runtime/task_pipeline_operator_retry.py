@@ -145,9 +145,6 @@ def request_impl_retry(
             and e.payload.get("authorized_next_operation_generation") == next_generation
             and str(e.payload.get("approval_ref") or "").strip()
         )), None)
-        if (policy is not None and int(operation["operation_generation"]) > int(policy.get("max_rework_attempts", 0))
-                and not authorize_extra_attempt and granted is None):
-            raise ValueError("Impl rework cap exhausted; an explicit one-generation approval is required")
         task = TaskStore(state_dir / "kanban.json").get(task_id)
         if task is None or task.status not in {"in_progress", "backlog"}:
             raise ValueError("task is not eligible for Impl retry")
@@ -157,11 +154,6 @@ def request_impl_retry(
             for row in TaskAttemptStore(state_dir / "task_attempts.json").current_rows()
         ):
             raise ValueError("TaskAttempt must settle before operator retry")
-        from zf.runtime.task_pipeline_reconciler import task_pipeline_policy
-
-        policy = task_pipeline_policy(
-            config, flow_kind=str(contexts[task_id].get("flow_kind") or "")
-        )
         if policy and policy.get("mode") == "blocking":
             repair_offset = sum(
                 1 for row in operations.values()
@@ -174,7 +166,7 @@ def request_impl_retry(
             limit = int(policy.get("max_rework_attempts") or 0) + repair_offset
             if int(operation.get("operation_generation") or 0) > limit and not authorize_extra_attempt and granted is None:
                 raise ValueError(
-                    "Impl retry budget exhausted; a controlled new generation is required"
+                    "Impl retry budget exhausted; an explicit one-generation approval is required"
                 )
         for event in events:
             if (
