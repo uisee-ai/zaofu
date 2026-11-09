@@ -15,28 +15,19 @@ def attach_execution_review(
 ) -> None:
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 
-    body = dict(review)
-    usage = body.get("usage_observations")
-    if isinstance(usage, Mapping) and usage.get("schema_version") == "execution-usage-facts.v1":
+    from zf.runtime.plan_execution_delivery import execution_review_delivery
+
+    body, details = execution_review_delivery(review)
+    for item in details:
         detail = write_immutable_json_sidecar(
-            state_dir, dict(usage), root="plan-execution-usage",
-            kind="plan_execution_usage", schema_version="execution-usage-facts.v1",
-            created_by="plan-preflight", source_event_id=source_event_id,
+            state_dir, item["body"], root=item["root"], kind=item["kind"],
+            schema_version=item["schema_version"], created_by="plan-preflight",
+            source_event_id=source_event_id,
         )
         payload.setdefault("input_refs", []).append({
-            **detail, "source_id": "plan-execution-usage",
-            "artifact_id": "plan-execution-usage.json", "allowed_paths": ["$"],
+            **detail, "source_id": item["source_id"],
+            "artifact_id": item["source_id"] + ".json", "allowed_paths": ["$"],
         })
-        groups = usage.get("groups")
-        body["usage_observations"] = {
-            **{key: value for key, value in usage.items() if key != "groups"},
-            "group_count": len(groups) if isinstance(groups, list) else 0,
-            "total_tokens": sum(int(group.get("total_tokens") or 0)
-                                for group in groups if isinstance(group, Mapping))
-                            if isinstance(groups, list) else 0,
-            "detail_source_id": "plan-execution-usage",
-            "detail_ref": detail["ref"], "detail_sha256": detail["sha256"],
-        }
     descriptor = write_immutable_json_sidecar(
         state_dir, body, root="plan-execution-reviews",
         kind="plan_execution_review", schema_version="plan-execution-review.v1",

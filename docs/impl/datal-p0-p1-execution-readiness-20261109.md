@@ -109,3 +109,40 @@ null，不能当成零成本。真实CLI/API回归证明无读回执、无越权
 
 第二批诊断修复：先复现阶段预算1项RED及成本字段2项RED；修复后CLI/API focused
 25项通过，影响闭包783 passed，premerge sentinel53 passed。
+
+## P1 并行差量与 P0 诊断交付修正
+
+本轮继续形成六个有真实入口的切片：P11B-CONDITIONS-R1、P11B-REPORT-R1、
+P12C-SCORING-R1、P13-TAXONOMY-R1、P13-REGISTRY-R1、P19-LOCKED-ENV-R1。
+原比较/回归/Case/交付任务保留全部集成验收并增加前置依赖；新模块、迁移、测试和
+证据目录与集成写域分离。原319条AC和199条命令逐字保持，新增18条具名行为AC。
+草稿九端口、task_execution_input别名、来源闭包、路径互斥、滚动smoke通过完整
+read-only Plan preflight；这不是正式准入或独立语义批准。
+
+v4 TaskPipelineReconciler按空闲池和能力选role，作者owner_role不固定占用实例。
+草稿保留独立assembly owner，新增片可复用作者owner，不能据此推断只会运行一个
+worker。依赖波次和外部wheel只读路径已补齐，未改实际在途合同。
+
+真实完整预估暴露了诊断自身的重复交付：execution review仍重复列出全部任务的
+机械owner选择，而作者成本估计还计入已被正式派发抽出的usage groups。
+现在 `plan_execution_delivery` 为成本估计和派发共用纯投影：
+
+- 必读review保留input_binding、完整图、容量、门禁接线、环境事实及计数。
+- 每任务命令/AC的机械stage选择保存在原子、摘要绑定的
+  `plan-execution-verification` sidecar，带原task-map/policy/generation绑定，
+  进入同一Source Manifest供按需读取；原Task Map、AC、命令语义端口不变。
+- 成本估计使用与正式派发相同的摘要格式，不写sidecar或read receipt；最终预算仍
+  由冻结manifest判定，未知Critic上下文不假装已计入。
+- replay先展开校验机械明细比较语义；相同输入保留原冻结inline/detail格式，
+  真实命令owner变化仍触发request divergence，篡改明细fail closed。
+
+先复现两项RED（机械明细重复必读、估计与派发正文不一致）及旧格式replay回归，
+修复后focused 57 passed。新草稿估计4,012,533 bytes/430最低页，仍为非权威估计；
+真实Critic dispatch预算与批准尚待验证。实施草稿和逐项preservation-proof存于真实
+项目 `diagnostics/parallel-task-admission-20261109/`。
+
+13:30 UTC，用真实TaskStore/operation/attempt及现行v4配置，仅在内存加入草稿后，
+调度器将六片分别分到lane2–7；加当前lane0/1共8，且无backpressure或未满足依赖。
+这是可重放forecast，不是实际派发。证据为 `proposal/scheduler-forecast.json`。
+影响闭包（含实际preflight/prepare-call caller、旧格式replay和mock artifact-package
+E2E）802 passed；未运行全量pytest或真实provider E2E。

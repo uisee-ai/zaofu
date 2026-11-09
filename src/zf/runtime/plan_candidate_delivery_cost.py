@@ -36,7 +36,10 @@ def candidate_delivery_cost(
         })
 
     add("author_report", "candidate", semantic)
-    add("execution_review", "execution_review", execution_review)
+    from zf.runtime.plan_execution_delivery import execution_review_delivery
+
+    delivery, _details = execution_review_delivery(execution_review)
+    add("execution_review", "execution_review", delivery)
     for ref in _child_artifact_refs(semantic):
         try:
             path = resolve_artifact_file(ref, project_root=project_root, state_dir=state_dir)
