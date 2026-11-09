@@ -536,3 +536,23 @@ LS-v1 实测周期刷新方法先复制约4.9万事件再消费最后50条。`Ev
 LS-v1的FMS16已正式task.done，RM旧immediate-replan抑制仍残留。`active_immediate_replan_task_ids` 现在消费同任务、同运行的kernel `task.done`；下一次新的失败/分诊仍建立新的抑制。运行级 `run.goal.completed/blocked` 只解除同运行的抑制，复用现有run_scope别名，不让其他运行终止本运行恢复。单次调用按需构造别名表；无法确定运行的终态保守不释放。原计划替代证明保留，普通派发或新计划提议不等于完成。
 
 这修正恢复路由的投影残留，不改写任务终态、补发完成事件或关闭业务Owner阻塞。真实证据、负例及回放见 `tasks/2026-11-08-2341-rm-terminal-suppression.md`。
+
+### 2026-11-09：Reader gap 输入选择提前进入协议纠错
+
+LS-v1 的设备选择 UI gap 曾将 `task-verify` 写成 `task_verify`：reader 外层报告
+被准入并结束，随后 task-map amendment 才拒绝，导致需要监工修订产物。
+现在 `workflow-read` 的实际结果适配入口对显式 gap 输入选择复用 Task Map 的
+机械 shape 校验，在 blocking 模式下通过已有 Call Result correction 返回原
+operation。原生字段错误回传、重复结果幂等和修正后准入沿用现有协议，不增加
+semantic attempt、不重建计划，也不由运行时代改字段或验收语义。
+
+这一前置检查只覆盖已声明选择的版本/键、两阶段非空端口列表、重复/非法值
+及必需 `task_execution_input`。未声明选择保持兼容；完整包的端口绑定、分区、
+矩阵、替换关系、验收覆盖和候选基线仍在原审核/准入链核验。本修复不声称所有
+amendment 失败均已自动恢复，也不回写已准入的历史 reader report。
+
+补充历史回放边界：旧版已准入的legacy结果在新校验下重新提交时可能产生协议诊断，
+但即时纠错派发也必须检查operation是否已结束及request hash是否仍匹配；结束/
+替换/取消的operation不得向复用lane发送纠错。原不可变结果与原settlement保留。
+新schema错误的实际提交、provider stop后的同operation纠错，以及旧结果回放
+反例见 `tests/test_gap_selection_admission.py`。

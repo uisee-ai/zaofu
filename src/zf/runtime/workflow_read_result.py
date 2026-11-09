@@ -127,6 +127,17 @@ def normalize_workflow_read_result(
             "code": "missing_required",
         })
     issues.extend(workflow_read_finding_issues(report.get("findings")))
+    from zf.runtime.task_map_required_ports import plan_input_selection_shape_errors
+
+    gaps = report.get("gap_tasks")
+    for index, gap in enumerate(gaps if isinstance(gaps, list) else []):
+        evidence = gap.get("evidence_contract") if isinstance(gap, dict) else None
+        if not isinstance(evidence, dict) or evidence.get("plan_input_selection") is None:
+            continue
+        field = f"control_result.gap_tasks[{index}].evidence_contract.plan_input_selection"
+        issues.extend({"field": field, "code": "schema_invalid", "message": message}
+                      for message in plan_input_selection_shape_errors(
+                          evidence["plan_input_selection"], prefix=field))
     return report, issues
 
 

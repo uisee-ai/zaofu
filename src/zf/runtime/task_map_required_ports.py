@@ -46,6 +46,24 @@ def required_plan_port_errors(value: Any) -> list[str]:
     return errors
 
 
+def plan_input_selection_shape_errors(policy: Any, *, prefix: str) -> list[str]:
+    """Check the shared selection schema before package binding is available."""
+    if (not isinstance(policy, dict)
+            or set(policy) != {"schema_version", "implementation", "task-verify"}
+            or policy.get("schema_version") != "task-plan-input-selection.v1"):
+        return [f"{prefix} has invalid schema; expected exactly schema_version, "
+                "implementation, task-verify with schema_version=task-plan-input-selection.v1"]
+    errors: list[str] = []
+    for stage in ("implementation", "task-verify"):
+        values = policy[stage]
+        if (not isinstance(values, list) or not values or
+                any(not isinstance(x, str) or not x.strip() or x != x.strip() for x in values)):
+            errors.append(f"{prefix}.{stage} must be a non-empty port list")
+        elif len(values) != len(set(values)) or "task_execution_input" not in values:
+            errors.append(f"{prefix}.{stage} contains duplicate, unbound or missing scoped input")
+    return errors
+
+
 def plan_input_declaration_errors(
     payload: dict[str, Any], *, available_ports: Iterable[str] | None = None,
 ) -> list[str]:
@@ -71,20 +89,18 @@ def plan_input_declaration_errors(
         if policy is None:
             continue
         prefix = f"{task_id}.evidence_contract.plan_input_selection"
-        if not isinstance(policy, dict) or set(policy) != {"schema_version", "implementation", "task-verify"} or policy.get("schema_version") != "task-plan-input-selection.v1":
-            errors.append(f"{prefix} has invalid schema")
+        shape_errors = plan_input_selection_shape_errors(policy, prefix=prefix)
+        if shape_errors:
+            errors.extend(shape_errors)
             continue
         full = {"execution_spec", "task_execution_input", "acceptance_matrix", "test_matrix", "real_e2e_matrix"}
         if not full.issubset(available):
             errors.append(f"{prefix} requires complete plan matrix ports")
         for stage in ("implementation", "task-verify"):
             values = policy.get(stage)
-            if (not isinstance(values, list) or not values or
-                    any(not isinstance(x, str) or not x.strip() or x != x.strip() for x in values)):
-                errors.append(f"{prefix}.{stage} must be a non-empty port list")
-            elif len(values) != len(set(values)) or not set(values).issubset(selectable) or "task_execution_input" not in values:
+            if not set(values).issubset(selectable):
                 errors.append(f"{prefix}.{stage} contains duplicate, unbound or missing scoped input")
     return errors
 
 
-__all__ = ["plan_input_declaration_errors", "required_plan_port_errors"]
+__all__ = ["plan_input_declaration_errors", "plan_input_selection_shape_errors", "required_plan_port_errors"]
