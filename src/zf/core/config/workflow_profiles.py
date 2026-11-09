@@ -99,6 +99,8 @@ _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "judgeRole", "judge_role",
 })
 _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
+    "reviewInputMaxBytes", "review_input_max_bytes",
+    "reviewInputMaxPages", "review_input_max_pages",
     "planCriticEnabled", "plan_critic_enabled",
     "topology",  # 批D: fanout(默认)| light(单 lane goal 环)
     "prdRef", "prd_ref",
@@ -1515,6 +1517,12 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         default="",
     ))
     topology = str(_pick(params, "topology", default="fanout")).strip() or "fanout"
+    for external, canonical in (("reviewInputMaxBytes", "review_input_max_bytes"),
+                                ("reviewInputMaxPages", "review_input_max_pages")):
+        if external in params and canonical in params:
+            raise WorkflowProfileError(f"PrdFlow.{external} aliases are ambiguous")
+        if (external in params or canonical in params) and (topology != "fanout" or not plan_critic_enabled):
+            raise WorkflowProfileError(f"PrdFlow.{external} requires fanout with Plan Critic enabled")
     if topology not in {"fanout", "light"}:
         raise WorkflowProfileError(
             f"PrdFlow: unknown topology {topology!r} (fanout|light)"
@@ -1662,6 +1670,11 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
                 "child_success_event": "prd.plan.child.completed",
                 "child_failure_event": "prd.plan.child.failed",
                 **({"synth_role": plan_critic_role} if plan_critic_enabled else {}),
+                **{canonical: _pick(params, external, canonical)
+                   for external, canonical in (
+                       ("reviewInputMaxBytes", "review_input_max_bytes"),
+                       ("reviewInputMaxPages", "review_input_max_pages"))
+                   if external in params or canonical in params},
             },
         },
     ]

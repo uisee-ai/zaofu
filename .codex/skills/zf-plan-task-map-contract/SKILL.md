@@ -231,6 +231,30 @@ replan action. Never declare new completion or remove acceptance to retain work.
 
 ### Optional scope evidence for an incremental Critic
 
+Before requesting a local replan, compare the complete candidate Task Map with
+the pinned admitted baseline and current canonical task contracts. List changed
+task IDs, changes outside the controlled trigger's `task_ids`, and global/shared
+changes. Changes to paths, verification ownership or acceptance are substantive;
+do not hide them as formatting. Do not normalize unrelated tasks in the same
+repair. If canonical state and the baseline disagree, report and reconcile that
+disagreement explicitly before claiming a local scope; never restore a known
+stale contract merely to make the comparison equal.
+
+Keep recovery histories as bounded explanations plus exact references/digests
+to already bound canonical artifacts. Do not embed earlier Task Maps or port
+bodies into each successive history file, or repeat their full JSON in Plan
+Markdown. Preserve the originals and unresolved findings. References do not
+replace required review of changed assertions, and an unbound reference does
+not establish that the Critic can read it.
+
+The operator can inspect a dispatched input set with
+`zf plan inspect-review --attempt <attempt_id>`. Distinguish available bytes
+from required bytes, and treat page counts as lower bounds including no output
+metadata. The configured aggregate `review_input_max_bytes` and
+`review_input_max_pages` can prevent an oversized Critic launch. Do not answer
+that preflight by deleting requirements or fabricating read receipts: prepare a
+coverage-preserving package or request an explicit change of review strategy.
+
 Only for a replan with a current admitted Plan Package and a prior independent
 Critic verdict, the Planner may include `scoped_plan_review.json` in
 `artifact_refs`. It is a semantic scope claim for the new Critic, not a new

@@ -805,6 +805,31 @@ class PlanSynthRuntimeMixin:
         except RunDispatchBlocked:
             return
         except Exception as exc:
+            from zf.runtime.plan_review_input_budget import PlanReviewInputBudgetExceeded
+
+            if isinstance(exc, PlanReviewInputBudgetExceeded):
+                from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+                diagnostic_ref = write_immutable_json_sidecar(
+                    self.state_dir, exc.diagnostic, root="plan-review-input-preflight",
+                    kind="plan_review_input_preflight", schema_version="plan-review-input-diagnostics.v1",
+                    created_by="plan-review-preflight", source_event_id=str(manifest.get("trigger_event_id") or ""),
+                )
+                failure = self.event_writer.append(ZfEvent(
+                    type="fanout.synth.completed", actor="zf-cli", origin="kernel",
+                    payload={"fanout_id": fanout_id, "trace_id": trace_id, "stage_id": stage_id,
+                             "role_instance": role.instance_id, "run_id": run_id,
+                             "status": "failed", "recommendation": "abstain",
+                             "reason": "plan_review_input_budget_exceeded",
+                             "failure_class": "reader_execution_failure", "failure_kind": "infra",
+                             "semantic_attempt_consumed": False, "summary": str(exc),
+                             "evidence_refs": [diagnostic_ref],
+                             "plan_review_optimization": exc.diagnostic},
+                    causation_id=str(manifest.get("trigger_event_id") or "") or None,
+                    correlation_id=trace_id,
+                ))
+                self._finalize_fanout_synth(failure)
+                return
             blocker = getattr(exc, "interactive_prompt_marker", "")
             if blocker:
                 # No critic turn ran: preserve planner results and retry dispatch.

@@ -574,6 +574,9 @@ class FanoutAggregateConfig:
     # B3 (R25 ISSUE-005): dedicated synth wait budget. 0 → inherit the
     # stage timeout (legacy behavior, 40min-class waits).
     synth_timeout_seconds: int = 0
+    # Zero preserves legacy deployments. Limits apply before a Plan Critic launch.
+    review_input_max_bytes: int = 0
+    review_input_max_pages: int = 0
 
 
 @dataclass
