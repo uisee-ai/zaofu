@@ -319,6 +319,16 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
         else:
             assert "Rework allowed_scope must cover the fix and its required evidence" in text
             assert "do not omit outputs or expand" in text
+            read_order = text.split("## Read Order (authoritative)", 1)[1].split(
+                "## Critical Constraints", 1,
+            )[0]
+            instructions = runtime.state_dir / "instructions" / f"{context.instance_id}.md"
+            assert str(instructions.resolve()) in read_order
+            assert read_order.index("auto-injected skills") < read_order.index(
+                "Controlled Artifact Inputs"
+            )
+            assert "already retained in the current context" in read_order
+            assert "every required body" in read_order
         assert f"cost --operation {context.operation_id} --json" in text
         assert "even when no budget is configured" in text
         assert "authorized notes or declared result scratch" in text

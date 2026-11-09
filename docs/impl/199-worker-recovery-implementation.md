@@ -556,3 +556,17 @@ amendment 失败均已自动恢复，也不回写已准入的历史 reader repor
 替换/取消的operation不得向复用lane发送纠错。原不可变结果与原settlement保留。
 新schema错误的实际提交、provider stop后的同operation纠错，以及旧结果回放
 反例见 `tests/test_gap_selection_admission.py`。
+
+### 2026-11-09：Verify 先加载读取方法，再消费长输入
+
+LS-v1 的 Verify 卡先要求读完整批受控输入，导致已经配置在角色 skill 中的
+精确分页方法尚未加载；worker 尝试超出上限的页字节数后仍需监工指导。
+Task Pipeline Verify 的实际派发卡现在先指向本 instance 的角色说明及其
+auto-injected skills，再完整消费必读正文。当前上下文已保留的方法不重复
+加载，临时没有上下文时按原规则恢复；不改变任何来源选择、读取账本、字节
+上限、合同、target 或准入门禁，也不把读取回执当作理解证明。
+
+首次派发、返工和传输失败后重试的实际 transport 测试见
+`tests/test_task_pipeline_capsule.py`；任务记录为
+`tasks/2026-11-09-0300-verify-method-read-order.md`。这项提示顺序修正不保证
+agent 一定采用某种分页，也不宣称共享输入过大或控制面高 CPU 已解决。

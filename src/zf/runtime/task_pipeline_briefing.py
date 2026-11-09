@@ -179,11 +179,15 @@ def write_task_pipeline_briefing(
         "## Read Order (authoritative)",
         "",
         *([
-            "1. Consume this stage card once, then the exact Controlled Artifact Inputs "
-            "batch and every next_cursor page. These pin the contract, target and required sources.",
-            "2. Do not reread task/source/progress projections or unchanged skills to "
+            "1. Consume this stage card once. Before bulk input reads, load "
+            f"`{state_dir / 'instructions' / f'{role.instance_id}.md'}` and its "
+            "configured auto-injected skills unless already retained in the current context.",
+            "2. Follow those retrieval methods to complete the exact Controlled Artifact Inputs "
+            "reads and consume every required body. These pin the contract, target and required "
+            "sources; role methods do not waive required reads or admission checks.",
+            "3. Do not reread task/source/progress projections or unchanged skills to "
             "reconstruct fields already consumed. Read an exact source only if context is missing.",
-            "3. Report task_context_stale on identity disagreement; never substitute "
+            "4. Report task_context_stale on identity disagreement; never substitute "
             "another contract/target. Kernel admission rechecks this operation's identity.",
             f"Diagnostic projections (read only if needed): `{task_doc_path(state_dir, task.id)}`, "
             f"`{task_source_path(state_dir, task.id)}`, `{task_progress_path(state_dir, task.id)}`.",
