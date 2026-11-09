@@ -54,3 +54,13 @@
 merge ab9fe996。新Critic已实际派发evt-22d84b82fd17，冻结必读4,188,102bytes；
 尚无Critic verdict，不能标记本批done。另补预算诊断阶段匹配和available/required
 成本分离，均先复现RED再修复。P1受控差量输入已记录，未改写在途合同。
+
+### 继续实施：六切片与诊断重复交付
+
+- 六切片完整草稿通过Plan preflight（57任务、保留原319 AC/199命令）；保留在途
+  两Impl及done。正式独立评审和准入仍未完成，不以草稿数量代替8个运行实例。
+- 实际复现并修复成本估计误计已抽离usage、必读机械owner明细重复交付；明细
+  保留摘要绑定sidecar，replay兼容原冻结格式。focused 57 passed。
+- 当前批次仍active，只有真实准入、独立验证及冷环境调用证据齐全才归档。
+- 影响闭包802 passed（含mock E2E）；真实状态+草稿的只读调度forecast分配lane2–7，
+  加现有两Impl可达8。forecast不等于正式准入/真实8并发。
