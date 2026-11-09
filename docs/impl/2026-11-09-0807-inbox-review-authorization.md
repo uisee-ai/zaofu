@@ -87,7 +87,37 @@ Request `prepare-TASK-349699-d846e1f7bd0a1dac`。实际事件时间为准。
 从 Inbox 进入原页面核对 Raw，再提交启动；API 返回 202 accepted，runtime_start=running；
 Task 进入 in_progress，产品与技术扫描实际派发。Inbox 同项关闭为 approved，未声称任务完成。
 
-后续运行、终态与独立产物检查：验收中，最终归档前补齐。
+最终结果：**修复并通过受控断点续接后，完整链路通过**。本轮不是未经干预的一次成功，
+也没有重新证明默认 8 lanes。Workflow 启动至终态约 78 分钟，包含重规划、源码修复与恢复。
+
+| 核对项 | 实际结果 |
+| --- | --- |
+| 子任务 `EXP-001` | TaskStore 归档为 done，09:30:43 UTC |
+| 冻结候选 | `ae8f27d61d2662fada29c7f38b3a5f0c9b880ecf`，与实现提交 `98b8cff` 文件树一致 |
+| 独立 Verify / 产品验收 | 六项条件、三条产品路径、五条命令通过；15 个项目测试通过 |
+| 需求复查 | 通过，未产生剩余 gap |
+| 最终 Judge | passed，12 条必需 claim 关闭 |
+| Kernel 交付 | `run.delivery.settled` / `evt-5cb6afad0708`，ship_status=completed |
+| 交付提交 | `56e251a57d38e64f9a3791134edbc5917e76ae76` |
+| Run 终态 | `run.goal.completed` / `evt-092fde064564`，09:54:09 UTC |
+| 父 Task `TASK-349699` | TaskStore 归档为 done，09:54:09 UTC；活动任务列表为空是正常归档 |
+| 交付后额外验收 | 19 个独立 CLI 案例、交付项目 unittest、compileall 全部通过 |
+| 最终 Inbox | pending=0、unread=0；保留原 approval 历史和源 Workflow 链接 |
+
+补正 Inbox 文案：将只记录 submitted/running 的“执行状态”改为“启动记录”，避免把历史
+启动事实当作当前运行状态。构建和真实浏览器验证通过，提交 `5d6f9e5d`。
+
+关键证据均在该目录的 `evidence/`：`final-acceptance.json`、`final-workflow-detail.json`、
+`final-product-check/independent-product-checks.json`、`final-inbox.json`、`final-inbox.png`、
+`final-inbox-workflow.png`、各阶段 Playwright trace 和原始 token/cost 日志。
+`events.jsonl`、`runtime-audit.tar.gz` 保留事件与关键必需产物；
+`delivered-product.tar.gz` 和 `product-history.bundle` 保留交付源码与提交历史。
+
+已通过 CLI 记录 `simulation.done`，正常停止 runtime / Run Manager，关闭临时 API，
+清除临时项目、运行状态、workspace、tmux 与私密环境；端口 47951 已关闭，
+没有残留项目进程。清理回执为 `evidence/cleanup.json`（09:57:47 UTC）。
+临时项目交付时存在运行生成的 `.codex/` 和 `zf.yaml.lock`，未纳入产品提交；清理时一并删除。
+这些临时文件不影响 ZaoFu worktree 的干净交付。
 
 ## 验收中发现的问题
 
@@ -137,6 +167,20 @@ Web 父进程尚未回收已退出 watcher、PID guard 仍视为存活的问题�
 追加修复的 `dev-verify plan --base HEAD --tests tests/test_plan_input_replay.py` 保守展开到
 260 个文件；自动层保留回执，deterministic/serial 以已执行的 50 + 385 项闭包替代，
 未重复未变化的 Web 测试，也未启动整套 pytest。
+
+## 仍保留的既有问题与证明边界
+
+1. Synthesis 返回结构化澄清时仍会报笼统 invalid JSON；本轮用一致的测试配置消除冲突后续接，
+   没有修复该协议分支。后续触发条件：合法任务约束与注册控制器冲突，需要接回原澄清流程。
+2. Web 启动的 watcher 退出后，父进程尚未回收时，普通 restart 可能被 PID guard 拒绝。
+   本轮正常重启临时 API 后恢复，未修改进程守卫；后续需覆盖 zombie 与父进程回收的真实测试。
+3. 终态之后重复的 `task.done.evidence` 被 `run.result.duplicate_suppressed` 正确挡住，
+   同时产生一条含 blocked / gate_evidence_missing 的决策诊断。TaskStore 和 Run 仍为 done/completed，
+   没有重新阻塞任务；诊断措辞与投影分类可独立改善，不能把这条诊断当作当前任务状态。
+
+完整真实证明限于一个修复后续接的 Codex、单 lane V5 CLI 场景；没有宣称所有 Provider、
+默认 8 lanes 或未经干预的新 Run 都已通过。Inbox 的源问答、审批、阅读、历史及迁移入口另有
+上述确定性回归和实际后端浏览器覆盖。
 
 ## 后端闭包的复跑命令
 

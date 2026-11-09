@@ -1,4 +1,8 @@
-> 状态: active
+> 状态: done
+
+实现：`a8088a61 feat: focus inbox on human review and authorization`；
+验收阻塞修复：`f6a2e341 fix: bind acceptance identity consistently during plan replay`；
+历史显示修正：`5d6f9e5d fix: distinguish workflow launch history from live status`。
 
 # Inbox 收敛为人类审核与授权中心
 
@@ -33,11 +37,19 @@
 
 ## 实施与证据
 
-范围 1–3 已完成。验证：主闭包 206 passed、扩展闭包 173 passed（含重复 mock E2E）、
+范围 1–5 已完成。验证：主闭包 206 passed、扩展闭包 173 passed（含重复 mock E2E）、
 最终投影 38 passed、sentinel 53 passed、Web 构建与 unit 通过、浏览器回归 17 passed、Traces 2 passed。
 实际后端 Docker 验收 4 passed，包含从侧栏 Traces → Operations 找到并处理移出记录。
 真实 Codex 已完成提问/回答/创建 Task/准备 Workflow，从 Inbox 审核 Raw 后启动成功；
-Task `TASK-349699` 仍在实际执行，终态验收未完成，保持 active。
+真实完整链路在 Plan 回放修复和受控断点续接后通过：父 Task `TASK-349699`、
+子任务 `EXP-001` 都已由 Kernel 标记 done 并归档；`run.goal.completed=evt-092fde064564`。
+交付提交 `56e251a57d38e64f9a3791134edbc5917e76ae76`，交付后 19 个独立 CLI 案例、
+15 个项目测试及 compileall 通过。最终 Inbox pending/unread 均为 0，审批历史保留。
+追加回放修复的 50 项模块测试、385 项调用方/mock E2E 和 sentinel 53 项通过。
+已记录 simulation.done，临时服务、项目状态、tmux 与私密环境清理完成。
+
+本轮不是全新 Run 无干预一次通过；Synthesis 澄清解析、退出进程回收与重复终态诊断三项
+既有问题未扩大修改，原因、触发条件和证据边界均记入实施记录。
 
 详见 [实施记录](../../docs/impl/2026-11-09-0807-inbox-review-authorization.md)。
 审批范围仅限此批次；不新增通用预算/权限平台，不修改其他项目运行状态，不合并或 push。
