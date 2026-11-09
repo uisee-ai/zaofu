@@ -417,7 +417,24 @@ def _with_seq(events: list[ZfEvent]) -> list[tuple[int, ZfEvent]]:
     return [(index, event) for index, event in enumerate(events, 1)]
 
 
-def _build(events: list[tuple[int, ZfEvent]], *, state_dir: Path | None = None) -> dict[str, dict[str, Any]]:
+def admitted_channel_question_events(events: list[ZfEvent]) -> set[str]:
+    """Return question events accepted by the Channel's own replay rules."""
+    admitted: set[str] = set()
+    relevant = [
+        event for event in events
+        if event.type.startswith(("channel.member.", "channel.question."))
+        or event.type in QUESTION_SOURCE_EVENT_TYPES
+    ]
+    _build(_with_seq(relevant), question_event_admissions=admitted)
+    return admitted
+
+
+def _build(
+    events: list[tuple[int, ZfEvent]],
+    *,
+    state_dir: Path | None = None,
+    question_event_admissions: set[str] | None = None,
+) -> dict[str, dict[str, Any]]:
     channels: dict[str, dict[str, Any]] = {}
     source_events: dict[str, ZfEvent] = {}
     for seq, event in events:
@@ -558,6 +575,16 @@ def _build(events: list[tuple[int, ZfEvent]], *, state_dir: Path | None = None) 
             if event.type == "channel.question.opened":
                 payload = {**payload, **recover_question_source(event, source_events)}
             _apply_question(channel, event, payload)
+            if question_event_admissions is not None:
+                question = channel["open_questions"].get(_payload_str(payload, "question_id") or event.id)
+                field = {
+                    "channel.question.opened": "opened_event_id",
+                    "channel.question.updated": "updated_event_id",
+                    "channel.question.resolved": "resolved_event_id",
+                    "channel.question.merged": "merged_event_id",
+                }.get(event.type)
+                if field and isinstance(question, dict) and question.get(field) == event.id:
+                    question_event_admissions.add(event.id)
         elif event.type.startswith("channel.consensus."):
             _apply_consensus(channel, event, payload)
         elif event.type == "channel.message.posted":

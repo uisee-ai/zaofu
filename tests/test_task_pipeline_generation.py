@@ -398,6 +398,7 @@ def test_generation_admission_persists_plan_package_identity(
     )
 
     assert event is not None
+    assert event.payload["frontier_owner"] == "run_manager"
     assert event.payload["plan_artifact_package_id"] == _PACKAGE_ID
     assert event.payload["plan_artifact_package_ref"] == _PACKAGE_REF
     assert event.payload["plan_artifact_package_digest"] == _PACKAGE_DIGEST
@@ -501,6 +502,9 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
+        def plan(self, **kwargs: object) -> SimpleNamespace:
+            return self.prepare(**kwargs)
+
         def prepare(self, **_kwargs: object) -> SimpleNamespace:
             return SimpleNamespace(
                 enabled=True,
@@ -588,6 +592,8 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
         },
         generation_context={
             "workflow_run_id": "run-1",
+            "flow_kind": "prd",
+            "request_kind": "prd",
             "task_map_generation": "map-g1",
             "task_map_ref": "artifacts/plan/task-map.json",
             "source_index_ref": "artifacts/plan/source-index.json",
@@ -604,6 +610,8 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
     assert captured["plan_artifact_package_id"] == _PACKAGE_ID
     assert captured["plan_artifact_package_ref"] == _PACKAGE_REF
     assert captured["skills"] == ["base-worker", "can-domain"]
+    assert captured["flow_kind"] == "prd"
+    assert captured["request_kind"] == "prd"
     assert captured["plan_artifact_package_digest"] == _PACKAGE_DIGEST
     assert captured["task_contract_snapshot_ref"] == (
         "artifacts/task-contracts/task-1.json"
@@ -615,3 +623,8 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
     assert captured["contract_snapshot_digest"] == captured[
         "task_contract_snapshot_digest"
     ]
+    envelope = captured["worker_execution_envelope"]
+    assert envelope["schema_version"] == "worker-execution-envelope.v1"
+    assert envelope["identity"]["operation_id"] == expected_operation.operation_id
+    assert envelope["lifecycle"]["unknown_is_not_idle"] is True
+    assert envelope["wake_contract"]["idle_probe_event"] == "worker.probe.idle"

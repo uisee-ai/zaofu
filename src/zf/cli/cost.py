@@ -28,6 +28,7 @@ from zf.core.cost.tracker import CostTracker
 def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("cost", help="Show cost breakdown")
     parser.add_argument("--budget", type=float, default=None, help="Budget to check against")
+    parser.add_argument("--operation", help="Read current operation token/cost headroom")
     parser.add_argument("--days", type=int, default=None,
                         help="Restrict to the last N days (active + recent archives)")
     parser.add_argument("--by-instance", action="store_true",
@@ -56,6 +57,18 @@ def run(args: argparse.Namespace) -> int:
     context = resolve_project_context()
     state_dir = context.state_dir
     tracker = CostTracker(state_dir / "cost.jsonl")
+
+    if getattr(args, "operation", None):
+        from zf.cli.output import print_result
+        from zf.runtime.workflow_budget_status import operation_budget_status
+
+        try:
+            data = operation_budget_status(state_dir, context.config, args.operation)
+        except ValueError as exc:
+            print_result(command="cost", context=context, data=None, ok=False, error=str(exc))
+            return 2
+        print_result(command="cost", context=context, data=data)
+        return 0
 
     if getattr(args, "refresh_pricing", False):
         return _run_refresh(context, args)

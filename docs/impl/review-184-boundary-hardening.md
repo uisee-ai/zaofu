@@ -54,3 +54,10 @@ payload 绑定同一份数据。读取期间原子替换路径只能影响之后
 - `tests/test_sidecar_refs.py`：读后原子替换与大小边界。
 - `tests/test_channel_prd_quality.py`：必需版本、历史兼容、repair 与评估预检。
 - 影响闭包由 `scripts/dev-verify.py plan --base dev` 解释，运行结果记入任务归档。
+
+## 2026-10-31 P1/P2 边界复核
+
+独立 worktree 复现并修复了 Workflow 项目路径越界、Task/Feature 重复 ID、Session
+tailer 字节偏移、EventWriter 绕过和终端索引恢复问题。路径现绑定项目根或 runtime
+state，Store 在锁内拒绝重复 ID，事件统一经 EventWriter，缺失或损坏的终端索引从
+archive 原子重建；新增回归测试覆盖这些边界。

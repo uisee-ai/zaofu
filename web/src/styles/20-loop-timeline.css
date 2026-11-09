@@ -73,3 +73,11 @@
   .loop-timeline-grid { --task-column: 176px; min-width: 580px; }
   .loop-timeline-footer { padding: 12px 14px; }
 }
+.loop-context { display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; padding:12px 16px; margin-bottom:16px; border:1px solid var(--line); border-radius:10px; color:var(--text-secondary); background:var(--panel); }
+.loop-context[role="alert"] { color:var(--err); }
+.loop-plan-comparison { border-bottom:1px solid var(--line-soft); padding:12px 20px; color:var(--text-secondary); font-size:var(--text-12); }
+.loop-plan-comparison summary { cursor:pointer; color:var(--text); font-weight:600; }
+.loop-plan-comparison summary small { margin-left:8px; color:var(--text-tertiary); font-weight:400; }
+.loop-plan-comparison p { line-height:1.5; }
+.loop-plan-rows { max-height:240px; overflow:auto; }
+.loop-plan-rows > div { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid var(--line-soft); }

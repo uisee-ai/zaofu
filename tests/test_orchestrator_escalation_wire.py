@@ -136,12 +136,18 @@ class TestDevBlockedTriggersEscalate:
 
 
 class TestReaderStageNoChangeEscalation:
+    @pytest.mark.parametrize("note,reason", [
+        ("input_unchanged", "canonical input unchanged"),
+        ("infrastructure_failure", "execution infrastructure must be repaired"),
+    ])
     def test_unchanged_semantic_scan_rejection_escalates(
         self,
         state_dir: Path,
         legacy_config,
         transport,
         monkeypatch,
+        note,
+        reason,
     ) -> None:
         failure = ZfEvent(
             type="prd.scan.failed",
@@ -152,7 +158,7 @@ class TestReaderStageNoChangeEscalation:
         EventLog(state_dir / "events.jsonl").append(failure)
         monkeypatch.setattr(
             "zf.runtime.stage_failure_replan.plan_reader_stage_replan",
-            lambda *_args, **_kwargs: (None, "input_unchanged"),
+            lambda *_args, **_kwargs: (None, note),
         )
         orchestrator = Orchestrator(state_dir, legacy_config, transport)
 
@@ -160,7 +166,7 @@ class TestReaderStageNoChangeEscalation:
 
         assert decision is not None
         assert decision.action == "escalate"
-        assert "canonical input unchanged" in decision.reason
+        assert reason in decision.reason
         events = EventLog(state_dir / "events.jsonl").read_all()
         assert any(event.type == "human.escalate" for event in events)
 

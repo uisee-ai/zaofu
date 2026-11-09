@@ -39,6 +39,16 @@ def _write_config(tmp_path: Path, workflow: str) -> Path:
             "  - name: reader",
             "    backend: mock",
             "    role_kind: reader",
+            *(
+                [
+                    "  - name: oa-primary",
+                    "    instance_id: oa-primary",
+                    "    backend: mock",
+                    "    role_kind: reader",
+                ]
+                if "oa_profile: oa-primary" in workflow
+                else []
+            ),
             "",
         )),
         encoding="utf-8",
@@ -86,6 +96,8 @@ def test_orchestration_config_accepts_explicit_semantic_control(tmp_path: Path) 
     plan_candidate: shadow
     semantic_failure: shadow
   shadow_sample_percent: 25
+  oa_profile: oa-primary
+  normal_frontier_owner: wrc
   max_plan_revisions: 3
   no_progress_limit: 2""",
     ))
@@ -95,6 +107,26 @@ def test_orchestration_config_accepts_explicit_semantic_control(tmp_path: Path) 
     assert policy.checkpoints == ["plan_candidate", "semantic_failure"]
     assert policy.checkpoint_policies["plan_candidate"] == "shadow"
     assert policy.shadow_sample_percent == 25
+    assert policy.oa_profile == "oa-primary"
+    assert policy.normal_frontier_owner == "wrc"
+
+
+def test_orchestration_config_rejects_unknown_frontier_owner(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="normal_frontier_owner"):
+        load_config(_write_config(
+            tmp_path,
+            """orchestration:
+  normal_frontier_owner: supervisor""",
+        ))
+
+
+def test_orchestration_config_rejects_missing_oa_profile(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oa_profile"):
+        load_config(_write_config(
+            tmp_path,
+            """orchestration:
+  oa_profile: missing-oa""",
+        ))
 
 
 @pytest.mark.parametrize("value", [-1, 101, "invalid"])

@@ -6,6 +6,7 @@ from zf.core.config.schema import ProjectConfig, ZfConfig
 from zf.core.events import EventLog, EventWriter
 from zf.core.task.store import TaskStore
 from zf.runtime.control_actions import ControlledActionService
+from zf.runtime.task_contract_authority import TaskContractAuthorityService
 
 
 def _runtime(
@@ -126,3 +127,77 @@ def test_task_contract_payload_normalizes_invalid_container_types(
     assert task.contract.validation == {}
     assert task.contract.fanout_force is False
     assert task.contract.wave == 2
+
+
+def test_update_task_uses_contract_authority_after_workflow_binding(
+    tmp_path: Path,
+) -> None:
+    state_dir, writer, service = _runtime(tmp_path)
+    created = _execute(service, writer, "create-task", {
+        "task_id": "TASK-AUTHORITY",
+        "title": "Update an authority-stamped contract",
+        "contract": {
+            "behavior": "Initial behavior.",
+            "verification": "Run the contract check.",
+        },
+    })
+    assert created["ok"] is True
+    store = TaskStore(state_dir / "kanban.json")
+    task = store.get("TASK-AUTHORITY")
+    assert task is not None
+    stamped = TaskContractAuthorityService(
+        task_store=store,
+        event_writer=writer,
+        state_dir=state_dir,
+    ).replace(
+        task,
+        contract=task.contract,
+        source="workflow-binding-test",
+        actor="web",
+    ).task
+    assert stamped.contract_authority_revision
+
+    updated = _execute(service, writer, "update-task", {
+        "task_id": task.id,
+        "contract": {"behavior": "Updated behavior."},
+    })
+
+    assert updated["ok"] is True
+    refreshed = store.get(task.id)
+    assert refreshed is not None
+    assert refreshed.contract.behavior == "Updated behavior."
+    assert refreshed.contract.verification == "Run the contract check."
+    assert refreshed.contract_authority_revision
+
+def test_create_task_causation_binds_original_requirement_for_critical_context(tmp_path):
+    from zf.runtime.critical_context import critical_context_sources
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    state, writer, service = _runtime(tmp_path)
+    origin = writer.emit('user.message', actor='user', payload={
+        'project_id':'P', 'conversation_id':'C', 'thread_key':'main',
+        'message':'完整原始需求，保留全部约束。',
+    })
+    result = _execute(service, writer, 'create-task', {
+        'task_id':'T-SOURCE', 'title':'Minimal requirement', 'project_id':'P',
+        'conversation_id':'C', 'thread_id':'main', 'causation_id':origin.id,
+    })
+    assert result['ok'], result
+    created = next(e for e in writer.event_log.read_all() if e.type == 'task.created')
+    assert created.payload['request']['originating_message_event_ids'] == [origin.id]
+    writer.emit('config.run_contract.request_bound', actor='kernel', task_id='T-SOURCE', payload={'run_id':'R'})
+    sources = critical_context_sources(state, writer.event_log.read_all(), 'R')
+    body = hydrate_sidecar_ref(state, next(s for s in sources if s['source_id']=='critical-user-and-config')).payload
+    assert body['original_user_inputs'][0]['message'] == origin.payload['message']
+
+
+def test_create_task_rejects_foreign_explicit_requirement_before_mutation(tmp_path):
+    state, writer, service = _runtime(tmp_path)
+    origin = writer.emit('user.message', actor='user', payload={
+        'project_id':'foreign', 'conversation_id':'C', 'message':'foreign requirement',
+    })
+    result = _execute(service, writer, 'create-task', {
+        'task_id':'T-FOREIGN', 'title':'Rejected requirement', 'project_id':'P',
+        'conversation_id':'C', 'originating_message_event_ids':[origin.id],
+    })
+    assert not result['ok']
+    assert TaskStore(state / 'kanban.json').get('T-FOREIGN') is None

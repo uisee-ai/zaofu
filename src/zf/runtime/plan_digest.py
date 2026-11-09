@@ -11,6 +11,8 @@ assembly 在位?verification 可执行形?scope 重叠?)。
 from __future__ import annotations
 
 from collections import defaultdict
+import json
+from pathlib import Path
 from typing import Any
 
 from zf.runtime.verification_commands import VerificationCommandError, task_map_verification_commands
@@ -57,11 +59,20 @@ def plan_digest_checklist(
     *,
     allowed_owner_roles: list[str] | None = None,
     require_unique_owner_roles: bool = False,
+    assembly_context_items: list[dict] | None = None,
 ) -> list[dict[str, Any]]:
     """机械核结果(每项 {key,label,ok,detail})—— 红绿一眼可见。"""
     items = list(task_items or [])
-    assemblies = [i for i in items if _is_assembly(i)]
+    assemblies = [i for i in (assembly_context_items if assembly_context_items is not None else items) if _is_assembly(i)]
     root_owners = [i for i in items if _root_paths(i)]
+    root_path_owners: dict[str, set[str]] = defaultdict(set)
+    for item in root_owners:
+        for path in _root_paths(item):
+            root_path_owners[path].add(str(item.get("task_id") or "?"))
+    root_conflicts = [
+        f"{path}: {', '.join(sorted(owners))}"
+        for path, owners in sorted(root_path_owners.items()) if len(owners) > 1
+    ]
     missing_verify = [
         str(i.get("task_id") or "?")
         for i in items
@@ -86,6 +97,8 @@ def plan_digest_checklist(
     assembly_ok = len(assemblies) >= 1 or simple_serial
     if assemblies:
         assembly_detail = ", ".join(str(i.get("task_id")) for i in assemblies)
+        if assembly_context_items is not None:
+            assembly_detail += "（完整任务图）"
     elif simple_serial:
         assembly_detail = f"simple serial: {items[0].get('task_id')}"
     else:
@@ -95,9 +108,9 @@ def plan_digest_checklist(
          "ok": assembly_ok,
          "detail": assembly_detail},
         {"key": "root_owner_unique", "label": "根文件唯一 owner",
-         "ok": len(root_owners) <= 1,
-         "detail": "唯一" if len(root_owners) <= 1
-                   else "多任务持根路径: " + ", ".join(str(i.get("task_id")) for i in root_owners)},
+         "ok": not root_conflicts,
+         "detail": "各根路径 owner 唯一" if not root_conflicts
+                   else "同根路径多 owner: " + "; ".join(root_conflicts)},
         {"key": "verification_present", "label": "每任务有 verification",
          "ok": not missing_verify,
          "detail": "齐" if not missing_verify else "缺: " + ", ".join(missing_verify)},
@@ -153,6 +166,7 @@ def render_plan_digest(
     task_map_ref: str = "",
     allowed_owner_roles: list[str] | None = None,
     require_unique_owner_roles: bool = False,
+    assembly_context_items: list[dict] | None = None,
 ) -> str:
     """投影出人读 markdown digest(任务表 + checklist)。"""
     items = list(task_items or [])
@@ -171,18 +185,44 @@ def render_plan_digest(
             paths += " …"
         verify = _verification_summary(i).replace("\n", " ")[:60] or "—"
         lines.append(
-            f"| {i.get('task_id','?')} | {i.get('owner_role') or '-'} | "
+            f"| {i.get('task_id','?')} | {i.get('owner_role') or i.get('owner_instance') or '-'} | "
             f"{i.get('wave','-')} | "
             f"{i.get('affinity_tag') or i.get('affinity') or '-'} | "
             f"{'✓' if _is_assembly(i) or _root_paths(i) else '-'} | "
             f"{paths or '—'} | {verify} |"
         )
-    lines += ["", "## Checklist（机械预检）", ""]
+    lines += ["", "## Checklist（机械预检）", "",
+              "以下是路径与结构摘要，不替代计划准入；层级路径冲突、显式政策和证据以实际准入结果为准。", ""]
     for c in plan_digest_checklist(
         items,
         allowed_owner_roles=allowed_owner_roles,
         require_unique_owner_roles=require_unique_owner_roles,
+        assembly_context_items=assembly_context_items,
     ):
         lines.append(f"- {'🟢' if c['ok'] else '🔴'} **{c['label']}** — {c['detail']}")
     lines.append("")
     return "\n".join(lines)
+
+
+def render_bound_plan_digest(
+    task_items: list[dict], *, plan_id: str, task_map_ref: str,
+    state_dir: Path, project_root: Path | None,
+) -> str:
+    """Use the bound full map for assembly presence and dispatch scope for other checks."""
+    from zf.runtime.plan_preview_artifacts import read_preview_artifact
+
+    context = None
+    unavailable = False
+    if task_map_ref:
+        try:
+            data = json.loads(read_preview_artifact(task_map_ref, state_dir=state_dir, project_root=project_root))
+            if not isinstance(data, dict) or not isinstance(data.get("tasks"), list):
+                raise ValueError("invalid task map")
+            context = [item for item in data["tasks"] if isinstance(item, dict)]
+        except (OSError, ValueError):
+            unavailable = True
+    digest = render_plan_digest(task_items, plan_id=plan_id, task_map_ref=task_map_ref,
+                                assembly_context_items=context)
+    if unavailable:
+        digest += "\n完整任务图不可读取；检查仅覆盖当前派发任务。\n"
+    return digest

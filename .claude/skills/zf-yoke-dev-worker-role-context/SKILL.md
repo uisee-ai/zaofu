@@ -35,6 +35,25 @@ methodology family — do not restate their content here:
 If a method skill and this role context appear to conflict, follow this role
 context for runtime truth, task scope, and completion claims.
 
+## 按阶段加载方法
+
+依赖声明保证方法全文可用，不表示开工前逐包读完。先读本角色边界和当前
+briefing，再按下表触发；同一会话中已完整读过且版本未变的方法不必重复加载。
+压缩/换会话后按当前工作阶段补读所需方法，不能以摘要替代遗忘的规则。
+
+| 当前动作 | 必须加载的方法 |
+|---|---|
+| 实现或修改行为、复现 bug | `tdd-evidence`，先按当前合同得到最小可执行反馈 |
+| 开始多文件/多切片实现 | `incremental-delivery`；单文件单函数最小变更不强制加载 |
+| 出现非预期测试/构建失败，原因未明 | `debugging-triage` |
+| 依赖外部库/API、协议或版本事实 | `source-verification`；仓内行为以源码和测试为准 |
+| 第一次写 Git 引用或提交之前 | `git-evidence`；显式路径、保护并行改动等硬规则始终有效 |
+| 准备最终 handoff | `zf-harness-done-contract` |
+
+返工先核对新身份、合同版本和全部失败项，完成当前 attempt 的必读工件后，
+针对失败项读取相关代码/测试并复现。保留所有未变约束、验收项和证据引用；
+不要把返工重新扩成全仓扫描，或再次一次性读取所有方法包。
+
 ## Rules
 
 - Work only inside the assigned scope.
@@ -59,15 +78,56 @@ context for runtime truth, task scope, and completion claims.
 - Execute each declared command exactly as stored. Do not repair quoting,
   escaping, paths, or arguments and then claim the rewritten command under the
   original command id; report a Planner/contract blocker instead.
-- Before editing, inspect the briefing's Controlled Artifact Inputs and execute
-  one literal sanctioned `zf artifact read` command for every declared
-  `required_reads` row, using its exact attempt id, source id, artifact id, and
-  JSON path. Reading the backing path with `cat`, `jq`, or an editor may help
+- “As stored” means the decoded command string, not JSON/YAML display escaping.
+  After required reads, parse the bound contract snapshot, select the command
+  by ID, and pass that value directly to the execution API (for example,
+  `subprocess.run(command, shell=True, ...)`). Do not manually transcribe its
+  serialized representation into another shell string. Record the executed
+  value/digest; before blaming the contract, compare it with the snapshot's
+  decoded value. A transcription failure requires correcting the invocation,
+  not rewriting the contract or reporting an upstream blocker.
+- Before editing, inspect the briefing's Controlled Artifact Inputs and consume
+  every declared `required_reads` row through literal sanctioned `zf artifact
+  read` commands (or the authenticated `--required` batch), using its exact
+  attempt id, source id, artifact id, and JSON path. Reading the backing path with `cat`, `jq`, or an editor may help
   exploration but does not satisfy the runtime read ledger.
-- 必需工件正文只完整读取一次；批量 `--required` 返回 JSONL，各行的 `content`
-  是正文字符串。先在工具内解析，按未读行分批呈现，避免把转义 JSONL 与解析后的
-  同一正文都输出。单项 `--source ... --artifact ...` 的 stdout 本身就是正文。
-  输出被截断时只补缺失部分，不重跑整个集合；不能以索引或摘要替代必需正文。
+- 必需工件正文首次完整读取后，避免无目的重复读取；`--required` 统一返回
+  `required-artifact-page.v2`，`aliases` 表示已分别鉴权、校验和记账的相同内容来源。
+  一页可含多个来源，读取每个 `items[].content`，用同一命令加
+  `--cursor <next_cursor>` 完整续读到 `next_cursor=null`；不要退回逐个别名重读。
+  单项分页才使用 `--page-start` / `--page-size` 和 `next_page_start`。
+  不要用 shell 循环把所有页再拼成超大输出。
+  单项未分页 stdout 本身就是正文；分页响应的 `content` 才是正文。
+  输出被截断时只补缺失部分，不重跑整个集合；索引、摘要及旧尝试的读取收据不能
+  代替当前必需正文。完成读取后按合同先跑最小可执行检查，保存实际首次反馈。
+- `--required --page-bytes 2048` 可降低单页 UTF-8 字节预算；它不是 token 数。每页单独
+  调用，给工具包装留余量。CLI 回执只证明成功输出；Provider transcript 完整匹配才是
+  可观察交付，unknown 不等于已送达，两者都不证明理解。
+- 保留 `critical-*` 原始需求、问答、批准配置，以及当前身份、全部未完成 AC/返工项。
+  批准配置优先于更早配置偏好；恢复后先重读这些完整来源。历史大输出用完整 ref/digest
+  按需恢复，版本不符回退同版本全文；来源不可恢复时据实报告，不能用摘要补造。
+- 压缩或换会话后，读取账本只证明曾产出，不证明当前仍理解正文。先核对续跑说明与
+  当前合同/来源摘要，再用原受控读取入口补读当前任务仍需理解的条款、接口和验收
+  片段；必要时可以重读，不能把减少重复读取理解为禁止恢复语义。保留补读范围及
+  理由，不默认重读整个全局材料集合；只有来源确实不可读或合同矛盾时才据实报告阻塞。
+- 在合同允许的路径维护续跑说明，绑定当前合同/工件摘要、HEAD、已理解的约束、
+  AC 与检查进度、下一步；重派时重新核对绑定。它帮助恢复语义理解，不替代原文、
+  命令收据或独立 Verify，也不把旧尝试的成功声明移作本次通过。
+- 按 briefing 的 `zf cost --operation ... --json` 在开工和心跳时检查剩余额度。
+  50% 预警开始固化续跑说明，80% 更新完整失败项、约束、修改和证据映射；
+  这两个水位是准备恢复的信号，不是提前结束/自报 blocked 的理由。
+  缓存 token 仍计入预算；未定价费用不能解释为免费。不要仅凭 context window
+  占用低认定余量充足，不靠裁掉合同、删除历史或换 attempt 重置额度来继续。
+- 检查点是继续实施的依据，不是结束当前 attempt 的理由。合同范围内的代码、测试、
+  固定验证入口尚未写完，或刚完成一次薄切片提交时，继续实现和复跑；不能仅因
+  “本轮未完成”提交失败/阻塞结果。未完成项只有在确有外部依赖、权限、环境、合同
+  冲突或运行时明确要求暂停时才据实交回，附已尝试的动作及恢复所需条件；不要虚构
+  限额或阻塞。真实故障仍使用当前 briefing 的失败/暂停渠道，不绕过预算或门禁。
+- 工作区守卫、runner 或工件交付失败时，先核对本次任务 workdir、完整目标路径、
+  attempt/dispatch 与拒绝事件；使用当前输出 profile 支持的结构化故障字段和证据。
+  `workspace_binding_mismatch` / `runner_failure` / `input_delivery_failed` 不能仅凭
+  「写不了」改称 `scope_contract_gap`。只有确认正确绑定后仍无法在合同范围履行
+  AC，才报告业务契约缺口；不要修改权限或 Plan 工件来绕过故障。
 - 保存完整测试日志和退出码，向上下文呈现用例总数、失败类型及代表性堆栈；大量
   subTest 同因失败时逐类检查，避免重复展开每一份相同堆栈。不得遗漏不同失败原因，
   也不得把节选当完整证据。后续验证应引用原始日志和实际命令收据。
@@ -97,6 +157,17 @@ context for runtime truth, task scope, and completion claims.
   integration boundary. The final assembly task additionally runs the declared
   product entrypoint and an assembled smoke across all contributing slices. It
   does not fabricate browser, Provider, or independent Verify verdicts.
+- 报告上游/合同阻塞前，绑定具体 AC、command owner/tier、缺失接口与最小复现，
+  说明为何它阻止本阶段必须完成的行为。自己尚未创建的实现或验证脚本（如 exit 127）
+  是实施基线，不单独构成外部阻塞；最终宿主/消费者尚未装配也不自动阻塞整个模块。
+  按当前已准入 Task Map 和实际接口确认责任，不用旧文档中的任务编号重建依赖。
+- 只在原合同允许时，继续自身持久化、事务、界面/API 和稳定端口，缺失外部实现时
+  对受影响操作显式拒绝。隔离样本只能证明所测局部行为，不能证明真实集成通过。
+  若本阶段 AC 本就要求真实来源或跨域接入，其缺失仍是阻塞；不得自行后移验收、
+  新增跨域 import、扩写权限，或用 fixture 消除门槛。
+- Owner 决定 pending 时列出实际受影响的语义与仍能独立实施的能力；先推进后者并
+  保存可复用代码/测试及剩余缺口。不暗设业务默认值、不把未决事项标已解决，也不因
+  部分能力完成宣告整个任务成功；精确缺口交当前求助/失败通道，不重复空跑。
 - Report changed files, tests run, failures, risks, and whether changes are
   committed or still dirty in the working tree.
 - If blocked by missing context or conflicting instructions, stop and report.
@@ -112,7 +183,8 @@ context for runtime truth, task scope, and completion claims.
   briefing. Do not infer an event name or duplicate its mechanical field list
   here.
 - For lane work, use `zf-harness-lane-goal-continuation` before ending a turn:
-  incomplete evidence means continue or block, not success. Include lane
+  incomplete evidence means continue work, or report a concrete blocker under
+  the rule above, never success. Include lane
   metadata, `source_commit`, `files_touched`, command results, and replayable
   evidence in the completion payload.
 
@@ -187,3 +259,39 @@ remain Kernel-owned.
 The briefing/runtime fills immutable run/task/contract/target bindings. Do not
 invent a different contract revision or claim a receipt for a command you did
 not run on the reported source commit.
+
+## Task 范围输入导航
+
+先用本次 briefing 的 `zf artifact index --attempt <id>` 定位来源/selector；
+`--query` 只过滤定位元数据，未命中不代表项目没有该需求。消费当前任务、必要共享
+接口和前置产物正文；不要因并行 lane 共用 Plan 就逐份通读其他任务。完成全部
+required reads 后按需扩读已授权来源；范围缺口通过受控 replan/补充绑定处理。
+写后保留来源 ref/digest、AC/检查证据和下一步到现有 handoff/checkpoint，按原提交
+协议发布；不能把未准入草稿当作下游输入，也不能直接修改目录或运行时状态。
+
+## 失败后的交付（199）
+
+失败通过当前 briefing 的受控结果入口上报给 Kernel，保留 task/operation/attempt、
+目标提交、合同/输入版本、失败命令或探针和证据 refs；区分产品缺陷、环境、传输、
+协议/输入和结果未知。不直接绕到 OA 修改 canonical 状态。必读来源本身不可获得时，
+可以报告有证据的输入故障；不能要求先读不存在的来源才允许报告，也不能据此声明通过。
+
+已有提交仍适用时优先补齐交接。缺接口/schema/日志时在原权限内定向检索，只有发现
+合同或依赖不成立才移交 OA。再次执行注明本次相对失败的变化、保留成果、修复范围、
+原失败探针和回归方法；环境修复先验原探针，代码修复仍交独立 Verify。远端结果未知
+先核对原操作，不能把本地缺少回执当作未执行而盲目重试。
+
+## 运行中求助（200）
+
+在当前合同内无法选择下一步、但 attempt 仍有效时，使用 briefing 给出的
+`zf recover assistance request`，携带 operation/attempt/lease、当前 actor、明确问题、
+`--evidence-ref` 和已尝试方法 `--tried`。执行策略向 `--owner orchestrator` 求助，
+环境/Provider/运行诊断向 `--owner run_manager` 求助。收到 request_id 后使用
+`zf recover assistance read --request-id <id>`；正常 heartbeat 和原 lease 义务不取消。
+只读指导不授权第二写入者。`controlled_handoff_required` 表示先按现有受控结果协议
+结算旧 attempt，再执行获准重派/计划修订；不能自己改 Store、预算、合同或 scope。
+响应过期、缺少输入或 owner 不可用时准确报告原请求，不把等待当作成功。
+
+环境安装、准备与验证命令由当前合同明确声明；不能假定 ContractD 会因为出现
+pnpm/Web 关键词而安装依赖或链接另一工作区。路径/工具提示不等于 OS 隔离，仍需
+遵守当前授权；无法在授权内完成则报告所缺能力。

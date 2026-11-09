@@ -23,17 +23,10 @@ from zf.runtime.plan_preview_artifacts import preview_artifact_path
 
 
 def _pending(events, workflow_run_id: str | None = None) -> list[dict]:
-    state: dict[str, dict] = {}
-    for event in events:
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        plan_id = str(payload.get("plan_id") or "")
-        if not plan_id:
-            continue
-        if event.type == "plan.approval.requested":
-            state[plan_id] = {**payload, "requested_ts": event.ts}
-        elif event.type in ("plan.approved", "plan.rejected"):
-            state.pop(plan_id, None)
-    pending = list(state.values())
+    from zf.runtime.plan_approval_replay import pending_plan_requests
+
+    pending = [{**event.payload, "requested_ts": event.ts}
+               for event in pending_plan_requests(events)]
     if workflow_run_id:
         pending = [
             item for item in pending
@@ -67,6 +60,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     from zf.cli.plan_execution import register as register_execution
 
     register_execution(sub)
+    from zf.cli.plan_input_review import register as register_input_review
+    register_input_review(sub)
+
     review = sub.add_parser("review", help="List plans awaiting review with digest and checklist")
     review.add_argument("--workflow-run-id", default=None)
     review.set_defaults(func=_run)
@@ -76,6 +72,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     rj = sub.add_parser("reject", help="Reject a plan and request synthesis replan")
     rj.add_argument("plan_id")
     rj.add_argument("--reason", required=True)
+    rj.add_argument("--input-task", action="append", default=None,
+                    help="Prioritize a task's complete input on replan; repeat for more tasks")
     rj.set_defaults(func=_run)
 
 
@@ -136,43 +134,33 @@ def _run(args: argparse.Namespace) -> int:
             print(f"  approve: zf plan approve {plan_id}")
         return 0
 
-    pending_ids = {str(p.get("plan_id")) for p in _pending(events)}
-    if args.plan_id not in pending_ids:
+    from zf.runtime.plan_approval_state import decide_pending_plan
+
+    decision_payload: dict = {"plan_id": args.plan_id}
+    if args.plan_cmd == "reject":
+        decision_payload["reason"] = args.reason
+        if getattr(args, "input_task", None) is not None:
+            from zf.runtime.reader_replan_feedback import input_task_ids
+
+            try:
+                decision_payload["input_task_ids"] = input_task_ids({"input_task_ids": args.input_task})
+            except ValueError as exc:
+                print(f"Error: {exc}")
+                return 1
+    writer = EventWriter(log)
+    result, _reason = decide_pending_plan(
+        writer,
+        state_dir=state_dir,
+        plan_id=args.plan_id,
+        event_type="plan.approved" if args.plan_cmd == "approve" else "plan.rejected",
+        payload=decision_payload,
+    )
+    if result is None:
         print(f"plan {args.plan_id} is not awaiting review; it was decided or does not exist.")
         return 1
-    requested = next(
-        (item for item in _pending(events) if str(item.get("plan_id")) == args.plan_id),
-        {},
-    )
-    decision_payload = {"plan_id": args.plan_id}
-    for key in (
-        "stage_id",
-        "trace_id",
-        "pdd_id",
-        "feature_id",
-        "task_map_ref",
-        "digest_ref",
-        "task_count",
-    ):
-        if requested.get(key):
-            decision_payload[key] = requested[key]
-    writer = EventWriter(log)
     if args.plan_cmd == "approve":
-        writer.append(ZfEvent(
-            type="plan.approved",
-            actor="operator",
-            payload=decision_payload,
-            causation_id=args.plan_id,
-        ))
         print(f"plan {args.plan_id} approved - fanout will start on the next kernel wake.")
         return 0
-    decision_payload["reason"] = args.reason
-    writer.append(ZfEvent(
-        type="plan.rejected",
-        actor="operator",
-        payload=decision_payload,
-        causation_id=args.plan_id,
-    ))
     print(f"plan {args.plan_id} rejected - synthesis will replan with the supplied reason.")
     return 0
 

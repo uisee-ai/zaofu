@@ -19,16 +19,21 @@ from zf.cli.flow import build_flow_intent
 from zf.core.events import ZfEvent
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.writer import EventWriter
+from zf.core.safety import PathGuardError
 from zf.core.security.redaction import redact_obj
+from zf.runtime.workflow_task_binding import project_request_task_id
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_delivery import (
     apply_flow_submit,
     build_flow_submit_preview,
 )
 from zf.runtime.workflow_intake import build_flow_intake
+from zf.runtime.workflow_paths import project_path
 from zf.web.projections.request_util import _request_json
 from zf.web.projections.workflow_yaml import project_workflow_yaml
 from zf.web.projections.workspace import _resolve_api_project
+from zf.runtime.workflow_git_readiness import preparation_git_diagnostics
+from zf.runtime.workflow_preparation_view import preparation_view
 
 
 def workflow_request_strings(value: object) -> list[str]:
@@ -134,6 +139,21 @@ def build_workflow_request_router(
         output = payload.get("output")
         if not output and request_id:
             output = context.project_root / "docs" / "intake" / f"{request_id}.md"
+        output_path: Path | None = None
+        if output:
+            try:
+                output_path = project_path(context.project_root, output, field="output")
+            except PathGuardError as exc:
+                return JSONResponse(
+                    {"ok": False, "status": "invalid_payload", "reason": str(exc)},
+                    status_code=422,
+                )
+        elif request_id:
+            output_path = project_path(
+                context.project_root,
+                context.project_root / "docs" / "intake" / f"{request_id}.md",
+                field="output",
+            )
         result = build_flow_intake(
             kind=str(payload.get("kind") or payload.get("request_kind") or "auto"),
             source_ref=str(payload.get("from") or payload.get("source_ref") or ""),
@@ -157,7 +177,8 @@ def build_workflow_request_router(
             acceptance=tuple(workflow_request_strings(payload.get("acceptance"))),
             constraints=tuple(workflow_request_strings(payload.get("constraints"))),
             open_questions=tuple(workflow_request_strings(payload.get("open_questions"))),
-            output=Path(str(output)).expanduser() if output else None,
+            output=output_path,
+            project_root=context.project_root,
         )
         return JSONResponse({"ok": True, "status": "intake_created", "result": result})
 
@@ -171,7 +192,7 @@ def build_workflow_request_router(
         denied = auth_response("workflow-classify", request, authorization, x_zf_web_token)
         if denied is not None:
             return denied
-        resolve(project_id)
+        context = resolve(project_id)
         payload = await _request_json(request)
         intake_ref = str(payload.get("intake") or payload.get("intake_ref") or "").strip()
         if not intake_ref:
@@ -179,8 +200,15 @@ def build_workflow_request_router(
                 {"ok": False, "status": "invalid_payload", "reason": "intake_ref is required"},
                 status_code=422,
             )
+        try:
+            intake_path = project_path(context.project_root, intake_ref, field="intake_ref")
+        except PathGuardError as exc:
+            return JSONResponse(
+                {"ok": False, "status": "invalid_payload", "reason": str(exc)},
+                status_code=422,
+            )
         result = build_flow_intent(
-            intake_path=Path(intake_ref).expanduser(),
+            intake_path=intake_path,
             explicit_kind=str(payload.get("kind") or "auto"),
         )
         return JSONResponse({"ok": True, "status": "classified", "result": result})
@@ -212,6 +240,13 @@ def build_workflow_request_router(
                 {"ok": False, "status": "invalid_payload", "reason": "intake_ref is required"},
                 status_code=422,
             )
+        try:
+            intake_path = project_path(context.project_root, intake_ref, field="intake_ref")
+        except PathGuardError as exc:
+            return JSONResponse(
+                {"ok": False, "status": "invalid_payload", "reason": str(exc)},
+                status_code=422,
+            )
         from zf.cli.flow import _load_manifest_for_intake
         from zf.runtime.workflow_requests import (
             WorkflowRequestConflict,
@@ -230,10 +265,18 @@ def build_workflow_request_router(
             current.get("workflow_input_manifest_ref") or ""
         )
         if current_manifest_ref:
-            manifest_path = Path(current_manifest_ref).expanduser()
+            try:
+                manifest_path = project_path(
+                    context.project_root, current_manifest_ref, field="workflow_input_manifest_ref"
+                )
+            except PathGuardError as exc:
+                return JSONResponse(
+                    {"ok": False, "status": "invalid_payload", "reason": str(exc)},
+                    status_code=422,
+                )
         else:
             manifest_path, _manifest = _load_manifest_for_intake(
-                Path(intake_ref).expanduser()
+                intake_path
             )
         if manifest_path is None:
             return JSONResponse(
@@ -408,11 +451,15 @@ def build_workflow_request_router(
         )
         effective_result = {
             **result,
+            "task_id": project_request_task_id(context.state_dir, result),
             "status": _request_status(result, admission, operation),
             "run_id": str(admission.get("run_id") or result.get("run_id") or ""),
             "queue_position": int(admission.get("queue_position") or 0),
             "run_admission": admission,
         }
+        preparation = preparation_view(effective_result, operation,
+                                       git_blockers=preparation_git_diagnostics(context.project_root))
+        effective_result["status"] = preparation["status"]
         body = redact_obj({
             "ok": True,
             "status": effective_result.get("status"),
@@ -422,6 +469,7 @@ def build_workflow_request_router(
             "artifacts": artifacts,
             "lifecycle": lifecycle,
             "operation": operation,
+            "preparation": preparation,
             "links": {
                 "intake_ref": str(
                     manifest.get("intake_json_ref")
@@ -456,6 +504,7 @@ def build_workflow_request_router(
         from zf.runtime.run_admission import build_run_admission_projection, request_admission_view
 
         admission_projection = build_run_admission_projection(events)
+        git_blockers = preparation_git_diagnostics(context.project_root)
         items: list[dict[str, Any]] = []
         for path in root.glob("*.json") if root.exists() else ():
             try:
@@ -479,9 +528,15 @@ def build_workflow_request_router(
                     config=context.config,
                     events=events,
                 )
+                projected = {**value, "status": _request_status(value, admission, operation),
+                             "run_id": str(admission.get("run_id") or value.get("run_id") or "")}
+                preparation = preparation_view(projected, operation,
+                                               git_blockers=git_blockers)
                 items.append({
                     **value,
-                    "status": _request_status(value, admission, operation),
+                    "task_id": project_request_task_id(context.state_dir, value),
+                    "status": preparation["status"],
+                    "preparation": preparation,
                     "run_id": str(
                         admission.get("run_id")
                         or value.get("run_id")
@@ -547,6 +602,13 @@ def build_workflow_request_router(
                 {"ok": False, "status": "invalid_payload", "reason": "intake_ref is required"},
                 status_code=422,
             )
+        try:
+            intake_path = project_path(context.project_root, intake_ref, field="intake_ref")
+        except PathGuardError as exc:
+            return JSONResponse(
+                {"ok": False, "status": "invalid_payload", "reason": str(exc)},
+                status_code=422,
+            )
         apply = bool(payload.get("apply"))
         current: dict[str, Any] = {}
         if not apply:
@@ -564,12 +626,20 @@ def build_workflow_request_router(
             )
             manifest_path: Path | None = None
             if current.get("workflow_input_manifest_ref"):
-                manifest_path = Path(
-                    str(current["workflow_input_manifest_ref"])
-                ).expanduser()
+                try:
+                    manifest_path = project_path(
+                        context.project_root,
+                        current["workflow_input_manifest_ref"],
+                        field="workflow_input_manifest_ref",
+                    )
+                except PathGuardError as exc:
+                    return JSONResponse(
+                        {"ok": False, "status": "invalid_payload", "reason": str(exc)},
+                        status_code=422,
+                    )
             else:
                 manifest_path, manifest = _load_manifest_for_intake(
-                    Path(intake_ref).expanduser()
+                    intake_path
                 )
                 request_id = str((manifest or {}).get("request_id") or "")
                 current = (
@@ -590,9 +660,17 @@ def build_workflow_request_router(
                         )
                     ),
                 )
-        config_ref = Path(
-            str(payload.get("config") or payload.get("config_ref") or context.config_path)
-        ).expanduser()
+        try:
+            config_ref = project_path(
+                context.project_root,
+                payload.get("config") or payload.get("config_ref") or context.config_path,
+                field="config_ref",
+            )
+        except PathGuardError as exc:
+            return JSONResponse(
+                {"ok": False, "status": "invalid_payload", "reason": str(exc)},
+                status_code=422,
+            )
         if apply:
             from zf.runtime.control_actions import ControlledActionService
 
@@ -637,7 +715,7 @@ def build_workflow_request_router(
             except ValueError as exc:
                 return JSONResponse({"ok": False, "status": "preparation_blocked", "reason": str(exc)}, status_code=409)
             if prepared is not None:
-                return JSONResponse({**prepared, "result": prepared}, status_code=202)
+                return JSONResponse({**prepared, "result": prepared}, status_code=202 if prepared.get("ok") else 409)
         synthesis_ref = (
             dict(current.get("synthesis_ref"))
             if isinstance(current.get("synthesis_ref"), dict)
@@ -645,7 +723,8 @@ def build_workflow_request_router(
         )
         result = build_flow_submit_preview(
             config_path=config_ref,
-            intake_path=Path(intake_ref).expanduser(),
+            intake_path=intake_path,
+            project_root=context.project_root,
             flow_kind=str(payload.get("kind") or current.get("kind") or ""),
             task_id=str(payload.get("task_id") or ""),
             pattern_id=str(payload.get("pattern_id") or ""),

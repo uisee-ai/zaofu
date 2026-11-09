@@ -186,7 +186,8 @@ def test_changing_source_never_publishes_a_mixed_generation(setup, monkeypatch):
     original = cache.build_sdlc_graph
     def changing(inputs):
         value = original(inputs)
-        service.writer.append(ZfEvent(type="user.message", payload={"request_id": binding["request_id"]}))
+        store = TaskStore(service.state_dir / "kanban.json")
+        store.add(Task(id=f"T-{len(store.list_all())}", title="Concurrent task mutation"))
         return value
     monkeypatch.setattr(cache, "build_sdlc_graph", changing)
     response = client.get(url(binding))
@@ -251,3 +252,35 @@ def test_review_packet_generation_invalidates_previous_graph_cache_and_etag(setu
     with monkeypatch.context() as old:
         old.setattr(cache, "CACHE_VERSION", "workflow-workbench.v2")
         assert client.get(url(binding), headers={"If-None-Match": stale.headers["etag"]}).status_code == 304
+
+
+def test_event_appends_during_graph_build_return_a_pinned_prefix(setup, monkeypatch):
+    client, service, binding = setup
+    original = cache.build_sdlc_graph
+    built_heads = []
+    def appending(inputs):
+        built_heads.append(inputs['scope']['head_seq'])
+        service.writer.append(ZfEvent(type='worker.progress', payload={'request_id':binding['request_id']}))
+        return original(inputs)
+    monkeypatch.setattr(cache, 'build_sdlc_graph', appending)
+    response = client.get(url(binding))
+    assert response.status_code == 200, response.text
+    assert len(built_heads) == 1  # Appending providers do not force three full rebuilds.
+    assert response.json()['scope']['head_seq'] == built_heads[-1]
+    assert len(service.writer.event_log.read_all()) > built_heads[-1]
+    updated = client.get(url(binding), headers={'If-None-Match':response.headers['etag']})
+    assert updated.status_code == 200
+    assert updated.json()['scope']['head_seq'] > response.json()['scope']['head_seq']
+
+
+def test_graph_serializes_expanded_config_once_per_read(setup, monkeypatch):
+    client, _, binding = setup
+    original = cache.fingerprint
+    configs = []
+    def observed(state, paths, config=None, **kwargs):
+        if config is not None: configs.append(config)
+        return original(state, paths, config, **kwargs)
+    monkeypatch.setattr(cache, 'fingerprint', observed)
+    response = client.get(url(binding))
+    assert response.status_code == 200
+    assert len(configs) == 1

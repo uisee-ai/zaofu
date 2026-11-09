@@ -316,7 +316,7 @@ class TestContractDFullyFilled:
         assert result.passed is True
         assert result.evidence["verification_stdout_tail"] == ""
 
-    def test_verification_command_links_web_node_modules_from_project_root(
+    def test_verification_cannot_implicitly_link_another_worktree(
         self, workspace, event_log, tmp_path, monkeypatch,
     ):
         root = tmp_path / "repo"
@@ -341,12 +341,14 @@ class TestContractDFullyFilled:
 
         result = ContractD().evaluate(task, workspace, event_log)
 
-        assert result.passed is True
-        assert result.evidence["web_dependencies"]["status"] == "linked"
-        assert (web_dir / "node_modules").is_symlink()
-        assert result.evidence["verification_stdout_tail"] == "linked-tsc"
+        assert result.passed is False
+        assert not (web_dir / "node_modules").exists()
+        # An explicitly admitted preparation command is executed as authored.
+        task.contract.verification = f"ln -s '{source_bin.parent}' web/node_modules && web/node_modules/.bin/tsc"
+        result = ContractD().evaluate(task, workspace, event_log)
+        assert result.passed and result.evidence["verification_stdout_tail"] == "linked-tsc"
 
-    def test_verification_command_prepares_web_python_extra(
+    def test_verification_requires_explicit_environment_preparation(
         self, workspace, event_log, tmp_path, monkeypatch,
     ):
         uv_log = tmp_path / "uv.log"
@@ -376,7 +378,10 @@ class TestContractDFullyFilled:
         result = ContractD().evaluate(task, workspace, event_log)
 
         assert result.passed is True
-        assert result.evidence["web_python_dependencies"]["status"] == "ready"
+        assert not uv_log.exists()
+        task.contract.verification = "uv run --extra web python -c 'import fastapi'"
+        result = ContractD().evaluate(task, workspace, event_log)
+        assert result.passed
         assert "run --extra web python -c" in uv_log.read_text(encoding="utf-8")
 
     def test_mixed_verification_prose_tail_uses_runtime_gate_evidence(
@@ -927,3 +932,12 @@ class TestContractDSyntaxPreCheck:
         assert result is not None
         assert result["passed"] is False
         assert ")" in result["stderr"] or "unexpected" in result["stderr"]
+
+
+@pytest.mark.parametrize("behavior", ["导出客户姓名和邮箱", "Export customer names and emails"])
+def test_contract_quality_is_language_neutral_structural_lint(workspace, event_log, behavior):
+    task = Task(id="T-LANG", title="CSV", contract=TaskContract(
+        behavior=behavior, verification="python -m unittest -q", scope=["export_csv.py"], acceptance="CSV 包含 name,email 表头且保留输入记录顺序"))
+    result = ContractQualityD().evaluate(task, workspace, event_log)
+    assert result.passed, result.reason
+    assert result.evidence["semantic_quality"] == "not_assessed"

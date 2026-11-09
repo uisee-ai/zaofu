@@ -639,6 +639,18 @@ def _normalize_plan_synth(
     result = {
         "schema_version": PLAN_SYNTH_RESULT_SCHEMA,
         "execution_status": "failed" if status in {"failed", "failure"} else "completed",
+        "failure_class": (
+            "reader_execution_failure"
+            if status in {"failed", "failure"}
+            and str(source.get("execution_status") or "").lower() == "failed"
+            and str(source.get("failure_class") or "") == "reader_execution_failure"
+            and recommendation in {"needs_rework", "abstain", "reject"}
+            and str(report.get("status") or "").lower() in {"blocked", "failed"}
+            and str(report.get("recommendation") or "").lower() in {
+                "needs_rework", "abstain", "reject",
+            }
+            else ""
+        ),
         "verdict": "rejected" if failed else "passed",
         "workflow_run_id": _text(source, "workflow_run_id", "trace_id"),
         "fanout_id": _text(source, "fanout_id"),

@@ -331,9 +331,20 @@ def evaluate_workdir_write_guard(
 ) -> int:
     if not event_type.endswith(".pre_tool_use") or not should_check_actor(actor):
         return 0
+    tool_input = event_payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return 0
+    tool_name = str(event_payload.get("tool_name") or "")
+    targets = write_target_operations(tool_name, tool_input)
+    command = str(tool_input.get("command") or "") if tool_name.lower() in {"bash", "shell"} else ""
+    mutating_shell = bool(command and bash_command_looks_mutating(command))
+    if not targets and not mutating_shell:
+        return 0
     from zf.cli.hook_dispatch_context import active_task_pipeline_dispatch
 
-    events = event_log.read_all()
+    from zf.cli.hook_context_events import hook_context_events
+
+    events = hook_context_events(event_log)
     pipeline = active_task_pipeline_dispatch(events, actor)
     has_pipeline_assignment = any(
         event.type == "task.pipeline.stage.dispatched"
@@ -346,16 +357,23 @@ def evaluate_workdir_write_guard(
             assigned_root = Path(workdir)
     if not has_pipeline_assignment and not assigned_root.is_dir():
         return 0
-    tool_input = event_payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return 0
-    tool_name = str(event_payload.get("tool_name") or "")
     cwd = Path(str(event_payload.get("cwd") or assigned_root))
     task_id = active_task_id_for_actor(event_log, actor)
-    allowed_workdirs = {assigned_root}
+    if pipeline is None and has_pipeline_assignment:
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
+        unresolved_pipeline = any(
+            row.get("status") == "running"
+            and row.get("role_instance") == actor
+            and row.get("task_pipeline_stage")
+            for row in reduce_workflow_operations(events).values()
+        )
+    else:
+        unresolved_pipeline = False
+    allowed_workdirs = set() if unresolved_pipeline else {assigned_root}
     project_roots = {Path(project_root), state_dir.parent}
     offending: list[str] = []
-    for operation, raw_target in write_target_operations(tool_name, tool_input):
+    for operation, raw_target in targets:
         target = Path(raw_target)
         target = target if target.is_absolute() else cwd / target
         if (
@@ -373,10 +391,9 @@ def evaluate_workdir_write_guard(
                 continue
             offending.append(str(target))
     if tool_name.lower() in {"bash", "shell"}:
-        command = str(tool_input.get("command") or "")
         for project_path in project_roots:
             if (
-                bash_command_looks_mutating(command)
+                mutating_shell
                 and str(project_path.resolve(strict=False)) in command
                 and not any(
                     str(root.resolve(strict=False)) in command
@@ -399,6 +416,9 @@ def evaluate_workdir_write_guard(
         task_id=task_id or None,
         payload={
             "reason": "outside_assigned_workdir",
+            "failure_class": (
+                "workspace_binding_mismatch" if unresolved_pipeline else "scope_violation"
+            ),
             "worker": actor,
             "origin_event": event_type,
             "tool_name": tool_name,
@@ -409,13 +429,13 @@ def evaluate_workdir_write_guard(
                 else "provider_write"
             ),
             "offending_paths": sorted(set(offending))[:10],
-            "assigned_workdir": str(assigned_root),
+            "assigned_workdir": "" if unresolved_pipeline else str(assigned_root),
         },
         causation_id=causation_id,
     ))
     print(
         "ZaoFu blocked this write: use the assigned writer workdir only: "
-        + str(assigned_root)
+        + ("unresolved task pipeline assignment" if unresolved_pipeline else str(assigned_root))
         + ". The only state-dir exception is the exact current result scratch "
         "declared by the Kernel. For handoff artifacts, write a workdir-relative "
         "file and emit that ref; the kernel relocates it into runtime artifact storage.",

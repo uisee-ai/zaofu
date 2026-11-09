@@ -61,6 +61,28 @@ def test_agent_semantic_intent_is_language_independent(
     }
 
 
+def test_agent_intent_source_message_event_id_is_accepted() -> None:
+    answer = json.dumps({
+        "action_proposal": {
+            "action": "create-task",
+            "intent": {
+                "decision": "propose_action",
+                "source_quote": "重开 generation",
+                "source_message_event_id": "evt-user",
+            },
+            "payload": {"title": "Task", "contract": {"behavior": "Do it.", "verification_tiers": ["static"]}},
+        },
+    }, ensure_ascii=False)
+
+    proposal = extract_action_proposal(
+        answer,
+        user_message="请重开 generation",
+        proposal_context={"causation_id": "evt-user"},
+    )
+
+    assert proposal is not None and proposal["valid"] is True
+
+
 def test_explicit_direct_create_task_mode_is_preserved() -> None:
     decoded = json.loads(_create_task_answer(source_quote="立即执行"))
     decoded["action_proposal"]["payload"]["execution_mode"] = "direct"

@@ -38,7 +38,6 @@ PLAN_REQUIRED_SOURCE_IDS = {
     "plan-port-requirement_spec",
     "plan-port-goal_claim_set",
     "plan-port-task_map",
-    "plan-port-planning_result",
 }
 
 pytestmark = pytest.mark.mock_e2e
@@ -508,6 +507,12 @@ def test_stale_contract_results_cannot_advance_current_generation(tmp_path: Path
         "contract",
         *PLAN_REQUIRED_SOURCE_IDS,
     }
+    source_manifest = hydrate_sidecar_ref(
+        state_dir, r2_payload["attempt_source_manifest"],
+    ).payload
+    sources = {item["source_id"]: item for item in source_manifest["sources"]}
+    assert sources["plan-port-task_map"]["ref"] == sources["plan-port-planning_result"]["ref"]
+    assert sources["plan-port-task_map"]["sha256"] == sources["plan-port-planning_result"]["sha256"]
 
     r1_workdir = Path(r1_child["workdir"])
     (r1_workdir / "result.txt").write_text("r1-obsolete\n", encoding="utf-8")

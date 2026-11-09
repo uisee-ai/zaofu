@@ -137,6 +137,7 @@ def authorize_artifact_read_from_environment(
     *,
     manifest: Mapping[str, Any],
     event_log: EventLog,
+    use_artifact_context: bool = False,
 ) -> dict[str, str]:
     """Authenticate the worker and return Kernel-bound consumer identity."""
 
@@ -145,6 +146,7 @@ def authorize_artifact_read_from_environment(
             state_dir,
             manifest=manifest,
             event_log=event_log,
+            use_artifact_context=use_artifact_context,
         )
     except ArtifactReadCapabilityError as exc:
         _record_denial(event_log, manifest=manifest, code=exc.code)
@@ -156,6 +158,7 @@ def _authorize_artifact_read_from_environment(
     *,
     manifest: Mapping[str, Any],
     event_log: EventLog,
+    use_artifact_context: bool = False,
 ) -> dict[str, str]:
     role_instance = str(os.environ.get("ZF_ROLE_INSTANCE") or "").strip()
     token = str(os.environ.get("ZF_ARTIFACT_READ_TOKEN") or "").strip()
@@ -223,7 +226,7 @@ def _authorize_artifact_read_from_environment(
                 "identity_mismatch",
                 f"artifact read {label} does not match the issued capability",
             )
-    _require_current_operation(binding, event_log)
+    _require_current_operation(binding, event_log, use_artifact_context=use_artifact_context)
     return {
         "actor": role_instance,
         "role": role_name,
@@ -247,13 +250,21 @@ def canonical_source_manifest_digest(manifest: Mapping[str, Any]) -> str:
 def _require_current_operation(
     binding: Mapping[str, Any],
     event_log: EventLog,
+    *,
+    use_artifact_context: bool = False,
 ) -> None:
     operation_id = str(binding.get("operation_id") or "")
     if not operation_id:
         return
     from zf.runtime.workflow_operation import load_workflow_operation
 
-    operation = load_workflow_operation(event_log, operation_id)
+    if not use_artifact_context:
+        operation = load_workflow_operation(event_log, operation_id)
+    else:
+        from zf.runtime.artifact_context_events import artifact_context_events
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
+        operation = reduce_workflow_operations(artifact_context_events(event_log)).get(operation_id)
     if not operation:
         raise ArtifactReadCapabilityError(
             "operation_missing",

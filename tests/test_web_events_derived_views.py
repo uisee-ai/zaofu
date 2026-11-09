@@ -152,7 +152,7 @@ def test_folded_derived_views_equal_fresh_rebuild(state_dir: Path) -> None:
     )
 
 
-def test_read_days_fold_drops_non_json_placeholder(state_dir: Path) -> None:
+def test_read_days_fold_preserves_ledger_integrity_diagnostic(state_dir: Path) -> None:
     import zf.web.projections.events as ev
 
     _clear_event_caches()
@@ -161,10 +161,10 @@ def test_read_days_fold_drops_non_json_placeholder(state_dir: Path) -> None:
         fh.write("not-json-at-all\n")
     _emit(state_dir, "task.completed", {})
     folded = ev.events_read_days(state_dir, 1)
-    # _parse_file 静默跳过非 JSON 行;fold 必须同样不带 segments 占位
-    assert "event.malformed" not in [e.type for e in folded]
+    # 完整损坏行必须保留完整性诊断，不能静默制造没有该事实的投影。
+    assert "event.malformed" in [e.type for e in folded]
     assert folded[-1].type == "task.completed"
-    # 但 events 表(_events_with_seq)保留占位——两种语义各自成立
+    # 日窗口和序列投影一致保留诊断。
     types = [e.type for _, e in ev._events_with_seq(state_dir)]
     assert "event.malformed" in types
 

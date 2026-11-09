@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
@@ -334,7 +334,8 @@ def _apply_operation_checkpoint(
         reduce_workflow_operations,
     )
 
-    operations = reduce_workflow_operations(writer.event_log.read_all())
+    operation_events = writer.event_log.read_all()
+    operations = reduce_workflow_operations(operation_events)
     current = operations.get(checkpoint.operation_id)
     if current is None:
         return WorkflowResumeApplyResult(
@@ -357,9 +358,15 @@ def _apply_operation_checkpoint(
         )
     redrive_actions = {
         "redrive_interrupted_reader_operation",
+        "redrive_interrupted_budget_synth_operation",
+        "redrive_interrupted_budget_reader_operation",
         "redrive_interrupted_task_pipeline_operation",
         "redrive_cancelled_interrupted_task_pipeline_operation",
+        "redrive_undispatched_task_pipeline_operation",
+        "redrive_abstained_task_verification",
         "redrive_budget_amended_task_pipeline_operation",
+        "redrive_budget_amended_synth_operation",
+        "redrive_budget_amended_reader_operation",
     }
     current_status = str(current.get("status") or "")
     live_attempt = _live_operation_attempt(
@@ -381,10 +388,16 @@ def _apply_operation_checkpoint(
                 "was not applied"
             ),
         )
-    if current_status in {"settled", "failed", "superseded"} or (
+    if current_status in {"failed", "superseded"} or (
+        current_status == "settled"
+        and checkpoint.safe_resume_action != "redrive_abstained_task_verification"
+    ) or (
         current_status == "blocked"
-        and checkpoint.safe_resume_action
-        != "redrive_budget_amended_task_pipeline_operation"
+        and checkpoint.safe_resume_action not in {
+            "redrive_budget_amended_task_pipeline_operation",
+            "redrive_budget_amended_synth_operation",
+            "redrive_budget_amended_reader_operation",
+        }
     ) or (
         current_status == "cancelled"
         and checkpoint.safe_resume_action not in redrive_actions
@@ -395,8 +408,11 @@ def _apply_operation_checkpoint(
             reason="operation already terminal",
         )
     if (
-        checkpoint.safe_resume_action
-        == "redrive_budget_amended_task_pipeline_operation"
+        checkpoint.safe_resume_action in {
+            "redrive_budget_amended_task_pipeline_operation",
+            "redrive_budget_amended_synth_operation",
+            "redrive_budget_amended_reader_operation",
+        }
     ):
         from zf.runtime.workflow_operation_task_pipeline import (
             find_task_pipeline_budget_amendment,
@@ -415,6 +431,17 @@ def _apply_operation_checkpoint(
                 applied=False,
                 reason="budget amendment is missing, stale, or out of scope",
             )
+    if checkpoint.safe_resume_action in {
+        "redrive_interrupted_budget_synth_operation",
+        "redrive_interrupted_budget_reader_operation",
+    }:
+        from zf.runtime.synth_budget_recovery import pending_reader_budget_amendment
+
+        if pending_reader_budget_amendment(writer.event_log.read_all(), current) is None:
+            return WorkflowResumeApplyResult(
+                checkpoint=checkpoint, applied=False,
+                reason="pending reader budget amendment no longer valid",
+            )
     if checkpoint.safe_resume_action == "cancel_terminal_reader_operation":
         from zf.runtime.terminal_reader_operation import terminal_reader_event
 
@@ -422,6 +449,24 @@ def _apply_operation_checkpoint(
             return WorkflowResumeApplyResult(
                 checkpoint=checkpoint, applied=False,
                 reason="reader carrier no longer has a terminal occurrence",
+            )
+    if checkpoint.safe_resume_action == "redrive_undispatched_task_pipeline_operation":
+        from zf.runtime.undispatched_pipeline_recovery import undispatched_pipeline_request
+
+        if current_status != "cancelled" or not undispatched_pipeline_request(
+            current, state_dir, operation_events,
+        ):
+            return WorkflowResumeApplyResult(
+                checkpoint=checkpoint, applied=False,
+                reason="pipeline request no longer has proof of no scheduler delivery",
+            )
+    if checkpoint.safe_resume_action == "redrive_abstained_task_verification":
+        from zf.runtime.abstained_verify_recovery import recoverable_abstention
+
+        if not recoverable_abstention(current, operation_events, state_dir):
+            return WorkflowResumeApplyResult(
+                checkpoint=checkpoint, applied=False,
+                reason="verifier retry is no longer eligible or has already been consumed",
             )
     planned = writer.append(ZfEvent(
         type=WORKFLOW_RESUME_PLANNED_EVENT,
@@ -441,8 +486,11 @@ def _apply_operation_checkpoint(
     )
     if checkpoint.safe_resume_action in redrive_actions:
         budget_redrive = (
-            checkpoint.safe_resume_action
-            == "redrive_budget_amended_task_pipeline_operation"
+            checkpoint.safe_resume_action in {
+                "redrive_budget_amended_task_pipeline_operation",
+                "redrive_budget_amended_synth_operation",
+                "redrive_budget_amended_reader_operation",
+            }
         )
         redriven = service.admit_redrive(
             operation_id=checkpoint.operation_id,
@@ -458,6 +506,10 @@ def _apply_operation_checkpoint(
             reason=(
                 "Owner budget amendment admitted a bounded operation redrive"
                 if budget_redrive
+                else "Controlled same-target verifier execution recovery"
+                if checkpoint.safe_resume_action == "redrive_abstained_task_verification"
+                else "Kernel replay restored a never-dispatched pipeline request"
+                if checkpoint.safe_resume_action == "redrive_undispatched_task_pipeline_operation"
                 else "Kernel replay admitted after explicit runtime restart"
             ),
             recovery_decision_owner=(
@@ -508,9 +560,23 @@ def _apply_operation_checkpoint(
     if cancelled is not None:
         emitted.append(cancelled.id)
     parent_task_id = checkpoint.parent_task_id or checkpoint.task_id
+    attempts = _task_attempt_rows(state_dir)
+    live_sibling_id = next((
+        str(row.get("operation_id") or "")
+        for row in operations.values()
+        if checkpoint.workflow_run_id
+        and row.get("operation_id") != checkpoint.operation_id
+        and row.get("workflow_run_id") == checkpoint.workflow_run_id
+        and (row.get("parent_task_id") or row.get("task_id")) == parent_task_id
+        and row.get("status") == "running"
+        and _live_operation_attempt(
+            attempts, operation_id=str(row.get("operation_id") or ""),
+            now_epoch=datetime.now(timezone.utc).timestamp(),
+        ) is not None
+    ), "")
     if checkpoint.safe_resume_action == "cancel_stale_operation" and parent_task_id:
         task = store.get(parent_task_id)
-        if task is not None and task.status == "in_progress":
+        if task is not None and task.status == "in_progress" and not live_sibling_id:
             store.update(
                 parent_task_id,
                 status="blocked",
@@ -541,6 +607,7 @@ def _apply_operation_checkpoint(
             "checkpoint_kind": "workflow_operation",
             "mode": checkpoint.safe_resume_action,
             "cancelled_event_id": cancelled.id if cancelled is not None else "",
+            "live_sibling_operation_id": live_sibling_id,
         },
         causation_id=cancelled.id if cancelled is not None else planned.id,
         correlation_id=checkpoint.workflow_run_id or None,
@@ -602,6 +669,7 @@ def _apply_checkpoint(
             emitted,
             config=config,
             events=events,
+            state_dir=state_dir,
         )
 
     if checkpoint.safe_resume_action == "needs_rework_dispatch":
@@ -703,6 +771,7 @@ def _apply_stage_replan(
     *,
     config: object,
     events: list[ZfEvent] | None,
+    state_dir: Path | None = None,
 ) -> WorkflowResumeApplyResult:
     if config is None:
         return WorkflowResumeApplyResult(
@@ -730,7 +799,7 @@ def _apply_stage_replan(
         )
     from zf.runtime.stage_failure_replan import plan_reader_stage_replan
 
-    replan_event, note = plan_reader_stage_replan(config, event_list, failure_event)
+    replan_event, note = plan_reader_stage_replan(config, event_list, failure_event, state_dir=state_dir)
     if replan_event is None:
         applied = writer.append(ZfEvent(
             type=WORKFLOW_RESUME_APPLIED_EVENT,
@@ -1033,7 +1102,12 @@ def _apply_batch_task_map_ready(
     # avbs-r4 F2: findings 随 rework 走(orchestrator_fanout 已有
     # rework_feedback → child briefing 管线,此前 batch 不填该键 = 盲 rework)
     if getattr(checkpoint, "rework_feedback", None):
-        payload["rework_feedback"] = list(checkpoint.rework_feedback)
+        feedback = _writer_resume_feedback(
+            payload,
+            list(checkpoint.rework_feedback),
+        )
+        if feedback:
+            payload["rework_feedback"] = feedback
     event = writer.append(ZfEvent(
         type="task_map.ready",
         actor="zf-cli",
@@ -1077,6 +1151,25 @@ _RESUME_PLAN_IDENTITY_KEYS = (
     "goal_claim_set_ref",
     "goal_claim_set_digest",
 )
+
+
+def _writer_resume_feedback(
+    payload: Mapping[str, Any], feedback: list[str],
+) -> list[str]:
+    """Do not replay planner-only findings into a current writer package."""
+
+    if not str(payload.get("plan_artifact_package_ref") or "").strip():
+        return feedback
+    stale_markers = (
+        "mandatory_goal_claim_contract_rewritten",
+        "task_map_invalid",
+        "source_index_invalid",
+        "upstream dependency failed",
+    )
+    return [
+        line for line in feedback
+        if not any(marker in str(line).lower() for marker in stale_markers)
+    ]
 
 
 def _resume_plan_identity(

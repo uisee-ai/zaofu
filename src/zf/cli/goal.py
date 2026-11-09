@@ -40,6 +40,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     set_cmd.add_argument("--timeout-seconds", type=float, default=None)
     set_cmd.add_argument("--token-budget", type=int, default=None)
     set_cmd.add_argument("--cost-budget-usd", type=float, default=None)
+    set_cmd.add_argument(
+        "--operation", default="", help="Budget-blocked Task Pipeline operation"
+    )
+    set_cmd.add_argument("--operation-max-usage-samples", type=int, default=None)
+    set_cmd.add_argument("--operation-token-budget", type=int, default=None)
+    set_cmd.add_argument(
+        "--all-run-operations", action="store_true",
+        help="Apply the sample limit to all operations in this Run",
+    )
     set_cmd.add_argument("--reason", default="", help="operator reason (audit)")
     set_cmd.set_defaults(func=_run_set)
 
@@ -92,6 +101,32 @@ def _run_set(args: argparse.Namespace) -> int:
     except (TypeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
+    operation_id = str(getattr(args, "operation", "") or "").strip()
+    sample_limit = getattr(args, "operation_max_usage_samples", None)
+    token_limit = getattr(args, "operation_token_budget", None)
+    operation_patch = {
+        key: value for key, value in {
+            "max_usage_samples": sample_limit,
+            "token_budget": token_limit,
+        }.items() if value is not None
+    }
+    all_operations = bool(getattr(args, "all_run_operations", False))
+    if all_operations and (not operation_id or sample_limit is None or token_limit is not None):
+        print("Error: --all-run-operations requires a sample-only operation amendment", file=sys.stderr)
+        return 2
+    if bool(operation_id) != bool(operation_patch):
+        print("Error: --operation and operation limits must be provided together", file=sys.stderr)
+        return 2
+    if operation_patch and (
+        any(value < 0 for value in operation_patch.values())
+        or status != "active" or run_limits_patch
+        or not str(getattr(args, "reason", "") or "").strip()
+    ):
+        print(
+            "Error: operation amendment requires --status active, nonnegative limits, an approval reason, and no run limit patch",
+            file=sys.stderr,
+        )
+        return 2
     if not objective and not status and not run_limits_patch:
         print(
             "Error: provide --objective, --status, and/or a run limit",
@@ -119,6 +154,28 @@ def _run_set(args: argparse.Namespace) -> int:
         payload["run_limits_patch"] = run_limits_patch
     if args.reason:
         payload["reason"] = str(args.reason)
+    if operation_id:
+        payload["operation_budget_id"] = operation_id
+        payload["operation_limits_patch"] = operation_patch
+        if all_operations:
+            payload["operation_budget_scope"] = "run"
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+        from zf.runtime.workflow_operation_task_pipeline import (
+            find_task_pipeline_budget_amendment,
+        )
+
+        events = writer.event_log.read_all()
+        operation = reduce_workflow_operations(events).get(operation_id, {})
+        candidate = ZfEvent(
+            type="run.goal.updated", actor="operator", payload=payload,
+            correlation_id=run_id or None,
+        )
+        if find_task_pipeline_budget_amendment([*events, candidate], operation) is not candidate:
+            print(
+                "Error: operation is not eligible or the named limit does not cover the blocked budget",
+                file=sys.stderr,
+            )
+            return 1
     event = writer.append(ZfEvent(
         type="run.goal.updated",
         actor="operator",

@@ -149,7 +149,14 @@ def _read_metric_events(state_dir: Path, config=None) -> list[tuple[int, ZfEvent
     from zf.web.projections.metric_facts import refresh_events, events
     try:
         refresh_events(state_dir, config)
-        return events(state_dir, include_malformed=True)
+        rows = events(state_dir, include_malformed=True)
+        # Compact metric rows omit identity, origin and admission payloads.
+        # Hydrate only the canonical records needed for the timeline contract.
+        full = dict(events(state_dir, full=True, config=config, types=(
+            "task.attempt.started", "task.attempt.succeeded", "task.attempt.failed",
+            "task.attempt.deadlettered", "task.attempt.superseded", "task_map.admitted",
+        )))
+        return [(seq, full.get(seq, event)) for seq, event in rows]
     except sqlite3.DatabaseError:
         # A disposable cache must not erase canonical Loop data when corrupt.
         return [(record.seq, record.event) for record in iter_event_records(state_dir, config=config)]

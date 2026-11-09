@@ -1,0 +1,12 @@
+{
+  "web_pid": 4120280,
+  "owned_pids_stopped": [
+    4120280,
+    4121512,
+    4121513
+  ],
+  "archive": "/tmp/zf-hello-prd-20261030-060443/evidence/isolated-project-stopped.tar.gz",
+  "temporary_state_removed": true,
+  "hello_tmux_sessions": [],
+  "listeners": "State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      2048         0.0.0.0:8001      0.0.0.0:*    users:((\"python\",pid=923506,fd=14))\n"
+}

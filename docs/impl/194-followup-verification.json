@@ -1,0 +1,383 @@
+{
+  "schema_version": "design-194-followup-evidence.v1",
+  "baseline_commit": "fe9204971ba2ec7b4bf4582a7fe7ac4c3493c63c",
+  "branch": "wip/codex-20261029-design-194",
+  "design_digest": "3c49d9c77af4cbe76d16410b756c77ba7a3e622d4645e28d0909b1263a5266cb",
+  "source_sha256": {
+    "src/zf/core/cost/tracker.py": "dd8b1316e7b9312a6545857d8fc08864662947538b02b3364e092d0835dc7b79",
+    "src/zf/runtime/cancelled_run_workers.py": "a5742e0f6163cff09adee117b9284eb432c234bf2c301ed55571347ddbede025",
+    "src/zf/runtime/dynamic_cancellation_receipts.py": "1d128236e2f9499c9f28ba8bc3fc95819429f9fc5ae739814c63967e321e0575",
+    "src/zf/runtime/dynamic_continuation_lifecycle.py": "6d0406691c09f176787c25b411b8d2c8a787c8e290cb3327fd3966a367f421bf",
+    "src/zf/runtime/dynamic_continuation_state.py": "096a06d7d6ae855d5bc3d5dba9a2b7128c3b09b4e753af0f9b406e0355f5a4e1",
+    "src/zf/runtime/fanout_recovery_runtime.py": "1c964666aefc21935e000bc207358d6da3ce981f0ab6ec68b6aceba6e3a512b7",
+    "src/zf/runtime/operation_usage_attribution.py": "7440ee3ddae05efcc4baba7237350502404b68a49d51e7522f195fbca86f0f41",
+    "src/zf/runtime/run_cancel_reconciliation.py": "faa5985b1244a846ff54810a621ba7ce865c449b4b9b5df1f7edd425653a8554",
+    "src/zf/runtime/transport_stream_json.py": "8bc3b499c3a505bf9a0650ce34206c9208a6ebcec600ea3561b41c2567b1dc50",
+    "src/zf/runtime/worker_state_runtime.py": "75069e65c4f4976e3bcf43a2a3d2483c2218518d20aa4656c39774fc5dc3c55d",
+    "tests/e2e/evidence_method_candidate_194.py": "d0f2b151be92598e3255a1098549d8b7435c4019073db1ce309bca950642013b",
+    "tests/e2e/evidence_review_194.py": "b13c3eb6d040e785e6f6a2e4a5ee3c71cd6d086fb778ce409bc3f92b4c291551",
+    "tests/e2e/staged_workflow_comparison.py": "8a7495741597e35e15f656f93199c6aba7f32abab0ca512109cdb612fca7ef42",
+    "tests/e2e/test_generic_workflow_complex_mock_e2e.py": "0971c5808f9e0c2d02a279d68dde5b62056b911ffe12d138f86c771fe6446cd1",
+    "tests/test_cancelled_run_workers.py": "3305abf58df679f7abaf9f922ed53f2aa15d2f22fbe4b60a183f7baa89901b74",
+    "tests/test_dynamic_continuation_bounds.py": "8ecf7b200adfea36a7663dfa9e4cffbf40c3383504bf538c58dacf993b3aa723",
+    "tests/test_evidence_review_194.py": "5e19d99f3172cc8f213ba05a2bd97fdbbc9562ed6f2814e8674f63309f261741",
+    "tests/test_operation_usage_attribution.py": "aeba0bbbd5b6132e1155d26bcfb86561aea4cd91a1acd519d21f12b587731c65",
+    "tests/test_staged_workflow_comparison.py": "ba03f106dd443ed2af50909bf3271a91124f457a1ea8255d3e60a8301426695d"
+  },
+  "artifact_sha256": {
+    "/tmp/zf-194-followup-20261029/cancellation-final.log": "3e1a9056a29b2bb39cdebb0f3ae4f05274131ff5121094eaa256eca0c9e3110b",
+    "/tmp/zf-194-followup-20261029/comparison-manifest-final.json": "d3949393c29d0f19d9a638d65333bd4a4f6fa51ff15428f7726729b27edcf1f0",
+    "/tmp/zf-194-followup-20261029/comparison-real-v2.json": "60e33abf43942da3d67e037c7dd4add7b595edbee1815bdbf328da63c4010959",
+    "/tmp/zf-194-followup-20261029/comparison-real-v2.log": "efec919a8910f408ec02d0b52eb78e7c94ca4e86c0746e89c8d0975160a006e4",
+    "/tmp/zf-194-followup-20261029/comparison-real.json": "121847b7bb2b4deff8ee75397751fd1f815efea8ed9a9c63b690ef94f7a1dac2",
+    "/tmp/zf-194-followup-20261029/comparison-real.log": "4dfc26a8e3c265cac307389b29570c2db7801412f36d750d4fee3b91c8520fe5",
+    "/tmp/zf-194-followup-20261029/dev-verify-final.json": "f754828cc5bce54821bcf5e0303490204716946565b4dd46715d49e8afa97b26",
+    "/tmp/zf-194-followup-20261029/dev-verify-final.log": "2c9257f7a743a994095f5241276b70d2681f447f6ee2e3353be5a45950674b6d",
+    "/tmp/zf-194-followup-20261029/dev-verify.log": "f89cee14944586fe1e500eead8c319ab3e1681855ff850495fe4667166dcf1cd",
+    "/tmp/zf-194-followup-20261029/eval-tests.log": "1fab0c1fc30ec49eb0544204fde11d27d4037ff89a579c6f2a78d18b0f551fec",
+    "/tmp/zf-194-followup-20261029/evolution.log": "b05b2f84ee37b77f47ff170b86911068704a11f4bc3e39f9f79c2a35f995beaf",
+    "/tmp/zf-194-followup-20261029/final-focused.log": "f99e69a9519cbc40af7417b25703fbee84b75275d11e5a962ee3d946453a2843",
+    "/tmp/zf-194-followup-20261029/impact.log": "4646051bc93111a5f934527b72124300ab293d13ebcd2b377cab81bdf6d541c7",
+    "/tmp/zf-194-followup-20261029/method-eval-reconciled/report.json": "d967f4cd1e08fbf69d39cc3270904e533060830fb82c2507c9b862b29ec52b25",
+    "/tmp/zf-194-followup-20261029/method-eval.log": "4d396e8450f58a37115395b231901bd162e466b26827aae06089eddcabced31f",
+    "/tmp/zf-194-followup-20261029/method-reconciled.log": "45691fca783f8ddcaf95bb89ff27f08531741e3e3a739b880cea198947bbd6bb",
+    "/tmp/zf-194-followup-20261029/method-resume.log": "8d1adc33d2b01dd1af393618988097ec8efcf99b357f58b1d69eb1d91eccc1c8",
+    "/tmp/zf-194-followup-20261029/route-matrix.log": "de63a32920457f8060df631b12e27fafe13870ffbb042d08318204dac45973c2",
+    "/tmp/zf-194-followup-20261029/runner-final.log": "3985dcdd8ae551cde53bf6d0b65656f0ac2891585efd39d7636f275524810701",
+    "/tmp/zf-194-followup-20261029/sentinel-final.log": "fb510d0006e5a6f02968583540ee417a561eaca3c6c13a95e61ea6c823c51eff",
+    "/tmp/zf-194-followup-20261029/sentinel.log": "d9396ac529498f09c88530536819ea238c385f563fab29bb7633bdfb79e8c144",
+    "/tmp/zf-194-followup-20261029/docs-verify.log": "6e577d50b7c8721ff66d51b68e469ad385dd165dc48ca1c00cd59f7e4b3a9d62",
+    "/tmp/zf-194-followup-20261029/docs-verify.json": "19150fcead930a62dfddec42c0cd2f46b12c588b37d39ecf4821659a9a3c972b",
+    "/tmp/zf-194-followup-20261029/cleanup-events.jsonl": "e043e1682e82f7597c734462e828c06596e43bab63937f6b31291f782420b9ad"
+  },
+  "logs_dir": "/tmp/zf-194-followup-20261029",
+  "overall_qualification": "HOLD",
+  "source_scope": "follow-up changes only; first batch has separate evidence",
+  "experiments": [
+    {
+      "arm": "direct",
+      "status": "completed",
+      "provider_turns": 4,
+      "observed_tokens": 59871,
+      "cost_usd": null,
+      "elapsed_seconds": 32.756217068003025,
+      "qualification": "HOLD",
+      "runtime_receipts": {
+        "schema_version": "generic-workflow-complex-scenario.v1",
+        "workflow_run_id": "REQ-GENERIC-COMPLEX-MOCK",
+        "workflow_generation": "25c83a2a19939215f9e03af744d27691567271731528ddb195377f776aa7fd85",
+        "effective_config_digest": "22e51caa8b2d261f40a6cc1e5659259c6078625226929c0431f48bae5c0f41bb",
+        "run_contract_digest": "7ecae9954206a183960b8ec069ef888b494520fe871a4c13099d534f627b2ccd",
+        "completion_profile": "artifact_delivery",
+        "objective": "核验 Orion v2 的 CSV 导出、90 天日志保留和四小时内实际恢复三项主张，记录来源、冲突与缺失证据。",
+        "stage_graph": [
+          "scope",
+          "collect-a",
+          "collect-b",
+          "synthesize",
+          "verify"
+        ],
+        "request_revision": 3,
+        "terminal_event_id": "evt-97b02cce851d",
+        "simulation_event_id": "evt-1a71a4f91a8b",
+        "semantic_replan_count": 1,
+        "protocol_repair_count": 1,
+        "oa": {
+          "checkpoint_requested": 0,
+          "decision_observed": 0,
+          "decision_applied": 0,
+          "provider_turns": 0
+        },
+        "required_artifact_refs": [
+          "artifacts/workflow/artifacts/reports/bc4fdc7d20bea8cad4380de0aaf61ffeefb74c03eeb6db405f1105c4484df808.json"
+        ],
+        "dossier_status": "ready",
+        "request_status": "running"
+      },
+      "reasons": [
+        "hybrid_runtime",
+        "source_digest_drift",
+        "single_case",
+        "unknown_monetary_cost",
+        "observed_token_cap_not_hard"
+      ]
+    },
+    {
+      "arm": "fixed",
+      "status": "failed",
+      "provider_turns": 6,
+      "observed_tokens": 89618,
+      "cost_usd": null,
+      "elapsed_seconds": 34.74279516399838,
+      "qualification": "HOLD",
+      "runtime_receipts": null,
+      "reasons": [
+        "hybrid_runtime",
+        "source_digest_drift",
+        "single_case",
+        "unknown_monetary_cost",
+        "observed_token_cap_not_hard"
+      ]
+    },
+    {
+      "arm": "dynamic",
+      "status": "failed",
+      "provider_turns": 5,
+      "observed_tokens": 74171,
+      "cost_usd": null,
+      "elapsed_seconds": 37.81575408007484,
+      "qualification": "HOLD",
+      "runtime_receipts": null,
+      "reasons": [
+        "hybrid_runtime",
+        "source_digest_drift",
+        "single_case",
+        "unknown_monetary_cost",
+        "observed_token_cap_not_hard"
+      ]
+    }
+  ],
+  "method_candidate": {
+    "decision": "HOLD",
+    "reason": "single_case_per_split; unknown_monetary_cost; no automatic promotion",
+    "selection": "rejected",
+    "selection_reason": "strict_selection_tie",
+    "results": {
+      "selection": {
+        "base": {
+          "score": 1.0,
+          "report": {
+            "claims": [
+              {
+                "id": "C1",
+                "status": "refuted",
+                "sources": [
+                  "D1",
+                  "D2"
+                ],
+                "reason": "D1 gives an expected Monday arrival, not an observed arrival. D2’s signed receiving record confirms arrival Tuesday, refuting the claim."
+              }
+            ]
+          }
+        },
+        "candidate": {
+          "score": 1.0,
+          "report": {
+            "claims": [
+              {
+                "id": "C1",
+                "status": "refuted",
+                "sources": [
+                  "D1",
+                  "D2"
+                ],
+                "reason": "D1 states a planned Monday arrival, not an observation. D2 directly records arrival on Tuesday in a signed receiving record, providing sufficient evidence to refute the Monday-arrival claim."
+              }
+            ]
+          }
+        }
+      },
+      "test": {
+        "base": {
+          "score": 1.0,
+          "report": {
+            "claims": [
+              {
+                "id": "C1",
+                "status": "refuted",
+                "sources": [
+                  "D1",
+                  "D2"
+                ],
+                "reason": "D2 reports final September measured uptime of 99.7%, below 99.9%. D1 states an objective, not observed uptime."
+              }
+            ]
+          }
+        },
+        "candidate": {
+          "score": 1.0,
+          "report": {
+            "claims": [
+              {
+                "id": "C1",
+                "status": "refuted",
+                "sources": [
+                  "D1",
+                  "D2"
+                ],
+                "reason": "D2 reports final audited September uptime of 99.7%, below 99.9%. D1 states an objective, not an observation, so it does not conflict with D2. The evidence is sufficient to refute the claim."
+              }
+            ]
+          }
+        }
+      }
+    },
+    "campaign_digest": "c09defe3f3a8a9223246bd78735e9e51e25792be70daeeee115c85cb392ca35f",
+    "turns": [
+      {
+        "name": "selection-base",
+        "prompt_digest": "50104a7b267905627d9d445b85394d66467818daa18447b02624a40784d49a9f",
+        "schema_digest": "da144030d0ccbe8d4e7d283b1db9250f98e058adf2cd47a6d7483f3cdab6a898",
+        "usage": {
+          "input_tokens": 15640,
+          "cached_input_tokens": 0,
+          "output_tokens": 65,
+          "cost_usd": null,
+          "cost_status": "provider_not_reported"
+        },
+        "elapsed_seconds": 9.565781279001385,
+        "status": "completed",
+        "tools_used": 0
+      },
+      {
+        "name": "selection-candidate",
+        "prompt_digest": "4e5f67bf219825c12e57f7e64e64d85e018a67ce5fc2996719a83730cc1df38a",
+        "schema_digest": "da144030d0ccbe8d4e7d283b1db9250f98e058adf2cd47a6d7483f3cdab6a898",
+        "usage": {
+          "input_tokens": 14840,
+          "cached_input_tokens": 0,
+          "output_tokens": 74,
+          "cost_usd": null,
+          "cost_status": "provider_not_reported"
+        },
+        "elapsed_seconds": 8.156711501069367,
+        "status": "completed",
+        "tools_used": 0
+      },
+      {
+        "name": "test-base",
+        "prompt_digest": "80c0d4816b13542f1491503e7f946cf132ad4181ec325f6aaba01b200292e560",
+        "schema_digest": "da144030d0ccbe8d4e7d283b1db9250f98e058adf2cd47a6d7483f3cdab6a898",
+        "usage": {
+          "input_tokens": 15656,
+          "cached_input_tokens": 0,
+          "output_tokens": 66,
+          "cost_usd": null,
+          "cost_status": "provider_not_reported"
+        },
+        "elapsed_seconds": 8.318744636024348,
+        "status": "completed",
+        "tools_used": 0
+      },
+      {
+        "name": "test-candidate",
+        "prompt_digest": "c582e1fea375f7ff5f1d75b9c2816518215380f65c8122044c76df8fea50458a",
+        "schema_digest": "da144030d0ccbe8d4e7d283b1db9250f98e058adf2cd47a6d7483f3cdab6a898",
+        "usage": {
+          "input_tokens": 15696,
+          "cached_input_tokens": 0,
+          "output_tokens": 85,
+          "cost_usd": null,
+          "cost_status": "provider_not_reported"
+        },
+        "elapsed_seconds": 10.448494320036843,
+        "status": "completed",
+        "tools_used": 0
+      }
+    ],
+    "equivalence": {
+      "roles": "unchanged",
+      "dependencies": "unchanged",
+      "required_evidence": "unchanged",
+      "completion_contract": "unchanged"
+    },
+    "production_changed": false,
+    "state_ref": {
+      "ref_schema_version": "sidecar-ref.v1",
+      "kind": "skill_optimizer_state",
+      "ref": "artifacts/evolution/skill-optimizer/states/d2f6c94de2c6588da0cf2de29f56e9a08e0ff90ff4bbdb5e1acda008781600fc.json",
+      "sha256": "d2f6c94de2c6588da0cf2de29f56e9a08e0ff90ff4bbdb5e1acda008781600fc",
+      "byte_count": 4532,
+      "content_type": "application/json",
+      "schema_version": "skill-optimizer-state.v1",
+      "encoding": "utf-8",
+      "created_by": "skill-optimizer",
+      "source_event_id": "",
+      "access_scope": {},
+      "retention": {
+        "class": "audit_required"
+      },
+      "required": true,
+      "preview": ""
+    }
+  },
+  "verification": {
+    "impact": {
+      "passed": 449
+    },
+    "route_matrix": {
+      "passed": 142
+    },
+    "evolution": {
+      "passed": 46,
+      "skipped": 1
+    },
+    "final_focused": {
+      "passed": 34,
+      "skipped": 1
+    },
+    "cancellation_final": {
+      "passed": 80,
+      "skipped": 1
+    },
+    "automatic_tiers": [
+      {
+        "id": "python-deterministic",
+        "tier": "deterministic",
+        "status": "not_run",
+        "reason": "excluded by --skip-tier"
+      },
+      {
+        "id": "python-serial",
+        "tier": "serial",
+        "returncode": 0,
+        "duration_s": 2.641,
+        "status": "passed"
+      },
+      {
+        "id": "premerge-sentinels",
+        "tier": "contract",
+        "returncode": 0,
+        "duration_s": 5.89,
+        "status": "passed"
+      },
+      {
+        "id": "flow-smoke",
+        "tier": "mock_e2e",
+        "returncode": 0,
+        "duration_s": 2.304,
+        "status": "passed"
+      },
+      {
+        "id": "real-provider",
+        "tier": "real_provider",
+        "status": "not_run",
+        "reason": "explicit operator tier"
+      }
+    ],
+    "full_pytest": false,
+    "coverage": false,
+    "browser": false,
+    "full_real_provider_route_e2e": false,
+    "runner_final": {
+      "passed": 20
+    },
+    "docs_instructions": {
+      "passed": 8
+    }
+  },
+  "deferred_qualification": [
+    "real transport cancellation/restart with final usage",
+    "strict frozen-source comparison under enforceable budget",
+    "six scenario coverage and repeated samples per route",
+    "full PRD/Issue/Refactor/Research/General provider canaries",
+    "all stages real generic runtime plus request/Web projection convergence"
+  ],
+  "production_config_changed": false,
+  "promotion_applied": false,
+  "push_or_merge": false,
+  "documentation_sha256": {
+    "docs/impl/194-followup-closure.md": "3c8aed0c0736cbe9dd601d2f6e9a45ce96be1acd2d49b5136f45855afc3a2e49",
+    "docs/impl/194-stage-workflow-implementation.md": "c8fd240d322f4b607dea107af31706b23f59fcefa4cb521ac2643f0d158eed94"
+  }
+}

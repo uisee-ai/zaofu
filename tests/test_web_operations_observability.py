@@ -36,6 +36,9 @@ def state_dir(tmp_path: Path) -> Path:
     (state / "kanban.json").write_text("[]", encoding="utf-8")
     (state / "feature_list.json").write_text("[]", encoding="utf-8")
     EventLog(state / "events.jsonl").append(ZfEvent(type="loop.started", actor="zf-cli"))
+    EventLog(state / "events.jsonl").append(ZfEvent(type="owner.visible_message.failed", actor="zf-cli", payload={
+        "target": "feishu", "route": "approval", "reason": "route missing",
+    }))
     return state
 
 
@@ -78,6 +81,8 @@ def test_operations_and_runtime_log_routes_are_read_only(
     assert operations.status_code == 200
     assert operations.json()["provider_telemetry"]["capabilities"][0]["effective"] == "active"
     assert operations.json()["otlp_exporter"]["enabled"] is False
+    assert operations.json()["owner_delivery"]["routes"][0]["reason"] == "route missing"
+    assert operations.json()["owner_delivery"]["routes"][0]["failure_count"] == 1
     assert logs.status_code == 200
     assert logs.json()["rows"][0]["component"] == "test"
     assert not (state_dir / "kanban.json").read_text(encoding="utf-8").strip("[]\n")

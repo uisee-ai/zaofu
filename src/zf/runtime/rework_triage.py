@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.execution_context_failure import execution_context_failure
 
 
 # PREREQ-B (2026-05-18, doc 40 §6 I57): single source of truth via
@@ -108,7 +109,7 @@ def is_plan_level_task_contract_blocker(event: ZfEvent) -> bool:
     payload = event.payload if isinstance(event.payload, dict) else {}
     failure_class = str(payload.get("failure_class") or "").strip().lower()
     blocker_kind = str(payload.get("blocker_kind") or "").strip().lower()
-    if "task_context_stale" in {failure_class, blocker_kind}:
+    if execution_context_failure(payload):
         return False
     semantic_kind = (
         failure_class in {
@@ -294,22 +295,24 @@ def classify_rework_trigger(
         )
 
     explicit_failure_class = str(payload.get("failure_class") or "").strip()
-    if event.type == "dev.blocked" and "task_context_stale" in {
-        explicit_failure_class,
-        str(payload.get("blocker_kind") or "").strip(),
-    }:
+    agent_diagnosis = getattr(
+        getattr(getattr(config, "workflow", None), "orchestration", None),
+        "normal_frontier_owner", "",
+    ) == "wrc"
+    if agent_diagnosis and explicit_failure_class in {"unknown", "ambiguous", "candidate_integration_conflict"}:
+        return _result(
+            "unknown", gate or event.type, "run_manager", "request_diagnosis",
+            "the observed failure does not establish its root cause or a plan change",
+        )
+    context_failure = execution_context_failure(payload)
+    if context_failure:
         return _result(
             "harness_rule_issue",
-            "task_context",
+            context_failure,
             "harness",
             "suspend_for_harness_fix",
-            "task projection/snapshot versions disagree; repair and validate "
-            "execution context before controlled retry, not product replan",
-        )
-    if explicit_failure_class in {"harness_failure", "runtime_result_admission"}:
-        return _result(
-            "harness_rule_issue", gate or "result_admission", "harness",
-            "suspend_for_harness_fix", "producer reports a runtime admission failure",
+            "typed execution blocker requires context repair and validation "
+            "before controlled retry; it does not establish a product plan gap",
         )
     if explicit_failure_class in {
         "candidate_environment_setup_failed",
@@ -432,6 +435,15 @@ def classify_rework_trigger(
             "terminal done claim is blocked by missing evidence",
         )
 
+    if agent_diagnosis and event.type in {"dev.failed", "dev.blocked", "candidate.conflict"}:
+        if explicit_failure_class in {"product_issue", "semantic", "test_failed_real"}:
+            return _result("product_issue", gate or event.type, "dev", "dispatch_rework",
+                           "producer supplied a structured semantic failure")
+        return _result(
+            "unknown", gate or event.type, "run_manager", "request_diagnosis",
+            "free-form failure text is diagnostic input, not a root-cause verdict",
+        )
+
     if (
         _contains_any(text, _HARNESS_MARKERS)
         or _discriminator_harness_profile_issue(event, text, failed_d)
@@ -445,7 +457,7 @@ def classify_rework_trigger(
             "failure text points at harness/gate/rule behavior",
         )
 
-    if _contains_any(text, _ENVIRONMENT_MARKERS):
+    if _contains_any(_failure_diagnostic_text(payload), _ENVIRONMENT_MARKERS):
         return _result(
             "environment_issue",
             gate or "environment",
@@ -672,6 +684,21 @@ def _payload_text(payload: dict[str, Any]) -> str:
         return json.dumps(payload, ensure_ascii=False, sort_keys=True).lower()
     except (TypeError, ValueError):
         return str(payload).lower()
+
+
+def _failure_diagnostic_text(payload: dict[str, Any]) -> str:
+    """Read diagnostics, not commands, paths or successful probe metadata."""
+    fields = ("error", "reason", "message", "summary", "detail", "details", "known_gaps", "findings")
+    parts = [str(payload[key]) for key in fields if payload.get(key)]
+    for key in ("probe_receipts", "acceptance_results", "command_receipts"):
+        rows = payload.get(key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict) or row.get("status") in {"passed", "success", "succeeded"}:
+                continue
+            parts.extend(str(row[field]) for field in fields if row.get(field))
+    return " ".join(parts).lower()
 
 
 def _integration_plan_reason_text(payload: dict[str, Any]) -> str:

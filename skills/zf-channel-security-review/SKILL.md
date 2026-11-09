@@ -28,6 +28,15 @@ Return:
 - minimum mitigation and verification evidence;
 - explicit owner decision when accepting residual risk is required.
 
+For a PRD, bind the review to its exact artifact ref/digest and state which
+clauses and negative cases you checked. Distinguish approved data residency,
+retention, recovery, and test-data de-identification from proposals or TBDs.
+Record missing evidence and the action it blocks. A dataset path or a planned
+test is not proof of data authorization or product verification. Membership,
+an invitation, or another role's sign-off does not establish your independent
+review. Apply platform-specific state boundaries only when the source or
+target system makes them relevant.
+
 Use the active Channel discussion protocol for questions, freeze, and sign-off
 when that Skill is loaded.
 

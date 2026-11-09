@@ -35,6 +35,7 @@ from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.orchestrator_fanout import _writer_task_dependencies_satisfied
+from zf.runtime.workflow_artifact_refs import canonical_workflow_artifact_refs
 from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.fanout import FanoutChild, FanoutContext
 from zf.runtime.candidates import CandidateRebuilder, CandidateResult, CandidateTask
@@ -96,6 +97,39 @@ class _FanoutPayloadProbe(WriterFanoutDataMixin):
             for child in manifest.get("children", [])
             if isinstance(child, dict)
         ]
+
+
+def test_workflow_artifact_refs_follow_current_plan_package() -> None:
+    stale_package = "artifacts/plan-packages/stale.json"
+    current_package = "artifacts/plan-packages/current.json"
+    stale_claim = "artifacts/goal-closure/claim-sets/stale.json"
+    current_claim = "artifacts/goal-closure/claim-sets/current.json"
+    task_map = "artifacts/fanouts/current/planner/artifacts/plan/task_map.json"
+    source_index = "artifacts/fanouts/current/planner/artifacts/plan/source_index.json"
+
+    refs = canonical_workflow_artifact_refs(
+        [
+            "docs/plans/prd.md",
+            stale_package,
+            stale_claim,
+            task_map,
+            source_index,
+        ],
+        scalar_refs={
+            "plan_artifact_package_ref": current_package,
+            "goal_claim_set_ref": current_claim,
+            "task_map_ref": task_map,
+            "source_index_ref": source_index,
+        },
+    )
+
+    assert refs == [
+        "docs/plans/prd.md",
+        task_map,
+        source_index,
+        current_package,
+        current_claim,
+    ]
 
 
 def _replace_task_contract(
@@ -2605,6 +2639,39 @@ def test_replan_reopens_terminal_refactor_tasks_for_writer_fanout(tmp_path: Path
         and event.payload.get("task_id") == "TASK-1"
     }
     assert len(task1_operation_ids) == 2
+
+
+def test_scoped_replan_preserves_unselected_completed_task_evidence(tmp_path: Path):
+    from zf.core.task.schema import TaskEvidence
+
+    state_dir, log, transport, orch = _state(tmp_path, synthesize_canonical=True)
+    orch.config.workflow.flow_metadata = {"result_protocol": {"mode": "blocking"}}
+    _start(orch)
+    store = TaskStore(state_dir / "kanban.json")
+    store.update("TASK-1", status="done")
+    store.update("TASK-2", status="done", evidence=TaskEvidence(commit="accepted-commit", output_summary="verified"))
+    original = store.get("TASK-2")
+    assert original is not None and original.evidence is not None
+    orch._last_worker_state["dev-1"] = "blocked"
+    orch._last_worker_state["dev-2"] = "blocked"
+    next_ref = ".zf/artifacts/F-11111111/task_map-local.json"
+    (state_dir / "artifacts" / "F-11111111" / "task_map-local.json").write_text(json.dumps({"tasks": [
+        {"task_id": "TASK-1", "scope": "changed", "allowed_paths": ["a3.txt"], "verification": "pytest"},
+        {"task_id": "TASK-2", "scope": "unchanged", "allowed_paths": ["b.txt"], "verification": "pytest"},
+    ]}))
+    replan_scope = {
+        "rework_of": "verified-local-replan", "rework_attempt": 1,
+        "rework_source": "verify.failed", "task_ids": ["TASK-1"], "resume_scope": "failed_children_only"}
+    projected = orch._fanout_flow_identity_payload({"trigger_payload": replan_scope, "children": []})
+    assert projected["task_ids"] == ["TASK-1"]
+    trigger = ZfEvent(type="task_map.ready", actor="zf-cli", correlation_id="trace-1", payload={
+        "pdd_id": "F-11111111", "feature_id": "F-11111111", "task_map_ref": next_ref, **projected})
+    orch.run_once(events=[trigger])
+    retained = TaskStore(state_dir / "kanban.json").get("TASK-2")
+    assert retained == original
+    assert [event.task_id for event in log.read_all() if event.type == "task.contract.update"
+            and event.payload.get("reopened_from_terminal") is True] == ["TASK-1"]
+    assert len(transport.sent) == 3
 
 
 def test_operator_replan_may_release_blocked_human_writer(tmp_path: Path):

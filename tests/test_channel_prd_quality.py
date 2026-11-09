@@ -49,6 +49,12 @@ def test_quality_contract_rejects_attestation_state_contradiction():
     assert "source_read_status" in validate_prd_quality_contract(body)
 
 
+def test_quality_contract_accepts_complete_verified_context_pack_state():
+    body = _quality_body()
+    body["classification"]["source_read_status"] = "complete_verified_context_pack"
+    assert validate_prd_quality_contract(body) == ""
+
+
 def test_quality_contract_requires_direct_research_evidence_and_adoption():
     body = _quality_body()
     body["requirement_coverage"][1].pop("adopted_conclusion")

@@ -1,0 +1,32 @@
+/* Product reading stays separate from the optional engineering context. */
+.plan-preview-body.plan-context-collapsed { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.plan-preview-context[hidden] { display: none; }
+.plan-product-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); min-height: 0; flex: 1; }
+.plan-product-nav { padding: 16px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: auto; background: var(--panel); }
+.plan-product-eyebrow { font-size: var(--text-12); color: var(--muted-foreground); margin: 0 0 8px; }
+.plan-product-nav > button { justify-content: flex-start; min-height: 36px; }
+.plan-product-nav [aria-pressed="true"], .plan-module-links [aria-current="true"] { background: var(--muted); font-weight: 600; border-color: var(--line); }
+.plan-product-content, .plan-source-reader { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.plan-product-content .plan-review-scroll { padding: 24px max(20px, calc((100% - 900px) / 2)); }
+.plan-product-content .plan-preview-markdown-pane { padding: 24px max(20px, calc((100% - 900px) / 2)); }
+.plan-product-content input, .plan-product-content select, .plan-product-nav input { min-width: 0; max-width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); background: var(--panel); font: inherit; }
+.plan-product-nav label { display: grid; gap: 6px; margin-top: 16px; font-size: var(--text-12); }
+.plan-module-links { display: flex; flex-direction: column; gap: 4px; }
+.plan-module-links button { background: transparent; border: 1px solid transparent; padding: 8px; color: var(--text); text-align: left; cursor: pointer; font: inherit; font-size: var(--text-12); overflow-wrap: anywhere; }
+.plan-module-links small { display: block; color: var(--muted-foreground); }
+.plan-review-filters { display: flex; flex-wrap: wrap; gap: 12px; }
+.plan-review-filters label { display: grid; gap: 6px; flex: 1; min-width: 140px; }
+.plan-trace-list summary { overflow-wrap: anywhere; }
+.plan-source-reader > label { padding: 12px; }
+.plan-document-outline { max-height: 30vh; overflow: auto; flex-shrink: 0; }
+.plan-document-outline input { margin-left: 8px; }
+.plan-review-card > .delivery-action-button { margin: 4px; }
+.plan-product-content :is(button, input, select, summary, a):focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .plan-product-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .plan-product-nav { flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 8px; max-height: 126px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .plan-product-nav > button { min-height: 32px; font-size: var(--text-12); }
+  .plan-product-nav > label, .plan-module-links, .plan-product-eyebrow { display: none; }
+  .plan-product-content .plan-review-scroll, .plan-product-content .plan-preview-markdown-pane { padding: 14px; }
+  .plan-document-outline { max-height: 24vh; }
+}

@@ -232,6 +232,11 @@ def build_workflow_operation_resume_checkpoints(
 
     event_list = list(events if events is not None else _read_events(Path(state_dir)))
     from zf.runtime.terminal_reader_operation import terminal_reader_event
+    from zf.runtime.undispatched_pipeline_recovery import undispatched_pipeline_request
+
+    from zf.runtime.abstained_verify_recovery import recoverable_abstention
+
+    from zf.runtime.synth_budget_recovery import pending_reader_budget_amendment
 
     operations = reduce_workflow_operations(event_list)
     attempts = _task_attempt_rows(Path(state_dir))
@@ -248,6 +253,8 @@ def build_workflow_operation_resume_checkpoints(
             and str(operation.get("reason") or "")
             == "workflow_resume_cancelled_interrupted_operation"
         )
+        abstained = recoverable_abstention(operation, event_list, Path(state_dir))
+        undispatched = undispatched_pipeline_request(operation, Path(state_dir), event_list)
         budget_amendment = find_task_pipeline_budget_amendment(
             event_list,
             operation,
@@ -255,6 +262,8 @@ def build_workflow_operation_resume_checkpoints(
         if (
             status not in {"requested", "reserved", "running", "suspended"}
             and not legacy_cancelled_restart
+            and not undispatched
+            and not abstained
             and budget_amendment is None
         ):
             continue
@@ -277,20 +286,47 @@ def build_workflow_operation_resume_checkpoints(
                 str(operation.get("last_event_at") or "")
             ),
         )
-        if budget_amendment is not None and live_attempt is not None:
+        if operation.get("operation_type") == "run_manager_reflect":
+            action = "no_action"
+            reason = "Run Manager owns durable reflection reconciliation; no TaskAttempt lease is expected"
+        elif budget_amendment is not None and live_attempt is not None:
             action = "no_action"
             reason = "budget-blocked operation already has a live TaskAttempt"
         elif budget_amendment is not None:
-            action = "redrive_budget_amended_task_pipeline_operation"
+            action = (
+                "redrive_budget_amended_task_pipeline_operation"
+                if task_pipeline_stage
+                else ("redrive_budget_amended_synth_operation"
+                      if operation.get("operation_type") == "fanout_synth"
+                      else "redrive_budget_amended_reader_operation")
+            )
             reason = (
                 "owner amended every exceeded budget dimension after the "
-                "Task Pipeline operation was blocked"
+                "operation was blocked"
             )
+        elif (
+            status == "suspended"
+            and pending_reader_budget_amendment(event_list, operation) is not None
+            and newer_live_attempt is None
+        ):
+            action = ("redrive_interrupted_budget_synth_operation"
+                      if operation.get("operation_type") == "fanout_synth"
+                      else "redrive_interrupted_budget_reader_operation")
+            reason = "budget-amended reader was stopped before its transport restart"
         elif status == "suspended" and newer_live_attempt is not None:
             action = "no_action"
             reason = (
                 "operation has a newer live TaskAttempt after interruption"
             )
+        elif abstained:
+            action = "redrive_abstained_task_verification"
+            reason = "admitted verifier execution failed; one same-target retry is available"
+        elif undispatched and status == "cancelled":
+            action = "redrive_undispatched_task_pipeline_operation"
+            reason = "stale cleanup cancelled a pipeline request before any TaskAttempt existed"
+        elif undispatched:
+            action = "no_action"
+            reason = "pipeline request awaits scheduler dispatch; no TaskAttempt has existed"
         elif legacy_cancelled_restart:
             action = "redrive_cancelled_interrupted_task_pipeline_operation"
             reason = (
@@ -311,6 +347,7 @@ def build_workflow_operation_resume_checkpoints(
                 "graceful_stop",
                 "fast_stop",
                 "task_pipeline_attempt_lease_expired",
+                "completion_audit_retry",
             }
         ):
             action = "redrive_interrupted_task_pipeline_operation"
@@ -320,7 +357,7 @@ def build_workflow_operation_resume_checkpoints(
             )
         elif (
             status == "suspended"
-            and str(operation.get("operation_type") or "") == "fanout_reader_child"
+            and str(operation.get("operation_type") or "") in {"fanout_reader_child", "fanout_synth"}
             and str(operation.get("reason") or "") in {"graceful_stop", "fast_stop"}
         ):
             action = "redrive_interrupted_reader_operation"
@@ -483,11 +520,15 @@ def build_workflow_resume_checkpoints(
     reconciler = WorkflowGraphReconciler()
     inflight_fanouts, unroutable_keys = _filing_guard_indexes(event_list)
     checkpoints: list[WorkflowResumeCheckpoint] = []
-    checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config))
+    checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config, state_dir=state_dir))
+    task_event_index = _index_events_for_tasks(
+        event_list, {task.id for task in task_list if isinstance(task.id, str) and task.id}
+    )
     for task in task_list:
         if task.status in {"done", "cancelled"}:
             continue
-        task_events = _events_for_task(event_list, task.id)
+        task_events = (list(task_event_index.get(task.id, [])) if isinstance(task.id, str)
+                       else _events_for_task(event_list, task.id))
         ref_checkpoint = _task_ref_repair_checkpoint(task, task_events)
         if ref_checkpoint is not None:
             checkpoints.append(ref_checkpoint)
@@ -2408,6 +2449,8 @@ def _reader_stage_replan_checkpoints(
     events: list[ZfEvent],
     tasks: list[Task],
     config: object,
+    *,
+    state_dir: Path,
 ) -> list[WorkflowResumeCheckpoint]:
     try:
         from zf.runtime.stage_failure_replan import (
@@ -2427,7 +2470,7 @@ def _reader_stage_replan_checkpoints(
     for event in events:
         if event.type not in stage_by_failure:
             continue
-        replan_event, note = plan_reader_stage_replan(config, events, event)
+        replan_event, note = plan_reader_stage_replan(config, events, event, state_dir=state_dir)
         if replan_event is None:
             continue
         stage, _selection = reader_stage_for_failure(config, events, event)
@@ -2501,6 +2544,33 @@ def _stage_from_event(event_type: str) -> str:
     if event_type.startswith("judge."):
         return "judge"
     return event_type.rsplit(".", 1)[0]
+
+
+def _index_events_for_tasks(
+    events: list[ZfEvent], task_ids: set[str],
+) -> dict[str, list[ZfEvent]]:
+    """Index this snapshot using the same exact task matching as recovery."""
+    index: dict[str, list[ZfEvent]] = {}
+    if not task_ids:
+        return index
+    for event in events:
+        if event.task_id:
+            if isinstance(event.task_id, str) and event.task_id in task_ids:
+                index.setdefault(event.task_id, []).append(event)
+            continue
+        payload = event.payload
+        if not isinstance(payload, dict):
+            continue
+        candidates = {
+            str(payload.get(key) or "")
+            for key in ("task_id", "source_task_id", "target_task_id", "active_task_id")
+        }
+        nested = payload.get("task")
+        if isinstance(nested, dict):
+            candidates.add(str(nested.get("id") or ""))
+        for task_id in candidates & task_ids:
+            index.setdefault(task_id, []).append(event)
+    return index
 
 
 def _events_for_task(events: list[ZfEvent], task_id: str) -> list[ZfEvent]:

@@ -32,3 +32,18 @@ assert.equal(resolvePlanPreviewItem(preview, [unrelated, ownerItem]), ownerItem)
 assert.equal(resolvePlanPreviewItem(null, [ownerItem], ownerItem), null);
 const refreshed = { ...ownerItem, status: "resolved" };
 assert.equal(resolvePlanPreviewItem(preview, [refreshed], ownerItem), refreshed);
+
+// Production-shaped plural bindings and author aliases remain readable.
+const production = buildPlanReview({
+  task_map: { tasks: [task], owner_decision_items: [{ decision_id: "Q1", affected_task_ids: ["T1"] }] },
+  source_inventory: { pages: [{ id: "P1", task_ids: ["T1", "T2"] }], forms: [{ id: "F1", task_ids: ["T1"] }] },
+  source_index: { traceability: [{ source_id: "SRC1", source_ref: "spec.md#stock" }] },
+  test_matrix: { formal_acceptance_scenarios: [{ id: "E01", task_id: "T1", acceptance_id: "AC1", trigger: "重试", expected: "不重复" }] },
+  execution_spec: { tasks: [{ task_id: "T1", body: { human_review: { scenarios: [{ name: "只扣一次", given: "库存10", when: "重试", then: "库存8", acceptance_ids: ["AC1"], command_ids: ["VC1"], source_ids: ["SRC1"] }] } } }] },
+});
+assert.equal(production.modules[0].pages.length, 1);
+assert.equal(production.modules[0].forms.length, 1);
+assert.equal(production.modules[0].scenarios[0].title, "只扣一次");
+assert.equal(production.modules[0].scenarios[0].sourceRefs[0], "spec.md#stock");
+assert.equal(production.modules[0].scenarios[0].issues.length, 0);
+assert.equal(production.modules[0].formalScenarios[0].id, "E01");

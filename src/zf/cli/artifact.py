@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -86,19 +85,61 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     list_cmd.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     list_cmd.set_defaults(func=_run_attempt_list)
 
+    index_cmd = sub.add_parser("index", help="Browse authorized attempt input locators without consuming bodies")
+    index_cmd.add_argument("--attempt", required=True)
+    index_cmd.add_argument("--query", default="", help="Literal filter over source, artifact, path and ref")
+    index_cmd.add_argument("--relation-id", default="", help="Exact declared Task, REQ, AC or dependency id")
+    index_cmd.add_argument("--navigate", action="store_true", help="Include declared relations and Markdown section locators")
+    index_cmd.add_argument("--cursor", default=None)
+    index_cmd.add_argument("--limit", type=int, default=50)
+    index_cmd.add_argument("--state-dir", default=None)
+    from zf.cli.artifact_input_index import run_input_index
+
+    index_cmd.set_defaults(func=run_input_index)
+    recover_cmd = sub.add_parser("recover", help="Reconstruct authorized current inputs without granting execution authority")
+    recover_cmd.add_argument("--attempt", required=True)
+    recover_cmd.add_argument("--cursor", default=None)
+    recover_cmd.add_argument("--state-dir", default=None)
+    from zf.cli.artifact_input_recovery import run_input_recovery
+
+    recover_cmd.set_defaults(func=run_input_recovery)
+    costs = sub.add_parser("costs", help="Inspect attempt input costs without inferring provider savings")
+    costs.add_argument("--attempt", required=True)
+    costs.add_argument("--state-dir", default=None)
+    costs.add_argument("--compare", help="Compare a compatible prior costs JSON report")
+    from zf.cli.artifact_input_costs import run_input_costs
+
+    costs.set_defaults(func=run_input_costs)
+    from zf.cli.work_record import register as register_work_record
+    register_work_record(sub)
+
     read_cmd = sub.add_parser(
         "read",
         help="Read one attempt input and append read evidence",
     )
     read_cmd.add_argument("--attempt", required=True, help="Attempt or dispatch id")
+    read_cmd.add_argument("--reason", choices=["initial", "recovery", "retry", "unspecified"], default="unspecified")
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
-    read_cmd.add_argument("--required", action="store_true", help="Read all kernel-required slices in one invocation")
+    read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded, deduplicated pages")
+    read_cmd.add_argument("--page-bytes", type=int, default=8192, help="Required output UTF-8 budget including metadata; 1024..8192 bytes")
+    read_cmd.add_argument("--cursor", default=None, help="Continue a bound --required page")
+    read_cmd.add_argument("--resume", action="store_true", help="Resume observed pages in the current provider session")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
     read_cmd.add_argument("--max-chars", type=int, default=0)
+    read_cmd.add_argument("--page-start", type=int, default=None, help="Start character offset for a bounded complete-read page")
+    read_cmd.add_argument("--page-size", type=int, default=8192, help="Characters per page, 1..8192")
     read_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
     read_cmd.set_defaults(func=_run_attempt_read)
+
+    checkpoint = sub.add_parser("checkpoint", help="Create an immutable dynamic continuation checkpoint")
+    checkpoint.add_argument("--run", required=True)
+    checkpoint.add_argument("--parent-operation", required=True)
+    checkpoint.add_argument("--task", required=True)
+    checkpoint.add_argument("--generation", required=True)
+    checkpoint.add_argument("--state-dir", default=None)
+    checkpoint.set_defaults(func=_run_dynamic_checkpoint)
 
     catalog = sub.add_parser(
         "catalog",
@@ -147,7 +188,25 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _run_help(args: argparse.Namespace) -> int:
-    print("usage: zf artifact {manifest create|list|read|catalog} ...")
+    print("usage: zf artifact {manifest create|list|read|checkpoint|catalog} ...")
+    return 0
+
+
+def _run_dynamic_checkpoint(args: argparse.Namespace) -> int:
+    from zf.runtime.dynamic_checkpoint import create_checkpoint
+
+    try:
+        context = resolve_project_context(explicit_state_dir=args.state_dir)
+        events = event_log_from_project(context.state_dir, config=context.config).read_all()
+        descriptor = create_checkpoint(
+            context.state_dir, events, workflow_run_id=args.run,
+            parent_operation_id=args.parent_operation, task_id=args.task,
+            task_map_generation=args.generation,
+        )
+    except (ConfigError, ValueError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(descriptor, ensure_ascii=False, sort_keys=True))
     return 0
 
 
@@ -174,11 +233,17 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 
 
 def _run_attempt_read(args: argparse.Namespace) -> int:
+    from time import perf_counter
+    started = perf_counter()
     try:
         required = getattr(args, "required", False)
+        if getattr(args, "resume", False) and (not required or getattr(args, "cursor", None)):
+            raise ValueError("--resume requires --required and cannot be combined with --cursor")
         if required:
-            if args.source or args.artifact or args.json_path != "$" or args.max_items or args.max_chars:
+            if args.source or args.artifact or args.json_path != "$" or args.max_items or args.max_chars or getattr(args, "page_start", None) is not None:
                 raise ValueError("--required cannot be combined with source, artifact or slice overrides")
+        elif getattr(args, "cursor", ""):
+            raise ValueError("--cursor requires --required")
         elif not args.source or not args.artifact:
             raise ValueError("artifact read requires --source and --artifact, or --required")
         context = resolve_project_context(
@@ -190,33 +255,36 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         )
         from zf.runtime.artifact_read_ledger import read_attempt_artifact
 
+        event_log = event_log_from_project(context.state_dir, config=context.config)
         identity = authorize_artifact_read_from_environment(
             context.state_dir,
             manifest=manifest,
-            event_log=event_log_from_project(
-                context.state_dir,
-                config=context.config,
-            ),
+            event_log=event_log,
+            # Exact and bundled reads use the same operation-identity reducer.
+            # The conservative view retains all operation facts and signing checks.
+            use_artifact_context=True,
         )
         if required:
             from zf.runtime.artifact_read_requirements import required_reads_for_attempt
+            from zf.runtime.artifact_context_events import artifact_context_events
 
             rows = required_reads_for_attempt(
-                event_log_from_project(context.state_dir, config=context.config).read_all(),
+                artifact_context_events(event_log),
                 args.attempt,
                 state_dir=context.state_dir, operation_id=identity["operation_id"],
             )
-            for row in rows:
-                result = read_attempt_artifact(
-                    context.state_dir, manifest=manifest,
-                    source_id=row["source_id"], artifact_id=row["artifact_id"],
-                    json_path=row.get("json_path", "$"),
-                    actor=identity["actor"], role=identity["role"],
-                    provider=identity["provider"], purpose=identity["purpose"],
-                )
-                print(json.dumps({"source_id": row["source_id"], "artifact_id": row["artifact_id"],
-                                  "json_path": row.get("json_path", "$"), "content": result["content"]},
-                                 ensure_ascii=False))
+            from zf.cli.artifact_required_read import prepare_required_read
+            from zf.runtime.artifact_output_delivery import emit_artifact_output
+
+            output, receipts = prepare_required_read(
+                context.state_dir, manifest=manifest, rows=rows, identity=identity,
+                cursor=getattr(args, "cursor", None) or None, page_bytes=args.page_bytes,
+                event_log=event_log,
+                resume=getattr(args, "resume", False),
+            )
+            for row in receipts:
+                row.update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
+            emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
             return 0
         result = read_attempt_artifact(
             context.state_dir,
@@ -226,15 +294,35 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             json_path=args.json_path,
             max_items=max(0, int(args.max_items or 0)),
             max_chars=max(0, int(args.max_chars or 0)),
+            page_start=getattr(args, "page_start", None),
+            page_size=getattr(args, "page_size", 8192),
             actor=identity["actor"],
             role=identity["role"],
             provider=identity["provider"],
             purpose=identity["purpose"],
+            record=False,
         )
-    except (ConfigError, ValueError) as exc:
+        if getattr(args, "page_start", None) is None and len(result["content"]) > 8192:
+            raise ValueError("artifact output exceeds 8192 characters; use --page-start and --page-size")
+
+    except (ConfigError, ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    print(result["content"])
+    if getattr(args, "page_start", None) is not None:
+        row = result["read"]
+        output = json.dumps({"content": result["content"], "page_start": row["page_start"],
+                          "page_end": row["page_end"], "page_total": row["page_total"],
+                          "next_page_start": row["page_end"] if row["page_end"] < row["page_total"] else None},
+                         ensure_ascii=False)
+    else:
+        output = result["content"]
+    from zf.runtime.artifact_output_delivery import emit_artifact_output
+    try:
+        result["read"].update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
+        emit_artifact_output(context.state_dir, output, [result["read"]], sys.stdout)
+    except OSError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -325,25 +413,9 @@ def _run_catalog_lineage(args: argparse.Namespace) -> int:
 
 
 def _load_attempt_source_manifest(state_dir: Path, attempt_id: str) -> dict[str, Any]:
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", str(attempt_id)).strip("-._") or "attempt"
-    root = state_dir / "artifacts" / "attempts" / safe / "source-manifests"
-    manifests: list[dict[str, Any]] = []
-    for path in sorted(root.glob("*.json")):
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(value, dict) and str(value.get("attempt_id") or "") == str(attempt_id):
-            manifests.append(value)
-    if not manifests:
-        raise ValueError(f"attempt source manifest not found: {attempt_id}")
-    canonical = {
-        json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        for item in manifests
-    }
-    if len(canonical) != 1:
-        raise ValueError(f"attempt has divergent source manifests: {attempt_id}")
-    return manifests[0]
+    from zf.runtime.artifact_input_index import load_attempt_source_manifest
+
+    return load_attempt_source_manifest(state_dir, attempt_id)
 
 
 def _run_manifest_create(args: argparse.Namespace) -> int:

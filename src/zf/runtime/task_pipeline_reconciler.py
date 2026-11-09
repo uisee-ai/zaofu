@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from zf.core.state.atomic_io import atomic_write_text
+from zf.runtime.task_pipeline_failure_accounting import is_semantic_failure, semantic_failures
 
 
 TASK_PIPELINE_SHADOW_SCHEMA = "task-pipeline-shadow.v1"
@@ -31,6 +32,7 @@ class TaskPipelineReconciler:
         impl_rework_requests: Mapping[str, Mapping[str, Any]] | None = None,
         preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
         oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+        inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         normalized_tasks = sorted(
             (_task_row(task) for task in tasks),
@@ -99,6 +101,7 @@ class TaskPipelineReconciler:
                     task["id"] in external_gate_satisfied_ids
                 ),
                 impl_rework_request=normalized_rework_requests.get(task["id"]),
+                inherited_failures=(inherited_failures or {}).get(task["id"], []),
             )
             for task in normalized_tasks
             if task["status"] not in {"done", "cancelled"}
@@ -199,6 +202,10 @@ class TaskPipelineReconciler:
             candidates = [
                 view for view in task_views if view["stage"] in ready_stages
             ]
+            # Soft order only among already-ready tasks; preserve bounded rework fairness.
+            candidates.sort(key=lambda view: (oa_delegations or {}).get(
+                view["task_id"], {}
+            ).get(stage_name, {}).get("dispatch_rank", float("inf")))
             if stage_name == "impl":
                 candidates = _bounded_rework_order(candidates)
             fresh_impl_dispatched = 0
@@ -251,6 +258,7 @@ class TaskPipelineReconciler:
                         "work_unit_id": str(delegation["work_unit_id"]),
                         "preferred_roles": preferred,
                         "selected_role": role,
+                        "dispatch_rank": delegation.get("dispatch_rank"),
                         "reason": ("oa_preferred" if role in preferred
                                    else "oa_preferred_unavailable_or_incompatible"),
                     }
@@ -377,8 +385,11 @@ def refresh_task_pipeline_projection(
     )
 
     contexts = task_pipeline_generation_contexts(events)
+    from zf.runtime.recovery_association import inherited_failure_operations
+
     projection = TaskPipelineReconciler().reconcile(
         policy=selected_policy,
+        inherited_failures=inherited_failure_operations(Path(orchestrator.state_dir), events, contexts),
         tasks=tasks,
         operations=reduce_workflow_operations(events).values(),
         attempts=task_attempt_store(orchestrator).current_rows(),
@@ -533,10 +544,26 @@ def task_pipeline_policy_partitions(
                 f"{admitted_profile_id!r} does not match configured {profile_id!r}"
             )
         if admitted_profile_digest and admitted_profile_digest != profile_digest:
-            raise ValueError(
-                f"Task {normalized_task_id} admitted profile_digest does not "
-                "match the configured Task Pipeline policy"
+            from zf.runtime.task_pipeline_legacy_binding import (
+                bind_disabled_risk_limit_opt_out,
+                bind_legacy_scoped_pool,
             )
+
+            bound = bind_legacy_scoped_pool(
+                config, policy, flow_kind=flow_kind,
+                admitted_digest=admitted_profile_digest,
+            )
+            if bound is None:
+                bound = bind_disabled_risk_limit_opt_out(
+                    policy, admitted_digest=admitted_profile_digest,
+                )
+            if bound is None:
+                raise ValueError(
+                    f"Task {normalized_task_id} admitted profile_digest does not "
+                    "match the configured Task Pipeline policy"
+                )
+            policy = bound
+            profile_digest = admitted_profile_digest
         key = (flow_kind, profile_id, profile_digest)
         groups.setdefault(key, []).append(normalized_task_id)
         policies[key] = policy
@@ -609,7 +636,11 @@ def _task_view(
     policy: Mapping[str, Any],
     external_gate_satisfied: bool = False,
     impl_rework_request: Mapping[str, Any] | None = None,
+    inherited_failures: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    configured_rework = int(policy.get("max_rework_attempts") or 0)
+    failures = semantic_failures([*operations, *(inherited_failures or [])])
+    policy = {**policy, "semantic_failure_count": len(failures)}
     blockers = [
         dependency
         for dependency in task.get("blocked_by", [])
@@ -661,29 +692,40 @@ def _task_view(
                 impl_rework_request=impl_rework_request,
             )
         verify = current_by_stage.get("verify")
+        impl = current_by_stage.get("impl")
+        exhausted = impl if impl is not None and not _semantic_passed(impl) else verify
         max_rework = int(policy.get("max_rework_attempts") or 0)
+        if (stage == "blocked" and verify is not None
+                and str(verify.get("status") or "") == "settled"
+                and _verifier_abstained(verify)):
+            blockers.append("verify_execution_failed")
         if (
             stage == "blocked"
-            and verify is not None
-            and str(verify.get("status") or "") == "settled"
-            and not _semantic_passed(verify)
-            and int(verify.get("operation_generation") or 1) > max_rework
+            and exhausted is not None
+            and str(exhausted.get("status") or "") == "settled"
+            and not _semantic_passed(exhausted)
+            and not _verifier_abstained(exhausted)
+            and is_semantic_failure(exhausted)
+            and len(failures) > max_rework
         ):
             blockers.append("semantic_rework_exhausted")
-            control_ref = verify.get("admitted_control_result_ref")
+            control_ref = exhausted.get("admitted_control_result_ref")
             semantic_blocker = {
-                "stage": "verify",
-                "operation_id": str(verify.get("operation_id") or ""),
+                "stage": _operation_stage(exhausted),
+                "operation_id": str(exhausted.get("operation_id") or ""),
                 "operation_generation": int(
-                    verify.get("operation_generation") or 1
+                    exhausted.get("operation_generation") or 1
                 ),
                 "semantic_verdict": str(
-                    verify.get("semantic_verdict") or ""
+                    exhausted.get("semantic_verdict") or ""
                 ),
-                "max_rework_attempts": max_rework,
+                "max_rework_attempts": configured_rework,
+                "failure_count": len(failures),
+                "failure_event_ids": [str(row.get("call_result_admitted_event_id") or row.get("last_event_id") or "") for row in failures
+                                      if row.get("call_result_admitted_event_id") or row.get("last_event_id")],
                 "source_event_id": str(
-                    verify.get("call_result_admitted_event_id")
-                    or verify.get("last_event_id")
+                    exhausted.get("call_result_admitted_event_id")
+                    or exhausted.get("last_event_id")
                     or ""
                 ),
                 "control_result_ref": (
@@ -705,6 +747,7 @@ def _task_view(
             and verify is not None
             and str(verify.get("status") or "") == "settled"
             and not _semantic_passed(verify)
+            and not _verifier_abstained(verify)
         ):
             blockers.append("verify_only_verification_rejected")
         if stage == "admission_blocked":
@@ -720,7 +763,8 @@ def _task_view(
         "blockers": blockers,
         "required_capabilities": list(task.get("required_capabilities") or []),
         "next_operation_generation": next_generation,
-        "rework_count": rework_count,
+        "rework_count": min(rework_count, len(failures)),
+        "semantic_failure_count": len(failures),
         "semantic_blocker": semantic_blocker,
         "impl_rework_request": (
             dict(impl_rework_request)
@@ -743,6 +787,9 @@ def _derive_stage(
         return "impl_ready", 1, 0
     impl_generation = int(impl.get("operation_generation") or 1)
     impl_status = str(impl.get("status") or "")
+    if (impl_status == "superseded"
+            and impl.get("reason") == "missing_flow_kind_before_dispatch"):
+        return "impl_ready", impl_generation + 1, max(0, impl_generation - 1)
     if impl_status == "requested":
         return "impl_ready", impl_generation, max(0, impl_generation - 1)
     if impl_status in _ACTIVE_OPERATION_STATUSES:
@@ -767,7 +814,14 @@ def _derive_stage(
     if requested_generation == impl_generation and (
         operator_retry or (impl_status == "settled" and _semantic_passed(impl))
     ):
-        if impl_generation <= max_rework:
+        bounded_grant = (
+            (impl_rework_request or {}).get("fault") in {
+                "task_pipeline_operator_retry", "task_pipeline_integration_rework",
+            }
+            and (impl_rework_request or {}).get("authorized_next_operation_generation") == impl_generation + 1
+            and bool((impl_rework_request or {}).get("approval_ref"))
+        )
+        if int(policy.get("semantic_failure_count") or 0) <= max_rework or bounded_grant:
             return "impl_rework_ready", impl_generation + 1, impl_generation
         return "blocked", impl_generation, impl_generation
     if impl_status != "settled" or not _semantic_passed(impl):
@@ -781,6 +835,13 @@ def _derive_stage(
         return "verify_ready", impl_generation, max(0, impl_generation - 1)
     verify_generation = int(verify.get("operation_generation") or 1)
     verify_status = str(verify.get("status") or "")
+    from zf.runtime.task_pipeline_verify_retry import IMPL_REFRESH_REASON_PREFIX
+
+    if (verify_status == "superseded"
+            and str(verify.get("reason") or "").startswith(IMPL_REFRESH_REASON_PREFIX)):
+        return "impl_rework_ready", verify_generation + 1, 0
+    if _verify_execution_retry(verify):
+        return "verify_ready", verify_generation + 1, 0
     if verify_status == "requested":
         return "verify_ready", verify_generation, max(0, verify_generation - 1)
     if verify_status in _ACTIVE_OPERATION_STATUSES:
@@ -794,8 +855,13 @@ def _derive_stage(
         return "blocked", verify_generation, max(0, verify_generation - 1)
     if verify_status != "settled":
         return "verify_ready", verify_generation, max(0, verify_generation - 1)
+    if _verifier_abstained(verify):
+        # No product verdict exists: recovery must repair execution conditions.
+        return "blocked", verify_generation, max(0, verify_generation - 1)
     if not _semantic_passed(verify):
-        if verify_generation <= max_rework:
+        if not is_semantic_failure(verify):
+            return "blocked", verify_generation, 0
+        if int(policy.get("semantic_failure_count") or 0) <= max_rework:
             return (
                 "impl_rework_ready",
                 verify_generation + 1,
@@ -812,6 +878,13 @@ def _derive_stage(
     )
 
 
+def _verify_execution_retry(verify: Mapping[str, Any]) -> bool:
+    from zf.runtime.task_pipeline_verify_retry import REASON_PREFIX
+
+    return (verify.get("status") == "superseded"
+            and str(verify.get("reason") or "").startswith(REASON_PREFIX))
+
+
 def _derive_verify_only_stage(
     current: Mapping[str, Mapping[str, Any]],
     *,
@@ -823,6 +896,8 @@ def _derive_verify_only_stage(
         return "verify_ready", 1, 0
     generation = int(verify.get("operation_generation") or 1)
     status = str(verify.get("status") or "")
+    if _verify_execution_retry(verify):
+        return "verify_ready", generation + 1, 0
     if status == "requested":
         return "verify_ready", generation, max(0, generation - 1)
     if status in _ACTIVE_OPERATION_STATUSES:
@@ -922,7 +997,7 @@ def _derive_post_verification_stage(
             review.get("semantic_verdict") or ""
         ).strip().lower()
         if review_verdict == "revise":
-            if allow_impl_rework and verify_generation <= max_rework:
+            if allow_impl_rework and int(policy.get("semantic_failure_count") or 0) <= max_rework:
                 return (
                     "impl_rework_ready",
                     verify_generation + 1,
@@ -971,6 +1046,12 @@ def _derive_post_verification_stage(
                     max(0, verify_generation - 1),
                 )
             if status == "superseded":
+                from zf.runtime.task_pipeline_integration_retry import IMPL_REWORK_REASON_PREFIX
+
+                if str(integration.get("reason") or "").startswith(IMPL_REWORK_REASON_PREFIX):
+                    if allow_impl_rework:
+                        return "impl_rework_ready", integration_generation + 1, 0
+                    return "blocked", integration_generation, 0
                 return (
                     "integration_ready",
                     max(verify_generation, integration_generation + 1),
@@ -983,6 +1064,10 @@ def _derive_post_verification_stage(
                     max(0, verify_generation - 1),
                 )
     return "integration_ready", verify_generation, max(0, verify_generation - 1)
+
+
+def _verifier_abstained(operation: Mapping[str, Any]) -> bool:
+    return str(operation.get("semantic_verdict") or "").strip().lower() == "abstained"
 
 
 def _semantic_passed(operation: Mapping[str, Any]) -> bool:
@@ -1065,7 +1150,15 @@ def _select_role(
     preferred_role: str = "",
     delegation: Mapping[str, Any] | None = None,
 ) -> str:
-    roles = list(dict.fromkeys(str(item) for item in pool.get("role_instances", []) if str(item)))
+    # Preserve the declaration order from the effective YAML policy.  A flow
+    # may provide explicit, namespaced role instances (for example
+    # ``prd-dev-lane-0``) while the compiler also appends legacy defaults
+    # (``dev-lane-0``).  Sorting the merged set selects the legacy alias first
+    # and leaves the real runtime role absent, producing a misleading
+    # ``waiting_for_capability`` stall.
+    roles = list(dict.fromkeys(
+        str(item) for item in pool.get("role_instances", []) if str(item)
+    ))
     profiles = {
         str(item.get("role") or ""): set(
             str(value) for value in item.get("capabilities", []) if str(value)

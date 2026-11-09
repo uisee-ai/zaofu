@@ -323,6 +323,47 @@ def test_plan_ready_channel_prd_can_create_task_without_implementation_start(
     assert evidence["declared_implementation_start"] is False
 
 
+def test_owner_confirmation_rejects_unassessed_channel_prd(
+    tmp_path: Path,
+) -> None:
+    state_dir, writer, service, authority = _ready_prd_fixture(
+        tmp_path,
+        implementation_start=False,
+        readiness_verdict="unassessed",
+    )
+    reached_before = sum(
+        event.type == "channel.consensus.reached"
+        for event in writer.event_log.read_all()
+        if event.payload.get("channel_id") == "ch-prd-task"
+    )
+
+    result = _execute(
+        service,
+        writer,
+        "channel-consensus-confirm",
+        {
+            "channel_id": "ch-prd-task",
+            "thread_id": "main",
+            "artifact_ref": authority["source_ref"],
+            "artifact_digest": authority["source_digest"],
+            "prd_revision": 1,
+        },
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "readiness_unassessed"
+    assert not any(
+        event.type == "channel.consensus.signed"
+        for event in writer.event_log.read_all()
+        if event.payload.get("channel_id") == "ch-prd-task"
+    )
+    assert sum(
+        event.type == "channel.consensus.reached"
+        for event in writer.event_log.read_all()
+        if event.payload.get("channel_id") == "ch-prd-task"
+    ) == reached_before
+
+
 def test_ready_channel_prd_compiles_strict_workflow_parent_contract(
     tmp_path: Path,
 ) -> None:

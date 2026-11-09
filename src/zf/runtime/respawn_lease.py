@@ -44,11 +44,20 @@ def respawn_instance_with_lock(
     recovery_reason: str,
     inject_idle_prompt: bool,
     force_fresh_session: bool = False,
+    resume_failed_synth: str = "",
 ) -> WorkflowRuntimeDecision:
     active_task = runtime._active_task_for_instance(role.instance_id)
     lock_dir = runtime.state_dir / "locks" / "respawns"
     try:
         with SessionLock(lock_dir, role.instance_id):
+            if resume_failed_synth:
+                from zf.runtime.synth_restart_checkpoint import reopen_synth_restart_checkpoint
+                try:
+                    reopen_synth_restart_checkpoint(runtime, role, resume_failed_synth)
+                except (ValueError, OSError) as exc:
+                    return WorkflowRuntimeDecision(
+                        action="resume_rejected", role=role.instance_id, reason=str(exc),
+                    )
             return runtime._respawn_instance_with_lease(
                 role,
                 recovery_reason=recovery_reason,

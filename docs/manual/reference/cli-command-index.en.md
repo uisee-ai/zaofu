@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **302** addressable command paths.
+The parser currently exposes **69** top-level families and **317** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -34,10 +34,17 @@ Artifact manifest helpers
 | `zf artifact catalog lineage` | Show subject-to-artifact lineage |
 | `zf artifact catalog list` | List artifact objects |
 | `zf artifact catalog show` | Show one artifact identity |
+| `zf artifact checkpoint` | Create an immutable dynamic continuation checkpoint |
+| `zf artifact costs` | Inspect attempt input costs without inferring provider savings |
+| `zf artifact index` | Browse authorized attempt input locators without consuming bodies |
 | `zf artifact list` | List immutable inputs available to one provider attempt |
 | `zf artifact manifest` | Artifact manifest commands |
 | `zf artifact manifest create` | Create a deterministic artifact manifest JSON |
 | `zf artifact read` | Read one attempt input and append read evidence |
+| `zf artifact recover` | Reconstruct authorized current inputs without granting execution authority |
+| `zf artifact work-record` | Publish or read current worker progress without completing a task |
+| `zf artifact work-record publish` | No parser summary. |
+| `zf artifact work-record show` | No parser summary. |
 
 ## `zf attach`
 
@@ -473,6 +480,7 @@ Review, approve, or reject a plan
 | `zf plan` | Review, approve, or reject a plan |
 | `zf plan approve` | Approve a plan and unlock writer fanout |
 | `zf plan inspect-execution` | Inspect plan execution facts without approval or dispatch |
+| `zf plan inspect-inputs` | Inspect declared task input coverage without approving semantic completeness |
 | `zf plan reject` | Reject a plan and request synthesis replan |
 | `zf plan review` | List plans awaiting review with digest and checklist |
 
@@ -511,6 +519,7 @@ Project-scoped review and insight commands
 | Command | Parser description |
 |---|---|
 | `zf project` | Project-scoped review and insight commands |
+| `zf project git-baseline` | Preview or apply an exact initial Git file manifest |
 | `zf project init` | Initialize a project container for issue/prd/refactor workflow intake |
 | `zf project review-spine` | Review project design/delivery/runtime spine |
 | `zf project review-spine propose` | Create a pending proposal from a spine review corrective action |
@@ -533,9 +542,14 @@ Recover deterministic runtime state from append-only events
 | Command | Parser description |
 |---|---|
 | `zf recover` | Recover deterministic runtime state from append-only events |
+| `zf recover assistance` | Attempt-bound read-only guidance |
+| `zf recover associate` | Admit evidence-bound recovery case relationships |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
-| `zf recover task-impl` | Preview or request retry after a blocked Impl repair |
+| `zf recover host-check` | Read-only host restart eligibility (exit 1 means do not restart) |
+| `zf recover oa-review` | Re-review a proven OA role-binding defect |
+| `zf recover task-impl` | Preview or request Impl retry after blocked Impl or rejected Verify |
 | `zf recover task-integration` | Retry integration after a reviewed repair |
+| `zf recover task-verify` | Retry verify after an execution repair |
 | `zf recover workflow` | Inspect or resume pending workflow stage handoffs |
 
 ## `zf refs`
@@ -706,6 +720,7 @@ Inspect event traces
 |---|---|
 | `zf trace` | Inspect event traces |
 | `zf trace delivery` | Feature-level idea->ship delivery trace |
+| `zf trace dispatch` | Current Task Pipeline scheduling summary |
 | `zf trace drift` | Planned-vs-actual drift report |
 | `zf trace execution-graph` | Planned task-map joined with actual runtime |
 | `zf trace export` | Export Delivery telemetry or a Goal completion receipt |

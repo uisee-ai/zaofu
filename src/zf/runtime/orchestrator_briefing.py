@@ -32,6 +32,7 @@ from zf.core.metrics.collector import MetricsCollector, MetricsSnapshot
 from zf.core.task.store import TaskStore
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.fast_path import render_fast_path_policy
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 def build_orchestrator_briefing(
@@ -87,7 +88,7 @@ def build_orchestrator_briefing(
     sections.append("")
 
     sections.append("## Memory")
-    sections.append(_render_memory(state_dir))
+    sections.append(_render_memory(state_dir, config=config))
     sections.append("")
 
     retained_learning = _render_retained_learning(
@@ -351,7 +352,8 @@ def _implementation_role_names(config: ZfConfig) -> list[str]:
     """
     roles = [
         role for role in config.roles
-        if role.name not in {"orchestrator", "arch"}
+        if not is_configured_orchestrator_role(config, role)
+        and role.name != "arch"
     ]
     staged = [
         role.name for role in roles
@@ -493,10 +495,10 @@ def _initial_intake_role(config: ZfConfig) -> str:
             if role.name == preferred and "task.assigned" in role.triggers:
                 return role.name
     for role in config.roles:
-        if role.name != "orchestrator" and "task.assigned" in role.triggers:
+        if not is_configured_orchestrator_role(config, role) and "task.assigned" in role.triggers:
             return role.name
     for role in config.roles:
-        if role.name != "orchestrator":
+        if not is_configured_orchestrator_role(config, role):
             return role.name
     return "<role-name>"
 
@@ -572,6 +574,9 @@ def _render_rework_triage_contract(event: ZfEvent) -> str:
         return ""
     payload = event.payload if isinstance(event.payload, dict) else {}
     request_id = str(payload.get("request_id") or "")
+    if payload.get("request_kind") == "worker_guidance":
+        from zf.runtime.worker_assistance import assistance_briefing
+        return assistance_briefing(payload, actor=str(payload.get("owner_instance") or "orchestrator"))
     task_id = str(event.task_id or payload.get("task_id") or "")
     recovery_scope = str(payload.get("recovery_scope") or "task")
     pdd_id = str(payload.get("pdd_id") or "")
@@ -658,7 +663,7 @@ def _render_worker_roster(config: ZfConfig) -> str:
     # Group instances by role.name, keeping the per-instance backend.
     by_role: dict[str, list[tuple[str, str]]] = {}
     for role in config.roles:
-        if role.name == "orchestrator":
+        if is_configured_orchestrator_role(config, role):
             continue
         by_role.setdefault(role.name, []).append(
             (role.instance_id, role.backend)
@@ -796,7 +801,7 @@ def _render_events(state_dir: Path, limit: int) -> str:
     )
 
 
-def _render_memory(state_dir: Path) -> str:
+def _render_memory(state_dir: Path, *, config: ZfConfig) -> str:
     memory_dir = state_dir / "memory"
     if not memory_dir.exists():
         return "_(no memory)_"
@@ -806,7 +811,20 @@ def _render_memory(state_dir: Path) -> str:
     if shared:
         parts.append("**Shared:**")
         parts.extend(f"- [{e.type}] {e.content}" for e in shared)
-    role_mem = store.get("orchestrator")
+    oa_role = next(
+        (
+            role
+            for role in config.roles
+            if is_configured_orchestrator_role(config, role)
+        ),
+        None,
+    )
+    oa_memory_key = str(
+        getattr(oa_role, "instance_id", "")
+        or getattr(oa_role, "name", "")
+        or "orchestrator"
+    )
+    role_mem = store.get(oa_memory_key)
     if role_mem:
         parts.append("**Orchestrator-specific:**")
         parts.extend(f"- [{e.type}] {e.content}" for e in role_mem)
@@ -965,7 +983,7 @@ def _render_promoted_rules(state_dir: Path) -> str:
 
 
 def _render_tools(config: ZfConfig) -> str:
-    orch = next((r for r in config.roles if r.name == "orchestrator"), None)
+    orch = next((r for r in config.roles if is_configured_orchestrator_role(config, r)), None)
     if orch is None or not orch.allowed_tools:
         return "_(no tools allowlisted; check your zf.yaml)_"
     return "\n".join(f"- `{t}`" for t in orch.allowed_tools)

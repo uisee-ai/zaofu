@@ -181,13 +181,29 @@ def validate_read_only_fragment(
         return "execution_pattern_not_registered", None
     if pattern.kind != "fanout_reader":
         return "execution_pattern_is_not_read_only", None
-    roles = {
-        str(getattr(role, "name", "") or ""): role
-        for role in getattr(config, "roles", []) or []
+    limits = action.get("budgets") or {}
+    children = limits.get("max_children")
+    depth = limits.get("max_depth", 1)
+    if type(children) is not int or not 1 <= children <= 16:
+        return "bounded_max_children_required", None
+    if type(depth) is not int or depth != 1:
+        return "d0_requires_depth_one", None
+    child_count = pattern_child_count(config, pattern)
+    if child_count == 0:
+        return "execution_pattern_has_no_children", None
+    if child_count > children:
+        return "max_children_exceeded", None
+    if pattern.barrier.get("mode") != "wait_for_all":
+        return "required_children_must_join_all", None
+    refs = set(pattern.roles) | {
+        str(child.get("role_instance") or child.get("role") or "")
+        for child in pattern.children
     }
-    for role_name in pattern.roles:
-        role = roles.get(role_name)
-        if role is None or _role_kind(role) != "reader":
+    if pattern.barrier.get("synth_role"):
+        refs.add(str(pattern.barrier["synth_role"]))
+    for ref in refs:
+        matches = [role for role in config.roles if ref in {role.name, role.instance_id}]
+        if not matches or any(_role_kind(role) != "reader" for role in matches):
             return "execution_pattern_has_writer_capability", None
     operation_type = str(action.get("operation_type") or "")
     if operation_type and operation_type not in {
@@ -201,6 +217,14 @@ def validate_read_only_fragment(
     }:
         return "operation_type_is_not_read_only", None
     return "", pattern
+
+
+def pattern_child_count(config: ZfConfig, pattern: ExecutionPattern) -> int:
+    return sum(
+        sum(ref in {role.name, role.instance_id} for role in config.roles)
+        for child in pattern.children
+        if (ref := str(child.get("role_instance") or child.get("role") or ""))
+    )
 
 
 def _role_kind(role: Any) -> str:

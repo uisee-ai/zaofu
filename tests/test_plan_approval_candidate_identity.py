@@ -23,6 +23,29 @@ def _request(orch, log, *, payload=None, tasks=None, trace="run-1"):
     return event, loaded
 
 
+def test_incremental_approval_digest_checks_assembly_in_bound_full_map(tmp_path):
+    state, log, orch = _approval_orch(tmp_path, enabled=True)
+    path = state / "artifacts" / "full-map.json"
+    path.write_text(json.dumps({"tasks": [
+        {"task_id": "ASSEMBLY", "root_owner_class": "assembly", "allowed_paths": ["root.json"]},
+        {"task_id": "NEW-A", "allowed_paths": ["src/a/**"]},
+        {"task_id": "NEW-B", "allowed_paths": ["src/b/**"]},
+    ]}))
+    event = EventWriter(log).append(ZfEvent(type="task_map.ready", correlation_id="run-1",
+                                             payload={"pdd_id": "PDD-1"}))
+    loaded = SimpleNamespace(pdd_id="PDD-1", task_map_ref="artifacts/full-map.json", task_items=[
+        {"task_id": "NEW-A", "owner_instance": "dev-lane-1", "allowed_paths": ["src/a/**"], "verification": "test-a"},
+        {"task_id": "NEW-B", "owner_instance": "dev-lane-2", "allowed_paths": ["src/b/**"], "verification": "test-b"},
+    ])
+    assert not orch._plan_approval_satisfied(stage_id="impl", trigger_event=event, loaded=loaded, trace_id="run-1")
+    request = next(e for e in log.read_all() if e.type == "plan.approval.requested")
+    digest = (state / request.payload["digest_ref"]).read_text()
+    assert "🟢 **assembly/根 owner 在位** — ASSEMBLY（完整任务图）" in digest
+    assert "| NEW-A | dev-lane-1 |" in digest
+    assert "| ASSEMBLY |" not in digest
+    assert "🔴 **allowed_paths 无重叠**" not in digest
+
+
 @pytest.mark.parametrize("change", ["package", "generation", "run", "contract", "plan_body"])
 def test_changed_plan_is_reviewable_with_same_task_ids(tmp_path, change):
     state, log, orch = _approval_orch(tmp_path, enabled=True)

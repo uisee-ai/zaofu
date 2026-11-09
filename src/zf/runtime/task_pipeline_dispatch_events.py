@@ -7,6 +7,17 @@ from typing import Any, Mapping
 from zf.core.events.model import ZfEvent
 
 
+def emit_task_pipeline_dispatch_failure(runtime: Any, exc: Exception) -> None:
+    runtime.event_writer.append(ZfEvent(
+        type="kernel.housekeeping.failed", actor="orchestrator", origin="kernel",
+        payload={
+            "step": "task_pipeline_dispatch",
+            "exc_type": type(exc).__name__,
+            "exc_repr": repr(exc)[:500],
+        },
+    ))
+
+
 def emit_task_pipeline_waiting_once(
     runtime: Any,
     *,

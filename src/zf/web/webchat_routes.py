@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,8 @@ from zf.web.agent_turn_contract import (
 from zf.web.agent_webchat_contract import build_legacy_shadow_projection, capabilities_for_surface
 from zf.web.projections.request_util import _request_json
 from zf.web.webchat_runtime import durable_webchat_enabled
+
+_MODEL_CATALOG_LOCK = threading.BoundedSemaphore(1)
 
 
 def build_webchat_router(
@@ -168,6 +171,27 @@ def build_webchat_router(
                 writer(ctx).event_log.read_all(),
             )
         return JSONResponse(payload)
+
+    @router.get("/api/projects/{project_id}/webchat/model-catalog")
+    def model_catalog(
+        project_id: str, request: Request, thread_key: str = "", task_id: str = "",
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
+        denied = auth("chat-orchestrator", request, authorization, x_zf_web_token)
+        if denied is not None:
+            return denied
+        from zf.web.kanban_model_catalog import codex_model_catalog
+
+        ctx = resolve_ctx(project_id)
+        if not _MODEL_CATALOG_LOCK.acquire(timeout=20):
+            raise HTTPException(503, "model catalog is busy; retry")
+        try:
+            return JSONResponse(codex_model_catalog(ctx.project_root, state_dir=ctx.state_dir, thread_key=thread_key, task_id=task_id))
+        except Exception as exc:
+            raise HTTPException(503, "model catalog unavailable") from exc
+        finally:
+            _MODEL_CATALOG_LOCK.release()
 
     @router.get("/api/projects/{project_id}/webchat/turns/{turn_id}/parts")
     def turn_parts(project_id: str, turn_id: str, after_seq: int = 0, limit: int = 500) -> JSONResponse:

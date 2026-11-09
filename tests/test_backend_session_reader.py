@@ -201,6 +201,50 @@ class TestCodexReader:
         reader = CodexSessionReader()
         assert reader.read_latest_usage(tmp_path / "ghost.jsonl") is None
 
+    def test_usage_reads_session_without_loading_entire_transcript(self, tmp_path, monkeypatch):
+        import json
+
+        path = tmp_path / "session.jsonl"
+        rows = [
+            {"type": "session_meta", "payload": {"id": "session-1"}},
+            {"type": "turn_context", "payload": {"model": "model-1"}},
+            {"type": "event_msg", "timestamp": "2026-11-04T08:00:00Z",
+             "payload": {"type": "token_count", "info": {
+                 "last_token_usage": {"input_tokens": 100, "output_tokens": 5},
+                 "total_token_usage": {"input_tokens": 200},
+                 "model_context_window": 1000}}},
+        ]
+        path.write_text("\n".join(json.dumps(row) for row in rows) + "\n{partial")
+        monkeypatch.setattr(Path, "read_text", lambda *args, **kwargs: pytest.fail("full-file read"))
+        report = CodexSessionReader().read_latest_usage(path)
+        assert report is not None
+        assert (report.effective_input_tokens, report.output_tokens, report.ratio) == (100, 5, 0.1)
+        assert report.usage_series_id == "codex:session-1"
+        assert report.model == "model-1"
+        assert report.usage_semantics == "cumulative"
+
+    def test_usage_tracks_append_partial_and_file_replacement(self, tmp_path):
+        import json
+
+        path = tmp_path / "session.jsonl"
+        def entry(tokens):
+            return json.dumps({"type": "event_msg", "payload": {
+                "type": "token_count", "info": {"last_token_usage": {
+                    "input_tokens": tokens, "output_tokens": 2}}}})
+
+        reader = CodexSessionReader()
+        path.write_text(entry(10) + "\n" + entry(20)[:15])
+        assert reader.read_latest_usage(path).effective_input_tokens == 10
+        with path.open("a") as stream:
+            stream.write(entry(20)[15:] + "\n")
+        assert reader.read_latest_usage(path).effective_input_tokens == 20
+        replacement = tmp_path / "replacement.jsonl"
+        replacement.write_text(entry(30) + "\n")
+        replacement.replace(path)
+        assert reader.read_latest_usage(path).effective_input_tokens == 30
+        path.write_text(entry(40) + "\n")
+        assert reader.read_latest_usage(path).effective_input_tokens == 40
+
     def test_session_path_uses_cached_path(self, tmp_path):
         reader = CodexSessionReader()
         cached = tmp_path / "cached" / "rollout.jsonl"

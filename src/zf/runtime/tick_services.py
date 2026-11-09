@@ -14,6 +14,7 @@ from zf.runtime.terminal_events import (
     latest_quiescent_run_terminal,
     terminal_after_event,
 )
+from zf.runtime.workflow_synthesis_consumer import WorkflowSynthesisConsumerBusy
 
 
 _SUPERVISOR_STALENESS_OBSERVER_EVENTS = frozenset({
@@ -64,6 +65,7 @@ _RUN_MANAGER_NOOP_INPUT_EVENTS = frozenset({
 })
 _RUN_MANAGER_REACTIVE_SELF_EVENTS = frozenset({
     "run.manager.agent.recommendation",
+    "run.manager.reflect.completed",
 })
 
 
@@ -235,6 +237,8 @@ def run_standard_tick_services(
             writer=event_writer,
             limit=1,
         )
+    except WorkflowSynthesisConsumerBusy:
+        pass  # Another host owns the lease; the durable work remains queued.
     except Exception as exc:
         workflow_synthesis_consumed = 0
         try:

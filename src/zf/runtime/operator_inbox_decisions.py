@@ -47,6 +47,7 @@ def channel_decision_item(
     deep_link = "?page=channels"
     if channel_id:
         deep_link += f"&channel={quote(channel_id, safe='')}"
+    deep_link += f"&thread={quote(thread_id, safe='')}&question={quote(question_id, safe='')}"
     return {
         "id": f"channel-question:{channel_id or 'unknown'}:{thread_id}:{question_id}",
         "kind": "channel_decision",
@@ -64,6 +65,9 @@ def channel_decision_item(
         "thread_id": thread_id,
         "asked_by": str(payload.get("asked_by") or _actor(event)),
         "question_kind": str(payload.get("kind") or "owner_decision"),
+        "decision_options": payload.get("options") or [],
+        "allow_other": payload.get("allow_other", True),
+        "recommended_answer": str(payload.get("recommended_answer") or ""),
         "priority": str(payload.get("priority") or "p1"),
         "deep_link": deep_link,
         "deep_link_label": "Open channel",
@@ -99,6 +103,12 @@ def kanban_question_item(
         if question_count > 1
         else question or "Kanban Agent needs input"
     )
+    thread_id = str(request.get("thread_key") or payload.get("thread_key") or "main")
+    deep_link = (
+        "?page=project&agent=open"
+        f"&agent_thread={quote(thread_id, safe='')}"
+        f"&agent_request={quote(_event_id(event), safe='')}"
+    )
     return {
         "id": kanban_question_item_id(request_id, revision),
         "kind": "kanban_question",
@@ -120,15 +130,50 @@ def kanban_question_item(
             or payload.get("conversation_id")
             or ""
         ),
-        "thread_id": str(
-            request.get("thread_key")
-            or payload.get("thread_key")
-            or "main"
-        ),
+        "thread_id": thread_id,
         "question_count": question_count,
-        "deep_link": "?page=project&agent=open",
+        "decision_options": request.get("options") or [],
+        "decision_questions": questions if isinstance(questions, list) else [],
+        "deep_link": deep_link,
         "deep_link_label": "Open Kanban Agent",
         "actions": [],
+    }
+
+
+def human_decision_item(
+    *,
+    event: Any,
+    payload: dict[str, Any],
+    decision_token: str,
+    status: str,
+    source_role: str,
+) -> dict[str, Any]:
+    return {
+        "id": f"human:{decision_token}",
+        "kind": "human_decision",
+        "status": status,
+        "title": "Run Manager Decision",
+        "summary": str(payload.get("reason") or payload.get("question") or "Run Manager needs an operator decision"),
+        "created_event_id": _event_id(event),
+        "created_ts": _event_ts(event),
+        "resolved_event_id": "",
+        "resolved_ts": "",
+        "source_role": source_role,
+        "source_actor": _actor(event),
+        "decision_token": decision_token,
+        "approval_ref": f"human:{decision_token}",
+        "checkpoint_id": str(payload.get("checkpoint_id") or ""),
+        "fingerprint": str(payload.get("fingerprint") or ""),
+        "actions": [
+            {"action": "human-decision-approve-controlled-action", "label": "Approve", "requires_token": True},
+            {"action": "human-decision-request-autoresearch", "label": "Diagnose", "requires_token": True},
+            {"action": "human-decision-dismiss", "label": "Dismiss", "requires_token": True},
+            {"action": "human-decision-safe-halt", "label": "Halt", "requires_token": True},
+        ],
+        "policy": {
+            "mutation_path": "human.escalation.acknowledged -> run_manager_tick",
+            "agent_can_approve": False,
+        },
     }
 
 
@@ -137,10 +182,9 @@ def _channel_question_aliases(payload: dict[str, Any]) -> list[str]:
     channel_id = str(payload.get("channel_id") or "").strip()
     if not question_id:
         return []
-    aliases = [f"question:{question_id}"]
     if channel_id:
-        aliases.insert(0, f"question:{channel_id}:{question_id}")
-    return aliases
+        return [f"question:{channel_id}:{question_id}"]
+    return [f"question:{question_id}"]
 
 
 def _event_id(event: Any) -> str:

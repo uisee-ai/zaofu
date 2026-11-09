@@ -203,8 +203,8 @@ def validate_provider_operation_summary(
             "provider_operation_summary.active_child_count",
             "terminal_has_active_children",
         ))
-    ceiling = max(1, min(6, int(max_parallel_agents or 6)))
-    if peak_parallel is not None and peak_parallel > ceiling:
+    ceiling = 0 if max_parallel_agents == 0 else max(1, min(6, int(max_parallel_agents)))
+    if ceiling and peak_parallel is not None and peak_parallel > ceiling:
         issues.append(_issue(
             "provider_operation_summary.peak_parallel_agents",
             "concurrency_ceiling_exceeded",

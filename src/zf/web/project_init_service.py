@@ -81,6 +81,7 @@ def initialize_admitted_project(
 
         initialized = init_flow_project(
             kind=generated_config.flow_kind,
+            controller_id=generated_config.controller_id,
             name=generated_config.project_name,
             description=generated_config.project_description,
             project_root=root,
@@ -126,7 +127,8 @@ def initialize_admitted_project(
         "project_metadata": initialized["project_metadata"],
         "provider_policy": initialized["provider_policy"],
         "git_readiness": initialized["git_readiness"],
-        "config_generated": "typed_flow_spec",
+        "config_generated": "registered_controller" if generated_config.controller_id else "typed_flow_spec",
+        "controller_id": generated_config.controller_id,
         "project": (
             _workspace_project_payload(registered_project)
             if registered_project is not None

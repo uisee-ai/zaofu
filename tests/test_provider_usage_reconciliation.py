@@ -20,6 +20,59 @@ from zf.runtime.shutdown import GracefulShutdown
 SESSION_ID = "22222222-2222-2222-2222-222222222222"
 
 
+@pytest.mark.parametrize("boundary", ["reader", "task_slot"])
+@pytest.mark.parametrize("fail_once", [False, True])
+def test_session_boundary_accounts_tail_before_replacing_identity(tmp_path, monkeypatch, boundary, fail_once):
+    from tests.test_role_lifecycle_runtime import _runtime, _seed_reader_fanout_context
+    from zf.runtime import provider_usage_reconciliation as reconciliation
+    from zf.runtime.task_pipeline_terminal import _release_archived_task_stage_slot
+
+    runtime, role, transport = _runtime(tmp_path)
+    _seed_reader_fanout_context(runtime, role, transport, task_id="OLD", trace_id="old-run")
+    registry = runtime._role_lifecycle_registry()
+    rollout = _write_rollout(tmp_path)
+    registry.bind_codex_session(role.instance_id, SESSION_ID, session_path=rollout, observed_from="test")
+    initial = build_disk_usage_event(role=role, usage=CodexSessionReader().read_latest_usage(rollout), config=runtime.config)
+    runtime.event_writer.append(initial)
+    tracker = CostTracker(runtime.state_dir / "cost.jsonl")
+    apply_agent_usage_event(tracker, initial, role_backends={role.instance_id: role.backend})
+    terminate = transport.terminate
+
+    def finish(instance):
+        terminate(instance)
+        _append_usage(rollout, timestamp="2026-08-11T07:30:10+00:00",
+                      input_tokens=55000, cached_input_tokens=43000, output_tokens=900)
+
+    monkeypatch.setattr(transport, "terminate", finish)
+
+    def retire():
+        if boundary == "reader":
+            return runtime._prepare_reader_fanout_context(
+                role=role, task_id="NEW", trace_id="new-run", state="idle",
+                provider_session_replaced=False, dispatch_id="new-dispatch",
+            )[0]
+        return _release_archived_task_stage_slot(
+            runtime, registry=registry, role_instance=role.instance_id,
+            binding_key="old-binding", task_id="OLD",
+        )
+
+    if fail_once:
+        apply = reconciliation.apply_agent_usage_event
+        monkeypatch.setattr(reconciliation, "apply_agent_usage_event",
+                            lambda *a, **kw: (_ for _ in ()).throw(OSError("cost receipt unavailable")))
+        assert not retire()
+        assert str(runtime._role_lifecycle_registry().get(role.instance_id)) == SESSION_ID
+        monkeypatch.setattr(reconciliation, "apply_agent_usage_event", apply)
+    assert retire()
+    assert str(runtime._role_lifecycle_registry().get(role.instance_id)) != SESSION_ID
+    entries = tracker._read_entries()
+    assert sum(int(e.get(k) or 0) for e in entries for k in ("input_tokens", "cache_read_tokens", "output_tokens")) == 55900
+    tail = [e for e in runtime.event_log.read_all()
+            if e.type == "agent.usage" and e.payload.get("capture_phase") == "session_boundary"]
+    assert len(tail) == 1
+    assert tail[0].payload["usage"]["combined_input_tokens"] == 55000
+
+
 class _FinalUsageTransport:
     def __init__(self, rollout: Path) -> None:
         self.rollout = rollout

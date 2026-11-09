@@ -1,0 +1,179 @@
+{
+  "scope": "actual isolated systemd/tmux and Autoresearch sidecar lifecycle; mock task backend, no model calls",
+  "unit": "zf-200-host-m7vn47kp",
+  "loops": [
+    {
+      "type": "loop.started",
+      "id": "evt-8288cfb6b073",
+      "ts": "2026-11-06T18:25:55.288636+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "runtime_load_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "runtime-load",
+          "ref": "diagnostics/runtime-load/521f87e5797b4a43862963947df50381.json",
+          "sha256": "0f8f46fa91a0d8d092638115b8bb892c411986b337ce1b4f6147012573a6bd6d",
+          "byte_count": 1903,
+          "content_type": "application/json",
+          "schema_version": "runtime-load.v1",
+          "encoding": "utf-8",
+          "created_by": "zf-cli",
+          "source_event_id": "",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "effective_config_sha256": "8056e36a6d958d8e403b0f70a6f6875861d2762f11de2bf37ccedc152b38ba69",
+        "pid": 430903
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "loop.started",
+      "id": "evt-10a3c261373d",
+      "ts": "2026-11-06T18:25:58.564194+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "runtime_load_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "runtime-load",
+          "ref": "diagnostics/runtime-load/6aca22440de74443bb38095ec360ed01.json",
+          "sha256": "e4c30c4ae163efb9a840a2e14f85b607792c0153a0fd569d4b511666110a7dfa",
+          "byte_count": 1903,
+          "content_type": "application/json",
+          "schema_version": "runtime-load.v1",
+          "encoding": "utf-8",
+          "created_by": "zf-cli",
+          "source_event_id": "",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "effective_config_sha256": "8056e36a6d958d8e403b0f70a6f6875861d2762f11de2bf37ccedc152b38ba69",
+        "pid": 430990
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    }
+  ],
+  "sidecar_events": [
+    {
+      "type": "autoresearch.resident_sidecar.started",
+      "id": "evt-f9e7a9cc18cd",
+      "ts": "2026-11-06T18:25:55.099254+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "command": [
+          "/home/min/workspace/zaofu-worktrees/design199-20261106/.venv/bin/zf",
+          "autoresearch",
+          "resident",
+          "--watch",
+          "--execute",
+          "--state-dir",
+          "/tmp/zf-200-host-20261106T182550-m7vn47kp/.test-state",
+          "--interval-seconds",
+          "10.0",
+          "--max-actions-per-tick",
+          "0",
+          "--worktree-root",
+          "/tmp/zf-200-host-20261106T182550-m7vn47kp/repair-worktrees"
+        ],
+        "log_path": "/tmp/zf-200-host-20261106T182550-m7vn47kp/.test-state/logs/autoresearch-resident.log",
+        "state_dir": "/tmp/zf-200-host-20261106T182550-m7vn47kp/.test-state",
+        "worktree_root": "/tmp/zf-200-host-20261106T182550-m7vn47kp/repair-worktrees",
+        "output_root": "",
+        "pid": 430962
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "autoresearch.resident_sidecar.already_running",
+      "id": "evt-fc8686adfae0",
+      "ts": "2026-11-06T18:25:58.392351+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "command": [
+          "/home/min/workspace/zaofu-worktrees/design199-20261106/.venv/bin/zf",
+          "autoresearch",
+          "resident",
+          "--watch",
+          "--execute",
+          "--state-dir",
+          "/tmp/zf-200-host-20261106T182550-m7vn47kp/.test-state",
+          "--interval-seconds",
+          "10.0",
+          "--max-actions-per-tick",
+          "0",
+          "--worktree-root",
+          "/tmp/zf-200-host-20261106T182550-m7vn47kp/repair-worktrees"
+        ],
+        "log_path": "/tmp/zf-200-host-20261106T182550-m7vn47kp/.test-state/logs/autoresearch-resident.log",
+        "state_dir": "/tmp/zf-200-host-20261106T182550-m7vn47kp/.test-state",
+        "worktree_root": "/tmp/zf-200-host-20261106T182550-m7vn47kp/repair-worktrees",
+        "output_root": "",
+        "lock_path": "/tmp/zf-200-host-20261106T182550-m7vn47kp/.test-state/processes/autoresearch-resident.lock"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "autoresearch.resident_sidecar.stopped",
+      "id": "evt-9c7080bd6a51",
+      "ts": "2026-11-06T18:26:02.724918+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "pid": 430962,
+        "stopped_by": "pidfile",
+        "log_path": "/tmp/zf-200-host-20261106T182550-m7vn47kp/.test-state/logs/autoresearch-resident.log"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": ""
+    }
+  ],
+  "normal_stop": [
+    {
+      "command": [
+        "/home/min/workspace/zaofu-worktrees/design199-20261106/.venv/bin/python",
+        "-m",
+        "zf.cli.main",
+        "stop",
+        "--include-run-manager"
+      ],
+      "returncode": 0,
+      "stdout": "Stopped harness session: zf-200-host-m7vn47kp-workers (18 steps completed)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/min/workspace/zaofu-worktrees/design199-20261106/.venv/bin/python",
+        "-m",
+        "zf.cli.main",
+        "stop",
+        "--include-run-manager"
+      ],
+      "returncode": 0,
+      "stdout": "Stopped harness session: zf-200-host-m7vn47kp-workers (18 steps completed)\n",
+      "stderr": "no server running on /tmp/zf-200-host-20261106T182550-m7vn47kp/tmux/tmux-1001/default\n"
+    }
+  ],
+  "source_file_sha256": "c3abbd576c7b55e5fc6e8bec1d69257472af598234f8a69019b02b1e9f7f5f03",
+  "implementation_commit": "768adb08"
+}

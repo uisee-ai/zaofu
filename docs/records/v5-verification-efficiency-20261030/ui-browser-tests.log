@@ -1,0 +1,19 @@
+
+Running 15 tests using 1 worker
+
+[1A[2K[1/15] [chromium] › tests/workflow-execution-graph.spec.ts:35:1 › Workflow does not display Plan documents or preview even after loading the full graph
+[1A[2K[2/15] [chromium] › tests/workflow-execution-graph.spec.ts:62:1 › single task offers expandable declared Claims without drawing an empty dependency graph
+[1A[2K[3/15] [chromium] › tests/workflow-execution-graph.spec.ts:85:1 › observed worker records, task relations and cross-view navigation
+[1A[2K[4/15] [chromium] › tests/workflow-execution-graph.spec.ts:161:1 › started execution loads automatically and retains a retryable structure on failure
+[1A[2K[5/15] [chromium] › tests/workflow-execution-graph.spec.ts:183:1 › full graph remains reachable when the execution summary fails
+[1A[2K[6/15] [chromium] › tests/workflow-execution-graph.spec.ts:202:1 › operation details show only recorded parent-child execution links
+[1A[2K[7/15] [chromium] › tests/workflow-execution-graph.spec.ts:226:1 › an explicitly bound Trace ID opens the matching trace in the project
+[1A[2K[8/15] [chromium] › tests/workflow-execution-graph.spec.ts:243:1 › stale execution summary refreshes structure and remains generation-bound
+[1A[2K[9/15] [chromium] › tests/workflow-execution-graph.spec.ts:273:1 › unidentified tasks are never linked to unrelated execution records
+[1A[2K[10/15] [chromium] › tests/workflow-execution-graph.spec.ts:300:1 › opening full workflow structure loads the complete graph
+[1A[2K[11/15] [chromium] › tests/workflow-execution-graph.spec.ts:321:1 › worker deep link waits for the bound execution summary without loading the full graph
+[1A[2K[12/15] [chromium] › tests/workflow-execution-graph.spec.ts:339:1 › live execution refresh preserves worker selection and viewport without requesting the full graph
+[1A[2K[13/15] [chromium] › tests/workflow-execution-graph.spec.ts:380:1 › Run result never claims completion without matching terminal evidence
+[1A[2K[14/15] [chromium] › tests/workflow-execution-graph.spec.ts:411:1 › unstarted preview shows goal and pending Run without inventing execution
+[1A[2K[15/15] [chromium] › tests/workflow-execution-graph.spec.ts:432:1 › observed workers without a compiled stage remain visible without inventing one
+[1A[2K  15 passed (42.4s)

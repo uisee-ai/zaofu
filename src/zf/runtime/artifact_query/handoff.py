@@ -72,6 +72,10 @@ class CanonicalHandoffResolver:
             task_id=task_id,
         )
         profile = str(mutable.get("output_profile_id") or "")
+        discovery = (
+            profile == "workflow-read"
+            and mutable.get("canonical_success_event") == "flow.discovery.child.completed"
+        )
         authority_contract = self._authority_contract(
             mutable,
             profile=profile,
@@ -111,16 +115,13 @@ class CanonicalHandoffResolver:
                 workflow_run_id=workflow_run_id,
                 task_id=task_id,
                 currentness=currentness,
-                allow_without_task=profile == "candidate-verify" or (
-                    profile == "workflow-read"
-                    and mutable.get("canonical_success_event") == "flow.discovery.child.completed"
-                ),
-                candidate=profile == "candidate-verify",
+                allow_without_task=profile == "candidate-verify" or discovery,
+                # Discovery evaluates the admitted generation, whose parent
+                # is not an implementation partition in the task map.
+                candidate=profile == "candidate-verify" or discovery,
+                profile=profile,
             )
-            if profile in {"implementation", "task-verify", "candidate-verify"} or (
-                profile == "workflow-read"
-                and mutable.get("canonical_success_event") == "flow.discovery.child.completed"
-            )
+            if profile in {"implementation", "task-verify", "candidate-verify"} or discovery
             else []
         )
         if plan_port_sources:
@@ -384,6 +385,13 @@ class CanonicalHandoffResolver:
             )
             generation_bound_package = (
                 task_bound_profile or candidate_bound_profile
+                # Plan inputs pin an admitted baseline; the plan output may
+                # replace it after review rather than execute its Task state.
+                or authority_contract.get("attempt_domain") == "plan"
+                # Discovery diagnoses its admitted execution generation;
+                # a newer package awaiting review is not its baseline.
+                or (profile in {"workflow-read", "global-rescan"} and payload.get("canonical_success_event")
+                    == "flow.discovery.child.completed")
             )
             current_package = (
                 admitted_plan_artifact_package_for_generation(
@@ -393,6 +401,10 @@ class CanonicalHandoffResolver:
                 if generation_bound_package
                 else reduced.get("current")
             )
+            if (not current_package and authority_contract.get("attempt_domain") == "plan"
+                    and not (reduced.get("current") or {}).get("task_map_generation")):
+                # Legacy package admissions did not record generation identity.
+                current_package = reduced.get("current")
             current_package = (
                 current_package if isinstance(current_package, Mapping) else {}
             )
@@ -719,14 +731,14 @@ class CanonicalHandoffResolver:
     def _current_plan_port_sources(
         self, *, workflow_run_id: str, task_id: str,
         currentness: Mapping[str, Any], allow_without_task: bool = False,
-        candidate: bool = False,
+        candidate: bool = False, profile: str = "",
     ) -> list[dict[str, Any]]:
         from zf.runtime.task_scoped_plan_inputs import current_plan_port_sources
 
         return current_plan_port_sources(
             state_dir=self.state_dir, workflow_run_id=workflow_run_id,
             task_id=task_id, currentness=currentness,
-            allow_without_task=allow_without_task, candidate=candidate,
+            allow_without_task=allow_without_task, candidate=candidate, profile=profile,
         )
 
     def _validate_task_snapshots(

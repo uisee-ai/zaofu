@@ -463,7 +463,9 @@ def test_active_run_budget_amendment_rearms_guard_without_resetting_usage(
         },
     ))
 
-    assert enforce_active_workflow_budgets(runtime) == []
+    warnings = enforce_active_workflow_budgets(runtime)
+    assert [event.type for event in warnings] == ["workflow.budget.warning"]
+    assert warnings[0].payload["warning_level"] == 50
     runtime.cost_tracker.record_usage(
         "dev", 100, 10, provider_cost_usd=1.0,
     )
@@ -588,10 +590,12 @@ def test_operation_usage_sample_limit_is_relative_to_start_baseline(
         instance_id="dev",
         source_event_id="usage-operation-1",
     )
-    assert enforce_active_workflow_budgets(
+    warnings = enforce_active_workflow_budgets(
         runtime,
         now_epoch=_epoch(str(operation["started_at"])) + 1,
-    ) == []
+    )
+    assert [event.type for event in warnings] == ["workflow.budget.warning"]
+    assert warnings[0].payload["measurement"]["usage_samples"] == 1
 
     runtime.cost_tracker.record_usage(
         "dev",

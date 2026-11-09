@@ -1010,7 +1010,12 @@ def agent_session_history(
             task_id=task_id,
         ):
             continue
-        out.append(_full_event_dict(seq, event))
+        out.append(_bind_kanban_history_event(
+            _full_event_dict(seq, event),
+            project_id=project_id,
+            conversation_id=conversation_id,
+            thread_id=thread_id,
+        ))
         primary_oldest_seq = seq
         if len(out) >= limit:
             break
@@ -1212,6 +1217,9 @@ def operator_inbox(
         HUMAN_ESCALATION_ACKNOWLEDGED,
         HUMAN_ESCALATION_REQUESTED,
         HUMAN_ESCALATION_SENT,
+        INBOX_ALL_READ,
+        INBOX_ITEM_READ,
+        OWNER_VISIBLE_MESSAGE_REQUESTED,
         RUN_MANAGER_HUMAN_DECISION_APPLIED,
         RUN_MANAGER_HUMAN_DECISION_REJECTED,
         build_operator_inbox,
@@ -1221,11 +1229,18 @@ def operator_inbox(
         PLAN_APPROVED,
         PLAN_REJECTED,
     )
+    from zf.runtime.run_manager import (
+        RUN_COMPLETED, _POST_TERMINAL_WORK_EVENTS, _PROGRESS_SUCCESS_EVENTS,
+    )
 
     types = [
         PLAN_APPROVAL_REQUESTED,
         PLAN_APPROVED,
         PLAN_REJECTED,
+        # Semantic PRD approvals can be emitted without a preceding plan
+        # approval request.  Keep task_map.ready available so the inbox can
+        # bind the resolved item to its canonical Plan/PRD artifacts.
+        "task_map.ready",
         GENERIC_APPROVAL_REQUESTED,
         GENERIC_APPROVAL_RESOLVED,
         GENERIC_APPROVAL_EXPIRED,
@@ -1235,33 +1250,29 @@ def operator_inbox(
         HUMAN_ESCALATION_ACKNOWLEDGED,
         RUN_MANAGER_HUMAN_DECISION_APPLIED,
         RUN_MANAGER_HUMAN_DECISION_REJECTED,
+        INBOX_ITEM_READ,
+        INBOX_ALL_READ,
+        OWNER_VISIBLE_MESSAGE_REQUESTED,
+        "channel.question.opened",
+        "channel.question.updated",
+        "channel.question.resolved",
+        "channel.question.merged",
+        "kanban.agent.plan.requested",
+        "kanban.agent.plan.answered",
     ]
+    types.extend([RUN_COMPLETED, "run.goal.updated", *_POST_TERMINAL_WORK_EVENTS, *_PROGRESS_SUCCESS_EVENTS])
     events = hydrate_events(
         state_dir,
         types=types,
-        type_prefixes=["runtime.attention."],
+        type_prefixes=["runtime.attention.", "channel.member."],
         config=config,
         require_fresh=True,
-        slim=True,
+        slim=False,
     )
     if not events:
         return None
-    # Approval payloads carry bound artifact refs that are intentionally not
-    # part of the compact index payload.  Hydrate only those decision events
-    # so Plan Preview and owner checkpoint routing see the authoritative body.
-    hydrated_approvals: dict[str, ZfEvent] = {}
-    for event in events:
-        if event.type not in {PLAN_APPROVAL_REQUESTED, GENERIC_APPROVAL_REQUESTED}:
-            continue
-        hydrated = hydrate_event_by_id(state_dir, event.id, config=config)
-        if hydrated is not None:
-            hydrated_approvals[event.id] = hydrated[1]
-    if hydrated_approvals:
-        events = [hydrated_approvals.get(event.id, event) for event in events]
-    # Owner checkpoint approvals historically did not copy the candidate refs
-    # into their slim payload.  Hydrate only the bound synth source event so
-    # the projection can backfill a truthful preview without scanning the raw
-    # event log or changing the normal slim inbox path.
+    # Owner checkpoint approvals can refer to a separate synth source event.
+    # Hydrate that event to backfill the bound preview.
     source_events: list[ZfEvent] = []
     for event in events:
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -1356,7 +1367,12 @@ def _kanban_agent_context_events(
             continue
         if not _kanban_agent_is_context_event(event, turn_ids=turn_ids, message_event_ids=message_event_ids):
             continue
-        out.append(_full_event_dict(seq, event))
+        out.append(_bind_kanban_history_event(
+            _full_event_dict(seq, event),
+            project_id=project_id,
+            conversation_id=conversation_id,
+            thread_id=thread_id,
+        ))
         if len(out) >= 80:
             break
     return list(reversed(out))
@@ -1472,7 +1488,13 @@ def _kanban_agent_history_event_matches(
         return False
     payload_conversation = str(payload.get("conversation_id") or "").strip()
     if conversation_id and payload_conversation and payload_conversation != conversation_id:
-        return False
+        if not _kanban_identity_alias(
+            project_id,
+            requested=conversation_id,
+            actual=payload_conversation,
+            kind="conversation",
+        ):
+            return False
     if event_type not in {
         "kanban.agent.proposal.resolved",
         "operator.action.resolved",
@@ -1480,7 +1502,13 @@ def _kanban_agent_history_event_matches(
     }:
         payload_thread = str(payload.get("thread_key") or payload.get("thread_id") or "").strip() or "main"
         if thread_id and payload_thread != thread_id:
-            return False
+            if not _kanban_identity_alias(
+                project_id,
+                requested=thread_id,
+                actual=payload_thread,
+                kind="thread",
+            ):
+                return False
     # NOTE (frontend-stress S9/S10 2026-07-15): do NOT exclude by backend.
     # The kanban-agent conversation is one durable thread per (project, thread_id)
     # that legitimately spans backends — a user may switch codex<->claude mid
@@ -1495,6 +1523,64 @@ def _kanban_agent_history_event_matches(
     if task_id and event.task_id and event.task_id != task_id:
         return False
     return True
+
+
+def _kanban_identity_alias(
+    project_id: str,
+    *,
+    requested: str,
+    actual: str,
+    kind: str,
+) -> bool:
+    """Match the pre-migration Kanban identity in a project read projection.
+
+    Older headless turns used ``kanban-agent:<project>/main`` while the Web
+    surface now uses ``kanban:<project>/kanban:<project>``.  The event ledger
+    remains unchanged; this narrow alias only lets the current read model
+    render those historical turns in the canonical project conversation.
+    """
+    if not project_id or not requested or not actual:
+        return False
+    if kind == "conversation":
+        aliases = {f"kanban:{project_id}", f"kanban-agent:{project_id}"}
+    elif kind == "thread":
+        aliases = {f"kanban:{project_id}", "main"}
+    else:
+        return False
+    return requested in aliases and actual in aliases
+
+
+def _bind_kanban_history_event(
+    item: dict[str, Any],
+    *,
+    project_id: str,
+    conversation_id: str,
+    thread_id: str,
+) -> dict[str, Any]:
+    payload = item.get("payload")
+    if not isinstance(payload, dict):
+        return item
+    actual_conversation = str(payload.get("conversation_id") or "").strip()
+    actual_thread = str(payload.get("thread_key") or payload.get("thread_id") or "").strip() or "main"
+    if (
+        conversation_id
+        and actual_conversation
+        and actual_conversation != conversation_id
+        and _kanban_identity_alias(project_id, requested=conversation_id, actual=actual_conversation, kind="conversation")
+    ) or (
+        thread_id
+        and actual_thread != thread_id
+        and _kanban_identity_alias(project_id, requested=thread_id, actual=actual_thread, kind="thread")
+    ):
+        bound = dict(item)
+        bound_payload = dict(payload)
+        if conversation_id:
+            bound_payload["conversation_id"] = conversation_id
+        if thread_id:
+            bound_payload["thread_key"] = thread_id
+        bound["payload"] = bound_payload
+        return bound
+    return item
 
 
 def _canonical_backend(value: str) -> str:
@@ -1557,6 +1643,7 @@ def _payload_slim(payload: dict[str, Any]) -> dict[str, Any]:
         "target",
         "message",
         "message_type",
+        "tool_call_id",
         "reason",
         "text",
         "content",

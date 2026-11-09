@@ -1,4 +1,4 @@
-"""One tool round trip preserves all scoped artifact consumption evidence."""
+"""Bounded batch reads preserve every scoped artifact consumption receipt."""
 import hashlib
 import json
 
@@ -45,7 +45,7 @@ def test_required_read_batch_preserves_authentication_slices_and_hashes(tmp_path
         assert not output.out
     else:
         assert result == 0, output.err
-        returned = [json.loads(line) for line in output.out.splitlines()]
+        returned = json.loads(output.out)["items"]
         assert len(returned) == 2
         assert all("中文" in row["content"] and "not-authorized" not in row["content"] for row in returned)
         rows = [json.loads(line) for line in ledger.read_text().splitlines()]
@@ -56,3 +56,317 @@ def test_required_read_batch_preserves_authentication_slices_and_hashes(tmp_path
 def test_required_read_batch_rejects_worker_slice_override(capsys):
     assert main(["artifact", "read", "--attempt", "unused", "--required", "--max-chars", "1"]) == 1
     assert "cannot be combined" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('required', [True, False])
+def test_read_rechecks_operation_after_telemetry_filter(tmp_path, monkeypatch, capsys, required):
+    state = tmp_path / ".runtime"
+    path = state / "artifacts" / "source.json"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"facts":["value"]}')
+    source = {"source_id": "s", "artifact_id": "s", "ref": "artifacts/source.json",
+              "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "allowed_paths": ["$.facts"]}
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+                                             dispatch_id="attempt-1", sources=[source],
+                                             metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest, operation_id="op-1")
+    writer = EventWriter(EventLog(state / "events.jsonl"))
+    for event_type in ("workflow.operation.requested", "workflow.operation.started"):
+        writer.append(ZfEvent(type=event_type, payload={"operation_id": "op-1", "active_attempt_id": "attempt-1"}))
+    writer.append(ZfEvent(type="codex.hook.post_tool_use", payload={"tool_response": "x" * 100_000}))
+    writer.append(ZfEvent(type="task.dispatched", payload={"attempt_id": "attempt-1", "required_reads": [
+        {"source_id": "s", "artifact_id": "s", "artifact_sha256": source["sha256"], "json_path": "$.facts"},
+    ]}))
+    command = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state)]
+    command += ["--required"] if required else ["--source", "s", "--artifact", "s", "--json-path", "$.facts"]
+    with monkeypatch.context() as patch:
+        patch.setattr(EventLog, 'read_all', lambda self: (_ for _ in ()).throw(AssertionError('full telemetry replay')))
+        assert main(command) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output['items'] if required else output == ['value']
+    ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
+    before = ledger.read_bytes()
+    writer.append(ZfEvent(type="workflow.operation.settled", payload={"operation_id": "op-1"}))
+    with monkeypatch.context() as patch:
+        patch.setattr(EventLog, 'read_all', lambda self: (_ for _ in ()).throw(AssertionError('full telemetry replay')))
+        assert main(command) == 1
+    assert "no longer active" in capsys.readouterr().err
+    assert ledger.read_bytes() == before
+    assert EventLog(state / "events.jsonl").read_all()[-1].type == "artifact.read.denied"
+
+
+def test_invalid_credential_is_rejected_before_context_scan(tmp_path, monkeypatch, capsys):
+    state = tmp_path / ".runtime"
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+                                             dispatch_id="attempt-1", sources=[],
+                                             metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest, operation_id="op-1")
+    monkeypatch.setenv("ZF_ROLE_NAME", "impostor")
+    monkeypatch.setattr("zf.runtime.artifact_context_events.ArtifactContextEvents.read_all",
+                        lambda self: (_ for _ in ()).throw(AssertionError("unauthorized scan")))
+    assert main(["artifact", "read", "--attempt", "attempt-1", "--required", "--state-dir", str(state)]) == 1
+    assert "does not match" in capsys.readouterr().err
+    assert EventLog(state / "events.jsonl").read_all()[-1].type == "artifact.read.denied"
+
+
+def test_required_read_selects_both_pinned_versions_of_the_same_logical_source(tmp_path, monkeypatch, capsys):
+    from zf.runtime.artifact_read_ledger import read_attempt_artifact, ArtifactReadError
+
+    state = tmp_path / ".runtime"
+    sources = []
+    for version in (1, 2):
+        path = state / "artifacts" / f"rework-{version}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"revision": version}))
+        sources.append({"source_id": "plan-rework-context", "artifact_id": "plan-rework-context.json",
+                        "ref": str(path.relative_to(state)), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+                                             dispatch_id="attempt-1", sources=sources,
+                                             metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest)
+    EventWriter(EventLog(state / "events.jsonl")).append(ZfEvent(
+        type="task.dispatched", actor="orchestrator", task_id="T1",
+        payload={"dispatch_id": "attempt-1", "required_reads": [
+            {"source_id": s["source_id"], "artifact_id": s["artifact_id"],
+             "artifact_sha256": s["sha256"], "json_path": "$"} for s in sources]},
+    ))
+    result = main(["artifact", "read", "--attempt", "attempt-1", "--required", "--state-dir", str(state)])
+    output = capsys.readouterr()
+    assert result == 0, output.err
+    assert [json.loads(row["content"])["revision"] for row in json.loads(output.out)["items"]] == [1, 2]
+    rows = [json.loads(line) for line in (state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl").read_text().splitlines()]
+    assert {r["artifact_sha256"] for r in rows} == {s["sha256"] for s in sources}
+    assert len({r["occurrence_id"] for r in rows}) == 2
+    with pytest.raises(ArtifactReadError, match="ambiguous"):
+        read_attempt_artifact(state, manifest=manifest, source_id="plan-rework-context",
+                              artifact_id="plan-rework-context.json", record=False)
+    manifest["sources"][1]["access_scope"] = {"visibility": "project", "actor": "other-worker"}
+    with pytest.raises(ArtifactReadError, match="not authorized"):
+        read_attempt_artifact(state, manifest=manifest, source_id="plan-rework-context",
+                              artifact_id="plan-rework-context.json", artifact_sha256=sources[1]["sha256"],
+                              actor="dev-1", record=False)
+
+
+@pytest.mark.parametrize("unauthorized_alias", [False, True])
+def test_identical_ports_share_delivery_but_not_authorization_or_receipts(
+    tmp_path, monkeypatch, capsys, unauthorized_alias,
+):
+    state = tmp_path / ".runtime"
+    path = state / "artifacts" / "plan.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"facts": "a" * 5000, "secret": "excluded"}))
+    sources = [{"source_id": name, "artifact_id": name, "ref": "artifacts/plan.json",
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "allowed_paths": ["$.facts"]} for name in ("task_map", "planning_result")]
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+        dispatch_id="attempt-1", sources=sources, metadata={"read_purpose": "implementation"},
+    )
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest)
+    requirements = [{"source_id": row["source_id"], "artifact_id": row["artifact_id"],
+                     "artifact_sha256": row["sha256"], "json_path": "$.facts"}
+                    for row in sources]
+    if unauthorized_alias:
+        requirements[1]["json_path"] = "$.secret"
+    EventWriter(EventLog(state / "events.jsonl")).append(ZfEvent(
+        type="task.dispatched", actor="orchestrator", task_id="T1",
+        payload={"dispatch_id": "attempt-1", "required_reads": requirements},
+    ))
+    result = main(["artifact", "read", "--attempt", "attempt-1", "--required",
+                   "--state-dir", str(state)])
+    output = capsys.readouterr()
+    ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
+    if unauthorized_alias:
+        assert result == 1
+        assert not ledger.exists()
+        assert not output.out
+    else:
+        assert result == 0, output.err
+        delivered = json.loads(output.out)["items"][0]
+        assert delivered["source_id"] == "task_map"
+        assert delivered["aliases"][0]["source_id"] == "planning_result"
+        assert delivered["content"] == "a" * 5000
+        assert len(output.out) < 8192
+        reads = [json.loads(line) for line in ledger.read_text().splitlines()]
+        assert len(reads) == 2
+        assert {row["source_id"] for row in reads} == {"task_map", "planning_result"}
+        assert all(row["artifact_sha256"] == sources[0]["sha256"] and not row["truncated"] for row in reads)
+
+
+def test_large_required_read_must_be_delivered_in_complete_pages(tmp_path, monkeypatch, capsys):
+    state = tmp_path / ".runtime"
+    path = state / "artifacts" / "large.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"facts": "中" * 10000}, ensure_ascii=False))
+    source = {"source_id": "large", "artifact_id": "large", "ref": "artifacts/large.json",
+              "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "allowed_paths": ["$.facts"]}
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+                                             dispatch_id="attempt-1", sources=[source],
+                                             metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest)
+    requirement = {"source_id": "large", "artifact_id": "large", "artifact_sha256": source["sha256"],
+                   "json_path": "$.facts"}
+    EventWriter(EventLog(state / "events.jsonl")).append(ZfEvent(
+        type="task.dispatched", actor="orchestrator", task_id="T1",
+        payload={"dispatch_id": "attempt-1", "required_reads": [requirement]},
+    ))
+    common = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state)]
+    ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
+    from zf.runtime.artifact_read_ledger import required_read_satisfied
+
+    cursor, contents = "", []
+    while True:
+        assert main([*common, "--required", "--cursor", cursor]) == 0
+        output = capsys.readouterr().out
+        assert len(output.encode("utf-8")) <= 8192
+        page = json.loads(output)
+        contents.extend(item["content"] for item in page["items"])
+        rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+        cursor = page["next_cursor"]
+        assert required_read_satisfied(rows, requirement) is (cursor is None)
+        if not cursor:
+            break
+    assert "".join(contents) == "中" * 10000
+    before = ledger.read_bytes()
+    assert main([*common, "--required", "--cursor", "bad:0:0"]) == 1
+    assert "cursor" in capsys.readouterr().err
+    assert ledger.read_bytes() == before
+
+
+@pytest.mark.parametrize("fault", ["", "tampered", "changed_attempt", "changed_requirement", "pinned_digest", "gap"])
+def test_required_pages_keep_aliases_bound_and_reject_incomplete_consumption(tmp_path, fault):
+    from zf.cli.artifact_required_read import prepare_required_read
+    from zf.runtime.artifact_output_delivery import emit_artifact_output
+    import io
+
+    def required_read_output(state, **kwargs):
+        output, receipts = prepare_required_read(state, **kwargs)
+        emit_artifact_output(state, output, receipts, io.StringIO())
+        return output
+    from zf.runtime.artifact_read_ledger import required_read_satisfied
+
+    state = tmp_path / ".runtime"
+    path = state / "artifacts" / "plan.json"
+    path.parent.mkdir(parents=True)
+    text = '中文 "quoted" \\ newline\n' * 1000
+    path.write_text(json.dumps({"facts": text}, ensure_ascii=False))
+    sources = [{"source_id": name, "artifact_id": name, "ref": "artifacts/plan.json",
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "allowed_paths": ["$.facts"]}
+               for name in ("plan-port-task_map", "oa-route-task_map")]
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1", dispatch_id="attempt-1",
+        sources=sources, metadata={"read_purpose": "implementation"},
+    )
+    requirements = [{"source_id": s["source_id"], "artifact_id": s["artifact_id"],
+                     "artifact_sha256": s["sha256"], "json_path": "$.facts"} for s in sources]
+    identity = {"actor": "dev", "role": "dev", "provider": "codex", "purpose": "implementation"}
+    ledger = state / "artifacts/attempts/attempt-1/read-ledger.active.jsonl"
+    output = required_read_output(state, manifest=manifest, rows=requirements, identity=identity)
+    page = json.loads(output)
+    contents = [page["items"][0]["content"]]
+    prefix = ledger.read_bytes()
+    if fault == "tampered":
+        path.write_text('{"facts":"changed"}')
+    elif fault == "changed_attempt":
+        manifest = {**manifest, "attempt_id": "attempt-2"}
+    elif fault == "changed_requirement":
+        requirements = requirements[:1]
+    elif fault == "pinned_digest":
+        requirements[0]["artifact_sha256"] = "0" * 64
+    if fault not in ("", "gap"):
+        with pytest.raises(ValueError):
+            required_read_output(state, manifest=manifest, rows=requirements, identity=identity,
+                                 cursor=page["next_cursor"])
+        assert ledger.read_bytes() == prefix
+        assert not (state / "artifacts/attempts/attempt-2/read-ledger.active.jsonl").exists()
+        return
+    while page["next_cursor"]:
+        output = required_read_output(state, manifest=manifest, rows=requirements, identity=identity,
+                                      cursor=page["next_cursor"])
+        assert len(output.encode("utf-8")) <= 8192
+        page = json.loads(output)
+        assert len(page["items"][0]["aliases"]) == 1
+        contents.append(page["items"][0]["content"])
+    assert "".join(contents) == text
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+    if fault == "gap":
+        rows = [row for row in rows if row["page_start"] != 0]
+    assert all(required_read_satisfied(rows, r) for r in requirements) == (fault != "gap")
+
+
+@pytest.mark.parametrize("fault", ["", "different", "trailing_newline", "unauthorized", "tampered"])
+def test_cross_source_identical_selected_text_keeps_occurrence_evidence(tmp_path, fault):
+    from zf.cli.artifact_required_read import prepare_required_read
+
+    state = tmp_path / ".runtime"
+    first = state / "artifacts" / "report.json"
+    second = state / "artifacts" / "plan.md"
+    first.parent.mkdir(parents=True)
+    content = "中文 plan requirement\n" * 40
+    first.write_text(json.dumps({"plan": content, "other": "keep"}, ensure_ascii=False))
+    second.write_text(content + ("changed" if fault == "different" else "\n" if fault == "trailing_newline" else ""))
+    sources = [
+        {"source_id": "report", "artifact_id": "report", "ref": "artifacts/report.json",
+         "sha256": hashlib.sha256(first.read_bytes()).hexdigest(), "allowed_paths": ["$.plan"]},
+        {"source_id": "plan", "artifact_id": "plan", "ref": "artifacts/plan.md",
+         "sha256": hashlib.sha256(second.read_bytes()).hexdigest(), "allowed_paths": ["$"]},
+    ]
+    if fault == "unauthorized":
+        sources[1]["access_scope"] = {"visibility": "project", "actor": "someone-else"}
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+        dispatch_id="attempt-1", sources=sources, metadata={"read_purpose": "implementation"},
+    )
+    requirements = [{"source_id": source["source_id"], "artifact_id": source["artifact_id"],
+                     "artifact_sha256": source["sha256"], "json_path": path}
+                    for source, path in zip(sources, ("$.plan", "$"), strict=True)]
+    if fault == "tampered":
+        second.write_text("different source after manifest")
+    identity = {"actor": "dev", "role": "dev", "provider": "codex", "purpose": "implementation"}
+    if fault in {"unauthorized", "tampered"}:
+        with pytest.raises(ValueError):
+            prepare_required_read(state, manifest=manifest, rows=requirements, identity=identity)
+        return
+    output, receipts = prepare_required_read(state, manifest=manifest, rows=requirements, identity=identity)
+    items = json.loads(output)["items"]
+    assert len(receipts) == 2
+    assert {receipt["artifact_sha256"] for receipt in receipts} == {source["sha256"] for source in sources}
+    if fault in {"different", "trailing_newline"}:
+        assert len(items) == 2
+        assert "aliases" not in items[0]
+    else:
+        assert len(items) == 1
+        assert items[0]["content"] == content
+        assert items[0]["artifact_sha256"] == sources[0]["sha256"]
+        assert items[0]["aliases"][0]["artifact_sha256"] == sources[1]["sha256"]
+
+
+def test_existing_bundle_identity_is_stable_without_cross_source_overlap(tmp_path):
+    from zf.cli.artifact_required_read import prepare_required_read
+    from zf.runtime.artifact_read_snapshot import open_selection
+    from zf.runtime.call_result_envelope import canonical_json_sha256
+
+    state = tmp_path / "state"
+    path = state / "artifacts" / "input.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"body": "x" * 10000}))
+    source = {"source_id": "s", "artifact_id": "a", "ref": "artifacts/input.json",
+              "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "allowed_paths": ["$.body"]}
+    manifest = build_attempt_source_manifest(workflow_run_id="r", task_id="t", attempt_id="a",
+        dispatch_id="a", sources=[source], metadata={"read_purpose": "implementation"})
+    rows = [{"source_id": "s", "artifact_id": "a", "artifact_sha256": source["sha256"], "json_path": "$.body"}]
+    identity = {"actor": "dev", "role": "dev", "provider": "codex", "purpose": "implementation"}
+    preview = open_selection(state, manifest=manifest, row=rows[0], identity=identity)
+    previous_digest = canonical_json_sha256({"manifest": manifest, "requirements": rows,
+        "selections": [(source["sha256"], "$.body", preview.digest)], "identity": identity})
+    first, _ = prepare_required_read(state, manifest=manifest, rows=rows, identity=identity)
+    page = json.loads(first)
+    assert page["bundle_digest"] == previous_digest
+    second, _ = prepare_required_read(state, manifest=manifest, rows=rows, identity=identity,
+                                       cursor=page["next_cursor"])
+    assert json.loads(second)["items"][0]["page_start"] == page["items"][0]["page_end"]

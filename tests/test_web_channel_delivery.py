@@ -39,6 +39,9 @@ def test_preview_is_complete_registered_and_read_only(fixture):
     assert response.json()["markdown"] == markdown
     assert response.json()["artifact_digest"] == prd["artifact_digest"]
     assert response.json()["revision"] == 2
+    assert response.json()["read_views"]["product"]["label"] == "产品经理"
+    assert response.json()["read_views"]["architecture"]["sections"]
+    assert response.json()["read_views"]["developer"]["sections"]
     assert (state / "events.jsonl").read_bytes() == before
 
 

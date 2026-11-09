@@ -12,7 +12,6 @@ from zf.core.task.store import TaskStore
 _EXTERNAL_EVIDENCE_FAILURES = frozenset({
     "external_gate",
     "manual_evidence_required",
-    "upstream_contract_gap",
 })
 
 

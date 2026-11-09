@@ -36,6 +36,11 @@ authoritative when it differs from an older Skill example.
 
 ## Rules
 
+- 大体积受控必读使用本次 briefing 的 `zf artifact read --attempt <本次attempt> --required`，
+  按 `required-artifact-page.v2` 逐页读取全部 `items[].content`；使用 `next_cursor`
+  继续，直到为空。工具上限较小时加 `--page-bytes 2048`，每页单独返回并完整阅读，
+  不并发堆积页面或把全文拼回超大输出。截断必须补读原页；CLI 回执与 read-ledger
+  不证明模型理解正文，尚未读完继续工作，不单独因此提交业务失败。
 - 在最终提交前加载 `zf-plan-execution-readiness`，记录条款级验收责任、切片可演示结果、
   阶段集成和条件决定的审查证据；机械数量检查不替代语义评估。
 - 对多章节或多份 authority，先建立来源单元到领域/模块/能力/旅程/需求/AC/task/test/

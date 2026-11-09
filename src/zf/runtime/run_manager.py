@@ -58,8 +58,11 @@ from zf.autoresearch.self_repair import (
 )
 from zf.runtime.repair_dispatch import pending_repair_dispatches
 from zf.runtime.pane_probe import build_runtime_pane_probe
+from zf.runtime.pause_lifecycle import is_dispatch_paused
+from zf.runtime.run_manager_action_admission import action_gate_reason, serialized_recovery_action
 from zf.runtime.problem_taxonomy import problem_envelope_from_action
 from zf.runtime.run_manager_advisor import build_replan_advisor_projection
+from zf.runtime.run_manager_progress import task_evidence_signals
 from zf.runtime.run_manager_reports import (
     build_regression_backlog_candidates,
     build_retrospective_markdown,
@@ -81,6 +84,11 @@ from zf.runtime.execution_policy_routing import (
     execution_route_catalog_for_role,
     pending_execution_route_actions,
 )
+from zf.runtime.workflow_frontier_owner import (
+    normal_frontier_owner,
+    run_manager_may_consume_normal_frontier,
+)
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 from zf.runtime.recovery_context import write_task_recovery_context
 from zf.runtime.run_manager_router import (
     ACTION_POLICIES,
@@ -101,6 +109,7 @@ from zf.runtime.run_manager_wait_hint import (
     build_wait_hint_projection,
 )
 from zf.runtime.run_continuation import (
+    bind_action_dependencies,
     build_run_continuation_projection,
     enrich_continuation_actions,
 )
@@ -332,7 +341,21 @@ def _run_manager_tick_unlocked(
         writer=writer,
     ):
         events = _read_events(state_dir, event_log=event_log)
+    from zf.runtime.run_manager_reflection import reconcile_reflections
+
+    reconcile_reflections(
+        state_dir=state_dir, writer=writer,
+        dispatch_enabled=_run_manager_reflect_enabled(config, reflect_fn),
+        invoke=lambda body: _reflection_payload(
+            _invoke_reflect_function(body, config=config, reflect_fn=reflect_fn)
+        ),
+    )
+    events = _read_events(state_dir, event_log=event_log)
     if _settle_pending_action_effects(events, writer):
+        events = _read_events(state_dir, event_log=event_log)
+    from zf.runtime.worker_assistance import reconcile_assistance
+
+    if auto_execute and reconcile_assistance(state_dir=state_dir, writer=writer, config=config):
         events = _read_events(state_dir, event_log=event_log)
     if reconcile_reserved_read_only_continuations(
         state_dir,
@@ -458,7 +481,7 @@ def _run_manager_tick_unlocked(
             emit_self_repair_closeouts,
         )
 
-        if not _resident_owns_self_repair_execution(config):
+        if not _resident_owns_self_repair_execution(config) and not is_dispatch_paused(state_dir, events=events):
             repairs_dispatched = dispatch_pending_self_repairs(
                 events,
                 writer,
@@ -490,6 +513,28 @@ def _run_manager_tick_unlocked(
         config=config,
         project_root=project_root,
     )
+    owner_blocked = projection.get("normal_frontier_owner_blocked")
+    if isinstance(owner_blocked, Mapping):
+        events = _read_events(state_dir, event_log=event_log)
+        fingerprint = str(owner_blocked.get("fingerprint") or "")
+        if fingerprint and not any(
+            event.type == "workflow.normal_frontier.owner_blocked"
+            and isinstance(event.payload, Mapping)
+            and str(event.payload.get("fingerprint") or "") == fingerprint
+            for event in events
+        ):
+            writer.emit(
+                "workflow.normal_frontier.owner_blocked",
+                actor="run-manager",
+                payload=dict(owner_blocked),
+                causation_id=started.id,
+            )
+            projection = build_run_manager_projection(
+                state_dir,
+                events=_read_events(state_dir, event_log=event_log),
+                config=config,
+                project_root=project_root,
+            )
     closeout_events = _emit_run_completed_closeout_if_ready(
         writer,
         projection=projection,
@@ -525,13 +570,37 @@ def _run_manager_tick_unlocked(
     )
     selected_operation_key = str(next_operation.get("operation_key") or "")
     if action_filter is not None and not continuation.get("terminal"):
-        selected_operation_key = next((
-            str(action.get("operation_key") or "")
-            for action in projection.get("pending_actions", [])
+        events = _read_events(state_dir, event_log=event_log)
+        filtered_actions = [
+            action for action in projection.get("pending_actions", [])
             if isinstance(action, dict)
             and str(action.get("action") or "") in action_filter
-        ), "")
-    if auto_execute and selected_operation_key:
+            and not _action_seen(events, action)
+        ]
+        filtered_continuation = build_run_continuation_projection(
+            events,
+            goal=projection.get("goal") or {},
+            pending_actions=filtered_actions,
+            completion_profile=projection.get("completion_profile") or {},
+        )
+        selected_operation_key = str(
+            (filtered_continuation.get("next_operation") or {}).get("operation_key") or ""
+        )
+        # An explicit request for a stale/invalid action still needs a rejection
+        # receipt. Do not execute it, or turn a pending human gate into a retry.
+        if auto_execute and not selected_operation_key and not is_dispatch_paused(state_dir, events=events):
+            blocked = next((
+                action for action in filtered_actions
+                if (action.get("preflight") or {}).get("status") == "blocked"
+                and (action.get("policy_decision") or {}).get("decision") != "needs_diagnosis"
+            ), None)
+            if blocked is not None:
+                _emit_blocked_action(
+                    writer, blocked, causation_id=started.id,
+                    reason="filtered recovery action failed preflight",
+                )
+                actions_blocked += 1
+    if auto_execute and selected_operation_key and not is_dispatch_paused(state_dir, events=events):
         for action in projection.get("pending_actions", []):
             if not isinstance(action, dict):
                 continue
@@ -651,6 +720,7 @@ def _run_manager_tick_unlocked(
                         causation_id=started.id,
                     )
                     if status == "applied":
+                        diagnosis_satisfied = True
                         actions_applied += 1
                         applied_safe_actions.append("resident_agent_reprompt")
                     elif status == "blocked":
@@ -688,6 +758,12 @@ def _run_manager_tick_unlocked(
                         reflect_requested += 1
                         reflect_completed += 1
                         events = _read_events(state_dir, event_log=event_log)
+                from zf.runtime.run_manager_reflection import reflection_pending
+
+                diagnosis_satisfied = diagnosis_satisfied or reflection_pending(
+                    _read_events(state_dir, event_log=event_log),
+                    _run_manager_reflect_request_id(action),
+                )
                 if not diagnosis_satisfied and _emit_autoresearch_request(
                     state_dir=state_dir,
                     writer=writer,
@@ -761,6 +837,10 @@ def _run_manager_tick_unlocked(
                 },
             )
 
+    tick_events = _read_events(state_dir, event_log=event_log)
+    tick_start = next(i for i, event in enumerate(tick_events) if event.id == started.id)
+    reflect_requested = sum(event.type == RUN_MANAGER_REFLECT_REQUESTED for event in tick_events[tick_start:])
+    reflect_completed = sum(event.type == RUN_MANAGER_REFLECT_COMPLETED for event in tick_events[tick_start:])
     transition = _emit_tick_transition(
         writer,
         projection=projection,
@@ -899,19 +979,31 @@ def build_run_manager_projection(
         events,
         task_store=TaskStore(state_dir / "kanban.json"),
     )
+    from zf.runtime.failure_diagnosis_routing import pending_failure_diagnoses
+    from zf.runtime.worker_assistance import pending_assistance_actions
+
+    failure_diagnoses = pending_failure_diagnoses(state_dir, events, config)
     rework_triage_actions = [
+        *pending_assistance_actions(events),
+        *failure_diagnoses,
         *immediate_replan_actions,
         *pending_rework_triage_actions(
             events,
             threshold=triage_threshold,
             stale_seconds=_DIAGNOSIS_REQUEST_STALE_SECONDS,
             advisor_available=any(
-                str(getattr(role, "name", "") or "") == "orchestrator"
+                is_configured_orchestrator_role(config, role)
                 for role in getattr(config, "roles", []) or []
             ),
             resident_advisor=resident_agent,
         ),
     ]
+    from zf.runtime.orchestrator_agent_execution_review import pending_execution_reviews
+
+    rework_triage_actions.extend(pending_execution_reviews(
+        state_dir=state_dir, config=config, events=events,
+        excluded_task_ids={str(action.get("task_id") or "") for action in rework_triage_actions},
+    ))
     rework_triage_actions = [
         enrich_semantic_replan_action(
             action,
@@ -1097,6 +1189,9 @@ def build_run_manager_projection(
         action for action in candidate_action_candidates
         if (
             not _candidate_rework_shadowed_by_workflow(action, workflow_actions)
+            and str(action.get("source_event_id") or "") not in {
+                str(item.get("source_event_id") or "") for item in failure_diagnoses
+            }
             and str(action.get("fanout_id") or "") not in triage_owned_fanouts
             and not (
                 set(_string_list(action.get("failed_task_ids")))
@@ -1176,15 +1271,34 @@ def build_run_manager_projection(
         *attention_actions,
     ]
     dynamic_continuation_actions = []
+    normal_frontier_owner_blocked: dict[str, Any] | None = None
     if (
         not base_pending_actions
         and completion_profile.get("status") != "complete"
     ):
-        dynamic_continuation_actions = pending_read_only_continuation_actions(
+        projected_dynamic_actions = pending_read_only_continuation_actions(
             state_dir,
             config=config,
             events=events,
         )
+        if run_manager_may_consume_normal_frontier(config):
+            dynamic_continuation_actions = projected_dynamic_actions
+        elif projected_dynamic_actions:
+            fragment_ids = sorted({
+                str(action.get("fragment_id") or "")
+                for action in projected_dynamic_actions
+                if str(action.get("fragment_id") or "")
+            })
+            fingerprint = hashlib.sha256(
+                json.dumps(fragment_ids, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            normal_frontier_owner_blocked = {
+                "schema_version": "workflow-normal-frontier-owner.v1",
+                "owner": normal_frontier_owner(config),
+                "blocked_by": "run_manager_owner_fence",
+                "fragment_ids": fragment_ids,
+                "fingerprint": fingerprint,
+            }
     selectable_actions = [
         *base_pending_actions,
         *dynamic_continuation_actions,
@@ -1229,10 +1343,26 @@ def build_run_manager_projection(
             for action in pending_actions
         ]
     pending_actions = _prioritize_pending_actions(pending_actions)
+    pending_actions = bind_action_dependencies(
+        pending_actions, TaskStore(state_dir / "kanban.json").list_all(),
+    )
     pending_actions, recovery_cases = converge_recovery_actions(
         events,
         pending_actions,
     )
+    # One bound diagnosis at a time; keep a derived wait, not a terminal
+    # blocked receipt that would permanently consume the queued action.
+    requests = resident_agent.get("requests") or []
+    if requests and _resident_agent_can_reprompt(resident_agent):
+        for action in pending_actions:
+            if _is_owned_resident_diagnosis(action):
+                admission = action.get("recovery_admission") or {}
+                if admission.get("status") != "blocked":
+                    action["diagnosis_wait"] = requests[0]
+                    action["recovery_admission"] = {
+                        **admission, "status": "blocked",
+                        "reason": "resident diagnosis awaits bound response or deadline",
+                    }
     recovery_metrics_events = events
     if current_run_id:
         from zf.runtime.run_scope import events_for_run
@@ -1256,9 +1386,44 @@ def build_run_manager_projection(
     continuation = build_run_continuation_projection(
         events,
         goal=goal,
-        pending_actions=pending_actions,
+        # Keep unresolved obligations visible, but do not select an action the
+        # executor will discard as already delivered. Later actions must run.
+        pending_actions=[a for a in pending_actions if not _action_seen(events, a)],
         completion_profile=completion_profile,
     )
+    # A no-progress diagnosis remains first in the queue, but cannot be sent
+    # while another Autoresearch request occupies the single-flight slot.
+    # Allow current task work with a separate available owner (OA review or
+    # resident diagnosis); retain human gates and the background diagnosis.
+    selected = continuation.get("next_operation")
+    if (
+        isinstance(selected, dict)
+        and selected.get("failure_class") == "no_progress_breaker"
+        and _autoresearch_inflight_request_ids(events)
+        and not _run_manager_reflect_enabled(config, None)
+    ):
+        review = next((
+            action for action in pending_actions
+            if (
+                action.get("action") == "orchestrator-rework-triage"
+                and action.get("failure_class") == "settled_impl_requires_semantic_review"
+                and _pending_action_readiness(action) == "ready_to_execute"
+                or action.get("task_id")
+                and _pending_action_readiness(action) == "needs_diagnosis"
+                and not resident_agent.get("requests")
+                and _resident_diagnosis_reprompt_action(action, resident_agent) is not None
+            )
+            and (action.get("recovery_admission") or {}).get("status") != "blocked"
+            and not action_gate_reason(state_dir, events, action, _pending_human_decisions(events))
+            and not _action_seen(events, action)
+        ), None)
+        if review is not None:
+            continuation = build_run_continuation_projection(
+                events,
+                goal=goal,
+                pending_actions=[review, *(a for a in pending_actions if a is not review)],
+                completion_profile=completion_profile,
+            )
     monitor = build_run_monitor_projection(
         state_dir,
         events=events,
@@ -1294,6 +1459,7 @@ def build_run_manager_projection(
         no_progress=no_progress,
         repair_merge_queue=merge_queue,
         wait_hints=wait_hints,
+        continuation=continuation,
     )
     retrospective_md = build_retrospective_markdown(projection={
         "summary": {
@@ -1394,6 +1560,7 @@ def build_run_manager_projection(
             "by_problem_class": dict(sorted(by_problem_class.items())),
         },
         "pending_actions": pending_actions,
+        "normal_frontier_owner_blocked": normal_frontier_owner_blocked,
         "summary": {
             "pending_actions": len(pending_actions),
             "executable_actions": sum(
@@ -1590,6 +1757,7 @@ def build_resident_agent_projection(
         try:
             resident = config.runtime.run_manager.resident_agent
             enabled = bool(resident.enabled)
+            threshold_seconds = resident.response_timeout_seconds
             instance_id = str(getattr(resident, "instance_id", "") or instance_id)
         except Exception:
             enabled = False
@@ -1638,9 +1806,16 @@ def build_resident_agent_projection(
     # recommendation for a long time, so silence alone is not a workflow or
     # provider fault.  Pane/process health is owned by run_manager_watchdog and
     # carries an explicit typed failure when recovery is warranted.
-    stalled = False
+    from zf.runtime.resident_request_obligations import resident_request_obligations
+
+    requests = resident_request_obligations(
+        events, now=current, timeout_seconds=threshold_seconds,
+    )
+    stalled = enabled and any(row["status"] == "overdue" for row in requests)
     if not enabled:
         status = "disabled"
+    elif stalled:
+        status = "stalled"
     elif spawned is None:
         status = "not_spawned"
     elif prompted is None or not prompt_sent:
@@ -1665,13 +1840,15 @@ def build_resident_agent_projection(
         "briefing_path": str(prompt_payload.get("briefing_path") or ""),
         "status": status,
         "stalled": stalled,
+        "requests": requests,
         "watchdog": {
             "enabled": enabled,
             "threshold_seconds": threshold_seconds,
             "prompt_age_seconds": prompt_age,
             "silent": silent,
-            "silence_is_fault": False,
+            "silence_is_fault": stalled,
             "reason": (
+                "bound resident request exceeded its response deadline" if stalled else
                 "resident agent has not emitted advice; silence alone is not a business fault"
                 if silent else ""
             ),
@@ -1704,11 +1881,22 @@ def _pending_resident_agent_actions(
     prompt_event = resident_agent.get("prompted_event")
     prompt_event = prompt_event if isinstance(prompt_event, dict) else {}
     prompt_event_id = str(prompt_event.get("event_id") or "")
+    obligation = next((row for row in resident_agent.get("requests", [])
+                       if row.get("status") == "overdue"), {})
+    prompt_event_id = str(obligation.get("event_id") or prompt_event_id)
+    request_id = str(obligation.get("request_id") or "")
+    if prompt_event_id and prompt_event_id not in source_event_ids:
+        source_event_ids.append(prompt_event_id)
     fingerprint = "run-manager-resident-stalled:" + (prompt_event_id or "unknown")
     can_reprompt = bool(
         str(resident_agent.get("tmux_session") or "").strip()
         and str(resident_agent.get("briefing_path") or "").strip()
     )
+    if any(event.type == RUN_MANAGER_RESIDENT_PROMPTED
+           and event.payload.get("request_id") == request_id
+           and str(event.payload.get("source_action_checkpoint_id") or "").startswith("resident-agent-stall-")
+           for event in events):
+        can_reprompt = False
     action_name = "resident-agent-reprompt" if can_reprompt else "diagnose-attention"
     safe_resume_action = "resident_agent_reprompt" if can_reprompt else "diagnose_attention"
     expected_downstream = (
@@ -1719,8 +1907,10 @@ def _pending_resident_agent_actions(
         "schema_version": "run-manager.pending-action.v1",
         "action": action_name,
         "checkpoint_id": "resident-agent-stall-" + hashlib.sha1(
-            fingerprint.encode("utf-8")
+            (fingerprint + ("" if can_reprompt else ":diagnose")).encode("utf-8")
         ).hexdigest()[:12],
+        "request_id": request_id,
+        "task_id": str(obligation.get("task_id") or ""),
         "safe_resume_action": safe_resume_action,
         "fingerprint": fingerprint,
         "failure_class": "run_manager_resident_agent_stalled",
@@ -1736,11 +1926,11 @@ def _pending_resident_agent_actions(
         "role_instance": str(resident_agent.get("instance_id") or "run-manager"),
         "attention_id": "resident-agent:" + (prompt_event_id or "prompted"),
         "severity": "high",
-        "title": "Resident Run Manager agent has not emitted observations",
+        "title": "Resident Run Manager request response is overdue",
         "summary": (
-            "run.manager.resident.prompted was emitted, but no "
-            "run.manager.agent.observation or run.manager.agent.recommendation "
-            "followed before the watchdog threshold."
+            "The current resident request has no matching response before its "
+            "configured deadline. Historical or unbound observations do not "
+            "fulfil this request; explicit pause time is excluded."
         ),
         "source_event_ids": source_event_ids,
         "source_ref": f"events.jsonl#{prompt_event_id}" if prompt_event_id else "",
@@ -1760,7 +1950,7 @@ def _pending_resident_agent_actions(
             "reprompt_resident_run_manager",
             "fix_provider_approval_or_cli_context",
         ],
-        "expected_output": [
+        "expected_output": (obligation.get("expected_output") if can_reprompt else None) or [
             "resident_agent_diagnosis",
             "pane_target",
             "provider_prompt_state",
@@ -1768,6 +1958,13 @@ def _pending_resident_agent_actions(
         ],
         "route_registry": "run-manager-router.v1",
     }
+    original_prompt = next((e for e in events if e.id == prompt_event_id), None)
+    context = (original_prompt.payload or {}).get("diagnosis_context") if original_prompt else None
+    if can_reprompt and isinstance(context, dict) and context.get("request_kind") == "recovery_diagnosis":
+        action.update({key: context[key] for key in (
+            "request_kind", "recovery_context_ref", "read_set_ref",
+            "source_ref", "diagnosis_expected_output",
+        ) if key in context})
     if _action_seen(events, action):
         return []
     action["preflight"] = preflight_action(
@@ -1823,6 +2020,18 @@ def _resident_diagnosis_reprompt_action(
         "diagnosis_source_action": str(action.get("action") or ""),
         "suggested_route": "run_manager_resident_agent",
     }
+    if _is_owned_resident_diagnosis(action):
+        reprompt.update(
+            request_kind="recovery_diagnosis",
+            request_id="rmd-" + hashlib.sha256(checkpoint_id.encode()).hexdigest()[:16],
+            diagnosis_expected_output=_string_list(action.get("expected_output")),
+            expected_output=[RUN_MANAGER_AGENT_RECOMMENDATION],
+            continuation_expected_events=[RUN_MANAGER_AGENT_RECOMMENDATION],
+            effect_expected_events=action.get("effect_expected_events") or (
+                ["task.done", "task.done.accepted"] if action.get("task_id")
+                else ["flow.goal.closed"]
+            ),
+        )
     reprompt["preflight"] = preflight_action(
         action="resident-agent-reprompt",
         payload=reprompt,
@@ -1834,18 +2043,21 @@ def _resident_diagnosis_reprompt_action(
     return reprompt
 
 
+def _is_owned_resident_diagnosis(action: dict[str, Any]) -> bool:
+    return (
+        action.get("action") == "diagnose-attention"
+        and action.get("owner_route") == "run_manager"
+        and action.get("suggested_route") == "run_manager_recovery"
+    )
+
+
 def _diagnosis_action_may_reprompt_resident(action: dict[str, Any]) -> bool:
-    """Only reprompt resident agent for resident-agent health diagnosis.
-
-    Generic workflow/fanout attention still needs a concrete resume proposal;
-    merely proving the resident pane was prompted is not evidence that the
-    target worker or fanout child recovered.
-    """
-
-    failure_class = str(action.get("failure_class") or "")
-    if failure_class == "run_manager_resident_agent_stalled":
-        return True
-    return str(action.get("suggested_route") or "") == "run_manager_resident_agent"
+    """Deliver owned diagnoses; a delivery receipt never resolves the fault."""
+    return (
+        _is_owned_resident_diagnosis(action)
+        or action.get("failure_class") == "run_manager_resident_agent_stalled"
+        or action.get("suggested_route") == "run_manager_resident_agent"
+    )
 
 
 def build_run_monitor_projection(
@@ -1954,6 +2166,9 @@ def build_run_monitor_projection(
         "current_phase": _derive_phase(events),
         "lane_occupancy": dict(sorted(lane_counts.items())),
         "in_flight_tasks": display_in_flight,
+        "task_evidence": task_evidence_signals(
+            events, (str(item.get("task_id") or "") for item in in_flight[-50:]),
+        ),
         "residual_in_flight_tasks": residual_in_flight,
         "open_attention": display_open_attention,
         "residual_open_attention": residual_open_attention,
@@ -2088,7 +2303,9 @@ def _recovery_event_matches_attention(
         }
         if lane in values:
             return True
-    return not task_id and not lane
+    # Missing scope cannot make unrelated progress proof of recovery.
+    # Unscoped escalations require their explicit controlled acknowledgement.
+    return False
 
 
 def _event_task_id(event: ZfEvent) -> str:
@@ -2205,10 +2422,18 @@ def build_run_status_explain_projection(
     no_progress: dict[str, Any],
     repair_merge_queue: dict[str, Any],
     wait_hints: dict[str, Any],
+    continuation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Explain the current run state from existing read-only projections."""
 
-    pending_action = next((item for item in pending_actions if isinstance(item, dict)), None)
+    next_operation = (continuation or {}).get("next_operation") or {}
+    selected_key = str(next_operation.get("operation_key") or "") if isinstance(next_operation, dict) else ""
+    pending_action = next((
+        item for item in pending_actions
+        if isinstance(item, dict) and selected_key and item.get("operation_key") == selected_key
+    ), None)
+    if pending_action is None:
+        pending_action = next((item for item in pending_actions if isinstance(item, dict)), None)
     event_list = list(events or [])
     pending_execution = _pending_execution_summary(event_list, pending_actions)
     explanation = _status_explain_decision(
@@ -2272,14 +2497,15 @@ def build_run_goal_projection(
 
     from zf.runtime.run_scope import (
         events_for_run,
-        known_run_ids,
-        resolve_run_for_event,
-        resolve_run_id,
+        event_run_id,
+        run_aliases,
     )
 
     all_events = list(events)
+    aliases = run_aliases(all_events)
+    known = set(aliases.values())
     requested_run_id = str(run_id or "").strip()
-    selected_run_id = resolve_run_id(all_events, requested_run_id)
+    selected_run_id = aliases.get(requested_run_id, "")
     if not selected_run_id and not requested_run_id:
         for event in reversed(all_events):
             if event.type not in {
@@ -2289,15 +2515,16 @@ def build_run_goal_projection(
                 "run.goal.blocked",
             }:
                 continue
-            selected_run_id = resolve_run_for_event(all_events, event)
+            selected_run_id = event_run_id(event, aliases=aliases)
+            if not selected_run_id and len(known) == 1:
+                selected_run_id = next(iter(known))
             if selected_run_id:
                 break
     if not selected_run_id and not requested_run_id:
-        known = known_run_ids(all_events)
         if len(known) == 1:
             selected_run_id = next(iter(known))
     scoped_events = (
-        events_for_run(all_events, run_id=selected_run_id)
+        events_for_run(all_events, run_id=selected_run_id, _aliases=aliases)
         if selected_run_id
         else ([] if requested_run_id else all_events)
     )
@@ -2360,6 +2587,7 @@ def build_run_goal_projection(
     handoff = reduce_attempt_handoffs(
         all_events,
         workflow_run_id=selected_run_id,
+        _aliases=aliases,
     )
     if terminal_event is not None:
         from zf.runtime.goal_completion_authority import scope_handoff_snapshot
@@ -4486,14 +4714,44 @@ def _consume_agent_recommendations(
     actions_applied = 0
     actions_blocked = 0
     actions_failed = 0
+    if is_dispatch_paused(state_dir, events=events):
+        return (0, 0, 0, 0, 0, 0, 0)
     for event in events:
         if event.type != RUN_MANAGER_AGENT_RECOMMENDATION:
             continue
         if _agent_recommendation_seen(events, event):
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
+        from zf.runtime.recovery_step import bind_recommendation_to_request
+        try:
+            payload = bind_recommendation_to_request(events, event, payload)
+            if (_recommendation_route(payload) == "controlled_action"
+                    and _controlled_action_name_from_recommendation(payload) == TRIAGE_REQUEST_ACTION):
+                from zf.runtime.resident_semantic_handoff import bind_resident_semantic_handoff
+                payload = bind_resident_semantic_handoff(
+                    state_dir=state_dir, config=config, events=events, payload=payload,
+                )
+        except ValueError as exc:
+            writer.emit(RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED, actor="run-manager",
+                causation_id=event.id, payload={"source_event_id": event.id,
+                    "status": "blocked", "reason": str(exc)})
+            consumed += 1
+            actions_blocked += 1
+            continue
         action = _action_from_agent_recommendation(event, payload)
         route = _recommendation_route(payload)
+        if route in {"autoresearch", "reflect", "repair"}:
+            current_events = writer.event_log.read_all()
+            gate = action_gate_reason(state_dir, current_events, action, _pending_human_decisions(current_events))
+            if not gate and not _operation_precondition_holds(current_events, action):
+                gate = "operation_precondition_changed"
+            if gate:
+                writer.emit(RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED, actor="run-manager",
+                    causation_id=event.id, payload={"source_event_id": event.id, "route": route,
+                        "status": "deferred", "reason": gate})
+                consumed += 1
+                actions_blocked += 1
+                continue
         status = "consumed"
         reason = ""
         downstream_event_ids: list[str] = []
@@ -4567,6 +4825,10 @@ def _consume_agent_recommendations(
             decision_name = str(decision.get("decision") or "")
             if decision_name == "auto_decide":
                 before = len(writer.event_log.read_all())
+                current_events = writer.event_log.read_all()
+                gate_reason = action_gate_reason(
+                    state_dir, current_events, action, _pending_human_decisions(current_events),
+                )
                 action_status = _execute_controlled_run_action(
                     state_dir=state_dir,
                     writer=writer,
@@ -4596,6 +4858,9 @@ def _consume_agent_recommendations(
                 else:
                     actions_failed += 1
                 reason = f"controlled_action_status={action_status}"
+                if gate_reason:
+                    status = "deferred"
+                    reason = gate_reason
             elif decision_name == "needs_diagnosis":
                 before = len(writer.event_log.read_all())
                 if _emit_autoresearch_request(
@@ -4693,9 +4958,10 @@ def _agent_recommendation_seen(events: list[ZfEvent], recommendation: ZfEvent) -
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
         if str(payload.get("source_event_id") or "") == recommendation.id:
+            if str(payload.get("status") or "") == "deferred" and str(payload.get("reason") or "") != "autoresearch_inflight":
+                return False
             if (
-                str(payload.get("status") or "") == "deferred"
-                or str(payload.get("reason") or "")
+                str(payload.get("reason") or "")
                 in {
                     "autoresearch_inflight",
                     "autoresearch_request_already_exists",
@@ -4802,6 +5068,7 @@ def _controlled_action_name_from_recommendation(payload: dict[str, Any]) -> str:
         requested = requested.get("action") or requested.get("kind")
     requested_name = str(requested or "").strip()
     supported = {
+        TRIAGE_REQUEST_ACTION,
         "workflow-task-resume",
         "workflow-batch-resume",
         "worker-lifecycle-recover",
@@ -4825,6 +5092,7 @@ def _controlled_action_name_from_recommendation(payload: dict[str, Any]) -> str:
     if safe_action in _SAFE_BATCH_ACTIONS:
         return "workflow-batch-resume"
     safe_to_action = {
+        "request_orchestrator_triage": TRIAGE_REQUEST_ACTION,
         "worker_lifecycle_recover": "worker-lifecycle-recover",
         "repair_closeout_validate": "repair-closeout-validate",
         "fanout_aggregate_rebuild": "fanout-aggregate-rebuild",
@@ -4888,9 +5156,27 @@ def _action_from_agent_recommendation(
         "manifest_ref",
         "worktree_path",
         "queue_id",
+        "workflow_run_id",
+        "run_id",
+        "task_map_generation",
+        "contract_revision",
+        "recovery_case_id",
+        "operation_precondition",
+        "request_id", "recorded_event_id", "target_commit", "active_attempt_id",
+        "plan_artifact_package_digest", "continuation_expected_events",
+        "effect_bindings", "effect_expected_events", "effect_required_sequence",
+        "shared_repair_association_id", "resource_id", "resource_version", "repair_step_id",
     ):
         if payload.get(key) is not None:
             action[key] = payload.get(key)
+    if action_name == TRIAGE_REQUEST_ACTION:
+        for key in (
+            "target_operation_id", "target_stage_id", "run_goal_objective_event_id",
+            "flow_kind", "role", "failure_count", "source_event_id", "source_event_type",
+            "source_event_ids", "failure_event_ids", "request_kind", "recovery_scope",
+        ):
+            if key in payload:
+                action[key] = payload[key]
     if payload.get("mutating_resume_supported") is not None:
         action["mutating_resume_supported"] = bool(payload.get("mutating_resume_supported"))
     expected_downstream = _string_list(payload.get("expected_downstream_events"))
@@ -5069,6 +5355,11 @@ def _emit_autoresearch_request(
             human=False,
         )
         return False
+    precondition = action.get("operation_precondition")
+    precondition = precondition if isinstance(precondition, dict) else {}
+    bound_run_id = str(
+        action.get("workflow_run_id") or action.get("run_id") or precondition.get("run_id") or ""
+    )
     payload = {
         "schema_version": "run-manager.autoresearch-request.v2",
         "request_id": request_id,
@@ -5086,8 +5377,13 @@ def _emit_autoresearch_request(
         "fanout_id": str(action.get("fanout_id") or ""),
         "pdd_id": str(action.get("pdd_id") or ""),
         "stage_id": str(action.get("stage_id") or ""),
-        "workflow_run_id": str(action.get("workflow_run_id") or ""),
-        "run_id": str(action.get("run_id") or ""),
+        "workflow_run_id": bound_run_id,
+        "run_id": str(action.get("run_id") or bound_run_id),
+        "task_map_generation": str(
+            action.get("task_map_generation")
+            or (precondition.get("generation") if bound_run_id and precondition.get("run_id") == bound_run_id else "")
+            or ""
+        ),
         "trace_id": str(action.get("trace_id") or ""),
         "failure_scope": str(action.get("failure_scope") or ""),
         "plan_admission_incident_id": str(action.get("plan_admission_incident_id") or ""),
@@ -5159,47 +5455,29 @@ def _maybe_invoke_run_manager_reflect(
             human=False,
         )
         return False
-    if not _request_id_seen(writer.event_log, RUN_MANAGER_REFLECT_REQUESTED, request_id):
-        writer.emit(
-            RUN_MANAGER_REFLECT_REQUESTED,
-            actor="run-manager",
-            causation_id=causation_id,
-            correlation_id=request_id,
-            payload={
-                "schema_version": "run-manager.reflect.v2",
-                "request_id": request_id,
-                "checkpoint_id": str(action.get("checkpoint_id") or ""),
-                "fingerprint": _fingerprint(action, fallback=request_id),
-                "failure_class": str(action.get("failure_class") or "unknown_complex"),
-                **context_refs,
-                "apply_policy": "proposal_only",
-                "source_event_ids": _string_list(action.get("source_event_ids")),
-            },
-        )
+    from zf.runtime.run_manager_reflection import submit_reflection
+
     prompt = _build_run_manager_reflect_prompt(
-        state_dir=state_dir,
-        project_root=project_root,
-        action=action,
-        projection=projection,
+        state_dir=state_dir, project_root=project_root, action=action, projection=projection,
     )
-    result = _invoke_reflect_function(prompt, config=config, reflect_fn=reflect_fn)
-    payload = _reflection_payload(result)
-    writer.emit(
-        RUN_MANAGER_REFLECT_COMPLETED,
-        actor="run-manager",
-        causation_id=causation_id,
-        correlation_id=request_id,
-        payload={
-            "schema_version": "run-manager.reflect.v2",
-            "request_id": request_id,
+    return submit_reflection(
+        state_dir=state_dir, writer=writer, request_id=request_id, prompt=prompt,
+        metadata={
             "checkpoint_id": str(action.get("checkpoint_id") or ""),
+            "recovery_case_id": recovery_case_id_from_payload(action),
             "fingerprint": _fingerprint(action, fallback=request_id),
+            "failure_class": str(action.get("failure_class") or "unknown_complex"),
+            "workflow_run_id": str(action.get("workflow_run_id") or ""),
+            "task_id": str(action.get("task_id") or ""),
+            "source_event_id": causation_id,
+            "source_event_ids": _string_list(action.get("source_event_ids")),
             **context_refs,
-            "apply_policy": "proposal_only",
-            **payload,
         },
+        timeout_seconds=_run_manager_reflect_timeout(config),
+        invoke=lambda body: _reflection_payload(
+            _invoke_reflect_function(body, config=config, reflect_fn=reflect_fn)
+        ),
     )
-    return True
 
 
 def _run_manager_reflect_enabled(
@@ -5538,6 +5816,7 @@ def _emit_run_completed_closeout_if_ready(
     return 1
 
 
+@serialized_recovery_action
 def _execute_controlled_run_action(
     *,
     state_dir: Path,
@@ -5546,8 +5825,23 @@ def _execute_controlled_run_action(
     project_root: Path | None,
     action: dict[str, Any],
     causation_id: str,
+    approved_decision_token: str = "",
 ) -> str:
+    events = writer.event_log.read_all()
+    if action_gate_reason(
+        state_dir, events, action, _pending_human_decisions(events),
+        approved_decision_token=approved_decision_token,
+    ) or not _operation_precondition_holds(events, action):
+        return "blocked"
     action_name = str(action.get("action") or "")
+    if action_name == "diagnose-attention":
+        return _execute_diagnose_attention(
+            state_dir=state_dir,
+            writer=writer,
+            project_root=project_root,
+            action=action,
+            causation_id=causation_id,
+        )
     if action_name == TRIAGE_REQUEST_ACTION:
         return _execute_orchestrator_triage_request(
             writer=writer,
@@ -5661,6 +5955,7 @@ def _execute_controlled_run_action(
             state_dir=state_dir,
             writer=writer,
             config=config,
+            project_root=project_root,
             action=action,
             causation_id=causation_id,
         )
@@ -5674,6 +5969,87 @@ def _execute_controlled_run_action(
     return "blocked"
 
 
+def _execute_diagnose_attention(
+    *,
+    state_dir: Path,
+    writer: EventWriter,
+    project_root: Path | None,
+    action: dict[str, Any],
+    causation_id: str,
+) -> str:
+    """Route an approved diagnosis action into the autoresearch lane.
+
+    Diagnosis normally travels through the ``needs_diagnosis`` policy branch.
+    An operator approval, however, is consumed by the controlled-action path,
+    so it needs an explicit executor instead of falling through to the
+    unsupported-action guard.
+    """
+
+    planned = writer.emit(
+        RUN_MANAGER_ACTION_PLANNED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=causation_id,
+        correlation_id=str(action.get("workflow_run_id") or "") or None,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+        },
+    )
+    before_events = writer.event_log.read_all()
+    requested = _emit_autoresearch_request(
+        state_dir=state_dir,
+        writer=writer,
+        action=action,
+        projection={},
+        project_root=project_root,
+        causation_id=planned.id,
+    )
+    if not requested:
+        inflight = bool(_autoresearch_inflight_request_ids(writer.event_log.read_all()))
+        reason = (
+            "autoresearch request is already in flight"
+            if inflight
+            else "autoresearch request already exists"
+        )
+        _emit_blocked_action(
+            writer,
+            action,
+            causation_id=planned.id,
+            reason=reason,
+            human=False,
+        )
+        return "blocked"
+    request_id = _run_manager_autoresearch_request_id(action)
+    emitted_request_ids = [
+        event.id
+        for event in writer.event_log.read_all()[len(before_events):]
+        if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+        and str((event.payload or {}).get("request_id") or "") == request_id
+    ]
+    outcome = writer.emit(
+        RUN_MANAGER_ACTION_APPLIED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=planned.id,
+        correlation_id=str(action.get("workflow_run_id") or "") or None,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+            "status": "applied",
+            "request_id": request_id,
+            "emitted_event_ids": emitted_request_ids,
+        },
+    )
+    _post_verify_action(
+        writer,
+        action,
+        {"ok": True, "status": "applied", "request_id": request_id},
+        causation_id=outcome.id,
+    )
+    return "applied"
+
+
 def _execute_read_only_dynamic_continuation(
     *,
     state_dir: Path,
@@ -5681,6 +6057,7 @@ def _execute_read_only_dynamic_continuation(
     config: ZfConfig,
     action: dict[str, Any],
     causation_id: str,
+    project_root: Path | None = None,
 ) -> str:
     planned = writer.emit(
         RUN_MANAGER_ACTION_PLANNED,
@@ -5700,6 +6077,7 @@ def _execute_read_only_dynamic_continuation(
         writer=writer,
         action=action,
         causation_id=planned.id,
+        project_root=project_root,
     )
     result_payload = {
         **_action_payload(action),
@@ -5803,6 +6181,11 @@ def _execute_orchestrator_triage_request(
         payload={
             "schema_version": "orchestrator.rework-triage.request.v1",
             "problem_class": "semantic",
+            "recovery_case_id": recovery_case_id_from_payload(action),
+            **{key: action[key] for key in (
+                "target_operation_id", "target_stage_id", "task_map_generation",
+                "run_goal_objective_event_id", "active_attempt_id",
+            ) if key in action},
             "workflow_run_id": str(action.get("workflow_run_id") or ""),
             "flow_kind": str(action.get("flow_kind") or ""),
             "stage_id": str(action.get("stage_id") or ""),
@@ -5925,6 +6308,8 @@ def _execute_semantic_replan_request(
             "flow_kind": str(action.get("flow_kind") or ""),
             "trace_id": str(action.get("trace_id") or action.get("request_id") or ""),
             "workflow_run_id": str(action.get("workflow_run_id") or ""),
+            "requirement_spec_ref": str(action.get("requirement_spec_ref") or ""),
+            "requirement_spec_digest": str(action.get("requirement_spec_digest") or ""),
             "task_id": str(action.get("task_id") or ""),
             "task_map_ref": task_map_ref,
             "source_index_ref": str(action.get("source_index_ref") or ""),
@@ -6021,8 +6406,9 @@ def _execute_semantic_replan_request(
     _post_verify_action(
         writer,
         {**action,
-         "effect_expected_events": ["task.done", "task.done.accepted"],
-         "effect_failure_events": ["dev.blocked", "flow.discovery.failed", "task.attempt.failed"]},
+         "effect_request_event_id": request.id,
+         "effect_expected_events": ["task_map.ready", "flow.discovery.completed"],
+         "effect_failure_events": ["flow.discovery.failed", "task_map.amend.failed"]},
         {"ok": True, "status": "applied", "emitted_event_ids": [request.id]},
         causation_id=outcome.id,
         state_dir=state_dir,
@@ -6813,7 +7199,24 @@ def _execute_resident_agent_reprompt(
     action: dict[str, Any],
     causation_id: str,
 ) -> str:
-    if str(action.get("semantic_triage_request_id") or ""):
+    if action.get("request_kind") == "recovery_diagnosis" and not action.get("recovery_context_ref"):
+        try:
+            refs = _write_run_manager_context_sidecars(
+                state_dir=state_dir, request_id=action["request_id"],
+                action=action, projection={}, project_root=project_root,
+                source_event_id=causation_id,
+            )
+        except Exception as exc:
+            _emit_blocked_action(writer, action, causation_id=causation_id,
+                                 reason=f"resident diagnosis context failed: {exc}")
+            return "blocked"
+        action = {
+            **action, **refs, "recovery_context_ref": refs["context_ref"],
+            "source_ref": str(refs["context_ref"].get("ref") or ""),
+        }
+    if not action.get("recovery_context_ref") and (
+        action.get("semantic_triage_request_id") or (action.get("request_id") and action.get("expected_output"))
+    ):
         context_ref = _write_recovery_context_for_action(
             state_dir=state_dir,
             writer=writer,
@@ -6900,7 +7303,7 @@ def _execute_resident_agent_reprompt(
     focus = _resident_action_focus_prompt(action)
     if focus:
         prompt = prompt.rstrip() + "\n\n" + focus + "\n"
-    sent = _send_tmux_prompt(target, prompt)
+    sent = _send_tmux_prompt(target, prompt, backend=config.runtime.run_manager.backend)
     if not sent.get("ok"):
         writer.emit(
             RUN_MANAGER_ACTION_FAILED,
@@ -6927,6 +7330,15 @@ def _execute_resident_agent_reprompt(
             "tmux_session": tmux_session,
             "target": target,
             "source_action_checkpoint_id": str(action.get("checkpoint_id") or ""),
+            "request_id": str(action.get("request_id") or action.get("semantic_triage_request_id") or ""),
+            "task_id": str(action.get("task_id") or ""),
+            "expected_output": _string_list(action.get("expected_output")),
+            "diagnosis_context": {
+                key: action[key] for key in (
+                    "request_kind", "recovery_context_ref", "read_set_ref",
+                    "source_ref", "diagnosis_expected_output",
+                ) if key in action
+            } if action.get("request_kind") == "recovery_diagnosis" else {},
             "briefing_refreshed": briefing_refreshed,
         },
     )
@@ -6995,6 +7407,9 @@ def _resident_briefing_path(
 
 
 def _resident_action_focus_prompt(action: dict[str, Any]) -> str:
+    if action.get("request_kind") == "worker_guidance":
+        from zf.runtime.worker_assistance import assistance_briefing
+        return assistance_briefing(action, actor=str(action.get("instance_id") or "run-manager"))
     checkpoint_id = str(action.get("checkpoint_id") or "").strip()
     failure_class = str(action.get("failure_class") or "").strip()
     title = str(action.get("title") or "").strip()
@@ -7021,11 +7436,23 @@ def _resident_action_focus_prompt(action: dict[str, Any]) -> str:
         lines.append("- recommended_actions: " + ", ".join(recommended))
     if expected:
         lines.append("- expected_output: " + ", ".join(expected))
+    request_id = str(action.get("request_id") or action.get("semantic_triage_request_id") or "")
+    if request_id:
+        lines.append(f"- 本次请求 request_id: `{request_id}`；响应必须回传该 ID，并交付 expected_output。旧观察或其他请求结果不能履行本次义务。")
     lines.extend([
         "",
-        "请优先围绕 Current Focus 做一次观察,输出 "
-        "`run.manager.agent.observation` 或 `run.manager.agent.recommendation`。",
+        "围绕 Current Focus 完成所要求的诊断或修复交付；expected_output 是交付合同。"
+        "只有没有指定交付时才能仅输出观察。建议须引用证据、说明下一步骤和负责人；修复须使用明确获准的 repair task。",
     ])
+    if action.get("request_kind") == "recovery_diagnosis":
+        lines.extend([
+            "- diagnosis_expected_output: " + ", ".join(_string_list(action.get("diagnosis_expected_output"))),
+            "- read_set_ref: `" + str((action.get("read_set_ref") or {}).get("ref") or "") + "`",
+            "读取 source_ref 的诊断上下文与 read_set_ref，按需核对原始证据和当前版本；旧故障可能已经失效。",
+            "通过 `zf emit run.manager.agent.recommendation` 返回 proposal_only 建议，payload 包含上述 request_id、",
+            "诊断交付内容、evidence_refs、recommended_route、下一动作/owner 和预期下游证据。",
+            "此响应只履行诊断请求；不得自行宣告原任务完成或改写规范状态。发出响应后结束本 turn。",
+        ])
     semantic_request_id = str(action.get("semantic_triage_request_id") or "").strip()
     if semantic_request_id:
         task_id = str(action.get("task_id") or "").strip()
@@ -7130,10 +7557,16 @@ def _resident_pane_display(target: str) -> dict[str, Any]:
     }
 
 
-def _send_tmux_prompt(target: str, prompt: str) -> dict[str, Any]:
+def _send_tmux_prompt(target: str, prompt: str, *, backend: str = "") -> dict[str, Any]:
     try:
-        from zf.runtime.tmux import tmux_env
+        from zf.runtime.tmux import TmuxSession, tmux_env
 
+        if backend == "codex":
+            session, window = target.split(":", 1)
+            tmux = TmuxSession(session)
+            tmux.clear_input(window)
+            tmux.send_paste(window, prompt)
+            return {"ok": True}
         env = tmux_env()
         paste = subprocess.run(
             ["tmux", "send-keys", "-t", target, prompt],
@@ -7185,6 +7618,17 @@ def _post_verify_action(
     state_dir: Path | None = None,
     config: ZfConfig | None = None,
 ) -> None:
+    if action.get("action") in {"orchestrator-rework-triage", "orchestrator-triage-advice-apply"}:
+        # Delivery closes the request operation, never the original fault.
+        # Task closeout is conservative evidence until a more specific effect
+        # contract is supplied by the admitted repair decision.
+        action = {
+            **action,
+            "effect_expected_events": action.get("effect_expected_events")
+            or ["task.done", "task.done.accepted"],
+        }
+    if action.get("action") == "orchestrator-rework-triage":
+        action = {**action, "continuation_expected_events": ["orchestrator.rework.triage.recorded"]}
     expected = {
         str(value) for value in action.get("expected_downstream_events") or []
         if str(value).strip()
@@ -7288,6 +7732,31 @@ def _settle_pending_action_effects(
         effect_id = str(payload.get("effect_id") or "")
         if not effect_id or effect_id in terminal_by_id:
             continue
+        if str(payload.get("action") or "") == "semantic-replan-request":
+            from zf.runtime.semantic_replan_redrive import cross_task_replan_cancellation
+
+            cancelled_id = cross_task_replan_cancellation(
+                events, str(payload.get("task_id") or ""),
+                str(payload.get("source_event_id") or ""),
+                request_id=str(payload.get("request_id") or ""),
+            )
+            if cancelled_id:
+                writer.emit(
+                    RUN_MANAGER_ACTION_EFFECT_FAILED,
+                    actor="run-manager", causation_id=cancelled_id,
+                    correlation_id=pending.correlation_id,
+                    payload={
+                        "schema_version": "run-manager.action.effect.v1",
+                        **_action_payload(payload), "effect_id": effect_id,
+                        "effect_pending_event_id": pending.id,
+                        "observed_event_id": cancelled_id,
+                        "observed_event_type": "fanout.cancelled", "status": "failed",
+                        "reason": "task recovery scan was superseded by another task",
+                    },
+                )
+                terminal_by_id.add(effect_id)
+                settled += 1
+                continue
         recovery_event_type = {
             "goal_closure_identity_invalid": "flow.goal.closed",
             "goal_closure_aggregate_schema_failed": "goal.closure.synthesized",
@@ -7349,10 +7818,10 @@ def _settle_pending_action_effects(
             )
         )
         timeout = int(payload.get("effect_timeout_seconds") or 0)
-        timed_out = timeout > 0 and (
-            (_event_age_seconds(pending, datetime.now(timezone.utc)) or 0)
-            >= timeout
-        )
+        from zf.runtime.pause_lifecycle import active_request_age_seconds
+        timed_out = timeout > 0 and active_request_age_seconds(
+            events, created_at=datetime.fromisoformat(pending.ts), now=datetime.now(timezone.utc),
+        ) >= timeout
         if observed is None and not timed_out:
             continue
         passed = observed is not None and observed.type in expected
@@ -7414,6 +7883,10 @@ def _effect_event_matches_scope(
     payload: dict[str, Any],
 ) -> bool:
     body = event.payload if isinstance(event.payload, dict) else {}
+    from zf.runtime.recovery_step import effect_bindings_match
+
+    if not effect_bindings_match(event, payload):
+        return False
     from zf.runtime.workflow_resume_effects import (
         matches_resume_admission, resume_admission_effect,
     )
@@ -7424,9 +7897,18 @@ def _effect_event_matches_scope(
         return bool(request_id) and event.causation_id == request_id and str(
             body.get("instance_id") or event.actor or ""
         ) == str(payload.get("instance_id") or payload.get("role_instance") or "")
-    expected_task = str(payload.get("task_id") or "") if (
-        payload.get("action") == "semantic-replan-request"
-    ) else ""
+    if payload.get("action") == "semantic-replan-request" and payload.get("effect_request_event_id"):
+        # A replan request completes at its own planning output, not product
+        # completion. Unrelated failures in the same run cannot settle it.
+        request_id = str(payload.get("request_id") or "")
+        if not request_id or body.get("request_id") != request_id:
+            return False
+        if body.get("workflow_run_id") != payload.get("workflow_run_id"):
+            return False
+        if event.type == "flow.discovery.failed" and int(body.get("gap_task_count") or 0) > 0:
+            return False  # wait for gap admission or its explicit failure
+        return True
+    expected_task = str(payload.get("task_id") or "")
     if expected_task and str(body.get("task_id") or event.task_id or "") != expected_task:
         return False
     for key in ("task_map_generation", "contract_revision"):
@@ -7888,6 +8370,16 @@ def _consume_human_decisions(
         action = _human_decision_action(payload, escalation)
         decision = str(payload.get("decision") or payload.get("resolution") or "acknowledged")
         if decision == "approve_controlled_action":
+            if not escalation:
+                writer.emit(RUN_MANAGER_HUMAN_DECISION_REJECTED, actor="run-manager",
+                    causation_id=event.id, payload={
+                        "schema_version": "run-manager.human-decision.v1",
+                        "decision_token": token, "source_event_id": event.id,
+                        "decision": decision, "reason": "matching escalation not found",
+                    })
+                rejected += 1
+                seen.update({token, event.id})
+                continue
             action["mutating_resume_supported"] = True
             status = _execute_controlled_run_action(
                 state_dir=state_dir,
@@ -7896,6 +8388,7 @@ def _consume_human_decisions(
                 project_root=project_root,
                 action=action,
                 causation_id=event.id,
+                approved_decision_token=token,
             )
             writer.emit(
                 RUN_MANAGER_HUMAN_DECISION_APPLIED,
@@ -9097,11 +9590,21 @@ def _pending_semantic_event_actions(
     triage_threshold: int = 0,
 ) -> list[dict[str, Any]]:
     from zf.runtime.rework_triage import REWORK_TRIAGE_TRIGGER_EVENTS
+    from zf.runtime.run_manager_integration_review import (
+        bind_integration_review_action, integration_review_sources,
+    )
+
+    integration_sources, integration_operations = integration_review_sources(events)
 
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for idx, event in enumerate(events):
         event_payload = event.payload if isinstance(event.payload, dict) else {}
+        if (event.type == "workflow.operation.blocked"
+                and event_payload.get("operation_id") in integration_operations):
+            continue
+        if event.type == "integration.queue.needs_review" and event.id not in integration_sources:
+            continue
         if (
             event.type == "task.attempt.failed"
             and str(event_payload.get("identity_version") or "")
@@ -9122,7 +9625,10 @@ def _pending_semantic_event_actions(
         if not event_is_recovery_actionable(event.type, event_payload):
             continue
         if (
-            event.type in {"task.rework.capped", "candidate.rework.capped"}
+            event.type in {
+                "task.rework.capped", "candidate.rework.capped",
+                "task.pipeline.semantic_rework.exhausted",
+            }
             and is_semantic_triage_cap(
                 event,
                 threshold=triage_threshold,
@@ -9217,7 +9723,9 @@ def _pending_semantic_event_actions(
             action = _unknown_actionable_event_diagnostic_action(event)
         else:
             continue
-        if _event_superseded_by_later_progress(events, event):
+        if event.id in integration_sources:
+            action = bind_integration_review_action(action, event, integration_sources[event.id])
+        elif _event_superseded_by_later_progress(events, event):
             continue
         fingerprint = str(action.get("fingerprint") or "")
         if fingerprint in seen:
@@ -9382,6 +9890,16 @@ def _semantic_event_diagnostic_action(
         if event.type == "run.goal.completion.blocked"
         else {}
     )
+    if event.type == "run.delivery.blocked" and payload.get("effect_state") == "unknown":
+        blocker_recovery = {
+            "suggested_action_kind": "reconcile_delivery_effect",
+            "action_policy": "needs_diagnosis",
+            "intervention_class": "diagnose",
+            "recommended_actions": [
+                "inspect_exact_ship_request_and_git_receipt",
+                "resolve_unknown_effect_before_retry",
+            ],
+        }
     suggested_action_kind = str(
         blocker_recovery.get("suggested_action_kind")
         or spec.suggested_action_kind
@@ -9961,7 +10479,7 @@ def _pending_candidate_recovery_actions(
         threshold=threshold,
         stale_seconds=_DIAGNOSIS_REQUEST_STALE_SECONDS,
         advisor_available=any(
-            str(getattr(role, "name", "") or "") == "orchestrator"
+            is_configured_orchestrator_role(config, role)
             for role in getattr(config, "roles", []) or []
         ),
         resident_advisor=resident_agent,
@@ -10779,6 +11297,14 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
 
 def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
     return {
+        **{key: str(action.get(key) or "") for key in (
+            "shared_repair_association_id", "resource_id", "resource_version", "repair_step_id",
+        )},
+        "target_commit": str(action.get("target_commit") or ""),
+        "contract_revision": str(action.get("contract_revision") or ""),
+        "active_attempt_id": str(action.get("active_attempt_id") or ""),
+        "continuation_expected_events": _string_list(action.get("continuation_expected_events")),
+        **({"effect_bindings": action["effect_bindings"]} if "effect_bindings" in action else {}),
         "action": str(action.get("action") or ""),
         "checkpoint_id": str(action.get("checkpoint_id") or ""),
         "safe_resume_action": str(action.get("safe_resume_action") or ""),
@@ -10851,6 +11377,8 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "trace_id": str(action.get("trace_id") or ""),
         "run_id": str(action.get("run_id") or ""),
         "workflow_run_id": str(action.get("workflow_run_id") or ""),
+        "requirement_spec_ref": str(action.get("requirement_spec_ref") or ""),
+        "requirement_spec_digest": str(action.get("requirement_spec_digest") or ""),
         "flow_kind": str(action.get("flow_kind") or ""),
         "diff_ref": str(action.get("diff_ref") or ""),
         "source_event_id": str(action.get("source_event_id") or ""),
@@ -11017,6 +11545,8 @@ def _human_escalations_by_token(events: list[ZfEvent]) -> dict[str, dict[str, An
         if event.type not in {"human.escalate", HUMAN_ESCALATION_SENT}:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.task_id and not payload.get("task_id"):
+            payload = {**payload, "task_id": event.task_id}
         token = _human_decision_event_token(event, payload)
         if not token:
             continue
@@ -11076,6 +11606,7 @@ def _human_decision_action(
     action = {
         "schema_version": "run-manager.pending-action.v1",
         "action": str(merged.get("action") or "workflow-batch-resume"),
+        "task_id": str(merged.get("task_id") or ""),
         "checkpoint_id": str(merged.get("checkpoint_id") or ""),
         "safe_resume_action": str(merged.get("safe_resume_action") or ""),
         "approval_ref": str(merged.get("approval_ref") or ""),
@@ -11130,6 +11661,7 @@ def _pending_human_decisions(events: list[ZfEvent]) -> list[dict[str, Any]]:
             continue
         rows.append({
             "decision_token": token,
+            "explicit_decision_token": bool(payload.get("decision_token") or payload.get("response_token")),
             "event_id": str(payload.get("event_id") or ""),
             "event_type": str(payload.get("event_type") or ""),
             "created_ts": str(payload.get("created_ts") or ""),
@@ -11240,6 +11772,11 @@ def _event_superseded_by_later_progress(
     events: list[ZfEvent],
     source_event: ZfEvent,
 ) -> bool:
+    from zf.runtime.task_failure_retirement import task_failure_retired
+
+    retired = task_failure_retired(events, source_event)
+    if retired is not None:
+        return retired
     source_payload = source_event.payload if isinstance(source_event.payload, dict) else {}
     source_run_id = str(
         source_payload.get("run_id")
@@ -11651,6 +12188,11 @@ def _action_seen(events: list[ZfEvent], action: dict[str, Any]) -> bool:
                 RUN_MANAGER_RESIDENT_PROMPTED,
             }
         ):
+            if (
+                event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+                and _diagnosis_action_request_stalled(events, action)
+            ):
+                continue
             return True
         if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED and str(
             payload.get("checkpoint_id")
@@ -12223,6 +12765,12 @@ def _pending_execution_summary(
     elif pending_actions:
         status = "pending_but_not_auto_ready"
         reason = "pending actions require diagnosis, human decision, or preflight repair"
+    diagnosis = next((
+        action for action in pending_actions
+        if action.get("failure_class") == "no_progress_breaker"
+        and _pending_action_readiness(action) == "needs_diagnosis"
+    ), None)
+    inflight = sorted(_autoresearch_inflight_request_ids(events)) if diagnosis else []
     return {
         "schema_version": "run-manager.pending-execution.v1",
         "status": status,
@@ -12234,6 +12782,11 @@ def _pending_execution_summary(
         "last_tick_actions_applied": applied,
         "last_tick_actions_blocked": blocked,
         "last_tick_actions_failed": failed,
+        "diagnosis_wait": (
+            {"reason": "autoresearch_inflight", "request_ids": inflight,
+             "checkpoint_id": str(diagnosis.get("checkpoint_id") or "")}
+            if diagnosis and inflight else {}
+        ),
     }
 
 
@@ -12406,6 +12959,8 @@ def _autoresearch_inflight_request_ids(events: list[ZfEvent]) -> set[str]:
     }
     requested: set[str] = set()
     terminal: set[str] = set()
+    bridged: set[str] = set()
+    terminal_diagnoses: dict[str, ZfEvent] = {}
     request_by_checkpoint: dict[str, str] = {}
     for event in events:
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -12413,6 +12968,11 @@ def _autoresearch_inflight_request_ids(events: list[ZfEvent]) -> set[str]:
             request_id = _autoresearch_result_request_id(event, payload)
             if request_id:
                 requested.add(request_id)
+                if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED:
+                    if str(payload.get("operation_key") or "").startswith("terminal-diagnosis:"):
+                        terminal_diagnoses[request_id] = event
+                else:
+                    bridged.add(request_id)
                 checkpoint_id = str(payload.get("checkpoint_id") or "")
                 if checkpoint_id:
                     request_by_checkpoint[checkpoint_id] = request_id
@@ -12426,7 +12986,19 @@ def _autoresearch_inflight_request_ids(events: list[ZfEvent]) -> set[str]:
             )
             if request_id:
                 terminal.add(request_id)
-    return requested - terminal
+    inflight = requested - terminal
+    # The invocation bridge already refuses an unbridged terminal diagnosis
+    # after the same run reopens. Do not reserve a slot for that impossible
+    # invocation, but retain any request with a real downstream lifecycle.
+    from zf.runtime.autoresearch_invocation import run_manager_autoresearch_request_superseded
+
+    for request_id in inflight - bridged:
+        request = terminal_diagnoses.get(request_id)
+        if request is not None and run_manager_autoresearch_request_superseded(
+            request, events=events,
+        ):
+            inflight.remove(request_id)
+    return inflight
 
 
 def _autoresearch_proposal_refs(payload: dict[str, Any]) -> dict[str, Any]:

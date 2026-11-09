@@ -33,13 +33,17 @@ def _synthesized_plan_payload(
     stage_id: str,
 ) -> dict[str, Any]:
     payload = {**trigger_payload, **artifact_payload, "stage_id": stage_id}
-    trigger_task_map_ref = str(trigger_payload.get("task_map_ref") or "").strip()
-    result_task_map_ref = str(artifact_payload.get("task_map_ref") or "").strip()
-    if result_task_map_ref and result_task_map_ref != trigger_task_map_ref:
-        # A replan trigger carries the admitted package that supplied its
-        # context.  The synthesized Task Map is a new immutable artifact and
-        # must derive a fresh generation/package instead of reusing that input
-        # identity merely because it survived flow-identity projection.
+    return plan_output_payload(trigger_payload, payload)
+
+
+def plan_output_payload(
+    trigger_payload: dict[str, Any], artifact_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Separate a new Plan output from the package used as its input."""
+    payload = dict(artifact_payload)
+    input_ref = str(trigger_payload.get("task_map_ref") or "").strip()
+    output_ref = str(payload.get("task_map_ref") or "").strip()
+    if output_ref and output_ref != input_ref:
         for key in _TASK_MAP_GENERATION_IDENTITY_KEYS:
             payload.pop(key, None)
     return payload
@@ -139,6 +143,9 @@ def admit_synthesized_plan_package(
         or trace_id
     ).strip()
     try:
+        from zf.runtime.plan_local_review_output import validate_local_review_output
+
+        validate_local_review_output(runtime, event=event, payload=payload)
         metadata = flow_metadata_for(runtime.config, payload=payload)
         identity = _admit(
             runtime,

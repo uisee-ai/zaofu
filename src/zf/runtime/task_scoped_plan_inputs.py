@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 from pathlib import Path
+import re
 
 SCHEMA_VERSION = "task-scoped-plan-input.v1"
 
 
+class MissingTaskPartitionError(ValueError):
+    """A well-formed scoped input has no partition for the requested task."""
+
+
 def task_input_paths(body: Any, *, task_id: str, candidate: bool = False) -> list[str]:
     """Keep legacy inputs whole; select only producer-declared partitions."""
+    if isinstance(body, Mapping) and "task_input_policy" in body:
+        return _declared_input_paths(body, task_id=task_id, candidate=candidate)
     if not isinstance(body, Mapping) or body.get("schema_version") != SCHEMA_VERSION:
         return ["$"]
     if set(body) != {"schema_version", "shared", "tasks"}:
@@ -29,8 +36,234 @@ def task_input_paths(body: Any, *, task_id: str, candidate: bool = False) -> lis
     if candidate:
         return ["$"]
     if task_id not in positions:
-        raise ValueError(f"task-scoped input has no partition for {task_id!r}")
+        raise MissingTaskPartitionError(f"task-scoped input has no partition for {task_id!r}")
     return ["$.shared", f"$.tasks[{positions[task_id]}]"]
+
+
+def _declared_input_paths(body: Mapping[str, Any], *, task_id: str, candidate: bool) -> list[str]:
+    """Validate explicit partitions without changing the artifact's native schema."""
+    from zf.runtime.artifact_read_ledger import _select_json_path
+
+    policy = body["task_input_policy"]
+    if (
+        not isinstance(policy, Mapping)
+        or set(policy) != {"schema_version", "shared_paths", "tasks"}
+        or policy.get("schema_version") != "task-input-policy.v1"
+        or not isinstance(policy["tasks"], list)
+    ):
+        raise ValueError("invalid task_input_policy")
+
+    def paths(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            raise ValueError("task input paths must be a list")
+        for path in value:
+            if (
+                not isinstance(path, str)
+                or not re.fullmatch(r"\$(?:\.[A-Za-z0-9_-]+|\[\d+\])*", path)
+                or path.startswith("$.task_input_policy")
+            ):
+                raise ValueError("invalid task input JSON path")
+            _select_json_path(body, path)
+        if len(value) != len(set(value)):
+            raise ValueError("task input paths must be unique")
+        return value
+
+    shared = list(paths(policy["shared_paths"]))
+    # Package admission stamps these mechanical identities after the producer
+    # partitions its semantic body. Include their original bytes in every read;
+    # do not rewrite the immutable artifact or infer any business partition.
+    if body.get("schema_version") == "product_acceptance_spec.v1":
+        for key in ("schema_version", "workflow_run_id", "flow_kind",
+                    "plan_revision", "task_map_generation"):
+            if key not in body:
+                continue
+            if not isinstance(body[key], str) or not body[key].strip():
+                raise ValueError(f"Product Acceptance identity {key} must be a string")
+            path = f"$.{key}"
+            if path not in shared:
+                shared.append(path)
+    partitions: dict[str, list[str]] = {}
+    assigned = set(shared)
+    for row in policy["tasks"]:
+        if not isinstance(row, Mapping) or set(row) != {"task_id", "paths"}:
+            raise ValueError("task input row requires task_id and paths")
+        key = row["task_id"]
+        if not isinstance(key, str) or not key.strip() or key in partitions:
+            raise ValueError("task input ids must be non-empty and unique")
+        partitions[key] = paths(row["paths"])
+        if not partitions[key]:
+            raise ValueError("task input partition must not be empty")
+        assigned.update(partitions[key])
+
+    def check_coverage(value: Any, path: str) -> None:
+        if path in assigned:
+            return
+        if isinstance(value, Mapping) and value:
+            for key, child in value.items():
+                if path == "$" and key == "task_input_policy":
+                    continue
+                check_coverage(child, f"{path}.{key}")
+        elif isinstance(value, list) and value:
+            for index, child in enumerate(value):
+                check_coverage(child, f"{path}[{index}]")
+        else:
+            raise ValueError(f"task input policy leaves unassigned content at {path}")
+
+    check_coverage(body, "$")
+    if candidate:
+        return ["$"]
+    if task_id not in partitions:
+        raise ValueError(f"task input policy has no partition for {task_id!r}")
+    return list(dict.fromkeys([*shared, *partitions[task_id]]))
+
+def _pinned_predecessor(state_dir: Path, ports: Mapping[str, Mapping[str, Any]], task_id: str) -> str:
+    """Return an explicitly replaced task, only for an admitted gap task map."""
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    port = ports.get("task_map")
+    if not port:
+        raise ValueError("replacement input requires pinned task_map")
+    task_map = hydrate_sidecar_ref(state_dir, {"ref": port.get("ref"), "sha256": port.get("sha256")}).payload
+    return _task_map_predecessor(task_map, task_id)
+
+
+def _task_map_predecessor(task_map: Any, task_id: str) -> str:
+    """Check an explicit replacement edge in a pinned or candidate Task Map."""
+    if not isinstance(task_map, Mapping) or not isinstance(task_map.get("tasks"), list):
+        raise ValueError("replacement input requires a valid task_map")
+    tasks = [row for row in task_map["tasks"] if isinstance(row, Mapping)]
+    matches = [row for row in tasks if str(row.get("task_id") or row.get("id") or "") == task_id]
+    amend = task_map.get("amend")
+    if (len(matches) != 1 or not isinstance(amend, Mapping)
+            or amend.get("kind") not in {"goal_gap", "module_parity_gap"}
+            or task_id not in (amend.get("gap_task_ids") or [])):
+        raise ValueError("replacement input requires an unambiguous gap task")
+    task = matches[0]
+    payload = task.get("payload")
+    predecessors = payload.get("supersedes_task_ids") if isinstance(payload, Mapping) else None
+    evidence = task.get("evidence_contract")
+    evidence_predecessors = evidence.get("supersedes_task_ids") if isinstance(evidence, Mapping) else None
+    if not isinstance(predecessors, list) or len(predecessors) != 1 or not isinstance(predecessors[0], str) or not predecessors[0].strip():
+        raise ValueError("replacement input requires one explicit predecessor")
+    if evidence_predecessors is not None and evidence_predecessors != predecessors:
+        raise ValueError("replacement input predecessor declarations conflict")
+    predecessor = predecessors[0]
+    if predecessor not in (amend.get("superseded_task_ids") or []) or any(
+        str(row.get("task_id") or row.get("id") or "") == predecessor for row in tasks
+    ):
+        raise ValueError("replacement input predecessor is not superseded")
+    return predecessor
+
+
+def _bind_republished_input_parent(
+    state_dir: Path, *, package: Mapping[str, Any], port: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Prove an explicit republication without rewriting its immutable package."""
+    from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
+
+    if port in package.get("inherited", []):
+        return dict(port)
+    ref = str(package.get("supersedes_package_ref") or "")
+    digest = str(package.get("supersedes_package_digest") or "")
+    if not ref or not digest:
+        raise ValueError("republished input has no pinned predecessor package")
+    parent = hydrate_plan_artifact_package(state_dir, {"ref": ref, "sha256": digest})
+    for field in ("workflow_run_id", "run_contract_digest"):
+        if not package.get(field) or parent.get(field) != package[field]:
+            raise ValueError("republished input predecessor identity mismatch: " + field)
+    matching = [item for group in ("produced", "inherited") for item in parent[group]
+                if item.get("logical_name") == port.get("logical_name")]
+    if len(matching) != 1 or any(
+        matching[0].get(field) != port.get(field)
+        for field in ("ref", "sha256", "schema_version")
+    ):
+        raise ValueError("republished input differs from pinned predecessor port")
+    return {**port, "source_package_ref": ref, "source_package_digest": digest}
+
+
+def _verify_predecessor_provenance(
+    state_dir: Path, *, port: Mapping[str, Any], predecessor: str, workflow_run_id: str,
+    require_replacement_edge: bool = False,
+) -> tuple[dict[str, Mapping[str, Any]], Mapping[str, Any]]:
+    """Verify the inherited body and predecessor against the package ancestry."""
+    from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    ref, digest = str(port.get("source_package_ref") or ""), str(port.get("source_package_digest") or "")
+    seen: set[str] = set()
+    first = True
+    traversed_maps = []
+    while ref and digest and ref not in seen and len(seen) < 32:
+        seen.add(ref)
+        package = hydrate_plan_artifact_package(state_dir, {"ref": ref, "sha256": digest})
+        if package.get("workflow_run_id") != workflow_run_id:
+            raise ValueError("predecessor package belongs to another run")
+        ports = [*package.get("produced", []), *package.get("inherited", [])]
+        if first and not any(
+            item.get("logical_name") == port.get("logical_name")
+            and item.get("ref") == port.get("ref") and item.get("sha256") == port.get("sha256")
+            for item in ports if isinstance(item, Mapping)
+        ):
+            raise ValueError("predecessor source port is not inherited from its package")
+        first = False
+        inherited_port = next((item for item in ports if isinstance(item, Mapping)
+                               and item.get("logical_name") == port.get("logical_name")), None)
+        if (inherited_port is None or inherited_port.get("ref") != port.get("ref")
+                or inherited_port.get("sha256") != port.get("sha256")):
+            raise ValueError("predecessor input changed in package ancestry")
+        task_port = next((item for item in ports if isinstance(item, Mapping) and item.get("logical_name") == "task_map"), None)
+        if task_port:
+            task_map = hydrate_sidecar_ref(state_dir, {"ref": task_port["ref"], "sha256": task_port["sha256"]}).payload
+            if not isinstance(task_map, Mapping) or not isinstance(task_map.get("tasks"), list):
+                raise ValueError("predecessor package has invalid task_map")
+            traversed_maps.append(task_map)
+            matches = [task for task in task_map["tasks"] if isinstance(task, Mapping)
+                       and str(task.get("task_id") or task.get("id") or "") == predecessor]
+            if len(matches) > 1:
+                raise ValueError("predecessor package has ambiguous task identity")
+            amend = task_map.get("amend") or {}
+            owns_edge = predecessor in amend.get("gap_task_ids", []) if isinstance(amend, Mapping) else False
+            if matches and (not require_replacement_edge or owns_edge):
+                if require_replacement_edge:
+                    from zf.runtime.gap_dependency_continuity import task_has_only_replayed_dependency_changes
+
+                    _task_map_predecessor(task_map, predecessor)
+                    if not task_has_only_replayed_dependency_changes(predecessor, list(reversed(traversed_maps))):
+                        raise ValueError("retained predecessor changed before its replacement")
+                return {str(item["logical_name"]): item for item in ports if isinstance(item, Mapping)}, package
+        ref, digest = str(package.get("supersedes_package_ref") or ""), str(package.get("supersedes_package_digest") or "")
+    raise ValueError("predecessor is absent from package ancestry")
+
+
+def _predecessor_input_paths(
+    state_dir: Path, *, ports: Mapping[str, Mapping[str, Any]], name: str,
+    body: Any, task_id: str, workflow_run_id: str,
+    initial_task_map: Mapping[str, Any] | None = None,
+) -> tuple[list[str], str]:
+    """Follow explicit replacement edges without widening the original input."""
+    seen = {task_id}
+    for _ in range(32):
+        predecessor = (_task_map_predecessor(initial_task_map, task_id)
+                       if initial_task_map is not None else _pinned_predecessor(state_dir, ports, task_id))
+        initial_task_map = None
+        if predecessor in seen:
+            raise ValueError("replacement input ancestry contains a cycle")
+        seen.add(predecessor)
+        try:
+            selected_paths = task_input_paths(body, task_id=predecessor)
+        except MissingTaskPartitionError:
+            selected_paths = None
+        ports, predecessor_package = _verify_predecessor_provenance(
+            state_dir, port=ports[name], predecessor=predecessor,
+            workflow_run_id=workflow_run_id, require_replacement_edge=selected_paths is None,
+        )
+        if selected_paths is not None:
+            return selected_paths, predecessor
+        ports[name] = _bind_republished_input_parent(
+            state_dir, package=predecessor_package, port=ports[name],
+        )
+        task_id = predecessor
+    raise ValueError("replacement input ancestry exceeds supported depth")
 
 
 def current_plan_port_sources(
@@ -41,6 +274,7 @@ def current_plan_port_sources(
     currentness: Mapping[str, Any],
     allow_without_task: bool = False,
     candidate: bool = False,
+    profile: str = "",
 ) -> list[dict[str, Any]]:
     from zf.core.task.store import TaskStore
     from zf.runtime.artifact_read_ledger import ArtifactReadError
@@ -92,12 +326,6 @@ def current_plan_port_sources(
     package_required = _declared_required_ports(
         package.get("required_ports")
     )
-    missing_declarations = sorted(set(declared) - set(package_required))
-    if missing_declarations:
-        raise ArtifactReadError(
-            "current Plan Artifact Package does not bind task required ports: "
-            + ", ".join(missing_declarations)
-        )
     required = list(dict.fromkeys([*package_required, *declared]))
     ports = {
         str(item.get("logical_name") or ""): item
@@ -105,6 +333,12 @@ def current_plan_port_sources(
         for item in package.get(group, [])
         if isinstance(item, Mapping)
     }
+    missing_declarations = sorted(set(declared) - set(ports))
+    if missing_declarations:
+        raise ArtifactReadError(
+            "current Plan Artifact Package does not bind task required ports: "
+            + ", ".join(missing_declarations)
+        )
     missing = [name for name in required if name not in ports]
     if missing:
         raise ArtifactReadError(
@@ -112,24 +346,55 @@ def current_plan_port_sources(
             + ", ".join(missing)
         )
 
+    if not candidate and profile in {"implementation", "task-verify"}:
+        from zf.runtime.task_plan_consumption import selected_plan_ports
+
+        try:
+            selection = selected_plan_ports(
+                state_dir=state_dir, task_id=task_id, profile=profile,
+                evidence=evidence, ports=ports, required=required,
+            )
+        except (ValueError, SidecarRefError) as exc:
+            raise ArtifactReadError(f"invalid task plan input selection: {exc}") from exc
+        if selection is not None:
+            required = selection
+    else:
+        selection = None
+
     paths = {}
     kinds = {}
+    predecessors: dict[str, str] = {}
     for name in required:
         try:
             body = hydrate_sidecar_ref(state_dir, {
                 "ref": ports[name]["ref"], "sha256": ports[name]["sha256"],
             }).payload
-            paths[name] = task_input_paths(body, task_id=task_id, candidate=candidate)
+            try:
+                paths[name] = task_input_paths(body, task_id=task_id, candidate=candidate)
+            except MissingTaskPartitionError:
+                if candidate or profile not in {"implementation", "task-verify"}:
+                    raise
+                ports[name] = _bind_republished_input_parent(
+                    state_dir, package=package, port=ports[name],
+                )
+                paths[name], predecessors[name] = _predecessor_input_paths(
+                    state_dir, ports=ports, name=name, body=body, task_id=task_id,
+                    workflow_run_id=workflow_run_id,
+                )
             kinds[name] = (
                 "task_scoped_plan_input"
-                if isinstance(body, Mapping) and body.get("schema_version") == SCHEMA_VERSION
+                if isinstance(body, Mapping) and (
+                    body.get("schema_version") == SCHEMA_VERSION or "task_input_policy" in body
+                )
                 else str(ports[name].get("artifact_kind") or name)
             )
+            if selection is not None and name == "task_execution_input" and kinds[name] != "task_scoped_plan_input":
+                raise ValueError("selected task_execution_input must be task scoped")
         except ValueError as exc:
             raise ArtifactReadError(f"invalid task input port {name!r}: {exc}") from exc
     return [
         {
-            "source_id": f"plan-port-{name}",
+            "source_id": f"plan-port-{name}" + (f"-predecessor-{predecessors[name]}" if name in predecessors else ""),
             "artifact_id": name,
             "kind": kinds[name],
             "ref": str(ports[name].get("ref") or ""),

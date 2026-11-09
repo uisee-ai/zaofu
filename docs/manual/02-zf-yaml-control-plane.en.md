@@ -114,6 +114,13 @@ Prefer replicas over duplicated role definitions. A logical `dev` role with
 four replicas expands to concrete worker instances such as `dev-1` through
 `dev-4`.
 
+Role-level `constraints.blocked_paths` and `constraints.max_steps` currently provide
+method instructions to the agent, without a dedicated write interceptor or step counter.
+Codex has no native equivalent of the `allowed_tools` allowlist. Task/operation scope
+hooks, controlled-action authorization, and admitted operation/run budgets have separate
+mechanical consumers; these controls do not provide an OS sandbox for arbitrary shell
+commands. A configured or delivered field alone is not proof of enforcement.
+
 ### 3.1 Role-Scoped Provider Sessions and On-Demand Lifecycle
 
 Initial Provider dynamic configuration belongs to a role/session rather than a

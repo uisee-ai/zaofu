@@ -84,7 +84,7 @@ def test_operations_keep_stage_placement_attempts_and_rework_evidence():
               ZfEvent(id="o3", type="workflow.operation.failed", payload={"workflow_run_id": "run-a", "operation_id": "O1", "reason": "transport_timeout"}, origin="kernel"),
               ZfEvent(id="o4", type="task.rework.requested", causation_id="o3", origin="kernel"),
               ZfEvent(id="o5", type="codex.hook.pre_tool_use", causation_id="o2", payload={"tool_name": "exec_command"}),
-              ZfEvent(id="o6", type="agent.usage", causation_id="o2", payload={"backend": "codex", "model": "provider-selected-model"})]
+              ZfEvent(id="o6", type="agent.usage", causation_id="o2", payload={"backend": "codex", "model": "provider-selected-model", "context_usage_ratio": 0.315, "model_context_window": 258400})]
     graph = build_sdlc_graph(sources(events=list(enumerate(events, 1))))
     assert next(n for n in graph["nodes"] if n["id"] == "workflow:stage:build")["status"] == "failed"
     assert any(e["source"] == "workflow:stage:build" and e["target"] == "operation:O1" for e in graph["edges"])
@@ -93,6 +93,9 @@ def test_operations_keep_stage_placement_attempts_and_rework_evidence():
     assert any(e["id"] == "o5" for e in operation["data"]["recent_activity"])
     assert operation['data']['agent_binding']['model'] == 'provider-selected-model'
     assert operation['data']['agent_binding']['source_event_id'] == 'o6'
+    assert operation['data']['context_observation'] == {
+        'context_usage_ratio': 0.315, 'context_window_tokens': 258400, 'source_event_id': 'o6',
+    }
     assert any(e["source"] == "event:o3" and e["target"] == "event:o4" for e in graph["edges"])
 
 

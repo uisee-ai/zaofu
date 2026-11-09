@@ -28,7 +28,7 @@ def test_reader_context_critical_does_not_schedule_product_task_retry(tmp_path):
     runtime, trigger = setup_reader(tmp_path)
     decision = runtime._on_context_critical(trigger)
     assert decision.action == "skip"
-    assert "reader fanout" in decision.reason
+    assert "provider lifecycle" in decision.reason
     assert not any(e.type in {"task.retry_scheduled", "completion_audit.routed"}
                    for e in runtime.event_log.read_all())
     assert runtime.task_store.get("T1").status == "in_progress"

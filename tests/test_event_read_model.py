@@ -801,6 +801,49 @@ def test_agent_session_history_is_backend_agnostic_for_thread(tmp_path: Path) ->
     assert "kanban.agent.turn.completed" in types
 
 
+def test_agent_session_history_binds_legacy_headless_identity_to_project_thread(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    base = {
+        "project_id": "proj-alias",
+        "conversation_id": "kanban-agent:proj-alias",
+        "thread_key": "main",
+        "backend": "codex-headless",
+    }
+    _write_line(state_dir / "events.jsonl", ZfEvent(
+        type="user.message",
+        id="evt-alias-user",
+        payload={
+            **base,
+            "target": "kanban-agent",
+            "runtime_delivery": "headless",
+            "message": "show the PRD preview",
+        },
+    ))
+    _write_line(state_dir / "events.jsonl", ZfEvent(
+        type="kanban.agent.reply",
+        id="evt-alias-reply",
+        payload={**base, "turn_id": "turn-alias", "answer": "PRD preview ready"},
+    ))
+    read_model.rebuild(state_dir)
+
+    page = read_model.agent_session_history(
+        state_dir,
+        surface="kanban_agent",
+        thread_id="kanban:proj-alias",
+        project_id="proj-alias",
+        conversation_id="kanban:proj-alias",
+        backend="codex-headless",
+        limit=20,
+    )
+
+    assert page is not None
+    assert [item["id"] for item in page["items"]] == ["evt-alias-user", "evt-alias-reply"]
+    assert all(item["payload"]["conversation_id"] == "kanban:proj-alias" for item in page["items"])
+    assert all(item["payload"]["thread_key"] == "kanban:proj-alias" for item in page["items"])
+
+
 def test_agent_session_history_includes_user_prompt_for_long_kanban_turn(tmp_path: Path) -> None:
     state_dir = tmp_path / ".zf"
     _write_line(state_dir / "events.jsonl", ZfEvent(

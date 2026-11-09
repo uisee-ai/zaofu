@@ -24,6 +24,7 @@ import json
 import os
 import shutil
 import subprocess
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -288,8 +289,61 @@ def _probe_provider_auth(backend: str) -> tuple[bool, str]:
             )
     elif result.returncode == 0 and "logged in" in output.lower():
         return True, "authenticated"
+
+    # Codex app-server can use a configured model-provider credential command
+    # (for example a local CPA client key) without an OAuth login session. The
+    # channel adapter dispatches through that same app-server path, so treating
+    # `codex login status` as the only readiness signal blocks a provider that
+    # is demonstrably usable by the configured runtime. Keep the OAuth probe
+    # first, then validate the configured credential command without exposing
+    # its output.
+    if probe_backend == "codex":
+        configured_ok, configured_detail = _probe_codex_model_provider_auth()
+        if configured_ok:
+            return True, configured_detail
     detail = output.splitlines()[0] if output else "not authenticated"
     return False, f"{detail}; authenticate with {login_hint}"
+
+
+def _probe_codex_model_provider_auth() -> tuple[bool, str]:
+    """Validate a Codex model-provider auth command, if one is configured."""
+
+    config_home = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
+    config_path = config_home / "config.toml"
+    try:
+        raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, tomllib.TOMLDecodeError):
+        return False, ""
+    provider_name = str(raw.get("model_provider") or "").strip()
+    providers = raw.get("model_providers")
+    provider = providers.get(provider_name) if isinstance(providers, dict) else None
+    auth = provider.get("auth") if isinstance(provider, dict) else None
+    if not isinstance(auth, dict):
+        return False, ""
+    command = str(auth.get("command") or "").strip()
+    args = auth.get("args")
+    if not command or not isinstance(args, list):
+        return False, ""
+    argv = [command, *(str(item) for item in args)]
+    if shutil.which(command) is None:
+        return False, ""
+    try:
+        credential = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False, ""
+    if credential.returncode != 0 or not (
+        str(credential.stdout or "").strip()
+        or str(credential.stderr or "").strip()
+    ):
+        return False, ""
+    label = provider_name or "configured"
+    return True, f"configured model-provider credentials ({label})"
 
 
 def probe_provider_auth(backend: str) -> tuple[bool, str]:

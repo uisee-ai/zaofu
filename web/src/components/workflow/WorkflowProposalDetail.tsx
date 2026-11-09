@@ -61,7 +61,8 @@ export function WorkflowProposalDetail({
     proposal_digest: proposalDigest,
   };
   const stages = asRecordArray(asRecord(proposal.stage_graph).nodes);
-  const blockers = asRecordArray(proposal.blockers);
+  const preparationBlockers = asRecordArray(asRecord(detail.preparation).blockers);
+  const blockers = [...asRecordArray(proposal.blockers), ...preparationBlockers];
   const preflight = asRecord(proposal.preflight);
   const diagnostics = asRecordArray(preflight.diagnostics);
   const stopDiagnostics = diagnostics.filter((item) => diagnosticSeverity(item) === "STOP");
@@ -238,6 +239,9 @@ export function WorkflowProposalDetail({
         <div>
           <span className="eyebrow">Readiness</span>
           <strong>{readiness.title}</strong>
+          {preparationBlockers.map((item, index) => <p key={index} data-testid="workflow-preparation-blocker">
+            {textValue(item.message)} {textValue(item.fix_it)}
+          </p>)}
           <small>
             {blockerCount} blockers
             {" / "}

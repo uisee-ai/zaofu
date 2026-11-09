@@ -160,3 +160,28 @@ def test_late_writer_result_with_stale_audit_does_not_reopen_terminal() -> None:
         [terminal, late, stale],
         run_id="run-1",
     ) is terminal
+
+
+def test_terminal_scope_reuses_one_run_identity_projection(monkeypatch) -> None:
+    from zf.runtime import run_scope, terminal_events
+
+    original = run_scope.run_aliases
+    calls = []
+    def count(rows):
+        calls.append(True)
+        return original(rows)
+
+    monkeypatch.setattr(run_scope, "run_aliases", count)
+    monkeypatch.setattr(terminal_events, "run_aliases", count)
+    source = ZfEvent(type="task.dispatched", correlation_id="run-a",
+                     payload={"workflow_run_id": "run-a"})
+    terminal = ZfEvent(type="ship.completed", correlation_id="run-a",
+                       payload={"workflow_run_id": "run-a"})
+    other = ZfEvent(type="run.goal.started", correlation_id="run-b",
+                    payload={"run_id": "run-b"})
+    events = [source, terminal, other]
+    assert terminal_after_event(events, source) is terminal
+    assert len(calls) == 1
+    calls.clear()
+    assert latest_quiescent_run_terminal(events) is None
+    assert len(calls) == 1

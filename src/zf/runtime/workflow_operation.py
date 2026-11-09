@@ -26,6 +26,7 @@ from zf.runtime.workflow_operation_task_pipeline import (
     admit_task_pipeline_redrive,
     apply_call_result_admission,
     apply_task_pipeline_operation_event,
+    starts_new_redrive_epoch,
     task_pipeline_operation_seed,
     task_pipeline_request_fields,
     task_pipeline_request_hash_body,
@@ -184,7 +185,14 @@ def reduce_workflow_operations(
     """Deterministically rebuild operation views from archive+active events."""
 
     operations: dict[str, dict[str, Any]] = {}
+    sent_attempts: dict[tuple[str, str], Mapping[str, Any]] = {}
     for event in events:
+        if event.type == "task.attempt.sent" and event.origin == "kernel":
+            sent = event.payload if isinstance(event.payload, dict) else {}
+            key = (str(sent.get("operation_id") or ""), str(sent.get("attempt_id") or ""))
+            if all(key):
+                sent_attempts[key] = sent
+            continue
         if apply_call_result_admission(operations, event):
             continue
         if event.type not in OPERATION_EVENT_TYPES:
@@ -303,6 +311,26 @@ def reduce_workflow_operations(
                 value = str(payload.get(key) or "")
                 if value:
                     row[key] = value
+            sent = sent_attempts.get((operation_id, row["active_attempt_id"]))
+            if row.get("task_pipeline_stage") and (sent or row.get("redrive_count")):
+                # A redrive's request epoch belongs to an earlier attempt.  Do
+                # not let an unverified replacement inherit that authority.
+                row["placement_epoch"] = 0
+            if sent and row.get("task_pipeline_stage") and all(
+                str(sent.get(key) or "") == str(expected or "") and bool(expected)
+                for key, expected in (
+                    ("workflow_run_id", row["workflow_run_id"]),
+                    ("task_id", row["task_id"]),
+                    ("dispatch_id", row["dispatch_id"]),
+                    ("lease_id", row["lease_id"]),
+                )
+            ):
+                try:
+                    placement_epoch = int(sent.get("placement_epoch") or 0)
+                except (TypeError, ValueError):
+                    placement_epoch = 0
+                if placement_epoch > 0:
+                    row["placement_epoch"] = placement_epoch
             for key in (
                 "context_delivery_envelope_ref",
                 "context_delivery_receipt_ref",
@@ -1049,20 +1077,22 @@ class WorkflowOperationService:
         compatibility_proof_digest: str = "",
         compatibility_request_ref: Mapping[str, Any] | None = None,
     ) -> ZfEvent | None:
-        """Admit one Run Manager decision for same-operation redrive."""
-        return admit_task_pipeline_redrive(
-            self,
-            operation_id=operation_id,
-            request_hash=request_hash,
-            workflow_run_id=workflow_run_id,
-            task_id=task_id,
-            source_attempt_id=source_attempt_id,
-            recovery_decision_event_id=recovery_decision_event_id,
-            reason=reason,
-            recovery_decision_owner=recovery_decision_owner,
-            compatibility_proof_digest=compatibility_proof_digest,
-            compatibility_request_ref=compatibility_request_ref,
-        )
+        """Serialize recovery owners on the same operation admission guard."""
+        lock_path = self.state_dir / "projections" / "workflow-operations" / f"{_safe_component(operation_id)}.guard"
+        with locked_path(lock_path):
+            return admit_task_pipeline_redrive(
+                self,
+                operation_id=operation_id,
+                request_hash=request_hash,
+                workflow_run_id=workflow_run_id,
+                task_id=task_id,
+                source_attempt_id=source_attempt_id,
+                recovery_decision_event_id=recovery_decision_event_id,
+                reason=reason,
+                recovery_decision_owner=recovery_decision_owner,
+                compatibility_proof_digest=compatibility_proof_digest,
+                compatibility_request_ref=compatibility_request_ref,
+            )
 
     def fail(
         self,
@@ -1106,9 +1136,17 @@ class WorkflowOperationService:
         )
         parent_task_id = str(existing_operation.get("parent_task_id") or "")
         emitted_body = dict(payload)
+        if event_type == "workflow.operation.started":
+            # Reader replay retains its pinned attempt and dispatch identity.
+            # A controlled redrive still creates a new start occurrence.
+            emitted_body["redrive_count"] = int(existing_operation.get("redrive_count") or 0)
         if parent_task_id:
             emitted_body.setdefault("parent_task_id", parent_task_id)
         for event in reversed(events):
+            if event_type == "workflow.operation.started" and starts_new_redrive_epoch(
+                event, existing_operation, operation_id, request_hash,
+            ):
+                break
             if event.type != event_type:
                 continue
             existing_body = event.payload if isinstance(event.payload, dict) else {}
@@ -1116,14 +1154,24 @@ class WorkflowOperationService:
                 str(existing_body.get("operation_id") or "") == operation_id
                 and str(existing_body.get("request_hash") or "") == request_hash
             ):
+                if (
+                    event_type == "workflow.operation.settled"
+                    and existing_operation.get("verification_recovery_count")
+                    and existing_operation.get("status") == "running"
+                    and (payload.get("admitted_call_result_ref") or {}).get("sha256")
+                    != (existing_body.get("admitted_call_result_ref") or {}).get("sha256")
+                ):
+                    continue
                 if event_type == "workflow.operation.started":
                     occurrence = (
                         str(payload.get("active_attempt_id") or ""),
                         str(payload.get("dispatch_id") or ""),
+                        emitted_body["redrive_count"],
                     )
                     existing_occurrence = (
                         str(existing_body.get("active_attempt_id") or ""),
                         str(existing_body.get("dispatch_id") or ""),
+                        int(existing_body.get("redrive_count") or 0),
                     )
                     if occurrence != existing_occurrence:
                         continue

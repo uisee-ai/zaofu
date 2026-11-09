@@ -15,7 +15,9 @@ from zf.runtime.semantic_replan import (
     SEMANTIC_REPLAN_ACTION,
     SEMANTIC_REPLAN_SAFE_ACTION,
 )
+from zf.runtime.semantic_replan_redrive import cross_task_replan_cancellation
 from zf.runtime.execution_policy_routing import recorded_execution_route_action
+from zf.runtime.recovery_step import IDENTITY_FIELDS
 
 
 TRIAGE_REQUESTED = "orchestrator.rework.triage.requested"
@@ -56,8 +58,6 @@ def pending_rework_triage_actions(
 ) -> list[dict[str, Any]]:
     """Derive one current Run Manager action per repeated-failure scope."""
 
-    if threshold <= 0:
-        return []
     now = now or datetime.now(timezone.utc)
     groups: dict[tuple[str, str], tuple[int, ZfEvent]] = {}
     for index, event in enumerate(events):
@@ -77,8 +77,7 @@ def pending_rework_triage_actions(
             or payload.get("fingerprint")
             or event.id
         )
-        failure_count = int(payload.get("failure_count") or payload.get("retry_count") or 0)
-        if not task_id or failure_count < threshold:
+        if not task_id:
             continue
         groups[(task_id, fingerprint)] = (index, event)
 
@@ -91,6 +90,11 @@ def pending_rework_triage_actions(
         recorded = _matching_recorded(events, request_id)
         if recorded is not None:
             action = _recorded_advice_action(recorded, capped, request_id, fingerprint)
+            if request is not None and _payload(request).get("recovery_case_id"):
+                action["recovery_case_id"] = _payload(request)["recovery_case_id"]
+                for key in IDENTITY_FIELDS:
+                    if _payload(request).get(key) and not action.get(key):
+                        action[key] = _payload(request)[key]
         elif request is not None:
             if _event_age_seconds(request, now) < stale_seconds:
                 continue
@@ -175,14 +179,21 @@ def pending_immediate_replan_actions(
             task_id,
             triage.id,
         )
-        if (
-            _has_later_task_progress(events, index, task_id)
-            or _action_completed(events, checkpoint_id)
-        ):
+        if _has_later_task_progress(events, index, task_id):
             continue
+        cancelled_id = ""
+        if _action_completed(events, checkpoint_id):
+            cancelled_id = cross_task_replan_cancellation(events, task_id, failed_event_id)
+            if not cancelled_id:
+                continue
+            checkpoint_id = _stable_id(
+                "ortriage-replan-redrive", task_id, triage.id, cancelled_id,
+            )
+            if _action_completed(events, checkpoint_id):
+                continue
         failed_payload = _payload(failed_event) if failed_event is not None else {}
         evidence_ids = list(dict.fromkeys(
-            item for item in (failed_event_id, triage.id) if item
+            item for item in (failed_event_id, triage.id, cancelled_id) if item
         ))
         fingerprint = str(
             failed_payload.get("failure_fingerprint")
@@ -214,6 +225,7 @@ def pending_immediate_replan_actions(
                 "semantic-replan",
                 task_id,
                 failed_event_id or triage.id,
+                *([cancelled_id] if cancelled_id else []),
             ),
             "task_id": task_id,
             "recorded_event_id": triage.id,
@@ -387,6 +399,7 @@ def _request_action(
         ),
         "failure_count": int(payload.get("failure_count") or payload.get("retry_count") or 0),
         "triage_threshold": threshold,
+        "semantic_triage_required": payload.get("semantic_triage_required") is True,
         "owner_route": "run_manager",
         "action_policy": "auto_decide",
         "intervention_class": "semantic_replan",
@@ -852,11 +865,13 @@ def _event_age_seconds(event: ZfEvent, now: datetime) -> int:
 def is_semantic_triage_cap(event: ZfEvent, *, threshold: int) -> bool:
     """Separate same-fingerprint semantic caps from aggregate retry exhaustion."""
 
-    if event.type not in _TRIAGE_CAP_EVENTS or threshold <= 0:
+    if event.type not in _TRIAGE_CAP_EVENTS:
         return False
     payload = _payload(event)
-    if bool(payload.get("semantic_triage_required")):
+    if payload.get("semantic_triage_required") is True:
         return True
+    if threshold <= 0:
+        return False
     evidence_ids = _string_list(payload.get("failure_event_ids"))
     return bool(
         str(payload.get("failure_fingerprint") or "").strip()
@@ -884,7 +899,17 @@ def triage_action_preflight(
         failures.append("missing_failure_fingerprint")
     if action == TRIAGE_REQUEST_ACTION:
         threshold = int(payload.get("triage_threshold") or 3)
-        if int(payload.get("failure_count") or 0) < threshold:
+        # A current, admitted Impl result is a review of one concrete failure,
+        # not a retry-exhaustion triage. Its producer binds the request to the
+        # task, operation and generation; the checkpoint rechecks freshness.
+        execution_review = (
+            payload.get("failure_class") == "settled_impl_requires_semantic_review"
+            and payload.get("source_event_type") == "workflow.call.result.admitted"
+            and bool(payload.get("target_operation_id"))
+            and bool(payload.get("task_map_generation"))
+            and int(payload.get("failure_count") or 0) >= 1
+        )
+        if not execution_review and payload.get("semantic_triage_required") is not True and int(payload.get("failure_count") or 0) < threshold:
             failures.append("failure_count_below_semantic_triage_threshold")
         if not _string_list(payload.get("source_event_ids")):
             failures.append("missing_failure_evidence")

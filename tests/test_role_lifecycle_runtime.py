@@ -586,6 +586,26 @@ def test_codex_resume_readiness_failure_falls_back_to_fresh_session(
     assert downgraded[-1].payload["fallback"] == "fresh_provider_session"
 
 
+@pytest.mark.parametrize("claimed", ["2026-11-08T01:16:30Z", 1794100590])
+def test_future_worker_action_does_not_delay_idle_admission(tmp_path, monkeypatch, claimed):
+    from dataclasses import replace
+    from datetime import datetime, timezone
+
+    received = datetime(2026, 11, 7, 20, 16, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr("zf.core.state.role_sessions._now_iso", lambda: received.isoformat())
+    orchestrator, role, _transport = _runtime(tmp_path)
+    role = replace(role, lifecycle=replace(role.lifecycle, idle_seconds=180))
+    monkeypatch.setattr(orchestrator, "_now", lambda: received.timestamp())
+    orchestrator._ensure_role_active(role)
+    registry = RoleSessionRegistry(orchestrator.state_dir / "role_sessions.yaml", tmp_path)
+    registry.record_heartbeat(role.instance_id, {"state": "idle", "last_action_ts": claimed})
+
+    eligible, reason, _ = orchestrator._role_suspend_admission(
+        role, now=received.timestamp() + 240,
+    )
+    assert eligible, reason
+
+
 def test_active_workflow_operation_prevents_hibernation(
     tmp_path: Path,
 ) -> None:

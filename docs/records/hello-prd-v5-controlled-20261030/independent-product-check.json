@@ -1,0 +1,41 @@
+{
+  "source": "admitted Impl commit; not a frozen or delivered candidate",
+  "commit": "272aadc1a28128431a14adb9168fcca944923791",
+  "source_event_id": "evt-b89f7a35ec1e",
+  "changed_files": [
+    "hello.py",
+    "tests/test_hello.py"
+  ],
+  "checks": [
+    {
+      "command": [
+        "python",
+        "hello.py"
+      ],
+      "exit": 0,
+      "stdout": "Hello, world!\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "python",
+        "hello.py",
+        "--name",
+        "ZaoFu"
+      ],
+      "exit": 0,
+      "stdout": "Hello, ZaoFu!\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "python",
+        "-c",
+        "import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); print(\"discovered_tests=\"+str(n)); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)"
+      ],
+      "exit": 0,
+      "stdout": "discovered_tests=2\n",
+      "stderr": "test_default_greeting (test_hello.HelloCommandTests.test_default_greeting) ... ok\ntest_named_greeting (test_hello.HelloCommandTests.test_named_greeting) ... ok\n\n----------------------------------------------------------------------\nRan 2 tests in 0.101s\n\nOK\n"
+    }
+  ]
+}

@@ -28,6 +28,9 @@ code and tests.
 - The configured runtime state dir (default `.zf/`) is runtime state, not
   source code.
 - Keep the deterministic kernel separate from agent-driven behavior.
+- Agents judge business meaning, applicability, and action plans; the runtime
+  validates the authorization, identity, version, and evidence bindings of
+  those decisions and executes state transitions.
 - Prefer agent/skill/prompt ownership for semantic, project-specific, or
   judgment-heavy behavior: agents decide, skills provide method, prompts provide
   goal/context. Keep deterministic code for invariants, schemas, state
@@ -176,6 +179,15 @@ code and tests.
   and UI on `0.0.0.0`, run the container with host networking, and do not
   install host browsers unless explicitly asked. If Docker is unavailable,
   report the exact blocker and intended command.
+- 浏览器验收前先检查本机镜像及容器内 Chromium 启动；已有镜像使用
+  `--pull=never --rm --network host`，不要先执行 `playwright install chromium`。
+  MCP 镜像默认入口是服务，运行测试时显式覆盖 entrypoint；使用镜像内浏览器，
+  核实项目 Playwright 与浏览器兼容性。若只有完整 Chromium 而无 headless shell，
+  使用 `channel: 'chromium'` 或显式 `executablePath`，禁止篡改 `browsers.json`
+  或伪造 revision。任意 UID 运行时为浏览器提供可写的容器 HOME/cache。
+- Docker 浏览器测试必须执行原有业务断言，并保留退出码、trace、截图/WebM、
+  源码提交及实际镜像/浏览器版本；浏览器启动或页面可达不等于产品验收通过。
+  环境失败先修复测试入口后重跑，禁止将未执行的浏览器 gate 标为通过。
 
 ## Sprint / Backlog
 

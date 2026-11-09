@@ -117,7 +117,7 @@ def test_e8_inflight_fanout_blocks_quiescence() -> None:
 
 # ---------- E6:超时地板 ----------
 
-def test_e6_timeout_floor_for_unconfigured_stage() -> None:
+def test_e6_zero_disables_declared_deadline_unknown_stage_keeps_fallback() -> None:
     from zf.runtime.orchestrator_fanout import (
         DEFAULT_FANOUT_TIMEOUT_S,
         FanoutCoordinationMixin,
@@ -127,7 +127,7 @@ def test_e6_timeout_floor_for_unconfigured_stage() -> None:
         stages=[SimpleNamespace(id="prd-lanes-verify", timeout_seconds=0)],
     )))
     got = FanoutCoordinationMixin._fanout_timeout_seconds(host, "prd-lanes-verify")
-    assert got == DEFAULT_FANOUT_TIMEOUT_S
+    assert got == 0
     unknown = FanoutCoordinationMixin._fanout_timeout_seconds(host, "nope")
     assert unknown == DEFAULT_FANOUT_TIMEOUT_S
     host2 = SimpleNamespace(config=SimpleNamespace(workflow=SimpleNamespace(

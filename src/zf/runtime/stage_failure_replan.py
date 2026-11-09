@@ -14,12 +14,16 @@ rework_of / rework_attempt / rework_feedback=findings),reader fanout
 from __future__ import annotations
 
 from typing import Any
+from pathlib import Path
+
+from types import SimpleNamespace
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.plan_artifact_package import (
     plan_artifact_package_binding,
     reduce_plan_artifact_packages,
 )
+from zf.runtime.plan_source_binding import bind_admitted_plan_source_refs
 
 # stage 级 replan 上限:超过即该升级 human,不许无限重合成
 # (r5 教训:机械重试无界 = 烧钱活锁)。
@@ -101,11 +105,25 @@ def _bind_current_plan_package_identity(
     *,
     events: list[ZfEvent],
     workflow_run_id: str,
+    state_dir: Path | None = None,
 ) -> None:
     """Keep stage replans on the canonical admitted package for the run."""
 
     if not workflow_run_id:
         return
+    decision_ref = payload.get("orchestrator_decision_ref")
+    if decision_ref:
+        from zf.runtime.replan_resynth import _bind_current_plan_package
+
+        for event in reversed(events):
+            if (event.type == "orchestrator.replan_requested" and event.origin == "kernel"
+                    and _event_run_id(event) == workflow_run_id
+                    and event.payload.get("classification") == "oa_semantic_return_to_plan"
+                    and event.payload.get("orchestrator_decision_ref") == decision_ref):
+                _bind_current_plan_package(
+                    payload, plan=SimpleNamespace(**event.payload), events=events,
+                )
+                return
     projection = reduce_plan_artifact_packages(
         events,
         workflow_run_id=workflow_run_id,
@@ -116,6 +134,7 @@ def _bind_current_plan_package_identity(
     for key in _GOAL_CLAIM_SET_IDENTITY_KEYS:
         payload.pop(key, None)
     payload.update(plan_artifact_package_binding(events, current))
+    bind_admitted_plan_source_refs(payload, current, events, state_dir=state_dir)
 
 
 def _payload_target_ref(payload: dict[str, Any]) -> str:
@@ -429,6 +448,7 @@ def plan_reader_stage_replan(
     events: list[ZfEvent],
     failure_event: ZfEvent,
     *,
+    state_dir: Path | None = None,
     authorized_generation: str = "",
     generation_source_event_id: str = "",
     authorization_event_id: str = "",
@@ -443,6 +463,10 @@ def plan_reader_stage_replan(
     stage, selection = reader_stage_for_failure(config, events, failure_event)
     if stage is None:
         return None, selection
+    from zf.runtime.reader_failure_supersession import reader_failure_was_replaced
+
+    if reader_failure_was_replaced(events, failure_event):
+        return None, "superseded_by_admitted_task_replacement"
     trigger_type = str(getattr(stage, "trigger", "") or "")
     if not trigger_type:
         return None, "stage_has_no_trigger"
@@ -466,6 +490,10 @@ def plan_reader_stage_replan(
         failure_event.payload if isinstance(failure_event.payload, dict) else {}
     )
     failure_fanout_id = str(failure_payload.get("fanout_id") or "")
+    from zf.runtime.failure_kind import FAILURE_KIND_INFRA, failure_kind_from_payload
+
+    if not authorized_generation and failure_kind_from_payload(failure_payload) == FAILURE_KIND_INFRA:
+        return None, "infrastructure_failure"
     origin_payload: dict[str, Any] = {}
     for event in events:
         if (
@@ -518,6 +546,9 @@ def plan_reader_stage_replan(
     )
     if superseding_success is not None:
         return None, "superseded_by_candidate_ready"
+    from zf.runtime.orchestrator_gap_admission import rejected_gap_admission
+
+    gap_repairs: list[dict[str, Any]] = []
     failure_seen = False
     for event in events:
         if event.id == failure_event.id:
@@ -530,7 +561,10 @@ def plan_reader_stage_replan(
             str(event.causation_id or "") == failure_event.id
             or str(payload.get("source_event_id") or "") == failure_event.id
         ) and _same_replan_scope(event, failure_event):
-            return None, "handled_by_gap_plan"
+            repair = rejected_gap_admission(events, event)
+            if repair is None:
+                return None, "handled_by_gap_plan"
+            gap_repairs.append(repair)
     # E4(prd-goal e2e finding-8):cap 曾数全量历史,后续 admission
     # 成功也不清零 → 每周期回声 escalate。只计"最近一次 stage 成功
     # 之后"的失败——成功即翻篇。
@@ -561,6 +595,8 @@ def plan_reader_stage_replan(
         if not _same_replan_scope(event, failure_event):
             continue
         if event.id == failure_event.id:
+            continue
+        if failure_kind_from_payload(event.payload) == FAILURE_KIND_INFRA:
             continue
         prior_failures += 1
     # A reader child can emit its configured success_event before downstream
@@ -642,6 +678,38 @@ def plan_reader_stage_replan(
                 or failure_event.type
             ),
         }]
+    if gap_repairs:
+        origin_payload["gap_admission_repair"] = gap_repairs[-1]
+        prior_summary = origin_payload.get("rework_summary")
+        origin_payload["rework_summary"] = {
+            **(prior_summary if isinstance(prior_summary, dict) else {}),
+            "gap_admission_repairs": gap_repairs,
+        }
+        findings.extend({
+            "severity": "high", "category": "gap_admission",
+            "path": repair["gap_event_ref"],
+            "message": (
+                f"{repair['reason']} ({repair['rejection_event_ref']}). "
+                "Read the original gap proposal at the cited event; preserve its "
+                "semantic diagnosis and repair only the rejected admission shape."
+            ),
+        } for repair in gap_repairs)
+
+    rejected_id = str(
+        failure_payload.get("trigger_event_id") or failure_event.causation_id or ""
+    ).strip()
+    rejected_plan = next((
+        event for event in events
+        if event.id == rejected_id and event.type == "task_map.ready"
+        and _same_run(event, failure_run_id)
+    ), None)
+    if (
+        failure_payload.get("failure_class") == "reader_execution_failure"
+        or (failure_payload.get("failure_scope") == "plan_admission" and rejected_plan is not None)
+    ):
+        # Old trigger refs describe an earlier candidate. Reuse only the
+        # failed candidate's supplied bindings, if recovery established them.
+        origin_payload["previous_plan_candidate_refs"] = []
     for key in (
         *_CANONICAL_INPUT_KEYS,
         "target_ref",
@@ -668,7 +736,9 @@ def plan_reader_stage_replan(
             continue
         value = failure_payload.get(key)
         if value not in (None, "", [], {}) and (
-            key in _CANONICAL_INPUT_KEYS or not origin_payload.get(key)
+            key in _CANONICAL_INPUT_KEYS
+            or key == "previous_plan_candidate_refs"
+            or not origin_payload.get(key)
         ):
             origin_payload[key] = value
     source_event_ids = {
@@ -703,6 +773,7 @@ def plan_reader_stage_replan(
         origin_payload,
         events=events,
         workflow_run_id=failure_run_id,
+        state_dir=state_dir,
     )
     if target_ref:
         origin_payload.setdefault("target_ref", target_ref)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -89,9 +90,11 @@ def test_build_autoresearch_resident_command_uses_current_zf_cli(monkeypatch):
     ]
 
 
+@pytest.mark.parametrize("action_limit", [0, 2])
 def test_autoresearch_resident_sidecar_starts_authorized_and_stops(
     tmp_path: Path,
     monkeypatch,
+    action_limit: int,
 ):
     monkeypatch.setenv("ZF_CLI_CMD", "zf")
     started = {}
@@ -115,7 +118,7 @@ def test_autoresearch_resident_sidecar_starts_authorized_and_stops(
             autoresearch_resident=RuntimeAutoresearchResidentConfig(
                 enabled=True,
                 interval_seconds=1.5,
-                max_actions_per_tick=2,
+                max_actions_per_tick=action_limit,
                 worktree_root=str(tmp_path / "worktrees"),
             ),
         ),
@@ -134,7 +137,7 @@ def test_autoresearch_resident_sidecar_starts_authorized_and_stops(
     assert "--execute" in started["command"]
     assert "1.5" in started["command"]
     assert "--max-actions-per-tick" in started["command"]
-    assert "2" in started["command"]
+    assert started["command"][started["command"].index("--max-actions-per-tick") + 1] == str(action_limit)
     assert started["cwd"] == str(tmp_path)
     assert started["env"]["ZF_AUTORESEARCH_RESIDENT"] == "authorized"
     assert sidecar.pid_path.exists()
@@ -339,3 +342,15 @@ def test_stop_by_pidfile_never_signals_a_reused_pid(tmp_path: Path):
 
     assert stop_autoresearch_resident_sidecar_by_pidfile(state_dir) is False
     assert not pid_file.exists()  # stale record cleared
+
+
+@pytest.mark.parametrize("actual_state,expected", [("/tmp/ours", True), ("/tmp/other", False)])
+def test_pidfile_identity_binds_state_not_shared_worktree_root(monkeypatch, actual_state, expected):
+    from zf.runtime.autoresearch_resident_sidecar import _pidfile_process_matches
+
+    recorded = ["zf", "autoresearch", "resident", "--state-dir", "/tmp/ours",
+                "--worktree-root", "/tmp/shared-repairs"]
+    actual = ["/python", "/venv/bin/zf", *recorded[1:]]
+    actual[actual.index("--state-dir") + 1] = actual_state
+    monkeypatch.setattr(Path, "read_bytes", lambda self: b"\0".join(p.encode() for p in actual)+b"\0")
+    assert _pidfile_process_matches(123, recorded) is expected

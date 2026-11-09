@@ -16,6 +16,7 @@ from zf.core.skills import (
     upsert_skills_lockfile,
     validate_skill_sources,
 )
+from zf.core.skills.provenance import SkillCandidate, resolve_skill
 
 
 def _write_skill(root: Path, name: str, text: str) -> Path:
@@ -477,6 +478,31 @@ def test_vendored_project_dependency_suppresses_implicit_yoke_collision(tmp_path
     assert not any("multiple candidates" in warning for warning in warnings)
     assert by_name["verify-review"].source_name == "project"
     assert by_name["verify-review"].collision_candidates == ()
+
+
+def test_project_yoke_overlay_wins_over_runner_checkout(tmp_path: Path):
+    """A worktree-local yoke skill must not collide with the runner's yoke."""
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    _write_skill(tmp_path / "yoke", "verify-review", "# Local yoke\n")
+    role = RoleConfig(name="verify", skills=["verify-review"])
+    config = ZfConfig(project=ProjectConfig(name="test"), roles=[role])
+
+    resolution = resolve_skill(
+        project_root=tmp_path,
+        state_dir=state_dir,
+        name="verify-review",
+        config=config,
+    )
+
+    assert resolution.source_name == "yoke"
+    assert resolution.path == tmp_path / "yoke" / "verify-review" / "SKILL.md"
+    assert resolution.collision_candidates == (
+        SkillCandidate(
+            source_name="yoke",
+            path=tmp_path / "yoke" / "verify-review" / "SKILL.md",
+        ),
+    )
 
 
 def test_materialize_claude_code_targets_worktree_project_dot_claude(tmp_path: Path):

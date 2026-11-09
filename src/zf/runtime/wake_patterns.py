@@ -59,6 +59,14 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "task.done.evidence",
     "task.created",
     "feature.liveness.blocked",
+    # Task Pipeline result edges are provider-independent completion
+    # notifications.  They must wake the existing Kernel/WRC route directly
+    # so the next ready stage does not wait for an unrelated tick.
+    "task.pipeline.generation.admitted",
+    "task.pipeline.verify.completed",
+    "task.pipeline.verify.failed",
+    "task.pipeline.acceptance.completed",
+    "task.pipeline.acceptance.failed",
     # Kernel-reactor liveness routes. These handlers mutate runtime state
     # or bridge bounded fanout work, so emitted events must wake run_once
     # instead of waiting for an unrelated periodic tick.
@@ -86,10 +94,12 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # Provider terminals may be emitted after the transport callback cycle.
     # Wake fanout reconciliation so a failed reader cannot strand its child.
     "workflow.operation.failed",
+    "workflow.call.result.repair.requested",
     # Tier-2 诊断(task 2026-07-06-0930):requested 唤醒诊断 stage 派发,
     # completed 唤醒结论消费(rework feedback / needs_owner 升级)。
     "diagnosis.requested",
     "diagnosis.completed",
+    "worker.assistance.requested",
     # Run 11 fix: task.assigned must wake Layer 1 so _dispatch_ready
     # can send the briefing to the assigned worker. Without this the
     # task sat in backlog forever after Layer 2 called `zf kanban assign`.
@@ -134,6 +144,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "run.manager.action.effect.pending",
     "run.manager.action.effect.passed",
     "run.manager.action.effect.failed",
+    "run.manager.reflect.completed",
     # Run Manager may settle an action effect during its periodic service
     # transaction before EventWatcher observes that effect.  A completed tick
     # is the restart-safe level trigger that re-evaluates blocked run claims.
@@ -144,6 +155,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # Controlled run-cancel actions emit this outside run_once. Wake
     # housekeeping immediately so resource reconciliation cannot wait on tick.
     "run.cancelled",
+    "run.resumed",
     "fanout.cancelled",
     "flow.discovery.failed",
     "task.done.blocked",
@@ -283,6 +295,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "worker.completed",
     "task.continuation_scheduled",
     "task.retry_scheduled",
+    "task_map.amend.failed",
     # 2026-06-03: stale task-capsule completion rejections are emitted by
     # the revision gate and must wake the reactor so same-lane rework can
     # be dispatched before orphan/max-iteration recovery takes over.
@@ -375,6 +388,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
 # (observational)但硬性不唤 Layer 2 agent turn。一次 Layer 2 turn 是一次
 # 完整 agent 推理;hook 流速 > 推理吞吐时 cursor 永久积压(R25: 2.9h)。
 LAYER2_NOISE_EVENTS: frozenset[str] = frozenset({
+    "workflow.call.result.repair.requested",
     "codex.hook.session_start",
     "codex.hook.user_prompt_submit",
     "codex.hook.pre_tool_use",

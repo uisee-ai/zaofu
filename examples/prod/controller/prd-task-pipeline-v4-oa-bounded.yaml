@@ -1,0 +1,151 @@
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+metadata:
+  name: prd-task-pipeline/v4-oa-bounded
+spec:
+  flowProfile: prd-flow-v4-task-pipeline
+  topology: fanout
+  lanes: 2
+  backend: codex
+  roleDefaults:
+    model_reasoning_effort: high
+  prdRef: docs/prd/TODO.md
+  targetRoot: app
+  qualityFloor: product-demo
+  evidencePolicy: strict_refs
+  deliveryPolicy: ship_candidate
+  artifactPackageMode: blocking
+  productAcceptanceMode: blocking
+  semanticSubmitProfiles:
+    workflow-read: blocking
+    plan-synth: blocking
+    implementation: blocking
+    task-verify: blocking
+    candidate-verify: blocking
+    thin-judge-goal-closure: blocking
+  taskPipeline:
+    mode: ${ZF_TASK_PIPELINE_MODE:-blocking}
+    maxActiveTaskPipelines: 4
+    maxReworkAttempts: 2
+    pools:
+      impl:
+        capacity: 2
+        roleInstances: [dev-lane-0, dev-lane-1]
+      verify:
+        capacity: 2
+        roleInstances: [verify-lane-0, verify-lane-1]
+    backpressure:
+      maxUnverifiedTasks: 3
+      maxIntegrationQueue: 2
+    workerLifecycle:
+      mode: on_demand
+      idleSeconds: 120
+    affinity:
+      implRework: prefer_previous_session
+      verifyIndependence: different_role
+      sessionBinding: task_stage
+      crossTaskContext: fresh
+    integrationAdmission:
+      default: verify_admitted
+      riskReview:
+        enabled: false
+    candidate:
+      integration: incremental_serial_cas
+      integrationCapacity: 1
+      rollingSmoke: required
+      incrementalEvent: integration.queue.integrated
+      freezeEvent: candidate.ready
+      deliveryEvent: run.delivery.completed
+      partialCandidateAutoShip: forbidden
+      finalVerifyTarget: frozen_exact_commit
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: prd-task-pipeline-v4-oa-bounded
+  zaofu:
+    catalog:
+      id: prd-task-pipeline-v4-oa-bounded-codex
+      label: PRD Task Pipeline v4 (OA bounded)
+      description: PRD controller with blocking V4 Task Pipeline and bounded OA checkpoints.
+      intent: build
+      backend: codex
+      roles: 11
+      recommended_for: [build]
+      preferred: false
+      order: 131
+spec:
+  profile_sources: [common/profiles.yaml]
+  uses: [prod-runtime/v1]
+  version: "1.0"
+  project:
+    name: prd-task-pipeline-v4-oa-bounded
+  orchestrator:
+    backend: codex
+    wake_min_interval_s: 5
+  roles:
+    # The semantic orchestrator agent is resident. Task Pipeline handoffs remain
+    # Kernel-owned; the role only handles admitted semantic checkpoints.
+    - name: oa-primary
+      instance_id: oa-primary
+      role_kind: reader
+      backend: codex
+      model_reasoning_effort: high
+      permission_mode: bypass
+      transport: tmux
+      execution:
+        default_profile: bounded-direct-v1
+        profile_allowlist: [bounded-direct-v1]
+      lifecycle:
+        mode: resident
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      triggers:
+        - dispatch.silent_stall
+        - orchestrator.rework.triage.requested
+        - orchestrator.semantic.checkpoint.requested
+      publishes: [orchestrator.rework.triage.recorded]
+      skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
+  runtime:
+    # v4 partial Candidate delivery is fenced. Final delivery is owned by the
+    # scoped Goal Completion operation, not this legacy compatibility switch.
+    git:
+      auto_ship_on_judge_passed: false
+  workflow:
+    orchestration:
+      # 195: semantic OA profile is explicit; Kernel/WRC still owns normal
+      # frontier dispatch and Run Manager remains the recovery owner.
+      oa_profile: oa-primary
+      normal_frontier_owner: run_manager
+      mode: exception_advisor
+      max_plan_revisions: 2
+      no_progress_limit: 2
+      flow_policies:
+        prd:
+          mode: semantic_control
+          pilot_id: oa-bounded-v4
+          checkpoints: [pre_impl, semantic_failure]
+          checkpoint_policies:
+            pre_impl: blocking
+            semantic_failure: blocking
+          autonomous_actions: [delegate, continue, rework]
+          review_blocked_tasks: true
+        research:
+          mode: exception_advisor
+        workflow:
+          mode: exception_advisor
+    kind_routes:
+      prd:
+        pattern_id: prd-scan
+        default_tier: standard
+    dag:
+      external_triggers: [prd.requested]
+    admission_replan:
+      enabled: true
+      resynth_trigger: prd.scan.completed
+    rework_routing:
+      prd.scan.failed: planner
+      prd.plan.failed: planner
+      integration.failed: planner
+      static_gate.failed: dev-lane-0
+      test.failed: dev-lane-0

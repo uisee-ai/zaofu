@@ -108,6 +108,19 @@ def test_runs_list_and_explain_share_terminal_workflow_run(
     assert explained["data"]["runs"]["run-1"]["status"] == "completed"
 
 
+def test_runs_list_reports_resumed_run_as_running(tmp_path: Path, monkeypatch, capsys) -> None:
+    state_dir = _init_project(tmp_path, monkeypatch)
+    capsys.readouterr()
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(type="run.goal.blocked", payload={"run_id": "run-1"}))
+    assert main(["runs", "list", "--json"]) == 0
+    assert _json_output(capsys)["data"]["workflow_runs"][0]["status"] == "blocked"
+    log.append(ZfEvent(type="run.goal.updated", payload={"run_id": "run-1", "status": "active"}))
+
+    assert main(["runs", "list", "--json"]) == 0
+    assert _json_output(capsys)["data"]["workflow_runs"][0]["status"] == "running"
+
+
 def test_emit_invalid_payload_writes_only_stderr(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

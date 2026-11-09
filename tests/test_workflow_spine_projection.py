@@ -269,3 +269,40 @@ def test_corrupt_projection_rebuilds_from_zero(tmp_path: Path) -> None:
     assert stats["events_folded"] == 1  # 从 0 重放
     attempts = _read(tmp_path, "task_attempts.json")
     assert attempts["tasks"]["T-1"]["attempt_count"] == 1
+
+
+def test_blocked_run_resumes_in_incremental_spine_without_reopening_completed(
+    tmp_path: Path,
+) -> None:
+    log = _log(tmp_path)
+    state_dir = tmp_path / ".zf"
+    log.append(ZfEvent(type="run.goal.blocked", payload={"run_id": "r1"}))
+    log.append(ZfEvent(type="run.goal.completed", payload={"run_id": "r2"}))
+    refresh_spine_projections(state_dir, log)
+    log.append(ZfEvent(type="run.goal.updated", payload={"run_id": "r1", "status": "active"}))
+    log.append(ZfEvent(type="run.goal.updated", payload={"run_id": "r2", "status": "active"}))
+    refresh_spine_projections(state_dir, log)
+
+    runs = _read(tmp_path, "workflow_spine.json")["runs"]
+    assert runs["r1"]["status"] == "running"
+    assert runs["r1"]["attention"] is False
+    assert "terminal_event_id" not in runs["r1"]
+    assert runs["r2"]["status"] == "completed"
+    assert runs["r2"]["terminal_event_id"]
+
+
+def test_old_spine_version_replays_previously_consumed_resume(tmp_path: Path) -> None:
+    log = _log(tmp_path)
+    state_dir = tmp_path / ".zf"
+    log.append(ZfEvent(type="run.goal.blocked", payload={"run_id": "r1"}))
+    log.append(ZfEvent(type="run.goal.updated", payload={"run_id": "r1", "status": "active"}))
+    refresh_spine_projections(state_dir, log)
+    projections = state_dir / "projections"
+    for name in ("task_attempts.json", "stage_spine.json", "workflow_health.json", "workflow_spine.json"):
+        path = projections / name
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["schema_version"] = "shadow-spine.v1"
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    assert refresh_spine_projections(state_dir, log)["events_folded"] == 2
+    assert _read(tmp_path, "workflow_spine.json")["runs"]["r1"]["status"] == "running"

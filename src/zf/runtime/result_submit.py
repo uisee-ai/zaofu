@@ -299,6 +299,22 @@ class SemanticResultSubmitService:
             adapters=self.registry,
         )
 
+    def authorize_running_operation(
+        self, operation_id: str, *, role_instance: str, credential: str,
+    ) -> tuple[dict[str, Any], Mapping[str, Any]]:
+        """Authorize nonterminal work records with the existing submit binding.
+
+        This does not consume the final-result capability or admit a result.
+        """
+        operation = load_workflow_operation(self.event_log, operation_id)
+        if operation is None or operation.get("status") != "running":
+            raise ResultSubmitError("operation_not_running", "work record requires a running operation")
+        request = self._request_body(operation).get("request")
+        if not isinstance(request, Mapping):
+            raise ResultSubmitError("request_invalid", "operation request body is missing")
+        self._authorize(operation=operation, request=request, role_instance=role_instance, credential=credential)
+        return dict(operation), request
+
     def validate_plan_candidate(
         self,
         *,
@@ -364,6 +380,12 @@ class SemanticResultSubmitService:
                 revision=_revision,
                 delivery=self._current_task_pipeline_delivery(_operation, request),
             )
+        if profile_id == "orchestrator-semantic-decision":
+            from zf.runtime.orchestrator_directive_refs import validate_orchestrator_submission
+
+            return validate_orchestrator_submission(
+                state_dir=self.state_dir, request=request, semantic=semantic,
+            )
         raise ResultSubmitError(
             "plan_candidate_validation_unavailable",
             "operation has no supported pre-submit validation profile",
@@ -390,6 +412,21 @@ class SemanticResultSubmitService:
             )
         )
         profile = self.registry.profile(profile_id, revision)
+        if profile_id == "orchestrator-semantic-decision":
+            from zf.runtime.orchestrator_directive_refs import validate_orchestrator_submission
+
+            validation = validate_orchestrator_submission(
+                state_dir=self.state_dir, request=request, semantic=semantic,
+            )
+            if validation["status"] != "passed":
+                raise ResultSubmitError(
+                    "orchestrator_directive_not_admitted",
+                    "; ".join(item["message"] for item in validation["errors"]),
+                    details={
+                        "status": "repair_required", "attempt_domain": "protocol_repair",
+                        "semantic_rework_cost": 0, "issues": validation["errors"],
+                    },
+                )
         if profile_id == _PLAN_SYNTH_PROFILE_ID:
             verdict_errors = plan_synth_verdict_errors(semantic)
             if verdict_errors:
@@ -840,7 +877,11 @@ def _compatibility_projection(field: str, payload: Mapping[str, Any]) -> dict[st
         or result.get("evidence_refs")
         or []
     )
-    evidence_refs = list(dict.fromkeys([*evidence_refs, *artifact_evidence]))
+    unique_evidence: list[Any] = []
+    for ref in [*evidence_refs, *artifact_evidence]:
+        if ref not in unique_evidence:
+            unique_evidence.append(ref)
+    evidence_refs = unique_evidence
     return {
         "status": "completed",
         "summary": str(result.get("summary") or ""),

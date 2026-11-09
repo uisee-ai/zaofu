@@ -32,6 +32,7 @@ def test_root_catalog_projects_delivery_and_registered_research_routes() -> None
     assert delivery["lane_count"] == 2
     assert delivery["topology"] == "multi_lane"
     assert delivery["required_parameters"] == ["target_root"]
+    assert "plan-critic" in delivery["roles"]
     assert set(delivery["writer_roles"]) == {"dev-lane-0", "dev-lane-1"}
     assert {"verify-lane-0", "verify-lane-1"} <= set(
         delivery["verify_roles"]

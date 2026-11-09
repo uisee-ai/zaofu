@@ -280,16 +280,25 @@ class FanoutEvidenceQueriesMixin:
     def _fanout_child_last_activity(
         self, child: dict, events: list[ZfEvent], baseline_epoch: float
     ) -> float:
-        """Epoch of the child's last sign of life: the most recent event it is
-        the actor of (agent.usage / worker.state.changed / its own results),
-        floored at the dispatch epoch so a freshly-dispatched child that has not
-        emitted anything yet is not treated as instantly idle.
-        """
+        """Latest worker activity; kernel bookkeeping cannot renew liveness."""
+        from zf.runtime.housekeeping import is_worker_activity_event
+
         role_instance = str(child.get("role_instance") or "")
         latest = baseline_epoch
         if role_instance:
             for event in events:
-                if event.actor == role_instance:
+                if (
+                    event.actor == role_instance
+                    and (
+                        # Usage is kernel-observed provider activity. Unlike
+                        # state mirrors, it remains evidence with kernel origin.
+                        is_worker_activity_event(event.type)
+                        or (
+                            event.origin != "kernel"
+                            and event.type in {"worker.heartbeat", "worker.progress", "phase.progressed"}
+                        )
+                    )
+                ):
                     epoch = self._event_epoch(event)
                     if epoch > latest:
                         latest = epoch
@@ -308,6 +317,21 @@ class FanoutEvidenceQueriesMixin:
         payloads: list[dict] = []
         for child in manifest.get("children", []) or []:
             if not isinstance(child, dict):
+                continue
+            from zf.runtime.call_result_admission import result_protocol_mode
+            from zf.runtime.admitted_fanout_report import admitted_fanout_report
+
+            descriptor = child.get("admitted_call_result_ref")
+            mode = result_protocol_mode(getattr(self, "config", None), {
+                **(manifest.get("trigger_payload") or {}), **child,
+            })
+            if mode == "blocking" or (mode == "warning" and descriptor):
+                if not isinstance(descriptor, dict) or not descriptor.get("ref"):
+                    continue
+                # Scratch result.json is diagnostic, never typed authority.
+                # Even a later rejected submission must not replace this body.
+                report = admitted_fanout_report(self, descriptor)
+                payloads.append({**child, "report": report})
                 continue
             payload = dict(child)
             result_payload = self._read_fanout_child_result_payload(
@@ -743,6 +767,8 @@ class FanoutEvidenceQueriesMixin:
         dispatch_epoch: float,
         idle_threshold: float,
         now: float,
+        last_activity_epoch: float | None = None,
+        events: list[ZfEvent] | None = None,
     ) -> bool:
         """E5/F15: thinking backend 的闲置宽限(与 worker 侧
         _provider_stuck_grace_active 同语义)。
@@ -750,7 +776,8 @@ class FanoutEvidenceQueriesMixin:
         codex xhigh 深读大文件的单回合可安静 5-15 分钟且零事件输出;
         avbs-r5 实测 reader 默认 300s 阈值在派发后 429s 即被误杀(pane
         实际存活)。宽限 = 自派发起 max(idle_threshold, 配置宽限);
-        宽限外仍按事件沉默判闲置(真死的 child 最终会被收割)。
+        宽限外，已打开的 Codex 回合按最后活动额外获得有界宽限；
+        真死的 child 最终仍会被收割。
         131-P2-3:宽限值走 workflow.attempt_lease_grace_s(出厂 900s)。
         """
         role_instance = str(child.get("role_instance") or "")
@@ -769,4 +796,13 @@ class FanoutEvidenceQueriesMixin:
         except (TypeError, ValueError):
             pass
         grace = max(float(idle_threshold), lease_grace)
-        return (now - dispatch_epoch) < grace
+        if (now - dispatch_epoch) < grace:
+            return True
+        if getattr(role, "backend", "") != "codex" or events is None or last_activity_epoch is None:
+            return False
+        from zf.runtime.fanout_idle_liveness import codex_turn_within_idle_grace
+
+        return codex_turn_within_idle_grace(
+            events, instance_id=role_instance, dispatch_epoch=dispatch_epoch,
+            last_activity_epoch=last_activity_epoch, idle_threshold=idle_threshold, now=now,
+        )

@@ -20,14 +20,20 @@ from zf.runtime.plan_artifact_ports import (
     coerce_plan_port_descriptors,
 )
 from zf.runtime.plan_matrix_admission import plan_matrix_admission_errors
+from zf.runtime.call_result_envelope import canonical_json_bytes
+from zf.runtime.plan_candidate_ports import (
+    PlanPortTooLarge, check_plan_port_size, read_plan_port_bytes,
+    plan_port_bodies as _plan_port_bodies,
+)
 from zf.runtime.task_map import (
-    load_task_map,
     resolve_artifact_file,
     validate_source_index_payload,
     validate_task_map_payload,
 )
 from zf.runtime.writer_fanout_admission import (
+    select_writer_task_items,
     validate_writer_task_items,
+    writer_fanout_dispatch_base_commit,
     writer_task_map_policy_errors,
     writer_task_items,
 )
@@ -59,6 +65,12 @@ def evaluate_plan_candidate_preflight(
         if isinstance(row, Mapping) and isinstance(row.get("report"), Mapping)
     ]
     errors: list[dict[str, str]] = []
+    from zf.runtime.workflow_read_result import workflow_read_finding_issues
+
+    for index, candidate in enumerate(candidates):
+        errors.extend(workflow_read_finding_issues(
+            candidate.get("findings", []), field=f"report[{index}].findings",
+        ))
     port_bodies = _plan_port_bodies(
         candidates,
         trigger=trigger,
@@ -102,15 +114,42 @@ def evaluate_plan_candidate_preflight(
             )
 
     if task_map:
-        from zf.runtime.task_scoped_plan_inputs import task_input_paths
+        from zf.runtime.task_scoped_plan_inputs import MissingTaskPartitionError, task_input_paths
 
+        raw_tasks = task_map.get("tasks")
+        tasks = [task for task in raw_tasks if isinstance(task, Mapping)] if isinstance(raw_tasks, list) else []
+        local_ports_by_task = {}
+        for index, task in enumerate(tasks):
+            evidence = task.get("evidence_contract")
+            local = evidence.get("required_plan_ports") if isinstance(evidence, Mapping) else []
+            local_ports_by_task[index] = {
+                canonical_plan_port_name(item) for item in (local if isinstance(local, list) else [])
+                if isinstance(item, str)
+            }
+        local_ports = set().union(*local_ports_by_task.values())
         for name, body in port_bodies.items():
-            raw_tasks = task_map.get("tasks")
-            for task in raw_tasks if isinstance(raw_tasks, list) else []:
-                if not isinstance(task, Mapping):
+            try:
+                task_input_paths(body, task_id="", candidate=True)
+            except ValueError as exc:
+                _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}", str(exc))
+                continue
+            for index, task in enumerate(tasks):
+                if (name in local_ports and name not in required_with_source
+                        and name not in local_ports_by_task[index]):
                     continue
                 try:
                     task_input_paths(body, task_id=str(task.get("task_id") or task.get("id") or ""))
+                except MissingTaskPartitionError as exc:
+                    from zf.runtime.plan_candidate_input_lineage import inherited_candidate_input_paths
+
+                    try:
+                        inherited_candidate_input_paths(state_dir=state_dir, trigger=trigger,
+                            task_map=task_map, task_id=str(task.get("task_id") or task.get("id") or ""),
+                            name=name, body=body)
+                    except ValueError as lineage_error:
+                        _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}",
+                               f"{exc}; {lineage_error}")
+                        break
                 except ValueError as exc:
                     _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}", str(exc))
                     break
@@ -121,6 +160,12 @@ def evaluate_plan_candidate_preflight(
             errors=errors,
         )
         if prior_task_map:
+            from zf.runtime.plan_requirement_amendment import amended_task_map_baseline
+            try:
+                prior_task_map = amended_task_map_baseline(state_dir,
+                    str(trigger.get("workflow_run_id") or trigger.get("trace_id") or ""), prior_task_map)
+            except (OSError, ValueError) as exc:
+                _error(errors, "owner_amendment_invalid", "requirement_amendment_ref", str(exc))
             errors.extend(_mandatory_goal_claim_contract_errors(
                 previous=prior_task_map,
                 current=task_map,
@@ -129,7 +174,12 @@ def evaluate_plan_candidate_preflight(
             dict(task_map),
             require_task_verification=True,
         )
-        for message in validation.errors:
+        from zf.runtime.task_map_required_ports import plan_input_declaration_errors
+
+        binding_errors = plan_input_declaration_errors(
+            dict(task_map), available_ports=available | _KERNEL_DERIVED_PORTS,
+        )
+        for message in dict.fromkeys([*validation.errors, *binding_errors]):
             _error(errors, "task_map_invalid", "task_map", message)
         for diagnostic in validation.summary.get("goal_coverage", {}).get(
             "diagnostics", []
@@ -146,7 +196,6 @@ def evaluate_plan_candidate_preflight(
             task_items: list[dict[str, Any]] = []
             try:
                 task_items = writer_task_items(dict(task_map))
-                validate_writer_task_items(task_items)
             except (RuntimeError, ValueError) as exc:
                 _error(
                     errors,
@@ -155,7 +204,25 @@ def evaluate_plan_candidate_preflight(
                     str(exc),
                 )
             if task_items:
+                try:
+                    selected, _, _, _ = select_writer_task_items(dict(task_map), task_items, trigger)
+                except (RuntimeError, ValueError) as exc:
+                    _error(errors, "writer_fanout_task_selection_invalid", "task_map.tasks", str(exc))
+                else:
+                    try:
+                        validate_writer_task_items(selected)
+                    except (RuntimeError, ValueError) as exc:
+                        _error(errors, "writer_fanout_task_map_invalid", "task_map.tasks", str(exc))
+                    try:
+                        writer_fanout_dispatch_base_commit(selected)
+                    except ValueError as exc:
+                        _error(errors, "writer_fanout_base_conflict", "task_map.tasks", str(exc))
                 policy = writer_policy or {}
+                from zf.runtime.plan_candidate_role_preflight import writer_role_errors
+
+                errors.extend(writer_role_errors(
+                    task_items, flow_kind=flow_kind, policy=policy,
+                ))
                 for message in writer_task_map_policy_errors(
                     task_items,
                     candidate_quality_source=str(
@@ -348,6 +415,9 @@ def _canonical_prior_task_map(
                 state_dir,
                 {"ref": package_ref, "sha256": package_digest},
             )
+            workflow_run_id = str(trigger.get("workflow_run_id") or trigger.get("trace_id") or "")
+            if workflow_run_id and package.get("workflow_run_id") != workflow_run_id:
+                raise ValueError("canonical Plan Package belongs to another workflow run")
             descriptor = next(
                 (
                     dict(port)
@@ -417,14 +487,17 @@ def _load_bound_task_map(
         project_root=project_root,
         state_dir=state_dir,
     )
-    raw = path.read_bytes()
+    raw = read_plan_port_bytes(path, "task_map")
     actual = hashlib.sha256(raw).hexdigest()
     if actual != expected:
         raise ValueError(
             f"task-map digest mismatch for {ref!r}: "
             f"expected {expected}, got {actual}"
         )
-    return load_task_map(path)
+    body = json.loads(raw)
+    if not isinstance(body, dict):
+        raise ValueError("task-map must be a JSON object")
+    return body
 
 
 def _mandatory_goal_claim_contract_errors(
@@ -521,16 +594,22 @@ def _task_map_candidate(
     for index, candidate in enumerate(candidates):
         inline = candidate.get("task_map")
         if isinstance(inline, Mapping) and inline:
-            found.append((dict(inline), f"report[{index}].task_map"))
+            try:
+                check_plan_port_size("task_map", len(canonical_json_bytes(inline)))
+                found.append((dict(inline), f"report[{index}].task_map"))
+            except PlanPortTooLarge as exc:
+                _error(errors, "plan_port_too_large", f"report[{index}].task_map", str(exc))
         ref = str(candidate.get("task_map_ref") or "").strip()
         if not ref:
             continue
         try:
-            found.append((load_task_map(resolve_artifact_file(
-                ref,
-                project_root=project_root,
-                state_dir=state_dir,
-            )), f"report[{index}].task_map_ref"))
+            path = resolve_artifact_file(ref, project_root=project_root, state_dir=state_dir)
+            body = json.loads(read_plan_port_bytes(path, "task_map"))
+            if not isinstance(body, dict):
+                raise ValueError("task-map must be a JSON object")
+            found.append((body, f"report[{index}].task_map_ref"))
+        except PlanPortTooLarge as exc:
+            _error(errors, "plan_port_too_large", f"report[{index}].task_map_ref", str(exc))
         except Exception as exc:
             _error(errors, "task_map_unreadable", f"report[{index}].task_map_ref", str(exc))
     port_body = port_bodies.get("task_map")
@@ -640,7 +719,7 @@ def _source_index_candidate(
                 project_root=project_root,
                 state_dir=state_dir,
             )
-            body = json.loads(path.read_text(encoding="utf-8"))
+            body = json.loads(read_plan_port_bytes(path, "source_index"))
             if isinstance(body, dict):
                 return body
             raise ValueError("source index must contain a JSON object")
@@ -651,92 +730,6 @@ def _source_index_candidate(
     if isinstance(body, Mapping):
         return dict(body)
     return {}
-
-
-def _plan_port_bodies(
-    candidates: list[dict[str, Any]],
-    *,
-    trigger: Mapping[str, Any],
-    state_dir: Path,
-    project_root: Path,
-    errors: list[dict[str, str]],
-) -> dict[str, Mapping[str, Any]]:
-    selected: dict[str, tuple[dict[str, Any], str]] = {}
-    sources = [(dict(trigger), "trigger_payload"), *(
-        (candidate, f"report[{index}]")
-        for index, candidate in enumerate(candidates)
-    )]
-    direct_refs = {
-        "source_inventory": ("source_inventory_ref",),
-        "capability_matrix": ("capability_matrix_ref",),
-        "acceptance_matrix": ("acceptance_matrix_ref",),
-        "test_matrix": ("test_matrix_ref", "regression_test_matrix_ref"),
-        "real_e2e_matrix": ("real_e2e_matrix_ref",),
-        "source_index": ("source_index_ref",),
-    }
-    for source, label in sources:
-        for index, descriptor in enumerate(
-            coerce_plan_port_descriptors(source.get("plan_ports"))
-        ):
-            name = canonical_plan_port_name(str(
-                descriptor.get("logical_name")
-                or descriptor.get("artifact_kind")
-                or descriptor.get("kind")
-                or ""
-            ))
-            if name:
-                selected[name] = (descriptor, f"{label}.plan_ports[{index}]")
-        for name, keys in direct_refs.items():
-            if name in selected and label == "trigger_payload":
-                continue
-            inline = source.get(name)
-            if isinstance(inline, Mapping) and inline:
-                selected[name] = (
-                    {"logical_name": name, "body": dict(inline)},
-                    f"{label}.{name}",
-                )
-                continue
-            ref = next(
-                (str(source.get(key) or "").strip() for key in keys if str(source.get(key) or "").strip()),
-                "",
-            )
-            if ref and not any(
-                canonical_plan_port_name(str(item.get("logical_name") or "")) == name
-                for item in coerce_plan_port_descriptors(source.get("plan_ports"))
-            ):
-                selected[name] = ({"logical_name": name, "ref": ref}, f"{label}.{keys[0]}")
-
-    bodies: dict[str, Mapping[str, Any]] = {}
-    for name, (descriptor, field) in selected.items():
-        body = descriptor.get("body")
-        if isinstance(body, Mapping):
-            bodies[name] = dict(body)
-            continue
-        ref = str(descriptor.get("ref") or "").strip()
-        if not ref:
-            continue
-        try:
-            path = resolve_artifact_file(
-                ref,
-                project_root=project_root,
-                state_dir=state_dir,
-            )
-            raw = path.read_bytes()
-            expected = str(
-                descriptor.get("sha256") or descriptor.get("digest") or ""
-            ).strip()
-            actual = hashlib.sha256(raw).hexdigest()
-            if expected and expected != actual:
-                raise ValueError(
-                    f"sha256 mismatch: expected {expected}, got {actual}"
-                )
-            value = json.loads(raw)
-            if not isinstance(value, Mapping):
-                raise ValueError("plan port must contain a JSON object")
-            bodies[name] = dict(value)
-        except Exception as exc:
-            _error(errors, "plan_port_unreadable", field, str(exc))
-    return bodies
 
 
 def _has_plan_markdown(

@@ -19,6 +19,7 @@ from zf.core.config.schema import (
     FeishuIdentityUserConfig,
 )
 from zf.core.events.log import EventLog
+from zf.core.events.model import ZfEvent
 from zf.core.config.project_context import resolve_project_context
 from zf.integrations.feishu.callback_security import (
     identity_auth_levels,
@@ -221,6 +222,9 @@ def test_duplicate_callback_is_idempotent(project: Path):
 
 def test_plan_approve_button_by_approver_emits_plan_approved(project: Path):
     ctx = resolve_project_context()
+    EventLog(ctx.state_dir / "events.jsonl").append(ZfEvent(
+        type="plan.approval.requested", payload={"plan_id": "plan-7"},
+    ))
     result = _handle_event_data(
         _button("plan-approve:plan-7", "ou_approver", "p1"),
         context=ctx, user_levels={},
@@ -230,6 +234,16 @@ def test_plan_approve_button_by_approver_emits_plan_approved(project: Path):
     assert approved and approved[0].payload["plan_id"] == "plan-7"
     assert approved[0].payload["surface"] == "feishu"
     assert approved[0].actor == "operator"  # human clicks; agent only recommends
+
+
+def test_plan_approve_button_rejects_missing_pending_plan(project: Path):
+    ctx = resolve_project_context()
+    result = _handle_event_data(
+        _button("plan-approve:plan-7", "ou_approver", "p-missing"),
+        context=ctx, user_levels={},
+    )
+    assert result["status"] == "stale_decision"
+    assert not [e for e in _events(ctx.state_dir) if e.type == "plan.approved"]
 
 
 def test_plan_approve_button_by_operator_is_rejected(project: Path):

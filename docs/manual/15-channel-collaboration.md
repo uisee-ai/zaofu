@@ -194,6 +194,7 @@ conversation / clarification / multi_lens
 必须满足：
 
 - PRD body 完整保存在 sanctioned artifact/sidecar；
+- readiness artifact 必须已经给出 `ready`、`needs_owner` 或 `needs_multi_lens` 结论；`unassessed` 的 PRD 不能由 Owner 确认；
 - event 只保存 identity、revision、digest、preview/ref 和 causation；
 - revision 更新使用 currentness/CAS，旧 revision 不能覆盖新确认结果；
 - 只有 Owner confirm 能产生 canonical PRD；

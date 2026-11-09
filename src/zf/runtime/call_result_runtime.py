@@ -295,6 +295,31 @@ def prepare_call_operation(
         if controlled_inputs:
             payload["input_refs"] = controlled_inputs
 
+    from zf.runtime.critical_context import critical_context_sources
+
+    critical_sources = critical_context_sources(
+        runtime.state_dir, runtime.event_log.read_all(), workflow_run_id,
+    )
+    if critical_sources:
+        critical_ids = {source["source_id"] for source in critical_sources}
+        payload["input_refs"] = [
+            *(item for item in (payload.get("input_refs") or [])
+              if not isinstance(item, dict) or item.get("source_id") not in critical_ids),
+            *critical_sources,
+        ]
+
+    if output_profile_id == "plan-synth":
+        from zf.runtime.plan_review_replay import pin_replayed_review_usage, remove_replayed_scoped_read_projection
+
+        remove_replayed_scoped_read_projection(
+            runtime, payload=payload, operation_id=operation_id, attempt_id=attempt_id,
+        )
+        pin_replayed_review_usage(runtime, payload=payload, operation_id=operation_id)
+        from zf.runtime.plan_unchanged_review import attach_unchanged_review
+
+        attach_unchanged_review(runtime, payload=payload, stage=stage_id, trigger_id=causation_id,
+                                operation_id=operation_id)
+
     source_manifest, source_descriptor = CanonicalHandoffResolver(
         state_dir=runtime.state_dir,
         project_root=runtime.project_root,
@@ -334,6 +359,28 @@ def prepare_call_operation(
             else ()
         ),
     )
+    full_plan_reads = list(required_reads) if output_profile_id == "plan-synth" else []
+    if output_profile_id == "plan-synth" and any(
+        isinstance(source, Mapping) and source.get("artifact_id") == "scoped_plan_review.json"
+        for source in source_manifest.get("sources", [])
+    ):
+        from zf.runtime.plan_local_review_policy import scope_critic_reads
+
+        required_reads = scope_critic_reads(
+            runtime.state_dir, events=runtime.event_log.read_all(), manifest=source_manifest,
+            required=required_reads,
+            explicit=explicit_required_reads if isinstance(explicit_required_reads, list) else [],
+            critic_role=str(payload.get("role_instance") or ""),
+            fanout_id=str(payload.get("fanout_id") or ""), stage_id=stage_id,
+            plan_revision=str(payload.get("plan_revision") or ""),
+        )
+    if output_profile_id == "plan-synth":
+        from zf.runtime.plan_review_input_diagnostics import review_diagnostics
+
+        payload["plan_review_optimization"] = review_diagnostics(
+            source_manifest, before=full_plan_reads, after=required_reads,
+            explicit=bool(explicit_required_reads),
+        )
     if required_reads:
         payload["required_reads"] = required_reads
         policy = build_input_consumption_policy(
@@ -503,6 +550,7 @@ def prepare_call_operation(
                 "placement_epoch",
                 "pipeline_key",
                 "task_stage_session_binding",
+                "role_binding_resolution",
                 "risk_class",
                 "integration_admission_profile",
                 "exact_task_target_commit",
@@ -544,6 +592,15 @@ def prepare_call_operation(
             "context_inheritance": dict(context_inheritance),
             "context_renderer_version": CONTEXT_RENDERER_VERSION,
         })
+    # Freeze the configured ceiling, never a worker-supplied result field. Omit
+    # unspecified settings so historical requests keep their original identity.
+    role_config = next((
+        role for role in getattr(runtime.config, "roles", [])
+        if role_instance in {role.instance_id, role.name}
+    ), None)
+    provider_session = getattr(role_config, "provider_session", None)
+    if provider_session is not None and provider_session.max_parallel_agents is not None:
+        request["provider_session_max_parallel_agents"] = provider_session.max_parallel_agents
     service = workflow_operation_service(runtime)
     ensured = service.ensure_operation(
         workflow_run_id=workflow_run_id,

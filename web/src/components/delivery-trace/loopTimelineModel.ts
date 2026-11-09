@@ -5,6 +5,7 @@ const time = (value?: string) => value ? Date.parse(value) : NaN;
 
 export const timelineTaskKey = (task: LoopViewTask) => JSON.stringify([task.id, task.stage_id ?? "", task.source]);
 export const timelineAttemptKey = (attempt: LoopViewAttempt) => JSON.stringify([
+  attempt.attempt_id || "", attempt.record_kind || "",
   attempt.started_ts, attempt.role,
   attempt.orphan || !attempt.started_ts ? [attempt.terminal?.ts, attempt.terminal?.seq, attempt.terminal?.type] : null,
 ]);
@@ -21,6 +22,8 @@ export function selectedAttemptIndices(task: LoopViewTask, keys: string[]): numb
 }
 
 export function attemptState(attempt: LoopViewAttempt) {
+  if (attempt.record_kind === "signal") return "uncounted";
+  if (!attempt.counted) return "uncounted";
   if (attempt.terminal) return /\.(failed|rejected)$/.test(attempt.terminal.type) ? "fail" : "done";
   return attempt.counted ? "open" : "uncounted";
 }

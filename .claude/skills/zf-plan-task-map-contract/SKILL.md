@@ -174,8 +174,129 @@ Put cross-task rules and required interfaces in `shared` or the consuming Task's
 body with same-version source refs. Impl/Task Verify must read both shared and
 owned partitions; Candidate Verify reads the entire port. The complete original
 artifact and digest remain authoritative. This is an input artifact, not another
-task contract. Existing ports retain full reads; do not wrap fixed-schema
-acceptance/test matrices or silently discard requirements to reduce context.
+task contract. By default existing ports retain full reads; do not wrap
+fixed-schema acceptance/test matrices or silently discard requirements.
+
+For shared design contracts, identify producer/consumers, the contract version
+or same-package anchor, and each consumer's required inputs, outputs and failure
+semantics. Keep the authoritative body once; selected inputs must expose its
+binding and the consumer's applicable obligations, not only a sibling Task name.
+Link current prerequisite decisions to their producer, affected Task IDs,
+latest use point and closure evidence in the existing Decision Register.
+Reflect real producer dependencies in `blocked_by`; a prose promise is not an
+automatic dispatch gate. A design-producing Task may establish its owned
+contract before its own implementation/Verify where authorized, but downstream
+consumers cannot independently invent the unresolved shared protocol.
+Preserve future mandatory scope without blocking unrelated ready work. These
+are authoring/review obligations inside existing ports, not new Task fields.
+
+For an explicitly reviewed task-local consumption contract, a Task Map entry
+may declare `evidence_contract.plan_input_selection` with exactly
+`schema_version: "task-plan-input-selection.v1"` and nonempty
+`implementation` and `task-verify` port-name lists. Each list must include
+`task_execution_input` and only names bound as required ports by the same
+Package; `task_execution_input` must use the task-scoped schema above and
+include a partition for each consuming Task. The Package must also
+bind the original `execution_spec`, `task_map`, `acceptance_matrix`, `test_matrix`, and `real_e2e_matrix` as
+required ports for full-scope verification. The lists select
+Impl/Task Verify required Plan ports, not acceptance scope. Supply complete
+task-local behavior, dependencies, decisions, source/acceptance mappings and
+verification in the selected inputs. Preserve full fixed-schema matrices in
+the Package for Plan Critic and Candidate Verify. Independently reconcile all
+mandatory rows, risks and cross-task obligations before approving the revision.
+Omitting the selection retains full reads; do not alter an admitted Plan or
+reuse its approval for this new contract.
+
+For new plans, assess the read amplification before submitting: count unique
+required input bytes and provider page turns for Impl, Task Verify, and each
+Candidate Verify lane. Prefer the reviewed task-local selection above when it
+removes unrelated global material. Keep full candidate obligations and their
+sources bound. A tiny task should have a correspondingly concise execution
+input; do not expand a two-file change into repeated copies of the same task
+contract, command matrix, and acceptance prose across every supplemental port.
+Use canonical IDs/refs for repeated tables while keeping each required assertion
+and task-specific dependency explicit. Critic reconciles coverage, not a target
+word count; reducing lane count or removing gates is a separate owner decision.
+
+### Preserve completed work with an executable scope
+
+On recovery/replan, retain the complete Task Map and acceptance matrices. When
+completed tasks have unchanged acceptance, the controlled trigger must carry
+explicit `task_ids` for the remaining work and an existing `resume_scope`.
+A sentence saying “preserve completed tasks” is not an execution scope: a full
+replan can reopen terminal tasks. Reconcile prior completion/integration receipts
+and compare contracts before requesting that scope through the controlled
+replan action. Never declare new completion or remove acceptance to retain work.
+`input_task_ids` controls context reading only; it is never a dispatch filter.
+
+### Optional scope evidence for an incremental Critic
+
+Only for a replan with a current admitted Plan Package and a prior independent
+Critic verdict, the Planner may include `scoped_plan_review.json` in
+`artifact_refs`. It is a semantic scope claim for the new Critic, not a new
+Task schema, approval, or verification result. Omit it if any global requirement,
+shared contract, task membership, unrelated task, or non-scoped Plan port
+changed, or if the evidence cannot establish the complete impact. In that case
+the Critic consumes the normal complete inputs.
+
+The existing controlled replan trigger must explicitly carry the same nonempty
+`task_ids` as the changed tasks. Do not add or change this dispatch scope inside
+the certificate. Prerequisites and downstream consumers are reviewed as context;
+their presence alone does not authorize reopening them as implementation tasks.
+
+The JSON object uses `schema_version: "scoped-plan-review.v1"`, the current
+`workflow_run_id`, `baseline_package_sha256`, `baseline_task_map_sha256`,
+`candidate_task_map_sha256`, a nonempty `affected_task_ids` list, and
+`evidence_refs` containing at least one exact controlled source id or ref for
+the original requirement. Set `scope_complete` and
+`verification_responsibility_preserved` to true only after comparing the old
+and new contracts, dependency consumers, source/acceptance mappings and
+verification ownership. `ports` is a nonempty list of objects with
+`logical_name`, `baseline_sha256`, and `candidate_sha256`; each selected port
+must be a complete `task-scoped-plan-input.v1` in both versions. Copy exact
+SHA-256 digests from pinned baseline descriptors and the final candidate files.
+
+Keep the complete Task Map, requirement, original sources and fixed-schema
+matrices bound and available. Supply an explicit candidate descriptor with its
+ref and SHA-256 for every unchanged baseline port; the kernel-derived Task Map
+and Goal Claim Set are exceptions, and `planning_result` may be omitted only
+when the baseline derives it from the Task Map. The runtime mechanically
+checks identity, prior admitted Critic evidence, unchanged global content,
+unaffected tasks and partition bodies, and adds prerequisite/downstream
+partitions. If any proof is missing or inconsistent it retains full reads.
+The prior full reads must have complete historical provider-output evidence
+bound to that Critic session; currently only Codex transcript observation is
+implemented. An unavailable or unsupported observation falls back to full
+reads. Historical delivery does not prove comprehension or current memory.
+The new Critic still performs an independent review and can expand any source.
+
+For scoped review, the current `source_index`, `coverage_ledger`, and
+`source_inventory` must be bound Plan ports and remain full required inputs.
+Reconcile every declared source ID with one disposition, affected task owners,
+source refs, and acceptance IDs; mark unknown or truncated mappings as unknown.
+Compare old/new task partitions and include affected prerequisites and consumers.
+A related image or an image whose owner is unknown requires full review until
+current-role visual evidence can be verified; an image ID or OCR is not a view.
+Use `artifact index` to locate bound originals, follow all pages and treat an
+incomplete navigation result as a request to inspect the authoritative source.
+Do not narrow review solely because an old Critic saw a source or a structural
+diff is replayable. Old/new shared rules, affected task bodies, original
+requirement and fixed matrices remain required; missing scope evidence or any
+unresolved relevant ownership falls back to the existing complete-read policy.
+After session rotation or compaction, use the current attempt's pinned policy,
+read receipts and authorized recovery paths; previous output is historical
+observation, not proof of current model comprehension.
+
+
+Keep whole-file hydration limits separate from selected partition size. When
+complete task inputs exceed one artifact's limit, emit separately bound ports
+and declare each in its consumer Task's `evidence_contract.required_plan_ports`.
+The task selection may reference these ports without adding them to the Task
+Map's global `required_plan_ports`. Every declared task port must resolve to an
+exact Package ref/digest before admission. Global verification keeps the complete
+canonical matrices; do not make every task's duplicated input globally required
+merely to make it selectable. Preserve genuinely global obligations in the
+global matrices, and audit per-role selected reads and bytes before submission.
 
 ## Source Provenance Contract
 
@@ -344,6 +465,14 @@ the delegated file in its acceptance criteria or verification commands. Usually
 the correct plan is to omit the placeholder entirely because the subtree owner
 will create real files; if the placeholder is itself a required deliverable,
 assign it and its acceptance check to that same subtree owner.
+
+声明证据文件时，同时指定实际生产阶段、写入者、可写路径及下游消费方式。
+当前片要求落盘的日志、结果、截图和状态快照，也必须落在该写入者的已授权路径；
+`evidence_contract` 只声明义务，不会自动授予路径权限。不要给所有任务共享的证据
+根目录；按任务/阶段划分互不重叠的范围。独立 Verify 的运行态报告走既有受控
+结果/工件入口，不靠扩大产品源代码权限。未来阶段的证据保留明确责任和触发条件。
+既有合同存在冲突时提交最小受控修订，保留 AC、命令与最终验收；不能把证据改成
+可选，也不能让 worker 通过不提交 Git 或换工具绕过写入限制。
 
 `evidence_contract` must be a JSON object (dict), never a list. The kernel
 contract layer only accepts dict values — `contract.update` ignores a non-dict
@@ -760,3 +889,19 @@ Use with the task map:
 - during replan: explain what changed, and reference the amendment artifact;
 - include `decision_map_ref` in plan/replan summaries when available;
 - keep dependencies and dispatch constraints in `task_map.json`.
+
+## Task 输入切片的语义对账（设计 198）
+
+批准 `plan_input_selection` 前，将原始条款、来源版本/定位、AC、命令和验证责任
+对应到 shared context 或本 Task partition。检查共享接口与前置依赖、异常与
+权限规则、边界值和跨任务反例，不能仅写章节标题或把不利约束排到别的 Task。
+选择理由与被排除范围写入现有 rationale/输入正文；没有适合字段时写该工件
+说明，不新增 Task schema。分别审 Impl 与 Verify 的消费需要；独立 Verify
+需自行核验目标和证据。完整 Plan/Candidate/Goal 覆盖政策保持不变。
+
+### 输入切片生产和反例预检
+
+按 [任务输入生产方法](references/task-input-production.md) 生成 shared/owned、来源、
+AC、图片状态与依赖义务。提交前用 `zf plan inspect-inputs --bundle <本地映射 JSON>`
+逐任务核验声明；Critic 必须独立从原始材料审查语义遗漏。离线评测标准答案不得进入
+Reviewer 上下文；真实 Provider 资格需另外记录，不能用结构检查代替。

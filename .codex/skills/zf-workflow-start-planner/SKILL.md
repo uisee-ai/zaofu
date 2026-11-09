@@ -25,6 +25,30 @@ Task/config binding, proposal identity, approval, idempotency, and execution.
 
 ## Method
 
+### Preparation recovery
+
+`ready` confirms the Requirement, not an assembled YAML or running workflow.
+For `preparation_blocked` / `preparation_failed`, report the projected blocker
+and repair its cause before retrying the same Request. Do not create duplicate
+Tasks or fake a Requirement revision to escape a failed operation.
+
+When a registered delivery controller requires a first Git commit, select an
+explicit source file list from the project's instructions. Exclude datasets,
+generated output, credentials and the configured state directory. Preview with
+`zf project git-baseline --root ROOT --paths-file FILES.json --exclude dataset`
+(repeat `--exclude` for other project paths). Review the returned file hashes,
+branch and exclusions; the project-specific choice of files remains the agent's
+job. Apply that exact manifest only within the operator's existing authorization,
+using `project-git-baseline` or the CLI's `--apply --manifest MANIFEST.json`.
+Do not stage the entire existing directory.
+
+After repair, use `zf workflow prepare --request ID --retry-failed`, or the
+controlled prepare payload `retry_failed: true`. A new attempt preserves the
+old failure; admitted selection can be reused only after identity and catalog
+revalidation. If the same cause remains, inspect it instead of repeatedly
+retrying. A queued attempt is in progress; report a prepared proposal only when
+its bound YAML exists. Config approval and Run approval remain separate actions.
+
 1. Confirm that a real Task exists. If the user has not requested tracking,
    discuss the work normally. If they requested execution but no Task exists,
    propose `create-task` first.

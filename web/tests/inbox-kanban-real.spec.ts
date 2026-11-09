@@ -1,0 +1,32 @@
+import { expect, test } from "@playwright/test";
+
+test("Inbox opens and answers the originating Kanban Agent question", async ({ page, request }) => {
+  test.setTimeout(60_000);
+  test.skip(process.env.ZF_INBOX_BROWSER_FIXTURE !== "kanban", "requires the isolated Kanban fixture");
+  await page.addInitScript(() => localStorage.setItem("zf.webActionToken", "zf-isolated-inbox-browser"));
+  const workspace = await (await request.get("/api/workspace/projects")).json();
+  const project = String(workspace.active_project_id);
+  const inboxApi = `/api/projects/${encodeURIComponent(project)}/operator/inbox`;
+  const before = await (await request.get(inboxApi)).json();
+  const item = before.pending.find((entry: { kind: string }) => entry.kind === "kanban_question");
+  expect(item).toBeTruthy();
+  await page.goto(`/?project=${encodeURIComponent(project)}&page=inbox`);
+  const row = page.locator(`[data-inbox-id="${item.id}"]`);
+  await expect(row).toBeVisible();
+  await row.click();
+  await page.locator(".inbox-reading-pane").getByRole("link", { name: "Open Kanban Agent" }).click();
+  await expect(page).toHaveURL(/agent_thread=thread-inbox/);
+  await expect(page).toHaveURL(new RegExp(`agent_request=${item.request_event_id}`));
+  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  const question = page.locator(`[data-plan-request-id="${item.request_event_id}"]`);
+  await expect(question).toBeVisible();
+  await expect(question).toContainText("How should this Task run?");
+  await question.getByText("PRD delivery", { exact: false }).first().click();
+  await question.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect.poll(async () => (await (await request.get(inboxApi)).json()).summary.decisions_pending).toBe(0);
+  const after = await (await request.get(inboxApi)).json();
+  expect(after.items.find((entry: { id: string }) => entry.id === item.id).status).toBe("answered");
+  await expect(page.getByTestId("agent-proposal-approve")).toBeVisible();
+  const events = await (await request.get(`/api/projects/${encodeURIComponent(project)}/events?type=workflow.invoke.requested`)).json();
+  expect(events.items).toHaveLength(0);
+});

@@ -98,12 +98,17 @@ class TaskStore:
     def _load_terminal_index(self) -> dict[str, str]:
         path = self._index_path
         if not path.exists():
-            return {}
+            return self.rebuild_terminal_index_from_archive()
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return {}
-        return data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return self.rebuild_terminal_index_from_archive()
+        if not isinstance(data, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in data.items()
+        ):
+            return self.rebuild_terminal_index_from_archive()
+        return data
 
     def _save_terminal_index(self, index: dict[str, str]) -> None:
         atomic_write_text(
@@ -146,6 +151,15 @@ class TaskStore:
         index = self._load_terminal_index()
         index[task_id] = date
         self._save_terminal_index(index)
+
+    def _archive_ids(self) -> set[str]:
+        ids: set[str] = set()
+        for path in list_archives(self._archive_dir, suffix=".json"):
+            for record in self._load_archive_file(path):
+                task_id = str(record.get("id") or record.get("task_id") or "")
+                if task_id:
+                    ids.add(task_id)
+        return ids
 
     # ---- record → Task ----
 
@@ -205,13 +219,13 @@ class TaskStore:
         index = self._load_terminal_index()
         date = index.get(task_id)
         if date is not None:
-            for d in self._load_archive_file(self._archive_file(date)):
+            for d in reversed(self._load_archive_file(self._archive_file(date))):
                 if d.get("id") == task_id:
                     return self._to_task(d)
         # Final fallback: scan every archive file (handles orphaned records
         # whose index entry was lost).
-        for f in list_archives(self._archive_dir, suffix=".json"):
-            for d in self._load_archive_file(f):
+        for f in reversed(list_archives(self._archive_dir, suffix=".json")):
+            for d in reversed(self._load_archive_file(f)):
                 if d.get("id") == task_id:
                     return self._to_task(d)
         return None
@@ -220,8 +234,10 @@ class TaskStore:
         with self._locked():
             raw = self._load_raw()
             existing_ids = {d["id"] for d in raw}
-            terminal_ids = set(self._load_terminal_index().keys())
+            terminal_ids = set(self._load_terminal_index().keys()) | self._archive_ids()
             known_ids = existing_ids | terminal_ids
+            if task.id in known_ids:
+                raise ValueError(f"task id already exists: {task.id}")
             for ref in task.blocked_by:
                 if ref not in known_ids:
                     raise ValueError(f"blocked_by reference not found: {ref}")
@@ -240,7 +256,7 @@ class TaskStore:
         with self._locked():
             raw = self._load_raw()
             existing_ids = {str(item.get("id") or "") for item in raw}
-            terminal_ids = set(self._load_terminal_index().keys())
+            terminal_ids = set(self._load_terminal_index().keys()) | self._archive_ids()
             batch_ids = set(ids)
             known_ids = existing_ids | terminal_ids | batch_ids
             for task in tasks:
@@ -345,6 +361,8 @@ class TaskStore:
         contract_authority_sequence: int,
         task_updates: dict | None = None,
         reopen_terminal: bool = False,
+        expected_status: str | None = None,
+        expected_blocked_by: list[str] | None = None,
     ) -> tuple[Task | None, bool]:
         """Atomically replace one complete contract when its CAS token matches."""
 
@@ -376,6 +394,10 @@ class TaskStore:
                 reopening = record is not None
             if record is not None:
                 d = dict(record) if reopening else record
+                if expected_status is not None and d.get("status") != expected_status:
+                    return self._to_task(dict(d)), False
+                if expected_blocked_by is not None and d.get("blocked_by", []) != expected_blocked_by:
+                    return self._to_task(dict(d)), False
                 current = str(d.get("contract_authority_revision") or "")
                 if current != str(expected_authority_revision or ""):
                     return self._to_task(dict(d)), False
@@ -428,6 +450,8 @@ class TaskStore:
         *,
         expected_authority_revision: str,
         updates: dict,
+        expected_status: str | None = None,
+        expected_blocked_by: list[str] | None = None,
     ) -> tuple[Task | None, bool]:
         """Patch non-authority Task fields only while the contract CAS token matches."""
 
@@ -448,6 +472,10 @@ class TaskStore:
             for index, record in enumerate(raw):
                 if record.get("id") != task_id:
                     continue
+                if expected_status is not None and record.get("status") != expected_status:
+                    return self._to_task(dict(record)), False
+                if expected_blocked_by is not None and record.get("blocked_by", []) != expected_blocked_by:
+                    return self._to_task(dict(record)), False
                 current = str(record.get("contract_authority_revision") or "")
                 if current != str(expected_authority_revision or ""):
                     return self._to_task(dict(record)), False
@@ -500,16 +528,14 @@ class TaskStore:
     def ready(self) -> list[Task]:
         """Backlog tasks whose entire blocked_by chain is resolved.
 
-        Resolution uses active tasks (done/cancelled in-place) plus the
-        terminal index (archived tasks). This lets us keep kanban.json
-        small without losing dependency resolution for follow-up tasks.
+        Resolve required inputs from admitted done tasks, including archives.
+        A cancelled/superseded producer needs an approved dependency revision;
+        terminal status alone does not supply its promised artifact.
         """
         tasks = self.list_all()
-        terminal_active = {
-            t.id for t in tasks if t.status in TERMINAL_STATES
-        }
-        terminal_archived = set(self._load_terminal_index().keys())
-        terminal = terminal_active | terminal_archived
+        dependencies = {dependency for task in tasks if task.status == "backlog" for dependency in task.blocked_by}
+        terminal = {dependency for dependency in dependencies
+                    if (producer := self.get(dependency)) is not None and producer.status == "done"}
         return [
             t for t in tasks
             if t.status == "backlog" and all(b in terminal for b in t.blocked_by)

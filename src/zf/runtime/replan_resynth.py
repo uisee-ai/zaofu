@@ -17,9 +17,11 @@ from zf.runtime.candidate_rework_evidence import (
     plan_rejection_required_actions,
 )
 from zf.runtime.plan_artifact_package import (
+    admitted_plan_artifact_package_for_generation,
     plan_artifact_package_binding,
     reduce_plan_artifact_packages,
 )
+from zf.runtime.plan_source_binding import bind_admitted_plan_source_refs
 
 
 _PLAN_PACKAGE_PAYLOAD_KEYS = (
@@ -32,10 +34,12 @@ _GOAL_CLAIM_SET_IDENTITY_KEYS = (
     "goal_claim_set_digest",
 )
 _REPLAN_SEMANTIC_PASSTHROUGH_KEYS = (
+    "input_task_ids",
     "source_commit",
     "candidate_base_commit",
     "previous_plan_candidate_refs",
     "required_actions",
+    "orchestrator_decision_ref",
     "orchestration_delta",
     "orchestration_delta_ref",
     "orchestration_delta_digest",
@@ -67,6 +71,7 @@ def append_replan_resynth_once(
             str(payload.get("pdd_id") or payload.get("feature_id") or ""),
             str(payload.get("rework_of") or ""),
             int(payload.get("rework_attempt") or 0),
+            _oa_replan_binding(payload),
         )
 
     key = identity(event)
@@ -84,6 +89,7 @@ def build_replan_resynth_event(
     plan: object,
     events: Sequence[ZfEvent],
     config: object,
+    state_dir: Path | None = None,
 ) -> ZfEvent | None:
     """Return the plan-synth trigger for a candidate-level replan."""
 
@@ -102,6 +108,9 @@ def build_replan_resynth_event(
         trace_id=str(getattr(plan, "trace_id", "") or ""),
     )
     payload = dict(base_payload)
+    # The previous trigger's reason describes its own stage, not this replan.
+    # Current context is carried by rework_source, feedback and classification.
+    payload.pop("reason", None)
     source_event = _event_by_id(
         events,
         str(getattr(plan, "source_event_id", "") or ""),
@@ -113,9 +122,10 @@ def build_replan_resynth_event(
         if source_event is not None and not isinstance(source_event, Mapping)
         else (source_event or {}).get("type", "")
     ).strip()
-    if source_type == "plan.rejected" or str(
+    plan_rejected = source_type == "plan.rejected" or str(
         getattr(plan, "source_event_type", "") or ""
-    ) == "plan.rejected":
+    ) == "plan.rejected"
+    if plan_rejected:
         feedback = list(dict.fromkeys([
             *plan_rejection_feedback(source_payload),
             *feedback,
@@ -156,11 +166,23 @@ def build_replan_resynth_event(
         value = getattr(plan, key, None)
         if value not in (None, "", [], {}):
             payload[key] = value
+    if plan_rejected:
+        from zf.runtime.reader_replan_feedback import input_task_ids
+
+        # A fresh operator review must not inherit an old read restriction.
+        payload.pop("input_task_ids", None)
+        if scope := input_task_ids(source_payload):
+            payload["input_task_ids"] = scope
     for key in _CANDIDATE_REWORK_IDENTITY_KEYS:
         value = getattr(plan, key, None)
         if value not in (None, "", [], {}):
             payload[key] = value
-    _bind_current_plan_package(payload, plan=plan, events=events)
+    _bind_current_plan_package(payload, plan=plan, events=events, state_dir=state_dir)
+    # Owner-approved requirement amendments outrank the historical launch input.
+    # These values come from a controlled Plan decision, not a worker result.
+    if source_type == "plan.rejected" and source_payload.get("requirement_amendment_ref"):
+        for key in ("requirement_amendment_ref", "requirement_spec_ref", "requirement_spec_digest"):
+            payload[key] = source_payload[key]
     for key in (
         "failed_task_ids",
         "task_ids",
@@ -205,6 +227,7 @@ def _bind_current_plan_package(
     *,
     plan: object,
     events: Sequence[ZfEvent],
+    state_dir: Path | None = None,
 ) -> None:
     """Replace inherited identity with an admitted package for this run."""
 
@@ -233,6 +256,19 @@ def _bind_current_plan_package(
         workflow_run_id=workflow_run_id,
     )
     current = projection.get("current")
+    if _oa_replan_binding(payload):
+        current = admitted_plan_artifact_package_for_generation(
+            projection,
+            task_map_generation=str(getattr(plan, "task_map_generation", "") or ""),
+        )
+        if not current or any(
+            str(getattr(plan, field, "") or "") != str(current.get(key) or "")
+            for field, key in (
+                ("plan_artifact_package_ref", "package_ref"),
+                ("plan_artifact_package_digest", "package_digest"),
+            )
+        ):
+            raise ValueError("OA replan baseline is not the pinned admitted package")
     if not isinstance(current, dict) or not current:
         if str(getattr(plan, "source_event_type", "") or "") != "plan.rejected":
             return
@@ -242,6 +278,22 @@ def _bind_current_plan_package(
     for key in _GOAL_CLAIM_SET_IDENTITY_KEYS:
         payload.pop(key, None)
     payload.update(plan_artifact_package_binding(package_events, current))
+    bind_admitted_plan_source_refs(payload, current, package_events, state_dir=state_dir)
+
+
+def _oa_replan_binding(payload: Mapping) -> tuple[str, ...]:
+    """An admitted OA decision keeps its exact baseline across follow-through."""
+    classification = payload.get("replan_classification") or payload.get("classification")
+    decision_ref = payload.get("orchestrator_decision_ref")
+    if classification != "oa_semantic_return_to_plan" or not isinstance(decision_ref, Mapping):
+        return ()
+    return (
+        str(payload.get("task_map_generation") or ""),
+        str(payload.get("plan_artifact_package_ref") or ""),
+        str(payload.get("plan_artifact_package_digest") or ""),
+        str(decision_ref.get("ref") or ""),
+        str(decision_ref.get("sha256") or ""),
+    )
 
 
 def _resynth_trigger(config: object, *, flow_kind: str) -> str:
@@ -273,6 +325,7 @@ def plan_missing_replan_resynth_events(
     events: Sequence[ZfEvent],
     *,
     config: object,
+    state_dir: Path | None = None,
 ) -> list[ZfEvent]:
     """Repair a replan marker whose follow-through used another Flow trigger."""
 
@@ -338,6 +391,7 @@ def plan_missing_replan_resynth_events(
             plan=SimpleNamespace(**plan_data),
             events=events,
             config=config,
+            state_dir=state_dir,
         )
         if desired is None:
             continue
@@ -364,6 +418,9 @@ def plan_missing_replan_resynth_events(
                 later.type == desired.type
                 and str(later_payload.get("rework_of") or "") == desired_rework_of
             ):
+                if (_oa_replan_binding(desired.payload)
+                        and _oa_replan_binding(later_payload) != _oa_replan_binding(desired.payload)):
+                    continue
                 advanced = True
                 break
             if later.type in {"task_map.ready", "candidate.ready"}:

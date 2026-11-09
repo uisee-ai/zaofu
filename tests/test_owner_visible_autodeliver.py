@@ -129,6 +129,20 @@ def test_deliver_noop_when_unconfigured(tmp_path):
     assert result is None
 
 
+def test_web_only_and_implicit_messages_do_not_fail_an_unconfigured_feishu_route(tmp_path):
+    from zf.core.events import EventLog, EventWriter, ZfEvent
+
+    log = EventLog(tmp_path / "events.jsonl")
+    for index, targets in enumerate((["web"], None)):
+        payload = {"message_id": f"m-{index}", "title": "Need a decision", "severity": "high",
+                   "human_action_required": True}
+        if targets is not None:
+            payload["delivery_targets"] = targets
+        EventWriter(log).append(ZfEvent(type="owner.visible_message.requested", actor="test", payload=payload))
+    deliver_owner_visible_to_feishu(state_dir=tmp_path, env={})
+    assert all(e.type == "owner.visible_message.requested" for e in log.read_all())
+
+
 def test_unconfigured_feishu_records_failed_receipt_for_pending_message(tmp_path):
     events = tmp_path / "events.jsonl"
     events.write_text(json.dumps({

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import pytest
 
 from zf.runtime.plan_review_packet import build_review_packet, render_human_review_dossier
 
@@ -97,3 +98,42 @@ def test_review_digest_mismatch_is_an_explicit_error(tmp_path):
     packet = build_review_packet(tmp_path, **kwargs, markdown="# Plan", preview_bundle={})
     assert packet["status"] == "blocked"
     assert any(row["code"] == "review_artifact_unreadable" for row in packet["diagnostics"])
+
+
+@pytest.mark.parametrize("case", ["empty", "closed", "pending", "missing", "malformed", "tampered", "markdown_empty"])
+def test_empty_register_is_complete_but_missing_or_invalid_register_is_not(tmp_path, case):
+    _, kwargs = _packet(tmp_path, ["R1"], ["R1"])
+    kwargs["decision_items"] = []
+    rows = [] if case != "pending" else [{"decision_id": "D1", "blocking": True}]
+    if case == "closed": rows = [{"decision_id": "D1", "status": "resolved"}]
+    body = json.dumps({"decisions": rows})
+    if case == "malformed": body = '{"decisions":"unknown"}'
+    if case == "markdown_empty": body = "# Owner decision register\n\n| ID | Question | Status |\n|---|---|---|\n"
+    path = tmp_path / "decisions.json"
+    path.write_text(body)
+    if case != "missing":
+        kwargs["artifacts"].append({"name": "decision_register", "ref": str(path),
+                                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    if case == "tampered": path.write_text("{}")
+    packet = build_review_packet(tmp_path, **kwargs, markdown="# Plan", preview_bundle={})
+    decision = next(row for row in packet["sections"] if row["id"] == "decisions")
+    assert decision["status"] == ("partial" if case in {"missing", "malformed", "tampered"} else "ready")
+    assert decision["counts"] == {"pending": int(case == "pending"), "blocking": int(case == "pending")}
+    if case == "pending": assert packet["status"] == "ready"  # material, not approval
+
+
+def test_bound_task_map_decisions_take_precedence_over_display_table(tmp_path):
+    _, kwargs = _packet(tmp_path, ["R1"], ["R1"])
+    kwargs["decision_items"] = []
+    path = tmp_path / "task_map.json"
+    path.write_text(json.dumps({"owner_decision_items": [
+        {"decision_id": "D-R04", "status": "resolved", "blocking": False}]}))
+    kwargs["artifacts"].append({"name": "task_map", "ref": str(path),
+                               "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    markdown = ("# Decision Register 与 Owner 决定\n\n"
+                "| decision_id | 状态 / 负责人 |\n| --- | --- |\n"
+                "| D-R04 | resolved / Owner |\n")
+    packet = build_review_packet(tmp_path, **kwargs, markdown=markdown, preview_bundle={})
+    decision = next(row for row in packet["sections"] if row["id"] == "decisions")
+    assert decision["status"] == "ready"
+    assert decision["counts"] == {"pending": 0, "blocking": 0}

@@ -43,12 +43,31 @@ Before comparing anything, confirm which tree you are auditing:
 
 ## Required Rescan Output
 
+在完整产品 discovery/rescan 中，先按
+[产品收口与交付重现](references/product-convergence.md)双向核查当前候选与批准意图，
+区分有证据的缺失、部分实现、冲突和待解释新增，以及尚未验证的范围。
+沿用当前结果协议提交；该分类不新增 runtime verdict 或 gap_category。
+
 ### 分片 Verify 后的完整产品收口
 
 当 v3 affinity Verify 后配置了 `flow-discovery`，逐任务 reader 在固定的集成
 candidate commit 上只验收自己的 task contract；全产品验收由后续 discovery
 负责。任务级通过不是产品通过。保留原始 mandatory AC、command ID 和 owner，
 后续阶段的条款按结果协议记录 deferred，不得伪装 passed 或直接删除。
+生成 gap task 时，从已绑定 Task Map 继承未修改的 validation command 对象，
+保留 tier、deterministic、reusable、rolling_smoke 及摘要等执行属性，不能只抄
+command ID 和命令文本。只有已验证的缺口才授权具体差异；先按当前 Task Pipeline
+合同检查候选任务，不能以“语义不变”省略机器要求的元数据。
+
+替代任务必须同时对账前驱的 `evidence_contract.plan_input_selection`。
+前驱已有消费声明时，每个替代任务都显式提交经过重新审核的声明；遗漏会退回
+全局端口必读，不能当作“沿用原设置”。按 `zf-plan-task-map-contract` 的方法核对
+新任务的来源、必选 AC、命令、接口、待决事项和验证责任是否完整落在所选输入中，
+记录唯一必读字节数及预计分页数。新增义务缺资料时扩大显式选择或补充有摘要的
+输入，不能由 runtime 猜测所需范围或无条件复制前驱声明。前驱分区仅是原需求
+证据，当前工作边界仍以新合同为准。保留完整原始端口供 Candidate/global Verify。
+新消费声明必须随新的 Plan artifact 走现有审核/准入流程；不得覆盖已准入的
+Task Map、attempt manifest、required-read policy，或伪造读取回执来缩短耗时。
 
 Discovery 必须读取受控 manifest 中的 Plan ports 和本轮已准入的分片原始
 control result / envelope refs；核对 run、generation、candidate commit、

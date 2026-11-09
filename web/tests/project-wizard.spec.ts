@@ -129,7 +129,7 @@ test("registers then opens an existing project without init or workflow intake",
   expect((await registered).status()).toBe(200);
   await expect(dialog).toBeHidden();
   expect(intakeRequests).toHaveLength(0);
-  await expect(page.getByLabel("Project")).toHaveAttribute("title", existingProjectRoot);
+  await expect(page.getByLabel("Project", { exact: true })).toHaveAttribute("title", existingProjectRoot);
 
   const mutationsBeforeOpen = mutationRequests.length;
   dialog = await openProjectDialog(page);
@@ -191,6 +191,10 @@ test("initializes an existing bare code repository with the internal default", a
     project_metadata?: Record<string, unknown>;
     provider_policy?: Record<string, unknown>;
   };
+  expect(initializedBody).toMatchObject({
+    kind: "prd", config_generated: "registered_controller",
+    controller_id: "zaofu-prd-v5-production-codex",
+  });
   await expect(dialog).toBeHidden();
   expect(intakeRequests).toHaveLength(0);
   expect(initPayload).toMatchObject({
@@ -212,7 +216,7 @@ test("initializes an existing bare code repository with the internal default", a
     confidence: "declared",
     languages: ["python"],
   });
-  await expect(page.getByLabel("Project")).toHaveAttribute("title", bareProjectRoot);
+  await expect(page.getByLabel("Project", { exact: true })).toHaveAttribute("title", bareProjectRoot);
   await expect(page.getByTestId("project-description")).toHaveText(
     "Browser-verified durable project context",
   );
@@ -247,8 +251,14 @@ test("creates a missing project with the internal default", async ({ page }) => 
     ready: true,
   });
   expect(initializedBody.git_readiness?.head).toMatch(/^[0-9a-f]{40,64}$/);
+  expect(initializedBody).toMatchObject({
+    kind: "prd", config_generated: "registered_controller",
+    controller_id: "zaofu-prd-v5-production-codex",
+  });
   await expect(dialog).toBeHidden();
-  await expect(page.getByLabel("Project")).toHaveAttribute("title", newProjectRoot);
+  await expect(page.getByLabel("Project", { exact: true })).toHaveAttribute("title", newProjectRoot);
+  await page.reload();
+  await expect(page.getByLabel("Project", { exact: true })).toHaveAttribute("title", newProjectRoot);
 });
 
 test("blocks an invalid project without register or init mutation", async ({ page }) => {

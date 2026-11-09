@@ -3738,6 +3738,7 @@ class TestPlanApprovalWebAction:
 
     def test_plan_approve_passes_allowlist_and_records(self, state_dir, monkeypatch):
         monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        EventLog(state_dir / "events.jsonl").append(ZfEvent(type="plan.approval.requested", payload={"plan_id": "evt-plan-1"}))
         c = TestClient(create_app(state_dir))
         r = c.post(
             "/api/actions/plan-approve",
@@ -3754,6 +3755,7 @@ class TestPlanApprovalWebAction:
 
     def test_plan_reject_requires_reason_then_records(self, state_dir, monkeypatch):
         monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        EventLog(state_dir / "events.jsonl").append(ZfEvent(type="plan.approval.requested", payload={"plan_id": "evt-plan-1"}))
         c = TestClient(create_app(state_dir))
         # 缺 reason → 400(过了 allowlist,被业务校验拦,证明已可达)
         r0 = c.post(
@@ -3775,6 +3777,7 @@ class TestPlanApprovalWebAction:
 
     def test_plan_approve_canonicalizes_dotted_alias(self, state_dir, monkeypatch):
         monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        EventLog(state_dir / "events.jsonl").append(ZfEvent(type="plan.approval.requested", payload={"plan_id": "evt-plan-2"}))
         c = TestClient(create_app(state_dir))
         r = c.post(
             "/api/actions/plan.approve",

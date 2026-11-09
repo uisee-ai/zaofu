@@ -989,7 +989,7 @@ def _manifest(state_dir: Path, fanout_id: str) -> dict:
     )
 
 
-def _durable_reader_state(tmp_path: Path):
+def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False):
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
@@ -1059,6 +1059,14 @@ def _durable_reader_state(tmp_path: Path):
             "workflow_run_id": "run-durable",
         },
     )
+    if rework_source:
+        source = ZfEvent(type="dev.blocked", task_id="T-VERIFY",
+                        correlation_id="run-durable")
+        log.append(source)
+        trigger.payload.update(rework_of=source.id, task_id="T-VERIFY",
+                               affected_task_ids=["T-VERIFY"])
+        trigger.correlation_id = "recovery-trace"
+        log.append(trigger)
     orch.run_once(events=[trigger])
     started = next(event for event in log.read_all() if event.type == "fanout.started")
     manifest = _manifest(state_dir, started.payload["fanout_id"])
@@ -1357,6 +1365,43 @@ def test_synth_turn_close_after_settled_result_is_not_dispatch_lost(
         and event.payload.get("child_id") == "synth"
         for event in log.read_all()
     )
+
+
+def test_stopped_plan_synth_redrives_existing_operation_after_provider_restart(tmp_path: Path) -> None:
+    from zf.runtime.workflow_operation import WorkflowOperationService, reduce_workflow_operations
+    from zf.runtime.workflow_resume import build_workflow_resume_projection
+    from zf.runtime.workflow_resume_apply import apply_workflow_resume
+
+    state, log, orch, fanout_id = _task_map_synth_orchestrator(tmp_path)
+    dispatch = next(event for event in log.read_all() if event.type == "fanout.synth.dispatched")
+    payload = dispatch.payload
+    service = WorkflowOperationService(state_dir=state, event_log=log, event_writer=EventWriter(log))
+    service.interrupt(operation_id=payload["operation_id"], request_hash=payload["request_hash"],
+                      workflow_run_id=payload["workflow_run_id"], task_id="", reason="graceful_stop")
+    projection = build_workflow_resume_projection(state, orch.config)
+    checkpoint = next(item for item in projection["operation_checkpoints"]
+                      if item["operation_id"] == payload["operation_id"])
+    assert checkpoint["safe_resume_action"] == "redrive_interrupted_reader_operation"
+    assert apply_workflow_resume(state, orch.config, checkpoint_id=checkpoint["checkpoint_id"])["applied"] == 1
+    EventWriter(log).append(ZfEvent(type="worker.launch_artifact.written", actor="zf-cli", payload={
+        "instance_id": payload["role_instance"], "launch_attempt": 2,
+    }))
+    assert orch._recover_lost_fanout_synth_dispatches(log.read_all()) is True
+    _, _, prompt, context = orch.transport.sent[-1]
+    assert context.operation_id == payload["operation_id"]
+    assert context.dispatch_id == payload["run_id"]
+    assert "Reconcile unfinished tool calls and external effects" in prompt
+    operations = reduce_workflow_operations(log.read_all())
+    operation = operations[payload["operation_id"]]
+    assert operation["status"] == "running"
+    assert operation["request_hash"] == payload["request_hash"]
+    assert operation["active_attempt_id"] == payload["attempt_id"]
+    assert service.mark_started(operation_id=payload["operation_id"], request_hash=payload["request_hash"],
+        workflow_run_id=payload["workflow_run_id"], dispatch_id=payload["run_id"],
+        active_attempt_id=payload["attempt_id"], role_instance=payload["role_instance"]) is None
+    assert orch._recover_lost_fanout_synth_dispatches(log.read_all()) is False
+    assert len([event for event in log.read_all() if event.type == "fanout.started"
+                and event.payload.get("fanout_id") == fanout_id]) == 1
 
 
 def test_paused_synth_dispatch_defers_without_business_failure_and_resumes(
@@ -3311,6 +3356,8 @@ def test_plan_candidate_briefing_validates_before_submit(
     assert briefing.count("result validate") == 1
     assert briefing.count("result submit") == 1
     assert briefing.index("result validate") < briefing.index("result submit")
+    assert "--summary" in briefing
+    assert "omit `--summary`" in briefing
     assert "does not consume the submit capability" in briefing
     assert "Effective Plan Admission Policy (kernel-pinned)" in briefing
     assert "maximum scope paths per task: `12`" in briefing

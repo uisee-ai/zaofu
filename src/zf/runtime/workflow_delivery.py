@@ -35,6 +35,8 @@ from zf.runtime.workflow_task_lifecycle import (
     claim_submitted_workflow_task as _claim_submitted_workflow_task,
 )
 from zf.runtime.workflow_runtime_start import ensure_submitted_workflow_runtime
+from zf.runtime.workflow_paths import bind_project_paths
+
 
 def build_flow_submit_preview(
     *,
@@ -48,7 +50,12 @@ def build_flow_submit_preview(
     output: Path | None = None,
     allow_missing_env: bool = False,
     synthesis_result_ref: dict[str, Any] | None = None,
+    project_root: Path | None = None,
 ) -> dict[str, Any]:
+    config_path, intake_path, bound_root = bind_project_paths(config_path, intake_path, project_root)
+    if bound_root is not None and output is not None:
+        from zf.runtime.workflow_paths import project_path
+        project_path(bound_root, output, field="output")
     manifest_path, manifest = _load_manifest_for_intake(intake_path)
     if manifest_path is None:
         manifest = {
@@ -69,6 +76,11 @@ def build_flow_submit_preview(
     projection_dir.mkdir(parents=True, exist_ok=True)
     preflight_path = projection_dir / "workflow-preflight.json"
     preview_path = (output or projection_dir / "workflow-submit-preview.json").expanduser()
+    if bound_root is not None and output is not None:
+        if not preview_path.is_absolute():
+            preview_path = state_dir / preview_path
+        from zf.core.safety import PathGuard
+        preview_path = PathGuard.assert_under(preview_path, state_dir)
     request_projection: dict[str, Any] = {}
     request_blockers: list[dict[str, Any]] = []
     if manifest_path is not None:
@@ -78,7 +90,6 @@ def build_flow_submit_preview(
             request_readiness_blockers,
             workflow_request_path,
         )
-
         state_dir.mkdir(parents=True, exist_ok=True)
         request_writer = EventWriter(event_log_from_project(state_dir, config=config))
         request_projection = register_workflow_intake(
@@ -108,7 +119,6 @@ def build_flow_submit_preview(
         if flow_kind in {"", "auto"} and request_projection.get("selected_flow_family"):
             flow_kind = {"IssueFlow": "issue", "PrdFlow": "prd", "RefactorFlow": "refactor", "Workflow": "workflow"}.get(
                 request_projection["selected_flow_family"], flow_kind)
-
         manifest["request_projection_ref"] = str(
             workflow_request_path(state_dir, request_id)
         )
@@ -139,7 +149,6 @@ def build_flow_submit_preview(
         from zf.runtime.workflow_proposal import (
             materialize_synthesized_workflow_candidate,
         )
-
         synthesis_kind = _normalize_request_kind(
             flow_kind or str(manifest.get("kind") or "")
         )
@@ -163,11 +172,9 @@ def build_flow_submit_preview(
     )
     if resolved_kind == "auto":
         from zf.runtime.workflow_request_routing import unresolved_route_blocker
-
         request_blockers.append(unresolved_route_blocker())
     else:
         from zf.core.workflow.request_policy import missing_fields_for_kind
-
         missing = missing_fields_for_kind(
             resolved_kind, objective=str(manifest.get("objective") or ""),
             source_ref=str(manifest.get("source_ref") or ""),
@@ -302,7 +309,6 @@ def build_flow_submit_preview(
             build_workflow_proposal,
             cleanup_synthesized_workflow_candidate,
         )
-
         try:
             proposal, proposal_ref = build_workflow_proposal(
                 state_dir,
@@ -417,7 +423,6 @@ def _submit_source_ref_blockers(
     flow_kind: str,
 ) -> list[dict[str, Any]]:
     """Mirror reader target admission before a workflow is submitted."""
-
     ref = str(source_ref or "").strip()
     if flow_kind not in {"issue", "prd"} or not ref:
         return []
@@ -491,7 +496,9 @@ def apply_flow_submit(
     reason: str = "",
     output: Path | None = None,
     allow_missing_env: bool = False,
+    project_root: Path | None = None,
 ) -> dict[str, Any]:
+    config_path, intake_path, bound_root = bind_project_paths(config_path, intake_path, project_root)
     config = load_config(config_path)
     state_dir = _state_dir_for_config(config_path, config)
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -501,7 +508,6 @@ def apply_flow_submit(
             register_workflow_intake,
             revise_workflow_request,
         )
-
         request_writer = EventWriter(event_log_from_project(state_dir, config=config))
         projection = register_workflow_intake(
             state_dir,
@@ -539,6 +545,7 @@ def apply_flow_submit(
         reason=reason,
         output=output,
         allow_missing_env=allow_missing_env,
+        project_root=bound_root,
     )
     writer = EventWriter(event_log_from_project(state_dir, config=config))
     payload = dict(preview.get("payload") or {})

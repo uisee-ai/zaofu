@@ -464,9 +464,12 @@ def prepare_plan_artifact_package(
     metadata: Mapping[str, Any] | None = None,
     source_event_id: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Build Claim Set and Package from explicit caller refs only."""
+    """Build claims and package from explicit or admitted inherited refs."""
 
     event_list = list(events)
+    from zf.runtime.plan_requirement_amendment import amendment_binding, amended_claim_set_baseline
+    owner_binding = amendment_binding(state_dir, workflow_run_id, events=event_list)
+    payload = {**payload, **owner_binding}
     mode = artifact_package_mode(metadata)
     if mode == "off":
         return {}, {}, {"mode": mode, "status": "off"}
@@ -492,6 +495,35 @@ def prepare_plan_artifact_package(
         task_map_digest=payload.get("task_map_digest"),
         task_map_ref=task_map_ref,
     )
+    explicit_ports = materialize_explicit_plan_ports(
+        state_dir=state_dir,
+        project_root=project_root,
+        # Candidate rework events can carry only immutable artifact refs and
+        # rely on this caller to identify the producing stage.  Bind that
+        # identity before materializing ports so ref-based and inline ports
+        # have the same producer contract.
+        payload={
+            **payload,
+            "stage_id": str(payload.get("stage_id") or producer_stage_id),
+        },
+        flow_kind=flow_kind,
+        required_ports=required_ports,
+    )
+    if owner_binding:
+        name = "issue_spec" if flow_kind == "issue" else "requirement_spec"
+        explicit_ports[name] = {
+            "logical_name": name, "artifact_kind": name,
+            "schema_version": "requirement-spec.v1", "producer_stage_id": producer_stage_id,
+            "ref": owner_binding["requirement_spec_ref"], "sha256": owner_binding["requirement_spec_digest"],
+        }
+    reduced = reduce_plan_artifact_packages(event_list, workflow_run_id=workflow_run_id)
+    previous = reduced.get("current")
+    previous = previous if isinstance(previous, Mapping) else {}
+    prior_body = None
+    if previous.get("package_ref") and previous.get("package_digest"):
+        prior_body = hydrate_plan_artifact_package(state_dir, {
+            "ref": previous["package_ref"], "sha256": previous["package_digest"],
+        })
     objective_ref = str(
         payload.get("requirement_spec_ref")
         or payload.get("objective_ref")
@@ -500,6 +532,17 @@ def prepare_plan_artifact_package(
         or payload.get("issue_ref")
         or ""
     )
+    if not objective_ref:
+        requirement_port = "issue_spec" if flow_kind == "issue" else "requirement_spec"
+        inherited_ports = {
+            port["logical_name"]: port
+            for port in [*prior_body["produced"], *prior_body["inherited"]]
+        } if prior_body else {}
+        # A gap plan can omit the unchanged requirement ref. Use the same
+        # digest-verified port that the new package inherits, before checking
+        # mandatory claim continuity. Explicit replacement still takes priority.
+        requirement = explicit_ports.get(requirement_port) or inherited_ports.get(requirement_port) or {}
+        objective_ref = str(requirement.get("ref") or "")
     claim_set, claim_descriptor = pin_goal_claim_set_from_task_map(
         state_dir=state_dir,
         project_root=project_root,
@@ -509,13 +552,6 @@ def prepare_plan_artifact_package(
         task_map_generation=generation,
         objective_ref=objective_ref,
         source_event_id=source_event_id,
-    )
-    explicit_ports = materialize_explicit_plan_ports(
-        state_dir=state_dir,
-        project_root=project_root,
-        payload=payload,
-        flow_kind=flow_kind,
-        required_ports=required_ports,
     )
     explicit_ports["goal_claim_set"] = {
         "logical_name": "goal_claim_set",
@@ -538,16 +574,17 @@ def prepare_plan_artifact_package(
     )
     previous = reduced.get("current")
     previous = previous if isinstance(previous, Mapping) else {}
+    if payload.get("resume_scope") == "gap_tasks_only" and payload.get("supersedes_task_map_generation"):
+        previous = admitted_plan_artifact_package_for_generation(
+            reduced, task_map_generation=str(payload["supersedes_task_map_generation"]),
+        )
+        if not previous:
+            from zf.runtime.product_acceptance import ProductAcceptanceError
+
+            raise ProductAcceptanceError("gap acceptance inheritance requires exact prior plan lineage")
     inherited: list[dict[str, Any]] = []
     continuity = mandatory_claim_continuity(None, claim_set)
-    if previous and previous.get("package_ref") and previous.get("package_digest"):
-        prior_body = hydrate_plan_artifact_package(
-            state_dir,
-            {
-                "ref": previous["package_ref"],
-                "sha256": previous["package_digest"],
-            },
-        )
+    if prior_body is not None:
         prior_claim_port = next(
             (
                 port
@@ -568,7 +605,7 @@ def prepare_plan_artifact_package(
             if isinstance(hydrated_claim.payload, Mapping):
                 previous_claim_set = hydrated_claim.payload
         continuity = mandatory_claim_continuity(
-            previous_claim_set,
+            amended_claim_set_baseline(state_dir, workflow_run_id, previous_claim_set),
             claim_set,
             claim_waivers=_goal_claim_waivers(payload),
             active_waiver_refs=_active_goal_claim_waiver_refs(
@@ -611,12 +648,40 @@ def prepare_plan_artifact_package(
         ports=[*explicit_ports.values(), *inherited],
         required_ports=required_ports,
     )
+    from zf.runtime.task_map_required_ports import plan_input_declaration_errors
+
+    input_errors = plan_input_declaration_errors(
+        task_map,
+        available_ports=(port["logical_name"] for port in [*explicit_ports.values(), *inherited]),
+    )
+    if input_errors:
+        raise PlanArtifactPackageError("invalid task plan inputs: " + "; ".join(input_errors))
+    from zf.runtime.plan_candidate_input_lineage import validate_dispatch_input_partitions
+
+    try:
+        validate_dispatch_input_partitions(
+            state_dir=state_dir, task_map=task_map,
+            ports=[*explicit_ports.values(), *inherited], required_ports=list(required_ports),
+            trigger={"workflow_run_id": workflow_run_id,
+                     "plan_artifact_package_ref": previous.get("package_ref", ""),
+                     "plan_artifact_package_digest": previous.get("package_digest", "")},
+            task_ids=(list(payload["task_ids"]) if isinstance(payload.get("task_ids"), list) and payload["task_ids"] else None),
+        )
+    except ValueError as exc:
+        raise PlanArtifactPackageError(f"invalid task input partitions: {exc}") from exc
     from zf.runtime.plan_acceptance_rework import rebind_inherited_gap_acceptance
 
     rebind_inherited_gap_acceptance(
         state_dir=state_dir, project_root=project_root, payload=payload,
         workflow_run_id=workflow_run_id, flow_kind=flow_kind,
         explicit_ports=explicit_ports, inherited=inherited,
+    )
+    from zf.runtime.plan_gap_input_partitions import rebind_gap_port_partitions
+
+    rebind_gap_port_partitions(
+        state_dir=state_dir, task_map=task_map, payload=payload,
+        explicit_ports=explicit_ports, inherited=inherited,
+        source_event_id=source_event_id,
     )
     product_acceptance_port = next(
         (
@@ -801,6 +866,15 @@ def admit_plan_artifact_package_for_payload(
                 "sha256": reusable["package_digest"],
             },
         )
+        from zf.runtime.plan_output_lineage import (
+            assert_package_explicit_ports_match, assert_package_task_map_matches,
+        )
+
+        assert_package_task_map_matches(
+            state_dir, project_root, current_body, payload)
+        assert_package_explicit_ports_match(
+            state_dir, project_root, current_body, payload,
+            flow_kind=flow_kind, producer_stage_id=producer_stage_id)
         current_mode = str(
             current_body.get("artifact_package_mode") or "shadow"
         )

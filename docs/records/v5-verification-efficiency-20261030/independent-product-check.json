@@ -1,0 +1,35 @@
+{
+  "candidate_commit": "198eb4163f05df19853be0e68866d3d62336a946",
+  "results": [
+    {
+      "command": [
+        "/home/uisee/workspace/zaofu/.venv/bin/python",
+        "hello.py"
+      ],
+      "exit_code": 0,
+      "stdout": "Hello, world!\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/uisee/workspace/zaofu/.venv/bin/python",
+        "hello.py",
+        "--name",
+        "ZaoFu"
+      ],
+      "exit_code": 0,
+      "stdout": "Hello, ZaoFu!\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/uisee/workspace/zaofu/.venv/bin/python",
+        "-c",
+        "import sys,unittest; r=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\")); sys.exit(0 if r.wasSuccessful() and r.testsRun>=2 else 1)"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "test_discovery_count_and_failures_control_exit_status (test_hello.CountedDiscoveryTests.test_discovery_count_and_failures_control_exit_status) ... ok\ntest_default_greeting (test_hello.HelloCLITests.test_default_greeting) ... ok\ntest_named_greeting (test_hello.HelloCLITests.test_named_greeting) ... ok\n\n----------------------------------------------------------------------\nRan 3 tests in 0.281s\n\nOK\n"
+    }
+  ]
+}

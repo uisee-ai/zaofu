@@ -50,6 +50,8 @@ from zf.runtime.channel_workflow_authority import (
 from zf.runtime.task_workflow_plans import (
     build_task_workflow_plan_request,
 )
+from zf.runtime.task_contract_authority import TaskContractAuthorityService
+from zf.runtime.task_contract_authority import current_authority_revision
 from zf.runtime.workflow_anchor import (
     bind_workflow_request_to_task,
     mark_workflow_managed_task,
@@ -77,6 +79,15 @@ class ProductActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
+        from zf.runtime.critical_context import bind_task_requirement_origin
+
+        try:
+            payload = bind_task_requirement_origin(payload, self.writer.event_log.read_all())
+        except ValueError as exc:
+            return self._failed(
+                requested=requested, action=action, requested_action=requested_action,
+                task_id=None, reason=str(exc), status_code=422, status="invalid_origin",
+            )
         title = str(payload.get("title") or "").strip()
         if not title:
             return self._failed(
@@ -296,12 +307,11 @@ class ProductActionsMixin:
                         "turn_id": str(payload.get("run_id") or ""),
                         "backend": str(payload.get("backend") or ""),
                         "originating_message_event_id": str(
-                            payload.get("causation_id")
-                            or payload.get(
-                                "originating_message_event_id"
-                            )
+                            payload.get("originating_message_event_id")
+                            or payload.get("causation_id")
                             or event.id
                         ),
+                        "originating_message_event_ids": payload.get("originating_message_event_ids", []),
                     },
                 )
             )
@@ -685,7 +695,24 @@ class ProductActionsMixin:
                 status="invalid_payload",
             )
 
-        updated = store.update(task_id, **updates)
+        if "contract" in updates and current_authority_revision(task):
+            contract = updates.pop("contract")
+            mutation = TaskContractAuthorityService(
+                task_store=store,
+                event_writer=self.writer,
+                state_dir=self.state_dir,
+            ).replace(
+                task,
+                contract=contract,
+                task_updates=updates,
+                source="kanban-agent-update-task",
+                actor=self.actor,
+                causation_id=requested.id,
+                correlation_id=requested.correlation_id or "",
+            )
+            updated = mutation.task
+        else:
+            updated = store.update(task_id, **updates)
         if updated is None:
             return self._failed(
                 requested=requested,
@@ -1897,6 +1924,7 @@ class ProductActionsMixin:
                     "target_config_digest": outcome.target_config_digest,
                     "config_ref": outcome.config_ref,
                     "receipt_ref": outcome.receipt_ref,
+                    "delivery_baseline_ref": outcome.delivery_baseline_ref,
                     "replayed": outcome.replayed,
                     "source_event_id": event.id,
                 },
@@ -1924,6 +1952,7 @@ class ProductActionsMixin:
                 "event_type": terminal.type,
                 "event_id": terminal.id,
                 "receipt_ref": outcome.receipt_ref,
+                "delivery_baseline_ref": outcome.delivery_baseline_ref,
                 "replayed": outcome.replayed,
             }
         status = "requested" if action != "workflow-config-propose" else "proposed"

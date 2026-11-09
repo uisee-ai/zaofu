@@ -758,9 +758,12 @@ class TaskRefManager:
         *,
         source_commit: str,
     ) -> list[str]:
+        # A cleanup-only rework can report no new edits while its TaskRef still
+        # carries the entire task delta from an explicit dispatch base. Preserve
+        # legacy no-patch handoffs that lack such a base (e.g. reader assembly).
         if (
-            isinstance(payload.get("changed_files"), list)
-            and not payload.get("changed_files")
+            payload.get("changed_files") == []
+            and not (payload.get("base_git_head") or payload.get("base_commit"))
             and not any(
                 isinstance(payload.get(key), list) and payload.get(key)
                 for key in ("artifact_refs", "file_plan", "files", "files_touched")
@@ -862,7 +865,7 @@ class TaskRefManager:
         if not base:
             base = self._feature_candidate_base(task_id, payload, source_commit)
         if not base:
-            base = str(payload.get("base_git_head") or "").strip()
+            base = str(payload.get("base_git_head") or payload.get("base_commit") or "").strip()
         if not base:
             base = self._combined_dependency_task_ref_base(task_id, source_commit)
         if not base:
@@ -883,12 +886,12 @@ class TaskRefManager:
                 "--verify",
                 f"{source_commit}^{{commit}}",
             ).strip()
-            raw = self._git("diff", "--name-only", f"{base_commit}..{source}")
+            raw = self._git("diff", "--name-only", "-z", f"{base_commit}..{source}")
         except Exception:
             return []
         return [
             self._normalize_artifact_path(line)
-            for line in raw.splitlines()
+            for line in raw.split("\0")
             if self._normalize_artifact_path(line)
         ]
 
@@ -919,7 +922,7 @@ class TaskRefManager:
                 str(task.contract.parent_task_id or "").strip(),
             ])
 
-        dispatch_base = str(payload.get("base_git_head") or "").strip()
+        dispatch_base = str(payload.get("base_git_head") or payload.get("base_commit") or "").strip()
         best = ""
         best_distance = -1
         prefix = self.config.runtime.git.candidate_branch_prefix
@@ -1086,10 +1089,10 @@ class TaskRefManager:
                         "--verify",
                         f"{candidate}^{{commit}}",
                     ).strip()
-                    raw = self._git("diff", "--name-only", f"{commit}..{source_commit}")
+                    raw = self._git("diff", "--name-only", "-z", f"{commit}..{source_commit}")
                 except Exception:
                     continue
-                distance = len([line for line in raw.splitlines() if line.strip()])
+                distance = len([path for path in raw.split("\0") if path])
                 if best_distance < 0 or distance < best_distance:
                     best = commit
                     best_distance = distance

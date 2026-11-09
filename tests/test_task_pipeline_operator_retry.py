@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -119,6 +120,43 @@ def test_cli_preview_then_apply_and_scheduler_advance(case, capsys):
     assert plan["tasks"][0]["stage"] == "impl_rework_ready"
     assert plan["dispatchable"]["impl"][0]["operation_generation"] == "2"
     assert plan["dispatchable"]["impl"][0]["stage"] == "impl"
+
+
+def test_retry_rejects_exhausted_budget_before_recording_request(case):
+    from zf.runtime.task_pipeline_operator_retry import request_impl_retry
+
+    state, log, writer, _, _ = case
+    config = SimpleNamespace(workflow=SimpleNamespace(
+        flow_metadata={"task_pipeline": {"mode": "blocking", "max_rework_attempts": 0}},
+    ))
+    before = log.path.read_bytes()
+    for apply in (False, True):
+        with pytest.raises(ValueError, match="retry budget exhausted"):
+            request_impl_retry(
+                state_dir=state, event_log=log, event_writer=writer,
+                operation_id="op-1", reason="repair checked", apply=apply, config=config,
+            )
+    assert log.path.read_bytes() == before
+
+
+def test_retry_allows_budget_offset_for_superseded_undispatched_repair(case):
+    from zf.runtime.task_pipeline_operator_retry import request_impl_retry
+
+    state, log, writer, identity, _ = case
+    previous = {**identity, "operation_id": "op-0", "operation_generation": 0}
+    writer.append(ZfEvent(type="workflow.operation.requested", task_id="T1", payload=previous))
+    writer.append(ZfEvent(
+        type="workflow.operation.superseded", task_id="T1",
+        payload={**previous, "reason": "missing_flow_kind_before_dispatch"},
+    ))
+    config = SimpleNamespace(workflow=SimpleNamespace(
+        flow_metadata={"task_pipeline": {"mode": "blocking", "max_rework_attempts": 0}},
+    ))
+    result = request_impl_retry(
+        state_dir=state, event_log=log, event_writer=writer,
+        operation_id="op-1", reason="repair checked", config=config,
+    )
+    assert result["status"] == "preview"
 
 
 @pytest.mark.parametrize(

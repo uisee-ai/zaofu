@@ -114,12 +114,21 @@ def test_resumed_operation_rearms_its_limit_and_blocks_the_run_again(tmp_path):
     runtime.event_writer.append(ZfEvent(type='run.goal.updated', actor='operator', payload={
         'workflow_run_id': 'run-1', 'run_id': 'run-1', 'source': 'zf_goal_cli',
         'status': 'active', 'run_limits_patch': {'token_budget': 0}}, correlation_id='run-1'))
+    assert build_workflow_resume_projection(runtime.state_dir, runtime.config)['operation_checkpoints'] == []
+    # The operation owner must amend the exact exceeded dimension explicitly.
+    runtime.event_writer.append(ZfEvent(type='run.goal.updated', actor='operator', payload={
+        'workflow_run_id': 'run-1', 'run_id': 'run-1', 'source': 'zf_goal_cli',
+        'status': 'active', 'operation_budget_id': op.operation_id,
+        'operation_limits_patch': {'token_budget': 20}}, correlation_id='run-1'))
     checkpoint = build_workflow_resume_projection(runtime.state_dir, runtime.config)['operation_checkpoints'][0]
     assert apply_workflow_resume(runtime.state_dir, runtime.config,
                                  checkpoint_id=checkpoint['checkpoint_id'])['applied'] == 1
     transport.terminated.clear()
     service.mark_started(**identity, role_instance='dev', active_attempt_id='a2', dispatch_id='d2',
                          budget_snapshot=usage_meter_snapshot(runtime, instance_id='dev'))
+    assert not any(event.type == 'workflow.budget.exceeded'
+                   for event in enforce_active_workflow_budgets(runtime))
+    runtime.cost_tracker.record_usage('dev', 10, 0, instance_id='dev')
     second = enforce_active_workflow_budgets(runtime)
     assert any(e.type == 'workflow.budget.exceeded' for e in second)
     assert transport.terminated == ['dev']

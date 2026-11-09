@@ -8,6 +8,7 @@ run and emits bounded observation/recommendation events through ``zf emit``.
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from zf.core.config.schema import (
     ZfConfig,
 )
 from zf.core.events.model import ZfEvent
+from zf.core.events.writer import EventWriter
 from zf.runtime.backend import get_adapter
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.injection import generate_role_instructions
@@ -33,6 +35,14 @@ RUN_MANAGER_RESIDENT_RESTART_FAILED = "run.manager.resident.restart_failed"
 RUN_MANAGER_RESIDENT_PRESERVED = "run.manager.resident.preserved"
 RUN_MANAGER_RESIDENT_REBOUND = "run.manager.resident.rebound"
 _PRESERVED_MARKER = "run-manager-resident-preserved.json"
+
+
+def _append_event(event_sink: Any, event: ZfEvent) -> ZfEvent:
+    if isinstance(event_sink, EventWriter):
+        return event_sink.append(event)
+    if not hasattr(event_sink, "read_all"):
+        return event_sink.append(event)
+    return EventWriter(event_sink, default_origin="kernel").append(event)
 
 
 def resident_run_manager_enabled(config: ZfConfig) -> bool:
@@ -172,6 +182,9 @@ def build_resident_run_manager_briefing(
     state_dir: Path,
     role: RoleConfig,
 ) -> str:
+    cli = zf_cli_cmd()
+    state_arg = shlex.quote(str(state_dir))
+    status_command = f"ZF_STATE_DIR={state_arg} {cli} status"
     payload_example = json.dumps(
         {
             "summary": "one-line observation",
@@ -209,29 +222,38 @@ def build_resident_run_manager_briefing(
         "  你可以作为 Run Manager 分派的 bounded repair worker 执行该修复。",
         "- 不自动 merge、不删除分支、不杀 tmux session、不重置 git。",
         "- 不替代 deterministic Run Manager tick、Supervisor、Autoresearch 或 Orchestrator。",
-        "- 需要记录观察时,只通过 `zf emit` 写事件。",
+        f"- 需要记录观察时,只通过 `{cli} emit` 写事件。",
         "- 每轮只做有界 one-shot 读取;不要启动 `Monitor`、`tail -f`、后台 `&`",
         "  或常驻 shell 循环。唤醒节奏由 Kernel tick 管理,provider 子进程不得越过角色生命周期。",
         "",
         "## Observe Loop",
         "",
-        "每 60-120 秒执行一轮:",
+        "收到绑定请求或 runtime 按配置唤醒时，执行一次有界观察；无待办可以 idle:",
         "",
-        f"1. 运行 `ZF_STATE_DIR={state_dir} zf status`。",
-        "2. 读取最近事件: `tail -n 120 \"$ZF_STATE_DIR/events.jsonl\"`。",
-        "3. 若存在,读取 `projections/run_manager.json`、"
-        "`projections/run_status_explain.json`、`projections/supervisor/snapshot.json`。",
+        f"1. 运行 `{status_command}`。",
+        "2. 有绑定请求时先按 source_ref 定位 recovery context，核对 request_id、当前 run/task、",
+        "   operation/attempt、合同和 failure refs；按本案证据引用完整读取相关正文，长正文分页。",
+        "   无绑定请求时先查看投影的索引/摘要，定位需处理的具体问题。",
+        "3. 仅为尚未回答的问题扩展读取：按事件 id、task 和时间定位事件；",
+        "   对 projections/run_manager.json、projections/run_status_explain.json、",
+        "   projections/supervisor/snapshot.json 先查看键/索引，再选本案条目。",
+        "   不整批倾倒原始事件尾部或全局投影；输出截断须补读相关正文，",
+        "   不能把过滤或读取收据当作已理解。冻结必读 artifact 仍按原 policy 完整消费。",
+        "   对在途任务核对 `monitor.task_evidence` 的派发、活动和结果信号时间及事件引用；"
+        "其中 `ts` 是入账时间，`usage_sample_ts` 是来源用量采样时间；没有来源时间时不得推断为新活动。"
+        "heartbeat 或读取不证明交付。信号仅按 task 关联，不代表当前 Run、attempt 或独立验收；"
+        "没有信号是未知，需结合 operation、合同及证据判断。",
         "4. 判断是否只是正常等待、是否有确定性 action、是否需要 repair worker、"
         "autoresearch 深诊断、reflect 或人工介入。",
         "5. 写一条观察事件,例如:",
         "",
         "```bash",
-        f"ZF_STATE_DIR={state_dir} zf emit run.manager.agent.observation "
-        f"--actor {role.instance_id} --state-dir {state_dir} "
-        f"--payload '{payload_example}'",
+        f"ZF_STATE_DIR={state_arg} {cli} emit run.manager.agent.observation "
+        f"--actor {shlex.quote(role.instance_id)} --state-dir {state_arg} "
+        f"--payload {shlex.quote(payload_example)}",
         "```",
         "",
-        "如果 `projections/run_manager.json` 或 `zf status` 显示 run 已经 passed/complete,",
+        f"如果 `projections/run_manager.json` 或 `{status_command}` 显示 run 已经 passed/complete,",
         "且之后没有 `verify.failed`、`judge.failed`、`run.failed`、新的",
         "`candidate.ready` 或人工 resume/reopen 信号,停止常规 proof-of-life 写入;",
         "只在发现 reopen/maintenance 需要动作时再写 observation 或 recommendation。",
@@ -239,17 +261,34 @@ def build_resident_run_manager_briefing(
         "## Decision Discipline",
         "",
         "- 如果只是 worker 正在正常执行,结论写 `status=watching`,不要打断。",
-        "- 建议 resume/rework 前必须依次核对三点(任一命中 → 建议 wait 并写明依据):",
-        "  ① 该任务是否已有完成证据(task.done/test.passed/judge.passed 等 closeout 事件,"
-        "不论新旧——完成证据早于 stall 信号仍然算完成);",
-        "  ② 所在 fanout 聚合是否未收拢、是否有兄弟 child 在飞——等待中的流不是停滞;",
-        "  ③ 同一 checkpoint 是否已有 workflow.resume.gate_unroutable 前科——"
-        "unroutable 是确定性事实,重复建议只会产生 no-op。",
+        "- 建议 resume/rework 前核对当前 run、task、operation、attempt、合同与目标版本。",
+        "  使用 recovery context 的 contract_identity.effective_revision；projection_revision 可能滞后，",
+        "  不能只据旧投影判合同漂移。planned_owner 是计划角色；实际 writer 查 assigned_to 和 attempt_identity。",
+        "  dependency_states 来自 TaskStore（含归档）；当前事件窗口没看到完成事件不能证明依赖未完成。",
+        "  ① 旧完成证据只在仍适用且没有后续失败/失效时复用；不能用旧通过覆盖新失败。",
+        "  ② 兄弟 child 在飞不能证明当前 child 正常；分别检查当前载体、lease、结果和聚合依赖。",
+        "  ③ workflow.resume.gate_unroutable 只说明当时前提不满足；前提改变后重新核验，",
+        "  前提未变则不重复同一动作。等待必须列出 owner、缺失项、作用域、唤醒条件和复查安排。",
+        "- 每个绑定 request_id 交付指定产物或说明缺失信息和下一责任方；历史观察不履行新请求。",
+        "- 已知机械恢复交 runtime；产品/合同问题移交已配置 OA；未知运行故障才申请诊断。",
+        "  沿原案卷携带证据、已尝试方案与待回答问题，不重复分诊或互相等待。",
+        "- 修复说明包含失败身份与证据、原因/假设、本次变化、保留成果、允许路径、验证和失败出口。",
+        "  同根因且代码、输入、环境、合同、策略均未变时，不重复派发；瞬时故障按策略退避。",
+        "- 发出请求、故障消除、Task 完成分别核验；处理器中断只恢复未完成处理步骤。",
+        "- worker_guidance 只读求助按固定 sidecar、原 request_id 和 proposal_only 回答；不能同时启动新写入者。",
+        "- 当前诊断输出绑定 request_id、证据、下一动作/owner；不得只观察代替 expected_output。",
+        "- 多任务共享故障须以 zf recover associate 提交资源/版本、member_case_ids、唯一修复 owner、证据与理由；",
+        "  资源修复不批量关闭任务。跨版本延续用 problem_continuation 和 failure_operation_ids，不改旧身份。",
+        "- 外部副作用响应丢失先查询原操作；不能靠新 repair_step_id、case 或 attempt 盲重试。",
+
         "- 如果发现已知 deterministic recovery 可以走,写"
         " `run.manager.agent.recommendation`,说明 action 名、证据 refs、预期 downstream event。",
         "- 如果是 harness bug、candidate hygiene/gate bug、projection/action bug,优先写"
         " `run.manager.agent.recommendation` 且 `recommended_route=repair`,附带 bounded"
         " `repair_task_payload`、scope、verification 和 evidence refs。",
+        "- 当前已准入 Impl 失败经诊断确认须 OA 裁决时，绑定原 request_id 发 recommendation：",
+        "  recommended_route=controlled_action、action=orchestrator-rework-triage、task_id、target_operation_id、",
+        "  summary 与证据；runtime 复用已配置 OA 的当前失败审核入口，保留原案卷，不直接重派 Worker。",
         "- 如果诊断证据不足,写 `recommended_route=autoresearch` 或 `recommended_route=reflect`;不要空转。",
         "- 如果安全边界不清、需要 merge/restart/删除状态,发 `human.escalate`。",
         "- 每次建议必须引用 event id、projection ref 或命令输出摘要,不要只写主观判断。",
@@ -258,8 +297,9 @@ def build_resident_run_manager_briefing(
         "## 恢复案卷(裁决卷宗)",
         "- `projections/recovery_case_file.json` 每 ~2 分钟更新:三表对账矛盾清单",
         "  (wip_without_carrier / queue_stuck / ready_but_starved)+ 静止断点 + 当前态快照",
-        "  (现预算、未决 escalation、quiescent)。**立案/裁决前先读它**——它是",
-        "  '为什么现在没有事情发生'的机械答案,比原始事件流可靠。",
+        "  (现预算、未决 escalation、quiescent)。它是诊断索引，可能滞后；",
+        "  只取本案条目，并用其引用核对 canonical Store、事件账本和必要 sidecar。",
+        "  投影不替代权威状态，未命中或窗口缺失不证明故障或依赖不存在。",
         "- 针对矛盾可用的恢复动词(经受控动作,前置条件不满足会被内核拒绝):",
         "  `task-requeue`(wip_without_carrier:任务挂进行中但承接 child 已死)、",
         "  `child-rebuild`(为死 child 走 rework 重建承接)、",
@@ -268,11 +308,12 @@ def build_resident_run_manager_briefing(
         "  `rescan-grant`(goal idle 驱动器弹尽后追加一轮)。",
         "  裁决输出:`run.manager.agent.recommendation` 带",
         "  `recommended_route=controlled_action`、`action=<动词>`、`action_payload={...}`、",
-        "  矛盾指纹与证据 refs。当前灰度为影子档:建议会被记录对照,不自动执行。",
+        "  矛盾指纹与证据 refs。runtime 按当前策略、身份和受控准入消费建议；",
+        "  建议提交不等于批准或执行成功，须核对 consumed、动作回执和实际下游效果。",
         "- 若矛盾根因是配置/代码(如质量门命令不适配栈),优先",
         "  `recommended_route=human` 并写明修改建议,不要用流程动词硬推。",
         "",
-        "现在开始观察当前 run。先执行一次 `zf status` 和事件/projection 快照读取。",
+        f"现在开始观察当前 run。先执行一次 `{status_command}`，再按上述请求与引用定位证据。",
     ])
 
 
@@ -324,7 +365,7 @@ def spawn_resident_run_manager(
 
     session_mode = resident_run_manager_session_mode(config)
     tmux_session = resident_run_manager_tmux_session(config)
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type="run.manager.resident.spawned",
         actor="zf-cli",
         payload={
@@ -363,7 +404,7 @@ def spawn_resident_run_manager(
     else:
         prompted = False
 
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type="run.manager.resident.prompted",
         actor="zf-cli",
         payload={
@@ -436,13 +477,13 @@ def rebind_preserved_resident_run_manager(
         "\n\n## Control-Plane Rebind\n\n"
         "ZF workflow/control-plane restarted while this dedicated Run Manager "
         "session was preserved. First tick mode is observe-only: reread "
-        "`zf status`, recent events, and projections before recommending any "
-        "mutating action.\n"
+        f"`{zf_cli_cmd()} status`, then locate the current request's evidence by refs "
+        "as above before recommending any mutating action.\n"
     )
     briefing_path.write_text(prompt, encoding="utf-8")
 
     tmux_session = resident_run_manager_tmux_session(config)
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type=RUN_MANAGER_RESIDENT_REBOUND,
         actor="zf-cli",
         payload={
@@ -477,7 +518,7 @@ def rebind_preserved_resident_run_manager(
     elif dry_run:
         prompted = bool(config.runtime.run_manager.resident_agent.prompt_on_start)
 
-    event_log.append(ZfEvent(
+    _append_event(event_log, ZfEvent(
         type="run.manager.resident.prompted",
         actor="zf-cli",
         payload={

@@ -53,6 +53,9 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "rework_attempt",
     "rework_source",
     "rework_feedback",
+    "operator_feedback",
+    "input_task_ids",
+    "historical_orchestration_context",
     "diagnostics_ref",
     "plan_compile_gate",
     "artifact_gate",
@@ -72,12 +75,14 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "source_commit",
     "candidate_base_commit",
     "required_actions",
+    "orchestrator_decision_ref",
     "orchestration_delta",
     "orchestration_delta_ref",
     "orchestration_delta_digest",
     "reason_codes",
     "operator_override",
     "owner_authorization",
+    "requirement_amendment_ref",
 )
 _TASK_DELIVERY_FACT_TYPES = frozenset({
     "candidate.ready",
@@ -134,7 +139,12 @@ def render_plan_synth_validation_section(
     return [
         *scratch_lines,
         "Write your actual review summary and explicitly choose status and recommendation "
-        "in both the result and report. Empty verdict fields are not a completed review.",
+        "in both the result and report. The two status fields have different contracts: "
+        "top-level `status` is execution status (`completed` or `failed`); "
+        "`report.status` is the semantic verdict (`passed`, `failed`, `blocked`, "
+        "or `suspended`). For a successful review use top-level `status: completed`, "
+        "`report.status: passed`, and `recommendation: approve`. Empty verdict fields "
+        "are not a completed review.",
         "",
         "Finding severity is an exact enum: use only `info`, `low`, `medium`, "
         "`high`, or `critical`. Record a non-blocking residual risk as `info` "
@@ -161,14 +171,24 @@ def build_plan_handoff_input_refs(
 
     state_dir = Path(state_dir)
     project_root = Path(project_root)
+    from zf.runtime.plan_requirement_amendment import amendment_binding
     trigger = (
         payload.get("trigger_payload")
         if isinstance(payload.get("trigger_payload"), Mapping)
         else {}
     )
+    binding = amendment_binding(state_dir, str(payload.get("workflow_run_id")
+        or trigger.get("workflow_run_id") or payload.get("trace_id")
+        or trigger.get("trace_id") or ""))
+    payload = {**payload, **binding}
     input_refs: list[dict[str, Any]] = []
     seen_sources: set[tuple[str, str]] = set()
+    if binding:
+        input_refs.append({**binding["requirement_amendment_ref"],
+                           "source_id": "owner-requirement-amendment", "allowed_paths": ["$"]})
     for source_id, kind, key in _PLAN_SOURCE_CANDIDATES:
+        if binding and source_id in {"requirement", "goal-objective"} and key != "requirement_spec_ref":
+            continue  # Prior authority remains in the amendment/previous package.
         ref = str(payload.get(key) or trigger.get(key) or "").strip()
         if not ref:
             continue
@@ -194,12 +214,28 @@ def build_plan_handoff_input_refs(
         if value not in (None, "", [], {}):
             rework_context[key] = value
     if len(rework_context) > 1:
+        from zf.runtime.plan_replan_authority_inputs import replan_authority_sources
+
+        input_refs.extend(replan_authority_sources(
+            state_dir=state_dir, project_root=project_root,
+            payload={**trigger, **{key: value for key, value in payload.items()
+                                   if value not in (None, "", [], {})}},
+            context=rework_context,
+        ))
         canonical_snapshot = _canonical_rework_task_snapshot(
             state_dir=state_dir,
             payload=payload,
             trigger=trigger,
         )
         if canonical_snapshot:
+            from zf.runtime.plan_rework_snapshot import bind_scoped_snapshot
+
+            canonical_snapshot, snapshot_ref = bind_scoped_snapshot(
+                state_dir, canonical_snapshot, context=rework_context,
+                source_event_id=source_event_id,
+            )
+            if snapshot_ref:
+                input_refs.append(snapshot_ref)
             rework_context["canonical_task_snapshot"] = canonical_snapshot
     if len(rework_context) > 1:
         source = write_immutable_json_sidecar(
@@ -218,7 +254,7 @@ def build_plan_handoff_input_refs(
         })
         input_refs.append(source)
     previous_refs = payload.get("previous_plan_candidate_refs")
-    if previous_refs in (None, []):
+    if previous_refs is None:
         previous_refs = trigger.get("previous_plan_candidate_refs")
     if previous_refs not in (None, []) and not isinstance(previous_refs, list):
         raise ValueError("previous Plan candidate refs must be a list")
@@ -252,12 +288,20 @@ def build_plan_handoff_input_refs(
                 "previous Plan candidate digest mismatch for "
                 f"{ref!r}: expected {expected}, got {actual or 'missing'}"
             )
+        allowed_paths = descriptor.get("allowed_paths", ["$"])
+        if (not isinstance(allowed_paths, list) or not allowed_paths
+                or any(not isinstance(path, str) or not path.strip() for path in allowed_paths)):
+            raise ValueError("previous Plan candidate allowed_paths must be a non-empty string list")
+        access_scope = descriptor.get("access_scope", {})
+        if not isinstance(access_scope, Mapping):
+            raise ValueError("previous Plan candidate access_scope must be an object")
         source.update({
             "source_id": f"previous-plan-candidate-{index}",
             "artifact_id": str(
                 descriptor.get("artifact_id") or Path(ref).name
             ),
-            "allowed_paths": ["$"],
+            "allowed_paths": list(allowed_paths),
+            "access_scope": dict(access_scope),
         })
         identity = (
             str(source.get("source_id") or ""),

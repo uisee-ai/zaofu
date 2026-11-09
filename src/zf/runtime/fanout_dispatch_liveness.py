@@ -161,6 +161,15 @@ class FanoutDispatchLivenessMixin:
                 self.transport.terminate(role.instance_id)
             if self.transport.is_alive(role.instance_id):
                 raise RuntimeError("reader provider process still alive after termination")
+            from zf.runtime.provider_usage_reconciliation import reconcile_provider_usage_tail
+
+            tail = reconcile_provider_usage_tail(
+                state_dir=self.state_dir, project_root=self.project_root,
+                config=self.config, event_log=self.event_writer.event_log,
+                included_roles={role.instance_id}, capture_phase="session_boundary",
+            )
+            if tail.failed_roles:
+                raise RuntimeError("provider usage tail reconciliation failed")
         except Exception as exc:  # noqa: BLE001
             self.event_writer.append(ZfEvent(
                 type="worker.recycle.failed",
@@ -219,7 +228,16 @@ class FanoutDispatchLivenessMixin:
         *,
         events: list[ZfEvent],
         dispatch_event: ZfEvent,
+        state_dir: Path,
     ) -> ZfEvent | None:
+        from zf.runtime.reader_respawn_continuation import (
+            reader_recovery_fence, reader_respawn_in_progress,
+        )
+
+        role_instance = str(dispatch_event.payload.get("role_instance") or "")
+        if role_instance and reader_respawn_in_progress(state_dir, role_instance):
+            return None
+        dispatch_index = reader_recovery_fence(events, dispatch_event, dispatch_index)
         # A protocol correction continues this exact attempt. Its source turn's
         # stop is no longer evidence that the child disappeared. A later stop
         # or transport loss still follows the existing bounded recovery path.
@@ -346,6 +364,8 @@ class FanoutDispatchLivenessMixin:
             and str(payload.get("backend") or "").strip() == "codex"
             and str(payload.get("turn_id") or "").strip()
         ):
+            if payload.get("provider_stop_reason") == "provider_policy_rejected":
+                return ""
             return str(
                 payload.get("instance_id")
                 or payload.get("role")
@@ -515,7 +535,7 @@ class FanoutDispatchLivenessMixin:
         run_id = str(child.get("run_id") or "")
         task_id = str(child.get("task_id") or "")
         trace_id = str(manifest.get("trace_id") or "")
-        self.event_writer.append(ZfEvent(
+        failed = self.event_writer.append(ZfEvent(
             type="fanout.child.failed",
             actor="zf-cli",
             task_id=task_id or None,
@@ -535,6 +555,12 @@ class FanoutDispatchLivenessMixin:
             causation_id=lost_event.id,
             correlation_id=trace_id,
         ))
+        from zf.runtime.fanout_timeout_operations import fail_reader_child_operations
+
+        fail_reader_child_operations(
+            self, manifest=manifest, pending_children=[child_id],
+            causation_event=failed, reason=f"{loss_reason}_recovery_exhausted",
+        )
         self._release_fanout_worker_if_terminal(
             role_instance=role_instance,
             fanout_id=fanout_id,

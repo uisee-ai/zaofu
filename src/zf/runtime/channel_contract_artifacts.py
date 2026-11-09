@@ -479,6 +479,26 @@ def typed_items(value: object) -> list[Any]:
     return [redact_obj(item) for item in value[:64]]
 
 
+def normalize_synthesis_contract(body: dict[str, Any]) -> dict[str, Any]:
+    """Normalize provider-compatible envelopes before strict validation.
+
+    The canonical contract stores ``dissent`` as an array, but some provider
+    turns return the same information in a status envelope such as
+    ``{"status": "unresolved", "items": [...]}``. Preserve that status in
+    one array item so the strict downstream schema and the review evidence
+    both remain intact.
+    """
+    normalized = dict(body)
+    dissent = normalized.get("dissent")
+    if isinstance(dissent, dict):
+        items = dissent.get("items")
+        if isinstance(items, list):
+            normalized["dissent"] = [dissent]
+        else:
+            normalized["dissent"] = [dissent]
+    return normalized
+
+
 def string_refs(value: object, *, limit: int = 64) -> list[str]:
     if not isinstance(value, list):
         return []

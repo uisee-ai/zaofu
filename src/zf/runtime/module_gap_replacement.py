@@ -130,6 +130,33 @@ def inherit_superseded_incoming_dependencies(
     tasks = [dict(task) for task in gap_tasks]
     by_id = {_task_id(task): task for task in tasks if _task_id(task)}
     gap_ids = set(by_id)
+    # A one-to-one batch substitutes nodes, not a decomposition of one parent.
+    # Keep each parent's prerequisites on its own successor and rebind old IDs.
+    replacements = {
+        parents[0]: _task_id(task)
+        for task in tasks
+        if len(parents := _string_list(task.get("supersedes_task_ids"))) == 1
+    }
+    if tasks and len(replacements) == len(tasks):
+        for successor in tasks:
+            parent = _string_list(successor.get("supersedes_task_ids"))[0]
+            successor["blocked_by"] = _unique_strings(
+                replacements.get(dependency, dependency)
+                for dependency in [*_task_dependencies(successor),
+                                   *_task_dependencies(base_tasks_by_id.get(parent, {}))]
+            )
+            successor.pop("dependencies", None)
+        return tasks
+    # When a replacement chain contains multiple successors, dependencies on
+    # any task being replaced are rewired by the successor graph below.  Do
+    # not inherit those stale edges from another superseded parent (for
+    # example, an assembly task depending on the implementation task it is
+    # replacing alongside a dedicated implementation successor).
+    all_superseded = {
+        old_id
+        for task in tasks
+        for old_id in _string_list(task.get("supersedes_task_ids"))
+    }
     for successor in tasks:
         superseded = _string_list(successor.get("supersedes_task_ids"))
         if not superseded:
@@ -147,7 +174,7 @@ def inherit_superseded_incoming_dependencies(
             dependency
             for old_id in superseded
             for dependency in _task_dependencies(base_tasks_by_id.get(old_id, {}))
-            if dependency not in gap_ids and dependency not in superseded
+            if dependency not in gap_ids and dependency not in all_superseded
         )
         for root_id in roots:
             root = by_id[root_id]

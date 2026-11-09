@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from zf.core.config.schema import (
     AutoresearchConfig,
     AutoresearchTriggerPolicyConfig,
@@ -170,6 +172,34 @@ def test_proposal_only_does_not_dispatch_repair_without_env_authorization(
         item for item in events
         if item.type == "autoresearch.repair.dispatch_requested"
     ]
+
+
+@pytest.mark.parametrize("fingerprint,expected", [
+    ("task_ref_rejected:T1", "task_ref_rejected"),
+    ("missing_task_ref_after_dev_build_done:T1", "missing_task_ref_after_dev_build_done"),
+    ("fanout_timed_out:f1", "fanout_timed_out"),
+    ("completion_snapshot_ref_missing:T1", "completion_snapshot_ref_missing"),
+    ("task_contract_invalid:T1", "task_contract_invalid"),
+    ("failure:worker_stuck:dev", "worker_stuck"),
+    ("failure: task_contract_invalid :T1", " task_contract_invalid "),
+    ("stall:stage:T1", "stall"),
+    ("handoff_stall:T1", ""),
+    ("unrecognized:T1", ""),
+    ("", ""),
+])
+def test_confirmed_repair_dispatch_preserves_failure_class_payload(tmp_path, monkeypatch, fingerprint, expected):
+    """Moving the mapper must not broaden taxonomy or normalize old payloads."""
+    state_dir = _state_dir(tmp_path)
+    orch = _orchestrator(state_dir, repair_mode="bounded_repair")
+    confirmed = _confirmed_task_ref_candidate(state_dir)
+    monkeypatch.setattr("zf.runtime.repair_authorization.decide_repair", lambda *args, **kwargs:
+                        SimpleNamespace(action="dispatch", fingerprint=fingerprint, attempt=1, bucket="unknown"))
+    orch._on_autoresearch_bug_candidate_confirmed(confirmed)
+    dispatch = next(e for e in orch.event_log.read_all() if e.type == "autoresearch.repair.dispatch_requested")
+    assert dispatch.payload["failure_class"] == expected
+    assert dispatch.payload["fingerprint"] == fingerprint
+    assert dispatch.payload["repair_mode"] == "bounded_repair"
+    assert dispatch.causation_id == confirmed.id
 
 
 def test_repair_attempt_exhaustion_returns_request_to_run_manager(

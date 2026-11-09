@@ -15,7 +15,7 @@ from zf.runtime.orchestrator_agent_policy import (
     checkpoint_policy,
     orchestration_flow_kind,
 )
-from zf.runtime.plan_artifact_package import reduce_plan_artifact_packages
+from zf.runtime.orchestrator_agent_plan_binding import current_checkpoint_plan_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
@@ -52,8 +52,19 @@ def request_semantic_failure_checkpoint(
     if task is None or str(task.status) in {"done", "cancelled"}:
         raise SemanticFailureCheckpointError("target_task_not_current")
     events = runtime.event_log.read_all()
+    current: dict[str, Any] = {}
+    bound_operation: Mapping[str, Any] = {}
+    if payload.get("target_operation_id"):
+        from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
+        current = operation_bindings(events, str(payload.get("workflow_run_id") or ""), {task_id}).get(task_id, {})
+        if current.get("operation_id") != payload["target_operation_id"] or current.get("status") != "settled":
+            raise SemanticFailureCheckpointError("target_operation_stale")
+        bound_operation = reduce_workflow_operations(events).get(str(payload["target_operation_id"]), {})
     workflow_run_id, package = _current_plan_package(
         events,
+        task_id=task_id,
         preferred_run_id=str(
             payload.get("workflow_run_id")
             or payload.get("trace_id")
@@ -84,8 +95,9 @@ def request_semantic_failure_checkpoint(
         else {}
     )
     active_attempt_id = str(
-        getattr(task, "active_dispatch_id", "")
-        or payload.get("active_attempt_id")
+        payload.get("active_attempt_id")
+        or getattr(task, "active_dispatch_id", "")
+        or current.get("active_attempt_id")
         or payload.get("dispatch_id")
         or latest_failure_payload.get("attempt_id")
         or latest_failure_payload.get("dispatch_id")
@@ -94,7 +106,8 @@ def request_semantic_failure_checkpoint(
     if not active_attempt_id:
         raise SemanticFailureCheckpointError("target_attempt_missing")
     target_role = str(
-        getattr(getattr(task, "contract", None), "owner_instance", "")
+        bound_operation.get("role_instance")
+        or getattr(getattr(task, "contract", None), "owner_instance", "")
         or getattr(task, "assigned_to", "")
         or payload.get("role")
         or ""
@@ -105,9 +118,13 @@ def request_semantic_failure_checkpoint(
         or payload.get("trigger_event_type")
         or "semantic-recovery"
     )
+    from zf.runtime.orchestrator_agent_execution_policy import run_goal_objective_snapshot
+
+    goal_snapshot = run_goal_objective_snapshot(events, workflow_run_id)
     failure_body = {
         "schema_version": SEMANTIC_FAILURE_INPUT_SCHEMA,
         "workflow_run_id": workflow_run_id,
+        "run_goal": goal_snapshot,
         "request_event_id": event.id,
         "failure_fingerprint": str(payload.get("failure_fingerprint") or ""),
         "target": {
@@ -155,6 +172,7 @@ def request_semantic_failure_checkpoint(
         "target_stage_id": target_stage,
         "target_attempt_id": active_attempt_id,
         "target_role_instance": target_role,
+        "run_goal_objective_event_id": goal_snapshot["objective_event_id"],
         "artifact_refs": artifact_refs,
     }
     return request_orchestrator_agent_checkpoint(
@@ -192,6 +210,7 @@ def _current_plan_package(
     events: list[ZfEvent],
     *,
     preferred_run_id: str,
+    task_id: str = "",
 ) -> tuple[str, dict[str, Any]]:
     run_ids: list[str] = []
     if preferred_run_id:
@@ -205,10 +224,11 @@ def _current_plan_package(
     if not preferred_run_id and len(run_ids) != 1:
         return "", {}
     for run_id in run_ids:
-        current = reduce_plan_artifact_packages(
+        current = current_checkpoint_plan_package(
             events,
             workflow_run_id=run_id,
-        ).get("current")
+            task_id=task_id,
+        )
         if isinstance(current, Mapping) and current:
             return run_id, dict(current)
     return "", {}

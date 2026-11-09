@@ -42,12 +42,14 @@ export function WebChatArtifactDrawer({
   artifacts,
   onClose,
   onChanged,
+  onReference,
   projectId,
   taskId,
 }: {
   artifacts: WebChatArtifact[];
   onClose: () => void;
   onChanged: () => Promise<void> | void;
+  onReference?: (item: WebChatArtifact) => void;
   projectId: string;
   taskId?: string;
 }) {
@@ -159,6 +161,7 @@ export function WebChatArtifactDrawer({
             </dl>
             <div className="webchat-resource-actions">
               <button type="button" onClick={() => void inspect(selected)}><Eye size={14} /> Preview</button>
+              {onReference ? <button type="button" onClick={() => onReference(selected)}>Add to message</button> : null}
               <a href={webChatArtifactContentUrl(projectId, selected.version_id)} download><Download size={14} /> Download</a>
               <button
                 type="button"

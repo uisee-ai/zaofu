@@ -463,12 +463,6 @@ _HUMAN_DECISION_ACTIONS = {
     # the badge forever). Consumers ignore unknown decision values safely.
     "human-decision-dismiss",
 }
-_HUMAN_DECISION_BY_ACTION = {
-    "human-decision-approve-controlled-action": "approve_controlled_action",
-    "human-decision-request-autoresearch": "request_autoresearch",
-    "human-decision-safe-halt": "safe_halt",
-    "human-decision-dismiss": "dismissed",
-}
 _ACTION_ALIASES = {
     "dispatch",
     "dispatch-task",
@@ -583,6 +577,7 @@ _ACTION_ALIASES = {
     "research-adopt",
     "research.adopt",
     "workflow-request",
+    "project-git-baseline",
     "workflow.request",
     "task-workflow-start",
     "task.workflow.start",
@@ -757,6 +752,9 @@ def create_app(
         state_dir=state_dir,
         project_root=project_root,
         config=config,
+        resolve_ctx=lambda project_id: _resolve_api_project(project_id,
+            default_project_id=default_project_id, default_state_dir=state_dir,
+            default_config=config, default_project_root=project_root),
     ))
     from zf.web.channel_delivery_routes import build_channel_delivery_router
 
@@ -1308,7 +1306,7 @@ def create_app(
                     "inspection": admission_inspection,
                 }, status_code=409)
         if implicit_admission and not (root / "zf.yaml").exists():
-            flow_kind = "multi"
+            flow_kind = "prd"
         if flow_kind and flow_kind not in {"multi", "issue", "prd", "refactor"}:
             return JSONResponse({
                 "ok": False,
@@ -1802,8 +1800,8 @@ def create_app(
         )
         try:
             events = EventLog(context.state_dir / "events.jsonl").read_all()
-        except Exception:
-            events = []
+        except Exception as exc:
+            raise HTTPException(503, "pending proposals unavailable") from exc
         return JSONResponse({
             "schema_version": "kanban-agent.pending-proposals.v1",
             "project_id": project_id,
@@ -6076,7 +6074,9 @@ def _web_action(
         return response
 
     if canonical_action in _HUMAN_DECISION_ACTIONS:
-        response = _handle_human_decision_action(
+        from zf.web.human_decision_action import submit_human_decision
+
+        response = submit_human_decision(
             writer,
             requested=requested,
             action=canonical_action,
@@ -6870,83 +6870,6 @@ def _handle_worker_runtime_action(
     }
 
 
-def _handle_human_decision_action(
-    writer: EventWriter,
-    *,
-    requested: ZfEvent,
-    action: str,
-    requested_action: str,
-    payload: dict,
-    project_id: str = "",
-) -> dict:
-    decision_token = _human_decision_token_from_payload(payload)
-    decision = _HUMAN_DECISION_BY_ACTION[action]
-    task_id = _task_id_from_payload(payload)
-    acknowledged = writer.emit(
-        "human.escalation.acknowledged",
-        actor="web",
-        task_id=task_id,
-        causation_id=requested.id,
-        correlation_id=requested.correlation_id,
-        payload={
-            "schema_version": "human-escalation-acknowledged.v1",
-            "decision_token": decision_token,
-            "decision": decision,
-            "source": str(payload.get("source") or "operator-inbox"),
-            "surface": "web",
-            "project_id": project_id,
-            "approval_ref": str(payload.get("approval_ref") or ""),
-            "checkpoint_id": str(payload.get("checkpoint_id") or ""),
-            "fingerprint": str(payload.get("fingerprint") or ""),
-            "created_event_id": str(payload.get("created_event_id") or ""),
-        },
-    )
-    completion_payload = {
-        "action": action,
-        "requested_action": requested_action,
-        "status": "acknowledged",
-        "event_type": "human.escalation.acknowledged",
-        "event_id": acknowledged.id,
-        "decision_token": decision_token,
-        "decision": decision,
-        "project_id": project_id,
-    }
-    writer.emit(
-        "runtime.action.completed",
-        actor="web",
-        task_id=task_id,
-        causation_id=acknowledged.id,
-        correlation_id=acknowledged.correlation_id,
-        payload=completion_payload,
-    )
-    writer.emit(
-        "web.action.completed",
-        actor="web",
-        task_id=task_id,
-        causation_id=acknowledged.id,
-        correlation_id=acknowledged.correlation_id,
-        payload=completion_payload,
-    )
-    return {
-        "_status_code": 202,
-        "ok": True,
-        "status": "acknowledged",
-        "action": action,
-        "requested_action": requested_action,
-        "event_type": "human.escalation.acknowledged",
-        "event_id": acknowledged.id,
-        "decision_token": decision_token,
-        "decision": decision,
-    }
-
-
-def _human_decision_token_from_payload(payload: dict) -> str:
-    raw = str(payload.get("decision_token") or payload.get("approval_ref") or "")
-    if raw.startswith("human:"):
-        raw = raw.removeprefix("human:")
-    return raw
-
-
 def _handle_assignment_propose(
     writer: EventWriter,
     *,
@@ -7217,6 +7140,7 @@ def _run_headless_kanban_agent_turn(
     project_id: str,
     conversation_id: str,
     thinking_level: str = "",
+    model: str = "",
     permission_profile: str = KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE,
     config: ZfConfig | None = None,
     durable_run: Any | None = None,
@@ -7373,6 +7297,7 @@ def _run_headless_kanban_agent_turn(
             },
             on_message=delta_emitter.emit,
             thinking_level=thinking_level,
+            **({"model": model} if model else {}),
             permission_profile=permission_profile,
         )
         delta_emitter.flush()

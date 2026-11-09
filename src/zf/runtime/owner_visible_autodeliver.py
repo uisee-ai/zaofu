@@ -8,7 +8,7 @@ watcher tick delivers them in-process at the runtime edge — NOT the
 deterministic kernel (the orchestrator never calls an external API; this runs in
 the ``zf start`` watcher composition root). Opt-in by env presence: with
 ``ZF_OWNER_VISIBLE_CHAT`` and route-specific targets unset this records an
-explicit failed receipt when pending messages exist. Reuses the existing
+explicit failed receipt only for pending requests that explicitly target Feishu. Reuses the existing
 ``deliver_owner_visible_messages_once`` delivery path and the signer-aware
 event-log factory.
 """
@@ -197,6 +197,7 @@ def _record_owner_visible_feishu_unconfigured(
                 transport=_UnconfiguredTransport(),
                 routing=RoutingConfig(channels={}),
                 max_attempts=1,
+                require_explicit_target=True,
             )
         finally:
             close = getattr(log, "close", None)

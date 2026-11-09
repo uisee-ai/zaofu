@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from zf.core.config.schema import ZfConfig
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
@@ -85,7 +87,7 @@ def _result(verdict: str) -> dict[str, object]:
     return result
 
 
-def _run(runtime, verdict: str):
+def _run(runtime, verdict: str, *, generation: str = "map-g1"):
     descriptor = write_immutable_json_sidecar(
         runtime.state_dir,
         _result(verdict),
@@ -124,7 +126,7 @@ def _run(runtime, verdict: str):
         generation_contexts={
             "TASK-RISK": {
                 "workflow_run_id": "run-1",
-                "task_map_generation": "map-g1",
+                "task_map_generation": generation,
                 "flow_kind": "prd",
             }
         },
@@ -184,3 +186,40 @@ def test_block_verdict_materializes_typed_blocker_once(tmp_path: Path) -> None:
     ]
     assert len(blocked) == 1
     assert blocked[0].payload["blocker"]["owner"] == "operator"
+
+
+@pytest.mark.parametrize("verdict,crash_after", [
+    ("replan", "task.pipeline.acceptance.replan_requested"),
+    ("replan", "orchestrator.rework.triage.requested"),
+    ("block", "task.pipeline.acceptance.blocked"),
+])
+def test_replay_repairs_route_followups(tmp_path, monkeypatch, verdict, crash_after):
+    runtime = _runtime(tmp_path)
+    append = runtime.event_writer.append
+
+    def crash(event):
+        result = append(event)
+        if event.type == crash_after:
+            raise SystemExit("simulated process loss after durable append")
+        return result
+
+    monkeypatch.setattr(runtime.event_writer, "append", crash)
+    with pytest.raises(SystemExit):
+        _run(runtime, verdict)
+    assert runtime.task_store.get("TASK-RISK").status == "in_progress"
+    monkeypatch.setattr(runtime.event_writer, "append", append)
+    _run(runtime, verdict)
+    _run(runtime, verdict)
+    assert runtime.task_store.get("TASK-RISK").status == "blocked"
+    types = [e.type for e in runtime.event_log.read_all()]
+    assert types.count(crash_after) == 1
+    if verdict == "replan":
+        assert types.count("orchestrator.rework.triage.requested") == 1
+
+
+def test_old_generation_acceptance_cannot_block_current_task(tmp_path):
+    runtime = _runtime(tmp_path)
+    _, decisions = _run(runtime, "replan", generation="map-g2")
+    assert decisions == []
+    assert runtime.task_store.get("TASK-RISK").status == "in_progress"
+    assert not any(e.type.endswith("replan_requested") for e in runtime.event_log.read_all())

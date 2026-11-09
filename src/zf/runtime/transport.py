@@ -79,6 +79,7 @@ class DispatchContext:
     workspace_generation: int | None = None
     placement_epoch: int | None = None
     task_stage_session_binding: str | None = None
+    worker_envelope_digest: str | None = None
 
     def to_payload(self) -> dict[str, str]:
         payload: dict[str, str] = {}
@@ -120,6 +121,8 @@ class DispatchContext:
             payload["task_stage_session_binding"] = (
                 self.task_stage_session_binding
             )
+        if self.worker_envelope_digest:
+            payload["worker_envelope_digest"] = self.worker_envelope_digest
         return payload
 
 
@@ -455,6 +458,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             setattr(err, "dead_reason", dead_reason)
             raise err
         self._assert_expected_cwd(role_name)
+        self._assert_dispatch_prompt_ready(role_name)
         clear_input = getattr(self.tmux, "clear_input", None)
         if callable(clear_input):
             clear_input(role_name)

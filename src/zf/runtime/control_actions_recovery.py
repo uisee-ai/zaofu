@@ -32,7 +32,7 @@ RECOVERY_ACTIONS = (
 
 _RETRIGGERABLE = frozenset({
     "task_map.ready", "candidate.ready", "lane.stage.completed", "flow.goal.closed",
-    "flow.discovery.requested", "flow.discovery.completed",
+    "flow.discovery.requested", "flow.discovery.completed", "flow.gap_plan.ready",
 })
 _UPSTREAM_LINEAGE_REBUILD_REASONS = frozenset({
     "blocking Goal closure has no current Plan Artifact Package",
@@ -226,8 +226,9 @@ class RecoveryActionsMixin:
             return self._recovery_failed(
                 requested, action, requested_action, "source_event_id is required",
             )
+        events = self.writer.event_log.read_all()
         source = None
-        for event in self.writer.event_log.read_all():
+        for event in events:
             if event.id == source_event_id:
                 source = event
                 break
@@ -236,12 +237,33 @@ class RecoveryActionsMixin:
                 requested, action, requested_action,
                 f"source event {source_event_id} not found", 404,
             )
-        if source.type not in _RETRIGGERABLE:
+        registered_reader_trigger = any(
+            stage.topology == "fanout_reader" and stage.trigger == source.type
+            for stage in getattr(getattr(self.config, "workflow", None), "stages", [])
+        )
+        if source.type not in _RETRIGGERABLE and not registered_reader_trigger:
             return self._recovery_failed(
                 requested, action, requested_action,
                 f"{source.type} is not a retriggerable driving event",
             )
-        for event in self.writer.event_log.read_all():
+        if source.type == "flow.gap_plan.ready":
+            if source.origin != "kernel":
+                return self._recovery_failed(
+                    requested, action, requested_action, "flow gap plan must originate from kernel",
+                )
+            outcomes = [
+                event.type for event in events
+                if event.type in {"task_map.amend.failed", "task_map.amended"}
+                and event.origin == "kernel"
+                and isinstance(event.payload, dict)
+                and event.payload.get("source_event_id") == source_event_id
+            ]
+            if "task_map.amend.failed" not in outcomes or "task_map.amended" in outcomes:
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "flow gap plan must have a failed, not already completed, amendment",
+                )
+        for event in events:
             body = event.payload if isinstance(event.payload, dict) else {}
             if str(body.get("redrive_of") or "") == source_event_id:
                 return self._recovery_failed(
@@ -249,16 +271,44 @@ class RecoveryActionsMixin:
                     f"already retriggered by {event.id}", 409,
                 )
         base = dict(source.payload if isinstance(source.payload, dict) else {})
+        if payload.get("repair_plan_output"):
+            from zf.core.state.locks import locked_path
+            from zf.runtime.plan_output_recovery import repair_plan_output
+
+            try:
+                with locked_path(self.state_dir / "locks" / "plan-output-recovery"):
+                    base = repair_plan_output(self, source, payload, requested)
+            except (ValueError, OSError) as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+        elif payload.get("refresh_plan_bindings"):
+            from zf.core.state.locks import locked_path
+            from zf.runtime.plan_binding_recovery import refresh_plan_bindings
+
+            try:
+                with locked_path(self.state_dir / "locks" / "plan-output-recovery"):
+                    base = refresh_plan_bindings(self, source, payload, requested)
+            except (ValueError, OSError) as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+        elif payload.get("retain_completed_task_ids"):
+            return self._recovery_failed(
+                requested, action, requested_action, "completion retention requires a Plan output repair")
         base["redrive_of"] = source_event_id
         base["rework_of"] = source_event_id  # 代际:retrigger 不是 replay
-        emitted = self.writer.append(ZfEvent(
+        trigger = ZfEvent(
             type=source.type,
             actor=self.actor,
             task_id=source.task_id,
             payload=base,
             causation_id=requested.id,
             correlation_id=source.correlation_id,
-        ))
+        )
+        from zf.runtime.reader_shadow_recovery import retain_shadow_as_observation
+
+        retain_shadow_as_observation(
+            trigger, events, approval_ref=str(payload.get("approval_ref") or ""),
+            request_id=requested.id,
+        )
+        emitted = self.writer.append(trigger)
         return self._recovery_ok(requested, emitted, action, requested_action, {
             "retriggered_event_id": emitted.id,
             "source_event_id": source_event_id,
@@ -268,6 +318,25 @@ class RecoveryActionsMixin:
     def _stage_replan_new_generation_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        if payload.get("repaired_failure_event_id"):
+            if "input_task_ids" in payload:
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "fixed-input repair cannot change input task scope; use an authorized new generation", 409,
+                )
+            from zf.core.state.locks import locked_path
+            from zf.runtime.reader_stage_recovery import repaired_reader_stage_trigger
+            with locked_path(self.state_dir / "locks" / "reader-stage-recovery"):
+                try:
+                    trigger = repaired_reader_stage_trigger(
+                        self.state_dir, self.config, self.writer.event_log.read_all(), payload, requested)
+                except ValueError as exc:
+                    return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+                emitted = self.writer.append(trigger)
+                return self._recovery_ok(requested, emitted, action, requested_action, {
+                    "stage_trigger_event_id": emitted.id,
+                    "repaired_failure_event_id": payload["repaired_failure_event_id"],
+                })
         escalation_event_id = str(
             payload.get("escalation_event_id") or ""
         ).strip()
@@ -279,6 +348,15 @@ class RecoveryActionsMixin:
                 requested_action,
                 "escalation_event_id and approval_ref are required",
             )
+        from zf.runtime.reader_replan_feedback import (
+            bind_operator_feedback, input_task_ids, operator_feedback,
+        )
+
+        try:
+            feedback = operator_feedback(payload)
+            input_scope = input_task_ids(payload)
+        except ValueError as exc:
+            return self._recovery_failed(requested, action, requested_action, str(exc))
         events = self.writer.event_log.read_all()
         escalation = next(
             (event for event in events if event.id == escalation_event_id),
@@ -363,6 +441,21 @@ class RecoveryActionsMixin:
             None,
         )
         if existing_trigger is not None:
+            if input_scope != input_task_ids(existing_trigger.payload):
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "stage generation already exists with a different input task scope", 409,
+                )
+            if payload.get("resume_candidate_synth_event_id") != existing_trigger.payload.get("resume_candidate_synth_event_id"):
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "stage generation already exists with a different candidate checkpoint", 409,
+                )
+            if feedback != operator_feedback(existing_trigger.payload):
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "stage generation already exists with different operator feedback", 409,
+                )
             if payload.get("repair_target") != existing_trigger.payload.get("reader_repair_target"):
                 return self._recovery_failed(
                     requested, action, requested_action,
@@ -386,6 +479,7 @@ class RecoveryActionsMixin:
             self.config,
             events,
             source,
+            state_dir=self.state_dir,
             authorized_generation=generation,
             generation_source_event_id=escalation.id,
             authorization_event_id=requested.id,
@@ -399,6 +493,26 @@ class RecoveryActionsMixin:
                 f"new stage generation rejected: {note}",
                 409,
             )
+        bind_operator_feedback(stage_trigger, feedback, request_id=requested.id)
+        stage_trigger.payload.pop("input_task_ids", None)
+        if input_scope:
+            stage_trigger.payload["input_task_ids"] = input_scope
+        from zf.runtime.reader_shadow_recovery import retain_shadow_as_observation
+
+        retain_shadow_as_observation(
+            stage_trigger, events, approval_ref=approval_ref, request_id=requested.id,
+        )
+        if payload.get("resume_candidate_synth_event_id"):
+            from zf.runtime.plan_synth_recovery_refs import resume_failed_critic_candidate
+
+            try:
+                synth_id = str(payload["resume_candidate_synth_event_id"])
+                stage_trigger.payload["previous_plan_candidate_refs"] = resume_failed_critic_candidate(
+                    self.state_dir, events, source, synth_id,
+                )
+                stage_trigger.payload["resume_candidate_synth_event_id"] = synth_id
+            except ValueError as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
         if "repair_target" in payload:
             from zf.runtime.reader_repair_target import bind_reader_repair_target
 
@@ -517,7 +631,7 @@ class RecoveryActionsMixin:
         if (
             aggregate_event is None
             or (
-                aggregate_event.type != "flow.discovery.completed"
+                aggregate_event.type not in {"flow.discovery.completed", "flow.discovery.failed"}
                 and schema_failure_event is None
             )
         ):
@@ -525,7 +639,7 @@ class RecoveryActionsMixin:
                 requested,
                 action,
                 requested_action,
-                "aggregate rebuild only accepts flow.discovery.completed, "
+                "aggregate rebuild only accepts flow.discovery.completed/failed, "
                 "its goal.closure.identity.invalid event, or a discriminator "
                 "that blocked goal.closure.synthesized",
                 409,
@@ -649,7 +763,12 @@ class RecoveryActionsMixin:
             if schema_failure_event is not None
             else aggregate_event.type
         )
-        if aggregate_config and expected_success_event != observed_success_event:
+        expected_source_event = (
+            str(aggregate_config.get("failure_event") or "")
+            if aggregate_event.type == "flow.discovery.failed"
+            else expected_success_event
+        )
+        if aggregate_config and expected_source_event != observed_success_event:
             return self._recovery_failed(
                 requested,
                 action,

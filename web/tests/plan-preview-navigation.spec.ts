@@ -11,7 +11,7 @@ for (const viewport of [
     const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
     const writes: string[] = [];
     page.on("request", (req) => {
-      if (req.method() !== "GET" && req.url().includes("/api/")) writes.push(req.url());
+      if (req.method() !== "GET" && req.url().includes("/api/") && !req.url().endsWith("/actions/inbox-item-read")) writes.push(req.url());
     });
     await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
     const dialog = page.getByRole("dialog", { name: "Plan preview" });

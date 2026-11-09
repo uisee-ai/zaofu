@@ -36,7 +36,7 @@ from zf.runtime.workflow_run import build_workflow_run
 from zf.web.projections.delivery_views import DeliveryView, build_delivery_view
 from zf.web.projections.delivery_view_wire import MAX_WIRE_ID_CHARS
 
-_DELIVERY_TRACE_CACHE_VERSION = "v3"
+_DELIVERY_TRACE_CACHE_VERSION = "v4"
 _DELIVERY_VIEW_CACHE_VERSION = "v4"
 _DELIVERY_VIEW_TASK_FRESHNESS_FIELD = "_delivery_view_task_freshness"
 _DELIVERY_VIEWS = {"overview", "runs", "graph", "work"}
@@ -73,6 +73,7 @@ def build_delivery_trace_router(*, resolve_ctx: Callable[[str], Any]) -> APIRout
             source_seq = 0
         trace = resolve_delivery_trace(
             state_dir=ctx.state_dir, config=ctx.config, generated_at=_now(),
+            project_root=ctx.project_root,
             project_id=project_id, feature_id=feature_id,
         )
         events = list(enumerate(event_log_from_project(ctx.state_dir, config=ctx.config).read_all()))

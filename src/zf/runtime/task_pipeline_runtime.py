@@ -37,6 +37,7 @@ from zf.runtime.task_pipeline_reconciler import (
 from zf.runtime.task_pipeline_affinity import task_pipeline_preferred_roles
 from zf.runtime.task_pipeline_dispatch_events import (
     emit_task_pipeline_dispatch_deferred_once,
+    emit_task_pipeline_dispatch_failure,
     emit_task_pipeline_waiting_once,
 )
 from zf.runtime.task_pipeline_runtime_selection import (
@@ -221,6 +222,7 @@ def admit_task_pipeline_generation(
         or ""
     ).strip()
     policy = task_pipeline_policy(runtime.config, flow_kind=flow_kind) or {}
+    from zf.runtime.workflow_frontier_owner import normal_frontier_owner
     pdd_id = str(
         trigger_payload.get("pdd_id")
         or trigger_payload.get("feature_id")
@@ -245,6 +247,7 @@ def admit_task_pipeline_generation(
         payload={
             "schema_version": TASK_PIPELINE_GENERATION_SCHEMA,
             "generation_id": prepared.generation_id,
+            "frontier_owner": normal_frontier_owner(runtime.config),
             "workflow_run_id": prepared.workflow_run_id,
             "flow_kind": flow_kind,
             "request_kind": str(
@@ -295,7 +298,31 @@ def prepare_task_pipeline_dispatch(
         if str(task_id).strip()
     }
     managed: set[str] = set()
+    # Unknown authority remains fail-closed; a resolved shadow controller
+    # cannot acquire dispatch authority merely because its projection failed.
+    blocking = True
     try:
+        from zf.runtime.workflow_frontier_owner import generation_owner_error, normal_frontier_owner
+
+        event_log = getattr(runtime, "event_log", None)
+        if event_log is not None and (normal_frontier_owner(runtime.config) == "wrc"
+                                      or task_pipeline_any_blocking(runtime.config)):
+            owner_error = generation_owner_error(
+                runtime.config, event_log.read_all(), task_store=getattr(runtime, "task_store", None),
+            )
+            if owner_error:
+                managed = task_pipeline_managed_task_ids(runtime)
+                managed.update(candidate_ids)
+                raise TaskPipelineRuntimeError(owner_error)
+
+        if normal_frontier_owner(runtime.config) == "wrc":
+            from zf.runtime.wrc_frontier_consumer import consume_normal_frontier
+
+            return consume_normal_frontier(
+                runtime,
+                candidate_task_ids=candidate_ids,
+            )
+        blocking = task_pipeline_any_blocking(runtime.config)
         event_log = getattr(runtime, "event_log", None)
         contexts = task_pipeline_generation_contexts(
             event_log.read_all() if event_log is not None else []
@@ -360,16 +387,9 @@ def prepare_task_pipeline_dispatch(
         write_task_pipeline_projection(runtime)
         return [], set()
     except Exception as exc:
-        runtime.event_writer.append(ZfEvent(
-            type="kernel.housekeeping.failed",
-            actor="orchestrator",
-            origin="kernel",
-            payload={
-                "step": "task_pipeline_dispatch",
-                "exc_type": type(exc).__name__,
-                "exc_repr": repr(exc)[:500],
-            },
-        ))
+        emit_task_pipeline_dispatch_failure(runtime, exc)
+        if not blocking:
+            return [], set()
         if not managed:
             managed = candidate_ids
         return [], managed
@@ -533,6 +553,8 @@ def reconcile_task_pipeline_runtime(
         delegation = admitted_pipeline_delegations(
             runtime, generation_contexts=group_contexts, policy=policy,
         )
+        from zf.runtime.recovery_association import inherited_failure_operations
+
         projection = TaskPipelineReconciler().reconcile(
             policy=policy,
             tasks=tasks,
@@ -546,6 +568,7 @@ def reconcile_task_pipeline_runtime(
             ),
             impl_rework_requests=impl_rework_requests,
             oa_delegations=delegation,
+            inherited_failures=inherited_failure_operations(state_dir, events, group_contexts),
             preferred_role_instances=task_pipeline_preferred_roles(
                 runtime,
                 generation_contexts=group_contexts,
@@ -845,7 +868,7 @@ def _activate_task_stage_binding(
         role,
         task_id=str(task.id),
         spawn_cwd=project_path,
-        skill_runtime_root=workspace_root,
+        skill_runtime_root=workspace_root, completion_via_briefing=True,
     )
     try:
         snapshot = runtime.transport.lifecycle_snapshot(role.instance_id)
@@ -912,7 +935,18 @@ def _verify_rework_feedback(
         or body.get("findings")
         or []
     )
-    return [dict(item) for item in rows if isinstance(item, Mapping)]
+    feedback = [dict(item) for item in rows if isinstance(item, Mapping)]
+    from zf.runtime.task_pipeline_verify_retry import IMPL_REFRESH_REASON_PREFIX
+
+    reason = str(operation.get("reason") or "")
+    if operation.get("status") == "superseded" and reason.startswith(IMPL_REFRESH_REASON_PREFIX):
+        feedback.insert(0, {
+            "source": "operator_verify_impl_refresh",
+            "reason": reason.removeprefix(IMPL_REFRESH_REASON_PREFIX),
+            "source_operation_id": str(operation.get("operation_id") or ""),
+            "control_result_ref": dict(descriptor),
+        })
+    return feedback
 
 
 def _git(cwd: Path, *args: str) -> str:

@@ -4,6 +4,7 @@ import { Activity, ChevronDown, ChevronRight, Clock3, Layers3 } from "lucide-rea
 
 import type { LoopViewProjection } from "../../api/types";
 import { LoopAttemptDrawer } from "./LoopAttemptDrawer";
+import { LoopPlanComparison } from "./LoopPlanComparison";
 import { attemptRange, durationLabel, selectedAttemptIndices, timelineAttemptKey, timelineModel, timelineSegments, timelineTaskKey } from "./loopTimelineModel";
 
 export function LoopTimeline({ view, openTask, onOpenTask }: {
@@ -11,10 +12,19 @@ export function LoopTimeline({ view, openTask, onOpenTask }: {
 }) {
   const [compressed, setCompressed] = useState(false);
   const [selection, setSelection] = useState<{ task: string; keys: string[] } | null>(null);
-  const model = useMemo(() => timelineModel(view.tasks, view.run.last_ts, compressed), [view, compressed]);
-  const rows = useMemo(() => model ? view.tasks.map((task) => timelineSegments(task, model)) : [], [view.tasks, model]);
-  const attempts = view.tasks.reduce((count, task) => count + task.attempts.length, 0);
-  const failures = view.tasks.reduce((count, task) => count + task.fails, 0);
+  const tasks = useMemo(() => (view.timeline?.tasks ?? view.tasks).map((task) => ({
+    ...task,
+    attempts: [...task.attempts.map((attempt) => ({ ...attempt, record_kind: "attempt" as const })),
+      ...(task.signals ?? []).map((signal) => ({
+        attempt_id: `event:${signal.seq}`, record_kind: "signal" as const,
+        started_ts: signal.ts, role: "", terminal: { type: signal.type, ts: signal.ts, seq: signal.seq, reason: signal.reason },
+        open: false, counted: false, orphan: true,
+      }))],
+  })), [view]);
+  const model = useMemo(() => timelineModel(tasks, view.run.last_ts, compressed), [tasks, view.run.last_ts, compressed]);
+  const rows = useMemo(() => model ? tasks.map((task) => timelineSegments(task, model)) : [], [tasks, model]);
+  const attempts = view.timeline?.attempt_count ?? view.tasks.reduce((count, task) => count + task.attempts.length, 0);
+  const failures = view.timeline?.failed_attempt_count ?? view.tasks.reduce((count, task) => count + task.fails, 0);
   const timestamp = (value: number) => new Date(value).toISOString();
   const clock = (value: number) => timestamp(value).slice(11, 16);
 
@@ -24,11 +34,13 @@ export function LoopTimeline({ view, openTask, onOpenTask }: {
         <h3>Loop timeline</h3><p>Actual execution{view.run.run_id ? <span title={view.run.run_id}> · {view.run.run_id}</span> : null}</p>
       </div></div>
       <div className="loop-timeline-stats">
-        {model ? <span title="Time between the first attempt and the last observed activity"><Clock3 size={14} />Observed span <strong>{durationLabel(model.observed - model.start)}</strong></span> : null}
-        <span><Layers3 size={14} />Attempts <strong>{attempts}</strong></span>
-        {failures > 0 ? <span className="loop-timeline-failures">Failed <strong>{failures}</strong></span> : null}
+        {model ? <span title="Time between the earliest displayed record and the last observed activity"><Clock3 size={14} />Observed span <strong>{durationLabel(model.observed - model.start)}</strong></span> : null}
+        <span title={view.timeline ? "Only identity-bound starts observed in this run; history may be incomplete" : "Legacy records may include auxiliary events"}><Layers3 size={14} />{view.timeline ? "Observed attempts" : "Legacy records"} <strong>{attempts}</strong></span>
+        {failures > 0 ? <span className="loop-timeline-failures">{view.timeline ? "Failed attempts" : "Failed records"} <strong>{failures}</strong></span> : null}
+        {view.timeline ? <span>Other events <strong>{view.timeline.signal_count}</strong></span> : null}
       </div>
     </header>
+    <LoopPlanComparison view={view} />
     {model ? <>
       <div className="loop-timeline-toolbar">
         <span>{timestamp(model.start).slice(0, 10)}{timestamp(model.observed).slice(0, 10) !== timestamp(model.start).slice(0, 10) ? ` – ${timestamp(model.observed).slice(0, 10)}` : ""} · UTC</span>
@@ -48,7 +60,7 @@ export function LoopTimeline({ view, openTask, onOpenTask }: {
               </span>)}
             </div>
           </div>
-          {view.tasks.map((task, index) => {
+          {tasks.map((task, index) => {
             const taskKey = timelineTaskKey(task);
             const opened = openTask === taskKey;
             const selectedIndices = opened && selection?.task === taskKey ? selectedAttemptIndices(task, selection.keys) : undefined;
@@ -60,7 +72,7 @@ export function LoopTimeline({ view, openTask, onOpenTask }: {
                   onClick={() => { setSelection(null); onOpenTask(opened ? null : taskKey); }}>
                   {opened ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   <span><span className="loop-v2-timeline-label" title={task.id}>{task.id}</span>
-                    <span className="loop-v2-timeline-meta">{task.stage_id ? `${task.stage_id} · ` : ""}{task.counted} {task.counted === 1 ? "attempt" : "attempts"}{task.fails ? ` · ${task.fails} failed` : ""}</span>
+                    <span className="loop-v2-timeline-meta">{task.stage_id ? `${task.stage_id} · ` : ""}{task.counted} {view.timeline ? "observed attempts" : "legacy records"}{task.fails ? ` · ${task.fails} failed` : ""}{task.signals?.length ? ` · ${task.signals.length} other events` : ""}</span>
                   </span>
                 </button>
               </div>
@@ -73,8 +85,8 @@ export function LoopTimeline({ view, openTask, onOpenTask }: {
                   const first = task.attempts[segment.indices[0]];
                   const range = attemptRange(first, model.observed);
                   const group = segment.indices.length > 1;
-                  const label = group ? `${segment.indices.length} attempts · select to inspect`
-                    : `Attempt ${segment.indices[0] + 1} · ${first.role || "Role unknown"} · ${range.known ? durationLabel(range.end - range.start) : "Duration unknown"} · ${first.terminal?.type || (first.counted ? "Open at last observation" : "Superseded")}`;
+                  const label = group ? `${segment.indices.length} records · select to inspect`
+                    : `${first.record_kind === "signal" ? "Unpaired event" : `Attempt ${segment.indices[0] + 1}`} · ${first.role || "Role unknown"} · ${range.known ? durationLabel(range.end - range.start) : "Duration unknown"} · ${first.terminal?.type || (first.counted ? "Open at last observation" : "Superseded")}`;
                   const point = segment.point || segment.right - segment.left < 0.8;
                   return <button key={segment.indices[0]} type="button" data-testid="loop-seg"
                     className={`loop-timeline-segment is-${segment.state} ${point ? "is-point" : ""} ${group ? "is-group" : ""}`}
@@ -97,9 +109,9 @@ export function LoopTimeline({ view, openTask, onOpenTask }: {
       </div>
       <footer className="loop-timeline-footer">
         <div className="loop-timeline-legend"><span><i className="is-done" />Completed</span><span><i className="is-open" />Open</span>
-          <span><i className="is-fail" />Failed</span><span><i className="is-uncounted" />Superseded</span><span>×N Grouped attempts</span></div>
-        <details><summary>About this timeline</summary><p>Actual attempt records · {Array.from(new Set(view.tasks.map((task) => task.source))).join(", ")}. Open means no terminal result was observed; it does not confirm the worker is running. Points represent short events or unknown durations. Striped groups preserve individual records in their details.{compressed ? " Gaps over 30 minutes with no recorded execution are compressed." : " Waiting time remains visible on the linear scale."}</p></details>
+          <span><i className="is-fail" />Failed</span><span><i className="is-uncounted" />Other event / superseded</span><span>×N Grouped records</span></div>
+        <details><summary>About this timeline</summary><p>{view.timeline ? "Attempts require an observed start with an explicit attempt ID. Other events are retained separately; the observation may be incomplete." : "Legacy records cannot all be confirmed as attempts."} Open means no terminal result was observed; it does not confirm the worker is running. Points represent short events or unknown durations. Striped groups preserve individual records in their details.{compressed ? " Gaps over 30 minutes with no recorded execution are compressed." : " Waiting time remains visible on the linear scale."}</p></details>
       </footer>
-    </> : <p className="loop-timeline-empty">No attempts recorded yet. The timeline appears with the first dispatch.</p>}
+    </> : <p className="loop-timeline-empty">No observed attempts or related events in this run.</p>}
   </section>;
 }

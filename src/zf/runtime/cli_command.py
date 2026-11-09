@@ -22,13 +22,13 @@ def zf_cli_cmd() -> str:
 
 
 def set_default_zf_cli_cmd() -> str:
-    """Populate ``ZF_CLI_CMD`` when the launcher did not provide one."""
+    """Bind runtime PATH and preserve any launcher-provided CLI command."""
+    _prepend_runtime_bin_to_path()
     configured = os.environ.get(ZF_CLI_CMD_ENV, "").strip()
     if configured:
         return configured
     command = default_zf_cli_cmd()
     os.environ[ZF_CLI_CMD_ENV] = command
-    _prepend_runtime_bin_to_path()
     return command
 
 
@@ -42,7 +42,7 @@ def default_zf_cli_cmd() -> str:
 
 
 def _prepend_runtime_bin_to_path() -> None:
-    """Make a bare ``zf`` resolve beside the active harness interpreter."""
+    """Resolve CLI and Python subprocesses beside the active interpreter."""
     runtime_bin = str(Path(sys.executable).parent)
     entries = [item for item in os.environ.get("PATH", "").split(os.pathsep) if item]
     os.environ["PATH"] = os.pathsep.join(

@@ -14,9 +14,16 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
+from zf.runtime.module_gap_task_declarations import _acceptance, _verification, _string_list
 
 from zf.core.state.atomic_io import atomic_write_text
 
+from zf.runtime.module_gap_task_declarations import preserve_gap_task_declarations
+from zf.runtime.gap_replay_claims import repair_replayed_goal_claims, require_replacement_goal_coverage
+from zf.runtime.gap_replacement_validation import (
+    require_replacement_input_selection,
+    with_structured_gap_verification,
+)
 from zf.runtime.module_gap_replacement import (
     bind_replacement_group as _bind_replacement_group,
     completed_task_ref_dependencies as _completed_task_ref_dependencies,
@@ -36,12 +43,8 @@ class ModuleGapPlanValidationResult:
     summary: dict[str, Any] = field(default_factory=dict)
 
     def to_check(self) -> dict[str, Any]:
-        return {
-            "name": "module_gap_plan_validate",
-            "passed": self.passed,
-            "errors": list(self.errors),
-            "summary": dict(self.summary),
-        }
+        return {"name": "module_gap_plan_validate", "passed": self.passed,
+                "errors": list(self.errors), "summary": dict(self.summary)}
 
 
 def gap_tasks_from_rework_summary(summary: Any) -> list[dict[str, Any]]:
@@ -65,6 +68,7 @@ def write_gap_task_map_amend_artifact(
     source_event_id: str,
     gap_tasks: list[dict[str, Any]],
     gap_plan_ref: str = "",
+    source_index_ref: str = "",
     supersedes_task_ids: list[str] | None = None,
     successor_base_commit: str = "",
     replacement_context: dict[str, Any] | None = None,
@@ -179,8 +183,75 @@ def write_gap_task_map_amend_artifact(
         ),
         "completed_task_ids": completed_dependency_task_ids,
     }
+    if source_index_ref:
+        source_index = _write_gap_source_index_amend_artifact(
+            state_dir=state_dir,
+            project_root=project_root,
+            base_source_index_ref=source_index_ref,
+            pdd_id=pdd_id,
+            source_event_id=source_event_id,
+            gap_tasks=gap_tasks,
+        )
+        result["source_index_ref"] = source_index["source_index_ref"]
+        result["source_index_digest"] = source_index["source_index_digest"]
     result.update(history)
     return result
+
+
+def _write_gap_source_index_amend_artifact(
+    *,
+    state_dir: Path,
+    project_root: Path | None,
+    base_source_index_ref: str,
+    pdd_id: str,
+    source_event_id: str,
+    gap_tasks: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Carry source-index rows forward when task ids are replaced."""
+
+    source_path = _resolve_artifact_ref(
+        base_source_index_ref,
+        state_dir=state_dir,
+        project_root=project_root,
+    )
+    if not source_path.exists():
+        raise ValueError(f"base source_index_ref not found: {base_source_index_ref}")
+    source_index = json.loads(source_path.read_text(encoding="utf-8"))
+    if not isinstance(source_index, dict):
+        raise ValueError("base source_index must be a JSON object")
+    replacements = _replacement_ids_by_superseded(gap_tasks)
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, str):
+            successors = replacements.get(value)
+            return successors[0] if successors else value
+        if isinstance(value, list):
+            out: list[Any] = []
+            for item in value:
+                rewritten = rewrite(item)
+                if rewritten not in out:
+                    out.append(rewritten)
+            return out
+        if isinstance(value, dict):
+            return {key: rewrite(item) for key, item in value.items()}
+        return value
+
+    amended = rewrite(source_index)
+    artifact_rel = (
+        Path("artifacts")
+        / _safe_artifact_part(pdd_id or "unknown")
+        / "gap-amends"
+        / _safe_artifact_part(source_event_id or "event")
+        / "source_index.json"
+    )
+    artifact_path = Path(state_dir) / artifact_rel
+    serialized = json.dumps(amended, ensure_ascii=False, indent=2) + "\n"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(artifact_path, serialized)
+    return {
+        "source_index_ref": artifact_rel.as_posix(),
+        "source_index_digest": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+    }
 
 
 def validate_module_gap_plan_payload(payload: dict[str, Any]) -> ModuleGapPlanValidationResult:
@@ -306,10 +377,15 @@ def build_gap_task_map_amend(
     for raw in gap_tasks:
         task_id = _task_id(raw)
         if task_id in existing_ids:
+            existing = next(task for task in tasks if _task_id(task) == task_id)
+            proposed = _gap_task_to_task_map_item(raw, wave=_int_value(existing.get("wave"), default=next_wave))
+            if repair_replayed_goal_claims(existing, proposed, has_lineage=bool(_task_contract_list(raw, "supersedes_task_ids"))):
+                appended.append(task_id)
             continue
         tasks.append(_gap_task_to_task_map_item(raw, wave=next_wave))
         existing_ids.add(task_id)
         appended.append(task_id)
+    require_replacement_goal_coverage(base_tasks_by_id, tasks, superseded_task_ids)
     _raise_dependency_waves(tasks)
 
     source_refs = dict(base_task_map.get("source_refs") or {})
@@ -349,6 +425,12 @@ def build_gap_task_map_amend(
         out["amend"]["goal_kind"] = goal_kind
     if gap_category:
         out["amend"]["gap_category"] = gap_category
+    from zf.runtime.gap_input_policy import rebind_gap_input_policy
+
+    rebind_gap_input_policy(
+        base_task_map, out, gap_tasks=gap_tasks,
+        replacements=_replacement_ids_by_superseded(gap_tasks),
+    )
     return out
 
 
@@ -365,6 +447,7 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
     ).strip()
     claim_paths = _claim_paths(raw)
     acceptance = _acceptance(raw)
+    criteria = raw.get("acceptance_criteria") or raw.get("acceptance")
     verification = _verification(raw)
     verification_read_paths = _string_list(raw.get("verification_read_paths"))
     source_refs = _string_list(raw.get("source_refs"))
@@ -409,7 +492,7 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
             or "Goal gap claim paths generated from verifier source_refs."
         ),
         "acceptance": acceptance,
-        "acceptance_criteria": acceptance,
+        "acceptance_criteria": deepcopy(criteria) if isinstance(criteria, list) else acceptance,
         "verification": verification,
         "verify_commands": verification,
         "verification_read_paths": verification_read_paths,
@@ -431,12 +514,9 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
             "supersedes_task_ids": _string_list(raw.get("supersedes_task_ids")),
         },
     }
-    root_owner_class = str(raw.get("root_owner_class") or "").strip()
-    if root_owner_class:
-        item["root_owner_class"] = root_owner_class
-    base_commit = str(raw.get("base_commit") or "").strip()
-    if base_commit:
-        item["base_commit"] = base_commit
+    preserve_gap_task_declarations(item, raw)
+    if "goal_claim_ids" in raw:
+        item["goal_claim_ids"] = _string_list(raw["goal_claim_ids"])
     validation = raw.get("validation")
     if isinstance(validation, dict):
         item["validation"] = deepcopy(validation)
@@ -454,8 +534,9 @@ def _inherit_replacement_mechanical_identity(
     to the explicitly named parent when no replacement identity is present.
     """
 
-    item = dict(raw)
+    item = with_structured_gap_verification(raw)
     superseded = _string_list(item.get("supersedes_task_ids"))
+    require_replacement_input_selection(item, [base_tasks_by_id[key] for key in superseded if key in base_tasks_by_id])
     inherited_task_id = (
         superseded[0]
         if len(superseded) == 1
@@ -493,6 +574,15 @@ def _inherit_replacement_mechanical_identity(
                 *_string_list(parent.get("exclusive_files")),
                 *_string_list(parent.get("shared_files")),
             ]))
+    elif len(superseded) == 1:
+        # The producer may restate an unchanged predecessor command while
+        # omitting its already-approved rolling-smoke marker.
+        from zf.runtime.gap_replacement_validation import inherit_unchanged_smoke_marker
+
+        item["validation"] = inherit_unchanged_smoke_marker(
+            item["validation"], parent.get("validation"), inherited_task_id,
+            _task_id(item),
+        )
     return item
 
 
@@ -611,7 +701,11 @@ def _enriched_gap_tasks(payload: dict[str, Any]) -> list[dict[str, Any]]:
         for key in ("affected_tasks", "gate_changes")
         if _string_list(payload.get(key))
     }
-    aggregate_supersedes = _string_list(payload.get("supersedes_task_ids"))
+    declared_supersedes = set(_superseded_task_ids(tasks))
+    aggregate_supersedes = [
+        task_id for task_id in _string_list(payload.get("supersedes_task_ids"))
+        if task_id not in declared_supersedes
+    ]
     if not inherited and not inherited_lists and not aggregate_supersedes:
         return tasks
     enriched: list[dict[str, Any]] = []
@@ -624,9 +718,8 @@ def _enriched_gap_tasks(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 item.setdefault(key, value)
         for key, value in inherited_lists.items():
             item.setdefault(key, value)
-        if aggregate_supersedes and not _string_list(
-            item.get("supersedes_task_ids")
-        ):
+        # An explicit empty list marks a supporting task, not a replacement.
+        if aggregate_supersedes and "supersedes_task_ids" not in item:
             parent_task_id = str(item.get("parent_task_id") or "").strip()
             matched = [
                 task_id
@@ -827,24 +920,8 @@ def _claim_paths(raw: dict[str, Any]) -> list[str]:
     )
 
 
-def _acceptance(raw: dict[str, Any]) -> list[str]:
-    return _string_list(raw.get("acceptance") or raw.get("acceptance_criteria"))
 
 
-def _verification(raw: dict[str, Any]) -> list[str]:
-    commands = _string_list(raw.get("verify_commands") or raw.get("verification"))
-    if commands:
-        return commands
-    validation = raw.get("validation")
-    rows = validation.get("commands") if isinstance(validation, dict) else []
-    if not isinstance(rows, list):
-        return []
-    return [
-        command
-        for row in rows
-        if isinstance(row, dict)
-        and (command := str(row.get("command") or "").strip())
-    ]
 
 
 def _dict_list(value: Any) -> list[dict[str, Any]]:
@@ -853,14 +930,6 @@ def _dict_list(value: Any) -> list[dict[str, Any]]:
     return [dict(item) for item in value if isinstance(item, dict)]
 
 
-def _string_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list | tuple | set):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str) and value.strip():
-        return [value.strip()]
-    return []
 
 
 def _int_value(value: Any, *, default: int = 0) -> int:

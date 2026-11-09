@@ -91,6 +91,7 @@ def build_workflow_proposal(
     base_config_path: Path,
     candidate_config_path: Path | None = None,
     synthesis_result_ref: Mapping[str, Any] | None = None,
+    preview_review_ref: Mapping[str, Any] | None = None,
     preflight: Mapping[str, Any] | None = None,
     flow_kind: str = "",
     actor: str = "zf-cli",
@@ -143,11 +144,14 @@ def build_workflow_proposal(
         raise WorkflowProposalError("workflow proposal config input is missing")
 
     synthesis, short_spec, short_spec_ref = _synthesis_input(
-        state_dir,
-        request=request,
-        descriptor=synthesis_result_ref,
-        flow_kind=flow_kind,
+        state_dir, request=request, descriptor=synthesis_result_ref, flow_kind=flow_kind,
     )
+    if (short_spec.get("parameters") or {}).get("controller_id"):
+        from zf.runtime.workflow_registered_controller import bound_controller_candidate
+        candidate_path = bound_controller_candidate(
+            state_dir, request, base_path, candidate_path, synthesis_result_ref, flow_kind,
+            preview_review_ref=preview_review_ref,
+        )
     if str(short_spec.get("flow_family") or "") == "Workflow":
         generated_path = _materialize_generic_candidate(
             Path(state_dir),
@@ -170,7 +174,8 @@ def build_workflow_proposal(
         candidate_path = generated_path
     if not candidate_path.is_file():
         raise WorkflowProposalError("workflow proposal config input is missing")
-    config = load_config(candidate_path)
+    from zf.runtime.workflow_approval_requirements import load_approval_bound_config
+    config = load_approval_bound_config(candidate_path, short_spec.get("parameters") or {})
     from zf.runtime.workflow_graph_snapshot import compile_proposal_graph
     rendered = redact_config(renderable_config_to_primitive(config))
     source_docs = _flow_documents(candidate_path)
@@ -273,6 +278,7 @@ def build_workflow_proposal(
         or _flow_purpose(flow_kind or str(request.get("kind") or ""))
     )
     compiler_inputs = {
+        **({"preview_review_ref": dict(preview_review_ref)} if preview_review_ref else {}),
         "controller_catalog_digest": stable_json_digest(
             {"flow_documents": source_docs}
         ),
@@ -855,11 +861,13 @@ def materialize_synthesized_workflow_candidate(
     if str(short_spec.get("flow_family") or "") != "Workflow":
         from zf.core.config.loader import ConfigError
         from zf.runtime.workflow_controller_candidate import materialize_controller_candidate
+        from zf.runtime.workflow_requests import hydrate_workflow_requirement
 
         try:
             return materialize_controller_candidate(
                 base_path=base_path, request_id=str(request.get("request_id") or ""),
                 short_spec=short_spec,
+                requirement=hydrate_workflow_requirement(Path(state_dir), dict(request)),
             )
         except (OSError, ValueError, ConfigError, yaml.YAMLError) as exc:
             raise WorkflowProposalError(str(exc)) from exc

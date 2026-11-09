@@ -1,0 +1,189 @@
+{
+  "tasks": [
+    {
+      "id": "TASK-PRD-PRODUCT",
+      "status": "done",
+      "title": "Deliver customer JSON-to-CSV CLI and real acceptance tests",
+      "blocked_reason": ""
+    },
+    {
+      "id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "status": "done",
+      "title": "workflow request proposal",
+      "blocked_reason": ""
+    }
+  ],
+  "operations": [
+    {
+      "operation_id": "wop-prd-scan-PRD-WORKFLOW-4EF709E12CE26EFD-ge-93758f718147",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "workflow",
+      "status": "settled",
+      "role_instance": "",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-scan-product-scan-trig-evt-d0cf3423-b7f3d6e47201",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "product-scan",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-scan-tech-scan-trig-evt-d0cf3423-db13c736bac7",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "tech-scan",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-plan-planner-trig-evt-7ebac964-7752979f3721",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "planner",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-plan-synth-trig-evt-7ebac964-89bfbdd21154",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_synth",
+      "status": "settled",
+      "role_instance": "plan-critic",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-orchestrator-agent-pre_impl-checkpoint-revision-a25a16338e23-4bdc3876c8b5",
+      "task_id": "",
+      "operation_type": "orchestrator_agent_semantic",
+      "status": "settled",
+      "role_instance": "orchestrator",
+      "semantic_verdict": "pending",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-impl-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-adf984fbe57c",
+      "task_id": "TASK-PRD-PRODUCT",
+      "operation_type": "task-stage",
+      "status": "settled",
+      "role_instance": "dev-lane-0",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-verify-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-4199909607a2",
+      "task_id": "TASK-PRD-PRODUCT",
+      "operation_type": "task-stage",
+      "status": "settled",
+      "role_instance": "verify-lane-0",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-integration-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-e873a526ab11",
+      "task_id": "TASK-PRD-PRODUCT",
+      "operation_type": "task-stage",
+      "status": "settled",
+      "role_instance": "candidate-integrator",
+      "semantic_verdict": "",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-lanes-verify-verify-lane-0-trig-evt-ef8ca07a-642e4aca4dcc",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "verify-lane-0",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-lanes-verify-verify-lane-1-trig-evt-ef8ca07a-8bb46c6a7810",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "verify-lane-1",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-lanes-verify-verify-lane-2-trig-evt-ef8ca07a-9c6134d369d2",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "verify-lane-2",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-lanes-verify-verify-lane-3-trig-evt-ef8ca07a-ca34fc0872b5",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "verify-lane-3",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-lanes-verify-verify-lane-4-trig-evt-ef8ca07a-de3f7db897ec",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "verify-lane-4",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-lanes-verify-verify-lane-5-trig-evt-ef8ca07a-6ae0140dd957",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "verify-lane-5",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-lanes-verify-verify-lane-6-trig-evt-ef8ca07a-208a214ae81d",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "verify-lane-6",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-lanes-verify-verify-lane-7-trig-evt-ef8ca07a-1e17f857e844",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "verify-lane-7",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-post-verify-discovery-flow-discovery-trig-evt-935f9f5c-8998d7a4ab62",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "flow-discovery",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    },
+    {
+      "operation_id": "wop-prd-lanes-final-judge-prd-trig-evt-56ce2b08-544cc8912b7e",
+      "task_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "operation_type": "fanout_reader_child",
+      "status": "settled",
+      "role_instance": "judge-prd",
+      "semantic_verdict": "passed",
+      "reason": "admitted_call_result"
+    }
+  ]
+}

@@ -14,10 +14,13 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
+
+from zf.runtime.artifact_delivery_result import CLAIM_STATUSES, VERDICTS
 
 from tests.e2e.test_generic_workflow_complex_mock_e2e import (
     run_generic_workflow_complex_scenario,
@@ -167,6 +170,11 @@ def _provider_verifier(
                 "artifact_delivery_result": _shape_schema(expected),
             },
         }
+        fields = schema["properties"]["artifact_delivery_result"]["properties"]
+        fields["verdict"]["enum"] = sorted(VERDICTS)
+        fields["recommended_action"]["enum"] = ["complete", "gap_plan", "replan", "human", "hold"]
+        fields["open_gap_refs"] = {"type": "array", "items": {"type": "string"}}
+        fields["goal_coverage"]["items"]["properties"]["status"]["enum"] = sorted(CLAIM_STATUSES)
         prompt = "\n".join([
             "You are the independent read-only verifier for a ZaoFu Generic "
             "Workflow provider drill.",
@@ -183,6 +191,8 @@ def _provider_verifier(
             "commands, or git mutations.",
             "Return only the artifact_delivery_result required by the supplied "
             "JSON schema. The verification contract pins runtime identity.",
+            "For passed use complete with no gaps; for rejected use gap_plan or replan "
+            "with gap refs; for blocked use human or hold.",
             *(
                 [
                     "INLINE_CANONICAL_INPUTS:",
@@ -315,21 +325,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     signal.signal(signal.SIGTERM, _terminate)
     try:
-        result = run_generic_workflow_complex_scenario(
-            root,
-            provider_verifier=_provider_verifier(
-                backend=args.backend,
-                timeout_seconds=args.timeout_seconds,
-                model=args.model,
-                reasoning_effort=args.reasoning_effort,
-                audit_holder=audit,
-            ),
-            provider_backend=args.backend,
-        )
+        # This scenario exercises the kernel in-process; only Verify is real.
+        with patch(
+            "zf.runtime.workflow_runtime_start.ensure_project_runtime",
+            return_value={"ok": True, "status": "running", "pid": 123, "launched": False},
+        ):
+            result = run_generic_workflow_complex_scenario(
+                root,
+                provider_verifier=_provider_verifier(
+                    backend=args.backend,
+                    timeout_seconds=args.timeout_seconds,
+                    model=args.model,
+                    reasoning_effort=args.reasoning_effort,
+                    audit_holder=audit,
+                ),
+                provider_backend=args.backend,
+            )
         result.update({
             "schema_version": "generic-workflow-real-provider-drill.v1",
             "status": "passed",
             "execution_mode": "hybrid_real_provider",
+            "control_plane": "mock",
             "source_identity": identity,
             "backend": args.backend,
             "model": args.model if args.backend == "codex" else "",
@@ -350,6 +366,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "cleaned": True,
         })
         return result
+    except Exception:
+        if audit:
+            print(json.dumps({
+                "status": "failed",
+                "execution_mode": "hybrid_real_provider",
+                "control_plane": "mock",
+                "provider_session_id": audit.get("provider_session_id", ""),
+                "provider_result": audit.get("provider_result", {}),
+                "usage": audit.get("usage", {}),
+            }, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+        raise
     finally:
         try:
             _cleanup(root)

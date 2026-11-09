@@ -150,12 +150,18 @@ def prepare_verify_target(
     }
     if entry_mode == "verify_only":
         return fields
+    from zf.runtime.task_pipeline_verify_retry import verify_impl_generation
+
     self_check_descriptor = admit_impl_self_check(
         runtime,
         task_id=task_id,
         workflow_run_id=workflow_run_id,
         task_map_generation=task_map_generation,
-        operation_generation=operation_generation,
+        operation_generation=verify_impl_generation(
+            runtime.event_log.read_all(), task_id=task_id,
+            workflow_run_id=workflow_run_id, task_map_generation=task_map_generation,
+            operation_generation=operation_generation,
+        ),
         source_commit=source_commit,
         contract_snapshot=contract_snapshot,
         target_snapshot=target,

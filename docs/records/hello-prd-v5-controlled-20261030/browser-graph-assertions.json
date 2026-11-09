@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "assertions": [
+    "Impl and Task Verify grouped under generation-owned compiled stage",
+    "Blocked budget result preserved; no false success",
+    "No duplicate unmapped Impl role"
+  ],
+  "errors": []
+}

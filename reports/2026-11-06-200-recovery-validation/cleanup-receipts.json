@@ -1,0 +1,166 @@
+{
+  "earlier_trials": [
+    {
+      "root": "/tmp/zf-200-real-20261106T170450Z-dm64b2x4",
+      "removed_at": "2026-11-06T18:14:25.437699+00:00",
+      "live_processes_before": [],
+      "tmux_server_absent": true,
+      "stop_events": [
+        {
+          "type": "simulation.done",
+          "id": "evt-221b4c460e24",
+          "ts": "2026-11-06T17:16:34.536377+00:00",
+          "actor": null,
+          "task_id": null,
+          "payload": {
+            "outcome": "aborted",
+            "reason": "canary workspace registry not isolated",
+            "scenario": "design200-real-trial-1"
+          },
+          "causation_id": null,
+          "correlation_id": null,
+          "origin": "worker"
+        },
+        {
+          "type": "loop.shutdown_requested",
+          "id": "evt-abeab1343b90",
+          "ts": "2026-11-06T17:16:35.461893+00:00",
+          "actor": "zf-cli",
+          "task_id": null,
+          "payload": {},
+          "causation_id": null,
+          "correlation_id": null,
+          "origin": ""
+        },
+        {
+          "type": "loop.stopped",
+          "id": "evt-ae1fe807b7a4",
+          "ts": "2026-11-06T17:16:35.991792+00:00",
+          "actor": "zf-cli",
+          "task_id": null,
+          "payload": {},
+          "causation_id": null,
+          "correlation_id": null,
+          "origin": ""
+        }
+      ],
+      "root_absent_after": true
+    },
+    {
+      "root": "/tmp/zf-200-host-20261106T165832-wdsf_l0a",
+      "removed_at": "2026-11-06T18:14:25.493795+00:00",
+      "live_processes_before": [],
+      "tmux_server_absent": true,
+      "stop_events": [
+        {
+          "type": "simulation.done",
+          "id": "evt-136e47dd48af",
+          "ts": "2026-11-06T16:58:43.880148+00:00",
+          "actor": "operator",
+          "task_id": null,
+          "payload": {},
+          "causation_id": null,
+          "correlation_id": null,
+          "origin": "worker"
+        },
+        {
+          "type": "loop.shutdown_requested",
+          "id": "evt-10e03960e426",
+          "ts": "2026-11-06T16:58:44.792762+00:00",
+          "actor": "zf-cli",
+          "task_id": null,
+          "payload": {},
+          "causation_id": null,
+          "correlation_id": null,
+          "origin": ""
+        },
+        {
+          "type": "loop.stopped",
+          "id": "evt-10379fcbc1ba",
+          "ts": "2026-11-06T16:58:44.840583+00:00",
+          "actor": "zf-cli",
+          "task_id": null,
+          "payload": {},
+          "causation_id": null,
+          "correlation_id": null,
+          "origin": ""
+        }
+      ],
+      "root_absent_after": true
+    }
+  ],
+  "real_success_trial": {
+    "root": "/tmp/zf-200-real-20261106T171651Z-8qffn5an",
+    "stop_commands": [
+      {
+        "command": [
+          "emit",
+          "simulation.done",
+          "--actor",
+          "operator",
+          "--payload",
+          "{\"outcome\": \"completed\", \"run_id\": \"workflow-4ef709e12ce26efd\", \"goal_completed_event\": \"evt-f6dac67e0122\", \"independent_verification\": \"passed\", \"delivered_commit\": \"b9219864fe5faf074286b878a7cc7669a7772d5a\"}"
+        ],
+        "returncode": 0,
+        "stdout": "Emitted: simulation.done (evt-5c4d79b0b4ea)\n",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "stop",
+          "--include-run-manager"
+        ],
+        "returncode": 0,
+        "stdout": "Stopped harness session: zf-200-real-8qffn5an (18 steps completed)\n",
+        "stderr": ""
+      }
+    ],
+    "stop_events": [
+      {
+        "type": "simulation.done",
+        "id": "evt-5c4d79b0b4ea",
+        "ts": "2026-11-06T18:21:34.174220+00:00",
+        "actor": "operator",
+        "task_id": null,
+        "payload": {
+          "outcome": "completed",
+          "run_id": "workflow-4ef709e12ce26efd",
+          "goal_completed_event": "evt-f6dac67e0122",
+          "independent_verification": "passed",
+          "delivered_commit": "b9219864fe5faf074286b878a7cc7669a7772d5a"
+        },
+        "causation_id": null,
+        "correlation_id": null,
+        "origin": "worker"
+      },
+      {
+        "type": "loop.shutdown_requested",
+        "id": "evt-7d962d82bd7f",
+        "ts": "2026-11-06T18:21:34.798472+00:00",
+        "actor": "zf-cli",
+        "task_id": null,
+        "payload": {},
+        "causation_id": null,
+        "correlation_id": null,
+        "origin": ""
+      },
+      {
+        "type": "loop.stopped",
+        "id": "evt-a63ebbb30227",
+        "ts": "2026-11-06T18:21:35.720458+00:00",
+        "actor": "zf-cli",
+        "task_id": null,
+        "payload": {},
+        "causation_id": null,
+        "correlation_id": null,
+        "origin": ""
+      }
+    ],
+    "live_processes_before_removal": [],
+    "tmux_server_absent": true,
+    "clean_delivered_git_tree": true,
+    "legacy_orphans": "see legacy-sidecar-cleanup.json",
+    "removed_at": "2026-11-06T18:29:05.683611+00:00",
+    "root_absent_after": true
+  }
+}

@@ -57,6 +57,10 @@ PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧
 
 `zf plan review`优先展示Kernel按实际派发任务集生成的plan-digest。返工TaskMap包含历史
 任务，不应把完整历史集合重算成当前scope冲突；无digest的旧事件继续使用兼容检查。
+增量摘要的 assembly 在位检查读取绑定的完整任务图，其余范围和所有权检查仍限定本次
+派发任务；任务表显示明确的 owner instance。完整图不可读取时显式提示检查范围。
+重新合成计划复用先前扫描输入时，不把旧触发事件的 `reason` 当成当前原因；新的
+来源类型、返工反馈和分类单独保留，既有事件不改写。
 
 
 跨generation gap完成时，当前Goal的终态只列本轮gap仍可能留下旧任务。对旧任务收尾
@@ -67,3 +71,9 @@ PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧
 权威 `run.goal.completed` 已携带交付结果；Run Manager 不再为其补发旧式
 `run.completed`（`not_shipped/not_requested`）记录。旧式 Judge 完成但未开启自动
 交付的兼容路径保持原行为，避免用全局 auto-ship 开关覆盖 Goal 的实际交付事实。
+
+运行脊柱只读投影在 `run.goal.blocked` 后收到同一 Run 的 `run.goal.updated`
+且状态为 `active` 或 `running` 时，显示恢复执行并清除旧终态提示；已完成的 Run
+不会因此重新打开。投影版本升级后从事件账本重建一次，随后继续按游标增量消费。
+父任务状态重放遵循同一事件顺序：旧 `run.goal.blocked` 后若该 Run 已恢复，
+再处理旧阻塞事件不得把父任务重新阻塞；后续的新阻塞仍正常生效。

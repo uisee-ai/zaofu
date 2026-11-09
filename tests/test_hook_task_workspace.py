@@ -226,3 +226,35 @@ def test_pipeline_write_guard_works_without_legacy_directory(assignment, monkeyp
         )
     )
     assert invoke(assignment, monkeypatch, workspace / "src/app.ts") == 2
+
+
+@pytest.mark.parametrize("tampered", ["", "lease_id", "dispatch_id", "task_id", "attempt_id", "origin"])
+def test_redrive_uses_sent_attempt_placement_for_write_guard(
+    assignment, monkeypatch, tampered
+):
+    _, legacy, workspace, log, writer, prepared = assignment
+    old = [e for e in log.read_all() if e.type == "task.pipeline.stage.dispatched"][-1]
+    common = {"operation_id": prepared.operation_id, "workflow_run_id": "run-1"}
+    writer.append(ZfEvent(type="workflow.operation.interrupted", task_id="T-NEW", payload=common))
+    writer.append(ZfEvent(type="workflow.operation.redrive_admitted", task_id="T-NEW", payload=common))
+    sent = {
+        **common, "task_id": "T-NEW", "attempt_id": "attempt-2",
+        "dispatch_id": "dispatch-2", "lease_id": "lease-2", "placement_epoch": "2",
+    }
+    if tampered and tampered != "origin":
+        sent[tampered] = "wrong"
+    writer.append(ZfEvent(type="task.attempt.sent", task_id="T-NEW", origin="worker" if tampered == "origin" else "kernel", payload=sent))
+    writer.append(ZfEvent(type="workflow.operation.started", task_id="T-NEW", origin="kernel", payload={
+        **common, "task_id": "T-NEW", "role_instance": "dev-1",
+        "active_attempt_id": "attempt-2", "dispatch_id": "dispatch-2", "lease_id": "lease-2",
+    }))
+    writer.append(ZfEvent(type="task.pipeline.stage.dispatched", task_id="T-NEW", origin="kernel", payload={
+        **old.payload, "dispatch_id": "dispatch-2", "attempt_id": "attempt-2",
+        "lease_id": "lease-2", "placement_epoch": 2,
+    }))
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    projected = reduce_workflow_operations(log.read_all())[prepared.operation_id]
+    assert projected["placement_epoch"] == (0 if tampered else 2)
+    assert invoke(assignment, monkeypatch, workspace / "src/app.ts") == (2 if tampered else 0)
+    assert invoke(assignment, monkeypatch, legacy / "src/app.ts") == 2

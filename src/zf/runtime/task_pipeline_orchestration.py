@@ -120,6 +120,8 @@ def admitted_pipeline_delegations(
                     "execution_plan_ref": descriptor,
                     "work_unit_id": unit_id,
                 }
+                if "dispatch_rank" in delegation:
+                    row["dispatch_rank"] = delegation["dispatch_rank"]
                 previous = result.setdefault(task_id, {}).get(stage)
                 if previous is not None and previous != row:
                     raise OrchestratorAgentContractError(

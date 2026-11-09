@@ -635,6 +635,23 @@ class RoleSessionRegistry:
                 self._load()
             meta = self._meta.setdefault(instance_id, {})
             retired = self._entries.get(instance_id)
+            binding = self._task_stage_bindings.get(
+                str(meta.get("active_task_stage_binding_key") or "")
+            )
+            if (
+                binding is not None
+                and binding.get("backend") == "codex"
+                and binding.get("current_role_instance") == instance_id
+                and binding.get("status") != "archived"
+                and binding.get("provider_session_observed")
+                and (not retired or binding.get("session_id") == retired)
+            ):
+                # The task-stage binding owns resume identity. Clearing only
+                # the slot would resurrect this retired transcript on activation.
+                retired = str(binding.get("session_id") or "")
+                binding.update(session_id="", session_path="",
+                               provider_session_observed=False,
+                               rotation_counter=int(binding.get("rotation_counter") or 0) + 1)
             if retired and meta.get("backend") == "codex":
                 # Hooks from the departing process can arrive after clear().
                 # Persist the fence under the same lock as the binding update.

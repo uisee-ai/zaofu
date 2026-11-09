@@ -41,7 +41,7 @@ def test_composed_full_source_reaches_canonical_prd_download_and_review_identity
     original = copy.deepcopy(body)
     writer = EventWriter(EventLog(tmp_path / "events.jsonl"))
     emit_structured_reply_events(state_dir=tmp_path, writer=writer, channel=channel, request=request,
-        message={"refs": {"synthesis_request_id": "synth", "prd_document_contract": "full.v1"}},
+        message={"refs": {"synthesis_request_id": "synth", "prd_document_contract": "legacy.v1"}},
         reply=json.dumps({"channel_synthesis": body}), reply_event_id="reply", actor="test", source="test")
     events = writer.event_log.read_all()
     published = next(event.payload for event in events if event.type == "channel.synthesis.proposed")
@@ -113,6 +113,35 @@ def test_attestation_expands_only_artifacts_in_the_attested_snapshot(tmp_path):
     assert expanded["consumed_contribution_digests"] == ["m", "r"]
     assert expanded["consumed_message_digests"] == original["semantic_source_required_digests"]
     assert "consumed_message_digests" not in body
+
+
+def test_contribution_message_can_be_selected_as_composition_source(tmp_path):
+    channel, request, body = fixture()
+    source = channel["context_packs"]["ctx"]["semantic_source_documents"][0]
+    source["kind"] = "contribution"
+    channel["context_packs"]["ctx"]["semantic_source_manifest"] = [
+        {key: value for key, value in source.items() if key != "content"}
+    ]
+
+    expanded, error = expand_prd_composition(
+        body, channel=channel, request=request, state_dir=tmp_path,
+    )
+
+    assert not error
+    assert "New decided rule." in expanded["prd_markdown"]
+
+
+def test_full_prd_contract_requires_standalone_body_without_file_source(tmp_path):
+    channel, request, body = fixture()
+    request = {**request, "prd_document_contract": "full.v1"}
+    expanded, error = expand_prd_composition(
+        body, channel=channel, request=request, state_dir=tmp_path,
+    )
+    assert expanded == body
+    assert error == (
+        "full.v1 requires standalone prd_markdown when no verified "
+        "prd_source_file is bound"
+    )
 
 
 @pytest.mark.parametrize("fault", ["", "digest", "anchors", "mixed", "foreign_kind"])

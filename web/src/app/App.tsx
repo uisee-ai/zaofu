@@ -195,7 +195,6 @@ import {
   pageLoadsDeliveryFeatures,
   pageLoadsSnapshot,
   pageOwnsBootstrapResource,
-  pagePollsOperatorInbox,
   projectionNeedsFresh,
   snapshotLoadKindForPage,
 } from "./pageLoadPolicy";
@@ -221,8 +220,10 @@ const LOCAL_AGENT_STREAM_EVENTS = new Set([
   "kanban.agent.message.delta",
   "channel.message.stream.delta",
 ]);
-const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id", "v"]);
+const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id", "v", "request", "expected_run", "workflow_node"]);
 const PAGE_QUERY_KEYS: Partial<Record<PageId, ReadonlySet<string>>> = {
+  project: new Set(["agent", "agent_thread", "agent_request"]),
+  channels: new Set(["thread", "question"]),
   workflows: new Set(["request", "graph", "node"]),
   inbox: new Set(["plan"]),
   settings: new Set(["settings"]),
@@ -638,7 +639,8 @@ export function App() {
   // still-pending proposals once they aged past the event window, silently
   // removing the operator's Accept entry point. Fetch the durable projection.
   const [kanbanPendingProposals, setKanbanPendingProposals] = useState<PendingKanbanProposal[]>([]);
-  const [inboxPendingCount, setInboxPendingCount] = useState(0);
+  const [inboxPendingCount, setInboxPendingCount] = useState<number | null>(null);
+  const inboxCountEpoch = useRef(0);
   const [selectedChannelId, setSelectedChannelId] = useState(initial.channel);
   const [channelDetail, setChannelDetail] = useState<ChannelDetail | null>(null);
   const [channelLoadError, setChannelLoadError] = useState<string | null>(null);
@@ -690,6 +692,7 @@ export function App() {
   const [projectWizardInspection, setProjectWizardInspection] = useState<WorkspaceProjectPathInspection | null>(null);
   const [projectWizardBusy, setProjectWizardBusy] = useState(false);
   const [projectWizardError, setProjectWizardError] = useState("");
+  const [projectSetupNotice, setProjectSetupNotice] = useState<{ projectId: string; message: string } | null>(null);
   const [showWelcome, setShowWelcome] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -1062,26 +1065,22 @@ export function App() {
     };
   }, [activeProjectId]);
 
-  // Operator Inbox pending count → nav badge. Polled; read-only projection.
+  // The navigation badge follows unread decisions on every project page.
   useEffect(() => {
+    inboxCountEpoch.current += 1;
     if (!activeProjectId) {
-      setInboxPendingCount(0);
+      setInboxPendingCount(null);
       return undefined;
     }
-    if (!pagePollsOperatorInbox(page)) {
-      return undefined;
-    }
+    setInboxPendingCount(null);
     let cancelled = false;
     const pull = async () => {
+      const ticket = ++inboxCountEpoch.current;
       try {
         const inbox = await getOperatorInbox(activeProjectId || undefined);
-        if (!cancelled) {
-          setInboxPendingCount((inbox?.pending ?? []).filter((item) => (
-            item.actionability === "human_required"
-          )).length);
-        }
+        if (!cancelled && ticket === inboxCountEpoch.current) setInboxPendingCount(inbox.summary.unread ?? 0);
       } catch {
-        /* read-only; CLI remains the fallback surface */
+        if (!cancelled && ticket === inboxCountEpoch.current) setInboxPendingCount(null);
       }
     };
     void pull();
@@ -1090,7 +1089,7 @@ export function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [activeProjectId, page]);
+  }, [activeProjectId]);
 
   useEffect(() => {
     const current = new URLSearchParams(window.location.search);
@@ -1112,7 +1111,8 @@ export function App() {
     }
     if (page === "channels") params.set("channel", selectedChannelId);
     if (selectedTaskId && (page !== "board" || taskDrawerOpen)) params.set("task", selectedTaskId);
-    window.history.replaceState(null, "", `?${params.toString()}`);
+    const planLocation = page === "inbox" && params.has("plan") ? window.location.hash : "";
+    window.history.replaceState(null, "", `?${params.toString()}${planLocation}`);
   }, [activeProjectId, page, selectedChannelId, selectedTaskId, statusFilter, taskDrawerOpen, viewMode]);
 
   useEffect(() => {
@@ -1644,6 +1644,9 @@ export function App() {
       if (!projectId) throw new Error("project action did not return a project id");
       await loadWorkspaceProjects();
       switchProject(projectId);
+      if (recordValue(result.git_readiness)?.ready === false) {
+        setProjectSetupNotice({ projectId, message: "Project created. Workflow preparation needs a Git baseline: review an explicit source file list and exclusions with the Kanban Agent, then approve initialization and retry preparation." });
+      }
       setProjectWizardOpen(false);
     } catch (err) {
       setProjectWizardError(err instanceof Error ? err.message : String(err));
@@ -2080,6 +2083,7 @@ export function App() {
 
   const taskDetailView = (
     <TaskDetail
+      projectId={activeProjectId || undefined}
       actionReady={actionGate.actionReady}
       actionResult={actionResult}
       actionState={actionGate.actionState}
@@ -2181,6 +2185,10 @@ export function App() {
       </header>
 
       {error ? <div className="error-strip">{error}</div> : null}
+      {projectSetupNotice?.projectId === activeProjectId ? <div className="error-strip" role="status">
+        {projectSetupNotice.message}
+        <button type="button" onClick={() => setProjectSetupNotice(null)}>Dismiss</button>
+      </div> : null}
       <ReadProjectionNotice snapshot={snapshot} />
 
       <main className={`workspace ${terminalOpen && activeProjectId ? "has-web-terminal" : ""}`.trim()}>
@@ -2224,7 +2232,10 @@ export function App() {
               onOpenProjection={(kind, id) => void openProjection(kind, id)}
             />
           ) : page === "inbox" ? (
-            <PlanApprovalPanel projectId={activeProjectId} autoOpenPlanId={initial.plan} />
+            <PlanApprovalPanel projectId={activeProjectId} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
+              inboxCountEpoch.current += 1;
+              setInboxPendingCount(inbox?.summary.unread ?? null);
+            }} />
           ) : page === "channels" ? (
               <ChannelRoute
                 actionReady={actionGate.actionReady}

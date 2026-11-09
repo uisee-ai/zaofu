@@ -515,6 +515,11 @@ def _integrate_locked(
         integration_base_head,
         task_ref,
     )
+    if adopted_base_commits and not successor_base_adopted:
+        # Worker delta paths exclude the failed predecessor's committed files.
+        # The proof above checks every carried file against the successor scope.
+        for commit in adopted_base_commits:
+            declared_files.update(rebuilder._commit_files(commit))
     commits, skipped_commits = rebuilder._task_commits(
         integration_base_head,
         task_ref,
@@ -522,11 +527,15 @@ def _integrate_locked(
     )
     applied_commits: list[str] = []
     for commit in commits:
-        status = rebuilder._apply_task_commit(
-            worktree,
-            commit,
-            declared_files=declared_files,
-        )
+        if adopted_base_commits and not successor_base_adopted:
+            from zf.runtime.task_partial_successor import apply_partial_successor_commit
+            status = apply_partial_successor_commit(rebuilder, task_id=task_id, worktree=worktree, commit=commit)
+        else:
+            status = rebuilder._apply_task_commit(
+                worktree,
+                commit,
+                declared_files=declared_files,
+            )
         if status == "applied":
             applied_commits.append(commit)
         else:
@@ -582,6 +591,7 @@ def _integrate_locked(
         "successor_base_adopted": successor_base_adopted,
         "supersedes_task_ids": supersedes_task_ids,
         "adopted_base_commits": adopted_base_commits,
+        "partial_base_replayed": bool(adopted_base_commits and not successor_base_adopted),
         "new_candidate_head": new_head,
         "integration_strategy": "cherry-pick",
         "patch_identity": patch_identity,
@@ -690,11 +700,64 @@ def _run_rolling_smoke(
             source_event_id=source_event_id,
         )
         refs.append(descriptor)
+        _restore_rolling_smoke_producer_paths(
+            worktree,
+            target_commit=target_commit,
+            producer_paths=command.get("producer_paths"),
+        )
         if evidence.get("exit_code") != 0:
             raise CandidateIncrementalError(
                 f"rolling smoke failed: {command['id']}"
             )
     return refs, registry_digest
+
+
+def _restore_rolling_smoke_producer_paths(
+    worktree: Path,
+    *,
+    target_commit: str,
+    producer_paths: Any,
+) -> None:
+    """Keep declared smoke outputs out of the candidate source diff.
+
+    Verification commands may materialize their durable output in a tracked
+    producer path. The command receipt is the immutable evidence for that
+    run; the candidate must retain the exact committed target tree so later
+    integration can distinguish test output from an implementation change.
+    Undeclared tracked changes remain visible to the cleanliness gate.
+    """
+
+    if not isinstance(producer_paths, list):
+        return
+    paths = [
+        str(path).strip().lstrip("./")
+        for path in producer_paths
+        if isinstance(path, str) and str(path).strip()
+    ]
+    paths = [
+        path for path in paths
+        if not path.startswith("/") and ".." not in Path(path).parts
+    ]
+    if not paths:
+        return
+    tracked = _git(
+        worktree,
+        "ls-tree",
+        "-r",
+        "--name-only",
+        target_commit,
+        "--",
+        *paths,
+    ).splitlines()
+    tracked = [path.strip() for path in tracked if path.strip()]
+    if not tracked:
+        return
+    try:
+        _git(worktree, "checkout", target_commit, "--", *tracked)
+    except RuntimeError as exc:
+        raise CandidateIncrementalError(
+            f"rolling smoke producer restore failed: {exc}"
+        ) from exc
 
 
 def _validate_receipt(
@@ -934,6 +997,14 @@ def _select_integration_base(
         ancestor=expected_candidate_head,
         descendant=dispatch_base_commit,
     ):
+        from zf.runtime.task_partial_successor import partial_successor_proof
+        task = rebuilder.task_store.get(task_id)
+        run_id = str((task.contract.evidence_contract or {}).get("workflow_run_id") or "") if task else ""
+        proof = partial_successor_proof(rebuilder, task_id=task_id, partial_head=dispatch_base_commit,
+                                       candidate_head=expected_candidate_head, workflow_run_id=run_id)
+        if proof and _commit_is_ancestor(rebuilder.project_root, ancestor=dispatch_base_commit,
+                                        descendant=task_source_commit):
+            return expected_candidate_head, False, proof["supersedes_task_ids"], proof["partial_commits"]
         raise CandidateIncrementalError(
             "dispatch_base_commit diverges from current candidate head"
         )

@@ -3,60 +3,29 @@ import {
   Package,
   Search,
   Settings2,
-  ShieldCheck,
-  SlidersHorizontal,
-  Wrench,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import type { WebChatToolCatalog } from "../../api/types";
 
 export type WebChatDrawerKind = "conversation" | "artifacts" | "activity" | "profile" | "";
-
-function permissionLabel(value: string): string {
-  return value.trim().replaceAll("_", " ") || "default";
-}
 
 export function WebChatResourceMenu({
   active,
   activityCount,
   artifactCount,
   onChange,
-  permissionProfile,
-  toolCount,
+  query,
+  toolCatalog,
 }: {
   active: WebChatDrawerKind;
   activityCount: number;
   artifactCount: number;
   onChange: (kind: WebChatDrawerKind) => void;
-  permissionProfile: string;
-  toolCount: number;
+  query: string;
+  toolCatalog?: WebChatToolCatalog;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function closeOutside(event: PointerEvent) {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
-        setOpen(false);
-      }
-    }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      triggerRef.current?.focus();
-    }
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
   function select(kind: Exclude<WebChatDrawerKind, "">) {
     onChange(active === kind ? "" : kind);
-    setOpen(false);
   }
 
   function item(
@@ -66,11 +35,11 @@ export function WebChatResourceMenu({
     icon: ReactNode,
     count?: number,
   ) {
+    if (query && !`${label} ${description}`.toLowerCase().includes(query)) return null;
     return (
       <button
-        aria-checked={active === kind}
+        aria-pressed={active === kind}
         className={active === kind ? "active" : ""}
-        role="menuitemcheckbox"
         type="button"
         onClick={() => select(kind)}
       >
@@ -85,40 +54,26 @@ export function WebChatResourceMenu({
   }
 
   return (
-    <div className="webchat-resource-menu" ref={rootRef}>
-      <button
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label="Tools and resources"
-        className={`webchat-composer-icon ${active ? "active" : ""}`}
-        ref={triggerRef}
-        title="Tools and resources"
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <SlidersHorizontal size={17} />
-      </button>
-      {open ? (
-        <div aria-label="Tools and resources" className="webchat-resource-popover" role="menu">
-          <div className="webchat-resource-menu-title">Tools and resources</div>
+    <>
+          {!query ? <div className="webchat-resource-menu-title">Tools and resources</div> : null}
           {item("conversation", "Conversation", "Search, export, fork, or correct", <Search size={17} />)}
           {item("artifacts", "Artifacts", "Inspect and adopt durable outputs", <Package size={17} />, artifactCount)}
           {item("activity", "Activity", "Follow child agents and controls", <Activity size={17} />, activityCount)}
           {item("profile", "Agent profile", "Provider and permission proposal", <Settings2 size={17} />)}
-          <div className="webchat-resource-menu-status" aria-label="Agent runtime status">
-            <span title="Pinned permission profile">
-              <ShieldCheck size={14} />
-              <span>Permission</span>
-              <strong>{permissionLabel(permissionProfile)}</strong>
-            </span>
-            <span title="Available tool catalog">
-              <Wrench size={14} />
-              <span>{toolCount} tools available</span>
-            </span>
-          </div>
-        </div>
-      ) : null}
-    </div>
+          {(!query || toolCatalog?.items.some((tool) => `${tool.name} ${tool.description} ${tool.tool_class}`.toLowerCase().includes(query))) ? <details className="webchat-resource-menu-tools" open={query ? true : undefined}>
+            <summary>Tool catalog</summary>
+            <p>Provider-native tools: availability not confirmed by this catalog.</p>
+            <p>External tools and MCP: availability not confirmed by this catalog.</p>
+            <p>ZaoFu host policy catalog (not a Provider-native allowlist):</p>
+            {toolCatalog?.items.filter((tool) => !query || `${tool.name} ${tool.description} ${tool.tool_class}`.toLowerCase().includes(query)).map((tool) => (
+              <div key={tool.name}>
+                <strong>{tool.name}</strong> · {tool.tool_class} · policy {tool.effective_policy}
+                <small>{tool.description}</small>
+              </div>
+            ))}
+            {toolCatalog && !toolCatalog.items.length ? <p>No catalog entries.</p> : null}
+          </details> : null}
+    </>
   );
 }
 

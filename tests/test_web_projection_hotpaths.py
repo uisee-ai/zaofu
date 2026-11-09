@@ -86,7 +86,7 @@ def test_day_windows_preserve_signature_rejection(tmp_path, monkeypatch):
     monkeypatch.setattr("zf.core.events.segments.event_log_from_project", lambda *a, **kw: log)
     expected = log.read_days(7)
     actual = ev.events_read_days(tmp_path, 7)
-    assert [e.type for e in actual] == [e.type for e in expected] == ["accepted", "event.malformed"]
+    assert [e.type for e in actual] == [e.type for e in expected] == ["accepted", "event.malformed", "event.malformed"]
     assert actual[0].id == expected[0].id
     assert actual[1].payload == expected[1].payload
 

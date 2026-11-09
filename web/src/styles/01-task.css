@@ -548,13 +548,6 @@
   color: var(--err);
 }
 
-.blocked-note {
-  color: var(--err);
-  font-size: var(--text-12);
-  line-height: 1.35;
-  overflow-wrap: break-word;
-}
-
 .fanout-panel {
   display: grid;
   gap: 12px;

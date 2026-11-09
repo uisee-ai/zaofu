@@ -3,18 +3,33 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
+
+import yaml
 from typing import Any
 
 SCALAR_FIELDS = {"lanes", "strictness", "backend", "verifyBackend", "topology"}
 
 
-def flow_input_roles(documents: list, index: int, family: str) -> dict[str, list[str]]:
+def flow_input_roles(documents: list, index: int, family: str, *, config_path: Path | None = None) -> dict[str, list[str]]:
     """Use compiler inputs before multi-Flow role namespacing, including profiles."""
     from zf.core.config.kind_envelope import assemble_envelope_stream
     flow_kinds = {"IssueFlow", "PrdFlow", "RefactorFlow"}
     selected = [deepcopy(doc) for i, doc in enumerate(documents)
                 if i == index or not isinstance(doc, dict) or doc.get("kind") not in flow_kinds]
-    body, _ = assemble_envelope_stream(selected)
+    sources = None
+    if config_path is not None:
+        from zf.core.config.loader import (
+            _config_env_map, _expand_env_vars, _load_profile_source_documents,
+            _profile_source_refs_from_documents,
+        )
+        env = _config_env_map(config_path)
+        selected = list(yaml.safe_load_all(_expand_env_vars(yaml.safe_dump_all(selected), env)))
+        profiles, sources = _load_profile_source_documents(
+            config_path, _profile_source_refs_from_documents(selected), env=env,
+        )
+        selected = profiles + selected
+    body, _ = assemble_envelope_stream(selected, profile_source_files=sources)
     result = {role["name"]: list(role.get("skills", [])) for role in body.get("roles", [])
               if role.get("flow_kind") == family}
     spec = documents[index].get("spec", {})
@@ -69,11 +84,15 @@ def config_review_fields(index: int, spec: dict, *, role_names: list[str], famil
     return result
 
 
-def apply_config_field(docs: list, field: str, value: Any) -> list:
+def apply_config_field(docs: list, field: str, value: Any, *, roles: dict | None = None) -> list:
     """Only called after the selected field has matched current server context."""
     result = deepcopy(docs)
     _, document, *keys = field.split(".")
     parent = result[int(document)]["spec"]
+    if keys[0] == "roles":
+        from zf.runtime.workflow_review_roles import apply_role_field
+        apply_role_field(parent, keys, value, roles or {})
+        return result
     for key in keys[:-1]:
         parent = parent.setdefault(key, {})
         if not isinstance(parent, dict):

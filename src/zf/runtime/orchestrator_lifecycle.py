@@ -31,8 +31,9 @@ from zf.runtime.injection import (
 )
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.provider_context import has_provider_context_exhausted
+from zf.runtime.provider_interactive_prompt import live_provider_interactive_prompt_marker
 from zf.runtime.role_lifecycle_runtime import complete_respawn, watchdog_should_skip
-from zf.runtime.recovery import build_recovery_briefing
+from zf.runtime.recovery import build_recovery_briefing, capture_recovery_git_context
 from zf.runtime.remediation_cascade import (
     CASCADE_SAFE_HALT,
     SAFE_HALTED_EVENT,
@@ -42,6 +43,7 @@ from zf.runtime.remediation_cascade import (
 from zf.runtime.recovery_sufficiency import run_recovery_sufficiency_gate
 from zf.runtime.repair_action_fanout_runtime import RepairActionFanoutRuntimeMixin
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 if TYPE_CHECKING:
     from zf.runtime.spawn_coordinator import SpawnCoordinator
@@ -277,7 +279,9 @@ class LifecycleManagerMixin(
         try:
             self.escalation.escalate(
                 f"task {task.id}: orphaned "
-                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)"
+                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)",
+                task_id=task.id,
+                metadata={"failure_class": "orphaned_task"},
             )
         except Exception:
             pass
@@ -441,7 +445,7 @@ class LifecycleManagerMixin(
         # regenerating respawn attempts; only capture survives for diagnosis.
         safe_halted = self._runtime_safe_halted()
         for role in self._runtime_active_role_configs():
-            if role.name == "orchestrator" or watchdog_should_skip(self, role):
+            if is_configured_orchestrator_role(self.config, role) or watchdog_should_skip(self, role):
                 continue
             if self._last_worker_state.get(role.instance_id) == "blocked_human":
                 continue
@@ -504,6 +508,14 @@ class LifecycleManagerMixin(
                     )
                     stale, stale_basis = self._worker_liveness_stale(role)
                     instance_state = getattr(self, "_instance_state", {})
+                    # Fast adoption is for a restarted watcher with no local
+                    # recycle marker. Local recycle failures retain the
+                    # existing stale-liveness recovery path below.
+                    interrupted_recycle = (
+                        role.instance_id not in instance_state
+                        and self._last_worker_state.get(role.instance_id)
+                        == "recycling"
+                    )
                     pending_recycle = (
                         instance_state.get(role.instance_id)
                         == "pending_recycle"
@@ -514,13 +526,14 @@ class LifecycleManagerMixin(
                     # must be replaced once its active obligation drains. If
                     # the pane is already gone, waiting for the normal worker
                     # heartbeat threshold only preserves a dead lease.
-                    if pending_recycle and (
+                    if (pending_recycle or interrupted_recycle) and (
                         active_task is not None or active_fanout is not None
                     ):
                         stale = True
                         stale_basis = (
-                            "pane_dead_during_pending_recycle_with_active_"
-                            "obligation"
+                            "pane_dead_during_interrupted_recycle_with_active_obligation"
+                            if interrupted_recycle else
+                            "pane_dead_during_pending_recycle_with_active_obligation"
                         )
                     if stale:
                         # Pending manifest recovery precedes normal respawn,
@@ -547,7 +560,15 @@ class LifecycleManagerMixin(
                                     f"evidence ({stale_basis})"
                                 ),
                             )
-                            decisions.append(self._respawn_instance(role))
+                            if interrupted_recycle:
+                                decisions.append(self._respawn_instance(
+                                    role,
+                                    recovery_reason="interrupted_context_recycle",
+                                    inject_idle_prompt=False,
+                                    force_fresh_session=True,
+                                ))
+                            else:
+                                decisions.append(self._respawn_instance(role))
                         # else: idle worker with no pending obligations —
                         # evidence only (the R18 completed-worker falsepos
                         # class); recovery happens at next dispatch/stuck.
@@ -660,56 +681,11 @@ class LifecycleManagerMixin(
 
         return decisions
 
-    def _emit_worker_runner_failed(
-        self,
-        *,
-        role: "RoleConfig",
-        task: Task | None,
-        source: str,
-        reason: str,
-    ) -> None:
-        """Record deterministic runner/process failure observed by Layer 1."""
-        lifecycle: dict[str, object] = {
-            "role_name": role.instance_id,
-            "alive": False,
-            "pane_pid": "",
-            "current_command": "",
-            "current_path": "",
-        }
-        snapshot_fn = getattr(self.transport, "lifecycle_snapshot", None)
-        if snapshot_fn is not None:
-            try:
-                snapshot = snapshot_fn(role.instance_id)
-                to_payload = getattr(snapshot, "to_payload", None)
-                if to_payload is not None:
-                    raw = to_payload()
-                    if isinstance(raw, dict):
-                        lifecycle.update(raw)
-            except Exception:
-                pass
+    def _emit_worker_runner_failed(self, *, role: "RoleConfig", task: Task | None,
+                                   source: str, reason: str) -> None:
+        from zf.runtime.stuck_recovery_signal import emit_worker_runner_failed
 
-        dispatch_id = ""
-        if task is not None:
-            dispatch_id = getattr(task, "active_dispatch_id", "") or ""
-        try:
-            self.event_writer.append(ZfEvent(
-                type="worker.runner.failed",
-                actor=role.instance_id,
-                task_id=task.id if task is not None else None,
-                payload={
-                    "role": role.name,
-                    "instance_id": role.instance_id,
-                    "backend": role.backend,
-                    "task_id": task.id if task is not None else "",
-                    "dispatch_id": dispatch_id,
-                    "source": source,
-                    "reason": reason,
-                    "dead_threshold": self._dead_threshold,
-                    "lifecycle": lifecycle,
-                },
-            ))
-        except Exception:
-            pass
+        emit_worker_runner_failed(self, role=role, task=task, source=source, reason=reason)
 
     def _apply_repair_action_request(self, event: ZfEvent) -> None:
         from zf.runtime.repair_action_executor import RepairActionExecutor
@@ -981,7 +957,9 @@ class LifecycleManagerMixin(
             reason="worker cancelled by repair action",
         )
 
-    def restart_role_instance(self, role: "RoleConfig") -> "WorkflowRuntimeDecision":
+    def restart_role_instance(
+        self, role: "RoleConfig", *, resume_failed_synth: str = "",
+    ) -> "WorkflowRuntimeDecision":
         """Restart one role through the same recovery path as the watchdog.
 
         A CLI/operator restart is still a provider-session replacement.  It
@@ -1005,6 +983,7 @@ class LifecycleManagerMixin(
             ),
             inject_idle_prompt=not force_fresh_session,
             force_fresh_session=force_fresh_session,
+            resume_failed_synth=resume_failed_synth,
         )
 
     def _respawn_instance(
@@ -1014,6 +993,7 @@ class LifecycleManagerMixin(
         recovery_reason: str = "watchdog",
         inject_idle_prompt: bool = True,
         force_fresh_session: bool = False,
+        resume_failed_synth: str = "",
     ) -> "WorkflowRuntimeDecision":
         """Serialize replacement of one provider session across processes.
 
@@ -1030,6 +1010,7 @@ class LifecycleManagerMixin(
             recovery_reason=recovery_reason,
             inject_idle_prompt=inject_idle_prompt,
             force_fresh_session=force_fresh_session,
+            resume_failed_synth=resume_failed_synth,
         )
 
     def _respawn_instance_with_lease(
@@ -1356,6 +1337,8 @@ class LifecycleManagerMixin(
                 continue
             if age is None or age < 600.0:
                 continue
+            if live_provider_interactive_prompt_marker(self.transport, instance_id):
+                continue
             self._instance_state[instance_id] = "recycling"
             self._set_worker_state(
                 instance_id, "recycling",
@@ -1446,7 +1429,7 @@ class LifecycleManagerMixin(
             # E1 fix: orchestrator gets cost tracking (above) but no
             # recycle — Layer 2 state is in its Claude session, hot-swap
             # would lose the orchestration train of thought.
-            if role.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             # LH-0.T4 / doc 59: warning, compact, and hard-cap are
             # distinct. Warning checkpoints recovery facts; compact and
@@ -1461,6 +1444,16 @@ class LifecycleManagerMixin(
                 self._context_compact_attempts().discard(role.instance_id)
             if usage.ratio < role.context_warning_threshold:
                 self._context_warning_fingerprint.pop(role.instance_id, None)
+                if sample_is_new and self._instance_state.get(role.instance_id) == "pending_recycle":
+                    active_task = self._active_task_for_instance(role.instance_id)
+                    active_fanout = self._active_fanout_child_for_instance(role.instance_id)
+                    self._instance_state[role.instance_id] = "healthy"
+                    self._set_worker_state(
+                        role.instance_id, "busy" if active_task or active_fanout else "idle",
+                        reason=f"fresh context ratio {usage.ratio:.2f} below warning; cancel pending recycle",
+                        task_id=(active_task.id if active_task else
+                                 self._last_worker_task_id.get(role.instance_id, "")),
+                    )
                 continue
             # Already tracked? Don't double-trigger pending/recycling.
             # "healthy" (explicit, after previous recycle completed)
@@ -1477,6 +1470,17 @@ class LifecycleManagerMixin(
                 and (self._now() - over_hard_cap) >= role.drain_hold_seconds
             )
             if force_recycle and current != "recycling":
+                if live_provider_interactive_prompt_marker(self.transport, role.instance_id):
+                    continue
+                from zf.runtime.native_compaction_recycle import defer_native_compaction_recycle
+
+                if defer_native_compaction_recycle(
+                    self,
+                    role,
+                    session_id=session_id_str,
+                    hard_cap_since=over_hard_cap,
+                ):
+                    continue
                 self._instance_state[role.instance_id] = "recycling"
                 self._set_worker_state(
                     role.instance_id, "recycling",
@@ -1603,22 +1607,16 @@ class LifecycleManagerMixin(
         command = str(getattr(caps, "compact_command", "") or "").strip()
         if not getattr(caps, "native_compact", False) or not command:
             return False
+        if bool(getattr(caps, "compact_requires_idle", False)):
+            # This path owns an active task. Defer to the existing drain/recycle
+            # policy; an unsent command is neither an attempt nor a failure.
+            return False
         attempts.add(role.instance_id)
         payload = dict(warning_payload)
         payload.update({
             "compact_command": command,
             "strategy": "compact_first",
         })
-        if bool(getattr(caps, "compact_requires_idle", False)):
-            self._emit_compact_failed(
-                role,
-                active_task,
-                payload,
-                reason="backend compact requires idle session",
-                causation_id=None,
-                correlation_id=None,
-            )
-            return False
         requested = self.event_writer.append(ZfEvent(
             type="worker.context.compact.requested",
             actor=role.instance_id,
@@ -1752,6 +1750,8 @@ class LifecycleManagerMixin(
         for instance_id, state in list(self._instance_state.items()):
             if state != "pending_recycle":
                 continue
+            if live_provider_interactive_prompt_marker(self.transport, instance_id):
+                continue
             is_idle = self.wip.can_accept(
                 instance_id,
                 self.task_store,
@@ -1781,6 +1781,10 @@ class LifecycleManagerMixin(
         recycling state so _check_pending doesn't re-trigger."""
         instance_id = role.instance_id
         try:
+            from zf.runtime.idle_context_recycle import hibernate_idle_context_recycle
+
+            if hibernate_idle_context_recycle(self, role):
+                return
             active_fanout = self._active_fanout_child_for_instance(instance_id)
             session_replacement = self._replace_provider_session_for_recycle(
                 role,
@@ -1939,12 +1943,31 @@ class LifecycleManagerMixin(
         try:
             snapshot_ref = str(fanout_child.get("snapshot_ref") or "")
             prompt = build_task_prompt(role.instance_id, path, "fanout_child")
+            prompt += (
+                f"\nCurrent runtime CLI: `{zf_cli_cmd()}`. Use it with the same arguments "
+                "instead of older executable paths in the original briefing. "
+                "The original request identity and required reads remain unchanged."
+            )
+            if role.role_kind == "reader":
+                from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+
+                prompt += reader_continuation_guidance(
+                    attempt_id=str(fanout_child.get("attempt_id") or ""),
+                    backend=role.backend, cli=zf_cli_cmd(),
+                )
             context = self._dispatch_context(
                 role=role,
                 briefing_path=path,
                 trace_id=str(fanout_child.get("trace_id") or "") or None,
+                operation_id=str(fanout_child.get("operation_id") or ""),
+                dispatch_id=str(fanout_child.get("run_id") or ""),
+                run_id=str(fanout_child.get("workflow_run_id") or ""),
             )
             self._send_transport_task(role.instance_id, path, prompt, context)
+            if fanout_child.get("recovery_kind") == "operator_synth_checkpoint":
+                from zf.runtime.synth_restart_checkpoint import mark_reopened_synth_started
+
+                mark_reopened_synth_started(self, role, fanout_child)
             self.event_writer.append(ZfEvent(
                 type="worker.recovery.injected",
                 actor=role.instance_id,
@@ -1957,6 +1980,9 @@ class LifecycleManagerMixin(
                     "run_id": str(fanout_child.get("run_id") or ""),
                     "briefing_path": str(path),
                     "snapshot_ref": snapshot_ref,
+                    "recovered_dispatch_event_id": str(fanout_child.get("event_id") or ""),
+                    "operation_id": str(fanout_child.get("operation_id") or ""),
+                    "request_hash": str(fanout_child.get("request_hash") or ""),
                 },
                 correlation_id=str(fanout_child.get("trace_id") or "") or None,
             ))
@@ -2013,38 +2039,7 @@ class LifecycleManagerMixin(
             task = idle_task
         git_context = None
         try:
-            from zf.runtime.git_capture import capture_git_diff_context
-
-            base_sha = ""
-            base_sha = getattr(self, "_dispatch_heads", {}).get(task.id, "")
-            git_root = self.project_root
-            try:
-                from zf.runtime.workdirs import WorkdirManager
-
-                workdirs = getattr(
-                    getattr(self.config, "runtime", None),
-                    "workdirs",
-                    None,
-                )
-                if workdirs is not None and getattr(workdirs, "enabled", False):
-                    plan = WorkdirManager(
-                        state_dir=self.state_dir,
-                        project_root=self.project_root,
-                        config=self.config,
-                    ).plan(role)
-                    project_path = Path(plan.project_path)
-                    if (
-                        plan.enabled
-                        and plan.mode == "worktree"
-                        and project_path.exists()
-                    ):
-                        git_root = project_path
-            except Exception:
-                git_root = self.project_root
-            git_context = capture_git_diff_context(
-                git_root,
-                base_sha=base_sha,
-            )
+            git_context = capture_recovery_git_context(self, role, task)
         except Exception:
             git_context = None
         try:
@@ -2184,8 +2179,18 @@ class LifecycleManagerMixin(
         heartbeat_age_s: float | None = None,
     ) -> "WorkflowRuntimeDecision":
         """Emit worker.stuck and try to recover the active task/worker."""
+        from zf.runtime.heartbeat_work_obligation import on_demand_work_obligation
         from zf.runtime.stuck_recovery_signal import emit_stuck_signal
 
+        if on_demand_work_obligation(self, role) is False:
+            return WorkflowRuntimeDecision(action="noop", role=role.instance_id,
+                                           reason="on-demand worker has no active work obligation")
+        blocker = live_provider_interactive_prompt_marker(self.transport, role.instance_id)
+        if blocker:
+            return WorkflowRuntimeDecision(
+                action="wait", role=role.instance_id,
+                reason=f"provider external input required: {blocker}",
+            )
         signal = emit_stuck_signal(
             self,
             role,
@@ -2196,6 +2201,17 @@ class LifecycleManagerMixin(
         )
         reason, task = signal.reason, signal.task
         dispatch_id, stuck_event = signal.dispatch_id, signal.event
+
+        latest_dispatch = (
+            self._latest_dispatch_event_for_task(task.id) if task is not None else None
+        )
+        if latest_dispatch is not None and latest_dispatch.type == "fanout.child.dispatched":
+            latest_role = str(latest_dispatch.payload.get("role_instance") or "")
+            if latest_role and latest_role != role.instance_id:
+                return WorkflowRuntimeDecision(
+                    action="wait", task_id=task.id, role=role.instance_id,
+                    reason="latest task dispatch belongs to another fanout role",
+                )
 
         progress_event = (
             self._latest_unrejected_progress_event_for_dispatch(
@@ -2251,6 +2267,16 @@ class LifecycleManagerMixin(
         )
         if completion_nudge is not None:
             return completion_nudge
+
+        from zf.runtime.task_pipeline_attempt_recovery import live_task_pipeline_attempt_for_role
+
+        pipeline_attempt = live_task_pipeline_attempt_for_role(self, role.instance_id)
+        if pipeline_attempt is not None:
+            return WorkflowRuntimeDecision(
+                action="wait", task_id=str(pipeline_attempt.get("task_id") or ""),
+                role=role.instance_id,
+                reason="live Task Pipeline attempt recovery belongs to Run Manager",
+            )
 
         requeued = task is None
         from_status = getattr(task, "status", "") if task is not None else ""
@@ -2667,7 +2693,8 @@ class LifecycleManagerMixin(
         finished, has uncommitted work, or stalled before implementation.  The
         prompt therefore preserves the worktree and lets the worker continue the
         original briefing when acceptance is not yet met.  Nudges once per
-        (instance, task, dispatch); the next stuck cycle falls through to requeue.
+        (instance, task, dispatch). A live pipeline attempt may be nudged again
+        only after its required-read coverage increases and its turn closes.
         """
         if task is None:
             return None
@@ -2679,8 +2706,19 @@ class LifecycleManagerMixin(
             registry = set()
             self._completion_nudge_requests = registry
         key = (role.instance_id, task.id, dispatch_id)
-        if key in registry:
-            return None  # already nudged once → let the caller requeue
+        progress_state = None
+        if hasattr(self, "state_dir") and hasattr(self, "event_log"):
+            from zf.runtime.attempt_read_progress import progress_nudge_state
+
+            progress_state = progress_nudge_state(
+                self, role_instance=role.instance_id, task_id=task.id,
+                dispatch_id=dispatch_id,
+            )
+        if progress_state is not None:
+            if not progress_state[2]:
+                return None
+        elif key in registry:
+            return None
         registry.add(key)
 
         detector = getattr(self, "_stuck_detectors", {}).get(role.instance_id)
@@ -2728,6 +2766,9 @@ class LifecycleManagerMixin(
                     "expected_event": expected_event,
                     "prompt_injected": prompt_injected,
                     "prompt_error": prompt_error,
+                    **({"attempt_id": progress_state[0],
+                        "input_read_progress": progress_state[1]}
+                       if progress_state is not None else {}),
                 },
             ))
         except Exception:
@@ -2791,6 +2832,8 @@ class LifecycleManagerMixin(
                 "acceptance blocker remains after attempting to resume the task."
             ),
         ]
+        from zf.runtime.attempt_read_progress import input_continuation_lines
+        lines.extend(input_continuation_lines(self, role_instance=role.instance_id, task_id=task.id, dispatch_id=dispatch_id))
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         prompt = build_task_prompt(role.instance_id, path)
         context = self._dispatch_context(

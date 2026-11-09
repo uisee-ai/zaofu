@@ -456,6 +456,9 @@ def _objective_acceptance_claims(
                 index=index,
             )
             mandatory = True
+        stable_ids = objective.get("acceptance_claim_ids")
+        if isinstance(stable_ids, list) and index < len(stable_ids) and stable_ids[index]:
+            claim_id = str(stable_ids[index])
         if not text:
             continue
         if not claim_id:

@@ -1,0 +1,10 @@
+{
+  "archive": "/tmp/zf-hello-v5-assembly-20261030-0654/evidence/isolated-projects-stopped.tar.gz",
+  "sha256": "011c769bd684e6e1aac6daa73e63e31fe2e0ff740f74d0ec445b628754288557",
+  "bytes": 5062889,
+  "entries": 2699,
+  "excluded": "provider homes, credential files and .env; Web action token never archived",
+  "owned_live_processes": [],
+  "port_8002": "closed",
+  "port_8001": "untouched; live PID 72631"
+}

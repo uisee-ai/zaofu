@@ -51,7 +51,9 @@ def dispatch_fixture(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "zf.runtime.task_workspaces.TaskWorkspaceManager",
-        lambda **kw: SimpleNamespace(prepare=lambda **kw: workspace),
+        lambda **kw: SimpleNamespace(
+            plan=lambda **kw: workspace, prepare=lambda **kw: workspace,
+        ),
     )
     monkeypatch.setattr(
         "zf.runtime.task_pipeline_terminal.task_pipeline_workspace_base",
@@ -118,6 +120,7 @@ def dispatch_fixture(tmp_path, monkeypatch):
             },
             generation_context={
                 "workflow_run_id": "run-1",
+                "flow_kind": "prd",
                 "task_map_generation": "map-new",
                 "generation_admitted_event_id": "evt-admitted",
                 **package,
@@ -146,6 +149,7 @@ def test_running_or_settled_operation_does_not_rewrite_capsule(
     assert (doc.read_bytes() if doc.exists() else None) == previous
     assert asdict(runtime.task_store.get(task.id)) == before
     assert len(prepared) == 1
+    assert prepared[0]["payload"]["flow_kind"] == "prd"
 
 
 def test_dispatch_rejects_snapshot_mismatch_before_operation(dispatch_fixture):
@@ -188,8 +192,16 @@ def test_dispatch_rejects_canonical_contract_changed_since_selection(dispatch_fi
 def test_transport_receives_fresh_capsule_and_real_briefing(
     dispatch_fixture, monkeypatch
 ):
-    runtime, task, _, _, dispatch = dispatch_fixture
+    import hashlib
+    import json
+
+    runtime, task, snapshot, _, dispatch = dispatch_fixture
     from zf.runtime.task_doc import task_doc_path
+
+    monkeypatch.setattr(
+        "zf.runtime.task_pipeline_runtime._activate_task_stage_binding",
+        lambda *a, **kw: {"binding_key": "task-stage-current"},
+    )
 
     write_task_doc(
         runtime.state_dir, Task(id=task.id, contract=TaskContract(behavior="old"))
@@ -226,6 +238,8 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         assert "## Read Order (authoritative)" in briefing.read_text()
         assert str(task_doc_path(runtime.state_dir, task.id).resolve()) in briefing.read_text()
         assert "Controlled Artifact Inputs" in briefing.read_text()
+        assert "## Worker Execution Envelope" in briefing.read_text()
+        assert context.worker_envelope_digest
         sent.append(context)
         return context
 
@@ -240,6 +254,16 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         "task.dispatched",
         "task.pipeline.stage.dispatched",
     ]
+    # Production request hashing deliberately removes workdir; the emitted
+    # kernel dispatch still pins the physical workspace for progress evidence.
+    from zf.runtime.work_record import _operation_workdir
+    from zf.runtime.workflow_operation import canonicalize_operation_request
+
+    payload = events[-1].payload
+    request = canonicalize_operation_request(payload)
+    assert "workdir" not in request
+    operation = {**payload, "active_attempt_id": payload["attempt_id"]}
+    assert _operation_workdir(events, operation, request) == runtime.project_root
 
 
 @pytest.mark.parametrize("old_dispatch,generation", [("", 1), ("tpd-old-p1", 2)])
@@ -253,6 +277,15 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
     from zf.runtime import call_result_runtime
 
     runtime, task, _, _, dispatch = dispatch_fixture
+    feedback = [{
+        "rework_item_id": "RW-01", "reason": "大整数边界必须保留；不省略用户约束",
+        "evidence_refs": ["evidence/full-failure.log"],
+        "reproduction_commands": ["python -m unittest tests.test_boundary"],
+    }, {
+        "rework_item_id": "RW-02", "reason": "大指数失败是独立问题",
+        "evidence_refs": ["evidence/exponent.log"],
+    }]
+    monkeypatch.setattr("zf.runtime.task_pipeline_runtime._verify_rework_feedback", lambda *a, **kw: feedback.copy())
     runtime.task_store.update(task.id, active_dispatch_id=old_dispatch, assigned_to="previous-role")
     before = asdict(runtime.task_store.get(task.id))
     original = call_result_runtime.prepare_call_operation
@@ -282,6 +315,20 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
         assert str(doc.resolve()) in briefing.read_text()
         assert str((doc.parent / "source.md").resolve()) in briefing.read_text()
         assert str((doc.parent / "progress.md").resolve()) in briefing.read_text()
+        text = briefing.read_text()
+        if stage == "impl":
+            assert "do not remove required evidence outputs" in text
+            assert "never authorize out-of-scope writes" in text
+        else:
+            assert "Rework allowed_scope must cover the fix and its required evidence" in text
+            assert "do not omit outputs or expand" in text
+        assert f"cost --operation {context.operation_id} --json" in text
+        compact = json.loads(text.split("## Compact Execution Context", 1)[1].split("```json\n", 1)[1].split("```", 1)[0])
+        assert "attempt_id" not in compact  # exact identity remains in header
+        assert f"- attempt_id: `{context.attempt_id}`" in text
+        if generation > 1:
+            recovered = json.loads(text.split("## Rework Feedback", 1)[1].split("```json\n", 1)[1].split("```", 1)[0])
+            assert recovered == feedback
         assert asdict(runtime.task_store.get(task.id)) == before
         sent.append(context)
         if send_fails:

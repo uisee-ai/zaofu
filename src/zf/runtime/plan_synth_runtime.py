@@ -8,7 +8,9 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.injection import build_task_prompt
-from zf.runtime.run_admission import RunDispatchBlocked
+from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+from zf.runtime.run_admission import RunDispatchBlocked, build_run_admission_projection
 
 
 PLAN_SYNTH_HANDOFF_KEYS = (
@@ -33,8 +35,10 @@ PLAN_SYNTH_HANDOFF_KEYS = (
     "plan_synth_contract_ref",
     "plan_synth_contract_digest",
     "reviewed_plan_candidate_digest",
+    "plan_review_optimization",
 )
 PLAN_SYNTH_SEMANTIC_FIELDS = (
+    "failure_class",
     "artifact_refs",
     "evidence_refs",
     "findings",
@@ -71,17 +75,21 @@ class PlanSynthRuntimeMixin:
     ) -> bool:
         """Re-send a synth briefing lost when its provider session restarted."""
 
+        admission = build_run_admission_projection(events)
         event_index = {event.id: index for index, event in enumerate(events)}
         dispatches: dict[str, list[ZfEvent]] = {}
         terminal: set[str] = set()
         lost_by_role: dict[str, list[tuple[int, ZfEvent]]] = {}
-        recovery_count: dict[str, int] = {}
+        recovery_losses: dict[str, list[int]] = {}
+        redrives: dict[str, list[tuple[int, ZfEvent]]] = {}
+        operations = None
         for index, event in enumerate(events):
             payload = event.payload if isinstance(event.payload, dict) else {}
             if event.type == "fanout.synth.dispatched":
                 fanout_id = str(payload.get("fanout_id") or "")
                 if fanout_id:
                     dispatches.setdefault(fanout_id, []).append(event)
+                    terminal.discard(fanout_id)
                 continue
             if event.type == "fanout.synth.completed":
                 fanout_id = str(payload.get("fanout_id") or "")
@@ -94,7 +102,12 @@ class PlanSynthRuntimeMixin:
             ):
                 fanout_id = str(payload.get("fanout_id") or "")
                 if fanout_id:
-                    recovery_count[fanout_id] = recovery_count.get(fanout_id, 0) + 1
+                    recovery_losses.setdefault(fanout_id, []).append(index)
+                continue
+            if event.type == "workflow.operation.redrive_admitted" and event.origin == "kernel":
+                operation_id = str(payload.get("operation_id") or "")
+                if operation_id:
+                    redrives.setdefault(operation_id, []).append((index, event))
                 continue
             role_instance = self._reader_dispatch_lost_role(event)
             if role_instance:
@@ -140,6 +153,35 @@ class PlanSynthRuntimeMixin:
                 int((manifest.get("aggregate_config") or {}).get("max_retries") or 0),
             )
             latest_dispatch = synth_dispatches[-1]
+            workflow_run_id = str(
+                latest_dispatch.payload.get("workflow_run_id")
+                or manifest.get("trace_id") or ""
+            )
+            run = admission.runs.get(workflow_run_id)
+            if run is not None and run.status != "running":
+                continue
+            operation_id = str(latest_dispatch.payload.get("operation_id") or "")
+            replay_boundary = -1
+            if operation_id:
+                from zf.runtime.workflow_operation import reduce_workflow_operations
+
+                if operations is None:
+                    operations = reduce_workflow_operations(events)
+                operation = operations.get(operation_id)
+                if (not operation or operation.get("request_hash") != latest_dispatch.payload.get("request_hash")
+                        or operation.get("status") not in {"requested", "reserved", "running"}):
+                    # A stopped operation awaits an explicit checkpoint decision;
+                    # an old launch signal must not fail its fanout meanwhile.
+                    continue
+                for index, event in redrives.get(operation_id, []):
+                    if (event.payload.get("request_hash") == operation.get("request_hash")
+                            and event.payload.get("workflow_run_id") == operation.get("workflow_run_id")
+                            and event.payload.get("source_attempt_id") == (
+                                latest_dispatch.payload.get("attempt_id") or latest_dispatch.payload.get("run_id")
+                            )
+                            and event.payload.get("recovery_decision_owner") == "kernel_replay"
+                            and event.payload.get("recovery_from_status") == "suspended"):
+                        replay_boundary = index
             latest_index = event_index.get(latest_dispatch.id, -1)
             if latest_index < 0:
                 continue
@@ -148,10 +190,18 @@ class PlanSynthRuntimeMixin:
                 latest_dispatch,
             ):
                 continue
+            from zf.runtime.synth_budget_recovery import recover_budget_amended_synth
+
+            budget_recovery = recover_budget_amended_synth(self, latest_dispatch, events)
+            if budget_recovery is not None:
+                if budget_recovery:
+                    return True
+                continue
             lost_event = self._reader_dispatch_lost_event_after(
                 lost_by_role.get(role_instance, []),
                 latest_index,
                 events=events, dispatch_event=latest_dispatch,
+                state_dir=self.state_dir,
             )
             if lost_event is None:
                 continue
@@ -167,7 +217,7 @@ class PlanSynthRuntimeMixin:
                 activity_index,
             ):
                 continue
-            recovery_attempts = recovery_count.get(fanout_id, 0)
+            recovery_attempts = sum(index > replay_boundary for index in recovery_losses.get(fanout_id, []))
             if recovery_attempts >= allowed_recoveries:
                 self._fail_lost_fanout_synth_dispatch(
                     manifest=manifest,
@@ -282,6 +332,15 @@ class PlanSynthRuntimeMixin:
         role = next(iter(self._fanout_roles([role_instance])), None)
         if role is None or not briefing_path.is_file():
             return False
+        operation_id = str(payload.get("operation_id") or "")
+        operation = None
+        if operation_id:
+            from zf.runtime.workflow_operation import load_workflow_operation
+
+            operation = load_workflow_operation(self.event_log, operation_id)
+            if (not operation or operation.get("request_hash") != payload.get("request_hash")
+                    or operation.get("status") not in {"requested", "reserved", "running"}):
+                return False
         self._set_worker_state(
             role_instance,
             "idle",
@@ -306,10 +365,19 @@ class PlanSynthRuntimeMixin:
             briefing_path,
             prompt_kind="fanout_synth",
         )
+        prompt += reader_continuation_guidance(
+            attempt_id=str(payload.get("attempt_id") or run_id),
+            backend=role.backend, cli=zf_cli_cmd(),
+        )
         dispatch_context = self._dispatch_context(
             role=role,
             briefing_path=briefing_path,
             trace_id=trace_id,
+            task_id=str(payload.get("task_id") or "") or None,
+            parent_task_id=str(payload.get("parent_task_id") or "") or None,
+            run_id=str(payload.get("workflow_run_id") or "") or None,
+            operation_id=operation_id or None,
+            dispatch_id=run_id,
         )
         try:
             self._send_transport_task(
@@ -338,6 +406,18 @@ class PlanSynthRuntimeMixin:
                 correlation_id=trace_id,
             ))
             return False
+        if operation and operation.get("status") in {"requested", "reserved"}:
+            from zf.runtime.workflow_operation import WorkflowOperationService
+
+            WorkflowOperationService(
+                state_dir=self.state_dir, event_log=self.event_log, event_writer=self.event_writer,
+            ).mark_started(
+                operation_id=operation_id, request_hash=str(payload.get("request_hash") or ""),
+                workflow_run_id=str(payload.get("workflow_run_id") or ""),
+                task_id=str(payload.get("task_id") or ""), dispatch_id=run_id,
+                role_instance=role_instance, active_attempt_id=str(payload.get("attempt_id") or ""),
+                causation_id=lost_event.id, correlation_id=trace_id,
+            )
         lost = self.event_writer.append(ZfEvent(
             type="fanout.child.dispatch_lost",
             actor="zf-cli",
@@ -454,6 +534,31 @@ class PlanSynthRuntimeMixin:
                 is_plan_synth
                 and str(getattr(stage, "attempt_domain", "") or "") == "plan"
             ):
+                failed_readers = [
+                    report.get("report") for report in reports
+                    if isinstance(report.get("report"), dict)
+                    and report["report"].get("execution_status") == "failed"
+                    and report["report"].get("failure_class") == "reader_execution_failure"
+                ]
+                if failed_readers:
+                    findings = [finding for report in failed_readers
+                                for finding in (report.get("findings") or [])
+                                if isinstance(finding, dict)]
+                    summary = str(failed_readers[0].get("summary") or "Plan reader execution failed")
+                    failure_event = self.event_writer.append(ZfEvent(
+                        type="fanout.synth.completed", actor="zf-cli",
+                        payload={"fanout_id": fanout_id, "trace_id": trace_id,
+                                 "stage_id": stage_id, "role_instance": role.instance_id,
+                                 "run_id": run_id, "status": "failed", "recommendation": "reject",
+                                 "failure_class": "reader_execution_failure", "summary": summary,
+                                 "report": {"child_id": "synth", "status": "failed",
+                                            "recommendation": "reject", "summary": summary,
+                                            "findings": findings}},
+                        causation_id=str(manifest.get("trigger_event_id") or "") or None,
+                        correlation_id=trace_id,
+                    ))
+                    self._finalize_fanout_synth(failure_event)
+                    return
                 from zf.core.workflow.flow_metadata import flow_metadata_for
                 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
                 from zf.runtime.plan_candidate_preflight import (
@@ -700,6 +805,19 @@ class PlanSynthRuntimeMixin:
         except RunDispatchBlocked:
             return
         except Exception as exc:
+            blocker = getattr(exc, "interactive_prompt_marker", "")
+            if blocker:
+                # No critic turn ran: preserve planner results and retry dispatch.
+                self._emit_fanout_dispatch_deferred_once(
+                    fanout_id=fanout_id, trace_id=trace_id, stage_id=stage_id,
+                    child_id="synth", run_id=run_id, role_instance=role.instance_id,
+                    prompt_kind="fanout_synth", reason=f"provider_interactive:{blocker}",
+                    state=getattr(self, "_last_worker_state", {}).get(role.instance_id, "idle"),
+                    alive=bool(getattr(exc, "pane_alive", False)),
+                    dispatchable=False,
+                    causation_id=str(manifest.get("trigger_event_id") or "") or None,
+                )
+                return
             failure_event = self.event_writer.append(ZfEvent(
                 type="fanout.synth.completed",
                 actor="zf-cli",
@@ -766,6 +884,13 @@ class PlanSynthRuntimeMixin:
                     (outcome.envelope_ref or {}).get("sha256") or ""
                 ),
             }
+            if payload.get("failure_class") == "reader_execution_failure":
+                from zf.runtime.artifact_context_events import artifact_context_events
+                from zf.runtime.plan_synth_recovery_refs import failed_critic_candidate_refs
+
+                payload["previous_plan_candidate_refs"] = failed_critic_candidate_refs(
+                    self.state_dir, artifact_context_events(self.event_log), payload,
+                )
             event = replace(event, payload=payload)
         from zf.runtime.plan_synth_owner_checkpoint import (
             apply_plan_synth_owner_checkpoint,

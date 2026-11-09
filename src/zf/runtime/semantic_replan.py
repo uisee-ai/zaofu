@@ -55,7 +55,6 @@ _ANCHOR_KEYS = (
     "candidate_ref",
     "candidate_head_commit",
     "target_ref",
-    "trace_id",
     "task_map_generation",
     "plan_artifact_package_id",
     "plan_artifact_package_ref",
@@ -247,6 +246,12 @@ def _semantic_replan_anchor(
         if event.type not in _ANCHOR_EVENT_TYPES:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if (
+            anchor.get("workflow_run_id")
+            and payload.get("workflow_run_id")
+            and payload["workflow_run_id"] != anchor["workflow_run_id"]
+        ):
+            continue
         event_pdd = str(payload.get("pdd_id") or payload.get("feature_id") or "")
         if pdd_id and event_pdd and event_pdd != pdd_id:
             continue
@@ -373,6 +378,40 @@ def _semantic_replan_anchor(
                     "target_ref": continuation_commit,
                 })
                 break
+    integrated_candidate = _bind_current_plan_and_candidate(anchor, events)
+
+    if task is not None and identity and not anchor.get("continuation_commit") and any(
+        event.type == "task.pipeline.stage.dispatched"
+        and event.origin == "kernel"
+        and event.task_id == task_id
+        and event.payload.get("workflow_run_id") == identity.get("workflow_run_id")
+        for event in events
+    ):
+        # Map amendments can carry a different task's unaccepted partial ref.
+        # Only the v4 integration ledger owns this Run's published Candidate.
+        for key in ("candidate_ref", "candidate_head_commit", "candidate_event_id"):
+            anchor.pop(key, None)
+        anchor.update(_incremental_candidate_anchor(
+            state_dir, events, workflow_run_id=str(identity.get("workflow_run_id") or ""),
+            project_root=project_root or Path(state_dir).parent,
+        ))
+    if task is not None and identity and not anchor.get("continuation_commit"):
+        from zf.runtime.task_pipeline_failure_continuation import task_pipeline_failure_continuation
+
+        partial = task_pipeline_failure_continuation(
+            state_dir=state_dir, project_root=project_root or Path(state_dir).parent,
+            events=events, task_id=task_id, workflow_run_id=str(anchor.get("workflow_run_id") or ""),
+            identity=identity, failure_event_ids=failure_event_ids or set(),
+        )
+        if partial:
+            anchor.update({
+                **partial,
+                "previous_candidate_ref": str(anchor.get("candidate_ref") or ""),
+                "previous_candidate_head_commit": str(anchor.get("candidate_head_commit") or ""),
+                "candidate_ref": partial["continuation_ref"],
+                "candidate_head_commit": partial["continuation_commit"],
+                "target_ref": partial["continuation_commit"],
+            })
     if (
         not anchor.get("continuation_commit")
         and anchor.get("candidate_head_commit")
@@ -396,7 +435,9 @@ def _semantic_replan_anchor(
             anchor["target_ref"] = failed_base
             anchor["handoff_kind"] = "task_base_recovery"
         else:
-            anchor["target_ref"] = anchor["candidate_ref"]
+            anchor["target_ref"] = (
+                candidate_head if integrated_candidate else anchor["candidate_ref"]
+            )
     elif not anchor.get("continuation_commit"):
         # A task-scoped replan can happen before the writer fanout has emitted
         # candidate.ready. The task snapshot still pins the integrated task
@@ -408,7 +449,115 @@ def _semantic_replan_anchor(
             anchor["handoff_kind"] = "task_base_recovery"
     anchor["supersedes_task_ids"] = [task_id] if task_id else []
     anchor["affected_task_ids"] = [task_id] if task_id else []
+    anchor.update(_admitted_requirement_identity(state_dir, anchor))
     return anchor
+
+
+def _bind_current_plan_and_candidate(
+    anchor: dict[str, Any], events: list[ZfEvent],
+) -> bool:
+    """Bind replan inputs without rewriting the failed task's contract snapshot."""
+    from zf.runtime.plan_artifact_package import (
+        plan_artifact_package_binding,
+        reduce_plan_artifact_packages,
+    )
+
+    run_id = str(anchor.get("workflow_run_id") or "")
+    if not run_id:
+        return False
+    current = reduce_plan_artifact_packages(events, workflow_run_id=run_id)["current"]
+    if current:
+        source = next((e for e in events if e.id == current.get("source_event_id")), None)
+        if source is not None:
+            for key in ("task_map_ref", "source_index_ref"):
+                if source.payload.get(key):
+                    anchor[key] = source.payload[key]
+            anchor.update(plan_artifact_package_binding(events, current))
+    if anchor.get("continuation_commit"):
+        return False
+    for event in reversed(events):
+        p = event.payload
+        if (
+            event.type == "integration.queue.integrated"
+            and p.get("workflow_run_id") == run_id
+            and p.get("status") == "integrated"
+            and p.get("receipt_ref")
+            and p.get("candidate_branch")
+            and p.get("candidate_head")
+        ):
+            anchor.update({
+                "candidate_ref": p["candidate_branch"],
+                "candidate_head_commit": p["candidate_head"],
+                "candidate_event_id": event.id,
+            })
+            return True
+    return False
+
+def _incremental_candidate_anchor(
+    state_dir: Path, events: list[ZfEvent], *, workflow_run_id: str, project_root: Path,
+) -> dict[str, str]:
+    """Bind recovery reads to the latest proven incremental publication."""
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    latest = next((event for event in reversed(events)
+        if event.type == "candidate.updated" and event.origin == "kernel"
+        and event.payload.get("incremental") is True
+        and event.payload.get("workflow_run_id") == workflow_run_id), None)
+    if latest is None:
+        return {}
+    payload = latest.payload
+    descriptor = payload.get("receipt_ref")
+    if (payload.get("status") != "integrated" or not isinstance(descriptor, dict)
+            or descriptor.get("kind") != "task_integration_receipt"
+            or descriptor.get("sha256") != payload.get("receipt_digest")):
+        return {}
+    try:
+        receipt = hydrate_sidecar_ref(state_dir, descriptor).payload
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != "task-integration-receipt.v1":
+        return {}
+    bindings = {
+        "workflow_run_id": "workflow_run_id", "task_id": "task_id",
+        "task_map_generation": "task_map_generation", "candidate_branch": "candidate_branch",
+        "candidate_generation": "candidate_generation", "task_ref": "task_ref",
+        "task_commit": "task_commit", "integration_operation_id": "operation_id",
+        "new_candidate_head": "candidate_head",
+    }
+    if any(not payload.get(event_key) or receipt.get(key) != payload[event_key]
+           for key, event_key in bindings.items()):
+        return {}
+    if latest.task_id != payload["task_id"]:
+        return {}
+    head = str(payload["candidate_head"])
+    if _git_commit_is_ancestor(project_root, ancestor=head,
+            descendant=f"refs/heads/{payload['candidate_branch']}") is not True:
+        return {}
+    return {"candidate_ref": head, "candidate_head_commit": head,
+            "candidate_event_id": latest.id}
+
+
+def _admitted_requirement_identity(state_dir: Path, anchor: dict[str, Any]) -> dict[str, str]:
+    """Recover the requirement pinned by this Run's admitted proposal."""
+    from zf.runtime.run_contract import load_run_contract
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    contract = load_run_contract(state_dir) or {}
+    workflow = contract.get("workflow")
+    if not isinstance(workflow, dict) or not isinstance(workflow.get("proposal_ref"), dict):
+        return {}
+    try:
+        hydrated = hydrate_sidecar_ref(state_dir, workflow["proposal_ref"])
+    except (OSError, ValueError):
+        return {}
+    proposal = hydrated.payload if hydrated.ok else None
+    if not isinstance(proposal, dict) or not anchor.get("workflow_run_id"):
+        return {}
+    if str(proposal.get("request_id") or "") != str(anchor["workflow_run_id"]):
+        return {}
+    ref = str(proposal.get("requirement_spec_ref") or "")
+    digest = str(proposal.get("requirement_spec_digest") or "")
+    return {"requirement_spec_ref": ref, "requirement_spec_digest": digest} if ref and digest else {}
 
 
 def _git_commit_is_ancestor(

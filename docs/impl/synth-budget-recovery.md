@@ -1,0 +1,48 @@
+# Synth 预算阻塞的受控恢复
+
+`zf goal set --status active --operation <id> --operation-max-usage-samples 0
+--reason <owner-authorization>` 可为因 usage_samples 阻塞的 Task Pipeline 或
+`fanout_synth` 登记具名预算修订。该命令不直接修改旧请求，未执行恢复前原限制仍有效。
+随后使用 `zf recover workflow --resume-pending --checkpoint-id <id>` 处理对应恢复检查点。
+
+Runtime 在 fanout 当前性、无已准入结果检查后，核对 kernel redrive、此前预算失败
+因果链、Owner 修订、operation 请求摘要和原 dispatch 身份，再发送原 briefing。
+恢复提示携带当前 Runtime CLI，避免固定版本升级后继续调用旧 CLI。
+仍使用原 request/attempt/必读合同，累计费用和开始时间不重置。
+`workflow.operation.started` 按 attempt、dispatch、受控 redrive_count 去重。
+相同恢复不会重复启动，非预算拒绝、失效修订或已过时 fanout 不适用。
+
+普通停机后的 reader 重放没有待执行的 Owner 预算 redrive 时，仍交回原 reader 恢复路径。
+若预算 redrive 已准入但尚未成功 started，修订失效仍阻断恢复，即使中间发生再次停机；
+不能因缺少有效修订而绕入普通 provider 重启路径。已成功 started 的历史预算恢复不阻塞
+之后的普通停机重放。`test_stopped_plan_synth_redrives_existing_operation_after_provider_restart`
+及预算撤销回归共同验证这两条路径的边界。
+
+验证：`tests/test_synth_budget_recovery.py` 经 CLI、恢复入口、实际 synth Runtime
+调用者及 mock transport 覆盖成功、范围、拒绝、失效、身份和幂等性。
+实施记录：[任务](../../tasks/active/2026-11-01-0042-critic-budget-recovery.md)。
+
+
+若预算阻塞同时关闭 fanout，恢复仅接受 `workflow_run_terminal:run.goal.blocked`
+取消，以及 kernel 可追溯到 `fanout.child.dispatch_lost` 的无结果退出失败。
+真正的审查 report、已准入结果和其他终态不适用。通过 `fanout.aggregate.started`
+与新派发事件重新打开载体，原失败保留在 ledger；结果重放以最近派发为边界，
+不会再次重放此前的退出失败。若预算 redrive 已获准但尚未启动就遇到显式停机，
+恢复检查点按原预算授权和请求继续，停机前已经 running 的调用不适用这条补偿。
+
+因 token 达限阻塞时，Owner 必须显式指定目标 operation：`zf goal set --status active
+--operation <id> --operation-token-budget <非负整数> --reason '<批准依据>'`。
+非零值必须高于阻断时的累计 token；零表示取消该 operation 的 token 上限。
+仅有 Run 级 `--token-budget` 修订不会授权或修改 operation 预算；具名修订
+经绑定的 kernel redrive 准入后只作用于该 operation，其他维度和其他操作保持原值。
+两层预算均继续独立生效，累计用量和冻结请求不重置。
+
+同一具名修订也适用于预算阻塞的 `fanout_reader_child`（例如 Planner）。
+受控恢复校验 Run、fanout、role、request hash 和原活动 attempt；只在未有
+权威结果时续派原操作。预算 redrive 已准入但尚未完成派发时如再次停机，
+恢复仍须追溯并核验原具名授权，不得退回普通重启路径绕过预算。
+
+预算 redrive 保留原 workflow operation 和输入读取 attempt，但为本次调度派发
+使用与 redrive 事件绑定的新 dispatch id。旧 scheduler TaskAttempt 已失败时，
+不得把同一个 dispatch id 交给 transport 再次认领；shadow 与 enforce 均应能
+生成新 TaskAttempt。新调度身份不改变原请求摘要、必读回执和累积用量。

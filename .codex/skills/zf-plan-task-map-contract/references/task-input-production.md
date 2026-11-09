@@ -1,0 +1,69 @@
+# 任务输入切片生产与反例审查
+
+这是既有 Task / Plan Package 合同的生产方法，不新增 Task schema，也不授权修改已批准版本。
+
+1. 对账完整原始材料，将条款、例外、共享规则、依赖接口、图片的页面/状态/位置绑定来源版本和定位。来源清单与覆盖账本不能只列摘要；排除要有理由，未知不得标成覆盖。
+2. 按 Task Map 的精确 ID 生成一次 owned partition；跨任务约束放 shared，说明消费者义务。保留验收 ID、source_ref、image_ref，以及接口错误语义。仅复制 ID 不算语义完整。
+3. 保留完整原始产物与矩阵。Impl / Task Verify 的 selection 只引用批准包内实际存在的端口；Candidate Verify、任务集成评审和 Goal Judge 保持各自 profile，不补造通用 judge selection。
+4. 提交前制作端口名到相对 JSON 文件的映射，运行 `zf plan inspect-inputs --bundle bundle.json --task T1`。按 next_offset 继续；缺失资料、未知引用、重复/多余切片和依赖错误均需解释或修复。预检不批准 Plan，也不修改原文件。
+5. Critic 独立从原始材料反向对账 shared + owned；逐条说明异常、共享规则、图片状态、依赖和验收责任是否保留。引用存在、结构合法或预检无问题都不能证明语义完整。
+
+任务分区不能只放作者目录中的 `complete_input_ref` 和摘要，而把实际正文留在未绑定文件。
+即使路径出现在 `artifact_refs`，也不证明它已进入下游 Plan Package 或授权 manifest。
+将完整来源、异常、用例和依赖正文放入该端口的 `shared` / `tasks[].body`；大型端口可通过
+既有 `plan_ports` 的 `{logical_name, ref, sha256}` 描述符交付，避免重复内嵌进结果正文。
+不要提高结果大小上限或删减正文。提交前从正式迁移后的工件与下游实际选择路径检查：
+离开作者工作目录后仍能读到完整正文和同版引用，才算交接成立。
+
+输入片段示例（正文自由字段属于输入材料，不能替代 canonical Task contract）：
+
+```json
+{
+  "schema_version": "task-scoped-plan-input.v1",
+  "shared": {
+    "protocol": "库存接口 v1；所有修改记录操作者和原值",
+    "source_refs": ["source.md#shared"]
+  },
+  "tasks": [{
+    "task_id": "T1",
+    "body": {
+      "acceptance_ids": ["AC-1"],
+      "source_refs": ["source.md#retry", "api.md#version"],
+      "image_refs": ["stock.png#empty"],
+      "behavior": "授权用户提交出库",
+      "exception": "重复请求返回首次结果，不得再次扣减",
+      "dependency": "消费 T0 的 v1 接口；版本冲突返回 409",
+      "image_state": "空库存显示补货入口，禁止显示出库按钮"
+    }
+  }]
+}
+```
+
+独立离线评测：
+
+- `PYTHONPATH=src python scripts/eval-context-inputs.py prepare --output /tmp/zf-context-eval-<UTC>/`
+  生成 100 Task 片段、生产者 bundle、五组匿名材料 blind.json 和分离的 grader.json。
+- Reviewer 只接收 blind.json，不能看 grader。四组反例保留 AC/来源 ID，分别漏掉异常、共享规则、图片状态、依赖正文；另有一组完整对照。
+- 返回绑定 evaluation_digest 的 cases/findings，包含 task_id、category、source_ref、精确 source_quote 与 explanation。
+- `... score --grader <grader.json> --findings <findings.json>` 只评分显式 findings 与证据绑定，报告漏报/误报；不通过关键词猜测语义，不是模型资格或 Plan 准入。真实评审还需记录 provider/model/session、独立性、原始输出和人工抽查。
+- `... benchmark` 仅测宿主快照/导航构建与分页准备时间和字节，不调用 Provider，不生成 worker 正文读取回执，不证明 token 节约。
+
+`... retrieval --tasks 100` / `--tasks 1000` 对 Impl/Task Verify/Candidate 的全部 Task/AC、来源、图片定位与独立预期集合对账；统计缺项、错项、重复项、完整性、精度/召回率及累计输出。非空结果不能证明查询通过；完整引用结果需遍历所有游标页。自然语言正文查询单列为未支持，不纳入精确定位分母。它不调用 Provider。
+
+`artifact index` 的 v2 页面用 `sources[item.source]` 解析来源，item.navigation 保存字段/章节位置。每页独立携带所需来源元数据；读取命令仍使用父授权 selector。看到 `navigation_complete=false` 时应核对固定原文，不能把未命中判为无需求；目录不产生必读回执。
+
+## 跨版本 Critic：完整性优先的按需输入
+
+- 先对账来源、已声明任务、验收与 coverage disposition；一个 source 可对应多个任务，
+  排除或未来决定须保留理由。ID、引用与当前版本机械核验；遗漏异常或视觉语义仍由独立 Critic 判断。
+- 对新旧 Task Map 比较实际变化，按声明的依赖加入前置和下游；共享/全局变化、任务集合变化、
+  不确定的依赖或影响范围无法证明时使用完整输入，不以关键词未命中作为无关证明。
+- 当前 Critic 的必读包含权威需求、完整 Task Map、来源索引/覆盖账本/视觉清单、固定矩阵，
+  以及受影响闭包的旧新 task-scoped 分区和 shared 原文。旧结论和结构化差异仅是导航辅助；
+  缺少来源、验收映射或对应本次 attempt 的完整读取证据时不能批准。
+- 精确关系优先，逐页验证来源与定位；`navigation_complete=false`、坏页、未授权或查询无结果
+  均不能视为无要求，须回到已绑定的完整原文或通过受控流程申请补充。图像需要真实视觉证据，
+  当前无法证明相关性或消费时回退全文及正常视觉审查，不能把 OCR 或图名当成已看图。
+- 对照全量和范围输入执行独立反例：异常、共享规则、未变依赖、图片状态和跨任务责任；
+  报告漏项、误报、读取/版本和模型证据。旧回执不替代本次读取；compaction 后不能声称
+  模型必然保留正文。不因字节节省宣称语义质量等价。

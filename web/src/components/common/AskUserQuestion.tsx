@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { readQuestionDraft, writeQuestionDraft } from "./questionDraft";
+
 export interface AskUserQuestionOption {
   id: string;
   label: string;
@@ -46,6 +48,7 @@ interface AskUserQuestionProps {
   collapseOnDiscuss?: boolean;
   disabled?: boolean;
   discussLabel?: string;
+  draftStorageKey?: string;
   invalidMessage?: string;
   onClose?: () => void;
   onDiscuss?: (question: AskUserQuestionItem) => void;
@@ -58,12 +61,17 @@ interface AskUserQuestionProps {
   variant?: "embedded" | "shelf";
 }
 
-export function AskUserQuestion({
+export function AskUserQuestion(props: AskUserQuestionProps) {
+  return <QuestionForm key={`${props.requestId}:${props.draftStorageKey || ""}:${JSON.stringify(props.questions)}`} {...props} />;
+}
+
+function QuestionForm({
   busy = false,
   className = "",
   collapseOnDiscuss = true,
   disabled = false,
   discussLabel = "Discuss",
+  draftStorageKey,
   invalidMessage = "",
   onClose,
   onDiscuss,
@@ -75,23 +83,26 @@ export function AskUserQuestion({
   submitLabel = "Continue",
   variant = "embedded",
 }: AskUserQuestionProps) {
-  const [activeIndex, setActiveIndex] = useState(0);
+  const signature = JSON.stringify(questions);
+  const [initialDraft] = useState(() => {
+    try { return draftStorageKey ? readQuestionDraft(window.localStorage, draftStorageKey, signature) : undefined; }
+    catch { return undefined; }
+  });
+  const [activeIndex, setActiveIndex] = useState(initialDraft?.activeIndex || 0);
   const [collapsed, setCollapsed] = useState(false);
-  const [selected, setSelected] = useState<Record<string, string>>({});
-  const [skipped, setSkipped] = useState<Record<string, boolean>>({});
-  const [textAnswers, setTextAnswers] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<Record<string, string>>(initialDraft?.selected || {});
+  const [skipped, setSkipped] = useState<Record<string, boolean>>(initialDraft?.skipped || {});
+  const [textAnswers, setTextAnswers] = useState<Record<string, string>>(initialDraft?.textAnswers || Object.fromEntries(
+    questions.filter(question => question.initialAnswer).map(question => [question.id, question.initialAnswer || ""]),
+  ));
 
   useEffect(() => {
-    setActiveIndex(0);
-    setCollapsed(false);
-    setSelected({});
-    setSkipped({});
-    setTextAnswers(Object.fromEntries(
-      questions
-        .filter((question) => question.initialAnswer)
-        .map((question) => [question.id, question.initialAnswer || ""]),
-    ));
-  }, [requestId]);
+    if (!draftStorageKey || (!activeIndex && !Object.keys(selected).length
+      && !Object.keys(skipped).length && !Object.keys(textAnswers).length)) return;
+    try {
+      writeQuestionDraft(window.localStorage, draftStorageKey, signature, { activeIndex, selected, skipped, textAnswers });
+    } catch { /* Storage access itself may be disabled. */ }
+  }, [draftStorageKey, signature, activeIndex, selected, skipped, textAnswers]);
 
   const safeQuestions = questions.slice(0, 3);
   const question = safeQuestions[activeIndex] || safeQuestions[0];

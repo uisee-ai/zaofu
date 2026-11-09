@@ -191,6 +191,7 @@ export interface WorkflowRequestsPage {
 }
 
 export interface WorkflowRequestDetail {
+  preparation?: Record<string, unknown>;
   ok: boolean;
   status: string;
   result: Record<string, unknown>;
@@ -1133,6 +1134,7 @@ export interface OperationsObservability {
   schema_version: string;
   project_id: string;
   scope: { kind: string; note: string };
+  owner_delivery?: { available: boolean; routes: Array<{ target: string; route: string; status: string; failure_count: number; reason: string; last_at: string }> };
   provider_telemetry: {
     requested_mode: string;
     updated_at: string;
@@ -3121,6 +3123,9 @@ export interface OperatorOutputPage {
 export interface OperatorInboxItem {
   id: string;
   unread?: boolean;
+  read_version?: string;
+  resolution?: string;
+  verification_required?: boolean;
   kind: string;
   status: string;
   title: string;
@@ -3249,6 +3254,7 @@ export interface PlanPreview {
     diagnostics?: Array<{ code: string; severity: string; message: string; evidence?: string[] }>;
     source_ids?: Record<string, string[]>;
     plan_ids?: Record<string, string[]>;
+    owner_decision_items?: Array<Record<string, unknown>>;
     missing_sections?: string[];
     policy?: Record<string, unknown>;
   };
@@ -3294,6 +3300,12 @@ export interface PlanPreview {
     options?: Array<{ option_id?: string; label?: string }>;
   }>;
   decision_count?: number;
+  decision_review?: {
+    items: Array<Record<string, unknown>>;
+    counts: Record<string, number>;
+    available: boolean;
+    error: string;
+  };
   actions?: Record<string, string>;
   policy?: Record<string, unknown>;
 }
@@ -3424,6 +3436,8 @@ export interface LoopViewPromiseItem {
 }
 
 export interface LoopViewAttempt {
+  attempt_id?: string;
+  record_kind?: "attempt" | "signal";
   started_ts: string;
   role: string;
   terminal: { type: string; ts: string; reason?: string; seq?: number } | null;
@@ -3439,6 +3453,7 @@ export interface LoopViewTask {
   fails: number;
   counted: number;
   source: string;
+  signals?: Array<{ task_id: string; type: string; ts: string; seq: number; reason: string }>;
 }
 
 export interface LoopViewLoop {
@@ -3485,6 +3500,15 @@ export interface LoopViewProjection {
     warn: boolean;
   }>;
   tasks: LoopViewTask[];
+  timeline?: {
+    tasks: LoopViewTask[];
+    attempt_count: number;
+    failed_attempt_count: number;
+    signal_count: number;
+    source: string;
+    coverage: string;
+    baseline?: { event_id: string; seq: number; task_map_ref: string; task_map_digest: string; task_ids: string[] } | null;
+  };
   backflows: Array<{ from_stage: string; to_stage: string; kind: string; count: number }>;
   subscriber_chains: Array<{ topic: string; seq: number; subscriber: string; result: string; result_seq: number }>;
   loops: Record<string, LoopViewLoop>;
