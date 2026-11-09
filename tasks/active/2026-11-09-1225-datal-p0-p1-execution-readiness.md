@@ -47,3 +47,10 @@
   override后两个独立环境均通过。自动纳入未来派发仍待合同准入。
 - P11B/P12C/P13给出具体可提前验证行为及不可删除的集成依赖，详见实施记录。
 - 新Plan完整评审、正式输入版本绑定、真实首个产品RED、差量任务准入尚未关闭。
+
+### 已合入与进行中
+
+首批实现bfd90684（fix: expose complete delivery cost gaps before plan submission），
+merge ab9fe996。新Critic已实际派发evt-22d84b82fd17，冻结必读4,188,102bytes；
+尚无Critic verdict，不能标记本批done。另补预算诊断阶段匹配和available/required
+成本分离，均先复现RED再修复。P1受控差量输入已记录，未改写在途合同。

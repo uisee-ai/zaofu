@@ -56,9 +56,24 @@ def test_costs_filter_scope_and_never_attribute_another_consumer_or_unbound_usag
     report=input_cost_report(state_dir=tmp_path,manifest=manifest,identity=IDENTITY,
         events=writer.event_log.read_all(),reads=[],consumer_actor='verify-1')
     assert report['visible_sources'] == 1 and report['scope_complete'] is False
+    assert report['required_input'] is None
     assert report['provider_usage'] is None and report['read_deliveries'] == 0
     assert 'alias' not in json.dumps(report)
     assert service.attempt_input_costs('a',context=service.context(role='verify'))['provider_usage'] is None
+
+
+def test_cli_costs_distinguish_available_from_frozen_required_selection(tmp_path, monkeypatch, capsys):
+    manifest, required, _ = published(tmp_path)
+    current_dispatch(tmp_path, required[:1])
+    _grant(tmp_path, monkeypatch, manifest=manifest, operation_id='op')
+    assert main(['artifact', 'costs', '--attempt', 'a', '--state-dir', str(tmp_path)]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report['selected_bytes_scope'] == 'all_visible_selections_not_required_reads'
+    assert report['required_input']['required_rows'] == 1
+    assert report['required_input']['distinct_selected_bytes'] == len('规则'.encode())
+    assert report['required_input']['unknown_rows'] == 0
+    assert report['selected_bytes'] > report['required_input']['distinct_selected_bytes']
+    assert report['read_deliveries'] == 0 and report['body_read_evidence'] is False
 
 
 def test_comparison_requires_same_material_scope_and_qualified_acceptance(tmp_path):
