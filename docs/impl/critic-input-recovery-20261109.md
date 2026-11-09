@@ -57,3 +57,16 @@ Planner 对账已接纳 package 与当前 task 合同，避免顺手重写范围
 真实 datal 故障的口径：可读取来源共 27,330,729 字节；当轮策略实际必读 30 条、
 19,682,377 字节，覆盖 7 条。两者须区分。请求修复 2 个任务，候选与绑定基线之间有
 43 个任务记录变化（41 个范围外）及 8 个全局字段变化，不能直接声明局部修复。
+
+## 混合版本部署
+
+运行中的旧 worker 可能仍使用旧 harness 的绝对 CLI 路径。新 `PrdFlow.spec` 键会被旧版
+fail-closed 拒绝，不能仅验证新控制面能读取配置。升级时需核实仍活跃的旧 CLI。
+本轮 datal 使用显式 `ZfConfig.spec.workflow.stages[prd-plan]`，完整保留展开的 stage 合同，
+只添加两个 aggregate 上限；旧 loader 可以读取，新运行时执行预算。按 stage id 对账后，
+所有 stage 定义及其他配置保持相同；显式 stage 位于展开列表前部，顺序变化已记录。
+待所有 worker 使用支持新键的 harness 后，可以回到更简洁的 PrdFlow 配置。
+
+真实恢复证据在目标项目 `diagnostics/critic-input-recovery-20261109/`，包括配置备份、
+验证日志、受控恢复请求及事件身份；控制面由本工作区加载，活跃 worker 保留。新 Planner
+已经派发，是否生成合格输入并通过独立 Critic 仍须观察后续结果。
