@@ -9,12 +9,12 @@ from zf.runtime.worker_execution_envelope import build_worker_execution_envelope
 from tests.test_work_record import setup, publish
 
 
-def dispatch(log, record, *, fault=""):
+def dispatch(log, record, *, fault="", placement_epoch=1):
     payload = {
         "workflow_run_id": "r", "task_id": "T7", "operation_id": "op",
         "attempt_id": "a", "dispatch_id": "a", "lease_id": "operation-lease",
         "task_pipeline_stage": "impl", "task_map_generation": "map-g1",
-        "operation_generation": 1, "placement_epoch": 1,
+        "operation_generation": 1, "placement_epoch": placement_epoch,
         "workspace_generation": 1, "role_instance": "dev-1",
         "task_stage_session_binding": "binding",
         "workdir": str(record.parent), "source_branch": "task/T7",
