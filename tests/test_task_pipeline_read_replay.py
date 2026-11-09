@@ -67,3 +67,49 @@ def test_replay_does_not_hide_contract_changes_or_weaker_reads(tmp_path, mutatio
     elif mutation == "bounded": current["required_reads"][0]["max_items"] = 1
     elif mutation == "minimum": current["required_reads"][0]["min_returned_bytes"] = 0
     assert ensure(current).status == "divergent"
+
+
+def test_restart_allows_one_compatibility_probe_without_unblocking_other_failures():
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.task_pipeline_read_replay import mark_restart_compatibility_probes
+    from zf.runtime.task_pipeline_reconciler import TaskPipelineReconciler
+    from tests.test_task_pipeline_reconciler import _policy, _task, _operation
+
+    blocked = ZfEvent(type="workflow.operation.blocked", origin="kernel", actor="zf-cli")
+    restart = ZfEvent(type="loop.started", origin="kernel", actor="zf-cli")
+    op = _operation("A", "impl", "blocked", generation=3)
+    op.update(reason="request_hash_compatibility_failed", last_event_id=blocked.id)
+    def stage(events, operation=op):
+        rows = mark_restart_compatibility_probes([operation], events)
+        return TaskPipelineReconciler().reconcile(
+            policy=_policy(), tasks=[_task("A", priority=1)], operations=rows, attempts=[]
+        )["tasks"][0]["stage"]
+    assert stage([blocked]) == "blocked"
+    assert stage([blocked, restart]) == "impl_ready"
+    failed_again = ZfEvent(type="workflow.operation.blocked", origin="kernel", actor="zf-cli")
+    assert stage([blocked, restart, failed_again], {**op, "last_event_id": failed_again.id}) == "blocked"
+    assert stage([blocked, restart], {**op, "reason": "semantic_rework_exhausted"}) == "blocked"
+    assert stage([blocked, restart], {**op, "last_event_id": "missing"}) == "blocked"
+    assert "compatibility_probe_restart_event_id" not in op
+
+
+def test_failed_real_probe_records_a_new_failure_and_stops_rechecking(tmp_path):
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.task_pipeline_read_replay import mark_restart_compatibility_probes
+
+    service, request, _, ensure = setup_service(tmp_path)
+    changed = {**request, "target_commit": "different-target"}
+    assert ensure(changed).status == "divergent"
+    assert ensure(changed).status == "divergent"
+    restart = service.event_writer.append(ZfEvent(type="loop.started", origin="kernel", actor="zf-cli"))
+    def marked():
+        events = service.event_log.read_all()
+        return mark_restart_compatibility_probes(reduce_workflow_operations(events).values(), events)[0]
+    assert marked()["compatibility_probe_restart_event_id"] == restart.id
+    assert ensure(changed).status == "divergent"
+    assert ensure(changed).status == "divergent"
+    assert marked()["reason"] == "request_hash_compatibility_failed"
+    assert "compatibility_probe_restart_event_id" not in marked()
+    size = len(service.event_log.read_all())
+    assert ensure(changed).status == "divergent"
+    assert len(service.event_log.read_all()) == size

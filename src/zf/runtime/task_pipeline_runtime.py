@@ -509,6 +509,8 @@ def reconcile_task_pipeline_runtime(
         events = runtime.event_log.read_all()
         all_operations = [row for row in reduce_workflow_operations(events).values()
                           if operation_matches_generation(row, contexts)]
+        from zf.runtime.task_pipeline_read_replay import mark_restart_compatibility_probes
+        all_operations = mark_restart_compatibility_probes(all_operations, events)
         state_dir = getattr(runtime, "state_dir", None)
         if state_dir is not None:
             all_operations = normalize_task_pipeline_operation_semantics(
@@ -527,6 +529,8 @@ def reconcile_task_pipeline_runtime(
         events = runtime.event_log.read_all()
         all_operations = [row for row in reduce_workflow_operations(events).values()
                           if operation_matches_generation(row, contexts)]
+        from zf.runtime.task_pipeline_read_replay import mark_restart_compatibility_probes
+        all_operations = mark_restart_compatibility_probes(all_operations, events)
         state_dir = getattr(runtime, "state_dir", None)
         if state_dir is not None:
             all_operations = normalize_task_pipeline_operation_semantics(

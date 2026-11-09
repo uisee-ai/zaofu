@@ -796,7 +796,8 @@ def _derive_stage(
         return "impl_active", impl_generation, max(0, impl_generation - 1)
     if (
         impl_status == "blocked"
-        and str(impl.get("reason") or "") == "request_hash_divergence"
+        and (str(impl.get("reason") or "") == "request_hash_divergence"
+             or impl.get("compatibility_probe_restart_event_id"))
     ):
         return "impl_ready", impl_generation, max(0, impl_generation - 1)
     if impl_status in {"failed", "blocked"}:
@@ -848,7 +849,8 @@ def _derive_stage(
         return "verify_active", verify_generation, max(0, verify_generation - 1)
     if (
         verify_status == "blocked"
-        and str(verify.get("reason") or "") == "request_hash_divergence"
+        and (str(verify.get("reason") or "") == "request_hash_divergence"
+             or verify.get("compatibility_probe_restart_event_id"))
     ):
         return "verify_ready", verify_generation, max(0, verify_generation - 1)
     if verify_status in {"failed", "blocked"}:
@@ -904,7 +906,8 @@ def _derive_verify_only_stage(
         return "verify_active", generation, max(0, generation - 1)
     if (
         status == "blocked"
-        and str(verify.get("reason") or "") == "request_hash_divergence"
+        and (str(verify.get("reason") or "") == "request_hash_divergence"
+             or verify.get("compatibility_probe_restart_event_id"))
     ):
         return "verify_ready", generation, max(0, generation - 1)
     if status in {"failed", "blocked"}:
@@ -977,8 +980,8 @@ def _derive_post_verification_stage(
             )
         if (
             review_status == "blocked"
-            and str(review.get("reason") or "")
-            == "request_hash_divergence"
+            and (str(review.get("reason") or "") == "request_hash_divergence"
+                 or review.get("compatibility_probe_restart_event_id"))
         ):
             return (
                 "acceptance_review_ready",
