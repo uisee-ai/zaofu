@@ -62,6 +62,14 @@ def settle_failed_attempt_operations(
     return changed
 
 
+def _settlement_eligible(row: Mapping[str, Any], *, mode: str) -> bool:
+    status = str(row.get("status") or "")
+    return status in {"prepared", "delivering", "sent"} or (
+        mode == "shadow" and status in {"expired", "failed"}
+        and str(row.get("failure_class") or "") == "lease_expired"
+    )
+
+
 def settle_admitted_operation_attempt(
     runtime: Any,
     event: ZfEvent,
@@ -114,6 +122,9 @@ def settle_admitted_operation_attempt(
         and str(row.get("operation_id") or "") == operation_id
         and (not run_id or str(row.get("run_id") or "") == run_id)
     ]
+    mode = support._attempt_mode(runtime)
+    if not any(_settlement_eligible(row, mode=mode) for row in candidates):
+        return False
     # Result repair keeps the immutable CallRequest attempt. The admitted
     # fanout occurrence identifies the execution dispatch that actually ended.
     admitted_dispatches = {
@@ -151,11 +162,11 @@ def settle_admitted_operation_attempt(
     )
     status = str(current.get("status") or "")
     repair_shadow_expiry = (
-        support._attempt_mode(runtime) == "shadow"
+        mode == "shadow"
         and status in {"expired", "failed"}
         and str(current.get("failure_class") or "") == "lease_expired"
     )
-    if status not in {"prepared", "delivering", "sent"} and not repair_shadow_expiry:
+    if not _settlement_eligible(current, mode=mode):
         return False
 
     attempt_id = str(current.get("attempt_id") or "")
