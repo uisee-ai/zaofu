@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现提交：`813f15c3` — fix: validate work records against current recovery placement；合并 `95db6981`。
 
 # 恢复派发后的阶段工作记录校验
 
@@ -10,4 +12,6 @@
 
 复现证据：datal `diagnostics/work-record-placement-20261109/before.json`。
 
-验证：初始回归 2 failed/3 passed；修复后定向40通过、dev-verify影响域66通过、sentinel53通过、动态续跑mock E2E4通过。真实P16B只读绑定从拒绝变为正确工作目录；等待合并及worker真实发布。
+验证：初始回归 2 failed/3 passed；修复后定向40通过、dev-verify影响域66通过、sentinel53通过、动态续跑mock E2E4通过。真实P16B只读绑定从拒绝变为正确工作目录。
+
+现场闭环：合并后58项定向及53项sentinel通过；2026-11-09 10:57 UTC 原worker发布 `evt-ca95172175de`，保留 attempt/dispatch/manifest，记录sidecar摘要核验通过。当前CLI加载修复，无需重启worker或控制面。记录是未独立验证的工作报告，不代表产品完成。实现worktree已按合并、干净、无活动使用检查清理。
