@@ -76,6 +76,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     rj.add_argument("--reason", required=True)
     rj.add_argument("--input-task", action="append", default=None,
                     help="Prioritize a task's complete input on replan; repeat for more tasks")
+    rj.add_argument("--dispatch-task", action="append", default=None,
+                    help="Explicit future execution task scope for a newly reviewed Plan; repeat for each task")
     rj.set_defaults(func=_run)
 
 
@@ -141,6 +143,8 @@ def _run(args: argparse.Namespace) -> int:
     decision_payload: dict = {"plan_id": args.plan_id}
     if args.plan_cmd == "reject":
         decision_payload["reason"] = args.reason
+        if getattr(args, "dispatch_task", None) is not None:
+            decision_payload["dispatch_task_ids"] = args.dispatch_task
         if getattr(args, "input_task", None) is not None:
             from zf.runtime.reader_replan_feedback import input_task_ids
 
@@ -150,7 +154,7 @@ def _run(args: argparse.Namespace) -> int:
                 print(f"Error: {exc}")
                 return 1
     writer = EventWriter(log)
-    result, _reason = decide_pending_plan(
+    result, reason = decide_pending_plan(
         writer,
         state_dir=state_dir,
         plan_id=args.plan_id,
@@ -158,7 +162,7 @@ def _run(args: argparse.Namespace) -> int:
         payload=decision_payload,
     )
     if result is None:
-        print(f"plan {args.plan_id} is not awaiting review; it was decided or does not exist.")
+        print(f"plan {args.plan_id} decision rejected: {reason}")
         return 1
     if args.plan_cmd == "approve":
         print(f"plan {args.plan_id} approved - fanout will start on the next kernel wake.")

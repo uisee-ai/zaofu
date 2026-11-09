@@ -64,3 +64,13 @@ merge ab9fe996。新Critic已实际派发evt-22d84b82fd17，冻结必读4,188,10
 - 当前批次仍active，只有真实准入、独立验证及冷环境调用证据齐全才归档。
 - 影响闭包802 passed（含mock E2E）；真实状态+草稿的只读调度forecast分配lane2–7，
   加现有两Impl可达8。forecast不等于正式准入/真实8并发。
+
+### 执行范围与环境入口继续收口
+
+- 旧恢复范围仅2gap，新增owner显式dispatch scope，经rejection→新Plan评审→同版
+  批准才更新任务；不覆盖done/active/foreign合同。六片+原2gap+4父任务为12项差量。
+- 产品缓存入口已在独立分支提交f5606fcd，基础设施63项通过；两个全新checkout
+  在离线环境实测Impl并发锁、Verify入口和venv隔离，详见实施记录。
+- 本批仍active：正式独立评审、差量准入及真实8Impl运行尚待验证。
+
+Owner scope影响闭包364 passed（含三个mock E2E），serial10 passed、sentinel53 passed。

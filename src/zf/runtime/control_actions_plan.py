@@ -53,6 +53,8 @@ class PlanApprovalActionsMixin:
         }
         if reason:
             event_payload["reason"] = reason
+        if "dispatch_task_ids" in payload:
+            event_payload["dispatch_task_ids"] = payload["dispatch_task_ids"]
         if action == "plan-reject" and "input_task_ids" in payload:
             from zf.runtime.reader_replan_feedback import input_task_ids
 
