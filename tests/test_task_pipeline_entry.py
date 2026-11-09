@@ -141,6 +141,23 @@ def test_external_gate_waits_without_worker_and_admits_operator_evidence_once(
         if event.type == "task.pipeline.stage.dispatched"
     ]
 
+    # The actual producer must preserve the consumer's task-scoped gate:
+    # unrelated work may recover while this task and its dependents wait.
+    from zf.runtime.run_manager import _pending_human_decisions
+    from zf.runtime.run_manager_action_admission import action_gate_reason
+
+    store.add(Task(id="TASK-INDEPENDENT"))
+    store.add(Task(id="TASK-DIRECT", blocked_by=[task.id]))
+    store.add(Task(id="TASK-TRANSITIVE", blocked_by=["TASK-DIRECT"]))
+    pending = _pending_human_decisions(log.read_all())
+    assert action_gate_reason(
+        state_dir, log.read_all(), {"task_id": "TASK-INDEPENDENT"}, pending,
+    ) == ""
+    for blocked_task in (task.id, "TASK-DIRECT", "TASK-TRANSITIVE", ""):
+        assert action_gate_reason(
+            state_dir, log.read_all(), {"task_id": blocked_task}, pending,
+        ) == "human_decision_pending"
+
     receipt.write_text('{"status":"passed"}\n', encoding="utf-8")
     receipt.chmod(0o444)
     file_digest = hashlib.sha256(receipt.read_bytes()).hexdigest()
