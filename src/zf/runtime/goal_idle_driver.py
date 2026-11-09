@@ -16,6 +16,7 @@ from typing import Any, Iterable
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.plan_approval_state import has_pending_plan_approval
+from zf.runtime.run_scope import events_for_run
 from zf.runtime.workflow_operation import (
     TERMINAL_OPERATION_STATUSES,
     reduce_workflow_operations,
@@ -65,6 +66,15 @@ def maybe_emit_goal_idle_rescan(
         state.goal_idle_ticks = 0
         return ""
     run_id = str(projection.get("run_id") or "")
+    scoped_events = events_for_run(events, run_id=run_id) if run_id else []
+    goal_start = next(
+        (index for index, event in enumerate(scoped_events)
+         if event.type == "run.goal.started"),
+        None,
+    )
+    if goal_start is None:
+        state.goal_idle_ticks = 0
+        return ""
     if has_pending_plan_approval(events, workflow_run_id=run_id):
         state.goal_idle_ticks = 0
         return ""
@@ -85,13 +95,17 @@ def maybe_emit_goal_idle_rescan(
     pending_rescan = False
     rescan_count = 0
     fail_refs: list[str] = []
-    for event in events:
+    for index, event in enumerate(scoped_events):
         payload = event.payload if isinstance(event.payload, dict) else {}
         fanout_id = str(payload.get("fanout_id") or "")
         if event.type == "fanout.started" and fanout_id:
             inflight.add(fanout_id)
         elif event.type in _FANOUT_TERMINALS and fanout_id:
             inflight.discard(fanout_id)
+        # A same-run fanout may start before the goal anchor and remain live,
+        # but pre-goal rescans must not spend this goal's retry allowance.
+        if index < goal_start:
+            continue
         if event.type in progress_events:
             last_progress_id = event.id
             pending_rescan = False
@@ -118,12 +132,14 @@ def maybe_emit_goal_idle_rescan(
     max_rescans = int(getattr(config.goal, "max_rescans", 5) or 0)
     if rescan_count >= max_rescans:
         # 有界:穷尽后升级 human(quiescent 会在宽限后接管静默)
-        if _exhausted_already_escalated(events):
+        if _exhausted_already_escalated(scoped_events[goal_start:]):
             return ""
         event_writer.append(ZfEvent(
             type="human.escalate",
             actor="zf-cli",
+            correlation_id=run_id,
             payload={
+                "workflow_run_id": run_id,
                 "reason": "goal idle rescans exhausted",
                 "source": "goal_idle_driver",
                 "rescan_count": rescan_count,
@@ -134,7 +150,9 @@ def maybe_emit_goal_idle_rescan(
     event_writer.append(ZfEvent(
         type=GOAL_RESCAN_EVENT,
         actor="zf-cli",
+        correlation_id=run_id,
         payload={
+            "workflow_run_id": run_id,
             "trigger": "idle",
             "source": "goal_idle_driver",
             "rescan_ordinal": rescan_count + 1,

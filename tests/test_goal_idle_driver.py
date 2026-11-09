@@ -51,6 +51,68 @@ def test_idle_active_goal_fires_bounded_rescan() -> None:
     assert writer.appended[0].type == GOAL_RESCAN_EVENT
     assert writer.appended[0].payload["trigger"] == "idle"
     assert writer.appended[0].payload["rescan_ordinal"] == 1
+    assert writer.appended[0].payload["workflow_run_id"] == "r-1"
+    assert writer.appended[0].correlation_id == "r-1"
+
+
+def test_pre_goal_rescan_does_not_spend_current_run_allowance() -> None:
+    request = ZfEvent(type=GOAL_RESCAN_EVENT, actor="zf-cli", payload={})
+    events = [request, _goal_started(),
+              ZfEvent(type="dev.build.done", actor="dev", payload={})]
+    writer = _Writer()
+    assert _tick_until_fire(events, _cfg(max_rescans=1), _state(), writer) == "rescan"
+    assert writer.appended[0].payload["rescan_ordinal"] == 1
+
+
+@pytest.mark.parametrize("foreign_type", [GOAL_RESCAN_EVENT, "fanout.started"])
+def test_other_run_pending_work_does_not_suppress_idle_rescan(foreign_type) -> None:
+    events = [_goal_started(), ZfEvent(
+        type=foreign_type, actor="zf-cli",
+        payload={"workflow_run_id": "other", "fanout_id": "foreign-fanout"},
+    )]
+    writer = _Writer()
+    assert _tick_until_fire(events, _cfg(), _state(), writer) == "rescan"
+    assert writer.appended[0].payload["rescan_ordinal"] == 1
+
+
+def test_other_run_rescan_and_exhaustion_do_not_change_current_run_limit() -> None:
+    events = [ZfEvent(type="run.goal.started", actor="zf-cli",
+                     payload={"run_id": "other"}), _goal_started()]
+    for run_id in ["other", "r-1"]:
+        events.extend([
+            ZfEvent(type=GOAL_RESCAN_EVENT, actor="zf-cli",
+                    payload={"workflow_run_id": run_id}),
+            ZfEvent(type="goal.rescan.completed", actor="zf-cli",
+                    payload={"workflow_run_id": run_id}),
+        ])
+    events.append(ZfEvent(type="human.escalate", actor="zf-cli", payload={
+        "workflow_run_id": "other", "source": "goal_idle_driver",
+    }))
+    writer = _Writer()
+    assert _tick_until_fire(events, _cfg(max_rescans=1), _state(), writer) == "exhausted"
+    assert writer.appended[0].payload["rescan_count"] == 1
+    assert writer.appended[0].payload["workflow_run_id"] == "r-1"
+    assert writer.appended[0].correlation_id == "r-1"
+
+
+def test_unscoped_loop_without_goal_does_not_emit_unowned_rescan() -> None:
+    writer = _Writer()
+    events = [ZfEvent(type="loop.started", actor="zf-cli", payload={})]
+    assert _tick_until_fire(events, _cfg(), _state(), writer) == ""
+    assert not writer.appended
+
+
+def test_same_run_fanout_started_before_goal_remains_inflight() -> None:
+    events = [ZfEvent(type="fanout.started", actor="zf-cli", payload={
+        "workflow_run_id": "r-1", "fanout_id": "pre-goal-planner",
+    }), _goal_started()]
+    writer = _Writer()
+    assert _tick_until_fire(events, _cfg(), _state(), writer) == ""
+    assert not writer.appended
+    events.append(ZfEvent(type="fanout.aggregate.completed", actor="zf-cli", payload={
+        "workflow_run_id": "r-1", "fanout_id": "pre-goal-planner",
+    }))
+    assert _tick_until_fire(events, _cfg(), _state(), writer) == "rescan"
 
 
 @pytest.mark.parametrize("scope", ["trace_id", "workflow_run_id", "correlation_id"])
