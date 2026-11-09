@@ -29,3 +29,5 @@ serial 10 passed、premerge sentinel 53 passed、mock flow smoke 10 passed。
 事件 evt-6858b7b45928，实际 Run Manager 自动派发 evt-7666ced8dbc8，派发验证
 evt-166a7abae525。派发效果仍 pending，不等于产品实现或验收成功。原始证据和监工记录
 位于 datal diagnostics/reader-triage-20261109/。
+
+后续建议消费兼容修复见 [legacy OA 转交](legacy-diagnostic-handoff-20261109.md)。

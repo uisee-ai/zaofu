@@ -1,4 +1,4 @@
-"""Bind resident advice to the existing current Impl semantic-review route."""
+"""Bind resident advice to current Impl checkpoints or legacy advisory review."""
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +17,10 @@ def bind_resident_semantic_handoff(
     if request is None:
         raise ValueError("semantic_handoff_diagnosis_missing")
     failure_ids = set(request.payload.get("failure_event_ids") or [])
-    operation_ids = {e.payload.get("operation_id") for e in events if e.id in failure_ids}
-    candidates = pending_execution_reviews(state_dir=state_dir, config=config, events=events)
+    operation_ids = frozenset(str(e.payload["operation_id"]) for e in events
+                              if e.id in failure_ids and e.payload.get("operation_id"))
+    candidates = pending_execution_reviews(state_dir=state_dir, config=config, events=events,
+                                          diagnosed_operation_ids=operation_ids)
     current = next((a for a in candidates
                     if a.get("task_id") == payload.get("task_id")
                     and a.get("target_operation_id") in operation_ids), None)
