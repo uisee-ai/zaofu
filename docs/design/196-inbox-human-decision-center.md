@@ -48,7 +48,8 @@ Inbox 不提供绕过方案审核的一键启动。来源仍负责并发、过�
   新版本成为独立未读项，不能沿用旧版本的授权或阅读回执。
 - 批准、拒绝、过期、被替代等事实来自原始事件，退出待办后保留审批历史。
   已处理项不再提供批准 / 拒绝控件。
-- Workflow 的“已批准”与 `execution_status=submitted/running` 分开显示；运行终态和产物
+- Workflow 的“已批准”与 `execution_status=submitted/running` 对应的启动记录分开显示；
+  启动记录是历史事实，不代表实时运行状态。运行终态和产物
   在原 Workflow 页面查看。提交或授权通过不代表任务完成。
 - Run Manager 的 acknowledged 只表示收到决定；Operations 继续显示 processing、applied、
   failed 等来源状态，不能把卡片消失或收到事件当作恢复成功。

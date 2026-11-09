@@ -514,7 +514,7 @@ function InboxRow({
             <p className="muted">{t("Review the original context to determine the available action.")}</p>
           ) : null}
           {item.resolution ? <p>{t("Decision result")}: {item.resolution}</p> : null}
-          {item.execution_status ? <p>执行状态：{item.execution_status}（授权通过不代表任务完成）</p> : null}
+          {item.execution_status ? <p>启动记录：{item.execution_status === "running" ? "已启动" : "已提交"}。授权通过不代表任务完成，最新结果请查看 Workflow。</p> : null}
           <details className="operator-inbox-source"><summary>Source and records</summary><div className="operator-inbox-meta-line">
             {inboxItemPrimaryRef(item) ? <span className="mono">{inboxItemPrimaryRef(item)}</span> : null}
             {item.stage_id ? <span>stage {item.stage_id}</span> : null}
