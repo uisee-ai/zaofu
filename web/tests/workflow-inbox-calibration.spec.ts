@@ -10,7 +10,7 @@ test("Inbox filters remain visible and selectable on desktop and narrow screens"
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/?project=ui-review&page=inbox");
     const filters = page.getByLabel("Inbox display view");
-    const names = ["All", "Needs action", "Resolved"];
+    const names = ["Needs action", "Resolved"];
     for (const name of names) {
       const button = filters.getByRole("button", { name, exact: true });
       await expect(button).toBeVisible();
@@ -24,11 +24,9 @@ test("Inbox filters remain visible and selectable on desktop and narrow screens"
     }
     const row = await filters.locator("button, select").evaluateAll(elements => elements.map(el => el.getBoundingClientRect().top));
     expect(Math.max(...row) - Math.min(...row)).toBeLessThan(8);
-    const more = page.getByLabel("More inbox views");
-    for (const value of ["runtime_attention", "notification", "automation"]) {
-      await more.selectOption(value);
-      await expect(more).toHaveValue(value);
-    }
+    await expect(page.getByLabel("More inbox views")).toHaveCount(0);
+    await page.getByRole("button", { name: "Search inbox", exact: true }).click();
+    await expect(page.getByLabel("Inbox kind").locator("option")).toHaveText(["All types", "Plan Ready", "Approval"]);
     await page.getByRole("checkbox", { name: "Unread", exact: true }).check();
     await expect(page.getByRole("checkbox", { name: "Unread", exact: true })).toBeChecked();
     await expect(page.getByRole("button", { name: "Mark all read" })).toBeVisible();

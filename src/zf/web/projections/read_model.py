@@ -1255,7 +1255,7 @@ def operator_inbox(
     events = hydrate_events(
         state_dir,
         types=types,
-        type_prefixes=["runtime.attention.", "channel.member."],
+        type_prefixes=["runtime.attention.", "channel.member.", "workflow.request."],
         config=config,
         require_fresh=True,
         slim=False,

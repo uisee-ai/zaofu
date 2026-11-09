@@ -6,7 +6,7 @@ from pathlib import Path
 from zf.core.config.schema import ProjectConfig, ZfConfig
 from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.runtime.control_actions import ControlledActionService
-from zf.runtime.operator_inbox import build_operator_inbox
+from zf.runtime.operator_inbox import build_operator_inbox, build_runtime_requests
 from zf.web.projections import read_model
 
 
@@ -14,7 +14,7 @@ def event(event_type: str, event_id: str, **payload: object) -> ZfEvent:
     return ZfEvent(id=event_id, type=event_type, actor="test", payload=payload)
 
 
-def test_only_human_decisions_and_legacy_owner_requests_are_projected(tmp_path: Path) -> None:
+def test_only_reviews_are_in_inbox_and_legacy_requests_remain_in_runtime(tmp_path: Path) -> None:
     events = [
         event("plan.approved", "auto", plan_id="auto-plan", auto=True),
         event("plan.approval.requested", "plan-request", plan_id="plan-1"),
@@ -30,9 +30,10 @@ def test_only_human_decisions_and_legacy_owner_requests_are_projected(tmp_path: 
     ]
     result = build_operator_inbox(tmp_path, events)
     assert {item["kind"] for item in result["pending"]} == {
-        "plan_approval", "channel_decision", "kanban_question", "human_decision", "owner_attention", "approval",
+        "plan_approval",
     }
-    assert result["summary"]["unread"] == 6
+    assert result["summary"]["unread"] == 1
+    result = {"items": build_runtime_requests(tmp_path, events)}
     legacy = next(item for item in result["items"] if item["id"] == "human:legacy")
     assert legacy["verification_required"] is True
     assert legacy["actions"] == []
@@ -44,28 +45,24 @@ def test_only_human_decisions_and_legacy_owner_requests_are_projected(tmp_path: 
 
 
 def test_versioned_reads_follow_decision_content_and_visible_snapshot(tmp_path: Path) -> None:
-    opened = event("channel.question.opened", "open", channel_id="c", question_id="q", kind="owner_decision", question="Choose A", options=[{"id": "a", "label": "A"}, {"id": "b", "label": "B"}])
+    opened = event("plan.approval.requested", "open", plan_id="p", task_map_ref="v1.json")
     first = build_operator_inbox(tmp_path, [opened])["items"][0]
     read = event("inbox.item.read", "read", item_id=first["id"], read_version=first["read_version"])
-    same = event("channel.question.updated", "same", channel_id="c", question_id="q", question="Choose A")
+    same = event("plan.approval.requested", "same", plan_id="p", task_map_ref="v1.json")
     assert build_operator_inbox(tmp_path, [opened, read, same])["summary"]["unread"] == 0
-    updated = event("channel.question.updated", "update", channel_id="c", question_id="q", options=[{"id": "a", "label": "A"}, {"id": "c", "label": "C"}])
+    updated = event("plan.approval.requested", "update", plan_id="p", task_map_ref="v2.json")
     current = build_operator_inbox(tmp_path, [opened, read, updated])["items"][0]
-    assert current["unread"] is True
-    assert current["read_version"] != first["read_version"]
+    assert current["unread"] and current["read_version"] != first["read_version"]
     old_all = event("inbox.all.read", "all", items=[{"item_id": first["id"], "read_version": first["read_version"]}])
-    later = event("kanban.agent.plan.requested", "new", plan_request={"request_id": "new", "question": "New?"})
-    after = build_operator_inbox(tmp_path, [opened, updated, old_all, later])
-    assert after["summary"]["unread"] == 2
+    later = event("plan.approval.requested", "new", plan_id="new")
+    assert build_operator_inbox(tmp_path, [opened, updated, old_all, later])["summary"]["unread"] == 2
     legacy_read = event("inbox.item.read", "legacy-read", item_id=first["id"])
-    after = build_operator_inbox(tmp_path, [opened, updated, legacy_read, later])
-    assert after["summary"]["unread"] == 1
+    assert build_operator_inbox(tmp_path, [opened, updated, legacy_read, later])["summary"]["unread"] == 1
     current_read = event("inbox.item.read", "read-new", item_id=first["id"], read_version=current["read_version"])
-    delayed_old = event("inbox.item.read", "read-old-delayed", item_id=first["id"], read_version=first["read_version"])
-    after = build_operator_inbox(tmp_path, [opened, updated, current_read, delayed_old])
+    after = build_operator_inbox(tmp_path, [opened, updated, current_read, read])
     assert after["summary"]["unread"] == 0
-    reverted = event("channel.question.updated", "reverted", channel_id="c", question_id="q", options=[{"id": "a", "label": "A"}, {"id": "b", "label": "B"}])
-    assert build_operator_inbox(tmp_path, [opened, updated, current_read, delayed_old, reverted])["summary"]["unread"] == 1
+    reverted = event("plan.approval.requested", "reverted", plan_id="p", task_map_ref="v1.json")
+    assert build_operator_inbox(tmp_path, [opened, updated, current_read, read, reverted])["summary"]["unread"] == 1
 
 
 def test_repeated_delivery_of_same_decision_does_not_reopen_unread(tmp_path: Path) -> None:
@@ -85,9 +82,11 @@ def test_sqlite_and_event_ledger_agree_on_decisions_and_reads(tmp_path: Path) ->
     log = EventLog(state / "events.jsonl")
     opened = event("channel.question.opened", "open", channel_id="c", thread_id="main", question_id="q", kind="owner_decision", question="Choose")
     log.append(opened)
+    log.append(event("plan.approval.requested", "p1", plan_id="p1"))
+    log.append(event("plan.approval.requested", "p2", plan_id="p2"))
     log.append(event("kanban.agent.plan.requested", "request", plan_request={"request_id": "r", "question": "Decide"}))
     first = build_operator_inbox(state, log.read_all())
-    item = next(item for item in first["items"] if item["kind"] == "channel_decision")
+    item = next(item for item in first["items"] if item["kind"] == "plan_approval")
     log.append(event("inbox.item.read", "read", item_id=item["id"], read_version=item["read_version"]))
     expected = build_operator_inbox(state, log.read_all(), project_root=tmp_path)
     projected = read_model.operator_inbox(state, project_root=tmp_path)
@@ -117,12 +116,15 @@ def test_channel_inbox_obeys_authoritative_question_admission(tmp_path: Path) ->
     raw = build_operator_inbox(state, log.read_all(), project_root=tmp_path)
     indexed = read_model.operator_inbox(state, project_root=tmp_path)
     assert raw["items"] == indexed["items"]
-    assert raw["pending"][0]["question_id"] == "q-db"
+    from zf.runtime.channel_projection import project_channel
+    assert raw["items"] == []
+    assert project_channel(state, CH)["open_questions"][0]["status"] == "open"
     assert defer(service, writer)["ok"]
     raw = build_operator_inbox(state, log.read_all(), project_root=tmp_path)
     indexed = read_model.operator_inbox(state, project_root=tmp_path)
     assert raw["items"] == indexed["items"]
-    assert raw["items"][0]["status"] == "resolved"
+    assert raw["items"] == []
+    assert project_channel(state, CH)["open_questions"][0]["status"] == "resolved"
 
 
 def test_channel_question_identity_is_scoped_to_its_channel(tmp_path: Path) -> None:
@@ -131,9 +133,8 @@ def test_channel_question_identity_is_scoped_to_its_channel(tmp_path: Path) -> N
         event("channel.question.opened", "second", channel_id="b", question_id="q", question="Second?"),
         event("channel.question.resolved", "answer", channel_id="b", question_id="q", resolution="answered"),
     ]
-    items = {item["channel_id"]: item for item in build_operator_inbox(tmp_path, events)["items"]}
-    assert items["a"]["status"] == "pending"
-    assert items["b"]["status"] == "resolved"
+    assert build_operator_inbox(tmp_path, events)["items"] == []
+    assert len(events) == 3
 
 
 def test_plan_decision_requires_current_request_and_serializes_competing_actions(tmp_path: Path) -> None:
@@ -221,7 +222,7 @@ def test_real_web_read_action_updates_sqlite_and_keeps_decision_pending(tmp_path
     (state / "kanban.json").write_text("[]\n")
     (state / "feature_list.json").write_text("[]\n")
     log = EventLog(state / "events.jsonl")
-    log.append(event("channel.question.opened", "open", channel_id="c", thread_id="main", question_id="q", kind="owner_decision", question="Decide"))
+    log.append(event("plan.approval.requested", "open", plan_id="p"))
     client = TestClient(create_app(state, project_root=tmp_path))
     project = client.get("/api/snapshot").json()["project"]["project_id"]
     path = f"/api/projects/{project}/operator/inbox"
@@ -257,14 +258,16 @@ def test_human_decision_submission_is_visible_and_cannot_be_submitted_twice(tmp_
         return client.post(action_path, headers={"x-zf-web-token": "test-token"},
                            json={"project_id": project, "idempotency_key": key, "payload": payload})
     assert submit("first").status_code == 202
-    inbox = client.get(inbox_path).json()
-    assert inbox["items"][0]["status"] == "processing"
-    assert inbox["summary"]["pending"] == 0
+    assert client.get(inbox_path).json()["items"] == []
+    source_path = f"/api/projects/{project}/observability/operations"
+    source = client.get(source_path).json()["source_requests"]
+    assert source["items"][0]["status"] == "processing"
     assert submit("second").status_code == 409
     log.append(event("run.manager.human_decision.applied", "applied", decision_token="hdec-1", decision="request_autoresearch", autoresearch_requested=False, reason="request failed"))
-    inbox = client.get(inbox_path).json()
-    assert inbox["items"][0]["status"] == "failed"
-    assert inbox["items"][0]["resolution"] == "request failed"
+    source = client.get(source_path).json()["source_requests"]
+    assert source["items"][0]["status"] == "failed"
+    assert source["items"][0]["resolution"] == "request failed"
+    assert client.get(inbox_path).json()["items"] == []
 
 
 def test_human_decision_requires_contract_and_current_run_state(tmp_path: Path, monkeypatch) -> None:
@@ -292,7 +295,8 @@ def test_human_decision_requires_contract_and_current_run_state(tmp_path: Path, 
     raw = build_operator_inbox(state, log.read_all(), project_root=tmp_path)
     indexed = read_model.operator_inbox(state, project_root=tmp_path)
     assert raw["items"] == indexed["items"]
-    by_token = {row["decision_token"]: row for row in raw["items"]}
+    assert raw["items"] == []
+    by_token = {row["decision_token"]: row for row in build_runtime_requests(state, log.read_all())}
     assert by_token["legacy-token"]["verification_required"] is True
     assert by_token["legacy-token"]["actions"] == []
     assert by_token["current-token"]["status"] == "superseded"
@@ -308,8 +312,10 @@ def test_unscoped_legacy_escalation_is_not_hidden_by_other_run_progress(tmp_path
     raw = build_operator_inbox(state, log.read_all(), project_root=tmp_path)
     indexed = read_model.operator_inbox(state, project_root=tmp_path)
     assert raw["items"] == indexed["items"]
-    assert raw["pending"][0]["verification_required"] is True
-    assert raw["pending"][0]["actions"] == []
+    assert raw["items"] == []
+    source = build_runtime_requests(state, log.read_all())
+    assert source[0]["verification_required"] is True
+    assert source[0]["actions"] == []
 
 
 def test_owner_delivery_failures_group_by_route_and_show_recovery() -> None:

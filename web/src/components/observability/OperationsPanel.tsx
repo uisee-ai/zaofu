@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getOperationsObservability } from "../../api/client";
 import type { OperationsObservability } from "../../api/types";
+import { LatestRequestGate } from "../../app/latestRequestGate";
+import { RuntimeRequests } from "./RuntimeRequests";
 
 function signalText(signals: Record<string, boolean>): string {
   return Object.entries(signals)
@@ -11,24 +13,34 @@ function signalText(signals: Record<string, boolean>): string {
 }
 
 export function OperationsPanel({ projectId }: { projectId?: string }) {
+  return <ProjectOperationsPanel key={projectId} projectId={projectId} />;
+}
+
+function ProjectOperationsPanel({ projectId }: { projectId?: string }) {
   const [data, setData] = useState<OperationsObservability | null>(null);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    getOperationsObservability(projectId)
-      .then((payload) => {
-        if (cancelled) return;
-        setData(payload);
-        setError("");
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
+  const gate = useRef(new LatestRequestGate());
+  const refresh = useCallback(async () => {
+    const ticket = gate.current.issue();
+    try {
+      const payload = await getOperationsObservability(projectId);
+      if (!gate.current.isCurrent(ticket)) return;
+      setData(payload);
+      setError("");
+    } catch (reason) {
+      if (gate.current.isCurrent(ticket)) setError(String(reason));
+    }
   }, [projectId]);
+
+  useEffect(() => {
+    void refresh();
+    const timer = setInterval(() => void refresh(), 15000);
+    return () => {
+      gate.current.invalidate();
+      clearInterval(timer);
+    };
+  }, [refresh]);
 
   if (error) return <p className="error">{error}</p>;
   if (!data) return <p className="muted">Loading operations status…</p>;
@@ -37,6 +49,8 @@ export function OperationsPanel({ projectId }: { projectId?: string }) {
   const exporterCounters = exporter.counters;
   return (
     <div className="observability-resource-grid" data-testid="operations-observability">
+      <RuntimeRequests key={projectId} projectId={projectId} requests={data.source_requests}
+        onChanged={refresh} />
       <section className="subsection">
         <div className="inline-heading"><h3>Operations</h3><span className="muted">{data.scope.kind}</span></div>
         <dl className="key-value-grid">
