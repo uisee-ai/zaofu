@@ -99,7 +99,7 @@ def gap_plan_amend_baseline(
     maps = None
     # Pin requirement authority; other inputs follow the task's declared consumers.
     # Required Plan outputs alone do not make execution_spec a task input.
-    selected = {"requirement_spec"}
+    selected: dict[str, set[str]] = {"requirement_spec": set()}
     for task_id in targets:
         task = old_tasks.get(task_id)
         if task is None or task_id not in new_tasks:
@@ -117,12 +117,37 @@ def gap_plan_amend_baseline(
             raise PlanArtifactPackageError("cross-generation gap needs explicit input selection: " + task_id)
         for values in selection.values():
             if isinstance(values, list):
-                selected.update(v for v in values if isinstance(v, str))
+                for name in values:
+                    if isinstance(name, str):
+                        selected.setdefault(name, set()).add(task_id)
     for name in selected:
         a, b = previous.get(name), latest.get(name)
         if a is None and b is None:
             continue
-        if a is None or b is None or a.get("sha256") != b.get("sha256"):
+        if a is None or b is None:
             raise PlanArtifactPackageError("gap amendment selected input changed: " + name)
+        if any(ports(package).get(name, {}).get("sha256") != a.get("sha256")
+               for package in ancestry):
+            from zf.runtime.task_scoped_plan_inputs import (
+                MissingTaskPartitionError, _predecessor_input_paths,
+                task_input_paths, unchanged_task_input,
+            )
+
+            original = hydrate_sidecar_ref(state_dir, a).payload
+            if not selected[name]:
+                raise PlanArtifactPackageError("gap amendment selected input changed: " + name)
+            for task_id in selected[name]:
+                try:
+                    task_input_paths(original, task_id=task_id)
+                    input_task_id = task_id
+                except MissingTaskPartitionError:
+                    _, input_task_id = _predecessor_input_paths(state_dir,
+                        ports=previous, name=name, body=original, task_id=task_id,
+                        workflow_run_id=str(old["workflow_run_id"]))
+                for package in ancestry:
+                    port = ports(package).get(name)
+                    if (port is None or not unchanged_task_input(original,
+                            hydrate_sidecar_ref(state_dir, port).payload, task_id=input_task_id)):
+                        raise PlanArtifactPackageError("gap amendment selected input changed: " + name)
         hydrate_sidecar_ref(state_dir, b)
     return str(latest["task_map"]["ref"]), str(current["task_map_generation"])

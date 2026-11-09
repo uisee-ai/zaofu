@@ -88,6 +88,10 @@ def _two_packages(tmp_path, mutation="", selected_port="task_execution_input"):
         gap["plan_ports"] = [{"logical_name": changed_port, "body":
             {**scoped_input, "shared": {"policy": "changed"}} if changed_port == "task_execution_input"
             else {"policy": "changed"}}]
+    if mutation == "unrelated":
+        scoped_input["tasks"][1]["body"] = {"acceptance": "Changed unrelated task"}
+        scoped_input["tasks"].reverse()
+        gap["plan_ports"] = [{"logical_name": "task_execution_input", "body": scoped_input}]
     package, descriptor, _ = prepare_plan_artifact_package(events=[first], payload=gap, **args)
     second = ZfEvent(type="plan.artifact_package.admitted", correlation_id="run-1",
         payload=package_event_payload(package, descriptor, status="admitted"))
@@ -102,7 +106,7 @@ def _task_delta():
             "verify_commands": ["pytest"], "source_refs": ["requirement.md"]}
 
 
-@pytest.mark.parametrize("mutation", ["", "execution"])
+@pytest.mark.parametrize("mutation", ["", "execution", "unrelated"])
 def test_older_task_gap_rebases_on_current_full_map_without_losing_other_work(tmp_path, monkeypatch, mutation):
     args, events, _, latest = _two_packages(tmp_path, mutation)
     state = args["state_dir"]
@@ -163,6 +167,50 @@ def test_selected_execution_spec_drift_remains_rejected(tmp_path):
     from zf.runtime.gap_plan_baseline import gap_plan_amend_baseline
     args, events, _, _ = _two_packages(tmp_path, "execution", selected_port="execution_spec")
     with pytest.raises(PlanArtifactPackageError, match="selected input changed: execution_spec"):
+        gap_plan_amend_baseline(state_dir=args["state_dir"], events=events,
+            payload={"workflow_run_id": "run-1", "task_map_generation": "g1"},
+            fallback_ref="r1.json", required=True, gap_tasks=[_task_delta()])
+
+
+def test_scoped_delta_package_admission_keeps_current_port_and_original_partition(tmp_path):
+    from zf.runtime.module_gap_plan import build_gap_task_map_amend
+    from zf.runtime.plan_artifact_package import prepare_plan_artifact_package
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.task_scoped_plan_inputs import _predecessor_input_paths
+    args, events, _, latest = _two_packages(tmp_path, "unrelated")
+    state = args["state_dir"]
+    port = next(p for p in latest["produced"] if p["logical_name"] == "task_map")
+    amended = build_gap_task_map_amend(hydrate_sidecar_ref(state, port).payload,
+        gap_tasks=[_task_delta()], supersedes_task_map_ref=port["ref"], supersedes_task_ids=["T1"])
+    claims = next(p for p in latest["produced"] if p["logical_name"] == "goal_claim_set")
+    amended["goal_claims"] = hydrate_sidecar_ref(state, claims).payload["claims"]
+    (state / "r3.json").write_text(json.dumps(amended))
+    package, _, _ = prepare_plan_artifact_package(events=events, payload={
+        "task_map_ref": "r3.json", "task_map_generation": "g3", "requirement_spec_ref": "requirement.md",
+        "resume_scope": "gap_tasks_only", "amend_of": port["ref"],
+        "supersedes_task_map_generation": "g2", "task_ids": ["T1-FIX"]}, **args)
+    ports = {p["logical_name"]: p for p in package["produced"] + package["inherited"]}
+    original = next(p for p in latest["produced"] if p["logical_name"] == "task_execution_input")
+    assert ports["task_execution_input"]["sha256"] == original["sha256"]
+    paths, parent = _predecessor_input_paths(state, ports=ports, name="task_execution_input",
+        body=hydrate_sidecar_ref(state, ports["task_execution_input"]).payload,
+        task_id="T1-FIX", workflow_run_id="run-1")
+    assert parent == "T1" and paths == ["$.shared", "$.tasks[1]"]
+
+
+def test_gap_rejects_intermediate_shared_change_even_when_restored(tmp_path):
+    from zf.runtime.gap_plan_baseline import gap_plan_amend_baseline
+    from zf.runtime.plan_artifact_package import prepare_plan_artifact_package, package_event_payload
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    args, events, original, latest = _two_packages(tmp_path, "input")
+    restored = next(p for p in original["produced"] if p["logical_name"] == "task_execution_input")
+    package, descriptor, _ = prepare_plan_artifact_package(events=events, payload={
+        "task_map_ref": "r2.json", "task_map_generation": "g3", "requirement_spec_ref": "requirement.md",
+        "resume_scope": "gap_tasks_only", "amend_of": "r2.json", "supersedes_task_map_generation": "g2",
+        "plan_ports": [{"logical_name": "task_execution_input", "body": hydrate_sidecar_ref(args["state_dir"], restored).payload}]}, **args)
+    events.append(ZfEvent(type="plan.artifact_package.admitted", correlation_id="run-1",
+        payload=package_event_payload(package, descriptor, status="admitted")))
+    with pytest.raises(PlanArtifactPackageError, match="selected input changed: task_execution_input"):
         gap_plan_amend_baseline(state_dir=args["state_dir"], events=events,
             payload={"workflow_run_id": "run-1", "task_map_generation": "g1"},
             fallback_ref="r1.json", required=True, gap_tasks=[_task_delta()])
