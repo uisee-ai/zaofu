@@ -251,3 +251,21 @@ PAS 重放修复验证：两项正向重放先 RED，修复后聚焦24 passed；
 验证规划器按289文件数量建议全量；依 AGENTS 采用明确的封装/重放/恢复/读者调用
 闭包，dev-verify run 跳过该数量驱动的 deterministic 全量层，运行 serial 层；
 未运行全量 pytest 或真实 provider E2E。
+
+
+### 拒绝旧 Plan 后的迟到 OA 决策
+
+现场旧 Plan 已有 operator `plan.rejected`，新 Planner 正在处理 14 项调整，
+旧 `plan_candidate` OA 仍在读取输入。旧准入仅比较当前包摘要；新包尚未
+接纳时，迟到的 adopt/revise 仍能作用于已拒绝候选。隔离测试复现两项 RED。
+
+准入现在从不可变 OA request 的 source_event_id 对账 plan.rejected：同一
+候选已被拒绝时返回 `plan_candidate_rejected`，不产生新的批准、拒绝或升级。
+其他候选的拒绝、不带 plan_id 的记录及其他 checkpoint 不改变已有语义。
+通过实际 apply 调用入口测试，而非只测试未接线 helper。
+
+此修复不强杀仍持有 transport 的 provider，不伪造其结果；旧评审自然结束
+后由准入拒绝迟到决策，新候选保留独立评审。真实 8 Impl 尚待正式 Plan 准入。
+
+验证：2 RED→39 focused；扩展直接调用闭包146 passed；dev-verify自动闭包
+309 passed/7 skipped、sentinel53 passed、flow-smoke10 passed。非全量或真实provider E2E。

@@ -112,3 +112,13 @@ PAS 重放修复验证：两项正向重放先 RED，修复后聚焦24 passed；
 验证规划器按289文件数量建议全量；依 AGENTS 采用明确的封装/重放/恢复/读者调用
 闭包，dev-verify run 跳过该数量驱动的 deterministic 全量层，运行 serial 层；
 未运行全量 pytest 或真实 provider E2E。
+
+### 继续监工：迟到 OA 决策防护
+
+- 人工拒绝旧候选后，旧 OA 仍可通过摘要检查并重复批准/退回；先复现2 RED，
+  再按不可变request源事件与拒绝事件对账，返回plan_candidate_rejected。
+- 保留provider独占和真实结果提交；不直接改运行态，也不取消新Planner。
+- 本批仍active，真实8Impl、14项准入及产品独立验证未完成。
+
+验证：2 RED→39 focused；扩展直接调用闭包146 passed；dev-verify自动闭包
+309 passed/7 skipped、sentinel53 passed、flow-smoke10 passed。非全量或真实provider E2E。

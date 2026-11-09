@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from zf.core.config.schema import (
     ProjectConfig,
     RoleConfig,
@@ -531,3 +533,37 @@ def test_repeated_plan_revision_opens_bounded_breaker(tmp_path: Path) -> None:
         and "breaker" in str(event.payload.get("reason"))
         for event in runtime.event_log.read_all()
     )
+
+
+@pytest.mark.parametrize("action", ["adopt", "revise"])
+def test_owner_rejection_invalidates_late_plan_review(tmp_path: Path, action: str) -> None:
+    runtime = _runtime(tmp_path)
+    trigger, loaded = _candidate(runtime)
+    _state, prepared = _checkpoint(runtime, trigger, loaded)
+    decision_event = _submit(runtime, prepared, action=action)
+    runtime.event_writer.append(ZfEvent(
+        type="plan.rejected", actor="operator", origin="kernel",
+        correlation_id="run-plan-1", payload={"plan_id": trigger.id, "reason": "new owner scope"},
+    ))
+    before = len(runtime.event_log.read_all())
+
+    outcome = apply_orchestrator_agent_decision(runtime, decision_event)
+
+    assert outcome["status"] == "rejected"
+    assert outcome["reason"] == "plan_candidate_rejected"
+    assert not any(event.type in {"plan.approved", "plan.rejected", "human.escalate"}
+                   for event in runtime.event_log.read_all()[before:])
+
+
+@pytest.mark.parametrize("plan_id", ["other-candidate", ""])
+def test_unrelated_rejection_does_not_invalidate_plan_review(tmp_path: Path, plan_id: str) -> None:
+    runtime = _runtime(tmp_path)
+    trigger, loaded = _candidate(runtime)
+    _state, prepared = _checkpoint(runtime, trigger, loaded)
+    decision_event = _submit(runtime, prepared)
+    runtime.event_writer.append(ZfEvent(
+        type="plan.rejected", actor="operator", origin="kernel",
+        correlation_id="run-plan-1", payload={"plan_id": plan_id},
+    ))
+
+    assert apply_orchestrator_agent_decision(runtime, decision_event)["status"] == "applied"

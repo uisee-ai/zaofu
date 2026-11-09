@@ -53,3 +53,16 @@ def operation_checkpoint_plan_package(
     return current_checkpoint_plan_package(
         events, workflow_run_id=str(request.get("workflow_run_id") or ""), task_id=task_id,
     )
+
+
+def plan_candidate_rejected(events: list[ZfEvent], request: Mapping[str, Any]) -> bool:
+    """Owner rejection ends this candidate even before its replacement is admitted."""
+    source_id = str(request.get("source_event_id") or "")
+    if request.get("checkpoint") != "plan_candidate" or not source_id:
+        return False
+    return any(
+        event.type == "plan.rejected"
+        and isinstance(event.payload, Mapping)
+        and str(event.payload.get("plan_id") or "") == source_id
+        for event in events
+    )
