@@ -74,3 +74,8 @@ merge ab9fe996。新Critic已实际派发evt-22d84b82fd17，冻结必读4,188,10
 - 本批仍active：正式独立评审、差量准入及真实8Impl运行尚待验证。
 
 Owner scope影响闭包364 passed（含三个mock E2E），serial10 passed、sentinel53 passed。
+
+- 读取分页耗时进一步定位到活动账本追加导致历史分片重扫；新增RED后修复单次
+  CLI内未变归档复用。保留实时取消、签名、替换/rotation校验，仍不改冻结输入。
+
+读取归档缓存影响闭包244 passed（含CLI授权与mock E2E），sentinel53 passed。
