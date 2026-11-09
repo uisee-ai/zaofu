@@ -18,6 +18,8 @@
 
 ## 当前证据
 
-未执行。前置任务和外部环境未满足时保留本任务，不以 mock 替代上线资格。
+已实现 EventLog durable observer、SQLite outbox、历史绑定、重放/重启去重、容量恢复、原生短 Session/Operation/usage 与 Terminal 已结算记录。跨仓库真实上报及 Dashboard 已联验。全入口调用前暂停/预算门、源快照水位、未接入 Provider 覆盖及自动保留/隔离处理仍未完成。
+
+本轮可独立验收切片见 [Z03a](2026-11-09-1512-z03a-observation-connector.md)。
 
 实施边界与仓库关系见 [接入计划](../../docs/impl/201-controller-integration-plan.md)。

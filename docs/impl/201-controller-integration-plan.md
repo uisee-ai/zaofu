@@ -12,3 +12,7 @@
 - [Z02 managed 访问与运行准入](../../tasks/active/2026-11-09-1224-z02-cloud-controller.md)
 - [Z03 用量和会话持久 outbox](../../tasks/active/2026-11-09-1224-z03-cloud-controller.md)
 - [Z04 命令权益与接管退出合同](../../tasks/active/2026-11-09-1224-z04-cloud-controller.md)
+
+本轮 [202 观测接入实现](202-controller-observability.md) 与
+[Z03a](../../tasks/active/2026-11-09-1512-z03a-observation-connector.md) 已接线实际 CLI、事件来源、
+持久 outbox 和真实 Controller 联验；Z01/Z03 的完整剩余义务仍保留 active。

@@ -76,10 +76,16 @@ def event_log_from_project(
 ) -> EventLog:
     """Return the EventLog for a project's effective runtime state dir."""
     es = getattr(getattr(config, "security", None), "event_signing", None)
+    observer = None
+    if config is not None and config.observability.controller.enabled:
+        from zf.integrations.controller.collector import Collector
+
+        observer = Collector(state_dir, config)
     return EventLog(
         Path(state_dir) / "events.jsonl",
         signer=build_event_signer(config, warn=warn),
         # Legacy projects that opted in to allow_unsigned_fallback keep
         # tolerating pre-signing plain lines on read; default is fail-closed.
         allow_unsigned=bool(getattr(es, "allow_unsigned_fallback", False)),
+        durable_observer=observer,
     )

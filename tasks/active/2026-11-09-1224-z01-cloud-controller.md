@@ -18,6 +18,8 @@
 
 ## 当前证据
 
-未执行。前置任务和外部环境未满足时保留本任务，不以 mock 替代上线资格。
+已实现显式配置、Client Credentials、绑定身份/能力协商、JSON Schema、批次 ACK 和实际 zf controller CLI。真实 Keycloak/Controller 联验通过。自动注册、完整配置/命令通道、租约与凭证轮换仍未完成。
+
+本轮可独立验收切片见 [Z03a](2026-11-09-1512-z03a-observation-connector.md)。
 
 实施边界与仓库关系见 [接入计划](../../docs/impl/201-controller-integration-plan.md)。
