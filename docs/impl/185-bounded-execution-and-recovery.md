@@ -1149,3 +1149,10 @@ LS-v1 176827事件的一次实际终态对账对358个settled operation返回0�
 `is_dispatch_paused`只反向查最新暂停/恢复意图；三种pause及三种resume仍按账本出现顺序决定，时间戳不用于排序。空显式事件列表不触发磁盘回读。完整`project_pause_lifecycle`仍供Web/Supervisor展示，保持checkpoint、历史、恢复建议和脱敏合同。这样派发门禁不为一个布尔值构造整份展示投影。
 
 实际调用覆盖`reconcile_task_attempts`、Orchestrator/WRC/Task Pipeline派发，以及暂停后的恢复。真实冻结快照使用只读store逐项比较原/新结算结果与暂停结果；局部提速不等于整个Watcher CPU问题关闭。见[空转谓词任务](../../tasks/2026-11-09-0044-idle-predicates.md)。
+
+
+## 失败批次判断的按需事件视图
+
+`build_workflow_batch_resume_checkpoints` 在第一次遇到失败 aggregate 时，为本次调用构建一次 `select_batch_failure_inputs`，仅供 reader 归属、候选触发、child runtime failure 和候选冻结链四处判断复用。它保留完整账本中的所有 `fanout.started`、`candidate.ready`、任意后缀 `.child.failed`、每个 aggregate 声明的任意 `failure_event`，以及所有 start 引用的 trigger（不限制其事件类型，兼容原始及去空白引用）。保留原事件对象与账本次序，不限制时间或数量。
+
+外层遍历、anchor、已恢复/失效/被后续候选替代判断仍消费完整事件快照，不能把这个专用视图传给其他恢复规则。每次投影重新选取，迟到结果和新候选立即纳入；不缓存跨 tick，也不改事件存储。新增失败判断若读取其他事件族，必须同步扩充此依赖选择和完整账本对照测试。`tests/test_batch_failure_input_selection.py` 覆盖实际恢复入口、不同 fanout、任意类型触发、动态失败事件、冻结链及迟到业务拒绝。任务见[失败批次输入优化](../../tasks/2026-11-09-0056-batch-failure-inputs.md)。
