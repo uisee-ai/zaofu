@@ -98,3 +98,17 @@ Owner scope影响闭包364 passed（含三个mock E2E），serial10 passed、sen
 逐页撤权/篡改/断管、完整provider输出观察及单页/四页resume），serial10 passed、
 sentinel53 passed。规划器按134文件数退化全量，依仓库规则运行上述显式边界
 及调用闭包，未运行全量pytest或真实provider E2E。
+
+
+### 监工新增：Critic 通过后的 PAS 重放准入
+
+- Critic 已通过，writer 因 PAS 封装时补入身份字段而误判正文变化，尚未出现新待审批请求。
+- 内联/文件重放两项真实调用回归先 RED；统一首次封装和重放的内核身份绑定。
+  验收正文变化仍必须拒绝，保留原 Critic 结果，修复后受控重放精确失败事件。
+- 验证与真实恢复尚待收口；本批仍 active，不能把当前 2 Impl 或 8 路预测标为完成。
+
+PAS 重放修复验证：两项正向重放先 RED，修复后聚焦24 passed；增加描述符路径后
+影响闭包225 passed（含三个 mock E2E）、serial10 passed、sentinel53 passed。
+验证规划器按289文件数量建议全量；依 AGENTS 采用明确的封装/重放/恢复/读者调用
+闭包，dev-verify run 跳过该数量驱动的 deterministic 全量层，运行 serial 层；
+未运行全量 pytest 或真实 provider E2E。

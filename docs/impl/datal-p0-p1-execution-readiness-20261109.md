@@ -229,3 +229,25 @@ UNKNOWN、P0 下一版本验证阻断等原始义务；与原六片写域隔离�
 逐页撤权/篡改/断管、完整provider输出观察及单页/四页resume），serial10 passed、
 sentinel53 passed。规划器按134文件数退化全量，依仓库规则运行上述显式边界
 及调用闭包，未运行全量pytest或真实provider E2E。
+
+
+### 监工新增：PAS 身份绑定的重放误拒绝
+
+真实 Critic 已经完成独立评审并获准入（`evt-4a5d2bfbc41b`），但 writer
+处理 `evt-be582073225e` 时触发 `evt-98a00e9e02da`，没有形成新的待审批请求。
+`product_acceptance_spec` 原始正文与已接纳包只有内核补入的 Run、Plan revision、
+Task Map generation 不同；首次封装会绑定这些字段，重放却直接比较未绑定正文。
+
+修复将 PAS 的内核身份绑定提取为同一个纯函数，首次封装与重放都调用它。
+重放使用摘要验证后的已接纳包身份，并继续比较完整正文；不忽略验收条款、
+mandatory、入口或真实资格要求。保持原包、原语义评审和冻结输入，修复后通过
+受控 `stage-retrigger` 重放精确失败的 `task_map.ready`，仍须人工批准才进入 writer。
+
+回归先复现内联/文件两条路径 RED；修复后覆盖描述符重放及四类验收正文变化拒绝。
+完整验证结果随实现提交补充。本批仍 active，实际 8 Impl 尚未达成。
+
+PAS 重放修复验证：两项正向重放先 RED，修复后聚焦24 passed；增加描述符路径后
+影响闭包225 passed（含三个 mock E2E）、serial10 passed、sentinel53 passed。
+验证规划器按289文件数量建议全量；依 AGENTS 采用明确的封装/重放/恢复/读者调用
+闭包，dev-verify run 跳过该数量驱动的 deterministic 全量层，运行 serial 层；
+未运行全量 pytest 或真实 provider E2E。
