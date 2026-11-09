@@ -23,12 +23,15 @@ amendment are separate role capabilities supplied by the workflow profile.
 - Read this role method once per unchanged skill digest. Load dependency references
   only for the current stage's verification method; do not concatenate all skills,
   briefing, task docs and global plans into a truncated tool response.
-- When a required batch spans many pages, use a bounded tool call to consume a
-  few sequential CLI cursor pages together when its output budget can carry all
-  bodies (for example, three 8 KiB pages with an explicit 24 KiB output budget).
+- When a required batch spans many pages, prefer the supported
+  `--required --pages 4` call. It returns up to four JSONL pages; consume each
+  page body and continue with the last line's `next_cursor`. Reserve enough
+  tool output (for example, 18000 tokens) and check that no body was truncated;
+  reduce `--pages` or `--page-bytes` if the available output budget is smaller.
   Preserve every page in the returned tool output; do not replace bodies with
   digests, discard output, or pipe it to a summary. Stop at the bounded page
-  count and keep the exact next cursor. Each CLI read retains its own receipt.
+  count and keep the exact next cursor. Each page retains its own authorization,
+  validation, and receipt.
   Avoid one model round trip for each tiny page and avoid restarting page one
   after inspecting the manifest. Provider output truncation still requires
   consuming the missing body, never assuming it was delivered.
@@ -71,8 +74,9 @@ amendment are separate role capabilities supplied by the workflow profile.
    避免连续1秒轮询：每次模型往返都重带上下文，空输出也会消耗累计预算。
    大体积正文使用 `zf artifact read --attempt <本次attempt> --required` 的有界分页，
    完整读取每页 `items[].content`，按 `next_cursor` 继续直到为空；相同正文的 aliases
-   已分别鉴权和记账，无须按别名重复阅读。工具输出预算较小时使用 `--page-bytes 2048`，
-   一次只消费一页，截断时补读原页，不把多页合并成超大输出。读取收据不证明模型理解；
+   已分别鉴权和记账，无须按别名重复阅读。按上述有界批读方法减少往返；工具输出
+   预算较小时降低 `--pages` 或使用 `--page-bytes 2048`，截断时补读缺失正文，
+   不把全部页合并成超大输出。读取收据不证明模型理解；
    未读完继续读取，不据此提交产品失败或要求删除必读来源。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
    the briefing marks it reusable for the exact target commit and command
