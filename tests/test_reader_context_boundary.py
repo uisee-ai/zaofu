@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from zf.core.config.loader import ConfigError, load_config
+from zf.core.events.model import ZfEvent
+from zf.core.task.schema import Task, TaskContract
 from tests.test_role_lifecycle_runtime import _runtime, _seed_reader_fanout_context
 
 
@@ -192,3 +194,69 @@ def test_dispatch_scope_waits_for_provider_turn(tmp_path, monkeypatch):
         run_id="next-attempt", trace_id="same-run", task_id="SAME")
     assert not transport.terminated
     assert not transport.spawned
+
+
+@pytest.mark.parametrize("scope", ["workflow", "dispatch"])
+def test_dead_reader_turn_rotates_context_and_dispatches_once(tmp_path, scope):
+    runtime, role, transport = _runtime(tmp_path)
+    _seed_reader_fanout_context(runtime, role, transport, task_id="OLD", trace_id="old-run")
+    role.lifecycle = replace(role.lifecycle, reader_context_scope=scope)
+    prompt = runtime.event_writer.append(ZfEvent(
+        type="codex.hook.user_prompt_submit", actor=role.instance_id,
+        payload={"session_id": "old-session", "turn_id": "unclosed-turn"},
+    ))
+    transport.alive.clear()
+    assert runtime._active_provider_turn(role.instance_id) is not None
+    args = dict(role=role, fanout_id="next", stage_id="plan", child_id=role.instance_id,
+                run_id="next-attempt", trace_id="new-run", task_id="NEW")
+
+    assert runtime._ensure_fanout_role_dispatchable(**args)
+    assert runtime._ensure_fanout_role_dispatchable(**args)
+
+    assert not transport.terminated
+    assert len(transport.spawned) == 1
+    events = runtime.event_log.read_all()
+    assert any(e.id == prompt.id for e in events)
+    assert len([e for e in events if e.type == "worker.recycled"]) == 1
+    assert runtime._active_provider_turn(role.instance_id) is None
+    assert runtime._role_lifecycle_registry().instance_meta()[role.instance_id][
+        "fanout_context_task_id"
+    ] == "NEW"
+
+
+@pytest.mark.parametrize("blocker", ["alive", "unknown", "child", "task", "respawning"])
+def test_dead_reader_turn_does_not_bypass_other_recovery_fences(tmp_path, monkeypatch, blocker):
+    runtime, role, transport = _runtime(tmp_path)
+    _seed_reader_fanout_context(
+        runtime, role, transport, task_id="OLD", trace_id="old-run",
+        terminal=blocker != "child",
+    )
+    runtime.event_writer.append(ZfEvent(
+        type="codex.hook.user_prompt_submit", actor=role.instance_id,
+        payload={"session_id": "old-session", "turn_id": "unclosed-turn"},
+    ))
+    if blocker != "alive":
+        transport.alive.clear()
+    if blocker == "unknown":
+        def unavailable(_):
+            raise RuntimeError("process observation unavailable")
+        monkeypatch.setattr(transport, "is_alive", unavailable)
+    if blocker == "task":
+        runtime.task_store.add(Task(
+            id="OTHER", title="Unsettled work", status="in_progress",
+            assigned_to=role.instance_id, contract=TaskContract(),
+        ))
+    if blocker == "respawning":
+        runtime._set_worker_state(role.instance_id, "respawning", force=True)
+    registry = runtime._role_lifecycle_registry()
+    previous = registry.get(role.instance_id)
+
+    assert not runtime._ensure_fanout_role_dispatchable(
+        role=role, fanout_id="next", stage_id="plan", child_id=role.instance_id,
+        run_id="next-attempt", trace_id="new-run", task_id="NEW",
+    )
+
+    assert registry.get(role.instance_id) == previous
+    assert not transport.spawned
+    assert not transport.terminated
+    assert not any(e.type == "worker.recycled" for e in runtime.event_log.read_all())

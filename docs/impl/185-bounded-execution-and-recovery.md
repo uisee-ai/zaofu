@@ -114,6 +114,12 @@ synth 仍按 trace 绑定，缺失 dispatch 身份或 Task/trace 范围时拒绝
 时，保留旧绑定，不启动替代。旧记录缺少 dispatch 绑定时保守轮换一次。会话切换保留
 工作目录，必需完整工件仍由已有输入合同约束；不以 shadow delta 替代权威输入。
 
+旧 provider 已明确退出时，缺失 stop hook 的历史 open turn 不单独阻止新上下文：
+仍先核对旧 child、task 和 worker 状态，只有全部允许切换才执行既有用量收尾、
+会话轮换与启动，并留下 `worker.recycling/recycled` 审计。活跃进程或存活状态未知
+仍等待，不伪造旧任务完成，也不删除历史 prompt。该条件接在实际 fanout 派发入口，
+由 `tests/test_reader_context_boundary.py` 覆盖死进程恢复及活跃/未知/未结算保护。
+
 这项配置进入有效执行策略摘要，改变后旧启动预览不能继续批准。需在新 Run 前选择，
 或走已有配置修订及重新批准；禁止改运行中的冻结配置。它不等于源码 single-agent
 接替、跨 Provider 恢复完成，也不保证预算内通过。真实收益要由新运行测量。
