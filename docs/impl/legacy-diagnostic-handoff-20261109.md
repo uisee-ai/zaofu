@@ -19,4 +19,15 @@ reader_execution_failure 也被当成与语义问题无关的故障直接排除�
 验证：新增实入口复现初始 4 failed / 7 passed；修复后 dev-verify 影响域 1226 passed、7 skipped，
 sentinel 53 passed，mock flow smoke 10 passed。新版本只读回放真实建议 evt-f969555cbd16，
 保持原 request、task、operation、attempt、case 身份并形成可转交动作（配置未改）。
-部署与实际 OA 收件效果待验证；不能据此标记 P12B 业务完成。
+实现 `58c2fdbb` 已合并为 `7a6a3217`，合并后定向 74 和 sentinel 53 通过。
+2026-11-09 09:48 UTC 控制面 PID 533027 已加载该版本，配置及 worker 保留。
+
+现场后续门禁仍阻塞：RM 新建议 `evt-65b0056c04fb` 通过只读绑定核对，但消费回执
+`evt-02de966ccd2b` 为 deferred / `event_ledger_integrity_unknown`，未产生 OA 下游事件。
+损坏位于 datal 的 `.zf-datal/events/2026-10-29.jsonl` 第 164 行、字节偏移 73141：
+474 个前导 NUL 后仍有可解析的 `runtime.start.requested`，但不能据此推断损坏区原内容。
+关机备份存在同一损坏；完整原件已取证复制，SHA256 为
+`197cdd31fb6f1c2c657120ae352260e25118ae4c3f2d0a316b042b0cd013a742`。
+取证位置：datal 的 `diagnostics/legacy-diagnosis-20261109/forensic-backup-proof.json`。
+未修改 canonical ledger 或放宽完整性 gate；需可信副本或合法恢复方案后再继续此案卷。
+因此代码与部署验证通过，实际 OA 收件及 P12B 恢复尚未通过；两者不能混为完成。
