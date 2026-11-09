@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
 
+from zf.core.config.controller import ControllerObservationConfig
+
 
 @dataclass
 class ProjectConfig:
@@ -1987,6 +1989,7 @@ class ObservabilityAlertConfig:
 
 @dataclass
 class ObservabilityConfig:
+    controller: ControllerObservationConfig = field(default_factory=ControllerObservationConfig)
     provider_telemetry: ProviderTelemetryConfig = field(
         default_factory=ProviderTelemetryConfig
     )

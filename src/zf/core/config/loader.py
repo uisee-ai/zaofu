@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from zf.core.config.controller import parse_controller_observation
+
 
 _ROLE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{0,31}$")
 # Permission modes describe ZaoFu's logical role policy. Trusted provider
@@ -5025,7 +5027,7 @@ _KNOWN_GOAL_KEYS = frozenset({
     "rework_fingerprint", "quiescent_after_escalate", "micro_loop",
 })
 _KNOWN_OBSERVABILITY_KEYS = frozenset({
-    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts",
+    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts", "controller",
 })
 _KNOWN_PROVIDER_TELEMETRY_KEYS = frozenset({
     "mode", "profile_id", "endpoint_env", "enable_traces",
@@ -5046,6 +5048,10 @@ def _build_observability(data: object) -> ObservabilityConfig:
     if not isinstance(data, dict):
         raise ConfigError("observability must be a mapping")
     _reject_unknown_keys(data, _KNOWN_OBSERVABILITY_KEYS, "observability")
+    try:
+        controller = parse_controller_observation(data.get("controller"))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(str(exc)) from exc
     telemetry_raw = data.get("provider_telemetry") or {}
     metrics_raw = data.get("metrics") or {}
     runtime_logs_raw = data.get("runtime_logs") or {}
@@ -5168,6 +5174,7 @@ def _build_observability(data: object) -> ObservabilityConfig:
             "observability.alerts.cooldown_seconds must be 30..86400"
         )
     return ObservabilityConfig(
+        controller=controller,
         provider_telemetry=ProviderTelemetryConfig(
             mode=mode,
             profile_id=str(

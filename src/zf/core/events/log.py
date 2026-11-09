@@ -18,7 +18,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from zf.core.events.model import ZfEvent
 from zf.core.state.locks import locked_path
@@ -68,9 +68,11 @@ class EventLog:
         *,
         signer: "EventSigner | None" = None,
         allow_unsigned: bool = False,
+        durable_observer: Callable[[ZfEvent], None] | None = None,
     ) -> None:
         self.path = path
         self.signer = signer
+        self.durable_observer = durable_observer
         # Read-path tolerance: when a signer is configured, plain
         # (non-envelope) lines are rejected as event.malformed unless the
         # project explicitly opted in to legacy tolerance. Without this,
@@ -118,6 +120,13 @@ class EventLog:
                 pass
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(prefix + line + "\n")
+                if self.durable_observer is not None:
+                    f.flush()
+                    os.fsync(f.fileno())
+            if self.durable_observer is not None:
+                # Required configured observation is not a best-effort diagnostic projector.
+                # A failed queue append leaves the occurrence replayable and propagates failure.
+                self.durable_observer(event)
         if self.index is not None:
             try:
                 self.index.observe(event)
