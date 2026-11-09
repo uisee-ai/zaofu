@@ -156,6 +156,14 @@ def dispatch_call_result_correction(
 
     if not outcome.repair_requested or not outcome.correction_ref:
         return False
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    operation = load_workflow_operation(runtime.event_log, outcome.operation_id)
+    if operation is not None and (
+        operation.get("status") in {"settled", "superseded", "cancelled"}
+        or operation.get("request_hash") != outcome.request_hash
+    ):
+        return False
     payload = source_event.payload if isinstance(source_event.payload, dict) else {}
     actor = str(payload.get("role_instance") or payload.get("role") or source_event.actor or "")
     role = next((
