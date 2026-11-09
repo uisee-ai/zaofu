@@ -33,6 +33,21 @@ class ProductAcceptanceError(ValueError):
     """A Product Acceptance artifact cannot be admitted mechanically."""
 
 
+def bind_product_acceptance_spec_identity(
+    spec: Mapping[str, Any], *, workflow_run_id: str, flow_kind: str,
+    plan_revision: str, task_map_generation: str,
+) -> dict[str, Any]:
+    """Apply the same kernel-owned identity at initial admission and replay."""
+    return {
+        **spec,
+        "schema_version": PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
+        "workflow_run_id": workflow_run_id,
+        "flow_kind": flow_kind,
+        "plan_revision": plan_revision,
+        "task_map_generation": task_map_generation,
+    }
+
+
 def product_acceptance_handoff_payload(
     payload: Mapping[str, Any],
 ) -> dict[str, Any]:

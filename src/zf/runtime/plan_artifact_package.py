@@ -695,6 +695,7 @@ def prepare_plan_artifact_package(
     if isinstance(product_acceptance_port, Mapping):
         from zf.runtime.product_acceptance import (
             PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
+            bind_product_acceptance_spec_identity,
             validate_product_acceptance_spec,
         )
 
@@ -711,13 +712,11 @@ def prepare_plan_artifact_package(
             )
         product_acceptance_spec = dict(hydrated.payload)
         if "product_acceptance_spec" in explicit_ports:
-            product_acceptance_spec.update({
-                "schema_version": PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
-                "workflow_run_id": workflow_run_id,
-                "flow_kind": flow_kind,
-                "plan_revision": plan_revision,
-                "task_map_generation": generation,
-            })
+            product_acceptance_spec = bind_product_acceptance_spec_identity(
+                product_acceptance_spec, workflow_run_id=workflow_run_id,
+                flow_kind=flow_kind, plan_revision=plan_revision,
+                task_map_generation=generation,
+            )
             descriptor = write_immutable_json_sidecar(
                 state_dir,
                 product_acceptance_spec,
