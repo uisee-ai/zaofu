@@ -37,6 +37,22 @@ def task_input_paths(body: Any, *, task_id: str, candidate: bool = False) -> lis
     return ["$.shared", f"$.tasks[{positions[task_id]}]"]
 
 
+def unchanged_task_input(before: Any, after: Any, *, task_id: str) -> bool:
+    """Compare complete producer-declared scope, never inferred semantic similarity."""
+    if not all(isinstance(body, Mapping) and body.get("schema_version") == SCHEMA_VERSION
+               for body in (before, after)):
+        return False
+    for body in (before, after):
+        task_input_paths(body, task_id=task_id)
+    def owned(body):
+        return next(row for row in body["tasks"] if row["task_id"] == task_id)
+    from zf.runtime.call_result_envelope import canonical_json_bytes
+
+    return canonical_json_bytes([before["shared"], owned(before)]) == canonical_json_bytes(
+        [after["shared"], owned(after)]
+    )
+
+
 def _pinned_predecessor(state_dir: Path, ports: Mapping[str, Mapping[str, Any]], task_id: str) -> str:
     """Return an explicitly replaced task, only for an admitted gap task map."""
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -104,7 +120,7 @@ def _bind_republished_input_parent(
 
 def _verify_predecessor_provenance(
     state_dir: Path, *, port: Mapping[str, Any], predecessor: str, workflow_run_id: str,
-    require_replacement_edge: bool = False,
+    input_history: list[Any], require_replacement_edge: bool = False,
 ) -> tuple[dict[str, Mapping[str, Any]], Mapping[str, Any]]:
     """Verify the inherited body and predecessor against the package ancestry."""
     from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
@@ -129,9 +145,11 @@ def _verify_predecessor_provenance(
         first = False
         inherited_port = next((item for item in ports if isinstance(item, Mapping)
                                and item.get("logical_name") == port.get("logical_name")), None)
-        if (inherited_port is None or inherited_port.get("ref") != port.get("ref")
-                or inherited_port.get("sha256") != port.get("sha256")):
-            raise ValueError("predecessor input changed in package ancestry")
+        if inherited_port is None:
+            raise ValueError("predecessor input absent from package ancestry")
+        # Resolve the original task identity first; validate every visited body
+        # against that exact partition before returning any read paths.
+        input_history.append(hydrate_sidecar_ref(state_dir, inherited_port).payload)
         task_port = next((item for item in ports if isinstance(item, Mapping) and item.get("logical_name") == "task_map"), None)
         if task_port:
             task_map = hydrate_sidecar_ref(state_dir, {"ref": task_port["ref"], "sha256": task_port["sha256"]}).payload
@@ -163,6 +181,7 @@ def _predecessor_input_paths(
 ) -> tuple[list[str], str]:
     """Follow explicit replacement edges without widening the original input."""
     seen = {task_id}
+    input_history = [body]
     for _ in range(32):
         predecessor = (_task_map_predecessor(initial_task_map, task_id)
                        if initial_task_map is not None else _pinned_predecessor(state_dir, ports, task_id))
@@ -177,8 +196,12 @@ def _predecessor_input_paths(
         ports, predecessor_package = _verify_predecessor_provenance(
             state_dir, port=ports[name], predecessor=predecessor,
             workflow_run_id=workflow_run_id, require_replacement_edge=selected_paths is None,
+            input_history=input_history,
         )
         if selected_paths is not None:
+            if any(not unchanged_task_input(body, previous, task_id=predecessor)
+                   for previous in input_history):
+                raise ValueError("predecessor input changed in package ancestry")
             return selected_paths, predecessor
         ports[name] = _bind_republished_input_parent(
             state_dir, package=predecessor_package, port=ports[name],

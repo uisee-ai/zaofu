@@ -9,3 +9,12 @@ LS-v1 的单任务 FMS03 修订保留了 55 项任务及完整历史端口。候
 实际入口为 Plan result validate/submit、Plan Synth 的 `evaluate_plan_candidate_preflight`；包准入为 `plan_artifact_package` 调用 `validate_dispatch_input_partitions`。`tests/test_plan_candidate_input_selection.py` 覆盖实际入口的选择、未消费历史端口、必要输入与结构拒绝；现有分区谱系、包准入和 Writer 测试覆盖后续链路。
 
 本地实施记录：[任务与验收](../../tasks/2026-11-08-1653-candidate-input-selection.md)。真实项目只读回放记录位于 LS-v1 `docs/records/2026-11-08-candidate-input-selection/`。预检通过只证明机械准入，不证明 Planner 语义正确、独立 Verify 或真实 Candidate E2E 已完成。
+
+
+## 跨计划的任务输入连续性
+
+LS-v1 FMS24 的已准入恢复报告被 `gap_plan_amend_baseline` 拒绝：FMS24 的旧包与当前包共享正文及原始分区完全相同，其他任务的更新却改变了整个输入端口摘要。现在跨计划增量仍证明包祖先、Run、目标任务/依赖和显式消费声明；端口发生变化时，只对严格 `task-scoped-plan-input.v1` 按任务 ID 比较完整 shared 与完整目标分区。缺分区、畸形/重复分区、目标或共享正文变化均拒绝；legacy及无任务消费范围的需求权威端口仍不允许变化。
+
+被替代任务没有同名分区时，沿固定 Task Map 的单前驱替代链找到原始输入任务。`task_scoped_plan_inputs` 的 worker 读取及候选预检共同检查沿途每个不可变端口中的原始分区；允许无关分区更新和位置变化，禁止中间目标输入变化后再还原。当前 source ref/digest 和当前 JSON 位置仍对应实际读到的当前端口，历史前驱标签与完整 shared 必读保持。不能只比较最终两份包，也不按文本相似度猜测输入等价。
+
+实际调用验证包括 gap bridge、`validate_dispatch_input_partitions`、`current_plan_port_sources`，以及包摘要/跨Run/替代链拒绝回归。LS-v1 真实只读预检保留56项任务，53项完成记录不变，仅FMS25的下游依赖改指FMS24续接任务；Owner决定和完整AC/Goal保持。任务：[分区连续性修复](../../tasks/2026-11-09-0030-gap-scoped-continuity.md)。
