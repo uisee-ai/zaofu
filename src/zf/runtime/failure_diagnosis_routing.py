@@ -13,8 +13,7 @@ from zf.runtime.recovery_step import IDENTITY_FIELDS
 def pending_failure_diagnoses(
     state_dir: Path, events: list[ZfEvent], config: Any,
 ) -> list[dict[str, Any]]:
-    if config.workflow.orchestration.normal_frontier_owner != "wrc":
-        return []
+    wrc = config.workflow.orchestration.normal_frontier_owner == "wrc"
     store = TaskStore(state_dir / "kanban.json")
     latest: dict[str, tuple[int, ZfEvent]] = {}
     for index, event in enumerate(events):
@@ -24,6 +23,9 @@ def pending_failure_diagnoses(
         task_id = str(event.task_id or payload.get("task_id") or payload.get("pdd_id") or "")
         task = store.get(task_id) if task_id else None
         if task is None or task.status in {"done", "cancelled"}:
+            continue
+        latest.pop(task_id, None)
+        if not wrc and payload.get("failure_class") != "reader_execution_failure":
             continue
         triage = classify_rework_trigger(event, config, evidence_events=events)
         if triage.recommended_action == "request_diagnosis":

@@ -295,6 +295,12 @@ def classify_rework_trigger(
         )
 
     explicit_failure_class = str(payload.get("failure_class") or "").strip()
+    if explicit_failure_class == "reader_execution_failure":
+        return _result(
+            "unknown", "input_delivery", "run_manager", "request_diagnosis",
+            "reader execution did not complete; diagnose the fixed inputs before "
+            "controlled retry, without inferring a product or manual-evidence failure",
+        )
     agent_diagnosis = getattr(
         getattr(getattr(config, "workflow", None), "orchestration", None),
         "normal_frontier_owner", "",
