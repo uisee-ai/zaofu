@@ -1,6 +1,6 @@
 # Z03a 持久观测 Connector 与实际来源接线
 
-> 状态: active
+> 状态: done
 
 来源：用户要求继续实施 203 tokens、Dashboard、Project/Session；本项是 Z01/Z03 的观测切片，父任务继续保留完整 managed 义务。
 
@@ -15,3 +15,13 @@
 设计与运行边界：[202](../../docs/impl/202-controller-observability.md)。实现 commit 与准确测试层级在归档时记录。
 
 未包含：全入口 managed 认证/预算/限额、命令执行、完整快照对账、未接入来源补齐和真实 Provider 计费资格；仍归 Z01–Z04。
+
+## 完成记录
+
+实现：`2d0ead6d feat: report project session and token usage through a durable controller connector`。
+
+- 新增 Connector 定向测试：24 passed；EventLog/Config/成本/CLI 聚焦闭包：325 passed；追加 Session/终端实际 caller 闭包：136 passed（集合存在重叠，不累加为唯一测试数）。
+- dev-verify plan/run：公共 config 引用扩展到全量，明确排除 deterministic 自动全量层；单独执行上述聚焦闭包。serial 10、sentinel 53、三流 mock E2E 10 均通过。
+- CLI 生成手册经 manual-docs.py generate 更新，currentness 通过；ruff 与 diff 检查通过。
+- 实际 Keycloak + Controller PostgreSQL + Docker Browser 联验通过；未使用真实模型账户。
+- 原生 Codex 本机真实用量验证及合入 dev 是用户新增的后续要求；继续执行，不将其写成已完成。

@@ -14,5 +14,5 @@
 - [Z04 命令权益与接管退出合同](../../tasks/active/2026-11-09-1224-z04-cloud-controller.md)
 
 本轮 [202 观测接入实现](202-controller-observability.md) 与
-[Z03a](../../tasks/active/2026-11-09-1512-z03a-observation-connector.md) 已接线实际 CLI、事件来源、
+[Z03a](../../tasks/done/2026-11-09-1512-z03a-observation-connector.md) 已接线实际 CLI、事件来源、
 持久 outbox 和真实 Controller 联验；Z01/Z03 的完整剩余义务仍保留 active。
