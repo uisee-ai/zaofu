@@ -33,7 +33,7 @@ def rejected(tmp_path, monkeypatch):
         sources[stage] = source
         writer.emit("workflow.call.result.admitted", task_id="T1", payload={**p, "semantic_verdict": verdict, "control_result_ref": {"source_event_id": source.id}})
         writer.emit("workflow.operation.settled", task_id="T1", payload=p)
-    monkeypatch.setattr("zf.runtime.task_pipeline_reconciler.task_pipeline_policy_for_contexts", lambda *a, **k: {"max_rework_attempts": 2})
+    monkeypatch.setattr("zf.runtime.task_pipeline_reconciler.task_pipeline_policy_for_contexts", lambda *a, **k: {"mode": "blocking", "max_rework_attempts": 2})
     return state, log, writer, identity, sources
 
 

@@ -305,3 +305,34 @@ P19已在正式任务中采用缓存修复，39a35a7上的23项自测覆盖冷ch
 篡改拒绝及真实安装失败；独立Verify尚待完成，整个P0/P1批次不能提前归档done。
 
 交付方法补齐验证：dev-verify 文档/技能闭包41 passed、1 skipped；两项技能元数据与三份副本字节一致。此为方法/文档层验证，不替代产品独立Verify。
+
+
+### 实时监工：重试投影重复扫描历史账本
+
+八路 Impl 交接 Verify 后，控制器仍存活但部分结果交接需等待数分钟。只读
+cProfile 定位到 `derive_impl_rework_requests` 的 operator retry 子步骤：
+同一次投影对同一事件列表重复折叠 Run 终态18次，累计占约20.4秒（含profile开销）。
+修复只在一次 `operator_impl_retry_requests` 调用内复用终态/别名结果；下一次
+投影重新折叠，受控重试命令仍读取当前状态，不增加跨调用缓存。
+
+经真实调用方新增两项回归先 RED（10次扫描而非1次），覆盖两个Run、最后请求
+胜出、新block/resume/cancel事件立即可见；无operator retry时不执行终态折叠。
+身份、当前代次、active owner、来源准入、预算与终态拒绝规则保持原样。
+
+同一173939条真实事件快照的只读对比：旧retry子步骤6.441711秒、新0.352407秒，
+输出完全一致（该快照无当前可重试任务）；非空多Run及授权边界由确定性测试覆盖。
+此为单次局部计时，不代表整轮控制器延迟已解决。取证位于datal诊断目录的
+`read-only-pipeline-profile.txt`、`retry-scope-comparison.json`。
+
+验证闭包另复现两个旧测试文件的3项预算失败：其fixture省略blocking模式或沿用
+shadow默认，却期待blocking模式预算拦截；在原dev同样失败。仅明确fixture的
+`mode=blocking`，保留所有原拒绝、授权一次、禁止修改原verdict断言。
+
+P16B已通过正式独立Verify（固定时钟4项、smoke8、runtime166、12consumer410，
+另9项对照探针），21:51 UTC完成后Ingest自动接续。Metrics独立Verify发现布尔
+分辨率被当作整数的真实缺陷，内核已自动发起单任务返工；未重启全局Plan。
+P19仍等待正式独立结果准入，批次继续active。
+
+重试投影验证：130项聚焦通过（含Run准入及Verify重试），76项调用/投影/
+多Run/mock E2E闭包通过，dev-verify自动闭包120 passed，sentinel53 passed。
+未运行全量pytest或真实provider E2E；真实datal继续运行，产品验收单独跟踪。

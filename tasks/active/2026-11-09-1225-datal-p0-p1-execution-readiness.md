@@ -159,3 +159,18 @@ dev-verify自动闭包528 passed，sentinel53 passed。首次自动验证8项CLI
   supervisor-incidents.jsonl。持续监工，不把阶段交接误判为中断。
 
 交付方法补齐验证：dev-verify 文档/技能闭包41 passed、1 skipped；两项技能元数据与三份副本字节一致。此为方法/文档层验证，不替代产品独立Verify。
+
+
+### 八路运行后的实时监工：调度热点
+
+- 复现重试投影同快照重复折叠Run终态，新增2项RED后改为单次调用内复用。
+  两Run与新增block/resume/cancel可见性、无请求不扫描均覆盖，不缓存跨调用状态。
+- 真实173939事件同快照输出相同，retry子步骤6.44秒降至0.35秒；整体调度
+  仍待加载新代码后观察。保留原始profile和对照receipt，不重写历史事件。
+- 三项既有预算测试在原dev复现fixture模式遗漏；显式blocking，保留原拦截断言。
+- P16B正式完成并自动解锁Ingest；Metrics独立Verify抓到bool分辨率缺陷并自动
+  单任务返工。P19仍待正式独立结果准入，本批保持active。
+
+重试投影验证：130项聚焦通过（含Run准入及Verify重试），76项调用/投影/
+多Run/mock E2E闭包通过，dev-verify自动闭包120 passed，sentinel53 passed。
+未运行全量pytest或真实provider E2E；真实datal继续运行，产品验收单独跟踪。
