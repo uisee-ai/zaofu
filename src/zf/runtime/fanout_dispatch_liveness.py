@@ -110,7 +110,15 @@ class FanoutDispatchLivenessMixin:
 
         blockers: list[str] = []
         if self._fanout_role_has_active_provider_turn(role.instance_id):
-            blockers.append("provider_turn_active")
+            # A terminated provider can leave an unclosed hook turn. Only a
+            # confirmed exit lets the existing rotation retire that context;
+            # active task/child and worker-state fences still apply below.
+            try:
+                provider_alive = self.transport.is_alive(role.instance_id)
+            except Exception:
+                provider_alive = True
+            if provider_alive is not False:
+                blockers.append("provider_turn_active")
         if self._active_fanout_child_for_instance(role.instance_id) is not None:
             blockers.append("fanout_child_active")
         active_task = self._active_task_for_instance(role.instance_id)
