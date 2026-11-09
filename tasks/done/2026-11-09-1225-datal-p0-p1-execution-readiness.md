@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # datal P0–P1：任务输入、评审交付、并行切片与冷环境
 
@@ -18,7 +18,7 @@
 - [x] P1 并行：对剩余任务的真实依赖、接口版本和写域作有据审查 -> verify:
   P11B/P12C/P13等候选给出可/不可拆的条款理由；可执行差量保留旧新AC映射，
   经过独立评审和受控准入；记录ready数/实际并行数，无强行凑8或减弱集成验收。
-- [ ] P1 环境：将已验证的锁定依赖准备纳入正式可重放入口 -> verify:
+- [x] P1 环境：将已验证的锁定依赖准备纳入正式可重放入口 -> verify:
   新Impl及Verify冷工作区可用，哈希验证、失败非零、无交叉venv；保留网络失败
   实证与缓存来源；安装成功不冒充产品RED/GREEN或独立Verify。
 
@@ -37,9 +37,9 @@
 - 方法：`skills/zf-plan-execution-readiness/`、`skills/zf-plan-task-map-contract/`。
 - 实施记录见 [实施记录](../../docs/impl/datal-p0-p1-execution-readiness-20261109.md)。
 
-验收尚未全部完成，不得提前归档done。
+四项验收已于2026-11-09 22:03 UTC齐备；下文保留各阶段历史记录，最新结论见文末。
 
-## 当前落地（尚未全部验收）
+## 实施过程（以下为历史检查点）
 
 - 提交前新增包含报告/附件/冻结规划上下文的非权威成本估计；未知 Critic 输入明确列出。
   TDD 3项RED后转绿，影响闭包571 passed，技能元数据16 passed/1 skipped。
@@ -174,3 +174,29 @@ dev-verify自动闭包528 passed，sentinel53 passed。首次自动验证8项CLI
 重试投影验证：130项聚焦通过（含Run准入及Verify重试），76项调用/投影/
 多Run/mock E2E闭包通过，dev-verify自动闭包120 passed，sentinel53 passed。
 未运行全量pytest或真实provider E2E；真实datal继续运行，产品验收单独跟踪。
+
+
+## 最终验收与归档（2026-11-09 22:03 UTC）
+
+本批四项验收全部完成；不等同于datal全部59任务完成，后续产品工作继续监工。
+实现提交包含：bfd90684 `fix: expose complete delivery cost gaps before plan submission`；
+交付方法d8bb1ff6 `chore: clarify bounded work record evidence handoff`；
+最终调度修复39390fa8 `fix: reuse terminal scope within operator retry replay`，
+已合入dev 8c61467d。其余分阶段提交与RED/GREEN证据保留在上述实施记录。
+
+- Plan：evt-b47ee800d5a2，同版Critic通过/准入evt-65dcfe5a29a9、evt-80024b037120，
+  owner批准evt-6d5f41a44201；59任务、14项差量正式准入，保留原319 AC/199命令。
+- 输入/并行：20:41:57、20:43:13 UTC真实8 Impl，独立身份/进程/心跳对账；
+  八片全部完成实际必读与行为RED→GREEN，详见eight-impl两次观察及输入测量receipt。
+- 冷环境：正式实现39a35a755aef59141b8837d67f0b84259608409a；独立Verify
+  23项正式测试及9项探针通过，evt-f4180a979cc9，准入evt-286fe9489792，
+  集成后done evt-28e7c39e43eb。没有用候选分支自测替代独立验收。
+- 最终运行态：46 done、3 in_progress、10 backlog（另23历史cancelled）；
+  Metrics独立Verify所发现缺陷已自动进入单任务返工，修复提交456cd504，等待复验。
+- 调度修复合并后212项调用/回归/mock E2E、53项sentinel通过；合并前dev-verify
+  最终自动闭包128 passed。未运行全量pytest或真实provider E2E。
+- 监工独立Verify链：datal/diagnostics/parallel-task-admission-20261109/
+  p19-final-independent-verify-chain.json；异常记录supervisor-incidents.jsonl。
+
+限制继续跟踪：历史账本NUL损坏仍使RunManager自动恢复受限；未篡改账本或绕gate。
+只读监控负责观察，本session负责取证、修复和受控恢复；不宣称后台脚本能自主改代码。
