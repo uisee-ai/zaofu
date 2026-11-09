@@ -22,6 +22,8 @@ def _retryable_operation(
     operations: Mapping[str, dict[str, Any]],
     contexts: Mapping[str, dict[str, Any]],
     events: list[ZfEvent],
+    *,
+    terminal_scope: tuple[dict[str, str], set[str]] | None = None,
 ) -> tuple[dict[str, Any], ZfEvent]:
     operation = operations.get(operation_id)
     if not operation or operation.get("task_pipeline_stage") not in {"impl", "verify"}:
@@ -43,7 +45,9 @@ def _retryable_operation(
         raise ValueError("only a settled, admitted blocked Impl or rejected Verify can be retried")
     from zf.runtime.run_admission import fold_terminal_run_scope
 
-    aliases, terminal_runs = fold_terminal_run_scope(events)
+    aliases, terminal_runs = (
+        terminal_scope if terminal_scope is not None else fold_terminal_run_scope(events)
+    )
     run_id = str(operation.get("workflow_run_id") or "")
     if aliases.get(run_id, run_id) in terminal_runs:
         raise ValueError("terminal run cannot be retried")
@@ -225,6 +229,7 @@ def operator_impl_retry_requests(
     contexts: Mapping[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     requests = {}
+    terminal_scope = None
     for event in events:
         p = event.payload
         if (
@@ -233,9 +238,15 @@ def operator_impl_retry_requests(
             or p.get("source") != SOURCE
         ):
             continue
+        if terminal_scope is None:
+            from zf.runtime.run_admission import fold_terminal_run_scope
+
+            # Reuse only within this snapshot; the next replay must see new events.
+            terminal_scope = fold_terminal_run_scope(events)
         try:
             operation, source = _retryable_operation(
-                str(p.get("operation_id") or ""), operations, contexts, events
+                str(p.get("operation_id") or ""), operations, contexts, events,
+                terminal_scope=terminal_scope,
             )
         except ValueError:
             continue

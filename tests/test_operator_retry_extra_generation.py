@@ -15,7 +15,7 @@ from zf.runtime.workflow_operation import reduce_workflow_operations
 def test_exhausted_retry_is_explicit_and_only_grants_one_generation(case, monkeypatch):
     state, log, _, _, _ = case
     monkeypatch.setattr('zf.runtime.task_pipeline_reconciler.task_pipeline_policy_for_contexts',
-                        lambda *a, **k: {**_policy(), 'max_rework_attempts': 0})
+                        lambda *a, **k: {**_policy(), 'mode': 'blocking', 'max_rework_attempts': 0})
     def invoke(*extra):
         parser = argparse.ArgumentParser()
         register(parser.add_subparsers())
