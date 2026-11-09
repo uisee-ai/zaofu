@@ -75,3 +75,37 @@ fastapi 成功，venv 各自独立。原锁摘要均为
 其完整预算、独立 Critic、同版 approve、两个 gap 正式准入尚待验证。
 新增并行切片与环境合同需后续受控差量，不能给当前冻结 attempt 临时扩范围。
 历史账本 NUL 损坏仍阻挡自动恢复的全局 gate，未删除原始记录或绕过该 gate。
+
+## 12:44 UTC：首批合入及真实 Critic 派发
+
+首批实现 `bfd90684`，合入dev `ab9fe996`；合并后55项focused和53项sentinel通过。
+新 Planner 提交已准入 `evt-163f68b9fe5a`，Critic 实际启动
+`evt-22d84b82fd17`，operation `wop-prd-plan-synth-trig-evt-8e7c080d-a0a03e72fb2d`。
+冻结清单实测4,188,102 bytes、456页，低于原4MiB上限6,202 bytes；
+模式仍为full，尚未取得独立Critic verdict及同版批准。
+
+现场另复现 inspect-review 使用 `stage_id` 查询operation，而operation保存
+`parent_stage_id`，导致预算误显示0。修正诊断的阶段查找并增强真实CLI回归；
+该命令仍明确预算来自当前operator配置，不冒充历史派发时的冻结配置。
+
+同轮观察到 Critic 将 artifact costs 的全部可见11,751,974 bytes称为需要完整
+读取。新增 `selected_bytes_scope` 注明该数是所有可见选择；新增 `required_input`
+单列冻结必读的行数、去重字节、最低页数和未知行。部分ACL可见或策略未知时返回
+null，不能当成零成本。真实CLI/API回归证明无读回执、无越权正文或provider归因变化。
+
+## 下一次受控差量的明确输入
+
+1. 保留当前38个done及在途attempt；已有采样、权限、PC运行结果接口按已集成
+   版本引用。当前两个gap先完成独立评审并准入，避免被后续优化反复覆盖。
+2. 将P11B/P12C/P13各自核心行为形成独立可验证片，原任务保留完整集成AC；
+   新片限定新模块/测试路径，不与集成片并发写API注册及迁移。
+3. 原始source_index、mandatory AC、candidate_verify责任保持；新增片从相应
+   LOCAL/AT条款细化具名行为及RED/GREEN命令，不能把单元fixture改称实板验收。
+4. 新任务的冷环境准备使用原bootstrap，按原锁校验两份本地wheel的hash；
+   显式绑定其持久manifest及Python3.11入口。Impl和Verify使用各自venv。
+   `UV_OVERRIDE`只替换同版本包来源，不改依赖版本、验收命令或原锁。
+5. 输出旧新任务/AC/命令映射与完整输入成本；任务成员变化不能伪装成原合同未变，
+   通过当前正式评审策略后才允许派发。
+
+第二批诊断修复：先复现阶段预算1项RED及成本字段2项RED；修复后CLI/API focused
+25项通过，影响闭包783 passed，premerge sentinel53 passed。

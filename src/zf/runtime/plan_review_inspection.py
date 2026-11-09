@@ -86,7 +86,7 @@ def inspect_review(state_dir: Path, attempt_id: str, events: list, *, config=Non
         diagnostic["budget_config_basis"] = "current_operator_config"
         from zf.runtime.plan_review_input_budget import check_review_input_budget, PlanReviewInputBudgetExceeded
         try:
-            check_review_input_budget(config, operation.get("stage_id", ""), diagnostic)
+            check_review_input_budget(config, operation.get("parent_stage_id") or operation.get("stage_id", ""), diagnostic)
         except PlanReviewInputBudgetExceeded:
             pass
     diagnostic["scope"] = review_scope_diagnostics(state_dir, manifest)

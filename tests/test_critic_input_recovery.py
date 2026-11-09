@@ -137,6 +137,9 @@ def test_operator_review_cli_is_read_only(tmp_path, monkeypatch, capsys):
     from zf.cli.main import main
     import zf.cli.plan_review_inspection as cli
     _, log, runtime, _, dispatch, _ = _running_recovered_synth(tmp_path)
+    operation = reduce_workflow_operations(log.read_all())[dispatch.payload['operation_id']]
+    stage = next(s for s in runtime.config.workflow.stages if s.id == operation['parent_stage_id'])
+    stage.aggregate.review_input_max_bytes = 1
     monkeypatch.setattr(cli, 'resolve_project_context', lambda **kwargs:
                         SimpleNamespace(state_dir=runtime.state_dir, config=runtime.config))
     monkeypatch.setattr(cli, 'event_log_from_project', lambda *args, **kwargs: log)
@@ -145,6 +148,8 @@ def test_operator_review_cli_is_read_only(tmp_path, monkeypatch, capsys):
     report = json.loads(capsys.readouterr().out)
     assert report['read_only'] and report['read_progress']['covered'] == 0
     assert report['diagnostic']['budget_config_basis'] == 'current_operator_config'
+    assert report['diagnostic']['limits']['review_input_max_bytes'] == 1
+    assert report['diagnostic']['preflight_status'] == 'blocked'
     assert before == {str(p): p.read_bytes() for p in runtime.state_dir.rglob('*') if p.is_file()}
 
 

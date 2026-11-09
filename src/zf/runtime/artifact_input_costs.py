@@ -74,12 +74,17 @@ def input_cost_report(*, state_dir: Path, manifest: dict, identity: Mapping[str,
         'plan_artifact_package_digest','read_purpose')}
     comparison['required_reads'] = required
     comparison['selections'] = sorted((s['source_id'],s['artifact_id'],s['sha256'],tuple(s.get('allowed_paths', ['$']))) for s in sources)
+    from zf.runtime.plan_review_input_diagnostics import input_size
+    required_cost = (input_size({'sources': sources}, required)
+                     if required is not None and len(sources) == len(manifest['sources']) else None)
     return {'schema_version': 'attempt-input-cost.v1', 'attempt_id': attempt, 'actor': actor,
         'binding_digest': canonical_json_sha256(comparison),
         'comparison_qualified': bool(required is not None and sources and manifest.get('contract_revision') and manifest.get('plan_artifact_package_digest')),
         'visible_sources': len(sources), 'scope_complete': len(sources) == len(manifest['sources']),
         'source_bytes': sum(n for _, n in physical) if physical and all(n is not None for _,n in physical) else None,
         'selected_bytes': sum(n for _, n in selections) if selections and all(n is not None for _,n in selections) else None,
+        'selected_bytes_scope': 'all_visible_selections_not_required_reads',
+        'required_input': required_cost,
         'snapshot_metadata_bytes': sum(len(json.dumps(s.get('read_selections', []), ensure_ascii=False).encode()) for s in sources),
         'navigation_metadata_bytes': sum(len(json.dumps(r.get('navigation',{}), ensure_ascii=False).encode())
                                          for s in sources for r in s.get('read_selections', [])),
