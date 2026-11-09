@@ -146,3 +146,32 @@ worker。依赖波次和外部wheel只读路径已补齐，未改实际在途合
 这是可重放forecast，不是实际派发。证据为 `proposal/scheduler-forecast.json`。
 影响闭包（含实际preflight/prepare-call caller、旧格式replay和mock artifact-package
 E2E）802 passed；未运行全量pytest或真实provider E2E。
+
+## Owner 显式执行范围与冷环境验证
+
+旧恢复请求固定两个gap，`--input-task`只控制阅读优先级，不能扩充writer派发范围。
+新增 `zf plan reject <plan-id> --reason ... --dispatch-task <id>`（可重复）及同名
+controlled-action字段 `dispatch_task_ids`，将owner选择绑定到真实pending request，
+经plan.rejected、replan trigger、冻结规划上下文传到writer选择。只允许新ID或同
+workflow的backlog；拒绝active/terminal/异workflow任务。approve不能改范围，
+新范围必须重新Plan/Critic/同版批准；命令本身不创建任务、不改依赖或canonical合同。
+
+本次提案保留原2gap，加入6新片及4个集成父任务，共12个执行差量ID。父任务需要
+正式更新依赖与写域，不能只加入子任务而保留冲突的旧父合同；38done和2在途不在
+更新范围。完整草稿preflight为57任务、0错误，仍不是正式准入。
+
+产品修复独立提交f5606fcd（chore: reuse hash-verified local wheels for isolated
+bootstrap），位于datal-locked-env-20261109。cache按原lock摘要寻址，校验版本、
+sha、路径逃逸，保留require-hashes和原flock；失败非零，Verify继续调用同bootstrap。
+产品基础设施63项通过。两个新clone清除继承UV_OVERRIDE、启用offline：同一Impl
+工作区两个并发bootstrap分别10.24/10.35秒成功，独立Verify入口11.04秒成功，
+venv隔离、原lock摘要不变。临时clone已清理，证据存真实项目diagnostics的
+`parallel-task-admission-20261109/cold-environments.json`。产品提交须经正式
+P19-LOCKED-ENV-R1采用及独立Verify；环境验证不抵扣产品验收。
+
+验证规划器因共享入口递归选中448文件并退化为全量。遵守仓库不因文件数自动全量
+的规则，使用显式Plan决策/重规划/冻结上下文/writer/contract authority/operation
+及三个mock E2E影响闭包，另执行dev-verify的serial与contract tier；未运行全量
+pytest或真实provider E2E。
+
+Owner scope影响闭包364 passed（含三个mock E2E），serial10 passed、sentinel53 passed。

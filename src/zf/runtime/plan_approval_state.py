@@ -53,6 +53,18 @@ def decide_pending_plan(
         if expected_request_id and pending.id != expected_request_id:
             return None, "plan approval request has changed"
         request = pending.payload if isinstance(pending.payload, dict) else {}
+        if "dispatch_task_ids" in payload:
+            if event_type != "plan.rejected":
+                return None, "dispatch scope changes require Plan rejection and a new review"
+            from zf.runtime.plan_owner_dispatch_scope import dispatch_task_ids, validate_owner_dispatch_scope
+
+            try:
+                ids = dispatch_task_ids(payload["dispatch_task_ids"])
+                validate_owner_dispatch_scope(state_dir, ids, request=request,
+                                              events=writer.event_log.read_all())
+            except ValueError as exc:
+                return None, str(exc)
+            payload = {**payload, "dispatch_task_ids": ids}
         if event_type == "plan.rejected" and payload.get("plan_review_ref"):
             from zf.runtime.plan_requirement_amendment import authorize_plan_review
             try:

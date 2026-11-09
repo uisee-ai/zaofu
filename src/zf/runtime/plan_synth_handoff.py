@@ -55,6 +55,7 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "rework_feedback",
     "operator_feedback",
     "input_task_ids",
+    "dispatch_scope_source_event_id",
     "historical_orchestration_context",
     "diagnostics_ref",
     "plan_compile_gate",

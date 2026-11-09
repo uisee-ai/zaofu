@@ -192,6 +192,10 @@ def build_replan_resynth_event(
         value = getattr(plan, key, None)
         if value not in (None, "", (), []):
             payload[key] = list(value) if isinstance(value, tuple) else value
+    if plan_rejected:
+        from zf.runtime.plan_owner_dispatch_scope import bind_owner_dispatch_scope
+
+        bind_owner_dispatch_scope(payload, source=source_event, events=events)
     return ZfEvent(
         type=trigger,
         actor="zf-cli",
