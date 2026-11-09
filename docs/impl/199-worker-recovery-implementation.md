@@ -570,3 +570,19 @@ auto-injected skills，再完整消费必读正文。当前上下文已保留的
 `tests/test_task_pipeline_capsule.py`；任务记录为
 `tasks/2026-11-09-0300-verify-method-read-order.md`。这项提示顺序修正不保证
 agent 一定采用某种分页，也不宣称共享输入过大或控制面高 CPU 已解决。
+
+### 2026-11-09：Goal idle 重扫按当前 Run 及启动边界计数
+
+LS-v1 完成第54项任务后出现“5次重扫耗尽”，其中一次实际发生在当前
+`run.goal.started` 之前。idle driver 现在复用 `run_scope`：只把当前 Run
+启动后的重扫、进展和升级用于预算及幂等判断，排除其他 Run 的事实。
+同 Run 在 goal 启动前已经发起的 fanout 仍纳入在途保护；不能因为预算
+边界修复而重复派发。单 Run 的启动后无身份旧事件沿用兼容规则，多 Run
+历史不猜测无主事件归属。未确定 Run 和 goal anchor 时不发无主重扫。
+
+新的 `goal.rescan.requested` 和耗尽 `human.escalate` 带
+`workflow_run_id`/`correlation_id`。既有上限、活动 operation、审批等待和
+完成判定不变，也不自动删除旧升级或批准业务待决项。实际心跳服务调用、
+跨 Run 负例及上限回归见 `tests/test_goal_idle_tick_scope.py`、
+`tests/test_goal_idle_driver.py`；记录见
+`tasks/2026-11-09-0333-goal-idle-run-scope.md`。
