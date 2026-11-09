@@ -111,6 +111,14 @@ class Collector:
         sample = str(data.get("usage_sample_id") or event.id)
         series = stable(self.cloud.project_id + ':' + str(data['usage_series_id'])) if data.get("usage_series_id") else None
         cumulative = data.get("usage_semantics") == "cumulative"
+        source_started = data.get('usage_series_started_at')
+        try:
+            started = datetime.fromisoformat(str(source_started).replace('Z', '+00:00'))
+            observed = datetime.fromisoformat(str(data.get('usage_timestamp') or event.ts).replace('Z', '+00:00'))
+            known_new_series = (started.tzinfo is not None and observed.tzinfo is not None
+                and binding['started'] <= started.timestamp() <= observed.timestamp() <= datetime.fromisoformat(event.ts).timestamp())
+        except (TypeError, ValueError):
+            known_new_series = False
         if cumulative and not series:
             # Do not invent a session boundary from role or time proximity.
             present = False
@@ -133,7 +141,8 @@ class Collector:
                 "reasoning_output_tokens"} and type(value) is int and 0 <= value <= 10**15},
             "provider_session_id": identifier(data.get("provider_session_id") or data.get("session_id"))}
         self.outbox.enqueue("usage:" + sample, str(data.get("usage_timestamp") or event.ts), payload,
-                            sample_series=series if cumulative and series else "", origin_id=binding['deployment'])
+                            sample_series=series if cumulative and series else "", origin_id=binding['deployment'],
+                            baseline_first=not known_new_series)
 
     def project(self):
         payload = {"kind": "project", "project_id": self.cloud.project_id, "version": 1,

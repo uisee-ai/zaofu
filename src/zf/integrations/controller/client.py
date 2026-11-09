@@ -51,6 +51,8 @@ def synchronize(context) -> dict:
         response.raise_for_status()
         validator = Draft202012Validator(response.json(), format_checker=FormatChecker())
         batch = collector.outbox.pending(min(cloud.batch_size, hello['max_batch']))
+        if any(message['payload'].get('baseline_only') for message in batch) and 'cumulative_baseline' not in hello.get('capabilities', []):
+            raise ValueError('Controller cumulative baseline capability is required')
         for message in batch:
             validator.validate(message)
         if batch:

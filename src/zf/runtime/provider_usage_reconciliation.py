@@ -102,6 +102,7 @@ def build_disk_usage_event(
     }
     if usage_series_id:
         payload["usage_series_id"] = usage_series_id
+        payload['usage_series_started_at'] = str(getattr(usage, 'series_started_at', '') or '')
     payload["usage_sample_id"] = _disk_usage_sample_id(
         actor=role.instance_id,
         backend=role.backend,

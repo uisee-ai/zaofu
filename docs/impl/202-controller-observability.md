@@ -57,3 +57,19 @@ dev-verify 当前因公共 config 导入图扩展到 1017 个测试文件；本�
 跨仓库 Keycloak/PostgreSQL/Docker Playwright 使用
 `scripts/check-controller-observation-producer.py` 产生两次原生 Session turn，重启同步后总计仍为
 240 tokens；验证登录、项目/会话历史、下钻、管理员汇总及用户隔离。没有真实模型调用或账单。
+
+## 本机 Codex 与首次累计余额
+
+`zf controller codex-usage --limit 2` 可在未启用 Controller 的项目内只读查看匹配当前 cwd
+的原生 Codex Session，支持 `--session-id` 精确选择。只输出 metadata/counters，不读认证
+文件、不触发模型调用、不上传历史。累计计数的范围是 Session 生命周期，不是今天；
+仅有增量回执时明确标注 last_reported_turn，latest_model 只代表最后模型。模型无价格或
+无法分段核实历史费用时保留 unpriced/null，订阅 tokens 不是实际账单。
+
+原生 reader 现在保留 Session 创建时间；Connector 将其与本地绑定起点核对。无法证明
+是绑定后新建的累计来源，第一份有效计数作为 baseline_only；下一份只计差值。服务端
+需声明 cumulative_baseline，否则队列保留并拒绝上传，不退回把全历史当新增的行为。
+旧 v1 流保持余额，未提供/显式 false 的字段保持服务器旧 digest；缺失初次计数不伪造零。
+
+测试：test_controller_native_usage、现有 reader/reconciliation 与 Controller PostgreSQL
+基线/兼容测试；另在本机真实日志执行只读命令，实际费用仍缺失。

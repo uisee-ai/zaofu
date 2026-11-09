@@ -129,6 +129,9 @@ class UsageReport:
     input_semantics: str = ""
     """Whether raw input is fresh-only or combined with cache counters."""
 
+    series_started_at: str = ""
+    """Observed native session creation time, when the provider records it."""
+
 
 # Claude 4.x large-context models report a 1M context window. The 200k
 # default fallback otherwise mis-flags a healthy worker (e.g. 247k tokens on
@@ -529,6 +532,7 @@ class CodexSessionReader(BackendSessionReader):
         latest_info: dict | None = None
         latest_ts: str = ""
         session_id: str = ""
+        series_started_at: str = ""
         latest_model: str = ""
         model_provider: str = "openai"
         latest_rate_limits: dict = {}
@@ -546,6 +550,7 @@ class CodexSessionReader(BackendSessionReader):
                         payload = obj.get("payload") or {}
                         if isinstance(payload, dict):
                             session_id = str(payload.get("id") or session_id)
+                            series_started_at = str(payload.get('timestamp') or obj.get('timestamp') or '')
                             model_provider = str(
                                 payload.get("model_provider") or model_provider
                             )
@@ -593,6 +598,7 @@ class CodexSessionReader(BackendSessionReader):
             raw=dict(accounting_usage),
             model=str(latest_info.get("model") or latest_model),
             usage_semantics="cumulative" if cumulative else "incremental",
+            series_started_at=series_started_at,
             usage_series_id=(
                 f"codex:{session_id}"
                 if session_id
