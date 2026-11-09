@@ -351,6 +351,7 @@ def _reconcile_external_gate(
                 "decision_token": token,
                 "reason": "required_manual_evidence_pending",
                 "blocker_kind": "external_gate",
+                "blocking_scope": "task",
                 "owner_route": "human",
                 "action_policy": "human_evidence",
                 "required_evidence_refs": required_refs,

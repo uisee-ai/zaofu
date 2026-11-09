@@ -53,6 +53,20 @@ WRC 确定性对账                         RM runtime 观察／选路
 
 ## 已复现的问题与修复
 
+### 2026-11-09：人工门禁生产者遗漏任务作用域
+
+LS-v1 首环恢复核对中发现，`external_gate` 入口产生的 `human.escalate`
+未声明 `blocking_scope`。恢复消费者按既有规则将缺省作用域视为整个 Run，
+因此一个任务的人工证据等待会阻止无关任务的恢复动作。隔离回归通过真实
+`reconcile_task_pipeline_entries` 生成事件，再调用 RM 共同准入，复现独立任务
+被误报 `human_decision_pending`；不是从等待现象猜测原因。
+
+该入口现在显式发布 `blocking_scope: task`。既有 TaskStore 依赖闭包继续约束
+门禁本身及直接、间接依赖任务，独立任务可恢复；不明确或真正 Run 级门禁仍关闭。
+人工证据摘要、目标提交、独立 `human.resolved` 身份与幂等校验保持原要求。
+测试同时覆盖实际事件生产者与 `action_gate_reason`，并沿原测试验证证据准入。
+这项修复不批准 LS-v1 的 Q06，也不把恢复分析或局部 UI 通过当作完整业务验收。
+
 ### 2026-11-07：替代任务的输入消费契约退化
 
 TODO 被拆为导航端口和实现两项后，Discovery 漏交前驱已有的
