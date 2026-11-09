@@ -1,6 +1,6 @@
 # 技术输入失败的后续恢复（2026-11-09）
 
-任务：`tasks/active/2026-11-09-0900-reader-failure-recovery.md`。
+任务：`tasks/done/2026-11-09-0900-reader-failure-recovery.md`。
 
 P12B 的 reader_execution_failure 已通过结果准入并结算 operation，但后续恢复链没有识别该结构化分类。
 文本启发式把 missing reads 当作 evidence_payload_gap，人工证据路由又把未执行验收的 blocked 占位行
@@ -23,4 +23,9 @@ broad deterministic：15544 passed、24 failed、20 skipped；24 个失败节点
 serial 10 passed、premerge sentinel 53 passed、mock flow smoke 10 passed。
 真实事件只读回放：evt-02b0e42c9751 在 run_manager 模式产生唯一 diagnose-attention，
 同一旧 triage 不再派生人工门禁；记录见 datal diagnostics/reader-triage-20261109/live-reclassification.json。
-部署后的受控恢复和工作流进展仍需跟踪。
+部署后的受控恢复入口已验证，业务诊断效果和工作流进展继续跟踪。
+
+实机闭环：dev 6e28c63c 已加载（PID 388578），workers/config 保留；错误 decision 的受控撤销
+事件 evt-6858b7b45928，实际 Run Manager 自动派发 evt-7666ced8dbc8，派发验证
+evt-166a7abae525。派发效果仍 pending，不等于产品实现或验收成功。原始证据和监工记录
+位于 datal diagnostics/reader-triage-20261109/。
