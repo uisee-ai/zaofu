@@ -89,3 +89,12 @@ Owner scope影响闭包364 passed（含三个mock E2E），serial10 passed、sen
 （包含三个mock E2E）、serial10 passed、sentinel53 passed。规划器按204文件
 数量升级全量，依仓库规则改为显式决策/重规划/CLI/Event来源及其mock调用闭包；
 未运行全量或真实provider E2E。
+
+- P0读取继续缩短每页独立进程的重复扫描：新增可选最多4页/次的CLI JSONL输出；
+  保留逐页授权、摘要、完整输出和回执。新接口先9项RED再转绿，追加跨页新事件
+  可见且历史分片只解码一次的回归；本批仍须完成正式新Plan和8Impl现场验收。
+
+多页读取：9项CLI新行为先RED后GREEN；影响闭包128 passed（含mock E2E、
+逐页撤权/篡改/断管、完整provider输出观察及单页/四页resume），serial10 passed、
+sentinel53 passed。规划器按134文件数退化全量，依仓库规则运行上述显式边界
+及调用闭包，未运行全量pytest或真实provider E2E。
