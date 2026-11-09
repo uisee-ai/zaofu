@@ -120,6 +120,11 @@ synth 仍按 trace 绑定，缺失 dispatch 身份或 Task/trace 范围时拒绝
 仍等待，不伪造旧任务完成，也不删除历史 prompt。该条件接在实际 fanout 派发入口，
 由 `tests/test_reader_context_boundary.py` 覆盖死进程恢复及活跃/未知/未结算保护。
 
+升级终态检查与 reader 重规划 checkpoint 批量解析运行归属时，在各自一次调用内
+惰性构建并复用完整事件快照的别名表；没有候选时不构建。下一调用重新计算，保留
+单运行旧事件回退、多运行歧义隔离、冲突根和晚到别名规则，不缓存跨 tick 运行状态。
+实际入口及快照变化由 `tests/test_recovery_scope_reuse.py` 验证。
+
 这项配置进入有效执行策略摘要，改变后旧启动预览不能继续批准。需在新 Run 前选择，
 或走已有配置修订及重新批准；禁止改运行中的冻结配置。它不等于源码 single-agent
 接替、跨 Provider 恢复完成，也不保证预算内通过。真实收益要由新运行测量。

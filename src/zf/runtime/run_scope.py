@@ -214,11 +214,13 @@ def events_for_run(
     return scoped
 
 
-def resolve_run_for_event(events: Iterable[ZfEvent], event: ZfEvent) -> str:
+def resolve_run_for_event(
+    events: Iterable[ZfEvent], event: ZfEvent, *,
+    _aliases: dict[str, str] | None = None,
+) -> str:
     """Resolve an event's run; legacy fallback is safe only for one run."""
 
-    rows = list(events)
-    aliases = run_aliases(rows)
+    aliases = _aliases if _aliases is not None else run_aliases(events)
     resolved = event_run_id(event, aliases=aliases)
     if resolved:
         return resolved

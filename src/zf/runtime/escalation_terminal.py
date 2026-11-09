@@ -10,7 +10,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.task.store import TaskStore
 from zf.runtime.run_admission import build_run_admission_projection
-from zf.runtime.run_scope import resolve_run_for_event
+from zf.runtime.run_scope import resolve_run_for_event, run_aliases
 
 
 _LEGACY_UNRECOVERABLE_MARKERS = (
@@ -46,6 +46,7 @@ def converge_unrecoverable_escalations(
     rows = list(events)
     emitted = 0
     terminalized_runs: set[str] = set()
+    aliases: dict[str, str] | None = None
     by_id = {event.id: event for event in rows}
     from zf.runtime.reader_failure_supersession import reader_failure_was_replaced
 
@@ -56,7 +57,9 @@ def converge_unrecoverable_escalations(
         policy = escalation_terminal_policy(payload)
         if not policy:
             continue
-        run_id = resolve_run_for_event(rows, escalation)
+        if aliases is None:
+            aliases = run_aliases(rows)
+        run_id = resolve_run_for_event(rows, escalation, _aliases=aliases)
         if not run_id:
             continue
         if run_id in terminalized_runs or _run_terminal_exists(
@@ -64,7 +67,7 @@ def converge_unrecoverable_escalations(
             run_id=run_id,
         ):
             continue
-        if _recovered_after(rows, index=index, run_id=run_id):
+        if _recovered_after(rows, index=index, run_id=run_id, aliases=aliases):
             continue
         source = by_id.get(str(payload.get("source_event_id") or ""))
         if source is not None and reader_failure_was_replaced(rows, source):
@@ -352,6 +355,7 @@ def _recovered_after(
     *,
     index: int,
     run_id: str,
+    aliases: dict[str, str],
 ) -> bool:
     for event in events[index + 1:]:
         if event.type not in _RECOVERY_PROGRESS_EVENTS:
@@ -363,7 +367,7 @@ def _recovered_after(
                 "running",
             }:
                 continue
-        if resolve_run_for_event(events, event) == run_id:
+        if resolve_run_for_event(events, event, _aliases=aliases) == run_id:
             return True
     return False
 
