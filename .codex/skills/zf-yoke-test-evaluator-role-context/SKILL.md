@@ -15,6 +15,30 @@ Method detail and task-verification contracts are available through its
 dependencies. Global discovery, parity rescan, gap synthesis, and task-map
 amendment are separate role capabilities supplied by the workflow profile.
 
+
+## Context consumption
+
+- Start with the current stage card and its controlled required-read batch. Consume
+  every `next_cursor` page; identical authorized aliases share content, not authority.
+- Read this role method once per unchanged skill digest. Load dependency references
+  only for the current stage's verification method; do not concatenate all skills,
+  briefing, task docs and global plans into a truncated tool response.
+- When a required batch spans many pages, use a bounded tool call to consume a
+  few sequential CLI cursor pages together when its output budget can carry all
+  bodies (for example, three 8 KiB pages with an explicit 24 KiB output budget).
+  Preserve every page in the returned tool output; do not replace bodies with
+  digests, discard output, or pipe it to a summary. Stop at the bounded page
+  count and keep the exact next cursor. Each CLI read retains its own receipt.
+  Avoid one model round trip for each tiny page and avoid restarting page one
+  after inspecting the manifest. Provider output truncation still requires
+  consuming the missing body, never assuming it was delivered.
+- Do not reread `task.md`, `source.md`, `progress.md` merely to reconstruct fields
+  already present in the pinned contract. For missing context, retrieve the exact
+  authorized source/slice. Mandatory acceptance and independent verification remain required.
+- Prefer the rendered `result validate ... --submit` command when provided. A failed
+  validation returns diagnostics without consuming submission; successful preflight
+  goes through normal Kernel admission in that invocation.
+
 ## Dependency Triggers
 
 - Always use `yoke/verify-review` for independent review order and evidence
@@ -41,40 +65,24 @@ amendment are separate role capabilities supplied by the workflow profile.
    不用标题、摘要或截断片段替代完整必读正文，也不要重复打印已完整读过的大段 Plan/PAS。
    单项 `zf artifact read --source ... --artifact ...` 的stdout就是正文，不是带`.content`
    字段的外壳；不要把正文JSON解析后再取不存在的`.content`而误判为空。`--required`
-   才按JSONL逐行输出source/artifact/json-path/content；保留已完整呈现的正文，不重复dump。
+   统一返回 `required-artifact-page.v2`；完整消费 `items[].content` 并按 `next_cursor`
+   续页到 null。原样返回每页及身份元数据，保留已完整呈现的正文，不重复dump。
    等待仍在运行的工具时采用与预计耗时相称的10—30秒等待（保持操作者可见的进度），
    避免连续1秒轮询：每次模型往返都重带上下文，空输出也会消耗累计预算。
-   大量嵌套重复正文可使用可选 `--required --shared-bodies`（不与
-   `--deduplicate-content` 合用），在当前工具允许的情况下保存到自己的临时工作文件后，
-   按连续字符区间分页读取；每页控制在工具输出上限内，记录已完整消费的区间。
-   优先使用 `zf artifact read --attempt <本次attempt> --required --shared-bodies --output-file
-   app/evidence/<本任务域>/__pycache__/required-<本次attempt>.jsonl`，由CLI原子保存完整
-   正文且只输出路径/大小/hash；目标必须在当前工作目录内、已gitignore且尚不存在。
-   回执不是已阅读证明，继续按连续区间完整分页；未读完本身不是外部阻塞，不应因此
-   提交failed或要求删除必读来源。仅真实缺失、校验失败或执行通道错误才报告恢复问题。
-   批量输出应在进程层直接保存 stdout 到允许的缓存（先创建父目录），不要先向工具打印全量
-   再复制展示文本。可用 subprocess.run(..., stdout=缓存文件, check=True)；仅打印退出码和大小。
-   缓存须逐行解析并核对 refs/来源摘要；不可用编辑补丁重建截断正文，坏缓存保留诊断后重新获取。
-   没有可靠 token 计数时，每次最多输出 15000 个字符，不在同一工具调用合并多页；
-   检查真实截断提示后再标已读。补读按字符区间覆盖全部缺口，少量正文 ID 不能代替缺页。
-   临时文件须位于授权且已忽略的位置（先用 `git check-ignore` 核对）；交接前确认
-   `git status --short` 干净。误写到未忽略位置时保全后移出，不把读取缓存提交成产品
-   代码，不改 `.gitignore` 隐藏文件；移动超出工具权限时请求监工执行。
-   JSONL 的 `kind=body` 是正文定义；外层 `refs` 中的 `path`/`ref` 只将对应占位 null
-   替换为此前定义，业务正文里的同名键和字面 null 不变。`kind=source` 保留来源、
-   内容摘要及逐来源读取凭证。所有定义和来源都须完整消费，引用只可复用已读完的定义，
-   不得只读索引/hash、抽样或摘要来签收。工具成功写入read-ledger不证明模型已消费正文。
-   若自行复核 `content_sha256`，先按 `refs` 完整还原选中正文，再计算 UTF-8 摘要。
-   字符串使用原文；其他值使用 `json.dumps(value, ensure_ascii=False, indent=2, default=str)`，
-   保留原键顺序且不追加换行。不要 hash JSONL 行、压缩 JSON 或排序键后的重编码；
-   编码差异不表示来源损坏，按准确口径复核后仍不匹配才报告完整性问题。
-   这是可逆展示，不改变 required_reads、权限、合同和验收门禁；老CLI不支持时继续用
-   原单项受控读取。遵守当前工具的写入边界和命令约束，不因保存输出而绕过守卫。
+   大体积正文使用 `zf artifact read --attempt <本次attempt> --required` 的有界分页，
+   完整读取每页 `items[].content`，按 `next_cursor` 继续直到为空；相同正文的 aliases
+   已分别鉴权和记账，无须按别名重复阅读。工具输出预算较小时使用 `--page-bytes 2048`，
+   一次只消费一页，截断时补读原页，不把多页合并成超大输出。读取收据不证明模型理解；
+   未读完继续读取，不据此提交产品失败或要求删除必读来源。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
    the briefing marks it reusable for the exact target commit and command
    digest. Do not rerun that identical deterministic command merely to produce
    another receipt. A stale/different-target receipt is evidence only, not a
    reusable result.
+   命令原文是绑定合同经 JSON/YAML 解析后的字符串，不是展示转义。按 command ID
+   取值并直接传给执行 API（如 `subprocess.run(command, shell=True, ...)`），不要把
+   序列化展示手抄到另一层 shell 字符串。记录实际命令值/摘要；认定合同命令错误前，
+   先与冻结快照解码值逐字核对。转录错误应修正调用，不能要求 Planner 改动正确合同。
 4. Add independent acceptance, regression, integration, browser, provider, or
    packaging probes required by the task's risk and verification tier. Receipt
    reuse never waives semantic AC review or an independent high-risk probe.
@@ -100,26 +108,20 @@ amendment are separate role capabilities supplied by the workflow profile.
 7. Record `reused_command_receipt_ids`, newly executed probes, exact findings,
    affected criteria, reproducible command ids, evidence refs, and the
    recommended semantic owner.
-   保存探针证据时先复用当前回合已持久化的工具结果：通过 briefing 中的 CLI 和 state dir
-   查询 `zf events --type <provider>.hook.post_tool_use --last 5 --json --state-dir <state_dir>`
-   （provider取本回合的codex或claude）。优先加 `--actor <role_instance>` 在取last之前
-   筛选；hook 顶层 `task_id` 可能为空，不能因 `--task` 查询为空便认定工具证据不存在。
-   应核对 `causation_id` 对应的当前派发；已知事件ID时用 `--id <event_id>` 读取原始事件。
-   短输出或空 stdout 可能仅保存在事件正文中，没有 raw_output 不等于采集失败；
-   若契约明确要求 sidecar 而实际没有，报告该具体约束，不伪造引用。避免反复输出查询自身的
-   历史大结果；确需扩大last时在调用端只输出待核验事件。核对工具结果事件的 actor、
-   Run、派发因果、实际命令、输出和退出码。仅引用确实存在且属于本次验证的
-   `event:<event_id>`，或该事件给出的原始输出 sidecar ref；保留截断输出的完整 sidecar。
+   保存探针证据时复用当前回合持久化的工具结果。先查询一次
+   `zf events --index --type <provider>.hook.post_tool_use --actor <role_instance> --last 5 --json --state-dir <state_dir>`，
+   只返回事件索引，再用 `--id <event_id>` 读取必要原始结果及 raw_output 引用。
+   核对 actor、Run、派发 causation、命令与退出码；hook task_id 可能为空。
+   当前上下文中已完整消费的正文不重复读取，保留 ID/ref 与校验事实复用。
+   短输出可能只在事件正文中，没有 sidecar 不代表采集失败；若契约要求 sidecar
+   却缺失，应报告具体约束，不能伪造引用。截断的输出必须消费完整 sidecar。
+   对照当前 contract snapshot 的 `evidence_contract` 和声明输出逐项核验本阶段义务；
+   如接受等价证据，注明合同依据及对应关系。不能只检查 AC/命令就漏掉证据约束，
+   也不能因后续阶段证据尚不存在而拒绝当前任务。
    核验 PRD 独立评审、Owner 确认、计划批准等前置流程证据时，注意事件可能早于 Task 创建，
    `task_id` 为空；`--task` 精确筛选不能证明这些事件不存在。优先按已绑定 ID/ref 查询，
    或按事件类型定位后核对 channel/thread、PRD ref/digest、计划代际及先后顺序；
    不把其他版本的评审、成员签字或仅有命令退出码当作所需批准。
-   建立一次证据索引：先用 `zf events --index --json` 加精确type/actor/task筛选，
-   只输出ID、身份、工具输入预览和raw_output引用；再用不带`--index`的`--id`读取
-   所选事件完整正文及sidecar。索引不是完整证据，不能直接用预览签收验收。
-   按事件类型、actor、当前派发因果定位 ID，再读取必要事件正文与
-   raw_output ref。不要为找一个命令的收据反复拉取 last 100/200 的 hook 历史；查询自身
-   也产生 hook 输出，递归读取会迅速放大上下文。找到原始命令后保留其 ID/ref 复用。
    预算紧张时先收敛已完成检查的矩阵并预校验；证据确实缺失则如实阻断，不反复扩展
    历史查询直到预算耗尽，不省略独立验收或伪造通过。
    将实际发现、命令及这些引用写进已授权的 result scratch。不得虚构事件或引用其他回合，
@@ -133,6 +135,10 @@ amendment are separate role capabilities supplied by the workflow profile.
    `acceptance_id`, `expected`, `observed`, `required_delta`,
    `reproduction_command_ids`, `allowed_scope`, `done_when`, `next_gate`, and
    `owner`.
+   `allowed_scope`同时覆盖产品修复及其交付所需的证据更新，逐项对账原合同声明的
+   evidence_contract.required；路径必须已在原合同写入范围内。不要只列源码/测试，
+   使后继无法刷新本来就必须交付的证据；也不能借证据义务扩大权限。若原合同本身
+   不允许必需输出，列明真正冲突交 OA 受控修订，不改合同或补造历史通过记录。
 9. Submit through the exact result profile and completion command in the
    briefing. Do not invent terminal events or mutate runtime truth.
    Treat content-addressed `completion-payloads/<kind>/<digest>.json` files as
@@ -194,3 +200,17 @@ When Candidate Verify receives a current `product_acceptance_spec`:
 Runtime owns schema validation, result admission/repair, attempt accounting,
 affinity routing, stale/replay checks, and terminal state. This Skill owns how
 to perform a meaningful independent evaluation.
+
+## Task 范围与独立证据
+
+以当前 attempt 输入索引定位本任务的 contract、原始约束、目标版本、验证命令和
+依赖接口，完整消费 required reads；索引/命中摘要不算正文已读。Impl 自检用于
+确定复核线索，不能替代 Verify 自己运行检查并绑定当前 target 的证据。共享
+规则必须保留失败语义、权限、边界值和跨任务接口反例；不因本任务切片较小而
+缩减验收。Candidate Verify 仍按其完整包政策读取，不套用 Task Verify 的选择。
+压缩/换会话后先核对 task/attempt/target/ref/digest，再补读当前不再掌握的正文；
+`--resume` 只适用于仍能使用当前会话已交付材料时，不是记忆或理解证明。
+
+恢复时使用当前 Verify attempt 的 `artifact recover`；检查点、Impl 历史已读和关系
+命中都不能抵扣独立 Verify 必读。声明关系只定位授权正文；superseded/rejected 输入
+必须交回受控重绑定路径，不能自行切到新包继续验收。

@@ -28,18 +28,21 @@ async function fixture(page: Page, withTurn: boolean) {
     actions: { mutation_enabled: true, allowed: ["chat-orchestrator", "kanban-plan-apply"] },
     web_session: { mode: "local_trusted", unlocked: true, actions_enabled: true },
     agent_surface: { configured_backend: "codex-headless", permission_profile: "workspace_writer",
-      backends: [{ id: "codex-headless", available: true, default: true }] },
+      backends: [{ id: "codex-headless", title: "Codex", available: true, default: true }] },
   } } });
   await page.addInitScript(() => localStorage.setItem("zf.operatorBackend", "codex-headless"));
   const state = {
     phase: withTurn ? "running" : "idle", attempt: 1, answers: 0, posts: 0,
-    failHistory: 0, failedHistory: 0, permissionDelay: false, failAction: false,
+    failHistory: 0, failedHistory: 0, permissionDelay: false, failAction: false, failAnswer: false,
     events: withTurn ? [event(1, "user.message", { target: "kanban-agent", runtime_delivery: "headless", message: "Prepare the workflow" }),
       event(2, "kanban.agent.turn.created", { message_event_id: "evt-1" }),
       event(3, "kanban.agent.turn.delta", { control_state: "plan_request_buffering" })] : [],
   };
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/webchat/model-catalog")) {
+      return route.fulfill({ json: { backend: "codex-headless", models: [], session_defaults: {} } });
+    }
     if (path.endsWith("/webchat/runtime")) {
       if (state.permissionDelay) await new Promise((resolve) => setTimeout(resolve, 300));
       const waiting = state.phase === "waiting_input";
@@ -62,6 +65,7 @@ async function fixture(page: Page, withTurn: boolean) {
     }
     if (path.includes("/interactions/") && path.endsWith("/answer")) {
       state.answers += 1;
+      if (state.failAnswer) return route.fulfill({ status: 503, json: { detail: "Answer temporarily unavailable" } });
       const response = route.request().postDataJSON().response.plan_response;
       state.events.push(event(13, "kanban.agent.plan.answered", response));
       state.phase = "running"; state.attempt = 2;
@@ -90,7 +94,7 @@ test("recovers questions without SSE, including a resumed turn and a failed hist
   await expect(page.getByTestId("agent-card-preparing")).toBeVisible();
   // No SSE terminal/reply is delivered: only durable runtime and history change.
   state.events.push(...questionEvents(1)); state.phase = "waiting_input";
-  await expect(page.getByText(plan(1).question, { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: plan(1).question, exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("agent-card-preparing")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Stop generating", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Cancel pending response", exact: true })).toBeVisible();
@@ -101,7 +105,7 @@ test("recovers questions without SSE, including a resumed turn and a failed hist
   await expect(page.getByRole("button", { name: "Stop generating", exact: true })).toBeVisible();
   state.events.push(...questionEvents(2)); state.phase = "waiting_input";
   state.failHistory = 1;
-  await expect(page.getByText(plan(2).question, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: plan(2).question, exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("Review question 2", { exact: true })).toBeVisible({ timeout: 20_000 });
   expect(state.failedHistory).toBe(1);
   await expect(page.getByTestId("agent-card-preparing")).toHaveCount(0);
@@ -130,5 +134,36 @@ test("rapid Enter events send once across permission lookup, and failure release
   await input.press("Enter");
   await expect.poll(() => state.posts).toBe(2);
   await expect(input).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+
+test("unsubmitted question options and Other text survive reload and failed submission", async ({ page }) => {
+  test.setTimeout(60_000);
+  const { state, errors } = await fixture(page, true);
+  state.events.push(...questionEvents(1)); state.phase = "waiting_input";
+  const card = page.getByRole("region", { name: "Ask user question", exact: true });
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await card.getByRole("radio", { name: /Provide an existing repository/ }).check();
+  await page.reload();
+  if (!await card.isVisible()) await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await expect(card.getByRole("radio", { name: /Provide an existing repository/ })).toBeChecked();
+  expect(state.answers).toBe(0);
+  await card.getByRole("radio", { name: "Other", exact: true }).check();
+  await card.getByRole("textbox").fill("Use the CSV export workspace");
+  state.failAnswer = true;
+  await card.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect.poll(() => state.answers).toBe(1);
+  await page.reload();
+  if (!await card.isVisible()) await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await expect(card.getByRole("radio", { name: "Other", exact: true })).toBeChecked();
+  await expect(card.getByRole("textbox")).toHaveValue("Use the CSV export workspace");
+  state.failAnswer = false;
+  await card.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect.poll(() => state.answers).toBe(2);
+  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("zf.plan-question-draft:")).length)).toBe(0);
+  state.events.push(...questionEvents(2)); state.phase = "waiting_input";
+  await expect(page.getByRole("heading", { name: plan(2).question, exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(card.getByRole("radio", { name: "Other", exact: true })).not.toBeChecked();
   expect(errors).toEqual([]);
 });

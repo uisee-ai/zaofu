@@ -60,7 +60,7 @@ import type {
   WebChatRuntime,
   WebChatSearchResult,
 } from "./types";
-import { cachedGetJson, clearGetCache } from "./queryClient";
+import { cachedGetJson, clearGetCache } from "./queryClient.js";
 
 async function requestJson<T>(
   path: string,
@@ -108,6 +108,27 @@ function webActionAuthHeaders(): Record<string, string> {
     "X-ZF-Web-Token": token,
     Authorization: `Bearer ${token}`,
   } : {};
+}
+
+export interface KanbanModelCatalog {
+  backend: string;
+  models: Array<{ model: string; label: string; default: boolean; default_effort: string; efforts: string[] }>;
+  session_defaults?: { model: string | null; effort: string | null; source: "provider_config" | "provider_session" | "session_baseline" | "unknown" };
+}
+
+export class KanbanModelCatalogError extends Error {
+  constructor(readonly status: number) {
+    super(`Model catalog unavailable (${status})`);
+  }
+}
+
+export async function getKanbanModelCatalog(projectId: string, threadId: string, taskId: string, signal?: AbortSignal): Promise<KanbanModelCatalog> {
+  const query = new URLSearchParams({ thread_key: threadId, task_id: taskId });
+  const response = await fetch(`${projectPrefix(projectId)}/webchat/model-catalog?${query}`, {
+    headers: webActionAuthHeaders(), signal, cache: "no-store",
+  });
+  if (!response.ok) throw new KanbanModelCatalogError(response.status);
+  return response.json() as Promise<KanbanModelCatalog>;
 }
 
 export async function uploadChannelAttachment(projectId: string, channelId: string, threadId: string, file: File): Promise<Record<string, unknown>> {
@@ -352,6 +373,7 @@ export async function initWorkspaceProject(payload: {
   if (!response.ok && response.status >= 500) {
     throw new Error(String(data.reason || `workspace init returned ${response.status}`));
   }
+  if (response.ok && data.ok !== false) clearGetCache("/api/workspace/projects");
   return data;
 }
 

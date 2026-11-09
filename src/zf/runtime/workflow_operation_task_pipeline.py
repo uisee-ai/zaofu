@@ -11,6 +11,7 @@ _BUDGET_AMENDMENT_DIMENSIONS = {
     "wall_clock": ("timeout_seconds", "elapsed_seconds"),
     "tokens": ("token_budget", "total_tokens"),
     "usd": ("cost_budget_usd", "total_usd"),
+    "usage_samples": ("max_usage_samples", "usage_samples"),
 }
 
 
@@ -31,12 +32,23 @@ TASK_PIPELINE_REQUEST_KEYS = (
     "risk_review_timeout_seconds",
     "risk_review_max_turns",
     "risk_review_budget_usd",
+    "provider_session_max_parallel_agents",
 )
 _INTEGER_REQUEST_KEYS = frozenset({
     "operation_generation",
     "workspace_generation",
     "placement_epoch",
 })
+
+
+def starts_new_redrive_epoch(event: ZfEvent, operation: Mapping[str, Any],
+                            operation_id: str, request_hash: str) -> bool:
+    """A newly admitted replay may start the same dispatch once again."""
+    body = event.payload if isinstance(event.payload, Mapping) else {}
+    return (operation.get("status") in {"requested", "reserved"}
+            and event.type == "workflow.operation.redrive_admitted"
+            and body.get("operation_id") == operation_id
+            and body.get("request_hash") == request_hash)
 
 
 def task_pipeline_operation_seed(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -81,7 +93,12 @@ def task_pipeline_request_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key in TASK_PIPELINE_REQUEST_KEYS:
         value = payload.get(key)
-        if value in (None, "", 0):
+        if value in (None, "") or (
+            value == 0 and key not in {
+                "risk_review_timeout_seconds", "risk_review_max_turns",
+                "risk_review_budget_usd", "provider_session_max_parallel_agents",
+            }
+        ):
             continue
         result[key] = _int_value(value) if key in _INTEGER_REQUEST_KEYS else str(value)
     return result
@@ -273,7 +290,10 @@ def find_task_pipeline_budget_amendment(
     blocked_event_id = str(operation.get("last_event_id") or "").strip()
     if (
         str(operation.get("status") or "") != "blocked"
-        or not str(operation.get("task_pipeline_stage") or "").strip()
+        or (
+            not str(operation.get("task_pipeline_stage") or "").strip()
+            and operation.get("operation_type") not in {"fanout_synth", "fanout_reader_child"}
+        )
         or not str(operation.get("reason") or "").startswith(
             "workflow_budget_exceeded:"
         )
@@ -342,7 +362,9 @@ def find_task_pipeline_budget_amendment(
             continue
         if str(payload.get("source") or "") != "zf_goal_cli":
             continue
-        patch = payload.get("run_limits_patch")
+        if str(payload.get("operation_budget_id") or "") != operation_id:
+            continue
+        patch = payload.get("operation_limits_patch")
         if not isinstance(patch, Mapping):
             continue
         if _budget_patch_covers_exceeded_dimensions(patch, budget_payload):
@@ -377,6 +399,8 @@ def _budget_patch_covers_exceeded_dimensions(
         except (TypeError, ValueError):
             return False
         if amended_limit < 0:
+            return False
+        if dimension == "usage_samples" and not amended_limit.is_integer():
             return False
         if amended_limit != 0 and amended_limit <= current_usage:
             return False
@@ -498,6 +522,20 @@ def admit_task_pipeline_redrive(
         and budget_amendment is not None
         and budget_amendment.id == recovery_decision_event_id
     )
+    # RM and restart replay may observe the same interrupted attempt. The
+    # attempt, not the decision-maker identity, owns this one recovery effect.
+    # Explicit compatibility and budget amendments retain their own admission.
+    if (source_attempt_id and not compatibility_proof_digest
+            and operation_status == "requested"
+            and decision_owner in {"run_manager", "kernel_replay"}):
+        if any(
+            event.type == "workflow.operation.redrive_admitted"
+            and event.payload.get("operation_id") == operation_id
+            and event.payload.get("source_attempt_id") == source_attempt_id
+            and event.payload.get("recovery_decision_owner") in {"run_manager", "kernel_replay"}
+            for event in events
+        ):
+            return None
     if (
         operation_status not in {"suspended", "requested"}
         and not legacy_cancelled_restart

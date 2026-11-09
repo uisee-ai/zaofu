@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import pytest
 
 from zf.core.events.log import EventLog
@@ -40,7 +41,7 @@ def test_window_cache_rechecks_file_identity_and_membership(tmp_path, change):
     if change == 'rotate':
         archive = tmp_path / 'events'
         archive.mkdir()
-        path.rename(archive / '2026-11-04.jsonl')
+        path.rename(archive / ((datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d') + '.jsonl'))
         log.append(second)
         assert [e.id for e in log.read_days(2)] == [first.id, second.id]
         assert [e.id for e in log.read_days()] == [second.id]
@@ -63,7 +64,7 @@ def test_window_cache_preserves_signature_and_unsigned_policy(tmp_path):
     trusted = EventLog(path, signer=EventSigner(b'test-key'))
     trusted.append(ZfEvent(type='signed'))
     assert [e.type for e in trusted.read_days()] == ['signed']
-    assert EventLog(path, signer=EventSigner(b'wrong-key')).read_days() == []
+    assert [e.type for e in EventLog(path, signer=EventSigner(b'wrong-key')).read_days()] == ['event.malformed']
     with path.open('a') as out:
         out.write(ZfEvent(type='plain').to_json() + '\n')
     assert [e.type for e in trusted.read_days()] == ['signed', 'event.malformed']

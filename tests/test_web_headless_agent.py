@@ -37,6 +37,7 @@ from zf.web.headless_agent import (
 )
 from zf.web.agent_session_runtime import cancel_agent_session_run, run_key
 from zf.web.server import create_app
+from zf.web.headless_turn_observability import _message_event_payload
 
 
 def _proposal_intent(source_quote: str) -> dict[str, str]:
@@ -44,6 +45,22 @@ def _proposal_intent(source_quote: str) -> dict[str, str]:
         "decision": "propose_action",
         "source_quote": source_quote,
     }
+
+
+@pytest.mark.parametrize(("provider_item", "outcome"), [
+    ({"type": "commandExecution", "status": "completed", "exitCode": 0}, "completed"),
+    ({"type": "commandExecution", "status": "completed", "exitCode": 1}, "failed"),
+    ({"type": "commandExecution", "status": "declined"}, "failed"),
+    ({"type": "commandExecution", "status": "cancelled"}, "cancelled"),
+    ({"type": "mcpToolCall", "status": "completed", "result": {"isError": True}}, "failed"),
+    ({"type": "commandExecution", "status": "completed"}, "unknown"),
+])
+def test_codex_tool_result_preserves_confirmed_outcome(provider_item: dict, outcome: str) -> None:
+    provider_item["id"] = "call-1"
+    message = headless_agent._codex_item_message({"method": "item/completed", "params": {"item": provider_item}}, message_type="tool_result")
+    assert message is not None
+    assert _message_event_payload(message)["status"] == outcome
+    assert _message_event_payload(message)["tool_call_id"] == "call-1"
 
 
 def test_codex_turn_completion_detects_output_and_context_exhaustion() -> None:
@@ -102,6 +119,7 @@ def _fake_codex_script(tmp_path: Path) -> Path:
             [
                 "import json, os, sys",
                 "expected_thinking = os.environ.get('FAKE_CODEX_THINKING_LEVEL')",
+                "expected_model = os.environ.get('FAKE_CODEX_MODEL')",
                 "expected_sandbox = os.environ.get('FAKE_CODEX_SANDBOX', 'danger-full-access')",
                 "expect_resume_security = os.environ.get('FAKE_CODEX_EXPECT_RESUME_SECURITY')",
                 "for line in sys.stdin:",
@@ -117,17 +135,20 @@ def _fake_codex_script(tmp_path: Path) -> Path:
                 "    elif req_id and method == 'thread/start':",
                 "        assert msg['params']['approvalPolicy'] == 'never'",
                 "        assert msg['params']['sandbox'] == expected_sandbox",
-                "        if expected_thinking:",
+                "        if expected_thinking and not expected_model and not os.environ.get('FAKE_CODEX_ONE_TURN'):",
                 "            assert msg['params']['config']['model_reasoning_effort'] == expected_thinking",
-                "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'threadId':'codex-thread-1'}}), flush=True)",
+                "        baseline = {} if os.environ.get('FAKE_CODEX_NO_BASELINE') else {'model':'baseline-model','reasoningEffort':'low'}",
+                "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'threadId':'codex-thread-1', **baseline}}), flush=True)",
                 "    elif req_id and method == 'thread/resume':",
                 "        if expect_resume_security:",
                 "            assert msg['params']['approvalPolicy'] == 'never'",
                 "            assert msg['params']['sandbox'] == expected_sandbox",
-                "            print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'threadId':'codex-thread-resumed'}}), flush=True)",
+                "            print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'threadId':'codex-thread-resumed','model':'baseline-model','reasoningEffort':'low'}}), flush=True)",
                 "        else:",
                 "            print(json.dumps({'jsonrpc':'2.0','id':req_id,'error':{'code':-32000,'message':'missing thread'}}), flush=True)",
                 "    elif req_id and method == 'turn/start':",
+                "        if expected_model:",
+                "            assert msg['params']['model'] == expected_model",
                 "        if expected_thinking:",
                 "            assert msg['params']['effort'] == expected_thinking",
                 "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'turnId':'turn-1'}}), flush=True)",
@@ -928,6 +949,105 @@ def test_headless_backends_accept_thinking_level(
         thinking_level="low",
     )
     assert result.ok is True
+
+
+def test_codex_model_is_sent_to_provider_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FAKE_CODEX_MODEL", "example-model")
+    script = _fake_codex_script(tmp_path)
+    codex = CodexHeadlessBackend(command=f"{sys.executable} {script}")
+    result = codex.run_turn(
+        prompt="hello", cwd=tmp_path, system_prompt="", thread_id="thread", provider_session_id="",
+        on_session_id=lambda _: None, on_message=None, timeout_s=5, model="example-model",
+    )
+    assert result.ok
+
+
+def test_one_turn_model_restores_provider_baseline_across_agent_instances(
+    state_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = _fake_codex_script(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_MODEL", "example-model")
+    monkeypatch.setenv("FAKE_CODEX_THINKING_LEVEL", "high")
+    make_agent = lambda: KanbanHeadlessAgent(
+        state_dir=state_dir, project_root=tmp_path,
+        backends={"codex-headless": CodexHeadlessBackend(command=f"{sys.executable} {script}")},
+    )
+    first = make_agent().run_turn(backend="codex-headless", message="first", thread_key="main",
+                                  model="example-model", thinking_level="high", permission_profile="read_only")
+    assert first.ok, first.error
+    stored = HeadlessThreadStore(state_dir=state_dir, project_root=tmp_path).load(thread_key="main")
+    assert stored["providers"]["codex-headless"]["one_turn_model_restore"] == {
+        "model": "baseline-model", "thinking_level": "low",
+    }
+
+    monkeypatch.setenv("FAKE_CODEX_MODEL", "baseline-model")
+    monkeypatch.setenv("FAKE_CODEX_THINKING_LEVEL", "low")
+    monkeypatch.setenv("FAKE_CODEX_EXPECT_RESUME_SECURITY", "1")
+    second = make_agent().run_turn(backend="codex-headless", message="second", thread_key="main", permission_profile="read_only")
+    assert second.ok, second.error
+    stored = HeadlessThreadStore(state_dir=state_dir, project_root=tmp_path).load(thread_key="main")
+    assert "one_turn_model_restore" not in stored["providers"]["codex-headless"]
+
+
+def test_effort_only_keeps_model_and_restores_baseline(
+    state_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = _fake_codex_script(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_THINKING_LEVEL", "high")
+    monkeypatch.setenv("FAKE_CODEX_ONE_TURN", "1")
+    make_agent = lambda: KanbanHeadlessAgent(
+        state_dir=state_dir, project_root=tmp_path,
+        backends={"codex-headless": CodexHeadlessBackend(command=f"{sys.executable} {script}")},
+    )
+    first = make_agent().run_turn(backend="codex-headless", message="first", thread_key="main",
+                                  thinking_level="high", permission_profile="read_only")
+    assert first.ok, first.error
+    stored = HeadlessThreadStore(state_dir=state_dir, project_root=tmp_path).load(thread_key="main")
+    assert stored["providers"]["codex-headless"]["one_turn_model_restore"] == {
+        "model": "baseline-model", "thinking_level": "low",
+    }
+    monkeypatch.setenv("FAKE_CODEX_MODEL", "baseline-model")
+    monkeypatch.setenv("FAKE_CODEX_THINKING_LEVEL", "low")
+    monkeypatch.setenv("FAKE_CODEX_EXPECT_RESUME_SECURITY", "1")
+    second = make_agent().run_turn(backend="codex-headless", message="second", thread_key="main", permission_profile="read_only")
+    assert second.ok, second.error
+    stored = HeadlessThreadStore(state_dir=state_dir, project_root=tmp_path).load(thread_key="main")
+    assert "one_turn_model_restore" not in stored["providers"]["codex-headless"]
+
+
+def test_effort_only_after_model_override_returns_to_original_model(
+    state_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = _fake_codex_script(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_MODEL", "example-model")
+    monkeypatch.setenv("FAKE_CODEX_THINKING_LEVEL", "high")
+    make_agent = lambda: KanbanHeadlessAgent(
+        state_dir=state_dir, project_root=tmp_path,
+        backends={"codex-headless": CodexHeadlessBackend(command=f"{sys.executable} {script}")},
+    )
+    first = make_agent().run_turn(backend="codex-headless", message="first", thread_key="main",
+                                  model="example-model", thinking_level="high", permission_profile="read_only")
+    assert first.ok, first.error
+    monkeypatch.setenv("FAKE_CODEX_MODEL", "baseline-model")
+    monkeypatch.setenv("FAKE_CODEX_EXPECT_RESUME_SECURITY", "1")
+    second = make_agent().run_turn(backend="codex-headless", message="second", thread_key="main",
+                                   thinking_level="high", permission_profile="read_only")
+    assert second.ok, second.error
+    stored = HeadlessThreadStore(state_dir=state_dir, project_root=tmp_path).load(thread_key="main")
+    assert stored["providers"]["codex-headless"]["one_turn_model_restore"]["model"] == "baseline-model"
+
+
+def test_one_turn_override_fails_closed_when_baseline_is_unknown(
+    state_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAKE_CODEX_NO_BASELINE", "1")
+    script = _fake_codex_script(tmp_path)
+    agent = KanbanHeadlessAgent(state_dir=state_dir, project_root=tmp_path,
+                                backends={"codex-headless": CodexHeadlessBackend(command=f"{sys.executable} {script}")})
+    result = agent.run_turn(backend="codex-headless", message="hello", thread_key="main",
+                            model="example-model", permission_profile="read_only")
+    assert not result.ok
+    assert "restorable model and effort" in result.error
 
 
 def test_headless_permission_profiles_map_to_provider_security(

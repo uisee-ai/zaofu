@@ -289,6 +289,21 @@ def test_dismiss_generic_proposal_emits_generic_resolution(
     assert pending_kanban_proposals(log.read_all()) == []
 
 
+def test_pending_proposals_reports_ledger_read_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    state_dir = _state(tmp_path)
+    client = TestClient(create_app(state_dir, project_root=tmp_path))
+    project_id = client.get("/api/snapshot").json()["project"]["project_id"]
+
+    def fail_read(_self: EventLog) -> list[ZfEvent]:
+        raise OSError("private filesystem detail")
+
+    monkeypatch.setattr(EventLog, "read_all", fail_read)
+    response = client.get(f"/api/projects/{project_id}/kanban-agent/pending-proposals")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "pending proposals unavailable"
+    assert "private filesystem detail" not in response.text
+
+
 def test_dismiss_through_web_action_route(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """r2 e2e regression: the service-level test passed while the WEB route
     rejected the action twice (allowlist, then kernel dispatch mapping) —

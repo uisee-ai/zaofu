@@ -1,3 +1,5 @@
+import { createContext, useContext, useEffect } from "react";
+import { clearQuestionDraft, planQuestionDraftKey } from "../common/questionDraft";
 import { Check, PencilLine, X } from "lucide-react";
 import {
   AskUserQuestion,
@@ -145,6 +147,8 @@ function PlanSummary({
   );
 }
 
+export const PlanQuestionDraftScope = createContext("");
+
 export function PlanInteractionForm({
   busy = false,
   disabled = false,
@@ -158,12 +162,18 @@ export function PlanInteractionForm({
   onSubmit?: (response: AgentSessionPlanResponse) => void;
   request: AgentSessionPlanRequest;
 }) {
+  const scope = useContext(PlanQuestionDraftScope);
+  const draftStorageKey = scope ? planQuestionDraftKey(scope, request) : undefined;
+  useEffect(() => {
+    if (request.response && draftStorageKey) clearQuestionDraft(draftStorageKey);
+  }, [request.response, draftStorageKey]);
   const questions = planQuestions(request);
   if (request.response) {
     return <PlanSummary request={request} />;
   }
   return (
     <AskUserQuestion
+      draftStorageKey={draftStorageKey}
       busy={busy}
       collapseOnDiscuss={false}
       disabled={disabled || !request.valid}

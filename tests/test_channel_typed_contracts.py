@@ -174,6 +174,92 @@ def test_synthesis_prompt_states_mechanical_json_types() -> None:
         in prompt
     )
     assert "All plural fields must be JSON arrays" in prompt
+    assert "dissent MUST be a JSON array" in prompt
+    assert "exact selected behavior" in prompt
+    assert "never replace a chosen error/status rule" in prompt
+
+
+def test_synthesis_normalizes_dissent_status_envelope(tmp_path: Path) -> None:
+    state_dir, writer = _writer(tmp_path)
+    channel, pack = _semantic_context(state_dir, stage="synthesis")
+    emit_structured_reply_events(
+        state_dir=state_dir,
+        writer=writer,
+        channel=channel,
+        request={
+            "request_id": "reply-dissent-envelope",
+            "thread_id": "main",
+            "message_id": "msg-synthesis",
+            "target_member_id": "reviewer",
+            "context_pack_id": pack["context_pack_id"],
+        },
+        message={
+            "message_id": "msg-synthesis",
+            "refs": {"synthesis_request_id": "synth-dissent-envelope"},
+        },
+        reply=json.dumps({
+            "channel_synthesis": {
+                "summary": "The complete discussion is captured durably.",
+                "open_questions": [],
+                "consumed_message_digests": pack[
+                    "semantic_source_required_digests"
+                ],
+                "dissent": {
+                    "status": "unresolved",
+                    "items": ["Architecture evidence remains deferred."],
+                },
+            },
+        }),
+        reply_event_id="evt-synthesis-dissent-envelope",
+        actor="test",
+        source="test",
+    )
+    proposed = next(
+        event
+        for event in writer.event_log.read_all()
+        if event.type == "channel.synthesis.proposed"
+    )
+    assert proposed.payload["dissent"] == [{
+        "status": "unresolved",
+        "items": ["Architecture evidence remains deferred."],
+    }]
+
+
+def test_synthesis_prompt_requires_prd_quality_structure() -> None:
+    prompt = channel_reply_response_contract(
+        {},
+        {"thread_id": "main"},
+        {"refs": {"synthesis_request_id": "synth-prd-quality"}},
+    )
+
+    for phrase in (
+        "User Stories and Independent Tests",
+        "Edge Cases and Error",
+        "Key Entities and Contracts",
+        "independent_test",
+        "named `#### Scenario: <stable-name>`",
+        "normative MUST or SHALL",
+        "baseline, target, measurement_method",
+        "TBD (owner decision required)",
+        "implementation companion",
+        "ADDED/MODIFIED/REMOVED Requirements",
+        "conversation contribution or analysis",
+        "complete standalone prd_markdown",
+        "section must be the exact heading title",
+    ):
+        assert phrase in prompt
+
+
+def test_synthesis_prompt_forbids_conversation_composition_without_file_source() -> None:
+    prompt = channel_reply_response_contract(
+        {},
+        {"thread_id": "main"},
+        {"refs": {"synthesis_request_id": "synth-no-file"}},
+    )
+    assert "MUST return the complete standalone prd_markdown" in prompt
+    assert "prd_file or prd_composition" in prompt
+    assert "never compose a conversation contribution" in prompt
+    assert "source_message_id, source_message_digest" not in prompt
 
 
 def test_prd_render_keeps_primary_decision_when_decision_list_is_empty() -> None:
@@ -212,6 +298,25 @@ def test_contribution_prompt_states_exact_question_enums() -> None:
     assert "finding, risk, or explicit assumption/gate" in prompt
     assert "it does not mean the question list is empty" in prompt
     assert "questions and freeze=true together" in prompt
+
+
+def test_active_mentioned_roster_member_gets_typed_contribution_contract() -> None:
+    channel = _channel()
+    channel["discussions"]["main"] = {
+        "state": "active",
+        "roster": ["arch", "critic"],
+    }
+    prompt = channel_reply_response_contract(
+        channel,
+        {
+            "thread_id": "main",
+            "target_member_id": "arch",
+            "routing_reason": "mention",
+        },
+        {"message_id": "msg-review"},
+    )
+
+    assert 'one JSON object named channel_contribution' in prompt
 
 
 def test_adaptive_next_round_preserves_lineage_as_a_contribution_turn(

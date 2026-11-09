@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from zf.core.task.schema import Task
 from zf.runtime.fanout_retry_briefing import write_blocking_reader_retry_briefing
 from zf.runtime.task_contract_snapshot import (
@@ -10,7 +11,8 @@ from zf.runtime.task_contract_snapshot import (
 from tests.test_reader_target_pinning import _state
 
 
-def test_legacy_contract_reader_retry_keeps_complete_result_draft(tmp_path: Path):
+@pytest.mark.parametrize('effective_operation_id', ['', 'fresh-operation'])
+def test_legacy_contract_reader_retry_keeps_complete_result_draft(tmp_path: Path, monkeypatch, effective_operation_id):
     head, state, _, _, orch = _state(tmp_path, workdirs=False)
     snapshot = build_task_contract_snapshot(Task(id='T1', title='retry target'),
         workflow_run_id='RUN', task_map_generation_id='GEN', base_commit=head, task_ref='task/T1')
@@ -21,12 +23,19 @@ def test_legacy_contract_reader_retry_keeps_complete_result_draft(tmp_path: Path
         'operation_id': 'fixture-operation', 'result_protocol_mode': 'blocking',
         **snapshot_payload_fields(descriptor), **target_payload_fields(target),
     }}
+    calls = []
+    def effective(_state, _log, operation_id):
+        calls.append(operation_id)
+        return {'max_usage_samples': 0, 'timeout_seconds': 0, 'token_budget': 0, 'cost_budget_usd': 8}
+    monkeypatch.setattr('zf.runtime.workflow_budget_status.effective_operation_limits', effective)
     result = write_blocking_reader_retry_briefing(orch, role=orch.config.roles[0],
         manifest={'fanout_id': 'fixture-fanout', 'stage_id': 'final-judge',
                   'topology': 'fanout_reader', 'trace_id': 'RUN', 'target_ref': head},
-        child=child, run_id='fixture-current-retry', contract_handoff_keys=())
+        child=child, run_id='fixture-current-retry', contract_handoff_keys=(),
+        effective_operation_id=effective_operation_id)
     assert result is not None
     text = result.read_text()
+    assert calls == ([effective_operation_id] if effective_operation_id else [])
     assert 'fixture-current-retry' in text
     assert 'verification-result.v1' in text
     assert descriptor['ref'] in text

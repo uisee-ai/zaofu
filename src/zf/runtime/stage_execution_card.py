@@ -309,6 +309,14 @@ def prepare_fanout_result_guidance(
         f"the enum value, and put rationale in `{result_prefix}summary` or "
         f"`{result_prefix}findings`.",
     ]
+    if semantic_submit and str(child_payload.get("output_profile_id") or "") == "plan-synth":
+        guidance.extend([
+            "Plan Synth status fields are intentionally distinct: top-level "
+            "`status` is only `completed` or `failed`; nested `report.status` "
+            "is only `passed`, `failed`, `blocked`, or `suspended`. A successful "
+            "review therefore uses `status: completed`, `report.status: passed`, "
+            "and `recommendation: approve`.",
+        ])
     if not semantic_submit:
         guidance.append(
             "`fanout_id`, `stage_id`, `child_id`, `run_id`, `role_instance`, "
@@ -552,7 +560,7 @@ def prepare_profiled_stage_result(
     plan_candidate_validation = child_payload.get("plan_candidate_validation")
     if isinstance(plan_candidate_validation, Mapping):
         lines.extend(_render_plan_candidate_policy(plan_candidate_validation))
-        validate_command = render_result_validate_command(command)
+        validate_command = render_result_validate_command(command) + " --summary"
         lines.extend([
             "- Plan candidate rule: after authoring, run only the pre-submit "
             "validation command below. It uses the same runtime evaluator as "
@@ -563,6 +571,8 @@ def prepare_profiled_stage_result(
             "other audit, search, test, or readback.",
             "- On validation or submission rejection, follow structured "
             "diagnostics only; do not reverse-engineer the harness.",
+            "- The validation output is bounded; omit `--summary` from the same "
+            "command to inspect the complete report when needed.",
             "",
             "Plan candidate pre-submit validation:",
             "```bash",
@@ -571,15 +581,30 @@ def prepare_profiled_stage_result(
             "",
         ])
     elif profile_id in {"task-verify", "candidate-verify"}:
+        command = render_result_validate_command(command) + " --submit"
+        operation_id = str(child_payload.get("operation_id") or "").strip()
         lines.extend([
-            "- After authoring, run the pre-submit validation below. It checks "
-            "schema, pinned contract and Product Acceptance; it does not consume the submit capability.",
-            "- Correct this same scratch using structured diagnostics and rerun "
-            "validation. After exit 0, submit immediately. Preflight is not "
-            "admission or a product verdict; submission still checks authority and evidence.",
-            "", "Verification pre-submit validation:", "```bash",
-            render_result_validate_command(command), "```", "",
+            "- Once the result scratch and evidence are ready, run the Success command below. "
+            "It preflights schema, pinned contract and Product Acceptance, then submits "
+            "immediately only if preflight passes, without another model turn.",
+            "- On rejection, correct this same scratch using structured diagnostics. "
+            "Submission still checks current authority, target and evidence; preflight "
+            "alone is not admission or a product verdict. Do not repeat completed reads/tests.",
+            "",
+            "Success command:",
+            "```bash",
+            command,
+            "```",
         ])
+        if operation_id:
+            lines.append(
+                f"The atomic command above performs the `result submit --operation "
+                f"{operation_id}` operation after validation."
+            )
+        lines.append(
+            "The validation portion does not consume the submit capability; "
+            "`--submit` invokes it atomically only after preflight passes."
+        )
     else:
         lines.extend([
             "- Terminal submit rule: once the required artifacts and prefilled "

@@ -1,0 +1,676 @@
+{
+  "schema_version": "hello-prd-browser-smoke.v1",
+  "status": "BLOCKED",
+  "project_id": "project-b8ad9c68",
+  "task_id": "TASK-5CB1FC",
+  "request_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+  "source_commit": "b33b6b9ff9a7af1f721d008365944b35a012459c",
+  "browser_submission": true,
+  "request_state": "clarifying",
+  "run_started": false,
+  "product_implementation_present": false,
+  "allowed_execution_profiles": [
+    "direct-v1"
+  ],
+  "v5_required_execution_profile": "bounded-direct-v1",
+  "v5_roles": 29,
+  "registered_codex_flows": [
+    "issue-fanout-v3-codex",
+    "prd-fanout-v3-codex",
+    "refactor-lane-v3-codex",
+    "general-workflow-v3-codex",
+    "prd-fanout-codex",
+    "issue-fanout-codex",
+    "refactor-flow-codex",
+    "prd-light-v3-codex",
+    "prd-fanout-v3-oa-pilot-codex",
+    "issue-fanout-v3-oa-pilot-codex",
+    "refactor-lane-v3-oa-pilot-codex",
+    "issue-task-pipeline-v4-shadow-codex",
+    "prd-task-pipeline-v4-oa-bounded-codex",
+    "prd-task-pipeline-v4-shadow-codex",
+    "refactor-task-pipeline-v4-shadow-codex"
+  ],
+  "business_stage_events": [],
+  "workflow_events": [
+    {
+      "type": "runtime.action.attempt.started",
+      "id": "evt-1fcd2a7f6d50",
+      "ts": "2026-10-30T06:16:13.471078+00:00",
+      "actor": "web",
+      "task_id": null,
+      "payload": {
+        "attempt_id": "act-evt-4a6358db",
+        "action": "create-task",
+        "requested_action": "create-task",
+        "surface": "web",
+        "started_at": "2026-10-30T06:16:13.470094Z",
+        "operation_id": "",
+        "request_hash": "",
+        "payload": {
+          "title": "Hello World PRD smoke",
+          "execution_mode": "workflow",
+          "prepare_workflow": true,
+          "backend": "codex",
+          "target_root": "/tmp/zf-hello-prd-20261030-060443/project",
+          "contract": {
+            "behavior": "在项目根目录以 Python 标准库交付 hello.py，并以 unittest 验证两种命令及退出码；仅一个实现任务，不增加额外功能。固定使用 ZaoFu PRD Workflow v5 Production (Codex)，zaofu-prd-v5-production-codex / zf-prd-v5.yaml，保留 Scan、Plan、Plan Critic、OA pre_impl、Impl、独立 Task Verify、Candidate Verify、Discovery、Judge 和 Kernel 交付；不得切换 light 或直接派发。沿用模板默认 8 条 lane、impl/verify 池各 8、最多 16 个活动 Task Pipeline、worker on-demand 空闲 120 秒及默认模型和推理强度，不要求并行任务；plan_approval=false。先完整预览配置，适配本项目路径、验证和 Git 引用，并确认 PRD 在各工作树可读；由 Owner 单独确认启动。",
+            "verification": "python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'",
+            "verification_tiers": [
+              "runtime"
+            ],
+            "spec_ref": "docs/prd/hello-world-prd-smoke.md",
+            "source_ref": "docs/prd/hello-world-prd-smoke.md",
+            "handoff_artifacts": [
+              "docs/prd/hello-world-prd-smoke.md"
+            ],
+            "scope": [
+              "hello.py",
+              "tests/test_hello.py",
+              "tests/__init__.py"
+            ],
+            "explicit_non_goals": [
+              "增加额外功能",
+              "增加额外实现任务",
+              "切换 light 或直接派发"
+            ],
+            "acceptance": "从项目根目录运行 python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'，退出码为 0，且测试覆盖两种调用的输出和退出码。",
+            "acceptance_criteria": [
+              "python hello.py 精确输出 Hello, world!，退出码为 0。",
+              "python hello.py --name ZaoFu 精确输出 Hello, ZaoFu!，退出码为 0。",
+              "仅使用 Python 标准库，unittest 自动化测试实际执行并检查上述两种调用。",
+              "从项目根目录运行 python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'，退出码为 0。"
+            ]
+          },
+          "project_id": "project-b8ad9c68",
+          "conversation_id": "kanban:project-b8ad9c68",
+          "thread_id": "kanban:project-b8ad9c68",
+          "run_id": "f4190eaa-dcce-45fb-9565-14cbe9a93ffe",
+          "causation_id": "evt-e46e7026eadb",
+          "source": "kanban-agent-proposal",
+          "proposal_event_id": "evt-9340d5e82ac6",
+          "actor": "web"
+        }
+      },
+      "causation_id": "evt-4a6358db3b43",
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "task.created",
+      "id": "evt-c06d961875a8",
+      "ts": "2026-10-30T06:16:13.478161+00:00",
+      "actor": "web",
+      "task_id": "TASK-5CB1FC",
+      "payload": {
+        "source": "kanban-agent",
+        "task": {
+          "title": "Hello World PRD smoke",
+          "id": "TASK-5CB1FC",
+          "key": "",
+          "status": "backlog",
+          "priority": 3,
+          "assigned_to": null,
+          "skills_required": [],
+          "blocked_by": [],
+          "contract": {
+            "schema_version": "",
+            "locale": "",
+            "feature_id": "",
+            "parent_task_id": "",
+            "campaign": "",
+            "phase": "",
+            "source_backlog_task_id": "",
+            "behavior": "在项目根目录以 Python 标准库交付 hello.py，并以 unittest 验证两种命令及退出码；仅一个实现任务，不增加额外功能。固定使用 ZaoFu PRD Workflow v5 Production (Codex)，zaofu-prd-v5-production-codex / zf-prd-v5.yaml，保留 Scan、Plan、Plan Critic、OA pre_impl、Impl、独立 Task Verify、Candidate Verify、Discovery、Judge 和 Kernel 交付；不得切换 light 或直接派发。沿用模板默认 8 条 lane、impl/verify 池各 8、最多 16 个活动 Task Pipeline、worker on-demand 空闲 120 秒及默认模型和推理强度，不要求并行任务；plan_approval=false。先完整预览配置，适配本项目路径、验证和 Git 引用，并确认 PRD 在各工作树可读；由 Owner 单独确认启动。",
+            "verification": "python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'",
+            "verification_tiers": [
+              "runtime"
+            ],
+            "validation": {},
+            "spec_ref": "docs/prd/hello-world-prd-smoke.md",
+            "plan_ref": "",
+            "tdd_ref": "",
+            "critic_gate_ref": "",
+            "critic_event_id": "",
+            "critic_dispatch_id": "",
+            "reviewed_arch_event_id": "",
+            "source_arch_dispatch_id": "",
+            "dispatch_id": "",
+            "dispatch_id_requirement": "",
+            "canonical_case_id": "",
+            "case_alias": "",
+            "canonical_behavior_test": "",
+            "package_namespace": "",
+            "scope": [
+              "hello.py",
+              "tests/test_hello.py",
+              "tests/__init__.py"
+            ],
+            "affected_files": [],
+            "exclusions": [],
+            "explicit_non_goals": [
+              "增加额外功能",
+              "增加额外实现任务",
+              "切换 light 或直接派发"
+            ],
+            "acceptance": "从项目根目录运行 python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'，退出码为 0，且测试覆盖两种调用的输出和退出码。",
+            "evidence_contract": {
+              "execution_owner": "workflow"
+            },
+            "complexity": "",
+            "review_route": {},
+            "owner_role": "",
+            "owner_instance": "",
+            "wave": 0,
+            "shared_files": [],
+            "exclusive_files": [],
+            "handoff_artifacts": [
+              "docs/prd/hello-world-prd-smoke.md"
+            ],
+            "task_doc_ref": "",
+            "source_doc_ref": "",
+            "progress_doc_ref": "",
+            "evidence_doc_ref": "",
+            "source_revision": "",
+            "contract_revision": "",
+            "capsule_revision": "",
+            "source_key": "",
+            "source_ref": "docs/prd/hello-world-prd-smoke.md",
+            "source_task_id": "",
+            "source_index_ref": "",
+            "source_mode": "",
+            "source_title": "",
+            "source_excerpt": "",
+            "product_contract_ref": "",
+            "spec_skip_reason": "",
+            "unknowns": [],
+            "review_profile": "",
+            "execution_profile_id": "",
+            "execution_profile_digest": "",
+            "risk_class": "",
+            "integration_admission_profile": "",
+            "rework_to": "",
+            "fanout_force": false,
+            "fix_of": "",
+            "acceptance_criteria": [
+              "python hello.py 精确输出 Hello, world!，退出码为 0。",
+              "python hello.py --name ZaoFu 精确输出 Hello, ZaoFu!，退出码为 0。",
+              "仅使用 Python 标准库，unittest 自动化测试实际执行并检查上述两种调用。",
+              "从项目根目录运行 python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'，退出码为 0。"
+            ],
+            "acceptance_evidence": {},
+            "goal_claim_ids": [],
+            "quality_gates_override": {}
+          },
+          "execution_binding": {
+            "owner": "workflow",
+            "request_id": "",
+            "request_revision": 0,
+            "workflow_run_id": "",
+            "origin_binding_digest": "",
+            "origin_task_digest": "sha256:bcace73e47b63f32e93d505bfbdabbcc7b0c9a7cf0d4c1c0fa928d15f1cf3f61"
+          },
+          "contract_authority_revision": "",
+          "contract_authority_sequence": 0,
+          "evidence": null,
+          "created_at": "2026-10-30T06:16:13.472003+00:00",
+          "dispatched_at": null,
+          "started_at": null,
+          "completed_at": null,
+          "cancelled_at": null,
+          "active_dispatch_id": "",
+          "retry_count": 0,
+          "blocked_reason": ""
+        },
+        "request": {
+          "title": "Hello World PRD smoke",
+          "execution_mode": "workflow",
+          "prepare_workflow": true,
+          "backend": "codex",
+          "target_root": "/tmp/zf-hello-prd-20261030-060443/project",
+          "contract": {
+            "behavior": "在项目根目录以 Python 标准库交付 hello.py，并以 unittest 验证两种命令及退出码；仅一个实现任务，不增加额外功能。固定使用 ZaoFu PRD Workflow v5 Production (Codex)，zaofu-prd-v5-production-codex / zf-prd-v5.yaml，保留 Scan、Plan、Plan Critic、OA pre_impl、Impl、独立 Task Verify、Candidate Verify、Discovery、Judge 和 Kernel 交付；不得切换 light 或直接派发。沿用模板默认 8 条 lane、impl/verify 池各 8、最多 16 个活动 Task Pipeline、worker on-demand 空闲 120 秒及默认模型和推理强度，不要求并行任务；plan_approval=false。先完整预览配置，适配本项目路径、验证和 Git 引用，并确认 PRD 在各工作树可读；由 Owner 单独确认启动。",
+            "verification": "python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'",
+            "verification_tiers": [
+              "runtime"
+            ],
+            "spec_ref": "docs/prd/hello-world-prd-smoke.md",
+            "source_ref": "docs/prd/hello-world-prd-smoke.md",
+            "handoff_artifacts": [
+              "docs/prd/hello-world-prd-smoke.md"
+            ],
+            "scope": [
+              "hello.py",
+              "tests/test_hello.py",
+              "tests/__init__.py"
+            ],
+            "explicit_non_goals": [
+              "增加额外功能",
+              "增加额外实现任务",
+              "切换 light 或直接派发"
+            ],
+            "acceptance": "从项目根目录运行 python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'，退出码为 0，且测试覆盖两种调用的输出和退出码。",
+            "acceptance_criteria": [
+              "python hello.py 精确输出 Hello, world!，退出码为 0。",
+              "python hello.py --name ZaoFu 精确输出 Hello, ZaoFu!，退出码为 0。",
+              "仅使用 Python 标准库，unittest 自动化测试实际执行并检查上述两种调用。",
+              "从项目根目录运行 python -c 'import sys,unittest; s=unittest.defaultTestLoader.discover(\"tests\",pattern=\"test_hello.py\"); n=s.countTestCases(); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if n and r.wasSuccessful() else 1)'，退出码为 0。"
+            ]
+          },
+          "project_id": "project-b8ad9c68",
+          "conversation_id": "kanban:project-b8ad9c68",
+          "thread_id": "kanban:project-b8ad9c68",
+          "run_id": "f4190eaa-dcce-45fb-9565-14cbe9a93ffe",
+          "causation_id": "evt-e46e7026eadb",
+          "source": "kanban-agent-proposal",
+          "proposal_event_id": "evt-9340d5e82ac6",
+          "actor": "web"
+        },
+        "proposal_event_id": "evt-9340d5e82ac6"
+      },
+      "causation_id": "evt-4a6358db3b43",
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "workflow.intake.created",
+      "id": "evt-cad11a88c4d4",
+      "ts": "2026-10-30T06:16:13.513149+00:00",
+      "actor": "web",
+      "task_id": "",
+      "payload": {
+        "request_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+        "project_id": "project-b8ad9c68",
+        "kind": "auto",
+        "status": "draft",
+        "revision": 1,
+        "requirement_spec_ref": "/tmp/zf-hello-prd-20261030-060443/project/.zf-hello-prd-v5-smoke/workflow-requests/prepare-TASK-5CB1FC-bcace73e47b63f32/requirements/revision-0001-7c99d4fd679532f7.json",
+        "requirement_spec_digest": "7c99d4fd679532f71c0035393fc3f09789b214c84d3b423f8d330290e50f18bf",
+        "missing_required_fields": [],
+        "open_questions": [],
+        "clarification_answer_count": 0,
+        "origin_binding": {
+          "schema_version": "workflow-origin-binding.v1",
+          "surface": "kanban_agent",
+          "source": "kanban-agent",
+          "project_id": "project-b8ad9c68",
+          "channel_id": "",
+          "thread_id": "",
+          "conversation_id": "kanban:project-b8ad9c68",
+          "thread_key": "kanban:project-b8ad9c68"
+        },
+        "workflow_input_manifest_ref": "/tmp/zf-hello-prd-20261030-060443/project/.zf-hello-prd-v5-smoke/workflow-requests/prepare-TASK-5CB1FC-bcace73e47b63f32/effective/revision-0001-ca321a87e6eaadb8/workflow-input-manifest.json",
+        "source_workflow_input_manifest_ref": "/tmp/zf-hello-prd-20261030-060443/project/artifacts/workflow/prepare-TASK-5CB1FC-bcace73e47b63f32/workflow-input-manifest.json"
+      },
+      "causation_id": null,
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": ""
+    },
+    {
+      "type": "workflow.request.updated",
+      "id": "evt-ffb405784d97",
+      "ts": "2026-10-30T06:16:13.525738+00:00",
+      "actor": "web",
+      "task_id": "",
+      "payload": {
+        "request_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+        "project_id": "project-b8ad9c68",
+        "kind": "auto",
+        "status": "ready",
+        "revision": 2,
+        "requirement_spec_ref": "/tmp/zf-hello-prd-20261030-060443/project/.zf-hello-prd-v5-smoke/workflow-requests/prepare-TASK-5CB1FC-bcace73e47b63f32/requirements/revision-0002-d4232738b30dccbe.json",
+        "requirement_spec_digest": "d4232738b30dccbe751e03fa6efe98d9962388d4c180a3ae0121f1350dcc71b4",
+        "missing_required_fields": [],
+        "open_questions": [],
+        "clarification_answer_count": 0,
+        "origin_binding": {
+          "schema_version": "workflow-origin-binding.v1",
+          "surface": "kanban_agent",
+          "source": "kanban-agent",
+          "project_id": "project-b8ad9c68",
+          "channel_id": "",
+          "thread_id": "",
+          "conversation_id": "kanban:project-b8ad9c68",
+          "thread_key": "kanban:project-b8ad9c68"
+        },
+        "previous_revision": 1,
+        "revision_reason": "requirement_update",
+        "source_event_id": "",
+        "attempt_domain": "plan",
+        "semantic_attempt_incremented": false
+      },
+      "causation_id": "evt-cad11a88c4d4",
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": ""
+    },
+    {
+      "type": "workflow.intake.ready",
+      "id": "evt-46289f79d75d",
+      "ts": "2026-10-30T06:16:13.529176+00:00",
+      "actor": "web",
+      "task_id": "",
+      "payload": {
+        "request_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+        "project_id": "project-b8ad9c68",
+        "kind": "auto",
+        "status": "ready",
+        "revision": 2,
+        "requirement_spec_ref": "/tmp/zf-hello-prd-20261030-060443/project/.zf-hello-prd-v5-smoke/workflow-requests/prepare-TASK-5CB1FC-bcace73e47b63f32/requirements/revision-0002-d4232738b30dccbe.json",
+        "requirement_spec_digest": "d4232738b30dccbe751e03fa6efe98d9962388d4c180a3ae0121f1350dcc71b4",
+        "missing_required_fields": [],
+        "open_questions": [],
+        "clarification_answer_count": 0,
+        "origin_binding": {
+          "schema_version": "workflow-origin-binding.v1",
+          "surface": "kanban_agent",
+          "source": "kanban-agent",
+          "project_id": "project-b8ad9c68",
+          "channel_id": "",
+          "thread_id": "",
+          "conversation_id": "kanban:project-b8ad9c68",
+          "thread_key": "kanban:project-b8ad9c68"
+        }
+      },
+      "causation_id": "evt-ffb405784d97",
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": ""
+    },
+    {
+      "type": "workflow.operation.requested",
+      "id": "evt-51ce25048d37",
+      "ts": "2026-10-30T06:16:13.559678+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "schema_version": "workflow-operation.v1",
+        "canonicalization_version": "workflow-operation-request.v1",
+        "call_result_canonicalization_version": "call-result-canonical-json.v1",
+        "workflow_run_id": "workflow-request:prepare-TASK-5CB1FC-bcace73e47b63f32:r2",
+        "parent_operation_id": "",
+        "parent_stage_id": "workflow-synthesis",
+        "parent_attempt_id": "",
+        "operation_id": "wop-workflow-synthesis-select-flow-fa3866debd67",
+        "operation_type": "workflow_synthesis",
+        "attempt_domain": "",
+        "request_hash": "21b8fe42f30f5ade60102e86395fc166cb39da3a99b09a5e9c4219955fd08b2e",
+        "request_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "workflow_operation_request",
+          "ref": "artifacts/operations/requests/369f599c4ccfe8cd4bbfbf12f04c6fb0fe8946ba3d8b3b823de56dc572ebbe8f.json",
+          "sha256": "369f599c4ccfe8cd4bbfbf12f04c6fb0fe8946ba3d8b3b823de56dc572ebbe8f",
+          "byte_count": 15000,
+          "content_type": "application/json",
+          "schema_version": "workflow-operation-request.v1",
+          "encoding": "utf-8",
+          "created_by": "workflow-operation-service",
+          "source_event_id": "",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "task_id": "",
+        "parent_task_id": "",
+        "role_instance": "",
+        "active_attempt_id": "",
+        "lease_id": "",
+        "child_task_ids": []
+      },
+      "causation_id": null,
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": "kernel"
+    },
+    {
+      "type": "workflow.synthesis.operation.bound",
+      "id": "evt-debbc2e99f51",
+      "ts": "2026-10-30T06:16:13.563101+00:00",
+      "actor": "web",
+      "task_id": "",
+      "payload": {
+        "request_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+        "project_id": "project-b8ad9c68",
+        "kind": "auto",
+        "status": "ready",
+        "revision": 2,
+        "requirement_spec_ref": "/tmp/zf-hello-prd-20261030-060443/project/.zf-hello-prd-v5-smoke/workflow-requests/prepare-TASK-5CB1FC-bcace73e47b63f32/requirements/revision-0002-d4232738b30dccbe.json",
+        "requirement_spec_digest": "d4232738b30dccbe751e03fa6efe98d9962388d4c180a3ae0121f1350dcc71b4",
+        "missing_required_fields": [],
+        "open_questions": [],
+        "clarification_answer_count": 0,
+        "origin_binding": {
+          "schema_version": "workflow-origin-binding.v1",
+          "surface": "kanban_agent",
+          "source": "kanban-agent",
+          "project_id": "project-b8ad9c68",
+          "channel_id": "",
+          "thread_id": "",
+          "conversation_id": "kanban:project-b8ad9c68",
+          "thread_key": "kanban:project-b8ad9c68"
+        },
+        "operation_id": "wop-workflow-synthesis-select-flow-fa3866debd67",
+        "request_hash": "21b8fe42f30f5ade60102e86395fc166cb39da3a99b09a5e9c4219955fd08b2e",
+        "request_revision": 2
+      },
+      "causation_id": "evt-46289f79d75d",
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": ""
+    },
+    {
+      "type": "workflow.synthesis.queued",
+      "id": "evt-e1a8b074aebd",
+      "ts": "2026-10-30T06:16:13.564075+00:00",
+      "actor": "web",
+      "task_id": null,
+      "payload": {
+        "request_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+        "request_revision": 2,
+        "operation_id": "wop-workflow-synthesis-select-flow-fa3866debd67",
+        "request_hash": "21b8fe42f30f5ade60102e86395fc166cb39da3a99b09a5e9c4219955fd08b2e",
+        "backend": "codex",
+        "status": "queued"
+      },
+      "causation_id": null,
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": ""
+    },
+    {
+      "type": "runtime.action.attempt.completed",
+      "id": "evt-a8bd0d4ee44d",
+      "ts": "2026-10-30T06:16:13.570991+00:00",
+      "actor": "web",
+      "task_id": null,
+      "payload": {
+        "attempt_id": "act-evt-4a6358db",
+        "action": "create-task",
+        "requested_action": "create-task",
+        "surface": "web",
+        "operation_id": "",
+        "request_hash": "",
+        "status": "completed",
+        "reason": "task TASK-5CB1FC created through controlled action",
+        "started_at": "2026-10-30T06:16:13.470094Z",
+        "completed_at": "2026-10-30T06:16:13.570826Z",
+        "result_event_id": "evt-c06d961875a8",
+        "reply_event_id": ""
+      },
+      "causation_id": "evt-1fcd2a7f6d50",
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "workflow.operation.started",
+      "id": "evt-6261b13a753e",
+      "ts": "2026-10-30T06:16:14.176078+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "schema_version": "workflow-operation.v1",
+        "workflow_run_id": "workflow-request:prepare-TASK-5CB1FC-bcace73e47b63f32:r2",
+        "operation_id": "wop-workflow-synthesis-select-flow-fa3866debd67",
+        "request_hash": "21b8fe42f30f5ade60102e86395fc166cb39da3a99b09a5e9c4219955fd08b2e",
+        "task_id": "",
+        "dispatch_id": "",
+        "role_instance": "",
+        "active_attempt_id": "",
+        "lease_id": "",
+        "provider_session_id": "",
+        "context_delivery_envelope_ref": {},
+        "context_delivery_receipt_ref": {},
+        "context_delivery_receipt_error": "",
+        "budget_snapshot": {},
+        "reservation_id": "",
+        "idempotency_key": ""
+      },
+      "causation_id": "evt-51ce25048d37",
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": "kernel"
+    },
+    {
+      "type": "workflow.synthesis.requested",
+      "id": "evt-9fe154d32f79",
+      "ts": "2026-10-30T06:16:14.179050+00:00",
+      "actor": "web",
+      "task_id": null,
+      "payload": {
+        "request_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+        "request_revision": 2,
+        "operation_id": "wop-workflow-synthesis-select-flow-fa3866debd67",
+        "request_hash": "21b8fe42f30f5ade60102e86395fc166cb39da3a99b09a5e9c4219955fd08b2e",
+        "requirement_spec_ref": "/tmp/zf-hello-prd-20261030-060443/project/.zf-hello-prd-v5-smoke/workflow-requests/prepare-TASK-5CB1FC-bcace73e47b63f32/requirements/revision-0002-d4232738b30dccbe.json",
+        "requirement_spec_digest": "d4232738b30dccbe751e03fa6efe98d9962388d4c180a3ae0121f1350dcc71b4",
+        "backend": "codex"
+      },
+      "causation_id": "evt-51ce25048d37",
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": ""
+    },
+    {
+      "type": "workflow.synthesis.result.prepared",
+      "id": "evt-302fe5b1e220",
+      "ts": "2026-10-30T06:20:07.596265+00:00",
+      "actor": "web",
+      "task_id": null,
+      "payload": {
+        "request_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+        "request_revision": 2,
+        "operation_id": "wop-workflow-synthesis-select-flow-fa3866debd67",
+        "request_hash": "21b8fe42f30f5ade60102e86395fc166cb39da3a99b09a5e9c4219955fd08b2e",
+        "result_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "workflow_synthesis_result",
+          "ref": "artifacts/workflow/synthesis/prepare-TASK-5CB1FC-bcace73e47b63f32/results/5d924ba77b818d9acc4ace19b3ca5f13aa87742320fcc91d36e60c3999ccdf68.json",
+          "sha256": "5d924ba77b818d9acc4ace19b3ca5f13aa87742320fcc91d36e60c3999ccdf68",
+          "byte_count": 3469,
+          "content_type": "application/json",
+          "schema_version": "workflow-synthesis-result.v1",
+          "encoding": "utf-8",
+          "created_by": "workflow-synthesis-admission",
+          "source_event_id": "evt-51ce25048d37",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        }
+      },
+      "causation_id": "evt-51ce25048d37",
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": ""
+    },
+    {
+      "type": "workflow.operation.settled",
+      "id": "evt-d6f95dd5f32e",
+      "ts": "2026-10-30T06:20:07.597889+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "schema_version": "workflow-operation.v1",
+        "workflow_run_id": "workflow-request:prepare-TASK-5CB1FC-bcace73e47b63f32:r2",
+        "operation_id": "wop-workflow-synthesis-select-flow-fa3866debd67",
+        "request_hash": "21b8fe42f30f5ade60102e86395fc166cb39da3a99b09a5e9c4219955fd08b2e",
+        "task_id": "",
+        "admitted_call_result_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "workflow_synthesis_result",
+          "ref": "artifacts/workflow/synthesis/prepare-TASK-5CB1FC-bcace73e47b63f32/results/5d924ba77b818d9acc4ace19b3ca5f13aa87742320fcc91d36e60c3999ccdf68.json",
+          "sha256": "5d924ba77b818d9acc4ace19b3ca5f13aa87742320fcc91d36e60c3999ccdf68",
+          "byte_count": 3469,
+          "content_type": "application/json",
+          "schema_version": "workflow-synthesis-result.v1",
+          "encoding": "utf-8",
+          "created_by": "workflow-synthesis-admission",
+          "source_event_id": "evt-51ce25048d37",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "provider_operation_summary_ref": {},
+        "reason": "admitted_call_result"
+      },
+      "causation_id": "evt-51ce25048d37",
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": "kernel"
+    },
+    {
+      "type": "workflow.synthesis.clarification.required",
+      "id": "evt-19307113fa10",
+      "ts": "2026-10-30T06:20:07.602015+00:00",
+      "actor": "web",
+      "task_id": "",
+      "payload": {
+        "request_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+        "project_id": "project-b8ad9c68",
+        "kind": "auto",
+        "status": "clarifying",
+        "revision": 2,
+        "requirement_spec_ref": "/tmp/zf-hello-prd-20261030-060443/project/.zf-hello-prd-v5-smoke/workflow-requests/prepare-TASK-5CB1FC-bcace73e47b63f32/requirements/revision-0002-d4232738b30dccbe.json",
+        "requirement_spec_digest": "d4232738b30dccbe751e03fa6efe98d9962388d4c180a3ae0121f1350dcc71b4",
+        "missing_required_fields": [],
+        "open_questions": [
+          "当前合成合同无法绑定指定的 v5 模板，模板所需的 bounded-direct-v1 也不在当前允许的执行 Profile 目录中；如何通过受控配置流程引入并验证完整 v5 配置，生成符合该需求的预览？"
+        ],
+        "clarification_answer_count": 0,
+        "origin_binding": {
+          "schema_version": "workflow-origin-binding.v1",
+          "surface": "kanban_agent",
+          "source": "kanban-agent",
+          "project_id": "project-b8ad9c68",
+          "channel_id": "",
+          "thread_id": "",
+          "conversation_id": "kanban:project-b8ad9c68",
+          "thread_key": "kanban:project-b8ad9c68"
+        },
+        "synthesis_ref": {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "workflow_synthesis_result",
+          "ref": "artifacts/workflow/synthesis/prepare-TASK-5CB1FC-bcace73e47b63f32/results/5d924ba77b818d9acc4ace19b3ca5f13aa87742320fcc91d36e60c3999ccdf68.json",
+          "sha256": "5d924ba77b818d9acc4ace19b3ca5f13aa87742320fcc91d36e60c3999ccdf68",
+          "byte_count": 3469,
+          "content_type": "application/json",
+          "schema_version": "workflow-synthesis-result.v1",
+          "encoding": "utf-8",
+          "created_by": "workflow-synthesis-admission",
+          "source_event_id": "evt-51ce25048d37",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        },
+        "synthesis_digest": "5d924ba77b818d9acc4ace19b3ca5f13aa87742320fcc91d36e60c3999ccdf68",
+        "synthesis_revision": 2,
+        "selected_flow_family": "PrdFlow"
+      },
+      "causation_id": "evt-debbc2e99f51",
+      "correlation_id": "prepare-TASK-5CB1FC-bcace73e47b63f32",
+      "origin": ""
+    }
+  ]
+}

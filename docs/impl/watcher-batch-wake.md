@@ -14,9 +14,20 @@
 模拟终态仍先由 Kernel 结算 Task / 看板，成功后才写 simulation.done 并停止 watcher。
 不修改事件类型、业务状态所有权、任务依赖或并发配额；整轮协调自身的开销仍然存在。
 
+近期事件的 `EventLog.read_days` 对活动账本复用进程内追加折叠：文件不变时复用
+已解码结果，追加时只读取完整新增行，轮转或截断时重建；签名账本每次重验。历史
+归档仍按请求的日期范围读取，返回的事件及其载荷是独立副本，不改变事件权威。
+
 验证：`tests/test_watched_batch.py` 覆盖同批合并、观察/限流、失败不停止和追加边界；
 `tests/test_cli_start.py` 覆盖真实 CLI 接线；
 `tests/e2e/test_terminal_kanban_convergence_mock_e2e.py` 覆盖真实 Orchestrator / Store / Kanban
 结算与重启去重。任务记录见 `tasks/done/2026-10-25-1556-watcher-batch-wake.md`。
 
 两侧事件批处理的集成与验证记录见 [2026-10-26 dev 同步](../records/2026-10-26-0938-upstream-dev-integration.md)。
+
+## 追加中断的事件行边界
+
+`EventLog.append` 在持有账本锁并完成轮转后，检查活动文件是否以换行结束。
+若前次写入留下未终止尾行，先追加非 JSON 标记和换行，再追加新事件：原字节
+保留，未完成记录不会因补换行而被误接纳，后续完整事件仍可单独重放。此机制
+不修复已经拼接的历史损坏行，也不推断中断调用的业务结果。

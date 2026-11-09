@@ -114,6 +114,31 @@ def test_ship_retry_requires_judge_passed(tmp_path: Path):
     assert result.get("ok") is not True
 
 
+def test_legacy_escalation_dismiss_requires_exact_operator_binding(tmp_path: Path):
+    service, log = _service(tmp_path)
+    source = ZfEvent(type="human.escalate", actor="supervisor",
+                     payload={"reason": "historical orphaned task"})
+    log.append(source)
+    payload = {"decision_token": source.id, "escalation_event_id": source.id,
+               "approval_ref": "operator:resume-approved", "reason": "superseded task reviewed"}
+    for missing in ("escalation_event_id", "approval_ref", "reason"):
+        result = _exec(service, "human-decision-dismiss", {
+            key: value for key, value in payload.items() if key != missing
+        })
+        assert result.get("ok") is not True
+    assert not [event for event in log.read_all() if event.type == "human.escalation.acknowledged"]
+    wrong = _exec(service, "human-decision-dismiss", {**payload, "escalation_event_id": "different"})
+    assert wrong.get("ok") is not True
+    assert _exec(service, "human-decision-dismiss", payload)["ok"] is True
+    from zf.runtime.run_manager import _consume_human_decisions, _pending_human_decisions
+    assert _pending_human_decisions(log.read_all())
+    _consume_human_decisions(state_dir=log.path.parent, writer=service.writer,
+                            config=service.config, project_root=tmp_path,
+                            events=log.read_all(), causation_id="test-tick")
+    assert _pending_human_decisions(log.read_all()) == []
+    assert _exec(service, "human-decision-dismiss", payload).get("ok") is not True
+
+
 def test_surgery_actions_policy_is_needs_approval():
     for action in (
         "payload-repair-reemit",

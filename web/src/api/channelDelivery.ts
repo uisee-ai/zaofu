@@ -16,6 +16,11 @@ export interface ChannelPrdDocument {
   title: string;
   markdown: string;
   byte_count: number;
+  spec_format?: string;
+  document_control?: { revision?: string; status?: string; owner?: string; profile?: "lite" | "full" | string };
+  success_metrics?: Array<Record<string, unknown>>;
+  non_functional_requirements?: Array<Record<string, unknown>>;
+  read_views?: Partial<Record<"product" | "architecture" | "developer", { label: string; sections: string[] }>>;
   sources?: { status: "ready" | "incomplete" | "unavailable"; items: Array<{
     kind: string; message_id: string; digest: string; name: string; content: string; available: boolean;
   }> };

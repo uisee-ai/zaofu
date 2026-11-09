@@ -144,7 +144,7 @@ def test_plan_preview_falls_back_to_bound_producer_markdown_ref(
     assert "## Acceptance" in preview["markdown"]
 
 
-def test_resolved_plan_without_request_keeps_bound_prd_preview(
+def test_requestless_plan_keeps_preview_outside_human_inbox(
     tmp_path: Path,
 ) -> None:
     state_dir, log = _state(tmp_path)
@@ -175,11 +175,7 @@ def test_resolved_plan_without_request_keeps_bound_prd_preview(
     ))
 
     inbox = build_operator_inbox(state_dir, log.read_all(), project_root=tmp_path)
-    item = inbox["items"][0]
-
-    assert item["status"] == "approved"
-    assert item["preview"]["available"] is True
-    assert item["refs"]["task_map_ref"].endswith("artifacts/plans/task_map.json")
+    assert inbox["items"] == []
 
     preview = build_plan_preview(
         state_dir, log.read_all(), plan_id="evt-prd-plan", project_root=tmp_path,
@@ -522,8 +518,18 @@ def test_operator_inbox_projects_only_owner_channel_questions(
     decision = pending["pending"][0]
     assert decision["channel_id"] == "ch-product"
     assert decision["thread_id"] == "main"
-    assert decision["deep_link"] == "?page=channels&channel=ch-product"
+    assert decision["deep_link"] == "?page=channels&channel=ch-product&thread=main&question=q-owner"
 
+    log.append(ZfEvent(
+        id="evt-canonical",
+        type="channel.question.opened",
+        actor="pm",
+        payload={
+            "channel_id": "ch-product", "thread_id": "main",
+            "question_id": "q-canonical", "question": "Which market first?",
+            "kind": "owner_decision", "target_member_id": "owner",
+        },
+    ))
     log.append(ZfEvent(
         id="evt-owner-merged",
         type="channel.question.merged",
@@ -536,8 +542,8 @@ def test_operator_inbox_projects_only_owner_channel_questions(
         },
     ))
     merged = build_operator_inbox(state_dir, log.read_all())
-    assert merged["summary"]["decisions_pending"] == 0
-    assert merged["items"][0]["status"] == "merged"
+    assert merged["summary"]["decisions_pending"] == 1
+    assert next(item for item in merged["items"] if item["question_id"] == "q-owner")["status"] == "merged"
 
 
 def test_operator_inbox_keeps_only_latest_kanban_question_revision(
@@ -577,7 +583,7 @@ def test_operator_inbox_keeps_only_latest_kanban_question_revision(
     pending = revised["pending"][0]
     assert pending["kind"] == "kanban_question"
     assert pending["revision"] == 2
-    assert pending["deep_link"] == "?page=project&agent=open"
+    assert pending["deep_link"] == "?page=project&agent=open&agent_thread=main&agent_request=evt-plan-r2"
     statuses = {item["revision"]: item["status"] for item in revised["items"]}
     assert statuses == {1: "superseded", 2: "pending"}
 
@@ -707,5 +713,4 @@ def test_operator_inbox_web_human_decision_action_acknowledges(
 
     after = client.get(f"/api/projects/{project_id}/operator/inbox").json()
     assert after["summary"]["pending"] == 0
-    assert after["summary"]["suppressed_acknowledged"] == 1
-    assert after["items"] == []
+    assert after["items"][0]["status"] == "processing"

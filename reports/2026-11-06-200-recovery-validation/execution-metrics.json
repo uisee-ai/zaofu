@@ -1,0 +1,518 @@
+{
+  "as_of": "2026-11-06T18:21:35.720458+00:00",
+  "operation_attempts": {
+    "wop-prd-scan-PRD-WORKFLOW-4EF709E12CE26EFD-ge-93758f718147": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:17:04.277846+00:00",
+          "attempt_id": "",
+          "lease_id": ""
+        }
+      ],
+      "role": "",
+      "start": "2026-11-06T17:17:04.277846+00:00",
+      "attempt_id": "",
+      "lease_id": "",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:19:15.843748+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:19:15.844398+00:00",
+      "elapsed_seconds": 131.566
+    },
+    "wop-prd-scan-product-scan-trig-evt-d0cf3423-b7f3d6e47201": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:17:14.222549+00:00",
+          "attempt_id": "run-fanout-prd-scan-evt-d0cf3423-product-scan",
+          "lease_id": "run-fanout-prd-scan-evt-d0cf3423-product-scan"
+        }
+      ],
+      "role": "product-scan",
+      "start": "2026-11-06T17:17:14.222549+00:00",
+      "attempt_id": "run-fanout-prd-scan-evt-d0cf3423-product-scan",
+      "lease_id": "run-fanout-prd-scan-evt-d0cf3423-product-scan",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:19:13.626802+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:19:13.627972+00:00",
+      "elapsed_seconds": 119.404
+    },
+    "wop-prd-scan-tech-scan-trig-evt-d0cf3423-db13c736bac7": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:17:15.038546+00:00",
+          "attempt_id": "run-fanout-prd-scan-evt-d0cf3423-tech-scan",
+          "lease_id": "run-fanout-prd-scan-evt-d0cf3423-tech-scan"
+        }
+      ],
+      "role": "tech-scan",
+      "start": "2026-11-06T17:17:15.038546+00:00",
+      "attempt_id": "run-fanout-prd-scan-evt-d0cf3423-tech-scan",
+      "lease_id": "run-fanout-prd-scan-evt-d0cf3423-tech-scan",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:19:15.685346+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:19:15.686605+00:00",
+      "elapsed_seconds": 120.647
+    },
+    "wop-prd-plan-planner-trig-evt-7ebac964-7752979f3721": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:19:20.879317+00:00",
+          "attempt_id": "run-fanout-prd-plan-evt-7ebac964-planner",
+          "lease_id": "run-fanout-prd-plan-evt-7ebac964-planner"
+        }
+      ],
+      "role": "planner",
+      "start": "2026-11-06T17:19:20.879317+00:00",
+      "attempt_id": "run-fanout-prd-plan-evt-7ebac964-planner",
+      "lease_id": "run-fanout-prd-plan-evt-7ebac964-planner",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:28:09.643683+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:28:09.644705+00:00",
+      "elapsed_seconds": 528.764
+    },
+    "wop-prd-plan-synth-trig-evt-7ebac964-89bfbdd21154": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:28:16.630807+00:00",
+          "attempt_id": "run-fanout-prd-plan-evt-7ebac964-synth",
+          "lease_id": "run-fanout-prd-plan-evt-7ebac964-synth"
+        }
+      ],
+      "role": "plan-critic",
+      "start": "2026-11-06T17:28:16.630807+00:00",
+      "attempt_id": "run-fanout-prd-plan-evt-7ebac964-synth",
+      "lease_id": "run-fanout-prd-plan-evt-7ebac964-synth",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:33:50.960443+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:33:50.961379+00:00",
+      "elapsed_seconds": 334.33
+    },
+    "wop-impl-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-adf984fbe57c": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:33:57.298305+00:00",
+          "attempt_id": "ta-ba7960d9196b7e32cef5",
+          "lease_id": "lease-ca504376948572fe3111"
+        }
+      ],
+      "role": "dev-lane-0",
+      "start": "2026-11-06T17:33:57.298305+00:00",
+      "attempt_id": "ta-ba7960d9196b7e32cef5",
+      "lease_id": "lease-ca504376948572fe3111",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:45:58.632090+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:45:58.633484+00:00",
+      "elapsed_seconds": 721.334
+    },
+    "wop-orchestrator-agent-pre_impl-checkpoint-revision-a25a16338e23-4bdc3876c8b5": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:33:57.349918+00:00",
+          "attempt_id": "oa-wop-orchestrator-agent-pre_impl-checkpoint-revision-a25a16338e23-4bdc3876c8b5",
+          "lease_id": "oa-wop-orchestrator-agent-pre_impl-checkpoint-revision-a25a16338e23-4bdc3876c8b5"
+        }
+      ],
+      "role": "orchestrator",
+      "start": "2026-11-06T17:33:57.349918+00:00",
+      "attempt_id": "oa-wop-orchestrator-agent-pre_impl-checkpoint-revision-a25a16338e23-4bdc3876c8b5",
+      "lease_id": "oa-wop-orchestrator-agent-pre_impl-checkpoint-revision-a25a16338e23-4bdc3876c8b5",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:37:35.695537+00:00",
+      "verdict": "pending",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:37:35.696721+00:00",
+      "elapsed_seconds": 218.346
+    },
+    "wop-verify-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-4199909607a2": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:46:04.279461+00:00",
+          "attempt_id": "ta-641557fc73b763a8cb1d",
+          "lease_id": "lease-5db1bea721587490bda7"
+        }
+      ],
+      "role": "verify-lane-0",
+      "start": "2026-11-06T17:46:04.279461+00:00",
+      "attempt_id": "ta-641557fc73b763a8cb1d",
+      "lease_id": "lease-5db1bea721587490bda7",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:48:40.648545+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:48:40.650768+00:00",
+      "elapsed_seconds": 156.369
+    },
+    "wop-integration-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-e873a526ab11": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:48:41.798614+00:00",
+          "attempt_id": "wop-integration-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-e873a526ab11",
+          "lease_id": "wop-integration-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-e873a526ab11"
+        }
+      ],
+      "role": "candidate-integrator",
+      "start": "2026-11-06T17:48:41.798614+00:00",
+      "attempt_id": "wop-integration-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-e873a526ab11",
+      "lease_id": "wop-integration-tp-TASK-PRD-PRODUCT-cfaa03ac06e8-e873a526ab11",
+      "redrive_count": 0,
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:48:42.609912+00:00"
+    },
+    "wop-prd-lanes-verify-verify-lane-0-trig-evt-ef8ca07a-642e4aca4dcc": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:49:21.873868+00:00",
+          "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-0",
+          "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-0"
+        }
+      ],
+      "role": "verify-lane-0",
+      "start": "2026-11-06T17:49:21.873868+00:00",
+      "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-0",
+      "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-0",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:54:00.570356+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:54:00.573966+00:00",
+      "elapsed_seconds": 278.696
+    },
+    "wop-prd-lanes-verify-verify-lane-1-trig-evt-ef8ca07a-8bb46c6a7810": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:49:22.800580+00:00",
+          "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-1",
+          "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-1"
+        }
+      ],
+      "role": "verify-lane-1",
+      "start": "2026-11-06T17:49:22.800580+00:00",
+      "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-1",
+      "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-1",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:53:43.953812+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:53:43.957407+00:00",
+      "elapsed_seconds": 261.153
+    },
+    "wop-prd-lanes-verify-verify-lane-2-trig-evt-ef8ca07a-9c6134d369d2": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:49:23.752473+00:00",
+          "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-2",
+          "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-2"
+        }
+      ],
+      "role": "verify-lane-2",
+      "start": "2026-11-06T17:49:23.752473+00:00",
+      "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-2",
+      "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-2",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:59:13.782884+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:59:13.786771+00:00",
+      "elapsed_seconds": 590.03
+    },
+    "wop-prd-lanes-verify-verify-lane-3-trig-evt-ef8ca07a-ca34fc0872b5": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:49:24.684245+00:00",
+          "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-3",
+          "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-3"
+        }
+      ],
+      "role": "verify-lane-3",
+      "start": "2026-11-06T17:49:24.684245+00:00",
+      "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-3",
+      "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-3",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:54:13.048484+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:54:13.050855+00:00",
+      "elapsed_seconds": 288.364
+    },
+    "wop-prd-lanes-verify-verify-lane-4-trig-evt-ef8ca07a-de3f7db897ec": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:49:25.560646+00:00",
+          "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-4",
+          "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-4"
+        }
+      ],
+      "role": "verify-lane-4",
+      "start": "2026-11-06T17:49:25.560646+00:00",
+      "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-4",
+      "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-4",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:54:49.533756+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:54:49.537520+00:00",
+      "elapsed_seconds": 323.973
+    },
+    "wop-prd-lanes-verify-verify-lane-5-trig-evt-ef8ca07a-6ae0140dd957": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:49:26.567531+00:00",
+          "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-5",
+          "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-5"
+        }
+      ],
+      "role": "verify-lane-5",
+      "start": "2026-11-06T17:49:26.567531+00:00",
+      "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-5",
+      "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-5",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:54:48.928249+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:54:48.930716+00:00",
+      "elapsed_seconds": 322.361
+    },
+    "wop-prd-lanes-verify-verify-lane-6-trig-evt-ef8ca07a-208a214ae81d": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:49:27.544255+00:00",
+          "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-6",
+          "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-6"
+        }
+      ],
+      "role": "verify-lane-6",
+      "start": "2026-11-06T17:49:27.544255+00:00",
+      "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-6",
+      "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-6",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:53:39.334912+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:53:39.338733+00:00",
+      "elapsed_seconds": 251.791
+    },
+    "wop-prd-lanes-verify-verify-lane-7-trig-evt-ef8ca07a-1e17f857e844": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:49:28.435052+00:00",
+          "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-7",
+          "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-7"
+        }
+      ],
+      "role": "verify-lane-7",
+      "start": "2026-11-06T17:49:28.435052+00:00",
+      "attempt_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-7",
+      "lease_id": "run-fanout-prd-lanes-verify-evt-ef8ca07a-verify-lane-7",
+      "redrive_count": 0,
+      "end": "2026-11-06T17:54:31.299984+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T17:54:31.302412+00:00",
+      "elapsed_seconds": 302.865
+    },
+    "wop-prd-post-verify-discovery-flow-discovery-trig-evt-935f9f5c-8998d7a4ab62": {
+      "starts": [
+        {
+          "ts": "2026-11-06T17:59:21.283541+00:00",
+          "attempt_id": "run-fanout-prd-post-verify-discovery-evt-935f9f5c-flow-discovery",
+          "lease_id": "run-fanout-prd-post-verify-discovery-evt-935f9f5c-flow-discovery"
+        }
+      ],
+      "role": "flow-discovery",
+      "start": "2026-11-06T17:59:21.283541+00:00",
+      "attempt_id": "run-fanout-prd-post-verify-discovery-evt-935f9f5c-flow-discovery",
+      "lease_id": "run-fanout-prd-post-verify-discovery-evt-935f9f5c-flow-discovery",
+      "redrive_count": 0,
+      "end": "2026-11-06T18:15:13.427320+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T18:15:13.430419+00:00",
+      "elapsed_seconds": 952.144
+    },
+    "wop-prd-lanes-final-judge-prd-trig-evt-56ce2b08-544cc8912b7e": {
+      "starts": [
+        {
+          "ts": "2026-11-06T18:15:20.912473+00:00",
+          "attempt_id": "run-fanout-prd-lanes-final-evt-56ce2b08-judge-prd",
+          "lease_id": "run-fanout-prd-lanes-final-evt-56ce2b08-judge-prd"
+        }
+      ],
+      "role": "judge-prd",
+      "start": "2026-11-06T18:15:20.912473+00:00",
+      "attempt_id": "run-fanout-prd-lanes-final-evt-56ce2b08-judge-prd",
+      "lease_id": "run-fanout-prd-lanes-final-evt-56ce2b08-judge-prd",
+      "redrive_count": 0,
+      "end": "2026-11-06T18:20:19.370416+00:00",
+      "verdict": "passed",
+      "terminal_event": "workflow.operation.settled",
+      "terminal_at": "2026-11-06T18:20:19.373493+00:00",
+      "elapsed_seconds": 298.458
+    }
+  },
+  "event_counts": {
+    "web.action.requested": 2,
+    "runtime.action.accepted": 2,
+    "runtime.action.attempt.started": 2,
+    "workflow.intake.created": 1,
+    "workflow.request.updated": 1,
+    "workflow.intake.ready": 1,
+    "workflow.request.proposed": 1,
+    "runtime.action.attempt.completed": 2,
+    "config.run_contract.request_bound": 1,
+    "workflow.request.approved": 1,
+    "workflow.submit.requested": 1,
+    "workflow.submit.accepted": 1,
+    "workflow.request.submitted": 1,
+    "run.goal.started": 1,
+    "workflow.invoke.requested": 1,
+    "runtime.start.requested": 1,
+    "config.run_contract.written": 4,
+    "provider.session.config.resolved": 46,
+    "role.lifecycle.dormant": 28,
+    "worker.state.changed": 117,
+    "workdir.prepared": 15,
+    "skills.materialized": 20,
+    "worker.launch_artifact.written": 18,
+    "run.manager.resident.spawned": 1,
+    "run.manager.resident.prompted": 1,
+    "briefing.hydration.checked": 4,
+    "session.started": 4,
+    "autoresearch.resident_sidecar.started": 4,
+    "task.created": 2,
+    "run.admission.requested": 1,
+    "run.admission.admitted": 1,
+    "workflow.operation.requested": 19,
+    "workflow.invoke.accepted": 1,
+    "workflow.request.running": 1,
+    "task.fanout.requested": 1,
+    "workflow.operation.started": 19,
+    "workflow.normal_frontier.owner_blocked": 1,
+    "workflow.normal_frontier.wrc.reconciled": 8,
+    "orchestrator.decision.recorded": 112,
+    "loop.started": 4,
+    "fanout.started": 5,
+    "role.lifecycle.activation.started": 16,
+    "role.lifecycle.ready": 16,
+    "task.attempt.started": 16,
+    "task.attempt.delivery_claimed": 16,
+    "task.attempt.sent": 16,
+    "runtime.snapshot.recorded": 13,
+    "fanout.child.dispatched": 13,
+    "worker.probe.idle": 15,
+    "run.manager.tick.started": 15,
+    "run.manager.tick.completed": 15,
+    "codex.hook.session_start": 34,
+    "codex.hook.user_prompt_submit": 19,
+    "codex.hook.pre_tool_use": 788,
+    "agent.text": 101,
+    "codex.hook.post_tool_use": 785,
+    "agent.usage": 421,
+    "task.attempt.heartbeat": 381,
+    "artifact.input.observed": 5,
+    "workflow.call.result.reported": 18,
+    "workflow.call.result.admitted": 18,
+    "workflow.operation.settled": 19,
+    "prd.scan.child.completed": 2,
+    "task.attempt.succeeded": 16,
+    "task.attempt.shadow.compared": 16,
+    "fanout.child.completed": 13,
+    "fanout.aggregate.started": 5,
+    "fanout.aggregate.completed": 5,
+    "prd.scan.completed": 1,
+    "codex.hook.stop": 19,
+    "provider.turn.closed": 18,
+    "run.manager.agent.observation": 1,
+    "worker.scope_write.rejected": 2,
+    "prd.plan.child.completed": 1,
+    "fanout.synth.dispatched": 1,
+    "role.lifecycle.suspended": 14,
+    "fanout.synth.completed": 1,
+    "goal.claim_set.pinned": 1,
+    "plan.artifact_package.admitted": 1,
+    "task_map.ready": 1,
+    "orchestrator.semantic.checkpoint.requested": 1,
+    "plan.approved": 1,
+    "task_map.materialization.prepared": 1,
+    "task.contract.mutation.prepared": 1,
+    "task.contract.revision.applied": 1,
+    "task.contract.update": 1,
+    "task_map.materialization.committed": 1,
+    "task_map.admitted": 1,
+    "artifact.manifest.published": 1,
+    "task.pipeline.generation.admitted": 1,
+    "task.doc.published": 2,
+    "task.dispatched": 2,
+    "task.pipeline.stage.dispatched": 2,
+    "worker.assistance.requested": 1,
+    "worker.heartbeat": 7,
+    "agent.tool.use": 4,
+    "agent.tool.result": 4,
+    "orchestrator.semantic.decision.submitted": 1,
+    "orchestrator.semantic.decision.admitted": 1,
+    "orchestrator.semantic.decision.shadowed": 1,
+    "orchestrator.semantic.decision.observed": 1,
+    "orchestrator.rework.triage.requested": 1,
+    "worker.assistance.dispatching": 1,
+    "task.attempt.shadow_mismatch": 2,
+    "orchestrator.rework.triage.recorded": 1,
+    "orchestrator.round.complete": 1,
+    "worker.assistance.closed": 1,
+    "reconcile.decision.shadow": 31,
+    "dev.build.done": 1,
+    "task.ref.updated": 1,
+    "impl.self_check.completed": 1,
+    "task.pipeline.verify.completed": 1,
+    "task.integration_enqueued": 1,
+    "integration.queue.integrating": 1,
+    "integration.queue.integrated": 1,
+    "candidate.updated": 1,
+    "task.done": 1,
+    "task.pipeline.sessions.archived": 1,
+    "candidate.ready": 1,
+    "worker.spawn_warning": 1,
+    "role.lifecycle.continuity.downgraded": 1,
+    "verify.child.completed": 8,
+    "test.passed": 1,
+    "flow.discovery.requested": 1,
+    "worker.drift.detected": 3,
+    "flow.discovery.child.completed": 1,
+    "flow.discovery.completed": 1,
+    "flow.goal.closed": 1,
+    "judge.child.completed": 1,
+    "goal.closure.synthesized": 1,
+    "run.goal.completion.claimed": 1,
+    "run.delivery.requested": 1,
+    "ship.lock_acquired": 1,
+    "ship.started": 1,
+    "ship.completed": 1,
+    "ship.lock_released": 1,
+    "run.delivery.settled": 1,
+    "judge.passed": 1,
+    "goal.closure.compat.projected": 1,
+    "run.goal.completed": 1,
+    "run.result.duplicate_suppressed": 1,
+    "owner.visible_message.requested": 1,
+    "task.doc.updated": 1,
+    "task.status_changed": 1,
+    "spec.promote.skipped": 1,
+    "simulation.done": 1,
+    "loop.shutdown_requested": 1,
+    "autoresearch.resident_sidecar.stopped": 1,
+    "loop.stopped": 1
+  },
+  "business_task_id": "TASK-PRD-PRODUCT",
+  "local_dev_commit": "b9219864fe5faf074286b878a7cc7669a7772d5a",
+  "candidate_commit": "6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+  "pricing_note": "ChatGPT subscription usage is unpriced; zero USD is not zero cost evidence."
+}

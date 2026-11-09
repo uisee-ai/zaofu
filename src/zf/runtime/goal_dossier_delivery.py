@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import quote
 
+from zf.runtime.owner_visible_autodeliver import owner_visible_autodeliver_enabled
 from zf.core.events import EventWriter, ZfEvent
 from zf.core.events.log import EventLog
 from zf.core.security.redaction import redact_obj
@@ -411,7 +412,7 @@ def _owner_request_payload(
         "message_id": message_id,
         "message_kind": "run_terminal_delivery",
         "delivery_class": "run_terminal",
-        "delivery_targets": ["web", "feishu"],
+        "delivery_targets": ["web", *(["feishu"] if owner_visible_autodeliver_enabled() else [])],
         "notification_policy": "owner_terminal_delivery",
         "source": "goal-dossier",
         "handled_by": "goal-dossier",

@@ -192,9 +192,12 @@ class WorkflowPreviewReview:
             )
         config_text = candidate_path.read_text()
         compiled_config = load_config(candidate_path)
+        from zf.runtime.workflow_review_roles import role_review_fields, role_review_inputs
+        role_inputs_by_name = role_review_inputs(compiled_config)
         docs = list(yaml.safe_load_all(config_text))
         for index, doc in enumerate(docs):
             if isinstance(doc, dict) and doc.get("kind") == "ZfConfig":
+                fields.update(role_review_fields(index, role_inputs_by_name))
                 plan_approval = (doc.get("spec", {}).get("workflow") or {}).get("plan_approval")
                 suffix = ".enabled" if isinstance(plan_approval, dict) else ""
                 fields[f"config.{index}.workflow.plan_approval{suffix}"] = {
@@ -211,7 +214,7 @@ class WorkflowPreviewReview:
             if str(doc["kind"]).lower().removesuffix("flow") != family:
                 continue
             spec = doc.get("spec") or {}
-            role_inputs = flow_input_roles(docs, index, family)
+            role_inputs = flow_input_roles(docs, index, family, config_path=candidate_path)
             fields.update(config_review_fields(index, spec, role_names=list(role_inputs),
                 family=family, inherited_skills=role_inputs))
         return {
@@ -226,6 +229,7 @@ class WorkflowPreviewReview:
             "config_digest": config_digest,
             "config_text": config_text,
             "compiled_role_skills": {role.name: list(role.skills) for role in compiled_config.roles},
+            "role_inputs": role_inputs_by_name,
         }
 
     def public_context(self, binding: dict) -> dict:
@@ -429,6 +433,11 @@ class WorkflowPreviewReview:
             path = self._candidate_config(ctx, changes)
             try:
                 compiled = load_config(path)
+                from zf.runtime.workflow_approval_requirements import enforce_approval_requirements
+                try:
+                    enforce_approval_requirements(compiled, ctx["proposal"].get("run_parameters") or {})
+                except ValueError as exc:
+                    raise PreviewReviewError("approval_requirement_conflict", str(exc), 422) from exc
                 if any(key in field for field in fields for key in (".roleSkillBundles.", ".role_skill_bundles.")) and (
                     {role.name: list(role.skills) for role in compiled.roles} == ctx["compiled_role_skills"]
                 ):
@@ -462,7 +471,7 @@ class WorkflowPreviewReview:
     def _candidate_config(self, ctx: dict, changes: list) -> Path:
         docs = list(yaml.safe_load_all(ctx["config_text"]))
         for change in changes:
-            docs = apply_config_field(docs, change["field"], change["after"])
+            docs = apply_config_field(docs, change["field"], change["after"], roles=ctx.get("role_inputs"))
         # Beside zf.yaml so relative config references preserve their meaning.
         path = self.project_root / f".zf-preview-{uuid.uuid4().hex}.yaml"
         atomic_write_text(
@@ -583,6 +592,7 @@ class WorkflowPreviewReview:
                     preflight=report,
                     flow_kind=self._flow_kind(ctx),
                     synthesis_result_ref=synthesis_ref,
+                    preview_review_ref=descriptor,
                     actor="web-owner",
                     writer=self.writer,
                 )
@@ -660,7 +670,7 @@ class WorkflowPreviewReview:
         for change in changes:
             if change["field"].startswith("config."):
                 key = change["field"].split(".")[-1]
-                if key in {"lanes", "strictness"}:
+                if key in {"lanes", "strictness"} and not parameters.get("controller_id"):
                     short_spec.setdefault("parameters", {})[key] = change["after"]
                 if key == "lanes":
                     # Lane expansion is compiler-owned. A smaller approved lane

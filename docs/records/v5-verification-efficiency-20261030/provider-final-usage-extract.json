@@ -1,0 +1,22 @@
+{
+  "source": "workdirs/verify-lane-0/codex-home/sessions/2026/10/30/rollout-2026-10-30T18-07-29-01a18c47-5e56-7461-a5e8-89e599044115.jsonl",
+  "kind": "derived counter extraction read before cleanup; not an original provider transcript",
+  "original_transcript_retained": false,
+  "total_token_usage": {
+    "input_tokens": 450020,
+    "cached_input_tokens": 399616,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 3055,
+    "reasoning_output_tokens": 164,
+    "total_tokens": 453075
+  },
+  "last_token_usage": {
+    "input_tokens": 53392,
+    "cached_input_tokens": 52608,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 103,
+    "reasoning_output_tokens": 0,
+    "total_tokens": 53495
+  },
+  "model_context_window": 475000
+}

@@ -14,6 +14,7 @@ TASK_WORKFLOW_PARAMETER_KEYS_TEXT = ", ".join(
 
 
 KANBAN_AGENT_ALLOWED_ACTIONS = (
+    "project-git-baseline",
     "chat-orchestrator",
     "operator-intent-create",
     "operator-intent-approve",
@@ -83,6 +84,7 @@ KANBAN_AGENT_ALLOWED_ACTIONS = (
 )
 
 PROJECT_OPERATOR_CONTROLLED_ACTIONS = frozenset({
+    "project-git-baseline",
     "channel-profile-register",
     "operator-intent-create",
     "operator-intent-approve",

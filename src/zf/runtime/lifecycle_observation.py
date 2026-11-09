@@ -22,6 +22,7 @@ from zf.runtime.owner_channel_liveness import (
 )
 from zf.runtime.remediation_cascade import SAFE_HALTED_EVENT
 from zf.runtime.provider_usage_reconciliation import build_disk_usage_event
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 if TYPE_CHECKING:
     from zf.core.config.schema import RoleConfig
@@ -46,7 +47,7 @@ class LifecycleObservationMixin:
         restarts or the underlying counter resets."""
         drift_roles, global_drift = self._recent_drift_refresh_scope()
         for role in self.config.roles:
-            if role.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             instance_id = role.instance_id
             drift_present = (
@@ -244,6 +245,11 @@ class LifecycleObservationMixin:
             tasks = self.task_store.list_all()
         except Exception:
             return []
+        try:
+            terminal_assignments = self._terminal_task_pipeline_assignments()
+        except Exception:
+            # Missing evidence must not hide a genuinely inactive worker.
+            terminal_assignments = {}
         expected: list[str] = []
         seen: set[str] = set()
         for task in tasks:
@@ -255,7 +261,16 @@ class LifecycleObservationMixin:
             assignee = task.assigned_to or ""
             if not assignee:
                 continue
-            if self._heartbeat_worker_finished_current_dispatch(assignee):
+            terminal_dispatch = terminal_assignments.get((task.id, assignee))
+            if terminal_dispatch and task.active_dispatch_id in {"", terminal_dispatch}:
+                # The provider operation has ended; the task may remain open
+                # for handoff/review without requiring an active worker turn.
+                continue
+            try:
+                worker_finished = self._heartbeat_worker_finished_current_dispatch(assignee)
+            except Exception:
+                worker_finished = False
+            if worker_finished:
                 # The writer already emitted a result (dev.build.done) for this
                 # task and is awaiting review/integration — legitimately idle in
                 # later stages, not "expected active". Without this, node-skip
@@ -266,7 +281,11 @@ class LifecycleObservationMixin:
             if role is None:
                 continue
             name = str(getattr(role, "name", ""))
-            if name and name != "orchestrator" and name not in seen:
+            if (
+                name
+                and not is_configured_orchestrator_role(self.config, role)
+                and name not in seen
+            ):
                 seen.add(name)
                 expected.append(name)
         return expected
@@ -288,7 +307,7 @@ class LifecycleObservationMixin:
         recycle can otherwise immediately put the fresh worker back into
         pending_recycle before it has produced a new turn.
         """
-        if str(getattr(role, "name", "") or "") == "orchestrator":
+        if is_configured_orchestrator_role(getattr(self, "config", None), role):
             attempt_identity, attempt_lookup_complete = {}, True
         else:
             attempt_identity, attempt_lookup_complete = (

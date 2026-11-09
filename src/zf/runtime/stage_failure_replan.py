@@ -16,6 +16,8 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
+from types import SimpleNamespace
+
 from zf.core.events.model import ZfEvent
 from zf.runtime.plan_artifact_package import (
     plan_artifact_package_binding,
@@ -109,6 +111,19 @@ def _bind_current_plan_package_identity(
 
     if not workflow_run_id:
         return
+    decision_ref = payload.get("orchestrator_decision_ref")
+    if decision_ref:
+        from zf.runtime.replan_resynth import _bind_current_plan_package
+
+        for event in reversed(events):
+            if (event.type == "orchestrator.replan_requested" and event.origin == "kernel"
+                    and _event_run_id(event) == workflow_run_id
+                    and event.payload.get("classification") == "oa_semantic_return_to_plan"
+                    and event.payload.get("orchestrator_decision_ref") == decision_ref):
+                _bind_current_plan_package(
+                    payload, plan=SimpleNamespace(**event.payload), events=events,
+                )
+                return
     projection = reduce_plan_artifact_packages(
         events,
         workflow_run_id=workflow_run_id,
@@ -448,6 +463,10 @@ def plan_reader_stage_replan(
     stage, selection = reader_stage_for_failure(config, events, failure_event)
     if stage is None:
         return None, selection
+    from zf.runtime.reader_failure_supersession import reader_failure_was_replaced
+
+    if reader_failure_was_replaced(events, failure_event):
+        return None, "superseded_by_admitted_task_replacement"
     trigger_type = str(getattr(stage, "trigger", "") or "")
     if not trigger_type:
         return None, "stage_has_no_trigger"
@@ -471,6 +490,10 @@ def plan_reader_stage_replan(
         failure_event.payload if isinstance(failure_event.payload, dict) else {}
     )
     failure_fanout_id = str(failure_payload.get("fanout_id") or "")
+    from zf.runtime.failure_kind import FAILURE_KIND_INFRA, failure_kind_from_payload
+
+    if not authorized_generation and failure_kind_from_payload(failure_payload) == FAILURE_KIND_INFRA:
+        return None, "infrastructure_failure"
     origin_payload: dict[str, Any] = {}
     for event in events:
         if (
@@ -573,6 +596,8 @@ def plan_reader_stage_replan(
             continue
         if event.id == failure_event.id:
             continue
+        if failure_kind_from_payload(event.payload) == FAILURE_KIND_INFRA:
+            continue
         prior_failures += 1
     # A reader child can emit its configured success_event before downstream
     # writer admission rejects the same Plan candidate.  Preserve the durable
@@ -669,6 +694,22 @@ def plan_reader_stage_replan(
                 "semantic diagnosis and repair only the rejected admission shape."
             ),
         } for repair in gap_repairs)
+
+    rejected_id = str(
+        failure_payload.get("trigger_event_id") or failure_event.causation_id or ""
+    ).strip()
+    rejected_plan = next((
+        event for event in events
+        if event.id == rejected_id and event.type == "task_map.ready"
+        and _same_run(event, failure_run_id)
+    ), None)
+    if (
+        failure_payload.get("failure_class") == "reader_execution_failure"
+        or (failure_payload.get("failure_scope") == "plan_admission" and rejected_plan is not None)
+    ):
+        # Old trigger refs describe an earlier candidate. Reuse only the
+        # failed candidate's supplied bindings, if recovery established them.
+        origin_payload["previous_plan_candidate_refs"] = []
     for key in (
         *_CANONICAL_INPUT_KEYS,
         "target_ref",
@@ -695,7 +736,9 @@ def plan_reader_stage_replan(
             continue
         value = failure_payload.get(key)
         if value not in (None, "", [], {}) and (
-            key in _CANONICAL_INPUT_KEYS or not origin_payload.get(key)
+            key in _CANONICAL_INPUT_KEYS
+            or key == "previous_plan_candidate_refs"
+            or not origin_payload.get(key)
         ):
             origin_payload[key] = value
     source_event_ids = {

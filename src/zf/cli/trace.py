@@ -17,6 +17,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("trace", help="Inspect event traces")
     sub = parser.add_subparsers(dest="trace_cmd")
 
+    dispatch = sub.add_parser("dispatch", help="Current Task Pipeline scheduling summary")
+    dispatch.add_argument("--run-id", default="")
+    dispatch.add_argument("--state-dir", default=None)
+    dispatch.set_defaults(func=run_dispatch_summary)
+
     show = sub.add_parser("show", help="Show a trace by correlation, event, or task id")
     show.add_argument("trace_id", help="Correlation id, event id, or task id")
     show.add_argument("--format", choices=["table", "json"], default="table")
@@ -205,6 +210,7 @@ def run_delivery_trace(args: argparse.Namespace) -> int:
     view = getattr(args, "trace_view", "delivery")
     trace = resolve_delivery_trace(
         state_dir=context.state_dir,
+        project_root=context.project_root,
         config=context.config,
         generated_at=datetime.now(timezone.utc).isoformat(),
         project_id=context.project_root.name,
@@ -237,6 +243,24 @@ def run_delivery_trace(args: argparse.Namespace) -> int:
             return 1
         return _emit(node, fmt, _render_node, trace)
     return _emit(trace, fmt, _render_delivery, trace)
+
+
+def run_dispatch_summary(args: argparse.Namespace) -> int:
+    from zf.runtime.task_pipeline_dispatch_summary import build_dispatch_summary
+    from zf.runtime.task_pipeline_projection import read_task_pipeline_projection
+
+    try:
+        context = resolve_project_context(explicit_state_dir=args.state_dir)
+    except ConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    projection = read_task_pipeline_projection(
+        context.state_dir, project_root=context.project_root, config=context.config,
+    )
+    print(json.dumps(build_dispatch_summary(
+        projection, workflow_run_id=args.run_id,
+    ), ensure_ascii=False, indent=2))
+    return 0
 
 
 def run_delivery_report(args: argparse.Namespace) -> int:
@@ -433,7 +457,7 @@ def _delivery_summary(trace: dict, *, view: str) -> dict:
         "feature_id": str(trace.get("feature_id") or ""),
         "status": str(trace.get("status") or ""),
         "generated_at": str(trace.get("generated_at") or ""),
-        "current_task_map_ref": str(trace.get("current_task_map_ref") or ""),
+        "current_task_map_ref": str(trace.get("current_task_map_ref") or (trace.get("task_map") or {}).get("task_map_ref") or ""),
         "current_source_index_ref": str(trace.get("current_source_index_ref") or ""),
         "tasks": {
             key: int(graph.get(key) or 0)
@@ -445,6 +469,7 @@ def _delivery_summary(trace: dict, *, view: str) -> dict:
                 "waiting_count",
             )
         },
+        "execution": trace.get("dispatch_summary") or {},
         "drift": {
             "status": str(drift.get("status") or ""),
             "summary": drift.get("summary") or {},

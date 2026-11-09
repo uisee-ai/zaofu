@@ -3,6 +3,16 @@ import pytest
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.core.events.log import EventLog
+from zf.core.events.model import ZfEvent
+from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+
+def admit_contexts(log, rows):
+    for task_id, row in rows.items():
+        log.append(ZfEvent(type="task.pipeline.generation.admitted", origin="kernel",
+            payload={"schema_version": "task-pipeline-generation.v1", "task_ids": [task_id],
+                     "task_map_generation": row["generation_id"], **row}))
+    return task_pipeline_generation_contexts(log.read_all())
+
 from zf.runtime.task_pipeline_terminal import reconcile_task_pipeline_freeze
 
 
@@ -49,6 +59,7 @@ def test_unfinished_other_run_does_not_block_freeze(tmp_path, monkeypatch):
         "OTHER": {"generation_id": "g1", "workflow_run_id": "other"},
         "GAP": {"generation_id": "g2", "workflow_run_id": "run-1"},
     }
+    contexts = admit_contexts(runtime.event_log, contexts)
     reconcile_task_pipeline_freeze(runtime, generation_contexts=contexts)
     assert frozen == ["g2"]
 
@@ -154,6 +165,7 @@ def test_authorized_supersession_does_not_hold_successor_freeze(tmp_path, monkey
     store.add(Task(id="OLD", status="cancelled"))
     store.add(Task(id="GAP", status="done"))
     log = EventLog(tmp_path / "events.jsonl")
+    admit_contexts(log, {"OLD": {"generation_id": "g1", "workflow_run_id": "run-1"}})
     log.append(
         ZfEvent(
             type="task.superseded",
@@ -184,9 +196,8 @@ def test_authorized_supersession_does_not_hold_successor_freeze(tmp_path, monkey
     )
     reconcile_task_pipeline_freeze(
         runtime,
-        generation_contexts={
-            "OLD": {"generation_id": "g1", "workflow_run_id": "run-1"},
-            "GAP": {"generation_id": "g2", "workflow_run_id": "run-1"},
-        },
+        generation_contexts=admit_contexts(log, {
+            "GAP": {"generation_id": "g2", "workflow_run_id": "run-1", "task_map_ref": "artifacts/amended.json"},
+        }),
     )
-    assert frozen == ["g1", "g2"]
+    assert frozen == ["g2"]

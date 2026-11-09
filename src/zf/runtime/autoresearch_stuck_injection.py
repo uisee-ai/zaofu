@@ -6,6 +6,7 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 def handle_autoresearch_stuck_injection(
@@ -61,7 +62,7 @@ def handle_autoresearch_stuck_injection(
     role = runtime._find_role_by_instance(instance_id) or runtime._find_role_by_name(
         instance_id
     )
-    if role is None or role.name == "orchestrator":
+    if role is None or is_configured_orchestrator_role(runtime.config, role):
         return _block(event, "unknown worker", role=instance_id)
 
     dispatch_payload = dispatch.payload if isinstance(dispatch.payload, dict) else {}

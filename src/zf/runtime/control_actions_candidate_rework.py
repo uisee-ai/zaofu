@@ -140,6 +140,34 @@ class CandidateReworkActionsMixin:
                 "reason": "missing " + ", ".join(missing),
                 "emitted_event_ids": [],
             }
+        # New gap tasks may need newly authored input partitions. Pin supplied
+        # ports before publishing the amendment; never silently drop them.
+        plan_ports = []
+        if "plan_ports" in payload:
+            from zf.runtime.plan_artifact_package_ports import materialize_explicit_plan_ports
+
+            try:
+                if not isinstance(payload["plan_ports"], list) or not all(
+                    isinstance(port, dict) for port in payload["plan_ports"]
+                ):
+                    raise ValueError("plan_ports must be a descriptor list")
+                from zf.runtime.plan_artifact_ports import normalize_plan_ports
+
+                supplied = normalize_plan_ports(payload["plan_ports"])
+                if any(port["logical_name"] in {"task_map", "planning_result", "goal_claim_set"}
+                       for port in supplied):
+                    raise ValueError("rework input ports cannot replace kernel-derived plan outputs")
+                plan_ports = list(materialize_explicit_plan_ports(
+                    state_dir=self.state_dir,
+                    project_root=self.project_root or self.state_dir.parent,
+                    payload={"plan_ports": supplied,
+                             "stage_id": "candidate-rework",
+                             "source_event_id": str(payload.get("source_event_id") or "")},
+                    flow_kind="",
+                ).values())
+            except ValueError as exc:
+                return {"status": "rejected", "reason": f"invalid rework plan ports: {exc}",
+                        "emitted_event_ids": []}
         rework_summary = (
             payload.get("rework_summary")
             if isinstance(payload.get("rework_summary"), dict)
@@ -185,6 +213,7 @@ class CandidateReworkActionsMixin:
         emitted: list[str] = []
         gap_task_ids: list[str] = []
         amended_identity: dict[str, Any] = {}
+        amended_source_index_ref = ""
         task_map_digest = ""
         superseded_generation = ""
         if rework_summary.get("gap_tasks"):
@@ -203,6 +232,7 @@ class CandidateReworkActionsMixin:
             task_map_ref = amend["task_map_ref"]
             gap_task_ids = list(amend["gap_task_ids"])
             task_map_digest = str(amend.get("task_map_digest") or "")
+            amended_source_index_ref = str(amend.get("source_index_ref") or "")
             superseded_generation = str(
                 payload.get("task_map_generation") or ""
             )
@@ -230,6 +260,7 @@ class CandidateReworkActionsMixin:
                     "gap_task_ids": gap_task_ids,
                     "gap_task_count": len(gap_task_ids),
                     "source_event_id": str(payload.get("source_event_id") or ""),
+                    "source_index_ref": amended_source_index_ref or str(payload.get("source_index_ref") or ""),
                     "source": "run_manager_gap_task_map_amend",
                 },
             )
@@ -305,12 +336,16 @@ class CandidateReworkActionsMixin:
                     task_id for task_id in task_ids
                     if task_id not in set(failed_task_ids)
                 ]
+        if plan_ports:
+            event_payload["plan_ports"] = plan_ports
         if rework_paths:
             event_payload["rework_paths"] = rework_paths
         if gap_task_ids:
             event_payload["amend_of"] = str(payload.get("task_map_ref") or "")
             event_payload["gap_task_ids"] = gap_task_ids
             event_payload["task_map_digest"] = task_map_digest
+            if amended_source_index_ref:
+                event_payload["source_index_ref"] = amended_source_index_ref
             event_payload["supersedes_task_map_generation"] = (
                 superseded_generation
             )
@@ -369,6 +404,10 @@ class CandidateReworkActionsMixin:
             **scope_payload,
         }
         event_payload.update(replan_semantic_context(payload))
+        from zf.runtime.plan_requirement_amendment import amendment_binding
+        owner_binding = amendment_binding(self.state_dir, str(
+            payload.get("workflow_run_id") or payload.get("trace_id") or ""))
+        event_payload.update(owner_binding)
         replan = self.writer.emit(
             "orchestrator.replan_requested",
             actor="zf-cli",
@@ -378,7 +417,7 @@ class CandidateReworkActionsMixin:
         )
         emitted = [replan.id]
         resynth = _build_resynth_event(
-            {**payload, **scope_payload},
+            {**payload, **scope_payload, **owner_binding},
             state_dir=self.state_dir,
             config=self.config or ZfConfig(),
         )
@@ -646,6 +685,7 @@ def _write_gap_task_map_amend(
         source_event_id=checkpoint_id or str(payload.get("source_event_id") or "event"),
         gap_tasks=gap_tasks,
         gap_plan_ref=str(rework_summary.get("gap_plan_ref") or ""),
+        source_index_ref=str(payload.get("source_index_ref") or ""),
         supersedes_task_ids=(
             _string_list(rework_summary.get("supersedes_task_ids"))
             or _string_list(payload.get("supersedes_task_ids"))

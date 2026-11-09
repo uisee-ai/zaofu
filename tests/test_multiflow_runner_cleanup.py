@@ -174,3 +174,41 @@ def test_clean_four_flow_runner_sigterm_stops_scoped_product_runtime(
             text=True,
         )
         assert probe.returncode != 0
+
+
+def test_generic_drill_explicitly_isolates_mock_control_plane(monkeypatch):
+    from zf.runtime import workflow_runtime_start
+
+    def unexpected_launcher(**_kwargs):
+        raise AssertionError("real control plane launcher reached from hybrid drill")
+
+    monkeypatch.setattr(workflow_runtime_start, "ensure_project_runtime", unexpected_launcher)
+    monkeypatch.setattr(
+        general_drill, "_provider_verifier",
+        lambda **_kwargs: lambda _project, _state, _sources, expected: expected,
+    )
+    result = general_drill.run(argparse.Namespace(
+        confirm_real=True, backend="codex", timeout_seconds=5,
+        model="test", reasoning_effort="low",
+    ))
+    assert result["status"] == "passed"
+    assert result["control_plane"] == "mock"
+
+
+def test_generic_drill_schema_allows_real_rejection_without_invalid_fields(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    state.mkdir()
+    source = state / "report.json"
+    source.write_text("{}", encoding="utf-8")
+    expected = {"verdict": "passed", "recommended_action": "complete",
+                "goal_coverage": [{"status": "closed"}], "open_gap_refs": []}
+    def invoke(**kwargs):
+        fields = kwargs["schema"]["properties"]["artifact_delivery_result"]["properties"]
+        assert set(fields["verdict"]["enum"]) == {"passed", "rejected", "blocked"}
+        assert set(fields["recommended_action"]["enum"]) == {"complete", "gap_plan", "replan", "human", "hold"}
+        assert "maxItems" not in fields["open_gap_refs"]
+        return {"artifact_delivery_result": expected}, {"raw_stdout": ""}
+    monkeypatch.setattr(general_drill, "_invoke_codex", invoke)
+    verify = general_drill._provider_verifier(backend="codex", timeout_seconds=5,
+                                                model="test", reasoning_effort="low", audit_holder={})
+    assert verify(tmp_path, state, {"report": {"ref": str(source)}}, expected) == expected

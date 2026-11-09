@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from zf.core.events.model import ZfEvent
-from zf.runtime.run_scope import event_run_id, events_for_run, known_run_ids, run_aliases
+from zf.runtime.run_scope import event_run_id, events_for_run, run_aliases
 
 
 # Existing task-attempt predicates remain here.  The run-level predicates below
@@ -161,7 +161,7 @@ def terminal_after_event(
     rows = list(events)
     aliases = run_aliases(rows)
     source_run_id = event_run_id(source_event, aliases=aliases)
-    scoped = _scoped_rows(rows, run_id=source_run_id)
+    scoped = _scoped_rows(rows, run_id=source_run_id, aliases=aliases)
     if scoped is None:
         return None
     try:
@@ -191,7 +191,7 @@ def successful_terminal_before_event(
         rows.append(source_event)
     aliases = run_aliases(rows)
     source_run_id = event_run_id(source_event, aliases=aliases)
-    scoped = _scoped_rows(rows, run_id=source_run_id)
+    scoped = _scoped_rows(rows, run_id=source_run_id, aliases=aliases)
     if scoped is None:
         return None
     try:
@@ -247,14 +247,17 @@ def event_run_scope(events: Iterable[ZfEvent], event: ZfEvent) -> str:
     return next(iter(ids)) if len(ids) == 1 else ""
 
 
-def _scoped_rows(rows: list[ZfEvent], *, run_id: str) -> list[ZfEvent] | None:
-    aliases = run_aliases(rows)
+def _scoped_rows(
+    rows: list[ZfEvent], *, run_id: str, aliases: dict[str, str] | None = None,
+) -> list[ZfEvent] | None:
+    if aliases is None:
+        aliases = run_aliases(rows)
     canonical = aliases.get(str(run_id or "").strip(), "")
     if canonical:
-        return events_for_run(rows, run_id=canonical)
+        return events_for_run(rows, run_id=canonical, _aliases=aliases)
     # A caller without an explicit scope is allowed only for a single-run or
     # legacy history.  This is intentionally conservative for shared state.
-    if len(known_run_ids(rows)) > 1:
+    if len(set(aliases.values())) > 1:
         return None
     return rows
 

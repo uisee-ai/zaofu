@@ -1,0 +1,329 @@
+{
+  "baseline": "1a1989cc",
+  "evaluation_scope": "third_batch_offline",
+  "retrieval": {
+    "schema_version": "context-retrieval-eval.v1",
+    "tasks": 100,
+    "source_bytes": 47165,
+    "positive_hits": 16,
+    "positive_cases": 17,
+    "unexpected_negative_hits": 0,
+    "negative_cases": 8,
+    "outcomes": [
+      {
+        "profile": "implementation",
+        "category": "task",
+        "query": "T1",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1928,
+        "host_ms": 0.6580520421266556,
+        "navigation_complete": true
+      },
+      {
+        "profile": "implementation",
+        "category": "acceptance",
+        "query": "AC-1",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1952,
+        "host_ms": 0.32384798396378756,
+        "navigation_complete": true
+      },
+      {
+        "profile": "implementation",
+        "category": "source",
+        "query": "source.md#exception",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1975,
+        "host_ms": 0.28530205599963665,
+        "navigation_complete": true
+      },
+      {
+        "profile": "implementation",
+        "category": "image",
+        "query": "screen.png#empty",
+        "expected": "hit",
+        "matched": true,
+        "locators": 2,
+        "output_bytes": 3061,
+        "host_ms": 0.30613900162279606,
+        "navigation_complete": true
+      },
+      {
+        "profile": "implementation",
+        "category": "shared",
+        "query": "source.md#shared",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1960,
+        "host_ms": 0.2622529864311218,
+        "navigation_complete": true
+      },
+      {
+        "profile": "implementation",
+        "category": "out_of_scope_task",
+        "query": "T2",
+        "expected": "miss",
+        "matched": false,
+        "locators": 0
+      },
+      {
+        "profile": "implementation",
+        "category": "unknown_id",
+        "query": "AC-UNKNOWN",
+        "expected": "miss",
+        "matched": false,
+        "locators": 0
+      },
+      {
+        "profile": "implementation",
+        "category": "acl",
+        "query": "T1",
+        "expected": "miss",
+        "matched": false,
+        "locators": 0
+      },
+      {
+        "profile": "implementation",
+        "category": "natural_language",
+        "query": "重复请求",
+        "expected": "unsupported",
+        "matched": false,
+        "note": "正文含此要求；当前索引只支持显式定位，不是全文/语义搜索。"
+      },
+      {
+        "profile": "implementation",
+        "category": "pinned_recovery",
+        "expected": "exact",
+        "matched": true,
+        "body_bytes": 552
+      },
+      {
+        "profile": "task-verify",
+        "category": "task",
+        "query": "T1",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1919,
+        "host_ms": 0.33859198447316885,
+        "navigation_complete": true
+      },
+      {
+        "profile": "task-verify",
+        "category": "acceptance",
+        "query": "AC-1",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1943,
+        "host_ms": 0.2731449203565717,
+        "navigation_complete": true
+      },
+      {
+        "profile": "task-verify",
+        "category": "source",
+        "query": "source.md#exception",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1966,
+        "host_ms": 0.26025890838354826,
+        "navigation_complete": true
+      },
+      {
+        "profile": "task-verify",
+        "category": "image",
+        "query": "screen.png#empty",
+        "expected": "hit",
+        "matched": true,
+        "locators": 2,
+        "output_bytes": 3049,
+        "host_ms": 0.27766404673457146,
+        "navigation_complete": true
+      },
+      {
+        "profile": "task-verify",
+        "category": "shared",
+        "query": "source.md#shared",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1951,
+        "host_ms": 0.24972599931061268,
+        "navigation_complete": true
+      },
+      {
+        "profile": "task-verify",
+        "category": "out_of_scope_task",
+        "query": "T2",
+        "expected": "miss",
+        "matched": false,
+        "locators": 0
+      },
+      {
+        "profile": "task-verify",
+        "category": "unknown_id",
+        "query": "AC-UNKNOWN",
+        "expected": "miss",
+        "matched": false,
+        "locators": 0
+      },
+      {
+        "profile": "task-verify",
+        "category": "acl",
+        "query": "T1",
+        "expected": "miss",
+        "matched": false,
+        "locators": 0
+      },
+      {
+        "profile": "task-verify",
+        "category": "natural_language",
+        "query": "重复请求",
+        "expected": "unsupported",
+        "matched": false,
+        "note": "正文含此要求；当前索引只支持显式定位，不是全文/语义搜索。"
+      },
+      {
+        "profile": "task-verify",
+        "category": "pinned_recovery",
+        "expected": "exact",
+        "matched": true,
+        "body_bytes": 552
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "task",
+        "query": "T1",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1930,
+        "host_ms": 0.9462869493290782,
+        "navigation_complete": false
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "acceptance",
+        "query": "AC-1",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1954,
+        "host_ms": 0.8867289870977402,
+        "navigation_complete": false
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "source",
+        "query": "source.md#exception",
+        "expected": "hit",
+        "matched": true,
+        "locators": 85,
+        "output_bytes": 107641,
+        "host_ms": 20.700974971987307,
+        "navigation_complete": false
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "image",
+        "query": "screen.png#empty",
+        "expected": "hit",
+        "matched": true,
+        "locators": 170,
+        "output_bytes": 213708,
+        "host_ms": 48.46660699695349,
+        "navigation_complete": false
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "shared",
+        "query": "source.md#shared",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1,
+        "output_bytes": 1965,
+        "host_ms": 0.8847849676385522,
+        "navigation_complete": false
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "last_task",
+        "query": "T99",
+        "expected": "hit",
+        "matched": false,
+        "locators": 0,
+        "output_bytes": 869,
+        "host_ms": 0.8506400045007467,
+        "navigation_complete": false
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "out_of_scope_task",
+        "query": "T2",
+        "expected": "hit",
+        "matched": true,
+        "locators": 1
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "unknown_id",
+        "query": "AC-UNKNOWN",
+        "expected": "miss",
+        "matched": false,
+        "locators": 0
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "acl",
+        "query": "T1",
+        "expected": "miss",
+        "matched": false,
+        "locators": 0
+      },
+      {
+        "profile": "candidate-verify",
+        "category": "natural_language",
+        "query": "重复请求",
+        "expected": "unsupported",
+        "matched": false,
+        "note": "正文含此要求；当前索引只支持显式定位，不是全文/语义搜索。"
+      }
+    ],
+    "provider_invoked": false,
+    "semantic_qualification": "not_run",
+    "limits": [
+      "合成固定样例；不能代替实际项目语义召回。",
+      "全文导航存在 512 项上限；未命中不证明没有需求。"
+    ]
+  },
+  "host_benchmark": {
+    "schema_version": "context-host-benchmark.v1",
+    "tasks": 100,
+    "source_bytes": 1069665,
+    "manifest_bytes": 4232,
+    "build_snapshot_navigation_ms": 32.631838927045465,
+    "paged_prepare_ms": 1.8052420346066356,
+    "prepared_output_bytes": 13655,
+    "prepared_body_bytes": 10910,
+    "pages": 4,
+    "provider_usage": null,
+    "semantic_qualification": "not_run",
+    "note": "宿主离线观测，未输出给 worker，不生成正文回执，不证明 token 节约。"
+  },
+  "blind_preparation": {
+    "cases": 5,
+    "tasks": 100,
+    "evaluation_digest": "634b07f1bfa156d98c1a41d709c4d17adda7d021d17ec88799ee9d39eee6c9e6",
+    "semantic_qualification": "not_run",
+    "provider_invoked": false
+  },
+  "real_provider": "deferred_until_batches_3_and_4_complete"
+}

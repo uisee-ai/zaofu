@@ -441,11 +441,12 @@ def _delivery_feature_fallbacks(
 def _delivery_runtime_statuses(
     events: list[tuple[int, object]],
 ) -> dict[str, str]:
-    """Derive fallback target state from ordered terminal runtime facts."""
+    """Derive fallback target state from ordered runtime lifecycle facts."""
 
     statuses: dict[str, str] = {}
     fanout_states = {
         "fanout.started": "active",
+        "fanout.aggregate.started": "active",
         "fanout.aggregate.completed": "done",
         "fanout.cancelled": "cancelled",
         "fanout.timed_out": "blocked",
@@ -460,9 +461,17 @@ def _delivery_runtime_statuses(
         fanout_id = str(_payload_ref(payload, "fanout_id") or "").strip()
         if fanout_id and event_type in fanout_states:
             statuses[fanout_id] = fanout_states[event_type]
-        if event_type not in goal_states:
+            if event_type == "fanout.aggregate.completed":
+                outcome = str(payload.get("status") or "completed").strip()
+                statuses[fanout_id] = {
+                    "completed": "done", "failed": "blocked", "timed_out": "blocked",
+                }.get(outcome, outcome)
+        recovered = event_type == "run.goal.updated" and str(
+            payload.get("status") or ""
+        ).strip() in {"active", "running"}
+        if event_type not in goal_states and not recovered:
             continue
-        state = goal_states[event_type]
+        state = "active" if recovered else goal_states[event_type]
         for value in (
             _payload_ref(payload, "pdd_id"),
             _payload_ref(payload, "feature_id"),
@@ -472,6 +481,8 @@ def _delivery_runtime_statuses(
         ):
             identity = str(value or "").strip()
             if identity:
+                if recovered and statuses.get(identity) not in {None, "active", "blocked"}:
+                    continue
                 statuses[identity] = state
     return statuses
 

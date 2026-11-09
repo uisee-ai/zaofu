@@ -9,7 +9,9 @@ def writer_amend_selection(
     amend = data.get("amend")
     if not isinstance(amend, dict):
         return requested_task_ids, resume_scope
-    scope = resume_scope or str(amend.get("resume_scope") or "").strip()
+    scope = resume_scope
+    if not requested_task_ids:
+        scope = scope or str(amend.get("resume_scope") or "").strip()
     if requested_task_ids or scope != "gap_tasks_only":
         return requested_task_ids, scope
     ids = amend.get("gap_task_ids")

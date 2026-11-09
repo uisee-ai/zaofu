@@ -32,6 +32,7 @@ class FlowCatalogEntry:
     preferred: bool
     order: int
     path: Path
+    assembly: str = ""
 
 
 _BACKEND_ORDER = {"claude": 0, "codex": 1}
@@ -65,7 +66,8 @@ def _catalog_entries() -> list[FlowCatalogEntry]:
     if prod is None:
         return []
     entries: list[FlowCatalogEntry] = []
-    paths = [*prod.glob("*.yaml"), *prod.glob("controller/*.yaml")]
+    paths = [*prod.glob("*.yaml"), *prod.glob("controller/*.yaml"),
+             *prod.parent.parent.glob("zf-*.yaml")]
     for path in sorted(paths):
         entry = _entry_from_yaml(path)
         if entry is not None:
@@ -83,7 +85,7 @@ def _catalog_entries() -> list[FlowCatalogEntry]:
 
 def _entry_from_yaml(path: Path) -> FlowCatalogEntry | None:
     try:
-        documents = yaml.safe_load_all(path.read_text(encoding="utf-8"))
+        documents = yaml.load_all(path.read_text(encoding="utf-8"), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
         for document in documents:
             if not isinstance(document, dict):
                 continue
@@ -138,6 +140,7 @@ def _entry_from_catalog(path: Path, catalog: dict) -> FlowCatalogEntry | None:
         preferred=preferred,
         order=order,
         path=path,
+        assembly=str(catalog.get("assembly") or ""),
     )
 
 

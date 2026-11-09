@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import uuid
 from dataclasses import dataclass
@@ -361,6 +362,9 @@ def handle_headless_kanban_agent_chat(
     run_turn: TurnRunner,
 ) -> dict[str, Any]:
     task_id = task_id_from_payload(payload)
+    model = str(payload.get("model") or "").strip()
+    if model and (backend != "codex-headless" or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}", model)):
+        return {"_status_code": 400, "ok": False, "status": "invalid_model", "reason": "model selection is not supported"}
     workflow_context = workflow_context_for_project(payload, project_root)
     thread_key = str(payload.get("thread_key") or "").strip()
     permission_profile = normalize_kanban_permission_profile(payload.get("permission_profile"))
@@ -425,6 +429,8 @@ def handle_headless_kanban_agent_chat(
             "project_id": project_id,
             "conversation_id": conversation_id,
             "backend": backend,
+            "requested_model": model,
+            "requested_thinking_level": _headless_thinking_level(payload),
             "permission_profile": permission_profile,
             "scope": str(payload.get("scope") or "project"),
             "message_event_id": user_message.id,
@@ -466,6 +472,7 @@ def handle_headless_kanban_agent_chat(
         "project_id": project_id,
         "conversation_id": conversation_id,
         "thinking_level": _headless_thinking_level(payload),
+        **({"model": model} if model else {}),
         "permission_profile": permission_profile,
         "config": config,
         "durable_run": durable_run,

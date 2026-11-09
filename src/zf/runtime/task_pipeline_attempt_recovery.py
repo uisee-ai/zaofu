@@ -27,6 +27,15 @@ def is_task_pipeline_attempt(row: Mapping[str, Any]) -> bool:
     )
 
 
+def live_task_pipeline_attempt_for_role(runtime: Any, instance_id: str) -> dict[str, Any] | None:
+    """Fence legacy watchdog recovery while an operation-v2 attempt is live."""
+    rows = TaskAttemptStore(Path(runtime.state_dir) / "task_attempts.json").current_rows()
+    matching = [row for row in rows if is_task_pipeline_attempt(row)
+                and row.get("instance_id") == instance_id
+                and row.get("status") in {"prepared", "delivering", "sent"}]
+    return dict(matching[0]) if matching else None
+
+
 def task_pipeline_attempt_identity_fields(
     row: Mapping[str, Any],
 ) -> dict[str, str]:

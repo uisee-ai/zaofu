@@ -1,6 +1,6 @@
 ---
 name: zf-prd-plan-synth
-description: "Use for ZaoFu PRD workflows. Defines the standard scan -> Planner -> plan-critic flow, optional PRD authoring handoffs, and the dispatchable plan contract for product delivery."
+description: "Use for ZaoFu PRD workflows. Defines scan, planning, configured review, and the dispatchable plan contract for product delivery."
 ---
 
 # ZaoFu PRD Plan Synthesis
@@ -13,22 +13,34 @@ actual dispatch briefing and configured role names:
 1. `prd-scan`: `product-scan` and `tech-scan` read in parallel; the Kernel
    waits for both and emits `prd.scan.completed`.
 2. `prd-plan`: `planner` produces the complete Plan, task map and matrices.
-3. After mechanical pre-submit admission, `plan-critic` runs as the stage's
-   independent synth role. A correctable rejection returns to Planner;
-   acceptance lets the Kernel publish `task_map.ready` and the bound package.
+3. By default, `plan-critic` independently reviews the admitted Planner
+   candidate. When the explicit `planCriticEnabled: false` route is configured,
+   Planner performs cross-artifact reconciliation and submits its own complete
+   candidate; the Kernel admits the package before writer dispatch. This is
+   Planner self-check, not independent review. Record missing evidence and do
+   not claim an independent Critic verdict.
 4. When enabled, human Plan approval precedes product writer dispatch.
 
-There are two configured Agent roles in the strict Plan stage, or four
-including its two scan roles. The Kernel is deterministic orchestration,
-not an additional Agent. Retries and provider-native helpers are not new
-configured workflow roles. Do not run Planner and Critic as parallel peers:
-Critic needs the exact admitted Planner artifacts.
+The default Plan stage has Planner and Critic; the explicitly configured
+no-Critic route has Planner alone. The Kernel is deterministic orchestration,
+not an additional Agent. When configured, Critic reviews the exact Planner
+candidate and must not run as a parallel peer.
 
 The author/PRD-review/task-map handoffs below also apply when an explicitly
 configured workflow separates PRD authoring. They do not add `prd-author`,
 `prd-critic`, or `task-map-synth` to the standard PrdFlow.
 
 ## PRD Author Output
+
+Channel PRD 输入先消费同版 `implementation_companion` 的来源基线、评审覆盖、验收数据
+计划和 handoff 索引，以及独立评估报告（如已提供）。复核报告的 PRD ref/digest；旧版
+checklist 不证明新版通过。执行 `zf-requirement-reconciliation` 的五项质量闭环。
+将已定 Requirement/AC/命令映射到 `prd-plan.md`、`task_map.json` 和 `source_index.json`，
+记录尚未生成项的生产者、触发条件和范围；这些是 Spec-kit spec/plan/tasks 的阶段对应，
+不另建第二份 Task Store。完整 plan/tasks 产生后由配置的 Critic 做跨工件对账；未配置
+Critic 时由 Planner 对账并明确是自检，保留人工审批。首次 PRD 不以
+未来文件、可选 assess 扩展或固定文件名为准入条件。TBD 仅阻塞其影响的当前动作，
+产品验证未执行不得转写为通过，独立评估也不能代替 Owner 执行授权。
 
 Write `prd.md` before emitting `prd.ready`. The PRD must be a durable artifact
 under the project root, normally `docs/prds/` or `docs/plans/`. Do not emit a
@@ -89,7 +101,7 @@ workflow has a source PRD or authority bundle:
   owner approval.
 
 The approval entry is a contract, not a formatting preference. For
-`derived_plan_full`, the Planner/Critic handoff must bind these semantic
+`derived_plan_full`, the Planner candidate and any configured Critic handoff must bind these semantic
 fields through existing plan ports or explicit evidence refs:
 
 - **PRD**: users, problem/outcome, scope, non-goals, success measures, and
@@ -103,7 +115,7 @@ fields through existing plan ports or explicit evidence refs:
 
 Do not claim `derived_plan_full` when a section is represented only by a task
 title, a source excerpt, or a command name. Preserve the missing contract as a
-Critic rework finding. The operator may render a read-only dossier from these
+blocking finding, including when Planner is the only plan role. The operator may render a read-only dossier from these
 bound artifacts, but Runtime must not invent project semantics or silently
 select an owner decision.
 
@@ -135,7 +147,7 @@ as the sole proof for every behavior row. Prefer stable section/heading anchors
 with a short excerpt or digest. Do not infer module coverage from task names,
 file counts, or a shared statement such as “待执行/待审批追踪项”. Any
 mandatory source unit without a disposition, semantic Plan body, producer, or
-verification path is a Critic rework finding and blocks `derived_plan_full`.
+verification path is a blocking finding and blocks `derived_plan_full`.
 
 Return `plan_content_profile: "derived_plan_full"` only when those sections and
 the exact confirmed authority have been reviewed. Use `summary_only` when the
@@ -187,7 +199,7 @@ affected decisions, tasks, dependencies, acceptance, and evidence, while
 preserving unaffected completed tasks and their refs. Approval applies only to
 the current revision; a change that affects scope, contract, task ownership,
 dependencies, or acceptance invalidates the previous approval and requires a
-new Critic verdict and owner approval. Do not silently edit a preview or reuse
+new Critic verdict when configured, and owner approval. Do not silently edit a preview or reuse
 an approval after its covered content changed.
 
 For greenfield PRD builds, include top-level `schema_version: "task-map.v1"`,
@@ -207,6 +219,15 @@ text.
 
 ## Human Review Before Approval
 
+For product specification and technical-design sufficiency, apply
+`zf-plan-execution-readiness/references/spec-design-readiness.md`: organize
+user stories by value with observable success criteria, resolve the contracts
+needed by the current implementation frontier, and retain later obligations.
+Reuse authoritative source bodies through precise refs; an index alone is not
+a synthesized specification. The configured reviewer, or Planner when no
+Critic is configured, reports each dimension and actual scope before making an
+explicit content-completeness claim.
+
 For the standard PRD Plan, apply `zf-plan-execution-readiness` and its
 `references/human-review.md` before submission. Lead the accepted Plan with
 user goals, scope/conditional scope, phase outcomes and owner decisions;
@@ -215,7 +236,7 @@ engineering repair history in appendices. When execution_spec is already
 used, place shared reading material in `shared.human_review` and module
 specifications/scenarios in each existing `tasks[].body.human_review`.
 Preserve canonical task/AC/command IDs and bind these artifacts in the same
-Plan Package. Critic checks semantic consistency; UI only renders the bound
+Plan Package. The configured reviewer checks semantic consistency; the UI only renders the bound
 content. Neither a page count nor repeated RED/GREEN prose proves clause
 coverage. Never rewrite admitted artifacts to improve presentation.
 
@@ -354,3 +375,10 @@ roles) emits the goal lifecycle: `run.goal.started`, `run.goal.updated`,
 `run.goal.quiescent.entered` / `run.goal.quiescent.exited` when the loop idles.
 Goal closure is the `run.goal.completed` signal, so a replan is truly done only
 when a clean rescan lets the loop reach it instead of `run.goal.blocked`.
+
+### 声明可导航关系
+
+生产 Task 切片时按已注册 schema 保留 requirement_ids、acceptance_ids、blocked_by/depends_on
+及 source_refs/image_refs 等显式关系；不要为导航添加 schema 不接受的字段。语义映射由
+Planner/Critic 对账，不能依赖运行时从散文猜测；目前导航只提取这些字段中的字符串引用。
+章节/关系目录只定位固定版本，导航不完整时继续核查获准正文，不将无命中视为无需求。

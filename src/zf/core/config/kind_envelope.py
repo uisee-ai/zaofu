@@ -533,6 +533,25 @@ def _scope_multi_kind_flow_expansion(expansion: dict) -> dict:
         if str(role.get("instance_id") or "").strip() in {"", old_name}:
             role["instance_id"] = new_name
 
+    task_pipeline = metadata.get("task_pipeline")
+    if isinstance(task_pipeline, dict):
+        for pool in (task_pipeline.get("pools") or {}).values():
+            if not isinstance(pool, dict):
+                continue
+            pool["role_instances"] = [
+                role_map.get(str(role), scoped(role))
+                for role in pool.get("role_instances", []) or []
+            ]
+            for profile in pool.get("worker_profiles", []) or []:
+                if isinstance(profile, dict) and profile.get("role"):
+                    role = str(profile["role"])
+                    profile["role"] = role_map.get(role, scoped(role))
+        task_pipeline.pop("profile_digest", None)
+        encoded = json.dumps(
+            task_pipeline, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
+        task_pipeline["profile_digest"] = hashlib.sha256(encoded).hexdigest()
+
     first_stage_id = scoped(out.get("entry_stage_id"))
     for stage in out.get("stages", []) or []:
         if not isinstance(stage, dict):

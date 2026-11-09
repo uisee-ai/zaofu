@@ -8,9 +8,32 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.config.schema import RoleConfig
+from zf.core.events.model import ZfEvent
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.stage_failure_replan import reader_stage_lineage_payload
 from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
+
+
+def reader_retry_operation_id(
+    manifest: dict, child: dict, dispatch: ZfEvent, prepared_call: Any,
+) -> str:
+    """Use the prepared operation or the reader child that owned this dispatch."""
+    if prepared_call is not None:
+        return prepared_call.operation_id
+    payload = dispatch.payload if isinstance(dispatch.payload, dict) else {}
+    if manifest.get("topology") != "fanout_reader":
+        return ""
+    for key, expected in (
+        ("fanout_id", manifest.get("fanout_id")),
+        ("child_id", child.get("child_id")),
+        ("role_instance", child.get("role_instance")),
+    ):
+        if not expected or payload.get(key) != expected:
+            return ""
+    trace_id = str(manifest.get("trace_id") or "")
+    if trace_id and payload.get("trace_id") != trace_id:
+        return ""
+    return str(payload.get("operation_id") or "")
 
 
 def write_blocking_reader_retry_briefing(
@@ -21,6 +44,7 @@ def write_blocking_reader_retry_briefing(
     child: dict,
     run_id: str,
     contract_handoff_keys: tuple[str, ...],
+    effective_operation_id: str = "",
 ) -> Path | None:
     """Reuse the durable reader briefing for a blocking operation retry."""
 
@@ -52,7 +76,9 @@ def write_blocking_reader_retry_briefing(
         or not str(child_payload.get("operation_id") or "").strip()
     ):
         return None
-    stage = runtime._fanout_stage_by_id(str(manifest.get("stage_id") or ""))
+    from zf.runtime.stage_definition_binding import bound_stage
+
+    stage = bound_stage(runtime, manifest.get("trigger_payload") or {}) or runtime._fanout_stage_by_id(str(manifest.get("stage_id") or ""))
     aggregate = getattr(stage, "aggregate", None) if stage else None
     if aggregate is None:
         return None
@@ -78,6 +104,7 @@ def write_blocking_reader_retry_briefing(
         aggregate=aggregate,
         child_payload=child_payload,
         skill_entries=[],
+        effective_operation_id=effective_operation_id,
     )
 
 

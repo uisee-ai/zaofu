@@ -236,6 +236,8 @@ def build_workflow_operation_resume_checkpoints(
 
     from zf.runtime.abstained_verify_recovery import recoverable_abstention
 
+    from zf.runtime.synth_budget_recovery import pending_reader_budget_amendment
+
     operations = reduce_workflow_operations(event_list)
     attempts = _task_attempt_rows(Path(state_dir))
     now = datetime.now(timezone.utc).timestamp()
@@ -284,15 +286,33 @@ def build_workflow_operation_resume_checkpoints(
                 str(operation.get("last_event_at") or "")
             ),
         )
-        if budget_amendment is not None and live_attempt is not None:
+        if operation.get("operation_type") == "run_manager_reflect":
+            action = "no_action"
+            reason = "Run Manager owns durable reflection reconciliation; no TaskAttempt lease is expected"
+        elif budget_amendment is not None and live_attempt is not None:
             action = "no_action"
             reason = "budget-blocked operation already has a live TaskAttempt"
         elif budget_amendment is not None:
-            action = "redrive_budget_amended_task_pipeline_operation"
+            action = (
+                "redrive_budget_amended_task_pipeline_operation"
+                if task_pipeline_stage
+                else ("redrive_budget_amended_synth_operation"
+                      if operation.get("operation_type") == "fanout_synth"
+                      else "redrive_budget_amended_reader_operation")
+            )
             reason = (
                 "owner amended every exceeded budget dimension after the "
-                "Task Pipeline operation was blocked"
+                "operation was blocked"
             )
+        elif (
+            status == "suspended"
+            and pending_reader_budget_amendment(event_list, operation) is not None
+            and newer_live_attempt is None
+        ):
+            action = ("redrive_interrupted_budget_synth_operation"
+                      if operation.get("operation_type") == "fanout_synth"
+                      else "redrive_interrupted_budget_reader_operation")
+            reason = "budget-amended reader was stopped before its transport restart"
         elif status == "suspended" and newer_live_attempt is not None:
             action = "no_action"
             reason = (
@@ -337,7 +357,7 @@ def build_workflow_operation_resume_checkpoints(
             )
         elif (
             status == "suspended"
-            and str(operation.get("operation_type") or "") == "fanout_reader_child"
+            and str(operation.get("operation_type") or "") in {"fanout_reader_child", "fanout_synth"}
             and str(operation.get("reason") or "") in {"graceful_stop", "fast_stop"}
         ):
             action = "redrive_interrupted_reader_operation"
@@ -501,10 +521,14 @@ def build_workflow_resume_checkpoints(
     inflight_fanouts, unroutable_keys = _filing_guard_indexes(event_list)
     checkpoints: list[WorkflowResumeCheckpoint] = []
     checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config, state_dir=state_dir))
+    task_event_index = _index_events_for_tasks(
+        event_list, {task.id for task in task_list if isinstance(task.id, str) and task.id}
+    )
     for task in task_list:
         if task.status in {"done", "cancelled"}:
             continue
-        task_events = _events_for_task(event_list, task.id)
+        task_events = (list(task_event_index.get(task.id, [])) if isinstance(task.id, str)
+                       else _events_for_task(event_list, task.id))
         ref_checkpoint = _task_ref_repair_checkpoint(task, task_events)
         if ref_checkpoint is not None:
             checkpoints.append(ref_checkpoint)
@@ -2520,6 +2544,33 @@ def _stage_from_event(event_type: str) -> str:
     if event_type.startswith("judge."):
         return "judge"
     return event_type.rsplit(".", 1)[0]
+
+
+def _index_events_for_tasks(
+    events: list[ZfEvent], task_ids: set[str],
+) -> dict[str, list[ZfEvent]]:
+    """Index this snapshot using the same exact task matching as recovery."""
+    index: dict[str, list[ZfEvent]] = {}
+    if not task_ids:
+        return index
+    for event in events:
+        if event.task_id:
+            if isinstance(event.task_id, str) and event.task_id in task_ids:
+                index.setdefault(event.task_id, []).append(event)
+            continue
+        payload = event.payload
+        if not isinstance(payload, dict):
+            continue
+        candidates = {
+            str(payload.get(key) or "")
+            for key in ("task_id", "source_task_id", "target_task_id", "active_task_id")
+        }
+        nested = payload.get("task")
+        if isinstance(nested, dict):
+            candidates.add(str(nested.get("id") or ""))
+        for task_id in candidates & task_ids:
+            index.setdefault(task_id, []).append(event)
+    return index
 
 
 def _events_for_task(events: list[ZfEvent], task_id: str) -> list[ZfEvent]:

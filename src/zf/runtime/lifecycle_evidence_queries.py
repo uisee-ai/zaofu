@@ -198,7 +198,7 @@ class LifecycleEvidenceQueriesMixin:
             if assigned == instance_id or dispatched == instance_id:
                 terminal = self._terminal_task_pipeline_assignments()
                 terminal_dispatch = terminal.get((task.id, instance_id))
-                if terminal_dispatch and task.active_dispatch_id in ("", terminal_dispatch):
+                if terminal_dispatch and task.active_dispatch_id in {"", terminal_dispatch}:
                     continue
                 return task
         return None
@@ -395,7 +395,12 @@ class LifecycleEvidenceQueriesMixin:
                 "snapshot_ref": str(payload.get("snapshot_ref") or ""),
                 "task_id": str(payload.get("task_id") or event.task_id or ""),
                 "retry_of_run_id": str(payload.get("retry_of_run_id") or ""),
+                "recovery_kind": str(payload.get("recovery_kind") or ""),
+                "attempt_id": str(payload.get("attempt_id") or ""),
                 "attempt": payload.get("attempt"),
+                "operation_id": str(payload.get("operation_id") or ""),
+                "request_hash": str(payload.get("request_hash") or ""),
+                "workflow_run_id": str(payload.get("workflow_run_id") or ""),
             }
         return None
 

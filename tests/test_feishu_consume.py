@@ -12,6 +12,7 @@ from zf.cli.feishu_consume import consume_stream, ingest_feishu_event
 from zf.cli.main import main
 from zf.core.config.project_context import resolve_project_context
 from zf.core.events.log import EventLog
+from zf.core.events.model import ZfEvent
 from zf.integrations.feishu.callback_token import sign_action
 
 
@@ -102,6 +103,9 @@ def test_inbound_message_idempotent(project: Path):
 
 def test_card_action_routes_to_handler_and_approves(project: Path):
     ctx = resolve_project_context()
+    EventLog(ctx.state_dir / "events.jsonl").append(ZfEvent(
+        type="plan.approval.requested", payload={"plan_id": "P1"},
+    ))
     token = sign_action(b"sek", action="plan-approve", target="P1",
                         chat_id="oc_team", ttl_seconds=100, now=time.time())
     event = {

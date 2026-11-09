@@ -361,6 +361,9 @@ def test_materialize_config_skills_resolves_sources_from_config_dir(tmp_path):
     }
     assert (project / "skills" / "test-skill" / "SKILL.md").is_file()
     assert load_config(config).skill_sources[0].path == "skills"
+    before = (project / "skills" / "test-skill" / "SKILL.md").read_bytes()
+    assert materialize_config_skills(config, project)["skills"] == ["skills/test-skill"]
+    assert (project / "skills" / "test-skill" / "SKILL.md").read_bytes() == before
 
 
 def test_materialize_preset_injects_checks(tmp_path):

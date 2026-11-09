@@ -82,6 +82,12 @@ def heartbeat_current_task_still_owned(runtime: Any, registry: Any, instance_id:
     task = next((t for t in tasks if t.id == current_task_id), None)
     if task is None or task.status != "in_progress":
         return False
+    try:
+        terminal_dispatch = runtime._terminal_task_pipeline_assignments().get((task.id, instance_id))
+    except Exception:
+        terminal_dispatch = None
+    if terminal_dispatch and task.active_dispatch_id in {"", terminal_dispatch}:
+        return False
     if (task.assigned_to or "") == instance_id:
         return True
     try:

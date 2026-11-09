@@ -14,6 +14,7 @@ from zf.core.events.writer import EventWriter
 from zf.runtime.result_submit import (
     ResultSubmitError,
     SemanticResultSubmitService,
+    SubmittedSemanticResult,
     credential_from_environment,
     parse_semantic_result_bytes,
 )
@@ -30,6 +31,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Preflight one profiled result without consuming submit capability",
     )
     _add_result_input_arguments(validate)
+    validate.add_argument("--submit", action="store_true", help="Submit immediately if preflight passes")
+    validate.add_argument(
+        "--summary", action="store_true",
+        help="Print bounded diagnostics; omit this option for the complete preflight report",
+    )
     validate.set_defaults(func=_run_validate)
     parser.set_defaults(func=_run_help)
 
@@ -97,11 +103,10 @@ def _run_validate(args: argparse.Namespace) -> int:
             parse_semantic_result_bytes(sys.stdin.buffer.read())
             if args.stdin else None
         )
-        outcome = SemanticResultSubmitService(
-            state_dir=context.state_dir,
-            event_log=log,
-            event_writer=EventWriter(log),
-        ).validate_plan_candidate(
+        service = SemanticResultSubmitService(
+            state_dir=context.state_dir, event_log=log, event_writer=EventWriter(log),
+        )
+        outcome = service.validate_plan_candidate(
             operation_id=str(args.operation),
             semantic_result=semantic_result,
             result_file=args.result_file,
@@ -110,11 +115,41 @@ def _run_validate(args: argparse.Namespace) -> int:
             credential=credential,
             project_root=Path.cwd(),
         )
+        if outcome.get("status") == "passed" and getattr(args, "submit", False):
+            submitted = service.submit(
+                operation_id=str(args.operation), semantic_result=semantic_result,
+                result_file=args.result_file, use_operation_scratch=bool(args.scratch),
+                role_instance=role, credential=credential,
+            )
+            _print_submission(submitted)
+            return 0
     except (ConfigError, ResultSubmitError, OSError, ValueError) as exc:
         _print_error(exc, fallback_code="result_validate_failed")
         return 1
-    print(json.dumps(outcome, ensure_ascii=False, sort_keys=True))
+    display = _validation_summary(outcome) if getattr(args, "summary", False) else outcome
+    print(json.dumps(display, ensure_ascii=False, sort_keys=True))
     return 0 if outcome.get("status") == "passed" else 1
+
+
+def _validation_summary(outcome: dict) -> dict:
+    """Bound model-facing diagnostics without changing the actual preflight."""
+    raw_errors = outcome.get("errors")
+    errors = raw_errors if isinstance(raw_errors, list) else []
+    shown = []
+    for item in errors[:12]:
+        if isinstance(item, dict):
+            shown.append({key: str(item.get(key) or "")[:512] for key in ("code", "field", "message")})
+        else:
+            shown.append({"message": str(item)[:512]})
+    return {
+        "schema_version": "result-validation-summary.v1",
+        "status": outcome.get("status"),
+        "error_count": len(errors) if isinstance(raw_errors, list) else None,
+        "errors": shown,
+        "errors_omitted": max(0, len(errors) - len(shown)),
+        "details_truncated": True,
+        "full_report": "Rerun the same validation command without --summary for the complete report.",
+    }
 
 
 def _run_submit(args: argparse.Namespace) -> int:
@@ -148,6 +183,11 @@ def _run_submit(args: argparse.Namespace) -> int:
     except (ConfigError, ResultSubmitError, OSError, ValueError) as exc:
         _print_error(exc, fallback_code="result_submit_failed")
         return 1
+    _print_submission(outcome)
+    return 0
+
+
+def _print_submission(outcome: SubmittedSemanticResult) -> None:
     print(json.dumps({
         "status": "admitted",
         "operation_id": outcome.operation_id,
@@ -157,7 +197,6 @@ def _run_submit(args: argparse.Namespace) -> int:
         "envelope_ref": outcome.envelope_ref,
         "control_result_ref": outcome.control_result_ref,
     }, ensure_ascii=False, sort_keys=True))
-    return 0
 
 
 __all__ = ["register"]

@@ -75,6 +75,10 @@ def run(args: argparse.Namespace) -> int:
     preserve_run_manager = _should_preserve_run_manager(config, args)
 
     if getattr(args, "force", False):
+        from zf.core.events.factory import event_log_from_project
+        from zf.core.events.writer import EventWriter
+        EventWriter(event_log_from_project(state_dir, config=config)).emit(
+            "loop.shutdown_requested", actor="zf-cli", payload={"mode": "force", "source": "operator"})
         if not getattr(args, "preserve_run_manager", False):
             preserve_run_manager = False
         if preserve_run_manager:

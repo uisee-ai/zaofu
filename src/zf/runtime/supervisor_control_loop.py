@@ -528,6 +528,10 @@ def _owner_message_delivery_targets(
     human_action_required: bool,
 ) -> list[str]:
     targets = ["web", "channel"]
+    from zf.runtime.owner_visible_autodeliver import owner_visible_autodeliver_enabled
+
+    if not owner_visible_autodeliver_enabled():
+        return targets
     if _run_manager_human_decision(item, decision):
         if human_action_required:
             targets.append("feishu")

@@ -132,6 +132,19 @@ def test_fault_matrix_has_one_decision_and_effect_owner_per_fault() -> None:
         task_pipeline_fault_contract("unknown")
 
 
+def test_live_pipeline_attempt_fences_only_its_role(tmp_path: Path) -> None:
+    from zf.runtime.task_pipeline_attempt_recovery import live_task_pipeline_attempt_for_role
+
+    runtime = _runtime(tmp_path)
+    attempt = _running_operation_v2_attempt(runtime)
+    assert live_task_pipeline_attempt_for_role(runtime, "impl-1")["attempt_id"] == attempt["attempt_id"]
+    assert live_task_pipeline_attempt_for_role(runtime, "other") is None
+    TaskAttemptStore(runtime.state_dir / "task_attempts.json").update(
+        attempt["attempt_id"], status="expired", updated_at="2026-08-03T00:03:00+00:00",
+    )
+    assert live_task_pipeline_attempt_for_role(runtime, "impl-1") is None
+
+
 def test_expired_operation_v2_waits_for_run_manager_then_redrives_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

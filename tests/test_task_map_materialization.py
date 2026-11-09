@@ -138,3 +138,107 @@ def test_materialization_replaces_existing_semantics_without_rolling_back_bindin
     )
     assert current.contract_authority_sequence == 1
     assert current.contract_authority_revision
+
+
+def test_revised_map_updates_backlog_dependencies_and_scheduler_readiness(tmp_path):
+    state_dir = tmp_path / ".zf"
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    store = TaskStore(state_dir / "kanban.json")
+    store.add_many([
+        Task(id="A", status="backlog", contract=TaskContract(behavior="A")),
+        Task(id="B", status="backlog", blocked_by=["A"],
+             contract=TaskContract(behavior="old")),
+    ])
+    assert [task.id for task in store.ready()] == ["A"]
+    plan, descriptor = prepare_task_map_materialization(
+        state_dir=state_dir,
+        tasks=[Task(id="A", status="backlog", contract=TaskContract(behavior="A")),
+               Task(id="B", status="backlog", contract=TaskContract(behavior="new"))],
+        task_map_ref="revised-task-map.json", writer=writer,
+    )
+    result = commit_task_map_materialization(state_dir=state_dir, plan=plan,
+                                              descriptor=descriptor, writer=writer)
+    assert store.get("B").blocked_by == []
+    assert {task.id for task in store.ready()} == {"A", "B"}
+    from tests.test_task_pipeline_reconciler import _policy
+    from zf.runtime.task_pipeline_reconciler import TaskPipelineReconciler
+
+    policy = _policy()
+    policy["mode"] = "blocking"
+    policy["pools"]["impl"].update(capacity=2, role_instances=["impl-1", "impl-2"])
+    projection = TaskPipelineReconciler().reconcile(
+        policy=policy, tasks=store.list_all(), operations=[], attempts=[],
+    )
+    assert {item["task_id"] for item in projection["dispatchable"]["impl"]} == {"A", "B"}
+    assert commit_task_map_materialization(state_dir=state_dir, plan=plan,
+                                           descriptor=descriptor, writer=writer) == result
+    assert sum(e.type == "task_map.materialization.committed"
+               for e in writer.event_log.read_all()) == 1
+
+
+def test_revised_map_rejects_active_dependency_changes_before_new_tasks(tmp_path):
+    state_dir = tmp_path / ".zf"
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    store = TaskStore(state_dir / "kanban.json")
+    store.add_many([
+        Task(id="A", status="backlog"),
+        Task(id="B", status="in_progress", blocked_by=["A"]),
+    ])
+    plan, descriptor = prepare_task_map_materialization(
+        state_dir=state_dir,
+        tasks=[Task(id="B", status="backlog"), Task(id="C", status="backlog")],
+        task_map_ref="revised-task-map.json", writer=writer,
+    )
+    with pytest.raises(ValueError, match="cannot change dependencies of non-backlog task B"):
+        commit_task_map_materialization(state_dir=state_dir, plan=plan,
+                                         descriptor=descriptor, writer=writer)
+    assert store.get("B").blocked_by == ["A"]
+    assert store.get("C") is None
+
+
+@pytest.mark.parametrize("change_contract", [False, True])
+@pytest.mark.parametrize("race_kind", ["dispatch", "dependency"])
+def test_dependency_update_cas_rejects_task_started_during_materialization(
+    tmp_path, monkeypatch, change_contract, race_kind,
+):
+    from zf.runtime.task_contract_authority import TaskContractAuthorityConflict
+
+    state_dir = tmp_path / ".zf"
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    store = TaskStore(state_dir / "kanban.json")
+    store.add_many([
+        Task(id="A", status="backlog"),
+        Task(id="C", status="backlog"),
+        Task(id="B", status="backlog", blocked_by=["A"],
+             contract=TaskContract(behavior="old")),
+    ])
+    initial, initial_ref = prepare_task_map_materialization(
+        state_dir=state_dir, tasks=[store.get("A"), store.get("B")],
+        task_map_ref="old.json", writer=writer,
+    )
+    commit_task_map_materialization(state_dir=state_dir, plan=initial,
+                                    descriptor=initial_ref, writer=writer)
+    task = store.get("B")
+    task.blocked_by = []
+    if change_contract:
+        task.contract.behavior = "new"
+    plan, descriptor = prepare_task_map_materialization(
+        state_dir=state_dir, tasks=[task], task_map_ref="new.json", writer=writer,
+    )
+    method = "compare_and_update_contract" if change_contract else "compare_and_update_fields"
+    original = getattr(TaskStore, method)
+
+    def start_before_compare(self, task_id, **kwargs):
+        if race_kind == "dispatch":
+            self.update(task_id, status="in_progress")
+        else:
+            self.update(task_id, blocked_by=["C"])
+        return original(self, task_id, **kwargs)
+
+    monkeypatch.setattr(TaskStore, method, start_before_compare)
+    with pytest.raises(TaskContractAuthorityConflict):
+        commit_task_map_materialization(state_dir=state_dir, plan=plan,
+                                         descriptor=descriptor, writer=writer)
+    current = store.get("B")
+    assert current.status == ("in_progress" if race_kind == "dispatch" else "backlog")
+    assert current.blocked_by == (["A"] if race_kind == "dispatch" else ["C"])

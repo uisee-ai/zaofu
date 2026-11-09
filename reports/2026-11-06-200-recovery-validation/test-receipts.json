@@ -1,0 +1,134 @@
+[
+  {
+    "log": "dev-verify-closeout.log",
+    "sha256": "181d107f485b6de391829ad034e40421ee661539764a4ce131a1a4315651fc57",
+    "results": [
+      "FAILED tests/test_feishu_channel_progress_card.py::test_confirm_click_is_wired_to_real_controlled_action",
+      "FAILED tests/test_export_public.py::test_export_includes_disclaimer_and_accepts_no_private_matches",
+      "FAILED tests/test_export_public.py::test_grep_fallback_sanitizes_path_with_spaces",
+      "FAILED tests/test_export_public.py::test_grep_fallback_fails_closed_on_scan_error",
+      "FAILED tests/test_export_public.py::test_export_rejects_literal_feishu_credentials",
+      "FAILED tests/test_prompt_source_closure.py::test_five_workflow_prompt_is_standalone_in_fresh_worktree",
+      "6 failed, 14539 passed, 20 skipped in 203.29s (0:03:23)"
+    ],
+    "archive_path": "test-logs/dev-verify-closeout.log.gz",
+    "encoding": "gzip; sha256 binds decompressed original bytes"
+  },
+  {
+    "log": "serial-final.log",
+    "sha256": "233f5a8a61dcac49122f36cc80f8e7ba69532f792ec4e2913d03e81dd6e288ed",
+    "results": [
+      "10 passed in 2.48s"
+    ]
+  },
+  {
+    "log": "sentinels-final.log",
+    "sha256": "85f60d926fcf7796d69b1429df67b2a3c722c997cd176cc85718e8890ec12268",
+    "results": [
+      "manual docs currentness: ok",
+      "53 passed in 2.38s"
+    ]
+  },
+  {
+    "log": "flow-smoke.log",
+    "sha256": "329864c6e890c273ba2b13b407f69a74d9b277431fcb90872571e48da5421b8b",
+    "results": [
+      "10 passed in 2.00s"
+    ]
+  },
+  {
+    "log": "caller-closure-final.log",
+    "sha256": "1c906933163e4d3b1c135a817fc661a640f6270de986ba8a0e05b4c13e33bf1e",
+    "results": [
+      "341 passed in 40.48s"
+    ]
+  },
+  {
+    "log": "diagnostic-admission-green.log",
+    "sha256": "e09f5598414185d52f96aba1f9a8c8d6d4b0c7634d51ea6c445d1c987fd32adf",
+    "results": [
+      "236 passed in 8.11s"
+    ]
+  },
+  {
+    "log": "shared-probe-final.log",
+    "sha256": "872f326291bc42929bd5e4602e462702903ee14d2afa5ec18a161aa088881aad",
+    "results": [
+      "40 passed in 2.18s"
+    ]
+  },
+  {
+    "log": "reactive-assistance-green.log",
+    "sha256": "61ecd7a973b42edcb1bc2332082150a831ac678c13a228c5b4367bb1d4269399",
+    "results": [
+      "249 passed in 12.40s"
+    ]
+  },
+  {
+    "log": "reactive-assistance-callers.log",
+    "sha256": "ab0ebddc9a24a76ee602eaf9c83417360b13e292ef1d1e4a235a2b010dc6d60f",
+    "results": [
+      "97 passed in 2.77s"
+    ]
+  },
+  {
+    "log": "reactive-assistance-sentinel.log",
+    "sha256": "d2f2845970c3933307e4db52142f8354ffee04fd689e5d9cf01be594d185a46e",
+    "results": [
+      "manual docs currentness: ok",
+      "53 passed in 2.59s"
+    ]
+  },
+  {
+    "log": "host-test.log",
+    "sha256": "f97cf15b4daeb746b215498fd9c08d29e0ded4c3209010d33f05b19eb6dff95f",
+    "results": [
+      "1 passed in 12.25s"
+    ]
+  },
+  {
+    "log": "final-focused.log",
+    "sha256": "e301b1546ed8d46100675fe80e0a51e60e7c5898b87cc9bce4111e16f738cc4b",
+    "results": [
+      "83 passed in 2.04s"
+    ]
+  },
+  {
+    "log": "sidecar-host-red.log",
+    "sha256": "483170bd81c88aaa0e578f1217627ba847238060203cd973d13ad2d12889c227",
+    "results": [
+      "FAILED tests/e2e/test_design200_host_supervision.py::test_host_recovers_unique_runtime_and_respects_pause[True]",
+      "1 failed in 10.18s"
+    ],
+    "archive_path": "test-logs/sidecar-host-red.log.gz",
+    "encoding": "gzip; sha256 binds decompressed original bytes"
+  },
+  {
+    "log": "sidecar-host-green.log",
+    "sha256": "03cd22d52ed1a4c94044e80cf88706374eeb19e0d32c059866b3ea8a01682f71",
+    "results": [
+      "1 passed in 14.22s"
+    ]
+  },
+  {
+    "log": "sidecar-callers.log",
+    "sha256": "4d631586a85d3ae90a7c2d1f2d491fe0c5ceb59887c2e6baec286bfbcbd669f9",
+    "results": [
+      "67 passed in 28.18s"
+    ]
+  },
+  {
+    "log": "sidecar-final-sentinel.log",
+    "sha256": "85f60d926fcf7796d69b1429df67b2a3c722c997cd176cc85718e8890ec12268",
+    "results": [
+      "53 passed in 2.38s"
+    ]
+  },
+  {
+    "log": "closeout-docs.log",
+    "sha256": "82c903b7a82adfb49d061a16d1434de2403964c3b61058e158e56816845da72c",
+    "results": [
+      "8 passed in 1.77s"
+    ]
+  }
+]

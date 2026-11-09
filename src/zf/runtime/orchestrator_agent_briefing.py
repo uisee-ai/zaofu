@@ -132,6 +132,7 @@ def build_orchestrator_agent_operation_briefing(
                     "capability_refs": [],
                     "preferred_role_refs": ["replace-with-configured-role"],
                     "skill_refs": [],
+                    "dispatch_rank": 0,
                 }],
                 "context_routes": [{
                     "work_unit_id": "replace-with-task-or-stage",
@@ -252,7 +253,21 @@ def build_orchestrator_agent_operation_briefing(
         "",
         *source_lines,
         "",
-        "Read every required source through the controlled interface before submitting:",
+        "Consume every required body through the controlled interface before submitting. "
+        "Prefer the deduplicated paged bundle:",
+        "",
+        "```bash",
+        f"zf artifact read --attempt {prepared.attempt_id} --required --state-dir {state_root}",
+        "```",
+        "",
+        "Consume every items[].content in each tool response; follow --cursor <next_cursor> "
+        "until null. Finish consuming one page before requesting the next. "
+        "Use --page-bytes 2048 if a response is truncated and reread the missing page. "
+        "Do not replace bodies with counters, summaries, or background capture_output loops. "
+        "CLI read receipts prove production, not model delivery or understanding. "
+        "Apply the context-hygiene required-artifact method.",
+        "",
+        "Individual source commands remain available for targeted rereads:",
         "",
         "```bash",
         *read_commands,
@@ -279,6 +294,11 @@ def build_orchestrator_agent_operation_briefing(
         "```bash",
         command,
         "```",
+        "A repair_pending/result_not_admitted response is not completion. "
+        "Follow the bounded correction for the same operation: consume missing "
+        "inputs or fix the existing scratch, then resubmit once for that repair round. "
+        "Never manufacture read receipts, change identity, or restart planning. "
+        "An admitted result must not be submitted again.",
         "",
     ])
 

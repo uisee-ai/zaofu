@@ -127,8 +127,10 @@ def reconcile_provider_usage_tail(
     config: ZfConfig | None,
     event_log: Any,
     excluded_roles: set[str] | None = None,
+    included_roles: set[str] | None = None,
+    capture_phase: str = "shutdown_tail",
 ) -> ProviderUsageTailResult:
-    """Capture provider snapshots after non-force transport shutdown.
+    """Capture provider snapshots after transport shutdown or session retirement.
 
     The provider rollout is read only after its process has exited. Existing
     sample receipts are replayed through the idempotent CostTracker so an
@@ -160,6 +162,8 @@ def reconcile_provider_usage_tail(
     failed: list[str] = []
     seen_instances: set[str] = set()
     for role in config.roles:
+        if included_roles is not None and role.instance_id not in included_roles:
+            continue
         if role.instance_id in excluded or role.name in excluded:
             continue
         if role.instance_id in seen_instances:
@@ -182,7 +186,7 @@ def reconcile_provider_usage_tail(
             role=role,
             usage=usage,
             config=config,
-            capture_phase="shutdown_tail",
+            capture_phase=capture_phase,
         )
         sample_id = str(event.payload.get("usage_sample_id") or "")
         existing = existing_by_sample.get(sample_id)

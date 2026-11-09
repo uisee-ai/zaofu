@@ -22,7 +22,15 @@ def required_prd_quality_contract(events: Iterable[ZfEvent], *, channel_id: str,
     return ""
 
 
-_COMPLETE_SOURCE_STATES = {"complete", "full", "verified", "complete_verified"}
+_COMPLETE_SOURCE_STATES = {
+    "complete",
+    "full",
+    "verified",
+    "complete_verified",
+    # The provider prompt uses this explicit state when the immutable
+    # context pack and all of its source bodies were read successfully.
+    "complete_verified_context_pack",
+}
 _INCOMPLETE_ARTIFACT_STATES = {
     "",
     "partial",
@@ -64,7 +72,12 @@ def validate_prd_quality_contract(body: dict[str, Any], *, required_version: str
         artifact_status = str(
             classification.get("artifact_readability_status") or ""
         ).strip().lower()
-        if source_status not in _COMPLETE_SOURCE_STATES:
+        # Context-pack based providers may add a descriptive suffix to the
+        # complete state (for example ``complete_verified_context_pack``).
+        # Treat the explicit complete family as equivalent to the legacy
+        # short values so publication and independent evaluation share one
+        # contract across provider revisions.
+        if source_status not in _COMPLETE_SOURCE_STATES and not source_status.startswith("complete_"):
             return (
                 "source_attestation.all_required_sources_read=true conflicts with "
                 f"classification.source_read_status={source_status or 'missing'}"

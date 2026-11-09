@@ -15,9 +15,86 @@ from zf.runtime.artifact_read_ledger import (
     materialize_attempt_source_ref,
     read_attempt_artifact,
     render_attempt_source_briefing,
+    required_read_satisfied,
     seal_read_ledger,
     validate_required_reads,
 )
+from zf.runtime.sidecar_refs import build_sidecar_ref_descriptor
+
+
+def test_large_ledger_admission_verifies_contents_and_attempt(tmp_path: Path) -> None:
+    ref = "artifacts/attempts/attempt-1/read-ledger-large.jsonl"
+    path = tmp_path / ref
+    path.parent.mkdir(parents=True)
+    row = {"schema_version": "artifact-read.v1", "attempt_id": "attempt-1",
+           "source_id": "plan", "artifact_id": "map", "json_path": "$",
+           "returned_bytes": 1, "padding": "x" * 1024}
+    raw = (json.dumps(row) + "\n").encode() * 4000
+    assert len(raw) > 4 * 1024 * 1024
+    path.write_bytes(raw)
+    descriptor = build_sidecar_ref_descriptor(
+        kind="artifact_read_ledger", ref=ref, sha256=hashlib.sha256(raw).hexdigest(),
+        byte_count=len(raw), content_type="application/x-ndjson",
+        schema_version="artifact-read-ledger.v1", created_by="test", required=True,
+    )
+    policy = {"attempt_id": "attempt-1", "required_reads": [{"source_id": "plan", "artifact_id": "map"}]}
+    assert validate_required_reads(tmp_path, policy=policy, ledger_descriptor=descriptor) == []
+    issues = validate_required_reads(tmp_path, policy={**policy, "attempt_id": "other"}, ledger_descriptor=descriptor)
+    assert issues[0]["code"] == "invalid_ledger"
+    path.write_bytes(raw.replace(b'"padding": "x', b'"padding": "y', 1))
+    issues = validate_required_reads(tmp_path, policy=policy, ledger_descriptor=descriptor)
+    assert issues[0]["code"] == "invalid_ref"
+    assert "hash mismatch" in issues[0]["message"]
+
+
+def test_required_read_accepts_only_contiguous_complete_pages(tmp_path: Path) -> None:
+    source = tmp_path / "artifacts" / "input.json"
+    source.parent.mkdir()
+    source.write_text(json.dumps({"body": "中文 abcdefghijklmnop"}, ensure_ascii=False), encoding="utf-8")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run", task_id="T1", attempt_id="attempt", dispatch_id="dispatch",
+        sources=[{"source_id": "s", "artifact_id": "a", "ref": "artifacts/input.json", "sha256": digest}],
+    )
+    requirement = {"source_id": "s", "artifact_id": "a", "artifact_sha256": digest,
+                   "json_path": "$.body", "min_returned_bytes": 1}
+    pages = []
+    start = 0
+    while True:
+        result = read_attempt_artifact(tmp_path, manifest=manifest, source_id="s", artifact_id="a",
+                                       json_path="$.body", page_start=start, page_size=5)
+        row = result["read"]
+        pages.append(row)
+        if row["page_end"] == row["page_total"]:
+            break
+        start = row["page_end"]
+    assert len(pages) > 2
+    assert not required_read_satisfied(pages[:-1], requirement)
+    assert not required_read_satisfied([pages[0], *pages[2:]], requirement)
+    assert required_read_satisfied(list(reversed(pages)), requirement)
+    corrupted = [dict(row, selected_sha256="0" * 64) if i == 1 else row
+                 for i, row in enumerate(pages)]
+    assert not required_read_satisfied(corrupted, requirement)
+    assert not required_read_satisfied(pages, {**requirement, "artifact_sha256": "0" * 64})
+    assert not required_read_satisfied(pages, {**requirement, "min_returned_bytes": 100000})
+
+
+def test_item_limit_cannot_satisfy_an_untruncated_required_read(tmp_path: Path) -> None:
+    source = tmp_path / "artifacts" / "input.json"
+    source.parent.mkdir()
+    source.write_text(json.dumps({"items": [1, 2, 3]}), encoding="utf-8")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run", task_id="T1", attempt_id="attempt", dispatch_id="dispatch",
+        sources=[{"source_id": "s", "artifact_id": "a", "ref": "artifacts/input.json", "sha256": digest}],
+    )
+    result = read_attempt_artifact(tmp_path, manifest=manifest, source_id="s", artifact_id="a",
+                                   json_path="$.items", max_items=1)
+    assert result["read"]["truncated"] is True
+    assert not required_read_satisfied([result["read"]], {
+        "source_id": "s", "artifact_id": "a", "artifact_sha256": digest,
+        "json_path": "$.items", "allow_truncated": False,
+    })
 
 
 def test_stage_profiles_declare_only_their_canonical_required_inputs() -> None:
@@ -44,16 +121,14 @@ def test_stage_profiles_declare_only_their_canonical_required_inputs() -> None:
         output_profile_id="implementation",
     )
     assert [(row["source_id"], row["json_path"]) for row in impl] == [
-        ("contract", "$.acceptance_criteria"),
-        ("contract", "$.verification_commands"),
+        ("contract", "$"),
     ]
     verify = canonical_required_reads(
         manifest,
         output_profile_id="candidate-verify",
     )
     assert {(row["source_id"], row["json_path"]) for row in verify} == {
-        ("contract", "$.acceptance_criteria"),
-        ("contract", "$.verification_commands"),
+        ("contract", "$"),
         ("target", "$"),
         ("impl-self-check", "$"),
     }
@@ -191,7 +266,8 @@ def test_attempt_source_briefing_renders_literal_runtime_cli(monkeypatch) -> Non
         "attempt_id": "attempt-1",
     })
 
-    assert f"`{command} artifact list --attempt <attempt-id>`" in briefing
+    assert f"`{command} artifact index --attempt attempt-1`" in briefing
+    assert "not read evidence" in briefing
     assert "Run one literal command per tool call" in briefing
     assert "loops, pipes, redirections" in briefing
 
@@ -212,8 +288,8 @@ def test_attempt_source_briefing_shell_quotes_json_path(monkeypatch) -> None:
 
     assert "--json-path '$'`" in briefing
     assert "--json-path $`" not in briefing
-    assert "--required --deduplicate-content`" in briefing
-    assert "content_ref" in briefing and "fresh session" in briefing
+    assert "do not accumulate background page reads" in briefing
+    assert "reread that exact page before continuing" in briefing
 
 
 def test_required_read_records_and_seals_attempt_ledger(tmp_path: Path) -> None:

@@ -257,6 +257,17 @@ def compile_run_plan_admission(
     decision_identity = (
         decision_identity if isinstance(decision_identity, Mapping) else {}
     )
+    effective_config_ref = request.get("effective_config_ref")
+    effective_config_ref = (
+        dict(effective_config_ref)
+        if isinstance(effective_config_ref, Mapping)
+        else {}
+    )
+    effective_config_digest = str(
+        request.get("effective_config_digest")
+        or effective_config_ref.get("sha256")
+        or ""
+    )
     execution_plan = {
         "schema_version": EXECUTION_PLAN_SCHEMA,
         "identity": {
@@ -270,7 +281,12 @@ def compile_run_plan_admission(
             "plan_artifact_package_digest": str(
                 decision_identity.get("plan_artifact_package_digest") or ""
             ),
+            "effective_config_ref": str(
+                effective_config_ref.get("ref") or ""
+            ),
+            "effective_config_digest": effective_config_digest,
         },
+        "effective_config_ref": effective_config_ref,
         "run_orchestration_plan_ref": plan_ref,
         "work_units": list((run_plan.get("graph") or {}).get("work_units") or []),
         "edges": list((run_plan.get("graph") or {}).get("edges") or []),
@@ -302,6 +318,8 @@ def compile_run_plan_admission(
         "plan_artifact_package_digest": str(
             decision_identity.get("plan_artifact_package_digest") or ""
         ),
+        "effective_config_ref": effective_config_ref,
+        "effective_config_digest": effective_config_digest,
         "run_orchestration_plan_ref": plan_ref,
         "execution_plan_ref": execution_ref,
     }

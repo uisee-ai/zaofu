@@ -12,7 +12,7 @@ import yaml
 from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.core.task.store import TaskStore
-from zf.runtime.sidecar_refs import write_sidecar_json
+from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
 from zf.runtime.recovery_checkpoint import maintenance_checkpoint_facts
 
@@ -44,7 +44,8 @@ def build_task_recovery_context(
     """Build one bounded, redacted recovery view without rereading the log."""
 
     state_dir = Path(state_dir)
-    task = TaskStore(state_dir / "kanban.json").get(task_id) if task_id else None
+    store = TaskStore(state_dir / "kanban.json")
+    task = store.get(task_id) if task_id else None
     task_events = [event for event in events if _event_task_id(event) == task_id]
     from zf.runtime.task_run_binding import canonical_task_run
     from zf.runtime.run_scope import events_for_run
@@ -95,11 +96,34 @@ def build_task_recovery_context(
         if isinstance(event.payload, dict)
     )
     attempt = recovery_attempt_facts(state_dir, task, run_id=run_id)
+    from zf.runtime.task_contract_snapshot import effective_contract_revision
+
+    dependencies = []
+    for dependency_id in task.blocked_by if task is not None else []:
+        dependency = store.get(dependency_id)
+        dependencies.append({
+            "task_id": dependency_id,
+            "status": dependency.status if dependency is not None else "unknown",
+            "workflow_run_id": canonical_task_run(dependency, events)[0] if dependency is not None else "",
+            "source": "TaskStore.get (including terminal archive)",
+        })
+    from zf.runtime.artifact_input_recovery import current_task_input_recovery
+
     return redact_obj({
         "schema_version": RECOVERY_CONTEXT_SCHEMA_VERSION,
         "is_derived_projection": True,
         "request_id": request_id,
         "attempt_identity": attempt,
+        "contract_identity": {
+            "effective_revision": effective_contract_revision(task) if task is not None else "",
+            "projection_revision": task.contract.contract_revision if task is not None else "",
+        },
+        "placement_identity": {
+            "planned_owner": task.contract.owner_instance if task is not None else "",
+            "assigned_to": task.assigned_to if task is not None else "",
+        },
+        "dependency_states": dependencies,
+        "input_recovery": current_task_input_recovery(state_dir, events, task),
         "maintenance_checkpoint": maintenance_checkpoint_facts(
             state_dir, task_events, task_id=task_id, attempt_facts=attempt,
         ),
@@ -160,23 +184,23 @@ def write_task_recovery_context(
         failure_event_ids=failure_event_ids,
         request_id=request_id,
     )
-    return write_sidecar_json(
+    descriptor = write_immutable_json_sidecar(
         Path(state_dir),
-        f"diagnostics/recovery/{_safe_slug(request_id)}/context.json",
         payload,
+        root=f"recovery-context/{_safe_slug(request_id)}",
         kind="recovery_context",
         schema_version=RECOVERY_CONTEXT_SCHEMA_VERSION,
         created_by="run-manager",
         source_event_id=source_event_id,
-        access_scope={
-            "visibility": "project",
-            "actor": "run-manager",
-            "purpose": "semantic-recovery",
-        },
-        retention={"class": "audit_required"},
         required=True,
-        preview=f"recovery context for {task_id}",
     )
+    descriptor["access_scope"] = {
+        "visibility": "project",
+        "actor": "run-manager",
+        "purpose": "semantic-recovery",
+    }
+    descriptor["preview"] = f"recovery context for {task_id}"
+    return descriptor
 
 
 def _event_task_id(event: ZfEvent) -> str:

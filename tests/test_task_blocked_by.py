@@ -66,7 +66,7 @@ class TestReadyResolution:
         ids = {t.id for t in ready}
         assert "T3" in ids
 
-    def test_cancelled_also_releases(self, tmp_path: Path):
+    def test_cancelled_does_not_supply_required_artifact(self, tmp_path: Path):
         store = TaskStore(tmp_path / "kanban.json")
         store._save_raw([])
         store.add(Task(title="A", id="T1"))
@@ -74,4 +74,4 @@ class TestReadyResolution:
         store.update("T1", status="cancelled")
         ready = store.ready()
         ids = {t.id for t in ready}
-        assert "T2" in ids
+        assert "T2" not in ids

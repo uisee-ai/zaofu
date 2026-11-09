@@ -1,120 +1,81 @@
-"""Explicit, one-generation Impl recovery after reviewed integration failure."""
+"""Evidence checks and briefing feedback for reviewed integration-to-Impl recovery."""
 
+import json
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping
 
 from zf.core.events.model import ZfEvent
-from zf.core.state.locks import locked_path
-from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
-from zf.runtime.workflow_operation import reduce_workflow_operations
-
-SOURCE = "task_pipeline_integration_rework"
-_ACTIVE = {"requested", "reserved", "running", "suspended"}
-
-
-def _target(operation_id: str, operations: Mapping[str, Mapping[str, Any]],
-        contexts: Mapping[str, Mapping[str, Any]], events: Sequence[ZfEvent]
-        ) -> tuple[Mapping[str, Any], ZfEvent]:
-    op = operations.get(operation_id, {})
-    task_id = str(op.get("task_id") or "")
-    context = contexts.get(task_id, {})
-    if (op.get("task_pipeline_stage") != "integration" or op.get("status") != "blocked"
-            or not context or any(op.get(k) != context.get(k)
-                for k in ("workflow_run_id", "task_map_generation"))):
-        raise ValueError("rework requires the current blocked integration")
-    generation = int(op.get("operation_generation") or 0)
-    rows = [r for r in operations.values() if r.get("task_id") == task_id]
-    if any(r.get("status") in _ACTIVE for r in rows):
-        raise ValueError("an active operation already owns the task")
-    rows = [r for r in rows if all(r.get(k) == op.get(k)
-            for k in ("workflow_run_id", "task_map_generation"))]
-    if any(int(r.get("operation_generation") or 0) > generation or (
-            r.get("task_pipeline_stage") == "integration" and r.get("operation_id") != operation_id
-            and int(r.get("operation_generation") or 0) >= generation) for r in rows):
-        raise ValueError("a newer operation supersedes this integration")
-    source = next((e for e in reversed(events) if e.type == "integration.queue.needs_review"
-        and e.origin == "kernel" and e.task_id == task_id
-        and e.payload.get("operation_id") == operation_id
-        and all(e.payload.get(k) == op.get(k) for k in ("workflow_run_id", "task_map_generation"))), None)
-    if source is None:
-        raise ValueError("blocked integration lacks canonical needs_review evidence")
-    targets = []
-    for stage, event_type, commit_key in (("impl", "dev.build.done", "source_commit"),
-            ("verify", "task.pipeline.verify.completed", "target_commit")):
-        matches = [r for r in rows if r.get("task_pipeline_stage") == stage
-            and int(r.get("operation_generation") or 0) == generation]
-        if len(matches) != 1:
-            raise ValueError("integration rework requires same-generation Impl and Verify")
-        row = matches[0]
-        source_id = (row.get("admitted_control_result_ref") or {}).get("source_event_id")
-        result = next((e for e in events if e.id == source_id), None)
-        admitted = next((e for e in events if e.id == row.get("call_result_admitted_event_id")), None)
-        if (row.get("status") != "settled" or row.get("semantic_verdict") != "passed"
-                or admitted is None or admitted.type != "workflow.call.result.admitted"
-                or admitted.task_id != task_id or admitted.payload.get("operation_id") != row.get("operation_id")
-                or (admitted.payload.get("control_result_ref") or {}).get("source_event_id") != source_id
-                or result is None or result.type != event_type or result.task_id != task_id
-                or any(result.payload.get(k) != row.get(k) for k in
-                    ("operation_id", "workflow_run_id", "task_map_generation"))
-                or not result.payload.get(commit_key)):
-            raise ValueError("integration rework requires admitted passing Impl and Verify sources")
-        targets.append(result.payload[commit_key])
-    if targets[0] != targets[1]:
-        raise ValueError("Verify target does not match the admitted Impl commit")
-    return op, source
+from zf.core.task.schema import Task
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.task_contract_snapshot import current_task_contract_identity
+from zf.runtime.task_pipeline_entry import task_pipeline_entry_mode
+from zf.runtime.task_pipeline_integration_retry import IMPL_REWORK_REASON_PREFIX
 
 
-def request_integration_impl_rework(*, state_dir: Path, event_log: Any, event_writer: Any,
-        operation_id: str, reason: str, approval_ref: str, apply: bool = False) -> dict[str, Any]:
-    if not reason.strip() or not approval_ref.strip():
-        raise ValueError("Impl rework requires a reason and explicit approval_ref")
-    from zf.runtime.task_pipeline_integration_retry import request_integration_retry
+def validate_impl_rework(
+    state_dir: Path, *, task: Task, operation: Mapping[str, Any],
+    verify: Mapping[str, Any], operations: Iterable[Mapping[str, Any]],
+    events: Iterable[ZfEvent],
+) -> str:
+    if task_pipeline_entry_mode(task) != "standard":
+        raise ValueError("integration rework requires a standard writer task")
+    impl = max(
+        (row for row in operations if row.get("task_pipeline_stage") == "impl"),
+        key=lambda row: int(row.get("operation_generation") or 1), default={},
+    )
+    if (impl.get("status") != "settled" or impl.get("semantic_verdict") != "passed"
+            or not impl.get("call_result_admitted_event_id")):
+        raise ValueError("integration rework requires an admitted passing Impl")
+    descriptor = verify.get("admitted_control_result_ref") or {}
+    body = hydrate_sidecar_ref(state_dir, descriptor).payload
+    if (not isinstance(body, dict) or body.get("schema_version") != "verification-result.v1"
+            or body.get("verdict") != "passed"
+            or body.get("execution_status") != "completed"
+            or any(not body.get(k) or body[k] != verify.get(k) for k in (
+                "operation_id", "task_id", "workflow_run_id", "task_map_generation",
+                "operation_generation", "request_hash",
+            ))
+            or not body.get("attempt_id")
+            or body["attempt_id"] != verify.get("active_attempt_id")):
+        raise ValueError("passing Verify evidence is missing or mismatched")
+    source = next((event for event in events if event.id == descriptor.get("source_event_id")), None)
+    if (source is None or source.type != "task.pipeline.verify.completed"
+            or source.task_id != task.id
+            or source.payload.get("operation_id") != verify.get("operation_id")):
+        raise ValueError("passing Verify lacks its canonical completion event")
+    identity = current_task_contract_identity(task)
+    if any(not body.get(k) or body[k] != identity.get(k) for k in (
+        "task_id", "workflow_run_id", "contract_revision", "task_map_generation",
+    )):
+        raise ValueError("Verify result no longer matches the current Task contract")
+    target = str(body.get("target_commit") or "")
+    index = json.loads((state_dir / "refs" / "task-index.json").read_text())
+    if not target or index.get(task.id, {}).get("source_commit") != target:
+        raise ValueError("Verify target is no longer the accepted TaskRef")
+    if not (int(impl.get("operation_generation") or 1)
+            <= int(verify.get("operation_generation") or 1)
+            <= int(operation.get("operation_generation") or 1)):
+        raise ValueError("integration rework stage generations are inconsistent")
+    return target
 
-    with locked_path(state_dir / "locks" / "task-pipeline-integration-rework.lock"):
-        # Reuse the existing terminal-run/task/attempt/current-integration safety gate.
-        request_integration_retry(state_dir=state_dir, event_log=event_log, event_writer=event_writer,
-            operation_id=operation_id, reason=reason, apply=False)
-        events = event_log.read_all()
-        op, source = _target(operation_id, reduce_workflow_operations(events),
-            task_pipeline_generation_contexts(events), events)
-        generation = int(op["operation_generation"])
-        prior = next((e for e in events if e.type == "task.rework.requested" and e.origin == "kernel"
-            and e.payload.get("source") == SOURCE and e.payload.get("operation_id") == operation_id
-            and e.payload.get("source_event_id") == source.id), None)
-        if prior:
-            return {"status": "already_requested", "event_id": prior.id, "operation_id": operation_id}
-        payload = {"source": SOURCE, "operation_id": operation_id, "task_id": op["task_id"],
-            "workflow_run_id": op["workflow_run_id"], "task_map_generation": op["task_map_generation"],
-            "operation_generation": generation, "source_event_id": source.id,
-            "reason": reason.strip(), "approval_ref": approval_ref.strip(),
-            "authorized_next_operation_generation": generation + 1}
-        result = {"status": "preview", **payload, "next_operation_generation": generation + 1}
-        if apply:
-            event = event_writer.append(ZfEvent(type="task.rework.requested", actor="zf-cli",
-                origin="kernel", task_id=op["task_id"], causation_id=source.id,
-                correlation_id=op["workflow_run_id"], payload=payload))
-            result.update(status="requested", event_id=event.id)
-        return result
 
-
-def integration_impl_rework_requests(*, events: Sequence[ZfEvent],
-        operations: Mapping[str, Mapping[str, Any]], contexts: Mapping[str, Mapping[str, Any]]) -> dict:
-    requests = {}
-    for event in events:
-        p = event.payload
-        if event.type != "task.rework.requested" or event.origin != "kernel" or p.get("source") != SOURCE:
-            continue
-        try:
-            op, source = _target(str(p.get("operation_id") or ""), operations, contexts, events)
-        except (ValueError, TypeError):
-            continue
-        generation = int(op["operation_generation"])
-        if (event.task_id != op["task_id"] or p.get("source_event_id") != source.id
-                or any(p.get(k) != op.get(k) for k in
-                    ("workflow_run_id", "task_map_generation", "operation_generation"))
-                or p.get("authorized_next_operation_generation") != generation + 1
-                or not str(p.get("approval_ref") or "").strip()):
-            continue
-        requests[op["task_id"]] = {**p, "fault": SOURCE, "event_id": event.id,
-            "expected_action": "repair_reviewed_integration_failure_then_repeat_independent_verify"}
-    return requests
+def integration_rework_feedback(
+    operations: Iterable[Mapping[str, Any]], *, task_id: str,
+    workflow_run_id: str, task_map_generation: str, operation_generation: int,
+) -> list[dict[str, Any]]:
+    for row in operations:
+        reason = str(row.get("reason") or "")
+        if (row.get("task_id") == task_id
+                and row.get("workflow_run_id") == workflow_run_id
+                and row.get("task_map_generation") == task_map_generation
+                and row.get("operation_generation") == operation_generation
+                and row.get("task_pipeline_stage") == "integration"
+                and row.get("status") == "superseded"
+                and reason.startswith(IMPL_REWORK_REASON_PREFIX)):
+            return [{
+                "source": "operator_integration_impl_rework",
+                "reason": reason.removeprefix(IMPL_REWORK_REASON_PREFIX),
+                "source_operation_id": row["operation_id"],
+                "expected_action": "repair_in_scope_and_resubmit_for_independent_verification",
+            }]
+    return []

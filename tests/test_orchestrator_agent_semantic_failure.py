@@ -570,14 +570,18 @@ def test_return_to_plan_emits_one_marker_and_existing_resynth_trigger(
     assert not any(event.type == "task_map.ready" for event in events)
 
 
-def test_graph_delta_rejects_ref_outside_operation_manifest(tmp_path: Path) -> None:
+def test_graph_delta_rejects_ref_outside_operation_manifest(tmp_path: Path, monkeypatch) -> None:
     runtime = _runtime(tmp_path)
     prepared = request_semantic_failure_checkpoint(runtime, _semantic_request(runtime))
 
-    outcome = apply_orchestrator_agent_decision(
-        runtime,
-        _submit_rework(runtime, prepared, outside_ref=True),
-    )
+    # Historical results admitted before preflight still face the apply-time gate.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "zf.runtime.orchestrator_directive_refs.validate_orchestrator_submission",
+            lambda **kwargs: {"status": "passed"},
+        )
+        submitted = _submit_rework(runtime, prepared, outside_ref=True)
+    outcome = apply_orchestrator_agent_decision(runtime, submitted)
 
     assert outcome["status"] == "rejected"
     assert "directive_ref_outside_operation" in outcome["reason"]

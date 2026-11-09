@@ -302,6 +302,9 @@ class CostTracker:
                 and str(entry.get("usage_series_id") or "") == series_id
                 and isinstance(entry.get("cumulative_usage"), dict)
             ):
+                observed, prior = _datetime_value(occurred_at), _datetime_value(entry.get("occurred_at"))
+                if observed is not None and prior is not None and observed < prior:
+                    return 0.0  # An older observation is not a provider counter reset.
                 previous = dict(entry["cumulative_usage"])
                 break
 

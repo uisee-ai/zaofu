@@ -50,6 +50,19 @@ def test_redact_obj_recurses_nested_structures():
     assert "[REDACTED_SECRET]" in json.dumps(redacted)
 
 
+def test_numeric_budgets_and_test_names_remain_readable_without_exposing_secrets():
+    import base64
+
+    header = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').decode().rstrip("=")
+    token = header + ".c3ludGhldGljLXBheWxvYWQ.c3ludGhldGljLXNpZ25hdHVyZQ"
+    safe = "token_budget: 1500000\ncontext_window_tokens: 200000\nmax_tokens: 1024\n"
+    test_name = "test_hello.HelloCommandTests.test_default_output"
+    assert redact_text(safe + test_name) == safe + test_name
+    assert redact_text(token) == "[REDACTED_JWT]"
+    assert "123456" not in redact_text("ACCESS_TOKEN=123456 PASSWORD=123456")
+    assert "secret-value" not in redact_text("token_budget: secret-value")
+
+
 def test_redact_obj_preserves_non_secret_token_capability_flags():
     redacted = redact_obj({
         "requires_token": True,
@@ -93,3 +106,22 @@ def test_diagnostics_collector_writes_redacted_jsonl(tmp_path: Path):
     assert data["trace_id"] == "trace/one"
     assert "secret-value" not in json.dumps(data)
     assert "abc123" not in json.dumps(data)
+
+
+def test_inline_numeric_budgets_preserve_chinese_and_markdown_punctuation():
+    for text in (
+        "使用 token_budget=0、timeout_seconds=0；保留空闲检测。",
+        "`token_budget=0`，并保留完整验证。", "(max_tokens=1024). Next step.",
+        "context_window_tokens: 200000。不要丢失后续正文。",
+    ):
+        assert redact_text(text) == text
+    for value in ("123456", "0abc", "0-secret", "secret-value"):
+        assert value not in redact_text(f"ACCESS_TOKEN={value}。后续正文")
+    assert "0-secret" not in redact_text("token_budget=0-secret")
+
+
+def test_flow_context_window_count_survives_yaml_preview_redaction():
+    safe = "roleDefaults:\n  contextWindowTokens: 200000\n"
+    assert redact_text(safe) == safe
+    assert "200000-secret" not in redact_text("contextWindowTokens: 200000-secret")
+    assert "123456" not in redact_text("ACCESS_TOKEN: 123456")

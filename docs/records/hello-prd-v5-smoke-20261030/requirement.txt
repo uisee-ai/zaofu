@@ -1,0 +1,3 @@
+请创建并执行一个真实交付 Task：Hello World PRD smoke。目标是验证 ZaoFu 完整 PRD 链路，不是让 Kanban chat 直接代写程序。
+需求：创建 Python 标准库命令行程序 hello.py；python hello.py 精确输出 Hello, world!；python hello.py --name ZaoFu 精确输出 Hello, ZaoFu!；两种调用退出码都为0；用 unittest 提供自动化测试。仅一个实现任务，不增加额外功能。
+请通过受控 create-task/workflow preparation 提案建单，固定使用目录中的 ZaoFu PRD Workflow v5 Production (Codex)，即 zaofu-prd-v5-production-codex / zf-prd-v5.yaml。保留 Scan、Plan、Plan Critic、OA pre_impl、Impl、独立 Task Verify、Candidate Verify、Discovery、Judge；不切换 light/direct。采用该配置默认 lane 容量、模型和生命周期，不要求并行任务。plan_approval=false，配置先完整预览，然后我在页面确认启动。PRD 若需生成请保存在本项目内并确保引用存在，handoff/contract 路径使用项目相对路径。请提出最小的建单与配置提案。

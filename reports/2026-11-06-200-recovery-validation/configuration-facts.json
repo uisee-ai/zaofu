@@ -1,0 +1,179 @@
+{
+  "version": "5.0.1",
+  "template": "zf-prd-v5.yaml",
+  "actual_config_sha256": "ec949c760579fe4caeb1bb73509c2d5e2bcd5ee606fe38f8174e3aafbe8c349e",
+  "normal_frontier_owner": "wrc",
+  "task_pipeline": {
+    "schema_version": "task-pipeline-controller-profile.v1",
+    "profile_id": "prd-flow-v4-task-pipeline",
+    "flow_kind": "prd",
+    "mode": "blocking",
+    "max_active_task_pipelines": 16,
+    "max_rework_attempts": 2,
+    "pools": {
+      "impl": {
+        "capacity": 8,
+        "role_instances": [
+          "dev-lane-0",
+          "dev-lane-1",
+          "dev-lane-2",
+          "dev-lane-3",
+          "dev-lane-4",
+          "dev-lane-5",
+          "dev-lane-6",
+          "dev-lane-7"
+        ],
+        "skills": [],
+        "capabilities": [],
+        "worker_profiles": []
+      },
+      "verify": {
+        "capacity": 8,
+        "role_instances": [
+          "verify-lane-0",
+          "verify-lane-1",
+          "verify-lane-2",
+          "verify-lane-3",
+          "verify-lane-4",
+          "verify-lane-5",
+          "verify-lane-6",
+          "verify-lane-7"
+        ],
+        "skills": [],
+        "capabilities": [],
+        "worker_profiles": []
+      }
+    },
+    "integration_admission": {
+      "default": "verify_admitted",
+      "risk_review": {
+        "enabled": false,
+        "for_risks": [
+          "high",
+          "critical"
+        ],
+        "timeout_seconds": 180,
+        "max_turns": 1,
+        "budget_usd": 1.0,
+        "fallback": "fail_closed"
+      }
+    },
+    "backpressure": {
+      "max_unverified_tasks": 8,
+      "max_integration_queue": 2
+    },
+    "worker_lifecycle": {
+      "mode": "on_demand",
+      "idle_seconds": 600
+    },
+    "affinity": {
+      "impl_rework": "prefer_previous_session",
+      "verify_independence": "different_role",
+      "session_binding": "task_stage",
+      "cross_task_context": "fresh"
+    },
+    "candidate": {
+      "integration": "incremental_serial_cas",
+      "integration_capacity": 1,
+      "rolling_smoke": "required",
+      "incremental_event": "integration.queue.integrated",
+      "freeze_event": "candidate.ready",
+      "delivery_event": "run.delivery.completed",
+      "partial_candidate_auto_ship": "forbidden",
+      "final_verify_target": "frozen_exact_commit"
+    },
+    "profile_digest": "3d01871645ce3b4686011b0d9404e4663529d5ab4a322430afe3af7afdffe249"
+  },
+  "source_profile_paths": [
+    "/home/min/workspace/zaofu-worktrees/design199-20261106/examples/prod/controller/common/profiles.yaml"
+  ],
+  "source_skills": [
+    {
+      "name": "zaofu-skills",
+      "path": "/home/min/workspace/zaofu-worktrees/design199-20261106/skills",
+      "mode": "readonly"
+    }
+  ],
+  "runtime_git": {
+    "candidate_base_ref": "dev",
+    "ship_target_branch": "dev",
+    "auto_ship_on_judge_passed": true
+  },
+  "configured_stage_count": 8,
+  "record_note": "v5 adapted only for isolated project/session/source paths, Python static checks, and approved local delivery; not a second control config.",
+  "workflow_policy": {
+    "mode": "exception_advisor",
+    "checkpoints": [],
+    "checkpoint_policies": {},
+    "pilot_id": "",
+    "shadow_sample_percent": 100,
+    "autonomous_actions": null,
+    "review_blocked_tasks": false,
+    "flow_policies": {
+      "prd": {
+        "mode": "semantic_control",
+        "checkpoints": [
+          "pre_impl",
+          "semantic_failure"
+        ],
+        "checkpoint_policies": {
+          "pre_impl": "shadow",
+          "semantic_failure": "blocking"
+        },
+        "pilot_id": "oa-wrc-prd-v5",
+        "shadow_sample_percent": 100,
+        "autonomous_actions": [
+          "delegate",
+          "continue",
+          "rework"
+        ],
+        "review_blocked_tasks": true
+      },
+      "research": {
+        "mode": "exception_advisor",
+        "checkpoints": [],
+        "checkpoint_policies": {},
+        "pilot_id": "",
+        "shadow_sample_percent": 100,
+        "autonomous_actions": null,
+        "review_blocked_tasks": false
+      },
+      "workflow": {
+        "mode": "exception_advisor",
+        "checkpoints": [],
+        "checkpoint_policies": {},
+        "pilot_id": "",
+        "shadow_sample_percent": 100,
+        "autonomous_actions": null,
+        "review_blocked_tasks": false
+      }
+    },
+    "oa_profile": "orchestrator",
+    "normal_frontier_owner": "wrc",
+    "max_plan_revisions": 2,
+    "no_progress_limit": 2
+  },
+  "run_limits": {
+    "timeout_seconds": 0.0,
+    "token_budget": 0,
+    "cost_budget_usd": 40.0
+  },
+  "execution_profiles": {
+    "bounded-direct-v1": {
+      "schema_version": "execution-profile.v1",
+      "strategy": "direct",
+      "continuation": "turn",
+      "collaboration": "single",
+      "access": "read_only",
+      "capability_policy": "require",
+      "limits": {
+        "max_children": 0,
+        "max_depth": 0,
+        "timeout_seconds": 0.0,
+        "max_usage_samples": 0,
+        "token_budget": 0,
+        "cost_budget_usd": 8.0
+      }
+    }
+  }
+}

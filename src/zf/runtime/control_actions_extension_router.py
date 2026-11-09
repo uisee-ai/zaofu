@@ -8,6 +8,7 @@ from zf.core.events import ZfEvent
 
 
 _EXTENSION_HANDLERS = {
+    "project-git-baseline": "_project_git_baseline",
     "channel-profile-register": "_channel_profile_register",
     "candidate-rework-apply": "_candidate_rework_apply",
     "evolution-asset-outcome": "_evolution_asset_outcome",

@@ -18,9 +18,9 @@ export type DiagnosticGroup = {
 export function workflowViewForRequest(request: WorkflowRequest): WorkflowView {
   const status = textValue(request.status).toLowerCase();
   const operationStatus = textValue(asRecord(request.operation).queue_status).toLowerCase();
-  if (["proposed", "draft", "ready", "clarifying"].includes(status)) return "decision";
+  if (["proposed", "draft", "ready", "clarifying", "preparation_failed", "preparation_blocked"].includes(status)) return "decision";
   if (
-    ["queued", "running", "submitted", "approved", "paused", "in_progress"].includes(status)
+    ["queued", "running", "submitted", "approved", "paused", "in_progress", "synthesis_queued", "synthesis_running"].includes(status)
     || ["queued", "running"].includes(operationStatus)
   ) {
     return "active";
@@ -39,6 +39,9 @@ export function readinessPresentation({
   runStatus: string;
   terminal: string;
 }): { title: string; tone: "error" | "info" | "ok" } {
+  if (requestStatus === "preparation_failed") return { title: "Workflow preparation failed", tone: "error" };
+  if (requestStatus === "preparation_blocked") return { title: "Project setup required before preparation", tone: "error" };
+  if (["synthesis_queued", "synthesis_running"].includes(requestStatus)) return { title: "Preparing workflow configuration", tone: "info" };
   if (blockerCount > 0) return { title: "Needs changes before approval", tone: "error" };
   if (requestStatus === "cancelled" || runStatus === "cancelled") {
     return { title: "Workflow cancelled", tone: "info" };
@@ -64,6 +67,13 @@ export function readinessPresentation({
     return { title: "Ready to prepare proposal", tone: "info" };
   }
   return { title: "Ready to run", tone: "ok" };
+}
+
+export function preparationFeedback(status: string, ok: boolean): string {
+  if (!ok) return "Workflow preparation needs attention.";
+  if (["synthesis_queued", "synthesis_running"].includes(status)) return "Workflow preparation is in progress; YAML is not ready yet.";
+  if (["proposed", "proposal_ready"].includes(status)) return "Proposal prepared.";
+  return "Request updated; review its preparation status.";
 }
 
 export function numberValue(value: unknown, fallback = 0): number {

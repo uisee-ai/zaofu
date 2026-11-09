@@ -314,6 +314,27 @@ def test_completion_nudge_preserves_incomplete_work_instead_of_forcing_failure(
     assert sent and sent[-1][0] == "dev-core"
 
 
+def test_completion_nudge_identifies_live_pipeline_input_attempt(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from zf.runtime.orchestrator import Orchestrator
+
+    monkeypatch.setattr(
+        "zf.runtime.task_pipeline_attempt_recovery.live_task_pipeline_attempt_for_role",
+        lambda runtime, role: {"task_id": "T1", "dispatch_id": "d1", "attempt_id": "a1", "status": "sent"},
+    )
+    stub = SimpleNamespace(
+        state_dir=tmp_path, _dispatch_context=lambda **kwargs: {},
+        _send_transport_task=lambda *args: None,
+    )
+    path = Orchestrator._inject_terminal_completion_nudge_prompt(
+        stub, role=SimpleNamespace(instance_id="dev-1"), task=SimpleNamespace(id="T1"),
+        dispatch_id="d1", expected_event="dev.build.done",
+    )
+    text = path.read_text(encoding="utf-8")
+    assert "missing-reads" in text and "a1" in text
+    assert "do not submit a result" in text.lower()
+
+
 def test_worktree_resolver_handles_zf_prefixed_ref(tmp_path):
     # P-NEXT-1b: a synth may write the task_map under its worktree's .zf/ and
     # emit a `.zf/...`-prefixed ref; the fallback must still find it.

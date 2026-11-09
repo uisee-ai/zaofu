@@ -14,6 +14,7 @@ from zf.runtime.orchestrator_agent_context import (
     OrchestratorAgentContext,
     build_orchestrator_agent_context,
 )
+from zf.runtime.orchestrator_agent_role import orchestrator_instance_id
 from zf.runtime.result_submit import bind_operation_submit_capability
 from zf.runtime.workflow_operation import (
     WorkflowOperationService,
@@ -58,6 +59,7 @@ def request_orchestrator_agent_checkpoint(
     source_event: ZfEvent,
     payload: Mapping[str, Any],
 ) -> PreparedOrchestratorAgentOperation:
+    role_instance = orchestrator_instance_id(runtime)
     checkpoint_source_event_id = canonical_checkpoint_source_event_id(
         source_event,
         payload,
@@ -110,7 +112,7 @@ def request_orchestrator_agent_checkpoint(
                 attempt_id=attempt_id,
                 checkpoint=checkpoint,
                 checkpoint_policy=checkpoint_policy,
-                role_instance="orchestrator",
+                role_instance=role_instance,
                 result_scratch_ref="",
                 context=None,
                 should_dispatch=False,
@@ -197,7 +199,7 @@ def request_orchestrator_agent_checkpoint(
         "checkpoint": checkpoint,
         "checkpoint_policy": checkpoint_policy,
         "attempt_domain": "run",
-        "role_instance": "orchestrator",
+        "role_instance": role_instance,
         "active_attempt_id": attempt_id,
         "lease_id": attempt_id,
         "checkpoint_input_ref": context.input_ref,
@@ -246,7 +248,7 @@ def request_orchestrator_agent_checkpoint(
         operation_type="orchestrator_agent_semantic",
         request=request,
         parent_stage_id=f"oa-{checkpoint}",
-        role_instance="orchestrator",
+        role_instance=role_instance,
         active_attempt_id=attempt_id,
         lease_id=attempt_id,
         causation_id=source_event.id,
@@ -268,13 +270,13 @@ def request_orchestrator_agent_checkpoint(
             runtime.state_dir,
             operation_id=operation_id,
             attempt_id=attempt_id,
-            role_instance="orchestrator",
+            role_instance=role_instance,
             manifest=context.source_manifest,
         )
         bind_operation_submit_capability(
             runtime.state_dir,
             operation_id=operation_id,
-            role_instance="orchestrator",
+            role_instance=role_instance,
             attempt_id=attempt_id,
             lease_id=attempt_id,
         )
@@ -309,7 +311,7 @@ def request_orchestrator_agent_checkpoint(
         attempt_id=attempt_id,
         checkpoint=checkpoint,
         checkpoint_policy=checkpoint_policy,
-        role_instance="orchestrator",
+        role_instance=role_instance,
         result_scratch_ref=result_scratch_ref,
         context=context,
         should_dispatch=ensured.status == "requested",

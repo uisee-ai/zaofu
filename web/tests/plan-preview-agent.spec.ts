@@ -27,6 +27,7 @@ for (const size of [{ width: 1440, height: 1000 }, { width: 1440, height: 1400 }
     const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
     await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-complete`);
     const panel = page.getByRole("dialog", { name: "Plan preview", exact: true });
+    await panel.getByRole("button", { name: "工程上下文", exact: true }).click();
     await panel.getByRole("button", { name: "完整原文", exact: true }).click();
     const reader = panel.locator(".plan-preview-reader");
     const original = (await reader.boundingBox())!;

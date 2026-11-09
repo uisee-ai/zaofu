@@ -124,11 +124,10 @@ class TestSignedRoundTrip:
         tampered = original.replace('"x": 1', '"x": 999')
         log_path.write_text(tampered)
 
-        # Reader with the same signer rejects (returns None for that line)
+        # Reader rejects the occurrence and exposes ledger integrity loss.
         log2 = EventLog(log_path, signer=signer)
         events = list(log2.read_all())
-        # The malformed/rejected line is silently dropped
-        assert events == []
+        assert [e.type for e in events] == ["event.malformed"]
 
 
 class TestUnsignedLineRejection:

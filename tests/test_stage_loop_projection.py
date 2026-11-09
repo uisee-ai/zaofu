@@ -66,6 +66,57 @@ def test_orphan_completion_preserved(tmp_path: Path) -> None:
     assert task["fails"] == 1
 
 
+def test_timeline_separates_identity_bound_attempts_from_unpaired_events(tmp_path: Path) -> None:
+    log = _log(tmp_path)
+    log.append(ZfEvent(type="task.attempt.started", task_id="T-1", payload={"attempt_id": "a1", "role": "dev"}))
+    log.append(ZfEvent(type="web.action.completed", task_id="T-1"))
+    log.append(ZfEvent(type="worker.context.compact.failed", task_id="T-1"))
+    log.append(ZfEvent(type="task.attempt.failed", task_id="T-1", payload={"attempt_id": "a1", "reason": "test failed"}))
+    log.append(ZfEvent(type="task.attempt.failed", task_id="T-1", payload={"attempt_id": "missing"}))
+
+    timeline = build_loop_view(_sd(tmp_path))["timeline"]
+    assert timeline["attempt_count"] == 1
+    assert timeline["failed_attempt_count"] == 1
+    assert timeline["signal_count"] == 3
+    task = timeline["tasks"][0]
+    assert task["attempts"][0]["attempt_id"] == "a1"
+    assert task["attempts"][0]["terminal"]["reason"] == "test failed"
+    assert {event["type"] for event in task["signals"]} == {
+        "web.action.completed", "worker.context.compact.failed", "task.attempt.failed",
+    }
+
+
+def test_timeline_uses_only_kernel_admitted_baseline_with_digest(tmp_path: Path) -> None:
+    log = _log(tmp_path)
+    log.append(ZfEvent(type="task_map.admitted", origin="kernel", id="admitted", payload={
+        "task_map_ref": "artifacts/task-map.json", "task_map_digest": "a" * 64,
+        "task_ids": ["T-1", "T-2"],
+    }))
+    log.append(ZfEvent(type="task.attempt.started", origin="worker", task_id="T-1", payload={"attempt_id": "fake"}))
+    view = build_loop_view(_sd(tmp_path))["timeline"]
+    assert view["baseline"]["event_id"] == "admitted"
+    assert view["baseline"]["task_ids"] == ["T-1", "T-2"]
+    assert view["attempt_count"] == 0
+    assert view["signal_count"] == 1
+
+    log.append(ZfEvent(type="task_map.admitted", origin="kernel", payload={"task_ids": ["T-3"]}))
+    assert build_loop_view(_sd(tmp_path))["timeline"]["baseline"] is None
+
+
+def test_timeline_does_not_assign_unscoped_events_to_single_run(tmp_path: Path) -> None:
+    log = _log(tmp_path)
+    log.append(ZfEvent(type="run.started", correlation_id="run-1", payload={"run_id": "run-1"}))
+    log.append(ZfEvent(type="task.attempt.started", task_id="T-1", payload={"attempt_id": "unscoped"}))
+    log.append(ZfEvent(type="task_map.admitted", origin="kernel", payload={
+        "task_map_ref": "map.json", "task_map_digest": "a" * 64, "task_ids": ["T-1"],
+    }))
+    log.append(ZfEvent(type="task.attempt.started", task_id="T-2", correlation_id="run-1", payload={"attempt_id": "scoped"}))
+    timeline = build_loop_view(_sd(tmp_path))["timeline"]
+    assert timeline["attempt_count"] == 1
+    assert [task["id"] for task in timeline["tasks"]] == ["T-2"]
+    assert timeline["baseline"] is None
+
+
 def test_superseded_open_attempt_is_uncounted_via_spine(tmp_path: Path) -> None:
     """E5 账本语义:被后续 attempt 顶替的 open attempt 不计数。"""
     sd = _sd(tmp_path)

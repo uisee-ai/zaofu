@@ -16,7 +16,7 @@ PLAN_REVIEW_REF_FIELDS = (
     "plan_artifact_ref", "plan_artifact_digest", "plan_ref",
     "plan_artifact_package_ref", "plan_artifact_package_digest",
     "plan_preview_bundle_ref", "plan_preview_bundle_digest",
-    "requirement_spec_ref",
+    "requirement_spec_ref", "requirement_spec_digest",
     "source_index_ref", "workflow_run_id",
 )
 
@@ -191,7 +191,7 @@ def bind_plan_approval_preview(
         **approval_payload,
         "plan_preview_bundle_ref": str(bundle.get("ref") or ""),
         "plan_preview_bundle_digest": str(bundle.get("sha256") or ""),
-        "plan_content_profile": str(trigger_payload.get("plan_content_profile") or "derived_plan_full"),
+        "plan_content_profile": str(trigger_payload.get("plan_content_profile") or "derived_plan"),
         "authority_refs": list(trigger_payload.get("authority_refs") or []),
     }
 

@@ -99,6 +99,7 @@ from zf.core.cost.tracker import CostTracker
 from zf.core.memory.store import MemoryStore
 from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 if TYPE_CHECKING:
@@ -432,7 +433,7 @@ class WorkflowRuntimeCoordinator(
         self._stuck_detectors: dict[str, StuckDetector] = {
             r.instance_id: StuckDetector(stale_threshold=r.stuck_threshold_seconds)
             for r in self.config.roles
-            if r.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, r)
         }
         self._stuck_already_reported: set[str] = set()
         # G-RESUME-4: watchdog counts consecutive is_alive=False results
@@ -722,7 +723,7 @@ class WorkflowRuntimeCoordinator(
         from zf.runtime.backend_session_reader import get_reader_for_backend
         self._session_readers: dict[str, object] = {}
         for r in self.config.roles:
-            if r.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, r):
                 continue
             reader = get_reader_for_backend(r.backend)
             if reader is not None and r.backend not in self._session_readers:
@@ -921,6 +922,11 @@ class WorkflowRuntimeCoordinator(
         if periodic_sweep:
             periodic.run_context_sweep(self)
         self._safe_housekeeping("budget_sweep", self._run_budget_sweep)
+        from zf.runtime.workflow_frontier_consumer import (
+            consume_wrc_normal_frontier,
+        )
+
+        decisions.extend(consume_wrc_normal_frontier(self))
         decisions.extend(self._dispatch_ready())
         decisions.extend(self._sweep_feature_liveness())
         # G-EVT-2: drain any transport-side events (e.g. StreamJsonTransport's
@@ -932,6 +938,9 @@ class WorkflowRuntimeCoordinator(
         from zf.runtime.orchestrator_agent_transport import dispatch_pending_orchestrator_checkpoint
 
         dispatch_pending_orchestrator_checkpoint(self)
+        from zf.runtime.worker_assistance import dispatch_pending_assistance
+
+        dispatch_pending_assistance(self)
         # doc 69 S-f: emit delivery.phase.* milestones for active features
         # (deterministic, idempotent; counts kernel verdicts, never re-judges).
         self._safe_housekeeping("phase_milestones", self._emit_phase_milestones)
@@ -2381,6 +2390,8 @@ class WorkflowRuntimeCoordinator(
           `_on_*` handlers fire. This preserves backward compatibility with
           configs that don't yet use the three-layer architecture.
         """
+        from zf.runtime.orchestrator_agent_role import configured_orchestrator_role
+
         decisions: list[WorkflowRuntimeDecision] = []
         if pushed is not None:
             recent = pushed
@@ -2393,6 +2404,10 @@ class WorkflowRuntimeCoordinator(
             offset = self._load_offset()
             recent, new_offset = self.event_log.read_from_offset(offset)
 
+        # Keep 194 Layer 2 authority activation tied to the legacy role's
+        # presence. ``oa_profile`` binds semantic checkpoint transport but
+        # does not silently promote a registered profile to a second state
+        # machine.
         layer2_active = self._find_role_by_name("orchestrator") is not None
         reacted_tasks: set[str] = set()
         # doc 66 §14.0: enter Layer 2 batch — per-event _notify_orchestrator_agent
@@ -2576,7 +2591,7 @@ class WorkflowRuntimeCoordinator(
                         terminal_decision is not None
                         and terminal_decision.action == "block"
                     ):
-                        orch_role = self._find_role_by_name("orchestrator")
+                        orch_role = configured_orchestrator_role(self)
                         will_dispatch = (
                             orch_role is not None
                             and (
@@ -2615,7 +2630,7 @@ class WorkflowRuntimeCoordinator(
                 # if state changes are needed.
                 # Note: _notify_orchestrator_agent applies the orchestrator
                 # role's triggers filter — events not in triggers are no-op.
-                orch_role = self._find_role_by_name("orchestrator")
+                orch_role = configured_orchestrator_role(self)
                 will_dispatch = (
                     orch_role is not None
                     and (not orch_role.triggers or event.type in orch_role.triggers)
@@ -3918,6 +3933,15 @@ class WorkflowRuntimeCoordinator(
             return False
         if old_ref != loaded.task_map_ref:
             return True
+        refs = evidence.get("source_refs")
+        refs = refs if isinstance(refs, dict) else {}
+        if same_workflow_run and any(
+            (incoming := str(getattr(loaded, key, "") or ""))
+            and incoming != str(refs.get(key) or "")
+            for key in ("plan_artifact_package_id", "plan_artifact_package_ref",
+                        "plan_artifact_package_digest", "task_map_generation")
+        ):
+            return True
         return str(getattr(task, "status", "") or "") in {
             "blocked",
             "failed",
@@ -4270,6 +4294,15 @@ class WorkflowRuntimeCoordinator(
         ))
         try:
             from zf.core.workflow.flow_metadata import flow_metadata_for
+            from zf.runtime.gap_plan_baseline import gap_plan_amend_baseline
+            from zf.runtime.plan_artifact_package import artifact_package_mode
+
+            metadata = flow_metadata_for(self.config, payload=payload)
+            base_task_map_ref, baseline_generation = gap_plan_amend_baseline(
+                state_dir=self.state_dir, events=self.event_log.read_all(),
+                payload=payload, fallback_ref=base_task_map_ref, gap_tasks=gap_tasks,
+                required=artifact_package_mode(metadata) == "blocking",
+            )
 
             amend = write_gap_task_map_amend_artifact(
                 state_dir=self.state_dir,
@@ -4280,10 +4313,7 @@ class WorkflowRuntimeCoordinator(
                 gap_tasks=gap_tasks,
                 gap_plan_ref=gap_plan_ref,
                 replacement_context=payload,
-                admission_metadata=flow_metadata_for(
-                    self.config,
-                    payload=payload,
-                ),
+                admission_metadata=metadata,
             )
         except Exception as exc:
             self.event_writer.append(ZfEvent(
@@ -4308,9 +4338,7 @@ class WorkflowRuntimeCoordinator(
                 reason=f"task_map amend failed: {exc}",
             )
         gap_task_ids = list(amend.get("gap_task_ids") or [])
-        superseded_generation = str(
-            workflow_identity.get("task_map_generation") or ""
-        ).strip()
+        superseded_generation = baseline_generation
         task_map_digest = str(amend.get("task_map_digest") or "").strip()
         task_map_generation = str(
             amend.get("task_map_generation") or ""
@@ -4620,7 +4648,9 @@ class WorkflowRuntimeCoordinator(
         event (e.g. loop.started, agent.usage). Only events the orchestrator
         role explicitly subscribes to via `triggers` reach Layer 2.
         """
-        orch_role = self._find_role_by_name("orchestrator")
+        from zf.runtime.orchestrator_agent_role import configured_orchestrator_role
+
+        orch_role = configured_orchestrator_role(self)
         if orch_role is None:
             return
         # B6a (R25 ISSUE-006 根因①): telemetry 噪音硬性不唤 Layer 2 —
@@ -4762,100 +4792,9 @@ class WorkflowRuntimeCoordinator(
             drained.append(also)
         return drained
 
-    def _fire_orchestrator_turn(
-        self, orch_role: RoleConfig, triggers: list[ZfEvent]
-    ) -> None:
-        """Send one Layer 2 turn covering `triggers` (most recent is primary)."""
-        if not triggers:
-            return
-        from zf.runtime.orchestrator_agent_transport import orchestrator_checkpoint_busy
-
-        primary = triggers[-1]
-        if primary.type == "orchestrator.semantic.checkpoint.requested":
-            from zf.runtime.orchestrator_agent_transport import (
-                dispatch_orchestrator_agent_operation,
-            )
-
-            dispatch_orchestrator_agent_operation(self, orch_role, primary)
-            return
-        if orchestrator_checkpoint_busy(self):
-            for trigger in triggers:
-                self._add_layer2_pending(trigger)
-            return
-        # Regenerate progress.md so Layer 2 sees fresh narrative state.
-        try:
-            regenerate_progress(self.state_dir)
-        except Exception:
-            pass  # progress.md is optional; never block dispatch on it
-        also_triggered = [e.type for e in triggers[:-1]]
-        briefing = build_orchestrator_briefing(
-            state_dir=self.state_dir,
-            config=self.config,
-            trigger_event=primary,
-            also_triggered=also_triggered,
-        )
-        briefings_dir = self.state_dir / "briefings"
-        briefings_dir.mkdir(parents=True, exist_ok=True)
-        ts_safe = primary.ts.replace(":", "-").replace(".", "-")
-        evid_short = primary.id.replace("evt-", "")[:12]
-        briefing_path = briefings_dir / f"orchestrator-{ts_safe}-{evid_short}.md"
-        briefing_path.write_text(briefing, encoding="utf-8")
-        extra = f" (+{len(also_triggered)} coalesced)" if also_triggered else ""
-        prompt = (
-            f"You are the orchestrator agent. New events have fired{extra} and you "
-            f"need to decide what to do next.\n"
-            f"Read the briefing at {briefing_path} for the full system state and trigger details. "
-            f"Make ONE round of decisions via tool calls, then exit."
-        )
-        try:
-            self._record_skill_provenance(role=orch_role, task_id=primary.task_id)
-            context = self._dispatch_context(
-                role=orch_role,
-                briefing_path=briefing_path,
-                task_id=primary.task_id,
-                trace_id=primary.correlation_id,
-            )
-            self._send_transport_task("orchestrator", briefing_path, prompt, context)
-        except Exception as exc:
-            payload = {
-                "trigger_event_id": primary.id,
-                "error": str(exc),
-            }
-            payload.update(transport_error_diagnostics(exc))
-            self.event_writer.append(ZfEvent(
-                type="orchestrator.dispatch_failed",
-                actor="zf-cli",
-                payload=payload,
-            ))
-            if str(payload.get("dead_reason") or "") == "pane_dead":
-                self.event_writer.append(ZfEvent(
-                    type="worker.respawn.requested",
-                    actor="zf-cli",
-                    payload={
-                        "role": "orchestrator",
-                        "instance_id": "orchestrator",
-                        "trigger_event_id": primary.id,
-                        "reason": "pane_dead_dispatch_failed",
-                        "source_event_type": "orchestrator.dispatch_failed",
-                        "source": "dispatch_failure_recovery",
-                    },
-                    causation_id=primary.id,
-                    correlation_id=primary.correlation_id,
-                ))
-                self.event_writer.append(ZfEvent(
-                    type="orchestrator.dispatch.retry_requested",
-                    actor="zf-cli",
-                    payload={
-                        "role": "orchestrator",
-                        "assignee": "orchestrator",
-                        "trigger_event_id": primary.id,
-                        "reason": "retry_after_pane_respawn",
-                        "source": "dispatch_failure_recovery",
-                        "max_attempts": 1,
-                    },
-                    causation_id=primary.id,
-                    correlation_id=primary.correlation_id,
-                ))
+    def _fire_orchestrator_turn(self, orch_role: RoleConfig, triggers: list[ZfEvent]) -> None:
+        from zf.runtime.orchestrator_advisory_dispatch import dispatch_advisory_turn
+        dispatch_advisory_turn(self, orch_role, triggers)
 
     def _flush_layer2_batch(self) -> None:
         """End-of-batch flush: fire ONE turn covering everything accumulated

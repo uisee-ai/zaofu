@@ -57,11 +57,23 @@ def test_bounded_required_reads_cli_uses_immutable_operation_policy(tmp_path, mo
     monkeypatch.setenv("ZF_ARTIFACT_READ_TOKEN_FILE", str(token))
     monkeypatch.setenv("ZF_ARTIFACT_PURPOSE", manifest.get("read_purpose", ""))
     capsys.readouterr()
-    assert main(["artifact", "read", "--attempt", manifest["attempt_id"],
-                 "--required", "--state-dir", str(state)]) == 0
-    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert len(rows) == len(child["required_reads"])
-    assert rows
+    command = ["artifact", "read", "--attempt", manifest["attempt_id"], "--state-dir", str(state)]
+    from zf.runtime.artifact_read_ledger import active_read_ledger_path, required_read_satisfied
+
+    ledger = active_read_ledger_path(state, manifest["attempt_id"])
+    cursor = ""
+    while True:
+        assert main([*command, "--required", "--cursor", cursor]) == 0
+        raw = capsys.readouterr().out
+        assert len(raw) <= 8192
+        page = json.loads(raw)
+        cursor = page["next_cursor"]
+        if not cursor:
+            break
+        partial = [json.loads(line) for line in ledger.read_text().splitlines()]
+        assert not all(required_read_satisfied(partial, row) for row in child["required_reads"])
+    reads = [json.loads(line) for line in ledger.read_text().splitlines()]
+    assert all(required_read_satisfied(reads, row) for row in child["required_reads"])
 
 
 def test_cancellation_fences_late_result_and_restart(tmp_path, monkeypatch):

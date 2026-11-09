@@ -1,0 +1,28 @@
+{
+  "source_worktree": "/tmp/zf-hello-prd-20261030-060443/source",
+  "implementation_commit": "0e0321bd",
+  "branch": "wip/codex-20261030-hello-prd-smoke",
+  "project_id": "project-a2f0fcdb",
+  "task_id": "TASK-626329",
+  "run_id": "prepare-TASK-626329-ce735a8c17e0ecc5",
+  "proposal_digest": "5d4e10163bfe0dfdf6a9b039b20e169bc43284f5b9f869d558444027cff1615f",
+  "config_checkpoint": "4de3e76",
+  "requirement_checkpoint": "85d4683",
+  "browser": "mcp/playwright:latest with host networking",
+  "port": 8002,
+  "mutations": "Browser project creation, Kanban prompt, Create task, YAML preview, Start Workflow; filesystem used only for input PRD fixture and read-only observation",
+  "plan_approval_required": false,
+  "operation_token_budget": 1500000,
+  "operation_timeout_seconds": 600,
+  "status": "blocked",
+  "assertions": {
+    "task_binding_visible": true,
+    "raw_numeric_budget_visible": true,
+    "raw_full_v5_lanes_and_wrc": true,
+    "auto_started_runtime": true,
+    "browser_page_errors": [],
+    "final_ui_kernel_blocked": true
+  },
+  "reason": "run_total_token_budget_exceeded",
+  "candidate_commit": "198eb4163f05df19853be0e68866d3d62336a946"
+}

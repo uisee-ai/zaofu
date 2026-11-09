@@ -12,6 +12,7 @@ from zf.runtime.task_contract_snapshot import (
     snapshot_payload_fields,
 )
 from zf.runtime.transport import DispatchContext
+from zf.runtime.workflow_frontier_owner import normal_frontier_owner
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
 
 
@@ -90,7 +91,18 @@ def dispatch_task_pipeline_stage(
     )
     from zf.runtime.task_pipeline_terminal import task_pipeline_workspace_base
 
+    # Once a workspace exists, prepare() validates and restores its persisted
+    # base. Do not compose a newer dependency tree underneath an in-flight
+    # implementation, a retry, or the independent verifier of its exact commit.
+    workspace_plan = workspace_manager.plan(
+        workflow_run_id=workflow_run_id, task_id=task_id,
+        task_map_generation=task_map_generation,
+        workspace_generation=workspace_generation,
+        base_ref=str(generation_context.get("dispatch_base_commit") or ""),
+    ) if entry_mode == "standard" else None
+    existing_workspace = bool(workspace_plan and Path(workspace_plan.workdir).exists())
     workspace_base = (
+        workspace_plan.base_commit if existing_workspace else
         task_pipeline_workspace_base(
             runtime,
             task=task,
@@ -198,6 +210,13 @@ def dispatch_task_pipeline_stage(
         attempt_rows=attempt_rows,
     )
     role_config_digest = _role_config_digest(runtime, role, task)
+    from zf.runtime.execution_profiles import resolve_execution_profile
+
+    execution_profile = resolve_execution_profile(
+        runtime.config,
+        role_instance=role.instance_id,
+        contract=getattr(task, "contract", None),
+    )
     binding = _activate_task_stage_binding(
         runtime,
         role=role,
@@ -234,6 +253,8 @@ def dispatch_task_pipeline_stage(
     )
     operation_payload: dict[str, Any] = {
         "workflow_run_id": workflow_run_id,
+        "frontier_owner": normal_frontier_owner(runtime.config),
+        "flow_kind": str(generation_context.get("flow_kind") or ""),
         "trace_id": workflow_run_id,
         # Result protocol selection is scoped by Flow kind in composite
         # configs.  Carry the admitted kind into the stage operation so the
@@ -250,6 +271,7 @@ def dispatch_task_pipeline_stage(
         "workspace_generation": workspace_generation,
         "placement_epoch": placement_epoch,
         "pipeline_key": operation_identity.pipeline_key,
+        "operation_id": operation_identity.operation_id,
         "task_stage_session_binding": str(binding.get("binding_key") or ""),
         "role_instance": role.instance_id,
         "attempt_id": scheduler_attempt_id,
@@ -296,6 +318,10 @@ def dispatch_task_pipeline_stage(
         **package_identity,
         **target_fields,
     }
+    if policy.get("role_binding_resolution"):
+        operation_payload["role_binding_resolution"] = dict(
+            policy["role_binding_resolution"]
+        )
     if assignment.get("orchestration_assignment"):
         operation_payload["orchestration_assignment"] = dict(assignment["orchestration_assignment"])
     if operation_generation > 1:
@@ -312,7 +338,26 @@ def dispatch_task_pipeline_stage(
             if isinstance(assignment.get("impl_rework_request"), Mapping)
             else None
         ))
+        from zf.runtime.task_pipeline_integration_rework import integration_rework_feedback
+
+        rework_feedback.extend(integration_rework_feedback(
+            operation_rows, task_id=task_id, workflow_run_id=workflow_run_id,
+            task_map_generation=task_map_generation,
+            operation_generation=operation_generation - 1,
+        ))
         operation_payload["rework_feedback"] = rework_feedback
+
+    from zf.runtime.worker_execution_envelope import (
+        build_worker_execution_envelope,
+    )
+
+    operation_payload["worker_execution_envelope"] = (
+        build_worker_execution_envelope(
+            payload=operation_payload,
+            role=role,
+            execution_profile=execution_profile,
+        )
+    )
 
     from zf.runtime.call_result_runtime import prepare_call_operation
     from zf.runtime.task_pipeline_capsule import (
@@ -389,6 +434,10 @@ def dispatch_task_pipeline_stage(
         workspace_generation=workspace_generation,
         placement_epoch=placement_epoch,
         task_stage_session_binding=str(binding.get("binding_key") or ""),
+        worker_envelope_digest=str(
+            operation_payload["worker_execution_envelope"].get("envelope_digest")
+            or ""
+        ),
     )
     from zf.runtime.task_pipeline_capsule import verify_pipeline_delivery_capsule
 

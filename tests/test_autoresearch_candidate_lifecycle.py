@@ -17,7 +17,9 @@ from zf.runtime.autoresearch_invocation import (
 )
 from zf.runtime.run_manager import (
     RUN_MANAGER_AUTORESEARCH_REQUESTED,
+    _autoresearch_inflight_request_ids,
     _consume_autoresearch_results,
+    _emit_autoresearch_request,
     _pending_attention_diagnostic_actions,
 )
 
@@ -280,6 +282,19 @@ def test_terminal_diagnosis_is_superseded_by_later_same_run_reopen() -> None:
         request,
         events=[blocked, request, reopened],
     ) is None
+    assert _autoresearch_inflight_request_ids([blocked, request, reopened]) == set()
+
+    # A request already bridged or queued still owns a real diagnostic slot.
+    for event_type in (
+        "autoresearch.invocation.requested",
+        "autoresearch.loop.requested",
+        "autoresearch.loop.accepted",
+        "autoresearch.loop.started",
+    ):
+        anchored = ZfEvent(type=event_type, payload={"request_id": "terminal-request"})
+        assert _autoresearch_inflight_request_ids(
+            [blocked, request, anchored, reopened],
+        ) == {"terminal-request"}
 
 
 def test_terminal_diagnosis_survives_unrelated_or_earlier_reopen() -> None:
@@ -320,6 +335,35 @@ def test_terminal_diagnosis_survives_unrelated_or_earlier_reopen() -> None:
 
     assert invocation is not None
     assert invocation.type == "autoresearch.invocation.requested"
+    assert _autoresearch_inflight_request_ids(
+        [earlier_reopen, blocked, request, other_run_reopen],
+    ) == {"terminal-request"}
+    assert _autoresearch_inflight_request_ids([request, other_run_reopen]) == {"terminal-request"}
+
+
+def test_superseded_unbridged_diagnosis_does_not_block_new_request(tmp_path: Path) -> None:
+    state_dir = _state_dir(tmp_path)
+    log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(log)
+    for event in (
+        ZfEvent(id="blocked", type="run.goal.blocked", payload={"run_id": "run-1"}),
+        ZfEvent(id="old-request", type=RUN_MANAGER_AUTORESEARCH_REQUESTED, payload={
+            "request_id": "old", "operation_key": "terminal-diagnosis:blocked",
+            "workflow_run_id": "run-1",
+        }),
+        ZfEvent(id="reopened", type="run.goal.updated", payload={
+            "run_id": "run-1", "status": "active",
+        }),
+    ):
+        log.append(event)
+    assert _emit_autoresearch_request(
+        state_dir=state_dir, writer=writer, project_root=tmp_path, projection={},
+        causation_id="tick", action={
+            "action": "diagnose-attention", "safe_resume_action": "diagnose_attention",
+            "checkpoint_id": "new-checkpoint", "fingerprint": "new-failure",
+        },
+    )
+    assert [event.id for event in log.read_all()[:3]] == ["blocked", "old-request", "reopened"]
 
 
 def test_failed_diagnosis_keeps_unverified_candidate(tmp_path):

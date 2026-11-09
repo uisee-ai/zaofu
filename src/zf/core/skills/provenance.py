@@ -193,10 +193,15 @@ def _repo_local_yoke_candidates(project_root: Path, name: str) -> list[tuple[str
     every project zf.yaml to declare another absolute skill source.
     """
     normalized = _normalize_dependency_name(name)
-    roots = [
-        project_root / "yoke",
-        _zaofu_repo_root() / "yoke",
-    ]
+    roots = [project_root / "yoke"]
+    # A runner may import ZaoFu from a different checkout while executing a
+    # project worktree (the real-provider harness does this deliberately).
+    # In that shape both checkouts expose the same yoke skill name.  The
+    # project-local overlay is authoritative; only fall back to the packaged
+    # checkout when the local overlay does not provide this exact skill.
+    local_path = roots[0] / _normalize_dependency_name(name) / "SKILL.md"
+    if not local_path.is_file():
+        roots.append(_zaofu_repo_root() / "yoke")
     candidates: list[tuple[str, Path]] = []
     seen: set[Path] = set()
     for root in roots:

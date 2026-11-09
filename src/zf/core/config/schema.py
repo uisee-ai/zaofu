@@ -63,6 +63,9 @@ class WorkflowOrchestrationFlowPolicyConfig:
     checkpoint_policies: dict[str, str] = field(default_factory=dict)
     pilot_id: str = ""
     shadow_sample_percent: int = 100
+    # None preserves legacy checkpoint policy; [] forbids autonomous execution.
+    autonomous_actions: list[str] | None = None
+    review_blocked_tasks: bool = False
 
 
 @dataclass
@@ -77,6 +80,12 @@ class WorkflowOrchestrationConfig(WorkflowOrchestrationFlowPolicyConfig):
     flow_policies: dict[str, WorkflowOrchestrationFlowPolicyConfig] = field(
         default_factory=dict,
     )
+    # Optional semantic OA role binding. Empty preserves the 194
+    # ``orchestrator`` role fallback; this does not activate authority.
+    oa_profile: str = ""
+    # Normal frontier ownership is an explicit migration contract. The
+    # current default keeps the 194 Run Manager continuation path.
+    normal_frontier_owner: str = "run_manager"
     max_plan_revisions: int = 2
     no_progress_limit: int = 2
 
@@ -204,16 +213,16 @@ class ProviderSessionConfig:
 
     effort: str = ""
     agent: str = ""
-    max_parallel_agents: int | None = None
+    max_parallel_agents: int | None = None  # 0: no harness result ceiling; provider default.
     native_delegation: bool | None = None
 
     def __post_init__(self) -> None:
         if self.native_delegation is not None and not isinstance(self.native_delegation, bool):
             raise ValueError("ProviderSessionConfig.native_delegation must be boolean")
         if self.max_parallel_agents is not None:
-            if self.max_parallel_agents < 1:
+            if self.max_parallel_agents < 0:
                 raise ValueError(
-                    "ProviderSessionConfig.max_parallel_agents must be >= 1"
+                    "ProviderSessionConfig.max_parallel_agents must be >= 0"
                 )
             if self.max_parallel_agents > 6:
                 raise ValueError(
@@ -1368,6 +1377,7 @@ class RuntimeRunManagerResidentAgentConfig:
     model: str = ""
     model_reasoning_effort: str = ""
     prompt_on_start: bool = True
+    response_timeout_seconds: int = 600
     # shared: resident pane joins session.tmux_session.
     # dedicated: resident pane uses tmux_session or derives
     # "<session.tmux_session>-run-manager".
@@ -1375,6 +1385,8 @@ class RuntimeRunManagerResidentAgentConfig:
     tmux_session: str = ""
 
     def __post_init__(self) -> None:
+        if type(self.response_timeout_seconds) is not int or self.response_timeout_seconds <= 0:
+            raise ValueError("resident_agent.response_timeout_seconds must be a positive integer")
         self.model_reasoning_effort = _normalize_model_reasoning_effort(
             self.model_reasoning_effort,
             owner="RuntimeRunManagerResidentAgentConfig",

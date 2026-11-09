@@ -79,6 +79,31 @@ test("event bursts coalesce and a change during a slow read gets one follow-up",
   expect(calls).toBe(3);
 });
 
+test("live status refresh keeps unchanged-size nodes visible and draggable", async ({ page }) => {
+  await setup(page);
+  let calls = 0;
+  await page.route("**/workflow-requests/A/graph*", route => {
+    const value = graph("A", ++calls);
+    value.nodes[0].status = calls === 1 ? "running" : "passed";
+    return route.fulfill({ json: value });
+  });
+  await open(page);
+  const node = page.locator('.react-flow__node[data-id="goal"]');
+  await expect(node).toBeVisible();
+  const box = (await node.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40, { steps: 8 }); await page.mouse.up();
+  const position = await node.evaluate(element => element.style.transform);
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole("button", { name: "Graph event", exact: true }).click();
+    await page.clock.runFor(300);
+    await expect.poll(() => calls).toBe(i + 2);
+    await expect(node).toHaveClass(/sdlc-status-passed/);
+    await expect(node).toBeVisible();
+    expect(await node.evaluate(element => element.style.transform)).toBe(position);
+  }
+});
+
 test("failed refresh retains data and reconnect reconciles immediately", async ({ page }) => {
   await setup(page);
   let calls = 0;

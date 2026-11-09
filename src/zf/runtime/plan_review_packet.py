@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.plan_preview_artifacts import read_preview_artifact
+from zf.runtime.plan_review_decisions import decision_counts
 
 
 def build_review_packet(
@@ -22,6 +23,7 @@ def build_review_packet(
     task_map_summary: dict[str, Any],
     decision_items: list[dict[str, Any]],
     preview_bundle: dict[str, Any],
+    decision_register_available: bool = False,
 ) -> dict[str, Any]:
     """Build an explicit, read-only contract for human Plan approval.
 
@@ -33,6 +35,7 @@ def build_review_packet(
     artifact_map = {str(item.get("name") or ""): item for item in artifacts}
     json_values: dict[str, dict[str, Any]] = {}
     diagnostics: list[dict[str, Any]] = []
+    bodies: dict[str, str] = {}
     for name, item in artifact_map.items():
         try:
             body = read_preview_artifact(
@@ -47,9 +50,10 @@ def build_review_packet(
                 "evidence": [item["ref"]],
             })
             continue
+        bodies[name] = body
         if name.endswith((".json", "_matrix", "_ledger", "_spec", "_index")) or name in {
             "task_map", "source_index", "coverage_ledger", "acceptance_matrix",
-            "test_matrix", "product_acceptance_spec", "real_e2e_matrix",
+            "test_matrix", "product_acceptance_spec", "real_e2e_matrix", "decision_register", "planning_result",
         }:
             try:
                 value = json.loads(body)
@@ -135,6 +139,11 @@ def build_review_packet(
             "notes": notes or [],
         }
 
+    from zf.runtime.plan_decision_register import decision_readiness
+    decisions_ready, pending = decision_readiness(bodies, payload, decision_items, markdown)
+    if "decision_register" in artifact_map and "decision_register" not in bodies:
+        decisions_ready = False
+    blocking = sum(item.get("blocking") is True for item in pending)
     sections = [
         section(
             "prd", "PRD", "ready" if markdown and authority_refs else "partial",
@@ -180,11 +189,13 @@ def build_review_packet(
         ),
         _coverage_section("source_coverage", "来源条款映射", source_ids["requirements"], plan_ids["requirements"], artifact_map, refs_by_name),
         section(
-            "decisions", "Owner Decisions", "ready" if decision_items else "partial",
-            counts={"pending": len(decision_items)},
+            "decisions", "Owner Decisions", "ready" if decisions_ready else "partial",
+            counts=(decision_counts(decision_items) if decision_register_available
+                    else {"pending": len(pending), "blocking": blocking}),
             names=[name for name in ("decision_register", "planning_result") if name in artifact_map],
             refs=[refs_by_name.get(name, [""])[0] for name in ("decision_register", "planning_result")],
-            notes=["审批前必须逐项处理 blocking decision。" if decision_items else "未绑定结构化 decision register，请核对 Plan。"],
+            notes=[("决定登记与本次审批问题分别展示；按受影响阶段处理 blocking decision。" if pending else "已绑定有效决策登记；当前无待决项。")
+                   if decisions_ready else "未绑定有效结构化 decision register，请核对 Plan。"],
         ),
         section(
             "provenance", "Provenance", "error" if any(item["code"] == "artifact_lineage_mismatch" for item in diagnostics) else "ready",
@@ -203,6 +214,7 @@ def build_review_packet(
         "diagnostics": diagnostics,
         "source_ids": source_ids,
         "plan_ids": plan_ids,
+        "owner_decision_items": pending,
         "missing_sections": missing,
         "policy": {"read_only": True, "missing_is_not_pass": True},
     }
@@ -329,7 +341,9 @@ def render_human_review_dossier(
         f"- **计划状态**：`{status}`；Plan ID：`{payload.get('plan_id') or ''}`；阶段：`{payload.get('stage_id') or '未声明'}`。",
         f"- **目标**：{objective}",
         f"- **权威输入**：{', '.join(f'`{ref}`' for ref in authority_refs) or '`未绑定`'}。",
-        f"- **待决事项**：`{len(decision_items)}` 项；任何 blocking decision 未关闭前不得启动 impl/verify。",
+        f"- **决定登记**：`{len(decision_items)}` 项；待决定 `{decision_counts(decision_items)['pending']}`，"
+        f"明确阻塞 `{decision_counts(decision_items)['blocking']}`，已授权待落实 `{decision_counts(decision_items)['follow_up']}`。"
+        "未来决定仅在其受影响动作前关闭；Plan 批准不自动关闭决定。",
         "- **审批边界**：以当前审批请求为准；未决方案及尚未取得的验证结果仍需独立确认。",
         "",
         "## 1.1 审核包状态",

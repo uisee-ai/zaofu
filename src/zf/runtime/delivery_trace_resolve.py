@@ -58,6 +58,7 @@ def resolve_delivery_trace(
     feature_id: str = "",
     task_id: str = "",
     task_map_ref: str = "",
+    project_root: Path | None = None,
 ) -> dict[str, Any]:
     """Load kanban + events + accepted task-map and build delivery-trace.v1."""
     inp = _load_feature_inputs(
@@ -151,6 +152,17 @@ def resolve_delivery_trace(
     if inp["bundle"]:
         trace["current_bundle"] = inp["bundle"]
         trace["current_task_map_ref"] = inp["bundle"].get("current_task_map_ref", "")
+    from zf.runtime.task_pipeline_dispatch_summary import build_dispatch_summary
+    from zf.runtime.task_pipeline_projection import read_task_pipeline_projection
+
+    # Preserve task lifecycle counts; expose execution state on a separate axis.
+    if project_root is not None:
+        projection = read_task_pipeline_projection(
+            state_dir, project_root=project_root, config=config,
+        )
+        trace["dispatch_summary"] = build_dispatch_summary(
+            projection, task_ids=set(inp["tasks"]),
+        )
     return trace
 
 

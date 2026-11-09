@@ -57,3 +57,15 @@ def test_slim_hydration_type_filter(tmp_path: Path) -> None:
 
     only = read_model.hydrate_events(state_dir, types=["fanout.started"], slim=True)
     assert [e.id for e in only] == ["evt-1"]
+
+
+def test_slim_hydration_keeps_tool_call_identity_and_outcome(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    _write_line(state_dir / "events.jsonl", ZfEvent(
+        type="agent.session.part.delta", id="evt-tool", actor="web",
+        payload={"message_type": "tool_result", "tool_call_id": "call-1", "status": "failed"},
+    ))
+    read_model.rebuild(state_dir)
+    tool = read_model.hydrate_events(state_dir, slim=True)[0]
+    assert tool.payload["tool_call_id"] == "call-1"
+    assert tool.payload["status"] == "failed"

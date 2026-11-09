@@ -193,6 +193,41 @@ def test_active_conversation_becomes_quiet_after_reply_cycle_settles() -> None:
     assert resumed["can_synthesize"] is False
 
 
+def test_active_conversation_can_resynthesize_after_new_structured_contribution() -> None:
+    channel = _channel()
+    channel["discussions"]["main"] = {
+        "state": "active",
+        "started_at": "2026-08-19T02:00:00Z",
+        "roster": ["pm", "architect"],
+    }
+    channel["open_questions"] = {}
+    channel["consensus"] = {}
+    channel["syntheses"] = [{
+        "thread_id": "main",
+        "ts": "2026-08-19T02:03:00Z",
+    }]
+    channel["contributions"] = [{
+        "thread_id": "main",
+        "member_id": "architect",
+        "contract_status": "structured",
+        "ts": "2026-08-19T02:04:00Z",
+    }]
+
+    projection = project_discussion_attention(
+        channel,
+        [{
+            "thread_id": "main",
+            "request_id": "reply-2",
+            "target_member_id": "architect",
+            "status": "completed",
+            "updated_at": "2026-08-19T02:04:00Z",
+        }],
+        {"main": []},
+    )["main"]
+
+    assert projection["can_synthesize"] is True
+
+
 def test_multi_lens_exposes_role_coverage_and_gates_synthesis() -> None:
     channel = _channel()
     channel["discussions"]["main"] = {

@@ -1,0 +1,70 @@
+{
+  "observed_at": "2026-11-06T18:24:41.070370+00:00",
+  "issue": "REAL-03: controller-held flock released on parent exit; later start overwrote live sidecar pidfile",
+  "processes": [
+    {
+      "pid": 253491,
+      "source_event_id": "evt-cab4936eedda",
+      "command": [
+        "/home/min/workspace/zaofu-worktrees/design199-20261106/.venv/bin/zf",
+        "autoresearch",
+        "resident",
+        "--watch",
+        "--execute",
+        "--state-dir",
+        "/tmp/zf-200-real-20261106T171651Z-8qffn5an/.canary-state",
+        "--interval-seconds",
+        "10.0",
+        "--max-actions-per-tick",
+        "1",
+        "--worktree-root",
+        "/tmp/zaofu-autoresearch-resident/worktrees"
+      ],
+      "action": "operator SIGTERM of recorded exact-state dedicated process group",
+      "exit_observed": true
+    },
+    {
+      "pid": 265711,
+      "source_event_id": "evt-3fc313e7bfbb",
+      "command": [
+        "/home/min/workspace/zaofu-worktrees/design199-20261106/.venv/bin/zf",
+        "autoresearch",
+        "resident",
+        "--watch",
+        "--execute",
+        "--state-dir",
+        "/tmp/zf-200-real-20261106T171651Z-8qffn5an/.canary-state",
+        "--interval-seconds",
+        "10.0",
+        "--max-actions-per-tick",
+        "1",
+        "--worktree-root",
+        "/tmp/zaofu-autoresearch-resident/worktrees"
+      ],
+      "action": "operator SIGTERM of recorded exact-state dedicated process group",
+      "exit_observed": true
+    },
+    {
+      "pid": 323642,
+      "source_event_id": "evt-fe110844e7d0",
+      "command": [
+        "/home/min/workspace/zaofu-worktrees/design199-20261106/.venv/bin/zf",
+        "autoresearch",
+        "resident",
+        "--watch",
+        "--execute",
+        "--state-dir",
+        "/tmp/zf-200-real-20261106T171651Z-8qffn5an/.canary-state",
+        "--interval-seconds",
+        "10.0",
+        "--max-actions-per-tick",
+        "1",
+        "--worktree-root",
+        "/tmp/zaofu-autoresearch-resident/worktrees"
+      ],
+      "action": "operator SIGTERM of recorded exact-state dedicated process group",
+      "exit_observed": true
+    }
+  ],
+  "note": "legacy processes removed explicitly after root cause recorded; prevention is separately regression-tested"
+}

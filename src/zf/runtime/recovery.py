@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from zf.core.config.schema import ZfConfig
 from zf.core.events.log import EventLog
@@ -33,8 +34,39 @@ from zf.core.state.git_state import GitState
 from zf.core.task.schema import Task
 from zf.runtime.git_capture import GitDiffContext, render_git_diff_context
 
+if TYPE_CHECKING:
+    from zf.core.config.schema import RoleConfig
+    from zf.runtime.orchestrator import Orchestrator
+
 
 _CURRENT_ACTIVE_HEADER = "## Currently Active"
+
+
+def capture_recovery_git_context(
+    runtime: Orchestrator, role: RoleConfig, task: Task,
+) -> GitDiffContext:
+    """Capture the same admitted task workspace used to respawn the worker."""
+    from zf.runtime.git_capture import capture_git_diff_context
+    from zf.runtime.workdirs import WorkdirManager
+
+    git_root = runtime._active_task_pipeline_spawn_cwd(role)
+    if git_root is None:
+        git_root = runtime.project_root
+        try:
+            workdirs = getattr(getattr(runtime.config, "runtime", None), "workdirs", None)
+            if workdirs is not None and getattr(workdirs, "enabled", False):
+                plan = WorkdirManager(
+                    state_dir=runtime.state_dir, project_root=runtime.project_root,
+                    config=runtime.config,
+                ).plan(role)
+                project_path = Path(plan.project_path)
+                if plan.enabled and plan.mode == "worktree" and project_path.exists():
+                    git_root = project_path
+        except Exception:
+            git_root = runtime.project_root
+    return capture_git_diff_context(
+        git_root, base_sha=getattr(runtime, "_dispatch_heads", {}).get(task.id, ""),
+    )
 
 
 def build_recovery_briefing(
@@ -77,6 +109,16 @@ def build_recovery_briefing(
     sections.append("## Recovery Read Order")
     sections.append(_render_recovery_read_order(state_dir, task))
     sections.append("")
+    from zf.core.events.factory import event_log_from_project
+    from zf.runtime.critical_context import recovery_required_inputs
+
+    recovery_events = event_log_from_project(state_dir, config=config).read_all()
+    sections.append(recovery_required_inputs(state_dir, recovery_events, task, role))
+    from zf.runtime.artifact_input_recovery import current_task_input_recovery, render_input_recovery
+
+    sections.append(render_input_recovery(current_task_input_recovery(
+        state_dir, recovery_events, task, actor=role,
+    )))
 
     # Section 1: shared memory
     sections.append("## Shared Memory")

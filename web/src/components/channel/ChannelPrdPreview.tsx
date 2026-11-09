@@ -3,6 +3,7 @@ import { Check, Copy, Download, Maximize2, Minimize2, Play, RotateCcw, X } from 
 import { getChannelPrdDocument, getChannelPrdEvaluation, type ChannelPrdDocument, type ChannelPrdEvaluationView, type ChannelPrdSelection } from "../../api/channelDelivery";
 import { MarkdownText } from "../agent-session/MarkdownText";
 import { prdMarkdownPages } from "./prdMarkdownPages";
+import { prdMarkdownView, type PrdAudienceView } from "./prdMarkdownViews";
 import type { ChannelFlow } from "./channelFlow";
 import { channelEvaluationFinding } from "./channelEvaluationFinding";
 import { ChannelPrdSources } from "./ChannelPrdSources";
@@ -18,6 +19,7 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
   const [actionError, setActionError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [source, setSource] = useState(false);
+  const [audienceView, setAudienceView] = useState<PrdAudienceView>("product");
   const [page, setPage] = useState(0);
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -50,6 +52,8 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
         throw new Error("PRD version mismatch. Reopen the latest preview.");
       }
       setDocument(value);
+      setAudienceView("product");
+      setPage(0);
     }).catch((reason) => { if (!controller.signal.aborted) setError(String(reason)); });
     return () => controller.abort();
   }, [attempt]); // Identity changes remount this component via its key.
@@ -71,7 +75,11 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
     load();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
   }, [document, evaluationAttempt]);
-  const pages = useMemo(() => prdMarkdownPages(document?.markdown ?? ""), [document?.markdown]);
+  const viewMarkdown = useMemo(() => source
+    ? (document?.markdown ?? "")
+    : prdMarkdownView(document?.markdown ?? "", audienceView, document?.read_views),
+  [document?.markdown, document?.read_views, audienceView, source]);
+  const pages = useMemo(() => prdMarkdownPages(viewMarkdown), [viewMarkdown]);
   const currentPage = pages[Math.min(page, pages.length - 1)];
   const changePage = (next: number) => {
     setPage(next);
@@ -94,6 +102,12 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
           <button type="button" className="icon-button" aria-pressed={!source} onClick={() => setSource(false)}>Preview</button>
           <button type="button" className="icon-button" aria-pressed={source} onClick={() => setSource(true)}>Source</button>
         </div>
+        {!source ? <div className="channel-prd-view-switch" role="group" aria-label="PRD audience view" data-testid="channel-prd-audience-views">
+          {(["product", "architecture", "developer"] as const).map((view) => <button key={view} type="button" className="icon-button"
+            aria-pressed={audienceView === view} data-testid={`channel-prd-view-${view}`} onClick={() => { setAudienceView(view); setPage(0); }}>
+            {document.read_views?.[view]?.label ?? (view === "product" ? "产品经理" : view === "architecture" ? "架构师" : "资深开发")}
+          </button>)}
+        </div> : null}
         <button type="button" className="icon-button" aria-label="Copy PRD" onClick={() => {
           void navigator.clipboard.writeText(document.markdown).then(() => setCopied(true)).catch(() => setActionError("Copy unavailable. Use Download instead."));
         }}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>

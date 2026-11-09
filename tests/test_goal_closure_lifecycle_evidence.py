@@ -111,3 +111,48 @@ def test_runtime_read_contract_requires_whole_closure_fact(tmp_path):
     assert required["artifact_sha256"] == facts["sha256"]
     descriptor = next(row for row in contract["input_refs"] if row["source_id"] == "closure-fact")
     assert descriptor["ref"] == facts["ref"]
+
+
+def workflow_events():
+    binding = {"request_id": "request-1", "requirement_spec_digest": "req-digest"}
+    approved = ZfEvent(type="workflow.request.approved", actor="web", payload={
+        **binding, "revision": 4, "status": "approved",
+    })
+    submitted = event("workflow.submit.requested", **binding, request_revision=4,
+                      workflow_proposal_digest="proposal-digest", effective_config_digest="config-digest")
+    invoked = event("workflow.invoke.requested", **binding, request_revision=4,
+                    workflow_proposal_digest="proposal-digest", effective_config_digest="config-digest")
+    return [approved, submitted, invoked]
+
+
+def test_closure_identity_includes_exact_workflow_approval_before_invocation(tmp_path):
+    rows = workflow_events()
+    source = event("flow.discovery.completed")
+    payload = {"workflow_run_id": "run-1", "goal_id": "goal-1",
+               "task_map_generation": "gen-1", "candidate_head_commit": "a" * 40}
+    identity = build_closure_identity(rows, source_event=source, payload=payload,
+                                      state_dir=tmp_path, flow_kind="prd")
+    facts = json.loads((tmp_path / identity["closure_fact_ref"]).read_text())
+    assert [r["event_id"] for r in facts["workflow_lifecycle_evidence"]] == [e.id for e in rows]
+    assert facts["workflow_lifecycle_evidence"][0]["actor"] == "web"
+    assert facts["workflow_lifecycle_evidence"][2]["payload"]["workflow_proposal_digest"] == "proposal-digest"
+
+
+@pytest.mark.parametrize("fault", ["revision", "digest", "request", "conflicting_run", "late"])
+def test_workflow_approval_cannot_bind_other_or_late_revision(fault):
+    from zf.runtime.goal_closure_lifecycle_evidence import workflow_lifecycle_evidence
+    rows = workflow_events()
+    if fault == "revision":
+        rows[0].payload["revision"] = 3
+    elif fault == "digest":
+        rows[0].payload["requirement_spec_digest"] = "old-digest"
+    elif fault == "request":
+        rows[0].payload["request_id"] = "other-request"
+    elif fault == "conflicting_run":
+        rows[0].payload["workflow_run_id"] = "other-run"
+    else:
+        rows = [*rows[1:], rows[0]]
+    evidence = workflow_lifecycle_evidence(rows, workflow_run_id="run-1")
+    assert not any(r["event_type"] == "workflow.request.approved" for r in evidence)
+    assert workflow_lifecycle_evidence(rows, workflow_run_id="other-run") == []
+    assert workflow_lifecycle_evidence([], workflow_run_id="run-1") == []

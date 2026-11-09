@@ -40,6 +40,7 @@ from zf.web.projections.operator import _operator_task_evidence
 from zf.web.projections.agents import _workdir_for_instance
 from zf.web.projections.task_fanout_runtime import _latest_task_fanout_runtimes
 from zf.web.projections.event_task_index import group_task_events as _group_task_events
+from zf.web.projections.event_task_index import cached_group_task_events
 from zf.web.projections.fanouts import _candidate_detail, _fanout_child_projection, _fanout_manifest, _fanout_progress
 
 
@@ -1355,7 +1356,9 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
             from zf.web.projections.projection_failures import record_projection_failure
             record_projection_failure("task_recent_events")
             events = []
-    all_events = _events_with_seq(state_dir, config=config)
+    from zf.web.projections.events import _events_state
+
+    all_events, event_epoch, event_fingerprint = _events_state(state_dir, config=config)
     aliases = run_aliases(event for _, event in all_events)
     legacy_completed_closeout = _current_completed_run_closeout_for_projection(
         all_events
@@ -1378,7 +1381,13 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
     latest_fanouts = _latest_task_fanout_runtimes(
         state_dir, {t.id for t in tasks}, include_report=include_detail_bodies,
     )
-    task_event_groups = _group_task_events(tasks, all_events, _search_texts)
+    task_event_groups = cached_group_task_events(
+        tasks, all_events, _search_texts, source_key=(str(state_dir.resolve()), event_epoch),
+        source_fingerprint=event_fingerprint,
+    )
+    context_types = (_GLOBAL_FAILURE_EVENTS | _PLAN_FAILURE_SUPERSEDING_EVENTS
+                     | _QUALITY_FAILURE_SUPERSEDING_EVENTS)
+    workflow_context = [(seq, event) for seq, event in all_events if event.type in context_types]
     for t in tasks:
         if task_event_groups is None:
             needle = t.id.lower()
@@ -1470,7 +1479,7 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
         fanout_projection = _task_fanout_projection(state_dir, refs, latest_fanout)
         workflow = workflow_projection(
             t,
-            _workflow_events_with_candidate_context(t, task_events, all_events, state_dir=state_dir, config=config),
+            _workflow_events_with_candidate_context(t, task_events, workflow_context, state_dir=state_dir, config=config),
             phase=phase,
             judge_configured=_workflow_judge_configured(config),
             terminal_success_event=_workflow_terminal_success_event(config),

@@ -36,7 +36,8 @@ def close_expired_queued_wait(
         and str(child.get("status") or "") in {"pending", "assigned", "dispatched"}
     ]
     if (
-        not queued_waiters
+        timeout_seconds <= 0
+        or not queued_waiters
         or active_execution_children
         or fanout_epoch is None
         or now - fanout_epoch < timeout_seconds

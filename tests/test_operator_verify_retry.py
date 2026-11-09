@@ -59,11 +59,11 @@ def test_verify_rejection_requires_bound_grant_and_preserves_verdict(rejected):
     ops = reduce_workflow_operations(events)
     assert ops["verify"]["semantic_verdict"] == "rejected"
     requests = derive_impl_rework_requests(events=events, generation_contexts=task_pipeline_generation_contexts(events), operation_rows=ops.values())
-    assert _derive_stage(ops, task={}, policy={"max_rework_attempts": 2}, impl_rework_request=requests["T1"])[:2] == ("impl_rework_ready", 5)
+    assert _derive_stage(ops, task={}, policy={"max_rework_attempts": 2, "semantic_failure_count": 3}, impl_rework_request=requests["T1"])[:2] == ("impl_rework_ready", 5)
     next_impl = {"impl": {**ops["impl"], "operation_generation": 5}, "verify": ops["verify"]}
-    assert _derive_stage(next_impl, task={}, policy={"max_rework_attempts": 2}, impl_rework_request=requests["T1"])[:2] == ("verify_ready", 5)
+    assert _derive_stage(next_impl, task={}, policy={"max_rework_attempts": 2, "semantic_failure_count": 3}, impl_rework_request=requests["T1"])[:2] == ("verify_ready", 5)
     current = {"impl": {**ops["impl"], "operation_generation": 5}, "verify": {**ops["verify"], "operation_generation": 5}}
-    assert _derive_stage(current, task={}, policy={"max_rework_attempts": 2}, impl_rework_request=requests["T1"])[0] == "blocked"
+    assert _derive_stage(current, task={}, policy={"max_rework_attempts": 2, "semantic_failure_count": 3}, impl_rework_request=requests["T1"])[0] == "blocked"
 
 
 @pytest.mark.parametrize("change", ["passed", "new_impl", "new_verify", "different_target", "impl_not_passed"])

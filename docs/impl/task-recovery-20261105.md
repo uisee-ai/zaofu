@@ -1,5 +1,7 @@
 # Task Pipeline 断点修复（2026-11-05）
 
+> 2026-11-09 合并更新：旧 shared-bodies/output-file 读取入口由 GitHub 的有界分页契约接替，详见 [合并与恢复记录](github-datal-recovery-20261109.md)。以下保留原修复历史。
+
 本批任务见 `tasks/done/2026-11-05-1400-task-recovery.md`。
 
 ## 修复边界

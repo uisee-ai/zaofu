@@ -74,6 +74,18 @@ def test_prepare_worktree_renders_v4_controller_in_blocking_mode(
     rendered = yaml.safe_load(
         (worktree / "zf.yaml").read_text(encoding="utf-8")
     )
+    # The outer resident owns diagnostic execution: an experiment may emit
+    # diagnostic requests, but must not spawn another executing resident.
+    assert rendered["runtime"]["autoresearch_resident"]["enabled"] is False
+    from zf.core.config.loader import load_config
+    from zf.runtime.autoresearch_resident_sidecar import start_autoresearch_resident_sidecar
+
+    assert load_config(cfg.config_template).runtime.autoresearch_resident.enabled is True
+    assert start_autoresearch_resident_sidecar(
+        config=load_config(worktree / "zf.yaml"), state_dir=worktree / ".zf",
+        project_root=worktree, dry_run=True,
+    ) is None
+    assert not (worktree / ".zf" / "processes" / "autoresearch-resident.pid.json").exists()
     metadata = rendered["workflow"]["_flow_metadata"]
     orchestration = rendered["workflow"]["orchestration"]
     assert metadata["prd_ref"] == "docs/prd/autoresearch.md"

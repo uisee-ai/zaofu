@@ -81,7 +81,7 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
         self._codex_observe_inflight: set[str] = set()
         self._codex_hook_trust_cache: dict[Path, list[tuple[str, str]]] = {}
 
-    def _claude_session_exists(self, session_id: str) -> bool:
+    def _claude_session_exists(self, session_id: str, *, cwd: Path | None = None) -> bool:
         """B-W5-01 (2026-04-20): probe whether Claude already has a
         session file for this uuid. Needed to distinguish "true respawn"
         (pane crashed, session file survives, --resume will work) from
@@ -90,7 +90,8 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
         found'). Mirrors `transport_stream_json._session_exists_on_disk`.
         """
         from zf.runtime.session_tailer import claude_session_path
-        return claude_session_path(self.project_root, session_id).exists()
+        project = str(Path(cwd).resolve()) if cwd is not None else self.project_root
+        return claude_session_path(project, session_id).exists()
 
     def _codex_session_exists(self, role: RoleConfig, session_id: str) -> bool:
         """Return True only when the cached Codex rollout still exists.
@@ -156,7 +157,7 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
             session_id = str(self.registry.get_or_create(
                 role.instance_id, backend=role.backend,
             ))
-            is_respawn = meta_spawned and self._claude_session_exists(session_id)
+            is_respawn = meta_spawned and self._claude_session_exists(session_id, cwd=cwd)
         else:
             self.registry.mark_backend(role.instance_id, role.backend)
             is_respawn = meta_spawned

@@ -19,6 +19,8 @@ def register_recover_task_integration(subparsers: argparse._SubParsersAction) ->
     parser.add_argument("--rework-impl", action="store_true",
                         help="Repair source through a new Impl and independent Verify, not integration-only retry")
     parser.add_argument("--approval-ref", default="", help="Explicit approval for exactly one next Impl generation")
+    parser.add_argument("--restart-from-impl", action="store_true",
+                        help="Repair the same writer task before a fresh Verify and integration")
     parser.set_defaults(func=run)
 
 
@@ -36,12 +38,16 @@ def run(args: argparse.Namespace) -> int:
             raise ValueError("run contract drift blocks recovery")
         action = request_integration_retry
         extra = {}
+        if args.rework_impl and args.restart_from_impl:
+            raise ValueError("choose one Impl recovery mode")
         if args.rework_impl:
-            from zf.runtime.task_pipeline_integration_rework import request_integration_impl_rework
+            from zf.runtime.task_pipeline_integration_rework_approved import request_integration_impl_rework
             action = request_integration_impl_rework
             extra["approval_ref"] = args.approval_ref
         elif args.approval_ref:
             raise ValueError("approval_ref requires --rework-impl")
+        if not args.rework_impl:
+            extra["restart_from_impl"] = args.restart_from_impl
         result = action(
             state_dir=context.state_dir, event_log=log, event_writer=EventWriter(log),
             operation_id=args.operation, reason=args.reason, apply=args.apply,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Iterable, Mapping
 from pathlib import Path
 
@@ -62,19 +63,21 @@ def build_canonical_required_reads(
     rows = [dict(item) for item in explicit if isinstance(item, Mapping)]
     profile = str(output_profile_id or "").strip()
     required_paths: dict[str, tuple[str, ...]] = {}
+    # A task contract is already scoped. AC/command-only reads silently omit
+    # evidence obligations, output requirements and scope boundaries.
     if profile == "implementation":
         required_paths = {
-            "contract": ("$.acceptance_criteria", "$.verification_commands"),
+            "contract": ("$",),
         }
     elif profile == "task-verify":
         required_paths = {
-            "contract": ("$.acceptance_criteria", "$.verification_commands"),
+            "contract": ("$",),
             "target": ("$",),
             "impl-self-check": ("$",),
         }
     elif profile == "candidate-verify":
         required_paths = {
-            "contract": ("$.acceptance_criteria", "$.verification_commands"),
+            "contract": ("$",),
             "target": ("$",),
         }
         source_ids = {
@@ -142,8 +145,12 @@ def build_canonical_required_reads(
                 or source_id in {
                     "goal-objective",
                     "requirement",
+                    "owner-requirement-amendment",
                     "review-artifact",
                     "plan-rework-context",
+                    "plan-rework-package",
+                    "plan-rework-decision",
+                    "plan-rework-delta",
                     "plan-execution-review",
                     "workflow-input",
                     "workflow-prompt",
@@ -155,6 +162,8 @@ def build_canonical_required_reads(
     required_paths.update(semantic_replan_handoff.required_read_paths(sources))
     for source in sources:
         source_id = str(source.get("source_id") or "")
+        if source_id.startswith("critical-") or source_id == "rework-feedback":
+            required_paths[source_id] = ("$",)
         for json_path in required_paths.get(source_id, ()):
             rows.append({
                 "source_id": source_id,
@@ -169,6 +178,11 @@ def build_canonical_required_reads(
 
     deduped: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, str]] = set()
+    source_by_identity = {
+        (str(source.get("source_id") or ""), str(source.get("artifact_id") or ""),
+         str(source.get("sha256") or "")): source for source in sources
+    }
+    seen_plan_slices: set[tuple[Any, ...]] = set()
     for row in rows:
         key = (
             str(row.get("source_id") or ""),
@@ -179,6 +193,21 @@ def build_canonical_required_reads(
         if not all(key[:3]) or key in seen:
             continue
         seen.add(key)
+        source = source_by_identity.get(key[:3], {})
+        ref = str(source.get("ref") or "")
+        if key[0].startswith("plan-port-") and ref:
+            # Preserve logical ports and attempt-local evidence authority;
+            # only collapse equal pinned reads in this new declaration.
+            slice_key = (
+                ref, key[2], key[3],
+                row.get("min_returned_bytes", 1), row.get("max_items", 0),
+                row.get("max_chars", 0), row.get("allow_truncated", False),
+                json.dumps(source.get("access_scope") or {}, sort_keys=True),
+                json.dumps(source.get("retention") or {}, sort_keys=True),
+            )
+            if slice_key in seen_plan_slices:
+                continue
+            seen_plan_slices.add(slice_key)
         deduped.append(row)
     return deduped
 

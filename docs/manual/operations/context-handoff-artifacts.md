@@ -139,3 +139,65 @@ Provider session resume 保留对话连续性，但不拥有 Task truth。Sessio
 
 - [观察一次交付](observe-delivery.md)
 - [Skills、Workdir 与 Git Evidence](../05-skills-workdirs-git-evidence.md)
+
+## 输入成本、任务预检与阶段工作记录
+
+Plan Preview 的“任务输入”页按固定 Plan 显示 AC、Task、来源/图片、角色选择和声明缺口；
+“完整原文”保留审阅入口。未提供输入、未映射来源或结构正常都不能视为语义覆盖通过。
+生产者可用 `zf plan inspect-inputs --bundle <端口文件映射.json> --task <id>` 预检，
+每次最多 8192 字节，沿 next_offset 继续；这不修改 Plan 或批准状态。
+
+Task Inputs 的“查看输入成本”对应 `zf artifact costs --attempt <id>`。
+正文交付、相同范围重读、声明的 initial/recovery/retry 原因和目录观测分别计量。
+`artifact read --reason recovery` 只是用途标注，不放宽必读，不产生完成权。
+Provider input/cache/output 与估算、上报、账单费用来自该 operation 的既有 usage；
+未观测保持 unknown，不能按字节推算 token 收益。
+`costs --compare <前次报告.json>` 只允许相同消费者、材料/选择、合同、Package 和必读政策对照。
+索引构建耗时没有在线逐次归因；`scripts/eval-context-inputs.py benchmark` 可运行离线宿主基线。
+
+阶段工作记录使用现有提交凭据；示例文件须位于当前绑定 workdir：
+
+```json
+{
+  "completed_actions": ["实现重复请求校验并运行指定测试"],
+  "pending": ["补充失败路径检查"],
+  "next_step": "核对 AC-1 的失败状态并提交正式结果",
+  "evidence_files": ["test-output.log"]
+}
+```
+
+运行 `zf artifact work-record publish --operation <id> --file progress.json --request-id <唯一 ID>`。
+记录最多 16 KiB，最多 16 项证据，每项 UTF-8 文本最多 64 KiB；拒绝工作区外路径、
+符号链接、非普通文件、.git/.env 路径和已识别的敏感材料。当前身份、canonical lease、
+工作区和 manifest 必须有效，此路径不借用只读 capability。
+证据与记录先写不可变 sidecar，再由 EventWriter 发布 ref；未发布 sidecar 不会被恢复。
+同一请求重试须保持正文和证据 digest 一致，不覆盖旧记录。
+
+`artifact recover`、实际 recovery briefing 和 handoff projection 提供当前有效记录摘要；
+`zf artifact work-record show --operation <id>` 返回有界正文页，续页须带首份 sha256 的
+`--digest` 和 `--page-start`。记录损坏、Task/输入版本改变或 operation 结束时不可复用。
+记录是 worker 未独立验证的陈述，不是正式结果、lease 或当前模型记忆证明。
+
+离线评测可运行 `PYTHONPATH=src python scripts/eval-context-inputs.py retrieval`；
+其合成样例仅测显式定位和权限边界，不能证明真实项目语义召回。
+工作记录证据用 `artifact work-record show --operation <id> --evidence <从 0 开始的序号>`
+读取固定副本；续页同样必须绑定返回的 digest。
+
+
+## 完整导航与紧凑分页
+
+`zf artifact index --attempt <id> --relation-id AC-999` 在当前授权 selector 内精确查找显式关系；
+`--query` 只搜索目录元数据、关系 ID 和章节标题，不搜索正文语义。`--navigate` 展开导航。
+新快照使用完整分片导航，旧版截断索引按原固定 digest 重建；损坏时只恢复该固定版本，
+不能读取变更后的原文替代。不可恢复会报错，不返回“完整但无结果”。
+
+CLI/API 返回 `attempt-input-index.v2`：每个 `items[]` 的 `source` 是本页 `sources[]` 下标，
+`navigation` 是位置；ref、digest、read_command 等来源信息每页每个授权来源只交付一次。
+每页默认最多 50 项，整响应含换行不超过 8192 UTF-8 字节；继续携带 `next_cursor` 查询，
+直到空游标。不同 occurrence/selector 即使 digest 相同也不合并。关系位置不扩大读取权限。
+`navigation_complete=false` 表示受支持的标识符/位置长度等限制阻止了完整导航，须核对固定原文。
+
+应用升级需重启 runtime/Web Python 消费者并重建前端；旧客户端需适配 v2 来源引用。
+不重写历史 manifest 或事件；旧游标失效后从首页查询。导航、恢复与分页本身都不生成正文回执。
+用 `scripts/eval-context-inputs.py retrieval --tasks 1000` 运行完整集合回归；该结果不代表自然语言、
+视觉理解或真实 Provider token/cache 收益。

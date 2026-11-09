@@ -1,0 +1,11 @@
+{
+  "page_errors": [],
+  "task_id_visible": true,
+  "raw_full_v5_numeric_budget_visible": true,
+  "runtime_auto_started": true,
+  "final_kernel_blocked_visible": true,
+  "ui_fixture_tests": "15 passed",
+  "all_business_mutations_via_browser": true,
+  "plan_approval_tested": false,
+  "multi_lane_impl_tested": false
+}

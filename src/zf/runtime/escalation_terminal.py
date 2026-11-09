@@ -46,6 +46,9 @@ def converge_unrecoverable_escalations(
     rows = list(events)
     emitted = 0
     terminalized_runs: set[str] = set()
+    by_id = {event.id: event for event in rows}
+    from zf.runtime.reader_failure_supersession import reader_failure_was_replaced
+
     for index, escalation in enumerate(rows):
         if escalation.type != "human.escalate":
             continue
@@ -62,6 +65,9 @@ def converge_unrecoverable_escalations(
         ):
             continue
         if _recovered_after(rows, index=index, run_id=run_id):
+            continue
+        source = by_id.get(str(payload.get("source_event_id") or ""))
+        if source is not None and reader_failure_was_replaced(rows, source):
             continue
         reason = str(payload.get("reason") or "unrecoverable human escalation")
         source_ids = [

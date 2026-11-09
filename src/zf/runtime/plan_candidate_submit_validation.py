@@ -43,16 +43,21 @@ def validate_plan_candidate_semantic(
             "plan_candidate_context_invalid",
             "operation Plan candidate writer policy must be an object",
         )
-    # Execution failure has no candidate to admit. Keep the typed failure
-    # report checks; semantic rejection alone still requires a complete Plan.
     if str(semantic.get("execution_status") or "").lower() == "failed":
         from zf.runtime.workflow_read_result import normalize_workflow_read_result
 
-        normalized, issues = normalize_workflow_read_result(ZfEvent(
-            type=str(request.get("canonical_failure_event") or "workflow.child.failed"),
-            payload={"report": dict(semantic)},
+        event_type = str(request.get("canonical_failure_event") or "")
+        if not event_type:
+            _raise_submit_error(
+                "canonical_event_missing", "operation has no canonical_failure_event",
+            )
+        identity = dict(request.get("result_identity") or {})
+        report, issues = normalize_workflow_read_result(ZfEvent(
+            type=event_type, payload={"report": {**dict(semantic), **identity}},
         ))
-        if normalized["execution_status"] == "failed":
+        # A valid failure report is admissible without a successful Plan. It
+        # still follows the signed failure event and normal typed-result gates.
+        if report["execution_status"] == "failed":
             return {
                 "schema_version": "semantic-result-preflight.v1",
                 "status": "failed" if issues else "passed",

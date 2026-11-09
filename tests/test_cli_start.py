@@ -308,6 +308,23 @@ def project_dir(tmp_path: Path, monkeypatch):
 
 
 class TestZfStart:
+    def test_control_plane_reload_recovers_enabled_autoresearch_sidecar(
+        self, project_dir: Path, monkeypatch,
+    ):
+        import zf.cli.start as start_mod
+
+        config_path = project_dir / "zf.yaml"
+        config = yaml.safe_load(config_path.read_text())
+        config["runtime"] = {"autoresearch_resident": {"enabled": True}}
+        config_path.write_text(yaml.safe_dump(config))
+        monkeypatch.setattr(start_mod, "_initialize_start_transport", lambda *args, **kwargs: True)
+
+        assert main(["start", "--dry-run", "--control-plane-only", "--skip-workflow-inspect"]) == 0
+        from zf.core.events.log import EventLog
+        events = EventLog(project_dir / ".zf" / "events.jsonl").read_all()
+        assert any(event.type == "autoresearch.resident_sidecar.started"
+                   and event.payload.get("dry_run") is True for event in events)
+
     def test_start_registered_in_cli(self):
         """zf start should be a recognized command."""
         with pytest.raises(SystemExit) as exc_info:
@@ -841,6 +858,7 @@ workflow:
         self,
         project_dir: Path,
         capsys,
+        monkeypatch,
     ):
         assert main(["start", "--dry-run", "--skip-workflow-inspect"]) == 0
         contract_ref = project_dir / ".zf" / "config" / "run-contract.json"
@@ -852,7 +870,11 @@ workflow:
         changed["roles"].append({"name": "verify", "backend": "mock"})
         (project_dir / "zf.yaml").write_text(yaml.dump(changed), encoding="utf-8")
 
-        result = main(["restart", "--dry-run"])
+        def forbidden_restart(*_args, **_kwargs):
+            pytest.fail("strict contract drift must block before stopping workers")
+
+        monkeypatch.setattr("zf.cli.restart._restart_full", forbidden_restart)
+        result = main(["restart"])
 
         assert result == 1
         captured = capsys.readouterr()
@@ -953,6 +975,12 @@ workflow:
         lines = [line for line in events_file.read_text().strip().split("\n") if line.strip()]
         event_types = [json.loads(line)["type"] for line in lines]
         assert "loop.started" in event_types
+        from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+        loaded = next(json.loads(line) for line in lines if json.loads(line)["type"] == "loop.started")
+        receipt = hydrate_sidecar_ref(project_dir / ".zf", loaded["payload"]["runtime_load_ref"]).payload
+        assert receipt["effective_config_sha256"] == loaded["payload"]["effective_config_sha256"]
+        assert receipt["loaded_consumers"] and receipt["source_tree_sha256"]
+        assert receipt["state_dir"] == str((project_dir / ".zf").resolve())
 
     def test_start_warns_when_render_lock_drifted(self, project_dir: Path):
         lock = project_dir / ".zf" / "config" / "render-lock.json"
@@ -1063,3 +1091,4 @@ class TestBootTmuxErrorFailClosed:
         # 锁文件已被显式清理;能再次拿锁 = 没有僵尸持锁。
         assert not (state_dir / "loop.lock").exists()
         assert killed_sessions, "boot cleanup must kill created tmux sessions"
+        assert all(command[-1].startswith("=") for command in killed_sessions)

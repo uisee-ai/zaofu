@@ -14,6 +14,9 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_request_routing import synthesis_request_is_ready
 from zf.runtime.workflow_synthesis_support import (
     ALLOWED_FLOW_FAMILIES,
+    COMPLETION_KEYS as _COMPLETION_KEYS,
+    FLOW_SPEC_KEYS as _FLOW_SPEC_KEYS,
+    RESULT_KEYS as _RESULT_KEYS,
     WORKFLOW_SYNTHESIS_RESULT_SCHEMA,
     admission_catalog as _admission_catalog,
     admission_contract,
@@ -43,36 +46,6 @@ from zf.runtime.workflow_requests import (
 
 WORKFLOW_SYNTHESIS_OPERATION_TYPE = "workflow_synthesis"
 WORKFLOW_SYNTHESIS_PROPOSAL_RETRY_LIMIT = 3
-_RESULT_KEYS = frozenset({
-    "schema_version",
-    "request_id",
-    "request_revision",
-    "requirement_ref",
-    "requirement_digest",
-    "selected_flow_family",
-    "short_flow_spec",
-    "decision_rationale",
-    "assumptions",
-    "open_questions",
-    "requested_roles",
-    "requested_skills",
-    "requested_profiles",
-    "completion_profile",
-    "risk_hints",
-})
-_FLOW_SPEC_KEYS = frozenset({
-    "flow_family",
-    "intent",
-    "parameters",
-    "purpose",
-    "template",
-})
-_COMPLETION_KEYS = frozenset({
-    "id",
-    "delivery_policy",
-    "completion_threshold",
-    "required_artifacts",
-})
 
 
 class WorkflowSynthesisError(ValueError):
@@ -133,6 +106,7 @@ def enqueue_workflow_synthesis(
         operation_type=WORKFLOW_SYNTHESIS_OPERATION_TYPE,
         request=prepared["operation_request"],
         parent_stage_id="workflow-synthesis",
+        parent_operation_id=str((operation_context or {}).get("retry_of_operation_id") or ""),
         causation_id=causation_id,
         correlation_id=request_id,
     )
@@ -157,6 +131,7 @@ def enqueue_workflow_synthesis(
         request_hash=ensured.request_hash,
         actor=actor,
         writer=writer,
+        retry_of_operation_id=str((operation_context or {}).get("retry_of_operation_id") or ""),
     )
     if ensured.created:
         writer.append(ZfEvent(
@@ -230,6 +205,7 @@ def run_workflow_synthesis(
         operation_type=WORKFLOW_SYNTHESIS_OPERATION_TYPE,
         request=operation_request,
         parent_stage_id="workflow-synthesis",
+        parent_operation_id=str((operation_context or {}).get("retry_of_operation_id") or ""),
         causation_id=causation_id,
         correlation_id=request_id,
     )
@@ -318,9 +294,14 @@ def run_workflow_synthesis(
         },
     ))
     try:
+        from zf.runtime.workflow_synthesis_recovery import reusable_synthesis_candidate
+        reusable = reusable_synthesis_candidate(
+            state_dir, operation_context or {}, request=request, writer=writer,
+        )
         raw_result = (
             dict(candidate_result)
             if isinstance(candidate_result, Mapping)
+            else reusable if reusable is not None
             else _invoke_synthesis_agent(
                 state_dir=state_dir,
                 project_root=project_root,
@@ -586,7 +567,9 @@ def _prepare_synthesis_operation(
     operation_id = stable_operation_id(
         workflow_run_id=workflow_run_id,
         parent_stage_id="workflow-synthesis",
-        operation_key="select-flow",
+        operation_key=("select-flow:retry:" + str(operation_context["retry_of_operation_id"])
+                       if operation_context and operation_context.get("retry_of_operation_id")
+                       else "select-flow"),
         operation_type=WORKFLOW_SYNTHESIS_OPERATION_TYPE,
     )
     catalog = _admission_catalog(config, project_root)
@@ -799,6 +782,9 @@ def _admit_result(
             "short FlowSpec lanes must be an integer between 1 and 64"
         )
     pipeline = parameters.get("task_pipeline")
+    critic_enabled = parameters.get("plan_critic_enabled")
+    if "plan_critic_enabled" in parameters and (flow_family != "PrdFlow" or type(critic_enabled) is not bool):
+        raise WorkflowSynthesisError("plan_critic_enabled requires PrdFlow and a boolean")
     if pipeline is not None:
         from zf.runtime.workflow_task_pipeline_inputs import validate_prd_task_pipeline
         try:
@@ -823,9 +809,14 @@ def _admit_result(
     requested_roles = _strings(result.get("requested_roles"))
     requested_skills = _strings(result.get("requested_skills"))
     requested_profiles = _strings(result.get("requested_profiles"))
-    _require_subset("role", requested_roles, catalog["roles"])
-    _require_subset("skill", requested_skills, catalog["skills"])
-    _require_subset("profile", requested_profiles, catalog["profiles"])
+    from zf.runtime.workflow_registered_controller import admit_capabilities
+    try:
+        admit_capabilities(parameters, flow_family, catalog, requested_roles, requested_skills, requested_profiles)
+        from zf.runtime.workflow_approval_requirements import validate_approval_requirements
+        validate_approval_requirements(parameters, hydrate_workflow_requirement(state_dir, dict(request)),
+                                       required=bool(parameters.get("controller_id")))
+    except ValueError as exc:
+        raise WorkflowSynthesisError(str(exc)) from exc
     completion = result.get("completion_profile") or {}
     if not isinstance(completion, Mapping):
         raise WorkflowSynthesisError(
@@ -972,19 +963,6 @@ def _replay_settled_synthesis(
         request_projection=projection,
         replayed=True,
     )
-
-
-def _require_subset(
-    label: str,
-    requested: list[str],
-    allowed: set[str],
-) -> None:
-    unknown = sorted(set(requested) - set(allowed))
-    if unknown:
-        raise WorkflowSynthesisError(
-            f"workflow synthesis requested unknown {label}(s): "
-            + ", ".join(unknown)
-        )
 
 
 __all__ = [

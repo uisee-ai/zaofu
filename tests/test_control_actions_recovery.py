@@ -131,6 +131,40 @@ def test_stage_retrigger_idempotent_and_generational(tmp_path: Path) -> None:
     assert len(redriven) == 1
 
 
+def test_flow_gap_retrigger_requires_failed_amend_and_is_idempotent(tmp_path: Path) -> None:
+    svc = _service(tmp_path)
+    log = svc.writer.event_log
+    src = svc.writer.append(ZfEvent(type="flow.gap_plan.ready", origin="kernel", payload={"gap_tasks": [{"task_id": "G"}]}))
+
+    def retry():
+        return svc._stage_retrigger_action(
+            requested=_req({}), action="stage-retrigger", requested_action="stage-retrigger",
+            payload={"source_event_id": src.id},
+        )
+
+    assert not retry()["ok"]
+    log.append(ZfEvent(type="task_map.amend.failed", origin="worker", payload={"source_event_id": src.id}))
+    assert not retry()["ok"]
+    log.append(ZfEvent(type="task_map.amend.failed", origin="kernel", payload={"source_event_id": src.id}))
+    assert retry()["ok"]
+    redriven = [e for e in log.read_all() if e.type == "flow.gap_plan.ready" and e.payload.get("redrive_of") == src.id]
+    assert len(redriven) == 1 and redriven[0].payload["gap_tasks"] == [{"task_id": "G"}]
+    assert not retry()["ok"]
+
+
+def test_flow_gap_retrigger_rejects_already_amended_plan(tmp_path: Path) -> None:
+    svc = _service(tmp_path)
+    src = svc.writer.append(ZfEvent(type="flow.gap_plan.ready", origin="kernel", payload={}))
+    svc.writer.append(ZfEvent(type="task_map.amend.failed", origin="kernel", payload={"source_event_id": src.id}))
+    svc.writer.append(ZfEvent(type="task_map.amended", origin="kernel", payload={"source_event_id": src.id}))
+    svc.writer.append(ZfEvent(type="task_map.amend.failed", origin="kernel", payload={"source_event_id": src.id}))
+    result = svc._stage_retrigger_action(
+        requested=_req({}), action="stage-retrigger", requested_action="stage-retrigger",
+        payload={"source_event_id": src.id},
+    )
+    assert not result["ok"]
+
+
 def test_stage_replan_new_generation_reopens_run_and_parent_once(
     tmp_path: Path,
 ) -> None:

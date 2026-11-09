@@ -23,24 +23,22 @@ from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import (
     SidecarRefError,
     build_sidecar_ref_descriptor,
-    hydrate_sidecar_ref,
     safe_sidecar_ref,
     sidecar_path,
 )
 from zf.runtime import semantic_replan_handoff
+from zf.runtime.artifact_read_ledger_validation import (
+    ARTIFACT_READ_SCHEMA, ArtifactReadError, _parse_ledger, _read_matches,
+    required_read_satisfied, validate_required_reads,
+)
 
 
 SOURCE_MANIFEST_SCHEMA = "attempt-source-manifest.v1"
-ARTIFACT_READ_SCHEMA = "artifact-read.v1"
 READ_POLICY_SCHEMA = "input-consumption-policy.v1"
 READ_LEDGER_SCHEMA = "artifact-read-ledger.v1"
 _ATTEMPT_REF_RE = re.compile(
     r"^artifacts/attempts/(?P<attempt>[^/]+)/read-ledger\.active\.jsonl$"
 )
-
-
-class ArtifactReadError(ValueError):
-    """A controlled artifact read or its evidence contract failed."""
 
 
 def build_attempt_source_manifest(
@@ -116,6 +114,8 @@ def build_attempt_source_manifest(
             "access_scope": access_scope,
             "retention": retention,
         }
+        if isinstance(raw.get("recovery_ref"), Mapping):
+            row["recovery_ref"] = dict(raw["recovery_ref"])
         normalized.append(row)
     manifest = {
         "schema_version": SOURCE_MANIFEST_SCHEMA,
@@ -239,6 +239,9 @@ def source_manifest_from_payload(
             )
             if source:
                 sources.append(source)
+    from zf.runtime.artifact_source_versions import pin_source_versions
+
+    pin_source_versions(state_dir, sources)
     manifest = build_attempt_source_manifest(
         workflow_run_id=workflow_run_id,
         task_id=task_id,
@@ -247,18 +250,18 @@ def source_manifest_from_payload(
         sources=sources,
         metadata=manifest_metadata,
     )
+    required_reads = canonical_required_reads(
+        manifest,
+        output_profile_id=str(payload.get("output_profile_id") or ""),
+        explicit=(payload.get("required_reads")
+                  if isinstance(payload.get("required_reads"), list) else ()),
+    )
+    from zf.runtime.artifact_read_snapshot import pin_read_selections
+
+    pin_read_selections(state_dir, manifest, required_reads)
     if payload.get("_context_delivery_enabled", True):
         from zf.runtime.context_delivery import attach_context_sections
 
-        required_reads = canonical_required_reads(
-            manifest,
-            output_profile_id=str(payload.get("output_profile_id") or ""),
-            explicit=(
-                payload.get("required_reads")
-                if isinstance(payload.get("required_reads"), list)
-                else ()
-            ),
-        )
         manifest = attach_context_sections(
             manifest,
             output_profile_id=str(payload.get("output_profile_id") or ""),
@@ -358,15 +361,20 @@ def read_attempt_artifact(
     manifest: Mapping[str, Any],
     source_id: str,
     artifact_id: str,
+    artifact_sha256: str = "",
     json_path: str = "$",
     max_items: int = 0,
     max_chars: int = 0,
+    page_start: int | None = None,
+    page_size: int = 0,
+    record: bool = True,
     actor: str = "",
     role: str = "",
     provider: str = "",
     purpose: str = "",
 ) -> dict[str, Any]:
-    source = _find_source(manifest, source_id=source_id, artifact_id=artifact_id)
+    source = _find_source(manifest, source_id=source_id, artifact_id=artifact_id,
+                          artifact_sha256=artifact_sha256)
     read_purpose = str(purpose or manifest.get("read_purpose") or "").strip()
     try:
         require_artifact_access(
@@ -413,36 +421,49 @@ def read_attempt_artifact(
         )
     ref = str(source.get("ref") or "")
     path = _manifest_ref_path(state_dir, ref)
-    if not path.exists() or not path.is_file():
-        raise ArtifactReadError(f"artifact ref missing: {ref}")
-    raw = path.read_bytes()
+    from zf.runtime.artifact_source_versions import read_source_version
+
+    try:
+        raw, recovery_mode = read_source_version(state_dir, dict(source), path=path)
+    except (OSError, ValueError, KeyError) as exc:
+        raise ArtifactReadError(str(exc)) from exc
     digest = hashlib.sha256(raw).hexdigest()
-    expected = str(source.get("sha256") or "")
-    if expected and digest != expected:
-        raise ArtifactReadError(
-            f"artifact hash mismatch for {ref}: expected {expected}, got {digest}"
-        )
-    selected: Any
-    if json_path != "$":
-        try:
-            decoded = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ArtifactReadError("json_path requires a JSON artifact") from exc
-        selected = _select_json_path(decoded, json_path)
-    else:
-        try:
-            selected = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            selected = raw.decode("utf-8", errors="replace")
+    from zf.runtime.artifact_text_codec import decode_artifact_text
+
+    try:
+        decoded = decode_artifact_text(raw, json_path)
+    except ValueError as exc:
+        raise ArtifactReadError(str(exc)) from exc
+    selected = _select_json_path(decoded, json_path)
+    if page_start is not None and (page_start < 0 or not 1 <= page_size <= 8192 or max_items or max_chars):
+        raise ArtifactReadError("paged reads require a non-negative start, size 1..8192, and no limits")
+    limited_items = bool(
+        max_items > 0 and isinstance(selected, (list, Mapping)) and len(selected) > max_items
+    )
     selected = _limit_items(selected, max_items=max_items)
     encoded = _encode_selected(selected)
-    truncated = False
+    truncated = limited_items
+    page_meta: dict[str, Any] = {}
+    if page_start is not None:
+        total = len(encoded)
+        if page_start >= total:
+            raise ArtifactReadError("page start is outside the selected content")
+        page_end = min(total, page_start + page_size)
+        page_meta = {
+            "page_start": page_start, "page_end": page_end, "page_total": total,
+            "selected_sha256": hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+            "selected_bytes": len(encoded.encode("utf-8")),
+        }
+        encoded = encoded[page_start:page_end]
+        truncated = page_start > 0 or page_end < total
     if max_chars > 0 and len(encoded) > max_chars:
         encoded = encoded[:max_chars]
         truncated = True
     row = {
         "schema_version": ARTIFACT_READ_SCHEMA,
         "status": "read",
+        "production_status": "generated",
+        "provider_delivery_status": "unknown",
         "workflow_run_id": str(manifest.get("workflow_run_id") or ""),
         "task_id": str(manifest.get("task_id") or ""),
         "attempt_id": str(manifest.get("attempt_id") or ""),
@@ -451,6 +472,7 @@ def read_attempt_artifact(
         "artifact_id": artifact_id,
         "artifact_ref": ref,
         "artifact_sha256": digest,
+        "recovery_mode": recovery_mode,
         "json_path": json_path,
         "bytes": len(raw),
         "returned_bytes": len(encoded.encode("utf-8")),
@@ -463,8 +485,10 @@ def read_attempt_artifact(
         "consumer_purpose": read_purpose,
         "occurrence_id": str(source.get("occurrence_id") or ""),
         "read_at": datetime.now(timezone.utc).isoformat(),
+        **page_meta,
     }
-    append_artifact_read(state_dir, row)
+    if record:
+        append_artifact_read(state_dir, row)
     return {"content": encoded, "read": row}
 
 
@@ -483,12 +507,12 @@ def append_artifact_read(state_dir: Path, row: Mapping[str, Any]) -> Path:
     return path
 
 
-def seal_read_ledger(state_dir: Path, attempt_id: str) -> dict[str, Any]:
+def seal_read_ledger(state_dir: Path, attempt_id: str, *, allow_empty: bool = False) -> dict[str, Any]:
     active = active_read_ledger_path(state_dir, attempt_id)
     with locked_path(active):
         attempt_dir = active.parent
         sealed_paths = sorted(attempt_dir.glob("read-ledger-*.jsonl"))
-        if not active.exists() and not sealed_paths:
+        if not active.exists() and not sealed_paths and not allow_empty:
             raise ArtifactReadError(f"active read ledger missing for {attempt_id}")
 
         # Output correction keeps the same attempt identity. The runtime may
@@ -508,6 +532,11 @@ def seal_read_ledger(state_dir: Path, attempt_id: str) -> dict[str, Any]:
                     separators=(",", ":"),
                 )
                 rows_by_body.setdefault(body, row)
+        from zf.runtime.artifact_output_delivery import observe_artifact_delivery
+
+        enriched = observe_artifact_delivery(state_dir, list(rows_by_body.values()))
+        rows_by_body = {json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")): row
+                        for row in enriched}
         ordered = sorted(
             rows_by_body.items(),
             key=lambda item: (str(item[1].get("read_at") or ""), item[0]),
@@ -538,40 +567,6 @@ def seal_read_ledger(state_dir: Path, attempt_id: str) -> dict[str, Any]:
         )
 
 
-def validate_required_reads(
-    state_dir: Path,
-    *,
-    policy: Mapping[str, Any],
-    ledger_descriptor: Mapping[str, Any],
-) -> list[dict[str, str]]:
-    try:
-        hydrated = hydrate_sidecar_ref(state_dir, dict(ledger_descriptor))
-    except Exception as exc:  # descriptor errors become admission issues
-        return [{"field": "input_consumption.read_ledger_ref", "code": "invalid_ref", "message": str(exc)}]
-    raw = hydrated.payload
-    if not isinstance(raw, str):
-        return [{"field": "input_consumption.read_ledger_ref", "code": "invalid_ledger"}]
-    attempt_id = str(policy.get("attempt_id") or "")
-    try:
-        rows = _parse_ledger(raw.encode("utf-8"), expected_attempt_id=attempt_id)
-    except ArtifactReadError as exc:
-        return [{"field": "input_consumption.read_ledger_ref", "code": "invalid_ledger", "message": str(exc)}]
-    issues: list[dict[str, str]] = []
-    required = policy.get("required_reads")
-    for index, item in enumerate(required if isinstance(required, list) else []):
-        if not isinstance(item, Mapping):
-            issues.append({"field": f"required_reads[{index}]", "code": "invalid_policy"})
-            continue
-        match = next((row for row in rows if _read_matches(row, item)), None)
-        if match is None:
-            issues.append({
-                "field": f"required_reads[{index}]",
-                "code": "required_read_missing",
-                "message": f"{item.get('source_id')}/{item.get('artifact_id')} {item.get('json_path') or '$'}",
-            })
-    return issues
-
-
 def active_read_ledger_path(state_dir: Path, attempt_id: str) -> Path:
     rel = f"artifacts/attempts/{_safe_component(attempt_id)}/read-ledger.active.jsonl"
     return sidecar_path(state_dir, rel)
@@ -595,13 +590,15 @@ def render_attempt_source_briefing(
     from zf.runtime.cli_command import zf_cli_cmd
 
     cli_command = zf_cli_cmd()
+    from zf.runtime.artifact_role_inputs import render_role_input_entry
     lines = [
         "## Controlled Artifact Inputs",
         "",
         f"- source_manifest_ref: `{ref}`",
         f"- attempt_id: `{attempt_id}`",
-        f"- List: `{cli_command} artifact list --attempt <attempt-id>`.",
-        "- Read required inputs with the exact commands below.",
+        f"- Index: `{cli_command} artifact index --attempt {attempt_id}`. "
+        "Locators only, not read evidence.",
+        render_role_input_entry(payload, state_dir),
         (
             "- Run one literal command per tool call; no variables, aliases, "
             "loops, pipes, redirections, substitutions, or compound commands "
@@ -609,20 +606,43 @@ def render_attempt_source_briefing(
         ),
     ]
     if required:
+        if any(isinstance(row, Mapping) and row.get("source_id") == "plan-structural-delta"
+               for row in payload.get("input_refs", [])):
+            lines.append(
+                "- The indexed Plan structural delta is an optional navigation aid, not an approval "
+                "or a substitute for current required source text. Review the requirements, shared "
+                "rules, affected tasks, dependencies and verification ownership independently."
+            )
+        if (any(str(row.get("artifact_id") or "") == "scoped_plan_review.json" for row in required if isinstance(row, Mapping))
+                and any(str(row.get("source_id") or "").startswith("baseline-plan-port-") for row in required if isinstance(row, Mapping))):
+            lines.append(
+                "- Local Plan review: the scope certificate is a claim, not approval. Compare old and new "
+                "contracts, affected prerequisites/consumers, requirements and verification ownership; "
+                "expand any authorized source if needed and independently decide the current verdict."
+            )
+        if any("-predecessor-" in str(row.get("source_id") or "") for row in required if isinstance(row, Mapping)):
+            lines.append(
+                "- Sources named `-predecessor-<task-id>` are historical predecessor "
+                "context. Apply the current task contract and current task map for "
+                "scope, verification ownership and acceptance; do not treat the "
+                "predecessor task's contract as the current one."
+            )
         lines.extend([
-            f"- Preferred single-call read: `{cli_command} artifact read --attempt {attempt_id} --required --deduplicate-content`.",
-            "  It returns every required slice and records each read. Consume the complete output; "
-            "do not repeat individual reads unless the tool output was truncated or a read failed.",
-            "  A content_ref reuses the earlier content_id body in this same output; "
-            "each source retains its own read receipt. If that body was truncated or absent, "
-            "use the exact individual read below. A fresh session must read the inputs again.",
-            f"- For large inputs: `{cli_command} artifact read --attempt {attempt_id} "
-            "--required --shared-bodies --output-file <local-cache-file>`. "
-            "Choose a new, gitignored path containing `.cache` or `__pycache__` "
-            "inside the assigned workdir and permitted write scope; no symlinks "
-            "or runtime state paths. The CLI saves the full output atomically "
-            "and prints only its receipt. Read the saved bodies and source mappings "
-            "in bounded pages; a cache receipt does not prove model consumption.",
+            f"- Preferred deduplicated read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
+            "  Consume every items[].content in required-artifact-page.v2. Identical bodies share output; "
+            "each source is recorded. Follow `--cursor <next_cursor>` until null. "
+            "Do not reread complete aliases.",
+            "- Required pages default to 8192 UTF-8 bytes including metadata, not tokens. "
+            "If the tool output budget is smaller, use --page-bytes 2048; consume pages "
+            "separately and leave room for tool wrappers. Return each raw page unchanged; do not filter fields or batch pages into a summary. CLI receipts prove production; "
+            "provider delivery may remain unknown and never proves understanding.",
+            "- Wait for each page's complete tool response and consume it before requesting "
+            "another page; do not accumulate background page reads. If a response is "
+            "truncated, omitted, or lost, reread that exact page before continuing.",
+            "- If an output is too large or truncated, read that exact source and JSON path "
+            "with `--page-start 0 --page-size 8192`. Read and consume every page, using "
+            "the returned `next_page_start` until it is null. The ledger accepts pages "
+            "only when they cover the entire selected input without gaps.",
         ])
         lines.extend(["- Required reads for this attempt:"])
         for item in required:
@@ -788,12 +808,20 @@ def _find_source(
     *,
     source_id: str,
     artifact_id: str,
+    artifact_sha256: str = "",
 ) -> dict[str, Any]:
+    matches = []
     for item in manifest.get("sources") if isinstance(manifest.get("sources"), list) else []:
         if not isinstance(item, Mapping):
             continue
-        if str(item.get("source_id") or "") == source_id and str(item.get("artifact_id") or "") == artifact_id:
-            return dict(item)
+        if (str(item.get("source_id") or "") == source_id
+                and str(item.get("artifact_id") or "") == artifact_id
+                and (not artifact_sha256 or item.get("sha256") == artifact_sha256)):
+            matches.append(dict(item))
+    if len(matches) > 1:
+        raise ArtifactReadError(f"ambiguous source: {source_id}/{artifact_id}; use the pinned required read")
+    if matches:
+        return matches[0]
     raise ArtifactReadError(f"source not found: {source_id}/{artifact_id}")
 
 
@@ -836,48 +864,9 @@ def _limit_items(value: Any, *, max_items: int) -> Any:
 
 
 def _encode_selected(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    from zf.runtime.artifact_text_codec import encode_selected
 
-
-def _parse_ledger(raw: bytes, *, expected_attempt_id: str) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for index, line in enumerate(raw.decode("utf-8").splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise ArtifactReadError(f"invalid read ledger line {index}") from exc
-        if not isinstance(row, dict) or row.get("schema_version") != ARTIFACT_READ_SCHEMA:
-            raise ArtifactReadError(f"invalid read ledger row {index}")
-        if expected_attempt_id and str(row.get("attempt_id") or "") != expected_attempt_id:
-            raise ArtifactReadError(f"attempt identity mismatch on ledger line {index}")
-        rows.append(row)
-    return rows
-
-
-def _read_matches(row: Mapping[str, Any], requirement: Mapping[str, Any]) -> bool:
-    if str(row.get("status") or "read") != "read":
-        return False
-    for field in ("source_id", "artifact_id"):
-        if str(requirement.get(field) or "") != str(row.get(field) or ""):
-            return False
-    digest = str(requirement.get("artifact_sha256") or requirement.get("sha256") or "")
-    if digest and digest != str(row.get("artifact_sha256") or ""):
-        return False
-    if str(requirement.get("json_path") or "$") != str(row.get("json_path") or "$"):
-        return False
-    if int(row.get("returned_bytes") or 0) < int(requirement.get("min_returned_bytes") or 1):
-        return False
-    if bool(row.get("truncated")) and not bool(requirement.get("allow_truncated", False)):
-        return False
-    for field in ("max_items", "max_chars"):
-        required_value = int(requirement.get(field) or 0)
-        if required_value and int(row.get(field) or 0) != required_value:
-            return False
-    return True
+    return encode_selected(value)
 
 
 def _safe_component(value: str) -> str:

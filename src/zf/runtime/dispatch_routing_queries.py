@@ -10,6 +10,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task
 from zf.core.config.schema import RoleConfig
 from zf.core.errors import CircuitBreaker
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 
 class DispatchRoutingQueriesMixin:
@@ -383,7 +384,7 @@ class DispatchRoutingQueriesMixin:
                 latest_dispatched=latest_dispatched,
                 route_role_name_pool=True,
             )
-            if role is None or role.name == "orchestrator":
+            if role is None or is_configured_orchestrator_role(self.config, role):
                 return None
             if not self._role_supports_task_skills(role, task):
                 return None
@@ -407,7 +408,7 @@ class DispatchRoutingQueriesMixin:
                 latest_dispatched=latest_dispatched,
                 route_role_name_pool=True,
             )
-            if role is None or role.name == "orchestrator":
+            if role is None or is_configured_orchestrator_role(self.config, role):
                 return None
             if not self._role_supports_task_skills(role, task):
                 return None
@@ -422,7 +423,7 @@ class DispatchRoutingQueriesMixin:
 
         # Unassigned with no topology metadata: first available non-orchestrator.
         for role in self.config.roles:
-            if role.name == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             if not self._role_supports_task_skills(role, task):
                 continue
@@ -463,7 +464,7 @@ class DispatchRoutingQueriesMixin:
         intended = str(task.assigned_to or self._initial_role_for_ready_task(task) or "")
         candidates = [
             role for role in roles
-            if role.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, role)
             and (
                 not intended
                 or role.name == intended

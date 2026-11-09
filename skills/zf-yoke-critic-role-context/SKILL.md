@@ -67,6 +67,10 @@ AC 或风险。
 5. 每条 canonical command 是否能由下游从 repo root 按存储原文执行；若
    Planner 只能通过重写、补转义或“等价命令”证明它，必须 Reject。含多层
    shell/interpreter 转义的 inline program 应改为 task-owned 测试/脚本；
+   先按原始 JSON/YAML 格式解码 command 值，再判断 shell 实际接收的字符；
+   展示层的转义不等于命令中的字面反斜杠。声称“命令不能执行”须绑定可复核的
+   解码值及失败证据；必要时在已授权的隔离夹具中做最小验证，不能重写命令来证明它。
+   无法复核时明确缺少证据，不把目测怀疑写成已复现缺陷；新证据推翻旧 finding 时撤销误报；
 6. 每个 mandatory AC 的行为与 evidence 是否有明确 producer，producer 的
    `allowed_paths` 是否覆盖生成 evidence 所需的实现、runner 配置、spec、
    fixture 和输出登记路径；
@@ -233,3 +237,24 @@ Before emitting a verdict, check:
   address them without coming back to ask for clarification
 - when emitting `gate.failed`, ensure the payload has both the structured
   verdict and a human-readable `summary` so reissue briefings render correctly
+
+## Judge 输入范围
+
+按当前 profile 的必读政策从 `artifact index --attempt <id>` 定位合同、目标版本
+与独立 Verify 结果，核对证据是否属于当前 Task/target。Integration acceptance
+review 和 Thin Judge/Goal closure 有各自范围；不得把 Impl 的
+`plan_input_selection` 当作 Judge 或全局验收的输入删减授权。必要共享约束、
+异常路径、跨任务影响有缺口时给出具体 ref/selector 与补充目标；历史批准、
+Impl 自检和目录可见性都不能代替独立验收结论。
+
+对关系/章节索引的命中需回读当前 Judge 授权正文；未命中或 complete=false 不证明
+无遗漏。恢复时检查 `artifact recover` 的身份和版本状态，不能将 Impl/Verify 消费
+历史当作 Judge 当前记忆，也不能凭恢复包越过受控准入或重新绑定。
+
+## 任务输入切片审查
+
+批准 Impl/Verify 的任务范围输入前，按完整原始来源核对 shared + owned 是否保留异常、
+共享规则、图片页面/状态、依赖接口和验收责任。AC/来源 ID 齐全不能证明正文完整。
+可用 `zf plan inspect-inputs --bundle <本地端口映射 JSON>` 检查声明，但语义裁决必须由
+当前 Critic 给出带 source_ref/quote 的 findings；预检无问题不能复用为 passed。
+评测时只读 blind 输入，不看评分标准答案。Candidate/Goal 范围保持既有 profile。

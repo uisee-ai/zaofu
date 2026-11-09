@@ -65,6 +65,7 @@ _RUN_MANAGER_NOOP_INPUT_EVENTS = frozenset({
 })
 _RUN_MANAGER_REACTIVE_SELF_EVENTS = frozenset({
     "run.manager.agent.recommendation",
+    "run.manager.reflect.completed",
 })
 
 

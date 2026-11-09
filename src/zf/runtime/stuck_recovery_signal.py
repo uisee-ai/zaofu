@@ -34,8 +34,16 @@ def emit_stuck_signal(
     dispatch = (
         runtime._latest_dispatch_event_for_task(task.id) if task is not None else None
     )
+    foreign_dispatch = False
+    if dispatch is not None and dispatch.type == "fanout.child.dispatched":
+        dispatch_role = str(dispatch.payload.get("role_instance") or "")
+        if dispatch_role and dispatch_role != role.instance_id:
+            foreign_dispatch = True
+            dispatch = None
     dispatch_payload = dispatch.payload if dispatch is not None else {}
-    task_dispatch_id = getattr(task, "active_dispatch_id", "") if task else ""
+    task_dispatch_id = (
+        getattr(task, "active_dispatch_id", "") if task and not foreign_dispatch else ""
+    )
     dispatch_id = task_dispatch_id
     briefing = ""
     if isinstance(dispatch_payload, dict):
@@ -99,3 +107,55 @@ def _role_session_id(runtime: Any, instance_id: str) -> str:
 
 
 __all__ = ["StuckSignal", "emit_stuck_signal"]
+
+
+def emit_worker_runner_failed(
+    self,
+    *,
+    role: Any,
+    task: Any,
+    source: str,
+    reason: str,
+) -> None:
+    """Record deterministic runner/process failure observed by Layer 1."""
+    lifecycle: dict[str, object] = {
+        "role_name": role.instance_id,
+        "alive": False,
+        "pane_pid": "",
+        "current_command": "",
+        "current_path": "",
+    }
+    snapshot_fn = getattr(self.transport, "lifecycle_snapshot", None)
+    if snapshot_fn is not None:
+        try:
+            snapshot = snapshot_fn(role.instance_id)
+            to_payload = getattr(snapshot, "to_payload", None)
+            if to_payload is not None:
+                raw = to_payload()
+                if isinstance(raw, dict):
+                    lifecycle.update(raw)
+        except Exception:
+            pass
+
+    dispatch_id = ""
+    if task is not None:
+        dispatch_id = getattr(task, "active_dispatch_id", "") or ""
+    try:
+        self.event_writer.append(ZfEvent(
+            type="worker.runner.failed",
+            actor=role.instance_id,
+            task_id=task.id if task is not None else None,
+            payload={
+                "role": role.name,
+                "instance_id": role.instance_id,
+                "backend": role.backend,
+                "task_id": task.id if task is not None else "",
+                "dispatch_id": dispatch_id,
+                "source": source,
+                "reason": reason,
+                "dead_threshold": self._dead_threshold,
+                "lifecycle": lifecycle,
+            },
+        ))
+    except Exception:
+        pass

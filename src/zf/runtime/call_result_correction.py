@@ -17,6 +17,13 @@ def repair_instruction(issue: Mapping[str, Any]) -> str:
     field = str(issue.get("field") or "control_result")
     code = str(issue.get("code") or "schema_invalid")
     message = str(issue.get("message") or "").strip()
+    if code == "required_read_missing" or field == "input_consumption.status":
+        return (
+            "Consume the missing required body through this attempt's controlled "
+            f"artifact read command ({message or 'see required_read_missing issues'}). "
+            "Finish all pages before resubmitting; never edit required_reads, "
+            "input_consumption, or the read ledger to manufacture evidence."
+        )
     if code == "missing_required":
         return f"Provide a non-empty value at {field}."
     if code == "workflow_output_missing":
@@ -69,12 +76,13 @@ def build_correction_briefing(
             "```",
         ]
     return "\n".join([
-        f"Active task: {task_id or '(none)'}",
+        f"Active task: {task_id}" if task_id else "Taskless operation protocol correction",
         "",
         "# Call Result Protocol Correction",
         "",
         "The previous provider turn completed work but returned an invalid control result.",
-        "Do not redo implementation or change verdict/evidence semantics.",
+        "Do not redo implementation or weaken verdict/evidence semantics. "
+        "If missing input changes the conclusion, report that fact truthfully.",
         f"Correction packet: `{correction_ref.get('ref', '')}`",
         f"Operation: `{operation_id}`",
         f"Request hash: `{request_hash}`",
@@ -142,6 +150,7 @@ def dispatch_call_result_correction(
     *,
     source_event: ZfEvent,
     outcome: CallResultAdmissionOutcome,
+    stop_timeout_seconds: float = 30.0,
 ) -> bool:
     """Continue the same resident provider session with a minimal correction."""
 
@@ -160,6 +169,7 @@ def dispatch_call_result_correction(
         source_event=source_event,
         actor=actor,
         backend=str(getattr(role, "backend", "") or ""),
+        timeout_seconds=stop_timeout_seconds,
     ):
         return False
     task_id = str(source_event.task_id or payload.get("task_id") or "")
@@ -186,6 +196,9 @@ def dispatch_call_result_correction(
         briefing_path=path,
         task_id=task_id,
         trace_id=source_event.correlation_id,
+        run_id=str(payload.get("workflow_run_id") or source_event.correlation_id or "") or None,
+        operation_id=outcome.operation_id,
+        dispatch_id=str(payload.get("dispatch_id") or "") or None,
     )
     runtime._send_transport_task(role.instance_id, path, prompt, context)
     runtime.event_writer.append(ZfEvent(

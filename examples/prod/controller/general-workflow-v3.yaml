@@ -106,7 +106,7 @@ spec:
       transport: tmux
       lifecycle: {mode: on_demand}
       execution: *bounded-execution
-      skills: [source-verification]
+      skills: [source-verification, zf-evidence-synthesis]
     - <<: *general-reader
       name: general-collector-a
       instance_id: general-collector-a
@@ -116,11 +116,11 @@ spec:
     - <<: *general-reader
       name: general-synthesizer
       instance_id: general-synthesizer
-      skills: [zf-project-suggest]
+      skills: [zf-project-suggest, zf-evidence-synthesis]
     - <<: *general-reader
       name: general-verifier
       instance_id: general-verifier
-      skills: [zf-yoke-test-evaluator-role-context]
+      skills: [zf-yoke-test-evaluator-role-context, zf-evidence-synthesis]
   workflow:
     orchestration:
       mode: exception_advisor

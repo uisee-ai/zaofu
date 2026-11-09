@@ -270,8 +270,22 @@ def settle_terminal_operation_attempt(
         row for row in candidates
         if str(row.get("status") or "") in {"prepared", "delivering", "sent"}
     ]
+    provider_failure = _provider_failure_class(event)
     if not active:
-        return False
+        repaired = False
+        for row in candidates:
+            if (provider_failure and row.get("status") == "failed"
+                    and row.get("terminal_event_id") == event.id
+                    and row.get("recovery_owner") == "workflow"
+                    and row.get("failure_class") == "workflow_operation_terminal"):
+                updated = attempt_store.update(
+                    str(row["attempt_id"]), status="failed", updated_at=support._now(),
+                    recovery_owner="run_manager", failure_class=provider_failure,
+                )
+                if updated is not None:
+                    row.update(updated)
+                    repaired = True
+        return repaired
     current = max(
         active,
         key=lambda row: (
@@ -286,15 +300,16 @@ def settle_terminal_operation_attempt(
         "workflow.operation.cancelled",
     }
     reason = str(payload.get("reason") or event.type)[:500]
+    recovery_owner = "run_manager" if provider_failure else "workflow"
     row = attempt_store.update(
         attempt_id,
         status="superseded" if superseded else "failed",
         updated_at=support._now(),
         terminal_event_id=event.id,
         failure_reason="" if superseded else reason,
-        failure_class="" if superseded else "workflow_operation_terminal",
+        failure_class="" if superseded else provider_failure or "workflow_operation_terminal",
         retryable=False,
-        recovery_owner="workflow",
+        recovery_owner=recovery_owner,
     )
     if row is None:
         return False
@@ -316,7 +331,7 @@ def settle_terminal_operation_attempt(
             "reason": reason,
             "failure_class": str(row.get("failure_class") or ""),
             "retryable": False,
-            "recovery_owner": "workflow",
+            "recovery_owner": recovery_owner,
             "read_ledger_ref": ledger_ref,
         },
         correlation_id=str(row.get("run_id") or run_id),
@@ -324,6 +339,20 @@ def settle_terminal_operation_attempt(
     )
     support._emit_shadow_comparison(runtime, row)
     return True
+
+
+def _provider_failure_class(event: ZfEvent) -> str:
+    """Only structured terminal provider facts transfer recovery ownership."""
+    from zf.runtime.provider_stop import KNOWN_STOP_REASONS
+
+    if event.type not in {"workflow.operation.blocked", "workflow.operation.failed"}:
+        return ""
+    reason = str(event.payload.get("provider_stop_reason") or "")
+    failure_class = str(event.payload.get("failure_class") or "")
+    if (reason in KNOWN_STOP_REASONS and not reason.startswith("completed_")
+            and failure_class == f"provider_stop:{reason}"):
+        return failure_class
+    return ""
 
 
 def _attempt_existed_when_event_occurred(

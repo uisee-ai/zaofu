@@ -156,7 +156,6 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .board-grid .task-age { font-size: var(--text-12); color: var(--text-tertiary); }
 .task-assignee-avatar { margin-left: auto; display: grid; place-items: center; flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; font-size: var(--text-9); color: var(--text-tertiary); background: var(--surface); }
 .task-assignee-avatar.assigned { color: var(--brand); background: var(--brand-subtle); }
-.board-grid .blocked-note { margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: var(--text-12); }
 .board-add-task { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--text-tertiary); font-size: var(--text-12-5); text-align: left; cursor: pointer; }
 .board-add-task:hover { background: var(--surface-2); color: var(--text); }
 .workbench-task-list { margin: 0; min-width: 0; --list-columns: minmax(260px, 1fr) 120px 140px 75px 100px 140px; }

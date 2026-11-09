@@ -58,6 +58,10 @@ def write_task_pipeline_briefing(
         )
         stage_instructions = [
             "Implement only the admitted Task Contract in this Task Workspace.",
+            "Rework code paths do not remove required evidence outputs already "
+            "authorized by the admitted contract. Refresh those outputs for the "
+            "current result; evidence requirements never authorize out-of-scope writes. "
+            "Resolve an explicit write prohibition before proceeding.",
             "Commit task changes with explicit pathspecs before submission.",
             "Set target_commit and every self-check target to the exact HEAD.",
             "Do not update candidate/main refs or runtime truth directly.",
@@ -90,6 +94,9 @@ def write_task_pipeline_briefing(
             "and do not reject/block this Task for evidence that layer will produce.",
             "Attach durable evidence to every result adjudicated by this stage.",
             "For a product gap, submit verdict=rejected with exact rework_items.",
+            "Rework allowed_scope must cover the fix and its required evidence "
+            "updates within the admitted contract; do not omit outputs or expand "
+            "the contract's write authority.",
         ]
         if payload.get("external_evidence_bindings"):
             stage_instructions.append(
@@ -136,7 +143,24 @@ def write_task_pipeline_briefing(
         f"\"current_task_id\":\"{task.id}\",\"state\":\"busy\","
         "\"last_action_ts\":\"<ISO8601 UTC>\"}'"
     )
+    budget_command = f"{zf_cli_cmd()} cost --operation {prepared.operation_id} --json"
     state_dir = Path(runtime.state_dir).resolve()
+    # These exact values are already delivered in the header/envelope. Keep
+    # distinct values (including unexpected mismatches) visible for diagnosis.
+    delivered = {
+        "task_id": str(task.id), "operation_id": prepared.operation_id,
+        "dispatch_id": payload.get("dispatch_id") or "",
+        "attempt_id": payload.get("attempt_id") or "",
+        "operation_generation": payload["operation_generation"],
+        "placement_epoch": payload["placement_epoch"],
+        "workdir": str(workspace.project_path),
+        "target_commit": payload.get("target_commit") or workspace.base_commit,
+        "instruction": _task_instruction(task),
+    }
+    display = {
+        key: value for key, value in display.items()
+        if key not in delivered or delivered[key] != value
+    }
     lines = [
         f"Active task: {task.id}",
         "",
@@ -154,6 +178,16 @@ def write_task_pipeline_briefing(
         "",
         "## Read Order (authoritative)",
         "",
+        *([
+            "1. Consume this stage card once, then the exact Controlled Artifact Inputs "
+            "batch and every next_cursor page. These pin the contract, target and required sources.",
+            "2. Do not reread task/source/progress projections or unchanged skills to "
+            "reconstruct fields already consumed. Read an exact source only if context is missing.",
+            "3. Report task_context_stale on identity disagreement; never substitute "
+            "another contract/target. Kernel admission rechecks this operation's identity.",
+            f"Diagnostic projections (read only if needed): `{task_doc_path(state_dir, task.id)}`, "
+            f"`{task_source_path(state_dir, task.id)}`, `{task_progress_path(state_dir, task.id)}`.",
+        ] if stage == "verify" else [
         f"1. Read the kernel-managed task document `{task_doc_path(state_dir, task.id)}`.",
         f"2. Read semantic source `{task_source_path(state_dir, task.id)}` and "
         f"progress `{task_progress_path(state_dir, task.id)}`.",
@@ -161,8 +195,37 @@ def write_task_pipeline_briefing(
         "briefing and Compact Execution Context; report task_context_stale on disagreement.",
         "4. Complete the exact Controlled Artifact Inputs reads below before work; "
         "reading task.md does not replace the required artifact read ledger.",
-        "5. Keep kernel projections read-only and submit only this operation's "
+        ]),
+        "Keep kernel projections read-only and submit only this operation's "
         "typed result through the Output Contract below.",
+        "",
+        "## Critical Constraints and Recovery",
+        "",
+        "Keep the critical-* required sources available: original user messages and "
+        "answers, approved Flow configuration, plus the current contract and rework "
+        "feedback. Approved configuration takes precedence over earlier configuration "
+        "preferences. Summaries cannot replace these full sources. After compaction "
+        "or resume, re-read their current versions before continuing. Recover older "
+        "evidence through its exact ref/digest; a version mismatch requires the full "
+        "authoritative source or an explicit unavailable report, never a guessed summary.",
+        "",
+        "## Budget and Continuation",
+        "",
+        "Read operation headroom before work, then with each heartbeat:",
+        "```bash",
+        budget_command,
+        "```",
+        "Use the configured tool permissions. If this diagnostic is unavailable, "
+        "record that limitation and continue; the kernel budget guard remains active.",
+        "Budget includes fresh input, cached input and output across all turns. "
+        "A low context-window ratio does not imply sufficient operation budget. "
+        "Unknown pricing is not free usage; usage samples are not model calls.",
+        "At warning_level >= 50, preserve a continuation note within the allowed "
+        "task scope: current operation/attempt/dispatch, contract/source digests, "
+        "HEAD and dirty paths, decisions, every open acceptance/rework item, "
+        "exact command results and full evidence refs, and next action. "
+        "Update it at >= 80. Checkpointing does not complete or pause an attempt; "
+        "continue required work within the existing gates and limits.",
         "",
         "## Stage Contract",
         "",
@@ -184,13 +247,26 @@ def write_task_pipeline_briefing(
         lines.extend([
             "## Rework Feedback",
             "",
+            "After the current required reads, reproduce these failures first. "
+            "Inspect affected code and its callers; retain all acceptance criteria "
+            "and run their required checks before handoff. Do not repeat global "
+            "repository/skill discovery solely because this is a new attempt.",
+            "Current required reads are still mandatory. Use the deduplicated "
+            "--required pages once; aliases already have independent receipts. "
+            "Prior receipts and continuation summaries cannot replace current "
+            "source bodies. Keep the prior session/history and full evidence "
+            "available for recovery; do not discard them to lower token usage.",
+            "",
             "```json",
             json.dumps(feedback, ensure_ascii=False, indent=2),
             "```",
             "",
         ])
     lines.extend([
+        *_render_worker_execution_envelope(payload),
         "## Compact Execution Context",
+        "",
+        "Exact duplicate fields are in the dispatch header and Task instruction above.",
         "",
         "```json",
         json.dumps(display, ensure_ascii=False, indent=2, sort_keys=True),
@@ -201,6 +277,7 @@ def write_task_pipeline_briefing(
         "Approximately every 60 seconds, or before a long tool call, run:",
         "```bash",
         heartbeat,
+        budget_command,
         "```",
         "",
         "## Recursion Guard (required)",
@@ -229,6 +306,26 @@ def write_task_pipeline_briefing(
         payload=payload,
     )
     return briefing_path
+
+
+def _render_worker_execution_envelope(payload: Mapping[str, Any]) -> list[str]:
+    envelope = payload.get("worker_execution_envelope")
+    if not isinstance(envelope, Mapping):
+        return []
+    from zf.runtime.worker_execution_envelope import normalize_worker_execution_envelope
+
+    normalized = normalize_worker_execution_envelope(envelope)
+    return [
+        "## Worker Execution Envelope",
+        "",
+        "The following dispatch snapshot is immutable for this operation. Do not",
+        "replace its role, target, profile, result contract, or lifecycle state.",
+        "",
+        "```json",
+        json.dumps(normalized, ensure_ascii=False, indent=2, sort_keys=True),
+        "```",
+        "",
+    ]
 
 
 def verification_result_template(

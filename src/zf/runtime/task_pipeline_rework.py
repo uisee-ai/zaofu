@@ -48,7 +48,7 @@ def derive_impl_rework_requests(
     requests.update(oa_impl_rework_requests(
         events=event_rows, operations=operations, contexts=generation_contexts,
     ))
-    from zf.runtime.task_pipeline_integration_rework import integration_impl_rework_requests
+    from zf.runtime.task_pipeline_integration_rework_approved import integration_impl_rework_requests
     requests.update(integration_impl_rework_requests(
         events=event_rows, operations=operations, contexts=generation_contexts,
     ))

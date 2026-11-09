@@ -29,6 +29,8 @@ export default function PlanArtifactChat({ preview, projectId, disabled, onBusy,
   const conversation = useRef<HTMLDivElement>(null);
   const epoch = useRef(0);
   const draft = result?.draft_ref as Record<string, unknown> | undefined;
+  const contractChanges = result?.contract_changes as { requirement?: { path: string; before: string; after: string }[];
+    claims?: { goal_claim_id: string; before: string; after: string }[] } | undefined;
   const unavailableReason = disabled ? "当前页面没有编辑权限。"
     : !name ? "当前未绑定完整 Plan 正文，摘要仅供阅读，无法引用修改。"
     : context && !context.editable ? preview.status === "rejected" ? "此版本已退回，等待新版 Plan Preview。" : "当前 Plan 已处理，修改需要重新规划。" : "";
@@ -117,6 +119,13 @@ export default function PlanArtifactChat({ preview, projectId, disabled, onBusy,
             <div><strong>{item.role}</strong><p>{item.text}</p>
               {draft && index === messages.length - 1 && <div className="workflow-agent-diff" data-testid="plan-review-diff">
                 <pre className="is-before">− {String(result?.before || "")}</pre><pre className="is-after">+ {String(result?.after || "")}</pre>
+                {!!(contractChanges?.requirement?.length || contractChanges?.claims?.length) && <div data-testid="plan-contract-diff">
+                  <strong>同步修订需求与验收条款</strong>
+                  {[...(contractChanges?.requirement ?? []).map(change => ({ ...change, label: change.path })),
+                    ...(contractChanges?.claims ?? []).map(change => ({ ...change, label: change.goal_claim_id }))].map(change =>
+                    <div key={change.label}><small>{change.label}</small><pre className="is-before">− {change.before}</pre>
+                      <pre className="is-after">+ {change.after}</pre></div>)}
+                </div>}
                 <div className="workflow-agent-diff-actions"><button type="button" className="primary" disabled={working || disabled} onClick={() => void apply()}>Apply</button>
                   <button type="button" disabled={working} onClick={() => { setResult(null); onBusy(false); }}>Discard</button></div>
               </div>}

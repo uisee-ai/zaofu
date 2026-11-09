@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import os
+from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -35,7 +37,28 @@ _READ_ALL_CACHE: dict[tuple, tuple] = {}
 # decode just the tail. Keyed by (path, signer, allow_unsigned) — stable
 # across appends.
 _READ_ALL_FOLD: dict[tuple, dict] = {}
-_READ_DAYS_FOLD: dict[tuple, dict] = {}
+# Recent-day consumers repeatedly read the active file independently of
+# read_all. Cache that file separately so appends only decode the new tail.
+_READ_ACTIVE_FOLD: dict[tuple, dict] = {}
+
+
+def _copy_events(events: tuple[ZfEvent, ...] | list[ZfEvent]) -> list[ZfEvent]:
+    """Keep read_days callers from mutating cached occurrences or payloads."""
+    return [replace(event, payload=deepcopy(event.payload)) for event in events]
+
+
+def _boundary_marker(path: Path, offset: int) -> bytes | None:
+    """Remember the old complete-line boundary across truncate-and-regrow."""
+    if offset <= 0:
+        return b""
+    length = min(offset, 128)
+    try:
+        with path.open("rb") as handle:
+            handle.seek(offset - length)
+            marker = handle.read(length)
+    except OSError:
+        return None
+    return marker if len(marker) == length else None
 
 
 class EventLog:
@@ -81,8 +104,20 @@ class EventLog:
             rotate_if_needed(self.path, self._archive_dir)
             self._rotate_by_size_if_needed()
             line = self._encode(event)
+            prefix = ""
+            try:
+                with self.path.open("rb") as previous:
+                    previous.seek(0, os.SEEK_END)
+                    if previous.tell():
+                        previous.seek(-1, os.SEEK_END)
+                        if previous.read(1) != b"\n":
+                            # Keep the unknown tail uncommitted even if it is
+                            # complete JSON without its terminating newline.
+                            prefix = "!\n"
+            except FileNotFoundError:
+                pass
             with open(self.path, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
+                f.write(prefix + line + "\n")
         if self.index is not None:
             try:
                 self.index.observe(event)
@@ -143,24 +178,26 @@ class EventLog:
         return json.dumps(envelope, ensure_ascii=False)
 
     def _decode(self, line: str) -> ZfEvent | None:
-        """Decode one JSONL line. Returns None for non-JSON (silently
-        skipped). Schema-invalid payloads (valid JSON but wrong shape)
+        """Decode one complete JSONL line. Invalid JSON, signatures or schema
         return a synthetic ``event.malformed`` ZfEvent in-memory so
         callers of ``read_all`` can surface the corruption; nothing is
         written back to disk, so repeated reads stay idempotent."""
         try:
             obj = json.loads(line)
-        except json.JSONDecodeError:
-            return None
+        except json.JSONDecodeError as exc:
+            return self._malformed(line, exc)
         if isinstance(obj, dict) and "event" in obj and "sig" in obj:
             # Signed envelope. Verify if we have a signer; else accept as-is.
             event_dict = obj["event"]
             event_json = json.dumps(event_dict, ensure_ascii=False, sort_keys=False)
             if self.signer is not None and not self.signer.verify(event_json, obj["sig"]):
                 # Try the canonical encoding the signer would produce
-                fresh_json = ZfEvent.from_dict(event_dict).to_json()
+                try:
+                    fresh_json = ZfEvent.from_dict(event_dict).to_json()
+                except (TypeError, KeyError, ValueError) as exc:
+                    return self._malformed(line, exc)
                 if not self.signer.verify(fresh_json, obj["sig"]):
-                    return None
+                    return self._malformed(line, ValueError("event signature verification failed"))
             try:
                 return ZfEvent.from_dict(event_dict)
             except (TypeError, KeyError) as e:
@@ -203,12 +240,17 @@ class EventLog:
         event from the same bad line, keeping counts bounded and avoiding
         append-during-decode recursion.
         """
+        import hashlib
+
         return ZfEvent(
+            id="malformed-" + hashlib.sha256(line.encode("utf-8", errors="replace")).hexdigest()[:24],
+            ts="1970-01-01T00:00:00+00:00",
             type="event.malformed",
             actor="zf-cli",
             payload={
                 "line": line[:200],
                 "error": str(error),
+                "ledger_integrity": "unknown",
             },
         )
 
@@ -269,28 +311,28 @@ class EventLog:
             snapshot_size = path.stat().st_size
         except FileNotFoundError:
             return [], 0
+        # Bound reads to the size observed before opening. A concurrent
+        # append is picked up on the next fold, and an unterminated final row
+        # remains unconsumed. Streaming avoids retaining another full copy of
+        # large archived ledgers and their split byte strings in memory.
+        events: list[ZfEvent] = []
+        consumed = 0
         try:
-            with path.open("rb") as f:
-                data = f.read(snapshot_size)
+            with path.open("rb") as stream:
+                while consumed < snapshot_size:
+                    raw = stream.readline(snapshot_size - consumed)
+                    if not raw or not raw.endswith(b"\n"):
+                        break
+                    consumed += len(raw)
+                    line = raw.decode("utf-8", "replace").strip()
+                    if not line:
+                        continue
+                    ev = self._decode(line)
+                    if ev is not None:
+                        events.append(ev)
         except FileNotFoundError:
             return [], 0
-        # Decode only the bytes present when the read began. If the active log
-        # is being appended concurrently, this prevents readers from chasing a
-        # moving EOF. A trailing newline-less row may be a partial write; leave
-        # it for a later read, matching read_from_offset().
-        last_newline = data.rfind(b"\n")
-        if last_newline < 0:
-            return [], 0
-        data = data[: last_newline + 1]
-        events: list[ZfEvent] = []
-        for raw in data.split(b"\n"):
-            line = raw.decode("utf-8", "replace").strip()
-            if not line:
-                continue
-            ev = self._decode(line)
-            if ev is not None:
-                events.append(ev)
-        return events, len(data)
+        return events, consumed
 
     def _parse_tail(self, path: Path, offset: int, snapshot_size: int) -> tuple[list[ZfEvent], int]:
         """Decode only bytes [offset, snapshot_size) — the appended tail."""
@@ -441,45 +483,64 @@ class EventLog:
                 last_days=last_days - 1,
                 suffix=".jsonl",
             ):
-                events.extend(self._read_window_file(f))
-        events.extend(self._read_window_file(self.path))
+                events.extend(self._parse_file(f))
+        events.extend(self._read_active_cached())
         return events
 
-    def _read_window_file(self, path: Path) -> list[ZfEvent]:
-        """Fold complete appended rows without widening a read_days window."""
-        fingerprint = getattr(self.signer, "cache_fingerprint", None)
-        verifier = fingerprint() if callable(fingerprint) else self.signer
-        key = (str(path.resolve()), verifier, self.allow_unsigned)
+    def _read_active_cached(self) -> list[ZfEvent]:
+        # Signed reads must reverify the actual bytes, even when file metadata
+        # was deliberately preserved after tampering.
+        if self.signer is not None:
+            return self._parse_file(self.path)
         try:
-            stat = path.stat()
-        except FileNotFoundError:
-            _READ_DAYS_FOLD.pop(key, None)
+            stat = self.path.stat()
+        except OSError:
             return []
+        key = (str(self.path.resolve()), self.allow_unsigned)
         identity = (stat.st_dev, stat.st_ino)
-        version = (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
-        entry = _READ_DAYS_FOLD.get(key)
+        entry = _READ_ACTIVE_FOLD.get(key)
         if entry is not None and entry["identity"] == identity:
-            if entry["version"] == version:
-                return list(entry["events"])
-            if stat.st_size > entry["version"][0]:
-                tail, consumed = self._parse_tail(path, entry["consumed"], stat.st_size)
-                rows = entry["events"] + tuple(tail)
-                consumed += entry["consumed"]
-            else:
-                parsed, consumed = self._parse_file_consumed(path)
-                rows = tuple(parsed)
-        else:
-            parsed, consumed = self._parse_file_consumed(path)
-            rows = tuple(parsed)
-        # Replace the complete entry atomically. Never share a mutable result
-        # list or advance past a partial JSONL row. Rotation changes the inode.
-        if key not in _READ_DAYS_FOLD and len(_READ_DAYS_FOLD) >= 16:
-            _READ_DAYS_FOLD.pop(next(iter(_READ_DAYS_FOLD)))
-        _READ_DAYS_FOLD[key] = {
-            "identity": identity, "version": version,
-            "consumed": consumed, "events": rows,
+            if entry["size"] == stat.st_size and entry["mtime"] == stat.st_mtime_ns:
+                return _copy_events(entry["events"])
+            if (
+                stat.st_size > entry["size"]
+                and stat.st_size >= entry["consumed"]
+                and _boundary_marker(self.path, entry["consumed"]) == entry["marker"]
+            ):
+                tail, consumed = self._parse_tail(self.path, entry["consumed"], stat.st_size)
+                try:
+                    after = self.path.stat()
+                except OSError:
+                    _READ_ACTIVE_FOLD.pop(key, None)
+                    return []
+                if (after.st_dev, after.st_ino) != identity or after.st_size < stat.st_size:
+                    _READ_ACTIVE_FOLD.pop(key, None)
+                    return self._parse_file(self.path)
+                if not consumed:
+                    # A partial line or transient read failure must be retried.
+                    return _copy_events(entry["events"])
+                events = entry["events"] + tuple(tail) if tail else entry["events"]
+                marker = _boundary_marker(self.path, entry["consumed"] + consumed)
+                if marker is None:
+                    return _copy_events(events)
+                _READ_ACTIVE_FOLD[key] = {
+                    "identity": identity, "size": stat.st_size, "mtime": stat.st_mtime_ns,
+                    "consumed": entry["consumed"] + consumed, "events": events, "marker": marker,
+                }
+                return _copy_events(events)
+        events, consumed = self._parse_file_consumed(self.path)
+        if not consumed and stat.st_size:
+            return events
+        marker = _boundary_marker(self.path, consumed)
+        if marker is None:
+            return events
+        while len(_READ_ACTIVE_FOLD) >= 8 and key not in _READ_ACTIVE_FOLD:
+            _READ_ACTIVE_FOLD.pop(next(iter(_READ_ACTIVE_FOLD)))
+        _READ_ACTIVE_FOLD[key] = {
+            "identity": identity, "size": stat.st_size, "mtime": stat.st_mtime_ns,
+            "consumed": consumed, "events": tuple(events), "marker": marker,
         }
-        return list(rows)
+        return _copy_events(events)
 
     def get_causation_chain(self, event_id: str) -> list[ZfEvent]:
         """Return the causal ancestors of an event in chronological order.

@@ -743,8 +743,37 @@ export function ChannelPage({
       setChannelPinnedToBottom(false);
     });
   }
+  const inboxQuestionHandled = useRef(false);
+  useEffect(() => {
+    if (inboxQuestionHandled.current || !detail || detail.channel_id !== selectedChannelId) return;
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("question") || "";
+    if (params.get("page") !== "channels" || !id || params.get("channel") !== selectedChannelId) return;
+    const thread = params.get("thread") || "main";
+    if (activeChannelThreadId !== channelThreadId(thread)) {
+      setActiveChannelThreadId(channelThreadId(thread));
+      return;
+    }
+    const question = Object.values(detail.open_questions || {}).find((entry) => (
+      String(entry.question_id || "") === id && String(entry.thread_id || "main") === thread
+    ));
+    if (!question || String(question.status || "") !== "open") {
+      inboxQuestionHandled.current = true;
+      setControlError("该问题已处理或当前不可用，请刷新 Inbox 查看最新状态。");
+      return;
+    }
+    if (!discussionBand?.ownerQuestions.some((entry) => entry.id === id && entry.sourceThreadId === thread)) return;
+    inboxQuestionHandled.current = true;
+    focusOwnerQuestion({ id, sourceThreadId: thread });
+  }, [detail, selectedChannelId, activeChannelThreadId, discussionBand]);
+  const linkedQuestion = new URLSearchParams(window.location.search);
+  const sourceSelection = questionSourceSelection || (
+    linkedQuestion.get("page") === "channels" && linkedQuestion.get("channel") === selectedChannelId && linkedQuestion.get("question")
+      ? { id: linkedQuestion.get("question") || "", sourceThreadId: linkedQuestion.get("thread") || "main" }
+      : null
+  );
   const selectedSourceQuestion = discussionBand?.ownerQuestions.find((question) => (
-    question.id === questionSourceSelection?.id && question.sourceThreadId === questionSourceSelection.sourceThreadId
+    question.id === sourceSelection?.id && question.sourceThreadId === sourceSelection.sourceThreadId
   ));
   useEffect(() => {
     if (!selectedSourceQuestion || drawer !== "diagnostics" || historyLoadingEarlier) return;

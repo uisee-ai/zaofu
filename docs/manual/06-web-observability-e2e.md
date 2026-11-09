@@ -88,6 +88,11 @@ Workflows 将生命周期分为：
 proposal；修改任何语义后应生成新 proposal。外部副作用必须通过 action token/trusted session
 的受控路径，Provider Agent 不能接触 token。
 
+Workflow 页显示当前 Requirement、已绑定 Task 和 Run；从 Task 链接进入时，优先选择与 Task
+身份精确匹配的 Request。大图默认只展示重点节点并明确提示省略数量，可展开完整图；缩略
+结构可能隐藏中间关系，不应解读为不存在依赖。节点详情的 Loop 链接携带 Request 和 Run；
+Loop 当前只展示最近 Run，若不匹配会提示，不会把它冒充所选 Run。
+
 ## 5. Delivery：读完整 Workflow
 
 Monitoring 下的 **Delivery** 以 Feature/交付为作用域，页内有三个 mode：
@@ -121,6 +126,12 @@ Loop 只加载自身的 scoped projection，不会为了这个页面额外读取
 attempt 时，drawer 首批展示 100 条并通过 **Load more** 继续展开；计数、Timeline、Completion
 Promise 和 Business Loops 仍基于完整投影，不会把首窗误报成完整历史。semantic event 会有界刷新，
 heartbeat/tick 等机械 pump 不触发页面请求。
+
+Timeline 的 Observed attempts 只计入有 `attempt_id` 的内核或历史开始记录，终态按 Task 和
+Attempt 身份配对；未经配对或其他运行时事件单独展示，不等同任务失败。历史事件窗口可能
+缺少开始记录，数值是已观测下界，不是完整次数。旧版接口无该投影时显示 Legacy records。
+Plan vs actual 仅比较当前 Run 中有引用和摘要的内核准入 Task Map 与已观察尝试；没有可信的
+计划耗时和成本基线时，不计算进度偏差、ETA 或费用预测。
 
 **Traces** 是低层因果诊断的 canonical 入口。列表按 Task、actor、status、duration、role 或
 backend 筛选；选择一行后才并行读取 bounded detail 与 lifecycle spans。宽幅详情先显示可证明

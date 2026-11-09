@@ -54,6 +54,23 @@ def test_fanout_identity_projects_wave_compat_fields() -> None:
     assert current["attempt"] == 3
 
 
+def test_task_recovery_scans_only_supersede_the_same_task() -> None:
+    def recovery(fanout_id: str, task_id: str) -> ZfEvent:
+        event = _started(fanout_id, f"evt-{fanout_id}")
+        event.task_id = "PARENT"
+        event.payload["expected_children"] = [{"child_id": "reader", "payload": {
+            "task_id": task_id,
+            "trigger_payload": {"handoff_kind": "task_base_recovery", "task_id": task_id},
+        }}]
+        return event
+
+    events = [recovery("identity-old", "IDENTITY"), recovery("design", "DESIGN"),
+              recovery("identity-new", "IDENTITY")]
+    projection = build_fanout_identity_projection(events)
+    assert {entry["fanout_id"] for entry in projection["current"]} == {"design", "identity-new"}
+    assert fanout_current_status(events, "identity-old").superseded_by == "identity-new"
+
+
 def test_latest_fanout_identity_marks_late_old_child_stale() -> None:
     events = [
         _started("fanout-review-old", "evt-start-old"),

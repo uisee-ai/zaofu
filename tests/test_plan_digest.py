@@ -48,6 +48,16 @@ def test_checklist_flags_missing_assembly_and_root_owner_dup():
     assert m["scope_no_overlap"] is False        # package.json 重叠
 
 
+def test_distinct_root_files_do_not_claim_an_owner_conflict():
+    items = [
+        {"task_id": "COMPOSE", "allowed_paths": ["compose.yaml"], "verification": "check"},
+        {"task_id": "IMAGE", "allowed_paths": ["Dockerfile"], "verification": "check"},
+    ]
+    assert _map(items)["root_owner_unique"] is True
+    assert _map(items)["scope_no_overlap"] is True
+    assert "不替代计划准入" in render_plan_digest(items)
+
+
 def test_checklist_allows_simple_serial_prd_task_without_assembly():
     checks = {
         c["key"]: c

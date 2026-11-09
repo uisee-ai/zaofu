@@ -19,6 +19,7 @@ from zf.runtime.artifact_query.models import (
     SourceSnapshot,
 )
 from zf.runtime.artifact_query.object_view import ArtifactObjectViewMixin
+from zf.runtime.artifact_query.navigation import ArtifactNavigationMixin
 from zf.runtime.artifact_query.extractors import iter_catalog_descriptors
 from zf.runtime.artifact_query.store import (
     EXTRACTOR_VERSION,
@@ -61,7 +62,7 @@ class ArtifactQueryError(ValueError):
     """A query cannot be answered without violating its requested mode."""
 
 
-class ArtifactQueryService(ArtifactObjectViewMixin):
+class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
     def __init__(
         self,
         *,
@@ -309,6 +310,41 @@ class ArtifactQueryService(ArtifactObjectViewMixin):
         result["task_id"] = task_id
         return result
 
+    def attempt_inputs(
+        self, attempt_id: str, *, context: QueryContext,
+        query: str = "", cursor: str | None = None, relation_id: str = "", navigate: bool = False,
+    ) -> dict[str, Any]:
+        from zf.runtime.artifact_input_index import input_index, load_attempt_source_manifest
+        from zf.runtime.artifact_input_lifecycle import input_lifecycle
+        from zf.runtime.artifact_read_requirements import ArtifactReadRequirementError, required_reads_for_attempt
+
+        manifest = load_attempt_source_manifest(self.state_dir, attempt_id)
+        events = self._events()
+        operation_id = next((str(event.payload["operation_id"]) for event in reversed(events)
+            if isinstance(event.payload, dict) and event.payload.get("operation_id")
+            and attempt_id in {event.payload.get(key) for key in ("attempt_id", "active_attempt_id", "dispatch_id")}), "")
+        try:
+            required = required_reads_for_attempt(events, attempt_id,
+                state_dir=self.state_dir, operation_id=operation_id)
+        except ArtifactReadRequirementError:
+            required = None  # Unknown policy must never appear as all-optional.
+        return input_index(
+            state_dir=self.state_dir,
+            manifest=manifest, required=required,
+            identity={"actor": context.actor, "role": context.role, "purpose": context.purpose},
+            reads=self._read_rows(attempt_id), query=query, cursor=cursor,
+            limit=min(context.limit, 50), relation_id=relation_id, navigate=navigate,
+            lifecycle=input_lifecycle(manifest, events, state_dir=self.state_dir),
+        )
+
+    def attempt_input_costs(self, attempt_id: str, *, context: QueryContext) -> dict[str, Any]:
+        from zf.runtime.artifact_input_index import load_attempt_source_manifest
+        from zf.runtime.artifact_input_costs import input_cost_report
+        return input_cost_report(state_dir=self.state_dir,
+            manifest=load_attempt_source_manifest(self.state_dir, attempt_id),
+            identity={"actor": context.actor, "role": context.role, "purpose": context.purpose},
+            events=self._events(), reads=self._read_rows(attempt_id))
+
     def attempt_inspect(
         self,
         attempt_id: str,
@@ -342,10 +378,12 @@ class ArtifactQueryService(ArtifactObjectViewMixin):
             )
         required_reads = self._required_reads(events, attempt_id)
         read_rows = self._read_rows(attempt_id)
+        from zf.runtime.artifact_read_ledger import required_read_satisfied
+
         missing = [
             row
             for row in required_reads
-            if not any(self._read_matches(item, row) for item in read_rows)
+            if not required_read_satisfied(read_rows, row)
         ]
         result = self.catalog_list(
             context=context,

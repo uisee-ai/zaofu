@@ -170,6 +170,13 @@ def _apply_parsed_contract(task: Task, parsed: dict[str, object]) -> list[str]:
     updated: list[str] = []
     if contract is None:
         return updated
+    acceptance = parsed.get("acceptance_criteria")
+    if isinstance(acceptance, list) and any(
+        not isinstance(item, str) for item in contract.acceptance_criteria
+    ):
+        if acceptance != [str(item) for item in contract.acceptance_criteria]:
+            raise ValueError("structured acceptance cannot be edited via task doc")
+        parsed = {key: value for key, value in parsed.items() if key != "acceptance_criteria"}
     for field_name in ("behavior", "verification"):
         value = parsed.get(field_name)
         if isinstance(value, str) and value.strip():

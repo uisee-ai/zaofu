@@ -40,6 +40,7 @@ from zf.autoresearch.worktree_preparation import (
 )
 from zf.core.config.loader import load_config
 from zf.core.config.render import renderable_config_to_primitive
+from zf.core.events.factory import event_log_from_project
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -227,6 +228,11 @@ def _apply_autoresearch_controller_overrides(
         f"zf-autoresearch-{run_id}"
     )
     data["global_budget_usd"] = cfg.budget_usd
+
+    # The outer Autoresearch process owns diagnosis and consumption. Starting
+    # another executing resident inside an experiment can recursively create
+    # worktrees and provider runs when the inner workflow reports a failure.
+    data.setdefault("runtime", {}).setdefault("autoresearch_resident", {})["enabled"] = False
 
     workflow = data.setdefault("workflow", {})
     flow_metadata = workflow.get("_flow_metadata")
@@ -1360,18 +1366,35 @@ def upsert_failure_backlog(
         )
         event_type = "task.updated"
 
-    EventLog(state_dir / "events.jsonl").append(ZfEvent(
-        type=event_type,
-        actor="zf-autoresearch",
-        task_id=task_id,
-        payload={
-            "source": "autoresearch",
-            "key": key,
-            "scenario": scenario.name,
-            "reason": reason,
-            "report": str(row.get("report_path", "")),
-        },
-    ))
+    config = None
+    for config_path in (
+        Path(cfg.worktree) / "zf.yaml",
+        Path(state_dir).parent / "zf.yaml",
+        repo_root() / "zf.yaml",
+    ):
+        if config_path.is_file():
+            try:
+                config = load_config(config_path)
+            except Exception:
+                continue
+            break
+    EventWriter(
+        event_log_from_project(state_dir, config=config, warn=False),
+        default_origin="external",
+    ).append(
+        ZfEvent(
+            type=event_type,
+            actor="zf-autoresearch",
+            task_id=task_id,
+            payload={
+                "source": "autoresearch",
+                "key": key,
+                "scenario": scenario.name,
+                "reason": reason,
+                "report": str(row.get("report_path", "")),
+            },
+        )
+    )
     return task_id
 
 

@@ -186,6 +186,9 @@ CLI 契约来自本机 `~/workspace/kimi-code` 的 `commands.ts`、`run-v2-print
    提交重试或延时。实际tmux/PTY探针验证Unicode、换行与单次提交字节完整；这不是模型验收。
 2. `zf artifact read --attempt <id> --required` 在一次CLI调用中读取Kernel声明的全部必需片段，
    每项仍经角色凭证、路径权限和摘要检查，分别记录read ledger，不删除必读正文或放宽完成门禁。
+   当前操作和必读声明的事件扫描可跳过明确无声明的规范 hook 遥测正文；签名、非规范
+   JSON、含必读声明或有歧义的行完整解码。凭证先验证，操作状态、来源摘要和每页回执
+   仍逐次核对；日志轮转时回退完整读取。
    禁止同时传入source/artifact/截断覆盖。briefing推荐批读，保留逐项命令用于失败或输出截断时补读。
 
 改进的CLI/读取安全、tmux、reader实际caller和bounded mock E2E闭包：237 passed；sentinel51 passed。
@@ -248,6 +251,9 @@ Issue新轮次于18:11:47 UTC真实关闭triage pane，旧PID505647消失。监�
 
 
 ## 消失 pane 的恢复修复
+
+2026-11-04 补充：tmux 启动、停止及启动异常清理按精确会话名称匹配；例如配置
+`zf-ls` 不会匹配或关闭 `zf-ls-control`。会话名前缀相同不表示同一个运行实例。
 
 真实故障注入后的受控 `zf restart issue-triage` 失败：pane 已消失，pane-grid 的归属检查
 拒绝终止，导致无法进入接续。新实现仅在成功列举该会话所有pane、确认旧pane、角色身份及
@@ -678,6 +684,23 @@ preflight、提案摘要、`workflow-config-apply` CAS 和 submit 门保持有�
 不变；没有合并候选质量门时扩容仍被拒绝。light 不能通过 lanes 改成 fanout。
 显式 Task Pipeline 池不能只改 lanes：必须另提完整池配置修订；本批不自动猜测池成员。
 这不证明 Task Map 后重新配置运行中 Run 已实现，后者仍需新代际批准与恢复边界验证。
+多 Flow 的 v4 池引用随角色命名空间展开。对旧版已准入代次，仅当反向去除 Flow 前缀
+后完整策略可重算出原摘要、所有角色存在且类型匹配时，派发可绑定到命名空间化角色；
+保持原代次摘要，并在操作请求中记录原摘要和当前展开摘要。容量、角色以外的策略变化
+仍按摘要漂移拒绝；此兼容不支持任意运行中配置变更。
+Task Pipeline 操作必须携带准入的 Flow kind，以解析该 Flow 的语义结果提交策略。
+对于旧版缺失 Flow kind、提交策略为 off 且在 briefing 阶段明确失败的 Impl 请求，
+仅当该操作从未产生 TaskAttempt 时，Kernel 才能依据失败事件 supersede 该请求并
+建立新的操作身份；这不消耗语义返工预算。已派发或其他失败原因不能走此恢复。
+受控输入较大时，`zf artifact read --page-start 0 --page-size 8192` 可按字符分页；
+只有同一工件摘要、路径和选中内容摘要的所有连续页面覆盖全内容时才满足必读。
+CLI 拒绝向一次工具调用输出超过 8192 字符的完整读取，避免下游工具截断后误记为已完整交付；
+分页保留完整原件和验收要求，但不降低全量必读的模型输入成本。
+watchdog 在发现未终结的 Task Pipeline operation-v2 attempt 时，不再使用 legacy
+路径重排 Task 或发送 idle 恢复简报；保留已有身份，交给 Run Manager 的租约恢复路径。
+重驱后的 operation 投影从 Kernel 已送达的 attempt 恢复 placement epoch，要求
+operation、run、task、dispatch 和 lease 均与启动事实一致；不匹配时不采信该 epoch。
+运行中的 Pipeline 分配无法解析时，写入守卫不退回旧 lane 工作区授权，保持拒绝。
 
 `plan-execution-review.usage_observations` 和 `zf plan inspect-execution` 接入
 CostTracker 已准入的新增计量及事件归属，不重复累计 Provider 的累计快照。
@@ -1010,6 +1033,22 @@ flow-smoke。首次共享合同命令误写测试路径，零测试执行，纠�
 
 ### Writer预算恢复后的汇总续行
 
+已接纳的 Task Map 在物化已有 backlog 任务时，同步更新该任务的 `blocked_by`，
+与合同一起通过 TaskContractAuthorityService 的 CAS 写入；变更依赖时同时核对
+任务仍为 backlog，避免在派发竞态中改变运行中任务的前置条件。运行中或终态任务
+的依赖修订需要先由受控生命周期处理，不能由物化流程静默修改。
+
+Task Pipeline 的 `zf recover task-impl` 在预览和申请前检查当前 Flow 的返工预算，
+计入未派发即因缺失 Flow kind 而被替代的 operation 抵扣；已耗尽时拒绝请求，
+避免返回无法调度的下一代预览。此检查不增加预算，也不更改已存在的请求。
+Impl 与 Verify 的已接纳失败结果达到有效返工上限时，调度投影均保留精确的
+`semantic_rework_exhausted` 原因、当前 Operation 和结果引用，Kernel 幂等发出
+`task.pipeline.semantic_rework.exhausted`，由 Run Manager 请求编排诊断。
+事件保留 Flow kind，避免多 Flow 配置选错恢复策略；新 Impl 的失败不引用旧 Verify
+结果。该升级只恢复诊断链路，不增加重试次数、不批准新 Plan，也不代表实施已恢复。
+`workflow.strict_triggers.rework_attempts_gte` 启用且达到阈值时，该耗尽事实走专门的
+编排 triage，避免同时请求通用 Autoresearch 诊断；阈值为 0 时保留通用诊断兜底。
+
 受控重试可保留原Run和已完成child，新Operation关联旧blocked Operation。
 当Owner已重新激活Run、当前fanout代际有效、全部writer完成时，由Run blocked
 产生的历史cancelled aggregate允许进入原候选集成；普通取消或仍终态Run不恢复。
@@ -1021,3 +1060,100 @@ flow-smoke。首次共享合同命令误写测试路径，零测试执行，纠�
 不会因该命令重开任务。CLI与重复调用回归见同一监工记录SUP-012。
 
 长期Run策略与reader断点恢复见[补充说明](185-long-horizon-run-recovery.md)。
+同一 Task 的最新派发若属于其他 fanout 角色，watchdog 不把该 dispatch 用于本角色的
+completion nudge，也不据此重排任务；角色身份不明确时等待协调器处理。
+对持有租约的 Task Pipeline attempt，首次催办之后仅当其必读内容的去重覆盖增加、
+且 provider 轮次已关闭时，才可再次发送同一 dispatch 的续作提示。催办事件记录
+attempt 和覆盖计数，重启后仍据账本去重；重复页、不相关输入或未关闭轮次不触发。
+覆盖计数只用于活性恢复，不替代完整读取门禁或独立验证。
+Plan 可对单个 Task 显式声明 `evidence_contract.plan_input_selection`；仅在该声明
+与当前 Package 摘要绑定的 Task Map 完全一致、两个消费者列表均合法且选中
+task-scoped `task_execution_input` 时，Impl/Task Verify 按各自声明读取。原始
+`execution_spec`、完整 Task Map、验收、测试和真实 E2E 矩阵仍须作为 Package
+必需端口保留，Candidate Verify 读取全量。
+未声明时沿用原全量规则；Planner/Critic 负责证明任务闭包，Kernel 不推断业务范围。
+本机制不改变已有 Plan 或其已准入代次，内容/消费合同变更仍需新版本独立审查和批准。
+
+## FMS 复盘补齐的执行边界（2026-10-28）
+
+- Plan candidate 的 writer policy 固定实际 Flow 角色闭包；预检和结果提交使用同一份快照调用 `resolve_writer_owner`，在 Critic/审批前拒绝未知、跨 Flow 或不匹配的 owner。旧操作没有快照时保留原有 materialization 检查。
+- `workspace_binding_mismatch`、`runner_failure`、`input_delivery_failed` 等结构化执行阻塞优先进入 harness 诊断；即使混有 scope 描述也不据此发起业务 replan。真正有证据的 upstream/scope gap 仍保留语义重规划。守卫无法解析正在执行的任务分配时输出明确类别并拒绝写入。
+- `zf artifact read --required` 先独立鉴权和校验每个来源，再按摘要、JSON path 和完整正文合并完全相同的内容，返回 `aliases`。每个来源保留独立读取收据；整个编码输出超过 8192 字符时先拒绝，避免未交付却记为已读。大输入继续逐页读取，不能靠摘要补齐账本。
+- Task Pipeline 只读投影同时展示 TaskStore 状态、Run goal 状态及其事件、最后 Operation 状态/原因/事件；不将 `run.manager.action.verify.passed` 当作任务恢复或产品通过。恢复有效性需分别核对新派发、实际代码/命令进展和独立 Verify。
+- 执行 skill 用绑定当前合同和 HEAD 的续跑说明保存语义进度，并优先取得最小可执行检查反馈；不改变原 AC、证据所有权或人工审批门槛。
+
+恢复 briefing 的 Git 上下文复用当前 Task Pipeline 派发的任务工作区，终结 Attempt 不再授权旧工作区。原生压缩后的新低水位采样会清除过期 `pending_recycle`，已有回收过程和陈旧样本不受影响，防止刚恢复语义理解便再次丢失会话。
+
+2026-10-28 FMS 恢复补充：新建必读声明对 `plan-port-*` 的同一非空 ref、摘要、
+JSON selector、读取限制、访问范围和保留策略去重；完整 manifest/Package 中的逻辑
+端口保留。不同来源路径、摘要、选择范围或读取限制不合并，非 Plan 验证证据不合并；
+已有 attempt 的不可变 policy 和读取账本不改写，也不跨 attempt 或 Impl/Verify 继承收据。
+
+原生压缩后，只有新用量样本低于 warning threshold 才撤销 `pending_recycle`，
+并按当前 Task/fanout 恢复 busy/idle 投影；未知/重复样本及已经 recycling 的实例不撤销。
+硬上限和 drain hold 强制回收规则保留。恢复简报的 Git 事实优先来自已准入的活跃
+Task Pipeline 工作树，与 respawn 的 cwd 解析一致；终态 attempt 不作为恢复工作树。
+这保证事实采集位置正确，不等同于模型语义记忆；语义理解和下一步仍由 worker 持续
+写入批准合同要求的 continuation 工件，再由后续独立验证检查。
+
+新增回归先复现8项失败，修复后聚焦闭包162项通过（包含v4 runtime-noise mock E2E），
+premerge sentinel 51项通过。验证选择器对这3处代码选出200个文件并升级全套；本轮实际
+执行上述读取门禁、恢复/硬上限、角色生命周期和v4模拟闭包，未执行全仓或产品E2E。
+
+
+## 2026-10-30 Kanban 问答草稿与批准配置交付基线
+
+`AskUserQuestion` 的 Plan 卡片将未提交选项、Other 文本和题号保存到浏览器本地，
+按 Project、Conversation、Thread、请求事件、请求 ID、revision/digest 隔离。
+问题内容变化不复用旧草稿；提交失败保留，收到成功响应或已回答投影后清除。
+它只保存 UI 草稿，不代替 durable interaction，也不会在刷新时自动提交。
+
+Raw YAML 页的 `Start Workflow` 对 `config_change` 提案始终调用幂等
+`workflow-config-apply`，显式携带 `establish_delivery_baseline: true`，成功后再 submit。
+Apply 对已跟踪的 `zf.yaml` 建立本地 checkpoint，保留正常 Git hooks；此字段额外请求
+`delivery_baseline_ref` 兼容收据。批准绑定、候选摘要、配置 CAS、秘密检查保持不变。
+统一 checkpoint 只提交批准的配置路径（支持嵌套项目），不推送；HEAD/index 必须等于批准的
+base 或 target，其他 tracked 改动、未批准的文件模式、detached HEAD 和忙碌 index 一律拒绝。
+非 Git 项目或未跟踪配置记录 `not_required`。提交遵守 Git 的路径限定和并发锁；若 ref 已更新
+但 index 未替换，重试在独立 index 中修复批准配置，持有真实 index 锁并核对 HEAD 后替换。
+原交付 preflight 继续检查脏改动。
+
+基线收据以 `delivery_baseline_ref` 绑定到 `workflow.config.change.applied` 事件及 API
+响应，包含 commit、提案 digest、配置 digest 和 apply 收据引用。若配置已应用但基线
+失败，处理其他改动后可重试同一提案；若 ref 更新后 index 替换失败，释放 Git 锁后重试会
+恢复 index，不重复提交；强杀留下的 Git index 锁仍需确认旧进程退出后处理。提交后再出现的其他改动仍由 submit preflight 拦截。
+
+验证入口：`tests/test_workflow_config_baseline.py`、
+`web/tests/kanban-question-recovery.spec.ts`、`tests/e2e/test_prd_v5_config_start.py`。
+Preview 的角色字段读取复用 loader 的 `profile_sources` 和环境展开，避免 v5 的
+`uses` 在预览入口变成未知 profile；保留原始文档编号及继承的技能。
+v5 启动测试明确从 `zf-prd-v5.yaml` 生成隔离项目的唯一控制面 `zf.yaml`，核对版本 5.0.1
+及 blocking Task Pipeline，使用本地 Provider CLI 桩、真实 watcher/tmux，终点为
+`workflow.invoke.accepted` 与首个 `task.attempt.sent`；不宣称真实 Provider 完成交付。
+
+## 漂移观察与终态 Pipeline assignment
+
+Provider operation 已终态、且 task/role/dispatch/generation 与最后一次 Pipeline
+派发精确匹配时，任务可以继续等待交接；该 assignment 不要求 worker 再产生活动，
+因此不应持续报 node-skip。新的 Pipeline/legacy 派发、同一角色的其他活动任务或
+终态证据不可用时仍保留正常告警；本规则只影响观察信号，不更新任务或准入状态。
+
+Codex 会话用量读取逐行扫描完整 JSONL，仅保留最新可用 metadata 和用量，
+不把 provider 会话整份载入内存，也不根据历史读取推断当前上下文。活动尾部
+的不完整 JSON 行继续跳过；文件追加、替换或截断后下一次扫描重新核对。
+
+运行终态判定在一次判定内部复用同一份完整事件身份映射；每次新的外部调用
+仍从传入事件重建，不缓存跨调用结果，保留多运行隔离和单运行兼容规则。
+
+Run Manager 的单次 goal projection 也在当前完整事件快照内复用身份映射，
+包括目标选择和 handoff scope；下一次投影重新构建，不跨调用缓存事件身份。
+
+Run 别名投影对既无显式身份、又不能形成既有 correlation 或 anchor 的事件
+避免构造候选身份；它们仍参与相同的账本遍历，既有和新建 Run 的绑定规则不变。
+
+事件账本完整重读在读取前固定文件大小，逐行解析该快照，仅消费完整换行记录；
+并发追加和未完成尾行留待后续读取。归档、签名验证、事件顺序及 payload 均保留。
+
+恢复检查点对同一事件快照仅构建一次任务事件临时索引：显式 event.task_id
+优先，否则按允许的 payload 任务身份匹配；保持原顺序与单事件去重，下一次
+投影重新索引，未截取历史事件或改变跨任务范围。

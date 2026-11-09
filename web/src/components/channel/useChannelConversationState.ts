@@ -85,7 +85,12 @@ export function useChannelComposerDraft(
 
 export function useChannelThreadSelection(projectId: string, channelId: string, detail: ChannelDetail | null) {
   const key = `zf.channelThread:v1:${JSON.stringify([projectId, channelId])}`;
-  const [selection, setSelection] = useState(() => ({ key, id: window.localStorage.getItem(key) || "" }));
+  const [selection, setSelection] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linked = params.get("page") === "channels" && params.get("channel") === channelId
+      ? params.get("thread") : "";
+    return { key, id: linked || window.localStorage.getItem(key) || "" };
+  });
   const requested = selection.key === key ? selection.id : window.localStorage.getItem(key) || "";
   const scoped = detail?.channel_id === channelId ? detail : null;
   const ids = [...new Set([

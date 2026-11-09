@@ -2,6 +2,9 @@
 
 本实现对应 [Plan / Task Map / 调度手册](../manual/13-plan-task-map-orchestrator-dispatch.md)，基线为 dev c6a92a2f。OA 提出语义策略，WRC 校验并执行；不增加第二套 canonical Task/Graph。
 
+有界自主动作、调度摘要、执行顺序偏好及 Run Manager 增量审查见
+[OA 有界执行](oa-bounded-execution.md)。
+
 ## 委派如何影响执行
 
 `pre_impl` / `run_start` 接纳的 execution plan 与 Run、Task Map generation 和 Plan Artifact Package ref/digest 绑定。`task_pipeline_runtime` 调用 `admitted_pipeline_delegations`，再将结果交给 `TaskPipelineReconciler`。WRC 实际派发前仍执行 Task contract、依赖、背压、租约和输出协议校验。
@@ -53,6 +56,8 @@ Verify 的常规失败继续使用既有有界 Impl 返工。涉及图变化、�
 Codex 当前使用 `tmux`。`stream-json` 仅准入 `claude-code`，包含逐副本 backend 校验，错误在 loader 中报告，不等到 provider 启动后误入 Claude SDK。
 
 高频 provider 活动事件可复用文件身份和版本未变化的 RoleSessionRegistry 读快照；其他 writer 修改或原子替换文件即失效。heartbeat 写仍走原有锁内重新加载和原子写，不缓存 canonical 写入。注册表优先采用 PyYAML 的 C safe loader/dumper，缺少扩展时回退 safe 实现。相同状态、任务、attempt 和 context ratio 的 usage liveness 在既有 60 秒窗口内不重复写入；任何上述字段变化立即落盘。费用事实、租约和事件顺序均不折叠。
+
+TaskAttempt 只有在锁内确认仍处于活动状态并实际续租后，才发出 `task.attempt.heartbeat`。终态后的迟到 heartbeat 或 provider usage 不产生新的续租事件；原始用量和已有事件仍保留，不能以心跳代替结果准入。
 
 回归覆盖 `tests/test_activity_liveness.py`、`tests/test_orchestrator_agent_operations.py` 与 `tests/e2e/test_orchestrator_agent_semantic_control_mock_e2e.py`。本轮 backlog 与实际验证结果见 [任务记录](../../tasks/done/2026-10-26-0339-hello-pipeline-validation-fixes.md)。
 
@@ -143,6 +148,8 @@ Impl handoff 和 Verify 使用 `<provider>.hook.post_tool_use`，按角色和派
 失败。完整正文和已有 `refs.raw_output` 是证据；索引仅用于定位。短输出或空
 stdout 可仅内联于事件，没有 sidecar 不代表工具未执行；若当前契约明确要求
 额外 sidecar，则必须核对允许的证据形式并如实报告约束，不补造引用。
+大输出已外置时，hook 事件仅保留按字节限制的首尾预览及完整 sidecar 引用，
+引用不再重复携带预览、开头和结尾；完整脱敏正文仍可通过引用校验和读取。
 
 
 ### 已终局 reader 的恢复清理

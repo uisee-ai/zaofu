@@ -1,0 +1,145 @@
+{
+  "event": {
+    "type": "candidate.ready",
+    "id": "evt-ef8ca07ab7ee",
+    "ts": "2026-11-06T17:48:47.119808+00:00",
+    "actor": "zf-cli",
+    "task_id": null,
+    "payload": {
+      "schema_version": "candidate-freeze-receipt.v1",
+      "freeze_id": "7a77d12cf241d6f445301a605440ade2587ccf0605065c75009368e38f63248d",
+      "generation_id": "tpg-fe957c1f3cfd4a9f0973",
+      "workflow_run_id": "workflow-4ef709e12ce26efd",
+      "flow_kind": "prd",
+      "request_kind": "prd",
+      "pdd_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "feature_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+      "fanout_id": "fanout-prd-plan-evt-7ebac964",
+      "task_map_generation": "a25a16338e230df92bf31bf75a2f045127c0ba120c8079ca43794b97b5fea5d8",
+      "plan_artifact_package_id": "planpkg-dbe210dddf308ecd46f2506795e750fade6c33fc206c52a363ffee834cd55cd5",
+      "plan_artifact_package_ref": "artifacts/plan-packages/dbe210dddf308ecd46f2506795e750fade6c33fc206c52a363ffee834cd55cd5.json",
+      "plan_artifact_package_digest": "dbe210dddf308ecd46f2506795e750fade6c33fc206c52a363ffee834cd55cd5",
+      "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-7ebac964/planner/artifacts/plan/task_map.json",
+      "task_map_digest": "01ecaeba696ee7277ccdd80cd693842f62012147a995ee520b15c9fe29e60d22",
+      "source_index_ref": "artifacts/fanouts/fanout-prd-plan-evt-7ebac964/planner/artifacts/plan/source_index.json",
+      "candidate_generation": "cg-69bdbfb2db4e7168",
+      "candidate_branch": "candidate/PRD-WORKFLOW-4EF709E12CE26EFD",
+      "candidate_ref": "refs/heads/candidate/PRD-WORKFLOW-4EF709E12CE26EFD",
+      "candidate_base_commit": "dc308f345a28f23d1f1cded9c72ac693f00d4e37",
+      "candidate_head": "6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+      "candidate_head_commit": "6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+      "diff_ref": "dc308f345a28f23d1f1cded9c72ac693f00d4e37..6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+      "integration_ledger_digest": "773ffa2f2d20c7800f52362c80bae98c776d0aadafcec60bca5a2dc50a1f01e4",
+      "task_ids": [
+        "TASK-PRD-PRODUCT"
+      ],
+      "completed_task_ids": [
+        "TASK-PRD-PRODUCT"
+      ],
+      "superseded_task_ids": [],
+      "task_supersession_event_ids": [],
+      "supersession_ledger_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "task_integration_receipt_refs": [
+        {
+          "ref_schema_version": "sidecar-ref.v1",
+          "kind": "task_integration_receipt",
+          "ref": "artifacts/task-integration-receipts/594c676ae11a2a05f3a86602e5be4ce2517bebc0364494f26e73e3c9e9cd115b.json",
+          "sha256": "594c676ae11a2a05f3a86602e5be4ce2517bebc0364494f26e73e3c9e9cd115b",
+          "byte_count": 2254,
+          "content_type": "application/json",
+          "schema_version": "task-integration-receipt.v1",
+          "encoding": "utf-8",
+          "created_by": "candidate-integrator",
+          "source_event_id": "evt-32a02632dc45",
+          "access_scope": {},
+          "retention": {
+            "class": "audit_required"
+          },
+          "required": true,
+          "preview": ""
+        }
+      ],
+      "status": "frozen",
+      "commit": "6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+      "target_commit": "6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+      "freeze_receipt_ref": {
+        "ref_schema_version": "sidecar-ref.v1",
+        "kind": "candidate_freeze_receipt",
+        "ref": "artifacts/candidate-freeze-receipts/f8cf2db57d38f388cb19fd6a1aca40dd0f1dd1f394d16ad07aca1b6bf1e2d704.json",
+        "sha256": "f8cf2db57d38f388cb19fd6a1aca40dd0f1dd1f394d16ad07aca1b6bf1e2d704",
+        "byte_count": 2474,
+        "content_type": "application/json",
+        "schema_version": "candidate-freeze-receipt.v1",
+        "encoding": "utf-8",
+        "created_by": "task-pipeline-freezer",
+        "source_event_id": "evt-673bbb62248f",
+        "access_scope": {},
+        "retention": {
+          "class": "audit_required"
+        },
+        "required": true,
+        "preview": ""
+      },
+      "freeze_receipt_digest": "f8cf2db57d38f388cb19fd6a1aca40dd0f1dd1f394d16ad07aca1b6bf1e2d704"
+    },
+    "causation_id": "evt-673bbb62248f",
+    "correlation_id": "workflow-4ef709e12ce26efd",
+    "origin": "kernel"
+  },
+  "receipt": {
+    "candidate_base_commit": "dc308f345a28f23d1f1cded9c72ac693f00d4e37",
+    "candidate_branch": "candidate/PRD-WORKFLOW-4EF709E12CE26EFD",
+    "candidate_generation": "cg-69bdbfb2db4e7168",
+    "candidate_head": "6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+    "candidate_head_commit": "6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+    "candidate_ref": "refs/heads/candidate/PRD-WORKFLOW-4EF709E12CE26EFD",
+    "completed_task_ids": [
+      "TASK-PRD-PRODUCT"
+    ],
+    "diff_ref": "dc308f345a28f23d1f1cded9c72ac693f00d4e37..6661dc6613d04fd143a44da7e5e0e1efaada06c8",
+    "fanout_id": "fanout-prd-plan-evt-7ebac964",
+    "feature_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+    "flow_kind": "prd",
+    "freeze_id": "7a77d12cf241d6f445301a605440ade2587ccf0605065c75009368e38f63248d",
+    "generation_id": "tpg-fe957c1f3cfd4a9f0973",
+    "integration_ledger_digest": "773ffa2f2d20c7800f52362c80bae98c776d0aadafcec60bca5a2dc50a1f01e4",
+    "pdd_id": "PRD-WORKFLOW-4EF709E12CE26EFD",
+    "plan_artifact_package_digest": "dbe210dddf308ecd46f2506795e750fade6c33fc206c52a363ffee834cd55cd5",
+    "plan_artifact_package_id": "planpkg-dbe210dddf308ecd46f2506795e750fade6c33fc206c52a363ffee834cd55cd5",
+    "plan_artifact_package_ref": "artifacts/plan-packages/dbe210dddf308ecd46f2506795e750fade6c33fc206c52a363ffee834cd55cd5.json",
+    "request_kind": "prd",
+    "schema_version": "candidate-freeze-receipt.v1",
+    "source_index_ref": "artifacts/fanouts/fanout-prd-plan-evt-7ebac964/planner/artifacts/plan/source_index.json",
+    "status": "frozen",
+    "superseded_task_ids": [],
+    "supersession_ledger_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "task_ids": [
+      "TASK-PRD-PRODUCT"
+    ],
+    "task_integration_receipt_refs": [
+      {
+        "access_scope": {},
+        "byte_count": 2254,
+        "content_type": "application/json",
+        "created_by": "candidate-integrator",
+        "encoding": "utf-8",
+        "kind": "task_integration_receipt",
+        "preview": "",
+        "ref": "artifacts/task-integration-receipts/594c676ae11a2a05f3a86602e5be4ce2517bebc0364494f26e73e3c9e9cd115b.json",
+        "ref_schema_version": "sidecar-ref.v1",
+        "required": true,
+        "retention": {
+          "class": "audit_required"
+        },
+        "schema_version": "task-integration-receipt.v1",
+        "sha256": "594c676ae11a2a05f3a86602e5be4ce2517bebc0364494f26e73e3c9e9cd115b",
+        "source_event_id": "evt-32a02632dc45"
+      }
+    ],
+    "task_map_digest": "01ecaeba696ee7277ccdd80cd693842f62012147a995ee520b15c9fe29e60d22",
+    "task_map_generation": "a25a16338e230df92bf31bf75a2f045127c0ba120c8079ca43794b97b5fea5d8",
+    "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-7ebac964/planner/artifacts/plan/task_map.json",
+    "task_supersession_event_ids": [],
+    "workflow_run_id": "workflow-4ef709e12ce26efd"
+  }
+}

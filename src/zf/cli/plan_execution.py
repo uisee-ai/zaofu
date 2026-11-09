@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from zf.core.config.loader import load_config
+from zf.core.workflow.flow_metadata import flow_metadata_for
 from zf.runtime.plan_execution_review import execution_policy, review_execution
 from zf.runtime.execution_usage_facts import execution_usage_facts
 
@@ -52,7 +53,7 @@ def run(args: argparse.Namespace) -> int:
             if ports.get("task_map") != task_map:
                 raise ValueError("task map differs from the admitted package")
             package_identity = package
-        metadata = config.workflow.flow_metadata_by_kind.get(args.flow_kind, {})
+        metadata = flow_metadata_for(config, args.flow_kind)
         report = review_execution(
             task_map, ports=ports, policy=execution_policy(config), metadata=metadata,
             identity=package_identity,

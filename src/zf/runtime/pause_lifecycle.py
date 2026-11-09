@@ -124,6 +124,31 @@ def is_dispatch_paused(
     return bool(projection.get("paused"))
 
 
+def active_request_age_seconds(
+    events: list[ZfEvent], *, created_at: datetime, now: datetime,
+) -> float:
+    """Exclude explicit dispatch pauses from a request response deadline."""
+    created_at = created_at.replace(tzinfo=created_at.tzinfo or timezone.utc)
+    paused_at: datetime | None = None
+    excluded = 0.0
+    for event in events:
+        if event.type not in PAUSE_EVENT_TYPES | RESUME_EVENT_TYPES:
+            continue
+        try:
+            stamp = datetime.fromisoformat(event.ts.replace("Z", "+00:00"))
+            stamp = stamp.replace(tzinfo=stamp.tzinfo or timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        if event.type in PAUSE_EVENT_TYPES and paused_at is None:
+            paused_at = stamp
+        elif event.type in RESUME_EVENT_TYPES and paused_at is not None:
+            excluded += max(0.0, (min(now, stamp) - max(created_at, paused_at)).total_seconds())
+            paused_at = None
+    if paused_at is not None:
+        excluded += max(0.0, (now - max(created_at, paused_at)).total_seconds())
+    return max(0.0, (now - created_at).total_seconds() - excluded)
+
+
 def _read_events(state_dir: Path) -> list[ZfEvent]:
     try:
         return EventLog(Path(state_dir) / "events.jsonl").read_all()

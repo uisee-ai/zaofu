@@ -1,0 +1,24 @@
+[
+  {
+    "command": [
+      "emit",
+      "simulation.done",
+      "--actor",
+      "operator",
+      "--payload",
+      "{\"outcome\": \"completed\", \"run_id\": \"workflow-4ef709e12ce26efd\", \"goal_completed_event\": \"evt-f6dac67e0122\", \"independent_verification\": \"passed\", \"delivered_commit\": \"b9219864fe5faf074286b878a7cc7669a7772d5a\"}"
+    ],
+    "returncode": 0,
+    "stdout": "Emitted: simulation.done (evt-5c4d79b0b4ea)\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "stop",
+      "--include-run-manager"
+    ],
+    "returncode": 0,
+    "stdout": "Stopped harness session: zf-200-real-8qffn5an (18 steps completed)\n",
+    "stderr": ""
+  }
+]

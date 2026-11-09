@@ -713,6 +713,8 @@ def _build_orchestration_flow_policy(
         "checkpoint_policies",
         "pilot_id",
         "shadow_sample_percent",
+        "autonomous_actions",
+        "review_blocked_tasks",
     }
     unknown = sorted(str(key) for key in data if str(key) not in known)
     if unknown:
@@ -812,12 +814,28 @@ def _build_orchestration_flow_policy(
         raise ConfigError(
             f"{path}.pilot_id requires one blocking checkpoint"
         )
+    actions = data.get("autonomous_actions")
+    if actions is not None:
+        if (not isinstance(actions, list)
+                or any(not isinstance(item, str) for item in actions)
+                or set(actions) - {"delegate", "continue", "rework"}
+                or len(actions) != len(set(actions))):
+            raise ConfigError(f"{path}.autonomous_actions must list unique delegate/continue/rework actions")
+        if mode != "semantic_control":
+            raise ConfigError(f"{path}.autonomous_actions requires semantic_control")
+    review_blocked = data.get("review_blocked_tasks", False)
+    if not isinstance(review_blocked, bool):
+        raise ConfigError(f"{path}.review_blocked_tasks must be boolean")
+    if review_blocked and (actions is None or "semantic_failure" not in checkpoints):
+        raise ConfigError(f"{path}.review_blocked_tasks requires autonomous_actions and semantic_failure")
     return WorkflowOrchestrationFlowPolicyConfig(
         mode=mode,
         checkpoints=checkpoints,
         checkpoint_policies=policies,
         pilot_id=pilot_id,
         shadow_sample_percent=shadow_sample_percent,
+        autonomous_actions=actions,
+        review_blocked_tasks=review_blocked,
     )
 
 
@@ -843,6 +861,28 @@ def _validate_orchestration_blocking_pilot_tiers(config: ZfConfig) -> None:
             )
 
 
+def _validate_orchestration_oa_profile(config: ZfConfig) -> None:
+    """Reject an explicit OA profile that cannot be resolved at startup."""
+
+    profile = str(
+        getattr(config.workflow.orchestration, "oa_profile", "") or ""
+    ).strip()
+    if not profile:
+        return
+    if any(
+        profile in {
+            str(getattr(role, "name", "") or "").strip(),
+            str(getattr(role, "instance_id", "") or "").strip(),
+        }
+        for role in config.roles
+    ):
+        return
+    raise ConfigError(
+        "workflow.orchestration.oa_profile must match a configured role "
+        "name or instance_id: " + profile
+    )
+
+
 def _build_workflow_orchestration(
     data: object,
 ) -> WorkflowOrchestrationConfig:
@@ -856,7 +896,11 @@ def _build_workflow_orchestration(
         "checkpoint_policies",
         "pilot_id",
         "shadow_sample_percent",
+        "autonomous_actions",
+        "review_blocked_tasks",
         "flow_policies",
+        "oa_profile",
+        "normal_frontier_owner",
         "max_plan_revisions",
         "no_progress_limit",
     }
@@ -875,6 +919,8 @@ def _build_workflow_orchestration(
                 "checkpoint_policies",
                 "pilot_id",
                 "shadow_sample_percent",
+                "autonomous_actions",
+                "review_blocked_tasks",
             )
             if key in data
         },
@@ -913,13 +959,26 @@ def _build_workflow_orchestration(
         raise ConfigError(
             "workflow.orchestration revision limits must be >= 1"
         )
+    oa_profile = str(data.get("oa_profile") or "").strip()
+    normal_frontier_owner = str(
+        data.get("normal_frontier_owner") or "run_manager"
+    ).strip().lower()
+    if normal_frontier_owner not in {"run_manager", "wrc"}:
+        raise ConfigError(
+            "workflow.orchestration.normal_frontier_owner must be "
+            "run_manager or wrc"
+        )
     return WorkflowOrchestrationConfig(
         mode=root.mode,
         checkpoints=root.checkpoints,
         checkpoint_policies=root.checkpoint_policies,
         pilot_id=root.pilot_id,
         shadow_sample_percent=root.shadow_sample_percent,
+        autonomous_actions=root.autonomous_actions,
+        review_blocked_tasks=root.review_blocked_tasks,
         flow_policies=flow_policies,
+        oa_profile=oa_profile,
+        normal_frontier_owner=normal_frontier_owner,
         max_plan_revisions=max_plan_revisions,
         no_progress_limit=no_progress_limit,
     )
@@ -2760,15 +2819,6 @@ def load_config(path: Path) -> ZfConfig:
             for s in stage_dicts if isinstance(s, dict)
         }
         flow_metadata_raw = workflow_data.get("_flow_metadata")
-        task_pipeline_raw = (
-            flow_metadata_raw.get("task_pipeline")
-            if isinstance(flow_metadata_raw, dict)
-            else None
-        )
-        task_pipeline_blocking = bool(
-            isinstance(task_pipeline_raw, dict)
-            and str(task_pipeline_raw.get("mode") or "") == "blocking"
-        )
         rendered_pipeline_stages = bool(
             isinstance(flow_metadata_raw, dict)
             and flow_metadata_raw.get("rendered_pipeline_stages")
@@ -2780,7 +2830,15 @@ def load_config(path: Path) -> ZfConfig:
         merged_names = {
             str(getattr(r, "name", "") or "") for r in roles
         }
+        metadata_by_kind = _build_flow_metadata_by_kind(workflow_data.get("_flow_metadata_by_kind"))
         for pipeline_spec in pipelines:
+            pipeline_metadata = metadata_by_kind.get(pipeline_spec.flow_kind, flow_metadata_raw)
+            task_pipeline_raw = (
+                pipeline_metadata.get("task_pipeline") if isinstance(pipeline_metadata, dict) else None
+            )
+            task_pipeline_blocking = bool(
+                isinstance(task_pipeline_raw, dict) and task_pipeline_raw.get("mode") == "blocking"
+            )
             needed = set()
             for st in pipeline_spec.stages:
                 pattern = st.role_pattern or f"{st.stage_id}-lane-{{lane}}"
@@ -2810,6 +2868,10 @@ def load_config(path: Path) -> ZfConfig:
                 materialize_lane_pipeline_stages(
                     pipeline_spec,
                     task_pipeline_blocking=task_pipeline_blocking,
+                    candidate_verify_width=(
+                        task_pipeline_raw.get("candidate", {}).get("verify_width")
+                        if isinstance(task_pipeline_raw, dict) else None
+                    ),
                 ),
             )
             dag_data = workflow_data.setdefault("dag", {})
@@ -3196,6 +3258,7 @@ def load_config(path: Path) -> ZfConfig:
     for warn in validate_role_event_names(cfg.roles):
         print(f"Warning: {warn}", file=sys.stderr)
     _validate_orchestration_blocking_pilot_tiers(cfg)
+    _validate_orchestration_oa_profile(cfg)
     cfg.config_sources = list(raw.get("_config_profile_sources", []) or [])
     return cfg
 
@@ -3873,6 +3936,9 @@ def _build_runtime(
         resident_raw.get("tmux_session", "") or ""
     ).strip()
     resident_enabled = _bool_value(resident_raw.get("enabled"), default=False)
+    resident_response_timeout = resident_raw.get("response_timeout_seconds", 600)
+    if type(resident_response_timeout) is not int or resident_response_timeout <= 0:
+        raise ConfigError("runtime.run_manager.resident_agent.response_timeout_seconds must be a positive integer")
     if resident_enabled and not run_manager_backend:
         raise ConfigError(
             "runtime.run_manager.backend is required when "
@@ -3892,15 +3958,15 @@ def _build_runtime(
         )
     try:
         autoresearch_resident_max_actions = int(
-            autoresearch_resident_raw.get("max_actions_per_tick", 1) or 1
+            autoresearch_resident_raw.get("max_actions_per_tick", 1)
         )
     except (TypeError, ValueError) as exc:
         raise ConfigError(
             "runtime.autoresearch_resident.max_actions_per_tick must be an integer"
         ) from exc
-    if autoresearch_resident_max_actions <= 0:
+    if autoresearch_resident_max_actions < 0:
         raise ConfigError(
-            "runtime.autoresearch_resident.max_actions_per_tick must be > 0"
+            "runtime.autoresearch_resident.max_actions_per_tick must be >= 0"
         )
     autoresearch_resident_backend = str(
         autoresearch_resident_raw.get("self_repair_backend", "") or ""
@@ -4142,6 +4208,7 @@ def _build_runtime(
             ),
             resident_agent=RuntimeRunManagerResidentAgentConfig(
                 enabled=resident_enabled,
+                response_timeout_seconds=resident_response_timeout,
                 transport=resident_transport,
                 instance_id=resident_instance_id,
                 model=str(resident_raw.get("model", "") or "").strip(),

@@ -74,13 +74,14 @@ from zf.runtime.git_capture import (
     capture_git_diff_context,
 )
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_actor, is_configured_orchestrator_role
 from zf.runtime.orchestrator_agent_reactor import OrchestratorAgentReactorMixin
 from zf.runtime.product_delivery import ingest_task_map_to_kanban
 from zf.runtime.provider_operation_stop import (
     emit_provider_stop_recovery,
     recover_provider_stopped_operation,
 )
-from zf.runtime.provider_stop import classify_provider_stop
+from zf.runtime.provider_stop import classify_provider_stop, provider_stop_action
 from zf.runtime.rework_triage import ReworkTriageResult
 from zf.runtime.task_map import (
     build_task_map_from_ingest_plan,
@@ -150,7 +151,7 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
     ("codex.hook.pre_tool_use", "_on_codex_hook_pre_tool_use"),
     ("codex.hook.post_tool_use", "_on_codex_hook_post_tool_use"),
     ("codex.hook.stop", "_on_codex_hook_stop"),
-    ("provider.turn.closed", "_on_codex_hook_session_start"),
+    ("provider.turn.closed", "_on_provider_turn_closed"),
     ("worker.completed", "_on_worker_completed"),
     ("agent.api_blocked", "_on_agent_api_blocked"),
     ("agent.timeout", "_on_agent_timeout"),
@@ -488,8 +489,12 @@ class EventReactorMixin(
                     task_id=str(event.task_id or ""),
                     reason=f"{event.type} → {reason} → human",
                 )
-            if note == "input_unchanged":
-                reason = "canonical input unchanged after semantic scan rejection"
+            if note in {"input_unchanged", "infrastructure_failure"}:
+                reason = (
+                    "execution infrastructure must be repaired before controlled reader retry"
+                    if note == "infrastructure_failure"
+                    else "canonical input unchanged after semantic scan rejection"
+                )
                 try:
                     self.escalation.escalate(
                         f"{event.type}: {reason}; owner action is required",
@@ -1478,7 +1483,12 @@ class EventReactorMixin(
     def _is_orchestrator_final_manifest(self, event: ZfEvent, manifest: Any) -> bool:
         actor = str(event.actor or "").strip()
         role = str(getattr(manifest, "role", "") or "").strip()
-        return actor == "orchestrator" or role == "orchestrator"
+        return (
+            actor == "orchestrator"
+            or role == "orchestrator"
+            or is_configured_orchestrator_actor(self.config, actor)
+            or is_configured_orchestrator_actor(self.config, role)
+        )
 
     def _is_plan_only_task(self, task: Task) -> bool:
         contract = getattr(task, "contract", None)
@@ -1744,7 +1754,7 @@ class EventReactorMixin(
     def _has_implementation_writer_role(self) -> bool:
         writer_names = {"dev", "developer", "builder", "writer", "implementer"}
         for role in getattr(self.config, "roles", []) or []:
-            if str(getattr(role, "name", "") or "") == "orchestrator":
+            if is_configured_orchestrator_role(self.config, role):
                 continue
             kind = str(getattr(role, "role_kind", "") or "auto").lower()
             name = str(getattr(role, "name", "") or "").lower()
@@ -2555,7 +2565,10 @@ class EventReactorMixin(
             return self._reject_evidence_contract_violation(event, task)
 
         actor = event.actor or ""
-        trusted_actor = actor in {"zf-cli", "orchestrator"}
+        trusted_actor = (
+            actor in {"zf-cli", "orchestrator"}
+            or is_configured_orchestrator_actor(self.config, actor)
+        )
         if trusted_actor:
             return self._reject_evidence_contract_violation(event, task)
         if self._lifecycle_event_already_handed_off(event):
@@ -3021,7 +3034,9 @@ class EventReactorMixin(
             or str(payload.get("role") or "").strip()
             or str(nested.get("role") or "").strip()
         )
-        if actor == "orchestrator":
+        if actor == "orchestrator" or is_configured_orchestrator_actor(
+            self.config, actor
+        ):
             return None
         expected = str(getattr(task, "assigned_to", "") or "").strip()
         if actor and expected:
@@ -4518,9 +4533,6 @@ class EventReactorMixin(
             decision = decide_promotion(
                 task_id=task.id,
                 spec_ref=spec_ref,
-                has_acceptance_evidence=bool(
-                    getattr(contract, "verification_tiers", []) or []
-                ),
             )
             self.event_writer.append(ZfEvent(
                 type=decision.event_type,
@@ -4531,6 +4543,8 @@ class EventReactorMixin(
                     "spec_ref": decision.spec_ref,
                     "source_event_id": event.id,
                 },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
             ))
         except Exception:
             pass
@@ -4551,7 +4565,7 @@ class EventReactorMixin(
         instances = {
             role.instance_id
             for role in getattr(self.config, "roles", [])
-            if role.name != "orchestrator"
+            if not is_configured_orchestrator_role(self.config, role)
         }
         if not instances:
             return
@@ -4745,6 +4759,14 @@ class EventReactorMixin(
         Registering the handler keeps the handler-coverage invariant green.
         """
         return None
+
+    def _on_provider_turn_closed(
+        self, event: ZfEvent,
+    ) -> WorkflowRuntimeDecision | None:
+        from zf.runtime.provider_turn_error import bind_failed_task_pipeline_turn
+
+        bound = bind_failed_task_pipeline_turn(self, event)
+        return self._recover_provider_stop(bound) if bound is not None else None
 
     def _on_codex_hook_session_start(
         self, event: ZfEvent,
@@ -5017,23 +5039,7 @@ class EventReactorMixin(
             )
         return None
 
-    @staticmethod
-    def _provider_stop_action(reason: str) -> str:
-        if reason in {"auth_error", "hook_review_required", "tool_permission_blocked"}:
-            return "suspend"
-        if reason == "rate_limited":
-            return "cooldown"
-        if reason == "context_limit":
-            return "recycle"
-        if reason in {
-            "completed_without_terminal_event",
-            "pending_todos",
-            "timeout",
-            "provider_policy_rejected",
-            "transport_error",
-        }:
-            return "requeue"
-        return "observe"
+    _provider_stop_action = staticmethod(provider_stop_action)
 
     def _emit_goal_limited_status(
         self,
@@ -5632,25 +5638,13 @@ class EventReactorMixin(
         *,
         task_id: str,
     ) -> WorkflowRuntimeDecision | None:
-        pattern_id = str(payload.get("pattern_id") or "").strip()
-        if not pattern_id:
-            return None
-        stage = self._workflow_stage_by_id(pattern_id)
+        from zf.runtime.stage_definition_binding import declared_reader_stage
+        stage = declared_reader_stage(self, event, payload, task_id)
+        if isinstance(stage, WorkflowRuntimeDecision):
+            return stage
         if stage is None:
             return None
-        topology = str(getattr(stage, "topology", "") or "")
-        if topology != "fanout_reader":
-            self._emit_task_fanout_rejected(
-                event,
-                "declared workflow pattern is not an external reader entry",
-                expected="topology=fanout_reader",
-                actual=f"topology={topology or 'unset'}",
-            )
-            return WorkflowRuntimeDecision(
-                action="block",
-                task_id=task_id,
-                reason=f"unsupported declared workflow pattern: {pattern_id}",
-            )
+        pattern_id = stage.id
         trigger = str(getattr(stage, "trigger", "") or "").strip()
         if not trigger:
             return None

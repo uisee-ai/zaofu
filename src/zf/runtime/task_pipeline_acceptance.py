@@ -34,6 +34,11 @@ def reconcile_task_pipeline_acceptance_routes(
         context = generation_contexts.get(task_id)
         if context is None:
             continue
+        if any(
+            str(operation.get(key) or "") != str(context.get(key) or "")
+            for key in ("workflow_run_id", "task_map_generation")
+        ):
+            continue
         descriptor = operation.get("admitted_control_result_ref")
         if not isinstance(descriptor, Mapping):
             continue
@@ -104,13 +109,18 @@ def reconcile_task_pipeline_acceptance_routes(
                 descriptor=descriptor,
                 payload={"delta_intent": dict(result.get("delta_intent") or {})},
             )
-            if routed is not None:
+            route_event = routed or next((
+                event for event in reversed(runtime.event_log.read_all())
+                if event.type == "task.pipeline.acceptance.replan_requested"
+                and (event.payload or {}).get("operation_id") == operation.get("operation_id")
+            ), None)
+            if route_event is not None:
                 _emit_oa_delta_request(
                     runtime,
                     task_id=task_id,
                     operation=operation,
                     source_event=result_event,
-                    route_event=routed,
+                    route_event=route_event,
                     descriptor=descriptor,
                     context=context,
                 )
@@ -119,6 +129,7 @@ def reconcile_task_pipeline_acceptance_routes(
                     task_id,
                     "risk review requires OA/Planner task-map replan",
                 )
+            if routed is not None:
                 decisions.append(WorkflowRuntimeDecision(
                     action="task_pipeline_acceptance_replan",
                     task_id=task_id,
@@ -226,8 +237,9 @@ def _block_task_once(
         descriptor=descriptor,
         payload={"reason": reason, "blocker": dict(blocker)},
     )
-    if event is not None:
-        _set_task_blocked(runtime, task_id, reason)
+    # The route ledger and TaskStore are separate durable writes. Replaying
+    # an existing route must finish the state update lost in that window.
+    _set_task_blocked(runtime, task_id, reason)
     return event
 
 
@@ -293,6 +305,8 @@ def _canonical_result_event(
 def _set_task_blocked(runtime: Any, task_id: str, reason: str) -> None:
     task = runtime.task_store.get(task_id)
     if task is None or str(task.status) in {"done", "cancelled"}:
+        return
+    if task.status == "blocked" and task.blocked_reason == reason:
         return
     runtime.task_store.update(
         task_id,

@@ -18,13 +18,31 @@ from zf.runtime.plan_synth_handoff import (
     build_plan_handoff_input_refs,
     build_plan_synth_call_payload,
     render_plan_synth_completion_command,
+    render_plan_synth_validation_section,
 )
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.stage_execution_card import (
     compact_fanout_stage_context,
     compact_stage_context,
+    prepare_fanout_result_guidance,
     prepare_result_file_command,
 )
+
+
+def test_plan_synth_guidance_distinguishes_execution_and_report_status() -> None:
+    section = "\n".join(render_plan_synth_validation_section("zf result submit --scratch"))
+    assert "top-level `status` is execution status (`completed` or `failed`)" in section
+    assert "`report.status` is the semantic verdict (`passed`, `failed`, `blocked`, or `suspended`)" in section
+    guidance, semantic_submit, _ = prepare_fanout_result_guidance(
+        child_payload={
+            "output_profile_id": "plan-synth",
+            "semantic_result_submit_mode": "blocking",
+            "operation_id": "operation-1",
+        },
+        has_contract_snapshot=False,
+    )
+    assert semantic_submit is True
+    assert any("Plan Synth status fields are intentionally distinct" in line for line in guidance)
 
 
 def test_plan_synth_completion_command_round_trips_shell_sensitive_json(
@@ -408,6 +426,8 @@ def test_plan_rework_pins_complete_previous_candidate_refs(
         }],
     )
 
+    candidate_refs[0]["allowed_paths"] = ["$.approved"]
+    candidate_refs[0]["access_scope"] = {"purpose": "plan-review"}
     refs = build_plan_handoff_input_refs(
         state_dir=state_dir,
         project_root=project_root,
@@ -423,6 +443,8 @@ def test_plan_rework_pins_complete_previous_candidate_refs(
         item for item in refs
         if item["source_id"].startswith("previous-plan-candidate-")
     ]
+    assert previous[0]["allowed_paths"] == ["$.approved"]
+    assert previous[0]["access_scope"] == {"purpose": "plan-review"}
     assert len(previous) == len(candidate_refs)
     assert {
         item["kind"] for item in previous
@@ -462,6 +484,17 @@ def test_plan_rework_rejects_previous_candidate_digest_drift(
                 }],
             },
         )
+
+
+def test_explicit_empty_candidate_refs_do_not_revive_nested_old_refs(tmp_path: Path) -> None:
+    state_dir = tmp_path / '.zf'
+    state_dir.mkdir()
+    refs = build_plan_handoff_input_refs(state_dir=state_dir, project_root=tmp_path,
+        payload={'rework_of': 'evt-failure', 'previous_plan_candidate_refs': [],
+                 'trigger_payload': {'previous_plan_candidate_refs': [{
+                     'ref': 'missing-old.json', 'sha256': 'a' * 64,
+                 }]}})
+    assert not any(item['source_id'].startswith('previous-plan-candidate-') for item in refs)
 
 
 def test_plan_synth_large_child_body_is_immutable_ref_not_inline(

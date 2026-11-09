@@ -144,3 +144,17 @@ def test_persistence_across_instances(tmp_path: Path):
     store2 = TaskStore(path)
     assert len(store2.list_all()) == 1
     assert store2.list_all()[0].title == "Persist me"
+
+
+@pytest.mark.parametrize("remove_index", [False, True])
+def test_get_returns_latest_completed_revision_after_same_day_reopen(tmp_path, remove_index):
+    store = TaskStore(tmp_path / "kanban.json")
+    task = store.add(Task(id="R", title="first"))
+    store.update(task.id, status="done")
+    task.title = "second"
+    store.reopen(task)
+    store.update(task.id, status="done")
+    if remove_index:
+        store._index_path.unlink()
+    assert store.get(task.id).title == "second"
+    assert len([t for t in store.list_all_with_archive() if t.id == task.id]) == 2

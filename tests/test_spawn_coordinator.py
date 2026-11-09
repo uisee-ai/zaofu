@@ -137,6 +137,25 @@ class TestClaudeFirstSpawn:
 
 
 class TestClaudeRespawn:
+    @pytest.mark.parametrize("file_in_worktree", [True, False])
+    def test_respawn_checks_the_actual_worktree_session(self, coordinator, transport, registry, monkeypatch, tmp_path, file_in_worktree):
+        from zf.runtime.session_tailer import claude_session_path
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        role = RoleConfig(name="dev", backend="claude-code", permission_mode="bypass")
+        worktree = tmp_path / "task-worktree"
+        worktree.mkdir()
+        coordinator.spawn(role, cwd=worktree)
+        session = str(registry.get("dev"))
+        session_dir = worktree if file_in_worktree else Path(coordinator.project_root)
+        path = claude_session_path(str(session_dir), session)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{}\n')
+        coordinator.spawn(role, cwd=worktree)
+        _, argv, cwd = transport.spawn_calls[-1]
+        assert cwd == worktree
+        assert ("--resume" in argv) is file_in_worktree
+
     def test_respawn_uses_resume_flag(
         self, coordinator, transport, registry, monkeypatch,
     ):
@@ -150,7 +169,7 @@ class TestClaudeRespawn:
         # Simulate pane crash recovery: meta says spawned_at exists
         # (it does after first spawn) AND session file is still on disk.
         monkeypatch.setattr(
-            coordinator, "_claude_session_exists", lambda _sid: True,
+            coordinator, "_claude_session_exists", lambda _sid, **_kwargs: True,
         )
         coordinator.spawn(role)   # second (true respawn)
 
@@ -178,7 +197,7 @@ class TestClaudeRespawn:
 
         coordinator.spawn(role)
         monkeypatch.setattr(
-            coordinator, "_claude_session_exists", lambda _sid: True,
+            coordinator, "_claude_session_exists", lambda _sid, **_kwargs: True,
         )
         coordinator.spawn(role)
 
@@ -203,7 +222,7 @@ class TestClaudeRespawn:
 
         # Re-dispatch: not a resume (session file gone), but the old process
         # still holds first_id.
-        monkeypatch.setattr(coordinator, "_claude_session_exists", lambda _sid: False)
+        monkeypatch.setattr(coordinator, "_claude_session_exists", lambda _sid, **_kwargs: False)
         monkeypatch.setattr(
             "zf.runtime.spawn_coordinator._uuid_used_by_live_process",
             lambda uuid: uuid == first_id,
@@ -243,7 +262,7 @@ class TestClaudeRespawn:
             "projects": {"/previous-run": {"lastSessionId": rotated_id}},
         }), encoding="utf-8")
 
-        monkeypatch.setattr(coordinator, "_claude_session_exists", lambda _sid: False)
+        monkeypatch.setattr(coordinator, "_claude_session_exists", lambda _sid, **_kwargs: False)
         monkeypatch.setattr(
             "zf.runtime.spawn_coordinator._uuid_used_by_live_process",
             lambda candidate: candidate == first_id,
@@ -269,7 +288,7 @@ class TestClaudeRespawn:
 
         # File probe returns False — no session file on disk.
         monkeypatch.setattr(
-            coordinator, "_claude_session_exists", lambda _sid: False,
+            coordinator, "_claude_session_exists", lambda _sid, **_kwargs: False,
         )
         coordinator.spawn(role)
 
@@ -1072,7 +1091,7 @@ class TestPurgeStaleClaudeSession:
         assert len(purge_calls) == 1
 
         # Second spawn (registry now marked, and claude session "exists")
-        monkeypatch.setattr(coord, "_claude_session_exists", lambda sid: True)
+        monkeypatch.setattr(coord, "_claude_session_exists", lambda sid, **_kwargs: True)
         coord.spawn(role)
         # is_respawn=True so purge must NOT run again
         assert len(purge_calls) == 1

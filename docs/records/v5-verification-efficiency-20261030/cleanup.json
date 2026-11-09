@@ -1,0 +1,14 @@
+{
+  "runtime_stopped": true,
+  "owned_project_processes_remaining": [],
+  "browser_stopped": true,
+  "web_8002_stopped": true,
+  "vite_8003_stopped": true,
+  "dev_8001_untouched": true,
+  "archive": "/tmp/zf-v5-fixes-e2e-20261030-0946/isolated-project-stopped.tar.gz",
+  "archive_sha256": "6deb6acc6463ce846a2ce9af9775c64525f1410814ef2506ce20554df2060375",
+  "archive_bytes": 6329230,
+  "archive_member_count": 3628,
+  "provider_homes_and_private_credentials_excluded": true,
+  "candidate_export_retained": "/tmp/zf-v5-fixes-e2e-20261030-0946/independent-product"
+}

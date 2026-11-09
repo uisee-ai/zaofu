@@ -28,6 +28,9 @@ code and tests.
 - The configured runtime state dir (default `.zf/`) is runtime state, not
   source code.
 - Keep the deterministic kernel separate from agent-driven behavior.
+- Agents judge business meaning, applicability, and action plans; the runtime
+  validates the authorization, identity, version, and evidence bindings of
+  those decisions and executes state transitions.
 - Prefer agent/skill/prompt ownership for semantic, project-specific, or
   judgment-heavy behavior: agents decide, skills provide method, prompts provide
   goal/context. Keep deterministic code for invariants, schemas, state
