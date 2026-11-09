@@ -73,3 +73,10 @@ Verify 已派发（`evt-6ccf145a1f2e`），不重复 Impl。
 流程 smoke 10 passed，sentinel 53 passed。未运行全量 pytest，不将 harness
 测试视为 datal 产品验收。真实只读证明保存在产品目录
 `diagnostics/github-dev-resume-20261109/checkpoint-compatibility-proof.json`。
+
+恢复复查补充：仅修正请求比较仍不足以拉起已经处于
+`request_hash_compatibility_failed` 的操作。现于后续 Kernel `loop.started`
+之后给此类操作一个有界的派发前复查机会；不直接更改其 canonical 状态，仍由
+`ensure_operation` 证明兼容。失败事件按重载代次重新记录，防止旧诊断去重导致
+无限轮询；合同漂移及其他 blocked 原因不能借此通过。Runtime 与 Dashboard
+投影使用相同复查资格。补充闭包 651 passed，sentinel 53 passed。

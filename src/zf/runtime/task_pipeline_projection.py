@@ -142,6 +142,8 @@ def build_task_pipeline_projection(
         for row in reduce_workflow_operations(event_rows).values()
         if _matches_current_generation(row, contexts)
     ]
+    from zf.runtime.task_pipeline_read_replay import mark_restart_compatibility_probes
+    operation_rows = mark_restart_compatibility_probes(operation_rows, event_rows)
     if state_dir is not None:
         operation_rows = normalize_task_pipeline_operation_semantics(
             state_dir,

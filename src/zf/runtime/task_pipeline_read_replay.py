@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
+
+from zf.core.events.model import ZfEvent
 
 
 def read_policy_compatibility(
@@ -54,3 +56,26 @@ def read_policy_compatibility(
             return None
         coverage.append({"previous": dict(required), "current": dict(covering)})
     return {"rule": "same-content-read-coverage.v1", "coverage": coverage}
+
+
+def mark_restart_compatibility_probes(
+    operations: Iterable[Mapping[str, Any]], events: Sequence[ZfEvent],
+) -> list[Mapping[str, Any]]:
+    """Offer a pre-send recheck after restart; never change canonical status.
+
+    A failed probe emits a new blocked occurrence after loop.started and thus
+    cannot poll forever. ensure_operation must still prove compatibility before
+    sending anything. Other blocked reasons never gain this eligibility.
+    """
+    positions = {event.id: index for index, event in enumerate(events)}
+    restart = next((event for event in reversed(events)
+                    if event.type == "loop.started" and event.origin == "kernel"), None)
+    if restart is None:
+        return list(operations)
+    return [{**operation, "compatibility_probe_restart_event_id": restart.id}
+            if (operation.get("status") == "blocked"
+                and operation.get("task_pipeline_stage")
+                and operation.get("reason") == "request_hash_compatibility_failed"
+                and operation.get("last_event_id") in positions
+                and positions[operation["last_event_id"]] < positions[restart.id])
+            else operation for operation in operations]

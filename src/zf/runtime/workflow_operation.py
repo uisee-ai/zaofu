@@ -1160,6 +1160,12 @@ class WorkflowOperationService:
         if parent_task_id:
             emitted_body.setdefault("parent_task_id", parent_task_id)
         for event in reversed(events):
+            if (event_type == "workflow.operation.blocked"
+                    and payload.get("reason") in {"request_hash_divergence", "request_hash_compatibility_failed"}
+                    and event.type == "loop.started" and event.origin == "kernel"):
+                # A reload may recheck old compatibility failures once. Keep
+                # the new failed occurrence so scheduling cannot poll forever.
+                break
             if event_type == "workflow.operation.started" and starts_new_redrive_epoch(
                 event, existing_operation, operation_id, request_hash,
             ):
