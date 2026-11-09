@@ -2445,12 +2445,13 @@ def _reader_stage_replan_checkpoints(
     if not stage_by_failure:
         return []
     anchor_task_id = _single_active_workflow_anchor_task_id(tasks)
-    from zf.runtime.run_scope import resolve_run_for_event
+    from zf.runtime.run_scope import resolve_run_for_event, run_aliases
 
     out: list[WorkflowResumeCheckpoint] = []
     from zf.runtime.reader_replan_index import ReaderReplanIndex
 
     event_index = ReaderReplanIndex(events)
+    aliases: dict[str, str] | None = None
     for event in events:
         if event.type not in stage_by_failure:
             continue
@@ -2462,6 +2463,8 @@ def _reader_stage_replan_checkpoints(
         stage, _selection = reader_stage_for_failure(config, events, event)
         if stage is None:
             continue
+        if aliases is None:
+            aliases = run_aliases(events)
         stage_id = str(getattr(stage, "id", "") or event.type)
         payload = event.payload if isinstance(event.payload, dict) else {}
         task_id = str(
@@ -2488,7 +2491,7 @@ def _reader_stage_replan_checkpoints(
             evidence_event_ids=[event.id],
             reason=note,
             source_event_type=event.type,
-            workflow_run_id=resolve_run_for_event(events, event),
+            workflow_run_id=resolve_run_for_event(events, event, _aliases=aliases),
         ))
     return out
 
