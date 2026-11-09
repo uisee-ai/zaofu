@@ -1135,6 +1135,7 @@ export interface OperationsObservability {
   project_id: string;
   scope: { kind: string; note: string };
   owner_delivery?: { available: boolean; routes: Array<{ target: string; route: string; status: string; failure_count: number; reason: string; last_at: string }> };
+  source_requests?: { available: boolean; items: OperatorInboxItem[] };
   provider_telemetry: {
     requested_mode: string;
     updated_at: string;
@@ -3126,6 +3127,10 @@ export interface OperatorInboxItem {
   read_version?: string;
   resolution?: string;
   verification_required?: boolean;
+  reviewable?: boolean;
+  execution_status?: string;
+  proposal_digest?: string;
+  workflow_proposal_ref?: Record<string, unknown>;
   kind: string;
   status: string;
   title: string;

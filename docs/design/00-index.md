@@ -18,7 +18,7 @@
 | 编号 | 文档 | 状态 | 摘要 |
 | --- | --- | --- | --- |
 | 195 | [OA/WRC Worker Runtime：借鉴 Agent Runtime 的执行合同与唤醒语义](195-oa-wrc-worker-runtime-borrowings.md) | partial | 借鉴 Agent/Tower 的 profile、worker envelope、resume、push wake、unknown gate 和 CoT 边界；第一批机械合同已接入，真实 Provider 资格仍 HOLD。 |
-| 196 | [Inbox 人工决策中心与阅读状态](196-inbox-human-decision-center.md) | partial | 人工决策准入、已读计数和受控动作已实施；历史兼容及来源动作仍需核对。 |
+| 196 | [Inbox 人类审核与授权中心](196-inbox-human-decision-center.md) | implemented | 仅保留 Plan / 有效授权；问答留在原会话，运行处置移到 Operations，Workflow 提案复用原审核入口。 |
 | 197 | [PRD/Spec 合同与分层阅读视图](197-prd-spec-contract-and-readable-views.md) | candidate | 对照 Spec Kit 与 OpenSpec 设计统一 PRD/Spec 正文、轻量 Runtime 合同校验、分层产物和产品/架构/开发阅读视图。 |
 | 198 | [上下文索引、写后读取与恢复闭环](198-context-index-write-read-resume.md) | partial | 已接入任务输入索引、固定选择分页、恢复和消费可视化；全文搜索与实际差量交付保留后续资格条件。 |
 | 199 | [Worker 失败恢复与角色交付闭环](199-worker-failure-recovery-and-role-handoff.md) | partial | 分层恢复、逐请求义务、异步诊断、作用域准入和 WRC 去重；实现证据与剩余验收见配套实施记录。 |

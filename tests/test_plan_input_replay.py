@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.plan_artifact_package import (
     PlanArtifactPackageError, admit_plan_artifact_package_for_payload,
     package_event_payload, write_plan_artifact_package,
@@ -75,3 +76,43 @@ def test_identical_explicit_input_or_omitted_input_reuses_package(tmp_path, form
     assert result["plan_artifact_package_ref"] == descriptor["ref"]
     assert result["plan_artifact_package_digest"] == descriptor["sha256"]
     assert service.writer.event_log.read_all() == before
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_product_acceptance_replay_binds_identity_but_preserves_content_fence(tmp_path, changed):
+    from tests.test_product_acceptance import _spec
+    service = _service(tmp_path)
+    package = _package(service.state_dir)
+    bound = {**_spec(), "workflow_run_id": "run-1", "plan_revision": "r1", "task_map_generation": "g1"}
+    spec_ref = write_immutable_json_sidecar(service.state_dir, bound, root="fixtures/product-acceptance",
+        kind="product_acceptance_spec", schema_version="product_acceptance_spec.v1", created_by="test")
+    port = {"logical_name": "product_acceptance_spec", "artifact_kind": "product_acceptance_spec",
+            "schema_version": "product_acceptance_spec.v1", "producer_stage_id": "prd-plan",
+            "ref": spec_ref["ref"], "sha256": spec_ref["sha256"]}
+    package["produced"].append(port)
+    descriptor = write_plan_artifact_package(service.state_dir, package)
+    service.writer.append(ZfEvent(type="plan.artifact_package.admitted", origin="kernel",
+        payload=package_event_payload(package, descriptor, status="admitted")))
+    # Real Plan writers submit semantic content; initial admission supplies these identities.
+    semantic = {key: value for key, value in bound.items() if key not in {
+        "schema_version", "workflow_run_id", "flow_kind", "plan_revision", "task_map_generation",
+    }}
+    if changed:
+        semantic["user_journeys"] = []
+    task_map = next(p for p in package["produced"] if p["logical_name"] == "task_map")
+    before = service.writer.event_log.read_all()
+    frozen = (service.state_dir / descriptor["ref"]).read_bytes()
+    kwargs = dict(state_dir=service.state_dir, project_root=tmp_path, event_writer=service.writer,
+        events=before, workflow_run_id="run-1", flow_kind="prd", producer_stage_id="plan",
+        goal_id="G", metadata={"artifact_package": {"mode": "blocking"}}, payload={
+            "task_map_ref": task_map["ref"], "task_map_generation": "g1",
+            "plan_ports": [{"logical_name": "product_acceptance_spec", "body": semantic}],
+        })
+    if changed:
+        with pytest.raises(PlanArtifactPackageError, match="differs from the admitted package"):
+            admit_plan_artifact_package_for_payload(**kwargs)
+    else:
+        result = admit_plan_artifact_package_for_payload(**kwargs)
+        assert result["plan_artifact_package_ref"] == descriptor["ref"]
+    assert service.writer.event_log.read_all() == before
+    assert (service.state_dir / descriptor["ref"]).read_bytes() == frozen

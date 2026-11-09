@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import {
   ArrowLeft,
-  AlertTriangle,
   Bell,
   Check,
   CheckCheck,
@@ -17,7 +16,6 @@ import {
   MessageSquare,
   RefreshCw,
   Search,
-  ShieldCheck,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -31,15 +29,11 @@ import { INBOX_VIEWS as VIEW_OPTIONS, inboxItemsForView, inboxStatusLabel, type 
 
 
 
-type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "channel_decision" | "kanban_question" | "owner_attention" | "approval";
+type InboxKindFilter = "all" | "plan_approval" | "approval";
 
 const KIND_OPTIONS: Array<{ value: InboxKindFilter; label: string }> = [
   { value: "all", label: "All types" },
   { value: "plan_approval", label: "Plan Ready" },
-  { value: "human_decision", label: "Human Decision" },
-  { value: "channel_decision", label: "Channel Decision" },
-  { value: "kanban_question", label: "Kanban Question" },
-  { value: "owner_attention", label: "Needs review" },
   { value: "approval", label: "Approval" },
 ];
 
@@ -520,6 +514,7 @@ function InboxRow({
             <p className="muted">{t("Review the original context to determine the available action.")}</p>
           ) : null}
           {item.resolution ? <p>{t("Decision result")}: {item.resolution}</p> : null}
+          {item.execution_status ? <p>启动记录：{item.execution_status === "running" ? "已启动" : "已提交"}。授权通过不代表任务完成，最新结果请查看 Workflow。</p> : null}
           <details className="operator-inbox-source"><summary>Source and records</summary><div className="operator-inbox-meta-line">
             {inboxItemPrimaryRef(item) ? <span className="mono">{inboxItemPrimaryRef(item)}</span> : null}
             {item.stage_id ? <span>stage {item.stage_id}</span> : null}
@@ -722,13 +717,7 @@ function inboxActionPayload(item: OperatorInboxItem, reason = ""): Record<string
 
 function kindLabel(kind: string): string {
   if (kind === "plan_approval") return "Plan Ready";
-  if (kind === "human_decision") return "Human Decision";
-  if (kind === "channel_decision") return "Channel Decision";
-  if (kind === "kanban_question") return "Kanban Question";
-  if (kind === "owner_attention") return "Needs review";
-  if (kind === "runtime_attention") return "Runtime Attention";
   if (kind === "approval") return "Approval";
-  if (kind === "run_delivery") return "Run Delivery";
   return kind.replace(/_/g, " ");
 }
 
@@ -754,10 +743,6 @@ function sourceLabel(source: string): string {
 
 function kindIcon(kind: string): LucideIcon {
   if (kind === "plan_approval") return FileText;
-  if (kind === "human_decision") return ShieldCheck;
-  if (kind === "channel_decision") return MessageSquare;
-  if (kind === "kanban_question") return MessageSquare;
-  if (kind === "runtime_attention") return AlertTriangle;
   if (kind === "approval") return CheckCircle2;
   return Bell;
 }

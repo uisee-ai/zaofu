@@ -118,9 +118,9 @@ test("slow preparation polls do not overlap or create an extra ordinary poll", a
 
 test("Inbox read state stays separate from decisions and retains current unread selection", async ({ page }) => {
   const items = [
-    { id: "approval", title: "Review proposal", kind: "approval", status: "pending", unread: false, actionability: "human_required", actions: [{ action: "approve", label: "Approve" }] },
-    { id: "report-a", title: "Decision request", kind: "approval", status: "pending", unread: true, read_version: "v1:a", actionability: "human_required", actions: [] },
-    { id: "report-b", title: "Decision request", kind: "approval", status: "pending", unread: true, read_version: "v1:b", actionability: "human_required", actions: [] },
+    { id: "approval", title: "Review proposal", kind: "approval", reviewable: true, status: "pending", unread: false, actionability: "human_required", actions: [{ action: "approve", label: "Approve" }] },
+    { id: "report-a", title: "Decision request", kind: "approval", reviewable: true, status: "pending", unread: true, read_version: "v1:a", actionability: "human_required", actions: [] },
+    { id: "report-b", title: "Decision request", kind: "approval", reviewable: true, status: "pending", unread: true, read_version: "v1:b", actionability: "human_required", actions: [] },
   ];
   const actions: string[] = [];
   let failRead = true;
@@ -170,7 +170,7 @@ test("a pending Inbox poll cannot undo an accepted read acknowledgement", async 
       await route.fulfill({ json: { ok: true } });
       return;
     }
-    const item = { id: "report", title: "Report", kind: "approval", status: "pending", actionability: "human_required", unread };
+    const item = { id: "report", title: "Report", kind: "approval", reviewable: true, status: "pending", actionability: "human_required", unread };
     if (holdPoll) { holdPoll = false; held = true; await delayed; }
     await route.fulfill({ json: { items: [item], pending: [item], summary: { unread: item.unread ? 1 : 0 }, policy: {} } }).catch(() => {});
   });
@@ -187,7 +187,7 @@ test("a pending Inbox poll cannot undo an accepted read acknowledgement", async 
 });
 
 test("Inbox row read control acknowledges only its own item", async ({ page }) => {
-  const items = ["first", "second"].map(id => ({ id, title: `Report ${id}`, kind: "approval", status: "pending", actionability: "human_required", unread: true }));
+  const items = ["first", "second"].map(id => ({ id, title: `Report ${id}`, kind: "approval", reviewable: true, status: "pending", actionability: "human_required", unread: true }));
   const reads: string[] = [];
   await page.route("**/api/projects/**", async route => {
     if (route.request().method() === "POST") {
@@ -213,7 +213,7 @@ for (const action of ["replan-approve", "replan-reject"]) test(`Inbox owner prev
   let release!: () => void;
   const delayed = new Promise<void>((resolve) => { release = resolve; });
   const actions: { action: string; payload: Record<string, unknown> }[] = [];
-  const item = { id: "approval:owner-review", kind: "approval", status: "pending", title: "Owner review", plan_id: "PLAN-1", created_event_id: "evt-owner-review",
+  const item = { id: "approval:owner-review", kind: "approval", reviewable: true, status: "pending", title: "Owner review", plan_id: "PLAN-1", created_event_id: "evt-owner-review",
     actionability: "human_required", owner_route: "plan_synth_owner_decision", approval_ref: "owner-review",
     proposal_ref: "proposal.json", eval_ref: "evaluation.json" };
   await page.route("**/api/projects/**", async (route) => {
@@ -244,7 +244,7 @@ for (const action of ["replan-approve", "replan-reject"]) test(`Inbox owner prev
 });
 
 test("an old Plan preview cannot approve a newer owner request", async ({ page }) => {
-  const item = { id: "approval:owner-review", kind: "approval", status: "pending", title: "Owner review", plan_id: "PLAN-1",
+  const item = { id: "approval:owner-review", kind: "approval", reviewable: true, status: "pending", title: "Owner review", plan_id: "PLAN-1",
     created_event_id: "evt-new", actionability: "human_required", owner_route: "plan_synth_owner_decision",
     approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" };
   await page.route("**/api/projects/**", async (route) => {
