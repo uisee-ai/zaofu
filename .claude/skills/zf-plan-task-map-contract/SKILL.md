@@ -231,6 +231,16 @@ replan action. Never declare new completion or remove acceptance to retain work.
 
 ### Optional scope evidence for an incremental Critic
 
+Classify the recovery before authoring: an implementation/test defect within an
+unchanged contract stays in task rework; changed task obligations require a local
+Plan delta with explicit affected task IDs; global acceptance, shared protocols,
+membership or ambiguous impact require broader reconciliation. An input delivery
+failure is a technical failure, not evidence to reject the product or rewrite its
+Plan. Keep the reproducible diagnosis and request controlled recovery. Do not
+combine a bounded business repair with unrelated historical Plan normalization.
+If baseline and current contracts already diverge, report that debt explicitly;
+the local route is unavailable until the authority is reconciled and reviewed.
+
 Before requesting a local replan, compare the complete candidate Task Map with
 the pinned admitted baseline and current canonical task contracts. List changed
 task IDs, changes outside the controlled trigger's `task_ids`, and global/shared
@@ -255,6 +265,16 @@ metadata. The configured aggregate `review_input_max_bytes` and
 that preflight by deleting requirements or fabricating read receipts: prepare a
 coverage-preserving package or request an explicit change of review strategy.
 
+Before submitting a candidate, run the execution card's `zf result validate`
+command and inspect `input_cost`: largest ports, distinct rendered bytes, full
+port page estimate, pinned limits, and tasks declaring local input selections.
+This draft observation excludes requirements/baseline/reports and does not yet
+apply verified local review. It is neither the final cost nor approval. For
+`review_required`, explain and repair amplification before submitting; use bound
+refs for unchanged content and keep full acceptance matrices. The final pinned
+manifest still enforces the configured limit. Never change a running attempt's
+policy or fabricate reads to make an existing attempt fit.
+
 Only for a replan with a current admitted Plan Package and a prior independent
 Critic verdict, the Planner may include `scoped_plan_review.json` in
 `artifact_refs`. It is a semantic scope claim for the new Critic, not a new
@@ -277,7 +297,10 @@ the original requirement. Set `scope_complete` and
 and new contracts, dependency consumers, source/acceptance mappings and
 verification ownership. `ports` is a nonempty list of objects with
 `logical_name`, `baseline_sha256`, and `candidate_sha256`; each selected port
-must be a complete `task-scoped-plan-input.v1` in both versions. Copy exact
+must be a complete `task-scoped-plan-input.v1` in both versions, or preserve the
+same native schema and identical complete `task_input_policy` in both versions.
+Native selectors must cover the original body, shared selections must remain
+identical, and only declared affected partitions may change. Copy exact
 SHA-256 digests from pinned baseline descriptors and the final candidate files.
 
 Keep the complete Task Map, requirement, original sources and fixed-schema

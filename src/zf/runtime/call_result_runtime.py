@@ -747,6 +747,10 @@ def _pin_plan_candidate_validation_context(
             payload=trigger_payload,
         ),
         "writer_policy": plan_candidate_writer_policy(runtime.config),
+        "review_input_limits": {
+            key: int(getattr(getattr(stage, "aggregate", None), key, 0))
+            for key in ("review_input_max_bytes", "review_input_max_pages")
+        },
     }
 
 

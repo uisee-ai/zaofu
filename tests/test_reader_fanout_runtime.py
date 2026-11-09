@@ -5075,6 +5075,8 @@ def test_plan_reader_operation_pins_artifact_scope_and_result_semantics(
                 roles=["issue-triage"],
                 target_ref="docs/issues/bug.md",
                 aggregate=FanoutAggregateConfig(
+                    review_input_max_bytes=4194304,
+                    review_input_max_pages=512,
                     mode="wait_for_all",
                     child_success_event="issue.triage.child.completed",
                     child_failure_event="issue.triage.child.failed",
@@ -5121,6 +5123,8 @@ def test_plan_reader_operation_pins_artifact_scope_and_result_semantics(
     )
     assert validation["manifest"]["stage_id"] == "issue-triage"
     assert validation["manifest"]["fanout_id"]
+
+    assert validation["review_input_limits"] == {"review_input_max_bytes": 4194304, "review_input_max_pages": 512}
 
 
 def test_scan_reader_operation_does_not_receive_plan_candidate_validation(

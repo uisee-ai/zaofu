@@ -51,6 +51,7 @@ def evaluate_plan_candidate_preflight(
     manifest: Mapping[str, Any],
     metadata: Mapping[str, Any] | None,
     writer_policy: Mapping[str, Any] | None = None,
+    review_input_limits: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return structured, deterministic readiness facts for one plan candidate."""
 
@@ -282,8 +283,11 @@ def evaluate_plan_candidate_preflight(
             "human-readable plan Markdown has no resolvable producer",
         )
 
+    from zf.runtime.plan_candidate_input_cost import candidate_input_cost
+
     return {
         "schema_version": SCHEMA_VERSION,
+        "input_cost": candidate_input_cost(task_map or {}, port_bodies, review_input_limits),
         "execution_review": review_execution(
             task_map or {}, ports=port_bodies,
             policy=(writer_policy or {}).get("execution", {}), metadata=metadata or {},

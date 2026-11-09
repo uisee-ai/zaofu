@@ -326,6 +326,10 @@ def prepare_fanout_result_guidance(
     if has_contract_snapshot:
         verification_prefix = "" if semantic_submit else "verification_result."
         guidance.extend([
+            "If required input delivery fails, use execution_status=failed, "
+            "verdict=abstained, failure_class=reader_execution_failure and durable "
+            "diagnostic evidence_refs. An incomplete read can report this technical "
+            "failure; it cannot establish a product verdict or passing requirements.",
             f"For `{verification_prefix}requirement_results[].status`, use only "
             "`passed`, `failed`, `blocked`, `waived`, or `not_applicable`; "
             "a `rejected` verdict requires at least one `failed` requirement.",
@@ -671,6 +675,10 @@ def prepare_writer_execution_card(
         "`*** Update File`; never delete, add, move, or recreate the scratch path.",
         "- For a blocker, set `execution_status` to `failed`, describe "
         "the reproducible blocker, and run the same submit command.",
+        "- If required input delivery fails, use `execution_status: failed`, "
+        "`verdict: blocked`, and `failure_class` / `blocker_kind: reader_execution_failure`; "
+        "attach durable diagnostic `evidence_refs` and a concrete summary. "
+        "Incomplete reads can report this technical failure, never success or product rejection.",
         "- If task capsule/briefing/snapshot versions disagree, stop and set "
         "both `failure_class` and `blocker_kind` to `task_context_stale`; "
         "attach the exact conflicting revisions as evidence. This is a "

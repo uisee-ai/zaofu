@@ -21,7 +21,7 @@ def check_review_input_budget(config: Any, stage_id: str, diagnostic: dict[str, 
               ("review_input_max_bytes", "review_input_max_pages")}
     size = diagnostic["after"]["distinct_selected_bytes"]
     # This is a lower bound, not a promise: metadata/escaping takes page space.
-    pages = (size + 8191) // 8192
+    pages = diagnostic['after'].get('minimum_page_count', (size + 32767) // 32768)
     diagnostic.update(limits=limits, minimum_page_count=pages,
                       page_estimate_kind="lower_bound_excluding_metadata")
     enabled = any(limits.values())

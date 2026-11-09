@@ -76,6 +76,7 @@ def validate_plan_candidate_semantic(
         writer_policy=(
             dict(writer_policy) if isinstance(writer_policy, Mapping) else None
         ),
+        review_input_limits=validation.get("review_input_limits"),
     )
 
 

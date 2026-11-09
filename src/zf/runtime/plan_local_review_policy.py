@@ -234,7 +234,13 @@ def _scope(
                                   new_port=read(new_source), affected_task_ids=affected)
         if paths is None:
             return required
-        baseline_task_ids.update(old_port["tasks"][int(path[8:-1])]["task_id"] for path in paths[0][1:])
+        if "task_input_policy" in old_port:
+            # Recover the reviewed task identities from the exact native selections.
+            selected_paths = set(paths[0]) - set(old_port["task_input_policy"]["shared_paths"])
+            baseline_task_ids.update(row["task_id"] for row in old_port["task_input_policy"]["tasks"]
+                                     if set(row["paths"]) & selected_paths)
+        else:
+            baseline_task_ids.update(old_port["tasks"][int(path[8:-1])]["task_id"] for path in paths[0][1:])
         replacements[str(new_source["source_id"])] = (new_source, paths[1])
         replacements[str(old_source["source_id"])] = (old_source, paths[0])
     # Reconcile the producer's declared source/acceptance ownership for the

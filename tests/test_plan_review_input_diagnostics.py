@@ -13,8 +13,8 @@ def test_diagnostics_reports_qualified_reduction_and_unknown_sizes():
              'artifact_sha256': s['sha256'], 'json_path': '$'} for s in sources]
     result = review_diagnostics({'sources': sources}, before=rows, after=[rows[0], rows[2]], explicit=False)
     assert result['mode'] == 'incremental'
-    assert result['before'] == {'required_rows': 3, 'distinct_selected_bytes': 420, 'unknown_rows': 1}
-    assert result['after'] == {'required_rows': 2, 'distinct_selected_bytes': 120, 'unknown_rows': 1}
+    assert result['before'] == {'required_rows': 3, 'distinct_selected_bytes': 420, 'minimum_page_count': 2, 'unknown_rows': 1}
+    assert result['after'] == {'required_rows': 2, 'distinct_selected_bytes': 120, 'minimum_page_count': 1, 'unknown_rows': 1}
 
 
 def test_fallback_reason_does_not_claim_unobserved_cause():

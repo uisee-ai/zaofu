@@ -140,6 +140,8 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         if provider_summary_ref is not None:
             payload["provider_operation_summary_ref"] = provider_summary_ref
         policy = self._input_policy(payload, input_policy)
+        from zf.runtime.task_input_failure import incomplete_task_input_failure
+
         reader_failed = adapted.payload.get("execution_status") == "failed" and (
             (adapted.schema_version == "workflow-read-result.v1"
              and adapted.payload.get("verdict") == "abstained")
@@ -147,6 +149,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
                 and adapted.payload.get("failure_class") == "reader_execution_failure"
                 and adapted.payload.get("verdict") == "rejected")
         )
+        reader_failed = reader_failed or incomplete_task_input_failure(adapted.schema_version, adapted.payload)
         ledger_descriptor: dict[str, Any] = {}
         read_issues: list[dict[str, str]] = []
         if policy:

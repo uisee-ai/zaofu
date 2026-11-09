@@ -21,7 +21,8 @@ aggregate:
 
 仅作用于 Plan synth，在 CanonicalHandoffResolver 固定 manifest、建立必读策略后，
 operation 注册及 provider 发送之前检查。按必读选区 SHA 去重计量正文；分页数是按
-8192 字节计算的下界，不含元数据/JSON 转义开销。配置任意上限时，未知大小不能当作 0
+8192 字符计算的下界，不含元数据/JSON 转义开销；旧快照缺少字符数时使用 UTF-8 四字节
+上界推导保守的最低页数，字节预算仍独立生效。配置任意上限时，未知大小不能当作 0
 通过。超限保存诊断 sidecar 并沿 reader execution failure 路径返回，不形成 Critic
 语义批准/否决，不消耗语义 replan 额度；重试必须先提供实际修复和受控恢复决定。
 
@@ -70,3 +71,9 @@ fail-closed 拒绝，不能仅验证新控制面能读取配置。升级时需�
 真实恢复证据在目标项目 `diagnostics/critic-input-recovery-20261109/`，包括配置备份、
 验证日志、受控恢复请求及事件身份；控制面由本工作区加载，活跃 worker 保留。新 Planner
 已经派发，是否生成合格输入并通过独立 Critic 仍须观察后续结果。
+
+
+## 第一批局部 Plan P0 增补
+
+实现及验收见 [局部 Plan P0](local-plan-p0-20261109.md)。补充原生分区的精确比较、
+Impl/Verify 未读完输入时的技术失败收敛、Planner 提交前成本观察及字符分页口径。

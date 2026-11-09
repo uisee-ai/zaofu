@@ -123,7 +123,8 @@ def test_review_budget_boundaries(limits, size, unknown, status):
     from zf.runtime.plan_review_input_budget import check_review_input_budget, PlanReviewInputBudgetExceeded
     config = SimpleNamespace(workflow=SimpleNamespace(stages=[
         SimpleNamespace(id='plan', aggregate=_build_fanout_aggregate(limits))]))
-    diagnostic = {'after': {'distinct_selected_bytes': size, 'unknown_rows': unknown}}
+    diagnostic = {'after': {'distinct_selected_bytes': size, 'unknown_rows': unknown,
+                            'minimum_page_count': (size + 8191) // 8192}}
     if status == 'blocked':
         with pytest.raises(PlanReviewInputBudgetExceeded):
             check_review_input_budget(config, 'plan', diagnostic)
