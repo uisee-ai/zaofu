@@ -50,6 +50,7 @@ def bind_owner_dispatch_scope(payload: dict, *, source: Any, events: Sequence) -
                     and field(e, 'type') == 'plan.approval.requested'), None)
     request_body = field(request, 'payload', {}) or {}
     if (field(source, 'type') != 'plan.rejected' or field(source, 'actor') != 'operator'
+            or field(source, 'origin') != 'kernel'
             or request is None or request_body.get('plan_id') != body.get('plan_id')
             or request_body.get('workflow_run_id') != body.get('workflow_run_id')):
         raise ValueError('dispatch scope requires a bound operator Plan rejection')
