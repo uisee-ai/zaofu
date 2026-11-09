@@ -23,3 +23,5 @@
 本轮可独立验收切片见 [Z03a](../done/2026-11-09-1512-z03a-observation-connector.md)。
 
 实施边界与仓库关系见 [接入计划](../../docs/impl/201-controller-integration-plan.md)。
+
+本机原生 Codex 和期初基线见 [Z03b](2026-11-09-1549-z03b-native-codex-usage.md)。

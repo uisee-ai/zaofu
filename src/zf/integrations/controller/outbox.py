@@ -69,7 +69,7 @@ class Outbox:
             row = db.execute("SELECT * FROM bindings WHERE started<=? ORDER BY started DESC LIMIT 1", (occurred.timestamp(),)).fetchone()
         return dict(row) if row else None
 
-    def enqueue(self, source_key: str, occurred_at: str, payload: dict, *, sample_series: str = "", origin_id: str = "") -> bool:
+    def enqueue(self, source_key: str, occurred_at: str, payload: dict, *, sample_series: str = "", origin_id: str = "", baseline_first: bool = False) -> bool:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT 1 FROM messages WHERE source_key=?", (source_key,)).fetchone():
@@ -83,8 +83,16 @@ class Outbox:
             wire_seq = db.execute("SELECT COALESCE(MAX(wire_seq),0)+1 FROM messages WHERE origin_id=?", (origin_id,)).fetchone()[0]
             payload = dict(payload)
             if sample_series:
+                baseline_key = 'series-counter:' + sample_series
+                previous_sample = db.execute('SELECT sequence FROM samples WHERE series=?', (sample_series,)).fetchone()
+                # Existing v1 streams have an established balance; do not rebaseline on upgrade.
+                db.execute('INSERT OR IGNORE INTO metadata VALUES (?,?)', (baseline_key, 'known' if previous_sample else 'pending'))
                 db.execute("INSERT INTO samples VALUES (?, 1) ON CONFLICT(series) DO UPDATE SET sequence=sequence+1", (sample_series,))
                 payload["sample_seq"] = db.execute("SELECT sequence FROM samples WHERE series=?", (sample_series,)).fetchone()[0]
+                first_counter = db.execute('SELECT value FROM metadata WHERE key=?', (baseline_key,)).fetchone()[0] == 'pending'
+                payload['baseline_only'] = bool(first_counter and baseline_first and payload.get('tokens') is not None)
+                if payload.get('tokens') is not None:
+                    db.execute('UPDATE metadata SET value=? WHERE key=?', ('known', baseline_key))
             message_id = hashlib.sha256((self.config.project_id + ':' + source_key).encode()).hexdigest()
             body = json.dumps({"protocol": "zfc.telemetry.v1", "workspace_id": self.config.workspace_id,
                 "origin_deployment_id": origin_id, "stream_id": stream_id, "seq": wire_seq,

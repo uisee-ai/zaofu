@@ -8,13 +8,24 @@ from zf.core.config.project_context import load_project_env, resolve_project_con
 
 def register(subparsers):
     parser = subparsers.add_parser('controller', help='Deliver Controller observation records')
-    parser.add_argument('action', choices=('sync', 'status'))
+    parser.add_argument('action', choices=('sync', 'status', 'codex-usage'))
     parser.add_argument('--watch', action='store_true')
+    parser.add_argument('--session-id', default='', help='Exact native Codex session for read-only inspection')
+    parser.add_argument('--limit', type=int, default=5, help='Maximum native sessions to inspect (1..50)')
     parser.set_defaults(func=run)
 
 
 def run(args):
     context = resolve_project_context(require_config=True)
+    if args.action == 'codex-usage':
+        from zf.integrations.controller.local_codex import local_codex_usage
+
+        if args.watch or not 1 <= args.limit <= 50:
+            print('codex-usage is a read-only snapshot; limit must be 1..50')
+            return 2
+        print(json.dumps(local_codex_usage(context.project_root, context.state_dir,
+            limit=args.limit, session_id=args.session_id), ensure_ascii=False, indent=2))
+        return 0
     cloud = context.config.observability.controller
     if not cloud.enabled:
         print('Controller observation is disabled; standalone behavior is unchanged')
