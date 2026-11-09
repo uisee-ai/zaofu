@@ -26,6 +26,10 @@ def pending_manual_evidence_gate_action(
     if task_store is None or failed_event is None:
         return False, None
     failed_payload = _payload(failed_event)
+    if failed_payload.get("failure_class") == "reader_execution_failure":
+        # Unexecuted acceptance rows are not observations of a manual gate.
+        # This also prevents historical text-based triage from recreating it.
+        return False, None
     triage_payload = _payload(triage_event)
     task_id = str(
         triage_event.task_id or triage_payload.get("task_id") or ""

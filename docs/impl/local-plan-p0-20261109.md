@@ -56,3 +56,6 @@ infra retry 分类和独立验证测试纳入影响闭包。合并前执行 dev-
 P12B 真实结果回归已受理：`evt-67a9e1f72b7f` 绑定 failed execution / incomplete input consumption，
 `evt-02b0e42c9751` 为 reader_execution_failure 的 dev.blocked。既有任务及凭据绑定保留，
 没有借技术失败生成产品成功。失败报告不能受理的问题已解除，P12B 业务工作本身仍未完成。
+
+后续监工发现并复现了 [技术输入失败的恢复分类问题](reader-failure-triage-20261109.md)：
+结果准入成功后，旧 triage 将失败误认成人工证据缺失；其修复单独记录，不改写本批真实回执。
