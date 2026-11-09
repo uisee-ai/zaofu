@@ -242,8 +242,9 @@ class CodexSessionTailer(_BaseSessionTailer):
 
     User messages and non-terminal event_msg entries (token_count /
     task_started / turn_context) are CLI bookkeeping and get skipped.
-    ``task_complete`` closes the provider turn even when Codex omits its
-    Stop hook, so it is projected as ``provider.turn.closed``. Cost
+    ``task_complete`` and ``turn_aborted`` close the provider turn even when
+    Codex omits its Stop hook. Both project ``provider.turn.closed``; an
+    interruption is cancelled, never successful task completion. Cost
     telemetry is handled by CodexSessionReader.
     """
 
@@ -259,7 +260,7 @@ class CodexSessionTailer(_BaseSessionTailer):
             return
         if m.get("type") == "event_msg":
             provider_event = str(payload.get("type") or "")
-            if provider_event not in {"task_complete", "turn_complete"}:
+            if provider_event not in {"task_complete", "turn_complete", "turn_aborted"}:
                 return
             turn_id = str(payload.get("turn_id") or "").strip()
             if not turn_id:
@@ -282,7 +283,9 @@ class CodexSessionTailer(_BaseSessionTailer):
                     "schema_version": "provider.turn.closed.v1",
                     "backend": "codex",
                     "provider_event": provider_event,
-                    "provider_status": "completed",
+                    "provider_status": (
+                        "cancelled" if provider_event == "turn_aborted" else "completed"
+                    ),
                     "turn_id": turn_id,
                     "completed_at": payload.get("completed_at"),
                     "duration_ms": payload.get("duration_ms"),

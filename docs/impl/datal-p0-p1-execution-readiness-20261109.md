@@ -269,3 +269,19 @@ PAS 重放修复验证：两项正向重放先 RED，修复后聚焦24 passed；
 
 验证：2 RED→39 focused；扩展直接调用闭包146 passed；dev-verify自动闭包
 309 passed/7 skipped、sentinel53 passed、flow-smoke10 passed。非全量或真实provider E2E。
+
+
+### Critic 已结束但派发仍等待 provider_turn_active
+
+真实旧 Critic 已受理结果并空闲，三个更早的回合在原始 transcript 中记录
+turn_aborted，但 session tailer 仅识别正常完成；迟到结束只清除最后一轮，
+旧轮仍打开，挡住新 Critic。新增2项RED后补充turn_aborted投影，状态为
+cancelled，沿既有provider.turn.closed路径只关闭对应turn，不发布任务完成
+或语义通过。新回合保持活跃；无turn_id的中断不能释放占用。
+
+恢复必须绑定原始session和turn记录，按读取器重放遗漏事实；不得凭tmux
+空闲伪造stop或直接改canonical状态。8Impl里程碑仍未完成，本批保持active。
+
+验证：2 RED→36 focused，reader/恢复/mock E2E闭包171 passed，
+dev-verify自动闭包528 passed，sentinel53 passed。首次自动验证8项CLI测试
+因PATH缺zf失败，补入现有venv/bin后整组重跑通过，未改生产行为或测试断言。
