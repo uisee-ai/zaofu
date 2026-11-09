@@ -123,6 +123,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
     read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded, deduplicated pages")
     read_cmd.add_argument("--page-bytes", type=int, default=8192, help="Required output UTF-8 budget including metadata; 1024..8192 bytes")
+    read_cmd.add_argument("--pages", type=int, default=1, help="Required pages per call, 1..4; emits JSON Lines, at most pages * page-bytes bytes")
     read_cmd.add_argument("--cursor", default=None, help="Continue a bound --required page")
     read_cmd.add_argument("--resume", action="store_true", help="Resume observed pages in the current provider session")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
@@ -237,6 +238,11 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
     started = perf_counter()
     try:
         required = getattr(args, "required", False)
+        pages = getattr(args, "pages", 1)
+        if not 1 <= pages <= 4:
+            raise ValueError("--pages must be 1..4")
+        if pages != 1 and not required:
+            raise ValueError("--pages requires --required")
         if getattr(args, "resume", False) and (not required or getattr(args, "cursor", None)):
             raise ValueError("--resume requires --required and cannot be combined with --cursor")
         if required:
@@ -268,23 +274,34 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             from zf.runtime.artifact_read_requirements import required_reads_for_attempt
             from zf.runtime.artifact_context_events import artifact_context_events
 
-            rows = required_reads_for_attempt(
-                artifact_context_events(event_log),
-                args.attempt,
-                state_dir=context.state_dir, operation_id=identity["operation_id"],
-            )
             from zf.cli.artifact_required_read import prepare_required_read
             from zf.runtime.artifact_output_delivery import emit_artifact_output
 
-            output, receipts = prepare_required_read(
-                context.state_dir, manifest=manifest, rows=rows, identity=identity,
-                cursor=getattr(args, "cursor", None) or None, page_bytes=args.page_bytes,
-                event_log=event_log,
-                resume=getattr(args, "resume", False),
-            )
-            for row in receipts:
-                row.update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
-            emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
+            cursor = getattr(args, "cursor", None) or None
+            for page in range(pages):
+                page_started = started if page == 0 else perf_counter()
+                if page:
+                    # Reuse only unchanged ledger segments, never authorization.
+                    identity = authorize_artifact_read_from_environment(
+                        context.state_dir, manifest=manifest, event_log=event_log,
+                        use_artifact_context=True,
+                    )
+                rows = required_reads_for_attempt(
+                    artifact_context_events(event_log), args.attempt,
+                    state_dir=context.state_dir, operation_id=identity["operation_id"],
+                )
+                output, receipts = prepare_required_read(
+                    context.state_dir, manifest=manifest, rows=rows, identity=identity,
+                    cursor=cursor, page_bytes=args.page_bytes, event_log=event_log,
+                    resume=bool(page == 0 and getattr(args, "resume", False)),
+                )
+                for row in receipts:
+                    row.update(read_reason=getattr(args, "reason", "unspecified"),
+                               host_elapsed_ms=round((perf_counter()-page_started)*1000, 3))
+                emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
+                cursor = json.loads(output)["next_cursor"]
+                if not cursor:
+                    break
             return 0
         result = read_attempt_artifact(
             context.state_dir,

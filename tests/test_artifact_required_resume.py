@@ -13,10 +13,11 @@ from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.runtime.artifact_read_ledger import build_attempt_source_manifest, write_attempt_source_manifest
 
 
+@pytest.mark.parametrize("pages", [1, 4])
 @pytest.mark.parametrize("witness", ["observed", "missing", "wrong_session", "truncated",
                                       "wrong_bundle", "wrong_operation", "wrong_actor", "gap", "tampered_output",
                                       "compacted_event", "compacted_transcript", "compacted_before_delivery"])
-def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_path, monkeypatch, capsys, witness):
+def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_path, monkeypatch, capsys, witness, pages):
     state = tmp_path / "state"
     source_path = state / "artifacts" / "input.json"
     source_path.parent.mkdir(parents=True)
@@ -74,8 +75,12 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
         writer.append(ZfEvent(type="worker.context.compacted", actor="dev-1", task_id="T1",
                               ts=(datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()))
 
-    assert main([*command, "--resume"]) == 0
-    resumed = json.loads(capsys.readouterr().out)
+    assert main([*command, "--resume", "--pages", str(pages)]) == 0
+    outputs = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(outputs) == pages
+    resumed = outputs[0]
+    for before, after in zip(outputs, outputs[1:]):
+        assert after["items"][0]["page_start"] == before["items"][-1]["page_end"]
     assert resumed["items"][0]["page_start"] == (first["items"][0]["page_end"] if witness in {"observed", "compacted_before_delivery"} else 0)
 
 

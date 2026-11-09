@@ -212,3 +212,20 @@ UNKNOWN、P0 下一版本验证阻断等原始义务；与原六片写域隔离�
 （包含三个mock E2E）、serial10 passed、sentinel53 passed。规划器按204文件
 数量升级全量，依仓库规则改为显式决策/重规划/CLI/Event来源及其mock调用闭包；
 未运行全量或真实provider E2E。
+
+## 单次有界多页读取
+
+新增可选 `zf artifact read --required --pages 4`：默认1页行为不变，范围1..4，
+每页维持原1024..8192字节预算并独立输出一行JSON、flush、记录回执。完整调用
+最大输出 `pages * page-bytes` 字节；续读使用最后一行的 `next_cursor`，complete
+即停止。执行工具须给足输出容量（四页建议至少16000 tokens），消费全部正文后
+再继续，截断内容必须补读，不能将生产回执视为理解或历史观察证据。
+
+同次调用复用未变历史分片，每页仍重新校验操作授权、当前required policy及文件
+摘要；取消、凭据失效、篡改、管道失败立即非零停止，已成功输出的前页回执保留。
+`--resume`只作用于首个页，之后沿返回游标继续；不修改冻结必读范围或身份。
+
+多页读取：9项CLI新行为先RED后GREEN；影响闭包128 passed（含mock E2E、
+逐页撤权/篡改/断管、完整provider输出观察及单页/四页resume），serial10 passed、
+sentinel53 passed。规划器按134文件数退化全量，依仓库规则运行上述显式边界
+及调用闭包，未运行全量pytest或真实provider E2E。
