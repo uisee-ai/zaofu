@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 31e698f5 fix: rebind gap input partitions before package admission
 
 # 局部恢复计划包的分区继承与来源索引衔接
 
@@ -31,4 +31,23 @@
 - dev-verify plan --base dev 已执行，选择器跨广域模块膨胀到全套；遵循 AGENTS 影响闭包要求，显式测试以上15文件和直接事件入口，未声称全量pytest。
 - dev-verify run --base dev --tests tests/test_gap_source_index_entrypoint.py --tests tests/test_gap_package_input_partitions.py --skip-tier deterministic --skip-tier serial：sentinel53、mockE2E10通过。CLI曾误用单个--tests带两个路径，退出2后按重复--tests正确重跑。
 - partition_package_replay.py 仅复制真实输入到临时state；完整prepare成功，13个required ports，未发生产事件。日志保留于Datal diagnostics/consumer-recovery-20261110/partition-package-replay.log。
-- 原测试、权限、作用域及独立Verify门禁未削减。部署恢复待验证。
+- 原测试、权限、作用域及独立Verify门禁未削减。部署恢复已验证，见下方事件记录。
+
+## 生产后验（2026-11-10 12:12 UTC）
+
+控制器 PID2114755 从 gap-partitions-20261110 已验证源码运行。
+`evt-d55a5c6f2c96` 局部重试生成包，`evt-8dc80ba40170` 正式准入；
+依用户先前批准授权，operator 经 `zf plan approve evt-e6857feb62f6`
+产生 `evt-8d4de307f395`，内核 `evt-9ce21ed4eb08` 派发 Privacy R8。
+
+新工作树 base `4ecb9f9a57c4ddafa5e721b6439e93d5e51a84f9`：
+Privacy 三目录与原部分成果9352b324逐树相同，Ingest及已验收fixture与
+Candidate9d28c014逐树相同，9d28亦为祖先；工作树初始干净。
+Task Map 下游P19/P20Q/P20仅将blocked_by中R7替换R8，其他正文完全相同；
+已完成Ingest与在途Dataset无状态/authority/contract变更。
+
+此处done指本项harness缺陷及生产恢复入口验证完成，不代表Privacy产品验收完成。
+正式Impl门禁、独立Verify、Candidate集成仍由runtime执行；50/59产品任务done。
+历史损坏账本unknown与Privacy原600秒超时原因仍单列，不改写也不豁免。
+证据存于Datal diagnostics/consumer-recovery-20261110，包括recovery-status.json、
+privacy-after-adopt-audit.json、privacy-downstream-plan-audit.json及测试日志。

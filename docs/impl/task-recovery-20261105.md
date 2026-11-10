@@ -397,7 +397,7 @@ Dashboard HTTP200。R5继续active；本次没有新的产品done，也没有声
 未声明该字段的旧图保持原有形状；selector 的不一致拒绝规则保持不变。
 回归覆盖 builder 到真实 `flow.gap_plan.ready` / Orchestrator / Writer
 派发及重启去重。见 `tests/test_gap_dispatch_delta.py` 和
-`tasks/active/2026-11-10-1128-gap-amend-dispatch-delta.md`。
+`tasks/done/2026-11-10-1128-gap-amend-dispatch-delta.md`。
 
 ### 2026-11-10：分区继承的生产入口
 
@@ -407,4 +407,4 @@ port rebinder 携带声明的父任务分区，最后校验本次派发任务能
 `flow.gap_plan.ready` 的 bridge 必须将 `source_index_ref` 交给 amendment writer，
 并在 ready 中使用其返回的新 ref；原 source index 保持不可变。
 回归见 `tests/test_gap_source_index_entrypoint.py`、`tests/test_gap_package_input_partitions.py`，
-记录见 `tasks/active/2026-11-10-1150-gap-package-partitions.md`。
+记录见 `tasks/done/2026-11-10-1150-gap-package-partitions.md`。

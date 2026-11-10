@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 8fede5f9 fix: bind gap amendment dispatch delta to current tasks
 
 # 局部恢复继承旧派发批次导致准入拒绝
 
@@ -35,4 +35,23 @@ Datal Privacy R7 → R8 的局部恢复从当前已准入 Task Map 生成新修�
 - `dev-verify.py plan --base dev --tests tests/test_gap_dispatch_delta.py`：推荐广域 230 文件；相对本批基线 005b174f 为 209 文件。按 AGENTS 的影响闭包规则，本次已明确执行上述直接调用/合同闭包，未声称全量测试。前批 Unicode 167 项已有通过记录，本批未改变该实现。
 - `dev-verify.py run --base dev --tests tests/test_gap_dispatch_delta.py --skip-tier deterministic --skip-tier serial --receipt /tmp/zf-gap-delta-tiers-20261110.json`：机械 sentinel 53 passed、deterministic mock E2E 10 passed。跳过两层用于避免选择器膨胀触发全量；不跳过本批 focused 测试。
 - `git diff --check` 通过。
-- 生产恢复待切换已提交代码并重新预检；仍为 active。
+- 生产部署及受控恢复已验证，见下方事件记录。
+
+## 生产后验（2026-11-10 12:12 UTC）
+
+控制器 PID2114755 从 gap-partitions-20261110 已验证源码运行。
+`evt-d55a5c6f2c96` 局部重试生成包，`evt-8dc80ba40170` 正式准入；
+依用户先前批准授权，operator 经 `zf plan approve evt-e6857feb62f6`
+产生 `evt-8d4de307f395`，内核 `evt-9ce21ed4eb08` 派发 Privacy R8。
+
+新工作树 base `4ecb9f9a57c4ddafa5e721b6439e93d5e51a84f9`：
+Privacy 三目录与原部分成果9352b324逐树相同，Ingest及已验收fixture与
+Candidate9d28c014逐树相同，9d28亦为祖先；工作树初始干净。
+Task Map 下游P19/P20Q/P20仅将blocked_by中R7替换R8，其他正文完全相同；
+已完成Ingest与在途Dataset无状态/authority/contract变更。
+
+此处done指本项harness缺陷及生产恢复入口验证完成，不代表Privacy产品验收完成。
+正式Impl门禁、独立Verify、Candidate集成仍由runtime执行；50/59产品任务done。
+历史损坏账本unknown与Privacy原600秒超时原因仍单列，不改写也不豁免。
+证据存于Datal diagnostics/consumer-recovery-20261110，包括recovery-status.json、
+privacy-after-adopt-audit.json、privacy-downstream-plan-audit.json及测试日志。
