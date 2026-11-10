@@ -102,7 +102,8 @@ def test_failed_registered_assembly_recovers_without_second_provider_call(assemb
                  requirement_digest=revised["requirement_spec_digest"])
     next_attempt = prepare()
     assert next_attempt["status"] == "synthesis_queued"
-    assert consume() == 1  # Supersede the settled operation from the prior revision.
-    assert consume() == 1
+    # Superseding old work does not spend the new revision's single dispatch slot.
+    assert consume() == 2
+    assert consume() == 0
     assert agent.calls == 2
     assert load_workflow_request(state, request["request_id"])["status"] == "proposed"

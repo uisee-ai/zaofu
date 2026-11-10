@@ -97,3 +97,10 @@ refs。必须同时绑定 Run、operation、attempt、fanout、stage、revision�
 UI 旅程测试同时检查当前 Task 绑定 request 的准备状态，遇到终态失败保存详情并立即
 失败，不再空等 YAML。历史失败事件不会使已恢复 request 误判失败。确定性负例可用
 `ZF_UI_FAKE_FAULT=synthesis-digest` 注入 fake provider 的摘要复制错误；它不是模型验证。
+
+中断准备后通过 UI 保存新的需求 revision 时，Synthesis consumer 也会收尾旧版
+`suspended` operation：沿原 Service 追加 `workflow.operation.superseded`，避免旧
+准备工作阻止新版配置应用。按 request 定向消费同样先处理过期 revision；当前 revision
+的暂停仍保留，不自动调用 Provider 或解除暂停。版本绑定与配置在途安全门禁保持不变。
+旧版本收尾不占用本轮新操作的消费名额，保证同步 CLI 定向准备仍可完成当前 revision；
+返回的消费数量包含收尾事件，但每轮新操作调用数仍受原 limit 限制。
