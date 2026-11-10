@@ -104,6 +104,17 @@ owner 为 Run Manager 时，才继续产生既有 `worker-lifecycle-recover` 提
 requested/completed 恢复因果链；受控重派检查 attempt 上限，保留合同和验证目标。
 普通 `zf restart`、语义失败及无恢复回执均不获得重派授权。
 
+`worker.respawn.requested` 与 `workflow.operation.redrive_admitted` 进入正式
+watcher 唤醒集合：前者可由外部 Run Manager 提交，后者也可由受控 resume/repair
+入口提交，均需驱动既有 `run_once` 消费。它们默认不触发 Layer2 Agent 推理，
+保留显式角色订阅、rate limiter、单 snapshot 一轮及原有持久化幂等。
+`worker.respawn.completed` 当前唯一生产源位于 `agent_view_runtime` 的同一轮
+`run_once` 内，其后 `_dispatch_ready` 即读取回执并准入重派，所以登记为
+batch-only，不额外唤醒；若将来出现异步外部生产者，须重新审查该分类。
+`tests/test_recovery_wake.py` 经真实 Watcher/callback/worker action consumer 覆盖
+唤醒、限流、批次合并、因果回执与重复请求。此改动不会抢占正在运行的同步 tick，
+也不解决长周期或缺少分段耗时观测的问题。
+
 恢复前应先修复已确认的环境问题；例如 Provider CLI 不支持模型时，升级磁盘上的
 CLI 不会替换存量进程。根操作员可通过既有 `zf start --control-plane-only` 重载
 控制面、保留其他 worker，再由 RM 对故障 Verify 执行精确生命周期恢复。
