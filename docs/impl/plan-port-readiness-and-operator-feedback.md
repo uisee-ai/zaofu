@@ -16,6 +16,25 @@ Plan producer 的结果预检与 Critic 派发前检查共用 `plan_candidate_po
 获取方式。Planner 简报使用该选项；去掉它可重新运行同一验证命令查看完整结果。
 摘要仅改变 CLI 输出，不改变预检、准入或 Critic 必读工件；默认 CLI 输出仍是完整报告。
 
+新 Plan Package 的公共准入还通过 `plan_package_matrix_admission` 复用既有
+`plan_matrix_admission_errors`，覆盖 controlled gap、gap bridge 与正常产出的共同入口。
+只在 capability/acceptance/test 三个注册表均明确 required、ready、enrichment fulfilled
+时启用；检查合并后的显式与继承工件，不把未补齐的全局旧矩阵当作新 TaskMap 的有效注册表。
+错误携带原 code/field/message，经原 package rejected 与 admission cancel 路线返回，
+blocking 模式在 canonical Task materialization 前停止；shadow 保留诊断与原 legacy 行为，
+off 不增加读取。同 generation 已准入 package 继续校验原绑定后复用，不因升级重开 worker。
+
+无 enrichment、部分矩阵和全字符串 AC 且未声明 canonical commands 的旧合同保持原兼容；
+一份声明现代完整矩阵的 TaskMap 混用字符串与结构化 AC/commands、非法行或非法列表时
+明确拒绝，不能借此整体跳过检查。
+可选矩阵不被升级为 required。检查只证明 ID/集合/已有引用和命令约定的一致性，不判断
+业务覆盖充分性、不新增能力/AC 映射、不授予 waiver，也不运行完整 Planner preflight。
+目前 real E2E helper 仍只检查 `rows[]`，`scenarios[]` 旧形状及 journey/task 引用闭合
+是单独待修项，本接线不扩 schema、不修旧数据，不能称为这些维度的验收证明。
+
+回归：`tests/test_plan_package_matrix_admission.py` 经实际 controlled action/gap bridge
+确认旧矩阵阻断，公共 caller 覆盖显式修订、继承、模式、legacy 和同版复用。
+
 `stage-replan-new-generation` 的原升级事件、Run 身份、授权引用及幂等约束保持不变。
 该受控动作可额外接受 `operator_feedback: list[str]`。条目必须是非空字符串；
 坏输入在恢复 Run 之前拒绝。新代际保留原失败诊断，再附加 operator 提供的文本与
