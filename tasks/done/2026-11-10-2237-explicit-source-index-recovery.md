@@ -1,6 +1,8 @@
 # 受控增量恢复保留显式 source_index
 
-> 状态: active
+> 状态: done
+
+实现提交：`86b70c17 fix: preserve explicit source indexes during candidate recovery`。
 
 根代理已授权在独立 worktree 修复并提交，由根代理唯一合并；不操作活动 LS 或其冻结候选。
 

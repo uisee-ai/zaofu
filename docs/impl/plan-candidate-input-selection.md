@@ -33,4 +33,4 @@ Gap 序列化通过 `preserve_gap_task_declarations` 保留显式 `owner_instanc
 
 此前再派生会将历史 parent 中的旧任务 ID 改成新 ID，并去重原 source_refs，造成作者已审核的历史谱系变形。现修复保留整个显式正文；没有显式 producer 时仍沿用原派生行为。显式 descriptor 缺失、摘要错误或文件不存在时，继续在发布 ready/amended 前拒绝，不回退到旧索引。身份、来源、矩阵与审批 gate 不变；固定 ref 不代表业务验收完成。
 
-`tests/test_control_actions_candidate_rework_source_index.py` 通过真实受控动作、ready 事件、`load_writer_task_map`、`Orchestrator._ensure_writer_tasks_canonical` 和 TaskStore 回读，验证正文/descriptor、历史 parent、重复来源、拒绝及 legacy 路径。任务：[显式索引恢复修复](../../tasks/active/2026-11-10-2237-explicit-source-index-recovery.md)。
+`tests/test_control_actions_candidate_rework_source_index.py` 通过真实受控动作、ready 事件、`load_writer_task_map`、`Orchestrator._ensure_writer_tasks_canonical` 和 TaskStore 回读，验证正文/descriptor、历史 parent、重复来源、拒绝及 legacy 路径。任务：[显式索引恢复修复](../../tasks/done/2026-11-10-2237-explicit-source-index-recovery.md)。
