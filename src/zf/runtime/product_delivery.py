@@ -870,7 +870,13 @@ def _contract_from_task_map_item(
         "source_refs": dict(refs),
     })
     if required_plan_ports:
-        evidence_contract["required_plan_ports"] = list(required_plan_ports)
+        from zf.runtime.plan_artifact_ports import canonical_plan_port_name
+
+        evidence_contract["required_plan_ports"] = list(dict.fromkeys(
+            canonical_plan_port_name(name) for name in [
+                *required_plan_ports, *_string_list(evidence_contract.get("required_plan_ports")),
+            ]
+        ))
     success_criteria = evidence_contract.get("success_criteria")
     if not isinstance(success_criteria, list):
         success_criteria = []
