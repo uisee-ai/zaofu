@@ -44,6 +44,9 @@ amendment are separate role capabilities supplied by the workflow profile.
 - Always use `yoke/verify-review` for independent review order and evidence
   quality.
 - Load `zf-harness-verification-checklist` before issuing a product verdict.
+  For project acceptance or new test coverage, load its project-verification
+  reference before selecting probes, then the project method named by the
+  briefing. Keep project-specific skills out of generic workflow defaults.
 - Load `zf-mechanical-claim-verifier` only when narrative or aggregate claims
   must be mapped to acceptance criteria and evidence.
 - Return a typed, evidence-backed pass/reject/blocked result for the immutable
