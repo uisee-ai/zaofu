@@ -48,6 +48,30 @@ _PRD_VIEW_SECTIONS = {
     "developer": ("document control", "user flow", "functional requirements", "requirements", "business rules", "non functional", "acceptance", "dependencies", "appendices"),
 }
 
+_PRD_VIEW_TOPICS = {
+    "product": ("overview", "background", "goals", "users", "stories", "flow", "requirements",
+                "rules", "edges", "nfr", "success", "acceptance", "dependencies"),
+    "architecture": ("overview", "goals", "rules", "entities", "nfr", "dependencies"),
+    "developer": ("stories", "flow", "requirements", "rules", "edges", "entities", "nfr",
+                  "acceptance", "dependencies"),
+}
+
+_PRD_SHARED_VIEW_SECTIONS = (
+    "document control", "decision", "risk", "open question", "assumption", "scope", "provenance",
+    "文档控制", "版本", "决定", "决策", "风险", "待决", "未决", "例外", "范围", "非目标", "来源",
+)
+
+_CATALOG_LABELS = {
+    "id": "标识", "title": "标题", "statement": "要求", "description": "说明", "value": "内容",
+    "status": "状态", "reason": "依据", "owner": "负责人", "section": "正文位置",
+    "source_refs": "来源引用", "evidence_refs": "证据引用", "acceptance_ids": "验收标识",
+    "requirement_ids": "需求标识", "command": "验证命令", "tier": "验证层级",
+    "expected_result": "预期结果", "measurement_method": "测量方法", "baseline": "基线",
+    "target": "目标", "measurement_timing": "测量时点", "priority": "优先级",
+    "producer_paths": "待生产路径", "ref": "引用", "digest": "摘要", "revision": "版本",
+    "blocking": "阻塞声明", "affected_tasks": "影响任务", "artifact": "工件",
+}
+
 
 def validate_prd_document(body: dict[str, Any]) -> str:
     # Existing persisted contracts remain readable. New provider prompts ask
@@ -289,9 +313,11 @@ def prd_view_index(markdown: str) -> dict[str, dict[str, Any]]:
     views: dict[str, dict[str, Any]] = {}
     labels = {"product": "产品经理", "architecture": "架构师", "developer": "资深开发"}
     for role, aliases in _PRD_VIEW_SECTIONS.items():
+        role_aliases = (*aliases, *_PRD_SHARED_VIEW_SECTIONS,
+                       *(alias for topic in _PRD_VIEW_TOPICS[role] for alias in _PRD_SPEC_SECTIONS[topic]))
         selected = [
             title for title, normalized_title in normalized
-            if any(_normalize_heading(alias) in normalized_title for alias in aliases)
+            if any(_normalize_heading(alias) in normalized_title for alias in role_aliases)
         ]
         views[role] = {
             "label": labels[role],
@@ -359,7 +385,8 @@ def _catalog_table(title: str, values: Any) -> list[str]:
         return escape(text, quote=False).replace("\\", "\\\\").replace("|", "\\|").replace("`", "\\`").replace("\r\n", "\n").replace("\n", "<br>")
 
     lines.extend([
-        "| " + " | ".join(cell(field) for field in fields) + " |",
+        "| " + " | ".join(cell(f"{_CATALOG_LABELS[field]}（{field}）" if field in _CATALOG_LABELS else field)
+                           for field in fields) + " |",
         "| " + " | ".join("---" for _ in fields) + " |",
     ])
     lines.extend("| " + " | ".join(cell(row[field]) if field in row else "" for field in fields) + " |" for row in rows)

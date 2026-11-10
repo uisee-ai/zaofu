@@ -1,6 +1,7 @@
 ---
 name: zf-prd-plan-synth
 description: "Use for ZaoFu PRD workflows. Defines scan, planning, configured review, and the dispatchable plan contract for product delivery."
+dependencies: [zf-plan-execution-readiness]
 ---
 
 # ZaoFu PRD Plan Synthesis
@@ -31,6 +32,11 @@ configured workflow separates PRD authoring. They do not add `prd-author`,
 `prd-critic`, or `task-map-synth` to the standard PrdFlow.
 
 ## PRD Author Output
+
+编写或评审 PRD 时读取[产品阅读与证据方法](references/product-reading-evidence.md)，
+将摘要、正文、设计和追溯组织为同版权威材料的阅读路径。存在设计问题时，同时读取
+依赖技能中的[设计调研与交接](../zf-plan-execution-readiness/references/design-research-handoff.md)。
+按适用性展开，不增加固定章节、角色或 Runtime 语义门禁。
 
 Channel PRD 输入先消费同版 `implementation_companion` 的来源基线、评审覆盖、验收数据
 计划和 handoff 索引，以及独立评估报告（如已提供）。复核报告的 PRD ref/digest；旧版
