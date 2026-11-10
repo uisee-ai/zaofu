@@ -23,6 +23,6 @@
 | 198 | [上下文索引、写后读取与恢复闭环](198-context-index-write-read-resume.md) | partial | 已接入任务输入索引、固定选择分页、恢复和消费可视化；全文搜索与实际差量交付保留后续资格条件。 |
 | 199 | [Worker 失败恢复与角色交付闭环](199-worker-failure-recovery-and-role-handoff.md) | partial | 分层恢复、逐请求义务、异步诊断、作用域准入和 WRC 去重；实现证据与剩余验收见配套实施记录。 |
 | 200 | [Agent 恢复职责与统一执行 Runtime](200-agent-recovery-ownership-and-unified-runtime.md) | implemented | 八个工作包完成；真实 Codex/v5 最小业务闭环，验证层级及生产资格边界见配套实施记录。 |
-| 206 | [公开资料中的 Spec 方法借鉴与质量评估](206-spec-method-borrowings-and-quality-evaluation.md) | partial | 六源机制分析、造父分层适配方案与带证据评分；首批方法/共享责任阅读落地，跨工具实际效果仍待验证。 |
+| 206 | [公开资料中的 Spec 方法借鉴与质量评估](206-spec-method-borrowings-and-quality-evaluation.md) | implemented（本批工程） | 六源借鉴与评分、紧凑阅读、六类真实生成/交接试点；外部原生对照、真人及完整 v5 效果资格未完成。 |
 
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。

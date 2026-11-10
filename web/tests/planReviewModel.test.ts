@@ -139,3 +139,11 @@ assert.equal(missingDefinitions.responsibilities[0].commands[0].definitions.leng
 import { decisionStatusDistribution } from "../src/components/delivery-trace/planReviewModel.js";
 assert.equal(decisionStatusDistribution(shared.task_map.owner_decision_items), "deferred 1 · confirmed 4 · pending_validation 1 · proposed 1");
 assert.equal(decisionStatusDistribution([{ status: "future-value" }, {}, { status: "future-value" }]), "future-value 2 · 未声明 1");
+
+// Exact repeated sections may fold for reading, but every original byte survives.
+const repeating = planTaskSpecifications('## Task Spec: A\n\n### 本片结果\nA 专属。\n\n### 完整决定\nD-sync 保持未来待决，不阻塞本期。\n\n## Task Spec: B\n\n### 本片结果\nB 专属。\n\n### 完整决定\nD-sync 保持未来待决，不阻塞本期。\n', ['A', 'B']);
+assert.equal(repeating.reading.A.filter(s => s.shared).length, 1);
+assert.equal(repeating.reading.A.map(s => s.content).join(''), repeating.tasks.A.content);
+assert.equal(repeating.reading.B.map(s => s.content).join(''), repeating.tasks.B.content);
+const different = planTaskSpecifications('## Task Spec: A\n### 决定\nD 未关闭\n## Task Spec: B\n### 决定\nD 已关闭\n', ['A', 'B']);
+assert.equal(different.reading.A.some(s => s.shared), false);

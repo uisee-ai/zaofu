@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlanPreview } from "../../api/types";
-import { buildPlanTrace, comparePlanTrace, dispositionLabel, traceSearch } from "./planTraceModel";
+import { buildPlanTrace, comparePlanTrace, dispositionLabel, taskTraceRows, traceSearch } from "./planTraceModel";
 import { object, planArtifactUrl, text } from "./planReviewModel";
 import type { ReviewArtifacts, ReviewPort } from "./planReviewModel";
 import { SourceRefs } from "./PlanReviewDetails";
 
-export default function PlanTraceReader({ artifacts, preview, projectId, onTask }: {
+export default function PlanTraceReader({ artifacts, preview, projectId, onTask, taskId = "", onClearTask }: {
   artifacts: ReviewArtifacts; preview: PlanPreview; projectId: string; onTask: (id: string) => void;
+  taskId?: string; onClearTask?: () => void;
 }) {
-  const trace = useMemo(() => buildPlanTrace(artifacts), [artifacts]);
+  const allTrace = useMemo(() => buildPlanTrace(artifacts), [artifacts]);
+  const trace = useMemo(() => taskTraceRows(allTrace, taskId), [allTrace, taskId]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(0);
@@ -19,6 +21,10 @@ export default function PlanTraceReader({ artifacts, preview, projectId, onTask 
   const [busy, setBusy] = useState(false);
   const request = useRef<AbortController>();
   useEffect(() => () => request.current?.abort(), []);
+  useEffect(() => {
+    request.current?.abort(); setComparison(null); setComparisonPage(0);
+    setPage(0); setError(""); setBusy(false);
+  }, [taskId, allTrace, preview.plan_id]);
   const filtered = useMemo(() => trace.filter(row => traceSearch(row).includes(query.trim().toLowerCase()) && (
     filter === "all" || filter === "unmapped" && row.disposition === "unmapped" ||
     filter === "pending" && row.disposition === "pending_decision" || filter === "invalid" && row.issues.length > 0 ||
@@ -41,22 +47,31 @@ export default function PlanTraceReader({ artifacts, preview, projectId, onTask 
       const old: PlanPreview = await response.json();
       if (!old.ok || !(old.trace_id && old.trace_id === preview.trace_id || old.pdd_id && old.pdd_id === preview.pdd_id)) throw new Error("无法确认两个 Plan 属于同一需求或流程，未进行比较");
       const values: ReviewArtifacts = {};
-      await Promise.all((["source_index", "coverage_ledger"] as ReviewPort[]).map(async name => {
+      const ports: ReviewPort[] = ["source_index", "coverage_ledger"];
+      // Evidence paths can also come from these ports. Asymmetric availability
+      // is unknown, not an added/removed evidence claim.
+      for (const name of ["task_map", "acceptance_matrix", "test_matrix"] as const) {
+        const bound = !!old.artifacts?.some(p => p.name === name);
+        if (bound !== !!artifacts[name]) throw new Error(`两版 ${name} 未同时读取，无法完整比较证据位置`);
+        if (bound) ports.push(name);
+      }
+      await Promise.all(ports.map(async name => {
         if (!old.artifacts?.some(p => p.name === name)) throw new Error(`对比版本未绑定 ${name}`);
         const res = await fetch(planArtifactUrl(projectId, old.plan_id, name), { signal: controller.signal });
         if (!res.ok) throw new Error(`${name}：HTTP ${res.status}`);
         const value: unknown = await res.json();
         const port = object(value);
-        const field = name === "source_index" ? "traceability" : "entries";
-        if (!Array.isArray(port[field] ?? port.rows)) throw new Error(`${name}：来源/覆盖列表缺失`);
+        const field = name === "source_index" ? "traceability" : name === "coverage_ledger" ? "entries" : "";
+        if (field && !Array.isArray(port[field] ?? port.rows)) throw new Error(`${name}：来源/覆盖列表缺失`);
         values[name] = value;
       }));
-      if (!controller.signal.aborted) setComparison({ id: old.plan_id, rows: comparePlanTrace(buildPlanTrace(values), trace) });
+      if (!controller.signal.aborted) setComparison({ id: old.plan_id, rows: comparePlanTrace(buildPlanTrace(values), allTrace).filter(change => !taskId || change.before?.taskIds.includes(taskId) || change.after?.taskIds.includes(taskId)) });
     } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "版本读取失败"); }
     finally { if (!controller.signal.aborted) setBusy(false); }
   };
   return <section aria-label="来源覆盖审查">
     <h2>来源覆盖审查</h2>
+    {taskId && <p>当前任务：{taskId} <button type="button" className="delivery-action-button" onClick={onClearTask}>查看全部来源</button></p>}
     <p>已分配表示计划去向；结构引用齐全不代表语义正确或测试通过。证据状态来自本版工件，实时执行结果请到任务查看。</p>
     <p>{trace.length} 条来源记录 · {trace.filter(r => r.disposition === "unmapped").length} 条未分配 · {trace.filter(r => r.disposition === "pending_decision").length} 条待决定 · {trace.filter(r => r.issues.length).length} 条需核对引用</p>
     {!artifacts.source_index && <p role="alert">未绑定或未读取独立来源索引，不能判断范围完整性。</p>}
@@ -101,6 +116,9 @@ export default function PlanTraceReader({ artifacts, preview, projectId, onTask 
           <p>状态：{dispositionLabel(change.before?.disposition || "")} → {dispositionLabel(change.after?.disposition || "")}</p>
           <p>AC：{change.before?.acceptanceIds.join("、") || "无"} → {change.after?.acceptanceIds.join("、") || "无"}</p>
           <p>命令：{change.before?.commandIds.join("、") || "无"} → {change.after?.commandIds.join("、") || "无"}</p>
+          <p>证据位置：{change.before?.evidence.join("、") || "未提供"} → {change.after?.evidence.join("、") || "未提供"}</p>
+          <p>以下任务曾经或当前消费此条款；是否重审由评审者决定，未自动撤销授权或证据。</p>
+          {[...new Set([...(change.before?.taskIds || []), ...(change.after?.taskIds || [])])].map(id => <button type="button" key={id} className="delivery-action-button" onClick={() => onTask(id)}>{id}</button>)}
         </details>)}
         <div className="plan-document-pagination">
           <button type="button" className="delivery-action-button" disabled={!comparisonPage} onClick={() => setComparisonPage(comparisonPage - 1)}>上一组变化</button>

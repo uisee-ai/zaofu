@@ -106,7 +106,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
             </article>)}
           </>}
           {view === "inputs" && <PlanInputReviewPanel key={`${projectId}:${preview.plan_id}`} preview={preview} projectId={projectId} />}
-          {!loading && view === "coverage" && <PlanTraceReader artifacts={artifacts} preview={preview} projectId={projectId} onTask={selectTask} />}
+          {!loading && view === "coverage" && <PlanTraceReader artifacts={artifacts} preview={preview} projectId={projectId} taskId={location.task} onClearTask={() => navigate({ task: "" })} onTask={selectTask} />}
           {!loading && (view === "modules" || view === "scenarios") && <>
             {location.task && !selected && <p role="alert">本版未找到任务 {location.task}，请选择已绑定任务。</p>}
             <label className="plan-review-selector">任务 / 模块<select aria-label="审阅模块" value={selected?.id || ""} onChange={event => navigate({ task: event.target.value })}>
@@ -115,12 +115,19 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
             </select></label>
             {selected && <section key={selected.id}>
               <h2>{selected.title || selected.id}</h2><p>{selected.id} · 前置：{selected.dependencies.join("、") || "未声明"}</p>
+              <button type="button" className="delivery-action-button" onClick={() => navigate({ view: "coverage", task: selected.id })}>查看本任务来源、验收与证据</button>
               <SourceRefs refs={selected.sourceRefs} {...sourceProps} />
               {view === "modules" ? <>
                 <p className="muted">以下为作者规格与任务合同；内容存在不代表独立评审、执行授权或产品验证通过。</p>
                 {specifications.shared.length > 0 && <details className="plan-review-card"><summary>同版共享合同</summary>{quoted(specifications.shared)}</details>}
                 {selected.specification ? <><p className="muted">规格来源：同版 execution_spec 任务分区</p><MarkdownText key={`${selected.id}:${selected.specification}`} content={selected.specification} /></>
-                  : specifications.tasks[selected.id] ? quoted([specifications.tasks[selected.id]])
+                  : specifications.tasks[selected.id] ? <section className="plan-original-excerpt">
+                    <p className="muted">同版原文；与其他任务完全相同的章节可展开阅读，完整原文保持不变。</p>
+                    {specifications.reading[selected.id].map(part => part.shared
+                      ? <details className="plan-review-card" key={part.key}><summary>共享重复章节：{part.title}</summary><MarkdownText content={part.content} /></details>
+                      : <MarkdownText key={part.key} content={part.content} />)}
+                    <button type="button" className="delivery-action-button" onClick={() => navigate({ view: "original", anchor: specifications.tasks[selected.id].anchor })}>在完整原文中阅读：{specifications.tasks[selected.id].title}</button>
+                  </section>
                   : <><p role="status">本版未细化独立模块规格，以下显示已绑定任务描述和验收项；字段、权限及异常细则需对照来源。</p><p>{selected.description}</p></>}
                 <details className="plan-review-card"><summary>任务责任与验证命令</summary>
                   <p>实现责任：{selected.owner || "未声明"}</p>

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "future-decision-positive",
+    "requirement": "R1：本期仅本地单用户清单，无账号/同步/后端。R2：D-sync 为未来是否同步的决定，owner Product owner，最迟下一版本立项前确认，本期不阻塞；不能自行选择同步方案。R3：本期新增/刷新行为可实现，保存失败保持原值；所有验证尚未执行。完整决定登记和 Task Spec 对 D-sync 状态/阻塞范围必须一致。",
+    "spec": "本期仅本地单用户清单，不做账号、同步、后端。D-sync 保持未决，负责人 Product owner，最迟下一版本立项前确认，不阻塞本期。T-LOCAL 承担新增和刷新，保存失败保持原值；来源 R1–R3。当前所有检查 NOT_RUN；具体新增字段、刷新数据来源与命令待接线前确认，不能把 D-sync 当阻塞。",
+    "expected": "positive"
+  },
+  {
+    "id": "future-decision-negative",
+    "requirement": "R1：本期仅本地单用户清单，无账号/同步/后端。R2：D-sync 为未来是否同步的决定，owner Product owner，最迟下一版本立项前确认，本期不阻塞；不能自行选择同步方案。R3：本期新增/刷新行为可实现，保存失败保持原值；所有验证尚未执行。完整决定登记和 Task Spec 对 D-sync 状态/阻塞范围必须一致。",
+    "spec": "本期先建账号和云同步。D-sync 设为 blocking=true，所有新增与刷新任务必须等同步供应商确认后才能启动；Product owner 应当本期实现前确认。保存失败保持原值，测试 NOT_RUN。",
+    "expected": "negative"
+  },
+  {
+    "id": "dependency-cycle-positive",
+    "requirement": "R1：提议 T-CORE 先实现业务模块、T-ENTRY 装配，ENTRY 依赖 CORE。现有草案错误地要求 CORE 完成前必须运行由 ENTRY 产生的全产品命令。R2：修复方案保持核心业务与真实入口验收全部义务，CORE 用本片模块测试独立验证，产品命令留给 ENTRY 集成阶段；不得删除最终验收或伪造通过。R3：指出原循环并给出可执行顺序、每片生产者/验证者、命令及证据状态。",
+    "spec": "T-CORE 先生产业务模块，用本片模块命令 C-CORE 验证，由 verify-core 负责；当前 NOT_RUN。T-ENTRY 依赖接纳后的 T-CORE，在真实入口装配，由 verify-entry 执行其产生的 C-PRODUCT 全产品验证，当前 NOT_RUN。删除的是 CORE 等待未来命令这一错误完成条件，保留最终真实入口验收；来源 R1–R3。",
+    "expected": "positive"
+  },
+  {
+    "id": "dependency-cycle-negative",
+    "requirement": "R1：提议 T-CORE 先实现业务模块、T-ENTRY 装配，ENTRY 依赖 CORE。现有草案错误地要求 CORE 完成前必须运行由 ENTRY 产生的全产品命令。R2：修复方案保持核心业务与真实入口验收全部义务，CORE 用本片模块测试独立验证，产品命令留给 ENTRY 集成阶段；不得删除最终验收或伪造通过。R3：指出原循环并给出可执行顺序、每片生产者/验证者、命令及证据状态。",
+    "spec": "T-ENTRY 依赖 T-CORE 完成。T-CORE 的完成条件是先通过由 T-ENTRY 产生的 C-PRODUCT 全产品验收；所有测试 NOT_RUN。为了保持验收严格，不允许模块级验证替代此条件。",
+    "expected": "negative"
+  }
+]

@@ -8,7 +8,7 @@ for (const width of [1280, 375]) test(`${width}px real R2 shared case preserves 
   await page.route("**/plans/evt-preview-review/preview", async route => {
     const response = await route.fetch();
     const body = await response.json();
-    await route.fulfill({ response, json: { ...body, markdown: "# R2 共享场景回放\n", review_dossier_markdown: "",
+    await route.fulfill({ response, json: { ...body, markdown: shared.markdown, review_dossier_markdown: "",
       artifacts: body.artifacts.filter((p: { name: string }) => ["task_map", "test_matrix", "source_index"].includes(p.name)),
       decision_review: { available: true, items: shared.task_map.owner_decision_items,
         counts: { total: 7, pending: 0, blocking: 0, follow_up: 0, resolved: 4, unknown: 3 }, error: "" },
@@ -22,6 +22,18 @@ for (const width of [1280, 375]) test(`${width}px real R2 shared case preserves 
   page.on("pageerror", e => errors.push(e.message));
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-review`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await dialog.getByRole("button", { name: "模块规格", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "审阅模块" }).selectOption("T-2");
+  const repeated = dialog.locator("details").filter({ has: page.locator("summary").filter({ hasText: "共享重复章节：完整决定与命名场景绑定" }) });
+  await expect(repeated).not.toHaveAttribute("open", "");
+  await repeated.locator("summary").click();
+  await expect(repeated).toContainText("S-add、S-invalid");
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
+  const download = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "下载 Markdown", exact: true }).click();
+  const stream = await (await download).createReadStream(); const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(chunks).toString()).toBe(shared.markdown);
   await dialog.getByRole("button", { name: "验收场景", exact: true }).click();
   await dialog.getByRole("combobox", { name: "审阅模块" }).selectOption("T-2");
   await expect(dialog.getByText("证据状态：NOT_RUN", { exact: true })).toBeVisible();

@@ -193,3 +193,54 @@ test("late input review response cannot contaminate another Plan", async ({ page
   await expect(panel.getByRole("heading", { name: /T-STOCK/ })).toHaveCount(0);
   await expect(panel).toContainText("请查看同版原始工件");
 });
+
+test("task-scoped trace centralizes source and evidence and can return to all sources", async ({ page, request }) => {
+  const dialog = await openReview(page, request);
+  await dialog.getByRole('button', { name: '模块规格', exact: true }).click();
+  await dialog.getByRole('combobox', { name: '审阅模块' }).selectOption('T-STOCK');
+  await dialog.getByRole('button', { name: '查看本任务来源、验收与证据', exact: true }).click();
+  await expect(dialog.getByText('当前任务：T-STOCK', { exact: false })).toBeVisible();
+  await expect(dialog.locator('.plan-trace-list > details')).toHaveCount(1);
+  const row = dialog.locator('.plan-trace-list > details');
+  await row.locator('summary').first().click();
+  await expect(row.getByText('test stock', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: '查看全部来源', exact: true }).click();
+  await expect(dialog.locator('.plan-trace-list > details')).toHaveCount(3);
+});
+
+
+test("version comparison reads both evidence matrices and rejects asymmetric availability", async ({ page, request }) => {
+  await page.route("**/plans/evt-preview-review-old/artifacts/source_index", async route => {
+    const response = await route.fetch({ url: route.request().url().replace('evt-preview-review-old', 'evt-preview-review') });
+    await route.fulfill({ response });
+  });
+  await page.route("**/plans/evt-preview-review-old/artifacts/coverage_ledger", async route => {
+    const response = await route.fetch({ url: route.request().url().replace('evt-preview-review-old', 'evt-preview-review') });
+    await route.fulfill({ response });
+  });
+  await page.route("**/artifacts/acceptance_matrix", async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.acceptance[0].evidence_paths = [route.request().url().includes('review-old') ? 'evidence/old.json' : 'evidence/current.json'];
+    await route.fulfill({ json: body });
+  });
+  const dialog = await openReview(page, request);
+  await dialog.getByRole('button', { name: '覆盖审查', exact: true }).click();
+  await dialog.locator('summary').filter({ hasText: '比较 Plan 版本' }).click();
+  await dialog.getByLabel('对比 Plan ID', { exact: true }).fill('evt-preview-review-old');
+  await dialog.getByRole('button', { name: '比较版本', exact: true }).click();
+  await expect(dialog.getByText('evt-preview-review-old → evt-preview-review：1 条变化', { exact: true })).toBeVisible();
+  const change = dialog.locator('details').filter({ has: page.locator('summary', { hasText: '修改 · REQ-STOCK' }) }).last();
+  await change.locator('summary').first().click();
+  await expect(change).toContainText('证据位置：evidence/old.json → evidence/current.json');
+  await expect(change.getByRole('button', { name: 'T-STOCK', exact: true })).toBeVisible();
+  await page.route('**/plans/evt-preview-review-old/preview', async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.artifacts = body.artifacts.filter((p: { name: string }) => p.name !== 'acceptance_matrix');
+    await route.fulfill({ json: body });
+  });
+  await dialog.getByRole('button', { name: '比较版本', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('两版 acceptance_matrix 未同时读取');
+  await expect(dialog.getByText('证据位置：evidence/old.json → evidence/current.json', { exact: true })).toHaveCount(0);
+});

@@ -43,5 +43,16 @@ export function planTaskSpecifications(markdown: string, taskIds: string[]) {
     if (values.length === 1) tasks[id] = values[0];
     else warnings.push(`${id} 存在重复原文任务规格，请在完整原文中核对。`);
   });
-  return { tasks, shared, warnings };
+  // Fold identical authored sections (ignoring edge whitespace) across tasks. Keep
+  // every original segment, its order and the complete document unchanged.
+  const pieces = Object.fromEntries(Object.entries(tasks).map(([id, section]) => [id, planDocumentSections(section.content)]));
+  const consumers = new Map<string, Set<string>>();
+  Object.entries(pieces).forEach(([id, parts]) => parts.filter(p => p.level > 2).forEach(p => {
+    const key = p.content.trim();
+    consumers.set(key, new Set([...(consumers.get(key) || []), id]));
+  }));
+  const reading = Object.fromEntries(Object.entries(pieces).map(([id, parts]) => [id, parts.map(part => ({
+    ...part, shared: part.level > 2 && (consumers.get(part.content.trim())?.size || 0) > 1,
+  }))]));
+  return { tasks, shared, warnings, reading };
 }
