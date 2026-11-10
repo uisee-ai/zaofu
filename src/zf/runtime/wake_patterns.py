@@ -94,6 +94,9 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # Provider terminals may be emitted after the transport callback cycle.
     # Wake fanout reconciliation so a failed reader cannot strand its child.
     "workflow.operation.failed",
+    # Controlled resume/repair can admit a redrive outside run_once; dispatch
+    # its already-authorized operation without waiting for an idle sweep.
+    "workflow.operation.redrive_admitted",
     "workflow.call.result.repair.requested",
     # Tier-2 诊断(task 2026-07-06-0930):requested 唤醒诊断 stage 派发,
     # completed 唤醒结论消费(rework feedback / needs_owner 升级)。
@@ -176,6 +179,8 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # G-RESUME-4: watchdog-driven respawn events
     "worker.respawned",
     "worker.respawn.failed",
+    # Run Manager/operator requests are drained by _handle_worker_action_requests.
+    "worker.respawn.requested",
     # Spawn may complete asynchronously after dispatch. Wake the reader
     # liveness reconciler so a replacement session cannot strand a child.
     "worker.launch_artifact.written",
@@ -387,6 +392,8 @@ WAKE_PATTERNS: tuple[str, ...] = (
 # (observational)但硬性不唤 Layer 2 agent turn。一次 Layer 2 turn 是一次
 # 完整 agent 推理;hook 流速 > 推理吞吐时 cursor 永久积压(R25: 2.9h)。
 LAYER2_NOISE_EVENTS: frozenset[str] = frozenset({
+    "worker.respawn.requested",
+    "workflow.operation.redrive_admitted",
     "workflow.call.result.repair.requested",
     "codex.hook.session_start",
     "codex.hook.user_prompt_submit",
@@ -550,6 +557,9 @@ class WakeRateLimiter:
 # 文档化机制)。invariant 测试消费本集合:housekeeping 分支事件 ∈
 # WAKE_PATTERNS ∪ BATCH_PROCESSED_EVENTS。
 BATCH_PROCESSED_EVENTS: frozenset[str] = frozenset({
+    # agent_view_runtime emits this inside run_once before _dispatch_ready
+    # consumes it through task_pipeline_recovery in the same cycle.
+    "worker.respawn.completed",
     "memory.note",
     "agent.usage",
     "gan.round.started",
