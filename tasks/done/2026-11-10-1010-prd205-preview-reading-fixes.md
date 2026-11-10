@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `6d00c6ef fix: make real Plan and Channel documents readable`
 
 # 205 真实 Plan Preview 问题与文档阅读修复
 

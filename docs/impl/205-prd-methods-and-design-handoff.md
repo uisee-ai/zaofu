@@ -118,7 +118,7 @@ stages 等），故未用其判定仓库技能无效，也未删减扩展字段�
 产物：保留正文和消费字段，去除无关执行元数据；不是手工填齐 UI 字段的理想输出。
 `plan-reading-regression.spec.ts` 经真实 React/API 入口回放该夹具；另用完整归档运行
 只读 Web 浏览器回归，记录截图、DOM、下载 SHA 与事件账本前后摘要。测试不批准或
-实施示例产品。详见任务 `tasks/active/2026-11-10-1010-prd205-preview-reading-fixes.md`。
+实施示例产品。详见任务 `tasks/done/2026-11-10-1010-prd205-preview-reading-fixes.md`。
 
 本次验证：Docker 浏览器 25 passed，真实归档回放无浏览器异常或写请求，下载原文
 SHA 不变；前端 build/unit 与后端定向通过。扩展 dev-verify 闭包为 1187 passed、
