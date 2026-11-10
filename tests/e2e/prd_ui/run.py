@@ -57,7 +57,8 @@ def prepare(root: Path, mode: str, journey: str) -> tuple[Path, dict[str, str]]:
     spec["runtime"]["autoresearch_resident"] = {"enabled": False}
     # Keep the Channel production budget; do not inherit Kanban's shorter test turn limit.
     spec.setdefault("channel", {})["provider_timeout_seconds"] = 1800
-    spec["workflow"]["plan_approval"] = True  # Approved test preset; UI must display it before starting.
+    # Fake starts with a different policy, forcing a real Apply/consumer handoff.
+    spec["workflow"]["plan_approval"] = mode != "fake"
     (project / "zf.yaml").write_text(yaml.safe_dump_all(documents, sort_keys=False))
     (project / "README.md").write_text("# Isolated PRD UI acceptance project\n")
     (project / ".gitignore").write_text(".ui-state/\nartifacts/\ndocs/intake/\ndocs/prd/\n.claude/\n.codex/\n")
@@ -199,9 +200,19 @@ def main() -> int:
             time.sleep(0.25)
         result = browser.returncode
         if result == 0:
-            from tests.e2e.prd_ui.audit import audit
+            from tests.e2e.prd_ui.audit import audit, check_config_handoff
             try:
-                (evidence / "audit.json").write_text(json.dumps(audit(project, journey=args.journey), indent=2))
+                result_audit = audit(project, journey=args.journey)
+                if args.provider == "fake" and args.workflow_runtime == "existing":
+                    from zf.core.events import EventLog
+                    from zf.core.config.loader import load_config
+                    state = project / load_config(project / "zf.yaml").project.state_dir
+                    log = EventLog(state / "events.jsonl")
+                    try:
+                        result_audit["config_handoff"] = check_config_handoff(log.read_all())
+                    finally:
+                        log.close()
+                (evidence / "audit.json").write_text(json.dumps(result_audit, indent=2))
             except Exception as exc:
                 result = 1
                 (evidence / "audit-error.txt").write_text(f"{type(exc).__name__}: {exc}")

@@ -3029,6 +3029,8 @@ def _compact_channel_message(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_reply_request(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "request_id": str(item.get("request_id") or ""),
+        "event_id": str(item.get("event_id") or ""),
+        "run_generation": int(item.get("run_generation") or 1),
         "run_id": str(item.get("run_id") or item.get("provider_run_id") or ""),
         "thread_id": str(item.get("thread_id") or "main"),
         "message_id": str(item.get("message_id") or ""),

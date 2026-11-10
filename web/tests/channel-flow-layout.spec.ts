@@ -29,7 +29,7 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
     previewMode: "data", markdown: "# Canonical PRD\n\n## Acceptance\n\n| Criterion | Result |\n|---|---|\n| Full body | Required |\n\n**Last paragraph preserved.**",
     questionOk: true, allowInvitations: false, allowPlanning: false, allowMessages: false, planningOk: true, planningPayload: {} as Record<string, unknown>, runs: [] as Record<string, unknown>[],
     plans: [] as Record<string, unknown>[], deliveryError: false, fileCalls: 0, allowReports: false, allowSynthesis: false, allowConsensus: false, readiness: undefined as Record<string, unknown> | undefined,
-    ownerReports: [] as Record<string, unknown>[], allowEvaluation: false, allowCancel: false, cancelOk: true, synthesisError: "",
+    ownerReports: [] as Record<string, unknown>[], allowEvaluation: false, allowCancel: false, cancelOk: true, synthesisError: "", allowRecovery: false,
     evaluationRows: [] as Array<Record<string, unknown>>,
     sources: undefined as Record<string, unknown> | undefined, requirementCoverage: [] as Array<Record<string, unknown>> };
   page.on("pageerror", (error) => state.errors.push(error.message));
@@ -54,6 +54,9 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
         run.status = "cancelled";
         detail.seq += 1;
         await route.fulfill({ json: { ok: true, status: "interrupted", process_found: true, process_terminated: true } });
+      } else if (path.endsWith("/actions/channel-drain-replies") && state.allowRecovery) {
+        state.payloads.push(req.postDataJSON().payload);
+        await route.fulfill({ status: 409, json: { ok: false, reason: "原生 turn 没有确定的中止回执；禁止重复投递。" } });
       } else if (path.endsWith("/actions/channel-question-resolve")) {
         const payload = req.postDataJSON().payload;
         state.payloads.push(payload);
@@ -1221,4 +1224,23 @@ test("pipeline summary follows inspected stages while execution and approvals ke
   await expect(page.getByTestId("channel-inline-question")).toBeInViewport();
   expect(state.writes).toEqual([]);
   expect(state.errors).toEqual([]);
+});
+
+test("unknown delivery recovery binds the failed request and displays refused evidence", async ({ page, request }) => {
+  const detail = fixture();
+  Object.assign(detail, { reply_requests: [{ request_id: "reply-aborted", event_id: "evt-failure", run_generation: 3,
+    message_id: "m1", thread_id: "main", target_member_id: "product_pm", status: "failed",
+    failure_status: "delivery_unknown", retryable: false, failure_category: "provider", updated_at: ts }] });
+  Object.assign(detail.discussion_attention.main, { state: "blocked", execution_state: "blocked", failed_reply_count: 1 });
+  const state = await setup(page, request, detail);
+  state.allowRecovery = true;
+  await page.getByTestId("channel-header-failures").click();
+  const retry = page.getByRole("button", { name: "核验终止并重试原回复", exact: true });
+  await expect(retry).toBeVisible();
+  await retry.click();
+  await expect(page.getByTestId("channel-control-error")).toContainText("禁止重复投递");
+  expect(state.payloads).toEqual([{ channel_id: channelId, reconcile_request_id: "reply-aborted",
+    failure_event_id: "evt-failure", run_generation: 3 }]);
+  await expect(retry).toBeEnabled();
+  expect(state.unexpected).toEqual([]);
 });

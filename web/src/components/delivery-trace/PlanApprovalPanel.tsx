@@ -583,22 +583,11 @@ function InboxRowActions({
   const { t } = useUiPreferences();
   if (item.status !== "pending") return null;
   if (item.owner_route === "plan_synth_owner_decision" && item.plan_id) {
-    const actions = (item.actions ?? [])
-      .map((action) => ({
-        action: typeof action.action === "string" ? action.action : "",
-        label: typeof action.label === "string" ? action.label : "",
-      }))
-      .filter((action) => action.action);
     return (
       <div className="operator-inbox-inline-actions" onClick={(event) => event.stopPropagation()}>
-        <button type="button" className="delivery-action-button" onClick={onPreview} disabled={!item.preview?.available}>
-          <Eye size={14} /> {t("Preview")}
+        <button type="button" className="delivery-action-button" onClick={onPreview} disabled={disabled}>
+          <Eye size={14} /> {item.preview?.available ? "查看候选计划并答复" : "查看问题并答复"}
         </button>
-        {actions.map((action) => (
-          <button key={action.action} type="button" className="delivery-action-button" onClick={() => onAction(action.action)} disabled={disabled}>
-            <Check size={14} /> {t(action.label || action.action)}
-          </button>
-        ))}
       </div>
     );
   }

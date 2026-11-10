@@ -4533,8 +4533,9 @@ def test_synth_failure_preserves_previous_plan_candidate_refs(tmp_path: Path):
     assert blocked.payload["previous_plan_candidate_refs"] == previous_refs
 
 
+@pytest.mark.parametrize("action, decision", [("replan-approve", "approved"), ("replan-reject", "rejected")])
 def test_plan_synth_owner_decision_holds_then_resumes_same_run(
-    tmp_path: Path,
+    tmp_path: Path, action: str, decision: str,
 ) -> None:
     state_dir, log, orch, fanout_id = _task_map_synth_orchestrator(tmp_path)
     decision_items = [{
@@ -4597,7 +4598,7 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
         type="web.action.requested",
         actor="web",
         correlation_id="trace-product",
-        payload={"action": "replan-approve"},
+        payload={"action": action},
     ))
     service = ControlledActionService(
         state_dir,
@@ -4609,8 +4610,8 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
         surface="web",
     )
     result = service.execute(
-        action="replan-approve",
-        requested_action="replan.approve",
+        action=action,
+        requested_action=action.replace("-", "."),
         requested=requested,
         payload={
             "approval_ref": item["approval_ref"],
@@ -4625,7 +4626,7 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
             "owner": "owner:min",
         },
     )
-    assert result["status"] == "approved"
+    assert result["status"] == decision
 
     orch.run_once(events=[])
 
@@ -4635,7 +4636,7 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
         event for event in events
         if event.type == "plan.synth.owner_decision.resolved"
     )
-    assert resolved.payload["decision"] == "approved"
+    assert resolved.payload["decision"] == decision
     aggregate = next(
         event for event in events
         if event.type == "fanout.aggregate.completed"
@@ -4643,7 +4644,7 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
     )
     assert aggregate.payload["status"] == "failed"
     blocked = next(event for event in events if event.type == "task_map.blocked")
-    assert blocked.payload["owner_decision_resolution"] == "approved"
+    assert blocked.payload["owner_decision_resolution"] == decision
     confirmation_ref = blocked.payload["owner_confirmation_ref"]
     assert confirmation_ref
     assert (state_dir / confirmation_ref).exists()

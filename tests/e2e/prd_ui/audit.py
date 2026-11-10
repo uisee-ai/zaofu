@@ -34,6 +34,23 @@ def check_dispatches(attempts: list[dict], operations: dict, role_kinds: dict) -
     return dispatched
 
 
+def check_config_handoff(events: list) -> dict[str, Any]:
+    invokes = [i for i, e in enumerate(events) if e.type == "workflow.invoke.requested"]
+    loops = [(i, e) for i, e in enumerate(events) if e.type == "loop.started"]
+    starts = [(i, e) for i, e in enumerate(events) if e.type == "runtime.start.requested"]
+    assert len(invokes) == 1 and len(loops) == 2 and len(starts) == 1, "missing unique warm consumer handoff"
+    (old_index, old), (new_index, new) = loops
+    start_index, start = starts[0]
+    assert old.payload["pid"] != new.payload["pid"] == start.payload["pid"], "old consumer reused"
+    assert old.payload["effective_config_sha256"] != new.payload["effective_config_sha256"], "policy unchanged"
+    assert old_index < start_index < new_index < invokes[0], "invoke published before new consumer ready"
+    assert any(e.type == "loop.shutdown_requested" for e in events[old_index:start_index]), "old consumer not stopped"
+    assert not any(e.type == "workflow.invoke.rejected" for e in events), "new consumer rejected invoke"
+    return {"old_pid": old.payload["pid"], "new_pid": new.payload["pid"],
+            "old_config_sha256": old.payload["effective_config_sha256"],
+            "new_config_sha256": new.payload["effective_config_sha256"]}
+
+
 def audit(project: Path, *, journey: str) -> dict[str, Any]:
     config = load_config(project / "zf.yaml")
     state = project / config.project.state_dir

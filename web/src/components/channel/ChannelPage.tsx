@@ -1,7 +1,7 @@
 import { useChannelComposerDraft, useChannelThreadSelection, channelDraftStorageKey, type ComposerAttachment, type ChannelComposerDraft } from "./useChannelConversationState";
 import { ChannelContextFailures } from "./ChannelContextFailures";
 // ChannelPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
-import { search, uploadChannelAttachment } from "../../api/client";
+import { postAction, search, uploadChannelAttachment } from "../../api/client";
 import type { ActionResponse, ChannelDetail, ChannelHistorySearchResult, ChannelSummary, RecentEvent } from "../../api/types";
 import { AgentSessionTimeline } from "../../components/agent-session/AgentSessionTimeline";
 import type { AgentSessionMessage, AgentSessionRun, AgentSessionTurn } from "../../components/agent-session/types";
@@ -1942,6 +1942,15 @@ export function ChannelPage({
                       <strong>{channelMemberLabel(members.find((member) => member.member_id === target) ?? { member_id: target })}</strong>
                       <span className="muted">{failure ? `${historic ? "历史记录 · " : ""}${failure.label}` : active ? "正在回复" : "等待运行时调度"}</span>
                       {failure ? <small>{failure.advice}</small> : null}
+                      {row.failure_status === "delivery_unknown" && row.event_id ? <button type="button"
+                        className="delivery-action-button" disabled={!actionReady || controlsBusy}
+                        onClick={() => void runControl(async () => {
+                          const result = await postAction("channel-drain-replies", {
+                            channel_id: selectedChannelId, reconcile_request_id: row.request_id,
+                            failure_event_id: row.event_id, run_generation: Number(row.run_generation || 1),
+                          }, projectId || undefined);
+                          if (result.ok === false) throw new Error(result.reason || "未能核验原生终止状态。");
+                        })}>核验终止并重试原回复</button> : null}
                       {reason ? <details className="channel-reply-error"><summary>错误详情 / 原始原因</summary><p>{reason}</p></details> : null}
                     </div>
                   </div>

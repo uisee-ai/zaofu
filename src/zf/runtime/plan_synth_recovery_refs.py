@@ -17,7 +17,12 @@ def failed_critic_candidate_refs(
     Missing, ambiguous, tampered or mismatched evidence is not a reason to
     substitute a candidate from an earlier replan.
     """
-    if payload.get("failure_class") != "reader_execution_failure":
+    from zf.runtime.plan_synth_feedback import normalize_plan_synth_owner_decision_items
+
+    owner_questions = normalize_plan_synth_owner_decision_items(payload.get("owner_decision_items"))
+    if payload.get("failure_class") != "reader_execution_failure" and not any(
+        item.get("blocking") is not False for item in owner_questions
+    ):
         return []
     operation_id = str(payload.get("operation_id") or "")
     attempt_id = str(payload.get("attempt_id") or "")

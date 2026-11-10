@@ -239,6 +239,9 @@ def assemble_controller(
     spec.pop("profile_sources", None)
     spec["project"] = copy.deepcopy(base["project"])
     spec["session"] = copy.deepcopy(base["session"])
+    # Resident operators belong to the project, not to a selected Flow template.
+    for key in ("run_manager", "autoresearch_resident"):
+        spec.setdefault("runtime", {})[key] = copy.deepcopy(base["runtime"][key])
     sources = copy.deepcopy(base.get("skill_sources") or [])
     sources = [s for s in sources if s["name"] != SOURCE_NAME]
     if package:

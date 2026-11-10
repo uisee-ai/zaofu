@@ -29,6 +29,7 @@ from zf.runtime.workflow_submission_binding import (
     pin_submitted_run_contract as _pin_submitted_run_contract,
 )
 from zf.runtime.workflow_delivery_replay import (
+    workflow_invoke_visibility as _workflow_invoke_visibility,
     submitted_request_replay_result as _submitted_request_replay_result,
 )
 from zf.runtime.workflow_task_lifecycle import (
@@ -36,6 +37,7 @@ from zf.runtime.workflow_task_lifecycle import (
 )
 from zf.runtime.workflow_runtime_start import ensure_submitted_workflow_runtime
 from zf.runtime.workflow_paths import bind_project_paths
+from zf.runtime.workflow_config_handoff import prepare_workflow_consumer, serialized_workflow_submit
 
 
 def build_flow_submit_preview(
@@ -485,6 +487,7 @@ def _workflow_manifest_artifact_refs(
     refs.append(str(manifest.get("intent_ref") or ""))
     return [ref for ref in dict.fromkeys(ref.strip() for ref in refs) if ref]
 
+@serialized_workflow_submit
 def apply_flow_submit(
     *,
     config_path: Path,
@@ -551,6 +554,11 @@ def apply_flow_submit(
     payload = dict(preview.get("payload") or {})
     correlation_id = str(payload.get("request_id") or "")
     task = str(payload.get("task_id") or "")
+    handoff = {}
+    if preview["status"] != "STOP":
+        handoff = prepare_workflow_consumer(config_path=config_path, state_dir=state_dir, writer=writer, payload=payload)
+        if handoff.get("status") == "STOP":
+            return {**preview, **handoff}
     if preview["status"] != "STOP":
         _pin_submitted_run_contract(
             state_dir=state_dir,
@@ -789,6 +797,7 @@ def apply_flow_submit(
     )
     return ensure_submitted_workflow_runtime({
         **preview,
+        **handoff,
         "schema_version": "workflow.submit.apply.v1",
         "dry_run": False,
         "status": "accepted",
@@ -955,46 +964,6 @@ def _submit_payload_to_workflow_invoke(payload: dict[str, Any]) -> dict[str, Any
         "expected_output": f"execute {payload.get('kind') or 'workflow'} workflow",
     }
 
-def _workflow_invoke_visibility(
-    events: list[ZfEvent],
-    *,
-    source_event_id: str,
-) -> dict[str, str]:
-    for event in reversed(events):
-        if event.type not in {
-            "workflow.invoke.accepted",
-            "workflow.invoke.rejected",
-            "run.admission.queued",
-            "run.admission.admitted",
-            "run.admission.rejected",
-        }:
-            continue
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        if str(payload.get("source_event_id") or "") != source_event_id:
-            continue
-        if event.type == "workflow.invoke.accepted":
-            return {
-                "status": "accepted",
-                "next_action": "watch fanout/task events; workflow invoke was consumed by the orchestrator",
-            }
-        if event.type == "run.admission.queued":
-            return {
-                "status": "queued",
-                "next_action": "the request is queued behind the active Project Run",
-            }
-        if event.type == "run.admission.admitted":
-            return {
-                "status": "admitted",
-                "next_action": "the Run is admitted; wait for the invoke consumer outcome",
-            }
-        return {
-            "status": "rejected",
-            "next_action": "inspect workflow.invoke.rejected reason and resubmit after correction",
-        }
-    return {
-        "status": "pending_consumer",
-        "next_action": "ensure `zf start` watcher is running so workflow.invoke.requested is consumed",
-    }
 
 def _public_preflight_report(report: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in report.items() if not str(key).startswith("_")}

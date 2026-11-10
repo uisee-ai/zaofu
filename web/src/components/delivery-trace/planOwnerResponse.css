@@ -1,0 +1,14 @@
+.plan-owner-response {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  max-height: 50%;
+  overflow: auto;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.plan-owner-response p,
+.plan-owner-response ol { margin: 0; }
+.plan-owner-response textarea { width: 100%; min-height: 80px; box-sizing: border-box; resize: vertical; }
+.plan-owner-response button { justify-self: start; }

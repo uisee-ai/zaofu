@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-for (const action of ["replan-approve", "replan-reject"]) {
+for (const action of ["replan-reject"]) {
   test(`owner deep link waits for approval identity and sends ${action}`, async ({ page, request }) => {
     const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
     let releaseInbox!: () => void;
@@ -31,19 +31,17 @@ for (const action of ["replan-approve", "replan-reject"]) {
     });
     await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
     const dialog = page.getByRole("dialog", { name: "Plan preview" });
-    const approve = dialog.getByRole("button", { name: "Approve decisions", exact: true });
-    const reject = dialog.getByRole("button", { name: "Reject", exact: true });
-    await expect(approve).toBeVisible();
-    await dialog.getByPlaceholder("reject reason", { exact: true }).fill("revise scope");
-    await expect(approve).toBeDisabled();
-    await expect(reject).toBeDisabled();
+    const answer = dialog.getByRole("button", { name: "提交答复并重新规划", exact: true });
+    await expect(dialog.getByText("候选计划待澄清，尚未通过 Critic", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Approve decisions", exact: true })).toHaveCount(0);
+    await dialog.getByRole("textbox", { name: "Owner 答复内容", exact: true }).fill("GIT-01: no Git writes only during Plan preview");
+    await expect(answer).toBeDisabled();
     releaseInbox();
-    const button = action === "replan-approve" ? approve : reject;
-    await expect(button).toBeEnabled();
-    await button.click();
+    await expect(answer).toBeEnabled();
+    await answer.click();
     await expect.poll(() => actions.length).toBe(1);
     expect(actions[0].name).toBe(action);
-    expect(actions[0].payload).toMatchObject({ approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" });
+    expect(actions[0].payload).toMatchObject({ approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json", reason: "GIT-01: no Git writes only during Plan preview" });
     await page.unrouteAll({ behavior: "wait" });
   });
 }

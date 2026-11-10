@@ -123,3 +123,45 @@ def submitted_request_replay_result(
 
 
 __all__ = ["submitted_request_replay_result"]
+
+
+def workflow_invoke_visibility(
+    events: list[ZfEvent],
+    *,
+    source_event_id: str,
+) -> dict[str, str]:
+    for event in reversed(events):
+        if event.type not in {
+            "workflow.invoke.accepted",
+            "workflow.invoke.rejected",
+            "run.admission.queued",
+            "run.admission.admitted",
+            "run.admission.rejected",
+        }:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("source_event_id") or "") != source_event_id:
+            continue
+        if event.type == "workflow.invoke.accepted":
+            return {
+                "status": "accepted",
+                "next_action": "watch fanout/task events; workflow invoke was consumed by the orchestrator",
+            }
+        if event.type == "run.admission.queued":
+            return {
+                "status": "queued",
+                "next_action": "the request is queued behind the active Project Run",
+            }
+        if event.type == "run.admission.admitted":
+            return {
+                "status": "admitted",
+                "next_action": "the Run is admitted; wait for the invoke consumer outcome",
+            }
+        return {
+            "status": "rejected",
+            "next_action": "inspect workflow.invoke.rejected reason and resubmit after correction",
+        }
+    return {
+        "status": "pending_consumer",
+        "next_action": "ensure `zf start` watcher is running so workflow.invoke.requested is consumed",
+    }
