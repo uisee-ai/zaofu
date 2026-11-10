@@ -1,6 +1,6 @@
 # 产品交付入口保留任务局部必读端口
 
-> 状态: active — 2026-11-10；根代理授权独立最小修复，不作为当前 FINAL 发布前置；根代理独占 dev 合并。
+> 状态: done — `453beafb` feat: preserve task-local required ports during product ingest；2026-11-10；根代理授权独立最小修复，不作为当前 FINAL 发布前置；根代理独占 dev 合并。
 
 基线 `71f33b0e` 的实际 `ingest_task_map_to_kanban` 已在临时状态复现：global 声明 `task_execution_input`，task-local 声明 `task_execution_input/local_detail`，ingest 成功但 TaskStore 仅剩 global，丢失 local_detail。LS 当前 writer 路线本来保留正确，本批不改其代码或运行态。
 
@@ -28,4 +28,4 @@ source-index 修复落 dev `fa5c78f8` 后，已通过本工作分支的 `0c34e0a
 
 额外只读输入限制：尝试将当前 R2 原始 66-task TaskMap 整体送入临时 product ingest，旧入口的 completeness gate 先因 9 个保留任务只有 allowed_paths、未写 scope 而拒绝，未进入本次合并逻辑。没有改原体或绕门禁，临时目录已清理。该入口适配问题不在本批，不能宣称真实 R2 全图经 product ingest 成功。LS 当前实际 writer 路线本来保留正确，本修复未改其运行态。
 
-实现与最终验证完成，待实现/归档提交。未写 LS event/state 或重启进程。
+实现与最终验证完成，实现提交后 worktree 无剩余任务改动；本记录归档至 done。未写 LS event/state 或重启进程，未 push；清洁工作分支交根代理合并。
