@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `5dfb5c02 fix: validate literal copy destinations across worker guards`
 
 # 有限 cp 写目标与任务工作区保护
 
