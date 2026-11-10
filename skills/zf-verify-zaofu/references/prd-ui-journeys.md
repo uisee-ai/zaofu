@@ -20,8 +20,8 @@ fake 层仅替换模型：Kanban 返回对话/提案，规划 worker 消费实�
 fake 通过后，在用户授权真实 Provider 执行的范围内，以新项目验证：
 
 ```bash
-PYTHONPATH=src:. .venv/bin/python tests/e2e/prd_ui/run.py --provider real --journey kanban --skip-build --timeout 1800
-PYTHONPATH=src:. .venv/bin/python tests/e2e/prd_ui/run.py --provider real --journey channel --skip-build --timeout 1800
+PYTHONPATH=src:. .venv/bin/python tests/e2e/prd_ui/run.py --provider real --journey kanban --skip-build --timeout 5400
+PYTHONPATH=src:. .venv/bin/python tests/e2e/prd_ui/run.py --provider real --journey channel --skip-build --timeout 5400
 ```
 
 需要 Docker `mcp/playwright:latest`、前端依赖、tmux 和真实层的 Codex 登录。
@@ -62,3 +62,27 @@ PRD、Plan 和来源绑定，以及独立只读审计。必须区分：浏览器
 只读审计必须拒绝错误 Run/Plan、正文截断、摘要冒充完整 Plan、重复启动，以及审批前实施。
 真实生成的需求/验收映射仍需逐条核对，不以字符数、固定标题或状态标签替代语义判断。
 出现运行失败时保留最初证据，先归因测试脚本/环境/产品，再修复并用新的独立运行验证。
+
+## 已有 runtime 与冷启动分别验证
+
+默认 `--workflow-runtime existing` 保留已有讨论 runtime，能发现配置应用后的旧消费者问题。
+`--workflow-runtime cold` 是另一个环境场景：YAML 预览完成后，测试夹具确认没有执行中的
+Workflow operation 或 Channel 回复，再通过 `zf stop --fast --include-run-manager`
+正常停机；浏览器随后点击 Start Workflow，由生产启动入口拉起新 runtime。
+
+```bash
+PYTHONPATH=src:. .venv/bin/python tests/e2e/prd_ui/run.py --provider fake --journey channel --workflow-runtime cold
+PYTHONPATH=src:. .venv/bin/python tests/e2e/prd_ui/run.py --provider real --journey channel --workflow-runtime cold --skip-build --timeout 5400
+```
+
+停机动作记录在 `evidence/runtime-handoff.json`，并断言实际出现一次
+`runtime.start.requested`。冷启动通过不能宣称已有 runtime 的配置切换问题已解决。
+整轮预算包含多角色讨论和规划；不再用固定的一半预算截断综合阶段。
+
+真实 Channel 单次调用使用生产默认的 1800 秒预算，避免被 Kanban 测试的 600 秒覆盖。
+阶段限制须明确适用范围：PRD 编写时禁止 Git 写入，不等于禁止未来经单独审批的标准交付。
+如果真实角色提出 Owner 问题，通过 UI 回复或退回重规划，保留额外交互的截图、trace 和
+受控动作回执，并将该轮标为 assisted；不自动把待决定候选当作最终审批 Plan。
+
+长时间实测按事件 cursor 增量取证；成功响应不把整个账本作为断言说明重复写入 trace。
+原始运行失败和修复后的独立复验分别存档，不能覆盖旧 `run.json` 或将补验冒充原轮通过。

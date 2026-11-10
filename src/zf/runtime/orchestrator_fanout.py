@@ -8370,7 +8370,7 @@ class FanoutCoordinationMixin(
                                 "The child plan reached this critic only after deterministic pre-submit validation. Treat mechanical schema and required-port presence as admitted facts unless the supplied evidence shows post-admission tampering; review semantic coverage, slicing, dependencies, risk, and acceptance quality instead.",
                                 "`goal_claim_set` and `planning_result` are Kernel-derived, `task_map_ref` supplies the `task_map` port, and issue flows adapt `requirement_spec` to `issue_spec`. Do not require these as duplicate `plan_ports` entries.",
                                 "Do not write child refs, the configured state dir, or the root project. Edit only the signed result scratch file named by the completion command.",
-                                "Return a semantic verdict delta: recommendation, summary, findings, fix_items, and evidence refs. Leave structural plan fields empty; the Kernel preserves the admitted Planner task map, plan ports, and artifact refs.",
+                                "Return a semantic verdict delta: recommendation, summary, findings, fix_items, evidence refs, and an explicit top-level `plan_content_profile` judged under the Critic skill. This coverage claim is verdict metadata, not a structural plan body. Leave structural plan fields empty; the Kernel preserves the admitted Planner task map, plan ports, and artifact refs.",
                                 'Every `findings` item must be an object with a non-empty `message`; use `{"message": "...", "severity": "..."}` and never replace `message` with `observation`, `title`, or a prose-only row.',
                             ]
                             if runner_policy.get("applies")

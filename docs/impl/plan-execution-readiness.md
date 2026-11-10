@@ -192,5 +192,10 @@ Plan 综合准入通过候选摘要核验后，`admit_synthesized_plan_package` 
 不升级为完整 Plan。回归覆盖 `tests/test_plan_content_profile.py` 的实际聚合调用方，
 浏览器测试继续核对同版产物、全文下载及审批前无实施派发。
 
+纯聚合 Critic 的 `plan_content_profile` 是 verdict 元数据，不是留空的计划结构正文。
+`zf-yoke-critic-role-context` 规定其覆盖判定和证据要求，实际 fanout 简报明确该输出字段；
+Kernel 继续只传播显式声明。真实审查通过但遗漏声明时，页面保留普通 Plan 标记，
+完整 Plan UI 验收失败；测试不得自行补值。方法更新只作用于后续加载该 Skill 的会话。
+
 在线 Apply 改变执行配置后，已启动 consumer 仍可能持有旧配置而拒绝新 Run；本验证
 不绕过 `consumer_config_stale`，也不把启动前配置的成功结果当作热重载验证。

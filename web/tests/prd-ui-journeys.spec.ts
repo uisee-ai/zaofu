@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const journey = process.env.ZF_UI_JOURNEY;
 const timeout = Number(process.env.ZF_UI_TIMEOUT_MS || 1_200_000);
@@ -12,12 +12,15 @@ type Event = { id: string; seq: number; type: string; task_id?: string; correlat
 
 async function get(request: APIRequestContext, path: string) {
   const response = await request.get(path);
-  expect(response.ok(), `${path}: ${await response.text()}`).toBeTruthy();
+  if (!response.ok()) throw new Error(`${path}: ${await response.text()}`);
   return response.json();
 }
+// The ledger is append-only. Incremental reads keep long real-provider traces bounded.
+const eventCache = new Map<string, Event[]>();
 async function events(request: APIRequestContext, project: string): Promise<Event[]> {
-  const all: Event[] = [];
-  let cursor = 0;
+  const all = eventCache.get(project) || [];
+  eventCache.set(project, all);
+  let cursor = all.length ? all[all.length - 1].seq : 0;
   for (;;) {
     const body = await get(request, `/api/projects/${project}/events?cursor=${cursor}&limit=500`);
     const rows: Event[] = body.items || [];
@@ -32,7 +35,7 @@ async function waitEvent(request: APIRequestContext, project: string, type: stri
   await expect.poll(async () => {
     const rows = await events(request, project);
     if (type === "plan.approval.requested") {
-      const rejected = rows.find(row => ["workflow.invoke.rejected", "run.goal.blocked"].includes(row.type));
+      const rejected = rows.find(row => ["workflow.invoke.rejected", "run.goal.blocked", "runtime.start.failed"].includes(row.type));
       if (rejected) throw new Error(`Workflow admission rejected: ${JSON.stringify(rejected.payload)}`);
     }
     found = rows.find(row => row.type === type);
@@ -100,7 +103,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     expect(String(discussionReply.payload?.answer)).toMatch(/README|确认|缺失/);
     await capture(page, "01-kanban-discussion");
     await answerRequirementQuestions(page, discussionTurn.payload?.status === "waiting_input");
-    await send(page, "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。不要修改 zf.yaml、Git 或运行状态。完成后回复 UI_PRD_WRITTEN。");
+    await send(page, "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。当前 PRD 编写和 Plan 预览阶段不要修改 zf.yaml、Git 或运行状态；这个阶段限制不禁止未来在单独 Plan 审批后采用标准受控 Git 交付流程。完成后回复 UI_PRD_WRITTEN。");
     await expect(page.locator(".agent-text-part").last()).toContainText("UI_PRD_WRITTEN", { timeout: turnTimeout });
     const prd = readFileSync("/zf-run/project/docs/prd/ui-requirement.md", "utf8");
     expect(prd).toContain("README.md");
@@ -123,7 +126,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
     await page.goto(`/?project=${project}&page=channels&channel=${encodeURIComponent(channelId)}`);
     const input = page.getByRole("textbox", { name: "Message UI PRD Group" });
-    await input.fill("请讨论：使用项目根目录的系统 cat README.md 验证，保持文件可读；文件缺失时以原生 stderr 和非零退出明确失败，不新增读取程序。当前只形成完整 PRD，后续由 UI 启动 PRD v5 Workflow 生成完整 Plan，实施等待审批。");
+    await input.fill("请讨论：使用项目根目录的系统 cat README.md 验证，保持文件可读；文件缺失时以原生 stderr 和非零退出明确失败，不新增读取程序。当前只形成完整 PRD，后续由 UI 启动 PRD v5 Workflow 生成完整 Plan，实施等待审批。PRD 保留完整结构和验收，按这个小需求的规模简洁表达，不引入额外业务系统。");
     await page.getByRole("button", { name: "Send message", exact: true }).click();
     await expect(input).toBeEmpty();
     await capture(page, "01-channel-discussion");
@@ -165,6 +168,10 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   await expect(raw).toContainText("5.0.1", { timeout: turnTimeout });
   await expect(raw).toContainText("plan_approval: true");
   await capture(page, "05-v5-yaml-preview");
+  if (process.env.ZF_UI_WORKFLOW_RUNTIME === "cold") {
+    writeFileSync(`${evidence}/runtime-handoff-request.json`, JSON.stringify({ project, journey }));
+    await expect.poll(() => existsSync(`${evidence}/runtime-handoff.json`), { timeout: 120_000 }).toBeTruthy();
+  }
   await page.getByTestId("workflow-start").click();
   const invoked = await waitEvent(request, project, "workflow.invoke.requested");
   await capture(page, "05-workflow-start-requested");
@@ -198,9 +205,16 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   await capture(page, "06-generated-plan-preview");
   await page.reload();
   await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
+  await dialog.getByRole("button", { name: "查看源码", exact: true }).click();
+  await expect(dialog.locator(".plan-document-source")).toHaveText(planBody.markdown);
+  await capture(page, "07-refreshed-plan-preview");
   const finalEvents = await events(request, project);
   expect(finalEvents.filter(row => row.type === "workflow.invoke.requested")).toHaveLength(1);
   expect(finalEvents.filter(row => row.type === "plan.approved")).toHaveLength(0);
+  if (process.env.ZF_UI_WORKFLOW_RUNTIME === "cold") {
+    expect(finalEvents.filter(row => row.type === "runtime.start.requested")).toHaveLength(1);
+  }
   writeFileSync(`${evidence}/lineage.json`, JSON.stringify({ task, invoked, approval, planBody }, null, 2));
   writeFileSync(`${evidence}/events.json`, JSON.stringify(finalEvents, null, 2));
 });

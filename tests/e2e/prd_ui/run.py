@@ -55,6 +55,8 @@ def prepare(root: Path, mode: str, journey: str) -> tuple[Path, dict[str, str]]:
     spec["session"] = {"tmux_session": "zf-ui-prd"}
     spec["runtime"]["run_manager"] = {"backend": "codex", "resident_agent": {"enabled": False}}
     spec["runtime"]["autoresearch_resident"] = {"enabled": False}
+    # Keep the Channel production budget; do not inherit Kanban's shorter test turn limit.
+    spec.setdefault("channel", {})["provider_timeout_seconds"] = 1800
     spec["workflow"]["plan_approval"] = True  # Approved test preset; UI must display it before starting.
     (project / "zf.yaml").write_text(yaml.safe_dump_all(documents, sort_keys=False))
     (project / "README.md").write_text("# Isolated PRD UI acceptance project\n")
@@ -86,6 +88,8 @@ def main() -> int:
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--timeout", type=int, default=1200)
+    parser.add_argument("--workflow-runtime", choices=["existing", "cold"], default="existing",
+                        help="cold stops the idle discussion runtime before the UI starts its Workflow")
     args = parser.parse_args()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     root = args.run_root or Path(f"/tmp/zf-prd-ui-{args.provider}-{args.journey}-{stamp}")
@@ -112,6 +116,7 @@ def main() -> int:
     manifest = {"provider": args.provider, "journey": args.journey, "project_root": str(project),
                 "port": port, "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
                 "status": "running", "test_boundary": "provider-only fake" if args.provider == "fake" else "real provider"}
+    manifest["workflow_runtime"] = args.workflow_runtime
     manifest["source_diff_sha256"] = hashlib.sha256(subprocess.check_output(
         ["git", "diff", "HEAD", "--", "src", "web/src", "web/tests", "tests", "skills"], cwd=REPO)).hexdigest()
     manifest["test_sources"] = {str(path.relative_to(REPO)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -149,11 +154,50 @@ def main() -> int:
                   "-v", f"{root}:/zf-run", "-w", "/work/web", "-e", "HOME=/tmp/ui-playwright",
                   "-e", f"ZF_WEB_BASE_URL=http://127.0.0.1:{port}", "-e", f"ZF_WEB_ACTION_TOKEN_FOR_TEST={env['ZF_WEB_ACTION_TOKEN']}",
                   "-e", f"ZF_UI_PROVIDER={args.provider}", "-e", f"ZF_UI_JOURNEY={args.journey}",
+                  "-e", f"ZF_UI_WORKFLOW_RUNTIME={args.workflow_runtime}",
                   "-e", f"ZF_UI_TIMEOUT_MS={args.timeout * 1000}", "-e", "ZF_E2E_VIDEO=on", image, "-lc",
                   'mkdir -p "$HOME"; export ZF_E2E_CHROMIUM_EXECUTABLE_PATH=$(find /ms-playwright -type f -path "*/chrome-linux64/chrome" | sort | tail -1); '
                   'test -n "$ZF_E2E_CHROMIUM_EXECUTABLE_PATH" && ./node_modules/.bin/playwright test tests/prd-ui-journeys.spec.ts '
                   '--workers=1 --reporter=line --output=/zf-run/evidence/playwright']
-        result = subprocess.run(docker, cwd=REPO, timeout=args.timeout + 120).returncode
+        browser = subprocess.Popen(docker, cwd=REPO)
+        deadline = time.monotonic() + args.timeout + 120
+        handoff = evidence / "runtime-handoff.json"
+        while browser.poll() is None:
+            if (args.workflow_runtime == "cold" and not handoff.exists()
+                    and (evidence / "runtime-handoff-request.json").exists()):
+                from zf.core.events import EventLog
+                from zf.core.config.loader import load_config
+                from zf.runtime.workflow_operation import reduce_workflow_operations, TERMINAL_OPERATION_STATUSES
+                from zf.runtime.workflow_runtime_start import _runtime_owner, _process_identity
+                state = project / load_config(project / "zf.yaml").project.state_dir
+                before = EventLog(state / "events.jsonl").read_all()
+                operations = reduce_workflow_operations(before)
+                assert all(op["status"] in TERMINAL_OPERATION_STATUSES for op in operations.values()), "cannot stop an active Workflow operation"
+                started = {e.payload.get("request_id") for e in before if e.type == "channel.agent.reply.started"}
+                ended = {e.payload.get("request_id") for e in before if e.type in {
+                    "channel.agent.reply.completed", "channel.agent.reply.failed"}}
+                assert not started - ended, "cannot stop an active Channel reply"
+                owner = _runtime_owner(state)
+                old_pid = int(owner.get("owner_pid") or 0)
+                old_identity = _process_identity(old_pid)
+                command([REPO / ".venv/bin/zf", "stop", "--fast", "--include-run-manager"],
+                        cwd=project, env=env, stdout=subprocess.DEVNULL, timeout=45)
+                if old_pid:
+                    launched_owner = next((process for process in processes if process.pid == old_pid), None)
+                    assert launched_owner is not None, "runtime owner is outside this fixture"
+                    launched_owner.wait(timeout=45)  # Reap it before the production PID guard checks liveness.
+                for _ in range(450):
+                    if not _runtime_owner(state) and (not old_identity or _process_identity(old_pid) != old_identity):
+                        break
+                    time.sleep(0.1)
+                assert not _runtime_owner(state) and (not old_identity or _process_identity(old_pid) != old_identity), "discussion runtime has not exited"
+                handoff.write_text(json.dumps({"mode": "cold", "action": "zf stop --fast --include-run-manager",
+                                               "previous_owner": owner, "active_workflow_operations_before": 0,
+                                               "terminal_operations_before": len(operations)}))
+            if time.monotonic() >= deadline:
+                raise TimeoutError("browser journey exceeded its total budget")
+            time.sleep(0.25)
+        result = browser.returncode
         if result == 0:
             from tests.e2e.prd_ui.audit import audit
             try:
