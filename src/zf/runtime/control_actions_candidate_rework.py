@@ -168,6 +168,10 @@ class CandidateReworkActionsMixin:
             except ValueError as exc:
                 return {"status": "rejected", "reason": f"invalid rework plan ports: {exc}",
                         "emitted_event_ids": []}
+        explicit_source_index_ref = next((
+            port["ref"] for port in plan_ports
+            if port["logical_name"] == "source_index"
+        ), "")
         rework_summary = (
             payload.get("rework_summary")
             if isinstance(payload.get("rework_summary"), dict)
@@ -219,7 +223,10 @@ class CandidateReworkActionsMixin:
         if rework_summary.get("gap_tasks"):
             try:
                 amend = _write_gap_task_map_amend(
-                    payload,
+                    # A validated explicit producer already describes the
+                    # successor. Legacy rewriting would alter historical refs.
+                    {**payload, "source_index_ref": ""}
+                    if explicit_source_index_ref else payload,
                     state_dir=self.state_dir,
                     project_root=self.project_root,
                 )
@@ -232,7 +239,9 @@ class CandidateReworkActionsMixin:
             task_map_ref = amend["task_map_ref"]
             gap_task_ids = list(amend["gap_task_ids"])
             task_map_digest = str(amend.get("task_map_digest") or "")
-            amended_source_index_ref = str(amend.get("source_index_ref") or "")
+            amended_source_index_ref = (
+                explicit_source_index_ref or str(amend.get("source_index_ref") or "")
+            )
             superseded_generation = str(
                 payload.get("task_map_generation") or ""
             )
@@ -276,7 +285,7 @@ class CandidateReworkActionsMixin:
             "candidate_base_commit": str(payload.get("candidate_base_commit") or ""),
             "target_ref": str(payload.get("target_ref") or ""),
             "feature_id": str(payload.get("feature_id") or ""),
-            "source_index_ref": str(payload.get("source_index_ref") or ""),
+            "source_index_ref": explicit_source_index_ref or str(payload.get("source_index_ref") or ""),
             "task_map_ref": task_map_ref,
             "rework_of": str(payload.get("source_event_id") or ""),
             "rework_attempt": int(payload.get("rework_attempt") or 0),
