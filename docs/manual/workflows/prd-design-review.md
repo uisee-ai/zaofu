@@ -20,6 +20,23 @@
 [设计调研与交接](../../../skills/zf-plan-execution-readiness/references/design-research-handoff.md)。
 实现范围与未完成部分见[实施对账](../../impl/205-prd-methods-and-design-handoff.md)。
 
+## 从 Spec 形成任务并阅读
+
+Planner/Critic 使用[任务规格切片方法](../../../skills/zf-plan-execution-readiness/references/task-spec-slices.md)，
+先明确可观察行为、拒绝及失败不变项，再按可演示结果、依赖和写入所有权分配任务。
+任务引用同版共享合同及具名场景，不复制整份 PRD，也不为增加任务数拆散事务。
+最终序列化的任务、决定登记、场景和正文须相互一致；配置的独立 Critic 负责语义复核。
+
+Web Plan Preview 的「模块规格」按正式 task_id 定位任务。已有 execution_spec 时读取
+其任务正文；无该端口时，作者可在完整 Plan 中使用精确二级标题
+`## Task Spec: <task_id>`，共享合同使用 `## Shared Spec`，任务内使用三级及以下标题。
+阅读器展示原文摘录并提供跳转；未知任务标题或重复规格会提示核对，不任选其中一份。
+历史 Plan 没有独立规格时仍显示任务描述、验收项和缺失提示。
+
+「任务责任与验证命令」展示同版 Task Map 已有的责任、允许路径、命令及 AC 绑定。
+这些内容是作者合同；存在规格或命令不代表评审通过、获准执行或产品测试成功。
+验收场景继续使用既有矩阵和 NOT_RUN 等证据状态，完整原文及工程附件可随时核对。
+
 ## 准备一个可消费的设计
 
 先说明用户、任务、约束和本次未知，复用本地知识；按问题选择行业/产品研究和

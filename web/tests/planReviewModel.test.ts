@@ -2,7 +2,7 @@ const assert = { equal(a: unknown, b: unknown) { if (a !== b) throw new Error(`$
 import { buildPlanReview, planArtifactUrl, resolvePlanPreviewItem } from "../src/components/delivery-trace/planReviewModel.js";
 import type { OperatorInboxItem } from "../src/api/types";
 import live from "./fixtures/prd205/live-plan.json" with { type: "json" };
-import { planReadingSections } from "../src/components/delivery-trace/planReadingSections.js";
+import { planReadingSections, planTaskSpecifications } from "../src/components/delivery-trace/planReadingSections.js";
 const task = { task_id: "T1", title: "调整库存", source_ref: "spec.md#stock", acceptance_criteria: [{ id: "AC1", statement: "只扣差额", verification_command_ids: ["VC1"] }] };
 const legacy = buildPlanReview({ task_map: { tasks: [task], owner_decision_items: [{ decision_id: "Q1", affected_task_ids: ["T1"], status: "pending" }] }, source_inventory: { pages: [{ id: "A01", task_id: "T1" }], forms: [] } });
 assert.equal(legacy.modules[0].specification, "");
@@ -74,3 +74,33 @@ const ownership = buildPlanReview({ task_map: { tasks: [task, { ...task, task_id
 assert.equal(ownership.modules[0].scenarios.length, 0);
 assert.equal(ownership.modules[0].formalScenarios.length, 0);
 assert.equal(ownership.modules[1].scenarios.length, 1);
+
+// Exact Task IDs and heading boundaries keep specification excerpts isolated.
+const scoped = planTaskSpecifications("# Plan\n\n## Shared Spec\n共同快照协议\n\n## Task Spec: T1\n本片新增\n### 失败不变项\n保留表单\n```md\n## Task Spec: T2\n仅代码示例\n```\n## Task Spec: T10\n另一任务正文\n## Task Spec: UNKNOWN\n未知正文\n", ["T1", "T10"]);
+assert.equal(scoped.shared[0].content.includes("共同快照协议"), true);
+assert.equal(scoped.tasks.T1.content.includes("保留表单"), true);
+assert.equal(scoped.tasks.T1.content.includes("另一任务正文"), false);
+assert.equal(scoped.tasks.T10.content.includes("未知正文"), false);
+assert.equal(scoped.tasks.UNKNOWN, undefined);
+assert.equal(scoped.tasks.T2, undefined);
+assert.equal(scoped.warnings.length, 1);
+const duplicateSpecs = planTaskSpecifications("## Task Spec: T1\n第一版\n## Task Spec: T1\n第二版\n", ["T1"]);
+assert.equal(duplicateSpecs.tasks.T1, undefined);
+assert.equal(duplicateSpecs.warnings.length, 1);
+assert.equal(Object.keys(planTaskSpecifications("## Task Spec: T1\n正文", []).tasks).length, 0);
+assert.equal(liveReview.modules.find(m => m.id === "RL-READING")!.owner, "dev-lane-1");
+assert.equal(liveReview.modules.find(m => m.id === "RL-READING")!.allowedPaths.includes("app/"), true);
+assert.equal(liveReview.modules.find(m => m.id === "RL-READING")!.commands.length, 3);
+
+// Real R2 uses test_id/task_ids and source-index scene_ids; task ownership stays exact.
+const namedCases = buildPlanReview({ task_map: { tasks: [task] },
+  test_matrix: { tests: [{ test_id: "S-add", task_ids: ["T1"], acceptance_ids: ["AC1"], command_ids: ["VC1"], given: "空列表", when: "保存", then: "新增", evidence_status: "NOT_RUN" }] },
+  source_index: { traceability: [
+    { scene_ids: ["S-add"], task_ids: ["T1"], source_ref: "requirement.md#add" },
+    { scene_ids: ["S-add"], task_ids: ["T2"], source_ref: "foreign.md" },
+    { scene_ids: ["S-add-other"], task_ids: ["T1"], source_ref: "other.md" },
+  ] },
+});
+assert.equal(namedCases.modules[0].scenarios[0].id, "S-add");
+assert.equal(namedCases.modules[0].scenarios[0].sourceRefs.join(), "requirement.md#add");
+assert.equal(namedCases.modules[0].scenarios[0].issues.length, 0);

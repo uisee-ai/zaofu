@@ -21,6 +21,7 @@
 .plan-document-outline { max-height: 30vh; overflow: auto; flex-shrink: 0; }
 .plan-document-outline input { margin-left: 8px; }
 .plan-review-card > .delivery-action-button { margin: 4px; }
+.plan-task-command { max-width: 100%; overflow: auto; white-space: pre; }
 .plan-document-status { margin: 0; padding: 8px 16px; font-size: var(--text-12); color: var(--muted-foreground); border-bottom: 1px solid var(--line); }
 .plan-document-search { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 14px; flex-shrink: 0; }
 .plan-document-search label { display: flex; align-items: center; gap: 8px; min-width: 0; }

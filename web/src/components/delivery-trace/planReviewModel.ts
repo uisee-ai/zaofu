@@ -55,8 +55,9 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
     const authoredScenarios = rows(review.scenarios);
     const candidates = authoredScenarios.length ? authoredScenarios : tests.filter(s => relatedTasks(s).includes(id));
     const scenarios = candidates.map(scenario => {
+      const scenarioId = text(scenario.id || scenario.case_id || scenario.test_id);
       const refs = strings(scenario.acceptance_ids);
-      const sourceRefs = unique([...strings(scenario.source_refs), ...strings(scenario.source_ids).flatMap(id => sources.filter(s => s.source_id === id).map(s => text(s.source_ref)))]);
+      const sourceRefs = unique([...strings(scenario.source_refs), ...strings(scenario.source_ids).flatMap(id => sources.filter(s => s.source_id === id).map(s => text(s.source_ref))), ...sources.filter(s => scenarioId && relatedTasks(s).includes(id) && strings(s.scene_ids).includes(scenarioId)).map(s => text(s.source_ref))]);
       const issues: string[] = [];
       for (const sourceId of strings(scenario.source_ids)) {
         if (sources.filter(s => s.source_id === sourceId && text(s.source_ref)).length !== 1) issues.push(`来源 ID 未唯一解析：${sourceId}`);
@@ -66,12 +67,15 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
       if (!sourceRefs.length) issues.push("来源条款尚未绑定");
       if (!strings(scenario.command_ids).length) issues.push("验证命令尚未绑定");
       else if (strings(scenario.command_ids).some(id => !knownCommands.has(id))) issues.push("场景命令未绑定到本任务验收项");
-      return { id: text(scenario.id || scenario.case_id), evidenceStatus: text(scenario.evidence_status) || "未声明（规划场景，不代表测试通过）", title: text(scenario.title || scenario.name), given: text(scenario.given), when: text(scenario.when), then: text(scenario.then), sourceRefs, acceptanceIds: refs, commandIds: strings(scenario.command_ids), issues };
+      return { id: scenarioId, evidenceStatus: text(scenario.evidence_status) || "未声明（规划场景，不代表测试通过）", title: text(scenario.title || scenario.name), given: text(scenario.given), when: text(scenario.when), then: text(scenario.then), sourceRefs, acceptanceIds: refs, commandIds: strings(scenario.command_ids), issues };
     });
     return {
       id, title: text(task.title), description: text(task.description),
       sourceRefs: unique([text(task.source_ref), ...strings(task.source_refs)]),
       dependencies: strings(task.blocked_by || task.dependencies),
+      owner: text(task.owner_role || task.role),
+      allowedPaths: strings(task.allowed_paths),
+      commands: rows(object(task.validation).commands),
       criteria: criteria.map(ac => ({ id: text(ac.id), statement: text(ac.statement), sourceRefs: unique([text(ac.source_ref), ...strings(ac.source_refs), ...sources.filter(s => relatedTasks(s).includes(id) && (strings(s.acceptance_ids).includes(text(ac.id)) || s.acceptance_id === ac.id)).map(s => text(s.source_ref))]), commandIds: strings(ac.verification_command_ids), tier: text(ac.verification_tier) })),
       pages: rows(inventory.pages).filter(p => relatedTasks(p).includes(id)),
       forms: rows(inventory.forms).filter(p => relatedTasks(p).includes(id)),

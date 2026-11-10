@@ -1,6 +1,7 @@
 """Method delivery and frozen identity checks; not semantic quality evidence."""
 from copy import deepcopy
 from pathlib import Path
+import pytest
 
 from zf.core.config.schema import ProjectConfig, RoleConfig, ZfConfig
 from zf.core.skills import materialize_role_skills
@@ -37,17 +38,19 @@ def test_method_revision_changes_digest_without_changing_source_or_target(monkey
     assert len(prd_review_method()["criteria"]) == 8
 
 
-def test_prd_role_materializes_design_dependency_and_reference_bytes(tmp_path):
+@pytest.mark.parametrize("role_name", ["planner", "plan-critic"])
+def test_prd_role_materializes_design_dependency_and_reference_bytes(tmp_path, role_name):
     root = Path(__file__).resolve().parents[1]
-    role = RoleConfig(name="planner", backend="codex", skills=["zf-prd-plan-synth"])
+    role = RoleConfig(name=role_name, backend="codex", skills=["zf-prd-plan-synth"])
     config = ZfConfig(project=ProjectConfig(name="method-test"), roles=[role])
     state = tmp_path / "isolated-state"
     state.mkdir()
     materialize_role_skills(config=config, project_root=root, state_dir=state, role=role, task_id="fixture")
-    target = state / "workdirs" / "planner" / "codex-home" / "skills"
+    target = state / "workdirs" / role_name / "codex-home" / "skills"
     for name, reference in (
         ("zf-prd-plan-synth", "product-reading-evidence.md"),
         ("zf-plan-execution-readiness", "design-research-handoff.md"),
+        ("zf-plan-execution-readiness", "task-spec-slices.md"),
     ):
         relative = Path(name) / "references" / reference
         canonical = root / "skills" / relative

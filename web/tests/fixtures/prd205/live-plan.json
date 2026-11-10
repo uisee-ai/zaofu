@@ -7,6 +7,34 @@
         "description": "只建立原生 ES module 包元数据、锁文件、HTTP 开发服务、空壳和约定；为下一任务提供实际服务与浏览器依赖。测试覆盖启动、路径与空壳返回，不宣称产品功能完成。",
         "blocked_by": [],
         "source_ref": "requirement.md#本地设计知识（已确认约束）",
+        "owner_role": "dev-lane-0",
+        "allowed_paths": [
+          "package.json",
+          "package-lock.json",
+          "tools/serve.mjs",
+          "tools/scaffold.html",
+          "docs/development/conventions.md",
+          "tests/scaffold/",
+          "artifacts/evidence/scaffold/"
+        ],
+        "validation": {
+          "commands": [
+            {
+              "id": "C-SCAFFOLD",
+              "command": "node --test tests/scaffold/scaffold.test.mjs",
+              "acceptance_ids": [
+                "AC-S1"
+              ],
+              "owner": "task_verify",
+              "tier": "runtime",
+              "deterministic": true,
+              "reusable": true,
+              "rolling_smoke": true,
+              "timeout_seconds": 120,
+              "producer_task_id": "RL-SCAFFOLD"
+            }
+          ]
+        },
         "acceptance_criteria": [
           {
             "id": "AC-S1",
@@ -24,6 +52,81 @@
         "description": "一个事务所有者贯通表单、校验去重、localStorage、列表、失败恢复、安全、响应布局和键盘访问；负责真实入口与全部浏览器验收。",
         "blocked_by": ["RL-SCAFFOLD"],
         "source_ref": "requirement.md#已确认行为与验收",
+        "owner_role": "dev-lane-1",
+        "allowed_paths": [
+          "app/",
+          "tests/reading-list/",
+          "tests/browser/",
+          "tools/browser/",
+          "artifacts/evidence/reading/"
+        ],
+        "validation": {
+          "commands": [
+            {
+              "id": "C-CORE",
+              "command": "node --test tests/reading-list/core.test.mjs",
+              "acceptance_ids": [
+                "AC-1",
+                "AC-2",
+                "AC-3",
+                "AC-4",
+                "AC-5",
+                "AC-6"
+              ],
+              "owner": "task_verify",
+              "tier": "runtime",
+              "deterministic": true,
+              "reusable": true,
+              "rolling_smoke": true,
+              "timeout_seconds": 120,
+              "producer_task_id": "RL-READING"
+            },
+            {
+              "id": "C-UI",
+              "command": "bash tools/browser/run.sh task",
+              "acceptance_ids": [
+                "AC-1",
+                "AC-2",
+                "AC-3",
+                "AC-4",
+                "AC-5",
+                "AC-6"
+              ],
+              "owner": "task_verify",
+              "tier": "e2e",
+              "deterministic": true,
+              "reusable": true,
+              "rolling_smoke": false,
+              "timeout_seconds": 900,
+              "producer_task_id": "RL-READING",
+              "producer_paths": [
+                "artifacts/evidence/reading/task/"
+              ]
+            },
+            {
+              "id": "C-CANDIDATE",
+              "command": "bash tools/browser/run.sh candidate",
+              "acceptance_ids": [
+                "AC-1",
+                "AC-2",
+                "AC-3",
+                "AC-4",
+                "AC-5",
+                "AC-6"
+              ],
+              "owner": "candidate_verify",
+              "tier": "e2e",
+              "deterministic": true,
+              "reusable": true,
+              "rolling_smoke": false,
+              "timeout_seconds": 900,
+              "producer_task_id": "RL-READING",
+              "producer_paths": [
+                "artifacts/evidence/reading/candidate/"
+              ]
+            }
+          ]
+        },
         "acceptance_criteria": [
           {
             "id": "AC-1",

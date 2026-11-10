@@ -111,3 +111,33 @@ test("read-only first visit bypasses setup and preview does not attempt read rec
   await page.unrouteAll({ behavior: "wait" });
   expect(writes).toEqual([]);
 });
+
+for (const width of [1280, 375]) test(`${width}px bound task specifications quote exact sections and expose shared contracts without inventing approval`, async ({ page, request }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const markdown = live.markdown + "\n\n## Shared Spec\n\n共享快照必须先保存再发布。\n\n## Task Spec: RL-SCAFFOLD\n\n骨架任务专属说明。\n\n## Task Spec: RL-READING\n\n### 本片结果\n\n添加失败保留表单与原存储。\n\n### 验收\n\n引用 SAVE-ADD-FAIL，保持 NOT_RUN。\n";
+  const dialog = await openLive(page, request, markdown);
+  await dialog.getByRole("button", { name: "模块规格", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "审阅模块" }).selectOption("RL-READING");
+  await expect(dialog.getByText("添加失败保留表单与原存储。", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("骨架任务专属说明。", { exact: true })).toHaveCount(0);
+  await dialog.getByText("同版共享合同", { exact: true }).click();
+  await expect(dialog.getByText("共享快照必须先保存再发布。", { exact: true })).toBeVisible();
+  await dialog.getByText("任务责任与验证命令", { exact: true }).click();
+  await expect(dialog.getByText("实现责任：dev-lane-1", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("bash tools/browser/run.sh candidate", { exact: true })).toBeVisible();
+  expect(await dialog.locator(".plan-review-scroll").evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await dialog.getByRole("button", { name: "在完整原文中阅读：Task Spec: RL-READING", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "完整原文", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByRole("heading", { name: "Task Spec: RL-READING", exact: true })).toBeInViewport();
+});
+
+test("duplicate or unknown task headings stay explicit and cannot replace another task specification", async ({ page, request }) => {
+  const dialog = await openLive(page, request, "# Plan\n\n## Task Spec: RL-READING\n重复正文一\n## Task Spec: RL-READING\n重复正文二\n## Task Spec: UNKNOWN\n未知任务正文\n");
+  await dialog.getByRole("button", { name: "模块规格", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "审阅模块" }).selectOption("RL-READING");
+  await expect(dialog.getByText(/存在重复原文任务规格/)).toBeVisible();
+  await expect(dialog.getByText("原文任务规格引用未知任务：UNKNOWN", { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/本版未细化独立模块规格/)).toBeVisible();
+  await expect(dialog.getByText("重复正文一", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText("未知任务正文", { exact: true })).toHaveCount(0);
+});
