@@ -1,5 +1,6 @@
 """Exercise the fake boundary against the production Plan contract."""
 from pathlib import Path
+import json
 
 import pytest
 
@@ -22,6 +23,24 @@ def test_ui_provider_writes_prd_only_when_user_requests_it(tmp_path: Path):
 def test_unknown_provider_turn_fails_instead_of_fabricating_success(tmp_path: Path):
     with pytest.raises(ValueError, match='unrecognized'):
         reply('User message:\nunknown request', tmp_path)
+
+
+def test_fake_synthesis_fault_preserves_request_but_returns_invalid_digest(tmp_path: Path, monkeypatch):
+    contract = {
+        "request_id": "REQ-UI-FAULT", "request_revision": 2,
+        "requirement_ref": "requirements/r2.json", "requirement_digest": "a" * 64,
+        "requirement": {"objective": "Read README.md"},
+        "registered_controllers": {"zaofu-prd-v5-production-codex": {
+            "digest": "b" * 64, "completion_profile": "prd"}},
+    }
+    prompt = "Use the zf-workflow-synthesis method.\nContract:\n" + json.dumps(contract)
+    monkeypatch.delenv("ZF_UI_FAKE_FAULT", raising=False)
+    assert reply(prompt, tmp_path)["requirement_digest"] == contract["requirement_digest"]
+    monkeypatch.setenv("ZF_UI_FAKE_FAULT", "synthesis-digest")
+    result = reply(prompt, tmp_path)
+    assert result["request_id"] == contract["request_id"]
+    assert result["requirement_digest"] != contract["requirement_digest"]
+    assert len(result["requirement_digest"]) != 64
 
 
 def test_scripted_plan_meets_preflight_and_keeps_state_root(tmp_path: Path):

@@ -180,6 +180,7 @@ function WorkflowProposalWorkbench({
 
   const current = detail?.result;
   const needsAnswers = current?.status === "clarifying";
+  const preparationFailed = ["preparation_failed", "preparation_blocked"].includes(textValue(current?.status));
   const effectiveConfig = asRecord(detail?.artifacts.effective_config);
   const yaml = textValue(effectiveConfig.yaml);
   const submitted = Boolean(detail?.lifecycle.submitted || detail?.links.run_id);
@@ -219,6 +220,11 @@ function WorkflowProposalWorkbench({
         {runId && <a href={`/?${loopUrl}`}>查看 Loop Timeline</a>}</div>
     </section>}
     {error && <div className="workflow-proposal-notice tone-error" role="alert">{error}</div>}
+    {preparationFailed && <div className="workflow-proposal-notice tone-error" role="alert" data-testid="workflow-preparation-failure">
+      <strong>{current?.status === "preparation_blocked" ? "Workflow preparation blocked" : "Workflow preparation failed"}</strong>
+      <span>Review the failure and retry preparation before starting this workflow.</span>
+      <button type="button" disabled={Boolean(busyAction)} onClick={() => setPanel("review")}>Review preparation</button>
+    </div>}
     {feedback && <div className={`workflow-proposal-notice ${feedback.ok ? "tone-ok" : "tone-error"}`} data-testid="workflow-proposal-feedback"><strong>{feedback.status}</strong><span>{feedback.reason || decisionFeedback(feedback)}</span></div>}
     {loading ? <WorkflowEmpty title="Loading workflows" /> : !requests.length ? <WorkflowEmpty title="No workflows" /> : !detail ? <WorkflowEmpty title="Loading workflow" /> :
       <WorkflowPreviewReview key={`${projectId}:${selectedId}`} detail={detail} projectId={projectId} disabled={!actionReady}
