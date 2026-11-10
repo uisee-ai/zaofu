@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现提交: `1af2c5ab` — feat: refine task spec guidance and shared scenario responsibility
 
 # 共享场景与决定原始状态阅读
 
@@ -14,4 +15,4 @@
 
 旧模型已复现真实 S-add 误报；修复后 unit 通过。Docker 1280/375 场景责任、原始决定状态/时点和只读检查通过；未知/重复/串任务保留提示。
 
-实现提交在归档时补记；完整方案见 [206](../../docs/design/206-spec-method-borrowings-and-quality-evaluation.md)。
+完整方案见 [206](../../docs/design/206-spec-method-borrowings-and-quality-evaluation.md)。

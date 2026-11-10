@@ -243,10 +243,10 @@ B 的准备方法已纳入本轮；执行状态仍为 NOT_RUN。C 是条件方�
 
 | 工作项 | 交付 | 验收 |
 | --- | --- | --- |
-| [研究与评分](../../tasks/active/2026-11-10-1306-spec206-research-scorecard.md) | 本文、固定源码引用、分项理由与两种权重 | 来源可定位、算术复算、未知证据明确 |
-| [方法演进](../../tasks/active/2026-11-10-1306-spec206-spec-methods.md) | Task Spec 局部义务、差量与反例方法、评估协议，同步三个技能目录 | Planner/Critic 实际物化与分发字节一致 |
-| [阅读器](../../tasks/active/2026-11-10-1306-spec206-shared-scenario-reader.md) | 共享场景逐任务责任；原始决定状态、最迟决定时点 | 真实字段夹具 + 正/反例单测 + Docker 双视口 |
-| [评估交付](../../tasks/active/2026-11-10-1306-spec206-evaluation-closeout.md) | 能力分、局限、聚焦验证、实现和归档提交 | 区分通过与 NOT_RUN，当前 worktree 干净 |
+| [研究与评分](../../tasks/done/2026-11-10-1306-spec206-research-scorecard.md) | 本文、固定源码引用、分项理由与两种权重 | 来源可定位、算术复算、未知证据明确 |
+| [方法演进](../../tasks/done/2026-11-10-1306-spec206-spec-methods.md) | Task Spec 局部义务、差量与反例方法、评估协议，同步三个技能目录 | Planner/Critic 实际物化与分发字节一致 |
+| [阅读器](../../tasks/done/2026-11-10-1306-spec206-shared-scenario-reader.md) | 共享场景逐任务责任；原始决定状态、最迟决定时点 | 真实字段夹具 + 正/反例单测 + Docker 双视口 |
+| [评估交付](../../tasks/done/2026-11-10-1306-spec206-evaluation-closeout.md) | 能力分、局限、聚焦验证、实现和归档提交 | 区分通过与 NOT_RUN，当前 worktree 干净 |
 
 ### 6.1 实际发现与修复
 

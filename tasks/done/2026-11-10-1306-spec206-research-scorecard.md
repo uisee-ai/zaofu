@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现提交: `1af2c5ab` — feat: refine task spec guidance and shared scenario responsibility
 
 # 六源深挖与可解释评分
 
@@ -14,4 +15,4 @@
 
 已核对六类官方来源并固定两个源码版本；design 206 给出七维逐项依据、两套权重、适用边界和 NOT_RUN。scores.json 复算一致。
 
-实现提交在归档时补记；完整方案见 [206](../../docs/design/206-spec-method-borrowings-and-quality-evaluation.md)。
+完整方案见 [206](../../docs/design/206-spec-method-borrowings-and-quality-evaluation.md)。

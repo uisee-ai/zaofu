@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现提交: `1af2c5ab` — feat: refine task spec guidance and shared scenario responsibility
 
 # 评估复核、文档与交付
 
@@ -14,4 +15,4 @@
 
 dev-verify 45 passed / 1 skipped（缺少示例外部技能源）；前端 build/typecheck/unit、bundle budget、Docker 10 用例、manual-docs check 通过。外部工具与新方法真实效果为 NOT_RUN。模拟已记录 simulation.done 并清理，8007 已释放。
 
-实现提交在归档时补记；完整方案见 [206](../../docs/design/206-spec-method-borrowings-and-quality-evaluation.md)。
+完整方案见 [206](../../docs/design/206-spec-method-borrowings-and-quality-evaluation.md)。
