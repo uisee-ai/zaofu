@@ -94,6 +94,23 @@ zf recover task-impl --operation <operation-id> --reason '<修复与验证证据
 
 ## Verify 后的集成失败与 Worker 生命周期
 
+可重试的 Task Pipeline Provider-stop 由 Run Manager 决定恢复，WRC 执行同一
+operation 的新 attempt。shadow 模式下，新中断保留 `expired`，不再被下一次
+租约 reconcile 改成普通 failed。历史 `operation-v2` 行只有在
+`failed / lease_expired_shadow_only / task_pipeline_provider_stop`、明确可重试且
+owner 为 Run Manager 时，才继续产生既有 `worker-lifecycle-recover` 提案；
+旧行、原失败事件和冻结请求不改写。WRC 仍要求当前 Run、suspended operation、
+历史行与 operation 的 active attempt/task/run 相同，以及精确匹配的 RM
+requested/completed 恢复因果链；受控重派检查 attempt 上限，保留合同和验证目标。
+普通 `zf restart`、语义失败及无恢复回执均不获得重派授权。
+
+恢复前应先修复已确认的环境问题；例如 Provider CLI 不支持模型时，升级磁盘上的
+CLI 不会替换存量进程。根操作员可通过既有 `zf start --control-plane-only` 重载
+控制面、保留其他 worker，再由 RM 对故障 Verify 执行精确生命周期恢复。
+`tests/runtime/test_provider_stop_recovery.py` 覆盖真实 Provider-stop → reconcile →
+RM 受控执行器 → WRC 重派及新 attempt；`tests/test_task_pipeline_shadow_recovery.py`
+覆盖旧 shadow 变体的身份、因果、终态和预算拒绝边界。这些机械检查不证明业务验收。
+
 Task 尚未 done 不代表 Impl/Verify worker 仍有执行义务。watchdog 对精确匹配的 Task Pipeline dispatch 和 operation 终态停止恢复该 worker，避免在等待集成时重启 provider 或重排 Task。新的活跃 operation 仍受监测，旧终态不能屏蔽下一次派发。
 
 结果接纳会先清空 Task 的 active_dispatch_id，集成失败时 Task 仍可保留 in_progress。此时仍按精确匹配的派发与 operation 终态排除旧 worker，不能因为活动标记已清空而再次催交旧完成事件；新的运行中 operation 或不同派发仍可见。`tests/test_task_pipeline_worker_liveness.py` 通过真实派发标记清理入口与 watchdog 验证这一交接。

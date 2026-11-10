@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.schema import (
     ProjectConfig,
     RoleConfig,
@@ -511,8 +513,9 @@ def test_reader_transport_stop_closes_operation_without_canonical_task(
     ) == []
 
 
+@pytest.mark.parametrize("attempt_mode", ["enforce", "shadow", "legacy_shadow"])
 def test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives(
-    tmp_path: Path,
+    tmp_path: Path, attempt_mode: str,
 ) -> None:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -527,7 +530,7 @@ def test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives(
         project=ProjectConfig(name="x", state_dir=str(state_dir)),
         workflow=WorkflowConfig(
             task_attempt=WorkflowTaskAttemptConfig(
-                mode="enforce",
+                mode="enforce" if attempt_mode == "enforce" else "shadow",
                 max_attempts=3,
             ),
         ),
@@ -553,6 +556,8 @@ def test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives(
             "task_map_generation": "map-g1",
             "workspace_generation": 1,
             "pipeline_key": "tp-task-verify-1",
+            "contract_revision": "contract-verify-1",
+            "exact_task_target_commit": "a" * 40,
         },
         task_id="TASK-VERIFY-1",
         role_instance="verify-lane-0",
@@ -611,6 +616,12 @@ def test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives(
 
     assert decision is not None
     assert decision.action == "recover"
+    from zf.runtime.task_attempt_runtime import reconcile_task_attempts
+
+    reconcile_task_attempts(orch)
+    after_first_reconcile = [event.id for event in orch.event_log.read_all()]
+    assert reconcile_task_attempts(orch) == 0
+    assert [event.id for event in orch.event_log.read_all()] == after_first_reconcile
     task = store.get("TASK-VERIFY-1")
     assert task is not None
     assert task.status == "in_progress"
@@ -660,6 +671,11 @@ def test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives(
     assert task is not None
     assert task.status == "in_progress"
 
+    if attempt_mode == "legacy_shadow":
+        # Persist the pre-fix projection without rewriting the interruption ledger.
+        attempts.update(attempt_id, status="failed", updated_at="2026-08-03T00:01:00+00:00",
+                        failure_reason="lease_expired_shadow_only")
+
     pending = pending_task_attempt_recovery_actions(
         state_dir / "projections",
         canonical_store_path=attempts.path,
@@ -668,17 +684,18 @@ def test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives(
     assert pending[0]["action"] == "worker-lifecycle-recover"
     assert pending[0]["policy_decision"]["decision"] == "auto_decide"
 
-    request = orch.event_writer.append(ZfEvent(
-        type="worker.respawn.requested",
-        actor="run-manager",
-        task_id="TASK-VERIFY-1",
-        payload={
-            "operation_id": "op-task-verify-1",
-            "attempt_id": attempt_id,
-            "recovery_decision_owner": "run_manager",
-            "recovery_effect_owner": "workflow_runtime_coordinator",
-        },
-    ))
+    from zf.runtime.run_manager import _execute_controlled_run_action
+
+    assert _execute_controlled_run_action(
+        state_dir=state_dir, writer=orch.event_writer, config=config,
+        project_root=tmp_path, action=pending[0], causation_id=attempt_failures[0].id,
+    ) == "applied"
+    request = next(event for event in reversed(orch.event_log.read_all())
+                   if event.type == "worker.respawn.requested")
+    assert request.payload["attempt_id"] == attempt_id
+    assert request.payload["operation_id"] == "op-task-verify-1"
+    contexts = {"TASK-VERIFY-1": {"workflow_run_id": "RUN-1"}}
+    assert reconcile_task_pipeline_redrives(orch, generation_contexts=contexts) == []
     orch.event_writer.append(ZfEvent(
         type="worker.respawn.completed",
         actor="verify-lane-0",
@@ -701,6 +718,20 @@ def test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives(
     assert operation is not None
     assert operation["status"] == "requested"
     assert operation["redrive_count"] == 1
+    assert operation["request_hash"] == ensured.request_hash
+    assert operation["contract_revision"] == "contract-verify-1"
+    assert operation["exact_task_target_commit"] == "a" * 40
+    assert reconcile_task_pipeline_redrives(orch, generation_contexts=contexts) == []
+    next_attempt = attempts.ensure_for_dispatch(
+        run_id="RUN-1", task_id="TASK-VERIFY-1", dispatch_id="dispatch-verify-2",
+        role="verify-lane-0", instance_id="verify-lane-0", operation_id="op-task-verify-1",
+        briefing_ref="briefings/verify.md", created_at="2026-08-03T00:02:00+00:00",
+        lease_expires_at="2099-08-03T00:00:00+00:00", max_attempts=3,
+        identity_version=TASK_ATTEMPT_IDENTITY_OPERATION_V2, placement_epoch=2,
+    ).attempt
+    assert next_attempt["ordinal"] == 2
+    assert next_attempt["operation_id"] == attempt["operation_id"]
+    assert next_attempt["attempt_id"] != attempt_id
 
 
 def test_taskless_orchestrator_timeout_closes_durable_operation(
