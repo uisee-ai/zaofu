@@ -59,6 +59,9 @@ def prepare(root: Path, mode: str, journey: str) -> tuple[Path, dict[str, str]]:
     spec.setdefault("channel", {})["provider_timeout_seconds"] = 1800
     # Fake starts with a different policy, forcing a real Apply/consumer handoff.
     spec["workflow"]["plan_approval"] = mode != "fake"
+    if journey == "channel-recovery":
+        from tests.e2e.prd_ui.recovery import configure
+        configure(spec, env, REPO)
     (project / "zf.yaml").write_text(yaml.safe_dump_all(documents, sort_keys=False))
     (project / "README.md").write_text("# Isolated PRD UI acceptance project\n")
     (project / ".gitignore").write_text(".ui-state/\nartifacts/\ndocs/intake/\ndocs/prd/\n.claude/\n.codex/\n")
@@ -79,19 +82,27 @@ def prepare(root: Path, mode: str, journey: str) -> tuple[Path, dict[str, str]]:
             os.environ.pop("ZF_WORKSPACE_HOME", None)
         else:
             os.environ["ZF_WORKSPACE_HOME"] = previous
+    if journey == "channel-recovery":
+        from tests.e2e.prd_ui.recovery import setup
+        setup(project)
     return project, env
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", choices=["fake", "real"], required=True)
-    parser.add_argument("--journey", choices=["kanban", "channel"], required=True)
+    parser.add_argument("--journey", choices=["kanban", "channel", "channel-recovery"], required=True)
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--owner-checkpoint", action="store_true", help="Require a real Critic Owner checkpoint and answer it through UI")
     parser.add_argument("--timeout", type=int, default=1200)
     parser.add_argument("--workflow-runtime", choices=["existing", "cold"], default="existing",
                         help="cold stops the idle discussion runtime before the UI starts its Workflow")
     args = parser.parse_args()
+    if args.journey == "channel-recovery" and args.provider != "real":
+        parser.error("channel-recovery requires the explicitly authorized real Codex tier")
+    if args.owner_checkpoint and (args.provider != "real" or args.journey != "kanban"):
+        parser.error("owner-checkpoint requires the real Kanban journey")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     root = args.run_root or Path(f"/tmp/zf-prd-ui-{args.provider}-{args.journey}-{stamp}")
     if root.parent != Path("/tmp") or not root.name.startswith("zf-") or root.exists():
@@ -117,11 +128,14 @@ def main() -> int:
     manifest = {"provider": args.provider, "journey": args.journey, "project_root": str(project),
                 "port": port, "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
                 "status": "running", "test_boundary": "provider-only fake" if args.provider == "fake" else "real provider"}
+    if args.journey == "channel-recovery":
+        manifest["test_boundary"] = "real Codex, controlled stdio fault; setup via controlled actions, send/retry through UI"
     manifest["workflow_runtime"] = args.workflow_runtime
+    manifest["owner_checkpoint_required"] = args.owner_checkpoint
     manifest["source_diff_sha256"] = hashlib.sha256(subprocess.check_output(
         ["git", "diff", "HEAD", "--", "src", "web/src", "web/tests", "tests", "skills"], cwd=REPO)).hexdigest()
     manifest["test_sources"] = {str(path.relative_to(REPO)): hashlib.sha256(path.read_bytes()).hexdigest()
-                                for path in [*sorted((REPO / "tests/e2e/prd_ui").glob("*.py")), REPO / "web/tests/prd-ui-journeys.spec.ts"]}
+                                for path in [*sorted((REPO / "tests/e2e/prd_ui").glob("*.py")), REPO / "web/tests/prd-ui-journeys.spec.ts", REPO / "web/tests/codex-channel-recovery.spec.ts"]}
     (evidence / "run.json").write_text(json.dumps(manifest, indent=2))
     processes = []
     print(f"[run] {root} http://127.0.0.1:{port}", flush=True)
@@ -130,8 +144,9 @@ def main() -> int:
         if args.provider == "fake":
             worker_log = (root / "worker.log").open("w")
             processes.append(subprocess.Popen([sys.executable, str(REPO / "tests/e2e/prd_ui/worker.py"), str(project)], cwd=project, env=env, stdout=worker_log, stderr=subprocess.STDOUT, start_new_session=True))
-        runtime_log = (root / "runtime.log").open("w")
-        processes.append(subprocess.Popen([str(REPO / ".venv/bin/zf"), "start"], cwd=project, env=env, stdout=runtime_log, stderr=subprocess.STDOUT, start_new_session=True))
+        if args.journey != "channel-recovery":
+            runtime_log = (root / "runtime.log").open("w")
+            processes.append(subprocess.Popen([str(REPO / ".venv/bin/zf"), "start"], cwd=project, env=env, stdout=runtime_log, stderr=subprocess.STDOUT, start_new_session=True))
         log = (root / "web.log").open("w")
         processes.append(subprocess.Popen([str(REPO / ".venv/bin/zf"), "web", "--host", "0.0.0.0", "--port", str(port)],
                                           cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
@@ -150,15 +165,17 @@ def main() -> int:
             raise TimeoutError("Web startup")
         fcntl.flock(port_lock, fcntl.LOCK_UN)
         port_lock.close()
+        browser_spec = "codex-channel-recovery.spec.ts" if args.journey == "channel-recovery" else "prd-ui-journeys.spec.ts"
         docker = ["docker", "run", "--rm", "--name", root.name, "--network", "host", "--user", f"{os.getuid()}:{os.getgid()}",
                   "--entrypoint", "bash", "-v", f"{REPO}:/work", "-v", f"{(REPO / 'web/node_modules').resolve()}:/work/web/node_modules",
                   "-v", f"{root}:/zf-run", "-w", "/work/web", "-e", "HOME=/tmp/ui-playwright",
                   "-e", f"ZF_WEB_BASE_URL=http://127.0.0.1:{port}", "-e", f"ZF_WEB_ACTION_TOKEN_FOR_TEST={env['ZF_WEB_ACTION_TOKEN']}",
                   "-e", f"ZF_UI_PROVIDER={args.provider}", "-e", f"ZF_UI_JOURNEY={args.journey}",
                   "-e", f"ZF_UI_WORKFLOW_RUNTIME={args.workflow_runtime}",
+                  "-e", f"ZF_UI_OWNER_CHECKPOINT={str(args.owner_checkpoint).lower()}",
                   "-e", f"ZF_UI_TIMEOUT_MS={args.timeout * 1000}", "-e", "ZF_E2E_VIDEO=on", image, "-lc",
                   'mkdir -p "$HOME"; export ZF_E2E_CHROMIUM_EXECUTABLE_PATH=$(find /ms-playwright -type f -path "*/chrome-linux64/chrome" | sort | tail -1); '
-                  'test -n "$ZF_E2E_CHROMIUM_EXECUTABLE_PATH" && ./node_modules/.bin/playwright test tests/prd-ui-journeys.spec.ts '
+                  f'test -n "$ZF_E2E_CHROMIUM_EXECUTABLE_PATH" && ./node_modules/.bin/playwright test tests/{browser_spec} '
                   '--workers=1 --reporter=line --output=/zf-run/evidence/playwright']
         browser = subprocess.Popen(docker, cwd=REPO)
         deadline = time.monotonic() + args.timeout + 120
@@ -202,7 +219,11 @@ def main() -> int:
         if result == 0:
             from tests.e2e.prd_ui.audit import audit, check_config_handoff
             try:
-                result_audit = audit(project, journey=args.journey)
+                if args.journey == "channel-recovery":
+                    from tests.e2e.prd_ui.recovery import audit as recovery_audit
+                    result_audit = recovery_audit(project)
+                else:
+                    result_audit = audit(project, journey=args.journey, owner_checkpoint=args.owner_checkpoint)
                 if args.provider == "fake" and args.workflow_runtime == "existing":
                     from zf.core.events import EventLog
                     from zf.core.config.loader import load_config

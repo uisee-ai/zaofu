@@ -51,7 +51,36 @@ def check_config_handoff(events: list) -> dict[str, Any]:
             "new_config_sha256": new.payload["effective_config_sha256"]}
 
 
-def audit(project: Path, *, journey: str) -> dict[str, Any]:
+def check_owner_checkpoint(events: list, run_id: str) -> dict[str, str]:
+    owners = [e for e in events if e.type == "approval.requested" and e.payload.get("owner_route") == "plan_synth_owner_decision"]
+    assert len(owners) == 1, "expected one real Owner checkpoint"
+    owner = owners[0]
+    decisions = [e for e in events if e.type in {"replan.owner_decision.approved", "replan.owner_decision.rejected"} and e.payload.get("checkpoint_id") == owner.payload["checkpoint_id"]]
+    assert len(decisions) == 1, "missing unique Owner answer"
+    decision = decisions[0]
+    assert decision.actor == "web" and decision.payload.get("surface") == "web", "Owner answer did not come through Web"
+    assert decision.payload.get("direct_adoption") is False, "Owner answer directly adopted the candidate"
+    resolutions = [e for e in events if e.type == "plan.synth.owner_decision.resolved" and e.payload.get("decision_event_id") == decision.id]
+    assert len(resolutions) == 1, "Owner answer was not consumed by runtime"
+    resolution = resolutions[0]
+    plans = [e for e in events if e.type == "plan.approval.requested"]
+    assert len(plans) == 1, "missing unique regenerated Plan"
+    plan = plans[0]
+    invokes = [e for e in events if e.type == "workflow.invoke.requested"]
+    assert len(invokes) == 1 and invokes[0].task_id == owner.task_id, "Owner checkpoint belongs to another Task"
+    for event in (owner, decision, resolution, plan):
+        assert {event.payload.get("workflow_run_id"), event.correlation_id} - {None, ""} == {run_id}, "Owner recovery changed Run"
+        # Web decisions and Plan approvals may be Run-scoped. The checkpoint
+        # joins them to the original Task; reject an explicit contradictory ID.
+        assert event.task_id in {None, "", owner.task_id}, "Owner recovery changed Task"
+    assert resolution.task_id == owner.task_id, "runtime resolved another Task"
+    assert events.index(owner) < events.index(decision) < events.index(resolution) < events.index(plan)
+    assert plan.payload["plan_id"] != owner.payload["plan_id"], "unreviewed candidate reused as final Plan"
+    return {"checkpoint_id": owner.payload["checkpoint_id"], "candidate_plan_id": owner.payload["plan_id"],
+            "decision_event_id": decision.id, "resolution_event_id": resolution.id, "final_plan_id": plan.payload["plan_id"]}
+
+
+def audit(project: Path, *, journey: str, owner_checkpoint: bool = False) -> dict[str, Any]:
     config = load_config(project / "zf.yaml")
     state = project / config.project.state_dir
     events = EventLog(state / "events.jsonl").read_all()
@@ -98,7 +127,9 @@ def audit(project: Path, *, journey: str) -> dict[str, Any]:
         assert confirmed.get("confirmed_by") == "web", "PRD was not confirmed through UI"
         assert confirmed.get("product_mode") == "multi_lens", "PRD did not come from the multi-role discussion"
         assert len(set(confirmed.get("signed_by", []))) >= 4, "missing discussion role signatures"
+    owner_evidence = check_owner_checkpoint(events, run_id) if owner_checkpoint else None
     return {"audit_source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "owner_checkpoint": owner_evidence,
             "workflow_run_id": run_id, "plan_id": plan_id, "plan_sha256": digest,
             "plan_artifact_ref": ref, "parent_task_id": task.id, "provider_roles_dispatched": sorted(dispatched),
             "channel_confirmation_event_id": confirmations[0].id if confirmations else None}

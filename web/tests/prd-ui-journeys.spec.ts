@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const journey = process.env.ZF_UI_JOURNEY;
+const ownerCheckpointRequired = process.env.ZF_UI_OWNER_CHECKPOINT === "true";
 const timeout = Number(process.env.ZF_UI_TIMEOUT_MS || 1_200_000);
 const turnTimeout = process.env.ZF_UI_PROVIDER === "fake" ? 45_000 : 600_000;
 const evidence = "/zf-run/evidence";
@@ -103,7 +104,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     expect(String(discussionReply.payload?.answer)).toMatch(/README|确认|缺失/);
     await capture(page, "01-kanban-discussion");
     await answerRequirementQuestions(page, discussionTurn.payload?.status === "waiting_input");
-    await send(page, "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。当前 PRD 编写和 Plan 预览阶段不要修改 zf.yaml、Git 或运行状态；这个阶段限制不禁止未来在单独 Plan 审批后采用标准受控 Git 交付流程。完成后回复 UI_PRD_WRITTEN。");
+    await send(page, "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。当前 PRD 编写和 Plan 预览阶段不要修改 zf.yaml、Git 或运行状态；" + (ownerCheckpointRequired ? "请在 PRD 登记阻塞决定 OWNER-GIT-01：未来实施是否授权标准受控 Git 提交，目前尚未批准。要求 Planner/Critic 在候选计划定稿前通过 Owner 决策检查点确认它，不能自行假定或把它移到实施后才问。现在先完整记录此未决项并写 PRD，不在当前聊天追问该项。" : "这个阶段限制不禁止未来在单独 Plan 审批后采用标准受控 Git 交付流程。") + "完成后回复 UI_PRD_WRITTEN。");
     await expect(page.locator(".agent-text-part").last()).toContainText("UI_PRD_WRITTEN", { timeout: turnTimeout });
     const prd = readFileSync("/zf-run/project/docs/prd/ui-requirement.md", "utf8");
     expect(prd).toContain("README.md");
@@ -175,8 +176,39 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   await page.getByTestId("workflow-start").click();
   const invoked = await waitEvent(request, project, "workflow.invoke.requested");
   await capture(page, "05-workflow-start-requested");
-  const approval = await waitEvent(request, project, "plan.approval.requested", timeout);
-  const planId = String(approval.payload?.plan_id || "");
+  let answeredOwner: Event | undefined;
+  let approval: Event | undefined;
+  const end = Date.now() + timeout;
+  while (!approval && Date.now() < end) {
+    const rows = await events(request, project);
+    const owner = rows.find(e => e.type === "approval.requested" && e.payload?.owner_route === "plan_synth_owner_decision");
+    if (owner && !answeredOwner) {
+      const ownerPlan = String(owner.payload?.plan_id || owner.payload?.source_event_id || "");
+      await page.goto(`/?project=${project}&page=inbox&plan=${encodeURIComponent(ownerPlan)}`);
+      const preview = page.getByRole("dialog", { name: "Plan preview" });
+      await expect(preview.getByText("候选计划待澄清，尚未通过 Critic", { exact: true })).toBeVisible();
+      const candidate = await get(request, `/api/projects/${project}/plans/${encodeURIComponent(ownerPlan)}/preview`);
+      expect(candidate.markdown).toContain("README.md");
+      expect(candidate.content_kind).not.toBe("unavailable");
+      expect(candidate.actions.approve).toBe("replan-approve");
+      // Full content describes document completeness, not Critic approval.
+      expect(rows.filter(e => e.type === "plan.approval.requested")).toHaveLength(0);
+      expect(rows.filter(e => e.type === "plan.approved")).toHaveLength(0);
+      writeFileSync(`${evidence}/owner-candidate.json`, JSON.stringify(candidate, null, 2));
+      await preview.getByRole("textbox", { name: "Owner 答复内容" }).fill("OWNER-GIT-01：当前仅 PRD 和 Plan 预览，禁止 Git 写操作和实施。本次仅授权依据此答复重新规划；未来必须先单独批准新版完整 Plan，之后才允许标准受控 Git 提交交付。不删除验收，不提前启动实施，也不要把阶段限制理解为永久禁止交付。");
+      await capture(page, "06-owner-answer-before-submit");
+      await preview.getByRole("button", { name: "提交答复并重新规划", exact: true }).click();
+      answeredOwner = owner;
+      writeFileSync(`${evidence}/owner-checkpoint.json`, JSON.stringify(owner, null, 2));
+    }
+    approval = rows.find(e => e.type === "plan.approval.requested");
+    const rejection = rows.find(e => ["workflow.invoke.rejected", "run.goal.blocked", "runtime.start.failed"].includes(e.type));
+    if (rejection) throw new Error(JSON.stringify(rejection.payload));
+    if (!approval) await page.waitForTimeout(2000);
+  }
+  expect(approval, "generated Plan approval").toBeTruthy();
+  if (ownerCheckpointRequired) expect(answeredOwner, "required real Critic Owner checkpoint").toBeTruthy();
+  const planId = String(approval!.payload?.plan_id || "");
   expect(planId).not.toBe("");
   await page.goto(`/?project=${project}&page=inbox&plan=${encodeURIComponent(planId)}`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
