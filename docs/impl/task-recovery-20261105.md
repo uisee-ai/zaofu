@@ -387,4 +387,4 @@ Dashboard HTTP200。R5继续active；本次没有新的产品done，也没有声
 
 `partial_successor_proof` 和 Candidate 的提交/树路径读取使用 `-z`，以 NUL 分隔并保留原始文件名。中文证据路径不再被 Git 的展示引号与八进制转义误判为越界；文件名中的换行、回车、引号及空格也不被拆分或 trim。该修复只改变机械路径解析，已准入失败绑定、单父续作证明、scope、冲突拒绝和独立验收不变。
 
-回归覆盖真实 Git 提交、续作工作区构造和候选补丁重放，并验证原候选引用不被提前发布。任务：[路径解析修复](../../tasks/active/2026-11-10-1054-unicode-partial-continuation.md)。
+回归覆盖真实 Git 提交、续作工作区构造和候选补丁重放，并验证原候选引用不被提前发布。任务：[路径解析修复](../../tasks/done/2026-11-10-1054-unicode-partial-continuation.md)。

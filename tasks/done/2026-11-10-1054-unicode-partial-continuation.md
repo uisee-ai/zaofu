@@ -1,6 +1,6 @@
 # 保留含中文证据路径的部分成果续作
 
-> 状态: active
+> 状态: done — `a9bd5d23 fix: preserve exact Git paths in partial task continuation`
 
 授权：用户要求持续监工、记录并修复 bug 后恢复 datal。限定修复 Git 路径输出的机械解析，不修改语义 scope 或绕过已准入失败、独立 Verify、候选 CAS。
 
@@ -22,3 +22,7 @@ Privacy R7 部分成果 `9352b324` 的98个改动实际都在授权目录内；�
 `dev-verify.py plan --base dev --tests ...` 因 `candidates.py` 大模块映射选到214个测试文件并升级全量确定性测试。依据仓库按影响闭包验证规则，本次仅改变三个路径读取点与两处Git输出保留，不改Event/Store协议；显式运行相关续作、Candidate和集成调用者测试，自动tiers保留sentinel/mock E2E，跳过无关全量及全局serial集合。不会将focused宣称full验证。
 
 实现说明：[task recovery](../../docs/impl/task-recovery-20261105.md)。
+
+## 部署核实
+
+2026-11-10 11:02 UTC 以本worktree源码启动 datal 的 control-plane-only 控制进程 PID1730272。日志确认实际模块来自本源码目录、Watcher running；原Privacy/orchestrator/Verify pane保留。未合并dev、未push。此done仅代表路径解析缺陷修复并部署；Privacy后继准入、独立Verify及产品验收仍各自执行，未代报任务成功。
