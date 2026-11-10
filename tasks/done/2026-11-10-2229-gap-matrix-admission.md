@@ -1,6 +1,6 @@
 # 增量 Plan Package 的现代矩阵闭合准入
 
-> 状态: active — 2026-11-10；监工 #205 已复现，根代理明确授权在隔离 worktree 实施，根代理独占 dev 合并。
+> 状态: done — 实现 `1ea4d5a4` `fix: validate declared matrices at package admission`；2026-11-10，根代理明确授权在隔离 worktree 实施，根代理独占 dev 合并。
 
 依据：LS-v1 `docs/records/2026-11-10-post-core-final-dependencies/gap-matrix-admission-audit.md`；dev `4c446537`。已准入 blocking package 的 readiness 声明检查通过，但原生 cross-port helper 报出 16 AC / 8 命令缺失。差量入口走公共 package 准入，未消费该 helper。
 
@@ -28,4 +28,4 @@
 
 限制：未跑全 pytest、真实 provider/host E2E；`rows/scenarios`、PAS journey/task 引用闭合和 `product_delivery` 的 task-local required 覆盖另账。本批只改善新 package 机械准入，不重验历史已准入包、不停止活跃 worker、不证明业务覆盖充分。
 
-待提交实现、填写 hash 后归档；不 merge/push/删除 worktree。
+实现已提交并完成残留检查，所有本批代码与验证记录已入实现 commit；本文件归档后冻结 worktree 交根代理合并。本代理不 merge/push/删除 worktree。
