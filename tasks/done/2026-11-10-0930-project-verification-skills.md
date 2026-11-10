@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `a44693a2 chore: add project verification skills and executable acceptance probes`
 
 # 项目验证方法与 ZaoFu 三条回归链
 
