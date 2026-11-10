@@ -1,4 +1,4 @@
-> 状态: active — `e32d78ba` 交接撤回；保留既有提交与全部验证历史
+> 状态: done — `ca63450f fix: reject copy commands in active shell substitutions`；最终影响闭包 1793 passed，sentinel 53 passed；待主监工独立复核合并。
 
 # 有限 cp 写目标与任务工作区保护
 
