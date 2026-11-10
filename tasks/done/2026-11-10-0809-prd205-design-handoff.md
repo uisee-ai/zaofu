@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现提交：`38327936 feat: improve PRD design guidance and readable handoffs`
 
 # 205-02 参考调研、设计与多 Agent 交接落地
 
@@ -17,7 +18,7 @@
 
 ## 结果
 
-实现与最终验证闭包已完成，等待本地提交后按实际 hash 归档。具体变更、测试范围和未完成部分见 `docs/impl/205-prd-methods-and-design-handoff.md`。
+实现与最终验证闭包已完成，并已本地提交。具体变更、测试范围和未完成部分见 `docs/impl/205-prd-methods-and-design-handoff.md`。
 
 方法效果、真实读者与具体产品验收未执行，不计为本任务测试通过。
 
