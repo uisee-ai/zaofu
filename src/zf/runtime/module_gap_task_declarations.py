@@ -12,6 +12,7 @@ def preserve_gap_task_declarations(item: dict[str, Any], raw: Mapping[str, Any])
     """
     for field in (
         "description", "source_excerpt", "source_ref", "owner_decision_ids",
+        "owner_instance", "preferred_impl_role",
         "lane_affinity", "skills_required", "explicit_non_goals", "exclusive_files",
     ):
         if field in raw:

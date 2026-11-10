@@ -18,3 +18,11 @@ LS-v1 FMS24 的已准入恢复报告被 `gap_plan_amend_baseline` 拒绝：FMS24
 被替代任务没有同名分区时，沿固定 Task Map 的单前驱替代链找到原始输入任务。`task_scoped_plan_inputs` 的 worker 读取及候选预检共同检查沿途每个不可变端口中的原始分区；允许无关分区更新和位置变化，禁止中间目标输入变化后再还原。当前 source ref/digest 和当前 JSON 位置仍对应实际读到的当前端口，历史前驱标签与完整 shared 必读保持。不能只比较最终两份包，也不按文本相似度猜测输入等价。
 
 实际调用验证包括 gap bridge、`validate_dispatch_input_partitions`、`current_plan_port_sources`，以及包摘要/跨Run/替代链拒绝回归。LS-v1 真实只读预检保留56项任务，53项完成记录不变，仅FMS25的下游依赖改指FMS24续接任务；Owner决定和完整AC/Goal保持。任务：[分区连续性修复](../../tasks/2026-11-09-0030-gap-scoped-continuity.md)。
+
+## 增量任务的 owner 实例声明
+
+Gap 序列化通过 `preserve_gap_task_declarations` 保留显式 `owner_instance` 和 `preferred_impl_role`，交由原有 Task Map 规范化及合同校验消费。此前这两项在完整 map 中合法，但经过增量任务转换后丢失，导致 PRD 后继任务的注册实例绑定消失。
+
+`owner_role: dev` 配合注册实例沿用既有语义：materialization 将实例放入 canonical `owner_instance`，清空通用 `owner_role`；同时声明两字段时，显式 `owner_instance` 仍优先于 `preferred_impl_role`。未声明时不补值，未注册实例仍拒绝；有效实例也不使任意未注册逻辑 owner 合法。此次只保留作者原声明，不更改 assembly/bundle 同 owner 自锁 gate、lane 分配或全局配置。
+
+`tests/test_module_gap_task_declarations.py` 覆盖真实 gap artifact writer → PRD `ingest_task_map_to_kanban` → `TaskStore` → `validate_task_contract`，校验实例、依赖、AC 和命令保留；`tests/test_task_map.py` 中既有 AVBS 自锁回归继续适用。此处验证的是机械准入与合同生成，实际计划仍须走原受控审批与派发。
