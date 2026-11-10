@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 紧凑规格与任务定位
 
@@ -17,3 +17,5 @@
 验证闭包：`dev-verify.py plan/run --base dev`，显式补充 test_spec_handoff_eval、test_spec_handoff_verification、test_eval_provider_container、test_plan_execution_eval；101 passed、2 skipped，Web typecheck/unit 通过；生产 build 通过；Docker 浏览器原有 19 项及新增证据比较 1 项通过；manual-docs check、diff check、三份 Skill 字节及 36 份 R4/R5 轨迹摘要核对通过。未执行全量 pytest/真实 v5 E2E。
 
 日志：`reports/spec206-next/`（忽略）；未 merge/push。
+
+实现提交：`86a65e85 feat: improve spec reading and validate bounded handoffs`。本项按上述本次批准范围完成；扩大效果资格的未测项保留在 206，不冒充已通过。
