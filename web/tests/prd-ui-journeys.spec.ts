@@ -1,0 +1,206 @@
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+
+const journey = process.env.ZF_UI_JOURNEY;
+const timeout = Number(process.env.ZF_UI_TIMEOUT_MS || 1_200_000);
+const turnTimeout = process.env.ZF_UI_PROVIDER === "fake" ? 45_000 : 600_000;
+const evidence = "/zf-run/evidence";
+// The caller's budget covers all discussion phases and Playwright teardown.
+test.describe.configure({ timeout });
+type Event = { id: string; seq: number; type: string; task_id?: string; correlation_id?: string; payload?: Record<string, any> };
+
+async function get(request: APIRequestContext, path: string) {
+  const response = await request.get(path);
+  expect(response.ok(), `${path}: ${await response.text()}`).toBeTruthy();
+  return response.json();
+}
+async function events(request: APIRequestContext, project: string): Promise<Event[]> {
+  const all: Event[] = [];
+  let cursor = 0;
+  for (;;) {
+    const body = await get(request, `/api/projects/${project}/events?cursor=${cursor}&limit=500`);
+    const rows: Event[] = body.items || [];
+    const next = Math.max(cursor, ...rows.map(row => row.seq));
+    all.push(...rows.filter(row => row.seq > cursor));
+    if (!rows.length || next === cursor || rows.length < 500) return all;
+    cursor = next;
+  }
+}
+async function waitEvent(request: APIRequestContext, project: string, type: string, duration = turnTimeout) {
+  let found: Event | undefined;
+  await expect.poll(async () => {
+    const rows = await events(request, project);
+    if (type === "plan.approval.requested") {
+      const rejected = rows.find(row => ["workflow.invoke.rejected", "run.goal.blocked"].includes(row.type));
+      if (rejected) throw new Error(`Workflow admission rejected: ${JSON.stringify(rejected.payload)}`);
+    }
+    found = rows.find(row => row.type === type);
+    return Boolean(found);
+  }, { timeout: duration, intervals: [300, 1000, 2000] }).toBeTruthy();
+  return found!;
+}
+async function capture(page: Page, name: string) {
+  await page.screenshot({ path: `${evidence}/${name}.png`, fullPage: true });
+  writeFileSync(`${evidence}/checkpoint.json`, JSON.stringify({ journey, stage: name, url: page.url() }, null, 2));
+}
+async function send(page: Page, text: string) {
+  const dialog = page.getByRole("dialog", { name: "Kanban Agent", exact: true });
+  await expect(dialog.or(page.getByRole("button", { name: "Open Kanban Agent" })).first()).toBeVisible();
+  if (!await dialog.isVisible()) await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  const input = dialog.locator("textarea.headless-input");
+  await expect(input).toBeEnabled({ timeout: turnTimeout });
+  await input.fill(text);
+  const submit = dialog.getByRole("button", { name: "Send message", exact: true });
+  await expect(submit).toBeEnabled({ timeout: turnTimeout });
+  await submit.click();
+}
+async function answerRequirementQuestions(page: Page, waitingForInput: boolean) {
+  const card = page.getByTestId("agent-card-plan").last();
+  const question = card.getByTestId("ask-user-question");
+  if (!waitingForInput) return;
+  // The completion event can arrive before React renders the question card.
+  await expect(question).toBeVisible({ timeout: turnTimeout });
+  for (let index = 0; index < 3; index++) {
+    const submit = question.getByTestId("ask-user-submit");
+    const next = (await submit.innerText()).includes("Next question");
+    const other = question.getByTestId("ask-user-option-other");
+    if (await other.isVisible()) await other.check();
+    await question.locator("textarea").fill("UI_PRD_CONFIRMED：README.md 缺失时报告路径并明确报错、非零退出、停止本次读取；存在时必须可读。使用系统现有 cat README.md 检查，不新增读取程序。当前 Kanban 讨论终点仅为 PRD，完整 Plan 留给后续 UI 启动的 PRD v5 Workflow；不要在聊天内生成 Plan。仅当前临时项目。");
+    await submit.click();
+    if (!next) return;
+  }
+  throw new Error("Unexpected extra requirement questions");
+}
+
+async function approveTask(page: Page) {
+  const card = page.locator('[data-testid="agent-card-approve"][data-proposal-action="create-task"]').last();
+  await expect(card).toBeVisible({ timeout: turnTimeout });
+  await capture(page, "03-task-proposal");
+  await card.getByTestId("agent-proposal-approve").click();
+}
+
+test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan preview`, async ({ page, request }) => {
+  page.setDefaultTimeout(20_000);
+  expect(["kanban", "channel"]).toContain(journey);
+  const snapshot = await get(request, "/api/snapshot");
+  const project = snapshot.project.project_id;
+  await page.addInitScript(token => {
+    localStorage.setItem("zf.webActionToken", token);
+    localStorage.setItem("zf.operatorBackend", "codex-headless");
+  }, process.env.ZF_WEB_ACTION_TOKEN_FOR_TEST || "");
+  await page.goto(`/?project=${project}`);
+  await expect(page.getByRole("dialog", { name: "Kanban Agent", exact: true }).or(page.getByRole("button", { name: "Open Kanban Agent" })).first()).toBeVisible();
+  if (!await page.getByRole("dialog", { name: "Kanban Agent", exact: true }).isVisible())
+    await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  if (journey === "kanban") {
+    await send(page, "UI_PRD_DISCUSS：请在当前 Kanban 会话讨论需求，不创建 Channel。需求：保持 README.md 可读，缺失文件时明确报告错误。验证入口固定为系统已有 cat README.md，不新增读取程序。先问我确认失败行为和本轮终点，暂不创建 Task。仅操作当前临时项目。");
+    const discussionTurn = await waitEvent(request, project, "kanban.agent.turn.completed");
+    const discussionReply = await waitEvent(request, project, "kanban.agent.reply");
+    expect(String(discussionReply.payload?.answer)).toMatch(/README|确认|缺失/);
+    await capture(page, "01-kanban-discussion");
+    await answerRequirementQuestions(page, discussionTurn.payload?.status === "waiting_input");
+    await send(page, "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。不要修改 zf.yaml、Git 或运行状态。完成后回复 UI_PRD_WRITTEN。");
+    await expect(page.locator(".agent-text-part").last()).toContainText("UI_PRD_WRITTEN", { timeout: turnTimeout });
+    const prd = readFileSync("/zf-run/project/docs/prd/ui-requirement.md", "utf8");
+    expect(prd).toContain("README.md");
+    expect(prd.length).toBeGreaterThan(500);
+    writeFileSync(`${evidence}/source-prd.md`, prd);
+    writeFileSync(`${evidence}/source-prd.sha256`, createHash("sha256").update(prd).digest("hex"));
+    await page.reload();
+    await capture(page, "02-kanban-prd-generated");
+    expect((await events(request, project)).filter(row => row.type === "channel.created")).toHaveLength(0);
+    await send(page, "UI_PRD_CREATE：确认 docs/prd/ui-requirement.md。请创建一个 Task 并 prepare_workflow，采用当前 PRD v5 配置生成 Workflow YAML Preview。只准备提案，不启动实施；保留 source_ref、验收和 target_root 当前项目。");
+    await approveTask(page);
+  } else {
+    await send(page, "UI_CHANNEL_SETUP：请创建 PRD Group，产品、架构、critic、synthesizer 参与，ID ui-prd-group，名称 UI PRD Group。真实运行使用已登录的 Codex 后端，禁止 fake/mock。先用 conversation 模式讨论 README.md 保持可读与缺失报错，不自动创建 Task。");
+    const setup = page.getByTestId("agent-card-plan").last();
+    await expect(setup).toBeVisible({ timeout: turnTimeout });
+    await setup.locator('input[data-recommended="true"]').check();
+    await setup.getByTestId("ask-user-submit").click();
+    const created = await waitEvent(request, project, "channel.created");
+    const channelId = String(created.payload?.channel_id);
+    await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
+    await page.goto(`/?project=${project}&page=channels&channel=${encodeURIComponent(channelId)}`);
+    const input = page.getByRole("textbox", { name: "Message UI PRD Group" });
+    await input.fill("请讨论：使用项目根目录的系统 cat README.md 验证，保持文件可读；文件缺失时以原生 stderr 和非零退出明确失败，不新增读取程序。当前只形成完整 PRD，后续由 UI 启动 PRD v5 Workflow 生成完整 Plan，实施等待审批。");
+    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    await expect(input).toBeEmpty();
+    await capture(page, "01-channel-discussion");
+    await page.getByTitle("More", { exact: true }).click();
+    await page.getByRole("combobox", { name: "Discussion mode" }).selectOption("multi_lens");
+    const start = page.getByRole("button", { name: "Start discussion", exact: true });
+    await expect(start).toBeEnabled({ timeout: turnTimeout });
+    await start.click();
+    await capture(page, "02-channel-multi-lens-started");
+    await waitEvent(request, project, "channel.synthesis.proposed", timeout);
+    await page.getByTitle("Close drawer", { exact: true }).click();
+    await page.getByTestId("channel-prd-handoff").getByRole("button", { name: "Preview", exact: true }).click();
+    const confirm = page.locator(".channel-consensus-control").getByRole("button", { name: "Confirm", exact: true });
+    await expect(confirm).toBeEnabled({ timeout: turnTimeout });
+    await confirm.click();
+    const confirmed = await waitEvent(request, project, "channel.consensus.reached");
+    writeFileSync(`${evidence}/channel-confirmation.json`, JSON.stringify(confirmed, null, 2));
+    await capture(page, "02-channel-prd-confirmed");
+    await page.getByText("Planning options", { exact: true }).click();
+    await page.getByTestId("channel-workflow-objective").fill("UI_CHANNEL_CREATE create a Task from this confirmed PRD. Prepare PRD v5 Workflow YAML, then wait for full Plan approval.");
+    await page.getByTestId("channel-create-task-from-prd").click();
+    const plan = page.getByTestId("agent-card-plan").last();
+    await expect(plan).toBeVisible({ timeout: turnTimeout });
+    const create = plan.locator('input[data-submit-action="create-task"][data-recommended="true"]');
+    await expect(create).toBeVisible({ timeout: turnTimeout });
+    await create.check();
+    await plan.getByTestId("ask-user-submit").click();
+    await approveTask(page);
+  }
+  const task = await waitEvent(request, project, "task.created");
+  await capture(page, "04-task-created");
+  // Open the prepared request from the actual Workflow navigation.
+  const minimize = page.getByRole("button", { name: "Minimize Kanban Agent" });
+  if (await minimize.isVisible()) await minimize.click();
+  await page.getByRole("button", { name: "Workflows", exact: true }).click();
+  await expect(page.getByTestId("workflow-proposal-page")).toBeVisible({ timeout: turnTimeout });
+  await page.getByRole("button", { name: "Raw", exact: true }).click();
+  const raw = page.getByRole("complementary", { name: "Raw YAML", exact: true });
+  await expect(raw).toContainText("5.0.1", { timeout: turnTimeout });
+  await expect(raw).toContainText("plan_approval: true");
+  await capture(page, "05-v5-yaml-preview");
+  await page.getByTestId("workflow-start").click();
+  const invoked = await waitEvent(request, project, "workflow.invoke.requested");
+  await capture(page, "05-workflow-start-requested");
+  const approval = await waitEvent(request, project, "plan.approval.requested", timeout);
+  const planId = String(approval.payload?.plan_id || "");
+  expect(planId).not.toBe("");
+  await page.goto(`/?project=${project}&page=inbox&plan=${encodeURIComponent(planId)}`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await expect(dialog).toBeVisible();
+  const planBody = await get(request, `/api/projects/${project}/plans/${encodeURIComponent(planId)}/preview`);
+  expect(planBody.content_profile).toBe("derived_plan_full");
+  expect(planBody.markdown).toContain("README.md");
+  for (const heading of ["PRD", "SDD", "TDD"]) expect(planBody.markdown).toContain(heading);
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
+  await dialog.getByRole("button", { name: "查看源码", exact: true }).click();
+  await expect(dialog.locator(".plan-document-source")).toHaveText(planBody.markdown);
+  const downloadReady = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "下载 Markdown", exact: true }).click();
+  const download = await downloadReady;
+  const downloaded = `${evidence}/generated-plan.md`;
+  await download.saveAs(downloaded);
+  expect(readFileSync(downloaded, "utf8")).toBe(planBody.markdown);
+  await dialog.getByRole("button", { name: "全文连续阅读", exact: true }).click();
+  const chapters = dialog.getByRole("combobox", { name: "计划章节", exact: true });
+  if (await chapters.isVisible()) {
+    const count = await chapters.locator("option").count();
+    await chapters.selectOption(String(count - 1));
+    await expect(dialog.getByRole("button", { name: "下一页", exact: true })).toBeDisabled();
+    await expect(dialog.locator(".plan-document-source")).not.toBeEmpty();
+  }
+  await capture(page, "06-generated-plan-preview");
+  await page.reload();
+  await expect(dialog).toBeVisible();
+  const finalEvents = await events(request, project);
+  expect(finalEvents.filter(row => row.type === "workflow.invoke.requested")).toHaveLength(1);
+  expect(finalEvents.filter(row => row.type === "plan.approved")).toHaveLength(0);
+  writeFileSync(`${evidence}/lineage.json`, JSON.stringify({ task, invoked, approval, planBody }, null, 2));
+  writeFileSync(`${evidence}/events.json`, JSON.stringify(finalEvents, null, 2));
+});

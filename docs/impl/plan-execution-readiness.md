@@ -175,3 +175,22 @@ ls 的已知语义错配及后续受控纠偏见[审阅记录](../records/2026-1
 `plan-agent-fixture-token`；只在该隔离测试服务使用。Docker 将源码与 node_modules
 只读挂载，测试输出设为容器内 `/tmp/zf-prd-review-results`，避免 UID 差异导致写入失败。
 本批验证范围与已复现的基线失败见[验证记录](../records/2026-10-31-prd-reader-validation.md)。
+
+### 从讨论到真实 Plan 的 UI 验证
+
+[PRD UI 验证方法](../../skills/zf-verify-zaofu/references/prd-ui-journeys.md) 分别从
+Kanban 独立讨论和 Channel Group 进入。测试使用预先启用 `plan_approval` 的 PRD v5，
+经 UI 确认 PRD、创建 Task、审阅 YAML 并启动，然后预览、刷新和下载本 Run 生成的 Plan。
+fake 只替换模型输出，准入、身份和审批保持真实；真实 Provider 使用新的隔离项目执行。
+
+Channel 从已结束回复的 conversation 切到 multi_lens 时，UI 发起既有受控 restart；
+在途/排队回复仍阻止切换。新 Task 提示使用 `prepare_workflow=true`，项目目标目录在
+提案编译时从可信上下文绑定，Owner 显式选择的目标保留。Task 与 Workflow 启动分别确认。
+
+Plan 综合准入通过候选摘要核验后，`admit_synthesized_plan_package` 将结果显式声明的
+`plan_content_profile` 传给聚合产物及 `task_map.ready`。缺失声明不推断完整性，摘要
+不升级为完整 Plan。回归覆盖 `tests/test_plan_content_profile.py` 的实际聚合调用方，
+浏览器测试继续核对同版产物、全文下载及审批前无实施派发。
+
+在线 Apply 改变执行配置后，已启动 consumer 仍可能持有旧配置而拒绝新 Run；本验证
+不绕过 `consumer_config_stale`，也不把启动前配置的成功结果当作热重载验证。

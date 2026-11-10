@@ -127,6 +127,10 @@ def admit_synthesized_plan_package(
             "reviewed_plan_candidate_digest": reviewed_digest,
         })
         return "failed", "reject", failure
+    # Keep the reviewed producer's explicit completeness claim across aggregation.
+    # Missing claims remain missing; neither Markdown nor an older input promotes them.
+    if "plan_content_profile" in event_payload:
+        artifact_payload = {**artifact_payload, "plan_content_profile": event_payload["plan_content_profile"]}
     trigger_payload = (
         manifest.get("trigger_payload")
         if isinstance(manifest.get("trigger_payload"), dict)

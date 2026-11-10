@@ -40,6 +40,12 @@ dependencies: [zf-harness-verification-checklist]
 测试内的 scripted worker 是明确的 mock 边界；真实 Git、Store、事件和准入并不
 把模型能力也变为已验证。三个场景的现有深度和缺口均列在场景表。
 
+## PRD 到 Plan 的用户路径
+
+模拟 Kanban Agent 或 Channel Group 讨论需求、生成 PRD、启动 PRD v5 Workflow 并
+预览完整 Plan 时，读 [两条 UI 旅程](references/prd-ui-journeys.md)。先 fake provider，
+再在已授权范围内运行真实 provider；每条路径保持独立来源与证据。
+
 ## Dashboard 与真实执行
 
 UI-only 改动遵守仓库的前端验证层级。浏览器用 Docker `mcp/playwright:latest`，

@@ -39,3 +39,11 @@ required reads 和结果 profile。测试中使用的内部 fixture 不是 worke
 参考方法来自 [e2e 项目验证 Skill](https://github.com/tester-army/e2e/tree/14dc946c40091496531451cf40e81eb407fe640e/skills/create-verification-skill)、
 [Midscene Playwright 接入](https://midscenejs.com/zh/integrate-with-playwright) 和
 [生命周期与并发](https://midscenejs.com/zh/midscene-test/execution)。
+
+ZaoFu 的 PRD 规划 UI 闭环见 [两条 UI 旅程](../../skills/zf-verify-zaofu/references/prd-ui-journeys.md)：
+Kanban 和 Channel 各自生成 PRD，再经 PRD v5 Workflow 生成完整 Plan；先 fake 后真实 Provider。
+本轮实测结果、修复及真实层阻塞见 [验证记录](../records/2026-11-10-prd-ui-validation.md)。
+
+完整 Plan 的 `plan_content_profile` 必须由已准入的综合审查结果显式声明并传到
+`task_map.ready`、待审批预览。不得根据 Markdown 标题猜测完整性；缺失声明保持普通
+Plan，`summary_only` 保持摘要。UI PRD 验证同时检查该交接、正文和下载一致性。

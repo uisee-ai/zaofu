@@ -10,9 +10,13 @@ def bind_nested_workflow_target(payload: dict[str, Any], context: dict[str, Any]
     """Carry the trusted project target into the proposal before approval."""
     plan = payload.get("workflow_plan")
     target = str(context.get("target_root") or "").strip()
-    if not target or not isinstance(plan, dict):
+    if not target:
         return payload
     copied = deepcopy(payload)
+    if copied.get("prepare_workflow") is True and "target_root" not in copied:
+        copied["target_root"] = target
+    if not isinstance(plan, dict):
+        return copied
     for option in copied["workflow_plan"].get("options") or []:
         if not isinstance(option, dict) or not option.get("route_id"):
             continue
@@ -129,6 +133,7 @@ def normalize_channel_task_submit_payload(
         "title",
         "workflow_plan",
         "prepare_workflow",
+        "target_root",
         "channel_prd_scope",
         "verification",
         "verification_tiers",
@@ -266,6 +271,11 @@ def normalize_channel_task_submit_payload(
         if not isinstance(raw_payload["prepare_workflow"], bool):
             return {}, {}, "prepare_workflow must be a boolean"
         payload["prepare_workflow"] = raw_payload["prepare_workflow"]
+    if "target_root" in raw_payload:
+        target = raw_payload["target_root"]
+        if not isinstance(target, str) or not target.strip():
+            return {}, {}, "target_root must be a non-empty string"
+        payload["target_root"] = target.strip()
     workflow_plan = raw_payload.get("workflow_plan")
     if workflow_plan is not None:
         if not isinstance(workflow_plan, dict):
