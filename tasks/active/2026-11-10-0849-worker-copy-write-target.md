@@ -1,4 +1,4 @@
-> 状态: done — `5dfb5c02 fix: validate literal copy destinations across worker guards`
+> 状态: active — 独立审查退回；保留初轮实现 `5dfb5c02` 与归档 `04f5abed`
 
 # 有限 cp 写目标与任务工作区保护
 
@@ -22,3 +22,17 @@
 - 首轮 99 项中 1 个新测试用了错误终态事件名，已修正为正式 settled 合同；最终第三批已包含并通过。
 - 完整原 plan、每批命令/结果、142 项并集无遗漏及测试源码 SHA 见 `docs/records/2026-11-10-worker-copy-guard-verification.json`。
 - 未运行真实 provider/host，未修 Docker :ro 子问题；仅有限 ASCII 字面文件复制，不承诺通用 shell 或 TOCTOU 沙箱。
+
+## 独立审查返工
+
+主监工撤销 `04f5abed` merge-ready：普通命令参数中的 cp 文本被误判，copy 的 scope frame 沿用最后 `/project/` 截断导致嵌套路径漏检。原批准范围内继续修复，不扩大 shell 授权或权限语义。补两 provider 非 cp 数据回归、真实授权根相对范围正反例，先红后绿并重跑完整影响闭包。
+
+09:20 主监工追加实证范围：native Write/Edit 两 provider 也存在嵌套 project scope 基线漏洞（独立12断言8pass/4fail）。本轮共享 frame 规范化覆盖所有已解析写目标，继续复用 Kernel workdir，不用任意 cwd 授权；先红后绿并保持 legacy/scratch 兼容。
+
+## 返工实现与新验证
+
+- cp 信号改为保留引用的命令位置扫描，普通 rg/printf/python/cat 数据不触发，已识别 wrapper/后续真正 cp 仍拒绝；literal 授权文法不扩展。
+- 删除最后 `/project/` 猜根，所有已解析写目标共享当前 Kernel 工作区的规范相对 frame，一次 hook 内只解析一次绑定。覆盖 cp、Write/Edit、patch/heredoc，保持 legacy 相对路径与精确 scratch 例外。
+- 先红后绿：初版新增21反例全部失败；native 扩围前20断言10失败/10通过；修后直接caller聚焦193通过。所有 hook 反例只判定 exit/events，不执行目标工具或越界写入。
+- 新 `dev-verify.py plan --base dev` 选择143文件；保留原清单四批 run：341 + 511 + 548 + 333 = **1733 passed**，无遗漏；未跑整库/host/真实provider。新 sentinel **53 passed**，manual docs currentness ok。
+- 新收据 `docs/records/2026-11-10-worker-copy-guard-rework-verification.json` 保留原plan、每批完整命令/结果、红例节点与新源码SHA。旧1680收据不变，不能当本次新diff的验证。

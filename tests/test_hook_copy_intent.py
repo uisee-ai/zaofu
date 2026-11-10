@@ -141,3 +141,57 @@ def test_copy_to_settled_workspace_does_not_reuse_old_assignment(assignment, mon
         "operation_id": prepared.operation_id, "workflow_run_id": "run-1",
     }))
     assert check(assignment, monkeypatch, f"cp {shlex.quote(str(source))} src/out.txt") == 2
+
+
+@pytest.mark.parametrize("backend", ["codex", "claude-code"])
+@pytest.mark.parametrize("command", [
+    "rg -n cp app", "printf '%s\\n' cp", "python -c 'print(\"cp\")'", "cat /bin/cp",
+    "printf ';' cp", "printf 'cp /outside/source /outside/target'",
+    "bash -c 'printf cp'", "env printf cp", "command -- printf cp",
+])
+def test_copy_word_in_non_command_data_keeps_existing_read_behavior(assignment, monkeypatch, backend, command):
+    assert check(assignment, monkeypatch, command, backend) == 0
+
+
+@pytest.mark.parametrize("backend", ["codex", "claude-code"])
+@pytest.mark.parametrize("target", ["other/project/src/out.txt", "other/project/project/src/out.txt"])
+def test_copy_scope_uses_authorized_root_not_last_project_segment(assignment, monkeypatch, backend, target):
+    source = source_file(assignment)
+    _, _, workspace, *_ = assignment
+    assert check(assignment, monkeypatch, f"cp {shlex.quote(str(source))} {workspace / target}", backend) == 2
+
+
+@pytest.mark.parametrize("target", ["src/project/out.txt", "project/src/out.txt"])
+def test_copy_legitimate_nested_project_directory_has_actual_relative_scope(assignment, monkeypatch, target):
+    from zf.core.task.store import TaskStore
+
+    source = source_file(assignment)
+    state, _, workspace, *_ = assignment
+    store = TaskStore(state / "kanban.json")
+    task = store.get("T-NEW")
+    task.contract.scope = [target.rsplit("/", 1)[0] + "/**"]
+    store.update(task.id, contract=task.contract)
+    assert check(assignment, monkeypatch, f"cp {shlex.quote(str(source))} {workspace / target}") == 0
+
+
+def test_copy_cwd_cannot_rebase_authorized_scope(assignment, monkeypatch):
+    source = source_file(assignment)
+    _, _, workspace, *_ = assignment
+    cwd = workspace / "other/project"
+    cwd.mkdir(parents=True)
+    assert check(assignment, monkeypatch, f"cp {shlex.quote(str(source))} src/out.txt", cwd=cwd) == 2
+
+
+@pytest.mark.parametrize("template", [
+    "printf ready; cp {source} {target}", "rg pattern app && cp {source} {target}",
+    "bash -c 'printf ready; cp {source} {target}'", "echo $(cp {source} {target})",
+    "sudo -u worker cp {source} {target}", "timeout 5 cp {source} {target}",
+    "env -u NAME cp {source} {target}", "if true; then cp {source} {target}; fi",
+])
+def test_copy_in_wrapper_or_later_command_is_still_unproven(assignment, monkeypatch, template):
+    source_file(assignment)
+    _, _, workspace, *_ = assignment
+    source = workspace / "src/source.txt"
+    source.write_text("source")
+    command = template.format(source=source, target=workspace / "src/out.txt")
+    assert check(assignment, monkeypatch, command) == 2

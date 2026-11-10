@@ -359,6 +359,55 @@ def is_authorized_result_scratch_target(
     )
 
 
+def _writer_workdir_binding(
+    state_dir: Path, events: list[ZfEvent], actor: str,
+) -> tuple[Path, bool, bool]:
+    """Share the existing kernel assignment rules with contract scope framing."""
+    from zf.cli.hook_dispatch_context import active_task_pipeline_dispatch
+
+    pipeline = active_task_pipeline_dispatch(events, actor)
+    has_pipeline = any(
+        event.type == "task.pipeline.stage.dispatched"
+        and event.payload.get("role_instance") == actor for event in events
+    )
+    root = state_dir / "workdirs" / actor / "project"
+    if pipeline is not None:
+        workdir = str(pipeline.payload.get("workdir") or "")
+        if workdir and Path(workdir).is_absolute():
+            root = Path(workdir)
+    unresolved = False
+    if pipeline is None and has_pipeline:
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
+        unresolved = any(
+            row.get("status") == "running"
+            and row.get("role_instance") == actor
+            and row.get("task_pipeline_stage")
+            for row in reduce_workflow_operations(events).values()
+        )
+    return root, has_pipeline, unresolved
+
+
+def workdir_scope_frames(
+    state_dir: Path, event_log: EventLog, actor: str, targets: list[str], cwd: str,
+) -> dict[str, str | None]:
+    """Resolve one binding for every target; cwd cannot grant another root."""
+    from zf.cli.hook_context_events import hook_context_events
+
+    root, _, unresolved = _writer_workdir_binding(
+        state_dir, hook_context_events(event_log), actor,
+    )
+    frames: dict[str, str | None] = dict.fromkeys(targets)
+    if not unresolved:
+        for target in frames:
+            path = Path(cwd or root) / target
+            try:
+                frames[target] = path.resolve(strict=False).relative_to(root.resolve(strict=False)).as_posix()
+            except (OSError, RuntimeError, ValueError):
+                pass
+    return frames
+
+
 def evaluate_workdir_write_guard(
     *,
     state_dir: Path,
@@ -386,36 +435,16 @@ def evaluate_workdir_write_guard(
     mutating_shell = bool(command and bash_command_looks_mutating(command))
     if not targets and not mutating_shell:
         return 0
-    from zf.cli.hook_dispatch_context import active_task_pipeline_dispatch
-
     from zf.cli.hook_context_events import hook_context_events
 
     events = hook_context_events(event_log)
-    pipeline = active_task_pipeline_dispatch(events, actor)
-    has_pipeline_assignment = any(
-        event.type == "task.pipeline.stage.dispatched"
-        and event.payload.get("role_instance") == actor for event in events
+    assigned_root, has_pipeline_assignment, unresolved_pipeline = _writer_workdir_binding(
+        state_dir, events, actor,
     )
-    assigned_root = state_dir / "workdirs" / actor / "project"
-    if pipeline is not None:
-        workdir = str(pipeline.payload.get("workdir") or "")
-        if workdir and Path(workdir).is_absolute():
-            assigned_root = Path(workdir)
     if not has_pipeline_assignment and not assigned_root.is_dir():
         return 0
     cwd = Path(str(event_payload.get("cwd") or assigned_root))
     task_id = active_task_id_for_actor(event_log, actor)
-    if pipeline is None and has_pipeline_assignment:
-        from zf.runtime.workflow_operation import reduce_workflow_operations
-
-        unresolved_pipeline = any(
-            row.get("status") == "running"
-            and row.get("role_instance") == actor
-            and row.get("task_pipeline_stage")
-            for row in reduce_workflow_operations(events).values()
-        )
-    else:
-        unresolved_pipeline = False
     allowed_workdirs = set() if unresolved_pipeline else {assigned_root}
     project_roots = {Path(project_root), state_dir.parent}
     offending: list[str] = []

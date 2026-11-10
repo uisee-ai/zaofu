@@ -13,7 +13,72 @@ _LITERAL_COPY = re.compile(
     rf"[ \t]*cp[ \t]+(?P<end>--[ \t]+)?(?P<source>{_PATH})"
     rf"[ \t]+(?P<target>{_PATH})[ \t]*"
 )
-_COPY_WORD = re.compile(r'''(?:^|[\s;'"|&()])(?:/[A-Za-z0-9_./-]+/)?cp(?=$|[\s;'"|&()])''')
+_WRAPPERS = {"env", "command", "exec", "sudo", "nohup", "timeout", "time", "busybox", "xargs"}
+_SHELLS = {"sh", "bash", "dash", "zsh", "ksh"}
+
+
+def _has_copy_command(command: str, depth: int = 0) -> bool:
+    """Recognize command positions without treating quoted arguments as code.
+
+    This only selects conservative rejection, never authorizes execution.
+    Known wrappers remain unproven; ordinary command arguments stay data.
+    """
+    if depth >= 4:
+        return bool(re.search(r"\bcp\b", command))
+    lexer = shlex.shlex(command, posix=False, punctuation_chars=";&|(){}<>\n")
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    tokens: list[str] = []
+    try:
+        tokens.extend(lexer)
+    except ValueError:
+        pass  # A partial leading cp still needs conservative rejection.
+    head, wrapper, shell, shell_body = True, False, False, False
+    uncertain_wrapper = False
+    previous = ""
+    for raw in tokens:
+        if raw and set(raw) <= set(";&|\n"):
+            head, wrapper, shell, shell_body = True, False, False, False
+            uncertain_wrapper = False
+            previous = raw
+            continue
+        if raw == "(" and (head or previous.endswith("$") or previous in {"<", ">"}):
+            head, wrapper, shell, shell_body = True, False, False, False
+            uncertain_wrapper = False
+            previous = raw
+            continue
+        if head and raw in {"(", ")", "{", "}", "!", "if", "then", "else", "do", "while", "until"}:
+            continue
+        try:
+            decoded = shlex.split(raw)
+        except ValueError:
+            decoded = []
+        word = decoded[0] if len(decoded) == 1 else raw
+        name = word.rsplit("/", 1)[-1]
+        if shell_body:
+            if _has_copy_command(word, depth + 1):
+                return True
+            shell_body = False
+        elif shell:
+            shell_body = word.startswith("-") and "c" in word[1:]
+        elif head or wrapper:
+            if name == "cp":
+                return True
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word):
+                continue
+            if name in _WRAPPERS:
+                wrapper = True
+                uncertain_wrapper = uncertain_wrapper or name == "timeout"
+            elif name in _SHELLS:
+                shell, wrapper = True, False
+            elif wrapper and word.startswith("-"):
+                uncertain_wrapper = uncertain_wrapper or word != "--"
+            elif not uncertain_wrapper:
+                wrapper = False
+            head = False
+        previous = raw
+    return False
 
 
 @dataclass(frozen=True)
@@ -29,17 +94,9 @@ def copy_intent(command: str) -> CopyIntent | None:
     not acquire a write exemption. Token inspection only detects cp; the full
     literal grammar alone can establish its operands.
     """
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        tokens = []
-    if not _COPY_WORD.search(command) and not any(
-        token.rsplit("/", 1)[-1] == "cp" for token in tokens
-    ):
-        return None
     match = _LITERAL_COPY.fullmatch(command)
     if match is None:
-        return CopyIntent()
+        return CopyIntent() if _has_copy_command(command) else None
     source = shlex.split(match["source"])[0]
     target = shlex.split(match["target"])[0]
     if not match["end"] and (source.startswith("-") or target.startswith("-")):

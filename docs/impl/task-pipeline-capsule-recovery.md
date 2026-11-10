@@ -75,6 +75,8 @@ Task Pipeline writer 的 hook 从当前 running operation 与精确匹配的 ker
 
 首轮只支持两个普通文件操作数及正确引用的字面路径，不支持目录/多源、其它选项、变量/通配符/替换、复合 shell 或 wrapper；识别到 cp 但不能证明写目标时以 `unproven_copy_write_target` 拒绝，可改为先读取来源再在任务域内 patch。目录目的地、目标或父目录的符号链接、已有多硬链接目标均拒绝，避免复制的实际文件落到另一范围。这里是保守 PreToolUse 检查，不是完整 shell 解释器或并发路径替换的 OS 沙箱。Docker `:ro` 命令仍沿用原策略，不因本修复获豁免。`tests/test_hook_copy_intent.py` 通过 Codex/Claude 的实际 hook 入口覆盖源读取、scope/runtime 边界、目录/链接和未知语法；任务记录见 `tasks/done/2026-11-10-0849-worker-copy-write-target.md`。
 
+独立审查补充：识别复制命令须保留词法引用与命令位置，`rg -n cp app`、`printf` 参数、`python -c` 的字符串以及 `cat /bin/cp` 不作为 cp 写意图；已识别 wrapper、后续 shell 命令中的 cp 仍不可由 literal 复制规则授权。Copy、原生 Write/Edit、patch/heredoc 的共享合同范围均按当前 Kernel 派发绑定的工作目录计算真实相对路径，不按最后一段 `/project/` 截断，也不允许 cwd 重设授权根。Legacy 相对路径沿用角色工作目录，结果 scratch 仍仅按既有精确能力授权。`tests/test_hook_scope_frame.py` 覆盖两 provider 原生工具的嵌套目录负例与合法 project 命名目录正例。初轮 `04f5abed` 交接因上述反例撤回，返工验证单独保留，不用原测试通过记录覆盖审查失败。
+
 复用 Task-stage 会话时，CompositeTransport 必须转发底层生命周期快照，供重绑定入口核对实际进程 cwd。同一 binding 的旧角色目录不能因为路由层丢失快照而被继续复用；确认无活跃 attempt/operation 后，原重绑定流程终止闲置槽位并在 Task Workspace 激活。没有目录观测能力的 adapter 不伪造 cwd。tests/test_task_pipeline_transport_binding.py 覆盖真实重绑定入口、同目录复用及按实例路由。
 
 Impl 已提交 blocked 时 operation 是终态，重启不等于重试。操作员修复阻塞后，可先预览：
