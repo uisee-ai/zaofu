@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 增量 TaskMap 保留既有 owner 实例声明（LS 监工 #204）
 
@@ -14,7 +14,7 @@
 - [x] 两字段同时声明及未声明 -> verify: 原 owner_instance 优先级保持；没有声明不注入实例。
 - [x] 未注册实例或任意未注册逻辑 owner -> verify: 仍由原严格合同校验拒绝；原 Legacy assembly 同 owner 自锁回归保持。
 - [x] 实施影响闭包 -> verify: 新回归先红后绿；dev-verify plan/run、相关 mock E2E 和 pre-merge sentinel 通过，说明精确测试层级。
-- [ ] 更新已有相关实现说明并完成本地提交/任务归档 -> verify: 实现 hash 写入 done 记录；worktree clean、merge_ready，交根监工唯一合并。
+- [x] 更新已有相关实现说明并完成本地提交/任务归档 -> verify: 实现 hash 写入 done 记录；实现提交后无残留，本记录归档后交根监工唯一合并。
 
 ## 验证记录
 
@@ -27,4 +27,4 @@
 - `ZF_PYTHON=/home/min/workspace/public/zaofu/.venv/bin/python bash scripts/dev-premerge-gate.sh`：manual docs currentness OK，53 passed。
 - `python -m ruff check src/zf/runtime/module_gap_task_declarations.py tests/test_module_gap_task_declarations.py` 与 `git diff --check`：通过。
 
-实现 hash 在实现提交后归档填写。关联：[Plan 候选与增量输入](../../docs/impl/plan-candidate-input-selection.md)。
+实现提交：`2d714d17` — `fix: preserve task owner bindings in gap amendments`。归档阶段仅更新本任务状态与路径；最终 plan 的测试集合及步骤与通过的 receipt 完全一致。基于 `dd88c3ac` 的独立分支 `wip/codex-20261110-gap-owner-fields` 保留供根监工合并，未 merge/push，未变更 LS 运行态。关联：[Plan 候选与增量输入](../../docs/impl/plan-candidate-input-selection.md)。
