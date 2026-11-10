@@ -118,10 +118,12 @@ test("a late response from a closed preview cannot replace the newly selected Pl
 test("large Plan pagination preserves every character through the final page", async ({ page, request }) => {
   const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
   const preview = await (await request.get(`/api/projects/${project}/plans/evt-preview-long/preview`)).json();
+  const loaded = page.waitForResponse(response => response.url().endsWith("/plans/evt-preview-long/preview") && response.ok());
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-long`);
+  await (await loaded).finished();
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
   const pagination = dialog.getByRole("navigation", { name: "计划阅读导航" });
-  await expect(pagination).toBeVisible();
+  await expect(pagination).toBeVisible({ timeout: 10000 });
   await pagination.getByTitle("切换到章节分页").click();
   await pagination.getByRole("button", { name: "查看源码" }).click();
   const next = pagination.getByRole("button", { name: "下一页" });

@@ -5,7 +5,9 @@ const expect = baseExpect.configure({ timeout: 15000 });
 async function openReview(page: import("@playwright/test").Page, request: import("@playwright/test").APIRequestContext) {
   const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-review`);
-  return page.getByRole("dialog", { name: "Plan preview" });
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await dialog.getByRole("button", { name: "审批概览", exact: true }).click();
+  return dialog;
 }
 
 test("bound review layers expose decisions, module rules and concrete acceptance without writes", async ({ page, request }) => {
@@ -39,7 +41,7 @@ test("bound review layers expose decisions, module rules and concrete acceptance
   await expect(dialog.getByRole("heading", { name: "SC-STOCK 差额修正和重试" })).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "E01 · 正式重试检查" })).toBeVisible();
   await dialog.getByRole("combobox", { name: "审阅模块" }).selectOption("T-LEGACY");
-  await expect(dialog.getByRole("status")).toContainText("尚未提供逐条 Given");
+  await expect(dialog.getByRole("status")).toContainText("尚未映射逐条 Given");
   await expect(dialog.getByText("受权读取", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(dialog.getByRole("combobox", { name: "审阅模块" })).toBeVisible();

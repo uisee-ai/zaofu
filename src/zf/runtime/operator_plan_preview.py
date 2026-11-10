@@ -427,6 +427,7 @@ def build_plan_preview(
         decision_items=decision_review["items"],
         status=status,
         review_packet=review_packet,
+        decision_register_available=decision_review["available"],
     )
     digest_source = "stored_digest"
     if task_map_digest:

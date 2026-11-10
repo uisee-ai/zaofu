@@ -86,6 +86,10 @@ CLI read receipt 只证明页面已产出，不证明模型已接收、阅读或
 
 ## 人工审阅与具体场景
 
+有交互、业务流程或架构设计需要时，按[设计调研与交接](references/design-research-handoff.md)
+检查调研适用性、设计输入、图示、公共规范、页面状态及同版设计验收。Planner 将未决项
+落实到受影响任务和责任，Critic 审查具体依据，不把局部未知升级为所有任务阻塞。
+
 生成或评审 PRD／技术设计时，先按[规格与设计就绪](references/spec-design-readiness.md)
 区分产品故事、设计合同、当前实施前沿和未来决定；Critic 分项记录证据与审查范围。
 

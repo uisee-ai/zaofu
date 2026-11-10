@@ -2106,7 +2106,7 @@ export function App() {
     />
   );
 
-  if (showWelcome) {
+  if (showWelcome && (snapshot?.runtime.web_session ?? webSessionStatus)?.mode !== "read_only") {
     return (
       <WelcomeWizard
         accessReady={actionGate.actionReady}
@@ -2232,7 +2232,7 @@ export function App() {
               onOpenProjection={(kind, id) => void openProjection(kind, id)}
             />
           ) : page === "inbox" ? (
-            <PlanApprovalPanel projectId={activeProjectId} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
+            <PlanApprovalPanel readOnly={(snapshot?.runtime.web_session ?? webSessionStatus)?.mode === "read_only"} projectId={activeProjectId} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
               inboxCountEpoch.current += 1;
               setInboxPendingCount(inbox?.summary.unread ?? null);
             }} />
