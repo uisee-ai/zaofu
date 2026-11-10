@@ -1,4 +1,4 @@
-> 状态: active — 独立审查退回；保留初轮实现 `5dfb5c02` 与归档 `04f5abed`
+> 状态: done — `5daa12a2 fix: bind write scopes and distinguish copy command positions`；保留初轮 `5dfb5c02` / 撤回交接 `04f5abed` 的审查历史
 
 # 有限 cp 写目标与任务工作区保护
 
