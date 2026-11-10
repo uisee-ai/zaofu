@@ -26,3 +26,11 @@ Gap 序列化通过 `preserve_gap_task_declarations` 保留显式 `owner_instanc
 `owner_role: dev` 配合注册实例沿用既有语义：materialization 将实例放入 canonical `owner_instance`，清空通用 `owner_role`；同时声明两字段时，显式 `owner_instance` 仍优先于 `preferred_impl_role`。未声明时不补值，未注册实例仍拒绝；有效实例也不使任意未注册逻辑 owner 合法。此次只保留作者原声明，不更改 assembly/bundle 同 owner 自锁 gate、lane 分配或全局配置。
 
 `tests/test_module_gap_task_declarations.py` 覆盖真实 gap artifact writer → PRD `ingest_task_map_to_kanban` → `TaskStore` → `validate_task_contract`，校验实例、依赖、AC 和命令保留；`tests/test_task_map.py` 中既有 AVBS 自锁回归继续适用。此处验证的是机械准入与合同生成，实际计划仍须走原受控审批与派发。
+
+## 受控恢复的显式来源索引
+
+`candidate-rework-apply` 先通过 `materialize_explicit_plan_ports` 固定并校验作者提供的端口。提供显式 `source_index` 时，`task_map.amended`/`task_map.ready` 的 `source_index_ref` 现在使用这个已固定的原 ref，增量 writer 不再对其进行 legacy 递归替换。Writer loader 优先消费事件的 ref，随后 TaskContract 的来源索引及 evidence source_refs 指向同一正文；仅保证 Package inline 正文正确不足以证明这条引用链正确。
+
+此前再派生会将历史 parent 中的旧任务 ID 改成新 ID，并去重原 source_refs，造成作者已审核的历史谱系变形。现修复保留整个显式正文；没有显式 producer 时仍沿用原派生行为。显式 descriptor 缺失、摘要错误或文件不存在时，继续在发布 ready/amended 前拒绝，不回退到旧索引。身份、来源、矩阵与审批 gate 不变；固定 ref 不代表业务验收完成。
+
+`tests/test_control_actions_candidate_rework_source_index.py` 通过真实受控动作、ready 事件、`load_writer_task_map`、`Orchestrator._ensure_writer_tasks_canonical` 和 TaskStore 回读，验证正文/descriptor、历史 parent、重复来源、拒绝及 legacy 路径。任务：[显式索引恢复修复](../../tasks/done/2026-11-10-2237-explicit-source-index-recovery.md)。
