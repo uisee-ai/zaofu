@@ -90,3 +90,10 @@ refs。必须同时绑定 Run、operation、attempt、fanout、stage、revision�
 概览现在优先显示阻塞/失败阶段，其次是执行中或汇聚中的阶段；显式选择仍优先。
 新增「查看当前阶段」用于拖动后返回，适配视野不再强制最低 0.8 倍。
 实时数据刷新仍保留用户视野，只有首次加载、切换视图或画布尺寸变化才重新适配。
+
+再次基于 dev 真实验证发现：Workflow Synthesis 被拒绝时，初始 Graph 可能仍只显示
+准备中的空图，失败及重试入口藏在 Raw → Prepare Workflow。现在在主视图显示准备失败/
+阻塞及「Review preparation」，打开原受控恢复面板；不自动重试、不放宽摘要校验。
+UI 旅程测试同时检查当前 Task 绑定 request 的准备状态，遇到终态失败保存详情并立即
+失败，不再空等 YAML。历史失败事件不会使已恢复 request 误判失败。确定性负例可用
+`ZF_UI_FAKE_FAULT=synthesis-digest` 注入 fake provider 的摘要复制错误；它不是模型验证。

@@ -131,6 +131,8 @@ def main() -> int:
     if args.journey == "channel-recovery":
         manifest["test_boundary"] = "real Codex, controlled stdio fault; setup via controlled actions, send/retry through UI"
     manifest["workflow_runtime"] = args.workflow_runtime
+    if args.provider == "fake":
+        manifest["fake_fault"] = env.get("ZF_UI_FAKE_FAULT", "")
     manifest["owner_checkpoint_required"] = args.owner_checkpoint
     manifest["source_diff_sha256"] = hashlib.sha256(subprocess.check_output(
         ["git", "diff", "HEAD", "--", "src", "web/src", "web/tests", "tests", "skills"], cwd=REPO)).hexdigest()

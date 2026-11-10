@@ -166,7 +166,21 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   await expect(page.getByTestId("workflow-proposal-page")).toBeVisible({ timeout: turnTimeout });
   await page.getByRole("button", { name: "Raw", exact: true }).click();
   const raw = page.getByRole("complementary", { name: "Raw YAML", exact: true });
-  await expect(raw).toContainText("5.0.1", { timeout: turnTimeout });
+  // Consult the current request, not historical failure events from a recovered attempt.
+  // A terminal preparation failure must not spend another provider timeout waiting for YAML.
+  const preparationDeadline = Date.now() + turnTimeout;
+  while (!((await raw.innerText()).includes("5.0.1")) && Date.now() < preparationDeadline) {
+    const requests = await get(request, `/api/projects/${project}/workflow-requests`);
+    const prepared = requests.items.find((item: Record<string, any>) => item.task_id === task.task_id);
+    if (prepared && ["preparation_failed", "preparation_blocked"].includes(prepared.status)) {
+      const detail = await get(request, `/api/projects/${project}/workflow-requests/${encodeURIComponent(prepared.request_id)}`);
+      writeFileSync(`${evidence}/preparation-failure.json`, JSON.stringify(detail, null, 2));
+      await capture(page, "05-workflow-preparation-failed");
+      throw new Error(`Workflow preparation ${prepared.status}: ${JSON.stringify(detail.preparation)}`);
+    }
+    await page.waitForTimeout(1000);
+  }
+  await expect(raw).toContainText("5.0.1");
   await expect(raw).toContainText("plan_approval: true");
   await capture(page, "05-v5-yaml-preview");
   if (process.env.ZF_UI_WORKFLOW_RUNTIME === "cold") {

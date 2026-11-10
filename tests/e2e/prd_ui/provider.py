@@ -32,7 +32,7 @@ def reply(prompt: str, cwd: Path) -> str | dict:
         contract, _ = json.JSONDecoder().raw_decode(prompt.split("Contract:\n", 1)[1].strip())
         controller_id = "zaofu-prd-v5-production-codex"
         entry = contract["registered_controllers"][controller_id]
-        return {
+        result = {
             "schema_version": "workflow-synthesis-result.v1",
             **{key: contract[key] for key in ("request_id", "request_revision", "requirement_ref", "requirement_digest")},
             "selected_flow_family": "PrdFlow",
@@ -46,6 +46,9 @@ def reply(prompt: str, cwd: Path) -> str | dict:
             "assumptions": [], "open_questions": [], "requested_roles": [], "requested_skills": [],
             "requested_profiles": [], "risk_hints": [],
         }
+        if os.environ.get("ZF_UI_FAKE_FAULT") == "synthesis-digest":
+            result["requirement_digest"] += "bad-copy"
+        return result
     message = prompt.rsplit("\nUser message:\n", 1)[-1]
     if "UI_PRD_DISCUSS" in message:
         return {"plan_request": {"subject_type": "clarification", "questions": [
