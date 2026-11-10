@@ -1,6 +1,6 @@
 # 203 部署级观测 Connector 的第一批接线
 
-本批对应 [Z01a](../../tasks/active/2026-11-10-1226-z01a-workspace-connector.md)，承接
+本批对应 [Z01a](../../tasks/done/2026-11-10-1226-z01a-workspace-connector.md)，承接
 [接入计划](201-controller-integration-plan.md)、设计 203/204 与 Controller `bb06981` 的公开 HTTP 合同。
 实现部署注册、空工作台心跳、多个本地 Project 的授权观测、安装凭据更新及可靠重放。
 **能力为 `observed`，仍保留 standalone 的本地执行规则。** 完整 managed 访问、执行名额和

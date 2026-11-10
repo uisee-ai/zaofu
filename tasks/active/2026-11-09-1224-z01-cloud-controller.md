@@ -18,11 +18,11 @@
 
 ## 当前证据
 
-已实现显式配置、Client Credentials、绑定身份/能力协商、JSON Schema、批次 ACK 和实际 zf controller CLI。真实 Keycloak/Controller 联验通过。自动注册、完整配置/命令通道、租约与凭证轮换仍未完成。
+已实现显式配置、Client Credentials、绑定身份/能力协商、JSON Schema、批次 ACK 和实际 zf controller CLI。真实 Keycloak/Controller 联验通过。Z01a 进一步完成外部观测安装注册、凭据轮换、零项目心跳和多项目接入；云端受信启动、完整 managed 配置/命令通道和租约仍未完成。
 
 本轮可独立验收切片见 [Z03a](../done/2026-11-09-1512-z03a-observation-connector.md)。
 
 实施边界与仓库关系见 [接入计划](../../docs/impl/201-controller-integration-plan.md)。
 
-下一批部署级注册与多项目观测切片见 [Z01a](2026-11-10-1226-z01a-workspace-connector.md)。
+已完成的部署级注册与多项目观测切片见 [Z01a](../done/2026-11-10-1226-z01a-workspace-connector.md)。
 本父任务仍保留完整 managed 接入、安装/启动绑定及剩余联合验收责任。

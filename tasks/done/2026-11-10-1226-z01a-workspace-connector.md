@@ -1,8 +1,8 @@
 # Z01a 部署级观测 Connector 与安全注册
 
-> 状态: active
+> 状态: done — `ee72db58 feat: add deployment connector enrollment and workspace observation`
 
-来源：用户批准从 `dev` 新 worktree 执行 203/204 的下一步；父任务 [Z01](2026-11-09-1224-z01-cloud-controller.md)，关联 [Z03](2026-11-09-1224-z03-cloud-controller.md)。
+来源：用户批准从 `dev` 新 worktree 执行 203/204 的下一步；父任务 [Z01](../active/2026-11-09-1224-z01-cloud-controller.md)，关联 [Z03](../active/2026-11-09-1224-z03-cloud-controller.md)。
 基线 ZaoFu `489d92b3`，Controller `bb06981`。本项交付第一批可独立运行的部署接入，
 不将注册成功等同于完整 managed；Z02/Z04 与父任务其余合同继续保留。
 
