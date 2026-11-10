@@ -19,6 +19,15 @@ export const unique = (values: string[]) => [...new Set(values.filter(Boolean))]
 export const portRows = (port: unknown, field: string) => rows(object(port)[field] ?? object(port).rows);
 export const relatedTasks = (row: Row) => unique([text(row.task_id), ...strings(row.task_ids)]);
 
+export function decisionStatusDistribution(decisions: Row[]): string {
+  const counts = new Map<string, number>();
+  for (const decision of decisions) {
+    const status = text(decision.status) || "未声明";
+    counts.set(status, (counts.get(status) || 0) + 1);
+  }
+  return [...counts].map(([status, count]) => `${status} ${count}`).join(" · ");
+}
+
 export function planArtifactUrl(projectId: string, planId: string, name: string): string {
   return `/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(name)}`;
 }
@@ -49,7 +58,6 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
     const review = object(body.human_review);
     const criteria = rows(task.acceptance_criteria);
     const acceptanceIds = new Set(criteria.map(ac => text(ac.id)));
-    const knownCommands = new Set(criteria.flatMap(ac => strings(ac.verification_command_ids)));
     // Prefer the module's explicit human review; otherwise use the admitted
     // test-matrix contract. Task identity wins over reused AC identifiers.
     const authoredScenarios = rows(review.scenarios);
@@ -57,17 +65,42 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
     const scenarios = candidates.map(scenario => {
       const scenarioId = text(scenario.id || scenario.case_id || scenario.test_id);
       const refs = strings(scenario.acceptance_ids);
+      const commandIds = strings(scenario.command_ids);
+      const participants = relatedTasks(scenario);
+      const responsibilities = (participants.length ? participants : [id]).map(taskId => {
+        const owners = tasks.filter(t => text(t.task_id || t.id) === taskId);
+        const owner = owners.length === 1 ? owners[0] : {};
+        const localCriteria = rows(owner.acceptance_criteria);
+        const boundCommands = new Set(localCriteria.flatMap(ac => strings(ac.verification_command_ids)));
+        const localCommands = commandIds.filter(command => boundCommands.has(command));
+        return { taskId, uniqueTask: owners.length === 1,
+          acceptanceIds: refs.filter(ref => localCriteria.some(ac => ac.id === ref)),
+          commandIds: localCommands,
+          commands: localCommands.map(commandId => {
+            const matches = rows(object(owner.validation).commands).filter(c => c.id === commandId);
+            return { id: commandId, definitions: matches };
+          }),
+        };
+      });
       const sourceRefs = unique([...strings(scenario.source_refs), ...strings(scenario.source_ids).flatMap(id => sources.filter(s => s.source_id === id).map(s => text(s.source_ref))), ...sources.filter(s => scenarioId && relatedTasks(s).includes(id) && strings(s.scene_ids).includes(scenarioId)).map(s => text(s.source_ref))]);
       const issues: string[] = [];
       for (const sourceId of strings(scenario.source_ids)) {
         if (sources.filter(s => s.source_id === sourceId && text(s.source_ref)).length !== 1) issues.push(`来源 ID 未唯一解析：${sourceId}`);
       }
-      if (!refs.length || refs.some(ref => !acceptanceIds.has(ref))) issues.push("验收项引用缺失或不属于当前任务");
+      if (!refs.length || refs.some(ref => !responsibilities.some(r => r.acceptanceIds.includes(ref)))) issues.push("验收项引用缺失或未绑定到场景参与任务");
+      for (const responsibility of responsibilities) {
+        if (!responsibility.uniqueTask) issues.push(`场景任务未唯一解析：${responsibility.taskId}`);
+        for (const command of responsibility.commands) {
+          if (command.definitions.length > 1) issues.push(`验证命令定义不唯一：${responsibility.taskId} / ${command.id}`);
+        }
+      }
       if (![scenario.given, scenario.when, scenario.then].every(v => text(v).trim())) issues.push("前置、操作或预期结果尚未补齐");
       if (!sourceRefs.length) issues.push("来源条款尚未绑定");
-      if (!strings(scenario.command_ids).length) issues.push("验证命令尚未绑定");
-      else if (strings(scenario.command_ids).some(id => !knownCommands.has(id))) issues.push("场景命令未绑定到本任务验收项");
-      return { id: scenarioId, evidenceStatus: text(scenario.evidence_status) || "未声明（规划场景，不代表测试通过）", title: text(scenario.title || scenario.name), given: text(scenario.given), when: text(scenario.when), then: text(scenario.then), sourceRefs, acceptanceIds: refs, commandIds: strings(scenario.command_ids), issues };
+      if (!commandIds.length) issues.push("验证命令尚未绑定");
+      else if (commandIds.some(command => !responsibilities.some(r => r.commandIds.includes(command)))) issues.push("场景命令未绑定到参与任务验收项");
+      if (participants.length && !participants.includes(id)) issues.push("当前任务未列入场景参与任务");
+      if (participants.length > 1 && responsibilities.some(r => r.taskId === id && (!r.acceptanceIds.length || !r.commandIds.length))) issues.push("本片责任待核对：场景未直接绑定本任务 AC 或命令，请对照 Task Spec 核对集成责任");
+      return { id: scenarioId, evidenceStatus: text(scenario.evidence_status) || "未声明（规划场景，不代表测试通过）", title: text(scenario.title || scenario.name), given: text(scenario.given), when: text(scenario.when), then: text(scenario.then), sourceRefs, acceptanceIds: refs, commandIds, responsibilities, issues };
     });
     return {
       id, title: text(task.title), description: text(task.description),

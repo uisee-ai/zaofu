@@ -1,0 +1,493 @@
+{
+  "task_map": {
+    "tasks": [
+      {
+        "task_id": "T-1",
+        "title": "建立单一可运行脚手架与共享约定",
+        "description": "Greenfield scaffold exception: deliver only the package, static server and documented shared contract; no product behavior is accepted here.",
+        "owner_role": "dev-lane-0",
+        "wave": 1,
+        "blocked_by": [],
+        "root_owner_class": "scaffold",
+        "allowed_paths": [
+          "app/package.json",
+          "app/package-lock.json",
+          "app/scripts/serve.mjs",
+          "app/tests/scaffold.test.mjs",
+          "app/CONVENTIONS.md",
+          "app/evidence/scaffold/"
+        ],
+        "allowed_paths_reason": "Exclusive package metadata/server ownership; later tasks only read these files.",
+        "acceptance_criteria": [
+          {
+            "id": "AC-S",
+            "statement": "A clean checkout has one documented Node ES module package and a bounded static server usable by the future reading-list entrypoint, without changing protected project inputs.",
+            "mandatory": true,
+            "verification_owner": "verify-lane-0",
+            "verification_tier": "static",
+            "verification_command_ids": [
+              "V-SCAFFOLD"
+            ]
+          }
+        ],
+        "validation": {
+          "commands": [
+            {
+              "id": "V-SCAFFOLD",
+              "command": "node --test app/tests/scaffold.test.mjs",
+              "acceptance_ids": [
+                "AC-S"
+              ],
+              "owner": "verify-lane-0",
+              "tier": "static",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 60,
+              "producer_paths": [
+                "app/evidence/scaffold/"
+              ],
+              "rolling_smoke": true
+            }
+          ]
+        },
+        "source_key": "requirement-r2",
+        "source_ref": "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+        "source_excerpt": "Greenfield technical scan: package metadata and conventions precede implementation; protected inputs remain unchanged.",
+        "spec_ref": "docs/plans/prd-plan-planner-plan.md#task-spec-t-1"
+      },
+      {
+        "task_id": "T-2",
+        "title": "完成保存、筛选、状态与恢复的阅读清单流程",
+        "description": "One bounded vertical user journey owns DOM, validation, transactional storage, focus behavior and focused evidence together; six source ACs remain one atomic behavior contract.",
+        "owner_role": "dev-lane-1",
+        "wave": 2,
+        "blocked_by": [
+          "T-1"
+        ],
+        "root_owner_class": "slice",
+        "allowed_paths": [
+          "app/src/",
+          "app/tests/journey.test.mjs",
+          "app/tests/browser.mjs",
+          "app/tests/harness.html",
+          "app/evidence/journey/"
+        ],
+        "allowed_paths_reason": "Exclusive feature module and slice harness; real shared entrypoint is reserved to T-3.",
+        "acceptance_criteria": [
+          {
+            "id": "AC-1",
+            "statement": "Trim title and URL; require both and a complete http/https URL; invalid fields show errors without insertion. Successful save adds an unread title/URL/createdAt record and clears the submitted form.",
+            "mandatory": true,
+            "verification_owner": "verify-lane-1",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "V-CORE",
+              "V-BROWSER"
+            ]
+          },
+          {
+            "id": "AC-2",
+            "statement": "Duplicate comparison uses the exact trimmed original URL string and never overwrites an existing record; https://example.com/A?x=1 and https://example.com/a?x=2 remain distinct valid links.",
+            "mandatory": true,
+            "verification_owner": "verify-lane-1",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "V-CORE",
+              "V-BROWSER"
+            ]
+          },
+          {
+            "id": "AC-3",
+            "statement": "Read/unread changes work both ways without changing createdAt; all/unread/read filters show the current state immediately.",
+            "mandatory": true,
+            "verification_owner": "verify-lane-1",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "V-CORE",
+              "V-BROWSER"
+            ]
+          },
+          {
+            "id": "AC-4",
+            "statement": "Successful additions and status changes survive refresh. Failed persistence shows no success, preserves the last saved data and the add form or original read state, and exposes a retry hint.",
+            "mandatory": true,
+            "verification_owner": "verify-lane-1",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "V-CORE",
+              "V-BROWSER"
+            ]
+          },
+          {
+            "id": "AC-5",
+            "statement": "First-use empty, filter-empty, and load-error states are distinct; unreadable stored bytes are never replaced as empty. Retry loading is available, without a reset/delete feature.",
+            "mandatory": true,
+            "verification_owner": "verify-lane-1",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "V-CORE",
+              "V-BROWSER"
+            ]
+          },
+          {
+            "id": "AC-6",
+            "statement": "Render titles as text, isolate opener on a new-window link, and fetch no preview. Sort newest first with insertion-order ties. At 375px/1280px forms and lists fit; keyboard add/filter/status have labels and visible focus. A card leaving the filter moves focus next, then previous, then current filter; filter actions retain trigger focus.",
+            "mandatory": true,
+            "verification_owner": "verify-lane-1",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "V-CORE",
+              "V-BROWSER"
+            ]
+          }
+        ],
+        "validation": {
+          "commands": [
+            {
+              "id": "V-CORE",
+              "command": "node --test app/tests/journey.test.mjs",
+              "acceptance_ids": [
+                "AC-1",
+                "AC-2",
+                "AC-3",
+                "AC-4",
+                "AC-5",
+                "AC-6"
+              ],
+              "owner": "verify-lane-1",
+              "tier": "runtime",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 60,
+              "producer_paths": [
+                "app/evidence/journey/core/"
+              ],
+              "rolling_smoke": true
+            },
+            {
+              "id": "V-BROWSER",
+              "command": "docker run --rm --user \"$(id -u):$(id -g)\" -e HOME=/tmp -v \"$PWD:/work\" -w /work --entrypoint bash mcp/playwright:latest -lc \"node app/tests/browser.mjs\"",
+              "acceptance_ids": [
+                "AC-1",
+                "AC-2",
+                "AC-3",
+                "AC-4",
+                "AC-5",
+                "AC-6"
+              ],
+              "owner": "verify-lane-1",
+              "tier": "e2e",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 240,
+              "producer_paths": [
+                "app/evidence/journey/browser/"
+              ],
+              "rolling_smoke": false
+            }
+          ]
+        },
+        "source_key": "requirement-r2",
+        "source_ref": "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+        "source_excerpt": "R2 AC-1—AC-6: local save, exact raw URL duplicate handling, bidirectional read status, transactional persistence, protected load errors, safe rendering and explicit focus recovery.",
+        "spec_ref": "docs/plans/prd-plan-planner-plan.md#task-spec-t-2"
+      },
+      {
+        "task_id": "T-3",
+        "title": "装配真实单页入口并验收完整产品路径",
+        "description": "Final assembly owner imports the completed feature into the actual index, consumes prior scenario results and runs the full contract against the real entrypoint.",
+        "owner_role": "dev-lane-2",
+        "wave": 3,
+        "blocked_by": [
+          "T-2"
+        ],
+        "root_owner_class": "assembly",
+        "allowed_paths": [
+          "app/index.html",
+          "app/tests/assembly.test.mjs",
+          "app/tests/product.mjs",
+          "app/evidence/assembly/"
+        ],
+        "allowed_paths_reason": "Only owner of real entrypoint and final assembled-product evidence; may read but never edit sibling scripts.",
+        "acceptance_criteria": [
+          {
+            "id": "AC-I",
+            "statement": "The actual single-page entrypoint exposes the complete add, filter, read/unread, refresh, save/load failure, safe link and keyboard/focus flows from AC-1 through AC-6 at both required widths.",
+            "mandatory": true,
+            "verification_owner": "verify-lane-2",
+            "verification_tier": "e2e",
+            "verification_command_ids": [
+              "V-ASSEMBLY",
+              "V-PRODUCT"
+            ]
+          }
+        ],
+        "validation": {
+          "commands": [
+            {
+              "id": "V-ASSEMBLY",
+              "command": "node --test app/tests/assembly.test.mjs",
+              "acceptance_ids": [
+                "AC-I"
+              ],
+              "owner": "verify-lane-2",
+              "tier": "runtime",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 60,
+              "producer_paths": [
+                "app/evidence/assembly/smoke/"
+              ],
+              "rolling_smoke": true
+            },
+            {
+              "id": "V-PRODUCT",
+              "command": "docker run --rm --user \"$(id -u):$(id -g)\" -e HOME=/tmp -v \"$PWD:/work\" -w /work --entrypoint bash mcp/playwright:latest -lc \"node app/tests/product.mjs\"",
+              "acceptance_ids": [
+                "AC-I"
+              ],
+              "owner": "verify-lane-2",
+              "tier": "e2e",
+              "deterministic": true,
+              "reusable": true,
+              "timeout_seconds": 240,
+              "producer_paths": [
+                "app/evidence/assembly/browser/"
+              ],
+              "rolling_smoke": false
+            }
+          ]
+        },
+        "source_key": "requirement-r2",
+        "source_ref": "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+        "source_excerpt": "The actual single-page entrypoint exposes the complete add, filter, read/unread, refresh, save/load failure, safe link and keyboard/focus flows from AC-1 through AC-6 at both required widths.",
+        "spec_ref": "docs/plans/prd-plan-planner-plan.md#task-spec-t-3"
+      }
+    ],
+    "owner_decision_items": [
+      {
+        "decision_id": "D-1",
+        "question": "未来同步和账号是否进入本期？",
+        "status": "deferred",
+        "blocking": false,
+        "owner": "Product owner",
+        "affected_task_ids": [
+          "T-2",
+          "T-3"
+        ],
+        "latest_decision_stage": "未来版本立项前",
+        "options": [
+          {
+            "option_id": "D-1-A",
+            "label": "继续本地单用户；未来同步单独决定"
+          }
+        ],
+        "recommendation": "继续本地单用户；未来同步单独决定",
+        "evidence_refs": [
+          "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+          "/tmp/zf-spec-slices-20261110T115528Z/project/.zf-spec/workflow-requests/workflow-38a3e3db1318725f/requirements/revision-0002-a8cc9c4b56d7846e.json"
+        ],
+        "blocker_impact": "Owner 原文明确本期不做账号、后端和同步；未来决定不阻塞当前本地方案。"
+      },
+      {
+        "decision_id": "D-2",
+        "question": "URL 去重是否规范化？",
+        "status": "confirmed",
+        "blocking": false,
+        "owner": "Product owner",
+        "affected_task_ids": [
+          "T-2",
+          "T-3"
+        ],
+        "latest_decision_stage": "R2 已冻结",
+        "options": [
+          {
+            "option_id": "D-2-A",
+            "label": "仅比较 trim 后原字符串"
+          }
+        ],
+        "recommendation": "仅比较 trim 后原字符串",
+        "evidence_refs": [
+          "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+          "/tmp/zf-spec-slices-20261110T115528Z/project/.zf-spec/workflow-requests/workflow-38a3e3db1318725f/requirements/revision-0002-a8cc9c4b56d7846e.json"
+        ],
+        "blocker_impact": "禁止大小写、查询参数或 URL 序列化归一化；保留两个完整合法反例。"
+      },
+      {
+        "decision_id": "D-3",
+        "question": "持久化失败和读取错误怎样处理？",
+        "status": "confirmed",
+        "blocking": false,
+        "owner": "Product owner",
+        "affected_task_ids": [
+          "T-2",
+          "T-3"
+        ],
+        "latest_decision_stage": "R2 已冻结",
+        "options": [
+          {
+            "option_id": "D-3-A",
+            "label": "保存后提交；读错时写保护并重试读取"
+          }
+        ],
+        "recommendation": "保存后提交；读错时写保护并重试读取",
+        "evidence_refs": [
+          "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+          "/tmp/zf-spec-slices-20261110T115528Z/project/.zf-spec/workflow-requests/workflow-38a3e3db1318725f/requirements/revision-0002-a8cc9c4b56d7846e.json"
+        ],
+        "blocker_impact": "失败不得报告成功或覆盖旧数据，不增加重置/删除。"
+      },
+      {
+        "decision_id": "D-4",
+        "question": "移出筛选与切换筛选后焦点去哪里？",
+        "status": "confirmed",
+        "blocking": false,
+        "owner": "Product owner",
+        "affected_task_ids": [
+          "T-2",
+          "T-3"
+        ],
+        "latest_decision_stage": "R2 已冻结",
+        "options": [
+          {
+            "option_id": "D-4-A",
+            "label": "下一张→上一张→当前筛选；筛选保留按钮焦点"
+          }
+        ],
+        "recommendation": "下一张→上一张→当前筛选；筛选保留按钮焦点",
+        "evidence_refs": [
+          "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+          "/tmp/zf-spec-slices-20261110T115528Z/project/.zf-spec/workflow-requests/workflow-38a3e3db1318725f/requirements/revision-0002-a8cc9c4b56d7846e.json"
+        ],
+        "blocker_impact": "两种动作分别有具名场景，不能把隐藏元素作为焦点终点。"
+      },
+      {
+        "decision_id": "D-5",
+        "question": "本期设计边界是否已确定？",
+        "status": "confirmed",
+        "blocking": false,
+        "owner": "Product owner",
+        "affected_task_ids": [
+          "T-2",
+          "T-3"
+        ],
+        "latest_decision_stage": "R2 已冻结",
+        "options": [
+          {
+            "option_id": "D-5-A",
+            "label": "系统字体、单列、蓝主色、红错误及文字"
+          }
+        ],
+        "recommendation": "系统字体、单列、蓝主色、红错误及文字",
+        "evidence_refs": [
+          "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+          "/tmp/zf-spec-slices-20261110T115528Z/project/.zf-spec/workflow-requests/workflow-38a3e3db1318725f/requirements/revision-0002-a8cc9c4b56d7846e.json"
+        ],
+        "blocker_impact": "按钮、输入、筛选、卡片；只补主流程和关键状态低保真，不强制外网灵感搜集。"
+      },
+      {
+        "decision_id": "D-6",
+        "question": "指标基线与目标何时确定？",
+        "status": "pending_validation",
+        "blocking": false,
+        "owner": "Product owner / future researcher",
+        "affected_task_ids": [
+          "T-2",
+          "T-3"
+        ],
+        "latest_decision_stage": "另行授权试用后的 owner 评审",
+        "options": [
+          {
+            "option_id": "D-6-A",
+            "label": "保留 TBD，以合成场景先定义测量方法"
+          }
+        ],
+        "recommendation": "保留 TBD，以合成场景先定义测量方法",
+        "evidence_refs": [
+          "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+          "/tmp/zf-spec-slices-20261110T115528Z/project/.zf-spec/workflow-requests/workflow-38a3e3db1318725f/requirements/revision-0002-a8cc9c4b56d7846e.json"
+        ],
+        "blocker_impact": "不虚构真实调研、基线或测试通过；指标待验证不阻塞本次文档审查。"
+      },
+      {
+        "decision_id": "D-7",
+        "question": "轻量本地技术方案是否随 Plan 批准？",
+        "status": "proposed",
+        "blocking": false,
+        "owner": "Technical owner",
+        "affected_task_ids": [
+          "T-1",
+          "T-2",
+          "T-3"
+        ],
+        "latest_decision_stage": "人工 Plan 审批",
+        "options": [
+          {
+            "option_id": "D-7-A",
+            "label": "原生 ES modules + localStorage JSON + Node 静态服务"
+          }
+        ],
+        "recommendation": "原生 ES modules + localStorage JSON + Node 静态服务",
+        "evidence_refs": [
+          "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+          "/tmp/zf-spec-slices-20261110T115528Z/project/.zf-spec/workflow-requests/workflow-38a3e3db1318725f/requirements/revision-0002-a8cc9c4b56d7846e.json"
+        ],
+        "blocker_impact": "技术建议供审批，不改动任何 owner 需求；尚未实施或验证。"
+      }
+    ]
+  },
+  "test_matrix": {
+    "tests": [
+      {
+        "test_id": "S-add",
+        "acceptance_ids": [
+          "AC-1"
+        ],
+        "task_ids": [
+          "T-2",
+          "T-3"
+        ],
+        "command_ids": [
+          "V-CORE",
+          "V-BROWSER",
+          "V-PRODUCT"
+        ],
+        "given": "无条目；固定时钟",
+        "when": "填写带首尾空格的标题与 https://example.com/a 并保存",
+        "then": "trim 后一条未读记录，createdAt 为固定时钟，表单清空，仅成功后显示结果",
+        "evidence_status": "NOT_RUN"
+      }
+    ]
+  },
+  "source_index": {
+    "traceability": [
+      {
+        "source_id": "R2-S-add",
+        "source_key": "requirement-r2",
+        "source_ref": "/tmp/zf-spec-slices-20261110T115528Z/project/requirement.md",
+        "requirement_statement": "Trim title and URL; require both and a complete http/https URL; invalid fields show errors without insertion. Successful save adds an unread title/URL/createdAt record and clears the submitted form. / trim 后一条未读记录，createdAt 为固定时钟，表单清空，仅成功后显示结果",
+        "task_ids": [
+          "T-2",
+          "T-3"
+        ],
+        "acceptance_ids": [
+          "AC-1"
+        ],
+        "scene_ids": [
+          "S-add"
+        ],
+        "disposition": "covered",
+        "evidence_status": "NOT_RUN"
+      }
+    ]
+  },
+  "_provenance": {
+    "kind": "selected admitted R2 fields; values unmodified; not a new provider run",
+    "plan_id": "evt-1dcfc632f607",
+    "sha256": {
+      "task_map.json": "82f519052584019ef50448c891a879bcd8c3149aad3943c49b2b8f7ff1ad3cea",
+      "test-matrix.json": "88dcab115ca2db00aeb6c169357fe7e4efd7718ef8b9e6a6832e61dbd322e678",
+      "source-index.json": "1ad0491bdad2afcf59f209b8df9f7b5fc2010ed6bb89e61131f1b000415cb6d9"
+    }
+  }
+}

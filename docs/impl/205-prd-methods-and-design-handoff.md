@@ -162,3 +162,24 @@ typecheck、unit 通过；18 个既有浏览器用例通过，最终受影响组
 决定状态词汇与通用统计的对齐。Critic 认可本例的共享验证职责，但不把这些展示提示
 静默消除；本例也不是固定输入的单变量实验或真人阅读效果证明。
 完整本地报告为 `reports/spec-task-slices/qualification.md`（按仓库策略忽略）。
+
+## 2026-11-10：公开资料借鉴与共享责任阅读
+
+设计与来源见 [206](../design/206-spec-method-borrowings-and-quality-evaluation.md)。本批基线
+`2fdee307`，仍在 `wip/codex-20261110-spec-task-slices`，不改 Kernel/API/schema。
+
+- 方法：在既有 `task-spec-slices.md` 增加局部责任、紧凑规格、行为差量和性质/反例
+  方法，引用新 `spec-quality-evaluation.md`。后者区分能力、产物与效果，明确固定
+  条件、独立交接、正反例、成本及未知证据；沿原 Planner/Critic 依赖实际物化。
+- 阅读：共享场景只在明确参与任务内解析 AC/命令，显示各片直接关系及验证责任。
+  未知、重复与缺失关系保留；R2 的装配 AC-I 不被自动等同于场景 AC-1。决定增加
+  原始状态分布与 `latest_decision_stage` 展示，后端通用统计不变。
+- 回归：从已接纳 R2 中选取原值及 SHA256 生成夹具；旧阅读模型上先复现误报，再
+  修复。合成反例另行标识，覆盖未知 Task/AC/命令、同名 AC 串任务及重复定义。
+- 验证：dev-verify 自动闭包 45 passed / 1 skipped，frontend typecheck/unit 通过；
+  production build 与 bundle budget 通过；Docker 两组浏览器共 10 passed，含
+  1280/375 视口、原状态与时点、缺失绑定提示、无 API 写请求及页面异常。
+
+此处 browser 通过证明展示消费和只读行为；新增方法的真实生成、跨工具独立交接、
+实现效果与成本实验仍 NOT_RUN。能力评分仅阅读支持调整，其他项不因方法加字加分。
+本地日志位于 `reports/spec-research/`，不提交；四项任务及实现提交记录见 design 206。

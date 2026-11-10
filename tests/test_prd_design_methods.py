@@ -51,6 +51,7 @@ def test_prd_role_materializes_design_dependency_and_reference_bytes(tmp_path, r
         ("zf-prd-plan-synth", "product-reading-evidence.md"),
         ("zf-plan-execution-readiness", "design-research-handoff.md"),
         ("zf-plan-execution-readiness", "task-spec-slices.md"),
+        ("zf-plan-execution-readiness", "spec-quality-evaluation.md"),
     ):
         relative = Path(name) / "references" / reference
         canonical = root / "skills" / relative

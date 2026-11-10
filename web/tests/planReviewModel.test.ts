@@ -104,3 +104,38 @@ const namedCases = buildPlanReview({ task_map: { tasks: [task] },
 assert.equal(namedCases.modules[0].scenarios[0].id, "S-add");
 assert.equal(namedCases.modules[0].scenarios[0].sourceRefs.join(), "requirement.md#add");
 assert.equal(namedCases.modules[0].scenarios[0].issues.length, 0);
+
+// Selected, unmodified fields from the admitted R2 Plan reproduce the shared case.
+import shared from "./fixtures/spec206-shared.json" with { type: "json" };
+const sharedReview = buildPlanReview(shared);
+const featureCase = sharedReview.modules.find(m => m.id === "T-2")!.scenarios[0];
+assert.equal(featureCase.issues.includes("场景命令未绑定到本任务验收项"), false);
+assert.equal(featureCase.issues.length, 0);
+assert.equal(featureCase.responsibilities[0].commandIds.join(), "V-CORE,V-BROWSER");
+assert.equal(featureCase.responsibilities[1].commandIds.join(), "V-PRODUCT");
+assert.equal(featureCase.responsibilities[1].acceptanceIds.length, 0);
+assert.equal(featureCase.responsibilities[1].commands[0].definitions[0].owner, "verify-lane-2");
+const assemblyCase = sharedReview.modules.find(m => m.id === "T-3")!.scenarios[0];
+assert.equal(assemblyCase.issues.some(s => s.startsWith("本片责任待核对")), true);
+assert.equal(assemblyCase.evidenceStatus, "NOT_RUN");
+assert.equal(assemblyCase.sourceRefs.some(s => s.endsWith("requirement.md")), true);
+// Counterexamples are synthetic mutations, not attributed to the real author.
+function mutateShared(change: (data: typeof shared) => void) {
+  const data = structuredClone(shared); change(data);
+  return buildPlanReview(data).modules.find(m => m.id === "T-2")!.scenarios[0];
+}
+assert.equal(mutateShared(data => data.test_matrix.tests[0].acceptance_ids.push("AC-UNKNOWN")).issues.some(s => s.startsWith("验收项引用缺失")), true);
+assert.equal(mutateShared(data => data.test_matrix.tests[0].command_ids.push("V-UNKNOWN")).issues.includes("场景命令未绑定到参与任务验收项"), true);
+assert.equal(mutateShared(data => data.test_matrix.tests[0].task_ids.push("T-MISSING")).issues.includes("场景任务未唯一解析：T-MISSING"), true);
+assert.equal(mutateShared(data => data.task_map.tasks.push(data.task_map.tasks[1])).issues.includes("场景任务未唯一解析：T-2"), true);
+assert.equal(mutateShared(data => data.task_map.tasks[1].validation.commands.push(data.task_map.tasks[1].validation.commands[0])).issues.includes("验证命令定义不唯一：T-2 / V-CORE"), true);
+const undeclared = mutateShared(data => {
+  data.test_matrix.tests[0].acceptance_ids = ["FOREIGN"];
+  data.task_map.tasks[0].acceptance_criteria[0].id = "FOREIGN";
+});
+assert.equal(undeclared.issues.some(s => s.startsWith("验收项引用缺失")), true);
+const missingDefinitions = mutateShared(data => { data.task_map.tasks[1].validation.commands = []; });
+assert.equal(missingDefinitions.responsibilities[0].commands[0].definitions.length, 0);
+import { decisionStatusDistribution } from "../src/components/delivery-trace/planReviewModel.js";
+assert.equal(decisionStatusDistribution(shared.task_map.owner_decision_items), "deferred 1 · confirmed 4 · pending_validation 1 · proposed 1");
+assert.equal(decisionStatusDistribution([{ status: "future-value" }, {}, { status: "future-value" }]), "future-value 2 · 未声明 1");

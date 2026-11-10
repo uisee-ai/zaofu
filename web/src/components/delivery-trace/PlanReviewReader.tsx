@@ -6,7 +6,7 @@ import PlanSourceReader from "./PlanSourceReader";
 import PlanTraceReader from "./PlanTraceReader";
 import PlanInputReviewPanel from "./PlanInputReviewPanel";
 import { DecisionList, PlanSourceContext, SourceRefs } from "./PlanReviewDetails";
-import { buildPlanReview, relatedTasks, strings, text } from "./planReviewModel";
+import { buildPlanReview, decisionStatusDistribution, relatedTasks, strings, text } from "./planReviewModel";
 import { usePlanArtifacts } from "./usePlanArtifacts";
 import { planReadingSections, planTaskSpecifications, type ReadingSection } from "./planReadingSections";
 import "./planReader.css";
@@ -88,6 +88,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
             <h2>待决事项与阶段边界</h2>
             <p>{registerKnown ? `共 ${decisions.length} 条登记。` : "结构化登记未确认，数量未知；请核对下方同版原文。"}未来待决定、已授权待落实与当前阻塞分别保留；批准 Plan 不会自动关闭它们。</p>
             <p>{decisionSummary}</p>
+            {registerKnown && <p>原始状态：{decisionStatusDistribution(decisions) || "未登记"}。保留作者状态，不据此推定关闭或执行授权。</p>}
             <DecisionList decisions={decisions} {...sourceProps} />
             {!registerKnown && quoted(excerpts.decisions)}
           </>}
@@ -136,6 +137,19 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
                   <h4>{scenario.id} {scenario.title}</h4><p className="muted">证据状态：{scenario.evidenceStatus}</p>
                   <dl><dt>前置 Given</dt><dd>{scenario.given || "待补充"}</dd><dt>操作 When</dt><dd>{scenario.when || "待补充"}</dd><dt>结果 Then</dt><dd>{scenario.then || "待补充"}</dd></dl>
                   <p>验收项：{scenario.acceptanceIds.join("、") || "未绑定"} · 命令：{scenario.commandIds.join("、") || "未绑定"}</p>
+                  <details><summary>逐任务验收责任</summary>
+                    {scenario.responsibilities.map(responsibility => <section key={responsibility.taskId}>
+                      <h5>{responsibility.taskId}{responsibility.taskId === selected.id ? "（当前任务）" : ""}</h5>
+                      <p>直接绑定场景 AC：{responsibility.acceptanceIds.join("、") || "未绑定；请对照本片命令和 Task Spec 核对集成责任"}</p>
+                      <p>本片场景命令：{responsibility.commandIds.join("、") || "未绑定"}</p>
+                      {responsibility.commands.map(command => <div key={command.id}>
+                        {command.definitions.length === 1 ? <>
+                          <pre className="plan-task-command" tabIndex={0}><code>{text(command.definitions[0].command)}</code></pre>
+                          <p>{command.id} · {text(command.definitions[0].owner) || "未声明责任"} · {text(command.definitions[0].tier) || "未声明层级"} · 命令 AC：{strings(command.definitions[0].acceptance_ids).join("、") || "未绑定"}</p>
+                        </> : <p>{command.id}：{command.definitions.length ? "定义不唯一，请核对原文" : "命令正文未提供"}</p>}
+                      </div>)}
+                    </section>)}
+                  </details>
                   <SourceRefs refs={scenario.sourceRefs} {...sourceProps} />
                   {scenario.issues.map(issue => <p role="status" key={issue}>{issue}</p>)}
                 </article>)}
