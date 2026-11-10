@@ -21,11 +21,28 @@
 .plan-document-outline { max-height: 30vh; overflow: auto; flex-shrink: 0; }
 .plan-document-outline input { margin-left: 8px; }
 .plan-review-card > .delivery-action-button { margin: 4px; }
+.plan-document-status { margin: 0; padding: 8px 16px; font-size: var(--text-12); color: var(--muted-foreground); border-bottom: 1px solid var(--line); }
+.plan-document-search { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 14px; flex-shrink: 0; }
+.plan-document-search label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.plan-document-search input { width: min(240px, 40vw); }
+.plan-document-search span { font-size: var(--text-12); color: var(--muted-foreground); }
+.plan-product-content .plan-preview-markdown-pane { padding: 32px max(24px, calc((100% - 820px) / 2)) 64px; }
+.plan-document .agent-markdown, .plan-original-excerpt .agent-markdown { font-size: var(--text-15); line-height: 1.85; }
+.plan-document .agent-markdown :is(h1,h2,h3,h4), .plan-original-excerpt .agent-markdown :is(h1,h2,h3,h4) { text-transform: none; letter-spacing: normal; line-height: 1.4; }
+.plan-document .agent-markdown h1 { font-size: var(--text-24); margin: 0 0 24px; }
+.plan-document .agent-markdown h2 { font-size: var(--text-20); margin: 32px 0 16px; }
+.plan-document .agent-markdown p { white-space: normal; margin: 12px 0; }
+.plan-document .agent-markdown li { margin: 6px 0; }
+.plan-original-excerpt { margin-block: 20px 32px; min-width: 0; }
+.plan-document .agent-markdown table, .plan-original-excerpt .agent-markdown table { width: max-content; min-width: 100%; max-width: none; }
+.plan-document .agent-markdown :is(th,td), .plan-original-excerpt .agent-markdown :is(th,td) { min-width: 110px; max-width: 400px; padding: 10px 14px; overflow-wrap: break-word; }
+.plan-document .agent-markdown td code { white-space: pre; overflow-wrap: normal; }
+.plan-preview-markdown-pane [data-plan-anchor] { scroll-margin-top: 16px; min-width: 0; }
 .plan-product-content :is(button, input, select, summary, a):focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 @media (max-width: 760px) {
   .plan-product-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .plan-product-nav { flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 8px; max-height: 126px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .plan-product-nav > button { min-height: 32px; font-size: var(--text-12); }
+  .plan-product-nav { flex-direction: row; flex-wrap: nowrap; gap: 4px; padding: 8px; max-height: 52px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .plan-product-nav > button { flex-shrink: 0; white-space: nowrap; min-height: 32px; font-size: var(--text-12); }
   .plan-product-nav > label, .plan-module-links, .plan-product-eyebrow { display: none; }
   .plan-product-content .plan-review-scroll, .plan-product-content .plan-preview-markdown-pane { padding: 14px; }
   .plan-document-outline { max-height: 24vh; }

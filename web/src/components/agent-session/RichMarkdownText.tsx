@@ -1,11 +1,13 @@
 import { Check, Copy } from "lucide-react";
-import { memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Streamdown, type StreamdownProps } from "streamdown";
 import type { MarkdownTextProps } from "./MarkdownText";
 
 import { ReferencePreviewContext } from "./referencePreview";
 import { localDocumentLink } from "./previewRegistry";
 import { prettyPrintIfJson } from "./jsonDisplay";
+
+const MarkdownDiagram = lazy(() => import("./MarkdownDiagram"));
 
 type MarkdownComponents = NonNullable<StreamdownProps["components"]>;
 
@@ -49,7 +51,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
   const text = isStreaming ? throttledContent : content;
   const normalized = useMemo(() => text.trim() || "-", [text]);
   const components = useMemo<MarkdownComponents>(() => ({
-    h1: ({ children, ...props }) => <h2 {...props}>{children}</h2>,
+    h1: ({ children, ...props }) => <h1 {...props}>{children}</h1>,
     h2: ({ children, ...props }) => <h2 {...props}>{children}</h2>,
     h3: ({ children, ...props }) => <h3 {...props}>{children}</h3>,
     h4: ({ children, ...props }) => <h4 {...props}>{children}</h4>,
@@ -63,7 +65,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
         : <a href={href} rel="noreferrer" target="_blank" {...props}>{children}</a>;
     },
     table: ({ children, ...props }) => (
-      <div className="agent-markdown-table-wrap">
+      <div className="agent-markdown-table-wrap" role="region" aria-label="表格，可横向滚动" tabIndex={0}>
         <table {...props}>{children}</table>
       </div>
     ),
@@ -82,6 +84,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
   return (
     <div className={`agent-markdown ${isStreaming ? "streaming" : ""} ${className}`.trim()}>
       <Streamdown
+        cdnUrl={null}
         components={components}
         controls={false}
         mode={isStreaming ? "streaming" : "static"}
@@ -97,6 +100,8 @@ export default RichMarkdownText;
 
 function CodeBlock({ code, language }: { code: string; language?: string }) {
   const [copied, setCopied] = useState(false);
+  const [source, setSource] = useState(false);
+  const fence = "`".repeat(Math.max(3, ...Array.from(code.matchAll(/`+/g), m => m[0].length + 1)));
   const handleCopy = async () => {
     if (!navigator.clipboard) return;
     await navigator.clipboard.writeText(code);
@@ -108,14 +113,18 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
       <div className="agent-code-header">
         <span>{language || "text"}</span>
         <small>{code.split("\n").length.toLocaleString()} lines</small>
+        {language === "mermaid" && <button type="button" onClick={() => setSource(!source)} aria-pressed={source}>{source ? "查看流程图" : "查看图源码"}</button>}
         <button type="button" onClick={handleCopy} title={copied ? "Copied" : "Copy code"}>
           {copied ? <Check size={13} /> : <Copy size={13} />}
           <span>{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
-      <pre>
-        <code>{code as ReactNode}</code>
-      </pre>
+      {language === "mermaid" && !source
+        ? <Suspense fallback={<p role="status">正在加载流程图…</p>}><MarkdownDiagram code={code} /></Suspense>
+        : language && language !== "mermaid"
+          ? <Streamdown mode="static" controls={false} cdnUrl={null}>{`${fence}${language}\n${code}\n${fence}`}</Streamdown>
+          : <pre><code>{code as ReactNode}</code></pre>}
+      {language === "mermaid" && !source && <details className="agent-diagram-source"><summary>流程图源码</summary><pre><code>{code}</code></pre></details>}
     </div>
   );
 }

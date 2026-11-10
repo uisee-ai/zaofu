@@ -1,6 +1,7 @@
 ---
 name: zf-prd-plan-synth
 description: "Use for ZaoFu PRD workflows. Defines scan, planning, configured review, and the dispatchable plan contract for product delivery."
+dependencies: [zf-plan-execution-readiness]
 ---
 
 # ZaoFu PRD Plan Synthesis
@@ -31,6 +32,11 @@ configured workflow separates PRD authoring. They do not add `prd-author`,
 `prd-critic`, or `task-map-synth` to the standard PrdFlow.
 
 ## PRD Author Output
+
+编写或评审 PRD 时读取[产品阅读与证据方法](references/product-reading-evidence.md)，
+将摘要、正文、设计和追溯组织为同版权威材料的阅读路径。存在设计问题时，同时读取
+依赖技能中的[设计调研与交接](../zf-plan-execution-readiness/references/design-research-handoff.md)。
+按适用性展开，不增加固定章节、角色或 Runtime 语义门禁。
 
 Channel PRD 输入先消费同版 `implementation_companion` 的来源基线、评审覆盖、验收数据
 计划和 handoff 索引，以及独立评估报告（如已提供）。复核报告的 PRD ref/digest；旧版
@@ -237,7 +243,18 @@ used, place shared reading material in `shared.human_review` and module
 specifications/scenarios in each existing `tasks[].body.human_review`.
 Preserve canonical task/AC/command IDs and bind these artifacts in the same
 Plan Package. The configured reviewer checks semantic consistency; the UI only renders the bound
-content. Neither a page count nor repeated RED/GREEN prose proves clause
+content. For routes without execution_spec, keep the same reading sections in the
+accepted Markdown; the reader quotes those sections without inventing a second
+specification. Store atomic Given/When/Then cases in the existing
+`test_matrix.tests[]` with task_id, acceptance_ids, command_ids, source_refs and
+explicit evidence_status. Do not create a parallel scenario list just for UI.
+Persist the complete decision register in `task_map.owner_decision_items`
+(including deferred, non-blocking and pending-validation items), not only in
+the role's control result. An explicitly empty list means the author reviewed
+and found no decisions; a missing field means unknown. The Critic checks the
+same IDs/statuses against the accepted Markdown and the bound task map;
+its own empty action-question list must not be used as the product register.
+Neither a page count nor repeated RED/GREEN prose proves clause
 coverage. Never rewrite admitted artifacts to improve presentation.
 
 ## Task Design

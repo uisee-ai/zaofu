@@ -63,6 +63,25 @@ def test_real_preview_reads_task_map_decisions_without_changing_action_questions
     assert preview["actions"]["approve"] == "plan-approve"
 
 
+def test_missing_register_is_unknown_in_reading_dossier_not_zero(tmp_path):
+    state, _, _ = _artifacts(tmp_path)
+    events = EventLog(state / "events.jsonl")
+    writer = EventWriter(events)
+    add_human_review_fixture(state, writer)
+    # An unrelated approval has no full task-map decision register.
+    writer.emit("plan.approval.requested", actor="test", payload={
+        "plan_id": "missing-register", "stage_id": "writer", "task_count": 1,
+        "plan_markdown_ref": "artifacts/no-register.md",
+    })
+    (state / "artifacts/no-register.md").write_text("# Plan\n\n## Decision Register\n待确认范围。")
+    preview = build_plan_preview(state, events.read_all(), plan_id="missing-register", project_root=state.parent)
+    assert not preview["decision_review"]["available"]
+    assert "结构化登记未确认，数量未知" in preview["review_dossier_markdown"]
+    assert "**决定登记**：`0`" not in preview["review_dossier_markdown"]
+    assert "| Owner Decisions | `partial` | 未确认，数量未知 |" in preview["review_dossier_markdown"]
+    assert "\n\n| 分区 | 状态 | 计数 |" in preview["review_dossier_markdown"]
+
+
 def test_impact_description_does_not_override_explicit_nonblocking_register(tmp_path):
     from tests.test_plan_review_packet import _packet
     from zf.runtime.plan_review_packet import build_review_packet

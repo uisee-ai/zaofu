@@ -38,7 +38,9 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
   }
   const decisions = rows(map.owner_decision_items);
   const sources = portRows(artifacts.source_index, "traceability");
-  const formal = rows(object(artifacts.test_matrix).formal_acceptance_scenarios);
+  const matrix = object(artifacts.test_matrix);
+  const formal = rows(matrix.formal_acceptance_scenarios);
+  const tests = rows(matrix.tests);
   const modules = tasks.map((task) => {
     const id = text(task.task_id || task.id);
     const matches = partitions.filter(p => p.task_id === id);
@@ -48,7 +50,11 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
     const criteria = rows(task.acceptance_criteria);
     const acceptanceIds = new Set(criteria.map(ac => text(ac.id)));
     const knownCommands = new Set(criteria.flatMap(ac => strings(ac.verification_command_ids)));
-    const scenarios = rows(review.scenarios).map(scenario => {
+    // Prefer the module's explicit human review; otherwise use the admitted
+    // test-matrix contract. Task identity wins over reused AC identifiers.
+    const authoredScenarios = rows(review.scenarios);
+    const candidates = authoredScenarios.length ? authoredScenarios : tests.filter(s => relatedTasks(s).includes(id));
+    const scenarios = candidates.map(scenario => {
       const refs = strings(scenario.acceptance_ids);
       const sourceRefs = unique([...strings(scenario.source_refs), ...strings(scenario.source_ids).flatMap(id => sources.filter(s => s.source_id === id).map(s => text(s.source_ref)))]);
       const issues: string[] = [];
@@ -60,18 +66,18 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
       if (!sourceRefs.length) issues.push("来源条款尚未绑定");
       if (!strings(scenario.command_ids).length) issues.push("验证命令尚未绑定");
       else if (strings(scenario.command_ids).some(id => !knownCommands.has(id))) issues.push("场景命令未绑定到本任务验收项");
-      return { id: text(scenario.id), title: text(scenario.title || scenario.name), given: text(scenario.given), when: text(scenario.when), then: text(scenario.then), sourceRefs, acceptanceIds: refs, commandIds: strings(scenario.command_ids), issues };
+      return { id: text(scenario.id || scenario.case_id), evidenceStatus: text(scenario.evidence_status) || "未声明（规划场景，不代表测试通过）", title: text(scenario.title || scenario.name), given: text(scenario.given), when: text(scenario.when), then: text(scenario.then), sourceRefs, acceptanceIds: refs, commandIds: strings(scenario.command_ids), issues };
     });
     return {
       id, title: text(task.title), description: text(task.description),
       sourceRefs: unique([text(task.source_ref), ...strings(task.source_refs)]),
       dependencies: strings(task.blocked_by || task.dependencies),
-      criteria: criteria.map(ac => ({ id: text(ac.id), statement: text(ac.statement), sourceRef: text(ac.source_ref), commandIds: strings(ac.verification_command_ids), tier: text(ac.verification_tier) })),
+      criteria: criteria.map(ac => ({ id: text(ac.id), statement: text(ac.statement), sourceRefs: unique([text(ac.source_ref), ...strings(ac.source_refs), ...sources.filter(s => relatedTasks(s).includes(id) && (strings(s.acceptance_ids).includes(text(ac.id)) || s.acceptance_id === ac.id)).map(s => text(s.source_ref))]), commandIds: strings(ac.verification_command_ids), tier: text(ac.verification_tier) })),
       pages: rows(inventory.pages).filter(p => relatedTasks(p).includes(id)),
       forms: rows(inventory.forms).filter(p => relatedTasks(p).includes(id)),
       decisions: decisions.filter(d => d.producer_task_id === id || strings(d.affected_task_ids).includes(id) || unique([...strings(task.prerequisite_decision_ids), ...strings(task.decision_ids)]).includes(text(d.decision_id))),
       specification: text(review.module_spec_markdown), scenarios,
-      formalScenarios: formal.filter(s => s.task_id === id || acceptanceIds.has(text(s.acceptance_id))),
+      formalScenarios: formal.filter(s => relatedTasks(s).length ? relatedTasks(s).includes(id) : acceptanceIds.has(text(s.acceptance_id))),
     };
   });
   return { modules, decisions, goals: rows(map.goal_claims), groups: rows(map.modules), warnings,

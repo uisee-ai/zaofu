@@ -11,6 +11,7 @@
 |---|---|---|
 | 第一次安装并完成一次可验证交付 | [首个可验证交付](getting-started/first-verified-delivery.md) | Task 进入 Workflow，Delivery 能解释结果和证据 |
 | 用多人和 Agent 把模糊需求聊成 PRD | [Channel 到 PRD](workflows/channel-to-prd.md) | Owner 确认 canonical PRD，并得到来源回执 |
+| 把 PRD 与设计交给开发并评估阅读效果 | [PRD 与设计交接](workflows/prd-design-review.md) | 同版设计/AC/任务可追溯，方法验证与真实产品效果分别报告 |
 | 为已有 Task 选择并启动 Workflow | [受控 Workflow 启动](workflows/controlled-workflow-start.md) | exact proposal 获批并产生 `workflow.invoke.requested` |
 | 签收 PRD、Issue、Refactor、General、Research 五类真实 Workflow | [五类 Workflow 真实 E2E](18-product-fanout-real-e2e.md) | exact Run 到达 family 对应终态，identity、artifact 和 evidence 全程可回读 |
 | 判断一个长期目标是否真的完成 | [观察一次交付](operations/observe-delivery.md) | 能从 Goal、Claim、Task、Evidence、Gap、Closure 解释结论 |

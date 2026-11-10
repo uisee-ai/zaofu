@@ -1,0 +1,678 @@
+{
+  "task_map": {
+    "tasks": [
+      {
+        "task_id": "RL-SCAFFOLD",
+        "title": "建立可启动且可验证的静态页面骨架",
+        "description": "只建立原生 ES module 包元数据、锁文件、HTTP 开发服务、空壳和约定；为下一任务提供实际服务与浏览器依赖。测试覆盖启动、路径与空壳返回，不宣称产品功能完成。",
+        "blocked_by": [],
+        "source_ref": "requirement.md#本地设计知识（已确认约束）",
+        "acceptance_criteria": [
+          {
+            "id": "AC-S1",
+            "statement": "干净检出可按约定启动可访问的空壳页面；锁文件和测试布局可重复使用。",
+            "mandatory": true,
+            "verification_owner": "task_verify",
+            "verification_tier": "runtime",
+            "verification_command_ids": ["C-SCAFFOLD"]
+          }
+        ]
+      },
+      {
+        "task_id": "RL-READING",
+        "title": "交付添加、阅读筛选与可靠恢复的完整旅程",
+        "description": "一个事务所有者贯通表单、校验去重、localStorage、列表、失败恢复、安全、响应布局和键盘访问；负责真实入口与全部浏览器验收。",
+        "blocked_by": ["RL-SCAFFOLD"],
+        "source_ref": "requirement.md#已确认行为与验收",
+        "acceptance_criteria": [
+          {
+            "id": "AC-1",
+            "statement": "标题和 URL 必填并去首尾空白；只接受 http/https。无效字段显示文字提示且不新增；保存成功后新增未读、保留标题 URL 创建时间并清空已提交表单。",
+            "mandatory": true,
+            "verification_owner": "task_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": ["C-CORE", "C-UI", "C-CANDIDATE"]
+          },
+          {
+            "id": "AC-2",
+            "statement": "按去首尾空白后的 URL 原字符串精确去重，不归一化大小写或查询参数；重复提示已存在并保留原记录。",
+            "mandatory": true,
+            "verification_owner": "task_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": ["C-CORE", "C-UI", "C-CANDIDATE"]
+          },
+          {
+            "id": "AC-3",
+            "statement": "已读与未读双向切换不改变创建时间；全部、未读、已读筛选即时反映状态变化。",
+            "mandatory": true,
+            "verification_owner": "task_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": ["C-CORE", "C-UI", "C-CANDIDATE"]
+          },
+          {
+            "id": "AC-4",
+            "statement": "新增与状态修改成功后刷新恢复；保存失败不显示成功、不覆盖最后已保存状态，保留新增表单或原阅读状态并提示重试。",
+            "mandatory": true,
+            "verification_owner": "task_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": ["C-CORE", "C-UI", "C-CANDIDATE"]
+          },
+          {
+            "id": "AC-5",
+            "statement": "首次无记录、筛选无结果、读取失败分别表达；读取失败保护不可读存量、禁止写入，支持重试读取，没有自动重置或删除。",
+            "mandatory": true,
+            "verification_owner": "task_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": ["C-CORE", "C-UI", "C-CANDIDATE"]
+          },
+          {
+            "id": "AC-6",
+            "statement": "标题作为文本；链接新窗口且隔离 opener，无预览；创建时间倒序且同时间保持插入顺序；375px/1280px 示例不横向溢出，键盘可添加、筛选、切换状态，有字段标签和可见焦点。",
+            "mandatory": true,
+            "verification_owner": "task_verify",
+            "verification_tier": "e2e",
+            "verification_command_ids": ["C-CORE", "C-UI", "C-CANDIDATE"]
+          }
+        ]
+      }
+    ]
+  },
+  "test_matrix": {
+    "schema_version": "test-matrix.v1",
+    "tests": [
+      {
+        "acceptance_ids": ["AC-1"],
+        "case_id": "ADD-TRIM",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "空存储",
+        "id": "ADD-TRIM",
+        "observation_kind": "interaction",
+        "source_ids": ["S-1A", "S-1B"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "保存 trim 后字符串、新未读记录及时间；仅提交成功后清空表单。",
+        "when": "提交标题“  示例  ”和 URL“ https://example.com/a  ”"
+      },
+      {
+        "acceptance_ids": ["AC-1"],
+        "case_id": "ADD-INVALID",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "空数据和完整表单",
+        "id": "ADD-INVALID",
+        "observation_kind": "dom",
+        "source_ids": ["S-1A", "S-1B"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "对应字段文字提示，输入保留，DOM 与存储记录数不变。",
+        "when": "分别提交空白标题、空 URL、乱码 URL、ftp 或 javascript URL"
+      },
+      {
+        "acceptance_ids": ["AC-2"],
+        "case_id": "DUP-EXACT",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "原记录具有原标题和时间",
+        "id": "DUP-EXACT",
+        "observation_kind": "state",
+        "source_ids": ["S-2A", "S-2B"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "提示已存在，原对象及原存储不变，保留本次表单。",
+        "when": "用新标题提交首尾带空格的同一 URL"
+      },
+      {
+        "acceptance_ids": ["AC-2"],
+        "case_id": "DUP-DIFFERENT",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "已有 https://example.com/a?x=1",
+        "id": "DUP-DIFFERENT",
+        "observation_kind": "state",
+        "source_ids": ["S-2A", "S-2B"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "每个不相等原字符串均可新增，不使用解析器规范化 URL 去重。",
+        "when": "提交 /A?x=1、/a?x=2，以及主机名大小写不同的合法原始字符串"
+      },
+      {
+        "acceptance_ids": ["AC-3"],
+        "case_id": "STATUS-BOTH",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "A 未读、B 已读",
+        "id": "STATUS-BOTH",
+        "observation_kind": "state",
+        "source_ids": ["S-3A", "S-3B"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "只改变 read；id、标题、URL、创建时间和插入序保持。",
+        "when": "A 标已读再恢复未读"
+      },
+      {
+        "acceptance_ids": ["AC-3"],
+        "case_id": "FILTER-LIVE",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "A 未读、B 已读",
+        "id": "FILTER-LIVE",
+        "observation_kind": "interaction",
+        "source_ids": ["S-3A", "S-3B"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "当前筛选立即移出 A，筛选选择保留，全部显示两条。",
+        "when": "在未读筛选将 A 标已读，再在已读筛选恢复未读，最后全部"
+      },
+      {
+        "acceptance_ids": ["AC-4"],
+        "case_id": "RELOAD-ADD",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "真实 localStorage 空",
+        "id": "RELOAD-ADD",
+        "observation_kind": "state",
+        "source_ids": ["S-4A", "S-4B", "S-4C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "标题 URL 时间 未读恢复，不依赖假存储。",
+        "when": "通过真实页面新增再刷新"
+      },
+      {
+        "acceptance_ids": ["AC-4"],
+        "case_id": "RELOAD-TOGGLE",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "真实页面已新增 A",
+        "id": "RELOAD-TOGGLE",
+        "observation_kind": "state",
+        "source_ids": ["S-4A", "S-4B", "S-4C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "已读和原始 id/时间恢复。",
+        "when": "标已读再刷新"
+      },
+      {
+        "acceptance_ids": ["AC-4"],
+        "case_id": "SAVE-ADD-FAIL",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "已保存 A，setItem 抛错",
+        "id": "SAVE-ADD-FAIL",
+        "observation_kind": "state",
+        "source_ids": ["S-4A", "S-4B", "S-4C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "无 B、无成功提示，最后持久化 A 字节不变，B 表单保留并提示重试。",
+        "when": "填写 B 后新增"
+      },
+      {
+        "acceptance_ids": ["AC-4"],
+        "case_id": "SAVE-TOGGLE-FAIL",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "A 未读且当前未读筛选，setItem 抛错",
+        "id": "SAVE-TOGGLE-FAIL",
+        "observation_kind": "state",
+        "source_ids": ["S-4A", "S-4B", "S-4C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "A 仍可见且未读，原时间和原始存储不变，提示重试。",
+        "when": "标 A 已读"
+      },
+      {
+        "acceptance_ids": ["AC-4"],
+        "case_id": "SAVE-RETRY",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "分别在新增和切换失败的独立上下文",
+        "id": "SAVE-RETRY",
+        "observation_kind": "state",
+        "source_ids": ["S-4A", "S-4B", "S-4C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "各提交一次正确状态、不重复；刷新恢复；新增只在成功后清空。",
+        "when": "解除故障并由用户显式重试"
+      },
+      {
+        "acceptance_ids": ["AC-5"],
+        "case_id": "FIRST-EMPTY",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "storage key 不存在",
+        "id": "FIRST-EMPTY",
+        "observation_kind": "dom",
+        "source_ids": ["S-5A", "S-5B", "S-5C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "显示“还没有阅读记录”且可添加，与读取失败区分。",
+        "when": "首次打开"
+      },
+      {
+        "acceptance_ids": ["AC-5"],
+        "case_id": "FILTER-EMPTY",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "仅有已读记录",
+        "id": "FILTER-EMPTY",
+        "observation_kind": "dom",
+        "source_ids": ["S-5A", "S-5B", "S-5C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "显示“此筛选下没有记录”，切回全部恢复。",
+        "when": "选择未读，再选择全部"
+      },
+      {
+        "acceptance_ids": ["AC-5"],
+        "case_id": "READ-THROW",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "存量有效 A，getItem 暂时抛错",
+        "id": "READ-THROW",
+        "observation_kind": "state",
+        "source_ids": ["S-5A", "S-5B", "S-5C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "显示读取失败和重试读取；写入禁用，原始存量不变，没有删除/重置入口。",
+        "when": "启动并尝试新增/切换"
+      },
+      {
+        "acceptance_ids": ["AC-5"],
+        "case_id": "READ-CORRUPT",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "分别为无效 JSON、错误数据结构、未知版本",
+        "id": "READ-CORRUPT",
+        "observation_kind": "state",
+        "source_ids": ["S-5A", "S-5B", "S-5C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "读取失败，不假装空状态；原始字符串不变，禁止写入。",
+        "when": "启动"
+      },
+      {
+        "acceptance_ids": ["AC-5"],
+        "case_id": "READ-RETRY",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "有效 A 但暂时读取失败",
+        "id": "READ-RETRY",
+        "observation_kind": "interaction",
+        "source_ids": ["S-5A", "S-5B", "S-5C"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "恢复后显示 A 并解除写锁；持续失败仍保留保护与错误。",
+        "when": "解除故障点击重试读取，再重复一次持续失败"
+      },
+      {
+        "acceptance_ids": ["AC-6"],
+        "case_id": "TITLE-XSS",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "标题为 <img src=x onerror=alert(1)>",
+        "id": "TITLE-XSS",
+        "observation_kind": "dom",
+        "source_ids": ["S-6A", "S-6B", "S-6C", "S-DESIGN", "S-VIEWPORT"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "显示字面文本，无 img 节点、脚本或预览请求。",
+        "when": "添加并展示"
+      },
+      {
+        "acceptance_ids": ["AC-6"],
+        "case_id": "LINK-ISOLATE",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "真实示例链接，浏览器仅本地拦截目标文档",
+        "id": "LINK-ISOLATE",
+        "observation_kind": "interaction",
+        "source_ids": ["S-6A", "S-6B", "S-6C", "S-DESIGN", "S-VIEWPORT"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "新窗口 opener 为 null，rel 含 noopener noreferrer，无链接预览，原页保留。",
+        "when": "键盘激活链接"
+      },
+      {
+        "acceptance_ids": ["AC-6"],
+        "case_id": "ORDER-TIES",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "插入 A(T1), B(T2), C(T2)，T2>T1",
+        "id": "ORDER-TIES",
+        "observation_kind": "state",
+        "source_ids": ["S-6A", "S-6B", "S-6C", "S-DESIGN", "S-VIEWPORT"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "始终 B C A，切换不修改创建时间，同时间保留插入顺序。",
+        "when": "展示、切换状态、刷新"
+      },
+      {
+        "acceptance_ids": ["AC-6"],
+        "case_id": "KEYBOARD",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "375px 与1280px 两个视口",
+        "id": "KEYBOARD",
+        "observation_kind": "interaction",
+        "source_ids": ["S-6A", "S-6B", "S-6C", "S-DESIGN", "S-VIEWPORT"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "全部操作完成，标签关联输入，焦点可见；记录移出筛选后焦点落到合理的筛选或相邻控件。",
+        "when": "只用 Tab/ShiftTab/Enter/Space 添加、选择三种筛选、双向切换状态"
+      },
+      {
+        "acceptance_ids": ["AC-6"],
+        "case_id": "LAYOUT-STATES",
+        "command_ids": ["C-UI", "C-CANDIDATE"],
+        "evidence_status": "NOT_RUN",
+        "expected_evidence_paths": ["artifacts/evidence/reading/task/", "artifacts/evidence/reading/candidate/"],
+        "given": "375px 与1280px；固定时间、系统字体、停动画，超长标题 URL",
+        "id": "LAYOUT-STATES",
+        "observation_kind": "visual",
+        "source_ids": ["S-6A", "S-6B", "S-6C", "S-DESIGN", "S-VIEWPORT"],
+        "source_refs": ["requirement.md#已确认行为与验收"],
+        "task_id": "RL-READING",
+        "then": "文档/表单/列表无横向溢出，蓝色主操作、红色错误附文字、单列卡片；逐状态截图供审查，不自动批准视觉基线。",
+        "when": "遍历正常、首次空、筛选空、读取失败、保存失败"
+      }
+    ],
+    "commands": [
+      {
+        "acceptance_ids": ["AC-S1"],
+        "command": "node --test tests/scaffold/scaffold.test.mjs",
+        "deterministic": true,
+        "id": "C-SCAFFOLD",
+        "owner": "task_verify",
+        "producer_task_id": "RL-SCAFFOLD",
+        "reusable": true,
+        "rolling_smoke": true,
+        "tier": "runtime",
+        "timeout_seconds": 120
+      },
+      {
+        "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6"],
+        "command": "node --test tests/reading-list/core.test.mjs",
+        "deterministic": true,
+        "id": "C-CORE",
+        "owner": "task_verify",
+        "producer_task_id": "RL-READING",
+        "reusable": true,
+        "rolling_smoke": true,
+        "tier": "runtime",
+        "timeout_seconds": 120
+      },
+      {
+        "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6"],
+        "command": "bash tools/browser/run.sh task",
+        "deterministic": true,
+        "id": "C-UI",
+        "owner": "task_verify",
+        "producer_paths": ["artifacts/evidence/reading/task/"],
+        "producer_task_id": "RL-READING",
+        "reusable": true,
+        "rolling_smoke": false,
+        "tier": "e2e",
+        "timeout_seconds": 900
+      },
+      {
+        "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6"],
+        "command": "bash tools/browser/run.sh candidate",
+        "deterministic": true,
+        "id": "C-CANDIDATE",
+        "owner": "candidate_verify",
+        "producer_paths": ["artifacts/evidence/reading/candidate/"],
+        "producer_task_id": "RL-READING",
+        "reusable": true,
+        "rolling_smoke": false,
+        "tier": "e2e",
+        "timeout_seconds": 900
+      }
+    ]
+  },
+  "markdown": "# 个人阅读清单：PRD、设计与执行候选 Plan\n\n## 评审入口、权威与授权\n\n个人用户希望把待阅读链接保存在当前浏览器，阅读后标记完成，并迅速找到未读内容。唯一产品行为权威是冻结的 requirement.md，数据是授权的合成评测，没有真实用户访谈或指标实测。不可变 workflow request 为下列 requirement_spec_ref；两份 product-scan / tech-scan 报告作为规划输入，均不构成产品验收或审批。\n\n本期为单用户单页 Web：无账号、服务器、跨设备同步、第三方抓取或 AI 摘要。不得增加自动重置或删除。只生成 PRD/SDD/TDD、任务和验收设计，停止在配置的 Critic 与人工 Plan 审批入口；当前 authorizes_execution=false，Plan 提交不是实施或发布许可。未来实施基于 HEAD 固定提交 0ad3ba3cba5df60deae9215690783dee91866aaa；目标根为当前仓库相对路径 `.`，输入中的外部根只作为来源定位，不授予写入权限。requirement.md、zf.yaml、AGENTS.md 保持原样。\n\nrequirement_spec_ref: /tmp/zf-prd205-v5-20261110T083647Z/workflow-retry/.zf-test/workflow-requests/workflow-9bbe3bd3920dc100/requirements/revision-0002-c5044694097689c8.json\n\n本地设计资料已经确认四类组件、颜色、排版和样例视口，足够支撑本次低保真设计，因此不为凑研究条数联网。所有新架构细节是待审查的技术提案，不冒充 Owner 新批准的产品行为。没有缩小原始六条验收；D-1 是未来决定，D-2 是未来观察，D-3 是当前执行阻塞。\n\n## PRD：价值、故事和成功观察\n\n|故事|可观察价值与演示|优先级|验收/任务|\n|---|---|---|---|\n|US-SAVE 保存链接|输入后得到一条未读；不合法和重复给可纠正提示，原数据不变|必须|AC-1/2，RL-READING|\n|US-READ 阅读筛选|标已读后从未读筛选即时消失；可恢复；刷新后仍在|必须|AC-3/4，RL-READING|\n|US-RECOVER 失败恢复|保存失败保留用户努力，读取失败保护存量并可重试|必须|AC-4/5，RL-READING|\n|US-ACCESS 安全可操作|键盘完成完整旅程，安全打开链接，窄屏能阅读|必须|AC-6，RL-READING|\n\n基线、目标和实际结果均未知，保持待验证。未来得到执行授权后，由产品 Owner 组织独立观察者，使用 example.com 合成任务观察“新增→筛未读→标已读→刷新恢复”的完成情况，以及失败提示后重试是否恢复。记录有效任务尝试数、完成数、所需重试、找到未读的步骤和恢复理解反馈；时间可作探索性观察，不先编造达标阈值。环境安装失败单列，不进入产品失败率分母。记录设备/视口、数据规模、熟悉度等混淆因素，不采集个人链接。首次获准原型观察后复盘，由 Owner 决定基线和目标，责任角色具体姓名尚未提供。当前不新增遥测系统，也不声称真实研究已完成。\n\n## 低保真页面与交互设计\n\n复用按钮、文本输入、状态筛选、列表卡片四类约定。系统字体、单列、蓝色主操作；错误红色并同时提供文字，不能只靠颜色。标题和 URL 都有持久可见 label 与字段错误关联；错误可通过状态区域宣布，焦点轮廓不能移除。表单提交、筛选、双向状态切换支持 Tab/ShiftTab/Enter/Space。卡片移出当前筛选时，把焦点转到合理的相邻操作或筛选控件。长标题与 URL 允许断行，控件可收缩，不能撑破视口。375px 与1280px仅为本次验收样例。\n\n```text\n正常：   阅读清单\n         标题 [示例文章              ]\n         URL  [https://example.com/a ] [添加]\n         [全部] [未读] [已读]\n         [示例文章 ↗  创建时间  未读  [标记已读]]\n首次空： 同一表单与筛选；“还没有阅读记录，添加第一条链接”\n筛选空： 同一表单与当前筛选；“此筛选下没有记录”，可切回全部\n读取失败： “读取失败，原数据未修改” [重试读取]；写入禁用\n保存失败： “保存失败，请重试”；新增保留所有输入，或卡片保留原阅读状态\n字段失败： 对应标题/URL下显示具体原因，保留输入，不新增\n```\n\n页面保留真实标题文本，链接用新窗口并隔离 opener，无抓取、图像预览或摘要。读取失败不显示“首次空”，不提供重置/删除。每个状态都在两种视口留截图供未来视觉评审，无高保真效果图要求。\n\n```mermaid\nflowchart TD\n A[打开页面] --> B{读取存储并校验}\n B -->|失败| C[显示读取失败并锁定写入]\n C -->|用户重试读取| B\n B -->|成功或 key 不存在| D[显示当前筛选及列表/首次空]\n D --> E{提交新增或切换状态}\n E -->|新增| F[trim 必填 http/https 精确去重]\n F -->|非法/重复| G[字段或重复提示 保留输入]\n G --> D\n F -->|合法| H[复制候选状态]\n E -->|切换| H\n H --> I{写入一次完整快照}\n I -->|失败| J[保留原状态/输入 提示重试]\n J --> E\n I -->|成功| K[发布新状态 新增清空表单]\n K --> D\n D -->|切换筛选| D\n```\n\n## SDD：边界、数据与失败契约\n\n产品采用原生 HTML/CSS/ES modules，入口 app/index.html。Node HTTP 服务只用于本地开发与验收，不是产品后台。骨架建立根包和锁文件，功能切片负责全部 app 页面、事件绑定、存储适配器以及测试；一套提交事务避免多个写入者在失败恢复上分歧。无需设计系统库或外部架构服务。\n\n存储 key 为 reading-list:v1，快照协议 reading-store.v1：`{version:1,items:[{id,title,url,createdAt,read}]}`。id 是本地稳定唯一标识，title/url 保存 trim 后原字符串，createdAt 为有限毫秒时间戳，read 为布尔。items 保持原插入次序；显示按 createdAt 降序，平局按数组原序。状态切换不重建 id 或 createdAt。不存在 key 是空集合；不合法 JSON、未知版本、字段结构错误或 getItem 抛错都进入读取失败，不能自动迁移、修复、重置或覆盖原始字节。\n\n新增输入为 `{title,url}`：trim 后必填，用 URL 解析器仅判断合法性和协议是否 http:/https:，不得把规范化后的 href 当保存值或去重键；重复按原 trim 字符串严格相等。输出为新增未读记录或字段/重复错误。状态输入 `{id,nextRead}`，输出仅 read 变化。筛选输入 all/unread/read 是页面内存状态，不写存储。读取输出 ready(items) 或 read_failed(error)，后者锁定全部写入直到显式重试成功。\n\n提交次序：从最后成功状态复制候选→校验/序列化→一次 setItem 完整快照→仅成功后发布内存和 DOM→新增才清空已提交表单。setItem 或序列化失败不得先改卡片、时间或表单，不显示成功，保留最后持久化快照并给重试提示。重试是用户显式重做同一新增/切换；成功一次即可，不重复插入。读取失败原始存量不可读时不能生成空快照。多标签并发写入未在输入中定义，列为未来实现风险；本计划不承诺同步或添加跨页协议。\n\n安全边界：标题通过 textContent 等文本机制显示；锚点 target=_blank、rel=noopener noreferrer。URL 协议白名单先于 DOM 创建。禁止 innerHTML 注入标题和任何预览请求。页面无需外部资源。错误描述不能泄露个人链接；本次示例都用 example.com。\n\n## 正式任务、所有权与执行波次\n\n|任务/波次|依赖|交付与独占边界|验收与验证|\n|---|---|---|---|\n|RL-SCAFFOLD / 1|无|建立可启动且可验证的静态页面骨架；package.json; package-lock.json; tools/serve.mjs; tools/scaffold.html; docs/development/conventions.md; tests/scaffold/; artifacts/evidence/scaffold/|AC-S1；C-SCAFFOLD|\n|RL-READING / 2|RL-SCAFFOLD|交付添加、阅读筛选与可靠恢复的完整旅程；app/; tests/reading-list/; tests/browser/; tools/browser/; artifacts/evidence/reading/|AC-1,AC-2,AC-3,AC-4,AC-5,AC-6；C-CORE,C-UI,C-CANDIDATE|\n\n骨架由 dev-lane-0 负责，功能与最终装配由独立 dev-lane-1 负责；真实依赖仍要求两波串行执行。RL-READING 的 root_owner_class=assembly，拥有真实入口与最终接线。波1唯一骨架任务显式拥有 package.json 和锁文件，波2依赖骨架真实服务/约定。不存在共享可写路径，也没有按前后端/测试层横切任务。每个任务负责自己的实现和测试，验证可读取兄弟任务文件，不转移写权限。路径详情、全部结构化验收和逐命令契约在 task_map.json。原需求路径不是实现所有权。\n\n当前只评审。未来顺序：独立配置 Critic→人工 Plan 审批并另行授权执行→波1实现自检→不同角色 task_verify→verify_admitted→串行 CAS 集成及 C-SCAFFOLD rolling smoke→波2实现自检→独立 C-CORE/C-UI→verify_admitted→CAS 集成及 C-CORE rolling smoke→冻结候选精确提交→C-CANDIDATE→Judge。配置实现和 Verify 各8槽、最多16 pipeline，但本计划真实依赖不并行。集成容量1，未验证任务不解锁依赖；最多2次返工遵从配置。当前每个未来 gate 都 PENDING，不能为提交 Plan 要求其提前通过。\n\n## TDD 与证据交接\n\n波1先建立可启动空壳及锁定依赖，随后以真实行为失败驱动功能：1）新增 trim/非法/重复；2）读取保护、保存失败与重试；3）双向状态、筛选、排序和平局；4）真实 DOM、刷新、链接隔离、键盘和布局。RED 必须是目标行为缺失，不能把缺依赖或语法错误充当行为 RED。先做最小实现使对应断言通过，再在保持行为的条件下整理。当前没有实施任何步骤，RED/GREEN/重构证据均 NOT_RUN。\n\nC-CORE 是状态/校验/事务/排序等便宜回归，覆盖每条 AC 的可计算部分，不代替完整 DOM 和真实浏览器验收。任务实现者必须自检，独立 task_verify 复用精确命令，并核对实际断言和错误分支；最终 candidate_verify 在冻结精确提交重新执行完整旅程。每条 AC 只在所有强制断言通过、退出码0且产出绑定目标提交的证据后才可通过。\n\n|ID|精确命令|Owner / tier|AC|未来产出|\n|---|---|---|---|---|\n|C-SCAFFOLD|`node --test tests/scaffold/scaffold.test.mjs`|task_verify / runtime|AC-S1|退出码及断言输出，由验证报告绑定|\n|C-CORE|`node --test tests/reading-list/core.test.mjs`|task_verify / runtime|AC-1,AC-2,AC-3,AC-4,AC-5,AC-6|退出码及断言输出，由验证报告绑定|\n|C-UI|`bash tools/browser/run.sh task`|task_verify / e2e|AC-1,AC-2,AC-3,AC-4,AC-5,AC-6|artifacts/evidence/reading/task/|\n|C-CANDIDATE|`bash tools/browser/run.sh candidate`|candidate_verify / e2e|AC-1,AC-2,AC-3,AC-4,AC-5,AC-6|artifacts/evidence/reading/candidate/|\n\n每次浏览器执行输出到 artifacts/evidence/reading/task/ 或 candidate/：命令、退出码、提交 SHA、环境版本、断言结果 JSON、Playwright 报告与 trace、各视口各状态截图、关键动作前后 DOM 与存储快照。保存失败必须证明原始存储字节未改；读取失败必须证明没有 setItem；刷新成功必须使用真实 localStorage。预期路径是未来 producer_paths，不是现有 evidence_refs。任何断言失败即产品失败；安装/端口/镜像等环境问题单列 ENVIRONMENT，不冒充产品 RED 或通过。\n\n### 干净检出与浏览器命令契约\n\nsetup_declared=false，不能假设安装阶段存在。RL-SCAFFOLD 未来创建锁定确切 Playwright 版本的 package.json/package-lock.json；RL-READING 创建 tools/browser/run.sh 与 tools/browser/playwright.config.mjs，使 task/candidate 两个参数自包含冷启动准备。验证入口存储的完整命令不含拼接或转义敏感脚本；复杂逻辑全部进入任务拥有的脚本。服务绑定0.0.0.0:4173；浏览器 origin/service_url 均 http://127.0.0.1:4173，入口 /app/index.html，不使用8001。\n\nrunner 的未来 Docker 形状：`docker run --rm --network host --user \"$(id -u):$(id -g)\" --entrypoint bash -v \"$PWD:/work\" -w /work -e PLAYWRIGHT_BROWSERS_PATH=0 mcp/playwright:latest -lc '<runner body>'`。此形状是脚本实现要求，不能把宿主变量原样作为 task_map 命令路径。容器 body 使用 set -euo pipefail，依次 npm ci、timeout 180s ./node_modules/.bin/playwright install chromium、./node_modules/.bin/playwright test --config tools/browser/playwright.config.mjs。明确写入权限、HOME/npm 缓存采用任务临时目录，整个命令900秒上限；不依赖宿主 node_modules 或已有浏览器缓存，不调用未安装全局 npx。记录镜像实际 digest、Node/npm/Playwright/Chromium 版本，latest 漂移若影响结果应重新评审，不隐瞒。\n\nPlaywright 配置启动并等待上述真实服务健康，workers=1，每个任务工作树独立端口使用；不在同一个工作树并行启动相同端口。每个场景独立 browser context。正常新增/切换/刷新用真实存储；仅错误场景注入可控的 getItem/setItem 异常，保留并观察真实底层原始存量。冻结时间和合成 fixture，视觉停动画，375/1280逐状态截图；不自动批准基线。链接目标本地拦截，不访问外部账号。最终验证从干净检出开始，核对被测 SHA 精确等于 frozen candidate；规划 target_commit 是起始基线，不能冒充最终实现提交。\n\n### 具名验收场景（全部 NOT_RUN）\n\n|场景/AC|Given|When|Then|\n|---|---|---|---|\n|ADD-TRIM / AC-1|空存储|提交标题“  示例  ”和 URL“ https://example.com/a  ”|保存 trim 后字符串、新未读记录及时间；仅提交成功后清空表单。|\n|ADD-INVALID / AC-1|空数据和完整表单|分别提交空白标题、空 URL、乱码 URL、ftp 或 javascript URL|对应字段文字提示，输入保留，DOM 与存储记录数不变。|\n|DUP-EXACT / AC-2|原记录具有原标题和时间|用新标题提交首尾带空格的同一 URL|提示已存在，原对象及原存储不变，保留本次表单。|\n|DUP-DIFFERENT / AC-2|已有 https://example.com/a?x=1|提交 /A?x=1、/a?x=2，以及主机名大小写不同的合法原始字符串|每个不相等原字符串均可新增，不使用解析器规范化 URL 去重。|\n|STATUS-BOTH / AC-3|A 未读、B 已读|A 标已读再恢复未读|只改变 read；id、标题、URL、创建时间和插入序保持。|\n|FILTER-LIVE / AC-3|A 未读、B 已读|在未读筛选将 A 标已读，再在已读筛选恢复未读，最后全部|当前筛选立即移出 A，筛选选择保留，全部显示两条。|\n|RELOAD-ADD / AC-4|真实 localStorage 空|通过真实页面新增再刷新|标题 URL 时间 未读恢复，不依赖假存储。|\n|RELOAD-TOGGLE / AC-4|真实页面已新增 A|标已读再刷新|已读和原始 id/时间恢复。|\n|SAVE-ADD-FAIL / AC-4|已保存 A，setItem 抛错|填写 B 后新增|无 B、无成功提示，最后持久化 A 字节不变，B 表单保留并提示重试。|\n|SAVE-TOGGLE-FAIL / AC-4|A 未读且当前未读筛选，setItem 抛错|标 A 已读|A 仍可见且未读，原时间和原始存储不变，提示重试。|\n|SAVE-RETRY / AC-4|分别在新增和切换失败的独立上下文|解除故障并由用户显式重试|各提交一次正确状态、不重复；刷新恢复；新增只在成功后清空。|\n|FIRST-EMPTY / AC-5|storage key 不存在|首次打开|显示“还没有阅读记录”且可添加，与读取失败区分。|\n|FILTER-EMPTY / AC-5|仅有已读记录|选择未读，再选择全部|显示“此筛选下没有记录”，切回全部恢复。|\n|READ-THROW / AC-5|存量有效 A，getItem 暂时抛错|启动并尝试新增/切换|显示读取失败和重试读取；写入禁用，原始存量不变，没有删除/重置入口。|\n|READ-CORRUPT / AC-5|分别为无效 JSON、错误数据结构、未知版本|启动|读取失败，不假装空状态；原始字符串不变，禁止写入。|\n|READ-RETRY / AC-5|有效 A 但暂时读取失败|解除故障点击重试读取，再重复一次持续失败|恢复后显示 A 并解除写锁；持续失败仍保留保护与错误。|\n|TITLE-XSS / AC-6|标题为 <img src=x onerror=alert(1)>|添加并展示|显示字面文本，无 img 节点、脚本或预览请求。|\n|LINK-ISOLATE / AC-6|真实示例链接，浏览器仅本地拦截目标文档|键盘激活链接|新窗口 opener 为 null，rel 含 noopener noreferrer，无链接预览，原页保留。|\n|ORDER-TIES / AC-6|插入 A(T1), B(T2), C(T2)，T2>T1|展示、切换状态、刷新|始终 B C A，切换不修改创建时间，同时间保留插入顺序。|\n|KEYBOARD / AC-6|375px 与1280px 两个视口|只用 Tab/ShiftTab/Enter/Space 添加、选择三种筛选、双向切换状态|全部操作完成，标签关联输入，焦点可见；记录移出筛选后焦点落到合理的筛选或相邻控件。|\n|LAYOUT-STATES / AC-6|375px 与1280px；固定时间、系统字体、停动画，超长标题 URL|遍历正常、首次空、筛选空、读取失败、保存失败|文档/表单/列表无横向溢出，蓝色主操作、红色错误附文字、单列卡片；逐状态截图供审查，不自动批准视觉基线。|\n\n## Decision Register\n\n|ID / 状态|问题/责任|影响任务与阻塞|最晚使用/关闭条件|\n|---|---|---|---|\n|D-1 / deferred|未来是否跨设备同步？ 产品 Owner（具体姓名未提供）|RL-READING；blocking=False|未来同步范围重新规划时；Owner 明确新范围并重新授权；本期不引入账号或后端。|\n|D-2 / pending_validation|成功指标真实基线与目标是什么？ 产品 Owner（具体姓名未提供）|RL-READING；blocking=False|未来获得执行授权的原型观察后复盘；取得真实任务观察记录，由 Owner 选择指标目标；当前 NOT_RUN，不添加埋点范围。|\n|D-3 / pending_approval|是否批准 Plan 并另行授权实施？ 授权审批 Owner|RL-SCAFFOLD,RL-READING；blocking=True|任何实施动作之前；配置的独立 Critic 完成审查、人工 Plan 审批且明确执行授权；当前 authorizes_execution=false。|\n\nD-1、D-2 不阻塞本期规划；不得借未来同步决定删减当前本地保存。D-3 阻塞任何实施，包括骨架，没有当前执行许可。无需向 Owner 重问已经确认的六条行为、四类组件或375/1280样例；本计划保留全部。本表与机器 owner_decision_items 同源，不能另造不同状态。\n\n## 原始条款对账与覆盖\n\nsource_index.traceability 与 coverage_ledger 按原始语义单元独立列出，不按任务反向编造来源。covered 仅代表规划已有映射，不代表测试通过；所有运行证据 NOT_RUN。没有删除/替代原验收项，未知指标和未来同步明确分开。\n\n|源 ID|原始要求|任务|AC / 决策|证据|\n|---|---|---|---|---|\n|S-SCOPE|目标与范围：当前浏览器个人阅读清单；单用户单页，无账号、服务器、跨设备同步、第三方抓取、AI 摘要。|RL-READING|保留约束/本计划设计说明|NOT_RUN|\n|S-1A|标题 URL 必填、trim、http/https，非法字段级提示且不新增。|RL-READING|AC-1|NOT_RUN|\n|S-1B|合法新增为未读，保留标题 URL 时间，成功后清空表单。|RL-READING|AC-1|NOT_RUN|\n|S-2A|trim 后 URL 字符串精确比较，不做大小写/查询参数归一化。|RL-READING|AC-2|NOT_RUN|\n|S-2B|重复提示已存在，不覆盖原记录。|RL-READING|AC-2|NOT_RUN|\n|S-3A|标已读和恢复未读，不改变创建时间。|RL-READING|AC-3|NOT_RUN|\n|S-3B|全部/未读/已读，切换状态立即按当前筛选显示。|RL-READING|AC-3|NOT_RUN|\n|S-4A|新增与状态修改成功后可刷新恢复。|RL-READING|AC-4|NOT_RUN|\n|S-4B|保存失败不宣称成功，不覆盖最后已保存状态。|RL-READING|AC-4|NOT_RUN|\n|S-4C|失败保留新增表单或原有阅读状态并给重试提示。|RL-READING|AC-4|NOT_RUN|\n|S-5A|首次无记录、筛选无结果、读取失败分别表达。|RL-READING|AC-5|NOT_RUN|\n|S-5B|读取失败保护不可读存量，允许重试读取。|RL-READING|AC-5|NOT_RUN|\n|S-5C|无自动重置或删除功能。|RL-READING|AC-5|NOT_RUN|\n|S-6A|标题当文本，链接新窗口隔离 opener，无预览。|RL-READING|AC-6|NOT_RUN|\n|S-6B|创建时间倒序，相同时间保持原插入顺序。|RL-READING|AC-6|NOT_RUN|\n|S-6C|窄屏不溢出，键盘添加/筛选/切换，可见焦点和字段标签。|RL-READING|AC-6|NOT_RUN|\n|S-DESIGN|复用按钮、文本输入、状态筛选、列表卡片；系统字体单列，蓝色主操作、红色错误并文字说明。|RL-SCAFFOLD,RL-READING|AC-6|NOT_RUN|\n|S-VIEWPORT|375px 和 1280px 是本次样例，不泛化为所有产品标准。|RL-READING|AC-6|NOT_RUN|\n|S-EXAMPLE|example.com 示例；主流程图、正常/空/失败低保真页，无需高保真或外部架构服务。|RL-READING|保留约束/本计划设计说明|NOT_RUN|\n|S-RESEARCH|外部检索按缺口判断，本地资料足够说明复用，不强凑调研数。|RL-READING|保留约束/本计划设计说明|NOT_RUN|\n|S-D1|D-1 后续跨设备同步待产品决定，不阻塞本期本地保存，不引入账号后端。|RL-READING|D-1|NOT_RUN|\n|S-METRICS|指标基线和目标无实测，列观察方法、责任角色和复盘时点，不编造访谈数据。|RL-READING|D-2|NOT_RUN|\n|S-EVIDENCE|合成评测；浏览器、持久化、视觉、无障碍全部 NOT_RUN。|RL-READING|保留约束/本计划设计说明|NOT_RUN|\n|S-AUTH|只规划，停人工 Plan 审批，不批准实现发布。|RL-SCAFFOLD,RL-READING|D-3|NOT_RUN|\n\n## 作者执行就绪审查与人工审批材料\n\n本作者核对了六条原始 AC、设计约束和证据边界，并建立源条款→任务→结构化 AC→精确命令→未来证据路径的双向映射。审查结论是候选材料可交配置的独立 Critic；这不是 Critic 通过或人工批准。任务粒度两步可独立验收；依赖、唯一根包、唯一产品接线、独立 Verify、滚动 smoke、冻结候选门禁均显式保留。无安装命令混入 slice 命令；浏览器包装器为当前无 setup 的环境提供未来冷启动契约。\n\n人工应并排阅读 requirement.md 与本计划：PRD 故事及六条结果；SDD 输入输出、快照及失败发布次序；TDD 具名 Given/When/Then、命令和证据；稳定 Decision Register、两波所有权和未来门禁。可审查工件为 task_map.json、source_index.json、七个 ready plan ports；ready 只代表规划补全。尚缺未来实施、浏览器、持久化、视觉、无障碍、配置 Critic 和人工批准证据，全部 NOT_RUN/PENDING。不存在真实调研或已测成功数据。阅读成本控制为一份完整人读文档与一份机器任务表，矩阵按来源/验收/命令维度补充，避免另造任务副本；文档具体尺寸在制作摘要中记录。\n",
+  "source_index": {
+    "schema_version": "source-index.v1",
+    "sources": [
+      {
+        "source_key": "requirement",
+        "ref": "requirement.md",
+        "sha256": "828bbf9d8644896a28411cfe9d5afa52c7c153e3a38fec2a055d73080c2d230b",
+        "kind": "confirmed_synthetic_authority"
+      },
+      {
+        "source_key": "immutable_request",
+        "ref": "/tmp/zf-prd205-v5-20261110T083647Z/workflow-retry/.zf-test/workflow-requests/workflow-9bbe3bd3920dc100/requirements/revision-0002-c5044694097689c8.json",
+        "sha256": "c5044694097689c8a22e918385222e42412ba2df2bdc241a2ae571a8f25175c6",
+        "kind": "immutable_workflow_request"
+      }
+    ],
+    "tasks": [
+      {
+        "task_id": "RL-SCAFFOLD",
+        "source_key": "S-DESIGN",
+        "source_ref": "requirement.md#本地设计知识（已确认约束）",
+        "source_excerpt": "复用系统字体、单列布局；单用户单页 Web，无账号、服务器。"
+      },
+      {
+        "task_id": "RL-READING",
+        "source_key": "S-1A",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "source_excerpt": "AC-1 至 AC-6：新增、精确去重、阅读状态、本地保存、区分反馈、安全与展示。"
+      }
+    ],
+    "traceability": [
+      {
+        "source_id": "S-SCOPE",
+        "source_ref": "requirement.md",
+        "statement": "目标与范围：当前浏览器个人阅读清单；单用户单页，无账号、服务器、跨设备同步、第三方抓取、AI 摘要。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": [],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-1A",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "标题 URL 必填、trim、http/https，非法字段级提示且不新增。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-1"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-1B",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "合法新增为未读，保留标题 URL 时间，成功后清空表单。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-1"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-2A",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "trim 后 URL 字符串精确比较，不做大小写/查询参数归一化。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-2"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-2B",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "重复提示已存在，不覆盖原记录。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-2"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-3A",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "标已读和恢复未读，不改变创建时间。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-3"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-3B",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "全部/未读/已读，切换状态立即按当前筛选显示。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-3"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-4A",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "新增与状态修改成功后可刷新恢复。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-4"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-4B",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "保存失败不宣称成功，不覆盖最后已保存状态。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-4"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-4C",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "失败保留新增表单或原有阅读状态并给重试提示。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-4"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-5A",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "首次无记录、筛选无结果、读取失败分别表达。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-5"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-5B",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "读取失败保护不可读存量，允许重试读取。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-5"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-5C",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "无自动重置或删除功能。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-5"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-6A",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "标题当文本，链接新窗口隔离 opener，无预览。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-6"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-6B",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "创建时间倒序，相同时间保持原插入顺序。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-6"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-6C",
+        "source_ref": "requirement.md#已确认行为与验收",
+        "statement": "窄屏不溢出，键盘添加/筛选/切换，可见焦点和字段标签。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-6"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-DESIGN",
+        "source_ref": "requirement.md#本地设计知识（已确认约束）",
+        "statement": "复用按钮、文本输入、状态筛选、列表卡片；系统字体单列，蓝色主操作、红色错误并文字说明。",
+        "task_ids": ["RL-SCAFFOLD", "RL-READING"],
+        "acceptance_ids": ["AC-6"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-VIEWPORT",
+        "source_ref": "requirement.md#本地设计知识（已确认约束）",
+        "statement": "375px 和 1280px 是本次样例，不泛化为所有产品标准。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": ["AC-6"],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-EXAMPLE",
+        "source_ref": "requirement.md#本地设计知识（已确认约束）",
+        "statement": "example.com 示例；主流程图、正常/空/失败低保真页，无需高保真或外部架构服务。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": [],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-RESEARCH",
+        "source_ref": "requirement.md#本地设计知识（已确认约束）",
+        "statement": "外部检索按缺口判断，本地资料足够说明复用，不强凑调研数。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": [],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-D1",
+        "source_ref": "requirement.md#范围、决定与证据边界",
+        "statement": "D-1 后续跨设备同步待产品决定，不阻塞本期本地保存，不引入账号后端。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": [],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-METRICS",
+        "source_ref": "requirement.md#范围、决定与证据边界",
+        "statement": "指标基线和目标无实测，列观察方法、责任角色和复盘时点，不编造访谈数据。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": [],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-EVIDENCE",
+        "source_ref": "requirement.md#范围、决定与证据边界",
+        "statement": "合成评测；浏览器、持久化、视觉、无障碍全部 NOT_RUN。",
+        "task_ids": ["RL-READING"],
+        "acceptance_ids": [],
+        "evidence_status": "NOT_RUN"
+      },
+      {
+        "source_id": "S-AUTH",
+        "source_ref": "requirement.md#范围、决定与证据边界",
+        "statement": "只规划，停人工 Plan 审批，不批准实现发布。",
+        "task_ids": ["RL-SCAFFOLD", "RL-READING"],
+        "acceptance_ids": [],
+        "evidence_status": "NOT_RUN"
+      }
+    ]
+  }
+}
