@@ -91,3 +91,36 @@ stages 等），故未用其判定仓库技能无效，也未删减扩展字段�
 检查只证明明确执行的层级，不将 mock 评估、Skill 物化或合成前后端夹具标为用户 E2E。
 
 使用入口：[PRD 与设计交接](../manual/workflows/prd-design-review.md)。
+
+## 2026-11-10：真实 v5 工件的 Web 阅读修复
+
+本节补充上一批次的范围：用户批准基于真实 Preview 评估继续修复，默认入口改为
+同版完整 Plan 连续阅读。保留结构视图、工程上下文、原文及下载；本次没有独立读者
+实验，也没有借 UI 回退修改已接纳工件或历史审批事实。
+
+- `test_matrix.tests[]` 的 GWT 场景按 task_id 读取，保留 AC/command/source 与
+  evidence_status；相同 AC ID 不能使其他任务的场景串入当前模块。
+- 缺少 human_review 时，摘要/设计/决定入口引用作者原文章节并可跳转全文。
+  任意自定义标题仍可由全文目录找到，不通过前端推断业务状态。
+- 缺少完整机器决定登记时显示“未确认、数量未知”，原文中的 D-1～D-3 仍可阅读；
+  已确认空登记才可显示 0。作者方法要求在既有 task_map.owner_decision_items
+  保存完整登记，不能用 Critic 的本次动作问题列表代替。
+- 默认正文使用清楚的标题层级、中文行距、固定阅读宽度；搜索跨强调文本匹配、
+  高亮并逐项定位；表格和代码局部滚动，保留可访问的键盘焦点。
+- Mermaid 使用本地依赖，静态 SVG 放入无脚本权限的 sandbox frame 并禁止外部请求。
+  支持内置解析器的 flowchart、sequenceDiagram、classDiagram、stateDiagram、ER、
+  C4 等；依赖大体积 Langium 解析器的图型（例如 architecture-beta）明确回退源码。
+  不通过提高单 chunk 500000 字节门禁或使用远端 CDN 规避限制。
+- Channel 失败/取消回复在正文起始处标识“生成中断”，保留原始文字与正式 PRD 状态；
+  长文本、URL、表格限制在阅读容器内。只读会话可直接阅读，自动已读回执不发写请求。
+
+新增 `web/tests/fixtures/prd205/live-plan.json` 来自本轮合成小需求的真实 Provider
+产物：保留正文和消费字段，去除无关执行元数据；不是手工填齐 UI 字段的理想输出。
+`plan-reading-regression.spec.ts` 经真实 React/API 入口回放该夹具；另用完整归档运行
+只读 Web 浏览器回归，记录截图、DOM、下载 SHA 与事件账本前后摘要。测试不批准或
+实施示例产品。详见任务 `tasks/active/2026-11-10-1010-prd205-preview-reading-fixes.md`。
+
+本次验证：Docker 浏览器 25 passed，真实归档回放无浏览器异常或写请求，下载原文
+SHA 不变；前端 build/unit 与后端定向通过。扩展 dev-verify 闭包为 1187 passed、
+1 skipped、1 failed；唯一 Loop 测试失败在修改前 a223088c 复现（测试配置缺少
+observability），详见本地验证报告；不能把该扩展闭包计为全绿。

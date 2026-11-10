@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Code, Download } from "lucide-react";
 import { MarkdownText } from "../agent-session/MarkdownText";
 import { planMarkdownPages } from "./planMarkdownPages";
+import { useDocumentSearch } from "./useDocumentSearch";
 import { planDocumentSections } from "./planDocumentSections";
 
-export default function PlanMarkdownDocument({ content, reviewContent = "", initialAnchor = "", onAnchorChange }: { content: string; reviewContent?: string; initialAnchor?: string; onAnchorChange?: (anchor: string) => void }) {
+export default function PlanMarkdownDocument({ content, reviewContent = "", initialAnchor = "", onAnchorChange, statusLine }: { statusLine?: string; content: string; reviewContent?: string; initialAnchor?: string; onAnchorChange?: (anchor: string) => void }) {
   const pages = useMemo(() => planMarkdownPages(content), [content]);
   const sections = useMemo(() => planDocumentSections(content), [content]);
   const [search, setSearch] = useState("");
@@ -15,6 +16,7 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
   const scrollPane = useRef<HTMLDivElement>(null);
   const index = Math.min(selectedPage, pages.length - 1);
   const current = pages[index];
+  const matches = useDocumentSearch(scrollPane, search, `${content}:${continuous}:${showSource}:${index}`);
   useEffect(() => {
     scrollPane.current?.scrollTo({ top: 0 });
   }, [index, content, continuous]);
@@ -40,6 +42,8 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
   };
   return (
     <div className="plan-document">
+      <style>{matches.style}</style>
+      {statusLine && <p className="plan-document-status">{statusLine}</p>}
       <nav className="plan-document-toolbar" aria-label="计划阅读导航">
         <button
           type="button"
@@ -76,13 +80,19 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
           </button>}
         </div>
       </nav>
+      <div className="plan-document-search" role="search" aria-label="搜索计划正文">
+        <label>搜索正文<input type="search" value={search} onChange={event => { setSearch(event.target.value); setContinuous(true); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); matches.move(event.shiftKey ? -1 : 1); } }} /></label>
+        {search && <><span aria-live="polite">{matches.count ? matches.active + 1 : 0} / {matches.count} 处匹配</span>
+          <button type="button" className="delivery-action-button" disabled={!matches.count} onClick={() => matches.move(-1)}>上一处</button>
+          <button type="button" className="delivery-action-button" disabled={!matches.count} onClick={() => matches.move(1)}>下一处</button>
+          <button type="button" className="delivery-action-button" disabled={!matches.count} onClick={matches.reveal}>定位匹配</button></>}
+      </div>
       <details className="plan-document-outline">
         <summary>章节索引</summary>
-        <label>搜索正文<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
         <p>{sections.filter(section => section.content.toLowerCase().includes(search.toLowerCase())).length} 个匹配章节</p>
         <ol>
           {reviewContent ? <li><button type="button" onClick={() => { setContinuous(true); scrollPane.current?.scrollTo({ top: 0 }); }}>人工审批摘要</button></li> : null}
-          {sections.filter(section => section.content.toLowerCase().includes(search.toLowerCase())).map(section => <li key={section.key}><button type="button" onClick={() => jump(section.anchor)}>{section.title}</button></li>)}
+          {sections.filter(section => section.content.toLowerCase().includes(search.toLowerCase())).map(section => <li key={section.key}><button type="button" onClick={() => jump(section.anchor)} style={{ paddingInlineStart: `${Math.max(0, section.level - 1) * 12}px` }}>{section.title}</button></li>)}
         </ol>
       </details>
       <div key={index} ref={scrollPane} className="plan-preview-markdown-pane" role="region" aria-label="计划正文" tabIndex={0}>

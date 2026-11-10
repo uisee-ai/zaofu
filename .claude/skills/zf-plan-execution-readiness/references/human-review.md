@@ -21,7 +21,7 @@
 ## 既有 execution_spec 的作者约定
 
 这是一种可选阅读表示约定，不是新的可派发 Task 合同。标准 PRD 新生成时应填写；
-旧计划保持兼容，缺失明确显示为尚未细化。Task ID、AC ID、命令 ID 继续来自现有
+旧计划保持兼容，缺失明确显示为未映射，并提供同版原文；不得断言原文没有该内容。Task ID、AC ID、命令 ID 继续来自现有
 Task Map/矩阵。所有内容与本次 accepted_plan 一起提交到同一个 Plan Package。
 不把下列字段添加到 execution_spec 顶层，保持其 shared/tasks 分区合同：
 
@@ -84,7 +84,9 @@ Plan Markdown 内采用同样阅读层次，不为版式强加新 runtime 端口
   原始参考图 ID、设计状态、实现状态、视觉验收状态分别记录，素材存在不等于设计完成。
 - 场景标题兼容 `title` / `name`；`source_ids` 必须在同版 source_index 唯一解析到
   来源引用，或显式提供 `source_refs`。缺 AC/命令绑定要补证，不能靠近似文本推断。
-  `test_matrix.formal_acceptance_scenarios` 与人工阅读场景分别核对，不以任一列表替代另一份。
+  既有 `test_matrix.tests[]` 中的 Given/When/Then 是可读场景的正式来源之一，按
+  `task_id`、AC、command 和 source 引用核对，保持 `evidence_status` 原值。
+  可选 `test_matrix.formal_acceptance_scenarios` 独立核对；不为阅读再造同义场景列表。
 - 决定登记沿用 `task_map.owner_decision_items`，区分待决定、已授权待落实、已关闭，
   当前阻塞仅按显式 `blocking` 声明。负责人、最迟时点与关闭证据保留原值；
   当前审批动作的问题列表只表示本次动作范围，数量为零不代表全部决定关闭。

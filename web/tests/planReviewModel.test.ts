@@ -1,6 +1,8 @@
 const assert = { equal(a: unknown, b: unknown) { if (a !== b) throw new Error(`${a} !== ${b}`); }, doesNotThrow(fn: () => unknown) { fn(); } };
 import { buildPlanReview, planArtifactUrl, resolvePlanPreviewItem } from "../src/components/delivery-trace/planReviewModel.js";
 import type { OperatorInboxItem } from "../src/api/types";
+import live from "./fixtures/prd205/live-plan.json" with { type: "json" };
+import { planReadingSections } from "../src/components/delivery-trace/planReadingSections.js";
 const task = { task_id: "T1", title: "调整库存", source_ref: "spec.md#stock", acceptance_criteria: [{ id: "AC1", statement: "只扣差额", verification_command_ids: ["VC1"] }] };
 const legacy = buildPlanReview({ task_map: { tasks: [task], owner_decision_items: [{ decision_id: "Q1", affected_task_ids: ["T1"], status: "pending" }] }, source_inventory: { pages: [{ id: "A01", task_id: "T1" }], forms: [] } });
 assert.equal(legacy.modules[0].specification, "");
@@ -47,3 +49,28 @@ assert.equal(production.modules[0].scenarios[0].title, "只扣一次");
 assert.equal(production.modules[0].scenarios[0].sourceRefs[0], "spec.md#stock");
 assert.equal(production.modules[0].scenarios[0].issues.length, 0);
 assert.equal(production.modules[0].formalScenarios[0].id, "E01");
+
+// Real v5 output: no execution_spec, tests live under test_matrix.tests.
+const liveReview = buildPlanReview(live);
+const reading = liveReview.modules.find(m => m.id === "RL-READING")!;
+assert.equal(reading.scenarios.length, 21);
+assert.equal(liveReview.modules.find(m => m.id === "RL-SCAFFOLD")!.scenarios.length, 0);
+assert.equal(reading.scenarios[0].id, "ADD-TRIM");
+assert.equal(reading.scenarios[0].evidenceStatus, "NOT_RUN");
+assert.equal(reading.scenarios[0].commandIds.join(","), "C-UI,C-CANDIDATE");
+assert.equal(reading.scenarios[0].sourceRefs[0], "requirement.md#已确认行为与验收");
+assert.equal(reading.scenarios[0].issues.length, 0);
+const excerpts = planReadingSections(live.markdown);
+assert.equal(excerpts.decisions.length, 1);
+assert.equal(excerpts.decisions[0].content.includes("D-3 / pending_approval"), true);
+assert.equal(excerpts.pages[0].content.includes("flowchart TD"), true);
+assert.equal(excerpts.overview.some(s => s.content.includes("PRD：价值")), true);
+// Headings in code fences are not interpreted as authored document sections.
+assert.equal(planReadingSections("# Plan\n```md\n## Decision Register\nnot a register\n```").decisions.length, 0);
+const ownership = buildPlanReview({ task_map: { tasks: [task, { ...task, task_id: "T2" }] }, test_matrix: {
+  tests: [{ id: "only-T2", task_id: "T2", acceptance_ids: ["AC1"], given: "A", when: "B", then: "C" }],
+  formal_acceptance_scenarios: [{ id: "formal-T2", task_id: "T2", acceptance_id: "AC1" }],
+} });
+assert.equal(ownership.modules[0].scenarios.length, 0);
+assert.equal(ownership.modules[0].formalScenarios.length, 0);
+assert.equal(ownership.modules[1].scenarios.length, 1);

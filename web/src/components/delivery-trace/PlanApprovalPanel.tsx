@@ -37,12 +37,12 @@ const KIND_OPTIONS: Array<{ value: InboxKindFilter; label: string }> = [
   { value: "approval", label: "Approval" },
 ];
 
-export function PlanApprovalPanel(props: { projectId: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void }) {
+export function PlanApprovalPanel(props: { readOnly?: boolean; projectId: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void }) {
   return <OperatorInboxPanel key={props.projectId} {...props} />;
 }
 
 function OperatorInboxPanel(
-  { projectId, autoOpenPlanId, onInboxUpdate }: { projectId: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void },
+  { projectId, autoOpenPlanId, onInboxUpdate, readOnly = false }: { readOnly?: boolean; projectId: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void },
 ) {
   const { t } = useUiPreferences();
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -240,6 +240,7 @@ function OperatorInboxPanel(
   };
 
   const markRead = async (item?: OperatorInboxItem, retainSelection = false) => {
+    if (readOnly) return;
     if (item && (!item.unread || readingItems.current.has(item.id))) return;
     if (!item && busy) return;
     if (item) readingItems.current.add(item.id);
@@ -337,7 +338,7 @@ function OperatorInboxPanel(
       <div className="plan-approval-head operator-inbox-head">
         <div className="inbox-title-row"><h3>{t("Inbox")}</h3><span className="inbox-pending-count" title={`${pendingCount} ${t("pending decisions")}`}>{initialLoading ? t("loading") : pendingCount}</span>
           <label className="inbox-unread-toggle"><input type="checkbox" checked={unreadOnly} onChange={event => { setRetainedReadId(""); setUnreadOnly(event.target.checked); }} /> {t("Unread")}</label>
-          <button type="button" className="inbox-header-control" aria-label="Mark all read" title="Mark all as read" disabled={Boolean(busy) || !unreadCount} onClick={() => void markRead()}><CheckCheck size={15} aria-hidden="true" /></button>
+          <button type="button" className="inbox-header-control" aria-label="Mark all read" title="Mark all as read" disabled={readOnly || Boolean(busy) || !unreadCount} onClick={() => void markRead()}><CheckCheck size={15} aria-hidden="true" /></button>
           <button type="button" className={`inbox-header-control ${query || kindFilter !== "all" ? "active" : ""}`} aria-label={t("Search inbox")} aria-expanded={searchOpen} onClick={() => setSearchOpen(!searchOpen)}><Search size={15} aria-hidden="true" /></button>
           <button type="button" className="inbox-header-control" aria-label={t("Refresh")} onClick={() => void refresh()} disabled={inboxRefreshing}><RefreshCw size={15} aria-hidden="true" /></button>
         </div>

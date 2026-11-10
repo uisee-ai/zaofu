@@ -243,7 +243,18 @@ used, place shared reading material in `shared.human_review` and module
 specifications/scenarios in each existing `tasks[].body.human_review`.
 Preserve canonical task/AC/command IDs and bind these artifacts in the same
 Plan Package. The configured reviewer checks semantic consistency; the UI only renders the bound
-content. Neither a page count nor repeated RED/GREEN prose proves clause
+content. For routes without execution_spec, keep the same reading sections in the
+accepted Markdown; the reader quotes those sections without inventing a second
+specification. Store atomic Given/When/Then cases in the existing
+`test_matrix.tests[]` with task_id, acceptance_ids, command_ids, source_refs and
+explicit evidence_status. Do not create a parallel scenario list just for UI.
+Persist the complete decision register in `task_map.owner_decision_items`
+(including deferred, non-blocking and pending-validation items), not only in
+the role's control result. An explicitly empty list means the author reviewed
+and found no decisions; a missing field means unknown. The Critic checks the
+same IDs/statuses against the accepted Markdown and the bound task map;
+its own empty action-question list must not be used as the product register.
+Neither a page count nor repeated RED/GREEN prose proves clause
 coverage. Never rewrite admitted artifacts to improve presentation.
 
 ## Task Design
