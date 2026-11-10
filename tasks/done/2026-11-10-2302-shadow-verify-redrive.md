@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — dd10d24e fix: restore shadow provider-stop recovery handoff
 
 # 修复 shadow Provider 中断到 RM 重派的状态衔接
 
