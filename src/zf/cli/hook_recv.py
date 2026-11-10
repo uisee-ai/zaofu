@@ -545,7 +545,9 @@ def _evaluate_runtime_write_guard(
 
     tool_name = str(event_payload.get("tool_name") or "").strip()
     tool_input = event_payload.get("tool_input")
-    input_text = _runtime_write_guard_text(tool_name, tool_input)
+    input_text = _runtime_write_guard_text(
+        tool_name, tool_input, cwd=str(event_payload.get("cwd") or "")
+    )
     lower_tool = tool_name.lower()
     protected = _mentions_protected_runtime_state(input_text, state_dir=state_dir)
     reason = ""
@@ -639,7 +641,9 @@ def _evaluate_allowed_paths_guard(
     if not isinstance(tool_input, dict):
         return 0
     tool_name = str(event_payload.get("tool_name") or "").strip()
-    operations = _write_target_operations(tool_name, tool_input)
+    operations = _write_target_operations(
+        tool_name, tool_input, cwd=str(event_payload.get("cwd") or "")
+    )
     if not operations:
         return 0
     task_id = _active_task_id_for_actor(event_log, actor)

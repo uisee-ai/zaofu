@@ -13,6 +13,7 @@ from pathlib import Path
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
+from zf.cli.hook_copy_intent import copy_intent, copy_paths_are_proven, resolved_copy_target
 
 
 _BASH_MUTATING_MARKERS = (
@@ -55,11 +56,15 @@ def bash_command_looks_mutating(command: str) -> bool:
         tokens = list(lexer)
     except ValueError:
         # Fail closed for malformed shell input with active side-effect syntax.
-        return _contains_active_shell_substitution(command) or bool(
-            re.search(r"(?:^|\s)(?:\d*)>>?(?:\s|[^=])", normalized)
+        return (
+            copy_intent(command) is not None
+            or _contains_active_shell_substitution(command)
+            or bool(re.search(r"(?:^|\s)(?:\d*)>>?(?:\s|[^=])", normalized))
         )
     if _is_simple_controlled_zf_result_command(command, tokens):
         return False
+    if copy_intent(command) is not None:
+        return True
     if _contains_active_shell_substitution(command):
         return True
     if any(marker in normalized for marker in _BASH_MUTATING_MARKERS):
@@ -165,9 +170,12 @@ def write_target_paths(tool_name: str, tool_input: dict) -> list[str]:
     return [path for _operation, path in write_target_operations(tool_name, tool_input)]
 
 
-def runtime_write_guard_text(tool_name: str, tool_input: object) -> str:
+def runtime_write_guard_text(tool_name: str, tool_input: object, *, cwd: str = "") -> str:
     """Inspect explicit file targets, retaining conservative unknown-input checks."""
-    targets = write_target_paths(tool_name, tool_input) if isinstance(tool_input, dict) else []
+    targets = (
+        [path for _, path in write_target_operations(tool_name, tool_input, cwd=cwd)]
+        if isinstance(tool_input, dict) else []
+    )
     if targets:
         # Quoted ledger paths in a plan are data, not mutation targets.
         return "\n".join(targets)
@@ -181,13 +189,19 @@ def runtime_write_guard_text(tool_name: str, tool_input: object) -> str:
 def write_target_operations(
     tool_name: str,
     tool_input: dict,
+    *,
+    cwd: str = "",
 ) -> list[tuple[str, str]]:
     """Return normalized operation/path pairs for provider-native writes."""
 
     lower = tool_name.lower().strip()
     if lower in {"bash", "shell"}:
-        target = _literal_handoff_target(str(tool_input.get("command") or ""))
-        return [("write", target)] if target else []
+        command = str(tool_input.get("command") or "")
+        target = _literal_handoff_target(command)
+        if target:
+            return [("write", target)]
+        copy = copy_intent(command)
+        return [("copy", resolved_copy_target(copy, cwd))] if copy and copy.target else []
     if lower in {"write", "edit", "multiedit", "notebookedit"}:
         raw = (
             tool_input.get("file_path")
@@ -364,8 +378,11 @@ def evaluate_workdir_write_guard(
     if not isinstance(tool_input, dict):
         return 0
     tool_name = str(event_payload.get("tool_name") or "")
-    targets = write_target_operations(tool_name, tool_input)
+    targets = write_target_operations(
+        tool_name, tool_input, cwd=str(event_payload.get("cwd") or "")
+    )
     command = str(tool_input.get("command") or "") if tool_name.lower() in {"bash", "shell"} else ""
+    copy = copy_intent(command) if not targets or targets[0][0] == "copy" else None
     mutating_shell = bool(command and bash_command_looks_mutating(command))
     if not targets and not mutating_shell:
         return 0
@@ -402,11 +419,17 @@ def evaluate_workdir_write_guard(
     allowed_workdirs = set() if unresolved_pipeline else {assigned_root}
     project_roots = {Path(project_root), state_dir.parent}
     offending: list[str] = []
+    unproven_copy = copy is not None and not copy_paths_are_proven(copy, cwd)
+    if unproven_copy:
+        offending.append(copy.target or "<unproven cp command>")
     for operation, raw_target in targets:
         target = Path(raw_target)
         target = target if target.is_absolute() else cwd / target
         if (
-            any(_path_is_within(target, root) for root in project_roots)
+            (
+                operation == "copy"
+                or any(_path_is_within(target, root) for root in project_roots)
+            )
             and not any(
                 _path_is_within(target, root) for root in allowed_workdirs
             )
@@ -444,7 +467,7 @@ def evaluate_workdir_write_guard(
         actor="zf-cli",
         task_id=task_id or None,
         payload={
-            "reason": "outside_assigned_workdir",
+            "reason": "unproven_copy_write_target" if unproven_copy else "outside_assigned_workdir",
             "failure_class": (
                 "workspace_binding_mismatch" if unresolved_pipeline else "scope_violation"
             ),
@@ -463,7 +486,10 @@ def evaluate_workdir_write_guard(
         causation_id=causation_id,
     ))
     print(
-        "ZaoFu blocked this write: use the assigned writer workdir only: "
+        ("ZaoFu blocked this write: cp requires one literal regular source and a non-linked file destination; "
+         "unsupported options/composition stay blocked. Read the source then use a relative patch. "
+         if unproven_copy else "ZaoFu blocked this write: ")
+        + "use the assigned writer workdir only: "
         + ("unresolved task pipeline assignment" if unresolved_pipeline else str(assigned_root))
         + ". The only state-dir exception is the exact current result scratch "
         "declared by the Kernel. For handoff artifacts, write a workdir-relative "
