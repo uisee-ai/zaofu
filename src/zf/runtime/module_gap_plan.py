@@ -425,6 +425,12 @@ def build_gap_task_map_amend(
         out["amend"]["goal_kind"] = goal_kind
     if gap_category:
         out["amend"]["gap_category"] = gap_category
+    # Dispatch selectors belong to this amendment, not the inherited plan batch.
+    if "dispatch_delta_task_ids" in out:
+        out["dispatch_delta_task_ids"] = list(appended)
+    metadata = out.get("metadata")
+    if isinstance(metadata, dict) and "dispatch_delta_task_ids" in metadata:
+        out["metadata"] = {**metadata, "dispatch_delta_task_ids": list(appended)}
     from zf.runtime.gap_input_policy import rebind_gap_input_policy
 
     rebind_gap_input_policy(

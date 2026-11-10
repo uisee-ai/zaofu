@@ -388,3 +388,13 @@ Dashboard HTTP200。R5继续active；本次没有新的产品done，也没有声
 `partial_successor_proof` 和 Candidate 的提交/树路径读取使用 `-z`，以 NUL 分隔并保留原始文件名。中文证据路径不再被 Git 的展示引号与八进制转义误判为越界；文件名中的换行、回车、引号及空格也不被拆分或 trim。该修复只改变机械路径解析，已准入失败绑定、单父续作证明、scope、冲突拒绝和独立验收不变。
 
 回归覆盖真实 Git 提交、续作工作区构造和候选补丁重放，并验证原候选引用不被提前发布。任务：[路径解析修复](../../tasks/done/2026-11-10-1054-unicode-partial-continuation.md)。
+
+### 2026-11-10：局部修订的派发 delta
+
+新 gap amendment 从完整 Task Map 继承任务正文和历史，但原图声明的
+`dispatch_delta_task_ids`（顶层或 metadata）必须重绑定到本次
+`amend.gap_task_ids`。否则旧批次清单与局部恢复请求冲突，Writer 拒绝派发。
+未声明该字段的旧图保持原有形状；selector 的不一致拒绝规则保持不变。
+回归覆盖 builder 到真实 `flow.gap_plan.ready` / Orchestrator / Writer
+派发及重启去重。见 `tests/test_gap_dispatch_delta.py` 和
+`tasks/active/2026-11-10-1128-gap-amend-dispatch-delta.md`。
