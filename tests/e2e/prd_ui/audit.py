@@ -18,8 +18,9 @@ def check_preview(preview: dict[str, Any], *, expected_plan_id: str, expected_ma
     assert preview.get("content_profile") == "derived_plan_full", "full Plan claim missing"
     assert preview.get("markdown") == expected_markdown, "preview content differs from its generated artifact"
     assert expected_markdown.strip(), "empty Plan"
-    for section in ("PRD", "SDD", "TDD"):
-        assert section in expected_markdown, f"missing {section}"
+    # This oracle proves artifact identity and completeness of the rendered copy.
+    # Semantic quality belongs to Critic and the recorded artifact assessment;
+    # valid Shared Spec / Task Spec documents need not use PRD/SDD/TDD headings.
 
 
 def check_dispatches(attempts: list[dict], operations: dict, role_kinds: dict) -> set[str]:

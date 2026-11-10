@@ -5,9 +5,19 @@ from tests.e2e.prd_ui.audit import check_preview
 PLAN = '# PRD\nREADME.md\n## SDD\nFiles\n## TDD\nMissing-file error\nLast acceptance\n'
 
 
-def test_exact_generated_plan_preview():
-    check_preview({'plan_id': 'current', 'content_profile': 'derived_plan_full', 'markdown': PLAN},
-                  expected_plan_id='current', expected_markdown=PLAN)
+@pytest.mark.parametrize("body", [
+    PLAN,
+    "# Shared Spec\nUse system cat README.md.\n## Task Spec\nOne owner; restore input.\n## Acceptance\nSeparate normal and missing-file evidence.\n",
+])
+def test_exact_generated_plan_preview(body):
+    check_preview({'plan_id': 'current', 'content_profile': 'derived_plan_full', 'markdown': body},
+                  expected_plan_id='current', expected_markdown=body)
+
+
+def test_empty_artifact_is_not_a_complete_preview():
+    with pytest.raises(AssertionError, match="empty Plan"):
+        check_preview({'plan_id': 'current', 'content_profile': 'derived_plan_full', 'markdown': ''},
+                      expected_plan_id='current', expected_markdown='')
 
 
 @pytest.mark.parametrize('change', [
