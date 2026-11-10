@@ -231,19 +231,25 @@ export function channelDiscussionControlPolicy(
   attention: ChannelDiscussionAttention | null,
   kernelState: string,
   hasRequirement: boolean,
+  modes?: { current: string; selected: string },
 ): ChannelDiscussionControlPolicy {
   const restartsBlockedDiscussion = Boolean(attention?.can_restart);
+  const startsMultiLens = kernelState === "active"
+    && ["conversation", "clarification"].includes(modes?.current ?? "")
+    && modes?.selected === "multi_lens"
+    && attention?.active_reply_count === 0
+    && attention?.queued_reply_count === 0;
   const startsNewDiscussion = (
     kernelState === "idle" && !restartsBlockedDiscussion
   );
   return {
     canStartOrRestart: Boolean(
       hasRequirement
-      && (startsNewDiscussion || restartsBlockedDiscussion),
+      && (startsNewDiscussion || restartsBlockedDiscussion || startsMultiLens),
     ),
     canDrainReplies: Boolean(attention?.can_drain_replies),
     canSynthesize: Boolean(attention?.can_synthesize),
-    restart: restartsBlockedDiscussion,
+    restart: restartsBlockedDiscussion || startsMultiLens,
     startLabel: restartsBlockedDiscussion
       ? "Restart discussion"
       : "Start discussion",

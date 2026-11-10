@@ -93,11 +93,11 @@ assert(
   "empty task id should request a task_create Plan",
 );
 assert(
-  taskCreateRequest.message.includes("workflow_plan 必须有 2-3 个选项"),
-  "Task-create request should prepare a bounded Workflow Plan",
+  taskCreateRequest.message.includes("prepare_workflow=true"),
+  "Task-create request should prepare the modern Workflow preview",
 );
 assert(
-  taskCreateRequest.message.includes("Task 确认只能创建 Task 并发布第二个 Workflow Plan"),
+  taskCreateRequest.message.includes("启动需要独立确认"),
   "Task-create request should preserve the second confirmation boundary",
 );
 const { expected_output: _taskCreateOutput, ...taskCreateAuthority } = (

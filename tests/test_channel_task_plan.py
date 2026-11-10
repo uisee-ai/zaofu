@@ -124,3 +124,29 @@ def test_unknown_channel_prd_scope_is_rejected():
     assert "channel_prd_scope must be" in normalize_channel_task_submit_payload({
         "title": "test", "channel_prd_scope": "skip", "channel_authority": _authority(),
     })[2]
+
+
+@pytest.mark.parametrize("explicit", [None, "selected-project"])
+def test_prepare_workflow_carries_trusted_target_to_create_action(explicit):
+    from zf.web.channel_task_plan import bind_nested_workflow_target
+    raw = {"title": "Prepare the confirmed PRD", "prepare_workflow": True,
+           "channel_authority": _authority()}
+    if explicit:
+        raw["target_root"] = explicit
+    bound = bind_nested_workflow_target(raw, {"target_root": "current-project"})
+    payload, _, error = normalize_channel_task_submit_payload(bound)
+    assert not error
+    assert payload["target_root"] == (explicit or "current-project")
+    assert payload["prepare_workflow"] is True
+    assert "workflow_plan" not in payload
+    assert raw.get("target_root") == explicit
+
+
+@pytest.mark.parametrize("target", [False, {}, ["path"], " "])
+def test_channel_task_rejects_invalid_target_root(target):
+    from zf.web.channel_task_plan import bind_nested_workflow_target
+    bound = bind_nested_workflow_target({
+        "title": "Prepare", "channel_authority": _authority(), "target_root": target,
+        "prepare_workflow": True,
+    }, {"target_root": "current-project"})
+    assert normalize_channel_task_submit_payload(bound)[2] == "target_root must be a non-empty string"

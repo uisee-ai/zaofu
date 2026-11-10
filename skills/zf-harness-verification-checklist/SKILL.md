@@ -13,6 +13,14 @@ Use this reference at verdict time under
 `zf-yoke-test-evaluator-role-context`. It defines verification quality, not the
 event schema or recovery state machine.
 
+## Project verification
+
+在选择项目验收场景、编写项目验证 Skill 或补齐测试覆盖时，先读
+[项目验证方法](references/project-verification.md)。它把原始条款、场景、
+断言和执行证据关联起来；项目 Skill 提供启动、数据和具体测试入口，
+本轮 Prompt 只提供目标版本、范围和已授权的执行层级。
+单一已知回归可直接执行对应探针，无需重新生成全项目地图。
+
 ## Checklist
 
 - The checked worktree/ref is the immutable target named by the briefing.

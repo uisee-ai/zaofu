@@ -990,6 +990,7 @@ export function ChannelPage({
     discussionBand?.attention ?? null,
     currentDiscussionState,
     Boolean(latestThreadRequirementText),
+    { current: recordString(currentDiscussion, "product_mode"), selected: discussionMode },
   );
   const defaultResponderId = recordString(workspaceDetail?.discussion ?? {}, "default_responder_id");
   const moderatorMemberId = (
