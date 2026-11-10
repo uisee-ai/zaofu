@@ -382,3 +382,9 @@ R9提交`d6e4486f fix: preserve recovery gates during control-plane reload`精�
 旧Critic在10:19:30、正式stop前因7200秒synth_timeout生成evt-6bc3cc89b7de→prd.plan.failed evt-b7cf6832b3b1，非对7742570b版的新语义否决。恢复后自动stage replan 2/2产生evt-389aef82b01a，Planner已实际运行（pane %807）。未覆盖历史失败或增加replan cap；最新7742570b冻结19文件逐字节复制到Planner允许忽略缓存，SHA索引quota-restored-planner-input-cache.json。指导其完整消费本attempt必读后复用已修订F1/F2正文、保留36done与两个在途任务、继续独立Critic及审批，避免退回旧版全量重写。三角色断点指导与新身份记录在quota-restored-guidance.json。额外Sources浏览器失败仍保留、不改判。
 
 Dashboard HTTP200。R5继续active；本次没有新的产品done，也没有声明计划已批准。记录待后续评估：全局暂停期间synth墙钟超时仍会产生计划失败及返修；本轮已走既有有界返修路径，不据此临时取消超时或伪造Critic通过。
+
+## 部分成果续作的 Git 路径解析（2026-11-10）
+
+`partial_successor_proof` 和 Candidate 的提交/树路径读取使用 `-z`，以 NUL 分隔并保留原始文件名。中文证据路径不再被 Git 的展示引号与八进制转义误判为越界；文件名中的换行、回车、引号及空格也不被拆分或 trim。该修复只改变机械路径解析，已准入失败绑定、单父续作证明、scope、冲突拒绝和独立验收不变。
+
+回归覆盖真实 Git 提交、续作工作区构造和候选补丁重放，并验证原候选引用不被提前发布。任务：[路径解析修复](../../tasks/active/2026-11-10-1054-unicode-partial-continuation.md)。

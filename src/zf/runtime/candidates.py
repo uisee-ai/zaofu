@@ -2030,11 +2030,12 @@ class CandidateRebuilder:
             "diff-tree",
             "--no-commit-id",
             "--name-only",
+            "-z",
             "-r",
             "--root",
             commit,
         )
-        return {line.strip() for line in out.splitlines() if line.strip()}
+        return {path for path in out.split("\0") if path}
 
     def _apply_task_commit(
         self,
@@ -2123,11 +2124,12 @@ class CandidateRebuilder:
             "ls-tree",
             "-r",
             "--name-only",
+            "-z",
             commit,
             "--",
             *paths,
         )
-        return {line.strip() for line in out.splitlines() if line.strip()}
+        return {path for path in out.split("\0") if path}
 
     def _cherry_pick_commit(self, worktree: Path, commit: str) -> str:
         result = subprocess.run(
@@ -2194,14 +2196,14 @@ class CandidateRebuilder:
             ["git", *args],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            text="-z" not in args,
             check=False,
             env=git_env(),
         )
         if result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip()
             raise RuntimeError(f"git {' '.join(args)} failed in {cwd}: {detail}")
-        return result.stdout.strip()
+        return os.fsdecode(result.stdout) if "-z" in args else result.stdout.strip()
 
 
 def _copy_materialized_candidate_path(*, source: Path, target: Path) -> bool:
