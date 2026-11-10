@@ -8,6 +8,10 @@ from typing import Any, Iterable, Mapping
 from zf.core.events.model import ZfEvent
 from zf.core.state.task_attempts import TASK_ATTEMPT_IDENTITY_OPERATION_V2
 from zf.runtime.task_attempt_runtime import task_attempt_store
+from zf.runtime.task_pipeline_attempt_recovery import (
+    is_shadow_provider_stop_attempt,
+    task_pipeline_retry_budget_allows,
+)
 from zf.runtime.workflow_operation import (
     WorkflowOperationService,
     reduce_workflow_operations,
@@ -110,11 +114,20 @@ def reconcile_task_pipeline_redrives(
         key=lambda row: str(row.get("attempt_id") or ""),
     )
     for attempt in attempts:
-        if not _eligible_attempt(attempt, generation_contexts):
+        if (
+            not _eligible_attempt(attempt, generation_contexts)
+            or not task_pipeline_retry_budget_allows(runtime, attempt)
+        ):
             continue
         operation_id = str(attempt.get("operation_id") or "")
         operation = operations.get(operation_id)
         if operation is None or str(operation.get("status") or "") != "suspended":
+            continue
+        if is_shadow_provider_stop_attempt(attempt) and (
+            operation.get("active_attempt_id") != attempt.get("attempt_id")
+            or operation.get("workflow_run_id") != attempt.get("run_id")
+            or operation.get("task_id") != attempt.get("task_id")
+        ):
             continue
         request = _completed_run_manager_recovery(
             events,
@@ -160,7 +173,10 @@ def project_task_pipeline_recovery(
             for row in attempt_rows
             if str(row.get("identity_version") or "")
             == TASK_ATTEMPT_IDENTITY_OPERATION_V2
-            and str(row.get("status") or "") == "expired"
+            and (
+                str(row.get("status") or "") == "expired"
+                or is_shadow_provider_stop_attempt(row)
+            )
             and str(row.get("recovery_owner") or "") == "run_manager"
         ),
         "admitted_redrives": [{
@@ -189,7 +205,10 @@ def _eligible_attempt(
         context
         and str(row.get("identity_version") or "")
         == TASK_ATTEMPT_IDENTITY_OPERATION_V2
-        and str(row.get("status") or "") == "expired"
+        and (
+            str(row.get("status") or "") == "expired"
+            or is_shadow_provider_stop_attempt(row)
+        )
         and str(row.get("recovery_owner") or "") == "run_manager"
         and str(row.get("run_id") or "")
         == str(context.get("workflow_run_id") or "")

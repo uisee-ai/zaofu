@@ -19,6 +19,10 @@ from zf.runtime.run_manager_router import (
     expected_downstream_events,
     preflight_action,
 )
+from zf.runtime.task_pipeline_attempt_recovery import (
+    is_retryable_pipeline_provider_stop,
+    is_shadow_provider_stop_attempt,
+)
 
 TASK_ATTEMPT_RECOVERY_SCHEMA_VERSION = "task-attempt-recovery.v1"
 
@@ -113,9 +117,20 @@ def _canonical_recovery_actions(
         ),
     ):
         status = str(row.get("status") or "")
-        if status in {"prepared", "delivering", "sent", "expired"}:
+        shadow_interruption = is_shadow_provider_stop_attempt(row)
+        provider_interruption = shadow_interruption or (
+            status == "expired" and is_retryable_pipeline_provider_stop(row)
+        )
+        if provider_interruption and (
+            max_retry_attempts and int(row.get("ordinal") or 0) >= max_retry_attempts
+        ):
+            actions.append(_canonical_failed_attempt_action(
+                row, max_retry_attempts=max_retry_attempts,
+            ))
+            continue
+        if status in {"prepared", "delivering", "sent", "expired"} or shadow_interruption:
             action = _canonical_expired_lease_action(
-                row,
+                {**row, "status": "expired"} if shadow_interruption else row,
                 now=now,
                 lease_grace_s=lease_grace_s,
             )

@@ -27,6 +27,31 @@ def is_task_pipeline_attempt(row: Mapping[str, Any]) -> bool:
     )
 
 
+def is_retryable_pipeline_provider_stop(row: Mapping[str, Any]) -> bool:
+    return bool(
+        is_task_pipeline_attempt(row)
+        and row.get("failure_class") == "task_pipeline_provider_stop"
+        and row.get("retryable") is True
+        and row.get("recovery_owner") == "run_manager"
+    )
+
+
+def is_shadow_provider_stop_attempt(row: Mapping[str, Any]) -> bool:
+    """Recognize only the old shadow projection of a retryable interruption."""
+    return bool(
+        is_retryable_pipeline_provider_stop(row)
+        and row.get("status") == "failed"
+        and row.get("failure_reason") == "lease_expired_shadow_only"
+    )
+
+
+def task_pipeline_retry_budget_allows(runtime: Any, row: Mapping[str, Any]) -> bool:
+    return (
+        row.get("retryable") is not False
+        and int(row.get("ordinal") or 0) < _max_attempts(runtime)
+    )
+
+
 def live_task_pipeline_attempt_for_role(runtime: Any, instance_id: str) -> dict[str, Any] | None:
     """Fence legacy watchdog recovery while an operation-v2 attempt is live."""
     rows = TaskAttemptStore(Path(runtime.state_dir) / "task_attempts.json").current_rows()
@@ -105,7 +130,10 @@ def reconcile_expired_task_pipeline_attempt(
         attempt_id,
     )
     emit_task_pipeline_attempt_failure(runtime, row, reason="lease_expired")
-    if _attempt_mode(runtime) != "enforce":
+    if (
+        _attempt_mode(runtime) != "enforce"
+        and not is_retryable_pipeline_provider_stop(row)
+    ):
         _store(runtime).update(
             attempt_id,
             status="failed",

@@ -16,11 +16,23 @@ from zf.runtime.workflow_operation import reduce_workflow_operations
 pytestmark = pytest.mark.mock_e2e
 
 
-def test_expired_attempt_reaches_wrc_redrive_without_monitor_session(tmp_path, monkeypatch):
+@pytest.mark.parametrize("fault", ["lease", "shadow_provider_stop", "legacy_shadow_provider_stop"])
+def test_expired_attempt_reaches_wrc_redrive_without_monitor_session(tmp_path, monkeypatch, fault):
     runtime = _runtime(tmp_path)
     attempt = _running_operation_v2_attempt(runtime)
-    monkeypatch.setattr("zf.runtime.task_attempt_runtime._expired", lambda _: True)
+    if fault == "lease":
+        monkeypatch.setattr("zf.runtime.task_attempt_runtime._expired", lambda _: True)
+    else:
+        from zf.runtime.task_pipeline_attempt_recovery import suspend_retryable_task_pipeline_provider_stop
+        runtime.config.workflow.task_attempt.mode = "shadow"
+        suspend_retryable_task_pipeline_provider_stop(runtime, attempt, reason="transport_error",
+            causation_id="mock-provider-stop", correlation_id="run-1")
     reconcile_task_attempts(runtime)
+    if fault == "legacy_shadow_provider_stop":
+        from zf.core.state.task_attempts import TaskAttemptStore
+        TaskAttemptStore(runtime.state_dir / "task_attempts.json").update(
+            attempt["attempt_id"], status="failed", failure_reason="lease_expired_shadow_only",
+            updated_at="2026-08-03T00:03:00+00:00")
     run_manager_tick(state_dir=runtime.state_dir, writer=runtime.event_writer,
                      config=runtime.config, project_root=tmp_path, spawn_repairs=False)
     requests = [e for e in runtime.event_log.read_all() if e.type == "worker.respawn.requested"]
