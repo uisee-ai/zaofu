@@ -519,6 +519,14 @@ def prepare_plan_artifact_package(
     reduced = reduce_plan_artifact_packages(event_list, workflow_run_id=workflow_run_id)
     previous = reduced.get("current")
     previous = previous if isinstance(previous, Mapping) else {}
+    if payload.get("resume_scope") == "gap_tasks_only" and payload.get("supersedes_task_map_generation"):
+        previous = admitted_plan_artifact_package_for_generation(
+            reduced, task_map_generation=str(payload["supersedes_task_map_generation"]),
+        )
+        if not previous:
+            from zf.runtime.product_acceptance import ProductAcceptanceError
+
+            raise ProductAcceptanceError("gap acceptance inheritance requires exact prior plan lineage")
     prior_body = None
     if previous.get("package_ref") and previous.get("package_digest"):
         prior_body = hydrate_plan_artifact_package(state_dir, {
@@ -568,20 +576,6 @@ def prepare_plan_artifact_package(
             "source_logical_name": "task_map",
             "adapter_version": "planning-result-task-map-adapter.v1",
         }
-    reduced = reduce_plan_artifact_packages(
-        event_list,
-        workflow_run_id=workflow_run_id,
-    )
-    previous = reduced.get("current")
-    previous = previous if isinstance(previous, Mapping) else {}
-    if payload.get("resume_scope") == "gap_tasks_only" and payload.get("supersedes_task_map_generation"):
-        previous = admitted_plan_artifact_package_for_generation(
-            reduced, task_map_generation=str(payload["supersedes_task_map_generation"]),
-        )
-        if not previous:
-            from zf.runtime.product_acceptance import ProductAcceptanceError
-
-            raise ProductAcceptanceError("gap acceptance inheritance requires exact prior plan lineage")
     inherited: list[dict[str, Any]] = []
     continuity = mandatory_claim_continuity(None, claim_set)
     if prior_body is not None:
@@ -656,19 +650,6 @@ def prepare_plan_artifact_package(
     )
     if input_errors:
         raise PlanArtifactPackageError("invalid task plan inputs: " + "; ".join(input_errors))
-    from zf.runtime.plan_candidate_input_lineage import validate_dispatch_input_partitions
-
-    try:
-        validate_dispatch_input_partitions(
-            state_dir=state_dir, task_map=task_map,
-            ports=[*explicit_ports.values(), *inherited], required_ports=list(required_ports),
-            trigger={"workflow_run_id": workflow_run_id,
-                     "plan_artifact_package_ref": previous.get("package_ref", ""),
-                     "plan_artifact_package_digest": previous.get("package_digest", "")},
-            task_ids=(list(payload["task_ids"]) if isinstance(payload.get("task_ids"), list) and payload["task_ids"] else None),
-        )
-    except ValueError as exc:
-        raise PlanArtifactPackageError(f"invalid task input partitions: {exc}") from exc
     from zf.runtime.plan_acceptance_rework import rebind_inherited_gap_acceptance
 
     rebind_inherited_gap_acceptance(
@@ -683,6 +664,19 @@ def prepare_plan_artifact_package(
         explicit_ports=explicit_ports, inherited=inherited,
         source_event_id=source_event_id,
     )
+    from zf.runtime.plan_candidate_input_lineage import validate_dispatch_input_partitions
+
+    try:
+        validate_dispatch_input_partitions(
+            state_dir=state_dir, task_map=task_map,
+            ports=[*explicit_ports.values(), *inherited], required_ports=list(required_ports),
+            trigger={"workflow_run_id": workflow_run_id,
+                     "plan_artifact_package_ref": previous.get("package_ref", ""),
+                     "plan_artifact_package_digest": previous.get("package_digest", "")},
+            task_ids=(list(payload["task_ids"]) if isinstance(payload.get("task_ids"), list) and payload["task_ids"] else None),
+        )
+    except ValueError as exc:
+        raise PlanArtifactPackageError(f"invalid task input partitions: {exc}") from exc
     product_acceptance_port = next(
         (
             port

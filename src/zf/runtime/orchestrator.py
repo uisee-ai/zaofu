@@ -4312,6 +4312,7 @@ class WorkflowRuntimeCoordinator(
                 source_event_id=event.id,
                 gap_tasks=gap_tasks,
                 gap_plan_ref=gap_plan_ref,
+                source_index_ref=str(payload.get("source_index_ref") or ""),
                 replacement_context=payload,
                 admission_metadata=metadata,
             )
@@ -4404,7 +4405,7 @@ class WorkflowRuntimeCoordinator(
                 "flow_kind": flow_kind,
                 "task_map_ref": str(amend.get("task_map_ref") or ""),
                 "task_map_digest": task_map_digest,
-                "source_index_ref": str(payload.get("source_index_ref") or ""),
+                "source_index_ref": str(amend.get("source_index_ref") or payload.get("source_index_ref") or ""),
                 "source_commit": str(payload.get("source_commit") or ""),
                 "candidate_base_commit": str(
                     payload.get("candidate_base_commit") or payload.get("source_commit") or ""
