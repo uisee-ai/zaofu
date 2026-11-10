@@ -1,6 +1,6 @@
 # P2：真实 Plan Critic 的 Owner 检查点缺少候选 Plan 引用
 
-> 状态: active
+> 状态: done
 
 ## 复现与证据
 
@@ -30,3 +30,9 @@ Owner 可通过 Reject 附带澄清，已由真实 UI 提交，并触发同 Run 
 
 实现与交互分析：[PRD UI 恢复](../../docs/impl/prd-ui-recovery.md)。
 验证与保留失败：[验证记录](../../docs/records/2026-11-10-prd-ui-recovery-validation.md)。
+
+实现提交：`9af9e1f3 fix: restore PRD workflow config handoff and review recovery`。
+
+验证：定向回归 65 passed；调用方 80 passed；串行 10 passed；哨兵 53 passed；
+两条 warm-runtime Docker 完整旅程均通过，Owner/Channel 交互验证通过。
+广域回归 4850 passed / 9 skipped / 2 failed；两项失败在 dev 基线复现，详情见验证记录。
