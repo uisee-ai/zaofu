@@ -636,6 +636,12 @@ def prepare_plan_artifact_package(
         ports=[*explicit_ports.values(), *inherited],
         required_ports=required_ports,
     )
+    from zf.runtime.plan_package_matrix_admission import validate_package_matrix_closure
+
+    validate_package_matrix_closure(
+        state_dir=state_dir, task_map=task_map,
+        ports=[*explicit_ports.values(), *inherited], required_ports=required_ports,
+    )
     from zf.runtime.task_map_required_ports import plan_input_declaration_errors
 
     input_errors = plan_input_declaration_errors(
