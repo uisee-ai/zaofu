@@ -124,3 +124,62 @@ stages 等），故未用其判定仓库技能无效，也未删减扩展字段�
 SHA 不变；前端 build/unit 与后端定向通过。扩展 dev-verify 闭包为 1187 passed、
 1 skipped、1 failed；唯一 Loop 测试失败在修改前 a223088c 复现（测试配置缺少
 observability），详见本地验证报告；不能把该扩展闭包计为全绿。
+
+## 2026-11-10：Spec 一致性与任务规格切片
+
+基线 dev `489d92b3`。本批次将 Spec 定义为可实现、可证伪的行为合同，沿现有 Task
+`contract`、Task Map 和 Plan 传递，不增加任务 Schema 或运行时语义硬门禁。
+
+- Planner/Critic 的就绪方法新增 `references/task-spec-slices.md`，要求来源、前后态、
+  拒绝与失败不变项、共享合同、实际入口、验证责任和决定一致；PRD 规划入口显式引用。
+  切片按结果、依赖和事务所有权确定，小产品可由一个完整旅程任务承担。
+- 复用 `execution_spec.tasks[].body.human_review.module_spec_markdown`；没有该端口
+  时，Plan 使用精确二级标题 `Task Spec: <task_id>` 及 `Shared Spec`。这是阅读约定，
+  独立 Critic 仍需检查最终序列化工件的语义与跨工件一致性。
+- Preview 的「模块规格」引用同版原文，保留共享合同、跳转全文和旧版缺失提示。
+  未知或重复任务标题不被选为任务规格；代码块中的标题不参与定位。
+  现有 Task Map 的责任、允许路径和命令可展开阅读，命令支持局部滚动和键盘访问。
+- 新真实样例使用 `test_matrix.tests[].test_id`，阅读器补齐该合法 ID，并按
+  source-index 中明确的 `scene_ids` 和任务归属解析来源；不通过相同 AC 猜测来源。
+  AC/命令不属于当前任务时仍显示归属提示，不通过展示转换消除工件中的缺口。
+- 浏览器夹具从上一轮真实工件补回原有 `owner_role`、`allowed_paths`、`validation`，
+  其余旧内容不改写；新增规格标题的用例明确是展示回归，不冒充重新生成的真实结果。
+
+方法及入口见[使用手册](../manual/workflows/prd-design-review.md#从-spec-形成任务并阅读)。
+本轮真实评测使用隔离 v5、合成阅读清单 R2 输入和配置中的独立 Critic，停人工审批。
+R2 明确绝对 URL 示例与精确焦点回退，保留原范围和 AC；它用于验证生成、审查和阅读
+链路，不构成真实用户研究或示例产品实现验收。
+
+真实运行 `workflow-38a3e3db1318725f` 产出 3 个任务、21 个具名场景和 7 条完整决定；
+独立 Critic 正式返回 passed/approve，Plan `evt-1dcfc632f607` 停在人工审批。
+输入和方法摘要匹配，未启动产品实现；产品证据仍为 NOT_RUN。
+只读 Web 经 Docker 在 1280/375 宽度核对三个任务、场景和决定，下载原文摘要等于
+接纳摘要，浏览器无异常或写请求，事件账本前后不变。模拟环境已归档并清理。
+
+本批验证：45 个聚焦 Python 测试通过、1 个外部技能依赖测试跳过；前端 build、
+typecheck、unit 通过；18 个既有浏览器用例通过，最终受影响组 8 个用例通过。
+保留三项改进空间：共享场景的任务局部 AC/命令显示、重复场景/决定列表的阅读负担、
+决定状态词汇与通用统计的对齐。Critic 认可本例的共享验证职责，但不把这些展示提示
+静默消除；本例也不是固定输入的单变量实验或真人阅读效果证明。
+完整本地报告为 `reports/spec-task-slices/qualification.md`（按仓库策略忽略）。
+
+## 2026-11-10：公开资料借鉴与共享责任阅读
+
+设计与来源见 [206](../design/206-spec-method-borrowings-and-quality-evaluation.md)。本批基线
+`2fdee307`，仍在 `wip/codex-20261110-spec-task-slices`，不改 Kernel/API/schema。
+
+- 方法：在既有 `task-spec-slices.md` 增加局部责任、紧凑规格、行为差量和性质/反例
+  方法，引用新 `spec-quality-evaluation.md`。后者区分能力、产物与效果，明确固定
+  条件、独立交接、正反例、成本及未知证据；沿原 Planner/Critic 依赖实际物化。
+- 阅读：共享场景只在明确参与任务内解析 AC/命令，显示各片直接关系及验证责任。
+  未知、重复与缺失关系保留；R2 的装配 AC-I 不被自动等同于场景 AC-1。决定增加
+  原始状态分布与 `latest_decision_stage` 展示，后端通用统计不变。
+- 回归：从已接纳 R2 中选取原值及 SHA256 生成夹具；旧阅读模型上先复现误报，再
+  修复。合成反例另行标识，覆盖未知 Task/AC/命令、同名 AC 串任务及重复定义。
+- 验证：dev-verify 自动闭包 45 passed / 1 skipped，frontend typecheck/unit 通过；
+  production build 与 bundle budget 通过；Docker 两组浏览器共 10 passed，含
+  1280/375 视口、原状态与时点、缺失绑定提示、无 API 写请求及页面异常。
+
+此处 browser 通过证明展示消费和只读行为；新增方法的真实生成、跨工具独立交接、
+实现效果与成本实验仍 NOT_RUN。能力评分仅阅读支持调整，其他项不因方法加字加分。
+本地日志位于 `reports/spec-research/`，不提交；四项任务及实现提交记录见 design 206。

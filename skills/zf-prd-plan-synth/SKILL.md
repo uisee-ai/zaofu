@@ -259,6 +259,17 @@ coverage. Never rewrite admitted artifacts to improve presentation.
 
 ## Task Design
 
+Apply `zf-plan-execution-readiness/references/task-spec-slices.md` to the
+complete candidate, including in the configured Critic review. Each Task
+receives a bounded specification of its observable outcome, shared contracts,
+failure invariants, entrypoint and independent acceptance responsibility.
+Use the existing execution_spec reading partition, or exact
+`## Task Spec: <task_id>` sections in the accepted Markdown with optional
+`## Shared Spec` for shared contracts. This is a reading convention, not a
+second Task schema. Reconcile serialized decisions, examples and matrix rows;
+template presence is not a semantic verdict. Keep known findings and their
+disposition in the existing review artifact across bounded rework.
+
 Split by end-to-end user journey, not by component-only layers. Each normal
 slice should own the smallest runnable behavior across the API/runtime/web
 layers it needs, plus its focused tests and evidence. A good task has:

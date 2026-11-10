@@ -1,0 +1,62 @@
+[
+  {
+    "id": "save-failure",
+    "expectations": [
+      "先保存后发布",
+      "失败保留旧状态及输入",
+      "成功清空输入/失败可重试",
+      "拒绝新增账号/后端"
+    ],
+    "test_code": "import {save} from './implementation.mjs';\nimport assert from 'node:assert/strict';\nconst old=Object.freeze({value:'old'}), draft=Object.freeze({value:'new'});\nlet seen; const ok=await save(old,draft,async x=>{seen=x;});\nassert.equal(seen,draft);assert.deepEqual(ok,{state:draft,input:'',error:null});\nconst bad=await save(old,draft,async()=>{throw Error('disk');});\nassert.deepEqual(bad,{state:old,input:draft,error:'save_failed'});\nassert.deepEqual(await save(old,draft,async()=>{}),ok);\nconsole.log('independent save oracle passed');\n"
+  },
+  {
+    "id": "permissions",
+    "expectations": [
+      "业务入口验证所有者",
+      "拒绝保持原对象",
+      "忽略所有权变更字段",
+      "具体接口及验证责任"
+    ],
+    "test_code": "import {update} from './implementation.mjs';\nimport assert from 'node:assert/strict';\nconst doc=Object.freeze({ownerId:'a',title:'old'});\nassert.deepEqual(update(doc,'b',{title:'new'}),{ok:false,reason:'forbidden',doc});\nassert.deepEqual(update(doc,'a',{title:'new',ownerId:'b'}),{ok:true,doc:{ownerId:'a',title:'new'}});\nassert.equal(doc.title,'old');assert.equal(doc.ownerId,'a');\nconsole.log('independent permission oracle passed');\n"
+  },
+  {
+    "id": "shared-scenario",
+    "expectations": [
+      "共享规则唯一正文及精确引用",
+      "逐任务AC/命令/owner分开",
+      "先功能后装配/局部不等后继",
+      "NOT_RUN及真实入口"
+    ],
+    "test_code": null
+  },
+  {
+    "id": "migration",
+    "expectations": [
+      "保留id/title和已有true",
+      "未知版本拒写保持字节",
+      "保留加载失败写保护与重试",
+      "三个消费者及旧证据重审"
+    ],
+    "test_code": null
+  },
+  {
+    "id": "future-decision",
+    "expectations": [
+      "本期本地范围",
+      "未来决定owner/截止/非阻塞一致",
+      "不擅自决定同步",
+      "失败不变项及NOT_RUN"
+    ],
+    "test_code": null
+  },
+  {
+    "id": "dependency-cycle",
+    "expectations": [
+      "明确循环原因",
+      "CORE局部验证不依赖ENTRY",
+      "ENTRY真实入口保留产品验收",
+      "顺序责任命令及NOT_RUN"
+    ],
+    "test_code": null
+  }
+]

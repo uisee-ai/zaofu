@@ -6,9 +6,9 @@ import PlanSourceReader from "./PlanSourceReader";
 import PlanTraceReader from "./PlanTraceReader";
 import PlanInputReviewPanel from "./PlanInputReviewPanel";
 import { DecisionList, PlanSourceContext, SourceRefs } from "./PlanReviewDetails";
-import { buildPlanReview, relatedTasks, strings, text } from "./planReviewModel";
+import { buildPlanReview, decisionStatusDistribution, relatedTasks, strings, text } from "./planReviewModel";
 import { usePlanArtifacts } from "./usePlanArtifacts";
-import { planReadingSections, type ReadingSection } from "./planReadingSections";
+import { planReadingSections, planTaskSpecifications, type ReadingSection } from "./planReadingSections";
 import "./planReader.css";
 
 type View = "inputs" | "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "original" | "sources";
@@ -38,6 +38,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
   const { artifacts, errors, loading } = usePlanArtifacts(preview, projectId, detailed);
   const model = useMemo(() => buildPlanReview(artifacts), [artifacts]);
   const excerpts = useMemo(() => planReadingSections(preview.markdown || ""), [preview.markdown]);
+  const specifications = useMemo(() => planTaskSpecifications(preview.markdown || "", model.modules.map(m => m.id)), [preview.markdown, model]);
   const selected = location.task ? model.modules.find(m => m.id === location.task) : model.modules[0];
   const decisions = preview.decision_review?.available ? preview.decision_review.items : model.decisions;
   const registerKnown = preview.decision_review ? preview.decision_review.available : Array.isArray((artifacts.task_map as Record<string, unknown> | undefined)?.owner_decision_items);
@@ -71,6 +72,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
           {errors.map(error => <p role="alert" key={error}>附件读取失败：{error}。请查看完整原文。</p>)}
           {preview.decision_review?.error && <p role="alert">{preview.decision_review.error}</p>}
           {!loading && model.warnings.map(warning => <p role="status" key={warning}>{warning}</p>)}
+          {!loading && view === "modules" && specifications.warnings.map(warning => <p role="status" key={warning}>{warning}</p>)}
           {!loading && view === "overview" && <>
             <h2>本次交付与审批范围</h2>
             <p>{model.modules.length} 个任务 · {model.criterionCount} 个验收项 · {model.pageCount ?? "未提供"} 个页面 · {model.formCount ?? "未提供"} 类表单</p>
@@ -86,6 +88,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
             <h2>待决事项与阶段边界</h2>
             <p>{registerKnown ? `共 ${decisions.length} 条登记。` : "结构化登记未确认，数量未知；请核对下方同版原文。"}未来待决定、已授权待落实与当前阻塞分别保留；批准 Plan 不会自动关闭它们。</p>
             <p>{decisionSummary}</p>
+            {registerKnown && <p>原始状态：{decisionStatusDistribution(decisions) || "未登记"}。保留作者状态，不据此推定关闭或执行授权。</p>}
             <DecisionList decisions={decisions} {...sourceProps} />
             {!registerKnown && quoted(excerpts.decisions)}
           </>}
@@ -103,7 +106,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
             </article>)}
           </>}
           {view === "inputs" && <PlanInputReviewPanel key={`${projectId}:${preview.plan_id}`} preview={preview} projectId={projectId} />}
-          {!loading && view === "coverage" && <PlanTraceReader artifacts={artifacts} preview={preview} projectId={projectId} onTask={selectTask} />}
+          {!loading && view === "coverage" && <PlanTraceReader artifacts={artifacts} preview={preview} projectId={projectId} taskId={location.task} onClearTask={() => navigate({ task: "" })} onTask={selectTask} />}
           {!loading && (view === "modules" || view === "scenarios") && <>
             {location.task && !selected && <p role="alert">本版未找到任务 {location.task}，请选择已绑定任务。</p>}
             <label className="plan-review-selector">任务 / 模块<select aria-label="审阅模块" value={selected?.id || ""} onChange={event => navigate({ task: event.target.value })}>
@@ -112,9 +115,26 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
             </select></label>
             {selected && <section key={selected.id}>
               <h2>{selected.title || selected.id}</h2><p>{selected.id} · 前置：{selected.dependencies.join("、") || "未声明"}</p>
+              <button type="button" className="delivery-action-button" onClick={() => navigate({ view: "coverage", task: selected.id })}>查看本任务来源、验收与证据</button>
               <SourceRefs refs={selected.sourceRefs} {...sourceProps} />
               {view === "modules" ? <>
-                {selected.specification ? <MarkdownText key={`${selected.id}:${selected.specification}`} content={selected.specification} /> : <><p role="status">本版未细化独立模块规格，以下显示已绑定任务描述和验收项；字段、权限及异常细则需对照来源。</p><p>{selected.description}</p></>}
+                <p className="muted">以下为作者规格与任务合同；内容存在不代表独立评审、执行授权或产品验证通过。</p>
+                {specifications.shared.length > 0 && <details className="plan-review-card"><summary>同版共享合同</summary>{quoted(specifications.shared)}</details>}
+                {selected.specification ? <><p className="muted">规格来源：同版 execution_spec 任务分区</p><MarkdownText key={`${selected.id}:${selected.specification}`} content={selected.specification} /></>
+                  : specifications.tasks[selected.id] ? <section className="plan-original-excerpt">
+                    <p className="muted">同版原文；与其他任务完全相同的章节可展开阅读，完整原文保持不变。</p>
+                    {specifications.reading[selected.id].map(part => part.shared
+                      ? <details className="plan-review-card" key={part.key}><summary>共享重复章节：{part.title}</summary><MarkdownText content={part.content} /></details>
+                      : <MarkdownText key={part.key} content={part.content} />)}
+                    <button type="button" className="delivery-action-button" onClick={() => navigate({ view: "original", anchor: specifications.tasks[selected.id].anchor })}>在完整原文中阅读：{specifications.tasks[selected.id].title}</button>
+                  </section>
+                  : <><p role="status">本版未细化独立模块规格，以下显示已绑定任务描述和验收项；字段、权限及异常细则需对照来源。</p><p>{selected.description}</p></>}
+                <details className="plan-review-card"><summary>任务责任与验证命令</summary>
+                  <p>实现责任：{selected.owner || "未声明"}</p>
+                  <p>允许写入：{selected.allowedPaths.join("、") || "未声明，请核对工程附件"}</p>
+                  {!selected.commands.length && <p>尚未取得本任务的验证命令，请核对工程附件。</p>}
+                  {selected.commands.map((command, index) => <article key={index}><h4>{text(command.id)}</h4><pre className="plan-task-command" tabIndex={0} aria-label={`验证命令 ${text(command.id)}`}><code>{text(command.command)}</code></pre><p>{text(command.owner) || "未声明责任"} · {text(command.tier) || "未声明层级"} · AC：{strings(command.acceptance_ids).join("、") || "未绑定"}</p></article>)}
+                </details>
                 <h3>页面与表单</h3><p>{[...selected.pages, ...selected.forms].map(p => `${text(p.id || p.page_id || p.form_id)} ${text(p.title || p.name)}`).join("；") || "未提供页面映射"}</p>
                 <h3>相关决定</h3><DecisionList decisions={selected.decisions} {...sourceProps} />
               </> : <>
@@ -124,6 +144,19 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
                   <h4>{scenario.id} {scenario.title}</h4><p className="muted">证据状态：{scenario.evidenceStatus}</p>
                   <dl><dt>前置 Given</dt><dd>{scenario.given || "待补充"}</dd><dt>操作 When</dt><dd>{scenario.when || "待补充"}</dd><dt>结果 Then</dt><dd>{scenario.then || "待补充"}</dd></dl>
                   <p>验收项：{scenario.acceptanceIds.join("、") || "未绑定"} · 命令：{scenario.commandIds.join("、") || "未绑定"}</p>
+                  <details><summary>逐任务验收责任</summary>
+                    {scenario.responsibilities.map(responsibility => <section key={responsibility.taskId}>
+                      <h5>{responsibility.taskId}{responsibility.taskId === selected.id ? "（当前任务）" : ""}</h5>
+                      <p>直接绑定场景 AC：{responsibility.acceptanceIds.join("、") || "未绑定；请对照本片命令和 Task Spec 核对集成责任"}</p>
+                      <p>本片场景命令：{responsibility.commandIds.join("、") || "未绑定"}</p>
+                      {responsibility.commands.map(command => <div key={command.id}>
+                        {command.definitions.length === 1 ? <>
+                          <pre className="plan-task-command" tabIndex={0}><code>{text(command.definitions[0].command)}</code></pre>
+                          <p>{command.id} · {text(command.definitions[0].owner) || "未声明责任"} · {text(command.definitions[0].tier) || "未声明层级"} · 命令 AC：{strings(command.definitions[0].acceptance_ids).join("、") || "未绑定"}</p>
+                        </> : <p>{command.id}：{command.definitions.length ? "定义不唯一，请核对原文" : "命令正文未提供"}</p>}
+                      </div>)}
+                    </section>)}
+                  </details>
                   <SourceRefs refs={scenario.sourceRefs} {...sourceProps} />
                   {scenario.issues.map(issue => <p role="status" key={issue}>{issue}</p>)}
                 </article>)}

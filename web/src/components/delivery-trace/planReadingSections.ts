@@ -19,3 +19,40 @@ export function planReadingSections(markdown: string) {
   });
   return { overview: select(titles.overview), journeys: select(titles.journeys), pages: select(titles.pages), decisions: select(titles.decisions) };
 }
+
+/** Exact author-owned Task IDs only; headings inside fences are excluded by the AST. */
+export function planTaskSpecifications(markdown: string, taskIds: string[]) {
+  const sections = planDocumentSections(markdown);
+  const tasks: Record<string, ReadingSection> = Object.create(null);
+  const warnings: string[] = [];
+  const candidates = new Map<string, ReadingSection[]>();
+  const shared: ReadingSection[] = [];
+  sections.forEach((section, index) => {
+    if (section.level !== 2) return;
+    const match = section.title.match(/^Task Spec:\s*(\S+)\s*$/);
+    if (!match && section.title !== "Shared Spec") return;
+    let end = index + 1;
+    while (end < sections.length && sections[end].level > section.level) end++;
+    const excerpt = { ...section, content: sections.slice(index, end).map(s => s.content).join("") };
+    if (!match) { shared.push(excerpt); return; }
+    const id = match[1];
+    if (!taskIds.includes(id)) { warnings.push(`原文任务规格引用未知任务：${id}`); return; }
+    candidates.set(id, [...(candidates.get(id) || []), excerpt]);
+  });
+  candidates.forEach((values, id) => {
+    if (values.length === 1) tasks[id] = values[0];
+    else warnings.push(`${id} 存在重复原文任务规格，请在完整原文中核对。`);
+  });
+  // Fold identical authored sections (ignoring edge whitespace) across tasks. Keep
+  // every original segment, its order and the complete document unchanged.
+  const pieces = Object.fromEntries(Object.entries(tasks).map(([id, section]) => [id, planDocumentSections(section.content)]));
+  const consumers = new Map<string, Set<string>>();
+  Object.entries(pieces).forEach(([id, parts]) => parts.filter(p => p.level > 2).forEach(p => {
+    const key = p.content.trim();
+    consumers.set(key, new Set([...(consumers.get(key) || []), id]));
+  }));
+  const reading = Object.fromEntries(Object.entries(pieces).map(([id, parts]) => [id, parts.map(part => ({
+    ...part, shared: part.level > 2 && (consumers.get(part.content.trim())?.size || 0) > 1,
+  }))]));
+  return { tasks, shared, warnings, reading };
+}

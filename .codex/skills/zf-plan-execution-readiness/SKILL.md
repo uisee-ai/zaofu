@@ -14,6 +14,10 @@ load_on_demand: true
 不替代 Kernel 的引用、路径、代际及完成证据检查。产物使用现有 Plan、task_map、
 矩阵和 Critic verdict；项目语义判断必须附来源，不能变成 Runtime 的项目规则。
 
+生成或审查任务切片时，读取[任务规格与一致性](references/task-spec-slices.md)。
+每片交接可观察行为、共享合同、失败不变项和独立验收责任；先审规格再审分配，
+并核对最终序列化正文、决定登记与矩阵，而非依赖作者的“已对齐”声明。
+
 先读取 `zf-requirement-reconciliation` 核对来源及未决问题。大需求、未来范围尚待
 细化或需要调整依赖图时，按[薄 Epic 与渐进细化](references/epic-refinement.md)
 保留全局义务并形成当前执行边界；不把 Epic 规划状态写成 Kernel Task 状态。

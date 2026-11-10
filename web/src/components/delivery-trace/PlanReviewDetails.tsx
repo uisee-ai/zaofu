@@ -16,7 +16,7 @@ export function DecisionList({ decisions, preview, projectId }: { decisions: Rec
   return <>{decisions.map((decision, i) => <details className="plan-review-card" key={`${text(decision.decision_id)}-${i}`}>
     <summary>{text(decision.decision_id)} · {text(decision.status) || "状态未声明"} · {text(decision.question || decision.title)}</summary>
     <p>负责人：{text(decision.named_owner || decision.owner) || "待指定"} · {text(decision.responsible_role)}</p>
-    <p>最迟确认：{text(decision.enter_before || decision.latest_gate) || "未声明"} · 影响任务：{strings(decision.affected_task_ids).join("、") || text(decision.producer_task_id) || "未声明"}</p>
+    <p>最迟确认：{text(decision.enter_before || decision.latest_gate || decision.latest_decision_stage) || "未声明"} · 影响任务：{strings(decision.affected_task_ids).join("、") || text(decision.producer_task_id) || "未声明"}</p>
     <p>关闭条件：{text(decision.done_when || decision.closure_evidence) || "未声明"}</p>
     <p>当前阻塞：{decision.blocking === true ? "是" : decision.blocking === false ? "否（仍须遵守最迟确认条件）" : "未声明"}</p>
     <p>{text(decision.pending_boundary)} {text(decision.approval_scope)} {text(decision.blocker_impact)}</p>
