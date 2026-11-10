@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现提交: `ea806d64` — feat: add readable task specs and consistency guidance
 
 # Spec 一致性、任务规格切片与真实规划验证
 
