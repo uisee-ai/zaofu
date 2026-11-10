@@ -45,6 +45,7 @@ from zf.cli.hook_dispatch_context import (
 from zf.cli.hook_workdir_guard import (
     actor_from_workdir_cwd as _actor_from_workdir_cwd,
     bash_command_looks_mutating as _bash_command_looks_mutating,
+    workdir_scope_frames as _workdir_scope_frames,
     evaluate_workdir_write_guard as _evaluate_workdir_write_guard,
     is_authorized_result_scratch_target as _is_authorized_result_scratch_target,
     runtime_write_guard_text as _runtime_write_guard_text,
@@ -545,7 +546,9 @@ def _evaluate_runtime_write_guard(
 
     tool_name = str(event_payload.get("tool_name") or "").strip()
     tool_input = event_payload.get("tool_input")
-    input_text = _runtime_write_guard_text(tool_name, tool_input)
+    input_text = _runtime_write_guard_text(
+        tool_name, tool_input, cwd=str(event_payload.get("cwd") or "")
+    )
     lower_tool = tool_name.lower()
     protected = _mentions_protected_runtime_state(input_text, state_dir=state_dir)
     reason = ""
@@ -590,15 +593,6 @@ def _evaluate_runtime_write_guard(
     return 2
 
 
-def _to_scope_frame(path: str) -> str:
-    """Reduce an absolute worker workdir path to the repo-relative scope frame."""
-    text = path.strip()
-    marker = "/project/"
-    if marker in text:
-        text = text.rsplit(marker, 1)[1]
-    return text.lstrip("/")
-
-
 def _active_task_scope(state_dir: Path, task_id: str) -> list[str]:
     """The active task's contract scope (allowed_paths); empty when undefined."""
     try:
@@ -639,7 +633,9 @@ def _evaluate_allowed_paths_guard(
     if not isinstance(tool_input, dict):
         return 0
     tool_name = str(event_payload.get("tool_name") or "").strip()
-    operations = _write_target_operations(tool_name, tool_input)
+    operations = _write_target_operations(
+        tool_name, tool_input, cwd=str(event_payload.get("cwd") or "")
+    )
     if not operations:
         return 0
     task_id = _active_task_id_for_actor(event_log, actor)
@@ -656,10 +652,15 @@ def _evaluate_allowed_paths_guard(
     scratch_update_operations = {
         "update", "write", "edit", "multiedit", "notebookedit",
     }
+
+    frames = _workdir_scope_frames(
+        state_dir, event_log, actor, [target for _, target in operations],
+        str(event_payload.get("cwd") or ""),
+    )
     offending = sorted({
         target
         for operation, target in operations
-        if not _path_allowed_by_scope(_to_scope_frame(target), scope)
+        if not (frames[target] is not None and _path_allowed_by_scope(frames[target], scope))
         and not (
             operation in scratch_update_operations
             and _is_authorized_result_scratch_target(

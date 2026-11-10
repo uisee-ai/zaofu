@@ -71,6 +71,16 @@ Plan 审批去重同时绑定任务集合与产物摘要（优先 Package digest
 
 Task Pipeline writer 的 hook 从当前 running operation 与精确匹配的 kernel dispatch 读取工作目录；同时匹配角色、task、dispatch、task-map generation、workspace generation 和 placement epoch。不能由 hook cwd 自行授权。当前任务的合同路径限制与现有结果 scratch 能力继续生效。事件索引纳入 task.pipeline.stage.dispatched；完成后的旧任务目录不再获得运行中授权。legacy role workdir 仍按原路径处理。
 
+对单条 `cp [--] <literal-source-file> <literal-destination-file>`，hook 区分只读源与写目标；runtime-state、当前工作区、任务 allowed_paths 使用同一个按 cwd 解析后的目标。源可位于已可读的外部证据目录，不能因为源包含项目根绝对路径就误判越域写入；源路径也不能豁免真正的外部写目标。不新增读取权限或绕过 provider 的 secret/read 约束。复制不获得结果 scratch 的 update/write 例外。
+
+首轮只支持两个普通文件操作数及正确引用的字面路径，不支持目录/多源、其它选项、变量/通配符/替换、复合 shell 或 wrapper；识别到 cp 但不能证明写目标时以 `unproven_copy_write_target` 拒绝，可改为先读取来源再在任务域内 patch。目录目的地、目标或父目录的符号链接、已有多硬链接目标均拒绝，避免复制的实际文件落到另一范围。这里是保守 PreToolUse 检查，不是完整 shell 解释器或并发路径替换的 OS 沙箱。Docker `:ro` 命令仍沿用原策略，不因本修复获豁免。`tests/test_hook_copy_intent.py` 通过 Codex/Claude 的实际 hook 入口覆盖源读取、scope/runtime 边界、目录/链接和未知语法；任务记录见 `tasks/done/2026-11-10-0849-worker-copy-write-target.md`。
+
+独立审查补充：识别复制命令须保留词法引用与命令位置，`rg -n cp app`、`printf` 参数、`python -c` 的字符串以及 `cat /bin/cp` 不作为 cp 写意图；已识别 wrapper、后续 shell 命令中的 cp 仍不可由 literal 复制规则授权。Copy、原生 Write/Edit、patch/heredoc 的共享合同范围均按当前 Kernel 派发绑定的工作目录计算真实相对路径，不按最后一段 `/project/` 截断，也不允许 cwd 重设授权根。Legacy 相对路径沿用角色工作目录，结果 scratch 仍仅按既有精确能力授权。`tests/test_hook_scope_frame.py` 覆盖两 provider 原生工具的嵌套目录负例与合法 project 命名目录正例。初轮 `04f5abed` 交接因上述反例撤回，返工验证单独保留，不用原测试通过记录覆盖审查失败。
+
+后续 `e32d78ba` 审查又复现双引号中活动命令替换的漏检：仅看外层词法命令位置不足以覆盖 `echo "$(cp ...)"`。现在额外提取可识别的活动 `$()`、反引号和进程替换正文，屏蔽外层展开值后检查子命令位置；单引号与转义 sigil 是数据，纯 `$((cp+1))` 不作为命令，但算术块内的 `$(cp ...)` 仍检查。此辅助不执行 shell、不展开变量，也不增加 cp 允许文法。替换帧最多 32 层、每帧括号深度最多 32 层、处理上下文（含外层）最多 64 个；未闭合或越界不能获得写入豁免。`tests/test_hook_copy_substitution.py` 经两 provider 真实 hook 验证活动/非活动、普通 cp 文本与替换内打印数据，均不执行被审工具；这不提供通用 shell、动态命令名或 TOCTOU 沙箱保证。
+
+词首、未引用的 `#` 注释跳至换行，注释中的 `)` 不结束替换正文；词内、引用或转义的 `#` 仍是数据。该词法边界用于避免把注释后实际执行的 cp 当成外层双引号文本，不新增任何可执行命令授权。
+
 复用 Task-stage 会话时，CompositeTransport 必须转发底层生命周期快照，供重绑定入口核对实际进程 cwd。同一 binding 的旧角色目录不能因为路由层丢失快照而被继续复用；确认无活跃 attempt/operation 后，原重绑定流程终止闲置槽位并在 Task Workspace 激活。没有目录观测能力的 adapter 不伪造 cwd。tests/test_task_pipeline_transport_binding.py 覆盖真实重绑定入口、同目录复用及按实例路由。
 
 Impl 已提交 blocked 时 operation 是终态，重启不等于重试。操作员修复阻塞后，可先预览：
