@@ -1,4 +1,4 @@
-> 状态: done — `5daa12a2 fix: bind write scopes and distinguish copy command positions`；保留初轮 `5dfb5c02` / 撤回交接 `04f5abed` 的审查历史
+> 状态: active — `e32d78ba` 交接撤回；保留既有提交与全部验证历史
 
 # 有限 cp 写目标与任务工作区保护
 
@@ -36,3 +36,15 @@
 - 先红后绿：初版新增21反例全部失败；native 扩围前20断言10失败/10通过；修后直接caller聚焦193通过。所有 hook 反例只判定 exit/events，不执行目标工具或越界写入。
 - 新 `dev-verify.py plan --base dev` 选择143文件；保留原清单四批 run：341 + 511 + 548 + 333 = **1733 passed**，无遗漏；未跑整库/host/真实provider。新 sentinel **53 passed**，manual docs currentness ok。
 - 新收据 `docs/records/2026-11-10-worker-copy-guard-rework-verification.json` 保留原plan、每批完整命令/结果、红例节点与新源码SHA。旧1680收据不变，不能当本次新diff的验证。
+
+## 活动替换返工
+
+独立复核确认双引号活动 `$(cp ...)` 在两个provider仍放行；基线已有逃逸，本轮有限cp承诺未闭合，相对04f5拒绝行为出现回退。仅补可识别活动替换正文的保守拒绝，literal cp授权文法不变，保留普通cp数据、单引号、转义与算术变量；所有hook反例仅判定不执行。
+
+## 活动替换最终实现与验证
+
+- 增加有界词法辅助：分离活动 `$()`/反引号/进程替换正文并屏蔽展开值；算术上下文只追踪嵌套活动替换，普通 cp 文本仍是数据。未闭合、超深/超数量上下文保守拒绝，不扩展 literal cp 授权文法。
+- 补实证注释反例：词首未引用 `#` 后的 `)` 不再错误截断替换；词内、引用及转义 `#` 不作注释。此修复不执行 shell，也不提供通用 shell/动态命令名/TOCTOU 沙箱。
+- 先红后绿：新活动替换回归在 e32d 源码上 **12 failed / 22 passed**；最终定向 **240 passed**。两个 provider 的真实 hook 只判定 exit/events，未执行被审工具或越界写。
+- 中间144文件闭包 **1777 passed** 已保留；随后注释边界修复使它不再代表最终diff。最终重新执行完整144文件闭包，四批 **341 + 511 + 583 + 358 = 1793 passed**，文件并集无遗漏/重复；sentinel **53 passed**、manual docs currentness ok。不是全库验证，未运行真实provider/host。
+- 最终源码SHA、原plan、逐批完整命令/结果、红例节点与边界见 `docs/records/2026-11-10-worker-copy-substitution-verification.json`；中间收据见 `docs/records/2026-11-10-worker-copy-substitution-intermediate-verification.json`。原1680/1733收据保持不变。

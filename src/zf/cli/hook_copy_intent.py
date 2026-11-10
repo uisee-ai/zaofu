@@ -7,6 +7,8 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
+from zf.cli.hook_shell_substitution import MAX_SUBSTITUTION_CONTEXTS, split_active_substitutions
+
 
 _PATH = r'''(?:[A-Za-z0-9_./-]+|'[A-Za-z0-9_./ -]+'|"[A-Za-z0-9_./ -]+")'''
 _LITERAL_COPY = re.compile(
@@ -18,6 +20,23 @@ _SHELLS = {"sh", "bash", "dash", "zsh", "ksh"}
 
 
 def _has_copy_command(command: str, depth: int = 0) -> bool:
+    pending = [(command, True)]
+    seen = 0
+    while pending:
+        text, is_command = pending.pop()
+        seen += 1
+        if seen > MAX_SUBSTITUTION_CONTEXTS:
+            return True  # Unproven active contexts never acquire an exemption.
+        outer, children, complete = split_active_substitutions(text)
+        if not complete or seen + len(pending) + len(children) > MAX_SUBSTITUTION_CONTEXTS:
+            return True
+        pending.extend(children)
+        if is_command and _copy_command_positions(outer, depth):
+            return True
+    return False
+
+
+def _copy_command_positions(command: str, depth: int) -> bool:
     """Recognize command positions without treating quoted arguments as code.
 
     This only selects conservative rejection, never authorizes execution.
