@@ -30,6 +30,22 @@ def run_workspace(args) -> int:
         if args.action == 'status':
             print(json.dumps(workspace_status(config)))
             return 0
+        if args.action == 'bootstrap':
+            print(json.dumps(installation.bootstrap()))
+            return 0
+        if args.action == 'takeover':
+            from zf.integrations.controller.binding import bind
+            bind(config)
+            print(json.dumps({'status': 'managed_binding_installed', 'policy_applied': False}))
+            return 0
+        if args.action in {'drain', 'resume', 'unenroll', 'serve'}:
+            from zf.integrations.controller import lifecycle
+            if args.action == 'serve':
+                lifecycle.serve(config, host=args.host, port=args.port,
+                                ssl_keyfile=args.ssl_keyfile, ssl_certfile=args.ssl_certfile)
+            else:
+                print(json.dumps(getattr(lifecycle, args.action)(config)))
+            return 0
     except Exception as exc:
         print(json.dumps({'status': 'configuration_or_identity_error', 'error_type': type(exc).__name__,
             'detail': 'Check workspace zf.yaml, private file permissions and installation binding; credentials are not printed'}))

@@ -35,6 +35,8 @@ def _workspace_projects_payload(
     default_project_root: Path,
     default_project_opened_at: str = "",
 ) -> dict[str, Any]:
+    from zf.integrations.controller.binding import managed_config
+    cloud = managed_config()
     projects: dict[str, dict[str, Any]] = {}
     if default_project_id:
         default_project = _default_workspace_project(
@@ -46,7 +48,9 @@ def _workspace_projects_payload(
         )
         projects[default_project_id] = _workspace_project_payload(default_project)
     try:
-        for project in WorkspaceRegistry().list_projects():
+        for project in WorkspaceRegistry(workspace=cloud.workspace if cloud else 'default').list_projects():
+            if cloud and cloud.hosting == 'external' and project.project_id not in cloud.projects:
+                continue
             projects[project.project_id] = _workspace_project_payload(project)
     except Exception as exc:
         items = list(projects.values())
@@ -83,6 +87,12 @@ def _workspace_projects_payload(
                 default_project_opened_at,
             )
         projects[default_project_id] = default_payload
+    if cloud:
+        from zf.integrations.controller.installation import Installation, private_read
+        import json
+        approved = json.loads(private_read(Installation(cloud).path / 'policy.json'))['projects']
+        projects = {key: value for key, value in projects.items() if key in approved
+                    and (cloud.hosting == 'cloud' or key in cloud.projects)}
     items = sorted(
         projects.values(),
         key=lambda item: (
@@ -117,6 +127,20 @@ def _resolve_api_project(
     default_project_root: Path,
     require_initialized: bool = True,
 ) -> ProjectContext:
+    from zf.integrations.controller.binding import managed_config
+    cloud = managed_config()
+    if cloud:
+        from zf.integrations.controller.installation import Installation, private_read
+        from zf.integrations.controller.workspace import project_contexts
+        import json
+        approved = json.loads(private_read(Installation(cloud).path / 'policy.json'))['projects']
+        selected = default_project_id if project_id == 'default' else project_id
+        if selected not in approved or (cloud.hosting == 'external' and selected not in cloud.projects):
+            raise HTTPException(403, 'managed_project_scope_required')
+        context = project_contexts(cloud, Installation(cloud).credentials(), [selected])[0]
+        if require_initialized:
+            _ensure_project_initialized(context, project_id=selected)
+        return context
     if project_id == "default" and not default_project_id:
         raise HTTPException(409, _no_default_project_payload())
     if project_id in {"default", default_project_id}:

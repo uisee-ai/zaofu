@@ -51,6 +51,12 @@ def collect_terminal(context, collector) -> None:
         if binding is None:
             continue
         identity = identities.get(entry.get('instance_id'), {})
+        from zf.integrations.controller.binding import managed_config
+        managed = managed_config()
+        if managed:
+            from zf.integrations.controller.ledger import Ledger
+            if Ledger(managed.state_dir).owns_terminal(cloud.project_id, identity.get('session_id')):
+                continue
         counters = {'input_tokens': entry.get('input_tokens'), 'output_tokens': entry.get('output_tokens'),
             'cache_read_tokens': entry.get('cache_read_tokens', 0),
             'cache_creation_tokens': entry.get('cache_creation_tokens', 0) + entry.get('cache_creation_1h_tokens', 0)}

@@ -77,6 +77,8 @@ def initialize_admitted_project(
     root_empty = _directory_is_empty(root) if root_exists else False
     greenfield = not root_exists or root_empty
     try:
+        from zf.integrations.controller.binding import project_directory
+        workspace = project_directory(root, workspace, generated_config.state_dir)
         from zf.cli.project import init_flow_project
 
         initialized = init_flow_project(

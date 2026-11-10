@@ -18,3 +18,7 @@
 持久 outbox 和真实 Controller 联验；Z01/Z03 的完整剩余义务仍保留 active。
 
 后续本机 Codex 与累计基线见 [Z03b](../../tasks/done/2026-11-09-1549-z03b-native-codex-usage.md)。
+
+本轮 Z01–Z04 实现与运行合同见 [204 managed Runtime 接线](204-controller-managed-runtime.md)。
+Controller 同步补充当前人类授权、Run readiness、安装退出证明和云端只读配置挂载合同。
+两仓库分别提交；未合并到 dev，生产联合资格继续由 Q01 承担。

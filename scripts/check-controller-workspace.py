@@ -161,7 +161,7 @@ def native_codex(context):
             'billed_cost_usd': None}
 
 
-def qualify(folder, root, settings, codex):
+def qualify(folder, root, settings, codex, managed=False):
     import uvicorn
     import yaml
     from sqlalchemy import select
@@ -232,9 +232,9 @@ def qualify(folder, root, settings, codex):
             projects=raw['workspace']['controller']['projects'], capabilities=['observe']))
         run_cli(config, 'sync')  # Establish opening boundaries before generating receipts.
         print('Project scopes applied; qualifying usage sources', flush=True)
-        native = native_codex(contexts[0]) if codex else None
+        native = native_codex(contexts[0]) if codex and not managed else None
         for number, context in enumerate(contexts):
-            if codex and number == 0:
+            if codex and not managed and number == 0:
                 continue  # Never combine the native cumulative receipt with a synthetic turn receipt.
             log = event_log_from_project(context.state_dir, config=context.config)
             try:
@@ -269,18 +269,45 @@ def qualify(folder, root, settings, codex):
         assert updated['deployment_id'] == first['deployment_id']
         run_cli(config, 'sync')
         assert app.state.observations.overview(owner, workspace_id=workspace)['usage'] == after['usage']
+        managed_result = None
+        if managed:
+            from check_controller_managed import qualify_managed
+            managed_result = qualify_managed(app, owner, workspace, config, raw, codex)
+        if managed:
+            run_cli(config, 'drain')
+            run_cli(config, 'sync')
         app.state.enrollments.revoke(owner, workspace)
         from zf.cli.main import main as cli
         with redirect_stdout(io.StringIO()):
             assert cli(['controller', 'sync', '--workspace-config', str(config)]) == 1
+        if managed:
+            for _ in range(20):
+                drained = app.state.credentials.drain_revocations()
+                assert drained['status'] in {'completed', 'idle'}
+                if drained['status'] == 'idle':
+                    break
+            assert drained['status'] == 'idle'
+            from zaofu_controller.control_schema import identity_revocations
+            from zaofu_controller.operations_schema import leases
+            from zaofu_controller.budget_schema import reservations
+            with app.state.access.engine.connect() as c:
+                print({'release_preflight': {'identity': drained,
+                    'lease_states': list(c.execute(select(leases.c.status)).scalars()),
+                    'budget_states': list(c.execute(select(reservations.c.status)).scalars()),
+                    'revocation_states': list(c.execute(select(identity_revocations.c.status)).scalars())}}, flush=True)
+            released = run_cli(config, 'unenroll')
+            assert released['management'] == 'standalone'
+            assert all(context.config_path.exists() for context in contexts)
+            managed_result['verified'].append('drain, IdP revocation and signed local release')
         return {'result': 'passed', 'controller_head': subprocess.check_output(
                     ['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip(),
+                'controller_worktree_dirty': bool(subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain'], text=True).strip()),
                 'real_services': ['PostgreSQL 17', 'Keycloak 26.8.2', 'Controller HTTP'],
                 'verified': ['empty-workspace heartbeat', 'enrollment retry', 'two projects',
                     'native lifecycle fixtures', 'usage replay deduplication', 'credential rotation', 'revocation'],
                 'objects': after['objects'], 'native_codex': native,
                 'human_login': 'fixture owner; email/browser flow not qualified',
-                'management': 'observed; execution limits not qualified'}
+                'management': managed_result or 'observed; execution limits not qualified'}
     finally:
         server.should_exit = True
         thread.join(10)
@@ -291,6 +318,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--controller-root', type=Path, required=True)
     parser.add_argument('--codex', action='store_true', help='Run ONE real local Codex subscription turn')
+    parser.add_argument('--managed', action='store_true', help='Exercise runtime grant and settlement boundaries')
     args = parser.parse_args()
     root = args.controller_root.resolve()
     sys.path[:0] = [str(Path(__file__).resolve().parents[1] / 'src'), str(root / 'src')]
@@ -341,8 +369,8 @@ def main():
             settings = Settings(database_url=f'postgresql+psycopg://postgres:{password}@127.0.0.1:{pg_port}/qualification',
                 session_key=Fernet.generate_key().decode(), client_secret='fixture-no-human-login', issuer=issuer,
                 public_origin=f'http://127.0.0.1:{api_port}', development=True,
-                iam_client_id='fixture-iam', iam_client_secret=iam_secret)
-            print(json.dumps(qualify(folder, root, settings, args.codex), ensure_ascii=False))
+                iam_client_id='fixture-iam', iam_client_secret=iam_secret, managed_runtime_versions=('0.0.7',))
+            print(json.dumps(qualify(folder, root, settings, args.codex, args.managed), ensure_ascii=False))
         finally:
             subprocess.run([*command, 'down', '--volumes', '--remove-orphans'], capture_output=True, timeout=60, check=True)
 

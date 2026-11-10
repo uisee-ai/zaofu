@@ -87,7 +87,7 @@ class Installation:
             pem = key.public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
             der = key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
             return {"public_key": pem.decode(), "installation_key": hashlib.sha256(der).hexdigest(),
-                    "workspace_id": self.config.workspace_id, "management": "observed"}
+                    "workspace_id": self.config.workspace_id, "management": self.config.management}
 
     def decode(self, result: dict) -> dict:
         from cryptography.fernet import Fernet
@@ -152,7 +152,7 @@ class Installation:
 
     def summary(self, body: dict) -> dict:
         return {"workspace_id": body["workspace_id"], "deployment_id": body["deployment_id"],
-                "generation": body["generation"], "management": "observed", "status": "enrolled",
+                "generation": body["generation"], "management": self.config.management, "status": "enrolled",
                 "online_verified": False}
 
     def accept_credentials(self, delivery_file: Path) -> dict:
@@ -169,3 +169,45 @@ class Installation:
                 transport.handshake()
             self.write("binding.json", result)
             return {**self.summary(body), "status": "credentials_updated", "online_verified": True}
+
+    def bootstrap(self) -> dict:
+        """Import an authenticated launcher identity; endpoint/workspace come from zf.yaml."""
+        from cryptography.fernet import Fernet
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from zf.integrations.controller.workspace_transport import WorkspaceTransport
+
+        body = {'issuer': os.environ.get('ZF_CONTROLLER_ISSUER'),
+                'controller': os.environ.get('ZF_CONTROLLER_URL'),
+                'workspace_id': os.environ.get('ZFC_WORKSPACE_ID'),
+                'deployment_id': os.environ.get('ZF_CONTROLLER_DEPLOYMENT_ID'),
+                'client_id': os.environ.get('ZF_CONTROLLER_CLIENT_ID'),
+                'client_secret': os.environ.get('ZF_CONTROLLER_CLIENT_SECRET')}
+        if (body['issuer'] != self.config.issuer or body['controller'] != self.config.endpoint
+                or body['workspace_id'] != self.config.workspace_id
+                or not all(isinstance(value, str) and value for value in body.values())):
+            raise ValueError('trusted launcher identity is incomplete or targets a different installation')
+        with self.locked():
+            key = self.key(create=True)
+            with WorkspaceTransport(self.config, body) as transport:
+                hello = transport.request('GET', '/internal/v1/me')
+                body['generation'] = hello.get('generation')
+                transport.handshake()
+            if (self.path / 'binding.json').exists():
+                old = self.decode(json.loads(private_read(self.path / 'binding.json')))
+                if any(old[name] != body[name] for name in ('deployment_id', 'generation')):
+                    if self.config.hosting != 'cloud' or body['generation'] <= old['generation']:
+                        raise ValueError('new generation requires an explicit installation migration')
+                    self.write('retired-generation-' + str(old['generation']) + '.json',
+                               json.loads(private_read(self.path / 'binding.json')))
+            symmetric = Fernet.generate_key()
+            result = {'protocol': 'zfc.control.v1', 'deployment_id': body['deployment_id'], 'delivery': {
+                'algorithm': 'RSA-OAEP-SHA256+Fernet',
+                'key': base64.b64encode(key.public_key().encrypt(symmetric, padding.OAEP(
+                    mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None))).decode(),
+                'body': Fernet(symmetric).encrypt(json.dumps(body).encode()).decode()}}
+            self.decode(result)
+            self.write('binding.json', result)
+        # Provider subprocesses do not inherit a raw Controller machine secret.
+        os.environ.pop('ZF_CONTROLLER_CLIENT_SECRET', None)
+        return {**self.summary(body), 'online_verified': True}

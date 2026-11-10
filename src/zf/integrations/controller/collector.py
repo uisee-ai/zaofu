@@ -25,6 +25,7 @@ def now():
 
 class Collector:
     def __init__(self, state_dir, config):
+        self.state_dir = state_dir
         self.config = config
         self.cloud = config.observability.controller
         self.outbox = Outbox(state_dir, self.cloud)
@@ -43,10 +44,13 @@ class Collector:
             "task_id": identifier(event.task_id or data.get("task_id")),
             "attempt_id": identifier(data.get("active_attempt_id") or data.get("attempt_id")),
             "agent_id": identifier(event.actor)}
-        if event.type == "agent.usage":
-            self._usage(event, attribution, binding)
-        elif event.type.startswith("agent.session.run.") and event.type.rsplit('.', 1)[-1] in {"started", "completed", "failed", "cancelled"}:
+        if event.type in {'agent.usage', 'controller.usage.receipt'}:
+            if not data.get('_controller_accounted'):
+                self._usage(event, attribution, binding)
+        elif (event.type.startswith("agent.session.run.") and event.type.rsplit('.', 1)[-1] in {"started", "completed", "failed", "cancelled"}) or event.type in {"controller.execution.started", "controller.execution.finished"}:
             phase = event.type.rsplit('.', 1)[-1]
+            if phase == "finished":
+                phase = "completed" if data.get("status") in {"completed", "not_started"} else "cancelled" if data.get("status") in {"cancelled", "stopped"} else "failed"
             session_id = identifier(data.get("thread_id") or data.get("provider_session_id"))
             operation_id = identifier(data.get("operation_id") or data.get("run_id"))
             if session_id:
@@ -65,7 +69,8 @@ class Collector:
                     "status": "running" if phase == "started" else phase,
                     "started_at": event.ts if phase == "started" else None,
                     "ended_at": event.ts if phase != "started" else None}, origin_id=binding['deployment'])
-            if phase in {'completed', 'failed', 'cancelled'} and operation_id:
+            if (phase in {'completed', 'failed', 'cancelled'} and operation_id
+                    and not (data.get('usage') or {}).get('_controller_accounted')):
                 from zf.runtime.provider_usage import normalize_provider_usage
 
                 accounting = normalize_provider_usage(data.get('usage'), backend=str(data.get('backend') or data.get('provider') or ''))
@@ -89,6 +94,15 @@ class Collector:
         from zf.runtime.provider_usage import canonical_usage_tokens
 
         data = event.payload or {}
+        if event.type == 'agent.usage' and data.get('source') == 'disk_reader':
+            from zf.integrations.controller.binding import managed_config
+            managed = managed_config()
+            if managed:
+                from zf.integrations.controller.ledger import Ledger
+                occurred = datetime.fromisoformat(str(data.get('usage_timestamp') or event.ts).replace('Z', '+00:00')).timestamp()
+                if Ledger(managed.state_dir).covers_usage(self.cloud.project_id, event.actor,
+                        data.get('provider_session_id') or data.get('session_id'), occurred):
+                    return
         raw = data.get("usage") if isinstance(data.get('usage'), dict) else {}
         backend = str(data.get("backend") or "")
         canonical = canonical_usage_tokens(raw, backend=backend, input_semantics=str(data.get("input_semantics") or ""))
@@ -140,6 +154,14 @@ class Collector:
                 "input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "cached_input_tokens",
                 "reasoning_output_tokens"} and type(value) is int and 0 <= value <= 10**15},
             "provider_session_id": identifier(data.get("provider_session_id") or data.get("session_id"))}
+        if data.get('budget_reservation_id'):
+            payload['budget_reservation_id'] = identifier(data['budget_reservation_id'])
+        if data.get('price_version'):
+            payload['price_version'] = identifier(data['price_version'])
+        for field in ('estimated_cost_usd', 'provider_reported_cost_usd'):
+            value = data.get(field)
+            if isinstance(value, str) and re.fullmatch(r'\d{1,12}(\.\d{1,12})?', value):
+                payload[field] = value
         self.outbox.enqueue("usage:" + sample, str(data.get("usage_timestamp") or event.ts), payload,
                             sample_series=series if cumulative and series else "", origin_id=binding['deployment'],
                             baseline_first=not known_new_series)
@@ -148,6 +170,11 @@ class Collector:
         payload = {"kind": "project", "project_id": self.cloud.project_id, "version": 1,
                    "name": (self.config.project.name or self.cloud.project_id)[:160],
                    "status": "registered", "kernel_status": "unknown", "configured_agents": len(self.config.roles)}
+        from zf.runtime.workflow_runtime_start import _ready_owner, _runtime_owner
+        if _ready_owner(self.state_dir):
+            payload['kernel_status'] = 'ready'
+        elif not _runtime_owner(self.state_dir):
+            payload['kernel_status'] = 'stopped'
         key = "project:" + self.cloud.deployment_id + ':' + stable(json.dumps(payload, sort_keys=True))
         payload['version'] = time.time_ns()
         self.outbox.snapshot(key, now(), payload)

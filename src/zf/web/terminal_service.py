@@ -24,6 +24,7 @@ from zf.web.terminal_backend import (
 from zf.web.terminal_backend_herdr import HerdrTerminalBackend
 from zf.web.terminal_registry import TerminalRegistry, TerminalRegistryError
 from zf.web.terminal_usage import TerminalUsageBinding, TerminalUsageService
+from zf.integrations.controller.terminal_execution import managed_terminal
 
 
 _SLOT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -261,6 +262,7 @@ class TerminalService:
             status_code=404,
         )
 
+    @managed_terminal
     def create_session(
         self,
         *,

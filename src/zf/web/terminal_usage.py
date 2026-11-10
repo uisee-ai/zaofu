@@ -276,6 +276,31 @@ class TerminalUsageService:
                 return fallback
         return self._project(internal)
 
+    def native_snapshot(self, *, provider: str, session_id: str, project_root: Path) -> dict[str, object]:
+        """Read exact native identity counters for managed non-terminal calls too."""
+        if provider not in _QUALIFIED_PROVIDERS or not session_id or not re.fullmatch(r'[a-zA-Z0-9_-]{1,160}', session_id):
+            return {'status': 'unavailable'}
+        root = self.claude_projects_root if provider == 'claude-code' else self.codex_sessions_root
+        pattern = f'*/{session_id}.jsonl' if provider == 'claude-code' else f'*/*/*/rollout-*-{session_id}.jsonl'
+        matches = [path for path in root.glob(pattern) if self._under(path.resolve(), root)]
+        if len(matches) != 1:
+            return {'status': 'unavailable'}
+        path = matches[0]
+        if provider == 'claude-code':
+            # Claude stores cwd in its project folder; never read another project's same UUID.
+            expected = str(Path(project_root).resolve()).replace('/', '-').replace('.', '-')
+            if path.parent.name != expected:
+                return {'status': 'unavailable'}
+            internal = self._read_claude(path)
+        else:
+            internal = self._read_codex(path, expected_root=Path(project_root))
+        result = self._project(internal)
+        from zf.runtime.backend_session_reader import get_reader_for_backend
+        reader = get_reader_for_backend(provider)
+        report = reader.read_latest_usage(path) if reader else None
+        result['session_started_at'] = getattr(report, 'series_started_at', '')
+        return result
+
     def settle(self, record: TerminalSessionRecord) -> dict[str, object]:
         internal = self._read_snapshot(record)
         if internal.status != "observed":

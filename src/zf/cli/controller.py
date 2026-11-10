@@ -9,11 +9,16 @@ from zf.core.config.project_context import load_project_env, resolve_project_con
 
 def register(subparsers):
     parser = subparsers.add_parser('controller', help='Deliver Controller observation records')
-    parser.add_argument('action', choices=('sync', 'status', 'codex-usage', 'installation-key', 'enroll', 'accept-credentials'))
+    parser.add_argument('action', choices=('sync', 'status', 'codex-usage', 'installation-key', 'enroll', 'accept-credentials',
+                                         'bootstrap', 'takeover', 'drain', 'resume', 'unenroll', 'serve'))
     parser.add_argument('--workspace-config', type=Path, help='Deployment-level zf.yaml with kind WorkspaceConfig')
     parser.add_argument('--code-file', type=Path, help='Owner-only file containing the installation enrollment code')
     parser.add_argument('--credentials-file', type=Path, help='Owner-only file containing Controller encrypted credential delivery')
     parser.add_argument('--watch', action='store_true')
+    parser.add_argument('--host', default='127.0.0.1', help='Managed serve bind address behind the qualified Gateway')
+    parser.add_argument('--port', type=int, default=8002)
+    parser.add_argument('--ssl-keyfile')
+    parser.add_argument('--ssl-certfile')
     parser.add_argument('--session-id', default='', help='Exact native Codex session for read-only inspection')
     parser.add_argument('--limit', type=int, default=5, help='Maximum native sessions to inspect (1..50)')
     parser.set_defaults(func=run)
@@ -24,7 +29,7 @@ def run(args):
         from zf.cli.controller_workspace import run_workspace
 
         return run_workspace(args)
-    if args.action in {'installation-key', 'enroll', 'accept-credentials'}:
+    if args.action in {'installation-key', 'enroll', 'accept-credentials', 'bootstrap', 'takeover', 'drain', 'resume', 'unenroll', 'serve'}:
         print('This action requires --workspace-config pointing to a deployment zf.yaml')
         return 2
     if getattr(args, 'code_file', None) or getattr(args, 'credentials_file', None):

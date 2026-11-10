@@ -83,6 +83,8 @@ class WorkflowResumeActionsMixin:
                     status="blocked",
                 )
 
+        from zf.integrations.controller.execution import check_project
+        check_project(self.project_root)
         from zf.runtime.workflow_resume import apply_workflow_resume
 
         result = apply_workflow_resume(
