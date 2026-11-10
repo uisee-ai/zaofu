@@ -33,6 +33,7 @@ def consume_workflow_synthesis_operations(
 
     state_dir = Path(state_dir)
     consumed = 0
+    superseded = 0
     lock = state_dir / "projections" / "workflow-synthesis-consumer.guard"
     service = WorkflowOperationService(
         state_dir=state_dir,
@@ -56,18 +57,16 @@ def consume_workflow_synthesis_operations(
             for operation in operations.values()
             if operation.get("operation_type")
             == synthesis.WORKFLOW_SYNTHESIS_OPERATION_TYPE
-            and operation.get("status") in {"requested", "running", "settled"}
+            and operation.get("status") in {"requested", "running", "settled", "suspended"}
         ]
         candidates.sort(
             key=lambda item: str(item.get("last_event_at") or "")
         )
         if request_id:
-            revision = load_workflow_request(state_dir, request_id).get("revision")
             candidates = [op for op in candidates if (
-                (body := synthesis._hydrate_operation_request(state_dir, op)).get("request_id") == request_id
-                and body.get("request_revision") == revision)]
+                synthesis._hydrate_operation_request(state_dir, op).get("request_id") == request_id)]
         for operation in candidates:
-            if consumed >= max(1, int(limit or 1)):
+            if consumed - superseded >= max(1, int(limit or 1)):
                 break
             try:
                 request_body = synthesis._hydrate_operation_request(
@@ -110,6 +109,11 @@ def consume_workflow_synthesis_operations(
                     correlation_id=request_id,
                 )
                 consumed += 1
+                superseded += 1  # Cleanup must not starve the requested revision's dispatch slot.
+                continue
+            # A new requirement revision supersedes even paused older work.
+            # The current revision stays paused until an explicit recovery action.
+            if operation.get("status") == "suspended":
                 continue
             if str(request_projection.get("status") or "") in {
                 "proposed",
