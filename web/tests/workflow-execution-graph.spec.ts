@@ -518,3 +518,41 @@ test('observed workers without a compiled stage remain visible without inventing
   await unassigned.getByRole('button', { name: /external-worker/ }).click();
   await expect(page.getByRole('complementary', { name: '图节点详情' })).toContainText('operation:orphan');
 });
+
+for (const stageStatus of ['running', 'aggregating', 'blocked']) test(`initial viewport shows the ${stageStatus} stage and can return after panning`, async ({ page }) => {
+  const phases = [
+    { ...stage('research-adaptive'), status: 'pending' },
+    { ...stage('prd-scan'), status: 'completed' },
+    { ...stage('prd-plan'), label: '当前规划', status: stageStatus },
+    { ...stage('impl'), status: 'pending' },
+  ];
+  const flow = { ...executionSummary, nodes: phases, edges: [{ id: 'scan-plan', source: phases[1].id, target: phases[2].id, relation: 'next', views: ['workflow'] }] };
+  await page.route('**/api/projects/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    const item = { request_id: 'A', objective: 'A', status: 'proposed', revision: 1, proposal_digest: 'A' };
+    if (path.endsWith('/workflow-requests')) return route.fulfill({ json: { items: [item] } });
+    if (path.endsWith('/graph/structure')) return route.fulfill({ json: { ...flow, schema_version: 'sdlc-workbench-structure.v1', execution_summary: false } });
+    if (path.endsWith('/graph/execution')) return route.fulfill({ json: flow });
+    if (path.includes('/workflow-requests/')) return route.fulfill({ json: { result: item, requirement: {}, proposal: {}, artifacts: {}, lifecycle: {}, links: {} } });
+    return route.fulfill({ json: {} });
+  });
+  await page.goto('/tests/inbox-workflow.html?surface=graph-refresh');
+  await page.locator('#root').evaluate(el => { el.style.height = '100vh'; });
+  const current = page.locator('.react-flow__node[data-id="workflow:stage:prd-plan"]');
+  async function isFullyVisible() {
+    return current.evaluate(el => {
+      const node = el.getBoundingClientRect();
+      const canvas = el.closest('.sdlc-canvas')!.getBoundingClientRect();
+      return node.width > 100 && node.left >= canvas.left && node.right <= canvas.right && node.top >= canvas.top && node.bottom <= canvas.bottom;
+    });
+  }
+  await expect.poll(isFullyVisible).toBe(true);
+  const canvas = await page.getByTestId('workflow-graph-canvas').boundingBox();
+  await page.mouse.move(canvas!.x + 30, canvas!.y + canvas!.height / 2);
+  await page.mouse.down(); await page.mouse.move(canvas!.x + 700, canvas!.y + canvas!.height / 2, { steps: 10 }); await page.mouse.up();
+  await expect.poll(isFullyVisible).toBe(false);
+  await page.getByRole('button', { name: '查看当前阶段', exact: true }).click();
+  await expect.poll(isFullyVisible).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(isFullyVisible).toBe(true);
+});

@@ -871,7 +871,7 @@ class PlanSynthRuntimeMixin:
                     (outcome.envelope_ref or {}).get("sha256") or ""
                 ),
             }
-            if payload.get("failure_class") == "reader_execution_failure":
+            if payload.get("failure_class") == "reader_execution_failure" or payload.get("owner_decision_items"):
                 from zf.runtime.artifact_context_events import artifact_context_events
                 from zf.runtime.plan_synth_recovery_refs import failed_critic_candidate_refs
 

@@ -30,11 +30,18 @@ def reply(prompt: str, cwd: Path) -> str | dict:
         return {"answer": "生成完整 Plan 后等待 Owner 审批。", "changes": changes}
     if "Use the zf-workflow-synthesis method." in prompt:
         contract, _ = json.JSONDecoder().raw_decode(prompt.split("Contract:\n", 1)[1].strip())
+        controller_id = "zaofu-prd-v5-production-codex"
+        entry = contract["registered_controllers"][controller_id]
         return {
             "schema_version": "workflow-synthesis-result.v1",
             **{key: contract[key] for key in ("request_id", "request_revision", "requirement_ref", "requirement_digest")},
             "selected_flow_family": "PrdFlow",
-            "short_flow_spec": {"flow_family": "PrdFlow", "purpose": "Implement the confirmed PRD using PRD v5", "parameters": {}},
+            "short_flow_spec": {"flow_family": "PrdFlow", "purpose": "Implement the confirmed PRD using PRD v5", "parameters": {
+                "controller_id": controller_id, "controller_digest": entry["digest"],
+                "verification_commands": ["test -r README.md"], "candidate_verify_width": 1,
+                "approval_requirements": {"plan": "required", "source_quotes": [contract["requirement"]["objective"]]},
+            }},
+            "completion_profile": entry["completion_profile"],
             "decision_rationale": "The owner explicitly requested the registered PRD v5 controller.",
             "assumptions": [], "open_questions": [], "requested_roles": [], "requested_skills": [],
             "requested_profiles": [], "risk_hints": [],

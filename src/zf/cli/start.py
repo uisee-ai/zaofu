@@ -1501,7 +1501,7 @@ def run(args: argparse.Namespace) -> int:
                 runtime_load_payload(config=config, state_dir=state_dir, project_root=project_root)))
             from zf.runtime.workflow_runtime_start import mark_runtime_ready
 
-            mark_runtime_ready(state_dir)
+            mark_runtime_ready(state_dir, config=config)
             try:
                 watcher.run(poll_interval=1.0, tick_interval=5.0)
             except KeyboardInterrupt:

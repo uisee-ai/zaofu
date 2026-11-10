@@ -35,3 +35,23 @@ def test_dispatch_oracle_joins_attempt_to_operation():
     from tests.e2e.prd_ui.audit import check_dispatches
     assert check_dispatches([{'operation_id': 'op'}], {'op': {'role_instance': 'planner'}},
                             {'planner': 'reader'}) == {'planner'}
+
+
+@pytest.mark.parametrize("change", ["none", "same_pid", "same_config", "early_invoke", "no_stop", "rejection"])
+def test_warm_config_handoff_oracle(change):
+    from zf.core.events import ZfEvent
+    from tests.e2e.prd_ui.audit import check_config_handoff
+    rows = [ZfEvent(type="loop.started", payload={"pid": 1, "effective_config_sha256": "old"}),
+            ZfEvent(type="loop.shutdown_requested"),
+            ZfEvent(type="runtime.start.requested", payload={"pid": 2}),
+            ZfEvent(type="loop.started", payload={"pid": 2, "effective_config_sha256": "new"}),
+            ZfEvent(type="workflow.invoke.requested")]
+    if change == "same_pid": rows[0].payload["pid"] = 2
+    if change == "same_config": rows[0].payload["effective_config_sha256"] = "new"
+    if change == "early_invoke": rows[3], rows[4] = rows[4], rows[3]
+    if change == "no_stop": rows.pop(1)
+    if change == "rejection": rows.append(ZfEvent(type="workflow.invoke.rejected"))
+    if change == "none":
+        assert check_config_handoff(rows)["new_pid"] == 2
+    else:
+        with pytest.raises(AssertionError): check_config_handoff(rows)

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Check, X, MessageSquare } from "lucide-react";
+import "./planOwnerResponse.css";
 import type { PlanPreview } from "../../api/types";
 import { MarkdownText } from "../agent-session/MarkdownText";
 const PlanReviewReader = lazy(() => import("./PlanReviewReader"));
@@ -61,9 +62,11 @@ export function PlanPreviewOverlay({
         </div>
         <div className="plan-preview-toolbar-actions">
           <button type="button" className="delivery-action-button" aria-expanded={showContext} onClick={() => setShowContext(!showContext)}>工程上下文</button>
-          <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || loading || preview.content_kind === "unavailable"}>
-            <Check size={14} /> {ownerDecision ? "Approve decisions" : "Approve"}
+          {!ownerDecision && <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || loading || preview.content_kind === "unavailable"}>
+            <Check size={14} /> Approve
           </button>
+          }
+          {!ownerDecision && <>
           <input
             value={rejectReason}
             placeholder="reject reason"
@@ -73,6 +76,7 @@ export function PlanPreviewOverlay({
           <button type="button" className="delivery-action-button" onClick={onReject} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || !rejectReason.trim()}>
             <X size={14} /> Reject
           </button>
+          </>}
           <button type="button" className="delivery-action-button" onClick={editing ? onRead : onRepair} disabled={!preview || disabled || reviewBusy}>
             <MessageSquare size={14} /> {editing ? "返回审阅" : "引用编辑"}
           </button>
@@ -83,6 +87,20 @@ export function PlanPreviewOverlay({
       </div>
       <div className={`plan-preview-body${showContext ? "" : " plan-context-collapsed"}`}>
         <main className={`plan-preview-reader${editing ? " plan-preview-editing" : ""}`}>
+          {ownerDecision && preview && <section aria-label="Owner 答复" className="plan-owner-response">
+            <strong>候选计划待澄清，尚未通过 Critic</strong>
+            <p>请逐项回答下列问题。提交后在当前 Run 重新规划，之后仍需审批新版 Plan 才能实施。</p>
+            <ol>{preview.owner_decision_items?.map((item) => <li key={item.decision_id || item.question}>
+              <strong>{item.decision_id}</strong>：{item.question}
+            </li>)}</ol>
+            <textarea aria-label="Owner 答复内容" rows={4} value={rejectReason}
+              placeholder="按问题编号填写选择、理由和适用范围；保留仍未授权的操作。"
+              onChange={(event) => onRejectReason(event.target.value)} disabled={preview.status !== "pending" || disabled || reviewBusy} />
+            <button type="button" className="delivery-action-button" onClick={onReject}
+              disabled={preview.status !== "pending" || !decisionReady || disabled || reviewBusy || loading || !rejectReason.trim()}>
+              提交答复并重新规划
+            </button>
+          </section>}
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
           {loading ? <p className="muted">Loading...</p> : <Suspense fallback={<p className="muted">Loading...</p>}>

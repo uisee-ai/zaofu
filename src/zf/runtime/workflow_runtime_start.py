@@ -64,14 +64,17 @@ def _runtime_owner(state_dir: Path) -> dict[str, Any]:
     return guard if _process_identity(pid) and _loop_owned(state_dir) else {}
 
 
-def mark_runtime_ready(state_dir: Path) -> None:
+def mark_runtime_ready(state_dir: Path, *, config: ZfConfig | None = None) -> None:
     """Publish readiness for this watcher epoch, after startup catch-up."""
     guard = _read(state_dir / "processes" / "watcher.pid.json")
     if guard.get("owner_pid") != os.getpid() or not guard.get("epoch"):
         return
+    from zf.runtime.workflow_config_consumer import consumer_policy_digest
+    policy = ({"execution_policy_digest": consumer_policy_digest(config),
+               "tmux_session": config.session.tmux_session} if config is not None else {})
     atomic_write_text(
         state_dir / "processes" / "runtime-ready.json",
-        json.dumps({"owner_pid": os.getpid(), "epoch": guard["epoch"]}) + "\n",
+        json.dumps({"owner_pid": os.getpid(), "epoch": guard["epoch"], **policy}) + "\n",
     )
 
 

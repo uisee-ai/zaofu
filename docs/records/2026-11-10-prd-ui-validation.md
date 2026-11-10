@@ -134,3 +134,9 @@ fake 最后回归证据：
 
 已结束的临时运行经 `simulation.done`、停止自己的 Web/runtime/容器/tmux 后归档；
 诊断包排除 provider home 和凭据目录。真实 dev 的 8001 和其他会话不在清理范围内。
+
+## 后续修复
+
+上述三个候选在后续获得批准，修复与验证见
+[PRD UI 恢复闭环修复验证](2026-11-10-prd-ui-recovery-validation.md)。
+本记录中的原始运行状态与当时结论保持不变。

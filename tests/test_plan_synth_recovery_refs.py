@@ -42,6 +42,19 @@ def test_failed_critic_recovers_only_bound_current_candidate_and_scope(tmp_path)
     assert failed_critic_candidate_refs(tmp_path, [dispatch], payload) == [candidate]
 
 
+def test_semantic_owner_question_recovers_same_bound_candidate(tmp_path):
+    from zf.runtime.call_result_adapters import ControlResultAdapterRegistry
+    payload, dispatch, candidate = _case(tmp_path)
+    event = ZfEvent(type='fanout.synth.completed', payload={**payload,
+        'failure_class': '', 'status': 'completed', 'recommendation': 'needs_rework',
+        'owner_decision_items': [{'decision_id': 'GIT-01', 'question': 'Which phase?', 'blocking': True}]})
+    result = ControlResultAdapterRegistry().adapt_for_profile(tmp_path, event, profile_id='plan-synth', revision='1')
+    assert result.payload['verdict'] == 'rejected'
+    bound = {**payload, **result.payload}
+    assert failed_critic_candidate_refs(tmp_path, [dispatch], bound) == [candidate]
+    assert failed_critic_candidate_refs(tmp_path, [dispatch], bound | {'reviewed_plan_candidate_digest': 'f' * 64}) == []
+
+
 @pytest.mark.parametrize('change', [
     {'plan_revision': 'old'}, {'reviewed_plan_candidate_digest': 'f' * 64},
     {'failure_class': 'product_rejection'}, {'attempt_id': 'other'},

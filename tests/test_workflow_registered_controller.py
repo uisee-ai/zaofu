@@ -77,6 +77,8 @@ def test_v5_selection_preserves_policy_and_applies_only_exact_approved_candidate
     assert config.project.name == "demo"
     assert config.project.state_dir == ".state-demo"
     assert config.session == load_config(base).session
+    assert config.runtime.run_manager == load_config(base).runtime.run_manager
+    assert config.runtime.autoresearch_resident == load_config(base).runtime.autoresearch_resident
     assert config.runtime.git.candidate_base_ref == "main"
     assert config.runtime.git.ship_target_branch == "main"
     assert config.runtime.git.auto_ship_on_judge_passed is False
