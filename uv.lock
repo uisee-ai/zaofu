@@ -1538,6 +1538,7 @@ dependencies = [
 [package.optional-dependencies]
 controller = [
     { name = "authlib" },
+    { name = "cryptography" },
     { name = "httpx2" },
     { name = "jsonschema" },
 ]
@@ -1566,6 +1567,7 @@ web = [
 requires-dist = [
     { name = "authlib", marker = "extra == 'controller'", specifier = ">=1.9.5,<2" },
     { name = "claude-code-sdk", marker = "extra == 'stream-json'", specifier = ">=0.0.25" },
+    { name = "cryptography", marker = "extra == 'controller'", specifier = ">=43" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.25" },
     { name = "httpx2", marker = "extra == 'controller'", specifier = ">=2,<3" },

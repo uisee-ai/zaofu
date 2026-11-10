@@ -6,14 +6,34 @@ from zf.integrations.controller.collector import Collector
 from zf.integrations.controller.outbox import OutboxFull
 
 
+def collect_project(context, collector, *, heartbeat=True) -> bool:
+    """Replay sanctioned sources; never write Kernel or provider state."""
+    from zf.core.events.factory import event_log_from_project
+    from zf.integrations.controller.terminal import collect_terminal
+
+    deferred = False
+    try:
+        collector.project()
+        log = event_log_from_project(context.state_dir, config=context.config)
+        try:
+            for event in log.read_all():
+                collector(event)  # Stable source identity repairs append-before-outbox crash windows.
+        finally:
+            log.close()
+        collect_terminal(context, collector)
+        if heartbeat:
+            collector.heartbeat()
+    except OutboxFull:
+        # A full queue must still drain. Missing projections replay on the next sync.
+        deferred = True
+    return deferred
+
+
 def synchronize(context) -> dict:
     # Optional dependencies are imported only by the explicitly enabled network caller.
     from authlib.integrations.httpx_client import OAuth2Client
     from jsonschema import Draft202012Validator, FormatChecker
     import httpx2
-
-    from zf.core.events.factory import event_log_from_project
-    from zf.integrations.controller.terminal import collect_terminal
 
     config = context.config
     cloud = config.observability.controller
@@ -23,20 +43,7 @@ def synchronize(context) -> dict:
     if not secret:
         raise ValueError("Controller client secret environment variable is unset")
     collector = Collector(context.state_dir, config)
-    deferred = False
-    try:
-        collector.project()
-        log = event_log_from_project(context.state_dir, config=config)
-        try:
-            for event in log.read_all():
-                collector(event)  # Stable source identity repairs append-before-outbox crash windows.
-        finally:
-            log.close()
-        collect_terminal(context, collector)
-        collector.heartbeat()
-    except OutboxFull:
-        # A full queue must still drain. Missing projections replay on the next sync.
-        deferred = True
+    deferred = collect_project(context, collector)
     with OAuth2Client(client_id=cloud.client_id, client_secret=secret, timeout=5, trust_env=False) as oauth:
         token = oauth.fetch_token(cloud.issuer + '/protocol/openid-connect/token', grant_type='client_credentials')
     with httpx2.Client(base_url=cloud.endpoint, timeout=10, trust_env=False,
