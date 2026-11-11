@@ -20,3 +20,7 @@
 1–3 已实现：Skill 归组/责任方法、显式 owner_review 草案预检、PRD 选项和终止等待修正。
 聚焦校验、提交/绑定/恢复、mock E2E、构建及 sentinel 通过；4 的真实复验仍待完成，保持 active。
 证据目录：reports/spec206-recovery-20261111/。未 merge/push。
+
+真实首轮55af3551：AC归组生效，已进入两轮独立Critic。真实证据归属冲突已由运行内返工修正；
+Critic连续误读V-03的显示转义，已用绑定工件及静态解析反证后停止测试，不能记passed。
+补接Kanban PRD方法、Owner畸形字段诊断及评审复现/反证方法，继续新冻结版本的真实三轮。

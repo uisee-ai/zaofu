@@ -118,3 +118,22 @@ def test_critic_receives_bound_draft_and_full_package_gate_remains_closed(tmp_pa
         build_plan_artifact_package(workflow_run_id="r1", flow_kind="prd", producer_stage_id="prd-plan",
             run_contract={}, plan_revision="r1", task_map_generation="g1", produced=[],
             required_ports=["task_map", "planning_result"])
+
+
+@pytest.mark.parametrize("field,value", [("options", None), ("options", {}),
+                                         ("evidence_refs", None), ("evidence_refs", 1)])
+def test_malformed_question_fields_return_diagnostics_without_consuming_submit(tmp_path, field, value):
+    from tests.test_result_submit import _running_plan_candidate_operation
+    runtime, prepared, service, token = _running_plan_candidate_operation(
+        tmp_path, result_semantics="artifact_production")
+    body = candidate(runtime.project_root)
+    body["owner_decision_items"][0][field] = value
+    kwargs = dict(operation_id=prepared.operation_id, role_instance="planner", credential=token)
+    before = [event.id for event in runtime.event_log.read_all()]
+    result = service.validate_plan_candidate(**kwargs, semantic_result=body, project_root=runtime.project_root)
+    assert result["status"] == "failed"
+    assert any(error["field"] == "owner_decision_items" for error in result["errors"])
+    assert [event.id for event in runtime.event_log.read_all()] == before
+    del body["owner_decision_items"][0][field]
+    submitted = service.submit(**kwargs, semantic_result=body)
+    assert submitted.canonical_event_type == "issue.triage.child.completed"

@@ -14,3 +14,5 @@ assert.equal(prdOnlyOption([{ id: "x", label: "保存 PRD 并启动 Task" }]), u
 assert.equal(prdOnlyOption([{ id: "x", label: "保存 PRD", action: "create-task" }]), undefined);
 assert.equal(prdOnlyOption([{ id: "x", label: "保存 PRD" }, { id: "y", label: "仅 PRD" }]), undefined);
 console.log("PRD journey authorization and terminal detection passed");
+
+assert.equal(prdOnlyOption([{ id: "x", label: "保存 PRD 并输出 Plan" }]), undefined);

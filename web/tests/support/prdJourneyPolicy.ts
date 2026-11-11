@@ -24,6 +24,6 @@ export function terminalPlanningEvent(rows: JourneyEvent[], invoked: JourneyEven
 export function prdOnlyOption(options: { id: string; label: string; action?: string }[]): string | undefined {
   const matches = options.filter(option => !option.action && /PRD/i.test(option.label) &&
     /仅|只|写入|保存|落盘|save|only/i.test(option.label) &&
-    !/workflow|kanban|task|实施|执行|启动|创建任务|生成计划|生成\s*plan/i.test(option.label));
+    !/workflow|kanban|task|实施|执行|启动|创建任务|生成计划|\bplan\b/i.test(option.label));
   return matches.length === 1 ? matches[0].id : undefined;
 }

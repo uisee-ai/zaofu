@@ -299,3 +299,19 @@ Capsule 和执行策略的身份摘要中按历史缺省表示省略，避免升
 的问题。只对预先授权的单项 OWNER-GIT-01 答复，未知决定留证停止。当前 Run 的 human.escalate
 等明确终止事件使等待及时失败，普通 prd.plan.failed 可继续既有返工；历史/其他 Run 不混入。
 本轮原始验证和逐条质量结论记录在 `reports/spec206-recovery-20261111/`，完成前不宣称实测通过。
+
+### 恢复批次的首轮真实发现与方法补接
+
+55af3551 的真实 Channel 已做到 11 个来源 AC → 单 Task 8 项验收，SC-01～11 各自保留，
+实际配置上限仍为8、plan_approval仍启用；两个Scan和真实独立Critic已调用。首轮Critic发现
+独立Verify证据指向Impl自检文档的真实冲突，Planner返工后通过未来派发受控报告绑定解决。
+
+但Critic连续两轮声称V-03的JSON转义导致SyntaxError。对两轮dispatch的输入清单所绑定
+工件核验摘要后，实际JSON解码值经shlex和Python compile均通过，前后命令字面串也未变。
+因此该finding属于显示转义误读，Planner“已修复”声明也不成立。测试在第二次误判后由操作者
+停止（browser exit 137），保留失败及两版候选，不能记作链路通过或Provider崩溃。
+
+后续补接：Kanban独立PRD提示采用同样的来源粒度/文档时点指导；owner_review对非列表的
+options/evidence_refs返回结构化诊断；执行就绪Skill要求对语法问题验证绑定工件实际值，
+返工允许带证据反驳不复现finding，并明确独立证据生产者与入口。201项聚焦测试、53项sentinel
+通过，随后以新冻结版本重新执行真实验证；原轮证据不覆盖。详见本批reports目录。

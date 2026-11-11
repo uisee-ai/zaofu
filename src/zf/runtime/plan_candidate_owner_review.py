@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -42,9 +43,15 @@ def owner_review_preflight(
             error("summary", "requires a reason for review")
         errors.extend(workflow_read_finding_issues(candidate.get("findings", [])))
         raw = candidate.get("owner_decision_items")
-        items = normalize_plan_synth_owner_decision_items(raw)
+        valid_shape = isinstance(raw, list) and all(
+            isinstance(item, Mapping)
+            and isinstance(item.get("options", []), list)
+            and isinstance(item.get("evidence_refs", []), list)
+            for item in raw
+        )
+        items = normalize_plan_synth_owner_decision_items(raw) if valid_shape else []
         if not items or not isinstance(raw, list) or len(items) != len(raw):
-            error("owner_decision_items", "requires typed questions with IDs")
+            error("owner_decision_items", "requires typed questions with IDs and list-valued options/evidence_refs")
         if not any(item["blocking"] for item in items):
             error("owner_decision_items", "requires a blocking question")
         if len({item["decision_id"] for item in items}) != len(items):
