@@ -15,6 +15,7 @@ for (const viewport of [
     });
     await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
     const dialog = page.getByRole("dialog", { name: "Plan preview" });
+    await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
     const nav = dialog.getByRole("navigation", { name: "计划阅读导航" });
     const pane = dialog.locator(".plan-preview-markdown-pane");
     const previous = nav.getByRole("button", { name: "上一页" });

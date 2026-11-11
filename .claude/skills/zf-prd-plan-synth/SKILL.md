@@ -86,25 +86,19 @@ After PRD approval, write:
 - `task_map.json`: dispatchable vertical slices.
 - `source_index.json`: PRD and evidence index.
 
-The Markdown plan is the human review document, not a one-paragraph status
-summary. It must be long enough to let an owner review the confirmed scope
-without opening the provider transcript. Include these sections whenever the
-workflow has a source PRD or authority bundle:
+Plan 正文面向审批与执行交接，默认沿用确认需求的语言；代码标识、命令、路径和
+固定机器键保持原样。小需求按适用性表达完整语义，不按模板补造页面、数据模型、
+并行 wave 或业务指标。推荐阅读顺序：
 
-- a human approval entry in this order: **PRD** (user outcome, scope, and
-  non-goals), **SDD** (system boundaries, entrypoints, data/API contracts,
-  ownership, and dependencies), **TDD** (acceptance-to-command mapping,
-  evidence paths, and current PASS/BLOCKED/NOT_RUN state), risks/open
-  decisions, and an approval checklist;
-- authority and source index, with every source ref and digest-bound anchor;
-- objective, users, scope, non-goals, assumptions, risks, and unresolved owner decisions;
-- one row for every formal task with its group, wave, dependencies, owned paths,
-  acceptance criteria, verification owner, and evidence contract;
-- the dependency graph and parallel execution waves;
-- requirement, acceptance, test, and real-E2E traceability summaries with their
-  exact matrix artifact refs;
-- approval gates and the explicit rule that impl/verify remain blocked before
-  owner approval.
+- 简短审批摘要：本次交付、变化、范围、主要风险、待决条件及批准后的动作；
+- Task Spec：本片行为与失败不变项、真实入口、依赖/写入责任、准备/恢复、验收与交接；
+- 共享合同：仅在确有共用内容时集中定义一次，任务引用具体条款及本片例外；
+- 工程附件：Task Map、来源/AC/测试矩阵的准确引用和未覆盖项，完整追溯不重复铺满正文。
+
+PRD/SDD/TDD 是语义覆盖要求，不强制使用对应字面标题或重复章节。单任务可使用
+一张责任表和少量段落；保持来源、命令、证据与决策可取得。身份、摘要、完整性和
+授权仍由既有工件及准入规则约束，缩短正文不删除任何强制验收或更改机器合同。
+审批前不执行实施和产品验收；通用运行协议引用当前 briefing/Skill，正文仅写任务特有义务。
 
 The approval entry is a contract, not a formatting preference. For
 `derived_plan_full`, the Planner candidate and any configured Critic handoff must bind these semantic

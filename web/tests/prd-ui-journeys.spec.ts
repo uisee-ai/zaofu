@@ -7,6 +7,9 @@ const ownerCheckpointRequired = process.env.ZF_UI_OWNER_CHECKPOINT === "true";
 const timeout = Number(process.env.ZF_UI_TIMEOUT_MS || 1_200_000);
 const turnTimeout = process.env.ZF_UI_PROVIDER === "fake" ? 45_000 : 600_000;
 const evidence = "/zf-run/evidence";
+const productInput = existsSync(`${evidence}/product-input.md`) ? readFileSync(`${evidence}/product-input.md`, "utf8") : "";
+const productRequest = (stage: string) => `${stage}：${productInput}\n只操作当前隔离项目。讨论和预览不实施；之后经 Owner 单独审批允许标准受控 Git 交付、实现及独立验证。PRD 写入 docs/prd/ui-requirement.md。中文表达，机器键和命令不翻译。角色调用及审批历史由外部测试协议核验，不添加为产品 AC。`;
+
 // The caller's budget covers all discussion phases and Playwright teardown.
 test.describe.configure({ timeout });
 type Event = { id: string; seq: number; type: string; task_id?: string; correlation_id?: string; payload?: Record<string, any> };
@@ -70,7 +73,7 @@ async function answerRequirementQuestions(page: Page, waitingForInput: boolean) 
     const next = (await submit.innerText()).includes("Next question");
     const other = question.getByTestId("ask-user-option-other");
     if (await other.isVisible()) await other.check();
-    await question.locator("textarea").fill("UI_PRD_CONFIRMED：README.md 缺失时报告路径并明确报错、非零退出、停止本次读取；存在时必须可读。使用系统现有 cat README.md 检查，不新增读取程序。当前 Kanban 讨论终点仅为 PRD，完整 Plan 留给后续 UI 启动的 PRD v5 Workflow；不要在聊天内生成 Plan。仅当前临时项目。");
+    await question.locator("textarea").fill(productInput ? productRequest("UI_PRD_CONFIRMED，确认以下需求，请依此回答当前所有问题") : "UI_PRD_CONFIRMED：README.md 缺失时报告路径并明确报错、非零退出、停止本次读取；存在时必须可读。使用系统现有 cat README.md 检查，不新增读取程序。当前 Kanban 讨论终点仅为 PRD，完整 Plan 留给后续 UI 启动的 PRD v5 Workflow；不要在聊天内生成 Plan。仅当前临时项目。");
     await submit.click();
     if (!next) return;
   }
@@ -98,13 +101,13 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   if (!await page.getByRole("dialog", { name: "Kanban Agent", exact: true }).isVisible())
     await page.getByRole("button", { name: "Open Kanban Agent" }).click();
   if (journey === "kanban") {
-    await send(page, "UI_PRD_DISCUSS：请在当前 Kanban 会话讨论需求，不创建 Channel。需求：保持 README.md 可读，缺失文件时明确报告错误。验证入口固定为系统已有 cat README.md，不新增读取程序。先问我确认失败行为和本轮终点，暂不创建 Task。仅操作当前临时项目。");
+    await send(page, productInput ? productRequest("UI_PRD_DISCUSS，当前 Kanban 讨论，不创建 Channel，先确认本轮终点，暂不创建 Task") : "UI_PRD_DISCUSS：请在当前 Kanban 会话讨论需求，不创建 Channel。需求：保持 README.md 可读，缺失文件时明确报告错误。验证入口固定为系统已有 cat README.md，不新增读取程序。先问我确认失败行为和本轮终点，暂不创建 Task。仅操作当前临时项目。");
     const discussionTurn = await waitEvent(request, project, "kanban.agent.turn.completed");
     const discussionReply = await waitEvent(request, project, "kanban.agent.reply");
     expect(String(discussionReply.payload?.answer)).toMatch(/README|确认|缺失/);
     await capture(page, "01-kanban-discussion");
     await answerRequirementQuestions(page, discussionTurn.payload?.status === "waiting_input");
-    await send(page, "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。当前 PRD 编写和 Plan 预览阶段不要修改 zf.yaml、Git 或运行状态；" + (ownerCheckpointRequired ? "请在 PRD 登记阻塞决定 OWNER-GIT-01：未来实施是否授权标准受控 Git 提交，目前尚未批准。要求 Planner/Critic 在候选计划定稿前通过 Owner 决策检查点确认它，不能自行假定或把它移到实施后才问。现在先完整记录此未决项并写 PRD，不在当前聊天追问该项。" : "这个阶段限制不禁止未来在单独 Plan 审批后采用标准受控 Git 交付流程。") + "完成后回复 UI_PRD_WRITTEN。");
+    await send(page, productInput ? productRequest("UI_PRD_ANSWER，确认，直接写入完整 PRD，完成后回复 UI_PRD_WRITTEN") : "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。当前 PRD 编写和 Plan 预览阶段不要修改 zf.yaml、Git 或运行状态；" + (ownerCheckpointRequired ? "请在 PRD 登记阻塞决定 OWNER-GIT-01：未来实施是否授权标准受控 Git 提交，目前尚未批准。要求 Planner/Critic 在候选计划定稿前通过 Owner 决策检查点确认它，不能自行假定或把它移到实施后才问。现在先完整记录此未决项并写 PRD，不在当前聊天追问该项。" : "这个阶段限制不禁止未来在单独 Plan 审批后采用标准受控 Git 交付流程。") + "完成后回复 UI_PRD_WRITTEN。");
     await expect(page.locator(".agent-text-part").last()).toContainText("UI_PRD_WRITTEN", { timeout: turnTimeout });
     const prd = readFileSync("/zf-run/project/docs/prd/ui-requirement.md", "utf8");
     expect(prd).toContain("README.md");
@@ -127,7 +130,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
     await page.goto(`/?project=${project}&page=channels&channel=${encodeURIComponent(channelId)}`);
     const input = page.getByRole("textbox", { name: "Message UI PRD Group" });
-    await input.fill("请讨论：使用项目根目录的系统 cat README.md 验证，保持文件可读；文件缺失时以原生 stderr 和非零退出明确失败，不新增读取程序。当前只形成完整 PRD，后续由 UI 启动 PRD v5 Workflow 生成完整 Plan，实施等待审批。PRD 保留完整结构和验收，按这个小需求的规模简洁表达，不引入额外业务系统。");
+    await input.fill(productInput ? productRequest("请讨论并形成完整 PRD，后续 UI 启动 PRD v5 Workflow 生成 Plan") : "请讨论：使用项目根目录的系统 cat README.md 验证，保持文件可读；文件缺失时以原生 stderr 和非零退出明确失败，不新增读取程序。当前只形成完整 PRD，后续由 UI 启动 PRD v5 Workflow 生成完整 Plan，实施等待审批。PRD 保留完整结构和验收，按这个小需求的规模简洁表达，不引入额外业务系统。");
     await page.getByRole("button", { name: "Send message", exact: true }).click();
     await expect(input).toBeEmpty();
     await capture(page, "01-channel-discussion");
@@ -147,7 +150,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     writeFileSync(`${evidence}/channel-confirmation.json`, JSON.stringify(confirmed, null, 2));
     await capture(page, "02-channel-prd-confirmed");
     await page.getByText("Planning options", { exact: true }).click();
-    await page.getByTestId("channel-workflow-objective").fill("UI_CHANNEL_CREATE create a Task from this confirmed PRD. Prepare PRD v5 Workflow YAML, then wait for full Plan approval.");
+    await page.getByTestId("channel-workflow-objective").fill("UI_CHANNEL_CREATE create a Task：从当前确认的中文 PRD 创建 Task，准备 PRD v5 Workflow YAML，生成中文 Plan 后等待审批。");
     await page.getByTestId("channel-create-task-from-prd").click();
     const plan = page.getByTestId("agent-card-plan").last();
     await expect(plan).toBeVisible({ timeout: turnTimeout });
@@ -264,4 +267,21 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   }
   writeFileSync(`${evidence}/lineage.json`, JSON.stringify({ task, invoked, approval, planBody }, null, 2));
   writeFileSync(`${evidence}/events.json`, JSON.stringify(finalEvents, null, 2));
+  if (process.env.ZF_UI_DELIVERY === "true") {
+    const binding = { plan_id: planId, sha256: createHash("sha256").update(planBody.markdown).digest("hex") };
+    writeFileSync(`${evidence}/preview-ready.json`, JSON.stringify(binding));
+    await expect.poll(() => {
+      const path = `${evidence}/execute-approved.json`;
+      if (!existsSync(path)) return false;
+      const approved = JSON.parse(readFileSync(path, "utf8"));
+      return approved.plan_id === binding.plan_id && approved.sha256 === binding.sha256;
+    }, { timeout, intervals: [2000] }).toBe(true);
+    await dialog.getByRole("button", { name: "Approve", exact: true }).click();
+    await capture(page, "08-plan-approved");
+    await waitEvent(request, project, "run.goal.completed", timeout);
+    const delivered = await events(request, project);
+    writeFileSync(`${evidence}/delivery-events.json`, JSON.stringify(delivered, null, 2));
+    await capture(page, "09-delivery-terminal");
+  }
+
 });

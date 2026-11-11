@@ -3,13 +3,13 @@ import live from "./fixtures/prd205/live-plan.json" with { type: "json" };
 
 // Replay the actual v5 author's shapes through the real React preview entry.
 // Only the projection responses are fixtures; no approval or provider is run.
-async function openLive(page: Page, request: APIRequestContext, markdown = live.markdown) {
+async function openLive(page: Page, request: APIRequestContext, markdown = live.markdown, original = true) {
   const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
   await page.route("**/plans/evt-preview-review/preview", async route => {
     const response = await route.fetch();
     const body = await response.json();
     const names = ["task_map", "test_matrix", "source_index"];
-    await route.fulfill({ response, json: { ...body, markdown, review_dossier_markdown: "",
+    await route.fulfill({ response, json: { ...body, markdown, content_profile: "derived_plan_full", review_dossier_markdown: "",
       artifacts: body.artifacts.filter((p: { name: string }) => names.includes(p.name)),
       decision_review: { available: false, items: [], counts: { total: 0 }, error: "" },
     } });
@@ -18,12 +18,16 @@ async function openLive(page: Page, request: APIRequestContext, markdown = live.
     await page.route(`**/plans/evt-preview-review/artifacts/${name}`, route => route.fulfill({ json: live[name] }));
   }
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-review`);
-  return page.getByRole("dialog", { name: "Plan preview" });
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  if (original) await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
+  return dialog;
 }
 
-test("real author shape: default full reading, unknown register quotes decisions, 21 cases remain NOT_RUN", async ({ page, request }) => {
-  const dialog = await openLive(page, request);
-  await expect(dialog.getByRole("button", { name: "完整原文", exact: true })).toHaveAttribute("aria-pressed", "true");
+test("real author shape: default approval overview, unknown register quotes decisions, 21 cases remain NOT_RUN", async ({ page, request }) => {
+  const dialog = await openLive(page, request, live.markdown, false);
+  await expect(dialog.getByRole("button", { name: "审批概览", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByText("完整 Plan Preview", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "个人阅读清单：PRD、设计与执行候选 Plan", exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "待决事项", exact: true }).click();
   await expect(dialog.getByText(/结构化登记未确认，数量未知/)).toBeVisible();
@@ -124,7 +128,7 @@ for (const width of [1280, 375]) test(`${width}px bound task specifications quot
   await expect(dialog.getByText("共享快照必须先保存再发布。", { exact: true })).toBeVisible();
   await dialog.getByText("任务责任与验证命令", { exact: true }).click();
   await expect(dialog.getByText("实现责任：dev-lane-1", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("bash tools/browser/run.sh candidate", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("验证命令 C-CANDIDATE", { exact: true })).toBeVisible();
   expect(await dialog.locator(".plan-review-scroll").evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await dialog.getByRole("button", { name: "在完整原文中阅读：Task Spec: RL-READING", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "完整原文", exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -140,4 +144,18 @@ test("duplicate or unknown task headings stay explicit and cannot replace anothe
   await expect(dialog.getByText(/本版未细化独立模块规格/)).toBeVisible();
   await expect(dialog.getByText("重复正文一", { exact: true })).toHaveCount(0);
   await expect(dialog.getByText("未知任务正文", { exact: true })).toHaveCount(0);
+});
+
+for (const width of [1280, 375]) test(`${width}px sibling handoff stays reachable without changing task scope`, async ({ page, request }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const markdown = "## Task Spec: RL-READING\n只负责本片。\n## TDD and evidence\n### 恢复\n失败后必须恢复原文件权限。\n## Task Spec: RL-SCAFFOLD\n其他任务专属。\n";
+  const dialog = await openLive(page, request, markdown, false);
+  await dialog.getByRole("button", { name: "模块规格", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "审阅模块" }).selectOption("RL-READING");
+  await dialog.getByText("任务规格之外的原文章节（需核对适用性）", { exact: true }).click();
+  await dialog.locator("summary").filter({ hasText: "TDD and evidence" }).click();
+  await expect(dialog.getByText("失败后必须恢复原文件权限。", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("其他任务专属。", { exact: true })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "在完整原文中阅读：TDD and evidence", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "TDD and evidence", exact: true })).toBeInViewport();
 });

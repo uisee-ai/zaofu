@@ -92,6 +92,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", choices=["fake", "real"], required=True)
     parser.add_argument("--journey", choices=["kanban", "channel", "channel-recovery"], required=True)
+    parser.add_argument("--requirement-file", type=Path, help="Frozen common product input for both UI journeys")
+    parser.add_argument("--delivery", action="store_true", help="Wait for a reviewed local authorization before UI Plan approval")
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--owner-checkpoint", action="store_true", help="Require a real Critic Owner checkpoint and answer it through UI")
@@ -103,6 +105,8 @@ def main() -> int:
         parser.error("channel-recovery requires the explicitly authorized real Codex tier")
     if args.owner_checkpoint and (args.provider != "real" or args.journey != "kanban"):
         parser.error("owner-checkpoint requires the real Kanban journey")
+    if args.delivery and (args.provider != "real" or args.journey == "channel-recovery"):
+        parser.error("delivery requires a real PRD journey")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     root = args.run_root or Path(f"/tmp/zf-prd-ui-{args.provider}-{args.journey}-{stamp}")
     if root.parent != Path("/tmp") or not root.name.startswith("zf-") or root.exists():
@@ -139,6 +143,16 @@ def main() -> int:
     manifest["test_sources"] = {str(path.relative_to(REPO)): hashlib.sha256(path.read_bytes()).hexdigest()
                                 for path in [*sorted((REPO / "tests/e2e/prd_ui").glob("*.py")), REPO / "web/tests/prd-ui-journeys.spec.ts", REPO / "web/tests/codex-channel-recovery.spec.ts"]}
     (evidence / "run.json").write_text(json.dumps(manifest, indent=2))
+    # Freeze the actual configured Skill source, not only the runtime commit.
+    skill_hashes = {str(p.relative_to(REPO / "skills")): hashlib.sha256(p.read_bytes()).hexdigest()
+                    for p in sorted((REPO / "skills").rglob("*")) if p.is_file() and ".git" not in p.parts}
+    (evidence / "skill-source.json").write_text(json.dumps({"path": str(REPO / "skills"), "files": skill_hashes}, indent=2))
+    if args.requirement_file:
+        requirement = args.requirement_file.read_bytes()
+        (evidence / "product-input.md").write_bytes(requirement)
+        manifest["product_input_sha256"] = hashlib.sha256(requirement).hexdigest()
+    manifest["delivery_requested"] = args.delivery
+    (evidence / "run.json").write_text(json.dumps(manifest, indent=2))
     processes = []
     print(f"[run] {root} http://127.0.0.1:{port}", flush=True)
     result = 1
@@ -172,6 +186,7 @@ def main() -> int:
                   "--entrypoint", "bash", "-v", f"{REPO}:/work", "-v", f"{(REPO / 'web/node_modules').resolve()}:/work/web/node_modules",
                   "-v", f"{root}:/zf-run", "-w", "/work/web", "-e", "HOME=/tmp/ui-playwright",
                   "-e", f"ZF_WEB_BASE_URL=http://127.0.0.1:{port}", "-e", f"ZF_WEB_ACTION_TOKEN_FOR_TEST={env['ZF_WEB_ACTION_TOKEN']}",
+                  "-e", f"ZF_UI_DELIVERY={str(args.delivery).lower()}",
                   "-e", f"ZF_UI_PROVIDER={args.provider}", "-e", f"ZF_UI_JOURNEY={args.journey}",
                   "-e", f"ZF_UI_WORKFLOW_RUNTIME={args.workflow_runtime}",
                   "-e", f"ZF_UI_OWNER_CHECKPOINT={str(args.owner_checkpoint).lower()}",
@@ -183,6 +198,9 @@ def main() -> int:
         deadline = time.monotonic() + args.timeout + 120
         handoff = evidence / "runtime-handoff.json"
         while browser.poll() is None:
+            if args.delivery and (evidence / "preview-ready.json").exists() and not (evidence / "preview-audit.json").exists():
+                from tests.e2e.prd_ui.audit import audit
+                (evidence / "preview-audit.json").write_text(json.dumps(audit(project, journey=args.journey), indent=2))
             if (args.workflow_runtime == "cold" and not handoff.exists()
                     and (evidence / "runtime-handoff-request.json").exists()):
                 from zf.core.events import EventLog
@@ -224,6 +242,9 @@ def main() -> int:
                 if args.journey == "channel-recovery":
                     from tests.e2e.prd_ui.recovery import audit as recovery_audit
                     result_audit = recovery_audit(project)
+                elif args.delivery:
+                    result_audit = json.loads((evidence / "preview-audit.json").read_text())
+                    result_audit["boundary"] = "preview only; delivery evidence audited separately"
                 else:
                     result_audit = audit(project, journey=args.journey, owner_checkpoint=args.owner_checkpoint)
                 if args.provider == "fake" and args.workflow_runtime == "existing":

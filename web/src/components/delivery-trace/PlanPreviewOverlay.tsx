@@ -54,7 +54,7 @@ export function PlanPreviewOverlay({
     <dialog ref={modal} className="plan-preview-overlay" aria-label="Plan preview" onCancel={(event) => { event.preventDefault(); if (!reviewBusy) onClose(); }}>
       <div className="plan-preview-toolbar">
         <div>
-          <strong>{preview?.content_profile === "derived_plan_full" ? "完整 PRD Preview" : "Plan Preview"}</strong>
+          <strong>{preview?.content_profile === "derived_plan_full" ? "完整 Plan Preview" : "Plan Preview"}</strong>
           <span className="mono">{planId || "loading"}</span>
           {preview?.content_profile === "derived_plan_full" && preview.markdown ? (
             <span className="muted">正文 {preview.markdown.length.toLocaleString()} 字符 · Task Map 为辅助拆分</span>

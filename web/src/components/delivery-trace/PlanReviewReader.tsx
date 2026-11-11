@@ -19,7 +19,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
     const params = new URLSearchParams(window.location.hash.slice(1));
     const samePlan = params.get("plan") === preview.plan_id;
     const candidate = samePlan ? params.get("view") : "";
-    const view = views.some(([id]) => id === candidate) ? candidate as View : "original";
+    const view = views.some(([id]) => id === candidate) ? candidate as View : preview.content_profile === "derived_plan_full" ? "overview" : "original";
     return { view: view as View, task: samePlan ? params.get("task") || "" : "", source: samePlan ? params.get("source") || "" : "", anchor: samePlan ? params.get("anchor") || "" : "" };
   };
   const [location, setLocation] = useState(readLocation);
@@ -129,6 +129,13 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
                     <button type="button" className="delivery-action-button" onClick={() => navigate({ view: "original", anchor: specifications.tasks[selected.id].anchor })}>在完整原文中阅读：{specifications.tasks[selected.id].title}</button>
                   </section>
                   : <><p role="status">本版未细化独立模块规格，以下显示已绑定任务描述和验收项；字段、权限及异常细则需对照来源。</p><p>{selected.description}</p></>}
+                {specifications.unassigned.length > 0 && <details className="plan-review-card">
+                  <summary>任务规格之外的原文章节（需核对适用性）</summary>
+                  <p>以下章节未按任务分区，可能包含准备、恢复或交接条件；展示不表示它们全部属于本任务。</p>
+                  {specifications.unassigned.map(section => <details key={section.key}>
+                    <summary>{section.title}</summary>{quoted([section])}
+                  </details>)}
+                </details>}
                 <details className="plan-review-card"><summary>任务责任与验证命令</summary>
                   <p>实现责任：{selected.owner || "未声明"}</p>
                   <p>允许写入：{selected.allowedPaths.join("、") || "未声明，请核对工程附件"}</p>

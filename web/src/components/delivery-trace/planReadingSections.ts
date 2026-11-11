@@ -3,7 +3,7 @@ import { planDocumentSections } from "./planDocumentSections.js";
 // Presentation aliases only: quote the author's sections verbatim. Never turn
 // prose into decision state, acceptance verdicts, or new approval questions.
 const titles = {
-  overview: /^(?:PRD[：:]|产品摘要|产品目标|目标与范围|评审入口|overview|executive summary)/i,
+  overview: /^(?:PRD[：:]|审批摘要|本次交付|Authority and user outcomes|产品摘要|产品目标|目标与范围|评审入口|overview|executive summary)/i,
   journeys: /(?:业务旅程|用户旅程|交互流程|user flow|user journey)/i,
   pages: /(?:低保真|页面.*设计|交互设计|设计交接|wireframe|design handoff)/i,
   decisions: /^(?:decision register|owner 决策项|待决事项|决定登记|决策登记)/i,
@@ -54,5 +54,13 @@ export function planTaskSpecifications(markdown: string, taskIds: string[]) {
   const reading = Object.fromEntries(Object.entries(pieces).map(([id, parts]) => [id, parts.map(part => ({
     ...part, shared: part.level > 2 && (consumers.get(part.content.trim())?.size || 0) > 1,
   }))]));
-  return { tasks, shared, warnings, reading };
+  // Unassigned siblings may hold essential setup/restore details. Expose their
+  // authored text without guessing which task owns it or extending task scope.
+  const unassigned = sections.flatMap((section, index) => {
+    if (section.level !== 2 || section.title === "Shared Spec" || /^Task Spec:/.test(section.title)) return [];
+    let end = index + 1;
+    while (end < sections.length && sections[end].level > section.level) end++;
+    return [{ ...section, content: sections.slice(index, end).map(s => s.content).join("") }];
+  });
+  return { tasks, shared, warnings, reading, unassigned };
 }

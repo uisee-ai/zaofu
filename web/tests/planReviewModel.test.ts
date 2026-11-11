@@ -147,3 +147,10 @@ assert.equal(repeating.reading.A.map(s => s.content).join(''), repeating.tasks.A
 assert.equal(repeating.reading.B.map(s => s.content).join(''), repeating.tasks.B.content);
 const different = planTaskSpecifications('## Task Spec: A\n### 决定\nD 未关闭\n## Task Spec: B\n### 决定\nD 已关闭\n', ['A', 'B']);
 assert.equal(different.reading.A.some(s => s.shared), false);
+
+// A sibling TDD is reachable without being silently assigned to every task.
+const handoff = planTaskSpecifications("## Task Spec: T1\n本片。\n## TDD and evidence\n### 恢复\n必须恢复原权限。\n## Task Spec: T2\n别片。\n", ["T1", "T2"]);
+assert.equal(handoff.tasks.T1.content.includes("必须恢复"), false);
+assert.equal(handoff.unassigned.length, 1);
+assert.equal(handoff.unassigned[0].content.includes("必须恢复原权限"), true);
+assert.equal(handoff.unassigned[0].content.includes("别片"), false);

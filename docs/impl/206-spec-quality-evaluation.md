@@ -174,3 +174,24 @@ Web 完成 typecheck、单测、生产 build 及 Docker Chromium 1280/375 回归
 - 复杂迁移与真实装配实现，验证间接消费者、保留行为和旧证据重审全链路。
 
 这些是扩大结论范围所需的下一阶段实验，不阻塞本批已复现问题的修复，也不授权新增复杂运行机制。
+
+
+## 紧凑中文交接续批（2026-11-11）
+
+基线 dev@3ffacda5；此次批准目标是小产品从中文 Plan 到独立实施验收。
+主规划方法沿用需求语言，把 PRD/SDD/TDD 作为语义覆盖，不再要求重复的固定章节。
+共享条款集中一次；Task Spec 内写本片准备、恢复、失败不变项和验证交接，完整追溯
+保留在绑定矩阵。Critic 核对执行身份与实际准备能力，文字说明不代替能力闭合。
+
+完整 Plan Preview 默认审批概览；旧摘要仍默认原文。模块视图列出未按任务分区的
+同版章节，可展开或跳转；不猜测相邻 TDD 属于某任务，不修改已接纳正文或下载。
+
+验证复用 `tests/e2e/prd_ui/run.py`：`--requirement-file` 冻结两入口共同产品需求，
+`skill-source.json` 记录候选 Skill 文件摘要；还须核对实际角色分发与工具读取。
+`--delivery` 仅真实 Provider 可用：先保存预览证据并完成独立 preview audit，操作者
+审阅后写入与 plan_id/正文 sha256 相同的 `execute-approved.json`，浏览器才点击
+原有 Approve。该本地文件是测试协调信号，不能替代 Web 审批、Kernel 准入或产品验收。
+产品原始样本见 `tests/fixtures/spec_handoff_eval/readme-cli-product.md`；流程身份、
+角色调用、审批序列在测试协议验证，不加入业务 AC。旧样本的治理 AC 不作删除。
+
+本节先登记实现边界；实际样本、失败、成本及最终判定在续批完成后补录。
