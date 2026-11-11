@@ -1,6 +1,8 @@
 # Z06 集中配置消费与模式切换
 
-> 状态: active
+> 状态: done
+
+实现 commit：`5dd1fcc0 feat: apply runtime settings and report provider health`
 
 来源：203/204 复盘缺口 1–3；用户明确授权分别生成 backlog 并实施。
 
@@ -22,6 +24,8 @@ CPA 产品、SMTP/MFA、目标云集群与灾备容量仍归 Q01，不用本批�
 - `uv run --with <controller-worktree> python scripts/check-controller-workspace.py --controller-root <controller-worktree> --managed`：隔离 PostgreSQL/Keycloak/HTTP 联验通过，含 settings digest 与 health。250 tokens 为测试回执，不是真实模型消耗。
 - 本批未跑全量 Runtime pytest；前序已记录的六项基线失败不在本批范围内。
 
-实现已在独立 worktree 中验证，等待本地实现提交及引用该提交归档；Q01 生产资格保持独立。
+实现已在独立 worktree 中验证、提交并归档；Q01 生产资格保持独立。
 
 最终模式切换与本地解绑回归：2 passed；观察模式移除项目无需读取已移除配置。
+
+提交后联合复核：本仓库实现提交与 Controller `81859a14be06d83484d2986b0023c65cca7660d6`（干净工作树）实际 Compose/HTTP 联验通过。日志 `/tmp/zf-policy-health-committed-joint.log`；隔离服务与临时凭据已清理。
