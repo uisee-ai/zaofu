@@ -197,4 +197,45 @@ Web 完成 typecheck、单测、生产 build 及 Docker Chromium 1280/375 回归
 产品原始样本见 `tests/fixtures/spec_handoff_eval/readme-cli-product.md`；流程身份、
 角色调用、审批序列在测试协议验证，不加入业务 AC。旧样本的治理 AC 不作删除。
 
-本节先登记实现边界；实际样本、失败、成本及最终判定在续批完成后补录。
+本批是工程改进和真实验证实验，不把负例隐藏为成功。两入口均从冻结产品输入重新
+生成，实际 Planner/Critic 分发的相关 Skill 文件均与冻结摘要一致（各 11/11），并有
+真实工具读取 task-spec-slices.md 的事件；不是仅核对源码存在。
+
+Kanban 首轮丢失独立 Plan 审批约束，恢复经过 Web 单字段配置审阅后唯一 invoke；
+首版 Plan 被 Critic 指出 Python 3.11 准备及结构化决定不闭合，返工后经独立 preview
+审计与 Web Approve（evt-30444d8ca5aa）进入实施。交付 commit 9251f840，独立 Task
+Verify 通过；候选 2283f716 冻结后，Candidate Verify（evt-34467a7d6c0c）8/8 条款、
+3/3 旅程通过；外部原始需求 oracle 5/5 通过，三文件摘要与审阅实现一致。独立 Verify
+复跑 Python 3.11.14 下 6 项 unittest 和 6 项 CLI 探针。最终候选验证前曾遇浏览器总
+时限中断，同一 Run 重启后由 Kernel 自动恢复；没有重新批准或借用旧候选证据。
+
+Channel 初轮 Requirement 丢失审批时序导致引用不绑定，恢复通过 Web 补回原约束。
+后续三轮语义 Critic 通过，但工件包依次因缺少 body/ref+sha、绝对路径、项目相对
+路径被当作 state_dir sidecar 引用而拒绝。两次自动返工耗尽后，run.goal.blocked
+（evt-686ca8e98e8c）收口，Web 实际显示阻塞、实施未开始；没有合格 Plan Preview。
+因此不能宣称双入口成功、无人工协助或通用审批约束缺陷已经修复。
+
+共享合同与修订补充试点为 2 案例 × 基线/候选 × 作者/新交接读者，共 8 次真实调用；
+均 completed_ungraded，保留 R1–R3 与缺失信息，没有假造执行结果。候选作者正文
+8996 字符对基线 8051，输出 token 7477 对 7127，未证明稳定减重。这不是完整 v5
+A/B、复杂迁移实施或外部工具原生对照。
+
+本轮维持既有文档能力评分 75.6/69.0、轻量维度 2/5；旧 dev 实跑 73.3/65.0 是不同
+证据口径，不能通过切换口径宣称提升。Spec Kit/Kiro/OpenSpec 及 NASA/Shape Up
+方法评分沿用第 7 节固定来源，不新增外部性能结论。工程回归：Python 聚焦
+90 passed、1 skipped（可选配置样本缺失），Web 类型检查/单测、生产 build/bundle
+门禁、Docker 双视口阅读 34 项通过；非全量 pytest。
+
+后续优先级：保留审批约束到 Requirement；在耗时 Critic 前验证完整工件包的来源/
+路径绑定；按消费者核对环境准备；在证明依赖后减少重复上下文。实测最终对账
+23 段全量、22 必读，返工 Critic 17 段全量且 8 段已被 shadow 识别未变，说明仅改
+可见 Markdown 不能解决全链路成本。详细协议、失败/恢复、截图及成本放在忽略的
+reports/spec206-delivery-20261111/evaluation.md；原始隔离证据归档在 /tmp/zf-spec206-*。
+
+最终 Judge `evt-09ab8f7a7079` 通过，Kanban `run.goal.completed evt-2a630c4f2678`
+于 02:15:34 UTC 收口；独立终态审计同时核对候选、两级 Verify 和 oracle。invoke 到
+终态墙钟 Kanban 85.56 分钟、Channel 52.67 分钟，包含返工/审批/恢复且不含前置
+讨论；实际 artifact read 调用分别 288/227 次。成本按 Provider 序列最后累计值去重，
+缓存、非缓存、输出及 Headless 分列，未换算账单。Judge 仍收到 38 段、30 必读，
+后续不能仅凭“thin”命名推断上下文成本。三项后续候选保留在本地 backlogs/，未批准、
+未实施；本批完成评估不代表 Channel 阻塞已解决。
