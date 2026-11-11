@@ -2,6 +2,8 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
+import { prdOnlyOption, sameInvocation, terminalPlanningEvent } from "./support/prdJourneyPolicy";
+
 const journey = process.env.ZF_UI_JOURNEY;
 const ownerCheckpointRequired = process.env.ZF_UI_OWNER_CHECKPOINT === "true";
 const timeout = Number(process.env.ZF_UI_TIMEOUT_MS || 1_200_000);
@@ -62,29 +64,44 @@ async function send(page: Page, text: string) {
   await expect(submit).toBeEnabled({ timeout: turnTimeout });
   await submit.click();
 }
-async function answerRequirementQuestions(page: Page, waitingForInput: boolean) {
+async function answerRequirementQuestions(page: Page, request: APIRequestContext, project: string, waitingForInput: boolean) {
   const card = page.getByTestId("agent-card-plan").last();
   const question = card.getByTestId("ask-user-question");
   if (!waitingForInput) return;
   // The completion event can arrive before React renders the question card.
   await expect(question).toBeVisible({ timeout: turnTimeout });
-  for (let index = 0; index < 3; index++) {
+  for (let index = 0; index < 6; index++) {
     const submit = question.getByTestId("ask-user-submit");
     const next = (await submit.innerText()).includes("Next question");
     // The frozen product scenario explicitly ends this discussion at the PRD.
     // A custom answer regenerates options and requires a second confirmation.
-    const prdOnly = question.getByTestId("ask-user-option-prd_only").or(question.getByTestId("ask-user-option-finalize_and_save"));
-    if (productInput && await prdOnly.isVisible()) {
-      await prdOnly.check();
+    const options = await question.locator('input[data-option-id]').evaluateAll(inputs => inputs.map(input => ({
+      id: input.getAttribute("data-option-id") || "",
+      label: input.getAttribute("aria-label") || "",
+      action: input.getAttribute("data-submit-action") || "",
+    })));
+    const selected = prdOnlyOption(options);
+    if (selected) {
+      writeFileSync(`${evidence}/prd-endpoint-selection.json`, JSON.stringify({ selected, options }, null, 2));
+      await question.getByTestId(`ask-user-option-${selected}`).check();
       await submit.click();
       if (!next) return;
       continue;
     }
+    const previousSeq = (await events(request, project)).at(-1)?.seq || 0;
     const other = question.getByTestId("ask-user-option-other");
     if (await other.isVisible()) await other.check();
     await question.locator("textarea").fill(productInput ? productRequest("UI_PRD_CONFIRMED，确认以下需求，请依此回答当前所有问题") : "UI_PRD_CONFIRMED：README.md 缺失时报告路径并明确报错、非零退出、停止本次读取；存在时必须可读。使用系统现有 cat README.md 检查，不新增读取程序。当前 Kanban 讨论终点仅为 PRD，完整 Plan 留给后续 UI 启动的 PRD v5 Workflow；不要在聊天内生成 Plan。仅当前临时项目。");
     await submit.click();
-    if (!next) return;
+    if (!next) {
+      let completed: Event | undefined;
+      await expect.poll(async () => {
+        completed = (await events(request, project)).find(row => row.seq > previousSeq && row.type === "kanban.agent.turn.completed");
+        return Boolean(completed);
+      }, { timeout: turnTimeout, intervals: [300, 1000, 2000] }).toBeTruthy();
+      if (completed!.payload?.status !== "waiting_input") return;
+      await expect(question.getByTestId("ask-user-submit")).toBeEnabled({ timeout: turnTimeout });
+    }
   }
   throw new Error("Unexpected extra requirement questions");
 }
@@ -115,7 +132,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     const discussionReply = await waitEvent(request, project, "kanban.agent.reply");
     expect(String(discussionReply.payload?.answer)).toMatch(/README|确认|缺失/);
     await capture(page, "01-kanban-discussion");
-    await answerRequirementQuestions(page, discussionTurn.payload?.status === "waiting_input");
+    await answerRequirementQuestions(page, request, project, discussionTurn.payload?.status === "waiting_input");
     await send(page, productInput ? productRequest("UI_PRD_ANSWER，确认，直接写入完整 PRD，完成后回复 UI_PRD_WRITTEN") : "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。当前 PRD 编写和 Plan 预览阶段不要修改 zf.yaml、Git 或运行状态；" + (ownerCheckpointRequired ? "请在 PRD 登记阻塞决定 OWNER-GIT-01：未来实施是否授权标准受控 Git 提交，目前尚未批准。要求 Planner/Critic 在候选计划定稿前通过 Owner 决策检查点确认它，不能自行假定或把它移到实施后才问。现在先完整记录此未决项并写 PRD，不在当前聊天追问该项。" : "这个阶段限制不禁止未来在单独 Plan 审批后采用标准受控 Git 交付流程。") + "完成后回复 UI_PRD_WRITTEN。");
     await expect(page.locator(".agent-text-part").last()).toContainText("UI_PRD_WRITTEN", { timeout: turnTimeout });
     const prd = readFileSync("/zf-run/project/docs/prd/ui-requirement.md", "utf8");
@@ -206,7 +223,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   let approval: Event | undefined;
   const end = Date.now() + timeout;
   while (!approval && Date.now() < end) {
-    const rows = await events(request, project);
+    const rows = (await events(request, project)).filter(row => sameInvocation(row, invoked));
     const owner = rows.find(e => e.type === "approval.requested" && e.payload?.owner_route === "plan_synth_owner_decision");
     if (owner && !answeredOwner) {
       const ownerPlan = String(owner.payload?.plan_id || owner.payload?.source_event_id || "");
@@ -221,7 +238,13 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
       expect(rows.filter(e => e.type === "plan.approval.requested")).toHaveLength(0);
       expect(rows.filter(e => e.type === "plan.approved")).toHaveLength(0);
       writeFileSync(`${evidence}/owner-candidate.json`, JSON.stringify(candidate, null, 2));
-      expect(await preview.innerText(), "Owner question must match the scripted answer").toContain("OWNER-GIT-01");
+      const questions = owner.payload?.owner_decision_items;
+      if (!ownerCheckpointRequired || !Array.isArray(questions) || questions.length !== 1 ||
+          questions[0].decision_id !== "OWNER-GIT-01") {
+        writeFileSync(`${evidence}/owner-checkpoint.json`, JSON.stringify(owner, null, 2));
+        await capture(page, "06-owner-decision-required");
+        throw new Error("OWNER_DECISION_REQUIRED: retained candidate; no scripted answer authorized for these questions");
+      }
       await preview.getByRole("textbox", { name: "Owner 答复内容" }).fill("OWNER-GIT-01：当前仅 PRD 和 Plan 预览，禁止 Git 写操作和实施。本次仅授权依据此答复重新规划；未来必须先单独批准新版完整 Plan，之后才允许标准受控 Git 提交交付。不删除验收，不提前启动实施，也不要把阶段限制理解为永久禁止交付。");
       await capture(page, "06-owner-answer-before-submit");
       await preview.getByRole("button", { name: "提交答复并重新规划", exact: true }).click();
@@ -229,8 +252,12 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
       writeFileSync(`${evidence}/owner-checkpoint.json`, JSON.stringify(owner, null, 2));
     }
     approval = rows.find(e => e.type === "plan.approval.requested");
-    const rejection = rows.find(e => ["workflow.invoke.rejected", "run.goal.blocked", "runtime.start.failed"].includes(e.type));
-    if (rejection) throw new Error(JSON.stringify(rejection.payload));
+    const rejection = terminalPlanningEvent(rows, invoked);
+    if (rejection) {
+      writeFileSync(`${evidence}/terminal-planning-event.json`, JSON.stringify(rejection, null, 2));
+      await capture(page, "06-planning-terminal");
+      throw new Error(`PLANNING_TERMINAL: ${JSON.stringify(rejection)}`);
+    }
     if (!approval) await page.waitForTimeout(2000);
   }
   expect(approval, "generated Plan approval").toBeTruthy();

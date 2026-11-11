@@ -412,3 +412,33 @@ when a clean rescan lets the loop reach it instead of `run.goal.blocked`.
 及 source_refs/image_refs 等显式关系；不要为导航添加 schema 不接受的字段。语义映射由
 Planner/Critic 对账，不能依赖运行时从散文猜测；目前导航只提取这些字段中的字符串引用。
 章节/关系目录只定位固定版本，导航不完整时继续核查获准正文，不将无命中视为无需求。
+
+## 无法完成可执行计划时的草案审查
+
+先遵循 Task Map Skill 的来源 AC 归组、原子场景保留和逐片验收责任方法。
+业务约束冲突不等于 Provider/传输故障。若已完成分析，但真实互斥要求使完整 Task Map 无法成立，
+保存当前 Markdown 草案和 `source-index.v1` 来源索引（可使用拟议 Task ID），提交以下明确声明：
+
+```json
+{
+  "candidate_kind": "owner_review",
+  "execution_status": "completed",
+  "result_semantics": "artifact_production",
+  "recommendation": "abstain",
+  "summary": "列出冲突的原文依据、已尝试的可行方案和仍需决定的理由",
+  "findings": [],
+  "plan_artifact_ref": "<实际草案 Markdown 路径>",
+  "plan_artifact_sha256": "<该文件原始字节的 SHA-256>",
+  "source_index_ref": "<实际来源索引 JSON 路径>",
+  "source_index_sha256": "<该文件原始字节的 SHA-256>",
+  "owner_decision_items": [{"decision_id": "D1", "question": "具体互斥决定", "blocking": true}]
+}
+```
+
+通过当前 operation 的 `zf result validate/submit` 提交，不直接改状态或生成审批事件。
+此声明只表示草案工件生产完成，绝不表示计划可执行或已获 Critic 批准；禁止将 Provider 中断、
+输入传递失败或工具异常标为此路径。实际执行失败继续明确报告 `execution_status: failed`。
+独立 Critic 必须核对来源、逐项判断冲突是否成立：可由合理归组/责任调整解决时返回 needs_rework；
+确实需要 Owner 时返回带完整 `owner_decision_items` 的非批准结果，并绑定当前候选摘要，进入
+已有 Owner 检查点。不能仅复述 Planner 的阻塞结论，也不能批准缺失 Task Map 的草案。
+Owner 答复后重新规划，完整计划仍需正常机械校验、独立 Critic 和人工审批。

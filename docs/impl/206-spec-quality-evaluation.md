@@ -278,3 +278,24 @@ Capsule 和执行策略的身份摘要中按历史缺省表示省略，避免升
 多任务候选被独立Critic指出首片矩阵混入后继输出及README时点冲突，停在Owner决策。修复后Channel则由Planner以10项来源AC/每Task上限8为由abstain，运行归为reader_execution_failure并升级人工；没有实际Critic派发和最终Preview。配置上限确实存在，但不能未经独立审查就认定保留来源映射无法合理归组。
 
 因此本批交付已完成且实测有效暴露新问题，完整双入口不是全绿。后续优先处理规划粒度与策略的语义协调、失败分类/恢复、稳定的人读产物，以及实际必读上下文的重复成本。单次PRD长度变化不足以证明性能提升；本轮没有覆盖表单/数据库/外部副作用产品。
+
+## 规划阻塞草案审查与复验（2026-11-11）
+
+上一轮 Channel 的 10 项来源 AC 被误认为必须对应 10 项 Task AC，与单任务上限 8 冲突。
+方法修正位于 `zf-plan-task-map-contract`：同类行为可归组，全部来源编号与原子矩阵仍分别保留；
+不提升上限、不丢 mandatory/P1。多任务验收只消费本片和前置片，文档时点以原文为准，
+全图文件独占继续生效。
+
+`plan_candidate_owner_review.py` 为 `candidate_kind: owner_review` 提供机械预检，经实际
+`validate_plan_candidate_semantic` 提交入口和 `PlanSynthRuntimeMixin` 派发入口调用。
+要求 execution_status=completed、artifact_production、abstain/blocked、具名阻塞问题，
+以及 Markdown 草案/规范来源索引的实际引用与 SHA-256。缺失、篡改及声明执行失败均拒绝。
+这里的 passed 只表示草案可交独立 Critic，不表示 execution_ready；完整 Task Map/工件准入、
+受控 Owner 检查点和人工 Plan 审批没有被绕过。Reader 的 artifact_production 成功表示工件
+生产完成；subject_verdict 保留 abstained/blocked，独立 Critic 决定返工或提出 Owner 问题。
+真实执行失败仍按 reader_execution_failure 处理。
+
+测试脚本按可见 PRD 保存选项识别终点，并保留选择证据；Other 后等待新回复以处理重新生成
+的问题。只对预先授权的单项 OWNER-GIT-01 答复，未知决定留证停止。当前 Run 的 human.escalate
+等明确终止事件使等待及时失败，普通 prd.plan.failed 可继续既有返工；历史/其他 Run 不混入。
+本轮原始验证和逐条质量结论记录在 `reports/spec206-recovery-20261111/`，完成前不宣称实测通过。

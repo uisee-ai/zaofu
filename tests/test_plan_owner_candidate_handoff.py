@@ -13,7 +13,7 @@ from zf.runtime.operator_plan_preview import build_plan_preview
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-@pytest.mark.parametrize('fault', ['', 'tampered_plan', 'wrong_revision', 'wrong_digest'])
+@pytest.mark.parametrize('fault', ['', 'tampered_plan', 'wrong_revision', 'wrong_digest', 'wrong_run'])
 def test_owner_checkpoint_reads_same_candidate_without_promoting_verdict(tmp_path, monkeypatch, fault):
     state = tmp_path / '.state'
     writer = EventWriter(EventLog(state / 'events.jsonl'))
@@ -40,6 +40,7 @@ def test_owner_checkpoint_reads_same_candidate_without_promoting_verdict(tmp_pat
         'plan_synth_contract_ref': contract['ref'], 'plan_synth_contract_digest': contract['sha256'],
         'reviewed_plan_candidate_digest': contract['sha256'], 'status': 'completed', 'recommendation': 'needs_rework',
         'owner_decision_items': [{'decision_id': 'GIT-01', 'question': 'Does no Git apply only to this preview?', 'blocking': True}]}
+    if fault == 'wrong_run': payload['workflow_run_id'] = 'another-run'
     if fault == 'wrong_revision': payload['plan_revision'] = 'other'
     if fault == 'wrong_digest': payload['reviewed_plan_candidate_digest'] = 'f' * 64
     if fault == 'tampered_plan': plan.write_text('wrong body')

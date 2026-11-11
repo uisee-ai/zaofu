@@ -64,6 +64,13 @@ def evaluate_plan_candidate_preflight(
         for row in reports
         if isinstance(row, Mapping) and isinstance(row.get("report"), Mapping)
     ]
+    from zf.runtime.plan_candidate_owner_review import owner_review_preflight
+
+    draft_review = owner_review_preflight(
+        candidates, state_dir=state_dir, project_root=project_root,
+    )
+    if draft_review is not None:
+        return draft_review
     errors: list[dict[str, str]] = []
     from zf.runtime.workflow_read_result import workflow_read_finding_issues
 
