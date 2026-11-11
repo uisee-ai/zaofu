@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any
 
@@ -153,6 +153,14 @@ class TaskContract:
     #    "test":   {"enabled": False}}
     # Empty dict = inherit yaml default verbatim (current behavior).
     quality_gates_override: dict = field(default_factory=dict)
+
+
+def task_contract_identity_payload(contract: TaskContract) -> dict[str, Any]:
+    """Preserve legacy identities when additive source conditions are absent."""
+    payload = asdict(contract)
+    if not payload["constraints"]:
+        payload.pop("constraints")
+    return payload
 
 
 def task_contract_from_mapping(value: object) -> TaskContract:

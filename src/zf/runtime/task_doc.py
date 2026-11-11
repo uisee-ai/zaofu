@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.state.atomic_io import atomic_write_text
-from zf.core.task.schema import Task
+from zf.core.task.schema import Task, task_contract_identity_payload
 
 
 @dataclass(frozen=True)
@@ -688,7 +688,7 @@ def _canonical_contract_payload(task: Task) -> dict[str, Any]:
     contract = task.contract
     if contract is None:
         return {"task_id": task.id, "contract": None}
-    data = asdict(contract)
+    data = task_contract_identity_payload(contract)
     for key in (
         "task_doc_ref",
         "source_doc_ref",

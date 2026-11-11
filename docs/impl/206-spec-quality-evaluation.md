@@ -259,3 +259,8 @@ Preview 兼容真实决定中的 id/decision/source_ref/latest_use_point/closure
 
 本批实际结果与成本数据记录在 gitignored `reports/spec206-optimization-20261111/`。
 方法交付、真实生成质量和实施后产品验证分别报告，Plan Preview 验证不授权实施。
+
+后续兼容补修：Channel 的扁平 `submit_payload.constraints` 映射到同一个 Task contract，
+只接受字符串数组；来源 quote 校验不变。空 constraints 在 Task 权威、Workflow 绑定、
+Capsule 和执行策略的身份摘要中按历史缺省表示省略，避免升级使未改变的请求失效；
+非空条件仍参与摘要，修改条件必须使旧绑定失效。

@@ -128,6 +128,8 @@ def test_channel_task_prepares_with_canonical_prd(tmp_path, monkeypatch):
     service.config = load_config(tmp_path / "zf.yaml")
     calls = _provider(monkeypatch)
     payload = {**_task_payload(authority), "prepare_workflow": True, "backend": "mock"}
+    conditions = ["完整 Plan 需 Owner 人工审批后才允许实施"]
+    payload["contract"]["constraints"] = conditions
     result = channel_execute(service, writer, "create-task", payload)
     assert result["ok"], result
     prepared = result["workflow_preparation"]
@@ -137,6 +139,7 @@ def test_channel_task_prepares_with_canonical_prd(tmp_path, monkeypatch):
     assert request["channel_id"] == authority["channel_id"]
     assert request["status"] == "clarifying"
     assert calls[0]["acceptance"]
+    assert all(condition in calls[0]["constraints"] for condition in conditions)
     task = TaskStore(state / "kanban.json").get(result["task_id"])
     assert task.contract.evidence_contract["implementation_start"] is False
     assert not any(
