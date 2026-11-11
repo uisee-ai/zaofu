@@ -249,11 +249,6 @@ def build_orchestrator_agent_context(
             ),
         },
     )
-    manifest_ref = write_attempt_source_manifest(
-        runtime.state_dir,
-        manifest,
-        source_event_id=source_event_id,
-    )
     required_sources = (
         [
             source
@@ -280,6 +275,24 @@ def build_orchestrator_agent_context(
             "semantic-failure-input", "task-recovery-context",
         }
     ]
+    from zf.runtime.artifact_read_snapshot import pin_read_selections
+    from zf.runtime.artifact_source_versions import pin_source_versions
+
+    required_keys = {
+        (row["source_id"], row["artifact_id"], row["artifact_sha256"])
+        for row in required_reads
+    }
+    # Only freeze the existing required scope; optional OA sources remain lazy.
+    pinned_sources = [source for source in manifest["sources"] if (
+        source["source_id"], source["artifact_id"], source["sha256"]
+    ) in required_keys]
+    pin_source_versions(runtime.state_dir, pinned_sources)
+    pin_read_selections(runtime.state_dir, {"sources": pinned_sources}, required_reads)
+    manifest_ref = write_attempt_source_manifest(
+        runtime.state_dir,
+        manifest,
+        source_event_id=source_event_id,
+    )
     read_policy = build_input_consumption_policy(
         workflow_run_id=workflow_run_id,
         attempt_id=attempt_id,
