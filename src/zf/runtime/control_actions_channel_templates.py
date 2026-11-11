@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from zf.runtime.channel_creation_policy import template_creation_overrides, prepare_legacy_start
+
 from zf.core.events import ZfEvent
 from zf.core.state.locks import locked_path
 from zf.runtime.channel_contracts import (
@@ -84,7 +86,7 @@ class ChannelTemplateActionsMixin:
     ) -> dict:
         materialized, error = materialize_channel_template(
             template_id,
-            overrides=payload.get("overrides"),
+            overrides=template_creation_overrides(payload),
         )
         if error or materialized is None:
             return self._failed(
@@ -504,23 +506,13 @@ class ChannelTemplateActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        try:
-            dispatch_policy = normalize_channel_dispatch_policy(
-                payload.get("dispatch_policy")
-            )
-        except ValueError as exc:
-            return self._failed(
-                requested=requested,
-                action=action,
-                requested_action=requested_action,
-                task_id=_task_id_from_payload(payload),
-                reason=str(exc),
-                status_code=422,
-                status="invalid_dispatch_policy",
-            )
+        payload, dispatch_policy, error = prepare_legacy_start(
+            self, requested=requested, action=action, requested_action=requested_action, payload=payload)
+        if error:
+            return error
         materialized, materialization_error = materialize_channel_template(
             _required_text(payload, "template_id"),
-            overrides=payload.get("overrides"),
+            overrides=template_creation_overrides(payload),
         )
         if materialization_error or materialized is None:
             return self._failed(
@@ -759,6 +751,9 @@ class ChannelTemplateActionsMixin:
                 status_code=404,
                 status="not_found",
             )
+        if channel.get("discussion", {}).get("mode") == "libre_discuss":
+            return self._failed(requested=requested, action=action, requested_action=requested_action,
+                                task_id=requested.task_id, status_code=422, reason="自由讨论无需启动阶段，请直接发送消息或点名成员")
         roster = discussion_roster(channel)
         if not roster:
             return self._failed(

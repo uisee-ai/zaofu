@@ -409,6 +409,10 @@ def advance_discussion(
     """
     if channel is None:
         channel = project_channel(Path(state_dir), channel_id) or {}
+    from zf.runtime.channel_libre import is_libre, advance_libre
+    if is_libre(channel):
+        return advance_libre(Path(state_dir), writer, channel_id=channel_id, thread_id=thread_id,
+                             config=config, project_root=project_root, now=now)
     session = discussion_state(channel, thread_id)
     state = str(session.get("state") or "idle")
     emitted: list[str] = []
@@ -948,6 +952,15 @@ def sweep_discussion_deadlines(
         if not isinstance(item, dict):
             continue
         channel_id = str(item.get("channel_id") or "")
+        if item.get("discussion", {}).get("mode") == "libre_discuss":
+            if not any(not r.get("publication") for r in item.get("libre_rounds", {}).values()):
+                continue
+            current = project_channel(Path(state_dir), channel_id) or {}
+            for tid in {str(r.get("thread_id") or "main") for r in current.get("libre_rounds", {}).values() if not r.get("publication")}:
+                advance_discussion(Path(state_dir), writer, channel_id=channel_id, thread_id=tid,
+                                   now=now, config=config, project_root=project_root)
+                ticked += 1
+            continue
         sessions = item.get("discussions")
         if not channel_id or not isinstance(sessions, dict):
             continue

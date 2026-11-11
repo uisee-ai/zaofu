@@ -2,9 +2,9 @@
 
 [English](channel-to-prd.en.md) · [工作流索引](README.md)
 
-> 当前合同：Channel 是面向人和 Agent 的需求讨论室。默认是自然 conversation；
-> clarification 和 multi-lens 需要显式选择。创建 Channel 不等于自动 fanout，确认 PRD
-> 也不等于创建 Task 或启动 Workflow。
+> 当前合同：新建 Channel 默认采用自由讨论 `libre_discuss`。建群后保持安静，不带讨论 seed，
+> 不自动发起讨论；由用户开始聊天并决定何时生成 PRD。已有 Channel 和三种旧模式保留。
+> 生成或确认 PRD 不会自动创建 Task 或启动 Workflow。
 
 ## 什么时候使用
 
@@ -20,11 +20,12 @@
 - 已有 Task，只需要选择 Workflow；
 - 用群聊成员直接修改 Project 或绕过审批点火。
 
-## 三种产品模式
+## 产品模式
 
 | 模式 | 何时使用 | 行为 |
 |---|---|---|
-| `conversation` | 默认；自然讨论和定向 @mention | 用户或 Leader 决定谁继续回答，不自动 fanout |
+| `libre_discuss` | 新建默认；按用户节奏讨论需求 | 无提及由主持人接话；可 @单人/@all；用户手动生成 PRD |
+| `conversation` | 显式选择旧版自然讨论和定向 @mention | 用户或 Leader 决定谁继续回答，不自动 fanout |
 | `clarification` | 需求缺字段、边界或 owner 决策 | 围绕开放问题逐项澄清 |
 | `multi_lens` | 明确需要多个独立视角和综合 | 显式 Discuss 后执行有界 fanout/synthesis |
 
@@ -37,7 +38,7 @@
 
 ```text
 为登录安全改造创建一个 PRD 讨论 Channel。
-先按自然 conversation 建群，邀请产品、架构和安全视角；不要自动创建 Task 或启动 Workflow。
+创建一个安静的自由讨论群，邀请产品、架构和安全视角。进群后由我开始说，PRD 也由我手动生成。
 ```
 
 审核 Channel setup Plan 中的：
@@ -49,39 +50,34 @@
 - Leader、权限和允许的 handoff；
 - source/origin receipt 目标。
 
-选择创建后，系统物化 Channel、Members、skills、权限和原始需求。默认
-`conversation` 不会因为 Channel 创建完成就自动 fanout 所有成员。
+选择创建后，系统仅创建 Channel、成员、skills 和权限。自由讨论不会把建群指令或项目简介
+悄悄作为首条需求发送；项目简介和其他原材料可以在生成 PRD 时显式选入。
 
-## 讨论和收敛
+## 自由讨论与手动生成
 
-典型路径：
+- 普通消息由主持人接话；`@单人` 只请该成员回答；`@all` 请当前有效成员参加本轮。
+- 主持人可在 `@all` 后组织一次必要的定向接力，不会持续广播、自动长总结或催促确认。
+- 一键创建 profile、手动邀请和主持人提出邀请建议均保留。批准入群不自动让新成员发言；
+  之后可点名他，或请他参与下一次 `@all`。
+- 同轮至少两个 Agent 实际回复且至少两个有效问题时，先整理去重，再呈现题卡。
+  不同场景、不同能力、独立子问和真实分歧必须保留；失败时原题标为未去重，仍可回答。
+- 答完题后继续聊天，不会自动生成 PRD；未答题也不会锁住生成入口。
+- 随时打开“生成 / 查看 PRD”，选择材料、项目简介或补充说明，再主动生成。
+- 本次采用受理时固定的聊天、答案及材料。后续回复和补充留给下一版，生成期间仍可聊天。
+- 停止只针对本次产物，不关闭群或删除旧 PRD；“重试本次”保留原材料，“生成新版”采用最新内容。
 
 ```text
-origin request
-  -> durable message ACK
-  -> natural conversation
-  -> optional clarification
-  -> optional explicit Discuss / multi_lens
-  -> explicit Finalize
-  -> PRD draft
-  -> Continue | Revise | Owner confirm
-  -> channel.consensus.reached(ref, digest, revision)
-  -> exact-origin PRD receipt
+创建静群 → 用户自由聊天 → 按需答题和补充
+                         ↓ 用户主动生成
+                      PRD 草稿 → 评估、修订、确认
 ```
 
-![Channel 中从自然讨论到多角色收敛的动态过程](../assets/quickstart-channel-discussion.webp)
+旧模式继续沿用其既有讨论与综合规则。下面的历史演示展示旧讨论流程，不代表自由讨论的自动行为。
 
-讨论中可以：
+![旧模式中多角色讨论和收敛的流程](../assets/quickstart-channel-discussion.webp)
 
-- @mention 一个成员回答具体问题；
-- 补充约束并继续同一 thread；
-- 显式触发多视角讨论；
-- 查看成员 identity、provider、状态和权限；
-- 要求 Finalize 形成 PRD draft；
-- 继续、修订或由 Owner 确认某个 revision。
-
-只有 Owner 确认的 revision 才是 canonical PRD。普通 synthesis、某个 Agent 的总结或
-多数成员口头同意都不能替代 Owner authority。
+只有 Owner 确认的 revision 才能作为经过确认的 PRD。某个 Agent 的总结、整理完成或
+多数成员口头同意不能替代评估、Owner authority 或后续开发授权。
 
 ## 从 PRD 进入交付
 

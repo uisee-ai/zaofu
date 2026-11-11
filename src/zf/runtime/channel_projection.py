@@ -121,6 +121,8 @@ CHANNEL_EVENT_TYPES = {
     "channel.discussion.participant.missed",
     "channel.relay.routed",
     "channel.relay.suppressed",
+    "channel.libre.round.started", "channel.libre.reply.processed",
+    "channel.libre.relay.proposed", "channel.libre.questions.published",
     "channel.question.opened",
     "channel.question.updated",
     "channel.question.resolved",
@@ -148,6 +150,7 @@ CHANNEL_EVENT_TYPES = {
     "channel.result.receipt.recorded",
     "channel.finding.recorded",
     "channel.summary.updated",
+    "channel.synthesis.cancelled",
     "channel.synthesis.requested",
     "channel.synthesis.stale_ignored",
     "channel.synthesis.repair.requested",
@@ -455,7 +458,13 @@ def _build(
         # materialize and redact only the bounded rows they actually expose;
         # eagerly redacting every historical event dominated Channel reads.
         channel["linked_events"].append((seq, event))
+        from zf.runtime.channel_libre import LIBRE_EVENTS, fold_libre_event
+        if event.type in LIBRE_EVENTS:
+            fold_libre_event(channel, event, payload)
         if event.type == "channel.created":
+            if payload.get("discussion_mode"):
+                channel["discussion"]["mode"] = normalize_product_discussion_mode(payload["discussion_mode"])
+                channel["discussion"]["engine_mode"] = discussion_engine_mode(channel["discussion"]["mode"])
             channel["status"] = "open"
             channel["created_by_event"] = True
             channel["created_at"] = channel["created_at"] or event.ts
@@ -506,6 +515,8 @@ def _build(
                 or 0
             )
             channel["leader_event_id"] = event.id
+            if channel["discussion"].get("mode") == "libre_discuss":
+                channel["discussion"]["default_responder_id"] = channel["leader_member_id"]
         elif event.type in {
             "channel.member.added",
             "channel.member.connected",
@@ -603,6 +614,7 @@ def _build(
             channel["summary"] = _payload_str(payload, "summary")
             channel["summary_event_id"] = event.id
         elif event.type in {
+            "channel.synthesis.cancelled",
             "channel.synthesis.requested",
             "channel.synthesis.stale_ignored",
             "channel.synthesis.repair.requested",
@@ -1949,7 +1961,7 @@ def _apply_question(channel: dict[str, Any], event: ZfEvent, payload: dict[str, 
         if isinstance(existing, dict):
             return
         identity = question_text_identity(payload.get("question"))
-        if identity and any(
+        if not payload.get("libre_round_id") and identity and any(
             str(item.get("thread_id") or "main") == thread_id
             and question_text_identity(item.get("question")) == identity
             for item in channel["open_questions"].values()
@@ -1988,6 +2000,8 @@ def _apply_question(channel: dict[str, Any], event: ZfEvent, payload: dict[str, 
             "status": "open",
             "opened_event_id": event.id,
             **question_source_fields(payload),
+            **({"libre_round_id": payload["libre_round_id"], "presentation_pending": bool(payload.get("presentation_pending"))}
+               if payload.get("libre_round_id") else {}),
             "ts": event.ts,
         })
         _question_activity(channel, event, thread_id)
@@ -2191,6 +2205,10 @@ def _apply_question_dedup(
     payload: dict[str, Any],
 ) -> None:
     request_id = _payload_str(payload, "request_id") or event.id
+    if event.type == "channel.question.dedup.applied" and channel.get("discussion", {}).get("mode") == "libre_discuss":
+        for merge in payload.get("libre_merge_plan", []):
+            merge_event = ZfEvent(type="channel.question.merged", id=event.id, ts=event.ts, actor=event.actor, payload={})
+            _apply_question(channel, merge_event, {**payload, **merge})
     existing = next(
         (
             item
@@ -2209,6 +2227,7 @@ def _apply_question_dedup(
             "target_member_id": _payload_str(payload, "target_member_id"),
             "ledger_digest": _payload_str(payload, "ledger_digest"),
             "question_count": payload.get("question_count") or 0,
+            "libre_round_id": payload.get("libre_round_id", ""),
             "generation": payload.get("generation") or 1,
             "prior_request_id": _payload_str(payload, "prior_request_id"),
             "repair_reason": _payload_str(payload, "repair_reason"),
@@ -2436,6 +2455,7 @@ def _apply_synthesis_request(channel: dict[str, Any], event: ZfEvent, payload: d
         ),
         "reason": _payload_str(payload, "reason"),
         "prompt": _payload_str(payload, "prompt"),
+        "prd_input_snapshot": payload.get("prd_input_snapshot") or {},
         "source": _payload_str(payload, "source"),
         "repair_id": _payload_str(payload, "repair_id"),
         "repair_revision": int(payload.get("repair_revision") or 0),
@@ -2912,6 +2932,9 @@ def _public_channel(
         "automation_reports": channel["automation_reports"],
         "discussion": channel["discussion"],
         "discussions": channel["discussions"],
+        "libre_rounds": channel.get("libre_rounds", {}) if include_messages else {
+            root: {"thread_id": row.get("thread_id"), "publication": {}}
+            for root, row in channel.get("libre_rounds", {}).items() if not row.get("publication")},
         "discussion_attention": discussion_attention,
         "evaluation_summary": evaluation_summary,
         "open_questions": sorted(

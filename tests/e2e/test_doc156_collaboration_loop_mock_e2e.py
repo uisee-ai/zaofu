@@ -239,6 +239,7 @@ def test_doc156_channel_research_adoption_and_workflow_start(
         {
             "template_id": "quick-change",
             "channel_id": "doc156-review",
+            "mode": "conversation",
             "overrides": {"backend": "fake"},
         },
     )
@@ -263,7 +264,7 @@ def test_doc156_channel_research_adoption_and_workflow_start(
             if event.type == "channel.agent.reply.completed"
             and event.payload.get("thread_id") == "main"
         ]
-        if len(replies) >= 1:
+        if len(replies) >= 1 and project_channel(state_dir, channel_id).get("contributions"):
             break
         time.sleep(0.02)
     assert len(replies) == 1
@@ -560,6 +561,7 @@ def test_four_lens_discussion_cross_review_and_signoff_closes(
         {
             "template_id": "architecture-review",
             "channel_id": channel_id,
+            "mode": "multi_lens",
             "overrides": {"backend": "fake"},
         },
     )

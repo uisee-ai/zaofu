@@ -9,6 +9,7 @@ from typing import Any
 from zf.core.events import EventWriter
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
+from zf.runtime.channel_synthesis_lock import channel_synthesis_lock_path
 from zf.runtime.channel_contract_artifacts import (
     channel_template_binding,
     persist_channel_contract,
@@ -206,6 +207,12 @@ def emit_structured_reply_events(
             source=source,
         )
         return
+    from zf.runtime.channel_libre import is_libre
+    if is_libre(channel):
+        from zf.runtime.channel_libre_reply import emit_libre_reply
+        emit_libre_reply(state_dir=state_dir, writer=writer, channel=channel, request=request, reply=reply,
+                         reply_event_id=reply_event_id, actor=actor, source=source)
+        return
     if not channel_reply_response_contract(channel, request, message):
         return
     _emit_contribution(
@@ -242,10 +249,8 @@ def _emit_synthesis(
 ) -> None:
     safe_channel_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", channel_id)
     safe_thread_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", thread_id)
-    with locked_path(
-        Path(state_dir)
-        / "locks"
-        / f"channel-prd-{safe_channel_id}-{safe_thread_id}"
+    with locked_path(channel_synthesis_lock_path(state_dir, channel_id, thread_id)), locked_path(
+        Path(state_dir) / "locks" / f"channel-prd-{safe_channel_id}-{safe_thread_id}"
     ):
         _emit_synthesis_locked(
             state_dir=state_dir,
@@ -304,6 +309,8 @@ def _emit_synthesis_locked(
         source=source,
     ):
         return
+    from zf.runtime.channel_prd_snapshot import snapshot_channel
+    channel = snapshot_channel(state_dir, channel, synthesis_request_id)
     synthesis, parse_error = _structured_reply_payload_with_error(
         reply,
         "channel_synthesis",

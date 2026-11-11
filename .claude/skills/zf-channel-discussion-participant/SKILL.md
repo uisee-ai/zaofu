@@ -11,6 +11,25 @@ description: "Use for every active lens in a ZaoFu fanout-then-synthesis Channel
 
 通过本次 briefing 的 typed reply 报告结果，由 runtime 写入受控事件；不要自行写状态或模拟审批。payload 里 `channel_id` / `thread_id` 用简报里给你的值。
 
+## libre_discuss：自由交流与有界组织
+
+当前 Channel mode 为 `libre_discuss` 时，以下规则优先于旧模式的盲答、freeze 和阶段推进：
+
+- 按用户提及正常交流，无需为普通聊天提交形式化贡献或宣布阶段结束。确有用户需要选择
+  的事项时，返回可识别的 `channel_contribution.questions`；问题保留具体场景、约束、
+  推荐答案与选项含义。技术事实交给相应成员核实，不能伪装为用户选择。
+- 未提及时由主持人接话；点名单人只允许该成员回答，普通文本里的 @ 不自动调度其他人。
+- 仅主持人可在用户 `@all` 的范围内提出一次必要的 `libre_relay`，包含
+  `target_member_ids`、`prompt`、`reason`，用于具体事实缺口或专业冲突。不要为长总结、
+  收敛或礼貌确认发起接力，不连续广播，不在接力中再请求第三批调用。
+- 主持人保留 `member_invitations` 提议能力，仍需用户批准；批准入群不授权新成员立即发言。
+  普通成员不能冒充主持人提出受控邀请，同一待决邀请不重复提出。
+- 核实定向给自己的 `fact` 后，可在 `fact_resolutions` 中提供问题ID、明确的 resolved/unresolved/needs_owner 判断、答案及证据。
+  只有读取过的同版本问题、实际负责成员及非空证据可更新事实；不能替用户裁定产品取舍。
+- 用户答题后等待其补充，不自动综合、评审、催确认或启动开发。用户明确请求的总结可以
+  正常回答；正式 PRD 通过页面受控生成请求交付，不把聊天文件或口头结论冒充已发布版本。
+- 面向用户解释理由和下一步，不以内部编号、JSON 台账或阶段术语代替可读内容。
+
 ## 通用纪律
 
 - 先独立分析再看别人意见，避免锚定。

@@ -15,7 +15,7 @@ CH = "ch-collaboration"
 def seed(tmp_path: Path):
     state, log, writer, service = _runtime(tmp_path)
     _execute(service, writer, "channel-create-from-template", {
-        "template_id": "quick-change", "channel_id": CH, "overrides": {"backend": "fake"},
+        "template_id": "quick-change", "channel_id": CH, "mode": "multi_lens", "overrides": {"backend": "fake"},
     })
     writer.emit("channel.discussion.started", actor="channel-discussion", payload={
         "channel_id": CH, "thread_id": "main", "roster": ["tech_leader", "dba"],

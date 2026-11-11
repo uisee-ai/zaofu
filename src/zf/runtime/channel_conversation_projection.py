@@ -10,6 +10,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.runtime.channel_contract_artifacts import CONTRIBUTION_SCHEMA_VERSION
 from zf.runtime.channel_projection import project_channel
+from zf.runtime.channel_libre import libre_conversation_metadata
 from zf.runtime.channel_reply_parsing import structured_reply_display_text
 from zf.runtime.channel_sidecar import hydrate_channel_message_text
 from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
@@ -212,6 +213,7 @@ def project_channel_conversation(
         "attachments": _selected_rows(detail.get("attachments"), page_message_ids),
         "artifacts": _selected_rows(detail.get("artifacts"), page_message_ids),
         "contributions": public_contributions,
+        **libre_conversation_metadata(detail, page_message_ids),
         "discussion": detail.get("discussion") or {},
         "discussions": detail.get("discussions") or {},
         "discussion_attention": detail.get("discussion_attention") or {},

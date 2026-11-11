@@ -2857,6 +2857,7 @@ export interface WorkspaceProjectsPage {
 }
 
 export interface ChannelDetail extends ChannelSummary {
+  libre_rounds?: Record<string, Record<string, unknown>>;
   member_invitation_proposals?: Array<Record<string, unknown>>;
   empty?: boolean;
   schema_version?: string;

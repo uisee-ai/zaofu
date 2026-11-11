@@ -70,7 +70,8 @@ def react_channel_synthesis_requested(
                 "mentions": [target_member_id],
                 "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1",
                          "prd_quality_contract": payload.get("prd_quality_contract", ""),
-                         **({"prd_source_file": payload["prd_source_file"]} if payload.get("prd_source_file") else {})},
+                         **({"prd_source_file": payload["prd_source_file"]} if payload.get("prd_source_file") else {}),
+                         **({"prd_input_snapshot": payload["prd_input_snapshot"]} if payload.get("prd_input_snapshot") else {})},
             },
             created_by="channel-synthesis:runtime",
             source_event_id=event.id,
@@ -115,6 +116,13 @@ def react_channel_synthesis_repair_requested(
         value=repair_id,
     )
     thread_id = str(payload.get("thread_id") or "main")
+    from zf.runtime.channel_libre import is_libre
+    repair_channel = project_channel(host.state_dir, channel_id) or {}
+    libre = is_libre(repair_channel)
+    if libre:
+        active = synthesis_request_in_flight(repair_channel, thread_id)
+        if not active or active.get("request_id") != synthesis_request_id:
+            return
     if message is None:
         revision = int(payload.get("repair_revision") or 0)
         contract_error = str(payload.get("contract_error") or "").strip()
@@ -129,8 +137,8 @@ def react_channel_synthesis_repair_requested(
                 "channel_id": channel_id,
                 "thread_id": thread_id,
                 "message_id": f"msg-{repair_id}",
-                "member_id": "operator",
-                "role": "user",
+                "member_id": repair_channel.get("leader_member_id", "主持人") if libre else "operator",
+                "role": "system" if libre else "user",
                 "source": "runtime",
                 "text": (
                     f"@{target_member_id} Correct synthesis contract revision "
@@ -149,6 +157,8 @@ def react_channel_synthesis_repair_requested(
                 "mentions": [target_member_id],
                 "refs": {
                     "synthesis_request_id": synthesis_request_id,
+                    **({"libre_control_event_id": event.id, "display_origin": "host_coordination",
+                        "display_text": "正在修复本次 PRD 的格式，仍采用原材料；你可以继续聊天。"} if libre else {}),
                     "synthesis_repair_id": repair_id,
                     "prd_document_contract": "full.v1",
                     **_synthesis_source_refs(host, synthesis_request_id, channel_id, thread_id),
@@ -185,6 +195,19 @@ def react_channel_question_dedup_requested(
     host,
     event: ZfEvent,
 ) -> None:
+    if (event.payload or {}).get("libre_round_id"):
+        from zf.runtime.channel_libre import _post_control
+        channel = project_channel(host.state_dir, event.payload["channel_id"]) or {}
+        if (channel.get("libre_rounds", {}).get(event.payload["libre_round_id"]) or {}).get("publication"):
+            return
+        _post_control(host.state_dir, host.event_writer, channel, event,
+                      text="正在整理本轮问题：只合并等价决策，保留不同场景、选项和独立子问。",
+                      targets=[event.payload["target_member_id"]],
+                      refs={"libre_round_id": event.payload["libre_round_id"],
+                            "question_dedup_request_id": event.payload["request_id"],
+                            "question_ledger_digest": event.payload["ledger_digest"]},
+                      config=getattr(host, "config", None), project_root=getattr(host, "project_root", None))
+        return
     payload = event.payload if isinstance(event.payload, dict) else {}
     channel_id = str(
         payload.get("channel_id") or event.correlation_id or ""
@@ -336,6 +359,8 @@ def react_channel_consensus_proposed(
         payload.get("channel_id") or event.correlation_id or ""
     )
     thread_id = str(payload.get("thread_id") or "main")
+    if (project_channel(host.state_dir, channel_id) or {}).get("discussion", {}).get("mode") == "libre_discuss":
+        return  # Explicit evaluation remains available; no automatic consensus loop.
     proposer = str(payload.get("proposed_by") or event.actor or "")
     required_signers = list(dict.fromkeys(
         str(member_id).strip()
@@ -464,5 +489,5 @@ def _synthesis_source_refs(host, request_id: str, channel_id: str, thread_id: st
         p = event.payload
         if (event.type == "channel.synthesis.requested" and p.get("request_id") == request_id
                 and p.get("channel_id") == channel_id and str(p.get("thread_id") or "main") == thread_id):
-            return {key: p[key] for key in ("prd_source_file", "prd_quality_contract") if p.get(key)}
+            return {key: p[key] for key in ("prd_source_file", "prd_quality_contract", "prd_input_snapshot") if p.get(key)}
     return {}

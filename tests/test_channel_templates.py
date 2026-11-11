@@ -194,6 +194,7 @@ def test_prd_template_persists_version_digest_roles_and_discussion(
         {
             "template_id": "prd-clarification",
             "channel_id": "ch-prd",
+            "mode": "conversation",
             "overrides": {
                 "backend": "fake",
                 "role_overrides": {
@@ -699,7 +700,7 @@ def test_template_discussion_mode_override_is_explicit_and_bounded():
         overrides={"discussion_mode": "auto"},
     )
     assert invalid is None
-    assert error == "discussion_mode must be conversation, clarification, or multi_lens"
+    assert error == "discussion_mode must be libre_discuss, conversation, clarification, or multi_lens"
 
 
 def test_create_and_start_is_one_action_with_seeded_requirement_and_followup(
@@ -988,6 +989,7 @@ def test_controlled_question_resolution_waits_for_canonical_dedup(
     created = _execute(service, writer, "channel-create-from-template", {
         "template_id": "quick-change",
         "channel_id": "ch-owner-dedup-gate",
+        "mode": "multi_lens",
         "overrides": {"backend": "fake"},
     })
     assert created["ok"] is True
@@ -1484,6 +1486,7 @@ def test_discussion_start_dispatches_participants_and_synthesis_once(
         {
             "template_id": "quick-change",
             "channel_id": "ch-quick",
+            "mode": "multi_lens",
             "overrides": {"backend": "fake"},
         },
     )
@@ -1636,6 +1639,7 @@ def test_discussion_restart_closes_active_session_and_uses_fresh_trigger(
         {
             "template_id": "quick-change",
             "channel_id": "ch-restart",
+            "mode": "conversation",
             "overrides": {"backend": "fake"},
         },
     )

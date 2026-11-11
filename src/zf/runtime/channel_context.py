@@ -96,6 +96,13 @@ def build_channel_context_pack(
         channel,
         trigger_message_id=trigger_message_id,
     )
+    if trigger_refs.get("synthesis_request_id") and state_dir is not None:
+        from zf.runtime.channel_prd_snapshot import snapshot_channel
+        trigger = next((m for m in (channel or {}).get("messages", []) if m.get("message_id") == trigger_message_id), None)
+        channel = snapshot_channel(state_dir, channel or {}, str(trigger_refs["synthesis_request_id"]), trigger_message=trigger)
+    elif trigger_refs.get("question_dedup_request_id") and trigger_refs.get("libre_round_id"):
+        from zf.runtime.channel_libre import round_ledger
+        channel = round_ledger(channel or {}, str(trigger_refs["libre_round_id"]))
     session = ((channel or {}).get("discussions") or {}).get(thread_id) or {}
     blind = bool(trigger_message_id and trigger_message_id == session.get("requirement_message_id")
                  or trigger_refs.get("adaptive_next_round_id"))
@@ -110,7 +117,7 @@ def build_channel_context_pack(
             safe_resolved_skill_refs, state_dir=Path(state_dir),
             project_root=project_root,
         )
-        if requires_complete_ledger and state_dir is not None
+        if (requires_complete_ledger or (channel or {}).get("discussion", {}).get("mode") == "libre_discuss") and state_dir is not None
         else []
     )
     visible_messages = list((channel or {}).get("messages") or (channel or {}).get("recent_messages") or [])
@@ -130,6 +137,7 @@ def build_channel_context_pack(
             channel,
             thread_id=thread_id,
             max_entries=profile_limits["question_entries"],
+            include_typed=(channel or {}).get("discussion", {}).get("mode") == "libre_discuss",
         )
     )
     ledger_digest = (
@@ -372,7 +380,8 @@ def _select_question_ledger(
     *,
     thread_id: str,
     max_entries: int,
-) -> list[dict[str, str]]:
+    include_typed: bool = False,
+) -> list[dict[str, Any]]:
     raw = (channel or {}).get("open_questions") or []
     items = list(raw.values()) if isinstance(raw, dict) else list(raw)
     selected = [
@@ -396,6 +405,9 @@ def _select_question_ledger(
             "risk_note": _excerpt(str(item.get("risk_note") or ""), 240),
             "opened_event_id": str(item.get("opened_event_id") or ""),
             "resolved_event_id": str(item.get("resolved_event_id") or ""),
+            **({**{key: item.get(key) for key in ("kind", "target_member_id", "depends_on", "options")},
+                "question_version_ref": str(item.get("updated_event_id") or item.get("opened_event_id") or "")}
+               if include_typed else {}),
         }
         for item in selected
     ]

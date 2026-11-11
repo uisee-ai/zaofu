@@ -72,6 +72,10 @@ class ChannelConsensusActionsMixin:
             ),
             None,
         )
+        if question and question.get("presentation_pending"):
+            return self._failed(requested=requested, action=action, requested_action=requested_action,
+                                task_id=requested.task_id, status_code=409, status="question_consolidation_pending",
+                                reason="本轮问题仍在整理，请等待题卡呈现")
         if question is None or str(question.get("status") or "") != "open":
             return self._failed(
                 requested=requested,

@@ -46,6 +46,7 @@ KANBAN_AGENT_ALLOWED_ACTIONS = (
     "start-collaboration",
     "channel-create-from-template",
     "channel-create-and-start",
+    "channel-synthesis-cancel",
     "channel-discussion-start",
     "channel-set-leader",
     "channel-invite-member",
@@ -315,6 +316,7 @@ CANONICAL_ACTIONS = {
     "channel.delete": "channel-delete",
     "channel.history.clear": "channel-clear-history",
     "channel.synthesis.request": "channel-synthesis-request",
+    "channel.synthesis.cancel": "channel-synthesis-cancel",
     "channel.question.resolve": "channel-question-resolve",
     "channel.consensus.confirm": "channel-consensus-confirm",
     "channel.consensus.block": "channel-consensus-block",
@@ -411,14 +413,14 @@ KANBAN_AGENT_CHANNEL_PROPOSAL_CONTRACT = (
     "an action. Never request secrets, never combine "
     "plan_request with action_proposal. Ordinary Plan requests are clarification, "
     "not permission or approval. A Channel setup Plan is the sole bounded "
-    "exception: set submit_action=channel-create-and-start, include a clean "
-    "discussion_seed containing only the business requirement, "
-    "submit_label='Create & start', allow_other=false, and give every option "
+    "exception: default to submit_action=channel-create-from-template with mode=libre_discuss, omit discussion_seed, "
+    "create a quiet Channel without posting any seed or starting discussion. Only an explicit legacy-mode request uses channel-create-and-start with a clean business-only discussion_seed. "
+    "submit_label='创建自由讨论群', allow_other=false, and give every option "
     "a label, description, and exact option-level submit_payload containing "
     "template_id, an explicit mode, plus optional name/overrides. Include a "
     "non-empty top-level "
     "question. Do not wrap Channel options in effect or put submit_payload under "
-    "effect. Every option must choose conversation for one default responder, "
+    "effect. Default every option to libre_discuss for a quiet user-led group; choose a legacy mode only when explicitly requested: conversation for one default responder, "
     "clarification for facilitated relay, or multi_lens for bounded blind fanout "
     "and synthesis. Use mode=multi_lens only inside submit_payload when the operator "
     "explicitly requests independent multi-role input or parallel review, never "

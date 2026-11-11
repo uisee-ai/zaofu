@@ -129,6 +129,12 @@ def apply_question_dedup_reply(
     task_id: str | None = None,
 ) -> tuple[bool, str]:
     """Validate one semantic merge plan and emit canonical merge events."""
+    from zf.runtime.channel_libre import is_libre
+    if is_libre(project_channel(Path(state_dir), channel_id)):
+        from zf.runtime.channel_libre_dedup import apply_libre_dedup
+        return apply_libre_dedup(state_dir=state_dir, writer=writer, channel_id=channel_id, thread_id=thread_id,
+                                request_id=request_id, payload=payload, actor=actor, source=source,
+                                causation_id=causation_id, task_id=task_id)
     prior = next(
         (
             event

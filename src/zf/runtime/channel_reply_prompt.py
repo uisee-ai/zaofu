@@ -280,6 +280,20 @@ def channel_reply_response_contract(
             "Do not claim another independent reviewer has checked these just because that role is listed. "
             + target_binding + feedback_instruction
         )
+    if refs.get("question_dedup_request_id") and channel.get("discussion", {}).get("mode") == "libre_discuss":
+        return _contract_response_instruction(
+            "one JSON object named channel_question_dedup containing the exact ledger_digest, "
+            "operate only on open questions; leave resolved and merged records unchanged. "
+            "keep_question_ids listing EVERY retained original question, and groups. "
+            "Each group contains canonical_question_id (a kept question), merge_question_ids, reason "
+            "and option_mappings keyed by each merged question id, mapping ALL source option ids "
+            "one-to-one to equivalent canonical option ids. Account for EVERY original question exactly once. "
+            "Merge only equivalent decisions with identical scope, scenario, constraints and answer meaning. "
+            "Related topics, equal recommended answers, dependent decisions and overlapping subquestions "
+            "are NOT duplicates. Preserve distinct scenarios, dissent and independent subquestions. "
+            "When uncertain keep both. Never delete a question because a sharper question exists. "
+            "Do not answer, resolve, reclassify or start cross-review, PRD generation or another discussion."
+        )
     if refs.get("question_dedup_request_id"):
         return _contract_response_instruction(
             "one JSON object named channel_question_dedup. "
@@ -308,6 +322,26 @@ def channel_reply_response_contract(
     # lineage, but their turn is still a normal contribution turn.
     if refs.get("adaptive_next_round_id"):
         return _channel_contribution_response_contract(adaptive_next_pass=True)
+    if channel.get("discussion", {}).get("mode") == "libre_discuss" and not refs.get("synthesis_request_id"):
+        return _contract_response_instruction(
+            "an optional JSON object named channel_contribution with summary and questions. "
+            "Chat naturally; do not require contributions, freeze, phases, consensus or PRD creation. "
+            "Each genuine user decision question needs question, options, recommended_answer and why_it_matters. "
+            "When options are supplied use exactly 2 or 3 items with unique id and label; otherwise use an empty list for free text. "
+            "Keep technical facts assigned to a real member, not the user. "
+            "To settle an assigned fact you have read in question_ledger, include fact_resolutions with "
+            "question_id, outcome=resolved|unresolved|needs_owner, answer and evidence_refs. Only resolved "
+            "with evidence can close a fact; never close an Owner decision. Include consumed_message_digests "
+            "for every required source in the bound semantic_source_manifest when settling facts. "
+            "Only the leader may suggest member_invitations using the supplied public profile catalog. "
+            "Each invitation needs member_id, profile_id, reason, source_refs and required_reviewer; "
+            "do not invent a profile or claim a proposed invite has already joined. "
+            "Only after an @all request the leader may propose libre_relay containing target_member_ids, "
+            "prompt and reason for one necessary targeted follow-up; never relay by plain @ text. "
+            "Invitations need user approval and do not automatically start a conversation. "
+            "Never automatically synthesize PRD or start work after answers. "
+            "The user controls when to generate a PRD. If no structured facts/questions are needed, return ordinary prose."
+        )
     if refs.get("synthesis_request_id"):
         selected_source = (
             "Selected immutable prd_source_file: "

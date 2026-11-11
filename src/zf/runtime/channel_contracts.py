@@ -116,6 +116,7 @@ CHANNEL_SAFE_PERMISSIONS = {
     "report_owner",
 }
 CHANNEL_DISCUSSION_MODES = {
+    "libre_discuss",
     "conversation",
     "clarification",
     "multi_lens",
@@ -284,7 +285,7 @@ def active_channel_skill_refs(
     """Select runtime skills without mutating the member capability profile."""
 
     refs = normalize_channel_skill_refs(value)
-    if discussion_engine_mode(discussion_mode) == "fanout_then_synthesis":
+    if discussion_engine_mode(discussion_mode) in {"fanout_then_synthesis", "libre_discuss"}:
         return refs
     return [ref for ref in refs if ref not in CHANNEL_MULTI_LENS_SKILL_REFS]
 
@@ -325,7 +326,7 @@ def normalize_permissions(value: object, *, member_type: str = "") -> list[str]:
 
 def normalize_product_discussion_mode(value: object) -> str:
     raw = str(value or "conversation").strip()
-    if raw in {"conversation", "clarification", "multi_lens"}:
+    if raw in {"libre_discuss", "conversation", "clarification", "multi_lens"}:
         return raw
     return CHANNEL_DISCUSSION_MODE_ALIASES.get(raw, "conversation")
 
@@ -333,6 +334,7 @@ def normalize_product_discussion_mode(value: object) -> str:
 def discussion_engine_mode(value: object) -> str:
     product_mode = normalize_product_discussion_mode(value)
     return {
+        "libre_discuss": "libre_discuss",
         "conversation": "manual_mention",
         "clarification": "mention_relay",
         "multi_lens": "fanout_then_synthesis",

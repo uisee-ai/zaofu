@@ -221,7 +221,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # async transports emit reply / question / consensus ledger events. Keep
     # them wakeable; otherwise strict cold-start sees registered handlers that
     # the live watcher will never deliver.
-    "channel.agent.reply.completed",
+    "channel.agent.reply.completed", "channel.libre.reply.processed",
     # Reply failures are external provider outcomes. Wake the reactor so the
     # bounded remediation policy can classify and settle them without waiting
     # for an unrelated workflow event.

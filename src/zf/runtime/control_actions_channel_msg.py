@@ -446,13 +446,17 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
+        if action == "channel-synthesis-cancel":
+            from zf.runtime.channel_synthesis_cancel import cancel_channel_synthesis
+            return cancel_channel_synthesis(self, requested=requested, action=action, requested_action=requested_action, payload=payload)
         channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         with locked_path(
             channel_synthesis_lock_path(self.state_dir, channel_id, thread_id)
         ):
             channel = project_channel(self.state_dir, channel_id) or {}
-            if pending_member_proposals(channel, thread_id):
+            libre = channel.get("discussion", {}).get("mode") == "libre_discuss"
+            if not libre and pending_member_proposals(channel, thread_id):
                 return self._failed(requested=requested, action=action, requested_action=requested_action,
                                     task_id=requested.task_id, reason="member invitation approval is pending",
                                     status_code=409, status="member_invitation_pending")
@@ -525,6 +529,8 @@ class ChannelMessageActionsMixin:
                 or _optional_str(payload.get("reason"))
                 or "Synthesize the current channel discussion into a concise decision draft, open questions, risks, and recommended next workflow action."
             )
+            if libre and not payload.get("prompt") and not payload.get("reason"):
+                prompt = "请根据本次选定材料生成完整、可供开发评估的 PRD 草稿。保留未决问题和待核实项，明确验收条件；不要替用户批准开发。"
             source_file = {}
             if "source_file" in payload:
                 from zf.runtime.channel_prd_file import snapshot_prd_file
@@ -548,6 +554,36 @@ class ChannelMessageActionsMixin:
                     "or prd_markdown if revisions are required. This requests a draft, not approval; "
                     "all independent reviews and Owner confirmation still apply. " + prompt
                 )
+            input_snapshot = {}
+            retry_of = str(payload.get("retry_of_request_id") or "")
+            if libre and retry_of:
+                original = next((e for e in self.writer.event_log.read_all() if e.type == "channel.synthesis.requested"
+                                 and e.payload.get("request_id") == retry_of and e.payload.get("channel_id") == channel_id
+                                 and e.payload.get("thread_id", "main") == thread_id), None)
+                if original is None or not original.payload.get("prd_input_snapshot"):
+                    return self._failed(requested=requested, action=action, requested_action=requested_action,
+                                        task_id=requested.task_id, status_code=404, reason="找不到可重试的原材料快照")
+                input_snapshot = original.payload["prd_input_snapshot"]
+                source_file = original.payload.get("prd_source_file") or {}
+                prompt = original.payload.get("prompt") or prompt
+            elif libre:
+                from zf.runtime.channel_prd_snapshot import capture_prd_input
+                additional_material = str(payload.get("additional_material") or "")
+                if payload.get("include_project_brief"):
+                    brief = str(getattr(getattr(self.config, "project", None), "description", "") or "").strip()
+                    if not brief:
+                        return self._failed(requested=requested, action=action, requested_action=requested_action,
+                                            task_id=requested.task_id, status_code=422, reason="项目简介为空，请补充原材料后再生成")
+                    additional_material += "\n\n用户选入的项目简介：\n" + brief
+                has_input = additional_material.strip() or source_file or any(
+                    m.get("role") in {"user", "human", "operator"} and not (m.get("refs") or {}).get("synthesis_request_id")
+                    for m in channel.get("messages", []))
+                if not has_input:
+                    return self._failed(requested=requested, action=action, requested_action=requested_action,
+                                        task_id=requested.task_id, status_code=422, reason="当前群尚无需求材料，请先聊天或添加原材料")
+                input_snapshot = capture_prd_input(self.state_dir, channel, request_id=request_id, thread_id=thread_id,
+                                                   actor=self.actor, source_event_id=requested.id,
+                                                   additional_material=additional_material)
             request_event = self.writer.emit(
                 "channel.synthesis.requested",
                 actor=self.actor,
@@ -566,10 +602,12 @@ class ChannelMessageActionsMixin:
                     "reason": str(payload.get("reason") or "synthesis requested"),
                     "prompt": prompt,
                     **({"prd_source_file": source_file} if source_file else {}),
+                    **({"prd_input_snapshot": input_snapshot} if input_snapshot else {}),
+                    **({"retry_of_request_id": retry_of} if retry_of else {}),
                     "source": self.surface,
                 },
             )
-            if source_file and (channel.get("discussions") or {}).get(thread_id):
+            if not libre and source_file and (channel.get("discussions") or {}).get(thread_id):
                 # An explicit file-to-draft action enters the existing review lifecycle.
                 # Preserve the roster, ledger and failed-request evidence; no signatures are granted.
                 self.writer.emit("channel.discussion.phase.changed", actor=self.actor,
@@ -588,8 +626,10 @@ class ChannelMessageActionsMixin:
             "text": f"@{target_member_id} {prompt}",
             "mentions": [target_member_id],
             "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1",
+                     **({"display_origin": "user_prd_request", "display_text": "请按本次选定的聊天和材料生成 PRD 草稿，保留未决事项。"} if libre else {}),
                      "prd_quality_contract": request_event.payload.get("prd_quality_contract", ""),
-                     **({"prd_source_file": source_file} if source_file else {})},
+                     **({"prd_source_file": source_file} if source_file else {}),
+                     **({"prd_input_snapshot": input_snapshot} if input_snapshot else {})},
         }, created_by=f"channel-synthesis:{self.surface}")
         message = self.writer.emit(
             "channel.message.posted",
@@ -769,6 +809,11 @@ class ChannelMessageActionsMixin:
         channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         mode = _required_text(payload, "mode")
         channel = project_channel(self.state_dir, channel_id) or {}
+        current_mode = channel.get("discussion", {}).get("mode", "conversation")
+        if mode != current_mode and "libre_discuss" in {mode, current_mode}:
+            return self._failed(requested=requested, action=action, requested_action=requested_action,
+                                task_id=requested.task_id, status_code=409, status="mode_migration_unavailable",
+                                reason="已有群保留其模式；请创建新群使用不同讨论模式")
         event_payload = {
             "channel_id": channel_id,
             "thread_id": str(payload.get("thread_id") or "main"),

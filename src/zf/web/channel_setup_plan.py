@@ -41,7 +41,7 @@ def normalize_channel_setup_submit_payload(
         return {}, {}, override_error
     materialized, error = materialize_channel_template(
         template_id,
-        overrides=overrides,
+        overrides={**overrides, "discussion_mode": str(raw_payload.get("mode") or overrides.get("discussion_mode") or "libre_discuss")},
     )
     if error or materialized is None:
         return {}, {}, error or "channel template preflight failed"
@@ -55,18 +55,18 @@ def normalize_channel_setup_submit_payload(
     if profile_error:
         return {}, {}, profile_error
 
-    mode = str(raw_payload.get("mode") or "").strip()
+    mode = str(raw_payload.get("mode") or "libre_discuss").strip()
     if not mode:
         return (
             {},
             {},
             "submit_payload.mode is required for Channel setup Plans",
         )
-    if mode not in {"conversation", "clarification", "multi_lens"}:
+    if mode not in {"libre_discuss", "conversation", "clarification", "multi_lens"}:
         return (
             {},
             {},
-            "submit_payload.mode must be conversation, clarification, or multi_lens",
+            "submit_payload.mode must be libre_discuss, conversation, clarification, or multi_lens",
         )
     dispatch_policy = str(raw_payload.get("dispatch_policy") or "auto").strip()
     if dispatch_policy not in {"auto", "trigger_only"}:
@@ -146,12 +146,13 @@ def normalize_channel_setup_submit_payload(
         "engine_mode": engine_mode,
         "dispatch_policy": dispatch_policy,
         "routing_strategy": {
+            "libre_discuss": "quiet_user_led",
             "conversation": "single_responder",
             "clarification": "facilitated_relay",
             "multi_lens": "blind_fanout_then_synthesis",
         }[mode],
         "first_pass_reply_count": (
-            len(members)
+            0 if mode == "libre_discuss" else len(members)
             if engine_mode == "fanout_then_synthesis"
             else min(1, len(members))
         ),

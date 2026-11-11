@@ -19,6 +19,8 @@ def question_dedup_gate_state(
     handlers and read projections share exactly the same gate.
     """
     current = channel or {}
+    if current.get("discussion", {}).get("mode") == "libre_discuss":
+        return "open"  # Free rounds gate individual unpublished candidates, never the whole queue.
     raw_questions = current.get("open_questions") or []
     questions = (
         raw_questions.values()

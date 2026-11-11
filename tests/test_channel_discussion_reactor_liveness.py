@@ -887,3 +887,31 @@ def test_synthesis_replay_routes_message_left_before_reply_request(
         if event.type == "channel.synthesis.proposed"
         and event.payload.get("request_id") == "synth-replay-1"
     ]) == 1
+
+
+def test_free_reply_processed_publishes_questions_through_real_l2_active_runtime(state_dir, config, transport):
+    orch = Orchestrator(state_dir, config, transport)
+    writer = orch.event_writer
+    cid, root, rid = "ch-libre-live", "user-root", "reply-pm"
+    writer.emit("channel.created", actor="web", correlation_id=cid, payload={
+        "channel_id":cid,"name":"Free live","discussion_mode":"libre_discuss","leader_member_id":"pm"})
+    writer.emit("channel.member.invited", actor="web", correlation_id=cid, payload={
+        "channel_id":cid,"member_id":"pm","member_type":"provider_agent","provider":"fake","backend":"fake"})
+    writer.emit("channel.message.posted", actor="web", correlation_id=cid, payload={
+        "channel_id":cid,"thread_id":"main","message_id":root,"member_id":"operator","role":"user","text":"讨论一下需求"})
+    writer.emit("channel.libre.round.started", actor="channel-runtime", correlation_id=cid, payload={
+        "channel_id":cid,"thread_id":"main","round_id":root,"targets":["pm"],"leader_member_id":"pm","allow_relay":False,"source":"test"})
+    writer.emit("channel.agent.reply.requested",actor="web",correlation_id=cid,payload={
+        "channel_id":cid,"thread_id":"main","message_id":root,"request_id":rid,"target_member_id":"pm","status":"pending"})
+    writer.emit("channel.agent.reply.completed",actor="pm",correlation_id=cid,payload={
+        "channel_id":cid,"thread_id":"main","message_id":root,"request_id":rid,"target_member_id":"pm","text":"需要明确保存范围"})
+    writer.emit("channel.question.opened",actor="pm",correlation_id=cid,payload={
+        "channel_id":cid,"thread_id":"main","question_id":"q-save","question":"刷新后保留吗？","libre_round_id":root,"presentation_pending":True,"source":"test"})
+    processed=writer.emit("channel.libre.reply.processed",actor="pm",correlation_id=cid,payload={
+        "channel_id":cid,"thread_id":"main","round_id":root,"request_id":rid,"source":"test"})
+    assert not project_channel(state_dir,cid)["owner_questionnaires"]["main"]
+    orch.run_once(events=[processed])
+    channel=project_channel(state_dir,cid)
+    assert len(channel["owner_questionnaires"]["main"])==1
+    assert channel["libre_rounds"][root]["publication"]["dedup_status"]=="not_required"
+    assert not channel["discussions"] and not channel["synthesis_requests"]

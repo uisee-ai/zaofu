@@ -122,16 +122,35 @@ export function createChannelActionAdapter(args: ChannelActionAdapterArgs) {
     threadId: string,
     targetMemberId?: string,
     sourceFile?: { ref: string; sha256: string },
+    materials?: { text?: string; includeProjectBrief?: boolean; retryRequestId?: string },
   ) {
     try {
       const result = await args.submitAction(
         "channel.synthesis.request",
-        synthesisRequestPayload(channelId(), threadId, targetMemberId, sourceFile),
+        { ...synthesisRequestPayload(channelId(), threadId, targetMemberId, sourceFile),
+          ...(args.channelDetail?.discussion?.mode === "libre_discuss" ? {
+            reason: "用户请求生成 PRD 草稿",
+            prompt: "请根据本次选定材料生成完整、可供开发评估的 PRD 草稿。保留未决问题和待核实项，明确验收条件；不要替我批准开发。",
+          } : {}),
+          ...(materials ? { additional_material: materials.text || "", include_project_brief: Boolean(materials.includeProjectBrief), retry_of_request_id: materials.retryRequestId || "" } : {}) },
       );
       if (!result.ok) throw new Error(result.reason || "PRD generation was not accepted; refresh and retry.");
     } finally {
       // A rejected route also has durable diagnostic evidence; keep its original error.
       await args.refreshChannelDetail().catch(() => {});
+    }
+  }
+
+  async function cancelSynthesis(threadId: string, requestId: string) {
+    const result = await args.submitAction("channel.synthesis.cancel", { channel_id: channelId(), thread_id: threadId, request_id: requestId });
+    if (!result.ok) throw new Error(result.reason || "未能停止本次生成");
+    await args.refreshChannelDetail();
+    const messages = args.channelDetail?.messages ?? [];
+    const sourceIds = new Set(messages.filter((m) => (m.refs as Record<string, unknown> | undefined)?.synthesis_request_id === requestId).map((m) => String(m.message_id)));
+    for (const run of args.channelDetail?.provider_runs ?? []) {
+      if (sourceIds.has(String(run.message_id)) && ["running", "started", "streaming"].includes(String(run.status))) {
+        await cancelProviderRun(String(run.run_id));
+      }
     }
   }
 
@@ -338,6 +357,7 @@ export function createChannelActionAdapter(args: ChannelActionAdapterArgs) {
     generateOwnerReport,
     evaluatePrd,
     requestSynthesis,
+    cancelSynthesis,
     resolveQuestion,
     setDiscussionMode,
     startDiscussion,

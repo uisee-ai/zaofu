@@ -298,8 +298,9 @@ class PlanApplyActionsMixin:
                 status_code=409,
                 status="plan_origin_missing",
             )
+        quiet_create = submit_action == "channel-create-from-template" and submit_payload.get("mode", "libre_discuss") == "libre_discuss"
         discussion_seed, legacy_seed_fallback, seed_error = (
-            channel_plan_discussion_seed(
+            ("", False, "") if quiet_create else channel_plan_discussion_seed(
                 request,
                 origin_message,
             )
@@ -373,6 +374,10 @@ class PlanApplyActionsMixin:
                 "discussion_seed_legacy_fallback": legacy_seed_fallback,
             },
         }
+        if quiet_create:
+            child_payload.pop("message", None)
+            child_payload.pop("message_id", None)
+            child_payload["refs"] = {}
         validation_error = validate_shared_action_payload(
             submit_action,
             child_payload,

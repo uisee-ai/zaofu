@@ -163,6 +163,7 @@ def question_frontier(
         record
         for record in records
         if str(record.get("status") or "") == "open"
+        and not record.get("presentation_pending")
         and all(
             _dependency_settled(dependency, by_id, seen=set())
             for dependency in _string_list(

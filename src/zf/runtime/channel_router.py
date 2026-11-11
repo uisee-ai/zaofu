@@ -165,8 +165,12 @@ def route_channel_message(
     if reason:
         return ChannelRouteResult(skipped=[{"reason": reason}])
     agent_member_ids = _agent_member_ids(channel)
+    from zf.runtime.channel_libre import authorize_control_message, record_round, is_libre
+    control_targets = authorize_control_message(Path(state_dir), writer, channel, message_event, message_payload)
+    if control_targets == []:
+        return ChannelRouteResult(skipped=[{"reason": "invalid_coordination_authority"}])
     relay_decision = None
-    if not _auto_route_allowed(
+    if control_targets is None and not _auto_route_allowed(
         role=role, source=source, sender=sender, agent_member_ids=agent_member_ids,
     ):
         # doc 122 §4: agent-authored posts may relay to their mentions through
@@ -270,6 +274,9 @@ def route_channel_message(
             if blind_roster:
                 targets = blind_roster
                 routing_reason = "discussion_blind_fanout"
+    if control_targets is not None:
+        targets = control_targets
+        routing_reason = "host_coordination"
     if not targets and relay_decision is None:
         tokens = detect_channel_mention_tokens(
             text,
@@ -342,6 +349,7 @@ def route_channel_message(
             skipped=[{"reason": round_guard_reason}],
         )
 
+    record_round(writer, channel, message_event, {**message_payload, "text": text}, targets)
     reply_requests: list[str] = []
     intent_requests: list[str] = []
     queued: list[str] = []
@@ -609,7 +617,8 @@ def route_channel_message(
                 deterministic_reason=deterministic_reason,
             )
     if (
-        relay_decision is not None
+        (is_libre(channel) and control_targets is None)
+        or relay_decision is not None
         or routing_reason == "discussion_blind_fanout"
         or str(discussion_state(channel, thread_id).get("state") or "idle") != "idle"
     ):
@@ -717,7 +726,8 @@ def _default_responder_target(channel: dict[str, Any] | None, *, sender_member_i
     discussion = (channel or {}).get("discussion")
     if not isinstance(discussion, dict):
         return ""
-    member_id = str(discussion.get("default_responder_id") or "").strip()
+    member_id = str((channel or {}).get("leader_member_id") if discussion.get("mode") == "libre_discuss"
+                    else discussion.get("default_responder_id") or "").strip()
     if not member_id:
         return ""
     member = _member_by_id(channel or {}, member_id)

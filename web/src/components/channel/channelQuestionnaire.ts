@@ -16,7 +16,7 @@ export function openOwnerQuestionnaire(
   const allLedger = questionRecords(detail?.open_questions)
     .filter((item) => channelThreadId(String(item.thread_id || "main")) === logicalThreadId);
   const ledger = allLedger
-    .filter((item) => String(item.status || "") === "open")
+    .filter((item) => String(item.status || "") === "open" && !item.presentation_pending)
     .filter((item) => String(item.question_id || "").trim());
   const ledgerIdentity = new Set(
     allLedger

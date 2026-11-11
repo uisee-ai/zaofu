@@ -455,6 +455,8 @@ def project_discussion_attention(
                 or consensus
             ),
         }
+    from zf.runtime.channel_libre import adapt_libre_attention
+    adapt_libre_attention(channel, projection, owner_questionnaires)
     return projection
 
 

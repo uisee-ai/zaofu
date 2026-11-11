@@ -44,7 +44,10 @@ def synthesis_request_currentness(
     latest_index, latest = requests[-1]
     payload = event.payload
     reason = ""
-    if index < boundary:
+    if any(e.type == "channel.synthesis.cancelled" and e.payload.get("request_id") == request_id
+           for _, e in scoped):
+        reason = "synthesis_cancelled"
+    elif index < boundary:
         reason = "discussion_advanced_after_synthesis_request"
     elif index != latest_index:
         reason = "newer_synthesis_request_exists"

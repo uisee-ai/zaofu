@@ -17,6 +17,8 @@ import type { UIEvent as ReactUIEvent } from "react";
 import type { ChannelPermissionProfile } from "../../app/sharedTypes";
 import { TablePage, agentConversationScrollSignature, asRecordArray, asStringArray, channelIdOf, channelNameOf, recordString, recordValue, scrollElementToBottom, textValue } from "../../app/shared";
 import { previewItemsFromRefs, type PreviewItem } from "../agent-session/previewRegistry";
+import { LibreDiscussionNotice, LibrePrdControls, type PrdMaterials } from "./LibreDiscussion";
+import { getChannelPrdCandidate } from "../../api/channelDelivery";
 import { ChannelFilePreview } from "./ChannelFilePreview";
 import { channelFlow, channelMemberLabel, channelSourceThreadId, FLOW_LABELS, type ChannelFlowNode } from "./channelFlow";
 import { ChannelFlowNavigation, ChannelFlowPreview } from "./ChannelFlowNavigation";
@@ -421,6 +423,7 @@ export function ChannelPage({
   onResearchAdopt,
   onCancelProviderRun,
   onRequestSynthesis,
+  onCancelSynthesis,
   onResolveQuestion,
   onSetMemberPermission,
   onSearchHistory,
@@ -469,7 +472,8 @@ export function ChannelPage({
   onRemoveMember: (memberId: string) => Promise<void>;
   onResearchAdopt: (payload: Record<string, unknown>) => Promise<void>;
   onCancelProviderRun: (runId: string) => Promise<void>;
-  onRequestSynthesis: (threadId: string, targetMemberId?: string, sourceFile?: { ref: string; sha256: string }) => Promise<void>;
+  onCancelSynthesis?: (threadId: string, requestId: string) => Promise<void>;
+  onRequestSynthesis: (threadId: string, targetMemberId?: string, sourceFile?: { ref: string; sha256: string }, materials?: PrdMaterials) => Promise<void>;
   onResolveQuestion: (questionId: string, threadId: string, resolution: string, answer: string) => Promise<void>;
   onSetMemberPermission: (memberId: string, permissionProfile: ChannelPermissionProfile) => Promise<void>;
   onSearchHistory: (query: string, threadId?: string) => Promise<ChannelHistorySearchResult>;
@@ -620,6 +624,7 @@ export function ChannelPage({
         return [{
           id,
           header: [
+            ...(item.dedup_status === "failed_raw" ? ["未去重 · 原题"] : []),
             String(item.priority || "p1").toUpperCase(),
             String(item.kind || "owner decision").replaceAll("_", " "),
           ].join(" / "),
@@ -986,7 +991,8 @@ export function ChannelPage({
     "state",
     "idle",
   );
-  const discussionControls = channelDiscussionControlPolicy(
+  const libreDiscuss = discussionMode === "libre_discuss";
+  const discussionControls = libreDiscuss ? { canStartOrRestart: false, canDrainReplies: false, canSynthesize: true, restart: false, startLabel: "自由讨论" } : channelDiscussionControlPolicy(
     discussionBand?.attention ?? null,
     currentDiscussionState,
     Boolean(latestThreadRequirementText),
@@ -2207,7 +2213,7 @@ export function ChannelPage({
           ) : null}
           <button
             className="icon-button"
-            disabled={!actionReady || controlsBusy || !discussionControls.canDrainReplies}
+            hidden={libreDiscuss} disabled={!actionReady || controlsBusy || !discussionControls.canDrainReplies}
             type="button"
             onClick={() => void runControl(onDrainReplies)}
           >
@@ -2226,7 +2232,7 @@ export function ChannelPage({
           </button>
           <button
             className="icon-button"
-            disabled={!actionReady || controlsBusy || !discussionControls.canStartOrRestart}
+            hidden={libreDiscuss} disabled={!actionReady || controlsBusy || !discussionControls.canStartOrRestart}
             type="button"
             onClick={() => void runControl(() => onStartDiscussion(
               controlThreadId,
@@ -2321,7 +2327,7 @@ export function ChannelPage({
             <span className="metric-chip">{replyHealth.waiting.length} waiting</span>
             <span className={`metric-chip ${currentFailedReplyRows.length ? "chip-warn" : ""}`}>{currentFailedReplyRows.length} failed</span>
             <span className="metric-chip">{mentionDigests.length} mentions</span>
-            <button className="icon-button" disabled={!actionReady || controlsBusy || !discussionControls.canDrainReplies} type="button" onClick={() => void runControl(onDrainReplies)}>
+            <button className="icon-button" hidden={libreDiscuss} disabled={!actionReady || controlsBusy || !discussionControls.canDrainReplies} type="button" onClick={() => void runControl(onDrainReplies)}>
               Drain Replies
             </button>
           </div>
@@ -2339,6 +2345,9 @@ export function ChannelPage({
     }
     if (activeDrawer === "prd") return <ChannelPrdPreview key={channelDocumentKey(prdSelection)}
       selection={prdSelection} flow={flow} actionReady={actionReady} busy={controlsBusy}
+      generationControls={libreDiscuss ? <LibrePrdControls requests={(workspaceDetail?.synthesis_requests ?? []).filter((r) => String(r.thread_id || "main") === controlThreadId)}
+        onReadCandidate={(requestId) => getChannelPrdCandidate(projectId || "default", selectedChannelId, controlThreadId, requestId)}
+        actionReady={actionReady} busy={controlsBusy} onCancel={onCancelSynthesis ? (requestId) => onCancelSynthesis(controlThreadId, requestId) : undefined} onGenerate={(materials) => onRequestSynthesis(controlThreadId, undefined, undefined, materials)} /> : undefined}
       onClose={() => setDrawer(null)}
       onDiscuss={() => { setDrawer(null); setChannelSplitThreadId(""); setActiveChannelThreadId(controlThreadId); requestAnimationFrame(() => composerRef.current?.focus()); }}
       onProcess={() => onWorkflowRequest("", workflowDraft.reason.trim() || "Create a Task bound to the canonical Channel PRD.", controlThreadId)}
@@ -2468,6 +2477,7 @@ export function ChannelPage({
               void runControl(() => onSetDiscussionMode(controlThreadId, mode, defaultResponderId));
             }}
           >
+            <option value="libre_discuss">自由讨论</option>
             <option value="conversation">conversation</option>
             <option value="clarification">clarification</option>
             <option value="multi_lens">multi lens</option>
@@ -2495,6 +2505,7 @@ export function ChannelPage({
               || controlsBusy
               || !discussionControls.canStartOrRestart
             }
+            hidden={libreDiscuss}
             type="button"
             onClick={() => void runControl(() => onStartDiscussion(
               controlThreadId,
@@ -2659,10 +2670,17 @@ export function ChannelPage({
           </button>
         </div>
       </div>
-      <ChannelFlowNavigation flow={flow}
+      {libreDiscuss ? <>
+        <div className="channel-control-actions libre-discussion-actions">
+          <button type="button" className="icon-button primary" onClick={() => setDrawer("prd")}>生成 / 查看 PRD</button>
+          <button type="button" className="icon-button" onClick={() => setDrawer("task")}>任务</button>
+          <button type="button" className="icon-button" onClick={() => setDrawer("workflow")}>开发进度</button>
+        </div>
+        <LibreDiscussionNotice detail={workspaceDetail ?? null} threadId={controlThreadId} />
+      </> : <ChannelFlowNavigation flow={flow}
         selectedNode={drawer && ["requirement", "discussion", "prd", "task", "workflow"].includes(drawer) ? drawer as ChannelFlowNode : undefined}
         onSelect={(node) => toggleDrawer(node)} onOpen={(node) => setDrawer(node)}
-        onReviewQuestions={focusOwnerQuestions} onReviewPlans={onReviewPlans} deliveryError={delivery.error} />
+        onReviewQuestions={focusOwnerQuestions} onReviewPlans={onReviewPlans} deliveryError={delivery.error} />}
       {loadError ? <div className="notice">{loadError}</div> : null}
       {actionResult && (
         actionResult?.action === "channel-create"

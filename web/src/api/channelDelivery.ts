@@ -49,6 +49,11 @@ function url(selection: ChannelPrdSelection, resource: string) {
 export function getChannelPrdDocument(selection: ChannelPrdSelection, signal?: AbortSignal) {
   return cachedGetJson<ChannelPrdDocument>(url(selection, "prd-preview"), { bypassCache: true, signal });
 }
+export interface ChannelPrdCandidate { request_id: string; status: "unvalidated_candidate"; markdown: string; reason: string }
+export function getChannelPrdCandidate(projectId: string, channelId: string, threadId: string, requestId: string) {
+  const params = new URLSearchParams({ thread_id: threadId, request_id: requestId });
+  return cachedGetJson<ChannelPrdCandidate>(`/api/projects/${encodeURIComponent(projectId || "default")}/channels/${encodeURIComponent(channelId)}/prd-candidate?${params}`, { bypassCache: true });
+}
 export function getChannelDelivery(selection: ChannelPrdSelection, signal?: AbortSignal) {
   return cachedGetJson<ChannelDeliveryEvidence>(url(selection, "delivery"), { bypassCache: true, signal });
 }

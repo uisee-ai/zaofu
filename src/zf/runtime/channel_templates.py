@@ -297,9 +297,9 @@ def materialize_channel_template(
     result = deepcopy(CHANNEL_TEMPLATES[template_id])
     discussion_mode = str(override_map.get("discussion_mode") or "").strip()
     if discussion_mode:
-        if discussion_mode not in {"conversation", "clarification", "multi_lens"}:
+        if discussion_mode not in {"libre_discuss", "conversation", "clarification", "multi_lens"}:
             return None, (
-                "discussion_mode must be conversation, clarification, or multi_lens"
+                "discussion_mode must be libre_discuss, conversation, clarification, or multi_lens"
             )
         result.setdefault("discussion", {})["mode"] = discussion_mode
     members = result["members"]
@@ -430,6 +430,8 @@ def materialize_channel_template(
         str(member["member_id"]) for member in enabled_members
     ]
     discussion["default_responder_id"] = str(
+        (leader_member_id if discussion.get("mode") == "libre_discuss" else "")
+        or
         discussion.get("default_responder_id")
         or discussion.get("synthesizer")
         or writer_role

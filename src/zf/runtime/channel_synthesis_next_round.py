@@ -17,6 +17,8 @@ def validate_synthesis_next_round(
 ) -> tuple[dict[str, Any], str]:
     """Return one valid adaptive-round request without deciding its merit."""
 
+    if channel.get("discussion", {}).get("mode") == "libre_discuss":
+        return {"action": "finalize"}, ""
     next_round, error = normalize_synthesis_next_round(
         synthesis.get("next_round")
     )

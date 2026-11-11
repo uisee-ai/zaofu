@@ -109,6 +109,7 @@ def _create_group(
             "channel_id": "channel-group-e2e",
             "name": "Channel Group E2E",
             "owner_actor_ref": "web",
+            "mode": mode,
         },
     )
     channel_id = str(created["channel_id"])

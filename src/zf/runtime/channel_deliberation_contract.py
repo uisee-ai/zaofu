@@ -448,6 +448,7 @@ def reply_question_records(
     thread_id: str,
     member_id: str,
     source_kind: str,
+    reuse_by_text: bool = True,
 ) -> tuple[list[dict[str, Any]], str]:
     raw_questions: list[object] = []
     for key in ("questions", "open_questions"):
@@ -499,14 +500,12 @@ def reply_question_records(
         if local_id in local_to_global:
             return [], f"duplicate_local_question_id:{local_id}"
         identity = question_text_identity(text)
-        reused_id = existing_by_text.get(identity) or current_by_text.get(
-            identity
-        )
+        reused_id = (existing_by_text.get(identity) or current_by_text.get(identity)) if reuse_by_text else ""
         if reused_id:
             local_to_global[local_id] = reused_id
             continue
         digest = hashlib.sha1(
-            f"{channel_id}:{thread_id}:question:{identity}".encode("utf-8")
+            (f"{channel_id}:{thread_id}:question:{identity}" + (f":{index}" if not reuse_by_text else "")).encode("utf-8")
         ).hexdigest()[:16]
         question_id = f"q-{digest}"
         local_to_global[local_id] = question_id

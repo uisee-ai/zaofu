@@ -160,7 +160,7 @@ _KERNEL_LIVENESS_EVENTS = frozenset({
     # in orchestrator_reactor.py and the inline dispatch chain is in
     # channel_router.route_channel_message.
     "channel.message.posted",
-    "channel.agent.reply.requested", "channel.synthesis.requested",
+    "channel.agent.reply.requested", "channel.synthesis.requested", "channel.libre.reply.processed",
     "channel.discussion.next_round.proposed",
     "channel.synthesis.repair.requested",
     "channel.question.dedup.requested",

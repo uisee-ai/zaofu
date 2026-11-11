@@ -59,6 +59,8 @@ def publish_evaluation_feedback(host: Any, request: Any) -> None:
         })
         report, _ = evaluation_feedback_documents(Path(host.state_dir), refs)
         channel = project_channel(host.state_dir, channel_id) or {}
+        if channel.get("discussion", {}).get("mode") == "libre_discuss":
+            return  # Preserve the readable evaluation; revisions remain an explicit user action.
         consensus = current_synthesis_consensus(channel, thread_id)
         session = (channel.get("discussions") or {}).get(thread_id) or {}
         reason = ""

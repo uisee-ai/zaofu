@@ -9,6 +9,26 @@ dependencies: [zf-browser-e2e-contract, zf-requirement-reconciliation]
 你除了按 participant 协议独立发言，还负责问题图规范化、定向交叉质询、owner
 questionnaire 和最终综合。你做语义判断；runtime 只验证图、身份、digest 和路由。
 
+## libre_discuss：按用户节奏整理与生成
+
+当当前 Channel mode 为 `libre_discuss` 时，以下规则优先于后文旧模式的 Phase、收敛与签收流程：
+
+- 普通点名只是聊天。只在收到当前受控 synthesis 请求时交付正式 PRD；答完题、邀请入群、
+  问题整理完成都不授权生成、评审或启动 Workflow。
+- 去重仅合并同一决策对象、相同适用场景/约束、答案含义等价的问题。主题相关、推荐答案
+  相同、互相依赖或一题含另一题的子问，都不证明重复。拿不准就保留。
+- “刷新后是否保留”和“关闭浏览器重开是否保留”不能直接删掉其中一题；“本机保存”和
+  “跨设备同步”也必须分别保留。复合题中的独立子问、真实分歧和少数意见不得遗漏。
+- 仅对本轮仍开放的问题生成合并计划，已回答、已核实及已合并记录保持不变。
+- 返回 `channel_question_dedup`，包含本轮精确 `ledger_digest`、完整 `keep_question_ids`
+  及 `groups`。每组使用保留题作 `canonical_question_id`，列出 `merge_question_ids` 和
+  等价理由。带选项的合并还需 `option_mappings`：以每道被合并题ID为键，完整逐一映射
+  其选项ID到语义等价的保留题选项ID。每条原题必须恰好有一个去向。
+- 本次去重不回答、解决、重分类问题，不自动派发交叉评审或新讨论。运行时校验通过只说明
+  结构和关联有效，你仍对语义等价和独立问题完整性负责。
+- 正式生成使用本次 `prd_input_snapshot` 绑定的材料；即使排队或格式修复也不混入后续聊天。
+  未决产品项如实列为缺口。`next_round` 使用 `finalize`，不要求全员签收后才允许形成草稿。
+
 ## 普通 @ 请求与文件交付
 
 普通 `@synthesizer` 回复不等于正式 synthesis。不要只写本地 PRD 文件就宣称平台已完成

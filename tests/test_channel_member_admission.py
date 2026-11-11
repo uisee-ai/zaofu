@@ -23,7 +23,7 @@ def execute(service, writer, action, payload):
     return service.execute(action=action, requested_action=action, payload=payload, requested=request)
 
 
-def fixture(tmp_path: Path, monkeypatch, *, role_context_ref=""):
+def fixture(tmp_path: Path, monkeypatch, *, role_context_ref="", mode="multi_lens"):
     state = tmp_path / "state"
     writer = EventWriter(EventLog(state / "events.jsonl"))
     config = ZfConfig(project=ProjectConfig(name="admission"), channel=ChannelConfig(agent_profiles={
@@ -34,15 +34,16 @@ def fixture(tmp_path: Path, monkeypatch, *, role_context_ref=""):
     service = ControlledActionService(state, writer, project_root=tmp_path, actor="web", config=config)
     created = execute(service, writer, "channel-create-from-template", {
         "channel_id": "ch-admit", "template_id": "prd-clarification", "name": "Admission",
-        "mode": "multi_lens", "overrides": {"backend": "fake"},
+        "mode": mode, "overrides": {"backend": "fake"},
     })
     assert created["ok"], created
     body = channel_message_event_payload(state, {"channel_id": "ch-admit", "thread_id": "main",
         "message_id": "brief", "member_id": "operator", "role": "user", "mentions": ["all"], "text": "@all Review inventory atomicity."}, created_by="web")
     message = writer.emit("channel.message.posted", actor="web", payload=body)
     channel = project_channel(state, "ch-admit")
-    start_discussion(writer, channel, actor="web", channel_id="ch-admit", thread_id="main",
-                     trigger_message_id="brief", trigger="explicit", source="test")
+    if mode != "libre_discuss":
+        start_discussion(writer, channel, actor="web", channel_id="ch-admit", thread_id="main",
+                         trigger_message_id="brief", trigger="explicit", source="test")
     route_channel_message(state_dir=state, writer=writer, message_event=message, message_payload=body,
                           actor="web", source="test", project_root=tmp_path, config=config, dispatch_inline=False)
     channel = project_channel(state, "ch-admit")
@@ -267,3 +268,31 @@ def test_approved_invitation_retry_recovers_missing_reply_route(tmp_path, monkey
     events = writer.event_log.read_all()
     for kind in ["channel.member.invited", "channel.member.invitation.decided", "channel.discussion.continued"]:
         assert sum(e.type == kind and e.payload.get("member_id", "qa") == "qa" for e in events) == 1
+
+
+def test_free_discussion_invitation_joins_quietly_and_can_be_mentioned(tmp_path, monkeypatch):
+    state, writer, config, service, channel, request = fixture(tmp_path, monkeypatch, mode="libre_discuss")
+    channel = propose(state, writer, channel, request)
+    proposal = channel["member_invitation_proposals"][0]
+    monkeypatch.setattr("zf.runtime.control_actions_channel_msg.dispatch_channel_replies_background", lambda **kwargs: None)
+    synthesis = execute(service, writer, "channel-synthesis-request", {"channel_id": "ch-admit"})
+    assert synthesis["ok"], synthesis
+    channel = project_channel(state, "ch-admit")
+    messages_before = len(channel["messages"])
+    result = execute(service, writer, "channel-invite-member", {
+        "channel_id": "ch-admit", "thread_id": "main", "member_id": "qa", "proposal_id": proposal["proposal_id"],
+    })
+    assert result["ok"], result
+    channel = project_channel(state, "ch-admit")
+    assert any(m["member_id"] == "qa" for m in channel["members"])
+    assert len(channel["messages"]) == messages_before
+    assert not channel["discussions"]
+    assert not any(r["target_member_id"] == "qa" for r in channel["reply_requests"])
+    body = channel_message_event_payload(state, {"channel_id": "ch-admit", "thread_id": "main", "message_id": "ask-qa",
+        "member_id": "operator", "role": "user", "text": "@qa 请从测试角度看看", "mentions": ["qa"]}, created_by="web")
+    message = writer.emit("channel.message.posted", actor="web", payload=body)
+    result = route_channel_message(state_dir=state, writer=writer, message_event=message, message_payload=body,
+                                  actor="web", source="test", project_root=tmp_path, config=config, dispatch_inline=False)
+    assert result.targets == ["qa"]
+    pack = next(p for p in project_channel(state, "ch-admit")["context_packs"] if p["trigger_message_id"] == "ask-qa")
+    assert pack["semantic_source_complete"]

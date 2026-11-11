@@ -177,6 +177,7 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
         "channel.synthesis.repair.requested",
         "_on_channel_synthesis_repair_requested",
     ),
+    ("channel.libre.reply.processed", "_on_channel_discussion_event"),
     ("channel.agent.reply.completed", "_on_channel_discussion_event"),
     ("channel.agent.reply.failed", "_on_channel_discussion_event"),
     ("channel.question.opened", "_on_channel_discussion_event"),

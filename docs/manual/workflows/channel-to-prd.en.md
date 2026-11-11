@@ -2,10 +2,10 @@
 
 [中文](channel-to-prd.md) · [Workflow index](README.en.md)
 
-> Current contract: a Channel is a requirement discussion room for people and
-> agents. Natural conversation is the default; clarification and multi-lens work
-> are explicit. Creating a Channel does not automatically fan out, and confirming
-> a PRD does not create a Task or start a Workflow.
+> Current contract: new Channels default to `libre_discuss`. Creation is quiet, with no
+> discussion seed or automatic first round. Users start the conversation and choose when to
+> generate a PRD. Existing Channels and the three legacy modes retain their behavior.
+> Generating or confirming a PRD never creates a Task or starts a Workflow automatically.
 
 ## When To Use It
 
@@ -21,11 +21,12 @@ Do not use it when:
 - a Task already exists and only needs a Workflow selection;
 - chat members are expected to modify the Project or bypass approval.
 
-## Three Product Modes
+## Product Modes
 
 | Mode | Use it when... | Behavior |
 |---|---|---|
-| `conversation` | Default natural discussion and targeted mentions | The user or Leader chooses who responds; no automatic fanout |
+| `libre_discuss` | Default for new, user-led discussions | The host replies without a mention; targeted/@all chat; manual PRD generation |
+| `conversation` | Explicit legacy natural discussion and targeted mentions | The user or Leader chooses who responds; no automatic fanout |
 | `clarification` | Fields, boundaries, or owner decisions are missing | Resolve open questions one by one |
 | `multi_lens` | Several independent views and synthesis are explicitly needed | An explicit Discuss action runs bounded fanout and synthesis |
 
@@ -39,8 +40,8 @@ Ask Kanban Agent:
 
 ```text
 Create a PRD discussion Channel for the login-security change.
-Start with natural conversation and invite product, architecture, and security
-perspectives. Do not create a Task or start a Workflow automatically.
+Create a quiet free-discussion group with product, architecture, and security
+perspectives. I will start chatting and generate the PRD manually.
 ```
 
 Review the setup Plan for:
@@ -52,40 +53,27 @@ Review the setup Plan for:
 - Leader, permissions, and allowed handoff;
 - source/origin receipt target.
 
-Creation materializes the Channel, Members, skills, permissions, and original
-request. A default `conversation` does not fan out to all members merely because
-the Channel now exists.
+Creation materializes the Channel, members, skills, and permissions. Free discussion
+does not copy setup instructions or silently inject the project brief into a first round.
+Users may explicitly select the brief and other materials when generating a PRD.
 
-## Discuss And Converge
+## Free Discussion And Manual Generation
 
-The normal path is:
+- With no mention the host responds. A single mention calls only that member; `@all` includes the current eligible members.
+- After `@all` the host may arrange one necessary targeted follow-up, without an ongoing broadcast or consensus loop.
+- Profile creation, manual invitations and host invitation proposals remain. Approval admits a member quietly; mention them afterward or include them in the next `@all`.
+- A round with at least two distinct replies and two valid questions is deduplicated before answer cards appear. Preserve distinct decisions, scenarios, options and dissent. On failure, raw cards are labelled and remain answerable.
+- Answering cards does not generate a PRD. Unanswered cards do not lock the generation entry.
+- Open “Generate / View PRD”, choose materials or the project brief, and request a draft explicitly.
+- The accepted request freezes its inputs. Later replies and edits belong to the next version; chat remains usable during generation.
+- Cancel only this artifact request, retaining chat and previous PRDs. Retry reuses the snapshot; a new version uses the latest selected inputs.
 
 ```text
-origin request
-  -> durable message ACK
-  -> natural conversation
-  -> optional clarification
-  -> optional explicit Discuss / multi_lens
-  -> explicit Finalize
-  -> PRD draft
-  -> Continue | Revise | Owner confirm
-  -> channel.consensus.reached(ref, digest, revision)
-  -> exact-origin PRD receipt
+quiet creation -> user-led chat, questions and additions
+                              -> explicit generation -> draft -> evaluation, revision and confirmation
 ```
 
-![Animated Channel journey from natural discussion to multi-role convergence](../assets/quickstart-channel-discussion.webp)
-
-Inside the discussion you can:
-
-- mention one member for a focused answer;
-- add constraints and continue the same thread;
-- explicitly start multi-lens discussion;
-- inspect member identity, provider, status, and permissions;
-- request Finalize to create a PRD draft;
-- continue, revise, or let the Owner confirm a revision.
-
-Only an Owner-confirmed revision is the canonical PRD. A synthesis, an agent
-summary, or verbal majority agreement does not replace Owner authority.
+Legacy modes retain their existing progression. Historical demonstrations show that legacy flow, not automatic free-discussion behavior.
 
 ## Move From PRD To Delivery
 

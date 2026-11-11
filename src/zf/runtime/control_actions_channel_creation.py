@@ -69,6 +69,7 @@ class ChannelCreationActionsMixin:
                 "channel_id": channel_id,
                 "name": name,
                 "channel_name": name,
+                "discussion_mode": str(payload.get("mode") or "libre_discuss"),
                 "creation_idempotency_key": str(payload.get("idempotency_key") or requested.id),
                 "creation_request_digest": hashlib.sha256(
                     json.dumps(payload, sort_keys=True).encode()

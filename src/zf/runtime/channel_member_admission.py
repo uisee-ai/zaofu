@@ -114,6 +114,8 @@ def complete_member_admission(service, *, requested, proposal, invited):
     if decision is None:
         decision = _record_decision(service, requested, proposal, "approved")
     channel = project_channel(service.state_dir, channel_id) or {}
+    if channel.get("discussion", {}).get("mode") == "libre_discuss":
+        return  # Admission alone never authorizes a conversation or review round.
     session = channel.get("discussions", {}).get(thread_id) or {}
     if not session:
         # The explicit admission is retained for the first formal discussion.

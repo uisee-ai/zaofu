@@ -17,8 +17,9 @@ PLAN_REPAIR_COMPLETED_EVENT = "kanban.agent.plan.repair.completed"
 PLAN_REPAIR_EXHAUSTED_EVENT = "kanban.agent.plan.repair.exhausted"
 PLAN_REQUEST_SCHEMA_VERSION = "kanban-plan-request.v3"
 PLAN_RESPONSE_SCHEMA_VERSION = "kanban-plan-response.v2"
-PLAN_DIRECT_APPLY_ACTIONS = frozenset({"channel-create-and-start"})
+PLAN_DIRECT_APPLY_ACTIONS = frozenset({"channel-create-and-start", "channel-create-from-template"})
 PLAN_CHANNEL_MODES = frozenset({
+    "libre_discuss",
     "conversation",
     "clarification",
     "multi_lens",
@@ -386,7 +387,7 @@ def plan_response_gate(
                 "answers": canonical_answers,
             }
 
-    if selected_submit_action == "channel-create-and-start":
+    if selected_submit_action in PLAN_DIRECT_APPLY_ACTIONS:
         channel_mode = str(
             selected_submit_payload.get("mode") or ""
         ).strip()

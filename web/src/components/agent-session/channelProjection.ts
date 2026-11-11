@@ -217,7 +217,11 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
     const role = recordString(message, "role") || (recordString(message, "member_id") ? "assistant" : "user");
     const messageId = recordString(message, "message_id") || recordString(message, "event_id") || `${threadId}-${messages.indexOf(message)}`;
     const rawText = recordString(message, "text") || recordString(message, "message") || recordString(message, "summary");
-    const text = role === "assistant" ? stripChannelResultHeading(rawText) : rawText;
+    const displayRefs = recordValue(message.refs);
+    const displayText = (role === "system" && displayRefs?.display_origin === "host_coordination")
+      || (role === "user" && displayRefs?.display_origin === "user_prd_request")
+      ? recordString(displayRefs, "display_text") || rawText : rawText;
+    const text = role === "assistant" ? stripChannelResultHeading(rawText) : displayText;
     const thread = ensureThread(threads, threadId);
     if (role === "assistant") {
       const refs = recordValue(message.refs);
@@ -264,7 +268,8 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
       turn.user = {
         id: messageId,
         role: role === "system" ? "system" : "user",
-        label: recordString(message, "member_id") || recordString(message, "actor") || (role === "system" ? "System" : "You"),
+        label: role !== "system" && detail?.discussion?.mode === "libre_discuss" && recordString(message, "member_id") === "operator"
+          ? "你" : recordString(message, "member_id") || recordString(message, "actor") || (role === "system" ? "System" : "You"),
         content: text,
         ts: recordString(message, "ts"),
         memberId: recordString(message, "member_id"),

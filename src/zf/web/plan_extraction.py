@@ -232,7 +232,7 @@ def normalize_plan_request(
     if not question_header:
         question_header = request_header
     discussion_seed = str(raw.get("discussion_seed") or "").strip()
-    if subject_type == "channel_setup" and not discussion_seed:
+    if subject_type == "channel_setup" and submit_action != "channel-create-from-template" and not discussion_seed:
         validation_errors.append(
             "channel_setup requires a clean discussion_seed"
         )
@@ -731,7 +731,11 @@ def _normalize_plan_submit_payload(
         )
     if action == "create-task":
         return normalize_channel_task_submit_payload(raw_payload)
-    if action == "channel-create-and-start":
+    if action in PLAN_DIRECT_APPLY_ACTIONS:
+        if action == "channel-create-and-start" and not raw_payload.get("mode"):
+            return {}, {}, "submit_payload.mode is required for legacy Channel startup"
+        if action == "channel-create-and-start" and raw_payload.get("mode") == "libre_discuss":
+            return {}, {}, "libre_discuss requires channel-create-from-template without automatic startup"
         return normalize_channel_setup_submit_payload(raw_payload, config=config)
     return {}, {}, f"unsupported Plan submit action: {action}"
 
@@ -768,7 +772,7 @@ def _plan_subject_type(
                 return "task_workflow"
             if action == "create-task":
                 return "task_create"
-    if submit_action == "channel-create-and-start":
+    if submit_action in PLAN_DIRECT_APPLY_ACTIONS:
         return "channel_setup"
     if submit_action == "create-task":
         return "task_create"
@@ -792,8 +796,8 @@ def _subject_action_error(
     if subject_type == "channel_setup":
         if mode == "continue" and not action:
             return ""
-        if mode != "apply" or action != "channel-create-and-start":
-            return "channel_setup only allows direct channel-create-and-start"
+        if mode != "apply" or action not in PLAN_DIRECT_APPLY_ACTIONS:
+            return "channel_setup only allows direct Channel creation"
     elif subject_type == "task_workflow":
         if mode == "continue" and not action:
             return ""
