@@ -46,7 +46,7 @@ def check_project(root):
             project_id = context.config.observability.controller.project_id
             policy = current_policy(config, credentials, transport, project_id)
             result = transport.request('POST', '/internal/v1/me/execution-readiness', {
-                'project_id': project_id, 'policy_version': policy['version'], 'mode': config.mode,
+                'project_id': project_id, 'policy_version': policy['version'], 'mode': config.effective_mode,
                 'price_version': config.price_version, 'tokens': config.request_tokens, 'money': config.request_money})
             if (result.get('protocol') != 'zfc.control.v1' or result.get('executable') is not True
                     or result.get('deployment_id') != credentials['deployment_id']
@@ -94,7 +94,15 @@ class Execution:
 
     def begin(self, cancel):
         try:
-            return self._begin(cancel)
+            from zf.core.state.locks import locked_path
+            from zf.integrations.controller.installation import Installation
+            from zf.integrations.controller.runtime_settings import applied
+            with locked_path(Installation(self.config).path / 'admission', timeout_seconds=15):
+                current = applied(self.config)
+                if any(getattr(current, key) != getattr(self.config, key) for key in
+                        ('effective_mode', 'mode_epoch', 'request_tokens', 'request_money', 'price_version', 'request_seconds')):
+                    raise ManagedDenied('runtime model access changed; retry admission')
+                return self._begin(cancel)
         except Exception:
             row = self.ledger.get(self.id)
             if row and 'started_at' not in self.body:
@@ -127,7 +135,7 @@ class Execution:
             try:
                 self.body['budget_request'] = {
                     'protocol': 'zfc.control.v1', 'request_id': self.id, 'operation_id': self.id,
-                    'project_id': self.body['project_id'], 'mode': self.config.mode,
+                    'project_id': self.body['project_id'], 'mode': self.config.effective_mode,
                     'provider': self.provider, 'model': self.model, 'policy_version': policy['version'],
                     'max_tokens': self.config.request_tokens, 'max_money': self.config.request_money,
                     'price_version': self.config.price_version, 'expires_in': self.config.request_seconds}
@@ -194,7 +202,7 @@ class Execution:
                          or (target.get('operation_id') and target['operation_id'] in {self.id, self.operation_id}))):
                 raise ManagedDenied('Session or Operation admission is closed')
 
-    def finish(self, usage, *, status, native_session='', accounting_mode='unknown', fresh_input=False):
+    def finish(self, usage, *, status, native_session='', accounting_mode='unknown', fresh_input=False, provider_error=None):
         from zf.core.events import EventWriter
         from zf.core.events.factory import event_log_from_project
 
@@ -215,6 +223,10 @@ class Execution:
         self.body.update(result=status, receipt=payload, finished_at=time.time(), native_session_id=native_session,
                          record_id=hashlib.sha256(
             (self.body['project_id'] + ':' + self.id).encode()).hexdigest())
+        from zf.integrations.controller.health import capture
+        capture(self.config.state_dir, self.credentials['deployment_id'], self.body['project_id'],
+                self.config.effective_mode, self.provider, status=status, error=provider_error,
+                observed_at=self.body['finished_at'], sample_id=self.id)
         # Save receipt before EventLog append so recovery can finish a crash in between.
         self.ledger.put(self.id, 'receipt_pending', self.body)
         log = event_log_from_project(self.context.state_dir, config=self.context.config)
@@ -288,10 +300,13 @@ def managed_turn(function):
         # Provider deadline and registry cancellation both bound a lost control channel.
         budget_deadline = time.monotonic() + max(0, execution.body['budget']['expires_at'] - time.time())
         values['execution_deadline'] = min(values.get('execution_deadline') or budget_deadline, budget_deadline)
-        result = None
+        result, provider_error = None, None
         try:
             result = function(self, *args, **values)
             return result
+        except Exception as exc:
+            provider_error = exc
+            raise
         finally:
             usage = dict(getattr(result, 'usage', {}) or {})
             native_id = getattr(result, 'provider_session_id', '') or execution.body.get('native_session_id', '')
@@ -306,7 +321,7 @@ def managed_turn(function):
                 usage = normalized['turn'] if normalized['mode'] == 'per_turn' else {}
             execution.finish(usage, status=getattr(result, 'status', 'unknown'),
                              native_session=native_id, accounting_mode=after.get('accounting_mode', 'unknown'),
-                             fresh_input=bool(native_usage))
+                             fresh_input=bool(native_usage), provider_error=provider_error or getattr(result, 'error', None))
             if result is not None:
                 # Preserve local cost counters; the aggregate Session event must not upload them twice.
                 result.usage['_controller_accounted'] = True

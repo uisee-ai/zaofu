@@ -31,7 +31,8 @@ class Collector:
         self.outbox = Outbox(state_dir, self.cloud)
 
     def __call__(self, event):
-        binding = self.outbox.binding_at(event.ts)
+        timestamp = (event.payload or {}).get('usage_timestamp') if event.type in {'agent.usage', 'controller.usage.receipt'} else None
+        binding = self.outbox.binding_at(timestamp or event.ts)
         if binding is None:
             # Pre-enrollment history has no proven deployment/mode binding. Do not relabel it.
             return
@@ -49,6 +50,11 @@ class Collector:
                 self._usage(event, attribution, binding)
         elif (event.type.startswith("agent.session.run.") and event.type.rsplit('.', 1)[-1] in {"started", "completed", "failed", "cancelled"}) or event.type in {"controller.execution.started", "controller.execution.finished"}:
             phase = event.type.rsplit('.', 1)[-1]
+            if phase in {'completed', 'failed', 'cancelled'} and not (data.get('usage') or {}).get('_controller_accounted'):
+                from zf.integrations.controller.health import capture
+                capture(self.state_dir, binding['deployment'], self.cloud.project_id, binding['mode'],
+                    identifier(data.get('provider') or data.get('backend')), status=phase,
+                    error=data.get('error'), observed_at=datetime.fromisoformat(event.ts).timestamp(), sample_id=event.id)
             if phase == "finished":
                 phase = "completed" if data.get("status") in {"completed", "not_started"} else "cancelled" if data.get("status") in {"cancelled", "stopped"} else "failed"
             session_id = identifier(data.get("thread_id") or data.get("provider_session_id"))

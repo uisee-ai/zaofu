@@ -196,3 +196,5 @@ uv run --extra dev --extra web --extra controller --with /path/to/zaofu-controll
 复现用临时基点 checkout 与隔离服务均清理；归档任务记录实现提交及分支。
 此批交付代码与本地联合验证，Q01 的生产集群/TLS/网络/沙箱、邮件 MFA、真实 CPA、
 备份恢复和容量验收仍待目标环境。未合并或推送。
+
+后续三项复盘补齐见 [205 审批开通、健康与集中配置](205-controller-policy-health-settings.md)。

@@ -66,4 +66,12 @@ def synchronize(context) -> dict:
             response = client.post('/internal/v1/me/batches', json={'protocol': 'zfc.telemetry.v1', 'records': batch})
             response.raise_for_status()
             collector.outbox.acknowledge(batch, response.json())
-    return {**collector.outbox.status(), 'collection_deferred': deferred}
+        from types import SimpleNamespace
+        from zf.integrations.controller.health import deliver
+        def request(method, path, body):
+            response = client.request(method, path, json=body)
+            response.raise_for_status()
+            return response.json()
+        health_failures = deliver(context.state_dir, SimpleNamespace(request=request))
+    return {**collector.outbox.status(), 'collection_deferred': deferred,
+            'health_delivery_failures': health_failures}

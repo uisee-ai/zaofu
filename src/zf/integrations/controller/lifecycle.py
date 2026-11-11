@@ -75,6 +75,8 @@ def resume(config):
 
 
 def unenroll(config):
+    from zf.integrations.controller.runtime_settings import applied
+    config = applied(config)
     import httpx2
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import padding
@@ -123,7 +125,7 @@ def unenroll(config):
                  'ZF_CONTROLLER_DEPLOYMENT_ID', 'ZF_CONTROLLER_ISSUER', 'ZF_CONTROLLER_URL', 'ZFC_WORKSPACE_ID'):
         os.environ.pop(name, None)
     for name in list(os.environ):
-        if name.startswith(('ZF_CPA_', 'CPA_')) or (config.mode == 'managed_cpa' and name in {'OPENAI_API_KEY', 'ANTHROPIC_API_KEY'}):
+        if name.startswith(('ZF_CPA_', 'CPA_')) or (config.effective_mode == 'managed_cpa' and name in {'OPENAI_API_KEY', 'ANTHROPIC_API_KEY'}):
             os.environ.pop(name, None)
     return {'status': 'unenrolled', 'management': 'standalone', 'local_data': 'retained'}
 
@@ -155,9 +157,12 @@ def serve(config, *, host, port, ssl_keyfile=None, ssl_certfile=None):
         app = create_app(config.state_dir, project_root=config.path.parent, default_project_enabled=False)
         def synchronize():
             from zf.core.config.controller_workspace import load_controller_workspace
-            while not stop.wait(config.interval_seconds):
+            from zf.integrations.controller.runtime_settings import applied
+            interval = applied(config).interval_seconds
+            while not stop.wait(interval):
                 try:
                     synchronize_workspace(load_controller_workspace(config.path))
+                    interval = applied(load_controller_workspace(config.path)).interval_seconds
                 except Exception:
                     # Access/admission independently fail closed; pending receipts are durable.
                     pass

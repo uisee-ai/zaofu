@@ -66,6 +66,7 @@ def run_workspace(args) -> int:
             if not args.watch:
                 return 1
         try:
-            time.sleep(config.interval_seconds)
+            from zf.integrations.controller.runtime_settings import applied
+            time.sleep(applied(config).interval_seconds)
         except KeyboardInterrupt:
             return 0

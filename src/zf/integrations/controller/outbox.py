@@ -31,8 +31,11 @@ class Outbox:
                   UNIQUE(origin_id, wire_seq));
                 CREATE TABLE IF NOT EXISTS samples(series TEXT PRIMARY KEY, sequence INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS bindings(deployment TEXT PRIMARY KEY, mode TEXT NOT NULL, started REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS mode_epochs(deployment TEXT NOT NULL, mode TEXT NOT NULL,
+                  started REAL NOT NULL, PRIMARY KEY(deployment, started));
                 CREATE TABLE IF NOT EXISTS capacity(id TEXT PRIMARY KEY, records INTEGER NOT NULL, bytes INTEGER NOT NULL);
             ''')
+            db.execute('INSERT OR IGNORE INTO mode_epochs SELECT deployment,mode,started FROM bindings')
             db.execute("INSERT OR IGNORE INTO metadata VALUES ('stream_id', ?)", (str(uuid.uuid4()),))
             for key in ("workspace_id", "project_id"):
                 existing = db.execute("SELECT value FROM metadata WHERE key=?", (key,)).fetchone()
@@ -43,11 +46,17 @@ class Outbox:
             binding = db.execute("SELECT * FROM bindings ORDER BY started DESC LIMIT 1").fetchone()
             if binding is not None and binding['deployment'] == config.deployment_id:
                 if binding['mode'] != config.mode:
-                    raise ValueError("changing accounting mode requires a new deployment binding")
+                    epoch = getattr(config, '_mode_epoch', 0)
+                    latest = db.execute('SELECT MAX(started) FROM mode_epochs WHERE deployment=?', (config.deployment_id,)).fetchone()[0]
+                    if not epoch or epoch <= latest or db.execute('SELECT 1 FROM capacity LIMIT 1').fetchone():
+                        raise ValueError("changing accounting mode requires a drained, applied policy boundary")
+                    db.execute('INSERT INTO mode_epochs VALUES (?,?,?)', (config.deployment_id, config.mode, epoch))
+                    db.execute('UPDATE bindings SET mode=? WHERE deployment=?', (config.mode, config.deployment_id))
             else:
                 if db.execute("SELECT 1 FROM bindings WHERE deployment=?", (config.deployment_id,)).fetchone():
                     raise ValueError("retired deployment cannot reclaim an outbox")
                 db.execute("INSERT INTO bindings VALUES (?,?,?)", (config.deployment_id, config.mode, time.time()))
+                db.execute('INSERT INTO mode_epochs SELECT deployment,mode,started FROM bindings WHERE deployment=?', (config.deployment_id,))
         os.chmod(self.path, 0o600)
 
     @contextmanager
@@ -67,8 +76,12 @@ class Outbox:
         if occurred.tzinfo is None:
             raise ValueError("source timestamp must include a timezone")
         with self.connect() as db:
-            row = db.execute("SELECT * FROM bindings WHERE started<=? ORDER BY started DESC LIMIT 1", (occurred.timestamp(),)).fetchone()
+            row = db.execute("SELECT * FROM mode_epochs WHERE started<=? ORDER BY started DESC LIMIT 1", (occurred.timestamp(),)).fetchone()
         return dict(row) if row else None
+
+    def has_reservations(self):
+        with self.connect() as db:
+            return db.execute('SELECT 1 FROM capacity LIMIT 1').fetchone() is not None
 
     def enqueue(self, source_key: str, occurred_at: str, payload: dict, *, sample_series: str = "", origin_id: str = "", baseline_first: bool = False) -> bool:
         with self.connect() as db:

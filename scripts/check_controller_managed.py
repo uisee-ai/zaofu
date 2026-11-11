@@ -32,13 +32,21 @@ def qualify_managed(app, owner, workspace, path, raw, codex):
     previous = app.state.commands.policy(owner, workspace)
     app.state.commands.update_policy(owner, workspace, PolicyInput(request_id='managed-qualification',
         version=previous['version'], reason='disposable managed runtime qualification', management='managed',
-        projects=raw['workspace']['controller']['projects'], capabilities=['observe', 'commands', 'budget', 'gateway']))
+        projects=raw['workspace']['controller']['projects'], capabilities=['observe', 'commands', 'budget', 'gateway'],
+        runtime_settings=dict(protocol='zfc.runtime-settings.v1', interval_seconds=3, batch_size=32,
+            diagnostic_sample_rate=0.0, mode='self_managed_cli', request_tokens=32768,
+            request_money='0', price_version='unknown', request_seconds=300)))
     raw['workspace']['controller'].update(management='managed', gateway_origin='https://workspace.example.test',
                                          request_seconds=300, request_tokens=32768)
     path.write_text(yaml.safe_dump(raw))
     config = load_controller_workspace(path)
     bind(config)
     synchronize_workspace(config)
+    from zf.integrations.controller.runtime_settings import applied
+    config = applied(config)
+    assert config.interval_seconds == 3 and config.batch_size == 32
+    accepted = app.state.commands.policy(owner, workspace)
+    assert accepted['applied_version'] == accepted['version'] and not accepted['applied_error']
     credentials = Installation(config).credentials()
     contexts = project_contexts(config, credentials, config.projects)
     binding = config, credentials, contexts[0]
@@ -72,6 +80,9 @@ def qualify_managed(app, owner, workspace, path, raw, codex):
         synchronized = synchronize_workspace(config)
         time.sleep(.1)
     assert synchronized['unresolved_executions'] == 0, synchronized
+    assert synchronized['health_delivery_failures'] == 0
+    health = app.state.budget_support.health(owner, workspace_id=workspace)
+    assert any(row['status'] == 'healthy' and row['payload']['mode'] == 'self_managed_cli' for row in health)
     rows = Ledger(config.state_dir).rows('execution')
     assert all(row['status'] in {'settled', 'not_started'} for row in rows), [(r['status'], r['body'].get('result')) for r in rows]
     with app.state.access.engine.begin() as c:
@@ -98,6 +109,7 @@ def qualify_managed(app, owner, workspace, path, raw, codex):
     synchronize_workspace(config)
     assert app.state.observations.overview(owner, workspace_id=workspace)['usage'] == before
     return {'status': 'passed', 'native_session_id': native, 'settled_tokens': counted,
-            'billed_cost_usd': None, 'verified': ['shared slots across projects', 'per-call reservation',
+            'billed_cost_usd': None, 'verified': ['applied runtime settings digest', 'durable runtime provider health',
+                'shared slots across projects', 'per-call reservation',
                 'native receipt settlement' if codex else 'fixture receipt settlement', 'replay deduplication', 'quota exhaustion before provider start'],
             'deferred': ['production gateway/TLS/sandbox/network', 'human email registration']}

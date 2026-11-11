@@ -69,7 +69,8 @@ def managed_config():
     installation = Installation(config)
     if json.loads(private_read(installation.path / 'managed.json')) != pin:
         raise ManagedDenied('managed installation pin is missing or inconsistent')
-    return config
+    from zf.integrations.controller.runtime_settings import applied
+    return applied(config)
 
 
 def project_binding(root: Path):

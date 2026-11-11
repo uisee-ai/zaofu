@@ -343,13 +343,13 @@ def main():
         compose = folder / 'compose.yaml'
         compose.write_text(yaml.safe_dump({'services': {
             'postgres': {'image': 'postgres:17', 'env_file': [str(folder / 'postgres.env')],
-                'ports': [f'127.0.0.1:{pg_port}:5432'], 'mem_limit': '256m',
+                'network_mode': 'host', 'command': ['postgres', '-c', f'port={pg_port}', '-c', 'listen_addresses=127.0.0.1'], 'mem_limit': '256m',
                 'tmpfs': ['/var/lib/postgresql/data']},
             'keycloak': {'image': 'quay.io/keycloak/keycloak:26.8.2',
-                'ports': [f'127.0.0.1:{kc_port}:8080'], 'mem_limit': '768m',
+                'network_mode': 'host', 'mem_limit': '768m',
                 'environment': {'JAVA_OPTS_KC_HEAP': '-Xms64m -Xmx256m'},
                 'env_file': [str(folder / 'keycloak.env')],
-                'command': ['start-dev', '--health-enabled=false']}}}))
+                'command': ['start-dev', '--health-enabled=false', '--http-host=127.0.0.1', f'--http-port={kc_port}']}}}))
         command = ['docker', 'compose', '-p', project, '-f', str(compose)]
         try:
             subprocess.run([*command, 'up', '-d'], check=True, capture_output=True, timeout=90)

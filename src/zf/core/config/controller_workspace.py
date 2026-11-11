@@ -33,6 +33,13 @@ class ControllerWorkspaceConfig:
     request_seconds: int = 3600
     hosting: str = 'external'
     project_root: Path | None = None
+    allowed_modes: tuple[str, ...] = ()
+    runtime_mode: str | None = None
+    mode_epoch: float = 0
+
+    @property
+    def effective_mode(self):
+        return self.runtime_mode or self.mode
 
     def target(self) -> dict:
         return {"endpoint": self.endpoint, "issuer": self.issuer,
@@ -65,6 +72,7 @@ def load_controller_workspace(path: Path) -> ControllerWorkspaceConfig:
         "receipt_retention_seconds",
         "request_seconds",
         "hosting", "project_root",
+        "allowed_modes",
     })
     management = cloud.get('management')
     if management not in {'observed', 'managed'}:
@@ -94,6 +102,11 @@ def load_controller_workspace(path: Path) -> ControllerWorkspaceConfig:
     mode = cloud.get("mode", "self_managed_cli")
     if mode not in {"self_managed_cli", "self_managed_api", "managed_cpa", "unknown"}:
         raise ValueError("invalid model access mode")
+    allowed_modes = cloud.get('allowed_modes', [mode])
+    if (not isinstance(allowed_modes, list) or not allowed_modes or mode not in allowed_modes
+            or len(set(allowed_modes)) != len(allowed_modes)
+            or any(m not in {'self_managed_cli', 'self_managed_api', 'managed_cpa', 'unknown'} for m in allowed_modes)):
+        raise ValueError('invalid locally consented model access modes')
     hosting = cloud.get('hosting', 'external')
     if hosting not in {'external', 'cloud'} or (hosting == 'cloud' and management != 'managed'):
         raise ValueError('invalid hosting or management combination')
@@ -131,4 +144,5 @@ def load_controller_workspace(path: Path) -> ControllerWorkspaceConfig:
                                      cloud["workspace_id"], tuple(projects), mode, development,
                                      management=management, gateway_origin=cloud.get('gateway_origin', ''),
                                      request_money=money, price_version=price, hosting=hosting,
+                                     allowed_modes=tuple(allowed_modes),
                                      project_root=Path(project_root) if project_root else None, **limits)

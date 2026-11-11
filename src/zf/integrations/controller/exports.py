@@ -87,7 +87,7 @@ def build_export(config, credentials, contexts, job):
     secrets = [credentials['client_secret'].encode()]
     secrets.extend(value.encode() for name, value in os.environ.items() if len(value) >= 8 and (
         name.startswith(('ZF_CONTROLLER_', 'ZF_CPA_', 'CPA_')) and name.endswith(('SECRET', 'TOKEN', 'KEY'))
-        or config.mode == 'managed_cpa' and name in {'OPENAI_API_KEY', 'ANTHROPIC_API_KEY'}))
+        or config.effective_mode == 'managed_cpa' and name in {'OPENAI_API_KEY', 'ANTHROPIC_API_KEY'}))
     try:
         fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, 'wb') as stream:

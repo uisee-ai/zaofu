@@ -38,7 +38,7 @@ def run_provider(command, *, backend, state_dir=None, model='', runner=None,
             except ProcessLookupError:
                 pass
     execution = Execution(binding, operation_id='', provider=backend, model=model).begin(cancel)
-    result, usage, native = None, {}, ''
+    result, usage, native, provider_error = None, {}, '', None
     args = list(command)
     if plain_output:
         if backend == 'codex':
@@ -64,6 +64,8 @@ def run_provider(command, *, backend, state_dir=None, model='', runner=None,
                 event = json.loads(line)
             except ValueError:
                 continue
+            if event.get('type') in {'error', 'turn.failed'} or event.get('is_error'):
+                provider_error = event.get('error') or {'code': event.get('subtype', 'unknown')}
             if event.get('type') == 'thread.started':
                 native = event.get('thread_id', '')
             if event.get('type') in {'turn.completed', 'result'}:
@@ -76,4 +78,7 @@ def run_provider(command, *, backend, state_dir=None, model='', runner=None,
         return result
     finally:
         cancel()
-        execution.finish(usage, status='completed' if result and result.returncode == 0 else 'unknown', native_session=native)
+        if result and result.returncode and not provider_error:
+            provider_error = result.stderr.decode(errors='replace') if isinstance(result.stderr, bytes) else result.stderr
+        execution.finish(usage, status='completed' if result and result.returncode == 0 and not provider_error else 'unknown',
+                         native_session=native, provider_error=provider_error)
