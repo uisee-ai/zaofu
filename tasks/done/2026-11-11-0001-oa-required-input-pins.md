@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现 commit：`137780d9 feat: pin required OA inputs before manifest publication`。本批候选 1+2 均已完成；未扩展 delta/公共正文语义裁剪。
 
 # OA 必读输入 pin 与完整页交付方法对齐
 
