@@ -740,6 +740,10 @@ def _emit_attempt_exhausted(
 
 
 def _transport_failure_policy(error: BaseException) -> tuple[str, bool]:
+    from zf.runtime.provider_interaction import ProviderInteractionRequired
+
+    if isinstance(error, ProviderInteractionRequired):
+        return "transport_interaction", False
     if isinstance(error, PermissionError):
         return "transport_permission", False
     if isinstance(error, FileNotFoundError):

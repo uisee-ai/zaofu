@@ -329,3 +329,34 @@ Channel 为13来源AC→7任务AC，Kanban为8来源AC/9场景；1280/375阅读�
 载体和文件分配留给Plan；E2E明确当前只写PRD，原始产品中的Plan目标由后续Workflow生成。
 这不修改原始产品输入，也不放宽全图文件独占。83项聚焦、53项sentinel、TypeScript及
 journey policy检查通过，继续单独重跑受影响的多任务样本；前两轮保留其实际98073bd6版本。
+
+### 多任务返工与 Provider 弹窗阻塞（66d194a1）
+
+多任务第三轮已修正 PRD 的文件时点：每片用法载体由 Plan 分配，README 只要求最终交付，
+没有提前生成手工 Plan。真实 Planner 产出 T-READ、T-SIZE 两个任务，各4项AC；首片写
+`docs/usage/read-file.md`，后片独占 `README.md`，全图写入路径不重叠。首片验证不消费
+后续 SIZE 产物；后片复验两入口。独立 Critic 首轮正确发现正文四项决定与 Task Map
+空登记不一致及一处来源ID笔误，自动返工后两任务内容不变、四项登记和来源ID已修正。
+
+第二轮 Critic 未实际启动：14:14:01 UTC 投递时，Provider 的“Approaching rate limits”
+选择器接收了 Enter；transcript 在同一时刻记录模型改为 `gpt-6-luna`，没有新 task_started，
+而账本仍记录 task.attempt.sent。Planner 窗口保留同型换模型弹窗，Provider 使用记录为95%。
+操作者保留证据后停止失效样本：browser137、body incomplete、audit not_run。
+这是投递与交互状态问题，不能算模型推理慢，也不是已触发硬配额拒绝的证据。
+
+针对已复现形态，在实际 TmuxTransport 发送入口检查当前可见的 Codex 换模型选择器，
+发现时不发送任何输入、不选择模型；TaskAttempt 记录 transport_interaction、不可自动重试、
+recovery_owner=human。普通低用量提示和历史选择器文本不触发。此保护是窄范围修正，
+不承诺识别所有 Provider 弹窗，也未解决检查后才出现弹窗的竞态。
+
+完成边界：Channel/Kanban 小例的真实通过来自98073bd6；多任务候选来自66d194a1，
+只完成静态/语义取证及首轮评审返工，最终审批与两模块 Web Preview 未验证。需要在
+Provider 用量恢复或操作者明确处理选择器、保持约定模型后，用最新提交重新执行多任务
+真实样本。不得以重放候选、静态解析或 fake E2E 代替这项真实通过。任务继续 active。
+
+最终弹窗补修验证：modal-tests.log 103 passed；modal-closure-tests.log 41 passed/1 deselected；
+modal-sentinel.log 53 passed；modal-flow-smoke.log 10 passed。计数存在覆盖交叉，不相加。
+dev-verify 对该补丁选择277测试文件并提升全量；未执行全量pytest/serial，
+modal-verify-receipt.json明确记录skip，以上述传输、实际dispatch、TaskAttempt、恢复、
+fanout、v5启动及mock验证闭包替代。没有在新增补丁后重新运行真实Provider。
+多任务临时project/workspace已归档、摘要验证并清理；8003已释放，8001未操作。

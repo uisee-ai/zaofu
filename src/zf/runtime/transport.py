@@ -458,11 +458,22 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             setattr(err, "dead_reason", dead_reason)
             raise err
         self._assert_expected_cwd(role_name)
+        backend = context.backend if context else self.pane_current_command(role_name).strip()
+        if backend == "codex":
+            from zf.runtime.provider_interaction import (
+                ProviderInteractionRequired, has_codex_model_switch_prompt,
+            )
+
+            capture = getattr(self.tmux, "capture_pane", None)
+            if callable(capture) and has_codex_model_switch_prompt(capture(role_name, lines=0)):
+                raise ProviderInteractionRequired(
+                    f"refusing to send task to {role_name}: Codex model-switch prompt "
+                    "requires operator interaction; no input was sent"
+                )
         clear_input = getattr(self.tmux, "clear_input", None)
         if callable(clear_input):
             clear_input(role_name)
         paste = getattr(self.tmux, "send_paste", None)
-        backend = context.backend if context else self.pane_current_command(role_name).strip()
         if backend == "codex" and callable(paste):
             paste(role_name, prompt)
             return
