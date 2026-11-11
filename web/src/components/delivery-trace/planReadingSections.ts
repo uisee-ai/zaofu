@@ -9,7 +9,7 @@ const titles = {
   decisions: /^(?:decision register|owner 决策项|待决事项|决定登记|决策登记)/i,
 };
 export type ReadingSection = ReturnType<typeof planDocumentSections>[number];
-const sharedTitle = /^Shared Spec(?:\s*[：:].*)?$/;
+const sharedTitle = /^(?:Shared Spec|共享 Task Spec)(?:\s*[：:].*)?$/;
 export function planReadingSections(markdown: string) {
   const sections = planDocumentSections(markdown);
   const select = (pattern: RegExp) => sections.flatMap((section, index) => {
@@ -18,7 +18,15 @@ export function planReadingSections(markdown: string) {
     while (end < sections.length && sections[end].level > section.level) end++;
     return [{ ...section, content: sections.slice(index, end).map(s => s.content).join("") }];
   });
-  return { overview: select(titles.overview), journeys: select(titles.journeys), pages: select(titles.pages), decisions: select(titles.decisions) };
+  // A heading's wording cannot prove it is an approval summary. Offer the
+  // first chapter only as a labelled quotation, never as inferred authority.
+  const firstChapter = sections.findIndex(section => section.level === 2);
+  const first = sections[firstChapter];
+  let end = firstChapter + 1;
+  while (end < sections.length && sections[end].level > 2) end++;
+  const opening = first && !/^Task Spec:/.test(first.title) && !sharedTitle.test(first.title)
+    ? [{ ...first, content: sections.slice(firstChapter, end).map(section => section.content).join("") }] : [];
+  return { opening, overview: select(titles.overview), journeys: select(titles.journeys), pages: select(titles.pages), decisions: select(titles.decisions) };
 }
 
 /** Exact author-owned Task IDs only; headings inside fences are excluded by the AST. */

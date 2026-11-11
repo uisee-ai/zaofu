@@ -76,7 +76,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
           {!loading && view === "overview" && <>
             <h2>本次交付与审批范围</h2>
             <p>{model.modules.length} 个任务 · {model.criterionCount} 个验收项 · {model.pageCount ?? "未提供"} 个页面 · {model.formCount ?? "未提供"} 类表单</p>
-            {model.overview ? <MarkdownText key={`overview:${model.overview}`} content={model.overview} /> : quoted(excerpts.overview)}
+            {model.overview ? <MarkdownText key={`overview:${model.overview}`} content={model.overview} /> : excerpts.overview.length ? quoted(excerpts.overview) : <>{excerpts.opening.length > 0 && <p className="muted">作者未声明独立概览；以下引用原文开篇，不推断审批结论。</p>}{quoted(excerpts.opening)}</>}
             <h3>业务旅程</h3>
             {model.journeys ? <MarkdownText key={`journeys:${model.journeys}`} content={model.journeys} /> : quoted(excerpts.journeys.length ? excerpts.journeys : excerpts.pages)}
             <details className="plan-review-card"><summary>完整交付目标（含工程约束）</summary>{model.goals.map((goal, i) => <p key={i}><strong>{text(goal.id)}</strong> {text(goal.statement)}</p>)}</details>

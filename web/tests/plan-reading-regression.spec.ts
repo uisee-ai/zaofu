@@ -172,3 +172,16 @@ for (const width of [1280, 375]) test(`${width}px real Chinese author headings p
     await page.unrouteAll({ behavior: "wait" });
   }
 });
+
+for (const width of [1280, 375]) test(`${width}px unfamiliar opening is an explicit quotation, not an inferred approval summary`, async ({ page, request }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const markdown = "# Plan\n## 权威、来源和授权\n候选仍等待 Owner 决定。\n### 来源\n保留来源原文。\n## PRD 用户结果\n原始字节不变。\n## Task Spec: RL-READING\n不能冒充概览的本片正文。\n";
+  const dialog = await openLive(page, request, markdown, false);
+  await expect(dialog.getByText("作者未声明独立概览；以下引用原文开篇，不推断审批结论。", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("候选仍等待 Owner 决定。", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("保留来源原文。", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("不能冒充概览的本片正文。", { exact: true })).toHaveCount(0);
+  expect(await dialog.locator(".plan-review-scroll").evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await dialog.getByRole("button", { name: "在完整原文中阅读：权威、来源和授权", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "权威、来源和授权", exact: true })).toBeInViewport();
+});

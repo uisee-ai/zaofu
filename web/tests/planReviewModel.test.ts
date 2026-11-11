@@ -180,3 +180,13 @@ const channelHeadings = "## authority 与产品规格（PRD）\n目标。\n## Sh
 assert.equal(planReadingSections(channelHeadings).overview.length, 1);
 assert.equal(planTaskSpecifications(channelHeadings, ["CLI-001"]).shared.length, 1);
 assert.equal(planTaskSpecifications(channelHeadings, ["CLI-001"]).unassigned.length, 1);
+
+const unfamiliarOpening = "## 权威、来源和授权\n等待 Owner。\n### 来源\n保留原文。\n```md\n## 伪标题\n```\n## Task Spec: T1\n本片。\n";
+assert.equal(planReadingSections(unfamiliarOpening).overview.length, 0);
+assert.equal(planReadingSections(unfamiliarOpening).opening[0].content, unfamiliarOpening.slice(0, unfamiliarOpening.indexOf("## Task Spec:")));
+assert.equal(planReadingSections("## Task Spec: T1\n仅本片。\n").opening.length, 0);
+assert.equal(planReadingSections("# 无二级章节\n原文。\n").opening.length, 0);
+assert.equal(planReadingSections("## 共享 Task Spec\n共享。\n").opening.length, 0);
+assert.equal(planTaskSpecifications("## 共享 Task Spec\n共同条件。\n", []).shared[0].content, "## 共享 Task Spec\n共同条件。\n");
+assert.equal(planDecisionView({ id: "D-001", proposed_resolution: "仍需 Owner 决定" }).resolution, "仍需 Owner 决定");
+assert.equal(planDecisionView({ resolution: "作者结论", proposed_resolution: "候选" }).resolution, "作者结论");
