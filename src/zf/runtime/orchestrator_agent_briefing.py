@@ -269,6 +269,7 @@ def build_orchestrator_agent_operation_briefing(
         "",
         "Consume every items[].content in each tool response; follow --cursor <next_cursor> "
         "until null. Finish consuming one page before requesting the next. "
+        "Return each raw page unchanged; do not filter fields or batch pages into a summary. "
         "Use --page-bytes 2048 if a response is truncated and reread the missing page. "
         "Do not replace bodies with counters, summaries, or background capture_output loops. "
         "CLI read receipts prove production, not model delivery or understanding. "
