@@ -160,3 +160,23 @@ assert.equal(handoff.tasks.T1.content.includes("必须恢复"), false);
 assert.equal(handoff.unassigned.length, 1);
 assert.equal(handoff.unassigned[0].content.includes("必须恢复原权限"), true);
 assert.equal(handoff.unassigned[0].content.includes("别片"), false);
+
+// Actual serialized Channel decisions previously rendered blank IDs and bodies.
+import realDecisions from "./fixtures/spec206-real-decisions.json" with { type: "json" };
+import { planDecisionView } from "../src/components/delivery-trace/planDecisionView.js";
+const ownerDecision = planDecisionView(realDecisions.items[4]);
+assert.equal(ownerDecision.id, "DL-05");
+assert.equal(ownerDecision.question, realDecisions.items[4].decision);
+assert.equal(ownerDecision.deadline, "创建/派发 CLI-001 之前");
+assert.equal(ownerDecision.sources[0], realDecisions.items[4].source_ref);
+assert.equal(ownerDecision.closure, realDecisions.items[4].closure_evidence);
+assert.equal(decisionStatusDistribution(realDecisions.items).includes("decided_source 4"), true);
+const aliased = planDecisionView({ decision_id: "A", id: "B", question: "Q", decision: "D", options: ["one", { label: "two" }, null], resolution: "still needs verification", evidence_refs: ["x"], source_ref: "x" });
+assert.equal(aliased.id, "A");
+assert.equal(aliased.options.join(), "one,two");
+assert.equal(aliased.sources.length, 1);
+assert.equal(aliased.resolution, "still needs verification");
+const channelHeadings = "## authority 与产品规格（PRD）\n目标。\n## Shared Spec：技术设计（SDD，CLI-CONTRACT-v1）\n规则。\n## Task Spec: CLI-001\n本片。\n";
+assert.equal(planReadingSections(channelHeadings).overview.length, 1);
+assert.equal(planTaskSpecifications(channelHeadings, ["CLI-001"]).shared.length, 1);
+assert.equal(planTaskSpecifications(channelHeadings, ["CLI-001"]).unassigned.length, 1);

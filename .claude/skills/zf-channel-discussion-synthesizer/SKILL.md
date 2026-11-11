@@ -208,6 +208,10 @@ Criteria；Dependencies、Assumptions、Risks and Open Questions。需要上线�
 保留原始需求的必要条款，已有长篇来源可按 composition 方法保留；不以固定字数删需求。
 新 Owner 决定进入 decision_log；原文既定事实按来源覆盖引用，不重复包装成新裁定。
 签收进展、审批和演练执行记录归 readiness 或后续运行证据，不重复塞进产品正文。
+提交前按行为 ID 检查 user_stories / requirements / NFR / success_metrics / AC：
+同一条件与反例只在最适合的权威条款展开，其余给出稳定引用及本层责任。
+不要把每个失败场景再扩写成五份目录；路径与原因、清理顺序、失败不变项等必要反例不能删。
+正文自读可理解，完整同版目录继续保留；同时检查最终导出体积，不能只统计 prd_markdown。
 
 准确性靠原文对照，完整性靠动态清单逐项核验，一致性靠交叉质询与反例，角色覆盖靠
 职责与缺口判断，可实施性靠可执行验收。不得凭 digest 齐全或自评分宣布高质量。

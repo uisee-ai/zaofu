@@ -54,6 +54,7 @@ def test_create_and_partial_update_preserve_task_contract_lineage(
         "title": "Implement the canonical PRD",
         "contract": {
             "behavior": "Implement the approved requirement.",
+            "constraints": ["实施必须等待 Owner 审批", "Python 3.11 标准库"],
             "verification": "Run the acceptance contract.",
             "spec_ref": "channel-artifacts/ch-prd/prd.md",
             "source_ref": "channel:ch-prd/main",
@@ -74,6 +75,7 @@ def test_create_and_partial_update_preserve_task_contract_lineage(
     store = TaskStore(state_dir / "kanban.json")
     task = store.get("TASK-LINEAGE")
     assert task is not None
+    assert task.contract.constraints == ["实施必须等待 Owner 审批", "Python 3.11 标准库"]
     assert task.contract.spec_ref == "channel-artifacts/ch-prd/prd.md"
     assert task.contract.source_ref == "channel:ch-prd/main"
     assert task.contract.handoff_artifacts == [
@@ -97,6 +99,10 @@ def test_create_and_partial_update_preserve_task_contract_lineage(
     assert refreshed is not None
     assert refreshed.contract.behavior.startswith("Implement and document")
     assert refreshed.contract.spec_ref == task.contract.spec_ref
+    assert refreshed.contract.constraints == task.contract.constraints
+    from zf.runtime.workflow_request_acceptance import bind_task_workflow_inputs
+    parameters, _, _, _ = bind_task_workflow_inputs({}, refreshed, task_contract_digest="test")
+    assert parameters["constraints"] == task.contract.constraints
     assert refreshed.contract.source_ref == task.contract.source_ref
     assert refreshed.contract.handoff_artifacts == task.contract.handoff_artifacts
     assert refreshed.contract.evidence_contract == task.contract.evidence_contract

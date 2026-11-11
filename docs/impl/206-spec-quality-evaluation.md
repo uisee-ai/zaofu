@@ -239,3 +239,23 @@ reports/spec206-delivery-20261111/evaluation.md；原始隔离证据归档在 /t
 缓存、非缓存、输出及 Headless 分列，未换算账单。Judge 仍收到 38 段、30 必读，
 后续不能仅凭“thin”命名推断上下文成本。三项后续候选保留在本地 backlogs/，未批准、
 未实施；本批完成评估不代表 Channel 阻塞已解决。
+
+
+## 第二批真实生成问题的修正（2026-11-11）
+
+Task 唯一合同增加来源声明的 `constraints`，创建、更新、持久化及 Task→Workflow Requirement
+均保留；没有条件时不补造审批。历史空输入摘要保持原形，来源直引/配置审批保护继续生效。
+条件不是权限，最终 YAML 仍由来源绑定的语义选择与受控装配产生。
+
+Preview 兼容真实决定中的 id/decision/source_ref/latest_use_point/closure_evidence，
+保留作者的未知状态与待履行义务。Shared Spec 带说明标题仍可定位；源文不重写。
+方法要求实际序列化后的模块正文分区、优先级/mandatory 对账、具体 RED/GREEN 和义务关闭点。
+校准反例见 [最终包校准](../../tests/fixtures/spec_handoff_eval/calibration-final-package.md)，
+多任务输入见 [共享只读产品](../../tests/fixtures/spec_handoff_eval/shared-readme-product.md)。
+
+任意 Python shell 写入仍采用保守防护；生成工件改用明确路径的 Write/apply_patch，
+不因引文包含项目路径而放宽范围或例外。长实测分开记录主体、退出、只读审计及录制完整性；
+真实长旅程默认截图和事件取证，不持续录制。主体完成不覆盖测试退出失败，ZIP 截断算基础设施失败。
+
+本批实际结果与成本数据记录在 gitignored `reports/spec206-optimization-20261111/`。
+方法交付、真实生成质量和实施后产品验证分别报告，Plan Preview 验证不授权实施。

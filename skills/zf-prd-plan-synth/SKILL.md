@@ -233,7 +233,7 @@ For the standard PRD Plan, apply `zf-plan-execution-readiness` and its
 user goals, scope/conditional scope, phase outcomes and owner decisions;
 follow with module specifications and concrete acceptance scenarios. Keep
 engineering repair history in appendices. When execution_spec is already
-used, place shared reading material in `shared.human_review` and module
+used, populate its existing human_review fields before submission: place shared reading material in `shared.human_review` and module
 specifications/scenarios in each existing `tasks[].body.human_review`.
 Preserve canonical task/AC/command IDs and bind these artifacts in the same
 Plan Package. The configured reviewer checks semantic consistency; the UI only renders the bound
@@ -251,6 +251,12 @@ its own empty action-question list must not be used as the product register.
 Neither a page count nor repeated RED/GREEN prose proves clause
 coverage. Never rewrite admitted artifacts to improve presentation.
 
+For artifact writes containing source paths, prefer native Write/apply_patch with explicit
+workdir-relative targets. The shell guard cannot distinguish arbitrary Python data
+from writes. If rejected, inspect the target and use the explicit-target tool; never
+weaken the guard, splice paths to evade it, or edit canonical runtime state. Use only
+the current Kernel-declared result scratch for result submission.
+
 ## Task Design
 
 Apply `zf-plan-execution-readiness/references/task-spec-slices.md` to the
@@ -260,7 +266,9 @@ failure invariants, entrypoint and independent acceptance responsibility.
 Use the existing execution_spec reading partition, or exact
 `## Task Spec: <task_id>` sections in the accepted Markdown with optional
 `## Shared Spec` for shared contracts. This is a reading convention, not a
-second Task schema. Reconcile serialized decisions, examples and matrix rows;
+second Task schema. A single-task module still excludes the shared overview and global register.
+Task-local setup, cleanup, RED/GREEN assertions and independent handoff belong inside
+that module or point to exact shared clauses. Reconcile serialized decisions, examples and matrix rows;
 template presence is not a semantic verdict. Keep known findings and their
 disposition in the existing review artifact across bounded rework.
 

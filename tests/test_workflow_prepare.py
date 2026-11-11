@@ -65,11 +65,14 @@ def _create_payload():
     }
 
 
-def test_kanban_create_prepares_without_start_or_config_write(tmp_path, monkeypatch):
+@pytest.mark.parametrize("conditions", [[], ["完整 Plan 需 Owner 审批后实施", "Python 3.11 标准库"]])
+def test_kanban_create_prepares_without_start_or_config_write(tmp_path, monkeypatch, conditions):
     service, log = _service(tmp_path)
     calls = _provider(monkeypatch)
     before = (tmp_path / "zf.yaml").read_bytes()
-    result = _execute(service, "create-task", _create_payload())
+    payload = _create_payload()
+    payload["contract"]["constraints"] = conditions
+    result = _execute(service, "create-task", payload)
     assert result["ok"], result
     preparation = result["workflow_preparation"]
     assert preparation["status"] == "synthesis_queued", preparation
@@ -78,6 +81,7 @@ def test_kanban_create_prepares_without_start_or_config_write(tmp_path, monkeypa
     assert request["status"] == "clarifying"
     assert request["open_questions"] == [QUESTION]
     assert calls[0]["acceptance"] == ["Active sessions remain valid"]
+    assert calls[0].get("constraints", []) == conditions
     assert (tmp_path / "zf.yaml").read_bytes() == before
     assert not any(e.type == "workflow.invoke.requested" for e in log.read_all())
 

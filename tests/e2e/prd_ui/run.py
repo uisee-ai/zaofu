@@ -131,7 +131,7 @@ def main() -> int:
     evidence.mkdir()
     manifest = {"provider": args.provider, "journey": args.journey, "project_root": str(project),
                 "port": port, "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
-                "status": "running", "test_boundary": "provider-only fake" if args.provider == "fake" else "real provider"}
+                "status": "running", "body_status": "not_started", "audit_status": "not_run", "browser_exit_code": None, "test_boundary": "provider-only fake" if args.provider == "fake" else "real provider"}
     if args.journey == "channel-recovery":
         manifest["test_boundary"] = "real Codex, controlled stdio fault; setup via controlled actions, send/retry through UI"
     manifest["workflow_runtime"] = args.workflow_runtime
@@ -190,7 +190,8 @@ def main() -> int:
                   "-e", f"ZF_UI_PROVIDER={args.provider}", "-e", f"ZF_UI_JOURNEY={args.journey}",
                   "-e", f"ZF_UI_WORKFLOW_RUNTIME={args.workflow_runtime}",
                   "-e", f"ZF_UI_OWNER_CHECKPOINT={str(args.owner_checkpoint).lower()}",
-                  "-e", f"ZF_UI_TIMEOUT_MS={args.timeout * 1000}", "-e", "ZF_E2E_VIDEO=on", image, "-lc",
+                  "-e", f"ZF_UI_TIMEOUT_MS={args.timeout * 1000}", "-e", f"ZF_E2E_VIDEO={os.environ.get('ZF_UI_RECORDING', 'on' if args.provider == 'fake' else 'off')}",
+                  "-e", "ZF_E2E_TRACE=off" if args.provider == "real" else "ZF_E2E_TRACE=retain-on-failure", image, "-lc",
                   'mkdir -p "$HOME"; export ZF_E2E_CHROMIUM_EXECUTABLE_PATH=$(find /ms-playwright -type f -path "*/chrome-linux64/chrome" | sort | tail -1); '
                   f'test -n "$ZF_E2E_CHROMIUM_EXECUTABLE_PATH" && ./node_modules/.bin/playwright test tests/{browser_spec} '
                   '--workers=1 --reporter=line --output=/zf-run/evidence/playwright']
@@ -236,7 +237,10 @@ def main() -> int:
                 raise TimeoutError("browser journey exceeded its total budget")
             time.sleep(0.25)
         result = browser.returncode
-        if result == 0:
+        manifest["browser_exit_code"] = result
+        manifest["body_status"] = "completed" if (evidence / "body-completed.json").exists() else "incomplete"
+        manifest["audit_status"] = "not_run"
+        if result == 0 or (evidence / "body-completed.json").exists():
             from tests.e2e.prd_ui.audit import audit, check_config_handoff
             try:
                 if args.journey == "channel-recovery":
@@ -257,14 +261,20 @@ def main() -> int:
                     finally:
                         log.close()
                 (evidence / "audit.json").write_text(json.dumps(result_audit, indent=2))
+                manifest["audit_status"] = "passed"
             except Exception as exc:
                 result = 1
+                manifest["audit_status"] = "failed"
                 (evidence / "audit-error.txt").write_text(f"{type(exc).__name__}: {exc}")
                 print(f"[audit failed] {exc}", flush=True)
     finally:
         subprocess.run(["docker", "rm", "-f", root.name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
         if not port_lock.closed:
             port_lock.close()
+        from tests.e2e.prd_ui.recording import inspect_recordings
+        manifest["recording"] = inspect_recordings(evidence / "playwright")
+        if manifest["recording"]["invalid"]:
+            result = 1
         manifest["status"] = "passed" if result == 0 else "failed"
         (evidence / "run.json").write_text(json.dumps(manifest, indent=2))
         zf = str(REPO / ".venv/bin/zf")

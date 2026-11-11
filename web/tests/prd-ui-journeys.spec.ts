@@ -73,7 +73,7 @@ async function answerRequirementQuestions(page: Page, waitingForInput: boolean) 
     const next = (await submit.innerText()).includes("Next question");
     // The frozen product scenario explicitly ends this discussion at the PRD.
     // A custom answer regenerates options and requires a second confirmation.
-    const prdOnly = question.getByTestId("ask-user-option-prd_only");
+    const prdOnly = question.getByTestId("ask-user-option-prd_only").or(question.getByTestId("ask-user-option-finalize_and_save"));
     if (productInput && await prdOnly.isVisible()) {
       await prdOnly.check();
       await submit.click();
@@ -277,6 +277,28 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   }
   writeFileSync(`${evidence}/lineage.json`, JSON.stringify({ task, invoked, approval, planBody }, null, 2));
   writeFileSync(`${evidence}/events.json`, JSON.stringify(finalEvents, null, 2));
+  if (process.env.ZF_UI_PROVIDER === "real") {
+    const reading = [];
+    for (const width of [1280, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const [tab, key] of [["审批概览", "overview"], ["模块规格", "module"]]) {
+        await dialog.getByRole("button", { name: tab, exact: true }).click();
+        const pane = dialog.getByRole("region", { name: "计划审阅内容" });
+        await expect(pane).toBeVisible();
+        await capture(page, `08-${width}-${key}`);
+        reading.push({ width, tab, text: await pane.innerText(), fits: await pane.evaluate(el => el.scrollWidth <= el.clientWidth + 1) });
+      }
+    }
+    writeFileSync(`${evidence}/reading-observations.json`, JSON.stringify(reading, null, 2));
+    for (const artifact of planBody.artifacts || []) {
+      if (!["task_map", "execution_spec", "source_index", "coverage_ledger", "test_matrix", "acceptance_matrix"].includes(artifact.name)) continue;
+      const response = await request.get(`/api/projects/${project}/plans/${encodeURIComponent(planId)}/artifacts/${artifact.name}`);
+      expect(response.ok()).toBeTruthy();
+      const bytes = await response.body();
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(artifact.sha256.replace(/^sha256:/, ""));
+      writeFileSync(`${evidence}/${artifact.name}.json`, bytes);
+    }
+  }
   if (process.env.ZF_UI_DELIVERY === "true") {
     const binding = { plan_id: planId, sha256: createHash("sha256").update(planBody.markdown).digest("hex") };
     writeFileSync(`${evidence}/preview-ready.json`, JSON.stringify(binding));
@@ -294,4 +316,5 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await capture(page, "09-delivery-terminal");
   }
 
+  writeFileSync(`${evidence}/body-completed.json`, JSON.stringify({ journey, plan_id: planId, boundary: process.env.ZF_UI_DELIVERY === "true" ? "delivery" : "pending-plan", completed_at: new Date().toISOString() }));
 });

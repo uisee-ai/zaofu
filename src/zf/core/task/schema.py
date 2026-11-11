@@ -52,6 +52,9 @@ class TaskContract:
     canonical_behavior_test: str = ""
     package_namespace: str = ""
     scope: list[str] = field(default_factory=list)
+    # Source-authored conditions (including approval boundaries), not permission
+    # grants. Keep them in the canonical contract through Workflow preparation.
+    constraints: list[str] = field(default_factory=list)
     affected_files: list[str] = field(default_factory=list)
     exclusions: list[str] = field(default_factory=list)
     explicit_non_goals: list[str] = field(default_factory=list)

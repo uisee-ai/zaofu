@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type { PlanPreview } from "../../api/types";
-import { object, planArtifactUrl, rows, strings, text } from "./planReviewModel";
+import { planArtifactUrl, strings, text } from "./planReviewModel";
+import { planDecisionView } from "./planDecisionView";
 
 export const PlanSourceContext = createContext<((name: string, anchor: string) => void) | null>(null);
 export function SourceRefs({ refs, preview, projectId, label = "来源条款" }: { refs: string[]; preview: PlanPreview; projectId: string; label?: string }) {
@@ -13,14 +14,15 @@ export function SourceRefs({ refs, preview, projectId, label = "来源条款" }:
 }
 export function DecisionList({ decisions, preview, projectId }: { decisions: Record<string, unknown>[]; preview: PlanPreview; projectId: string }) {
   if (!decisions.length) return <p>未列出相关决定；不代表所有问题均已关闭。</p>;
-  return <>{decisions.map((decision, i) => <details className="plan-review-card" key={`${text(decision.decision_id)}-${i}`}>
-    <summary>{text(decision.decision_id)} · {text(decision.status) || "状态未声明"} · {text(decision.question || decision.title)}</summary>
+  return <>{decisions.map((decision, i) => { const view = planDecisionView(decision); return <details className="plan-review-card" key={`${view.id}-${i}`}>
+    <summary>{view.id} · {text(decision.status) || "状态未声明"} · {view.question}</summary>
     <p>负责人：{text(decision.named_owner || decision.owner) || "待指定"} · {text(decision.responsible_role)}</p>
-    <p>最迟确认：{text(decision.enter_before || decision.latest_gate || decision.latest_decision_stage) || "未声明"} · 影响任务：{strings(decision.affected_task_ids).join("、") || text(decision.producer_task_id) || "未声明"}</p>
-    <p>关闭条件：{text(decision.done_when || decision.closure_evidence) || "未声明"}</p>
+    <p>最迟确认：{view.deadline || "未声明"} · 影响任务：{strings(decision.affected_task_ids).join("、") || text(decision.producer_task_id) || "未声明"}</p>
+    <p>关闭条件：{view.closure || "未声明"}</p>
+    {view.resolution && <p>处理意见：{view.resolution}</p>}
     <p>当前阻塞：{decision.blocking === true ? "是" : decision.blocking === false ? "否（仍须遵守最迟确认条件）" : "未声明"}</p>
     <p>{text(decision.pending_boundary)} {text(decision.approval_scope)} {text(decision.blocker_impact)}</p>
-    {rows(decision.options).map((option, index) => <p key={index}>{text(object(option).label)}</p>)}
-    <SourceRefs refs={strings(decision.evidence_refs)} preview={preview} projectId={projectId} />
-  </details>)}</>;
+    {view.options.map((option, index) => <p key={index}>{option}</p>)}
+    <SourceRefs refs={view.sources} preview={preview} projectId={projectId} />
+  </details>; })}</>;
 }

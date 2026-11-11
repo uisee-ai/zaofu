@@ -77,6 +77,7 @@ def bind_task_workflow_inputs(
     if not acceptance and input_contract["acceptance"]:
         acceptance = [input_contract["acceptance"]]
     constraints = [
+        *input_contract.get("constraints", []),
         *input_contract["exclusions"],
         *input_contract["explicit_non_goals"],
         *input_contract["unknowns"],
@@ -178,6 +179,7 @@ def build_task_workflow_input_contract(
         "acceptance_criteria": list(contract.acceptance_criteria or []),
         "acceptance": str(contract.acceptance or ""),
         "scope": _strings(contract.scope),
+        **({"constraints": _strings(contract.constraints)} if contract.constraints else {}),
         "exclusions": _strings(contract.exclusions),
         "explicit_non_goals": _strings(contract.explicit_non_goals),
         "unknowns": _strings(contract.unknowns),
@@ -280,6 +282,7 @@ def assert_task_workflow_input_coverage(
     ):
         errors.append("acceptance coverage is missing")
     expected_constraints = [
+        *_strings(input_contract.get("constraints")),
         *_strings(input_contract.get("exclusions")),
         *_strings(input_contract.get("explicit_non_goals")),
         *_strings(input_contract.get("unknowns")),

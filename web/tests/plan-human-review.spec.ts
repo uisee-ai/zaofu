@@ -244,3 +244,25 @@ test("version comparison reads both evidence matrices and rejects asymmetric ava
   await expect(dialog.getByRole('alert')).toContainText('两版 acceptance_matrix 未同时读取');
   await expect(dialog.getByText('证据位置：evidence/old.json → evidence/current.json', { exact: true })).toHaveCount(0);
 });
+
+// A recorded Channel output exercises the field vocabulary actually used by providers.
+import realDecisions from "./fixtures/spec206-real-decisions.json" with { type: "json" };
+test("real decision records retain IDs, unknown statuses, deadlines and sources", async ({ page, request }) => {
+  await page.route("**/plans/evt-preview-review/preview", async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.decision_review = { ...body.decision_review, available: true, items: realDecisions.items };
+    await route.fulfill({ response, json: body });
+  });
+  const dialog = await openReview(page, request);
+  const card = dialog.locator(".plan-review-card").filter({ hasText: "DL-05 · pending_approval" });
+  await card.locator("summary").first().click();
+  await expect(card).toContainText("创建/派发 CLI-001 之前");
+  await expect(card).toContainText(realDecisions.items[4].closure_evidence);
+  await card.locator("summary").filter({ hasText: "来源条款" }).click();
+  await expect(card).toContainText(realDecisions.items[4].source_ref);
+  await expect(dialog).toContainText("DL-01 · decided_source");
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(card).toBeVisible();
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+});
