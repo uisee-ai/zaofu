@@ -1203,6 +1203,13 @@ def run(args: argparse.Namespace) -> int:
                     # first_dispatch → observe_codex_session to resolve
                     # it; tailer can be re-attached lazily if needed.
 
+        if control_plane_only:
+            from zf.runtime.session_tailer_recovery import restore_preserved_session_tailers
+
+            restore_preserved_session_tailers(
+                registry, codex_tailer, claude_tailer, dry_run=dry_run,
+            )
+
         from zf.runtime.run_manager_resident import (
             clear_resident_preserve_marker,
             dedicated_resident_run_manager_role,
