@@ -67,6 +67,12 @@ assert.equal(excerpts.pages[0].content.includes("flowchart TD"), true);
 assert.equal(excerpts.overview.some(s => s.content.includes("PRD：价值")), true);
 // Headings in code fences are not interpreted as authored document sections.
 assert.equal(planReadingSections("# Plan\n```md\n## Decision Register\nnot a register\n```").decisions.length, 0);
+for (const title of ["权威、范围与当前状态", "权威、范围与审批入口"]) {
+  const authored = planReadingSections(`# 中文 Plan\n\n## ${title}\n仅交付三个文件，审批后实施。\n\n## PRD 用户结果\n原始字节不变。\n\n## Task Spec: T1\n本片说明。`);
+  assert.equal(authored.overview[0].content.includes("仅交付三个文件，审批后实施。"), true);
+  assert.equal(authored.overview[0].content.includes("本片说明。"), false);
+  assert.equal(authored.journeys[0].content.includes("原始字节不变。"), true);
+}
 const ownership = buildPlanReview({ task_map: { tasks: [task, { ...task, task_id: "T2" }] }, test_matrix: {
   tests: [{ id: "only-T2", task_id: "T2", acceptance_ids: ["AC1"], given: "A", when: "B", then: "C" }],
   formal_acceptance_scenarios: [{ id: "formal-T2", task_id: "T2", acceptance_id: "AC1" }],

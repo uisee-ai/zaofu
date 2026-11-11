@@ -159,3 +159,16 @@ for (const width of [1280, 375]) test(`${width}px sibling handoff stays reachabl
   await dialog.getByRole("button", { name: "在完整原文中阅读：TDD and evidence", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "TDD and evidence", exact: true })).toBeInViewport();
 });
+
+for (const width of [1280, 375]) test(`${width}px real Chinese author headings populate the default overview`, async ({ page, request }) => {
+  await page.setViewportSize({ width, height: 900 });
+  for (const title of ["权威、范围与当前状态", "权威、范围与审批入口"]) {
+    const markdown = `# 中文 Plan\n\n## ${title}\n仅交付三个文件，审批后实施。\n\n## PRD 用户结果\n原始字节不变。\n\n## Task Spec: RL-READING\n本片说明。`;
+    const dialog = await openLive(page, request, markdown, false);
+    await expect(dialog.getByRole("button", { name: "审批概览", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog.getByText("仅交付三个文件，审批后实施。", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("原始字节不变。", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("本片说明。", { exact: true })).toHaveCount(0);
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
