@@ -71,6 +71,15 @@ async function answerRequirementQuestions(page: Page, waitingForInput: boolean) 
   for (let index = 0; index < 3; index++) {
     const submit = question.getByTestId("ask-user-submit");
     const next = (await submit.innerText()).includes("Next question");
+    // The frozen product scenario explicitly ends this discussion at the PRD.
+    // A custom answer regenerates options and requires a second confirmation.
+    const prdOnly = question.getByTestId("ask-user-option-prd_only");
+    if (productInput && await prdOnly.isVisible()) {
+      await prdOnly.check();
+      await submit.click();
+      if (!next) return;
+      continue;
+    }
     const other = question.getByTestId("ask-user-option-other");
     if (await other.isVisible()) await other.check();
     await question.locator("textarea").fill(productInput ? productRequest("UI_PRD_CONFIRMED，确认以下需求，请依此回答当前所有问题") : "UI_PRD_CONFIRMED：README.md 缺失时报告路径并明确报错、非零退出、停止本次读取；存在时必须可读。使用系统现有 cat README.md 检查，不新增读取程序。当前 Kanban 讨论终点仅为 PRD，完整 Plan 留给后续 UI 启动的 PRD v5 Workflow；不要在聊天内生成 Plan。仅当前临时项目。");
@@ -117,7 +126,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await page.reload();
     await capture(page, "02-kanban-prd-generated");
     expect((await events(request, project)).filter(row => row.type === "channel.created")).toHaveLength(0);
-    await send(page, "UI_PRD_CREATE：确认 docs/prd/ui-requirement.md。请创建一个 Task 并 prepare_workflow，采用当前 PRD v5 配置生成 Workflow YAML Preview。只准备提案，不启动实施；保留 source_ref、验收和 target_root 当前项目。");
+    await send(page, "UI_PRD_CREATE：确认 docs/prd/ui-requirement.md。请创建一个 Task 并 prepare_workflow，采用当前 PRD v5 配置生成 Workflow YAML Preview。必须将“完整 Plan 需 Owner 人工审批后才允许实施”保留到 Task/Requirement 的 constraints，Workflow 设置 plan_approval: true。只准备提案，不启动实施；保留 source_ref、验收和 target_root 当前项目。");
     await approveTask(page);
   } else {
     await send(page, "UI_CHANNEL_SETUP：请创建 PRD Group，产品、架构、critic、synthesizer 参与，ID ui-prd-group，名称 UI PRD Group。真实运行使用已登录的 Codex 后端，禁止 fake/mock。先用 conversation 模式讨论 README.md 保持可读与缺失报错，不自动创建 Task。");
@@ -150,7 +159,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     writeFileSync(`${evidence}/channel-confirmation.json`, JSON.stringify(confirmed, null, 2));
     await capture(page, "02-channel-prd-confirmed");
     await page.getByText("Planning options", { exact: true }).click();
-    await page.getByTestId("channel-workflow-objective").fill("UI_CHANNEL_CREATE create a Task：从当前确认的中文 PRD 创建 Task，准备 PRD v5 Workflow YAML，生成中文 Plan 后等待审批。");
+    await page.getByTestId("channel-workflow-objective").fill("UI_CHANNEL_CREATE create a Task：从当前确认的中文 PRD 创建 Task，准备 PRD v5 Workflow YAML，生成中文 Plan 后等待 Owner 人工审批；该要求必须进入 Requirement constraints 并配置 workflow.plan_approval: true。");
     await page.getByTestId("channel-create-task-from-prd").click();
     const plan = page.getByTestId("agent-card-plan").last();
     await expect(plan).toBeVisible({ timeout: turnTimeout });
@@ -212,6 +221,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
       expect(rows.filter(e => e.type === "plan.approval.requested")).toHaveLength(0);
       expect(rows.filter(e => e.type === "plan.approved")).toHaveLength(0);
       writeFileSync(`${evidence}/owner-candidate.json`, JSON.stringify(candidate, null, 2));
+      expect(await preview.innerText(), "Owner question must match the scripted answer").toContain("OWNER-GIT-01");
       await preview.getByRole("textbox", { name: "Owner 答复内容" }).fill("OWNER-GIT-01：当前仅 PRD 和 Plan 预览，禁止 Git 写操作和实施。本次仅授权依据此答复重新规划；未来必须先单独批准新版完整 Plan，之后才允许标准受控 Git 提交交付。不删除验收，不提前启动实施，也不要把阶段限制理解为永久禁止交付。");
       await capture(page, "06-owner-answer-before-submit");
       await preview.getByRole("button", { name: "提交答复并重新规划", exact: true }).click();
