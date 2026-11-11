@@ -65,3 +65,34 @@ def test_warm_config_handoff_oracle(change):
         assert check_config_handoff(rows)["new_pid"] == 2
     else:
         with pytest.raises(AssertionError): check_config_handoff(rows)
+
+
+@pytest.mark.parametrize("change", ["none", "changed_body", "changed_contract", "other_run", "other_fanout", "unbound_ref", "missing_binding"])
+def test_pure_critic_plan_is_bound_to_reviewed_artifact(tmp_path, change):
+    import hashlib
+    import json
+    from zf.core.events import ZfEvent
+    from tests.e2e.prd_ui.audit import read_generated_plan
+    state = tmp_path / "state"
+    (state / "artifacts").mkdir(parents=True)
+    ref = "artifacts/planner.md"
+    (state / ref).write_text(PLAN)
+    digest = hashlib.sha256(PLAN.encode()).hexdigest()
+    contract = {"workflow_run_id": "run", "fanout_id": "fan", "source_bindings": [{"ref": ref, "sha256": digest}]}
+    if change == "missing_binding": contract["source_bindings"] = []
+    raw = json.dumps(contract)
+    (state / "artifacts/contract.json").write_text(raw)
+    review = ZfEvent(type="fanout.synth.completed", payload={"workflow_run_id": "run", "fanout_id": "fan", "plan_synth_contract_ref": "artifacts/contract.json", "reviewed_plan_candidate_digest": hashlib.sha256(raw.encode()).hexdigest()})
+    source = ZfEvent(type="task_map.ready", payload={"workflow_run_id": "run", "fanout_id": "fan", "evidence_refs": [ref]})
+    approval = ZfEvent(type="plan.approval.requested", payload={"workflow_run_id": "run", "plan_id": source.id, "plan_artifact_ref": "docs/nonexistent.md"})
+    preview = {"refs": {"markdown_ref": ref}}
+    if change == "changed_body": (state / ref).write_text("plausible but changed")
+    if change == "changed_contract": (state / "artifacts/contract.json").write_text(raw + " ")
+    if change == "other_run": review.payload["workflow_run_id"] = "other"
+    if change == "other_fanout": review.payload["fanout_id"] = "other"
+    if change == "unbound_ref": source.payload["evidence_refs"] = []
+    if change == "none":
+        assert read_generated_plan(approval, preview, [review, source, approval], state=state, project=tmp_path) == (ref, digest, PLAN)
+    else:
+        with pytest.raises((AssertionError, ValueError)):
+            read_generated_plan(approval, preview, [review, source, approval], state=state, project=tmp_path)
