@@ -10,7 +10,7 @@ const timeout = Number(process.env.ZF_UI_TIMEOUT_MS || 1_200_000);
 const turnTimeout = process.env.ZF_UI_PROVIDER === "fake" ? 45_000 : 600_000;
 const evidence = "/zf-run/evidence";
 const productInput = existsSync(`${evidence}/product-input.md`) ? readFileSync(`${evidence}/product-input.md`, "utf8") : "";
-const productRequest = (stage: string) => `${stage}：${productInput}\n只操作当前隔离项目。讨论和预览不实施；之后经 Owner 单独审批允许标准受控 Git 交付、实现及独立验证。PRD 写入 docs/prd/ui-requirement.md。中文表达，机器键和命令不翻译。角色调用及审批历史由外部测试协议核验，不添加为产品 AC。`;
+const productRequest = (stage: string) => `${stage}：\n<原始产品需求>\n${productInput}\n</原始产品需求>\n当前阶段约束：只讨论并保存 PRD 到 docs/prd/ui-requirement.md。原始产品需求中的完整 Plan Preview 是后续由 UI 启动 PRD v5 Workflow 生成的终点，不是当前聊天写 Plan 的指令；当前不要生成手工 Plan Preview 或把自己的文件分配方案提升为 PRD 要求。产品行为及原有交付时点保持不变。只操作当前隔离项目，讨论和预览不实施；之后经 Owner 单独审批允许标准受控 Git 交付、实现及独立验证。中文表达，机器键和命令不翻译。角色调用及审批历史由外部测试协议核验，不添加为产品 AC。`;
 
 // The caller's budget covers all discussion phases and Playwright teardown.
 test.describe.configure({ timeout });
