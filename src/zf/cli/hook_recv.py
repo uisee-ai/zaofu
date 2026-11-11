@@ -557,7 +557,14 @@ def _evaluate_runtime_write_guard(
             command = str(tool_input.get("command") or "")
         else:
             command = input_text
-        if " zf task-doc ingest " in f" {command.strip()} ":
+        literal_targets = (
+            _write_target_operations(tool_name, tool_input)
+            if isinstance(tool_input, dict) else []
+        )
+        if literal_targets:
+            if protected:
+                reason = "shell_write_targets_runtime_state"
+        elif " zf task-doc ingest " in f" {command.strip()} ":
             reason = "worker_task_doc_ingest_forbidden"
         elif protected and _bash_command_looks_mutating(command):
             reason = "shell_write_targets_runtime_state"

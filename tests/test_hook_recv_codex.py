@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from zf.cli.hook_workdir_guard import bash_command_looks_mutating
 from zf.cli.hook_recv import run as hook_recv_run
 from zf.core.events.log import EventLog
@@ -617,9 +619,11 @@ def test_codex_apply_patch_allows_write_inside_allowed_paths(
     assert not [e for e in events if e.type == "worker.scope_write.rejected"]
 
 
+@pytest.mark.parametrize("tool_name", ["apply_patch", "Bash"])
 def test_codex_allowed_paths_guard_allows_only_current_result_scratch(
     tmp_path: Path,
     monkeypatch,
+    tool_name: str,
 ) -> None:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -669,6 +673,13 @@ def test_codex_allowed_paths_guard_allows_only_current_result_scratch(
     sibling.write_text("{}\n", encoding="utf-8")
 
     def invoke_patch(target: Path, session_id: str) -> int:
+        patch = (
+            "*** Begin Patch\n"
+            f"*** Update File: {target}\n"
+            "@@\n-{}\n+{\"verdict\": \"passed\"}\n*** End Patch"
+        )
+        if tool_name == "Bash":
+            patch = f"apply_patch <<'PATCH'\n{patch}\nPATCH"
         return _invoke(
             state_dir,
             event="codex.hook.pre_tool_use",
@@ -676,17 +687,8 @@ def test_codex_allowed_paths_guard_allows_only_current_result_scratch(
             payload={
                 "session_id": session_id,
                 "transcript_path": str(transcript),
-                "tool_name": "apply_patch",
-                "tool_input": {
-                    "command": (
-                        "*** Begin Patch\n"
-                        f"*** Update File: {target}\n"
-                        "@@\n"
-                        "-{}\n"
-                        "+{\"verdict\": \"passed\"}\n"
-                        "*** End Patch"
-                    ),
-                },
+                "tool_name": tool_name,
+                "tool_input": {"command": patch},
             },
             monkeypatch=monkeypatch,
         )
