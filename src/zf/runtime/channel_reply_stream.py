@@ -13,6 +13,7 @@ CHANNEL_CONTRACT_KEYS = (
     "channel_cross_review",
     "channel_consensus_review",
     "channel_question_dedup",
+    "channel_synthesis_part",
 )
 
 _WAIT = "wait"

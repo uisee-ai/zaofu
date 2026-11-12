@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import hashlib
 from collections.abc import Callable
 from typing import Any
 
@@ -65,6 +66,8 @@ class HeadlessDeltaEmitter:
         self._pending_thinking: list[str] = []
         self._last_flush_at = time.monotonic()
         self._content_started = False
+        self._commentary: dict[str, str] = {}
+        self._pending_commentary: set[str] = set()
         self._control_stream = HeadlessControlStreamFilter()
         self.first_output_at: float | None = None
 
@@ -93,6 +96,17 @@ class HeadlessDeltaEmitter:
             return
         if self.agent_session_emitter is not None:
             self.agent_session_emitter.emit_message(message)
+        params = message.raw.get("params") or {}
+        if (message.type == "status" and str(message.raw.get("method") or "").endswith("item/agentMessage/delta")
+                and isinstance(params, dict) and params.get("itemId")):
+            item_id = str(params["itemId"])
+            previous = self._commentary.get(item_id, "")
+            self._commentary[item_id] = (previous + message.content)[:4000]
+            if previous == self._commentary[item_id]:
+                return
+            self._pending_commentary.add(item_id)
+            self._flush_first_content_or_due()
+            return
         if message.type == "thinking":
             if message.content:
                 self._pending_thinking.append(message.content)
@@ -104,6 +118,10 @@ class HeadlessDeltaEmitter:
     def flush(self) -> None:
         if self.agent_session_emitter is not None:
             self.agent_session_emitter.flush()
+        for item_id in sorted(self._pending_commentary):
+            self._emit_one(HeadlessMessage(type="status", content=self._commentary[item_id],
+                raw={"public_commentary": {"id": item_id, "snapshot": True}}))
+        self._pending_commentary.clear()
         if self._pending_thinking:
             content = "".join(self._pending_thinking)
             self._pending_thinking.clear()
@@ -209,6 +227,11 @@ def _message_event_payload(message: HeadlessMessage) -> dict[str, Any]:
     tool_outcome = message.raw.get("tool_outcome")
     if message.type == "tool_result" and isinstance(tool_outcome, str) and tool_outcome in {"completed", "failed", "cancelled", "unknown"}:
         payload["status"] = tool_outcome
+        payload["refs"] = {"completion_confirmed": tool_outcome == "completed"}
+    note = message.raw.get("public_commentary")
+    if isinstance(note, dict) and note.get("snapshot") is True:
+        payload["part_id"] = "commentary-" + hashlib.sha256(str(note.get("id")).encode()).hexdigest()[:20]
+        payload["refs"] = {"raw": {"public_commentary": note}}
     call_id = message.raw.get("call_id")
     if message.type in {"tool_use", "tool_result"} and isinstance(call_id, str) and 0 < len(call_id) <= 256:
         payload["tool_call_id"] = call_id

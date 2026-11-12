@@ -50,6 +50,7 @@ export function LibrePrdControls({ requests, actionReady, busy, onGenerate, onCa
     {snapshot?.cutoff_at ? <p>本次材料截至 {String(snapshot.cutoff_at)}；后续补充用于下一版。</p> : null}
     {latest ? <p role="status">当前生成请求：{({ requested: "排队或生成中", repair_requested: "正在修复格式", proposed: "草稿已生成，待评估", completed: "草稿已生成，待评估", blocked: "生成失败，请查看原因", failed: "生成失败", cancelled: "已停止采用本次结果" } as Record<string, string>)[String(latest.status)] || "已受理"}</p> : null}
     {latest?.reason && ["failed", "blocked"].includes(String(latest.status)) ? <p role="status">失败原因：{String(latest.reason)}</p> : null}
+    {latest?.contract_error ? <details><summary>查看当前校验未通过的原因</summary><p>{String(latest.contract_error)}</p></details> : null}
     {needsRecovery ? <div role="status">
       <p>原请求的最终交付结果尚未确认，重新生成暂不可用。可以检查并结束失败请求，不再采用其迟到结果；聊天、原材料和旧版 PRD 保留，之后由你手动重试。</p>
       {onRecover ? <button className="icon-button" type="button" disabled={!actionReady || busy || working} onClick={() => {
@@ -59,14 +60,14 @@ export function LibrePrdControls({ requests, actionReady, busy, onGenerate, onCa
           .finally(() => setWorking(false));
       }}>检查并结束失败请求</button> : null}
     </div> : null}
-    {latest?.candidate_available && onReadCandidate ? <button className="icon-button" type="button" disabled={loadingCandidate} onClick={() => {
+    {(latest?.candidate_available || latest?.checkpoint_draft_available) && onReadCandidate ? <button className="icon-button" type="button" disabled={loadingCandidate} onClick={() => {
       setLoadingCandidate(true); setError("");
       void onReadCandidate(String(latest.request_id)).then(setCandidate)
         .catch((reason: unknown) => setError(String(reason instanceof Error ? reason.message : reason)))
         .finally(() => setLoadingCandidate(false));
-    }}>{loadingCandidate ? "读取候选稿…" : "查看未通过校验的候选稿"}</button> : null}
+    }}>{loadingCandidate ? "读取草稿…" : latest?.candidate_available ? "查看未通过校验的候选稿" : "查看本次草稿（尚未发布）"}</button> : null}
     {candidate && candidate.request_id === latest?.request_id ? <details open className="libre-prd-candidate">
-      <summary>未通过校验的候选内容，不能用于创建任务</summary>
+      <summary>{candidate.status === "checkpoint_draft" ? "本次已保存草稿 · 尚未发布" : "未通过校验的候选内容，不能用于创建任务"}</summary>
       {candidate.reason ? <p role="status">{candidate.reason}</p> : null}
       <MarkdownText content={candidate.markdown} />
     </details> : null}
@@ -75,7 +76,7 @@ export function LibrePrdControls({ requests, actionReady, busy, onGenerate, onCa
     }}>停止本次生成（保留聊天和旧版 PRD）</button> : null}
     {latest && ["blocked", "failed", "cancelled"].includes(String(latest.status)) ? <button className="icon-button" type="button" disabled={!actionReady || busy || working || needsRecovery} onClick={() => {
       void submit({ retryRequestId: String(latest.request_id) });
-    }}>重试本次（沿用原材料）</button> : null}
+    }}>{latest.synthesis_pipeline === "checkpointed.v1" ? "重试未完成部分（沿用原材料）" : "重试本次（沿用原材料）"}</button> : null}
     {error ? <p role="alert">{error}</p> : null}
     <button className="icon-button primary" type="button" disabled={!actionReady || busy || working || needsRecovery} onClick={() => {
       void submit({ text, includeProjectBrief });

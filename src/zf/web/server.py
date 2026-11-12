@@ -551,6 +551,7 @@ _ACTION_ALIASES = {
     "channel.history.clear",
     "channel-synthesis",
     "channel-synthesis-request",
+    "channel-synthesis-cancel", "channel.synthesis.cancel",
     "channel-synthesis-recover", "channel.synthesis.recover",
     "channel.synthesis.request",
     "channel-question-resolve", "channel.question.resolve",
@@ -5694,8 +5695,11 @@ def _web_action(
         payload,
         idempotency_key=x_idempotency_key,
     )
-    if canonical_action.startswith("workflow-"):
+    if canonical_action.startswith("workflow-") or canonical_action == "channel-synthesis-cancel":
         request_payload = _action_payload(payload, preserve_request_id=True)
+    if canonical_action == "channel-synthesis-cancel":
+        # This is the generation being stopped, not the HTTP attempt identity.
+        idempotency_key = str(x_idempotency_key or payload.get("idempotency_key") or "")
     payload_hash = _payload_hash(request_payload)
     if idempotency_key:
         idempotency_state = _reserve_idempotency_key(
@@ -6110,6 +6114,7 @@ def _web_action(
         "channel-clear-history",
         "channel-synthesis",
         "channel-synthesis-request",
+        "channel-synthesis-cancel",
         "channel-synthesis-recover",
         "channel-question-resolve", "channel-consensus-confirm",
         "channel-consensus-block",
@@ -6603,11 +6608,13 @@ def _validate_action_payload(
             return "decision is required"
         if not str(payload.get("summary") or "").strip():
             return "summary is required"
-    if action in {"channel-synthesis-request", "channel-synthesis-recover"}:
+    if action in {"channel-synthesis-request", "channel-synthesis-recover", "channel-synthesis-cancel"}:
         if not str(payload.get("channel_id") or "").strip():
             return "channel_id is required"
         if action == "channel-synthesis-recover" and not str(payload.get("synthesis_request_id") or "").strip():
             return "synthesis_request_id is required"
+        if action == "channel-synthesis-cancel" and not str(payload.get("request_id") or "").strip():
+            return "request_id is required"
     if action == "workflow-invoke":
         if not str(payload.get("task_id") or "").strip():
             return "task_id is required"

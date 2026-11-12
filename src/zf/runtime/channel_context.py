@@ -277,6 +277,8 @@ def build_channel_context_pack(
             "required_message_digests"
         ],
         "semantic_source_documents": semantic_sources["documents"],
+        **({"semantic_source_archived": semantic_sources["archived_sources"]}
+           if "archived_sources" in semantic_sources else {}),
         "artifact_refs": _select_artifact_refs(
             None if blind else channel,
             selected_messages=selected,

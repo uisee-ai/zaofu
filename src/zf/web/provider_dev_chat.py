@@ -161,6 +161,23 @@ def handle_agent_session_cancel(
     from zf.web.agent_turn_store import AgentTurnStore
 
     state_dir = writer.event_log.path.parent
+    channel_id = str(payload.get("channel_id") or "")
+    generation = 1
+    if channel_id:
+        from zf.runtime.channel_projection import project_channel
+        from zf.runtime.channel_owner_authority import channel_owner_authority_error
+        channel = project_channel(state_dir, channel_id) or {}
+        error = channel_owner_authority_error(channel, actor="web", capability="cancel_synthesis")
+        if error:
+            return {"ok": False, "_status_code": 403, "status": "forbidden", "reason": error}
+        bound = next((r for r in channel.get("provider_runs", []) if r.get("run_id") == run_id), {})
+        try:
+            generation = int(payload.get("run_generation") or 1)
+        except (ValueError, TypeError):
+            return {"ok": False, "_status_code": 422, "status": "invalid_payload", "reason": "run_generation must be a positive integer"}
+        if (not bound or bound.get("provider_thread_id") != thread_id
+                or int(bound.get("run_generation") or 1) != generation):
+            return {"ok": False, "_status_code": 409, "status": "stale_run", "reason": "运行已变化，请刷新后停止当前运行"}
     if database_path(state_dir).exists():
         turns = AgentTurnStore(state_dir)
         try:
@@ -199,6 +216,8 @@ def handle_agent_session_cancel(
         ),
         payload={
             "project_id": project_id,
+            "channel_id": channel_id,
+            "run_generation": generation,
             "conversation_id": str(
                 payload.get("conversation_id") or ""
             ),

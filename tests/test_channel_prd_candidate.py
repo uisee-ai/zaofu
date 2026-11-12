@@ -40,5 +40,8 @@ def test_candidate_is_bound_read_only_and_integrity_checked(tmp_path, structured
     channel = project_channel(state, "ch")
     assert libre_conversation_metadata(channel, set())["synthesis_requests"][0]["candidate_available"]
     assert not channel.get("syntheses")
+    writer.emit("channel.synthesis.cancelled", actor="web", payload={"channel_id": "ch", "thread_id": "main",
+                "request_id": "generation", "status": "cancelled"})
+    assert client.get(path, params={"request_id": "generation"}).status_code == 200
     (state / "channels/ch/candidate.txt").write_text("tampered")
     assert client.get(path, params={"request_id": "generation"}).status_code == 409

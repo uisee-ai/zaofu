@@ -173,6 +173,37 @@ const channelConversation: AgentConversation = {
   threads: [{ ...thread, id: "main" }],
 };
 
+const readableConversation: AgentConversation = {
+  id: "readable-fixture", surface: "channel_group", activeThreadId: "main",
+  threads: [{ id: "main", title: "需求讨论", status: "streaming", turns: [{
+    id: "readable-turn", threadId: "main", runs: [{
+      id: "readable-run", threadId: "main", memberId: "主持人", provider: "codex-headless", status: "streaming",
+      startedAt: new Date(Date.now() - 84_000).toISOString(),
+      parts: [
+        ...["核对材料与整理文稿", "保存需求与验收映射", "整理已确认决定"].map((title, index) => part("status", index < 2 ? "completed" : "streaming", title, {
+          refs: { raw: { activity: { kind: "synthesis", id: `phase-${index}`, index, total: 5, completed: 2,
+            title, state: index < 2 ? "completed" : "started", restored: index === 0 } } },
+        })),
+        part("status", "streaming", "进展", { content: "正在核对已确认的身份配置和断线恢复规则，保留每个决定对应的验收条件。",
+          refs: { raw: { public_commentary: { id: "public-note", snapshot: true } } } }),
+        part("tool", "completed", "read", { toolName: "read", refs: { completion_confirmed: true, input: { path: "docs/PRD-v2.md" } } }),
+        part("text", "streaming", "text", { content: "已保存文稿和需求验收映射，接下来整理已确认决定。最终校验完成前，这些内容仍是草稿。",
+          refs: { provider_session_id: "native-session-id-for-diagnostics" } }),
+      ],
+    }], cards: [],
+  }] }],
+};
+
+const failedReadableConversation: AgentConversation = {
+  id: "failed-readable-fixture", surface: "channel_group", activeThreadId: "main",
+  threads: [{ id: "main", title: "main", status: "failed", turns: [{
+    id: "failed-turn", threadId: "main", cards: [], runs: [{
+      id: "failed-run", threadId: "main", status: "failed",
+      parts: [part("error", "failed", "执行未完成", { content: "连接中断；本次未完成，已保存的内容保留。" })],
+    }],
+  }] }],
+};
+
 const workflowRequestConversation: AgentConversation = {
   id: "workflow-request", surface: "kanban_agent", activeThreadId: "main",
   threads: [{ id: "main", title: "main", status: "idle", turns: [{
@@ -581,6 +612,15 @@ export function AgentSessionFixturePage() {
           request={{ ...adaptiveChannelPlan, response: adaptiveChannelPlanResponse }}
           onSubmit={setAdaptiveChannelPlanResponse}
         />
+      </div>
+
+      <h3 style={{ marginTop: 24 }}>可读过程 · 检查点恢复</h3>
+      <div className="channel-page-chat" data-testid="fx-readable-activity">
+        <AgentSessionTimeline activeThreadId="main" compact conversation={readableConversation} collapseCompletedRunDetails minimalRunActivity />
+      </div>
+
+      <div className="channel-page-chat" data-testid="fx-readable-failure">
+        <AgentSessionTimeline activeThreadId="main" compact conversation={failedReadableConversation} collapseCompletedRunDetails minimalRunActivity />
       </div>
 
       <h3 style={{ marginTop: 24 }}>Timeline — kanban_agent(orchestrator 同款 props)</h3>

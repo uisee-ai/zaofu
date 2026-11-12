@@ -647,6 +647,31 @@ for (const hasArtifact of [false, true]) {
   });
 }
 
+test("saved synthesis draft remains clearly unpublished while reading and does not write", async ({ page, request }) => {
+  const detail = fixture();
+  detail.discussion.mode = "libre_discuss";
+  detail.synthesis_requests.push({ thread_id: "main", request_id: "partial", status: "requested",
+    synthesis_pipeline: "checkpointed.v1", checkpoint_draft_available: true });
+  const state = await setup(page, request, detail);
+  await page.route("**/prd-candidate?*", route => route.fulfill({ json: {
+    request_id: "partial", status: "checkpoint_draft", reason: "尚未通过最终校验，不能创建任务。",
+    markdown: "# 本次草稿\n\n" + Array.from({ length: 50 }, (_, i) => `段落 ${i}：保留完整的产品行为和验收。\n\n`).join(""),
+  } }));
+  await page.getByTestId("channel-flow-discussion").click();
+  await page.getByRole("button", { name: "Synthesize", exact: true }).click();
+  const controls = page.getByTestId("libre-prd-controls");
+  await controls.getByRole("button", { name: "查看本次草稿（尚未发布）", exact: true }).click();
+  const draft = controls.locator(".libre-prd-candidate");
+  await expect(draft).toContainText("尚未通过最终校验");
+  await draft.getByText("段落 49：保留完整的产品行为和验收。", { exact: true }).scrollIntoViewIfNeeded();
+  await expect(draft.locator("summary")).toBeInViewport();
+  await expect(draft.locator("summary")).toContainText("尚未发布");
+  await expect(page.locator(".channel-composer-input")).toBeEditable();
+  await expect(page.getByTestId("channel-prd-preview")).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+  expect(state.errors).toEqual([]);
+});
+
 for (const mobile of [false, true]) {
   test(`libre unknown synthesis has controlled recovery and manual retry (${mobile ? "mobile" : "desktop"})`, async ({ page, request }) => {
     const detail = readyFixture();

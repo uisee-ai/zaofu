@@ -70,6 +70,8 @@ def react_channel_synthesis_requested(
                 "mentions": [target_member_id],
                 "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1",
                          "prd_quality_contract": payload.get("prd_quality_contract", ""),
+                         **({"synthesis_pipeline": payload["synthesis_pipeline"]} if payload.get("synthesis_pipeline") else {}),
+                         **({"retry_of_request_id": payload["retry_of_request_id"]} if payload.get("retry_of_request_id") else {}),
                          **({"prd_source_file": payload["prd_source_file"]} if payload.get("prd_source_file") else {}),
                          **({"prd_input_snapshot": payload["prd_input_snapshot"]} if payload.get("prd_input_snapshot") else {})},
             },
@@ -489,5 +491,6 @@ def _synthesis_source_refs(host, request_id: str, channel_id: str, thread_id: st
         p = event.payload
         if (event.type == "channel.synthesis.requested" and p.get("request_id") == request_id
                 and p.get("channel_id") == channel_id and str(p.get("thread_id") or "main") == thread_id):
-            return {key: p[key] for key in ("prd_source_file", "prd_quality_contract", "prd_input_snapshot") if p.get(key)}
+            return {key: p[key] for key in ("prd_source_file", "prd_quality_contract", "prd_input_snapshot",
+                                           "synthesis_pipeline", "retry_of_request_id") if p.get(key)}
     return {}

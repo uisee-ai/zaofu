@@ -1231,6 +1231,7 @@ class KanbanHeadlessAgent:
         )
 
     def _system_prompt(self, permission_profile: str = KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE) -> str:
+        from zf.runtime.agent_readable_output import READABLE_AGENT_OUTPUT
         profile = normalize_permission_profile(permission_profile)
         cli_command = _headless_zf_cli_cmd()
         execution_contract = {
@@ -1269,7 +1270,7 @@ class KanbanHeadlessAgent:
             ),
         }[profile]
         return (
-            "You are the ZaoFu Kanban Agent. You explain runtime projections and "
+            READABLE_AGENT_OUTPUT + "You are the ZaoFu Kanban Agent. You explain runtime projections and "
             "can perform normal project development when the active permission "
             f"profile allows it. Active permission profile: {profile}. "
             f"{execution_contract} "

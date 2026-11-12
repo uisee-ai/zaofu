@@ -244,16 +244,27 @@ def libre_conversation_metadata(channel: dict, visible_message_ids: set[str]) ->
     requests: dict[str, dict] = {}
     snapshots: dict[str, dict] = {}
     candidates: set[str] = set()
+    checkpoint_drafts: set[str] = set()
+    pipelines: dict[str, str] = {}
+    for run in channel.get("agent_session_runs", []):
+        for part in run.get("parts", []):
+            activity = ((part.get("refs") or {}).get("raw") or {}).get("activity") or {}
+            if activity.get("index") == 0 and activity.get("state") == "completed" and activity.get("checkpoint"):
+                checkpoint_drafts.add(str(activity.get("synthesis_request_id") or ""))
     for row in channel.get("synthesis_requests", []):
         rid = row.get("request_id")
         if row.get("invalid_reply_ref"):
             candidates.add(rid)
         if row.get("prd_input_snapshot"):
             snapshots[rid] = row["prd_input_snapshot"]
+        if row.get("synthesis_pipeline"):
+            pipelines[rid] = row["synthesis_pipeline"]
         requests[str(row.get("thread_id") or "main")] = {
-            **{key: row.get(key) for key in ("thread_id", "request_id", "status", "reason", "target_member_id", "ts", "recovery_required")},
+            **{key: row.get(key) for key in ("thread_id", "request_id", "status", "reason", "contract_error", "target_member_id", "ts", "recovery_required")},
             "prd_input_snapshot": row.get("prd_input_snapshot") or snapshots.get(rid) or {},
             "candidate_available": rid in candidates,
+            "checkpoint_draft_available": rid in checkpoint_drafts,
+            "synthesis_pipeline": row.get("synthesis_pipeline") or pipelines.get(rid) or "",
         }
     rounds = {root: {"thread_id": row.get("thread_id"), "publication": row.get("publication") or {}, "warnings": row.get("warnings") or []}
               for root, row in channel.get("libre_rounds", {}).items()

@@ -11,6 +11,7 @@ from zf.core.config.schema import DEFAULT_CHANNEL_SEMANTIC_SOURCE_CHARS
 from zf.core.events import EventLog, EventWriter
 from zf.runtime.channel_sidecar import hydrate_channel_message_text
 from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
+from zf.runtime.channel_source_projection import checkpointed_synthesis
 
 
 SEMANTIC_SOURCE_SCHEMA_VERSION = "channel.semantic_sources.v1"
@@ -141,6 +142,13 @@ def build_semantic_source_bundle(
     documents: list[dict[str, Any]] = []
     errors: list[str] = []
     source_chars = 0
+    archived_sources: list[dict[str, Any]] = []
+    # An explicit Owner reply/reference selects a prior draft as current input.
+    # Do not interpret natural language or infer semantic authority here.
+    selected_history = {str(m.get("reply_to_message_id") or "") for m in thread_messages[:end]
+                        if m.get("role") == "user"}
+    owner_references = "\n".join(str(m.get("text") or "") + "\n" + json.dumps(m.get("refs") or {}, ensure_ascii=False)
+                                  for m in thread_messages[:end] if m.get("role") == "user")
 
     # Prior user inputs remain candidates across restarts. Their semantic role
     # is decided by the participant, not inferred from a UI flag.
@@ -174,6 +182,18 @@ def build_semantic_source_bundle(
         body_digest = str(
             descriptor.get("sha256") or message.get("body_sha256") or ""
         )
+        explicitly_selected = message_id in selected_history or any(value and value in owner_references
+            for value in (message_id, body_ref))
+        if stage == "synthesis" and checkpointed_synthesis(refs) and kind == "synthesis_attempt" and not explicitly_selected:
+            # Prior generated contracts are derived outputs, not new Owner
+            # requirements. Keep their provenance for audit without repeating
+            # failed/obsolete JSON inside the required input body.
+            archived_sources.append({"kind": kind, "message_id": message_id,
+                                     "message_body_ref": body_ref or f"event:{message.get('event_id') or message_id}#inline-message",
+                                     "message_body_digest": body_digest or (hashlib.sha256(str(message.get("text") or "").encode()).hexdigest() if not body_ref else ""),
+                                     "message_body_byte_count": descriptor.get("byte_count", 0),
+                                     "read_status": "historical_derived_output_not_required"})
+            continue
         try:
             text = (
                 hydrate_channel_message_text(Path(state_dir), message, strict=True)
@@ -354,6 +374,7 @@ def build_semantic_source_bundle(
         ],
         "documents": documents if not errors else [],
         "source_chars": source_chars,
+        **({"archived_sources": archived_sources} if checkpointed_synthesis(refs) else {}),
     }
 
 

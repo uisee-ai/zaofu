@@ -1,5 +1,6 @@
 import type { EventRecord, WebChatTurn } from "../../api/types.js";
 import { reconcileDurableRuns } from "./durableRunProjection.js";
+import { restoreDurableReadableActivity } from "./durableReadableActivity.js";
 import type {
   AgentConversation, AgentSessionActionProposal, AgentSessionCard, AgentSessionPart, AgentSessionPlanRequest, AgentSessionRun,
   AgentSessionThread, AgentSessionThreadRef, AgentSessionTurn,
@@ -402,7 +403,7 @@ function applyDelta(run: AgentSessionRun, event: EventRecord, payload: Record<st
     return;
   }
   upsertPart(run, {
-    id: kind === "tool" ? `tool-${seq}` : `status-${seq}`,
+    id: kind === "tool" ? `tool-${seq}` : textValue(payload.part_id).trim() || `status-${seq}`,
     runId: run.id,
     kind,
     state: kind === "tool" ? "streaming" : "submitted",
@@ -965,6 +966,7 @@ export function buildKanbanConversation(args: {
       run.updatedAt = event.ts;
     }
   }
+  restoreDurableReadableActivity(threads.values(), accepted);
   reconcileDurableRuns(threads.values(), args.durableTurns ?? []);
   return {
     id: `kanban:${args.projectId || "default"}`,

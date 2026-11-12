@@ -108,6 +108,9 @@ def build_channel_provider_prompt(
     if context_pack.get("semantic_source_stage") == "blind_contribution":
         typed_phase_ref = "blind_contribution"
     context_view = redact_obj(_intern_cross_review_coverage(context_pack))
+    from zf.runtime.channel_source_projection import checkpointed_synthesis, intern_source_contents
+    if checkpointed_synthesis(refs):
+        context_view = intern_source_contents(context_view)
     source_file = ""
     if (state_dir is not None and context_pack.get("context_pack_ref")
             and len(str(context_view)) > MAX_INLINE_CONTEXT_CHARS):
@@ -304,4 +307,5 @@ def build_channel_system_prompt(
     reply_contract = str(member.get("reply_contract") or "").strip()
     if reply_contract:
         prompt = f"{prompt}\n\n{reply_contract}"
-    return prompt
+    from zf.runtime.agent_readable_output import READABLE_AGENT_OUTPUT
+    return prompt + "\n\n" + READABLE_AGENT_OUTPUT

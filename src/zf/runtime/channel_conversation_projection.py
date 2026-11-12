@@ -429,9 +429,24 @@ def _compact_refs(refs: dict[str, Any]) -> dict[str, Any]:
             "evaluation_source_document",
             "source_requirement_message_id",
             "consensus_review_id",
+            "completion_confirmed",
+            "display_origin",
+            "display_text",
         )
         if refs.get(key) not in (None, "")
     }
+    raw = refs.get("raw") if isinstance(refs.get("raw"), dict) else {}
+    public_raw: dict[str, Any] = {}
+    activity = raw.get("activity")
+    if isinstance(activity, dict) and activity.get("kind") == "synthesis":
+        public_raw["activity"] = {key: _limited_text(activity[key], 600) if isinstance(activity[key], str) else activity[key]
+            for key in ("kind", "id", "index", "total", "completed", "title", "state", "retry", "restored", "reason")
+            if key in activity and isinstance(activity[key], (str, bool, int))}
+    note = raw.get("public_commentary")
+    if isinstance(note, dict) and note.get("snapshot") is True:
+        public_raw["public_commentary"] = {"id": _limited_text(note.get("id"), 160), "snapshot": True}
+    if public_raw:
+        out["raw"] = public_raw
     attachments = refs.get("attachments")
     if isinstance(attachments, list):
         out["attachments"] = [
@@ -475,13 +490,8 @@ def _provider_run_in_conversation(
     return (
         status in _ACTIVE_RUN_STATUSES
         or status in _FAILED_RUN_STATUSES
-        or (
-            status not in {"completed", "succeeded", "done"}
-            and (
-                str(item.get("message_id") or "") in page_message_ids
-                or str(item.get("request_id") or "") in page_request_ids
-            )
-        )
+        or str(item.get("message_id") or "") in page_message_ids
+        or str(item.get("request_id") or "") in page_request_ids
     )
 
 
@@ -496,9 +506,17 @@ def _compact_provider_run(item: dict[str, Any]) -> dict[str, Any]:
         drop={"usage", "raw_output", "prompt", "transcript"},
     )
     parts = item.get("parts") if isinstance(item.get("parts"), list) else []
+    if str(item.get("status") or "") in {"completed", "succeeded", "done"}:
+        # The canonical Channel message already supplies the complete reply.
+        parts = [part for part in parts if isinstance(part, dict) and part.get("kind") != "text"]
+    # Keep the latest phase receipts even after a busy tool tail. Raw native
+    # payloads remain excluded; the public projection carries only safe fields.
+    phases = {str(part.get("part_id")): part for part in parts if isinstance(part, dict)
+              and (((part.get("refs") or {}).get("raw") or {}).get("activity") or {}).get("kind") == "synthesis"}
+    selected = list({str(part.get("part_id")): part for part in [*list(phases.values())[-5:], *parts[-24:]] if isinstance(part, dict)}.values())
     out["parts"] = [
         _compact_mapping(part, text_limit=900, drop={"raw_output", "arguments"})
-        for part in parts[-24:]
+        for part in selected
         if isinstance(part, dict)
     ]
     return out

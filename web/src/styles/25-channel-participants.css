@@ -127,6 +127,7 @@
 .channel-prd-document::backdrop { background: var(--panel); }
 .channel-prd-document .channel-document-pagination { flex: none; justify-content: center; gap: 20px; padding: 8px 18px; border-top: 1px solid var(--line-soft); }
 .channel-prd-document .channel-document-toolbar { flex-wrap: wrap; }
+.channel-prd-document .channel-document-toolbar > div { flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .channel-prd-file-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .channel-prd-file-title strong { font-size: var(--text-13); }
 .channel-prd-view-switch { display: flex; padding: 2px; border-radius: 7px; background: var(--surface); }

@@ -83,6 +83,13 @@ def reply_generation_is_current(
     if not request_id:
         return True
     events = list(events)
+    run = provider_run_fields_for_request(channel_id, request)
+    if any(event.type == "agent.session.run.cancelled" and event.payload.get("source") == "web"
+           and event.payload.get("channel_id") == channel_id
+           and event.payload.get("run_id") == run["run_id"]
+           and _positive_int(event.payload.get("run_generation"), default=1) == run["run_generation"]
+           for event in events):
+        return False
     if any(event.type == "channel.synthesis.recovered"
            and event.payload.get("channel_id") == channel_id
            and any(row.get("request_id") == request_id for row in event.payload.get("replies") or [])

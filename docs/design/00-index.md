@@ -24,5 +24,6 @@
 | 199 | [Worker 失败恢复与角色交付闭环](199-worker-failure-recovery-and-role-handoff.md) | partial | 分层恢复、逐请求义务、异步诊断、作用域准入和 WRC 去重；实现证据与剩余验收见配套实施记录。 |
 | 200 | [Agent 恢复职责与统一执行 Runtime](200-agent-recovery-ownership-and-unified-runtime.md) | implemented | 八个工作包完成；真实 Codex/v5 最小业务闭环，验证层级及生产资格边界见配套实施记录。 |
 | 201 | [libre_discuss：用户掌握节奏的 Agent Channel](201-libre-discuss-channel.md) | implemented | 安静建群、角色邀请、主持人有界调度、前置去重及失败回退、手动 PRD 输入快照与局部取消；旧模式保留。验证边界见[实施记录](../impl/libre-discuss-implementation.md)。 |
+| 202 | [可读 Agent 活动与可恢复的分段 PRD 综合](202-readable-agent-activity-and-checkpointed-synthesis.md) | implemented | Channel/Kanban 可折叠公开过程、来源整理、分段保存与恢复、跨进程取消；狼人杀 v2 已通过原发布路径，验证边界见[实施记录](../impl/readable-agent-activity-and-checkpointed-synthesis.md)。 |
 
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。

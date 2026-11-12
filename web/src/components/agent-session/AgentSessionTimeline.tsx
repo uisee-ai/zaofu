@@ -17,7 +17,6 @@ import type {
 } from "./types";
 import { getAgentSessionRawOutput } from "../../api/client";
 import { MarkdownText } from "./MarkdownText";
-import { completedRunNotices } from "./notices";
 import { actionImpactRows, previewItemsFromRefs, type PreviewItem } from "./previewRegistry";
 import { formatOutputStats, formatToolDuration, getOutputPreview, prettyPrintIfJson, rawOutputLabel, rawOutputRefFromRefs, type RawOutputRef } from "./toolOutput";
 import { actionPresentation } from "./actionPresentation";
@@ -28,7 +27,6 @@ import { ReferencePreviewContext, previewFileRef } from "./referencePreview";
 const PreviewOpenContext = createContext<((part: AgentSessionPart) => void) | null>(null);
 import { segmentRunParts, type ToolRunSegment } from "./toolGrouping";
 import { cleanToolTitle, iconForToolName } from "./toolIcon";
-import { ThinkingIndicator } from "./ThinkingIndicator";
 import { runStartTimestamp, toolCallCount } from "./liveRunIndicator";
 import { ApproveInteractionActions, PlanInteractionForm, PlanQuestionDraftScope } from "./AgentInteractionControls";
 import { AgentThreadNavigation } from "./AgentThreadNavigation";
@@ -38,6 +36,8 @@ import {
   presentContribution,
 } from "./contributionPresentation";
 import { isSettledTurn, windowAgentTurns } from "./turnWindow";
+import { ReadableAgentActivity } from "./ReadableAgentActivity";
+import { ReadableAgentReply } from "./ReadableAgentReply";
 
 interface AgentSessionTimelineProps {
   onPreviewReference?: (item: PreviewItem) => void;
@@ -455,17 +455,7 @@ function RunBlock({
   const replyParts = visibleParts.filter(isReplyPart);
   const detailParts = visibleParts.filter((part) => !isReplyPart(part));
   const thinkingParts = detailParts.filter((part) => part.kind === "thinking");
-  // stream-ux axis 2: while the run works and no reply text has arrived, the
-  // header renders the live indicator (pulsing dots + member + elapsed) as a
-  // SINGLE line instead of a bare dot over blank space. Suppressed only when
-  // a live ThinkingPart already shows its own "Thinking · Ns" line (kanban
-  // thinking stream — channel hides those).
-  const chatToolParts = detailParts.filter((part) => part.kind !== "thinking" && part.kind !== "status");
-  const chatVisibleThinking = channelChatMode ? [] : thinkingParts;
-  const showThinkingIndicator = chatMode && runWorking && !replyParts.length && !chatVisibleThinking.length;
-  // A kanban chat header with no member, no indicator, and no cancel action
-  // would render a lone status dot on its own line — drop the row entirely.
-  const showChatHeader = showThinkingIndicator || Boolean(run.memberId) || Boolean(canCancel);
+  const showChatHeader = Boolean(run.memberId);
   const headerStatusLabel = channelChatMode && thinkingParts.length && (run.status === "streaming" || run.status === "submitted")
     ? `${statusLabel(run.status)} · Thinking`
     : statusLabel(run.status);
@@ -484,57 +474,6 @@ function RunBlock({
           ))}
     </div>
   );
-  // Prose-first detail block: thinking -> subtle "Thought",
-  // tools → "See N steps"; drops status placeholders and the "Activity · N
-  // events" wrapper. Returns null when there's nothing meaningful to show.
-  const renderChatDetails = (parts: AgentSessionPart[]) => {
-    // Channel = multi-member group chat: each agent's internal reasoning is
-    // noise, so the "Thought" line is suppressed there. The kanban-agent
-    // single session keeps it because a single-agent session benefits from a
-    // compact reasoning trace.
-    const thinking = channelChatMode ? [] : parts.filter((part) => part.kind === "thinking");
-    // ZF-E2E-RACING UI (2026-07-11): status parts that survive on a COMPLETED
-    // run are real notices (e.g. the blocked-route "未自动扇出(防风暴)" line
-    // from chat-e2e F5), not progress placeholders — those are synthesized
-    // only while a run is working. Dropping them left a bare presence dot:
-    // four mystery bubbles in one racing-channel discussion. Render them as
-    // muted system lines instead.
-    // frontend-stress OBS-1 (2026-07-15): keep only real notices on a completed
-    // run; progress placeholders collapse (see notices.ts).
-    const notices = completedRunNotices(parts, run.status);
-    const tools = parts.filter((part) => part.kind !== "thinking" && part.kind !== "status");
-    if (!thinking.length && !tools.length && !notices.length) return null;
-    if (!runWorking) {
-      const activityFailed = [...thinking, ...tools].some((part) => (
-        part.kind === "error" || part.state === "failed"
-      ));
-      const activityCount = thinking.length + tools.length;
-      return (
-        <div className="agent-chat-details settled">
-          {notices.length ? renderPartList(notices, "agent-notice-list") : null}
-          {activityCount ? (
-            <details className={`agent-activity-fold ${activityFailed ? "error" : ""}`.trim()} open={activityFailed || undefined}>
-              <summary>
-                <ChevronRight className="agent-run-detail-chevron" size={14} />
-                <span>{activityFailed ? "Activity needs attention" : `Activity · ${activityCount} ${activityCount === 1 ? "step" : "steps"}`}</span>
-              </summary>
-              <div className="agent-activity-fold-body">
-                {thinking.length ? renderPartList(thinking, "agent-thinking-list") : null}
-                {tools.length ? renderPartList(tools, "agent-process-list", true) : null}
-              </div>
-            </details>
-          ) : null}
-        </div>
-      );
-    }
-    return (
-      <div className="agent-chat-details">
-        {notices.length ? renderPartList(notices, "agent-notice-list") : null}
-        {thinking.length ? renderPartList(thinking, "agent-thinking-list") : null}
-        {tools.length ? renderPartList(tools, "agent-process-list", true) : null}
-      </div>
-    );
-  };
   const statusPart = (): AgentSessionPart => ({
     id: `${run.id}-pending`,
     runId: run.id,
@@ -553,19 +492,8 @@ function RunBlock({
         {chatMode ? (
           <div className="agent-run-title agent-run-title-min">
             {renderRunIdentity?.(run)}
-            {showThinkingIndicator ? (
-              // Single status line: pulse dots + @member + "Thinking · 12s".
-              <ThinkingIndicator
-                label={chatToolParts.length ? "Working" : "Thinking"}
-                startedAt={runStartTimestamp(run)}
-                who={renderRunIdentity ? undefined : run.memberId}
-              />
-            ) : (
-              <>
-                <span className={`agent-thread-dot ${statusClass(run.status)}`} />
-                {!renderRunIdentity && run.memberId ? <span className="agent-run-who">@{run.memberId}</span> : null}
-              </>
-            )}
+            <span className={`agent-thread-dot ${statusClass(run.status)}`} />
+            {!renderRunIdentity && run.memberId ? <span className="agent-run-who">@{run.memberId}</span> : null}
           </div>
         ) : (
           <div className="agent-run-title">
@@ -579,7 +507,7 @@ function RunBlock({
             ) : null}
           </div>
         )}
-        {canCancel ? (
+        {canCancel && !chatMode ? (
           <div className="agent-run-actions">
             <button className="agent-inline-button" type="button" onClick={() => onCancelRun?.(run.id)}>
               Cancel
@@ -597,13 +525,14 @@ function RunBlock({
           // the details fold underneath.
           runWorking ? (
             <>
-              {renderChatDetails(detailParts)}
+              <ReadableAgentActivity run={run} onStop={canCancel ? () => onCancelRun?.(run.id) : undefined}
+                renderTechnicalPart={(part) => <PartRenderer channelChatMode={channelChatMode} part={part} runStatus={run.status} />} />
               {replyParts.length ? renderPartList(replyParts, "agent-reply-list") : null}
             </>
           ) : (
             <>
               {replyParts.length ? renderPartList(replyParts, "agent-reply-list") : null}
-              {renderChatDetails(detailParts)}
+              <ReadableAgentActivity run={run} renderTechnicalPart={(part) => <PartRenderer channelChatMode={channelChatMode} part={part} runStatus={run.status} />} />
             </>
           )
         ) : visibleParts.length ? (
@@ -679,7 +608,7 @@ function PartRenderer({
       {shouldShowTextPartTitle(part) ? <span className="agent-part-title">{part.title}</span> : null}
       {/* Render markdown on BOTH surfaces — kanban-agent replies previously fell
           back to plain <p>, showing raw markdown (**bold**, `code`, lists). */}
-      <MarkdownText content={body} formatStandaloneJson isStreaming={isStreaming} />
+      <ReadableAgentReply content={body} streaming={isStreaming} />
       {/* Strip source-event provenance so a prose reply doesn't carry an
           `evt-... text` chip; keep real artifact refs. */}
       <AttachmentChips refs={omitProvenanceRefs(part.refs)} />
@@ -699,7 +628,8 @@ function PartRenderer({
   );
 }
 
-const PROVENANCE_REF_KEYS = ["source_event_id", "source_event_seq", "source_event_type", "schema_version", "task_id"];
+const PROVENANCE_REF_KEYS = ["source_event_id", "source_event_seq", "source_event_type", "schema_version", "task_id",
+  "provider_session_id", "snapshot_ref", "trace_id", "event_id", "request_event_id", "channel_last_event_id"];
 
 function omitProvenanceRefs(refs?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!refs) return refs;
@@ -735,7 +665,7 @@ function isPreviewPart(part: AgentSessionPart): boolean {
 
 function shouldShowTextPartTitle(part: AgentSessionPart): boolean {
   if (!part.title) return false;
-  return !["Reply", "Response"].includes(part.title);
+  return !["reply", "response", "text"].includes(part.title.toLowerCase());
 }
 
 function ThinkingPart({ part, runStatus }: { part: AgentSessionPart; runStatus: AgentSessionStatus }) {

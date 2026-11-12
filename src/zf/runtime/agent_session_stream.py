@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,8 @@ class AgentSessionStreamEmitter:
         self._final_text: list[str] = []
         self._last_flush_at = time.monotonic()
         self._content_started = False
+        self._commentary_text: dict[str, str] = {}
+        self._pending_commentary: set[str] = set()
 
     @property
     def started_event_id(self) -> str | None:
@@ -93,6 +96,20 @@ class AgentSessionStreamEmitter:
     def emit_message(self, message: Any) -> None:
         message_type = str(getattr(message, "type", "") or "")
         content = str(getattr(message, "content", "") or "")
+        raw = getattr(message, "raw", {}) or {}
+        params = raw.get("params") if isinstance(raw, dict) else None
+        params = params if isinstance(params, dict) else {}
+        if (message_type == "status" and isinstance(raw, dict)
+                and str(raw.get("method") or "").endswith("item/agentMessage/delta")
+                and params.get("itemId")):
+            item_id = str(params["itemId"])
+            previous = self._commentary_text.get(item_id, "")
+            self._commentary_text[item_id] = (previous + content)[:4000]
+            if previous == self._commentary_text[item_id]:
+                return
+            self._pending_commentary.add(item_id)
+            self._flush_first_content_or_due()
+            return
         if message_type == "text":
             if content:
                 self._pending_text.append(content)
@@ -106,14 +123,25 @@ class AgentSessionStreamEmitter:
             return
 
         self.flush()
+        activity = raw.get("activity") if isinstance(raw, dict) else None
+        state = str(activity.get("state") or "started") if isinstance(activity, dict) else _state_for_message_type(message_type)
+        if message_type == "tool_result" and raw.get("tool_outcome") in {"completed", "failed", "cancelled", "unknown"}:
+            state = "idle" if raw["tool_outcome"] == "unknown" else raw["tool_outcome"]
         self._emit_part(
             kind=_kind_for_message_type(message_type),
-            state=_state_for_message_type(message_type),
+            state=state,
             content=content or str(getattr(message, "output", "") or ""),
             refs=_refs_for_message(message),
+            part_id=("activity-" + hashlib.sha256(str(activity.get("id")).encode()).hexdigest()[:20])
+                    if isinstance(activity, dict) and activity.get("id") else "",
         )
 
     def flush(self) -> None:
+        for item_id in sorted(self._pending_commentary):
+            self._emit_part(kind="status", state="started", content=self._commentary_text[item_id],
+                            refs={"raw": {"public_commentary": {"id": item_id, "snapshot": True}}},
+                            part_id="commentary-" + hashlib.sha256(item_id.encode()).hexdigest()[:20])
+        self._pending_commentary.clear()
         if self._pending_thinking:
             content = "".join(self._pending_thinking)
             self._pending_thinking.clear()
@@ -249,9 +277,10 @@ class AgentSessionStreamEmitter:
         state: str,
         content: str = "",
         refs: dict[str, Any] | None = None,
+        part_id: str = "",
     ) -> None:
         self.seq += 1
-        part_id = f"{kind}-{self.seq:04d}"
+        part_id = part_id or f"{kind}-{self.seq:04d}"
         payload = {
             **self._base_payload(),
             "part_id": part_id,

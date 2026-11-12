@@ -21,6 +21,20 @@
   gap: 8px;
 }
 
+.libre-prd-candidate > summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 0;
+  background: var(--panel);
+  color: var(--brand);
+  font-weight: 500;
+}
+
+.channel-drawer:has(.libre-prd-controls) .channel-drawer-header .mono {
+  display: none;
+}
+
 @media (max-width: 640px) {
   .libre-discussion-notice {
     padding-inline: 16px;

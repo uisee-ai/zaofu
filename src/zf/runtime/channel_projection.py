@@ -1374,6 +1374,12 @@ def _apply_agent_session(channel: dict[str, Any], event: ZfEvent, payload: dict[
     if not run:
         return
     if event.type.startswith("agent.session.part."):
+        refs = payload.get("refs") if isinstance(payload.get("refs"), dict) else {}
+        raw = refs.get("raw") if isinstance(refs.get("raw"), dict) else {}
+        snapshot = payload.get("kind") == "status" and (
+            isinstance(raw.get("activity"), dict)
+            or isinstance(raw.get("public_commentary"), dict) and raw["public_commentary"].get("snapshot") is True
+        )
         state = "streaming"
         if event.type.endswith(".completed"):
             state = "completed"
@@ -1386,7 +1392,7 @@ def _apply_agent_session(channel: dict[str, Any], event: ZfEvent, payload: dict[
             default_part_id=_payload_str(payload, "part_id") or "part",
             default_kind=_payload_str(payload, "kind") or _payload_str(payload, "message_type") or "status",
             state=state,
-            append=event.type.endswith(".delta"),
+            append=event.type.endswith(".delta") and not snapshot,
         )
         return
     status = _session_run_status(event.type, payload)
@@ -1521,10 +1527,14 @@ def _upsert_session_part(
         "source_event_id": event.id,
         "updated_at": event.ts,
     })
+    if event.type == "agent.session.tool.completed":
+        part["refs"] = {**part.get("refs", {}), "completion_confirmed": True}
     run["updated_at"] = event.ts
 
 
 def _session_run_status(event_type: str, payload: dict[str, Any]) -> str:
+    if event_type == "agent.session.run.cancelled" and payload.get("source") == "web":
+        return "cancelled" if payload.get("process_terminated") or payload.get("status") == "already_exited" else "streaming"
     explicit = _payload_str(payload, "status")
     if explicit:
         if explicit in {"started", "running"}:
@@ -2461,6 +2471,8 @@ def _apply_synthesis_request(channel: dict[str, Any], event: ZfEvent, payload: d
         "reason": _payload_str(payload, "reason"),
         "prompt": _payload_str(payload, "prompt"),
         "prd_input_snapshot": payload.get("prd_input_snapshot") or {},
+        "synthesis_pipeline": _payload_str(payload, "synthesis_pipeline"),
+        "retry_of_request_id": _payload_str(payload, "retry_of_request_id"),
         "source": _payload_str(payload, "source"),
         "repair_id": _payload_str(payload, "repair_id"),
         "repair_revision": int(payload.get("repair_revision") or 0),

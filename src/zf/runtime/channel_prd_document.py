@@ -128,15 +128,9 @@ def _validate_prd_spec_v1(body: dict[str, Any]) -> str:
                for word in ("GIVEN", "WHEN", "THEN")):
         return "prd-spec.v1 scenarios must include GIVEN, WHEN, and THEN"
 
-    for field in ("non_functional_requirements", "success_metrics"):
-        values = body.get(field)
-        if not isinstance(values, list):
-            return f"prd-spec.v1 {field} must be a list"
-        if control["profile"] == "full" and field == "success_metrics" and not values:
-            return "prd-spec.v1 full profile requires success_metrics"
-        error = _validate_id_items(field, values)
-        if error:
-            return error
+    error = validate_prd_measurables(body)
+    if error:
+        return error
     if control["profile"] == "full":
         error = _validate_full_profile(body, headings, requirement_headings)
         if error:
@@ -149,6 +143,26 @@ def _validate_prd_spec_v1(body: dict[str, Any]) -> str:
         return error
     if not isinstance(body.get("open_questions"), list):
         return "prd-spec.v1 open_questions must be a list"
+    return ""
+
+
+def validate_prd_measurables(body: dict[str, Any]) -> str:
+    """Shared mechanical schema gate, also used before saving a document part."""
+    control = body.get("document_control") or {}
+    for field in ("non_functional_requirements", "success_metrics"):
+        values = body.get(field)
+        if not isinstance(values, list):
+            return f"prd-spec.v1 {field} must be a list"
+        if control.get("profile") == "full" and field == "success_metrics" and not values:
+            return "prd-spec.v1 full profile requires success_metrics"
+        error = _validate_id_items(field, values)
+        if error:
+            return error
+    if control.get("profile") == "full":
+        for item in body.get("success_metrics") or []:
+            for key in ("baseline", "target", "measurement_method", "owner", "measurement_timing", "status"):
+                if not isinstance(item.get(key), str) or not item[key].strip():
+                    return f"prd-spec.v1 success_metrics {item.get('id') or '<unknown>'} requires {key}"
     return ""
 
 
@@ -211,11 +225,6 @@ def _validate_full_profile(
         return "prd-spec.v1 full profile requires a named Scenario for every requirement"
     if normative_count < requirement_count:
         return "prd-spec.v1 full profile requires MUST or SHALL for every requirement"
-    for field in ("success_metrics",):
-        for item in body.get(field) or []:
-            for key in ("baseline", "target", "measurement_method", "owner", "measurement_timing", "status"):
-                if not isinstance(item.get(key), str) or not item[key].strip():
-                    return f"prd-spec.v1 {field} {item.get('id') or '<unknown>'} requires {key}"
     return ""
 
 

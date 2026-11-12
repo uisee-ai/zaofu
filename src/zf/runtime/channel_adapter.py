@@ -681,6 +681,7 @@ def _run_headless_reply(
     # optional headless provider runtime unless a real provider is requested.
     from zf.web.headless_agent import (
         ClaudeHeadlessBackend,
+        HeadlessMessage,
         HeadlessTurnResult,
         HeadlessThreadStore,
     )
@@ -768,6 +769,11 @@ def _run_headless_reply(
                 snapshot_ref=runtime_snapshot_ref,
             ),
         )
+        from zf.runtime.channel_cancellation import ChannelCancellationMonitor
+        cancellation_monitor = ChannelCancellationMonitor(Path(state_dir), channel_id=channel_id,
+            channel_thread_id=str(request.get("thread_id") or "main"), run_id=str(run_fields["run_id"]),
+            provider_thread_id=thread_id, generation=int(run_fields["run_generation"]),
+            synthesis_id=str((message.get("refs") or {}).get("synthesis_request_id") or ""))
         stream.start(
             provider_session_id=provider_session_id,
             permission_snapshot=base_snapshot,
@@ -860,20 +866,41 @@ def _run_headless_reply(
             )
 
         try:
-            result = run_channel_provider_with_continuations(
-                run_turn=run_provider_turn,
-                initial_prompt=_build_channel_prompt(
+            from zf.runtime.channel_source_projection import checkpointed_synthesis
+            extra = {}
+            provider_runner = run_channel_provider_with_continuations
+            if checkpointed_synthesis(message.get("refs") or {}):
+                from zf.runtime.channel_checkpointed_synthesis import run_checkpointed_synthesis
+                from zf.runtime.channel_synthesis_lock import synthesis_request_in_flight
+                def synthesis_active() -> bool:
+                    current = project_channel(Path(state_dir), channel_id) or {}
+                    active = synthesis_request_in_flight(current, str(request.get("thread_id") or "main"))
+                    from zf.runtime.channel_run_owner import reply_generation_is_current
+                    run = next((r for r in current.get("provider_runs", []) if r.get("run_id") == run_fields["run_id"]), {})
+                    return bool(active and active.get("request_id") == (message.get("refs") or {}).get("synthesis_request_id")
+                                and run.get("status") not in {"cancelled", "failed", "stale", "completed"}
+                                and reply_generation_is_current(writer.event_log.read_all(), channel_id=channel_id, request=request))
+                def synthesis_progress(activity: dict) -> None:
+                    stream.emit_message(HeadlessMessage(type="status", content=activity["title"], raw={"activity": activity}))
+                provider_runner = run_checkpointed_synthesis
+                extra = {"member": member, "state_dir": Path(state_dir), "on_progress": synthesis_progress,
+                         "is_active": synthesis_active}
+            with cancellation_monitor:
+                result = provider_runner(
+                    run_turn=run_provider_turn,
+                    initial_prompt=_build_channel_prompt(
+                        channel=channel,
+                        member=member,
+                        message=message,
+                        request=request,
+                        state_dir=Path(state_dir),
+                    ),
+                    provider_session_id=provider_session_id,
                     channel=channel,
-                    member=member,
-                    message=message,
                     request=request,
-                    state_dir=Path(state_dir),
-                ),
-                provider_session_id=provider_session_id,
-                channel=channel,
-                request=request,
-                message=message,
-            )
+                    message=message,
+                    **extra,
+                )
             visible_stream.finish(str(getattr(result, "reply", "") or ""))
         except Exception as exc:
             stream.fail(

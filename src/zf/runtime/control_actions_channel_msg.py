@@ -602,6 +602,7 @@ class ChannelMessageActionsMixin:
                     "discussion_context_digest": str((channel.get("discussions", {}).get(thread_id) or {}).get("context_digest") or ""),
                     "target_member_id": target_member_id,
                     "prd_quality_contract": "channel-prd-quality.v1",
+                    **({"synthesis_pipeline": "checkpointed.v1"} if libre else {}),
                     "status": "requested",
                     "reason": str(payload.get("reason") or "synthesis requested"),
                     "prompt": prompt,
@@ -632,6 +633,8 @@ class ChannelMessageActionsMixin:
             "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1",
                      **({"display_origin": "user_prd_request", "display_text": "请按本次选定的聊天和材料生成 PRD 草稿，保留未决事项。"} if libre else {}),
                      "prd_quality_contract": request_event.payload.get("prd_quality_contract", ""),
+                     **({"synthesis_pipeline": "checkpointed.v1",
+                         **({"retry_of_request_id": retry_of} if retry_of else {})} if libre else {}),
                      **({"prd_source_file": source_file} if source_file else {}),
                      **({"prd_input_snapshot": input_snapshot} if input_snapshot else {})},
         }, created_by=f"channel-synthesis:{self.surface}")

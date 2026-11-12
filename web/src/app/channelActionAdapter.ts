@@ -87,6 +87,7 @@ export function createChannelActionAdapter(args: ChannelActionAdapterArgs) {
     const result = await args.submitAction("agent-session-cancel", {
       run_id: runId, thread_id: threadId, conversation_id: channelId(),
       channel_id: channelId(), backend: run?.backend || run?.provider,
+      run_generation: Number(run?.run_generation || 1),
     });
     if (!result.ok) throw new Error(result.reason || "Provider cancellation failed");
     await args.refreshChannelDetail();
