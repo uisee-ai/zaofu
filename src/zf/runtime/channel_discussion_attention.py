@@ -294,6 +294,7 @@ def project_discussion_attention(
             state, reason, next_action = "blocked", "context_pack_rejected", "diagnose_attention"
             execution_state = "running" if active_replies else "blocked"
         unknown_delivery = any(r.get("status") == "failed"
+                               and r.get("terminal_disposition") != "abandoned"
                                and r.get("failure_status") == "delivery_unknown" for r in replies)
         retry_synthesis = bool(
             phase == "phase3_synthesis" and synthesis_requests

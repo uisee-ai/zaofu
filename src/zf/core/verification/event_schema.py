@@ -1092,6 +1092,7 @@ def channel_event_schema_rules() -> dict[str, dict[str, Any]]:
             "optional": ["task_id", "run_id", "refs"],
         },
         "channel.synthesis.cancelled": {"required": [*base, "request_id", "status", "reason"]},
+        "channel.synthesis.recovered": {"required": [*base, "request_id", "status", "disposition", "reason", "replies"]},
         "channel.libre.round.started": {"required": [*base, "round_id", "targets", "allow_relay"]},
         "channel.libre.reply.processed": {"required": [*base, "round_id", "request_id"]},
         "channel.libre.relay.proposed": {"required": [*base, "round_id", "targets", "prompt", "reason"]},

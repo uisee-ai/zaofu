@@ -154,6 +154,17 @@ export function createChannelActionAdapter(args: ChannelActionAdapterArgs) {
     }
   }
 
+  async function recoverSynthesis(threadId: string, requestId: string) {
+    try {
+      const result = await args.submitAction("channel.synthesis.recover", {
+        channel_id: channelId(), thread_id: threadId, synthesis_request_id: requestId,
+      });
+      if (!result.ok) throw new Error(result.reason || "失败请求尚不能安全结束，请检查原运行");
+    } finally {
+      await args.refreshChannelDetail().catch(() => {});
+    }
+  }
+
   async function generateOwnerReport(threadId: string) {
     await args.submitAction(
       "channel.owner_report.request",
@@ -358,6 +369,7 @@ export function createChannelActionAdapter(args: ChannelActionAdapterArgs) {
     evaluatePrd,
     requestSynthesis,
     cancelSynthesis,
+    recoverSynthesis,
     resolveQuestion,
     setDiscussionMode,
     startDiscussion,

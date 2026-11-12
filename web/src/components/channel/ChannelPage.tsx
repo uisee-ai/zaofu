@@ -424,6 +424,7 @@ export function ChannelPage({
   onCancelProviderRun,
   onRequestSynthesis,
   onCancelSynthesis,
+  onRecoverSynthesis,
   onResolveQuestion,
   onSetMemberPermission,
   onSearchHistory,
@@ -473,6 +474,7 @@ export function ChannelPage({
   onResearchAdopt: (payload: Record<string, unknown>) => Promise<void>;
   onCancelProviderRun: (runId: string) => Promise<void>;
   onCancelSynthesis?: (threadId: string, requestId: string) => Promise<void>;
+  onRecoverSynthesis?: (threadId: string, requestId: string) => Promise<void>;
   onRequestSynthesis: (threadId: string, targetMemberId?: string, sourceFile?: { ref: string; sha256: string }, materials?: PrdMaterials) => Promise<void>;
   onResolveQuestion: (questionId: string, threadId: string, resolution: string, answer: string) => Promise<void>;
   onSetMemberPermission: (memberId: string, permissionProfile: ChannelPermissionProfile) => Promise<void>;
@@ -2346,6 +2348,7 @@ export function ChannelPage({
     }
     if (activeDrawer === "synthesis" && libreDiscuss) return <>
       <LibrePrdControls requests={(workspaceDetail?.synthesis_requests ?? []).filter((r) => String(r.thread_id || "main") === controlThreadId)}
+        onRecover={onRecoverSynthesis ? (requestId) => onRecoverSynthesis(controlThreadId, requestId) : undefined}
         onReadCandidate={(requestId) => getChannelPrdCandidate(projectId || "default", selectedChannelId, controlThreadId, requestId)}
         actionReady={actionReady} busy={controlsBusy} onCancel={onCancelSynthesis ? (requestId) => onCancelSynthesis(controlThreadId, requestId) : undefined} onGenerate={(materials) => onRequestSynthesis(controlThreadId, undefined, undefined, materials)} />
       <button className="icon-button" type="button" onClick={() => setDrawer("prd")}>Preview PRD</button>

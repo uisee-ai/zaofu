@@ -446,6 +446,10 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
+        if action == "channel-synthesis-recover":
+            from zf.runtime.channel_synthesis_recovery import recover_channel_synthesis
+            return recover_channel_synthesis(self, requested=requested, action=action,
+                                             requested_action=requested_action, payload=payload)
         if action == "channel-synthesis-cancel":
             from zf.runtime.channel_synthesis_cancel import cancel_channel_synthesis
             return cancel_channel_synthesis(self, requested=requested, action=action, requested_action=requested_action, payload=payload)

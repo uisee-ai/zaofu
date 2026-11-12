@@ -295,3 +295,8 @@ let publicationRejected = false;
 try { await publicationAdapter.requestSynthesis("feature/api", undefined, fileSelection); }
 catch (error) { publicationRejected = String(error).includes("Source changed"); }
 assert(publicationRejected && Number(synthesisRefreshes) === 2, "rejected publication refreshes durable errors and stays actionable instead of opening an empty PRD");
+
+await publicationAdapter.recoverSynthesis("feature/api", "synth-failed").catch(() => {});
+assert(Number(synthesisRefreshes) === 3, "rejected recovery refreshes current evidence");
+assert(publicationCalls.at(-1)?.synthesis_request_id === "synth-failed" && publicationCalls.at(-1)?.thread_id === "feature/api",
+  "recovery remains bound to the selected failed request and thread");

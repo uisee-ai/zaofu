@@ -20,7 +20,7 @@ def stale_reply_transition(
     Preserve failure updates, but require a new generation to resume work.
     """
     current_generation = _positive_int(current.get("run_generation"), default=1)
-    return generation < current_generation or (
+    return current.get("terminal_disposition") == "abandoned" or generation < current_generation or (
         generation == current_generation
         and current.get("status") in RUN_TERMINAL_STATUSES
         and status != "failed"
@@ -82,6 +82,12 @@ def reply_generation_is_current(
     request_id = str(request.get("request_id") or "")
     if not request_id:
         return True
+    events = list(events)
+    if any(event.type == "channel.synthesis.recovered"
+           and event.payload.get("channel_id") == channel_id
+           and any(row.get("request_id") == request_id for row in event.payload.get("replies") or [])
+           for event in events):
+        return False
     generations = [
         _positive_int(event.payload.get("run_generation"), default=1)
         for event in events
@@ -108,6 +114,8 @@ def active_reply_for_target(
         if str(item.get("target_member_id") or "") != target_member_id:
             continue
         if exclude_request_id and str(item.get("request_id") or "") == exclude_request_id:
+            continue
+        if item.get("terminal_disposition") == "abandoned":
             continue
         if str(item.get("status") or "") in wanted or (
             item.get("status") == "failed" and item.get("failure_status") == "delivery_unknown"

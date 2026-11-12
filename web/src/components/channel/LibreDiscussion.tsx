@@ -19,10 +19,11 @@ export function LibreDiscussionNotice({ detail, threadId }: { detail: ChannelDet
   </div>;
 }
 
-export function LibrePrdControls({ requests, actionReady, busy, onGenerate, onCancel, onReadCandidate }: {
+export function LibrePrdControls({ requests, actionReady, busy, onGenerate, onCancel, onRecover, onReadCandidate }: {
   requests: Array<Record<string, unknown>>; actionReady: boolean; busy: boolean;
   onGenerate: (materials: PrdMaterials) => Promise<void>;
   onCancel?: (requestId: string) => Promise<void>;
+  onRecover?: (requestId: string) => Promise<void>;
   onReadCandidate?: (requestId: string) => Promise<ChannelPrdCandidate>;
 }) {
   const [text, setText] = useState("");
@@ -38,6 +39,7 @@ export function LibrePrdControls({ requests, actionReady, busy, onGenerate, onCa
     finally { setWorking(false); }
   };
   const latest = requests.at(-1);
+  const needsRecovery = latest?.recovery_required === true;
   const snapshot = requests.slice().reverse().map((r) => r.prd_input_snapshot as Record<string, unknown> | undefined).find((s) => s?.cutoff_at);
   return <section className="channel-control-panel libre-prd-controls" data-testid="libre-prd-controls">
     <strong>按当前内容生成 PRD</strong>
@@ -47,6 +49,16 @@ export function LibrePrdControls({ requests, actionReady, busy, onGenerate, onCa
     {!actionReady ? <p role="status">当前会话尚未获得操作权限，请先完成页面授权。</p> : null}
     {snapshot?.cutoff_at ? <p>本次材料截至 {String(snapshot.cutoff_at)}；后续补充用于下一版。</p> : null}
     {latest ? <p role="status">当前生成请求：{({ requested: "排队或生成中", repair_requested: "正在修复格式", proposed: "草稿已生成，待评估", completed: "草稿已生成，待评估", blocked: "生成失败，请查看原因", failed: "生成失败", cancelled: "已停止采用本次结果" } as Record<string, string>)[String(latest.status)] || "已受理"}</p> : null}
+    {latest?.reason && ["failed", "blocked"].includes(String(latest.status)) ? <p role="status">失败原因：{String(latest.reason)}</p> : null}
+    {needsRecovery ? <div role="status">
+      <p>原请求的最终交付结果尚未确认，重新生成暂不可用。可以检查并结束失败请求，不再采用其迟到结果；聊天、原材料和旧版 PRD 保留，之后由你手动重试。</p>
+      {onRecover ? <button className="icon-button" type="button" disabled={!actionReady || busy || working} onClick={() => {
+        setWorking(true); setError("");
+        void onRecover(String(latest.request_id))
+          .catch((reason: unknown) => setError(String(reason instanceof Error ? reason.message : reason)))
+          .finally(() => setWorking(false));
+      }}>检查并结束失败请求</button> : null}
+    </div> : null}
     {latest?.candidate_available && onReadCandidate ? <button className="icon-button" type="button" disabled={loadingCandidate} onClick={() => {
       setLoadingCandidate(true); setError("");
       void onReadCandidate(String(latest.request_id)).then(setCandidate)
@@ -58,14 +70,14 @@ export function LibrePrdControls({ requests, actionReady, busy, onGenerate, onCa
       {candidate.reason ? <p role="status">{candidate.reason}</p> : null}
       <MarkdownText content={candidate.markdown} />
     </details> : null}
-    {onCancel && latest && ["requested", "repair_requested"].includes(String(latest.status)) ? <button className="icon-button" type="button" disabled={!actionReady || busy || working} onClick={() => {
+    {onCancel && latest && !needsRecovery && ["requested", "repair_requested"].includes(String(latest.status)) ? <button className="icon-button" type="button" disabled={!actionReady || busy || working} onClick={() => {
       void onCancel(String(latest.request_id)).catch((reason: unknown) => setError(String(reason instanceof Error ? reason.message : reason)));
     }}>停止本次生成（保留聊天和旧版 PRD）</button> : null}
-    {latest && ["blocked", "failed", "cancelled"].includes(String(latest.status)) ? <button className="icon-button" type="button" disabled={!actionReady || busy || working} onClick={() => {
+    {latest && ["blocked", "failed", "cancelled"].includes(String(latest.status)) ? <button className="icon-button" type="button" disabled={!actionReady || busy || working || needsRecovery} onClick={() => {
       void submit({ retryRequestId: String(latest.request_id) });
     }}>重试本次（沿用原材料）</button> : null}
     {error ? <p role="alert">{error}</p> : null}
-    <button className="icon-button primary" type="button" disabled={!actionReady || busy || working} onClick={() => {
+    <button className="icon-button primary" type="button" disabled={!actionReady || busy || working || needsRecovery} onClick={() => {
       void submit({ text, includeProjectBrief });
     }}>{busy || working ? "提交中…" : "生成 PRD / 查看本次进度"}</button>
   </section>;

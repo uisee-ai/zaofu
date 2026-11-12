@@ -27,6 +27,12 @@ class ChannelDispatchResult:
         }
 
 
+def channel_reply_dispatch_claim_path(state_dir: Path, channel_id: str, request_id: str) -> Path:
+    """Share the live dispatcher fence with controlled recovery."""
+    digest = hashlib.sha256(f"{channel_id}:{request_id}".encode("utf-8")).hexdigest()
+    return Path(state_dir) / "locks" / "channel-reply-claims" / digest
+
+
 def with_channel_reply_dispatch_claim(
     dispatch: Callable[..., ChannelDispatchResult],
 ) -> Callable[..., ChannelDispatchResult]:
@@ -36,15 +42,7 @@ def with_channel_reply_dispatch_claim(
     def claimed_dispatch(*args: Any, **kwargs: Any) -> ChannelDispatchResult:
         channel_id = str(kwargs["channel_id"])
         request_id = str(kwargs["request_id"])
-        digest = hashlib.sha256(
-            f"{channel_id}:{request_id}".encode("utf-8")
-        ).hexdigest()
-        lock_target = (
-            Path(kwargs["state_dir"])
-            / "locks"
-            / "channel-reply-claims"
-            / digest
-        )
+        lock_target = channel_reply_dispatch_claim_path(kwargs["state_dir"], channel_id, request_id)
         try:
             with locked_path(lock_target, timeout_seconds=0.05):
                 return dispatch(*args, **kwargs)

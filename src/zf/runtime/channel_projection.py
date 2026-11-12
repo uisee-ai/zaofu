@@ -151,6 +151,7 @@ CHANNEL_EVENT_TYPES = {
     "channel.finding.recorded",
     "channel.summary.updated",
     "channel.synthesis.cancelled",
+    "channel.synthesis.recovered",
     "channel.synthesis.requested",
     "channel.synthesis.stale_ignored",
     "channel.synthesis.repair.requested",
@@ -613,6 +614,10 @@ def _build(
         elif event.type == "channel.summary.updated":
             channel["summary"] = _payload_str(payload, "summary")
             channel["summary_event_id"] = event.id
+        elif event.type == "channel.synthesis.recovered":
+            from zf.runtime.channel_synthesis_recovery import apply_synthesis_recovery
+            apply_synthesis_recovery(channel, event)
+            _apply_synthesis_request(channel, event, payload)
         elif event.type in {
             "channel.synthesis.cancelled",
             "channel.synthesis.requested",
@@ -2754,6 +2759,8 @@ def _public_channel(
     include_messages: bool,
     include_linked_events: bool = True,
 ) -> dict[str, Any]:
+    from zf.runtime.channel_synthesis_recovery import recovery_required_requests
+    needs_recovery = recovery_required_requests(channel)
     messages = [
         channel["messages"][key]
         for key in sorted(channel["messages"], key=lambda item: str(channel["messages"][item].get("ts", "")))
@@ -2901,7 +2908,9 @@ def _public_channel(
             ),
         ),
         "syntheses": channel["syntheses"],
-        "synthesis_requests": channel["synthesis_requests"],
+        "synthesis_requests": [{**row, "recovery_required": (
+            str(row.get("thread_id") or "main"), str(row.get("request_id") or "")
+        ) in needs_recovery} for row in channel["synthesis_requests"]],
         "question_dedup_requests": channel["question_dedup_requests"],
         "workflow_requests": workflow_requests,
         "mentions_detected": channel["mentions_detected"],

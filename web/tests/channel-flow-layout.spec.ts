@@ -646,6 +646,63 @@ for (const hasArtifact of [false, true]) {
   });
 }
 
+for (const mobile of [false, true]) {
+  test(`libre unknown synthesis has controlled recovery and manual retry (${mobile ? "mobile" : "desktop"})`, async ({ page, request }) => {
+    const detail = readyFixture();
+    detail.discussion.mode = "libre_discuss";
+    const failed = { request_id: "synth-failed", thread_id: "main", status: "failed", recovery_required: true,
+      reason: "codex turn timed out at total deadline", prd_input_snapshot: { cutoff_at: ts } };
+    detail.synthesis_requests.push(failed);
+    const state = await setup(page, request, detail);
+    state.allowSynthesis = true;
+    let recoveries = 0;
+    let release: () => void = () => {};
+    await page.route("**/actions/channel.synthesis.recover", async (route) => {
+      recoveries += 1;
+      expect(route.request().postDataJSON().payload).toMatchObject({ channel_id: channelId, thread_id: "main", synthesis_request_id: "synth-failed" });
+      if (recoveries === 1) {
+        await route.fulfill({ status: 409, json: { ok: false, reason: "原执行仍持有运行权，尚未解除保护" } });
+        return;
+      }
+      await new Promise<void>((resolve) => { release = resolve; });
+      Object.assign(failed, { status: "cancelled", recovery_required: false });
+      detail.seq += 1;
+      await route.fulfill({ json: { ok: true, status: "recovered" } });
+    });
+    if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByTestId("channel-flow-discussion").click();
+    await page.getByRole("button", { name: "Synthesize", exact: true }).click();
+    const controls = page.getByTestId("libre-prd-controls");
+    const recover = controls.getByRole("button", { name: "检查并结束失败请求", exact: true });
+    const retry = controls.getByRole("button", { name: "重试本次（沿用原材料）", exact: true });
+    const generate = controls.getByRole("button", { name: "生成 PRD / 查看本次进度", exact: true });
+    await expect(controls).toContainText("codex turn timed out at total deadline");
+    await expect(retry).toBeDisabled();
+    await expect(generate).toBeDisabled();
+    await recover.click();
+    await expect(controls.getByRole("alert")).toContainText("尚未解除保护");
+    await expect(recover).toBeEnabled();
+    await expect(retry).toBeDisabled();
+    await page.screenshot({ path: `test-results/synthesis-recovery-${mobile ? "mobile" : "desktop"}.png`, fullPage: true });
+    await recover.click();
+    await expect.poll(() => recoveries).toBe(2);
+    await expect(recover).toBeDisabled();
+    expect(state.writes).toEqual([]);
+    release();
+    await expect(recover).toHaveCount(0);
+    await expect(retry).toBeEnabled();
+    expect(state.writes).toEqual([]); // Recovery never starts another model turn.
+    await retry.click();
+    await expect.poll(() => state.payloads.length).toBe(1);
+    expect(state.payloads[0]).toMatchObject({ retry_of_request_id: "synth-failed", thread_id: "main" });
+    await page.getByRole("button", { name: "Preview PRD", exact: true }).click();
+    await expect(page.getByTestId("channel-prd-preview")).toContainText("Last paragraph preserved.");
+    expect(detail.syntheses).toHaveLength(1);
+    expect(state.unexpected).toEqual([]);
+    expect(state.errors).toEqual([]);
+  });
+}
+
 test("verified Markdown preview supports Source and Process uses only the existing planning action", async ({ page, request }) => {
   const detail = readyFixture();
   const state = await setup(page, request, detail);

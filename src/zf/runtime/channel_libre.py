@@ -251,7 +251,7 @@ def libre_conversation_metadata(channel: dict, visible_message_ids: set[str]) ->
         if row.get("prd_input_snapshot"):
             snapshots[rid] = row["prd_input_snapshot"]
         requests[str(row.get("thread_id") or "main")] = {
-            **{key: row.get(key) for key in ("thread_id", "request_id", "status", "reason", "target_member_id", "ts")},
+            **{key: row.get(key) for key in ("thread_id", "request_id", "status", "reason", "target_member_id", "ts", "recovery_required")},
             "prd_input_snapshot": row.get("prd_input_snapshot") or snapshots.get(rid) or {},
             "candidate_available": rid in candidates,
         }

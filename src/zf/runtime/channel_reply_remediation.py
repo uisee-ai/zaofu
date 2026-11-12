@@ -183,6 +183,12 @@ def fold_channel_reply_states(events: Iterable[ZfEvent]) -> dict[tuple[str, str]
     """
     states: dict[tuple[str, str], dict[str, Any]] = {}
     for event in events:
+        if event.type == "channel.synthesis.recovered":
+            for binding in event.payload.get("replies") or []:
+                item = states.get((event.payload.get("channel_id"), binding.get("request_id")))
+                if item and int(item.get("run_generation") or 1) == int(binding.get("run_generation") or 1):
+                    item.update(terminal_disposition="abandoned", retryable=False)
+            continue
         status = _STATUS_BY_TYPE.get(event.type)
         if status is None:
             continue
@@ -268,6 +274,8 @@ def channel_reply_remediation_candidates(
     recoverable = current_review_reply_bindings(events)
     rejected = current_review_reply_bindings(events, status="rejected")
     for key, item in fold_channel_reply_states(events).items():
+        if item.get("terminal_disposition") == "abandoned":
+            continue
         status = str(item.get("status") or "")
         age = _age_seconds(str(item.get("updated_at") or ""), now)
         if age is not None and age > max_age_seconds:

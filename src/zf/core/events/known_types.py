@@ -499,6 +499,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "channel.history.cleared",
     "channel.finding.recorded", "channel.summary.updated",
     "channel.synthesis.cancelled",
+    "channel.synthesis.recovered",
     "channel.synthesis.requested", "channel.synthesis.proposed",
     "channel.synthesis.stale_ignored",
     "channel.contribution.stale_ignored",

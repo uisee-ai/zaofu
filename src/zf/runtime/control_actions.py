@@ -322,7 +322,7 @@ class ControlledActionService(
                 requested_action=requested_action,
                 payload=payload,
             )
-        if action in {"channel-synthesis-request", "channel-synthesis-cancel"}:
+        if action in {"channel-synthesis-request", "channel-synthesis-cancel", "channel-synthesis-recover"}:
             return self._channel_synthesis_request(
                 requested=requested,
                 action=action,
