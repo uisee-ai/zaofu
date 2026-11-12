@@ -1,13 +1,15 @@
 """The production gap bridge publishes the replacement's source-index partition."""
 import json
 import subprocess
+import pytest
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.task_scoped_plan_inputs import task_input_paths
 from tests.test_module_gap_plan_runtime import _state, _write_base_task_map
 
 
-def test_gap_bridge_rebinds_source_index_and_keeps_original(tmp_path):
+@pytest.mark.parametrize("additive", [False, True])
+def test_gap_bridge_rebinds_source_index_and_keeps_original(tmp_path, additive):
     state, log, transport, orch = _state(tmp_path)
     ref = _write_base_task_map(state)
     old = 'CANGJIE-WEB-001'
@@ -27,12 +29,24 @@ def test_gap_bridge_rebinds_source_index_and_keeps_original(tmp_path):
             'base_commit': commit, 'owner_role': 'dev', 'claim_paths': ['web/**'],
             'acceptance': ['original behavior'], 'verify_commands': ['pytest'],
             'source_refs': ['git:' + commit]}]})
+    if additive:
+        event.payload['gap_tasks'][0]['blocked_by'] = ['MODEL-BINDING']
+        event.payload['gap_tasks'].insert(0, {
+            'task_id': 'MODEL-BINDING', 'parent_task_id': old,
+            'owner_role': 'dev', 'claim_paths': ['model/**'],
+            'acceptance': ['model execution binding'], 'verify_commands': ['pytest'],
+            'source_refs': ['git:' + commit],
+        })
     orch.run_once(events=[event])
     ready = next(e for e in log.read_all() if e.type == 'task_map.ready')
-    assert ready.payload['task_ids'] == [new]
+    assert ready.payload['task_ids'] == (['MODEL-BINDING', new] if additive else [new])
     assert ready.payload['source_index_ref'] != '.zf/source-index.json'
     updated = json.loads((state / ready.payload['source_index_ref']).read_text())
     assert updated['tasks'] == [{'task_id': new, 'requirement': 'original text'}]
     assert task_input_paths(updated, task_id=new) == ['$.schema_version', '$.tasks[0]']
+    if additive:
+        assert task_input_paths(updated, task_id='MODEL-BINDING') == ['$.schema_version', '$.tasks[0]']
     assert json.loads(source_path.read_text()) == source
     assert len(transport.sent) == 1
+    if additive:
+        assert 'MODEL-BINDING' in str(transport.sent[0][1])

@@ -9,6 +9,39 @@ from typing import Any
 _TASK_PATH = re.compile(r"^\$\.tasks\[(\d+)\](.*)$")
 
 
+def rebind_gap_source_partitions(
+    base: dict[str, Any], amended: dict[str, Any], *, gap_tasks: list[dict[str, Any]],
+) -> None:
+    """Give additive nodes only their explicitly declared source read grants."""
+    from zf.runtime.task_scoped_plan_inputs import task_input_paths
+
+    if "task_input_policy" not in base:
+        return
+    task_input_paths(base, task_id="", candidate=True)
+    original = {row["task_id"]: row["paths"] for row in base["task_input_policy"]["tasks"]}
+    rows = amended["task_input_policy"]["tasks"]
+    assigned = {row["task_id"] for row in rows}
+    for gap in gap_tasks:
+        task_id = gap["task_id"]
+        if task_id in assigned:
+            continue
+        context = gap.get("payload") or {}
+        parent = gap.get("parent_task_id") or context.get("parent_task_id")
+        parents = list(dict.fromkeys(
+            ([parent] if parent else [])
+            + list(gap.get("supersedes_task_ids") or context.get("supersedes_task_ids") or [])
+        ))
+        if not parents or any(parent not in original for parent in parents):
+            raise ValueError(f"gap task {task_id} has no explicit source input partition")
+        paths = list(dict.fromkeys(path for parent in parents for path in original[parent]))
+        rows.append({"task_id": task_id, "paths": paths})
+        assigned.add(task_id)
+    # The source writer preserves positions; fail closed if a rewrite changed
+    # coverage or invalidated a path instead of granting the complete document.
+    for gap in gap_tasks:
+        task_input_paths(amended, task_id=gap["task_id"])
+
+
 def rebind_gap_input_policy(
     base: dict[str, Any], amended: dict[str, Any], *,
     gap_tasks: list[dict[str, Any]], replacements: dict[str, list[str]],

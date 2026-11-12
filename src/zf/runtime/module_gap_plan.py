@@ -237,6 +237,9 @@ def _write_gap_source_index_amend_artifact(
         return value
 
     amended = rewrite(source_index)
+    from zf.runtime.gap_input_policy import rebind_gap_source_partitions
+
+    rebind_gap_source_partitions(source_index, amended, gap_tasks=gap_tasks)
     artifact_rel = (
         Path("artifacts")
         / _safe_artifact_part(pdd_id or "unknown")
