@@ -1,13 +1,15 @@
 import { Check, Copy } from "lucide-react";
 import { memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Streamdown, type StreamdownProps } from "streamdown";
+import { defaultRemarkPlugins, Streamdown, type StreamdownProps } from "streamdown";
 import type { MarkdownTextProps } from "./MarkdownText";
 
 import { ReferencePreviewContext } from "./referencePreview";
 import { localDocumentLink } from "./previewRegistry";
+import { localDocumentMarkdownRef, remarkLocalDocuments } from "./localDocumentMarkdown";
 import { prettyPrintIfJson } from "./jsonDisplay";
 
 type MarkdownComponents = NonNullable<StreamdownProps["components"]>;
+const previewRemarkPlugins = [...Object.values(defaultRemarkPlugins), remarkLocalDocuments];
 
 // How often the live (growing) bubble re-parses markdown while streaming.
 // Without this, every token re-parses the whole accumulated text (jank on
@@ -56,7 +58,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
     h5: ({ children, ...props }) => <h5 {...props}>{children}</h5>,
     h6: ({ children, ...props }) => <h5 {...props}>{children}</h5>,
     a: ({ children, href, ...props }) => {
-      const item = localDocumentLink(href || "");
+      const item = localDocumentLink(localDocumentMarkdownRef(href || ""));
       return openReference && item
         ? <button type="button" className="agent-inline-button" title="Preview file"
             onClick={() => openReference(item)}>{children}</button>
@@ -83,6 +85,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
     <div className={`agent-markdown ${isStreaming ? "streaming" : ""} ${className}`.trim()}>
       <Streamdown
         components={components}
+        remarkPlugins={openReference ? previewRemarkPlugins : undefined}
         controls={false}
         mode={isStreaming ? "streaming" : "static"}
         parseIncompleteMarkdown={isStreaming}

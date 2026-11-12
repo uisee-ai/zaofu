@@ -26,7 +26,7 @@ function fixture() {
 async function setup(page: Page, request: APIRequestContext, detail: ReturnType<typeof fixture>, diagnosticMode: "data" | "error" | "empty" = "data") {
   const projects = await (await request.get("/api/workspace/projects")).json();
   const state = { diagnosticCalls: 0, mode: diagnosticMode, writes: [] as string[], payloads: [] as Record<string, unknown>[], unexpected: [] as string[], errors: [] as string[], hold: false, release: () => {},
-    previewMode: "data", markdown: "# Canonical PRD\n\n## Acceptance\n\n| Criterion | Result |\n|---|---|\n| Full body | Required |\n\n**Last paragraph preserved.**",
+    previewMode: "data", fileRefs: [] as string[], markdown: "# Canonical PRD\n\n## Acceptance\n\n| Criterion | Result |\n|---|---|\n| Full body | Required |\n\n**Last paragraph preserved.**",
     questionOk: true, allowInvitations: false, allowPlanning: false, allowMessages: false, planningOk: true, planningPayload: {} as Record<string, unknown>, runs: [] as Record<string, unknown>[],
     plans: [] as Record<string, unknown>[], deliveryError: false, fileCalls: 0, allowReports: false, allowSynthesis: false, allowConsensus: false, readiness: undefined as Record<string, unknown> | undefined,
     ownerReports: [] as Record<string, unknown>[], allowEvaluation: false, allowCancel: false, cancelOk: true, synthesisError: "",
@@ -115,6 +115,7 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
       await route.fulfill({ json: { channels: [detail] } });
     } else if (path.endsWith(`/${channelId}/file-preview`)) {
       state.fileCalls += 1;
+      state.fileRefs.push(new URL(req.url()).searchParams.get("ref") || "");
       await route.fulfill(state.previewMode === "error" ? { status: 409, json: { detail: "file changed" } } : { json: {
         name: "generated.md", ref: "outputs/generated.md", format: "markdown", content: state.markdown, sha256: "file-digest", byte_count: state.markdown.length,
       } });
@@ -1246,6 +1247,39 @@ test("local Markdown delivery previews and explicitly publishes a draft without 
   expect(state.writes).toHaveLength(1);
   expect(state.errors).toEqual([]);
   expect(state.unexpected).toEqual([]);
+});
+
+for (const streaming of [false, true]) test(`local Markdown links preserve exact file refs (${streaming ? "streaming" : "completed"})`, async ({ page, request }) => {
+  const detail = fixture();
+  const refs = ["docs/PRD-v2.md", "./docs/PRD-v2.md", "/home/狼人杀/docs/PRD-v2.md", "docs/需求 文档.md", "docs/100%20完成.md"];
+  // Exercise both Owner messages and finalized Agent Markdown. The full
+  // Streamdown pipeline, not just the link helper, must retain raw destinations.
+  detail.messages[0].text = refs.map((ref, i) => `[用户文件 ${i}](<${ref}>)`).join("\n\n");
+  detail.provider_runs[0].parts[0].content = refs.map((ref, i) => `[角色文件 ${i}](<${ref}>)`).join("\n\n")
+    + "\n\n[外部文档](https://example.com/PRD.md)\n\n[危险链接](javascript:alert%281%29)";
+  if (streaming) {
+    detail.provider_runs[0].status = "streaming";
+    detail.provider_runs[0].parts[0].state = "streaming";
+  }
+  const state = await setup(page, request, detail);
+  const initialUrl = page.url();
+  for (const sender of ["用户", "角色"]) {
+    for (const [i, ref] of refs.entries()) {
+      const previousCalls = state.fileRefs.length;
+      await page.getByRole("button", { name: `${sender}文件 ${i}`, exact: true }).click();
+      const file = page.getByTestId("channel-file-preview");
+      await expect(file.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+      const requestedRefs = state.fileRefs.slice(previousCalls);
+      expect(requestedRefs.length).toBeGreaterThan(0);
+      expect(requestedRefs.every((requestedRef) => requestedRef === ref)).toBe(true);
+      expect(page.url()).toBe(initialUrl);
+      await file.getByRole("button", { name: "Close preview" }).click();
+    }
+  }
+  await expect(page.getByRole("link", { name: "外部文档", exact: true })).toHaveAttribute("href", "https://example.com/PRD.md");
+  await expect(page.getByRole("link", { name: "危险链接", exact: true })).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+  expect(state.errors).toEqual([]);
 });
 
 test("blocked PRD generation keeps its reason after reload without enabling Process", async ({ page, request }) => {

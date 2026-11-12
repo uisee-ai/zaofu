@@ -11,6 +11,12 @@
 后端只接受当前项目、当前线程明确引用的文件；保留摘要、大小、UTF-8、敏感信息、
 隐藏路径和 symlink 防护。普通外部 HTTP 链接保持原行为。
 
+本地 Markdown 链接在解析时先将原始目标装入内部片段标记，预览组件再取回原值；
+不将 URL 规范化后的 `href` 当作文件路径。这样 `docs/PRD.md`、`./docs/PRD.md`、
+中文、空格（使用 `<...>` 目标语法）和字面百分号均按原始引用提交，避免被渲染器
+拦截或二次编码。该处理仅在存在文件预览上下文时启用，不改变普通外链的安全处理，
+也不放宽后端对当前线程引用、目录边界和摘要的检查。
+
 文件预览提供“生成正式 PRD 草案”。这是一项显式、token-gated 操作，不是打开预览
 的副作用。请求携带 `source_file: {ref, sha256}`，摘要必须与刚预览的文件一致。
 当前问题未解决、仍有回复在执行或有成员待批准时不接受发布。
@@ -56,6 +62,9 @@ Owner 未决问题仍可发布可评审草案，但 synthesis 会标记 `owner_g
 
 - `tests/test_channel_prd_file.py`：真实受控动作、快照、完整版本、同版评审与重放防护。
 - `tests/test_channel_file_preview.py` / `tests/test_web_channel_delivery.py`：路径和 HTTP 读取边界。
+- `web/tests/localDocumentLink.test.ts` / `channel-flow-layout.spec.ts`：原始文件引用经过
+  完整 Markdown 渲染和预览请求仍保持一致，覆盖用户、角色、流式、中文、空格、
+  相对路径和字面百分号；外链与危险协议继续走原有安全处理。
 - 原有 PRD composition、synthesis repair、discussion、consensus、Task/Workflow 合同测试。
 - Docker Playwright：群内链接预览、明确提交草案、同版 PRD 预览及未批准的 Process 禁用。
 
