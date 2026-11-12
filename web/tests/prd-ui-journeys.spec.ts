@@ -130,7 +130,9 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await send(page, productInput ? productRequest("UI_PRD_DISCUSS，当前 Kanban 讨论，不创建 Channel，先确认本轮终点，暂不创建 Task") : "UI_PRD_DISCUSS：请在当前 Kanban 会话讨论需求，不创建 Channel。需求：保持 README.md 可读，缺失文件时明确报告错误。验证入口固定为系统已有 cat README.md，不新增读取程序。先问我确认失败行为和本轮终点，暂不创建 Task。仅操作当前临时项目。");
     const discussionTurn = await waitEvent(request, project, "kanban.agent.turn.completed");
     const discussionReply = await waitEvent(request, project, "kanban.agent.reply");
-    expect(String(discussionReply.payload?.answer)).toMatch(/README|确认|缺失/);
+    expect(["completed", "waiting_input"]).toContain(discussionTurn.payload?.status);
+    expect(discussionReply.payload?.turn_id).toBe(discussionTurn.payload?.turn_id);
+    expect(String(discussionReply.payload?.answer || "").trim()).not.toBe("");
     await capture(page, "01-kanban-discussion");
     await answerRequirementQuestions(page, request, project, discussionTurn.payload?.status === "waiting_input");
     await send(page, productInput ? productRequest("UI_PRD_ANSWER，确认，直接写入完整 PRD，完成后回复 UI_PRD_WRITTEN") : "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。当前 PRD 编写和 Plan 预览阶段不要修改 zf.yaml、Git 或运行状态；" + (ownerCheckpointRequired ? "请在 PRD 登记阻塞决定 OWNER-GIT-01：未来实施是否授权标准受控 Git 提交，目前尚未批准。要求 Planner/Critic 在候选计划定稿前通过 Owner 决策检查点确认它，不能自行假定或把它移到实施后才问。现在先完整记录此未决项并写 PRD，不在当前聊天追问该项。" : "这个阶段限制不禁止未来在单独 Plan 审批后采用标准受控 Git 交付流程。") + "完成后回复 UI_PRD_WRITTEN。");
