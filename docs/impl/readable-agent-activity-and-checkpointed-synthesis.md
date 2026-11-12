@@ -19,6 +19,7 @@
 Channel 与 Kanban Agent 是产品内共享时间线的两个实际入口，均使用默认收起的活动组件。公开 commentary 合并为有稳定身份的快照；Kanban 的 ephemeral bridge 和持久 Agent session 分别接入，避免逐字尾片替代完整说明。普通正文不再展示原生会话号和 text 标签；完整 Markdown、复制、文件、证据、问题和批准卡片保留。
 
 步骤只报告已原子保存的部分。未确认结果的工具不会因整轮完成而获得成功标记。过程计时在结束后冻结，无虚构百分比或剩余时间。草稿在综合控制区只读预览，明确尚未发布；原 PRD 阅读器保持既有产品/架构/开发视图，材料表单不进入阅读器。窄屏工具栏换行以保留全屏/下载入口。
+真实最终截图还发现原风险区直接序列化结构化 gap/risk 对象。现在优先展示其说明文字，原字段保留在可展开详情；只调整原区块的内容呈现。8 项结构化显示、风险接受及版本绑定浏览器回归通过。
 
 ## 验证中发现的边界
 
@@ -46,6 +47,7 @@ Channel 与 Kanban Agent 是产品内共享时间线的两个实际入口，均�
 | Docker 共享组件与 Channel 浏览器回归 | `browser-release-closure.log`：58 passed；终止状态与裸运输名称最终边界见 `browser-error-polish.log`：3 passed |
 | Kanban 实际运输 bridge 与原生边界 | `kanban-stream-boundary.log`：91 passed；最终 coalescing 边界见 `kanban-coalescing-final.log`：16 passed |
 | 原上下文引用、扁平交接路径与原发布调用链 | `context-bound-reuse-closure.log`：148 passed；修复前复现见 `context-bound-reuse-red.log` |
+| 结构化未解决项与原风险确认门禁 | `browser-readable-readiness.log`：8 passed；最后生产构建见 `build-release.log` |
 
 日志与截图位于仓库本地 `output/readable-agent-synthesis/`，未作为代码提交。Docker 使用 `mcp/playwright:latest`、host networking 与镜像内既有 Chromium；测试写入均为 fixture 截获。SceneProof CLI 在当前环境不可用，已用实际浏览器截图检查桌面、展开、手机布局及报告图像。
 

@@ -1155,6 +1155,27 @@ test("exhausted synthesis retry keeps the source thread and lets backend select 
 });
 
 
+test("structured PRD gaps and risks show readable prose with optional original data", async ({ page, request }) => {
+  const detail = readyFixture();
+  const prd = detail.syntheses[0];
+  Object.assign(prd, { readiness_verdict: "needs_owner", readiness_ref: "readiness.json", readiness_digest: "risk-digest" });
+  detail.consensus = { main: { ...prd, reached_event_id: "", human_confirmed: false } };
+  const state = await setup(page, request, detail);
+  state.readiness = { ref: "readiness.json", digest: "risk-digest", verdict: "needs_owner", implementation_start: false,
+    reason: "待审阅当前文档", gaps: [{ id: "gap", description: "需要核对来源绑定", metadata: "preserved" }],
+    risks: [{ id: "risk", statement: "真实接入尚未验证" }] };
+  await page.getByTestId("channel-flow-prd").click();
+  const panel = page.getByTestId("channel-readiness-risks");
+  await expect(panel).toContainText("需要核对来源绑定");
+  await expect(panel).toContainText("真实接入尚未验证");
+  await expect(panel.locator("pre:visible")).toHaveCount(0);
+  expect(await panel.innerText()).not.toContain('"id"');
+  await panel.getByText("查看原始数据", { exact: true }).first().click();
+  await expect(panel.locator("pre").first()).toContainText('"metadata": "preserved"');
+  await expect(page.getByRole("button", { name: "接受风险并确认", exact: true })).toBeDisabled();
+  expect(state.writes).toEqual([]);
+});
+
 for (const mode of ["explicit", "missing", "ready"] as const) {
   test(`PRD risk confirmation requires explicit version-bound acceptance: ${mode}`, async ({ page, request }) => {
     const detail = readyFixture();

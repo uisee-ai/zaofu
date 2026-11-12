@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 import { getChannelPrdDocument, type ChannelPrdDocument, type ChannelPrdSelection } from "../../api/channelDelivery";
 
 const bareDigest = (value: unknown) => String(value || "").replace(/^sha256:/, "");
-const describe = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value);
+const describe = (value: unknown) => {
+  if (typeof value === "string") return value;
+  const row = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const label = [row.description, row.statement, row.reason, row.summary, row.title]
+    .find(item => typeof item === "string" && item.trim()) as string | undefined;
+  return <><span>{label || "查看此项的详细信息"}</span>
+    <details><summary>查看原始数据</summary><pre>{JSON.stringify(value, null, 2)}</pre></details></>;
+};
 
 /** Remounted for each project/thread/PRD/readiness identity by ChannelPage. */
 export function ChannelConsensusControl({ selection, artifactRef, consensus, actionReady, busy, onDecision }: {
