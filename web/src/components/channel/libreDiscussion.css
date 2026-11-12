@@ -9,10 +9,6 @@
   white-space: normal;
 }
 
-.libre-discussion-actions {
-  padding-inline: 24px;
-}
-
 .libre-prd-controls textarea {
   width: 100%;
   min-height: 80px;
@@ -30,8 +26,4 @@
     padding-inline: 16px;
   }
 
-  .libre-discussion-actions {
-    padding-inline: 16px;
-    justify-content: flex-start;
-  }
 }

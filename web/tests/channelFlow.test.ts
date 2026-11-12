@@ -6,6 +6,19 @@ import type { AgentConversation, AgentSessionRun, AgentSessionTurn } from "../sr
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 const empty = { channel_id: "ch-test", name: "test", members: [], workflow_requests: [] } as ChannelDetail;
 assert(channelFlow(empty, "main").current === "requirement", "empty channel is not a completed discussion");
+const libre = { ...empty, discussion: { mode: "libre_discuss" } } as ChannelDetail;
+assert(channelFlow(libre, "main").current === "discussion", "quiet libre channel is open for discussion without a seed");
+assert(channelFlow(libre, "main").statuses.discussion === "Free discussion", "libre navigation does not require starting a discussion");
+assert(!channelFlow(libre, "main").complete.discussion, "available free discussion is not completed work");
+assert(channelFlow({ ...libre, discussions: { main: { state: "completed" } } }, "main").statuses.discussion === "Free discussion",
+  "legacy phase state cannot close a libre conversation");
+assert(channelFlow({ ...libre, open_questions: [{ question_id: "q", thread_id: "main", status: "open" }] }, "main").statuses.discussion === "Awaiting input",
+  "published libre questions retain their review indicator");
+const libreGenerating = { ...libre, synthesis_requests: [{ thread_id: "main", request_id: "manual", status: "requested" }] } as ChannelDetail;
+assert(channelFlow(libreGenerating, "main").statuses.prd === "Generating", "manual generation is visible without a legacy kernel phase");
+assert(channelFlow(libreGenerating, "main").current === "prd", "manual generation selects the PRD navigation stage");
+assert(channelFlow({ ...libreGenerating, synthesis_requests: [{ thread_id: "main", status: "cancelled" }] }, "main").statuses.prd === "Not generated",
+  "cancelled generation is not still running");
 const prd = { thread_id: "main", artifact_ref: "prd.md", artifact_digest: "sha256:current", prd_revision: 2,
   readiness_verdict: "ready", event_id: "synthesis", summary: "Accepted PRD", open_questions: [] };
 const detail = { ...empty, syntheses: [prd], consensus: { main: { ...prd, reached_event_id: "consensus" } },

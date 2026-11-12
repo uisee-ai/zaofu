@@ -2368,7 +2368,14 @@ export function ChannelPage({
         </div> : null}
       </>;
     }
-    if (activeDrawer === "discussion") return renderDiscussionActivity();
+    if (activeDrawer === "discussion") return libreDiscuss ? <>
+      <LibreDiscussionNotice detail={workspaceDetail ?? null} threadId={controlThreadId} />
+      <div className="channel-control-actions">
+        <button className="icon-button primary" type="button" onClick={() => setDrawer("prd")}>
+          <FileText size={16} />Synthesize
+        </button>
+      </div>
+    </> : renderDiscussionActivity();
     if (activeDrawer === "diagnostics") {
       if (selectedSourceQuestion && ownerQuestionAttachments.unassigned.includes(selectedSourceQuestion)) return <section data-testid="channel-question-source-diagnostics">
         <p>Source reply unavailable · {selectedSourceQuestion.askedBy || "Unknown agent"}</p>
@@ -2520,7 +2527,7 @@ export function ChannelPage({
           </button>
         </div>
         <button className="icon-button" disabled={!actionReady || controlsBusy || !discussionControls.canSynthesize} type="button"
-          onClick={() => void runControl(() => onRequestSynthesis(controlThreadId))}>
+          onClick={() => libreDiscuss ? setDrawer("prd") : void runControl(() => onRequestSynthesis(controlThreadId))}>
           <FileText size={16} />Synthesize
         </button>
         <div className="channel-control-panel">
@@ -2670,17 +2677,10 @@ export function ChannelPage({
           </button>
         </div>
       </div>
-      {libreDiscuss ? <>
-        <div className="channel-control-actions libre-discussion-actions">
-          <button type="button" className="icon-button primary" onClick={() => setDrawer("prd")}>生成 / 查看 PRD</button>
-          <button type="button" className="icon-button" onClick={() => setDrawer("task")}>任务</button>
-          <button type="button" className="icon-button" onClick={() => setDrawer("workflow")}>开发进度</button>
-        </div>
-        <LibreDiscussionNotice detail={workspaceDetail ?? null} threadId={controlThreadId} />
-      </> : <ChannelFlowNavigation flow={flow}
+      <ChannelFlowNavigation flow={flow}
         selectedNode={drawer && ["requirement", "discussion", "prd", "task", "workflow"].includes(drawer) ? drawer as ChannelFlowNode : undefined}
         onSelect={(node) => toggleDrawer(node)} onOpen={(node) => setDrawer(node)}
-        onReviewQuestions={focusOwnerQuestions} onReviewPlans={onReviewPlans} deliveryError={delivery.error} />}
+        onReviewQuestions={focusOwnerQuestions} onReviewPlans={onReviewPlans} deliveryError={delivery.error} />
       {loadError ? <div className="notice">{loadError}</div> : null}
       {actionResult && (
         actionResult?.action === "channel-create"

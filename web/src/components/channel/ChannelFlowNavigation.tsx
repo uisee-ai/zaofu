@@ -20,11 +20,13 @@ function stageSummary(flow: ChannelFlow, node: ChannelFlowNode): string {
     : "Add a brief to give the discussion a starting point.";
   if (node === "discussion") return flow.questionCount
     ? `${flow.questionCount} ${flow.questionCount === 1 ? "decision needs" : "decisions need"} your input.`
+    : flow.libreDiscuss ? "直接发消息由主持人接话，@角色单独交流，@all全员讨论。你可以随时打开 PRD，选择材料并手动生成。"
     : flow.statuses.discussion === "Converged" ? "Discussion has converged. Review the resulting PRD."
     : flow.statuses.discussion === "Awaiting input" ? "Waiting for input from the discussion."
     : "Review the discussion and its latest contributions.";
   if (node === "prd") return flow.generationError || (flow.hasArtifact
     ? `Revision ${flow.revision} · ${flow.ready ? "Ready for task planning." : "Review the current document and findings."}`
+    : flow.libreDiscuss ? "随时选择当前聊天、项目简介和补充材料生成 PRD；继续聊天不会自动生成或推进开发。"
     : "The PRD will appear after synthesis.");
   if (node === "task") return flow.tasks.length
     ? `${flow.tasks.length} ${flow.tasks.length === 1 ? "task created" : "tasks created"} from PRD revision ${flow.revision}.`

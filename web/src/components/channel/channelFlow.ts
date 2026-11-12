@@ -61,18 +61,20 @@ export function channelFlow(detail: ChannelDetail | null, threadId: string, deli
     .filter((row) => inThread(row, threadId) && (row.role === "user" || row.member_id === "operator"));
   const discussion = detail?.discussions?.[threadId];
   const attention = detail?.discussion_attention?.[threadId];
+  const libreDiscuss = detail?.discussion?.mode === "libre_discuss";
   const discussionState = flowText(attention?.state) || flowText(discussion?.state);
-  const hasDiscussion = Boolean(discussionState && discussionState !== "idle");
+  const hasDiscussion = libreDiscuss || Boolean(discussionState && discussionState !== "idle");
   const taskPlans = (evidence?.plans ?? []).filter((row) => row.subject_type === "task_create");
   const workflowPlans = (evidence?.plans ?? []).filter((row) => row.subject_type === "task_workflow" && taskIds.has(row.task_id));
   const planning = evidence?.planning;
   const planningTask = planning?.task_id ? "workflow" : "task";
-  const activeDiscussion = ["running", "collecting", "synthesizing"].includes(discussionState);
+  const activeDiscussion = !libreDiscuss && ["running", "collecting", "synthesizing"].includes(discussionState);
   const consensus = detail?.consensus?.[threadId];
   const currentConsensus = consensus?.artifact_ref === artifactRef
     && digest(consensus?.artifact_digest) === digest(artifactDigest)
     && Number(consensus?.prd_revision || 0) === revision;
-  const discussionStatus = questionCount || discussionState === "needs_input" ? "Awaiting input"
+  const discussionStatus = libreDiscuss ? questionCount ? "Awaiting input" : "Free discussion"
+    : questionCount || discussionState === "needs_input" ? "Awaiting input"
     : ["blocked", "failed", "cancelled"].includes(discussionState) ? "Needs attention"
     : activeDiscussion ? "Discussing" : ["ready", "completed", "awaiting_consensus"].includes(discussionState) ? "Converged"
     : hasDiscussion ? "Unknown" : "Not started";
@@ -80,7 +82,8 @@ export function channelFlow(detail: ChannelDetail | null, threadId: string, deli
   const generationError = ["blocked", "failed"].includes(flowText(synthesisRequest?.status))
     ? flowText(synthesisRequest?.reason) || flowText(synthesisRequest?.contract_error) || "PRD generation failed"
     : "";
-  const generating = (attention?.kernel_phase || discussion?.state) === "phase3_synthesis"
+  const generating = libreDiscuss ? ["requested", "repair_requested"].includes(flowText(synthesisRequest?.status))
+    : (attention?.kernel_phase || discussion?.state) === "phase3_synthesis"
     && attention?.execution_state === "running"
     && !["proposed", "blocked", "failed", "cancelled"].includes(flowText(synthesisRequest?.status));
   const prdStatus = generating ? "Generating" : !artifactRef ? "Not generated" : ready ? "Ready"
@@ -96,7 +99,8 @@ export function channelFlow(detail: ChannelDetail | null, threadId: string, deli
     : planning?.status === "failed" ? "Failed" : "Unknown";
   const reviewingPrd = Boolean(artifactRef && currentConsensus && !generating
     && (attention?.kernel_phase || discussion?.state) === "phase3_synthesis");
-  const current: ChannelFlowNode = questionCount || (activeDiscussion && !reviewingPrd) ? "discussion"
+  const current: ChannelFlowNode = libreDiscuss && generating ? "prd"
+    : questionCount || (activeDiscussion && !reviewingPrd) ? "discussion"
     : workflows.length || workflowPlans.length || (planning?.status && planningTask === "workflow") ? "workflow"
     : tasks.length || taskPlans.length || planning?.status ? "task"
     : artifactRef ? "prd" : hasDiscussion ? "discussion" : "requirement";
@@ -113,7 +117,7 @@ export function channelFlow(detail: ChannelDetail | null, threadId: string, deli
     requirement: requirements.length > 0, discussion: discussionStatus === "Converged" || ready,
     prd: ready, task: tasks.length > 0, workflow: statuses.workflow === "Completed",
   };
-  return { canonical, artifactRef, artifactDigest, revision, ready, latest, requirements,
+  return { canonical, artifactRef, artifactDigest, revision, ready, latest, requirements, libreDiscuss,
     openQuestions, questionCount, tasks, workflows, current, statuses, complete, plans: [...taskPlans, ...workflowPlans],
     hasArtifact: Boolean(artifactRef), generationError, loading: !detail };
 }

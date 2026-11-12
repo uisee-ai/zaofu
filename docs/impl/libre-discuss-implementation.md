@@ -55,6 +55,27 @@ canonical 状态仍由 EventWriter / ControlledActionService 写入。
 来源并以主持人显示，不伪造 operator 用户发言；手动生成动作保留真实用户意图。
 聊天 DTO 仅带局部轮次和生成进度，不复制整份历史、候选稿或诊断 sidecar。
 
+## Channel 页面显示兼容调整
+
+按用户体验反馈恢复原有 Brief → Discussion → PRD → Tasks → Workflow 导航、摘要及详情抽屉，
+撤下自由讨论专用的三按钮栏和常驻说明栏。使用说明、问题整理及原题回退提示收进 Discussion
+抽屉，成员管理、原生题卡、聊天和 PRD 预览沿用现有组件。
+
+这次仅调整前端显示与入口：自由讨论不依赖旧阶段状态，空群即可聊天；PRD 导航始终可进入，
+Synthesize 打开材料选择后再由用户提交。生成指示读取本次请求，取消后不继续显示生成中。
+没有恢复自动开聊、答完问题自动综合或旧 Start/Restart/Drain 按钮。
+
+本次验证：六个相关前端单测文件、生产构建/typecheck 和 bundle 预算通过。Docker 浏览器
+首轮 51 项中 49 项通过；包含安静群→主持人聊天→手动 PRD→继续补充、手机导航、失败候选稿
+两条自由讨论流程。题卡初始滚动检查首轮失败，定向复验通过，保留其不稳定记录。
+窄屏长 PRD 全屏工具栏检查在候选版及修改前 HEAD `34551f1b` 的独立构建中均失败，属于
+已验证的既有问题；本次不宣称整个浏览器套件全绿。基线构建在隔离临时目录完成，未覆盖工作区源码。
+
+已查看 8001 狼人杀实际页面的旧版导航、Discussion 和 PRD 抽屉截图，以及隔离测试的手机截图。
+浏览器测试只使用 8033/8034 隔离环境，实际项目仅进行只读页面检查。日志与截图位于本地
+`output/playwright/channel-ui-restore-*` 和 `channel-ui-baseline-*`。SceneProof CLI 仍不可用，
+因此采用实际页面截图核对；未声称运行该 CLI。
+
 ## 验证证据
 
 以下日志和截图保存在本地 `output/libre-discuss-implementation/`，不入 Git。
