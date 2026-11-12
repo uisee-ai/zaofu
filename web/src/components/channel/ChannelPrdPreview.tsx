@@ -9,10 +9,10 @@ import { channelEvaluationFinding } from "./channelEvaluationFinding";
 import { ChannelPrdSources } from "./ChannelPrdSources";
 
 /** Mounted with an exact project/thread/PRD key; old reads cannot enable Process. */
-export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProcess, onEvaluate, onDiscuss, onClose, children, generationControls }: {
+export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProcess, onEvaluate, onDiscuss, onClose, children }: {
   selection: ChannelPrdSelection; flow: ChannelFlow; actionReady: boolean; busy: boolean;
   onProcess: () => Promise<void>; onEvaluate: (role: "full" | "focused", retry: boolean) => Promise<void>;
-  onDiscuss: () => void; onClose: () => void; children?: ReactNode; generationControls?: ReactNode;
+  onDiscuss: () => void; onClose: () => void; children?: ReactNode;
 }) {
   const [document, setDocument] = useState<ChannelPrdDocument>();
   const [error, setError] = useState("");
@@ -125,12 +125,11 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
         <button type="button" className="icon-button" title="Close drawer" onClick={onClose}><X size={14} /></button></div>
     </div>
     <div ref={bodyRef} className="channel-document-body">
-      {generationControls}
       {flow.generationError ? <div role="alert" data-testid="channel-prd-generation-error">
         <p>PRD 生成受阻：{flow.generationError}</p>
         <p>请处理该原因后重试；从文件生成的草案，请重新打开原文件并选择“生成正式 PRD 草案”。</p>
       </div> : null}
-      {!flow.hasArtifact ? <p role="status">{generating ? "正在生成完整 PRD。请等待当前综合结果，无需重复触发。" : generationControls ? "尚无完整 PRD。你可以选择材料并主动生成草稿。" : "尚无完整 PRD。请先完成当前讨论与审查。"}</p>
+      {!flow.hasArtifact ? <p role="status">{generating ? "正在生成完整 PRD。请等待当前综合结果，无需重复触发。" : "尚无完整 PRD。请先完成当前讨论与审查。"}</p>
         : !document && !error ? <p role="status">Loading full PRD…</p> : null}
       {error ? <div role="alert"><p>Preview unavailable. No summary has been substituted for the document.</p><small>{error}</small>
         <button className="icon-button" type="button" onClick={() => setAttempt(attempt + 1)}><RotateCcw size={14} />Retry</button></div> : null}

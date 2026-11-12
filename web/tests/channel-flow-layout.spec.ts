@@ -605,6 +605,47 @@ test("PRD source view exposes bound inputs and returns to chat for correction", 
   expect(state.errors).toEqual([]);
 });
 
+for (const hasArtifact of [false, true]) {
+  test(`libre PRD reader keeps generation materials separate (${hasArtifact ? "published" : "empty"})`, async ({ page, request }) => {
+    const detail = hasArtifact ? readyFixture() : fixture();
+    detail.discussion.mode = "libre_discuss";
+    const state = await setup(page, request, detail);
+    await page.getByTestId("channel-flow-prd").click();
+    const preview = page.getByTestId("channel-prd-preview");
+    const controls = page.getByTestId("libre-prd-controls");
+    await expect(preview).toBeVisible();
+    await expect(controls).toHaveCount(0);
+    if (hasArtifact) {
+      await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+      await preview.getByRole("button", { name: "Source", exact: true }).click();
+      await expect(preview.getByTestId("channel-prd-source")).toContainText("Last paragraph preserved.");
+      await expect(controls).toHaveCount(0);
+    }
+    await page.getByTitle("Close drawer", { exact: true }).click();
+    await page.getByTestId("channel-flow-discussion").click();
+    await page.getByRole("button", { name: "Synthesize", exact: true }).click();
+    await expect(controls).toBeVisible();
+    await expect(preview).toHaveCount(0);
+    expect(state.writes).toEqual([]);
+
+    state.allowSynthesis = true;
+    await controls.getByRole("textbox", { name: "补充 PRD 原材料", exact: true }).fill("保留本机数据，刷新后继续使用。");
+    await controls.getByRole("checkbox").check();
+    await controls.getByRole("button", { name: "生成 PRD / 查看本次进度", exact: true }).click();
+    await expect.poll(() => state.payloads.length).toBe(1);
+    expect(state.payloads[0]).toMatchObject({ thread_id: "main", include_project_brief: true, additional_material: "保留本机数据，刷新后继续使用。" });
+    if (hasArtifact) await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Preview PRD", exact: true }).click();
+    await expect(preview).toBeVisible();
+    await expect(controls).toHaveCount(0);
+    if (hasArtifact) await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+    await page.screenshot({ path: `test-results/libre-prd-reader-${hasArtifact ? "published-mobile" : "empty-desktop"}.png`, fullPage: true });
+    expect(state.writes).toHaveLength(1);
+    expect(state.unexpected).toEqual([]);
+    expect(state.errors).toEqual([]);
+  });
+}
+
 test("verified Markdown preview supports Source and Process uses only the existing planning action", async ({ page, request }) => {
   const detail = readyFixture();
   const state = await setup(page, request, detail);

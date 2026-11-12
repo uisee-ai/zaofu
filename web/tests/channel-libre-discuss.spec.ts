@@ -43,11 +43,18 @@ test("quiet free discussion, visible PRD entry, input errors and manual publicat
   expect(afterChat.reply_requests[0].target_member_id).toBe("product_pm");
   expect(afterChat.synthesis_requests).toHaveLength(0);
   await page.getByTestId("channel-flow-prd").click();
+  await expect(page.getByTestId("channel-prd-preview")).toBeVisible();
+  await expect(controls).toHaveCount(0);
+  await page.getByTitle("Close drawer", { exact: true }).click();
+  await page.getByTestId("channel-flow-discussion").click();
+  await page.getByRole("button", { name: "Synthesize", exact: true }).click();
   await controls.getByRole("textbox", { name: "补充 PRD 原材料", exact: true }).fill("删除前需要确认。不做跨设备同步。保留未决事项。");
   await controls.getByRole("checkbox").check();
   await controls.getByRole("button", { name: "生成 PRD / 查看本次进度", exact: true }).click();
   await expect.poll(async () => (await read()).syntheses.length, { timeout: 30_000 }).toBe(1);
   await expect(controls).toContainText("后续补充用于下一版");
+  await page.getByRole("button", { name: "Preview PRD", exact: true }).click();
+  await expect(controls).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Download PRD", exact: true })).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: "test-results/libre-prd-desktop.png", fullPage: true });
   await page.getByTitle("Close drawer", { exact: true }).click();
@@ -58,7 +65,8 @@ test("quiet free discussion, visible PRD entry, input errors and manual publicat
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("channel-flow-prd").scrollIntoViewIfNeeded();
   await page.getByTestId("channel-flow-prd").click();
-  await expect(controls).toBeVisible();
+  await expect(page.getByTestId("channel-prd-preview")).toBeVisible();
+  await expect(controls).toHaveCount(0);
   await page.getByTitle("Close drawer", { exact: true }).click();
   await page.getByTestId("channel-flow-workflow").scrollIntoViewIfNeeded();
   await page.getByTestId("channel-flow-workflow").click();
@@ -73,7 +81,8 @@ test("rejected candidate is readable separately from the formal PRD", async ({ p
   const project = String(snapshot.project?.project_id || "default");
   await page.addInitScript((value) => localStorage.setItem("zf.webActionToken", value), token);
   await page.goto(`/?project=${encodeURIComponent(project)}&page=channels&channel=ch-libre-candidate`);
-  await page.getByTestId("channel-flow-prd").click();
+  await page.getByTestId("channel-flow-discussion").click();
+  await page.getByRole("button", { name: "Synthesize", exact: true }).click();
   await page.getByRole("button", { name: "查看未通过校验的候选稿", exact: true }).click();
   const candidate = page.locator(".libre-prd-candidate");
   await expect(candidate).toContainText("不能用于创建任务");

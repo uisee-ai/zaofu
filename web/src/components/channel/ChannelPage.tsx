@@ -49,7 +49,7 @@ const ChannelEmojiPicker = lazy(() => import("./ChannelEmojiPicker").then((modul
   default: module.ChannelEmojiPicker,
 })));
 
-type ChannelDrawerKey = "members" | "attention" | "diagnostics" | "reports" | "settings" | "file" | ChannelFlowNode;
+type ChannelDrawerKey = "members" | "attention" | "diagnostics" | "reports" | "settings" | "file" | "synthesis" | ChannelFlowNode;
 
 type ComposerFormatAction = "bold" | "italic" | "underline" | "strike" | "link" | "ordered-list" | "unordered-list" | "quote" | "inline-code" | "code-block";
 
@@ -1047,6 +1047,7 @@ export function ChannelPage({
   const [previewFile, setPreviewFile] = useState<PreviewItem | null>(null);
   const drawerTitles: Record<ChannelDrawerKey, string> = {
     file: "File preview",
+    synthesis: "生成 PRD",
     members: "Members",
     attention: "Activity",
     diagnostics: "诊断",
@@ -2343,11 +2344,14 @@ export function ChannelPage({
         </>
       );
     }
+    if (activeDrawer === "synthesis" && libreDiscuss) return <>
+      <LibrePrdControls requests={(workspaceDetail?.synthesis_requests ?? []).filter((r) => String(r.thread_id || "main") === controlThreadId)}
+        onReadCandidate={(requestId) => getChannelPrdCandidate(projectId || "default", selectedChannelId, controlThreadId, requestId)}
+        actionReady={actionReady} busy={controlsBusy} onCancel={onCancelSynthesis ? (requestId) => onCancelSynthesis(controlThreadId, requestId) : undefined} onGenerate={(materials) => onRequestSynthesis(controlThreadId, undefined, undefined, materials)} />
+      <button className="icon-button" type="button" onClick={() => setDrawer("prd")}>Preview PRD</button>
+    </>;
     if (activeDrawer === "prd") return <ChannelPrdPreview key={channelDocumentKey(prdSelection)}
       selection={prdSelection} flow={flow} actionReady={actionReady} busy={controlsBusy}
-      generationControls={libreDiscuss ? <LibrePrdControls requests={(workspaceDetail?.synthesis_requests ?? []).filter((r) => String(r.thread_id || "main") === controlThreadId)}
-        onReadCandidate={(requestId) => getChannelPrdCandidate(projectId || "default", selectedChannelId, controlThreadId, requestId)}
-        actionReady={actionReady} busy={controlsBusy} onCancel={onCancelSynthesis ? (requestId) => onCancelSynthesis(controlThreadId, requestId) : undefined} onGenerate={(materials) => onRequestSynthesis(controlThreadId, undefined, undefined, materials)} /> : undefined}
       onClose={() => setDrawer(null)}
       onDiscuss={() => { setDrawer(null); setChannelSplitThreadId(""); setActiveChannelThreadId(controlThreadId); requestAnimationFrame(() => composerRef.current?.focus()); }}
       onProcess={() => onWorkflowRequest("", workflowDraft.reason.trim() || "Create a Task bound to the canonical Channel PRD.", controlThreadId)}
@@ -2371,7 +2375,7 @@ export function ChannelPage({
     if (activeDrawer === "discussion") return libreDiscuss ? <>
       <LibreDiscussionNotice detail={workspaceDetail ?? null} threadId={controlThreadId} />
       <div className="channel-control-actions">
-        <button className="icon-button primary" type="button" onClick={() => setDrawer("prd")}>
+        <button className="icon-button primary" type="button" onClick={() => setDrawer("synthesis")}>
           <FileText size={16} />Synthesize
         </button>
       </div>
@@ -2527,7 +2531,7 @@ export function ChannelPage({
           </button>
         </div>
         <button className="icon-button" disabled={!actionReady || controlsBusy || !discussionControls.canSynthesize} type="button"
-          onClick={() => libreDiscuss ? setDrawer("prd") : void runControl(() => onRequestSynthesis(controlThreadId))}>
+          onClick={() => libreDiscuss ? setDrawer("synthesis") : void runControl(() => onRequestSynthesis(controlThreadId))}>
           <FileText size={16} />Synthesize
         </button>
         <div className="channel-control-panel">

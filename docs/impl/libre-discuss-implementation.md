@@ -65,6 +65,19 @@ canonical 状态仍由 EventWriter / ControlledActionService 写入。
 Synthesize 打开材料选择后再由用户提交。生成指示读取本次请求，取消后不继续显示生成中。
 没有恢复自动开聊、答完问题自动综合或旧 Start/Restart/Drain 按钮。
 
+PRD 阅读页面随后按用户反馈进一步恢复：移除 Preview / Source 顶部的生成材料表单，
+`ChannelPrdPreview` 恢复原有组件合同。Synthesize 改为打开独立的材料抽屉，保留补充材料、
+项目简介、请求进度、取消与失败候选稿入口；其中 Preview PRD 返回原生阅读页面。
+本次仅调整阅读与生成入口，不改正文、受众章节筛选、独立评估或任务准入逻辑。
+
+阅读页恢复的定向验证：生产构建/typecheck、bundle 预算及五个相关单测文件通过；
+Docker 浏览器九项通过，覆盖空稿/已有稿的材料分离、显式提交、手机阅读、Source、
+下载、评估请求、版本绑定和失败重试。写操作由测试路由拦截，不会影响真实项目。
+8001 狼人杀项目另做只读检查，Preview / Source 无材料表单，Synthesize 独立面板可见；
+仍读到 49,292 字符及六种身份模板，记录到的写请求为零。
+日志和实际页面截图为 `output/playwright/prd-preview-restore-*`、
+`prd-preview-restored-live.png`、`prd-source-restored-live.png` 和 `prd-materials-separate-live.png`。
+
 本次验证：六个相关前端单测文件、生产构建/typecheck 和 bundle 预算通过。Docker 浏览器
 首轮 51 项中 49 项通过；包含安静群→主持人聊天→手动 PRD→继续补充、手机导航、失败候选稿
 两条自由讨论流程。题卡初始滚动检查首轮失败，定向复验通过，保留其不稳定记录。
