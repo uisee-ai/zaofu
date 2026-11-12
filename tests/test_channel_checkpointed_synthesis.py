@@ -120,6 +120,31 @@ def test_invalid_part_retries_only_that_part_and_does_not_save_it(world):
     assert set(saved) == {"document"}
 
 
+def test_staging_handoff_references_retry_only_implementation_before_publication(world):
+    state, writer, pack, member, request = world
+    message, progress = request("first")
+    calls = []
+    native = backend(pack, calls)
+    injected = False
+    def turn(prompt, session):
+        nonlocal injected
+        result = native(prompt, session)
+        if calls[-1][0] == "implementation" and not injected:
+            injected = True
+            prefix, encoded = result.reply.split("<!-- zf:channel-contract -->\n")
+            payload = json.loads(encoded)
+            payload["channel_synthesis_part"]["fields"]["implementation_companion"] = {
+                "verification_execution_contract": {"acceptance_catalog_ref": "requirements.acceptance_criteria"}}
+            return replace(result, reply=prefix + "<!-- zf:channel-contract -->\n" + json.dumps(payload))
+        return result
+    result = run(world, message, progress, turn)
+    assert result.ok
+    assert [c[0] for c in calls] == ["document", "requirements", "decisions", "implementation", "implementation", "finalize"]
+    assert "canonical contract is flat" in calls[-2][1]
+    assert all("requirements.acceptance_criteria" not in p.read_text()
+               for p in (state / "channels/synthesis-parts").rglob("*.json"))
+
+
 def test_tampered_saved_part_fails_closed(world):
     state, writer, pack, member, request = world
     message, progress = request("first")

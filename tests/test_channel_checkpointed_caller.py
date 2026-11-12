@@ -23,8 +23,9 @@ from zf.runtime.channel_conversation_projection import project_channel_conversat
 class PortionBackend:
     backend_id = "codex-headless"
 
-    def __init__(self, state, *, fail="", wrong_attestation=False):
+    def __init__(self, state, *, fail="", wrong_attestation=False, context_bound_handoff=False):
         self.state, self.fail, self.wrong_attestation = state, fail, wrong_attestation
+        self.context_bound_handoff = context_bound_handoff
         self.calls = []
 
     def available(self):
@@ -48,6 +49,9 @@ class PortionBackend:
         for keys, value in ((spec.arrays, []), (spec.objects, {}), (spec.strings, "fixture")):
             for key in keys:
                 fields.setdefault(key, value)
+        if name == "implementation" and self.context_bound_handoff:
+            fields["implementation_companion"]["source_baseline"] = {"context_pack": {
+                "context_pack_id": pack["context_pack_id"], "sha256": pack["context_pack_sha256"]}}
         if name == "finalize":
             fields["next_round"] = {"action": "finalize"}
             for key in ("consumed_message_digests", "consumed_contribution_refs", "consumed_contribution_digests"):
@@ -138,6 +142,32 @@ def test_actual_controlled_retry_restores_only_saved_parts(world, monkeypatch, l
     names = [re.search(r"ONLY part '([^']+)'", c["prompt"]).group(1) for c in backend.calls]
     assert names == ["requirements", "decisions", "implementation", "finalize"]
     assert len([e for e in writer.event_log.read_all() if e.type == "channel.synthesis.proposed"]) == 1
+
+
+def test_retry_regenerates_context_bound_handoff_without_rewriting_saved_contract(world, monkeypatch):
+    state, writer, service = prepare(world, monkeypatch)
+    first = execute(service, writer, "channel-synthesis-request", {"channel_id": "ch-free"})
+    dispatch(state, writer, PortionBackend(state, fail="finalize", context_bound_handoff=True))
+    old_context = project_channel(state, "ch-free")["reply_requests"][-1]["context_pack_id"]
+    saved = {p: p.read_bytes() for p in (state / "channels/synthesis-parts").rglob("*.json")}
+    assert execute(service, writer, "channel-synthesis-recover", {
+        "channel_id": "ch-free", "synthesis_request_id": first["request_id"]})["ok"]
+    assert execute(service, writer, "channel-synthesis-request", {
+        "channel_id": "ch-free", "retry_of_request_id": first["request_id"]})["ok"]
+    backend = PortionBackend(state, context_bound_handoff=True)
+    dispatch(state, writer, backend)
+    names = [re.search(r"ONLY part '([^']+)'", c["prompt"]).group(1) for c in backend.calls]
+    assert names == ["implementation", "finalize"]
+    channel = project_channel(state, "ch-free")
+    current_context = channel["reply_requests"][-1]["context_pack_id"]
+    assert current_context != old_context
+    proposed = next(e for e in writer.event_log.read_all() if e.type == "channel.synthesis.proposed")
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    artifact = hydrate_sidecar_ref(state, {"ref": proposed.payload["artifact_ref"],
+        "sha256": proposed.payload["artifact_digest"], "content_type": "application/json"}).payload
+    baseline = artifact["body"]["synthesis"]["implementation_companion"]["source_baseline"]
+    assert baseline["context_pack"]["context_pack_id"] == current_context
+    assert all(path.read_bytes() == content for path, content in saved.items())
 
 
 @pytest.mark.parametrize("action", ["channel.synthesis.cancel", "channel-synthesis-cancel"])

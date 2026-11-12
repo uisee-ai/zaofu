@@ -30,6 +30,8 @@ Channel 与 Kanban Agent 是产品内共享时间线的两个实际入口，均�
 6. 实际停止按钮暴露了两层既有接线缺陷：Web allowlist 未注册 cancel，以及通用 HTTP `request_id` 提取误吞业务生成身份。修复并覆盖实际 token-gated HTTP 调用和两种 action 名称。
 7. Web 与 Harness 的进程注册表相互独立，Web 端返回未找到子进程不能证明 Harness 已停止。取消意图由持有子进程的 Adapter 增量读取 EventLog 执行，真实 spawned-process 测试证明跨进程停止，旧 generation 和迟到输出被围栏拦截。旧运行尚未加载此监视器，实测时先走前端取消，再按授权重启 Harness，并从前端恢复未知投递；未把该次 CLI 收尾写成前端物理取消通过。
 8. 普通运行失败但没有工具时，错误正文保留原回复，过程组件也保留终止状态。公开过程过滤裸运输名称；回归覆盖失败只显示一份原因、不保留旋转图标。
+9. 实际独立全文评估发现：旧开发交接把原上下文写成当前基线，而本轮 attestation 指向新上下文。实际调用者回归先复现仅重做 finalize；恢复校验现在跳过含原上下文摘要／身份引用的缓存部分，由 Agent 重新撰写，其他部分仍复用，旧 sidecar 不改写。不将历史 v2 的评估结果改成通过。
+10. 专项评估发现开发交接沿用了分段暂存路径，如 `requirements.acceptance_criteria`，而 canonical 合同是扁平结构。共同提示与交接提示明确根路径；交接保存前拒绝确切的暂存字段别名，由当前部分重试，不能在 Runtime 静默改写 Agent 合同。两处最终补修共 148 项影响闭包检查通过；未通过真实 Provider 再生成第三版，历史 v2 的真实结果与受控调用链回归分别记录。
 
 ## 确定性与浏览器验证
 
@@ -43,6 +45,7 @@ Channel 与 Kanban Agent 是产品内共享时间线的两个实际入口，均�
 | 生产构建/类型/包预算 | `build-release.log`：通过；入口 chunk 470,320 字节，小于 500,000 |
 | Docker 共享组件与 Channel 浏览器回归 | `browser-release-closure.log`：58 passed；终止状态与裸运输名称最终边界见 `browser-error-polish.log`：3 passed |
 | Kanban 实际运输 bridge 与原生边界 | `kanban-stream-boundary.log`：91 passed；最终 coalescing 边界见 `kanban-coalescing-final.log`：16 passed |
+| 原上下文引用、扁平交接路径与原发布调用链 | `context-bound-reuse-closure.log`：148 passed；修复前复现见 `context-bound-reuse-red.log` |
 
 日志与截图位于仓库本地 `output/readable-agent-synthesis/`，未作为代码提交。Docker 使用 `mcp/playwright:latest`、host networking 与镜像内既有 Chromium；测试写入均为 fixture 截获。SceneProof CLI 在当前环境不可用，已用实际浏览器截图检查桌面、展开、手机布局及报告图像。
 
@@ -57,5 +60,7 @@ Channel 与 Kanban Agent 是产品内共享时间线的两个实际入口，均�
 - 正式产物摘要：`1e6202fe4cff5a2ce6cabf634b6e88c29952939da855d99acb040190c27c1abb`。产品、架构、开发视图已检查，原阅读器没有混入生成材料表单。Source 为三页；经前端 Download 取得 215,533 字节，与三页全文逐字节一致。
 - 已审阅的第二版正文 33,731 字符完整作为正式文档前缀且仅出现一次；其后是需求追溯、决定、验收及开发交接。保留六身份模板、`agent.output.v2`、本地 Codex 正常登录、独立记忆、预算、规则和 NOT_RUN 声明。正文完整性不等于独立内容评估通过。
 - 刷新后五部分与三项恢复凭据可回放；Kanban 的公开说明和工具活动也可回放，完成后无持续计时和旋转。正式 v2 的全文及权限验收专项已从原阅读器请求，结果按同一产物摘要单独记录。
+- 同版全文评估于 12:17:26 UTC 完成，结论 FAIL：184 项矩阵中 179 PASS、3 FAIL、2 INDETERMINATE。缺口包括狼人真人视图接口样例、逐原子命名场景与验收绑定、tasks 后的 Spec-kit analyze 检查点；另有上下文基线和原题卡／合并记录证据边界。生成、下载及恢复功能通过不代表这份 PRD 内容已达开发门槛。上下文缓存问题已补修并回归，其他内容缺口如实保留，不自动修改已发布 v2 或批准实施。
+- 同版权限与验收专项已完成，结论 FAIL；246 项矩阵，5 条发现：原子场景、交接路径、上下文绑定及独立评审／原题卡证据边界。交接路径问题在最终补修中加入阶段内检查；评估原报告保留。两项真实评估均已完整返回，没有以重启取消未完成评估来提前收尾。
 
 真实网络没有主动注入故障；可控 Provider 替身验证了中断与未知交付。狼人杀游戏尚未开发，其性能、真实模型、角色质量及 CLI 接入测试不能据本批改为通过。没有创建开发 Task、启动 Workflow 或批准实施。

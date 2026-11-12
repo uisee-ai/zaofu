@@ -118,6 +118,14 @@ def load_parts(state_dir: Path, *, binding: dict, request_id: str, context_diges
             continue
         if name == "finalize" and (body.get("origin_request_id") != request_id or body.get("context_digest") != context_digest):
             continue  # The final read attestation must be authored for THIS context.
+        if body.get("context_digest") != context_digest:
+            origin = context_receipts.get(body.get("context_digest")) or {}
+            identities = (body.get("context_digest"), origin.get("context_pack_id"))
+            serialized = json.dumps(body["fields"], ensure_ascii=False)
+            if any(identity and identity in serialized for identity in identities):
+                # A business portion may carry an active context-bound baseline
+                # too. Regenerate it; never rewrite the Agent's old claims.
+                continue
         if name in candidates and candidates[name] != body["fields"]:
             raise SidecarRefError("hash_mismatch", "Conflicting synthesis checkpoint receipts")
         candidates[name] = body["fields"]

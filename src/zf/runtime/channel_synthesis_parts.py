@@ -42,6 +42,19 @@ PARTS = (
                             "canonical_cross_review_refs", "supporting_contribution_refs")),
 )
 
+STAGING_FIELD_REFS = {f"{spec.name}.{field}" for spec in PARTS for field in spec.fields}
+
+
+def _staging_reference(value: Any) -> str:
+    if isinstance(value, str):
+        return value if value in STAGING_FIELD_REFS else ""
+    children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()
+    for child in children:
+        found = _staging_reference(child)
+        if found:
+            return found
+    return ""
+
 GUIDANCE = {
     "document": (
         "Read the complete required source pack, including all Owner decisions and dissent. "
@@ -80,7 +93,11 @@ GUIDANCE = {
         "recommended_answer and concrete alternatives. Future tests and execution approvals are not missing product decisions."
     ),
     "implementation": (
-        "Use the saved acceptance IDs exactly. verification_commands entries have unique id, command (pure "
+        "Use the saved acceptance IDs exactly. Saved-part names are staging envelopes, NOT canonical schema paths. "
+        "The assembled channel_synthesis is FLAT: reference acceptance_criteria, decision_log, decisions, "
+        "requirement_coverage etc at the root. Never publish requirements.acceptance_criteria, "
+        "decisions.decision_log, decisions.decisions or other staging-envelope field references. "
+        "verification_commands entries have unique id, command (pure "
         "executable shell), acceptance_ids, producer_paths, owner, tier, deterministic, reusable, timeout_seconds. "
         "Browser criteria require a repo-root executable Docker Playwright command and artifact paths. "
         "Future test files are planned deliverables, not evidence already executed. " + PRD_AUTHOR_GUIDANCE
@@ -132,6 +149,10 @@ def part_error(spec: SynthesisPart, fields: Any) -> str:
             "consumed_message_digests", "consumed_contribution_refs", "consumed_contribution_digests"))
     ):
         return "explicit source-consumption evidence is required"
+    if spec.name == "implementation":
+        staging_ref = _staging_reference(fields)
+        if staging_ref:
+            return f"canonical contract is flat; replace staging-only field reference {staging_ref} with its root field"
     return ""
 
 
@@ -152,6 +173,7 @@ def part_prompt(spec: SynthesisPart, *, initial_prompt: str, saved: dict[str, di
         f"allowed optional fields: {spec.optional}. Only these fields belong in fields.\n"
         + GUIDANCE[spec.name]
         + f"\nCurrent source identity: context_pack_id={context_id}; context_pack_sha256={context_digest}.\n"
+        + "The saved-part envelope is staging only; published contract field references use the flat canonical root.\n"
         + "Saved complete parts (authoritative candidate dependencies, not approval; never re-emit them):\n"
         + json.dumps(saved, ensure_ascii=False, separators=(",", ":"))
         + (f"\nThe previous attempt for THIS part was rejected: {error}. Correct only this part.\n" if error else "")
