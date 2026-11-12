@@ -23,11 +23,14 @@ amendment are separate role capabilities supplied by the workflow profile.
 - Read this role method once per unchanged skill digest. Load dependency references
   only for the current stage's verification method; do not concatenate all skills,
   briefing, task docs and global plans into a truncated tool response.
-- When a required batch spans many pages, prefer the supported
-  `--required --pages 4` call. It returns up to four JSONL pages; consume each
-  page body and continue with the last line's `next_cursor`. Reserve enough
-  tool output (for example, 18000 tokens) and check that no body was truncated;
-  reduce `--pages` or `--page-bytes` if the available output budget is smaller.
+- Start a required batch with one page; increase `--pages` only after observing
+  complete delivery within the tool's actual capacity, including JSON metadata.
+  Requesting a larger output token budget does not guarantee a larger response;
+  `--page-bytes` counts UTF-8 bytes, not tokens. A fixed four-page batch is not
+  a safe default. Consume every page body and continue with the last `next_cursor`.
+  On `Warning: truncated output` or another truncation marker, reduce page count
+  or size and reread the affected page from its original cursor. Do not keep
+  retrying a known oversized batch while the tool capacity is unchanged.
   Preserve every page in the returned tool output; do not replace bodies with
   digests, discard output, or pipe it to a summary. Stop at the bounded page
   count and keep the exact next cursor. Each page retains its own authorization,
@@ -35,6 +38,10 @@ amendment are separate role capabilities supplied by the workflow profile.
   Avoid one model round trip for each tiny page and avoid restarting page one
   after inspecting the manifest. Provider output truncation still requires
   consuming the missing body, never assuming it was delivered.
+- Apply the same bounded reads to briefing, role instructions, task docs and
+  method files; read affected excerpts instead of concatenating whole files.
+  Check read gaps with `zf attempt missing-reads <current-attempt>`;
+  `artifact recover` context reconstruction advice is not a read-gap verdict.
 - Do not reread `task.md`, `source.md`, `progress.md` merely to reconstruct fields
   already present in the pinned contract. For missing context, retrieve the exact
   authorized source/slice. Mandatory acceptance and independent verification remain required.
