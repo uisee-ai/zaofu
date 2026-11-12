@@ -6,7 +6,10 @@ from types import SimpleNamespace
 import pytest
 
 from zf.core.events.model import ZfEvent
-from zf.runtime.writer_fanout_admission import load_writer_task_map, writer_fanout_dispatch_base_commit
+from zf.runtime.writer_fanout_admission import (
+    load_writer_task_map, writer_fanout_dispatch_base_commit,
+    writer_task_dispatch_base_commit,
+)
 
 
 def _fixture(tmp_path):
@@ -63,3 +66,26 @@ def test_full_map_still_rejects_mixed_bases(tmp_path):
     data.pop("amend")
     with pytest.raises(ValueError, match="conflicting base_commit"):
         _load(tmp_path, data)
+
+
+def test_additive_gap_uses_current_dispatch_target_not_successor_partial(tmp_path):
+    data, heads = _fixture(tmp_path)
+    subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                    "commit", "--allow-empty", "-qm", "unverified partial"], cwd=tmp_path, check=True)
+    partial = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True).strip()
+    data["target_commit"] = heads[0]  # The original Plan target remains historical.
+    data["tasks"][1].update(base_commit=partial, source_refs=["git:" + partial])
+    data["tasks"].append({"task_id": "PRODUCER", "title": "producer",
+                          "allowed_paths": ["src/model.py"], "verification": "git diff --check"})
+    data["amend"]["gap_task_ids"] = ["PRODUCER", "GAP"]
+    loaded = _load(tmp_path, data, {"resume_scope": "gap_tasks_only", "dispatch_base_commit": heads[1]})
+    assert loaded.dispatch_base_commit == heads[1]
+    bases = {row["task_id"]: writer_task_dispatch_base_commit(row, fallback=loaded.dispatch_base_commit)
+             for row in loaded.task_items}
+    assert bases == {"PRODUCER": heads[1], "GAP": partial}
+
+
+def test_mixed_explicit_and_implicit_bases_require_a_shared_target():
+    with pytest.raises(ValueError, match="explicit dispatch target"):
+        writer_fanout_dispatch_base_commit([{"task_id": "PRODUCER"},
+                                           {"task_id": "SUCCESSOR", "base_commit": "a" * 40}])

@@ -423,3 +423,17 @@ terminal successor，前置的补缺业务义务由其 Task Map 契约承载。
 `tests/test_gap_source_index_entrypoint.py`，后者证明前置先派发、后继等待。
 预检必须运行真实来源索引 amendment writer，再检查所有端口；只对旧继承
 端口做分区模拟会遗漏这个边界。
+
+### 2026-11-12：混合增量批次按任务选择基线
+
+同一批次包含 additive 前置与携带 `base_commit` 的 successor 时，不能把
+后者的 partial 基线提升为整批公共基线。公共 target 保持当前受控 dispatch
+目标，只有 successor 本身消费 task-local base；混合批次缺公共目标时拒绝，
+多个相互冲突的显式基线仍拒绝。`gap_tasks_only` 的当前事件
+`dispatch_base_commit` 优先于完整 Task Map 留存的历史 `target_commit`。
+普通非 gap 入口保留原优先级，全部任务同一显式基线仍可延续原行为。
+
+计划预检与运行时加载共享该选择规则。回归包含真实 writer 工作区：前置
+checkout 必须等于已验收 candidate，不能含 sibling 的未验收 Case 文件；
+后继保留自身 partial 并等待依赖。此修复不原地重写已经派发的 attempt，
+历史错误派发应通过正式失败交接与有界替换恢复。
