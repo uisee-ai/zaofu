@@ -342,3 +342,16 @@ Package 的 runtime sidecar 合同因此拒绝。现在在 Critic 前用既有 s
 真实同份失败报告在隔离 state 通过最终聚合和 blocking Package，14 端口完整；
 新增调用者与保护边界回归后闭包 278 passed，sentinel 53、mock E2E 10 passed。
 该补修有真实产物重放证据，未声称已在原旧版本运行中生效。
+
+
+### B02 补充：Owner 局部修订入口
+
+`zf plan reject <id> --changed-task <task-id> --reason <反馈>` 和受控
+`plan-reject.changed_task_ids` 将修改范围绑定到当前待审批 Package 的完整 Task Map，
+校验 Run、引用摘要和任务存在性；错误范围不消耗待审批决定。
+`changed_task_ids` 只描述本次拟修改范围，不改变 `task_ids` / `resume_scope` 的执行语义，
+也不等同 `input_task_ids` 的阅读优先级。新的无范围退回不能继承旧范围。
+
+Planner 仍须比较旧包、生成语义范围声明与工具证书；Critic 派发验证原始 Operator
+决定、因果链、历史独立通过、实际读取和候选正文。证书缺失、共享变化或旧证据失效
+仍全量。执行阶段不得因为局部审查而漏掉尚未实施的其他任务。

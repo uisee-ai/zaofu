@@ -85,7 +85,15 @@ def _scope(
     if (not rework.get("rework_of") or any(rework.get(key) for key in (
             "requirement_amendment_ref", "human_resolution", "owner_decision_resolution", "operator_override"))):
         return required
-    requested = rework.get("task_ids")
+    scope_key = "changed_task_ids" if "changed_task_ids" in rework else "task_ids"
+    requested = rework.get(scope_key)
+    if scope_key == "changed_task_ids":
+        decisions = [event for event in events if event.id == rework.get("rework_of")
+                     and event.type == "plan.rejected" and event.actor == "operator"
+                     and event.payload.get("workflow_run_id") == run
+                     and event.payload.get(scope_key) == requested]
+        if len(decisions) != 1:
+            return required
     if (not isinstance(requested, list) or not requested or len(requested) != len(affected)
             or set(requested) != set(affected)):
         return required
@@ -137,7 +145,7 @@ def _scope(
             or triggers[0].payload.get("workflow_run_id") != run
             or triggers[0].payload.get("rework_of") != rework.get("rework_of")
             or triggers[0].payload.get("plan_artifact_package_digest") != package_source.get("sha256")
-            or triggers[0].payload.get("task_ids") != requested):
+            or triggers[0].payload.get(scope_key) != requested):
         return required
     bindings = contract.get("source_bindings")
     if not isinstance(bindings, list):
@@ -173,9 +181,10 @@ def _scope(
         candidate_ports[name] = item
     old_ports = {str(p["logical_name"]): p for p in [*package.get("produced", []), *package.get("inherited", [])]}
     previous_bindings = previous.get("_critic_source_bindings") or []
+    # Inherited requirement/issue ports can be read as authority sources.
+    # Match their exact bound bytes and receipts, not a producer-only alias.
     if any(name != "goal_claim_set" and not any(
         isinstance(item, Mapping) and item.get("sha256") == port.get("sha256")
-        and str(item.get("source_id") or "").startswith(("child-artifact-", "child-result-"))
         and any(isinstance(source, Mapping) and all(source.get(k) == item.get(k)
                     for k in ("source_id", "artifact_id", "ref", "sha256"))
                 for source in previous.get("sources", []))

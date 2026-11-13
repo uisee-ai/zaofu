@@ -138,7 +138,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await send(page, productInput ? productRequest("UI_PRD_ANSWER，确认，直接写入完整 PRD，完成后回复 UI_PRD_WRITTEN") : "UI_PRD_ANSWER：确认缺失文件必须明确报错，采用现有 cat README.md 验证，不新增读取程序。当前只编写 PRD；后续完整 Plan 必须由 UI 启动 PRD v5 Workflow 生成，实施等待 Owner 审批。请现在直接写入完整 PRD 到 docs/prd/ui-requirement.md，包含场景、验收和失败语义。当前 PRD 编写和 Plan 预览阶段不要修改 zf.yaml、Git 或运行状态；" + (ownerCheckpointRequired ? "请在 PRD 登记阻塞决定 OWNER-GIT-01：未来实施是否授权标准受控 Git 提交，目前尚未批准。要求 Planner/Critic 在候选计划定稿前通过 Owner 决策检查点确认它，不能自行假定或把它移到实施后才问。现在先完整记录此未决项并写 PRD，不在当前聊天追问该项。" : "这个阶段限制不禁止未来在单独 Plan 审批后采用标准受控 Git 交付流程。") + "完成后回复 UI_PRD_WRITTEN。");
     await expect(page.locator(".agent-text-part").last()).toContainText("UI_PRD_WRITTEN", { timeout: turnTimeout });
     const prd = readFileSync("/zf-run/project/docs/prd/ui-requirement.md", "utf8");
-    expect(prd).toContain("README.md");
+    if (!productInput) expect(prd).toContain("README.md");
     expect(prd.length).toBeGreaterThan(500);
     writeFileSync(`${evidence}/source-prd.md`, prd);
     writeFileSync(`${evidence}/source-prd.sha256`, createHash("sha256").update(prd).digest("hex"));
@@ -148,7 +148,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await send(page, "UI_PRD_CREATE：确认 docs/prd/ui-requirement.md。请创建一个 Task 并 prepare_workflow，采用当前 PRD v5 配置生成 Workflow YAML Preview。必须将“完整 Plan 需 Owner 人工审批后才允许实施”保留到 Task/Requirement 的 constraints，Workflow 设置 plan_approval: true。只准备提案，不启动实施；保留 source_ref、验收和 target_root 当前项目。");
     await approveTask(page);
   } else {
-    await send(page, "UI_CHANNEL_SETUP：请创建 PRD Group，产品、架构、critic、synthesizer 参与，ID ui-prd-group，名称 UI PRD Group。真实运行使用已登录的 Codex 后端，禁止 fake/mock。先用 conversation 模式讨论 README.md 保持可读与缺失报错，不自动创建 Task。");
+    await send(page, productInput ? "UI_CHANNEL_SETUP：请创建 PRD Group，产品、架构、critic、synthesizer 参与，ID ui-prd-group，名称 UI PRD Group。真实运行使用已登录的 Codex 后端，禁止 fake/mock。先创建 conversation 模式的需求讨论群，具体需求随后在群内提交，不自动创建 Task。" : "UI_CHANNEL_SETUP：请创建 PRD Group，产品、架构、critic、synthesizer 参与，ID ui-prd-group，名称 UI PRD Group。真实运行使用已登录的 Codex 后端，禁止 fake/mock。先用 conversation 模式讨论 README.md 保持可读与缺失报错，不自动创建 Task。");
     const setup = page.getByTestId("agent-card-plan").last();
     await expect(setup).toBeVisible({ timeout: turnTimeout });
     await setup.locator('input[data-recommended="true"]').check();
@@ -236,7 +236,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
       const preview = page.getByRole("dialog", { name: "Plan preview" });
       await expect(preview.getByText("候选计划待澄清，尚未通过 Critic", { exact: true })).toBeVisible();
       const candidate = await get(request, `/api/projects/${project}/plans/${encodeURIComponent(ownerPlan)}/preview`);
-      expect(candidate.markdown).toContain("README.md");
+      if (!productInput) expect(candidate.markdown).toContain("README.md");
       expect(candidate.content_kind).not.toBe("unavailable");
       expect(candidate.actions.approve).toBe("replan-approve");
       // Full content describes document completeness, not Critic approval.
@@ -274,7 +274,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   await expect(dialog).toBeVisible();
   const planBody = await get(request, `/api/projects/${project}/plans/${encodeURIComponent(planId)}/preview`);
   expect(planBody.content_profile).toBe("derived_plan_full");
-  expect(planBody.markdown).toContain("README.md");
+  if (!productInput) expect(planBody.markdown).toContain("README.md");
   // Heading labels vary across valid Plan methods. The artifact audit verifies
   // exact generated content; Critic and the separate assessment judge its quality.
   await dialog.getByRole("button", { name: "完整原文", exact: true }).click();

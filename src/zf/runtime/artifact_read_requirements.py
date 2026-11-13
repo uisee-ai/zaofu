@@ -162,6 +162,12 @@ def build_canonical_required_reads(
 
     sources = _sources(manifest)
     required_paths.update(semantic_replan_handoff.required_read_paths(sources))
+    if profile == "plan-synth":
+        # Keep the authority identity when its bytes also appear as a port.
+        # Local-review eligibility validates the authority's exact receipt.
+        sources = sorted(sources, key=lambda source: not (
+            source.get("source_id") in {"requirement", "goal-objective"}
+            or str(source.get("source_id") or "").startswith("critical-")))
     for source in sources:
         source_id = str(source.get("source_id") or "")
         if source_id.startswith("critical-") or source_id == "rework-feedback":

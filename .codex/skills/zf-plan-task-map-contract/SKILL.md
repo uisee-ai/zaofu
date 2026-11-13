@@ -239,9 +239,13 @@ shared contract, task membership, unrelated task, or non-scoped Plan port
 changed, or if the evidence cannot establish the complete impact. In that case
 the Critic consumes the normal complete inputs.
 
-The existing controlled replan trigger must explicitly carry the same nonempty
-`task_ids` as the changed tasks. Do not add or change this dispatch scope inside
-the certificate. Prerequisites and downstream consumers are reviewed as context;
+The controlled replan trigger must explicitly carry the same nonempty edit
+scope as the changed tasks: an operator Plan rejection may use
+`zf plan reject <id> --changed-task <task-id> --reason <feedback>` (repeat the
+flag for more tasks), producing version-bound `changed_task_ids`. This does
+not narrow execution, select reading priorities, or grant incremental review.
+Without that field, the existing controlled execution replan `task_ids` remains
+the scope source. Do not invent either scope inside the certificate. Prerequisites and downstream consumers are reviewed as context;
 their presence alone does not authorize reopening them as implementation tasks.
 
 The JSON object uses `schema_version: "scoped-plan-review.v1"`, the current
@@ -281,6 +285,20 @@ bound to that Critic session; currently only Codex transcript observation is
 implemented. An unavailable or unsupported observation falls back to full
 reads. Historical delivery does not prove comprehension or current memory.
 The new Critic still performs an independent review and can expand any source.
+
+When publishing a task-scoped supplemental port for future incremental review,
+prepare the first full-review baseline as well: explicitly bind the complete
+`source_index`, `coverage_ledger`, `source_inventory`, and required acceptance
+specification as file ref/digest ports before Critic dispatch. A port derived
+only after that review has no historical full-read receipt and cannot serve as
+an approved input baseline. Preserve the normal fixed schemas; the coverage
+ledger uses `schema_version: "coverage-ledger.v1"` with `entries` keyed by
+`source_id`, each declaring `disposition`, `task_ids`, `acceptance_ids`, and a
+reason for non-covered dispositions. For this optional scope proof, reconcile
+Task Map `source_refs` with source-index task `source_refs` and `acceptance_ids`,
+and source-index `traceability` rows (`source_id`, `source_ref`). Include empty
+`pages`/`forms` lists in the inventory when there are no visual surfaces. Do not
+invent visual assets, drop sources, or alter fixed matrices to qualify.
 
 For scoped review, the current `source_index`, `coverage_ledger`, and
 `source_inventory` must be bound Plan ports and remain full required inputs.

@@ -55,7 +55,7 @@ def test_local_partition_selection_is_bounded_for_many_unrelated_tasks():
 
 
 @pytest.mark.parametrize("problem", ["global", "outside_map", "outside_port", "shared", "missing",
-                                     "duplicate", "unknown_dependency", "bad_schema", "unknown_scope"])
+                                     "missing_unrelated", "duplicate", "unknown_dependency", "bad_schema", "unknown_scope"])
 def test_incomplete_or_broad_proof_keeps_full_read(problem):
     old_map, new_map, old_port, new_port = _inputs()
     scope = ["A"]
@@ -64,6 +64,9 @@ def test_incomplete_or_broad_proof_keeps_full_read(problem):
     if problem == "outside_port": new_port["tasks"][2]["body"] = {}
     if problem == "shared": new_port["shared"]["interface"] = "v2"
     if problem == "missing": new_port["tasks"].pop(1)
+    if problem == "missing_unrelated":
+        old_port["tasks"].pop(2)
+        new_port["tasks"].pop(2)
     if problem == "duplicate": new_port["tasks"].append(deepcopy(new_port["tasks"][0]))
     if problem == "unknown_dependency": new_map["tasks"][0]["blocked_by"] = ["missing"]
     if problem == "bad_schema": new_port["schema_version"] = "unknown"
@@ -136,10 +139,12 @@ def _policy_fixture(state, scenario=""):
     def port(name, ref):
         return {"logical_name": name, "artifact_kind": name, "producer_stage_id": "plan",
                 "ref": ref["ref"], "sha256": ref["sha256"]}
+    authority_ports = [port("requirement_spec", requirement)] if scenario == "authority_port" else []
     package = build_plan_artifact_package(workflow_run_id="run-1", flow_kind="prd", producer_stage_id="plan",
         run_contract=_run_contract(state), plan_revision="old-rev", task_map_generation="old-gen",
         produced=[port("task_map", old_map_ref), port("execution_spec", old_port_ref), port("planning_result", unchanged),
-                  port("source_index", index_ref), port("coverage_ledger", ledger_ref), port("source_inventory", inventory_ref)])
+                  port("source_index", index_ref), port("coverage_ledger", ledger_ref), port("source_inventory", inventory_ref),
+                  *authority_ports])
     package_ref = write_plan_artifact_package(state, package)
     cert = save({"schema_version": "scoped-plan-review.v1", "workflow_run_id": "run-1", "scope_complete": True,
         "verification_responsibility_preserved": True, "baseline_package_sha256": package_ref["sha256"],
@@ -159,7 +164,7 @@ def _policy_fixture(state, scenario=""):
     report = save({"schema_version": "fanout-child-result.v1", "task_map_ref": new_map_ref["ref"],
         "role_instance": "planner", "child_id": "planner", "dispatch_id": "new-planner-attempt",
         "plan_ports": [port("execution_spec", new_port_ref), port("planning_result", new_planning),
-                       port("source_index", index_ref), port("coverage_ledger", ledger_ref), port("source_inventory", inventory_ref)]}, "report")
+                       port("source_index", index_ref), port("coverage_ledger", ledger_ref), port("source_inventory", inventory_ref), *authority_ports]}, "report")
 
     def source(source_id, artifact_id, ref):
         return {**ref, "source_id": source_id, "artifact_id": artifact_id, "allowed_paths": ["$"]}
@@ -171,10 +176,13 @@ def _policy_fixture(state, scenario=""):
         source("child-artifact-planner-5", "source_index.json", index_ref),
         source("child-artifact-planner-6", "coverage_ledger.json", ledger_ref),
         source("child-artifact-planner-7", "source_inventory.json", inventory_ref)]
+    if authority_ports:
+        children.append(source("child-artifact-planner-8", "requirement_spec.json", requirement))
     requirement_source = source("requirement", "requirement.json", new_requirement)
     old_requirement_source = source("requirement", "requirement.json", requirement)
     requested_tasks = [] if scenario == "no_dispatch_scope" else ["A"]
-    rework = save({"schema_version": "plan-rework-context.v1", "rework_of": "old-failure", "task_ids": requested_tasks}, "rework")
+    scope_key = "changed_task_ids" if scenario == "operator_edit_scope" else "task_ids"
+    rework = save({"schema_version": "plan-rework-context.v1", "rework_of": "old-failure", scope_key: requested_tasks}, "rework")
     inputs = [*children,
         source("plan-rework-package", "package.json", package_ref),
         source("baseline-plan-port-task_map", "old-map.json", old_map_ref),
@@ -198,7 +206,7 @@ def _policy_fixture(state, scenario=""):
         "fanout_id": "old-fanout", "stage_id": "plan", "plan_revision": "old-rev", "child_bindings": [{"child_id": "planner",
         **{k: old_report[k] for k in ("source_id", "artifact_id", "sha256")}}],
         "source_bindings": [{k: s[k] for k in ("source_id", "artifact_id", "ref", "sha256")}
-                            for s in [old_report, *old_children]]}, "old-contract")
+                            for s in [old_requirement_source, old_report, *old_children]]}, "old-contract")
     previous_body = {"schema_version": "attempt-source-manifest.v1", "workflow_run_id": "run-1",
         "attempt_id": "old-attempt", "sources": [old_requirement_source, old_report, *old_children,
             source("plan-synth-contract", "old-contract.json", old_contract)]}
@@ -267,7 +275,7 @@ def _policy_fixture(state, scenario=""):
     admitted_package = ZfEvent(type="plan.artifact_package.admitted", origin="kernel", causation_id="old-synth", payload={
         **package_event_payload(package, package_ref, status="admitted"), "source_event_id": synth.id})
     trigger = ZfEvent(id="trigger", type="prd.plan.requested", origin="kernel", payload={"workflow_run_id": "run-1",
-        "rework_of": "old-failure", "task_ids": requested_tasks, "plan_artifact_package_digest": package_ref["sha256"]})
+        "rework_of": "old-failure", scope_key: requested_tasks, "plan_artifact_package_digest": package_ref["sha256"]})
     started = ZfEvent(type="fanout.started", origin="kernel", causation_id="trigger", payload={"fanout_id": "new-fanout",
         "stage_id": "plan", "trigger_event_id": "trigger", "workflow_run_id": "run-1"})
     old_producer = ZfEvent(type="fanout.child.dispatched", origin="kernel", payload={"fanout_id": "old-fanout",
@@ -281,7 +289,9 @@ def _policy_fixture(state, scenario=""):
         "operation_id": "old-operation", "workflow_run_id": "run-1", "request_hash": old_request_hash,
         "request_ref": old_request})
     return manifest, required, [old_producer, operation_requested, dispatch, operation_started, admitted_result, synth,
-                                admitted_package, trigger, started, new_producer]
+                                admitted_package, trigger, started, new_producer,
+                                ZfEvent(id="old-failure", type="plan.rejected", actor="operator", payload={
+                                    "workflow_run_id": "run-1", scope_key: requested_tasks})]
 
 
 @pytest.mark.parametrize("scenario", ["global_map", "outside_map", "outside_port", "shared_port", "global_port",
@@ -405,7 +415,7 @@ def test_local_critic_policy_falls_back_for_unproved_inputs(tmp_path, problem):
                               critic_role="planner" if problem == "same_current_role" else "critic") == required
 
 
-@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered", "generated_certificate", "late_provider_session"])
+@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered", "generated_certificate", "late_provider_session", "operator_edit_scope", "authority_port"])
 def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, monkeypatch, prior_format):
     from tests.test_call_result_runtime import _runtime
     from zf.runtime.artifact_read_ledger import active_read_ledger_path, read_attempt_artifact, render_attempt_source_briefing, seal_read_ledger
@@ -417,7 +427,7 @@ def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, mo
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
     runtime = _runtime(tmp_path)
-    manifest, _, events = _policy_fixture(runtime.state_dir, prior_format if prior_format in {"generated_certificate", "late_provider_session"} else "")
+    manifest, _, events = _policy_fixture(runtime.state_dir, prior_format if prior_format in {"generated_certificate", "late_provider_session", "operator_edit_scope", "authority_port"} else "")
     if prior_format == "legacy_recovered":
         previous = next(e for e in events if e.id == "old-synth")
         previous.payload.pop("recommendation")
@@ -573,3 +583,15 @@ def test_scoped_review_survives_real_semantic_submit_and_package_gate(tmp_path, 
         manifest={"workflow_run_id": "run-1"}, stage_id="plan", trace_id="run-1", success_event="task_map.ready",
         final_status="completed", recommendation="approve", artifact_payload=output)
     assert status == "completed" and calls == [True]
+
+
+@pytest.mark.parametrize("problem", ["missing", "wrong_actor", "wrong_run", "wrong_scope"])
+def test_operator_edit_scope_requires_the_exact_controlled_decision(tmp_path, problem):
+    manifest, required, events = _policy_fixture(tmp_path, "operator_edit_scope")
+    decision = next(e for e in events if e.id == "old-failure")
+    if problem == "missing": events.remove(decision)
+    if problem == "wrong_actor": decision.actor = "planner"
+    if problem == "wrong_run": decision.payload["workflow_run_id"] = "another-run"
+    if problem == "wrong_scope": decision.payload["changed_task_ids"] = ["C"]
+    assert _scope_policy(tmp_path, events=events, manifest=manifest, required=required,
+                         explicit=[], critic_role="critic") == required
