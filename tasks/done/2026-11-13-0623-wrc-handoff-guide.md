@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `a585f2de` chore: clarify work record handoff for worker roles
 
 # WRC 证据封装与角色方法交接修复
 
@@ -33,7 +33,13 @@ LS-v1 Verify 在 2026-11-13 06:06 将项目根的原生 CommandExecution JSON �
 在本独占 worktree，使用 `PYTHONPATH=src /home/min/workspace/public/zaofu/.venv/bin/python`，确保导入本分支代码而非 MAIN：
 
 - `scripts/dev-verify.py plan --base dev --tests tests/test_work_record_help.py --tests tests/test_work_record.py --tests tests/test_work_record_dispatch.py --tests tests/test_plan_readiness_skills.py --tests tests/test_skill_provenance.py`：选出 backend/docs/skills/tests 7 个测试文件，无未知源路径。
-- 相同参数的 `scripts/dev-verify.py run`：104 passed，1 skipped（未提供可选 `examples/tmp/dev-codex-backends.yaml`），没有跑全量 pytest。
+- 相同参数的 `scripts/dev-verify.py run`：104 passed，1 skipped（可选 dev-codex 示例的 `./skills/external`、`./skills/critic` 外部源不存在），没有跑全量 pytest。
 - `PYTHONPATH=src bash scripts/dev-premerge-gate.sh`：manual docs currentness ok，53 passed。首次索引过期已按生成器修正，未跳过门禁。
 - 4 个改动技能的 `read_skill_metadata(..., expected_name=...)`：无 warnings；3 份源码/分发副本及共享 reference 一致，真实角色物化测试通过。
 - `git diff --check` 通过。没有改 MAIN 的 AGENTS/index、LS 技能源、worker、runtime 或 scratch；没有重启、merge、push。
+
+## 交付结论
+
+本批 4 条验收均完成；实现 commit `a585f2de`（chore: clarify work record handoff for worker roles）。所有运行/权限门禁保留，未引入 WRC 必交要求。归档提交仅更新任务状态并移动到 done。
+
+补充核验：`tests/test_skill_provenance.py::test_dev_codex_example_materializes_each_role_skills_and_dependencies -q --no-cov -rs` 明确 skip 原因为 external skill source missing，不是示例 YAML 不存在；本记录已更正首次解释。生产 LS config 中 dev-lane-0/verify-lane-0 均存在且 materialize=copy；已向主监工提供以 `load_config` + `materialize_role_skills`、只写 `/tmp` 临时根，对 Impl/Verify × Codex/Claude 四组合核对共享 reference 与角色依赖的方法。待主监工显式补丁同步 LS vendored skills 后执行；本批未扩大到生产项目写入。
