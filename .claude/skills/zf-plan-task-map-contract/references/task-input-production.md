@@ -5,15 +5,23 @@
 1. 对账完整原始材料，将条款、例外、共享规则、依赖接口、图片的页面/状态/位置绑定来源版本和定位。来源清单与覆盖账本不能只列摘要；排除要有理由，未知不得标成覆盖。
 2. 按 Task Map 的精确 ID 生成一次 owned partition；跨任务约束放 shared，说明消费者义务。保留验收 ID、source_ref、image_ref，以及接口错误语义。仅复制 ID 不算语义完整。
 3. 保留完整原始产物与矩阵。Impl / Task Verify 的 selection 只引用批准包内实际存在的端口；Candidate Verify、任务集成评审和 Goal Judge 保持各自 profile，不补造通用 judge selection。
-4. 提交前制作端口名到相对 JSON 文件的映射，运行 `zf plan inspect-inputs --bundle bundle.json --task T1`。按 next_offset 继续；缺失资料、未知引用、重复/多余切片和依赖错误均需解释或修复。预检不批准 Plan，也不修改原文件。
+4. 冻结前列出 Impl / Task Verify 实际选择的 shared / owned 路径、各自必要性与排除理由，以及完整来源的固定版本和获授权精确读取位置；在现有 rationale/输入正文或工件说明中记录，不新增字段。制作端口名到相对 JSON 文件的映射，运行 `zf plan inspect-inputs --bundle bundle.json --task T1`。按 next_offset 继续；缺失资料、未知引用、重复/多余切片和依赖错误均需解释或修复。字节与页数仅是核查重复和适用性的审查信号，不作为阈值准入或自动裁剪依据。预检不批准 Plan，也不修改原文件。
 5. Critic 独立从原始材料反向对账 shared + owned；逐条说明异常、共享规则、图片状态、依赖和验收责任是否保留。引用存在、结构合法或预检无问题都不能证明语义完整。
 
 任务分区不能只放作者目录中的 `complete_input_ref` 和摘要，而把实际正文留在未绑定文件。
 即使路径出现在 `artifact_refs`，也不证明它已进入下游 Plan Package 或授权 manifest。
-将完整来源、异常、用例和依赖正文放入该端口的 `shared` / `tasks[].body`；大型端口可通过
-既有 `plan_ports` 的 `{logical_name, ref, sha256}` 描述符交付，避免重复内嵌进结果正文。
+将本消费者必需的完整条款、异常、用例和依赖接口正文放入该端口的 `shared` / `tasks[].body`；
+完整来源与全局矩阵仍保留在已绑定的权威产物中并可精确回取。大型端口可通过既有
+`plan_ports` 的 `{logical_name, ref, sha256}` 描述符交付，避免重复内嵌进结果正文。
 不要提高结果大小上限或删减正文。提交前从正式迁移后的工件与下游实际选择路径检查：
 离开作者工作目录后仍能读到完整正文和同版引用，才算交接成立。
+
+这里“完整”按本消费者的适用义务判断，不等于前置任务全文。反例是将每个前置的
+`{contract: deepcopy(producer_task), context: producer_pipeline_context}` 默认复制进新 owned：
+生产者旧 AC、实施命令与执行身份不会因此成为当前消费者义务。应交付实际消费的接口正文、
+版本及已发布成果/验证引用，保留适用的错误、UNKNOWN、生命周期和直接 caller 验证责任；
+例如消费 T0 的库存 v1 接口及 409 错误语义，而非复制 T0 的完整实施合同。完整前置合同仍
+固定版本、合法可回取；不能以此反例删掉本消费者确需的异常、图片状态、来源/AC 或验证正文。
 
 输入片段示例（正文自由字段属于输入材料，不能替代 canonical Task contract）：
 
