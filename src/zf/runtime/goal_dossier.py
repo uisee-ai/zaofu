@@ -844,14 +844,18 @@ def _evidence_index(events: Iterable[ZfEvent]) -> list[dict[str, str]]:
 def _source_refs(events: Iterable[ZfEvent]) -> tuple[list[str], list[str]]:
     refs: list[str] = []
     digests: list[str] = []
+    seen_refs: set[str] = set()
+    seen_digests: set[str] = set()
     for event in events:
         payload = event.payload if isinstance(event.payload, dict) else {}
         for key, value in _walk(payload):
             target = digests if _is_digest_key(key) else refs if _is_ref_key(key) else None
             if target is None:
                 continue
+            seen = seen_digests if target is digests else seen_refs
             for item in _strings(value):
-                if item not in target:
+                if item not in seen:
+                    seen.add(item)
                     target.append(item)
     return refs, digests
 
