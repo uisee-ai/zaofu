@@ -296,7 +296,12 @@ ledger uses `schema_version: "coverage-ledger.v1"` with `entries` keyed by
 `source_id`, each declaring `disposition`, `task_ids`, `acceptance_ids`, and a
 reason for non-covered dispositions. For this optional scope proof, reconcile
 Task Map `source_refs` with source-index task `source_refs` and `acceptance_ids`,
-and source-index `traceability` rows (`source_id`, `source_ref`). Include empty
+and source-index `traceability` rows (`source_id`, `source_ref`). Every task
+`source_refs` item must exactly match a traceability `source_ref` whose ledger
+row names that task. A whole-file ref and `file#AC-1` are different declarations:
+use the actual atomic refs for task ownership, or explicitly map the file-level
+source as well; do not assume anchors prove coverage of an entire file. Keep
+transport copies in the inventory unless separately mapped. Include empty
 `pages`/`forms` lists in the inventory when there are no visual surfaces. Do not
 invent visual assets, drop sources, or alter fixed matrices to qualify.
 
