@@ -360,3 +360,24 @@ dev-verify 对该补丁选择277测试文件并提升全量；未执行全量pyt
 modal-verify-receipt.json明确记录skip，以上述传输、实际dispatch、TaskAttempt、恢复、
 fanout、v5启动及mock验证闭包替代。没有在新增补丁后重新运行真实Provider。
 多任务临时project/workspace已归档、摘要验证并清理；8003已释放，8001未操作。
+
+### 剩余多任务真实复验通过（2026-11-13 UTC）
+
+本节更新前述“任务继续active”的历史结论。b1f79651 上的真实 Kanban 多任务 v5链路
+已完成：两Scan→Planner→独立Critic首轮approve→pending Plan，body/browser/audit均passed。
+T-READ为7AC、T-SIZE为8AC，16原子场景全部保留，另列双入口复验；写入路径无重叠，
+首片独立用法、后片最终README，P0/P1 mandatory保留。8554字符完整正文与评审候选摘要
+一致；来源、刷新、下载通过，额外只读Docker检查两模块在1280/375下均无正文横向溢出。
+没有批准Plan或实施产品，补验没有API写入。
+
+本次先复现测试措辞误拦，b1f79651将首轮回复检查改为有效状态、同turn绑定及非空，
+保留后续真实PRD/Plan检查，随后独立重跑通过。源码保护仍含a531f0fe。报告及截图见
+`reports/spec206-retest-20261112/evaluation.md`；原始失败和后续成功分别留存。
+本轮约29.5分钟，Planner约10.5、Critic约11.1分钟，未解决性能偏重。
+
+真实候选的READ AC同时引用最终命令，但实际verification_commands阶段筛选和
+verification_result_template将其从首片验收排除；已保存绑定候选函数重放证明。
+这不代表产品命令已执行。正文仍有未包代码的tests/__init__.py被Markdown解释为强调
+的可读性瑕疵，原始工件及结构化路径正确；决策状态文案也可更直接，作为非阻塞改进保留。
+本轮Critic一次通过，没有真实返工或配额弹窗，不能宣称覆盖了故障注入场景。
+Channel/Kanban小例保持98073bd6历史通过归属，不伪称三条路径同HEAD全验证。
