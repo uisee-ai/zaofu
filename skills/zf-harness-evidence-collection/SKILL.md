@@ -36,6 +36,22 @@ Collect:
   `feature_list.json`, or `role_sessions.yaml` by hand.
 - If evidence is missing, report the missing field instead of approving.
 
+## 工具输出完整交付
+
+- 批量或并行读取前，按本批所需正文总量检查子工具、外层聚合wrapper和后续wait的
+  输出预算；inner成功或预算足够不保证整批交付完整。优先有界读取或分批，确需
+  调整单次预算时按当前工具合同设置，不修改全局限制。Codex中分别检查
+  `exec_command.max_output_tokens`、`functions.exec`首行`@exec`的
+  `max_output_tokens`及后续`functions.wait.max_tokens`，不要假定默认值处处相同。
+- 检查实际返回层的截断/省略标记、来源边界及分页游标。源码或日志正文中引用
+  “truncated”等字样本身不是截断证据；命令退出0也不证明正文已完整交付。
+- 有遗漏时标出缺失来源/页/片段，只补读缺失或无法定位的最小相关范围，再核对
+  必需正文与版本/游标连续性。沿用现有受控reader及required-read校验，不因补读
+  缩减必读范围或绕过权限。后台读取回执、已保存文件或省略摘要不能代替provider
+  实际收到的正文；交付未完成前不得声称已完整阅读该证据。
+
+以上是Agent采集方法，不是新增runtime gate；完整交付也不等于业务验收通过。
+
 ## 非终态工作记录（WRC）
 
 需要将已有授权记录中的阶段进展发布为 WRC 时，先读
