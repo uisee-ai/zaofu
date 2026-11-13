@@ -500,29 +500,44 @@ def plan_reader_stage_replan(
 
     if not authorized_generation and failure_kind_from_payload(failure_payload) == FAILURE_KIND_INFRA:
         return None, "infrastructure_failure"
+    rejected_id = str(
+        failure_payload.get("trigger_event_id") or failure_event.causation_id or ""
+    ).strip()
+    rejected_plan = index.by_id.get(rejected_id)
+    if rejected_plan is not None and (
+        rejected_plan.type != "task_map.ready" or not _same_run(rejected_plan, failure_run_id)
+    ):
+        rejected_plan = None
     origin_payload: dict[str, Any] = {}
-    for _, event in index.rows(trigger_type):
-        if (
-            _same_run(event, failure_run_id)
-            and isinstance(event.payload, dict)
-            and _same_replan_scope(event, failure_event, task_scopes)
-        ):
-            origin_payload = dict(event.payload)
-    lineage = reader_stage_lineage_payload(
-        events,
-        stage_id=str(getattr(stage, "id", "") or ""),
-        correlation_id=str(failure_event.correlation_id or ""),
-        fanout_id=failure_fanout_id,
-        event_index=index,
-    )
-    if failure_fanout_id:
-        if not lineage:
+    if failure_payload.get("failure_scope") == "plan_admission" and not failure_fanout_id:
+        # Operator amendments may have no reader fanout. Their rejected ready
+        # event, not another Plan's stage history, owns recovery and authority.
+        if rejected_plan is None:
             return None, "reader_origin_missing"
-        # A Run may contain many candidates for the same reader stage. Its
-        # latest request is not the causal input of this failed operation.
-        origin_payload = lineage
+        origin_payload = dict(rejected_plan.payload)
     else:
-        origin_payload = {**lineage, **origin_payload}
+        for _, event in index.rows(trigger_type):
+            if (
+                _same_run(event, failure_run_id)
+                and isinstance(event.payload, dict)
+                and _same_replan_scope(event, failure_event, task_scopes)
+            ):
+                origin_payload = dict(event.payload)
+        lineage = reader_stage_lineage_payload(
+            events,
+            stage_id=str(getattr(stage, "id", "") or ""),
+            correlation_id=str(failure_event.correlation_id or ""),
+            fanout_id=failure_fanout_id,
+            event_index=index,
+        )
+        if failure_fanout_id:
+            if not lineage:
+                return None, "reader_origin_missing"
+            # A Run may contain many candidates for the same reader stage. Its
+            # latest request is not the causal input of this failed operation.
+            origin_payload = lineage
+        else:
+            origin_payload = {**lineage, **origin_payload}
     if (
         _requires_changed_scan_input(stage, failure_event.type)
         and _semantic_failure(failure_payload)
@@ -672,14 +687,6 @@ def plan_reader_stage_replan(
                 or failure_event.type
             ),
         }]
-    rejected_id = str(
-        failure_payload.get("trigger_event_id") or failure_event.causation_id or ""
-    ).strip()
-    rejected_plan = index.by_id.get(rejected_id)
-    if rejected_plan is not None and (
-        rejected_plan.type != "task_map.ready" or not _same_run(rejected_plan, failure_run_id)
-    ):
-        rejected_plan = None
     if (
         failure_payload.get("failure_class") == "reader_execution_failure"
         or (failure_payload.get("failure_scope") == "plan_admission" and rejected_plan is not None)
@@ -714,7 +721,7 @@ def plan_reader_stage_replan(
         value = failure_payload.get(key)
         if value not in (None, "", [], {}) and (
             key in _CANONICAL_INPUT_KEYS
-            or key == "previous_plan_candidate_refs"
+            or key in {"previous_plan_candidate_refs", "plan_admission_incident_id"}
             or not origin_payload.get(key)
         ):
             origin_payload[key] = value
