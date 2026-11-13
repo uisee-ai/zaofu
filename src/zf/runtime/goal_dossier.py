@@ -27,7 +27,7 @@ from zf.runtime.goal_dossier_consistency import (
 )
 from zf.runtime.goal_dossier_history import build_goal_dossier_history
 from zf.runtime.goal_completion_authority import scope_handoff_snapshot
-from zf.runtime.operation_projection import project_task_operations
+from zf.runtime.operation_projection import project_task_operations_batch
 from zf.runtime.plan_artifact_package import (
     hydrate_plan_artifact_package,
     reduce_plan_artifact_packages,
@@ -721,8 +721,7 @@ def _operations(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for task_id in task_ids:
-        projection = project_task_operations(state_dir, task_id, events=events)
+    for projection in project_task_operations_batch(state_dir, task_ids, events=events):
         candidates = list(projection.get("operations") or []) + list(
             projection.get("workflow_operations") or []
         )
