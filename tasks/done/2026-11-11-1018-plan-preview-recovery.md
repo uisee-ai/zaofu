@@ -1,6 +1,6 @@
 # Plan Preview 规划冲突、恢复与真实复验
 
-> 状态: active
+> 状态: done
 
 用户已批准执行上一轮建议1–4。基于 ebcfd415，在当前spec206工作分支继续；依据 reports/spec206-optimization-20261111/evaluation.md。只本地提交，未授权merge/push；真实Provider测试已授权，终点为待审批或真实待决Preview，不实施示例产品。
 
@@ -15,7 +15,7 @@
 
 归组、原子场景责任与Owner必要性由Skill/Agent判断；runtime只校验明确声明、工件绑定及既有转换。单一Task合同，保留文件独占和受控动作保护。临时项目8002+，8001不动。
 
-## 实施记录
+## 实施记录（历史，以末节完成结论为准）
 
 1–3 已实现：Skill 归组/责任方法、显式 owner_review 草案预检、PRD 选项和终止等待修正。
 聚焦校验、提交/绑定/恢复、mock E2E、构建及 sentinel 通过；4 的真实复验仍待完成，保持 active。
@@ -38,3 +38,24 @@ Critic连续误读V-03的显示转义，已用绑定工件及静态解析反证�
 
 弹窗补修聚焦103、fanout/恢复41（1未选择）、sentinel53、mock flow10通过。
 未跑全量pytest，未在弹窗补修后宣称真实Provider通过。所有本批临时服务已停止并归档。
+
+## 完成结论（2026-11-13 UTC）
+
+实施提交：
+- 55af3551 fix: route blocked planning drafts to independent review
+- 98073bd6 fix: require grounded planning review and preserve PRD slice timing
+- 66d194a1 fix: preserve source document timing during PRD intake
+- a531f0fe fix: block task delivery into provider model switch prompts
+- b1f79651 test: bind PRD discussion checks to turn results
+
+1–3的实现及上文聚焦测试已完成；4的剩余真实多任务复验现已passed。
+本次两Scan、Planner、Critic首轮通过并进入pending Plan，body completed/browser0/audit passed。
+READ7AC/SIZE8AC、16原子场景保留；路径不重叠；16项传输回归、两轮fake、TypeScript通过。
+两模块在1280/375实际阅读、来源/刷新/下载通过，所有产品验证仍NOT_RUN、未批准实施。
+实际阶段命令选择证明首片不消费后片最终命令；完整证据在reports/spec206-retest-20261112/。
+
+本次没有真实返工或换模型弹窗，不能称故障注入E2E已覆盖；继续沿用绑定的mock/caller证据。
+执行偏慢、Markdown未包代码的路径及阶段命令阅读歧义作为非阻塞质量改进保留。
+本批验收闭合；临时服务已停止，归档后清理状态，未merge/push，worktree保留。
+
+收尾dev-verify按本次test/docs影响范围自动执行instruction-stack、Web typecheck/Web unit均通过；manual-docs currentness通过，详见verify-receipt.json。
