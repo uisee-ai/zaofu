@@ -18,7 +18,7 @@ from zf.runtime.workflow_read_result import normalize_workflow_read_result
 
 @pytest.mark.parametrize("name", ["source_inventory", "capability_matrix", "acceptance_matrix",
                                   "test_matrix", "real_e2e_matrix", "source_index"])
-@pytest.mark.parametrize('form', ['inline', 'port_body'])
+@pytest.mark.parametrize('form', ['inline', 'port_body', 'inline_only'])
 def test_complete_referenced_port_survives_author_cleanup(tmp_path, name, form):
     project = tmp_path / "project"
     state = project / "runtime-state"
@@ -31,6 +31,8 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name, form):
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     original = ({f"{name}_ref": ref, "artifact_refs": [ref], name: body} if form == 'inline' else
                 {'artifact_refs': [ref], 'plan_ports': [{'logical_name': name, 'body': body}]})
+    if form == 'inline_only':
+        original.pop('artifact_refs')
     submitted = parse_semantic_result_bytes(json.dumps({
         **original, "summary": "完整引用交接", "result_semantics": "artifact_production",
     }).encode())
@@ -49,6 +51,8 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name, form):
     report = reports[0]["report"]
     assert name not in report
     assert all('body' not in port for port in report.get('plan_ports', []))
+    if form == 'inline_only':
+        digest = report['plan_ports'][0]['sha256']
     errors = []
     bodies = plan_port_bodies([report], trigger={}, state_dir=state, project_root=project, errors=errors)
     assert not errors

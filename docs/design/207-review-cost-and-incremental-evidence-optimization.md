@@ -265,7 +265,9 @@ Owner 确认本文范围后，再将选中的工作包转成 backlog，明确每
 
 - `prepare_fanout_synth_reports` 在引用已复制到 runtime 后，仅移除六类端口中与
   引用文件解码内容完全相同的 inline 副本（包括实际生成的 `plan_ports[].body`）；
-  对已有显式 ref/digest 的其他端口也只做解码后内容完全相同的引用转换。冲突、摘要不符
+  对已有显式 ref/digest 的其他端口也只做解码后内容完全相同的引用转换。
+  六类端口若仅有 inline 正文，则先用既有 immutable Plan port writer 完整持久化，再交接
+  ref/digest，避免下游提取正文后与 child report 重复。已有引用缺失或冲突时不替换。冲突、摘要不符
   和不可读引用保留。原 admitted
   producer result 不变，Critic、预检和 Package 继续消费完整引用正文。
 - canonical required reads 合并同摘要、选择、权限、保留策略、来源事件 的正文

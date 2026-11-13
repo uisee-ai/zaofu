@@ -5,7 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from zf.runtime.call_result_envelope import canonical_json_bytes
+from zf.runtime.call_result_envelope import canonical_json_bytes, write_immutable_json_sidecar
 from zf.runtime.plan_candidate_ports import read_plan_port_bytes
 from zf.runtime.task_map import resolve_artifact_file
 
@@ -50,6 +50,21 @@ def compact_report(report: dict, *, state_dir: Path, project_root: Path) -> dict
             basename = Path(item['ref']).name if item.get('ref') else name + '.json'
             refs.extend(ref for ref in report.get('artifact_refs', []) if isinstance(ref, str)
                         and Path(ref).name == basename)
+            if name in REFERENCE_PORTS and not any(refs):
+                # Inline-only producers otherwise cause downstream candidate
+                # extraction to repeat this same body beside the child report.
+                # Use the existing immutable port writer before that handoff.
+                raw = canonical_json_bytes(item['body'])
+                if not item.get('sha256') or item['sha256'] == hashlib.sha256(raw).hexdigest():
+                    descriptor = write_immutable_json_sidecar(
+                        state_dir, item['body'], root='plan-ports', kind=name,
+                        schema_version=str(item['body'].get('schema_version') or ''),
+                        created_by='fanout-report-compaction',
+                        source_event_id=str(report.get('source_event_id') or ''))
+                    item = {key: value for key, value in item.items() if key != 'body'}
+                    item.update(ref=descriptor['ref'], sha256=descriptor['sha256'])
+                compacted.append(item)
+                continue
             for ref in dict.fromkeys(ref for ref in refs if isinstance(ref, str) and ref):
                 try:
                     path = resolve_artifact_file(ref, project_root=project_root, state_dir=state_dir)
