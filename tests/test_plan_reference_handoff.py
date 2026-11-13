@@ -2,6 +2,7 @@
 import hashlib
 import json
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -165,3 +166,38 @@ def test_compaction_never_repairs_an_explicit_ref_from_an_alias(tmp_path, proble
     else:
         report['source_inventory_ref'] = 'source_inventory.json'
     assert compact_report(report, state_dir=state, project_root=tmp_path) == report
+
+
+def test_explicit_project_port_is_pinned_before_critic_and_author_cleanup(tmp_path):
+    project, state = tmp_path / 'project', tmp_path / 'runtime'
+    project.mkdir(); state.mkdir()
+    source = project / 'skill-adapter-plan.json'
+    body = {'schema_version': 'skill-adapter-plan.v1', 'rules': ['keep complete contract']}
+    source.write_text(json.dumps(body))
+    port = {'logical_name': 'skill_adapter_plan', 'ref': str(source),
+            'sha256': hashlib.sha256(source.read_bytes()).hexdigest()}
+    prepared = prepare_fanout_synth_reports(
+        reports=[{'child_id': 'planner', 'report': {'plan_ports': [port]}}],
+        manifest={'fanout_id': 'pin-project-port'}, state_dir=state, project_root=project,
+        config=ZfConfig(), roles=[])
+    source.unlink()
+    report = prepared[0]['report']
+    assert not Path(report['plan_ports'][0]['ref']).is_absolute()
+    assert report['plan_ports'][0]['sha256'] == port['sha256']
+    ports = materialize_explicit_plan_ports(
+        state_dir=state, project_root=project, payload=report, flow_kind='prd')
+    assert hydrate_sidecar_ref(state, ports['skill_adapter_plan']).payload == body
+
+
+@pytest.mark.parametrize("problem", ["missing", "digest", "outside"])
+def test_project_port_pinning_does_not_replace_invalid_binding(tmp_path, problem):
+    from zf.runtime.plan_report_compaction import pin_report_port_refs
+    project, state = tmp_path / 'project', tmp_path / 'runtime'
+    project.mkdir(); state.mkdir()
+    source = (tmp_path if problem == 'outside' else project) / 'adapter.json'
+    raw = b'{"version": 1}'
+    if problem != 'missing': source.write_bytes(raw)
+    port = {'logical_name': 'adapter', 'ref': str(source),
+            'sha256': 'f' * 64 if problem == 'digest' else hashlib.sha256(raw).hexdigest()}
+    report = {'plan_ports': [port]}
+    assert pin_report_port_refs(report, state_dir=state, project_root=project) == report

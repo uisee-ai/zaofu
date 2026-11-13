@@ -335,3 +335,10 @@ UI 真实测试保持默认单轮等待 600 秒；`--turn-timeout` 可显式设�
 B02 的 CLI/派发接线已实施，但自然案例无合格分区基线，真实增量正例缺失，任务
 保持 active。B01 仅完成 rejected 事实层，未实现审批前正文专审。30% 稳定局部修订
 降时、50% 实际重复流量及广泛质量无退化尚未闭环；C1/C2 不在本批实施范围。
+
+后续真实 CLI Channel 首轮 Critic 通过后，发现额外显式端口使用项目绝对 ref，
+Package 的 runtime sidecar 合同因此拒绝。现在在 Critic 前用既有 source materializer
+固定相同摘要的显式端口引用；原 producer 不变，缺失/摘要冲突/越界仍保留错误。
+真实同份失败报告在隔离 state 通过最终聚合和 blocking Package，14 端口完整；
+新增调用者与保护边界回归后闭包 278 passed，sentinel 53、mock E2E 10 passed。
+该补修有真实产物重放证据，未声称已在原旧版本运行中生效。

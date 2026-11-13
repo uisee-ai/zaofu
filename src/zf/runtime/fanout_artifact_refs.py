@@ -200,8 +200,9 @@ def prepare_fanout_synth_reports(
             roles=roles,
             prefer_workdir_sources=True,
         )
-        from zf.runtime.plan_report_compaction import compact_report
+        from zf.runtime.plan_report_compaction import compact_report, pin_report_port_refs
 
+        rewritten = pin_report_port_refs(rewritten, state_dir=state_dir, project_root=project_root)
         rewritten = compact_report(rewritten, state_dir=state_dir, project_root=project_root)
         row["report"] = rewritten
         if rewritten != report:

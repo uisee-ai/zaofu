@@ -85,3 +85,27 @@ def compact_report(report: dict, *, state_dir: Path, project_root: Path) -> dict
             compacted.append(item)
         result['plan_ports'] = compacted
     return result
+
+
+def pin_report_port_refs(report: dict, *, state_dir: Path, project_root: Path) -> dict:
+    """Pin explicit project descriptors before the Critic reads the candidate."""
+    from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
+
+    ports = report.get('plan_ports')
+    if not isinstance(ports, list):
+        return report
+    pinned = []
+    for port in ports:
+        item = dict(port) if isinstance(port, dict) else port
+        if (isinstance(item, dict) and not isinstance(item.get('body'), dict)
+                and item.get('ref') and item.get('sha256')):
+            try:
+                source = materialize_attempt_source_ref(
+                    state_dir=state_dir, project_root=project_root, ref=str(item['ref']),
+                    source_id='plan-port:' + str(item.get('logical_name') or ''), kind='plan_port')
+            except (OSError, ValueError):
+                source = {}
+            if source and source['sha256'] == item['sha256']:
+                item['ref'] = source['ref']
+        pinned.append(item)
+    return {**report, 'plan_ports': pinned}
