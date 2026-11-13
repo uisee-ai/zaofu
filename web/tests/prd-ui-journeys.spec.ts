@@ -155,8 +155,11 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await setup.getByTestId("ask-user-submit").click();
     const created = await waitEvent(request, project, "channel.created");
     const channelId = String(created.payload?.channel_id);
+    const threadId = String(created.payload?.thread_id || "main");
     await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
-    await page.goto(`/?project=${project}&page=channels&channel=${encodeURIComponent(channelId)}`);
+    // Pin the created thread before typing; late detail hydration can otherwise
+    // switch the default thread and restore a different (empty) composer draft.
+    await page.goto(`/?project=${project}&page=channels&channel=${encodeURIComponent(channelId)}&thread=${encodeURIComponent(threadId)}`);
     const input = page.getByRole("textbox", { name: "Message UI PRD Group" });
     await input.fill(productInput ? productRequest("请讨论并形成完整 PRD，后续 UI 启动 PRD v5 Workflow 生成 Plan") : "请讨论：使用项目根目录的系统 cat README.md 验证，保持文件可读；文件缺失时以原生 stderr 和非零退出明确失败，不新增读取程序。当前只形成完整 PRD，后续由 UI 启动 PRD v5 Workflow 生成完整 Plan，实施等待审批。PRD 保留完整结构和验收，按这个小需求的规模简洁表达，不引入额外业务系统。");
     await page.getByRole("button", { name: "Send message", exact: true }).click();

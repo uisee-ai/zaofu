@@ -77,15 +77,9 @@ def input_cost_report(*, state_dir: Path, manifest: dict, identity: Mapping[str,
     comparison['required_reads'] = required
     comparison['selections'] = sorted((s['source_id'],s['artifact_id'],s['sha256'],tuple(s.get('allowed_paths', ['$']))) for s in sources)
     from zf.runtime.artifact_input_timing import attempt_timing
-    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
     review = None
     if operation and len(sources) == len(manifest['sources']) and actor == operation.get('role_instance'):
-        try:
-            request = hydrate_sidecar_ref(state_dir, operation['request_ref']).payload['request']
-            if request.get('active_attempt_id') == attempt:
-                review = request.get('plan_review_optimization')
-        except (OSError, ValueError, KeyError, TypeError):
-            pass  # Missing historical observations are unknown, never zero cost.
+        review = review_selection(events, operation, manifest)
     return {'schema_version': 'attempt-input-cost.v1', 'attempt_id': attempt, 'actor': actor,
         'binding_digest': canonical_json_sha256(comparison),
         'comparison_qualified': bool(required is not None and sources and manifest.get('contract_revision') and manifest.get('plan_artifact_package_digest')),
@@ -115,6 +109,26 @@ def input_cost_report(*, state_dir: Path, manifest: dict, identity: Mapping[str,
             '分页与截断补读不可等同；执行墙钟时间包含工具和等待，不代表模型推理时间。']}
 
 
+def review_selection(events: list, operation: dict, manifest: dict) -> dict | None:
+    """Read the exact kernel dispatch observation, not a later recomputation."""
+    if not operation.get('operation_id') or not operation.get('request_hash'):
+        return None
+    observations = {}
+    for event in events:
+        p = event.payload
+        if (event.type != 'fanout.synth.dispatched' or event.origin != 'kernel'
+                or p.get('operation_id') != operation.get('operation_id')
+                or p.get('request_hash') != operation.get('request_hash')
+                or p.get('workflow_run_id') != manifest.get('workflow_run_id')
+                or p.get('attempt_id') != manifest.get('attempt_id')
+                or p.get('attempt_source_manifest_digest') != canonical_json_sha256(manifest)):
+            continue
+        value = p.get('plan_review_optimization')
+        if isinstance(value, dict) and value.get('schema_version') == 'plan-review-input-diagnostics.v1':
+            observations[canonical_json_sha256(value)] = value
+    return next(iter(observations.values())) if len(observations) == 1 else None
+
+
 def review_outcome(state_dir: Path, events: list, operation: dict, attempt: str) -> dict | None:
     """Report admitted declarations, never classify finding prose as truth."""
     from zf.runtime.call_result_envelope import hydrate_call_result_envelope
@@ -131,9 +145,12 @@ def review_outcome(state_dir: Path, events: list, operation: dict, attempt: str)
                     or identity.get('workflow_run_id') != operation.get('workflow_run_id')):
                 continue
             descriptor = envelope.get('control_result') or envelope.get('control_result_ref')
-            if descriptor != event.payload.get('control_result_ref'):
+            admitted = event.payload.get('control_result_ref')
+            if (not isinstance(descriptor, dict) or not isinstance(admitted, dict)
+                    or any(not descriptor.get(key) or descriptor.get(key) != admitted.get(key)
+                           for key in ('ref', 'sha256', 'schema_version'))):
                 continue
-            control = hydrate_sidecar_ref(state_dir, descriptor).payload
+            control = hydrate_sidecar_ref(state_dir, admitted).payload
             if control.get('schema_version') != 'plan-synthesis-result.v1':
                 continue
             findings = control.get('findings')

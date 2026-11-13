@@ -274,7 +274,7 @@ Owner 确认本文范围后，再将选中的工作包转成 backlog，明确每
   正文、无关任务及依赖闭包。布尔语义声明、原始约束引用及受影响 ID 必须由 Agent
   提供。命令成功不是增量资格；dispatch 的历史通过、权限和实际读取证明仍是必需条件。
 - `zf artifact costs` 与 Web 同源报告增加分页/partial 返回、attempt 墙钟时间和
-  冻结的评审策略。queue/execution 是事件观察，不等于 provider 启动或模型思考。
+  精确绑定派发事件的评审策略。queue/execution 是事件观察，不等于 provider 启动或模型思考。
   缺少阶段边界、供应商工具数、截断修复归因的项为 null；不得以零参与节约计算。
 - findings 的确认、撤回、关闭仍由独立评审方法负责。复用已有记录，不引入按措辞
   自动判断缺陷的 runtime gate；精确 JSON 解码、正例和真实冲突作为校准样本。
@@ -299,3 +299,7 @@ Owner 确认本文范围后，再将选中的工作包转成 backlog，明确每
 
 UI 真实测试保持默认单轮等待 600 秒；`--turn-timeout` 可显式设置不超过总预算的
 补测等待时长，写入 run.json。延长等待的补测与原超时样本分开，不能宣称生产延迟已修复。
+
+成本视图读取 kernel 派发事件中绑定 operation/request/attempt/manifest 的评审策略；
+评审结果用 envelope 与 admission 的 ref/sha256/schema 身份匹配，附加审计元数据不要求相等。
+冲突或证据缺失仍显示未知，不把 reviewer 声明当作独立质量真值。
