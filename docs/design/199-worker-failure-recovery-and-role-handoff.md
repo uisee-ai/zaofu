@@ -1014,3 +1014,16 @@ R15 的交付可追溯性。新增字段、提示词或日志本身不算完成�
 组合工作区不发布 Candidate。独立 Verify、串行集成和 CAS 仍决定成果准入。
 测试入口：[独立恢复基线](../../tests/test_task_pipeline_mixed_bases.py)及
 [部分成果续接](../../tests/test_task_partial_successor.py)。
+
+### 无 Reader fanout 的计划准入恢复
+
+Operator 提交的差量 `task_map.ready` 可能没有对应 Reader fanout。其
+`failure_scope=plan_admission` 失败必须通过明确 trigger／causation 取得同 Run
+的被拒 ready 载荷；不得按同 stage/run 合并历史 fanout 输入。缺失或不匹配的
+因果源关闭恢复，不能借用旧 OA decision、delta、任务范围、operator 授权或恢复
+代际。新的 admission incident 覆盖被拒载荷上的旧 incident；当前明确源携带的
+authority 仍经过既有身份与摘要检查，不因恢复而扩大授权。
+
+该边界由 [stage recovery](../../src/zf/runtime/stage_failure_replan.py) 实施，
+[因果输入及 Kernel caller 回归](../../tests/test_plan_admission_replan_lineage.py)
+覆盖历史污染、缺源／跨 Run、当前显式授权和重放；真实交付恢复仍需独立验证。
