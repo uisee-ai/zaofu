@@ -12,7 +12,8 @@ def attempt_timing(events: list, operation: Mapping[str, Any], attempt: str) -> 
         return result
     relevant, active = [], ''
     for event in events:
-        if event.payload.get('operation_id') != operation.get('operation_id'):
+        if (not event.type.startswith('workflow.operation.')
+                or event.payload.get('operation_id') != operation.get('operation_id')):
             continue
         identity = event.payload.get('active_attempt_id') or event.payload.get('attempt_id')
         if identity:

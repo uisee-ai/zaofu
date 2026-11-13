@@ -22,6 +22,7 @@ def test_settlement_without_repeated_attempt_identity_uses_ordered_active_attemp
     end = event('settled', 30)
     end.payload.pop('active_attempt_id')
     events = [event('requested', 1), event('started', 3), event('retry_started', 20, 'retry'),
-              event('started', 21, 'retry'), end]
+              event('started', 21, 'retry'),
+              ZfEvent(type='agent.usage', payload={'operation_id': 'op', 'attempt_id': 'task-attempt'}), end]
     assert attempt_timing(events, {'operation_id': 'op'}, 'a')['execution_ms'] is None
     assert attempt_timing(events, {'operation_id': 'op'}, 'retry')['execution_ms'] == 9000
