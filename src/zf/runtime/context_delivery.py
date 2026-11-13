@@ -371,7 +371,8 @@ def latest_delivery_receipt(
     """Return only the newest receipt occurrence for one role/run."""
 
     rows = list(events)
-    for event in reversed(rows):
+    for index in range(len(rows) - 1, -1, -1):
+        event = rows[index]
         if str(getattr(event, "type", "")) != "workflow.operation.started":
             continue
         payload = getattr(event, "payload", {})
@@ -382,8 +383,21 @@ def latest_delivery_receipt(
         if str(payload.get("role_instance") or "") != role_instance:
             continue
         descriptor = payload.get("context_delivery_receipt_ref")
-        if isinstance(descriptor, Mapping):
-            return dict(descriptor)
+        if not isinstance(descriptor, Mapping) or not descriptor:
+            return {}  # A newer unknown delivery must not borrow older history.
+        descriptor = dict(descriptor)
+        for admitted in reversed(rows[index + 1:]):
+            body = getattr(admitted, "payload", {})
+            if (getattr(admitted, "type", "") != "workflow.call.result.admitted"
+                    or not isinstance(body, Mapping)
+                    or any(not payload.get(k) or body.get(k) != payload[k]
+                           for k in ("workflow_run_id", "operation_id", "request_hash"))):
+                continue
+            observation = body.get("context_delivery_session_observation_ref")
+            if isinstance(observation, Mapping):
+                descriptor["session_observation_ref"] = dict(observation)
+            break
+        return descriptor
     return {}
 
 
@@ -473,6 +487,17 @@ def _load_compatible_receipt(
         return {}, "unknown"
     if str(receipt.get("schema_version") or "") != CONTEXT_DELIVERY_RECEIPT_SCHEMA:
         return {}, "unknown"
+    if not receipt.get("provider_session_id") and "session_observation_ref" in descriptor:
+        from zf.runtime.context_session_observation import observed_session_id
+
+        try:
+            session_id = observed_session_id(
+                state_dir, receipt_ref=descriptor,
+                observation_ref=descriptor["session_observation_ref"],
+            )
+        except Exception:
+            return {}, "unknown"
+        receipt = {**receipt, "provider_session_id": session_id}
     compatible = all((
         str(receipt.get("workflow_run_id") or "") == workflow_run_id,
         str(receipt.get("role_instance") or "") == role_instance,

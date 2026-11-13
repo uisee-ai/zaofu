@@ -515,6 +515,15 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
                 issues=tuple(issues),
                 repair_round=repair_round - 1,
             )
+        session_observation: dict[str, Any] = {}
+        if not issues and ledger_descriptor:
+            from zf.runtime.context_session_observation import prepare_session_observation
+
+            session_observation = prepare_session_observation(
+                self.state_dir, event_log=self.event_log,
+                result_identity=envelope["identity"], ledger_ref=ledger_descriptor,
+                policy=policy, source_event_id=event.id,
+            )
         admitted = self.event_writer.append(ZfEvent(
             type="workflow.call.result.admitted",
             actor="zf-cli",
@@ -531,6 +540,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
                 **_product_acceptance_projection(adapted.payload),
                 "provider_operation_summary_ref": provider_summary_ref or {},
                 "read_ledger_ref": ledger_descriptor,
+                **session_observation,
                 "source_event_id": event.id,
             },
             causation_id=reported.id,

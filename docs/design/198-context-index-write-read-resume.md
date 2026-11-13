@@ -253,6 +253,17 @@ checkpoint 不自动授权恢复。重读前核验当前身份、lease、工作�
 上下文差量保持 shadow 比较；只有明确恢复协议和失败回退后再受控灰度。
 不兼容时回退当前角色的完整必要输入，而非整份无关历史。
 
+首次 Codex 会话 ID 晚于发送准备出现时，可在结果完整准入后，以同
+operation/attempt/dispatch/角色/run 的 sealed ledger 和完整 provider 输出见证，
+通过不可变补证关联原空 ID receipt。下一次交付仅消费该精确 receipt 的补证；
+新 operation 的未知记录不能回退借用更老成功记录。至少一个带当前 attempt、
+delivery identity 的完整 required-read 输出作为会话锚；无身份正文的手动页只作
+同会话一致性核验。缺证、混合会话、摘要或身份不符保持未知，不从角色最新 UUID 回填。
+这只补历史会话关联：native session reuse、历史输入交付、当前上下文保留状态和
+正文重发量分别计量，实际 delivery 仍为 full，旧 ledger 不能满足新 attempt。
+实现及真实调用入口见 [context_session_observation](../../src/zf/runtime/context_session_observation.py)
+和 [call_result_admission](../../src/zf/runtime/call_result_admission.py)。
+
 ## 9. 8 Impl + 8 Verify
 
 - 内容存储可以去重，权限、输入绑定、读回执和验证责任分别保存。
