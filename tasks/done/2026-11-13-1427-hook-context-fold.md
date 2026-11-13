@@ -2,6 +2,10 @@
 
 实现提交：`8eaede97 fix: fold append-only artifact context reads safely`。
 
+交付纠正：归档后Root与独立review确认第三个P1，旧候选 `63c36fbb` 单独不可合并，
+此前未合dev/未部署。由 [部分快照补充任务](../active/2026-11-13-1454-hook-context-partial-snapshot.md)
+在新worktree继续修复；本记录保留原实现历史，后续仅以包含补充提交且重新验证的新HEAD交付。
+
 # Hook/reader 上下文追加读取复用
 
 来源：LS-v1 C1 Verify 监工，`tool-roundtrip-observation.md`（2026-11-13）；Root 已依据用户持续修复授权指定此独立 worktree 实施。仅修复 ArtifactContextEvents 在 active 少量追加后重复扫描未变归档的缺口。
@@ -19,7 +23,7 @@
 - 独立审核发现两项P1并先复现再修复：无后验fallback轮转漏settled；snapshot边界前EOF/短partial被误当合法partial。均以实际 `_require_current_operation` 调用验证不能授权已settled attempt。
 - 最终机制和性能/冷启动限制见 [实现说明](../../docs/impl/artifact-context-fold.md)。普通append可返回经完整前缀复验的冻结snapshot，下次只读取tail并及时吸收terminal。
 - 模块/hook/CLI focused：54 passed；最终dev-verify 26文件影响闭包262 passed/35.41s（含4个deterministic mock E2E入口），premerge sentinel 53 passed/3.17s。
-- 独立审核最终源码SHA `e3f7cf517c7dc8fcc66031026cc4d1b00c9b3220c302a201db9249518a397632`、测试SHA `36439eec1958fd5d0a86e7dd74b062144749b2a8e78426041a485173da98acd6`，无剩余confirmed finding；额外6类纯内存caller断言通过。未执行real-provider tier或全量pytest。
+- 当时独立审核源码SHA `e3f7cf517c7dc8fcc66031026cc4d1b00c9b3220c302a201db9249518a397632`、测试SHA `36439eec1958fd5d0a86e7dd74b062144749b2a8e78426041a485173da98acd6`，其后发现第三项P1，原无剩余finding结论撤回，见顶部补充任务。此前额外6类纯内存caller断言通过；未执行real-provider tier或全量pytest。
 - 最终机器receipt `/tmp/zf-hook-context-fold-20261113-dev-verify-final.json` SHA `496f8251270a4ba1ebb9196433f77f83f41ca40b0b9df96d7973ccf2edf26e84`；此前260项receipt在短读修订后不作为最终证据。
 
 验证命令均在此worktree、主checkout `.venv/bin/python`、`PYTHONPATH=src` 下执行：

@@ -156,10 +156,12 @@ class ArtifactContextEvents:
         if current == entry.signature:
             return True
         if (path != self.log.path or current[:2] != entry.signature[:2]
-                or current[-1] <= entry.signature[-1]):
+                or current[-1] <= entry.signature[-1]
+                or entry.consumed < entry.signature[-1]):
             return False
         # A concurrent append may leave our bounded snapshot intact. Prove
-        # its complete prefix again instead of replaying unchanged archives.
+        # its entire original boundary, not just rows before a partial tail:
+        # a transient rewrite could have hidden a pre-existing terminal there.
         # Keep the OLD signature/offset: the unread tail is for the next call.
         with path.open("rb") as stream:
             if _signature(os.fstat(stream.fileno())) != current:

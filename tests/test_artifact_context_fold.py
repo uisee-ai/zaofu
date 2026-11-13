@@ -1,4 +1,5 @@
 """Append folding must not trade away the conservative context view."""
+import io
 import os
 import time
 from pathlib import Path
@@ -277,3 +278,72 @@ def test_short_read_before_snapshot_end_cannot_hide_existing_terminal(tmp_path, 
         )
     assert error.value.code == "operation_terminal"
     assert truncated and restored
+
+
+def test_buffered_partial_snapshot_cannot_hide_existing_terminal_after_growth(tmp_path, monkeypatch):
+    from zf.runtime.artifact_read_capability import ArtifactReadCapabilityError, _require_current_operation
+
+    path = tmp_path / "events.jsonl"
+    prefix = (
+        _row("request", "workflow.operation.requested", operation_id="op")
+        + _row("started", "workflow.operation.started", operation_id="op", active_attempt_id="attempt")
+    )
+    terminal = _row("settled", "workflow.operation.settled", operation_id="op", detail="x" * (40 * 1024))
+    original = prefix + terminal
+    path.write_bytes(original)
+    log = EventLog(path)
+    decode = log.decode_line
+    open_path = Path.open
+    overwritten = restored = False
+    partial_lengths = []
+
+    class BufferedRead:
+        def __init__(self, raw):
+            self.stream = io.BufferedReader(raw, buffer_size=8192)
+
+        def __getattr__(self, name):
+            return getattr(self.stream, name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.stream.close()
+
+        def readline(self, size):
+            nonlocal restored
+            line = self.stream.readline(size)
+            if overwritten and not restored and not line.endswith(b"\n"):
+                partial_lengths.append((len(line), size))
+                # The reader consumed the entire old bound, mixing its real
+                # 8192-byte buffer with the overwritten suffix. Restore and
+                # append before its post-stat, preserving the complete prefix.
+                with open_path(path, "r+b") as stream:
+                    stream.write(original + _row("noise", "codex.hook.post_tool_use"))
+                restored = True
+            return line
+
+    def open_buffered(target, mode="r", *args, **kwargs):
+        if target == path and mode == "rb":
+            return BufferedRead(open_path(target, mode, buffering=0))
+        return open_path(target, mode, *args, **kwargs)
+
+    def overwrite_once(line):
+        nonlocal overwritten
+        event = decode(line)
+        if event.id == "started" and not overwritten:
+            with open_path(path, "r+b") as stream:
+                stream.seek(len(prefix))
+                stream.write(b"x" * len(terminal))
+            overwritten = True
+        return event
+
+    monkeypatch.setattr(Path, "open", open_buffered)
+    monkeypatch.setattr(log, "decode_line", overwrite_once)
+    with pytest.raises(ArtifactReadCapabilityError) as error:
+        _require_current_operation(
+            {"operation_id": "op", "attempt_id": "attempt"}, log, use_artifact_context=True,
+        )
+    assert error.value.code == "operation_terminal"
+    assert overwritten and restored
+    assert partial_lengths == [(len(terminal), len(terminal))]
