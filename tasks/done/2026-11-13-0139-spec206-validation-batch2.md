@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done；实现：`2518fa03 fix: reconcile spec handoffs from real workflow evaluation`。
 
 # 第二批：修订、反例、成本与真实交接
 
@@ -14,7 +14,7 @@
 ## 实施与验证记录
 
 首轮实现：`ea894e5d feat: clarify spec review and verification responsibilities`。
-补修提交与归档状态在验证结束后记录。实现与实测的范围分别记录，不把产品行为通过当作规格生成质量全通过。
+补修：`2518fa03 fix: reconcile spec handoffs from real workflow evaluation`。实现与实测的范围分别记录，不把产品行为通过当作规格生成质量全通过。
 
 - Web：概览/责任/决定/变更入口，同版决定原文在结构化登记为空时仍可阅读。
 - 方法：原始约束、完整决定集合、AC实际阶段责任、唯一生产者与后继消费者、真实解码命令和交付资源核对；沿用既有六类报告ref。
