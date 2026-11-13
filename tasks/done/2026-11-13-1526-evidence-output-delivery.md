@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现提交：`c061464b docs: check evidence delivery across tool output layers`。
 
 # 证据读取的聚合输出完整性
 
