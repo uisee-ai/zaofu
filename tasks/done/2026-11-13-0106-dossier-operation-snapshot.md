@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `6becdc8a` fix: reuse operation inputs within goal dossier builds
 
 # 终态 Dossier operation 投影单次快照复用
 
