@@ -367,3 +367,12 @@ B02 还需识别 `product_acceptance_spec` 的受控身份绑定：Package 准�
 旧 Critic 的精确绑定、必读且有 Provider 输出凭据的独立端口或完整 child report。
 复算后必须与已准入端口逐字段完全相等；正文更改、错身份或未读正文一律全量，
 不泛化成任意“派生产物可继承审批”。当前 Critic 及本次 Package 准入仍独立执行。
+
+
+真实局部评审进一步暴露 Package 代次问题：独立 Critic 结果已准入，Task Map 引用
+未变而 execution_spec 变化时，旧实现仍复用输入代次，随后被不可变端口检查拒绝。
+已绑定候选摘要的 Plan synthesis 现在用 Run + 精确已评审 candidate digest 派生新
+`task_map_generation` / `plan_revision`，不要求修改 Task Map 正文来推动版本。
+同次评审重放保持同一代次、仍检查 Task Map 和全部显式端口；局部评审仅允许由
+同一完成事件生成且历史包含原基线的当前包重放。旧包不覆写，其他候选、迟到结果
+及正文篡改仍按原身份/准入门禁拒绝。无候选绑定的历史入口保持原合同。

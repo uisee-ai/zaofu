@@ -104,7 +104,11 @@ def _policy_fixture(state, scenario=""):
     if scenario == "outside_map": new_map["tasks"][2]["title"] = "changed"
     if scenario == "outside_port": new_port["tasks"][2]["body"]["evidence"] = "changed"
     if scenario == "shared_port": new_port["shared"]["interface"] = "v2"
+    if scenario == "same_map":
+        new_map = deepcopy(old_map)
     old_map_ref, new_map_ref = save(old_map, "old-map"), save(new_map, "new-map")
+    if scenario == "same_map":
+        new_map_ref = old_map_ref
     old_port_ref, new_port_ref = save(old_port, "old-port"), save(new_port, "new-port")
     unchanged = save({"schema_version": "planning.v1", "value": "same"}, "planning")
     requirement = save({"schema_version": "requirement.v1", "body": "original acceptance"}, "requirement")
@@ -559,7 +563,8 @@ def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, mo
         validate_local_review_output(runtime, event=result, payload=output)
 
 
-def test_scoped_review_survives_real_semantic_submit_and_package_gate(tmp_path, monkeypatch):
+@pytest.mark.parametrize("scenario", ["valid", "same_map", "no_dispatch_scope"])
+def test_scoped_review_survives_real_semantic_submit_and_package_gate(tmp_path, monkeypatch, scenario):
     from tests.test_call_result_runtime import _runtime
     from zf.runtime import plan_artifact_package_runtime as package_runtime
     from zf.runtime.artifact_read_ledger import read_attempt_artifact
@@ -568,7 +573,7 @@ def test_scoped_review_survives_real_semantic_submit_and_package_gate(tmp_path, 
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
     runtime = _runtime(tmp_path)
-    manifest, _, events = _policy_fixture(runtime.state_dir)
+    manifest, _, events = _policy_fixture(runtime.state_dir, scenario)
     for event in events:
         runtime.event_writer.append(event)
     token = provision_role_submit_credential(runtime.state_dir, "critic").read_text().strip()
@@ -596,13 +601,35 @@ def test_scoped_review_survives_real_semantic_submit_and_package_gate(tmp_path, 
     report = hydrate_sidecar_ref(runtime.state_dir, report_source).payload
     output = {"workflow_run_id": "run-1", "flow_kind": "prd", "task_map_ref": report["task_map_ref"],
               "plan_ports": report["plan_ports"]}
-    calls = []
-    monkeypatch.setattr(package_runtime, "_admit", lambda *_args, **_kwargs: calls.append(True) or {})
-    monkeypatch.setattr(package_runtime, "flow_metadata_for", lambda *_args, **_kwargs: {})
-    status, _, _ = package_runtime.admit_synthesized_plan_package(runtime, event=result,
-        manifest={"workflow_run_id": "run-1"}, stage_id="plan", trace_id="run-1", success_event="task_map.ready",
-        final_status="completed", recommendation="approve", artifact_payload=output)
-    assert status == "completed" and calls == [True]
+    from zf.runtime.run_contract import write_run_contract, stable_json_sha256
+    from zf.runtime.plan_artifact_package import reduce_plan_artifact_packages
+
+    contract_body = {"schema_version": "run-contract.v1", "workflow": {"kind": "prd"}}
+    write_run_contract(runtime.state_dir, {**contract_body, "contract_digest": stable_json_sha256(contract_body)})
+    monkeypatch.setattr(package_runtime, "flow_metadata_for", lambda *_args, **_kwargs:
+        {"flow_kind": "prd", "artifact_package": {"mode": "blocking", "required_ports": ["task_map", "execution_spec"]}})
+    runtime._contract_failure_payload = lambda body, reason: {**body, "reason": reason}
+    kwargs = dict(event=result, manifest={"workflow_run_id": "run-1", "trigger_payload": {
+        "task_map_ref": report["task_map_ref"], "task_map_generation": "old-gen", "plan_revision": "old-rev"}},
+        stage_id="plan", trace_id="run-1", success_event="task_map.ready", final_status="completed",
+        recommendation="approve", artifact_payload=output)
+    status, _, identity = package_runtime.admit_synthesized_plan_package(runtime, **kwargs)
+    assert status == "completed", identity
+    assert identity["task_map_generation"] != "old-gen"
+    projection = reduce_plan_artifact_packages(runtime.event_log.read_all(), workflow_run_id="run-1")
+    assert len(projection["history"]) == 1
+    current = projection["current"]
+    assert current["source_event_id"] == result.id
+    package = hydrate_sidecar_ref(runtime.state_dir, {"ref": current["package_ref"], "sha256": current["package_digest"]}).payload
+    assert next(p for p in package["produced"] if p["logical_name"] == "execution_spec")["sha256"] == output["plan_ports"][0]["sha256"]
+    replay_status, _, replay = package_runtime.admit_synthesized_plan_package(runtime, **kwargs)
+    assert replay_status == "completed", replay
+    assert replay == identity
+    assert len([e for e in runtime.event_log.read_all() if e.type == "plan.artifact_package.admitted"]) == 2
+    changed = deepcopy(kwargs)
+    changed["artifact_payload"]["plan_ports"][0]["sha256"] = "0" * 64
+    assert package_runtime.admit_synthesized_plan_package(runtime, **changed)[0] == "failed"
+
 
 
 @pytest.mark.parametrize("problem", ["missing", "wrong_actor", "wrong_run", "wrong_scope"])

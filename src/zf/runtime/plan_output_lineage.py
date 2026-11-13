@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any, Mapping
 
+from zf.core.events.model import ZfEvent
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.task_map import load_task_map, resolve_artifact_file
 
@@ -61,3 +62,15 @@ def assert_package_explicit_ports_match(
                     "changed input requires a new plan generation")
     except (OSError, ValueError) as exc:
         raise PlanArtifactPackageError(f"explicit plan port replay rejected: {exc}") from exc
+
+
+def reviewed_plan_generation(event: ZfEvent) -> str:
+    """Bind a fresh generation to the exact independently reviewed candidate."""
+    from zf.runtime.call_result_envelope import canonical_json_sha256
+
+    body = event.payload
+    digest = body.get("plan_synth_contract_digest")
+    if not digest or digest != body.get("reviewed_plan_candidate_digest"):
+        raise ValueError("reviewed Plan generation requires an exact candidate digest")
+    return canonical_json_sha256({"schema_version": "reviewed-plan-generation.v1",
+        "workflow_run_id": body.get("workflow_run_id"), "candidate_digest": digest})
