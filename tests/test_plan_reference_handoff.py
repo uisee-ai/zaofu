@@ -146,3 +146,22 @@ def test_reference_only_matrices_reach_blocking_package_preparation(tmp_path):
     assert set(required) <= ports.keys()
     for name, body in bodies.items():
         assert hydrate_sidecar_ref(state, ports[name]).payload == body
+
+
+@pytest.mark.parametrize("problem", ["conflict", "missing"])
+@pytest.mark.parametrize("explicit", ["port", "scalar"])
+def test_compaction_never_repairs_an_explicit_ref_from_an_alias(tmp_path, problem, explicit):
+    from zf.runtime.plan_report_compaction import compact_report
+    state = tmp_path / 'state'
+    (state / 'other').mkdir(parents=True)
+    body = {'mandatory': True}
+    if problem == 'conflict':
+        (state / 'source_inventory.json').write_text('{"mandatory":false}')
+    (state / 'other/source_inventory.json').write_text(json.dumps(body))
+    port = {'logical_name': 'source_inventory', 'body': body}
+    report = {'plan_ports': [port], 'artifact_refs': ['other/source_inventory.json']}
+    if explicit == 'port':
+        port['ref'] = 'source_inventory.json'
+    else:
+        report['source_inventory_ref'] = 'source_inventory.json'
+    assert compact_report(report, state_dir=state, project_root=tmp_path) == report

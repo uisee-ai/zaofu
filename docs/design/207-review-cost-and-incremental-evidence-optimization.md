@@ -309,3 +309,8 @@ UI 真实测试保持默认单轮等待 600 秒；`--turn-timeout` 可显式设�
 引用优先必须贯穿最终 fanout 聚合：capability/acceptance/test/real_e2e 的 scalar ref
 与已有 source_inventory/source_index 一样进入聚合 payload 及 artifact/evidence refs。
 只有直接 port materialization 通过不够，还须验证聚合后的 blocking Package 准备入口。
+
+显式端口 ref 优先于同名工件发现；其缺失、冲突或摘要错误时保留原正文与引用，
+不改选另一个同名 ref 来掩盖错误。评审方法同时核对证据生产者的实际派发写权限，
+只读 Verify 经受控结果端口交付，不因 Task 的 allowed_paths 推断验证者有产品写权；
+缺少配置事实时报告未知，不编造“未配置 Critic”等阶段结论。

@@ -46,10 +46,12 @@ def compact_report(report: dict, *, state_dir: Path, project_root: Path) -> dict
             # Some producer adapters emit ports[].body plus artifact_refs,
             # without the scalar reference. Exact contents, not the filename,
             # establish equivalence; filenames only bound candidate discovery.
-            refs = [item.get('ref'), report.get(name + '_ref')]
-            basename = Path(item['ref']).name if item.get('ref') else name + '.json'
-            refs.extend(ref for ref in report.get('artifact_refs', []) if isinstance(ref, str)
-                        and Path(ref).name == basename)
+            # An explicit binding is authoritative, even when unreadable or
+            # conflicting. Alias discovery must not silently repair it.
+            explicit_ref = item.get('ref') or report.get(name + '_ref')
+            refs = ([explicit_ref] if explicit_ref else [
+                ref for ref in report.get('artifact_refs', []) if isinstance(ref, str)
+                and Path(ref).name == name + '.json'])
             if name in REFERENCE_PORTS and not any(refs):
                 # Inline-only producers otherwise cause downstream candidate
                 # extraction to repeat this same body beside the child report.
