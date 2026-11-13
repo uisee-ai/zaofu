@@ -231,6 +231,8 @@ def _policy_fixture(state, scenario=""):
     for index, row in enumerate([old_requirement_source, old_report, *old_children]):
         read = read_attempt_artifact(state, manifest=previous_body, source_id=row["source_id"],
             artifact_id=row["artifact_id"], actor="plan-critic", role="plan-critic", provider="codex", record=False)
+        if scenario == "late_provider_session":
+            read["read"].update(operation_id="old-operation", workflow_run_id="run-1")
         output = StringIO()
         emit_artifact_output(state, read["content"], [read["read"]], output)
         provider_outputs.append({"timestamp": (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat(),
@@ -242,7 +244,8 @@ def _policy_fixture(state, scenario=""):
     envelope = normalize_call_result_envelope(source_payload={"run_id": "old-attempt",
         "fanout_id": "old-fanout", "stage_id": "plan", "plan_revision": "old-rev",
         "plan_synth_contract_digest": old_contract["sha256"],
-        "reviewed_plan_candidate_digest": old_contract["sha256"], "provider_session_id": session,
+        "reviewed_plan_candidate_digest": old_contract["sha256"],
+        "provider_session_id": "" if scenario == "late_provider_session" else session,
         "read_ledger_ref": ledger["ref"], "read_ledger_digest": ledger["sha256"],
         "input_consumption_status": "satisfied"}, control_result=control,
         workflow_run_id="run-1", operation_id="old-operation", request_hash=old_request_hash,
@@ -273,7 +276,7 @@ def _policy_fixture(state, scenario=""):
         "child_id": "planner", "run_id": "new-planner-attempt", "role_instance": "planner"})
     operation_started = ZfEvent(type="workflow.operation.started", origin="kernel", payload={
         "operation_id": "old-operation", "active_attempt_id": "old-attempt", "request_hash": old_request_hash,
-        "role_instance": "plan-critic", "provider_session_id": session})
+        "role_instance": "plan-critic", "provider_session_id": "" if scenario == "late_provider_session" else session})
     operation_requested = ZfEvent(type="workflow.operation.requested", origin="kernel", payload={
         "operation_id": "old-operation", "workflow_run_id": "run-1", "request_hash": old_request_hash,
         "request_ref": old_request})
@@ -402,7 +405,7 @@ def test_local_critic_policy_falls_back_for_unproved_inputs(tmp_path, problem):
                               critic_role="planner" if problem == "same_current_role" else "critic") == required
 
 
-@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered", "generated_certificate"])
+@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered", "generated_certificate", "late_provider_session"])
 def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, monkeypatch, prior_format):
     from tests.test_call_result_runtime import _runtime
     from zf.runtime.artifact_read_ledger import active_read_ledger_path, read_attempt_artifact, render_attempt_source_briefing, seal_read_ledger
@@ -414,7 +417,7 @@ def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, mo
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
     runtime = _runtime(tmp_path)
-    manifest, _, events = _policy_fixture(runtime.state_dir, "generated_certificate" if prior_format == "generated_certificate" else "")
+    manifest, _, events = _policy_fixture(runtime.state_dir, prior_format if prior_format in {"generated_certificate", "late_provider_session"} else "")
     if prior_format == "legacy_recovered":
         previous = next(e for e in events if e.id == "old-synth")
         previous.payload.pop("recommendation")

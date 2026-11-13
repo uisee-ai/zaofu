@@ -16,6 +16,8 @@ def test_rejected_facts_actual_handoff_preserves_open_findings_without_approval(
     assert _scope_policy(tmp_path, events=events, manifest=manifest, required=required,
                          explicit=[], critic_role='critic') == required
     synth = next(e for e in events if e.id == 'old-synth')
+    synth.payload.pop('recommendation')
+    synth.payload['report'] = {'recommendation': 'reject', 'status': 'rejected'}
     trigger = next(e for e in events if e.id == 'trigger')
     failure = ZfEvent(id='old-failure', type='lane.stage.failed', origin='kernel',
                      causation_id=synth.id, payload={'workflow_run_id': 'run-1'})

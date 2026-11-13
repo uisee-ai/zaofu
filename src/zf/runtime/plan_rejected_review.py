@@ -31,7 +31,7 @@ def rejected_review_source(state_dir: Path, *, trigger_id: str, run: str, rework
         return None
     report = current.payload.get('report') or {}
     if (not isinstance(report, dict)
-            or any(value not in (None, '', 'needs_rework') for value in
+            or any(value not in (None, '', 'reject', 'needs_rework') for value in
                    (current.payload.get('recommendation'), report.get('recommendation')))):
         return None
     try:

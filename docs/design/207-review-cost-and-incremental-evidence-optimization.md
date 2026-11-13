@@ -289,3 +289,13 @@ Owner 确认本文范围后，再将选中的工作包转成 backlog，明确每
 固定真实输入：[CLI 共享只读规则](../../tests/fixtures/spec_handoff_eval/shared-readme-product.md)
 与[共享保存状态／正式接口](../../tests/fixtures/spec_handoff_eval/shared-save-product.md)。
 前者验证到审批后交付，后者验证到完整 Plan Preview；后者的产品实现与运行验收不冒充已测。
+
+
+真实来源补验发现：Codex session ID 可以在 operation started 之后才产生。历史复用
+允许从已接纳 envelope 绑定的 sealed ledger 中恢复唯一 session，至少一条 receipt
+必须精确匹配 operation/attempt/Run/actor；缺身份的历史分页不能单独建立此证明。
+仍要求实际 provider transcript 观察、完整原始 request/policy/candidate 绑定和独立角色。
+多个 session、其他 operation、缺启动事件或摘要不符仍回退；旧 passed 判定条件不变。
+
+UI 真实测试保持默认单轮等待 600 秒；`--turn-timeout` 可显式设置不超过总预算的
+补测等待时长，写入 run.json。延长等待的补测与原超时样本分开，不能宣称生产延迟已修复。

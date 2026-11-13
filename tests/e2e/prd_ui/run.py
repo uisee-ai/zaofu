@@ -98,9 +98,14 @@ def main() -> int:
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--owner-checkpoint", action="store_true", help="Require a real Critic Owner checkpoint and answer it through UI")
     parser.add_argument("--timeout", type=int, default=1200)
+    parser.add_argument("--turn-timeout", type=int, help="Per-turn UI wait budget in seconds; real default 600, fake default 45")
     parser.add_argument("--workflow-runtime", choices=["existing", "cold"], default="existing",
                         help="cold stops the idle discussion runtime before the UI starts its Workflow")
     args = parser.parse_args()
+    if args.turn_timeout is None:
+        args.turn_timeout = min(args.timeout, 45 if args.provider == 'fake' else 600)
+    if not 1 <= args.turn_timeout <= args.timeout:
+        parser.error('turn-timeout must be positive and no greater than timeout')
     if args.journey == "channel-recovery" and args.provider != "real":
         parser.error("channel-recovery requires the explicitly authorized real Codex tier")
     if args.owner_checkpoint and (args.provider != "real" or args.journey != "kanban"):
@@ -152,6 +157,8 @@ def main() -> int:
         (evidence / "product-input.md").write_bytes(requirement)
         manifest["product_input_sha256"] = hashlib.sha256(requirement).hexdigest()
     manifest["delivery_requested"] = args.delivery
+    manifest['timeout_seconds'] = args.timeout
+    manifest['turn_timeout_seconds'] = args.turn_timeout
     (evidence / "run.json").write_text(json.dumps(manifest, indent=2))
     processes = []
     print(f"[run] {root} http://127.0.0.1:{port}", flush=True)
@@ -190,6 +197,7 @@ def main() -> int:
                   "-e", f"ZF_UI_PROVIDER={args.provider}", "-e", f"ZF_UI_JOURNEY={args.journey}",
                   "-e", f"ZF_UI_WORKFLOW_RUNTIME={args.workflow_runtime}",
                   "-e", f"ZF_UI_OWNER_CHECKPOINT={str(args.owner_checkpoint).lower()}",
+                  "-e", f"ZF_UI_TURN_TIMEOUT_MS={args.turn_timeout * 1000}",
                   "-e", f"ZF_UI_TIMEOUT_MS={args.timeout * 1000}", "-e", f"ZF_E2E_VIDEO={os.environ.get('ZF_UI_RECORDING', 'on' if args.provider == 'fake' else 'off')}",
                   "-e", "ZF_E2E_TRACE=off" if args.provider == "real" else "ZF_E2E_TRACE=retain-on-failure", image, "-lc",
                   'mkdir -p "$HOME"; export ZF_E2E_CHROMIUM_EXECUTABLE_PATH=$(find /ms-playwright -type f -path "*/chrome-linux64/chrome" | sort | tail -1); '

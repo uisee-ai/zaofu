@@ -378,22 +378,27 @@ def reviewed_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: st
               and event.payload.get("active_attempt_id") == body.get("attempt_id")
               and event.payload.get("request_hash") == identity.get("request_hash")
               and event.payload.get("role_instance") == identity.get("producer_role")]
-    sessions = {str(event.payload.get("provider_session_id") or "") for event in starts}
-    if len(sessions) != 1 or not next(iter(sessions)):
-        raise ValueError("baseline Critic provider session is unproven")
-    session = next(iter(sessions))
-    envelope_session = (envelope.get("execution") or {}).get("provider_session_id")
-    if envelope_session and envelope_session != session:
-        raise ValueError("baseline Critic provider session differs")
+    if not starts:
+        raise ValueError("baseline Critic start identity is unproven")
     ledger_ref = admission[0].payload.get("read_ledger_ref")
     consumption = envelope.get("input_consumption") or {}
     if (not isinstance(ledger_ref, Mapping) or consumption.get("status") != "satisfied"
             or consumption.get("read_ledger_ref") != ledger_ref.get("ref")
             or consumption.get("read_ledger_digest") != ledger_ref.get("sha256")):
         raise ValueError("baseline Critic ledger binding differs")
-    from zf.runtime.plan_prior_ledger import prior_observed_rows
+    from zf.runtime.plan_prior_ledger import prior_observed_rows, prior_review_session
     from zf.runtime.artifact_output_delivery import observe_artifact_delivery
 
+    sessions = {str(event.payload.get("provider_session_id") or "") for event in starts} - {""}
+    if len(sessions) > 1:
+        raise ValueError("baseline Critic provider session is ambiguous")
+    session = next(iter(sessions)) if sessions else prior_review_session(
+        state_dir, ledger_ref, attempt_id=str(body.get("attempt_id") or ""),
+        operation_id=str(body.get("operation_id") or ""), run=run,
+        actor=str(identity.get("producer_role") or ""))
+    envelope_session = (envelope.get("execution") or {}).get("provider_session_id")
+    if envelope_session and envelope_session != session:
+        raise ValueError("baseline Critic provider session differs")
     recorded = prior_observed_rows(state_dir, ledger_ref, attempt_id=str(body.get("attempt_id") or ""),
                                    session_id=session, actor=str(identity.get("producer_role") or ""))
     checked = observe_artifact_delivery(state_dir, recorded)
