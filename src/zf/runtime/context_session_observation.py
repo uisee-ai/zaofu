@@ -12,7 +12,10 @@ from typing import Any, Mapping
 from uuid import UUID
 
 from zf.runtime.artifact_output_match import complete_output_observed, observable_outputs
+from zf.runtime.artifact_read_ledger import _manifest_ref_path, _select_json_path
 from zf.runtime.artifact_read_ledger_validation import _parse_ledger, validate_required_reads
+from zf.runtime.artifact_source_versions import read_source_version
+from zf.runtime.artifact_text_codec import decode_artifact_text, encode_selected
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
@@ -34,6 +37,18 @@ def _load(state: Path, ref: Mapping[str, Any]) -> Any:
 def _source_ref(body: Mapping[str, Any], stem: str) -> dict[str, str]:
     return {"ref": str(body.get(f"{stem}_ref") or ""),
             "sha256": str(body.get(f"{stem}_digest") or "")}
+
+
+def _validate_raw_body(state: Path, source: Mapping[str, Any], row: Mapping[str, Any], body: str) -> None:
+    """Reproduce the complete non-paged CLI output; never supply an identity anchor."""
+    _require(not row.get("delivery_id") and not row.get("bundle_digest")
+             and not row.get("truncated") and not row.get("max_items")
+             and not row.get("max_chars"), "raw_read_shape")
+    raw, _ = read_source_version(state, dict(source),
+        path=_manifest_ref_path(state, str(source["ref"])))
+    path = str(row.get("json_path") or "$")
+    expected = encode_selected(_select_json_path(decode_artifact_text(raw, path), path))
+    _require(body == expected and len(body.encode()) == row.get("returned_bytes"), "raw_output_body")
 
 
 def _validate(state: Path, proof: Mapping[str, Any], receipt_ref: Mapping[str, Any]) -> str:
@@ -101,38 +116,41 @@ def _validate(state: Path, proof: Mapping[str, Any], receipt_ref: Mapping[str, A
         body = output.get("body")
         _require(isinstance(body, str) and hashlib.sha256(body.encode()).hexdigest() == row.get("output_sha256"),
                  "output_digest")
-        page = json.loads(body)
-        if page.get("schema_version") == "required-artifact-page.v2":
-            _require(page.get("attempt_id") == identity["attempt_id"]
-                 and row.get("delivery_id") and page.get("delivery_id") == row["delivery_id"]
-                 and row.get("bundle_digest") and page.get("bundle_digest") == row["bundle_digest"],
-                 "output_identity")
-            matches = []
-            for item in page.get("items", []):
-                aliases = [item, *item.get("aliases", [])]
-                if any(all(alias.get(k) == row.get(k) for k in
-                           ("source_id", "artifact_id", "artifact_sha256", "json_path")) for alias in aliases):
-                    matches.append(item)
-            _require(len(matches) == 1, "output_source")
-            item = matches[0]
-            _require(item.get("selected_sha256") == row.get("selected_sha256"), "output_selection")
-            identity_anchors += 1
+        if not any(k in row for k in ("page_start", "page_end", "page_total")):
+            _validate_raw_body(state, source, row, body)
         else:
-            # The manual --page-start path has no attempt/delivery nonce in its
-            # output. Check it for consistency, but never use it as the anchor.
-            _require(set(page) == {"content", "page_start", "page_end", "page_total", "next_page_start"}
-                     and not row.get("delivery_id") and not row.get("bundle_digest"), "manual_page_schema")
-            item = page
-            _require(item["next_page_start"] == (row["page_end"] if row["page_end"] < row["page_total"] else None),
-                     "manual_page_cursor")
-        _require(all(item.get(k) == row.get(k) for k in
-                     ("page_start", "page_end", "page_total")),
-                 "output_page")
-        _require(isinstance(item.get("content"), str)
-                 and all(type(row.get(k)) is int for k in ("page_start", "page_end", "page_total"))
-                 and 0 <= row["page_start"] < row["page_end"] <= row["page_total"]
-                 and len(item["content"]) == row["page_end"] - row["page_start"]
-                 and len(item["content"].encode()) == row.get("returned_bytes"), "output_body")
+            page = json.loads(body)
+            if page.get("schema_version") == "required-artifact-page.v2":
+                _require(page.get("attempt_id") == identity["attempt_id"]
+                     and row.get("delivery_id") and page.get("delivery_id") == row["delivery_id"]
+                     and row.get("bundle_digest") and page.get("bundle_digest") == row["bundle_digest"],
+                     "output_identity")
+                matches = []
+                for item in page.get("items", []):
+                    aliases = [item, *item.get("aliases", [])]
+                    if any(all(alias.get(k) == row.get(k) for k in
+                               ("source_id", "artifact_id", "artifact_sha256", "json_path")) for alias in aliases):
+                        matches.append(item)
+                _require(len(matches) == 1, "output_source")
+                item = matches[0]
+                _require(item.get("selected_sha256") == row.get("selected_sha256"), "output_selection")
+                identity_anchors += 1
+            else:
+                # The manual --page-start path has no attempt/delivery nonce in its
+                # output. Check it for consistency, but never use it as the anchor.
+                _require(set(page) == {"content", "page_start", "page_end", "page_total", "next_page_start"}
+                         and not row.get("delivery_id") and not row.get("bundle_digest"), "manual_page_schema")
+                item = page
+                _require(item["next_page_start"] == (row["page_end"] if row["page_end"] < row["page_total"] else None),
+                         "manual_page_cursor")
+            _require(all(item.get(k) == row.get(k) for k in
+                         ("page_start", "page_end", "page_total")),
+                     "output_page")
+            _require(isinstance(item.get("content"), str)
+                     and all(type(row.get(k)) is int for k in ("page_start", "page_end", "page_total"))
+                     and 0 <= row["page_start"] < row["page_end"] <= row["page_total"]
+                     and len(item["content"]) == row["page_end"] - row["page_start"]
+                     and len(item["content"].encode()) == row.get("returned_bytes"), "output_body")
         observed = load(row.get("provider_observation_ref") or {})
         _require(observed.get("schema_version") == "provider-output-observation.v1",
                  "witness_schema")
