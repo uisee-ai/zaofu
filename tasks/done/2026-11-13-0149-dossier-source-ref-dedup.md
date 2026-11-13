@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `e65843db` fix: avoid repeated list scans in dossier source refs
 
 # Dossier 来源引用的线性成员判断
 
