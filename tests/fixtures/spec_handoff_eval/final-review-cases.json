@@ -1,0 +1,8 @@
+[
+  {"id":"valid","requirement":"R1 READ P0必需，SIZE P1必需；各片交付用法，最终统一README。R2 两入口缺失/目录失败必须含路径和原因且只读。R3 只生成计划，实施经Owner审批。","candidate":"Plan/Task Map/矩阵一致：READ先交付读取、局部测试、docs/read.md用法；SIZE依赖READ，交付字节计数、README及独立双入口复验。共享SR-ERROR说明缺失/目录返回非零、空stdout、stderr含输入路径和原因，输入字节/条目/类型不变。两任务保留P0/P1且mandatory=true。READ本片命令C-READ，SIZE本片C-SIZE，候选C-BOTH由SIZE生产；全部NOT_RUN。D-GATE pending_approval，blocking=true，Owner在实施前批准；Plan及TaskMap均如此。本轮首次规划，无历史变更。","expected":"pass"},
+  {"id":"missing-invariant","requirement":"R1 保存失败保留旧内存状态、持久化字节与输入；提示失败。","candidate":"Task Spec/AC/测试矩阵均只验证失败提示；没有其他引用或不变项断言。","expected":"finding"},
+  {"id":"priority-drift","requirement":"R1 SIZE P1必需。","candidate":"PRD写P1必需，最终Plan和TaskMap把SIZE改成可选且不派发。","expected":"finding"},
+  {"id":"future-command","requirement":"R1 READ先交付，SIZE依赖READ，最终双入口检查必须保留。","candidate":"READ完成前必须执行C-BOTH，该脚本由SIZE首次生成；SIZE依赖READ完成。","expected":"finding"},
+  {"id":"decision-drift","requirement":"D-ENV仅需实施前验证，当前不阻塞Plan。","candidate":"Plan：D-ENV pending_validation blocking=false；TaskMap：同ID resolved blocking=false，closure_evidence为空；矩阵写环境已通过。","expected":"finding"},
+  {"id":"shared-revision","requirement":"SR-ERR从v1只有路径改为v2路径和原因；消费者READ/SIZE/ENTRY，保留只读。","candidate":"本次变更只更新READ。SIZE与ENTRY仍验收只有路径，声明全部旧运行证据可直接复用；原只读场景被删除。","expected":"finding"}
+]

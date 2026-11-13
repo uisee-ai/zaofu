@@ -4,6 +4,7 @@ import { planDocumentSections } from "./planDocumentSections.js";
 // prose into decision state, acceptance verdicts, or new approval questions.
 const titles = {
   overview: /^(?:PRD[：:]|审批摘要|本次交付|权威、范围与(?:当前状态|审批入口)|Authority and user outcomes|authority 与产品规格|产品摘要|产品目标|目标与范围|评审入口|overview|executive summary)/i,
+  changes: /^(?:本次变更|变更摘要|修订影响|变更与保留|change summary|revision impact)/i,
   journeys: /(?:业务旅程|用户旅程|PRD 用户结果|交互流程|user flow|user journey)/i,
   pages: /(?:低保真|页面.*设计|交互设计|设计交接|wireframe|design handoff)/i,
   decisions: /^(?:decision register|owner 决策项|待决事项|决定登记|决策登记)/i,
@@ -26,7 +27,7 @@ export function planReadingSections(markdown: string) {
   while (end < sections.length && sections[end].level > 2) end++;
   const opening = first && !/^Task Spec:/.test(first.title) && !sharedTitle.test(first.title)
     ? [{ ...first, content: sections.slice(firstChapter, end).map(section => section.content).join("") }] : [];
-  return { opening, overview: select(titles.overview), journeys: select(titles.journeys), pages: select(titles.pages), decisions: select(titles.decisions) };
+  return { opening, changes: select(titles.changes), overview: select(titles.overview), journeys: select(titles.journeys), pages: select(titles.pages), decisions: select(titles.decisions) };
 }
 
 /** Exact author-owned Task IDs only; headings inside fences are excluded by the AST. */

@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import type { PlanPreview } from "../../api/types";
 import { planArtifactUrl, strings, text } from "./planReviewModel";
-import { planDecisionView } from "./planDecisionView";
+import { decisionStatusLabel, planDecisionView } from "./planDecisionView";
 
 export const PlanSourceContext = createContext<((name: string, anchor: string) => void) | null>(null);
 export function SourceRefs({ refs, preview, projectId, label = "来源条款" }: { refs: string[]; preview: PlanPreview; projectId: string; label?: string }) {
@@ -16,6 +16,7 @@ export function DecisionList({ decisions, preview, projectId }: { decisions: Rec
   if (!decisions.length) return <p>未列出相关决定；不代表所有问题均已关闭。</p>;
   return <>{decisions.map((decision, i) => { const view = planDecisionView(decision); return <details className="plan-review-card" key={`${view.id}-${i}`}>
     <summary>{view.id} · {text(decision.status) || "状态未声明"} · {view.question}</summary>
+    <p>状态说明：{decisionStatusLabel(decision)}；不据状态推断执行授权或义务关闭。</p>
     <p>负责人：{text(decision.named_owner || decision.owner) || "待指定"} · {text(decision.responsible_role)}</p>
     <p>最迟确认：{view.deadline || "未声明"} · 影响任务：{strings(decision.affected_task_ids).join("、") || text(decision.producer_task_id) || "未声明"}</p>
     <p>关闭条件：{view.closure || "未声明"}</p>

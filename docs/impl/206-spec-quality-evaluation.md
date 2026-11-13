@@ -381,3 +381,18 @@ verification_result_template将其从首片验收排除；已保存绑定候选�
 的可读性瑕疵，原始工件及结构化路径正确；决策状态文案也可更直接，作为非阻塞改进保留。
 本轮Critic一次通过，没有真实返工或配额弹窗，不能宣称覆盖了故障注入场景。
 Channel/Kanban小例保持98073bd6历史通过归属，不伪称三条路径同HEAD全验证。
+
+
+## 阅读、修订与反例续批（2026-11-13）
+
+用户批准两批共八项优化，实施任务见 tasks/active/2026-11-13-0139-spec206-review-batch1.md
+及 tasks/active/2026-11-13-0139-spec206-validation-batch2.md。Plan 审批概览增加原始任务依赖与
+验收入口；命令按已有 owner/producer 声明标注本片、其他任务、候选及人工责任，不替代
+运行时阶段选择。决定显示原始 status 及中文解释，pending_validation 不推断授权；
+blocking 继续只读取显式布尔值。变更视图引用同版作者章节，缺失不推断无变更。
+
+最终包对账集中在 readiness 的 final-package-review.md，PRD Skill 引用同一方法；
+返工复用必须保留候选身份、受影响消费者和强制读取义务。没有新增自动业务质量 gate。
+只读 CLI 双入口独立 oracle 采用冻结需求及随机 seed 206，覆盖字节/大小/错误/只读，
+以正确实现与单缺陷变体校准。真实 Kanban/Channel 结果、失败与成本记录将放在
+忽略目录 reports/spec206-batches-20261113/，未运行不记通过；真人理解时间另列未测。

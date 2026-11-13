@@ -259,18 +259,13 @@ the current Kernel-declared result scratch for result submission.
 
 ## Task Design
 
-Apply `zf-plan-execution-readiness/references/task-spec-slices.md` to the
-complete candidate, including in the configured Critic review. Each Task
-receives a bounded specification of its observable outcome, shared contracts,
-failure invariants, entrypoint and independent acceptance responsibility.
-Use the existing execution_spec reading partition, or exact
-`## Task Spec: <task_id>` sections in the accepted Markdown with optional
-`## Shared Spec` for shared contracts. This is a reading convention, not a
-second Task schema. A single-task module still excludes the shared overview and global register.
-Task-local setup, cleanup, RED/GREEN assertions and independent handoff belong inside
-that module or point to exact shared clauses. Reconcile serialized decisions, examples and matrix rows;
-template presence is not a semantic verdict. Keep known findings and their
-disposition in the existing review artifact across bounded rework.
+Apply `zf-plan-execution-readiness/references/task-spec-slices.md` for task-local
+behavior, shared references, setup/cleanup, RED/GREEN and reading partitions;
+perform `references/final-package-review.md` from that same skill on the final
+serialized candidate. Keep findings and their disposition in the existing review
+artifact. These referenced methods are the single method source; do not repeat
+their full checklist in every task or re-read unchanged bodies already read in
+this turn. This does not waive required inputs or independent Critic review.
 
 Split by end-to-end user journey, not by component-only layers. Each normal
 slice should own the smallest runnable behavior across the API/runtime/web

@@ -38,6 +38,7 @@ Critic 收到 `plan-execution-review` 必需输入时逐项解释其事实与本
 区分新增 token、缓存、重试归属和未知费用，不从输入字节数推导模型成本。
 
 Planner 在提交最终工件前、Critic 在决定 verdict 前，读取并执行
+[最终包对账](references/final-package-review.md)，并按适用行为展开
 [执行一致性复核](references/execution-consistency.md)。它检查实际动作生产者、
 状态相关权限、本片/候选验证边界、完整修正事务与跨工件决定版本；结果记录到已有
 评审工件。方法加载或结构检查通过不代表这些语义检查已经通过。

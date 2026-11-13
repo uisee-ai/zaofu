@@ -21,7 +21,7 @@ test("bound review layers expose decisions, module rules and concrete acceptance
   await dialog.getByRole("button", { name: "工程上下文", exact: true }).click();
   await expect(dialog.getByText("2 个任务 · 2 个验收项 · 2 个页面 · 1 类表单")).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "产品目标" })).toBeVisible();
-  await expect(dialog.getByText("待决定 1 · 明确阻塞 0 · 已授权待落实 1 · 已关闭 0 · 其他状态 0", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("待决定 1 · 已授权待落实 1 · 明确阻塞 0", { exact: true })).toBeVisible();
   await dialog.locator("summary").filter({ hasText: "确认库存来源" }).click();
   await expect(dialog.getByText("关闭条件：确认唯一真源")).toBeVisible();
   await dialog.getByRole("button", { name: "模块规格", exact: true }).click();
@@ -265,4 +265,27 @@ test("real decision records retain IDs, unknown statuses, deadlines and sources"
   await page.setViewportSize({ width: 375, height: 812 });
   await expect(card).toBeVisible();
   expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+});
+
+
+test("review entry exposes task order, authored changes and decision explanations", async ({ page, request }) => {
+  await page.route("**/plans/evt-preview-review/preview", async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.markdown += "\n## 本次变更\nMODIFIED：调整共享失败提示。\n\nPRESERVED：拒绝后库存不变。\n";
+    body.decision_review.items = [{ id: "D-ENV", status: "pending_validation", blocking: false, question: "环境验证", owner: "dev", latest_use_point: "实施时", closure_evidence: "实际命令收据" }];
+    await route.fulfill({ json: body });
+  });
+  const dialog = await openReview(page, request);
+  await expect(dialog.getByRole("heading", { name: "交付顺序与完成条件" })).toBeVisible();
+  await expect(dialog.getByText("待验证 1 · 明确阻塞 0", { exact: true })).toBeVisible();
+  const decision = dialog.locator("details").filter({ has: page.locator("summary", { hasText: "D-ENV" }) }).last();
+  await decision.locator("summary").first().click();
+  await expect(decision).toContainText("状态说明：待验证");
+  await expect(decision).toContainText("最迟确认：实施时");
+  await dialog.getByRole("button", { name: "变更审阅", exact: true }).click();
+  await expect(dialog.getByText("PRESERVED：拒绝后库存不变。", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 812 });
+  const pane = dialog.getByRole("region", { name: "计划审阅内容" });
+  expect(await pane.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
 });
