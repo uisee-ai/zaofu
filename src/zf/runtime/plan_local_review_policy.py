@@ -180,17 +180,11 @@ def _scope(
             return required
         candidate_ports[name] = item
     old_ports = {str(p["logical_name"]): p for p in [*package.get("produced", []), *package.get("inherited", [])]}
-    previous_bindings = previous.get("_critic_source_bindings") or []
-    # Inherited requirement/issue ports can be read as authority sources.
-    # Match their exact bound bytes and receipts, not a producer-only alias.
-    if any(name != "goal_claim_set" and not any(
-        isinstance(item, Mapping) and item.get("sha256") == port.get("sha256")
-        and any(isinstance(source, Mapping) and all(source.get(k) == item.get(k)
-                    for k in ("source_id", "artifact_id", "ref", "sha256"))
-                for source in previous.get("sources", []))
-        and _has_full_read(prior_required, item)
-        and _has_observed_read(prior_observed, item)
-        for item in previous_bindings) for name, port in old_ports.items()):
+    from zf.runtime.plan_port_review_proof import port_has_prior_review
+
+    if any(name != "goal_claim_set" and not port_has_prior_review(
+        state_dir, port=port, package=package, previous=previous,
+    ) for name, port in old_ports.items()):
         return required
     selected = {str(p.get("logical_name") or ""): p for p in ports if isinstance(p, Mapping)}
     if len(selected) != len(ports) or not selected or "task_map" in selected:

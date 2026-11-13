@@ -360,3 +360,10 @@ Planner 仍须比较旧包、生成语义范围声明与工具证书；Critic �
 严格增量覆盖证明不成立。方法要求显式对齐原子来源责任，或另行完整声明文件级来源，
 不通过删除片段、模糊前缀匹配或弱化 Runtime 检查来获得增量资格。该映射修订先全量
 独立评审，通过后才可作为后续局部修订的基线。
+
+B02 还需识别 `product_acceptance_spec` 的受控身份绑定：Package 准入复用
+`bind_product_acceptance_identity` 写入 Run/flow/revision/generation，导致已全读原始
+正文与最终端口摘要不同。资格检查只对这一种已知变换复算，并要求完整原文来自
+旧 Critic 的精确绑定、必读且有 Provider 输出凭据的独立端口或完整 child report。
+复算后必须与已准入端口逐字段完全相等；正文更改、错身份或未读正文一律全量，
+不泛化成任意“派生产物可继承审批”。当前 Critic 及本次 Package 准入仍独立执行。

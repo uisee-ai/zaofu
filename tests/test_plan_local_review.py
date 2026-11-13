@@ -140,6 +140,17 @@ def _policy_fixture(state, scenario=""):
         return {"logical_name": name, "artifact_kind": name, "producer_stage_id": "plan",
                 "ref": ref["ref"], "sha256": ref["sha256"]}
     authority_ports = [port("requirement_spec", requirement)] if scenario == "authority_port" else []
+    acceptance = {"schema_version": "product_acceptance_spec.v1", "checks": ["preserve all acceptance"]}
+    acceptance_case = scenario in {"bound_acceptance_inline", "bound_acceptance_file", "acceptance_changed_semantics",
+                                  "acceptance_wrong_identity", "acceptance_unread_body"}
+    acceptance_original = save(acceptance, "original-acceptance") if acceptance_case else None
+    if acceptance_case:
+        from zf.runtime.plan_artifact_package_ports import bind_product_acceptance_identity
+        normalized = bind_product_acceptance_identity(acceptance, workflow_run_id="run-1", flow_kind="prd",
+            plan_revision="old-rev", task_map_generation="old-gen")
+        if scenario == "acceptance_changed_semantics": normalized["checks"] = []
+        if scenario == "acceptance_wrong_identity": normalized["plan_revision"] = "another-revision"
+        authority_ports.append(port("product_acceptance_spec", save(normalized, "bound-acceptance")))
     package = build_plan_artifact_package(workflow_run_id="run-1", flow_kind="prd", producer_stage_id="plan",
         run_contract=_run_contract(state), plan_revision="old-rev", task_map_generation="old-gen",
         produced=[port("task_map", old_map_ref), port("execution_spec", old_port_ref), port("planning_result", unchanged),
@@ -176,8 +187,9 @@ def _policy_fixture(state, scenario=""):
         source("child-artifact-planner-5", "source_index.json", index_ref),
         source("child-artifact-planner-6", "coverage_ledger.json", ledger_ref),
         source("child-artifact-planner-7", "source_inventory.json", inventory_ref)]
-    if authority_ports:
-        children.append(source("child-artifact-planner-8", "requirement_spec.json", requirement))
+    for extra in authority_ports:
+        children.append(source(f"child-artifact-planner-extra-{extra['logical_name']}",
+                               f"{extra['logical_name']}.json", extra))
     requirement_source = source("requirement", "requirement.json", new_requirement)
     old_requirement_source = source("requirement", "requirement.json", requirement)
     requested_tasks = [] if scenario == "no_dispatch_scope" else ["A"]
@@ -199,8 +211,15 @@ def _policy_fixture(state, scenario=""):
 
     old_children = [source(f"child-artifact-old-{index}", f"old-{index}.json", ref)
                     for index, ref in enumerate((old_map_ref, old_port_ref, unchanged, index_ref, ledger_ref, inventory_ref))]
+    old_acceptance_ports = []
+    if acceptance_case and scenario != "acceptance_unread_body":
+        old_acceptance_ports = [{"logical_name": "product_acceptance_spec", "body": acceptance}]
+        if scenario == "bound_acceptance_file":
+            old_acceptance_ports = [port("product_acceptance_spec", acceptance_original)]
+            old_children.append(source("child-artifact-old-acceptance", "acceptance.json", acceptance_original))
     old_report_ref = save({"schema_version": "fanout-child-result.v1", "role_instance": "old-planner",
-                           "child_id": "planner", "dispatch_id": "old-planner-attempt"}, "old-report")
+                           "child_id": "planner", "dispatch_id": "old-planner-attempt",
+                           "plan_ports": old_acceptance_ports}, "old-report")
     old_report = source("child-result-old-planner", "old-report.json", old_report_ref)
     old_contract = save({"schema_version": "plan-synth-contract.v1", "workflow_run_id": "run-1",
         "fanout_id": "old-fanout", "stage_id": "plan", "plan_revision": "old-rev", "child_bindings": [{"child_id": "planner",
@@ -298,7 +317,8 @@ def _policy_fixture(state, scenario=""):
                                       "global_requirement", "no_dispatch_scope", "prior_scoped", "prior_truncated",
                                       "coverage_missing", "coverage_pending", "coverage_unknown", "source_misowned", "acceptance_unlinked",
                                       "index_missing_acceptance", "index_truncated", "inventory_incomplete",
-                                      "visual_affected", "visual_unmapped", "visual_asset_unmapped"])
+                                      "visual_affected", "visual_unmapped", "visual_asset_unmapped",
+                                      "acceptance_changed_semantics", "acceptance_wrong_identity", "acceptance_unread_body"])
 def test_local_critic_policy_keeps_full_input_when_change_is_not_proved_local(tmp_path, scenario):
     manifest, required, events = _policy_fixture(tmp_path, scenario)
     assert _scope_policy(tmp_path, events=events, manifest=manifest, required=required, explicit=[], critic_role="critic") == required
@@ -415,7 +435,7 @@ def test_local_critic_policy_falls_back_for_unproved_inputs(tmp_path, problem):
                               critic_role="planner" if problem == "same_current_role" else "critic") == required
 
 
-@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered", "generated_certificate", "late_provider_session", "operator_edit_scope", "authority_port"])
+@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered", "generated_certificate", "late_provider_session", "operator_edit_scope", "authority_port", "bound_acceptance_inline", "bound_acceptance_file"])
 def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, monkeypatch, prior_format):
     from tests.test_call_result_runtime import _runtime
     from zf.runtime.artifact_read_ledger import active_read_ledger_path, read_attempt_artifact, render_attempt_source_briefing, seal_read_ledger
@@ -427,7 +447,7 @@ def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, mo
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
     runtime = _runtime(tmp_path)
-    manifest, _, events = _policy_fixture(runtime.state_dir, prior_format if prior_format in {"generated_certificate", "late_provider_session", "operator_edit_scope", "authority_port"} else "")
+    manifest, _, events = _policy_fixture(runtime.state_dir, prior_format if prior_format in {"generated_certificate", "late_provider_session", "operator_edit_scope", "authority_port", "bound_acceptance_inline", "bound_acceptance_file"} else "")
     if prior_format == "legacy_recovered":
         previous = next(e for e in events if e.id == "old-synth")
         previous.payload.pop("recommendation")
