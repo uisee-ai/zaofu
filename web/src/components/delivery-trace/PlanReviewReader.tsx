@@ -88,7 +88,8 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
             <details className="plan-review-card"><summary>完整交付目标（含工程约束）</summary>{model.goals.map((goal, i) => <p key={i}><strong>{text(goal.id)}</strong> {text(goal.statement)}</p>)}</details>
             <h3>业务与交付模块</h3>
             {model.groups.length > 0 ? model.groups.map((group, i) => <article className="plan-review-card" key={i}><h4>{text(group.title || group.name || group.module_id || group.id)}</h4><p>{text(group.description || group.summary)}</p>{strings(group.task_ids).map(id => <button className="delivery-action-button" type="button" key={id} onClick={() => selectTask(id)}>{model.modules.find(m => m.id === id)?.title || id}</button>)}</article>) : <p>本版未提供业务分组，可从模块规格查看各任务的用户行为。</p>}
-            <h3>待决事项与进入条件</h3><p>{decisionSummary}</p><DecisionList decisions={decisions} {...sourceProps} />{!registerKnown && quoted(excerpts.decisions)}
+            <h3>待决事项与进入条件</h3><p>{decisionSummary}</p><DecisionList decisions={decisions} {...sourceProps} />
+            {excerpts.decisions.length > 0 && <button type="button" className="delivery-action-button" onClick={() => navigate({ view: "decisions" })}>核对同版决定原文</button>}
           </>}
           {!loading && view === "changes" && <>
             <h2>本次变更与保留义务</h2>
@@ -102,7 +103,11 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
             <p>{decisionSummary}</p>
             {registerKnown && <p>原始状态：{decisionStatusDistribution(decisions) || "未登记"}。保留作者状态，不据此推定关闭或执行授权。</p>}
             <DecisionList decisions={decisions} {...sourceProps} />
-            {!registerKnown && quoted(excerpts.decisions)}
+            {excerpts.decisions.length > 0 && <details className="plan-review-card" open={!decisions.length}>
+              <summary>同版决定原文</summary>
+              <p>以下保留正文中的决定；结构化登记与正文需要逐项对账，空登记不表示正文没有决定。这里不推断决定状态或执行授权。</p>
+              {quoted(excerpts.decisions)}
+            </details>}
           </>}
           {!loading && view === "pages" && <>
             <h2>页面与设计</h2><p>参考素材仅表示来源；设计、实现与视觉验收使用本版工件的原始状态。</p>

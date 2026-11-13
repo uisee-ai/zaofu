@@ -50,7 +50,8 @@ def verify(root: Path) -> dict:
                     reason = result.stderr.replace(path, b"").strip(b" \t\r\n:;\"'[]()")
                     passed = result.returncode != 0 and not result.stdout and path in result.stderr and bool(reason)
                 else:
-                    passed = result.returncode != 0 and bool(result.stdout.strip() or result.stderr.strip())
+                    usage = (result.stdout + result.stderr).decode(errors="replace").lower()
+                    passed = result.returncode != 0 and ("usage" in usage or "用法" in usage)
                 unchanged = snapshot() == before
                 cases.append({"entry": script.name, "case": name, "passed": passed and unchanged,
                               "fixture_unchanged": unchanged, "exit_code": result.returncode,

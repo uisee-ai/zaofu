@@ -289,3 +289,28 @@ test("review entry exposes task order, authored changes and decision explanation
   const pane = dialog.getByRole("region", { name: "计划审阅内容" });
   expect(await pane.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
 });
+
+
+for (const heading of ["Decision Register", "决策、覆盖与交付清单"]) {
+test(`empty structured register preserves ${heading}`, async ({ page, request }) => {
+  const writes: string[] = [];
+  page.on("request", req => { if (req.method() !== "GET" && req.url().includes("/api/") && !req.url().endsWith("/actions/inbox-item-read")) writes.push(req.url()); });
+  await page.route("**/plans/evt-preview-review/preview", async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.markdown += `\n## ${heading}\n| ID | status | question |\n| --- | --- | --- |\n| D-PROSE | pending_validation | 实施前验证环境 |\n`;
+    body.decision_review = { ...body.decision_review, available: true, items: [] };
+    await route.fulfill({ json: body });
+  });
+  const dialog = await openReview(page, request);
+  await dialog.getByRole("button", { name: "核对同版决定原文", exact: true }).click();
+  await expect(dialog.getByText("共 0 条登记。", { exact: false })).toBeVisible();
+  await expect(dialog.getByRole("cell", { name: "D-PROSE", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("cell", { name: "pending_validation", exact: true })).toBeVisible();
+  await expect(dialog.getByText("以下保留正文中的决定", { exact: false })).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 812 });
+  const pane = dialog.getByRole("region", { name: "计划审阅内容" });
+  expect(await pane.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  expect(writes).toEqual([]);
+});
+}

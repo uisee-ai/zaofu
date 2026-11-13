@@ -248,8 +248,27 @@ the role's control result. An explicitly empty list means the author reviewed
 and found no decisions; a missing field means unknown. The Critic checks the
 same IDs/statuses against the accepted Markdown and the bound task map;
 its own empty action-question list must not be used as the product register.
+Compare the complete ID sets before comparing statuses: a nonempty prose
+register with an empty task-map register is a missing-record finding even
+when the author says there are no new product-scope choices.
 Neither a page count nor repeated RED/GREEN prose proves clause
 coverage. Never rewrite admitted artifacts to improve presentation.
+
+Before every resubmission, including an environment-only Critic rework, apply
+`zf-plan-execution-readiness/references/spec-revision-review.md` and put its
+`## 本次变更` reading entry in the new bound Plan. Identify the previous candidate,
+changed consumers and preserved obligations; a larger replacement specification
+does not itself explain the revision.
+
+Avoid duplicating complete port bodies in both files and the control result.
+For `source_inventory`, `capability_matrix`, `acceptance_matrix`, `test_matrix`,
+`real_e2e_matrix` and `source_index`, write each complete JSON file once and use
+the existing top-level `<name>_ref`, also listing that file in `artifact_refs`.
+Do not repeat that port as an inline field or `plan_ports[].body`. These six
+reference routes are supported by candidate preflight, Critic handoff and
+Package materialization; consumers still read the complete bound artifact.
+Keep other required bodies and every configured required read. Do not infer
+new reference fields, shorten semantic contents, or omit missing files to save tokens.
 
 For artifact writes containing source paths, prefer native Write/apply_patch with explicit
 workdir-relative targets. The shell guard cannot distinguish arbitrary Python data

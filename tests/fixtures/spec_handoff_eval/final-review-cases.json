@@ -1,8 +1,86 @@
 [
-  {"id":"valid","requirement":"R1 READ P0必需，SIZE P1必需；各片交付用法，最终统一README。R2 两入口缺失/目录失败必须含路径和原因且只读。R3 只生成计划，实施经Owner审批。","candidate":"Plan/Task Map/矩阵一致：READ先交付读取、局部测试、docs/read.md用法；SIZE依赖READ，交付字节计数、README及独立双入口复验。共享SR-ERROR说明缺失/目录返回非零、空stdout、stderr含输入路径和原因，输入字节/条目/类型不变。两任务保留P0/P1且mandatory=true。READ本片命令C-READ，SIZE本片C-SIZE，候选C-BOTH由SIZE生产；全部NOT_RUN。D-GATE pending_approval，blocking=true，Owner在实施前批准；Plan及TaskMap均如此。本轮首次规划，无历史变更。","expected":"pass"},
-  {"id":"missing-invariant","requirement":"R1 保存失败保留旧内存状态、持久化字节与输入；提示失败。","candidate":"Task Spec/AC/测试矩阵均只验证失败提示；没有其他引用或不变项断言。","expected":"finding"},
-  {"id":"priority-drift","requirement":"R1 SIZE P1必需。","candidate":"PRD写P1必需，最终Plan和TaskMap把SIZE改成可选且不派发。","expected":"finding"},
-  {"id":"future-command","requirement":"R1 READ先交付，SIZE依赖READ，最终双入口检查必须保留。","candidate":"READ完成前必须执行C-BOTH，该脚本由SIZE首次生成；SIZE依赖READ完成。","expected":"finding"},
-  {"id":"decision-drift","requirement":"D-ENV仅需实施前验证，当前不阻塞Plan。","candidate":"Plan：D-ENV pending_validation blocking=false；TaskMap：同ID resolved blocking=false，closure_evidence为空；矩阵写环境已通过。","expected":"finding"},
-  {"id":"shared-revision","requirement":"SR-ERR从v1只有路径改为v2路径和原因；消费者READ/SIZE/ENTRY，保留只读。","candidate":"本次变更只更新READ。SIZE与ENTRY仍验收只有路径，声明全部旧运行证据可直接复用；原只读场景被删除。","expected":"finding"}
+  {
+    "id": "valid",
+    "requirement": "R1 READ P0必需，SIZE P1必需；各片交付用法，最终统一README。R2 两入口缺失/目录失败必须含路径和原因且只读。R3 只生成计划，实施经Owner审批。",
+    "candidate": "Plan/Task Map/矩阵一致：READ先交付读取、局部测试、docs/read.md用法；SIZE依赖READ，交付字节计数、README及独立双入口复验。共享SR-ERROR说明缺失/目录返回非零、空stdout、stderr含输入路径和原因，输入字节/条目/类型不变。两任务保留P0/P1且mandatory=true。READ本片命令C-READ，SIZE本片C-SIZE，候选C-BOTH由SIZE生产；全部NOT_RUN。D-GATE pending_approval，blocking=true，Owner在实施前批准；Plan及TaskMap均如此。本轮首次规划，无历史变更。",
+    "expected": "pass"
+  },
+  {
+    "id": "missing-invariant",
+    "requirement": "R1 保存失败保留旧内存状态、持久化字节与输入；提示失败。",
+    "candidate": "Task Spec/AC/测试矩阵均只验证失败提示；没有其他引用或不变项断言。",
+    "expected": "finding"
+  },
+  {
+    "id": "priority-drift",
+    "requirement": "R1 SIZE P1必需。",
+    "candidate": "PRD写P1必需，最终Plan和TaskMap把SIZE改成可选且不派发。",
+    "expected": "finding"
+  },
+  {
+    "id": "future-command",
+    "requirement": "R1 READ先交付，SIZE依赖READ，最终双入口检查必须保留。",
+    "candidate": "READ完成前必须执行C-BOTH，该脚本由SIZE首次生成；SIZE依赖READ完成。",
+    "expected": "finding"
+  },
+  {
+    "id": "decision-drift",
+    "requirement": "D-ENV仅需实施前验证，当前不阻塞Plan。",
+    "candidate": "Plan：D-ENV pending_validation blocking=false；TaskMap：同ID resolved blocking=false，closure_evidence为空；矩阵写环境已通过。",
+    "expected": "finding"
+  },
+  {
+    "id": "shared-revision",
+    "requirement": "SR-ERR从v1只有路径改为v2路径和原因；消费者READ/SIZE/ENTRY，保留只读。",
+    "candidate": "本次变更只更新READ。SIZE与ENTRY仍验收只有路径，声明全部旧运行证据可直接复用；原只读场景被删除。",
+    "expected": "finding"
+  },
+  {
+    "id": "empty-register",
+    "requirement": "正文和TaskMap必须保存完整决定登记，包括已确认与待验证项；本次行动问题可为空。",
+    "candidate": "正文Decision Register：D01 confirmed、D02 pending_validation blocking=false。TaskMap owner_decision_items=[]。作者解释没有新增范围取舍，所以无需登记。Critic仅比较共同ID，称全部一致。",
+    "expected": "finding"
+  },
+  {
+    "id": "task-count-drift",
+    "requirement": "原始用户明确规划为两个可交付任务T-READ和T-SIZE，READ先、SIZE后；测试用法与入口随片交付。",
+    "candidate": "PRD转述为先READ再SIZE。最终TaskMap先增加T-BASE交付测试布局，再T-READ，再T-SIZE；作者称需要独占共享路径，未取得改变任务数的授权。",
+    "expected": "finding"
+  },
+  {
+    "id": "docs-timing-drift",
+    "requirement": "原始用户：各片用法随实际入口交付，最终README提供两个入口用法；具体实现文件自主选择。",
+    "candidate": "PRD和Plan/AC共同要求READ必须修改README且SIZE必须再次修改README，禁止分片用法文件。没有额外决定授权。作者称这是保留原要求。",
+    "expected": "finding"
+  },
+  {
+    "id": "local-ac-future-obligation",
+    "requirement": "READ先交付读取及本片用法，SIZE后交付计数及最终双入口README；两入口都必需。",
+    "candidate": "Plan正文正确。TaskMap的READ mandatory AC为“两入口无参给用法”和“最终README含两入口”，均绑定owner=task_verify的READ本片命令；SIZE仍待READ完成。",
+    "expected": "finding"
+  },
+  {
+    "id": "valid-json-quoting",
+    "requirement": "仅判断JSON序列化的命令是否存在额外转义；不能据显示外观推断实际字符串。产品runner尚未实现，不判断产品通过。",
+    "candidate": "原始JSON字段为 {\"command\": \"python -c \\\"import sys; print(sys.version)\\\"\"}。JSON解码后无反斜线字符，shlex结果为三个参数：[python, -c, import sys; print(sys.version)]；bash -n退出0。",
+    "expected": "pass"
+  },
+  {
+    "id": "literal-quote-escaping",
+    "requirement": "实际解码的command必须按shell协议将Python程序作为-c的一个参数；检查其内容而非JSON显示。",
+    "candidate": "原始JSON字段为 {\"command\": \"python -c \\\\\\\"import sys; print(sys.version)\\\\\\\"\"}。JSON解码后的引号前确实含反斜线字符，分号暴露给shell；bash -n报括号语法错误。",
+    "expected": "finding"
+  },
+  {
+    "id": "optional-producer",
+    "requirement": "两个入口随片有用法，最终README必须含两个入口；不要求首片运行未来入口。",
+    "candidate": "Plan选择READ独占README且SIZE只读。共享规格要求READ写两种语法，READ Task AC却只要求本入口，另一种语法可选；SIZE AC必须看到两种语法且无法写README。",
+    "expected": "finding"
+  },
+  {
+    "id": "planned-documentation",
+    "requirement": "恰好两个任务，READ先独立交付、SIZE后；各片用法与最终README双入口必需；首片不得等待SIZE执行。",
+    "candidate": "READ明确独占README，mandatory AC要求写两种既定语法并标注SIZE未交付，检查文档内容但只运行READ。SIZE依赖READ，README只读，在两个入口交付后实际执行两种语法并断言输出、错误/只读/清理；最终候选新复验。不存在要求READ运行未来SIZE的条款。",
+    "expected": "pass"
+  }
 ]

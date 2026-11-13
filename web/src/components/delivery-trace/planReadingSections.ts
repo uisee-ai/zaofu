@@ -7,7 +7,7 @@ const titles = {
   changes: /^(?:本次变更|变更摘要|修订影响|变更与保留|change summary|revision impact)/i,
   journeys: /(?:业务旅程|用户旅程|PRD 用户结果|交互流程|user flow|user journey)/i,
   pages: /(?:低保真|页面.*设计|交互设计|设计交接|wireframe|design handoff)/i,
-  decisions: /^(?:decision register|owner 决策项|待决事项|决定登记|决策登记)/i,
+  decisions: /^(?:decision register|owner 决策项|待决事项|未决事项|决定登记|决策登记|决策、覆盖与交付清单)/i,
 };
 export type ReadingSection = ReturnType<typeof planDocumentSections>[number];
 const sharedTitle = /^(?:Shared Spec|共享 Task Spec)(?:\s*[：:].*)?$/;

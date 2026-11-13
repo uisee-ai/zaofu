@@ -24,14 +24,18 @@ def product(root: Path):
     (root / 'file_size.py').write_text(SOURCE.replace('{output}', 'print(len(data))'))
 
 
-def test_correct_product_preserves_bytes_and_counts_bytes(tmp_path):
+@pytest.mark.parametrize("usage", ["usage: tool path", "用法：tool path"])
+def test_correct_product_preserves_bytes_and_counts_bytes(tmp_path, usage):
     product(tmp_path)
+    for path in tmp_path.glob("*.py"):
+        path.write_text(path.read_text().replace("usage: tool path", usage))
     result = verify(tmp_path)
     assert result['passed']
     assert len(result['cases']) == 22
 
 
 @pytest.mark.parametrize('entry,old,new,failed_case', [
+    ('read_file.py', 'usage: tool path', 'something failed', 'usage'),
     ('file_size.py', 'print(len(data))', 'print(len(data.decode(errors="replace")))', 'bytes-3'),
     ('read_file.py', 'sys.stdout.buffer.write(data)', 'sys.stdout.buffer.write(data + b"\\n")', 'bytes-1'),
     ('read_file.py', 'data = p.read_bytes()', 'data = p.read_bytes(); p.write_bytes(b"changed")', 'bytes-0'),
