@@ -1,6 +1,6 @@
 # 计划准入失败的因果恢复输入
 
-> 状态: active
+> 状态: done — `494c0f3a` fix: bind plan admission recovery to its causal ready event
 
 授权：用户持续授权监工中发现问题后修复并记录；根会话 2026-11-13 明确授权此唯一已复现缺陷，指定独立 worktree、仅提交不合并推送。基线 `8781a3d0`。
 
