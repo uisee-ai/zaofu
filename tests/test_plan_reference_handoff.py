@@ -64,6 +64,15 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name, form):
     ports = materialize_explicit_plan_ports(state_dir=state, project_root=project, payload=report, flow_kind="prd")
     assert ports[name]["sha256"] == digest
     assert hydrate_sidecar_ref(state, ports[name]).payload == body
+    # The final synth aggregation must preserve scalar refs too; checking only
+    # direct materialization misses the production Package admission caller.
+    from tests.test_writer_fanout_runtime import _FanoutPayloadProbe
+    projected = _FanoutPayloadProbe()._generic_fanout_success_payload(
+        manifest={'children': []}, success_event='task_map.ready',
+        extra_payloads=[{**report, 'source_commit': 'a' * 40}])
+    projected_ports = materialize_explicit_plan_ports(
+        state_dir=state, project_root=project, payload=projected, flow_kind='prd')
+    assert hydrate_sidecar_ref(state, projected_ports[name]).payload == body
     assert (original.get(name) or original['plan_ports'][0]['body']) == body
     (state / ports[name]["ref"]).unlink()
     errors = []
@@ -100,3 +109,40 @@ def test_explicit_port_body_and_digest_survive_lossless_compaction(tmp_path):
     assert not errors
     port['sha256'] = 'f' * 64
     assert compact_report(report, state_dir=state, project_root=tmp_path) == report
+
+
+def test_reference_only_matrices_reach_blocking_package_preparation(tmp_path):
+    from tests.test_writer_fanout_runtime import _FanoutPayloadProbe
+    from zf.runtime.plan_artifact_package import prepare_plan_artifact_package
+    from zf.runtime.plan_report_compaction import compact_report, REFERENCE_PORTS
+    from zf.runtime.run_contract import stable_json_sha256, write_run_contract
+
+    state = tmp_path / 'runtime-state'
+    state.mkdir()
+    (state / 'requirement.md').write_text('交付 AC-1，矩阵正文不可丢失。')
+    required = ['requirement_spec', 'goal_claim_set', 'task_map', 'planning_result', *REFERENCE_PORTS]
+    (state / 'task_map.json').write_text(json.dumps({
+        'schema_version': 'task-map.v1', 'objective': '交付 AC-1',
+        'required_plan_ports': required,
+        'tasks': [{'task_id': 'T1', 'acceptance_criteria': ['AC-1']}]}))
+    report = {'task_map_ref': 'task_map.json', 'prd_ref': 'requirement.md', 'source_commit': 'a' * 40}
+    bodies = {}
+    for name in REFERENCE_PORTS:
+        body = {'schema_version': name.replace('_', '-') + '.v1',
+                'status': 'ready', 'rows': ['AC-1'], 'content': '完整验收正文'}
+        (state / (name + '.json')).write_text(json.dumps(body))
+        report.update({name: body, name + '_ref': name + '.json'})
+        bodies[name] = body
+    projected = _FanoutPayloadProbe()._generic_fanout_success_payload(
+        manifest={'children': []}, success_event='task_map.ready',
+        extra_payloads=[compact_report(report, state_dir=state, project_root=tmp_path)])
+    contract = {'schema_version': 'run-contract.v1', 'workflow': {'kind': 'prd'}}
+    write_run_contract(state, {**contract, 'contract_digest': stable_json_sha256(contract)})
+    package, _, _ = prepare_plan_artifact_package(
+        state_dir=state, project_root=tmp_path, events=[], payload=projected,
+        workflow_run_id='run-matrices', flow_kind='prd', producer_stage_id='prd-plan',
+        goal_id='GOAL-1', metadata={'artifact_package': {'mode': 'blocking'}})
+    ports = {port['logical_name']: port for port in package['produced']}
+    assert set(required) <= ports.keys()
+    for name, body in bodies.items():
+        assert hydrate_sidecar_ref(state, ports[name]).payload == body

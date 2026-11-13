@@ -315,6 +315,8 @@ class WriterFanoutDataMixin:
                 "expected_module_parity_report_paths_ref",
             ),
         }
+        for key in ("capability_matrix_ref", "acceptance_matrix_ref", "test_matrix_ref", "real_e2e_matrix_ref"):
+            inventory_scalar_refs[key] = self._first_child_value(manifest, payloads, key)
         if plan_artifact_ref:
             payload["plan_artifact_ref"] = plan_artifact_ref
             artifact_refs.append(plan_artifact_ref)
