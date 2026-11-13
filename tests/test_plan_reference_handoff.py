@@ -18,7 +18,8 @@ from zf.runtime.workflow_read_result import normalize_workflow_read_result
 
 @pytest.mark.parametrize("name", ["source_inventory", "capability_matrix", "acceptance_matrix",
                                   "test_matrix", "real_e2e_matrix", "source_index"])
-def test_complete_referenced_port_survives_author_cleanup(tmp_path, name):
+@pytest.mark.parametrize('form', ['inline', 'port_body'])
+def test_complete_referenced_port_survives_author_cleanup(tmp_path, name, form):
     project = tmp_path / "project"
     state = project / "runtime-state"
     author = state / "workdirs/planner/project"
@@ -28,7 +29,8 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name):
     body = {"schema_version": "fixture.v1", "content": "完整语义，保留失败不变项", "rows": [{"id": "S1"}]}
     source.write_text(json.dumps(body, ensure_ascii=False))
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
-    original = {f"{name}_ref": ref, "artifact_refs": [ref], name: body}
+    original = ({f"{name}_ref": ref, "artifact_refs": [ref], name: body} if form == 'inline' else
+                {'artifact_refs': [ref], 'plan_ports': [{'logical_name': name, 'body': body}]})
     submitted = parse_semantic_result_bytes(json.dumps({
         **original, "summary": "完整引用交接", "result_semantics": "artifact_production",
     }).encode())
@@ -36,7 +38,8 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name):
         type="fanout.child.completed", actor="planner", payload={"report": submitted},
     ))
     assert not issues
-    assert normalized[f"{name}_ref"] == ref
+    if form == 'inline':
+        assert normalized[f"{name}_ref"] == ref
     reports = prepare_fanout_synth_reports(
         reports=[{"child_id": "planner", "role_instance": "planner", "report": normalized}],
         manifest={"fanout_id": "F-REF"}, state_dir=state, project_root=project,
@@ -45,6 +48,7 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name):
     shutil.rmtree(author)
     report = reports[0]["report"]
     assert name not in report
+    assert all('body' not in port for port in report.get('plan_ports', []))
     errors = []
     bodies = plan_port_bodies([report], trigger={}, state_dir=state, project_root=project, errors=errors)
     assert not errors
@@ -56,7 +60,7 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name):
     ports = materialize_explicit_plan_ports(state_dir=state, project_root=project, payload=report, flow_kind="prd")
     assert ports[name]["sha256"] == digest
     assert hydrate_sidecar_ref(state, ports[name]).payload == body
-    assert original == {f"{name}_ref": ref, "artifact_refs": [ref], name: body}
+    assert (original.get(name) or original['plan_ports'][0]['body']) == body
     (state / ports[name]["ref"]).unlink()
     errors = []
     assert name not in plan_port_bodies([report], trigger={}, state_dir=state, project_root=project, errors=errors)
@@ -72,4 +76,23 @@ def test_compaction_keeps_conflicts_and_unavailable_references(tmp_path):
     report = {'source_inventory': {'mandatory': True}, 'source_inventory_ref': 'inventory.json'}
     assert compact_report(report, state_dir=state, project_root=tmp_path) == report
     path.unlink()
+    assert compact_report(report, state_dir=state, project_root=tmp_path) == report
+
+
+def test_explicit_port_body_and_digest_survive_lossless_compaction(tmp_path):
+    from zf.runtime.plan_report_compaction import compact_report
+    state = tmp_path / 'state'
+    state.mkdir()
+    body = {'entries': [{'disposition': 'pending', 'reason': 'adverse evidence remains'}]}
+    raw = json.dumps(body).encode()
+    (state / 'ledger.json').write_bytes(raw)
+    digest = hashlib.sha256(raw).hexdigest()
+    port = {'logical_name': 'coverage_ledger', 'body': body, 'ref': 'ledger.json', 'sha256': digest}
+    report = {'plan_ports': [port]}
+    compacted = compact_report(report, state_dir=state, project_root=tmp_path)
+    assert compacted['plan_ports'] == [{key: value for key, value in port.items() if key != 'body'}]
+    errors = []
+    assert plan_port_bodies([compacted], trigger={}, state_dir=state, project_root=tmp_path, errors=errors)['coverage_ledger'] == body
+    assert not errors
+    port['sha256'] = 'f' * 64
     assert compact_report(report, state_dir=state, project_root=tmp_path) == report

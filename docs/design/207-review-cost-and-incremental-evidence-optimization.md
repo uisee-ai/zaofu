@@ -17,7 +17,7 @@
 | 是否立即换模型 | 暂不调整；C 批单独做模型/推理强度对照 | 先排除重复工作，避免同时改变变量而无法归因 |
 | 如何定义成功 | 质量守住、局部修订成本下降、真实双入口仍闭环 | 提速指标是试验目标；样本不足时不能宣布生产资格通过 |
 
-Owner 已确认在原 worktree 实施 A/B；对应六项任务位于 tasks/active/2026-11-13-0836-spec207-*.md。第 11 节明确本次实现边界，性能验收单独记录。
+Owner 已确认在原 worktree 实施 A/B；对应六项任务位于 tasks/active/2026-11-13-0836-spec207-*.md。第 12 节明确本次实现边界，性能验收单独记录。
 
 ## 2. 实测基线：重在哪里
 
@@ -240,7 +240,7 @@ Owner 确认本文范围后，再将选中的工作包转成 backlog，明确每
 每批汇报必须分别给出：已落地代码、真实生效证据、质量变化、成本变化、尚未覆盖的场景。目标是减少不必要工作并提高有效发现率，不能用“实现了增量函数”或“总字数减少”宣称整条工作流已经变轻。
 
 
-## 11. A/B 实施细化与边界（2026-11-13）
+## 12. A/B 实施细化与边界（2026-11-13）
 
 ### 审批前 rejected 事实合同
 
@@ -264,7 +264,9 @@ Owner 确认本文范围后，再将选中的工作包转成 backlog，明确每
 ### 确定性改动和语义所有权
 
 - `prepare_fanout_synth_reports` 在引用已复制到 runtime 后，仅移除六类端口中与
-  引用文件解码内容完全相同的 inline 副本；冲突和不可读引用保留。原 admitted
+  引用文件解码内容完全相同的 inline 副本（包括实际生成的 `plan_ports[].body`）；
+  对已有显式 ref/digest 的其他端口也只做解码后内容完全相同的引用转换。冲突、摘要不符
+  和不可读引用保留。原 admitted
   producer result 不变，Critic、预检和 Package 继续消费完整引用正文。
 - canonical required reads 合并同摘要、选择、权限、保留策略、来源事件 的正文
   别名，所有 source 身份及受控展开仍在 manifest 中；explicit required reads 不减免。
@@ -282,3 +284,8 @@ Owner 确认本文范围后，再将选中的工作包转成 backlog，明确每
 工程合同、固定模型回放、真实 Kanban/Channel 交付、成本收益四类结论分别记录在
 本批任务和 `reports/spec207-optimization/`。单次真实成功不等于稳定收益；同机并发
 的墙钟时间不作因果性能结论。C1/C2 保留 deferred，未更换生产模型或关闭评审阶段。
+
+
+固定真实输入：[CLI 共享只读规则](../../tests/fixtures/spec_handoff_eval/shared-readme-product.md)
+与[共享保存状态／正式接口](../../tests/fixtures/spec_handoff_eval/shared-save-product.md)。
+前者验证到审批后交付，后者验证到完整 Plan Preview；后者的产品实现与运行验收不冒充已测。
