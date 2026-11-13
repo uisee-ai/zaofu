@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `1faf3ed7` fix: bind late context sessions to admitted output evidence
 
 # 首次上下文交付的迟到会话关联
 
