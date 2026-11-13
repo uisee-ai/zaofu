@@ -1,4 +1,7 @@
-> 状态: active
+> 状态: done
+
+实现提交：`f6f55655 fix: reject partial context snapshots on concurrent growth`。
+本提交完整包含旧候选 `63c36fbb3ad7e414966f21cae60ef67449b96c0b`；后者未单独合dev/部署。
 
 # 补充修复：部分快照不能仅凭已消费前缀承认并发追加
 
@@ -8,7 +11,7 @@
 - 只修增长快照匹配：未消费到原snapshot边界时不得只验证consumed前缀 -> verify: 重试完整读取后拒绝settled；普通完整snapshot append仍高效、合法partial补齐和下一次terminal刷新不变。
 - 交付补充纠正 -> verify: 更新原impl/旧task链接与本task，最新whole closure/sentinel、独立审核通过，再实现commit+archivecommit；新HEAD包含旧63c36fbb。
 
-禁止改旧冻结worktree、主checkout、LS运行态；不重启、不merge/push。新验证完成前旧handoff不具备落地条件。
+禁止改旧冻结worktree、主checkout、LS运行态；不重启、不merge/push。仅以包含本补充修复及新验证的完整HEAD交付，旧handoff不单独落地。
 
 ## 实施与验证
 

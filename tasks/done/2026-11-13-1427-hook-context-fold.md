@@ -3,8 +3,8 @@
 实现提交：`8eaede97 fix: fold append-only artifact context reads safely`。
 
 交付纠正：归档后Root与独立review确认第三个P1，旧候选 `63c36fbb` 单独不可合并，
-此前未合dev/未部署。由 [部分快照补充任务](../active/2026-11-13-1454-hook-context-partial-snapshot.md)
-在新worktree继续修复；本记录保留原实现历史，后续仅以包含补充提交且重新验证的新HEAD交付。
+此前未合dev/未部署。由 [部分快照补充任务](2026-11-13-1454-hook-context-partial-snapshot.md)
+在新worktree完成修复（`f6f55655`）并重新验证；本记录保留原实现历史，仅以包含补充提交的新HEAD交付。
 
 # Hook/reader 上下文追加读取复用
 
