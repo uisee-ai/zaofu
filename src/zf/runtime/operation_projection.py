@@ -8,6 +8,9 @@ second control plane.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,18 +22,73 @@ from zf.core.state.atomic_io import atomic_write_text
 from zf.core.task.store import TERMINAL_STATES, TaskStore
 
 
+@dataclass(frozen=True)
+class _OperationInputs:
+    dispatch_events: dict[str, list[ZfEvent]]
+    task_dispatch_ids: dict[str, list[str]]
+    workflow_events: dict[str, list[ZfEvent]]
+    workflow_rows: dict[str, dict[str, Any]]
+    role_sessions: dict[str, dict[str, str]]
+
+
+def project_task_operations_batch(
+    state_dir: Path,
+    task_ids: list[str],
+    *,
+    events: list[ZfEvent],
+) -> Iterator[dict[str, Any]]:
+    """Share read-only inputs for one Dossier, never across builds or ticks."""
+
+    if not task_ids:
+        return
+    dispatch_events: dict[str, list[ZfEvent]] = {}
+    task_dispatch_ids: dict[str, list[str]] = {}
+    workflow_events: dict[str, list[ZfEvent]] = {}
+    for event in events:
+        dispatch_id = _event_dispatch_id(event)
+        dispatch_events.setdefault(dispatch_id, []).append(event)
+        if dispatch_id and event.task_id is not None:
+            task_dispatches = task_dispatch_ids.setdefault(event.task_id, [])
+            if dispatch_id not in task_dispatches:
+                task_dispatches.append(dispatch_id)
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        operation_id = str(payload.get("operation_id") or "")
+        workflow_events.setdefault(operation_id, []).append(event)
+    role_sessions: dict[str, dict[str, str]] = {}
+    for value in _read_role_sessions(state_dir).values():
+        if not isinstance(value, dict):
+            continue
+        dispatch_id = str(value.get("dispatch_id") or value.get("active_dispatch_id") or "")
+        role_sessions.setdefault(dispatch_id, {
+            str(k): str(v) for k, v in value.items() if v is not None
+        })
+    inputs = _OperationInputs(
+        dispatch_events, task_dispatch_ids, workflow_events,
+        _workflow_operation_rows(events), role_sessions,
+    )
+    for task_id in task_ids:
+        yield project_task_operations(state_dir, task_id, events=events, _inputs=inputs)
+
+
 def project_operation(
     state_dir: Path,
     dispatch_id: str,
     *,
     events: list[ZfEvent] | None = None,
+    _inputs: _OperationInputs | None = None,
 ) -> dict[str, Any]:
     events = events if events is not None else EventLog(state_dir / "events.jsonl").read_all()
     task_store = TaskStore(state_dir / "kanban.json")
-    matched = [_event for _event in events if _event_dispatch_id(_event) == dispatch_id]
+    matched = (
+        _inputs.dispatch_events.get(dispatch_id, []) if _inputs is not None
+        else [_event for _event in events if _event_dispatch_id(_event) == dispatch_id]
+    )
     task_id = _first_task_id(matched)
     task = task_store.get(task_id) if task_id else None
-    role_session = _role_session_for_dispatch(state_dir, dispatch_id)
+    role_session = (
+        _inputs.role_sessions.get(dispatch_id, {}) if _inputs is not None
+        else _role_session_for_dispatch(state_dir, dispatch_id)
+    )
     timeline = [_timeline_item(event) for event in matched]
     last = matched[-1] if matched else None
     provider_events = [
@@ -83,26 +141,33 @@ def project_task_operations(
     task_id: str,
     *,
     events: list[ZfEvent] | None = None,
+    _inputs: _OperationInputs | None = None,
 ) -> dict[str, Any]:
     events = events if events is not None else EventLog(state_dir / "events.jsonl").read_all()
     dispatch_ids: list[str] = []
-    for event in events:
-        if event.task_id != task_id:
-            continue
-        dispatch_id = _event_dispatch_id(event)
-        if dispatch_id and dispatch_id not in dispatch_ids:
-            dispatch_ids.append(dispatch_id)
+    if _inputs is not None:
+        dispatch_ids = _inputs.task_dispatch_ids.get(task_id, [])
+    else:
+        for event in events:
+            if event.task_id != task_id:
+                continue
+            dispatch_id = _event_dispatch_id(event)
+            if dispatch_id and dispatch_id not in dispatch_ids:
+                dispatch_ids.append(dispatch_id)
+    workflow_rows = (
+        _inputs.workflow_rows if _inputs is not None else _workflow_operation_rows(events)
+    )
     return {
         "schema_version": "task-operations.v1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "task_id": task_id,
         "operations": [
-            project_operation(state_dir, dispatch_id, events=events)
+            project_operation(state_dir, dispatch_id, events=events, _inputs=_inputs)
             for dispatch_id in dispatch_ids
         ],
         "workflow_operations": [
-            project_workflow_operation(state_dir, operation_id, events=events)
-            for operation_id, row in _workflow_operation_rows(events).items()
+            project_workflow_operation(state_dir, operation_id, events=events, _inputs=_inputs)
+            for operation_id, row in workflow_rows.items()
             if str(row.get("task_id") or "") == task_id
         ],
     }
@@ -113,11 +178,16 @@ def project_workflow_operation(
     operation_id: str,
     *,
     events: list[ZfEvent] | None = None,
+    _inputs: _OperationInputs | None = None,
 ) -> dict[str, Any]:
     events = events if events is not None else EventLog(state_dir / "events.jsonl").read_all()
-    row = dict(_workflow_operation_rows(events).get(operation_id) or {})
+    row = (
+        deepcopy(_inputs.workflow_rows.get(operation_id) or {}) if _inputs is not None
+        else dict(_workflow_operation_rows(events).get(operation_id) or {})
+    )
     timeline = []
-    for event in events:
+    matching_events = _inputs.workflow_events.get(operation_id, []) if _inputs is not None else events
+    for event in matching_events:
         payload = event.payload if isinstance(event.payload, dict) else {}
         if str(payload.get("operation_id") or "") != operation_id:
             continue
@@ -261,8 +331,19 @@ def _resume_packet_path(state_dir: Path, task_id: str, dispatch_id: str) -> str:
 
 
 def _role_session_for_dispatch(state_dir: Path, dispatch_id: str) -> dict[str, str]:
+    if not dispatch_id:
+        return {}
+    for value in _read_role_sessions(state_dir).values():
+        if not isinstance(value, dict):
+            continue
+        if str(value.get("dispatch_id") or value.get("active_dispatch_id") or "") == dispatch_id:
+            return {str(k): str(v) for k, v in value.items() if v is not None}
+    return {}
+
+
+def _read_role_sessions(state_dir: Path) -> dict[str, Any]:
     path = state_dir / "role_sessions.yaml"
-    if not path.exists() or not dispatch_id:
+    if not path.exists():
         return {}
     try:
         import yaml
@@ -270,14 +351,7 @@ def _role_session_for_dispatch(state_dir: Path, dispatch_id: str) -> dict[str, s
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except Exception:
         return {}
-    if not isinstance(data, dict):
-        return {}
-    for value in data.values():
-        if not isinstance(value, dict):
-            continue
-        if str(value.get("dispatch_id") or value.get("active_dispatch_id") or "") == dispatch_id:
-            return {str(k): str(v) for k, v in value.items() if v is not None}
-    return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _role_from_instance(instance_id: str) -> str:
