@@ -1,6 +1,6 @@
 # 消费者输入完整性的局部方法澄清
 
-> 状态: active
+> 状态: done — `3c33f632 docs: clarify consumer-scoped input completeness`
 
 ## 授权与范围
 
@@ -36,4 +36,4 @@ root 依据用户持续授权“遇问题修复、记录、推进”批准归因
 - 证据：`/tmp/zf-input-method-{plan,receipt,check,materialize,sentinel}-20261113.{json,log}`（实际后缀：plan/receipt/materialize 为 json，check/sentinel 为 log）。离线反例测试验证显式证据绑定与遗漏计分，未调用真实 Provider，不能据此声称模型语义质量获证。
 - 更新 reference SHA256：`e3a80fe226e9e618fcba66adcfabd58100a5caf327120710e2a92607cb0817fb`。
 
-实现 commit 待记录；归档后交 root merge。
+实现 commit：`3c33f632 docs: clarify consumer-scoped input completeness`。实现提交后工作树无残留；本次仅归档状态与路径，交 root 作为唯一 merge owner 合并。
