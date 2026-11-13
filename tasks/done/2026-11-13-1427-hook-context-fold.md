@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现提交：`8eaede97 fix: fold append-only artifact context reads safely`。
 
 # Hook/reader 上下文追加读取复用
 
