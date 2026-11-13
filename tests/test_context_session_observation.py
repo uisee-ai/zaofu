@@ -20,11 +20,11 @@ from zf.runtime.context_delivery import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def fixture(state):
+def fixture(state, source_body='{"requirement":"complete original source"}'):
     admission, operations = _runtime(state)
     source = state / "artifacts/input.json"
     source.parent.mkdir(parents=True, exist_ok=True)
-    source.write_text('{"requirement":"complete original source"}')
+    source.write_text(source_body)
     required = [{"source_id": "workflow-input", "artifact_id": "input", "json_path": "$",
                  "artifact_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
                  "allow_truncated": False}]
@@ -235,6 +235,87 @@ def test_real_manual_page_shape_needs_strict_v2_anchor_and_one_observed_session(
         assert not admitted.payload.get("context_delivery_session_observation_ref")
         assert next_delivery(f)["previous_state"] == "incompatible"
 
+
+
+def add_raw_read(f, *, observed=True, body_override=None):
+    from zf.runtime.artifact_read_ledger import read_attempt_artifact
+
+    result = read_attempt_artifact(f.state, manifest=f.manifest,
+        source_id="workflow-input", artifact_id="input",
+        actor="verify-1", role="verify", provider="codex", purpose="task-verify", record=False)
+    row = result["read"]
+    row["operation_id"] = "op-1"
+    # The non-paged CLI emits selected text directly, without a page envelope.
+    body = result["content"] if body_override is None else body_override
+    row["returned_bytes"] = len(body.encode())
+    emit_artifact_output(f.state, body, [row], io.StringIO())
+    if observed:
+        with f.transcript.open("a") as stream:
+            stream.write("\n" + json.dumps({"type": "response_item", "timestamp": "2099-01-01T00:00:00+00:00",
+                "payload": {"type": "custom_tool_call_output", "call_id": "raw-call", "output": body}}))
+
+
+@pytest.mark.parametrize("source_body", [
+    '{"schema_version":"workflow.input_manifest.v1","requirement":"完整输入"}',
+    '"JSON string selected as raw text"',
+    '# Original requirement\n完整 Markdown 输入\n',
+])
+def test_real_admission_accepts_full_raw_output_alongside_v2_and_manual_pages(tmp_path, source_body):
+    f = fixture(tmp_path, source_body)
+    original = (tmp_path / f.receipt["ref"]).read_bytes()
+    add_manual_page(f)
+    add_raw_read(f)
+    assert admit(f).admitted
+    admitted = next(e for e in f.operations.event_log.read_all() if e.type == "workflow.call.result.admitted")
+    assert admitted.payload.get("context_delivery_session_observation_ref"), admitted.payload
+    proof = hydrate_sidecar_ref(tmp_path, admitted.payload["context_delivery_session_observation_ref"]).payload
+    assert proof["current_context_availability"] == "unknown"
+    assert (tmp_path / f.receipt["ref"]).read_bytes() == original
+    envelope = next_delivery(f)
+    assert envelope["previous_state"] == "known"
+    assert {s["delivery"] for s in envelope["sections"]} == {"full"}
+    assert {s["shadow_delivery"] for s in envelope["sections"]} == {"unchanged"}
+    assert admit(f).admitted
+    assert sum(e.type == "workflow.call.result.admitted" for e in f.operations.event_log.read_all()) == 1
+
+
+@pytest.mark.parametrize("fault", [
+    "raw_only", "unknown", "different_session", "wrong_body", "output_digest",
+    "witness_partial", "source_digest", "partial_page_metadata", "limited_read",
+])
+def test_raw_output_never_weakens_anchor_source_or_observation_checks(tmp_path, fault):
+    from zf.runtime.artifact_read_ledger import active_read_ledger_path
+
+    f = fixture(tmp_path, '{"schema_version":"required-artifact-page.v2","attempt_id":"attempt-1"}'
+                if fault == "raw_only" else '{"requirement":"complete original source"}')
+    if fault == "raw_only":
+        active_read_ledger_path(tmp_path, "attempt-1").write_text("")
+    add_raw_read(f, observed=fault != "unknown",
+                 body_override='{"requirement":"different source"}' if fault == "wrong_body" else None)
+    if fault not in {"raw_only", "unknown", "wrong_body"}:
+        rows = sealed_rows(f)
+        row = rows[-1]
+        if fault in {"different_session", "witness_partial"}:
+            witness = hydrate_sidecar_ref(tmp_path, row["provider_observation_ref"]).payload
+            if fault == "different_session":
+                witness["session_id"] = row["provider_session_id"] = str(uuid4())
+            else:
+                witness["output"] = witness["raw_output"] = "incomplete"
+            row["provider_observation_ref"] = write_json(f, witness)
+        elif fault == "output_digest":
+            row["output_sha256"] = "0" * 64
+        elif fault == "source_digest":
+            row["artifact_sha256"] = "0" * 64
+        elif fault == "partial_page_metadata":
+            row["page_end"] = row["returned_bytes"]
+        else:
+            row["max_chars"] = 1
+        replace_ledger(f, rows)
+    assert admit(f).admitted  # Optional association cannot invalidate business admission.
+    admitted = next(e for e in f.operations.event_log.read_all() if e.type == "workflow.call.result.admitted")
+    assert admitted.payload["context_delivery_session_observation_status"] == "unavailable"
+    assert not admitted.payload.get("context_delivery_session_observation_ref")
+    assert next_delivery(f)["previous_state"] == "incompatible"
 
 
 @pytest.mark.parametrize("fault", ["missing", "broken_digest", "other_receipt", "other_identity", "other_session"])

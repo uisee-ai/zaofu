@@ -258,7 +258,10 @@ operation/attempt/dispatch/角色/run 的 sealed ledger 和完整 provider 输�
 通过不可变补证关联原空 ID receipt。下一次交付仅消费该精确 receipt 的补证；
 新 operation 的未知记录不能回退借用更老成功记录。至少一个带当前 attempt、
 delivery identity 的完整 required-read 输出作为会话锚；无身份正文的手动页只作
-同会话一致性核验。缺证、混合会话、摘要或身份不符保持未知，不从角色最新 UUID 回填。
+同会话一致性核验。CLI 未分页的完整原正文也可参与核验：按固定来源版本和授权
+selector 重建实际输出，核对全文、字节数、摘要及完整 provider 见证；不得将任意
+raw 输出当作分页包装或身份锚。截断/限长 raw、缺证、混合会话、摘要或身份不符
+保持未知，不从角色最新 UUID 回填。
 这只补历史会话关联：native session reuse、历史输入交付、当前上下文保留状态和
 正文重发量分别计量，实际 delivery 仍为 full，旧 ledger 不能满足新 attempt。
 实现及真实调用入口见 [context_session_observation](../../src/zf/runtime/context_session_observation.py)
