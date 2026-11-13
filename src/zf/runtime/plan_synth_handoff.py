@@ -215,6 +215,15 @@ def build_plan_handoff_input_refs(
             rework_context[key] = value
     if len(rework_context) > 1:
         from zf.runtime.plan_replan_authority_inputs import replan_authority_sources
+        from zf.runtime.plan_rejected_review import rejected_review_source
+
+        prior_review = rejected_review_source(
+            state_dir, trigger_id=source_event_id,
+            run=str(payload.get('workflow_run_id') or trigger.get('workflow_run_id') or ''),
+            rework_of=str(rework_context.get('rework_of') or ''),
+        )
+        if prior_review:
+            input_refs.append(prior_review)
 
         input_refs.extend(replan_authority_sources(
             state_dir=state_dir, project_root=project_root,

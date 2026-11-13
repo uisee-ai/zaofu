@@ -146,6 +146,16 @@ def _policy_fixture(state, scenario=""):
         "baseline_task_map_sha256": old_map_ref["sha256"], "candidate_task_map_sha256": new_map_ref["sha256"],
         "affected_task_ids": ["A"], "evidence_refs": ["requirement"], "ports": [{"logical_name": "execution_spec",
         "baseline_sha256": old_port_ref["sha256"], "candidate_sha256": new_port_ref["sha256"]}]}, "certificate")
+    if scenario == "generated_certificate":
+        from zf.runtime.plan_scope_evidence import prepare_scope_evidence
+        baseline = {"task_map": (state / old_map_ref["ref"]).read_bytes(),
+                    "execution_spec": (state / old_port_ref["ref"]).read_bytes()}
+        candidate = {"task_map": (state / new_map_ref["ref"]).read_bytes(),
+                     "execution_spec": (state / new_port_ref["ref"]).read_bytes()}
+        claim = {"workflow_run_id": "run-1", "baseline_package_sha256": package_ref["sha256"],
+                 "affected_task_ids": ["A"], "evidence_refs": ["requirement"],
+                 "scope_complete": True, "verification_responsibility_preserved": True}
+        cert = save(prepare_scope_evidence(baseline, candidate, claim), "certificate")
     report = save({"schema_version": "fanout-child-result.v1", "task_map_ref": new_map_ref["ref"],
         "role_instance": "planner", "child_id": "planner", "dispatch_id": "new-planner-attempt",
         "plan_ports": [port("execution_spec", new_port_ref), port("planning_result", new_planning),
@@ -209,7 +219,9 @@ def _policy_fixture(state, scenario=""):
     old_request_hash = operation_request_hash(old_request_body)
     old_request = save(old_request_body, "old-request")
     control = save({"schema_version": "plan-synthesis-result.v1", "execution_status": "completed",
-        "verdict": "passed", "plan_synth_contract_digest": old_contract["sha256"],
+        "verdict": "rejected" if scenario == "rejected" else "passed",
+        "findings": [{"id": "F-01", "message": "mandatory scenario missing", "status": "open"}],
+        "plan_synth_contract_digest": old_contract["sha256"],
         "reviewed_plan_candidate_digest": old_contract["sha256"]}, "control")
     session = str(uuid4())
     transcript = state.parent / "old-critic-session.jsonl"
@@ -239,7 +251,7 @@ def _policy_fixture(state, scenario=""):
     synth = ZfEvent(id="old-synth", type="fanout.synth.completed", payload={"workflow_run_id": "run-1",
         "operation_id": "old-operation", "attempt_id": "old-attempt", "status": "completed",
         "fanout_id": "old-fanout", "stage_id": "plan", "plan_revision": "old-rev",
-        "recommendation": "approve", "plan_synth_contract_ref": old_contract["ref"],
+        "recommendation": "needs_rework" if scenario == "rejected" else "approve", "plan_synth_contract_ref": old_contract["ref"],
         "plan_synth_contract_digest": old_contract["sha256"],
         "reviewed_plan_candidate_digest": old_contract["sha256"], "control_result_ref": control})
     dispatch = ZfEvent(type="fanout.synth.dispatched", origin="kernel", payload={"operation_id": "old-operation",
@@ -390,7 +402,7 @@ def test_local_critic_policy_falls_back_for_unproved_inputs(tmp_path, problem):
                               critic_role="planner" if problem == "same_current_role" else "critic") == required
 
 
-@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered"])
+@pytest.mark.parametrize("prior_format", ["kernel", "legacy_recovered", "generated_certificate"])
 def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, monkeypatch, prior_format):
     from tests.test_call_result_runtime import _runtime
     from zf.runtime.artifact_read_ledger import active_read_ledger_path, read_attempt_artifact, render_attempt_source_briefing, seal_read_ledger
@@ -402,7 +414,7 @@ def test_local_critic_policy_is_pinned_by_the_actual_dispatch_entry(tmp_path, mo
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
     runtime = _runtime(tmp_path)
-    manifest, _, events = _policy_fixture(runtime.state_dir)
+    manifest, _, events = _policy_fixture(runtime.state_dir, "generated_certificate" if prior_format == "generated_certificate" else "")
     if prior_format == "legacy_recovered":
         previous = next(e for e in events if e.id == "old-synth")
         previous.payload.pop("recommendation")

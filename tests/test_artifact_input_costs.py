@@ -40,6 +40,9 @@ def test_cli_usage_accounting_keeps_navigation_body_recovery_and_provider_distin
     assert report['produced_body_bytes'] == 2*report['repeated_exact_body_bytes']
     assert report['read_bytes_by_reason']['recovery'] == report['repeated_exact_body_bytes']
     assert report['host_read_ms'] is not None
+    assert report['paging']['truncation_repair_calls'] is None
+    assert report['provider_tool_calls'] is None
+    assert report['timing']['model_reasoning_ms'] is None
     assert report['provider_usage']['input_tokens'] == 70
     assert report['provider_usage']['cache_read_tokens'] == 80
     assert report['provider_usage']['sample_count'] == 1
@@ -76,3 +79,17 @@ def test_comparison_requires_same_material_scope_and_qualified_acceptance(tmp_pa
     for change in ({'actor':'verify-1'},{'binding_digest':'changed'},{'comparison_qualified':False}):
         with pytest.raises(ValueError):
             compare_input_costs(before,{**after,**change})
+
+
+def test_review_outcome_uses_exact_admitted_attempt_and_does_not_invent_quality(tmp_path):
+    from tests.test_plan_local_review import _policy_fixture
+    from zf.runtime.artifact_input_costs import review_outcome
+    _, _, events = _policy_fixture(tmp_path, 'rejected')
+    operation = {'operation_id': 'old-operation', 'workflow_run_id': 'run-1'}
+    outcome = review_outcome(tmp_path, events, operation, 'old-attempt')
+    assert outcome['verdict'] == 'rejected'
+    assert outcome['finding_status_counts'] == {'unspecified': 1}
+    assert outcome['quality_attribution'] == 'reviewer_declared_not_independent_ground_truth'
+    assert review_outcome(tmp_path, events, operation, 'new-attempt') is None
+    admission = next(e for e in events if e.type == 'workflow.call.result.admitted')
+    assert review_outcome(tmp_path, [*events, admission], operation, 'old-attempt') == outcome

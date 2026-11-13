@@ -200,6 +200,9 @@ def prepare_fanout_synth_reports(
             roles=roles,
             prefer_workdir_sources=True,
         )
+        from zf.runtime.plan_report_compaction import compact_report
+
+        rewritten = compact_report(rewritten, state_dir=state_dir, project_root=project_root)
         row["report"] = rewritten
         if rewritten != report:
             descriptor = write_immutable_json_sidecar(

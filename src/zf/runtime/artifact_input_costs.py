@@ -24,7 +24,7 @@ def input_cost_report(*, state_dir: Path, manifest: dict, identity: Mapping[str,
     operation = operations[0] if len(operations) == 1 else {}
     actor = consumer_actor or str(operation.get('role_instance') or '')
     seen, delivered, ranges = set(), {}, set()
-    produced = repeated = 0
+    produced = repeated = pages = partial = 0
     reasons: Counter = Counter()
     read_ms = 0.0
     for row in reads:
@@ -42,6 +42,8 @@ def input_cost_report(*, state_dir: Path, manifest: dict, identity: Mapping[str,
         if key in seen:
             continue
         seen.add(key)
+        pages += int(row.get('page_start') is not None)
+        partial += int(bool(row.get('truncated')))
         count = max(0, int(row.get('returned_bytes') or 0))
         produced += count
         if body in ranges:
@@ -74,6 +76,16 @@ def input_cost_report(*, state_dir: Path, manifest: dict, identity: Mapping[str,
         'plan_artifact_package_digest','read_purpose')}
     comparison['required_reads'] = required
     comparison['selections'] = sorted((s['source_id'],s['artifact_id'],s['sha256'],tuple(s.get('allowed_paths', ['$']))) for s in sources)
+    from zf.runtime.artifact_input_timing import attempt_timing
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    review = None
+    if operation and len(sources) == len(manifest['sources']) and actor == operation.get('role_instance'):
+        try:
+            request = hydrate_sidecar_ref(state_dir, operation['request_ref']).payload['request']
+            if request.get('active_attempt_id') == attempt:
+                review = request.get('plan_review_optimization')
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # Missing historical observations are unknown, never zero cost.
     return {'schema_version': 'attempt-input-cost.v1', 'attempt_id': attempt, 'actor': actor,
         'binding_digest': canonical_json_sha256(comparison),
         'comparison_qualified': bool(required is not None and sources and manifest.get('contract_revision') and manifest.get('plan_artifact_package_digest')),
@@ -85,6 +97,13 @@ def input_cost_report(*, state_dir: Path, manifest: dict, identity: Mapping[str,
                                          for s in sources for r in s.get('read_selections', [])),
         'produced_body_bytes': produced, 'repeated_exact_body_bytes': repeated,
         'read_deliveries': len(delivered), 'read_bytes_by_reason': dict(reasons),
+        'paging': {'returned_pages': pages, 'partial_returns': partial,
+                   'truncation_repair_calls': None},
+        'timing': attempt_timing(events, operation, attempt) if actor == operation.get('role_instance') else None,
+        'review_selection': review,
+        'review_outcome': review_outcome(state_dir, events, operation, attempt)
+            if actor == operation.get('role_instance') and len(sources) == len(manifest['sources']) else None,
+        'provider_tool_calls': None,
         'host_read_ms': read_ms if delivered and all('host_elapsed_ms' in r for r in delivered.values()) else None,
         'navigation': {'observed_calls': len(observations), 'output_bytes': sum(o['output_bytes'] for o in observations),
                        'host_ms': sum(o['host_elapsed_ms'] for o in observations)},
@@ -92,7 +111,41 @@ def input_cost_report(*, state_dir: Path, manifest: dict, identity: Mapping[str,
         'current_memory': 'unknown', 'body_read_evidence': False,
         'limitations': ['索引构建成本未单独归因；历史未观测调用不计零成本。',
             'Provider usage 是整个 operation，不能按字节分摊为某次读取或节约。',
-            '重复正文只统计完全相同范围；read reason 为调用者声明，非完成证据。']}
+            '重复正文只统计完全相同范围；read reason 为调用者声明，非完成证据。',
+            '分页与截断补读不可等同；执行墙钟时间包含工具和等待，不代表模型推理时间。']}
+
+
+def review_outcome(state_dir: Path, events: list, operation: dict, attempt: str) -> dict | None:
+    """Report admitted declarations, never classify finding prose as truth."""
+    from zf.runtime.call_result_envelope import hydrate_call_result_envelope
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    admissions = [event for event in events if event.type == 'workflow.call.result.admitted'
+                  and event.payload.get('operation_id') == operation.get('operation_id')
+                  and event.payload.get('workflow_run_id') == operation.get('workflow_run_id')]
+    matched = []
+    for event in admissions:
+        try:
+            envelope = hydrate_call_result_envelope(state_dir, event.payload['envelope_ref'])
+            identity = envelope.get('identity') or {}
+            if (identity.get('attempt_id') != attempt or identity.get('operation_id') != operation.get('operation_id')
+                    or identity.get('workflow_run_id') != operation.get('workflow_run_id')):
+                continue
+            descriptor = envelope.get('control_result') or envelope.get('control_result_ref')
+            if descriptor != event.payload.get('control_result_ref'):
+                continue
+            control = hydrate_sidecar_ref(state_dir, descriptor).payload
+            if control.get('schema_version') != 'plan-synthesis-result.v1':
+                continue
+            findings = control.get('findings')
+            counts = Counter((row.get('status') if row.get('status') in {'confirmed', 'closed', 'withdrawn', 'unverified'}
+                              else 'unspecified') for row in findings if isinstance(row, dict)) if isinstance(findings, list) else None
+            matched.append((descriptor['sha256'], {'verdict': control.get('verdict'),
+                'finding_status_counts': dict(counts) if counts is not None else None,
+                'quality_attribution': 'reviewer_declared_not_independent_ground_truth'}))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    unique = dict(matched)
+    return next(iter(unique.values())) if len(unique) == 1 else None
 
 
 def compare_input_costs(before: dict, after: dict) -> dict:

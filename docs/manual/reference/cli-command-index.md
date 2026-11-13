@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **70** 个顶层命令 family、**318** 条可寻址命令路径。
+当前共 **70** 个顶层命令 family、**319** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -489,6 +489,7 @@ Review, approve, or reject a plan
 | `zf plan approve` | Approve a plan and unlock writer fanout |
 | `zf plan inspect-execution` | Inspect plan execution facts without approval or dispatch |
 | `zf plan inspect-inputs` | Inspect declared task input coverage without approving semantic completeness |
+| `zf plan prepare-scope-review` | Assemble scope evidence; does not approve or establish runtime eligibility |
 | `zf plan reject` | Reject a plan and request synthesis replan |
 | `zf plan review` | List plans awaiting review with digest and checklist |
 

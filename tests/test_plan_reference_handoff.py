@@ -28,7 +28,7 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name):
     body = {"schema_version": "fixture.v1", "content": "完整语义，保留失败不变项", "rows": [{"id": "S1"}]}
     source.write_text(json.dumps(body, ensure_ascii=False))
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
-    original = {f"{name}_ref": ref, "artifact_refs": [ref]}
+    original = {f"{name}_ref": ref, "artifact_refs": [ref], name: body}
     submitted = parse_semantic_result_bytes(json.dumps({
         **original, "summary": "完整引用交接", "result_semantics": "artifact_production",
     }).encode())
@@ -44,6 +44,7 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name):
     )
     shutil.rmtree(author)
     report = reports[0]["report"]
+    assert name not in report
     errors = []
     bodies = plan_port_bodies([report], trigger={}, state_dir=state, project_root=project, errors=errors)
     assert not errors
@@ -55,8 +56,20 @@ def test_complete_referenced_port_survives_author_cleanup(tmp_path, name):
     ports = materialize_explicit_plan_ports(state_dir=state, project_root=project, payload=report, flow_kind="prd")
     assert ports[name]["sha256"] == digest
     assert hydrate_sidecar_ref(state, ports[name]).payload == body
-    assert original == {f"{name}_ref": ref, "artifact_refs": [ref]}
+    assert original == {f"{name}_ref": ref, "artifact_refs": [ref], name: body}
     (state / ports[name]["ref"]).unlink()
     errors = []
     assert name not in plan_port_bodies([report], trigger={}, state_dir=state, project_root=project, errors=errors)
     assert any(error["code"] == "plan_port_unreadable" for error in errors)
+
+
+def test_compaction_keeps_conflicts_and_unavailable_references(tmp_path):
+    from zf.runtime.plan_report_compaction import compact_report
+    state = tmp_path / 'state'
+    state.mkdir()
+    path = state / 'inventory.json'
+    path.write_text('{"mandatory":false}')
+    report = {'source_inventory': {'mandatory': True}, 'source_inventory_ref': 'inventory.json'}
+    assert compact_report(report, state_dir=state, project_root=tmp_path) == report
+    path.unlink()
+    assert compact_report(report, state_dir=state, project_root=tmp_path) == report

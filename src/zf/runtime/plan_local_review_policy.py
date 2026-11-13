@@ -338,6 +338,19 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
             or not body.get("plan_synth_contract_digest")
             or body.get("reviewed_plan_candidate_digest") != body.get("plan_synth_contract_digest")):
         raise ValueError("baseline has no approved exact Critic result")
+    return reviewed_critic_manifest(state_dir, events, run, synth, expected_verdict="passed")
+
+
+def reviewed_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: str,
+                             synth: ZfEvent, *, expected_verdict: str) -> dict[str, Any]:
+    """Validate review facts; only the passed-package wrapper grants baseline use."""
+    if expected_verdict not in {"passed", "rejected"}:
+        raise ValueError("unsupported historical review verdict")
+    body = synth.payload
+    if (synth.type != "fanout.synth.completed" or body.get("workflow_run_id") != run
+            or body.get("status") != "completed" or not body.get("plan_synth_contract_digest")
+            or body.get("reviewed_plan_candidate_digest") != body.get("plan_synth_contract_digest")):
+        raise ValueError("historical review candidate differs")
     admission = [e for e in events if e.type == "workflow.call.result.admitted"
                  and e.actor == "zf-cli"
                  and (e.origin == "kernel" or (not e.origin
@@ -395,7 +408,7 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
         raise ValueError("baseline Critic envelope does not match admitted result")
     control = hydrate_sidecar_ref(state_dir, control_ref).payload
     if (control.get("schema_version") != "plan-synthesis-result.v1"
-            or control.get("execution_status") != "completed" or control.get("verdict") != "passed"
+            or control.get("execution_status") != "completed" or control.get("verdict") != expected_verdict
             or control.get("plan_synth_contract_digest") != body.get("plan_synth_contract_digest")
             or control.get("reviewed_plan_candidate_digest") != body.get("plan_synth_contract_digest")):
         raise ValueError("baseline Critic semantic result was not approved")

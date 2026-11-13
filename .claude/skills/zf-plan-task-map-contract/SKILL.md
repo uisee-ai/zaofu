@@ -256,6 +256,18 @@ verification ownership. `ports` is a nonempty list of objects with
 must be a complete `task-scoped-plan-input.v1` in both versions. Copy exact
 SHA-256 digests from pinned baseline descriptors and the final candidate files.
 
+Use `zf plan prepare-scope-review --baseline-bundle <old-map.json>
+--candidate-bundle <new-map.json> --claim <scope-claim.json>` to compute the
+certificate hashes from the exact final files. Each bundle maps logical port
+names (including `task_map`) to local JSON paths. The claim contains the current
+run, baseline Package digest, affected IDs, evidence refs and the two explicit
+semantic assertions above. Save its stdout as `scoped_plan_review.json` and bind
+it in `artifact_refs`. A successful preflight proves structural compatibility
+only: the dispatch still checks the admitted baseline, provider read evidence,
+authority and candidate identity. Missing proof keeps full review; inspect the
+actual `plan_review_optimization` mode/reason rather than claiming incremental
+review merely because the file exists.
+
 Keep the complete Task Map, requirement, original sources and fixed-schema
 matrices bound and available. Supply an explicit candidate descriptor with its
 ref and SHA-256 for every unchanged baseline port; the kernel-derived Task Map
