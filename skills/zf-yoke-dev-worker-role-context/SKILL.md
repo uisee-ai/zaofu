@@ -3,7 +3,7 @@ name: zf-yoke-dev-worker-role-context
 description: "Use for ZaoFu dev workers that need yoke-style isolated, evidence-first implementation discipline."
 stages: [impl, fix]
 tags: [yoke, role-context, implementation]
-dependencies: [tdd-evidence, incremental-delivery, debugging-triage, git-evidence, source-verification, zf-harness-done-contract, zf-find-simplifications]
+dependencies: [tdd-evidence, incremental-delivery, debugging-triage, git-evidence, source-verification, zf-harness-done-contract, zf-find-simplifications, zf-harness-evidence-collection]
 auto_inject: true
 load_on_demand: false
 ---
@@ -48,6 +48,7 @@ briefing，再按下表触发；同一会话中已完整读过且版本未变的
 | 出现非预期测试/构建失败，原因未明 | `debugging-triage` |
 | 依赖外部库/API、协议或版本事实 | `source-verification`；仓内行为以源码和测试为准 |
 | 第一次写 Git 引用或提交之前 | `git-evidence`；显式路径、保护并行改动等硬规则始终有效 |
+| 发布阶段工作记录 | `zf-harness-evidence-collection` 的 WRC 正文与附件方法；不增加写权限或完成要求 |
 | 准备最终 handoff | `zf-harness-done-contract` |
 
 返工先核对新身份、合同版本和全部失败项，完成当前 attempt 的必读工件后，

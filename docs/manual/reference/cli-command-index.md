@@ -43,7 +43,7 @@ Artifact manifest helpers
 | `zf artifact read` | Read one attempt input and append read evidence |
 | `zf artifact recover` | Reconstruct authorized current inputs without granting execution authority |
 | `zf artifact work-record` | Publish or read current worker progress without completing a task |
-| `zf artifact work-record publish` | No parser summary. |
+| `zf artifact work-record publish` | 发布可选的非终态工作记录，不完成 Task 或替代正式验收。 |
 | `zf artifact work-record show` | No parser summary. |
 
 ## `zf attach`

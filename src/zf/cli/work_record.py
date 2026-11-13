@@ -1,4 +1,5 @@
 """Authenticated nonterminal work record publish/read using submit credentials."""
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -16,7 +17,29 @@ def register(sub):
     parser = sub.add_parser('work-record', help='Publish or read current worker progress without completing a task')
     modes = parser.add_subparsers(dest='work_record_command', required=True)
     for mode in ('publish','show'):
-        child = modes.add_parser(mode)
+        child = modes.add_parser(
+            mode,
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description=(
+                "发布可选的非终态工作记录，不完成 Task 或替代正式验收。"
+                if mode == 'publish' else None
+            ),
+            epilog=(
+                '正文和附件须为 pinned workdir 内已有授权的普通文件；不增加写权限。\n'
+                '--file 指下面的四字段正文，不能直接传原生 CommandExecution 或日志。\n'
+                'evidence_files 必须相对工作区（不是正文目录），禁止绝对路径及 ..。\n'
+                '正文示例（tests.log 须为已存在、获准保存的附件）：\n'
+                '{\n'
+                '  "completed_actions": ["已运行并记录本轮检查，逐项验收尚未完成"],\n'
+                '  "pending": ["核对剩余验收项"],\n'
+                '  "next_step": "将核验后的证据引用填入当前授权结果",\n'
+                '  "evidence_files": ["tests.log"]\n'
+                '}\n'
+                '方法：zf-harness-evidence-collection/references/work-record.md。\n'
+                '已有合格证据 refs 可按原结果合同引用，不必额外发布 WRC。'
+                if mode == 'publish' else None
+            ),
+        )
         child.add_argument('--operation', required=True)
         child.add_argument('--state-dir', default=None)
         if mode == 'publish':

@@ -3,7 +3,7 @@ name: zf-yoke-test-evaluator-role-context
 description: "Use for ZaoFu Verify, test, discovery, and scan-verification roles that need independent evidence-first evaluation."
 stages: [verify, test, discovery, scan]
 tags: [yoke, role-context, verification]
-dependencies: [verify-review, zf-harness-verification-checklist, zf-mechanical-claim-verifier, tdd-evidence]
+dependencies: [verify-review, zf-harness-verification-checklist, zf-mechanical-claim-verifier, tdd-evidence, zf-harness-evidence-collection]
 auto_inject: true
 load_on_demand: false
 ---
@@ -45,6 +45,8 @@ amendment are separate role capabilities supplied by the workflow profile.
   不替代当前必读正文、独立检查或正式准入；无新进展不重复抄录。
 
 ## Dependency Triggers
+
+- 需要发布阶段工作记录时，按需读取 `zf-harness-evidence-collection` 的 WRC 正文与附件方法；不新增结果字段、写权限或完成要求。
 
 - Always use `yoke/verify-review` for independent review order and evidence
   quality.

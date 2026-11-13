@@ -36,6 +36,13 @@ Collect:
   `feature_list.json`, or `role_sessions.yaml` by hand.
 - If evidence is missing, report the missing field instead of approving.
 
+## 非终态工作记录（WRC）
+
+需要将已有授权记录中的阶段进展发布为 WRC 时，先读
+[工作记录正文与附件](references/work-record.md)。Impl 与 Verify 复用此方法；
+它不增加写权限、结果字段或完成门禁。当前 briefing/result profile 的格式优先，
+已有可核验的 event/ref 可以直接用于原结果合同，不要求再包装成 WRC。
+
 ## Output Shape
 
 Use:

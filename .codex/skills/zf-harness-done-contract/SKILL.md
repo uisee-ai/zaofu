@@ -3,6 +3,7 @@ name: zf-harness-done-contract
 description: "Use when an Impl/Fix worker is ready to hand off work; requires reproducible evidence while leaving identity, result admission, and terminal state to the deterministic runtime."
 stages: [impl, fix]
 tags: [contract, evidence, completion]
+dependencies: [zf-harness-evidence-collection]
 auto_inject: false
 load_on_demand: true
 ---
@@ -156,14 +157,8 @@ Workers do not mark tasks, candidates, or goals done themselves.
 
 ## 阶段工作记录与恢复
 
-长任务在完成一组证据、出现未决事项或准备换会话时，可用当前 operation 的
-`zf artifact work-record publish --operation <id> --file <workdir 内 JSON> --request-id <唯一 ID>`
-发布非终态记录。JSON 严格包含 completed_actions、pending、next_step、evidence_files；
-前三者为动作列表、未决列表、下一步字符串，证据为工作区内相对路径列表。
-不写凭据；测试日志不能包装成独立 Verify 结论。
-
-命令使用现有 result-submit 凭据，核验 current Task/attempt/lease/workdir/input 版本；
-完整 sidecar 先写入，再发布事件。同一 request-id 必须保持记录和证据内容不变。
-新会话先用 briefing 的 recover 入口，再用 `artifact work-record show --operation <id>`
-按 digest/next_page_start 回读当前记录。历史陈述不证明当前理解，不豁免 required reads。
-记录不消费正式 result submit、不完成 Task，也不授予执行权限；仍按原交付合同提交结果。
+需要发布非终态进展时，按需读取共享 `zf-harness-evidence-collection` 技能的
+[WRC 正文与附件方法](../zf-harness-evidence-collection/references/work-record.md)。
+Impl 与 Verify 使用同一四字段正文和相对附件路径约定，不直接 publish 原生日志。
+现有 result scratch/证据 refs 继续按原合同交付；WRC 不新增写权限、必交产物或
+完成门禁，也不代替当前必读、独立验收和正式结果准入。

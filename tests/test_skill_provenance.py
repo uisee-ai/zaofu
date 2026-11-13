@@ -262,6 +262,7 @@ def test_prod_verify_and_judge_skill_activation_boundaries():
         "zf-harness-verification-checklist",
         "zf-mechanical-claim-verifier",
         "tdd-evidence",
+        "zf-harness-evidence-collection",
     )
     assert replan.dependencies == ("zf-verify-gap-producer-contract",)
     assert matrix.auto_inject is True

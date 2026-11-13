@@ -14,6 +14,8 @@ from zf.core.skills import materialize_role_skills, read_skill_metadata
     ("zf-yoke-critic-role-context", "zf-plan-execution-readiness", "skills"),
     ("zf-yoke-dev-worker-role-context", "tdd-evidence", "yoke"),
     ("zf-yoke-dev-worker-role-context", "zf-harness-done-contract", "skills"),
+    ("zf-yoke-dev-worker-role-context", "zf-harness-evidence-collection", "skills"),
+    ("zf-yoke-test-evaluator-role-context", "zf-harness-evidence-collection", "skills"),
     ("zf-yoke-test-evaluator-role-context", "tdd-evidence", "yoke"),
     ("zf-yoke-test-evaluator-role-context", "verify-review", "yoke"),
     ("zf-channel-discussion-synthesizer", "zf-requirement-reconciliation", "skills"),
@@ -38,6 +40,7 @@ def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role
     metadata = read_skill_metadata(actual, expected_name=method)
     assert metadata.name == method
     references = {
+        "zf-harness-evidence-collection": ("work-record.md",),
         "zf-plan-task-map-contract": ("review-ports.md",),
         "zf-plan-execution-readiness": ("execution-consistency.md", "human-review.md", "epic-refinement.md",
                                         "bounded-spike.md", "cross-domain-obligations.md", "early-feedback.md",

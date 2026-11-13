@@ -17,3 +17,12 @@ Task Pipeline简报和Impl/Verify角色方法改为按完成的检查组、阶�
 的已有对应字段及证据引用，不新增产品文件、scratch字段、状态表或准入门。
 该方法不证明当前记忆、不替代required reads，也不自动发布work record或暂停任务；
 减轻反复回查的实际效果仍须由真实worker后续记录与恢复行为核验。
+
+## 正文、附件与角色方法
+
+`zf artifact work-record publish --help` 展示四字段正文示例；原生 CommandExecution
+或日志应作为 `evidence_files` 附件，路径相对 pinned workdir。正文及附件都须在
+原角色已有写权限内，不能把外部 scratch/项目根 OUT 当作路径例外。共享方法见
+[工作记录正文与附件](../../skills/zf-harness-evidence-collection/references/work-record.md)，
+通过 Impl/Verify 角色技能依赖物化，按需读取；不是新的 WRC 必交要求。已有合格
+event/ref 仍按原 result 合同引用，不需要绕经 WRC。CLI 运行校验和状态行为未改变。
