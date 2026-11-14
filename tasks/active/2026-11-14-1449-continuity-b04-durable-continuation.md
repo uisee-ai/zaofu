@@ -18,8 +18,14 @@
 
 验证：runtime-final.log、acceptance-foundations.log、dispatch-callers.log；暂停/工具/审批/求助/旧身份/重启反例。
 
-未关闭：仍需其他 Provider、宿主监督独立故障域、未知外部效果自动核查及全局历史/子调用消费旅程。
+未关闭：仍需未接入 Provider、宿主监督独立故障域、未知外部效果自动核查及全局历史/子调用消费旅程。
 
 对账报告：[207–209 / Spec 覆盖](../../reports/continuity-handoff-20261114-review.md)。
 实现入口：[实现记录](../../docs/impl/continuity-handoff-spec-001.md)。
 首批实现 commit：`2313bf61 feat: harden task continuity and preserve handoff evidence`；未 merge / push / 部署。
+
+## 后续增量：接续与资源占用
+
+Claude stream-json 现在直接落盘回合打开/关闭事实；丢失内存通知后由 idle replay 核对当前身份并保持同一 attempt 接续。长回合、工具未决、暂停、旧身份和错误最终结果阻止接续。仍缺全 Provider 与宿主独立故障域、未知效果自动核对的整体验收。
+
+验证与限制：[本增量报告](../../reports/continuity-runtime-20261115-review.md)。状态保持 active，不将子能力通过视为整项完成。

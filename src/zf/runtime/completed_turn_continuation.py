@@ -26,6 +26,8 @@ def reconcile_completed_turns(runtime: Any) -> int:
         bound = bind_completed_task_pipeline_turn(runtime, event)
         if bound is None:
             continue
+        if bound.payload.get("pending_tool_ids") or bound.payload.get("tool_identity_unknown"):
+            continue
         task = runtime.task_store.get(str(bound.task_id or ""))
         if (task is None or task.status != "in_progress" or task.assigned_to != actor
                 or task.active_dispatch_id != bound.payload["dispatch_id"]):
@@ -50,7 +52,8 @@ def reconcile_completed_turns(runtime: Any) -> int:
 
 def _waiting(events: list, actor: str, attempt_id: str, *, task_id: str, created_at: str) -> bool:
     prompts = [i for i, e in enumerate(events)
-               if e.actor == actor and e.type == "codex.hook.user_prompt_submit"]
+               if e.actor == actor and (e.type == "codex.hook.user_prompt_submit"
+                   or (e.type == "provider.turn.opened" and e.origin == "kernel"))]
     if not prompts:
         return True
     created = _parse_event_ts(created_at)

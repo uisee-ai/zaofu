@@ -839,6 +839,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     # Codex hook events reserved for LH-3.5 (config + adapter arrive there).
     "codex.hook.session_start", "codex.hook.user_prompt_submit",
     "codex.hook.pre_tool_use", "codex.hook.post_tool_use", "codex.hook.stop",
+    "provider.turn.opened",
     "provider.turn.closed",
     # Provider-native telemetry is a diagnostic projection only. These events
     # never wake a workflow or participate in Gate/task transitions.

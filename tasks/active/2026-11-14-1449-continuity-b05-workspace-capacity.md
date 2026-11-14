@@ -23,8 +23,14 @@
 818 passed（7 项既有别名 allowlist skipped），281 项调用方回归，sentinel 53、flow smoke 10。
 配置与限制见 [环境准备实现](../../docs/impl/continuity-environment-preparation.md)。
 
-未关闭：未声明工具/数据变化的资格，实际执行者持有环境锁与共享依赖目标使用者；真实 DAG/Provider 并发资格。
+未关闭：未声明工具/数据变化的资格，未接线实际执行者与共享依赖目标使用者；真实 DAG/Provider 并发资格。
 
 对账报告：[207–209 / Spec 覆盖](../../reports/continuity-handoff-20261114-review.md)。
 实现入口：[实现记录](../../docs/impl/continuity-handoff-spec-001.md)。
 首批实现 commit：`2313bf61 feat: harden task continuity and preserve handoff evidence`；未 merge / push / 部署。
+
+## 后续增量：接续与资源占用
+
+新增实际 tmux 原生 Provider 与 stream-json drain 的环境共享锁；安装独占，兼容 setup 只读复用，多 worker 不互斥，不同 worktree 独立。共享依赖目标、主动关闭描述符或脱离 Provider 的工具、SDK 控制器强杀后的孤儿进程仍未完整覆盖。
+
+验证与限制：[本增量报告](../../reports/continuity-runtime-20261115-review.md)。状态保持 active，不将子能力通过视为整项完成。

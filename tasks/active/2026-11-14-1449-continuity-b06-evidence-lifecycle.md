@@ -23,3 +23,9 @@
 对账报告：[207–209 / Spec 覆盖](../../reports/continuity-handoff-20261114-review.md)。
 实现入口：[实现记录](../../docs/impl/continuity-handoff-spec-001.md)。
 首批实现 commit：`2313bf61 feat: harden task continuity and preserve handoff evidence`；未 merge / push / 部署。
+
+## 后续增量：接续与资源占用
+
+Role/Task cleanup 与 zf stop 删除工作区期间持独占锁；即使 session 计数为零，有实际持有者仍拒绝删除。未实现 durable cleanup 全阶段事务，未把库级 Task cleanup 测试冒充完整生产收尾旅程。
+
+验证与限制：[本增量报告](../../reports/continuity-runtime-20261115-review.md)。状态保持 active，不将子能力通过视为整项完成。

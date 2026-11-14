@@ -73,8 +73,9 @@ def progress_nudge_state(
             and event.payload.get("recovery_action") == "completion_nudge_requested"
         ]
         from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
+        from zf.runtime.stream_turn_lifecycle import open_stream_turn
 
-        if active_codex_turn_from_events(events, role_instance) is not None:
+        if active_codex_turn_from_events(events, role_instance) is not None or open_stream_turn(events, role_instance) is not None:
             return attempt_id, progress, False
         if not nudges:
             return attempt_id, progress, True
@@ -90,6 +91,7 @@ def progress_nudge_state(
                     if event.actor == role_instance and event.type in {
                         "provider.turn.closed", "codex.hook.pre_tool_use", "agent.text",
                         "codex.hook.user_prompt_submit",
+                        "provider.turn.opened",
                     }]
         return attempt_id, progress, bool(
             advanced and activity and activity[-1] == "provider.turn.closed"

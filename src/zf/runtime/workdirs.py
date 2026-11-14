@@ -1159,6 +1159,20 @@ class WorkdirManager:
         return actions
 
     def remove(self, role: RoleConfig) -> "WorkdirRemovalResult":
+        """Remove a retired workspace, or return blocked while it is in use."""
+        from zf.runtime.environment_usage import environment_mutation
+
+        plan = self.plan(role)
+        if not plan.enabled or plan.mode != "worktree" or not Path(plan.project_path).exists():
+            return self._remove_unoccupied(role)
+        try:
+            with environment_mutation(Path(plan.project_path)):
+                return self._remove_unoccupied(role)
+        except (TimeoutError, OSError) as exc:
+            return WorkdirRemovalResult(status="blocked", workdir=plan.workdir,
+                project_path=plan.project_path, reason=f"environment in use or lock unavailable: {exc}")
+
+    def _remove_unoccupied(self, role: RoleConfig) -> "WorkdirRemovalResult":
         """Tear down a previously prepared worktree for a retired worker.
 
         Returns a structured result describing what happened so callers can

@@ -416,15 +416,19 @@ class StreamJsonTransport(TransportAdapter):
             self._record_telemetry_launch(context, launch)
         started_at = time.monotonic()
         def _drain_once(sid: str, resume: bool):
-            with SessionLock(self.lock_dir, sid):
-                return asyncio.run(
+            from zf.runtime.environment_usage import environment_in_use
+
+            with SessionLock(self.lock_dir, sid), environment_in_use(role_cwd):
+                from zf.runtime.stream_turn_lifecycle import run_stream_turn
+
+                return run_stream_turn(self.state_dir, context, sid, lambda: asyncio.run(
                     self._turn_cancellation.drain(role_name, lambda: self._drain(
                         prompt=prompt, session_id=sid,
                         role=role, is_resume=resume,
                         cwd=role_cwd,
                         env=role_env,
                     ))
-                )
+                ))
 
         try:
             messages, status = _drain_once(session_id, is_resume)

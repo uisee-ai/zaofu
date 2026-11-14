@@ -212,6 +212,23 @@ class TaskWorkspaceManager:
         return plan
 
     def cleanup(
+        self, plan: TaskWorkspacePlan, *, task_terminal: bool, integrated_or_archived: bool,
+        active_attempts: int, active_sessions: int,
+    ) -> TaskWorkspaceRemovalResult:
+        from zf.runtime.environment_usage import environment_mutation
+
+        args = dict(task_terminal=task_terminal, integrated_or_archived=integrated_or_archived,
+                    active_attempts=active_attempts, active_sessions=active_sessions)
+        if not Path(plan.project_path).exists():
+            return self._cleanup_unoccupied(plan, **args)
+        try:
+            with environment_mutation(Path(plan.project_path)):
+                return self._cleanup_unoccupied(plan, **args)
+        except (TimeoutError, OSError) as exc:
+            return TaskWorkspaceRemovalResult(status="blocked", project_path=plan.project_path,
+                reason=f"environment in use or lock unavailable: {exc}")
+
+    def _cleanup_unoccupied(
         self,
         plan: TaskWorkspacePlan,
         *,

@@ -21,10 +21,10 @@ SHA256 `f5a033210875e90fe059236974ca0c4ff2737b7b7fbbf6b7c62f6238bce8c52a`。
 | 当前执行的进展 | `task_evidence_signals` → Run Manager context；`CallResultAdmissionService` 补齐 kernel origin、attempt/dispatch | activity、input observation、work record、verification、admitted result 分开；准入不等于业务通过 |
 | 有限输入恢复 | `build_input_recovery` → CLI required-read 分页及 next_action | 历史交付不证明本轮记忆；恢复文本不授予新权限，也不撤销有效原权限 |
 | 输入与任务切分方法 | `zf-plan-execution-readiness` → 新增参考方法，三个 skill 副本同步 | 不用字符门槛裁决任务语义，不擅自把 required 改 optional |
-| Setup 准备 | `TaskWorkspaceManager.prepare` / `WorkdirManager` → `run_project_setup` | 同一 readiness marker 的 installer 互斥不等于全部执行者/共享环境互斥 |
+| Setup 准备 | `TaskWorkspaceManager.prepare` / `WorkdirManager` → `run_project_setup` | 物理工作区 installer 与已接线 Provider 使用者互斥；不等于全部外部工具/共享依赖目标已隔离 |
 | 正确工作区检查点 | maintenance controlled action / checkpoint → `checkpoint_root` → 当前 operation immutable request + kernel placement | snapshot 不证明源进程停止；身份损坏时不回落到旧 role checkout |
 | 保守清理 | task cleanup、role retire、`zf stop` → `workspace_retention_reason` | 未知 ignored 文件、外层成果、stop 时未合入的提交保留；不据此宣称全资源图已实现 |
-| 回合结束接续 | `Orchestrator.run_once` → `run_replay_sweep`，先回放结果，再 `reconcile_completed_turns` | 当前只自动处理有确切 turn identity 的 Codex operation-v2 sent attempt |
+| 回合结束接续 | `Orchestrator.run_once` → `run_replay_sweep`，先回放结果，再 `reconcile_completed_turns` | 支持有确切 turn identity 的 Codex 和已落盘 Claude stream-json operation-v2 sent attempt |
 | 同 attempt 发送 | lifecycle nudge → `DispatchContext.continuation` → authority bridge → 原 transport | 不创建新 attempt、不接管 lease、不重启缺失 worker，不绕开预算/暂停/owner/operation |
 | 接续的发送边界 | `claim_completion_nudge` 在发送前持久 claim；进展投影交给 Run Manager | unknown 不是失败，也不是未发送；不盲重发；已送达不是成果已验收 |
 | 工作记录推进 | `progress_nudge_state` → 校验当前 work record 的身份、正文 digest、证据 refs | 同一记录换发布事件不算新进展；记录只允许提醒，不允许结算 |
@@ -54,6 +54,17 @@ metric facts 缓存版本升级以保留启动回执引用，旧缓存可重建�
 失去回合通知、控制器重建、发送中断、暂停/审批/求助/长工具、旧身份、重复工作记录、
 setup 并发/输入改变/失败失效、错误 checkpoint 路径、ignored 成果及旧 writer 拒绝退出。
 
-完整命令、结果及 207–209 / F01–F18 矩阵保存在验收报告。尚需完成便携交接接收协议、
-受控输入修订全过程、跨 Provider 真实接力、在用环境/资源持有者闭环、宿主级无人监工故障、
+完整命令、结果及 207–209 / F01–F18 矩阵保存在验收报告。便携交接接收协议已在后续增量接入 Task Pipeline；尚需完成
+受控输入修订全过程、跨 Provider 真实接力、在用环境/资源持有者全集闭环、宿主级无人监工故障、
 全量人类材料目录/后端按需读取以及 Datal 原始要求的产品资格。原 Datal 暂停保持。
+
+## 2026-11-15：Claude 回合落盘与环境使用者
+
+后续交付见 [持续接续与资源占用报告](../../reports/continuity-runtime-20261115-review.md)。
+`StreamJsonTransport` 对身份完整的 Task Pipeline 调用，通过 EventWriter 在 SDK 执行前后
+直接追加 `provider.turn.opened/closed`。通知队列丢失后，idle replay 能核对当前
+operation/attempt/dispatch/lease/instance/session/turn，沿用原 attempt 进行有界接续。
+打开事件是观察事实，closed 沿用既有唤醒路径；两者都不代表业务完成。
+无最终结果、错误/异会话结果、未决工具、未闭合回合以及暂停/旧身份不得触发接续。
+异常只记录结构化原因与核查责任，不复制异常正文、prompt 或凭据。
+未知外部效果仍先核对，不能通过重发猜测成功；真实跨 Provider 接管资格未在本轮授予。

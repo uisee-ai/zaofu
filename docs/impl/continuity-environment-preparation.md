@@ -1,6 +1,6 @@
 # 连续执行：环境准备身份与安装互斥
 
-对应 ZF-SPEC-001 F11，[总实现记录](continuity-handoff-spec-001.md)。本增量不宣称环境实际使用者的生命周期锁已完成。
+对应 ZF-SPEC-001 F11，[总实现记录](continuity-handoff-spec-001.md)。安装资格与执行持有者分别验收；当前已接入本机 tmux 原生 Provider 和 stream-json 回合，完整资源图仍未完成。
 
 ## 配置与行为
 
@@ -49,3 +49,24 @@ bootstrap 仍是 best-effort；强制环境资格应使用项目声明的 setup 
 - 未执行真实 Provider、生产环境重建或 Datal 恢复。没有把 F11/B05 标为完成。
 
 原始日志与检查清单保存在本地 `reports/continuity-environment-20261115/`。
+
+## 2026-11-15：执行持有者与清理互斥
+
+`TmuxTransport.spawn` 对 Codex/Claude Code 的实际启动命令加入 stdlib exec 包装器；
+包装器取得物理工作区共享锁，以可继承文件描述符执行 Provider。多个 worker 可同时持锁。
+`StreamJsonTransport` 在 SDK drain 期间持有同一共享锁；退出上下文后释放。
+安装、bootstrap、Role/Task cleanup 和 `zf stop` 的工作区删除路径取得独占锁。
+锁冲突时拒绝启动、安装或删除，不把 canonical session 计数为零当成资源无人使用的证明。
+
+兼容 setup 可在共享锁内只读验证 marker 与输入摘要后直接复用；强制重装或身份变化必须
+取得独占锁。provision 遇到使用者占锁时，只允许复用现成目标；Python bootstrap 还须验证 ready 回执、输入摘要及本地环境 inode。缺链接或资格变化返回等待，不执行安装。不同物理 worktree 相互独立。锁不可用时失败上浮，不跳过保护。
+
+资格限制：这是一台宿主上的 advisory lock，不是分布式资源租约或完整写入隔离。
+原生进程必须保留继承描述符；主动关闭描述符、未经过该启动入口的进程、脱离 Provider 的
+后台工具和指向其他工作区的共享依赖目标不在完整保护范围内。SDK 锁由控制器持有，
+控制器被强杀后孤儿子进程的回收仍需独立故障域验收。准备中资源保留、正常持有者退出
+后的重试已测，不宣称上述未知情形已安全隔离。
+
+定向用例含真实 mock Provider 子进程、长 stream query、多个共享持有者、安装优先占锁、
+兼容复用、身份变化、独立 worktree 和清理拒绝。详见
+[本增量报告](../../reports/continuity-runtime-20261115-review.md)。

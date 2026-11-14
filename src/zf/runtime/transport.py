@@ -249,6 +249,10 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             # tokens like `Bash(zf kanban *)` break the shell command
             # line with "syntax error near unexpected token '('".
             command = shlex.join(argv)
+            if cwd is not None and role.backend in {"codex", "claude-code"}:
+                from zf.runtime.environment_usage import guarded_provider_argv
+
+                command = shlex.join(guarded_provider_argv(cwd, argv))
             env_prefix = self._agent_env_prefix(cwd)
             if env_prefix:
                 command = f"{env_prefix} {command}"

@@ -28,6 +28,7 @@ from typing import Callable
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
 from zf.runtime.environment_preparation import declared_setup_identity, environment_preparation_dir
+from zf.runtime.environment_usage import EnvironmentInUse, environment_in_use
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -136,11 +137,20 @@ def run_project_setup(
         return ProjectSetupResult(ran=False, ok=True, detail="no setup declared")
     marker = (marker_dir or worktree) / SETUP_MARKER
     try:
+        if not force:
+            # Read-only reuse may coexist with workers; mutation still needs
+            # the exclusive lock and rechecks inputs after acquiring it.
+            with environment_in_use(worktree):
+                try:
+                    if marker.read_text(encoding="utf-8").strip() == _setup_digest(worktree, script, setup_inputs):
+                        return ProjectSetupResult(ran=False, ok=True, detail="setup marker matches")
+                except (OSError, ValueError):
+                    pass
         with locked_path(environment_preparation_dir(worktree) / "prepare", timeout_seconds=0):
             with locked_path(marker, timeout_seconds=0):
                 return _run_locked_setup(worktree, script, marker, timeout_s, runner, force, setup_inputs)
-    except TimeoutError:
-        return ProjectSetupResult(ran=False, ok=False, detail="setup already in progress; retry after preparation completes")
+    except (TimeoutError, EnvironmentInUse):
+        return ProjectSetupResult(ran=False, ok=False, detail="environment in use or setup already in progress; retry after holders exit")
     except OSError as exc:
         return ProjectSetupResult(ran=False, ok=False, detail=f"setup lock unavailable: {exc}")
 
@@ -215,8 +225,46 @@ def provision_worktree_env(
     """
     if not paths:
         return []
-    with locked_path(environment_preparation_dir(worktree) / "prepare", timeout_seconds=0):
-        return _provision_locked(worktree, source_root, paths, bootstrap_uv_dev=bootstrap_uv_dev, runner=runner)
+    try:
+        with locked_path(environment_preparation_dir(worktree) / "prepare", timeout_seconds=0):
+            return _provision_locked(worktree, source_root, paths, bootstrap_uv_dev=bootstrap_uv_dev, runner=runner)
+    except TimeoutError as busy:
+        # A worker may hold the environment while another role reuses it.
+        # Prove that no mutation is needed; unknown readiness still waits.
+        try:
+            with environment_in_use(worktree):
+                reused = _reuse_provisioned_env(worktree, source_root, paths, bootstrap_uv_dev)
+        except EnvironmentInUse:
+            raise busy
+        if reused is not None:
+            return reused
+        raise
+
+
+def _reuse_provisioned_env(
+    worktree: Path, source_root: Path, paths: list[str], bootstrap_uv_dev: bool,
+) -> list[str] | None:
+    reused: list[str] = []
+    for raw in paths:
+        relative = str(raw).strip().strip("/")
+        if not relative:
+            continue
+        if relative == ".venv" and bootstrap_uv_dev and (worktree / "pyproject.toml").exists():
+            try:
+                receipt = json.loads((environment_preparation_dir(worktree) / "uv-bootstrap.json").read_text())
+                identity = _local_venv_identity(worktree)
+                if (not isinstance(receipt, dict) or receipt.get("status") != "ready" or not identity
+                        or receipt.get("environment") != identity
+                        or receipt.get("digest") != _setup_digest(worktree, "uv sync --extra dev; fallback uv sync")):
+                    return None
+            except (OSError, ValueError):
+                return None
+            reused.append(relative)
+        elif (source_root / relative).exists():
+            target = worktree / relative
+            if not target.exists() and not target.is_symlink():
+                return None
+    return reused
 
 
 def _provision_locked(worktree: Path, source_root: Path, paths: list[str], *,
