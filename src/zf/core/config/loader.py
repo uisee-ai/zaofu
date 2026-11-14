@@ -422,6 +422,13 @@ def _parse_project_setup_script(project_data: dict) -> str:
     return str(setup or "").strip()
 
 
+def _parse_project_setup_inputs(value: object) -> list[str]:
+    if (not isinstance(value, list) or any(not isinstance(item, str) or not item.strip()
+            or Path(item).is_absolute() or ".." in Path(item).parts for item in value)):
+        raise ConfigError("project.setup_inputs must list nonempty workspace-relative file paths")
+    return list(dict.fromkeys(value))
+
+
 def _parse_project_description(project_data: dict) -> str:
     description = project_data.get("description", "")
     if description and not isinstance(description, str):
@@ -2937,6 +2944,7 @@ def load_config(path: Path) -> ZfConfig:
             workspace=project_data.get("workspace", "."),
             state_dir=project_data.get("state_dir", ".zf"),
             setup_script=_parse_project_setup_script(project_data),
+            setup_inputs=_parse_project_setup_inputs(project_data.get("setup_inputs", [])),
         ),
         session=_build_session(session_data),
         orchestrator=OrchestratorConfig(

@@ -201,7 +201,8 @@ class TaskWorkspaceManager:
         )
         setup = self.config.project.setup_script
         if setup:
-            result = run_project_setup(project_path, setup, marker_dir=workdir)
+            result = run_project_setup(project_path, setup, marker_dir=workdir,
+                setup_inputs=getattr(self.config.project, "setup_inputs", []))
             if not result.ok:
                 raise TaskWorkspaceError(
                     f"task workspace setup failed for {plan.task_id} "

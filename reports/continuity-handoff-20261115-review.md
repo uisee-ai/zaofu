@@ -6,6 +6,10 @@
 `wip/codex-20261114-continuity-handoff`，增量起点 `b4ba134d`。
 对应 F04，以及 F03/F05/F16 的交接读取边界；没有启动已暂停的 Datal。
 
+交接实现 commit：`88a7563d feat: persist task handoffs and require authenticated receipt`。
+随后完成的环境增量见 [准备身份与安装互斥](../docs/impl/continuity-environment-preparation.md)，
+含新增配置、bootstrap 回执、818 项定向回归与 281 项调用方回归；两组用例有重叠，不相加为独立测试总数。
+
 ## 本次交付
 
 - Task Pipeline 派发后继阶段前，保存不可变 `task-handoff.v1`：目标、合同版本、前序结果引用、工作记录、候选工作区 HEAD/dirty、环境资格、剩余验收与未知交付效果。重放复用原正文，不因工作区后续变化重写。

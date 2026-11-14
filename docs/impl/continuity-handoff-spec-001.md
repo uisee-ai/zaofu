@@ -7,6 +7,7 @@ SHA256 `f5a033210875e90fe059236974ca0c4ff2737b7b7fbbf6b7c62f6238bce8c52a`。
 本批是增量修复，**不表示 18 项规格或 Datal 产品验收全部完成**。
 
 后续实现：[不可变交接与目标回执](../../reports/continuity-handoff-20261115-review.md)。
+环境增量：[准备身份与安装互斥](continuity-environment-preparation.md)。
 `task_pipeline_dispatch` 在冻结请求前写入 `task-handoff.v1` 并注册必读来源；
 `artifact handoff-accept` 复用 operation 凭据与读取账本，事件保存接收事实；
 `call_result_admission` 对新交接要求当前回执，Task Detail 展示独立接收状态。

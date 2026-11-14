@@ -78,6 +78,7 @@ class WorkdirManager:
             project_path,
             setup,
             marker_dir=self.root / role.instance_id,
+            setup_inputs=getattr(self.config.project, "setup_inputs", []),
         )
         if not result.ok:
             raise RuntimeError(

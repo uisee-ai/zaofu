@@ -18,7 +18,12 @@
 
 验证：contracts-final.log、eight-lane.log 与 eight-lane.xml。
 
-未关闭：仍需工具/数据身份、执行者持有环境锁、bootstrap/shared env 互斥；真实 DAG/Provider 并发资格。
+2026-11-15 增量：物理工作区安装 mutex、setup/bootstrap 互斥、bootstrap 成功回执、
+失败残留拒绝伪就绪、禁止失败后借用其他 checkout venv；`project.setup_inputs` 绑定显式工具/数据身份文件。
+818 passed（7 项既有别名 allowlist skipped），281 项调用方回归，sentinel 53、flow smoke 10。
+配置与限制见 [环境准备实现](../../docs/impl/continuity-environment-preparation.md)。
+
+未关闭：未声明工具/数据变化的资格，实际执行者持有环境锁与共享依赖目标使用者；真实 DAG/Provider 并发资格。
 
 对账报告：[207–209 / Spec 覆盖](../../reports/continuity-handoff-20261114-review.md)。
 实现入口：[实现记录](../../docs/impl/continuity-handoff-spec-001.md)。

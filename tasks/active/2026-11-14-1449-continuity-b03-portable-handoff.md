@@ -21,6 +21,7 @@
 2026-11-15 增量：Task Pipeline 不可变交接正文、必读投递、认证接收回执、重启重放、
 结果准入补证、恢复命令与 Dashboard 状态已接通。601 项影响闭包、53 sentinel、10 flow smoke、
 3 项 Docker 浏览器验证通过。详见 [第二批对账](../../reports/continuity-handoff-20261115-review.md)。
+交接实现 commit：`88a7563d feat: persist task handoffs and require authenticated receipt`。
 
 未关闭：任意会话失效的便携交接、Codex/Claude Code 真实接力与物理 writer 隔离；不因新增回执标整项 done。
 

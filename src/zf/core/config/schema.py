@@ -15,6 +15,7 @@ class ProjectConfig:
     # provision 后在 worktree 内执行。内容属项目语义(pnpm install /
     # uv sync ...),kernel 只负责执行、超时、幂等与失败上浮。
     setup_script: str = ""
+    setup_inputs: list[str] = field(default_factory=list)
 
 
 @dataclass

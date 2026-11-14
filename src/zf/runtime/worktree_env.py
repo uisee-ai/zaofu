@@ -18,6 +18,7 @@ later as a normal gate failure, not a crash here.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from typing import Callable
 
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
+from zf.runtime.environment_preparation import declared_setup_identity, environment_preparation_dir
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -35,6 +37,9 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 SETUP_MARKER = ".zf-setup.done"
 
 _SETUP_INPUT_NAMES = {
+    ".node-version",
+    ".python-version",
+    ".tool-versions",
     "Cargo.lock",
     "Cargo.toml",
     "Gemfile",
@@ -78,7 +83,7 @@ class ProjectSetupResult:
     detail: str = ""
 
 
-def _setup_digest(worktree: Path, script: str) -> str:
+def _setup_digest(worktree: Path, script: str, setup_inputs: list[str] | None = None) -> str:
     """Bind setup readiness to the script and tracked dependency surfaces.
 
     A newly scaffolded project can add its package manifests after role
@@ -87,6 +92,8 @@ def _setup_digest(worktree: Path, script: str) -> str:
     """
     digest = hashlib.sha256()
     digest.update(script.encode("utf-8"))
+    if setup_inputs:
+        digest.update(declared_setup_identity(worktree, setup_inputs).encode())
     inputs: list[Path] = []
     try:
         for root, dirs, files in os.walk(worktree):
@@ -115,6 +122,7 @@ def run_project_setup(
     timeout_s: int = 600,
     runner: Runner | None = None,
     force: bool = False,
+    setup_inputs: list[str] | None = None,
 ) -> ProjectSetupResult:
     """Execute the project-declared setup script inside a fresh worktree.
 
@@ -128,8 +136,9 @@ def run_project_setup(
         return ProjectSetupResult(ran=False, ok=True, detail="no setup declared")
     marker = (marker_dir or worktree) / SETUP_MARKER
     try:
-        with locked_path(marker, timeout_seconds=0):
-            return _run_locked_setup(worktree, script, marker, timeout_s, runner, force)
+        with locked_path(environment_preparation_dir(worktree) / "prepare", timeout_seconds=0):
+            with locked_path(marker, timeout_seconds=0):
+                return _run_locked_setup(worktree, script, marker, timeout_s, runner, force, setup_inputs)
     except TimeoutError:
         return ProjectSetupResult(ran=False, ok=False, detail="setup already in progress; retry after preparation completes")
     except OSError as exc:
@@ -138,9 +147,13 @@ def run_project_setup(
 
 def _run_locked_setup(
     worktree: Path, script: str, marker: Path, timeout_s: int,
-    runner: Runner | None, force: bool,
+    runner: Runner | None, force: bool, setup_inputs: list[str] | None,
 ) -> ProjectSetupResult:
-    digest = _setup_digest(worktree, script)
+    try:
+        digest = _setup_digest(worktree, script, setup_inputs)
+    except (ValueError, OSError) as exc:
+        marker.unlink(missing_ok=True)
+        return ProjectSetupResult(ran=False, ok=False, detail=str(exc))
     try:
         if (
             not force
@@ -172,7 +185,11 @@ def _run_locked_setup(
         return ProjectSetupResult(
             ran=True, ok=False, exit_code=result.returncode, detail=tail,
         )
-    if _setup_digest(worktree, script) != digest:
+    try:
+        current_digest = _setup_digest(worktree, script, setup_inputs)
+    except (ValueError, OSError) as exc:
+        return ProjectSetupResult(ran=True, ok=False, exit_code=0, detail=str(exc))
+    if current_digest != digest:
         return ProjectSetupResult(ran=True, ok=False, exit_code=0,
                                   detail="setup inputs changed during preparation; readiness not published")
     try:
@@ -196,12 +213,21 @@ def provision_worktree_env(
     Best-effort and idempotent: skips paths whose source is missing or whose
     destination already exists. Returns the relative paths provisioned.
     """
+    if not paths:
+        return []
+    with locked_path(environment_preparation_dir(worktree) / "prepare", timeout_seconds=0):
+        return _provision_locked(worktree, source_root, paths, bootstrap_uv_dev=bootstrap_uv_dev, runner=runner)
+
+
+def _provision_locked(worktree: Path, source_root: Path, paths: list[str], *,
+                      bootstrap_uv_dev: bool, runner: Runner | None) -> list[str]:
     normalized_paths = [
         str(raw).strip().strip("/")
         for raw in (paths or [])
         if str(raw).strip().strip("/")
     ]
     bootstrapped: set[str] = set()
+    local_python_required = bootstrap_uv_dev and (worktree / "pyproject.toml").exists()
     if bootstrap_uv_dev and ".venv" in normalized_paths:
         if _bootstrap_uv_dev_env(worktree, runner=runner):
             bootstrapped.add(".venv")
@@ -213,6 +239,8 @@ def provision_worktree_env(
         if rel in bootstrapped:
             provisioned.append(rel)
             continue
+        if rel == ".venv" and local_python_required:
+            continue  # A failed local bootstrap must not inherit another checkout's editable install.
         if not src.exists():
             continue
         if dst.exists() or dst.is_symlink():
@@ -236,10 +264,25 @@ def _bootstrap_uv_dev_env(project_root: Path, *, runner: Runner | None = None) -
     Failure is intentionally non-fatal; the gate command will surface the real
     dependency issue later.
     """
-    if (project_root / ".venv").exists():
-        return True
     if not (project_root / "pyproject.toml").exists():
         return False
+    receipt = environment_preparation_dir(project_root) / "uv-bootstrap.json"
+    digest = _setup_digest(project_root, "uv sync --extra dev; fallback uv sync")
+    previous = {}
+    if receipt.exists():
+        try:
+            previous = json.loads(receipt.read_text())
+        except (OSError, ValueError):
+            return False  # Unknown preparation evidence never becomes ready by existence.
+        if not isinstance(previous, dict):
+            return False
+    if (project_root / ".venv").exists():
+        if (previous.get("status") == "ready" and previous.get("digest") == digest
+                and previous.get("environment") and previous["environment"] == _local_venv_identity(project_root)):
+            return True
+        if previous.get("status") not in {"preparing", "failed"}:
+            return False  # Preserve externally managed/in-use environments; no implicit rebuild.
+    atomic_write_text(receipt, json.dumps({"status": "preparing", "digest": digest}) + "\n")
     run = runner or subprocess.run
     attempts = (
         ["uv", "sync", "--extra", "dev"],
@@ -256,7 +299,21 @@ def _bootstrap_uv_dev_env(project_root: Path, *, runner: Runner | None = None) -
                 check=False,
             )
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            atomic_write_text(receipt, json.dumps({"status": "failed", "digest": digest}) + "\n")
             return False
-        if result.returncode == 0 or (project_root / ".venv").exists():
+        environment = _local_venv_identity(project_root)
+        if (result.returncode == 0 and environment
+                and _setup_digest(project_root, "uv sync --extra dev; fallback uv sync") == digest):
+            atomic_write_text(receipt, json.dumps({"status": "ready", "digest": digest,
+                "command": argv, "environment": environment}) + "\n")
             return True
+    atomic_write_text(receipt, json.dumps({"status": "failed", "digest": digest}) + "\n")
     return False
+
+
+def _local_venv_identity(project_root: Path) -> dict[str, object] | None:
+    path = project_root / ".venv"
+    if path.is_symlink() or not path.is_dir():
+        return None
+    stat = path.stat()
+    return {"path": str(path.resolve()), "device": stat.st_dev, "inode": stat.st_ino}

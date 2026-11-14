@@ -1560,6 +1560,7 @@ class CandidateRebuilder:
             script,
             marker_dir=worktree.parent,
             force=True,
+            setup_inputs=getattr(self.config.project, "setup_inputs", []),
         )
         return {
             "schema_version": "candidate-environment.v1",
