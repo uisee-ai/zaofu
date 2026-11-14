@@ -1,4 +1,4 @@
-"""Bind a failed provider turn to its exact still-live Task Pipeline attempt."""
+"""Bind a provider turn outcome to its exact still-live Task Pipeline attempt."""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -15,6 +15,19 @@ def bind_failed_task_pipeline_turn(runtime: Any, event: ZfEvent) -> ZfEvent | No
     if (payload.get("backend") != "codex" or payload.get("provider_status") != "failed"
             or not payload.get("provider_stop_reason") or not payload.get("turn_id")):
         return None
+    return _bind_current_task_pipeline_turn(runtime, event)
+
+
+def bind_completed_task_pipeline_turn(runtime: Any, event: ZfEvent) -> ZfEvent | None:
+    payload = event.payload
+    if (payload.get("backend") != "codex" or payload.get("provider_status") != "completed"
+            or not payload.get("turn_id")):
+        return None
+    return _bind_current_task_pipeline_turn(runtime, event)
+
+
+def _bind_current_task_pipeline_turn(runtime: Any, event: ZfEvent) -> ZfEvent | None:
+    payload = event.payload
     attempts = [row for row in task_attempt_store(runtime).current_rows()
                 if row.get("identity_version") == "operation-v2"
                 and row.get("instance_id") == event.actor and row.get("status") == "sent"]

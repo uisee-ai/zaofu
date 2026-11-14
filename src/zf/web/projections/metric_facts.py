@@ -18,11 +18,11 @@ from zf.web.projections.event_index_cursor import active_identity, can_resume
 from zf.web.projections.read_model import _connect, db_path
 from zf.web.projections.sqlite_reader import connect_readonly
 
-VERSION = "metric-facts.v2"
+VERSION = "metric-facts.v3"
 PULSE_KEYS = {"signal", "status", "to", "task_id", "role", "instance_id", "state",
               "current_task_id", "assignee", "assigned_to", "tier", "route", "rework_kind", "backend",
               "run_id", "workflow_run_id", "trace_id", "stage_id", "child_id",
-              "role_instance", "route_id", "pattern_id"}
+              "role_instance", "route_id", "pattern_id", "runtime_load_ref"}
 
 
 @contextmanager

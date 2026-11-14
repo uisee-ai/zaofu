@@ -80,6 +80,7 @@ def prepare_required_read(
             "items": [*items, *([extra] if extra is not None else [])],
             "next_cursor": continuation,
             "complete": continuation is None,
+            "next_action": "read_next_page" if continuation else "confirm_delivery_then_continue_current_step",
         }, ensure_ascii=False)
 
     # Fill a page with complete small items and at most one partial tail. This

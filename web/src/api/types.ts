@@ -3366,6 +3366,14 @@ export interface RunPulseSessions {
 }
 
 export interface RunPulse {
+  versions?: {
+    source_revision: string;
+    loaded_revision: string;
+    comparison: "unknown" | "same_revision" | "different";
+    lifecycle: "unknown" | "started" | "stopped";
+    event_id: string;
+    receipt_status: "unavailable" | "available";
+  };
   last_event_age_seconds?: number | null;
   events_per_bucket?: number[];
   bucket_seconds?: number | null;

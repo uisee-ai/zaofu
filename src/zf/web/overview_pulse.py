@@ -351,6 +351,7 @@ def build_overview_pulse(
         record_projection_failure("pulse.events")
         events = []
     loop = build_runtime_loop_health(state_dir, events=events, now=current)
+    from zf.runtime.runtime_version_projection import runtime_version_snapshot
     return {
         "schema_version": SCHEMA_VERSION,
         "is_derived_projection": True,
@@ -358,7 +359,8 @@ def build_overview_pulse(
         "run_pulse": {**_run_pulse(events, current), "loop": {
             "status": loop.get("status"),
             "age_seconds": loop.get("age_seconds"),
-        }, "sessions": _sessions(state_dir, config, events)},
+        }, "sessions": _sessions(state_dir, config, events),
+            "versions": runtime_version_snapshot(state_dir, events)},
         "task_flow": _task_flow(state_dir, config, events, current),
         "attention": _attention(events, current),
         "why_not": _why_not(state_dir, events, loop),

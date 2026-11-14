@@ -24,6 +24,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from zf.core.state.atomic_io import atomic_write_text
+from zf.core.state.locks import locked_path
+
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -123,8 +126,21 @@ def run_project_setup(
     script = (script or "").strip()
     if not script:
         return ProjectSetupResult(ran=False, ok=True, detail="no setup declared")
-    digest = _setup_digest(worktree, script)
     marker = (marker_dir or worktree) / SETUP_MARKER
+    try:
+        with locked_path(marker, timeout_seconds=0):
+            return _run_locked_setup(worktree, script, marker, timeout_s, runner, force)
+    except TimeoutError:
+        return ProjectSetupResult(ran=False, ok=False, detail="setup already in progress; retry after preparation completes")
+    except OSError as exc:
+        return ProjectSetupResult(ran=False, ok=False, detail=f"setup lock unavailable: {exc}")
+
+
+def _run_locked_setup(
+    worktree: Path, script: str, marker: Path, timeout_s: int,
+    runner: Runner | None, force: bool,
+) -> ProjectSetupResult:
+    digest = _setup_digest(worktree, script)
     try:
         if (
             not force
@@ -134,6 +150,11 @@ def run_project_setup(
             return ProjectSetupResult(ran=False, ok=True, detail="setup marker matches")
     except OSError:
         pass
+    # An interrupted rebuild must not leave a previous readiness claim usable.
+    try:
+        marker.unlink(missing_ok=True)
+    except OSError as exc:
+        return ProjectSetupResult(ran=False, ok=False, detail=f"cannot invalidate setup readiness: {exc}")
     run = runner or subprocess.run
     try:
         result = run(
@@ -151,11 +172,14 @@ def run_project_setup(
         return ProjectSetupResult(
             ran=True, ok=False, exit_code=result.returncode, detail=tail,
         )
+    if _setup_digest(worktree, script) != digest:
+        return ProjectSetupResult(ran=True, ok=False, exit_code=0,
+                                  detail="setup inputs changed during preparation; readiness not published")
     try:
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(digest + "\n", encoding="utf-8")
-    except OSError:
-        pass
+        atomic_write_text(marker, digest + "\n")
+    except OSError as exc:
+        return ProjectSetupResult(ran=True, ok=False, exit_code=0,
+                                  detail=f"setup readiness could not be persisted: {exc}")
     return ProjectSetupResult(ran=True, ok=True, exit_code=0)
 
 

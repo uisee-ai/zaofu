@@ -251,12 +251,19 @@ class TaskWorkspaceManager:
                 project_path=str(project_path),
                 reason="task workspace has uncommitted changes",
             )
+        from zf.runtime.workspace_retention import workspace_retention_reason
+
+        retained = workspace_retention_reason(project_path,
+            provision_paths=self.config.runtime.workdirs.provision_paths, bookkeeping_dir=workdir)
+        if retained:
+            return TaskWorkspaceRemovalResult(
+                status="blocked", project_path=str(project_path), reason=retained,
+            )
         try:
             self._git(
                 self.project_root,
                 "worktree",
                 "remove",
-                "--force",
                 str(project_path),
             )
             shutil.rmtree(workdir, ignore_errors=True)

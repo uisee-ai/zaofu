@@ -520,10 +520,12 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             )
         admitted = self.event_writer.append(ZfEvent(
             type="workflow.call.result.admitted",
+            origin="kernel",
             actor="zf-cli",
             task_id=event.task_id,
             payload={
                 **operation_identity,
+                **{key: envelope["identity"].get(key, "") for key in ("attempt_id", "dispatch_id")},
                 "schema_version": "call-result-admission.v1",
                 "admission_status": "admitted",
                 "mode": mode,

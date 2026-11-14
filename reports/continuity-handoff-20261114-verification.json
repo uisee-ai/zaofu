@@ -1,0 +1,650 @@
+{
+  "scope": "local implementation verification; not canonical runtime state",
+  "source_base": "0625d001cca3ca270bea0016c40ce729927ae130",
+  "source_files_sha256": {
+    ".claude/skills/zf-plan-execution-readiness/SKILL.md": "205163740501f7eb011656c11e73cb59b8eb42128a88c993673653cc6aaef5d0",
+    ".claude/skills/zf-plan-execution-readiness/references/task-input-continuity.md": "a2142bc5436eb1ec3a50a3ea84b5ac55aaa60fff2746fdf987db01887d7b7e97",
+    ".codex/skills/zf-plan-execution-readiness/SKILL.md": "205163740501f7eb011656c11e73cb59b8eb42128a88c993673653cc6aaef5d0",
+    ".codex/skills/zf-plan-execution-readiness/references/task-input-continuity.md": "a2142bc5436eb1ec3a50a3ea84b5ac55aaa60fff2746fdf987db01887d7b7e97",
+    "skills/zf-plan-execution-readiness/SKILL.md": "205163740501f7eb011656c11e73cb59b8eb42128a88c993673653cc6aaef5d0",
+    "skills/zf-plan-execution-readiness/references/task-input-continuity.md": "a2142bc5436eb1ec3a50a3ea84b5ac55aaa60fff2746fdf987db01887d7b7e97",
+    "src/zf/cli/artifact_required_read.py": "91ac5a38ae6d9ea5ccbbcbd5c5b90a944f9dfe6b467dc7a87ef8670a3e2d07fc",
+    "src/zf/cli/stop.py": "821dfdfecad3eb3e1f3894cc45a1992689a0ccb8990b110359584d406131226f",
+    "src/zf/core/events/known_types.py": "9b6b7cebdd9433d3bfab37a54618e66c84962f3c92013d6cf213d7dbadca2530",
+    "src/zf/runtime/artifact_input_recovery.py": "03082bf59eba0bde588df5ab2f2e05b55f4004cc67405c01324698e26118dd21",
+    "src/zf/runtime/attempt_read_progress.py": "d194667dfef8e130fa443e4f5b512833a56e9946e1d4a51242b741279922330d",
+    "src/zf/runtime/call_result_admission.py": "7f93eac4f56b4496a55f933da89df1cf3972f1a5a860edb6584fb2f48a266e79",
+    "src/zf/runtime/completed_turn_continuation.py": "fc7a427bf66987174c52909c144e25eb618e83dea68c4f2bd478b89bbd2aa2ec",
+    "src/zf/runtime/maintenance_worktree.py": "5325446299f40e74ab7f61a80ca8f4bbbd5533a062b3edeff622c3efaef5f300",
+    "src/zf/runtime/orchestrator.py": "ab708bac89b7e82ac61c8c0310b9fe68ce79d875d72feaf32a8183c209c43ca5",
+    "src/zf/runtime/orchestrator_lifecycle.py": "f92ba600cb5b24c004cebfed7d4ef6bc94d987625e45379c61194d3cc4473fa4",
+    "src/zf/runtime/orchestrator_periodic_sweep.py": "8f487ce16a4186a8f0304fbe497d2e93f72006fdfdc5e2d3c96fe73cc013c75e",
+    "src/zf/runtime/provider_turn_error.py": "8414ea216f3eefa5f9a9ad5e8da915064009e19e7dc4e4d79761aae4b78ae11b",
+    "src/zf/runtime/run_manager_progress.py": "fbb94bf512b7e4524d67ce9c66e3070cb127da01afde799488fd3e2a3d52078d",
+    "src/zf/runtime/runtime_authority_bridge.py": "c55e3f89b152e61ea6bad6472ef7e3ab8b8b21fc830b160e8098ba5bf648b721",
+    "src/zf/runtime/runtime_version_projection.py": "1dfd98c587620c411817e18efd1acf69a1fb29cbc62ee5eb2515493480891d36",
+    "src/zf/runtime/task_attempt_continuation.py": "c50ddb551305960f4d85c9114c8c51ad5560d442c91ec4d93afe5987670b1a89",
+    "src/zf/runtime/task_pipeline_runtime.py": "5821701c7e04e03e98c37cc7f23b1bb05530e5bb5825cb06b773acf280896120",
+    "src/zf/runtime/task_workspaces.py": "157a25d4ac9adcbaccd54d7a42f2d33537536fc0c0e5416538331f674bada5f2",
+    "src/zf/runtime/transport.py": "5936963ccfdbc86b2c2f8b5ae85110458662c45f47fd60e108039cf02a42d9d4",
+    "src/zf/runtime/workdirs.py": "2d13c5f7016f3a376287063624aacb2ace6c8ecc98aed25249a30ed6c27b40f4",
+    "src/zf/runtime/workspace_retention.py": "762ad80dd294309099dba85161fc0e84cad1a1d6a9a20a122e6908880828475f",
+    "src/zf/runtime/worktree_env.py": "2a01b777c848877ac75818a6e4c5bb44cbee2316d75bb60fcdff1a7461d7143a",
+    "src/zf/web/overview_pulse.py": "cbfeeb4b621e32504aef2a92862ce1e17bef24a32af0300da4f55ac189fa6232",
+    "src/zf/web/projections/metric_facts.py": "c12089bdb6e3fa54a6e1f2aa5a6c3caf2221dab9ad83ec7d3b1ba50f446bfaae",
+    "src/zf/web/projections/metric_views.py": "9d4cb974f84a2359bb7c56c85630f8256f8749c36f02c9cf7860975dc74ca50f",
+    "tests/e2e/test_continuity_worker_overlap_mock_e2e.py": "ca9b0dd31c590f2ba1e1b243857a0d0ed064a4637bd95472861a6227d8a34cb8",
+    "tests/e2e/test_verification_eight_slots_mock_e2e.py": "4cd37f7b3a1018f853e732ed13c5416df89fa338ce3e2952530f11b3c06e9f04",
+    "tests/test_admitted_result_progress.py": "859e2e877c0b8a216c81157c42130966e8e82440074685ef31af28b8dd00be55",
+    "tests/test_attempt_work_continuation.py": "399f2fbfbd3269a15719aa9d9ff3276816f1af7954356c4bdcb04fce5b7922fd",
+    "tests/test_checkpoint_task_pipeline_workspace.py": "3932fb806f2d0255615babcc83ef2c287addd91ffebc8dd6cb5759a10e6655ec",
+    "tests/test_completed_turn_continuation.py": "7ef53d4fe78ae95978c7a9f42dbed24e5bb9dfd6f9e962a9348a15ef40291218",
+    "tests/test_input_recovery_exit.py": "3b018c1834ba9b5e2496f5f2c6da40e300d55254a6e69248e0ad6f896831d335",
+    "tests/test_run_manager_progress_identity.py": "3f01848af600a51aae391f3ddaf3638f3c739f5557d97147c23baa8d6d526665",
+    "tests/test_runtime_version_projection.py": "914bffabbad389fe38802fdb45b6b3acdc26ae9527c7d3d8ab68471d958b7f0a",
+    "tests/test_stop_preserves_candidates.py": "c66fef37780886c492cb03b4dfe7a4f551d55bb7c0ed97659e684acf3b7c6266",
+    "tests/test_task_stage_writer_fence.py": "1e1d9450050a3fcf27cd418c3df4ccf1d9903bb8b7ced3dbab3d8f678978766c",
+    "tests/test_task_workspace_cleanup_preservation.py": "0821a96d1eb45fb33633a9575314c7c2579011e08562298f4c70c4278dd0d9b5",
+    "tests/test_workflow_preview_review.py": "7f3b8c68b32f4b5ec16dd12e21c259c6cb8356beef2f303c2a46c9c5e86a3fcd",
+    "tests/test_worktree_setup_concurrency.py": "53bd0649292a9640775c15488b48785c8b8aa5aba54f5661a873970f93ca87b3",
+    "web/src/api/types.ts": "b7636930832bd45e40ba8300973cfe9483f24024f0765767d6acc0bf7e2e8883",
+    "web/src/components/delivery-trace/PlanMarkdownDocument.tsx": "c88700d2f3e9378a9a5969ff02f0e4cedd9ff4ce94bbba2f5ffeaf431901f48d",
+    "web/src/components/delivery-trace/planDocumentSections.ts": "0faf957d5e2a7b56fdce2b44e1c1cd0c3d9ea621cc2890d24ab83c5781a14164",
+    "web/src/components/delivery-trace/planMarkdownPages.ts": "43b88806eb6321cc65d52728760e156f90cc14a51cd7c562959729db8869c07a",
+    "web/src/components/overview/PulseBand.tsx": "bfb0bf00e0dba8bfeb13b405a5e1b6c2ec7b1a3807132b8d751e5532e8a4a6f9",
+    "web/tests/dashboard-pulse-first.spec.ts": "00beaa0e654847ba6908a94205b73e0a83d3fcd742ff99838d5ac311ca2b7e34",
+    "web/tests/plan-preview-content.spec.ts": "ece0350805765fc250a785847ccfae849b91cdd18b66753b680e1a367c6abce2",
+    "web/tests/planMarkdownPages.test.ts": "49c494a77880b4bcf190b3f7c907a438952effd7de87c760d9f110c6f4198ebc"
+  },
+  "suites": [
+    {
+      "log": "runtime-final.log",
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/test_completed_turn_continuation.py",
+        "tests/test_attempt_work_continuation.py",
+        "tests/test_attempt_read_progress.py",
+        "tests/test_provider_turn_error.py",
+        "tests/test_provider_turn_liveness.py",
+        "tests/test_scheduler_task_attempt.py",
+        "tests/test_task_pipeline_transport_binding.py",
+        "tests/test_stop_clean_workdirs.py",
+        "tests/test_stop_preserves_candidates.py",
+        "tests/test_task_workspace_binding.py",
+        "tests/test_task_workspace_cleanup_preservation.py",
+        "tests/test_workdirs.py",
+        "tests/test_worker_assistance.py",
+        "tests/test_attempt_handoff_reducer.py",
+        "tests/test_recovery_handoff_effects.py",
+        "tests/test_pending_handoff_reconciliation.py",
+        "tests/test_candidate_verification_authority.py",
+        "tests/test_candidate_freeze_receipts.py",
+        "tests/test_goal_completion_receipt.py",
+        "tests/test_plan_approval_candidate_identity.py",
+        "tests/test_task_pipeline_capacity_recovery.py",
+        "-q",
+        "--no-cov",
+        "--tb=short",
+        "-n",
+        "4",
+        "--dist",
+        "loadfile"
+      ],
+      "exit_code": 0,
+      "passed": 226
+    },
+    {
+      "log": "writer-fence-green.log",
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/test_task_stage_writer_fence.py",
+        "tests/test_task_pipeline_transport_binding.py",
+        "tests/test_task_pipeline_role_instructions.py",
+        "tests/test_task_pipeline_generation.py",
+        "tests/test_task_pipeline_capsule.py",
+        "tests/test_completed_turn_continuation.py",
+        "-q",
+        "--no-cov",
+        "--tb=short"
+      ],
+      "exit_code": 0,
+      "passed": 51
+    },
+    {
+      "log": "admission-continuation-green.log",
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/test_admitted_result_progress.py",
+        "tests/test_call_result_admission.py",
+        "tests/test_call_result_runtime.py",
+        "tests/test_run_manager_progress_identity.py",
+        "tests/test_completed_turn_continuation.py",
+        "tests/test_attempt_work_continuation.py",
+        "tests/test_attempt_read_progress.py",
+        "tests/test_cost_budget_enforcement.py",
+        "-q",
+        "--no-cov",
+        "--tb=short",
+        "-n",
+        "4",
+        "--dist",
+        "loadfile"
+      ],
+      "exit_code": 0,
+      "passed": 82
+    },
+    {
+      "log": "acceptance-foundations.log",
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/test_completed_turn_continuation.py",
+        "tests/test_run_manager_progress_identity.py",
+        "tests/test_run_manager.py",
+        "tests/test_admitted_result_progress.py",
+        "tests/test_attempt_work_continuation.py",
+        "tests/test_attempt_read_progress.py",
+        "tests/test_control_plane_reload_pause.py",
+        "tests/test_paused_reader_restart_recovery.py",
+        "tests/test_plan_approval_identity.py",
+        "tests/test_reader_result_before_recovery.py",
+        "tests/test_product_acceptance.py",
+        "tests/test_goal_coverage_graph.py",
+        "tests/test_context_delivery.py",
+        "tests/test_context_recovery_continuity.py",
+        "-q",
+        "--no-cov",
+        "--tb=short",
+        "-n",
+        "4",
+        "--dist",
+        "loadfile"
+      ],
+      "exit_code": 0,
+      "passed": 246
+    },
+    {
+      "log": "contracts-final.log",
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/test_run_manager_action_admission.py",
+        "tests/test_recovery_storage_faults.py",
+        "tests/test_gap_package_input_partitions.py",
+        "tests/test_plan_package_requirement_continuity.py",
+        "tests/test_work_record.py",
+        "tests/test_work_record_dispatch.py",
+        "tests/test_runtime_maintenance.py",
+        "tests/test_run_continuation.py",
+        "tests/test_run_continuation_scope.py",
+        "tests/test_product_acceptance_plan_replay.py",
+        "tests/test_artifact_input_recovery.py",
+        "tests/test_artifact_required_resume.py",
+        "tests/test_artifact_read_snapshot.py",
+        "tests/test_input_recovery_exit.py",
+        "tests/test_worktree_setup_concurrency.py",
+        "tests/test_worktree_env.py",
+        "tests/test_runtime_version_projection.py",
+        "tests/test_web_metric_facts.py",
+        "tests/test_web_overview_pulse.py",
+        "tests/test_web_metrics_snapshot.py",
+        "-q",
+        "--no-cov",
+        "--tb=short",
+        "-n",
+        "4",
+        "--dist",
+        "loadfile"
+      ],
+      "exit_code": 0,
+      "passed": 180
+    },
+    {
+      "log": "dispatch-callers.log",
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/test_dispatch_inflight_wedge.py",
+        "tests/test_e2e_p0_fixes.py",
+        "tests/test_idle_recycle_skill_treatment.py",
+        "tests/test_orchestrator_agent_dispatch.py",
+        "tests/test_reader_fanout_runtime.py",
+        "tests/test_result_correction_liveness.py",
+        "tests/test_role_lifecycle_runtime.py",
+        "tests/test_run_admission.py",
+        "tests/test_synth_interactive_deferral.py",
+        "tests/test_synth_pending_terminal_recovery.py",
+        "tests/test_orchestrator_lifecycle_handlers.py",
+        "tests/test_call_result_repair_reconciliation.py",
+        "-q",
+        "--no-cov",
+        "--tb=short",
+        "-n",
+        "4",
+        "--dist",
+        "loadfile"
+      ],
+      "exit_code": 0,
+      "passed": 350
+    },
+    {
+      "log": "eight-lane.log",
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/e2e/test_continuity_worker_overlap_mock_e2e.py",
+        "tests/e2e/test_verification_eight_slots_mock_e2e.py",
+        "-q",
+        "--no-cov",
+        "--tb=short",
+        "--junitxml=reports/continuity-handoff-20261114/eight-lane.xml"
+      ],
+      "exit_code": 0,
+      "passed": 8,
+      "qualification": "real held subprocesses behind mock delivery boundary; not real provider throughput"
+    },
+    {
+      "log": "web-build-final.log",
+      "cwd": "web",
+      "argv": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit_code": 0
+    },
+    {
+      "log": "web-unit-final.log",
+      "cwd": "web",
+      "argv": [
+        "npm",
+        "run",
+        "test:unit"
+      ],
+      "exit_code": 0
+    },
+    {
+      "log": "shared-parser-unit.log",
+      "cwd": "web",
+      "argv": [
+        "node",
+        "scripts/run-unit-tests.mjs",
+        "tests/planMarkdownPages.test.ts"
+      ],
+      "exit_code": 0
+    },
+    {
+      "log": "gates-final.log",
+      "argv": [
+        "python3",
+        "scripts/dev-verify.py",
+        "run",
+        "--base",
+        "dev",
+        "--skip-tier",
+        "deterministic",
+        "--skip-tier",
+        "serial",
+        "--keep-going",
+        "--receipt",
+        "reports/continuity-handoff-20261114/verification-receipt.json"
+      ],
+      "exit_code": 0,
+      "sentinel_passed": 53,
+      "flow_smoke_passed": 10,
+      "skip_explanation": "automatic broad pytest tiers replaced by explicit impact-closure suites listed above; no full-suite claim"
+    },
+    {
+      "log": "browser.log",
+      "argv": [
+        "docker",
+        "run",
+        "--pull=never",
+        "--rm",
+        "--network",
+        "host",
+        "--user",
+        "1001:1001",
+        "--entrypoint",
+        "/bin/sh",
+        "-v",
+        "/home/min/workspace/public/zaofu-worktrees/continuity-handoff-20261114:/repo",
+        "-w",
+        "/repo/web",
+        "-e",
+        "HOME=/tmp/browser-home",
+        "-e",
+        "ZF_WEB_BASE_URL=http://127.0.0.1:8003",
+        "-e",
+        "ZF_E2E_VIDEO=on",
+        "-e",
+        "ZF_E2E_CHROMIUM_EXECUTABLE_PATH=/ms-playwright/chromium-1226/chrome-linux64/chrome",
+        "mcp/playwright:latest",
+        "-c",
+        "mkdir -p \"$HOME\"; npx playwright test tests/dashboard-pulse-first.spec.ts tests/plan-preview-content.spec.ts --workers=2 --output=../reports/continuity-handoff-20261114/browser --reporter=line"
+      ],
+      "exit_code": 0,
+      "passed": 9
+    }
+  ],
+  "evidence_root": "reports/continuity-handoff-20261114/",
+  "artifacts": {
+    "acceptance-foundations.log": {
+      "sha256": "89231423ffde1f5827eebf27272a846e9e5b9d5c9ee75fc0e025d54a5ff4eaf6",
+      "bytes": 383
+    },
+    "admission-continuation-green.log": {
+      "sha256": "f8a35996352f17947b8f6d0495152f96426038e1319e93680dc5d0905c4d41bc",
+      "bytes": 222
+    },
+    "admission-progress-red.log": {
+      "sha256": "87197b04d4321dc2bca7f9a44e385575e41d51d93d56c3095bf955dd25449f49",
+      "bytes": 622
+    },
+    "browser/.last-run.json": {
+      "sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903",
+      "bytes": 45
+    },
+    "browser/dashboard-pulse-first-a-sc-bca3b-shot-and-deferred-workspace-chromium/trace.zip": {
+      "sha256": "4eb65beba069fde229a4b49c3e096e68e217a36e402e4b78929e12f507f040db",
+      "bytes": 387022
+    },
+    "browser/dashboard-pulse-first-a-sc-bca3b-shot-and-deferred-workspace-chromium/video.webm": {
+      "sha256": "2b9a3925efed4fd9e37d5f754bc01e01737cee7c3ee54dfa4a29497d60005144",
+      "bytes": 73257
+    },
+    "browser/plan-preview-content-a-lat-86aeb-ace-the-newly-selected-Plan-chromium/trace.zip": {
+      "sha256": "1e88c5c159cac5a70b1f624494113ae95468996872f86aa137fb2b05ff74b943",
+      "bytes": 469656
+    },
+    "browser/plan-preview-content-a-lat-86aeb-ace-the-newly-selected-Plan-chromium/video.webm": {
+      "sha256": "1a2168c940810d1b16ed7ae2f6cf33ff7a50d924dfea954f5b1ab4e91b21841f",
+      "bytes": 62918
+    },
+    "browser/plan-preview-content-compl-fd3fe-ain-distinct-without-writes-chromium/trace.zip": {
+      "sha256": "34e70e86ee5b93b26e2da0ab803aa4a951f212c35d1dce83e2d11cd6e0bc03fa",
+      "bytes": 773158
+    },
+    "browser/plan-preview-content-compl-fd3fe-ain-distinct-without-writes-chromium/video.webm": {
+      "sha256": "4c8a295365c13d66213a32e03e0fbbd07ffa05c4e35b2e995ce56b188b365c01",
+      "bytes": 126650
+    },
+    "browser/plan-preview-content-conti-65fed--it-without-losing-the-tail-chromium/continuous-plan-tail.png": {
+      "sha256": "c235dfbab3d2d8d7cc414331162b9b92ade37878c64383b183aee836bcbf59e6",
+      "bytes": 273822
+    },
+    "browser/plan-preview-content-conti-65fed--it-without-losing-the-tail-chromium/trace.zip": {
+      "sha256": "c7ba97c26af584162702c6139d0ed430bc5507d6e92eb0a963fe7eabd5c43fd8",
+      "bytes": 1407512
+    },
+    "browser/plan-preview-content-conti-65fed--it-without-losing-the-tail-chromium/video.webm": {
+      "sha256": "afe72ce9d1c03b195c85b3d8c23f855b3835402d732a0d245544d9fb9ce9dd5f",
+      "bytes": 332487
+    },
+    "browser/plan-preview-content-large-2032a-cter-through-the-final-page-chromium/trace.zip": {
+      "sha256": "4d40268a647785d57cb16fd6b1dcde3a0798d53a16b28fab46cf945692d50052",
+      "bytes": 2484087
+    },
+    "browser/plan-preview-content-large-2032a-cter-through-the-final-page-chromium/video.webm": {
+      "sha256": "1efdc061a4954afa41341b1977996798a11cd821a2840ed1a7de2869100cfbd0",
+      "bytes": 473951
+    },
+    "browser/plan-preview-content-long--60756-les-instead-of-raw-Markdown-chromium/trace.zip": {
+      "sha256": "e52f4a8f207c598f127ae5ba70e6ea6b3df11a2acf3c4b97a6aa43eda25653ac",
+      "bytes": 737538
+    },
+    "browser/plan-preview-content-long--60756-les-instead-of-raw-Markdown-chromium/video.webm": {
+      "sha256": "facea0d62fed1dd784ba8996b1cc148862195f5ff7271dff576f10c745dd1343",
+      "bytes": 233986
+    },
+    "browser/plan-preview-content-missi-fca63-legacy-digest-is-identified-chromium/trace.zip": {
+      "sha256": "d71e897ff7205c4f3c6ce681c56e2cef73574006b03200cc3eeec1ecd6f882cb",
+      "bytes": 468935
+    },
+    "browser/plan-preview-content-missi-fca63-legacy-digest-is-identified-chromium/video.webm": {
+      "sha256": "49494ec5ecab13d6f378c8b44acd8c078abae847cab758c15e47840ba44e6bbd",
+      "bytes": 66605
+    },
+    "browser/plan-preview-content-owner-05962-ity-and-sends-replan-reject-chromium/trace.zip": {
+      "sha256": "499d29cb86e4a7d03aa065f510558d32a26bbc0ef450ee20d5583afaefb2037c",
+      "bytes": 567446
+    },
+    "browser/plan-preview-content-owner-05962-ity-and-sends-replan-reject-chromium/video.webm": {
+      "sha256": "8bf05079f9623b37e6bbe9f17e32bde3d7b3e36f089a72d297359ec0521b0dd6",
+      "bytes": 80754
+    },
+    "browser/plan-preview-content-owner-f57cd-ty-and-sends-replan-approve-chromium/trace.zip": {
+      "sha256": "caa09240fbf22db6392f293006d2b3c9ab4501541325b02eb144d2e30cf376d1",
+      "bytes": 553645
+    },
+    "browser/plan-preview-content-owner-f57cd-ty-and-sends-replan-approve-chromium/video.webm": {
+      "sha256": "4cdeb4b12ddf82749c59a7e4a9f3a86b1975117a56bbe5bbe9e809203fe3ac72",
+      "bytes": 79275
+    },
+    "browser-before-parser-reuse/.last-run.json": {
+      "sha256": "9461c72727ec842acf7b13d00a89c6bd461d5fa73b1fbaca668d3ea1e23e5d5c",
+      "bytes": 96
+    },
+    "browser-before-parser-reuse/dashboard-pulse-first-a-sc-bca3b-shot-and-deferred-workspace-chromium/trace.zip": {
+      "sha256": "eff152bb0aeeef41d40da997cf6c23a85d43345ca21f11ae4e5486f41496ff74",
+      "bytes": 408911
+    },
+    "browser-before-parser-reuse/dashboard-pulse-first-a-sc-bca3b-shot-and-deferred-workspace-chromium/video.webm": {
+      "sha256": "07697e40ceed7a824e233e32643b4df4d1965de06f9c04c2bae40e9873d1461a",
+      "bytes": 68035
+    },
+    "browser-before-parser-reuse/plan-preview-content-a-lat-86aeb-ace-the-newly-selected-Plan-chromium/trace.zip": {
+      "sha256": "eb3330d3af9c2b66cf4cc87bb9c2f78469ea477198ed399e7a2f09c482a34ded",
+      "bytes": 491976
+    },
+    "browser-before-parser-reuse/plan-preview-content-a-lat-86aeb-ace-the-newly-selected-Plan-chromium/video.webm": {
+      "sha256": "5b487888399f76fdbd0b74548e0c1f96197ae3b3b412e8b6b2421ae0666272bf",
+      "bytes": 62560
+    },
+    "browser-before-parser-reuse/plan-preview-content-compl-fd3fe-ain-distinct-without-writes-chromium/trace.zip": {
+      "sha256": "5dc2a27d6e911bad4ba36b18a302ca3905edfb0795095dc93b6b45b92cca0dae",
+      "bytes": 794039
+    },
+    "browser-before-parser-reuse/plan-preview-content-compl-fd3fe-ain-distinct-without-writes-chromium/video.webm": {
+      "sha256": "79a6003b3c62906f906e7c3fc0648d73828def228428fec3571e5cf5921fc0ce",
+      "bytes": 123612
+    },
+    "browser-before-parser-reuse/plan-preview-content-conti-65fed--it-without-losing-the-tail-chromium/continuous-plan-tail.png": {
+      "sha256": "c235dfbab3d2d8d7cc414331162b9b92ade37878c64383b183aee836bcbf59e6",
+      "bytes": 273822
+    },
+    "browser-before-parser-reuse/plan-preview-content-conti-65fed--it-without-losing-the-tail-chromium/trace.zip": {
+      "sha256": "0d1f51cd6ca1d535297a4d588467f0f431e91d39b4cf8e2e0a70451c150319f2",
+      "bytes": 1535830
+    },
+    "browser-before-parser-reuse/plan-preview-content-conti-65fed--it-without-losing-the-tail-chromium/video.webm": {
+      "sha256": "64d19004a8a0b5925d521cd390bc0c5d4bf0d14e37f9160be8b6238698650984",
+      "bytes": 255295
+    },
+    "browser-before-parser-reuse/plan-preview-content-large-2032a-cter-through-the-final-page-chromium/error-context.md": {
+      "sha256": "fd886d2537a846302ad8fa19f2b68f59faca901337b9d3e46e86764f050c2a0d",
+      "bytes": 217098
+    },
+    "browser-before-parser-reuse/plan-preview-content-large-2032a-cter-through-the-final-page-chromium/trace.zip": {
+      "sha256": "fc2a21007e2203ace1b952d033c919de9970bd5d33668b0f3093336ffbfbaca6",
+      "bytes": 452908
+    },
+    "browser-before-parser-reuse/plan-preview-content-large-2032a-cter-through-the-final-page-chromium/video.webm": {
+      "sha256": "6a8e8d01ffb6361d433f438c7788ba18c1bdf62e6bac9f6e699e404ca98cbff0",
+      "bytes": 149638
+    },
+    "browser-before-parser-reuse/plan-preview-content-long--60756-les-instead-of-raw-Markdown-chromium/trace.zip": {
+      "sha256": "a03516671041fc0149f1faf53bf435e1375a71aa05667ee6def0b608a540f03a",
+      "bytes": 724851
+    },
+    "browser-before-parser-reuse/plan-preview-content-long--60756-les-instead-of-raw-Markdown-chromium/video.webm": {
+      "sha256": "2f0e7e6cee793271e8406f31911634130d0c9c7af7bcc52ff21bae08e45026b4",
+      "bytes": 232448
+    },
+    "browser-before-parser-reuse/plan-preview-content-missi-fca63-legacy-digest-is-identified-chromium/trace.zip": {
+      "sha256": "1e48cb9028f2599f5a715630d98a6300dade6cf08b5dfb1897d257c637e05329",
+      "bytes": 493553
+    },
+    "browser-before-parser-reuse/plan-preview-content-missi-fca63-legacy-digest-is-identified-chromium/video.webm": {
+      "sha256": "344c278ee64d936b8cb9231c8369ff76292091dc6805c15a804b8cc5d2cb21c4",
+      "bytes": 83571
+    },
+    "browser-before-parser-reuse/plan-preview-content-owner-05962-ity-and-sends-replan-reject-chromium/trace.zip": {
+      "sha256": "5c3508a8da44ee35bb5831c366fad1cae7fb3edcbd24f79f44c12b3421ce5f18",
+      "bytes": 731071
+    },
+    "browser-before-parser-reuse/plan-preview-content-owner-05962-ity-and-sends-replan-reject-chromium/video.webm": {
+      "sha256": "3c3657eac13ed001b8f512a1d40c054a39c9f5caf5c864e557dea61079ab4513",
+      "bytes": 96314
+    },
+    "browser-before-parser-reuse/plan-preview-content-owner-f57cd-ty-and-sends-replan-approve-chromium/trace.zip": {
+      "sha256": "cb292760949ad159e2d4ed28f45644bb26bfd49997a9840def916c12eccfd80b",
+      "bytes": 720876
+    },
+    "browser-before-parser-reuse/plan-preview-content-owner-f57cd-ty-and-sends-replan-approve-chromium/video.webm": {
+      "sha256": "a65679dc29573c34de55488b2b41eb3e054cfc83d5f92986abec090719d07a0c",
+      "bytes": 86382
+    },
+    "browser-before-parser-reuse.log": {
+      "sha256": "e1b30d0a4f5b2ad42a32e5eda2e5a0c8deee32e9002fea32cade7f6ddfcc72cb",
+      "bytes": 4568
+    },
+    "browser.log": {
+      "sha256": "b26e0a09f36adc9855a4349b06b24463a4a54ca909a077ef18bbc7be7bc3ecfb",
+      "bytes": 1584
+    },
+    "contracts-final.log": {
+      "sha256": "09cbdef2d6c8912faa433099902f1330527374d92ba925d8138268bc4424c394",
+      "bytes": 303
+    },
+    "dispatch-callers.log": {
+      "sha256": "955d39ca4e26bbca899c7f8d2657c47b93bb353ccce12e7f9979c6c216410385",
+      "bytes": 464
+    },
+    "eight-lane.log": {
+      "sha256": "8738863aa16d198d4283bccb380742d3b97e83e140398a4c5c8c0d5816e417e8",
+      "bytes": 1117
+    },
+    "eight-lane.xml": {
+      "sha256": "f9fcea650a4d296e5e5e2755be256b67fb3577fd916ae1284f2b91a423f08cca",
+      "bytes": 13800
+    },
+    "gates-final.log": {
+      "sha256": "321c56f771376f614cb5f5d3c126cc23e50f6dbd8d8911450d05afb4a0dce194",
+      "bytes": 6457
+    },
+    "gates.log": {
+      "sha256": "5f4940f333c9953ae2463d15769daa23d14698d8ea2ad646ebb27eddb1ee1382",
+      "bytes": 7615
+    },
+    "runtime-final.log": {
+      "sha256": "869d0be6f505bdecadb3bb964ea88f8cfb3b05b1ea1bf56027f877609f5b8c32",
+      "bytes": 383
+    },
+    "sentinel-final.log": {
+      "sha256": "f461bc4a2d213dfd2018daed5689941173f08cbdb2132753d950ccc728c8023b",
+      "bytes": 127
+    },
+    "shared-parser-unit.log": {
+      "sha256": "3101a6a3d05f29a09217f5ffdb81974b883c1ee3562775e9ab129c7587c7cc5a",
+      "bytes": 29
+    },
+    "verification-plan.txt": {
+      "sha256": "722aab0e2e71e3b683cabc8be7ddf4ebe1035535a29fc94609fc31b6e5003b4f",
+      "bytes": 3843
+    },
+    "verification-receipt.json": {
+      "sha256": "05d8e3713166bcd09a9853b9addfc9831bdd0fe5bf6385b291b518e7cb2970b1",
+      "bytes": 41099
+    },
+    "web-build-final.log": {
+      "sha256": "fd4db51e7d3c556aa1d2330f9b2d87f320e8d0a5e87f86e0ecffe4d086db7625",
+      "bytes": 6692
+    },
+    "web-unit-final.log": {
+      "sha256": "92cfaa8b9614eb16444f0e8058c52f259c6823ee1741d2420c637c8bb7d5ed2d",
+      "bytes": 2164
+    },
+    "writer-fence-green.log": {
+      "sha256": "393640a03db4be54b51146be3f5ba0beec81074af9d5d61de0aba6911ba6acd5",
+      "bytes": 99
+    },
+    "writer-fence-red.log": {
+      "sha256": "cdbafe9424826a91052dc6f8580c24d62045c45d26300ac74421813316b3eadf",
+      "bytes": 1146
+    },
+    "zf-continuity-baseline-tests.log": {
+      "sha256": "3c768c853ca5ca1d47b25ca09a00ddf9537278ee958db2716c51d575bdbb5e1e",
+      "bytes": 2483
+    },
+    "zf-continuity-checkpoint-tests.log": {
+      "sha256": "d3b1a8010651855b68dbeaa4c1640024852e2ed42f41c09a1703b0b59b560dc0",
+      "bytes": 99
+    },
+    "zf-continuity-cleanup-tests.log": {
+      "sha256": "3845e9fc550406f6ede0278b5c1ee3c12e1ccea8fec7a90d62537406c389a87b",
+      "bytes": 99
+    },
+    "zf-continuity-closure-tests.log": {
+      "sha256": "9ddea37b79fbc4fe04d881101c7c69522230556234a123d75485ffad2533e722",
+      "bytes": 624
+    },
+    "zf-continuity-environment-tests.log": {
+      "sha256": "308495a7fa6a92a8905f9f44f1072834e52c4e7ed4ada9e6f5bfd1be7ed5e2c1",
+      "bytes": 99
+    },
+    "zf-continuity-input-tests.log": {
+      "sha256": "3c3adafa5b50f8734b6e9631fe58f898545c3f58b499b07c3b71e1fa7da7f041",
+      "bytes": 179
+    },
+    "zf-continuity-nudge-tests.log": {
+      "sha256": "30ef35f226a1c6686a3106479fcd61fa94f83fdf0a20b3a3e23d7ef8c7e94126",
+      "bytes": 99
+    },
+    "zf-continuity-preview-tests.log": {
+      "sha256": "802c6022a3d02fb32b18a345dd021b302b6d0ab979eface6d3854d31e64c12fc",
+      "bytes": 100
+    },
+    "zf-continuity-progress-tests.log": {
+      "sha256": "b36107f11625de86d22e1b86f906bd19eb504175e1d66858e5895f5f74703d3b",
+      "bytes": 260
+    },
+    "zf-continuity-skills-capacity-tests.log": {
+      "sha256": "60e8f91343d8e857581f9e9d5289ea2631390e2a062426be845cc1d2e1b55525",
+      "bytes": 110
+    },
+    "zf-continuity-turn-closure-tests.log": {
+      "sha256": "640863598c80f1f47f5ef1b0324a5ab63d5a2c8fbc19834839f9224c713da212",
+      "bytes": 180
+    }
+  },
+  "browser": {
+    "image_id": "sha256:8342e03ef3571d09afffcd00558b8067e66489a54e7f3f0d96a71a327fd45fe2",
+    "chromium": "149.0.7827.22",
+    "playwright": "1.59.1"
+  },
+  "limitations": [
+    "overlapping suites are not additive unique test counts",
+    "real providers and Datal not exercised",
+    "early commands with nonexistent test paths exited 5 and contributed no passing tests",
+    "initial sentinel and browser failures retained; final gates passed"
+  ],
+  "spec_full_product_acceptance": {
+    "passed": 0,
+    "total": 18
+  },
+  "design_packages_fully_closed": {
+    "passed": 0,
+    "total": 8
+  }
+}

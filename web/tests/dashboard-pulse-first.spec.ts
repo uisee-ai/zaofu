@@ -35,6 +35,8 @@ test("a scoped Project dashboard renders overview pulse before its snapshot and 
           respawn_failed_streak: 0,
           loop: { status: "running", age_seconds: 4 },
           sessions: { active: 2, stale: 0 },
+          versions: { source_revision: "abcdef123456", loaded_revision: "123456abcdef",
+            comparison: "different", lifecycle: "started", event_id: "startup", receipt_status: "available" },
         },
         task_flow: null,
         attention: null,
@@ -50,6 +52,12 @@ test("a scoped Project dashboard renders overview pulse before its snapshot and 
     await expect.poll(() => snapshotObserved).toBe(true);
     expect(workspaceObserved).toBe(false);
     await expect(page.getByTestId("overview-pulse-band")).toContainText("7s");
+    const band = page.getByTestId("overview-pulse-band");
+    await expect(band).toContainText("sourceabcdef12");
+    await expect(band).toContainText("last loaded123456ab");
+    await expect(band).toContainText("task adoptionunverified");
+    await expect(band.locator('[title*="Updating source does not reload"]')).toBeVisible();
+    await expect(band.locator('[title*="Updating source does not reload"] strong')).toHaveClass(/is-warn/);
     expect(pulseRequests).toHaveLength(1);
     expect(new URL(pulseRequests[0]).pathname).toBe(`/api/projects/${projectId}/overview-pulse`);
     releaseSnapshot();

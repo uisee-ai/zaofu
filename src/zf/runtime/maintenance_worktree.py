@@ -32,6 +32,9 @@ def checkpoint_root(state_dir: Path, project_root: Path, config: Any,
     if assigned_worker and owner != assigned_worker:
         raise ValueError("checkpoint worker does not match canonical task assignee")
     worker = assigned_worker or owner
+    pipeline_root = _pipeline_checkpoint_root(state_dir, task, worker)
+    if pipeline_root is not None:
+        return pipeline_root
     if not worker or not config.runtime.workdirs.enabled:
         return project_root
     role = next((r for r in config.roles if r.instance_id == worker), None)
@@ -44,6 +47,45 @@ def checkpoint_root(state_dir: Path, project_root: Path, config: Any,
     if not root.is_dir():
         raise ValueError("checkpoint worker workspace is missing")
     return root
+
+
+def _pipeline_checkpoint_root(state_dir: Path, task: Any, worker: str) -> Path | None:
+    """Use the same checked placement as worker records, never the lane fallback.
+
+    Checkpointing observes even stopped attempts. It does not renew their lease
+    or attest that the old writer has stopped.
+    """
+    from zf.core.events import EventLog
+    from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.task_run_binding import canonical_task_run
+    from zf.runtime.work_record import _operation_workdir
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    if task is None:
+        return None
+    log = EventLog(state_dir / "events.jsonl")
+    events = log.read_all()
+    if not any(e.type == "task.pipeline.stage.dispatched" and e.task_id == task.id for e in events):
+        return None
+    run_id, _ = canonical_task_run(task, events)
+    facts = recovery_attempt_facts(state_dir, task, run_id=run_id)
+    identity = facts.get("identity", {})
+    if facts["status"] != "bound" or identity.get("instance_id") != worker:
+        raise ValueError("checkpoint task workspace identity is unavailable")
+    operation = load_workflow_operation(log, str(identity.get("operation_id") or "")) or {}
+    if (operation.get("workflow_run_id") != run_id
+            or operation.get("task_id") != task.id
+            or operation.get("dispatch_id") != task.active_dispatch_id
+            or operation.get("role_instance") != worker):
+        raise ValueError("checkpoint operation does not match the canonical task")
+    descriptor = operation.get("request_ref")
+    if not isinstance(descriptor, dict):
+        raise ValueError("checkpoint operation request is unavailable")
+    body = hydrate_sidecar_ref(state_dir, descriptor).payload
+    if not isinstance(body, dict) or not isinstance(body.get("request"), dict):
+        raise ValueError("checkpoint operation request is invalid")
+    return _operation_workdir(events, operation, body["request"])
 
 
 def _git(root: Path, *args: str) -> bytes:

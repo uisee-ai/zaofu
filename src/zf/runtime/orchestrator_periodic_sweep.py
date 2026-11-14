@@ -55,6 +55,10 @@ def run_replay_sweep(
         ),
     )
 
+    from zf.runtime.completed_turn_continuation import reconcile_completed_turns
+
+    runtime._safe_housekeeping("completed_turn_continuation", lambda: reconcile_completed_turns(runtime))
+
 
 def _recover_reader_results_and_goal(runtime: Any, *, replay_readers: bool = True) -> None:
     try:

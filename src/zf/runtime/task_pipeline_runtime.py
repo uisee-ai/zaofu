@@ -838,6 +838,18 @@ def _activate_task_stage_binding(
                 "physical slot still owns an active WorkflowOperation",
             )
         runtime.transport.terminate(role.instance_id)
+        try:
+            still_alive = runtime.transport.is_alive(role.instance_id)
+        except Exception as exc:
+            raise TaskPipelineWaiting(
+                "waiting_for_worker_exit",
+                "old worker exit cannot be confirmed; retain the current binding",
+            ) from exc
+        if still_alive:
+            raise TaskPipelineWaiting(
+                "waiting_for_worker_exit",
+                "old worker exit is pending; do not activate another writer",
+            )
         now = _now_iso()
         registry.update_instance_meta(
             role.instance_id,

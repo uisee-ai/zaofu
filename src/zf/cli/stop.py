@@ -179,7 +179,17 @@ def clean_state_dir_workdirs(project_root: Path, state_dir: Path) -> tuple[int, 
             inside = False
         if not inside:
             continue
-        result = _git("worktree", "remove", "--force", str(path))
+        from zf.runtime.workspace_retention import workspace_retention_reason
+
+        retained = workspace_retention_reason(path)
+        # Stopping execution does not deliver a candidate's Git history.
+        head = _git("-C", str(path), "rev-parse", "HEAD")
+        integrated = (head.returncode == 0 and
+                      _git("merge-base", "--is-ancestor", head.stdout.strip(), "HEAD").returncode == 0)
+        if retained or not integrated:
+            print(f"Warning: retaining worktree {path}: {retained or 'candidate commits are not merged into the current checkout'}", file=sys.stderr)
+            continue
+        result = _git("worktree", "remove", str(path))
         if result.returncode != 0:
             print(
                 f"Warning: could not remove worktree {path}: {result.stderr.strip()}",
@@ -189,10 +199,9 @@ def clean_state_dir_workdirs(project_root: Path, state_dir: Path) -> tuple[int, 
         removed += 1
         if branch:
             branches.append(branch)
-    _git("worktree", "prune")
     deleted: list[str] = []
     for branch in branches:
-        result = _git("branch", "-D", branch)
+        result = _git("branch", "-d", branch)
         if result.returncode == 0:
             deleted.append(branch)
         else:

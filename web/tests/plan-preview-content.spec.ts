@@ -196,3 +196,23 @@ test("long Plan renders headings and tables instead of raw Markdown", async ({ p
     `${preview.review_dossier_markdown.trimEnd()}\n\n---\n\n${preview.markdown}`,
   );
 });
+
+test("continuous large Plan exposes deferred content and can load it without losing the tail", async ({ page, request }, testInfo) => {
+  // Exercise the accessible manual fallback independently of scroll observation.
+  await page.addInitScript(() => Object.defineProperty(window, "IntersectionObserver", { value: undefined }));
+  const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-long`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  const more = dialog.getByRole("button", { name: /继续加载正文/ });
+  await expect(more).toBeAttached();
+  await expect(dialog.getByRole("button", { name: "查看源码", exact: true })).toBeEnabled();
+  const pane = dialog.getByRole("region", { name: "计划正文", exact: true });
+  for (let step = 0; step < 100 && await more.count(); step += 1) {
+    const before = await pane.locator(":scope > section").count();
+    await more.click();
+    await expect.poll(() => pane.locator(":scope > section").count()).toBeGreaterThan(before);
+  }
+  await expect(more).toHaveCount(0);
+  await expect(pane).toContainText("END-OF-LONG-PLAN");
+  await page.screenshot({ path: testInfo.outputPath("continuous-plan-tail.png") });
+});

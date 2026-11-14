@@ -1221,9 +1221,16 @@ class WorkdirManager:
                 reason="workdir has uncommitted changes",
             )
 
+        from zf.runtime.workspace_retention import workspace_retention_reason
+
+        retained = workspace_retention_reason(project_path,
+            provision_paths=self.config.runtime.workdirs.provision_paths, bookkeeping_dir=workdir)
+        if retained:
+            return WorkdirRemovalResult(status="dirty", workdir=str(workdir),
+                project_path=str(project_path), reason=retained)
         try:
             subprocess.run(
-                ["git", "worktree", "remove", "--force", str(project_path)],
+                ["git", "worktree", "remove", str(project_path)],
                 cwd=self.project_root,
                 check=True,
                 text=True,

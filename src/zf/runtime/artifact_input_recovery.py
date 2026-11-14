@@ -48,8 +48,16 @@ def build_input_recovery(
         "reconstruction_required": len(visible), "checkpoint": checkpoint or {"status": "unavailable", "authorizes_continuation": False},
         "commands": {"index": f"{prefix} index --attempt {attempt}",
                      "recover": f"{prefix} recover --attempt {attempt}"},
-        "instructions": "History and checkpoints do not prove current memory. Revalidate identity, workdir and lease; "
-                        "consume all required bodies needed after compaction/session change. Use --resume only while current-session material remains available.",
+        "instructions": "This report does not grant or revoke execution authority; it does not revoke an otherwise valid task authorization. "
+                        "Revalidate identity, workdir and lease. Historical reads do not prove current memory. "
+                        "Resume uses observed current-session delivery after the latest known compaction; otherwise it starts at the first gap. "
+                        "If previously delivered material is no longer available in this session, omit --resume. "
+                        "Follow next_cursor, repair only truncated/missing pages, then continue the current step. "
+                        "Repeat recovery notices do not require restarting a completed unchanged recovery set.",
+        "recovery_exit": {"after_complete_delivery": "continue_current_step",
+                          "requires_current_execution_authority": True,
+                          "requires_complete_untruncated_delivery": True,
+                          "missing_environment_or_unknown_effect": "wait_for_specific_dependency"},
     }
     from zf.runtime.work_record import current_work_record
     result["work_record"] = current_work_record(state_dir, events, manifest, identity.get("actor", ""))
@@ -57,7 +65,7 @@ def build_input_recovery(
         op = shlex.quote(str(result["work_record"]["operation_id"]))
         result["commands"]["work_record_read"] = f"{prefix} work-record show --operation {op}"
     if not lifecycle["requires_rebind"]:
-        result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required --reason recovery"
+        result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required --resume --reason recovery"
     result["next_action"] = "request_controlled_rebind" if lifecycle["requires_rebind"] else "reconstruct_required_inputs"
     # The embedded index stays paginated; the recovery response itself, including
     # checkpoint metadata and command envelope, has the same byte budget.

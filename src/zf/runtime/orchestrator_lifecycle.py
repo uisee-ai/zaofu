@@ -44,6 +44,7 @@ from zf.runtime.recovery_sufficiency import run_recovery_sufficiency_gate
 from zf.runtime.repair_action_fanout_runtime import RepairActionFanoutRuntimeMixin
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
 from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
+from zf.runtime.task_attempt_continuation import claim_completion_nudge
 
 if TYPE_CHECKING:
     from zf.runtime.spawn_coordinator import SpawnCoordinator
@@ -2719,6 +2720,9 @@ class LifecycleManagerMixin(
                 return None
         elif key in registry:
             return None
+        if progress_state is not None and not claim_completion_nudge(self, role.instance_id, task.id,
+                dispatch_id, causation_id=causation_id, correlation_id=correlation_id):
+            return None
         registry.add(key)
 
         detector = getattr(self, "_stuck_detectors", {}).get(role.instance_id)
@@ -2750,7 +2754,7 @@ class LifecycleManagerMixin(
             prompt_error = str(exc)
         try:
             self.event_writer.append(ZfEvent(
-                type="worker.stuck.recovered",
+                type="worker.stuck.recovered", origin="kernel",
                 actor=role.instance_id,
                 task_id=task.id,
                 causation_id=causation_id or "",
@@ -2814,6 +2818,9 @@ class LifecycleManagerMixin(
             ),
             (
                 "2. Inspect the current worktree and the original active briefing. "
+                "First reconcile outstanding tools and external effects; continue waiting "
+                "on an existing test/process instead of launching it again. An unknown "
+                "effect or pending approval is a wait condition, not permission to retry. "
                 "If acceptance is not yet met and no real external blocker exists, "
                 "continue the original task from the preserved state. Do not emit a "
                 "failure solely because this nudge arrived, the worktree is clean, "
@@ -2841,6 +2848,8 @@ class LifecycleManagerMixin(
             briefing_path=path,
             task_id=task.id,
         )
+        from zf.runtime.task_attempt_continuation import continuation_context
+        context = continuation_context(self, role.instance_id, context)
         self._send_transport_task(role.instance_id, path, prompt, context)
         return path
 

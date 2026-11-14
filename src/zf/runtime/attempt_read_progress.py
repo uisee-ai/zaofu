@@ -57,6 +57,10 @@ def progress_nudge_state(
         if not attempt_id or not operation_id:
             return None
         events = runtime.event_log.read_all()
+        from zf.runtime.pause_lifecycle import is_dispatch_paused
+
+        if is_dispatch_paused(Path(runtime.state_dir), events=events):
+            return attempt_id, 0, False
         progress = required_read_progress(
             Path(runtime.state_dir), events, attempt_id=attempt_id, operation_id=operation_id,
         )
@@ -64,25 +68,65 @@ def progress_nudge_state(
             return attempt_id, 0, False
         nudges = [
             (i, event) for i, event in enumerate(events)
-            if event.type == "worker.stuck.recovered" and event.actor == role_instance
+            if event.type in {"worker.stuck.recovered", "worker.continuation.claimed"} and event.actor == role_instance
             and event.task_id == task_id and event.payload.get("dispatch_id") == dispatch_id
             and event.payload.get("recovery_action") == "completion_nudge_requested"
         ]
+        from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
+
+        if active_codex_turn_from_events(events, role_instance) is not None:
+            return attempt_id, progress, False
         if not nudges:
             return attempt_id, progress, True
         index, last = nudges[-1]
         previous = last.payload.get("input_read_progress")
         if last.payload.get("attempt_id") != attempt_id or not isinstance(previous, int):
             return attempt_id, progress, False
+        advanced = progress > previous or _new_work_record(
+            Path(runtime.state_dir), events[index + 1:], prior_events=events[:index + 1], role_instance=role_instance,
+            task_id=task_id, dispatch_id=dispatch_id, attempt_id=attempt_id, operation_id=operation_id,
+        )
         activity = [event.type for event in events[index + 1:]
                     if event.actor == role_instance and event.type in {
                         "provider.turn.closed", "codex.hook.pre_tool_use", "agent.text",
+                        "codex.hook.user_prompt_submit",
                     }]
         return attempt_id, progress, bool(
-            progress > previous and activity and activity[-1] == "provider.turn.closed"
+            advanced and activity and activity[-1] == "provider.turn.closed"
         )
     except (OSError, ValueError, TypeError, KeyError):
         return None
+
+
+def _new_work_record(state_dir: Path, events: list[Any], *, prior_events: list[Any], **identity: str) -> bool:
+    """A new bound report permits a reminder, never acceptance or a new lease."""
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    actor = identity.pop("role_instance")
+    expected = {**identity, "actor": actor}
+    seen = {e.payload.get("payload_digest") for e in prior_events
+            if e.type == "worker.work_record.published" and e.origin == "kernel"
+            and e.actor == actor and e.payload.get("attempt_id") == identity["attempt_id"]}
+    for event in reversed(events):
+        if (event.type != "worker.work_record.published" or event.origin != "kernel"
+                or event.actor != actor or event.task_id != identity["task_id"]
+                or any(event.payload.get(key) != value for key, value in expected.items())):
+            continue
+        try:
+            digest = event.payload.get("payload_digest")
+            if not digest or digest in seen:
+                return False
+            ref = event.payload["work_record_ref"]
+            body = hydrate_sidecar_ref(state_dir, ref).payload
+            if (body.get("schema_version") != "worker-work-record.v1" or body.get("payload_digest") != digest
+                    or any(body.get("binding", {}).get(key) != value for key, value in expected.items())):
+                return False
+            for evidence in body.get("evidence_refs", []):
+                hydrate_sidecar_ref(state_dir, evidence)
+            return True
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return False
+    return False
 
 
 def input_continuation_lines(runtime: Any, *, role_instance: str, task_id: str, dispatch_id: str) -> list[str]:

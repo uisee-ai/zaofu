@@ -80,6 +80,7 @@ class DispatchContext:
     placement_epoch: int | None = None
     task_stage_session_binding: str | None = None
     worker_envelope_digest: str | None = None
+    continuation: bool = False
 
     def to_payload(self) -> dict[str, str]:
         payload: dict[str, str] = {}
