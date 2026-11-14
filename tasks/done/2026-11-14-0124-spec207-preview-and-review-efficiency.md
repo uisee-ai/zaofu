@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done；实现 `01548e5c fix: align plan summaries and avoid costly scoped reviews`。
 
 # 207 后续：审批一致性、阅读优先级与增量收益
 
