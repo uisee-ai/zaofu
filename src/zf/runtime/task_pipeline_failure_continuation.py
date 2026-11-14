@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import re
 import subprocess
 from typing import Any
@@ -101,7 +102,9 @@ def _matches(left: dict, right: dict, keys: tuple[str, ...]) -> bool:
 def _git(root: Path, *args: str) -> str | None:
     try:
         result = subprocess.run(['git', '-C', str(root), *args], capture_output=True,
-                                text=True, check=False, timeout=5)
+                                text='-z' not in args, check=False, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return result.stdout.strip() if result.returncode == 0 else None
+    if result.returncode != 0:
+        return None
+    return os.fsdecode(result.stdout) if '-z' in args else result.stdout.strip()

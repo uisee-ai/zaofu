@@ -382,3 +382,58 @@ R9提交`d6e4486f fix: preserve recovery gates during control-plane reload`精�
 旧Critic在10:19:30、正式stop前因7200秒synth_timeout生成evt-6bc3cc89b7de→prd.plan.failed evt-b7cf6832b3b1，非对7742570b版的新语义否决。恢复后自动stage replan 2/2产生evt-389aef82b01a，Planner已实际运行（pane %807）。未覆盖历史失败或增加replan cap；最新7742570b冻结19文件逐字节复制到Planner允许忽略缓存，SHA索引quota-restored-planner-input-cache.json。指导其完整消费本attempt必读后复用已修订F1/F2正文、保留36done与两个在途任务、继续独立Critic及审批，避免退回旧版全量重写。三角色断点指导与新身份记录在quota-restored-guidance.json。额外Sources浏览器失败仍保留、不改判。
 
 Dashboard HTTP200。R5继续active；本次没有新的产品done，也没有声明计划已批准。记录待后续评估：全局暂停期间synth墙钟超时仍会产生计划失败及返修；本轮已走既有有界返修路径，不据此临时取消超时或伪造Critic通过。
+
+## 部分成果续作的 Git 路径解析（2026-11-10）
+
+`partial_successor_proof` 和 Candidate 的提交/树路径读取使用 `-z`，以 NUL 分隔并保留原始文件名。中文证据路径不再被 Git 的展示引号与八进制转义误判为越界；文件名中的换行、回车、引号及空格也不被拆分或 trim。该修复只改变机械路径解析，已准入失败绑定、单父续作证明、scope、冲突拒绝和独立验收不变。
+
+回归覆盖真实 Git 提交、续作工作区构造和候选补丁重放，并验证原候选引用不被提前发布。任务：[路径解析修复](../../tasks/done/2026-11-10-1054-unicode-partial-continuation.md)。
+
+### 2026-11-10：局部修订的派发 delta
+
+新 gap amendment 从完整 Task Map 继承任务正文和历史，但原图声明的
+`dispatch_delta_task_ids`（顶层或 metadata）必须重绑定到本次
+`amend.gap_task_ids`。否则旧批次清单与局部恢复请求冲突，Writer 拒绝派发。
+未声明该字段的旧图保持原有形状；selector 的不一致拒绝规则保持不变。
+回归覆盖 builder 到真实 `flow.gap_plan.ready` / Orchestrator / Writer
+派发及重启去重。见 `tests/test_gap_dispatch_delta.py` 和
+`tasks/done/2026-11-10-1128-gap-amend-dispatch-delta.md`。
+
+### 2026-11-10：分区继承的生产入口
+
+局部包构建须先选择并读取同一个已准入 baseline 包，再由已有 acceptance 和
+port rebinder 携带声明的父任务分区，最后校验本次派发任务能读取的完整输入。
+未知父任务及无 lineage 的继承仍拒绝，不能通过放宽读取范围恢复。
+`flow.gap_plan.ready` 的 bridge 必须将 `source_index_ref` 交给 amendment writer，
+并在 ready 中使用其返回的新 ref；原 source index 保持不可变。
+回归见 `tests/test_gap_source_index_entrypoint.py`、`tests/test_gap_package_input_partitions.py`，
+记录见 `tasks/done/2026-11-10-1150-gap-package-partitions.md`。
+
+### 2026-11-12：来源索引覆盖增量前置任务
+
+多节点 gap amendment 中，`source_index` 既是新生成的显式端口，也携带
+原有 `task_input_policy`。只改名 terminal successor 会漏掉 additive
+predecessor 的分区，使 Task Map 已生成而 Package 准入失败。
+来源索引 writer 现在从显式 `parent_task_id` / `supersedes_task_ids`
+继承原分区路径，为新增节点补齐读授权；不扩大为全文件读取，不改原始索引，
+缺少明确父分区或路径无效时在写产物前拒绝。原来源业务映射继续指向唯一
+terminal successor，前置的补缺业务义务由其 Task Map 契约承载。
+
+回归覆盖 `tests/test_gap_source_index_partitions.py` 与生产入口
+`tests/test_gap_source_index_entrypoint.py`，后者证明前置先派发、后继等待。
+预检必须运行真实来源索引 amendment writer，再检查所有端口；只对旧继承
+端口做分区模拟会遗漏这个边界。
+
+### 2026-11-12：混合增量批次按任务选择基线
+
+同一批次包含 additive 前置与携带 `base_commit` 的 successor 时，不能把
+后者的 partial 基线提升为整批公共基线。公共 target 保持当前受控 dispatch
+目标，只有 successor 本身消费 task-local base；混合批次缺公共目标时拒绝，
+多个相互冲突的显式基线仍拒绝。`gap_tasks_only` 的当前事件
+`dispatch_base_commit` 优先于完整 Task Map 留存的历史 `target_commit`。
+普通非 gap 入口保留原优先级，全部任务同一显式基线仍可延续原行为。
+
+计划预检与运行时加载共享该选择规则。回归包含真实 writer 工作区：前置
+checkout 必须等于已验收 candidate，不能含 sibling 的未验收 Case 文件；
+后继保留自身 partial 并等待依赖。此修复不原地重写已经派发的 attempt，
+历史错误派发应通过正式失败交接与有界替换恢复。

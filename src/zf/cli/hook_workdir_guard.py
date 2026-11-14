@@ -45,6 +45,8 @@ def actor_from_workdir_cwd(state_dir: Path, payload: dict) -> str:
 
 
 def bash_command_looks_mutating(command: str) -> bool:
+    if _literal_shell_patch(command) is not None:
+        return True
     normalized = f" {_NON_MUTATING_REDIRECTION_RE.sub(' ', command).strip()} "
     if " zf task-doc ingest " in normalized:
         return True
@@ -160,6 +162,28 @@ def _is_simple_controlled_zf_result_command(
     )
 
 
+def _literal_shell_patch(command: str) -> str | None:
+    """Recognize only one apply_patch with an entirely literal heredoc body.
+
+    Unsupported shell syntax retains conservative command inspection. The first
+    delimiter must end the command: a later delimiter cannot hide shell suffixes.
+    """
+    lines = command.strip().splitlines()
+    if not lines:
+        return None
+    header = re.fullmatch(r"apply_patch\s+<<\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1", lines[0])
+    if header is None:
+        return None
+    delimiter = header.group(2)
+    end = next((i for i, line in enumerate(lines[1:], 1) if line == delimiter), None)
+    if end != len(lines) - 1:
+        return None
+    body = lines[1:end]
+    if len(body) < 3 or body[0] != "*** Begin Patch" or body[-1] != "*** End Patch":
+        return None
+    return "\n".join(body)
+
+
 def write_target_paths(tool_name: str, tool_input: dict) -> list[str]:
     """Return explicit paths targeted by provider-native write tools."""
     return [path for _operation, path in write_target_operations(tool_name, tool_input)]
@@ -182,7 +206,7 @@ def write_target_operations(
     tool_name: str,
     tool_input: dict,
 ) -> list[tuple[str, str]]:
-    """Return normalized operation/path pairs for provider-native writes."""
+    """Return targets for native writes and single literal shell patches."""
 
     lower = tool_name.lower().strip()
     if lower in {"write", "edit", "multiedit", "notebookedit"}:
@@ -193,7 +217,7 @@ def write_target_operations(
         )
         text = str(raw or "").strip()
         return [(lower, text)] if text else []
-    if lower != "apply_patch":
+    if lower not in {"apply_patch", "bash", "shell"}:
         return []
     command = str(
         tool_input.get("command")
@@ -201,6 +225,11 @@ def write_target_operations(
         or tool_input.get("input")
         or ""
     )
+    if lower in {"bash", "shell"}:
+        patch = _literal_shell_patch(str(tool_input.get("command") or ""))
+        if patch is None:
+            return []
+        command = patch
     operations: list[tuple[str, str]] = []
     for line in command.splitlines():
         stripped = line.strip()
@@ -390,7 +419,7 @@ def evaluate_workdir_write_guard(
             ) and operation in {"update", "write", "edit", "multiedit", "notebookedit"}:
                 continue
             offending.append(str(target))
-    if tool_name.lower() in {"bash", "shell"}:
+    if tool_name.lower() in {"bash", "shell"} and not targets:
         for project_path in project_roots:
             if (
                 mutating_shell

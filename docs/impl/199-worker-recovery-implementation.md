@@ -1,5 +1,16 @@
 # 199：失败恢复实施与覆盖记录
 
+## 2026-11-11 控制面重启后的动态会话采集
+
+`zf start --control-plane-only` 保留动态 Product Flow worker 时，除了启动角色，
+还从 `RoleSessionRegistry` 恢复已有 provider 会话的采集连接。
+入口调用 `runtime/session_tailer_recovery.py`；只消费已登记且存在的会话文件，
+从 EOF 接续，不回放重启期间的历史正文，不重绑会话、不重新派发任务。
+同 instance/path 复用 tailer 的幂等连接，dry-run 不启动采集线程。
+CLI 接线及新行只采集一次的 mock 回归见 `tests/test_session_tailer_recovery.py`
+与 `tests/test_cli_start.py`。该修复解决重启后活跃 worker 遥测缺失，
+不表示控制器 SIGSEGV 根因或历史账本完整性问题已解决。
+
 > 状态: partial
 > 日期：2026-11-06 UTC；设计：[199](../design/199-worker-failure-recovery-and-role-handoff.md)；起点：`cff2a8d1`。
 

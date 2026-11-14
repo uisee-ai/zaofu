@@ -1,12 +1,57 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from tests.test_workflow_budget_guard import _runtime, _start_operation
 from zf.cli.main import main
 from zf.core.config.schema import ExecutionProfileLimitsConfig
 from zf.core.events.model import ZfEvent
 from zf.runtime.workflow_budget_guard import enforce_active_workflow_budgets
 from zf.runtime.workflow_budget_status import operation_budget_status
+
+
+@pytest.mark.parametrize("limit,used", [(0, 2_046_586), (1000, 10), (1000, 500), (1000, 800)])
+def test_cost_guidance_does_not_pause_unfinished_work_without_violation(
+    tmp_path, monkeypatch, capsys, limit, used,
+):
+    runtime, transport = _runtime(
+        tmp_path, operation_limits=ExecutionProfileLimitsConfig(token_budget=limit),
+    )
+    operation_id, _ = _start_operation(runtime)
+    runtime.cost_tracker.record_usage("dev", used, 0, model="unknown-model", provider="openai")
+    monkeypatch.setattr("zf.cli.cost.resolve_project_context", lambda: SimpleNamespace(
+        state_dir=runtime.state_dir, config=runtime.config, project_root=tmp_path,
+    ))
+    before = runtime.event_log.read_all()
+    assert main(["cost", "--operation", operation_id, "--json"]) == 0
+    status = json.loads(capsys.readouterr().out)["data"]
+    assert status["exceeded"] == []
+    assert "Continue the current authorized work" in status["guidance"]
+    assert "does not pause or complete" in status["guidance"]
+    assert ("Preserve a continuation note" in status["guidance"]) == (limit > 0 and used >= limit / 2)
+    assert runtime.event_log.read_all() == before
+    assert transport.terminated == []
+
+
+@pytest.mark.parametrize("pricing_unavailable", [False, True])
+def test_cost_guidance_keeps_hard_limit_and_fail_closed_recovery(tmp_path, pricing_unavailable):
+    runtime, _ = _runtime(
+        tmp_path, operation_limits=ExecutionProfileLimitsConfig(
+            token_budget=1000, cost_budget_usd=10 if pricing_unavailable else 0,
+        ),
+    )
+    runtime.config.budget_fail_closed = pricing_unavailable
+    operation_id, _ = _start_operation(runtime)
+    runtime.cost_tracker.record_usage(
+        "dev", 10 if pricing_unavailable else 1000, 0,
+        model="unknown-model", provider="openai",
+    )
+    status = operation_budget_status(runtime.state_dir, runtime.config, operation_id)
+    assert status["exceeded"] == ["pricing_unavailable" if pricing_unavailable else "tokens"]
+    assert "Continue the current authorized work" not in status["guidance"]
+    assert "controlled recovery" in status["guidance"]
+    assert "do not reset budgets or skip gates" in status["guidance"]
 
 
 def test_warning_restart_dedup_components_and_hard_limit(tmp_path):

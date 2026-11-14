@@ -644,8 +644,13 @@ def render_attempt_source_briefing(
             "the returned `next_page_start` until it is null. The ledger accepts pages "
             "only when they cover the entire selected input without gaps.",
         ])
-        lines.extend(["- Required reads for this attempt:"])
-        for item in required:
+        lines.append(
+            f"- Required reads for this attempt: {len(required)} selections. Locator examples below are "
+            "navigation only (up to 8); the full manifest and --required cursor "
+            "remain authoritative. Unlisted selections are still mandatory; "
+            "use artifact index for exact fallback source/path locators."
+        )
+        for item in required[:8]:
             source_id = str(item.get("source_id") or "")
             artifact_id = str(item.get("artifact_id") or "")
             json_path = str(item.get("json_path") or "$")

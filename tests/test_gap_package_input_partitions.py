@@ -9,8 +9,9 @@ from zf.runtime.plan_artifact_package import package_event_payload, prepare_plan
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
+@pytest.mark.parametrize("required", [False, True])
 @pytest.mark.parametrize("parent", ["T1", "unknown"])
-def test_package_rebinds_all_inherited_partitioned_ports(tmp_path, parent):
+def test_package_rebinds_all_inherited_partitioned_ports(tmp_path, parent, required):
     args, _, gap, previous = _prepare(tmp_path)
     state = args["state_dir"]
     spec = hydrate_sidecar_ref(state, _port(previous)).payload
@@ -23,6 +24,11 @@ def test_package_rebinds_all_inherited_partitioned_ports(tmp_path, parent):
                  "task_input_policy": {"schema_version": "task-input-policy.v1",
                      "shared_paths": ["$.schema_version"],
                      "tasks": [{"task_id": "T1", "paths": ["$.rules[0]"]}]}}
+    if required:
+        path = state / "r1.json"
+        original = json.loads(path.read_text())
+        original["required_plan_ports"] = ["product_acceptance_spec", "execution_spec"]
+        path.write_text(json.dumps(original))
     first, descriptor, _ = prepare_plan_artifact_package(events=[], payload={
         "task_map_ref": "r1.json", "task_map_generation": "g1",
         "requirement_spec_ref": "requirement.md", "plan_ports": [
@@ -30,7 +36,8 @@ def test_package_rebinds_all_inherited_partitioned_ports(tmp_path, parent):
             {"logical_name": "execution_spec", "body": execution}]}, **args)
     event = ZfEvent(type="plan.artifact_package.admitted", correlation_id="run-1",
                    payload=package_event_payload(first, descriptor, status="admitted"))
-    (state / "r2.json").write_text(json.dumps({"tasks": [
+    (state / "r2.json").write_text(json.dumps({**({"required_plan_ports":
+        ["product_acceptance_spec", "execution_spec"]} if required else {}), "tasks": [
         {"task_id": "T1", "acceptance_criteria": ["Exact JSON"]},
         {"task_id": "T2", "parent_task_id": parent, "acceptance_criteria": ["Exact JSON"]}],
         "amend": {"gap_task_ids": ["T2"]}}))

@@ -109,3 +109,25 @@ def test_gap_plan_inherits_its_generation_after_a_newer_plan_is_admitted(tmp_pat
     package, _, _ = prepare_plan_artifact_package(events=[event, newer_event], payload=gap, **args)
     assert _port(package)["rebound_from_ref"] == _port(previous)["ref"]
     assert package["supersedes_package_ref"] == event.payload["package_ref"]
+
+
+def test_gap_plan_accepts_bounded_amend_chain_to_prior_plan(tmp_path):
+    args, event, gap, _ = _prepare(tmp_path)
+    first = args["state_dir"] / "r2.json"
+    first.write_text(json.dumps({
+        "tasks": [{"task_id": "T1", "acceptance_criteria": ["Exact JSON"]}],
+        "amend": {"supersedes_task_map_ref": "r1.json"},
+    }))
+    second = args["state_dir"] / "r3.json"
+    second.write_text(json.dumps({
+        "tasks": [{"task_id": "T1", "acceptance_criteria": ["Exact JSON"]}],
+        "amend": {"supersedes_task_map_ref": "r2.json"},
+    }))
+    package, _, claim = prepare_plan_artifact_package(
+        events=[event], payload={**gap, "amend_of": "r3.json"}, **args
+    )
+    assert claim["goal_claim_continuity"]["status"] == "passed"
+    assert not any(
+        port["logical_name"] == "product_acceptance_spec"
+        for port in package["inherited"]
+    )

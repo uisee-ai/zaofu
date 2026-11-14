@@ -215,7 +215,11 @@ def evaluate_plan_candidate_preflight(
                     except (RuntimeError, ValueError) as exc:
                         _error(errors, "writer_fanout_task_map_invalid", "task_map.tasks", str(exc))
                     try:
-                        writer_fanout_dispatch_base_commit(selected)
+                        from zf.runtime.writer_fanout_admission import writer_task_map_dispatch_target
+
+                        writer_fanout_dispatch_base_commit(
+                            selected, fallback=writer_task_map_dispatch_target(task_map, trigger),
+                        )
                     except ValueError as exc:
                         _error(errors, "writer_fanout_base_conflict", "task_map.tasks", str(exc))
                 policy = writer_policy or {}
