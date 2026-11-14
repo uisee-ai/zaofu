@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { PlanPreview } from "../../api/types";
 import { MarkdownText } from "../agent-session/MarkdownText";
 import PlanMarkdownDocument from "./PlanMarkdownDocument";
+import PlanApprovalOverview from "./PlanApprovalOverview";
 import PlanSourceReader from "./PlanSourceReader";
 import PlanTraceReader from "./PlanTraceReader";
 import PlanInputReviewPanel from "./PlanInputReviewPanel";
@@ -67,34 +68,20 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
         {view === "original" ? <PlanMarkdownDocument statusLine={`版本 ${preview.plan_id} · ${preview.status} · 规划快照，尚不代表实施或测试通过`} content={preview.markdown || ""} reviewContent={preview.review_dossier_markdown || ""} initialAnchor={location.anchor} onAnchorChange={anchor => navigate({ anchor })} />
           : view === "sources" ? <PlanSourceReader preview={preview} projectId={projectId} name={location.source} anchor={location.anchor} onSelect={openSource} />
           : <div className="plan-review-scroll" role="region" aria-label="计划审阅内容" tabIndex={0}>
-          <p className="muted">版本 {preview.plan_id} · {preview.status} · 以下为规划快照，计划分配与场景不代表实现或测试已通过。</p>
+          <p className="muted">{preview.status === "pending" ? "待审批" : preview.status} · 以下为规划快照，计划分配与场景不代表实现或测试已通过。</p>
           {loading && <p role="status">正在读取同版规格…</p>}
           {errors.map(error => <p role="alert" key={error}>附件读取失败：{error}。请查看完整原文。</p>)}
           {preview.decision_review?.error && <p role="alert">{preview.decision_review.error}</p>}
           {!loading && model.warnings.map(warning => <p role="status" key={warning}>{warning}</p>)}
           {!loading && view === "modules" && specifications.warnings.map(warning => <p role="status" key={warning}>{warning}</p>)}
-          {!loading && view === "overview" && <>
-            <h2>本次交付与审批范围</h2>
-            <p>{model.modules.length} 个任务 · {model.criterionCount} 个验收项 · {model.pageCount ?? "未提供"} 个页面 · {model.formCount ?? "未提供"} 类表单</p>
-            {model.overview ? <MarkdownText key={`overview:${model.overview}`} content={model.overview} /> : excerpts.overview.length ? quoted(excerpts.overview) : <>{excerpts.opening.length > 0 && <p className="muted">作者未声明独立概览；以下引用原文开篇，不推断审批结论。</p>}{quoted(excerpts.opening)}</>}
-            <h3>交付顺序与完成条件</h3>
-            {model.modules.map(module => <article className="plan-review-card" key={module.id}>
-              <button type="button" className="delivery-action-button" onClick={() => selectTask(module.id)}>{module.id} · {module.title}</button>
-              <p>前置：{module.dependencies.join("、") || "未声明前置"} · 验收项：{module.criteria.map(ac => ac.id).join("、") || "未提供"}</p>
-              <p>{module.description}</p>
-            </article>)}
-            <h3>业务旅程</h3>
-            {model.journeys ? <MarkdownText key={`journeys:${model.journeys}`} content={model.journeys} /> : quoted(excerpts.journeys.length ? excerpts.journeys : excerpts.pages)}
-            <details className="plan-review-card"><summary>完整交付目标（含工程约束）</summary>{model.goals.map((goal, i) => <p key={i}><strong>{text(goal.id)}</strong> {text(goal.statement)}</p>)}</details>
-            <h3>业务与交付模块</h3>
-            {model.groups.length > 0 ? model.groups.map((group, i) => <article className="plan-review-card" key={i}><h4>{text(group.title || group.name || group.module_id || group.id)}</h4><p>{text(group.description || group.summary)}</p>{strings(group.task_ids).map(id => <button className="delivery-action-button" type="button" key={id} onClick={() => selectTask(id)}>{model.modules.find(m => m.id === id)?.title || id}</button>)}</article>) : <p>本版未提供业务分组，可从模块规格查看各任务的用户行为。</p>}
-            <h3>待决事项与进入条件</h3><p>{decisionSummary}</p><DecisionList decisions={decisions} {...sourceProps} />
-            {excerpts.decisions.length > 0 && <button type="button" className="delivery-action-button" onClick={() => navigate({ view: "decisions" })}>核对同版决定原文</button>}
-          </>}
+          {!loading && view === "overview" && <PlanApprovalOverview
+            model={model} excerpts={excerpts} decisionSummary={decisionSummary} decisions={decisions}
+            preview={preview} projectId={projectId} quoted={quoted} selectTask={selectTask}
+            onChanges={() => navigate({ view: "changes" })} onDecisions={() => navigate({ view: "decisions" })} />}
           {!loading && view === "changes" && <>
             <h2>本次变更与保留义务</h2>
             <p>以下引用作者的同版变更说明；未提供不代表没有变更。历史版本逐项差异可在覆盖审查中比较。</p>
-            {quoted(excerpts.changes)}
+            {model.changes ? <MarkdownText content={model.changes} /> : quoted(excerpts.changes)}
             <button type="button" className="delivery-action-button" onClick={() => navigate({ view: "coverage" })}>比较绑定版本与来源影响</button>
           </>}
           {!loading && view === "decisions" && <>

@@ -210,3 +210,18 @@ assert.equal(changeSections.length, 1);
 assert.equal(changeSections[0].content.includes("原字节不变"), true);
 assert.equal(changeSections[0].content.includes("读取。"), false);
 assert.equal(planReadingSections("```md\n## 本次变更\n假的标题\n```").changes.length, 0);
+
+
+{
+  const review = buildPlanReview({ execution_spec: { shared: { human_review: {
+    overview_markdown: "交付三个 CLI。", changes_markdown: "仅修改 upper 示例，其他义务保留。",
+    risks_markdown: "输入编码风险仍需验证。",
+  } } } });
+  assert.equal(review.overview, "交付三个 CLI。");
+  assert.equal(review.changes, "仅修改 upper 示例，其他义务保留。");
+  assert.equal(review.risks, "输入编码风险仍需验证。");
+  assert.equal(buildPlanReview({}).changes, "");
+}
+
+
+assert.equal(planDecisionView({ id: "D-03", statement: "Owner 批准后才允许实现", status: "pending", blocking: true }).question, "Owner 批准后才允许实现");

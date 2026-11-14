@@ -403,3 +403,37 @@ full 415494 → incremental 442000 bytes（增加 6.38%）；诊断存在 11 项
 15 分 20 秒，不证明提速。无收益回退、独立图多样本和完整分区计量仍待后续评估。
 详细失败、阶段、截图与停机归档见 [B02 验证报告](../../reports/spec207-b02/evaluation.md)
 （本地 gitignored）；B02 可归档，整体性能目标仍未通过。
+
+
+### 复评后修复：摘要、审批首屏与无收益回退
+
+机械 digest 的 assembly 结论与 Task Map 准入共用 `assembly_ownership_errors`。
+单 owner 或有依赖的串行拓扑不要求专门 assembly 任务；多个独立并行 bundle 缺
+assembly、assembly 与所依赖 bundle 共用 owner 等错误仍保留。缺 owner/任务/依赖
+身份显示未知，不按名字含 ASSEMBLY 或根文件数量推定集成责任已满足。该检查只
+报告拓扑，不证明最终产品已装配；历史 digest 工件不覆写，绑定版本的当前预览
+使用当前投影规则。
+
+审批概览按交付、作者声明的本次变化、风险与待决定、执行顺序组织。作者缺摘要
+时用绑定任务展示范围，不把第一章的路径、SHA 与授权时间线自动当成业务摘要；
+开篇和工程目标保留在可展开的工程来源中。事件版本移入工程上下文，完整原文、
+来源和待决定状态仍可检查。真实记录用 statement 承载决定正文时也保留展示，
+避免只剩 D-ID 和状态。既有 human_review 可提供 changes_markdown 与
+risks_markdown；缺失明确显示未知，不推断无变更、无风险或已通过验证。
+
+增量资格通过后，派发前按精确 source/artifact/digest 和已授权 JSON selection
+复算 full 与 scoped 的完整选中正文，包含新旧分区、shared、前后继和其余必读。
+同摘要正文去重只用于计量，不减少显式必读义务。使用原始引用或精确固定副本，
+不修改已发布 manifest、不制造读取回执。未知、持平或 scoped 更多时用原 full
+policy；diagnostic 保留 verified 资格、candidate 成本和真实选择原因
+`selection_size_unproven` / `no_selection_byte_saving`。正文计量不是 Provider
+流量、token、费用或延迟预测；全量回退不继承历史批准。
+
+依赖审查与避免重复正文的方法留在 Planner/Critic Skill：业务依赖、共享脚手架、
+证据与集成依赖分别解释，不把单 lane 排队顺序写成业务链；图变化重新全量评审，
+不由 runtime 自动删边。后续真实多样本仍须证明生成图与实际耗时改进。
+
+本批范围和验收见 [后续任务](../../tasks/done/2026-11-14-0124-spec207-preview-and-review-efficiency.md)，
+原始本地证据保存在 `reports/spec207-followup/`。对 B02 原最终派发只读回放：资格
+仍 verified，scoped 442000 bytes > full 415494 bytes，选择 full；11 个未计量分区
+已完整复算，unknown=0。原事件账本不变，该结果不是新 Provider 运行。

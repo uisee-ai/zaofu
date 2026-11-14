@@ -121,7 +121,7 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
     };
   });
   return { modules, decisions, goals: rows(map.goal_claims), groups: rows(map.modules), warnings,
-    overview: text(shared.overview_markdown), journeys: text(shared.journeys_markdown),
+    overview: text(shared.overview_markdown), changes: text(shared.changes_markdown), risks: text(shared.risks_markdown), journeys: text(shared.journeys_markdown),
     pages: rows(inventory.pages), forms: rows(inventory.forms),
     pageCount: Array.isArray(inventory.pages) ? inventory.pages.length : null,
     formCount: Array.isArray(inventory.forms) ? inventory.forms.length : null,

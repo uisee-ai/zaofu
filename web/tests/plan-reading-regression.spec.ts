@@ -173,15 +173,33 @@ for (const width of [1280, 375]) test(`${width}px real Chinese author headings p
   }
 });
 
-for (const width of [1280, 375]) test(`${width}px unfamiliar opening is an explicit quotation, not an inferred approval summary`, async ({ page, request }) => {
+for (const width of [1280, 375]) test(`${width}px unfamiliar engineering opening is folded and remains reachable verbatim`, async ({ page, request }) => {
   await page.setViewportSize({ width, height: 900 });
   const markdown = "# Plan\n## 权威、来源和授权\n候选仍等待 Owner 决定。\n### 来源\n保留来源原文。\n## PRD 用户结果\n原始字节不变。\n## Task Spec: RL-READING\n不能冒充概览的本片正文。\n";
   const dialog = await openLive(page, request, markdown, false);
-  await expect(dialog.getByText("作者未声明独立概览；以下引用原文开篇，不推断审批结论。", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("作者未提供独立业务摘要；以下列出同版任务，详细范围请核对完整原文。", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("保留来源原文。", { exact: true })).not.toBeVisible();
+  await dialog.locator("summary").filter({ hasText: "工程来源与完整约束" }).click();
   await expect(dialog.getByText("候选仍等待 Owner 决定。", { exact: true })).toBeVisible();
   await expect(dialog.getByText("保留来源原文。", { exact: true })).toBeVisible();
   await expect(dialog.getByText("不能冒充概览的本片正文。", { exact: true })).toHaveCount(0);
   expect(await dialog.locator(".plan-review-scroll").evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await dialog.getByRole("button", { name: "在完整原文中阅读：权威、来源和授权", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "权威、来源和授权", exact: true })).toBeInViewport();
+});
+
+
+test("approval overview prioritizes delivery and decisions while preserving engineering originals", async ({ page, request }) => {
+  const markdown = "# 三个独立 CLI\n\n## 授权、原始来源与范围\n工程引用 artifacts/private-long-path.json，SHA-256 abc123，evt-old-source。\n\n## Task Spec: RL-READING\n完整义务不能删。\n";
+  const dialog = await openLive(page, request, markdown, false);
+  await expect(dialog.getByRole("heading", { name: "本次交付与审批范围" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "本次变更", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "风险与待决定事项" })).toBeVisible();
+  await expect(dialog.getByText(/本版未提供独立变更说明/)).toBeVisible();
+  await expect(dialog.getByText(/工程引用 artifacts/)).not.toBeVisible();
+  await dialog.locator("summary").filter({ hasText: "工程来源与完整约束" }).click();
+  await expect(dialog.getByText(/工程引用 artifacts/)).toBeVisible();
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
+  await dialog.getByRole("button", { name: "查看源码", exact: true }).click();
+  await expect(dialog.locator(".plan-document-source")).toHaveText(markdown);
 });

@@ -55,7 +55,7 @@ export function PlanPreviewOverlay({
       <div className="plan-preview-toolbar">
         <div>
           <strong>{preview?.content_profile === "derived_plan_full" ? "完整 Plan Preview" : "Plan Preview"}</strong>
-          <span className="mono">{planId || "loading"}</span>
+          <span>{preview?.status === "pending" ? "待审批" : preview?.status || "加载中"}</span>
           {preview?.content_profile === "derived_plan_full" && preview.markdown ? (
             <span className="muted">正文 {preview.markdown.length.toLocaleString()} 字符 · Task Map 为辅助拆分</span>
           ) : null}
@@ -114,6 +114,7 @@ export function PlanPreviewOverlay({
           <dl className="plan-approval-meta">
             <div><dt>正文</dt><dd>{planContentKindLabel(preview)}</dd></div>
             <div><dt>内容契约</dt><dd>{planContentProfileLabel(preview?.content_profile)}</dd></div>
+            <div><dt>版本</dt><dd className="mono">{planId || "-"}</dd></div>
             <div><dt>status</dt><dd>{preview?.status || "-"}</dd></div>
             <div><dt>stage</dt><dd>{preview?.stage_id || "-"}</dd></div>
             <div><dt>tasks</dt><dd>{preview?.task_count ?? preview?.task_map_summary?.task_count ?? "-"}</dd></div>

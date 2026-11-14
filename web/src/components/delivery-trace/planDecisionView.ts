@@ -4,7 +4,7 @@ import { type Row, strings, text, unique } from "./planReviewModel.js";
 export function planDecisionView(row: Row) {
   return {
     id: text(row.decision_id) || text(row.id),
-    question: text(row.question) || text(row.title) || text(row.decision),
+    question: text(row.question) || text(row.title) || text(row.decision) || text(row.statement),
     resolution: text(row.resolution) || text(row.recommendation) || text(row.proposed_resolution),
     deadline: text(row.enter_before) || text(row.latest_gate) || text(row.latest_decision_stage) || text(row.latest_use_point),
     closure: text(row.done_when) || text(row.closure_evidence),

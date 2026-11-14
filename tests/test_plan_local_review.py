@@ -75,7 +75,7 @@ def test_incomplete_or_broad_proof_keeps_full_read(problem):
                              new_port=new_port, affected_task_ids=scope) is None
 
 
-def _policy_fixture(state, scenario=""):
+def _policy_fixture(state, scenario="", *, unrelated_bytes=4096):
     from datetime import datetime, timedelta, timezone
     from io import StringIO
     from uuid import uuid4
@@ -93,6 +93,9 @@ def _policy_fixture(state, scenario=""):
             schema_version=body.get("schema_version", "fixture.v1"), created_by="test")
 
     old_map, new_map, old_port, new_port = _inputs()
+    # A real size benefit requires substantial unrelated content, not tiny toy partitions.
+    for port in (old_port, new_port):
+        port["tasks"][2]["body"]["detail"] = "c" * unrelated_bytes
     for task_map in (old_map, new_map):
         for task in task_map["tasks"]:
             task_id = task["task_id"]

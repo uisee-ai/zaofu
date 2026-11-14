@@ -45,7 +45,7 @@ def _checklist(task_map_path: Path) -> list[str]:
 
     tasks = data.get("tasks") or []
     return [
-        f"[X] {check['label']}: {check['detail']}"
+        f"[{'?' if check['ok'] is None else 'X'}] {check['label']}: {check['detail']}"
         for check in plan_digest_checklist(tasks)
         if not check["ok"]
     ]

@@ -110,7 +110,8 @@ test("a late response from a closed preview cannot replace the newly selected Pl
   await (await lateResponse).finished();
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(dialog.getByRole("status")).toContainText("仅有计划摘要");
-  await expect(dialog.locator(".plan-preview-toolbar").getByText("evt-preview-digest", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "工程上下文", exact: true }).click();
+  await expect(dialog.locator(".plan-preview-context").getByText("evt-preview-digest", { exact: true })).toBeVisible();
   await expect(dialog.getByText("完整规划示例", { exact: true })).toHaveCount(0);
 });
 
