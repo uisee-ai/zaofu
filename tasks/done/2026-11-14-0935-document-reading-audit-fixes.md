@@ -1,6 +1,7 @@
 # Plan／PRD 真实阅读审核修复
 
-> 状态: active
+> 状态: done
+> 实现提交: `d2e0c923 fix: improve Plan and PRD Markdown reading`
 
 来源：用户批准下一步优化；[207](../../docs/design/207-review-cost-and-incremental-evidence-optimization.md)，本地证据 reports/spec207-visual-audit/evaluation.md。
 
@@ -21,4 +22,4 @@
 - canonical Skill 与两份分发字节一致；业务优先的新生成顺序尚未运行新 Provider 验证，旧工件保持原样。
 - 详细证据：本地 `reports/spec207-reading-fixes/evaluation.md`；测试中旧状态／DOM 换行断言的修正及中间超时均有记录，最终冻结源文件与构建后完整通过。
 
-本批次不 merge／push。实现提交将在归档时记录。
+本批次不 merge／push。实现已验证，任务随本归档提交关闭。
