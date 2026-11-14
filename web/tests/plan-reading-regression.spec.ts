@@ -19,11 +19,22 @@ async function openLive(page: Page, request: APIRequestContext, markdown = live.
   }
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-review`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
-  if (original) await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
+  if (!original) await dialog.getByRole("button", { name: "审批概览", exact: true }).click();
   return dialog;
 }
 
-test("real author shape: default approval overview, unknown register quotes decisions, 21 cases remain NOT_RUN", async ({ page, request }) => {
+test("default opens the full continuous document and preserves explicit overview links", async ({ page, request }) => {
+  const dialog = await openLive(page, request);
+  await expect(dialog.getByRole("button", { name: "完整原文", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByRole("heading", { name: "个人阅读清单：PRD、设计与执行候选 Plan", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "查看源码", exact: true }).click();
+  await expect(dialog.locator(".plan-document-source")).toHaveText(live.markdown);
+  await dialog.getByRole("button", { name: "审批概览", exact: true }).click();
+  await page.reload();
+  await expect(dialog.getByRole("button", { name: "审批概览", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("real author shape: optional approval overview, unknown register quotes decisions, 21 cases remain NOT_RUN", async ({ page, request }) => {
   const dialog = await openLive(page, request, live.markdown, false);
   await expect(dialog.getByRole("button", { name: "审批概览", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(dialog.getByText("完整 Plan Preview", { exact: true })).toBeVisible();
@@ -46,6 +57,7 @@ test("real author shape: default approval overview, unknown register quotes deci
 test("rendered search crosses emphasis, navigates matches, and download preserves original bytes", async ({ page, request }) => {
   const markdown = "# 阅读测试\n\n## 第一节\n保存**失败**后保留输入。\n\n## 第二节\n保存失败可以重试。\n";
   const dialog = await openLive(page, request, markdown);
+  await dialog.locator("summary").filter({ hasText: "章节索引" }).click();
   await dialog.getByLabel("搜索正文", { exact: true }).fill("保存失败");
   await expect(dialog.getByText("1 / 2 处匹配", { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "下一处", exact: true }).click();
@@ -203,3 +215,77 @@ test("approval overview prioritizes delivery and decisions while preserving engi
   await dialog.getByRole("button", { name: "查看源码", exact: true }).click();
   await expect(dialog.locator(".plan-document-source")).toHaveText(markdown);
 });
+
+test("document typography uses a readable body size and bounds desktop line length", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const dialog = await openLive(page, request, "# 阅读体验\n\n一段用于检查实际字号和行距的正文。\n\n## 方案\n\n- 第一项\n- 第二项\n");
+  const paragraph = dialog.getByText("一段用于检查实际字号和行距的正文。", { exact: true });
+  await expect(paragraph).toBeVisible();
+  const typography = await paragraph.evaluate(el => ({ size: parseFloat(getComputedStyle(el).fontSize), line: parseFloat(getComputedStyle(el).lineHeight), width: el.getBoundingClientRect().width }));
+  expect(typography.size).toBeGreaterThanOrEqual(16);
+  expect(typography.line).toBeGreaterThanOrEqual(27);
+  expect(typography.width).toBeLessThanOrEqual(760);
+  await expect(dialog.getByRole("heading", { name: "方案", exact: true })).toBeVisible();
+  expect((await dialog.getByRole("region", { name: "计划正文", exact: true }).boundingBox())!.height).toBeGreaterThan(650);
+});
+
+test("focused Plan keeps full Markdown and reading location while review tools stay optional", async ({ page, request }) => {
+  const markdown = "# 阅读样本\n\n## 目标\n\n第一段说明。\n\n- 第一项\n\n  列表中的独立段落。\n\n> 一条引用。\n\n| 字段 | 规则 |\n|---|---|\n| name | 必填 |\n\n```python\nprint('hello')\n```\n";
+  const dialog = await openLive(page, request, markdown, false);
+  await dialog.getByRole("button", { name: "专注阅读", exact: true }).click();
+  await expect(dialog.getByRole("navigation", { name: "计划审阅视图" })).toBeHidden();
+  await expect(dialog.getByRole("button", { name: "Approve", exact: true })).toBeHidden();
+  const paragraph = dialog.getByText("列表中的独立段落。", { exact: true });
+  await expect(paragraph).toHaveCSS("display", "block");
+  await expect(paragraph).toHaveCSS("font-size", "16px");
+  await expect(paragraph).toHaveCSS("line-height", "28px");
+  await expect(dialog.locator("blockquote")).toBeVisible();
+  await expect(dialog.getByRole("region", { name: "计划正文", exact: true }).locator("table")).toBeVisible();
+  await dialog.locator("summary").filter({ hasText: "章节索引" }).click();
+  await dialog.getByRole("button", { name: "目标", exact: true }).click();
+  await expect(page).toHaveURL(/reader=focus/);
+  await page.reload();
+  await expect(dialog.getByRole("button", { name: "返回审阅", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "查看源码", exact: true }).click();
+  expect(await dialog.locator(".plan-document-source").textContent()).toBe(markdown);
+  await dialog.getByRole("button", { name: "返回审阅", exact: true }).click();
+  await expect(dialog.getByRole("navigation", { name: "计划审阅视图" })).toBeVisible();
+});
+
+
+test("Markdown semantics survive sections: long inline code, untyped fences, h6 and global references", async ({ page, request, context }) => {
+  const path = "docs/" + "long-segment/".repeat(12) + "spec.md";
+  const markdown = `# 语义样本\n\n请打开 \`${path}\` 并继续阅读。\n\n## 引用链接\n\n[验收规范][spec]，以及 ![示意图][image]。\n\n###### 六级标题\n\n\`\`\`\nplain block\n\`\`\`\n\n## 引用定义\n\n[spec]: https://example.invalid/spec "验收规范"\n[image]: /favicon.svg\n`;
+  const dialog = await openLive(page, request, markdown);
+  const body = dialog.getByRole("region", { name: "计划正文", exact: true });
+  await expect(body.locator("p code")).toHaveText(path);
+  await expect(body.locator("p .agent-code-block")).toHaveCount(0);
+  await expect(body.locator(".agent-code-block")).toHaveCount(1);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await body.getByTitle("Copy code", { exact: true }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("plain block");
+  await expect(body.getByRole("heading", { level: 6, name: "六级标题" })).toBeVisible();
+  await expect(body.getByRole("link", { name: "验收规范" })).toHaveAttribute("href", "https://example.invalid/spec");
+  await expect(body.getByRole("img", { name: "示意图" })).toHaveAttribute("src", "/favicon.svg");
+  await dialog.getByRole("button", { name: "全文连续阅读", exact: true }).click();
+  await expect(body.getByRole("link", { name: "验收规范" })).toHaveAttribute("href", "https://example.invalid/spec");
+  await dialog.getByRole("button", { name: "查看源码", exact: true }).click();
+  await expect(body.locator("pre")).toHaveText(markdown);
+});
+
+for (const width of [1440, 1024, 390]) {
+  test(`ordinary tables wrap and wide tables explain scrolling at ${width}px`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const markdown = "# 表格阅读\n\n| 名称 | 规则 | 状态 |\n|---|---|---|\n| 保存 | 很长的规则说明允许自然换行。" + "说明".repeat(40) + " | 待验收 |\n\n| 一 | 二 | 三 | 四 | 五 | 六 | 七 | 八 | 九 | 十 |\n|---|---|---|---|---|---|---|---|---|---|\n| a | b | c | d | e | f | g | h | i | j |\n";
+    const dialog = await openLive(page, request, markdown);
+    await dialog.getByRole("button", { name: "专注阅读", exact: true }).click();
+    const body = dialog.getByRole("region", { name: "计划正文", exact: true });
+    const wrappers = body.locator(".agent-markdown-table-wrap");
+    await expect(wrappers).toHaveCount(2);
+    if (width >= 1024) expect(await wrappers.first().evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    expect(await wrappers.last().evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
+    await expect(body.locator(".agent-table-scroll-hint").last()).toBeVisible();
+    expect(await body.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    expect((await body.boundingBox())!.height).toBeGreaterThan(700);
+  });
+}

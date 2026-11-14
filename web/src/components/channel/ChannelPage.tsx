@@ -1,4 +1,5 @@
 import { useChannelComposerDraft, useChannelThreadSelection, channelDraftStorageKey, type ComposerAttachment, type ChannelComposerDraft } from "./useChannelConversationState";
+import { useChannelDrawer } from "./useChannelDrawer";
 import { ChannelContextFailures } from "./ChannelContextFailures";
 // ChannelPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { postAction, search, uploadChannelAttachment } from "../../api/client";
@@ -493,7 +494,7 @@ export function ChannelPage({
   const [controlsBusy, setControlsBusy] = useState(false);
   const [controlError, setControlError] = useState("");
   const [researchActionBusyId, setResearchActionBusyId] = useState("");
-  const [drawer, setDrawer] = useState<ChannelDrawerKey | null>(null);
+  const [drawer, setDrawer] = useChannelDrawer<ChannelDrawerKey>(projectId || "", selectedChannelId, activeChannelThreadId);
   const [channelSwitcherOpen, setChannelSwitcherOpen] = useState(false);
   const [channelSearch, setChannelSearch] = useState("");
   const [historyQuery, setHistoryQuery] = useState("");
@@ -2613,6 +2614,16 @@ export function ChannelPage({
           </div>
         </div>
         <div className="channel-header-actions">
+          <button type="button" className="channel-tool-button channel-prd-open" data-testid="channel-prd-preview-entry"
+            aria-pressed={drawer === "prd"} onClick={() => {
+              const url = new URL(window.location.href);
+              url.searchParams.set("reader", "focus");
+              window.history.replaceState(window.history.state, "", url);
+              setDrawer("prd");
+              window.dispatchEvent(new Event("zf:prd-reader-focus"));
+            }}>
+            <FileText size={16} /><span>PRD 预览</span>
+          </button>
           <button
             aria-pressed={historySearchOpen}
             className={`channel-tool-button ${historySearchOpen ? "active" : ""}`}

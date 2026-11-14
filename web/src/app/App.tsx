@@ -223,7 +223,7 @@ const LOCAL_AGENT_STREAM_EVENTS = new Set([
 const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id", "v", "request", "expected_run", "workflow_node"]);
 const PAGE_QUERY_KEYS: Partial<Record<PageId, ReadonlySet<string>>> = {
   project: new Set(["agent", "agent_thread", "agent_request"]),
-  channels: new Set(["thread", "question"]),
+  channels: new Set(["thread", "question", "preview", "reader"]),
   workflows: new Set(["request", "graph", "node"]),
   inbox: new Set(["plan"]),
   settings: new Set(["settings"]),

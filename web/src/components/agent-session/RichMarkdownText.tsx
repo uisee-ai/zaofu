@@ -56,7 +56,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
     h3: ({ children, ...props }) => <h3 {...props}>{children}</h3>,
     h4: ({ children, ...props }) => <h4 {...props}>{children}</h4>,
     h5: ({ children, ...props }) => <h5 {...props}>{children}</h5>,
-    h6: ({ children, ...props }) => <h5 {...props}>{children}</h5>,
+    h6: ({ children, ...props }) => <h6 {...props}>{children}</h6>,
     a: ({ children, href, ...props }) => {
       const item = localDocumentLink(href || "");
       return openReference && item
@@ -64,21 +64,17 @@ const RichMarkdownText = memo(function RichMarkdownText({
             onClick={() => openReference(item)}>{children}</button>
         : <a href={href} rel="noreferrer" target="_blank" {...props}>{children}</a>;
     },
-    table: ({ children, ...props }) => (
-      <div className="agent-markdown-table-wrap" role="region" aria-label="表格，可横向滚动" tabIndex={0}>
-        <table {...props}>{children}</table>
-      </div>
-    ),
-    pre: ({ children }) => <>{children}</>,
-    code: ({ children, className: codeClassName, ...props }) => {
-      const value = String(children ?? "");
-      const language = languageFromClassName(String(codeClassName ?? ""));
-      const isBlock = Boolean(language) || value.includes("\n") || value.length > 96;
-      if (!isBlock) {
-        return <code className={codeClassName} {...props}>{children}</code>;
-      }
+    table: ({ children, node: _node, ...props }) => <MarkdownTable {...props}>{children}</MarkdownTable>,
+    // A pre > code node is a block even without a language or trailing newline.
+    // Inline code stays inline regardless of the length of its contents.
+    pre: ({ node, children }) => {
+      const code = node?.children.find(child => child.type === "element" && child.tagName === "code");
+      if (!code || code.type !== "element") return <pre>{children}</pre>;
+      const value = code.children.map(child => child.type === "text" ? child.value : "").join("");
+      const language = languageFromClassName(String(code.properties.className ?? ""));
       return <CodeBlock code={trimTrailingNewline(language === "json" ? prettyPrintIfJson(value) : value)} language={language} />;
     },
+    code: ({ children, node: _node, ...props }) => <code {...props}>{children}</code>,
   }), [openReference]);
 
   return (
@@ -97,6 +93,26 @@ const RichMarkdownText = memo(function RichMarkdownText({
 });
 
 export default RichMarkdownText;
+
+function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
+  const wrapper = useRef<HTMLDivElement>(null);
+  const table = useRef<HTMLTableElement>(null);
+  const [overflow, setOverflow] = useState(false);
+  useEffect(() => {
+    const measure = () => setOverflow(Boolean(wrapper.current && table.current && table.current.scrollWidth > wrapper.current.clientWidth + 1));
+    const observer = new ResizeObserver(measure);
+    if (wrapper.current) observer.observe(wrapper.current);
+    if (table.current) observer.observe(table.current);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  return <div className="agent-markdown-table">
+    {overflow && <small className="agent-table-scroll-hint">表格较宽，可横向滚动 →</small>}
+    <div ref={wrapper} className="agent-markdown-table-wrap" role="region" aria-label="表格，可横向滚动" tabIndex={0}>
+      <table ref={table} {...props}>{children}</table>
+    </div>
+  </div>;
+}
 
 function CodeBlock({ code, language }: { code: string; language?: string }) {
   const [copied, setCopied] = useState(false);

@@ -127,6 +127,7 @@
 .channel-prd-document::backdrop { background: var(--panel); }
 .channel-prd-document .channel-document-pagination { flex: none; justify-content: center; gap: 20px; padding: 8px 18px; border-top: 1px solid var(--line-soft); }
 .channel-prd-document .channel-document-toolbar { flex-wrap: wrap; }
+.channel-prd-document .channel-document-toolbar > div:last-child { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; }
 .channel-prd-file-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .channel-prd-file-title strong { font-size: var(--text-13); }
 .channel-prd-view-switch { display: flex; padding: 2px; border-radius: 7px; background: var(--surface); }
@@ -141,11 +142,11 @@
 .channel-file-chip small { color: var(--brand); }
 .channel-document-toolbar small { color: var(--muted-foreground); font-size: var(--text-11); }
 .channel-document-body { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
-.channel-document-body > .agent-markdown { max-width: 76ch; margin: 0 auto; font-size: var(--text-14); line-height: 1.7; }
-.channel-document-body .agent-markdown :is(h2, h3, h4) { text-transform: none; letter-spacing: normal; margin: 24px 0 12px; }
-.channel-document-body .agent-markdown h2 { font-size: var(--text-18); }
-.channel-document-body .agent-markdown h2:first-child { font-size: var(--text-20); margin-top: 0; }
-.channel-document-body .agent-markdown h3 { font-size: var(--text-16); }
+.channel-document-body > .agent-markdown:not(.document-markdown) { max-width: 76ch; margin: 0 auto; font-size: var(--text-14); line-height: 1.7; }
+.channel-document-body .agent-markdown:not(.document-markdown) :is(h2, h3, h4) { text-transform: none; letter-spacing: normal; margin: 24px 0 12px; }
+.channel-document-body .agent-markdown:not(.document-markdown) h2 { font-size: var(--text-18); }
+.channel-document-body .agent-markdown:not(.document-markdown) h2:first-child { font-size: var(--text-20); margin-top: 0; }
+.channel-document-body .agent-markdown:not(.document-markdown) h3 { font-size: var(--text-16); }
 .channel-prd-document .agent-markdown-table-wrap { max-width: 100%; overflow-x: auto; }
 .channel-document-body pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-12); }
 .channel-document-body [role="alert"] { overflow-wrap: anywhere; }
@@ -667,3 +668,7 @@
     width: calc(100% - 20px);
   }
 }
+
+.channel-header-actions .channel-prd-open { border: 1px solid var(--line); background: var(--surface); color: var(--text); gap: 6px; white-space: nowrap; }
+
+.channel-prd-document.is-fullscreen .channel-document-body { padding: 40px max(24px, calc((100% - 760px) / 2)) 64px; }

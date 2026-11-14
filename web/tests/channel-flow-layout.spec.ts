@@ -347,6 +347,7 @@ test("empty channel keeps the composer primary without a placeholder PRD card", 
   Object.assign(detail.discussion_attention.main, { state: "idle", attention_kind: "none", owner_question_count: 0, open_question_count: 0 });
   const state = await setup(page, request, detail);
   await expect(page.getByTestId("channel-prd-handoff")).toHaveCount(0);
+  await expect(page.getByTestId("channel-prd-preview-entry")).toBeInViewport();
   await expect(page.getByTestId("channel-flow-requirement")).toHaveAttribute("aria-current", "step");
   await expect(page.locator(".channel-composer")).toBeInViewport();
   expect(state.writes).toEqual([]);
@@ -734,7 +735,6 @@ test("preview failures and read-only sessions cannot Process; retry loads the fu
   await expect(page.getByTestId("channel-create-task-from-prd")).toBeEnabled();
   await page.route("**/api/web-session", (route) => route.fulfill({ json: { mode: "read_only", unlocked: false, actions_enabled: false } }));
   await page.reload();
-  await page.getByTestId("channel-flow-prd").click();
   await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
   await expect(page.getByTestId("channel-create-task-from-prd")).toBeDisabled();
   await expect(preview).toContainText("session is read-only");
@@ -1159,7 +1159,7 @@ test("blocked PRD generation keeps its reason after reload without enabling Proc
   const state = await setup(page, request, detail);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (attempt) await page.reload();
-    await page.getByTestId("channel-flow-prd").click();
+    else await page.getByTestId("channel-flow-prd").click();
     await expect(page.getByTestId("channel-prd-generation-error")).toContainText("342979>120000");
     await expect(page.getByTestId("channel-prd-generation-error")).toContainText("重新打开原文件");
     await expect(page.getByTestId("channel-create-task-from-prd")).toBeDisabled();
@@ -1243,4 +1243,106 @@ test("unknown delivery recovery binds the failed request and displays refused ev
     failure_event_id: "evt-failure", run_generation: 3 }]);
   await expect(retry).toBeEnabled();
   expect(state.unexpected).toEqual([]);
+});
+
+for (const width of [1440, 375]) {
+  test(`PRD entry stays above long conversations in read-only sessions at ${width}px`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const detail = readyFixture();
+    detail.messages = Array.from({ length: 40 }, (_, index) => ({ ...detail.messages[0], message_id: `long-${index}`, text: `Message ${index}: ${"Discussion content. ".repeat(100)}` }));
+    const state = await setup(page, request, detail);
+    await page.route("**/api/web-session", route => route.fulfill({ json: { mode: "read_only", unlocked: false, actions_enabled: false } }));
+    await page.reload();
+    const entry = page.getByTestId("channel-prd-preview-entry");
+    await expect(entry).toBeInViewport();
+    await expect(entry).toBeEnabled();
+    await entry.click();
+    const preview = page.getByTestId("channel-prd-preview");
+    await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+    await expect(preview).toHaveAttribute("aria-modal", "true");
+    expect((await preview.locator(".channel-document-body").boundingBox())!.height).toBeGreaterThan(650);
+    await expect(page.getByTestId("channel-create-task-from-prd")).toBeDisabled();
+    expect(state.writes).toEqual([]);
+  });
+}
+
+test("PRD header entry creates a direct link, survives refresh and closes without reopening", async ({ page, request }) => {
+  const state = await setup(page, request, readyFixture());
+  const entry = page.locator(".channel-shell-header").getByRole("button", { name: "PRD 预览", exact: true });
+  await expect(entry).toBeInViewport();
+  await entry.click();
+  await expect(page).toHaveURL(/preview=prd/);
+  const linked = page.url();
+  const preview = page.getByRole("dialog", { name: "PRD preview" });
+  await expect(preview).toHaveAttribute("aria-modal", "true");
+  await page.keyboard.press("Escape");
+  await expect(preview).toHaveAttribute("aria-modal", "false");
+  await entry.click();
+  await expect(preview).toHaveAttribute("aria-modal", "true");
+  await page.reload();
+  await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+  await preview.getByRole("button", { name: "Close drawer", exact: true }).click();
+  await expect(page).not.toHaveURL(/preview=prd/);
+  await page.reload();
+  await expect(preview).toHaveCount(0);
+  await page.goto(linked);
+  await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+  expect(state.writes).toEqual([]);
+});
+
+test("PRD direct link does not reuse another thread's document", async ({ page, request }) => {
+  const detail = readyFixture();
+  detail.messages.push({ ...detail.messages[0], message_id: "other-message", thread_id: "other", text: "Other thread" });
+  const state = await setup(page, request, detail);
+  const url = new URL(page.url());
+  url.searchParams.set("thread", "other"); url.searchParams.set("preview", "prd");
+  await page.goto(url.toString());
+  const preview = page.getByRole("dialog", { name: "PRD preview" });
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText("尚无完整 PRD");
+  await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
+for (const width of [1440, 390]) {
+  test(`PRD focus link uses document typography and restores split view at ${width}px`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const state = await setup(page, request, readyFixture());
+    state.markdown = "# 阅读样本\n\n## 目标\n\n第一段说明。\n\n- 第一项\n\n  列表中的独立段落。\n\n> 一条引用。\n\n| 字段 | 规则 |\n|---|---|\n| name | 必填 |\n\n```python\nprint('hello')\n```\n";
+    const url = new URL(page.url()); url.searchParams.set("preview", "prd"); url.searchParams.set("reader", "focus");
+    await page.goto(url.toString());
+    const preview = page.getByRole("dialog", { name: "PRD preview" });
+    await expect(preview).toHaveAttribute("aria-modal", "true");
+    const paragraph = preview.getByText("列表中的独立段落。", { exact: true });
+    await expect(paragraph).toHaveCSS("display", "block");
+    await expect(paragraph).toHaveCSS("font-size", "16px");
+    await expect(paragraph).toHaveCSS("line-height", "28px");
+    expect((await paragraph.boundingBox())!.width).toBeLessThanOrEqual(760);
+    await expect(preview.getByRole("button", { name: "Exit PRD fullscreen", exact: true })).toBeInViewport();
+    await expect(preview.getByRole("button", { name: "Download PRD" })).toBeInViewport();
+    await page.reload();
+    await expect(preview).toHaveAttribute("aria-modal", "true");
+    await page.keyboard.press("Escape");
+    await expect(page).not.toHaveURL(/reader=focus/);
+    await expect(preview).toHaveAttribute("aria-modal", "false");
+    await preview.getByRole("button", { name: "Source", exact: true }).click();
+    expect(await preview.getByTestId("channel-prd-source").textContent()).toBe(state.markdown);
+    expect(state.writes).toEqual([]);
+  });
+}
+
+
+test("PRD global references survive pagination and long inline code remains in its paragraph", async ({ page, request }) => {
+  const state = await setup(page, request, readyFixture());
+  const path = "docs/" + "long-path/".repeat(14) + "spec.md";
+  state.markdown = `# 引用测试\n\n打开 \`${path}\` 并继续。\n\n[验收规范][spec]\n\n###### 六级标题\n\n`
+    + "可读内容。 ".repeat(8200) + "\n\n## 第二页\n\n" + "第二页正文。 ".repeat(1000) + "\n\n[spec]: https://example.invalid/spec\n";
+  await page.getByTestId("channel-prd-preview-entry").click();
+  const preview = page.getByRole("dialog", { name: "PRD preview" });
+  await expect(preview.locator("p code")).toHaveText(path);
+  await expect(preview.locator("p .agent-code-block")).toHaveCount(0);
+  await expect(preview.getByRole("heading", { level: 6, name: "六级标题" })).toBeVisible();
+  await expect(preview.getByRole("link", { name: "验收规范" })).toHaveAttribute("href", "https://example.invalid/spec");
+  await expect(preview.getByRole("navigation", { name: "PRD pages" })).toBeVisible();
+  expect(state.writes).toEqual([]);
 });

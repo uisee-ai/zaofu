@@ -972,3 +972,8 @@ risks_markdown 写已知风险、当前待决定和未来条件。不把 SHA、�
 任务用明确引用和本片差异交接，不在多份正文复制同一整段。仍保留所有原始义务、
 验收责任与完整工件；不按固定字数截断。依赖和增量读取的取舍执行
 zf-plan-execution-readiness 的 execution-route 方法；不要用叙述声称已节省成本。
+
+
+完整 `prd-plan.md` 与 `human_review` 都遵循
+[zf-prd-plan-synth 的完整 Plan 正文首屏阅读顺序](../zf-prd-plan-synth/SKILL.md)：
+先交代业务目标、方案、验收和待决条件，再展开任务与来源审计；不只优化可选概览。

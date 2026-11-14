@@ -14,14 +14,14 @@ import { decisionReadingSummary } from "./planDecisionView";
 import "./planReader.css";
 
 type View = "inputs" | "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "changes" | "original" | "sources";
-const views: [View, string][] = [["overview", "审批概览"], ["changes", "变更审阅"], ["modules", "模块规格"], ["pages", "页面与设计"], ["scenarios", "验收场景"], ["decisions", "待决事项"], ["coverage", "覆盖审查"], ["inputs", "任务输入"], ["original", "完整原文"], ["sources", "来源原文"]];
+const views: [View, string][] = [["original", "完整原文"], ["overview", "审批概览"], ["changes", "变更审阅"], ["modules", "模块规格"], ["pages", "页面与设计"], ["scenarios", "验收场景"], ["decisions", "待决事项"], ["coverage", "覆盖审查"], ["inputs", "任务输入"], ["sources", "来源原文"]];
 
 export default function PlanReviewReader({ preview, projectId }: { preview: PlanPreview; projectId: string }) {
   const readLocation = () => {
     const params = new URLSearchParams(window.location.hash.slice(1));
     const samePlan = params.get("plan") === preview.plan_id;
     const candidate = samePlan ? params.get("view") : "";
-    const view = views.some(([id]) => id === candidate) ? candidate as View : preview.content_profile === "derived_plan_full" ? "overview" : "original";
+    const view = views.some(([id]) => id === candidate) ? candidate as View : "original";
     return { view: view as View, task: samePlan ? params.get("task") || "" : "", source: samePlan ? params.get("source") || "" : "", anchor: samePlan ? params.get("anchor") || "" : "" };
   };
   const [location, setLocation] = useState(readLocation);
@@ -32,7 +32,9 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
     setLocation(value);
     const url = new URL(window.location.href);
     if (url.searchParams.get("page") === "inbox") url.searchParams.set("plan", preview.plan_id);
-    url.hash = new URLSearchParams({ plan: preview.plan_id, ...value }).toString();
+    const hash = new URLSearchParams({ plan: preview.plan_id, ...value });
+    if (new URLSearchParams(url.hash.slice(1)).get("reader") === "focus") hash.set("reader", "focus");
+    url.hash = hash.toString();
     window.history.replaceState(window.history.state, "", url);
   };
   useEffect(() => { const update = () => setLocation(readLocation()); window.addEventListener("hashchange", update); window.addEventListener("popstate", update); return () => { window.removeEventListener("hashchange", update); window.removeEventListener("popstate", update); }; }, [preview.plan_id]);

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, Copy, Download, Maximize2, Minimize2, Play, RotateCcw, X } from "lucide-react";
 import { getChannelPrdDocument, getChannelPrdEvaluation, type ChannelPrdDocument, type ChannelPrdEvaluationView, type ChannelPrdSelection } from "../../api/channelDelivery";
-import { MarkdownText } from "../agent-session/MarkdownText";
+import { DocumentMarkdown } from "../agent-session/DocumentMarkdown";
+import { documentReferences } from "../agent-session/documentReferences";
 import { prdMarkdownPages } from "./prdMarkdownPages";
 import { prdMarkdownView, type PrdAudienceView } from "./prdMarkdownViews";
 import type { ChannelFlow } from "./channelFlow";
@@ -24,7 +25,29 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreen, updateFullscreen] = useState(() => new URLSearchParams(window.location.search).get("reader") === "focus");
+  const setFullscreen = (value: boolean) => {
+    updateFullscreen(value);
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("project") !== selection.projectId || url.searchParams.get("channel") !== selection.channelId) return;
+    if (value) url.searchParams.set("reader", "focus"); else url.searchParams.delete("reader");
+    window.history.replaceState(window.history.state, "", url);
+  };
+  useEffect(() => {
+    const restoreReader = () => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("project") === selection.projectId && params.get("channel") === selection.channelId
+        && params.get("preview") === "prd" && (!params.get("thread") || params.get("thread") === selection.threadId)) {
+        updateFullscreen(params.get("reader") === "focus");
+      }
+    };
+    window.addEventListener("popstate", restoreReader);
+    window.addEventListener("zf:prd-reader-focus", restoreReader);
+    return () => {
+      window.removeEventListener("popstate", restoreReader);
+      window.removeEventListener("zf:prd-reader-focus", restoreReader);
+    };
+  }, [selection.projectId, selection.channelId, selection.threadId]);
   const [evaluation, setEvaluation] = useState<ChannelPrdEvaluationView>();
   const [evaluationError, setEvaluationError] = useState("");
   const [evaluationAttempt, setEvaluationAttempt] = useState(0);
@@ -79,6 +102,7 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
     ? (document?.markdown ?? "")
     : prdMarkdownView(document?.markdown ?? "", audienceView, document?.read_views),
   [document?.markdown, document?.read_views, audienceView, source]);
+  const definitions = useMemo(() => documentReferences(prdMarkdownPages(document?.markdown ?? "").filter(page => !page.plain).map(page => page.content)), [document?.markdown]);
   const pages = useMemo(() => prdMarkdownPages(viewMarkdown), [viewMarkdown]);
   const currentPage = pages[Math.min(page, pages.length - 1)];
   const changePage = (next: number) => {
@@ -136,7 +160,7 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
       {document ? <>
         {currentPage.plain && !source ? <p className="muted">本节内容过长，已使用分页原文显示；复制和下载包含完整文档。</p> : null}
         {source || currentPage.plain ? <pre data-testid="channel-prd-source">{currentPage.content}</pre>
-          : <MarkdownText content={currentPage.content} />}
+          : <DocumentMarkdown content={currentPage.content} definitions={definitions} />}
         <details className="channel-document-evidence"><summary>Version &amp; integrity</summary><code>{document.artifact_ref}</code><code>sha256:{document.artifact_digest}</code></details>
         <ChannelPrdSources document={document} onDiscuss={onDiscuss} />
         <section className="channel-prd-evaluation" data-testid="channel-prd-evaluation">
