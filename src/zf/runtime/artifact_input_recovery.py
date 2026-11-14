@@ -66,6 +66,17 @@ def build_input_recovery(
         result["commands"]["work_record_read"] = f"{prefix} work-record show --operation {op}"
     if not lifecycle["requires_rebind"]:
         result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required --resume --reason recovery"
+        from zf.runtime.task_handoff_receipt import handoff_receipt_projection
+
+        handoff_sources = [s for s in manifest.get("sources", []) if s.get("source_id") == "task-handoff"]
+        if handoff_sources:
+            receipt = handoff_receipt_projection(state_dir, events, str(manifest.get("task_id") or ""))
+            if receipt.get("handoff_ref", {}).get("sha256") == handoff_sources[0].get("sha256"):
+                result["handoff_receipt"] = {key: receipt[key] for key in ("status", "target_operation_id")}
+                if receipt["status"] == "awaiting_receipt":
+                    operation = shlex.quote(receipt["target_operation_id"])
+                    digest = shlex.quote(handoff_sources[0]["sha256"])
+                    result["commands"]["handoff_accept_after_read"] = f"{prefix} handoff-accept --operation {operation} --digest {digest}"
     result["next_action"] = "request_controlled_rebind" if lifecycle["requires_rebind"] else "reconstruct_required_inputs"
     # The embedded index stays paginated; the recovery response itself, including
     # checkpoint metadata and command envelope, has the same byte budget.

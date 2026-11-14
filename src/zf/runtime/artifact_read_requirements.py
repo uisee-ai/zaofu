@@ -162,7 +162,7 @@ def build_canonical_required_reads(
     required_paths.update(semantic_replan_handoff.required_read_paths(sources))
     for source in sources:
         source_id = str(source.get("source_id") or "")
-        if source_id.startswith("critical-") or source_id == "rework-feedback":
+        if source_id.startswith("critical-") or source_id in {"rework-feedback", "task-handoff"}:
             required_paths[source_id] = ("$",)
         for json_path in required_paths.get(source_id, ()):
             rows.append({

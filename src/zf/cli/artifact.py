@@ -112,6 +112,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     costs.set_defaults(func=run_input_costs)
     from zf.cli.work_record import register as register_work_record
     register_work_record(sub)
+    from zf.cli.artifact_handoff import register as register_handoff
+    register_handoff(sub)
 
     read_cmd = sub.add_parser(
         "read",

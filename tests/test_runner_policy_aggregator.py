@@ -254,3 +254,4 @@ def test_aggregator_index_uses_the_actual_cli_command(monkeypatch):
     assert "Bash(uv run zf artifact index *)" in tools
     assert "Bash(uv run zf artifact recover *)" in tools
     assert "Bash(uv run zf artifact read *)" in tools
+    assert "Bash(uv run zf artifact handoff-accept *)" in tools

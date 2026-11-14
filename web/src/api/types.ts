@@ -2270,6 +2270,12 @@ export interface TaskRunPanelProjection {
 
 export interface HandoffSummaryProjection {
   schema_version: string;
+  receipt?: {
+    status: "unavailable" | "awaiting_receipt" | "accepted" | "incomplete";
+    delivery_status?: "dispatched" | "not_dispatched";
+    target_operation_id?: string;
+    business_completed: false;
+  };
   generated_at?: string;
   task_id: string;
   objective: string;

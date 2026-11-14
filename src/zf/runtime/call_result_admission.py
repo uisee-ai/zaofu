@@ -224,6 +224,12 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             allow_incomplete_reads=reader_failed,
         ))
         issues.extend(self._control_result_identity_issues(envelope, adapted))
+        if not reader_failed and envelope["execution"]["status"] == "completed":
+            from zf.runtime.task_handoff_receipt import handoff_admission_issues
+
+            issues.extend(handoff_admission_issues(
+                self.state_dir, self.event_log.read_all(), dict(operation or {}),
+            ))
         currentness_issues = self._operation_result_currentness_issues(
             envelope,
             operation or {},

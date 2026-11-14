@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **318** addressable command paths.
+The parser currently exposes **69** top-level families and **319** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -36,6 +36,7 @@ Artifact manifest helpers
 | `zf artifact catalog show` | Show one artifact identity |
 | `zf artifact checkpoint` | Create an immutable dynamic continuation checkpoint |
 | `zf artifact costs` | Inspect attempt input costs without inferring provider savings |
+| `zf artifact handoff-accept` | Acknowledge a completely read current handoff, without completing the task |
 | `zf artifact index` | Browse authorized attempt input locators without consuming bodies |
 | `zf artifact list` | List immutable inputs available to one provider attempt |
 | `zf artifact manifest` | Artifact manifest commands |

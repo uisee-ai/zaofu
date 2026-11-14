@@ -592,6 +592,14 @@ function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
   const nextAction = textValue(summary.next_required_action);
   const nextEvent = textValue(summary.next_required_event);
   const changedFiles = asStringArray(summary.changed_files).slice(0, 4);
+  const receipt = asRecord(summary.receipt);
+  const receiptStatus = textValue(receipt.status);
+  const receiptLabel: Record<string, string> = {
+    unavailable: "尚无交接材料",
+    awaiting_receipt: "材料已保存，等待接收确认",
+    accepted: "接手者已确认接收（不代表业务完成）",
+    incomplete: "交接证据不完整，需要修复",
+  };
 
   return (
     <section className="subsection handoff-summary-panel">
@@ -606,6 +614,12 @@ function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
         <dd>{textValue(owner.role) || "-"} {textValue(owner.instance_id) ? <span className="mono">{textValue(owner.instance_id)}</span> : null}</dd>
         <dt>stage</dt>
         <dd>{textValue(summary.current_stage) || "-"}</dd>
+        <dt>交接接收</dt>
+        <dd data-testid="task-handoff-receipt">{receiptLabel[receiptStatus] || "接收状态未知"}</dd>
+        {receipt.delivery_status ? <>
+          <dt>交接派发</dt>
+          <dd>{receipt.delivery_status === "dispatched" ? "已派发到目标执行" : "尚未派发到目标执行"}</dd>
+        </> : null}
         <dt>next_event</dt>
         <dd className="mono">{nextEvent || "-"}</dd>
         <dt>next_action</dt>

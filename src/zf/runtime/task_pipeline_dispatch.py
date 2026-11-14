@@ -366,6 +366,14 @@ def dispatch_task_pipeline_stage(
     )
 
     current_pipeline_capsule_task(runtime, task_id=task_id, snapshot=contract_snapshot)
+    from zf.runtime.task_handoff import attach_task_handoff
+
+    try:
+        attach_task_handoff(runtime, operation_payload, contract_snapshot)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        from zf.runtime.task_pipeline_runtime import TaskPipelineWaiting
+
+        raise TaskPipelineWaiting("waiting_for_handoff", str(exc)) from exc
     prepared = prepare_call_operation(
         runtime,
         payload=operation_payload,
