@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 from zf.runtime.cli_command import (
@@ -48,6 +49,25 @@ def test_default_zf_cli_cmd_falls_back_to_runtime_python(
     monkeypatch.setattr("zf.runtime.cli_command.sys.executable", str(python))
 
     assert default_zf_cli_cmd() == f"{python} -m zf.cli.main"
+
+
+def test_explicit_cli_still_binds_subprocess_python_to_runtime(tmp_path, monkeypatch):
+    runtime_bin = tmp_path / "runtime" / "bin"
+    system_bin = tmp_path / "system" / "bin"
+    for directory, label in ((runtime_bin, "runtime"), (system_bin, "system")):
+        directory.mkdir(parents=True)
+        python = directory / "python3"
+        python.write_text(f"#!/bin/sh\nprintf '%s' '{label}'\n")
+        python.chmod(0o755)
+    monkeypatch.setattr("zf.runtime.cli_command.sys.executable", str(runtime_bin / "python"))
+    monkeypatch.setenv("ZF_CLI_CMD", "uv --project /explicit run zf")
+    monkeypatch.setenv("PATH", str(system_bin))
+
+    for _ in range(2):
+        assert set_default_zf_cli_cmd() == "uv --project /explicit run zf"
+    assert zf_cli_cmd() == "uv --project /explicit run zf"
+    assert subprocess.check_output(["python3"], text=True) == "runtime"
+    assert os.environ["PATH"].split(os.pathsep) == [str(runtime_bin), str(system_bin)]
 
 
 def test_discover_source_root_still_finds_checkout() -> None:

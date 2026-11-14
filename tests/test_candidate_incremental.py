@@ -24,6 +24,7 @@ from zf.runtime.candidate_incremental import (
     CandidateIncrementalError,
     _rolling_smoke_environment_error,
     _rolling_smoke_command,
+    _restore_rolling_smoke_producer_paths,
     _select_integration_base,
     _successor_contract_binds_base,
     _update_candidate_ref,
@@ -54,6 +55,28 @@ def test_rolling_smoke_reports_missing_npm_environment(tmp_path) -> None:
     )
 
     assert error == f"candidate_environment_not_ready: dependencies missing at {app}"
+
+
+def test_rolling_smoke_restores_declared_tracked_producer_paths(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Integration Test")
+    _git(tmp_path, "config", "user.email", "integration@example.com")
+    output = tmp_path / "app" / "evidence.json"
+    output.parent.mkdir()
+    output.write_text("committed\n", encoding="utf-8")
+    _git(tmp_path, "add", "app/evidence.json")
+    _git(tmp_path, "commit", "-q", "-m", "base")
+    commit = _git(tmp_path, "rev-parse", "HEAD")
+    output.write_text("generated\n", encoding="utf-8")
+
+    _restore_rolling_smoke_producer_paths(
+        tmp_path,
+        target_commit=commit,
+        producer_paths=["app/evidence.json"],
+    )
+
+    assert output.read_text(encoding="utf-8") == "committed\n"
+    assert _git(tmp_path, "status", "--porcelain") == ""
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json
 from zf.runtime.task_refs import TaskRefManager
 from zf.runtime.task_pipeline_terminal import (
