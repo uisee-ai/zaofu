@@ -646,5 +646,7 @@
   "design_packages_fully_closed": {
     "passed": 0,
     "total": 8
-  }
+  },
+  "implementation_commit": "2313bf6136069de825df1a1cf62d42d64a7a4e90",
+  "temporary_browser_api": "stopped after final browser verification"
 }

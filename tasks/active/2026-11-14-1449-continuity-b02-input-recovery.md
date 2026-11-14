@@ -22,4 +22,4 @@
 
 对账报告：[207–209 / Spec 覆盖](../../reports/continuity-handoff-20261114-review.md)。
 实现入口：[实现记录](../../docs/impl/continuity-handoff-spec-001.md)。
-实现 commit：待本批提交后回填；未 merge / push / 部署。
+首批实现 commit：`2313bf61 feat: harden task continuity and preserve handoff evidence`；未 merge / push / 部署。

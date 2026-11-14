@@ -2,6 +2,8 @@
 
 > 状态：首批实现完成验证，完整 Spec 仍在实施；不得作为全部完成或部署证明。
 
+首批实现 commit：`2313bf61 feat: harden task continuity and preserve handoff evidence`。未合并、未推送、未部署；临时浏览器 API 已停止。
+
 ## 1. 基线与统计口径
 
 - 来源：207 §30 的 8 个 P0/P1 包，208 的增量验收，209 §9–10；产品分母为 Spec F01–F18。
