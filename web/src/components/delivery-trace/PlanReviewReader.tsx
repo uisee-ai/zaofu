@@ -13,7 +13,7 @@ import "./planReader.css";
 type View = "inputs" | "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "original" | "sources";
 const views: [View, string][] = [["overview", "审批概览"], ["modules", "模块规格"], ["pages", "页面与设计"], ["scenarios", "验收场景"], ["decisions", "待决事项"], ["coverage", "覆盖审查"], ["inputs", "任务输入"], ["original", "完整原文"], ["sources", "来源原文"]];
 
-export default function PlanReviewReader({ preview, projectId }: { preview: PlanPreview; projectId: string }) {
+export default function PlanReviewReader({ preview, projectId, onBodyRequested }: { preview: PlanPreview; projectId: string; onBodyRequested?: (value: boolean) => void }) {
   const readLocation = () => {
     const params = new URLSearchParams(window.location.hash.slice(1));
     const samePlan = params.get("plan") === preview.plan_id;
@@ -24,6 +24,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
   const [location, setLocation] = useState(readLocation);
   const [query, setQuery] = useState("");
   const { view } = location;
+  useEffect(() => { onBodyRequested?.(view === "original" || view === "decisions"); }, [view, onBodyRequested]);
   const navigate = (next: Partial<typeof location>) => {
     const value = { ...location, ...next };
     setLocation(value);
@@ -34,7 +35,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
   };
   useEffect(() => { const update = () => setLocation(readLocation()); window.addEventListener("hashchange", update); window.addEventListener("popstate", update); return () => { window.removeEventListener("hashchange", update); window.removeEventListener("popstate", update); }; }, [preview.plan_id]);
   const detailed = view === "coverage" || view === "scenarios";
-  const { artifacts, errors, loading } = usePlanArtifacts(preview, projectId, detailed);
+  const { artifacts, errors, loading } = usePlanArtifacts(preview, projectId, detailed, !["sources", "inputs", "original"].includes(view));
   const model = useMemo(() => buildPlanReview(artifacts), [artifacts]);
   const selected = location.task ? model.modules.find(m => m.id === location.task) : model.modules[0];
   const decisions = preview.decision_review?.available ? preview.decision_review.items : model.decisions;
@@ -55,7 +56,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
         </>}
       </nav>
       <div className="plan-product-content">
-        {view === "original" ? <PlanMarkdownDocument content={preview.markdown || ""} reviewContent={preview.review_dossier_markdown || ""} initialAnchor={location.anchor} onAnchorChange={anchor => navigate({ anchor })} />
+        {view === "original" ? (preview.content_state === "deferred" ? <p>完整原文尚未加载。</p> : <PlanMarkdownDocument content={preview.markdown || ""} reviewContent={preview.review_dossier_markdown || ""} initialAnchor={location.anchor} onAnchorChange={anchor => navigate({ anchor })} />)
           : view === "sources" ? <PlanSourceReader preview={preview} projectId={projectId} name={location.source} anchor={location.anchor} onSelect={openSource} />
           : <div className="plan-review-scroll" role="region" aria-label="计划审阅内容" tabIndex={0}>
           <p className="muted">版本 {preview.plan_id} · {preview.status} · 以下为规划快照，计划分配与场景不代表实现或测试已通过。</p>

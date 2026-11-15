@@ -156,14 +156,14 @@ HTML 显式锚点、ATX/Setext 标题和 fenced code 有测试，目录不是完
 | R03-B | B06 | 同版自检/独立复验/最终验收分列，改名和迟到报告负例拒绝 | 待关闭 |
 | R10-A | B03/B04 | 接手者实际消费失败路径/SOP/决定，来源、版本与失效条件可查 | 前任记录认证 CLI 与方法已接线；真实模型采用、全局历史检索待验 |
 | R10-B | B03/B04 | 子成果落盘、父接收、最终验收分列；迟到答复不推进错误 attempt | 待关闭 |
-| R05-A | B07 | 主预览轻数据与正文/附件解耦；目录/章节不反复加载无关完整包 | 章节、附件、输入审查不重建无关整包；主预览与 accepted_plan 兼容路径仍待关闭 |
+| R05-A | B07 | 主预览轻数据与正文/附件解耦；目录/章节不反复加载无关完整包 | 主预览已接轻量 envelope；固定 accepted_plan 章节不重建正文，旧版仅解析选定 canonical 来源；定向 API/浏览器验收通过，不宣称旧版零全文 IO |
 | R05-B | B07 | Kanban/Channel 同版入口、新约束采用和统一材料目录完整性 | 待关闭 |
-| R05-C | B07 | 慢详情、跨项目、SSE 重连、清空/删除/无权/过期/未知保持一致 | 迟到响应及审批状态修复、来源失效回归通过；SSE 与全入口旅程待验 |
+| R05-C | B07 | 慢详情、跨项目、SSE 重连、清空/删除/无权/过期/未知保持一致 | 慢正文隔离、原生 SSE 断线重连后批准/删除对账通过；跨项目、来源异常已有回归，全入口组合仍待验 |
 | R08-A | B04/B03 | 暂停/取消/审批/维护与重启、部署、凭据轮换、执行者切换组合验收 | 待关闭，已有暂停宿主资格 |
-| R09-A | B05/B02 | Datal 原要求到 DAG 独立评审，尾部集成有明确边界和证据生产者 | 待关闭 |
+| R09-A | B05/B02 | Datal 原要求到 DAG 独立评审，尾部集成有明确边界和证据生产者 | 只读结构与尾部风险评审完成；45 任务无环，P20/P20Q 有写域和生产者但责任过宽；实际重切分/签审未关闭 |
 | R09-B | B05 | 真实 8 Impl/8 Verify 分别产出及窄前沿对照，不用 mock 代替 | 待关闭 |
 | R11-A | B01–B07 | 所有条款生产/消费、同版证据、实现/合入/采用逐条对账 | 进行中 |
-| R11-B | B06 | Datal 八类产品资格按 v1.4 分列；正式数据/硬件不足保留条件 | 待关闭，外部资格受限 |
+| R11-B | B06 | Datal 八类产品资格按 v1.4 分列；正式数据/硬件不足保留条件 | 八类差额已分列并复核 51 来源/10 绑定摘要；149+44 映射不代表产品通过，正式数据/硬件资格仍受限 |
 
 执行顺序：验收索引 → R06/R02/R04-A/R07-A → R01/R03/R10 → R05/R08/R09 → 条件性 R07-C/R11-B。
 R04-B/C 随资源主链推进。原 Datal 暂停保持；真实 Codex 使用 GPT-6.1 Terra。
@@ -237,6 +237,39 @@ TaskContractAuthorityService 的不可变变更回执补存旧合同与旧执行
 现有 `evidence_files` 可保留带来源、适用版本、失效条件和替代说明的 SOP/失败路径；
 语义方法在 `zf-harness-done-contract`，不增加第二套任务状态或 runtime 语义判断。
 读取不等于 handoff-accept，更不等于业务验收。全局历史搜索与真实模型采用仍未关闭。
+
+## 2026-11-15：沙箱预检、预览分层及差额复核
+
+真实 Codex 入口在付费模型回合前先运行当前 CLI 的
+`codex sandbox --permission-profile :workspace -C <isolated-root> -- /usr/bin/true`。
+失败留下命令、退出码和 stderr，不降级到无沙箱。宿主 Codex 0.164.0 使用 bundled bwrap；
+系统未安装发行版 bubblewrap，Ubuntu 24.04 的 unprivileged user namespace 限制开启，
+实际失败为 RTM_NEWADDR Operation not permitted。与 AppArmor capability 限制一致，
+但未读到 kernel audit 原始拒绝日志，不能将推断写成已证实的具体规则命中。
+管理员修复步骤见 [宿主修复](../../reports/continuity-sandbox-host-remediation-20261115.md)，
+保留 AppArmor 与 sandbox；本会话不修改 /etc 或降低权限边界。Go 继续按用户要求暂缓。
+
+Inbox 主预览改为 `/plans/{plan_id}/preview/summary` 的轻量 envelope：保留审批身份、
+动作和绑定目录，正文明确 deferred。完整原文、工程上下文、待决登记或编辑操作才取全审阅体；
+来源与任务输入不读取无关结构化包。摘要/版本路由禁缓存，完整体迟到或审批身份变化不替换当前视图。
+固定 accepted_plan 目录/章节校验版本并复用索引；旧格式仍可能解析选定 canonical Plan，
+只保证不重建无关 dossier。无摘要的旧来源通过 `/artifacts/{name}/version` 固定本次读取快照，
+界面明确这不是审批时版本。未访问的正文不以空字符串冒充完整交付。
+
+原生 EventSource 断开并重连后，Inbox 主动重新读取当前已打开 Plan；15 秒刷新也是补偿入口。
+审批完成更新按钮，Plan 删除关闭旧预览并提示；迟到刷新不能重开已关闭或覆盖新 Plan。
+浏览器故障注入对原生 SSE 流作有限响应并让客户端重连，状态变化以路由注入；
+这证明 UI 对账，不冒充真实业务审批全过程。浏览器夹具使用 Uvicorn lifespan 在 SIGTERM 后
+追加 simulation.done 并清理自己的隔离目录，外置原子回执保留清理事实。
+
+本次重新绑定 Datal 51 个原始文件、10 个 Plan 引用；149 组要求有映射，但八类产品差额仍在。
+P20/P20Q 的写域和证据生产者存在，尾部责任仍过宽，见 [Datal 对账](../../reports/continuity-datal-reconciliation-20261115.md)。
+用户要求的最小 TypeScript PRD 全真实验收已准备隔离方案，须在剩余能力收口及正常沙箱资格后启动，
+不提前以小演示代替 SPEC-002、真实 8+8 或 Datal 外部资格。
+
+本轮完整证据和未完成清单见 [修复与验收报告](../../reports/continuity-sandbox-preview-20261115-review.md)。
+R05-B 统一材料目录/全入口约束、恢复全旅程、环境替换回退、跨 Provider、真实并行等仍按矩阵保留，
+不是全部由 sandbox 一个故障造成；B01–B07 均保持 active。
 
 Python/Node 使用隔离的离线依赖实测共享复用、声明身份变化、占用时拒绝重建、准备失败
 不伪就绪及候选保留。Go 不在当前 PATH，保留 skipped；未安装宿主工具或下载依赖。

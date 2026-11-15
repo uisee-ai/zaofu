@@ -1,5 +1,10 @@
 > 状态: active
 
+2026-11-15 本批：真实 Codex 调用前接入当前 CLI sandbox 预检，失败仅留证据，不绕过权限。
+宿主 RTM_NEWADDR 权限失败仍未修复，等待管理员按发行版 bubblewrap/AppArmor 前提处理；
+未产生新真实 Provider 资格。见[修复说明](../../reports/continuity-sandbox-host-remediation-20261115.md)
+与[本批报告](../../reports/continuity-sandbox-preview-20261115-review.md)。
+
 2026-11-15 续作：前任 work record/SOP 通过当前 operation 身份认证和固定 handoff 引用
 分页读取，旧 dispatch/错误 target/损坏正文拒绝；语义方法沿用 evidence_files。
 真实 Codex 入口改为 workspace-write；宿主 bwrap 预检失败，无新的正常沙箱真实资格。

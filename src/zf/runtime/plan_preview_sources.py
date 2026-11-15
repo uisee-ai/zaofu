@@ -39,10 +39,21 @@ def bound_plan_source(state_dir: Path, events: list, *, plan_id: str, name: str,
         raise PlanSourceError(409, "ambiguous plan source binding")
     item = matches[0] if matches else None
     if name == "accepted_plan":
-        # Legacy canonical-Plan recovery remains owned by the full projection.
-        from zf.runtime.operator_plan_preview import build_plan_preview
-        preview = build_plan_preview(state_dir, events, plan_id=plan_id, project_root=project_root)
-        item = next((row for row in preview.get("artifacts", []) if row["name"] == name), None)
+        declared = str(payload.get("plan_artifact_ref") or payload.get("plan_ref") or "")
+        if (item and item.get("sha256") and declared == item["ref"]
+                and not bundle.get("plan_ref") and not any(p["name"] == "planning_result" for p in ports)
+                and (not payload.get("plan_artifact_digest") or payload["plan_artifact_digest"] == item["sha256"])):
+            return item  # The chapter reader validates this digest; no full-body reconstruction.
+        import hashlib
+        from zf.runtime.operator_plan_preview import _plan_events
+        from zf.runtime.plan_canonical_content import canonical_plan_content
+
+        requested, resolved = _plan_events(events, plan_id)
+        payload, source = plan_source_payload(state_dir, events, plan_id=plan_id,
+            source_event=requested or resolved, project_root=project_root)
+        body, ref, _, plan_ref, _, _ = canonical_plan_content(state_dir, events, payload=payload,
+            bound_source=source, artifacts=ports, preview_bundle=bundle, project_root=project_root)
+        item = {"name": name, "ref": ref, "sha256": hashlib.sha256(body.encode()).hexdigest(), "version_origin": "observed"} if body and plan_ref else None
     elif item is None:
         authority = plan_authority_refs(state_dir, payload=payload, artifacts=ports,
             preview_bundle=bundle, project_root=project_root)

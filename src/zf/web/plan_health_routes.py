@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import PlainTextResponse
 
 
@@ -90,6 +90,22 @@ def build_plan_health_router(
     def default_operator_inbox() -> dict:
         return operator_inbox("default")
 
+    @router.get("/api/projects/{project_id}/plans/{plan_id}/preview/summary")
+    def plan_preview_summary(project_id: str, plan_id: str, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        ctx = resolve_ctx(project_id)
+        if ctx is None:
+            raise HTTPException(404, "unknown project")
+        from zf.core.events.factory import event_log_from_project
+        from zf.runtime.plan_preview_summary import build_plan_preview_summary
+
+        preview = build_plan_preview_summary(ctx.state_dir,
+            list(event_log_from_project(ctx.state_dir, config=ctx.config).read_all()),
+            plan_id=plan_id, project_root=getattr(ctx, "project_root", None))
+        if preview.get("ok") is False:
+            raise HTTPException(404, preview["reason"])
+        return preview
+
     @router.get("/api/projects/{project_id}/plans/{plan_id}/preview")
     def plan_preview(project_id: str, plan_id: str) -> dict:
         ctx = resolve_ctx(project_id)
@@ -114,6 +130,31 @@ def build_plan_health_router(
     @router.get("/api/plans/{plan_id}/preview")
     def default_plan_preview(plan_id: str) -> dict:
         return plan_preview("default", plan_id)
+
+    @router.get("/api/projects/{project_id}/plans/{plan_id}/artifacts/{name}/version")
+    def plan_artifact_version(project_id: str, plan_id: str, name: str, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        # Legacy authority refs have no published digest. Snapshot only the selected
+        # source; later chapter reads must match this observed version.
+        ctx = resolve_ctx(project_id)
+        if ctx is None:
+            raise HTTPException(404, "unknown project")
+        import hashlib
+        from zf.core.events.factory import event_log_from_project
+        from zf.runtime.plan_preview_sources import bound_plan_source, PlanSourceError
+        from zf.runtime.plan_preview_artifacts import read_preview_artifact
+        try:
+            item = bound_plan_source(ctx.state_dir,
+                list(event_log_from_project(ctx.state_dir, config=ctx.config).read_all()),
+                plan_id=plan_id, name=name, project_root=ctx.project_root)
+            body = read_preview_artifact(item["ref"], state_dir=ctx.state_dir,
+                project_root=ctx.project_root, digest=item["sha256"]).encode()
+            return {"name": name, "sha256": hashlib.sha256(body).hexdigest(),
+                    "size_bytes": len(body), "binding": item.get("version_origin", "declared" if item["sha256"] else "observed")}
+        except PlanSourceError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @router.get("/api/projects/{project_id}/plans/{plan_id}/artifacts/{name}")
     def plan_artifact(project_id: str, plan_id: str, name: str,

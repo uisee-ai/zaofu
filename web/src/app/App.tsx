@@ -2232,7 +2232,7 @@ export function App() {
               onOpenProjection={(kind, id) => void openProjection(kind, id)}
             />
           ) : page === "inbox" ? (
-            <PlanApprovalPanel projectId={activeProjectId} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
+            <PlanApprovalPanel projectId={activeProjectId} liveState={liveState} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
               inboxCountEpoch.current += 1;
               setInboxPendingCount(inbox?.summary.unread ?? null);
             }} />

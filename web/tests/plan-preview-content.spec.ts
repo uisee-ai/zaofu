@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 for (const action of ["replan-approve", "replan-reject"]) {
   test(`owner deep link waits for approval identity and sends ${action}`, async ({ page, request }) => {
     const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
-    let previewRequests = 0;
+    let resolvedPreviews = 0;
     let resolvedStatus = "";
     let releaseInbox!: () => void;
     const ready = new Promise<void>((resolve) => { releaseInbox = resolve; });
@@ -17,12 +17,17 @@ for (const action of ["replan-approve", "replan-reject"]) {
       await ready;
       await route.fulfill({ response, json: body });
     });
-    await page.route("**/plans/evt-preview-rich/preview", async (route) => {
+    await page.route("**/plans/evt-preview-rich/preview/summary", async (route) => {
       const response = await route.fetch();
       const body = await response.json();
-      previewRequests += 1;
-      if (resolvedStatus) body.status = resolvedStatus;
+      if (resolvedStatus) { body.status = resolvedStatus; resolvedPreviews += 1; }
       body.actions = { ...body.actions, approve: "replan-approve", reject: "replan-reject" };
+      await route.fulfill({ response, json: body });
+    });
+    await page.route("**/plans/evt-preview-rich/preview", async route => {
+      const response = await route.fetch();
+      const body = await response.json();
+      if (resolvedStatus) body.status = resolvedStatus;
       await route.fulfill({ response, json: body });
     });
     const actions: { name: string; payload: Record<string, unknown> }[] = [];
@@ -49,7 +54,7 @@ for (const action of ["replan-approve", "replan-reject"]) {
     await expect.poll(() => actions.length).toBe(1);
     expect(actions[0].name).toBe(action);
     expect(actions[0].payload).toMatchObject({ approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" });
-    await expect.poll(() => previewRequests, { timeout: 5000 }).toBe(2);
+    await expect.poll(() => resolvedPreviews, { timeout: 5000 }).toBeGreaterThanOrEqual(1);
     await expect(approve).toBeDisabled();
     await expect(reject).toBeDisabled();
     await page.unrouteAll({ behavior: "wait" });
@@ -99,7 +104,7 @@ test("a late response from a closed preview cannot replace the newly selected Pl
   let completed!: () => void;
   const delayed = new Promise<void>((resolve) => { release = resolve; });
   const fulfilled = new Promise<void>((resolve) => { completed = resolve; });
-  await page.route("**/plans/evt-preview-complete/preview", async (route) => {
+  await page.route("**/plans/evt-preview-complete/preview/summary", async (route) => {
     const response = await route.fetch();
     await delayed;
     await route.fulfill({ response });
@@ -113,7 +118,7 @@ test("a late response from a closed preview cannot replace the newly selected Pl
   await next.click();
   await page.locator(".inbox-reading-pane").getByRole("button", { name: "Preview", exact: true }).click();
   await expect(dialog.getByRole("status")).toContainText("仅有计划摘要");
-  const lateResponse = page.waitForResponse("**/plans/evt-preview-complete/preview");
+  const lateResponse = page.waitForResponse("**/plans/evt-preview-complete/preview/summary");
   release();
   await fulfilled;
   await (await lateResponse).finished();
@@ -131,7 +136,7 @@ test(`a delayed post-approval refresh cannot ${openAnother ? "replace another Pl
   let refreshStarted!: () => void;
   const delayed = new Promise<void>((resolve) => { release = resolve; });
   const started = new Promise<void>((resolve) => { refreshStarted = resolve; });
-  await page.route("**/plans/evt-preview-complete/preview", async (route) => {
+  await page.route("**/plans/evt-preview-complete/preview/summary", async (route) => {
     const response = await route.fetch();
     calls += 1;
     if (calls > 1) {
@@ -156,7 +161,7 @@ test(`a delayed post-approval refresh cannot ${openAnother ? "replace another Pl
     await page.locator(".inbox-reading-pane").getByRole("button", { name: "Preview", exact: true }).click();
     await expect(dialog.getByRole("status")).toContainText("仅有计划摘要");
   }
-  const lateResponse = page.waitForResponse("**/plans/evt-preview-complete/preview");
+  const lateResponse = page.waitForResponse("**/plans/evt-preview-complete/preview/summary");
   release();
   await (await lateResponse).finished();
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -274,3 +279,79 @@ test("continuous large Plan exposes deferred content and can load it without los
   await expect(pane).toContainText("END-OF-LONG-PLAN");
   await page.screenshot({ path: testInfo.outputPath("continuous-plan-tail.png") });
 });
+
+test("source deep link reads chapters without fetching whole Plan or unrelated task bodies", async ({ page, request }) => {
+  const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+  const unrelated: string[] = [];
+  page.on("request", req => {
+    if (/\/preview$/.test(req.url()) || /\/artifacts\/(task_map|execution_spec|source_inventory)$/.test(req.url())) unrelated.push(req.url());
+  });
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-chapters#plan=evt-preview-chapters&view=sources`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await expect(dialog.getByRole("combobox", { name: "同版来源文档" })).toBeVisible();
+  await expect(dialog.getByRole("navigation", { name: "来源阅读导航" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+  expect(unrelated).toEqual([]);
+});
+
+test("slow full review does not block the approval toolbar or module view", async ({ page, request }) => {
+  const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+  let release!: () => void;
+  let started!: () => void;
+  const delay = new Promise<void>(resolve => { release = resolve; });
+  const loading = new Promise<void>(resolve => { started = resolve; });
+  let wholeReads = 0;
+  await page.route("**/plans/evt-preview-review/preview", async route => {
+    wholeReads += 1; started(); await delay; await route.continue();
+  });
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-review`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await expect(dialog.getByRole("heading", { name: "产品目标" })).toBeVisible();
+  expect(wholeReads).toBe(0);
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
+  await loading;
+  await expect(dialog.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "模块规格", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "使用者与字段" })).toBeVisible();
+  release();
+  await page.unrouteAll({ behavior: "wait" });
+});
+
+for (const outcome of ["approved", "deleted"]) {
+  test(`closed SSE reconnect reconciles an open Plan that became ${outcome}`, async ({ page, request }) => {
+    const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+    let changed = false;
+    let releaseStream!: () => void;
+    const reconnect = new Promise<void>(resolve => { releaseStream = resolve; });
+    let connections = 0;
+    await page.route("**/api/projects/*/stream?*", async route => {
+      if (connections++ === 0) {
+        await route.fulfill({ contentType: "text/event-stream", body: ": connected\nretry: 100\n\n" });
+      } else {
+        await reconnect;
+        await route.continue();
+      }
+    });
+    await page.route("**/plans/evt-preview-rich/preview/summary", async route => {
+      if (changed && outcome === "deleted") {
+        await route.fulfill({ status: 404, json: { detail: "plan not found" } }); return;
+      }
+      const response = await route.fetch();
+      const body = await response.json();
+      if (changed) { body.status = "approved"; body.resolved_event_id = "resolved-during-disconnect"; }
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
+    const dialog = page.getByRole("dialog", { name: "Plan preview" });
+    await expect(dialog.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+    await expect(page.locator(".status-reconnecting")).toBeVisible({ timeout: 10000 });
+    changed = true;
+    releaseStream();
+    if (outcome === "approved") {
+      await expect(dialog.getByRole("button", { name: "Approve", exact: true })).toBeDisabled({ timeout: 10000 });
+    } else {
+      await expect(dialog).toHaveCount(0, { timeout: 10000 });
+      await expect(page.getByText(/预览已失效，请重新打开/)).toBeVisible();
+    }
+  });
+}

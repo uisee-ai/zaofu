@@ -3228,6 +3228,7 @@ export interface OperatorInboxProjection {
 }
 
 export interface PlanPreview {
+  content_state?: "deferred";
   action_payload?: Record<string, unknown>;
   schema_version: string;
   ok: boolean;

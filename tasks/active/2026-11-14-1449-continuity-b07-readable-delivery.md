@@ -1,5 +1,10 @@
 > 状态: active
 
+2026-11-15 本批：主预览轻量 envelope 接线；完整正文按需；固定 accepted_plan 章节不重建无关审阅体；
+旧来源快照明确 observed；原生 SSE 重连后刷新审批或关闭已删除预览。补直接待决视图回归，
+不依赖先打开工程上下文。保留统一材料目录与全入口新增约束旅程缺口，不归档整项。
+证据：[本批报告](../../reports/continuity-sandbox-preview-20261115-review.md)。
+
 2026-11-15 继续验证：修复审批刷新迟到覆盖/重开、Owner 决策后仍 pending，以及普通审批
 busy id 不匹配；实际 Docker 浏览器先复现后重验。附件下载与 input-review 现在复用
 轻量来源绑定，不重建无关完整 Plan；章节读取保持同版校验。主 preview 整包与 SSE

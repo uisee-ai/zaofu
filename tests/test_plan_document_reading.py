@@ -14,21 +14,21 @@ from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.web.plan_health_routes import build_plan_health_router
 
 
-def fixture(root, content, *, authority=False, ref="artifacts/source.md"):
+def fixture(root, content, *, authority=False, accepted=False, ref="artifacts/source.md"):
     state = root / "state"
     (state / "artifacts").mkdir(parents=True)
     path = state / ref
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content.encode())
     digest = hashlib.sha256(content.encode()).hexdigest()
-    name = "requirement_1_source.md" if authority else "requirement_source"
+    name = "accepted_plan" if accepted else "requirement_1_source.md" if authority else "requirement_source"
     package = {"schema_version": "plan-preview-bundle.v1", "artifacts": [] if authority else [
         {"name": name, "ref": ref, "sha256": digest}]}
     body = json.dumps(package).encode()
     (state / "artifacts/bundle.json").write_bytes(body)
     writer = EventWriter(EventLog(state / "events.jsonl"))
     writer.append(ZfEvent(type="plan.approval.requested", payload={
-        "plan_id": "plan", "plan_artifact_ref": "artifacts/unrelated-plan.md",
+        "plan_id": "plan", "plan_artifact_ref": ref if accepted else "artifacts/unrelated-plan.md",
         "plan_preview_bundle_ref": "artifacts/bundle.json",
         "plan_preview_bundle_digest": hashlib.sha256(body).hexdigest(),
         **({"authority_refs": [ref]} if authority else {}),
@@ -219,3 +219,110 @@ def test_unsupported_source_never_looks_like_empty_success(tmp_path, fault, stat
     response = client.get(url, params={"sha256": digest})
     assert response.status_code == status
     assert "sections" not in response.json()
+
+
+def test_accepted_plan_download_and_chapter_skip_unrelated_review_rendering(tmp_path, monkeypatch):
+    content = "# Plan\n\n## First\nKeep current rules.\n\n## Last\nEND-PLAN\n"
+    client, state, _, url, digest = fixture(tmp_path, content, accepted=True)
+    monkeypatch.setattr("zf.runtime.operator_plan_preview.build_plan_preview",
+        lambda *a, **kw: pytest.fail("accepted Plan must not rebuild whole review"))
+    monkeypatch.setattr("zf.runtime.plan_canonical_content.canonical_plan_content",
+        lambda *a, **kw: pytest.fail("pinned chapter should not reconstruct the whole Plan"))
+    before = (state / "events.jsonl").read_bytes()
+    response = client.get(url, params={"sha256": digest})
+    assert response.status_code == 200, response.text
+    assert response.json()["section_count"] == 3
+    response = client.get(url + "/sections/2", params={"sha256": digest})
+    assert response.status_code == 200 and "END-PLAN" in response.json()["content"]
+    assert client.get(url.removesuffix("/document"), params={"sha256": digest}).text == content
+    assert (state / "events.jsonl").read_bytes() == before
+
+
+def test_summary_exposes_approval_identity_without_reading_plan_bodies(tmp_path, monkeypatch):
+    client, state, _, _, _ = fixture(tmp_path, "# Requirements\n", accepted=True)
+    monkeypatch.setattr("zf.runtime.operator_plan_preview.build_plan_preview",
+        lambda *a, **kw: pytest.fail("summary must not render full preview"))
+    from zf.runtime.plan_preview_artifacts import read_preview_artifact
+    def metadata_only(ref, **kwargs):
+        assert ref.endswith("bundle.json"), f"summary read unrelated body {ref}"
+        return read_preview_artifact(ref, **kwargs)
+    monkeypatch.setattr("zf.runtime.plan_preview_artifacts.read_preview_artifact", metadata_only)
+    before = (state / "events.jsonl").read_bytes()
+    response = client.get("/api/projects/p/plans/plan/preview/summary")
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    data = response.json()
+    assert data["status"] == "pending" and data["requested_event_id"]
+    assert data["content_state"] == "deferred" and data["markdown"] == ""
+    assert data["artifacts"][0]["name"] == "accepted_plan"
+    assert data["actions"]["approve"] == "plan-approve"
+    assert (state / "events.jsonl").read_bytes() == before
+    assert client.get("/api/projects/p/plans/missing/preview/summary").status_code == 404
+
+
+def test_legacy_summary_keeps_source_and_snapshots_only_selected_version(tmp_path, monkeypatch):
+    client, state, path, url, digest = fixture(tmp_path, "# Legacy\n\nSource body\n", authority=True)
+    monkeypatch.setattr("zf.runtime.operator_plan_preview.build_plan_preview",
+        lambda *a, **kw: pytest.fail("legacy source must not rebuild full Plan"))
+    summary = client.get("/api/projects/p/plans/plan/preview/summary").json()
+    entry = next(p for p in summary["artifacts"] if p["name"] == "requirement_1_source.md")
+    assert entry["sha256"] == ""  # Unknown published version, not an invented approval binding.
+    before = (state / "events.jsonl").read_bytes()
+    version = client.get(url.removesuffix("/document") + "/version")
+    assert version.status_code == 200
+    assert version.headers["cache-control"] == "no-store"
+    assert version.json()["binding"] == "observed" and version.json()["sha256"] == digest
+    assert client.get(url, params={"sha256": digest}).status_code == 200
+    path.write_text("# Changed source\n")
+    assert client.get(url, params={"sha256": digest}).status_code == 409
+    assert (state / "events.jsonl").read_bytes() == before
+
+
+@pytest.mark.parametrize("owner", [False, True])
+@pytest.mark.parametrize("resolution", ["pending", "approved", "rejected", "rerequested"])
+def test_summary_and_full_preview_share_approval_identity(tmp_path, owner, resolution):
+    client, state, _, _, _ = fixture(tmp_path, "# Plan\n", accepted=True)
+    writer = EventWriter(EventLog(state / "events.jsonl"))
+    payload = {"plan_id": "plan", "plan_artifact_ref": "artifacts/source.md"}
+    if owner:
+        payload.update(owner_route="plan_synth_owner_decision", approval_ref="approval/one",
+                       checkpoint_id="checkpoint", proposal_ref="proposal/one", plan_preview=True)
+    requested_type = "approval.requested" if owner else "plan.approval.requested"
+    writer.append(ZfEvent(type=requested_type, payload=payload))
+    if resolution != "pending":
+        writer.append(ZfEvent(type="approval.resolved" if owner else "plan." + (
+            "rejected" if resolution == "rejected" else "approved"), payload={
+                "plan_id": "plan", "approval_ref": "approval/one",
+                "resolution": "rejected" if resolution == "rejected" else "approved"}))
+    if resolution == "rerequested":
+        writer.append(ZfEvent(type=requested_type, payload={**payload, "approval_ref": "approval/two"}))
+    before = (state / "events.jsonl").read_bytes()
+    url = "/api/projects/p/plans/plan/preview"
+    summary, full = client.get(url + "/summary").json(), client.get(url).json()
+    for key in ("status", "requested_event_id", "resolved_event_id", "source_event_id",
+                "actions", "action_payload"):
+        assert summary[key] == full[key], key
+    assert summary["status"] == ("pending" if resolution == "rerequested" else resolution)
+    assert (state / "events.jsonl").read_bytes() == before
+
+
+@pytest.mark.parametrize("fault", ["unbound", "changed", "deleted", "outside"])
+def test_selected_version_never_publishes_unbound_or_changed_source(tmp_path, fault):
+    client, state, path, url, _ = fixture(tmp_path, "# Original\n")
+    version_url = url.removesuffix("/document") + "/version"
+    if fault == "unbound":
+        version_url = version_url.replace("requirement_source", "not-bound")
+    elif fault == "changed":
+        path.write_text("# Replacement\n")
+    elif fault == "deleted":
+        path.unlink()
+    else:
+        outside = tmp_path.parent / f"private-{tmp_path.name}.md"
+        outside.write_text("PRIVATE")
+        path.unlink()
+        path.symlink_to(outside)
+    before = (state / "events.jsonl").read_bytes()
+    response = client.get(version_url)
+    assert response.status_code in {403, 404, 409}, response.text
+    assert "sha256" not in response.json() and "PRIVATE" not in response.text
+    assert (state / "events.jsonl").read_bytes() == before

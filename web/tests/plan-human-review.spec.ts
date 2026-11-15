@@ -8,6 +8,15 @@ async function openReview(page: import("@playwright/test").Page, request: import
   return page.getByRole("dialog", { name: "Plan preview" });
 }
 
+test("direct decision view loads the bound decision register without opening context first", async ({ page, request }) => {
+  const dialog = await openReview(page, request);
+  await dialog.getByRole("button", { name: "待决事项", exact: true }).click();
+  await expect(dialog.getByText("待决定 1 · 明确阻塞 0 · 已授权待落实 1 · 已关闭 0 · 其他状态 0", { exact: true })).toBeVisible();
+  await dialog.locator("summary").filter({ hasText: "确认库存来源" }).click();
+  await expect(dialog.getByText("关闭条件：确认唯一真源")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+});
+
 test("bound review layers expose decisions, module rules and concrete acceptance without writes", async ({ page, request }) => {
   const mutations: string[] = [];
   // Inbox read receipts are separate; the product reader must not mutate business state.

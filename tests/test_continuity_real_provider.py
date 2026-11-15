@@ -19,7 +19,7 @@ import pytest
 from tests.test_artifact_input_recovery import current_dispatch
 from tests.test_artifact_read_capability import _grant
 from tests.test_artifact_read_snapshot import published
-from tests.continuity_provider_command import provider_command
+from tests.continuity_provider_command import provider_command, require_provider_sandbox
 from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.runtime.environment_usage import assert_workspace_idle, guarded_provider_argv
 
@@ -33,6 +33,8 @@ def test_fresh_terra_sessions_continue_bound_dirty_candidate(tmp_path, monkeypat
     root = tmp_path / "product"
     root.mkdir()
     state = tmp_path / "state"
+    state.mkdir()
+    require_provider_sandbox(root, state, evidence)
     manifest, required, _ = published(state, body={
         "shared": "Implement Python totals.py: subtotal(values) sums integers; reject bool and non-integers with ValueError. Never change existing integer behavior.",
         "tasks": [{} for _ in range(7)] + [{"next_step": "Add total_with_fee(values, fee): call subtotal and add nonnegative integer fee; reject bool/negative/non-integer fees."}],

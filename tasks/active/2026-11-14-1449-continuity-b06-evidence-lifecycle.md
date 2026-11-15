@@ -1,5 +1,9 @@
 > 状态: active
 
+2026-11-15 本批：只读复核 Datal 的 51 来源/10 Plan 绑定，按原编号分列八类产品差额，
+记录 45 任务 DAG 与 P20/P20Q 尾部过宽风险；未恢复生产任务或宣称正式产品资格通过。
+见[Datal 对账](../../reports/continuity-datal-reconciliation-20261115.md)。本任务仍为 active。
+
 2026-11-15 继续验证：Verify/Integration 局部重试、源版本/合同不匹配、迟到证据、暂停和
 审批身份相关 110 项回归通过（包含于最终 444 项）。不将这些确定性证据冒充视频补录、
 上传回执丢失与正式交付全链。见[继续验证报告](../../reports/continuity-validation-20261115-review.md)。
