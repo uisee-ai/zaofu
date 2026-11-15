@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `4fa961cf` fix: improve document anchors and audit reading
 
 # PRD / Plan 真实阅读缺口修复
 
