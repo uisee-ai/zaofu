@@ -1,4 +1,5 @@
 import hashlib
+import pytest
 
 from tests.test_completed_turn_continuation import case
 from zf.core.events import ZfEvent
@@ -62,3 +63,49 @@ def test_hook_records_digest_without_copying_prompt(tmp_path, monkeypatch):
     assert event.origin == "kernel"
     assert event.payload["submitted_prompt_sha256"] == hashlib.sha256(b"private prompt body").hexdigest()
     assert "private prompt body" not in event.to_json()
+
+
+@pytest.mark.parametrize("paused", [False, True])
+def test_actual_hook_cli_lost_notification_reconciles_after_controller_restart(tmp_path, paused):
+    import json
+    import subprocess
+    import sys
+    from zf.core.state.role_sessions import RoleSessionRegistry
+    from zf.runtime.task_handoff import _unconfirmed_continuations
+
+    runtime, store, attempt, transport, _ = case(tmp_path)
+    registry = RoleSessionRegistry(runtime.state_dir / "role_sessions.yaml", project_root=tmp_path)
+    registry.get_or_create("verify-1", backend="codex")
+    session_id = "99999999-9999-9999-9999-999999999999"
+    assert registry.bind_codex_session("verify-1", session_id)
+    sends = []
+    def accepted_then_lost(role, path, prompt, **kwargs):
+        sends.append(prompt)
+        result = subprocess.run([sys.executable, "-m", "zf.cli.main", "hook-recv",
+            "--event", "codex.hook.user_prompt_submit", "--backend", "codex",
+            "--state-dir", str(runtime.state_dir)], text=True, capture_output=True, timeout=15,
+            input=json.dumps({"session_id": session_id, "turn_id": "new-turn", "prompt": prompt}))
+        assert result.returncode == 0, result.stderr
+        raise OSError("lost transport return after actual hook CLI")
+    transport.send_task = accepted_then_lost
+    runtime.run_once(events=[])
+    if paused:
+        runtime.event_writer.append(ZfEvent(type="dispatch.paused", actor="operator", origin="kernel"))
+    restarted = Orchestrator(runtime.state_dir, runtime.config, transport)
+    restarted.run_once(events=[])
+    restarted.run_once(events=[])
+    events = runtime.event_log.read_all()
+    assert len(sends) == 1
+    assert len([e for e in events if e.type == "worker.continuation.reconciled"]) == 1
+    assert _unconfirmed_continuations(events, "T1", attempt["attempt_id"]) == []
+    assert store.get(attempt["attempt_id"])["status"] == "sent"
+
+
+def test_corrupt_ledger_never_launches_a_recovery_turn_or_rewrites_history(tmp_path):
+    runtime, _, _, transport, _ = case(tmp_path)
+    path = runtime.state_dir / "events.jsonl"
+    original = path.read_bytes() + b'{"type":"approval.requested",broken}\n'
+    path.write_bytes(original)
+    runtime.run_once(events=[])
+    assert not transport.sends
+    assert path.read_bytes().startswith(original)

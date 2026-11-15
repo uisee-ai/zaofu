@@ -1,5 +1,10 @@
 > 状态: active
 
+2026-11-15 续作：前任 work record/SOP 通过当前 operation 身份认证和固定 handoff 引用
+分页读取，旧 dispatch/错误 target/损坏正文拒绝；语义方法沿用 evidence_files。
+真实 Codex 入口改为 workspace-write；宿主 bwrap 预检失败，无新的正常沙箱真实资格。
+历史绕过 sandbox 的实验不计入该资格。证据：[续作报告](../../reports/continuity-next-20261115-review.md)。
+
 # ZF-SPEC-001 中立交接与执行资格
 
 用户于2026-11-14明确授权基于 spec 在新 worktree 实施；覆盖 F04/F05/F08。

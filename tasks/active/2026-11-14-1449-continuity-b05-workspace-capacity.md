@@ -1,5 +1,9 @@
 > 状态: active
 
+2026-11-15 续作：R04-B 显式清理请求/结果持久化与 resume-only CLI 已接线；删除后丢回执、
+路径复用、新工作区范围、未交付/占用/损坏账本均有回归。Python/Node 离线实际执行通过，
+Go 不在 PATH；完整替换回退及真实 8+8 未关闭。证据：[续作报告](../../reports/continuity-next-20261115-review.md)。
+
 # ZF-SPEC-001 切分、并发与环境复用
 
 用户于2026-11-14明确授权基于 spec 在新 worktree 实施；覆盖 F10/F11。

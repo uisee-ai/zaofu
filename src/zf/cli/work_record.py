@@ -23,6 +23,7 @@ def register(sub):
             child.add_argument('--file', required=True)
             child.add_argument('--request-id', required=True)
         else:
+            child.add_argument('--predecessor', action='store_true', help='Read the predecessor record pinned in this operation handoff')
             child.add_argument('--evidence', type=int, help='Read an immutable evidence envelope by zero-based index')
             child.add_argument('--page-start', type=int, default=0)
             child.add_argument('--digest', help='Pin continuation pages to the first returned record digest')
@@ -39,12 +40,16 @@ def run(args):
                 role=role, credential=credential, record_file=Path(args.file), request_id=args.request_id)
         else:
             service = SemanticResultSubmitService(state_dir=ctx.state_dir, event_log=log, event_writer=EventWriter(log))
-            _, manifest, _ = authorize_work_record(service, args.operation, role, credential)
-            record = current_work_record(ctx.state_dir, log.read_all(), manifest, role)
-            if record['status'] != 'bound':
-                raise ValueError('current work record unavailable')
-            descriptor = record['work_record_ref']
-            body = hydrate_sidecar_ref(ctx.state_dir, descriptor).payload
+            binding, manifest, _ = authorize_work_record(service, args.operation, role, credential)
+            if args.predecessor:
+                from zf.runtime.task_handoff import predecessor_work_record
+                descriptor, body = predecessor_work_record(ctx.state_dir, manifest, binding)
+            else:
+                record = current_work_record(ctx.state_dir, log.read_all(), manifest, role)
+                if record['status'] != 'bound':
+                    raise ValueError('current work record unavailable')
+                descriptor = record['work_record_ref']
+                body = hydrate_sidecar_ref(ctx.state_dir, descriptor).payload
             if args.evidence is not None:
                 if not 0 <= args.evidence < len(body['evidence_refs']):
                     raise ValueError('invalid evidence index')

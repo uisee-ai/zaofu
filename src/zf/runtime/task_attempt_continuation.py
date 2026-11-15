@@ -24,7 +24,10 @@ def continuation_context(runtime: Any, role: str, context: Any) -> Any:
 
 
 def validate_task_continuation(runtime: Any, role: str, context: DispatchContext) -> None:
-    if is_dispatch_paused(runtime.state_dir):
+    events = runtime.event_log.read_all()
+    if any(e.type == "event.malformed" and e.payload.get("ledger_integrity") == "unknown" for e in events):
+        raise RuntimeError("continuation requires a trustworthy ledger; preserve original history")
+    if is_dispatch_paused(runtime.state_dir, events=events):
         raise RuntimeError("continuation is paused")
     task = runtime.task_store.get(str(context.task_id or ""))
     row = task_attempt_store(runtime).get(str(context.attempt_id or "")) or {}

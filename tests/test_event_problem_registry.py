@@ -69,6 +69,15 @@ def test_goal_identity_invalid_tries_run_manager_rebuild_before_autoresearch() -
     )
 
 
+def test_retained_cleanup_is_observable_without_authorizing_automatic_deletion():
+    spec = spec_for_event("workspace.cleanup.blocked")
+    assert spec is not None and spec.supervisor_attention == "on_single"
+    assert spec.effective_recovery_policy == "none"
+    assert spec.effective_notification_policy == "trace_only"
+    assert not spec.autoresearch_eligible
+    assert event_consumer_contract_gaps({"workspace.cleanup.blocked"}) == []
+
+
 def test_known_flow_failure_events_do_not_have_consumer_contract_gaps() -> None:
     known_flow_failures = {
         event_type

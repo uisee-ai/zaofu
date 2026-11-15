@@ -86,6 +86,9 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
         raise ValueError("predecessor request body is missing")
     verify_sidecar_ref(runtime.state_dir, request_ref)
     references = [request_ref]
+    change = _contract_change(runtime, target["task_id"], events, contract.get("contract_authority_revision"))
+    if change.get("ref"):
+        references.append(change["ref"])
     record = None
     for event in reversed(events):
         if (event.type == "worker.work_record.published" and event.origin == "kernel"
@@ -124,6 +127,7 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
         "source": {key: source.get(key, "") for key in ("operation_id", "active_attempt_id", "dispatch_id", "status", "role_instance", "task_pipeline_stage", "reason", "semantic_verdict")},
         "objective": contract.get("behavior") or contract.get("title") or "",
         "contract_revision": contract.get("contract_revision", ""),
+        "contract_change": change,
         "remaining_acceptance": contract.get("acceptance_criteria", []),
         "workspace": {"path": str(workspace), **observed, "candidate_status": "preserved_not_accepted",
                       "environment_qualification": "unverified"},
@@ -132,6 +136,58 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
         "next_action": "Read current contract and handoff, acknowledge receipt, then continue the current authorized stage.",
         "references": references, "authorizes_execution": False, "business_completed": False,
     })
+
+
+def _contract_change(runtime, task_id, events, expected_revision=None):
+    """Keep old facts reachable without treating their approvals as current."""
+    task = runtime.task_store.get(task_id)
+    revision = getattr(task, "contract_authority_revision", "")
+    if expected_revision is not None and expected_revision != revision:
+        raise ValueError("contract authority changed during handoff preparation")
+    for event in reversed(events):
+        if (event.type != "task.contract.revision.applied" or event.origin != "kernel"
+                or event.task_id != task_id
+                or event.payload.get("contract_authority_revision") != revision):
+            continue
+        ref = event.payload.get("mutation_ref") or {
+            "ref": event.payload.get("contract_mutation_ref", ""),
+            "sha256": event.payload.get("contract_mutation_digest", ""),
+            "kind": "task_contract_mutation", "content_type": "application/json",
+        }
+        if not ref.get("sha256"):
+            raise ValueError("contract history requires a pinned digest")
+        body = hydrate_sidecar_ref(runtime.state_dir, ref).payload
+        if body.get("task_id") != task_id or body.get("authority_revision") != revision:
+            raise ValueError("contract history identity mismatch")
+        return {"ref": ref, "authority_revision": revision,
+                "previous_authority_revision": body.get("previous_authority_revision", ""),
+                "previous_snapshot_available": isinstance(body.get("previous_contract"), dict),
+                "authorizes_execution": False}
+    return {"status": "unavailable", "authorizes_execution": False}
+
+
+def predecessor_work_record(state_dir: Path, manifest: dict, binding: dict) -> tuple[dict, dict]:
+    """Read only the predecessor pinned for an already authorized current caller."""
+    sources = [s for s in manifest.get("sources", []) if s.get("source_id") == SOURCE_ID]
+    if len(sources) != 1 or not sources[0].get("sha256"):
+        raise ValueError("current operation has no pinned predecessor handoff")
+    body = hydrate_sidecar_ref(state_dir, sources[0]).payload
+    validate_handoff_body(body, {key: binding[key] for key in ("workflow_run_id", "task_id", "operation_id")})
+    record = body.get("work_record")
+    if not isinstance(record, dict):
+        raise ValueError("predecessor work record unavailable")
+    expected = {key: binding[key] for key in ("workflow_run_id", "task_id")}
+    expected.update(operation_id=body["source"]["operation_id"],
+                    attempt_id=body["source"].get("active_attempt_id"),
+                    dispatch_id=body["source"].get("dispatch_id"))
+    if (not all(expected.values()) or record.get("schema_version") != "worker-work-record.v1"
+            or record.get("authorizes_execution") is not False
+            or any(record.get("binding", {}).get(key) != value for key, value in expected.items())):
+        raise ValueError("predecessor work record identity mismatch")
+    refs = [ref for ref in body["references"] if ref.get("kind") == "worker_work_record"]
+    if len(refs) != 1 or hydrate_sidecar_ref(state_dir, refs[0]).payload != record:
+        raise ValueError("predecessor work record does not match pinned reference")
+    return refs[0], record
 
 
 def _unconfirmed_continuations(events, task_id, attempt_id):

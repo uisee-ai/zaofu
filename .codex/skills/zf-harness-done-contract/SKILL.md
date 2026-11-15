@@ -175,3 +175,20 @@ Workers do not mark tasks, candidates, or goals done themselves.
 新会话先用 briefing 的 recover 入口，再用 `artifact work-record show --operation <id>`
 按 digest/next_page_start 回读当前记录。历史陈述不证明当前理解，不豁免 required reads。
 记录不消费正式 result submit、不完成 Task，也不授予执行权限；仍按原交付合同提交结果。
+
+### 失败路径、SOP 与决定的交接
+
+有可复用的失败经验、操作步骤或关键决定时，在工作区内保存短 Markdown 文件，并通过
+现有 `evidence_files` 固定其正文与摘要，不增加另一份任务状态。逐项写明来源事件/ref 或
+固定提交、适用输入/源码版本、成立条件、失效条件、被替代的结论及仍待验证的部分。
+语义适用性由接手者核对；不能把经验记录包装成新授权或独立验收。
+
+接手 operation 使用当前凭据执行
+`zf artifact work-record show --operation <当前 id> --predecessor`，读取本次交接固定的前任
+记录；按其中的 `evidence_refs` 索引加 `--evidence <n>` 回读原文。沿用 digest 与分页参数，
+不改用前任凭据，不通过猜测 state dir 文件路径扩大读取范围。缺失/损坏记录应报告具体
+缺口，不能自行补造历史。该入口仅提供当前交接的直接前任，不是全局历史搜索。
+
+读完后在当前记录的 completed_actions 中写核查结果，pending 保留未决/失效问题，
+next_step 指明下一动作；必要时通过新 evidence_files 保留带来源的后续决定。不能仅因
+前任说“已完成”就跳过当前 required reads、handoff 接收回执或结果准入。

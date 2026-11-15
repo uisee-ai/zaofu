@@ -68,3 +68,59 @@ def test_real_operation_preparation_pins_handoff_as_required_input(tmp_path):
     request = hydrate_sidecar_ref(runtime.state_dir, event.payload["request_ref"]).payload["request"]
     assert any(row["source_id"] == "task-handoff" and row["artifact_sha256"] == ref["sha256"]
         for row in request["required_reads"])
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_successor_dispatch_exposes_pinned_contract_history(dispatch_fixture, corrupt):
+    from zf.core.task.schema import TaskContract
+    from zf.runtime.task_contract_authority import TaskContractAuthorityService
+    from zf.runtime.task_pipeline_runtime import TaskPipelineWaiting
+
+    runtime, task, snapshot, prepared, dispatch = dispatch_fixture
+    root = runtime.project_root
+    for args in (["init", "-q"], ["config", "user.email", "test@example.com"],
+                 ["config", "user.name", "Test"], ["commit", "--allow-empty", "-qm", "test: seed"]):
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+    candidate = root / "candidate.txt"
+    candidate.write_text("unfinished work stays untouched")
+    service = TaskContractAuthorityService(task_store=runtime.task_store,
+        event_writer=runtime.event_writer, state_dir=runtime.state_dir)
+    change = service.replace(task, contract=TaskContract(behavior="new scope"), source="approved_revision")
+    task.contract = change.task.contract
+    task.contract_authority_revision = change.authority_revision
+    from zf.runtime.task_doc import compute_task_capsule_revisions
+    snapshot.update(compute_task_capsule_revisions(change.task))
+    snapshot["contract_authority_revision"] = change.authority_revision
+    request = write_immutable_json_sidecar(runtime.state_dir, {"request": {"task_id": task.id}},
+        root="requests", kind="request", schema_version="request.v1", created_by="kernel")
+    identity = {"operation_id": "predecessor", "workflow_run_id": "run-1", "task_id": task.id,
+                "task_pipeline_stage": "impl", "request_ref": request, "active_attempt_id": "old"}
+    for kind in ("workflow.operation.requested", "workflow.operation.started", "workflow.operation.settled"):
+        runtime.event_writer.append(ZfEvent(type=kind, origin="kernel", task_id=task.id, payload=identity))
+    # A later worker assertion must not replace the authority service's receipt.
+    runtime.event_writer.append(ZfEvent(type="task.contract.revision.applied", origin="worker", task_id=task.id,
+        payload={"contract_authority_revision": change.authority_revision, "mutation_ref": {"ref": "not-real"}}))
+    if corrupt:
+        (runtime.state_dir / change.receipt_ref).write_text("{}")
+        with pytest.raises(TaskPipelineWaiting):
+            dispatch()
+        assert not prepared
+    else:
+        dispatch()
+        body = hydrate_sidecar_ref(runtime.state_dir, prepared[-1]["payload"]["task_handoff_ref"]).payload
+        history = body["contract_change"]
+        assert history["previous_snapshot_available"] and not history["authorizes_execution"]
+        old_new = hydrate_sidecar_ref(runtime.state_dir, history["ref"]).payload
+        assert old_new["previous_contract"]["behavior"] == "current"
+        assert old_new["contract"]["behavior"] == "new scope"
+        assert history["ref"] in body["references"]
+        assert body["workspace"]["dirty"]
+    assert candidate.read_text() == "unfinished work stays untouched"
+
+
+def test_handoff_history_cannot_mix_current_store_with_stale_snapshot(dispatch_fixture):
+    from zf.runtime.task_handoff import _contract_change
+
+    runtime, task, _, _, _ = dispatch_fixture
+    with pytest.raises(ValueError, match="authority changed"):
+        _contract_change(runtime, task.id, [], expected_revision="stale-revision")

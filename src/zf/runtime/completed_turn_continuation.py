@@ -18,6 +18,8 @@ def reconcile_completed_turns(runtime: Any) -> int:
     from zf.runtime.continuation_delivery import reconcile_continuation_deliveries
     reconcile_continuation_deliveries(runtime)
     events = runtime.event_log.read_all()
+    if any(e.type == "event.malformed" and e.payload.get("ledger_integrity") == "unknown" for e in events):
+        return 0
     if is_dispatch_paused(runtime.state_dir, events=events):
         return 0
     actors = {row.get("instance_id") for row in task_attempt_store(runtime).current_rows()

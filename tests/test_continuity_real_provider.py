@@ -19,6 +19,7 @@ import pytest
 from tests.test_artifact_input_recovery import current_dispatch
 from tests.test_artifact_read_capability import _grant
 from tests.test_artifact_read_snapshot import published
+from tests.continuity_provider_command import provider_command
 from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.runtime.environment_usage import assert_workspace_idle, guarded_provider_argv
 
@@ -58,9 +59,7 @@ def test_fresh_terra_sessions_continue_bound_dirty_candidate(tmp_path, monkeypat
                    "Preserve subtotal and complete only the next_step from task 7. Leave both functions in totals.py.")
                 + "\nRun a small Python assertion for your changed behavior, then report briefly."
             )
-            argv = ["codex", "exec", "--skip-git-repo-check", "--json", "--ephemeral", "--ignore-user-config",
-                "--model", "gpt-6.1-terra", "--config", 'model_reasoning_effort="high"',
-                "--dangerously-bypass-approvals-and-sandbox", "-C", str(root), prompt]
+            argv = provider_command(root, state, prompt)
             with (evidence / f"phase-{phase}.jsonl").open("w") as output, (evidence / f"phase-{phase}.stderr").open("w") as errors:
                 process = subprocess.Popen(guarded_provider_argv(root, argv), cwd=root,
                     stdin=subprocess.DEVNULL, stdout=output, stderr=errors, start_new_session=True)

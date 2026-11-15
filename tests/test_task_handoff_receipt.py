@@ -30,6 +30,27 @@ def handoff(tmp_path, monkeypatch, request):
             body["objective"] *= 500
             body["references"] = [write_sidecar_text(state, "artifacts/large-evidence.txt", "e" * 5_000_000,
                 kind="evidence", schema_version="evidence.v1", created_by="kernel")]
+        if getattr(request, "param", "") == "history":
+            import base64
+            import hashlib
+            note = "失败路径：旧安装步骤不可重用。\nSOP：先检查锁定文件，再安装。\n适用版本：r1；锁定文件改变后失效。\n替代：先前无条件重装的决定。\n"
+            evidence = write_immutable_json_sidecar(state, {
+                "schema_version": "work-record-evidence.v1", "path": "handoff-notes.md",
+                "sha256": hashlib.sha256(note.encode()).hexdigest(),
+                "body_base64": base64.b64encode(note.encode()).decode()},
+                root="work-records/evidence", kind="work_record_evidence",
+                schema_version="work-record-evidence.v1", created_by="old-worker")
+            record = {"schema_version": "worker-work-record.v1",
+                "binding": {"workflow_run_id": "r", "task_id": "T7", "operation_id": "old",
+                            "attempt_id": "old-attempt", "dispatch_id": "old-dispatch"},
+                "completed_actions": ["保存失败事实"], "pending": ["核对新版本"],
+                "next_step": "读取 handoff-notes.md 并核对适用性", "evidence_refs": [evidence],
+                "claims_status": "worker_report_unverified", "authorizes_execution": False}
+            record_ref = write_immutable_json_sidecar(state, record, root="work-records", kind="worker_work_record",
+                schema_version="worker-work-record.v1", created_by="old-worker")
+            body.update(work_record=record, references=[record_ref, evidence],
+                source={"operation_id": "old", "active_attempt_id": "old-attempt", "dispatch_id": "old-dispatch"})
+            saved.update(note=note, record_ref=record_ref, evidence_ref=evidence)
         ref = write_immutable_json_sidecar(state, body, root="task-handoffs/bodies", kind="task_handoff", schema_version="task-handoff.v1", created_by="kernel")
         manifest, descriptor = source_manifest_from_payload(state_dir=state, project_root=tmp_path,
             payload={"input_refs": [{**ref, "source_id": "task-handoff", "artifact_id": "task-handoff", "allowed_paths": ["$"]}]},
@@ -161,3 +182,42 @@ def test_partial_body_requires_remaining_pages_and_large_reference_stays_out_of_
     assert handoff_receipt_projection(state, log.read_all(), "T7")["status"] == "accepted"
     (state / "artifacts/large-evidence.txt").unlink()
     assert handoff_receipt_projection(state, log.read_all(), "T7")["status"] == "incomplete"
+
+
+@pytest.mark.parametrize("handoff", ["history"], indirect=True)
+def test_successor_cli_reads_pinned_predecessor_sop_without_inheriting_authority(handoff, capsys):
+    from zf.cli.main import main
+
+    state, log, _, saved = handoff
+    command = ["artifact", "work-record", "show", "--predecessor", "--operation", "op", "--state-dir", str(state)]
+    assert main([*command, "--evidence", "0"]) == 0
+    page = json.loads(capsys.readouterr().out)
+    assert page["content"] == saved["note"]
+    assert page["sha256"] == saved["evidence_ref"]["sha256"]
+    assert page["authorizes_execution"] is False
+    assert handoff_receipt_projection(state, log.read_all(), "T7")["status"] == "awaiting_receipt"
+    assert TaskStore(state / "kanban.json").get("T7").status == "in_progress"
+    TaskStore(state / "kanban.json").update("T7", active_dispatch_id="replacement")
+    assert main([*command, "--evidence", "0"]) == 1
+    assert not capsys.readouterr().out
+
+
+@pytest.mark.parametrize("handoff", ["history"], indirect=True)
+def test_corrupt_predecessor_body_is_not_replaced_by_embedded_copy(handoff, capsys):
+    from zf.cli.main import main
+
+    state, _, _, saved = handoff
+    (state / saved["record_ref"]["ref"]).write_text("{}")
+    assert main(["artifact", "work-record", "show", "--predecessor", "--operation", "op", "--state-dir", str(state)]) == 1
+    assert not capsys.readouterr().out
+
+
+@pytest.mark.parametrize("handoff", ["history"], indirect=True)
+@pytest.mark.parametrize("field", ["workflow_run_id", "task_id", "operation_id"])
+def test_predecessor_material_cannot_be_rebound_to_another_target(handoff, field):
+    from zf.runtime.task_handoff import predecessor_work_record
+
+    state, _, _, saved = handoff
+    binding = {"workflow_run_id": "r", "task_id": "T7", "operation_id": "op", field: "other"}
+    with pytest.raises(ValueError, match="target is stale"):
+        predecessor_work_record(state, saved["manifest"], binding)

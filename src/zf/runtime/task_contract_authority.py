@@ -230,6 +230,8 @@ class TaskContractAuthorityService:
             "previous_authority_revision": expected_revision,
             "authority_revision": revision,
             "authority_sequence": sequence,
+            "previous_contract": asdict(current.contract),
+            "previous_execution_binding": asdict(task_execution_binding(current)),
             "contract": asdict(materialized),
             "execution_binding": asdict(binding),
             "task_updates": effective_task_updates,
@@ -494,6 +496,7 @@ class TaskContractAuthorityService:
             ],
             "contract_authority_revision": receipt["authority_revision"],
             "contract_authority_sequence": receipt["authority_sequence"],
+            "mutation_ref": dict(descriptor),
             "contract_mutation_ref": str(descriptor.get("ref") or ""),
             "contract_mutation_digest": str(descriptor.get("sha256") or ""),
         }
@@ -569,6 +572,7 @@ class TaskContractAuthorityService:
             return None
         return self.event_writer.append(ZfEvent(
             type=event_type,
+            origin="kernel",
             actor=actor,
             task_id=task_id,
             payload=payload,

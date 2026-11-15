@@ -31,6 +31,8 @@ def reconcile_continuation_deliveries(runtime: Any) -> int:
     with locked_path(runtime.state_dir / "locks" / "continuation-receipts"):
         from zf.runtime.workflow_operation import reduce_workflow_operations
         events = runtime.event_log.read_all()
+        if any(e.type == "event.malformed" and e.payload.get("ledger_integrity") == "unknown" for e in events):
+            return 0
         operations = reduce_workflow_operations(events)
         resolved = {e.payload.get("claim_id") for e in events
                     if e.type == "worker.continuation.reconciled" and e.origin == "kernel"}
