@@ -13,7 +13,8 @@ uv run zf doctor provider --backend codex --json
 
 - `codex` CLI 是否在 `PATH`。
 - `codex --version` 是否可执行。
-- 当前环境是否支持基础 network namespace probe。
+- 在隔离临时目录内运行当前 Codex 自身的 `sandbox --permission-profile :workspace` 命令。
+- 启动探测不调用模型、不验证账号或业务；未知 CLI 接口/超时/权限失败返回非零，不把 `unshare -n` 结果当 Codex 资格。
 
 如果输出 `sandbox: unsupported`,普通 Codex sandbox 可能在启动前失败,常见错误类似:
 
@@ -25,19 +26,27 @@ unshare: unshare failed: Operation not permitted
 
 ## 2. E2E 策略
 
-真实 E2E 不允许自动降级 fake provider。预检失败时只有两种选择:
+真实 E2E 不允许自动降级 fake provider 或以关闭 sandbox 代替正常权限验证。
+预检失败先修复宿主，再以实际运行 Provider 的普通用户重验；不要用 root 的结果代替。
 
-1. 修宿主机 namespace / sandbox 权限,再重跑预检。
-2. 在报告中显式记录风险,并仅对本次真实验证使用 Codex sandbox bypass。
-
-示例:
+Ubuntu 24.04 的新节点可执行仓库内受限安装脚本：
 
 ```bash
-codex exec --dangerously-bypass-approvals-and-sandbox --json "$PROMPT"
+bash scripts/setup-codex-sandbox.sh --check
+bash scripts/setup-codex-sandbox.sh --apply
 ```
 
-ZaoFu 当前把该 bypass 作为可信本地 Codex provider 的默认执行权限；它适用于
-受控开发机、E2E 和已授权项目，不适用于共享主机、非可信项目或 production-like 环境。
+`--check` 不提权。`--apply` 仅在 Ubuntu 24.04 安装发行版 bubblewrap、apparmor-profiles、
+apparmor-utils，加载发行版 bwrap-userns-restrict profile；最后以原用户执行预检。
+已安装包不重复安装，已有相同 profile 可重复加载；定制 profile、符号链接或缺失发行版源文件
+会停止并保留现场。不会关闭全局 AppArmor/userns 限制，不安装 setuid helper，不修改 Codex 账号配置。
+自动包安装不重启业务服务；如果 profile 或内核不支持，应由管理员调查，而不是自动放宽。
+其他发行版先按包管理器安装 bubblewrap，再运行 doctor；自动修复脚本不会假装已资格化这些平台。
+
+官方前提见 [Codex sandbox prerequisites](https://learn.chatgpt.com/docs/sandboxing)。
+2026-11-16 在 Ubuntu 24.04.2、Codex 0.164.0、bubblewrap 0.9.0 验证：专用 profile 允许 bwrap
+建立 namespace，受限子进程仍不能写工作区外的测试文件，userns 限制保持1。
+安装包本身未解决该宿主问题，加载专用 profile 后才通过。跨节点不能只检查包是否存在。
 
 ### 2.1 WebKanban 启动模式
 
@@ -67,9 +76,9 @@ ZF_KANBAN_AGENT_CLAUDE_HEADLESS_PERMISSION_MODE=bypassPermissions
 tools/start-webkanban.sh --port 8001 --status
 ```
 
-必须看到 `codex_headless_sandbox: danger-full-access`、
+历史可信开发默认可能显示 `codex_headless_sandbox: danger-full-access`、
 `claude_headless_permission_mode: bypassPermissions`、`tmux: running` 和
-`api: ok`。`zf doctor provider` 仍可能报告宿主普通 sandbox 不可用；它检查的是
+`api: ok`；这不属于受限权限验收。新节点受限运行须显式选择 `workspace-write` 并先通过 doctor。`zf doctor provider` 检查的是
 host capability，不是 ZaoFu 是否已显式 bypass。
 
 直接 `uv run zf web ...` 也会使用相同的代码默认值；以下变量仅用于显式记录或

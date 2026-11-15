@@ -11,8 +11,8 @@ uv run zf doctor provider --backend codex --json
 
 Preflight reads the environment without starting a worker or writing runtime
 truth. It checks whether the `codex` CLI is on `PATH`, whether
-`codex --version` executes, and whether the host supports the basic network
-namespace probe.
+`codex --version` executes, and whether the installed Codex can launch a command through its own workspace permission profile.
+The probe does not call a model or qualify credentials; unknown interfaces and failed probes return nonzero.
 
 If the result says `sandbox: unsupported`, normal Codex sandbox startup may
 fail with an error such as:
@@ -25,18 +25,24 @@ unshare: unshare failed: Operation not permitted
 
 ## 2. E2E Policy
 
-Real E2E never silently falls back to a fake provider. After a preflight
-failure, either fix host namespace and sandbox support or explicitly record the
-risk and use bypass only for that trusted validation:
+Real E2E must not replace restricted execution with a fake provider or a sandbox bypass.
+Repair host prerequisites, then rerun as the intended ordinary service user, not root.
 
 ```bash
-codex exec --dangerously-bypass-approvals-and-sandbox --json "$PROMPT"
+bash scripts/setup-codex-sandbox.sh --check
+bash scripts/setup-codex-sandbox.sh --apply
 ```
 
-ZaoFu currently makes this bypass the default execution posture for trusted
-local Codex providers. It is appropriate for controlled development hosts,
-E2E, and authorized projects, not shared hosts, untrusted projects, or
-production-like environments.
+The apply mode is qualified for Ubuntu 24.04 only. It installs distribution bubblewrap/AppArmor
+packages when missing and loads the distribution bwrap-userns-restrict profile. It preserves
+customized profiles, rejects symlinks/missing package profiles, and leaves global AppArmor/userns
+restrictions enabled. It does not change Codex accounts, install a setuid helper, or reboot services.
+Repeat execution reuses installed packages and an identical profile. Other distributions must use
+their package manager and run doctor; they are not automatically qualified by this script.
+
+See [official prerequisites](https://learn.chatgpt.com/docs/sandboxing). On Ubuntu 24.04.2 with
+Codex 0.164.0 and bubblewrap 0.9.0, installing the package alone still failed; loading the profile
+restored normal startup while workspace-external writes remained denied. Verify each new host.
 
 ### 2.1 WebKanban Launch Modes
 
@@ -67,9 +73,9 @@ Verify the effective launch policy:
 tools/start-webkanban.sh --port 8001 --status
 ```
 
-The result must include `codex_headless_sandbox: danger-full-access`,
+The historical trusted-local default may include `codex_headless_sandbox: danger-full-access`,
 `claude_headless_permission_mode: bypassPermissions`, `tmux: running`, and
-`api: ok`. `zf doctor provider` may still report that the host's normal sandbox
+`api: ok`. This does not qualify restricted execution; explicitly choose `workspace-write` on restricted deployments. `zf doctor provider` may still report that the host's normal sandbox
 is unsupported; it checks host capability, not whether ZaoFu explicitly
 bypasses it.
 

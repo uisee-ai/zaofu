@@ -1,5 +1,10 @@
 > 状态: active
 
+2026-11-16：宿主正常 sandbox 已修复，发行版包与专用 AppArmor profile 保持全局限制开启；
+普通用户工作区内写入与外部拒绝写入负例通过。doctor/真实验收共用 Codex 自身探测，补新节点
+幂等修复脚本。真实 Terra High 两个 fresh 会话接力通过；完整 Task Pipeline 中断恢复及跨
+Provider仍未完成，不归档。见[本批报告](../../reports/continuity-host-20261116-review.md)。
+
 2026-11-15 本批：真实 Codex 调用前接入当前 CLI sandbox 预检，失败仅留证据，不绕过权限。
 宿主 RTM_NEWADDR 权限失败仍未修复，等待管理员按发行版 bubblewrap/AppArmor 前提处理；
 未产生新真实 Provider 资格。见[修复说明](../../reports/continuity-sandbox-host-remediation-20261115.md)

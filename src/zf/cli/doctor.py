@@ -333,42 +333,26 @@ def _codex_provider_preflight() -> dict[str, Any]:
             f"codex --version failed: {_probe_summary(version)}"
         )
 
-    unshare_path = shutil.which("unshare")
-    if unshare_path:
-        probe = _run_probe([unshare_path, "-n", "true"], timeout_s=5)
-        report["sandbox"]["method"] = "unshare -n true"
-        if probe["returncode"] == 0:
-            report["sandbox"]["status"] = "ok"
-            return report
-        text = f"{probe['stdout']}\n{probe['stderr']}".lower()
-        if "operation not permitted" in text or "not permitted" in text:
-            report["ok"] = False
-            report["sandbox"]["status"] = "unsupported"
-            report["sandbox"]["diagnostic"] = _probe_summary(probe)
-            report["issues"].append(
-                "network namespace is not available; Codex sandbox may fail before replying"
-            )
-            report["recommendations"].append(
-                "For explicit real E2E only, rerun Codex with a documented sandbox bypass or fix host namespace permissions."
-            )
-            return report
-        report["sandbox"]["status"] = "unknown"
-        report["sandbox"]["diagnostic"] = _probe_summary(probe)
-        report["warnings"].append(
-            "network namespace probe failed with an unclassified error"
-        )
-        return report
+    from tempfile import TemporaryDirectory
+    from zf.runtime.provider_sandbox import probe_codex_sandbox
 
-    bwrap_path = shutil.which("bwrap")
-    if bwrap_path:
-        report["sandbox"]["method"] = "bwrap present; unshare unavailable"
-        report["warnings"].append(
-            "unshare command is unavailable; sandbox support could not be proven before real Codex run"
-        )
-    else:
-        report["sandbox"]["method"] = "no unshare/bwrap probe"
-        report["warnings"].append(
-            "neither unshare nor bwrap is available on PATH; sandbox support could not be proven"
+    # unshare -n needs host capabilities; it is not Codex's userns/bwrap path.
+    with TemporaryDirectory(prefix="zf-provider-preflight-") as temporary:
+        probe = probe_codex_sandbox(Path(temporary), codex=codex_path)
+    report["sandbox"].update(
+        method="codex sandbox --permission-profile :workspace",
+        status="ok" if probe["returncode"] == 0 else "unsupported" if probe["phase"] == "launch" else "unknown",
+        diagnostic="" if probe["returncode"] == 0 else _probe_summary(probe),
+        probe=probe,
+        qualification="command_startup_only",
+    )
+    if probe["returncode"] != 0:
+        report["ok"] = False
+        report["issues"].append("Codex restricted sandbox preflight failed before model execution")
+        report["recommendations"].append(
+            "Repair host bubblewrap/AppArmor prerequisites; see docs/manual/16-real-codex-provider-preflight.md. "
+            "On Ubuntu 24.04 use scripts/setup-codex-sandbox.sh --apply, then rerun doctor as the service user. "
+            "An unknown CLI interface requires a qualified Codex version; do not bypass the sandbox."
         )
     return report
 

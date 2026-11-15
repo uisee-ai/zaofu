@@ -20,8 +20,10 @@ def build_plan_health_router(
 ) -> APIRouter:
     router = APIRouter()
     from zf.web.plan_document_routes import build_plan_document_router
+    from zf.web.plan_material_routes import build_plan_material_router
 
     router.include_router(build_plan_document_router(resolve_ctx))
+    router.include_router(build_plan_material_router(resolve_ctx))
 
     @router.get("/api/projects/{project_id}/plan/pending")
     def plan_pending(project_id: str, workflow_run_id: str | None = None) -> dict:

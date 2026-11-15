@@ -5,13 +5,14 @@ import PlanMarkdownDocument from "./PlanMarkdownDocument";
 import PlanSourceReader from "./PlanSourceReader";
 import PlanTraceReader from "./PlanTraceReader";
 import PlanInputReviewPanel from "./PlanInputReviewPanel";
+import PlanMaterialCatalog from "./PlanMaterialCatalog";
 import { DecisionList, PlanSourceContext, SourceRefs } from "./PlanReviewDetails";
 import { buildPlanReview, relatedTasks, strings, text } from "./planReviewModel";
 import { usePlanArtifacts } from "./usePlanArtifacts";
 import "./planReader.css";
 
-type View = "inputs" | "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "original" | "sources";
-const views: [View, string][] = [["overview", "审批概览"], ["modules", "模块规格"], ["pages", "页面与设计"], ["scenarios", "验收场景"], ["decisions", "待决事项"], ["coverage", "覆盖审查"], ["inputs", "任务输入"], ["original", "完整原文"], ["sources", "来源原文"]];
+type View = "inputs" | "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "original" | "sources" | "materials";
+const views: [View, string][] = [["overview", "审批概览"], ["modules", "模块规格"], ["pages", "页面与设计"], ["scenarios", "验收场景"], ["decisions", "待决事项"], ["coverage", "覆盖审查"], ["inputs", "任务输入"], ["original", "完整原文"], ["sources", "来源原文"], ["materials", "材料目录"]];
 
 export default function PlanReviewReader({ preview, projectId, onBodyRequested }: { preview: PlanPreview; projectId: string; onBodyRequested?: (value: boolean) => void }) {
   const readLocation = () => {
@@ -35,7 +36,7 @@ export default function PlanReviewReader({ preview, projectId, onBodyRequested }
   };
   useEffect(() => { const update = () => setLocation(readLocation()); window.addEventListener("hashchange", update); window.addEventListener("popstate", update); return () => { window.removeEventListener("hashchange", update); window.removeEventListener("popstate", update); }; }, [preview.plan_id]);
   const detailed = view === "coverage" || view === "scenarios";
-  const { artifacts, errors, loading } = usePlanArtifacts(preview, projectId, detailed, !["sources", "inputs", "original"].includes(view));
+  const { artifacts, errors, loading } = usePlanArtifacts(preview, projectId, detailed, !["sources", "inputs", "original", "materials"].includes(view));
   const model = useMemo(() => buildPlanReview(artifacts), [artifacts]);
   const selected = location.task ? model.modules.find(m => m.id === location.task) : model.modules[0];
   const decisions = preview.decision_review?.available ? preview.decision_review.items : model.decisions;
@@ -58,6 +59,7 @@ export default function PlanReviewReader({ preview, projectId, onBodyRequested }
       <div className="plan-product-content">
         {view === "original" ? (preview.content_state === "deferred" ? <p>完整原文尚未加载。</p> : <PlanMarkdownDocument content={preview.markdown || ""} reviewContent={preview.review_dossier_markdown || ""} initialAnchor={location.anchor} onAnchorChange={anchor => navigate({ anchor })} />)
           : view === "sources" ? <PlanSourceReader preview={preview} projectId={projectId} name={location.source} anchor={location.anchor} onSelect={openSource} />
+          : view === "materials" ? <div className="plan-review-scroll"><PlanMaterialCatalog preview={preview} projectId={projectId} onRead={openSource} /></div>
           : <div className="plan-review-scroll" role="region" aria-label="计划审阅内容" tabIndex={0}>
           <p className="muted">版本 {preview.plan_id} · {preview.status} · 以下为规划快照，计划分配与场景不代表实现或测试已通过。</p>
           {loading && <p role="status">正在读取同版规格…</p>}
