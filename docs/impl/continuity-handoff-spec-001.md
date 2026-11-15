@@ -335,3 +335,14 @@ Docker Chromium 最终 28 项通过，保留实际页面业务断言及 trace/We
 [继续验证报告](../../reports/continuity-validation-20261115-review.md)。
 本轮正常 Codex sandbox 预检仍因 bwrap RTM_NEWADDR 权限失败，未运行真实模型。
 浏览器视频是本次阅读与审批 UI 的证据，不冒充 R03 的 Datal 产品视频/上传/归档全链验收。
+
+## 2026-11-16：真实 PRD 验收的 worker sandbox 入口
+
+显式 `roles[].provider_session.sandbox: workspace-write` 让 Codex 首次启动与 resume
+使用 `--sandbox workspace-write --ask-for-approval never`，不回退全权限；该字段进入
+会话不可变配置摘要，变更权限使旧绑定失效。只接受 Codex，此字段不改变逻辑角色权限，
+未配置的历史项目保留原行为。部署宿主仍需通过 `scripts/setup-codex-sandbox.sh --check`。
+仓库生成的 telemetry hooks 仍沿用现有受信来源策略，OS sandbox 开关不替代 hooks 审核。
+
+回归覆盖 loader、首次与恢复 argv、配置身份变更、错误值与其他 Provider 拒绝、tmux 调用方。
+真实 PRD 实验使用独立 `/tmp/zf-minimal-prd-*` 项目，结果另记，不因开关实现宣称端到端通过。

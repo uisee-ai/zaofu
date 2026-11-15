@@ -374,7 +374,7 @@ _KNOWN_ROLE_KEYS = frozenset({
     "agent", "provider_session", "lifecycle",
 })
 _KNOWN_PROVIDER_SESSION_KEYS = frozenset({
-    "effort", "agent", "max_parallel_agents", "native_delegation",
+    "effort", "agent", "max_parallel_agents", "native_delegation", "sandbox",
 })
 _KNOWN_ROLE_LIFECYCLE_KEYS = frozenset({
     "mode", "idle_seconds", "cooldown_seconds",
@@ -520,6 +520,7 @@ def _build_provider_session(
             agent=str(agent or "").strip(),
             max_parallel_agents=parallel,
             native_delegation=data.get("native_delegation"),
+            sandbox=data.get("sandbox", ""),
         )
     except ValueError as exc:
         raise ConfigError(

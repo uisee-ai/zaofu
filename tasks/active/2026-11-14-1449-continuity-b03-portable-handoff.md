@@ -57,3 +57,8 @@ Provider仍未完成，不归档。见[本批报告](../../reports/continuity-ho
 用户已批准修正后的实施顺序；本任务保持 active，逐条验收以 [剩余关闭清单](../../docs/impl/continuity-handoff-spec-001.md#2026-11-15按成功条件推进的剩余关闭清单) 为索引。只关闭有真实调用方和适用证据的条款，其他剩余项不因本批提交自动完成。
 
 本轮修正：两个 GPT-6.1 Terra High 新会话完成脏成果接续的隔离真实实验；完整 Task Pipeline 故障接管及跨 provider 仍未关闭。 详见[修正报告](../../reports/continuity-closure-20261115-review.md)。
+
+2026-11-16 PRD 验收启动前发现并修复：真实 tmux worker 仍无条件关闭 OS sandbox。
+新增显式 Codex workspace-write 配置，覆盖首次/resume 和配置身份冻结；历史默认保持。
+失败测试先复现；provider-session/adapter 40、config/tmux/mock 27、sentinel 53 项通过。
+本任务仍 active，PRD 全链与中断恢复证据另行对账。

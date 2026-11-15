@@ -216,8 +216,11 @@ class ProviderSessionConfig:
     agent: str = ""
     max_parallel_agents: int | None = None  # 0: no harness result ceiling; provider default.
     native_delegation: bool | None = None
+    sandbox: str = ""  # Explicit Codex workspace sandbox; empty preserves legacy policy.
 
     def __post_init__(self) -> None:
+        if self.sandbox not in ("", "workspace-write"):
+            raise ValueError("ProviderSessionConfig.sandbox must be workspace-write or empty")
         if self.native_delegation is not None and not isinstance(self.native_delegation, bool):
             raise ValueError("ProviderSessionConfig.native_delegation must be boolean")
         if self.max_parallel_agents is not None:

@@ -53,6 +53,40 @@ def test_provider_session_omitted_keeps_legacy_argv() -> None:
     )
 
 
+@pytest.mark.parametrize("resume", [False, True])
+def test_explicit_workspace_sandbox_reaches_worker_command_and_identity(tmp_path, resume):
+    from dataclasses import replace
+
+    role = load_config(_config(tmp_path, {
+        "name": "executor", "backend": "codex",
+        "provider_session": {"sandbox": "workspace-write"},
+    })).roles[0]
+    argv = CodexAdapter().build_command(role, is_resume=resume, session_id="session-1")
+    assert "--dangerously-bypass-approvals-and-sandbox" not in argv
+    assert argv[argv.index("--sandbox") + 1] == "workspace-write"
+    assert argv[argv.index("--ask-for-approval") + 1] == "never"
+    resolved = resolve_effective_provider_session(state_dir=tmp_path, role=role)
+    legacy = resolve_effective_provider_session(
+        state_dir=tmp_path, role=replace(role, provider_session=ProviderSessionConfig()),
+    )
+    assert resolved.snapshot["resolved"]["sandbox"]["value"] == "workspace-write"
+    assert resolved.digest != legacy.digest
+
+
+@pytest.mark.parametrize("sandbox", [True, "danger-full-access", "unknown"])
+def test_provider_sandbox_rejects_invalid_values(tmp_path, sandbox):
+    with pytest.raises(ConfigError, match="sandbox"):
+        load_config(_config(tmp_path, {"name": "executor", "backend": "codex",
+                                     "provider_session": {"sandbox": sandbox}}))
+
+
+def test_provider_sandbox_rejects_unsupported_backend(tmp_path):
+    role = load_config(_config(tmp_path, {"name": "executor", "backend": "claude-code",
+                                       "provider_session": {"sandbox": "workspace-write"}})).roles[0]
+    with pytest.raises(ValueError, match="sandbox"):
+        ClaudeCodeAdapter().build_command(role)
+
+
 @pytest.mark.parametrize("backend", ["codex", "claude-code"])
 def test_native_delegation_opt_out_is_applied_to_provider_and_snapshot(tmp_path, backend):
     path = _config(tmp_path, {"name": "executor", "backend": backend,
