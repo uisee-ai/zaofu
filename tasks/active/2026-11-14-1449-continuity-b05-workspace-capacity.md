@@ -34,3 +34,15 @@
 新增实际 tmux 原生 Provider 与 stream-json drain 的环境共享锁；安装独占，兼容 setup 只读复用，多 worker 不互斥，不同 worktree 独立。共享依赖目标、主动关闭描述符或脱离 Provider 的工具、SDK 控制器强杀后的孤儿进程仍未完整覆盖。
 
 验证与限制：[本增量报告](../../reports/continuity-runtime-20261115-review.md)。状态保持 active，不将子能力通过视为整项完成。
+
+## 2026-11-15 P0：环境资源与准入
+
+用户已授权下一步优化；Claude 功能降优先级。本批范围：
+
+- 共享依赖按真实目标持锁 → verify: 原生 mock Provider 使用 A，B/source setup 和 source stop 均拒绝修改/删除；两个消费者可以并行。
+- 必需环境清单 → verify: 配置往返与注册工作流继承；Task/Role/Candidate 缺输出失败，真实 Task dispatcher 不创建 Provider operation。
+- 环境实例回执 → verify: 替换目标或目录使旧启动计划失效；缺目录可通过成功 setup 恢复，未提交候选原样保留。
+- 回归与对账 → verify: 影响闭包、配置合同、sentinel、Flow mock E2E；真实 Provider/跨宿主资格不冒充通过。
+
+代码、配置与限制见 [环境资源实现](../../docs/impl/continuity-environment-resources.md)。
+B05 仍为 active；未声明外部资源、真实多语言资格和完整环境替换事务未完成。

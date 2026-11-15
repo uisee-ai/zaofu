@@ -1330,6 +1330,8 @@ class WorkdirConfig:
     # symlinked from project_root into every worktree so gate/verify commands
     # (run_tests.sh, tsc, npm) run natively. Missing sources are skipped.
     provision_paths: list[str] = field(default_factory=list)
+    # Required outputs of provisioning/setup, checked before execution.
+    required_paths: list[str] = field(default_factory=list)
 
 
 @dataclass

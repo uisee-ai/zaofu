@@ -237,3 +237,13 @@ def test_controlled_request_consumes_v5_selection_into_config_preview(assembly):
     assert proposal["change_mode"] == "config_change"
     assert base.read_bytes() == before
     assert not any(e.type == "workflow.invoke.requested" for e in writer.event_log.read_all())
+
+
+def test_registered_controller_preserves_required_environment_paths(assembly):
+    base, _, _, _, _ = assembly
+    documents = list(yaml.safe_load_all(base.read_text()))
+    raw = next(doc['spec'] for doc in documents if doc.get('kind') == 'ZfConfig')
+    raw.setdefault('runtime', {}).setdefault('workdirs', {})['required_paths'] = ['.venv', 'web/node_modules']
+    base.write_text(yaml.safe_dump_all(documents))
+    _, _, candidate = _candidate(assembly)
+    assert load_config(candidate).runtime.workdirs.required_paths == ['.venv', 'web/node_modules']

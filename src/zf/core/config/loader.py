@@ -429,6 +429,14 @@ def _parse_project_setup_inputs(value: object) -> list[str]:
     return list(dict.fromkeys(value))
 
 
+def _parse_required_environment_paths(value: object) -> list[str]:
+    if (not isinstance(value, list) or any(not isinstance(item, str) or not item.strip()
+            or Path(item).is_absolute() or '..' in Path(item).parts or not Path(item).parts
+            for item in value)):
+        raise ConfigError('runtime.workdirs.required_paths must list nonempty workspace-relative paths')
+    return list(dict.fromkeys(str(Path(item)) for item in value))
+
+
 def _parse_project_description(project_data: dict) -> str:
     description = project_data.get("description", "")
     if description and not isinstance(description, str):
@@ -4178,6 +4186,7 @@ def _build_runtime(
             enabled=bool(workdirs_raw.get("enabled", False)),
             root=str(workdirs_raw.get("root", ".zf/workdirs")),
             mode=mode,
+            required_paths=_parse_required_environment_paths(workdirs_raw.get('required_paths', [])),
             provision_paths=[
                 str(p).strip()
                 for p in (workdirs_raw.get("provision_paths") or [])

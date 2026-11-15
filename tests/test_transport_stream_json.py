@@ -460,8 +460,11 @@ def test_second_turn_waits_for_delayed_session_file_before_purge(
             "zf.runtime.transport_stream_json.purge_stale_claude_session_lock",
             return_value={},
         ) as purge,
-        patch("zf.runtime.transport_stream_json.time.sleep") as sleep,
+        # Isolate the transport clock: patching time.sleep itself also mocks
+        # subprocess timeout polling used by environment identity checks.
+        patch("zf.runtime.transport_stream_json.time", wraps=time) as transport_time,
     ):
+        transport_time.sleep.return_value = None
         transport.send_task(
             "dev",
             briefing_path=state_dir / "briefings" / "dev-T1.md",
@@ -474,7 +477,7 @@ def test_second_turn_waits_for_delayed_session_file_before_purge(
         )
 
     assert purge.call_count == 1
-    sleep.assert_called_once()
+    transport_time.sleep.assert_called_once()
     assert getattr(calls[0], "resume", None) is None
     assert getattr(calls[1], "resume", None) == str(
         registry.get_or_create("dev")

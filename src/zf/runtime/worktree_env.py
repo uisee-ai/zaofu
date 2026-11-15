@@ -28,7 +28,11 @@ from typing import Callable
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
 from zf.runtime.environment_preparation import declared_setup_identity, environment_preparation_dir
-from zf.runtime.environment_usage import EnvironmentInUse, environment_in_use
+from zf.runtime.environment_usage import EnvironmentInUse, environment_in_use, environment_mutation
+from zf.runtime.environment_resources import register_environment_resources
+from zf.runtime.environment_readiness import (
+    setup_environment_matches, invalidate_setup_environment, record_setup_environment,
+)
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -124,6 +128,7 @@ def run_project_setup(
     runner: Runner | None = None,
     force: bool = False,
     setup_inputs: list[str] | None = None,
+    required_paths: list[str] | None = None,
 ) -> ProjectSetupResult:
     """Execute the project-declared setup script inside a fresh worktree.
 
@@ -133,6 +138,10 @@ def run_project_setup(
     setup 即为项目合约,失败必须上浮给调用方 fail-closed,不能静默降级。
     """
     script = (script or "").strip()
+    try:
+        register_environment_resources(worktree, required_paths or [])
+    except (OSError, ValueError, TimeoutError) as exc:
+        return ProjectSetupResult(ran=False, ok=False, detail=f'environment declaration unavailable: {exc}')
     if not script:
         return ProjectSetupResult(ran=False, ok=True, detail="no setup declared")
     marker = (marker_dir or worktree) / SETUP_MARKER
@@ -142,11 +151,12 @@ def run_project_setup(
             # the exclusive lock and rechecks inputs after acquiring it.
             with environment_in_use(worktree):
                 try:
-                    if marker.read_text(encoding="utf-8").strip() == _setup_digest(worktree, script, setup_inputs):
+                    if (marker.read_text(encoding="utf-8").strip() == _setup_digest(worktree, script, setup_inputs)
+                            and setup_environment_matches(worktree, marker)):
                         return ProjectSetupResult(ran=False, ok=True, detail="setup marker matches")
                 except (OSError, ValueError):
                     pass
-        with locked_path(environment_preparation_dir(worktree) / "prepare", timeout_seconds=0):
+        with environment_mutation(worktree):
             with locked_path(marker, timeout_seconds=0):
                 return _run_locked_setup(worktree, script, marker, timeout_s, runner, force, setup_inputs)
     except (TimeoutError, EnvironmentInUse):
@@ -169,6 +179,7 @@ def _run_locked_setup(
             not force
             and marker.exists()
             and marker.read_text(encoding="utf-8").strip() == digest
+            and setup_environment_matches(worktree, marker)
         ):
             return ProjectSetupResult(ran=False, ok=True, detail="setup marker matches")
     except OSError:
@@ -176,6 +187,7 @@ def _run_locked_setup(
     # An interrupted rebuild must not leave a previous readiness claim usable.
     try:
         marker.unlink(missing_ok=True)
+        invalidate_setup_environment(worktree, marker)
     except OSError as exc:
         return ProjectSetupResult(ran=False, ok=False, detail=f"cannot invalidate setup readiness: {exc}")
     run = runner or subprocess.run
@@ -203,6 +215,7 @@ def _run_locked_setup(
         return ProjectSetupResult(ran=True, ok=False, exit_code=0,
                                   detail="setup inputs changed during preparation; readiness not published")
     try:
+        record_setup_environment(worktree, marker)
         atomic_write_text(marker, digest + "\n")
     except OSError as exc:
         return ProjectSetupResult(ran=True, ok=False, exit_code=0,
@@ -225,8 +238,11 @@ def provision_worktree_env(
     """
     if not paths:
         return []
+    register_environment_resources(worktree, paths)
+    if source_root.exists():
+        register_environment_resources(source_root, paths)
     try:
-        with locked_path(environment_preparation_dir(worktree) / "prepare", timeout_seconds=0):
+        with environment_mutation(worktree):
             return _provision_locked(worktree, source_root, paths, bootstrap_uv_dev=bootstrap_uv_dev, runner=runner)
     except TimeoutError as busy:
         # A worker may hold the environment while another role reuses it.

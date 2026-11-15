@@ -1561,7 +1561,17 @@ class CandidateRebuilder:
             marker_dir=worktree.parent,
             force=True,
             setup_inputs=getattr(self.config.project, "setup_inputs", []),
+            required_paths=self.config.runtime.workdirs.required_paths,
         )
+        from dataclasses import replace
+        from zf.runtime.required_environment import require_workspace_environment
+
+        if result.ok:
+            try:
+                require_workspace_environment(worktree, self.config.runtime.workdirs.required_paths,
+                    qualified_setup=bool(script.strip()))
+            except (RuntimeError, OSError, ValueError) as exc:
+                result = replace(result, ok=False, detail=str(exc))
         return {
             "schema_version": "candidate-environment.v1",
             "status": "ready" if result.ok else "failed",

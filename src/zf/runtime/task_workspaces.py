@@ -202,12 +202,17 @@ class TaskWorkspaceManager:
         setup = self.config.project.setup_script
         if setup:
             result = run_project_setup(project_path, setup, marker_dir=workdir,
-                setup_inputs=getattr(self.config.project, "setup_inputs", []))
+                setup_inputs=getattr(self.config.project, "setup_inputs", []),
+                required_paths=self.config.runtime.workdirs.required_paths)
             if not result.ok:
                 raise TaskWorkspaceError(
                     f"task workspace setup failed for {plan.task_id} "
                     f"(exit {result.exit_code}): {result.detail}"
                 )
+        from zf.runtime.required_environment import require_workspace_environment
+
+        require_workspace_environment(project_path, self.config.runtime.workdirs.required_paths,
+            qualified_setup=bool(setup), bootstrap_uv_dev=True)
         self._write_metadata(plan, git_worktree_created=True)
         return plan
 

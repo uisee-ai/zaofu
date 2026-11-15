@@ -72,19 +72,22 @@ class WorkdirManager:
         """执行 project.scripts.setup(若声明)。失败 fail-closed:
         worktree 不可运行时派活只会烧 token,宁可铸造失败走既有补救。"""
         setup = self.config.project.setup_script
-        if not setup:
-            return
         result = run_project_setup(
             project_path,
             setup,
             marker_dir=self.root / role.instance_id,
             setup_inputs=getattr(self.config.project, "setup_inputs", []),
+            required_paths=self.config.runtime.workdirs.required_paths,
         )
         if not result.ok:
             raise RuntimeError(
                 f"workdir setup failed for {role.instance_id}"
                 f" (exit {result.exit_code}): {result.detail}"
             )
+        from zf.runtime.required_environment import require_workspace_environment
+
+        require_workspace_environment(project_path, self.config.runtime.workdirs.required_paths,
+            qualified_setup=bool(setup), bootstrap_uv_dev=True)
 
     def plan(self, role: RoleConfig) -> WorkdirPlan:
         workdir = self.root / role.instance_id

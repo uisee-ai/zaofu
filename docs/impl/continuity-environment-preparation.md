@@ -70,3 +70,5 @@ bootstrap 仍是 best-effort；强制环境资格应使用项目声明的 setup 
 定向用例含真实 mock Provider 子进程、长 stream query、多个共享持有者、安装优先占锁、
 兼容复用、身份变化、独立 worktree 和清理拒绝。详见
 [本增量报告](../../reports/continuity-runtime-20261115-review.md)。
+
+后续 P0：[共享资源占用、必需输出准入与实例回执](continuity-environment-resources.md)。
