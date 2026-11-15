@@ -46,3 +46,11 @@
 
 代码、配置与限制见 [环境资源实现](../../docs/impl/continuity-environment-resources.md)。
 B05 仍为 active；未声明外部资源、真实多语言资格和完整环境替换事务未完成。
+
+## 2026-11-15：剩余规格与真实验证
+
+承接用户本轮授权的 [ZF-SPEC-002](../../docs/spec/zaofu-continuity-remaining-qualification.spec.md) R04/R09；原验收与状态 active 保留。
+
+真实多语言环境、完整资源持有者/替换事务、Datal DAG 与真实 8+8 并发仍未完成。本轮两个单次 Verify 并发不充当 8+8 资格。
+
+实现与验证摘要见 [实现记录](../../docs/impl/continuity-handoff-spec-001.md)，本地完整 [缺口与对账报告](../../reports/continuity-qualification-20261115-review.md)。不把局部真实资格当整项完成。

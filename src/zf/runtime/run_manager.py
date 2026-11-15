@@ -2668,6 +2668,11 @@ def run_goal_completion_claim_event(
         if isinstance(payload.get("artifact_delivery_result"), dict)
         else {}
     )
+    if artifact_result and (
+        cause.type != "artifact.delivery.verified"
+        or artifact_result.get("verdict") != "passed"
+    ):
+        return None
     result = artifact_result or closure_result
     if cause.type != "judge.passed" and not result:
         # Historical closure events without an admitted typed result do not

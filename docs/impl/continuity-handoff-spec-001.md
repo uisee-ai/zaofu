@@ -68,3 +68,33 @@ operation/attempt/dispatch/lease/instance/session/turn，沿用原 attempt 进�
 无最终结果、错误/异会话结果、未决工具、未闭合回合以及暂停/旧身份不得触发接续。
 异常只记录结构化原因与核查责任，不复制异常正文、prompt 或凭据。
 未知外部效果仍先核对，不能通过重发猜测成功；真实跨 Provider 接管资格未在本轮授予。
+
+## 2026-11-15：剩余规格与真实资格
+
+用户授权承接所有未完成项形成 [ZF-SPEC-002](../spec/zaofu-continuity-remaining-qualification.spec.md)，
+11 项增量映射原 F01–F18 和 207–209；Spec 与详细报告继续按本地 ignored 规则保存。
+新 Spec SHA256：`e9072418b38d24182ccc65843e460983735cdbbc0efe3b7652c0555b9b106412`。
+完整计划和对账：[实施计划](../../reports/continuity-qualification-20261115-plan.md)、
+[真实验证与缺口报告](../../reports/continuity-qualification-20261115-review.md)。
+
+本轮真实验证触发以下修复：
+
+- `run_goal_completion_claim_event` 只接收正确的 artifact delivery 事件且结果正文为 passed；
+  rejected/blocked/未知不先生成无效完成申请。实际 Orchestrator 实时处理和重放各有负例。
+  旧终态 gate 原本已拒绝此类结果，本次不声称修复了错误完成事件。
+- Generic Workflow 真实 Provider 验证入口固定身份、摘要和交付物引用，不向模型预填通过结论。
+  正例修正“发货=签收”口径混淆；原错误主张保留为独立拒绝反例，不要求判断等于通过模板。
+- 合成来源的 scope 与证据由 synth 实际读取并绑定准入 envelope，使 Verify 的有效引用可准入；
+  跨 Run/未绑定引用仍拒绝。`--evidence-dir` 在清理前保存失败和成功输入、输出及账本，不覆盖旧证据。
+- 核验方法更新 canonical `zf-evidence-synthesis` 及两份分发副本；业务语义留在方法与独立 Agent 判断。
+
+资格证据：真实 systemd/tmux 恢复与暂停 2 场景；实际 API + Docker Chromium 16 场景，
+保留 WebM/trace/截图；真实 Codex `gpt-6.1-terra` High 正反例各一次最终通过。
+Provider 测试仅 Verify 为真实模型，控制面是 mock；不与宿主测试拼接成完整无人值守证明。
+最终影响闭包 249 passed（Run Manager、Goal gate/receipt、准入、真实验证入口 mock、直接调用方及 skill 派发）；
+sentinel 53 / Flow mock E2E 10 通过。不是全仓 pytest，也不将不同轮次重叠用例相加。
+
+剩余范围全部保留：R01 输入修订/真实压缩；R02 全义务监督/未知效果；R03 同版视频与上传整链；
+R04 持久收尾/真实语言资格；R05 服务端按需正文/目录/重连；R06 任务采用/部署；R07 跨 Provider 接管；
+R08 控制意图组合；R09 真实并发/DAG；R10 SOP/历史/子工作消费；R11 Datal 原始产品资格。
+B01–B07 不归档，未恢复 Datal、未 merge/push/部署。

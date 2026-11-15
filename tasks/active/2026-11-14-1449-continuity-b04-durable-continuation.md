@@ -29,3 +29,11 @@
 Claude stream-json 现在直接落盘回合打开/关闭事实；丢失内存通知后由 idle replay 核对当前身份并保持同一 attempt 接续。长回合、工具未决、暂停、旧身份和错误最终结果阻止接续。仍缺全 Provider 与宿主独立故障域、未知效果自动核对的整体验收。
 
 验证与限制：[本增量报告](../../reports/continuity-runtime-20261115-review.md)。状态保持 active，不将子能力通过视为整项完成。
+
+## 2026-11-15：剩余规格与真实验证
+
+承接用户本轮授权的 [ZF-SPEC-002](../../docs/spec/zaofu-continuity-remaining-qualification.spec.md) R02/R03/R08/R10；原验收与状态 active 保留。
+
+真实 systemd/tmux 两场景通过：控制器强杀后唯一恢复、resident 不重复、暂停不重启。修复非 passed artifact 结果仍发完成申请，覆盖 Orchestrator 实时/重放负例；原终态 gate 原已拒绝。所有 Task 后续成果、未知效果核对与全局历史仍未关闭。
+
+实现与验证摘要见 [实现记录](../../docs/impl/continuity-handoff-spec-001.md)，本地完整 [缺口与对账报告](../../reports/continuity-qualification-20261115-review.md)。不把局部真实资格当整项完成。

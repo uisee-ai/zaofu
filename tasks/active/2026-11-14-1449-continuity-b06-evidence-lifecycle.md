@@ -29,3 +29,11 @@
 Role/Task cleanup 与 zf stop 删除工作区期间持独占锁；即使 session 计数为零，有实际持有者仍拒绝删除。未实现 durable cleanup 全阶段事务，未把库级 Task cleanup 测试冒充完整生产收尾旅程。
 
 验证与限制：[本增量报告](../../reports/continuity-runtime-20261115-review.md)。状态保持 active，不将子能力通过视为整项完成。
+
+## 2026-11-15：剩余规格与真实验证
+
+承接用户本轮授权的 [ZF-SPEC-002](../../docs/spec/zaofu-continuity-remaining-qualification.spec.md) R03/R04/R06；原验收与状态 active 保留。
+
+真实 Terra High 正反例揭露并修复：验证输出身份/引用约束、预设成功模板、夹具口径混淆、上游证据准入绑定和失败证据保留。最终正例完成，反例拒绝结果准入且 Goal 完成数为零。实际固定源码补 WebM/上传/归档、durable cleanup 仍未完成。
+
+实现与验证摘要见 [实现记录](../../docs/impl/continuity-handoff-spec-001.md)，本地完整 [缺口与对账报告](../../reports/continuity-qualification-20261115-review.md)。不把局部真实资格当整项完成。

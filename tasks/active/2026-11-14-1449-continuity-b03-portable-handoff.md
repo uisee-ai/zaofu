@@ -28,3 +28,11 @@
 对账报告：[207–209 / Spec 覆盖](../../reports/continuity-handoff-20261114-review.md)。
 实现入口：[实现记录](../../docs/impl/continuity-handoff-spec-001.md)。
 首批实现 commit：`2313bf61 feat: harden task continuity and preserve handoff evidence`；未 merge / push / 部署。
+
+## 2026-11-15：剩余规格与真实验证
+
+承接用户本轮授权的 [ZF-SPEC-002](../../docs/spec/zaofu-continuity-remaining-qualification.spec.md) R07/R08/R10；原验收与状态 active 保留。
+
+跨 Provider、旧 writer 物理隔离、全入口交接资格及 SOP/子调用消费继续保留；Claude 接管增强按用户偏好较低优先级。
+
+实现与验证摘要见 [实现记录](../../docs/impl/continuity-handoff-spec-001.md)，本地完整 [缺口与对账报告](../../reports/continuity-qualification-20261115-review.md)。不把局部真实资格当整项完成。
