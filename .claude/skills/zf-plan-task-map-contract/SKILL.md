@@ -975,5 +975,5 @@ zf-plan-execution-readiness 的 execution-route 方法；不要用叙述声称�
 
 
 完整 `prd-plan.md` 与 `human_review` 都遵循
-[zf-prd-plan-synth 的完整 Plan 正文首屏阅读顺序](../zf-prd-plan-synth/SKILL.md)：
+[正文阅读与审查](../zf-requirement-reconciliation/references/document-reading.md)：
 先交代业务目标、方案、验收和待决条件，再展开任务与来源审计；不只优化可选概览。

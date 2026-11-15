@@ -49,3 +49,11 @@
 .document-reading-surface .document-markdown.agent-markdown .agent-markdown-table { margin-block: 20px; }
 .document-reading-surface .document-markdown.agent-markdown .agent-markdown-table-wrap { margin-block: 0; }
 .agent-table-scroll-hint { display: block; margin-bottom: 6px; color: var(--muted-foreground); font-size: var(--text-12); }
+.document-catalog { margin-block: 20px; }
+.document-catalog > p { color: var(--muted-foreground); }
+.document-catalog details { margin-block: 10px; border-bottom: 1px solid var(--line-soft); padding-block: 10px; }
+.document-catalog summary { cursor: pointer; overflow-wrap: anywhere; }
+.document-catalog-entry > summary { white-space: pre-line; }
+.document-catalog dl { margin: 14px 0; }
+.document-catalog dt { margin-top: 12px; color: var(--muted-foreground); font-size: var(--text-13); }
+.document-catalog dd { margin: 4px 0 12px; overflow-wrap: anywhere; }

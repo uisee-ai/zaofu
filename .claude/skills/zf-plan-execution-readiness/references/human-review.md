@@ -3,6 +3,9 @@
 适用于 Planner 生成和 Critic 审查。语义由 Agent 判断；UI 只投影同版工件，Kernel
 只校验既有身份、摘要、分区及引用。无需新增任务 schema 或业务词汇 gate。
 
+先按依赖技能的[正文阅读与审查](../../zf-requirement-reconciliation/references/document-reading.md)
+检查实际完整原文开头和场景，记录位置/短引文与判断。以下阅读字段不能代替此检查。
+
 ## 四层阅读顺序
 
 1. 审批首页：用户/问题、交付目标、本期范围与非目标、条件扩展、阶段可演示结果、

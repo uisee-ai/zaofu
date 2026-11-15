@@ -4,7 +4,7 @@ import { getChannelPrdDocument, getChannelPrdEvaluation, type ChannelPrdDocument
 import { DocumentMarkdown } from "../agent-session/DocumentMarkdown";
 import { documentReferences } from "../agent-session/documentReferences";
 import { prdMarkdownPages } from "./prdMarkdownPages";
-import { prdMarkdownView, type PrdAudienceView } from "./prdMarkdownViews";
+import { prdMarkdownView, prdReadingSections, type PrdAudienceView } from "./prdMarkdownViews";
 import type { ChannelFlow } from "./channelFlow";
 import { channelEvaluationFinding } from "./channelEvaluationFinding";
 import { ChannelPrdSources } from "./ChannelPrdSources";
@@ -105,6 +105,7 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
   const definitions = useMemo(() => documentReferences(prdMarkdownPages(document?.markdown ?? "").filter(page => !page.plain).map(page => page.content)), [document?.markdown]);
   const pages = useMemo(() => prdMarkdownPages(viewMarkdown), [viewMarkdown]);
   const currentPage = pages[Math.min(page, pages.length - 1)];
+  const readingSections = useMemo(() => prdReadingSections(currentPage.content), [currentPage.content]);
   const changePage = (next: number) => {
     setPage(next);
     bodyRef.current?.scrollTo({ top: 0 });
@@ -149,6 +150,7 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
         <button type="button" className="icon-button" title="Close drawer" onClick={onClose}><X size={14} /></button></div>
     </div>
     <div ref={bodyRef} className="channel-document-body">
+      {fullscreen && actionError ? <p role="alert">{actionError}</p> : null}
       {flow.generationError ? <div role="alert" data-testid="channel-prd-generation-error">
         <p>PRD 生成受阻：{flow.generationError}</p>
         <p>请处理该原因后重试；从文件生成的草案，请重新打开原文件并选择“生成正式 PRD 草案”。</p>
@@ -160,7 +162,11 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
       {document ? <>
         {currentPage.plain && !source ? <p className="muted">本节内容过长，已使用分页原文显示；复制和下载包含完整文档。</p> : null}
         {source || currentPage.plain ? <pre data-testid="channel-prd-source">{currentPage.content}</pre>
-          : <DocumentMarkdown content={currentPage.content} definitions={definitions} />}
+          : readingSections.map((section, index) => section.auditTitle
+            ? <details key={index} className="channel-prd-audit"><summary>{section.auditTitle}（展开查看完整原文）</summary>
+                <DocumentMarkdown content={section.content} definitions={definitions} />
+              </details>
+            : <DocumentMarkdown key={index} content={section.content} definitions={definitions} />)}
         <details className="channel-document-evidence"><summary>Version &amp; integrity</summary><code>{document.artifact_ref}</code><code>sha256:{document.artifact_digest}</code></details>
         <ChannelPrdSources document={document} onDiscuss={onDiscuss} />
         <section className="channel-prd-evaluation" data-testid="channel-prd-evaluation">

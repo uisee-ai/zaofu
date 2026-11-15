@@ -20,6 +20,7 @@ from zf.core.skills import materialize_role_skills, read_skill_metadata
     ("zf-channel-discussion-synthesizer", "zf-requirement-reconciliation", "skills"),
     ("zf-yoke-planner-role-context", "zf-requirement-reconciliation", "skills"),
     ("zf-yoke-critic-role-context", "zf-requirement-reconciliation", "skills"),
+    ("zf-prd-plan-synth", "zf-requirement-reconciliation", "skills"),
 ])
 def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role_skill, method, source):
     root = Path(__file__).resolve().parents[1]
@@ -39,6 +40,7 @@ def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role
     metadata = read_skill_metadata(actual, expected_name=method)
     assert metadata.name == method
     references = {
+        "zf-requirement-reconciliation": ("document-reading.md",),
         "zf-plan-task-map-contract": ("review-ports.md",),
         "zf-plan-execution-readiness": ("execution-consistency.md", "human-review.md", "epic-refinement.md",
                                         "bounded-spike.md", "cross-domain-obligations.md", "early-feedback.md",
@@ -130,7 +132,7 @@ def test_human_review_example_reaches_existing_task_scoped_reader():
     assert body["tasks"][0]["body"]["human_review"]["scenarios"][0]["acceptance_ids"]
 
 
-@pytest.mark.parametrize("name", ["zf-plan-execution-readiness", "zf-workflow-start-planner", "zf-harness-self-improve", "zf-verify-rescan-replan", "zf-harness-done-contract", "zf-harness-verification-checklist"])
+@pytest.mark.parametrize("name", ["zf-requirement-reconciliation", "zf-plan-execution-readiness", "zf-workflow-start-planner", "zf-harness-self-improve", "zf-verify-rescan-replan", "zf-harness-done-contract", "zf-harness-verification-checklist"])
 def test_operator_methods_keep_references_in_provider_materialization(tmp_path, name):
     root = Path(__file__).resolve().parents[1]
     source = root / "skills" / name

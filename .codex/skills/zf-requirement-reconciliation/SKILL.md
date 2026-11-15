@@ -13,6 +13,9 @@ load_on_demand: true
 再做转换；不能只根据摘要补写需求。沿调用角色已有的覆盖、决定、风险和评审工件
 保存结果，不增加第二份需求 Store，不直接修改 canonical state。
 
+撰写或评审完整 PRD / Plan 时读取[正文阅读与审查](references/document-reading.md)。
+作者和独立评审者核对实际完整原文的开头与场景，在已有报告保留位置和判断证据。
+
 ## 聊天中的需求来源
 
 Channel 的 Owner 聊天和已绑定附件都是待核对的输入，不要求用户预先标记。

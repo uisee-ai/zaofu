@@ -1,6 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import { lazy, Suspense, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Streamdown, type StreamdownProps } from "streamdown";
+import { Streamdown, defaultRehypePlugins, type StreamdownProps } from "streamdown";
+import { documentAnchors, documentCatalogs } from "./documentReading";
 import type { MarkdownTextProps } from "./MarkdownText";
 
 import { ReferencePreviewContext } from "./referencePreview";
@@ -16,6 +17,9 @@ type MarkdownComponents = NonNullable<StreamdownProps["components"]>;
 // long/fast streams). ~11/s is smooth; trailing-edge so the final text still
 // lands within this window of the last token.
 const STREAM_MARKDOWN_THROTTLE_MS = 90;
+const safePlugins = [defaultRehypePlugins.raw, defaultRehypePlugins.sanitize, documentAnchors,
+  defaultRehypePlugins.katex, defaultRehypePlugins.harden];
+const readingPlugins = [...safePlugins.slice(0, -1), documentCatalogs, defaultRehypePlugins.harden];
 
 /** Trailing-edge throttle: emits `value` at most once per `ms`. */
 function useThrottledValue<T>(value: T, ms: number): T {
@@ -62,7 +66,21 @@ const RichMarkdownText = memo(function RichMarkdownText({
       return openReference && item
         ? <button type="button" className="agent-inline-button" title="Preview file"
             onClick={() => openReference(item)}>{children}</button>
-        : <a href={href} rel="noreferrer" target="_blank" {...props}>{children}</a>;
+        : <a href={href} rel="noreferrer" target={href?.startsWith("#") ? undefined : "_blank"} {...props}
+            onClick={event => {
+              if (!href?.startsWith("#")) return;
+              // Even a missing/paged-out anchor must not replace the app route.
+              event.preventDefault();
+              const root = event.currentTarget.closest("dialog") ?? event.currentTarget.closest(".agent-markdown");
+              let id: string;
+              try { id = decodeURIComponent(href.slice(1)); } catch { return; }
+              const target = Array.from(root?.querySelectorAll<HTMLElement>("[id]") ?? []).find(el => el.id === id || el.id === `user-content-${id}`);
+              if (!target) return;
+              for (let parent = target.parentElement; parent && parent !== root; parent = parent.parentElement) {
+                if (parent instanceof HTMLDetailsElement) parent.open = true;
+              }
+              target.scrollIntoView({ block: "start" });
+            }}>{children}</a>;
     },
     table: ({ children, node: _node, ...props }) => <MarkdownTable {...props}>{children}</MarkdownTable>,
     // A pre > code node is a block even without a language or trailing newline.
@@ -81,6 +99,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
     <div className={`agent-markdown ${isStreaming ? "streaming" : ""} ${className}`.trim()}>
       <Streamdown
         cdnUrl={null}
+        rehypePlugins={className.split(/\s+/).includes("document-markdown") ? readingPlugins : safePlugins}
         components={components}
         controls={false}
         mode={isStreaming ? "streaming" : "static"}

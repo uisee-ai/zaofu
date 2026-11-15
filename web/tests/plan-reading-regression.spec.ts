@@ -1,6 +1,26 @@
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 import live from "./fixtures/prd205/live-plan.json" with { type: "json" };
 
+test("named anchors remain navigable without blocked noise and unsafe HTML stays inert", async ({ page, request }) => {
+  const markdown = '# 锚点回归\n\n[跳到验收](#acceptance)\n\n[不存在的锚点](#missing-anchor)\n\n<a id="authority"></a>\n\n## 来源\n正常正文。\n\n<a id="acceptance"></a>\n\n## 验收\n失败保持原值。\n\n[危险链接](javascript:alert(1))\n\n<img src="x" onerror="window.__injected=true">\n\n<script>window.__injected=true</script>\n\n`<a id="literal"></a>`\n';
+  const dialog = await openLive(page, request, markdown);
+  await expect(dialog.locator('.document-anchor')).toHaveCount(2);
+  await expect(dialog.locator('[title="Blocked URL: undefined"]')).toHaveCount(1); // Only the rejected dangerous URL.
+  await expect(dialog.getByRole('heading', { name: '来源', exact: true })).toBeVisible();
+  const before = page.url();
+  await dialog.getByRole('link', { name: '不存在的锚点', exact: true }).click();
+  expect(page.url()).toBe(before);
+  await dialog.getByRole('link', { name: '跳到验收', exact: true }).click();
+  expect(page.url()).toBe(before); // A document anchor must not replace the Plan route hash.
+  await expect(dialog.getByRole('heading', { name: '验收', exact: true })).toBeInViewport();
+  expect(await page.evaluate(() => (window as Window & { __injected?: boolean }).__injected)).toBeUndefined();
+  await expect(dialog.locator('a[href^="javascript:"]')).toHaveCount(0);
+  await expect(dialog.locator('[onerror],script')).toHaveCount(0);
+  await expect(dialog.locator('code').filter({ hasText: '<a id="literal"></a>' })).toHaveCount(1);
+  await dialog.getByRole('button', { name: '查看源码', exact: true }).click();
+  await expect(dialog.locator('.plan-document-source')).toHaveText(markdown);
+});
+
 // Replay the actual v5 author's shapes through the real React preview entry.
 // Only the projection responses are fixtures; no approval or provider is run.
 async function openLive(page: Page, request: APIRequestContext, markdown = live.markdown, original = true) {

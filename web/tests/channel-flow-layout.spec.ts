@@ -797,7 +797,8 @@ test("long PRD Markdown stays readable in split view and fullscreen with intact 
     await expect(preview.getByRole("button", { name: "Download PRD" })).toBeInViewport();
     await expect(preview.getByRole("navigation", { name: "PRD pages" })).toBeInViewport();
     expect(Math.round((await preview.boundingBox())!.width)).toBe(width);
-    await preview.getByRole("button", { name: "Process", exact: true }).focus();
+    await expect(preview.getByTestId("channel-create-task-from-prd")).not.toBeVisible();
+    await preview.getByRole("button", { name: "Previous", exact: true }).focus();
     await page.keyboard.press("Tab");
     // Native dialogs may visit browser chrome between the last and first control;
     // background page controls must remain inert throughout the modal session.
@@ -1344,5 +1345,42 @@ test("PRD global references survive pagination and long inline code remains in i
   await expect(preview.getByRole("heading", { level: 6, name: "六级标题" })).toBeVisible();
   await expect(preview.getByRole("link", { name: "验收规范" })).toHaveAttribute("href", "https://example.invalid/spec");
   await expect(preview.getByRole("navigation", { name: "PRD pages" })).toBeVisible();
+  expect(state.writes).toEqual([]);
+});
+
+for (const width of [1440, 390]) test(`PRD ${width}px audit details preserve decisions, unknown states and full downloads`, async ({ page, request }) => {
+  await page.setViewportSize({ width, height: 844 });
+  const state = await setup(page, request, readyFixture());
+  state.markdown = '# 审计阅读\n\n## 目标\n失败保持原状态。\n\n## 需求追溯与决策记录\n\n### 来源覆盖\n来源明细仅按需展开。\n\n### 新增决定\n\n| 标识（id） | question | 状态（status） | 阻塞声明（blocking） | 负责人（owner） | 来源引用（source_refs） | custom_field |\n|---|---|---|---|---|---|---|\n| D-1 | 确认重试边界 | pending_validation | true | Owner | msg-source | 未知字段必须保留 |\n| D-2 | 保留异议 | future_state | false | 待指定 | msg-other | 保留完整说明 |\n\n## 假设、风险与分歧\n风险继续可见。\n\n## Provenance\n来源摘要不丢失。\n';
+  const url = new URL(page.url()); url.searchParams.set('preview', 'prd'); url.searchParams.set('reader', 'focus');
+  await page.goto(url.toString());
+  const preview = page.getByRole('dialog', { name: 'PRD preview' });
+  await expect(preview.getByText('失败保持原状态。', { exact: true })).toBeVisible();
+  await expect(preview.getByText('来源明细仅按需展开。', { exact: true })).not.toBeVisible();
+  await expect(preview.getByText('风险继续可见。', { exact: true })).toBeVisible();
+  const decision = preview.locator('.document-catalog-entry').first();
+  await expect(decision.locator('summary')).toContainText('确认重试边界');
+  await expect(decision.locator('summary')).toContainText('pending_validation');
+  await expect(decision.locator('summary')).toContainText('阻塞: true');
+  await expect(preview.locator('.document-catalog-entry').nth(1).locator('summary')).toContainText('future_state');
+  await decision.locator('summary').click();
+  await expect(decision.getByText('未知字段必须保留', { exact: true })).toBeVisible();
+  await preview.locator('summary').filter({ hasText: '来源覆盖明细' }).click();
+  await expect(preview.getByText('来源明细仅按需展开。', { exact: true })).toBeVisible();
+  await preview.locator('summary').filter({ hasText: '查看原始表格' }).click();
+  await expect(preview.locator('table')).toBeVisible();
+  expect(await preview.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  expect((await preview.locator('.channel-document-body').boundingBox())!.height).toBeGreaterThan(720);
+  await expect(preview.getByTestId('channel-create-task-from-prd')).not.toBeVisible();
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new Error('unavailable')) } }));
+  await preview.getByRole('button', { name: 'Copy PRD' }).click();
+  await expect(preview.locator('.channel-document-body').getByRole('alert')).toContainText('Copy unavailable');
+  const download = page.waitForEvent('download');
+  await preview.getByRole('button', { name: 'Download PRD' }).click();
+  const stream = await (await download).createReadStream(); const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(chunks).toString()).toBe(state.markdown);
+  await page.keyboard.press('Escape');
+  await expect(preview.getByTestId('channel-create-task-from-prd')).toBeVisible();
   expect(state.writes).toEqual([]);
 });
