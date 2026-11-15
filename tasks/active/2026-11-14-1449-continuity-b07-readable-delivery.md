@@ -31,3 +31,11 @@
 实际 API + Docker Chromium 的 Plan 内容与人工审阅 16 场景通过，保留 WebM/trace/截图。修正现有镜像 executablePath 和实际 UID 的测试入口；服务端章节取文、材料目录、全入口新增约束与 SSE 重连删除语义仍未关闭。
 
 实现与验证摘要见 [实现记录](../../docs/impl/continuity-handoff-spec-001.md)，本地完整 [缺口与对账报告](../../reports/continuity-qualification-20261115-review.md)。不把局部真实资格当整项完成。
+
+## 2026-11-15：R05 来源按章读取增量
+
+- 已实施：绑定项目/Plan/来源摘要的服务端目录与正文分片；缓存损坏重建；来源变更、缺失、越界显式拒绝。
+- 已实施：来源 Markdown 阅读、目录分页/全文搜索、章节书签、长章分片及完整原文入口；迟到响应隔离。
+- 验证：后端影响闭包 251 passed；原有 Docker 浏览器 16 场景、新增 4 场景；build/typecheck/unit、sentinel 53、Flow mock 10 通过。最终记录见 [本批验收报告](../../reports/continuity-reading-20261115-review.md)。
+- 尚未关闭：主 Plan 首次整包和 accepted_plan 兼容路径；统一人类材料目录；全入口约束旅程与 SSE 重连/删除语义。冷索引仍需全文件摘要校验，不能宣称全链路无全文 IO。
+- 当前仅完成 R05 子集，保持 active，不将 207–209 或 ZF-SPEC-002 整体标为完成。

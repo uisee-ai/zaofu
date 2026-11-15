@@ -61,7 +61,8 @@ test("mobile product navigation keeps design status and searchable source chapte
   await dialog.getByRole("button", { name: "来源原文", exact: true }).click();
   await dialog.locator("summary").filter({ hasText: "章节索引" }).click();
   await dialog.getByLabel("搜索正文", { exact: true }).fill("重复扣减");
-  await expect(dialog.getByText("1 个匹配章节", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "搜索章节", exact: true }).click();
+  await expect(dialog.getByText("1 个匹配章节 · 当前仅加载所选章节", { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "库存规则", exact: true }).click();
   await expect(page).toHaveURL(/anchor=stock/);
   await expect(dialog.getByRole("heading", { name: "库存规则" })).toBeVisible();

@@ -98,3 +98,33 @@ sentinel 53 / Flow mock E2E 10 通过。不是全仓 pytest，也不将不同轮
 R04 持久收尾/真实语言资格；R05 服务端按需正文/目录/重连；R06 任务采用/部署；R07 跨 Provider 接管；
 R08 控制意图组合；R09 真实并发/DAG；R10 SOP/历史/子工作消费；R11 Datal 原始产品资格。
 B01–B07 不归档，未恢复 Datal、未 merge/push/部署。
+
+## 2026-11-15：R05 来源正文按章读取
+
+本批完成 R05/B07 的来源 Markdown 阅读增量，B07 继续 active。原稿完整下载保留，
+来源阅读器默认只获取章节目录和当前章；目录每页最多 100 项，长章节以最多 64 KiB
+UTF-8 正文片段显示，明确标注“当前未显示整章”。提供整份原文入口、章节前后切换、
+分页目录、服务端正文搜索、章节书签与刷新恢复。迟到响应不替换新章节或新文档。
+
+实际入口：`build_plan_health_router` 注册 `plan_document_routes`；
+`PlanReviewReader → PlanSourceReader → PlanSourceDocument` 消费新增读取 API。
+共用 `plan_preview_sources` 保留原有 owner checkpoint、task_map.ready 和恢复版本绑定，
+未另造审批真源。新接口位于 `plans/{plan_id}/artifacts/{name}/document` 及
+`document/sections/{section}`，必须携带来源 SHA256；目录 `offset/limit/anchor/q`、正文 `page`
+均为读取参数。未知或缺失 404、越界来源 403、版本变化 409、非法 UTF-8/非 Markdown 415、
+片段越界 416、超出既有 8 MiB 源文件上限 413，错误不冒充空正文或完整通过。
+
+配置 state_dir 下 `cache/plan-documents` 保存可重建 SQLite 字节范围索引；文件身份、
+大小、mtime/ctime、摘要和索引版本参与缓存身份。冷索引完整校验源文件摘要，暖读取只取
+当前片段，显式全文搜索扫描有界块；缓存不存第二份正文，也不写 Agent 已读、审批或完成事件。
+HTML 显式锚点、ATX/Setext 标题和 fenced code 有测试，目录不是完整 CommonMark 语义解析器。
+
+验证覆盖实际 Web 路由、原有预览/审批/恢复调用方，以及 Docker Chromium 实际 API 交互；
+详细命令、失败记录、WebM/trace/截图、源码摘要见
+[本地读取验收报告](../../reports/continuity-reading-20261115-review.md)。
+
+仍未关闭：主 Plan preview 初始整包正文、`accepted_plan` 历史兼容路径仍可能加载整份预览；
+全量人类材料目录、全部 Kanban/Channel 入口、约束变更旅程、SSE 重连/删除语义仍待验收。
+裸 `authority_refs` 沿用当前预览计算的版本摘要，不将其升级为历史审批时已固定的来源版本。
+章节位置按当前摘要绑定，不能跨版本无条件复用。缓存清理仍属后续资源生命周期范围。
+本批不触发模型、部署或 Datal 恢复；真实 Provider 后续验收按授权使用 GPT-6.1 Terra。

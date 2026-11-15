@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 
@@ -19,6 +19,9 @@ def build_plan_health_router(
     resolve_ctx: Callable[[str], Any],
 ) -> APIRouter:
     router = APIRouter()
+    from zf.web.plan_document_routes import build_plan_document_router
+
+    router.include_router(build_plan_document_router(resolve_ctx))
 
     @router.get("/api/projects/{project_id}/plan/pending")
     def plan_pending(project_id: str, workflow_run_id: str | None = None) -> dict:
@@ -113,7 +116,8 @@ def build_plan_health_router(
         return plan_preview("default", plan_id)
 
     @router.get("/api/projects/{project_id}/plans/{plan_id}/artifacts/{name}")
-    def plan_artifact(project_id: str, plan_id: str, name: str) -> PlainTextResponse:
+    def plan_artifact(project_id: str, plan_id: str, name: str,
+                      sha256: str = Query("", pattern=r"^$|^[a-f0-9]{64}$")) -> PlainTextResponse:
         ctx = resolve_ctx(project_id)
         if ctx is None:
             raise HTTPException(status_code=404, detail="unknown project")
@@ -127,7 +131,12 @@ def build_plan_health_router(
             )
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return PlainTextResponse(content, headers={"X-Content-Type-Options": "nosniff"})
+        if sha256:
+            import hashlib
+
+            if hashlib.sha256(content.encode()).hexdigest() != sha256:
+                raise HTTPException(409, "source version changed; reload the preview")
+        return PlainTextResponse(content, headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
     @router.get("/api/projects/{project_id}/plans/{plan_id}/input-review")
     def plan_input_review(project_id: str, plan_id: str, task: str = "", offset: int = 0, limit: int = 5) -> dict:

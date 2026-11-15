@@ -9,10 +9,10 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from zf.runtime.plan_preview_sources import plan_authority_refs, plan_source_payload
 from zf.runtime.plan_review_packet import build_review_packet, render_human_review_dossier
 from zf.runtime.plan_review_decisions import read_decision_review
 from zf.runtime.plan_preview_artifacts import (
-    PLAN_REVIEW_REF_FIELDS,
     preview_artifact_path,
     preview_package_artifacts,
     read_plan_preview_bundle,
@@ -105,58 +105,8 @@ def build_plan_preview(
         }
 
     source_event = requested or resolved
-    payload = dict(_payload(source_event))
-    if str(payload.get("owner_route") or "") == "plan_synth_owner_decision":
-        payload.setdefault("plan_id", str(payload.get("source_event_id") or plan_id))
-    if (
-        str(payload.get("owner_route") or "") == "plan_synth_owner_decision"
-        and (not payload.get("plan_artifact_ref") or not payload.get("task_map_ref"))
-    ):
-        source_id = str(payload.get("source_event_id") or "").strip()
-        candidate = next(
-            (
-                event for event in events
-                if _event_id(event) == source_id
-                and isinstance(_payload(event), dict)
-            ),
-            None,
-        )
-        if candidate is not None:
-            from zf.runtime.plan_synth_owner_checkpoint import plan_preview_refs
-
-            refs = plan_preview_refs(
-                _payload(candidate),
-                state_dir=state_dir,
-                project_root=project_root,
-            )
-            payload.update({
-                key: value for key, value in refs.items()
-                if value and not payload.get(key)
-            })
-    bound_source = next((event for event in events if _event_id(event) == plan_id
-                         and _etype(event) == "task_map.ready"), None)
-    if bound_source is not None:
-        original = _payload(bound_source)
-        if any(payload.get(key) and original.get(key) and payload[key] != original[key]
-               for key in ("task_map_ref", "pdd_id", "trace_id", "workflow_run_id",
-                           "plan_artifact_package_digest", "requirement_spec_ref")):
-            bound_source = None
-        else:
-            for key in (*PLAN_REVIEW_REF_FIELDS, "task_map_ref", "digest_ref"):
-                if not payload.get(key) and original.get(key):
-                    payload[key] = original[key]
-            # Semantic approval events may omit the PRD identity fields while
-            # task_map.ready remains the bound source of truth.
-            for key in ("stage_id", "flow_kind", "request_kind", "target_ref", "pdd_id", "task_count"):
-                if not payload.get(key) and original.get(key):
-                    payload[key] = original[key]
-            if not payload.get("plan_artifact_ref"):
-                from zf.runtime.resume_plan_preview import resumed_plan_refs
-
-                payload.update(resumed_plan_refs(
-                    original, events[:events.index(bound_source) + 1],
-                    state_dir=state_dir, project_root=project_root,
-                ))
+    payload, bound_source = plan_source_payload(state_dir, events, plan_id=plan_id,
+        source_event=source_event, project_root=project_root)
     resolved_payload = _payload(resolved) if resolved is not None else {}
     status = "pending"
     if resolved is not None:
@@ -351,30 +301,8 @@ def build_plan_preview(
             )
             if decision_items:
                 break
-    authority_refs = [
-        str(item) for item in (
-            preview_bundle.get("authority_refs")
-            or payload.get("authority_refs")
-            or []
-        ) if str(item).strip()
-    ]
-    if not authority_refs:
-        authority_refs = _source_index_authority_refs(
-            state_dir,
-            project_root=project_root,
-            source_index_ref=str(payload.get("source_index_ref") or ""),
-            source_index_digest=next(
-                (p["sha256"] for p in artifacts if p["name"] == "source_index"),
-                "",
-            ),
-        )
-    if not authority_refs:
-        # The admitted Package already binds these authority ports and digests;
-        # source_index need not repeat the same refs as optional metadata.
-        authority_refs = list(dict.fromkeys(
-            item["ref"] for item in artifacts
-            if item["name"] in {"requirement_spec", "issue_spec"}
-        ))
+    authority_refs = plan_authority_refs(state_dir, payload=payload, artifacts=artifacts,
+        preview_bundle=preview_bundle, project_root=project_root)
     requirement_artifacts = [
         item for item in artifacts
         if str(item.get("name") or "").startswith("requirement_")
