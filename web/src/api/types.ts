@@ -3379,6 +3379,13 @@ export interface RunPulse {
     lifecycle: "unknown" | "started" | "stopped";
     event_id: string;
     receipt_status: "unavailable" | "available";
+    task_adoption?: {
+      scope: "authenticated_worker_cli";
+      active: number;
+      observed: number;
+      tasks: Array<{ task_id: string; actor: string; dispatch_id: string; status: "unknown" | "observed";
+        source_revision: string; comparison: "unknown" | "same_revision" | "different"; event_id: string }>;
+    };
   };
   last_event_age_seconds?: number | null;
   events_per_bucket?: number[];

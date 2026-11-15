@@ -117,8 +117,12 @@ export function PulseBand({ pulse }: { pulse: RunPulse | null | undefined }) {
             ? "The startup receipt differs from this checkout. Updating source does not reload running workers."
             : "Last startup receipt; matching revisions do not prove current worker code or uncommitted changes."}
         />
-        <PulseItem label="task adoption" value="unverified"
-          hint="The controller startup receipt does not attest which harness version each active task worker loaded." />
+        <PulseItem label="task adoption"
+          value={pulse.versions?.task_adoption
+            ? `${pulse.versions.task_adoption.observed}/${pulse.versions.task_adoption.active} CLI observed`
+            : "unverified"}
+          tone={pulse.versions?.task_adoption?.tasks.some(task => task.comparison === "different") ? "warn" : undefined}
+          hint="Authenticated CLI observations for current task dispatches; this does not prove provider adoption or a clean checkout." />
       </div>
     </section>
   );

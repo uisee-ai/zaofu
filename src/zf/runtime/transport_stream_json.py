@@ -418,7 +418,9 @@ class StreamJsonTransport(TransportAdapter):
         def _drain_once(sid: str, resume: bool):
             from zf.runtime.environment_usage import environment_in_use
 
-            with SessionLock(self.lock_dir, sid), environment_in_use(role_cwd):
+            from zf.runtime.environment_exec import resource_environment
+            with SessionLock(self.lock_dir, sid), environment_in_use(role_cwd) as environment_plan:
+                role_env.update(resource_environment(environment_plan))
                 from zf.runtime.stream_turn_lifecycle import run_stream_turn
 
                 return run_stream_turn(self.state_dir, context, sid, lambda: asyncio.run(

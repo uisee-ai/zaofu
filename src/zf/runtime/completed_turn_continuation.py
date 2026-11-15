@@ -15,6 +15,8 @@ def reconcile_completed_turns(runtime: Any) -> int:
     A later prompt, pending tool, assistance request or pause holds this path.
     Further reminders require new bound work/read evidence, not just chatter.
     """
+    from zf.runtime.continuation_delivery import reconcile_continuation_deliveries
+    reconcile_continuation_deliveries(runtime)
     events = runtime.event_log.read_all()
     if is_dispatch_paused(runtime.state_dir, events=events):
         return 0

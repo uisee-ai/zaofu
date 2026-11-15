@@ -22,8 +22,12 @@ def _source_revision() -> str:
 
 def runtime_version_snapshot(state_dir: Path, events: Iterable[ZfEvent]) -> dict[str, Any]:
     """Read-only evidence; matching revisions do not prove a worker deployment."""
+    from zf.runtime.worker_load_receipt import worker_adoption_snapshot
+
+    events = list(events)
     source = _source_revision()
     result: dict[str, Any] = {
+        "task_adoption": worker_adoption_snapshot(state_dir, events, source),
         "source_revision": source, "loaded_revision": "", "comparison": "unknown",
         "lifecycle": "unknown", "event_id": "", "receipt_status": "unavailable",
     }

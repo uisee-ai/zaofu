@@ -2720,9 +2720,12 @@ class LifecycleManagerMixin(
                 return None
         elif key in registry:
             return None
-        if progress_state is not None and not claim_completion_nudge(self, role.instance_id, task.id,
-                dispatch_id, causation_id=causation_id, correlation_id=correlation_id):
-            return None
+        claim = None
+        if progress_state is not None:
+            claim = claim_completion_nudge(self, role.instance_id, task.id, dispatch_id,
+                causation_id=causation_id, correlation_id=correlation_id)
+            if not claim:
+                return None
         registry.add(key)
 
         detector = getattr(self, "_stuck_detectors", {}).get(role.instance_id)
@@ -2748,6 +2751,7 @@ class LifecycleManagerMixin(
                 task=task,
                 dispatch_id=dispatch_id,
                 expected_event=expected_event,
+                claim_id=claim.id if claim else "",
             )
             prompt_injected = True
         except Exception as exc:  # noqa: BLE001 — best-effort nudge
@@ -2794,64 +2798,11 @@ class LifecycleManagerMixin(
         task: Task,
         dispatch_id: str,
         expected_event: str,
+        claim_id: str = "",
     ) -> Path:
-        briefing_dir = self.state_dir / "briefings"
-        briefing_dir.mkdir(parents=True, exist_ok=True)
-        path = briefing_dir / f"{role.instance_id}-{task.id}-completion-nudge.md"
-        lines = [
-            f"Active task: {task.id}",
-            "",
-            "# Resume or complete the active task",
-            "",
-            (
-                "The worker became silent before the kernel observed a terminal "
-                "event. The kernel does not know whether implementation is complete. "
-                "Preserve the current worktree and use the original active briefing "
-                "and role instructions as the authoritative task contract."
-            ),
-            "",
-            "## Required action (run these now, in order)",
-            (
-                f"1. `{zf_cli_cmd()} guard ownership --task {task.id} "
-                f"--actor {role.instance_id}` — if it exits non-zero, STOP "
-                "(your ownership is stale)."
-            ),
-            (
-                "2. Inspect the current worktree and the original active briefing. "
-                "First reconcile outstanding tools and external effects; continue waiting "
-                "on an existing test/process instead of launching it again. An unknown "
-                "effect or pending approval is a wait condition, not permission to retry. "
-                "If acceptance is not yet met and no real external blocker exists, "
-                "continue the original task from the preserved state. Do not emit a "
-                "failure solely because this nudge arrived, the worktree is clean, "
-                "or expected tests do not exist yet."
-            ),
-            (
-                "3. When acceptance is met, commit any task-owned changes before "
-                "completion. Stage only this task's changed files with explicit "
-                "pathspecs (`git add -- <path>...`); never use `git add -A`, `git add .`, "
-                "or `git commit -a`."
-            ),
-            (
-                f"4. Emit your terminal event `{expected_event}` with the active "
-                f"dispatch id `{dispatch_id or '-'}` (see your role instructions "
-                "for the exact command). Emit the failure event only when a real "
-                "acceptance blocker remains after attempting to resume the task."
-            ),
-        ]
-        from zf.runtime.attempt_read_progress import input_continuation_lines
-        lines.extend(input_continuation_lines(self, role_instance=role.instance_id, task_id=task.id, dispatch_id=dispatch_id))
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        prompt = build_task_prompt(role.instance_id, path)
-        context = self._dispatch_context(
-            role=role,
-            briefing_path=path,
-            task_id=task.id,
-        )
-        from zf.runtime.task_attempt_continuation import continuation_context
-        context = continuation_context(self, role.instance_id, context)
-        self._send_transport_task(role.instance_id, path, prompt, context)
-        return path
+        from zf.runtime.continuation_delivery import inject_completion_prompt
+        return inject_completion_prompt(self, role=role, task=task, dispatch_id=dispatch_id,
+            expected_event=expected_event, claim_id=claim_id)
 
     def _rejected_artifact_manifest_event_ids(
         self,

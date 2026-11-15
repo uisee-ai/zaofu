@@ -37,3 +37,9 @@ Claude stream-json 现在直接落盘回合打开/关闭事实；丢失内存通
 真实 systemd/tmux 两场景通过：控制器强杀后唯一恢复、resident 不重复、暂停不重启。修复非 passed artifact 结果仍发完成申请，覆盖 Orchestrator 实时/重放负例；原终态 gate 原已拒绝。所有 Task 后续成果、未知效果核对与全局历史仍未关闭。
 
 实现与验证摘要见 [实现记录](../../docs/impl/continuity-handoff-spec-001.md)，本地完整 [缺口与对账报告](../../reports/continuity-qualification-20261115-review.md)。不把局部真实资格当整项完成。
+
+## 2026-11-15：按成功条件收口
+
+用户已批准修正后的实施顺序；本任务保持 active，逐条验收以 [剩余关闭清单](../../docs/impl/continuity-handoff-spec-001.md#2026-11-15按成功条件推进的剩余关闭清单) 为索引。只关闭有真实调用方和适用证据的条款，其他剩余项不因本批提交自动完成。
+
+本轮修正：续接提示唯一 claim/摘要与 provider 收件事实进入 idle 对账，unknown 不盲重发；Run Manager 与 handoff 消费结果。原生 hook 完整故障旅程待验。 详见[修正报告](../../reports/continuity-closure-20261115-review.md)。

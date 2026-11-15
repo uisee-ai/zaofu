@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 
 from zf.core.state.atomic_io import atomic_write_text
-from zf.core.state.locks import FileLock, lock_path_for
+from zf.core.state.locks import lock_path_for
 from zf.runtime.environment_preparation import environment_preparation_dir
 from zf.runtime.environment_exec import path_identity
 
@@ -51,7 +51,9 @@ def register_environment_resources(worktree: Path, paths: list[str]) -> None:
     # prove that its resources have been retired.
     if set(declared).issubset(read_resource_paths(worktree)):
         return
-    with FileLock(lock_path_for(environment_preparation_dir(worktree) / 'prepare'), timeout_seconds=0):
+    from zf.runtime.environment_usage import environment_mutation
+
+    with environment_mutation(worktree):
         merged = sorted(set(read_resource_paths(worktree)) | set(declared))
         atomic_write_text(resource_manifest(worktree), json.dumps({
             'schema': 'environment-resources.v1', 'paths': merged,
@@ -82,6 +84,7 @@ def environment_lock_plan(worktree: Path) -> dict:
                    else _host_resource_lock_dir())
         locks.add(str(storage / (key + '.lock')))
     return {
+        'workspace': str(root),
         'locks': [str(lock_path_for(environment_preparation_dir(root) / 'prepare')), *sorted(locks)],
         'bindings': bindings,
         'instances': {logical: path_identity(logical) for logical in bindings},

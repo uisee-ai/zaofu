@@ -145,6 +145,8 @@ def _unconfirmed_continuations(events, task_id, attempt_id):
         key = (event.actor, event.payload.get("dispatch_id"), event.payload.get("input_read_progress"))
         if event.type == "worker.continuation.claimed":
             pending[key] = event.id
+        elif event.type == "worker.continuation.reconciled" and event.payload.get("delivery_status") == "observed":
+            pending = {key: value for key, value in pending.items() if value != event.payload.get("claim_id")}
         elif event.type == "worker.stuck.recovered" and event.payload.get("prompt_injected") is True:
             pending.pop(key, None)
     return list(pending.values())

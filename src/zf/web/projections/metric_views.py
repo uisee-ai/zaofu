@@ -74,7 +74,7 @@ def pulse(state_dir: Path, config=None, *, now=None) -> dict:
             "run_pulse": {**p._run_pulse(selected, current), "loop": {"status": loop.get("status"), "age_seconds": loop.get("age_seconds")},
                           "sessions": p._sessions(state_dir, config, selected),
                           "versions": runtime_version_snapshot(state_dir, (event for _, event in facts.events(
-                              state_dir, types=("loop.started", "loop.stopped"))))},
+                              state_dir, types=("loop.started", "loop.stopped", "worker.runtime.observed"), prefixes=("workflow.operation.",))))},
             "task_flow": p._task_flow(state_dir, config, selected, current,
                                       projected_tasks=tasks.rows(state_dir), projected_counts=tasks.counts(state_dir)),
             "attention": p._attention(selected, current), "why_not": p._why_not(state_dir, selected, loop)}

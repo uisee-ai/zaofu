@@ -2,6 +2,8 @@
 from datetime import datetime, timezone
 from typing import Any
 
+from zf.core.events import ZfEvent
+
 from zf.runtime.pause_lifecycle import is_dispatch_paused
 from zf.runtime.provider_turn_liveness import _parse_event_ts
 from zf.runtime.task_attempt_runtime import task_attempt_store
@@ -46,10 +48,9 @@ def validate_task_continuation(runtime: Any, role: str, context: DispatchContext
 
 
 def claim_completion_nudge(runtime: Any, role: str, task_id: str, dispatch_id: str,
-                           *, causation_id: str | None, correlation_id: str | None) -> bool:
+                           *, causation_id: str | None, correlation_id: str | None) -> ZfEvent | None:
     """Claim before bytes leave; an interrupted delivery remains explicitly unknown."""
     import hashlib
-    from zf.core.events import ZfEvent
     from zf.core.state.locks import locked_path
     from zf.runtime.attempt_read_progress import progress_nudge_state
 
@@ -57,10 +58,10 @@ def claim_completion_nudge(runtime: Any, role: str, task_id: str, dispatch_id: s
     with locked_path(runtime.state_dir / "locks" / f"continuation-{key}"):
         progress = progress_nudge_state(runtime, role_instance=role, task_id=task_id, dispatch_id=dispatch_id)
         if progress is None or not progress[2]:
-            return False
-        runtime.event_writer.append(ZfEvent(type="worker.continuation.claimed", origin="kernel",
+            return None
+        claim = runtime.event_writer.append(ZfEvent(type="worker.continuation.claimed", origin="kernel",
             actor=role, task_id=task_id, causation_id=causation_id or "", correlation_id=correlation_id,
             payload={"dispatch_id": dispatch_id, "attempt_id": progress[0], "input_read_progress": progress[1],
                 "recovery_action": "completion_nudge_requested", "delivery_status": "unknown",
                 "recovery_owner": "run_manager", "next_action": "reconcile_existing_turn_before_retry"}))
-    return True
+    return claim

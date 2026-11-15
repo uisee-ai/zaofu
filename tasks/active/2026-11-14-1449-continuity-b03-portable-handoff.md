@@ -36,3 +36,9 @@
 跨 Provider、旧 writer 物理隔离、全入口交接资格及 SOP/子调用消费继续保留；Claude 接管增强按用户偏好较低优先级。
 
 实现与验证摘要见 [实现记录](../../docs/impl/continuity-handoff-spec-001.md)，本地完整 [缺口与对账报告](../../reports/continuity-qualification-20261115-review.md)。不把局部真实资格当整项完成。
+
+## 2026-11-15：按成功条件收口
+
+用户已批准修正后的实施顺序；本任务保持 active，逐条验收以 [剩余关闭清单](../../docs/impl/continuity-handoff-spec-001.md#2026-11-15按成功条件推进的剩余关闭清单) 为索引。只关闭有真实调用方和适用证据的条款，其他剩余项不因本批提交自动完成。
+
+本轮修正：两个 GPT-6.1 Terra High 新会话完成脏成果接续的隔离真实实验；完整 Task Pipeline 故障接管及跨 provider 仍未关闭。 详见[修正报告](../../reports/continuity-closure-20261115-review.md)。

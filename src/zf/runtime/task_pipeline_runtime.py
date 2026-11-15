@@ -865,6 +865,19 @@ def _activate_task_stage_binding(
             force=True,
         )
 
+    if not alive or binding_switch:
+        from zf.runtime.environment_usage import assert_workspace_idle, EnvironmentInUse
+
+        prior_path = current_path or str(role_meta.get("active_task_workspace") or "")
+        try:
+            for candidate in {str(project_path), prior_path} - {""}:
+                assert_workspace_idle(Path(candidate))
+        except (OSError, ValueError, EnvironmentInUse) as exc:
+            raise TaskPipelineWaiting(
+                "waiting_for_worker_exit",
+                "workspace still has a process holder or its exit cannot be confirmed",
+            ) from exc
+
     binding = registry.bind_task_stage_session(
         workflow_run_id=workflow_run_id,
         task_id=str(task.id),
@@ -880,6 +893,7 @@ def _activate_task_stage_binding(
         binding_key=str(binding.get("binding_key") or ""),
         role_instance=role.instance_id,
     )
+    registry.update_instance_meta(role.instance_id, active_task_workspace=str(project_path))
     runtime._ensure_role_active(
         role,
         task_id=str(task.id),

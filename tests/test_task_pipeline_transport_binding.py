@@ -81,3 +81,36 @@ def test_composite_does_not_invent_cwd_for_adapter_without_snapshot() -> None:
     snapshot = router.lifecycle_snapshot("dev-1")
     assert snapshot.alive
     assert snapshot.current_path == ""
+
+
+def test_dead_provider_with_surviving_child_cannot_start_successor_writer(tmp_path):
+    import select
+    import subprocess
+    import sys
+    from zf.runtime.task_pipeline_runtime import TaskPipelineWaiting
+
+    runtime, role, transport = _runtime(tmp_path)
+    workspace = tmp_path / "candidate"
+    workspace.mkdir()
+    candidate = workspace / "dirty.txt"
+    candidate.write_text("preserved candidate")
+    registry = RoleSessionRegistry(runtime.state_dir / "role_sessions.yaml", project_root=str(tmp_path))
+    registry.update_instance_meta(role.instance_id, active_task_workspace=str(workspace))
+    # The transport reports dead, but a real process can still access the tree.
+    process = subprocess.Popen([sys.executable, "-c", "print('ready', flush=True); input()"],
+        cwd=workspace, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    args = dict(runtime=runtime, role=role, task=Task(id="NEXT", title="successor"),
+        workflow_run_id="run", task_map_generation="g", stage="impl", workspace_generation=1,
+        placement_epoch=2, role_config_digest="digest", project_path=workspace, workspace_root=tmp_path)
+    try:
+        assert select.select([process.stdout], [], [], 5)[0]
+        assert process.stdout.readline().strip() == "ready"
+        with pytest.raises(TaskPipelineWaiting, match="process holder"):
+            _activate_task_stage_binding(**args)
+        assert not transport.spawned
+        assert candidate.read_text() == "preserved candidate"
+    finally:
+        process.communicate("\n", timeout=5)
+    _activate_task_stage_binding(**args)
+    assert len(transport.spawned) == 1
+    assert candidate.read_text() == "preserved candidate"

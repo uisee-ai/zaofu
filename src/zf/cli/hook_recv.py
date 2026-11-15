@@ -818,6 +818,9 @@ def run(args: argparse.Namespace) -> int:
         for k in ("turn_id", "transcript_path", "permission_mode"):
             if k in payload:
                 event_payload[k] = payload[k]
+    if args.event == "codex.hook.user_prompt_submit" and isinstance(payload.get("prompt"), str):
+        import hashlib
+        event_payload["submitted_prompt_sha256"] = hashlib.sha256(payload["prompt"].encode()).hexdigest()
     if args.event.endswith(".stop"):
         event_payload["provider_stop_reason"] = classify_provider_stop(
             event_payload | payload,
@@ -849,6 +852,7 @@ def run(args: argparse.Namespace) -> int:
     try:
         event_writer.append(ZfEvent(
             type=args.event,
+            origin="kernel" if args.event == "codex.hook.user_prompt_submit" else "",
             actor=actor,
             payload=event_payload,
             causation_id=causation_id,

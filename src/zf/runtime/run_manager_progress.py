@@ -15,7 +15,7 @@ _SIGNAL_TYPES = {
     "work_record": frozenset({"worker.work_record.published"}),
     "verification": frozenset({"verify.passed", "verify.failed", "test.passed", "test.failed"}),
     "accepted_result": frozenset({"workflow.call.result.admitted"}),
-    "continuation": frozenset({"worker.continuation.claimed", "worker.stuck.recovered"}),
+    "continuation": frozenset({"worker.continuation.claimed", "worker.stuck.recovered", "worker.continuation.reconciled"}),
     "result_signal": frozenset({
         "dev.build.done", "dev.blocked", "task.ref.updated", "task.done",
         "test.passed", "test.failed", "verify.passed", "verify.failed",
@@ -87,9 +87,10 @@ def task_evidence_signals(
             evidence["proves_current_memory"] = False
         if "continuation" in signals:
             delivered = event.type == "worker.stuck.recovered" and payload.get("prompt_injected") is True
-            evidence.update(delivery_status="delivered" if delivered else "unknown",
+            observed = event.type == "worker.continuation.reconciled" and payload.get("delivery_status") == "observed"
+            evidence.update(delivery_status="observed" if observed else "delivered" if delivered else "unknown",
                 recovery_owner="run_manager", business_completed=False,
-                next_action="observe_bound_progress" if delivered else "reconcile_existing_turn_before_retry")
+                next_action="observe_bound_progress" if delivered or observed else "reconcile_existing_turn_before_retry")
         source_id = (
             event.id if event.type == "agent.usage"
             else str(payload.get("source_event_id") or "")

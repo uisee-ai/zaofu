@@ -42,7 +42,8 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "owner.visible_message.suppressed",
     "goal.dossier.inconsistent",
     "dispatch.paused", "dispatch.resumed",
-    "worker.continuation.claimed",
+    "worker.continuation.claimed", "worker.runtime.observed",
+    "worker.continuation.prepared", "worker.continuation.reconciled",
     "task.handoff.prepared", "task.handoff.accepted",
     # doc 79 remediation cascade (no-dead-end): cascade decision + safe-halt floor
     "remediation.cascade", "runtime.safe_halted", "runtime.resumed",

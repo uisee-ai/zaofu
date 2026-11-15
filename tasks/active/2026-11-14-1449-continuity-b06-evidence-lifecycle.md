@@ -37,3 +37,7 @@ Role/Task cleanup 与 zf stop 删除工作区期间持独占锁；即使 session
 真实 Terra High 正反例揭露并修复：验证输出身份/引用约束、预设成功模板、夹具口径混淆、上游证据准入绑定和失败证据保留。最终正例完成，反例拒绝结果准入且 Goal 完成数为零。实际固定源码补 WebM/上传/归档、durable cleanup 仍未完成。
 
 实现与验证摘要见 [实现记录](../../docs/impl/continuity-handoff-spec-001.md)，本地完整 [缺口与对账报告](../../reports/continuity-qualification-20261115-review.md)。不把局部真实资格当整项完成。
+
+## 2026-11-15：按成功条件收口
+
+用户已批准修正后的实施顺序；本任务保持 active，逐条验收以 [剩余关闭清单](../../docs/impl/continuity-handoff-spec-001.md#2026-11-15按成功条件推进的剩余关闭清单) 为索引。只关闭有真实调用方和适用证据的条款，其他剩余项不因本批提交自动完成。

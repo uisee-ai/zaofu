@@ -326,6 +326,9 @@ def test_spawn_passes_role_scoped_launch_env_to_sdk_without_cross_role_leakage(
 
     first_env = getattr(calls[0][1], "env")
     second_env = getattr(calls[1][1], "env")
+    import json
+    assert json.loads(first_env.pop("ZF_ENVIRONMENT_RESOURCES")) == [str(state_dir.parent)]
+    assert json.loads(second_env.pop("ZF_ENVIRONMENT_RESOURCES")) == [str(state_dir.parent)]
     assert first_env == {
         "ZF_ROLE_INSTANCE": "dev-1",
         "ZF_ARTIFACT_READ_TOKEN_FILE": str(state_dir / "one.token"),

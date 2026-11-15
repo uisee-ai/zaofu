@@ -34,6 +34,71 @@ def test_actual_tmux_launch_command_holds_environment_for_native_process(tmp_pat
     assert run_project_setup(tmp_path, "true").ok
 
 
+def test_provider_closing_inherited_descriptors_still_blocks_installer(tmp_path):
+    from zf.runtime.environment_usage import guarded_provider_argv
+
+    process = subprocess.Popen(guarded_provider_argv(tmp_path, [sys.executable, '-c',
+        "import os; os.closerange(3, 65536); print('ready', flush=True); input()"]),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        assert select.select([process.stdout], [], [], 5)[0]
+        assert process.stdout.readline().strip() == 'ready'
+        assert not run_project_setup(tmp_path, 'touch forbidden', force=True).ok
+        assert not (tmp_path / 'forbidden').exists()
+        import pytest
+        from zf.runtime.environment_resources import register_environment_resources
+        with pytest.raises(TimeoutError):
+            register_environment_resources(tmp_path, ['node_modules'])
+    finally:
+        process.communicate('\n', timeout=5)
+    assert run_project_setup(tmp_path, 'true').ok
+
+
+def test_unregistered_process_with_workspace_cwd_blocks_cleanup_and_setup(tmp_path):
+    _init_product_repo(tmp_path)
+    project = _add_worker_worktree(tmp_path, '.runtime', 'external-child')
+    process = subprocess.Popen([sys.executable, '-c', "print('ready', flush=True); input()"],
+        cwd=project, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        assert select.select([process.stdout], [], [], 5)[0]
+        assert process.stdout.readline().strip() == 'ready'
+        assert not run_project_setup(project, 'touch forbidden', force=True).ok
+        assert clean_state_dir_workdirs(tmp_path, tmp_path / '.runtime')[0] == 0
+        assert project.exists()
+    finally:
+        process.communicate('\n', timeout=5)
+    assert clean_state_dir_workdirs(tmp_path, tmp_path / '.runtime')[0] == 1
+
+
+def test_detached_child_retains_resource_identity_after_provider_exits(tmp_path):
+    import os
+    import signal
+    import time
+    from zf.runtime.environment_usage import guarded_provider_argv
+
+    child_code = "import os,time; os.chdir('/'); os.closerange(3,65536); time.sleep(20)"
+    parent_code = (
+        "import subprocess,sys; p=subprocess.Popen([sys.executable,'-c',sys.argv[1]],"
+        "start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
+        "print(p.pid,flush=True)"
+    )
+    result = subprocess.run(guarded_provider_argv(tmp_path, [sys.executable, '-c', parent_code, child_code]),
+        capture_output=True, text=True, timeout=5, check=True)
+    pid = int(result.stdout)
+    try:
+        assert not run_project_setup(tmp_path, 'touch forbidden', force=True).ok
+        assert not (tmp_path / 'forbidden').exists()
+    finally:
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(50):
+            from pathlib import Path
+            stat = Path(f'/proc/{pid}/stat')
+            if not stat.exists() or stat.read_text().rsplit(')', 1)[1].split()[0] == 'Z':
+                break
+            time.sleep(.02)
+    assert run_project_setup(tmp_path, 'true').ok
+
+
 def test_stop_cleanup_retains_resource_with_an_actual_holder(tmp_path):
     _init_product_repo(tmp_path)
     project = _add_worker_worktree(tmp_path, ".runtime", "dev-held")
