@@ -24,41 +24,13 @@ class PlanDocumentError(ValueError):
 
 def document_source(state_dir: Path, events: list[Any], *, plan_id: str, name: str,
                     sha256: str, project_root: Path | None) -> Path:
-    from zf.runtime.operator_plan_preview import _plan_events
-    from zf.runtime.plan_preview_sources import plan_authority_refs, plan_source_payload
-    from zf.runtime.plan_preview_artifacts import (
-        preview_artifact_path, preview_package_artifacts, read_plan_preview_bundle,
-    )
+    from zf.runtime.plan_preview_sources import bound_plan_source, PlanSourceError
+    from zf.runtime.plan_preview_artifacts import preview_artifact_path
 
-    requested, resolved = _plan_events(events, plan_id)
-    if requested is None and resolved is None:
-        raise PlanDocumentError(404, "plan not found")
-    payload, _ = plan_source_payload(state_dir, events, plan_id=plan_id,
-        source_event=requested or resolved, project_root=project_root)
-    ports, error = preview_package_artifacts(payload, state_dir=state_dir, project_root=project_root)
-    bundle, bundle_error = read_plan_preview_bundle(payload, state_dir=state_dir, project_root=project_root)
-    if error or bundle_error:
-        raise PlanDocumentError(409, "plan source binding changed or is unavailable")
-    matches = [row for row in ports if row["name"] == name]
-    if len(matches) > 1:
-        raise PlanDocumentError(409, "ambiguous plan source binding")
-    item = matches[0] if matches else None
-    if name == "accepted_plan":
-        # Canonical Plan recovery also supports legacy synth evidence and logical
-        # fanout paths. Keep that compatibility in its existing single owner.
-        from zf.runtime.operator_plan_preview import build_plan_preview
-
-        preview = build_plan_preview(state_dir, events, plan_id=plan_id, project_root=project_root)
-        item = next((row for row in preview.get("artifacts", []) if row["name"] == name), None)
-    elif item is None:
-        authority = plan_authority_refs(state_dir, payload=payload, artifacts=ports,
-            preview_bundle=bundle, project_root=project_root)
-        for index, ref in enumerate(authority, 1):
-            if name == f"requirement_{index}_{Path(ref).name}":
-                item = {"ref": ref, "sha256": ""}
-                break
-    if item is None:
-        raise PlanDocumentError(404, "source is not bound to this plan")
+    try:
+        item = bound_plan_source(state_dir, events, plan_id=plan_id, name=name, project_root=project_root)
+    except PlanSourceError as exc:
+        raise PlanDocumentError(exc.status, str(exc)) from exc
     if item.get("sha256") and item["sha256"] != sha256:
         raise PlanDocumentError(409, "source version changed; reload the preview")
     try:

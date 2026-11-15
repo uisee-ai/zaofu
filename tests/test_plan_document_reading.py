@@ -62,6 +62,23 @@ def test_index_and_selected_chapter_do_not_build_or_deliver_unrelated_bodies(tmp
     assert (state / "events.jsonl").read_bytes() == before
 
 
+@pytest.mark.parametrize("authority", [False, True])
+def test_bound_download_does_not_rebuild_unrelated_full_preview(tmp_path, monkeypatch, authority):
+    content = "# 需求\n\n选定的完整原文。\n"
+    client, state, path, url, digest = fixture(tmp_path, content, authority=authority)
+    monkeypatch.setattr("zf.runtime.operator_plan_preview.build_plan_preview",
+                        lambda *a, **kw: pytest.fail("download must not rebuild unrelated review bodies"))
+    before = (state / "events.jsonl").read_bytes()
+    response = client.get(url.removesuffix('/document'), params={"sha256": digest})
+    assert response.status_code == 200, response.text
+    assert response.text == content
+    path.write_text("# 新版\n旧链接不能下载替换后的正文。\n")
+    refused = client.get(url.removesuffix('/document'), params={"sha256": digest})
+    assert refused.status_code in {404, 409}
+    assert '替换后的正文' not in refused.text
+    assert (state / "events.jsonl").read_bytes() == before
+
+
 def test_sections_round_trip_utf8_and_long_lines_without_hidden_truncation(tmp_path):
     content = "intro\r\n\r\n标题\r\n====\r\n\r\n```python\r\n# not a heading\r\n```\r\n\r\n## Huge\n" + "数据😀" * 20000 + "\nEND\n"
     client, _, _, url, digest = fixture(tmp_path, content)

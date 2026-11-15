@@ -1,5 +1,6 @@
 import copy
 import json
+import pytest
 
 from fastapi.testclient import TestClient
 from zf.cli.main import main
@@ -60,7 +61,7 @@ def test_mechanical_gaps_are_not_confused_with_undetectable_semantics():
     assert inspect_plan_inputs(bundle)['source_index_available'] is False
 
 
-def test_producer_cli_and_bound_preview_api(tmp_path,capsys):
+def test_producer_cli_and_bound_preview_api(tmp_path,capsys,monkeypatch):
     bundle=artifacts(2)
     mapping={}
     for name,body in bundle.items():
@@ -74,10 +75,13 @@ def test_producer_cli_and_bound_preview_api(tmp_path,capsys):
     (state/'kanban.json').write_text(json.dumps({'tasks': []}))
     add_human_review_fixture(state,EventWriter(EventLog(state/'events.jsonl')))
     client=TestClient(create_app(state,project_root=tmp_path))
+    monkeypatch.setattr('zf.runtime.operator_plan_preview.build_plan_preview',
+        lambda *args, **kwargs: pytest.fail('input review must not render unrelated Plan bodies'))
     response=client.get('/api/projects/default/plans/evt-preview-review/input-review?task=T-STOCK')
     assert response.status_code==200,response.text
     assert response.json()['items'][0]['task_id']=='T-STOCK'
     assert 'task_execution_input_unavailable' in response.json()['items'][0]['issues']
+    assert client.get('/api/projects/default/plans/missing/input-review').status_code == 404
     assert client.get('/api/projects/default/plans/evt-preview-review/input-review?limit=0').status_code==400
 
 

@@ -13,7 +13,7 @@ from zf.runtime.artifact_read_ledger import source_manifest_from_payload
 from zf.runtime.task_contract_snapshot import current_task_contract_identity
 
 
-def setup(state, *, operation_task="T7", operation_run="r"):
+def setup(state, *, operation_task="T7", operation_run="r", newer_package=True):
     task = Task(id='T7', title='current task', status='in_progress', assigned_to='dev-1',
         active_dispatch_id='dispatch', execution_binding=TaskExecutionBinding(workflow_run_id='r'),
         contract=TaskContract(behavior='original behavior', evidence_contract={'task_map_generation': '1'}))
@@ -34,7 +34,8 @@ def setup(state, *, operation_task="T7", operation_run="r"):
             'artifact_sha256': manifest['sources'][0]['sha256'], 'json_path': '$'}]}
     for kind in ['workflow.operation.requested', 'workflow.operation.started']:
         writer.append(ZfEvent(type=kind, task_id=operation_task, payload=payload))
-    writer.append(admission('2'))
+    if newer_package:
+        writer.append(admission('2'))
     return task, manifest, writer
 
 
@@ -88,3 +89,38 @@ def test_old_inputs_do_not_resurrect_changed_or_retired_tasks(tmp_path, fault):
         writer.append(ZfEvent(type='workflow.operation.cancelled' if fault == 'cancelled' else 'workflow.operation.started',
             task_id='other' if fault == 'wrong_operation_task' else 'T7', payload=p))
     assert input_lifecycle(manifest, writer.event_log.read_all(), state_dir=tmp_path)['requires_rebind']
+
+
+@pytest.mark.parametrize('command', ['recover', 'index'])
+def test_same_package_contract_revision_requires_rebind_without_losing_original(tmp_path, monkeypatch, capsys, command):
+    from dataclasses import asdict
+    from zf.runtime.task_contract_authority import TaskContractAuthorityService
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    state = tmp_path / 'state'
+    task, manifest, writer = setup(state, newer_package=False)
+    _grant(state, monkeypatch, manifest=manifest, operation_id='op')
+    source = state / 'artifacts/input.json'
+    original = source.read_bytes()
+    candidate = tmp_path / 'candidate.txt'
+    candidate.write_text('unfinished candidate')
+    changed = asdict(task.contract)
+    changed['acceptance_criteria'] = ['new acceptance obligation']
+    mutation = TaskContractAuthorityService(task_store=TaskStore(state / 'kanban.json'),
+        event_writer=writer, state_dir=state).replace(task, contract=changed, source='approved_revision')
+    assert main(['artifact', command, '--attempt', 'a', '--state-dir', str(state)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    lifecycle = result['inputs']['lifecycle'] if command == 'recover' else result['lifecycle']
+    assert lifecycle['requires_rebind'] is True
+    assert lifecycle['reason'] == 'task_binding_changed'
+    assert lifecycle['authorizes_rebind'] is False
+    if command == 'recover':
+        assert result['status'] == 'rebind_required'
+        assert 'required_read' not in result['commands']
+        assert result['next_action'] == 'request_controlled_rebind'
+    assert source.read_bytes() == original
+    assert candidate.read_text() == 'unfinished candidate'
+    assert TaskStore(state / 'kanban.json').get(task.id).active_dispatch_id == 'dispatch'
+    receipt = hydrate_sidecar_ref(state, {'ref': mutation.receipt_ref, 'sha256': mutation.receipt_digest}).payload
+    assert receipt['previous_contract']['acceptance_criteria'] == []
+    assert receipt['contract']['acceptance_criteria'] == ['new acceptance obligation']

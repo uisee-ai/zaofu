@@ -48,7 +48,7 @@ export function PlanPreviewOverlay({
   const [showContext, setShowContext] = useState(false);
   useEffect(() => { const element = modal.current; element?.showModal(); return () => element?.close(); }, []);
   const planId = preview?.plan_id || "";
-  const disabled = Boolean(actionKey && busy.endsWith(`:${actionKey}`));
+  const disabled = Boolean((actionKey && busy.endsWith(`:${actionKey}`)) || (planId && busy.endsWith(`:${planId}`)));
   const isPrdPlan = preview?.stage_id === "prd-plan"
     || preview?.pdd_id?.startsWith("TASK-")
     || preview?.trace_id?.includes("-prd-");

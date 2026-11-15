@@ -123,12 +123,15 @@ def build_plan_health_router(
             raise HTTPException(status_code=404, detail="unknown project")
         from zf.core.events.factory import event_log_from_project
         from zf.runtime.operator_plan_preview import read_plan_preview_attachment
+        from zf.runtime.plan_preview_sources import PlanSourceError
 
         try:
             content = read_plan_preview_attachment(
                 ctx.state_dir, event_log_from_project(ctx.state_dir, config=ctx.config).read_all(),
                 plan_id=plan_id, name=name, project_root=getattr(ctx, "project_root", None),
             )
+        except PlanSourceError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         if sha256:
@@ -144,18 +147,19 @@ def build_plan_health_router(
         if ctx is None:
             raise HTTPException(404, "unknown project")
         from zf.core.events.factory import event_log_from_project
-        from zf.runtime.operator_plan_preview import build_plan_preview
+        from zf.runtime.plan_preview_sources import bound_plan_sources, PlanSourceError
         from zf.runtime.plan_preview_artifacts import read_preview_artifact
         from zf.runtime.plan_input_review import inspect_plan_inputs, PORTS
         import json
         try:
             events = event_log_from_project(ctx.state_dir, config=ctx.config).read_all()
-            preview = build_plan_preview(ctx.state_dir, events, plan_id=plan_id, project_root=ctx.project_root)
-            bindings = preview.get("artifacts", [])
+            _, bindings, _ = bound_plan_sources(ctx.state_dir, events, plan_id=plan_id, project_root=ctx.project_root)
             artifacts = {row["name"]: json.loads(read_preview_artifact(row["ref"], state_dir=ctx.state_dir,
                 project_root=ctx.project_root, digest=row["sha256"])) for row in bindings if row["name"] in PORTS}
             report = inspect_plan_inputs(artifacts, task_id=task, offset=offset, limit=limit, bindings=bindings, plan_id=plan_id)
             return report
+        except PlanSourceError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
         except (OSError, ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
 

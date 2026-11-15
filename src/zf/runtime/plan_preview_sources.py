@@ -7,6 +7,54 @@ from typing import Any
 from zf.runtime.plan_preview_artifacts import PLAN_REVIEW_REF_FIELDS
 
 
+class PlanSourceError(ValueError):
+    def __init__(self, status: int, message: str) -> None:
+        self.status = status
+        super().__init__(message)
+
+
+def bound_plan_sources(state_dir: Path, events: list, *, plan_id: str,
+                       project_root: Path | None) -> tuple[dict, list[dict], dict]:
+    """Resolve immutable catalog bindings without rendering any review body."""
+    from zf.runtime.operator_plan_preview import _plan_events
+    from zf.runtime.plan_preview_artifacts import preview_package_artifacts, read_plan_preview_bundle
+
+    requested, resolved = _plan_events(events, plan_id)
+    if requested is None and resolved is None:
+        raise PlanSourceError(404, "plan not found")
+    payload, _ = plan_source_payload(state_dir, events, plan_id=plan_id,
+        source_event=requested or resolved, project_root=project_root)
+    ports, error = preview_package_artifacts(payload, state_dir=state_dir, project_root=project_root)
+    bundle, bundle_error = read_plan_preview_bundle(payload, state_dir=state_dir, project_root=project_root)
+    if error or bundle_error:
+        raise PlanSourceError(409, "plan source binding changed or is unavailable")
+    return payload, ports, bundle
+
+
+def bound_plan_source(state_dir: Path, events: list, *, plan_id: str, name: str,
+                      project_root: Path | None) -> dict:
+    payload, ports, bundle = bound_plan_sources(state_dir, events, plan_id=plan_id, project_root=project_root)
+    matches = [row for row in ports if row["name"] == name]
+    if len(matches) > 1:
+        raise PlanSourceError(409, "ambiguous plan source binding")
+    item = matches[0] if matches else None
+    if name == "accepted_plan":
+        # Legacy canonical-Plan recovery remains owned by the full projection.
+        from zf.runtime.operator_plan_preview import build_plan_preview
+        preview = build_plan_preview(state_dir, events, plan_id=plan_id, project_root=project_root)
+        item = next((row for row in preview.get("artifacts", []) if row["name"] == name), None)
+    elif item is None:
+        authority = plan_authority_refs(state_dir, payload=payload, artifacts=ports,
+            preview_bundle=bundle, project_root=project_root)
+        for index, ref in enumerate(authority, 1):
+            if name == f"requirement_{index}_{Path(ref).name}":
+                item = {"name": name, "ref": ref, "sha256": ""}
+                break
+    if item is None:
+        raise PlanSourceError(404, "source is not bound to this plan")
+    return item
+
+
 def plan_source_payload(state_dir: Path, events: list, *, plan_id: str, source_event: Any,
                         project_root: Path | None) -> tuple[dict, Any]:
     from zf.runtime.operator_plan_preview import _payload, _event_id, _etype

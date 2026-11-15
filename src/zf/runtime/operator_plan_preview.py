@@ -849,10 +849,8 @@ def read_plan_preview_attachment(
     state_dir: Path, events: Iterable[Any], *, plan_id: str, name: str,
     project_root: Path | None = None,
 ) -> str:
-    preview = build_plan_preview(state_dir, events, plan_id=plan_id, project_root=project_root)
-    artifact = next((p for p in preview.get("artifacts", []) if p["name"] == name), None)
-    if artifact is None:
-        raise ValueError("artifact is not bound to this plan")
+    from zf.runtime.plan_preview_sources import bound_plan_source
+    artifact = bound_plan_source(state_dir, list(events), plan_id=plan_id, name=name, project_root=project_root)
     return read_preview_artifact(artifact["ref"], state_dir=state_dir, project_root=project_root, digest=artifact["sha256"])
 
 

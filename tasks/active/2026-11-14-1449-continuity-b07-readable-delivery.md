@@ -1,5 +1,10 @@
 > 状态: active
 
+2026-11-15 继续验证：修复审批刷新迟到覆盖/重开、Owner 决策后仍 pending，以及普通审批
+busy id 不匹配；实际 Docker 浏览器先复现后重验。附件下载与 input-review 现在复用
+轻量来源绑定，不重建无关完整 Plan；章节读取保持同版校验。主 preview 整包与 SSE
+全旅程仍未关闭。见[继续验证报告](../../reports/continuity-validation-20261115-review.md)。
+
 # ZF-SPEC-001 预览与分层阅读
 
 用户于2026-11-14明确授权基于 spec 在新 worktree 实施；覆盖 F14/F15/F16。

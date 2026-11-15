@@ -3,6 +3,8 @@ import { test, expect } from "@playwright/test";
 for (const action of ["replan-approve", "replan-reject"]) {
   test(`owner deep link waits for approval identity and sends ${action}`, async ({ page, request }) => {
     const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+    let previewRequests = 0;
+    let resolvedStatus = "";
     let releaseInbox!: () => void;
     const ready = new Promise<void>((resolve) => { releaseInbox = resolve; });
     await page.route("**/operator/inbox", async (route) => {
@@ -18,6 +20,8 @@ for (const action of ["replan-approve", "replan-reject"]) {
     await page.route("**/plans/evt-preview-rich/preview", async (route) => {
       const response = await route.fetch();
       const body = await response.json();
+      previewRequests += 1;
+      if (resolvedStatus) body.status = resolvedStatus;
       body.actions = { ...body.actions, approve: "replan-approve", reject: "replan-reject" };
       await route.fulfill({ response, json: body });
     });
@@ -26,6 +30,7 @@ for (const action of ["replan-approve", "replan-reject"]) {
       const name = route.request().url().split("/").pop()!;
       if (name !== "inbox-item-read") {
         actions.push({ name, payload: route.request().postDataJSON().payload });
+        resolvedStatus = name === "replan-approve" ? "approved" : "rejected";
       }
       await route.fulfill({ json: { ok: true } });
     });
@@ -44,6 +49,9 @@ for (const action of ["replan-approve", "replan-reject"]) {
     await expect.poll(() => actions.length).toBe(1);
     expect(actions[0].name).toBe(action);
     expect(actions[0].payload).toMatchObject({ approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" });
+    await expect.poll(() => previewRequests, { timeout: 5000 }).toBe(2);
+    await expect(approve).toBeDisabled();
+    await expect(reject).toBeDisabled();
     await page.unrouteAll({ behavior: "wait" });
   });
 }
@@ -114,6 +122,56 @@ test("a late response from a closed preview cannot replace the newly selected Pl
   await expect(dialog.locator(".plan-preview-toolbar").getByText("evt-preview-digest", { exact: true })).toBeVisible();
   await expect(dialog.getByText("完整规划示例", { exact: true })).toHaveCount(0);
 });
+
+for (const openAnother of [false, true]) {
+test(`a delayed post-approval refresh cannot ${openAnother ? "replace another Plan" : "reopen a closed Plan"}`, async ({ page, request }, info) => {
+  const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+  let calls = 0;
+  let release!: () => void;
+  let refreshStarted!: () => void;
+  const delayed = new Promise<void>((resolve) => { release = resolve; });
+  const started = new Promise<void>((resolve) => { refreshStarted = resolve; });
+  await page.route("**/plans/evt-preview-complete/preview", async (route) => {
+    const response = await route.fetch();
+    calls += 1;
+    if (calls > 1) {
+      refreshStarted();
+      await delayed;
+    }
+    await route.fulfill({ response });
+  });
+  const actions: Record<string, unknown>[] = [];
+  await page.route("**/actions/*", async (route) => {
+    if (route.request().url().endsWith("/plan-approve")) actions.push(route.request().postDataJSON().payload);
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-complete`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await dialog.getByRole("button", { name: "Approve", exact: true }).click();
+  await started;
+  const busyDuringRefresh = await dialog.getByRole("button", { name: "Approve", exact: true }).isDisabled();
+  await dialog.getByRole("button", { name: "Close preview" }).click();
+  if (openAnother) {
+    await page.getByTestId("inbox-queue-item").filter({ hasText: "evt-preview-digest" }).click();
+    await page.locator(".inbox-reading-pane").getByRole("button", { name: "Preview", exact: true }).click();
+    await expect(dialog.getByRole("status")).toContainText("仅有计划摘要");
+  }
+  const lateResponse = page.waitForResponse("**/plans/evt-preview-complete/preview");
+  release();
+  await (await lateResponse).finished();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  if (openAnother) {
+    await expect(dialog.locator(".plan-preview-toolbar").getByText("evt-preview-digest", { exact: true })).toBeVisible();
+  } else {
+    await expect(dialog).toHaveCount(0);
+  }
+  expect(actions).toHaveLength(1);
+  expect(actions[0]).toMatchObject({ plan_id: "evt-preview-complete" });
+  expect(actions[0].request_event_id).toBeTruthy();
+  expect(busyDuringRefresh).toBe(true);
+  await page.screenshot({ path: info.outputPath('after-late-refresh.png') });
+});
+}
 
 test("large Plan pagination preserves every character through the final page", async ({ page, request }) => {
   const project = (await (await request.get("/api/snapshot")).json()).project.project_id;

@@ -28,6 +28,15 @@ def input_lifecycle(manifest: Mapping[str, Any], events: Sequence[Any], *,
         return row.get("package_ref") == ref and (row.get("package_digest") or row.get("package_sha256")) == digest
     current = reduced.get("current") or {}
     if matches(current):
+        authority = manifest.get("handoff_authority_contract") or {}
+        if state_dir is not None and isinstance(authority, Mapping) and authority.get("attempt_domain") == "task":
+            try:
+                valid = (_current_task_binding(state_dir, manifest, events)
+                         or _current_recovery_reader_binding(state_dir, manifest, events))
+            except (OSError, ValueError):
+                return {**result, "status": "unknown", "reason": "task_binding_unavailable", "requires_rebind": True}
+            if not valid:
+                return {**result, "status": "stale", "reason": "task_binding_changed", "requires_rebind": True}
         return {**result, "status": "current"}
     if any(matches(row) for row in reduced.get("history", [])):
         try:

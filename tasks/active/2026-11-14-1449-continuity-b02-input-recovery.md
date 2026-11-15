@@ -1,5 +1,10 @@
 > 状态: active
 
+2026-11-15 继续验证：实际 recover/index 复现同 Package 内合同变更仍标 current；修复为
+校验 Task/operation 当前绑定并报告 requires_rebind，保留原输入与 dispatch。覆盖旧新快照、
+既有 generation 保留和恢复 reader 回归；活跃 writer 隔离全旅程仍待验。
+见[继续验证报告](../../reports/continuity-validation-20261115-review.md)。
+
 2026-11-15 续作：R01-B 补旧/新合同不可变快照及后继派发引用，首次修订也保留旧正文。
 验证旧新正文、重建读取、损坏阻断及脏候选保留；活跃修订/旧批准隔离全旅程仍未完成。
 证据：[续作报告](../../reports/continuity-next-20261115-review.md)。
