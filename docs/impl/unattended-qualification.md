@@ -120,3 +120,7 @@ Run Manager 使用既有 host-assist preview/apply 门禁，核对 signed change
 宿主候选发布在preview与apply重新preview时检查Git作者/提交者可解析；缺身份在暂存和effect.started前失败，保留原工作区。运行时不猜测身份、不修改用户全局Git配置。隔离验收仓库初始化需配置本地测试身份，不能依赖监工shell的临时环境变量。
 
 同一Git身份前置条件也覆盖Autoresearch修复候选发布：缺身份在repair publish started和暂存前拒绝，不留下可避免的未决副作用。
+
+## Owner 决策等待页的同版 Plan 预览
+
+Critic 因业务选择等待 owner 时，也须显示它实际审阅的 Planner 输入。引用仅从同一 operation/attempt/fanout/revision 的不可变 contract 与 source manifest 交叉解析，并校验摘要；不能使用最近任意 Plan。该只读解析不授予 Reader 重试或语义通过权限。新 checkpoint 保存绑定，旧 checkpoint 在读投影中补全，保持原审批 request 与 candidate 身份不变；歧义、缺失或摘要篡改继续失败关闭。

@@ -12,13 +12,20 @@ from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
 def failed_critic_candidate_refs(
     state_dir: Path, events: Sequence[ZfEvent], payload: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    """Return only child sources pinned by this Critic's contract and manifest.
-
-    Missing, ambiguous, tampered or mismatched evidence is not a reason to
-    substitute a candidate from an earlier replan.
-    """
+    """Recover inputs only for the explicit Reader-execution recovery route."""
     if payload.get("failure_class") != "reader_execution_failure":
         return []
+    return bound_critic_candidate_refs(state_dir, events, payload)
+
+
+def bound_critic_candidate_refs(
+    state_dir: Path, events: Sequence[ZfEvent], payload: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Return only child sources pinned by this Critic's contract and manifest.
+
+    Missing, ambiguous, tampered or mismatched evidence cannot select an older
+    Plan. Reading these inputs confers neither retry authority nor a verdict.
+    """
     operation_id = str(payload.get("operation_id") or "")
     attempt_id = str(payload.get("attempt_id") or "")
     fanout_id = str(payload.get("fanout_id") or "")

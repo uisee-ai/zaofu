@@ -87,10 +87,26 @@ def plan_source_payload(state_dir: Path, events: list, *, plan_id: str, source_e
             None,
         )
         if candidate is not None:
+            from zf.core.events.model import ZfEvent
             from zf.runtime.plan_synth_owner_checkpoint import plan_preview_refs
+            from zf.runtime.plan_synth_recovery_refs import bound_critic_candidate_refs
+
+            body = dict(_payload(candidate))
+            if not body.get("previous_plan_candidate_refs"):
+                typed_events = [
+                    event if isinstance(event, ZfEvent) else ZfEvent.from_dict(event)
+                    for event in events
+                    if isinstance(event, ZfEvent) or (
+                        isinstance(event, dict) and event.get("type")
+                        and isinstance(event.get("payload"), dict)
+                    )
+                ]
+                body["previous_plan_candidate_refs"] = bound_critic_candidate_refs(
+                    state_dir, typed_events, body,
+                )
 
             refs = plan_preview_refs(
-                _payload(candidate),
+                body,
                 state_dir=state_dir,
                 project_root=project_root,
             )

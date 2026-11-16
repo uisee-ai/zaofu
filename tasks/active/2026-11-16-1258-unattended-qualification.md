@@ -87,3 +87,7 @@ host-assist commit 与 Task Impl retry，不改变 Provider sandbox。仅发布�
 扩展实际缺陷影响闭包：AR修复候选复用同一Git提交实现，也补齐identity前置检查；真实Git回归先RED，确认旧实现已暂存再失败，修正后必须零effect/零staged。R4规划已经启动，资格尚未开始，两隔离仓库都已显式设置本地测试身份，未更改全局配置。
 
 AR身份预检定向3通过，4文件调用闭包29通过（含runner与refactor mock），sentinel53通过。仅在尚未批准Plan的R4预备阶段载入此防御，不增加产品写入权限。
+
+第四轮预备阶段 Critic 正确要求两项数字规则确认；监工经正式 owner decision 答复 Number 全串有限输入与原生有序聚合，Planner 已按此返工，最终 Plan 尚未批准。首次请求误填了原审批为空的 candidate_task_map_ref，被409拒绝；改用原绑定后成功。此为监工请求错误，单独记录，不归因于运行时。
+
+另复现语义 owner checkpoint 的 Preview 缺正文：旧代码只为 Reader execution failure 收集 Planner refs。抽出严格同版只读解析，新 checkpoint 与旧事件读投影均可显示实际受审 Plan；原审批不变、不放宽 Reader retry。RED→GREEN 定向58通过，14文件影响闭包383通过、sentinel53、Plan approval/replan mock E2E5通过。真实R4旧事件只读重放得到9122字正文且无内容/工件错误；这仅证明Preview修复，不代表最终Plan或产品通过。
