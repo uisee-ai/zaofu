@@ -64,3 +64,7 @@ continue 仅在主目标完成后移交已运行的 resident，保留其 singlet
 briefing 移到 required sidecar，避免污染修复 worktree；创建修复分支不再使用会重置已有分支的 `-B`。
 提交只是候选发布；独立 verification、受控 apply、源码加载及续跑保持原有门禁。
 RecoveryCase 对 validate/apply 的成功保持 open，不能把中间步骤标为原目标 resolved。
+
+自动 repair 使用的 `dev-verify` 保留完整影响闭包，不再因为超过 80 个测试文件而扩大为全仓测试。
+仍包含直接调用方、共享契约和串行测试；未映射源码仍拒绝。全量发布验证应显式执行，
+不能让文件数量触发无关失败并阻断修复。该修改经 81 文件闭包回归先失败后通过。
