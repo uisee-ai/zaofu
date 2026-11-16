@@ -140,3 +140,5 @@ resident 启动的 loop 若解析到的控制面配置确实拥有 parent_state_
 静止判定遵循既有升级范围：明确 `blocking_scope=side` 的审批只约束其旁路动作，不得让整个产品恢复tick静止。它不会清除/确认更早的Run级升级；未声明范围的旧事件仍按Run级保守处理。现场 failure-closeout-activate 的旁路审批无需监工代批，预授权浏览器采证可以独立继续。
 
 Candidate Reader 已有内核准入的 verification-result.v1 abstained 时，通用 batch 的 reemit_candidate_ready 不得竞争原 Reader 的恢复路径。按同一fanout、operation/request/run、源事件和control_result_ref绑定准入事实，保留现有采证→stage恢复链。原始超时或缺失准入的legacy runtime失败仍保留原有有界重发能力；不将基础设施失败改判为产品通过。
+
+修复派发的合同在落盘前绑定隔离checkout：将源仓内绝对scope规范为相对路径，拒绝越界/上级遍历/symlink逃逸；仅移除精确源仓cwd前缀，不能可靠转换且仍指向原仓的验证拒绝签发。pytest复用当前解释器依赖但设置PYTHONPATH=src，验收实际导入修复候选。briefing提供不可变合同绝对定位；self-repair方法识别父账本内精确kernel授权事件和dispatched合同摘要，不再要求修复分支复制的zf.yaml重新授权。不放宽沙箱，不设置全局授权环境变量，仍需独立验证和受控apply。

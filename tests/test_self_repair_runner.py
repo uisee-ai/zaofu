@@ -516,3 +516,23 @@ def test_closeout_calls_authorized_kernel_publisher_before_independent_validatio
     assert closeout.payload['repair_contract_digest'] == dispatched.payload['repair_contract_digest']
     assert _git(root, 'rev-parse', 'HEAD') == base
     assert not any(e.type == 'run.manager.repair.merge.merged' for e in log.read_all())
+
+
+def test_dispatch_freezes_checkout_relative_contract_and_absolute_evidence_locator(tmp_path):
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    log, writer = _writer(tmp_path)
+    event = _dispatch_requested()
+    event.payload['repair_task_payload']['contract'].update(
+        scope=[str(tmp_path / 'src/zf/fix.py')],
+        verification=f'cd {tmp_path} && .venv/bin/python -m pytest tests/test_fix.py',
+    )
+    with patch('zf.runtime.self_repair_runner.subprocess.run') as run:
+        run.return_value = MagicMock(returncode=0, stderr='')
+        assert dispatch_pending_self_repairs([event], writer, root=str(tmp_path), tmp_root=str(tmp_path)) == 1
+    dispatched = next(e for e in log.read_all() if e.type == 'autoresearch.repair.dispatched')
+    contract = hydrate_sidecar_ref(tmp_path, dispatched.payload['repair_contract_ref']).payload
+    assert contract['scope'] == ['src/zf/fix.py']
+    assert 'PYTHONPATH=src' in contract['verification_commands'][0]
+    briefing = Path(dispatched.payload['briefing_path']).read_text()
+    assert str(tmp_path / dispatched.payload['repair_contract_ref']['ref']) in briefing
+    assert 'kernel dispatch authorization' in briefing

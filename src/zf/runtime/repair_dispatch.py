@@ -141,8 +141,13 @@ def write_repair_contract(
     *,
     base_commit: str,
     created_by: str,
+    source_root: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     contract = build_repair_contract(req, base_commit=base_commit)
+    if source_root is not None:
+        from zf.runtime.repair_checkout_contract import bind_checkout_contract
+
+        contract = bind_checkout_contract(contract, source_root)
     descriptor = write_immutable_json_sidecar(
         Path(state_dir),
         contract,
@@ -306,6 +311,7 @@ def build_repair_briefing(
     *,
     repair_contract: Mapping[str, Any] | None = None,
     repair_contract_ref: Mapping[str, Any] | None = None,
+    state_dir: Path | None = None,
 ) -> str:
     contract = (
         dict(repair_contract)
@@ -321,10 +327,16 @@ def build_repair_briefing(
     hypothesis = str(contract.get("behavior") or "")
     contract_digest = str((repair_contract_ref or {}).get("sha256") or "")
     contract_ref = str((repair_contract_ref or {}).get("ref") or "")
+    if state_dir is not None and contract_ref:
+        contract_ref = str(state_dir / contract_ref)
     return (
         f"# Authorized self-repair — {req.candidate_id}\n\n"
         "Follow the **zf-self-repair** skill exactly: write backlog → fix → "
-        "verify → done. You are on an isolated zaofu worktree branch.\n\n"
+        "verify → done. Read skills/zf-self-repair/SKILL.md in this isolated checkout.\n"
+        "Scope paths and verification cwd refer to THIS checkout, never the source harness.\n"
+        "The bound contract's source_event_id identifies the kernel dispatch authorization; "
+        "verify that grant in the parent ZF_STATE_DIR ledger. Do not infer authorization "
+        "from this checkout's copied zf.yaml or enable global bypass flags.\n\n"
         f"- fingerprint: {req.fingerprint}  (attempt {req.attempt})\n"
         f"- hypothesis: {hypothesis}\n"
         f"- scope (do NOT exceed): {', '.join(str(s) for s in scope)}\n"

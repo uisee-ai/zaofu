@@ -129,6 +129,7 @@ def dispatch_pending_self_repairs(
                 req,
                 base_commit=base_commit,
                 created_by=dispatch_actor,
+                source_root=hroot,
             )
         except Exception as exc:
             writer.append(ZfEvent(
@@ -174,6 +175,7 @@ def dispatch_pending_self_repairs(
             req,
             repair_contract=repair_contract,
             repair_contract_ref=repair_contract_ref,
+            state_dir=state_dir,
         )
         from zf.runtime.sidecar_refs import write_sidecar_text
         briefing_ref = write_sidecar_text(state_dir,

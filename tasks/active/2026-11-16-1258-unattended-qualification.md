@@ -117,3 +117,9 @@ epoch5两Reader自检通过后因Docker沙箱拒绝正式abstained，随后再�
 epoch6载入f1f0b5c8后实际退出旁路误静止，18:06:36/58/18:07:03连续产生三份受控容器回执（F6坏参数仍失败），证明快路径已生效。F4记录reader_environment_busy后30秒释放租约，两Reader自动启动，没有监工释放/抢锁。
 
 新竞争缺陷：通用batch先重发Candidate，导致原Reader回执交接报“reader failure has been superseded”。为精确内核准入的candidate-verify abstained保留Reader恢复所有权，不再通用重发；旧超时/缺准入不受影响。24定向、107文件闭包1684通过/7跳过、sentinel53、mock10；真实旧事件只读重放不再生成该批重发checkpoint。尚未加载现场，保留运行中修复的基线。
+
+实际F6修复Worker正常退出但no_commit。其原生记录证明skill仅接受env/copied-config授权，未识别已准入kernel grant；合同scope/验证cwd还错误指向原harness。新增精确授权方法及隔离checkout合同绑定，回归先RED后GREEN；25定向、88文件影响闭包1339通过/2跳过，新增symlink/原仓验证拒绝回归另行验收。没有开启全局bypass，没有让Worker改写运行状态。
+
+epoch6后续仍失败：未经加载的旧通用重发与Reader采证竞争，最终12次probe预算用尽；自动诊断Planner针对更早Docker权限错误生成有界调查草案而未输出task_map。不能把token/model继承修复记为诊断成功；需要冻结新源码再做新资格轮。
+
+隔离合同最终定向27通过（含symlink/原仓验证拒绝）、sentinel53通过。影响闭包含相关恢复mock；未声称真实修复链已通过。
