@@ -62,3 +62,18 @@ def test_runtime_aggregate_publishes_infra_and_never_requests_plan(tmp_path):
     assert outcome.payload['failure_kind'] == 'infra'
     plans = plan_candidate_rework(events, max_attempts=2)
     assert plans == []  # Infrastructure is excluded from semantic candidate rework.
+
+
+def test_retry_quality_failure_does_not_inherit_previous_infrastructure_kind(tmp_path):
+    writer = EventWriter(EventLog(tmp_path / 'events.jsonl'))
+    context = FanoutContext.create(stage_id='verify', topology='fanout_reader', trace_id='run',
+        trigger_event_id='candidate', target_ref='sha', role_instances=['reader'])
+    writer.append(context.started_event())
+    identity = {'fanout_id': context.fanout_id, 'child_id': 'reader'}
+    writer.emit('fanout.child.failed', payload={**identity, 'failure_kind': 'infra',
+        'control_result_schema': 'verification-result.v1', 'semantic_verdict': 'abstained'})
+    writer.append(context.child_dispatched_event(context.expected_children[0], run_id='retry'))
+    writer.emit('fanout.child.failed', payload={**identity, 'control_result_schema': 'verification-result.v1',
+        'semantic_verdict': 'rejected'})
+    manifest = FanoutManifestProjector(tmp_path).rebuild(context.fanout_id, writer.event_log.read_all())
+    assert aggregate_failure_kind(manifest['children']) == ''

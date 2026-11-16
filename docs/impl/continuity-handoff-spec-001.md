@@ -461,3 +461,6 @@ Reader 必须审阅并以当前身份提交。宿主执行不等于 Provider san
 
 fixed-input repair 同样接入已有 operator_feedback→rework_feedback 绑定，保留操作员
 来源和请求事件。修复事实/证据位置进入后继Reader上下文；这不是预先批准其产品判决。
+
+分类为 attempt 局部结果：新派发及结果投影重置前次 schema/verdict/failure kind/class，
+防止一次 infra 失败污染后续真正的 rejected。重试质量拒绝负对照已覆盖。
