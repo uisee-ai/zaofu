@@ -23,3 +23,13 @@ R1-R5、R7代码/方法与定向回归已实施；R6采用现有受控host-assis
 最终影响闭包481文件：6032 passed, 8 skipped；serial10、sentinel53、mock E2E10；
 Web typecheck/unit通过。详情 reports/unattended-repair-20261116T1053Z/review.md。
 R8真实复验待固定代码后执行，因此任务暂不标done。
+
+## 真实复验中新增缺口
+
+实现提交593b0441（feat: bound reader recovery and separate diagnosis effects）。
+占用释放后9.85秒派发，两个Reader各激活一次，无反复挂起；lane-1真实结果准入，
+报告Docker/端口权限阻塞。lane-0误判候选输入绑定失效：已补充独立候选绑定证明，
+RED→GREEN；复用结果准入currentness，保留所有身份/摘要/冻结/取消检查。
+补充影响闭包756 passed/7 skipped，sentinel53/mock10通过。
+当前冻结候选d8088354在受控宿主路径完成测试、构建、Docker桌面及移动端断言，
+均退出0；明确记录operator_authorized_host，尚待新的Reader/Judge独立结论。

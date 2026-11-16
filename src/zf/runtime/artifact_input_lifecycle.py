@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+from zf.runtime.candidate_input_binding import current_candidate_input_binding
 
 from zf.runtime.plan_artifact_package import (
     admitted_plan_artifact_package_for_generation,
@@ -32,7 +33,8 @@ def input_lifecycle(manifest: Mapping[str, Any], events: Sequence[Any], *,
         if state_dir is not None and isinstance(authority, Mapping) and authority.get("attempt_domain") == "task":
             try:
                 valid = (_current_task_binding(state_dir, manifest, events)
-                         or _current_recovery_reader_binding(state_dir, manifest, events))
+                         or _current_recovery_reader_binding(state_dir, manifest, events)
+                         or current_candidate_input_binding(state_dir, manifest, events))
             except (OSError, ValueError):
                 return {**result, "status": "unknown", "reason": "task_binding_unavailable", "requires_rebind": True}
             if not valid:

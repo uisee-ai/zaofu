@@ -597,3 +597,9 @@ workspace-write exec 已调用 shell 成功。前置人工修复不计为无人�
 已认证的当前operation可按Task当前dispatch精确选择operation-v2 attempt lane，
 历史lane不能阻塞新代handoff接收。未绑定operation的恢复查询仍拒绝歧义。
 进程观测worker.runtime.observed不计为agent语义重复决策；真实worker重复决策检测保留。
+
+真实复验补充发现：候选Reader采用冻结候选合同，输入恢复却只检查普通Task派发，
+误报task_binding_changed。现从活跃operation及不可变request证明manifest身份，
+复用结果准入的候选currentness校验；冻结目标、子Task合同、sidecar摘要、取消和
+新attempt继续失效关闭。修复不授予执行权限，不允许读取旧代包替代当前包。
+定向影响闭包756 passed/7 skipped，sentinel53和mock10通过。
