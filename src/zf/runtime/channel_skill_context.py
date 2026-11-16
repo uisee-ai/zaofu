@@ -10,7 +10,7 @@ from zf.runtime.sidecar_refs import SidecarRefError
 
 def load_channel_skill_guidance(
     refs: list[dict[str, Any]], *, state_dir: Path,
-    project_root: Path | None, max_bytes: int = 65536,
+    project_root: Path | None, max_bytes: int = 98304,
 ) -> list[dict[str, str]]:
     roots = [(state_dir / "runtime-skills").resolve()]
     if project_root is not None:

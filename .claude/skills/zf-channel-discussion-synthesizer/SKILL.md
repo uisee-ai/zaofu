@@ -145,7 +145,7 @@ Task 创建和 Workflow 点火仍需 owner 单独发起。
 ## 完整 PRD 与可追溯评估
 
 完整 `prd_markdown` 先执行依赖技能的
-[正文阅读与审查](../zf-requirement-reconciliation/references/document-reading.md)，
+[正文阅读与审查](../zf-document-reading/SKILL.md)，
 以业务问题和交付行为开头，场景分段；原文位置与自检发现进入已有质量清单。
 
 执行 `zf-requirement-reconciliation` 的“五项质量闭环”：把来源基线、独立评审覆盖、

@@ -39,8 +39,12 @@ def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role
     assert actual.read_bytes() == (root / source / method / "SKILL.md").read_bytes()
     metadata = read_skill_metadata(actual, expected_name=method)
     assert metadata.name == method
+    if method == "zf-requirement-reconciliation":
+        companion = actual.parent.parent / "zf-document-reading/SKILL.md"
+        assert companion.read_bytes() == (root / "skills/zf-document-reading/SKILL.md").read_bytes()
+        assert "zf-document-reading" in metadata.dependencies
+        assert any(row["name"] == "zf-document-reading" and row["dependency_of"] for row in manifest["skills"])
     references = {
-        "zf-requirement-reconciliation": ("document-reading.md",),
         "zf-plan-task-map-contract": ("review-ports.md",),
         "zf-plan-execution-readiness": ("execution-consistency.md", "human-review.md", "epic-refinement.md",
                                         "bounded-spike.md", "cross-domain-obligations.md", "early-feedback.md",

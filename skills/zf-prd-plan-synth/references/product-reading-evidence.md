@@ -4,7 +4,7 @@
 不创建第二套合同。本文落实设计 205 的方法，真实读者与产品效果仍需独立验证。
 
 正文首屏、场景排版和评审证据共用
-[正文阅读与审查](../../zf-requirement-reconciliation/references/document-reading.md)，
+[正文阅读与审查](../../zf-document-reading/SKILL.md)，
 适用于完整 PRD 和 Plan，不仅是摘要字段。
 
 ## 阅读路径与同版修订

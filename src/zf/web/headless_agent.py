@@ -1615,8 +1615,11 @@ class KanbanHeadlessAgent:
         task_id: str,
         context: dict[str, Any],
     ) -> str:
+        from zf.web.headless_methods import document_method_context
+
         return "\n".join([
             "ZaoFu Kanban Agent turn",
+            document_method_context(),
             f"project_root: {self.project_root}",
             f"state_dir: {self.state_dir}",
             f"task_id: {task_id or ''}",
