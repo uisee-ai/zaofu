@@ -346,3 +346,22 @@ Docker Chromium 最终 28 项通过，保留实际页面业务断言及 trace/We
 
 回归覆盖 loader、首次与恢复 argv、配置身份变更、错误值与其他 Provider 拒绝、tmux 调用方。
 真实 PRD 实验使用独立 `/tmp/zf-minimal-prd-*` 项目，结果另记，不因开关实现宣称端到端通过。
+
+## 2026-11-16：v5 真实 PRD 集成验收续作
+
+按用户批准顺序先修复配置/Plan，再验证正常交付和故障接续。
+`tests/continuity_prd_fixture.py` 从当前 `zf-prd-v5.yaml` 派生隔离验收配置，
+保留 WRC/blocking、固定候选、Critic、人工 Plan 批准；两条 Impl/Verify lane，
+Terra High 与 workspace-write，各阶段和 Run 不设 token/执行时长上限，其他门禁保留。
+Reader 使用 dispatch 范围，工作区保持；基线实验关闭额外 resident 修复 Agent，
+不得将基线声明为已完成无人监工恢复。后续故障实验独立记录。
+
+实际派生配置复现 lane_role_template 不接受 sandbox；补齐共享 ProviderSessionConfig
+解析，保留非法值拒绝。Planner/Reviewer 方法补充浏览器命令、AC、owner/tier、
+实际阶段、证据路径和候选身份一致性；已知 locator 优先，避免反复索引遍历。
+语义判断仍在技能，运行时不按产品类型硬编码验收。
+
+验收记录见 `reports/continuity-prd-v5-20261116/`；沿用 B01–B07 active，
+真实流程或故障场景未通过前不得归档或声称完整规格通过。
+
+本批启动前定向验证：配置/lane生成/Reader轮换/技能分发179 passed；sentinel53 passed；Flow mock10 passed。沙箱命令和Docker Chromium启动通过，尚不等于真实PRD通过。自动planner因共享配置选择全量，采用显式闭包替代；一次误用skip-tier名称触发的全量进程已定向停止，未计为通过。
