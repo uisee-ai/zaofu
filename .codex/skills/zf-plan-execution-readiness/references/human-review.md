@@ -30,7 +30,7 @@ Task ID 与前置关系引用现有 Task Map，不重写全套验收矩阵。路
 
 ## 既有 execution_spec 的作者约定
 
-这是一种可选阅读表示约定，不是新的可派发 Task 合同。标准 PRD 新生成时应填写；
+这是既有可选端口的阅读表示约定，不是新的可派发 Task 合同。新完整 Plan 必须选择本文的结构化入口或下文精确 Markdown 入口；选择此端口时应填写；
 旧计划保持兼容，缺失明确显示为未映射，并提供同版原文；不得断言原文没有该内容。Task ID、AC ID、命令 ID 继续来自现有
 Task Map/矩阵。所有内容与本次 accepted_plan 一起提交到同一个 Plan Package。
 不把下列字段添加到 execution_spec 顶层，保持其 shared/tasks 分区合同：
@@ -68,7 +68,15 @@ Task Map/矩阵。所有内容与本次 accepted_plan 一起提交到同一个 P
 示例仅展示表达形式，不是任何项目需求。任务已有 body 字段必须保留；shared 的原有
 安全、集成和跨模块义务不能移入仅 UI 可见的未绑定文件。无需在 prose 中自填 run/
 revision/digest；由正式 Package 绑定身份。未启用 execution_spec 的路线可在既有
-Plan Markdown 内采用同样阅读层次，不为版式强加新 runtime 端口。
+Plan Markdown 内使用精确二级标题 `## Task Spec: <exact task_id>`，每个任务一次；
+业务标题另起段或三级标题。共享规则及准备/清理写在 `## Shared Spec`，各任务引用
+适用规则和自身责任。`### T-SAVE：标题` 或任务表不能被局部阅读器定位为独立规格。
+不为版式强加新 runtime 端口。结构化正文中的 schema_version 不能只放端口描述符，
+tasks 必须是数组；不要把 `{T-SAVE: {...}}` 当作合法分区。
+
+正文与决定登记逐 ID 对账后，再核对局部关联字段：决定用 `affected_task_ids`，
+或任务用 `decision_ids` / `prerequisite_decision_ids`。`affected_tasks` 不是消费者合同。
+完整原文和可选阅读正文应共享同一权威描述，不另抄一套容易漂移的规则。
 
 ## 条款覆盖与测试先行
 

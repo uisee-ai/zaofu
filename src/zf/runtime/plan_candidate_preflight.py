@@ -261,6 +261,19 @@ def evaluate_plan_candidate_preflight(
             _error(errors, "source_index_invalid", "source_index", message)
 
     if task_map:
+        from zf.runtime.source_index_gate import evaluate_source_index_gate
+
+        # Mirror writer admission before spending a Critic attempt. This is
+        # anchor presence only; semantic coverage remains the Critic's job.
+        source_gate = evaluate_source_index_gate(
+            task_items=[{**task, "task_id": task.get("task_id") or task.get("id")}
+                        for task in task_map.get("tasks", []) if isinstance(task, Mapping)],
+            source_index=source_index, findings=None,
+            harness_profile=str((writer_policy or {}).get("harness_profile") or ""),
+        )
+        if not source_gate.passed:
+            _error(errors, "source_index_gap", "source_index",
+                   f"{source_gate.note}: {', '.join(source_gate.missing_anchor_task_ids)}")
         errors.extend(plan_matrix_admission_errors(
             task_map=task_map,
             source_index=source_index,

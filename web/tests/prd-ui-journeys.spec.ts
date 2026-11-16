@@ -2,6 +2,8 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
+import { verifyPlanModuleReading } from "./support/prdPlanReading";
+
 import { prdOnlyOption, sameInvocation, terminalPlanningEvent } from "./support/prdJourneyPolicy";
 
 const journey = process.env.ZF_UI_JOURNEY;
@@ -331,6 +333,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
       writeFileSync(`${evidence}/${artifact.name}.json`, bytes);
     }
   }
+  await verifyPlanModuleReading(page, request, dialog, project, planId, evidence);
   if (process.env.ZF_UI_DELIVERY === "true") {
     const binding = { plan_id: planId, sha256: createHash("sha256").update(planBody.markdown).digest("hex") };
     writeFileSync(`${evidence}/preview-ready.json`, JSON.stringify(binding));

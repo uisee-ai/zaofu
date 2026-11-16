@@ -304,6 +304,7 @@ def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
     work_units = getattr(workflow, "work_units", None)
     split = getattr(work_units, "split_quality", None)
     return {
+        "harness_profile": str(getattr(workflow, "harness_profile", "") or ""),
         "role_closure": writer_role_policy(config),
         "execution": execution_policy(config),
         "candidate_quality_source": str(

@@ -443,3 +443,34 @@ Kernel于06:00:47 UTC发出 `run.goal.completed`。操作员续测状态为compl
 恢复证据见忽略目录 `reports/spec206-batches-20261113/evaluation.md`。
 
 最终补修验证：`dev-verify` 按两批明确路径与6个直接测试模块执行，Python **77 passed、1 skipped**；Web typecheck、完整Web unit、`npm run build` 通过；Docker `plan-human-review.spec.ts` **14/14**通过。未运行全量后端pytest。
+
+## 2026-11-16：真实模块阅读与机械准入修复
+
+`dev@1cd237bb` 的真实 Kanban/Channel 评测发现：两条流程均抵达 Plan Preview，
+但四个模块都退回任务描述；Kanban 的状态目录相对 source_index 被按项目根读取，
+在 Critic 批准后误拒，又消耗一轮 Planner/Critic。固定回归和原文渲染通过不能替代
+最终模块正文消费验证。
+
+修复边界：来源索引 IO 复用 `resolve_artifact_file`，遵守配置 state_dir 及既有别名；
+Planner 候选预检复用 strict/release 的来源锚点门，在 Critic 前返回缺口，baseline
+保留既有降级语义。声明 `task-scoped-plan-input.v1` 的端口描述符必须与实际正文
+schema 一致，避免缺 schema 被静默按旧整份输入消费；未声明的旧格式仍兼容。
+这是机械一致性检查，不判断业务覆盖或引入另一套 Task 合同。
+
+新完整 Plan 的逐任务阅读入口由主 task-map skill 明确：可选 execution_spec 的
+`tasks[].body.human_review.module_spec_markdown`，或同版 Markdown 的精确二级
+`## Task Spec: <task_id>`。共享行为及执行规则要有可解析的同版入口；决定关联使用
+`affected_task_ids` 或任务 decision_ids。Planner/Critic 对最终文件独立核对入口、
+实际开头与场景摘录；摘要、方法加载、预检通过均不等同语义批准。
+
+真实 UI 旅程现在逐个检查接纳 Task Map 中的模块，保留正文和截图，并拒绝描述回退。
+fixture 用例仍只是 mock；真实生成结果单列。历史已接纳产物不直接改写，修复须经
+新候选和正常评审。成本目标仍需合格增量样本、同条件对照及重复测量，不能把合法
+回退全量或机械重试减少直接报成已达 30%/50%。
+
+真实 Kanban 首轮仍产生无冒号的 `## Task Spec T-SAVE`，并被 Critic 接纳；
+浏览器新增断言如实拒绝其描述回退。阅读器因此兼容英文冒号、中文冒号及空格
+分隔的显式 Task Spec 标题，仍要求完整 Task ID、二级 AST 标题和唯一匹配。
+跨别名重复、未知 ID、带附加标题文字和代码块中的伪标题不获绑定。只引用作者
+原文，不改写已接纳工件、推断正文归属或补造规格；推荐生产格式仍为英文冒号。
+同一失败工件在修复后补做浏览器验证，原失败记录与生成版本独立保留。

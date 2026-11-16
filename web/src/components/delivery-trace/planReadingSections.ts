@@ -11,6 +11,7 @@ const titles = {
 };
 export type ReadingSection = ReturnType<typeof planDocumentSections>[number];
 const sharedTitle = /^(?:Shared Spec|共享 Task Spec)(?:\s*[：:].*)?$/;
+const taskTitle = /^Task Spec(?:\s*[:：]\s*|\s+)(\S+)\s*$/;
 export function planReadingSections(markdown: string) {
   const sections = planDocumentSections(markdown);
   const select = (pattern: RegExp) => sections.flatMap((section, index) => {
@@ -25,7 +26,7 @@ export function planReadingSections(markdown: string) {
   const first = sections[firstChapter];
   let end = firstChapter + 1;
   while (end < sections.length && sections[end].level > 2) end++;
-  const opening = first && !/^Task Spec:/.test(first.title) && !sharedTitle.test(first.title)
+  const opening = first && !taskTitle.test(first.title) && !sharedTitle.test(first.title)
     ? [{ ...first, content: sections.slice(firstChapter, end).map(section => section.content).join("") }] : [];
   return { opening, changes: select(titles.changes), overview: select(titles.overview), journeys: select(titles.journeys), pages: select(titles.pages), decisions: select(titles.decisions) };
 }
@@ -39,7 +40,7 @@ export function planTaskSpecifications(markdown: string, taskIds: string[]) {
   const shared: ReadingSection[] = [];
   sections.forEach((section, index) => {
     if (section.level !== 2) return;
-    const match = section.title.match(/^Task Spec:\s*(\S+)\s*$/);
+    const match = section.title.match(taskTitle);
     if (!match && !sharedTitle.test(section.title)) return;
     let end = index + 1;
     while (end < sections.length && sections[end].level > section.level) end++;
@@ -67,7 +68,7 @@ export function planTaskSpecifications(markdown: string, taskIds: string[]) {
   // Unassigned siblings may hold essential setup/restore details. Expose their
   // authored text without guessing which task owns it or extending task scope.
   const unassigned = sections.flatMap((section, index) => {
-    if (section.level !== 2 || sharedTitle.test(section.title) || /^Task Spec:/.test(section.title)) return [];
+    if (section.level !== 2 || sharedTitle.test(section.title) || taskTitle.test(section.title)) return [];
     let end = index + 1;
     while (end < sections.length && sections[end].level > section.level) end++;
     return [{ ...section, content: sections.slice(index, end).map(s => s.content).join("") }];

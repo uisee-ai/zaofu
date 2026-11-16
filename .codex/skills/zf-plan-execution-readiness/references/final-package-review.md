@@ -45,6 +45,20 @@ ID 集合，再逐 ID 核对状态及义务；在现有评审中记录两边位�
 本次行动问题列表才可以为空。只核对共同 ID 会漏掉整条缺失，不能据此声明全部一致。
 审批 gate 如出现在正文登记，也必须保持同一身份和原始状态；不把登记本身当作授权。
 
+## 最终阅读入口对账
+
+按 task-map contract 的两个现有入口逐任务检查最终序列化正文：execution_spec 的
+`tasks[].body.human_review.module_spec_markdown`，或同版完整 Markdown 中精确
+`## Task Spec: <task_id>`。描述、AC 表、存在某个 execution_spec 文件都不能替代完整
+模块入口。核对实际 body.schema_version / tasks 数组，不只读描述符；核对
+`affected_task_ids` / 任务 decision_ids，不只看全局决定数量。
+每片必须能定位适用的同版共享行为与准备/清理/证据交接规则，不把完整 Plan 复制进去。
+
+现有 review/findings/summary 中保留当前 ref/digest、实际首个内容块和代表场景短引文，
+再记录模块入口及共享引用的抽查位置、发现的缺口。即使 findings 没有问题，也在现有
+summary 或已有评审工件记录阅读依据；空 findings 和“独立全文已审”不是可核对摘录。
+语义不足定向返工，不给 runtime 增加“必须有某业务词”或最少字数门禁。
+
 ## 一个问题只登记一次
 
 在现有 findings/review 中保持稳定 `id`，绑定当前候选 digest、来源原句、冲突字段、

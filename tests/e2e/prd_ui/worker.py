@@ -64,7 +64,15 @@ AC-1 → test-command → `{command}`。
 验证层级 runtime；owner task_verify；证据 artifacts/readme-tests.json；当前 NOT_RUN。
 命令及产品测试在后续实施任务中创建，规划阶段不声称已经执行通过。
 
-## 任务与依赖
+## Task Spec: TASK-1
+
+### 保持 README 可读
+操作者从项目根目录运行 `cat README.md`，正常返回完整文件内容；缺失文件时返回非零
+退出码和明确错误。测试在临时目录创建存在/缺失前态，结束后清理临时目录，不写真实数据。
+先验证缺失分支的行为 RED，再实现并以同一断言取得 GREEN；本片负责完整 README 行为，
+独立 task_verify 按 AC-1/test-command 复核，规划时证据为 NOT_RUN。
+
+### 任务与依赖
 | Task | 范围 | 依赖 | Wave | 验收 | Verify |
 |---|---|---|---|---|---|
 | TASK-1 | README.md、tests/test_readme.py | 无 | 1 | AC-1 | task_verify/test-command |

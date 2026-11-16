@@ -91,6 +91,40 @@ ZaoFu plan stages have two output layers:
 Customer or project skills may influence domain judgment, but the machine
 contract is fixed. Do not rely on markdown-only task lists for dispatch.
 
+## Human reading entry contract
+
+For a newly authored complete Plan, give every exact Task ID a complete readable
+specification through one of the existing inputs below. A Task description,
+acceptance table or prose pointer to an unbound author file is not that entry.
+
+- With `execution_spec`: put `schema_version: "task-scoped-plan-input.v1"` in
+  the actual JSON **body**, not only the port descriptor. `tasks` is an array of
+  `{task_id, body}`; each `body.human_review.module_spec_markdown` contains the
+  owned behavior, exceptions and verification responsibilities. Preserve other
+  body fields. Shared behavior/setup/cleanup stays once in `shared`, with exact
+  same-version references and each consumer's applicable obligations.
+- Without that optional port: the bound complete Plan uses exactly one level-2
+  heading `## Task Spec: <exact task_id>` per Task. Put the Chinese business title
+  in the following paragraph or level-3 heading, not on that protocol heading.
+  Put common behavior and execution rules once under `## Shared Spec`, and name
+  the applicable rules in each Task Spec. `### T-1: title` is not an equivalent
+  reader entry. Do not add a new port merely for layout.
+- The full `task_map.owner_decision_items` associates decisions with existing
+  tasks through `affected_task_ids: ["T-1"]` (or task `decision_ids`). Do not
+  substitute `affected_tasks`; prose IDs alone do not establish the module link.
+
+For either entry, keep readable common clauses under `## Shared Spec` in the
+bound Plan when shared rules apply, so the module reader can show that same
+version. Structured shared inputs may reference those fixed clauses; do not
+invent divergent copies or hide preparation/cleanup in unreferenced siblings.
+
+Before submission, inspect the actual bound files: can each Task's entry and its
+shared rules be found using those exact keys/headings? Critic repeats this check
+on the current candidate and quotes one owned behavior and its shared reference
+in the existing review. Report missing/unreadable entries explicitly; do not
+approve them based on a good overview or a passed mechanical preflight. Semantic
+completeness remains an agent judgment, not a keyword or length gate.
+
 ## Required Artifacts
 
 For human Plan Preview, also follow the
