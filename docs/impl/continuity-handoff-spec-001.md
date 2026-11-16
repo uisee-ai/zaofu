@@ -419,3 +419,11 @@ recover task-impl/task-verify与当前身份进行结果准入。Impl自检与�
 不是 Impl 的 blocked。宿主入口仅在同身份已接纳 verification-result.v1 证明这个组合时
 允许独立 Verify 的探测；completed/abstained 不获得执行资格。RED复现后120项
 宿主/Impl重试/Verify重试/typed admission闭包通过；不改变产品 verdict。
+
+真实恢复后再现跨阶段交接缺口：Impl结果通过且回合结束，驻留进程仍占Task Workspace，
+独立Verify正确地被exclusive occupancy拒绝。新增 task_workspace_handoff 在实际
+Task-stage activation入口释放同Run/Task/map/binding、已准入settled且回合已结束的前任；
+任一活跃operation/attempt、回合后新活动、其他任务或身份不明均不获释放资格。
+沿用原生命周期服务保留session/workdir；随后原样检查真实占用，残留子进程仍阻塞。
+不靠降低idle阈值或豁免占用解决。6类正反例和调用方/生命周期/资源闭包81项通过，
+sentinel53通过；首次mock与真实继续情况见本轮报告，不能据单测宣称无人监工资格。
