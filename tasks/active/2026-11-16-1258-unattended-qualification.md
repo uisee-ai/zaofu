@@ -166,3 +166,6 @@ Candidate弃权提示完成73文件影响闭包：1183通过/1跳过/10失败，
 R7真实窗口在22:05连续产生build/test/browser三个125；此时另一Reader尚未结算，聚合失败直到22:06才出现，所以旧代际退场保护尚无继任事件可用。回归1RED/6反例通过；提取共用的严格回执解析，在等待聚合时暂停该operation剩余采证、继续其它operation。57定向通过/2host未选，追加不饿死其它operation断言，72文件影响闭包进行中。没有增加预算或放宽证据准入，尚未载入R7。
 
 聚合等待期采证保护完成72文件影响闭包1156通过，sentinel53通过，包含恢复/断点/交接mock E2E；新增其它operation不饿死断言已在闭包中通过。R7继续冻结原源码；F4资源延期与释放后派发已有事件证据。
+
+
+2026-11-16 22:25 UTC：R7 两业务任务独立 Verify 完成，但同候选的失败宿主回执没有进入 RM 语义诊断，Reader 多代重复，无 F6 自修复闭环。新增 host_probe_diagnosis 并接入 pending_failure_diagnoses：真实 fixture 先 1 RED/7 保护用例通过，补充成功退场、重复故障去重、成功后新故障用例后 12 通过；68 文件影响闭包 1121 passed，sentinel 53 passed，含 deterministic recovery mock E2E。R7 真实账本只读重放及完整 RM 投影均生成唯一 host-probe:evt-332ff15198a5 请求，preflight/policy passed；未改运行账本、未向冻结 R7 热加载补丁。R7 安排空档收尾判 FAILED，下一轮仍需真实 source repair→apply/reload→浏览器→Judge→goal 证明，不将离线测试标成无人验收通过。

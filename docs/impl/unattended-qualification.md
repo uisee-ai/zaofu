@@ -172,3 +172,6 @@ Worker援助请求沿用受控CLI的参数边界：单条`zf recover assistance 
 
 
 Reader失败回执还需覆盖聚合等待窗口：首个稳定、同策略、同operation、允许命令的非零退出回执出现后，剩余命令暂停，即使兄弟Reader尚未结算、aggregate failure还没产生。后续tick继续尝试原有受控交接，不抢先生成聚合失败，也不阻塞其它可执行operation。Task Pipeline、未知退出码、未稳定源码和无效绑定沿用原处理。
+
+
+宿主采证失败接入既有语义诊断：只消费具有 kernel started→completed 因果链、当前预授权策略摘要、不可变 receipt 摘要、manifest/operation/run/task/attempt 身份一致、稳定源码及允许命令的非零退出回执。每个 run/task/target 合并为一个待诊断请求；重复同目标 Reader 派发不算恢复，可信同命令成功回执解除该故障，新候选或目标终态使旧请求退场。诊断入口复用 Run Manager projection→resident 路由，由 agent 判定产品、依赖还是运行器原因；代码不按错误字符串直接授予源码修复，不新增第二套状态机。

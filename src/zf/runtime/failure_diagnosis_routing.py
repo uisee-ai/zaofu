@@ -31,7 +31,9 @@ def pending_failure_diagnoses(
         if triage.recommended_action == "request_diagnosis":
             latest[task_id] = index, event
     from zf.runtime.reader_wait_recovery import pending_reader_wait_diagnoses
-    actions = pending_reader_wait_diagnoses(events)
+    from zf.runtime.host_probe_diagnosis import pending_host_probe_diagnoses
+    actions = [*pending_reader_wait_diagnoses(events),
+               *pending_host_probe_diagnoses(state_dir, events, config)]
     for task_id, (index, event) in latest.items():
         if has_later_task_progress(events, index, task_id):
             continue
