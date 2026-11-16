@@ -17,6 +17,6 @@ def test_recovery_fact_wakes_only_after_consumed_cursor(kind):
 def test_bookkeeping_and_unknown_events_do_not_create_fast_feedback():
     rows = [ZfEvent(type=kind) for kind in (
         "run.manager.tick.started", "run.manager.tick.completed", "agent.usage",
-        "worker.heartbeat", "orchestrator.round.complete", "future.unclassified.fact",
+        "worker.heartbeat", "provider.turn.started", "orchestrator.round.complete", "future.unclassified.fact",
     )]
     assert not has_new_recovery_input(rows, "")

@@ -7,6 +7,7 @@ from zf.core.events.model import ZfEvent
 RECOVERY_INPUTS = frozenset({
     "runtime.action.attempt.completed",
     "workflow.operation.settled",
+    "provider.turn.closed",
     "worker.assistance.requested",
     "run.manager.agent.recommendation",
     "run.manager.reflect.completed",

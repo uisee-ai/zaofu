@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import zf.runtime.tick_services as tick_services
 from zf.core.config.schema import (
     AutoresearchConfig,
@@ -1005,7 +1007,8 @@ def test_standard_tick_services_pushes_run_manager_human_decision_card(
     assert "human-decision-approve:hdec-r5" in json.dumps(card, ensure_ascii=False)
 
 
-def test_bound_recovery_receipt_wakes_rm_before_supervisor_interval(tmp_path: Path):
+@pytest.mark.parametrize("event_type", ["runtime.action.attempt.completed", "provider.turn.closed"])
+def test_bound_recovery_receipt_wakes_rm_before_supervisor_interval(tmp_path: Path, event_type: str):
     state_dir = _state(tmp_path)
     orch = _FakeOrchestrator(state_dir, ZfConfig())
     state = TickServiceState(last_supervisor_inspection_at=100.0,
@@ -1014,7 +1017,7 @@ def test_bound_recovery_receipt_wakes_rm_before_supervisor_interval(tmp_path: Pa
     initial = ZfEvent(type="run.manager.tick.completed", actor="run-manager")
     orch.event_log.append(initial)
     state.last_run_manager_input_event_id = ""
-    receipt = ZfEvent(type="runtime.action.attempt.completed", origin="kernel",
+    receipt = ZfEvent(type=event_type, origin="kernel",
                       actor="run-manager", payload={"operation_id": "op-1"})
     orch.event_log.append(receipt)
     with patch("zf.runtime.tick_services._run_supervisor") as supervisor, \
