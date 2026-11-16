@@ -367,3 +367,5 @@ Reader 使用 dispatch 范围，工作区保持；基线实验关闭额外 resid
 本批启动前定向验证：配置/lane生成/Reader轮换/技能分发179 passed；sentinel53 passed；Flow mock10 passed。沙箱命令和Docker Chromium启动通过，尚不等于真实PRD通过。自动planner因共享配置选择全量，采用显式闭包替代；一次误用skip-tier名称触发的全量进程已定向停止，未计为通过。
 
 真实 v5 启动再现占用登记顺序缺口：tmux 先创建项目 cwd 的 shell，之后首次登记源依赖被正确的占用检查拒绝。`zf start` 现于 transport 初始化前登记源资源，不豁免持有者或清理保护。启动入口 RED 后78项启动/资源/环境闭包GREEN，sentinel53、Flow mock10通过；同一已接纳请求继续恢复，保留首次启动失败。
+
+真实v5 Planner首轮失败并非token/timeout：组合shell补丁触发保守写域拒绝，随后把$(sed...)作为字面补丁导致无效hunk。单独原生scratch更新已成功。保留guard，补planner方法：具体补丁、独立literal heredoc、产物与scratch分写；长文分段防截断。通过受控stage-replan-new-generation绑定原失败恢复，不冒充产品质量通过。
