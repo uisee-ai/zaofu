@@ -29,7 +29,11 @@ def configuration(root: Path, *, harness: Path) -> list[dict]:
             capacity=2, roleInstances=[f"{prefix}-lane-{i}" for i in range(2)],
         )
     cfg = controller["spec"]
-    cfg["project"] = {"name": root.name, "state_dir": ".zf"}
+    cfg["project"] = {
+        "name": root.name, "state_dir": ".zf",
+        # The fixture uses Node's built-in tests and the installed TS compiler.
+        "scripts": {"setup": "node --version && tsc --version"},
+    }
     cfg["session"] = {"tmux_session": root.name}
     cfg["profile_sources"] = [str(harness / p) for p in cfg["profile_sources"]]
     cfg["skill_sources"][0]["path"] = str(harness / "skills")
