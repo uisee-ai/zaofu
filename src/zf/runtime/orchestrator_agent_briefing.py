@@ -124,20 +124,26 @@ def build_orchestrator_agent_operation_briefing(
                     "exclusions": [],
                 },
                 "graph": {
-                    "work_units": [{"work_unit_id": "replace-with-task-or-stage"}],
+                    "work_units": [{
+                        "work_unit_id": "replace-with-unit-label",
+                        **({
+                            "task_ids": ["replace-with-plan-task-id"],
+                            "stage_ids": ["replace-with-configured-stage"],
+                        } if prepared.checkpoint == "pre_impl" else {}),
+                    }],
                     "edges": [],
                     "barriers": [],
                     "semantic_checkpoints": [],
                 },
                 "delegation": [{
-                    "work_unit_id": "replace-with-task-or-stage",
+                    "work_unit_id": "replace-with-unit-label",
                     "capability_refs": [],
                     "preferred_role_refs": ["replace-with-configured-role"],
                     "skill_refs": [],
                     "dispatch_rank": 0,
                 }],
                 "context_routes": [{
-                    "work_unit_id": "replace-with-task-or-stage",
+                    "work_unit_id": "replace-with-unit-label",
                     "required_sources": [],
                     "return_policy": "selective",
                 }],
@@ -193,6 +199,11 @@ def build_orchestrator_agent_operation_briefing(
                 "Graph/dependency changes require Planner revision and normal approval, "
                 "not new edges in this advisory execution plan."
             )
+            if prepared.checkpoint == "pre_impl":
+                output_rules.append(
+                    "- bind task_ids to existing Plan IDs. A stage label alone in "
+                    "work_unit_id is not a stage selector; declare stage_ids explicitly."
+                )
         elif prepared.checkpoint in {"stage_barrier", "pre_closeout"}:
             output_rules.append(
                 "- include `orchestration-result.v1`; every input result ref "

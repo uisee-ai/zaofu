@@ -51,3 +51,14 @@ B01–B06 的入口与安全边界已补齐第一批实现，B07 尚待真实 PR
 下一修复批次显式传达合同内的本地提交请求、说明已有精确 scratch 适配，且为 OA 正向结束回合但缺结果增加同检查点一次重投；暂停、终态、已准入结果及活动新回合均拒绝重投。RED 已复现，准备以修复后源码从原断点验证，不改写本轮失败历史。
 
 该批定向 136 + 33 passed；297 文件影响闭包 4212 passed / 9 skipped / 1 failed，唯一失败是已在 2137a567 复现的 wake 数量快照（194 vs 193），本批未修改 wake 集合。sentinel 53 与 mock E2E 10 通过。新增说明曾导致 12 KiB briefing 回归，已压缩说明后复测通过，没有放宽阈值。真实断点续跑仍待验收。
+
+`a686f199` 后的 epoch 3 确实自动重投、结算旧 OA operation，并继续 semantic_failure。
+OA 正式升级旧提交授权阻塞；它没有凭空推断新源码赋予权限。监工通过现有
+`zf recover task-impl` 对两项 settled blocked 操作先 preview 再 apply；两 Impl 已并行续跑。
+记录为人工介入，不记无人通过。真实 OS 诊断中断测试证实活 owner 保留、死 owner
+只关闭一次、dirty 修改保留、不重放命令；仍不能替代真实 Provider 整条修复链。
+
+旧 pre_impl 结果另因裸阶段 work_unit 被拒绝。补全结果模板的 task_ids/stage_ids，
+不降低 execution_task_outside_plan 门禁。RED→GREEN 定向 78 passed；相对已验证
+HEAD 的增量影响闭包 172 passed / 7 skipped、sentinel 53、mock E2E 10 passed。
+这次方法修正留给下一冻结轮次，未热改运行中的 epoch 3；B07 继续 active。

@@ -91,3 +91,7 @@ RecoveryCase 对 validate/apply 的成功保持 open，不能把中间步骤标�
 Plan/Critic 输入编译也必须从正式 `source_refs.source_ref` 物化原文，而不是只传带路径的
 Requirement 摘要。原文与需求快照同时绑定为 required 输入，保留各自摘要；后续源文件变化
 不改变已签发正文。受控需求修订继续按既有 amendment 规则替代旧权威输入。
+
+真实续跑还暴露了 OA 示例歧义：`work_unit_id` 是单元标识，不能用裸 `impl` / `verify`
+冒充阶段选择器。pre_impl 的结果模板现在展示 `task_ids` 与 `stage_ids`，要求引用
+已批准 Plan 的任务。仅改善生成方法；未知任务仍由原准入规则拒绝，不放宽权限。
