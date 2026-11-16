@@ -474,6 +474,9 @@ def _aggregate_contract_snapshot(
                 raise CandidateVerificationAuthorityError(
                     "candidate verification command digest collision"
                 )
+            tier = str(item.get("tier") or "integration")
+            if existing is not None and existing["tier"] != tier:
+                raise CandidateVerificationAuthorityError("same candidate command has conflicting verification tiers")
             command_ids[str(item.get("command_id") or "")] = aggregate_id
             row = commands_by_digest.setdefault(digest, {
                 "command_id": aggregate_id,
@@ -481,7 +484,8 @@ def _aggregate_contract_snapshot(
                 "command_digest": digest,
                 "acceptance_ids": [],
                 "owner": "candidate_verify",
-                "tier": "integration",
+                "tier": tier,
+                "producer_paths": [],
                 "deterministic": bool(item.get("deterministic", True)),
                 "reusable": False,
                 "timeout_seconds": int(item.get("timeout_seconds") or 0),
@@ -490,6 +494,8 @@ def _aggregate_contract_snapshot(
                 int(row.get("timeout_seconds") or 0),
                 int(item.get("timeout_seconds") or 0),
             )
+            row["producer_paths"] = _unique([*row["producer_paths"], *item.get("producer_paths", [])])
+            row["deterministic"] = row["deterministic"] and bool(item.get("deterministic", True))
             row["acceptance_ids"] = _unique([
                 *row.get("acceptance_ids", []),
                 *[
@@ -525,7 +531,8 @@ def _aggregate_contract_snapshot(
                 "text": f"[{child_task_id}] {statement}",
                 "mandatory": bool(item.get("mandatory", True)),
                 "verification_owner": "candidate_verify",
-                "verification_tier": "integration",
+                "verification_tier": str(item.get("verification_tier") or "integration"),
+                "producer_paths": list(item.get("producer_paths") or []),
                 "verification_command_ids": mapped_commands,
                 "source_task_id": child_task_id,
                 "source_acceptance_id": child_acceptance_id,
@@ -561,7 +568,7 @@ def _aggregate_contract_snapshot(
         "acceptance_criteria": criteria,
         "verification_command": str(commands[0]["command"] if commands else ""),
         "verification_commands": commands,
-        "verification_tiers": ["integration"],
+        "verification_tiers": _unique([str(row["tier"]) for row in commands]),
         "verification_owner": "candidate_verify",
         "verification_tier": "integration",
         "required_source_outputs": _unique(required_source_outputs),

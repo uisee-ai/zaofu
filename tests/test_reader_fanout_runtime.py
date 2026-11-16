@@ -1732,8 +1732,9 @@ def test_flow_discovery_aggregate_strips_invalid_gap_tasks(
     ]
 
 
+@pytest.mark.parametrize("explicit_goal", [False, True])
 def test_flow_discovery_aggregate_preserves_parent_goal_identity(
-    tmp_path: Path,
+    tmp_path: Path, explicit_goal: bool,
 ) -> None:
     _state_dir, log, _transport, orch = _state(tmp_path)
     stage = orch.config.workflow.stages[0]
@@ -1742,7 +1743,8 @@ def test_flow_discovery_aggregate_preserves_parent_goal_identity(
     stage.aggregate.child_failure_event = "flow.discovery.child.failed"
     stage.aggregate.success_event = "flow.discovery.completed"
     stage.aggregate.failure_event = "flow.discovery.failed"
-    _start_fanout(orch)
+    _start_fanout(orch, payload={"goal_id": "bound-goal"} if explicit_goal else {})
+    expected_goal = "bound-goal" if explicit_goal else "F-11111111"
     dispatched = next(
         event for event in log.read_all()
         if event.type == "fanout.child.dispatched"
@@ -1781,7 +1783,7 @@ def test_flow_discovery_aggregate_preserves_parent_goal_identity(
     assert completed.payload["workflow_run_id"] == "trace-1"
     assert completed.payload["pdd_id"] == "F-11111111"
     assert completed.payload["feature_id"] == "F-11111111"
-    assert completed.payload["goal_id"] == "F-11111111"
+    assert completed.payload["goal_id"] == expected_goal
     assert {
         item["key"] for item in completed.payload["identity_conflicts"]
     } == {"pdd_id", "feature_id", "goal_id"}
@@ -1804,7 +1806,7 @@ def test_flow_discovery_aggregate_preserves_parent_goal_identity(
     assert len(rebuilt) == 2
     assert rebuilt[-1].payload["rebuild_of"] == completed.id
     assert rebuilt[-1].payload["recovery_generation"] == 1
-    assert rebuilt[-1].payload["goal_id"] == "F-11111111"
+    assert rebuilt[-1].payload["goal_id"] == expected_goal
 
 
 def test_goal_identity_recovery_drill_rebuilds_legacy_aggregate_without_agent(

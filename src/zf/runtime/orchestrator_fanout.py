@@ -7540,89 +7540,10 @@ class FanoutCoordinationMixin(
             )
         return out
 
-    def _pin_reader_target_or_reject(
-        self,
-        *,
-        role: RoleConfig,
-        target_ref: str,
-        context,
-        child,
-        run_id: str,
-        causation_id: str,
-    ) -> bool:
-        """FIX-9/15①(bizsim r4 F9):reader child 派发前锁定审计对象。
+    def _pin_reader_target_or_reject(self, **kwargs) -> bool:
+        from zf.runtime.reader_target_dispatch import pin_reader_target_or_defer
 
-        stage 声明了 target_ref 但渲染为空 → 拒派发(r4 judge 五审即
-        审基线树);checkout/HEAD 校验失败 → 拒派发。锁定成功把
-        target_commit 写进 child payload 供 briefing/证据绑定消费。
-        """
-        config = getattr(self, "config", None)
-        workflow = getattr(config, "workflow", None)
-        stages = getattr(workflow, "stages", []) or []
-        stage = next(
-            (
-                s for s in stages
-                if getattr(s, "id", "") == context.stage_id
-            ),
-            None,
-        )
-        declared = str(getattr(stage, "target_ref", "") or "").strip() if stage else ""
-        cleaned = str(target_ref or "").strip()
-        reason = ""
-        pinned = ""
-        from zf.runtime.reader_target_binding import reader_checkout_ref
-
-        try:
-            cleaned = reader_checkout_ref(self.state_dir, child.payload or {}, cleaned)
-        except TaskContractSnapshotError as exc:
-            reason = f"target_binding_invalid: {exc}"
-        unrendered = "${" in cleaned or "{{" in cleaned
-        if not reason and declared and (not cleaned or unrendered):
-            reason = "target_ref_unresolved"
-            cleaned = "" if unrendered else cleaned
-        elif not reason and cleaned and not self._fanout_target_ref_is_project_path(cleaned):
-            from zf.runtime.workdirs import WorkdirManager
-
-            try:
-                pinned = WorkdirManager(
-                    state_dir=self.state_dir,
-                    project_root=self.project_root,
-                    config=self.config,
-                ).pin_reader_target(role, cleaned)
-            except Exception as exc:
-                reason = f"pin_failed: {exc}"
-        if reason:
-            failure_payload = {
-                "fanout_id": context.fanout_id,
-                "trace_id": context.trace_id,
-                "stage_id": context.stage_id,
-                "child_id": child.child_id,
-                "run_id": run_id,
-                "role_instance": role.instance_id,
-                "target_ref": cleaned,
-                "reason": reason,
-            }
-            self.event_writer.append(ZfEvent(
-                type="fanout.child.workdir_mismatch",
-                actor="zf-cli",
-                payload=failure_payload,
-                causation_id=causation_id,
-                correlation_id=context.trace_id,
-            ))
-            self.event_writer.append(ZfEvent(
-                type="fanout.child.failed",
-                actor="zf-cli",
-                payload={
-                    **failure_payload,
-                    "failure_class": "reader_workdir_mismatch",
-                },
-                causation_id=causation_id,
-                correlation_id=context.trace_id,
-            ))
-            return False
-        if pinned and isinstance(child.payload, dict):
-            child.payload["target_commit"] = pinned
-        return True
+        return pin_reader_target_or_defer(self, **kwargs)
 
     def _checkout_fanout_reader(self, role: RoleConfig, target_ref: str) -> None:
         if not target_ref:

@@ -28,6 +28,10 @@ class TaskWorkspaceError(RuntimeError):
     """A task workspace request is unsafe or no longer current."""
 
 
+class TaskWorkspaceBusyError(TaskWorkspaceError):
+    """Declared setup is waiting for live environment consumers to exit."""
+
+
 @dataclass(frozen=True)
 class TaskWorkspacePlan:
     workflow_run_id: str
@@ -193,19 +197,24 @@ class TaskWorkspaceManager:
                     str(project_path),
                     plan.base_commit,
                 )
-        provision_worktree_env(
-            project_path,
-            self.project_root,
-            self.config.runtime.workdirs.provision_paths,
-            bootstrap_uv_dev=True,
-        )
+        try:
+            provision_worktree_env(
+                project_path,
+                self.project_root,
+                self.config.runtime.workdirs.provision_paths,
+                bootstrap_uv_dev=True,
+            )
+        except TimeoutError as exc:
+            raise TaskWorkspaceBusyError(str(exc)) from exc
         setup = self.config.project.setup_script
         if setup:
             result = run_project_setup(project_path, setup, marker_dir=workdir,
                 setup_inputs=getattr(self.config.project, "setup_inputs", []),
+                setup_scope=self.config.project.setup_scope,
                 required_paths=self.config.runtime.workdirs.required_paths)
             if not result.ok:
-                raise TaskWorkspaceError(
+                error_type = TaskWorkspaceBusyError if result.waiting_for_resources else TaskWorkspaceError
+                raise error_type(
                     f"task workspace setup failed for {plan.task_id} "
                     f"(exit {result.exit_code}): {result.detail}"
                 )
@@ -440,6 +449,7 @@ def _component(value: str, *, limit: int = 64) -> str:
 __all__ = [
     "TASK_WORKSPACE_SCHEMA_VERSION",
     "TaskWorkspaceError",
+    "TaskWorkspaceBusyError",
     "TaskWorkspaceManager",
     "TaskWorkspacePlan",
     "TaskWorkspaceRemovalResult",

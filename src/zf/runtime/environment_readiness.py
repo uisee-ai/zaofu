@@ -17,8 +17,10 @@ def _receipt(worktree: Path, marker: Path) -> Path:
 
 
 def _snapshot(worktree: Path) -> dict:
+    from zf.runtime.shared_environment_setup import resource_epochs
+    epochs = resource_epochs(worktree)
     return {name: {'target': str((worktree / name).resolve()),
-                   'identity': path_identity(str(worktree / name))}
+                   'identity': path_identity(str(worktree / name)), 'epochs': epochs}
             for name in read_resource_paths(worktree)}
 
 
@@ -34,6 +36,8 @@ def setup_environment_matches(worktree: Path, marker: Path) -> bool:
 
 
 def invalidate_setup_environment(worktree: Path, marker: Path) -> None:
+    from zf.runtime.shared_environment_setup import invalidate_shared_setup
+    invalidate_shared_setup(worktree)
     _receipt(worktree, marker).unlink(missing_ok=True)
 
 

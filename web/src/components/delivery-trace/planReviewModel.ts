@@ -8,7 +8,7 @@ export function resolvePlanPreviewItem(preview: Pick<PlanPreview, "plan_id"> | n
 }
 
 export type Row = Record<string, unknown>;
-export const reviewPorts = ["task_map", "execution_spec", "source_inventory", "source_index", "coverage_ledger", "acceptance_matrix", "test_matrix"] as const;
+export const reviewPorts = ["task_map", "execution_spec", "source_inventory", "source_index", "coverage_ledger", "acceptance_matrix", "test_matrix", "product_acceptance_spec"] as const;
 export type ReviewPort = typeof reviewPorts[number];
 export type ReviewArtifacts = Partial<Record<ReviewPort, unknown>>;
 export const object = (value: unknown): Row => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
@@ -75,6 +75,7 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
     };
   });
   return { modules, decisions, goals: rows(map.goal_claims), groups: rows(map.modules), warnings,
+    acceptanceJourneys: rows(object(artifacts.product_acceptance_spec).user_journeys),
     overview: text(shared.overview_markdown), journeys: text(shared.journeys_markdown),
     pages: rows(inventory.pages), forms: rows(inventory.forms),
     pageCount: Array.isArray(inventory.pages) ? inventory.pages.length : null,

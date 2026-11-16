@@ -141,6 +141,7 @@ def test_clean_candidate_ship_merges_to_main_and_tags(tmp_path: Path):
 
     assert result.status == "completed"
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+    assert _git(tmp_path, "log", "-1", "--format=%s") == "feat: deliver verified product candidate"
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "candidate\n"
     assert _git(tmp_path, "rev-parse", "--verify", "pdd/F-11111111-final")
     assert any(event.type == "ship.completed" for event in log.read_all())

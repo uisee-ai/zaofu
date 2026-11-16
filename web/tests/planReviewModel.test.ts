@@ -10,6 +10,10 @@ assert.equal(legacy.modules[0].decisions.length, 1);
 assert.equal(legacy.pageCount, 1);
 assert.equal(legacy.formCount, 0);
 assert.equal(buildPlanReview({}).pageCount, null);
+const pas = buildPlanReview({ product_acceptance_spec: { user_journeys: [{ journey_id: "J1", title: "原始旅程", assertions: [{ assertion_id: "A1", statement: "保持原值" }] }] } });
+assert.equal(pas.acceptanceJourneys[0].title, "原始旅程");
+assert.equal(pas.overview, ""); // No inferred product synopsis or business grouping.
+assert.equal(pas.groups.length, 0);
 for (const malformed of [null, "invalid", [], { tasks: [null, 42, []] }]) assert.doesNotThrow(() => buildPlanReview({ task_map: malformed }));
 const rich = { shared: { human_review: { overview_markdown: "目标", journeys_markdown: "流程" } }, tasks: [{ task_id: "T1", body: { human_review: { module_spec_markdown: "业务规格", scenarios: [{ id: "S1", given: "库存10，原消耗3", when: "目标5", then: "库存8", acceptance_ids: ["AC1"], command_ids: ["VC1"], source_refs: ["spec.md#stock"] }, { id: "S2", acceptance_ids: ["AC-OTHER"] }] } } }] };
 const result = buildPlanReview({ task_map: { tasks: [task] }, execution_spec: rich });

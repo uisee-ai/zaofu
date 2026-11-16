@@ -8,6 +8,19 @@ async function openReview(page: import("@playwright/test").Page, request: import
   return page.getByRole("dialog", { name: "Plan preview" });
 }
 
+test("legacy overview renders bound goals and PAS without inventing a synopsis", async ({ page, request }) => {
+  const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-review-legacy`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await expect(dialog.getByRole("region", { name: "已绑定交付目标" })).toContainText("库存一致");
+  await expect(dialog.getByRole("region", { name: "已绑定产品验收旅程" })).toContainText("重复请求不重复结算且刷新保持库存");
+  await expect(dialog.getByText("本版尚未提供独立产品摘要，请结合完整原文确认范围。")).toBeVisible();
+  await expect(dialog.getByRole("region", { name: "按任务审阅" }).getByRole("button", { name: "修正库存" })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("bound-overview.png"), fullPage: true });
+  await dialog.getByRole("region", { name: "按任务审阅" }).getByRole("button", { name: "修正库存" }).click();
+  await expect(dialog.getByRole("combobox", { name: "审阅模块" })).toHaveValue("T-STOCK");
+});
+
 test("direct decision view loads the bound decision register without opening context first", async ({ page, request }) => {
   const dialog = await openReview(page, request);
   await dialog.getByRole("button", { name: "待决事项", exact: true }).click();

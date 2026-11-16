@@ -429,6 +429,12 @@ def _parse_project_setup_inputs(value: object) -> list[str]:
     return list(dict.fromkeys(value))
 
 
+def _parse_project_setup_scope(value: object) -> str:
+    if value not in ("workspace", "shared_resources"):
+        raise ConfigError("project.setup_scope must be workspace or shared_resources")
+    return str(value)
+
+
 def _parse_required_environment_paths(value: object) -> list[str]:
     if (not isinstance(value, list) or any(not isinstance(item, str) or not item.strip()
             or Path(item).is_absolute() or '..' in Path(item).parts or not Path(item).parts
@@ -2954,6 +2960,7 @@ def load_config(path: Path) -> ZfConfig:
             state_dir=project_data.get("state_dir", ".zf"),
             setup_script=_parse_project_setup_script(project_data),
             setup_inputs=_parse_project_setup_inputs(project_data.get("setup_inputs", [])),
+            setup_scope=_parse_project_setup_scope(project_data.get("setup_scope", "workspace")),
         ),
         session=_build_session(session_data),
         orchestrator=OrchestratorConfig(

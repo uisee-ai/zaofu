@@ -240,6 +240,15 @@ Plan Package. The configured reviewer checks semantic consistency; the UI only r
 content. Neither a page count nor repeated RED/GREEN prose proves clause
 coverage. Never rewrite admitted artifacts to improve presentation.
 
+Even a minimal PRD must provide an explicit approval synopsis, user journeys
+and business grouping before submission. Read `references/human-review.md`
+from the readiness skill, not only its index. If `execution_spec` is an enabled
+port, populate the existing `shared.human_review` fields; put authored groups
+in `task_map.modules` with exact task IDs. Otherwise provide these sections in
+the accepted Plan Markdown. Check the actual submitted files for omissions;
+a populated task list or PAS is not proof that the human synopsis exists.
+Critic reports missing presentation separately from missing product behavior.
+
 ## Task Design
 
 Split by end-to-end user journey, not by component-only layers. Each normal

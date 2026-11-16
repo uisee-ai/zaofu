@@ -465,7 +465,7 @@ class ShipService:
             self.project_root,
             "merge",
             "--no-ff",
-            "--no-edit",
+            "-m", "feat: deliver verified product candidate",
             target_ref,
         )
 

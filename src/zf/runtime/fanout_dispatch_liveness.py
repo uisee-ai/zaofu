@@ -819,7 +819,7 @@ class FanoutDispatchLivenessMixin:
         prompt_kind: str,
         reason: str,
         state: str,
-        alive: bool,
+        alive: bool | None,
         dispatchable: bool,
         causation_id: str | None,
     ) -> None:

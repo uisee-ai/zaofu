@@ -506,3 +506,52 @@ Run `minprd-v5-r2-015713` 在 05:26:54 UTC 产生内核事件
 待改进仍包括 Discovery 完整配置强制分页、pin/setup 占用未区分 infra、聚合 goal_id
 父子来源差异和自动 ship 的非 Conventional merge 标题。这些保留为问题，不能由正常闭环
 掩盖；原 B01–B07 仍按各自完整验收条件保持 active。
+
+## 2026-11-16：最小 PRD 复盘 P0–P2 修复
+
+本批对应 `tasks/done/2026-11-16-0559-prd-long-run-p0-p2.md`，沿用真实最小 PRD 发现的问题，不改写其旧事件、attempt 或
+交付提交。实现、回归过程和本地证据详见
+`reports/prd-long-run-p0-p2-20261116/review.md`。
+
+- **P0 环境等待**：Reader pin 的占用检查移至 prepare/checkout 前。临时占用记录
+  `fanout.child.dispatch_deferred` / `reader_environment_busy`，保持 pending，既有
+  level-triggered Reader 恢复入口继续尝试同一 fanout，控制器重建后也可恢复；不生成
+  产品失败或消耗语义返工次数。错误目标/真正 pin 失败仍拒派发并标记 infra。
+  仅 on-demand、无活跃 operation/turn/task/child 的受管 Reader 可以通过既有生命周期
+  服务休眠；未知占用者和存活子进程继续阻塞，不绕过真实资源检查。
+  Task Workspace 的 provision/setup 占用通过 `TaskWorkspaceBusyError` 接入
+  Task Pipeline 的 `waiting_for_environment`，避免误计为派发故障冷却。
+- **P0 共享 setup**：新增 `project.setup_scope`，默认 `workspace`，保留每工作区
+  可能产生本地文件的脚本行为。只有显式设置 `shared_resources` 才允许跨工作区复用；
+  该声明表示脚本的依赖输出均在声明的共享资源中，必须同时提供 setup 脚本、
+  `project.setup_inputs` 和 `runtime.workdirs.required_paths`。
+  setup_inputs 应包含安装脚本、依赖锁文件以及影响准备结果的工具版本/数据身份文件。
+  provision_paths 只负责接入路径，不独自证明准备完成。
+  复用收据核对脚本/输入摘要、逻辑声明、物理目标及实例，并绑定资源 mutation epoch。
+  原地安装、资源替换、输入变化及失败安装均使旧收据失效；失效时等待独占锁后准备。
+  首次准备应在消费者启动前完成；活跃消费者只允许复用合格收据，不能强行安装。
+  Reader、Task Workspace、Candidate 三个入口均接入该配置；Candidate 仅在显式共享
+  模式下允许复用，默认模式仍强制执行候选 setup。
+- **P0 候选合同保真**：聚合保留每条命令的 tier、producer_paths 和每条 AC 的
+  verification_tier。相同命令合并产物路径、保守保留非确定性；tier 冲突拒绝聚合。
+  Candidate 阶段本身的 owner/tier 仍为 `candidate_verify/integration`，这不覆盖
+  其下命令的 `e2e` 或 AC 的规范层级 `real_e2e`；旧快照不重写。
+- **P0 Goal 身份**：显式父 trigger/manifest 的 goal_id 优先于 pdd_id；仅父级未绑定
+  Goal 时采用旧 PDD 回退，不能把子报告/聚合投影中的别名提升为父级身份。
+  冲突仍显式记录；实时聚合和受控 aggregate rebuild 共用规则。
+- **P1 输入加载**：存在已批准精确 Flow 时，原始输入及 `critical-approved-flow`
+  保持完整必读，`approved-config-full` 留在同 attempt 的可检索源中，允许按需读取。
+  无精确 Flow 的旧流程仍要求完整配置；修复说明、原需求和其他阶段必读证据不减少。
+  只影响新 materialization，不修改已派发 attempt 或继承旧读收据。
+- **P1 Preview**：从同版不可变包读取 PAS，展示用户旅程和断言；旧 Plan 缺独立摘要时
+  展示已绑定 Goal，缺业务分组时提供任务目录，并明确标示缺项和“规划不等于通过”。
+  PRD synth 方法要求新 Plan 编写产品摘要、旅程、分组，三份技能同步；UI 不编造语义。
+- **P2 交付提交**：自动 Ship 的新产品 merge 使用
+  `feat: deliver verified product candidate`，保持 --no-ff、目标校验及冲突处理。
+
+验证分层：真实临时 Git/资源进程 + 确定性运行时调用链、契约门禁、mock 流程和 Docker
+Playwright。浏览器使用已有镜像 `mcp/playwright:latest`、独立端口 8003，保留业务断言、
+trace、截图及 WebM；fixture 正常退出时记录 simulation.done 并清理自有临时状态。
+本批修复不新增真实 Provider 故障矩阵结论：8+8 满载、跨 Provider 接力、Go、长时间无人
+监工资格及原 B01–B07 的剩余验收仍独立管理。持续由未知占用者持有的环境仍需等待或
+受控运维处理，不能通过强杀不明进程来宣称自愈成功。

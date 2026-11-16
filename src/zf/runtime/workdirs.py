@@ -78,8 +78,12 @@ class WorkdirManager:
             marker_dir=self.root / role.instance_id,
             setup_inputs=getattr(self.config.project, "setup_inputs", []),
             required_paths=self.config.runtime.workdirs.required_paths,
+            setup_scope=self.config.project.setup_scope,
         )
         if not result.ok:
+            from zf.runtime.environment_usage import EnvironmentInUse
+            if result.waiting_for_resources:
+                raise EnvironmentInUse(result.detail)
             raise RuntimeError(
                 f"workdir setup failed for {role.instance_id}"
                 f" (exit {result.exit_code}): {result.detail}"
@@ -463,6 +467,9 @@ class WorkdirManager:
         pinned = self._git(
             self.project_root, "rev-parse", f"{checkout_ref}^{{commit}}",
         ).strip()
+        from zf.runtime.environment_usage import assert_workspace_idle
+        if Path(plan.project_path).exists():
+            assert_workspace_idle(Path(plan.project_path))
         self.prepare(role)
         project_path = Path(plan.project_path)
         self._git(project_path, "reset", "--hard", "HEAD")

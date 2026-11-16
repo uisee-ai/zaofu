@@ -16,6 +16,7 @@ class ProjectConfig:
     # uv sync ...),kernel 只负责执行、超时、幂等与失败上浮。
     setup_script: str = ""
     setup_inputs: list[str] = field(default_factory=list)
+    setup_scope: str = "workspace"
 
 
 @dataclass

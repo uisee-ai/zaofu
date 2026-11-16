@@ -86,6 +86,7 @@ class ProjectSetupResult:
     ok: bool
     exit_code: int | None = None
     detail: str = ""
+    waiting_for_resources: bool = False
 
 
 def _setup_digest(worktree: Path, script: str, setup_inputs: list[str] | None = None) -> str:
@@ -129,6 +130,7 @@ def run_project_setup(
     force: bool = False,
     setup_inputs: list[str] | None = None,
     required_paths: list[str] | None = None,
+    setup_scope: str = "workspace",
 ) -> ProjectSetupResult:
     """Execute the project-declared setup script inside a fresh worktree.
 
@@ -138,9 +140,15 @@ def run_project_setup(
     setup 即为项目合约,失败必须上浮给调用方 fail-closed,不能静默降级。
     """
     script = (script or "").strip()
+    if setup_scope not in {"workspace", "shared_resources"}:
+        raise ValueError('invalid setup_scope')
+    if setup_scope == 'shared_resources' and not (script and setup_inputs and required_paths):
+        raise ValueError('shared setup requires script, setup_inputs and required_paths')
     try:
         register_environment_resources(worktree, required_paths or [])
-    except (OSError, ValueError, TimeoutError) as exc:
+    except TimeoutError as exc:
+        return ProjectSetupResult(ran=False, ok=False, detail=str(exc), waiting_for_resources=True)
+    except (OSError, ValueError) as exc:
         return ProjectSetupResult(ran=False, ok=False, detail=f'environment declaration unavailable: {exc}')
     if not script:
         return ProjectSetupResult(ran=False, ok=True, detail="no setup declared")
@@ -150,19 +158,34 @@ def run_project_setup(
             # Read-only reuse may coexist with workers; mutation still needs
             # the exclusive lock and rechecks inputs after acquiring it.
             with environment_in_use(worktree):
+                from zf.runtime.shared_environment_setup import shared_setup_matches
                 try:
-                    if (marker.read_text(encoding="utf-8").strip() == _setup_digest(worktree, script, setup_inputs)
+                    digest = _setup_digest(worktree, script, setup_inputs)
+                except (OSError, ValueError):
+                    digest = ""  # Recheck/invalidate under the mutation lock below.
+                if digest and setup_scope == 'shared_resources' and shared_setup_matches(
+                        worktree, digest):
+                    record_setup_environment(worktree, marker)
+                    atomic_write_text(marker, digest + '\n')
+                    return ProjectSetupResult(ran=False, ok=True, detail='shared setup receipt matches')
+                try:
+                    if (digest and setup_scope == "workspace"
+                            and marker.read_text(encoding="utf-8").strip() == digest
                             and setup_environment_matches(worktree, marker)):
                         return ProjectSetupResult(ran=False, ok=True, detail="setup marker matches")
                 except (OSError, ValueError):
                     pass
         with environment_mutation(worktree):
             with locked_path(marker, timeout_seconds=0):
-                return _run_locked_setup(worktree, script, marker, timeout_s, runner, force, setup_inputs)
+                result = _run_locked_setup(worktree, script, marker, timeout_s, runner, force, setup_inputs)
+                if result.ok and setup_scope == 'shared_resources':
+                    from zf.runtime.shared_environment_setup import record_shared_setup
+                    record_shared_setup(worktree, _setup_digest(worktree, script, setup_inputs))
+                return result
     except (TimeoutError, EnvironmentInUse):
-        return ProjectSetupResult(ran=False, ok=False, detail="environment in use or setup already in progress; retry after holders exit")
-    except OSError as exc:
-        return ProjectSetupResult(ran=False, ok=False, detail=f"setup lock unavailable: {exc}")
+        return ProjectSetupResult(ran=False, ok=False, detail="environment in use or setup already in progress; retry after holders exit", waiting_for_resources=True)
+    except (OSError, ValueError) as exc:
+        return ProjectSetupResult(ran=False, ok=False, detail=f"setup readiness unavailable: {exc}")
 
 
 def _run_locked_setup(

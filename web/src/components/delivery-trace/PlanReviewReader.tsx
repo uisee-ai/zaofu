@@ -9,6 +9,7 @@ import PlanMaterialCatalog from "./PlanMaterialCatalog";
 import { DecisionList, PlanSourceContext, SourceRefs } from "./PlanReviewDetails";
 import { buildPlanReview, relatedTasks, strings, text } from "./planReviewModel";
 import { usePlanArtifacts } from "./usePlanArtifacts";
+import { PlanBoundJourneys } from "./PlanBoundJourneys";
 import "./planReader.css";
 
 type View = "inputs" | "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "original" | "sources" | "materials";
@@ -70,11 +71,14 @@ export default function PlanReviewReader({ preview, projectId, onBodyRequested }
             <h2>本次交付与审批范围</h2>
             <p>{model.modules.length} 个任务 · {model.criterionCount} 个验收项 · {model.pageCount ?? "未提供"} 个页面 · {model.formCount ?? "未提供"} 类表单</p>
             {model.overview ? <MarkdownText key={`overview:${model.overview}`} content={model.overview} /> : <p>本版尚未提供独立产品摘要，请结合完整原文确认范围。</p>}
+            {!model.overview && model.goals.length > 0 && <section aria-label="已绑定交付目标"><h3>已绑定交付目标</h3>{model.goals.map((goal, i) => <p key={i}><strong>{text(goal.id || goal.goal_claim_id)}</strong> {text(goal.statement)}</p>)}</section>}
             <h3>业务旅程</h3>
             {model.journeys ? <MarkdownText key={`journeys:${model.journeys}`} content={model.journeys} /> : <p>本版尚未提供独立业务流程说明，请结合模块规格和完整原文审阅。</p>}
+            <PlanBoundJourneys journeys={model.acceptanceJourneys} />
             <details className="plan-review-card"><summary>完整交付目标（含工程约束）</summary>{model.goals.map((goal, i) => <p key={i}><strong>{text(goal.id)}</strong> {text(goal.statement)}</p>)}</details>
             <h3>业务与交付模块</h3>
             {model.groups.length > 0 ? model.groups.map((group, i) => <article className="plan-review-card" key={i}><h4>{text(group.title || group.name || group.module_id || group.id)}</h4><p>{text(group.description || group.summary)}</p>{strings(group.task_ids).map(id => <button className="delivery-action-button" type="button" key={id} onClick={() => selectTask(id)}>{model.modules.find(m => m.id === id)?.title || id}</button>)}</article>) : <p>本版未提供业务分组，可从模块规格查看各任务的用户行为。</p>}
+            {!model.groups.length && <section aria-label="按任务审阅"><h4>按任务审阅</h4>{model.modules.map(module => <button className="delivery-action-button" key={module.id} type="button" onClick={() => selectTask(module.id)}>{module.title || module.id}</button>)}</section>}
             <h3>待决事项与进入条件</h3><p>{decisionSummary}</p><DecisionList decisions={decisions} {...sourceProps} />
           </>}
           {!loading && view === "decisions" && <>

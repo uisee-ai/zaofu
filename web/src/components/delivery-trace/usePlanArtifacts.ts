@@ -15,7 +15,7 @@ export function usePlanArtifacts(preview: PlanPreview, projectId: string, detail
     const controller = new AbortController();
     const saved = cache.key === key ? cache.artifacts : {};
     const ports = JSON.parse(bindings) as Array<{ name: ReviewPort }>;
-    const names = ports.map(p => p.name).filter(name => (detailed || ["task_map", "execution_spec", "source_inventory"].includes(name)) && !(name in saved));
+    const names = ports.map(p => p.name).filter(name => (detailed || ["task_map", "execution_spec", "source_inventory", "product_acceptance_spec"].includes(name)) && !(name in saved));
     setErrors([]); setLoading(names.length > 0);
     void Promise.all(names.map(async name => {
       try {
