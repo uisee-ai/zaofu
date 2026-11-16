@@ -169,3 +169,6 @@ R7真实窗口在22:05连续产生build/test/browser三个125；此时另一Read
 
 
 2026-11-16 22:25 UTC：R7 两业务任务独立 Verify 完成，但同候选的失败宿主回执没有进入 RM 语义诊断，Reader 多代重复，无 F6 自修复闭环。新增 host_probe_diagnosis 并接入 pending_failure_diagnoses：真实 fixture 先 1 RED/7 保护用例通过，补充成功退场、重复故障去重、成功后新故障用例后 12 通过；68 文件影响闭包 1121 passed，sentinel 53 passed，含 deterministic recovery mock E2E。R7 真实账本只读重放及完整 RM 投影均生成唯一 host-probe:evt-332ff15198a5 请求，preflight/policy passed；未改运行账本、未向冻结 R7 热加载补丁。R7 安排空档收尾判 FAILED，下一轮仍需真实 source repair→apply/reload→浏览器→Judge→goal 证明，不将离线测试标成无人验收通过。
+
+
+R8 于22:54:11 UTC批准Plan，F1未提交测试保留、F2控制器6.094秒恢复、F3真实结果通知中断及F5重复请求无重放均命中。但自动诊断立即因harness本地Git身份缺失退出；产品仓库身份已设，诊断worktree实际共享harness/.git。该遗漏属于监工fixture准备，23:11:45记录FAILED后停止专属服务/观察器，保留dirty工作与证据；不归因于新补丁，不宣称无人通过。R9仍冻结caccacf8，新增双root去除临时作者变量后的身份预检，并通过实际共享worktree检查；23:15左右重新进入扫描，资格尚未开始。原PRD、浏览器、F1–F6、2+2和12次预算不变。

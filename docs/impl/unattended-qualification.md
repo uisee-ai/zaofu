@@ -175,3 +175,6 @@ Reader失败回执还需覆盖聚合等待窗口：首个稳定、同策略、�
 
 
 宿主采证失败接入既有语义诊断：只消费具有 kernel started→completed 因果链、当前预授权策略摘要、不可变 receipt 摘要、manifest/operation/run/task/attempt 身份一致、稳定源码及允许命令的非零退出回执。每个 run/task/target 合并为一个待诊断请求；重复同目标 Reader 派发不算恢复，可信同命令成功回执解除该故障，新候选或目标终态使旧请求退场。诊断入口复用 Run Manager projection→resident 路由，由 agent 判定产品、依赖还是运行器原因；代码不按错误字符串直接授予源码修复，不新增第二套状态机。
+
+
+隔离验收的Git身份预检须覆盖两个仓库：产品仓库与实际运行的harness仓库。Autoresearch诊断worktree共享harness的Git公共元数据，只设置产品仓库身份仍会导致Flow source preparation失败。部署者须在相应仓库明确配置认可的本地作者/提交者身份；服务启动前在移除临时GIT_AUTHOR_*/GIT_COMMITTER_*变量的环境中分别执行git var GIT_AUTHOR_IDENT和git var GIT_COMMITTER_IDENT。不得为通过验收修改全局Git配置，也不得把仅本次命令的-c user.name/user.email误当成持久服务配置。临时共享worktree可验证继承，检查干净后移除。预检失败应在资格开始前处理；运行期间补配置必须记录该轮资格失败。
