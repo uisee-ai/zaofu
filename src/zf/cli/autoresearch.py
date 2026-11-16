@@ -921,8 +921,18 @@ def _run_loop(args) -> int:
         worktree=args.worktree,
         parent_state_dir=parent_state_dir,
         max_iterations=args.max_iterations,
-        budget_usd=args.budget_usd,
+        budget_usd=min(
+            [args.budget_usd] + [cap for cap in (
+                (parent_limits.cost_budget_usd, context.config.global_budget_usd)
+                if parent_limits is not None else ()
+            ) if cap is not None and cap > 0]
+        ),
         token_budget=parent_limits.token_budget if parent_limits is not None else None,
+        role_provider_settings={
+            role.name: {"backend": role.backend, "model": role.model,
+                        "model_reasoning_effort": role.model_reasoning_effort}
+            for role in (context.config.roles if parent_limits is not None else [])
+        },
         output_dir=output_dir,
         reflect_backend=args.reflect_backend,
         fix_wait_strategy=args.fix_wait_strategy,

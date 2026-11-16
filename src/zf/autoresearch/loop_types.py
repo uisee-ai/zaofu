@@ -19,6 +19,7 @@ class LoopConfig:
     max_iterations: int = 10
     budget_usd: float = 200.0
     token_budget: int | None = None
+    role_provider_settings: dict[str, dict[str, str]] = field(default_factory=dict)
     output_dir: Path | None = None
     reflect_backend: str = "claude-code"
     fix_wait_strategy: str = "head_change"   # head_change | manual | none

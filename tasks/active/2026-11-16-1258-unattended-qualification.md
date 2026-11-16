@@ -105,3 +105,7 @@ R4两业务任务于17:38前均独立Verify通过并done，Candidate冻结6d3022
 AR自动诊断在22分钟后被模板重新引入的10000000 token预算阻断，0/1修复完成；计量10010424中9525632为缓存读取，不能称为同时上下文长度。父流程明确token_budget=0。自动诊断保留dirty工作树，未输出可应用补丁；修复与原业务续跑的全链仍未验收。
 
 归档占用修复提交68b46c81，真实R4事件离线重放确认两lane均无残留回合。诊断token继承回归先RED（三处缺口）后GREEN，0/正数/未指定及无关状态目录均覆盖；49定向（新增参数后）、155文件增量调用闭包1890通过，sentinel53通过。仅继承归属校验后的run token预算，不放宽其他权限。B07保持active，尚无最终Candidate/Judge通过证据。
+
+epoch5于17:50:59通过本轮隔离harness合并已验证源码并重启控制器/AR sidecar，仍保留F6坏参数。两Candidate Verify随即自动派发，证明归档卡点断点恢复；产品dev仍为seed而Candidate分支保持6d3022d8，未提前Ship。F4目标改为实际verify-lane-0，独立冻结epoch5脚本和摘要，不改原资格脚本。
+
+另修复诊断子流程模型/美元上限偏移：同名同backend仅继承model/effort，单次费用上限取父配置与loop最小正上限；不传递产品权限。两RED后51定向、156文件影响闭包1892通过、sentinel53通过。真实R4配置只读CLI重放确认Astra/High规划、Terra/High实施验收、token0、费用40；run_loop被捕获而未实际执行，不算诊断成功。

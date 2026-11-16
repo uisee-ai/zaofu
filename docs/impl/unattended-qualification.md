@@ -132,3 +132,5 @@ Autoresearch loop 的单次内部 runner 继承 loop 已指定的 budget_usd，�
 Task Pipeline 终态归档已终止 transport、轮换 session 后，会产生内核 `role.lifecycle.suspended`（reason=task_stage_session_archived，preserve_session=false）。Provider 回合重放必须关闭该实例在此事件之前的残留回合，否则 Candidate Verify 被 provider_turn_active 永久阻挡。只接受内核 orchestrator 的这一销毁事件；保留会话、其他实例/原因及后续新回合均不受影响。终止失败且进程仍活跃时仍保持占用。
 
 resident 启动的 loop 若解析到的控制面配置确实拥有 parent_state_dir，则继承其 workflow.run_limits.token_budget，经 LoopConfig 与内部 runner 显式传递。0 是有效的不限值，不能通过 truthiness 回退到模板的10000000；未指定父配置或状态目录不匹配的独立实验仍保留模板限制。此变更不复制产品的宿主命令、文件发布或修复权限，成本与超时限制也不因此关闭。
+
+同一归属校验也用于诊断执行参数：loop 的单次美元上限不超过父 workflow/global 已配置的正数上限；同名且同 backend 的角色继承显式 model 与 model_reasoning_effort。不同 backend 或未指定模型保留模板设置。仅复制这两个执行参数，不复制工具、写入路径、凭据或发布策略。该上限仍不是跨多次诊断的剩余额度账本，不能用未定价的0美元记录宣称成本已准确约束。

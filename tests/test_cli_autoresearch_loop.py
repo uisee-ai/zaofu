@@ -267,6 +267,7 @@ def test_real_iteration_reports_its_own_state_before_config_cleanup(tmp_path, mo
     def run(cfg):
         assert cfg.budget_usd == 7.5  # Never expand to the inner runner's $500 default.
         assert cfg.token_budget == 0
+        assert cfg.role_provider_settings == {"planner": {"backend": "codex", "model": "gpt-6-astra"}}
         return result
     monkeypatch.setattr(loop_iteration, "run_autoresearch", run)
 
@@ -282,7 +283,8 @@ def test_real_iteration_reports_its_own_state_before_config_cleanup(tmp_path, mo
     monkeypatch.setattr(loop_iteration, "cleanup_autoresearch_run", lambda *a, **kw: config.unlink())
     outcome = cli._real_autoresearch_fn(
         scenario="controlled-stuck-recovery", run_id="test",
-        cfg=LoopConfig(worktree=worktree, parent_state_dir=tmp_path / "parent", budget_usd=7.5, token_budget=0),
+        cfg=LoopConfig(worktree=worktree, parent_state_dir=tmp_path / "parent", budget_usd=7.5, token_budget=0,
+                       role_provider_settings={"planner": {"backend": "codex", "model": "gpt-6-astra"}}),
     )
     assert outcome["state_dir"] == str(state)
     assert outcome["tasks_done"] == 0

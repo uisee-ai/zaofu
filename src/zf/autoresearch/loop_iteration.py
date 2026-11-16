@@ -31,6 +31,7 @@ def run_iteration(*, scenario: str, run_id: str, cfg: LoopConfig) -> dict:
         diagnostic_context=cfg.seed_text,
         budget_usd=cfg.budget_usd,
         token_budget=cfg.token_budget,
+        role_provider_settings=cfg.role_provider_settings,
     )
     try:
         result = run_autoresearch(ar_cfg)

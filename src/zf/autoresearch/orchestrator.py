@@ -15,7 +15,7 @@ import shlex
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -79,6 +79,7 @@ class AutoresearchRunConfig:
     timeout_seconds: int | None = None
     budget_usd: float = 500.0
     token_budget: int | None = None
+    role_provider_settings: dict[str, dict[str, str]] = field(default_factory=dict)
     confirm: bool = False
     reuse_worktree: bool = False
     keep_running: bool = False
@@ -229,6 +230,13 @@ def _apply_autoresearch_controller_overrides(
         f"zf-autoresearch-{run_id}"
     )
     data["global_budget_usd"] = cfg.budget_usd
+    for role in data.get("roles", []):
+        selected = cfg.role_provider_settings.get(role.get("name", ""), {})
+        if selected.get("backend") != role.get("backend"):
+            continue
+        for key in ("model", "model_reasoning_effort"):
+            if selected.get(key):
+                role[key] = selected[key]
 
     # The outer Autoresearch process owns diagnosis and consumption. Starting
     # another executing resident inside an experiment can recursively create
