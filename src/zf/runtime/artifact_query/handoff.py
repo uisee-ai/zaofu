@@ -157,6 +157,11 @@ class CanonicalHandoffResolver:
                 else []
             )
             mutable["artifact_refs"] = [*artifact_refs, *route_sources]
+        from zf.runtime.reader_replan_feedback import repair_input_refs
+        artifact_refs = mutable.get("artifact_refs")
+        mutable["artifact_refs"] = [*(artifact_refs if isinstance(artifact_refs, list) else []), *repair_input_refs(
+            self.state_dir, mutable, workflow_run_id=workflow_run_id,
+            task_id=task_id, source_event_id=source_event_id)]
         reader_inputs = reader_stage_input_refs(
             mutable,
             stage_id=str(authority_contract.get("stage_id") or ""),

@@ -464,3 +464,10 @@ fixed-input repair 同样接入已有 operator_feedback→rework_feedback 绑定
 
 分类为 attempt 局部结果：新派发及结果投影重置前次 schema/verdict/failure kind/class，
 防止一次 infra 失败污染后续真正的 rejected。重试质量拒绝负对照已覆盖。
+
+真实派发复核纠正上述接线边界：仅写rework_feedback事件仍不足，source-manifest模式不会
+把inline trigger正文直接交给Reader。CanonicalHandoffResolver现将修复说明和原始来源
+落为不可变reader-repair-context sidecar，以critical-reader-repair-context登记为完整必读
+输入，并纳入source snapshot摘要。大正文仍按既有分页读取；当前已派发attempt不修改。
+下一代须重新读取，既有读收据不因消息相似而继承。已用真实resolver→manifest→required
+read→正文读取链路验证，而非仅断言恢复事件携带字段。

@@ -38,3 +38,24 @@ def bind_operator_feedback(trigger: ZfEvent, feedback: list[str], *, request_id:
         *({'message': text, 'source': 'operator', 'source_event_id': request_id}
           for text in feedback),
     ]
+
+
+def repair_input_refs(state_dir, payload: Mapping[str, Any], *, workflow_run_id: str,
+                      task_id: str, source_event_id: str) -> list[dict[str, Any]]:
+    """Pin repair feedback before context compaction removes inline trigger bodies."""
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+    trigger = payload.get('trigger_payload')
+    trigger = trigger if isinstance(trigger, Mapping) else {}
+    fields = {key: payload.get(key) or trigger.get(key) for key in (
+        'rework_feedback', 'operator_feedback', 'repair_reason', 'repaired_failure_event_id',
+    )}
+    if not any(fields.get(key) for key in ('rework_feedback', 'operator_feedback', 'repair_reason')):
+        return []
+    descriptor = write_immutable_json_sidecar(state_dir, {
+        'schema_version': 'reader-repair-context.v1', 'workflow_run_id': workflow_run_id,
+        'task_id': task_id, 'source_event_id': source_event_id, **fields,
+        'authority': 'Recovery context only; preserve provenance, independently evaluate evidence and the current contract.',
+    }, root='reader-repair-context', kind='reader_repair_context', schema_version='reader-repair-context.v1',
+        created_by='canonical-handoff-resolver', source_event_id=source_event_id)
+    return [{**descriptor, 'source_id':'critical-reader-repair-context', 'allowed_paths':['$']}]
