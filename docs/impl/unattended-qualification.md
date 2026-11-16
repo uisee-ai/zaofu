@@ -164,3 +164,8 @@ Reader采证失败快速交接：同一operation、授权策略、稳定目标�
 失败采证交回Reader后，旧代际必须退出后续采证队列：仅由同Run、同fanout派发及失败绑定的kernel candidate.ready继任事实证明已交接。单纯action请求、Worker自报或其它Run/失败不构成完成。旧代际跳过后继续检查新代际，不占住每tick一次副作用的队首；新Reader仍承担全部未验证命令，预算不增加。
 
 Worker援助请求沿用受控CLI的参数边界：单条`zf recover assistance request`的引号内question/tried是字面数据，其中提及rm、write_text不视为执行删除或Python写入。仅此确定子命令纳入已有结果提交识别路径；真实shell替换、组合、管道、重定向仍进入原守卫，CLI自身operation/attempt/lease授权不变。
+
+
+### Candidate 环境弃权的提交指引
+
+环境/Provider失败导致未进行产品验收时，使用execution_status=failed、verdict=abstained，保留真实故障及可用工具证据，省略product_acceptance_report及其ref/digest；空模板并非合法的产品报告。若已提供报告，仍校验所有必需身份、旅程、断言与证据。预校验针对这组明确状态补充可执行提示，不替Worker判断产品语义、不修改scratch、不放宽通过门禁。恢复后仍必须完成独立产品验收。R7曾自行补齐失败证据并准入，说明不是永久死锁；该改动减少误入完整报告分支的往返。

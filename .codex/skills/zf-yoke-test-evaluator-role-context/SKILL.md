@@ -183,6 +183,15 @@ amendment are separate role capabilities supplied by the workflow profile.
 
 When Candidate Verify receives a current `product_acceptance_spec`:
 
+- If an execution failure prevented product evaluation, submit exactly
+  `execution_status: failed` + `verdict: abstained`, retain the actual failure
+  and available tool evidence, and omit `product_acceptance_report`,
+  `product_acceptance_report_ref`, and `product_acceptance_report_digest`.
+  Remove any unperformed report template already in scratch; an empty object,
+  null, or blocked rows with invented assertion evidence are not substitutes.
+  This reports an external wait, not product acceptance. If a product report is
+  supplied, all its identity and evidence checks still apply. After recovery,
+  independently complete the full mandatory product evaluation below.
 - 以派发的 `output_profile_id=candidate-verify` 识别产品验收义务。兼容流程的任务快照
   可能仍绑定 `verification_owner=task_verify`；保持该不可变身份及任务矩阵责任，
   同时完成独立的 `product_acceptance_report`。任务行的 `not_applicable` 不豁免
