@@ -143,3 +143,9 @@ R5自动诊断rmar-4e7a7c2b0089完成Scan/Planner/Critic，但OA读取234063字�
 R6规划及Critic通过，OA在真实$.config读取后正式adopt实施图。审批前复核R4原回执确认同一坏Docker参数下仍跑完build/test/browser，浪费有限采证预算；两项RED复现部分失败回执不能交接。新增失败快速交回Reader，成功仍需完整命令集；保持12次上限，不跳过未跑的业务断言。定向30通过/2host未选，追加无关命令否定用例，影响闭包进行中。
 
 失败快速交接完成6文件影响闭包与sentinel（包含stale-contract handoff mock），不把未跑命令记为通过；R6 Plan仍未批准，无运行中的operation，准备在资格前加载最终修正。
+
+R6已于20:13:41 UTC正式批准同版Plan（evt-259b07412402），资格冻结7fe59dae。审批前载入失败快速交接，审阅两任务/八项AC/七端口及独立Critic、OA adopt，启动预定义F1–F6观察器。产品与无人恢复均尚未通过；资格中临时恢复介入计数从0开始。
+
+R6两Task已于20:37前独立Verify并done，Candidate冻结后按预案注入单处Docker参数故障，两Candidate Reader自主启动。另复现已完成Task的resident诊断审批未退场：校正测试fixture为真实kernel origin后，旧实现仍2RED；修正后80定向通过，另加派发来源保护并启动78文件影响闭包。真实R6只读重放已不再把旧evt-132fcc0093a2列为pending，实时运行未载入修正，不把重放视为本轮通过。
+
+旧诊断退场修正完成78文件增量影响闭包1199通过（含恢复mock）、sentinel53通过。派发身份保护补充在闭包中通过；该修正仅在开发worktree，未载入R6，不改写资格结果。
