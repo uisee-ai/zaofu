@@ -109,3 +109,5 @@ AR自动诊断在22分钟后被模板重新引入的10000000 token预算阻断�
 epoch5于17:50:59通过本轮隔离harness合并已验证源码并重启控制器/AR sidecar，仍保留F6坏参数。两Candidate Verify随即自动派发，证明归档卡点断点恢复；产品dev仍为seed而Candidate分支保持6d3022d8，未提前Ship。F4目标改为实际verify-lane-0，独立冻结epoch5脚本和摘要，不改原资格脚本。
 
 另修复诊断子流程模型/美元上限偏移：同名同backend仅继承model/effort，单次费用上限取父配置与loop最小正上限；不传递产品权限。两RED后51定向、156文件影响闭包1892通过、sentinel53通过。真实R4配置只读CLI重放确认Astra/High规划、Terra/High实施验收、token0、费用40；run_loop被捕获而未实际执行，不算诊断成功。
+
+实际恢复延迟还复现为tick结构缺陷：Run Manager事件判定嵌在300秒Supervisor门内，使有限发布/采证每步等待完整巡检周期。新增有限机械恢复事件快路径，仍复用原Run Manager事务与消费游标；回归先RED（105秒无调用）后GREEN，证明无需触发Supervisor且记账事件不反馈自激。31定向、24文件影响闭包412通过/7跳过、sentinel53、mock flow-smoke10通过；当前仅离线验证，加载后还需实际回执时序验证。

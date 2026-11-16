@@ -134,3 +134,5 @@ Task Pipeline 终态归档已终止 transport、轮换 session 后，会产生�
 resident 启动的 loop 若解析到的控制面配置确实拥有 parent_state_dir，则继承其 workflow.run_limits.token_budget，经 LoopConfig 与内部 runner 显式传递。0 是有效的不限值，不能通过 truthiness 回退到模板的10000000；未指定父配置或状态目录不匹配的独立实验仍保留模板限制。此变更不复制产品的宿主命令、文件发布或修复权限，成本与超时限制也不因此关闭。
 
 同一归属校验也用于诊断执行参数：loop 的单次美元上限不超过父 workflow/global 已配置的正数上限；同名且同 backend 的角色继承显式 model 与 model_reasoning_effort。不同 backend 或未指定模型保留模板设置。仅复制这两个执行参数，不复制工具、写入路径、凭据或发布策略。该上限仍不是跨多次诊断的剩余额度账本，不能用未定价的0美元记录宣称成本已准确约束。
+
+恢复调度的快路径与周期巡检分开：新的受控副作用回执、operation结算、assistance、RM建议/反思及诊断终态，可在下一次标准tick触发既有Run Manager事务，不再先等待300秒Supervisor巡检。沿用已消费事件游标、终态静止检查及原动作授权；RM自身tick记账、usage/heartbeat和未知事件不进入快路径（未知事件仍由周期巡检处理）。每次事务仍只执行原先允许的有限副作用，不能因加速而重放已完成命令。

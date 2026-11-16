@@ -1003,3 +1003,26 @@ def test_standard_tick_services_pushes_run_manager_human_decision_card(
     assert transport.sent_messages[0].msg_type == "interactive"
     assert "Run Manager 人工决策" in json.dumps(card, ensure_ascii=False)
     assert "human-decision-approve:hdec-r5" in json.dumps(card, ensure_ascii=False)
+
+
+def test_bound_recovery_receipt_wakes_rm_before_supervisor_interval(tmp_path: Path):
+    state_dir = _state(tmp_path)
+    orch = _FakeOrchestrator(state_dir, ZfConfig())
+    state = TickServiceState(last_supervisor_inspection_at=100.0,
+                             last_run_manager_tick_at=100.0)
+    intervals = TickServiceIntervals(supervisor_inspection_s=300)
+    initial = ZfEvent(type="run.manager.tick.completed", actor="run-manager")
+    orch.event_log.append(initial)
+    state.last_run_manager_input_event_id = ""
+    receipt = ZfEvent(type="runtime.action.attempt.completed", origin="kernel",
+                      actor="run-manager", payload={"operation_id": "op-1"})
+    orch.event_log.append(receipt)
+    with patch("zf.runtime.tick_services._run_supervisor") as supervisor, \
+            patch("zf.runtime.tick_services._run_run_manager", return_value=MagicMock(changed=True, repairs_dispatched=0)) as manager:
+        result = run_standard_tick_services(orch, state=state, now=105.0, intervals=intervals)
+        assert manager.call_count == 1
+        assert result.run_manager is True
+        supervisor.assert_not_called()
+        orch.event_log.append(ZfEvent(type="run.manager.tick.completed", actor="run-manager"))
+        run_standard_tick_services(orch, state=state, now=110.0, intervals=intervals)
+        assert manager.call_count == 1  # bookkeeping must not create a tick feedback loop
