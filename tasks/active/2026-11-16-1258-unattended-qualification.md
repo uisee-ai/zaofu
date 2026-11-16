@@ -91,3 +91,7 @@ AR身份预检定向3通过，4文件调用闭包29通过（含runner与refactor
 第四轮预备阶段 Critic 正确要求两项数字规则确认；监工经正式 owner decision 答复 Number 全串有限输入与原生有序聚合，Planner 已按此返工，最终 Plan 尚未批准。首次请求误填了原审批为空的 candidate_task_map_ref，被409拒绝；改用原绑定后成功。此为监工请求错误，单独记录，不归因于运行时。
 
 另复现语义 owner checkpoint 的 Preview 缺正文：旧代码只为 Reader execution failure 收集 Planner refs。抽出严格同版只读解析，新 checkpoint 与旧事件读投影均可显示实际受审 Plan；原审批不变、不放宽 Reader retry。RED→GREEN 定向58通过，14文件影响闭包383通过、sentinel53、Plan approval/replan mock E2E5通过。真实R4旧事件只读重放得到9122字正文且无内容/工件错误；这仅证明Preview修复，不代表最终Plan或产品通过。
+
+R4于17:04:11 UTC批准Plan evt-dae1196b30c0，冻结cc3d33f6。F2活动Impl控制器自动恢复6.105秒；F1 watchdog新pane保持同工作区与非空测试摘要；F3实际结果通知中断命中、结果正确结算；F5两次原manifest重复请求返回already_recorded且副作用started仍1。两候选已由预授权宿主发布，无人工代提交。
+
+新缺陷：隔离容器 /work tmpfs默认noexec，npm test中的tsc返回126。独立于R4的0755脚本真实回归先RED，再仅为容器工作区显式exec后GREEN；2项host通过、66文件影响闭包1091通过、sentinel53通过（闭包含恢复mock）。本修复尚未加载R4；该轮RM已自行启动AR诊断，继续区分自动链与监工工作。

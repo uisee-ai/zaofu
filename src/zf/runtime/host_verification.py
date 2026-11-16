@@ -33,7 +33,9 @@ def container_command(policy, source: Path, output: Path, command: str, name: st
         '--pids-limit=256', '--memory=2g', '--cpus=2',
         '--user', f'{os.getuid()}:{os.getgid()}',
         '--tmpfs', '/tmp:rw,nosuid,nodev,size=1073741824,mode=1777',
-        '--tmpfs', '/work:rw,nosuid,nodev,size=1073741824,mode=1777',
+        # Docker tmpfs defaults to noexec; provisioned build tools need execution
+        # only in this disposable container workspace, never on the host.
+        '--tmpfs', '/work:rw,nosuid,nodev,exec,size=1073741824,mode=1777',
         '--mount', f'type=bind,src={source},dst=/source,readonly',
         '--mount', f'type=bind,src={output},dst=/evidence',
         '-e', 'HOME=/tmp', '-e', 'ZF_EVIDENCE_DIR=/evidence', '-e', 'NODE_PATH=/app/node_modules',

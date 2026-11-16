@@ -101,6 +101,24 @@ def test_budget_exhaustion_escalates_once_without_execution(case, monkeypatch):
 
 
 @pytest.mark.host
+def test_real_container_can_execute_provisioned_build_tool(tmp_path):
+    import os
+    image = subprocess.check_output(['docker', 'image', 'inspect', 'mcp/playwright:latest',
+                                    '--format', '{{.Id}}'], text=True).strip()
+    source, output = tmp_path / 'source', tmp_path / 'output'
+    source.mkdir(); output.mkdir()
+    tool = source / 'build-tool'
+    tool.write_text('#!/bin/sh\nprintf "build tool ran\\n" > /evidence/result.txt\n')
+    tool.chmod(0o755)
+    p = policy(); p.image = image; p.commands = ['./build-tool']
+    argv = container_command(p, source, output, './build-tool', f'zf-build-tool-{os.getpid()}')
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert (output / 'result.txt').read_text() == 'build tool ran\n'
+    assert not (source / 'result.txt').exists()
+
+
+@pytest.mark.host
 def test_real_container_executes_bounded_probe_and_collects_evidence(case):
     service, root = prepare(case)
     image = subprocess.check_output(['docker', 'image', 'inspect', 'mcp/playwright:latest', '--format', '{{.Id}}'], text=True).strip()
