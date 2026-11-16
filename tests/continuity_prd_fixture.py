@@ -3,6 +3,7 @@
 This only prepares configuration; it never approves or starts a workflow.
 """
 from pathlib import Path
+import shlex
 
 import yaml
 
@@ -31,8 +32,14 @@ def configuration(root: Path, *, harness: Path) -> list[dict]:
     cfg = controller["spec"]
     cfg["project"] = {
         "name": root.name, "state_dir": ".zf",
-        # The fixture uses Node's built-in tests and the installed TS compiler.
-        "scripts": {"setup": "node --version && node_modules/.bin/tsc --version"},
+        # Copy the installed compiler without sharing a mutable install target.
+        # Fresh workspaces must prepare while other workers hold their own envs.
+        "scripts": {"setup": (
+            "mkdir -p node_modules/typescript node_modules/.bin && "
+            f"cp -a {shlex.quote(str(harness / 'web/node_modules/typescript'))}/. node_modules/typescript/ && "
+            "ln -sfn ../typescript/bin/tsc node_modules/.bin/tsc && "
+            "node --version && node_modules/.bin/tsc --version"
+        )},
     }
     cfg["session"] = {"tmux_session": root.name}
     cfg["profile_sources"] = [str(harness / p) for p in cfg["profile_sources"]]
@@ -46,7 +53,8 @@ def configuration(root: Path, *, harness: Path) -> list[dict]:
     # agents are qualified separately with explicit fault injection.
     cfg["runtime"]["run_manager"]["resident_agent"] = {"enabled": False}
     cfg["runtime"]["autoresearch_resident"] = {"enabled": False}
-    cfg["runtime"]["workdirs"]["provision_paths"] = ["node_modules"]
+    cfg["runtime"]["workdirs"]["provision_paths"] = []
+    cfg["runtime"]["workdirs"]["required_paths"] = ["node_modules"]
     for role in cfg["roles"]:
         role.update(model="gpt-6.1-terra", model_reasoning_effort="high")
         role["provider_session"] = {
