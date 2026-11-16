@@ -414,3 +414,8 @@ recover task-impl/task-verify与当前身份进行结果准入。Impl自检与�
 实现：task_host_manifest.py、task_host_actions.py，测试 test_task_host_actions.py。
 本增量只覆盖Task Pipeline已结束的阻塞阶段；全局Candidate Reader和无人监工授权策略
 尚未据此获得资格。执行记录继续保存在本轮 reports/continuity-prd-v5-20261116-review.md。
+
+续审修正：Task Verify 的环境失败是 `execution_status=failed, verdict=abstained`，
+不是 Impl 的 blocked。宿主入口仅在同身份已接纳 verification-result.v1 证明这个组合时
+允许独立 Verify 的探测；completed/abstained 不获得执行资格。RED复现后120项
+宿主/Impl重试/Verify重试/typed admission闭包通过；不改变产品 verdict。

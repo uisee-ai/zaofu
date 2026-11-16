@@ -33,10 +33,18 @@ def binding(service, operation_id: str) -> tuple[dict, dict, dict, Path]:
     events = service.writer.event_log.read_all()
     operations = reduce_workflow_operations(events)
     op = operations.get(operation_id, {})
-    if (op.get("status") != "settled" or op.get("semantic_verdict") not in {"blocked", "failed"}
+    abstained_verify = op.get("task_pipeline_stage") == "verify" and op.get("semantic_verdict") == "abstained"
+    if (op.get("status") != "settled" or (op.get("semantic_verdict") not in {"blocked", "failed"} and not abstained_verify)
             or op.get("task_pipeline_stage") not in {"impl", "verify"}
             or not op.get("call_result_admitted_event_id")):
         raise ValueError("host assistance requires a settled admitted blocked task operation")
+    if abstained_verify:
+        result = hydrate_sidecar_ref(service.state_dir, op.get("admitted_control_result_ref") or {}).payload
+        if (result.get("schema_version") != "verification-result.v1"
+                or result.get("execution_status") != "failed" or result.get("verdict") != "abstained"
+                or any(result.get(k) != op.get(k) for k in (
+                    "operation_id", "task_id", "workflow_run_id", "task_map_generation", "operation_generation"))):
+            raise ValueError("host assistance requires the admitted failed Verify execution")
     aliases, terminals = fold_terminal_run_scope(events)
     if aliases.get(op["workflow_run_id"], op["workflow_run_id"]) in terminals:
         raise ValueError("terminal Run cannot authorize host assistance")

@@ -206,3 +206,37 @@ def test_web_token_gate_reaches_real_controlled_commit(case):
             "approval_ref": "owner:review-1", "reviewed_digest": manifest["manifest_digest"]}))
     assert response.status_code == 200, response.text
     assert response.json()["result"]["source_commit"] == git(root, "rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize('execution,accepted', [('failed', True), ('completed', False)])
+def test_verify_abstention_requires_its_own_failed_execution_receipt(case, execution, accepted):
+    service, root, identity = case
+    approve(service, preview(service, operation_id='op-1', kind='commit', paths=['probe.py']))
+    _, request, _, _ = binding(service, 'op-1')
+    head = git(root, 'rev-parse', 'HEAD')
+    own = {**identity, 'operation_id': 'verify-1', 'task_pipeline_stage': 'verify',
+           'operation_generation': 2, 'active_attempt_id': 'verify-attempt'}
+    request = {**request, 'target_commit': head}
+    req = write_sidecar_json(service.state_dir, 'artifacts/verify-request.json', {'request': request},
+        kind='test', schema_version='test.v1', created_by='test')
+    result = write_sidecar_json(service.state_dir, 'artifacts/verify-result.json',
+        {**own, 'schema_version': 'verification-result.v1', 'verdict': 'abstained',
+         'execution_status': execution, 'target_commit': head},
+        kind='test', schema_version='verification-result.v1', created_by='test')
+    for kind, extra in [
+        ('workflow.operation.requested', {'request_ref': req}),
+        ('task.pipeline.stage.dispatched', {'workdir': str(root), 'source_branch': 'worker-test'}),
+        ('workflow.call.result.admitted', {'semantic_verdict': 'abstained', 'control_result_ref': result}),
+        ('workflow.operation.settled', {}),
+    ]:
+        service.writer.append(ZfEvent(type=kind, payload={**own, **extra}))
+    if not accepted:
+        with pytest.raises(ValueError, match='failed Verify execution'):
+            preview(service, operation_id='verify-1', kind='verify', command_id='contract-verification')
+        return
+    manifest = preview(service, operation_id='verify-1', kind='verify', command_id='contract-verification')
+    receipt = approve(service, manifest)['result']
+    assert receipt['operation_id'] == 'verify-1'
+    assert receipt['active_attempt_id'] == 'verify-attempt'
+    assert receipt['exit_code'] == 0 and receipt['target_commit'] == head
+    assert receipt['product_verdict'] == 'not_evaluated'
