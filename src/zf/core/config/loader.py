@@ -3857,6 +3857,14 @@ def _build_runtime(
     reflect_raw = run_manager_raw.get("reflect") or {}
     if not isinstance(reflect_raw, dict):
         raise ConfigError("runtime.run_manager.reflect must be a mapping")
+    ar_terminal_policy = autoresearch_resident_raw.get("on_parent_terminal", "preserve")
+    if ar_terminal_policy not in {"cancel", "preserve", "continue"}:
+        raise ConfigError("runtime.autoresearch_resident.on_parent_terminal must be cancel, preserve or continue")
+    from zf.core.config.host_verification import parse_host_verification
+    try:
+        host_verification = parse_host_verification(data.get("host_verification"))
+    except (ValueError, TypeError) as exc:
+        raise ConfigError(str(exc)) from exc
     source_repair_raw = run_manager_raw.get("source_repair") or {}
     if not isinstance(source_repair_raw, dict):
         raise ConfigError("runtime.run_manager.source_repair must be a mapping")
@@ -4231,6 +4239,7 @@ def _build_runtime(
             lock_file=str(skills_raw.get("lock_file", ".zf/skills.lock.json")),
             strict=bool(skills_raw.get("strict", False)),
         ),
+        host_verification=host_verification,
         run_manager=RuntimeRunManagerConfig(
             backend=run_manager_backend,
             reflect=RuntimeRunManagerReflectConfig(
@@ -4255,6 +4264,9 @@ def _build_runtime(
                 tmux_session=resident_tmux_session,
             ),
             source_repair=RuntimeRunManagerSourceRepairConfig(
+                publish_candidate=_bool_value(source_repair_raw.get("publish_candidate"), default=False),
+                model=str(source_repair_raw.get("model") or ""),
+                model_reasoning_effort=str(source_repair_raw.get("model_reasoning_effort") or ""),
                 enabled=_bool_value(
                     source_repair_raw.get("enabled"),
                     default=False,
@@ -4291,6 +4303,7 @@ def _build_runtime(
             ),
         ),
         autoresearch_resident=RuntimeAutoresearchResidentConfig(
+            on_parent_terminal=ar_terminal_policy,
             enabled=_bool_value(
                 autoresearch_resident_raw.get("enabled"),
                 default=False,

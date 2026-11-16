@@ -503,11 +503,10 @@ def run_resident_once(
             continue
         # ACCEPTED was already emitted as the queue acknowledgement above;
         # execution adds the STARTED anchor.
-        writer.append(ZfEvent(
-            type=LOOP_STARTED,
-            actor="zf-autoresearch-resident",
-            payload={"loop_request_id": action.loop_request_id, "command": action.command},
-        ))
+        from zf.autoresearch.interrupted_checkpoint import checkpoint_started
+        diagnosis_start = checkpoint_started(writer, state_dir=Path(state_dir),
+            request_id=action.loop_request_id, command=action.command,
+            worktree=Path(worktree_root) / action.loop_request_id)
         # Enforce the loop's own declared budget (research_mode_contract
         # budget_cap.max_minutes, 2x grace) on the synchronous runner. The
         # resident consumes requests single-file, so one unbounded loop starves
@@ -577,6 +576,8 @@ def run_resident_once(
             actor="zf-autoresearch-resident",
             payload={
                 "loop_request_id": action.loop_request_id,
+                "checkpoint_ref": diagnosis_start.payload["checkpoint_ref"],
+                "interrupted": proc.returncode < 0,
                 "mode": action.research_mode,
                 "artifact_envelope": action.artifact_envelope or {},
                 "returncode": proc.returncode,

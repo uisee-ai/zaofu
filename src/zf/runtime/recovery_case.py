@@ -262,6 +262,12 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
             "run.manager.action.verify.passed",
             "run.manager.action.effect.passed",
         }:
+            if payload.get("action") in {"repair-closeout-validate", "repair-closeout-apply"}:
+                # Validation/apply completes a repair step, not the original
+                # workflow. Its scoped continuation effect must still arrive.
+                if case["status"] not in {"waiting", "blocked", "superseded"}:
+                    case["status"] = "open"
+                continue
             if (event_type == "run.manager.action.effect.passed"
                     and payload.get("action") == "resident-agent-reprompt"
                     and payload.get("request_kind") == "recovery_diagnosis"):

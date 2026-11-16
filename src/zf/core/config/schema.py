@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from zf.core.config.host_verification import HostVerificationConfig
+
 from dataclasses import dataclass, field, fields
 
 
@@ -1412,6 +1414,9 @@ class RuntimeRunManagerReflectConfig:
 
 @dataclass
 class RuntimeRunManagerSourceRepairConfig:
+    publish_candidate: bool = False
+    model: str = ""
+    model_reasoning_effort: str = ""
     enabled: bool = False
     backend: str = ""
     mode: str = "isolated_worktree"
@@ -1449,6 +1454,7 @@ class RuntimeRunManagerConfig:
 
 @dataclass
 class RuntimeAutoresearchResidentConfig:
+    on_parent_terminal: str = "preserve"
     enabled: bool = False
     interval_seconds: float = 10.0
     max_actions_per_tick: int = 1
@@ -1580,8 +1586,10 @@ class RuntimeWebTerminalConfig:
     allow_takeover: bool = True
 
 
+
 @dataclass
 class RuntimeConfig:
+    host_verification: HostVerificationConfig = field(default_factory=HostVerificationConfig)
     workdirs: WorkdirConfig = field(default_factory=WorkdirConfig)
     git: GitIsolationConfig = field(default_factory=GitIsolationConfig)
     skills: RuntimeSkillsConfig = field(default_factory=RuntimeSkillsConfig)

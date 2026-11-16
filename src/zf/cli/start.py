@@ -1549,13 +1549,9 @@ def run(args: argparse.Namespace) -> int:
         return 1
     finally:
         if autoresearch_resident_sidecar is not None:
-            from zf.runtime.autoresearch_resident_sidecar import (
-                stop_autoresearch_resident_sidecar,
-            )
-
-            stop_autoresearch_resident_sidecar(
-                autoresearch_resident_sidecar,
-                event_log=event_log,
+            from zf.runtime.autoresearch_parent_exit import finish_resident_on_parent_exit
+            finish_resident_on_parent_exit(
+                autoresearch_resident_sidecar, config=config, event_log=event_log,
             )
         if feishu_inbound_sidecar is not None:
             from zf.runtime.feishu_inbound_sidecar import (

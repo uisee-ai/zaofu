@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from zf.runtime.result_workspace_guidance import result_workspace_guidance
+
 from pathlib import Path
 
 from zf.runtime.orchestrator_agent_operations import (
@@ -284,6 +286,7 @@ def build_orchestrator_agent_operation_briefing(
         "",
         f"- schema: `{output_schema}`",
         *output_rules,
+        *result_workspace_guidance(scratch),
         f"- edit `{scratch}`; preserve all prefilled identity fields",
         "- update that prefilled file in place; with apply_patch use `*** Update File`; "
         "never delete, add, move, or recreate the scratch path",

@@ -311,3 +311,15 @@ def test_worker_effect_matches_instance_and_request(tmp_path):
     log.append(ZfEvent(type="worker.respawn.failed", actor="dev-0", causation_id="respawn-request"))
     assert _settle_pending_action_effects(log.read_all(), writer) == 1
     assert log.read_all()[-1].type == "run.manager.action.effect.failed"
+
+
+def test_repair_validation_and_apply_are_not_original_workflow_recovery():
+    case_id = 'case-repair'
+    for action in ('repair-closeout-validate', 'repair-closeout-apply'):
+        events = [_event('run.manager.action.effect.pending', case_id, action=action),
+                  _event('run.manager.action.effect.passed', case_id, action=action)]
+        row = build_recovery_case_projection(events)['cases'][0]
+        assert row['status'] == 'open'
+        events.append(_event('run.manager.action.effect.passed', case_id, action='resume-workflow',
+                              observed_event_type='fanout.child.dispatched'))
+        assert build_recovery_case_projection(events)['cases'][0]['status'] == 'resolved'

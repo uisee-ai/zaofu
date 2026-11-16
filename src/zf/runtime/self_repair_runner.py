@@ -18,6 +18,7 @@ present → not pending → no re-dispatch (doc 80 invariant 4).
 from __future__ import annotations
 
 import subprocess
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -50,20 +51,34 @@ CLOSEOUT_REQUIRED = "autoresearch.repair.closeout.required"
 DISPATCH_BLOCKED = "autoresearch.repair.dispatch_blocked"
 
 
-def _spawn_command(backend: str, *, worktree: Path, briefing: str) -> list[str]:
-    """Command line for the supported unattended self-repair backends."""
+def _spawn_command(backend: str, *, worktree: Path, briefing: str,
+                   model: str = "", effort: str = "") -> list[str]:
+    """Repair providers retain their sandbox; host effects have separate gates."""
     if backend == "codex":
-        return [
-            "codex",
-            "exec",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "-C",
-            str(worktree),
-            briefing,
-        ]
+        command = ["codex", "exec", "--sandbox", "workspace-write",
+                   "-c", 'approval_policy="never"', "-C", str(worktree)]
+        if model:
+            command += ["--model", model]
+        if effort:
+            command += ["-c", "model_reasoning_effort=" + json.dumps(effort)]
+        return [*command, briefing]
     if backend in {"claude-code", "claude"}:
-        return ["claude", "--dangerously-skip-permissions", "-p", briefing]
-    return [backend, "--dangerously-skip-permissions", "-p", briefing]
+        command = ["claude", "--permission-mode", "default"]
+        if model:
+            command += ["--model", model]
+        return [*command, "-p", briefing]
+    raise ValueError("unsupported self-repair backend")
+
+
+def _repair_provider_settings(state_dir: Path) -> tuple[str, str]:
+    from zf.core.config.loader import ConfigError
+    from zf.core.config.project_context import resolve_project_context
+    try:
+        context = resolve_project_context(explicit_state_dir=state_dir, load_config_with_explicit=True)
+    except (ConfigError, OSError):
+        return "", ""
+    config = context.config.runtime.run_manager.source_repair
+    return config.model, config.model_reasoning_effort
 
 
 def harness_root(arg: str | None = None) -> Path:
@@ -102,6 +117,7 @@ def dispatch_pending_self_repairs(
     hroot = harness_root(root)
     base_commit = _git_stdout(hroot, "rev-parse", "HEAD")
     state_dir = Path(writer.event_log.path).parent
+    model, effort = _repair_provider_settings(state_dir) if spawn else ("", "")
     base = Path(tmp_root) if tmp_root else Path(tempfile.gettempdir())
     prepared = 0
     for req in pending:
@@ -132,14 +148,14 @@ def dispatch_pending_self_repairs(
         worktree.parent.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(
             [
-                "git", "-C", str(hroot), "worktree", "add", "-B", branch,
+                "git", "-C", str(hroot), "worktree", "add", "-b", branch,
                 str(worktree), "HEAD",
             ],
             capture_output=True,
             text=True,
             check=False,
         )
-        if result.returncode != 0 and "already exists" not in (result.stderr or ""):
+        if result.returncode != 0:
             writer.append(ZfEvent(
                 type=DISPATCH_BLOCKED,
                 actor=dispatch_actor,
@@ -159,11 +175,12 @@ def dispatch_pending_self_repairs(
             repair_contract=repair_contract,
             repair_contract_ref=repair_contract_ref,
         )
-        briefing_path = worktree / ".self-repair-briefing.md"
-        try:
-            briefing_path.write_text(briefing, encoding="utf-8")
-        except OSError:
-            pass
+        from zf.runtime.sidecar_refs import write_sidecar_text
+        briefing_ref = write_sidecar_text(state_dir,
+            f"artifacts/self-repair/briefings/{repair_contract_ref['sha256']}.md", briefing,
+            kind="self_repair_briefing", schema_version="self-repair-briefing.v1",
+            created_by=dispatch_actor, required=True)
+        briefing_path = sidecar_path(state_dir, briefing_ref["ref"])
         dispatched_event = writer.append(ZfEvent(
             type=DISPATCHED,
             actor=dispatch_actor,
@@ -226,7 +243,7 @@ def dispatch_pending_self_repairs(
                         "argv": _spawn_command(
                             backend,
                             worktree=worktree,
-                            briefing=briefing,
+                            briefing=briefing, model=model, effort=effort,
                         ),
                         "cwd": str(worktree),
                         "timeout_seconds": max(
@@ -453,6 +470,22 @@ def emit_self_repair_closeouts(
         branch_head = _git_stdout(worktree, "rev-parse", "HEAD")
         base_commit = str(payload.get("base_commit") or "").strip()
         comparison_base = base_commit or root_head
+        if branch_head == comparison_base and spawned_event is not None and process_result is not None:
+            from zf.runtime.repair_candidate_publish import publish_repair_candidate
+            from zf.core.config.loader import ConfigError
+            from zf.core.config.project_context import resolve_project_context
+            try:
+                state = Path(writer.event_log.path).parent
+                context = resolve_project_context(explicit_state_dir=state, load_config_with_explicit=True)
+                published = publish_repair_candidate(writer=writer, state_dir=state, harness=hroot,
+                    root=worktree, payload=payload, contract=repair_contract,
+                    policy=context.config.runtime.run_manager.source_repair)
+                branch_head = published or branch_head
+            except (ConfigError, ValueError, OSError) as exc:
+                emit_repair_terminal(writer, dispatched_event=event, spawned_event=spawned_event,
+                    payload=payload, status="blocked", reason=f"candidate_publish_blocked:{exc}",
+                    process_result=process_result)
+                continue
         if not branch_head or branch_head == comparison_base:
             if spawned_event is not None and process_result is not None:
                 emit_repair_terminal(

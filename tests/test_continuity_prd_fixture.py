@@ -48,3 +48,18 @@ def test_lane_template_rejects_unsupported_sandbox(tmp_path, sandbox):
     path.write_text(yaml.safe_dump_all(documents))
     with pytest.raises(ConfigError, match="sandbox"):
         load_config(path)
+
+
+def test_unattended_qualification_policy_is_bounded_and_keeps_approval(tmp_path, monkeypatch):
+    from tests.unattended_prd_fixture import prepare
+    monkeypatch.setattr('tests.unattended_prd_fixture.subprocess.check_output', lambda *args, **kwargs: 'sha256:'+'a'*64)
+    root=tmp_path/'product'
+    prepare(root,harness=Path(__file__).resolve().parents[1],compiler_root=Path('/installed/compiler'))
+    config=load_config(root/'zf.yaml')
+    assert config.workflow.plan_approval_enabled
+    assert config.runtime.host_verification.enabled
+    assert config.runtime.host_verification.max_executions_per_run == 12
+    assert config.runtime.host_verification.protected_files['tests/browser.cjs']
+    assert config.runtime.run_manager.source_repair.model == 'gpt-6.1-terra'
+    assert config.runtime.run_manager.source_repair.publish_candidate
+    assert config.runtime.run_manager.source_repair.allow_paths == ['src/zf/runtime/host_verification.py','tests/test_host_verification.py']

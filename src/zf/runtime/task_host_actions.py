@@ -71,7 +71,7 @@ def _verify(root: Path, manifest: dict) -> tuple[dict, str]:
             "execution_origin": "operator_authorized_host"}, text
 
 
-def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str) -> dict:
+def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, verifier=None) -> dict:
     if not approval_ref.strip() or reviewed_digest != manifest.get("manifest_digest"):
         raise ValueError("explicit approval_ref and exact reviewed manifest digest required")
     body = {k: v for k, v in manifest.items() if k != "manifest_digest"}
@@ -105,7 +105,7 @@ def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str) -
                 if manifest["kind"] == "commit":
                     result = _commit(root, manifest)
                 else:
-                    result, output = _verify(root, manifest)
+                    result, output = (verifier or _verify)(root, manifest)
                     if dependency_digest(service, root) != manifest["dependency_digest"]:
                         result.update(status="failed", source_stable=False)
                     log_ref = write_sidecar_text(state, prefix + "/output.txt", output,

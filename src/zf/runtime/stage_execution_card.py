@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import shlex
+from zf.runtime.result_workspace_guidance import result_workspace_guidance
+
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -506,6 +508,7 @@ def prepare_profiled_stage_result(
         "",
         f"- profile: `{profile_id}` revision `{profile_revision}`",
         f"- schema: `{profile.schema_version}`",
+        *result_workspace_guidance(scratch),
         f"- Edit `{scratch}`. Its JSON root is the complete "
         f"`{profile.semantic_field}` body; preserve prefilled fields at the root. "
         f"Do not wrap it under `{profile.semantic_field}` or add identity fields. "
@@ -670,6 +673,7 @@ def prepare_writer_execution_card(
         "## Output Contract",
         "",
         "- profile: `implementation` revision `1`",
+        *result_workspace_guidance(scratch),
         f"- Edit the complete semantic result at `{scratch}`.",
         "- Update the prefilled scratch file in place. With apply_patch use "
         "`*** Update File`; never delete, add, move, or recreate the scratch path.",

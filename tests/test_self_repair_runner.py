@@ -108,7 +108,7 @@ def test_claude_code_backend_uses_claude_cli_spawn_command(tmp_path):
         spawned.payload["launch_ref"]["ref"],
     ).read_text(encoding="utf-8"))
     command = launch["argv"]
-    assert command[:3] == ["claude", "--dangerously-skip-permissions", "-p"]
+    assert command[:3] == ["claude", "--permission-mode", "default"]
 
 
 def test_codex_backend_uses_codex_exec_spawn_command(tmp_path):
@@ -137,10 +137,10 @@ def test_codex_backend_uses_codex_exec_spawn_command(tmp_path):
     assert command[:4] == [
         "codex",
         "exec",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "-C",
+        "--sandbox",
+        "workspace-write",
     ]
-    assert command[5].startswith("# Authorized self-repair")
+    assert command[-1].startswith("# Authorized self-repair")
 
 
 def test_spawn_without_backend_is_blocked_not_guessed(tmp_path):
@@ -482,3 +482,37 @@ def _repair_process_events(
         },
     )
     return dispatched, spawned
+
+
+def test_self_repair_never_disables_provider_sandbox_and_accepts_explicit_model():
+    from zf.runtime.self_repair_runner import _spawn_command
+    command = _spawn_command('codex', worktree=Path('/tmp/isolated-repair'), briefing='repair',
+                             model='gpt-6.1-terra', effort='high')
+    assert not any('dangerously' in arg for arg in command)
+    assert command[command.index('--sandbox') + 1] == 'workspace-write'
+    assert command[command.index('--model') + 1] == 'gpt-6.1-terra'
+    assert 'model_reasoning_effort="high"' in command
+
+
+def test_closeout_calls_authorized_kernel_publisher_before_independent_validation(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from zf.core.config.schema import ZfConfig
+    root, worktree, base = _repair_worktree(tmp_path)
+    log, writer = _writer(tmp_path)
+    dispatched, spawned = _repair_process_events(tmp_path, worktree=worktree, base_commit=base,
+                                                status='completed', returncode=0)
+    dispatched.payload['branch'] = 'self-repair/test'
+    config = ZfConfig()
+    policy = config.runtime.run_manager.source_repair
+    policy.enabled = policy.publish_candidate = True
+    policy.apply_policy = 'verified_checkpoint_apply'
+    policy.allow_paths = ['src/zf/**']
+    monkeypatch.setattr('zf.core.config.project_context.resolve_project_context', lambda **kwargs: SimpleNamespace(config=config))
+    (worktree / 'src/zf').mkdir(parents=True)
+    (worktree / 'src/zf/fixed.py').write_text('fixed = True\n')
+    assert emit_self_repair_closeouts([dispatched, spawned], writer, root=str(root)) == 1
+    closeout = next(e for e in log.read_all() if e.type == CLOSEOUT_REQUIRED)
+    assert closeout.payload['repair_commit'] != base
+    assert closeout.payload['repair_contract_digest'] == dispatched.payload['repair_contract_digest']
+    assert _git(root, 'rev-parse', 'HEAD') == base
+    assert not any(e.type == 'run.manager.repair.merge.merged' for e in log.read_all())

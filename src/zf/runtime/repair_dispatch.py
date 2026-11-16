@@ -333,7 +333,10 @@ def build_repair_briefing(
         f"- immutable repair contract: {contract_ref} ({contract_digest})\n\n"
         "Steps: ① write the backlog FIRST (`> 状态: active`) ② make the surgical "
         "fix within scope ③ run verification ④ on GREEN commit + mark the backlog "
-        "`done` with the commit hash; on RED or over the attempt cap leave it "
+        "`done` with the commit hash. If sandbox denies Git metadata, leave the verified patch "
+        "uncommitted and report the exact denial; the separately authorized runtime publisher "
+        "may commit it after exit. Never disable sandbox or request broader filesystem access. "
+        "On RED or over the attempt cap leave it "
         "un-merged, mark `blocked`, escalate. Never touch runtime truth "
         "(events.jsonl/kanban.json/...) or credentials. Do not push to any remote.\n"
     )
