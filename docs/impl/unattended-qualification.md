@@ -154,3 +154,5 @@ Candidate Reader 已有内核准入的 verification-result.v1 abstained 时，�
 Task handoff 冻结前从当前前驱已结算 attempt 收集原生命令输出，要求 kernel dispatch、operation/task/run/attempt、角色、cwd 与 hook causation 一致；结束后的事件和其它任务不会进入索引。小输出和已校验的 raw sidecar 输出分别保存为脱敏不可变观察，交接正文仅携带索引引用。缺失或篡改的大输出显式 unavailable，不能把截断预览当完整证据；不推断退出码、不把 hook 变为业务通过事实。
 
 接手者使用交接正文提供的 `artifact handoff-evidence --operation <当前op>`，选择 `--event` 按1024字符分页；续页必须绑定摘要。跨多次接力用 `--source-operation`，仅沿当前合同 required_reads 摘要与 kernel handoff.prepared 绑定的同任务历史引用读取。接口复用当前 operation 凭据、Task assignee、canonical lease 与输入版本校验，不开放任意账本或 transcript 查询。required handoff 的读取回执不表示原始观察已独立验收。
+
+OA必读配置避免重复表示：只有标准effective-config-snapshot.v1同时提供完整config与yaml/compiled_graph时，必读路径取同一工件的`$.config`；保留完整原始摘要、受控全文访问以及全部控制字段。无重复表示的运行时快照、legacy工件继续`$`。briefing的逐项命令必须与必读策略使用相同JSONPath；原文缺读/截断仍拒绝准入，不增加continuation次数掩盖输入成本。

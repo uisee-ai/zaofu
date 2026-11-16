@@ -135,3 +135,7 @@ epoch6后续仍失败：未经加载的旧通用重发与Reader采证竞争，�
 追加修复历史测试输出可发现性：dispatch冻结前构建因果绑定工具输出索引，增加当前凭据鉴权的按需分页CLI，原观察不自动变成TDD通过。真实R5只读对账还发现canonical request会移除input_refs，跨轮链改从required_reads摘要与kernel handoff事件解析，避免只在简化fixture中成立。原始输出缺失/篡改、跨角色/Run/派发/cwd、晚到事件、凭据错误、分页摘要和多轮历史均有回归；R5自动诊断Critic仍在运行，未停止现场。
 
 工具观察交接47项定向、15文件影响闭包161通过。首轮sentinel要求刷新新增CLI的中英文命令索引，已使用既有生成器更新后53通过。真实R5事件隔离重放找到27条同attempt观察，原RED446字节、GREEN完整raw2321字节；当前请求required_reads可准确找回原handoff摘要。此重放不修改实时账本、不提交验收结论。
+
+R5自动诊断rmar-4e7a7c2b0089完成Scan/Planner/Critic，但OA读取234063字节配置工件到86550时耗尽有界续作，operation正式blocked。该工件包含完整config、YAML与派生图；新增必读$.config仅去掉重复表示，仍绑定原摘要且保留所有控制字段。4个RED复现，修正后55项原有/新增调用测试通过，另新增真实准入测试确认缺读仍拒绝、完整子树读取后准入。R5保留失败，待新源码完整验证后开始R6。
+
+配置去重读取最终16文件影响闭包252通过/7跳过，sentinel53和flow-smoke10通过。真实快照按相同JSON编码比较179719→69420字节，完整config字段无删除，不能换算为模型token节省。19:38 UTC R5已记录FAILED并通过simulation.done/受控stop停用父子流程和专属service，核实无所属runtime残留，未删除工作成果。

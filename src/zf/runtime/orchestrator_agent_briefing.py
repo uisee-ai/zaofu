@@ -221,7 +221,7 @@ def build_orchestrator_agent_operation_briefing(
     read_commands: list[str] = []
     state_root = Path(state_dir).expanduser().resolve()
     required = {
-        (str(item.get("source_id") or ""), str(item.get("artifact_id") or ""))
+        (str(item.get("source_id") or ""), str(item.get("artifact_id") or "")): str(item.get("json_path") or "$")
         for item in context.read_policy.get("required_reads", [])
         if isinstance(item, Mapping)
     }
@@ -235,13 +235,14 @@ def build_orchestrator_agent_operation_briefing(
         if (source_id, artifact_id) not in required:
             optional_source_lines.append(line)
             continue
+        json_path = required[(source_id, artifact_id)]
         source_lines.append(line)
         read_commands.append(
             "zf artifact read "
             f"--attempt {prepared.attempt_id} "
             f"--source {source_id} "
             f"--artifact {artifact_id} "
-            f"--json-path '$' --state-dir {state_root}"
+            f"--json-path '{json_path}' --state-dir {state_root}"
         )
     return "\n".join([
         "# Orchestrator Agent Semantic Checkpoint",
@@ -268,6 +269,9 @@ def build_orchestrator_agent_operation_briefing(
         "",
         "Consume every required body through the controlled interface before submitting. "
         "Prefer the deduplicated paged bundle:",
+        "For effective-config, consume the complete $.config subtree when required; "
+        "the same pinned snapshot's YAML and derived graph remain available on demand. "
+        "No runtime permission, budget, role or routing field is summarized away.",
         "",
         "```bash",
         f"zf artifact read --attempt {prepared.attempt_id} --required --state-dir {state_root}",
