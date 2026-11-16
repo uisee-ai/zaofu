@@ -225,3 +225,13 @@ to perform a meaningful independent evaluation.
 恢复时使用当前 Verify attempt 的 `artifact recover`；检查点、Impl 历史已读和关系
 命中都不能抵扣独立 Verify 必读。声明关系只定位授权正文；superseded/rejected 输入
 必须交回受控重绑定路径，不能自行切到新包继续验收。
+
+## 受控宿主测试回执
+
+沙箱环境无法执行必需命令时，报告技术阻塞而非业务失败，不修改权限或删除验收。
+操作员可针对该已结束的 Verify operation 审阅并执行原合同命令，保留独立的一次宿主
+采证。恢复时核对账本 `runtime.action.attempt.completed`、receipt_ref/output_ref摘要、
+Run/Task/合同、固定 target、命令、source_stable与退出码，并重新独立审查业务断言。
+如需新探测仍提出具体需求；不能用 Impl 的宿主回执冒充 Verify 自己的独立执行证据。
+结果注明 execution_origin=operator_authorized_host及原执行身份；新结果使用当前派发
+身份。宿主动作不发 test.passed/task.done，也不代替 Verify/Judge 的语义判断。

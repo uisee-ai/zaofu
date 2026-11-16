@@ -192,3 +192,17 @@ Workers do not mark tasks, candidates, or goals done themselves.
 读完后在当前记录的 completed_actions 中写核查结果，pending 保留未决/失效问题，
 next_step 指明下一动作；必要时通过新 evidence_files 保留带来源的后续决定。不能仅因
 前任说“已完成”就跳过当前 required reads、handoff 接收回执或结果准入。
+
+### 受控宿主协助后的交接
+
+沙箱禁止监听、Docker 或 Git 索引写入时，保留代码与失败，通过当前 blocked 通道报告；
+不改权限、不取 action token。操作员可以审阅 `zf recover host-assist` 的精确清单，
+通过 token-gated `task-host-assist` 为已结束的阻塞尝试执行提交或合同命令。
+
+恢复 briefing 明确引用宿主回执时，先读取账本中对应 `runtime.action.attempt.completed`
+及其 receipt_ref/output_ref，校验摘要、Run/Task/合同/命令及目标提交、source_stable和退出码；
+身份或源码已变则不复用。回执仅证明命令事实，不是产品通过。允许引用已授权、同版且
+可复用的宿主执行事实完成自检材料，明确 execution_origin=operator_authorized_host，
+不可写成新 Worker 亲自执行，也不可把原回执的 operation/attempt 填入本次结果身份。
+已有精确源码提交且不需改代码时，不为绕开权限制造空提交或改测试；仍完整核对本任务
+AC和当前结果合同。独立 Verify 不被该自检回执替代；失败或缺证据时继续报告真实阻塞。

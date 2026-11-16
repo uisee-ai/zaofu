@@ -383,3 +383,34 @@ Worker 诚实提交 dev.blocked，没有伪造自检或提交。Docker socket �
 命令接线与失败/超时/非法项回归17项通过。用法与资格限制见
 [预检手册](../manual/16-real-codex-provider-preflight.md#11-对实际任务工作区检查能力)。
 这只是诊断改进，尚未新增沙箱外受控测试/提交入口，也没有通过完整 PRD 或故障旅程。
+
+## 2026-11-16：受控宿主协助与断点恢复
+
+用户授权实现受控宿主路径，同时本 session 逐项审阅。新增 `recover host-assist` 仅
+预览：必须在项目上下文运行，绑定已接纳且已结束的阻塞 Impl/Task Verify operation、
+Run/Task/attempt/lease/dispatch、冻结合同、派发工作区、HEAD、源码文件摘要及声明依赖
+内容摘要。当前不支持活跃 Worker、暂停/终态 Run、跨仓目录、删除文件或带活动 Git hook
+的提交；这些情况明确拒绝，不自动扩大权限。
+
+`POST /api/actions/task-host-assist` 是唯一新增执行入口，必须提供显式操作员 action token、
+approval_ref、reviewed_digest 和原始 manifest；trusted-session 不能替代该动作的 token。
+Provider 不持有该 token，Kanban Agent 自动动作清单没有加入本动作。
+执行前在既有资源排他锁下重读身份/源文件/依赖，检查真实持有者；拒绝已有暂存内容，
+提交路径必须精确等于任务全部变更且位于已分配写域。无强制暂存、跳钩子、amend/merge/push。
+
+验证只运行当前阶段合同中的原始命令，要求干净的固定目标；宿主子进程只接收 PATH、
+临时 HOME/TMPDIR、LANG，不继承 action/provider 凭据。保留真实退出码和完整日志，
+前后源码/依赖改变即失败。宿主代码执行须由操作员审阅：该入口不是任意代码的安全沙箱。
+命令采用合同的1–900秒有限探测时长；它不修改v5阶段和Run的token/时长配置。
+
+事实通过既有 runtime.action.attempt.started/completed/failed 与原子 sidecar 保存。
+相同manifest重复执行返回原回执；已有started但无完成时保留未知效果，拒绝自动重跑。
+当前该未知状态需人工核查，尚不宣称自动效果核对/丢通知恢复全部完成。
+动作不产生task.done/dev.build.done/test.passed，不修改原失败结果；后续使用已有
+recover task-impl/task-verify与当前身份进行结果准入。Impl自检与独立Verify的宿主执行
+必须分开绑定，原Impl回执不能冒充独立Verify；仍需语义审查和Judge。
+
+真实 caller 是 CLI preview→Web token gate→ControlledActionService extension；
+实现：task_host_manifest.py、task_host_actions.py，测试 test_task_host_actions.py。
+本增量只覆盖Task Pipeline已结束的阻塞阶段；全局Candidate Reader和无人监工授权策略
+尚未据此获得资格。执行记录继续保存在本轮 reports/continuity-prd-v5-20261116-review.md。

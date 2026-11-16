@@ -161,3 +161,22 @@ export ZF_CODEX_HEADLESS_TOOL_TIMEOUT_S=14400
 ```bash
 env | grep -E 'CODEX|OPENAI|ZF_' | sed -E 's/(=.).+$/=***REDACTED***/' | sort
 ```
+
+## 5. 保留沙箱的逐项宿主协助
+
+用户已批准宿主协助且任务报告真实环境阻塞后，操作员在**项目根目录**预览：
+
+```text
+zf recover host-assist --state-dir <configured-state-dir> --operation <blocked-operation-id> --kind commit --path <exact-relative-file>
+zf recover host-assist --state-dir <configured-state-dir> --operation <blocked-operation-id> --kind verify --command-id <contract-command-id>
+```
+
+每个提交文件单独重复--path。CLI只读，没有--apply；提交后重新预览验证，以取得新的
+HEAD绑定。审阅完整manifest、代码、命令、依赖与副作用后，操作员通过已有 Web action
+认证入口提交 `task-host-assist`，payload包含manifest、reviewed_digest、approval_ref。
+不要把action token交给Worker或写入报告。此宿主服务会执行审阅过的代码，不是通用沙箱。
+
+收到回执后先核对status、退出码、source_stable、目标提交和日志；用既有recover task-impl
+或task-verify断点续接，reason中引用原回执，不改原失败。相同manifest只返回历史结果；
+未知执行效果、活动进程占用、暂停、陈旧身份或源码变化均不得盲目重试。
+支持边界与证据消费者见[实施记录](../impl/continuity-handoff-spec-001.md#2026-11-16受控宿主协助与断点恢复)。

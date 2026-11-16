@@ -74,3 +74,19 @@ SCAFFOLD 首次 Impl 在 sandbox workspace-write 中遭遇本地监听 EPERM 和
 linked worktree Git 索引只读；保留脏代码、失败事实与宿主2/2测试诊断。
 Doctor 新增三项显式能力探测及 CLI 接线，17项定向回归通过，真实三项阻塞复现。
 不关闭沙箱，不把 startup-only 当任务资格；受控宿主执行路径待决，任务仍 active。
+
+## 2026-11-16：用户批准的受控宿主协助
+
+用户明确要求继续实现并由当前session监工。新增CLI精确预览→Web显式token动作→
+当前Task Pipeline阻塞operation的宿主提交/合同验证，按任务/版本/源码/依赖/持有者核验；
+事实侧车与原失败均保留，不代发任务通过。正常流程仍需独立Verify/Judge，
+全局候选与无人监工授权策略尚未完成；B05维持active。
+
+验收：审阅manifest→verify：无token/过期/暂停/越域/占用/暂存/依赖变化拒绝；
+执行精确提交与原合同命令→verify：实际Git、退出码、sidecar、幂等与不变更任务终态；
+新代码载入后从原阻塞恢复→verify：后续真实任务阶段推进，不能只以action完成判成功。
+
+入口增量验证：126 项定向影响闭包、53 项哨兵、10 项 Flow mock 通过；CLI
+手册 currentness 通过。dev-verify 对共享 Web/CLI 边界扩展全量，按仓库影响闭包规则
+显式排除 deterministic/serial/web，采用上述直接调用与合同测试；不是全量验收。
+本批入口实现可提交，但 B05 与真实全流程验收仍 active，待真实收据与恢复闭环。
