@@ -50,6 +50,7 @@ from zf.runtime.recovery_case import (
     recovery_action_admission,
     recovery_case_id_from_payload,
 )
+from zf.runtime.recovery_step import IDENTITY_FIELDS
 from zf.autoresearch.self_repair import (
     candidate_from_dict,
     candidate_with_diagnosis,
@@ -5318,6 +5319,8 @@ def _repair_task_payload_from_agent_action(
 def _repair_continuation_from_action(action: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": "self-repair.request-continuation.v1",
+        "recovery_case_id": recovery_case_id_from_payload(action),
+        **{key: action[key] for key in IDENTITY_FIELDS if action.get(key)},
         "resume_original_workflow": True,
         "checkpoint_id": str(action.get("checkpoint_id") or ""),
         "safe_resume_action": str(action.get("safe_resume_action") or ""),
@@ -9258,6 +9261,8 @@ def _pending_post_repair_continuation_actions(
             action = {
                 "schema_version": "run-manager.pending-action.v1",
                 "action": "workflow-batch-resume",
+                **{key: continuation[key] for key in ("recovery_case_id", *IDENTITY_FIELDS)
+                   if continuation.get(key)},
                 "checkpoint_id": checkpoint_id,
                 "safe_resume_action": safe_action,
                 "fingerprint": fingerprint,

@@ -68,3 +68,7 @@ RecoveryCase 对 validate/apply 的成功保持 open，不能把中间步骤标�
 自动 repair 使用的 `dev-verify` 保留完整影响闭包，不再因为超过 80 个测试文件而扩大为全仓测试。
 仍包含直接调用方、共享契约和串行测试；未映射源码仍拒绝。全量发布验证应显式执行，
 不能让文件数量触发无关失败并阻断修复。该修改经 81 文件闭包回归先失败后通过。
+
+修复请求 continuation 与合并后的 `workflow-batch-resume` 必须携带同一 `recovery_case_id`
+及原 Run/Task/代际/合同版本/目标提交/attempt 绑定。否则实际恢复后会关闭一个新生成的 case，
+留下原 case 悬空；跨修复、合并、续跑及 effect 投影的回归覆盖此问题。
