@@ -259,7 +259,10 @@ def test_real_iteration_reports_its_own_state_before_config_cleanup(tmp_path, mo
         worktree=worktree, status="failed", tasks_done=0, expected_done=1,
         fatal_event=None, report_path=tmp_path / "report.md", review_gate=None,
     )
-    monkeypatch.setattr(loop_iteration, "run_autoresearch", lambda cfg: result)
+    def run(cfg):
+        assert cfg.budget_usd == 7.5  # Never expand to the inner runner's $500 default.
+        return result
+    monkeypatch.setattr(loop_iteration, "run_autoresearch", run)
 
     monkeypatch.setenv("ZF_PROJECT_ROOT", str(tmp_path / "parent"))
     monkeypatch.setenv("ZF_STATE_DIR", str(tmp_path / "parent-state"))
@@ -273,7 +276,7 @@ def test_real_iteration_reports_its_own_state_before_config_cleanup(tmp_path, mo
     monkeypatch.setattr(loop_iteration, "cleanup_autoresearch_run", lambda *a, **kw: config.unlink())
     outcome = cli._real_autoresearch_fn(
         scenario="controlled-stuck-recovery", run_id="test",
-        cfg=LoopConfig(worktree=worktree, parent_state_dir=tmp_path / "parent"),
+        cfg=LoopConfig(worktree=worktree, parent_state_dir=tmp_path / "parent", budget_usd=7.5),
     )
     assert outcome["state_dir"] == str(state)
     assert outcome["tasks_done"] == 0

@@ -95,3 +95,5 @@ AR身份预检定向3通过，4文件调用闭包29通过（含runner与refactor
 R4于17:04:11 UTC批准Plan evt-dae1196b30c0，冻结cc3d33f6。F2活动Impl控制器自动恢复6.105秒；F1 watchdog新pane保持同工作区与非空测试摘要；F3实际结果通知中断命中、结果正确结算；F5两次原manifest重复请求返回already_recorded且副作用started仍1。两候选已由预授权宿主发布，无人工代提交。
 
 新缺陷：隔离容器 /work tmpfs默认noexec，npm test中的tsc返回126。独立于R4的0755脚本真实回归先RED，再仅为容器工作区显式exec后GREEN；2项host通过、66文件影响闭包1091通过、sentinel53通过（闭包含恢复mock）。本修复尚未加载R4；该轮RM已自行启动AR诊断，继续区分自动链与监工工作。
+
+R4自动诊断现场另确认loop→inner runner漏传budget_usd：7.5的回归实际收到500，已RED→GREEN补传；39定向、3文件调用闭包29与sentinel53通过。本修正没有盲目继承产品的容器命令/文件发布权限，也没有声称解决父目标跨诊断累计计费。现场父workflow run cap40、诊断inner cap500，两个CostTracker美元值0仅表示记录值，不能推断调用免费或未消费。
