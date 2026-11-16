@@ -129,7 +129,8 @@ q('#calculate').onclick=()=>{q('#numbers-error').textContent='';try{const x=summ
             role['model']='gpt-6-astra'
     cfg['runtime']['run_manager']['resident_agent']={'enabled':True,'model':'gpt-6.1-terra','model_reasoning_effort':'high'}
     cfg['runtime']['run_manager'].setdefault('source_repair',{}).update(enabled=True, backend='codex',model='gpt-6.1-terra',model_reasoning_effort='high',
-        publish_candidate=True,apply_policy='verified_checkpoint_apply',allow_paths=['src/zf/runtime/host_verification.py','tests/test_host_verification.py'])
+        publish_candidate=True,apply_policy='verified_checkpoint_apply',restart_policy='operator_approved',
+        allow_paths=['src/zf/runtime/host_verification.py','tests/test_host_verification.py'])
     cfg['runtime']['autoresearch_resident'].update(enabled=True,worktree_root=str(root/'repair-worktrees'),on_parent_terminal='continue')
     cfg['runtime']['host_verification']={'enabled':True,'approval_ref':'owner:unattended-qualification-20261116',
         'image':subprocess.check_output(['docker','image','inspect','mcp/playwright:latest','--format','{{.Id}}'],text=True).strip(),
@@ -138,3 +139,9 @@ q('#calculate').onclick=()=>{q('#numbers-error').textContent='';try{const x=summ
     cfg['runtime']['git']['auto_ship_on_judge_passed']=True
     (root/'zf.yaml').write_text(yaml.safe_dump_all(docs,sort_keys=False))
     return {'root':str(root),'prd_sha256':hashlib.sha256(PRD.encode()).hexdigest(),'browser_sha256':hashlib.sha256(BROWSER.encode()).hexdigest()}
+
+
+def request_payload(root: Path) -> dict:
+    """Use the controlled API field, not the CLI's --from option name."""
+    return {'kind': 'prd', 'objective': '实现冻结的双工具 PRD，并以独立验证与真实浏览器证据完成交付',
+            'source_ref': str(root / 'docs/prd/TODO.md'), 'target_root': str(root), 'backend': 'codex'}

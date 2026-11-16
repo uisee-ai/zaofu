@@ -74,3 +74,8 @@ RecoveryCase 对 validate/apply 的成功保持 open，不能把中间步骤标�
 修复请求 continuation 与合并后的 `workflow-batch-resume` 必须携带同一 `recovery_case_id`
 及原 Run/Task/代际/合同版本/目标提交/attempt 绑定。否则实际恢复后会关闭一个新生成的 case，
 留下原 case 悬空；跨修复、合并、续跑及 effect 投影的回归覆盖此问题。
+
+真实 PRD 第一轮暴露了原文交接缺失：验收驱动应传 `source_ref`（不是 CLI 风格的 `from`），
+Plan/Critic 输入编译也必须从正式 `source_refs.source_ref` 物化原文，而不是只传带路径的
+Requirement 摘要。原文与需求快照同时绑定为 required 输入，保留各自摘要；后续源文件变化
+不改变已签发正文。受控需求修订继续按既有 amendment 规则替代旧权威输入。

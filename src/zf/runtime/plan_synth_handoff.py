@@ -38,6 +38,7 @@ _CHILD_ARTIFACT_SCALAR_KEYS = (
 )
 _PLAN_SOURCE_CANDIDATES = (
     ("goal-objective", "goal_objective", "objective_ref"),
+    ("requirement", "requirement_authority", "source_ref"),
     ("requirement", "requirement_authority", "target_ref"),
     ("requirement", "requirement_spec", "requirement_spec_ref"),
     ("requirement", "requirement_spec", "requirement_ref"),
@@ -182,6 +183,10 @@ def build_plan_handoff_input_refs(
         or trigger.get("workflow_run_id") or payload.get("trace_id")
         or trigger.get("trace_id") or ""))
     payload = {**payload, **binding}
+    source_refs = {
+        **(trigger.get("source_refs") if isinstance(trigger.get("source_refs"), Mapping) else {}),
+        **(payload.get("source_refs") if isinstance(payload.get("source_refs"), Mapping) else {}),
+    }
     input_refs: list[dict[str, Any]] = []
     seen_sources: set[tuple[str, str]] = set()
     if binding:
@@ -190,7 +195,8 @@ def build_plan_handoff_input_refs(
     for source_id, kind, key in _PLAN_SOURCE_CANDIDATES:
         if binding and source_id in {"requirement", "goal-objective"} and key != "requirement_spec_ref":
             continue  # Prior authority remains in the amendment/previous package.
-        ref = str(payload.get(key) or trigger.get(key) or "").strip()
+        ref = str(payload.get(key) or trigger.get(key)
+                  or (source_refs.get(key) if key == "source_ref" else "") or "").strip()
         if not ref:
             continue
         source = materialize_attempt_source_ref(

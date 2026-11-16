@@ -62,4 +62,8 @@ def test_unattended_qualification_policy_is_bounded_and_keeps_approval(tmp_path,
     assert config.runtime.host_verification.protected_files['tests/browser.cjs']
     assert config.runtime.run_manager.source_repair.model == 'gpt-6.1-terra'
     assert config.runtime.run_manager.source_repair.publish_candidate
+    assert config.runtime.run_manager.source_repair.restart_policy == 'operator_approved'
     assert config.runtime.run_manager.source_repair.allow_paths == ['src/zf/runtime/host_verification.py','tests/test_host_verification.py']
+    from tests.unattended_prd_fixture import request_payload
+    from zf.runtime.workflow_request_identity import request_source_ref
+    assert request_source_ref(root, root / '.zf', request_payload(root)) == str(root / 'docs/prd/TODO.md')
