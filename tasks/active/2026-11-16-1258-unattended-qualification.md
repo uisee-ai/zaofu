@@ -123,3 +123,5 @@ epoch6载入f1f0b5c8后实际退出旁路误静止，18:06:36/58/18:07:03连续�
 epoch6后续仍失败：未经加载的旧通用重发与Reader采证竞争，最终12次probe预算用尽；自动诊断Planner针对更早Docker权限错误生成有界调查草案而未输出task_map。不能把token/model继承修复记为诊断成功；需要冻结新源码再做新资格轮。
 
 隔离合同最终定向27通过（含symlink/原仓验证拒绝）、sentinel53通过。影响闭包含相关恢复mock；未声称真实修复链已通过。
+
+第五轮已基于afae6478进入Scan/Plan预备，尚未批准Plan。独立调用审阅复现新规范命令被验证器command_not_allowlisted拒绝（1RED/3安全用例通过）；补齐仅当前解释器+pytest+固定PYTHONPATH的准入，26定向通过，增量影响闭包及sentinel/mock全部通过。准备在资格开始前加载此修正，不改变冻结业务需求与12次预算。

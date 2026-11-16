@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -161,6 +162,12 @@ def _trusted_invocation(command: str) -> dict[str, Any] | None:
         env["PYTEST_ADDOPTS"] = "--no-cov"
         command = command[len(prefix):].strip()
     argv = shlex.split(command)
+    # The frozen checkout contract reuses this interpreter's dependencies,
+    # while importing the isolated candidate. Do not admit arbitrary env or
+    # executable paths from an agent's verification instruction.
+    if (len(argv) >= 5 and argv[:3] == ["env", "PYTHONPATH=src", sys.executable]
+            and argv[3:5] == ["-m", "pytest"]):
+        return {"argv": argv[2:], "env": {**env, "PYTHONPATH": "src"}}
     if len(argv) >= 4 and argv[:3] == ["uv", "run", "pytest"]:
         return {"argv": argv, "env": env}
     if (
