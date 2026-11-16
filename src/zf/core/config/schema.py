@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from zf.core.config.host_verification import HostVerificationConfig
+from zf.core.config.task_publication import TaskPublicationConfig
 
 from dataclasses import dataclass, field, fields
 
@@ -1590,6 +1591,7 @@ class RuntimeWebTerminalConfig:
 @dataclass
 class RuntimeConfig:
     host_verification: HostVerificationConfig = field(default_factory=HostVerificationConfig)
+    task_publication: TaskPublicationConfig = field(default_factory=TaskPublicationConfig)
     workdirs: WorkdirConfig = field(default_factory=WorkdirConfig)
     git: GitIsolationConfig = field(default_factory=GitIsolationConfig)
     skills: RuntimeSkillsConfig = field(default_factory=RuntimeSkillsConfig)

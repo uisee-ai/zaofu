@@ -62,3 +62,14 @@ OA 正式升级旧提交授权阻塞；它没有凭空推断新源码赋予权�
 不降低 execution_task_outside_plan 门禁。RED→GREEN 定向 78 passed；相对已验证
 HEAD 的增量影响闭包 172 passed / 7 skipped、sentinel 53、mock E2E 10 passed。
 这次方法修正留给下一冻结轮次，未热改运行中的 epoch 3；B07 继续 active。
+
+OA 模板修正已提交 `52ac03a1`。epoch 3 后续证明不是单纯授权文案问题：两个 Worker
+实际 `git add` 均因共享 Git index 只读失败。15:26 UTC 停止本轮专属服务、tmux 和观察器，
+保留全部 dirty 产品与证据；evaluation-epoch3.json 仍为失败，无 Verify/Candidate 完成证据。
+
+新增默认关闭的 `runtime.task_publication`，经明确预授权精确路径和有限次数，复用已有
+host-assist commit 与 Task Impl retry，不改变 Provider sandbox。仅发布当前 blocked 候选，
+提交不是任务通过；源码/合同/身份/活动回合/未决副作用/预算门禁保持失败关闭。
+32 项定向验证通过（包括实际 Git 与原 retry 事件）；影响闭包和新真实轮次尚待完成。
+
+受控发布最终定向 76 passed / 1 host deselected；859 文件影响闭包 10817 passed / 18 skipped / 15 failed，15 项逐名属于已在 2137a567 复现的基线集合，无新增失败名称。sentinel 53 与 mock E2E 10 通过。保留失败对账 JSON；不宣称全量或真实 PRD 通过。准备新冻结轮次验证自动发布→原 Worker 自检→独立 Verify。

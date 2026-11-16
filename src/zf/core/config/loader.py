@@ -3861,8 +3861,10 @@ def _build_runtime(
     if ar_terminal_policy not in {"cancel", "preserve", "continue"}:
         raise ConfigError("runtime.autoresearch_resident.on_parent_terminal must be cancel, preserve or continue")
     from zf.core.config.host_verification import parse_host_verification
+    from zf.core.config.task_publication import parse_task_publication
     try:
         host_verification = parse_host_verification(data.get("host_verification"))
+        task_publication = parse_task_publication(data.get("task_publication"))
     except (ValueError, TypeError) as exc:
         raise ConfigError(str(exc)) from exc
     source_repair_raw = run_manager_raw.get("source_repair") or {}
@@ -4240,6 +4242,7 @@ def _build_runtime(
             strict=bool(skills_raw.get("strict", False)),
         ),
         host_verification=host_verification,
+        task_publication=task_publication,
         run_manager=RuntimeRunManagerConfig(
             backend=run_manager_backend,
             reflect=RuntimeRunManagerReflectConfig(

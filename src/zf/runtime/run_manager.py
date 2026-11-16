@@ -356,6 +356,13 @@ def _run_manager_tick_unlocked(
         events = _read_events(state_dir, event_log=event_log)
     from zf.runtime.worker_assistance import reconcile_assistance
 
+    if auto_execute and getattr(config.runtime, "task_publication", None) and config.runtime.task_publication.enabled:
+        from zf.runtime.control_actions import ControlledActionService
+        from zf.runtime.task_publication import reconcile_task_publication
+        publication_service = ControlledActionService(state_dir, writer, config=config,
+            project_root=project_root, actor="run-manager", surface="runtime")
+        if reconcile_task_publication(publication_service):
+            events = _read_events(state_dir, event_log=event_log)
     if auto_execute and getattr(config.runtime, "host_verification", None) and config.runtime.host_verification.enabled:
         from zf.runtime.control_actions import ControlledActionService
         from zf.runtime.host_verification import reconcile_host_verification

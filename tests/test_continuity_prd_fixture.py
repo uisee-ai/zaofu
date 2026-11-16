@@ -60,6 +60,12 @@ def test_unattended_qualification_policy_is_bounded_and_keeps_approval(tmp_path,
     assert config.runtime.host_verification.enabled
     assert config.runtime.host_verification.max_executions_per_run == 12
     assert config.runtime.host_verification.protected_files['tests/browser.cjs']
+    assert config.runtime.task_publication.enabled
+    assert config.runtime.task_publication.max_publications_per_run == 4
+    assert set(config.runtime.task_publication.paths) == {
+        'app/src/normalize.ts', 'app/tests/normalize.test.mjs',
+        'app/src/numbers.ts', 'app/tests/numbers.test.mjs',
+    }
     assert config.runtime.run_manager.source_repair.model == 'gpt-6.1-terra'
     assert config.runtime.run_manager.source_repair.publish_candidate
     assert config.runtime.run_manager.source_repair.restart_policy == 'operator_approved'

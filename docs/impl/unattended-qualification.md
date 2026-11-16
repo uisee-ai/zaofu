@@ -95,3 +95,20 @@ Requirement 摘要。原文与需求快照同时绑定为 required 输入，保�
 真实续跑还暴露了 OA 示例歧义：`work_unit_id` 是单元标识，不能用裸 `impl` / `verify`
 冒充阶段选择器。pre_impl 的结果模板现在展示 `task_ids` 与 `stage_ids`，要求引用
 已批准 Plan 的任务。仅改善生成方法；未知任务仍由原准入规则拒绝，不放宽权限。
+
+## 沙箱内 Writer 的受控候选发布
+
+真实续跑中两个 Worker 都尝试了明确请求的 commit，但共享 Git 元数据为只读，
+`index.lock` 创建失败。普通 Task 不能只依赖 AR 专用发布器，也不能放宽 Worker 沙箱。
+
+`runtime.task_publication` 提供独立、默认关闭的预授权策略：`enabled`、`approval_ref`、
+精确文件清单 `paths`、`max_publications_per_run`（启用时 1..100）。只适用于当前
+已准入、已结算 blocked 的 Impl 候选；不会解析错误字符串来推断权限。
+有活动回合、暂停/终态、后继 operation、变更合同、分支或源码、越界路径、活动环境、
+现有 index、Git hooks、未决 Git 副作用时拒绝发布或保留等待，不执行任意宿主命令。
+
+Run Manager 使用既有 host-assist preview/apply 门禁，核对 signed changed_files、
+当前 HEAD、合同范围、预授权清单、完整文件及依赖摘要，发布一次本地候选提交。
+回执绑定策略摘要与批准引用。随后经现有有界 Task Impl retry 请求重新检查精确 commit；
+不增加 rework 额度、不直接生成 Impl passed，不跳过独立 Verify/Judge。
+发布与后续重试分别留痕；退出在 started/completed 之间时明确升级，不猜测成功后重放。

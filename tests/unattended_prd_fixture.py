@@ -136,6 +136,9 @@ q('#calculate').onclick=()=>{q('#numbers-error').textContent='';try{const x=summ
         'image':subprocess.check_output(['docker','image','inspect','mcp/playwright:latest','--format','{{.Id}}'],text=True).strip(),
         'network':'host','protected_files':{'tests/browser.cjs':hashlib.sha256(BROWSER.encode()).hexdigest()},
         'commands':['npm test','npm run build','npm run build && node tests/browser.cjs'],'max_executions_per_run':12,'timeout_seconds':180}
+    cfg['runtime']['task_publication']={'enabled':True,'approval_ref':'owner:unattended-qualification-20261116',
+        'paths':['app/src/normalize.ts','app/tests/normalize.test.mjs','app/src/numbers.ts','app/tests/numbers.test.mjs'],
+        'max_publications_per_run':4}
     cfg['runtime']['git']['auto_ship_on_judge_passed']=True
     (root/'zf.yaml').write_text(yaml.safe_dump_all(docs,sort_keys=False))
     return {'root':str(root),'prd_sha256':hashlib.sha256(PRD.encode()).hexdigest(),'browser_sha256':hashlib.sha256(BROWSER.encode()).hexdigest()}
