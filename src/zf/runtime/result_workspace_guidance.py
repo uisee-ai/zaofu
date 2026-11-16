@@ -5,13 +5,14 @@ from pathlib import Path
 def result_workspace_guidance(scratch: Path) -> list[str]:
     return [
         '## Workspace and result authority',
-        'Product edits remain limited to the dispatched checkout and assigned write scopes; '
+        'Product edits obey assigned write scopes. '
         'Reader source checkouts and evidence inputs are read-only.',
-        f'The Kernel-prepared `{scratch}` is this operation\'s authorized result output, '
-        'even when it is outside the product checkout. Update only that existing file '
-        'with the provider native Edit/apply_patch tool; this is not permission to write its directory.',
-        'Do not use shell/Python redirection to bypass a denied write. If the native edit is denied, '
-        'report the exact denial through the existing assistance/result channel.',
-        'Never directly edit events.jsonl, kanban.json, session.yaml, leases, other attempts\' scratch, '
-        'or required evidence inputs. Submission CLI performs the canonical transition.',
+        f'Authorized scratch: `{scratch}`, even outside the product checkout. '
+        'Edit only that existing file; not permission to write its directory.',
+        "Use native Edit/apply_patch, or its standalone exec_command/Bash adapter: "
+        "`apply_patch <<'PATCH'`, quoted heredoc Update File patch, then `PATCH`; "
+        "no command prefix/suffix, substitutions, output redirection, add/delete/move.",
+        'Do not use shell/Python redirection to bypass denial; report it via assistance.',
+        'Never edit events.jsonl, kanban.json, session.yaml, leases or other scratch. '
+        'Submission CLI owns canonical transitions.',
     ]

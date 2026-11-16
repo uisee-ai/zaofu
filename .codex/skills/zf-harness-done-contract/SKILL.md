@@ -58,7 +58,11 @@ Before submitting the completion claim:
 ## 提交工具与预校验边界
 
 结果 scratch 位于工作目录外时，只使用原生 Edit/Write 或 apply_patch 修改当前
-briefing 明确授权的精确路径；Python/heredoc/shell 动态写入不享有这个路径例外。
+briefing 明确授权的精确路径。如果 Provider 只通过 exec_command/Bash 暴露 apply_patch，
+已有守卫也支持单独的 `apply_patch <<'PATCH'`：引号 heredoc 仅包含当前 scratch 的
+Update File patch，以独立 `PATCH` 行结束；禁止前后附加命令、替换、输出重定向、
+创建/删除/移动文件。该适配不绕过 Provider 权限；不可用或被拒绝时仍走协助通道。
+Python 或其他 shell 动态写入不享有这个路径例外。
 被守卫拒绝时先改用授权工具，不放宽守卫、不改 canonical state、不重复动态写法。
 工作目录内的审计或读取临时文件另行保存，提交前保全证据并确认工作区 clean。
 

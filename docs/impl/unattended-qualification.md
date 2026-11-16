@@ -43,6 +43,16 @@ Candidate Reader 在原冻结目标的预授权采证完成后，使用现有受
 普通 Task、Candidate 和 OA 派发都明确：产品 checkout 受原 write scopes 限制；Reader 源码/证据只读；
 只有 Kernel 提前创建的当前 operation scratch 可通过原生 Edit/apply_patch 原地更新。
 scratch 在 checkout 外不是整个 runtime 目录的写授权。canonical state 仍只能经受控 CLI 提交。
+原生 apply_patch 仅以 exec_command/Bash 适配提供时，说明明确指向已有守卫支持的单一、
+引号 heredoc Update File patch；不放宽目标、添加/删除/移动或动态 shell 写入。
+Task 派发消息显式请求合同要求的本地 writer commit，仅限分配分支与路径；
+Reader 不因此获得写权限，不授权创建分支、merge/push 或绕过 Provider 拒绝。
+
+OA 的 periodic liveness sweep 同时检查“进程仍活着但 Provider 回合已经结束”。
+只有当前 operation 开始后的同一 session/turn 有明确关闭事件、没有更新的活动回合、
+没有已准入结果且 Run 未暂停/终止，才保留原输入/operation 并重投一次检查点。
+重投复用读取回执与游标，不能跳过尚未读取的正文；再次缺结果则 operation blocked，
+释放 OA 队列供后续诊断，不伪造语义 verdict。仍活跃或身份不明的 Provider 不受干扰。
 
 AR 启动前保存包含工作区、命令、阶段、PID/start ticks/boot ID 的 checkpoint sidecar，账本绑定 digest。
 resident 重启后只在证实原 owner 已退出时，将悬空诊断明确关闭为 interrupted，保留候选和检查点并升级；

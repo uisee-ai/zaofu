@@ -29,3 +29,25 @@ B01–B06 的入口与安全边界已补齐第一批实现，B07 尚待真实 PR
 影响闭包 1,101 文件：13,059 passed / 19 skipped / 17 failed；在 2137a567 干净导出基线复现其中 16 项，另一 signed_board_delivery 当前单独复测通过。保留 baseline-failures.json/log，不修无关历史失败。最后定向 187 passed、交接 8 passed；sentinel 53、mock E2E 10、serial 10、Web typecheck/unit 通过。非全量通过，非新真实 PRD 通过。
 
 复核还发现旧 self-repair sandbox bypass、修复分支 -B 重置及运行 briefing 污染 worktree；本批移除这些路径，提供默认关闭的受控候选发布，并验证其 CLI/tick 既有调用链。真实 Provider 故障资格仍不能用此处单测替代。
+
+### 真实流程复验与后续修正
+
+实现提交 `7bbd61ad feat: add bounded unattended recovery execution`。后续修正：
+
+- `48274873`：修复验证保留完整影响闭包，不因文件数超过 80 扩展为全仓；27 passed / 1 skipped。
+- `45e6f959`：repair → apply → continuation 保留原 RecoveryCase 身份；186 定向通过，影响闭包 4990 passed / 7 skipped，3 项 PATH 环境失败补齐虚拟环境后逐项通过。
+- `af1ff7f9`：已完成的失败容器回执也交回独立 Reader；36 passed + sentinel 53。
+- `9e1e4393`：Plan/Critic 显式物化原始 source_ref，不能只读包含路径的 Requirement 摘要；35 定向、930 影响测试及 sentinel 53 通过。
+- `459bfbb6`：活跃期 repair apply 在修改源码之前核对 operator_approved 重启策略；187 定向、5013 影响测试 / 7 skipped、sentinel 53、mock E2E 10 通过。
+
+第 1 轮隔离真实 PRD 在 Plan 补证阶段停止，NOT_QUALIFIED，未进入资格计时。入口驱动错误传入 `from` 而非 `source_ref` 属于本 session 的问题，不能算作框架故障；正确嵌套 source_ref 的运行时交接缺口另行复现并修复。Planner 自动返工已发生，但不替代完整产品验收。
+
+第 2 轮 `/tmp/zf-unattended-r2-20261116T141114Z` 冻结 `459bfbb6`，使用正式 source_ref 和显式 operator_approved。14:29 UTC Planner 已准入，独立 Critic 开始；尚未批准 Plan 或进入 Impl，B07 继续未完成。详细失败历史、日志与故障脚本摘要保存在 reports/unattended-qualification-20261116/ 及隔离根 receipts/，不能把能力测试计作无人真实 PRD 通过。
+
+第二轮后续：14:36 UTC 同版 Plan/Critic/Preview 审阅批准，开始资格计时。控制器启动窗口异常退出后约 9 秒恢复并并行派发两项 Impl；带未提交测试的 Worker 退出后自动 respawn，原文件摘要保留；结果通知期间控制器中断后，原 blocked 结果正确准入。
+
+本轮未通过：两个 Impl 报告提交要求与 Provider 的“未明确请求不 commit”规则冲突；一个 Worker 因未说明既有 literal apply_patch 适配而停止填写 scratch。OA 在只读完部分输入后结束回合，无结果却持续占据 running operation，Run Manager 已提交的恢复请求无法继续。未到独立 Verify、Candidate 或 F4–F6；没有人工代提交、代测试或宣布完成。
+
+下一修复批次显式传达合同内的本地提交请求、说明已有精确 scratch 适配，且为 OA 正向结束回合但缺结果增加同检查点一次重投；暂停、终态、已准入结果及活动新回合均拒绝重投。RED 已复现，准备以修复后源码从原断点验证，不改写本轮失败历史。
+
+该批定向 136 + 33 passed；297 文件影响闭包 4212 passed / 9 skipped / 1 failed，唯一失败是已在 2137a567 复现的 wake 数量快照（194 vs 193），本批未修改 wake 集合。sentinel 53 与 mock E2E 10 通过。新增说明曾导致 12 KiB briefing 回归，已压缩说明后复测通过，没有放宽阈值。真实断点续跑仍待验收。

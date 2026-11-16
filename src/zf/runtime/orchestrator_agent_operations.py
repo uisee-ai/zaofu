@@ -555,13 +555,14 @@ def retry_orchestrator_agent_operation(
     retry_attempt: int,
     dispatch_id: str,
     causation_id: str,
+    reason: str = "retry_after_orchestrator_pane_respawn",
 ) -> None:
     workflow_operation_service(runtime).mark_retry_started(
         operation_id=prepared.operation_id,
         request_hash=prepared.request_hash,
         workflow_run_id=prepared.workflow_run_id,
         retry_attempt=retry_attempt,
-        reason="retry_after_orchestrator_pane_respawn",
+        reason=reason,
         dispatch_id=dispatch_id,
         role_instance=prepared.role_instance,
         active_attempt_id=prepared.attempt_id,

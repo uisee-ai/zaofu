@@ -106,6 +106,11 @@ def reconcile_orchestrator_agent_operation_liveness(runtime: Any) -> None:
     _redrive_explicitly_stopped_checkpoints(runtime, events, operations)
     events = runtime.event_log.read_all()
     operations = reduce_workflow_operations(events)
+    from zf.runtime.orchestrator_missing_result import reconcile_closed_checkpoint_turn
+
+    reconcile_closed_checkpoint_turn(runtime, events, operations)
+    events = runtime.event_log.read_all()
+    operations = reduce_workflow_operations(events)
     candidates = [
         operation
         for operation in operations.values()

@@ -1900,6 +1900,10 @@ def build_task_prompt(
     return (
         f"Read the task briefing at {briefing_path}; follow its Read Order to "
         "load the kernel-managed task.md before you work. "
+        "Execute that task. I explicitly request the local Git commit only when "
+        "the dispatched writer contract requires it, limited to the assigned branch and write scopes. "
+        "This does not authorize creating branches, merging, pushing, bypassing a denied "
+        "operation, or writing outside the contract. Reader roles remain read-only. "
         f"Also read your role instructions at {instructions_path} for constraints and completion protocol."
     )
 
