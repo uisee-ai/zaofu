@@ -458,3 +458,6 @@ Reader 必须审阅并以当前身份提交。宿主执行不等于 Provider san
 验证覆盖真实 Git detached currentness/负对照、实时与 settled replay 分类、实际聚合调用方、
 历史 sidecar 篡改/缺失/跨 Run、误派发取消及活跃持有者拒绝。完整交付、Judge 和无人值守
 故障旅程继续单独验收，不因本补丁完成自动标为通过。
+
+fixed-input repair 同样接入已有 operator_feedback→rework_feedback 绑定，保留操作员
+来源和请求事件。修复事实/证据位置进入后继Reader上下文；这不是预先批准其产品判决。

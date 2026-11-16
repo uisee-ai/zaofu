@@ -56,7 +56,9 @@ def repaired_reader_stage_trigger(
     if trigger is None:
         raise ValueError(f"reader repair retry rejected: {reason}")
     from zf.runtime.plan_requirement_amendment import amendment_binding
+    from zf.runtime.reader_replan_feedback import bind_operator_feedback, operator_feedback
     trigger.payload.update(amendment_binding(state_dir, run_id, events=events))
+    bind_operator_feedback(trigger, operator_feedback(payload), request_id=requested.id)
     trigger.payload.update(repaired_failure_event_id=failure.id,
                            repair_reason=str(payload["reason"]))
     return trigger

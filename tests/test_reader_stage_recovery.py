@@ -41,7 +41,7 @@ def execute(service, failure_id, **overrides):
 
 def test_explicit_repaired_reader_retry_keeps_run_inputs_and_replays_once(recovery):
     service, failure, original = recovery
-    result = execute(service, failure.id)
+    result = execute(service, failure.id, operator_feedback=["Read repaired probe receipt at artifacts/receipt.json"])
     assert result["ok"], result
     triggers = [e for e in service.writer.event_log.read_all() if e.type == original.type]
     assert len(triggers) == 2
@@ -49,6 +49,8 @@ def test_explicit_repaired_reader_retry_keeps_run_inputs_and_replays_once(recove
     assert triggers[-1].payload["target_ref"] == "HEAD"
     assert triggers[-1].payload["repaired_failure_event_id"] == failure.id
     assert triggers[-1].payload["stage_replan_generation"]
+    assert triggers[-1].payload["rework_feedback"][-1]["message"] == "Read repaired probe receipt at artifacts/receipt.json"
+    assert triggers[-1].payload["rework_feedback"][-1]["source"] == "operator"
     assert service.config.workflow.plan_approval_enabled
     assert not execute(service, failure.id)["ok"]
     assert len([e for e in service.writer.event_log.read_all() if e.type == original.type]) == 2
