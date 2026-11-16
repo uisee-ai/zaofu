@@ -78,7 +78,9 @@ def build_resident_run_manager_role(config: ZfConfig) -> RoleConfig | None:
         model=resident.model,
         model_reasoning_effort=resident.model_reasoning_effort,
         provider_session=(
-            ProviderSessionConfig(effort=resident.model_reasoning_effort)
+            ProviderSessionConfig(sandbox="workspace-write", native_delegation=False)
+            if run_manager.backend == "codex"
+            else ProviderSessionConfig(effort=resident.model_reasoning_effort)
             if run_manager.backend == "claude-code"
             and resident.model_reasoning_effort
             else None

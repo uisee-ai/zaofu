@@ -555,3 +555,14 @@ trace、截图及 WebM；fixture 正常退出时记录 simulation.done 并清理
 本批修复不新增真实 Provider 故障矩阵结论：8+8 满载、跨 Provider 接力、Go、长时间无人
 监工资格及原 B01–B07 的剩余验收仍独立管理。持续由未知占用者持有的环境仍需等待或
 受控运维处理，不能通过强杀不明进程来宣称自愈成功。
+
+## 2026-11-16：无人监工故障验收前置修正
+
+真实故障验收启用 resident Run Manager 时，发现其动态生成的 Codex Role 没有
+provider_session，仍会落入 adapter 的 legacy sandbox bypass 分支。生成入口现在显式
+使用 workspace-write 并禁止 native delegation；逻辑 permission_mode 与受控动作门禁
+不变，Claude effort 设置保持。实际 Role→adapter argv 的 RED/80 项调用链回归、
+53 项 sentinel 和 10 项 mock 流程通过后用于新的隔离验收。
+本机 Codex 0.164 的探测命令为 `codex sandbox -- /usr/bin/true`；真实 Terra High
+workspace-write exec 已调用 shell 成功。前置人工修复不计为无人自愈成绩。
+后续故障事实/结果保留在 `reports/unattended-faults-20261116T090219Z/`。
