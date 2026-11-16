@@ -51,4 +51,8 @@ def review_diagnostics(manifest: Mapping[str, Any], *, before: list[dict[str, An
         mode, reason = 'full', 'impact_scope_ineligible_or_explicit_reads'
     return {'schema_version': 'plan-review-input-diagnostics.v1', 'strategy': 'cross_version_evidence',
             'mode': mode, 'reason': reason,
+            'eligibility': 'verified' if mode == 'incremental' else
+                ('unproven' if 'plan-rework-package' in ids else 'no_approved_baseline'),
+            'historical_facts': 'rejected_review_bound' if 'plan-rejected-review' in ids else 'none',
+            'inherited_approval': False,
             'before': input_size(manifest, before), 'after': input_size(manifest, after)}

@@ -81,6 +81,42 @@ def check_owner_checkpoint(events: list, run_id: str) -> dict[str, str]:
             "decision_event_id": decision.id, "resolution_event_id": resolution.id, "final_plan_id": plan.payload["plan_id"]}
 
 
+def read_generated_plan(approval: Any, preview: dict, events: list, *, state: Path, project: Path) -> tuple[str, str, str]:
+    """Follow an explicitly reviewed evidence ref, never search for a plausible file."""
+    from zf.runtime.plan_preview_artifacts import read_preview_artifact
+    payload = approval.payload
+    ref = str(preview.get("refs", {}).get("markdown_ref") or "")
+    assert ref, "preview has no generated artifact ref"
+    digest = str(payload.get("plan_artifact_digest") or "")
+    if ref != payload.get("plan_artifact_ref") or not digest:
+        # Pure critics can retain a non-existent local output path. The actual
+        # planner document must be pinned in that Run/fanout's reviewed contract.
+        source = next((e for e in events if e.id == payload["plan_id"]), None)
+        assert source is not None, "missing bound Plan source event"
+        run = payload.get("workflow_run_id") or payload.get("trace_id")
+        assert run and source.payload.get("workflow_run_id") == run, "Plan source Run mismatch"
+        refs = [*source.payload.get("evidence_refs", []), *source.payload.get("artifact_refs", [])]
+        assert ref in refs, "resolved Plan is not explicit source evidence"
+        fanout = source.payload.get("fanout_id")
+        reviews = [e for e in events[:events.index(source)] if e.type == "fanout.synth.completed"
+                   and e.payload.get("workflow_run_id") == run and e.payload.get("fanout_id") == fanout]
+        assert fanout and reviews, "no same-Run fanout review"
+        reviewed = reviews[-1].payload
+        contract_digest = reviewed.get("reviewed_plan_candidate_digest")
+        assert contract_digest, "review has no candidate digest"
+        contract = json.loads(read_preview_artifact(
+            reviewed["plan_synth_contract_ref"], state_dir=state, project_root=project, digest=contract_digest,
+        ))
+        assert contract.get("workflow_run_id") == run and contract.get("fanout_id") == fanout, "review contract binding mismatch"
+        bindings = [b for b in contract.get("source_bindings", []) if b.get("ref") == ref]
+        assert len(bindings) == 1 and bindings[0].get("sha256"), "Plan absent from reviewed digest bindings"
+        digest = bindings[0]["sha256"]
+        declared = payload.get("plan_artifact_digest")
+        assert not declared or declared.removeprefix("sha256:") == digest.removeprefix("sha256:"), "approval digest disagrees with reviewed Plan"
+    markdown = read_preview_artifact(ref, state_dir=state, project_root=project, digest=digest)
+    return ref, digest.removeprefix("sha256:"), markdown
+
+
 def audit(project: Path, *, journey: str, owner_checkpoint: bool = False) -> dict[str, Any]:
     config = load_config(project / "zf.yaml")
     state = project / config.project.state_dir
@@ -102,14 +138,8 @@ def audit(project: Path, *, journey: str, owner_checkpoint: bool = False) -> dic
     )
     plan_id = str(approval.payload["plan_id"])
     preview = build_plan_preview(state, events, plan_id=plan_id, project_root=project)
-    ref = str(approval.payload.get("plan_artifact_ref") or "")
-    assert ref, "approval has no full Plan artifact"
-    from zf.runtime.plan_preview_artifacts import preview_artifact_path
-    path = preview_artifact_path(ref, state_dir=state, project_root=project)
-    markdown = path.read_text()
+    ref, digest, markdown = read_generated_plan(approval, preview, events, state=state, project=project)
     check_preview(preview, expected_plan_id=plan_id, expected_markdown=markdown)
-    digest = hashlib.sha256(markdown.encode()).hexdigest()
-    assert digest == str(approval.payload.get("plan_artifact_digest", "")).removeprefix("sha256:"), "Plan digest mismatch"
     tasks = TaskStore(state / "kanban.json").list_all()
     assert len(tasks) == 1, "only the parent Task may exist before plan approval"
     task = tasks[0]

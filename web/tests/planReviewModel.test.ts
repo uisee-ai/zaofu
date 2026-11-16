@@ -67,6 +67,12 @@ assert.equal(excerpts.pages[0].content.includes("flowchart TD"), true);
 assert.equal(excerpts.overview.some(s => s.content.includes("PRD：价值")), true);
 // Headings in code fences are not interpreted as authored document sections.
 assert.equal(planReadingSections("# Plan\n```md\n## Decision Register\nnot a register\n```").decisions.length, 0);
+for (const title of ["权威、范围与当前状态", "权威、范围与审批入口"]) {
+  const authored = planReadingSections(`# 中文 Plan\n\n## ${title}\n仅交付三个文件，审批后实施。\n\n## PRD 用户结果\n原始字节不变。\n\n## Task Spec: T1\n本片说明。`);
+  assert.equal(authored.overview[0].content.includes("仅交付三个文件，审批后实施。"), true);
+  assert.equal(authored.overview[0].content.includes("本片说明。"), false);
+  assert.equal(authored.journeys[0].content.includes("原始字节不变。"), true);
+}
 const ownership = buildPlanReview({ task_map: { tasks: [task, { ...task, task_id: "T2" }] }, test_matrix: {
   tests: [{ id: "only-T2", task_id: "T2", acceptance_ids: ["AC1"], given: "A", when: "B", then: "C" }],
   formal_acceptance_scenarios: [{ id: "formal-T2", task_id: "T2", acceptance_id: "AC1" }],
@@ -147,3 +153,75 @@ assert.equal(repeating.reading.A.map(s => s.content).join(''), repeating.tasks.A
 assert.equal(repeating.reading.B.map(s => s.content).join(''), repeating.tasks.B.content);
 const different = planTaskSpecifications('## Task Spec: A\n### 决定\nD 未关闭\n## Task Spec: B\n### 决定\nD 已关闭\n', ['A', 'B']);
 assert.equal(different.reading.A.some(s => s.shared), false);
+
+// A sibling TDD is reachable without being silently assigned to every task.
+const handoff = planTaskSpecifications("## Task Spec: T1\n本片。\n## TDD and evidence\n### 恢复\n必须恢复原权限。\n## Task Spec: T2\n别片。\n", ["T1", "T2"]);
+assert.equal(handoff.tasks.T1.content.includes("必须恢复"), false);
+assert.equal(handoff.unassigned.length, 1);
+assert.equal(handoff.unassigned[0].content.includes("必须恢复原权限"), true);
+assert.equal(handoff.unassigned[0].content.includes("别片"), false);
+
+// Actual serialized Channel decisions previously rendered blank IDs and bodies.
+import realDecisions from "./fixtures/spec206-real-decisions.json" with { type: "json" };
+import { planDecisionView } from "../src/components/delivery-trace/planDecisionView.js";
+const ownerDecision = planDecisionView(realDecisions.items[4]);
+assert.equal(ownerDecision.id, "DL-05");
+assert.equal(ownerDecision.question, realDecisions.items[4].decision);
+assert.equal(ownerDecision.deadline, "创建/派发 CLI-001 之前");
+assert.equal(ownerDecision.sources[0], realDecisions.items[4].source_ref);
+assert.equal(ownerDecision.closure, realDecisions.items[4].closure_evidence);
+assert.equal(decisionStatusDistribution(realDecisions.items).includes("decided_source 4"), true);
+const aliased = planDecisionView({ decision_id: "A", id: "B", question: "Q", decision: "D", options: ["one", { label: "two" }, null], resolution: "still needs verification", evidence_refs: ["x"], source_ref: "x" });
+assert.equal(aliased.id, "A");
+assert.equal(aliased.options.join(), "one,two");
+assert.equal(aliased.sources.length, 1);
+assert.equal(aliased.resolution, "still needs verification");
+const channelHeadings = "## authority 与产品规格（PRD）\n目标。\n## Shared Spec：技术设计（SDD，CLI-CONTRACT-v1）\n规则。\n## Task Spec: CLI-001\n本片。\n";
+assert.equal(planReadingSections(channelHeadings).overview.length, 1);
+assert.equal(planTaskSpecifications(channelHeadings, ["CLI-001"]).shared.length, 1);
+assert.equal(planTaskSpecifications(channelHeadings, ["CLI-001"]).unassigned.length, 1);
+
+const unfamiliarOpening = "## 权威、来源和授权\n等待 Owner。\n### 来源\n保留原文。\n```md\n## 伪标题\n```\n## Task Spec: T1\n本片。\n";
+assert.equal(planReadingSections(unfamiliarOpening).overview.length, 0);
+assert.equal(planReadingSections(unfamiliarOpening).opening[0].content, unfamiliarOpening.slice(0, unfamiliarOpening.indexOf("## Task Spec:")));
+assert.equal(planReadingSections("## Task Spec: T1\n仅本片。\n").opening.length, 0);
+assert.equal(planReadingSections("# 无二级章节\n原文。\n").opening.length, 0);
+assert.equal(planReadingSections("## 共享 Task Spec\n共享。\n").opening.length, 0);
+assert.equal(planTaskSpecifications("## 共享 Task Spec\n共同条件。\n", []).shared[0].content, "## 共享 Task Spec\n共同条件。\n");
+assert.equal(planDecisionView({ id: "D-001", proposed_resolution: "仍需 Owner 决定" }).resolution, "仍需 Owner 决定");
+assert.equal(planDecisionView({ resolution: "作者结论", proposed_resolution: "候选" }).resolution, "作者结论");
+
+import { decisionReadingSummary, decisionStatusLabel } from "../src/components/delivery-trace/planDecisionView.js";
+import { taskCommandReferences } from "../src/components/delivery-trace/planCommandView.js";
+const decisionsBefore = [{ status: "proposed", blocking: false }, { status: "pending_validation", blocking: false }, { status: "pending_approval", blocking: true }, { status: "future-status" }];
+const snapshot = JSON.stringify(decisionsBefore);
+assert.equal(decisionReadingSummary(decisionsBefore), "待确认提议 1 · 待验证 1 · 待审批 1 · 未识别状态：future-status 1 · 明确阻塞 1");
+assert.equal(decisionStatusLabel({ status: "not_run" }), "尚未执行");
+assert.equal(JSON.stringify(decisionsBefore), snapshot);
+const readTask = { task_id: "READ", acceptance_criteria: [{ id: "R", verification_command_ids: ["LOCAL", "FINAL", "MISSING"] }], validation: { commands: [{ id: "LOCAL", command: "read test", owner: "task_verify", producer_task_id: "READ" }] } };
+const sizeTask = { task_id: "SIZE", validation: { commands: [{ id: "FINAL", command: "both test", owner: "candidate_verify", producer_task_id: "SIZE" }] } };
+const refs = taskCommandReferences([readTask, sizeTask], readTask);
+assert.equal(refs.map(r => r.label).join(";"), "本任务 · 本片验证;其他任务 SIZE · 候选集成验证;定义缺失，请核对工程附件");
+assert.equal(taskCommandReferences([readTask, sizeTask, sizeTask], readTask)[1].definitions.length, 2);
+assert.equal(buildPlanReview({ task_map: { tasks: [readTask, sizeTask] } }).modules[0].criteria[0].commandReferences[1].label, "其他任务 SIZE · 候选集成验证");
+const changeText = "## 本次变更\nMODIFIED：错误格式。\n### 保留\n原字节不变。\n## Task Spec: READ\n读取。";
+const changeSections = planReadingSections(changeText).changes;
+assert.equal(changeSections.length, 1);
+assert.equal(changeSections[0].content.includes("原字节不变"), true);
+assert.equal(changeSections[0].content.includes("读取。"), false);
+assert.equal(planReadingSections("```md\n## 本次变更\n假的标题\n```").changes.length, 0);
+
+
+{
+  const review = buildPlanReview({ execution_spec: { shared: { human_review: {
+    overview_markdown: "交付三个 CLI。", changes_markdown: "仅修改 upper 示例，其他义务保留。",
+    risks_markdown: "输入编码风险仍需验证。",
+  } } } });
+  assert.equal(review.overview, "交付三个 CLI。");
+  assert.equal(review.changes, "仅修改 upper 示例，其他义务保留。");
+  assert.equal(review.risks, "输入编码风险仍需验证。");
+  assert.equal(buildPlanReview({}).changes, "");
+}
+
+
+assert.equal(planDecisionView({ id: "D-03", statement: "Owner 批准后才允许实现", status: "pending", blocking: true }).question, "Owner 批准后才允许实现");

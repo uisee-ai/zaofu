@@ -1,6 +1,7 @@
 ---
 name: zf-channel-discussion-participant
 description: "Use for every active lens in a ZaoFu fanout-then-synthesis Channel. Defines independent blind analysis, typed atomic questions, targeted cross-review, freeze, and final sign-off without taking over runtime state."
+dependencies: [zf-document-reading]
 ---
 
 # Channel 需求澄清讨论 — 参与者协议
@@ -10,6 +11,9 @@ description: "Use for every active lens in a ZaoFu fanout-then-synthesis Channel
 关键约束。
 
 通过本次 briefing 的 typed reply 报告结果，由 runtime 写入受控事件；不要自行写状态或模拟审批。payload 里 `channel_id` / `thread_id` 用简报里给你的值。
+
+编写或同版评审 PRD 时应用已交付的 `zf-document-reading` 正文方法；在现有意见字段记录
+开头、代表场景及来源升级的具体证据，不把纯版式偏好升级为 Owner 阻塞。
 
 ## 通用纪律
 

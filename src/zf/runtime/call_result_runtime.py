@@ -375,10 +375,10 @@ def prepare_call_operation(
             plan_revision=str(payload.get("plan_revision") or ""),
         )
     if output_profile_id == "plan-synth":
-        from zf.runtime.plan_review_input_diagnostics import review_diagnostics
+        from zf.runtime.plan_review_selection_cost import choose_review_reads
 
-        payload["plan_review_optimization"] = review_diagnostics(
-            source_manifest, before=full_plan_reads, after=required_reads,
+        required_reads, payload["plan_review_optimization"] = choose_review_reads(
+            runtime.state_dir, source_manifest, before=full_plan_reads, candidate=required_reads,
             explicit=bool(explicit_required_reads),
         )
     if required_reads:

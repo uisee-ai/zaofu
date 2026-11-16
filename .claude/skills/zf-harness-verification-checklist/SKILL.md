@@ -27,8 +27,20 @@ event schema or recovery state machine.
 - The task contract and every mandatory acceptance criterion were read.
 - Each criterion has a behavior-specific check; a green generic command alone
   is not coverage.
+- Compare each mandatory AC's full statement with the actual probe scope,
+  not only its ID, command owner or the author's module summary. If a first
+  slice's AC says "both entrypoints" or "final README" but the evidence only
+  covers its local entrypoint, do not mark that AC passed. Record the exact
+  conflict with the Plan/source and use the configured finding/rework path;
+  do not silently narrow an admitted AC or edit the canonical contract.
+  A contract conflict is not proof of faulty product behavior, nor permission
+  to implement a successor early. Request the authorized contract correction
+  while preserving the successor's mandatory verification obligations.
 - Required verification tiers have reproducible command or artifact evidence.
 - Changed files/artifacts and their evidence belong to the assigned scope.
+- Deliverable links and required resources resolve from the clean candidate.
+  Runtime-injected PRDs, fixtures or local sidecars are not shipped files;
+  their presence in a worker directory cannot prove a product link works.
 - Declared implementation checks were independently rerun where applicable.
 - Required regression, integration, browser, provider, packaging, or live
   checks were added when the contract calls for them.

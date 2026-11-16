@@ -125,6 +125,7 @@ def normalize_channel_task_submit_payload(
         "acceptance_criteria",
         "channel_authority",
         "explicit_non_goals",
+        "constraints",
         "objective",
         "priority",
         "scope",
@@ -200,6 +201,11 @@ def normalize_channel_task_submit_payload(
                 return {}, {}, f"approved_task requires {field}"
         if raw_payload.get("validation") is not None and not isinstance(raw_payload["validation"], dict):
             return {}, {}, "validation must be a mapping"
+    if "constraints" in raw_payload and (
+        not isinstance(raw_payload["constraints"], list)
+        or any(not isinstance(item, str) for item in raw_payload["constraints"])
+    ):
+        return {}, {}, "submit_payload.constraints must be a list of strings"
     scope = _string_values(raw_payload.get("scope"))
     invalid_scope = [
         entry for entry in scope if not scope_entry_is_path_like(entry)
@@ -223,6 +229,7 @@ def normalize_channel_task_submit_payload(
             raw_payload.get("acceptance_criteria")
         ),
         "scope": scope,
+        "constraints": _string_values(raw_payload.get("constraints")),
         "explicit_non_goals": _string_values(
             raw_payload.get("explicit_non_goals")
         ),

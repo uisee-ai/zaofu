@@ -239,9 +239,13 @@ shared contract, task membership, unrelated task, or non-scoped Plan port
 changed, or if the evidence cannot establish the complete impact. In that case
 the Critic consumes the normal complete inputs.
 
-The existing controlled replan trigger must explicitly carry the same nonempty
-`task_ids` as the changed tasks. Do not add or change this dispatch scope inside
-the certificate. Prerequisites and downstream consumers are reviewed as context;
+The controlled replan trigger must explicitly carry the same nonempty edit
+scope as the changed tasks: an operator Plan rejection may use
+`zf plan reject <id> --changed-task <task-id> --reason <feedback>` (repeat the
+flag for more tasks), producing version-bound `changed_task_ids`. This does
+not narrow execution, select reading priorities, or grant incremental review.
+Without that field, the existing controlled execution replan `task_ids` remains
+the scope source. Do not invent either scope inside the certificate. Prerequisites and downstream consumers are reviewed as context;
 their presence alone does not authorize reopening them as implementation tasks.
 
 The JSON object uses `schema_version: "scoped-plan-review.v1"`, the current
@@ -256,6 +260,18 @@ verification ownership. `ports` is a nonempty list of objects with
 must be a complete `task-scoped-plan-input.v1` in both versions. Copy exact
 SHA-256 digests from pinned baseline descriptors and the final candidate files.
 
+Use `zf plan prepare-scope-review --baseline-bundle <old-map.json>
+--candidate-bundle <new-map.json> --claim <scope-claim.json>` to compute the
+certificate hashes from the exact final files. Each bundle maps logical port
+names (including `task_map`) to local JSON paths. The claim contains the current
+run, baseline Package digest, affected IDs, evidence refs and the two explicit
+semantic assertions above. Save its stdout as `scoped_plan_review.json` and bind
+it in `artifact_refs`. A successful preflight proves structural compatibility
+only: the dispatch still checks the admitted baseline, provider read evidence,
+authority and candidate identity. Missing proof keeps full review; inspect the
+actual `plan_review_optimization` mode/reason rather than claiming incremental
+review merely because the file exists.
+
 Keep the complete Task Map, requirement, original sources and fixed-schema
 matrices bound and available. Supply an explicit candidate descriptor with its
 ref and SHA-256 for every unchanged baseline port; the kernel-derived Task Map
@@ -269,6 +285,25 @@ bound to that Critic session; currently only Codex transcript observation is
 implemented. An unavailable or unsupported observation falls back to full
 reads. Historical delivery does not prove comprehension or current memory.
 The new Critic still performs an independent review and can expand any source.
+
+When publishing a task-scoped supplemental port for future incremental review,
+prepare the first full-review baseline as well: explicitly bind the complete
+`source_index`, `coverage_ledger`, `source_inventory`, and required acceptance
+specification as file ref/digest ports before Critic dispatch. A port derived
+only after that review has no historical full-read receipt and cannot serve as
+an approved input baseline. Preserve the normal fixed schemas; the coverage
+ledger uses `schema_version: "coverage-ledger.v1"` with `entries` keyed by
+`source_id`, each declaring `disposition`, `task_ids`, `acceptance_ids`, and a
+reason for non-covered dispositions. For this optional scope proof, reconcile
+Task Map `source_refs` with source-index task `source_refs` and `acceptance_ids`,
+and source-index `traceability` rows (`source_id`, `source_ref`). Every task
+`source_refs` item must exactly match a traceability `source_ref` whose ledger
+row names that task. A whole-file ref and `file#AC-1` are different declarations:
+use the actual atomic refs for task ownership, or explicitly map the file-level
+source as well; do not assume anchors prove coverage of an entire file. Keep
+transport copies in the inventory unless separately mapped. Include empty
+`pages`/`forms` lists in the inventory when there are no visual surfaces. Do not
+invent visual assets, drop sources, or alter fixed matrices to qualify.
 
 For scoped review, the current `source_index`, `coverage_ledger`, and
 `source_inventory` must be bound Plan ports and remain full required inputs.
@@ -905,3 +940,40 @@ Use with the task map:
 AC、图片状态与依赖义务。提交前用 `zf plan inspect-inputs --bundle <本地映射 JSON>`
 逐任务核验声明；Critic 必须独立从原始材料审查语义遗漏。离线评测标准答案不得进入
 Reviewer 上下文；真实 Provider 资格需另外记录，不能用结构检查代替。
+
+## 来源 AC 与任务验收粒度
+
+`max_acceptance_criteria` 约束单个 Task 的验收条目数，不是来源 PRD 的 AC 数。
+先列出全部来源 AC 和原子场景，再按同一责任、行为和验证入口归组；Task AC 可通过
+`source_refs` 引用多个来源 AC，但每个原子场景仍须在验收/测试矩阵中独立列行，保留来源编号、
+输入、预期结果、验证责任、命令及 Task 映射。不得用“等场景”“综合通过”替代断言。
+例如来源正常文本、空文件、非 UTF-8 三项可归为“逐字节读取”，但三种输入和字节断言不可合并消失。
+10 项来源 AC 不自动意味着必须创建 10 项 Task AC，也不自动意味着与上限 8 冲突。
+不得为凑数归并无关行为、删除 mandatory/P1 要求、擅自提高配置上限，或新增非产品任务。
+先尝试有理由的归组及允许的任务切片；仍存在真实互斥条件才提出有原文证据的 Owner 决定。
+
+逐 Task 检查其矩阵只消费当前片及已完成前置片的产物。首个读取 Task 不负责后续计数命令的
+7/0/4 等结果；这些行归计数 Task。跨片集成断言归最终集成责任，不能成为首片交付前提。
+全图文件独占规则继续生效，串行依赖不授权重复 `allowed_paths`。区分原文的“每片交付用法”
+与“每片修改同一个 README”：前者可使用各片独占用法文档，最后一个责任方交付根 README
+中的完整入口；保留每片真实入口/用法/测试的时点。若原文明确要求每片修改同一文件，不能
+自行改变时点，应说明配置能力冲突并交 Owner。禁止在 PRD/Plan 中自行强化成原文没有的约束。
+
+
+### 人审概览与本次差异（207）
+
+使用既有 execution_spec.shared.human_review 时，overview_markdown 先写用户结果、
+范围和非目标；changes_markdown 写相对绑定基线的具体变化、保留义务及影响任务；
+risks_markdown 写已知风险、当前待决定和未来条件。不把 SHA、事件链或文件清单
+当作业务摘要；它们放在来源/工程审计正文。没有可靠基线时明确未知，不能写成
+“没有变更”。这些是可选人读正文，不新增 canonical Task schema 或批准状态。
+
+小需求以短概览和按需展开的 Task Spec 为主；相同全局约束保留一个权威来源，
+任务用明确引用和本片差异交接，不在多份正文复制同一整段。仍保留所有原始义务、
+验收责任与完整工件；不按固定字数截断。依赖和增量读取的取舍执行
+zf-plan-execution-readiness 的 execution-route 方法；不要用叙述声称已节省成本。
+
+
+完整 `prd-plan.md` 与 `human_review` 都遵循
+[正文阅读与审查](../zf-requirement-reconciliation/references/document-reading.md)：
+先交代业务目标、方案、验收和待决条件，再展开任务与来源审计；不只优化可选概览。

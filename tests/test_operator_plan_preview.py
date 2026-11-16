@@ -542,7 +542,7 @@ def test_current_digest_uses_bound_task_commands_without_rewriting_history(tmp_p
 
     state, full, payload = _artifacts(tmp_path)
     task_map = json.dumps({"tasks": [{
-        "task_id": "SLICE-1", "allowed_paths": ["src/feature.py"], "wave": 1,
+        "task_id": "SLICE-1", "owner_role": "dev-0", "allowed_paths": ["feature.py"], "wave": 1,
         "validation": {"commands": [{"id": "local", "command": "node --test tests/feature.mjs"}]},
     }]})
     (state / payload["task_map_ref"]).write_text(task_map)
@@ -563,6 +563,7 @@ def test_current_digest_uses_bound_task_commands_without_rewriting_history(tmp_p
     result = _preview(state, payload)
     assert result["markdown"] == full
     assert "node --test tests/feature.mjs" in result["digest_markdown"]
+    assert "不要求独立 assembly" in result["digest_markdown"]
     assert result["digest_source"] == "bound_task_map"
     assert "🔴" not in result["digest_markdown"]
     assert (state / payload["digest_ref"]).read_bytes() == stored

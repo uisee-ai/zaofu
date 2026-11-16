@@ -503,7 +503,7 @@ def test_template_preflight_rejects_missing_skill_without_partial_channel(
 ):
     state_dir, log, writer, service = _runtime(tmp_path)
     monkeypatch.setattr(
-        "zf.runtime.control_actions_channel_admin.resolve_builtin_skill_source",
+        "zf.runtime.channel_skill_materialization.resolve_builtin_skill_source",
         lambda _name: None,
     )
 
@@ -565,7 +565,13 @@ def test_all_templates_materialize_every_skill_ref(tmp_path: Path):
             resolved = by_role[member["channel_role"]][
                 "resolved_skill_refs"
             ]
-            assert len(resolved) == len(member["skill_refs"])
+            logical_refs = {item["logical_ref"] for item in resolved}
+            assert set(member["skill_refs"]) <= logical_refs
+            assert len(logical_refs) == len(resolved)
+            assert "skills/zf-document-reading/SKILL.md" in logical_refs
+            from zf.runtime.channel_skill_context import load_channel_skill_guidance
+            guidance = load_channel_skill_guidance(resolved, state_dir=state_dir, project_root=tmp_path)
+            assert len(guidance) == len(resolved)
             for descriptor in resolved:
                 assert Path(descriptor["resolved_path"]).is_file()
                 assert str(Path(descriptor["resolved_path"])).startswith(

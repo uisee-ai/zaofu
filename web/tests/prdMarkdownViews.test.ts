@@ -1,4 +1,4 @@
-import { prdMarkdownView } from "../src/components/channel/prdMarkdownViews.js";
+import { prdMarkdownView, prdReadingSections } from "../src/components/channel/prdMarkdownViews.js";
 import mixed from "./fixtures/prd205/reading.json" with { type: "json" };
 
 function assert(condition: unknown, message = "assertion failed"): void {
@@ -51,3 +51,10 @@ for (const role of ["product", "architecture", "developer"] as const) {
 }
 assert(prdMarkdownView(mixed.markdown, "product", mixed.read_views).includes("库存不足时拒绝，库存保持不变。"));
 console.log("prdMarkdownViews.test.ts OK");
+
+const auditDocument = '# PRD\n\n## 产品目标\n保留结果。\n\n```md\n## Provenance\n不能折叠代码\n```\n\n## 需求追溯与决策记录\n声明。\n\n### 来源覆盖\n完整来源。\n\n### 新增决定\nD-1 pending，阻塞上线。\n\n## 假设、风险与分歧\n保留风险。\n\n## Provenance\n版本来源。\n';
+const sections = prdReadingSections(auditDocument);
+assert(sections.map(section => section.content).join('') === auditDocument, 'folding preserves every source character');
+assert(sections.filter(section => section.auditTitle).length === 2);
+assert(sections.filter(section => !section.auditTitle).some(section => section.content.includes('D-1 pending，阻塞上线。') && section.content.includes('保留风险。')));
+assert(!prdReadingSections('## 未知来源\n完整未知义务。')[0].auditTitle, 'unknown headings remain visible');

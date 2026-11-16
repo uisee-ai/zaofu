@@ -52,7 +52,7 @@ Kanban 可能返回多题澄清卡片，需从 UI 逐题回答；不能只等待
 
 ## 证据与结果
 
-每次运行保留 `evidence/run.json`、阶段截图、Playwright trace/video、当前 checkpoint、
+每次运行保留 `evidence/run.json`、阶段截图、当前 checkpoint、
 PRD、Plan 和来源绑定，以及独立只读审计。必须区分：浏览器链路、fake 模型、真实模型、
 语义质量、基础设施阻塞；fake 通过不等于真实 Provider 验收。
 
@@ -86,3 +86,9 @@ PYTHONPATH=src:. .venv/bin/python tests/e2e/prd_ui/run.py --provider real --jour
 
 长时间实测按事件 cursor 增量取证；成功响应不把整个账本作为断言说明重复写入 trace。
 原始运行失败和修复后的独立复验分别存档，不能覆盖旧 `run.json` 或将补验冒充原轮通过。
+
+长实测默认关闭持续 trace/video，保留逐阶段截图、事件与下载的原文，避免数小时录制
+拖垮收尾；需要录制时显式设置 `ZF_UI_RECORDING=on`（trace 仍默认关闭）。fake 保留录制。
+`body-completed.json` 只证明主体到达终点；run.json 分别记录 body_status、browser_exit_code、
+audit_status、recording。主体完成但退出失败时仍只读审计，整轮保持 failed；ZIP 必须能读且 CRC 正常。
+不要把补验或关闭录制后的新轮结果覆盖到旧轮。

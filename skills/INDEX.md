@@ -92,3 +92,5 @@
 - `yoke/tdd-evidence` — 测试驱动开发 + 完成证据纪律:测试先行、bug 先复现、测试即证据。writer/dev 角色实现任何逻辑、修任何 bug、改任何行为时使用;完成证据与 kernel 完成审计机械配对。
 - `yoke/verify-review` — 多轴验收评审:verify/review reader 角色对候选变更做五轴评审并产出 schema 合规的结构化报告(覆盖矩阵非空、发现分级、runner/product 失败分类、证据可复跑),与 verify.child.completed 报告合约机械配对。
 - `yoke/vertical-slicing` — tracer-bullet 垂直切片的 task_map 拆分法:每个 task 纵切全部集成层、独立可验收,替代按技术层横切。task-map-synth/plan 角色使用,配对 task_map 契约与 lane 亲和语义。
+
+- `zf-document-reading` — PRD / Plan 业务优先正文、来源边界与当前版本阅读证据；[方法](zf-document-reading/SKILL.md)。

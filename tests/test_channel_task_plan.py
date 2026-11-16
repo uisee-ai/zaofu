@@ -150,3 +150,21 @@ def test_channel_task_rejects_invalid_target_root(target):
         "prepare_workflow": True,
     }, {"target_root": "current-project"})
     assert normalize_channel_task_submit_payload(bound)[2] == "target_root must be a non-empty string"
+
+
+def test_flat_channel_constraints_are_preserved_without_inventing_approval():
+    for conditions in [[], ["完整 Plan 需 Owner 人工审批后才允许实施", "Python 3.11"]]:
+        payload, _, error = normalize_channel_task_submit_payload({
+            "title": "Deliver PRD", "channel_authority": _authority(), "constraints": conditions,
+        })
+        assert not error
+        assert payload["contract"]["constraints"] == conditions
+
+
+@pytest.mark.parametrize("conditions", ["requires approval", {"approval": True}, [{"text": "requires approval"}], [42]])
+def test_flat_channel_constraints_reject_unsupported_shapes(conditions):
+    payload, _, error = normalize_channel_task_submit_payload({
+        "title": "Deliver PRD", "channel_authority": _authority(), "constraints": conditions,
+    })
+    assert payload == {}
+    assert "constraints must be a list of strings" in error

@@ -45,7 +45,7 @@ def _checklist(task_map_path: Path) -> list[str]:
 
     tasks = data.get("tasks") or []
     return [
-        f"[X] {check['label']}: {check['detail']}"
+        f"[{'?' if check['ok'] is None else 'X'}] {check['label']}: {check['detail']}"
         for check in plan_digest_checklist(tasks)
         if not check["ok"]
     ]
@@ -74,6 +74,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     rj.add_argument("--reason", required=True)
     rj.add_argument("--input-task", action="append", default=None,
                     help="Prioritize a task's complete input on replan; repeat for more tasks")
+    rj.add_argument("--changed-task", action="append", default=None,
+                    help="Declare proposed edit scope; does not narrow execution or grant incremental review")
     rj.set_defaults(func=_run)
 
 
@@ -139,6 +141,8 @@ def _run(args: argparse.Namespace) -> int:
     decision_payload: dict = {"plan_id": args.plan_id}
     if args.plan_cmd == "reject":
         decision_payload["reason"] = args.reason
+        if getattr(args, "changed_task", None) is not None:
+            decision_payload["changed_task_ids"] = args.changed_task
         if getattr(args, "input_task", None) is not None:
             from zf.runtime.reader_replan_feedback import input_task_ids
 
@@ -154,9 +158,10 @@ def _run(args: argparse.Namespace) -> int:
         plan_id=args.plan_id,
         event_type="plan.approved" if args.plan_cmd == "approve" else "plan.rejected",
         payload=decision_payload,
+        project_root=context.project_root,
     )
     if result is None:
-        print(f"plan {args.plan_id} is not awaiting review; it was decided or does not exist.")
+        print(f"plan {args.plan_id}: {_reason}")
         return 1
     if args.plan_cmd == "approve":
         print(f"plan {args.plan_id} approved - fanout will start on the next kernel wake.")

@@ -53,6 +53,15 @@ def decide_pending_plan(
         if expected_request_id and pending.id != expected_request_id:
             return None, "plan approval request has changed"
         request = pending.payload if isinstance(pending.payload, dict) else {}
+        if event_type == "plan.rejected" and "changed_task_ids" in payload:
+            from zf.runtime.plan_revision_scope import validate_changed_task_ids
+
+            try:
+                payload = {**payload, "changed_task_ids": validate_changed_task_ids(
+                    payload["changed_task_ids"], request=request, state_dir=state_dir,
+                    project_root=project_root or state_dir.parent)}
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                return None, str(exc)
         if event_type == "plan.rejected" and payload.get("plan_review_ref"):
             from zf.runtime.plan_requirement_amendment import authorize_plan_review
             try:

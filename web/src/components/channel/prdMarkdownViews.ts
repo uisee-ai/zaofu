@@ -7,6 +7,28 @@ export interface PrdViewIndex {
 
 type Heading = { level: number; title: string; start: number };
 
+/** Fold only named audit sections, never arbitrary risks/decisions or text
+ * matched by path/hash keywords. Slices concatenate to the exact input. */
+export function prdReadingSections(markdown: string): Array<{ content: string; auditTitle?: string }> {
+  const headings = markdownHeadings(markdown);
+  const result: Array<{ content: string; auditTitle?: string }> = [];
+  let cursor = 0;
+  let parent = "";
+  for (let index = 0; index < headings.length; index += 1) {
+    const heading = headings[index];
+    if (heading.level === 2) parent = heading.title;
+    const audit = heading.level === 2 && heading.title === "Provenance"
+      || heading.level === 3 && parent === "需求追溯与决策记录" && heading.title === "来源覆盖";
+    if (!audit || heading.start < cursor) continue;
+    const next = headings.slice(index + 1).find(item => item.level <= heading.level);
+    if (heading.start > cursor) result.push({ content: markdown.slice(cursor, heading.start) });
+    cursor = next?.start ?? markdown.length;
+    result.push({ content: markdown.slice(heading.start, cursor), auditTitle: heading.title === "Provenance" ? "文档来源" : "来源覆盖明细" });
+  }
+  if (cursor < markdown.length) result.push({ content: markdown.slice(cursor) });
+  return result.length ? result : [{ content: markdown }];
+}
+
 /** Filter the same PRD revision into a read-only audience view without duplicating its body. */
 export function prdMarkdownView(
   markdown: string,

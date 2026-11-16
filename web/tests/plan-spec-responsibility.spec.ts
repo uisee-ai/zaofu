@@ -48,7 +48,8 @@ for (const width of [1280, 375]) test(`${width}px real R2 shared case preserves 
   await expect(dialog.getByText("证据状态：NOT_RUN", { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "待决事项", exact: true }).click();
   await expect(dialog.getByText(/^原始状态：deferred 1 · confirmed 4 · pending_validation 1 · proposed 1/)).toBeVisible();
-  await expect(dialog.getByText(/已关闭 4 · 其他状态 3/)).toBeVisible();
+  await expect(dialog.getByText("未识别状态：deferred 1 · 已确认 4 · 待验证 1 · 待确认提议 1 · 明确阻塞 0", { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/已关闭 4/)).toHaveCount(0);
   await dialog.locator("summary").filter({ hasText: "D-1 · deferred" }).click();
   await expect(dialog.getByText(/^最迟确认：未来版本立项前/)).toBeVisible();
   await page.unrouteAll({ behavior: "wait" });

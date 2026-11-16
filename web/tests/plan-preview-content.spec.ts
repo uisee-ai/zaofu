@@ -58,6 +58,7 @@ test("complete Plan, bound matrix and summary remain distinct without writes", a
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
   await dialog.getByRole("button", { name: "工程上下文", exact: true }).click();
   await expect(dialog.getByText("完整 Plan", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
   const tail = dialog.getByText("END-OF-FULL-PLAN", { exact: true });
   await tail.scrollIntoViewIfNeeded();
   await expect(tail).toBeVisible();
@@ -109,7 +110,8 @@ test("a late response from a closed preview cannot replace the newly selected Pl
   await (await lateResponse).finished();
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(dialog.getByRole("status")).toContainText("仅有计划摘要");
-  await expect(dialog.locator(".plan-preview-toolbar").getByText("evt-preview-digest", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "工程上下文", exact: true }).click();
+  await expect(dialog.locator(".plan-preview-context").getByText("evt-preview-digest", { exact: true })).toBeVisible();
   await expect(dialog.getByText("完整规划示例", { exact: true })).toHaveCount(0);
 });
 
@@ -120,6 +122,7 @@ test("large Plan pagination preserves every character through the final page", a
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-long`);
   await (await loaded).finished();
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
   const pagination = dialog.getByRole("navigation", { name: "计划阅读导航" });
   await expect(pagination).toBeVisible({ timeout: 10000 });
   await pagination.getByTitle("切换到章节分页").click();
@@ -157,6 +160,7 @@ test("long Plan renders headings and tables instead of raw Markdown", async ({ p
   const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "格式化长计划", exact: true })).toBeVisible();
   await expect(dialog.locator(".plan-preview-markdown-pane > section table").first()).toBeVisible();
   await dialog.getByTitle("切换到章节分页").click();

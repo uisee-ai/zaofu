@@ -47,20 +47,35 @@ export function PlanPreviewOverlay({
 }) {
   const modal = useRef<HTMLDialogElement>(null);
   const [showContext, setShowContext] = useState(false);
+  const [focused, setFocused] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("reader") === "focus");
+  const toggleFocus = () => {
+    const next = !focused;
+    setFocused(next);
+    const url = new URL(window.location.href);
+    const params = new URLSearchParams(url.hash.slice(1));
+    if (next) { params.set("reader", "focus"); params.set("view", "original"); } else params.delete("reader");
+    if (preview?.plan_id) params.set("plan", preview.plan_id);
+    url.hash = params.toString();
+    window.history.replaceState(window.history.state, "", url);
+    window.dispatchEvent(new Event("hashchange"));
+  };
   useEffect(() => { const element = modal.current; element?.showModal(); return () => element?.close(); }, []);
   const planId = preview?.plan_id || "";
   const disabled = Boolean(actionKey && busy.endsWith(`:${actionKey}`));
   return (
-    <dialog ref={modal} className="plan-preview-overlay" aria-label="Plan preview" onCancel={(event) => { event.preventDefault(); if (!reviewBusy) onClose(); }}>
+    <dialog ref={modal} className={`plan-preview-overlay${focused ? " is-focused" : ""}`} aria-label="Plan preview" onCancel={(event) => { event.preventDefault(); if (!reviewBusy) onClose(); }}>
       <div className="plan-preview-toolbar">
         <div>
-          <strong>{preview?.content_profile === "derived_plan_full" ? "完整 PRD Preview" : "Plan Preview"}</strong>
-          <span className="mono">{planId || "loading"}</span>
+          <strong>{preview?.content_profile === "derived_plan_full" ? "完整 Plan Preview" : "Plan Preview"}</strong>
+          <span>{preview?.status === "pending" ? "待审批" : preview?.status || "加载中"}</span>
           {preview?.content_profile === "derived_plan_full" && preview.markdown ? (
             <span className="muted">正文 {preview.markdown.length.toLocaleString()} 字符 · Task Map 为辅助拆分</span>
           ) : null}
         </div>
         <div className="plan-preview-toolbar-actions">
+          <button type="button" className="delivery-action-button" data-reading-mode aria-pressed={focused} disabled={editing || loading || !preview} onClick={toggleFocus}>
+            {focused ? "返回审阅" : "专注阅读"}
+          </button>
           <button type="button" className="delivery-action-button" aria-expanded={showContext} onClick={() => setShowContext(!showContext)}>工程上下文</button>
           {!ownerDecision && <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || loading || preview.content_kind === "unavailable"}>
             <Check size={14} /> Approve
@@ -114,6 +129,7 @@ export function PlanPreviewOverlay({
           <dl className="plan-approval-meta">
             <div><dt>正文</dt><dd>{planContentKindLabel(preview)}</dd></div>
             <div><dt>内容契约</dt><dd>{planContentProfileLabel(preview?.content_profile)}</dd></div>
+            <div><dt>版本</dt><dd className="mono">{planId || "-"}</dd></div>
             <div><dt>status</dt><dd>{preview?.status || "-"}</dd></div>
             <div><dt>stage</dt><dd>{preview?.stage_id || "-"}</dd></div>
             <div><dt>tasks</dt><dd>{preview?.task_count ?? preview?.task_map_summary?.task_count ?? "-"}</dd></div>

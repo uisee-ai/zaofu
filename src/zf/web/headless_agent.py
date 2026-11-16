@@ -1352,6 +1352,23 @@ class KanbanHeadlessAgent:
             "Never inspect, "
             "request, or fabricate a workflow action token, and never call "
             "`zf workflow start --apply`; provider turns may only preview/propose. "
+            "When writing a PRD, keep one authoritative statement per behavior and stable IDs for "
+            "acceptance/scenarios. Preserve concrete failure counterexamples and source priorities; "
+            "reference the same rule across sections rather than copying it into US, NFR, metrics and AC. "
+            "The primary document must remain understandable and retain the full source binding. "
+            "Preserve every source acceptance ID and atomic scenario; source AC count need not "
+            "equal the later per-Task AC count, since cohesive behaviors may be grouped with "
+            "complete source mappings. Preserve each delivery slice's actual entrypoint, usage "
+            "and tests without making it depend on future slices. Per-slice usage documentation "
+            "does not imply that every slice must edit the same root README or shared file. "
+            "Do not strengthen source-authored file timing; if the Owner explicitly requires "
+            "conflicting shared-file timing, retain that decision instead of silently changing it. "
+            "Before saving the PRD, trace every named-file-by-delivery-milestone obligation to "
+            "the Owner's original words. A final README requirement plus per-slice usage does "
+            "not authorize a new requirement that README itself be updated at every slice. "
+            "Leave unspecified usage carriers and file allocation to the later Plan; your own "
+            "proposed allocation is not new Owner authority. Serial task order alone does not "
+            "waive the configured whole-plan exclusive-file invariant. "
             "For a new Task intended for Workflow delivery, set payload.prepare_workflow=true "
             "and payload.execution_mode=workflow; omit workflow_plan. After Task approval, "
             "the runtime prepares a canonical Workflow Request with semantic selection, "
@@ -1366,7 +1383,10 @@ class KanbanHeadlessAgent:
             "asks to create a delivery Workflow from materials, prefer create-task with "
             "prepare_workflow even if the requested profile or lane capacity requires a config "
             "change. Preserve the requested profile, independent capacities, source paths, "
-            "target and acceptance constraints in the Task contract; ask for missing target "
+            "target and acceptance constraints in the Task contract. Put source-authored conditions "
+            "and approval boundaries in contract.constraints (a list of strings), product exclusions "
+            "in contract.explicit_non_goals, and verifiable outcomes in contract.acceptance_criteria. "
+            "Do not invent approval requirements or treat a preserved condition as granted permission; ask for missing target "
             "information rather than inventing it. For a known target directory include "
             "payload.target_root; bind source documents through contract.source_ref and "
             "contract.handoff_artifacts. Review and revise the resulting Preview "
@@ -1411,10 +1431,11 @@ class KanbanHeadlessAgent:
             "Task from its confirmed PRD, return subject_type=task_create with "
             "two or three options. The recommended option uses mode=propose, "
             "action=create-task, and a flat payload limited to title, objective, "
-            "acceptance, acceptance_criteria, scope, explicit_non_goals, "
+            "acceptance, acceptance_criteria, scope, explicit_non_goals, constraints, "
             "skills_required, priority, optional channel_prd_scope, verification, "
             "verification_tiers, validation, optional task_id, and optional "
-            "workflow_plan; priority must be an integer from 1 through 5. When "
+            "workflow_plan; constraints is a list of source-authored conditions and approval boundaries, "
+            "separate from product non-goals. Priority must be an integer from 1 through 5. When "
             "the owner requests the complete product, use channel_prd_scope=full_product "
             "(the default): the canonical PRD supplies behavior, acceptance and verification. "
             "For an explicitly requested bounded review, verification or rehearsal, use "
@@ -1594,8 +1615,11 @@ class KanbanHeadlessAgent:
         task_id: str,
         context: dict[str, Any],
     ) -> str:
+        from zf.web.headless_methods import document_method_context
+
         return "\n".join([
             "ZaoFu Kanban Agent turn",
+            document_method_context(),
             f"project_root: {self.project_root}",
             f"state_dir: {self.state_dir}",
             f"task_id: {task_id or ''}",

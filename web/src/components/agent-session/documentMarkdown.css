@@ -1,0 +1,59 @@
+.document-reading-surface .agent-markdown.document-markdown {
+  width: 100%; max-width: 760px; margin-inline: auto; color: var(--text);
+  font-family: var(--font-sans); font-size: var(--text-16); line-height: 1.75;
+  overflow-wrap: break-word; text-align: start;
+}
+.document-reading-surface .document-markdown.agent-markdown :is(h1,h2,h3,h4,h5,h6) {
+  color: var(--text); font-weight: 600; line-height: 1.4;
+  text-transform: none; letter-spacing: normal; text-wrap: pretty;
+}
+.document-reading-surface .document-markdown.agent-markdown h1 { font-size: var(--text-24); margin: 0 0 24px; }
+.document-reading-surface .document-markdown.agent-markdown h2 { font-size: var(--text-20); margin: 32px 0 12px; }
+.document-reading-surface .document-markdown.agent-markdown h3 { font-size: var(--text-18); margin: 24px 0 10px; }
+.document-reading-surface .document-markdown.agent-markdown :is(h4,h5,h6) { font-size: var(--text-16); margin: 20px 0 8px; }
+.document-reading-surface .document-markdown.agent-markdown p { margin: 14px 0; white-space: normal; }
+.document-reading-surface .document-markdown.agent-markdown :is(ul,ol) { margin: 12px 0; padding-inline-start: 1.6em; }
+.document-reading-surface .document-markdown.agent-markdown li { padding-inline-start: 0.25em; margin: 6px 0; }
+.document-reading-surface .document-markdown.agent-markdown li > p { display: block; margin: 8px 0; }
+.document-reading-surface .document-markdown.agent-markdown li > :is(ul,ol) { margin-block: 6px; }
+.document-reading-surface .document-markdown.agent-markdown strong { font-weight: 600; }
+.document-reading-surface .document-markdown.agent-markdown blockquote {
+  margin: 20px 0; padding: 1px 0 1px 18px; border-left: 3px solid var(--line);
+  color: var(--muted-foreground);
+}
+.document-reading-surface .document-markdown.agent-markdown hr { margin: 28px 0; border: 0; border-top: 1px solid var(--line); }
+.document-reading-surface .document-markdown.agent-markdown a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.document-reading-surface .document-markdown.agent-markdown :not(pre) > code {
+  padding: 2px 5px; border: 0; border-radius: 4px; background: var(--muted);
+  font-family: var(--font-mono); font-size: 0.9em; white-space: break-spaces; overflow-wrap: anywhere;
+}
+.document-reading-surface .document-markdown.agent-markdown .agent-code-block { margin-block: 18px; box-shadow: none; border-radius: 10px; background: var(--surface); }
+.document-reading-surface .document-markdown.agent-markdown .agent-code-header { padding: 9px 14px; background: transparent; }
+.document-reading-surface .document-markdown.agent-markdown .agent-code-block pre,
+.document-reading-surface .document-markdown.agent-markdown [data-streamdown="code-block-body"] {
+  padding: 16px; white-space: pre; overflow-x: auto; line-height: 1.65;
+  font-size: var(--text-13); tab-size: 4;
+}
+.document-reading-surface .document-markdown.agent-markdown pre code { font-size: inherit; line-height: inherit; }
+.document-reading-surface .document-markdown.agent-markdown .agent-markdown-table-wrap { margin-block: 20px; border: 0; border-radius: 0; }
+.document-reading-surface .document-markdown.agent-markdown table { width: 100%; min-width: 100%; max-width: none; border-collapse: collapse; font-size: var(--text-14); line-height: 1.6; }
+.document-reading-surface .document-markdown.agent-markdown :is(th,td) { min-width: 110px; max-width: 360px; padding: 12px 16px; border: 0; border-bottom: 1px solid var(--line-soft); text-align: start; vertical-align: top; overflow-wrap: anywhere; }
+.document-reading-surface .document-markdown.agent-markdown th { color: var(--text); font-size: inherit; font-weight: 600; background: var(--surface); text-transform: none; letter-spacing: normal; }
+.document-reading-surface .document-markdown.agent-markdown td code { white-space: break-spaces; overflow-wrap: anywhere; }
+.document-reading-surface .document-markdown.agent-markdown img { max-width: 100%; height: auto; border-radius: 8px; }
+.document-reading-surface .document-markdown.agent-markdown .agent-code-block code {
+  background: transparent; padding: 0; border: 0; border-radius: 0;
+  font-size: inherit; white-space: pre; overflow-wrap: normal;
+}
+
+.document-reading-surface .document-markdown.agent-markdown .agent-markdown-table { margin-block: 20px; }
+.document-reading-surface .document-markdown.agent-markdown .agent-markdown-table-wrap { margin-block: 0; }
+.agent-table-scroll-hint { display: block; margin-bottom: 6px; color: var(--muted-foreground); font-size: var(--text-12); }
+.document-catalog { margin-block: 20px; }
+.document-catalog > p { color: var(--muted-foreground); }
+.document-catalog details { margin-block: 10px; border-bottom: 1px solid var(--line-soft); padding-block: 10px; }
+.document-catalog summary { cursor: pointer; overflow-wrap: anywhere; }
+.document-catalog-entry > summary { white-space: pre-line; }
+.document-catalog dl { margin: 14px 0; }
+.document-catalog dt { margin-top: 12px; color: var(--muted-foreground); font-size: var(--text-13); }
+.document-catalog dd { margin: 4px 0 12px; overflow-wrap: anywhere; }

@@ -360,7 +360,7 @@ def channel_reply_response_contract(
             "dissent MUST be a JSON array; when unresolved dissent has a status and items, "
             "encode that envelope as one array item rather than an object. "
             "Your deliverable now is the complete standalone PRD, not a decision draft, "
-            "outline, or recommendation that a later workflow write the PRD. Keep only the summary field concise; never omit required answer or artifact content. "
+            "outline, or recommendation that a later workflow write the PRD. Be complete and concise: define each behavior once, retain necessary failure counterexamples and source priorities, and reference stable IDs across stories, NFR, metrics and AC instead of repeating their bodies. Never omit required answer or artifact content. "
             "Non-goals/out_of_scope describe sourced product exclusions only. A request to discuss or "
             "write the PRD now and wait for approval before implementation is an authorization boundary; "
             "put it in readiness/next steps, never exclude implementation or workflow delivery from the product. "
