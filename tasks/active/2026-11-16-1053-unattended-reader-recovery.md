@@ -33,3 +33,8 @@ RED→GREEN；复用结果准入currentness，保留所有身份/摘要/冻结/�
 补充影响闭包756 passed/7 skipped，sentinel53/mock10通过。
 当前冻结候选d8088354在受控宿主路径完成测试、构建、Docker桌面及移动端断言，
 均退出0；明确记录operator_authorized_host，尚待新的Reader/Judge独立结论。
+
+候选两个Reader结果均已准入passed，聚合test.passed=evt-eadda3aa7c07，
+随后自动flow.discovery.requested=evt-9c4843f59a02。发现无Task合同的workflow-read
+复扫也被错误套用Task派发检查；补齐冻结目标Reader身份校验，并对最终Thin Judge
+同一输入路径加回归。为部署代码显式停止试验，随后从复扫断点恢复。

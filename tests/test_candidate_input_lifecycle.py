@@ -11,7 +11,7 @@ from zf.runtime.call_result_runtime import prepare_call_operation, mark_call_ope
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def setup(tmp_path):
+def setup(tmp_path, profile="candidate-verify"):
     runtime = _runtime(tmp_path)
     seeded = _seed_frozen_candidate(runtime)
     body = _package(runtime.state_dir, generation=seeded['generation'])
@@ -26,8 +26,11 @@ def setup(tmp_path):
         'plan_artifact_package_digest': package.payload['package_digest']}))
     payload = {'workflow_run_id': seeded['run_id'], 'task_id': 'FLOW-ANCHOR',
         'fanout_id': 'candidate-readers', 'child_id': 'verify-lane-0', 'role_instance': 'verify-lane-0',
-        'stage_id': 'issue-lanes-verify', 'output_profile_id': 'candidate-verify',
-        'artifact_package_mode': 'shadow', 'target_commit': seeded['candidate_head']}
+        'stage_id': 'issue-lanes-verify', 'output_profile_id': profile,
+        'artifact_package_mode': 'shadow', 'target_commit': seeded['candidate_head'],
+        'plan_artifact_package_ref': package.payload['package_ref'],
+        'plan_artifact_package_digest': package.payload['package_digest'],
+        'task_map_generation': seeded['generation']}
     prepared = prepare_call_operation(runtime, payload=payload, operation_type='fanout_reader_child',
         operation_key='verify-lane-0', stage_id='issue-lanes-verify', task_id='FLOW-ANCHOR',
         dispatch_id='candidate-dispatch', causation_id='candidate-with-package')
@@ -68,4 +71,30 @@ def test_candidate_reader_rejects_stale_or_tampered_authority(tmp_path, fault):
             ref = freeze.payload['freeze_receipt_ref']['ref']
         else: ref = payload['target_snapshot_ref' if fault == 'target_bytes' else 'contract_snapshot_ref']
         (runtime.state_dir / ref).write_text('{}')
+    assert input_lifecycle(manifest, runtime.event_log.read_all(), state_dir=runtime.state_dir)['requires_rebind']
+
+
+@pytest.mark.parametrize('profile', ['workflow-read', 'thin-judge-goal-closure'])
+def test_frozen_workflow_readers_do_not_inherit_anchor_dispatch(tmp_path, profile):
+    runtime, manifest, _, _ = setup(tmp_path, profile)
+    assert not manifest.get('contract_revision')
+    lifecycle = input_lifecycle(manifest, runtime.event_log.read_all(), state_dir=runtime.state_dir)
+    assert lifecycle['requires_rebind'] is False
+    assert lifecycle['status'] == 'current'
+
+
+@pytest.mark.parametrize('fault', ['target', 'generation', 'cancelled', 'new_attempt', 'manifest', 'contract', 'profile'])
+def test_frozen_workflow_reader_rejects_invalid_binding(tmp_path, fault):
+    runtime, manifest, prepared, _ = setup(tmp_path, 'workflow-read')
+    if fault in {'target', 'generation'}:
+        freeze = next(e for e in runtime.event_log.read_all() if e.id == 'candidate-with-package')
+        field = 'candidate_head_commit' if fault == 'target' else 'task_map_generation'
+        runtime.event_writer.emit('candidate.ready', payload={**freeze.payload, field: 'different'})
+    elif fault == 'cancelled': runtime.event_writer.emit('fanout.cancelled', payload={
+        'workflow_run_id': manifest['workflow_run_id'], 'fanout_id': 'candidate-readers'})
+    elif fault == 'new_attempt': runtime.event_writer.emit('workflow.operation.started', payload={
+        'operation_id': prepared.operation_id, 'active_attempt_id': 'new-attempt'})
+    elif fault == 'manifest': manifest['read_purpose'] = 'tampered-purpose'
+    elif fault == 'contract': manifest['contract_revision'] = 'task-contract-r1'
+    elif fault == 'profile': manifest['handoff_authority_contract']['output_profile_id'] = 'implementation'
     assert input_lifecycle(manifest, runtime.event_log.read_all(), state_dir=runtime.state_dir)['requires_rebind']

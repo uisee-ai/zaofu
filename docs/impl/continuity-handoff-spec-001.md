@@ -603,3 +603,8 @@ workspace-write exec 已调用 shell 成功。前置人工修复不计为无人�
 复用结果准入的候选currentness校验；冻结目标、子Task合同、sidecar摘要、取消和
 新attempt继续失效关闭。修复不授予执行权限，不允许读取旧代包替代当前包。
 定向影响闭包756 passed/7 skipped，sentinel53和mock10通过。
+
+同批真实后续阶段暴露workflow-read复扫也没有Task实施合同。无Task合同的
+workflow-read/thin-judge-goal-closure仅在自身活跃Reader operation、不可变manifest
+及当前冻结目标/Plan绑定全部相符时保留读取；含Task合同者不走此例外。
+不同目标、代次、取消、替换attempt或内容篡改继续拒绝；不改变语义门禁。
