@@ -21,12 +21,17 @@ def test_live_child_projection_keeps_typed_failure_for_aggregate(tmp_path, verdi
     assert aggregate_failure_kind(manifest['children']) == expected
 
 
-def test_settled_replay_keeps_same_failure_routing(tmp_path, monkeypatch):
+@pytest.mark.parametrize('schema,failure_class,expected', [
+    ('verification-result.v1', '', 'infra'),
+    ('workflow-read-result.v1', 'reader_execution_failure', 'infra'),
+    ('workflow-read-result.v1', 'reader_abstained', ''),
+])
+def test_settled_replay_keeps_same_failure_routing(tmp_path, monkeypatch, schema, failure_class, expected):
     import zf.runtime.call_result_envelope as envelopes
     import zf.runtime.call_result_runtime as results
     monkeypatch.setattr(envelopes, 'hydrate_call_result_envelope', lambda *_: {})
     monkeypatch.setattr(results, 'hydrate_admitted_control_result', lambda *_: {
-        'schema_version': 'verification-result.v1', 'verdict': 'abstained'})
+        'schema_version': schema, 'verdict': 'abstained', 'failure_class': failure_class})
     writer = EventWriter(EventLog(tmp_path / 'events.jsonl'))
     context = FanoutContext.create(stage_id='verify', topology='fanout_reader', trace_id='run',
         trigger_event_id='candidate', target_ref='sha', role_instances=['reader'])
@@ -37,7 +42,7 @@ def test_settled_replay_keeps_same_failure_routing(tmp_path, monkeypatch):
     DurableCallFanoutMixin._replay_settled_fanout_call(probe, context=context,
         child=context.expected_children[0], prepared=prepared, topology='fanout_reader', causation_id='retry')
     manifest = FanoutManifestProjector(tmp_path).rebuild(context.fanout_id, writer.event_log.read_all())
-    assert aggregate_failure_kind(manifest['children']) == 'infra'
+    assert aggregate_failure_kind(manifest['children']) == expected
 
 
 def test_runtime_aggregate_publishes_infra_and_never_requests_plan(tmp_path):
@@ -77,3 +82,25 @@ def test_retry_quality_failure_does_not_inherit_previous_infrastructure_kind(tmp
         'semantic_verdict': 'rejected'})
     manifest = FanoutManifestProjector(tmp_path).rebuild(context.fanout_id, writer.event_log.read_all())
     assert aggregate_failure_kind(manifest['children']) == ''
+
+
+def test_live_admitted_reader_execution_failure_reaches_stage_event(tmp_path, monkeypatch):
+    from tests.test_reader_fanout_runtime import _state, _start_fanout
+    from zf.runtime.call_result_admission import CallResultAdmissionOutcome
+    state, log, transport, runtime = _state(tmp_path)
+    _start_fanout(runtime)
+    fanout = next(e.payload['fanout_id'] for e in log.read_all() if e.type == 'fanout.started')
+    monkeypatch.setattr('zf.runtime.call_result_admission.result_protocol_mode', lambda *_: 'blocking')
+    monkeypatch.setattr('zf.runtime.call_result_runtime.admit_runtime_call_result', lambda *a, **k:
+        CallResultAdmissionOutcome(status='admitted', mode='blocking', operation_id='op', request_hash='hash'))
+    monkeypatch.setattr('zf.runtime.call_result_runtime.hydrate_admitted_control_result', lambda *_: {
+        'schema_version': 'workflow-read-result.v1', 'verdict': 'abstained',
+        'failure_class': 'reader_execution_failure', 'summary': 'Probe unavailable',
+        'status': 'failed', 'recommendation': 'abstain', 'findings': []})
+    for child in ('review-a', 'review-b'):
+        runtime.run_once(events=[ZfEvent(type='review.approved', actor=child, correlation_id='trace-1',
+            payload={'fanout_id': fanout, 'child_id': child, 'run_id': f'run-{fanout}-{child}',
+                     'report': {'status': 'blocked', 'recommendation': 'abstain',
+                                'summary': 'Probe unavailable', 'findings': []}})])
+    outcome = next(e for e in log.read_all() if e.type == 'review.rejected')
+    assert outcome.payload['failure_kind'] == 'infra'

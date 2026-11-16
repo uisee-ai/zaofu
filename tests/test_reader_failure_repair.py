@@ -8,25 +8,28 @@ from zf.runtime.sidecar_refs import write_sidecar_json
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def typed_failure(service, original, verdict='abstained'):
+def typed_failure(service, original, verdict='abstained', schema='verification-result.v1', failure_class=''):
     writer = service.writer
     identity = {'workflow_run_id': 'run-1', 'operation_id': 'verify-1', 'request_hash': 'hash'}
     result = write_sidecar_json(service.state_dir, 'artifacts/verify.json', {
-        **identity, 'schema_version': 'verification-result.v1', 'verdict': verdict},
-        kind='call_control_result', schema_version='verification-result.v1', created_by='test')
+        **identity, 'schema_version': schema, 'verdict': verdict, 'failure_class': failure_class},
+        kind='call_control_result', schema_version=schema, created_by='test')
     writer.emit('workflow.operation.requested', payload=identity)
     writer.emit('workflow.call.result.admitted', payload={**identity, 'control_result_ref': result})
     writer.emit('workflow.operation.settled', payload=identity)
     writer.emit('fanout.child.failed', payload={**identity, 'fanout_id': 'f1', 'child_id': 'verify',
-        'control_result_ref': result, 'semantic_verdict': verdict, 'control_result_schema': 'verification-result.v1'})
+        'control_result_ref': result, 'semantic_verdict': verdict, 'control_result_schema': schema})
     failure = writer.emit(original.type, correlation_id='run-1', payload={
         k:v for k,v in original.payload.items() if k != 'failure_kind'})
     return failure, result
 
 
-def test_historical_missing_aggregate_kind_recovered_without_mutating_events(recovery):
+@pytest.mark.parametrize('schema,failure_class', [
+    ('verification-result.v1', ''), ('workflow-read-result.v1', 'reader_execution_failure'),
+])
+def test_historical_missing_aggregate_kind_recovered_without_mutating_events(recovery, schema, failure_class):
     service, failure, trigger = recovery
-    failure, _ = typed_failure(service, failure)
+    failure, _ = typed_failure(service, failure, schema=schema, failure_class=failure_class)
     before = service.writer.event_log.path.read_bytes()
     assert execute(service, failure.id)['ok']
     assert service.writer.event_log.path.read_bytes().startswith(before)

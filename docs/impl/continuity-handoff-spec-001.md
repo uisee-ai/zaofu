@@ -472,6 +472,14 @@ fixed-input repair 同样接入已有 operator_feedback→rework_feedback 绑定
 下一代须重新读取，既有读收据不因消息相似而继承。已用真实resolver→manifest→required
 read→正文读取链路验证，而非仅断言恢复事件携带字段。
 
+真实 Discovery 暴露 workflow-read 结果二次规范化缺陷：第一次把 blocked/abstained 的
+状态统一为 failed，第二次据此覆盖显式 recommendation，误变 semantic_rejection。
+现在优先保留明确的 block/abstain/reject/needs_rework；缺省 recommendation 也保持
+原 subject verdict。非产物型 Reader 的显式 reader_execution_failure 同样保留。
+实时 fanout、settled replay 和历史受控恢复均传递已接纳 failure_class；未声明执行失败的
+普通弃权不自动推断为 infra，拒绝结果也不转成通过。覆盖实际 SemanticResultSubmitService
+的重复适配、实时 stage 聚合及历史 ref/digest 恢复。原历史事件与已冻结输入保持不变。
+
 复扫方法补充于 zf-verify-rescan-replan/references/product-convergence.md：普通分页未完成
 继续补读，不能以abstain替代消费义务；核验当前集成候选全局收据，区分已有合格证据、
 当前阶段明确要求的新probe与未覆盖风险。保留独立完整产品审计和PAS，不把环境重跑失败

@@ -31,7 +31,8 @@ def repaired_failure_kind(state_dir, events, failure):
         result = hydrate_sidecar_ref(state_dir, descriptor).payload
         if any(result.get(key) != op.get(key) for key in ('operation_id', 'request_hash', 'workflow_run_id')):
             return ''
-        child.update(control_result_schema=result.get('schema_version'), semantic_verdict=result.get('verdict'))
+        child.update(control_result_schema=result.get('schema_version'), semantic_verdict=result.get('verdict'),
+                     failure_class=result.get('failure_class'))
     return aggregate_failure_kind(children)
 
 

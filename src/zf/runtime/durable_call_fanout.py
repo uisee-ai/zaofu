@@ -617,6 +617,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
             ),
             "semantic_verdict": verdict,
             "control_result_schema": str(control.get("schema_version") or ""),
+            "failure_class": str(control.get("failure_class") or ""),
             "replayed_settled_operation": True,
         }
         self.event_writer.append(ZfEvent(

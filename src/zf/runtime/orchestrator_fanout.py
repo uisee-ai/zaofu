@@ -4621,6 +4621,7 @@ class FanoutCoordinationMixin(
                 base_payload["semantic_verdict"] = control_verdict
                 control_schema = str(control_result.get("schema_version") or "")
                 base_payload["control_result_schema"] = control_schema
+                base_payload["failure_class"] = str(control_result.get("failure_class") or "")
                 if control_schema == "artifact-delivery-result.v1":
                     report_payload["artifact_delivery_result"] = dict(
                         control_result
