@@ -33,6 +33,8 @@ runtime:
 
 Candidate Reader 在原冻结目标的预授权采证完成后，使用现有受控 Reader infrastructure retry，
 将回执反馈给独立 Reader。Task Pipeline 保留自身 rework 归属。临时宿主 `host-assist` 的 token gate 保持不变。
+成功和失败的已完成采证都要交回 Reader，由它区分产品失败与基础设施失败；不能只消费 exit 0，
+让失败证据停在原地。未决执行、目标不稳定或缺少退出码仍拒绝自动交接。
 
 ## 工作区和诊断生命周期
 

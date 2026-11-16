@@ -20,8 +20,9 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
             continue
         receipt = hydrate_sidecar_ref(service.state_dir, p['receipt_ref']).payload
         if (receipt.get('policy_digest') == digest(asdict(policy))
-                and receipt.get('execution_origin') == 'preauthorized_container' and receipt.get('status') == 'completed'
-                and receipt.get('exit_code') == 0 and receipt.get('source_stable') is True):
+                and receipt.get('execution_origin') == 'preauthorized_container'
+                and receipt.get('status') in {'completed', 'failed'}
+                and type(receipt.get('exit_code')) is int and receipt.get('source_stable') is True):
             receipts[receipt['command_id']] = p['receipt_ref']
     if not required <= receipts.keys():
         return False
@@ -40,10 +41,10 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         if stage is None:
             continue
         payload = {'repaired_failure_event_id': failure.id, 'approval_ref': policy.approval_ref,
-            'reason': 'Preauthorized container probes completed for the original frozen target; independent verification required.',
+            'reason': 'Preauthorized container execution evidence is available for the original frozen target; independent verification required.',
             'operator_feedback': [
                 'Read the following bound container receipts as execution evidence, independently evaluate the original acceptance criteria. '
-                'Do not repeat an unavailable sandbox command or treat the receipt as a product verdict. '
+                'Inspect exit codes and output, including failures. Do not repeat an unavailable sandbox command or treat the receipt as a product verdict. '
                 + ', '.join(str(service.state_dir / r['ref']) for r in receipts.values())]}
         requested = service.writer.emit('control.action.requested', actor='run-manager', payload={
             'action': 'stage-replan-new-generation', **payload})
