@@ -162,3 +162,5 @@ Reader采证失败快速交接：同一operation、授权策略、稳定目标�
 常驻诊断派生的人工升级必须沿不可变来源对账：仅限kernel升级→单一resident建议→已绑定的kernel诊断请求与派发→同Run/Task canonical失败→后续kernel任务终态。该链完整时，旧诊断在待处理投影与静止判定中退场；账本保留原建议和升级，不伪造人工批准。缺失/歧义来源、其它任务或Run、Worker自报完成、普通安全/业务审批均不适用。重试或进程活动本身不是终态。
 
 失败采证交回Reader后，旧代际必须退出后续采证队列：仅由同Run、同fanout派发及失败绑定的kernel candidate.ready继任事实证明已交接。单纯action请求、Worker自报或其它Run/失败不构成完成。旧代际跳过后继续检查新代际，不占住每tick一次副作用的队首；新Reader仍承担全部未验证命令，预算不增加。
+
+Worker援助请求沿用受控CLI的参数边界：单条`zf recover assistance request`的引号内question/tried是字面数据，其中提及rm、write_text不视为执行删除或Python写入。仅此确定子命令纳入已有结果提交识别路径；真实shell替换、组合、管道、重定向仍进入原守卫，CLI自身operation/attempt/lease授权不变。

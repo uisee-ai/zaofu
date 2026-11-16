@@ -119,7 +119,7 @@ def _is_simple_controlled_zf_result_command(
     """Recognize one side-effect-controlled zf CLI invocation.
 
     Semantic JSON is opaque data. Looking for strings such as ``.write_text``
-    inside a quoted ``zf emit``/``zf result submit|validate`` payload incorrectly
+    inside a quoted result or assistance payload incorrectly
     classifies that data as a Python filesystem mutation. Shell composition
     remains fail-closed: substitutions, pipes, separators and redirects never
     enter this exemption.
@@ -159,6 +159,7 @@ def _is_simple_controlled_zf_result_command(
     return bool(
         args[:1] == ["emit"]
         or args[:2] in (["result", "submit"], ["result", "validate"])
+        or args[:3] == ["recover", "assistance", "request"]
     )
 
 
