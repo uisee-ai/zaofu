@@ -52,3 +52,8 @@
 发现 lane provider_session 的 sandbox 解析未接通，补解析及真实配置回归；
 完整 B02 成功条件仍保留，未以配置通过替代恢复成果。
 记录：[本批实现与资格边界](../../docs/impl/continuity-handoff-spec-001.md)。
+
+2026-11-16 最小 PRD 现场追加：修复 Candidate blocked/abstained 在 fanout 投影及重放
+丢失 schema 后误触发全局 Plan；fixed-input repair 从历史已接纳 sidecar 恢复分类，
+可受控撤销显式已停止误派发后继，保留原 Run/候选。Task/B02 整项仍 active，
+实际恢复与全旅程证据继续记录到本轮报告，不以单元测试替代完整资格。

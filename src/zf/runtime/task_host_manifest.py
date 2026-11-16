@@ -33,6 +33,11 @@ def binding(service, operation_id: str) -> tuple[dict, dict, dict, Path]:
     events = service.writer.event_log.read_all()
     operations = reduce_workflow_operations(events)
     op = operations.get(operation_id, {})
+    if op.get("request_ref") and not op.get("task_pipeline_stage"):
+        request = hydrate_sidecar_ref(service.state_dir, op["request_ref"]).payload["request"]
+        if request.get("output_profile_id") == "candidate-verify":
+            from zf.runtime.candidate_host_binding import binding as candidate_binding
+            return candidate_binding(service, op, request, events, operations)
     abstained_verify = op.get("task_pipeline_stage") == "verify" and op.get("semantic_verdict") == "abstained"
     if (op.get("status") != "settled" or (op.get("semantic_verdict") not in {"blocked", "failed"} and not abstained_verify)
             or op.get("task_pipeline_stage") not in {"impl", "verify"}
@@ -122,7 +127,7 @@ def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = 
     names = sorted(set(paths or []))
     command = None
     if kind == "commit":
-        if op["task_pipeline_stage"] != "impl" or not names:
+        if op.get("task_pipeline_stage") != "impl" or not names:
             raise ValueError("commit requires explicit Impl paths")
         hooks = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", "hooks"))
         if (git_read(root, "config", "--get", "core.hooksPath").stdout.strip()
@@ -147,10 +152,11 @@ def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = 
             raise ValueError("verification command is not in the frozen contract")
         command = commands[0]
         from zf.runtime.verification_commands import verification_command_required_for_stage
-        owner = "impl_self_check" if op["task_pipeline_stage"] == "impl" else "task_verify"
+        owner = ("candidate_verify" if contract.get("authority_scope") == "candidate" else
+                 "impl_self_check" if op["task_pipeline_stage"] == "impl" else "task_verify")
         if not verification_command_required_for_stage(command, verification_owner=owner, task_id=op["task_id"]):
             raise ValueError("verification command belongs to a different stage")
-        if op["task_pipeline_stage"] == "verify" and request.get("target_commit") != git(root, "rev-parse", "HEAD"):
+        if owner != "impl_self_check" and request.get("target_commit") != git(root, "rev-parse", "HEAD"):
             raise ValueError("Verify target differs from the frozen target")
     body = {"schema_version": "task-host-manifest.v1", "kind": kind,
             "operation_id": operation_id,
@@ -158,7 +164,7 @@ def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = 
                 "operation_generation", "active_attempt_id", "lease_id", "dispatch_id", "request_hash")},
             "contract_digest": request["result_identity"]["contract_snapshot_digest"],
             "workdir": str(root), "head": git(root, "rev-parse", "HEAD"),
-            "branch": git(root, "symbolic-ref", "--short", "HEAD"),
+            "branch": git(root, "rev-parse", "--abbrev-ref", "HEAD"),
             "paths": names, "command": command, "files": source_files(root),
             "dependency_digest": dependency_digest(service, root)}
     return {**body, "manifest_digest": digest(body)}

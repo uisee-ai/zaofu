@@ -434,3 +434,27 @@ TODO-JOURNEY真实产出的browser runner复现镜像内`/work`解析Playwright�
 存储异常/损坏值保留/键盘旅程、实际image ID、失败trace/video和自有服务进程收尾。
 通用经验进入dev-worker技能并同步分发；产品脚本仍归隔离验收项目，不硬编码进Kernel。
 本轮预冻结执行只作runner诊断，正式候选冻结后的重新验收仍是必要门禁。
+
+## 2026-11-16：Candidate 环境阻塞与误重规划修复
+
+真实最小 PRD 已完成两个任务的 Impl/Task Verify，并冻结候选。Candidate Verify 的
+`verification-result.v1` 返回 blocked/abstained；fanout 子事件保留 schema，但 manifest
+白名单及 settled replay 丢失 schema，导致聚合缺失 failure_kind，被误送回全局 Plan。
+投影现保留结果类型及失败分类；重放同样保留。聚合发布阶段事件同步透传分类，
+避免仅中间投影修复而恢复消费者继续误判。语义 rejected 不被转换为 infra。
+
+受控 `stage-replan-new-generation` 的 fixed-input repair 可从历史子操作已接纳结果的
+ref/digest 重新核验基础设施失败；不修改旧事件。显式 `misrouted_operation_ids` 仅允许
+同 Run、因果链下、已停止且未接纳结果的 Plan reader。存在进程持有者、新计划发布或
+未列出的活跃后继即拒绝。取消通过 WorkflowOperationService，fanout 由 EventWriter
+记账；随后恢复原 Reader 输入与候选，保留人工审批及既有任务成果。
+
+`task-host-assist` 同时接受已接纳 unavailable Candidate Verify 的只读合同探测。
+固定 Run/map/operation/request、不可变合同/target/freeze receipt、当前候选及实际 Reader
+worktree；要求同仓库 detached exact HEAD、源码干净、资源空闲。仅执行当前 candidate_verify
+合同命令，禁止 Candidate commit。结果仍是宿主执行收据，不自动产生产品 verdict；独立
+Reader 必须审阅并以当前身份提交。宿主执行不等于 Provider sandbox 获得 Docker/监听权限。
+
+验证覆盖真实 Git detached currentness/负对照、实时与 settled replay 分类、实际聚合调用方、
+历史 sidecar 篡改/缺失/跨 Run、误派发取消及活跃持有者拒绝。完整交付、Judge 和无人值守
+故障旅程继续单独验收，不因本补丁完成自动标为通过。

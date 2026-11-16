@@ -5777,6 +5777,7 @@ class FanoutCoordinationMixin(
             ])
             if derived_failure_kind:
                 aggregate_payload.setdefault("failure_kind", derived_failure_kind)
+                failure_recovery.setdefault("failure_kind", derived_failure_kind)
         aggregate_event = self.event_writer.append(ZfEvent(
             type="fanout.aggregate.completed",
             actor="zf-cli",

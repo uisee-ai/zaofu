@@ -23,6 +23,7 @@ def apply_child_metadata(child: dict, payload: dict) -> None:
         "result_protocol_mode", "attempt_source_manifest_ref",
         "attempt_source_manifest_digest", "input_consumption_policy_digest",
         "admitted_call_result_digest", "semantic_verdict",
+        "control_result_schema", "failure_kind", "failure_class",
     ):
         value = _payload_str(payload, key)
         if value:
