@@ -471,3 +471,8 @@ fixed-input repair 同样接入已有 operator_feedback→rework_feedback 绑定
 输入，并纳入source snapshot摘要。大正文仍按既有分页读取；当前已派发attempt不修改。
 下一代须重新读取，既有读收据不因消息相似而继承。已用真实resolver→manifest→required
 read→正文读取链路验证，而非仅断言恢复事件携带字段。
+
+复扫方法补充于 zf-verify-rescan-replan/references/product-convergence.md：普通分页未完成
+继续补读，不能以abstain替代消费义务；核验当前集成候选全局收据，区分已有合格证据、
+当前阶段明确要求的新probe与未覆盖风险。保留独立完整产品审计和PAS，不把环境重跑失败
+解释为已有证据失效。方法变更供后续materialization，当前attempt不冒称已热加载该文本。
