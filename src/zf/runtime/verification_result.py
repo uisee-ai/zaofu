@@ -138,10 +138,16 @@ def validate_verification_result(
     execution_status = str(result.get("execution_status") or "")
     verdict = str(result.get("verdict") or "")
     if execution_status not in EXECUTION_STATUSES:
-        raise VerificationResultError(f"invalid execution_status {execution_status!r}")
+        raise VerificationResultError(
+            f"invalid execution_status {execution_status!r}; allowed: completed, failed; "
+            "environment failure uses failed with verdict=abstained"
+        )
     if execution_status == "failed":
         if verdict != "abstained":
-            raise VerificationResultError("failed verifier execution must abstain")
+            raise VerificationResultError(
+                'failed verifier execution must abstain: use execution_status="failed", '
+                'verdict="abstained"; do not use blocked or inconclusive as execution_status/verdict'
+            )
         return
     if verdict not in COMPLETED_VERDICTS:
         raise VerificationResultError("completed verifier must pass, reject, or block")

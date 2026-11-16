@@ -86,9 +86,23 @@ def _rolling_smoke_environment_error(
         return None
     if not tokens or tokens[0] != "npm":
         return None
-    if (execution_root / "package.json").is_file() and not (
-        execution_root / "node_modules"
-    ).is_dir():
+    try:
+        package = json.loads((execution_root / "package.json").read_text())
+    except (OSError, ValueError):
+        return None  # Let the actual command diagnose an invalid package.
+    if not isinstance(package, dict):
+        return None
+    dependencies = set()
+    for section in ("dependencies", "devDependencies"):
+        declared = package.get(section)
+        if isinstance(declared, dict):
+            dependencies.update(declared)
+    # Node resolves package dependencies through parent node_modules directories.
+    # A package with no declared dependencies does not require an empty sentinel.
+    roots = (execution_root, *execution_root.parents)
+    if any(not any((root / "node_modules" / name / "package.json").is_file()
+                   or (root / "node_modules" / (name + ".js")).is_file()
+                   for root in roots) for name in dependencies):
         return f"candidate_environment_not_ready: dependencies missing at {execution_root}"
     return None
 

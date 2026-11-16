@@ -790,6 +790,10 @@ def _no_progress_fingerprint(
     *,
     fallback: str,
 ) -> str:
+    if event_type == "fanout.child.dispatch_deferred":
+        raw = "|".join(str(payload.get(key) or "") for key in
+                       ("fanout_id", "child_id", "stage_id", "reason", "target_ref"))
+        return "rmfp-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
     if event_type == "task.dispatch_context.bound":
         source = str(payload.get("source") or "")
         if source == "writer_fanout_task_binding_recovery":

@@ -48,6 +48,16 @@ amendment are separate role capabilities supplied by the workflow profile.
 - Prefer the rendered `result validate ... --submit` command when provided. A failed
   validation returns diagnostics without consuming submission; successful preflight
   goes through normal Kernel admission in that invocation.
+- For `verification-result.v1`, an environment/provider execution failure uses
+  exactly `execution_status: failed` and `verdict: abstained`, with truthful
+  failure_class and evidence. `blocked` and `inconclusive` are not execution_status
+  values. Do not copy prose status words into typed fields.
+- Correct a preflight diagnostic using the pinned profile/schema, then validate
+  again. After two corrections of the same error without progress, stop guessing:
+  report the operation ID, exact diagnostic and attempted corrections through the
+  briefing's sanctioned blocker channel. Do not emit passed, fabricate evidence,
+  or loop on validation commands. Read-only preflight itself does not consume a
+  lease or emit failure events; the blocker report lets recovery observe the gap.
 
 ## Dependency Triggers
 
@@ -191,7 +201,8 @@ When Candidate Verify receives a current `product_acceptance_spec`:
 - 产品证据每项使用当前工具结果提供的 `{ref, sha256}` 描述符；事件字符串不能替代
   该结构，不伪造摘要。任务切片范围不豁免已绑定产品规格所需的跨切片只读检查。
 - Deterministic product failure is semantic rework. Provider/environment
-  execution failure is `blocked`/external wait and must not be reported as a
+  execution failure is an external wait (`verification-result.v1`: `failed` +
+  `abstained`) and must not be reported as a
   failed product journey or consume semantic rework.
 
 ## Role Boundary

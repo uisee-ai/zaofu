@@ -140,6 +140,13 @@ def _submit(runtime, dispatch, result):
         })
     role = payload["role_instance"]
     token = (runtime.state_dir / f"private/result-submit/roles/{role}.token").read_text().strip()
+    from zf.runtime.task_handoff import SOURCE_ID
+    from zf.runtime.task_handoff_receipt import accept_task_handoff
+    for source in manifest.get("sources", []):
+        if source.get("source_id") == SOURCE_ID:
+            accept_task_handoff(state_dir=runtime.state_dir, event_log=runtime.event_log,
+                operation_id=payload["operation_id"], role=role, credential=token,
+                digest=source["sha256"])
     submitted = SemanticResultSubmitService(
         state_dir=runtime.state_dir, event_log=runtime.event_log, event_writer=runtime.event_writer,
     ).submit(operation_id=payload["operation_id"], semantic_result=result,

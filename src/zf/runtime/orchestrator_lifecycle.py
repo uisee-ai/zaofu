@@ -508,6 +508,10 @@ class LifecycleManagerMixin(
                         role.instance_id,
                     )
                     stale, stale_basis = self._worker_liveness_stale(role)
+                    if not stale and (active_task is not None or active_fanout is not None):
+                        from zf.runtime.provider_exit_evidence import active_provider_exit_confirmed
+                        if active_provider_exit_confirmed(self, role):
+                            stale, stale_basis = True, "registered_provider_exited_workspace_idle"
                     instance_state = getattr(self, "_instance_state", {})
                     # Fast adoption is for a restarted watcher with no local
                     # recycle marker. Local recycle failures retain the

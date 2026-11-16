@@ -47,7 +47,7 @@ def test_rolling_smoke_npm_prefix_runs_from_package_root(tmp_path) -> None:
 def test_rolling_smoke_reports_missing_npm_environment(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
-    (app / "package.json").write_text("{}\n", encoding="utf-8")
+    (app / "package.json").write_text('{"devDependencies":{"typescript":"*"}}\n', encoding="utf-8")
 
     error = _rolling_smoke_environment_error(
         "npm --prefix app exec tsc -- --noEmit",

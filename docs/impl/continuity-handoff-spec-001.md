@@ -566,3 +566,34 @@ provider_session，仍会落入 adapter 的 legacy sandbox bypass 分支。生�
 本机 Codex 0.164 的探测命令为 `codex sandbox -- /usr/bin/true`；真实 Terra High
 workspace-write exec 已调用 shell 成功。前置人工修复不计为无人自愈成绩。
 后续故障事实/结果保留在 `reports/unattended-faults-20261116T090219Z/`。
+
+
+## 2026-11-16 执行阶段真实故障修复
+
+任务：`tasks/active/2026-11-16-1053-unattended-reader-recovery.md`。
+来源：`reports/unattended-faults-20261116T090219Z/review.md`。
+
+- Reader预注册只准备并绑定目标，实际派发才激活Provider；占用时不反复启动。
+- Reader环境等待沿用角色stuck阈值（至少60秒），跨重启、排除显式暂停和stop到resume停机区间累计；
+  先检查是否释放，再判断超时。超时成为具名infra失败，按fanout/child/run
+  路由至Run Manager，Task已done也不能掩盖工作流义务。资源检查不被绕过。
+- Run Manager无进展投影覆盖Reader延期，只有匹配run/fanout/child推进或终止
+  才清除；旧诊断不能解决另一阶段。诊断效果接受绑定request的建议，案例仍
+  等待后续修复或人工决定，不能据此标业务恢复。
+- Node依赖预检按声明和父级node_modules查找；空目录不是依赖存在证明，
+  无依赖包不强制本地node_modules。真实命令仍是验收依据。
+- Verify明确failed+abstained组合；相同preflight错误两次纠正后按角色方法
+  报告阻塞，不能盲猜枚举。validate保持只读，不暗中修改lease或终态。
+- 已注册Provider的PID/start身份确认退出且工作区无任何活跃/未知持有者时，
+  watchdog可提前恢复；单次pane探测失败仍不能越过新鲜心跳保护。
+- 宿主验证继续使用有token、approval_ref、精确manifest digest的受控入口；
+  复验前检查已有Docker镜像、容器Chromium、宿主监听和合同命令能力。
+  不把镜像存在等同于Provider沙箱可访问Docker，不授予任意宿主shell权限。
+  产品命令结果、源码稳定性、目标提交和浏览器证据仍必须分别准入。
+
+真实资格需以本批复验记录为准；单元通过不替代无人闭环资格。
+
+本批回归进一步发现并修复：版本投影读取失败必须走Dashboard旧值保留路径；
+已认证的当前operation可按Task当前dispatch精确选择operation-v2 attempt lane，
+历史lane不能阻塞新代handoff接收。未绑定operation的恢复查询仍拒绝歧义。
+进程观测worker.runtime.observed不计为agent语义重复决策；真实worker重复决策检测保留。

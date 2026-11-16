@@ -584,6 +584,7 @@ class FanoutDispatchLivenessMixin:
         prompt_kind: str = "fanout_child",
         skip_send_window: bool = False,
         provider_session_replaced: bool = False,
+        prepare_only: bool = False,
     ) -> bool:
         """Return whether a fanout role can receive a prompt now."""
 
@@ -617,6 +618,22 @@ class FanoutDispatchLivenessMixin:
                     force=True,
                 )
                 state = "idle"
+
+        if prepare_only:
+            # Check ownership before materializing skills or mutating a target,
+            # but never activate a provider just to prepare its workspace.
+            busy = state in {"busy", "blocked_human", "recycling", "respawning"}
+            turning = self._fanout_role_has_active_provider_turn(role.instance_id)
+            if busy or turning:
+                self._emit_fanout_dispatch_deferred_once(
+                    fanout_id=fanout_id, trace_id=trace_id, stage_id=stage_id,
+                    child_id=child_id, run_id=run_id, role_instance=role.instance_id,
+                    prompt_kind=prompt_kind,
+                    reason="provider_turn_active" if turning else f"worker_state_not_dispatchable:{state}",
+                    state=state, alive=None, dispatchable=False, causation_id=causation_id,
+                )
+                return False
+            return True
 
         context_ready, context_rotation = self._prepare_reader_fanout_context(
             role=role,

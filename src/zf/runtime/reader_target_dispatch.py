@@ -56,6 +56,12 @@ def pin_reader_target_or_defer(
             ).pin_reader_target(role, cleaned)
         except (EnvironmentInUse, TimeoutError):
             _release_idle_owner(self, role)
+            from zf.runtime.reader_wait_recovery import exhaust_reader_wait
+            if exhaust_reader_wait(
+                self, role=role, context=context, child=child, run_id=run_id,
+                target_ref=cleaned, causation_id=causation_id,
+            ):
+                return False
             try:
                 alive = self.transport.is_alive(role.instance_id)
             except Exception:

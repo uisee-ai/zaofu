@@ -2020,17 +2020,14 @@ def _resident_diagnosis_reprompt_action(
         "diagnosis_source_action": str(action.get("action") or ""),
         "suggested_route": "run_manager_resident_agent",
     }
-    if _is_owned_resident_diagnosis(action):
+    if _is_owned_resident_diagnosis(action) or action.get("suggested_route") == "run_manager_resident_agent":
         reprompt.update(
             request_kind="recovery_diagnosis",
-            request_id="rmd-" + hashlib.sha256(checkpoint_id.encode()).hexdigest()[:16],
+            request_id=action.get("request_id") or "rmd-" + hashlib.sha256(checkpoint_id.encode()).hexdigest()[:16],
             diagnosis_expected_output=_string_list(action.get("expected_output")),
             expected_output=[RUN_MANAGER_AGENT_RECOMMENDATION],
             continuation_expected_events=[RUN_MANAGER_AGENT_RECOMMENDATION],
-            effect_expected_events=action.get("effect_expected_events") or (
-                ["task.done", "task.done.accepted"] if action.get("task_id")
-                else ["flow.goal.closed"]
-            ),
+            effect_expected_events=[RUN_MANAGER_AGENT_RECOMMENDATION],
         )
     reprompt["preflight"] = preflight_action(
         action="resident-agent-reprompt",
@@ -7897,6 +7894,12 @@ def _effect_event_matches_scope(
     )
     if resume_admission_effect(payload):
         return matches_resume_admission(event, payload)
+    if payload.get("action") == "resident-agent-reprompt" and payload.get("request_kind") == "recovery_diagnosis":
+        if (event.type != RUN_MANAGER_AGENT_RECOMMENDATION
+                or not payload.get("request_id")
+                or body.get("request_id") != payload["request_id"]
+                or event.actor != payload.get("instance_id")):
+            return False
     if payload.get("action") == "worker-lifecycle-recover":
         request_id = str(payload.get("effect_request_event_id") or "")
         return bool(request_id) and event.causation_id == request_id and str(

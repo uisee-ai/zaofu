@@ -489,20 +489,6 @@ class FanoutCoordinationMixin(
     ) -> bool:
         run_id = f"run-{context.fanout_id}-{child.child_id}"
         try:
-            if not self._ensure_fanout_role_dispatchable(
-                role=role,
-                fanout_id=context.fanout_id,
-                stage_id=context.stage_id,
-                child_id=child.child_id,
-                run_id=run_id,
-                trace_id=context.trace_id,
-                task_id=str(
-                    (child.payload or {}).get("task_id") or ""
-                ) or None,
-                causation_id=causation_id,
-                prompt_kind="fanout_child",
-            ):
-                return False
             prepared_dispatch = prepared_dispatch or self._prepare_reader_fanout_child_operation(
                 context=context,
                 child=child,
@@ -524,6 +510,20 @@ class FanoutCoordinationMixin(
                         causation_id=causation_id,
                     )
                 return True
+            if not self._ensure_fanout_role_dispatchable(
+                role=role,
+                fanout_id=context.fanout_id,
+                stage_id=context.stage_id,
+                child_id=child.child_id,
+                run_id=run_id,
+                trace_id=context.trace_id,
+                task_id=str(
+                    (child.payload or {}).get("task_id") or ""
+                ) or None,
+                causation_id=causation_id,
+                prompt_kind="fanout_child",
+            ):
+                return False
             briefing_path = self._write_fanout_briefing(
                 role=role,
                 context=context,
@@ -6656,7 +6656,8 @@ class FanoutCoordinationMixin(
                     release_slot=False,
                 )
                 return False
-        if not self._ensure_fanout_role_dispatchable(
+        fresh_reader = fresh_operation and manifest.get("topology") == "fanout_reader"
+        if not fresh_reader and not self._ensure_fanout_role_dispatchable(
             role=role,
             fanout_id=fanout_id,
             skip_send_window=False,
@@ -6706,6 +6707,20 @@ class FanoutCoordinationMixin(
                     child=child,
                     recovery_decision_event=recovery_decision_event,
                 )
+            if fresh_reader and not self._ensure_fanout_role_dispatchable(
+                role=role,
+                fanout_id=fanout_id,
+                skip_send_window=False,
+                stage_id=stage_id,
+                child_id=child_id,
+                run_id=run_id,
+                trace_id=trace_id,
+                task_id=str(child.get("task_id") or "") or None,
+                causation_id=previous_dispatch.id,
+                prompt_kind="fanout_child",
+                provider_session_replaced=provider_session_replaced,
+            ):
+                return False
             if prepared_call is not None and not prepared_call.should_dispatch:
                 return False
             task_item = {}
