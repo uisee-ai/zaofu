@@ -1001,6 +1001,12 @@ def run(args: argparse.Namespace) -> int:
             _preserved_run_manager_start_context(config, state_dir)
         )
 
+        # Declare source resources before tmux creates a shell whose cwd is
+        # the project. That shell is correctly treated as a live holder later.
+        if config.runtime.workdirs.enabled and not dry_run:
+            from zf.runtime.environment_resources import register_environment_resources
+            register_environment_resources(project_root, config.runtime.workdirs.provision_paths)
+
         # 6. Initialize transport (creates tmux session today)
         transport = make_transport(config, dry_run=dry_run)
         if not _initialize_start_transport(
