@@ -140,9 +140,13 @@ def reconcile_host_verification(service) -> int:
                 _, _, contract, _ = binding(service, operation_id)
             except (ValueError, KeyError, OSError):
                 continue
-            from zf.runtime.host_verification_handoff import resume_reader_after_probes
+            from zf.runtime.host_verification_handoff import completed_reader_probes, resume_reader_after_probes
             if resume_reader_after_probes(service, operation, contract, policy, events):
                 return 1
+            if completed_reader_probes(service, operation, contract, policy, events)[2]:
+                # The aggregate failure may still await a sibling Reader. Keep
+                # this failure for handoff; do not spend its remaining probes.
+                continue
             for command in contract['verification_commands']:
                 if command.get('command') not in policy.commands:
                     continue

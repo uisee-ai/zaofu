@@ -169,3 +169,6 @@ Worker援助请求沿用受控CLI的参数边界：单条`zf recover assistance 
 ### Candidate 环境弃权的提交指引
 
 环境/Provider失败导致未进行产品验收时，使用execution_status=failed、verdict=abstained，保留真实故障及可用工具证据，省略product_acceptance_report及其ref/digest；空模板并非合法的产品报告。若已提供报告，仍校验所有必需身份、旅程、断言与证据。预校验针对这组明确状态补充可执行提示，不替Worker判断产品语义、不修改scratch、不放宽通过门禁。恢复后仍必须完成独立产品验收。R7曾自行补齐失败证据并准入，说明不是永久死锁；该改动减少误入完整报告分支的往返。
+
+
+Reader失败回执还需覆盖聚合等待窗口：首个稳定、同策略、同operation、允许命令的非零退出回执出现后，剩余命令暂停，即使兄弟Reader尚未结算、aggregate failure还没产生。后续tick继续尝试原有受控交接，不抢先生成聚合失败，也不阻塞其它可执行operation。Task Pipeline、未知退出码、未稳定源码和无效绑定沿用原处理。

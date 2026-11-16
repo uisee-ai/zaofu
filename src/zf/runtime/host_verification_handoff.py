@@ -25,13 +25,14 @@ def reader_probe_handoff_complete(operation: dict, events) -> bool:
     return False
 
 
-def resume_reader_after_probes(service, operation: dict, contract: dict, policy, events) -> bool:
+def completed_reader_probes(service, operation: dict, contract: dict, policy, events) -> tuple[set, dict, bool]:
+    """Collect only current-policy, stable-target Reader execution receipts."""
     if operation.get('task_pipeline_stage'):
-        return False  # Task Pipeline retains its own rework state machine.
+        return set(), {}, False  # Task Pipeline retains its own rework state machine.
     required = {c['command_id'] for c in contract['verification_commands']
                 if c.get('command') in policy.commands}
     if not required:
-        return False
+        return required, {}, False
     receipts = {}
     failed_probe = False
     for event in events:
@@ -47,6 +48,13 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
                 and type(receipt.get('exit_code')) is int and receipt.get('source_stable') is True):
             receipts[receipt['command_id']] = p['receipt_ref']
             failed_probe = failed_probe or receipt['exit_code'] != 0
+    return required, receipts, failed_probe
+
+
+def resume_reader_after_probes(service, operation: dict, contract: dict, policy, events) -> bool:
+    required, receipts, failed_probe = completed_reader_probes(service, operation, contract, policy, events)
+    if not required:
+        return False
     if not failed_probe and not required <= receipts.keys():
         return False
     dispatch = next((e for e in events if e.type == 'fanout.child.dispatched'
