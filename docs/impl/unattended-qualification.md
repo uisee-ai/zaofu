@@ -128,3 +128,5 @@ Critic 因业务选择等待 owner 时，也须显示它实际审阅的 Planner 
 隔离容器的 `/work` tmpfs 必须允许执行预置构建工具：Docker 默认 noexec 会使0755的 tsc/脚本返回126。仅临时构建工作区显式 exec；保留 nosuid/nodev、非root、只读源码挂载、无宿主凭据/socket和命令预授权。真实宿主层用可执行脚本验证此边界，解释器直接执行字符串不足以覆盖这一故障。
 
 Autoresearch loop 的单次内部 runner 继承 loop 已指定的 budget_usd，不能因构造参数遗漏回退到500默认值。此修正仅闭合该调用边界，不代表已实现父目标跨诊断累计预算或未定价模型的真实成本计量；这些必须分别核实。
+
+Task Pipeline 终态归档已终止 transport、轮换 session 后，会产生内核 `role.lifecycle.suspended`（reason=task_stage_session_archived，preserve_session=false）。Provider 回合重放必须关闭该实例在此事件之前的残留回合，否则 Candidate Verify 被 provider_turn_active 永久阻挡。只接受内核 orchestrator 的这一销毁事件；保留会话、其他实例/原因及后续新回合均不受影响。终止失败且进程仍活跃时仍保持占用。

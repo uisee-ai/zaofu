@@ -97,3 +97,9 @@ R4于17:04:11 UTC批准Plan evt-dae1196b30c0，冻结cc3d33f6。F2活动Impl控�
 新缺陷：隔离容器 /work tmpfs默认noexec，npm test中的tsc返回126。独立于R4的0755脚本真实回归先RED，再仅为容器工作区显式exec后GREEN；2项host通过、66文件影响闭包1091通过、sentinel53通过（闭包含恢复mock）。本修复尚未加载R4；该轮RM已自行启动AR诊断，继续区分自动链与监工工作。
 
 R4自动诊断现场另确认loop→inner runner漏传budget_usd：7.5的回归实际收到500，已RED→GREEN补传；39定向、3文件调用闭包29与sentinel53通过。本修正没有盲目继承产品的容器命令/文件发布权限，也没有声称解决父目标跨诊断累计计费。现场父workflow run cap40、诊断inner cap500，两个CostTracker美元值0仅表示记录值，不能推断调用免费或未消费。
+
+R4两业务任务于17:38前均独立Verify通过并done，Candidate冻结6d3022d8；但Candidate Verify两lane因已归档的旧Provider回合仍active而不派发。17:45正式记录FAILED，停止剩余预定故障观察器，保留所有产品提交和F6注入。资格期间人工恢复0，但不能宣称无人完成。F4观察器等待flow-verify而实际为verify-lane，未命中；下一轮须先修正并重新冻结。
+
+归档回合重放回归先RED后GREEN；同时覆盖真实slot release调用、终止失败仍存活不得释放、保留会话及新回合不误关闭。29定向、205文件增量影响闭包2938通过（含相关mock E2E）、sentinel53通过。下一次源码加载属于监工恢复epoch，不改写R4失败结论。
+
+AR自动诊断在22分钟后被模板重新引入的10000000 token预算阻断，0/1修复完成；计量10010424中9525632为缓存读取，不能称为同时上下文长度。父流程明确token_budget=0。自动诊断保留dirty工作树，未输出可应用补丁；修复与原业务续跑的全链仍未验收。

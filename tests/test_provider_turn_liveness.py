@@ -140,3 +140,38 @@ def test_on_demand_dormant_closes_prior_codex_turn_generation(
     active = active_codex_turn(log, state_dir, "reader")
     assert active is not None
     assert active["turn_id"] == "turn-new"
+
+
+def test_archived_task_stage_suspension_closes_only_prior_turns() -> None:
+    from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
+
+    old = ZfEvent(type="codex.hook.user_prompt_submit", actor="verify-1",
+                  payload={"session_id": "old", "turn_id": "old"})
+    suspended = ZfEvent(
+        type="role.lifecycle.suspended", actor="orchestrator", origin="kernel",
+        payload={"instance_id": "verify-1", "reason": "task_stage_session_archived",
+                 "preserve_session": False},
+    )
+    assert active_codex_turn_from_events([old, suspended], "verify-1") is None
+    new = ZfEvent(type="codex.hook.user_prompt_submit", actor="verify-1",
+                  payload={"session_id": "new", "turn_id": "new"})
+    assert active_codex_turn_from_events([old, suspended, new], "verify-1")["turn_id"] == "new"
+
+
+def test_unrelated_or_preserved_suspension_does_not_close_turn() -> None:
+    from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
+
+    old = ZfEvent(type="codex.hook.user_prompt_submit", actor="verify-1",
+                  payload={"session_id": "old", "turn_id": "old"})
+    for origin, instance, reason, preserve in [
+        ("agent", "verify-1", "task_stage_session_archived", False),
+        ("kernel", "verify-2", "task_stage_session_archived", False),
+        ("kernel", "verify-1", "idle", False),
+        ("kernel", "verify-1", "task_stage_session_archived", True),
+        ("kernel", "verify-1", "task_stage_session_archived", None),
+    ]:
+        suspended = ZfEvent(
+            type="role.lifecycle.suspended", actor="orchestrator", origin=origin,
+            payload={"instance_id": instance, "reason": reason, "preserve_session": preserve},
+        )
+        assert active_codex_turn_from_events([old, suspended], "verify-1")["turn_id"] == "old"
