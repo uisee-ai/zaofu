@@ -484,3 +484,25 @@ read→正文读取链路验证，而非仅断言恢复事件携带字段。
 继续补读，不能以abstain替代消费义务；核验当前集成候选全局收据，区分已有合格证据、
 当前阶段明确要求的新probe与未覆盖风险。保留独立完整产品审计和PAS，不把环境重跑失败
 解释为已有证据失效。方法变更供后续materialization，当前attempt不冒称已热加载该文本。
+
+## 2026-11-16：最小 PRD 正常流程真实闭环
+
+Run `minprd-v5-r2-015713` 在 05:26:54 UTC 产生内核事件
+`run.goal.completed`（`evt-66199a56b74a`），交付状态 `ship_delivered`。
+已走过真实审批、两任务 Impl/独立 Task Verify、候选集成、两条 Candidate Verify、
+产品完整性复扫和 Thin Judge。Discovery 缺少 PAS 字段曾被准入拒绝，原操作内补充
+绑定后通过；最终 Judge 也由真实 Terra High 提交，经机械门禁完成交付。
+
+冻结候选 `e4fc724e09ce4794dfdd64301c257b5cee788a42`；隔离产品仓库交付提交
+`fe3654ac4fcef603f54b22d6b9402f49df619179`，两者源码树一致。
+最终运行时版本 `c1c0757e`；45 个不可变引用摘要核验通过。
+内核自动记录 `simulation.done`（`evt-31f3b98cf591`），退出自有 tmux/controller；
+操作员关闭隔离 Web 8002，保留源码、账本和证据，未修改真实开发环境 8001。
+本地证据备份见 `reports/continuity-prd-v5-20261116/final/audit.json`，包含交付源码归档、
+两 lane 浏览器产物及已核验收据；完整过程见 `reports/continuity-prd-v5-20261116-review.md`。
+
+资格边界：本轮包含操作员宿主探测、问题修复及受控恢复，不是无人值守资格；
+2-task DAG 不证明 8 Impl/8 Verify 满载，也不证明跨 Provider、Go 或整个 207–209/spec 完成。
+待改进仍包括 Discovery 完整配置强制分页、pin/setup 占用未区分 infra、聚合 goal_id
+父子来源差异和自动 ship 的非 Conventional merge 标题。这些保留为问题，不能由正常闭环
+掩盖；原 B01–B07 仍按各自完整验收条件保持 active。
