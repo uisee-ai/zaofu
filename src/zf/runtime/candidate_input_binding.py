@@ -7,6 +7,7 @@ from zf.runtime.call_result_envelope import canonical_json_sha256
 from zf.runtime.candidate_currentness import candidate_currentness_issues
 from zf.runtime.candidate_verification_authority import _latest_frozen_candidate
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.reader_input_dispatch import reader_input_dispatch_matches
 from zf.runtime.workflow_operation import operation_request_hash, reduce_workflow_operations
 
 
@@ -25,7 +26,8 @@ def current_candidate_input_binding(
     if (row.get("status") != "running" or not row.get("lease_id")
             or row.get("operation_type") != "fanout_reader_child"
             or any(not manifest.get(key) or row.get(key) != manifest[key] for key in (
-                "task_id", "workflow_run_id", "dispatch_id", "task_map_generation"))):
+                "task_id", "workflow_run_id", "task_map_generation"))
+            or not reader_input_dispatch_matches(row, manifest, events)):
         return False
     body = hydrate_sidecar_ref(state_dir, row.get("request_ref") or {}).payload
     if operation_request_hash(body) != row.get("request_hash"):
@@ -34,10 +36,11 @@ def current_candidate_input_binding(
     identity = request.get("result_identity") or {}
     profile = request.get("output_profile_id")
     contract_reader = profile == "candidate-verify"
-    workflow_reader = (profile in {"workflow-read", "thin-judge-goal-closure"}
+    workflow_reader = (profile == "workflow-read"
                        and not manifest.get("contract_revision")
                        and not identity.get("contract_snapshot_ref"))
-    if (not (contract_reader or workflow_reader)
+    goal_reader = profile == "thin-judge-goal-closure" and not manifest.get("contract_revision")
+    if (not (contract_reader or workflow_reader or goal_reader)
             or request.get("source_manifest_digest") != canonical_json_sha256(manifest)
             or request.get("handoff_authority_contract") != authority
             or any(body.get(key) != row.get(key) for key in (
@@ -57,6 +60,20 @@ def current_candidate_input_binding(
             contract_ref=str(identity.get("contract_snapshot_ref") or ""),
             contract_digest=str(identity.get("contract_snapshot_digest") or ""))):
         return False
+    if goal_reader:
+        from zf.runtime.goal_closure_identity import (
+            closure_is_current, validate_goal_closure_dispatch_snapshots,
+        )
+
+        target = hydrate_sidecar_ref(state_dir, {
+            "ref": identity.get("target_snapshot_ref"),
+            "sha256": identity.get("target_snapshot_digest"),
+        }).payload
+        validate_goal_closure_dispatch_snapshots(state_dir, {
+            **identity, "closure_identity": target.get("closure_identity"),
+        })
+        if not closure_is_current(list(events), target):
+            return False
     frozen = _latest_frozen_candidate(list(events), str(manifest["workflow_run_id"]))
     if frozen is None:
         return False

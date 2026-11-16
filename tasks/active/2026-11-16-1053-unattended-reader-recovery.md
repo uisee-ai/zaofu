@@ -38,3 +38,20 @@ RED→GREEN；复用结果准入currentness，保留所有身份/摘要/冻结/�
 随后自动flow.discovery.requested=evt-9c4843f59a02。发现无Task合同的workflow-read
 复扫也被错误套用Task派发检查；补齐冻结目标Reader身份校验，并对最终Thin Judge
 同一输入路径加回归。为部署代码显式停止试验，随后从复扫断点恢复。
+
+## 验收结果
+
+R1-R8均完成本批声明范围：Reader真实占用释放9.85秒后派发；两个独立Candidate
+Verify通过；discovery一次提交纠错后自主完成；Thin Judge通过，隔离产品交付
+01e86e72，2026-11-16 11:50:36Z Kernel事件evt-3eccd3a22180为run.goal.completed。
+本轮补齐transport redrive输入身份和Goal Closure快照；旧checkpoint在授权修复
+新Reader启动后不再重发，实测历史切片重放确认旧checkpoint消失。
+最后影响闭包1858 passed/7 skipped（119文件），serial10、sentinel53、mock10。
+原始大批闭包6032 passed/8 skipped；均不是全量pytest，未测Go。
+
+真实资格限制：浏览器三命令为受控host-assist，OA有一次scope澄清，重启/部署由
+本session执行；不宣称纯无人自愈全部合格。最终去重补丁采用真实事件回放及mock
+caller验收，未再启动一轮真实Provider全流程。R7快速退出分支仅确定性验收。
+试验进程、private tmux及8002 Web已停止；产品、报告、trace/WebM保留。
+独立autoresearch诊断在主流程终止时收到SIGTERM，缺少最终报告，保留其worktree
+及未提交产物，不冒充诊断完成、不自动合并或删除。

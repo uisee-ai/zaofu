@@ -8,7 +8,7 @@ from tests.test_candidate_verification_authority import _runtime, _seed_frozen_c
 from zf.core.events import ZfEvent
 from zf.runtime.artifact_input_lifecycle import input_lifecycle
 from zf.runtime.call_result_runtime import prepare_call_operation, mark_call_operation_started
-from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json
 
 
 def setup(tmp_path, profile="candidate-verify"):
@@ -31,6 +31,20 @@ def setup(tmp_path, profile="candidate-verify"):
         'plan_artifact_package_ref': package.payload['package_ref'],
         'plan_artifact_package_digest': package.payload['package_digest'],
         'task_map_generation': seeded['generation']}
+    if profile == 'thin-judge-goal-closure':
+        identity = {'workflow_run_id': seeded['run_id'], 'goal_id': 'goal-1',
+            'task_map_generation': seeded['generation'],
+            'plan_artifact_package_ref': package.payload['package_ref'],
+            'plan_artifact_package_digest': package.payload['package_digest']}
+        target = {**identity, 'target_commit': seeded['candidate_head'], 'closure_identity': 'closure-1'}
+        for name, body in [('contract', identity), ('target', target)]:
+            schema = f'goal-closure-{name}-snapshot.v1'
+            ref = write_sidecar_json(runtime.state_dir, f'artifacts/goal-{name}.json',
+                {**body, 'schema_version': schema}, kind='goal_closure_snapshot', schema_version=schema, created_by='test')
+            payload[f'{name}_snapshot_ref'] = ref['ref']
+            payload[f'{name}_snapshot_digest'] = ref['sha256']
+        payload.update(target)
+        runtime.event_writer.emit('flow.goal.closed', payload=target)
     prepared = prepare_call_operation(runtime, payload=payload, operation_type='fanout_reader_child',
         operation_key='verify-lane-0', stage_id='issue-lanes-verify', task_id='FLOW-ANCHOR',
         dispatch_id='candidate-dispatch', causation_id='candidate-with-package')
@@ -97,4 +111,35 @@ def test_frozen_workflow_reader_rejects_invalid_binding(tmp_path, fault):
     elif fault == 'manifest': manifest['read_purpose'] = 'tampered-purpose'
     elif fault == 'contract': manifest['contract_revision'] = 'task-contract-r1'
     elif fault == 'profile': manifest['handoff_authority_contract']['output_profile_id'] = 'implementation'
+    assert input_lifecycle(manifest, runtime.event_log.read_all(), state_dir=runtime.state_dir)['requires_rebind']
+
+
+@pytest.mark.parametrize('fault', ['', 'missing_redrive', 'wrong_request', 'wrong_run', 'changed_lease', 'wrong_cause'])
+def test_authorized_transport_redrive_preserves_immutable_input_attempt(tmp_path, fault):
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+    runtime, manifest, prepared, _ = setup(tmp_path, 'workflow-read')
+    row = reduce_workflow_operations(runtime.event_log.read_all())[prepared.operation_id]
+    identity = {k: row[k] for k in ('operation_id', 'workflow_run_id', 'task_id', 'request_hash')}
+    if fault != 'missing_redrive':
+        redrive = {**identity, 'source_attempt_id': row['active_attempt_id'],
+                   'recovery_decision_event_id': 'recovery-proof', 'recovery_decision_owner': 'kernel_replay'}
+        if fault == 'wrong_request': redrive['request_hash'] = 'wrong'
+        if fault == 'wrong_run': redrive['workflow_run_id'] = 'wrong'
+        runtime.event_writer.emit('workflow.operation.redrive_admitted', payload=redrive)
+    runtime.event_writer.emit('workflow.operation.started', causation_id='wrong' if fault == 'wrong_cause' else 'recovery-proof', payload={
+        **identity, 'dispatch_id': 'transport-retry', 'active_attempt_id': row['active_attempt_id'],
+        'role_instance': row['role_instance'], 'lease_id': 'changed' if fault == 'changed_lease' else row['lease_id']})
+    lifecycle = input_lifecycle(manifest, runtime.event_log.read_all(), state_dir=runtime.state_dir)
+    assert lifecycle['requires_rebind'] is bool(fault)
+
+
+@pytest.mark.parametrize('fault', ['contract_bytes', 'target_bytes', 'closure_changed'])
+def test_thin_judge_input_requires_current_typed_closure(tmp_path, fault):
+    runtime, manifest, _, payload = setup(tmp_path, 'thin-judge-goal-closure')
+    if fault == 'closure_changed':
+        runtime.event_writer.emit('flow.goal.closed', payload={
+            'workflow_run_id': manifest['workflow_run_id'], 'goal_id': 'goal-1', 'closure_identity': 'new'})
+    else:
+        ref = payload['contract_snapshot_ref' if fault == 'contract_bytes' else 'target_snapshot_ref']
+        (runtime.state_dir / ref).write_text('{}')
     assert input_lifecycle(manifest, runtime.event_log.read_all(), state_dir=runtime.state_dir)['requires_rebind']

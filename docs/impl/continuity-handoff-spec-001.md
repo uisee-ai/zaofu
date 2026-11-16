@@ -608,3 +608,15 @@ workspace-write exec 已调用 shell 成功。前置人工修复不计为无人�
 workflow-read/thin-judge-goal-closure仅在自身活跃Reader operation、不可变manifest
 及当前冻结目标/Plan绑定全部相符时保留读取；含Task合同者不走此例外。
 不同目标、代次、取消、替换attempt或内容篡改继续拒绝；不改变语义门禁。
+
+真实重派又确认：同一operation保留不可变attempt/lease/request，但transport dispatch
+会加retry后缀。输入恢复只在存在同run、request、source_attempt与最新started因果
+匹配的redrive_admitted时接受该变化；新attempt或lease不能借此继承。
+Thin Judge专用Goal Closure快照复用既有typed snapshot校验，并要求闭环身份当前。
+同一冻结候选已通过显式基础设施修复正式启动新Reader时，旧checkpoint让出恢复权；
+否则Run Manager会将旧失败再拉起。原始失败保留，不以历史成功冒充新成功。
+本轮真实PRD最终test.passed→flow.discovery.completed→flow.goal.closed→judge.passed
+→ship.completed→run.goal.completed。产品仅合并到隔离试验仓dev，最终01e86e72；
+ZaoFu源仓未merge/push。宿主采证及scope澄清计为人工协助，不宣称纯无人资格。
+最后修复影响闭包119文件1858 passed/7 skipped，serial10/sentinel53/mock10；
+真实旧checkpoint事件切片回放确认不再重复恢复。完整证据及资格限制见上述report。

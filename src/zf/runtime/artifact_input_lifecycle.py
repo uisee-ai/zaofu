@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from zf.runtime.candidate_input_binding import current_candidate_input_binding
+from zf.runtime.reader_input_dispatch import reader_input_dispatch_matches
 
 from zf.runtime.plan_artifact_package import (
     admitted_plan_artifact_package_for_generation,
@@ -127,7 +128,8 @@ def _current_recovery_reader_binding(state_dir: Path, manifest: Mapping[str, Any
     if (row.get("status") != "running" or row.get("operation_type") != "fanout_reader_child"
             or row.get("attempt_domain") != "task" or not row.get("lease_id")
             or any(not manifest.get(key) or row.get(key) != manifest[key] for key in (
-                "task_id", "workflow_run_id", "dispatch_id", "task_map_generation"))):
+                "task_id", "workflow_run_id", "task_map_generation"))
+            or not reader_input_dispatch_matches(row, manifest, events)):
         return False
     # The immutable request binds both the complete manifest and its result identity.
     body = hydrate_sidecar_ref(state_dir, row.get("request_ref") or {}).payload
