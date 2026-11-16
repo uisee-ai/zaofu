@@ -14,7 +14,8 @@ def test_real_qualification_preserves_v5_and_delivers_reader_policy(tmp_path):
     config = load_config(path)
     assert config.version == "5.0.1"
     assert config.workflow.plan_approval_enabled
-    assert config.project.setup_script == "node --version && tsc --version"
+    assert config.project.setup_script == "node --version && node_modules/.bin/tsc --version"
+    assert config.runtime.workdirs.provision_paths == ["node_modules"]
     assert config.workflow.orchestration.normal_frontier_owner == "wrc"
     pipeline = config.workflow.flow_metadata["task_pipeline"]
     assert pipeline["mode"] == "blocking"
