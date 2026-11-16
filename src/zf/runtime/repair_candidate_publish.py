@@ -41,6 +41,8 @@ def publish_repair_candidate(*, writer, state_dir: Path, harness: Path, root: Pa
                     or not any(fnmatch.fnmatchcase(name, p) for p in policy.allow_paths)
                     or not any(fnmatch.fnmatchcase(name, p) for p in contract['scope'])):
                 raise ValueError(f'repair publish path outside authorized scope: {name}')
+        git(root, 'var', 'GIT_AUTHOR_IDENT')
+        git(root, 'var', 'GIT_COMMITTER_IDENT')
         body = {'head': base, 'files': source_files(root), 'paths': names,
                 'repair_contract_digest': payload['repair_contract_digest']}
         key = digest(body)

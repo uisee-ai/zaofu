@@ -83,3 +83,7 @@ host-assist commit 与 Task Impl retry，不改变 Provider sandbox。仅发布�
 断点epoch4加载fc9fe4ea后，宿主发布已越过锁门禁，但隔离产品仓库缺Git本地作者身份（初始commit仅继承监工环境），两任务暂存后commit失败。系统保存失败回执并拒绝盲重放，索引保留。追加发布前身份检查（RED→GREEN），后续新fixture初始化显式设本地测试身份；不改全局、不人工补写产品commit。
 
 身份前置检查验证：7文件影响闭包71通过，sentinel53通过，design199 recovery mock E2E 1通过。第三轮及epoch4已通过simulation.done、zf stop --include-run-manager和所属systemd停用结束，staged候选与全部证据保留。
+
+扩展实际缺陷影响闭包：AR修复候选复用同一Git提交实现，也补齐identity前置检查；真实Git回归先RED，确认旧实现已暂存再失败，修正后必须零effect/零staged。R4规划已经启动，资格尚未开始，两隔离仓库都已显式设置本地测试身份，未更改全局配置。
+
+AR身份预检定向3通过，4文件调用闭包29通过（含runner与refactor mock），sentinel53通过。仅在尚未批准Plan的R4预备阶段载入此防御，不增加产品写入权限。

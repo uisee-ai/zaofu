@@ -118,3 +118,5 @@ Run Manager 使用既有 host-assist preview/apply 门禁，核对 signed change
 真实R3暴露候选发布与空闲Provider依赖租约互斥：Provider整个生命周期持共享环境锁，原host-assist一律排他锁，导致任务已settled仍无限等待。修正为Git候选发布、内部隔离容器快照持共享依赖锁；依赖安装/修改持排他锁，仍阻止采证与发布。普通直接宿主验证仍需排他锁，外部action不接收readonly_snapshot能力。共享锁不替代任务身份、完整差异、源摘要、预算和副作用回执门禁。环境忙的发布延迟会记录operation ID，不再静默跳过。
 
 宿主候选发布在preview与apply重新preview时检查Git作者/提交者可解析；缺身份在暂存和effect.started前失败，保留原工作区。运行时不猜测身份、不修改用户全局Git配置。隔离验收仓库初始化需配置本地测试身份，不能依赖监工shell的临时环境变量。
+
+同一Git身份前置条件也覆盖Autoresearch修复候选发布：缺身份在repair publish started和暂存前拒绝，不留下可避免的未决副作用。

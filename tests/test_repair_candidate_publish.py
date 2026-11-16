@@ -8,7 +8,8 @@ from zf.runtime.repair_candidate_publish import publish_repair_candidate
 from zf.runtime.task_host_manifest import git
 
 
-def test_kernel_publishes_only_authorized_patch_after_provider_exit(tmp_path):
+@pytest.mark.parametrize('missing_identity', [False, True])
+def test_kernel_publishes_only_authorized_patch_after_provider_exit(tmp_path, monkeypatch, missing_identity):
     root = tmp_path / 'harness'; root.mkdir()
     def run(*args):
         return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
@@ -23,6 +24,19 @@ def test_kernel_publishes_only_authorized_patch_after_provider_exit(tmp_path):
                              allow_paths=['src/zf/**'], deny_paths=['**/events.jsonl'])
     (work / 'src/zf').mkdir(parents=True)
     (work / 'src/zf/fix.py').write_text('fixed = True\n')
+    if missing_identity:
+        run('config', '--unset', 'user.email'); run('config', 'user.useConfigOnly', 'true')
+        from zf.runtime.workflow_git_readiness import git_environment
+        env = git_environment()
+        monkeypatch.setattr('zf.runtime.workflow_git_readiness.git_environment',
+            lambda: {**env, 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1'})
+        with pytest.raises(ValueError, match='Git inspection failed'):
+            publish_repair_candidate(writer=writer, state_dir=tmp_path/'state', harness=root, root=work,
+                payload=payload, contract=contract, policy=policy)
+        assert git(work, 'rev-parse', 'HEAD') == base
+        assert not git(work, 'diff', '--cached', '--name-only')
+        assert not writer.event_log.read_all()
+        return
     head = publish_repair_candidate(writer=writer, state_dir=tmp_path/'state', harness=root, root=work,
                                     payload=payload, contract=contract, policy=policy)
     assert head != base and git(work, 'rev-parse', 'HEAD^') == base
