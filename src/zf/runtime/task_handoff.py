@@ -121,6 +121,8 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
             raise ValueError("handoff workspace cannot be inspected")
         observed[field] = bool(result.stdout) if field == "dirty" else result.stdout.strip()
     from zf.core.security.redaction import redact_obj
+    from zf.runtime.task_execution_evidence import capture_execution_evidence, previous_handoff
+    from zf.runtime.cli_command import zf_cli_cmd
 
     return redact_obj({
         "schema_version": SCHEMA, "target": target,
@@ -132,8 +134,13 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
         "workspace": {"path": str(workspace), **observed, "candidate_status": "preserved_not_accepted",
                       "environment_qualification": "unverified"},
         "admitted_results": results, "work_record": record,
+        "execution_evidence_ref": capture_execution_evidence(runtime.state_dir, source, events),
+        "previous_handoff_ref": previous_handoff(runtime.state_dir, source, events),
+        "execution_evidence_read": zf_cli_cmd() + " artifact handoff-evidence --operation " + target["operation_id"],
         "unknown_effects": _unconfirmed_continuations(events, target["task_id"], source.get("active_attempt_id")),
-        "next_action": "Read current contract and handoff, acknowledge receipt, then continue the current authorized stage.",
+        "next_action": "Read current contract and handoff, acknowledge receipt, then continue the current authorized stage. "
+                       "For missing historical command output, use execution_evidence_read; select --event from its index "
+                       "or --source-operation for a linked earlier attempt. Observations are not acceptance verdicts.",
         "references": references, "authorizes_execution": False, "business_completed": False,
     })
 
