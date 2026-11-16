@@ -156,3 +156,5 @@ Task handoff 冻结前从当前前驱已结算 attempt 收集原生命令输出�
 接手者使用交接正文提供的 `artifact handoff-evidence --operation <当前op>`，选择 `--event` 按1024字符分页；续页必须绑定摘要。跨多次接力用 `--source-operation`，仅沿当前合同 required_reads 摘要与 kernel handoff.prepared 绑定的同任务历史引用读取。接口复用当前 operation 凭据、Task assignee、canonical lease 与输入版本校验，不开放任意账本或 transcript 查询。required handoff 的读取回执不表示原始观察已独立验收。
 
 OA必读配置避免重复表示：只有标准effective-config-snapshot.v1同时提供完整config与yaml/compiled_graph时，必读路径取同一工件的`$.config`；保留完整原始摘要、受控全文访问以及全部控制字段。无重复表示的运行时快照、legacy工件继续`$`。briefing的逐项命令必须与必读策略使用相同JSONPath；原文缺读/截断仍拒绝准入，不增加continuation次数掩盖输入成本。
+
+Reader采证失败快速交接：同一operation、授权策略、稳定目标和允许命令的完整非零退出回执出现后，可直接经原Reader恢复门交回独立审查，不要求继续运行剩余命令来证明一个已知失败。反馈明确列出仍未验证的命令；成功回执仍须覆盖全部必需命令才可触发该交接。未知退出码、不稳定源、无关命令不触发快速交接，不生成任何产品通过事件。

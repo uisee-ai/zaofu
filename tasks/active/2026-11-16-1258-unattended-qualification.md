@@ -139,3 +139,7 @@ epoch6后续仍失败：未经加载的旧通用重发与Reader采证竞争，�
 R5自动诊断rmar-4e7a7c2b0089完成Scan/Planner/Critic，但OA读取234063字节配置工件到86550时耗尽有界续作，operation正式blocked。该工件包含完整config、YAML与派生图；新增必读$.config仅去掉重复表示，仍绑定原摘要且保留所有控制字段。4个RED复现，修正后55项原有/新增调用测试通过，另新增真实准入测试确认缺读仍拒绝、完整子树读取后准入。R5保留失败，待新源码完整验证后开始R6。
 
 配置去重读取最终16文件影响闭包252通过/7跳过，sentinel53和flow-smoke10通过。真实快照按相同JSON编码比较179719→69420字节，完整config字段无删除，不能换算为模型token节省。19:38 UTC R5已记录FAILED并通过simulation.done/受控stop停用父子流程和专属service，核实无所属runtime残留，未删除工作成果。
+
+R6规划及Critic通过，OA在真实$.config读取后正式adopt实施图。审批前复核R4原回执确认同一坏Docker参数下仍跑完build/test/browser，浪费有限采证预算；两项RED复现部分失败回执不能交接。新增失败快速交回Reader，成功仍需完整命令集；保持12次上限，不跳过未跑的业务断言。定向30通过/2host未选，追加无关命令否定用例，影响闭包进行中。
+
+失败快速交接完成6文件影响闭包与sentinel（包含stale-contract handoff mock），不把未跑命令记为通过；R6 Plan仍未批准，无运行中的operation，准备在资格前加载最终修正。

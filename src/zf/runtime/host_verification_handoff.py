@@ -13,6 +13,7 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
     if not required:
         return False
     receipts = {}
+    failed_probe = False
     for event in events:
         p = event.payload
         if (event.type != 'runtime.action.attempt.completed' or p.get('operation_id') != operation['operation_id']
@@ -21,10 +22,12 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         receipt = hydrate_sidecar_ref(service.state_dir, p['receipt_ref']).payload
         if (receipt.get('policy_digest') == digest(asdict(policy))
                 and receipt.get('execution_origin') == 'preauthorized_container'
+                and receipt.get('command_id') in required
                 and receipt.get('status') in {'completed', 'failed'}
                 and type(receipt.get('exit_code')) is int and receipt.get('source_stable') is True):
             receipts[receipt['command_id']] = p['receipt_ref']
-    if not required <= receipts.keys():
+            failed_probe = failed_probe or receipt['exit_code'] != 0
+    if not failed_probe and not required <= receipts.keys():
         return False
     dispatch = next((e for e in events if e.type == 'fanout.child.dispatched'
                      and e.payload.get('operation_id') == operation['operation_id']), None)
@@ -45,6 +48,7 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
             'operator_feedback': [
                 'Read the following bound container receipts as execution evidence, independently evaluate the original acceptance criteria. '
                 'Inspect exit codes and output, including failures. Do not repeat an unavailable sandbox command or treat the receipt as a product verdict. '
+                + 'Commands without receipts remain unverified: ' + ', '.join(sorted(required - receipts.keys())) + '. '
                 + ', '.join(str(service.state_dir / r['ref']) for r in receipts.values())]}
         requested = service.writer.emit('control.action.requested', actor='run-manager', payload={
             'action': 'stage-replan-new-generation', **payload})

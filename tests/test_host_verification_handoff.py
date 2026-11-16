@@ -34,3 +34,25 @@ def test_completed_probe_routes_through_controlled_retry_once(recovery, status, 
     assert trigger.payload['repaired_failure_event_id']==failure.id
     assert 'probe.json' in trigger.payload['operator_feedback'][0]
     assert not any(e.type=='test.passed' for e in service.writer.event_log.read_all())
+
+
+@pytest.mark.parametrize(('status','code','stable','command_id','expected'), [
+    ('failed',125,True,'first',True), ('failed',1,True,'first',True), ('completed',0,True,'first',False),
+    ('failed',125,False,'first',False), ('failed',None,True,'first',False), ('failed',125,True,'outside',False),
+])
+def test_failed_probe_can_return_to_reader_without_running_remaining_commands(recovery,status,code,stable,command_id,expected):
+    service,failure,_=recovery
+    p=policy();p.commands.append('python3 later.py')
+    operation={'operation_id':'op-reader','workflow_run_id':'run-1'}
+    service.writer.emit('fanout.child.dispatched',payload={**operation,'fanout_id':'f1'})
+    service.writer.emit(failure.type,correlation_id='run-1',payload=failure.payload)
+    ref=write_sidecar_json(service.state_dir,'artifacts/first-probe.json',{
+        'command_id':command_id,'status':status,'source_stable':stable,'exit_code':code,
+        'execution_origin':'preauthorized_container','policy_digest':digest(asdict(p))},
+        kind='test',schema_version='test.v1',created_by='test')
+    service.writer.emit('runtime.action.attempt.completed',payload={**operation,'approval_ref':p.approval_ref,
+        'kind':'verify','receipt_ref':ref})
+    contract={'verification_commands':[{'command_id':'first','command':'python3 probe.py'},
+                                       {'command_id':'later','command':'python3 later.py'}]}
+    assert resume_reader_after_probes(service,operation,contract,p,service.writer.event_log.read_all()) is expected
+    assert not any(e.type in {'test.passed','task.done'} for e in service.writer.event_log.read_all())
