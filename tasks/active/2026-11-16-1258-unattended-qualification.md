@@ -111,3 +111,5 @@ epoch5于17:50:59通过本轮隔离harness合并已验证源码并重启控制�
 另修复诊断子流程模型/美元上限偏移：同名同backend仅继承model/effort，单次费用上限取父配置与loop最小正上限；不传递产品权限。两RED后51定向、156文件影响闭包1892通过、sentinel53通过。真实R4配置只读CLI重放确认Astra/High规划、Terra/High实施验收、token0、费用40；run_loop被捕获而未实际执行，不算诊断成功。
 
 实际恢复延迟还复现为tick结构缺陷：Run Manager事件判定嵌在300秒Supervisor门内，使有限发布/采证每步等待完整巡检周期。新增有限机械恢复事件快路径，仍复用原Run Manager事务与消费游标；回归先RED（105秒无调用）后GREEN，证明无需触发Supervisor且记账事件不反馈自激。31定向、24文件影响闭包412通过/7跳过、sentinel53、mock flow-smoke10通过；当前仅离线验证，加载后还需实际回执时序验证。
+
+epoch5两Reader自检通过后因Docker沙箱拒绝正式abstained，随后再次停止推进。只读核实真正停点为quiescent_now：17:43的failure-closeout审批明确blocking_scope=side，却在Reader结束后使全局tick静止。不是F4锁把控制器卡死；watcher心跳仍更新。修复旁路范围不阻断产品恢复，既有Run级升级不被覆盖；RED→GREEN 47定向、10文件闭包82通过、sentinel53、recovery mock2通过。真实事件离线重放从escalate_unresolved变为no_escalate；未代批归档动作、未修改历史升级事件。

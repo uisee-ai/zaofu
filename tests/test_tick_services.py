@@ -1026,3 +1026,25 @@ def test_bound_recovery_receipt_wakes_rm_before_supervisor_interval(tmp_path: Pa
         orch.event_log.append(ZfEvent(type="run.manager.tick.completed", actor="run-manager"))
         run_standard_tick_services(orch, state=state, now=110.0, intervals=intervals)
         assert manager.call_count == 1  # bookkeeping must not create a tick feedback loop
+
+
+def test_side_closeout_approval_keeps_recovery_tick_running(tmp_path: Path):
+    from datetime import datetime, timedelta, timezone
+    state_dir = _state(tmp_path)
+    config = ZfConfig()
+    config.goal.enabled = True
+    config.goal.quiescent_after_escalate = True
+    orch = _FakeOrchestrator(state_dir, config)
+    orch.event_log.append(ZfEvent(
+        type="human.escalate", actor="run-manager", origin="kernel",
+        ts=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+        payload={"blocking_scope": "side", "action": "failure-closeout-activate"},
+    ))
+    orch.event_log.append(ZfEvent(type="workflow.operation.settled", origin="kernel"))
+    with patch("zf.runtime.tick_services._run_run_manager", return_value=MagicMock(changed=True, repairs_dispatched=0)) as manager:
+        result = run_standard_tick_services(
+            orch, state=TickServiceState(last_supervisor_inspection_at=100), now=105,
+        )
+    assert result.run_manager
+    manager.assert_called_once()
+    assert not any(e.type == "run.goal.quiescent.entered" for e in orch.event_log.read_all())

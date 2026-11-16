@@ -91,6 +91,10 @@ def quiescent_now(
         }:
             inflight_fanouts.discard(fanout_id)
         if event.type == _ESCALATE_EVENT:
+            # Side-track approval cannot suspend product recovery. Keep any
+            # earlier run-scoped escalation; this is not an acknowledgement.
+            if str(payload.get("blocking_scope") or "run").strip().lower() == "side":
+                continue
             escalate = event
             woke_after = False
             continue
