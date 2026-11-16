@@ -8971,6 +8971,7 @@ def _pending_repair_apply_actions(
             "continuation_safe_resume_action": continuation_safe_action,
             "continuation_stale_reason": continuation_stale_reason,
             "apply_policy": "verified_checkpoint_apply",
+            "restart_policy": str(getattr(source_repair, "restart_policy", "") or ""),
             "restart_strategy": "control_plane_restart_preserve_workers",
             "restart_boundary": str(
                 getattr(source_repair, "restart_boundary", "") or ""

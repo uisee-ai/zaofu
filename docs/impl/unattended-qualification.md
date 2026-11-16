@@ -7,6 +7,8 @@
 - `zf recover host-unit --name zf-<project>` 生成用户服务；`--install` 安装并 enable，不自行启动未获授权的 Run。`ExecCondition` 调用现有 host-check；意外退出 restart，pause/stop/completed 拒绝启动。重启上限 5 次/300 秒，超限保留 systemd failure，不能宣称无限自愈。
 - 用户服务保留明确的项目、state、Python、源码、PATH 和私有 tmux 位置，不持久化 token。节点启动依赖 user systemd；`loginctl show-user "$USER" -p Linger` 可检查是否无需登录启动。真实节点重启必须独立验收。
 - 源码修复 actuator 在受服务托管时先核对 MainPID，只使对应控制器异常退出，由原服务接管启动。不会 exec 一个脱离原服务的新控制器。
+- 活跃期的 verified checkpoint apply 同时要求 `source_repair.restart_policy: operator_approved`。
+  `never_during_active_run` / `next_run` 在修复写入之前阻断并留下原检查点；验证成功不等于获准重启。
 - Run Manager tick 在 `auto_execute` 且 `runtime.host_verification.enabled` 时消费已结束的不可用验证。使用现有合同/currentness/资源锁/manifest 和回执通道，不授予 Worker 宿主权限。
 
 ## 预授权测试边界
