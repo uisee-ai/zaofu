@@ -94,6 +94,19 @@ const duplicateSpecs = planTaskSpecifications("## Task Spec: T1\n第一版\n## T
 assert.equal(duplicateSpecs.tasks.T1, undefined);
 assert.equal(duplicateSpecs.warnings.length, 1);
 assert.equal(Object.keys(planTaskSpecifications("## Task Spec: T1\n正文", []).tasks).length, 0);
+// Real Kanban candidate 360268d3 authored explicit IDs without a colon.
+// Punctuation aliases must preserve the same exact-ID and ambiguity boundaries.
+const punctuationSpecs = "## Shared Spec：同版共享合同\n共享准备清理。\n## Task Spec T-SAVE\n功能入口。\n### 交接\n保留草稿。\n## Task Spec：T-ENTRY\n正式入口。\n## Task Spec T-SAVE-OTHER\n未知任务。\n";
+const punctuation = planTaskSpecifications(punctuationSpecs, ["T-SAVE", "T-ENTRY"]);
+assert.equal(punctuation.tasks["T-SAVE"]?.content, "## Task Spec T-SAVE\n功能入口。\n### 交接\n保留草稿。\n");
+assert.equal(punctuation.tasks["T-ENTRY"]?.content, "## Task Spec：T-ENTRY\n正式入口。\n");
+assert.equal(punctuation.warnings.length, 1);
+assert.equal(punctuation.unassigned.length, 0);
+assert.equal(planReadingSections("## Task Spec T-SAVE\n正文").opening.length, 0);
+const aliasCollision = planTaskSpecifications("## Task Spec: T1\n原文。\n## Task Spec T1\n另一处。\n", ["T1"]);
+assert.equal(aliasCollision.tasks.T1, undefined);
+assert.equal(aliasCollision.warnings.length, 1);
+assert.equal(Object.keys(planTaskSpecifications("## Task Spec T1 extra\n正文\n## Task SpecT1\n正文\n```md\n## Task Spec T2\n示例\n```", ["T1", "T2"]).tasks).length, 0);
 assert.equal(liveReview.modules.find(m => m.id === "RL-READING")!.owner, "dev-lane-1");
 assert.equal(liveReview.modules.find(m => m.id === "RL-READING")!.allowedPaths.includes("app/"), true);
 assert.equal(liveReview.modules.find(m => m.id === "RL-READING")!.commands.length, 3);
