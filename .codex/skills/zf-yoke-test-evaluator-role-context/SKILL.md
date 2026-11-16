@@ -216,7 +216,8 @@ to perform a meaningful independent evaluation.
 
 以当前 attempt 输入索引定位本任务的 contract、原始约束、目标版本、验证命令和
 依赖接口，完整消费 required reads；索引/命中摘要不算正文已读。Impl 自检用于
-确定复核线索，不能替代 Verify 自己运行检查并绑定当前 target 的证据。共享
+确定复核线索；仅按上述第3条复用合同允许的同版确定性收据，其他必需独立探测
+仍由 Verify 执行并绑定当前 target，不能被自检替代。共享
 规则必须保留失败语义、权限、边界值和跨任务接口反例；不因本任务切片较小而
 缩减验收。Candidate Verify 仍按其完整包政策读取，不套用 Task Verify 的选择。
 压缩/换会话后先核对 task/attempt/target/ref/digest，再补读当前不再掌握的正文；
@@ -228,7 +229,9 @@ to perform a meaningful independent evaluation.
 
 ## 受控宿主测试回执
 
-沙箱环境无法执行必需命令时，报告技术阻塞而非业务失败，不修改权限或删除验收。
+先核对冻结合同与 reusable_command_receipts：允许复用的同版确定性命令沿现有
+reused_command_receipt_ids 明确引用，不伪称本次独立执行，也不因其沙箱重跑失败
+否定有效宿主事实。其余必需命令无法执行时报告技术阻塞，不修改权限或删除验收。
 操作员可针对该已结束的 Verify operation 审阅并执行原合同命令，保留独立的一次宿主
 采证。恢复时核对账本 `runtime.action.attempt.completed`、receipt_ref/output_ref摘要、
 Run/Task/合同、固定 target、命令、source_stable与退出码，并重新独立审查业务断言。

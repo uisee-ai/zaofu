@@ -407,8 +407,9 @@ Provider 不持有该 token，Kanban Agent 自动动作清单没有加入本动�
 相同manifest重复执行返回原回执；已有started但无完成时保留未知效果，拒绝自动重跑。
 当前该未知状态需人工核查，尚不宣称自动效果核对/丢通知恢复全部完成。
 动作不产生task.done/dev.build.done/test.passed，不修改原失败结果；后续使用已有
-recover task-impl/task-verify与当前身份进行结果准入。Impl自检与独立Verify的宿主执行
-必须分开绑定，原Impl回执不能冒充独立Verify；仍需语义审查和Judge。
+recover task-impl/task-verify与当前身份进行结果准入。必需新增的Verify宿主探测必须绑定自己的operation；原Impl回执不能冒充新独立执行。
+冻结合同明确允许的同版确定性命令仍可走既有reused_command_receipt_ids复用，
+不得为本入口抹去合同复用许可；独立语义审查与Judge仍保留。
 
 真实 caller 是 CLI preview→Web token gate→ControlledActionService extension；
 实现：task_host_manifest.py、task_host_actions.py，测试 test_task_host_actions.py。
