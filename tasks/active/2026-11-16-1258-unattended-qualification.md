@@ -113,3 +113,7 @@ epoch5于17:50:59通过本轮隔离harness合并已验证源码并重启控制�
 实际恢复延迟还复现为tick结构缺陷：Run Manager事件判定嵌在300秒Supervisor门内，使有限发布/采证每步等待完整巡检周期。新增有限机械恢复事件快路径，仍复用原Run Manager事务与消费游标；回归先RED（105秒无调用）后GREEN，证明无需触发Supervisor且记账事件不反馈自激。31定向、24文件影响闭包412通过/7跳过、sentinel53、mock flow-smoke10通过；当前仅离线验证，加载后还需实际回执时序验证。
 
 epoch5两Reader自检通过后因Docker沙箱拒绝正式abstained，随后再次停止推进。只读核实真正停点为quiescent_now：17:43的failure-closeout审批明确blocking_scope=side，却在Reader结束后使全局tick静止。不是F4锁把控制器卡死；watcher心跳仍更新。修复旁路范围不阻断产品恢复，既有Run级升级不被覆盖；RED→GREEN 47定向、10文件闭包82通过、sentinel53、recovery mock2通过。真实事件离线重放从escalate_unresolved变为no_escalate；未代批归档动作、未修改历史升级事件。
+
+epoch6载入f1f0b5c8后实际退出旁路误静止，18:06:36/58/18:07:03连续产生三份受控容器回执（F6坏参数仍失败），证明快路径已生效。F4记录reader_environment_busy后30秒释放租约，两Reader自动启动，没有监工释放/抢锁。
+
+新竞争缺陷：通用batch先重发Candidate，导致原Reader回执交接报“reader failure has been superseded”。为精确内核准入的candidate-verify abstained保留Reader恢复所有权，不再通用重发；旧超时/缺准入不受影响。24定向、107文件闭包1684通过/7跳过、sentinel53、mock10；真实旧事件只读重放不再生成该批重发checkpoint。尚未加载现场，保留运行中修复的基线。

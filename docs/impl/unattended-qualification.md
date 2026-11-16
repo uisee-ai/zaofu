@@ -138,3 +138,5 @@ resident 启动的 loop 若解析到的控制面配置确实拥有 parent_state_
 恢复调度的快路径与周期巡检分开：新的受控副作用回执、operation结算、assistance、RM建议/反思及诊断终态，可在下一次标准tick触发既有Run Manager事务，不再先等待300秒Supervisor巡检。沿用已消费事件游标、终态静止检查及原动作授权；RM自身tick记账、usage/heartbeat和未知事件不进入快路径（未知事件仍由周期巡检处理）。每次事务仍只执行原先允许的有限副作用，不能因加速而重放已完成命令。
 
 静止判定遵循既有升级范围：明确 `blocking_scope=side` 的审批只约束其旁路动作，不得让整个产品恢复tick静止。它不会清除/确认更早的Run级升级；未声明范围的旧事件仍按Run级保守处理。现场 failure-closeout-activate 的旁路审批无需监工代批，预授权浏览器采证可以独立继续。
+
+Candidate Reader 已有内核准入的 verification-result.v1 abstained 时，通用 batch 的 reemit_candidate_ready 不得竞争原 Reader 的恢复路径。按同一fanout、operation/request/run、源事件和control_result_ref绑定准入事实，保留现有采证→stage恢复链。原始超时或缺失准入的legacy runtime失败仍保留原有有界重发能力；不将基础设施失败改判为产品通过。

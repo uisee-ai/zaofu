@@ -858,6 +858,10 @@ def build_workflow_batch_resume_checkpoints(
                 event_list,
                 event,
             )
+            from zf.runtime.candidate_reader_recovery_owner import admitted_reader_recovery_owns_failure
+
+            if candidate_trigger is not None and admitted_reader_recovery_owns_failure(event_list, event):
+                continue
             candidate_runtime_retry = (
                 candidate_trigger is not None
                 and _candidate_runtime_failure_only(event_list, event)
