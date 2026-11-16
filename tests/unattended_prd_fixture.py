@@ -131,7 +131,7 @@ q('#calculate').onclick=()=>{q('#numbers-error').textContent='';try{const x=summ
     cfg['runtime']['run_manager'].setdefault('source_repair',{}).update(enabled=True, backend='codex',model='gpt-6.1-terra',model_reasoning_effort='high',
         publish_candidate=True,apply_policy='verified_checkpoint_apply',restart_policy='operator_approved',
         allow_paths=['src/zf/runtime/host_verification.py','tests/test_host_verification.py'])
-    cfg['runtime']['autoresearch_resident'].update(enabled=True,worktree_root=str(root/'repair-worktrees'),on_parent_terminal='continue')
+    cfg['runtime']['autoresearch_resident'].update(enabled=True,worktree_root=str(root/'.zf/repair-worktrees'),on_parent_terminal='continue')
     cfg['runtime']['host_verification']={'enabled':True,'approval_ref':'owner:unattended-qualification-20261116',
         'image':subprocess.check_output(['docker','image','inspect','mcp/playwright:latest','--format','{{.Id}}'],text=True).strip(),
         'network':'host','protected_files':{'tests/browser.cjs':hashlib.sha256(BROWSER.encode()).hexdigest()},

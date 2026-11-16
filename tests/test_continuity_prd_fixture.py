@@ -60,6 +60,7 @@ def test_unattended_qualification_policy_is_bounded_and_keeps_approval(tmp_path,
     assert config.runtime.host_verification.enabled
     assert config.runtime.host_verification.max_executions_per_run == 12
     assert config.runtime.host_verification.protected_files['tests/browser.cjs']
+    assert Path(config.runtime.autoresearch_resident.worktree_root).is_relative_to(root / '.zf')
     assert config.runtime.task_publication.enabled
     assert config.runtime.task_publication.max_publications_per_run == 4
     assert set(config.runtime.task_publication.paths) == {
