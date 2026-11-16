@@ -428,3 +428,9 @@ Task-stage activation入口释放同Run/Task/map/binding、已准入settled且�
 沿用原生命周期服务保留session/workdir；随后原样检查真实占用，残留子进程仍阻塞。
 不靠降低idle阈值或豁免占用解决。6类正反例和调用方/生命周期/资源闭包81项通过，
 sentinel53通过；首次mock与真实继续情况见本轮报告，不能据单测宣称无人监工资格。
+
+TODO-JOURNEY真实产出的browser runner复现镜像内`/work`解析Playwright失败；模块位于
+`/app/node_modules`，不是宿主缺浏览器。操作员保留原脚本后修复受限任务源码，补齐
+存储异常/损坏值保留/键盘旅程、实际image ID、失败trace/video和自有服务进程收尾。
+通用经验进入dev-worker技能并同步分发；产品脚本仍归隔离验收项目，不硬编码进Kernel。
+本轮预冻结执行只作runner诊断，正式候选冻结后的重新验收仍是必要门禁。
