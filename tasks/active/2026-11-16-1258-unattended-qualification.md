@@ -125,3 +125,9 @@ epoch6后续仍失败：未经加载的旧通用重发与Reader采证竞争，�
 隔离合同最终定向27通过（含symlink/原仓验证拒绝）、sentinel53通过。影响闭包含相关恢复mock；未声称真实修复链已通过。
 
 第五轮已基于afae6478进入Scan/Plan预备，尚未批准Plan。独立调用审阅复现新规范命令被验证器command_not_allowlisted拒绝（1RED/3安全用例通过）；补齐仅当前解释器+pytest+固定PYTHONPATH的准入，26定向通过，增量影响闭包及sentinel/mock全部通过。准备在资格开始前加载此修正，不改变冻结业务需求与12次预算。
+
+第五轮于18:59:58 UTC批准Plan并冻结ec158621。F1保留非空测试摘要且重启pane，F2控制器自主恢复6.192秒，F3结果通知中断命中，F5原manifest重复两次均already_recorded且effect.started仍1；F4/F6尚未命中。数字任务进入独立Verify，名称恢复因缺原RED证据引用blocked。原RED实际上仍在causation绑定的hook事件中，缺口是交接可发现性，尚待修复。
+
+真实R5另外复现两项误升级：采证撞上尚未关闭Provider turn被永久升级；已提交且工作区干净的blocked结果被再发布。新增真实调用回归均先RED后GREEN，51项定向通过/2 host未选。暂时占用改为延期，无差异不创建新Git effect，保留已有回执续跑及未决副作用保护。尚未加载运行中R5，不把离线修复算该轮通过。
+
+两项误升级修复的69文件增量影响闭包1127通过（含恢复mock E2E），sentinel53通过。数字任务已独立Verify完成，名称任务无运行中的operation而仍未完成；不改写R5资格结论。

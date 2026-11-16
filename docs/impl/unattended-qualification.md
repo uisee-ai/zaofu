@@ -144,3 +144,7 @@ Candidate Reader 已有内核准入的 verification-result.v1 abstained 时，�
 修复派发的合同在落盘前绑定隔离checkout：将源仓内绝对scope规范为相对路径，拒绝越界/上级遍历/symlink逃逸；仅移除精确源仓cwd前缀，不能可靠转换且仍指向原仓的验证拒绝签发。pytest复用当前解释器依赖但设置PYTHONPATH=src，验收实际导入修复候选。briefing提供不可变合同绝对定位；self-repair方法识别父账本内精确kernel授权事件和dispatched合同摘要，不再要求修复分支复制的zf.yaml重新授权。不放宽沙箱，不设置全局授权环境变量，仍需独立验证和受控apply。
 
 独立repair验证器消费同一冻结命令格式：只接受当前受信sys.executable执行pytest以及精确PYTHONPATH=src，拒绝其它解释器、环境和任意Python脚本。合同生产者的测试还须走此验证调用入口，单独启动子进程通过不能证明白名单准入。
+
+受控采证在已结算结果与 Provider 回合结束之间遇到活动 turn 时，应按暂时占用延期，不生成永久人工升级；后续 tick 在同一授权下重新检查。外部 action 仍拒绝忙碌请求，不绕过回合门禁。
+
+自动候选发布须区分 signed changed_files（相对基线的实现范围）与当前未提交差异。无当前差异、也无本 operation 待处理发布回执时不创建 Git effect，不因此升级或请求重试；已有成功回执仍按精确 commit/文件/依赖校验续跑，未知副作用继续失败关闭。

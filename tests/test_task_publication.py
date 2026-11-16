@@ -108,6 +108,20 @@ def test_changed_published_candidate_does_not_retry(case):
     assert not any(e.type == 'task.rework.requested' for e in service.writer.event_log.read_all())
 
 
+def test_clean_blocked_candidate_needs_no_publication(case):
+    _, root, _ = case
+    git(root, 'add', '--', 'probe.py')
+    git(root, 'commit', '-m', 'feat: publish candidate before recovery')
+    service, root = prepare(case)
+    before = git(root, 'rev-parse', 'HEAD')
+    assert reconcile_task_publication(service) == 0
+    assert reconcile_task_publication(service) == 0
+    assert git(root, 'rev-parse', 'HEAD') == before
+    assert not any(e.type in {'human.escalate', 'runtime.action.attempt.started',
+                             'task.rework.requested'}
+                   for e in service.writer.event_log.read_all())
+
+
 def test_binding_rejection_is_observable_without_effect(case, monkeypatch, caplog):
     service, root = prepare(case)
     before = git(root, 'rev-parse', 'HEAD')

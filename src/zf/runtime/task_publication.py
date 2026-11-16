@@ -72,6 +72,10 @@ def reconcile_task_publication(service) -> int:
                     if retry['status'] == 'requested':
                         return 1
                     continue
+                if not git(root, 'status', '--porcelain'):
+                    # Result paths may describe already committed work. Only a
+                    # current source delta needs a new publication effect.
+                    continue
                 result = hydrate_sidecar_ref(service.state_dir, op['admitted_control_result_ref']).payload
                 paths = result.get('changed_files')
                 if (result.get('operation_id') != op_id or result.get('verdict') != 'blocked'

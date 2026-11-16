@@ -93,7 +93,7 @@ def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, v
             raise ValueError("prior host effect is unresolved; inspect it, do not rerun")
         op, _, _, root = binding(service, manifest["operation_id"])
         if active_codex_turn_from_events(service.writer.event_log.read_all(), str(op.get("role_instance") or "")):
-            raise ValueError("host assistance requires a closed provider turn")
+            raise BlockingIOError("host assistance requires a closed provider turn")
         # Publication reads dependencies; isolated snapshots also only read the
         # host workspace. Neither needs to evict idle provider environment readers.
         mode = fcntl.LOCK_SH if manifest["kind"] == "commit" or readonly_snapshot else fcntl.LOCK_EX

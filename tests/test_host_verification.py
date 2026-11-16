@@ -164,3 +164,21 @@ def test_container_snapshot_coexists_with_readers_but_waits_for_mutation(case, m
     assert len(calls) == (0 if exclusive else 1)
     if exclusive:
         assert reconcile_host_verification(service) == 1
+
+
+def test_active_provider_turn_defers_probe_without_escalating(case, monkeypatch):
+    service, _ = prepare(case)
+    active = [True]
+    monkeypatch.setattr('zf.runtime.task_host_actions.active_codex_turn_from_events',
+                        lambda *args: {'turn_id': 'finishing'} if active[0] else None)
+    calls = []
+    def verify(*args):
+        calls.append(args)
+        return {'status': 'completed', 'source_stable': True, 'exit_code': 0}, 'pass'
+    monkeypatch.setattr('zf.runtime.host_verification.verify_in_container', verify)
+    assert reconcile_host_verification(service) == 0
+    assert not calls
+    assert not any(e.type == 'human.escalate' for e in service.writer.event_log.read_all())
+    active[0] = False
+    assert reconcile_host_verification(service) == 1
+    assert len(calls) == 1
