@@ -78,6 +78,7 @@ class AutoresearchRunConfig:
     expected_done: int | None = None
     timeout_seconds: int | None = None
     budget_usd: float = 500.0
+    token_budget: int | None = None
     confirm: bool = False
     reuse_worktree: bool = False
     keep_running: bool = False
@@ -270,6 +271,8 @@ def _apply_autoresearch_controller_overrides(
     run_limits = workflow.get("run_limits")
     if isinstance(run_limits, dict):
         run_limits["cost_budget_usd"] = cfg.budget_usd
+    if cfg.token_budget is not None:
+        workflow.setdefault("run_limits", {})["token_budget"] = cfg.token_budget
 
     # The diagnostic checkout owns the tested source version. Reusing the
     # launcher checkout's skills adds a second candidate beside project skills.

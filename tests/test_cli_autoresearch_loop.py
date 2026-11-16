@@ -166,6 +166,7 @@ def test_loop_handler_invokes_run_loop(tmp_path: Path) -> None:
     assert cfg.scenarios == ["scen-A"]
     assert cfg.max_iterations == 1
     assert cfg.review_gate == "auto"
+    assert cfg.token_budget is None  # Explicit unrelated state must not inherit local config.
     # Injectable callables must be wired by the CLI handler.
     kwargs = captured["kwargs"]
     expected_fns = {
@@ -204,14 +205,17 @@ def test_loop_handler_returns_zero_for_done_status(tmp_path: Path) -> None:
     assert exit_code == 0
 
 
+@pytest.mark.parametrize("token_budget", [0, 12345])
 def test_loop_handler_defaults_to_project_state_dir(
     tmp_path: Path,
     monkeypatch,
+    token_budget,
 ) -> None:
     project = tmp_path / "project"
     project.mkdir()
     (project / "zf.yaml").write_text(
-        'version: "1.0"\nproject:\n  name: test\n  state_dir: runtime-state\n',
+        'version: "1.0"\nproject:\n  name: test\n  state_dir: runtime-state\n'
+        f'workflow:\n  run_limits:\n    token_budget: {token_budget}\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(project)
@@ -242,6 +246,7 @@ def test_loop_handler_defaults_to_project_state_dir(
     cfg = captured["cfg"]
     assert cfg.parent_state_dir == project / "runtime-state"
     assert cfg.output_dir == project / "runtime-state" / "autoresearch" / "loop"
+    assert cfg.token_budget == token_budget
 
 
 def test_real_iteration_reports_its_own_state_before_config_cleanup(tmp_path, monkeypatch):
@@ -261,6 +266,7 @@ def test_real_iteration_reports_its_own_state_before_config_cleanup(tmp_path, mo
     )
     def run(cfg):
         assert cfg.budget_usd == 7.5  # Never expand to the inner runner's $500 default.
+        assert cfg.token_budget == 0
         return result
     monkeypatch.setattr(loop_iteration, "run_autoresearch", run)
 
@@ -276,7 +282,7 @@ def test_real_iteration_reports_its_own_state_before_config_cleanup(tmp_path, mo
     monkeypatch.setattr(loop_iteration, "cleanup_autoresearch_run", lambda *a, **kw: config.unlink())
     outcome = cli._real_autoresearch_fn(
         scenario="controlled-stuck-recovery", run_id="test",
-        cfg=LoopConfig(worktree=worktree, parent_state_dir=tmp_path / "parent", budget_usd=7.5),
+        cfg=LoopConfig(worktree=worktree, parent_state_dir=tmp_path / "parent", budget_usd=7.5, token_budget=0),
     )
     assert outcome["state_dir"] == str(state)
     assert outcome["tasks_done"] == 0

@@ -902,6 +902,15 @@ def _run_loop(args) -> int:
         load_config_with_explicit=args.parent_state_dir is not None,
     )
     parent_state_dir = context.state_dir
+    # Inherit only from the control plane that owns this runtime. A standalone
+    # loop with an unrelated explicit state directory keeps its template limits.
+    parent_limits = (
+        context.config.workflow.run_limits
+        if context.config is not None
+        and (context.project_root / context.config.project.state_dir).resolve()
+        == parent_state_dir.resolve()
+        else None
+    )
     output_dir = (
         args.output_dir
         if args.output_dir is not None
@@ -913,6 +922,7 @@ def _run_loop(args) -> int:
         parent_state_dir=parent_state_dir,
         max_iterations=args.max_iterations,
         budget_usd=args.budget_usd,
+        token_budget=parent_limits.token_budget if parent_limits is not None else None,
         output_dir=output_dir,
         reflect_backend=args.reflect_backend,
         fix_wait_strategy=args.fix_wait_strategy,
