@@ -254,3 +254,18 @@ def test_direct_host_probe_still_requires_exclusive_environment(case):
             approve(service, manifest)
     with pytest.raises(ValueError, match='internal snapshot verifier'):
         apply(service, manifest, approval_ref='owner:test', reviewed_digest=manifest['manifest_digest'], readonly_snapshot=True)
+
+
+def test_missing_git_identity_fails_before_staging_or_effect(case, monkeypatch):
+    service, root, _ = case
+    subprocess.run(['git', '-C', str(root), 'config', '--unset', 'user.email'], check=True)
+    from zf.runtime.workflow_git_readiness import git_environment
+    original_env = git_environment()
+    monkeypatch.setattr('zf.runtime.workflow_git_readiness.git_environment',
+        lambda: {**original_env, 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1'})
+    subprocess.run(['git', '-C', str(root), 'config', 'user.useConfigOnly', 'true'], check=True)
+    monkeypatch.delenv('EMAIL', raising=False)
+    with pytest.raises(ValueError, match='Git inspection failed'):
+        preview(service, operation_id='op-1', kind='commit', paths=['probe.py'])
+    assert not git(root, 'diff', '--cached', '--name-only')
+    assert not any(e.type == 'runtime.action.attempt.started' for e in service.writer.event_log.read_all())

@@ -129,6 +129,10 @@ def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = 
     if kind == "commit":
         if op.get("task_pipeline_stage") != "impl" or not names:
             raise ValueError("commit requires explicit Impl paths")
+        # Resolve identity before staging: an unattended service may not inherit
+        # the interactive shell's author environment or global Git config.
+        git(root, "var", "GIT_AUTHOR_IDENT")
+        git(root, "var", "GIT_COMMITTER_IDENT")
         hooks = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", "hooks"))
         if (git_read(root, "config", "--get", "core.hooksPath").stdout.strip()
                 or any(p.is_file() and os.access(p, os.X_OK) and not p.name.endswith(".sample")

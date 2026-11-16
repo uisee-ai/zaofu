@@ -79,3 +79,7 @@ host-assist commit 与 Task Impl retry，不改变 Provider sandbox。仅发布�
 真实Plan/Critic通过且原文已读，人工批准后2Impl完成代码与自测但Git元数据只读，均正式blocked。预授权自动发布在两次Run Manager tick后仍未生效；只读独立复算满足绑定，需补充运行进程拒绝诊断。F2活动Impl控制器9.088秒自主重启；F1内容摘要为空，F3故障未命中，均不记为完整通过。R3/evaluation.json保留失败，停止4个预定注入观察器，保留产品与控制器现场。后续诊断重载算监工轮间介入，不能改写本轮结论。候选绑定拒绝原因日志回归先RED后GREEN，12项定向通过，66文件调用闭包进行中。
 
 已定位根因并修复：空闲Codex仍持环境共享租约，候选发布/容器快照错误请求排他租约。Git发布和隔离只读快照改持共享依赖锁，依赖修改仍排他阻止；直接宿主验证不变。host-assist补充活动Provider回合拒绝，未暴露外部只读开关。两个真实锁回归先RED（共享读不应阻塞）后GREEN，排他修改仍拒绝；51定向通过/1host未选，增量68文件影响闭包1123通过，sentinel53通过。报告包含R3四个实际阻塞锁及持有者证据。下一步从保留断点加载修复，不能据此改写R3无人失败结论。
+
+断点epoch4加载fc9fe4ea后，宿主发布已越过锁门禁，但隔离产品仓库缺Git本地作者身份（初始commit仅继承监工环境），两任务暂存后commit失败。系统保存失败回执并拒绝盲重放，索引保留。追加发布前身份检查（RED→GREEN），后续新fixture初始化显式设本地测试身份；不改全局、不人工补写产品commit。
+
+身份前置检查验证：7文件影响闭包71通过，sentinel53通过，design199 recovery mock E2E 1通过。第三轮及epoch4已通过simulation.done、zf stop --include-run-manager和所属systemd停用结束，staged候选与全部证据保留。
