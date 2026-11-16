@@ -85,7 +85,7 @@ def test_real_git_and_probe_effects_preserve_task_verdict_and_are_idempotent(cas
                    for e in service.writer.event_log.read_all())
 
 
-@pytest.mark.parametrize("change", ["source", "digest", "staged", "approval", "holder", "generation", "contract", "paused"])
+@pytest.mark.parametrize("change", ["source", "digest", "staged", "approval", "active_provider", "generation", "contract", "paused"])
 def test_changed_or_unauthorized_manifest_cannot_commit(case, monkeypatch, change):
     service, root, identity = case
     manifest = preview(service, operation_id="op-1", kind="commit", paths=["probe.py"])
@@ -93,8 +93,8 @@ def test_changed_or_unauthorized_manifest_cannot_commit(case, monkeypatch, chang
     if change == "source": (root / "probe.py").write_text("print('changed')\n")
     if change == "digest": manifest["head"] = "0" * 40
     if change == "staged": subprocess.run(["git", "-C", str(root), "add", "--", "probe.py"], check=True)
-    if change == "holder": monkeypatch.setattr("zf.runtime.environment_exec.resource_holders",
-                                               lambda plan: [{"pid": 123}])
+    if change == "active_provider": monkeypatch.setattr("zf.runtime.task_host_actions.active_codex_turn_from_events",
+                                                       lambda *args: {"turn_id": "live"})
     if change == "generation": service.writer.append(ZfEvent(type="workflow.operation.requested", payload={
         **identity, "operation_id": "op-2", "operation_generation": 2}))
     if change == "contract": TaskStore(service.state_dir / "kanban.json").update("T1", contract=TaskContract(acceptance="new"))
@@ -240,3 +240,17 @@ def test_verify_abstention_requires_its_own_failed_execution_receipt(case, execu
     assert receipt['active_attempt_id'] == 'verify-attempt'
     assert receipt['exit_code'] == 0 and receipt['target_commit'] == head
     assert receipt['product_verdict'] == 'not_evaluated'
+
+
+def test_direct_host_probe_still_requires_exclusive_environment(case):
+    import fcntl
+    from zf.runtime.environment_exec import resource_locks
+    from zf.runtime.environment_resources import environment_lock_plan
+    service, root, _ = case
+    approve(service, preview(service, operation_id='op-1', kind='commit', paths=['probe.py']))
+    manifest = preview(service, operation_id='op-1', kind='verify', command_id='contract-verification')
+    with resource_locks(environment_lock_plan(root), fcntl.LOCK_SH):
+        with pytest.raises(BlockingIOError):
+            approve(service, manifest)
+    with pytest.raises(ValueError, match='internal snapshot verifier'):
+        apply(service, manifest, approval_ref='owner:test', reviewed_digest=manifest['manifest_digest'], readonly_snapshot=True)

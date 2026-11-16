@@ -163,7 +163,7 @@ def reconcile_host_verification(service) -> int:
                     return 0
                 try:
                     apply(service, manifest, approval_ref=policy.approval_ref,
-                        reviewed_digest=manifest['manifest_digest'],
+                        reviewed_digest=manifest['manifest_digest'], readonly_snapshot=True,
                         verifier=lambda root, body: verify_in_container(service, root, body, policy))
                 except BlockingIOError:
                     continue  # a live resource owner is a defer, not permission to steal its workspace

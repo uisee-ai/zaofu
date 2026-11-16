@@ -128,3 +128,21 @@ def test_modified_protected_oracle_never_starts_container(case, monkeypatch):
     monkeypatch.setattr('zf.runtime.host_verification._run_container', lambda *args, **kwargs: pytest.fail('must reject before executing'))
     with pytest.raises(ValueError, match='modified or removed'):
         verify_in_container(service, root, manifest, p)
+
+
+@pytest.mark.parametrize('exclusive', [False, True])
+def test_container_snapshot_coexists_with_readers_but_waits_for_mutation(case, monkeypatch, exclusive):
+    import fcntl
+    from zf.runtime.environment_exec import resource_locks
+    from zf.runtime.environment_resources import environment_lock_plan
+    service, root = prepare(case)
+    calls = []
+    def verify(*args):
+        calls.append(args)
+        return {'status': 'completed', 'source_stable': True, 'exit_code': 0}, 'pass'
+    monkeypatch.setattr('zf.runtime.host_verification.verify_in_container', verify)
+    with resource_locks(environment_lock_plan(root), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH):
+        assert reconcile_host_verification(service) == (0 if exclusive else 1)
+    assert len(calls) == (0 if exclusive else 1)
+    if exclusive:
+        assert reconcile_host_verification(service) == 1

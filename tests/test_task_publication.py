@@ -106,3 +106,31 @@ def test_changed_published_candidate_does_not_retry(case):
     (root / 'probe.py').write_text('changed after publication')
     assert reconcile_task_publication(service) == 0
     assert not any(e.type == 'task.rework.requested' for e in service.writer.event_log.read_all())
+
+
+def test_binding_rejection_is_observable_without_effect(case, monkeypatch, caplog):
+    service, root = prepare(case)
+    before = git(root, 'rev-parse', 'HEAD')
+    def unavailable(*args):
+        raise ValueError('task generation is no longer current')
+    monkeypatch.setattr('zf.runtime.task_publication.binding', unavailable)
+    assert reconcile_task_publication(service) == 0
+    assert git(root, 'rev-parse', 'HEAD') == before
+    assert 'op-1' in caplog.text
+    assert 'task generation is no longer current' in caplog.text
+    assert not any(e.type == 'human.escalate' for e in service.writer.event_log.read_all())
+
+
+@pytest.mark.parametrize('exclusive', [False, True])
+def test_publication_respects_environment_readers_and_mutators(case, exclusive):
+    import fcntl
+    from zf.runtime.environment_exec import resource_locks
+    from zf.runtime.environment_resources import environment_lock_plan
+    service, root = prepare(case)
+    before = git(root, 'rev-parse', 'HEAD')
+    with resource_locks(environment_lock_plan(root), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH):
+        assert reconcile_task_publication(service) == (0 if exclusive else 1)
+    assert (git(root, 'rev-parse', 'HEAD') == before) == exclusive
+    if exclusive:
+        assert not any(e.type == 'runtime.action.attempt.started' for e in service.writer.event_log.read_all())
+        assert reconcile_task_publication(service) == 1

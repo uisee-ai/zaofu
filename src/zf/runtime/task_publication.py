@@ -6,6 +6,7 @@ worker/independent Reader must assess the resulting exact commit.
 """
 from dataclasses import asdict
 import subprocess
+import logging
 
 from zf.core.state.locks import locked_path
 from zf.runtime.pause_lifecycle import is_dispatch_paused
@@ -43,7 +44,9 @@ def reconcile_task_publication(service) -> int:
                 continue
             try:
                 _, _, _, root = binding(service, op_id)
-            except (ValueError, KeyError, OSError):
+            except (ValueError, KeyError, OSError) as exc:
+                logging.getLogger(__name__).warning(
+                    'Candidate publication deferred for %s: %s', op_id, exc)
                 continue  # A stale operation, changed contract or live successor has no authority.
             if any(e.type == 'human.escalate' and e.payload.get('task_publish_operation') == op_id for e in events):
                 continue
@@ -86,6 +89,8 @@ def reconcile_task_publication(service) -> int:
                 apply(service, manifest, approval_ref=approval, reviewed_digest=manifest['manifest_digest'])
                 return 1
             except BlockingIOError:
+                logging.getLogger(__name__).warning(
+                    'Candidate publication deferred for %s: dependency environment is being mutated', op_id)
                 continue
             except (ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
                 _escalate(service, events, op, str(exc))

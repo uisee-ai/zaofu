@@ -112,3 +112,7 @@ Run Manager 使用既有 host-assist preview/apply 门禁，核对 signed change
 回执绑定策略摘要与批准引用。随后经现有有界 Task Impl retry 请求重新检查精确 commit；
 不增加 rework 额度、不直接生成 Impl passed，不跳过独立 Verify/Judge。
 发布与后续重试分别留痕；退出在 started/completed 之间时明确升级，不猜测成功后重放。
+
+候选发布绑定检查未通过时，控制器日志保留 operation ID 与拒绝原因；这只增加诊断可见性，不将过期任务升级为可执行，也不自动创建人工升级事件。
+
+真实R3暴露候选发布与空闲Provider依赖租约互斥：Provider整个生命周期持共享环境锁，原host-assist一律排他锁，导致任务已settled仍无限等待。修正为Git候选发布、内部隔离容器快照持共享依赖锁；依赖安装/修改持排他锁，仍阻止采证与发布。普通直接宿主验证仍需排他锁，外部action不接收readonly_snapshot能力。共享锁不替代任务身份、完整差异、源摘要、预算和副作用回执门禁。环境忙的发布延迟会记录operation ID，不再静默跳过。

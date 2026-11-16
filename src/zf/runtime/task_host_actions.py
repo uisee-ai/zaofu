@@ -11,6 +11,7 @@ import tempfile
 from zf.core.state.locks import locked_path
 from zf.runtime.environment_exec import resource_locks
 from zf.runtime.environment_resources import environment_lock_plan
+from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json, write_sidecar_text
 from zf.runtime.task_host_manifest import binding, dependency_digest, digest, git, preview, source_files
 from zf.runtime.workflow_git_readiness import git_environment
@@ -71,12 +72,14 @@ def _verify(root: Path, manifest: dict) -> tuple[dict, str]:
             "execution_origin": "operator_authorized_host"}, text
 
 
-def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, verifier=None) -> dict:
+def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, verifier=None, readonly_snapshot: bool = False) -> dict:
     if not approval_ref.strip() or reviewed_digest != manifest.get("manifest_digest"):
         raise ValueError("explicit approval_ref and exact reviewed manifest digest required")
     body = {k: v for k, v in manifest.items() if k != "manifest_digest"}
     if digest(body) != reviewed_digest or manifest.get("schema_version") != "task-host-manifest.v1":
         raise ValueError("host manifest digest or schema is invalid")
+    if readonly_snapshot and (manifest["kind"] != "verify" or verifier is None):
+        raise ValueError("read-only snapshot requires an internal snapshot verifier")
     state = service.state_dir
     with locked_path(state / "locks" / "task-host-assist"):
         prior = [e for e in service.writer.event_log.read_all()
@@ -88,8 +91,13 @@ def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, v
                     "result": hydrate_sidecar_ref(state, receipt).payload}
         if any(e.type == "runtime.action.attempt.started" for e in prior):
             raise ValueError("prior host effect is unresolved; inspect it, do not rerun")
-        _, _, _, root = binding(service, manifest["operation_id"])
-        with resource_locks(environment_lock_plan(root), fcntl.LOCK_EX):
+        op, _, _, root = binding(service, manifest["operation_id"])
+        if active_codex_turn_from_events(service.writer.event_log.read_all(), str(op.get("role_instance") or "")):
+            raise ValueError("host assistance requires a closed provider turn")
+        # Publication reads dependencies; isolated snapshots also only read the
+        # host workspace. Neither needs to evict idle provider environment readers.
+        mode = fcntl.LOCK_SH if manifest["kind"] == "commit" or readonly_snapshot else fcntl.LOCK_EX
+        with resource_locks(environment_lock_plan(root), mode):
             current = preview(service, operation_id=manifest["operation_id"], kind=manifest["kind"],
                               paths=manifest["paths"], command_id=(manifest.get("command") or {}).get("command_id", ""))
             if current != manifest:
