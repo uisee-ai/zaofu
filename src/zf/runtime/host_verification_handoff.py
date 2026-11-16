@@ -5,6 +5,26 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.stage_failure_replan import reader_stage_for_failure
 
 
+def reader_probe_handoff_complete(operation: dict, events) -> bool:
+    """A kernel successor owns remaining probes; do not drain its predecessor."""
+    if operation.get('task_pipeline_stage'):
+        return False
+    run = operation.get('workflow_run_id')
+    fanout = ''
+    failures = set()
+    for event in events:
+        p = event.payload
+        if event.origin != 'kernel' or not run or p.get('workflow_run_id') != run:
+            continue
+        if event.type == 'fanout.child.dispatched' and p.get('operation_id') == operation['operation_id']:
+            fanout = p.get('fanout_id') or ''
+        elif fanout and event.type.endswith('.failed') and p.get('fanout_id') == fanout:
+            failures.add(event.id)
+        elif event.type == 'candidate.ready' and p.get('repaired_failure_event_id') in failures:
+            return True
+    return False
+
+
 def resume_reader_after_probes(service, operation: dict, contract: dict, policy, events) -> bool:
     if operation.get('task_pipeline_stage'):
         return False  # Task Pipeline retains its own rework state machine.

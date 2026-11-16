@@ -56,3 +56,26 @@ def test_failed_probe_can_return_to_reader_without_running_remaining_commands(re
                                        {'command_id':'later','command':'python3 later.py'}]}
     assert resume_reader_after_probes(service,operation,contract,p,service.writer.event_log.read_all()) is expected
     assert not any(e.type in {'test.passed','task.done'} for e in service.writer.event_log.read_all())
+
+
+@pytest.mark.parametrize('invalid', ['', 'request_only', 'worker_ready', 'other_run', 'other_failure'])
+def test_reconciler_skips_old_reader_only_after_kernel_successor(recovery, monkeypatch, invalid):
+    from unittest.mock import Mock
+    from zf.runtime import host_verification as module
+    service, _, _ = recovery
+    service.writer.default_origin = 'kernel'
+    service.config.runtime.host_verification = policy()
+    old = {'operation_id': 'old', 'workflow_run_id': 'run-1', 'status': 'settled', 'semantic_verdict': 'abstained'}
+    successor = {**old, 'operation_id': 'new'}
+    service.writer.emit('fanout.child.dispatched', payload={**old, 'fanout_id': 'failed-fanout'})
+    failed = service.writer.emit('test.failed', payload={'fanout_id': 'failed-fanout', 'workflow_run_id': 'run-1'})
+    service.writer.default_origin = 'worker' if invalid == 'worker_ready' else 'kernel'
+    service.writer.emit('control.action.requested' if invalid == 'request_only' else 'candidate.ready',
+        payload={
+            'workflow_run_id': 'other' if invalid == 'other_run' else 'run-1',
+            'repaired_failure_event_id': 'unrelated' if invalid == 'other_failure' else failed.id})
+    monkeypatch.setattr(module, 'reduce_workflow_operations', lambda events: {'old': old, 'new': successor})
+    binding = Mock(side_effect=ValueError('binding unavailable in this consumer test'))
+    monkeypatch.setattr(module, 'binding', binding)
+    assert module.reconcile_host_verification(service) == 0
+    assert [call.args[1] for call in binding.call_args_list] == (['new'] if not invalid else ['old', 'new'])

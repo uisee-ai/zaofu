@@ -133,6 +133,9 @@ def reconcile_host_verification(service) -> int:
         for operation_id, operation in operations.items():
             if operation.get('status') != 'settled' or operation.get('semantic_verdict') not in {'blocked', 'failed', 'abstained'}:
                 continue
+            from zf.runtime.host_verification_handoff import reader_probe_handoff_complete
+            if reader_probe_handoff_complete(operation, events):
+                continue
             try:
                 _, _, contract, _ = binding(service, operation_id)
             except (ValueError, KeyError, OSError):
