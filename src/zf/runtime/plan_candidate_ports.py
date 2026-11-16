@@ -123,6 +123,15 @@ def plan_port_bodies(
             _error(errors, "plan_port_too_large", field, str(exc))
         except Exception as exc:
             _error(errors, "plan_port_unreadable", field, str(exc))
+    from zf.runtime.task_scoped_plan_inputs import SCHEMA_VERSION
+
+    for name, body in bodies.items():
+        descriptor, field = selected[name]
+        if (descriptor.get("schema_version") == SCHEMA_VERSION
+                and body.get("schema_version") != SCHEMA_VERSION):
+            _error(errors, "plan_port_schema_mismatch", field,
+                   f"declared {SCHEMA_VERSION!r} requires the same body.schema_version; "
+                   "put schema_version, shared, and tasks[] in the actual port body")
     return bodies
 
 

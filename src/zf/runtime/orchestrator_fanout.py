@@ -2973,9 +2973,11 @@ class FanoutCoordinationMixin(
             source_index = None
             ref = str(loaded.source_index_ref or "")
             if ref:
-                path = Path(ref)
-                if not path.is_absolute():
-                    path = (self.project_root / ref).resolve()
+                from zf.runtime.task_map import resolve_artifact_file
+
+                path = resolve_artifact_file(
+                    ref, project_root=self.project_root, state_dir=self.state_dir,
+                )
                 if path.exists():
                     try:
                         source_index = _json.loads(
