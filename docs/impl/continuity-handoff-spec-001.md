@@ -570,7 +570,7 @@ workspace-write exec 已调用 shell 成功。前置人工修复不计为无人�
 
 ## 2026-11-16 执行阶段真实故障修复
 
-任务：`tasks/active/2026-11-16-1053-unattended-reader-recovery.md`。
+任务：`tasks/done/2026-11-16-1053-unattended-reader-recovery.md`。
 来源：`reports/unattended-faults-20261116T090219Z/review.md`。
 
 - Reader预注册只准备并绑定目标，实际派发才激活Provider；占用时不反复启动。
