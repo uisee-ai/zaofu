@@ -67,3 +67,10 @@ B05 仍为 active；未声明外部资源、真实多语言资格和完整环境
 用户已批准修正后的实施顺序；本任务保持 active，逐条验收以 [剩余关闭清单](../../docs/impl/continuity-handoff-spec-001.md#2026-11-15按成功条件推进的剩余关闭清单) 为索引。只关闭有真实调用方和适用证据的条款，其他剩余项不因本批提交自动完成。
 
 本轮修正：资源声明、安装、清理和新 writer 接管检查真实进程占用，覆盖关闭继承 fd、父进程退出的孤儿及未登记 cwd 持有者；未知外部资源、持久清理流程和多语言完整资格待验。 详见[修正报告](../../reports/continuity-closure-20261115-review.md)。
+
+## 2026-11-16：实际 Worker 能力缺口
+
+SCAFFOLD 首次 Impl 在 sandbox workspace-write 中遭遇本地监听 EPERM 和
+linked worktree Git 索引只读；保留脏代码、失败事实与宿主2/2测试诊断。
+Doctor 新增三项显式能力探测及 CLI 接线，17项定向回归通过，真实三项阻塞复现。
+不关闭沙箱，不把 startup-only 当任务资格；受控宿主执行路径待决，任务仍 active。

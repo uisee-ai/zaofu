@@ -31,6 +31,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     provider = sub.add_parser("provider", help="Check provider CLI preflight")
     provider.add_argument("--backend", choices=["codex"], default="codex")
     provider.add_argument("--json", action="store_true", dest="as_json")
+    provider.add_argument("--workdir", type=Path, default=None,
+                          help="Actual worker workdir for opt-in capability probes")
+    provider.add_argument("--capability", action="append", default=[],
+                          choices=["local-listen", "docker", "git-metadata"],
+                          help="Probe a task prerequisite without changing sandbox permissions")
     provider.set_defaults(func=_run_provider)
 
     sidecar = sub.add_parser("sidecar", help="Check sidecar refs referenced by events")
@@ -176,10 +181,27 @@ def _run_provider(args: argparse.Namespace) -> int:
         print(f"Error: unsupported provider backend: {args.backend}", file=sys.stderr)
         return 1
     report = _codex_provider_preflight()
+    if getattr(args, "capability", None) and report["ok"]:
+        from zf.runtime.provider_task_capabilities import probe_task_capabilities
+
+        try:
+            report["capabilities"] = probe_task_capabilities(
+                args.workdir or Path.cwd(), args.capability, codex=report["codex"]["path"],
+            )
+            blocked = [row["capability"] for row in report["capabilities"]
+                       if row["status"] == "blocked"]
+            if blocked:
+                report["ok"] = False
+                report["issues"].append("Task capabilities blocked: " + ", ".join(blocked))
+        except (OSError, ValueError) as exc:
+            report["ok"] = False
+            report["issues"].append(f"Task capability inspection failed: {exc}")
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         _print_provider_report(report)
+        for row in report.get("capabilities", []):
+            print(f"capability {row['capability']}: {row['status']} ({row['qualification']})")
     return 0 if report["ok"] else 1
 
 

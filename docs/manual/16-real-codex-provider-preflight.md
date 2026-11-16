@@ -16,6 +16,31 @@ uv run zf doctor provider --backend codex --json
 - 在隔离临时目录内运行当前 Codex 自身的 `sandbox --permission-profile :workspace` 命令。
 - 启动探测不调用模型、不验证账号或业务；未知 CLI 接口/超时/权限失败返回非零，不把 `unshare -n` 结果当 Codex 资格。
 
+### 1.1 对实际任务工作区检查能力
+
+沙箱启动成功不代表可以监听端口、访问 Docker 或提交 worktree。需要这些能力时，
+在派发模型前对**实际 worker 工作区**执行可选探测：
+
+```bash
+uv run zf doctor provider --workdir /absolute/worker/project \
+  --capability local-listen --capability docker --capability git-metadata --json
+```
+
+每项至多 20 秒，沿用 Codex `:workspace` 和 managed config；不调用模型、不修改权限。
+`local-listen` 仅绑定并关闭临时 loopback 端口；`docker` 仅读取现有
+`/var/run/docker.sock` 中的 `mcp/playwright:latest` 镜像身份，不跟随远端 Docker
+context，不拉取或运行容器；`git-metadata` 仅读取
+实际 Git dir/common dir 的只读挂载与访问权限，不尝试写索引或提交。
+任何一项受阻均返回非零，并与 `command_startup_only` 分开显示。
+Git 权限观察通过不等于提交成功，镜像可读不等于浏览器或产品验收通过。
+该命令是显式诊断入口，尚未自动成为所有 Workflow 的派发门。
+
+2026-11-16 最小 PRD 实测：启动预检通过，但 Worker 的本地监听返回 EPERM，
+Docker socket 连接被拒绝，linked worktree Git 元数据目录挂载为只读。
+这属于任务执行能力不匹配；不要据此重写业务验收、自动关闭沙箱或放宽 Docker socket。
+后续需要明确批准的受控执行路径；本检查不授予额外权限。
+边界说明见 [Codex Permissions](https://learn.chatgpt.com/docs/permissions)。
+
 如果输出 `sandbox: unsupported`,普通 Codex sandbox 可能在启动前失败,常见错误类似:
 
 ```text

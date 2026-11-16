@@ -369,3 +369,17 @@ Reader 使用 dispatch 范围，工作区保持；基线实验关闭额外 resid
 真实 v5 启动再现占用登记顺序缺口：tmux 先创建项目 cwd 的 shell，之后首次登记源依赖被正确的占用检查拒绝。`zf start` 现于 transport 初始化前登记源资源，不豁免持有者或清理保护。启动入口 RED 后78项启动/资源/环境闭包GREEN，sentinel53、Flow mock10通过；同一已接纳请求继续恢复，保留首次启动失败。
 
 真实v5 Planner首轮失败并非token/timeout：组合shell补丁触发保守写域拒绝，随后把$(sed...)作为字面补丁导致无效hunk。单独原生scratch更新已成功。保留guard，补planner方法：具体补丁、独立literal heredoc、产物与scratch分写；长文分段防截断。通过受控stage-replan-new-generation绑定原失败恢复，不冒充产品质量通过。
+
+## 2026-11-16：任务能力预检与真实阻塞
+
+真实 v5 经独立 Critic、Docker Preview 和授权 Plan 批准，已派发 SCAFFOLD。
+同一脚手架测试宿主运行2/2通过，但 Worker 内监听 EPERM；Git worktree 索引只读，
+Worker 诚实提交 dev.blocked，没有伪造自检或提交。Docker socket 访问也被沙箱拒绝。
+这证明启动探测通过不代表任务执行能力就绪。
+
+新增显式 CLI 入口 `zf doctor provider --workdir <worker> --capability local-listen
+--capability docker --capability git-metadata --json`，与启动结果分开记录；
+不改权限、不写 Git、不启动模型。真实失败现场三项均正确报告 blocked；
+命令接线与失败/超时/非法项回归17项通过。用法与资格限制见
+[预检手册](../manual/16-real-codex-provider-preflight.md#11-对实际任务工作区检查能力)。
+这只是诊断改进，尚未新增沙箱外受控测试/提交入口，也没有通过完整 PRD 或故障旅程。
