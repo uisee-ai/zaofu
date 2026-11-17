@@ -67,3 +67,13 @@ PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧
 权威 `run.goal.completed` 已携带交付结果；Run Manager 不再为其补发旧式
 `run.completed`（`not_shipped/not_requested`）记录。旧式 Judge 完成但未开启自动
 交付的兼容路径保持原行为，避免用全局 auto-ship 开关覆盖 Goal 的实际交付事实。
+
+快速停止后的 writer 派发锁消费 `workflow.operation.interrupted`，仅在 Task ID
+和 `source_attempt_id` 与旧派发完全匹配时释放该派发的占用。其他任务或其他尝试的
+中断不能释放锁；同一身份在中断之后再次派发时仍视为活跃。该判断只允许恢复调度，
+不代表实现或验证通过。回归入口：`tests/test_writer_fanout_runtime.py`。
+
+集成失败事件的 `task_ids` 表示涉及的任务，不能据此推断这些任务完成。
+恢复检查点只继承明确的已完成列表及汇总证据，避免将失败任务当作已满足的依赖。
+Plan Package 引用存在本身不能证明返工意见已被修复或替代；恢复必须保留意见，
+除非有可核对的替代证据，避免隐藏当前版本仍然存在的问题。

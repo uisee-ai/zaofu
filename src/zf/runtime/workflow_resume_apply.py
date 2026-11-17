@@ -1087,20 +1087,9 @@ _RESUME_PLAN_IDENTITY_KEYS = (
 def _writer_resume_feedback(
     payload: Mapping[str, Any], feedback: list[str],
 ) -> list[str]:
-    """Do not replay planner-only findings into a current writer package."""
+    """Preserve findings unless their supersession is proven by evidence."""
 
-    if not str(payload.get("plan_artifact_package_ref") or "").strip():
-        return feedback
-    stale_markers = (
-        "mandatory_goal_claim_contract_rewritten",
-        "task_map_invalid",
-        "source_index_invalid",
-        "upstream dependency failed",
-    )
-    return [
-        line for line in feedback
-        if not any(marker in str(line).lower() for marker in stale_markers)
-    ]
+    return feedback
 
 
 def _resume_plan_identity(

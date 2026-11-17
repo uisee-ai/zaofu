@@ -1441,6 +1441,9 @@ def test_run_manager_executes_candidate_rework_controlled_action(
     _append_candidate_rework_fixture(log)
     task_map_path = state_dir / "artifacts" / "CJMIN-RM" / "task_map.json"
     task_map_path.parent.mkdir(parents=True)
+    (task_map_path.parent / "source_index.json").write_text(
+        json.dumps({"sources": [{"task_id": "CJMIN-WEB-001"}]}), encoding="utf-8",
+    )
     task_map_path.write_text(
         json.dumps({
             "schema_version": "task-map.v1",
@@ -1511,6 +1514,10 @@ def test_run_manager_executes_candidate_rework_controlled_action(
     assert amended
     assert amended[-1].payload["gap_task_ids"] == ["CJMIN-WEB-GAP-001"]
     assert amended[-1].payload["task_map_digest"]
+    amended_source = state_dir / amended[-1].payload["source_index_ref"]
+    assert json.loads(amended_source.read_text(encoding="utf-8"))["sources"]
+    rework_source_ref = amended[-1].payload["source_index_ref"]
+    assert rework_source_ref
     assert amended[-1].payload["task_map_generation"] != "generation-rm"
     assert amended[-1].payload["supersedes_task_map_generation"] == (
         "generation-rm"
@@ -1527,6 +1534,7 @@ def test_run_manager_executes_candidate_rework_controlled_action(
         == "CJMIN-WEB-GAP-001"
     )
     assert rework_ready[-1].payload["workflow_run_id"] == "workflow-run-rm"
+    assert rework_ready[-1].payload["source_index_ref"] == rework_source_ref
     assert rework_ready[-1].payload["flow_kind"] == "refactor"
     assert rework_ready[-1].payload["task_map_digest"] == amended[-1].payload[
         "task_map_digest"
