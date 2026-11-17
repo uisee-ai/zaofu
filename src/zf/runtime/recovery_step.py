@@ -12,6 +12,26 @@ IDENTITY_FIELDS = (
 )
 
 
+def diagnosis_reply_matches_request(event: ZfEvent, request: Mapping[str, Any]) -> bool:
+    """The exact request and designated responder bind omitted reply identity."""
+    body = event.payload or {}
+    if (event.type != "run.manager.agent.recommendation"
+            or not request.get("request_id") or not request.get("instance_id")
+            or body.get("request_id") != request["request_id"]
+            or event.actor != request["instance_id"]):
+        return False
+    for key in (*IDENTITY_FIELDS, "recovery_case_id", "fanout_id"):
+        if request.get(key) and body.get(key) and body[key] != request[key]:
+            return False
+    expected_run = request.get("workflow_run_id") or request.get("run_id")
+    if expected_run and any(value and value != expected_run for value in (
+        body.get("workflow_run_id"), body.get("run_id"), event.correlation_id,
+    )):
+        return False
+    return not (event.task_id and request.get("task_id")
+                and event.task_id != request["task_id"])
+
+
 def admitted_recovery_continuation(
     events: Iterable[ZfEvent], action: Mapping[str, Any], state: Mapping[str, Any],
 ) -> bool:
