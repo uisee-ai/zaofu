@@ -330,6 +330,9 @@ class CodexAdapter(BackendAdapter):
 
         if role.model and role.model != "placeholder":
             cmd.extend(["--model", role.model])
+        # Automation keeps the configured model; a savings suggestion must not
+        # consume the next task prompt. Actual quota errors remain visible.
+        cmd.extend(["-c", "notice.hide_rate_limit_model_nudge=true"])
         provider_session = role.provider_session
         if provider_session is not None and provider_session.native_delegation is False:
             cmd.extend(["--disable", "multi_agent", "--disable", "multi_agent_v2"])

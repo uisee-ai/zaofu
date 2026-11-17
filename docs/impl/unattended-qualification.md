@@ -199,3 +199,12 @@ Reader失败回执还需覆盖聚合等待窗口：首个稳定、同策略、�
 真实诊断 Reader 将正确子运行 `--state-dir` 改为父 `source_state_dir`，被 operation_missing 拒绝；自动重试又把旧“Never retry or re-send”理解为禁止新 attempt 提交。派发说明明确保留给定提交目录，source_state_dir 仅用于只读证据；每次新 dispatch 授权当前 run_id 的一次提交，前次失败不撤销该授权。成功提交仍不可重复，旧身份不可复用；命令错误时保留原命令和错误并结束本 attempt，由既有有界恢复处理。
 
 该修正覆盖 typed 和 legacy Reader retry 的真实 briefing 调用入口；不新增重试额度、不授予父状态写权限、不忽略 operation/attempt/lease 校验。指令回归通过不等于真实 Provider 已遵循，必须另做冻结新源码的真实复验；R11 继续原版本，不热加载此修正。
+
+
+## R11：模型提醒与未送达重派的输入保全
+
+真实 R11 在03:54 UTC记录FAILED并停止专属父子流程/观察器，保留成果；监工临时恢复0，F1/F2/F3/F5已有证据，F4/F6及最终产品验收未完成。多个Codex角色的“Approaching rate limits”模型选择框阻止派发，这不是已经耗尽额度的证明。自动启动/恢复命令使用 `-c notice.hide_rate_limit_model_nudge=true` 保持既定模型，仅关闭模型切换提醒；不改用户全局配置、不自动选择低价模型、不放宽sandbox或真实额度限制。官方定义见[配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
+
+首次Impl恢复request含critical-reader-repair-context；Provider未就绪后，新operation已存在，旧rework建议从调度投影退出。第二次派发因而丢失必读反馈，同operation请求摘要漂移。真实冻结request只删除该必读项，精确得到现场693f2da4摘要，证明不是Task语义变化。修正从当前operation的冻结request恢复原修复sidecar引用，核对Run/Task/operation/阶段/代际/合同及内容摘要；不同operation不继承，明确的新反馈仍触发通常的一致性检查，缺失或篡改原sidecar失败关闭。新attempt仍重新生成自己的manifest/读取回执和提交身份，不移植旧授权。
+
+真实调用回归先3RED/2保护通过，修正后96定向通过；影响闭包尚在执行。R11未热加载，新版本须经真实断点验证，不能倒改失败资格。

@@ -193,3 +193,14 @@ R10身份/命令修正验证：218文件增量影响闭包2938通过/8跳过/13�
 R11于03:35:48 UTC批准同版Plan，冻结69bb7d96；两Task并行实施，F2控制器6.126秒自主恢复，F1保留同workspace非空测试摘要。规划期间旁路诊断Reader错误提交到父state，重派后又受“禁止重试”歧义阻断。修正真实typed/legacy briefing的当前派发授权与source只读边界，先2RED、后8项定向通过；影响闭包进行中。新代码未载入R11，资格及B03真实复验未完成。
 
 Reader新派发授权修正完成：2RED后8项定向通过，完整Reader调用方166通过、13文件增量闭包385通过/7跳过、sentinel53和flow-smoke10通过。保留12KiB briefing门禁、原有重试与鉴权拒绝；真实Provider遵循仍待新冻结轮复验，未热加载R11。
+
+
+## R11：模型提醒与未送达重派的输入保全
+
+真实 R11 在03:54 UTC记录FAILED并停止专属父子流程/观察器，保留成果；监工临时恢复0，F1/F2/F3/F5已有证据，F4/F6及最终产品验收未完成。多个Codex角色的“Approaching rate limits”模型选择框阻止派发，这不是已经耗尽额度的证明。自动启动/恢复命令使用 `-c notice.hide_rate_limit_model_nudge=true` 保持既定模型，仅关闭模型切换提醒；不改用户全局配置、不自动选择低价模型、不放宽sandbox或真实额度限制。官方定义见[配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
+
+首次Impl恢复request含critical-reader-repair-context；Provider未就绪后，新operation已存在，旧rework建议从调度投影退出。第二次派发因而丢失必读反馈，同operation请求摘要漂移。真实冻结request只删除该必读项，精确得到现场693f2da4摘要，证明不是Task语义变化。修正从当前operation的冻结request恢复原修复sidecar引用，核对Run/Task/operation/阶段/代际/合同及内容摘要；不同operation不继承，明确的新反馈仍触发通常的一致性检查，缺失或篡改原sidecar失败关闭。新attempt仍重新生成自己的manifest/读取回执和提交身份，不移植旧授权。
+
+真实调用回归先3RED/2保护通过，修正后96定向通过；影响闭包尚在执行。R11未热加载，新版本须经真实断点验证，不能倒改失败资格。
+
+模型提醒/反馈保全完成225文件增量闭包：3284通过/1跳过/12失败，12项逐名属于2137a567已复现基线集合；锁竞争项单独复测仍为既有WorkflowSynthesisConsumerBusy预期不一致。96定向、sentinel53通过，闭包含恢复/断点mock E2E。保留失败日志与逐项对账，不宣称全绿；准备冻结新源码进行操作员辅助断点复验。

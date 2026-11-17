@@ -51,7 +51,9 @@ def repair_input_refs(state_dir, payload: Mapping[str, Any], *, workflow_run_id:
         'rework_feedback', 'operator_feedback', 'repair_reason', 'repaired_failure_event_id',
     )}
     if not any(fields.get(key) for key in ('rework_feedback', 'operator_feedback', 'repair_reason')):
-        return []
+        return _replayed_task_repair_input(
+            state_dir, payload, workflow_run_id=workflow_run_id, task_id=task_id,
+        )
     descriptor = write_immutable_json_sidecar(state_dir, {
         'schema_version': 'reader-repair-context.v1', 'workflow_run_id': workflow_run_id,
         'task_id': task_id, 'source_event_id': source_event_id, **fields,
@@ -59,3 +61,51 @@ def repair_input_refs(state_dir, payload: Mapping[str, Any], *, workflow_run_id:
     }, root='reader-repair-context', kind='reader_repair_context', schema_version='reader-repair-context.v1',
         created_by='canonical-handoff-resolver', source_event_id=source_event_id)
     return [{**descriptor, 'source_id':'critical-reader-repair-context', 'allowed_paths':['$']}]
+
+
+def _replayed_task_repair_input(state_dir, payload: Mapping[str, Any], *,
+                              workflow_run_id: str, task_id: str) -> list[dict[str, Any]]:
+    """Retain one immutable recovery input after an unsent task retry.
+
+    The rework recommendation leaves the scheduler projection once its successor
+    exists. That must not remove an input already frozen with that operation.
+    Explicit new feedback still goes through ordinary request divergence checks.
+    """
+    import re
+    from pathlib import Path
+
+    from zf.core.events.log import EventLog
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    operation_id = str(payload.get('operation_id') or '')
+    if not operation_id or not payload.get('task_pipeline_stage'):
+        return []
+    operation = load_workflow_operation(EventLog(Path(state_dir) / 'events.jsonl'), operation_id)
+    if operation is None:
+        return []
+    body = hydrate_sidecar_ref(state_dir, operation['request_ref']).payload
+    request = body['request']
+    source_id = 'critical-reader-repair-context'
+    reads = [row for row in request.get('required_reads', []) if row.get('source_id') == source_id]
+    if not reads:
+        return []
+    if any(body.get(key) != value for key, value in (
+        ('workflow_run_id', workflow_run_id), ('task_id', task_id), ('operation_id', operation_id),
+    )):
+        raise ValueError('replayed repair input belongs to a different task operation')
+    for key in ('task_pipeline_stage', 'operation_generation', 'task_map_generation',
+                'contract_snapshot_digest'):
+        if request.get(key) != payload.get(key):
+            raise ValueError(f'replayed repair input identity changed: {key}')
+    digests = {str(row.get('artifact_sha256') or '') for row in reads}
+    if len(digests) != 1 or not re.fullmatch(r'[0-9a-f]{64}', next(iter(digests))):
+        raise ValueError('replayed repair input has an ambiguous or invalid digest')
+    digest = next(iter(digests))
+    descriptor = {'ref': f'artifacts/reader-repair-context/{digest}.json', 'sha256': digest,
+                  'kind': 'reader_repair_context', 'content_type': 'application/json'}
+    context = hydrate_sidecar_ref(state_dir, descriptor).payload
+    if (context.get('schema_version') != 'reader-repair-context.v1'
+            or context.get('workflow_run_id') != workflow_run_id or context.get('task_id') != task_id):
+        raise ValueError('replayed repair context identity mismatch')
+    return [{**descriptor, 'source_id': source_id, 'allowed_paths': ['$']}]
