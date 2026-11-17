@@ -11,7 +11,7 @@ def test_frozen_contract_rebinds_source_paths_to_repair_checkout(tmp_path):
     source.mkdir()
     req = RepairRequest(fingerprint='f', attempt=0, candidate_id='c', candidate_path='evidence',
         repair_task_payload={'contract': {'scope': [str(source / 'src/zf/runtime/host_verification.py')],
-        'verification': f'cd {shlex.quote(str(source))} && .venv/bin/python -m pytest -q tests/test_host_verification.py'}})
+        'verification_commands': [f'cd {shlex.quote(str(source))} && .venv/bin/python -m pytest -q tests/test_host_verification.py']}})
     contract, _ = write_repair_contract(tmp_path / 'state', req, base_commit='base', created_by='test', source_root=source)
     assert contract['scope'] == ['src/zf/runtime/host_verification.py']
     command = contract['verification_commands'][0]
@@ -37,7 +37,7 @@ def test_shared_python_verifies_isolated_source_not_original(tmp_path):
     (worktree / 'src/repair_probe.py').write_text('VALUE = "isolated"\n')
     (worktree / 'tests/test_probe.py').write_text('import repair_probe\ndef test_import():\n    assert repair_probe.VALUE == "isolated"\n')
     req = RepairRequest(fingerprint='f', attempt=0, candidate_id='c', candidate_path='evidence', repair_task_payload={'contract': {
-        'scope': ['src/**', 'tests/**'], 'verification': f'cd {source} && .venv/bin/python -m pytest -q -c /dev/null --no-cov tests/test_probe.py'}})
+        'scope': ['src/**', 'tests/**'], 'verification_commands': [f'cd {source} && .venv/bin/python -m pytest -q -c /dev/null --no-cov tests/test_probe.py']}})
     contract, _ = write_repair_contract(tmp_path / 'state', req, base_commit='base', created_by='test', source_root=source)
     result = subprocess.run(shlex.split(contract['verification_commands'][0]), cwd=worktree, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -61,3 +61,18 @@ def test_untranslated_original_checkout_command_is_rejected(tmp_path):
         bind_checkout_contract({"scope": ["src/fix.py"],
             "verification_instruction": f"pytest {source}/tests/test_fix.py",
             "verification_commands": []}, source)
+
+
+@pytest.mark.parametrize('instruction', [
+    'pytest -q tests/test_fix.py',
+    'pytest -q tests/test_fix.py; verify isolation and record runtime receipts.',
+    'uv run pytest tests/test_fix.py; then review the original candidate.',
+])
+def test_verification_prose_is_not_promoted_to_executable_commands(tmp_path, instruction):
+    req = RepairRequest(fingerprint='f', attempt=0, candidate_id='c', candidate_path='evidence',
+        repair_task_payload={'contract': {'scope': ['src/**'], 'verification': instruction,
+            'verification_commands': ['git diff --check']}})
+    contract, _ = write_repair_contract(tmp_path / 'state', req, base_commit='base',
+        created_by='test', source_root=tmp_path / 'source')
+    assert contract['verification_commands'] == ['git diff --check']
+    assert contract['verification_instruction']

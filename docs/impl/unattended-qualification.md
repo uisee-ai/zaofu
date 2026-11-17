@@ -184,3 +184,11 @@ Reader失败回执还需覆盖聚合等待窗口：首个稳定、同策略、�
 
 
 隔离验收的Git身份预检须覆盖两个仓库：产品仓库与实际运行的harness仓库。Autoresearch诊断worktree共享harness的Git公共元数据，只设置产品仓库身份仍会导致Flow source preparation失败。部署者须在相应仓库明确配置认可的本地作者/提交者身份；服务启动前在移除临时GIT_AUTHOR_*/GIT_COMMITTER_*变量的环境中分别执行git var GIT_AUTHOR_IDENT和git var GIT_COMMITTER_IDENT。不得为通过验收修改全局Git配置，也不得把仅本次命令的-c user.name/user.email误当成持久服务配置。临时共享worktree可验证继承，检查干净后移除。预检失败应在资格开始前处理；运行期间补配置必须记录该轮资格失败。
+
+## R10：修复收尾的身份与命令合同
+
+真实R10已越过候选自动发布，但独立验证前被 `repair_contract_continuation_drift` 阻断。收尾不能重建一份缩减的恢复身份：保留冻结请求所有字段，包括 request schema、RecoveryCase、task_map_generation、target_commit、active_attempt_id及空身份槽；额外重启/验证策略由runtime追加。冲突仍在不可变合同核对处拒绝，不能忽略身份漂移。回归从真实Git候选的closeout生产者调用合同消费者，并逐字段验证篡改拒绝。
+
+`contract.verification` 是语义说明，不再按 pytest/uv 等前缀猜测为可执行命令；精确命令显式写入既有 `verification_commands`、`validation.commands` 或 `evidence_contract.success_criteria[kind=command_passed]`。每项只含命令，不在分号后拼接自然语言。Resident RM 的输出示例及要求同步更新。已有仅含说明的合同仍保留说明并执行强制影响范围验证，不把说明当作已执行命令；需要指定聚焦测试的调用者必须迁移到上述结构化字段。明确命令继续绑定共享Python与隔离checkout；现有权限/allowlist/影响闭包门禁不放宽。
+
+这两项修正尚需新一轮真实资格验证，不能追认R10通过。R10的两个业务Task已done，Candidate/Judge/goal与源码应用重启未完成。

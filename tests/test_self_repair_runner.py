@@ -250,10 +250,20 @@ def test_closeout_required_emitted_when_repair_worktree_has_commit(tmp_path):
             candidate_path="/x/cand.md",
             repair_task_payload={
                 "contract": {
-                    "scope": ["src/zf/**"],
-                    "verification": "pytest x",
+                    "scope": ["fix.txt"],
+                    "verification": "focused regression passes",
+                    "verification_commands": ["pytest x"],
                 },
                 "continuation": {
+                    "schema_version": "self-repair.request-continuation.v1",
+                    "recovery_case_id": "case-original",
+                    "workflow_run_id": "workflow-original",
+                    "task_map_generation": "generation-original",
+                    "target_commit": "candidate-original",
+                    "active_attempt_id": "attempt-original",
+                    "run_id": "",
+                    "fanout_id": "",
+                    "source_event_ids": [],
                     "checkpoint_id": "checkpoint-1",
                     "safe_resume_action": "needs_stage_dispatch",
                 },
@@ -311,6 +321,16 @@ def test_closeout_required_emitted_when_repair_worktree_has_commit(tmp_path):
         closeout.payload["continuation"]["resume_strategy"]
         == "snapshot_replay_then_preserve_run_manager_control_plane_restart"
     )
+
+    # Exercise the actual consumer, not just a few projected fields. The live
+    # request includes schema, empty identity slots and recovery bindings.
+    from zf.runtime.repair_dispatch import validate_repair_contract_action, RepairContractError
+    validate_repair_contract_action(tmp_path, closeout.payload)
+    for field in repair_contract["continuation"]:
+        changed = dict(closeout.payload)
+        changed["continuation"] = {**closeout.payload["continuation"], field: "drift"}
+        with pytest.raises(RepairContractError, match="continuation"):
+            validate_repair_contract_action(tmp_path, changed)
 
     second = emit_self_repair_closeouts(
         [dispatched, closeout],
@@ -524,7 +544,7 @@ def test_dispatch_freezes_checkout_relative_contract_and_absolute_evidence_locat
     event = _dispatch_requested()
     event.payload['repair_task_payload']['contract'].update(
         scope=[str(tmp_path / 'src/zf/fix.py')],
-        verification=f'cd {tmp_path} && .venv/bin/python -m pytest tests/test_fix.py',
+        verification_commands=[f'cd {tmp_path} && .venv/bin/python -m pytest tests/test_fix.py'],
     )
     with patch('zf.runtime.self_repair_runner.subprocess.run') as run:
         run.return_value = MagicMock(returncode=0, stderr='')

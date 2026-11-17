@@ -553,30 +553,21 @@ def emit_self_repair_closeouts(
             if isinstance(requested_continuation, dict)
             else {}
         )
+        # Keep the frozen request identity, including empty slots and its schema.
+        # Closeout policy is additive; conflicting request policy still fails the
+        # immutable-contract check before any validation or apply action.
         continuation = {
             "schema_version": "self-repair.closeout-continuation.v1",
+            "resume_original_workflow": True,
+            **requested_continuation,
             "restart_required": restart["restart_required"],
             "restart_strategy": restart["restart_strategy"],
             "safe_boundary": restart["safe_boundary"],
             "state_snapshot_required": restart["state_snapshot_required"],
             "replay_required": restart["replay_required"],
-            "resume_original_workflow": True,
             "resume_strategy": restart["resume_strategy"],
             "blocked_until": "verification_passed_and_apply_decision_recorded",
         }
-        for name in (
-            "checkpoint_id",
-            "safe_resume_action",
-            "workflow_run_id",
-            "run_id",
-            "pdd_id",
-            "feature_id",
-            "fanout_id",
-            "task_id",
-            "source_event_ids",
-        ):
-            if requested_continuation.get(name) not in (None, "", []):
-                continuation[name] = requested_continuation[name]
         writer.append(ZfEvent(
             type=CLOSEOUT_REQUIRED,
             actor="zf-self-repair",

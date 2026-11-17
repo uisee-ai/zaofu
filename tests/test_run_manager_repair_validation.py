@@ -17,7 +17,7 @@ def test_independent_validator_runs_frozen_shared_python_in_candidate(tmp_path):
         'import candidate_probe\ndef test_candidate():\n    assert candidate_probe.VALUE == "candidate"\n')
     contract = bind_checkout_contract({'scope': ['src/**', 'tests/**'],
         'verification_instruction': 'pytest -q -c /dev/null --no-cov tests/test_candidate.py',
-        'verification_commands': []}, tmp_path / 'original')
+        'verification_commands': ['pytest -q -c /dev/null --no-cov tests/test_candidate.py']}, tmp_path / 'original')
     result = execute_repair_verification_plan(worktree=str(root), verification_plan=[{
         'kind': 'repair_contract', 'command': contract['verification_commands'][0]}])
     assert result['ok'], result

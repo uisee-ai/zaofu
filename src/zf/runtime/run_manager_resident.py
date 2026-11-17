@@ -197,7 +197,8 @@ def build_resident_run_manager_briefing(
                 "title": "optional bounded repair task title",
                 "contract": {
                     "scope": ["src/zf/**", "tests/**"],
-                    "verification": "focused pytest command",
+                    "verification": "expected behavior and evidence to review",
+                    "verification_commands": ["pytest -q tests/test_affected_behavior.py"],
                 },
             },
         },
@@ -288,6 +289,8 @@ def build_resident_run_manager_briefing(
         "- 如果是 harness bug、candidate hygiene/gate bug、projection/action bug,优先写"
         " `run.manager.agent.recommendation` 且 `recommended_route=repair`,附带 bounded"
         " `repair_task_payload`、scope、verification 和 evidence refs。",
+        "  contract.verification 仅写语义验收说明；可执行命令单独放入 contract.verification_commands 数组，",
+        "  每项只含一个完整命令，不追加分号后的自然语言或未来动作。runtime 不从说明文字猜命令。",
         "- 当前已准入 Impl 失败经诊断确认须 OA 裁决时，绑定原 request_id 发 recommendation：",
         "  recommended_route=controlled_action、action=orchestrator-rework-triage、task_id、target_operation_id、",
         "  summary 与证据；runtime 复用已配置 OA 的当前失败审核入口，保留原案卷，不直接重派 Worker。",

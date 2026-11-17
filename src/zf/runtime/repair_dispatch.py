@@ -399,30 +399,12 @@ def _verification_commands(
     for row in _items(evidence.get("success_criteria")):
         if isinstance(row, Mapping) and str(row.get("kind") or "") == "command_passed":
             values.append(row.get("command"))
-    instruction = str(contract.get("verification") or "").strip()
-    if instruction and _looks_like_command(instruction):
-        values.append(instruction)
     commands: list[str] = []
     for value in values:
         command = str(value or "").strip()
         if command and command not in commands:
             commands.append(command)
     return commands
-
-
-def _looks_like_command(value: str) -> bool:
-    prefixes = (
-        "PYTEST_ADDOPTS=",
-        "bash ",
-        "git ",
-        "npm ",
-        "pnpm ",
-        "pytest ",
-        "python ",
-        "python3 ",
-        "uv ",
-    )
-    return value.startswith(prefixes)
 
 
 def _items(value: Any) -> list[Any]:

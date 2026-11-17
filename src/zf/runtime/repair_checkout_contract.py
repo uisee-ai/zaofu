@@ -37,7 +37,5 @@ def bind_checkout_contract(contract: dict, source_root: Path) -> dict:
 
     instruction = command(contract["verification_instruction"])
     commands = [command(item) for item in contract["verification_commands"]]
-    if instruction.startswith("env PYTHONPATH=src ") and instruction not in commands:
-        commands.append(instruction)
     return {**contract, "scope": scope,
             "verification_instruction": instruction, "verification_commands": commands}
