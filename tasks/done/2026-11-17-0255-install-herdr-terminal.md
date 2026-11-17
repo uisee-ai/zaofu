@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现提交: `5de19a1f fix: install and verify Herdr for web terminals`
 
 # 安装脚本集成 Herdr 与 Web Terminal 验证
 
