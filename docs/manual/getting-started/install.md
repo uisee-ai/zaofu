@@ -15,13 +15,14 @@ cd zaofu
 ./install.sh
 ```
 
-菜单含三种选择：
+安装器的提示、菜单、错误和辅助脚本输出使用英文。菜单含四种选择：
 
 | 选择 | 安装结果 | 是否需要 Controller |
 | --- | --- | --- |
 | standalone（默认） | 本机完整工作台，之后从 Web 添加/打开 Project | 不需要账号、Keycloak 或注册码 |
 | observed | 本机工作台 + 外部实例注册 + 授权 Project 的心跳、Session、tokens 等观测 | 需要已批准的外部 Workspace 和注册码 |
 | cloud | 提示前往门户注册、申请云端实例，本机不安装 | 由 Controller 审核和创建实例 |
+| remove | 停止当前源码安装拥有的服务，移除依赖环境和构建产物 | 不自动注销 Controller 身份 |
 
 脚本会安装缺少的 uv、Herdr 到 `~/.local/bin`，缺少或低于 22 的 Node.js 到
 `~/.local/share/zaofu/node`，使用 `uv sync --locked`、`npm ci` 和生产 Web 构建。
@@ -113,3 +114,29 @@ tmux kill-session -t '=zf-controller-8002'  # 仅 observed 存在此会话
 诊断使用 `<workspace-home>/install-web-<port>.log`、`webkanban-<port>.log` 和
 `controller-<port>.log`。这些文件可能包含访问链接，应按私有文件处理。CLI/配置详细合同见
 [部署 Connector](../../impl/203-controller-workspace-connector.md)。
+
+## 卸载 ZaoFu
+
+菜单选择 **4) Remove ZaoFu**，或在要卸载的源码目录中执行：
+
+```bash
+./install.sh remove                         # 先显示计划，交互确认默认 No
+./install.sh remove --yes                   # 自动化：确认执行卸载
+./install.sh --mode remove --yes            # 等价形式
+```
+
+自定义 Workspace 需传原来的 `--workspace-home PATH`。卸载会停止该源码目录启动并标记归属
+的 Dashboard/Connector tmux 服务（包括不同端口），删除该目录的 `.venv`、`web/node_modules`
+和 `web/dist`。源码、Project、Workspace、访问令牌、Provider 登录和共享的 uv、Node、Herdr
+全部保留；不会删除 checkout 或执行系统包卸载。重新运行 `./install.sh` 可以恢复运行环境。
+
+卸载不下载/安装依赖，重复执行不会删除保留数据。非交互缺少 `--yes` 时仅输出计划并返回
+非零；交互选择 No 时没有停止/删除副作用。正常完成才输出 `ZaoFu runtime removed`。
+
+为保护仍在使用的安装，发现活跃 Project runtime、未 Stop CLI 的 Web Terminal、其他使用该
+checkout 的进程、符号链接目标或项目/Workspace 数据落入待删目录时会拒绝删除。状态目录按
+Project `zf.yaml` 解析，不假设 `.zf`。旧启动器创建且没有归属标记的服务应先明确停止，再卸载；
+脚本不会仅凭相似的 session 名称终止进程。
+
+managed/cloud 绑定仍需先完成既有 Controller 生命周期；本地卸载不绕过纳管边界。observed
+卸载只停止本地采集，保留注册凭据和待发送数据，不会自动撤销 Controller 中的身份。

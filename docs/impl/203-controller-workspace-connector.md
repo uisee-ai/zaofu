@@ -7,6 +7,8 @@
 [安装与 Controller 选择](../manual/getting-started/install.md)。
 standalone/observed 安装共同准备 Herdr，并复用现有 Web Terminal adapter 校验宿主能力；
 该检查不授予 Controller 权限、不修改 managed binding，也不自动登录模型 Provider。
+安装器另提供英文 `remove` 入口，按 tmux 运行时归属标记停止本安装服务并清理生成目录，
+保留配置/凭据/观测队列；它不等价于 `unenroll`，也不撤销 Controller 身份。
 
 本批对应 [Z01a](../../tasks/done/2026-11-10-1226-z01a-workspace-connector.md)，承接
 [接入计划](201-controller-integration-plan.md)、设计 203/204 与 Controller `bb06981` 的公开 HTTP 合同。

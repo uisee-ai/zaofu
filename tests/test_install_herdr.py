@@ -90,7 +90,7 @@ def test_existing_binary_is_never_replaced(installer, tmp_path, monkeypatch, ver
     if compatible:
         installer.ensure_herdr(check_only=True)
     else:
-        with pytest.raises(ValueError, match="不兼容"):
+        with pytest.raises(ValueError, match="Incompatible"):
             installer.ensure_herdr()
     assert binary.read_bytes() == payload and not calls
 
@@ -107,7 +107,7 @@ def test_broken_destination_and_concurrent_install_are_preserved(installer, tmp_
     binary.parent.mkdir(parents=True)
     binary.symlink_to(tmp_path / "missing")
     calls = download_fixture(installer, monkeypatch, b"must-not-download", fail=True)
-    with pytest.raises(ValueError, match="不会覆盖"):
+    with pytest.raises(ValueError, match="will not be overwritten"):
         installer.ensure_herdr()
     assert binary.is_symlink() and not calls
     binary.unlink()
@@ -122,6 +122,6 @@ def test_broken_destination_and_concurrent_install_are_preserved(installer, tmp_
 def test_unsupported_host_does_not_download(installer, monkeypatch):
     monkeypatch.setattr(installer.platform, "system", lambda: "Windows")
     calls = download_fixture(installer, monkeypatch, b"must-not-download", fail=True)
-    with pytest.raises(ValueError, match="支持"):
+    with pytest.raises(ValueError, match="supports"):
         installer.ensure_herdr()
     assert not calls

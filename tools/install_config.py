@@ -13,19 +13,19 @@ from zf.core.config.controller_workspace import load_controller_workspace
 def configure(args) -> None:
     path = args.path.expanduser().absolute()
     if path.name != "zf.yaml" or path.is_symlink():
-        raise ValueError("部署配置必须是普通 zf.yaml 文件")
+        raise ValueError("Deployment configuration must be a regular zf.yaml file")
     if path.exists():
         config = load_controller_workspace(path)
         if config.management != "observed" or config.hosting != "external":
-            raise ValueError("已有托管配置，请使用 zf controller 生命周期")
+            raise ValueError("Managed configuration exists; use the zf controller lifecycle")
         requested = {
             "endpoint": args.endpoint, "issuer": args.issuer,
             "workspace_id": args.workspace_id, "mode": args.model_mode,
             "projects": tuple(args.project),
         }
         if any(value and value != getattr(config, key) for key, value in requested.items()):
-            raise ValueError("已有配置与参数冲突；不会修改安装目标或授权项目")
-        print("复用已有 WorkspaceConfig；未修改配置或安装身份")
+            raise ValueError("Options conflict with the existing configuration; installation identity and project scope are preserved")
+        print("Reusing WorkspaceConfig; configuration and installation identity are unchanged")
         return
     raw = {
         "version": "1.0", "kind": "WorkspaceConfig",
@@ -48,7 +48,7 @@ def configure(args) -> None:
         candidate.chmod(0o600)
         load_controller_workspace(candidate)
         os.link(candidate, path)
-    print("已创建 observed WorkspaceConfig（尚未注册）")
+    print("Created observed WorkspaceConfig (enrollment pending)")
 
 
 def main() -> int:
@@ -62,7 +62,7 @@ def main() -> int:
         configure(args)
     except (ValueError, OSError, yaml.YAMLError):
         # URLs/invalid YAML can contain credentials: never render inputs or exceptions.
-        print("配置失败：检查 zf.yaml、HTTPS 地址、已批准 Workspace ID；已有配置不会被覆盖。")
+        print("Configuration failed: check zf.yaml, HTTPS URLs and the approved workspace ID. Existing configuration is preserved.")
         return 2
     return 0
 
