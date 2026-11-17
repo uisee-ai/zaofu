@@ -117,3 +117,9 @@ TerminalRegistry 提供终端 Session 生命周期；execution 收据保留 Oper
 不再把终端当成可复用 Session。新增测试从实际 EventWriter/collect_project caller 复现
 先红后绿，闭包 131 项通过。错误历史收据保持原样，不改账、不重新解释同一 message_id；
 当前实验旧行保留为反例，生产若已有同类数据须单独评审显式纠正方案。新 Session 已在 claw02 复验为 stopped；对应缺失用量保持 pending/null。
+
+最终验证：默认 PRD 项目的真实 Kanban 已完成 snapshot 渲染；新终端停止状态及未知
+用量已通过 Controller API 复核。脱敏证据、失败轮次、运行脚本、镜像/源码摘要及清理
+结果归档到 `/home/min/workspace/.verification-archives/zaofu-controller-q01b-claw02-20261117/`。
+原 standalone 8002 保留，实验资源已清理；本轮未获得真实 Pod Provider/CPA 或生产灾备
+资格，Z05 继续 active。本地实现提交已完成，未合并/推送。
