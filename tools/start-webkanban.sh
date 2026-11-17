@@ -397,6 +397,7 @@ if [[ "$workspace_only" == "1" ]]; then
 fi
 
 launch_env=(
+  PATH="$PATH"
   ZF_WORKSPACE_HOME="$workspace_home"
   ZF_WEB_ACTION_TOKEN="$token"
   ZF_KANBAN_AGENT_CODEX_HEADLESS_SANDBOX="$codex_headless_sandbox"

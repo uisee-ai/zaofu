@@ -31,6 +31,11 @@
 
 ## 1. 安装 ZaoFu（必需）
 
+首次安装可在源码根目录运行 `./install.sh`，选择独立使用、接入 Controller，或前往云端门户。
+默认 standalone 不要求 Controller 账号。脚本安装用户级依赖、构建并启动 Dashboard；
+非交互使用 `./install.sh --mode standalone`。注册码、远程访问和重复安装说明见
+[安装与 Controller 选择](getting-started/install.md)。下面保留开发者手动安装路径。
+
 必需环境：
 
 - Python 3.11+、`uv`、Git、`tmux`；
@@ -65,11 +70,11 @@ export ZAOFU_ROOT=/path/to/zaofu
 完成标志：Dashboard 打开并进入安装 Onboarding。安装步骤只需要按本教程执行，
 本页不要求先创建示例 Project。
 
-### Web Terminal（默认启用，可选安装）
+### Web Terminal（install.sh 集成安装）
 
-Dashboard host 默认启用 Web Terminal；这只开放受鉴权的 Terminal 能力，不会自动安装或
-启动 CLI。若要在 Dashboard 内实际运行 Claude Code/Codex TUI，还需安装 Herdr `>=0.8.0`；
-它是宿主二进制，不属于 `uv sync` 的 Python 依赖：
+Dashboard host 默认启用 Web Terminal；运行时不会自动安装或启动 CLI。根目录 `install.sh`
+已经集成 Herdr 下载、SHA256 和协议检查。若使用手动 `uv sync` 路径，仍需安装 Herdr
+`>=0.8.0`；它是宿主二进制，不属于 Python 依赖：
 
 ```bash
 curl -fsSL https://herdr.dev/install.sh | sh

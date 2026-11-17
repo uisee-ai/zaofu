@@ -2,6 +2,14 @@
 
 此文保留 Z01a 的历史范围和验证；后续 managed 实现见 [204 接线](204-controller-managed-runtime.md)。
 
+本地安装入口现由根目录 `install.sh` 提供 standalone / observed 选择：复用下述部署配置、
+安装密钥和注册 CLI，不引入新 IAM 或改变 managed 生命周期。操作流程见
+[安装与 Controller 选择](../manual/getting-started/install.md)。
+standalone/observed 安装共同准备 Herdr，并复用现有 Web Terminal adapter 校验宿主能力；
+该检查不授予 Controller 权限、不修改 managed binding，也不自动登录模型 Provider。
+安装器另提供英文 `remove` 入口，按 tmux 运行时归属标记停止本安装服务并清理生成目录，
+保留配置/凭据/观测队列；它不等价于 `unenroll`，也不撤销 Controller 身份。
+
 本批对应 [Z01a](../../tasks/done/2026-11-10-1226-z01a-workspace-connector.md)，承接
 [接入计划](201-controller-integration-plan.md)、设计 203/204 与 Controller `bb06981` 的公开 HTTP 合同。
 实现部署注册、空工作台心跳、多个本地 Project 的授权观测、安装凭据更新及可靠重放。
