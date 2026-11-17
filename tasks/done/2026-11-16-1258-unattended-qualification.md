@@ -1,18 +1,19 @@
 # 无人恢复 P0/P1 与新 PRD 资格验收
 
-> 状态: active
+> 状态: done
+> 实现: `1bff811d` — `fix: keep media review within frozen acceptance obligations`（累计实现含`7bbd61ad`及后续修复）
 
 用户已批准建议中的 P0/P1 实施及真实 PRD 两轮评估。基线 2137a567；独立 worktree unattended-qualification-20261116。规格：docs/spec/unattended-recovery-qualification.spec.md（本地忽略）。前序证据位于 continuity-handoff-20261114/reports/unattended-repair-20261116T1053Z/review.md。实现记录：docs/impl/unattended-qualification.md。
 
 ## Backlog / 验收
 
-- [ ] B01 / U01：标准宿主监督部署入口 → verify: CLI 测试、真实用户 service 控制器退出恢复；pause/stop/terminal 拒绝重启；配置与重启前置可诊断。
-- [ ] B02 / U02：预授权测试 → verify: 精确合同/源码/依赖绑定、限定预算与命令、旧授权/变更/未决副作用拒绝；调用入口和证据消费测试。
-- [ ] B03 / U03：统一 workspace/scratch 权限 → verify: 实际派发说明及原生结果提交无需人工澄清；canonical state 仍拒绝直接改写。
-- [ ] B04 / U04：修复链路配置和集成 → verify: AR 补丁、独立验证、受控 apply、加载新源码、恢复原 checkpoint；越界失败关闭。
-- [ ] B05 / U05：恢复效果 → verify: 诊断建议/应用不能冒充原目标进展；重复恢复幂等且旧检查点退出。
-- [ ] B06 / U06：诊断生命周期 → verify: 阶段/报告落盘，终止不冒充成功，跨进程重启可重建未完成工作。
-- [ ] B07 / U07：冻结最终源码，最小真实 PRD 2+2 → verify: 原业务断言及 Docker 浏览器证据，账本到 run.goal.completed；规定故障矩阵与人工介入计数独立记录。
+- [x] B01 / U01：标准宿主监督部署入口 → verify: CLI 测试、真实用户 service 控制器退出恢复；pause/stop/terminal 拒绝重启；配置与重启前置可诊断。
+- [x] B02 / U02：预授权测试 → verify: 精确合同/源码/依赖绑定、限定预算与命令、旧授权/变更/未决副作用拒绝；调用入口和证据消费测试。
+- [x] B03 / U03：统一 workspace/scratch 权限 → verify: 实际派发说明及原生结果提交无需人工澄清；canonical state 仍拒绝直接改写。
+- [x] B04 / U04：修复链路配置和集成 → verify: AR 补丁、独立验证、受控 apply、加载新源码、恢复原 checkpoint；越界失败关闭。
+- [x] B05 / U05：恢复效果 → verify: 诊断建议/应用不能冒充原目标进展；重复恢复幂等且旧检查点退出。
+- [x] B06 / U06：诊断生命周期 → verify: 阶段/报告落盘，终止不冒充成功，跨进程重启可重建未完成工作。
+- [x] B07 / U07：冻结最终源码，最小真实 PRD 2+2 → verify: 原业务断言及 Docker 浏览器证据，账本到 run.goal.completed；规定故障矩阵与人工介入计数独立记录。
 
 ## 执行纪律
 
@@ -304,3 +305,8 @@ R15 两Task完成，F1–F6触发且源码修复独立验证/应用/加载后，
 
 辅助epoch2已自动结算迟到triage效果，并由两条真实Reader打开截图；lane0正式通过。lane1因交接新增“review trace/video”措辞推导额外播放义务而暂停：原PRD/PAS要求WebM留存与身份绑定，未单独要求播放。此属本session提示引入的范围偏移，修正交接与技能，区分留存、交互证明、明确播放义务，不增加或豁免冻结验收标准。该措辞修正在开发分支，真实后续验收待完成。
 措辞修正验证：58项定向通过/1跳过，sentinel53通过；无权限、预算或产品合同变更。
+
+
+## 最终关闭：R16
+
+2026-11-17 13:44 UTC原始冻结轮自主完成，临时恢复介入0；F1–F6、双Verify、Discovery、Judge及goal闭合。详细对账与边界见[实施文档](../../docs/impl/unattended-qualification.md)和[持久资格收据](../../docs/impl/unattended-qualification-r16.json)。此前active/失败记录为历史，不覆盖最终事实。仅本批B01–B07归档，后续优化及全部207–209不在此归档声明内。
