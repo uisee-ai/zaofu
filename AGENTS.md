@@ -250,6 +250,23 @@ Multiple agent sessions may work this repo concurrently. Four hard rules:
   running Web/tooling from that checkout, confirm it is clean and current; do
   not operate from a stale tree.
 
+## 开发 Worktree 合并收尾
+
+- 日常开发 worktree 合入 `dev` 且合并后验证通过后，合并执行者必须完成对应
+  worktree 和已完全合并本地分支的清理；合并授权包含正常清理，无须再次询问，
+  不依赖 push。只有用户明确要求保留时才保留。
+- 报告、截图、trace 和回放证据先归档至实际 `dev` checkout 的
+  `reports/worktree-archives/<UTC时间>-<分支标识>/`（gitignored），校验文件清单与
+  哈希、记录源 branch/HEAD 和合并 SHA，并将最终报告链接指向归档位置。
+  资料需要保留不是长期保留 worktree 的理由；历史回放中的原路径保留为来源记录。
+- 清理必须确认源 HEAD 已合入、无未提交/未跟踪的待开发内容、无活跃 agent/tmux/
+  服务占用。未归档 backlog 或候选代码需先妥善交接，不能当缓存删除。
+  遇到这些阻塞或归档失败，应处理并报告 `merged_not_closed`，不能宣称收尾完成，
+  不能用 `--force` 或 `branch -D` 绕过检查。
+- 由 `dev` 合并执行者从源 worktree 外运行 `git worktree remove`、`git branch -d`
+  并核实删除；只处理本次对应的 worktree，不批量清理其他会话或运行时 worker。
+  后续开发从最新 `dev` 新建 worktree。具体步骤沿用 `zf-harness-commit-push`。
+
 ## Docs / Commands
 
 - Architecture, runtime, config schema, Web/API, security, or external
