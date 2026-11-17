@@ -71,13 +71,19 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         stage, _ = reader_stage_for_failure(service.config, events, failure)
         if stage is None:
             continue
+        from zf.runtime.host_evidence_media import materialize_container_media
+        indices = materialize_container_media(service.state_dir, list(receipts.values()), image=policy.image)
+        media = (' Read-only media indices (paths relative to state_dir, source/digests bound): '
+                 + ', '.join(str(service.state_dir / ref['ref']) for ref in indices)
+                 + '. Open the indexed image files directly with the image viewer; do not extract to scratch '
+                 'or /proc. Review images and recorded trace/video independently; files alone are not a verdict.') if indices else ''
         payload = {'repaired_failure_event_id': failure.id, 'approval_ref': policy.approval_ref,
             'reason': 'Preauthorized container execution evidence is available for the original frozen target; independent verification required.',
             'operator_feedback': [
                 'Read the following bound container receipts as execution evidence, independently evaluate the original acceptance criteria. '
                 'Inspect exit codes and output, including failures. Do not repeat an unavailable sandbox command or treat the receipt as a product verdict. '
                 + 'Commands without receipts remain unverified: ' + ', '.join(sorted(required - receipts.keys())) + '. '
-                + ', '.join(str(service.state_dir / r['ref']) for r in receipts.values())]}
+                + ', '.join(str(service.state_dir / r['ref']) for r in receipts.values()) + media]}
         requested = service.writer.emit('control.action.requested', actor='run-manager', payload={
             'action': 'stage-replan-new-generation', **payload})
         result = service.execute(action='stage-replan-new-generation', requested_action='stage-replan-new-generation',
