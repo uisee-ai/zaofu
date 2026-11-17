@@ -258,3 +258,25 @@ CLI 追加 revision 2 后，旧流 max_seq=20 正确拒绝新序号 21、22；�
 的历史上限授权到 22。未修改数据库或原消息，随后均 ACK。`delta-delete-2` 的独立
 前置检查及 Dashboard 已确认已知 1,976,314 tokens 保留、两条 partial、完整总量 null、
 账单 null 和预算冻结；删除后续步骤失败不影响这些已完成断言，失败原因另记录。
+
+## Q01c：验证边界与 Workflow 资源复盘
+
+后续 `delta-delete-3` 已完成真实 CSI 备份阻止删除、实验保留期、备份清除与审核、
+PVC/PV/Longhorn 卷清理和账号关闭；并再次核对上述 partial Dashboard。不将任意
+应用 HTTP preview 与已通过的 artifact preview 混淆。
+
+默认 PRD 路由仍未完成，保留原请求和 paused/safe-halt 证据。实验配置 800m CPU、
+2 GiB、2 agent 槽位与单调用 600 秒：常驻 Run Manager 和 product scan 已占满槽，
+tech scan 被容量准入拒绝；多次受控读取耗时十几至几十秒，返工触及期限。600 秒
+是夹具配置，Runtime 默认是 3,600 秒，不据此修改产品默认或削掉默认角色。
+
+首轮只转发工具 stdout，缺少完整执行状态用于诊断；复查第二轮原始记录则证实
+`wait` 与成功的受控读取存在，不能继续归因于未等待或工件不可读。agent 方法应
+保留工具 handle、退出状态与最终正文；空 stdout 不等于空输入。资源/期限配置应
+覆盖默认角色及其调用耗时，预算期限不能通过租约续期暗中延长。未知责任必须保留，
+资源调整不构成旧 Run 成功证明；需从原请求走完完整门禁后才签收真实 Workflow。
+
+最终 `terminal-final-adopt-1` 通过正常 stop/MFA adoption/start 更新最后的 Terminal
+快照修复；实际 `/opt/zaofu/src` 的 1,465 文件摘要全部一致，Pod ready 且重启数 0。
+该结果证明候选部署与源码绑定；Terminal 最终快照行为由 35 项定向回归覆盖，不
+据此宣称未完成的真实默认 Workflow 已恢复成功。

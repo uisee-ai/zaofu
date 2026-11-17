@@ -79,3 +79,31 @@ Run Manager 419,492 已知 tokens 的停止缺少原生完成边界，却被旧�
 而不修改旧 ACK/已知消费。回归发现并修正旧 settle ACK 时序与受管 CLI 配置问题。
 原生/Terminal 闭包 133 passed；其余新闭包 90 passed，CLI/Workspace 修复复验
 38 passed；sentinel 53 passed。仍须部署后实际纠正两条中断收据和复核冻结，整批 active。
+
+## 实际历史纠正及复盘
+
+`fd5f93c6 fix: retain incomplete native usage and append audited corrections` 已在 Charlie
+正常 stop/MFA adoption/start 部署，1,465 个实际 import 源码文件摘要一致。
+两条 revision 2 在旧 handoff 上限 20 被正确阻止；审核精确纠正与旧 writer fence，
+通过 Controller 运维 CLI 将相同 uploader/origin/stream 上限调整到 22 后均 ACK。
+`delta-delete-3` 再核对已知 1,976,314 tokens、两条 partial、null 完整总量/账单和冻结。
+原始收据、已知消费与未结责任未删除，任务仍 active。
+
+完整 Workflow 夹具为 800m/2 GiB/2 agents、单调用 600 秒；Runtime 默认期限是
+3,600 秒，不能将夹具配置误报为产品默认。Run Manager 与 product scan 占满槽位，
+tech scan 容量准入拒绝；首轮工具只输出 stdout，缺少执行状态用于诊断。第二轮
+工具 `wait` 和受控 artifact read 成功记录确实存在，不能归因于未等待或文件始终
+不可读；十几至几十秒的多次读取和预算期限使执行无法完成。保留原 Run，不新建
+替代请求制造通过。后续须按默认角色集合配置资源/期限、处理未知责任并完整恢复验收。
+
+`bf5f3837 fix: bind terminal completion to final native counter snapshot` 的 35 项定向
+回归通过，`terminal-final-adopt-1` 正常 MFA 更新已完成，实际 1,465 源码摘要一致。
+运行镜像 `sha256:52261bbcc8eb42414a04e06340676259f5ed847955b3290841b88459051d41d7`；
+真实完整 Workflow 仍未通过，不以源码核对或镜像就绪替代产品验收。
+
+收尾通过产品接口停止三个实验实例，清除 7 份临时 Codex auth，保留宿主原文件、
+原 Workflow/PVC 和未知消费。原 standalone 8002=200。脱敏证据及 677 个文件摘要
+校验位于 `/home/min/workspace/.verification-archives/zaofu-controller-q01c-claw02-20261117/`。
+最终 `dev-verify plan --base dev` 保守扩展到 632 个测试文件及 Web；没有据文件数量
+再触发全套。各修复的实际 caller/共享合同闭包和 sentinel 证据按检查点记录，不将
+聚焦测试或 Pod ready 解释为完整 Provider Workflow 通过。本任务继续 active。
