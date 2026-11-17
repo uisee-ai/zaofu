@@ -72,3 +72,13 @@ operation closeout、fanout 投影、CLI、Run admission 和 mock flow 回归。
 和历史失败保持原样。该入口不启动新规划代际，也不替代 Critic 的语义判断。
 
 真实 CLI 调用链与中断重放回归见 `tests/test_synth_timeout_checkpoint.py`。
+
+## 长期停机后的读取凭证
+
+角色 token 轮换会更新 credential generation，但不会自动延长旧 attempt 的
+48 小时读取绑定。恢复简报投递前，Kernel 必须重新核对当前活跃 operation、
+dispatch、角色、attempt、request hash 和不可变 source manifest，再调用既有
+`bind_attempt_artifact_read_capability` 续发同范围凭证。旧凭证自然过期时仍拒绝
+普通读取；只有合法恢复投递触发续发，不把全部历史 attempt 一并延期。
+读取账本、输入范围和请求不变；终态、policy 阻塞、已准入结果、篡改来源和身份
+漂移均不续发、不投递。回归见 `tests/test_reader_recovery_capability.py`。

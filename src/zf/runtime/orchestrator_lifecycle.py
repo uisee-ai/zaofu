@@ -1968,12 +1968,9 @@ class LifecycleManagerMixin(
                 "The original request identity and required reads remain unchanged."
             )
             if role.role_kind == "reader":
-                from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+                from zf.runtime.reader_respawn_continuation import reader_recovery_guidance
 
-                prompt += reader_continuation_guidance(
-                    attempt_id=str(fanout_child.get("attempt_id") or ""),
-                    backend=role.backend, cli=zf_cli_cmd(),
-                )
+                prompt += reader_recovery_guidance(self, role, fanout_child)
             context = self._dispatch_context(
                 role=role,
                 briefing_path=path,
