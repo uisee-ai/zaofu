@@ -60,8 +60,94 @@ Agent, and Feishu interaction in one product walkthrough.
 
 ## Quick Start
 
-首次安装可运行 `./install.sh`，选择本机独立使用（默认）、本机注册到 Controller，或前往云端申请实例。
-非交互使用 `./install.sh --mode standalone`；详见[安装说明](docs/manual/getting-started/install.md)。
+### Install and start the Dashboard
+
+On Linux or macOS, run the installer as your normal user. Prerequisites are
+Bash, Python 3, curl, Git, tmux, and tar. On Ubuntu, install missing prerequisites
+with `sudo apt install python3 curl git tmux tar`.
+
+```bash
+git clone https://github.com/uisee-ai/zaofu
+cd zaofu
+./install.sh
+```
+
+The installer uses English prompts and offers four choices:
+
+| Menu option | Result |
+| --- | --- |
+| **1) Install standalone** (default) | A complete local workspace; no Controller account or enrollment required. |
+| **2) Install and enroll with a Controller** | A local workspace with instance, authorized project, session, and token telemetry (`observed` mode). |
+| **3) Use a cloud workspace** | Instructions to request an instance in the Controller portal; provisioning follows approval. Nothing is installed locally. |
+| **4) Remove ZaoFu** | Stop this installation's services and remove its generated runtime files, preserving user data. |
+
+The script installs missing uv, Node.js 22, and Herdr for Web Terminal in your
+user directory, syncs locked Python dependencies, builds the Dashboard, and
+checks service readiness. Install and sign in to Codex or Claude Code separately
+before starting agent work.
+
+By default, open **http://127.0.0.1:8001/**. The authenticated access link is saved
+in the private file `<workspace-home>/install-web-<port>.log`; the default
+Workspace directory is `~/.zaofu` (or `ZF_WORKSPACE_HOME`). Use that link to
+complete Web Bootstrap and add/open projects. For a remote node, forward the
+default port with `ssh -L 8001:127.0.0.1:8001 user@your-node`.
+
+```bash
+./install.sh --mode standalone                 # Non-interactive local installation
+./install.sh --yes --no-start                   # Install without starting services
+./install.sh --mode standalone --skip-deps --port 8002  # Reuse dependencies/build
+./install.sh --help                            # All options
+```
+
+Use `--workspace-home /path/to/workspace` for a custom data directory and
+`--host 0.0.0.0` for direct access on a trusted network. Repeated installation
+preserves configuration and data; it does not replace an existing service.
+Services run in user tmux sessions; rerun the installer after a reboot.
+
+### Enroll a local node with a Controller
+
+First obtain an approved **external Workspace**, the Controller HTTPS origin,
+and the Keycloak realm issuer. Then run the interactive enrollment flow:
+
+```bash
+./install.sh --mode observed
+```
+
+Select the local registry project IDs to authorize; an empty selection reports
+only instance heartbeats. The first run prepares the installation public key.
+If no enrollment code is supplied, it exits with code **3** and leaves services
+stopped. Have the Controller owner issue a code for that key, save it in a
+user-owned file, and continue:
+
+```bash
+chmod 600 /private/enrollment-code
+./install.sh --mode observed --skip-deps --code-file /private/enrollment-code
+```
+
+Keep the same `--workspace-home` and `--workspace-config` paths on every run if
+customized. `observed` adds telemetry; managed/cloud instances use the Controller
+lifecycle for provisioning, authorization, and release.
+
+### Remove ZaoFu
+
+Choose **4) Remove ZaoFu**, or run from the installation's source directory:
+
+```bash
+./install.sh remove          # Show the plan and ask for confirmation (default: No)
+./install.sh remove --yes    # Apply removal without an interactive prompt
+```
+
+Removal stops the Dashboard/Connector services owned by this installation and
+deletes `.venv`, `web/node_modules`, and `web/dist`. Source code, projects,
+Workspace data, credentials, and shared uv/Node.js/Herdr installations remain.
+Stop active project runtimes and Web Terminals first; managed bindings require
+Controller release. Removal does not revoke Controller enrollment. Pass the same
+`--workspace-home` if customized; run `./install.sh` again to reinstall.
+
+See the [installation and enrollment guide (Chinese)](docs/manual/getting-started/install.md)
+for detailed parameters, logs, and lifecycle behavior.
+
+### Development and CLI setup
 
 From a ZaoFu source checkout, install the common development and runtime
 dependencies, then inspect the recommended product Controller for a target
@@ -240,6 +326,7 @@ apply remains human- or token-gated. See the
 
 | Start here | Document |
 |---|---|
+| Installation, enrollment, and removal | [Installer guide (Chinese)](docs/manual/getting-started/install.md) |
 | First project and first request | [Quick Start](docs/manual/01-quickstart.en.md) |
 | Kernel, state, and lifecycle model | [Architecture Overview](docs/manual/architecture.en.md) |
 | Daily operator commands | [CLI Operations](docs/manual/03-cli-operations.en.md) |
