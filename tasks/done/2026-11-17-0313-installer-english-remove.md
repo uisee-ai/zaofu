@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现提交: `d65b44b3` — `feat: add safe runtime removal and English installer prompts`
 
 # 安装器英文界面与卸载入口
 
