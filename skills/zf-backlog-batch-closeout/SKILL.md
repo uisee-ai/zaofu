@@ -111,6 +111,11 @@ commit.
      clean; otherwise set `merge_ready=false`, list every residual path, and
      leave the worktree and branch intact;
    - for a direct commit on `dev`, report `merge_ready=not_applicable`;
+   - list reports/screenshots/trace/replay evidence to preserve in the handoff.
+     On an authorized merge, the merge owner archives and verifies these under
+     the actual dev checkout's `reports/worktree-archives/` before removing the
+     source worktree. Evidence alone must not become a retention exception;
+     final report links must use the surviving archive path.
    - once a worktree is declared merge-ready, freeze it. Any later write
      invalidates the handoff and requires this audit again;
    - do not remove the worktree here. Final merge and cleanup belong to
