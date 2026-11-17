@@ -64,7 +64,8 @@ def respawn_instance_with_lock(
             if resume_failed_synth:
                 from zf.runtime.synth_restart_checkpoint import reopen_synth_restart_checkpoint
                 try:
-                    reopen_synth_restart_checkpoint(runtime, role, resume_failed_synth)
+                    reopen_synth_restart_checkpoint(runtime, role, resume_failed_synth,
+                                                    approval_ref=recovery_approval_ref)
                 except (ValueError, OSError) as exc:
                     return WorkflowRuntimeDecision(
                         action="resume_rejected", role=role.instance_id, reason=str(exc),

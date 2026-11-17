@@ -22,7 +22,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--resume-failed-reader", default="", metavar="EVENT_ID",
                         help="Resume this exact reader transport checkpoint and its required reads")
     parser.add_argument("--recovery-approval-ref", default="", metavar="PATH",
-                        help="Project-local approval artifact bound to the reader checkpoint")
+                        help="Project-local approval artifact bound to a reader or synth timeout checkpoint")
     parser.add_argument("--dry-run", action="store_true", help="Record commands without executing tmux")
     parser.add_argument(
         "--state-dir",
@@ -91,7 +91,8 @@ def run(args: argparse.Namespace) -> int:
             state_dir,
             context.project_root,
             dry_run,
-            **({"resume_failed_synth": resume_failure} if resume_failure else {}),
+            **({"resume_failed_synth": resume_failure, "recovery_approval_ref": approval_ref}
+               if resume_failure else {}),
             **({"resume_failed_reader": reader_failure, "recovery_approval_ref": approval_ref}
                if reader_failure else {}),
         )
@@ -173,6 +174,8 @@ def _restart_role(
         project_root=project_root,
     )
     restart_options = {"resume_failed_synth": resume_failed_synth} if resume_failed_synth else {}
+    if resume_failed_synth and recovery_approval_ref:
+        restart_options["recovery_approval_ref"] = recovery_approval_ref
     if resume_failed_reader:
         restart_options.update(resume_failed_reader=resume_failed_reader,
                                recovery_approval_ref=recovery_approval_ref)
