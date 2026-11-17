@@ -280,3 +280,15 @@ blocked结果修正最终51文件影响闭包924 passed / 1 skipped，sentinel53
 R14修正完成：Planner早期上下文与Critic执行报告暴露rolling-smoke选择、顺序和独立Candidate工作区，不自动执行未标记build；每片列实际smoke命令ID。既有handoff索引标记预览截断，鉴权分页CLI返回同摘要持久ref；执行卡提示按actor找hook和event引用。canonical技能补充干净环境前置及复合命令完整读取，同步两provider。
 
 真实集成消费者反例及Planner/Critic调用3RED，交接2RED/4保护通过→33定向通过。首轮闭包912通过/1跳过/1Reader措辞断言失败，撤回误改后最终58文件闭包913通过/1跳过，sentinel53通过；包含恢复和replan断点mock。briefing曾超12KiB，压缩重复描述后在完整闭包通过，不提高上限。这些不是新真实PRD通过；B07/U07待下一冻结轮。
+
+## R15：迟到 Task 完成的 effect 对账
+
+R15 两任务均独立 Verify、集成完成，Candidate 3d1d2682 冻结；两个 Writer 和 Verify
+均实际使用原 RED 事件，数字 smoke 在干净候选5通过，名称集成后完整6通过。
+名称 OA triage 于10:38:00 UTC超时（evt-6efbfce13edc），10:38:27 task.done
+（evt-2089615b0b49）晚到。现有代码只纠正诊断回复超时，OA 超时永远 terminal；
+主任务成功后仍可能阻挡 goal closure。新增 tick 回归先1RED/12保护通过，修正后
+60项定向通过；同Run/Task/代际的Kernel完成才追加结算，保留超时记录及全部门禁。
+影响闭包及最终真实验收待完成。运行中R15保持冻结源码，F6已注入，不热加载补丁。
+
+迟到对账验证：初版tick反例1RED/12保护通过；现场事件回放发现Task ID仅在事件信封，补齐此真实形状与缺失/冲突保护后61项定向通过。389文件影响闭包5123 passed / 7 skipped，sentinel53、flow-smoke10通过；闭包启动后调整了上述信封兼容，最终版本另跑67项定向闭包全部通过。原始三事件隔离回放：冻结旧源码不结算，修正源码追加1条绑定evt-2089615b0b49的passed，未写运行中账本。无人资格仍未完成。

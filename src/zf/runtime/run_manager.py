@@ -7761,8 +7761,13 @@ def _settle_pending_action_effects(
             and not previous.payload.get("observed_event_id")
             and previous.payload.get("effect_pending_event_id", pending.id) == pending.id
             and previous.payload.get("request_id") == payload.get("request_id")
-            and payload.get("action") == "resident-agent-reprompt"
-            and payload.get("request_kind") == "recovery_diagnosis"
+            and (
+                (payload.get("action") == "resident-agent-reprompt"
+                 and payload.get("request_kind") == "recovery_diagnosis")
+                or (payload.get("action") == "orchestrator-rework-triage"
+                    and payload.get("request_id")
+                    and previous.payload.get("effect_pending_event_id") == pending.id)
+            )
         )
         if not effect_id or (effect_id in terminal_by_id and not correctable_timeout):
             continue
@@ -7834,6 +7839,9 @@ def _settle_pending_action_effects(
         required_sequence = (
             required_sequence if isinstance(required_sequence, list) else []
         )
+        from zf.runtime.recovery_step import triage_completion_matches
+
+        late_triage = correctable_timeout and payload.get("action") == "orchestrator-rework-triage"
         observed = (
             _observe_required_effect_sequence(
                 events[index + 1:],
@@ -7847,12 +7855,16 @@ def _settle_pending_action_effects(
                     for candidate in events[index + 1:]
                     if candidate.type in expected | failures
                     and _effect_event_matches_scope(candidate, payload)
+                    and (not late_triage or triage_completion_matches(candidate, payload))
                 ),
                 None,
             )
         )
-        if correctable_timeout and (observed is None or observed.type not in expected):
-            continue  # Preserve timeout history until the bound reply is proven.
+        if correctable_timeout and (
+            observed is None or observed.type not in expected
+            or (late_triage and not triage_completion_matches(observed, payload))
+        ):
+            continue  # Keep timeout history until its bound recovery evidence arrives.
         timeout = int(payload.get("effect_timeout_seconds") or 0)
         from zf.runtime.pause_lifecycle import active_request_age_seconds
         timed_out = timeout > 0 and active_request_age_seconds(

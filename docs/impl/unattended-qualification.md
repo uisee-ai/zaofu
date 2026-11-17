@@ -299,3 +299,18 @@ blocked结果修正最终51文件影响闭包924 passed / 1 skipped，sentinel53
 R14修正完成：Planner早期上下文与Critic执行报告暴露rolling-smoke选择、顺序和独立Candidate工作区，不自动执行未标记build；每片列实际smoke命令ID。既有handoff索引标记预览截断，鉴权分页CLI返回同摘要持久ref；执行卡提示按actor找hook和event引用。canonical技能补充干净环境前置及复合命令完整读取，同步两provider。
 
 真实集成消费者反例及Planner/Critic调用3RED，交接2RED/4保护通过→33定向通过。首轮闭包912通过/1跳过/1Reader措辞断言失败，撤回误改后最终58文件闭包913通过/1跳过，sentinel53通过；包含恢复和replan断点mock。briefing曾超12KiB，压缩重复描述后在完整闭包通过，不提高上限。这些不是新真实PRD通过；B07/U07待下一冻结轮。
+
+## 迟到的任务完成与恢复效果对账（R15）
+
+真实 R15 中，名称任务的 OA triage effect 先超过 1800 秒窗口，约 27 秒后该任务
+独立 Verify、集成并生成 `task.done`。超时本身保留为历史事实；不能让它永久覆盖
+后来已经准入的完成证据，也不能把 OA 建议、Worker 自述或其它任务成功当成完成。
+
+`run_manager_tick` 对同一内核 pending/timeout 绑定追加一次 effect passed，要求
+原 request、pending ref 一致，且迟到完成来自 Kernel，包含相同 workflow、task、
+task_map_generation；冲突的 task/correlation、缺失代际、实际失败结果继续拒绝。
+这只结算已有恢复 effect，不创建任务完成、不改写历史、不跳过 Verify/Judge。
+回归入口：`tests/test_triage_late_completion.py`，连同诊断回复/恢复链测试运行。
+本修正在开发 worktree 验证，不热加载到 R15，真实无人资格仍需独立结论。
+
+迟到对账验证：初版tick反例1RED/12保护通过；现场事件回放发现Task ID仅在事件信封，补齐此真实形状与缺失/冲突保护后61项定向通过。389文件影响闭包5123 passed / 7 skipped，sentinel53、flow-smoke10通过；闭包启动后调整了上述信封兼容，最终版本另跑67项定向闭包全部通过。原始三事件隔离回放：冻结旧源码不结算，修正源码追加1条绑定evt-2089615b0b49的passed，未写运行中账本。无人资格仍未完成。
