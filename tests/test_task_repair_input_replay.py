@@ -82,3 +82,31 @@ def test_replay_does_not_replace_changed_contract_with_prior_authority(tmp_path)
     payload["contract_snapshot_digest"] = "b" * 64
     with pytest.raises(ValueError):
         prepare(payload, "a2")
+
+
+def test_restoring_original_request_redrives_prior_compatibility_block(tmp_path):
+    runtime, payload, first, prepare = setup_retry(tmp_path)
+    from zf.runtime.workflow_operation import WorkflowOperationService, reduce_workflow_operations
+    service = WorkflowOperationService(state_dir=runtime.state_dir, event_log=runtime.event_log,
+                                       event_writer=runtime.event_writer)
+    service.block(operation_id=first.operation_id, request_hash=first.request_hash,
+                  workflow_run_id="run", task_id="T1", reason="request_hash_compatibility_failed")
+    replay = prepare(deepcopy(payload), "a2")
+    assert replay.should_dispatch
+    row = reduce_workflow_operations(runtime.event_log.read_all())[first.operation_id]
+    assert row["status"] == "requested"
+    assert row["redrive_count"] == 1
+    assert row["compatibility_proof_digest"]
+    assert prepare(deepcopy(payload), "a3").request_hash == first.request_hash
+    assert reduce_workflow_operations(runtime.event_log.read_all())[first.operation_id]["redrive_count"] == 1
+
+
+def test_restoring_original_request_does_not_clear_other_blocks(tmp_path):
+    runtime, payload, first, prepare = setup_retry(tmp_path)
+    from zf.runtime.workflow_operation import WorkflowOperationService
+    service = WorkflowOperationService(state_dir=runtime.state_dir, event_log=runtime.event_log,
+                                       event_writer=runtime.event_writer)
+    service.block(operation_id=first.operation_id, request_hash=first.request_hash,
+                  workflow_run_id="run", task_id="T1", reason="semantic_rework_exhausted")
+    assert not prepare(payload, "a2").should_dispatch
+    assert not any(e.type == "workflow.operation.redrive_admitted" for e in runtime.event_log.read_all())

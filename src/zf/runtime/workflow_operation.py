@@ -495,7 +495,14 @@ class WorkflowOperationService:
             existing = load_workflow_operation(self.event_log, operation_id)
             if existing is not None:
                 existing_hash = str(existing.get("request_hash") or "")
-                if existing_hash and existing_hash != request_hash:
+                restoring_blocked_request = (
+                    bool(request.get("task_pipeline_stage"))
+                    and existing.get("status") == "blocked"
+                    and existing.get("reason") in {
+                        "request_hash_divergence", "request_hash_compatibility_failed",
+                    }
+                )
+                if existing_hash and (existing_hash != request_hash or restoring_blocked_request):
                     compatibility = self._task_pipeline_replay_compatibility(
                         existing=existing,
                         current_request_body=request_body,
@@ -554,6 +561,10 @@ class WorkflowOperationService:
                                 result_ref.get("sha256") or ""
                             ),
                             reason="task_pipeline_attempt_local_replay",
+                        )
+                    if existing_hash == request_hash:
+                        raise WorkflowOperationError(
+                            "Task Pipeline replay compatibility proof unavailable"
                         )
                     if (
                         str(existing.get("status") or "") == "blocked"

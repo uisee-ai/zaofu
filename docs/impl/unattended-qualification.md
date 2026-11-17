@@ -208,3 +208,6 @@ Reader失败回执还需覆盖聚合等待窗口：首个稳定、同策略、�
 首次Impl恢复request含critical-reader-repair-context；Provider未就绪后，新operation已存在，旧rework建议从调度投影退出。第二次派发因而丢失必读反馈，同operation请求摘要漂移。真实冻结request只删除该必读项，精确得到现场693f2da4摘要，证明不是Task语义变化。修正从当前operation的冻结request恢复原修复sidecar引用，核对Run/Task/operation/阶段/代际/合同及内容摘要；不同operation不继承，明确的新反馈仍触发通常的一致性检查，缺失或篡改原sidecar失败关闭。新attempt仍重新生成自己的manifest/读取回执和提交身份，不移植旧授权。
 
 真实调用回归先3RED/2保护通过，修正后96定向通过；影响闭包尚在执行。R11未热加载，新版本须经真实断点验证，不能倒改失败资格。
+
+
+R11断点epoch2真实确认新进程保持Terra与主任务workspace-write，模型提醒配置已生效；但恢复到原请求摘要后仍停在旧request_hash_compatibility_failed。ensure_operation仅在摘要不同才尝试兼容恢复，等于原摘要反而直接返回blocked。新增真实prepare→block→prepare回归1RED/7保护通过，修正后53定向通过；同一原请求也须校验冻结sidecar、生成原有兼容证明再受控redrive，其他阻塞不清除、重放仅准入一次。332文件增量闭包4238通过/12失败，12项均在2137a567基线已复现，完整对账保留。运行中epoch2未热加载；04:06受控停止，保留新的诊断现场，等待下次断点复验。
