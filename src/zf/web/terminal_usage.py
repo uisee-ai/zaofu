@@ -102,6 +102,7 @@ class _UsageSnapshot:
     context_usage_ratio: float | None = None
     observed_at: str = ""
     reason: str = ""
+    turn_boundary: dict = field(default_factory=dict)
 
 
 class TerminalUsageService:
@@ -293,8 +294,13 @@ class TerminalUsageService:
                 return {'status': 'unavailable'}
             internal = self._read_claude(path)
         else:
-            internal = self._read_codex(path, expected_root=Path(project_root))
+            try:
+                internal = self._read_codex(path, expected_root=Path(project_root), strict=True)
+            except (OSError, ValueError, TypeError):
+                return {'status': 'unavailable'}
         result = self._project(internal)
+        if internal.turn_boundary.get('session_id') == session_id:
+            result['turn_boundary'] = internal.turn_boundary
         from zf.runtime.backend_session_reader import get_reader_for_backend
         reader = get_reader_for_backend(provider)
         report = reader.read_latest_usage(path) if reader else None
@@ -488,7 +494,10 @@ class TerminalUsageService:
             observed_at=observed_at,
         )
 
-    def _read_codex(self, path: Path, *, expected_root: Path) -> _UsageSnapshot:
+    def _read_codex(self, path: Path, *, expected_root: Path, strict: bool = False) -> _UsageSnapshot:
+        from zf.runtime.codex_turn_boundary import CodexTurnBoundary
+
+        boundary = CodexTurnBoundary()
         buckets: dict[str, _UsageBucket] = {}
         previous: dict[str, int] = {}
         seen_incremental: set[str] = set()
@@ -497,7 +506,8 @@ class TerminalUsageService:
         accounting_mode = "unknown"
         observed_at = ""
         context_ratio: float | None = None
-        for obj in self._jsonl(path):
+        for obj in self._jsonl(path, strict=strict):
+            boundary.consume(obj)
             kind = obj.get("type")
             payload = obj.get("payload")
             if not isinstance(payload, dict):
@@ -585,6 +595,7 @@ class TerminalUsageService:
                 provider=provider,
                 accounting_mode=accounting_mode,
                 reason="provider transcript has no usage receipt yet",
+                turn_boundary=boundary.project(),
             )
         return _UsageSnapshot(
             status="observed",
@@ -594,6 +605,7 @@ class TerminalUsageService:
             buckets=buckets,
             context_usage_ratio=context_ratio,
             observed_at=observed_at,
+            turn_boundary=boundary.project(),
         )
 
     def _project(self, snapshot: _UsageSnapshot) -> dict[str, object]:
@@ -813,19 +825,25 @@ class TerminalUsageService:
         return match.group(1) if match else ""
 
     @staticmethod
-    def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
+    def _jsonl(path: Path, *, strict: bool = False) -> Iterable[dict[str, Any]]:
         try:
             handle = path.open("r", encoding="utf-8", errors="replace")
         except OSError:
+            if strict:
+                raise
             return
         with handle:
             for line in handle:
                 try:
                     value = json.loads(line)
                 except json.JSONDecodeError:
+                    if strict:
+                        raise
                     continue
                 if isinstance(value, dict):
                     yield value
+                elif strict:
+                    raise ValueError("provider transcript contains a non-object record")
 
     @staticmethod
     def _receipt_counters(receipt: dict[str, Any]) -> dict[str, int]:

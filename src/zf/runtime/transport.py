@@ -204,6 +204,14 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         self._launch_records: dict[str, dict[str, object]] = {}
         self._readiness_failures: dict[str, dict[str, object]] = {}
         self._dry_run_stopped: set[str] = set()
+        self._roles: dict[str, RoleConfig] = {}
+
+    def register_role(self, role: RoleConfig) -> None:
+        """Retain the runtime's launch contract, including generated resident roles."""
+        self._roles[role.instance_id] = role
+
+    def execution_role(self, role_name: str) -> RoleConfig | None:
+        return self._roles.get(role_name)
 
     @property
     def session_name(self) -> str:
@@ -232,6 +240,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         # 1206 Phase B: delegate slot allocation to the active layout.
         from zf.integrations.controller.execution import check_project
         check_project(cwd or Path.cwd())
+        self.register_role(role)
         # WindowPerRoleLayout issues new-window (legacy behavior),
         # PaneGridLayout issues new-window for the first role and
         # split-window for every subsequent role.
@@ -358,7 +367,13 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         command = self.pane_current_command(role_name).strip()
         leaf = command.rsplit("/", 1)[-1].strip().lower()
         if leaf in self._SHELL_COMMANDS:
-            return False, "shell"
+            foreground = getattr(self.tmux, "pane_foreground_command", None)
+            try:
+                leaf = foreground(role_name) if callable(foreground) else ""
+            except (OSError, ValueError):
+                leaf = ""
+            if leaf not in {"codex", "claude"}:
+                return False, "shell"
         if self._pane_has_provider_context_exhausted(role_name):
             return False, "provider_context_exhausted"
         if leaf == "node":

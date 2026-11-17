@@ -4,6 +4,30 @@
 [Z05](../../tasks/active/2026-11-17-1250-z05-cloud-runtime-delivery.md)。Controller 侧对应
 `docs/design/06-cloud-runtime-delivery-contract.md` 与 Q01b，Keycloak 路线保持不变。
 
+## Q01c 真实默认 Workflow 暴露的运行合同
+
+claw02 gVisor 中 Codex 已进入终端前台，tmux 的 `pane_current_command` 仍报告
+`bash`。不能据终端文字认定 Provider 存活：仅当 Linux procfs 证明前台进程组、TTY、
+session、父子链及进程启动时间均绑定当前 pane 时，允许识别该前台 Codex/Claude。
+取消先通知这个已验证前台组和 pane 组，再按既有时限升级终止；PID 重用、后台进程、
+无 procfs 或角色归属不明均不构成运行证据。
+
+动态 resident/fanout 角色由实际 Transport 注册启动合同，纳管执行取该合同并逐轮申请
+租约及预算；不能只重新读取静态 `zf.yaml.roles`，也不能因角色动态产生而免除准入。
+计量读取配置 state_dir 下对应角色独立的 `codex-home/sessions`，并核对实际启动
+工作目录（包括受管工作树），不扫描其他角色或用户的全局会话作替代。
+
+Codex TUI 常驻进程按原生 `task_started` → usage → 同 turn_id `task_complete`
+结算，完成后释放本轮名额，无须等待整个 Workflow 或进程退出。部分 token 更新、
+提前发出的业务完成事件、错配轮次和不完整 JSONL 均不证明原生调用完成。首轮零基线
+仅在完整原生日志证明没有先前用量时成立；取消后缺少计量的前序轮次继续保留未知责任。
+该资格绑定实测 Codex 0.166.0；其他 Provider/日志形状不能据此自动宣称同等资格。
+
+验证工具也有独立边界：本节点 `kubectl exec` 读取 100,000 字节时实际只收到
+65,537 字节但返回 0，复现于独立 Python 输出，不属于 ZaoFu JSON 格式缺陷。
+长证据必须先落在 Pod 文件，再分块读取并核对长度与 SHA256；不能据 exec 退出码
+认定证据完整，也不能关闭验证或修改业务输出去掩盖传输截断。
+
 ## 可构建交付
 
 从仓库根目录运行 `docker build -f deploy/cloud/Dockerfile -t zaofu-runtime:<version> .`。

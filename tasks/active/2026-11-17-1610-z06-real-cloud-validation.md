@@ -2,6 +2,21 @@
 
 > 状态: active
 
+## Q01c 默认 Workflow 修复检查点
+
+真实 PRD v5 已受理并进入 scan fanout，但 gVisor tmux 前台误判导致反复启动失败。
+已通过产品 stop 暂停 Charlie 实例，保留原 Workflow/PVC；修复前台身份判定、取消时
+前台进程组终止、动态角色纳管合同、角色独立原生会话目录与逐轮结算。未伪造 Workflow
+完成事件，部署后从同一请求恢复验证。
+
+回归先证明原 caller 动态 resident 角色遭拒，再修复；初始影响闭包 277 passed、
+1 项 10ms 时钟敏感测试失败（独立重跑通过）。该测试改为可控时钟，保留实际错误类别
+断言，最终结果后续补录。新增原生日志/实际 observer 测试与三流 mock smoke 17 passed；
+sentinel 53 passed。这些结果不替代完整真实 Provider Workflow。
+
+最终改动定向闭包（tmux lifecycle、角色准入、native observer、Terminal usage、三流
+mock smoke）38 passed；更新后的 sentinel 53 passed。完整真实默认 Workflow 仍在复验。
+
 来源：Owner 要求完成剩余 1–8 真实验证；承接 Z05，联动 Controller Q01c。基线 7b32668f，旧回归结果不冒充真实 Provider。
 
 1. 已审核 Workspace 中调用真实 Provider -> verify: 模型确实执行小型任务、产物可复核，并通过现有受管执行入口上报 Session/Operation/usage。
