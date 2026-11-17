@@ -109,6 +109,7 @@ def main() -> int:
     parser.add_argument("--channel-reasoning", default="", choices=["", "low", "medium", "high", "xhigh"],
                         help="Project-local Codex reasoning pin; default preserves existing behavior")
     parser.add_argument("--delivery", action="store_true", help="Wait for a reviewed local authorization before UI Plan approval")
+    parser.add_argument("--replan", action="store_true", help="Reject the first Plan through UI and verify a new reviewed preview")
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--owner-checkpoint", action="store_true", help="Require a real Critic Owner checkpoint and answer it through UI")
@@ -117,6 +118,8 @@ def main() -> int:
     parser.add_argument("--workflow-runtime", choices=["existing", "cold"], default="existing",
                         help="cold stops the idle discussion runtime before the UI starts its Workflow")
     args = parser.parse_args()
+    if args.replan and (args.delivery or args.owner_checkpoint):
+        parser.error("--replan is a separate pending-plan journey; cannot combine with delivery or Owner checkpoint")
     review_policy = None
     if args.review_policy:
         from zf.core.config.plan_review import validate_plan_review
@@ -182,6 +185,7 @@ def main() -> int:
         (evidence / "product-input.md").write_bytes(requirement)
         manifest["product_input_sha256"] = hashlib.sha256(requirement).hexdigest()
     manifest["delivery_requested"] = args.delivery
+    manifest["replan_requested"] = args.replan
     manifest['timeout_seconds'] = args.timeout
     manifest['turn_timeout_seconds'] = args.turn_timeout
     (evidence / "run.json").write_text(json.dumps(manifest, indent=2))
@@ -219,6 +223,7 @@ def main() -> int:
                   "-v", f"{root}:/zf-run", "-w", "/work/web", "-e", "HOME=/tmp/ui-playwright",
                   "-e", f"ZF_WEB_BASE_URL=http://127.0.0.1:{port}", "-e", f"ZF_WEB_ACTION_TOKEN_FOR_TEST={env['ZF_WEB_ACTION_TOKEN']}",
                   "-e", f"ZF_UI_DELIVERY={str(args.delivery).lower()}",
+                  "-e", f"ZF_UI_REPLAN={str(args.replan).lower()}",
                   "-e", f"ZF_UI_PROVIDER={args.provider}", "-e", f"ZF_UI_JOURNEY={args.journey}",
                   "-e", f"ZF_UI_WORKFLOW_RUNTIME={args.workflow_runtime}",
                   "-e", f"ZF_UI_REVIEW_POLICY={env.get('ZF_UI_REVIEW_POLICY', '')}",
@@ -285,7 +290,7 @@ def main() -> int:
                     result_audit = json.loads((evidence / "preview-audit.json").read_text())
                     result_audit["boundary"] = "preview only; delivery evidence audited separately"
                 else:
-                    result_audit = audit(project, journey=args.journey, owner_checkpoint=args.owner_checkpoint)
+                    result_audit = audit(project, journey=args.journey, owner_checkpoint=args.owner_checkpoint, replan=args.replan)
                 if args.provider == "fake" and args.workflow_runtime == "existing":
                     from zf.core.events import EventLog
                     from zf.core.config.loader import load_config

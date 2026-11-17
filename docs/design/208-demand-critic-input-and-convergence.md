@@ -1,6 +1,6 @@
 # 208：按需 Critic 的输入范围与返修收敛
 
-> 状态：两批实施与验证完成。基于 dev `bbefdff0`；第一批完整度问题已修复，第二批真实 Channel → Plan Preview 从头通过。各批降本效果分别按实测报告，不混合作因果比较。
+> 状态：前两批实施与验证完成；第三批经用户授权实施中。基于 dev `bbefdff0`；第一批完整度问题已修复，第二批真实 Channel → Plan Preview 从头通过。各批降本效果分别按实测报告，不混合作因果比较。
 
 造父已经支持显式 `none / targeted / full`，但首次定向评审仍完整读取来源，报告与独立工件重叠，返修又携带历史大正文。本次让按需策略同时约束工作范围与输入路径，保留完整、可读的 PRD / Plan、来源证据和人工审批。
 
@@ -126,3 +126,131 @@ operation 耗时 10.16 / 6.85 分钟。两轮生成稿不同，不把与上轮 2
 - [上下文工程](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)：引用、按需获取与必要背景。
 - [Claude Code 评审](https://claude.dev/blog/solving-code-review-at-anthropic/)：有界返修、差量复审和事故评测；该文仍每 PR 做 AI review，不作为全部免审依据。
 - [OpenSpec verify](https://github.com/Fission-AI/OpenSpec/blob/main/skills/openspec-verify-change/SKILL.md)：明确未覆盖、不补造不适用材料。
+
+## 第三批：上下文预算、唯一矩阵正文与 replan
+
+### 问题与调研结论
+
+用户希望首次 Plan 和 replan 都减少无效评审成本，同时保持缺陷识别、可读正文、需求
+来源和人工审批。第二批原生记录显示 Critic 模型窗口为 475000，v5 的 roleDefaults
+却为 120000，适配器按 0.7 得到 84000 的 auto-compaction 上限；两次压缩均发生于
+约 8 万上下文，之后又重读材料。该值不是模型窗口不足的证据。
+
+测试矩阵有 114 个 tests 行，许多行重复同一 AC 全句及通用 Given；已有 consumer
+需要稳定 test/source/acceptance/command 标识与 Given/When/Then，并不要求把参数
+笛卡尔积展开成重复正文。所有不同失败结果、验证阶段和责任必须仍有明确覆盖。
+
+公开依据（2026-11-17 核验，方法借鉴，不直接照搬平台实现）：
+
+| 资料 | 采用 | 不采用 |
+| --- | --- | --- |
+| [Anthropic context engineering](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents) | 小而有效的上下文、按需取原文、压缩后保留决策与未决事项 | 仅扩大窗口、不测质量；摘要代替读取证明 |
+| [Claude Code review](https://claude.dev/blog/solving-code-review-at-anthropic/) | 局部返修、差量复审、用缺陷回归约束降本 | 用代码评审策略自动免除产品 Plan 审查 |
+| [Spec Kit analyze](https://github.com/github/spec-kit/blob/main/templates/commands/analyze.md) | 按需求/任务/覆盖关系审一致性，优先确定缺陷，避免重复正文 | 为展示再造第二份合同 |
+| [OpenSpec verify](https://github.com/Fission-AI/OpenSpec/blob/main/src/core/templates/workflows/verify-change.ts) | 分开完整性、正确性、一致性；明确未验与不适用 | 将执行验收方法生搬到尚未实施的 Plan |
+| [Codex config reference](https://developers.openai.com/codex/config-reference) + 本地 CodexAdapter | 区分模型窗口和触发压缩的 token 限制；本地参数与 native 取证 | 声称增大模型真实容量或修改宿主全局配置 |
+
+### 设计决定
+
+1. v5 保留默认角色预算 120000 和既有 0.7 阈值，即原生压缩请求 84000；
+   400000/280000 作为显式环境覆盖的实验配置，不改变 Codex 自报窗口或 Kernel hard-cap。
+   固定输入六次实验未证明扩大阈值能降低累计输入，故不推广为全部角色的默认值。
+   首次、返修及 replan 同一角色启动路径共享该配置。预算修订不授权增加并发或跳过审查。
+2. 在既有 Planner 方法中要求矩阵 tests 使用最小完备场景集：同一 owner/tier/command、
+   相同前态与失败不变项的参数可在同一 When/Then 中显式列举；不同结果/责任/阶段不得
+   合并。使用原有字段，来源以稳定 ID 定位，保留每项独有约束；人读 Plan 仍完整。
+   方法阅读按当前 scope 选择，先完成必要原文读取再一次形成 findings，不反复启动全审。
+3. replan 分两条明确路径：有完整历史证据的局部继承继续使用既有 scoped_plan_review
+   校验；没有继承资格的当前 targeted 重新审查，不冒充旧 approval 可复用。后者只在
+   绑定且完整的 plan-rework-context、既有批准 targeted/focus、无需求修订/人工覆盖、
+   无待验证增量证书时，对**当前作者**明确绑定的补充矩阵/索引使用按需导航。
+   原始需求、当前完整 Plan/Task Map、旧候选、返修原因/finding、执行事实及未知输入保持
+   必读，所有原文可展开。full、显式必读、失效/歧义上下文及增量证书失败都保持原保护。
+   这是当前定向审查的输入路由，不是历史增量证明，也不产生自动批准。
+   即使 rework 标签全部缺失，只要仍携带旧候选而没有可验证返修上下文，也不得误判
+   为首次导航；该缺失变体以失败回归证明，回退保留完整必读。
+   实测另发现 Planner 合法使用标准 `test_matrix_ref` 等引用字段，而非每项都写进
+   `plan_ports`，首次必读仍为 296505 字节。补充兼容既有具名引用字段：仅当前单一
+   作者、同一 manifest 精确 ref、已验证摘要及已知 v1 schema 的矩阵/目录可导航；
+   保留原文可访问。缺失/未知 schema、多个作者、字段别名冲突、core 引用及与显式
+   port 的 ref/digest 冲突保持必读，不用文件名或正文相似度猜用途。对此增加真实
+   生成包的固定输入重放；已启动流程的旧选择结果保留，不改写历史读取证据。
+4. 真实测试通过 Web 受控退回已生成的待审批 Plan，要求一个明确局部修正，等待真实
+   Planner 和 Critic 形成新版本，再核对预览与下载。产品实施仍为 NOT_RUN。完整链路
+   分阶段计量，不能把少跑阶段或不同模型的耗时当作固定输入降本。
+
+### 验收及停止边界
+
+- C1：编译 v5、构建首次/恢复命令 → verify: 84000 默认、显式覆盖保留、不覆盖原生窗口；
+  真实记录压缩次数、最大上下文与耗时，不假设必须零压缩。
+- C2：同一需求生成矩阵与 Plan → verify: 独有错误/边界/共享不变量和 owner/tier 保留，
+  反例仍 reject；矩阵行数/字节只作为观察，不按固定长度裁剪。
+- C3：真实调用 prepare_call_operation → verify: replan 只降低当前明确补充工件，旧事实
+  仍全部交付，digest/权限/回执/重放保持；首次与 full/显式/失效证书有反例测试。
+- C4：真实 Channel + v5 + Web 退回重规划 → verify: 两个版本、退回原因、两个 Critic
+  dispatch/verdict、同版 preview/download，前版不冒充后版，均不启动产品实施。
+- C5：固定输入/多缺陷样本与影响闭包 → verify: fresh/cache/output/耗时/压缩分别计量，
+  保留首次失败；若新范围选择漏掉缺陷或失去绑定，先收紧回退再复测。
+
+新增语义仍属于 Agent/Skill，代码只检查来源类型、批准策略、摘要和读取绑定。后续实测
+若发现更合适的有界方案，先在本节补充依据再实施；不自动增加无限优化循环或新状态机。
+
+### 第三批实测中的方案修订
+
+固定输入首组显示 84000 阈值有一次压缩，280000 阈值无压缩且更快，但累计输入增加。
+因此“零压缩”不是成功指标：保留全部 ABBA 数据，再加入 140000 的中间阈值两次对照，
+结合 fresh/cache、耗时、缺陷和真实链路选最终默认；未取得账单时不声称费用下降。
+保留启动时的 400000 配置记录，不回写历史；另按实际 Workflow Apply 后的配置绑定
+判定运行预算。实测 Channel 在 Web 应用 v5 模板后已改为 120000，故两条真实
+Workflow 均属最终默认验证，大预算只属于固定输入实验。
+
+六次固定输入实验（每档两次）中，280000 相对 84000 的平均累计输入增加 91.2%，
+fresh 输入增加 4.3%，平均耗时降低 17.1%；140000 累计输入增加 65.6%，fresh 降低
+14.2%，平均耗时降低 15.8%。样本小且宿主有并行工作，不据此声称显著提速或费用最优。
+因此最终保留原默认，以减少不必要输入、等价场景去重和定向复审为主；保留显式大预算
+覆盖供已测场景使用。实验运行与最终默认验证分列，不篡改运行中的配置快照。
+
+另一个实测反例：同一 AC 在 Task Map 指定人工阅读，product_acceptance_spec 却写
+E2E/CLI，六次评审只有一次指出。增加通用的跨工件验收责任对账方法及固定正反例：
+沿同一 source/AC ID 核对 Task Map、命令登记、acceptance_matrix 与产品验收规格的
+owner、tier、阶段和证据生产者；多种互补验证可以并存，但须区分义务及生产者。
+不把端口默认标签当作实际验证能力，不为此新增语义 Runtime gate 或复制一套合同。
+两条真实首稿又分别暴露了跨阶段复制：正文已局部化，但 Task Map 或测试行仍保留
+后继 HTTP/最终 README 的要求。补充作者方法：先拆出当前任务实际承担的子断言，
+不能靠“本任务范围内”前缀改变完整来源条款的含义；交付前读取实际序列化 AC 与
+测试行，而非只解析 JSON 或查看已整理的人读正文。原完整来源义务保留在真实生产者。
+保留启动和实际角色工作目录的方法摘要；新方法再对固定历史反例及实际生成包真实复审。
+长期回归样本及执行边界见
+[验收责任校准](../../tests/e2e/fixtures/plan-review-assignment/README.md)；最终默认另跑
+真实 Kanban → Plan → Web 退回 → replan，并核对实际应用后的配置，不能仅从项目启动配置推断角色预算。
+
+真实 Channel 首次待审批预览另发现身份冲突：作者将产品代号 `LOCAL-DRAFT` 写入
+Task Map 的 `pdd_id`，而运行绑定为父任务 ID；现有 Web provenance 检查正确报错。
+补充方法将 `pdd_id` / `feature_id` / `workflow_run_id` 明确为当前上下文绑定，禁止
+自行生成产品代号；未提供的可选字段省略。保留 Web 身份保护，不把错误隐藏或降级。
+修订需生成新候选，经正常结果提交及独立评审；不能就地修改已准入工件。本次真实
+报告分别记录旅程可打开与审核包身份一致性，避免将前者冒充全部质量通过。
+新增 C6 验收：来源冲突及工件不可读均由测试审计拒绝；普通 Owner 待审批不冒充
+工件错误。经 Web 再退回并独立评审的新候选须消除身份错误，保持 Task/AC/命令/依赖
+和既有恢复说明，下载与刷新仍与当前正文一致；原失败版本及诊断必须保留。
+同次矩阵读回还发现 roles 行将合法读取和权限拒绝合并，却只写非零/403 预期。
+在方法中补具体反例；同一有界修订须将两入口的成功/拒绝预期按输入分别表达，保持
+原 AC 和命令责任，不借“场景精简”消除成功分支。语义仍由作者及独立 Critic 判断。
+
+### 第三批验收结果
+
+本地证据入口为 `reports/critic-replan-20261117/evaluation.html`。固定真实候选 ABBA
+各两次，必读字节减少 38.1%，平均累计输入减少 26.9%、新输入减少 17.9%，四次均指出
+真实阶段缺陷。新增身份/参数分支方法另有校准及最终真实复验，不混作同一 A/B。
+
+真实 Kanban 旅程及 Web 退回后的新版通过。Channel 原完整审计因身份冲突失败，保留
+原记录；再次 Web 退回产生第三版，独立 Critic 与浏览器核验通过，身份及分支修复，
+任务合同保持，预览/下载/刷新同版。最终实际 replan 导航必读字节减少 32.1%，没有
+继承旧批准。两条真实 Workflow 使用最终默认预算，示例产品没有获批实施。
+
+本批 Runtime 影响闭包 848 passed / 1 skipped；后续预览完整性回归 56 passed，
+两组有重叠。Web、serial、sentinel、mock 与 fake Docker replan 通过；未执行全库
+pytest。全部必读项有同角色/operation 的原生输出证据，额外未完整观察的返回保留
+说明。真实全过程 Critic/Planner 累计输入比均约 1.03，新输入比分别约 1.17 和 1.33；
+不同候选之间不作因果降本比较。Replan 仍有多次压缩，Kanban 矩阵仍约 100 KB，
+端到端延迟与作者首稿稳定性尚需后续观察。

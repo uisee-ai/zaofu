@@ -412,6 +412,15 @@ Emit the required refs at the top level of the event payload. It is acceptable
 to duplicate them inside `report`, but top-level fields are the dispatch
 contract.
 
+Identity fields (`pdd_id`, `feature_id`, `workflow_run_id`) are runtime bindings,
+not product names. Copy them only from the current pinned briefing/context;
+never invent a product slug or copy a previous candidate's conflicting identity.
+If an optional identity is not supplied, omit it. Keep product names in titles
+or descriptions. Before submission, compare identity fields in the serialized
+Task Map, result, and source metadata with the current binding; a human-readable
+Plan cannot override a mismatch. Do not rewrite an admitted artifact in place:
+publish a new candidate through the normal result submission path.
+
 ```json
 {
   "fanout_id": "<fanout id>",
@@ -419,8 +428,8 @@ contract.
   "child_id": "<role or synth>",
   "status": "completed",
   "summary": "<one-line plan result>",
-  "pdd_id": "<stable product/work id>",
-  "feature_id": "<stable feature id>",
+  "pdd_id": "<current pinned pdd_id; omit if not supplied>",
+  "feature_id": "<current pinned feature_id; omit if not supplied>",
   "plan_artifact_ref": "docs/plans/example-plan.md",
   "task_map_ref": "artifacts/plan/task_map.json",
   "source_index_ref": "artifacts/plan/source_index.json",
@@ -448,8 +457,8 @@ contract.
 ```json
 {
   "schema_version": "task-map.v1",
-  "pdd_id": "<stable product/work id>",
-  "feature_id": "<stable feature id>",
+  "pdd_id": "<current pinned pdd_id; omit if not supplied>",
+  "feature_id": "<current pinned feature_id; omit if not supplied>",
   "target_root": "<repo-relative product root, when the workflow has one>",
   "shared_conventions": {
     "test_path_prefix": "<repo-relative test prefix, e.g. app/tests/>",
@@ -602,6 +611,11 @@ The corresponding Test Matrix has one and only one command registry:
 `test_matrix.commands[]`. Repeat each Task Map command there with the same id,
 exact command string, and `acceptance_ids`. Do not define a second command
 under `test_matrix.tests[]`; other matrix rows reference command ids.
+
+矩阵的场景正文按 [最小完备场景集](references/scenario-economy.md) 组织；首次规划和
+replan 都适用。先覆盖独有失败结果、边界与验证责任，再合并可证明等价的参数。
+不为每个参数复制 AC 全句，不用计数或短文档代替语义覆盖。
+
 
 Each command id has exactly one producer Task in the immutable Task Map.
 Acceptance criteria in any Task may reference that global id directly. Do not

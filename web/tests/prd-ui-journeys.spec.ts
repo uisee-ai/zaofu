@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { verifyPlanModuleReading } from "./support/prdPlanReading";
+import { verifyPlanReplan } from "./support/prdPlanReplan";
 
 import { prdOnlyOption, sameInvocation, terminalPlanningEvent } from "./support/prdJourneyPolicy";
 
@@ -281,12 +282,12 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   }
   expect(approval, "generated Plan approval").toBeTruthy();
   if (ownerCheckpointRequired) expect(answeredOwner, "required real Critic Owner checkpoint").toBeTruthy();
-  const planId = String(approval!.payload?.plan_id || "");
+  let planId = String(approval!.payload?.plan_id || "");
   expect(planId).not.toBe("");
   await page.goto(`/?project=${project}&page=inbox&plan=${encodeURIComponent(planId)}`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
   await expect(dialog).toBeVisible();
-  const planBody = await get(request, `/api/projects/${project}/plans/${encodeURIComponent(planId)}/preview`);
+  let planBody = await get(request, `/api/projects/${project}/plans/${encodeURIComponent(planId)}/preview`);
   if (reviewPolicy) expect(planBody.critic_review?.mode).toBe(reviewPolicy.mode);
   expect(planBody.content_profile).toBe("derived_plan_full");
   if (!productInput) expect(planBody.markdown).toContain("README.md");
@@ -320,6 +321,11 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   await dialog.getByRole("button", { name: "格式化阅读", exact: true }).click();
   await expect(dialog.locator(".document-markdown:visible").first()).toBeVisible();
   await capture(page, "07-refreshed-plan-preview");
+  if (process.env.ZF_UI_REPLAN === "true") {
+    ({ approval, planBody, planId } = await verifyPlanReplan(page, request, project,
+      { approval, planBody }, evidence, timeout, () => events(request, project)));
+    expect(readFileSync(`${evidence}/replan-download.md`, "utf8")).toBe(planBody.markdown);
+  }
   const finalEvents = await events(request, project);
   expect(finalEvents.filter(row => row.type === "workflow.invoke.requested")).toHaveLength(1);
   expect(finalEvents.filter(row => row.type === "plan.approved")).toHaveLength(0);

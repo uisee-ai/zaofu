@@ -1,4 +1,4 @@
-"""Lossless report partitions and policy-bound first-review navigation.
+"""Lossless report partitions and policy-bound current-candidate navigation.
 
 No risk classifier lives here. Targeted scope is an approved Agent decision;
 all original sources stay available through the existing controlled reader.
@@ -20,6 +20,12 @@ SUPPLEMENTARY_PORTS = frozenset({
     "capability_matrix", "acceptance_matrix", "test_matrix", "real_e2e_matrix",
     "coverage_ledger", "source_inventory", "product_acceptance_spec",
 })
+# Existing named-ref contracts; a ref alone is insufficient without this schema
+# and a single producer. Explicit plan_ports retain their digest-bound path.
+REFERENCE_SCHEMAS = {
+    name: name.replace("_", "-") + ".v1"
+    for name in {*SUPPLEMENTARY_PORTS, "source_index"} - {"product_acceptance_spec"}
+}
 
 
 def _identity(source: Mapping[str, Any]) -> tuple:
@@ -58,6 +64,35 @@ def _partition(value: Any, peers: set[str], path: str = "$", depth: int = 0) -> 
     return parts
 
 
+def _navigation_phase(sources: list, bodies: dict, required: list) -> str:
+    """Separate fresh targeted re-review from evidence-inheriting local review."""
+    # A failed inheritance proof must not fall through to a weaker policy.
+    if any(source.get("artifact_id") in {"scoped_plan_review.json", "unchanged-plan-review.json"}
+           or source.get("source_id") == "owner-requirement-amendment" for source in sources):
+        return ""
+    rework = [source for source in sources if source.get("source_id") in {
+        "plan-rework-package", "plan-rework-context"}]
+    if not rework:
+        return "" if any(str(source.get("source_id", "")).startswith("previous-plan-candidate")
+                         for source in sources) else "initial"
+    contexts = [source for source in rework if source.get("source_id") == "plan-rework-context"]
+    if len(contexts) != 1:
+        return ""
+    source = contexts[0]
+    body = bodies.get(_identity(source))
+    if (not isinstance(body, dict) or body.get("schema_version") != "plan-rework-context.v1"
+            or not isinstance(body.get("rework_of"), str) or not body["rework_of"].strip()
+            or any(body.get(key) for key in (
+                "requirement_amendment_ref", "human_resolution", "owner_decision_resolution", "operator_override"))):
+        return ""
+    if not any((row.get("source_id"), row.get("artifact_id"), row.get("artifact_sha256")) == _identity(source)
+               and row.get("json_path", "$") == "$"
+               and not any(row.get(key) for key in ("max_chars", "max_items", "allow_truncated"))
+               for row in required):
+        return ""
+    return "replan"
+
+
 def select_plan_input_reads(
     state_dir: Path, manifest: Mapping[str, Any], required: list[dict[str, Any]], *,
     policy: Mapping[str, Any], explicit: bool = False,
@@ -80,39 +115,64 @@ def select_plan_input_reads(
     full_rows = {(row.get("source_id"), row.get("artifact_id"), row.get("artifact_sha256"))
                  for row in required if row.get("json_path", "$") == "$"}
     peers = {encode_selected(body) for key, body in bodies.items() if key in full_rows}
-    targeted = (policy.get("mode") == "targeted" and bool(policy.get("focus"))
-                and not any(source.get("source_id") in {"plan-rework-package", "plan-rework-context"}
-                            for source in sources))
+    phase = _navigation_phase(sources, bodies, required)
+    targeted = policy.get("mode") == "targeted" and bool(policy.get("focus")) and bool(phase)
     optional: set[tuple] = set()
     if targeted:
         # Use exact port ref + digest, never a filename match. Preserve unknown
         # or multiply declared ports and any source explicitly carrying authority.
         declarations: dict[tuple, set[str]] = {}
         core_refs: set[str] = set()
-        index_owners: dict[str, set[tuple]] = {}
+        reference_claims: dict[str, set[tuple]] = {}
+        reference_targets: dict[str, set[tuple]] = {}
+        named_ports: dict[str, set[tuple]] = {}
+        reference_versions: dict[str, set[str]] = {}
+        for source in sources:
+            if isinstance(source.get("ref"), str) and isinstance(source.get("sha256"), str):
+                reference_versions.setdefault(source["ref"], set()).add(source["sha256"])
         for key, body in bodies.items():
             if not str(key[0]).startswith("child-result-") or not isinstance(body, dict):
                 continue
             core_refs.update(body[field] for field in (
                 "plan_artifact_ref", "plan_ref", "task_map_ref", "requirement_spec_ref",
+                "product_spec_ref", "prd_ref", "objective_ref", "issue_spec_ref", "issue_ref",
+                "planning_result_ref", "accepted_plan_ref",
             ) if isinstance(body.get(field), str) and body[field])
-            if isinstance(body.get("source_index_ref"), str) and body["source_index_ref"]:
-                index_owners.setdefault(body["source_index_ref"], set()).add(key)
+            for name in REFERENCE_SCHEMAS:
+                fields = (name + "_ref", "regression_test_matrix_ref") if name == "test_matrix" else (name + "_ref",)
+                for field in fields:
+                    ref = body.get(field)
+                    if isinstance(ref, str) and ref:
+                        reference_claims.setdefault(ref, set()).add((key, name))
+                        reference_targets.setdefault(name, set()).add((key, ref))
             for port in body.get("plan_ports", []):
-                if isinstance(port, dict) and port.get("ref") and port.get("sha256"):
-                    declarations.setdefault((port["ref"], port["sha256"]), set()).add(port.get("logical_name", ""))
+                if isinstance(port, dict) and isinstance(port.get("logical_name"), str):
+                    named_ports.setdefault(port["logical_name"], set()).add((
+                        port.get("ref") if isinstance(port.get("ref"), str) else "",
+                        port.get("sha256") if isinstance(port.get("sha256"), str) else ""))
+                if (isinstance(port, dict) and isinstance(port.get("ref"), str) and port["ref"]
+                        and isinstance(port.get("sha256"), str) and port["sha256"]):
+                    declarations.setdefault((port["ref"], port["sha256"]), set()).add(
+                        port.get("logical_name") if isinstance(port.get("logical_name"), str) else "")
         for key, source in source_map.items():
             names = declarations.get((source.get("ref"), source.get("sha256")), set())
-            index = bodies.get(key)
-            index_ports = [(digest, port_names) for (ref, digest), port_names in declarations.items()
+            body = bodies.get(key)
+            claims = reference_claims.get(source.get("ref"), set())
+            reference_name = next(iter(claims))[1] if len(claims) == 1 else ""
+            reference_ports = [(digest, port_names) for (ref, digest), port_names in declarations.items()
                            if ref == source.get("ref")]
-            known_index = (len(index_owners.get(source.get("ref"), set())) == 1
-                           and isinstance(index, dict) and index.get("schema_version") == "source-index.v1"
-                           and all(digest == source.get("sha256") and port_names == {"source_index"}
-                                   for digest, port_names in index_ports))
+            known_reference = (bool(reference_name) and isinstance(body, dict)
+                and len(reference_targets.get(reference_name, set())) == 1
+                and reference_versions.get(source.get("ref")) == {source.get("sha256")}
+                and body.get("schema_version") == REFERENCE_SCHEMAS[reference_name]
+                and all(digest == source.get("sha256") and port_names == {reference_name}
+                        for digest, port_names in reference_ports)
+                and all(ref == source.get("ref") and digest == source.get("sha256")
+                        for ref, digest in named_ports.get(reference_name, set())))
             if (key in bodies and str(key[0]).startswith("child-artifact-")
                     and source.get("ref") not in core_refs
-                    and (known_index or len(names) == 1 and names <= SUPPLEMENTARY_PORTS)):
+                    and (not claims or known_reference)
+                    and (known_reference or len(names) == 1 and names <= SUPPLEMENTARY_PORTS)):
                 optional.add(key)
     optional_text = {encode_selected(bodies[key]) for key in optional}
     result: list[dict[str, Any]] = []
@@ -132,14 +192,16 @@ def select_plan_input_reads(
         other_peers = peers - {encode_selected(body)}
         parts = _partition(body, other_peers)
         for path, value in parts:
-            if (targeted and (path == "$.source_index" or re.fullmatch(r"\$\.plan_ports\[\d+\]\.body", path))
+            if (targeted and str(key[0]).startswith("child-result-")
+                    and (path == "$.source_index" or re.fullmatch(r"\$\.plan_ports\[\d+\]\.body", path))
                     and encode_selected(value) in optional_text):
                 continue
             result.append({**row, "json_path": path,
                            "min_returned_bytes": 0 if value == "" else row.get("min_returned_bytes", 1)})
     if result == required:
         return required, ""
-    return result, "targeted_navigation" if optional else "lossless_report_partition"
+    strategy = "targeted_replan_navigation" if phase == "replan" else "targeted_navigation"
+    return result, strategy if optional else "lossless_report_partition"
 
 
 def complete_partition_read(
