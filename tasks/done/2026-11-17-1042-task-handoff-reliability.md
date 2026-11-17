@@ -1,6 +1,7 @@
 # 任务接力可靠性：现场归属、阶段投影与受控输入续读
 
-> 状态: active
+> 状态: done
+> 实现: `5dc24294` — `fix: preserve task handoff bindings and current pipeline state`
 > 来源: 2026-11-17 用户明确要求生成 Spec 后在新 worktree 实施；ZF-SPEC-002 r2。
 
 Spec: [任务接力可靠性](../../docs/spec/task-handoff-reliability.spec.md)（按约定本地忽略）。
