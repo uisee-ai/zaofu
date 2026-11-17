@@ -1,6 +1,6 @@
 # 合并 R16 资格与任务接力可靠性
 
-> 状态: active
+> 状态: done — 1630bc67 `fix: integrate qualified recovery and task handoff reliability`
 
 用户批准先归档R16，再在独立worktree集成task-handoff-reliability并验证后合入dev。
 基线dev 0625d001，R16归档ec56e54b，接力分支f3203084。本批不push；主dev未提交资料原样保留。

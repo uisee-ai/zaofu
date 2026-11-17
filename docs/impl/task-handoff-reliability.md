@@ -89,7 +89,7 @@ _operation_workdir核对Kernel dispatch、lease、placement epoch及执行信封
 无现代身份字段的历史派发保留既有有限兼容，不因此授予lease或允许写入运行时真相。
 
 两分支的测试夹具已补齐真实请求/attempt/envelope及配置工作区元数据，避免用简化fixture迫使生产门禁降级。
-验证与归档见../../tasks/active/2026-11-17-1444-continuity-integration.md。R16真实资格仍绑定原源码1bff811d，
+验证与归档见../../tasks/done/2026-11-17-1444-continuity-integration.md。R16真实资格仍绑定原源码1bff811d，
 不能自动转移为本集成提交的真实Provider/无人资格；本集成另行验证受影响的恢复、交接与浏览器路径。
 
 ### 集成验证与基线对账（2026-11-17 UTC）
