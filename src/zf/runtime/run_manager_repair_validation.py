@@ -168,6 +168,11 @@ def _trusted_invocation(command: str) -> dict[str, Any] | None:
     if (len(argv) >= 5 and argv[:3] == ["env", "PYTHONPATH=src", sys.executable]
             and argv[3:5] == ["-m", "pytest"]):
         return {"argv": argv[2:], "env": {**env, "PYTHONPATH": "src"}}
+    # Older frozen contracts retain this spelling. Bind it to our interpreter;
+    # never execute a candidate-controlled virtualenv entrypoint.
+    if argv and argv[0] == ".venv/bin/pytest":
+        return {"argv": [sys.executable, "-m", "pytest", *argv[1:]],
+                "env": {**env, "PYTHONPATH": "src"}}
     if len(argv) >= 4 and argv[:3] == ["uv", "run", "pytest"]:
         return {"argv": argv, "env": env}
     if (

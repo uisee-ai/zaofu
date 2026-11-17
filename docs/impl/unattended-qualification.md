@@ -214,3 +214,14 @@ R11断点epoch2真实确认新进程保持Terra与主任务workspace-write，模
 
 
 诊断执行约束补充：R11 epoch2真实argv显示父Task是workspace-write，派生AR角色却使用模板默认未指定sandbox；模型继承已有，但显式sandbox约束丢失。同一已核对parent_state_dir、同名且同backend的Codex角色继承父workspace-write；只传这一限制，不传allowed_tools或额外权限，不覆盖其它provider。模板provider_session=null也须正确建立约束。2RED/1保护通过后修正，真实null形状追加1RED，最终51定向通过；用现场完整YAML离线渲染并load_config后11角色命令确认workspace-write且无approvals-and-sandbox bypass。真实子进程复验仍待进行，147文件影响闭包进行中；旧子运行不直接改配置。
+
+
+## R11 epoch3：真实恢复与验证命令兼容
+
+加载 e1808f16 后，两个原 Impl operation 在不改变 request hash 的条件下生成兼容证明并 redrive；两项 Task 独立 Verify 通过，Candidate 01203797 冻结。派生诊断真实进程保持 workspace-write，新 Scan 两项正常提交。F4 实际命中 reader_environment_busy，预定观察器释放后自动续派；F6 控制器退出由宿主 service 约6秒恢复。以上属于辅助续跑，不修改原 R11 的 FAILED 资格结论。
+
+F6 的 resident 自行定位 Docker 参数，自动派发修复、受控发布候选并生成 closeout；04:40:36 独立验证以 command_not_allowlisted 失败（evt-0d6b3ff8fd1f）。原因是合同生产者只规范化 pytest / python -m pytest，遗漏此次真实建议中的 .venv/bin/pytest。工作区存在 .venv 不能证明其入口应获执行权限。
+
+修正新合同的精确入口规范化；旧冻结合同保留原文与摘要，由验证器把该精确拼写映射到受信 sys.executable -m pytest，并设置 PYTHONPATH=src 验证隔离候选。禁止执行候选自带虚拟环境入口，其他解释器、环境和相似路径继续拒绝。新增回归放置恶意候选 pytest 脚本，证明未执行；不修改不可变合同、不降低源码版本/审批/结果准入门禁。
+
+生产者/消费者2RED，旧合同兼容追加1RED；最终34定向通过，76文件增量影响闭包1338通过/7跳过，sentinel53、flow-smoke10通过。真实epoch3已受控停止并保留全部产品、修复与证据。由于加载新harness会改变source_head，旧修复不能自动应用到不同基线；下一冻结轮重新验证完整绑定，不跳过source_head_drift门禁。B07仍未完成，不能归档。

@@ -6,12 +6,13 @@ import pytest
 from zf.runtime.repair_dispatch import RepairRequest, write_repair_contract
 
 
-def test_frozen_contract_rebinds_source_paths_to_repair_checkout(tmp_path):
+@pytest.mark.parametrize('entrypoint', ['.venv/bin/python -m pytest', '.venv/bin/pytest'])
+def test_frozen_contract_rebinds_source_paths_to_repair_checkout(tmp_path, entrypoint):
     source = tmp_path / 'original source'
     source.mkdir()
     req = RepairRequest(fingerprint='f', attempt=0, candidate_id='c', candidate_path='evidence',
         repair_task_payload={'contract': {'scope': [str(source / 'src/zf/runtime/host_verification.py')],
-        'verification_commands': [f'cd {shlex.quote(str(source))} && .venv/bin/python -m pytest -q tests/test_host_verification.py']}})
+        'verification_commands': [f'cd {shlex.quote(str(source))} && {entrypoint} -q tests/test_host_verification.py']}})
     contract, _ = write_repair_contract(tmp_path / 'state', req, base_commit='base', created_by='test', source_root=source)
     assert contract['scope'] == ['src/zf/runtime/host_verification.py']
     command = contract['verification_commands'][0]

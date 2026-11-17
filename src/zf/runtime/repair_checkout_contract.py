@@ -30,7 +30,7 @@ def bind_checkout_contract(contract: dict, source_root: Path) -> dict:
                 break
         if str(root) in text:
             raise ValueError("repair verification must run in its isolated checkout")
-        for prefix in (".venv/bin/python -m pytest", "python -m pytest", "python3 -m pytest", "pytest"):
+        for prefix in (".venv/bin/python -m pytest", ".venv/bin/pytest", "python -m pytest", "python3 -m pytest", "pytest"):
             if text == prefix or text.startswith(prefix + " "):
                 return f"env PYTHONPATH=src {shlex.quote(sys.executable)} -m pytest" + text[len(prefix):]
         return text
