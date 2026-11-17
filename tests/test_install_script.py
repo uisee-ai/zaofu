@@ -27,7 +27,7 @@ def checkout(tmp_path):
     root = tmp_path / "source with spaces"
     for child in ("tools", ".venv/bin", "web/dist"):
         (root / child).mkdir(parents=True)
-    for name in ("install.sh", "tools/install_config.py"):
+    for name in ("install.sh", "tools/install_config.py", "tools/install_herdr.py"):
         shutil.copy(ROOT / name, root / name)
     (root / "web/dist/index.html").write_text("test")
     executable(root / ".venv/bin/python", f'exec {shlex.quote(sys.executable)} "$@"')
@@ -42,6 +42,11 @@ def checkout(tmp_path):
         executable(bin_dir / name, f'echo "{name} $*" >> "$CALLS"\n'
                    + ('exit "${SYNC_DEPS_FAIL:-0}"' if name == "uv" else "exit 0"))
     executable(bin_dir / "curl", 'exit "${UNHEALTHY:-0}"')
+    executable(bin_dir / "herdr", '''
+if [[ "$1" == --version ]]; then echo "herdr ${HERDR_VERSION:-0.9.5}";
+elif [[ "$1" == api ]]; then echo '{}';
+else exit "${HERDR_PROTOCOL_FAIL:-0}"; fi
+''')
     executable(bin_dir / "tmux", '''
 echo "tmux $*" >> "$CALLS"
 if [[ "$1" == has-session ]]; then
@@ -138,6 +143,13 @@ def test_locked_dependencies_fail_before_launch(checkout):
     assert result.returncode == 7
     assert "uv sync --locked --extra web --extra stream-json --extra controller" in calls(checkout)
     assert "npm" not in calls(checkout) and "launcher" not in calls(checkout)
+
+
+@pytest.mark.parametrize("extra", [{"HERDR_VERSION": "0.7.0"}, {"HERDR_PROTOCOL_FAIL": "1"}])
+def test_incompatible_herdr_blocks_even_skip_deps(checkout, extra):
+    result = run(checkout, "--yes", "--skip-deps", **extra)
+    assert result.returncode != 0 and "Herdr 未就绪" in result.stdout
+    assert "launcher" not in calls(checkout) and "zf controller" not in calls(checkout)
 
 
 @pytest.mark.parametrize("context", ["pin", "ZF_CONTROLLER_WORKSPACE_CONFIG", "ZF_CONTROLLER_CLIENT_ID", "ZFC_WORKSPACE_ID"])

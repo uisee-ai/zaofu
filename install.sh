@@ -22,10 +22,10 @@ usage() {
   --host HOST                  127.0.0.1（默认）/localhost/::1/0.0.0.0
   --port PORT                  Dashboard 端口（默认 8001）
   --no-start                   只安装/配置/注册，不启动后台进程
-  --skip-deps                  跳过依赖同步和 Web 构建，使用已有安装
+  --skip-deps                  跳过安装/构建，仍检查已有 Herdr 协议
   -h, --help                   帮助
 
-自动在用户目录安装缺少的 uv、Node.js 22；不使用 sudo、不安装系统服务。
+自动在用户目录安装缺少的 uv、Node.js 22、Herdr 0.9.5；不使用 sudo、不安装系统服务。
 系统需先有 bash、curl、git、tmux、tar、python3。Provider CLI 登录由用户完成。
 已有 managed 实例不能用此脚本降级；云端/全面托管沿用 Controller 生命周期。
 EOF
@@ -132,14 +132,21 @@ PY
     mv "$scratch/${archive%.tar.gz}" "$node_home"
     export PATH="$node_home/bin:$PATH"
   fi
-  step '同步锁定的 Python 依赖并构建 Dashboard'
+  step '同步锁定的 Python 依赖'
   uv sync --locked --extra web --extra stream-json --extra controller
-  npm --prefix "$root/web" ci --no-audit --no-fund
-  npm --prefix "$root/web" run build
 else
   [[ -x "$root/.venv/bin/zf" && -f "$root/web/dist/index.html" ]] || fail '--skip-deps 需要已有 .venv 和 web/dist'
 fi
 command -v uv >/dev/null || fail '找不到 uv'
+step '安装并验证 Web Terminal 的 Herdr 依赖'
+herdr_args=()
+[[ "$deps" == 1 ]] || herdr_args+=(--check-only)
+"$root/.venv/bin/python" tools/install_herdr.py "${herdr_args[@]}"
+if [[ "$deps" == 1 ]]; then
+  step '构建 Dashboard'
+  npm --prefix "$root/web" ci --no-audit --no-fund
+  npm --prefix "$root/web" run build
+fi
 zf_cmd=("$root/.venv/bin/zf")
 pending=0
 if [[ "$mode" == observed ]]; then

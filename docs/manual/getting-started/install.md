@@ -23,11 +23,19 @@ cd zaofu
 | observed | 本机工作台 + 外部实例注册 + 授权 Project 的心跳、Session、tokens 等观测 | 需要已批准的外部 Workspace 和注册码 |
 | cloud | 提示前往门户注册、申请云端实例，本机不安装 | 由 Controller 审核和创建实例 |
 
-脚本会安装缺少的 uv 到 `~/.local/bin`、缺少或低于 22 的 Node.js 到
+脚本会安装缺少的 uv、Herdr 到 `~/.local/bin`，缺少或低于 22 的 Node.js 到
 `~/.local/share/zaofu/node`，使用 `uv sync --locked`、`npm ci` 和生产 Web 构建。
 Node 下载使用官方 SHA256 清单验证；uv 遵循[官方安装机制](https://docs.astral.sh/uv/getting-started/installation/)，
 不修改 shell profile。缺少 Python 3.11+ 时由 uv 管理项目解释器。不会调用 sudo、修改系统包、
 安装开机服务或复制其他机器的模型登录。后续直接调用 uv 时可将 `~/.local/bin` 加入 PATH。
+
+Web Terminal 的 Herdr 随安装一起准备：首次下载固定
+[Herdr 0.9.5](https://github.com/herdrdev/herdr/releases/tag/v0.9.5)，核对固定的官方 SHA256，
+然后复用 ZaoFu adapter 检查版本、API schema、observe/control 和 Tab 重命名。
+下载、校验或协议检查失败时，不发布新二进制、不启动 Dashboard。已有兼容版本会复用；
+旧版、损坏或不兼容版本需先由用户修复，脚本不会覆盖已有 Herdr 或修改 Provider hooks。
+`--skip-deps` 仍执行协议检查；若缺失 Herdr，去掉该参数重新安装。安装输出包含实际版本、
+路径和二进制 SHA256，便于记录部署证据。此检查不等于真实模型登录或终端端到端验收。
 
 ```bash
 # 自动化安装：必须显式选择模式，或用 --yes 选择默认 standalone
@@ -46,7 +54,7 @@ ssh -L 8002:127.0.0.1:8002 user@your-node
 
 需要局域网直连时显式传 `--host 0.0.0.0`。有写权限的 URL 保存在
 `<workspace-home>/install-web-<port>.log`（0600），不会写入终端安装输出；只在可信设备查看。
-安装成功的含义是 Web 进程存活且 Workspace API 就绪。开始真实 Agent 工作前仍需用户自行安装、
+安装成功的含义是 Herdr 能力检查通过、Web 进程存活且 Workspace API 就绪。开始真实 Agent 工作前仍需用户自行安装、
 登录 Codex / Claude Code，完成 Web Bootstrap，并运行对应的 provider doctor。
 
 ## 将本地节点注册到 Controller

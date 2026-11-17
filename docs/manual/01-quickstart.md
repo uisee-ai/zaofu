@@ -70,11 +70,11 @@ export ZAOFU_ROOT=/path/to/zaofu
 完成标志：Dashboard 打开并进入安装 Onboarding。安装步骤只需要按本教程执行，
 本页不要求先创建示例 Project。
 
-### Web Terminal（默认启用，可选安装）
+### Web Terminal（install.sh 集成安装）
 
-Dashboard host 默认启用 Web Terminal；这只开放受鉴权的 Terminal 能力，不会自动安装或
-启动 CLI。若要在 Dashboard 内实际运行 Claude Code/Codex TUI，还需安装 Herdr `>=0.8.0`；
-它是宿主二进制，不属于 `uv sync` 的 Python 依赖：
+Dashboard host 默认启用 Web Terminal；运行时不会自动安装或启动 CLI。根目录 `install.sh`
+已经集成 Herdr 下载、SHA256 和协议检查。若使用手动 `uv sync` 路径，仍需安装 Herdr
+`>=0.8.0`；它是宿主二进制，不属于 Python 依赖：
 
 ```bash
 curl -fsSL https://herdr.dev/install.sh | sh
