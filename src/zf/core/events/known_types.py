@@ -647,6 +647,9 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     # Agent (stream-json transport)
     "agent.thinking", "agent.text", "agent.tool.use", "agent.tool.result",
     "agent.usage", "agent.api_blocked", "agent.timeout",
+    "controller.usage.receipt",
+    "controller.execution.started",
+    "controller.execution.finished",  # Bound accounting projection; not another native cost sample.
     # Autoresearch trigger decisions and supervisor diagnostic injection.
     "autoresearch.trigger.accepted", "autoresearch.trigger.skipped",
     "autoresearch.invocation.requested",

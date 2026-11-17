@@ -77,7 +77,20 @@ def event_log_from_project(
     """Return the EventLog for a project's effective runtime state dir."""
     es = getattr(getattr(config, "security", None), "event_signing", None)
     observer = None
-    if config is not None and config.observability.controller.enabled:
+    if config is not None:
+        from zf.integrations.controller.binding import managed_config, ManagedDenied, approved_projects, retired_projects
+        cloud = managed_config()
+        if cloud is not None:
+            from zf.integrations.controller.installation import Installation
+            from zf.integrations.controller.workspace import project_contexts
+            matches = [ctx for ctx in project_contexts(cloud, Installation(cloud).credentials(),
+                       sorted(set(approved_projects(cloud)) | set(retired_projects(cloud))))
+                       if ctx.state_dir == Path(state_dir).resolve()]
+            if len(matches) != 1:
+                raise ManagedDenied('EventLog is outside the managed Project scope')
+            config = matches[0].config
+    cloud_observation = getattr(getattr(config, "observability", None), "controller", None)
+    if cloud_observation is not None and cloud_observation.enabled:
         from zf.integrations.controller.collector import Collector
 
         observer = Collector(state_dir, config)

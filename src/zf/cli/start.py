@@ -725,6 +725,10 @@ def _refresh_pricing_catalog(config, state_dir: Path) -> None:
         print(f"Warning: {exc}; using last-known-good pricing", file=sys.stderr)
 
 
+from zf.integrations.controller.project_runtime import managed_runtime
+
+
+@managed_runtime
 def run(args: argparse.Namespace) -> int:
     project_root = Path.cwd()
     # doc 78 O-7 fix: load the project .env so the watcher (and the O-7
@@ -734,6 +738,8 @@ def run(args: argparse.Namespace) -> int:
     # (R8 stall: 29 requested, 0 delivered). Non-overriding.
     from zf.core.config.project_context import load_project_env
     load_project_env(project_root)
+    from zf.integrations.controller.execution import check_project
+    check_project(project_root)
     config_path = project_root / "zf.yaml"
     dry_run = getattr(args, "dry_run", False)
     if not dry_run:

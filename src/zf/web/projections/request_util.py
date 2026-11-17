@@ -146,6 +146,9 @@ def _web_unlock_rate_limit() -> tuple[int, int]:
 
 
 def _web_trusted_session_enabled() -> bool:
+    from zf.integrations.controller.access import request_authority
+    if request_authority.get() is not None:
+        return request_authority.get() is True
     return os.environ.get("ZF_WEB_TRUSTED_SESSION", "").strip().lower() in {
         "1",
         "true",

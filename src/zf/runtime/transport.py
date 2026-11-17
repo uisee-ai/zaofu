@@ -21,6 +21,7 @@ from zf.core.config.schema import RoleConfig, ZfConfig
 from zf.core.events.model import ZfEvent
 from zf.runtime.provider_context import has_provider_context_exhausted
 from zf.runtime.tmux import TmuxError, TmuxSession
+from zf.integrations.controller.tmux import managed_dispatch
 from zf.runtime.tmux_readiness import (
     TmuxReadinessMixin,
     build_tmux_readiness_error,
@@ -229,6 +230,8 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         cwd: Path | None = None,
     ) -> None:
         # 1206 Phase B: delegate slot allocation to the active layout.
+        from zf.integrations.controller.execution import check_project
+        check_project(cwd or Path.cwd())
         # WindowPerRoleLayout issues new-window (legacy behavior),
         # PaneGridLayout issues new-window for the first role and
         # split-window for every subsequent role.
@@ -434,6 +437,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
     def is_alive(self, role_name: str) -> bool:
         return self._agent_process_alive(role_name)
 
+    @managed_dispatch
     def send_task(
         self,
         role_name: str,
@@ -479,6 +483,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             return
         self.tmux.send_keys(role_name, prompt)
 
+    @managed_dispatch
     def compact_context(self, role_name: str, command: str) -> bool:
         if not command:
             return False

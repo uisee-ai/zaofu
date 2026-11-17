@@ -302,8 +302,9 @@ def invoke_reflection_llm(
 
     cmd = _reflect_command(backend)
     try:
-        proc = subprocess.run(
-            cmd,
+        from zf.integrations.controller.helper import run_provider
+        proc = run_provider(
+            cmd, backend=backend, plain_output=True,
             input=prompt,
             capture_output=True,
             text=True,

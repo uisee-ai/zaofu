@@ -681,6 +681,8 @@ def create_app(
     gets a fresh app pointing at its own tmp .zf.
     """
     app = FastAPI(title="zaofu dashboard", version=__version__)
+    from zf.integrations.controller.access import install_access
+    install_access(app)
     from zf.web.dashboard_projection import register_pending_handler
     register_pending_handler(app)
     from zf.web.projection_worker import active_worker, register_projection_worker
@@ -1233,7 +1235,10 @@ def create_app(
             or ""
         ).strip()
         try:
+            from zf.integrations.controller.binding import project_directory
+            workspace = project_directory(root, workspace)
             context = resolve_project_context(cwd=root, require_config=True)
+            project_directory(root, workspace, context.config.project.state_dir)
             project = WorkspaceRegistry(workspace=workspace).upsert_context(
                 context,
                 display_name=display_name,
@@ -8997,6 +9002,11 @@ def _web_mutation_auth_error(
     x_zf_web_token: str | None,
     web_session_token: str | None = None,
 ) -> dict | None:
+    from zf.integrations.controller.access import request_authority
+    if request_authority.get() is not None:
+        return None if request_authority.get() else {
+            '_status_code': 403, 'ok': False, 'status': 'unauthorized',
+            'action': action_name, 'reason': 'current Gateway authorization required'}
     configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
     trusted_session = _web_trusted_session_enabled()
     passcode_session = _web_session_token_valid(web_session_token)

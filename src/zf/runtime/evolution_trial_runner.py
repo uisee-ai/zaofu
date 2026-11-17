@@ -448,6 +448,7 @@ def _run_evaluator_cases(
                 request=request,
                 campaign=campaign,
                 case=case,
+                state_dir=state_dir,
                 backend=backend,
                 arm=arm,
                 index=index,
@@ -514,6 +515,7 @@ def _run_evaluator_cases(
 
 def _invoke_provider(
     *,
+    state_dir: Path | None = None,
     request: ZfEvent,
     campaign: Mapping[str, Any],
     case: Mapping[str, Any],
@@ -567,8 +569,9 @@ def _invoke_provider(
                 *( ["--model", model] if model else [] ),
                 prompt,
             ]
-        proc = runner(
-            command,
+        from zf.integrations.controller.helper import run_provider
+        proc = run_provider(
+            command, backend=backend, state_dir=state_dir, model=model, runner=runner,
             cwd=work,
             env=environment,
             capture_output=True,

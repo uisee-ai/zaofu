@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Protocol
 
 from zf import __version__
+from zf.integrations.controller.execution import managed_turn
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import FileLock
 from zf.runtime.operations_metrics import OperationsMetricsRegistry
@@ -427,6 +428,7 @@ class ClaudeHeadlessBackend:
             args.extend(["--session-id", thread_id])
         return args
 
+    @managed_turn
     def run_turn(
         self,
         *,
@@ -727,6 +729,7 @@ class CodexHeadlessBackend:
             args.extend(["--listen", "stdio://"])
         return args
 
+    @managed_turn
     def run_turn(
         self,
         *,
