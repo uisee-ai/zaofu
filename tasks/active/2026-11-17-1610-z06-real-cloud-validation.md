@@ -2,6 +2,13 @@
 
 > 状态: active
 
+## cwd 验证检查点
+
+真实独立 tmux 探针证明 gVisor 的 pane_current_path 为空、进程 cwd 可读；新增带
+所有权和进程身份检查的回退。派发前检查前移，避免尚未发送输入的错误产生预算
+义务。142 passed、3 deselected，sentinel 53 passed；未代替完整 Workflow 验收。
+旧失败的 131,072 未知预留保留，需通过受控且可审计的纠正流程处理。
+
 ## Q01c 默认 Workflow 修复检查点
 
 真实 PRD v5 已受理并进入 scan fanout，但 gVisor tmux 前台误判导致反复启动失败。

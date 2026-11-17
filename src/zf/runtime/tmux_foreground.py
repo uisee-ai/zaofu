@@ -72,3 +72,18 @@ def same_process_group(process: Process, *, proc_root: Path = Path("/proc")) -> 
                 and current.session == process.session and current.group == current.pid)
     except (OSError, ValueError, IndexError):
         return False
+
+
+def process_cwd(pane_pid: str, *, proc_root: Path = Path('/proc')) -> str:
+    """Read cwd of an owned pane PID only while its process identity is stable."""
+    try:
+        pid = int(pane_pid)
+        if pid <= 1:
+            return ''
+        before = _read(pid, proc_root)
+        path = (proc_root / str(pid) / 'cwd').readlink()
+        if not path.is_absolute() or not path.is_dir() or _read(pid, proc_root) != before:
+            return ''
+        return str(path)
+    except (OSError, ValueError, IndexError, TypeError):
+        return ''

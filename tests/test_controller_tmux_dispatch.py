@@ -47,3 +47,20 @@ def test_managed_runtime_generated_role_uses_spawned_contract_and_accounting(man
     with pytest.raises(ManagedDenied, match="role"):
         transport.send_task("invented-role", project.state_dir / "briefing.md", "must not run")
     assert len(sent) == 1
+
+
+def test_pre_input_cwd_failure_never_reserves_provider_budget(managed, monkeypatch):
+    from zf.runtime.tmux import TmuxError
+    config, peer, project, _ = managed
+    monkeypatch.chdir(project.project_root)
+    tmux = TmuxSession('isolated')
+    transport = TmuxTransport(tmux)
+    transport.register_role(RoleConfig(name='resident', backend='codex'))
+    transport._expected_cwds['resident'] = project.project_root
+    monkeypatch.setattr(transport, '_agent_process_liveness', lambda _: (True, ''))
+    monkeypatch.setattr(tmux, 'pane_current_path', lambda _: '')
+    for call in [lambda: transport.send_task('resident', project.state_dir / 'brief.md', 'fixture'),
+                 lambda: transport.compact_context('resident', '/compact')]:
+        with pytest.raises(TmuxError, match='unable to verify pane cwd'):
+            call()
+    assert not peer.budgets and not peer.leases

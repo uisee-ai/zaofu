@@ -212,3 +212,16 @@ Provider 故障样本。没有这个证据的失败仍保持未知，不按错�
 实际 Provider 子进程、关闭后拒绝执行、显式 resume 后恢复。取消调用没有独立原生
 usage，恢复后的累计 token_count 不能唯一分摊给两次调用；未结预留保留。这是明确
 的计量缺口，不能以停止成功或后续推理成功宣称取消消费结算通过。
+
+## Q01c：gVisor cwd 与派发前检查
+
+独立 tmux 探针复现 `pane_current_path` 为空，而同一 pane 的 `/proc/<pid>/cwd`
+能返回真实项目目录。不能将空值当成目录匹配，也不能跳过路径授权。仅在 tmux
+成功返回空值时，读取已验证归属 pane 的进程 cwd；读取前后核对进程身份、读取后
+再核对 pane PID，目录必须存在且为绝对路径。PID 更换、缺失或所有权不明均拒绝。
+
+同时将 send/compact 的存活、目录和模型切换检查移到 managed budget admission
+之前；真正 clear/paste/send 仍在预算与租约保护内。这样确定未发送输入的检查失败
+不会创建未知消费预留，已发送或无法证明是否发送的失败仍须保留责任。真实旧失败
+记录不追溯改写。直接影响闭包 142 passed、3 deselected；sentinel 53 passed。
+完整默认 Workflow 仍须部署后真实恢复验收。

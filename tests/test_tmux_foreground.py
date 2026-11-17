@@ -105,3 +105,35 @@ def test_actual_termination_signals_owned_foreground_even_when_pane_disappears(t
     assert sent == [(200, signal.SIGTERM), (100, signal.SIGTERM),
                     (200, signal.SIGKILL), (100, signal.SIGKILL)]
     assert result.alive_after_kill  # A surviving child is not reported as terminated.
+
+
+def test_owned_pane_cwd_fallback_rejects_changed_binding(tree, monkeypatch, tmp_path):
+    import subprocess
+    folder = tmp_path / 'project'
+    folder.mkdir()
+    (tree / '100/cwd').symlink_to(folder)
+    original = tmux_foreground.process_cwd
+    monkeypatch.setattr(tmux_foreground, 'process_cwd', lambda pid: original(pid, proc_root=tree))
+    tmux = TmuxSession('isolated')
+    monkeypatch.setattr(tmux, '_target', lambda _: '%1')
+    monkeypatch.setattr(tmux, '_run', lambda *args, **kwargs: subprocess.CompletedProcess([], 0, '', ''))
+    monkeypatch.setattr(tmux, 'pane_pid', lambda _: '100')
+    assert tmux.pane_current_path('dev') == str(folder)
+    ids = iter(['100', '200'])
+    monkeypatch.setattr(tmux, 'pane_pid', lambda _: next(ids))
+    assert tmux.pane_current_path('dev') == ''
+
+
+def test_cwd_fallback_rejects_process_reuse_or_missing_directory(tree, monkeypatch):
+    (tree / '100/cwd').symlink_to(tree)
+    original = tmux_foreground._read
+    calls = []
+    def read(pid, root):
+        calls.append(pid)
+        if len(calls) == 2:
+            proc(tree, 100, name='bash', parent=50, started=11)
+        return original(pid, root)
+    monkeypatch.setattr(tmux_foreground, '_read', read)
+    assert tmux_foreground.process_cwd('100', proc_root=tree) == ''
+    (tree / '100/cwd').unlink()
+    assert tmux_foreground.process_cwd('100', proc_root=tree) == ''

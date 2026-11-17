@@ -532,7 +532,15 @@ class TmuxSession:
         )
         if result.returncode != 0:
             return ""
-        return result.stdout.strip()
+        path = result.stdout.strip()
+        if path:
+            return path
+        # gVisor may leave this tmux format empty despite a valid /proc cwd.
+        # Resolve only the owned pane, then recheck that binding after the read.
+        from zf.runtime.tmux_foreground import process_cwd
+        pid = self.pane_pid(window)
+        path = process_cwd(pid)
+        return path if pid and pid == self.pane_pid(window) else ''
 
     def wait_for_prompt(
         self,

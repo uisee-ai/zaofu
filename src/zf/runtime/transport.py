@@ -452,7 +452,6 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
     def is_alive(self, role_name: str) -> bool:
         return self._agent_process_alive(role_name)
 
-    @managed_dispatch
     def send_task(
         self,
         role_name: str,
@@ -489,6 +488,12 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
                     f"refusing to send task to {role_name}: Codex model-switch prompt "
                     "requires operator interaction; no input was sent"
                 )
+        return self._send_admitted_task(role_name, briefing_path, prompt, context=context)
+
+    @managed_dispatch
+    def _send_admitted_task(self, role_name: str, briefing_path: Path, prompt: str,
+                            *, context: DispatchContext | None = None) -> None:
+        backend = context.backend if context else self.pane_current_command(role_name).strip()
         clear_input = getattr(self.tmux, "clear_input", None)
         if callable(clear_input):
             clear_input(role_name)
@@ -498,13 +503,16 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             return
         self.tmux.send_keys(role_name, prompt)
 
-    @managed_dispatch
     def compact_context(self, role_name: str, command: str) -> bool:
         if not command:
             return False
         if not self._agent_process_alive(role_name):
             return False
         self._assert_expected_cwd(role_name)
+        return self._compact_admitted_context(role_name, command)
+
+    @managed_dispatch
+    def _compact_admitted_context(self, role_name: str, command: str) -> bool:
         self.tmux.send_keys(role_name, command)
         return True
 
