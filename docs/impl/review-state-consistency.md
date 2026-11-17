@@ -31,7 +31,7 @@ Web metric_task 按 ID 取最后的归档记录，再由活跃记录覆盖。这
 任务记录分别为 `tasks/active/2026-10-31-0058-{watcher-batch-gap,event-rotation-cursor,
 task-archive-currentness,web-reopened-task-metrics}.md`，完成后归档到 `tasks/done/`。
 
-## 验证证据与基线限制
+## 2026-10-31 历史验证证据与基线限制
 
 环境：复用主 checkout 的 `.venv`，`PYTHONPATH=src` 指向当前 worktree，并将该 venv 的
 `bin` 放到 PATH 首位，确保 shell 子进程也使用同一依赖集。未调用真实 provider。
@@ -77,3 +77,27 @@ flow smoke **10 passed**；Web typecheck、Web unit、改动 Python 文件 Ruff 
 范围审查：16 个变更文件，跨 EventLog / Session / TaskStore / Runtime / Web projection
 共享边界，按 high 风险进行扩大验证；未更改 canonical 状态文件、凭据、provider 或配置。
 原 checkout 的未跟踪 `sima/` 保持不变。本分支仅本地提交，交接后冻结，未合并或 push。
+
+## 2026-11-17 当前 dev 整合
+
+以 `194552ca` 为基线重跑一致性回归，得到 5 failed / 3 passed，确认事件轮转、
+观察批次补读和重开任务指标仍需修复。TaskStore 最新归档查询已由 `b1f028e3` 落地，
+本轮保留现实现及回归，不重复替换。上节的全量结果仅代表 10 月 31 日历史版本。
+
+`7ee5611e fix: preserve event cursors and current task projections` 整合事件消费与投影，
+补齐同日碰撞的独立 segment、丢失游标历史时显式失败、Watcher 回调失败后重试。
+`6422418f fix: retain recovery evidence and release interrupted writers` 整合中断 writer
+释放、集成失败检查点与反馈保留。旧 source-index 测试在当前 dev 已有更强断言，
+保留当前版本。恢复合同见 [长期运行恢复](185-long-horizon-run-recovery.md)。
+
+验证分两组执行：恢复路径 6 个文件 **349 passed**；EventLog/Session、真实 watcher/
+CLI/runtime 调用、TaskStore/Web 投影和 mock replay 的 34 个文件 **493 passed**。
+两组均通过 `pytest -q --no-cov -n 4 --dist loadfile` 执行，排除 host、perf、
+real_provider；serial 单独 **10 passed**。Web typecheck/unit、Ruff 和 diff 检查通过；
+premerge sentinel **53 passed**，flow smoke **10 passed**。
+
+使用 `scripts/dev-verify.py plan --base dev --workers 4` 检查自动影响闭包。
+共享 EventLog/Orchestrator import 扇出会把 800 多个文件提升为整仓 deterministic
+步骤；按仓库聚焦验证规则，用上述显式闭包替代该步骤，执行
+`scripts/dev-verify.py run --base dev --workers 4 --skip-tier deterministic` 完成其他层。
+本轮未执行全量 pytest，也不将 mock E2E 当作真实 provider 交付证明。
