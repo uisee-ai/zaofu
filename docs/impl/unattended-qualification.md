@@ -211,3 +211,6 @@ Reader失败回执还需覆盖聚合等待窗口：首个稳定、同策略、�
 
 
 R11断点epoch2真实确认新进程保持Terra与主任务workspace-write，模型提醒配置已生效；但恢复到原请求摘要后仍停在旧request_hash_compatibility_failed。ensure_operation仅在摘要不同才尝试兼容恢复，等于原摘要反而直接返回blocked。新增真实prepare→block→prepare回归1RED/7保护通过，修正后53定向通过；同一原请求也须校验冻结sidecar、生成原有兼容证明再受控redrive，其他阻塞不清除、重放仅准入一次。332文件增量闭包4238通过/12失败，12项均在2137a567基线已复现，完整对账保留。运行中epoch2未热加载；04:06受控停止，保留新的诊断现场，等待下次断点复验。
+
+
+诊断执行约束补充：R11 epoch2真实argv显示父Task是workspace-write，派生AR角色却使用模板默认未指定sandbox；模型继承已有，但显式sandbox约束丢失。同一已核对parent_state_dir、同名且同backend的Codex角色继承父workspace-write；只传这一限制，不传allowed_tools或额外权限，不覆盖其它provider。模板provider_session=null也须正确建立约束。2RED/1保护通过后修正，真实null形状追加1RED，最终51定向通过；用现场完整YAML离线渲染并load_config后11角色命令确认workspace-write且无approvals-and-sandbox bypass。真实子进程复验仍待进行，147文件影响闭包进行中；旧子运行不直接改配置。

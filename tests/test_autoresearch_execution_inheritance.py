@@ -1,3 +1,5 @@
+import pytest
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,6 +38,8 @@ roles:
     backend: codex
     model: gpt-6-astra
     model_reasoning_effort: high
+    provider_session:
+      sandbox: workspace-write
 ''')
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ZF_PROJECT_ROOT", raising=False)
@@ -51,4 +55,22 @@ roles:
         assert args.func(args) == 0
     cfg = captured["cfg"]
     assert cfg.budget_usd == 40
-    assert cfg.role_provider_settings["planner"] == {"backend": "codex", "model": "gpt-6-astra", "model_reasoning_effort": "high"}
+    assert cfg.role_provider_settings["planner"] == {"backend": "codex", "model": "gpt-6-astra", "model_reasoning_effort": "high", "sandbox": "workspace-write"}
+
+
+@pytest.mark.parametrize("session", [None, {"native_delegation": False}])
+def test_diagnostic_inherits_parent_sandbox_without_extra_tools(tmp_path, session):
+    data = {"roles": [
+        {"name": "planner", "backend": "codex", "allowed_tools": ["Read"],
+         "provider_session": session},
+        {"name": "verify", "backend": "mock"},
+    ]}
+    cfg = AutoresearchRunConfig(worktree=tmp_path, role_provider_settings={
+        "planner": {"backend": "codex", "sandbox": "workspace-write"},
+        "verify": {"backend": "codex", "sandbox": "workspace-write"},
+    })
+    _apply_autoresearch_controller_overrides(data, cfg=cfg, run_id="diagnosis")
+    assert data["roles"][0]["provider_session"] == {
+        **(session or {}), "sandbox": "workspace-write"}
+    assert data["roles"][0]["allowed_tools"] == ["Read"]
+    assert "provider_session" not in data["roles"][1]

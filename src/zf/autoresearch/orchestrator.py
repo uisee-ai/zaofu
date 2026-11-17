@@ -237,6 +237,11 @@ def _apply_autoresearch_controller_overrides(
         for key in ("model", "model_reasoning_effort"):
             if selected.get(key):
                 role[key] = selected[key]
+        if role.get("backend") == "codex" and selected.get("sandbox") == "workspace-write":
+            # Preserve the parent's explicit confinement, never its tool grants.
+            role["provider_session"] = {
+                **(role.get("provider_session") or {}), "sandbox": "workspace-write",
+            }
 
     # The outer Autoresearch process owns diagnosis and consumption. Starting
     # another executing resident inside an experiment can recursively create

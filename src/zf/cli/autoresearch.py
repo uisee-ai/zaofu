@@ -930,7 +930,9 @@ def _run_loop(args) -> int:
         token_budget=parent_limits.token_budget if parent_limits is not None else None,
         role_provider_settings={
             role.name: {"backend": role.backend, "model": role.model,
-                        "model_reasoning_effort": role.model_reasoning_effort}
+                        "model_reasoning_effort": role.model_reasoning_effort,
+                        **({"sandbox": role.provider_session.sandbox}
+                           if role.provider_session and role.provider_session.sandbox else {})}
             for role in (context.config.roles if parent_limits is not None else [])
         },
         output_dir=output_dir,
