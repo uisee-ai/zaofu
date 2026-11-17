@@ -17,6 +17,14 @@ sentinel 53 passed。这些结果不替代完整真实 Provider Workflow。
 最终改动定向闭包（tmux lifecycle、角色准入、native observer、Terminal usage、三流
 mock smoke）38 passed；更新后的 sentinel 53 passed。完整真实默认 Workflow 仍在复验。
 
+`ea3de378 fix: bind managed TUI turns to native execution evidence` 已部署；
+`native-turn-adopt-1` 正常 MFA 接纳成功。新 Pod CA 包 SHA256 与退役 A 后配置一致。
+恢复原请求被旧 Project lease starting 义务阻止，未执行 Provider；继续补双端权威
+租约终态查询和本地条件恢复，不通过手工改状态消除阻塞。
+
+租约恢复最终影响闭包 68 passed，含 CLI、Controller command caller、Workspace 与
+三流 mock smoke；sentinel 53 passed。Controller 对应真实 PostgreSQL/API 48 passed。
+
 来源：Owner 要求完成剩余 1–8 真实验证；承接 Z05，联动 Controller Q01c。基线 7b32668f，旧回归结果不冒充真实 Provider。
 
 1. 已审核 Workspace 中调用真实 Provider -> verify: 模型确实执行小型任务、产物可复核，并通过现有受管执行入口上报 Session/Operation/usage。

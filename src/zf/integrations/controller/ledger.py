@@ -61,6 +61,15 @@ class Ledger:
                           (status, json.dumps(body), time.time(), identifier)).rowcount != 1:
                 raise ValueError('missing Connector obligation')
 
+    def put_if_current(self, previous, status, body):
+        """Do not retire an obligation replaced while remote proof was fetched."""
+        with self.connect() as db:
+            return bool(db.execute(
+                'UPDATE obligations SET status=?,body=?,updated=? WHERE id=? AND status=? AND body=? AND updated=?',
+                (status, json.dumps(body), time.time(), previous['id'], previous['status'],
+                 json.dumps(previous['body']), previous['updated']),
+            ).rowcount)
+
     def get(self, identifier):
         with self.connect() as db:
             row = db.execute('SELECT * FROM obligations WHERE id=?', (identifier,)).fetchone()

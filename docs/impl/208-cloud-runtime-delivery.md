@@ -28,6 +28,15 @@ Codex TUI 常驻进程按原生 `task_started` → usage → 同 turn_id `task_c
 长证据必须先落在 Pod 文件，再分块读取并核对长度与 SHA256；不能据 exec 退出码
 认定证据完整，也不能关闭验证或修改业务输出去掩盖传输截断。
 
+随后真实 stop/adoption/start 暴露 Project 槽位恢复缺口：Controller 已因旧 Pod 的
+物理停止证据释放租约，本地持久义务仍为 starting。恢复必须查询当前机器有权读取的
+同 Project 租约证明，绑定 Workspace、租约 ID、当前 deployment/generation；跨代
+仅接受 Controller 核验旧部署及已完成 stop 的物理 fence。此确认只解除本地 Project
+槽位，不清除用量或预算未知责任。原运行锁或同代存活 owner 仍阻止启动；更新本地义务
+使用条件更新，不能覆盖查询期间已替换的新租约。CLI start 和 Controller project.load
+共用这条路径，之后重新申请运行租约；同 Project 并发申请在 Controller 串行拒绝第二个
+运行实例。旧接口不支持、失联或证据不完整时保持拒绝。
+
 ## 可构建交付
 
 从仓库根目录运行 `docker build -f deploy/cloud/Dockerfile -t zaofu-runtime:<version> .`。
