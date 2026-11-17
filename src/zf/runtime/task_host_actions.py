@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import subprocess
 import tempfile
+from collections.abc import Callable
 
 from zf.core.state.locks import locked_path
 from zf.runtime.environment_exec import resource_locks
@@ -19,7 +20,11 @@ from zf.runtime.workflow_git_readiness import git_environment
 ACTION = "task-host-assist"
 
 
-def _commit(root: Path, manifest: dict) -> dict:
+def _commit(root: Path, manifest: dict, *,
+            source_snapshot: Callable[[Path], list[dict]] | None = None) -> dict:
+    # Only internal repair publication supplies a base-bound delta snapshot.
+    # External manifests cannot select or disable the default full-source gate.
+    snapshot = source_snapshot or source_files
     paths = manifest["paths"]
     # No alternate index, forced add, hook bypass, amendment, merge or push.
     def run(*args):
@@ -30,13 +35,13 @@ def _commit(root: Path, manifest: dict) -> dict:
     run("add", "--", *paths)
     if set(git(root, "diff", "--cached", "--name-only", "-z").split("\0")) - {""} != set(paths):
         raise ValueError("staged paths changed; preserve index for operator inspection")
-    if source_files(root) != manifest["files"] or git(root, "rev-parse", "HEAD") != manifest["head"]:
+    if snapshot(root) != manifest["files"] or git(root, "rev-parse", "HEAD") != manifest["head"]:
         raise ValueError("source changed during staging; preserve index for operator inspection")
     run("commit", "-m", "feat: publish reviewed task implementation", "-m",
         "Host-Assist-Manifest: " + manifest["manifest_digest"], "--only", "--", *paths)
     head = git(root, "rev-parse", "HEAD")
     if (git(root, "rev-parse", "HEAD^") != manifest["head"]
-            or source_files(root) != manifest["files"]
+            or snapshot(root) != manifest["files"]
             or git(root, "status", "--porcelain", "--untracked-files=all")):
         raise ValueError("Git postcondition failed; inspect committed effect before recovery")
     return {"status": "completed", "source_commit": head, "paths": paths}

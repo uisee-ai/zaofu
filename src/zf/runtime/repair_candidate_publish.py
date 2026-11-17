@@ -6,10 +6,16 @@ import os
 from pathlib import Path
 
 from zf.core.state.locks import locked_path
+from zf.runtime.project_git_baseline import _file
 from zf.runtime.task_host_actions import _commit
-from zf.runtime.task_host_manifest import digest, git, source_files
+from zf.runtime.task_host_manifest import digest, git
 from zf.runtime.workflow_git_readiness import git_read
 from zf.runtime.source_repair_apply import _hard_denied
+
+
+def _changed_paths(root: Path, base: str) -> list[str]:
+    return sorted((set(git(root, 'diff', base, '--name-only', '-z', '--').split('\0'))
+                   | set(git(root, 'ls-files', '--others', '--exclude-standard', '-z').split('\0'))) - {''})
 
 
 def publish_repair_candidate(*, writer, state_dir: Path, harness: Path, root: Path,
@@ -32,8 +38,7 @@ def publish_repair_candidate(*, writer, state_dir: Path, harness: Path, root: Pa
                 or any(p.is_file() and os.access(p, os.X_OK) and not p.name.endswith('.sample') for p in hooks.glob('*'))
                 or git(root, 'diff', '--cached', '--name-only')):
             raise ValueError('repair publish refuses Git hooks or an existing staged index')
-        names = sorted((set(git(root, 'diff', '--name-only', '-z').split('\0'))
-                        | set(git(root, 'ls-files', '--others', '--exclude-standard', '-z').split('\0'))) - {''})
+        names = _changed_paths(root, base)
         if not names:
             return ''
         for name in names:
@@ -43,7 +48,13 @@ def publish_repair_candidate(*, writer, state_dir: Path, harness: Path, root: Pa
                 raise ValueError(f'repair publish path outside authorized scope: {name}')
         git(root, 'var', 'GIT_AUTHOR_IDENT')
         git(root, 'var', 'GIT_COMMITTER_IDENT')
-        body = {'head': base, 'files': source_files(root), 'paths': names,
+        def snapshot(checkout: Path) -> list[dict]:
+            # Scan every delta path, including concurrent/untracked additions,
+            # against the frozen base even after commit. Unchanged tracked test
+            # fixtures are inherited history, not newly published source bytes.
+            return [_file(checkout, name) for name in _changed_paths(checkout, base)]
+
+        body = {'head': base, 'files': snapshot(root), 'paths': names,
                 'repair_contract_digest': payload['repair_contract_digest']}
         key = digest(body)
         previous = [e for e in writer.event_log.read_all() if e.payload.get('repair_publish_digest') == key]
@@ -53,7 +64,7 @@ def publish_repair_candidate(*, writer, state_dir: Path, harness: Path, root: Pa
             'action': 'repair-candidate-publish', 'repair_publish_digest': key,
             'repair_contract_digest': payload['repair_contract_digest'], 'base_commit': base,
             'branch': payload['branch'], 'paths': names})
-        result = _commit(root, {**body, 'manifest_digest': key})
+        result = _commit(root, {**body, 'manifest_digest': key}, source_snapshot=snapshot)
         writer.emit('runtime.action.attempt.completed', actor='zf-self-repair', causation_id=start.id,
             payload={'action': 'repair-candidate-publish', 'repair_publish_digest': key,
                      **result, 'product_verdict': 'not_evaluated'})
