@@ -57,12 +57,13 @@ def configure_identity(client, base, admin_password, iam_secret):
     # Creating the realm first preserves Keycloak's built-in basic/roles scopes.
     token = client.post(base + '/realms/master/protocol/openid-connect/token', data={
         'grant_type': 'password', 'client_id': 'admin-cli',
-        'username': 'fixture-admin', 'password': admin_password})
+        'username': 'fixture-admin', 'password': admin_password}, timeout=15)
     token.raise_for_status()
     headers = {'Authorization': 'Bearer ' + token.json()['access_token']}
 
     def call(method, path, **kwargs):
-        result = client.request(method, base + '/admin/realms' + path, headers=headers, **kwargs)
+        # Cold Realm creation can outlast the two-second readiness probe timeout.
+        result = client.request(method, base + '/admin/realms' + path, headers=headers, timeout=15, **kwargs)
         result.raise_for_status()
         return result.json() if result.content else None
 
