@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现提交: `1ed5334a feat: add standalone and controller-aware installer`
 
 # 安装入口与 standalone / Controller 选择
 
