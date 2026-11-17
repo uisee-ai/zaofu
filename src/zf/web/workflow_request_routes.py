@@ -90,7 +90,8 @@ def build_workflow_request_router(
     router = APIRouter()
     from zf.web.workflow_preparation_worker import WorkflowPreparationWorker
     preparation_worker = WorkflowPreparationWorker()
-    preparation_worker.watch(default_project_root)
+    if default_project_id:
+        preparation_worker.watch(default_project_root)
     router.add_event_handler("startup", preparation_worker.start)
     router.add_event_handler("shutdown", preparation_worker.stop)
 
