@@ -22,6 +22,7 @@ class CodexTurnBoundary:
         self.state = "empty"
         self.started = self.completed = self.usage_at = 0.0
         self.prior_usage = False
+        self.aborted = False
 
     def consume(self, row: dict) -> None:
         payload = row.get("payload", {})
@@ -55,6 +56,7 @@ class CodexTurnBoundary:
                 self.valid = False
                 return
             self.state = "completed" if kind == "task_complete" else "aborted"
+            self.aborted = self.aborted or kind == "turn_aborted"
             self.completed = when
 
     def project(self) -> dict:
@@ -62,7 +64,17 @@ class CodexTurnBoundary:
             return {}
         return {"session_id": self.session, "turn_count": len(self.turn_ids), "turn_id": self.turn,
                 "state": self.state, "started_at": self.started, "completed_at": self.completed,
-                "usage_at": self.usage_at, "prior_usage": self.prior_usage}
+                "usage_at": self.usage_at, "prior_usage": self.prior_usage, "aborted": self.aborted}
+
+
+def completed_session(after: dict, *, session_id: str) -> bool:
+    """A fresh terminal owns its entire Session, including every earlier turn."""
+    boundary = after.get("turn_boundary", {})
+    return bool(boundary and boundary.get("session_id") == session_id
+                and boundary.get("state") == "completed" and boundary.get("turn_count", 0) > 0
+                and boundary.get("aborted") is False and not boundary.get("prior_usage", True)
+                and 0 < boundary.get("started_at", 0) <= boundary.get("usage_at", 0)
+                <= boundary.get("completed_at", 0))
 
 
 def completed_turn(before: dict, after: dict, *, started_at: float, session_id: str) -> bool:

@@ -202,7 +202,8 @@ class Execution:
                          or (target.get('operation_id') and target['operation_id'] in {self.id, self.operation_id}))):
                 raise ManagedDenied('Session or Operation admission is closed')
 
-    def finish(self, usage, *, status, native_session='', accounting_mode='unknown', fresh_input=False, provider_error=None):
+    def finish(self, usage, *, status, native_session='', accounting_mode='unknown', fresh_input=False, provider_error=None,
+               usage_complete=True):
         from zf.core.events import EventWriter
         from zf.core.events.factory import event_log_from_project
 
@@ -214,6 +215,7 @@ class Execution:
                    'provider_session_id': native_session or None,
                    'backend': self.provider, 'provider': self.provider, 'model': self.model,
                    'usage': usage or {}, 'usage_sample_id': self.id, 'usage_scope': 'exclusive',
+                   'usage_completeness': 'complete' if usage_complete else 'partial',
                    'accounting_mode': accounting_mode, 'budget_reservation_id': self.body['budget']['id']}
         if fresh_input:
             payload['input_semantics'] = 'fresh_plus_cache'
@@ -326,7 +328,8 @@ def managed_turn(function):
                 usage = normalized['turn'] if normalized['mode'] == 'per_turn' else {}
             execution.finish(usage, status=getattr(result, 'status', 'unknown'),
                              native_session=native_id, accounting_mode=after.get('accounting_mode', 'unknown'),
-                             fresh_input=bool(native_usage), provider_error=provider_error or getattr(result, 'error', None))
+                             fresh_input=bool(native_usage), provider_error=provider_error or getattr(result, 'error', None),
+                             usage_complete=getattr(result, 'status', '') == 'completed')
             if result is not None:
                 # Preserve local cost counters; the aggregate Session event must not upload them twice.
                 result.usage['_controller_accounted'] = True
@@ -346,6 +349,12 @@ def reconcile_executions(config, credentials, transport, contexts):
         if row['status'] == 'settled':
             continue
         context = projects.get(body['project_id'])
+        if context and body.get('usage_review'):
+            if row['status'] == 'receipt_pending':
+                from zf.integrations.controller.usage_review import publish_review
+                publish_review(context, ledger, row)
+            unresolved += 1
+            continue
         if (context and body['deployment_id'] == credentials['deployment_id']
                 and row['status'] in {'preparing', 'not_started'}
                 and (body.get('result') == 'not_started'
@@ -401,6 +410,9 @@ def reconcile_executions(config, credentials, transport, contexts):
                     'action': 'release', 'policy_version': body['policy_version'],
                     'result_ref': 'connector:' + row['id'], 'digest': proof})
                 ledger.put(row['id'], 'settlement_pending', body)
+            if body.get('receipt', {}).get('usage_completeness') == 'partial':
+                unresolved += 1
+                continue
             result = transport.request('POST', '/internal/v1/me/budgets/reservations/' + body['budget']['id'] + '/settle', {
                 'protocol': 'zfc.control.v1', 'origin_id': body['deployment_id'], 'record_id': body['record_id']})
             if result.get('status') != 'settled':

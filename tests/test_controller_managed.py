@@ -72,9 +72,12 @@ def managed(workspace, tmp_path, monkeypatch):
             return httpx2.Response(200, json=result)
         if path.endswith('/settle'):
             records = [r['payload'] for r in peer.records.values() if r['payload'].get('record_id') == body['record_id']]
-            assert len(records) == 1
-            assert records[0]['tokens'] is not None
-            peer.settlements.append(records[0])
+            assert records
+            latest = max(records, key=lambda r: r['revision'])
+            assert latest['tokens'] is not None
+            if latest['completeness'] != 'complete':
+                return httpx2.Response(409, json={'error': 'usage_unresolved'})
+            peer.settlements.append(latest)
             return httpx2.Response(200, json={'status': 'settled'})
         if path == '/internal/v1/me/access/check':
             if not peer.access_allowed:

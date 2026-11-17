@@ -133,6 +133,9 @@ class Collector:
         if accounting not in {"api", "subscription", "enterprise", "unknown"}:
             accounting = "unknown"
         sample = str(data.get("usage_sample_id") or event.id)
+        revision = data.get('usage_revision', 1) if event.type == 'controller.usage.receipt' else 1
+        if type(revision) is not int or not 1 <= revision <= 10**9:
+            raise ValueError('invalid Controller usage revision')
         series = stable(self.cloud.project_id + ':' + str(data['usage_series_id'])) if data.get("usage_series_id") else None
         cumulative = data.get("usage_semantics") == "cumulative"
         source_started = data.get('usage_series_started_at')
@@ -153,11 +156,13 @@ class Collector:
         namespace = identifier(data.get("request_namespace"))
         if not (request_id and namespace):
             request_id = namespace = None
-        payload = {**attribution, "kind": "usage", "record_id": stable(self.cloud.project_id + ':' + sample), "revision": 1,
+        payload = {**attribution, "kind": "usage", "record_id": stable(self.cloud.project_id + ':' + sample), "revision": revision,
             "provider": identifier(data.get("provider")) or identifier(backend) or "unknown",
             "model": identifier(data.get("model")) or "unknown", "mode": mode, "accounting_mode": accounting,
             "source": "runtime", "source_request_id": request_id, "request_namespace": namespace,
-            "quality": "reported" if present else "missing", "completeness": "complete" if present else "pending",
+            "quality": "reported" if present else "missing",
+            "completeness": ("complete" if data.get('usage_completeness', 'complete') == 'complete'
+                             else "partial") if present else "pending",
             "tokens": tokens if present else None, "semantics": "cumulative" if cumulative and series else "delta",
             "series_id": series, "input_semantics": "fresh_plus_cache",
             "raw_counters": {key: value for key, value in raw.items() if key in {
@@ -172,7 +177,8 @@ class Collector:
             value = data.get(field)
             if isinstance(value, str) and re.fullmatch(r'\d{1,12}(\.\d{1,12})?', value):
                 payload[field] = value
-        self.outbox.enqueue("usage:" + sample, str(data.get("usage_timestamp") or event.ts), payload,
+        key = "usage:" + sample + (':revision:' + str(revision) if revision > 1 else '')
+        self.outbox.enqueue(key, str(data.get("usage_timestamp") or event.ts), payload,
                             sample_series=series if cumulative and series else "", origin_id=binding['deployment'],
                             baseline_first=not known_new_series)
 

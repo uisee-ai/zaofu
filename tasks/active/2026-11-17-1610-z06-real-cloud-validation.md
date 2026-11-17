@@ -70,3 +70,12 @@ mock smoke）38 passed；更新后的 sentinel 53 passed。完整真实默认 Wo
   在约 10.5 秒终止 Codex 启动的 sleep 90，后续调用被 fence 拒绝，显式 resume 后成功。
   取消/恢复原生计量边界不足，最终 46,358 tokens 已知、65,536 预留未结；不可将
   未知部分视为零或借重置额度清除。完整 Workflow 另在无旧责任的批准租户验证。
+
+## 部分用量与历史修订检查点
+
+Run Manager 419,492 已知 tokens 的停止缺少原生完成边界，却被旧逻辑标完整；
+原 Workflow 已通过 `zf runs pause` 暂停并保留。修复 tmux、Web Terminal、headless
+完整性判断，并增加限定为降低完整性的 `controller usage-review` CLI，追加 revision
+而不修改旧 ACK/已知消费。回归发现并修正旧 settle ACK 时序与受管 CLI 配置问题。
+原生/Terminal 闭包 133 passed；其余新闭包 90 passed，CLI/Workspace 修复复验
+38 passed；sentinel 53 passed。仍须部署后实际纠正两条中断收据和复核冻结，整批 active。

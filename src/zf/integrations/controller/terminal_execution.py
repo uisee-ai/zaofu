@@ -55,8 +55,12 @@ def observe(service, record, execution):
         if counters.get('total_tokens', 0) is not None and counters.get('total_tokens', 0) >= execution.config.request_tokens:
             current = service.stop_session(record.session_id)
         if current.state != 'active':
+            from zf.runtime.codex_turn_boundary import completed_session
+            native = service.usage.native_snapshot(provider=current.provider,
+                session_id=current.provider_session_id, project_root=service.project_root)
             execution.finish(delta({}, counters, fresh=True), status=current.state,
                 native_session=current.provider_session_id, accounting_mode=counters.get('accounting_mode', 'unknown'),
-                fresh_input=True)
+                fresh_input=True, usage_complete=current.provider == 'codex'
+                and completed_session(native, session_id=current.provider_session_id))
             return
         time.sleep(1)

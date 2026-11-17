@@ -102,6 +102,61 @@ def test_native_resumed_turn_subtracts_previous_complete_counters(managed, nativ
     assert delta(before, after)['input_tokens'] == 25
 
 
+def test_stopped_fresh_tui_reports_known_partial_usage_without_final_settlement(managed, native):
+    config, peer, context, credentials = managed
+    path, registry, identity = native
+    execution = Execution((config, credentials, context), operation_id='interrupted-workflow',
+                          provider='codex', model='fixture', session_id=identity).begin(lambda: None)
+    started = execution.body['started_at'] + .01
+    # Native startup can lag budget admission; a fresh session does not prove finality.
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[0]['timestamp'] = iso(started)
+    path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+    append(path, event('task_started', started + .01, turn_id='incomplete'))
+    receipt(path, started + .02)
+    observe(SimpleNamespace(is_alive=lambda _: False), 'resident', registry,
+            RoleConfig(name='resident', backend='codex'), {}, execution)
+    synchronize_workspace(config)
+    records = [item['payload'] for item in peer.records.values() if item['payload']['kind'] == 'usage']
+    assert len(records) == 1
+    assert records[0]['tokens']['input_tokens'] == 50
+    assert records[0]['completeness'] == 'partial'
+    assert not peer.settlements
+    assert execution.ledger.get(execution.id)['status'] == 'settlement_pending'
+
+
+@pytest.mark.parametrize('ending', ['completed', 'running', 'aborted', 'earlier_aborted'])
+def test_terminal_stop_requires_all_native_turns_complete(managed, native, ending):
+    from zf.integrations.controller.terminal_execution import observe as terminal_observe
+    from zf.web.terminal_usage import TerminalUsageService
+    config, peer, context, credentials = managed
+    path, _, identity = native
+    execution = Execution((config, credentials, context), operation_id='terminal-test',
+                          provider='codex', model='fixture', session_id='public-terminal').begin(lambda: None)
+    started = execution.body['started_at'] + .01
+    append(path, event('task_started', started, turn_id='first'))
+    receipt(path, started + .01)
+    if ending == 'earlier_aborted':
+        append(path, event('turn_aborted', started + .02, turn_id='first'),
+               event('task_started', started + .03, turn_id='second'))
+        receipt(path, started + .04, total=200)
+        append(path, event('task_complete', started + .05, turn_id='second'))
+    elif ending != 'running':
+        append(path, event('task_complete' if ending == 'completed' else 'turn_aborted',
+                           started + .02, turn_id='first'))
+    usage = TerminalUsageService(state_dir=context.state_dir)
+    current = SimpleNamespace(session_id='public-terminal', provider='codex', provider_session_id=identity,
+                              state='stopped')
+    service = SimpleNamespace(project_root=context.project_root, get_session=lambda _: current,
+        usage=SimpleNamespace(snapshot=lambda _: snapshot(context, 'codex', identity),
+                              native_snapshot=usage.native_snapshot))
+    terminal_observe(service, current, execution)
+    synchronize_workspace(config)
+    records = [item['payload'] for item in peer.records.values() if item['payload']['kind'] == 'usage']
+    assert records[0]['completeness'] == ('complete' if ending == 'completed' else 'partial')
+    assert bool(peer.settlements) == (ending == 'completed')
+
+
 def test_aborted_turn_without_receipt_is_never_zero_baselined_on_resume(managed, native):
     _, _, context, _ = managed
     path, _, identity = native

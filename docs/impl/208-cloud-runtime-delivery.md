@@ -225,3 +225,25 @@ usage，恢复后的累计 token_count 不能唯一分摊给两次调用；未�
 不会创建未知消费预留，已发送或无法证明是否发送的失败仍须保留责任。真实旧失败
 记录不追溯改写。直接影响闭包 142 passed、3 deselected；sentinel 53 passed。
 完整默认 Workflow 仍须部署后真实恢复验收。
+
+## Q01c：原生取消用量的完整性与历史纠正
+
+真实 Run Manager 在停止时已观测 419,492 tokens，但没有原生 `task_complete`；
+旧逻辑把非空 counters 标成完整。修正后，tmux Codex turn 必须有匹配的原生完成边界，
+Web Terminal 的整个新会话必须全部正常完成；取消、未完成和先前中断均只报告部分
+用量。headless 非 completed 结果同样不能凭非空 counters 声称完整。保留已知 counters
+和未知责任，订阅计量不变为 API 账单。partial receipt 不请求最终 settle。
+
+新增 `zf controller usage-review --execution-id ID --reason REASON --evidence-ref
+REF#sha256=DIGEST`，仅将已释放、已结算且原始 usage 已 ACK 的当前项目执行降为部分
+用量。命令不能更改 tokens、费用、身份或核销责任；原始收据和远端结算证据保留，
+追加同 record/origin/occurred_at 的 revision 2。依据安装 Ledger CAS 先持久化纠正，
+再通过 EventWriter/Collector 追加；正常 Connector 可跨部署重放该纠正，幂等重试不
+修改旧 ACK。Controller 既有修订对账冻结后续预算，保留已知消费；不得借旧 settle
+ACK 在纠正尚未上传时再次标成已结算。证据引用和理由保留在事件及纠正义务中。
+
+验证：原生 observer、managed caller、Terminal 影响闭包 133 passed；纠正补充测试
+初次揭示旧 ACK 竞态与 CLI 未应用受管项目配置，两处均修正；CLI/Workspace 38 passed，
+其余纠正/Collector/managed 闭包 90 passed（同轮 CLI 失败另由后续 38 项复验覆盖）。
+sentinel 53 passed。集合有重叠，不累计为唯一测试数；真实部署复验另记。原默认
+Workflow 保留在 paused 状态，不能借此宣称完整 Workflow 已通过。
