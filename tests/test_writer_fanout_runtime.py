@@ -4565,6 +4565,46 @@ def test_writer_dispatch_fence_matches_terminal_dispatch_id_before_workflow_run_
     )
 
 
+def test_writer_dispatch_fence_releases_only_the_interrupted_attempt(tmp_path: Path):
+    state_dir, log, _transport, orch = _state(tmp_path)
+    _seed_tasks(state_dir)
+    _start(orch)
+    dispatch = next(
+        event for event in log.read_all()
+        if event.type == "fanout.child.dispatched"
+        and event.payload.get("task_id") == "TASK-1"
+    )
+    dispatch_id = str(dispatch.payload["run_id"])
+    for task_id, source_attempt_id in [
+        ("TASK-2", dispatch_id),
+        ("TASK-1", "another-attempt"),
+    ]:
+        log.append(ZfEvent(
+            type="workflow.operation.interrupted", actor="zf-cli",
+            payload={"task_id": task_id, "source_attempt_id": source_attempt_id,
+                     "reason": "fast_stop"},
+        ))
+        assert orch._task_dispatch_id_is_active("TASK-1", dispatch_id)
+    log.append(ZfEvent(
+        type="workflow.operation.interrupted", actor="zf-cli",
+        payload={"task_id": "TASK-1", "source_attempt_id": dispatch_id,
+                 "reason": "fast_stop"},
+    ))
+    assert not orch._task_dispatch_id_is_active("TASK-1", dispatch_id)
+    orch._last_worker_state["dev-1"] = "busy"
+    orch._recover_writer_fanout_task_bindings()
+    assert orch._last_worker_state["dev-1"] == "idle"
+    assert orch._writer_task_dispatch_fence_reason(
+        "TASK-1", role_instance="dev-1", run_id=dispatch_id + "-retry-1",
+    ) == ""
+    # A subsequent dispatch of the same identity is live again.
+    log.append(ZfEvent(
+        type="fanout.child.dispatched", actor="zf-cli", task_id="TASK-1",
+        payload=dict(dispatch.payload),
+    ))
+    assert orch._task_dispatch_id_is_active("TASK-1", dispatch_id)
+
+
 def test_writer_fanout_completion_keeps_canonical_task_active_for_verify(
     tmp_path: Path,
 ):

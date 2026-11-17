@@ -450,6 +450,13 @@ class FanoutRecoveryRuntimeMixin:
                 task = self.task_store.get(task_id)
                 if task is None or task.status in {"done", "cancelled", "blocked"}:
                     continue
+                if not self._task_dispatch_id_is_active(task_id, run_id):
+                    if task.assigned_to == role_instance and task.active_dispatch_id == run_id:
+                        self._set_worker_state(
+                            role_instance, "idle", task_id=task_id, force=True,
+                            reason="writer fanout dispatch no longer active",
+                        )
+                    continue
                 if (
                     task.assigned_to == role_instance
                     and task.active_dispatch_id == run_id
