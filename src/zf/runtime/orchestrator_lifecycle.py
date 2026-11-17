@@ -984,6 +984,7 @@ class LifecycleManagerMixin(
 
     def restart_role_instance(
         self, role: "RoleConfig", *, resume_failed_synth: str = "",
+        resume_failed_reader: str = "", recovery_approval_ref: str = "",
     ) -> "WorkflowRuntimeDecision":
         """Restart one role through the same recovery path as the watchdog.
 
@@ -1009,6 +1010,8 @@ class LifecycleManagerMixin(
             inject_idle_prompt=not force_fresh_session,
             force_fresh_session=force_fresh_session,
             resume_failed_synth=resume_failed_synth,
+            resume_failed_reader=resume_failed_reader,
+            recovery_approval_ref=recovery_approval_ref,
         )
 
     def _respawn_instance(
@@ -1019,6 +1022,8 @@ class LifecycleManagerMixin(
         inject_idle_prompt: bool = True,
         force_fresh_session: bool = False,
         resume_failed_synth: str = "",
+        resume_failed_reader: str = "",
+        recovery_approval_ref: str = "",
     ) -> "WorkflowRuntimeDecision":
         """Serialize replacement of one provider session across processes.
 
@@ -1036,6 +1041,8 @@ class LifecycleManagerMixin(
             inject_idle_prompt=inject_idle_prompt,
             force_fresh_session=force_fresh_session,
             resume_failed_synth=resume_failed_synth,
+            resume_failed_reader=resume_failed_reader,
+            recovery_approval_ref=recovery_approval_ref,
         )
 
     def _respawn_instance_with_lease(
