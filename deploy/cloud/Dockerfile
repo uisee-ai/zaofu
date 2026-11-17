@@ -21,6 +21,10 @@ WORKDIR /opt/zaofu
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 COPY skills/ ./skills/
+COPY yoke/ ./yoke/
+COPY examples/prod/ ./examples/prod/
+COPY zf-prd-v5.yaml ./
+COPY deploy/cloud/check_runtime.py ./deploy/cloud/check_runtime.py
 COPY --from=web /build/web/dist ./web/dist/
 RUN uv sync --frozen --no-dev --extra web --extra controller --extra stream-json \
     && uv cache clean
@@ -30,6 +34,7 @@ ENV PATH="/opt/zaofu/.venv/bin:/workspace/home/.local/bin:/usr/local/bin:/usr/bi
     PYTHONUNBUFFERED=1
 WORKDIR /workspace
 USER 1000:1000
+RUN /opt/zaofu/.venv/bin/python /opt/zaofu/deploy/cloud/check_runtime.py
 EXPOSE 8443
 ENTRYPOINT ["/usr/bin/tini", "--", "zf"]
 CMD ["controller", "serve", "--workspace-config", "/etc/zaofu/zf.yaml", "--host", "0.0.0.0", "--port", "8443", "--ssl-keyfile", "/etc/zaofu/tls/tls.key", "--ssl-certfile", "/etc/zaofu/tls/tls.crt"]

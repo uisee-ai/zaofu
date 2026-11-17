@@ -6,6 +6,15 @@
 !src/**
 !skills/
 !skills/**
+!yoke/
+!yoke/**
+!examples/
+!examples/prod/
+!examples/prod/**
+!zf-prd-v5.yaml
+!deploy/
+!deploy/cloud/
+!deploy/cloud/check_runtime.py
 !web/
 !web/**
 web/node_modules

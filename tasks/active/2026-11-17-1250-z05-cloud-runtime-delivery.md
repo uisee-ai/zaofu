@@ -20,4 +20,5 @@
 不把 Controller 的数据库或集群凭据放进租户镜像，不改项目 canonical state。
 
 实施与纠正 spec：[208 云端 Runtime 交付](../../docs/impl/208-cloud-runtime-delivery.md)。
-已完成镜像与空工作台接线验证；项目首次初始化出现真实准入循环，继续实施，不关闭任务。
+已完成镜像与空工作台接线验证；新增项目准入/ACK/初始化重试以及云端历史 Outbox 交接。
+聚焦回归已通过，真实 Gateway 与重建复验继续进行；完整 Session/Provider 等仍未关闭，任务保持 active。

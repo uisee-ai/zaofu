@@ -1356,6 +1356,12 @@ def create_app(
                 admission_inspection=admission_inspection,
             )
             return JSONResponse(body, status_code=status_code)
+        try:
+            from zf.integrations.controller.binding import project_directory
+            project_directory(root, str(payload.get("workspace") or "default"),
+                              generated_config.state_dir if generated_config else payload.get("state_dir"))
+        except Exception as exc:
+            return JSONResponse({"ok": False, "status": "init_failed", "reason": str(exc)}, status_code=422)
         if generated_config is not None:
             root.mkdir(parents=True, exist_ok=True)
             (root / "zf.yaml").write_text(

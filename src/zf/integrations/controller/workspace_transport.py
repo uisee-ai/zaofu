@@ -70,6 +70,20 @@ class WorkspaceTransport:
         if 'receipt_dispositions' in self.hello.get('capabilities', []):
             status = outbox.status()
             for origin in status['origins']:
+                if (self.config.hosting == 'cloud' and origin['origin_id'] != self.credentials['deployment_id']
+                        and 'cloud_receipt_handoff' in self.hello.get('capabilities', [])):
+                    grant = self.request('POST', '/internal/v1/me/cloud-handoffs', {
+                        'protocol': 'zfc.telemetry.v1', 'origin_id': origin['origin_id'],
+                        'stream_id': status['stream_id'], 'max_seq': origin['max_seq']})
+                    if (grant.get('protocol') != 'zfc.telemetry.v1'
+                            or grant.get('workspace_id') != self.config.workspace_id
+                            or grant.get('uploader_id') != self.credentials['deployment_id']
+                            or grant.get('origin_id') != origin['origin_id']
+                            or grant.get('stream_id') != status['stream_id']
+                            or type(grant.get('max_seq')) is not int or grant['max_seq'] < origin['max_seq']
+                            or not isinstance(grant.get('expires_at'), (int, float))
+                            or grant['expires_at'] <= time.time()):
+                        raise ValueError('historical telemetry handoff identity mismatch')
                 identifiers = outbox.quarantined_ids(origin['origin_id']) or ['watermark-only']
                 for start in range(0, len(identifiers), 32):
                     response = self.request('GET', '/internal/v1/me/receipt-dispositions', params={
