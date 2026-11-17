@@ -66,7 +66,11 @@ def admit_project(context, workspace):
     if intent and any(intent.get(k) != v for k, v in identity.items()):
         raise ManagedDenied('pending Project initialization identity changed')
     saved = json.loads(private_read(installation.path / 'policy.json'))
-    if intent is None:
+    if intent and intent['request']['generation'] > credentials['generation']:
+        raise ManagedDenied('pending Project initialization belongs to a newer deployment')
+    if intent is None or intent['request']['generation'] < credentials['generation']:
+        # A manual retry after fenced replacement is a new current-generation request.
+        # Preserve Project identity; never replay the old machine's approval as a new grant.
         intent = {**identity, 'request': {'protocol': 'zfc.control.v1', 'request_id': str(uuid.uuid4()),
             'project_id': entry.project_id, 'generation': credentials['generation'], 'policy_version': saved['version']}}
         installation.write(name, intent)

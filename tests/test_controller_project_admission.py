@@ -196,3 +196,29 @@ def test_cloud_delivery_obtains_bounded_handoff_before_historical_replay(cloud, 
             assert transport.deliver(outbox)['pending_records'] == 0
             assert calls.index('/internal/v1/me/cloud-handoffs') < calls.index('/internal/v1/me/receipt-dispositions')
             assert next(iter(peer.records.values()))['origin_deployment_id'] == old['deployment_id']
+
+
+def test_pending_cloud_initialization_can_retry_after_generation_replacement(cloud, monkeypatch):
+    from zf.integrations.controller.project_admission import intent_name
+    config, peer = cloud
+    root = config.project_root / 'pending-replacement'
+    peer.deny_admission = True
+    with pytest.raises(ManagedDenied, match='project_quota_exceeded'):
+        initialize(root)
+    installation = Installation(config)
+    path = installation.path / intent_name(root)
+    old = json.loads(path.read_text())
+    credentials = {**installation.credentials(), 'generation': 2, 'deployment_id': 'successor'}
+    peer.generation, peer.deployment_id = 2, 'successor'
+    monkeypatch.setattr(Installation, 'credentials', lambda self: credentials)
+    with WorkspaceTransport(config, credentials) as transport:
+        apply_policy(config, credentials, transport, installation)
+    with pytest.raises(ManagedDenied, match='project_quota_exceeded'):
+        initialize(root)
+    pending = json.loads(path.read_text())
+    assert pending['project_id'] == old['project_id']
+    assert pending['request']['request_id'] != old['request']['request_id']
+    assert pending['request']['generation'] == 2
+    assert not list(root.glob('**/events.jsonl'))
+    peer.deny_admission = False
+    assert initialize(root).ok and len(peer.admissions) == 1

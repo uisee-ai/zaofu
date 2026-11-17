@@ -259,6 +259,34 @@ def test_terminal_settled_cost_receipts_and_short_lifecycle_are_replayed_once(pr
     assert 'private-terminal-title' not in json.dumps(batch)
 
 
+def test_managed_terminal_finish_does_not_project_a_reusable_idle_session(project):
+    from zf.integrations.controller.client import collect_project
+    from zf.web.terminal_registry import TerminalRegistry
+
+    root, config, state = project
+    collector = Collector(state, config)
+    started = datetime.now(timezone.utc).isoformat()
+    stopped = datetime.now(timezone.utc).isoformat()
+    registry = TerminalRegistry(state, project_id='local-project-id', project_root=root)
+    registry.mutate(lambda value: value['sessions'].append({'session_id': 'term-a', 'generation': 1,
+        'provider': 'codex', 'state': 'stopped', 'created_at': started, 'stopped_at': stopped}))
+    log = event_log_from_project(state, config=config)
+    EventWriter(log).append(ZfEvent(type='controller.execution.finished', actor='controller-connector',
+        payload={'thread_id': 'term-a', 'operation_id': 'terminal-operation', 'backend': 'codex',
+                 'source': 'terminal', 'status': 'stopped', 'usage': {'_controller_accounted': True}}))
+    log.close()
+    context = SimpleNamespace(config=config, state_dir=state, project_root=root)
+    collect_project(context, collector, heartbeat=False)
+    collect_project(context, collector, heartbeat=False)
+    messages = collector.outbox.pending(32)
+    validate(messages)
+    sessions = [m['payload'] for m in messages if m['payload']['kind'] == 'session']
+    assert [(r['source'], r['status']) for r in sessions] == [('terminal', 'started'), ('terminal', 'stopped')]
+    assert sessions[-1]['ended_at'] == stopped
+    operation = next(m['payload'] for m in messages if m['payload']['kind'] == 'operation')
+    assert operation['operation_id'] == 'terminal-operation' and operation['status'] == 'cancelled'
+
+
 def test_project_configuration_can_return_to_a_previous_value(project):
     _, config, state = project
     collector = Collector(state, config)

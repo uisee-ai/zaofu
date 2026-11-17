@@ -22,3 +22,11 @@
 实施与纠正 spec：[208 云端 Runtime 交付](../../docs/impl/208-cloud-runtime-delivery.md)。
 已完成镜像与空工作台接线验证；新增项目准入/ACK/初始化重试以及云端历史 Outbox 交接。
 聚焦回归已通过，真实 Gateway 与重建复验继续进行；完整 Session/Provider 等仍未关闭，任务保持 active。
+
+
+追加修正：镜像内固定 Herdr/Codex 工具、Herdr 冷启动限时重试、待初始化 Project
+跨代次显式重新准入。聚焦闭包 131 项通过；真实沙箱终端画面、Keycloak 撤销 WS、换代重试与新 Session 停止投影已复验。
+
+终态验收追加发现并纠正 execution 收据覆盖终端 stopped 的投影冲突；实际 caller 红绿
+回归、131 项相关闭包与 53 项 sentinel 通过。真实 CLI 未输入模型凭据或推理提示；
+Controller 看到停止 Session 及 pending/null 用量，完整模型调用资格保持未完成。

@@ -591,7 +591,8 @@ class FakeRunner:
         raise AssertionError(f"unexpected spawn: {argv}")
 
 
-def test_herdr_adapter_starts_a_project_named_headless_server() -> None:
+@pytest.mark.parametrize("warming_timeout", [False, True])
+def test_herdr_adapter_starts_a_project_named_headless_server(warming_timeout: bool) -> None:
     class StartingRunner(FakeRunner):
         def __init__(self) -> None:
             super().__init__()
@@ -606,6 +607,8 @@ def test_herdr_adapter_starts_a_project_named_headless_server() -> None:
                 del timeout
                 self.argv.append(command)
                 self.workspace_lists += 1
+                if warming_timeout and self.workspace_lists == 2:
+                    raise subprocess.TimeoutExpired(command, 2.0)
                 return subprocess.CompletedProcess(
                     command,
                     1 if self.workspace_lists == 1 else 0,

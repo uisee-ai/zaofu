@@ -561,3 +561,42 @@ def test_default_project_alias_and_canonical_id_share_terminal_registry(
     assert created.status_code == 200
     assert default_view.status_code == 200
     assert default_view.json()["sessions"][0]["session_id"] == created.json()["session"]["session_id"]
+
+
+def test_managed_terminal_websocket_uses_verified_origin_with_private_upstream_host(tmp_path, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+    from zf.integrations.controller.access import ManagedAccessMiddleware
+    from zf.web import terminal_routes
+
+    client, service = _router_client(tmp_path)
+    origin = "https://workspace.example.test"
+    class Verifier:
+        def verify(self, token, method, path):
+            assert token == "signed-fixture"
+            return {"origin": origin}
+        def current(self, claims):
+            assert claims["origin"] == origin
+    client.app.add_middleware(ManagedAccessMiddleware,
+        config=SimpleNamespace(gateway_origin=origin), verifier=Verifier())
+    async def relay(websocket, **kwargs):
+        await websocket.send_text("fixture-frame")
+    monkeypatch.setattr(terminal_routes, "relay_terminal_websocket", relay)
+    sid = service.list_sessions()["sessions"][0]["session_id"]
+    prefix = f"/api/projects/project-a/terminal-sessions/{sid}"
+    headers = {"origin": origin, "x-zf-access-context": "signed-fixture", "x-zf-web-token": "secret"}
+    ticket = client.post(prefix + "/attachments", json={"mode": "observe"}, headers=headers).json()
+    protocols = [ticket["subprotocol"], ticket["ticket"]]
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(prefix + "/observe", subprotocols=protocols,
+                headers={**headers, "origin": "https://attacker.example", "x-forwarded-host": "workspace.example.test"}):
+            pass
+    with client.websocket_connect(prefix + "/observe", subprotocols=protocols, headers=headers) as socket:
+        assert socket.accepted_subprotocol == "zf-terminal-v1"
+        assert socket.receive_text() == "fixture-frame"
+
+
+def test_unverified_forwarded_origin_does_not_relax_standalone_terminal_policy():
+    ws = SimpleNamespace(headers={"origin": "https://workspace.example.test", "host": "private.service:8443",
+        "x-forwarded-host": "workspace.example.test", "x-zf-access-context": "unverified"},
+        url=SimpleNamespace(scheme="wss"), scope={"zf.access": {"origin": "https://workspace.example.test"}})
+    assert _same_origin(ws, _config()) is False

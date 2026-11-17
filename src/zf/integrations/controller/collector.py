@@ -59,7 +59,9 @@ class Collector:
                 phase = "completed" if data.get("status") in {"completed", "not_started"} else "cancelled" if data.get("status") in {"cancelled", "stopped"} else "failed"
             session_id = identifier(data.get("thread_id") or data.get("provider_session_id"))
             operation_id = identifier(data.get("operation_id") or data.get("run_id"))
-            if session_id:
+            # Native terminal lifecycle belongs to TerminalRegistry. A later execution
+            # receipt must not overwrite its stopped state with reusable-Session idle.
+            if session_id and data.get("source") != "terminal":
                 source = data.get("source")
                 if source not in {"workflow", "kanban", "channel", "operator", "helper"}:
                     source = "unknown"

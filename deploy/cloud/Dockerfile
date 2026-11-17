@@ -25,10 +25,16 @@ COPY yoke/ ./yoke/
 COPY examples/prod/ ./examples/prod/
 COPY zf-prd-v5.yaml ./
 COPY deploy/cloud/check_runtime.py ./deploy/cloud/check_runtime.py
+COPY tools/install_herdr.py ./tools/install_herdr.py
+COPY deploy/cloud/providers/ ./providers/
 COPY --from=web /build/web/dist ./web/dist/
 RUN uv sync --frozen --no-dev --extra web --extra controller --extra stream-json \
     && uv cache clean
-ENV PATH="/opt/zaofu/.venv/bin:/workspace/home/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+RUN npm ci --omit=dev --prefix /opt/zaofu/providers \
+    && HOME=/tmp/zf-herdr-build .venv/bin/python tools/install_herdr.py \
+    && install -m 755 /tmp/zf-herdr-build/.local/bin/herdr /usr/local/bin/herdr \
+    && rm -rf /tmp/zf-herdr-build
+ENV PATH="/opt/zaofu/.venv/bin:/opt/zaofu/providers/node_modules/.bin:/workspace/home/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     HOME="/workspace/home" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1

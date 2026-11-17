@@ -14,7 +14,8 @@ Git 历史、运行目录不进入镜像。
 实例包含当前 CLI、源码内模板、生产控制器配置及 profiles、规范 skills 和 yoke 依赖、Web 及 git/tmux/Node/npm/tini；默认
 非 root，HOME 为 `/workspace/home`。部署侧提供独享 `/workspace` 持久卷、限额
 `/tmp`、只读 WorkspaceConfig 和独立 TLS Secret。使用只读根文件系统，无 Kubernetes
-ServiceAccount token。模型登录、API 凭据和 Provider CLI 的版本资格另行验证，
+ServiceAccount token。镜像带校验和固定的 Herdr 0.9.5 与 npm lock 固定的 Codex 0.166.0。模型登录、
+API 凭据与真实调用另行验证，
 不能把镜像能启动等同于已授权模型调用。
 
 入口为 `zf controller serve`，在绑定机器身份并完成首次同步后开放 8443。Controller
@@ -67,3 +68,52 @@ uploader、origin、stream、max_seq 与有效期。Controller 必须有旧写�
 初始化默认 PRD v5，并校验传递 skills 依赖、profile、Git 和 Session。真实联验先发现
 生产目录/v5 配置缺失，构建验收进一步发现 yoke 方法依赖缺失；两者均已补入允许列表。
 这项验收只初始化项目，不执行 Provider 任务，也不代替云端预算/认证联合验收。
+
+
+## 终端工具交付补齐
+
+反例：真实云端 `terminal-sessions` 显示 enabled=true，但 capability=false、Herdr
+binary unavailable。本地 install.sh 已有工具安装，云镜像不能遗漏同一运行依赖。
+Docker 构建复用 `tools/install_herdr.py` 的官方版本/SHA256，不再维护第二份下载逻辑；
+Codex 使用 `deploy/cloud/providers/package-lock.json` 的固定版本和 integrity。
+工具安装到镜像只读路径，不写入租户 HOME，也不携带任何登录材料。
+
+构建检查以非 root 用户执行真实 Herdr schema/observe/control/tab rename 能力探测、
+Codex 版本检查和默认项目初始化。其他 Provider CLI 未被这次镜像资格覆盖；不能用
+Codex 已安装推断 Claude/CPA 已接通。实际终端 CLI 启动与模型推理分别验收，缺失
+usage 必须保留 unknown/pending，不能伪造为零成本。
+
+本次新增改动属于镜像工具交付；55 项既有安装器/终端适配测试通过，实际构建通过。
+默认 PRD v5 的真实 Web 创建、Project 上报、云端项目额度拒绝和导出下载已通过。
+完整模型调用的 Session/tokens 联验仍等待明确的凭据范围与 Provider 输入。
+
+
+真实沙箱首次启动进一步暴露 readiness 竞态：Herdr server 已启动，但第一轮 2 秒
+workspace list 探测超时直接中止了整个 5 秒启动等待。修正只在原有总时限内重试
+`herdr_timeout`，不重复 spawn、不吞掉其他错误、不延长无界等待。新增冷启动探测超时
+回归，终端适配、Web 路由及安装器闭包 70 项通过；claw02 冷启动创建/停止均返回 200。
+
+
+跨代次重试反例：先因额度拒绝创建，之后实例升级，持久 intent 仍携带旧 generation，
+导致重试一直被机器权限入口拒绝。现在只在用户再次初始化时，为更高的已验证机器代次
+创建新的 request_id/current generation/current policy 请求；Project/root/state_dir 身份
+保持不变。旧决定不被当作新授权、不会自动登记新范围；额度、忙碌、当前策略与 ACK
+检查继续执行。检测到 intent 属于更新代次时拒绝倒退。失败不写业务事件。
+新增换代重试回归后，项目接入、Workspace、managed 路径、终端适配/Web 与安装器
+闭包共 131 项通过；未运行全套 pytest。
+
+
+## Gateway 终端与 Session 投影纠正
+
+终端 Origin 只取 ManagedAccessMiddleware 已验签、完成当前授权复核的请求 scope，
+不能信任转发 Host。standalone 的 Host/scheme/allowed_origins 与一次性 ticket 保持原有
+检查。实际路由与鉴权闭包分别通过 62/59 项；claw02 收到 full terminal.frame 与 3478
+字节二进制画面。真实 Keycloak logout 后活动 WebSocket 以 4403 关闭，后续 API 401；
+重新认证后通过受管接口停止进程，另一个用户继续访问。没有输入模型凭据或推理提示。
+
+更强的终态验收发现：终端注册表的 stopped 已 ACK，但晚到的 controller.execution.finished
+把同一 Session 投影为 unknown/idle，较旧的 stopped 版本随后无法覆盖它。修复只让
+TerminalRegistry 提供终端 Session 生命周期；execution 收据保留 Operation 和用量投影，
+不再把终端当成可复用 Session。新增测试从实际 EventWriter/collect_project caller 复现
+先红后绿，闭包 131 项通过。错误历史收据保持原样，不改账、不重新解释同一 message_id；
+当前实验旧行保留为反例，生产若已有同类数据须单独评审显式纠正方案。新 Session 已在 claw02 复验为 stopped；对应缺失用量保持 pending/null。
