@@ -74,6 +74,7 @@ def planning_execution_context(config: Any, *, flow_kind: str = "") -> list[str]
     policy.update({
         "plan_approval_required": bool(config.workflow.plan_approval_enabled),
         "task_pipeline": metadata.get("task_pipeline", {}),
+        "rolling_smoke_policy": _rolling_smoke_policy(),
         "flow_kind": flow_kind,
         "authorizes_execution": False,
     })
@@ -141,6 +142,7 @@ def review_execution(
             "independent_task_verify": per_task,
             "task_pipeline_mode": pipeline.get("mode", "off") if isinstance(pipeline, Mapping) else "off",
             "command_owners": dict(owners),
+            "rolling_smoke_policy": _rolling_smoke_policy(),
             "task_requirements": [_task_requirements(task) for task in tasks],
             "stages": stages,
             "impl_self_check_required": bool(policy.get("impl_self_check_required")),
@@ -187,6 +189,11 @@ def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:
     owners = ("impl_self_check", "task_verify", "candidate_verify")
     return {
         "task_id": task_id,
+        "rolling_smoke_command_ids": [
+            str(command.get("id") or "")
+            for command in _rows(_object(task.get("validation")).get("commands"))
+            if isinstance(command, Mapping) and command.get("rolling_smoke") is True
+        ],
         "commands": [
             {
                 "command_id": str(command.get("id") or ""),
@@ -217,6 +224,17 @@ def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:
             for criterion in _rows(task.get("acceptance_criteria"))
             if isinstance(criterion, Mapping)
         ],
+    }
+
+
+def _rolling_smoke_policy() -> dict[str, Any]:
+    """Facts of candidate_incremental._run_rolling_smoke, not build inference."""
+    return {
+        "selector": "rolling_smoke == true",
+        "order": "command_registry_order",
+        "execution_workspace": "candidate_worktree",
+        "implicit_unselected_commands": False,
+        "writer_commands_replayed": False,
     }
 
 

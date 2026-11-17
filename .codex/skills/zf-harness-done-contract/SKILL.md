@@ -34,6 +34,10 @@ event or editing truth files.
 
 Before submitting the completion claim:
 
+Read the complete evidence lookup method below, including after compaction.
+Do not stop at the first 100 lines or treat a shortened command preview as the
+complete execution history. Existing event evidence needs no new product file.
+
 1. Compare the assigned scope with the actual diff and produced artifacts.
    核对当前 contract snapshot 的 `evidence_contract`、声明的输出和测试义务，
    逐项绑定本阶段交付的文件/ref；只有合同允许时才用其他持久化证据等价替代，
@@ -106,6 +110,16 @@ copy large logs into the event payload; persist them and cite their refs.
 
 ## 查找已持久化的命令证据
 
+恢复尝试先使用 briefing 的 `artifact handoff-evidence --operation <当前 id>`。
+索引中的 `command_preview` 只有前160字符，`command_truncated=true` 表示必须按该
+`--event <id>` 回读完整 command/output；旧索引没有此字段也不证明预览完整。
+复合命令前部可能是 apply_patch，后部才有测试，不能仅搜索预览中的 npm/test 关键词
+就断言 RED 丢失。核对候选事件的完整正文、执行顺序、源码和断言；混合输出未能证明
+各条命令的退出码时明确缺口，不从最后一个命令成功推断之前全成功。
+沿 `previous_operation` 和 `--source-operation` 查询已绑定的更早尝试，不猜测其他 Run。
+分页保持相同 digest；CLI 返回的 `ref` 是可引用的持久工件，未读完不能用摘要替代正文。
+
+当前尝试尚未进入前任交接索引时，使用以下 hook 入口，而不是等待下一次返工。
 使用当前 briefing 中的 CLI 和 state dir 查询实际 Provider 的 hook：
 
 ```text

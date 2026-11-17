@@ -188,6 +188,16 @@ Planner 不能自批；Critic 不因任务、用例或矩阵计数增加就判�
 - 候选装配检查只消费当时已有的输入；需要 frozen candidate、Verify briefing、
   source manifest 或最终浏览器 context 的命令留给真实后续消费者。保留 mandatory
   AC 及 command 身份，说明消费者和汇总入口，不能通过过滤命令降低最终覆盖。
+- 增量集成的 rolling smoke 在独立 Candidate worktree 执行，只按 registry 顺序
+  运行 `rolling_smoke=true` 的命令。读取执行报告中的 `rolling_smoke_policy` 与
+  每片 `rolling_smoke_command_ids`，逐项核对实际输入产物的生产动作。普通 build
+  命令即使写在前面或由 Impl/Task Verify 成功执行，也不会因此在集成工作区自动运行；
+  setup 安装依赖也不等于已编译当前候选。对照干净工作区核对被忽略的 dist、生成代码、
+  数据夹具是否由明确配置的 provisioning 或本次 smoke 命令产生。缺前置时修订原命令
+  合同并重审，不能只在正文写“先 build”，不能靠监工预先构建或复制旧产物取得通过。
+  例如测试导入 dist 时，单独 node 测试在已有 dist 的 Writer 可通过，在新 Candidate
+  却报模块缺失；让 smoke recipe 包含已授权的必要构建，或按真实执行顺序声明前置。
+  这仍是 Planner/Critic 的语义可执行性审查，Kernel 不猜测语言、不自动添加命令。
 - task_verify owner 指独立验收责任；当前本片可执行命令仍需 Impl 自检收据。
   candidate/human 未来责任保留待验；集成检查上下文不能冒充 Verify 或作者上下文。
 - “八并行”分别证明配置容量、可调度任务、在途派发、隔离工作区/端口/数据和实际

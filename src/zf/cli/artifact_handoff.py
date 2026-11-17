@@ -44,7 +44,7 @@ def run_evidence(args):
         if not 0 <= args.page_start < len(content):
             raise ValueError('invalid evidence page offset')
         end = min(len(content), args.page_start + 1024)
-        result = {'content': content[args.page_start:end], 'sha256': ref['sha256'],
+        result = {'content': content[args.page_start:end], 'sha256': ref['sha256'], 'ref': ref,
             'page_start': args.page_start, 'page_end': end, 'page_total': len(content),
             'next_page_start': end if end < len(content) else None, 'authorizes_execution': False}
     except (ConfigError, OSError, ValueError, KeyError, TypeError) as exc:

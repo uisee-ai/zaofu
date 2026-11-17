@@ -680,14 +680,11 @@ def prepare_writer_execution_card(
         "- Blocked: execution_status=failed/verdict=blocked; target_commit=observed HEAD, "
         "changed_files=actual diff, evidence_refs=durable refs. Clear template slots and "
         "unexecuted self-check rows; unknown facts may be empty. Submit normally.",
-        "- If required input delivery fails, use `execution_status: failed`, "
-        "`verdict: blocked`, and `failure_class` / `blocker_kind: reader_execution_failure`; "
-        "attach durable diagnostic `evidence_refs` and a concrete summary. "
-        "Incomplete reads can report this technical failure, never success or product rejection.",
-        "- If task capsule/briefing/snapshot versions disagree, stop and set "
-        "both `failure_class` and `blocker_kind` to `task_context_stale`; "
-        "attach the exact conflicting revisions as evidence. This is a "
-        "runtime context repair, not an upstream product scope gap.",
+        "- Input delivery failure: execution_status=failed, verdict=blocked, "
+        "failure_class=blocker_kind=reader_execution_failure. Attach durable diagnostics/summary; "
+        "incomplete reads never justify success or product rejection.",
+        "- Capsule/briefing/snapshot version conflict: stop; set failure_class=blocker_kind="
+        "task_context_stale and cite conflicting revisions. Request context repair, not scope expansion.",
         "- If the blocker proves this task contract is unsatisfiable inside "
         "its allowed paths, set both `failure_class` and `blocker_kind` to "
         "one of `task_contract_unsatisfiable`, `upstream_contract_gap`, or "
@@ -697,6 +694,8 @@ def prepare_writer_execution_card(
         "- Self-check command IDs are a closed set. Include a command receipt "
         "only for an exact command already present in the prefilled template; "
         "record extra checks as evidence instead of inventing a `command_id`.",
+        "- Evidence: read done-contract's full lookup method. Hooks use --actor, not --task; "
+        "`event:<id>` can cite short output. Read truncated command previews in full.",
         "",
     ]
     return command, command, display, lines

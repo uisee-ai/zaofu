@@ -57,6 +57,21 @@ def test_missing_raw_evidence_is_explicit_not_a_successful_preview(tmp_path):
     assert body['status'] == 'unavailable' and body['output'] is None
 
 
+def test_compound_command_preview_explicitly_requires_full_body_read(tmp_path):
+    from zf.runtime.task_execution_evidence import capture_execution_evidence
+    source, dispatch, hook, settled = observations(tmp_path)
+    command = "apply_patch <<'PATCH'\n" + "# test patch\n" * 30 + "PATCH\nnpm test"
+    hook = replace(hook, payload={**hook.payload, 'tool_input': {'command': command},
+                                 'tool_response': 'assertion RED; exit 1'})
+    ref = capture_execution_evidence(tmp_path, source, [dispatch, hook, settled])
+    row = hydrate_sidecar_ref(tmp_path, ref).payload['entries'][0]
+    assert 'npm test' not in row['command_preview']
+    assert row['command_truncated'] is True
+    original = hydrate_sidecar_ref(tmp_path, row['ref']).payload
+    assert original['command'] == command and original['output'] == 'assertion RED; exit 1'
+    assert original['authorizes_execution'] is False
+
+
 def test_real_dispatch_attaches_reachable_observation_index(dispatch_fixture):
     import subprocess
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
@@ -124,10 +139,14 @@ def test_authenticated_cli_can_page_original_evidence_across_multiple_attempts(e
                '--event', hook.id, '--state-dir', str(state)]
     assert main(command) == 0
     page = json.loads(capsys.readouterr().out)
+    descriptor = page['ref']
+    assert descriptor['sha256'] == page['sha256']
+    assert hydrate_sidecar_ref(state, descriptor).payload['event_id'] == hook.id
     content, digest = page['content'], page['sha256']
     while page['next_page_start'] is not None:
         assert main([*command, '--page-start', str(page['next_page_start']), '--digest', digest]) == 0
         page = json.loads(capsys.readouterr().out)
+        assert page['ref'] == descriptor
         content += page['content']
     assert json.loads(content)['output'] == 'original RED\n' * 300
     assert not page['authorizes_execution']

@@ -65,6 +65,7 @@ def capture_execution_evidence(state_dir: Path, source: dict, events: list) -> d
             kind='task_tool_observation', schema_version='task-tool-observation.v1',
             created_by='kernel', source_event_id=event.id)
         entries.append({'event_id': event.id, 'command_preview': body['command'][:160],
+                        'command_truncated': len(body['command']) > 160,
                         'status': body['status'], 'ref': ref})
     return write_immutable_json_sidecar(state_dir, {
         'binding': {k: source[k] for k in IDENTITY}, 'entries': entries,

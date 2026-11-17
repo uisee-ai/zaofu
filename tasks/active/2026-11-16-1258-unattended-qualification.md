@@ -267,3 +267,16 @@ blocked结果修正最终51文件影响闭包924 passed / 1 skipped，sentinel53
 结果后准入evt-b631e131e323，Run Manager自动发布evt-5f6d9c41cab8并派发后继自检。
 这是2次监工恢复介入（启动新源码与请求旧任务重试）的辅助证据，R13原轮仍FAILED，
 新冻结源码下的完整无人资格尚待复验。
+
+
+## R14：集成 smoke 与证据发现缺口
+
+冻结0c19afc6，08:41 UTC批准同版Plan，F1脏测试保全、F2控制器6.027秒恢复、F3真实结果通知中断及F5重复请求幂等命中，临时恢复0。数字任务Impl及独立Verify通过，集成evt-66f332159460因rolling smoke缺app/dist/numbers.js失败；只选择node测试，Plan正文“先build”没有进入实际执行命令。Planner、Critic和本session审批均遗漏干净集成工作区的前置条件，不能归因于产品算法。
+
+名称任务二次blocked称缺RED/smoke持久引用；原RED复合命令evt-e82da1cee9d8仍在账本及handoff索引e1a9880f…，短command_preview隐藏后部npm test，不能认定证据丢失。当前smoke的事件引用方法已存在，但Worker未正确使用。需补齐方法交付与可发现性，不能放宽TDD证据。
+
+09:10 UTC记录FAILED并受控停止本轮父子runtime和专属service，保留dirty成果。停止时自动诊断尚在推进，不声称已证明永远无法自愈；无Candidate/F4/F6/Judge/goal成功。下一修复：在既有执行报告/Planner上下文暴露rolling-smoke实际选择及独立工作区事实，技能复核干净环境前置；强化复合命令完整读取与当前hook事件证据方法，保持权限和验收门禁。B07/U07仍active。
+
+R14修正完成：Planner早期上下文与Critic执行报告暴露rolling-smoke选择、顺序和独立Candidate工作区，不自动执行未标记build；每片列实际smoke命令ID。既有handoff索引标记预览截断，鉴权分页CLI返回同摘要持久ref；执行卡提示按actor找hook和event引用。canonical技能补充干净环境前置及复合命令完整读取，同步两provider。
+
+真实集成消费者反例及Planner/Critic调用3RED，交接2RED/4保护通过→33定向通过。首轮闭包912通过/1跳过/1Reader措辞断言失败，撤回误改后最终58文件闭包913通过/1跳过，sentinel53通过；包含恢复和replan断点mock。briefing曾超12KiB，压缩重复描述后在完整闭包通过，不提高上限。这些不是新真实PRD通过；B07/U07待下一冻结轮。
