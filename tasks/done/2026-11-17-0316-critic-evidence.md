@@ -1,18 +1,17 @@
-# 第二批：按需评审与受控流程
+# 第一批：评审证据与局部追溯
 
-> 状态: active
+> 状态: done；实现提交：`eb9d3acf feat: add evidence-bound on-demand Plan and Channel review`
 
 依据：用户批准两批建议，基于 dev 54e4ecf8；完成后合并 dev，不 push。
 
-- 复用 PrdFlow 可选 Critic、现有选读和受控提案，支持 none / targeted / full 的明确选择与理由；默认不改变，不能由作者自批免审。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
-- Channel 使用现有按需邀请及定向 cross-review；提供无默认专门 Critic 的显式模板入口，确保必签名单与实际参与者一致。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
-- 程序检查不代替语义评审；定向审查说明覆盖边界，缺乏历史证据不假称增量全文已审。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
-- 验证三种路由、身份/版本绑定、必签收敛、审批保持、真实报告回放与 Web 投影；不以 mock 证明模型漏检率或真实提速。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
+- 复现 Channel 结构化 evidence_refs 丢失；保留完整评审 sidecar 及可查询引用，非法输入显式拒绝。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
+- 将当前版本、实际审查范围、未覆盖项和阅读依据纳入现有方法及投影，兼容历史缺证据记录而不伪造通过。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
+- 局部 AC 通过明确的 source index / coverage ledger 映射定位来源，不猜测业务关联；覆盖歧义和跨任务反例。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
 
 验证层：聚焦后端、Web unit/typecheck/build、Docker 浏览器（如涉及展示）、mock E2E、合并前后 sentinel；真实模型实验不冒充已完成。
 
 
-实现检查完成（待写入实现提交号后归档）：
+实现与验收完成：
 
 - 后端影响闭包：565 passed / 1 skipped（缺外部示例技能）；Proposal 拆分调用方 44 passed，新增策略不一致反例 1 passed。
 - Web typecheck/unit/build 通过；Docker 浏览器共 18 个不同用例通过（既有 14 + 新增 4）。
