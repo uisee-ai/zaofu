@@ -15,7 +15,7 @@ from zf.core.state.locks import locked_path
 
 def fingerprint(state_dir: Path) -> list:
     paths = [state_dir / "kanban.json"] + sorted((state_dir / "kanban").glob("*.json"))
-    return [[str(p), p.stat().st_ino, p.stat().st_size, p.stat().st_mtime_ns] for p in paths if p.exists()]
+    return ["metric-tasks.v2", *[[str(p), p.stat().st_ino, p.stat().st_size, p.stat().st_mtime_ns] for p in paths if p.exists()]]
 
 
 def refresh(state_dir: Path) -> None:
@@ -31,14 +31,16 @@ def refresh(state_dir: Path) -> None:
         before = fingerprint(state_dir)
         if meta(conn, "tasks") == before: return
         store = TaskStore(state_dir / "kanban.json")
-        active_ids = {task.id for task in store.list_all()}
+        active = {task.id: task for task in store.list_all()}
+        current = {task.id: task for task in store.list_all_with_archive()}
+        current.update(active)
         rows = []
-        for i, task in enumerate(store.list_all_with_archive()):
+        for i, task in enumerate(current.values()):
             data = {"id": task.id, "status": task.status, "assigned_to": task.assigned_to,
                     "created_at": task.created_at, "dispatched_at": task.dispatched_at,
                     "blocked_by": task.blocked_by,
                     "owner_role": getattr(task.contract, "owner_role", "") if task.contract else ""}
-            rows.append((task.id, i, int(task.id in active_ids), task.status,
+            rows.append((task.id, i, int(task.id in active), task.status,
                          kanban_column_projection(task).column, int(task.evidence is not None), json.dumps(data)))
         old = {row["id"]: tuple(row) for row in conn.execute("SELECT * FROM metric_task")}
         changed = [row for row in rows if old.get(row[0]) != row]
