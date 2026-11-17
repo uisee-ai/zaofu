@@ -189,7 +189,9 @@ def _check_result(runtime, dispatch):
             return [fill(v) for v in value]
         if value in ("<HEAD commit>", "<exact target_commit from Stage Context>"):
             return _git(Path(payload["workdir"]), "rev-parse", "HEAD")
-        return evidence if isinstance(value, str) and value.startswith("<durable") else value
+        return evidence if isinstance(value, str) and (
+            value.startswith("<durable") or value == "<implementation summary artifact or event ref>"
+        ) else value
     return fill(result)
 
 
@@ -237,6 +239,7 @@ def test_local_replan_retains_commit_and_releases_two_downstream_workers(tmp_pat
         "known_gaps": ["local contract requires downstream artifact"],
         "summary": "contract phase conflict", "failure_class": "contract_phase_conflict",
         "evidence_refs": ["mock://phase-conflict"],
+        "self_check": {},  # This blocked attempt has no successful self-check receipts.
     })
     replan = _oa_replan(runtime, failed)
     assert replan.payload["task_ids"] == ["TASK-1"]

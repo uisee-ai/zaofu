@@ -203,6 +203,13 @@ next_step 指明下一动作；必要时通过新 evidence_files 保留带来源
 不改权限、不取 action token。操作员可以审阅 `zf recover host-assist` 的精确清单，
 通过 token-gated `task-host-assist` 为已结束的阻塞尝试执行提交或合同命令。
 
+blocked 结果也必须填写真实事实：`target_commit` 取当前已观察 HEAD，`changed_files`
+列出实际本任务变更路径，`evidence_refs` 引用具体失败输出。不可只改 verdict/summary
+而留下 `<HEAD commit>`、示例证据或默认通过的自检行。无法观察的事实留空并解释；
+未执行的自检删除示例行或明确标记未通过，不伪造收据。Git 提交受阻时，当前 HEAD
+仍是提交前基线，不能声称未提交修改已被该 commit 包含。恢复机制只依据签名清单及
+精确预授权发布；它不会从描述猜测可提交路径，也不以发布成功代替后续独立 Verify。
+
 恢复 briefing 明确引用宿主回执时，先读取账本中对应 `runtime.action.attempt.completed`
 及其 receipt_ref/output_ref，校验摘要、Run/Task/合同/命令及目标提交、source_stable和退出码；
 身份或源码已变则不复用。回执仅证明命令事实，不是产品通过。允许引用已授权、同版且

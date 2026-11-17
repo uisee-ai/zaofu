@@ -242,3 +242,28 @@ F6 的 resident 自行定位 Docker 参数，自动派发修复、受控发布�
 修正新合同的精确入口规范化；旧冻结合同保留原文与摘要，由验证器把该精确拼写映射到受信 sys.executable -m pytest，并设置 PYTHONPATH=src 验证隔离候选。禁止执行候选自带虚拟环境入口，其他解释器、环境和相似路径继续拒绝。新增回归放置恶意候选 pytest 脚本，证明未执行；不修改不可变合同、不降低源码版本/审批/结果准入门禁。
 
 生产者/消费者2RED，旧合同兼容追加1RED；最终34定向通过，76文件增量影响闭包1338通过/7跳过，sentinel53、flow-smoke10通过。真实epoch3已受控停止并保留全部产品、修复与证据。由于加载新harness会改变source_head，旧修复不能自动应用到不同基线；下一冻结轮重新验证完整绑定，不跳过source_head_drift门禁。B07仍未完成，不能归档。
+
+
+## R13：blocked 结果的模板残留
+
+冻结32a13009的新轮中，名称Impl只更新失败摘要，保留`<HEAD commit>`、示例证据和空
+`changed_files`。contract-bound提交准入在blocked/failed分支提前返回，结果错误地结算；
+自动发布根据签名清单安全拒绝并升级。数字Impl填写完整，自动发布与重新派发正常，
+证明不是必须放开Git权限才能恢复。07:31 UTC受控关闭本轮，保存全部工作区和证据；
+F1/F2/F3/F5有局部证据，F4/F6及最终验收未完成，R13为FAILED，临时恢复介入0。
+
+修正在既有typed准入入口拒绝结果及自检中的目标/证据模板占位符，走原有有界
+`result_repair`，不提前结算、不增加语义尝试，不把未知事实或缺测伪装成通过。
+真实基础设施失败仍允许空未知字段及空自检；不要求其先满足成功验收。交接方法先写入
+canonical done-contract skill并同步两provider分发，紧凑执行卡要求blocked也填写
+观察到的HEAD、实际修改路径和失败引用。发布allowlist及source binding不放宽。
+
+6个回归RED/1个失败上报保护通过，修正后48定向通过。真实R13两份签名结果只读重放
+确认名称占位结果被拒绝、数字完整结果保留准入。完整SemanticResultSubmitService
+调用证明同attempt纠正后可上报dev.blocked，纠正前无终态事件。影响闭包首轮暴露
+旧mock自检占位及briefing超12KiB；补齐mock实际证据并压缩指引，不提高文本上限。
+最终闭包与真实断点复验仍待完成；上述不是新轮无人资格通过。
+
+blocked结果修正最终51文件影响闭包924 passed / 1 skipped，sentinel53 passed；
+其中包含局部replan断点闭合mock E2E。48项定向与完整提交入口通过。
+真实断点续跑和新冻结无人资格尚待完成，不能将此测试层当作真实Provider全流程。

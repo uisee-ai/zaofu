@@ -100,6 +100,18 @@ def _implementation_issues(
     except TaskContractSnapshotError as exc:
         return [_plan_contract_issue(exc)]
 
+    placeholder = _implementation_placeholder(result)
+    if placeholder:
+        return [_issue(
+            field=placeholder,
+            code="implementation_result_placeholder",
+            message=("Implementation result contains an unresolved placeholder, including on a blocked "
+                     "result. Fill target_commit from the observed HEAD and changed_files from the "
+                     "actual task diff; replace evidence slots with durable refs. Unknown facts may "
+                     "be empty and unexecuted self-check rows omitted on failure; never claim they passed."),
+            owner="implementation_owner",
+            action="result_repair",
+        )]
     execution_status = str(result.get("execution_status") or "completed")
     verdict = str(result.get("verdict") or "passed")
     if execution_status == "failed" or verdict in {"rejected", "blocked", "abstained"}:
@@ -150,6 +162,26 @@ def _implementation_issues(
             action="result_repair",
         )]
     return []
+
+
+def _implementation_placeholder(value: Any, path: str = "control_result") -> str:
+    """Validate template slots, not the meaning or completeness of a failure."""
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            field = f"{path}.{key}"
+            if key in {"source_commit", "target_commit", "evidence_refs", "changed_files"}:
+                if any("<" in item or ">" in item for item in _strings(child)):
+                    return field
+            elif isinstance(child, (Mapping, list)):
+                found = _implementation_placeholder(child, field)
+                if found:
+                    return found
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            found = _implementation_placeholder(child, f"{path}[{index}]")
+            if found:
+                return found
+    return ""
 
 
 def _verification_issues(

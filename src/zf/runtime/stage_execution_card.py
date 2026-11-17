@@ -677,8 +677,9 @@ def prepare_writer_execution_card(
         f"- Edit the complete semantic result at `{scratch}`.",
         "- Update the prefilled scratch file in place. With apply_patch use "
         "`*** Update File`; never delete, add, move, or recreate the scratch path.",
-        "- For a blocker, set `execution_status` to `failed`, describe "
-        "the reproducible blocker, and run the same submit command.",
+        "- Blocked: execution_status=failed/verdict=blocked; target_commit=observed HEAD, "
+        "changed_files=actual diff, evidence_refs=durable refs. Clear template slots and "
+        "unexecuted self-check rows; unknown facts may be empty. Submit normally.",
         "- If required input delivery fails, use `execution_status: failed`, "
         "`verdict: blocked`, and `failure_class` / `blocker_kind: reader_execution_failure`; "
         "attach durable diagnostic `evidence_refs` and a concrete summary. "
