@@ -191,6 +191,15 @@ def synchronize_workspace(config):
             except PolicyNotApplied as exc:
                 if ('execution_drain_required' not in str(exc) and 'local_consent_required' not in str(exc)
                         or not (installation.path / 'policy.json').exists()):
+                    # Liveness is independent of policy acceptance. Without this,
+                    # one rejected update makes the controller's freshness gate
+                    # prevent the owner from submitting its correction.
+                    outbox = Outbox(config.state_dir, observation(config, credentials))
+                    try:
+                        heartbeat(outbox, credentials['generation'], [])
+                    except OutboxFull:
+                        pass
+                    transport.deliver(outbox)
                     raise
                 policy_error = str(exc).rsplit(': ', 1)[-1]
                 policy = json.loads(private_read(installation.path / 'policy.json'))

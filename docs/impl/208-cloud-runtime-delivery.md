@@ -123,3 +123,17 @@ TerminalRegistry 提供终端 Session 生命周期；execution 收据保留 Oper
 结果归档到 `/home/min/workspace/.verification-archives/zaofu-controller-q01b-claw02-20261117/`。
 原 standalone 8002 保留，实验资源已清理；本轮未获得真实 Pod Provider/CPA 或生产灾备
 资格，Z05 继续 active。本地实现提交已完成，未合并/推送。
+
+## Q01c：策略拒绝的存活通道
+
+真实 claw02 验证发现控制面接受 batch_size=100，而 Runtime 合同上限是 32。实例
+拒绝应用本来正确，但同步异常使心跳停止，Controller 又以过期心跳拒绝更正策略，
+形成无法经产品接口恢复的闭环。Controller 修正严格数值边界；本地实例在可信策略
+已返回拒绝 ACK 后，继续以既有安装身份上报存活并排空部署级 Outbox，然后保留原
+拒绝结果。没有应用新策略，不执行命令/维护，不声明 Kernel ready。
+
+覆盖入口为 `synchronize_workspace`；回归同时证明失败版本不覆盖本地 policy、没有
+applied=true，只有真实 heartbeat，后续合法版本仍可正常应用。身份/协议校验失败
+维持原拒绝，不把信任边界失败掩盖成配置问题。对应 Controller 合同见兄弟仓库
+`docs/design/06-cloud-runtime-delivery-contract.md` §17。真实环境资格由 Q01c 任务记录，
+本段不是整批完成声明。
