@@ -147,13 +147,16 @@ def test_terminal_stop_requires_all_native_turns_complete(managed, native, endin
     usage = TerminalUsageService(state_dir=context.state_dir)
     current = SimpleNamespace(session_id='public-terminal', provider='codex', provider_session_id=identity,
                               state='stopped')
+    previous = {**snapshot(context, 'codex', identity), 'fresh_input_tokens': 1, 'cached_input_tokens': 1}
     service = SimpleNamespace(project_root=context.project_root, get_session=lambda _: current,
-        usage=SimpleNamespace(snapshot=lambda _: snapshot(context, 'codex', identity),
+        usage=SimpleNamespace(snapshot=lambda _: previous,
                               native_snapshot=usage.native_snapshot))
     terminal_observe(service, current, execution)
     synchronize_workspace(config)
     records = [item['payload'] for item in peer.records.values() if item['payload']['kind'] == 'usage']
     assert records[0]['completeness'] == ('complete' if ending == 'completed' else 'partial')
+    # Counter and completion evidence must come from the same final native read.
+    assert records[0]['tokens']['input_tokens'] == (100 if ending == 'earlier_aborted' else 50)
     assert bool(peer.settlements) == (ending == 'completed')
 
 

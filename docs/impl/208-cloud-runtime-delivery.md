@@ -247,3 +247,14 @@ ACK 在纠正尚未上传时再次标成已结算。证据引用和理由保留�
 其余纠正/Collector/managed 闭包 90 passed（同轮 CLI 失败另由后续 38 项复验覆盖）。
 sentinel 53 passed。集合有重叠，不累计为唯一测试数；真实部署复验另记。原默认
 Workflow 保留在 paused 状态，不能借此宣称完整 Workflow 已通过。
+
+进一步收紧 Terminal 结算：完成边界与计量 counters 必须来自同一次最终原生读取，
+避免停止前快照比最后完成记录更早却被标为完整。新增不同快照数值的回归；Terminal
+observer 与 managed callers 35 passed。
+
+真实 `partial-adopt-1` 正常接纳新镜像，1,465 个运行源码摘要一致。两条中断收据通过
+CLI 追加 revision 2 后，旧流 max_seq=20 正确拒绝新序号 21、22；审核精确两条纠正
+和旧 writer fence 后，使用 Controller 既有 `grant-handoff` 将该 uploader/origin/stream
+的历史上限授权到 22。未修改数据库或原消息，随后均 ACK。`delta-delete-2` 的独立
+前置检查及 Dashboard 已确认已知 1,976,314 tokens 保留、两条 partial、完整总量 null、
+账单 null 和预算冻结；删除后续步骤失败不影响这些已完成断言，失败原因另记录。
