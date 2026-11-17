@@ -1,6 +1,7 @@
 # 按需 Critic 输入与返修收敛
 
-> 状态: active
+> 状态: done
+> 实现提交: `0bf28494 feat: bound on-demand plan review inputs and preserve author claims`
 
 用户已批准按建议生成 Spec 并实施，追加要求真实 Channel → Plan Preview 验证。依据 [208 Spec](../../docs/design/208-demand-critic-input-and-convergence.md)，基于 dev bbefdff0 的隔离 worktree。
 
@@ -9,7 +10,7 @@
 - [x] S3 / AC5：修正场景边界、验收责任及角色阅读方法 → verify: 三份分发一致、负样本与真实输出阅读。
 - [x] S4 / AC6–7：固定样本对照和真实 Channel → Plan Preview → verify: 同版 PRD/Plan、策略/用量、Docker 页面/下载证据；不启动产品实施。
 
-实施完成后运行 dev-verify 与 sentinel，记录实际测试层和未覆盖项，提交实现，再以实现 hash 归档。未授权本轮 merge/push。
+实现已提交；最终 dev-verify 的 serial/Web/sentinel/flow-smoke 全部通过，deterministic 整库层由已完成的影响闭包替代，最终选择差集为零。保留首失败与修复证据，现按实现 hash 归档。未授权本轮 merge/push。
 
 ## 当前验证证据
 
