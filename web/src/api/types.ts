@@ -3227,6 +3227,7 @@ export interface OperatorInboxProjection {
 }
 
 export interface PlanPreview {
+  critic_review?: { mode: string; label: string; reason: string; focus: string[]; error?: string };
   action_payload?: Record<string, unknown>;
   schema_version: string;
   ok: boolean;

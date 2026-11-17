@@ -1,0 +1,22 @@
+# 第二批：按需评审与受控流程
+
+> 状态: active
+
+依据：用户批准两批建议，基于 dev 54e4ecf8；完成后合并 dev，不 push。
+
+- 复用 PrdFlow 可选 Critic、现有选读和受控提案，支持 none / targeted / full 的明确选择与理由；默认不改变，不能由作者自批免审。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
+- Channel 使用现有按需邀请及定向 cross-review；提供无默认专门 Critic 的显式模板入口，确保必签名单与实际参与者一致。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
+- 程序检查不代替语义评审；定向审查说明覆盖边界，缺乏历史证据不假称增量全文已审。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
+- 验证三种路由、身份/版本绑定、必签收敛、审批保持、真实报告回放与 Web 投影；不以 mock 证明模型漏检率或真实提速。 -> verify: 定向行为回归、直接调用方与相关合同检查通过。
+
+验证层：聚焦后端、Web unit/typecheck/build、Docker 浏览器（如涉及展示）、mock E2E、合并前后 sentinel；真实模型实验不冒充已完成。
+
+
+实现检查完成（待写入实现提交号后归档）：
+
+- 后端影响闭包：565 passed / 1 skipped（缺外部示例技能）；Proposal 拆分调用方 44 passed，新增策略不一致反例 1 passed。
+- Web typecheck/unit/build 通过；Docker 浏览器共 18 个不同用例通过（既有 14 + 新增 4）。
+- sentinel 53 passed，mock flow 10 passed；v5 Kanban/Channel 两条 UI 旅程均 passed、audit passed，provider-only fake。
+- 历史真实 Critic 回复隔离回放：8 对象完整保存，5 个唯一导航引用；未冒充新真实模型质量/成本实验。
+- 自动全量 deterministic/serial 未跑，以聚焦影响闭包替代；未运行全库 pytest。
+- 详细记录：reports/demand-critic-20261117/evaluation.md（本地忽略证据）；可复用合同见 docs/impl/206-spec-quality-evaluation.md。

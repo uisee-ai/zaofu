@@ -238,3 +238,17 @@ assert.equal(planReadingSections("```md\n## 本次变更\n假的标题\n```").ch
 
 
 assert.equal(planDecisionView({ id: "D-03", statement: "Owner 批准后才允许实现", status: "pending", blocking: true }).question, "Owner 批准后才允许实现");
+
+// Actual producer source_acceptance_ids resolve through unique admitted source IDs.
+const atomicMap = { tasks: [{ task_id: "T1", acceptance_criteria: [{ id: "LOCAL", source_acceptance_ids: ["AC-SOURCE"] }] }] };
+const atomicIndex = { traceability: [{ source_id: "AC-SOURCE", source_ref: "prd.md#AC-SOURCE" }] };
+assert.equal(buildPlanReview({ task_map: atomicMap, source_index: atomicIndex }).modules[0].criteria[0].sourceRefs[0], "prd.md#AC-SOURCE");
+const ambiguousIndex = { traceability: [...atomicIndex.traceability, { source_id: "AC-SOURCE", source_ref: "other.md" }] };
+const ambiguousSource = buildPlanReview({ task_map: atomicMap, source_index: ambiguousIndex });
+assert.equal(ambiguousSource.modules[0].criteria[0].sourceRefs.length, 0);
+assert.equal(ambiguousSource.warnings.some(w => w.includes("未唯一解析")), true);
+assert.equal(buildPlanReview({ task_map: atomicMap, source_index: { traceability: [{ ...atomicIndex.traceability[0], task_ids: ["T2"] }] } }).modules[0].criteria[0].sourceRefs.length, 0);
+const ledgerMap = { tasks: [{ task_id: "T1", acceptance_criteria: [{ id: "LOCAL" }] }, { task_id: "T2", acceptance_criteria: [{ id: "LOCAL" }] }] };
+const ledgerReview = buildPlanReview({ task_map: ledgerMap, source_index: atomicIndex, coverage_ledger: { entries: [{ source_id: "AC-SOURCE", task_ids: ["T1"], acceptance_ids: ["LOCAL"] }] } });
+assert.equal(ledgerReview.modules[0].criteria[0].sourceRefs[0], "prd.md#AC-SOURCE");
+assert.equal(ledgerReview.modules[1].criteria[0].sourceRefs.length, 0);

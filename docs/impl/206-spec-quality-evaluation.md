@@ -474,3 +474,77 @@ fixture 用例仍只是 mock；真实生成结果单列。历史已接纳产物�
 跨别名重复、未知 ID、带附加标题文字和代码块中的伪标题不获绑定。只引用作者
 原文，不改写已接纳工件、推断正文归属或补造规格；推荐生产格式仍为英文冒号。
 同一失败工件在修复后补做浏览器验证，原失败记录与生成版本独立保留。
+
+
+## 2026-11-17 按需 Critic：证据闭环与显式选择
+
+本批从 dev 54e4ecf8 开始。两批任务：先保留评审证据与 AC 来源，再复用现有受控
+提案实现按需调用。职责选择属于 Agent/Owner；Kernel 不根据业务关键词、任务数
+或自评分判定风险，也不增加一个选审查者的 Agent。
+
+### 可用入口
+
+PrdFlow.spec 支持显式 `planReview`（别名 `plan_review`）：
+
+```yaml
+planReview:
+  mode: targeted  # none / targeted / full
+  reason: 本次只调整共享失败规则，需要核对两个入口的影响
+  focus:
+    - 保存失败后状态和重试是否在两个入口保持一致
+    - 本片与后继的验收时点是否正确
+```
+
+默认与既有 planCriticEnabled 行为兼容。none 不生成专门 Critic；targeted 保留独立
+Critic 并限定关注问题及依赖；显式 full 不启用局部选读。targeted 没有已批准基线和
+消费证据时仍读取必要完整上下文，不能宣称必然减少 token 或延迟。现有角色的
+summary/findings/evidence_refs 记录当前版本、实际检查范围、摘录与未审范围。
+
+Workflow Synthesis 使用 parameters.plan_review：普通 Flow 保留当前 lanes，注册 v5
+控制器保留其固定 lanes/pipeline。两条路径均经配置候选、Proposal
+批准路径生效，不直接改当前配置；保留 Plan approval、工件准入与下游 Verify。
+不能用旧布尔开关静默覆盖已有 planReview。PrdFlow light 无 Plan 阶段，显式拒绝此参数。
+Plan preview 从该 Plan 绑定的 run contract 读取方式，不读取实时配置，也不把配置
+为 full 或 targeted 显示成评审已通过；历史无记录显示未知。
+
+Channel 显式选择 `prd-clarification-on-demand` 模板，产品与架构成员仍参与，固定
+critic 不入初始 roster。默认模板不变。问题优先走现有定向 cross-review；专业能力
+缺口通过主席 member_invitations + Owner 受控批准补审，新增必审角色保留在 review_roster
+直至同版签收；未邀请角色不会成为幽灵必签成员。
+
+### 证据与来源
+
+Channel 共识评审接受 evidence_refs 的字符串及带 ref 的对象。完整评审原体及绑定
+通过原子、不可变 sidecar 保存，事件保留字符串导航和 review_ref/review_digest，
+投影暴露评审证据。非法引用显式拒绝，不再过滤后签字；历史签字标 legacy_unrecorded，
+不回填旧账本。证据保存不是语义真实性认证。
+
+Web 局部 AC 解析明确 source_acceptance_ids/source_ids，以及 coverage ledger 的
+任务 + AC 联合映射；source_id 不唯一、跨任务错配或缺失仍提示未解析，不根据名称猜测。
+
+### 验证边界
+
+确定性检查比较 none / targeted / full 的实际派发、受控提案、审批保持、版本绑定、
+选读降级和 Channel 名单收敛；归档真实样本仅用于原故障回放。mock 不证明模型审查
+质量、漏检率或端到端提速，真实多样本成本实验必须单独记录，不复用上一轮评分宣称提升。
+
+
+按需邀请使用项目已有 `channel.agent_profiles` 公共目录，不从角色名编造 provider 或
+权限。未配置可用专业 profile 时，主席记录能力缺口并走现有 Owner 决策；不能伪称已
+加载 Critic。可在项目 ZfConfig.spec 中配置只读审查 profile，例如：
+
+```yaml
+channel:
+  agent_profiles:
+    prd-critic:
+      channel_role: critic
+      persona: 核对原始需求、异常反例和交付时点的独立审查者
+      provider: codex
+      backend: codex
+      permission_ceiling: read_only
+      skill_refs:
+        - skills/zf-channel-discussion-participant/SKILL.md
+```
+
+模型和 provider 沿项目已有配置选择；本批不修改真实 dev 的 zf.yaml，不自动重启或
+改变正在进行的讨论。

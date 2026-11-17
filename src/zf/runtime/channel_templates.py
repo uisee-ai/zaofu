@@ -271,6 +271,14 @@ CHANNEL_TEMPLATES: dict[str, dict[str, Any]] = {
 }
 
 
+CHANNEL_TEMPLATES["prd-clarification-on-demand"] = {
+    **deepcopy(CHANNEL_TEMPLATES["prd-clarification"]),
+    "name": "PRD Clarification · On-demand review",
+    "members": [deepcopy(member) for member in CHANNEL_TEMPLATES["prd-clarification"]["members"]
+                if member["member_id"] != "critic"],
+}
+
+
 def template_digest(template_id: str) -> str:
     template = CHANNEL_TEMPLATES[template_id]
     canonical = json.dumps(

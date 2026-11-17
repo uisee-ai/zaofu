@@ -11,6 +11,7 @@ from typing import Any
 
 from zf.runtime.plan_review_packet import build_review_packet, render_human_review_dossier
 from zf.runtime.plan_review_decisions import read_decision_review
+from zf.runtime.plan_review_policy_view import plan_review_policy_view
 from zf.runtime.plan_preview_artifacts import (
     PLAN_REVIEW_REF_FIELDS,
     preview_artifact_path,
@@ -473,6 +474,7 @@ def build_plan_preview(
         "markdown": markdown,
         "review_dossier_markdown": review_dossier,
         "review_packet": review_packet,
+        "critic_review": plan_review_policy_view(state_dir, payload),
         "content_kind": content_kind,
         "content_error": markdown_error,
         "digest_markdown": digest_markdown,

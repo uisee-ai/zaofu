@@ -49,6 +49,22 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
   }
   const decisions = rows(map.owner_decision_items);
   const sources = portRows(artifacts.source_index, "traceability");
+  const coverage = portRows(artifacts.coverage_ledger, "entries");
+  const acceptanceSources = (taskId: string, ac: Row): string[] => {
+    const ids = unique([...strings(ac.source_acceptance_ids), ...strings(ac.source_ids),
+      ...coverage.filter(row => relatedTasks(row).includes(taskId) && strings(row.acceptance_ids).includes(text(ac.id)))
+        .map(row => text(row.source_id))]);
+    if (!artifacts.source_index) return []; // The source port may still be lazy-loaded.
+    return ids.flatMap(sourceId => {
+      const matches = sources.filter(row => row.source_id === sourceId &&
+        (!relatedTasks(row).length || relatedTasks(row).includes(taskId)));
+      if (matches.length !== 1 || !text(matches[0].source_ref)) {
+        warnings.push(`${taskId} / ${text(ac.id)} 来源 ID 未唯一解析：${sourceId}`);
+        return [];
+      }
+      return [text(matches[0].source_ref)];
+    });
+  };
   const matrix = object(artifacts.test_matrix);
   const formal = rows(matrix.formal_acceptance_scenarios);
   const tests = rows(matrix.tests);
@@ -112,7 +128,7 @@ export function buildPlanReview(artifacts: ReviewArtifacts) {
       allowedPaths: strings(task.allowed_paths),
       commands: rows(object(task.validation).commands),
       commandReferences: taskCommandReferences(tasks, task),
-      criteria: criteria.map(ac => ({ id: text(ac.id), statement: text(ac.statement), sourceRefs: unique([text(ac.source_ref), ...strings(ac.source_refs), ...sources.filter(s => relatedTasks(s).includes(id) && (strings(s.acceptance_ids).includes(text(ac.id)) || s.acceptance_id === ac.id)).map(s => text(s.source_ref))]), commandIds: strings(ac.verification_command_ids), commandReferences: taskCommandReferences(tasks, task, strings(ac.verification_command_ids)), tier: text(ac.verification_tier) })),
+      criteria: criteria.map(ac => ({ id: text(ac.id), statement: text(ac.statement), sourceRefs: unique([text(ac.source_ref), ...strings(ac.source_refs), ...acceptanceSources(id, ac), ...sources.filter(s => relatedTasks(s).includes(id) && (strings(s.acceptance_ids).includes(text(ac.id)) || s.acceptance_id === ac.id)).map(s => text(s.source_ref))]), commandIds: strings(ac.verification_command_ids), commandReferences: taskCommandReferences(tasks, task, strings(ac.verification_command_ids)), tier: text(ac.verification_tier) })),
       pages: rows(inventory.pages).filter(p => relatedTasks(p).includes(id)),
       forms: rows(inventory.forms).filter(p => relatedTasks(p).includes(id)),
       decisions: decisions.filter(d => d.producer_task_id === id || strings(d.affected_task_ids).includes(id) || unique([...strings(task.prerequisite_decision_ids), ...strings(task.decision_ids)]).includes(text(d.decision_id || d.id))),

@@ -38,7 +38,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
     window.history.replaceState(window.history.state, "", url);
   };
   useEffect(() => { const update = () => setLocation(readLocation()); window.addEventListener("hashchange", update); window.addEventListener("popstate", update); return () => { window.removeEventListener("hashchange", update); window.removeEventListener("popstate", update); }; }, [preview.plan_id]);
-  const detailed = view === "coverage" || view === "scenarios";
+  const detailed = view === "coverage" || view === "scenarios" || view === "modules";
   const { artifacts, errors, loading } = usePlanArtifacts(preview, projectId, detailed);
   const model = useMemo(() => buildPlanReview(artifacts), [artifacts]);
   const excerpts = useMemo(() => planReadingSections(preview.markdown || ""), [preview.markdown]);
@@ -76,6 +76,12 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
           {preview.decision_review?.error && <p role="alert">{preview.decision_review.error}</p>}
           {!loading && model.warnings.map(warning => <p role="status" key={warning}>{warning}</p>)}
           {!loading && view === "modules" && specifications.warnings.map(warning => <p role="status" key={warning}>{warning}</p>)}
+          {!loading && view === "overview" && preview.critic_review && <div className="plan-review-policy">
+            <strong>{preview.critic_review.label}</strong>
+            {preview.critic_review.reason && <p>{preview.critic_review.reason}</p>}
+            {preview.critic_review.focus.length > 0 && <ul>{preview.critic_review.focus.map((question, index) => <li key={index}>{question}</li>)}</ul>}
+            {preview.critic_review.error && <p role="alert">{preview.critic_review.error}</p>}
+          </div>}
           {!loading && view === "overview" && <PlanApprovalOverview
             model={model} excerpts={excerpts} decisionSummary={decisionSummary} decisions={decisions}
             preview={preview} projectId={projectId} quoted={quoted} selectTask={selectTask}

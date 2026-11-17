@@ -239,3 +239,22 @@ def test_controlled_request_consumes_v5_selection_into_config_preview(assembly):
     assert proposal["change_mode"] == "config_change"
     assert base.read_bytes() == before
     assert not any(e.type == "workflow.invoke.requested" for e in writer.event_log.read_all())
+
+
+@pytest.mark.parametrize("mode", ["none", "targeted", "full"])
+def test_registered_v5_preserves_explicit_review_choice_through_proposal(assembly, mode):
+    base, state, _, result, writer = assembly
+    selected = {"mode": mode, "reason": "Owner authorized risk-based selection",
+                "focus": ["Cross-task failure-state preservation"] if mode == "targeted" else []}
+    result["short_flow_spec"]["parameters"]["plan_review"] = selected
+    original = base.read_bytes()
+    outcome, request, candidate = _candidate(assembly)
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+    config = load_config(candidate)
+    assert flow_metadata_for(config, "prd")["plan_review"] == selected
+    assert bool(next(s for s in config.workflow.stages if s.id == "prd-plan").aggregate.synth_role) == (mode != "none")
+    proposal, _ = build_workflow_proposal(state, request=request, base_config_path=base,
+        candidate_config_path=candidate, synthesis_result_ref=outcome.result_ref, flow_kind="prd", writer=writer,
+        preflight={"status": "GO", "blockers": []})
+    assert proposal["approval_status"] == "approvable", proposal["blockers"]
+    assert base.read_bytes() == original
