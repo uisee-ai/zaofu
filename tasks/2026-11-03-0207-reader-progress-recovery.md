@@ -1,6 +1,6 @@
 # P1：Reader 读取推进后再次断线耗尽恢复额度并误触发 Plan 重规划
 
-> 状态: active
+> 状态: done — `58eff080` fix: preserve plan and reader checkpoints across transport recovery。
 
 Owner 已授权持续监工、修复恢复问题并合并 dev。DL 在 `evt-45cde7953353`
 和 `evt-9ae31aba9802` 两次收到 Provider `server_overloaded`。第一次自动重投
@@ -26,4 +26,12 @@ Run/Event 契约，再用 dev-verify 执行 sentinel 和确定性 mock flow 层�
 代码验证完成：最终影响闭包 620 passed / 7 skipped；合并哨兵 53 passed；
 mock flow 10 passed。实际 CLI 恢复测试覆盖旧版缺少 producer 的错误派生链，
 请求/预算/账本不变、Run 恢复事件顺序、下一次断线、错误阻塞拒绝与中断重放。
-本任务暂保持 active，等待合并部署后核对真实读取续跑再归档。
+2026-11-04 时暂保持 active，等待合并部署后核对真实读取续跑再归档。
+
+2026-11-17 收尾：来源修复已合入当前 dev，适配现有 Reader recovery 调用者并通过
+最终 900 项恢复/安全影响闭包。真实 DL 原 Planner 已产出，当前恢复其原 Plan
+Critic operation；同时修复 Synth 超时恢复和长期停机凭证过期。Run、请求哈希、
+attempt、候选输入及历史读取账本均保留，实际 Provider 已重新接收有效分页输出。
+旧分页 bundle 不兼容会保守重读，因此不声明零重复读取或 Plan 已获批准。
+部署、备份和旧服务目录退役证据见
+[服务收敛报告](../reports/worktree-archives/20261117-dl-service-consolidation/README.md)。
