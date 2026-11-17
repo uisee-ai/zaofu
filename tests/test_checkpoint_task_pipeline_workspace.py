@@ -28,6 +28,16 @@ def case(tmp_path):
     (root / "untracked.txt").write_text("uncommitted task result")
     cfg = ZfConfig(project=ProjectConfig(name="checkpoint"), roles=[RoleConfig(name="dev-1")],
         runtime=RuntimeConfig(workdirs=WorkdirConfig(enabled=True, mode="worktree", root=str(state / "roles"))))
+    # Model the admitted placement, including its configured root and metadata.
+    import json
+    target = state / "roles/tasks/r/T7/g1/project"
+    target.parent.mkdir(parents=True)
+    root.rename(target)
+    record = target / record.name
+    (target.parent / "meta.json").write_text(json.dumps({
+        "task_id": "T7", "workflow_run_id": "r", "task_map_generation": "map-g1",
+        "workspace_generation": 1,
+    }))
     # A reused lane still has another task's checkout. Never snapshot it.
     lane = state / "roles/dev-1/project"
     lane.mkdir(parents=True)

@@ -6,6 +6,7 @@ import subprocess
 import pytest
 
 from tests.test_capture_logs_watchdog import _AliveControllableTransport, state_dir
+from tests.test_task_workspace_recovery import workspace
 from zf.core.config.schema import ProjectConfig, RoleConfig, SessionConfig, ZfConfig
 from zf.core.events import EventLog, ZfEvent
 from zf.core.state.role_sessions import RoleSessionRegistry
@@ -187,22 +188,25 @@ def test_run_once_recovers_hydrated_recycle_and_keeps_original_task(state_dir):
     assert TaskStore(state_dir / "kanban.json").get("TASK-LIVENESS-DEV").active_dispatch_id == "disp-dev"
 
 
-def test_interrupted_recycle_keeps_generation_owned_workspace(state_dir):
-    orch, transport, _, _ = interrupted_runtime(state_dir)
-    workspace = state_dir / "workdirs/tasks/workflow-original/task-dev/g2/project"
-    workspace.mkdir(parents=True)
-    subprocess.run(["git", "init", "-q", str(workspace)], check=True, capture_output=True)
-    candidate = workspace / "unfinished.txt"
+def test_interrupted_recycle_keeps_generation_owned_workspace(workspace):
+    # Use a real current request/attempt/envelope rather than an unauthenticated
+    # dispatch fragment; stronger placement gates must not be disabled for a fixture.
+    runtime, role, task, root, _, _ = workspace
+    role.backend = "codex"
+    transport = RecordingTransport()
+    old = Orchestrator(runtime.state_dir, runtime.config, transport)
+    old._instance_state[role.instance_id] = "recycling"
+    old._set_worker_state(role.instance_id, "recycling", reason="context hard cap")
+    old.event_writer.append(ZfEvent(type="worker.heartbeat", actor=role.instance_id, origin="worker",
+        payload={"state": "busy", "last_action_ts": datetime.now(timezone.utc).isoformat()}))
+    del old
+    candidate = root / "unfinished.txt"
     candidate.write_text("candidate work must survive\n")
-    orch.config.runtime.workdirs.enabled = True
-    orch.config.runtime.workdirs.mode = "worktree"
-    orch.event_writer.append(ZfEvent(type="task.pipeline.stage.dispatched", actor="orchestrator",
-                                   task_id="TASK-LIVENESS-DEV", payload={
-        "role_instance": "dev", "attempt_id": "attempt-original",
-        "operation_id": "op-original", "dispatch_id": "disp-dev",
-        "operation_generation": 2, "workspace_generation": 2, "workdir": str(workspace),
-    }))
+    transport.alive_flags[role.instance_id] = False
+    orch = Orchestrator(runtime.state_dir, runtime.config, transport)
+    orch._dead_threshold = 1
     assert [d.action for d in orch._capture_logs()] == ["respawn"]
-    assert transport.argv[0][2] == workspace.resolve()
+    assert transport.argv[0][2] == root.resolve()
     assert candidate.read_text() == "candidate work must survive\n"
+    assert orch.task_store.get(task.id).active_dispatch_id == task.active_dispatch_id
     assert len([e for e in orch.event_log.read_all() if e.type == "task.pipeline.stage.dispatched"]) == 1

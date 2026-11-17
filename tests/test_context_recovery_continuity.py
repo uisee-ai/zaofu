@@ -94,5 +94,9 @@ def test_recovery_captures_live_task_workspace(state_dir, claude_config, transpo
     monkeypatch.setattr(orch, "_ensure_recovery_contract_sufficient", lambda *_: True)
     monkeypatch.setattr(orch, "_send_transport_task", lambda *_: None)
     assert orch._inject_recovery_briefing(claude_config.roles[0])
-    assert ("task-only.txt" in captured[0].dirty_files) is not terminal
-    assert ("root-only.txt" in captured[0].dirty_files) is terminal
+    if terminal:
+        # A terminal task attempt cannot justify falling back to unrelated code.
+        assert captured[0] is None
+    else:
+        assert "task-only.txt" in captured[0].dirty_files
+        assert "root-only.txt" not in captured[0].dirty_files

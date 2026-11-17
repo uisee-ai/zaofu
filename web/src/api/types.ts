@@ -2281,6 +2281,8 @@ export interface HandoffSummaryProjection {
   objective: string;
   current_state: string;
   current_stage: string;
+  pipeline?: Record<string, unknown> | null;
+  input_recovery?: Record<string, unknown>;
   owner?: Record<string, unknown>;
   completed?: Array<Record<string, unknown>>;
   missing_evidence?: Array<Record<string, unknown>>;
