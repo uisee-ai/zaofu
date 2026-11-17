@@ -121,7 +121,7 @@ def dispatch_pending_self_repairs(
     base = Path(tmp_root) if tmp_root else Path(tempfile.gettempdir())
     prepared = 0
     for req in pending:
-        branch = repair_branch_name(req)
+        branch = repair_branch_name(req, namespace=str(state_dir.resolve()))
         worktree = base / "zf-self-repair" / branch.replace("/", "_")
         try:
             repair_contract, repair_contract_ref = write_repair_contract(

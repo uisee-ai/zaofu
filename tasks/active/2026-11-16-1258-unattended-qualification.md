@@ -248,3 +248,22 @@ R12辅助epoch2在载入32a13009后自行结算三条旧诊断effect，并于06:
 blocked结果修正最终51文件影响闭包924 passed / 1 skipped，sentinel53 passed；
 其中包含局部replan断点闭合mock E2E。48项定向与完整提交入口通过。
 真实断点续跑和新冻结无人资格尚待完成，不能将此测试层当作真实Provider全流程。
+
+
+## R13 辅助恢复：修复工作区身份
+
+在辅助重启期间，watchdog发现旧run_manager投影后请求修复，Git报告worktree已存在
+（evt-9b8d66afff9f）。原命名仅将fingerprint替换斜杠/冒号后截前48字符；长路径的
+不同后缀和不同state_dir中的相同fingerprint会落到共享/tmp的同一目录。保持已有
+失败关闭行为，不删除、不重置旧分支或dirty工作区。
+
+新派发以安全可读短前缀加完整fingerprint/规范state_dir身份的SHA256前16位及attempt
+组成分支/目录。幂等仍由原账本fingerprint+attempt负责；已经dispatched的旧修复继续
+使用事件中的原路径，未重写历史合同。2RED/1保护通过→24定向通过；真实Git用例
+证明不同state_dir可分别派发、同轮重放不重建、两侧未提交文件保留。90文件影响
+闭包1364 passed / 1 skipped，sentinel53 passed，含相关恢复mock E2E。
+
+辅助epoch2载入8aeed5da并受控重试名称任务，原源码变更保留。名称Worker修正blocked
+结果后准入evt-b631e131e323，Run Manager自动发布evt-5f6d9c41cab8并派发后继自检。
+这是2次监工恢复介入（启动新源码与请求旧任务重试）的辅助证据，R13原轮仍FAILED，
+新冻结源码下的完整无人资格尚待复验。

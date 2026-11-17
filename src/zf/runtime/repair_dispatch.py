@@ -13,6 +13,9 @@ done). Pure functions here; the CLI does the git worktree + agent spawn.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
+import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -82,9 +85,12 @@ def pending_repair_dispatches(
     return [req for key, req in requests.items() if key not in dispatched]
 
 
-def repair_branch_name(req: RepairRequest) -> str:
-    short = (req.fingerprint.replace(":", "-").replace("/", "-") or "unknown")[:48]
-    return f"self-repair/{short}-a{req.attempt}"
+def repair_branch_name(req: RepairRequest, *, namespace: str = "") -> str:
+    # The label is lossy; the full identity must survive truncation and sanitizing.
+    short = (re.sub(r"[^A-Za-z0-9_-]+", "-", req.fingerprint).strip("-") or "unknown")[:32]
+    identity = json.dumps([namespace, req.fingerprint], ensure_ascii=True).encode()
+    suffix = hashlib.sha256(identity).hexdigest()[:16]
+    return f"self-repair/{short}-{suffix}-a{req.attempt}"
 
 
 def build_repair_contract(
