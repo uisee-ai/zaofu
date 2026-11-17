@@ -192,3 +192,10 @@ Reader失败回执还需覆盖聚合等待窗口：首个稳定、同策略、�
 `contract.verification` 是语义说明，不再按 pytest/uv 等前缀猜测为可执行命令；精确命令显式写入既有 `verification_commands`、`validation.commands` 或 `evidence_contract.success_criteria[kind=command_passed]`。每项只含命令，不在分号后拼接自然语言。Resident RM 的输出示例及要求同步更新。已有仅含说明的合同仍保留说明并执行强制影响范围验证，不把说明当作已执行命令；需要指定聚焦测试的调用者必须迁移到上述结构化字段。明确命令继续绑定共享Python与隔离checkout；现有权限/allowlist/影响闭包门禁不放宽。
 
 这两项修正尚需新一轮真实资格验证，不能追认R10通过。R10的两个业务Task已done，Candidate/Judge/goal与源码应用重启未完成。
+
+
+## R11：Reader 新派发的提交权限
+
+真实诊断 Reader 将正确子运行 `--state-dir` 改为父 `source_state_dir`，被 operation_missing 拒绝；自动重试又把旧“Never retry or re-send”理解为禁止新 attempt 提交。派发说明明确保留给定提交目录，source_state_dir 仅用于只读证据；每次新 dispatch 授权当前 run_id 的一次提交，前次失败不撤销该授权。成功提交仍不可重复，旧身份不可复用；命令错误时保留原命令和错误并结束本 attempt，由既有有界恢复处理。
+
+该修正覆盖 typed 和 legacy Reader retry 的真实 briefing 调用入口；不新增重试额度、不授予父状态写权限、不忽略 operation/attempt/lease 校验。指令回归通过不等于真实 Provider 已遵循，必须另做冻结新源码的真实复验；R11 继续原版本，不热加载此修正。
