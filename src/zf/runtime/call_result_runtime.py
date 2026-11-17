@@ -378,11 +378,28 @@ def prepare_call_operation(
         )
     if output_profile_id == "plan-synth":
         from zf.runtime.plan_review_selection_cost import choose_review_reads
+        from zf.runtime.plan_input_read_selection import select_plan_input_reads
 
         payload["plan_review_policy"] = configured_review
+        selection_strategy = ""
+        if required_reads == full_plan_reads:
+            required_reads, selection_strategy = select_plan_input_reads(
+                runtime.state_dir, source_manifest, required_reads,
+                policy=configured_review, explicit=bool(explicit_required_reads),
+            )
         required_reads, payload["plan_review_optimization"] = choose_review_reads(
             runtime.state_dir, source_manifest, before=full_plan_reads, candidate=required_reads,
-            explicit=bool(explicit_required_reads),
+            explicit=bool(explicit_required_reads), strategy=selection_strategy,
+        )
+    elif (source_manifest.get("handoff_authority_contract") or {}).get("attempt_domain") == "plan":
+        from zf.runtime.plan_input_read_selection import select_plan_input_reads
+        from zf.runtime.plan_review_selection_cost import choose_review_reads
+
+        partitioned, strategy = select_plan_input_reads(runtime.state_dir, source_manifest,
+            required_reads, policy={}, explicit=bool(explicit_required_reads))
+        required_reads, payload["plan_input_optimization"] = choose_review_reads(
+            runtime.state_dir, source_manifest, before=required_reads, candidate=partitioned,
+            explicit=bool(explicit_required_reads), strategy=strategy,
         )
     if required_reads:
         payload["required_reads"] = required_reads

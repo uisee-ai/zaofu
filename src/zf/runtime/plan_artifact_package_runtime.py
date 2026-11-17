@@ -129,8 +129,16 @@ def admit_synthesized_plan_package(
         return "failed", "reject", failure
     # Keep the reviewed producer's explicit completeness claim across aggregation.
     # Missing claims remain missing; neither Markdown nor an older input promotes them.
-    if "plan_content_profile" in event_payload:
-        artifact_payload = {**artifact_payload, "plan_content_profile": event_payload["plan_content_profile"]}
+    profile = event_payload.get("plan_content_profile")
+    plan_ref = str(artifact_payload.get("plan_artifact_ref") or "")
+    if profile in (None, "", "derived_plan") and contract_digest and plan_ref:
+        from zf.runtime.plan_content_profile import reviewed_author_profile
+
+        profile = reviewed_author_profile(
+            runtime.state_dir, event_payload, plan_ref=plan_ref,
+        ) or profile
+    if profile:
+        artifact_payload = {**artifact_payload, "plan_content_profile": profile}
     trigger_payload = (
         manifest.get("trigger_payload")
         if isinstance(manifest.get("trigger_payload"), dict)

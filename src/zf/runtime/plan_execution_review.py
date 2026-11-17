@@ -342,6 +342,9 @@ def plan_review_briefing(config: Any, *, flow_kind: str = "") -> list[str]:
         "For targeted mode, check the named questions and affected dependencies/shared rules; "
         "state actual reviewed and unreviewed scope in summary with current artifact refs/digests "
         "and opening/scenario excerpts. Expand review if evidence reveals a wider conflict. "
-        "Required source reads still apply; targeted focus is not proof of whole-document approval "
-        "or of eligibility for incremental reads. Do not rewrite the Planner's artifacts.",
+        "Consume the pinned required reads, then retrieve supplementary port contents needed to answer "
+        "each focus and its affected dependencies. Record actual evidence and unreviewed scope. "
+        "First targeted review needs no historical approval; historical incremental reuse still needs "
+        "its bound evidence. Targeted focus is not proof of whole-document approval. "
+        "Do not rewrite the Planner's artifacts.",
     ]

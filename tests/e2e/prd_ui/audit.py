@@ -157,7 +157,11 @@ def audit(project: Path, *, journey: str, owner_checkpoint: bool = False) -> dic
         assert binding.get("channel_id") == confirmed.get("channel_id"), "Task belongs to another Channel"
         assert confirmed.get("confirmed_by") == "web", "PRD was not confirmed through UI"
         assert confirmed.get("product_mode") == "multi_lens", "PRD did not come from the multi-role discussion"
-        assert len(set(confirmed.get("signed_by", []))) >= 4, "missing discussion role signatures"
+        from zf.runtime.channel_projection import project_channel
+        from zf.runtime.channel_prd_revision import consensus_mode_and_required_signers
+        channel = project_channel(state, confirmed["channel_id"])
+        _, required = consensus_mode_and_required_signers(channel, thread_id=confirmed.get("thread_id") or "main")
+        assert required and set(required) <= set(confirmed.get("signed_by", [])), "missing actual required role signatures"
     owner_evidence = check_owner_checkpoint(events, run_id) if owner_checkpoint else None
     return {"audit_source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "owner_checkpoint": owner_evidence,

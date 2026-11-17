@@ -26,4 +26,6 @@
 | 206 | [公开资料中的 Spec 方法借鉴与质量评估](206-spec-method-borrowings-and-quality-evaluation.md) | implemented（本批工程） | 六源借鉴与评分、紧凑阅读、六类真实生成/交接试点；外部原生对照、真人及完整 v5 效果资格未完成。 |
 | 207 | [评审成本与增量证据优化方案](207-review-cost-and-incremental-evidence-optimization.md) | implementing | 基于真实 v5 成本与公开资料，提出输入减负、审批前/已批准增量评审、finding 收敛及交付后复核优化；含分批范围、质量约束与对照验收。 |
 
+| 208 | [按需 Critic 的输入范围与返修收敛](208-demand-critic-input-and-convergence.md) | implementing | 修复 none/STOP，减少无损包装重复，分离首次定向与历史增量，并以真实 Channel → Plan Preview 验证。 |
+
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。

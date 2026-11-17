@@ -134,7 +134,7 @@ def serve(project: Path) -> None:
                                           max_items=0, max_chars=0)
                 if profile == "plan-synth":
                     semantic = {"status": "completed", "execution_status": "completed", "recommendation": "approve",
-                                "plan_content_profile": "derived_plan_full",
+                                "plan_content_profile": "derived_plan",
                                 "summary": "Scripted critic reviewed the bound candidate and requirement.",
                                 "report": {"status": "passed", "recommendation": "approve", "findings": [],
                                            "summary": "Source, README behavior, negative test, ownership and approval boundary are covered."}}

@@ -490,8 +490,10 @@ def reviewed_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: st
     for binding in child_bindings:
         matching = [source for source in previous.get("sources", []) if isinstance(source, Mapping)
                     and all(source.get(key) == binding.get(key) for key in ("source_id", "artifact_id", "sha256"))]
-        if (len(matching) != 1 or not _has_full_read(policy["required_reads"], matching[0])
-                or not _has_observed_read(observed, matching[0])):
+        from zf.runtime.plan_input_read_selection import complete_partition_read
+
+        if (len(matching) != 1 or not complete_partition_read(
+                state_dir, matching[0], policy["required_reads"], observed)):
             raise ValueError("baseline producer result is not a required bound source")
         report = hydrate_sidecar_ref(state_dir, dict(matching[0])).payload
         if (not isinstance(report, Mapping) or report.get("child_id") != binding.get("child_id")

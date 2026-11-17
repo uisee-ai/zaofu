@@ -23,7 +23,8 @@ def command(args, *, cwd, env, **kwargs):
     return subprocess.run([str(arg) for arg in args], cwd=cwd, env=env, check=True, **kwargs)
 
 
-def prepare(root: Path, mode: str, journey: str) -> tuple[Path, dict[str, str]]:
+def prepare(root: Path, mode: str, journey: str, *, review_policy=None,
+            channel_template="prd-clarification") -> tuple[Path, dict[str, str]]:
     root.mkdir(parents=True, exist_ok=False)
     project = root / "project"
     project.mkdir()
@@ -48,6 +49,10 @@ def prepare(root: Path, mode: str, journey: str) -> tuple[Path, dict[str, str]]:
     documents = list(yaml.safe_load_all((REPO / "zf-prd-v5.yaml").read_text()))
     flow, controller = documents
     flow["spec"].update(prdRef="docs/prd/ui-requirement.md", targetRoot=str(project))
+    if review_policy:
+        flow["spec"]["planReview"] = review_policy
+        env["ZF_UI_REVIEW_POLICY"] = json.dumps(review_policy, ensure_ascii=False)
+    env["ZF_UI_CHANNEL_TEMPLATE"] = channel_template
     spec = controller["spec"]
     spec["profile_sources"] = [str(REPO / path) for path in spec["profile_sources"]]
     spec["skill_sources"][0]["path"] = str(REPO / "skills")
@@ -93,6 +98,9 @@ def main() -> int:
     parser.add_argument("--provider", choices=["fake", "real"], required=True)
     parser.add_argument("--journey", choices=["kanban", "channel", "channel-recovery"], required=True)
     parser.add_argument("--requirement-file", type=Path, help="Frozen common product input for both UI journeys")
+    parser.add_argument("--review-policy", type=Path, help="Explicit Owner-authorized plan_review JSON")
+    parser.add_argument("--channel-template", choices=["prd-clarification", "prd-clarification-on-demand"],
+                        default="prd-clarification")
     parser.add_argument("--delivery", action="store_true", help="Wait for a reviewed local authorization before UI Plan approval")
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--skip-build", action="store_true")
@@ -102,6 +110,10 @@ def main() -> int:
     parser.add_argument("--workflow-runtime", choices=["existing", "cold"], default="existing",
                         help="cold stops the idle discussion runtime before the UI starts its Workflow")
     args = parser.parse_args()
+    review_policy = None
+    if args.review_policy:
+        from zf.core.config.plan_review import validate_plan_review
+        review_policy = validate_plan_review(json.loads(args.review_policy.read_text()))
     if args.turn_timeout is None:
         args.turn_timeout = min(args.timeout, 45 if args.provider == 'fake' else 600)
     if not 1 <= args.turn_timeout <= args.timeout:
@@ -122,7 +134,8 @@ def main() -> int:
         command(["codex", "login", "status"], cwd=REPO, env=os.environ, timeout=15)
     if not args.skip_build:
         command(["npm", "--prefix", "web", "run", "build"], cwd=REPO, env=os.environ)
-    project, env = prepare(root, args.provider, args.journey)
+    project, env = prepare(root, args.provider, args.journey, review_policy=review_policy,
+                          channel_template=args.channel_template)
     port_lock = open("/tmp/zf-prd-ui-port-allocation.lock", "a")
     fcntl.flock(port_lock, fcntl.LOCK_EX)
     port = 8002
@@ -140,6 +153,8 @@ def main() -> int:
     if args.journey == "channel-recovery":
         manifest["test_boundary"] = "real Codex, controlled stdio fault; setup via controlled actions, send/retry through UI"
     manifest["workflow_runtime"] = args.workflow_runtime
+    manifest["requested_review_policy"] = review_policy
+    manifest["channel_template"] = args.channel_template
     if args.provider == "fake":
         manifest["fake_fault"] = env.get("ZF_UI_FAKE_FAULT", "")
     manifest["owner_checkpoint_required"] = args.owner_checkpoint
@@ -196,6 +211,8 @@ def main() -> int:
                   "-e", f"ZF_UI_DELIVERY={str(args.delivery).lower()}",
                   "-e", f"ZF_UI_PROVIDER={args.provider}", "-e", f"ZF_UI_JOURNEY={args.journey}",
                   "-e", f"ZF_UI_WORKFLOW_RUNTIME={args.workflow_runtime}",
+                  "-e", f"ZF_UI_REVIEW_POLICY={env.get('ZF_UI_REVIEW_POLICY', '')}",
+                  "-e", f"ZF_UI_CHANNEL_TEMPLATE={args.channel_template}",
                   "-e", f"ZF_UI_OWNER_CHECKPOINT={str(args.owner_checkpoint).lower()}",
                   "-e", f"ZF_UI_TURN_TIMEOUT_MS={args.turn_timeout * 1000}",
                   "-e", f"ZF_UI_TIMEOUT_MS={args.timeout * 1000}", "-e", f"ZF_E2E_VIDEO={os.environ.get('ZF_UI_RECORDING', 'on' if args.provider == 'fake' else 'off')}",

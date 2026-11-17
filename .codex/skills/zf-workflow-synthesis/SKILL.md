@@ -68,6 +68,11 @@ project constraints. Treat every allowlist as closed.
 
 ## Hard Boundaries
 
+`plan_review.mode: none` 或 `plan_critic_enabled: false` 会从 PrdFlow 移除 Plan Critic。
+`requested_roles` 必须对应修改后的有效角色，不机械复制 catalog 的默认名单，不能仍
+请求 `plan-critic` 或其改名实例。Channel 的 PRD reviewer 与 Workflow Plan 角色分开。
+targeted 保留 Critic 并给出明确问题；保留 Owner 要求的 Plan 审批，不以免审代表实施授权。
+
 已注册 `bounded-agent-v1` 时，有界报告交付可用 `intent=bounded_execution`，参数为
 `executor_role`、`verifier_role`、可选 `deadline_seconds`（1..3600，默认 600）。
 完成要求为 `artifact_delivery`，必需产物 `agent-execute.result`。执行者和验证者

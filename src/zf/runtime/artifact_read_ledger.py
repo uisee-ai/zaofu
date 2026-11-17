@@ -325,7 +325,7 @@ def build_input_consumption_policy(
             "artifact_id": str(item.get("artifact_id") or ""),
             "artifact_sha256": str(item.get("artifact_sha256") or item.get("sha256") or ""),
             "json_path": str(item.get("json_path") or "$"),
-            "min_returned_bytes": int(item.get("min_returned_bytes") or 1),
+            "min_returned_bytes": int(item.get("min_returned_bytes", 1)),
             "max_items": int(item.get("max_items") or 0),
             "max_chars": int(item.get("max_chars") or 0),
             "allow_truncated": bool(item.get("allow_truncated", False)),

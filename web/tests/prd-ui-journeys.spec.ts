@@ -7,6 +7,9 @@ import { verifyPlanModuleReading } from "./support/prdPlanReading";
 import { prdOnlyOption, sameInvocation, terminalPlanningEvent } from "./support/prdJourneyPolicy";
 
 const journey = process.env.ZF_UI_JOURNEY;
+const reviewPolicy = process.env.ZF_UI_REVIEW_POLICY ? JSON.parse(process.env.ZF_UI_REVIEW_POLICY) : null;
+const channelTemplate = process.env.ZF_UI_CHANNEL_TEMPLATE || "prd-clarification";
+const reviewInstruction = reviewPolicy ? ` Owner 已授权本轮评审策略，Workflow Synthesis 必须保留 parameters.plan_review=${JSON.stringify(reviewPolicy)}，进入 Requirement constraints；保持 plan_approval: true。这是流程策略，不是产品 AC。` : "";
 const ownerCheckpointRequired = process.env.ZF_UI_OWNER_CHECKPOINT === "true";
 const timeout = Number(process.env.ZF_UI_TIMEOUT_MS || 1_200_000);
 const turnTimeout = Number(process.env.ZF_UI_TURN_TIMEOUT_MS || (process.env.ZF_UI_PROVIDER === "fake" ? 45_000 : 600_000));
@@ -147,10 +150,10 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await page.reload();
     await capture(page, "02-kanban-prd-generated");
     expect((await events(request, project)).filter(row => row.type === "channel.created")).toHaveLength(0);
-    await send(page, "UI_PRD_CREATE：确认 docs/prd/ui-requirement.md。请创建一个 Task 并 prepare_workflow，采用当前 PRD v5 配置生成 Workflow YAML Preview。必须将“完整 Plan 需 Owner 人工审批后才允许实施”保留到 Task/Requirement 的 constraints，Workflow 设置 plan_approval: true。只准备提案，不启动实施；保留 source_ref、验收和 target_root 当前项目。");
+    await send(page, "UI_PRD_CREATE：确认 docs/prd/ui-requirement.md。请创建一个 Task 并 prepare_workflow，采用当前 PRD v5 配置生成 Workflow YAML Preview。必须将“完整 Plan 需 Owner 人工审批后才允许实施”保留到 Task/Requirement 的 constraints，Workflow 设置 plan_approval: true。只准备提案，不启动实施；保留 source_ref、验收和 target_root 当前项目。" + reviewInstruction);
     await approveTask(page);
   } else {
-    await send(page, productInput ? "UI_CHANNEL_SETUP：请创建 PRD Group，产品、架构、critic、synthesizer 参与，ID ui-prd-group，名称 UI PRD Group。真实运行使用已登录的 Codex 后端，禁止 fake/mock。先创建 conversation 模式的需求讨论群，具体需求随后在群内提交，不自动创建 Task。" : "UI_CHANNEL_SETUP：请创建 PRD Group，产品、架构、critic、synthesizer 参与，ID ui-prd-group，名称 UI PRD Group。真实运行使用已登录的 Codex 后端，禁止 fake/mock。先用 conversation 模式讨论 README.md 保持可读与缺失报错，不自动创建 Task。");
+    await send(page, `UI_CHANNEL_SETUP：请创建 PRD Group，template_id=${channelTemplate}，ID ui-prd-group，名称 UI PRD Group。${channelTemplate === "prd-clarification-on-demand" ? "初始 product_pm、arch、synthesizer 参与，不预置专门 Critic；专业缺口使用受控邀请。" : "产品、架构、critic、synthesizer 参与。"} 可选 security_reviewer 和 dev_reviewer 暂不启用。真实运行使用已登录的 Codex 后端，禁止 fake/mock。先创建 conversation 模式需求讨论群，具体需求随后提交，不自动创建 Task。`);
     const setup = page.getByTestId("agent-card-plan").last();
     await expect(setup).toBeVisible({ timeout: turnTimeout });
     await setup.locator('input[data-recommended="true"]').check();
@@ -176,6 +179,13 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await waitEvent(request, project, "channel.synthesis.proposed", timeout);
     await page.getByTitle("Close drawer", { exact: true }).click();
     await page.getByTestId("channel-prd-handoff").getByRole("button", { name: "Preview", exact: true }).click();
+    const prdDialog = page.getByTestId("channel-prd-preview");
+    await expect(prdDialog.locator(".document-markdown").first()).toBeVisible();
+    await capture(page, "02-prd-rendered");
+    const prdDownloadReady = page.waitForEvent("download");
+    await prdDialog.getByRole("button", { name: "Download PRD", exact: true }).click();
+    const prdDownload = await prdDownloadReady;
+    await prdDownload.saveAs(`${evidence}/source-prd.md`);
     const confirm = page.locator(".channel-consensus-control").getByRole("button", { name: "Confirm", exact: true });
     await expect(confirm).toBeEnabled({ timeout: turnTimeout });
     await confirm.click();
@@ -183,7 +193,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     writeFileSync(`${evidence}/channel-confirmation.json`, JSON.stringify(confirmed, null, 2));
     await capture(page, "02-channel-prd-confirmed");
     await page.getByText("Planning options", { exact: true }).click();
-    await page.getByTestId("channel-workflow-objective").fill("UI_CHANNEL_CREATE create a Task：从当前确认的中文 PRD 创建 Task，准备 PRD v5 Workflow YAML，生成中文 Plan 后等待 Owner 人工审批；该要求必须进入 Requirement constraints 并配置 workflow.plan_approval: true。");
+    await page.getByTestId("channel-workflow-objective").fill("UI_CHANNEL_CREATE create a Task：从当前确认的中文 PRD 创建 Task，准备 PRD v5 Workflow YAML，生成中文 Plan 后等待 Owner 人工审批；该要求必须进入 Requirement constraints 并配置 workflow.plan_approval: true。" + reviewInstruction);
     await page.getByTestId("channel-create-task-from-prd").click();
     const plan = page.getByTestId("agent-card-plan").last();
     await expect(plan).toBeVisible({ timeout: turnTimeout });
@@ -218,6 +228,8 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   }
   await expect(raw).toContainText("5.0.1");
   await expect(raw).toContainText("plan_approval: true");
+  if (reviewPolicy) await expect(raw).toContainText(`mode: ${reviewPolicy.mode}`);
+  writeFileSync(`${evidence}/workflow-yaml-preview.txt`, await raw.innerText());
   await capture(page, "05-v5-yaml-preview");
   if (process.env.ZF_UI_WORKFLOW_RUNTIME === "cold") {
     writeFileSync(`${evidence}/runtime-handoff-request.json`, JSON.stringify({ project, journey }));
@@ -275,6 +287,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
   await expect(dialog).toBeVisible();
   const planBody = await get(request, `/api/projects/${project}/plans/${encodeURIComponent(planId)}/preview`);
+  if (reviewPolicy) expect(planBody.critic_review?.mode).toBe(reviewPolicy.mode);
   expect(planBody.content_profile).toBe("derived_plan_full");
   if (!productInput) expect(planBody.markdown).toContain("README.md");
   // Heading labels vary across valid Plan methods. The artifact audit verifies
@@ -296,12 +309,16 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     await expect(dialog.getByRole("button", { name: "下一页", exact: true })).toBeDisabled();
     await expect(dialog.locator(".plan-document-source")).not.toBeEmpty();
   }
+  await dialog.getByRole("button", { name: "格式化阅读", exact: true }).click();
+  await expect(dialog.locator(".document-markdown:visible").first()).toBeVisible();
   await capture(page, "06-generated-plan-preview");
   await page.reload();
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
   await dialog.getByRole("button", { name: "查看源码", exact: true }).click();
   await expect(dialog.locator(".plan-document-source")).toHaveText(planBody.markdown);
+  await dialog.getByRole("button", { name: "格式化阅读", exact: true }).click();
+  await expect(dialog.locator(".document-markdown:visible").first()).toBeVisible();
   await capture(page, "07-refreshed-plan-preview");
   const finalEvents = await events(request, project);
   expect(finalEvents.filter(row => row.type === "workflow.invoke.requested")).toHaveLength(1);

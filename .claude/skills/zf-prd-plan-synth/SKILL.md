@@ -15,12 +15,18 @@ actual dispatch briefing and configured role names:
    waits for both and emits `prd.scan.completed`.
 2. `prd-plan`: `planner` produces the complete Plan, task map and matrices.
 3. By default, `plan-critic` independently reviews the admitted Planner
-   candidate. When the explicit `planCriticEnabled: false` route is configured,
+   candidate. Explicit `plan_review` selects none, targeted or full with a reason;
+   targeted also names the review questions and does not imply whole-document approval.
+   When `plan_review.mode: none` or `planCriticEnabled: false` is configured,
    Planner performs cross-artifact reconciliation and submits its own complete
    candidate; the Kernel admits the package before writer dispatch. This is
    Planner self-check, not independent review. Record missing evidence and do
    not claim an independent Critic verdict.
 4. When enabled, human Plan approval precedes product writer dispatch.
+
+Use the configured scope and the input policy; supplementary ports remain available
+for controlled reads. Follow the dependency's review-scope method for first targeted
+review, evidence-bound incremental review and finding-linked rework.
 
 The default Plan stage has Planner and Critic; the explicitly configured
 no-Critic route has Planner alone. The Kernel is deterministic orchestration,

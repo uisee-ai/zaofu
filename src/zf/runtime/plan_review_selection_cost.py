@@ -18,9 +18,15 @@ from zf.runtime.sidecar_refs import sidecar_path
 def choose_review_reads(
     state_dir: Path, manifest: Mapping[str, Any], *, before: list[dict[str, Any]],
     candidate: list[dict[str, Any]], explicit: bool,
+    strategy: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     diagnostic = review_diagnostics(manifest, before=before, after=candidate, explicit=explicit)
-    if diagnostic["mode"] != "incremental":
+    if strategy and before != candidate:
+        diagnostic.update(strategy=strategy,
+            mode="targeted" if strategy == "targeted_navigation" else "full",
+            reason=strategy, eligibility="policy_bound" if strategy == "targeted_navigation" else "lossless",
+            inherited_approval=False)
+    if before == candidate:
         return candidate, diagnostic
     sources: dict[tuple, list] = {}
     for source in manifest.get("sources", []):

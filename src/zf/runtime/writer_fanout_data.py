@@ -383,6 +383,8 @@ class WriterFanoutDataMixin:
             payload["artifact_refs"] = self._dedupe_strings(artifact_refs)
 
         if success_event == "task_map.ready":
+            if profile := self._first_child_value({}, payloads, "plan_content_profile"):
+                payload["plan_content_profile"] = profile
             trigger_payload = (
                 manifest.get("trigger_payload")
                 if isinstance(manifest.get("trigger_payload"), dict)

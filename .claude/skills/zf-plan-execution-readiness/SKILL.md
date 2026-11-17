@@ -48,6 +48,12 @@ Planner 在提交最终工件前、Critic 在决定 verdict 前，读取并执�
 交付可运行产品或部署环境时，按[可复现交付规划](references/delivery-validation.md)
 明确指南、环境与关键旅程的生产者、独立验证责任和执行时点。
 
+## 审查范围
+
+Planner/Critic 读取[按需审查与有界返修](references/review-scope.md)。下列语义方法按本次
+批准的评审范围执行；首次 targeted 与历史 incremental 分开，实际必读与扩读遵守
+当前派发策略。全量方法不能将定向评审重新扩大为全部附件必读，也不能缩窄本次 focus。
+
 ## 条款与验收责任
 
 规划阶段先区分“现在必须取得的证据”和“未来阶段必须执行的门禁”。例如独立Critic、

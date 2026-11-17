@@ -422,7 +422,9 @@ def channel_reply_response_contract(
             "Preserve source message and attachment identities, explain conflicts and later corrections, "
             "and do not invent authorization. Build a source-driven requirement inventory. requirement_coverage is a non-empty array "
             "of objects with id, source_refs, evidence_refs, section, acceptance_ids, and status (covered, deferred, or gap). "
-            "Every row must have direct evidence_refs; source_refs alone are not evidence. Research rows "
+            "Every row must have direct evidence_refs as a non-empty array of reference strings "
+            '(for example ["sources/requirement.md"]), not ref/digest objects. Copy actual bound source refs, '
+            "not the illustrative example path; source_refs alone are not evidence. Research rows "
             "(id beginning RES- or kind=research) must also contain adopted_conclusion and applicability_limit. "
             "Every deferred or gap item must also contain a non-empty reason. "
             "Match each source requirement to a real PRD section and acceptance; section must be the exact "

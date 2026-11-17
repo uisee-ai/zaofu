@@ -46,6 +46,8 @@ def reply(prompt: str, cwd: Path) -> str | dict:
             "assumptions": [], "open_questions": [], "requested_roles": [], "requested_skills": [],
             "requested_profiles": [], "risk_hints": [],
         }
+        if os.environ.get("ZF_UI_REVIEW_POLICY"):
+            result["short_flow_spec"]["parameters"]["plan_review"] = json.loads(os.environ["ZF_UI_REVIEW_POLICY"])
         if os.environ.get("ZF_UI_FAKE_FAULT") == "synthesis-digest":
             result["requirement_digest"] += "bad-copy"
         return result
@@ -79,7 +81,7 @@ def reply(prompt: str, cwd: Path) -> str | dict:
             "submit_action": "channel-create-and-start", "submit_label": "Create Group", "allow_other": False,
             "options": [{"id": "prd", "label": "PRD Group", "recommended": True,
                          "description": "产品、架构、质疑和综合角色参与；先自然讨论。",
-                         "submit_payload": {"template_id": "prd-clarification", "channel_id": "ui-prd-group",
+                         "submit_payload": {"template_id": os.environ.get("ZF_UI_CHANNEL_TEMPLATE", "prd-clarification"), "channel_id": "ui-prd-group",
                                             "name": "UI PRD Group", "mode": "conversation",
                                             "overrides": {"backend": "fake", "budget": {"max_rounds": 1},
                                                           "role_overrides": {"security_reviewer": {"enabled": False}}}}},

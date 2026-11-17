@@ -27,7 +27,9 @@ PRD、review 或 Workflow 阶段；如已有完整文件，给出群内可预览
 实现与操作约束见 `docs/impl/channel-prd-file-publication.md`。
 
 质量增强版 synthesis 必须声明 `quality_contract=channel-prd-quality.v1`。需求覆盖表逐行
-提供直接 `evidence_refs`，研究项补充 `adopted_conclusion` 与 `applicability_limit`；来源
+提供直接 `evidence_refs: list[str]`，例如 `["sources/requirement.md"]`；此字段不是
+`{ref,digest,location}` 对象数组，不能用对象代替合同要求的字符串引用。引用取自当前
+绑定来源，不照抄示例路径。研究项补充 `adopted_conclusion` 与 `applicability_limit`；来源
 attestation 的读取状态不能与 partial/不可读 artifact 同时出现。贡献物分为互斥的
 `canonical_cross_review_refs` 和 `supporting_contribution_refs`，两者并集必须等于消费列表。
 同时提供 `permission_audit_contract`，明确 `deny_by_default`、审计事件字段、查询字段、
@@ -162,7 +164,7 @@ Runtime 会把上述清单和 companion 导出到同版 Markdown；无需复制�
 这次 synthesis 就须交付完整 PRD；不能只给摘要并建议后续 Workflow 再编制。
 先从实际源文档生成需求清单，保留范围、主流程、异常流程、权限、数据约束、状态变化、
 非功能要求和可执行验收；按项目取舍，不套用固定条数或固定产品功能表。
-`requirement_coverage` 每项包含唯一 `id`、`source_refs`、正文 `section`、
+`requirement_coverage` 每项包含唯一 `id`、`source_refs`、字符串数组 `evidence_refs`、正文 `section`、
 `acceptance_ids` 和 `status: covered|deferred|gap`；covered 必须指向声明过的验收 ID，
 其他状态提供具体 `reason`，不得将未覆盖项静默删除。
 `decision_log` 逐项记录问题/决定、依据、理由、异议及处置；没有新决定可为空。
