@@ -27,3 +27,10 @@
   排行与 Dashboard。失败模型用量继续 unknown，不能代表实际费用或完整 Workflow。
 - 发现公开会话与内部线程身份分叉，导致重复 Session/停止 fence 失配；回归先红后绿，
   直接影响闭包 200 passed。新实现仍待部署后真实会话停止复验，任务继续 active。
+- `session-upgrade-2`：正常 stop/MFA adoption/start 部署会话修复；旧 PVC 保留。
+- `budget-real-1`：真实预算耗尽在 Provider 启动前拒绝，但暴露 Web 失败事件制造
+  pending 用量的缺陷；新增明确调用前拒绝证据，不能与启动后用量未知混淆。
+  定向 20 项、直接影响闭包 217 项及 sentinel 53 项通过；真实重跑继续执行。
+- 资格脚本增强：从 containerd 的 manifest target 取摘要并核对 OCI 内容及 Pod
+  imageID 的解析关系；Docker 29 的 image ID 在本环境实际是 manifest digest，
+  不能按旧版行为误判为 config digest。保留归档摘要与运行源码哈希作交叉证据。

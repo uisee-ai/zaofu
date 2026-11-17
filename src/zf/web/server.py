@@ -7319,7 +7319,7 @@ def _run_headless_kanban_agent_turn(
         turn_outcome = classify_headless_failure(reason)
         if durable_run is not None:
             fail_durable_run(state_dir, durable_run, reason=reason)
-        agent_stream.fail(reason=reason, status="failed")
+        agent_stream.fail(reason=exc, status="failed")
         writer.emit(
             "kanban.agent.turn.failed",
             actor="web",

@@ -290,7 +290,11 @@ def managed_turn(function):
                               model=values.get('model', ''),
                               session_id=values.get('run_thread_id') or values['thread_id'])
         execution.body.update(native_before=before, native_session_id=previous_id)
-        execution.begin(lambda: cancel_agent_session_run(key))
+        try:
+            execution.begin(lambda: cancel_agent_session_run(key))
+        except Exception as exc:
+            from zf.runtime.provider_usage import ProviderCallNotStarted
+            raise ProviderCallNotStarted(str(exc)) from exc
         callback = values.get('on_session_id')
         def native_identified(identifier):
             execution.body['native_session_id'] = identifier

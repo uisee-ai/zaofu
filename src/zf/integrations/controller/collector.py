@@ -50,7 +50,8 @@ class Collector:
                 self._usage(event, attribution, binding)
         elif (event.type.startswith("agent.session.run.") and event.type.rsplit('.', 1)[-1] in {"started", "completed", "failed", "cancelled"}) or event.type in {"controller.execution.started", "controller.execution.finished"}:
             phase = event.type.rsplit('.', 1)[-1]
-            if phase in {'completed', 'failed', 'cancelled'} and not (data.get('usage') or {}).get('_controller_accounted'):
+            if (phase in {'completed', 'failed', 'cancelled'} and data.get('provider_started') is not False
+                    and not (data.get('usage') or {}).get('_controller_accounted')):
                 from zf.integrations.controller.health import capture
                 capture(self.state_dir, binding['deployment'], self.cloud.project_id, binding['mode'],
                     identifier(data.get('provider') or data.get('backend')), status=phase,
@@ -78,6 +79,7 @@ class Collector:
                     "started_at": event.ts if phase == "started" else None,
                     "ended_at": event.ts if phase != "started" else None}, origin_id=binding['deployment'])
             if (phase in {'completed', 'failed', 'cancelled'} and operation_id
+                    and data.get('provider_started') is not False
                     and not (data.get('usage') or {}).get('_controller_accounted')):
                 from zf.runtime.provider_usage import normalize_provider_usage
 

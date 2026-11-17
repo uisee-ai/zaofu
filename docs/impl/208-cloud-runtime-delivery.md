@@ -160,3 +160,17 @@ Collector 到受管 Session stop command 先红后绿，覆盖唯一 Session、�
 原生会话标识不改名及停止后再次调用在获得 lease 前被拒绝。直接调用与三类 headless
 后端、usage 和命令闭包 200 passed。历史已 ACK 的错误别名不改写，不重发不同正文；
 新部署还需使用新 Session 做真实取消复验。
+
+## Q01c：调用前拒绝不构成缺失消费
+
+真实清空可用额度后，Controller 在预算预留前拒绝了 Kanban 调用，Provider 未执行；
+但 Web 通用失败事件没有区分 admission，Collector 将其投影为 pending/null 用量。
+这会把无需对账的拒绝混入未知消费。新增确定性的 `ProviderCallNotStarted` 边界：
+只有 managed decorator 的 `Execution.begin` 抛错、尚未调用 Provider 时使用该类型；
+Web/Channel 保留失败事件并写 `provider_started=false`，Collector 不为其生成消费或
+Provider 故障样本。没有这个证据的失败仍保持未知，不按错误字符串猜测零消费。
+
+原预算预留、租约释放、可能丢失响应的责任恢复逻辑不变；已启动后失败不能走此豁免。
+回归覆盖真实 decorator → EventWriter/Collector，以及实际 Web action caller 的拒绝
+与普通 Provider 异常。实验中旧错误记录继续保留，不修改已 ACK message 的正文；
+新部署使用新 turn 验证拒绝记录增量为零。
