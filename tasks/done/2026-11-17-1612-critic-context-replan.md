@@ -1,6 +1,6 @@
 # Critic 上下文、矩阵及 replan 同步优化
 
-> 状态: active
+> 状态: done — `c3e17917` fix: bound replan critic inputs and preserve review consistency
 
 用户授权调研、补充 spec、实施和真实测试。沿用 `wip/codex-20261117-critic-scope`，基线 `22b9c83e`；范围见 [208 第三批](../../docs/design/208-demand-critic-input-and-convergence.md)。本批不 merge/push，不审批测试产品实施。
 
@@ -8,7 +8,7 @@
 - [x] C2：矩阵唯一正文、等价参数组及方法选择 → verify: 既有消费者兼容，正反例保留独有边界、跨工件验收责任，真实生成与完整来源对账。
 - [x] C3：replan 当前范围与历史增量分开 → verify: 当前 Plan/Task Map、原需求、旧 finding 与执行事实必读；full/显式/缺证/改需求/失败证书保持保护；实际派发及读取回执覆盖。
 - [x] C4：实际 Channel → Plan Preview → Owner 退回 → replan → 新版 Preview → verify: Docker + 真实 Provider、受控退回、版本更新、Critic 独立 verdict、无实施与旧版审批复用。
-- [ ] C5：固定输入/缺陷校准、影响闭包、提交归档 → verify: 分列 fresh/cache/output/耗时/压缩，保留失败、重试和质量限制，本地实现及归档两次提交。
+- [x] C5：固定输入/缺陷校准、影响闭包、提交归档 → verify: 分列 fresh/cache/output/耗时/压缩，保留失败、重试和质量限制，本地实现及归档两次提交。
 - [x] C6：真实预览身份冲突及矩阵分支修复 → verify: 当前绑定不得被产品代号替换；新增机械预览审计拒绝来源冲突；真实 Web 再次退回产生新候选，Task/AC/命令/依赖不变，两入口 roles 场景分别说明成功与拒绝结果，最终 preview/download/refresh 与身份诊断一致。保留原失败，禁止就地改写准入工件。
 
 ## 验证结果
