@@ -360,7 +360,9 @@ def prepare_call_operation(
         ),
     )
     full_plan_reads = list(required_reads) if output_profile_id == "plan-synth" else []
-    if output_profile_id == "plan-synth" and any(
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+    configured_review = flow_metadata_for(runtime.config, payload=payload).get("plan_review", {})
+    if output_profile_id == "plan-synth" and configured_review.get("mode") != "full" and any(
         isinstance(source, Mapping) and source.get("artifact_id") == "scoped_plan_review.json"
         for source in source_manifest.get("sources", [])
     ):
@@ -377,6 +379,7 @@ def prepare_call_operation(
     if output_profile_id == "plan-synth":
         from zf.runtime.plan_review_selection_cost import choose_review_reads
 
+        payload["plan_review_policy"] = configured_review
         required_reads, payload["plan_review_optimization"] = choose_review_reads(
             runtime.state_dir, source_manifest, before=full_plan_reads, candidate=required_reads,
             explicit=bool(explicit_required_reads),

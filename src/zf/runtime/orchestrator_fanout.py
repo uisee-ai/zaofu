@@ -8139,6 +8139,7 @@ class FanoutCoordinationMixin(
             current_status=current_status,
         )
         from zf.core.workflow.runner_policy import pure_aggregator_policy_plan
+        from zf.runtime.plan_execution_review import plan_review_briefing
 
         runner_policy = pure_aggregator_policy_plan(self.config, role)
         runner_policy_lines: list[str] = []
@@ -8369,6 +8370,7 @@ class FanoutCoordinationMixin(
                         *(
                             [
                                 "This pure aggregator reviews the admitted child plan; it does not author or rewrite plan artifacts.",
+                                *plan_review_briefing(self.config, flow_kind=flow_kind),
                                 "The child plan reached this critic only after deterministic pre-submit validation. Treat mechanical schema and required-port presence as admitted facts unless the supplied evidence shows post-admission tampering; review semantic coverage, slicing, dependencies, risk, and acceptance quality instead.",
                                 "`goal_claim_set` and `planning_result` are Kernel-derived, `task_map_ref` supplies the `task_map` port, and issue flows adapt `requirement_spec` to `issue_spec`. Do not require these as duplicate `plan_ports` entries.",
                                 "Do not write child refs, the configured state dir, or the root project. Edit only the signed result scratch file named by the completion command.",

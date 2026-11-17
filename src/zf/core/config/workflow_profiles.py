@@ -99,7 +99,7 @@ _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "judgeRole", "judge_role",
 })
 _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
-    "planCriticEnabled", "plan_critic_enabled",
+    "planCriticEnabled", "plan_critic_enabled", "planReview", "plan_review",
     "topology",  # 批D: fanout(默认)| light(单 lane goal 环)
     "prdRef", "prd_ref",
     "targetRef", "target_ref",
@@ -1501,11 +1501,12 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         raise WorkflowProfileError(
             f"PrdFlow: unknown param(s) {unknown} (fail-closed)"
         )
-    if "planCriticEnabled" in params and "plan_critic_enabled" in params:
-        raise WorkflowProfileError("PrdFlow.planCriticEnabled aliases are ambiguous")
-    plan_critic_enabled = _pick(params, "planCriticEnabled", "plan_critic_enabled", default=True)
-    if not isinstance(plan_critic_enabled, bool):
-        raise WorkflowProfileError("PrdFlow.planCriticEnabled must be a boolean")
+    from zf.core.config.plan_review import resolve_plan_review
+    try:
+        plan_review = resolve_plan_review(params)
+    except ValueError as exc:
+        raise WorkflowProfileError(str(exc)) from exc
+    plan_critic_enabled = plan_review["mode"] != "none"
     lanes = int(_pick(params, "lanes", "laneCount", "lane_count", default=2))
     backend = str(_pick(params, "backend", default="codex"))
     verify_backend = str(_pick(
@@ -1537,6 +1538,8 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
             "prd-flow-v4-task-pipeline requires topology: fanout"
         )
     if topology == "light":
+        if "planReview" in params or "plan_review" in params:
+            raise WorkflowProfileError("planReview requires fanout topology with a Plan stage")
         return _expand_prd_flow_light(
             params,
             backend=backend,
@@ -1706,6 +1709,8 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
     )
     if discovery_stage:
         stages.append(discovery_stage)
+    if "planReview" in params or "plan_review" in params or not plan_critic_enabled:
+        metadata["plan_review"] = plan_review
     metadata["prd_ref"] = str(_pick(params, "prdRef", "prd_ref", default=""))
     metadata["target_root"] = str(_pick(params, "targetRoot", "target_root", default=""))
     metadata["stack"] = str(_pick(params, "stack", default=""))

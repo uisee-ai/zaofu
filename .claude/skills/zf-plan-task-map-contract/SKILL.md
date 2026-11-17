@@ -1011,3 +1011,16 @@ zf-plan-execution-readiness 的 execution-route 方法；不要用叙述声称�
 完整 `prd-plan.md` 与 `human_review` 都遵循
 [正文阅读与审查](../zf-requirement-reconciliation/references/document-reading.md)：
 先交代业务目标、方案、验收和待决条件，再展开任务与来源审计；不只优化可选概览。
+
+
+## 局部验收来源与评审范围
+
+每个 AC 使用已有 `source_ref` / `source_refs`，或明确 `source_acceptance_ids` / `source_ids`
+关联同版 source_index.traceability 的唯一 source_id；也可由 coverage_ledger.entries
+通过 task_ids + acceptance_ids 精确关联。不要把模块的全部来源当成每条 AC 的来源，
+不要只因 AC 名称相似就推断关联。未知或重复源 ID 应保留缺口。
+
+按编译的 planning execution facts 说明实际审查方式。`plan_review.mode=none` 表示
+没有专门独立 Critic，并不表示独立评审通过；targeted 的 focus 是评审问题，不是
+产品范围删减。作者不得修改控制结果来自批免审。正文工程标识（如 `tests/__init__.py`）
+用代码标记，GIVEN/WHEN/THEN 分行，避免追溯表重复整段共享规格。

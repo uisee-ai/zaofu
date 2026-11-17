@@ -22,6 +22,7 @@ FLOW_PARAMETER_KEYS = CONTROLLER_PARAMETERS | frozenset({
     "lanes",
     "pattern_id",
     "plan_critic_enabled",
+    "plan_review",
     "scoper_role",
     "strictness",
     "task_pipeline",
@@ -45,6 +46,7 @@ _CONTROLLER_PARAMETER_KEYS = CONTROLLER_PARAMETERS | frozenset({
     "strictness",
     "pattern_id",
     "plan_critic_enabled",
+    "plan_review",
     "task_pipeline",
 })
 

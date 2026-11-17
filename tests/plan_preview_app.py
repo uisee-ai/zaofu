@@ -80,4 +80,6 @@ def create_test_app():
     from tests.plan_human_review_fixture import add_human_review_fixture
 
     add_human_review_fixture(state, writer)
+    from tests.plan_review_policy_fixture import add_plan_review_policy_fixtures
+    add_plan_review_policy_fixtures(state, writer)
     return create_app(state, config=load_config(config_path), project_root=root)

@@ -141,6 +141,7 @@ def build_run_contract(
         },
         "workflow": {
             "kind": str(metadata.get("flow_kind") or ""),
+            **({"plan_review": dict(metadata["plan_review"])} if metadata.get("plan_review") else {}),
             "intent": str(metadata.get("intent") or ""),
             "template": str(metadata.get("workflow_template") or ""),
             "completion_profile": completion_profile,

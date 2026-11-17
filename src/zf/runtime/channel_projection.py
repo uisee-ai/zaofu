@@ -2309,6 +2309,7 @@ def _apply_consensus(channel: dict[str, Any], event: ZfEvent, payload: dict[str,
             "proposed_by": _payload_str(payload, "proposed_by") or event.actor,
             "proposed_event_id": event.id,
             "signed": {},
+            "reviews": {},
             "blocked": [],
             "reached_event_id": "",
             "reopened": False,
@@ -2324,6 +2325,15 @@ def _apply_consensus(channel: dict[str, Any], event: ZfEvent, payload: dict[str,
             return
         if member_id in _channel_agent_member_ids(channel):
             item.setdefault("signed", {})[member_id] = event.ts
+            item.setdefault("reviews", {})[member_id] = {
+                "summary": _payload_str(payload, "summary"),
+                "artifact_digest": _payload_str(payload, "artifact_digest"),
+                "evidence_refs": _string_list(payload.get("evidence_refs")),
+                "review_ref": _payload_str(payload, "review_ref"),
+                "review_digest": _payload_str(payload, "review_digest"),
+                "evidence_status": "recorded" if payload.get("review_ref") else "legacy_unrecorded",
+                "event_id": event.id,
+            }
         else:
             item["human_confirmed"] = True
             item["human_confirmed_by"] = member_id
@@ -2343,6 +2353,9 @@ def _apply_consensus(channel: dict[str, Any], event: ZfEvent, payload: dict[str,
             "blocker_question": _payload_str(payload, "blocker_question"),
             "dissent": _payload_str(payload, "dissent"),
             "evidence_refs": _string_list(payload.get("evidence_refs")),
+            "review_ref": _payload_str(payload, "review_ref"),
+            "review_digest": _payload_str(payload, "review_digest"),
+            "summary": _payload_str(payload, "summary"),
             "event_id": event.id,
             "ts": event.ts,
         })
