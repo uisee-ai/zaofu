@@ -137,3 +137,9 @@ applied=true，只有真实 heartbeat，后续合法版本仍可正常应用。�
 维持原拒绝，不把信任边界失败掩盖成配置问题。对应 Controller 合同见兄弟仓库
 `docs/design/06-cloud-runtime-delivery-contract.md` §17。真实环境资格由 Q01c 任务记录，
 本段不是整批完成声明。
+
+随后真实重启又复现首次同步抛出 `PolicyNotApplied`，使 Web 入口尚未监听就退出。
+`lifecycle.serve` 仅捕获这一已验身份、已发送拒绝 ACK 的类型，继续启动受管 Web 与
+Connector，等待后续合法策略；普通身份/协议错误仍在监听前失败。无已应用策略和
+保留旧策略均覆盖，未签名请求始终 403。启动聚焦 21 项、直接调用闭包 68 项通过；
+claw02 的失败轮次 `recovery-2` 保留，真实恢复以随后复验结果为准。
