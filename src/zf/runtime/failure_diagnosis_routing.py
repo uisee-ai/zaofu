@@ -30,7 +30,10 @@ def pending_failure_diagnoses(
         triage = classify_rework_trigger(event, config, evidence_events=events)
         if triage.recommended_action == "request_diagnosis":
             latest[task_id] = index, event
-    actions = []
+    from zf.runtime.reader_wait_recovery import pending_reader_wait_diagnoses
+    from zf.runtime.host_probe_diagnosis import pending_host_probe_diagnoses
+    actions = [*pending_reader_wait_diagnoses(events),
+               *pending_host_probe_diagnoses(state_dir, events, config)]
     for task_id, (index, event) in latest.items():
         if has_later_task_progress(events, index, task_id):
             continue
@@ -52,6 +55,6 @@ def pending_failure_diagnoses(
             "continuation_expected_events": ["run.manager.agent.recommendation"],
             "summary": "诊断当前失败事实、已尝试方法和适用合同；先收集证据，再决定修复或向 OA 移交。",
             "expected_downstream_events": ["run.manager.resident.prompted", "run.manager.autoresearch.requested"],
-            "effect_expected_events": ["task.done", "task.done.accepted"],
+            "effect_expected_events": ["run.manager.agent.recommendation"],
         })
     return actions

@@ -8,6 +8,28 @@ async function openReview(page: import("@playwright/test").Page, request: import
   return page.getByRole("dialog", { name: "Plan preview" });
 }
 
+test("legacy overview renders bound goals and PAS without inventing a synopsis", async ({ page, request }) => {
+  const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-review-legacy`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await expect(dialog.getByRole("region", { name: "已绑定交付目标" })).toContainText("库存一致");
+  await expect(dialog.getByRole("region", { name: "已绑定产品验收旅程" })).toContainText("重复请求不重复结算且刷新保持库存");
+  await expect(dialog.getByText("本版尚未提供独立产品摘要，请结合完整原文确认范围。")).toBeVisible();
+  await expect(dialog.getByRole("region", { name: "按任务审阅" }).getByRole("button", { name: "修正库存" })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("bound-overview.png"), fullPage: true });
+  await dialog.getByRole("region", { name: "按任务审阅" }).getByRole("button", { name: "修正库存" }).click();
+  await expect(dialog.getByRole("combobox", { name: "审阅模块" })).toHaveValue("T-STOCK");
+});
+
+test("direct decision view loads the bound decision register without opening context first", async ({ page, request }) => {
+  const dialog = await openReview(page, request);
+  await dialog.getByRole("button", { name: "待决事项", exact: true }).click();
+  await expect(dialog.getByText("待决定 1 · 明确阻塞 0 · 已授权待落实 1 · 已关闭 0 · 其他状态 0", { exact: true })).toBeVisible();
+  await dialog.locator("summary").filter({ hasText: "确认库存来源" }).click();
+  await expect(dialog.getByText("关闭条件：确认唯一真源")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+});
+
 test("bound review layers expose decisions, module rules and concrete acceptance without writes", async ({ page, request }) => {
   const mutations: string[] = [];
   // Inbox read receipts are separate; the product reader must not mutate business state.
@@ -61,7 +83,8 @@ test("mobile product navigation keeps design status and searchable source chapte
   await dialog.getByRole("button", { name: "来源原文", exact: true }).click();
   await dialog.locator("summary").filter({ hasText: "章节索引" }).click();
   await dialog.getByLabel("搜索正文", { exact: true }).fill("重复扣减");
-  await expect(dialog.getByText("1 个匹配章节", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "搜索章节", exact: true }).click();
+  await expect(dialog.getByText("1 个匹配章节 · 当前仅加载所选章节", { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "库存规则", exact: true }).click();
   await expect(page).toHaveURL(/anchor=stock/);
   await expect(dialog.getByRole("heading", { name: "库存规则" })).toBeVisible();

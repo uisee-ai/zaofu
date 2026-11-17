@@ -34,7 +34,7 @@ def test_sibling_preregistration_does_not_rotate_one_reader_for_queued_tasks(
     )
     assert registered == ["API", "CLI", "PRODUCT"]
     assert set(prepared) == set(registered)
-    assert len(transport.spawned) == 1
+    assert not transport.spawned  # Preregistration must not start a workspace holder.
     assert not transport.terminated
 
     args = dict(role=role, fanout_id="verify", stage_id="verify",

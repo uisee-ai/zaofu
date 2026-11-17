@@ -330,7 +330,9 @@ class RecoveryActionsMixin:
                 try:
                     trigger = repaired_reader_stage_trigger(
                         self.state_dir, self.config, self.writer.event_log.read_all(), payload, requested)
-                except ValueError as exc:
+                    from zf.runtime.reader_failure_repair import retire_misrouted_readers
+                    retire_misrouted_readers(self, self.writer.event_log.read_all(), payload, requested)
+                except (ValueError, OSError) as exc:
                     return self._recovery_failed(requested, action, requested_action, str(exc), 409)
                 emitted = self.writer.append(trigger)
                 return self._recovery_ok(requested, emitted, action, requested_action, {

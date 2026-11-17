@@ -578,6 +578,7 @@ def test_stage_dispatch_carries_admitted_plan_package_identity(
         config=SimpleNamespace(),
         task_store=store,
         event_writer=EventWriter(log),
+        event_log=log,
         _find_role_by_instance=lambda _value: role,
     )
 

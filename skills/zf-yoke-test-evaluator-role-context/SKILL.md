@@ -48,6 +48,16 @@ amendment are separate role capabilities supplied by the workflow profile.
 - Prefer the rendered `result validate ... --submit` command when provided. A failed
   validation returns diagnostics without consuming submission; successful preflight
   goes through normal Kernel admission in that invocation.
+- For `verification-result.v1`, an environment/provider execution failure uses
+  exactly `execution_status: failed` and `verdict: abstained`, with truthful
+  failure_class and evidence. `blocked` and `inconclusive` are not execution_status
+  values. Do not copy prose status words into typed fields.
+- Correct a preflight diagnostic using the pinned profile/schema, then validate
+  again. After two corrections of the same error without progress, stop guessing:
+  report the operation ID, exact diagnostic and attempted corrections through the
+  briefing's sanctioned blocker channel. Do not emit passed, fabricate evidence,
+  or loop on validation commands. Read-only preflight itself does not consume a
+  lease or emit failure events; the blocker report lets recovery observe the gap.
 
 ## Dependency Triggers
 
@@ -173,6 +183,15 @@ amendment are separate role capabilities supplied by the workflow profile.
 
 When Candidate Verify receives a current `product_acceptance_spec`:
 
+- If an execution failure prevented product evaluation, submit exactly
+  `execution_status: failed` + `verdict: abstained`, retain the actual failure
+  and available tool evidence, and omit `product_acceptance_report`,
+  `product_acceptance_report_ref`, and `product_acceptance_report_digest`.
+  Remove any unperformed report template already in scratch; an empty object,
+  null, or blocked rows with invented assertion evidence are not substitutes.
+  This reports an external wait, not product acceptance. If a product report is
+  supplied, all its identity and evidence checks still apply. After recovery,
+  independently complete the full mandatory product evaluation below.
 - 以派发的 `output_profile_id=candidate-verify` 识别产品验收义务。兼容流程的任务快照
   可能仍绑定 `verification_owner=task_verify`；保持该不可变身份及任务矩阵责任，
   同时完成独立的 `product_acceptance_report`。任务行的 `not_applicable` 不豁免
@@ -191,7 +210,8 @@ When Candidate Verify receives a current `product_acceptance_spec`:
 - 产品证据每项使用当前工具结果提供的 `{ref, sha256}` 描述符；事件字符串不能替代
   该结构，不伪造摘要。任务切片范围不豁免已绑定产品规格所需的跨切片只读检查。
 - Deterministic product failure is semantic rework. Provider/environment
-  execution failure is `blocked`/external wait and must not be reported as a
+  execution failure is an external wait (`verification-result.v1`: `failed` +
+  `abstained`) and must not be reported as a
   failed product journey or consume semantic rework.
 
 ## Role Boundary
@@ -216,7 +236,8 @@ to perform a meaningful independent evaluation.
 
 以当前 attempt 输入索引定位本任务的 contract、原始约束、目标版本、验证命令和
 依赖接口，完整消费 required reads；索引/命中摘要不算正文已读。Impl 自检用于
-确定复核线索，不能替代 Verify 自己运行检查并绑定当前 target 的证据。共享
+确定复核线索；仅按上述第3条复用合同允许的同版确定性收据，其他必需独立探测
+仍由 Verify 执行并绑定当前 target，不能被自检替代。共享
 规则必须保留失败语义、权限、边界值和跨任务接口反例；不因本任务切片较小而
 缩减验收。Candidate Verify 仍按其完整包政策读取，不套用 Task Verify 的选择。
 压缩/换会话后先核对 task/attempt/target/ref/digest，再补读当前不再掌握的正文；
@@ -225,3 +246,15 @@ to perform a meaningful independent evaluation.
 恢复时使用当前 Verify attempt 的 `artifact recover`；检查点、Impl 历史已读和关系
 命中都不能抵扣独立 Verify 必读。声明关系只定位授权正文；superseded/rejected 输入
 必须交回受控重绑定路径，不能自行切到新包继续验收。
+
+## 受控宿主测试回执
+
+先核对冻结合同与 reusable_command_receipts：允许复用的同版确定性命令沿现有
+reused_command_receipt_ids 明确引用，不伪称本次独立执行，也不因其沙箱重跑失败
+否定有效宿主事实。其余必需命令无法执行时报告技术阻塞，不修改权限或删除验收。
+操作员可针对该已结束的 Verify operation 审阅并执行原合同命令，保留独立的一次宿主
+采证。恢复时核对账本 `runtime.action.attempt.completed`、receipt_ref/output_ref摘要、
+Run/Task/合同、固定 target、命令、source_stable与退出码，并重新独立审查业务断言。
+如需新探测仍提出具体需求；不能用 Impl 的宿主回执冒充 Verify 自己的独立执行证据。
+结果注明 execution_origin=operator_authorized_host及原执行身份；新结果使用当前派发
+身份。宿主动作不发 test.passed/task.done，也不代替 Verify/Judge 的语义判断。

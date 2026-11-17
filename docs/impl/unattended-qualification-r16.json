@@ -1,0 +1,218 @@
+{
+  "classification": "UNATTENDED_QUALIFICATION_PASS",
+  "scope": "Frozen minimal TypeScript PRD, 2 Impl + 2 Verify, preauthorized F1-F6; after approved Plan",
+  "ad_hoc_recovery_interventions": 0,
+  "goal_event": "evt-64a457f7e46e",
+  "completed_at": "2026-11-17T13:44:00.898651+00:00",
+  "qualification_elapsed_seconds": 4336.559564,
+  "source_head": "1bff811de62223fef0c8c6a5c56b98d69f6c57ef",
+  "loaded_repair_head": "90f159cf2aac3b005bbf9e413b83c93321dc9b4d",
+  "candidate": "6152266da70d1276e31e18e81c029703e2d85749",
+  "tasks": [
+    {
+      "id": "TASK-NAME",
+      "status": "done"
+    },
+    {
+      "id": "TASK-NUMBERS",
+      "status": "done"
+    },
+    {
+      "id": "PRD-WORKFLOW-6313EA7B1508EB36",
+      "status": "done"
+    }
+  ],
+  "pending_action_effects": [],
+  "failed_action_effects": [],
+  "limitations": [
+    "Not a long-duration reliability estimate",
+    "No host reboot, cross-provider handoff, Go or 8+8 capacity qualification",
+    "Predeclared Plan approval, host service and bounded repair/test authorization remain prerequisites"
+  ],
+  "workflow_run_id": "workflow-6313ea7b1508eb36",
+  "evidence_digests": {
+    "evaluation.json": "e4fe3e4814e41b96654e6633991829e772c727a8057a9c38b7f8fe22796c077f",
+    "fault-chain-review-current.json": "533b5f649193f3add4d0bb91817ac1d9c2aed294aa5977b7ce398e284a03ae31",
+    "independent-image-consumption.json": "363ee3b2b4a812cd33eaa61496ed6ea716dea4434de2cb53a3bd7365f0373d9b"
+  },
+  "event_chain": {
+    "F1": [
+      {
+        "id": "evt-d165fec46eda",
+        "at": "2026-11-17T12:35:40.373789+00:00",
+        "type": "worker.respawned",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-b4461e6fb679",
+        "at": "2026-11-17T12:52:13.494106+00:00",
+        "type": "task.done",
+        "origin": "kernel"
+      }
+    ],
+    "F2": [
+      {
+        "id": "evt-5cb5e6f45e02",
+        "at": "2026-11-17T12:32:26.737668+00:00",
+        "type": "loop.started",
+        "origin": "kernel"
+      }
+    ],
+    "F3": [
+      {
+        "id": "evt-84e13b93c057",
+        "at": "2026-11-17T12:38:28.446838+00:00",
+        "type": "workflow.call.result.admitted",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-d2aa903902f7",
+        "at": "2026-11-17T12:38:45.364115+00:00",
+        "type": "runtime.action.attempt.completed",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-193944484249",
+        "at": "2026-11-17T12:52:27.703616+00:00",
+        "type": "task.done",
+        "origin": "kernel"
+      }
+    ],
+    "F4": [
+      {
+        "id": "evt-1b277503b2d2",
+        "at": "2026-11-17T13:15:46.817603+00:00",
+        "type": "fanout.child.dispatch_deferred",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-9070c8d50d89",
+        "at": "2026-11-17T13:16:29.392745+00:00",
+        "type": "fanout.child.dispatched",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-1767112f0e39",
+        "at": "2026-11-17T13:22:15.680245+00:00",
+        "type": "workflow.call.result.admitted",
+        "origin": "kernel"
+      }
+    ],
+    "F5": [
+      {
+        "id": "evt-014f4d535bc8",
+        "at": "2026-11-17T12:38:45.573430+00:00",
+        "type": "runtime.action.attempt.started",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-3cc8bfed8a34",
+        "at": "2026-11-17T12:38:48.673678+00:00",
+        "type": "runtime.action.attempt.completed",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-c5dba101bad6",
+        "at": "2026-11-17T12:38:52.281435+00:00",
+        "type": "runtime.action.attempt.completed",
+        "origin": ""
+      },
+      {
+        "id": "evt-3143c6718445",
+        "at": "2026-11-17T12:38:52.649793+00:00",
+        "type": "runtime.action.attempt.completed",
+        "origin": ""
+      }
+    ],
+    "F6": [
+      {
+        "id": "evt-960c6a67fe77",
+        "at": "2026-11-17T13:08:22.276029+00:00",
+        "type": "runtime.action.attempt.completed",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-61502fe74fac",
+        "at": "2026-11-17T13:11:38.682312+00:00",
+        "type": "run.manager.agent.recommendation",
+        "origin": "worker"
+      },
+      {
+        "id": "evt-b4a9b0f52e63",
+        "at": "2026-11-17T13:11:38.951835+00:00",
+        "type": "run.manager.repair.accepted",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-eba7d6194ef1",
+        "at": "2026-11-17T13:11:39.886182+00:00",
+        "type": "autoresearch.repair.dispatched",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-89d6841b0deb",
+        "at": "2026-11-17T13:14:23.467023+00:00",
+        "type": "runtime.action.attempt.completed",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-ef50f416740f",
+        "at": "2026-11-17T13:15:43.185143+00:00",
+        "type": "run.manager.action.applied",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-2b8194cc68c1",
+        "at": "2026-11-17T13:16:02.702205+00:00",
+        "type": "run.manager.repair.merge.merged",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-1ecc1987e824",
+        "at": "2026-11-17T13:16:13.063063+00:00",
+        "type": "loop.started",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-d8eae4f4cd31",
+        "at": "2026-11-17T13:22:30.281122+00:00",
+        "type": "runtime.action.attempt.completed",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-158e51bdd9b4",
+        "at": "2026-11-17T13:22:38.665942+00:00",
+        "type": "runtime.action.attempt.completed",
+        "origin": "kernel"
+      },
+      {
+        "id": "evt-3fd43ac2677b",
+        "at": "2026-11-17T13:22:50.640586+00:00",
+        "type": "runtime.action.attempt.completed",
+        "origin": "kernel"
+      }
+    ]
+  },
+  "independent_stages": [
+    {
+      "event_id": "evt-aad16f0e0fbc",
+      "type": "test.passed",
+      "at": "2026-11-17T13:29:57.609977+00:00"
+    },
+    {
+      "event_id": "evt-37cef5f4334e",
+      "type": "flow.discovery.completed",
+      "at": "2026-11-17T13:37:28.280251+00:00"
+    },
+    {
+      "event_id": "evt-9c076a559d67",
+      "type": "judge.passed",
+      "at": "2026-11-17T13:44:00.452666+00:00"
+    },
+    {
+      "event_id": "evt-64a457f7e46e",
+      "type": "run.goal.completed",
+      "at": "2026-11-17T13:44:00.898651+00:00"
+    }
+  ]
+}

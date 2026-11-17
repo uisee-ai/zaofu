@@ -858,6 +858,10 @@ def build_workflow_batch_resume_checkpoints(
                 event_list,
                 event,
             )
+            from zf.runtime.candidate_reader_recovery_owner import admitted_reader_recovery_owns_failure
+
+            if candidate_trigger is not None and admitted_reader_recovery_owns_failure(event_list, event):
+                continue
             candidate_runtime_retry = (
                 candidate_trigger is not None
                 and _candidate_runtime_failure_only(event_list, event)
@@ -1750,6 +1754,11 @@ def _batch_checkpoint_superseded_reason(
         return _repair_checkpoint_superseded_reason(events, checkpoint)
     if checkpoint.safe_resume_action != "reemit_candidate_ready":
         return ""
+    from zf.runtime.candidate_repair_resume import candidate_repair_supersedes
+
+    repair_reason = candidate_repair_supersedes(events, checkpoint)
+    if repair_reason:
+        return repair_reason
     if not checkpoint.candidate_head_commit:
         return ""
     source_idx = next(

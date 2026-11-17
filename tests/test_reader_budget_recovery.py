@@ -34,6 +34,15 @@ def test_reader_retry_preserves_required_writer_evidence(tmp_path: Path) -> None
         'artifact_sha256': descriptor['sha256'], 'json_path': '$',
     })
     previous = next(e for e in log.read_all() if e.type == 'fanout.child.dispatched')
+    # A fresh reader may replace a cancelled call only after the role is idle.
+    # The controlled-action test below covers this lifecycle through run_once.
+    old = child['payload']
+    workflow_operation_service(orch).cancel(
+        operation_id=old['operation_id'], request_hash=old['request_hash'],
+        workflow_run_id='run-durable', task_id='T-VERIFY', reason='controlled_reader_retry',
+    )
+    orch._set_worker_state(config.roles[0].instance_id, 'idle',
+                           task_id='T-VERIFY', reason='original_reader_cancelled')
     prepare_fresh_reader_retry(
         orch, manifest=_manifest(state, child['fanout_id']), child=child,
         role=config.roles[0], attempt=1, previous_dispatch=previous,

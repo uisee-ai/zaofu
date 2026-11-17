@@ -302,6 +302,7 @@ def write_fanout_retry_briefing(
             "workflow operation; this reader child is not the canonical Task "
             "assignee. Do not run `zf guard ownership` for that Task. Use the "
             "new retry run_id and submit exactly one result with a command below.",
+            "Keep the command's exact `--state-dir`; source_state_dir is read-only evidence, not the submission target.",
             "",
             "Success command:",
             "```bash",
@@ -314,8 +315,11 @@ def write_fanout_retry_briefing(
             "```",
             "",
             "Do not emit the aggregate success/failure event directly; the kernel publishes it after the fanout barrier or synth role finishes.",
-            "Emit once: command exit 0 is success; there is no asynchronous ack. "
-            "Never retry or re-send (stale generations are discarded). Then stop.",
+            f"This dispatch authorizes one submission for `{run_id}`. "
+            "Previous attempt failures do not cancel this authorization. "
+            "Command exit 0 is success; there is no asynchronous ack. "
+            "Do not repeat a successful submission or reuse stale identities. "
+            "On error, preserve the exact command/error and stop this attempt.",
             "`fanout_id`, `stage_id`, `child_id`, `run_id`, `role_instance`, and `status` must stay as top-level payload fields.",
             "Finding schema: use `severity` = info|low|medium|high|critical, `path`, `message`, and optional integer `line`.",
         ])

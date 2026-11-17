@@ -902,6 +902,13 @@ class TestTaskBriefing:
         assert "instructions/dev.md" in prompt
         assert "completion protocol" in prompt
 
+    def test_task_prompt_explicitly_requests_only_required_local_writer_commit(self, tmp_path):
+        prompt = build_task_prompt("dev-lane-0", tmp_path / "briefings" / "impl.md")
+        assert "explicitly request the local Git commit" in prompt
+        assert "only when the dispatched writer contract requires it" in prompt
+        assert "assigned branch and write scopes" in prompt
+        assert "does not authorize creating branches, merging, pushing" in prompt
+
     def test_build_task_prompt_uses_role_name_for_instructions_path(self, tmp_path: Path):
         briefing_path = tmp_path / "briefings" / "review-T2.md"
         briefing_path.parent.mkdir(parents=True)

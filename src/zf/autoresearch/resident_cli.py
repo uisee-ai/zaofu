@@ -49,6 +49,11 @@ def _run_resident_loop(args: Any, *, state_dir: Path) -> int:
     previous_sigterm = signal.signal(signal.SIGTERM, _request_shutdown)
     try:
         while not shutdown_requested.is_set():
+            if args.execute:
+                from zf.autoresearch.interrupted_checkpoint import reconcile_interrupted
+                from zf.core.events import EventWriter
+                from zf.core.events.factory import event_log_from_project
+                reconcile_interrupted(EventWriter(event_log_from_project(state_dir)), state_dir=state_dir)
             actions = run_resident_once(
                 state_dir=state_dir,
                 worktree_root=args.worktree_root,
@@ -61,6 +66,10 @@ def _run_resident_loop(args: Any, *, state_dir: Path) -> int:
                 should_stop=shutdown_requested.is_set,
             )
             print(actions_json(actions), flush=True)
+            from zf.runtime.autoresearch_parent_exit import parent_completed
+            from zf.core.events.factory import event_log_from_project
+            if not actions and parent_completed(event_log_from_project(state_dir).read_all()):
+                break  # continue policy drains its finite queue, then releases ownership
             if shutdown_requested.is_set() or not getattr(args, "watch", False):
                 break
             shutdown_requested.wait(interval)

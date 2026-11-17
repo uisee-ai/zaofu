@@ -679,6 +679,106 @@
       "expected_critic_verdict": "reject",
       "required_finding": "安装结果写入与修正事务未分配；统计报表不生产安装结果字段。",
       "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "normative_body_bound_to_task",
+      "source_requirement": "批准的 Plan 明确采用完整 Number 转换且只接受有限输入，不限制为十进制；0x10 应返回16，2x必须拒绝。",
+      "plan_body": "按逗号分段、trim，拒绝空段，以 Number 完整转换并检查有限性；保留指数及完整进制表示。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "NUM-FINITE",
+            "text": "按批准的完整有限数字规则解析",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "numbers",
+            "title": "有限数字解析",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "app/src/numbers.ts",
+              "app/tests/numbers.test.mjs"
+            ],
+            "exclusive_files": [
+              "app/src/numbers.ts"
+            ],
+            "verification": "npm test",
+            "goal_claim_ids": [
+              "NUM-FINITE"
+            ],
+            "acceptance_criteria": [
+              {
+                "id": "AC-NUM",
+                "statement": "完整Number转换且有限：0x10=16、0b10=2、1e2=100；空段和2x拒绝。"
+              }
+            ]
+          }
+        ]
+      },
+      "downstream_read_selection": [
+        "task_map"
+      ],
+      "expected_kernel_passed": true,
+      "error_contains": "",
+      "diagnostic": "",
+      "expected_critic_verdict": "approve",
+      "required_finding": "具体数字语法及正反边界已进入numbers任务的必读AC，与正文一致。",
+      "minimal_revision": "保留完整语义和任务读取绑定；不要求增加另一份全局正文。"
+    },
+    {
+      "id": "normative_body_only_oracle_drift",
+      "source_requirement": "批准的 Plan 明确采用完整 Number 转换且只接受有限输入，不限制为十进制；0x10 应返回16，2x必须拒绝。",
+      "plan_body": "按逗号分段、trim，拒绝空段，以 Number 完整转换并检查有限性；保留指数及完整进制表示。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "NUM-FINITE",
+            "text": "按批准的完整有限数字规则解析",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "numbers",
+            "title": "有限数字解析",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "app/src/numbers.ts",
+              "app/tests/numbers.test.mjs"
+            ],
+            "exclusive_files": [
+              "app/src/numbers.ts"
+            ],
+            "verification": "npm test",
+            "goal_claim_ids": [
+              "NUM-FINITE"
+            ],
+            "acceptance_criteria": [
+              {
+                "id": "AC-NUM",
+                "statement": "支持有限数字、小数和负数，拒绝非法段。"
+              }
+            ]
+          }
+        ]
+      },
+      "downstream_read_selection": [
+        "task_map"
+      ],
+      "expected_kernel_passed": true,
+      "error_contains": "",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "正文允许0x10，但下游泛化条款允许Writer和Verify共同收窄为十进制并错误断言0x10应拒绝。",
+      "minimal_revision": "将已批准的完整Number规则及0x10正例、2x反例交付到numbers任务现有AC或受控必读规格；核对实际选择器，不能只添加路径或依赖测试全绿。",
+      "possible_implementation": "用十进制正则限制Number转换。",
+      "possible_independent_verify": "assert.throws(() => summarizeNumbers(\"0x10\")); // 运行成功但oracle违反批准正文"
     }
   ]
 }

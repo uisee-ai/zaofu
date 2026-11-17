@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from zf.core.config.host_verification import HostVerificationConfig
+from zf.core.config.task_publication import TaskPublicationConfig
+
 from dataclasses import dataclass, field, fields
 
 
@@ -15,6 +18,8 @@ class ProjectConfig:
     # provision 后在 worktree 内执行。内容属项目语义(pnpm install /
     # uv sync ...),kernel 只负责执行、超时、幂等与失败上浮。
     setup_script: str = ""
+    setup_inputs: list[str] = field(default_factory=list)
+    setup_scope: str = "workspace"
 
 
 @dataclass
@@ -215,8 +220,11 @@ class ProviderSessionConfig:
     agent: str = ""
     max_parallel_agents: int | None = None  # 0: no harness result ceiling; provider default.
     native_delegation: bool | None = None
+    sandbox: str = ""  # Explicit Codex workspace sandbox; empty preserves legacy policy.
 
     def __post_init__(self) -> None:
+        if self.sandbox not in ("", "workspace-write"):
+            raise ValueError("ProviderSessionConfig.sandbox must be workspace-write or empty")
         if self.native_delegation is not None and not isinstance(self.native_delegation, bool):
             raise ValueError("ProviderSessionConfig.native_delegation must be boolean")
         if self.max_parallel_agents is not None:
@@ -1329,6 +1337,8 @@ class WorkdirConfig:
     # symlinked from project_root into every worktree so gate/verify commands
     # (run_tests.sh, tsc, npm) run natively. Missing sources are skipped.
     provision_paths: list[str] = field(default_factory=list)
+    # Required outputs of provisioning/setup, checked before execution.
+    required_paths: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1405,6 +1415,9 @@ class RuntimeRunManagerReflectConfig:
 
 @dataclass
 class RuntimeRunManagerSourceRepairConfig:
+    publish_candidate: bool = False
+    model: str = ""
+    model_reasoning_effort: str = ""
     enabled: bool = False
     backend: str = ""
     mode: str = "isolated_worktree"
@@ -1442,6 +1455,7 @@ class RuntimeRunManagerConfig:
 
 @dataclass
 class RuntimeAutoresearchResidentConfig:
+    on_parent_terminal: str = "preserve"
     enabled: bool = False
     interval_seconds: float = 10.0
     max_actions_per_tick: int = 1
@@ -1573,8 +1587,11 @@ class RuntimeWebTerminalConfig:
     allow_takeover: bool = True
 
 
+
 @dataclass
 class RuntimeConfig:
+    host_verification: HostVerificationConfig = field(default_factory=HostVerificationConfig)
+    task_publication: TaskPublicationConfig = field(default_factory=TaskPublicationConfig)
     workdirs: WorkdirConfig = field(default_factory=WorkdirConfig)
     git: GitIsolationConfig = field(default_factory=GitIsolationConfig)
     skills: RuntimeSkillsConfig = field(default_factory=RuntimeSkillsConfig)

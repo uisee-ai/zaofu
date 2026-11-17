@@ -939,3 +939,14 @@ def test_resident_briefing_contains_wait_semantics_rules(tmp_path) -> None:
     assert "完成证据早于 stall 信号仍然算完成" not in briefing
     assert "兄弟 child 在飞不能证明当前 child 正常" in briefing
     assert "workflow.resume.gate_unroutable" in briefing
+
+
+def test_codex_resident_uses_workspace_sandbox_without_native_delegation() -> None:
+    role = build_resident_run_manager_role(_resident_config(
+        backend='codex', model='gpt-6.1-terra', model_reasoning_effort='high',
+    ))
+    assert role is not None
+    argv = get_adapter('codex').build_command(role)
+    assert '--dangerously-bypass-approvals-and-sandbox' not in argv
+    assert argv[argv.index('--sandbox') + 1] == 'workspace-write'
+    assert role.provider_session.native_delegation is False

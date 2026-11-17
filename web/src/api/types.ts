@@ -2270,11 +2270,19 @@ export interface TaskRunPanelProjection {
 
 export interface HandoffSummaryProjection {
   schema_version: string;
+  receipt?: {
+    status: "unavailable" | "awaiting_receipt" | "accepted" | "incomplete";
+    delivery_status?: "dispatched" | "not_dispatched";
+    target_operation_id?: string;
+    business_completed: false;
+  };
   generated_at?: string;
   task_id: string;
   objective: string;
   current_state: string;
   current_stage: string;
+  pipeline?: Record<string, unknown> | null;
+  input_recovery?: Record<string, unknown>;
   owner?: Record<string, unknown>;
   completed?: Array<Record<string, unknown>>;
   missing_evidence?: Array<Record<string, unknown>>;
@@ -3222,6 +3230,7 @@ export interface OperatorInboxProjection {
 }
 
 export interface PlanPreview {
+  content_state?: "deferred";
   action_payload?: Record<string, unknown>;
   schema_version: string;
   ok: boolean;
@@ -3366,6 +3375,21 @@ export interface RunPulseSessions {
 }
 
 export interface RunPulse {
+  versions?: {
+    source_revision: string;
+    loaded_revision: string;
+    comparison: "unknown" | "same_revision" | "different";
+    lifecycle: "unknown" | "started" | "stopped";
+    event_id: string;
+    receipt_status: "unavailable" | "available";
+    task_adoption?: {
+      scope: "authenticated_worker_cli";
+      active: number;
+      observed: number;
+      tasks: Array<{ task_id: string; actor: string; dispatch_id: string; status: "unknown" | "observed";
+        source_revision: string; comparison: "unknown" | "same_revision" | "different"; event_id: string }>;
+    };
+  };
   last_event_age_seconds?: number | null;
   events_per_bucket?: number[];
   bucket_seconds?: number | null;

@@ -84,6 +84,7 @@ KANBAN_AGENT_ALLOWED_ACTIONS = (
 )
 
 PROJECT_OPERATOR_CONTROLLED_ACTIONS = frozenset({
+    "task-host-assist",
     "project-git-baseline",
     "channel-profile-register",
     "operator-intent-create",

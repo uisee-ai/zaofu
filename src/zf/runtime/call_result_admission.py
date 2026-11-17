@@ -224,6 +224,12 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             allow_incomplete_reads=reader_failed,
         ))
         issues.extend(self._control_result_identity_issues(envelope, adapted))
+        if not reader_failed and envelope["execution"]["status"] == "completed":
+            from zf.runtime.task_handoff_receipt import handoff_admission_issues
+
+            issues.extend(handoff_admission_issues(
+                self.state_dir, self.event_log.read_all(), dict(operation or {}),
+            ))
         currentness_issues = self._operation_result_currentness_issues(
             envelope,
             operation or {},
@@ -520,10 +526,12 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             )
         admitted = self.event_writer.append(ZfEvent(
             type="workflow.call.result.admitted",
+            origin="kernel",
             actor="zf-cli",
             task_id=event.task_id,
             payload={
                 **operation_identity,
+                **{key: envelope["identity"].get(key, "") for key in ("attempt_id", "dispatch_id")},
                 "schema_version": "call-result-admission.v1",
                 "admission_status": "admitted",
                 "mode": mode,

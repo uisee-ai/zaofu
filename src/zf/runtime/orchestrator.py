@@ -780,6 +780,9 @@ class WorkflowRuntimeCoordinator(
         shape only) and restart reconciliation all skipped it. Rolling back at
         the primitive covers every caller, current and future.
         """
+        if getattr(context, "continuation", False):
+            # A follow-up send failure does not revoke the original task lease.
+            return
         task_id = getattr(context, "task_id", None)
         dispatch_id = getattr(context, "dispatch_id", None)
         if not task_id or not dispatch_id:
@@ -2322,7 +2325,11 @@ class WorkflowRuntimeCoordinator(
             raise BudgetExceededError(
                 f"dispatch to {role_name} blocked: budget exceeded"
             )
-        if role_on_demand:
+        if context is not None and context.continuation:
+            from zf.runtime.task_attempt_continuation import validate_task_continuation
+
+            validate_task_continuation(self, role_name, context)
+        if role_on_demand and not (context is not None and context.continuation):
             try:
                 self._ensure_role_active(
                     role,

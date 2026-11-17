@@ -64,3 +64,19 @@ def test_restart_actuator_retains_legacy_and_process_identity_fences(tmp_path, g
     path.write_text(json.dumps(guard))
     with patch("zf.runtime.source_repair_restart_actuator._looks_like_watcher", return_value=looks_like):
         assert _recorded_watcher_pid(tmp_path) == expected
+
+
+def test_managed_restart_stays_with_host_supervisor(tmp_path, monkeypatch):
+    import zf.runtime.source_repair_restart_actuator as module
+    monkeypatch.setenv('ZF_HOST_SUPERVISOR_UNIT', 'zf-qualified.service')
+    monkeypatch.setattr(module, '_recorded_watcher_pid', lambda state: 1234)
+    calls = []
+    def run(argv, **kwargs):
+        from subprocess import CompletedProcess
+        calls.append(argv)
+        return CompletedProcess(argv, 0, '1234\n' if 'show' in argv else '', '')
+    monkeypatch.setattr(module, '_systemctl', run)
+    monkeypatch.setattr(module.time, 'sleep', lambda _: None)
+    monkeypatch.setattr(module.os, 'execvp', lambda *args: pytest.fail('must not create a second controller owner'))
+    assert module.main(['--project-root', str(tmp_path), '--state-dir', str(tmp_path)]) == 0
+    assert calls[-1] == ['systemctl', '--user', 'kill', '--kill-whom=main', '--signal=SIGKILL', 'zf-qualified.service']

@@ -17,6 +17,7 @@ _OBSERVATION_EVENT_TYPES = {
     "worker.drift.detected",
     "worker.refresh.triggered",
     "worker.state.changed",
+    "worker.runtime.observed",  # Process telemetry is not an agent decision.
     # Codex/Claude hook events are high-volume runtime observations. A normal
     # turn often emits many pre/post tool hooks while the agent reads briefings,
     # skills, and tests; that is activity, not repeat decision drift.

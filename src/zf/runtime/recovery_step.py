@@ -12,6 +12,42 @@ IDENTITY_FIELDS = (
 )
 
 
+def triage_completion_matches(event: ZfEvent, request: Mapping[str, Any]) -> bool:
+    """Only admitted completion of the exact task generation can retire triage."""
+    if event.origin != 'kernel' or event.type not in {'task.done', 'task.done.accepted'}:
+        return False
+    body = event.payload or {}
+    for key in ('workflow_run_id', 'task_map_generation'):
+        if not request.get(key) or body.get(key) != request[key]:
+            return False
+    if not request.get('task_id') or (event.task_id or body.get('task_id')) != request['task_id']:
+        return False
+    return not (
+        (body.get('task_id') and body['task_id'] != request['task_id'])
+        or (event.correlation_id and event.correlation_id != request['workflow_run_id'])
+    )
+
+
+def diagnosis_reply_matches_request(event: ZfEvent, request: Mapping[str, Any]) -> bool:
+    """The exact request and designated responder bind omitted reply identity."""
+    body = event.payload or {}
+    if (event.type != "run.manager.agent.recommendation"
+            or not request.get("request_id") or not request.get("instance_id")
+            or body.get("request_id") != request["request_id"]
+            or event.actor != request["instance_id"]):
+        return False
+    for key in (*IDENTITY_FIELDS, "recovery_case_id", "fanout_id"):
+        if request.get(key) and body.get(key) and body[key] != request[key]:
+            return False
+    expected_run = request.get("workflow_run_id") or request.get("run_id")
+    if expected_run and any(value and value != expected_run for value in (
+        body.get("workflow_run_id"), body.get("run_id"), event.correlation_id,
+    )):
+        return False
+    return not (event.task_id and request.get("task_id")
+                and event.task_id != request["task_id"])
+
+
 def admitted_recovery_continuation(
     events: Iterable[ZfEvent], action: Mapping[str, Any], state: Mapping[str, Any],
 ) -> bool:

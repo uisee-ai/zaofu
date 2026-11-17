@@ -5,15 +5,17 @@ import PlanMarkdownDocument from "./PlanMarkdownDocument";
 import PlanSourceReader from "./PlanSourceReader";
 import PlanTraceReader from "./PlanTraceReader";
 import PlanInputReviewPanel from "./PlanInputReviewPanel";
+import PlanMaterialCatalog from "./PlanMaterialCatalog";
 import { DecisionList, PlanSourceContext, SourceRefs } from "./PlanReviewDetails";
 import { buildPlanReview, relatedTasks, strings, text } from "./planReviewModel";
 import { usePlanArtifacts } from "./usePlanArtifacts";
+import { PlanBoundJourneys } from "./PlanBoundJourneys";
 import "./planReader.css";
 
-type View = "inputs" | "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "original" | "sources";
-const views: [View, string][] = [["overview", "审批概览"], ["modules", "模块规格"], ["pages", "页面与设计"], ["scenarios", "验收场景"], ["decisions", "待决事项"], ["coverage", "覆盖审查"], ["inputs", "任务输入"], ["original", "完整原文"], ["sources", "来源原文"]];
+type View = "inputs" | "overview" | "modules" | "pages" | "scenarios" | "decisions" | "coverage" | "original" | "sources" | "materials";
+const views: [View, string][] = [["overview", "审批概览"], ["modules", "模块规格"], ["pages", "页面与设计"], ["scenarios", "验收场景"], ["decisions", "待决事项"], ["coverage", "覆盖审查"], ["inputs", "任务输入"], ["original", "完整原文"], ["sources", "来源原文"], ["materials", "材料目录"]];
 
-export default function PlanReviewReader({ preview, projectId }: { preview: PlanPreview; projectId: string }) {
+export default function PlanReviewReader({ preview, projectId, onBodyRequested }: { preview: PlanPreview; projectId: string; onBodyRequested?: (value: boolean) => void }) {
   const readLocation = () => {
     const params = new URLSearchParams(window.location.hash.slice(1));
     const samePlan = params.get("plan") === preview.plan_id;
@@ -24,6 +26,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
   const [location, setLocation] = useState(readLocation);
   const [query, setQuery] = useState("");
   const { view } = location;
+  useEffect(() => { onBodyRequested?.(view === "original" || view === "decisions"); }, [view, onBodyRequested]);
   const navigate = (next: Partial<typeof location>) => {
     const value = { ...location, ...next };
     setLocation(value);
@@ -34,7 +37,7 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
   };
   useEffect(() => { const update = () => setLocation(readLocation()); window.addEventListener("hashchange", update); window.addEventListener("popstate", update); return () => { window.removeEventListener("hashchange", update); window.removeEventListener("popstate", update); }; }, [preview.plan_id]);
   const detailed = view === "coverage" || view === "scenarios";
-  const { artifacts, errors, loading } = usePlanArtifacts(preview, projectId, detailed);
+  const { artifacts, errors, loading } = usePlanArtifacts(preview, projectId, detailed, !["sources", "inputs", "original", "materials"].includes(view));
   const model = useMemo(() => buildPlanReview(artifacts), [artifacts]);
   const selected = location.task ? model.modules.find(m => m.id === location.task) : model.modules[0];
   const decisions = preview.decision_review?.available ? preview.decision_review.items : model.decisions;
@@ -55,8 +58,9 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
         </>}
       </nav>
       <div className="plan-product-content">
-        {view === "original" ? <PlanMarkdownDocument content={preview.markdown || ""} reviewContent={preview.review_dossier_markdown || ""} initialAnchor={location.anchor} onAnchorChange={anchor => navigate({ anchor })} />
+        {view === "original" ? (preview.content_state === "deferred" ? <p>完整原文尚未加载。</p> : <PlanMarkdownDocument content={preview.markdown || ""} reviewContent={preview.review_dossier_markdown || ""} initialAnchor={location.anchor} onAnchorChange={anchor => navigate({ anchor })} />)
           : view === "sources" ? <PlanSourceReader preview={preview} projectId={projectId} name={location.source} anchor={location.anchor} onSelect={openSource} />
+          : view === "materials" ? <div className="plan-review-scroll"><PlanMaterialCatalog preview={preview} projectId={projectId} onRead={openSource} /></div>
           : <div className="plan-review-scroll" role="region" aria-label="计划审阅内容" tabIndex={0}>
           <p className="muted">版本 {preview.plan_id} · {preview.status} · 以下为规划快照，计划分配与场景不代表实现或测试已通过。</p>
           {loading && <p role="status">正在读取同版规格…</p>}
@@ -67,11 +71,14 @@ export default function PlanReviewReader({ preview, projectId }: { preview: Plan
             <h2>本次交付与审批范围</h2>
             <p>{model.modules.length} 个任务 · {model.criterionCount} 个验收项 · {model.pageCount ?? "未提供"} 个页面 · {model.formCount ?? "未提供"} 类表单</p>
             {model.overview ? <MarkdownText key={`overview:${model.overview}`} content={model.overview} /> : <p>本版尚未提供独立产品摘要，请结合完整原文确认范围。</p>}
+            {!model.overview && model.goals.length > 0 && <section aria-label="已绑定交付目标"><h3>已绑定交付目标</h3>{model.goals.map((goal, i) => <p key={i}><strong>{text(goal.id || goal.goal_claim_id)}</strong> {text(goal.statement)}</p>)}</section>}
             <h3>业务旅程</h3>
             {model.journeys ? <MarkdownText key={`journeys:${model.journeys}`} content={model.journeys} /> : <p>本版尚未提供独立业务流程说明，请结合模块规格和完整原文审阅。</p>}
+            <PlanBoundJourneys journeys={model.acceptanceJourneys} />
             <details className="plan-review-card"><summary>完整交付目标（含工程约束）</summary>{model.goals.map((goal, i) => <p key={i}><strong>{text(goal.id)}</strong> {text(goal.statement)}</p>)}</details>
             <h3>业务与交付模块</h3>
             {model.groups.length > 0 ? model.groups.map((group, i) => <article className="plan-review-card" key={i}><h4>{text(group.title || group.name || group.module_id || group.id)}</h4><p>{text(group.description || group.summary)}</p>{strings(group.task_ids).map(id => <button className="delivery-action-button" type="button" key={id} onClick={() => selectTask(id)}>{model.modules.find(m => m.id === id)?.title || id}</button>)}</article>) : <p>本版未提供业务分组，可从模块规格查看各任务的用户行为。</p>}
+            {!model.groups.length && <section aria-label="按任务审阅"><h4>按任务审阅</h4>{model.modules.map(module => <button className="delivery-action-button" key={module.id} type="button" onClick={() => selectTask(module.id)}>{module.title || module.id}</button>)}</section>}
             <h3>待决事项与进入条件</h3><p>{decisionSummary}</p><DecisionList decisions={decisions} {...sourceProps} />
           </>}
           {!loading && view === "decisions" && <>

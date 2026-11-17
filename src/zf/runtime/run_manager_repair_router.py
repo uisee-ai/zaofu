@@ -104,6 +104,8 @@ def special_action_preflight(
     if action in REPAIR_CLOSEOUT_APPLY_ACTIONS:
         if not checkpoint_id:
             failures.append("missing_apply_checkpoint_id")
+        if payload.get("restart_policy") != "operator_approved":
+            failures.append("repair_restart_not_authorized")
         if str(payload.get("apply_policy") or "") != "verified_checkpoint_apply":
             failures.append("verified_checkpoint_apply_not_enabled")
         if not str(payload.get("worktree_path") or payload.get("worktree") or ""):

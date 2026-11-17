@@ -7,6 +7,8 @@ import json
 import os
 import shlex
 import signal
+import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -24,6 +26,18 @@ def main(argv: list[str] | None = None) -> int:
     state_dir = Path(args.state_dir).resolve()
     time.sleep(max(float(args.delay_seconds), 0.1))
     watcher_pid = _recorded_watcher_pid(state_dir)
+    unit = os.environ.get("ZF_HOST_SUPERVISOR_UNIT", "")
+    if unit:
+        # Keep the installed service as the sole controller owner. Killing only
+        # its recorded MainPID lets Restart=on-failure perform the guarded boot.
+        # A manual exec here would escape the service and lose host supervision.
+        if not re.fullmatch(r"zf-[a-zA-Z0-9_-]{1,100}\.service", unit) or watcher_pid <= 1:
+            return 1
+        result = _systemctl(["systemctl", "--user", "show", unit, "-p", "MainPID", "--value"])
+        if result.returncode or result.stdout.strip() != str(watcher_pid):
+            return 1
+        return _systemctl(["systemctl", "--user", "kill", "--kill-whom=main",
+                           "--signal=SIGKILL", unit]).returncode
     if watcher_pid > 0 and watcher_pid != os.getpid():
         _terminate_watcher(watcher_pid)
     os.chdir(project_root)
@@ -34,6 +48,10 @@ def main(argv: list[str] | None = None) -> int:
     ]
     os.execvp(command[0], command)
     return 1
+
+
+def _systemctl(argv):
+    return subprocess.run(argv, capture_output=True, text=True, check=False, timeout=30)
 
 
 def _recorded_watcher_pid(state_dir: Path) -> int:

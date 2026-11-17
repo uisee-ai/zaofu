@@ -258,6 +258,8 @@ def assemble_controller(
     git.update(candidate_base_ref=branch, ship_target_branch=branch)
     provision = base.get("runtime", {}).get("workdirs", {}).get("provision_paths", [])
     spec["runtime"].setdefault("workdirs", {})["provision_paths"] = copy.deepcopy(provision)
+    spec['runtime']['workdirs']['required_paths'] = copy.deepcopy(
+        base.get('runtime', {}).get('workdirs', {}).get('required_paths', []))
     static = spec.setdefault("quality_gates", {}).setdefault("static", {})
     static.update(enabled=True, required_checks=list(parameters["verification_commands"]))
     return documents

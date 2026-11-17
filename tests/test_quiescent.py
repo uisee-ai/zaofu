@@ -179,3 +179,13 @@ def test_tick_services_gate_skips_during_shutdown_drain(tmp_path: Path) -> None:
     assert result.heartbeat_sweep is False
     assert result.supervisor_inspection is False
     assert log.read_all() == []  # 排空窗零立案零副作用
+
+
+def test_side_escalation_does_not_hibernate_product_or_clear_run_blocker():
+    side = _ev("human.escalate", minutes_ago=30, eid="side")
+    side.payload.update(blocking_scope="side", action="failure-closeout-activate")
+    assert not quiescent_now([side], config=_cfg(), now_epoch=_NOW.timestamp()).quiescent
+    blocking = _ev("human.escalate", minutes_ago=40, eid="run")
+    status = quiescent_now([blocking, side], config=_cfg(), now_epoch=_NOW.timestamp())
+    assert status.quiescent
+    assert status.escalate_event_id == "run"

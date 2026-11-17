@@ -5632,8 +5632,9 @@ def test_run_manager_executes_repair_closeout_validation_plan(tmp_path: Path) ->
     assert queue["items"][0]["next_allowed_action"] == "operator_merge_or_reject"
 
 
+@pytest.mark.parametrize("restart_policy", ["operator_approved", "never_during_active_run", "next_run"])
 def test_verified_checkpoint_apply_is_opt_in_and_requires_passed_validation(
-    tmp_path: Path,
+    tmp_path: Path, restart_policy: str,
 ) -> None:
     state_dir, log, _writer = _state(tmp_path)
     closeout_payload = {
@@ -5690,6 +5691,7 @@ def test_verified_checkpoint_apply_is_opt_in_and_requires_passed_validation(
             source_repair=RuntimeRunManagerSourceRepairConfig(
                 enabled=True,
                 apply_policy="verified_checkpoint_apply",
+                restart_policy=restart_policy,
             ),
         ),
     )
@@ -5704,7 +5706,16 @@ def test_verified_checkpoint_apply_is_opt_in_and_requires_passed_validation(
         item for item in projection["pending_actions"]
         if item.get("action") == "repair-closeout-apply"
     )
-    assert action["policy_decision"]["decision"] == "auto_decide"
+    if restart_policy == "operator_approved":
+        assert action["policy_decision"]["decision"] == "auto_decide"
+    else:
+        assert action["policy_decision"]["decision"] != "auto_decide"
+        assert "repair_restart_not_authorized" in action["preflight"]["failures"]
+        result = run_manager_tick(state_dir=state_dir, writer=_writer, config=enabled,
+                                  spawn_repairs=False, action_filter={"repair-closeout-apply"})
+        assert result.actions_blocked == 1
+        assert not any(e.type in {"runtime.restart.requested", RUN_MANAGER_REPAIR_MERGE_MERGED}
+                       for e in log.read_all())
     assert action["continuation_checkpoint_id"] == "wfres-apply-1"
     assert action["validation_event_id"]
 

@@ -838,6 +838,18 @@ def _activate_task_stage_binding(
                 "physical slot still owns an active WorkflowOperation",
             )
         runtime.transport.terminate(role.instance_id)
+        try:
+            still_alive = runtime.transport.is_alive(role.instance_id)
+        except Exception as exc:
+            raise TaskPipelineWaiting(
+                "waiting_for_worker_exit",
+                "old worker exit cannot be confirmed; retain the current binding",
+            ) from exc
+        if still_alive:
+            raise TaskPipelineWaiting(
+                "waiting_for_worker_exit",
+                "old worker exit is pending; do not activate another writer",
+            )
         now = _now_iso()
         registry.update_instance_meta(
             role.instance_id,
@@ -852,6 +864,13 @@ def _activate_task_stage_binding(
             reason="Task Pipeline slot rebound to another Task-stage session",
             force=True,
         )
+
+    if not alive or binding_switch:
+        from zf.runtime.task_workspace_handoff import ensure_stage_workspace_idle
+
+        prior_path = current_path or str(role_meta.get("active_task_workspace") or "")
+        ensure_stage_workspace_idle(runtime, registry, role, task, workflow_run_id,
+                                    task_map_generation, project_path, prior_path)
 
     binding = registry.bind_task_stage_session(
         workflow_run_id=workflow_run_id,
@@ -868,6 +887,7 @@ def _activate_task_stage_binding(
         binding_key=str(binding.get("binding_key") or ""),
         role_instance=role.instance_id,
     )
+    registry.update_instance_meta(role.instance_id, active_task_workspace=str(project_path))
     runtime._ensure_role_active(
         role,
         task_id=str(task.id),

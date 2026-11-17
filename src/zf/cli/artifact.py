@@ -112,6 +112,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     costs.set_defaults(func=run_input_costs)
     from zf.cli.work_record import register as register_work_record
     register_work_record(sub)
+    from zf.cli.artifact_handoff import register as register_handoff
+    register_handoff(sub)
 
     read_cmd = sub.add_parser(
         "read",
@@ -270,6 +272,8 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             # The conservative view retains all operation facts and signing checks.
             use_artifact_context=True,
         )
+        from zf.runtime.worker_load_receipt import record_worker_cli_load
+        record_worker_cli_load(context.state_dir, event_log, manifest, identity, _run_attempt_read)
         if required:
             from zf.runtime.artifact_read_requirements import required_reads_for_attempt
             from zf.runtime.artifact_context_events import artifact_context_events

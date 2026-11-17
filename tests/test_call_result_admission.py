@@ -261,6 +261,24 @@ def test_admitted_rejected_result_settles_call_without_semantic_rework(tmp_path:
     assert admitted.payload["semantic_verdict"] == "rejected"
 
 
+def test_pinned_handoff_requires_receipt_before_result_admission(tmp_path: Path) -> None:
+    admission, operations = _runtime(tmp_path)
+    operations.ensure_operation(
+        workflow_run_id="run-1", operation_id="op-1", operation_type="agent",
+        request={"required_reads": [{"source_id": "task-handoff", "artifact_sha256": "a" * 64}]},
+        task_id="T1",
+    )
+    outcome = admission.report_legacy_result(
+        ZfEvent(type="verify.child.completed", actor="verify-1", task_id="T1",
+                payload=_persisted_verification_payload(tmp_path)),
+        mode="blocking", operation={"workflow_run_id": "run-1", "operation_id": "op-1",
+            "request_hash": load_workflow_operation(operations.event_log, "op-1")["request_hash"]},
+    )
+    assert not outcome.admitted
+    assert any(issue["code"] == "handoff_receipt_required" for issue in outcome.issues)
+    assert not any(event.type == "workflow.operation.settled" for event in operations.event_log.read_all())
+
+
 def test_admitted_result_binds_provider_operation_summary(tmp_path: Path) -> None:
     admission, operations = _runtime(tmp_path)
     ensured = operations.ensure_operation(

@@ -101,6 +101,16 @@ authoritative when it differs from an older Skill example.
 - 含项目根路径的来源引用只是产物数据，也可能触发动态 shell 写入门禁；优先用
   原生 Edit/Write/apply_patch 写 workdir 产物与 Kernel 授权的确切 result scratch，
   不把外部来源读取和本地产物写入混进一个 Python/shell 脚本，不绕过 guard。
+- apply_patch 必须收到具体补丁文本；`$(sed ...)`、变量和生成器不是补丁内容。
+  若通过 shell 调用，只用一个独立的 `apply_patch <<'PATCH'` 字面 heredoc，
+  不在前后拼 `mkdir`、管道或其他命令。父目录可由原生补丁创建；产物写入与 scratch
+  更新分开进行，scratch 只更新 Kernel 给出的确切路径，不删除重建。
+  先复制获准的旧草案到 workdir 内再逐处修订是允许的；不要把生成脚本写到 `/tmp`
+  或用动态补丁管道规避写入检查。拒绝后先修正工具用法，不把一次用法错误当成
+  整个工作区不可写；确实无法完成时才报告失败及精确失败调用。
+- 长技能/briefing 首读按约4KiB正文分段，依据实际工具返回容量调整；请求很大的
+  max_output_tokens 不保证完整返回。逐段检查有无截断，只补缺失范围；避免多份长文
+  合并 cat 后再次重读。必需输入仍完整消费，分段不是省略审查责任。
 - Load `zf-plan-task-map-contract` before emitting the map. On incremental
   replan, also load `zf-gap-task-synth` and preserve unaffected completed tasks.
 - When Controlled Artifact Inputs include portable matrix drafts, load

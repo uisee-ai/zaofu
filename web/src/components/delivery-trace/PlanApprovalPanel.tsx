@@ -43,12 +43,12 @@ const KIND_OPTIONS: Array<{ value: InboxKindFilter; label: string }> = [
   { value: "approval", label: "Approval" },
 ];
 
-export function PlanApprovalPanel(props: { projectId: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void }) {
+export function PlanApprovalPanel(props: { projectId: string; liveState?: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void }) {
   return <OperatorInboxPanel key={props.projectId} {...props} />;
 }
 
 function OperatorInboxPanel(
-  { projectId, autoOpenPlanId, onInboxUpdate }: { projectId: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void },
+  { projectId, liveState, autoOpenPlanId, onInboxUpdate }: { projectId: string; liveState?: string; autoOpenPlanId?: string | null; onInboxUpdate?: (inbox: OperatorInboxProjection | null) => void },
 ) {
   const { t } = useUiPreferences();
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -81,6 +81,9 @@ function OperatorInboxPanel(
   const inboxRequestGate = useRef(new LatestRequestGate());
   const inboxRequest = useRef<AbortController | null>(null);
   const previewRequestGate = useRef(new LatestRequestGate());
+  const reconcilePreview = useRef<() => void>(() => undefined);
+  const previewPolling = useRef(false);
+  const previousLiveState = useRef(liveState);
   const readingItems = useRef(new Set<string>());
   const linkedPlanRead = useRef("");
   const updateCallback = useRef(onInboxUpdate);
@@ -132,7 +135,7 @@ function OperatorInboxPanel(
     inboxRefreshInFlight.current = false;
   }, [projectId]);
 
-  const refreshInbox = useCallback(async (force = false) => {
+  const refreshInbox = useCallback(async (force = false, reconcile = false) => {
     if (inboxRefreshInFlight.current && !force) return;
     inboxRequest.current?.abort();
     const controller = new AbortController();
@@ -146,6 +149,7 @@ function OperatorInboxPanel(
       const inboxData = await getOperatorInbox(projectId || undefined, controller.signal);
       if (current()) {
         setInbox(inboxData);
+        if (reconcile) reconcilePreview.current();
         updateCallback.current?.(inboxData);
       }
     } catch (error) {
@@ -168,7 +172,7 @@ function OperatorInboxPanel(
 
   useEffect(() => {
     void refreshInbox();
-    const inboxTimer = setInterval(() => void refreshInbox(), 15000);
+    const inboxTimer = setInterval(() => void refreshInbox(false, true), 15000);
     return () => {
       clearInterval(inboxTimer);
       inboxRequestGate.current.invalidate();
@@ -176,6 +180,12 @@ function OperatorInboxPanel(
       inboxRefreshInFlight.current = false;
     };
   }, [refreshInbox]);
+
+  useEffect(() => {
+    const previous = previousLiveState.current;
+    previousLiveState.current = liveState;
+    if (liveState === "live" && (previous === "reconnecting" || previous === "degraded")) void refreshInbox(true, true);
+  }, [liveState, refreshInbox]);
 
   const openPreview = async (planId: string, item?: OperatorInboxItem, editing = false) => {
     const ticket = previewRequestGate.current.issue();
@@ -187,7 +197,7 @@ function OperatorInboxPanel(
     setActionError("");
     setActionNotice("");
     try {
-      const result = await getPlanPreview(planId, projectId || undefined);
+      const result = await getPlanPreview(planId, projectId || undefined, true);
       if (previewRequestGate.current.isCurrent(ticket) && projectIdRef.current === projectId) setPreview(result);
     } catch (error) {
       if (previewRequestGate.current.isCurrent(ticket)) setActionError(String(error instanceof Error ? error.message : error));
@@ -204,25 +214,53 @@ function OperatorInboxPanel(
     return () => previewRequestGate.current.invalidate();
   }, [autoOpenPlanId, projectId]);
 
+  const sameProject = () => alive.current && projectIdRef.current === projectId;
+  const previewRefreshFor = (planId: string) => {
+    const ticket = preview?.plan_id === planId ? previewRequestGate.current.issue() : null;
+    const current = () => sameProject() && ticket !== null && previewRequestGate.current.isCurrent(ticket);
+    return async () => {
+      if (!current()) return;
+      const updated = await getPlanPreview(planId, projectId || undefined, true);
+      if (current()) setPreview(updated);
+    };
+  };
+
+  reconcilePreview.current = () => {
+    if (!preview || busy || reviewBusy || previewPolling.current) return;
+    const ticket = previewRequestGate.current.issue();
+    previewPolling.current = true;
+    void getPlanPreview(preview.plan_id, projectId || undefined, true).then(updated => {
+      if (sameProject() && previewRequestGate.current.isCurrent(ticket)) setPreview(updated);
+    }).catch(error => {
+      if (sameProject() && previewRequestGate.current.isCurrent(ticket)) {
+        setPreview(null);
+        setActionError(`预览已失效，请重新打开：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }).finally(() => { previewPolling.current = false; });
+  };
+
   const act = async (action: "plan-approve" | "plan-reject", planId: string, requestEventId?: string) => {
     if (!requestEventId) {
       setActionError("The request is unavailable. Refresh Inbox before deciding.");
       return;
     }
-    setBusy(`${action}:${planId}`);
+    const actionKey = `${action}:${planId}`;
+    const refreshPreview = previewRefreshFor(planId);
+    setBusy(actionKey);
     setActionError("");
     setActionNotice("");
     try {
       const payload: Record<string, unknown> = { plan_id: planId, request_event_id: requestEventId };
       if (action === "plan-reject") payload.reason = rejectReason[planId] || "";
       const result = await postAction(action, payload, projectId || undefined);
+      if (!sameProject()) return;
       if (result.ok === false) setActionError(result.reason || `${action} failed`);
       await refresh();
-      if (preview?.plan_id === planId) {
-        setPreview(await getPlanPreview(planId, projectId || undefined));
-      }
+      await refreshPreview();
+    } catch (error) {
+      if (sameProject()) setActionError(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy("");
+      if (sameProject()) setBusy((current) => current === actionKey ? "" : current);
     }
   };
 
@@ -233,15 +271,21 @@ function OperatorInboxPanel(
 
   const actOnItem = async (item: OperatorInboxItem, action: string, reason = "") => {
     if (!action) return;
-    setBusy(`${action}:${item.id}`);
+    const actionKey = `${action}:${item.id}`;
+    const refreshPreview = previewRefreshFor(String(item.plan_id || ""));
+    setBusy(actionKey);
     setActionError("");
     setActionNotice("");
     try {
       const result = await postAction(action, inboxActionPayload(item, reason), projectId || undefined);
+      if (!sameProject()) return;
       if (result.ok === false) setActionError(result.reason || `${action} failed`);
       await refresh();
+      await refreshPreview();
+    } catch (error) {
+      if (sameProject()) setActionError(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy("");
+      if (sameProject()) setBusy((current) => current === actionKey ? "" : current);
     }
   };
 

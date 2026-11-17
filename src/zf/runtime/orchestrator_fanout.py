@@ -489,20 +489,6 @@ class FanoutCoordinationMixin(
     ) -> bool:
         run_id = f"run-{context.fanout_id}-{child.child_id}"
         try:
-            if not self._ensure_fanout_role_dispatchable(
-                role=role,
-                fanout_id=context.fanout_id,
-                stage_id=context.stage_id,
-                child_id=child.child_id,
-                run_id=run_id,
-                trace_id=context.trace_id,
-                task_id=str(
-                    (child.payload or {}).get("task_id") or ""
-                ) or None,
-                causation_id=causation_id,
-                prompt_kind="fanout_child",
-            ):
-                return False
             prepared_dispatch = prepared_dispatch or self._prepare_reader_fanout_child_operation(
                 context=context,
                 child=child,
@@ -524,6 +510,20 @@ class FanoutCoordinationMixin(
                         causation_id=causation_id,
                     )
                 return True
+            if not self._ensure_fanout_role_dispatchable(
+                role=role,
+                fanout_id=context.fanout_id,
+                stage_id=context.stage_id,
+                child_id=child.child_id,
+                run_id=run_id,
+                trace_id=context.trace_id,
+                task_id=str(
+                    (child.payload or {}).get("task_id") or ""
+                ) or None,
+                causation_id=causation_id,
+                prompt_kind="fanout_child",
+            ):
+                return False
             briefing_path = self._write_fanout_briefing(
                 role=role,
                 context=context,
@@ -4621,6 +4621,7 @@ class FanoutCoordinationMixin(
                 base_payload["semantic_verdict"] = control_verdict
                 control_schema = str(control_result.get("schema_version") or "")
                 base_payload["control_result_schema"] = control_schema
+                base_payload["failure_class"] = str(control_result.get("failure_class") or "")
                 if control_schema == "artifact-delivery-result.v1":
                     report_payload["artifact_delivery_result"] = dict(
                         control_result
@@ -5777,6 +5778,7 @@ class FanoutCoordinationMixin(
             ])
             if derived_failure_kind:
                 aggregate_payload.setdefault("failure_kind", derived_failure_kind)
+                failure_recovery.setdefault("failure_kind", derived_failure_kind)
         aggregate_event = self.event_writer.append(ZfEvent(
             type="fanout.aggregate.completed",
             actor="zf-cli",
@@ -6654,7 +6656,8 @@ class FanoutCoordinationMixin(
                     release_slot=False,
                 )
                 return False
-        if not self._ensure_fanout_role_dispatchable(
+        fresh_reader = fresh_operation and manifest.get("topology") == "fanout_reader"
+        if not fresh_reader and not self._ensure_fanout_role_dispatchable(
             role=role,
             fanout_id=fanout_id,
             skip_send_window=False,
@@ -6704,6 +6707,20 @@ class FanoutCoordinationMixin(
                     child=child,
                     recovery_decision_event=recovery_decision_event,
                 )
+            if fresh_reader and not self._ensure_fanout_role_dispatchable(
+                role=role,
+                fanout_id=fanout_id,
+                skip_send_window=False,
+                stage_id=stage_id,
+                child_id=child_id,
+                run_id=run_id,
+                trace_id=trace_id,
+                task_id=str(child.get("task_id") or "") or None,
+                causation_id=previous_dispatch.id,
+                prompt_kind="fanout_child",
+                provider_session_replaced=provider_session_replaced,
+            ):
+                return False
             if prepared_call is not None and not prepared_call.should_dispatch:
                 return False
             task_item = {}
@@ -7538,89 +7555,10 @@ class FanoutCoordinationMixin(
             )
         return out
 
-    def _pin_reader_target_or_reject(
-        self,
-        *,
-        role: RoleConfig,
-        target_ref: str,
-        context,
-        child,
-        run_id: str,
-        causation_id: str,
-    ) -> bool:
-        """FIX-9/15①(bizsim r4 F9):reader child 派发前锁定审计对象。
+    def _pin_reader_target_or_reject(self, **kwargs) -> bool:
+        from zf.runtime.reader_target_dispatch import pin_reader_target_or_defer
 
-        stage 声明了 target_ref 但渲染为空 → 拒派发(r4 judge 五审即
-        审基线树);checkout/HEAD 校验失败 → 拒派发。锁定成功把
-        target_commit 写进 child payload 供 briefing/证据绑定消费。
-        """
-        config = getattr(self, "config", None)
-        workflow = getattr(config, "workflow", None)
-        stages = getattr(workflow, "stages", []) or []
-        stage = next(
-            (
-                s for s in stages
-                if getattr(s, "id", "") == context.stage_id
-            ),
-            None,
-        )
-        declared = str(getattr(stage, "target_ref", "") or "").strip() if stage else ""
-        cleaned = str(target_ref or "").strip()
-        reason = ""
-        pinned = ""
-        from zf.runtime.reader_target_binding import reader_checkout_ref
-
-        try:
-            cleaned = reader_checkout_ref(self.state_dir, child.payload or {}, cleaned)
-        except TaskContractSnapshotError as exc:
-            reason = f"target_binding_invalid: {exc}"
-        unrendered = "${" in cleaned or "{{" in cleaned
-        if not reason and declared and (not cleaned or unrendered):
-            reason = "target_ref_unresolved"
-            cleaned = "" if unrendered else cleaned
-        elif not reason and cleaned and not self._fanout_target_ref_is_project_path(cleaned):
-            from zf.runtime.workdirs import WorkdirManager
-
-            try:
-                pinned = WorkdirManager(
-                    state_dir=self.state_dir,
-                    project_root=self.project_root,
-                    config=self.config,
-                ).pin_reader_target(role, cleaned)
-            except Exception as exc:
-                reason = f"pin_failed: {exc}"
-        if reason:
-            failure_payload = {
-                "fanout_id": context.fanout_id,
-                "trace_id": context.trace_id,
-                "stage_id": context.stage_id,
-                "child_id": child.child_id,
-                "run_id": run_id,
-                "role_instance": role.instance_id,
-                "target_ref": cleaned,
-                "reason": reason,
-            }
-            self.event_writer.append(ZfEvent(
-                type="fanout.child.workdir_mismatch",
-                actor="zf-cli",
-                payload=failure_payload,
-                causation_id=causation_id,
-                correlation_id=context.trace_id,
-            ))
-            self.event_writer.append(ZfEvent(
-                type="fanout.child.failed",
-                actor="zf-cli",
-                payload={
-                    **failure_payload,
-                    "failure_class": "reader_workdir_mismatch",
-                },
-                causation_id=causation_id,
-                correlation_id=context.trace_id,
-            ))
-            return False
-        if pinned and isinstance(child.payload, dict):
-            child.payload["target_commit"] = pinned
-        return True
+        return pin_reader_target_or_defer(self, **kwargs)
 
     def _checkout_fanout_reader(self, role: RoleConfig, target_ref: str) -> None:
         if not target_ref:

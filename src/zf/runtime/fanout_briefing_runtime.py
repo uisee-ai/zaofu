@@ -1054,7 +1054,7 @@ class FanoutBriefingMixin:
                 "Submit one result below; fanout, operation, attempt, and lease "
                 "identity is authoritative.",
                 "",
-                "Use `--state-dir`; this role may run from a detached workdir.",
+                "Keep the command's exact `--state-dir`; source_state_dir is read-only evidence, not the submission target.",
                 "",
                 *result_preview_lines,
                 *command_lines,
@@ -1062,8 +1062,11 @@ class FanoutBriefingMixin:
                 "",
                 *result_guidance,
                 "",
-                "Emit once: command exit 0 is success; there is no asynchronous ack. "
-                "Never retry or re-send (stale generations are discarded). Then stop.",
+                f"This dispatch authorizes one submission for `{run_id}`. "
+                "Previous attempt failures do not cancel this authorization. "
+                "Command exit 0 is success; there is no asynchronous ack. "
+                "Do not repeat a successful submission or reuse stale identities. "
+                "On error, preserve the exact command/error and stop this attempt.",
                 "",
                 f"Child success event: `{child_success_event}`",
                 f"Child failure event: `{child_failure_event}`",

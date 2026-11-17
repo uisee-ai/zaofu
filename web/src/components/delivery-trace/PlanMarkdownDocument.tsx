@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Code, Download } from "lucide-react";
 import { MarkdownText } from "../agent-session/MarkdownText";
-import { planMarkdownPages } from "./planMarkdownPages";
+import { parsePlanMarkdown, planMarkdownPages } from "./planMarkdownPages";
 import { planDocumentSections } from "./planDocumentSections";
 
 export default function PlanMarkdownDocument({ content, reviewContent = "", initialAnchor = "", onAnchorChange }: { content: string; reviewContent?: string; initialAnchor?: string; onAnchorChange?: (anchor: string) => void }) {
-  const pages = useMemo(() => planMarkdownPages(content), [content]);
-  const sections = useMemo(() => planDocumentSections(content), [content]);
+  const tree = useMemo(() => parsePlanMarkdown(content), [content]);
+  const pages = useMemo(() => planMarkdownPages(content, tree), [content, tree]);
+  const sections = useMemo(() => planDocumentSections(content, tree), [content, tree]);
   const [search, setSearch] = useState("");
   const [anchor, setAnchor] = useState(initialAnchor);
   const [selectedPage, setPage] = useState(0);
@@ -91,11 +92,7 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
             ? <pre className="plan-preview-markdown plan-document-source">{content}</pre>
             : <>
               {reviewContent ? <details className="plan-review-card"><summary>人工审批摘要与工程审计</summary><MarkdownText className="plan-preview-markdown plan-review-dossier" content={reviewContent} /></details> : null}
-              {sections.map(section => <section key={section.key} data-plan-anchor={section.anchor}>
-                {planMarkdownPages(section.content).map((page, pageIndex) => page.plain
-                  ? <pre key={pageIndex} className="plan-preview-markdown plan-document-source">{page.source}</pre>
-                  : <MarkdownText key={`${section.key}:${pageIndex}`} className="plan-preview-markdown" content={page.markdown} />)}
-              </section>)}
+              <ContinuousPlanBody sections={sections} documentPages={pages} anchor={anchor} scrollPane={scrollPane} />
             </>
           : <>
             {current.plain && !showSource && <p className="muted" role="status">当前段以原文显示；全文可下载。</p>}
@@ -106,4 +103,48 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
       </div>
     </div>
   );
+}
+
+// Keep the toolbar and first readable pages available while later Markdown is
+// rendered on demand. The full source and download remain independently usable.
+function ContinuousPlanBody({ sections, documentPages, anchor, scrollPane }: {
+  sections: ReturnType<typeof planDocumentSections>; anchor: string;
+  documentPages: ReturnType<typeof planMarkdownPages>;
+  scrollPane: { current: HTMLDivElement | null };
+}) {
+  const pages = useMemo(() => sections.flatMap(section =>
+    (sections.length === 1 ? documentPages : planMarkdownPages(section.content)).map((page, index) => ({
+      ...page, anchor: index === 0 ? section.anchor : "", key: `${section.key}:${index}`,
+    }))), [sections, documentPages]);
+  const [visible, setVisible] = useState(4);
+  const sentinel = useRef<HTMLButtonElement>(null);
+  useEffect(() => setVisible(4), [pages]);
+  const target = anchor ? pages.findIndex(page => page.anchor === anchor) : -1;
+  const count = Math.max(visible, target + 1);
+  useEffect(() => {
+    if (target >= 0) {
+      setVisible(value => Math.max(value, target + 1));
+      requestAnimationFrame(() => scrollPane.current?.querySelector(`[data-plan-anchor="${CSS.escape(anchor)}"]`)?.scrollIntoView({ block: "start" }));
+    }
+  }, [target, anchor, scrollPane]);
+  useEffect(() => {
+    const button = sentinel.current;
+    if (!button || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) setVisible(value => Math.min(value + 2, pages.length));
+    }, { root: button.closest(".plan-preview-markdown-pane"), rootMargin: "200px" });
+    observer.observe(button);
+    return () => observer.disconnect();
+  }, [count, pages.length]);
+  return <>
+    {pages.slice(0, count).map(page => <section key={page.key} data-plan-anchor={page.anchor || undefined}>
+      {page.plain
+        ? <pre className="plan-preview-markdown plan-document-source">{page.source}</pre>
+        : <MarkdownText className="plan-preview-markdown" content={page.markdown} />}
+    </section>)}
+    {count < pages.length && <button ref={sentinel} type="button" className="delivery-action-button"
+      onClick={() => setVisible(value => Math.min(value + 2, pages.length))}>
+      继续加载正文（还有 {pages.length - count} 页）；完整原文可下载
+    </button>}
+  </>;
 }

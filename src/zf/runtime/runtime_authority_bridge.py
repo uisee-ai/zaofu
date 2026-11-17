@@ -82,11 +82,15 @@ class RuntimeAuthorityMixin:
             prepare_task_attempt,
         )
 
-        prepared = prepare_task_attempt(
-            self,
-            context=context,
-            briefing_path=briefing_path,
-        )
+        if context is not None and context.continuation:
+            from zf.runtime.task_attempt_continuation import validate_task_continuation
+
+            validate_task_continuation(self, role_name, context)
+            prepared = None
+        else:
+            prepared = prepare_task_attempt(
+                self, context=context, briefing_path=briefing_path,
+            )
         delivery_context = prepared.context if prepared is not None else context
         try:
             try:

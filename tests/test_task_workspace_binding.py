@@ -101,6 +101,27 @@ def test_task_workspaces_isolate_worker_reuse_and_restore_rework(
     assert task_c.project_path != task_a.project_path
 
 
+def test_task_workspace_setup_consumes_declared_identity_without_losing_candidate(tmp_path):
+    manager, role, base = _manager(tmp_path)
+    workspace = _prepare(manager, role, base, "TASK-A")
+    project = Path(workspace.project_path)
+    (project / "candidate.txt").write_text("keep uncommitted work")
+    manifest = project / "dataset.identity.json"
+    manifest.write_text('{"version":1}')
+    manager.config.project.setup_script = "echo prepared >> preparation.log"
+    manager.config.project.setup_inputs = ["dataset.identity.json"]
+    _prepare(manager, role, base, "TASK-A")
+    _prepare(manager, role, base, "TASK-A")
+    assert (project / "preparation.log").read_text().splitlines() == ["prepared"]
+    manifest.write_text('{"version":2}')
+    _prepare(manager, role, base, "TASK-A")
+    assert (project / "preparation.log").read_text().splitlines() == ["prepared", "prepared"]
+    assert (project / "candidate.txt").read_text() == "keep uncommitted work"
+    manifest.unlink()
+    with pytest.raises(TaskWorkspaceError, match="declared setup input unavailable"):
+        _prepare(manager, role, base, "TASK-A")
+
+
 def test_existing_task_workspace_keeps_frozen_base_when_candidate_advances(
     tmp_path: Path,
 ) -> None:

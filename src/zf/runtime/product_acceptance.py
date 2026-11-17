@@ -591,6 +591,18 @@ def bind_product_acceptance_report(
         )
         return replace(adapted, payload=result, descriptor=descriptor)
     except (OSError, ValueError) as exc:
+        message = str(exc)
+        if (
+            schema == "verification-result.v1"
+            and result.get("execution_status") == "failed"
+            and result.get("verdict") == "abstained"
+        ):
+            message += (
+                ". If no product evaluation was possible, omit product_acceptance_report, "
+                "product_acceptance_report_ref and product_acceptance_report_digest; retain "
+                "the truthful execution failure and its evidence. Supplied product reports "
+                "remain subject to full validation; do not fabricate assertion evidence."
+            )
         return replace(
             adapted,
             issues=(
@@ -598,7 +610,7 @@ def bind_product_acceptance_report(
                 {
                     "field": "control_result.product_acceptance_report",
                     "code": "product_acceptance_invalid",
-                    "message": str(exc),
+                    "message": message,
                 },
             ),
         )

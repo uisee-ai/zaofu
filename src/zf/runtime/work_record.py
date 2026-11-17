@@ -29,7 +29,7 @@ def authorize_work_record(service: SemanticResultSubmitService, operation_id: st
     run_id, _ = canonical_task_run(task, service.event_log.read_all())
     if run_id != operation.get('workflow_run_id'):
         raise ValueError('work record canonical Task Run mismatch')
-    facts = recovery_attempt_facts(service.state_dir, task, run_id=run_id)
+    facts = recovery_attempt_facts(service.state_dir, task, run_id=run_id, operation_id=operation_id)
     identity = facts.get('identity', {})
     if (facts['status'] != 'bound' or identity.get('operation_id') != operation_id or identity.get('instance_id') != role
             or identity.get('status') not in {'prepared','sent','running'} or not identity.get('lease_id')):

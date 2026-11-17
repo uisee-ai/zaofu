@@ -9,10 +9,11 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from zf.runtime.plan_preview_sources import plan_authority_refs, plan_source_payload
+from zf.runtime.plan_canonical_content import _plan_markdown, _bound_plan_refs
 from zf.runtime.plan_review_packet import build_review_packet, render_human_review_dossier
 from zf.runtime.plan_review_decisions import read_decision_review
 from zf.runtime.plan_preview_artifacts import (
-    PLAN_REVIEW_REF_FIELDS,
     preview_artifact_path,
     preview_package_artifacts,
     read_plan_preview_bundle,
@@ -105,58 +106,8 @@ def build_plan_preview(
         }
 
     source_event = requested or resolved
-    payload = dict(_payload(source_event))
-    if str(payload.get("owner_route") or "") == "plan_synth_owner_decision":
-        payload.setdefault("plan_id", str(payload.get("source_event_id") or plan_id))
-    if (
-        str(payload.get("owner_route") or "") == "plan_synth_owner_decision"
-        and (not payload.get("plan_artifact_ref") or not payload.get("task_map_ref"))
-    ):
-        source_id = str(payload.get("source_event_id") or "").strip()
-        candidate = next(
-            (
-                event for event in events
-                if _event_id(event) == source_id
-                and isinstance(_payload(event), dict)
-            ),
-            None,
-        )
-        if candidate is not None:
-            from zf.runtime.plan_synth_owner_checkpoint import plan_preview_refs
-
-            refs = plan_preview_refs(
-                _payload(candidate),
-                state_dir=state_dir,
-                project_root=project_root,
-            )
-            payload.update({
-                key: value for key, value in refs.items()
-                if value and not payload.get(key)
-            })
-    bound_source = next((event for event in events if _event_id(event) == plan_id
-                         and _etype(event) == "task_map.ready"), None)
-    if bound_source is not None:
-        original = _payload(bound_source)
-        if any(payload.get(key) and original.get(key) and payload[key] != original[key]
-               for key in ("task_map_ref", "pdd_id", "trace_id", "workflow_run_id",
-                           "plan_artifact_package_digest", "requirement_spec_ref")):
-            bound_source = None
-        else:
-            for key in (*PLAN_REVIEW_REF_FIELDS, "task_map_ref", "digest_ref"):
-                if not payload.get(key) and original.get(key):
-                    payload[key] = original[key]
-            # Semantic approval events may omit the PRD identity fields while
-            # task_map.ready remains the bound source of truth.
-            for key in ("stage_id", "flow_kind", "request_kind", "target_ref", "pdd_id", "task_count"):
-                if not payload.get(key) and original.get(key):
-                    payload[key] = original[key]
-            if not payload.get("plan_artifact_ref"):
-                from zf.runtime.resume_plan_preview import resumed_plan_refs
-
-                payload.update(resumed_plan_refs(
-                    original, events[:events.index(bound_source) + 1],
-                    state_dir=state_dir, project_root=project_root,
-                ))
+    payload, bound_source = plan_source_payload(state_dir, events, plan_id=plan_id,
+        source_event=source_event, project_root=project_root)
     resolved_payload = _payload(resolved) if resolved is not None else {}
     status = "pending"
     if resolved is not None:
@@ -186,122 +137,12 @@ def build_plan_preview(
     )
     if preview_bundle_error:
         artifacts_error = artifacts_error or preview_bundle_error
-    planning_result = _planning_result_bundle(
-        artifacts, state_dir=state_dir, project_root=project_root,
+    from zf.runtime.plan_canonical_content import canonical_plan_content
+
+    markdown, markdown_ref, markdown_error, plan_ref, planning_result, fanout_id = canonical_plan_content(
+        state_dir, events, payload=payload, bound_source=bound_source, artifacts=artifacts,
+        preview_bundle=preview_bundle, project_root=project_root,
     )
-    fanout_id = str(
-        payload.get("fanout_id")
-        or (bound_source and _payload(bound_source).get("fanout_id"))
-        or preview_bundle.get("fanout_id")
-        or ""
-    )
-    # The package may contain a planning-result bundle while the approval
-    # event still carries the old logical path (or an accepted_plan port for
-    # the Decision Register). Resolve the bundle's canonical Plan first.
-    bundle_plan_ref = str(
-        preview_bundle.get("plan_ref")
-        or planning_result.get("plan_ref")
-        or ""
-    )
-    plan_lookup = bool(bundle_plan_ref or plan_ref)
-    plan_refs = _bound_plan_refs(
-        bundle_plan_ref or plan_ref,
-        fanout_id=fanout_id,
-    )
-    if bundle_plan_ref and plan_ref and plan_ref != bundle_plan_ref:
-        plan_refs.extend(_bound_plan_refs(plan_ref, fanout_id=fanout_id))
-    if not plan_refs:
-        plan_refs = [plan_ref] if plan_ref else [digest_ref]
-    markdown, markdown_ref, markdown_error = _plan_markdown(
-        state_dir,
-        project_root=project_root,
-        refs=plan_refs,
-        digest=(
-            str(payload.get("plan_artifact_digest") or "")
-            if not bundle_plan_ref and plan_ref
-            else ""
-        ),
-    )
-    if markdown and markdown_ref and plan_lookup:
-        plan_ref = markdown_ref
-        payload["plan_artifact_ref"] = markdown_ref
-        payload["plan_artifact_digest"] = hashlib.sha256(
-            markdown.encode("utf-8")
-        ).hexdigest()
-    if not markdown and not bundle_plan_ref:
-        plan_port = next((p for p in artifacts if p["name"] == "accepted_plan"), None)
-        if plan_port:
-            plan_lookup = True
-            markdown, markdown_ref, markdown_error = _plan_markdown(
-                state_dir,
-                project_root=project_root,
-                refs=[plan_port["ref"]],
-                digest=plan_port.get("sha256", ""),
-            )
-            if markdown and markdown_ref:
-                plan_ref = markdown_ref
-                payload["plan_artifact_ref"] = markdown_ref
-                payload["plan_artifact_digest"] = hashlib.sha256(
-                    markdown.encode("utf-8")
-                ).hexdigest()
-    # A pure plan critic may carry the planner's markdown only as an explicit
-    # evidence ref while retaining its own prefilled, workdir-local plan path.
-    # Reuse that bound evidence ref when the declared path is unavailable;
-    # never scan directories or infer an artifact from unrelated events.
-    if not markdown and bound_source is not None:
-        source_payload = _payload(bound_source)
-        synth_id = str(source_payload.get("synth_event_id") or "").strip()
-        synth = next((
-            event for event in events
-            if _etype(event) == "fanout.synth.completed"
-            and (
-                (synth_id and _event_id(event) == synth_id)
-                or (
-                    str(_payload(event).get("fanout_id") or "")
-                    == str(source_payload.get("fanout_id") or "")
-                    and str(_payload(event).get("workflow_run_id") or "")
-                    == str(source_payload.get("workflow_run_id") or "")
-                )
-            )
-        ), None)
-        explicit_refs = [
-            *(_string_refs(source_payload.get("evidence_refs"))),
-            *(_string_refs(source_payload.get("artifact_refs"))),
-        ]
-        if synth is not None:
-            explicit_refs.extend([
-                *(_string_refs(_payload(synth).get("evidence_refs"))),
-                *(_string_refs(_payload(synth).get("artifact_refs"))),
-            ])
-        if explicit_refs:
-            plan_candidates = [
-                ref for ref in explicit_refs
-                if ref.lower().endswith((".md", ".markdown"))
-                and "/plans/" in ref.replace("\\", "/")
-            ]
-            plan_candidates = sorted(
-                dict.fromkeys(plan_candidates),
-                key=_plan_candidate_rank,
-            )
-            if bundle_plan_ref:
-                plan_candidates = [
-                    *_bound_plan_refs(bundle_plan_ref, fanout_id=fanout_id),
-                    *plan_candidates,
-                ]
-            markdown, markdown_ref, fallback_error = _plan_markdown(
-                state_dir,
-                project_root=project_root,
-                refs=plan_candidates,
-            )
-            if markdown:
-                plan_ref = markdown_ref
-                payload["plan_artifact_ref"] = markdown_ref
-                payload["plan_artifact_digest"] = hashlib.sha256(
-                    markdown.encode("utf-8")
-                ).hexdigest()
-                markdown_error = ""
-            elif fallback_error:
-                markdown_error = f"{markdown_error}; {fallback_error}".strip("; ")
     # Evidence fallback may recover the canonical Markdown after the package
     # was written without an `accepted_plan` port. Bind that recovered body to
     # the preview too, so the same human-readable Plan can be opened from the
@@ -351,30 +192,8 @@ def build_plan_preview(
             )
             if decision_items:
                 break
-    authority_refs = [
-        str(item) for item in (
-            preview_bundle.get("authority_refs")
-            or payload.get("authority_refs")
-            or []
-        ) if str(item).strip()
-    ]
-    if not authority_refs:
-        authority_refs = _source_index_authority_refs(
-            state_dir,
-            project_root=project_root,
-            source_index_ref=str(payload.get("source_index_ref") or ""),
-            source_index_digest=next(
-                (p["sha256"] for p in artifacts if p["name"] == "source_index"),
-                "",
-            ),
-        )
-    if not authority_refs:
-        # The admitted Package already binds these authority ports and digests;
-        # source_index need not repeat the same refs as optional metadata.
-        authority_refs = list(dict.fromkeys(
-            item["ref"] for item in artifacts
-            if item["name"] in {"requirement_spec", "issue_spec"}
-        ))
+    authority_refs = plan_authority_refs(state_dir, payload=payload, artifacts=artifacts,
+        preview_bundle=preview_bundle, project_root=project_root)
     requirement_artifacts = [
         item for item in artifacts
         if str(item.get("name") or "").startswith("requirement_")
@@ -530,87 +349,6 @@ def plan_preview_available(
     refs: list[str],
 ) -> bool:
     return _first_existing_ref(state_dir, project_root=project_root, refs=refs) is not None
-
-
-def _plan_markdown(
-    state_dir: Path,
-    *,
-    project_root: Path | None,
-    refs: list[str],
-    digest: str = "",
-) -> tuple[str, str, str]:
-    diagnostics: list[str] = []
-    for ref in refs:
-        if not ref:
-            continue
-        try:
-            body = read_preview_artifact(ref, state_dir=state_dir, project_root=project_root, digest=digest)
-            if body.strip():
-                return body, ref, ""
-            diagnostics.append(f"{ref}: artifact is empty")
-        except (OSError, ValueError) as exc:
-            diagnostics.append(f"{ref}: {exc}")
-    return "", "", "; ".join(diagnostics)
-
-
-def _planning_result_bundle(
-    artifacts: list[dict[str, str]], *, state_dir: Path,
-    project_root: Path | None,
-) -> dict[str, Any]:
-    """Read the package's planning-result port when it is a preview bundle."""
-
-    item = next(
-        (item for item in artifacts if item.get("name") == "planning_result"),
-        None,
-    )
-    if not item:
-        return {}
-    try:
-        value = json.loads(read_preview_artifact(
-            item["ref"], state_dir=state_dir, project_root=project_root,
-            digest=item.get("sha256", ""),
-        ))
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) and value.get("schema_version") == "plan-preview-bundle.v1" else {}
-
-
-def _bound_plan_refs(ref: str, *, fanout_id: str) -> list[str]:
-    """Return explicit refs for a logical planner artifact and its fanout.
-
-    Worker outputs use ``docs/...`` paths, while admitted fanout artifacts are
-    materialized below ``state/artifacts/fanouts/<fanout>/planner``. The
-    fanout id is already bound by the approval/task-map event, so this is a
-    deterministic binding rather than directory discovery.
-    """
-
-    ref = str(ref or "").strip()
-    if not ref:
-        return []
-    refs: list[str] = []
-    if fanout_id and not Path(ref).is_absolute() and not ref.startswith("artifacts/"):
-        refs.append(f"artifacts/fanouts/{fanout_id}/planner/{ref.lstrip('/')}")
-    refs.append(ref)
-    return list(dict.fromkeys(refs))
-
-
-def _plan_candidate_rank(ref: str) -> tuple[int, str]:
-    """Prefer a canonical planner Plan over PRD summaries or registers."""
-
-    name = Path(ref).name.lower()
-    if name in {"prd-plan-planner-plan.md", "prd-plan-synth-plan.md"}:
-        rank = 0
-    elif name.endswith("-plan.md"):
-        rank = 1
-    elif name == "prd-v14-preview.md":
-        rank = 20
-    elif "decision-register" in name:
-        rank = 100
-    elif name in {"sdd-v14-preview.md", "tdd-v14-preview.md"}:
-        rank = 110
-    else:
-        rank = 50
-    return rank, str(ref)
 
 
 def _task_map_summary(
@@ -921,10 +659,8 @@ def read_plan_preview_attachment(
     state_dir: Path, events: Iterable[Any], *, plan_id: str, name: str,
     project_root: Path | None = None,
 ) -> str:
-    preview = build_plan_preview(state_dir, events, plan_id=plan_id, project_root=project_root)
-    artifact = next((p for p in preview.get("artifacts", []) if p["name"] == name), None)
-    if artifact is None:
-        raise ValueError("artifact is not bound to this plan")
+    from zf.runtime.plan_preview_sources import bound_plan_source
+    artifact = bound_plan_source(state_dir, list(events), plan_id=plan_id, name=name, project_root=project_root)
     return read_preview_artifact(artifact["ref"], state_dir=state_dir, project_root=project_root, digest=artifact["sha256"])
 
 
@@ -959,14 +695,6 @@ def _correlation_id(event: Any) -> str:
     if isinstance(event, dict):
         return str(event.get("correlation_id") or "")
     return str(getattr(event, "correlation_id", "") or "")
-
-
-def _string_refs(value: Any) -> list[str]:
-    if isinstance(value, str):
-        return [value] if value.strip() else []
-    if not isinstance(value, list):
-        return []
-    return [str(item).strip() for item in value if str(item).strip()]
 
 
 def _int_or_none(value: Any) -> int | None:

@@ -60,12 +60,21 @@ def dispatch_orchestrator_agent_operation(
         trigger_payload.get("checkpoint_dispatch_retry_max_attempts") or 1
     )
     if retry_attempt:
+        missing_result = bool(trigger_payload.get("missing_result_turn_event_id"))
+        if missing_result:
+            prompt += (
+                " Resume the same checkpoint after the prior turn ended without a typed result. "
+                "Reuse its saved read receipts/cursor, consume remaining required inputs, and submit "
+                "the typed result or a supported failure; a chat summary does not close this obligation."
+            )
         retry_orchestrator_agent_operation(
             runtime,
             prepared,
             retry_attempt=retry_attempt,
             dispatch_id=trigger.id,
             causation_id=trigger.id,
+            reason=("retry_after_closed_turn_without_result" if missing_result
+                    else "retry_after_orchestrator_pane_respawn"),
         )
     else:
         activate_orchestrator_agent_operation(

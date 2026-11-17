@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **318** addressable command paths.
+The parser currently exposes **69** top-level families and **322** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -36,6 +36,8 @@ Artifact manifest helpers
 | `zf artifact catalog show` | Show one artifact identity |
 | `zf artifact checkpoint` | Create an immutable dynamic continuation checkpoint |
 | `zf artifact costs` | Inspect attempt input costs without inferring provider savings |
+| `zf artifact handoff-accept` | Acknowledge a completely read current handoff, without completing the task |
+| `zf artifact handoff-evidence` | Read causally bound predecessor tool observations without accepting them |
 | `zf artifact index` | Browse authorized attempt input locators without consuming bodies |
 | `zf artifact list` | List immutable inputs available to one provider attempt |
 | `zf artifact manifest` | Artifact manifest commands |
@@ -546,7 +548,9 @@ Recover deterministic runtime state from append-only events
 | `zf recover assistance` | Attempt-bound read-only guidance |
 | `zf recover associate` | Admit evidence-bound recovery case relationships |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
+| `zf recover host-assist` | Preview exact task host assistance without executing it |
 | `zf recover host-check` | Read-only host restart eligibility (exit 1 means do not restart) |
+| `zf recover host-unit` | Render or install an opt-in user systemd supervisor |
 | `zf recover oa-review` | Re-review a proven OA role-binding defect |
 | `zf recover task-impl` | Preview or request Impl retry after blocked Impl or rejected Verify |
 | `zf recover task-integration` | Retry integration after a reviewed repair |

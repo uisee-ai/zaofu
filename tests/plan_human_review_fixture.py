@@ -25,6 +25,9 @@ def add_human_review_fixture(state, writer):
         "forms": [{"id": "F01", "title": "修正", "task_ids": ["T-STOCK"]}],
     }}
     bodies.update({
+        "product_acceptance_spec": {"user_journeys": [{"journey_id": "J-STOCK", "title": "重复修正保持一致",
+            "mandatory": True, "verification_tier": "e2e", "assertions": [
+                {"assertion_id": "AC-STOCK", "statement": "重复请求不重复结算且刷新保持库存"}]}]},
         "source_index": {"rows": [
             {"source_id": "REQ-STOCK", "statement": "库存不得重复扣减", "source_ref": "artifacts/source.md#stock"}, {"source_id": "REQ-NOTIFY", "statement": "通知渠道待确认"},
             {"source_id": "REQ-MISSING", "statement": "未分配来源示例"},
@@ -61,4 +64,20 @@ def add_human_review_fixture(state, writer):
         "plan_id": "evt-preview-review-old", "workflow_run_id": "preview-review", "trace_id": "preview-review", "pdd_id": "PDD-REVIEW", "task_count": 2,
         "task_map_ref": ports[0]["ref"], "plan_artifact_ref": "artifacts/full-plan.md",
         "plan_artifact_package_ref": old_ref["ref"], "plan_artifact_package_digest": old_ref["sha256"],
+    }))
+
+    # Separate legacy format: immutable package has no authored human synopsis.
+    legacy_ports = [p for p in ports if p["logical_name"] != "execution_spec"]
+    legacy = build_plan_artifact_package(
+        workflow_run_id="preview-legacy", flow_kind="prd", producer_stage_id="prd-plan",
+        run_contract=_run_contract(state), plan_revision="r0", task_map_generation="g0",
+        produced=legacy_ports, required_ports=[p["logical_name"] for p in legacy_ports],
+    )
+    legacy_ref = write_plan_artifact_package(state, legacy)
+    writer.append(ZfEvent(type="plan.approval.requested", actor="fixture", payload={
+        "plan_id": "evt-preview-review-legacy", "workflow_run_id": "preview-legacy",
+        "trace_id": "preview-legacy", "pdd_id": "PDD-LEGACY", "task_count": 2,
+        "task_map_ref": ports[0]["ref"], "plan_artifact_ref": "artifacts/full-plan.md",
+        "plan_artifact_package_ref": legacy_ref["ref"],
+        "plan_artifact_package_digest": legacy_ref["sha256"],
     }))

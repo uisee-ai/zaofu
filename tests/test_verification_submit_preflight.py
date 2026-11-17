@@ -210,3 +210,18 @@ def test_verifier_preflight_cli_keeps_binding_for_corrected_submit(tmp_path, mon
     submitted = service.submit(operation_id=prepared.operation_id, use_operation_scratch=True,
         role_instance="verify-1", credential=credential_path.read_text().strip())
     assert submitted.canonical_event_type == "verify.child.completed"
+
+
+def test_failed_execution_diagnostic_names_exact_legal_fields(tmp_path):
+    from zf.runtime.verification_result import validate_verification_result, VerificationResultError
+    with pytest.raises(VerificationResultError, match="allowed: completed, failed"):
+        result = {key: "bound" for key in (
+            "workflow_run_id", "task_id", "contract_revision", "task_map_generation",
+            "base_commit", "task_ref", "contract_snapshot_ref", "contract_snapshot_digest",
+            "target_snapshot_ref", "target_commit", "target_snapshot_digest",
+            "verification_owner", "verification_tier")}
+        result.update(schema_version="verification-result.v1", execution_status="blocked", verdict="inconclusive")
+        validate_verification_result(result)
+    result.update(execution_status="failed")
+    with pytest.raises(VerificationResultError, match='verdict="abstained"'):
+        validate_verification_result(result)

@@ -1,0 +1,348 @@
+# 受限授权的无人执行资格
+
+## R12 收尾缺口与断点修正
+
+R12 的两项业务、独立 Candidate Verify、真实浏览器、需求复扫和 Judge 均通过，
+但目标关闭被 `failed_action_effect` 阻断，不能称无人全流程成功。原轮保留 FAILED，
+后续加载补丁并恢复同一断点属于监工辅助验证，不回填无人资格。
+
+诊断回复用不可变 request_id 与指定响应角色绑定原请求；回复可以省略已由请求固定的
+Run/Task/代际字段，但任何显式冲突仍拒绝。效果消费者沿用这一身份合同，避免回复已到达
+却因缺少重复 Run ID 被误记为超时。对已有 kernel 超时记录，只有原请求的可信回复可追加
+效果成功记录；原失败保留，真实失败及无回复超时不被覆盖。这里只结算诊断交接，
+RecoveryCase 仍不因收到建议而成为产品恢复成功。
+
+修复后续检查点还须对账原故障的受控回执：同一 RecoveryCase、Run、Task、代际和候选，
+在受控 merge 之后同一命令已有完整、稳定、同策略的可信成功回执时，旧恢复请求从调度
+投影退出。未决、篡改、不同目标、应用前成功或后续再次失败不退出；不改写历史事件，
+不以通用 Task 进展替代故障专属证据，也不直接宣告产品通过。
+
+对应 [实施任务](../../tasks/active/2026-11-16-1258-unattended-qualification.md)、本地 ZF-SPEC-003 和 [前序实现](continuity-handoff-spec-001.md)。基线 2137a567。
+
+## 已接入的入口
+
+- `zf recover host-unit --name zf-<project>` 生成用户服务；`--install` 安装并 enable，不自行启动未获授权的 Run。`ExecCondition` 调用现有 host-check；意外退出 restart，pause/stop/completed 拒绝启动。重启上限 5 次/300 秒，超限保留 systemd failure，不能宣称无限自愈。
+- 用户服务保留明确的项目、state、Python、源码、PATH 和私有 tmux 位置，不持久化 token。节点启动依赖 user systemd；`loginctl show-user "$USER" -p Linger` 可检查是否无需登录启动。真实节点重启必须独立验收。
+- 源码修复 actuator 在受服务托管时先核对 MainPID，只使对应控制器异常退出，由原服务接管启动。不会 exec 一个脱离原服务的新控制器。
+- 活跃期的 verified checkpoint apply 同时要求 `source_repair.restart_policy: operator_approved`。
+  `never_during_active_run` / `next_run` 在修复写入之前阻断并留下原检查点；验证成功不等于获准重启。
+- Run Manager tick 在 `auto_execute` 且 `runtime.host_verification.enabled` 时消费已结束的不可用验证。使用现有合同/currentness/资源锁/manifest 和回执通道，不授予 Worker 宿主权限。
+
+## 预授权测试边界
+
+```yaml
+runtime:
+  host_verification:
+    enabled: true
+    approval_ref: owner:<具体批准记录>
+    image: sha256:<本机已有镜像完整摘要>
+    commands: ["npm test", "npm run build"]
+    max_executions_per_run: 12
+    timeout_seconds: 180
+```
+
+默认关闭。只执行上述精确命令与冻结合同的交集，使用固定镜像，不 pull。
+默认执行在无网络、只读根文件系统、无 capabilities、受资源上限约束的容器内，非 root UID；
+浏览器需要宿主网络时须在 zf.yaml 显式设置 `network: host`，依然不共享 Docker socket/宿主凭据。
+`protected_files` 可固定验收脚本摘要，修改或删除会在启动容器前拒绝。
+只拷贝审查过的源文件和声明依赖，不挂载 Git、运行状态、宿主 HOME 或 Docker socket。
+目标和依赖摘要在调用前后复查；输出和证据保留目标、命令摘要、镜像、授权和来源。
+图片/视频等原始 bytes 以带内容摘要的 base64 sidecar 保存，可无损提取；宿主回执不颁发产品 verdict。
+一次 tick 至多一条有界命令；中断且无终态的副作用不可盲目重跑。
+
+Candidate Reader 在原冻结目标的预授权采证完成后，使用现有受控 Reader infrastructure retry，
+将回执反馈给独立 Reader。Task Pipeline 保留自身 rework 归属。临时宿主 `host-assist` 的 token gate 保持不变。
+成功和失败的已完成采证都要交回 Reader，由它区分产品失败与基础设施失败；不能只消费 exit 0，
+让失败证据停在原地。未决执行、目标不稳定或缺少退出码仍拒绝自动交接。
+
+## 工作区和诊断生命周期
+
+普通 Task、Candidate 和 OA 派发都明确：产品 checkout 受原 write scopes 限制；Reader 源码/证据只读；
+只有 Kernel 提前创建的当前 operation scratch 可通过原生 Edit/apply_patch 原地更新。
+scratch 在 checkout 外不是整个 runtime 目录的写授权。canonical state 仍只能经受控 CLI 提交。
+原生 apply_patch 仅以 exec_command/Bash 适配提供时，说明明确指向已有守卫支持的单一、
+引号 heredoc Update File patch；不放宽目标、添加/删除/移动或动态 shell 写入。
+Task 派发消息显式请求合同要求的本地 writer commit，仅限分配分支与路径；
+Reader 不因此获得写权限，不授权创建分支、merge/push 或绕过 Provider 拒绝。
+
+OA 的 periodic liveness sweep 同时检查“进程仍活着但 Provider 回合已经结束”。
+只有当前 operation 开始后的同一 session/turn 有明确关闭事件、没有更新的活动回合、
+没有已准入结果且 Run 未暂停/终止，才保留原输入/operation 并重投一次检查点。
+重投复用读取回执与游标，不能跳过尚未读取的正文；再次缺结果则 operation blocked，
+释放 OA 队列供后续诊断，不伪造语义 verdict。仍活跃或身份不明的 Provider 不受干扰。
+
+AR 启动前保存包含工作区、命令、阶段、PID/start ticks/boot ID 的 checkpoint sidecar，账本绑定 digest。
+resident 重启后只在证实原 owner 已退出时，将悬空诊断明确关闭为 interrupted，保留候选和检查点并升级；
+不将 `loop.started` 当作完成，不重放未经新决定授权的命令。已有 self-repair launch/result、验证及合并回执
+继续提供后续阶段检查点，未新建另一套任务状态。
+
+`runtime.autoresearch_resident.on_parent_terminal` 支持 preserve（默认）、cancel、continue。
+preserve/cancel 终止进程且保留磁盘成果；继续运行需要新的受控决定，不能自动把不完整报告判成功。
+continue 仅在主目标完成后移交已运行的 resident，保留其 singleton lock，队列排空后退出；显式 stop/pause 优先。
+
+## 资格记录
+
+证据写入本 worktree `reports/unattended-qualification-20261116/`。必须区分确定性回归、真实宿主能力和完整真实 PRD。
+当前宿主、容器测试不能替代新 PRD 到 `run.goal.completed` 的验收。每轮临时干预记录为该轮无人资格失败；
+修复后再启动新轮，不用旧轮结果冒充新源码全流程通过。
+
+资格审查也对照批准正文与实际行为，而非只看 Task done。R9 的数字任务在独立 Verify 中仍采用与批准正文相反的边界 oracle；方法层在 `zf-plan-execution-readiness/references/execution-consistency.md` 增加正文条款到下游必读位置的明确对账，并用 `tests/fixtures/plan-counterexamples/cases.json` 保留正反校准例。夹具和技能物化通过不代表语义判断已改善，仍需真实复审和产品断言验证。
+
+## 自动修复的额外隔离修正
+
+旧 self-repair 启动器曾使用 Provider sandbox bypass 参数；本批移除，Codex 固定 workspace-write。
+`runtime.run_manager.source_repair.model/model_reasoning_effort` 显式选择模型，真实验收配置 Terra High。
+`publish_candidate: true` 为独立 opt-in：只有已退出进程、冻结合同、原 base/修复分支、精确 scope/allow/deny、
+空 index、无活动 Git hooks 都成立，才由 runtime 提交候选。Worker 不需要获得共享 Git 元数据写权限。
+briefing 移到 required sidecar，避免污染修复 worktree；创建修复分支不再使用会重置已有分支的 `-B`。
+提交只是候选发布；独立 verification、受控 apply、源码加载及续跑保持原有门禁。
+RecoveryCase 对 validate/apply 的成功保持 open，不能把中间步骤标为原目标 resolved。
+
+修复候选发布扫描冻结 base 到当前 checkout 的完整差量，而非把既有仓库当作待初始化仓库重新导入。未修改的受信历史文件（如凭据拒绝测试样本）不属于本次发布字节；所有新增/修改文件仍经过同一凭据、路径、symlink 和大小检查。暂存前后及提交后均按原 base 重算差量，出现未授权并发变化保留现场并拒绝确认。该快照函数只由内部修复调用传入，外部 manifest 不能选择或关闭扫描；初始基线、普通 host-assist 和容器采证的原全量检查不变。
+
+自动 repair 使用的 `dev-verify` 保留完整影响闭包，不再因为超过 80 个测试文件而扩大为全仓测试。
+仍包含直接调用方、共享契约和串行测试；未映射源码仍拒绝。全量发布验证应显式执行，
+不能让文件数量触发无关失败并阻断修复。该修改经 81 文件闭包回归先失败后通过。
+
+修复请求 continuation 与合并后的 `workflow-batch-resume` 必须携带同一 `recovery_case_id`
+及原 Run/Task/代际/合同版本/目标提交/attempt 绑定。否则实际恢复后会关闭一个新生成的 case，
+留下原 case 悬空；跨修复、合并、续跑及 effect 投影的回归覆盖此问题。
+
+真实 PRD 第一轮暴露了原文交接缺失：验收驱动应传 `source_ref`（不是 CLI 风格的 `from`），
+Plan/Critic 输入编译也必须从正式 `source_refs.source_ref` 物化原文，而不是只传带路径的
+Requirement 摘要。原文与需求快照同时绑定为 required 输入，保留各自摘要；后续源文件变化
+不改变已签发正文。受控需求修订继续按既有 amendment 规则替代旧权威输入。
+
+真实续跑还暴露了 OA 示例歧义：`work_unit_id` 是单元标识，不能用裸 `impl` / `verify`
+冒充阶段选择器。pre_impl 的结果模板现在展示 `task_ids` 与 `stage_ids`，要求引用
+已批准 Plan 的任务。仅改善生成方法；未知任务仍由原准入规则拒绝，不放宽权限。
+
+## 沙箱内 Writer 的受控候选发布
+
+真实续跑中两个 Worker 都尝试了明确请求的 commit，但共享 Git 元数据为只读，
+`index.lock` 创建失败。普通 Task 不能只依赖 AR 专用发布器，也不能放宽 Worker 沙箱。
+
+`runtime.task_publication` 提供独立、默认关闭的预授权策略：`enabled`、`approval_ref`、
+精确文件清单 `paths`、`max_publications_per_run`（启用时 1..100）。只适用于当前
+已准入、已结算 blocked 的 Impl 候选；不会解析错误字符串来推断权限。
+有活动回合、暂停/终态、后继 operation、变更合同、分支或源码、越界路径、活动环境、
+现有 index、Git hooks、未决 Git 副作用时拒绝发布或保留等待，不执行任意宿主命令。
+
+Run Manager 使用既有 host-assist preview/apply 门禁，核对 signed changed_files、
+当前 HEAD、合同范围、预授权清单、完整文件及依赖摘要，发布一次本地候选提交。
+回执绑定策略摘要与批准引用。随后经现有有界 Task Impl retry 请求重新检查精确 commit；
+不增加 rework 额度、不直接生成 Impl passed，不跳过独立 Verify/Judge。
+发布与后续重试分别留痕；退出在 started/completed 之间时明确升级，不猜测成功后重放。
+
+候选发布绑定检查未通过时，控制器日志保留 operation ID 与拒绝原因；这只增加诊断可见性，不将过期任务升级为可执行，也不自动创建人工升级事件。
+
+真实R3暴露候选发布与空闲Provider依赖租约互斥：Provider整个生命周期持共享环境锁，原host-assist一律排他锁，导致任务已settled仍无限等待。修正为Git候选发布、内部隔离容器快照持共享依赖锁；依赖安装/修改持排他锁，仍阻止采证与发布。普通直接宿主验证仍需排他锁，外部action不接收readonly_snapshot能力。共享锁不替代任务身份、完整差异、源摘要、预算和副作用回执门禁。环境忙的发布延迟会记录operation ID，不再静默跳过。
+
+宿主候选发布在preview与apply重新preview时检查Git作者/提交者可解析；缺身份在暂存和effect.started前失败，保留原工作区。运行时不猜测身份、不修改用户全局Git配置。隔离验收仓库初始化需配置本地测试身份，不能依赖监工shell的临时环境变量。
+
+同一Git身份前置条件也覆盖Autoresearch修复候选发布：缺身份在repair publish started和暂存前拒绝，不留下可避免的未决副作用。
+
+## Owner 决策等待页的同版 Plan 预览
+
+Critic 因业务选择等待 owner 时，也须显示它实际审阅的 Planner 输入。引用仅从同一 operation/attempt/fanout/revision 的不可变 contract 与 source manifest 交叉解析，并校验摘要；不能使用最近任意 Plan。该只读解析不授予 Reader 重试或语义通过权限。新 checkpoint 保存绑定，旧 checkpoint 在读投影中补全，保持原审批 request 与 candidate 身份不变；歧义、缺失或摘要篡改继续失败关闭。
+
+隔离容器的 `/work` tmpfs 必须允许执行预置构建工具：Docker 默认 noexec 会使0755的 tsc/脚本返回126。仅临时构建工作区显式 exec；保留 nosuid/nodev、非root、只读源码挂载、无宿主凭据/socket和命令预授权。真实宿主层用可执行脚本验证此边界，解释器直接执行字符串不足以覆盖这一故障。
+
+Autoresearch loop 的单次内部 runner 继承 loop 已指定的 budget_usd，不能因构造参数遗漏回退到500默认值。此修正仅闭合该调用边界，不代表已实现父目标跨诊断累计预算或未定价模型的真实成本计量；这些必须分别核实。
+
+Task Pipeline 终态归档已终止 transport、轮换 session 后，会产生内核 `role.lifecycle.suspended`（reason=task_stage_session_archived，preserve_session=false）。Provider 回合重放必须关闭该实例在此事件之前的残留回合，否则 Candidate Verify 被 provider_turn_active 永久阻挡。只接受内核 orchestrator 的这一销毁事件；保留会话、其他实例/原因及后续新回合均不受影响。终止失败且进程仍活跃时仍保持占用。
+
+resident 启动的 loop 若解析到的控制面配置确实拥有 parent_state_dir，则继承其 workflow.run_limits.token_budget，经 LoopConfig 与内部 runner 显式传递。0 是有效的不限值，不能通过 truthiness 回退到模板的10000000；未指定父配置或状态目录不匹配的独立实验仍保留模板限制。此变更不复制产品的宿主命令、文件发布或修复权限，成本与超时限制也不因此关闭。
+
+同一归属校验也用于诊断执行参数：loop 的单次美元上限不超过父 workflow/global 已配置的正数上限；同名且同 backend 的角色继承显式 model 与 model_reasoning_effort。不同 backend 或未指定模型保留模板设置。仅复制这两个执行参数，不复制工具、写入路径、凭据或发布策略。该上限仍不是跨多次诊断的剩余额度账本，不能用未定价的0美元记录宣称成本已准确约束。
+
+恢复调度的快路径与周期巡检分开：新的受控副作用回执、operation结算、assistance、RM建议/反思及诊断终态，可在下一次标准tick触发既有Run Manager事务，不再先等待300秒Supervisor巡检。沿用已消费事件游标、终态静止检查及原动作授权；RM自身tick记账、usage/heartbeat和未知事件不进入快路径（未知事件仍由周期巡检处理）。每次事务仍只执行原先允许的有限副作用，不能因加速而重放已完成命令。
+
+Provider 回合关闭也触发该快路径：结果可能先结算，发布/采证仍因活动回合延期；关闭事件使其重新检查当前身份与授权。关闭不代表任务成功，也不绕过暂停、终态和资源门禁。回合开始、usage 与 RM 自身记账不因此触发循环恢复。
+
+静止判定遵循既有升级范围：明确 `blocking_scope=side` 的审批只约束其旁路动作，不得让整个产品恢复tick静止。它不会清除/确认更早的Run级升级；未声明范围的旧事件仍按Run级保守处理。现场 failure-closeout-activate 的旁路审批无需监工代批，预授权浏览器采证可以独立继续。
+
+Candidate Reader 已有内核准入的 verification-result.v1 abstained 时，通用 batch 的 reemit_candidate_ready 不得竞争原 Reader 的恢复路径。按同一fanout、operation/request/run、源事件和control_result_ref绑定准入事实，保留现有采证→stage恢复链。原始超时或缺失准入的legacy runtime失败仍保留原有有界重发能力；不将基础设施失败改判为产品通过。
+
+修复派发的合同在落盘前绑定隔离checkout：将源仓内绝对scope规范为相对路径，拒绝越界/上级遍历/symlink逃逸；仅移除精确源仓cwd前缀，不能可靠转换且仍指向原仓的验证拒绝签发。pytest复用当前解释器依赖但设置PYTHONPATH=src，验收实际导入修复候选。briefing提供不可变合同绝对定位；self-repair方法识别父账本内精确kernel授权事件和dispatched合同摘要，不再要求修复分支复制的zf.yaml重新授权。不放宽沙箱，不设置全局授权环境变量，仍需独立验证和受控apply。
+
+独立repair验证器消费同一冻结命令格式：只接受当前受信sys.executable执行pytest以及精确PYTHONPATH=src，拒绝其它解释器、环境和任意Python脚本。合同生产者的测试还须走此验证调用入口，单独启动子进程通过不能证明白名单准入。
+
+受控采证在已结算结果与 Provider 回合结束之间遇到活动 turn 时，应按暂时占用延期，不生成永久人工升级；后续 tick 在同一授权下重新检查。外部 action 仍拒绝忙碌请求，不绕过回合门禁。
+
+自动候选发布须区分 signed changed_files（相对基线的实现范围）与当前未提交差异。无当前差异、也无本 operation 待处理发布回执时不创建 Git effect，不因此升级或请求重试；已有成功回执仍按精确 commit/文件/依赖校验续跑，未知副作用继续失败关闭。
+
+## 恢复时按需读取原始命令观察
+
+Task handoff 冻结前从当前前驱已结算 attempt 收集原生命令输出，要求 kernel dispatch、operation/task/run/attempt、角色、cwd 与 hook causation 一致；结束后的事件和其它任务不会进入索引。小输出和已校验的 raw sidecar 输出分别保存为脱敏不可变观察，交接正文仅携带索引引用。缺失或篡改的大输出显式 unavailable，不能把截断预览当完整证据；不推断退出码、不把 hook 变为业务通过事实。
+
+接手者使用交接正文提供的 `artifact handoff-evidence --operation <当前op>`，选择 `--event` 按1024字符分页；续页必须绑定摘要。跨多次接力用 `--source-operation`，仅沿当前合同 required_reads 摘要与 kernel handoff.prepared 绑定的同任务历史引用读取。接口复用当前 operation 凭据、Task assignee、canonical lease 与输入版本校验，不开放任意账本或 transcript 查询。required handoff 的读取回执不表示原始观察已独立验收。
+
+OA必读配置避免重复表示：只有标准effective-config-snapshot.v1同时提供完整config与yaml/compiled_graph时，必读路径取同一工件的`$.config`；保留完整原始摘要、受控全文访问以及全部控制字段。无重复表示的运行时快照、legacy工件继续`$`。briefing的逐项命令必须与必读策略使用相同JSONPath；原文缺读/截断仍拒绝准入，不增加continuation次数掩盖输入成本。
+
+Reader采证失败快速交接：同一operation、授权策略、稳定目标和允许命令的完整非零退出回执出现后，可直接经原Reader恢复门交回独立审查，不要求继续运行剩余命令来证明一个已知失败。反馈明确列出仍未验证的命令；成功回执仍须覆盖全部必需命令才可触发该交接。未知退出码、不稳定源、无关命令不触发快速交接，不生成任何产品通过事件。
+
+常驻诊断派生的人工升级必须沿不可变来源对账：仅限kernel升级→单一resident建议→已绑定的kernel诊断请求与派发→同Run/Task canonical失败→后续kernel任务终态。该链完整时，旧诊断在待处理投影与静止判定中退场；账本保留原建议和升级，不伪造人工批准。缺失/歧义来源、其它任务或Run、Worker自报完成、普通安全/业务审批均不适用。重试或进程活动本身不是终态。
+
+失败采证交回Reader后，旧代际必须退出后续采证队列：仅由同Run、同fanout派发及失败绑定的kernel candidate.ready继任事实证明已交接。单纯action请求、Worker自报或其它Run/失败不构成完成。旧代际跳过后继续检查新代际，不占住每tick一次副作用的队首；新Reader仍承担全部未验证命令，预算不增加。
+
+Worker援助请求沿用受控CLI的参数边界：单条`zf recover assistance request`的引号内question/tried是字面数据，其中提及rm、write_text不视为执行删除或Python写入。仅此确定子命令纳入已有结果提交识别路径；真实shell替换、组合、管道、重定向仍进入原守卫，CLI自身operation/attempt/lease授权不变。
+
+
+### Candidate 环境弃权的提交指引
+
+环境/Provider失败导致未进行产品验收时，使用execution_status=failed、verdict=abstained，保留真实故障及可用工具证据，省略product_acceptance_report及其ref/digest；空模板并非合法的产品报告。若已提供报告，仍校验所有必需身份、旅程、断言与证据。预校验针对这组明确状态补充可执行提示，不替Worker判断产品语义、不修改scratch、不放宽通过门禁。恢复后仍必须完成独立产品验收。R7曾自行补齐失败证据并准入，说明不是永久死锁；该改动减少误入完整报告分支的往返。
+
+
+Reader失败回执还需覆盖聚合等待窗口：首个稳定、同策略、同operation、允许命令的非零退出回执出现后，剩余命令暂停，即使兄弟Reader尚未结算、aggregate failure还没产生。后续tick继续尝试原有受控交接，不抢先生成聚合失败，也不阻塞其它可执行operation。Task Pipeline、未知退出码、未稳定源码和无效绑定沿用原处理。
+
+
+宿主采证失败接入既有语义诊断：只消费具有 kernel started→completed 因果链、当前预授权策略摘要、不可变 receipt 摘要、manifest/operation/run/task/attempt 身份一致、稳定源码及允许命令的非零退出回执。每个 run/task/target 合并为一个待诊断请求；重复同目标 Reader 派发不算恢复，可信同命令成功回执解除该故障，新候选或目标终态使旧请求退场。诊断入口复用 Run Manager projection→resident 路由，由 agent 判定产品、依赖还是运行器原因；代码不按错误字符串直接授予源码修复，不新增第二套状态机。
+
+
+隔离验收的Git身份预检须覆盖两个仓库：产品仓库与实际运行的harness仓库。Autoresearch诊断worktree共享harness的Git公共元数据，只设置产品仓库身份仍会导致Flow source preparation失败。部署者须在相应仓库明确配置认可的本地作者/提交者身份；服务启动前在移除临时GIT_AUTHOR_*/GIT_COMMITTER_*变量的环境中分别执行git var GIT_AUTHOR_IDENT和git var GIT_COMMITTER_IDENT。不得为通过验收修改全局Git配置，也不得把仅本次命令的-c user.name/user.email误当成持久服务配置。临时共享worktree可验证继承，检查干净后移除。预检失败应在资格开始前处理；运行期间补配置必须记录该轮资格失败。
+
+## R10：修复收尾的身份与命令合同
+
+真实R10已越过候选自动发布，但独立验证前被 `repair_contract_continuation_drift` 阻断。收尾不能重建一份缩减的恢复身份：保留冻结请求所有字段，包括 request schema、RecoveryCase、task_map_generation、target_commit、active_attempt_id及空身份槽；额外重启/验证策略由runtime追加。冲突仍在不可变合同核对处拒绝，不能忽略身份漂移。回归从真实Git候选的closeout生产者调用合同消费者，并逐字段验证篡改拒绝。
+
+`contract.verification` 是语义说明，不再按 pytest/uv 等前缀猜测为可执行命令；精确命令显式写入既有 `verification_commands`、`validation.commands` 或 `evidence_contract.success_criteria[kind=command_passed]`。每项只含命令，不在分号后拼接自然语言。Resident RM 的输出示例及要求同步更新。已有仅含说明的合同仍保留说明并执行强制影响范围验证，不把说明当作已执行命令；需要指定聚焦测试的调用者必须迁移到上述结构化字段。明确命令继续绑定共享Python与隔离checkout；现有权限/allowlist/影响闭包门禁不放宽。
+
+这两项修正尚需新一轮真实资格验证，不能追认R10通过。R10的两个业务Task已done，Candidate/Judge/goal与源码应用重启未完成。
+
+
+## R11：Reader 新派发的提交权限
+
+真实诊断 Reader 将正确子运行 `--state-dir` 改为父 `source_state_dir`，被 operation_missing 拒绝；自动重试又把旧“Never retry or re-send”理解为禁止新 attempt 提交。派发说明明确保留给定提交目录，source_state_dir 仅用于只读证据；每次新 dispatch 授权当前 run_id 的一次提交，前次失败不撤销该授权。成功提交仍不可重复，旧身份不可复用；命令错误时保留原命令和错误并结束本 attempt，由既有有界恢复处理。
+
+该修正覆盖 typed 和 legacy Reader retry 的真实 briefing 调用入口；不新增重试额度、不授予父状态写权限、不忽略 operation/attempt/lease 校验。指令回归通过不等于真实 Provider 已遵循，必须另做冻结新源码的真实复验；R11 继续原版本，不热加载此修正。
+
+
+## R11：模型提醒与未送达重派的输入保全
+
+真实 R11 在03:54 UTC记录FAILED并停止专属父子流程/观察器，保留成果；监工临时恢复0，F1/F2/F3/F5已有证据，F4/F6及最终产品验收未完成。多个Codex角色的“Approaching rate limits”模型选择框阻止派发，这不是已经耗尽额度的证明。自动启动/恢复命令使用 `-c notice.hide_rate_limit_model_nudge=true` 保持既定模型，仅关闭模型切换提醒；不改用户全局配置、不自动选择低价模型、不放宽sandbox或真实额度限制。官方定义见[配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
+
+首次Impl恢复request含critical-reader-repair-context；Provider未就绪后，新operation已存在，旧rework建议从调度投影退出。第二次派发因而丢失必读反馈，同operation请求摘要漂移。真实冻结request只删除该必读项，精确得到现场693f2da4摘要，证明不是Task语义变化。修正从当前operation的冻结request恢复原修复sidecar引用，核对Run/Task/operation/阶段/代际/合同及内容摘要；不同operation不继承，明确的新反馈仍触发通常的一致性检查，缺失或篡改原sidecar失败关闭。新attempt仍重新生成自己的manifest/读取回执和提交身份，不移植旧授权。
+
+真实调用回归先3RED/2保护通过，修正后96定向通过；影响闭包尚在执行。R11未热加载，新版本须经真实断点验证，不能倒改失败资格。
+
+
+R11断点epoch2真实确认新进程保持Terra与主任务workspace-write，模型提醒配置已生效；但恢复到原请求摘要后仍停在旧request_hash_compatibility_failed。ensure_operation仅在摘要不同才尝试兼容恢复，等于原摘要反而直接返回blocked。新增真实prepare→block→prepare回归1RED/7保护通过，修正后53定向通过；同一原请求也须校验冻结sidecar、生成原有兼容证明再受控redrive，其他阻塞不清除、重放仅准入一次。332文件增量闭包4238通过/12失败，12项均在2137a567基线已复现，完整对账保留。运行中epoch2未热加载；04:06受控停止，保留新的诊断现场，等待下次断点复验。
+
+
+诊断执行约束补充：R11 epoch2真实argv显示父Task是workspace-write，派生AR角色却使用模板默认未指定sandbox；模型继承已有，但显式sandbox约束丢失。同一已核对parent_state_dir、同名且同backend的Codex角色继承父workspace-write；只传这一限制，不传allowed_tools或额外权限，不覆盖其它provider。模板provider_session=null也须正确建立约束。2RED/1保护通过后修正，真实null形状追加1RED，最终51定向通过；用现场完整YAML离线渲染并load_config后11角色命令确认workspace-write且无approvals-and-sandbox bypass。真实子进程复验仍待进行，147文件影响闭包进行中；旧子运行不直接改配置。
+
+
+## R11 epoch3：真实恢复与验证命令兼容
+
+加载 e1808f16 后，两个原 Impl operation 在不改变 request hash 的条件下生成兼容证明并 redrive；两项 Task 独立 Verify 通过，Candidate 01203797 冻结。派生诊断真实进程保持 workspace-write，新 Scan 两项正常提交。F4 实际命中 reader_environment_busy，预定观察器释放后自动续派；F6 控制器退出由宿主 service 约6秒恢复。以上属于辅助续跑，不修改原 R11 的 FAILED 资格结论。
+
+F6 的 resident 自行定位 Docker 参数，自动派发修复、受控发布候选并生成 closeout；04:40:36 独立验证以 command_not_allowlisted 失败（evt-0d6b3ff8fd1f）。原因是合同生产者只规范化 pytest / python -m pytest，遗漏此次真实建议中的 .venv/bin/pytest。工作区存在 .venv 不能证明其入口应获执行权限。
+
+修正新合同的精确入口规范化；旧冻结合同保留原文与摘要，由验证器把该精确拼写映射到受信 sys.executable -m pytest，并设置 PYTHONPATH=src 验证隔离候选。禁止执行候选自带虚拟环境入口，其他解释器、环境和相似路径继续拒绝。新增回归放置恶意候选 pytest 脚本，证明未执行；不修改不可变合同、不降低源码版本/审批/结果准入门禁。
+
+生产者/消费者2RED，旧合同兼容追加1RED；最终34定向通过，76文件增量影响闭包1338通过/7跳过，sentinel53、flow-smoke10通过。真实epoch3已受控停止并保留全部产品、修复与证据。由于加载新harness会改变source_head，旧修复不能自动应用到不同基线；下一冻结轮重新验证完整绑定，不跳过source_head_drift门禁。B07仍未完成，不能归档。
+
+
+## R13：blocked 结果的模板残留
+
+冻结32a13009的新轮中，名称Impl只更新失败摘要，保留`<HEAD commit>`、示例证据和空
+`changed_files`。contract-bound提交准入在blocked/failed分支提前返回，结果错误地结算；
+自动发布根据签名清单安全拒绝并升级。数字Impl填写完整，自动发布与重新派发正常，
+证明不是必须放开Git权限才能恢复。07:31 UTC受控关闭本轮，保存全部工作区和证据；
+F1/F2/F3/F5有局部证据，F4/F6及最终验收未完成，R13为FAILED，临时恢复介入0。
+
+修正在既有typed准入入口拒绝结果及自检中的目标/证据模板占位符，走原有有界
+`result_repair`，不提前结算、不增加语义尝试，不把未知事实或缺测伪装成通过。
+真实基础设施失败仍允许空未知字段及空自检；不要求其先满足成功验收。交接方法先写入
+canonical done-contract skill并同步两provider分发，紧凑执行卡要求blocked也填写
+观察到的HEAD、实际修改路径和失败引用。发布allowlist及source binding不放宽。
+
+6个回归RED/1个失败上报保护通过，修正后48定向通过。真实R13两份签名结果只读重放
+确认名称占位结果被拒绝、数字完整结果保留准入。完整SemanticResultSubmitService
+调用证明同attempt纠正后可上报dev.blocked，纠正前无终态事件。影响闭包首轮暴露
+旧mock自检占位及briefing超12KiB；补齐mock实际证据并压缩指引，不提高文本上限。
+最终闭包与真实断点复验仍待完成；上述不是新轮无人资格通过。
+
+blocked结果修正最终51文件影响闭包924 passed / 1 skipped，sentinel53 passed；
+其中包含局部replan断点闭合mock E2E。48项定向与完整提交入口通过。
+真实断点续跑和新冻结无人资格尚待完成，不能将此测试层当作真实Provider全流程。
+
+
+## R13 辅助恢复：修复工作区身份
+
+在辅助重启期间，watchdog发现旧run_manager投影后请求修复，Git报告worktree已存在
+（evt-9b8d66afff9f）。原命名仅将fingerprint替换斜杠/冒号后截前48字符；长路径的
+不同后缀和不同state_dir中的相同fingerprint会落到共享/tmp的同一目录。保持已有
+失败关闭行为，不删除、不重置旧分支或dirty工作区。
+
+新派发以安全可读短前缀加完整fingerprint/规范state_dir身份的SHA256前16位及attempt
+组成分支/目录。幂等仍由原账本fingerprint+attempt负责；已经dispatched的旧修复继续
+使用事件中的原路径，未重写历史合同。2RED/1保护通过→24定向通过；真实Git用例
+证明不同state_dir可分别派发、同轮重放不重建、两侧未提交文件保留。90文件影响
+闭包1364 passed / 1 skipped，sentinel53 passed，含相关恢复mock E2E。
+
+辅助epoch2载入8aeed5da并受控重试名称任务，原源码变更保留。名称Worker修正blocked
+结果后准入evt-b631e131e323，Run Manager自动发布evt-5f6d9c41cab8并派发后继自检。
+这是2次监工恢复介入（启动新源码与请求旧任务重试）的辅助证据，R13原轮仍FAILED，
+新冻结源码下的完整无人资格尚待复验。
+
+
+## R14：集成 smoke 与证据发现缺口
+
+冻结0c19afc6，08:41 UTC批准同版Plan，F1脏测试保全、F2控制器6.027秒恢复、F3真实结果通知中断及F5重复请求幂等命中，临时恢复0。数字任务Impl及独立Verify通过，集成evt-66f332159460因rolling smoke缺app/dist/numbers.js失败；只选择node测试，Plan正文“先build”没有进入实际执行命令。Planner、Critic和本session审批均遗漏干净集成工作区的前置条件，不能归因于产品算法。
+
+名称任务二次blocked称缺RED/smoke持久引用；原RED复合命令evt-e82da1cee9d8仍在账本及handoff索引e1a9880f…，短command_preview隐藏后部npm test，不能认定证据丢失。当前smoke的事件引用方法已存在，但Worker未正确使用。需补齐方法交付与可发现性，不能放宽TDD证据。
+
+09:10 UTC记录FAILED并受控停止本轮父子runtime和专属service，保留dirty成果。停止时自动诊断尚在推进，不声称已证明永远无法自愈；无Candidate/F4/F6/Judge/goal成功。下一修复：在既有执行报告/Planner上下文暴露rolling-smoke实际选择及独立工作区事实，技能复核干净环境前置；强化复合命令完整读取与当前hook事件证据方法，保持权限和验收门禁。B07/U07仍active。
+
+R14修正完成：Planner早期上下文与Critic执行报告暴露rolling-smoke选择、顺序和独立Candidate工作区，不自动执行未标记build；每片列实际smoke命令ID。既有handoff索引标记预览截断，鉴权分页CLI返回同摘要持久ref；执行卡提示按actor找hook和event引用。canonical技能补充干净环境前置及复合命令完整读取，同步两provider。
+
+真实集成消费者反例及Planner/Critic调用3RED，交接2RED/4保护通过→33定向通过。首轮闭包912通过/1跳过/1Reader措辞断言失败，撤回误改后最终58文件闭包913通过/1跳过，sentinel53通过；包含恢复和replan断点mock。briefing曾超12KiB，压缩重复描述后在完整闭包通过，不提高上限。这些不是新真实PRD通过；B07/U07待下一冻结轮。
+
+## 迟到的任务完成与恢复效果对账（R15）
+
+真实 R15 中，名称任务的 OA triage effect 先超过 1800 秒窗口，约 27 秒后该任务
+独立 Verify、集成并生成 `task.done`。超时本身保留为历史事实；不能让它永久覆盖
+后来已经准入的完成证据，也不能把 OA 建议、Worker 自述或其它任务成功当成完成。
+
+`run_manager_tick` 对同一内核 pending/timeout 绑定追加一次 effect passed，要求
+原 request、pending ref 一致，且迟到完成来自 Kernel，包含相同 workflow、task、
+task_map_generation；冲突的 task/correlation、缺失代际、实际失败结果继续拒绝。
+这只结算已有恢复 effect，不创建任务完成、不改写历史、不跳过 Verify/Judge。
+回归入口：`tests/test_triage_late_completion.py`，连同诊断回复/恢复链测试运行。
+本修正在开发 worktree 验证，不热加载到 R15，真实无人资格仍需独立结论。
+
+迟到对账验证：初版tick反例1RED/12保护通过；现场事件回放发现Task ID仅在事件信封，补齐此真实形状与缺失/冲突保护后61项定向通过。389文件影响闭包5123 passed / 7 skipped，sentinel53、flow-smoke10通过；闭包启动后调整了上述信封兼容，最终版本另跑67项定向闭包全部通过。原始三事件隔离回放：冻结旧源码不结算，修正源码追加1条绑定evt-2089615b0b49的passed，未写运行中账本。无人资格仍未完成。
+
+
+## R15：独立视觉验收的证据交付
+
+R15 两Task完成，F1–F6触发且源码修复独立验证/应用/加载后，原候选构建、单测、浏览器均成功。但截图仅嵌入container-evidence.json，Reader无授权解码写入路径，图片查看器拒绝/proc内存路径。监工看过截图不能替代独立Reader；11:13 UTC保留FAILED并受控停止本轮，成果与失败证据保留。
+
+修复在既有host probe→Reader交接入口生成只读媒体投影：原证据、回执不变；校验父摘要、镜像/候选一致、各文件摘要与大小、相对路径和符号链接安全；原子落盘后提供索引和精确图片路径。Reader仍只读，运行时不赋予视觉verdict，媒体损坏拒绝而不吞错。旧Base64回执无需重写即可重建。技能源补充直接打开索引图片及独立审查义务，通过既有角色工作区分发；不新增任意解码写权限。
+
+媒体修复验证：真实交接调用先1RED；修正后44定向通过、2host未选；14文件影响闭包161通过/1跳过，sentinel53通过（含stale-contract handoff mock）。真实R15回执在临时隔离目录重放，9个条目（7种必需证据和2份原命名视频）摘要全部验证、重复投影幂等；未改现场账本。此处不等于真实Reader视觉审查通过，后续需加载修复单独做辅助断点验收。
+
+辅助epoch2已自动结算迟到triage效果，并由两条真实Reader打开截图；lane0正式通过。lane1因交接新增“review trace/video”措辞推导额外播放义务而暂停：原PRD/PAS要求WebM留存与身份绑定，未单独要求播放。此属本session提示引入的范围偏移，修正交接与技能，区分留存、交互证明、明确播放义务，不增加或豁免冻结验收标准。该措辞修正在开发分支，真实后续验收待完成。
+措辞修正验证：58项定向通过/1跳过，sentinel53通过；无权限、预算或产品合同变更。
+
+
+## R16 最终资格与批次归档（2026-11-17）
+
+冻结实现`1bff811d`已于13:44:00 UTC完成最小TypeScript PRD，Plan批准后72分16.56秒；
+2 Impl + 2 Verify、预授权F1–F6、临时恢复介入0。双独立Candidate Verify、Discovery和Judge
+通过，内核goal为`evt-64a457f7e46e`，三个Task均done，pending/failed恢复效果均空。
+Discovery首次缺少验收报告，被机械准入拒绝后自行纠正，没有监工代交。
+
+精简持久证据：[R16资格收据](unattended-qualification-r16.json)。包含原始评估摘要、故障因果
+事件、输入源码/修复加载/候选身份及原始证据文件SHA256。完整账本、媒体和原始日志仍保留
+在本地reports/unattended-qualification-20261116及隔离R16根，不把运行时真相复制成源码。
+
+B01–B07在本批限定范围内完成：宿主监督及停止保护、有限授权测试、工作区交接、独立验证
+后的修复应用/实际加载、效果与幂等、诊断生命周期、最终冻结真实PRD。历史R1–R15失败与
+辅助通过不回填；先前广域测试16个基线失败仍保留，不声称全仓全绿。
+
+本资格不包括主机断电重启、Go、跨Provider、8+8满载或长期耐久。Provider诊断输出留存和
+重复读取成本优化属于后续项，不影响本次已获得的限定资格，也未冒称已经实现。
+归档任务：../../tasks/done/2026-11-16-1258-unattended-qualification.md。

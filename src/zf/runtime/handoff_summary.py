@@ -51,9 +51,12 @@ def project_handoff_summary(
     from zf.runtime.task_run_binding import canonical_task_run
     from zf.runtime.run_scope import events_for_run
 
-    rows = [event for _, event in task_events or []]
+    all_events = list(index.events) if index is not None else EventLog(state_dir / "events.jsonl").read_all()
+    rows = [event for _, event in task_events] if task_events is not None else [event for event in all_events if event.task_id == task_id]
+    if task_events is None:
+        task_events = list(enumerate(rows, start=1))
     bound_run, strict_binding = canonical_task_run(
-        task, index.events if index is not None else rows,
+        task, all_events,
     )
     if strict_binding:
         kept = {event.id for event in events_for_run(
@@ -103,6 +106,20 @@ def project_handoff_summary(
         or _text(packet_dict.get("next_event"))
     )
     next_required_action = _text(resume_packet.get("next_required_action"))
+    from zf.runtime.handoff_pipeline import pipeline_handoff
+    pipeline = pipeline_handoff(state_dir=state_dir, project_root=project_root or state_dir.parent,
+                                config=config, task=task, events=all_events)
+    owner = _owner(packet_dict, task)
+    if pipeline is not None:
+        current_state = task.status if task else "unknown"
+        event_stage = pipeline["current_stage"]
+        owner = pipeline["owner"]
+        next_required_event = pipeline["next_required_event"]
+        next_required_action = pipeline["next_required_action"]
+        blockers = list(pipeline.get("blockers", []))
+        completed = list(pipeline["admitted_results"])
+        source_event_ids = list(dict.fromkeys([*pipeline["source_event_ids"],
+                                              *[item["event_id"] for item in completed]]))
     quality = _handoff_quality(
         objective=objective,
         completed=completed,
@@ -115,8 +132,25 @@ def project_handoff_summary(
     )
     from zf.runtime.artifact_input_recovery import current_task_input_recovery
     recovery_inputs = current_task_input_recovery(state_dir,
-        list(index.events) if index is not None else rows, task)
+        all_events, task)
+    if pipeline is not None:
+        # Legacy resume packets describe different gates. Keep their evidence
+        # available in history, but do not advertise it as this route's duties.
+        missing = []
+        if task and task.status not in {"done", "cancelled"}:
+            if recovery_inputs.get("status") != "bound":
+                missing = [{"kind": "current_input_binding", "message": "当前必要输入绑定尚不可核验"}]
+            elif recovery_inputs.get("historical_missing"):
+                missing = [{"kind": "required_reads", "message":
+                            f"当前执行仍缺 {recovery_inputs['historical_missing']} 项必要输入读取证据"}]
+    from zf.runtime.task_handoff_receipt import handoff_receipt_projection
+
     return redact_obj({
+        "receipt": handoff_receipt_projection(state_dir, all_events, task_id),
+        "pipeline": pipeline,
+        "input_recovery": {key: value for key, value in recovery_inputs.items()
+                           if key in {"status", "identity", "required_visible", "historical_missing",
+                                      "reconstruction_required", "current_memory", "next_action", "checkpoint"}},
         "work_record": recovery_inputs.get("work_record", {"status": "unavailable", "authorizes_execution": False}),
         "schema_version": "handoff-summary.v1",
         "generated_at": now.isoformat(),
@@ -124,7 +158,7 @@ def project_handoff_summary(
         "objective": objective,
         "current_state": current_state,
         "current_stage": event_stage or _text(packet_dict.get("current_stage")),
-        "owner": _owner(packet_dict, task),
+        "owner": owner,
         "completed": completed,
         "missing_evidence": missing,
         "blockers": blockers,

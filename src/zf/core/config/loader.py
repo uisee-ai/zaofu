@@ -374,7 +374,7 @@ _KNOWN_ROLE_KEYS = frozenset({
     "agent", "provider_session", "lifecycle",
 })
 _KNOWN_PROVIDER_SESSION_KEYS = frozenset({
-    "effort", "agent", "max_parallel_agents", "native_delegation",
+    "effort", "agent", "max_parallel_agents", "native_delegation", "sandbox",
 })
 _KNOWN_ROLE_LIFECYCLE_KEYS = frozenset({
     "mode", "idle_seconds", "cooldown_seconds",
@@ -420,6 +420,27 @@ def _parse_project_setup_script(project_data: dict) -> str:
     if setup and not isinstance(setup, str):
         raise ConfigError("project.scripts.setup must be a string")
     return str(setup or "").strip()
+
+
+def _parse_project_setup_inputs(value: object) -> list[str]:
+    if (not isinstance(value, list) or any(not isinstance(item, str) or not item.strip()
+            or Path(item).is_absolute() or ".." in Path(item).parts for item in value)):
+        raise ConfigError("project.setup_inputs must list nonempty workspace-relative file paths")
+    return list(dict.fromkeys(value))
+
+
+def _parse_project_setup_scope(value: object) -> str:
+    if value not in ("workspace", "shared_resources"):
+        raise ConfigError("project.setup_scope must be workspace or shared_resources")
+    return str(value)
+
+
+def _parse_required_environment_paths(value: object) -> list[str]:
+    if (not isinstance(value, list) or any(not isinstance(item, str) or not item.strip()
+            or Path(item).is_absolute() or '..' in Path(item).parts or not Path(item).parts
+            for item in value)):
+        raise ConfigError('runtime.workdirs.required_paths must list nonempty workspace-relative paths')
+    return list(dict.fromkeys(str(Path(item)) for item in value))
 
 
 def _parse_project_description(project_data: dict) -> str:
@@ -505,6 +526,7 @@ def _build_provider_session(
             agent=str(agent or "").strip(),
             max_parallel_agents=parallel,
             native_delegation=data.get("native_delegation"),
+            sandbox=data.get("sandbox", ""),
         )
     except ValueError as exc:
         raise ConfigError(
@@ -2937,6 +2959,8 @@ def load_config(path: Path) -> ZfConfig:
             workspace=project_data.get("workspace", "."),
             state_dir=project_data.get("state_dir", ".zf"),
             setup_script=_parse_project_setup_script(project_data),
+            setup_inputs=_parse_project_setup_inputs(project_data.get("setup_inputs", [])),
+            setup_scope=_parse_project_setup_scope(project_data.get("setup_scope", "workspace")),
         ),
         session=_build_session(session_data),
         orchestrator=OrchestratorConfig(
@@ -3833,6 +3857,16 @@ def _build_runtime(
     reflect_raw = run_manager_raw.get("reflect") or {}
     if not isinstance(reflect_raw, dict):
         raise ConfigError("runtime.run_manager.reflect must be a mapping")
+    ar_terminal_policy = autoresearch_resident_raw.get("on_parent_terminal", "preserve")
+    if ar_terminal_policy not in {"cancel", "preserve", "continue"}:
+        raise ConfigError("runtime.autoresearch_resident.on_parent_terminal must be cancel, preserve or continue")
+    from zf.core.config.host_verification import parse_host_verification
+    from zf.core.config.task_publication import parse_task_publication
+    try:
+        host_verification = parse_host_verification(data.get("host_verification"))
+        task_publication = parse_task_publication(data.get("task_publication"))
+    except (ValueError, TypeError) as exc:
+        raise ConfigError(str(exc)) from exc
     source_repair_raw = run_manager_raw.get("source_repair") or {}
     if not isinstance(source_repair_raw, dict):
         raise ConfigError("runtime.run_manager.source_repair must be a mapping")
@@ -4170,6 +4204,7 @@ def _build_runtime(
             enabled=bool(workdirs_raw.get("enabled", False)),
             root=str(workdirs_raw.get("root", ".zf/workdirs")),
             mode=mode,
+            required_paths=_parse_required_environment_paths(workdirs_raw.get('required_paths', [])),
             provision_paths=[
                 str(p).strip()
                 for p in (workdirs_raw.get("provision_paths") or [])
@@ -4206,6 +4241,8 @@ def _build_runtime(
             lock_file=str(skills_raw.get("lock_file", ".zf/skills.lock.json")),
             strict=bool(skills_raw.get("strict", False)),
         ),
+        host_verification=host_verification,
+        task_publication=task_publication,
         run_manager=RuntimeRunManagerConfig(
             backend=run_manager_backend,
             reflect=RuntimeRunManagerReflectConfig(
@@ -4230,6 +4267,9 @@ def _build_runtime(
                 tmux_session=resident_tmux_session,
             ),
             source_repair=RuntimeRunManagerSourceRepairConfig(
+                publish_candidate=_bool_value(source_repair_raw.get("publish_candidate"), default=False),
+                model=str(source_repair_raw.get("model") or ""),
+                model_reasoning_effort=str(source_repair_raw.get("model_reasoning_effort") or ""),
                 enabled=_bool_value(
                     source_repair_raw.get("enabled"),
                     default=False,
@@ -4266,6 +4306,7 @@ def _build_runtime(
             ),
         ),
         autoresearch_resident=RuntimeAutoresearchResidentConfig(
+            on_parent_terminal=ar_terminal_policy,
             enabled=_bool_value(
                 autoresearch_resident_raw.get("enabled"),
                 default=False,

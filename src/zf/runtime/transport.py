@@ -80,6 +80,8 @@ class DispatchContext:
     placement_epoch: int | None = None
     task_stage_session_binding: str | None = None
     worker_envelope_digest: str | None = None
+    continuation: bool = False
+    continuation_id: str | None = None
 
     def to_payload(self) -> dict[str, str]:
         payload: dict[str, str] = {}
@@ -121,6 +123,8 @@ class DispatchContext:
             payload["task_stage_session_binding"] = (
                 self.task_stage_session_binding
             )
+        if self.continuation_id:
+            payload["continuation_id"] = self.continuation_id
         if self.worker_envelope_digest:
             payload["worker_envelope_digest"] = self.worker_envelope_digest
         return payload
@@ -248,6 +252,10 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             # tokens like `Bash(zf kanban *)` break the shell command
             # line with "syntax error near unexpected token '('".
             command = shlex.join(argv)
+            if cwd is not None and role.backend in {"codex", "claude-code"}:
+                from zf.runtime.environment_usage import guarded_provider_argv
+
+                command = shlex.join(guarded_provider_argv(cwd, argv))
             env_prefix = self._agent_env_prefix(cwd)
             if env_prefix:
                 command = f"{env_prefix} {command}"

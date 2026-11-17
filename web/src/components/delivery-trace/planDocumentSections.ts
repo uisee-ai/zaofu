@@ -1,7 +1,6 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 
-export function planDocumentSections(content: string) {
-  const tree = fromMarkdown(content);
+export function planDocumentSections(content: string, tree = fromMarkdown(content)) {
   const starts: Array<{ start: number; title: string; anchor: string; level: number }> = [];
   let previousEnd = 0;
   for (const node of tree.children) {

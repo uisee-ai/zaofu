@@ -1389,9 +1389,10 @@ export function getOperatorInbox(projectId?: string, signal?: AbortSignal): Prom
   return requestJson<OperatorInboxProjection>(`${projectPrefix(projectId)}/operator/inbox`, { signal });
 }
 
-export function getPlanPreview(planId: string, projectId?: string): Promise<PlanPreview> {
+export function getPlanPreview(planId: string, projectId?: string, summary = false, signal?: AbortSignal): Promise<PlanPreview> {
   return requestJson<PlanPreview>(
-    `${projectPrefix(projectId)}/plans/${encodeURIComponent(planId)}/preview`,
+    `${projectPrefix(projectId)}/plans/${encodeURIComponent(planId)}/preview${summary ? "/summary" : ""}`,
+    { signal, bypassCache: true },
   );
 }
 

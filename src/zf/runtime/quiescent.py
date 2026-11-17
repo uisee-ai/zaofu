@@ -77,6 +77,7 @@ def quiescent_now(
     if not _enabled(config):
         return QuiescentStatus(quiescent=False, reason="disabled")
     rows = list(events)
+    from zf.runtime.task_failure_retirement import task_failure_retired
     escalate: ZfEvent | None = None
     woke_after = False
     progress = _progress_events()
@@ -91,6 +92,12 @@ def quiescent_now(
         }:
             inflight_fanouts.discard(fanout_id)
         if event.type == _ESCALATE_EVENT:
+            if task_failure_retired(rows, event) is True:
+                continue
+            # Side-track approval cannot suspend product recovery. Keep any
+            # earlier run-scoped escalation; this is not an acknowledgement.
+            if str(payload.get("blocking_scope") or "run").strip().lower() == "side":
+                continue
             escalate = event
             woke_after = False
             continue

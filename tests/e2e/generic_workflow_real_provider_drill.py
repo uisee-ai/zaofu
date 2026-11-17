@@ -57,6 +57,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--confirm-real", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=600)
     parser.add_argument("--model", default="gpt-5.5")
+    parser.add_argument("--case", choices=("supported", "unsupported-claim"), default="supported")
+    parser.add_argument("--evidence-dir", help="Empty directory for durable evidence, including failures")
     parser.add_argument(
         "--reasoning-effort",
         choices=("minimal", "low", "medium", "high", "xhigh"),
@@ -65,14 +67,14 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _shape_schema(value: Any) -> dict[str, Any]:
+def _shape_schema(value: Any, *, pin: bool = False) -> dict[str, Any]:
     if isinstance(value, Mapping):
         return {
             "type": "object",
             "additionalProperties": False,
             "required": list(value),
             "properties": {
-                str(key): _shape_schema(item)
+                str(key): _shape_schema(item, pin=pin)
                 for key, item in value.items()
             },
         }
@@ -88,17 +90,26 @@ def _shape_schema(value: Any) -> dict[str, Any]:
             "type": "array",
             "minItems": len(value),
             "maxItems": len(value),
-            "items": _shape_schema(value[0]),
+            "items": _shape_schema(value[0], pin=pin),
         }
     if isinstance(value, bool):
-        return {"type": "boolean"}
+        return {"type": "boolean", **({"enum": [value]} if pin else {})}
     if isinstance(value, int):
-        return {"type": "integer"}
+        return {"type": "integer", **({"enum": [value]} if pin else {})}
     if isinstance(value, float):
-        return {"type": "number"}
+        return {"type": "number", **({"enum": [value]} if pin else {})}
     if value is None:
         return {"type": "null"}
-    return {"type": "string"}
+    return {"type": "string", **({"enum": [value]} if pin else {})}
+
+
+def _identity_contract(expected: Mapping[str, Any]) -> dict[str, Any]:
+    """Pin facts, never supply the evaluator with a successful verdict to copy."""
+    judgments = {"verdict", "summary", "recommended_action", "open_gap_refs",
+                 "verification_evidence_refs", "goal_coverage"}
+    return {**{key: value for key, value in expected.items() if key not in judgments},
+            "goal_coverage": [{"goal_claim_id": row["goal_claim_id"]}
+                              for row in expected.get("goal_coverage", []) if row.get("goal_claim_id")]}
 
 
 def _descriptor_path(state_dir: Path, descriptor: Mapping[str, Any]) -> Path:
@@ -130,7 +141,7 @@ def _provider_verifier(
         )
         verification_contract.write_text(
             json.dumps(
-                {"artifact_delivery_result": expected},
+                {"artifact_delivery_result": _identity_contract(expected)},
                 indent=2,
                 sort_keys=True,
             ),
@@ -171,10 +182,25 @@ def _provider_verifier(
             },
         }
         fields = schema["properties"]["artifact_delivery_result"]["properties"]
+        for key, value in _identity_contract(expected).items():
+            if key != "goal_coverage":
+                fields[key] = _shape_schema(value, pin=True)
         fields["verdict"]["enum"] = sorted(VERDICTS)
         fields["recommended_action"]["enum"] = ["complete", "gap_plan", "replan", "human", "hold"]
         fields["open_gap_refs"] = {"type": "array", "items": {"type": "string"}}
         fields["goal_coverage"]["items"]["properties"]["status"]["enum"] = sorted(CLAIM_STATUSES)
+        claims = [row["goal_claim_id"] for row in expected.get("goal_coverage", []) if row.get("goal_claim_id")]
+        if claims:
+            fields["goal_coverage"]["items"]["properties"]["goal_claim_id"]["enum"] = claims
+        for row in (fields.get("verification_evidence_refs"),
+                    fields["goal_coverage"]["items"]["properties"].get("supporting_artifact_refs")):
+            if row is not None:
+                row.update(type="array", items={"type": "string"})
+                row.pop("minItems", None)
+                row.pop("maxItems", None)
+        artifact_refs = [row["ref"] for row in expected.get("artifacts", []) if row.get("ref")]
+        if artifact_refs:
+            fields["goal_coverage"]["items"]["properties"]["supporting_artifact_refs"]["items"]["enum"] = artifact_refs
         prompt = "\n".join([
             "You are the independent read-only verifier for a ZaoFu Generic "
             "Workflow provider drill.",
@@ -185,14 +211,19 @@ def _provider_verifier(
                 for name, path in sorted(source_paths.items())
             ],
             read_instruction,
-            "Confirm that the report closes the mandatory claim using two "
-            "independent evidence families.",
+            "Independently assess whether the report answers the scope question "
+            "correctly using the supplied evidence. Separate source independence "
+            "from whether those sources support the claimed measurement. Reject "
+            "unsupported conclusions; there is no preset successful verdict.",
             "Do not modify files and do not run tests, builds, package "
             "commands, or git mutations.",
             "Return only the artifact_delivery_result required by the supplied "
             "JSON schema. The verification contract pins runtime identity.",
             "For passed use complete with no gaps; for rejected use gap_plan or replan "
             "with gap refs; for blocked use human or hold.",
+            "goal_coverage.supporting_artifact_refs refers to declared deliverable artifacts, "
+            "not their upstream evidence. Cite the upstream evidence in verification_evidence_refs "
+            "and explain its relevance in your summary. Empty supporting refs are allowed for open claims.",
             *(
                 [
                     "INLINE_CANONICAL_INPUTS:",
@@ -206,6 +237,11 @@ def _provider_verifier(
                 else []
             ),
         ])
+        (state_dir / "provider-inputs.json").write_text(json.dumps([
+            {"name": name, "path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+             "content": path.read_text(encoding="utf-8")}
+            for name, path in sorted(source_paths.items())
+        ], ensure_ascii=False, indent=2), encoding="utf-8")
         if backend == "claude-code":
             output, audit = _invoke_claude(
                 project_root=project_root,
@@ -315,9 +351,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if not args.confirm_real:
         raise SystemExit("pass --confirm-real to invoke a real provider")
     root = Path(tempfile.mkdtemp(prefix=_TEMP_PREFIX, dir="/tmp"))
+    evidence = Path(args.evidence_dir).resolve() if getattr(args, "evidence_dir", None) else None
+    if evidence is not None:
+        if evidence.exists() and any(evidence.iterdir()):
+            _cleanup(root)
+            raise ValueError("evidence directory must be empty; preserve previous qualification")
+        evidence.mkdir(parents=True, exist_ok=True)
     audit: dict[str, Any] = {}
     started = time.monotonic()
     identity = source_identity(_REPO_ROOT)
+    case = getattr(args, "case", "supported")
+    qualification = {"status": "running", "source_identity": identity, "case": case,
+                     "backend": args.backend, "model": args.model,
+                     "reasoning_effort": args.reasoning_effort,
+                     "temporary_root": str(root), "cleaned": False}
     previous_sigterm = signal.getsignal(signal.SIGTERM)
 
     def _terminate(signum, _frame) -> None:  # noqa: ANN001
@@ -340,6 +387,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     audit_holder=audit,
                 ),
                 provider_backend=args.backend,
+                expected_verdict="rejected" if case == "unsupported-claim" else "passed",
+                report_transform=(lambda generation, _: {"conclusion":
+                    "Yes: both independent records prove that 42 parcels were delivered."}
+                    if generation == 2 else {}) if case == "unsupported-claim" else None,
             )
         result.update({
             "schema_version": "generic-workflow-real-provider-drill.v1",
@@ -361,12 +412,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "timeout_seconds": args.timeout_seconds,
             },
             "provider_audit": audit,
+            "case": case,
             "oa": dict(result.get("oa") or {}),
             "temporary_root": str(root),
             "cleaned": True,
         })
+        qualification.update(status="passed", result=result)
         return result
-    except Exception:
+    except Exception as exc:
+        qualification.update(status="failed", error_type=type(exc).__name__, error=str(exc)[:1000])
         if audit:
             print(json.dumps({
                 "status": "failed",
@@ -379,9 +433,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise
     finally:
         try:
+            if evidence is not None:
+                state = root / "project" / ".zf"
+                for name in ("provider-audit.json", "provider-raw.jsonl", "provider-inputs.json",
+                             "provider-output-schema.json", "provider-verification-contract.json", "events.jsonl"):
+                    if (state / name).is_file():
+                        shutil.copyfile(state / name, evidence / name)
             _cleanup(root)
+            qualification["cleaned"] = not root.exists()
         finally:
             signal.signal(signal.SIGTERM, previous_sigterm)
+            if evidence is not None:
+                qualification["duration_seconds"] = round(time.monotonic() - started, 3)
+                (evidence / "qualification.json").write_text(json.dumps(qualification,
+                    ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def main() -> int:

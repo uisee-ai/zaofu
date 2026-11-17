@@ -1,13 +1,14 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Check, X, MessageSquare } from "lucide-react";
 import type { PlanPreview } from "../../api/types";
+import { usePlanReviewBody } from "./usePlanReviewBody";
 import { MarkdownText } from "../agent-session/MarkdownText";
 const PlanReviewReader = lazy(() => import("./PlanReviewReader"));
 const PlanArtifactChat = lazy(() => import("../workflow/PlanArtifactChat"));
 
 export function PlanPreviewOverlay({
   projectId,
-  preview,
+  preview: envelope,
   loading,
   busy,
   rejectReason,
@@ -46,9 +47,11 @@ export function PlanPreviewOverlay({
 }) {
   const modal = useRef<HTMLDialogElement>(null);
   const [showContext, setShowContext] = useState(false);
+  const [bodyRequested, setBodyRequested] = useState(false);
+  const { preview, loading: bodyLoading, error: bodyError } = usePlanReviewBody(envelope, projectId, editing || showContext || bodyRequested);
   useEffect(() => { const element = modal.current; element?.showModal(); return () => element?.close(); }, []);
   const planId = preview?.plan_id || "";
-  const disabled = Boolean(actionKey && busy.endsWith(`:${actionKey}`));
+  const disabled = Boolean((actionKey && busy.endsWith(`:${actionKey}`)) || (planId && busy.endsWith(`:${planId}`)));
   const isPrdPlan = preview?.stage_id === "prd-plan"
     || preview?.pdd_id?.startsWith("TASK-")
     || preview?.trace_id?.includes("-prd-");
@@ -88,10 +91,12 @@ export function PlanPreviewOverlay({
         <main className={`plan-preview-reader${editing ? " plan-preview-editing" : ""}`}>
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
+          {bodyError && <p role="alert">审阅正文读取失败：{bodyError}</p>}
+          {bodyLoading && <p role="status">正在读取审阅正文，其他视图仍可使用…</p>}
           {loading ? <p className="muted">Loading...</p> : <Suspense fallback={<p className="muted">Loading...</p>}>
             {preview && (editing
-              ? <PlanArtifactChat key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} disabled={disabled} onBusy={onReviewBusy} onApplied={onApplied} />
-              : <PlanReviewReader key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} />)}
+              ? (preview.content_state === "deferred" ? <p>正在加载可引用的同版正文…</p> : <PlanArtifactChat key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} disabled={disabled} onBusy={onReviewBusy} onApplied={onApplied} />)
+              : <PlanReviewReader key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} onBodyRequested={setBodyRequested} />)}
           </Suspense>}
         </main>
         <aside className="plan-preview-context" hidden={!showContext}>

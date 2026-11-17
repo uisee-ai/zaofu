@@ -1001,6 +1001,12 @@ def run(args: argparse.Namespace) -> int:
             _preserved_run_manager_start_context(config, state_dir)
         )
 
+        # Declare source resources before tmux creates a shell whose cwd is
+        # the project. That shell is correctly treated as a live holder later.
+        if config.runtime.workdirs.enabled and not dry_run:
+            from zf.runtime.environment_resources import register_environment_resources
+            register_environment_resources(project_root, config.runtime.workdirs.provision_paths)
+
         # 6. Initialize transport (creates tmux session today)
         transport = make_transport(config, dry_run=dry_run)
         if not _initialize_start_transport(
@@ -1543,13 +1549,9 @@ def run(args: argparse.Namespace) -> int:
         return 1
     finally:
         if autoresearch_resident_sidecar is not None:
-            from zf.runtime.autoresearch_resident_sidecar import (
-                stop_autoresearch_resident_sidecar,
-            )
-
-            stop_autoresearch_resident_sidecar(
-                autoresearch_resident_sidecar,
-                event_log=event_log,
+            from zf.runtime.autoresearch_parent_exit import finish_resident_on_parent_exit
+            finish_resident_on_parent_exit(
+                autoresearch_resident_sidecar, config=config, event_log=event_log,
             )
         if feishu_inbound_sidecar is not None:
             from zf.runtime.feishu_inbound_sidecar import (

@@ -439,7 +439,8 @@ def run_standard_tick_services(
         except Exception:
             pass
 
-    if now - state.last_supervisor_inspection_at >= intervals.supervisor_inspection_s:
+    supervisor_due = now - state.last_supervisor_inspection_at >= intervals.supervisor_inspection_s
+    if supervisor_due:
         state.last_supervisor_inspection_at = now
         supervisor_inspection = _run_supervisor(
             state_dir=state_dir,
@@ -533,6 +534,22 @@ def run_standard_tick_services(
             run_manager_result.repairs_dispatched > 0
             or source_repair_dispatched
         )
+
+    if not supervisor_due:
+        from zf.runtime.recovery_tick_wake import has_new_recovery_input
+
+        recovery_inputs = event_log.read_all()
+        if has_new_recovery_input(recovery_inputs, state.last_run_manager_input_event_id) and _run_manager_tick_due(
+            state=state, events=recovery_inputs, now=now,
+            idle_refresh_s=intervals.run_manager_idle_refresh_s,
+        ):
+            run_manager_result = _run_run_manager(
+                orchestrator=orchestrator, event_log=event_log, writer=event_writer,
+                state_dir=state_dir, config=config, project_root=project_root,
+            )
+            state.last_run_manager_tick_at = now
+            state.last_run_manager_input_event_id = _latest_run_manager_input_id(recovery_inputs)
+            self_repair_consumer = bool(run_manager_result.repairs_dispatched > 0)
 
     stillness_state_label = ""
     stillness_redriven = 0
