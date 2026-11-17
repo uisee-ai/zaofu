@@ -1,5 +1,8 @@
 # Task Pipeline 上下文发布与恢复
 
+自定义工作区恢复、当前阶段接力视图及受控输入续读的补强见
+[任务接力可靠性](task-handoff-reliability.md)。
+
 局部重规划保留代码、合同代次及下游调度的完整 mock 链路与候选冻结修复，见
 [断点恢复闭环验证](recovery-closure-validation.md)。冻结须覆盖同一 Run 全部当前任务，
 不能仅因修订任务完成就忽略沿用旧代次的下游任务。

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -19,21 +20,34 @@ from zf.runtime.artifact_read_ledger_validation import _parse_ledger
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def resume_position(
+@dataclass(frozen=True)
+class ResumeDecision:
+    index: int = 0
+    offset: int = 0
+    reason: str = "evidence_unavailable"
+
+
+def resume_position(*args: Any, **kwargs: Any) -> tuple[int, int]:
+    """Compatibility cursor for callers that do not display a decision reason."""
+    decision = resume_decision(*args, **kwargs)
+    return decision.index, decision.offset
+
+
+def resume_decision(
     state_dir: Path, *, manifest: dict[str, Any], identity: dict[str, Any],
     bundle_digest: str, groups: list[dict[str, Any]], receipts: list[list[dict[str, Any]]],
     event_log: Any = None,
-) -> tuple[int, int]:
+) -> ResumeDecision:
     """Return the first gap; unavailable or inconsistent evidence starts over."""
     attempt = str(manifest.get("attempt_id") or "")
     operation = str(identity.get("operation_id") or "")
     if not attempt or not operation or identity.get("provider") != "codex":
-        return 0, 0
+        return ResumeDecision(reason="unsupported_identity_or_provider")
     try:
         registry = RoleSessionRegistry(state_dir / "role_sessions.yaml", state_dir.parent)
         session = str(registry.get(identity["actor"]) or "")
         if not session:
-            return 0, 0
+            return ResumeDecision(reason="session_unbound")
         from zf.cli.artifact_resume_boundary import continuation_boundary, _epoch
 
         boundary = continuation_boundary(
@@ -41,7 +55,7 @@ def resume_position(
             actor=identity["actor"], session_id=session,
         )
         if boundary is None:
-            return 0, 0
+            return ResumeDecision(reason="continuation_boundary_unavailable")
         active = active_read_ledger_path(state_dir, attempt)
         paths = sorted(active.parent.glob("read-ledger-*.jsonl"))
         if active.exists():
@@ -50,7 +64,7 @@ def resume_position(
         for path in paths:
             raw = path.read_bytes()
             if path != active and not path.stem.endswith(hashlib.sha256(raw).hexdigest()[:16]):
-                return 0, 0
+                return ResumeDecision(reason="read_ledger_invalid")
             rows.extend(_parse_ledger(raw, expected_attempt_id=attempt))
         candidates = [row for row in rows if row.get("operation_id") == operation
                       and row.get("bundle_digest") == bundle_digest
@@ -58,9 +72,13 @@ def resume_position(
                       and row.get("consumer_role") == identity["role"]
                       and row.get("consumer_provider") == identity["provider"]
                       and row.get("consumer_purpose") == identity["purpose"]]
+        if not candidates:
+            return ResumeDecision(reason="compatible_receipts_missing")
         observed = observe_artifact_delivery(state_dir, candidates)
         observed = [row for row in observed if row.get("provider_delivery_status") == "observed_in_transcript"
                     and row.get("provider_session_id") == session]
+        if not observed:
+            return ResumeDecision(reason="current_session_delivery_unverified")
         if boundary:
             retained = []
             for row in observed:
@@ -74,6 +92,8 @@ def resume_position(
                 except (OSError, ValueError, KeyError, TypeError):
                     continue
             observed = retained
+            if not observed:
+                return ResumeDecision(reason="delivery_predates_compaction")
         bodies: dict[str, Any] = {}
         for index, (group, aliases) in enumerate(zip(groups, receipts, strict=True)):
             selection = group.get("selection")
@@ -123,7 +143,7 @@ def resume_position(
                 ends.append(end)
             position = min(ends, default=0)
             if position < total:
-                return index, position
-        return len(groups), 0
+                return ResumeDecision(index, position, "observed_prefix" if index or position else "coverage_gap")
+        return ResumeDecision(len(groups), 0, "observed_complete")
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
-        return 0, 0
+        return ResumeDecision(reason="evidence_invalid")

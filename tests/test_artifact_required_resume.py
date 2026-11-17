@@ -79,6 +79,13 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
     outputs = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert len(outputs) == pages
     resumed = outputs[0]
+    compatible = witness in {"observed", "compacted_before_delivery"}
+    assert resumed["continuation"]["mode"] == ("resume" if compatible else "full")
+    assert resumed["continuation"]["skipped_chars"] == (first["items"][0]["page_end"] if compatible else 0)
+    assert resumed["continuation"]["current_memory"] == "unknown"
+    assert resumed["continuation"]["reason"]
+    assert resumed["continuation"]["required_occurrences"] == 1
+    assert resumed["continuation"]["distinct_bodies"] == 1
     for before, after in zip(outputs, outputs[1:]):
         assert after["items"][0]["page_start"] == before["items"][-1]["page_end"]
     assert resumed["items"][0]["page_start"] == (first["items"][0]["page_end"] if witness in {"observed", "compacted_before_delivery"} else 0)
@@ -122,7 +129,22 @@ def test_resume_requires_matching_operation_and_gap_free_pages(tmp_path, monkeyp
         f.write(json.dumps({"timestamp": (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat(),
             "type": "response_item", "payload": {"type": "function_call_output", "call_id": "2", "output": raw2}}) + "\n")
     assert main([*cmd, "--resume"]) == 0
-    assert json.loads(capsys.readouterr().out)["items"] == []
+    third_raw = capsys.readouterr().out.strip()
+    third = json.loads(third_raw)
+    assert third["items"] == []
+    assert third["continuation"]["reason"] == "observed_complete"
+    assert third["continuation"]["skipped_chars"] == 10000
+    assert len(third_raw.encode()) < len(raw.encode())
+    # Explicit opt-out reproduces the full first page despite prior witnesses.
+    assert main(cmd) == 0
+    full_raw = capsys.readouterr().out.strip()
+    full = json.loads(full_raw)
+    assert full["items"][0]["page_start"] == 0
+    assert "continuation" not in full
+    # Independent reconstruction proves that the resumed delivery omitted no body.
+    reconstructed = page["items"][0]["content"] + page2["items"][0]["content"]
+    assert reconstructed == "x" * 10000
+    print(f"continuation comparison: full-first-page={len(full_raw.encode())}B complete-resume={len(third_raw.encode())}B; body=10000 chars")
     from zf.runtime.artifact_read_ledger import seal_read_ledger
     from zf.runtime.artifact_read_ledger_validation import validate_required_reads
 

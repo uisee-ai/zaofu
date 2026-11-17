@@ -37,6 +37,13 @@ def checkpoint_root(state_dir: Path, project_root: Path, config: Any,
     role = next((r for r in config.roles if r.instance_id == worker), None)
     if role is None:
         raise ValueError("checkpoint worker is not registered")
+    from zf.core.events import EventLog
+    from zf.runtime.task_workspace_binding import resolve_task_workspace
+
+    task_root = resolve_task_workspace(state_dir=state_dir, project_root=project_root,
+        config=config, task=task, events=EventLog(state_dir / "events.jsonl").read_all())
+    if task_root is not None:
+        return task_root
     plan = WorkdirManager(state_dir=state_dir, project_root=project_root, config=config).plan(role)
     if plan.mode == "dry-run":
         return project_root
