@@ -1,6 +1,7 @@
 # Critic 阅读成本与 Channel 交付收敛
 
-> 状态: active
+> 状态: done
+> 实现提交: `5536738d` — feat: reduce scoped critic delivery and channel generation cost
 
 用户批准结合 208 评估报告及 2.30 倍成本分析继续实施。基线 d026a57f，沿用原 worktree；不 merge/push。依据 [208 Spec](../../docs/design/208-demand-critic-input-and-convergence.md) 的第二批实施范围。
 
