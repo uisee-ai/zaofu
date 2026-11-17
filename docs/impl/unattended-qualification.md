@@ -69,6 +69,8 @@ continue 仅在主目标完成后移交已运行的 resident，保留其 singlet
 当前宿主、容器测试不能替代新 PRD 到 `run.goal.completed` 的验收。每轮临时干预记录为该轮无人资格失败；
 修复后再启动新轮，不用旧轮结果冒充新源码全流程通过。
 
+资格审查也对照批准正文与实际行为，而非只看 Task done。R9 的数字任务在独立 Verify 中仍采用与批准正文相反的边界 oracle；方法层在 `zf-plan-execution-readiness/references/execution-consistency.md` 增加正文条款到下游必读位置的明确对账，并用 `tests/fixtures/plan-counterexamples/cases.json` 保留正反校准例。夹具和技能物化通过不代表语义判断已改善，仍需真实复审和产品断言验证。
+
 ## 自动修复的额外隔离修正
 
 旧 self-repair 启动器曾使用 Provider sandbox bypass 参数；本批移除，Codex 固定 workspace-write。
