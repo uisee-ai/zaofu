@@ -60,6 +60,9 @@ Agent, and Feishu interaction in one product walkthrough.
 
 ## Quick Start
 
+首次安装可运行 `./install.sh`，选择本机独立使用（默认）、本机注册到 Controller，或前往云端申请实例。
+非交互使用 `./install.sh --mode standalone`；详见[安装说明](docs/manual/getting-started/install.md)。
+
 From a ZaoFu source checkout, install the common development and runtime
 dependencies, then inspect the recommended product Controller for a target
 project:

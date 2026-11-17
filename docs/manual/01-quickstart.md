@@ -31,6 +31,11 @@
 
 ## 1. 安装 ZaoFu（必需）
 
+首次安装可在源码根目录运行 `./install.sh`，选择独立使用、接入 Controller，或前往云端门户。
+默认 standalone 不要求 Controller 账号。脚本安装用户级依赖、构建并启动 Dashboard；
+非交互使用 `./install.sh --mode standalone`。注册码、远程访问和重复安装说明见
+[安装与 Controller 选择](getting-started/install.md)。下面保留开发者手动安装路径。
+
 必需环境：
 
 - Python 3.11+、`uv`、Git、`tmux`；
