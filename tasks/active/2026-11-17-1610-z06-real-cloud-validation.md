@@ -34,3 +34,9 @@
 - 资格脚本增强：从 containerd 的 manifest target 取摘要并核对 OCI 内容及 Pod
   imageID 的解析关系；Docker 29 的 image ID 在本环境实际是 manifest digest，
   不能按旧版行为误判为 config digest。保留归档摘要与运行源码哈希作交叉证据。
+
+- `budget-bob-1` 在干净租户真实复验调用前额度拒绝：用量条目和预留均无增量。
+  额度恢复保留已用量，真实调用成功；公开 Session 唯一。Controller session.stop
+  在约 10.5 秒终止 Codex 启动的 sleep 90，后续调用被 fence 拒绝，显式 resume 后成功。
+  取消/恢复原生计量边界不足，最终 46,358 tokens 已知、65,536 预留未结；不可将
+  未知部分视为零或借重置额度清除。完整 Workflow 另在无旧责任的批准租户验证。

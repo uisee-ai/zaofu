@@ -174,3 +174,8 @@ Provider 故障样本。没有这个证据的失败仍保持未知，不按错�
 回归覆盖真实 decorator → EventWriter/Collector，以及实际 Web action caller 的拒绝
 与普通 Provider 异常。实验中旧错误记录继续保留，不修改已 ACK message 的正文；
 新部署使用新 turn 验证拒绝记录增量为零。
+
+真实 `budget-bob-1` 已验证新部署的额度拒绝不会制造消费、公开 Session stop 能终止
+实际 Provider 子进程、关闭后拒绝执行、显式 resume 后恢复。取消调用没有独立原生
+usage，恢复后的累计 token_count 不能唯一分摊给两次调用；未结预留保留。这是明确
+的计量缺口，不能以停止成功或后续推理成功宣称取消消费结算通过。
