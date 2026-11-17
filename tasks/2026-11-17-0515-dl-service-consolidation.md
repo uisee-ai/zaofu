@@ -13,6 +13,7 @@ Autoresearch 与角色会话，验证原 Run 恢复后退役四个旧 services w
 - Reader/Synth 仅根据同一请求与 attempt 的新增必读覆盖继续传输恢复；无进展仍受限。
 - Reader 精确检查点恢复保留请求、读取账本和费用绑定，拒绝语义失败、policy 拒绝和身份漂移。
 - 适配现有 `reader_dispatch_recovery` 的角色占用、预算修正和暂缓派发逻辑。
+- 部署预检发现旧 Run 的直接阻塞为 Synth 超时；补充显式审批的精确超时检查点恢复，保留读取账本并验证停机与中断重放。
 
 ## 验收
 

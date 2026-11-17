@@ -55,3 +55,20 @@ runtime CLI 路径。中途失败可以重放，事件按精确 failure id 去�
 验证入口：`tests/test_reader_progress_recovery.py`、
 `tests/test_reader_restart_checkpoint.py`，并覆盖既有 Reader/Synth 重启、
 operation closeout、fanout 投影、CLI、Run admission 和 mock flow 回归。
+
+## 无审查结果的 Synth 超时
+
+`zf restart plan-critic --resume-failed-synth <fanout.synth.completed-event-id>
+--recovery-approval-ref <project-local-json>` 也支持 Kernel 记录的 `synth_timeout`。
+审批正文使用 `action: resume-synth-checkpoint`，并绑定 `failure_event_id` 和
+`workflow_run_id`。仅接受没有报告、没有准入结果且保有有效必读进展的原请求。
+输入 manifest、原 attempt、角色和请求哈希必须一致；更新的同阶段 fanout、其他
+占用该角色的操作、活跃 Provider turn、policy 拒绝和终态 Run 均不可恢复。
+
+若 Run 被阻塞，必须证明其唯一当前终态沿 stage-cap escalation、阶段失败追溯至
+该超时。优雅停机留下的 suspended operation 经 `WorkflowOperationService`
+重投准入后，再通过 EventWriter 和 TaskStore 恢复 Run/任务并派发原 Synth。
+角色 respawn lease 覆盖整个过程，恢复中断可重放；原读取账本、费用绑定、候选
+和历史失败保持原样。该入口不启动新规划代际，也不替代 Critic 的语义判断。
+
+真实 CLI 调用链与中断重放回归见 `tests/test_synth_timeout_checkpoint.py`。
