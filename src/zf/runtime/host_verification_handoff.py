@@ -76,7 +76,8 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         media = (' Read-only media indices (paths relative to state_dir, source/digests bound): '
                  + ', '.join(str(service.state_dir / ref['ref']) for ref in indices)
                  + '. Open the indexed image files directly with the image viewer; do not extract to scratch '
-                 'or /proc. Review images and recorded trace/video independently; files alone are not a verdict.') if indices else ''
+                 'or /proc. Evaluate only the frozen acceptance obligations: distinguish media retention '
+                 'from playback review, and do not infer either from file presence alone.') if indices else ''
         payload = {'repaired_failure_event_id': failure.id, 'approval_ref': policy.approval_ref,
             'reason': 'Preauthorized container execution evidence is available for the original frozen target; independent verification required.',
             'operator_feedback': [

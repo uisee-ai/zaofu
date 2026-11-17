@@ -197,7 +197,7 @@ Persist large screenshots, traces, and pixel reports as sidecars and return
 their exact ref/digest in the Product Acceptance Report. Do not embed image
 bodies in events or let narrative "looks correct" replace observable checks.
 
-容器回执的媒体若已由运行时提供 `container-media-index.v1`，先核对原证据摘要、候选和镜像，再按索引的 state_dir 相对路径用图片工具直接查看。媒体索引是可重建的只读投影，不能替代原回执或业务断言；可通过记录的 trace / 视频检查交互顺序。不要为读取图片写产品目录、结果 scratch 或尝试 `/proc` 内存文件。若没有可读媒体路径，明确报告证据交付缺口，不能以文件存在或监工看过代替独立视觉审查。
+容器回执的媒体若已由运行时提供 `container-media-index.v1`，先核对原证据摘要、候选和镜像，再按索引的 state_dir 相对路径用图片工具直接查看。媒体索引是可重建的只读投影，不能替代原回执或业务断言；按冻结验收条款区分媒体留存、交互证明与播放审阅：留存需核验回执、摘要和身份；交互可使用契约认可的 DOM 断言、trace、截图或视频。只有条款明确要求播放/解码时，才将缺少播放器记作该义务的阻塞；不能临时新增播放义务，也不能豁免已经明确要求的播放检查。不要为读取图片写产品目录、结果 scratch 或尝试 `/proc` 内存文件。若没有可读媒体路径，明确报告证据交付缺口，不能以文件存在或监工看过代替独立视觉审查。
 
 **A verify/review child report is a structured contract, not free text.** Since
 FIX-14, the `report` payload on verify/review child events is validated against
