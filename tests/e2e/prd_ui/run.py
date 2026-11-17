@@ -24,7 +24,7 @@ def command(args, *, cwd, env, **kwargs):
 
 
 def prepare(root: Path, mode: str, journey: str, *, review_policy=None,
-            channel_template="prd-clarification") -> tuple[Path, dict[str, str]]:
+            channel_template="prd-clarification", channel_model="", channel_reasoning="") -> tuple[Path, dict[str, str]]:
     root.mkdir(parents=True, exist_ok=False)
     project = root / "project"
     project.mkdir()
@@ -62,6 +62,10 @@ def prepare(root: Path, mode: str, journey: str, *, review_policy=None,
     spec["runtime"]["autoresearch_resident"] = {"enabled": False}
     # Keep the Channel production budget; do not inherit Kanban's shorter test turn limit.
     spec.setdefault("channel", {})["provider_timeout_seconds"] = 1800
+    if channel_model:
+        spec["channel"]["codex_model"] = channel_model
+    if channel_reasoning:
+        spec["channel"]["codex_reasoning_effort"] = channel_reasoning
     # Fake starts with a different policy, forcing a real Apply/consumer handoff.
     spec["workflow"]["plan_approval"] = mode != "fake"
     if journey == "channel-recovery":
@@ -101,6 +105,9 @@ def main() -> int:
     parser.add_argument("--review-policy", type=Path, help="Explicit Owner-authorized plan_review JSON")
     parser.add_argument("--channel-template", choices=["prd-clarification", "prd-clarification-on-demand"],
                         default="prd-clarification")
+    parser.add_argument("--channel-model", default="", help="Project-local Codex model pin for Channel evaluation")
+    parser.add_argument("--channel-reasoning", default="", choices=["", "low", "medium", "high", "xhigh"],
+                        help="Project-local Codex reasoning pin; default preserves existing behavior")
     parser.add_argument("--delivery", action="store_true", help="Wait for a reviewed local authorization before UI Plan approval")
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--skip-build", action="store_true")
@@ -135,7 +142,8 @@ def main() -> int:
     if not args.skip_build:
         command(["npm", "--prefix", "web", "run", "build"], cwd=REPO, env=os.environ)
     project, env = prepare(root, args.provider, args.journey, review_policy=review_policy,
-                          channel_template=args.channel_template)
+                          channel_template=args.channel_template, channel_model=args.channel_model,
+                          channel_reasoning=args.channel_reasoning)
     port_lock = open("/tmp/zf-prd-ui-port-allocation.lock", "a")
     fcntl.flock(port_lock, fcntl.LOCK_EX)
     port = 8002
@@ -155,6 +163,8 @@ def main() -> int:
     manifest["workflow_runtime"] = args.workflow_runtime
     manifest["requested_review_policy"] = review_policy
     manifest["channel_template"] = args.channel_template
+    manifest["channel_model"] = args.channel_model
+    manifest["channel_reasoning_effort"] = args.channel_reasoning
     if args.provider == "fake":
         manifest["fake_fault"] = env.get("ZF_UI_FAKE_FAULT", "")
     manifest["owner_checkpoint_required"] = args.owner_checkpoint

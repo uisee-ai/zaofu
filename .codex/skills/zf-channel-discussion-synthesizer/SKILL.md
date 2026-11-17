@@ -17,6 +17,9 @@ PRD、review 或 Workflow 阶段；如已有完整文件，给出群内可预览
 没有完整文件时不要用内存中的字节数/哈希代替交付。
 
 正式 synthesis 由 Runtime 保存 PRD，`read_only` 不妨碍结构化交付，无需因此请求提权。
+完整 PRD 只出现在一种结构化正文载体中；JSON 外、reply_text 和 summary 不重复整篇。
+结构/类型修复保留已有效的需求和正文，只修复被指出的字段及关联一致性；返回完整修正对象，
+不先写另一篇长草稿。独立需求复核仍须执行，不能为省 token 忽略来源或替 Owner 决策。
 若请求给出 `prd_source_file`，完整阅读该不可变快照与所需讨论来源。保留全文时返回
 `prd_file: {ref, sha256}`（与该 descriptor 精确一致），同时提供完整需求覆盖、验收、
 决策和来源声明；需要修改长文件时优先 `prd_composition: {source_ref, source_digest, edits, appendix_markdown}`，

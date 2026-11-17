@@ -162,7 +162,8 @@ def _is_simple_controlled_zf_result_command(
 
 def write_target_paths(tool_name: str, tool_input: dict) -> list[str]:
     """Return explicit paths targeted by provider-native write tools."""
-    return [path for _operation, path in write_target_operations(tool_name, tool_input)]
+    # Parent directory creation is checked by the workdir guard, not file globs.
+    return [path for operation, path in write_target_operations(tool_name, tool_input) if operation != "mkdir"]
 
 
 def runtime_write_guard_text(tool_name: str, tool_input: object) -> str:
@@ -185,6 +186,10 @@ def write_target_operations(
     """Return normalized operation/path pairs for provider-native writes."""
 
     lower = tool_name.lower().strip()
+    if lower in {"bash", "shell"}:
+        from zf.cli.literal_shell_write import literal_shell_write_targets
+
+        return literal_shell_write_targets(str(tool_input.get("command") or ""))
     if lower in {"write", "edit", "multiedit", "notebookedit"}:
         raw = (
             tool_input.get("file_path")
@@ -377,7 +382,8 @@ def evaluate_workdir_write_guard(
         target = Path(raw_target)
         target = target if target.is_absolute() else cwd / target
         if (
-            any(_path_is_within(target, root) for root in project_roots)
+            (tool_name.lower() in {"bash", "shell"}
+             or any(_path_is_within(target, root) for root in project_roots))
             and not any(
                 _path_is_within(target, root) for root in allowed_workdirs
             )
@@ -390,7 +396,7 @@ def evaluate_workdir_write_guard(
             ) and operation in {"update", "write", "edit", "multiedit", "notebookedit"}:
                 continue
             offending.append(str(target))
-    if tool_name.lower() in {"bash", "shell"}:
+    if tool_name.lower() in {"bash", "shell"} and not targets:
         for project_path in project_roots:
             if (
                 mutating_shell

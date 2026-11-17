@@ -158,7 +158,9 @@ def dispatch_reply_request(
         backend = str(member.get("backend") or request.get("backend") or "").strip().lower()
         if backend in HEADLESS_BACKENDS and not (_worker_session(member) or request.get("worker_session_id")) and deterministic_reply is None:
             request = {**request, "provider_timeout_seconds": _channel_provider_headless_timeout_s(config),
-                       "codex_context_window_tokens": config.channel.codex_context_window_tokens if config else 0}
+                       "codex_context_window_tokens": config.channel.codex_context_window_tokens if config else 0,
+                       "codex_model": str(member.get("model") or (config.channel.codex_model if config else "")),
+                       "codex_reasoning_effort": str(member.get("thinking_level") or (config.channel.codex_reasoning_effort if config else ""))}
         run_fields = provider_run_fields_for_request(channel_id, request)
         started = writer.emit(
             "channel.agent.reply.started",
@@ -179,6 +181,8 @@ def dispatch_reply_request(
                 "worker_session_id": _worker_session(member) or str(request.get("worker_session_id") or ""),
                 "provider_timeout_seconds": request.get("provider_timeout_seconds", 0),
                 "codex_context_window_tokens": request.get("codex_context_window_tokens", 0),
+                "codex_model": request.get("codex_model", ""),
+                "codex_reasoning_effort": request.get("codex_reasoning_effort", ""),
                 **run_fields,
                 "source": source,
             },
@@ -688,7 +692,8 @@ def _run_headless_reply(
     from zf.runtime.channel_provider_config import channel_codex_backend
     adapters = backends or {
         "claude-headless": ClaudeHeadlessBackend(),
-        "codex-headless": channel_codex_backend(int(request.get("codex_context_window_tokens") or 0)),
+        "codex-headless": channel_codex_backend(int(request.get("codex_context_window_tokens") or 0),
+            model=str(request.get("codex_model") or ""), reasoning_effort=str(request.get("codex_reasoning_effort") or "")),
     }
     adapter = adapters.get(backend)
     if adapter is None:
@@ -842,6 +847,7 @@ def _run_headless_reply(
                 )
             return adapter.run_turn(
                 **({"image_inputs": image_inputs} if image_inputs else {}),
+                **({"model": request["codex_model"]} if backend == "codex-headless" and request.get("codex_model") else {}),
                 prompt=turn_prompt,
                 cwd=project_root,
                 system_prompt=system_prompt,
@@ -851,7 +857,7 @@ def _run_headless_reply(
                 on_message=visible_stream.emit,
                 timeout_s=remaining,
                 execution_deadline=deadline,
-                thinking_level=str(member.get("thinking_level") or ""),
+                thinking_level=str(member.get("thinking_level") or (request.get("codex_reasoning_effort") if backend == "codex-headless" else "") or ""),
                 run_id=str(run_fields["run_id"]),
                 run_thread_id=thread_id,
                 project_id=str(channel.get("project_id") or channel_id),

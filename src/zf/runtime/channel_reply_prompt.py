@@ -379,6 +379,10 @@ def channel_reply_response_contract(
             "A local file link or success summary alone is not a published PRD. " +
             source_reuse +
             "prd_markdown, when used instead, is the complete standalone PRD Markdown. "
+            "Return the complete PRD only once, inside prd_markdown (or the existing prd_file ref). "
+            "Do not print a second full PRD before or after the structured JSON, or repeat it in reply_text/summary. "
+            "For a mechanical contract repair, retain valid requirements and prose; repair the named fields "
+            "and their dependent references, then submit the complete corrected object without a separate prose draft. "
             "For a newly authored formal PRD set spec_format=prd-spec.v1 and document_control "
             "with revision, status, owner, and profile=lite or full. Use the standard sections "
             "Overview, Background and Problem, Goals/Non-goals/Scope, User Personas and "

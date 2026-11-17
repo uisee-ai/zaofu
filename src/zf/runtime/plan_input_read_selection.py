@@ -89,20 +89,30 @@ def select_plan_input_reads(
         # or multiply declared ports and any source explicitly carrying authority.
         declarations: dict[tuple, set[str]] = {}
         core_refs: set[str] = set()
+        index_owners: dict[str, set[tuple]] = {}
         for key, body in bodies.items():
             if not str(key[0]).startswith("child-result-") or not isinstance(body, dict):
                 continue
             core_refs.update(body[field] for field in (
-                "plan_artifact_ref", "plan_ref", "task_map_ref", "source_index_ref", "requirement_spec_ref",
+                "plan_artifact_ref", "plan_ref", "task_map_ref", "requirement_spec_ref",
             ) if isinstance(body.get(field), str) and body[field])
+            if isinstance(body.get("source_index_ref"), str) and body["source_index_ref"]:
+                index_owners.setdefault(body["source_index_ref"], set()).add(key)
             for port in body.get("plan_ports", []):
                 if isinstance(port, dict) and port.get("ref") and port.get("sha256"):
                     declarations.setdefault((port["ref"], port["sha256"]), set()).add(port.get("logical_name", ""))
         for key, source in source_map.items():
             names = declarations.get((source.get("ref"), source.get("sha256")), set())
+            index = bodies.get(key)
+            index_ports = [(digest, port_names) for (ref, digest), port_names in declarations.items()
+                           if ref == source.get("ref")]
+            known_index = (len(index_owners.get(source.get("ref"), set())) == 1
+                           and isinstance(index, dict) and index.get("schema_version") == "source-index.v1"
+                           and all(digest == source.get("sha256") and port_names == {"source_index"}
+                                   for digest, port_names in index_ports))
             if (key in bodies and str(key[0]).startswith("child-artifact-")
                     and source.get("ref") not in core_refs
-                    and len(names) == 1 and names <= SUPPLEMENTARY_PORTS):
+                    and (known_index or len(names) == 1 and names <= SUPPLEMENTARY_PORTS)):
                 optional.add(key)
     optional_text = {encode_selected(bodies[key]) for key in optional}
     result: list[dict[str, Any]] = []
@@ -122,7 +132,7 @@ def select_plan_input_reads(
         other_peers = peers - {encode_selected(body)}
         parts = _partition(body, other_peers)
         for path, value in parts:
-            if (targeted and re.fullmatch(r"\$\.plan_ports\[\d+\]\.body", path)
+            if (targeted and (path == "$.source_index" or re.fullmatch(r"\$\.plan_ports\[\d+\]\.body", path))
                     and encode_selected(value) in optional_text):
                 continue
             result.append({**row, "json_path": path,

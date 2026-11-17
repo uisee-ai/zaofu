@@ -330,7 +330,7 @@ _KNOWN_COST_KEYS = frozenset({
     "pricing_refresh_timeout_seconds",
     "backend_accounting_modes",
 })
-_KNOWN_CHANNEL_KEYS = frozenset({"agent_profiles", "semantic_source_max_chars", "codex_context_window_tokens", "provider_timeout_seconds"})
+_KNOWN_CHANNEL_KEYS = frozenset({"agent_profiles", "semantic_source_max_chars", "codex_context_window_tokens", "provider_timeout_seconds", "codex_model", "codex_reasoning_effort"})
 _KNOWN_CHANNEL_AGENT_PROFILE_KEYS = frozenset({
     "revision",
     "persona",
@@ -4638,8 +4638,13 @@ def _build_channel(data: object) -> ChannelConfig:
     timeout = data.get("provider_timeout_seconds", 0)
     if type(timeout) is not int or not 0 <= timeout <= 7200:
         raise ConfigError("channel.provider_timeout_seconds must be an integer between 0 and 7200")
-    return ChannelConfig(agent_profiles=profiles, semantic_source_max_chars=budget,
-                         codex_context_window_tokens=context_window, provider_timeout_seconds=timeout)
+    try:
+        return ChannelConfig(agent_profiles=profiles, semantic_source_max_chars=budget,
+                             codex_context_window_tokens=context_window, provider_timeout_seconds=timeout,
+                             codex_model=data.get("codex_model", ""),
+                             codex_reasoning_effort=data.get("codex_reasoning_effort", ""))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 _FEISHU_ROUTE_TARGETS = {

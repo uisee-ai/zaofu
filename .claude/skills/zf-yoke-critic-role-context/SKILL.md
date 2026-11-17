@@ -47,6 +47,10 @@ Local adaptation of yoke critic role context for ZaoFu.
 
 ## Plan Critic Gate (Skill-Owned)
 
+先读取本次批准的 `plan_review` 与 `zf-plan-execution-readiness/references/review-scope.md`。
+以下维度按声明的 targeted/full 范围适用，不能用角色通用清单将定向审查扩大为全文审批。
+只展开与 focus、共享约束和真实反证有关的方法引用；当前上下文仍有同版内容时不重复加载。
+
 加载 `zf-plan-execution-readiness`，逐条核对混合 AC 的验证责任、过大工作包、
 阶段集成和不合理依赖。把具体来源及判定写进 verdict；不能只按任务名豁免前置 AC。
 同时执行该方法的来源分类、跨域反例和最早反馈审查。返工 verdict 区分“已列修复关闭”

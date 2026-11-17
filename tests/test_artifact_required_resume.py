@@ -11,12 +11,14 @@ from zf.cli.main import main
 from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.runtime.artifact_read_ledger import build_attempt_source_manifest, write_attempt_source_manifest
+from zf.runtime.artifact_text_page import parse_artifact_page
 
 
 @pytest.mark.parametrize("witness", ["observed", "missing", "wrong_session", "truncated",
                                       "wrong_bundle", "wrong_operation", "wrong_actor", "gap", "tampered_output",
                                       "compacted_event", "compacted_transcript", "compacted_before_delivery"])
-def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_path, monkeypatch, capsys, witness):
+@pytest.mark.parametrize("output_format", ["json", "text"])
+def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_path, monkeypatch, capsys, witness, output_format):
     state = tmp_path / "state"
     source_path = state / "artifacts" / "input.json"
     source_path.parent.mkdir(parents=True)
@@ -32,10 +34,10 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
         writer.append(ZfEvent(type=typ, payload={"operation_id": "op-1", "active_attempt_id": "attempt-1"}))
     writer.append(ZfEvent(type="task.dispatched", payload={"attempt_id": "attempt-1", "required_reads": [
         {"source_id": "s", "artifact_id": "a", "artifact_sha256": source["sha256"], "json_path": "$.body"}]}))
-    command = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state), "--required"]
+    command = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state), "--required", "--format", output_format]
     assert main(command) == 0
     first_raw = capsys.readouterr().out.strip()
-    first = json.loads(first_raw)
+    first = parse_artifact_page(first_raw)
     assert first["next_cursor"]
     if witness in {"wrong_bundle", "wrong_operation", "wrong_actor", "gap", "tampered_output"}:
         from zf.runtime.artifact_read_ledger import active_read_ledger_path
@@ -75,7 +77,7 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
                               ts=(datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()))
 
     assert main([*command, "--resume"]) == 0
-    resumed = json.loads(capsys.readouterr().out)
+    resumed = parse_artifact_page(capsys.readouterr().out.rstrip("\n"))
     assert resumed["items"][0]["page_start"] == (first["items"][0]["page_end"] if witness in {"observed", "compacted_before_delivery"} else 0)
 
 
