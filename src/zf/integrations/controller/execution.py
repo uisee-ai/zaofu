@@ -287,7 +287,8 @@ def managed_turn(function):
         previous_id = values.get('provider_session_id', '')
         before = snapshot(binding[2], native_provider, previous_id)
         execution = Execution(binding, operation_id=operation, provider=provider,
-                              model=values.get('model', ''), session_id=values['thread_id'])
+                              model=values.get('model', ''),
+                              session_id=values.get('run_thread_id') or values['thread_id'])
         execution.body.update(native_before=before, native_session_id=previous_id)
         execution.begin(lambda: cancel_agent_session_run(key))
         callback = values.get('on_session_id')

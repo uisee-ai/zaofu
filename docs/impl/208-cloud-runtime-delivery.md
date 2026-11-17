@@ -143,3 +143,20 @@ applied=true，只有真实 heartbeat，后续合法版本仍可正常应用。�
 Connector，等待后续合法策略；普通身份/协议错误仍在监听前失败。无已应用策略和
 保留旧策略均覆盖，未签名请求始终 403。启动聚焦 21 项、直接调用闭包 68 项通过；
 claw02 的失败轮次 `recovery-2` 保留，真实恢复以随后复验结果为准。
+
+## Q01c：真实订阅用量与会话身份
+
+claw02 的 gVisor Pod 经 TLS Gateway 完成真实 Codex Kanban turn；按账号的 `model/list`
+选用可用模型后返回指定正文，Provider 总量 23,413（输入含缓存 23,401，缓存读 10,880，
+输出 12）。Controller 标准化为新输入 12,521 + 缓存读 10,880 + 输出 12，恰好一次
+入账；额度、Project/Session/Operation、排行和实际 Dashboard 相互核对通过。先前
+模型不受订阅支持的失败用量保持 pending/null，账单金额未知；不将它归零。
+
+进一步复盘发现 headless 的内部 thread binding 与公开 `run_thread_id` 不同，Connector
+此前使用前者形成第二个 Session，也使按公开 Session 提交的停止 fence 无法匹配
+该执行。`managed_turn` 改用已有的 `run_thread_id`，缺省仍用 `thread_id`；Provider
+内部绑定及 native session ID 保持各自职责。回归从真实 decorator、EventWriter、
+Collector 到受管 Session stop command 先红后绿，覆盖唯一 Session、费用归属、
+原生会话标识不改名及停止后再次调用在获得 lease 前被拒绝。直接调用与三类 headless
+后端、usage 和命令闭包 200 passed。历史已 ACK 的错误别名不改写，不重发不同正文；
+新部署还需使用新 Session 做真实取消复验。

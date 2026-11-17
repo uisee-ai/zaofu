@@ -22,3 +22,8 @@
 - `recovery-2` 进一步复现首次同步拒绝导致服务重启循环；补 `serve` 对已验证策略
   未应用的受限恢复，身份错误仍拒绝监听。启动聚焦 21 passed、直接调用闭包 68 passed，
   不把这些回归计为真实模型或完整 Workflow 证明。
+- 真实 `recovery-4`、`policy-3` 通过；`provider-smoke-6` 完成 gVisor Pod Codex
+  订阅模型调用，`provider-observability-1` 核对 23,413 tokens、额度、Session/Operation、
+  排行与 Dashboard。失败模型用量继续 unknown，不能代表实际费用或完整 Workflow。
+- 发现公开会话与内部线程身份分叉，导致重复 Session/停止 fence 失配；回归先红后绿，
+  直接影响闭包 200 passed。新实现仍待部署后真实会话停止复验，任务继续 active。

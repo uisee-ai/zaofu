@@ -155,6 +155,51 @@ def test_backend_reuse_is_admitted_each_turn_and_receipts_are_not_duplicated(man
     assert len(calls) == 2
 
 
+def test_managed_turn_uses_public_session_identity_for_receipts_and_remote_fences(managed):
+    config, peer, context, _ = managed
+    project_id = context.config.observability.controller.project_id
+    writer = EventWriter(event_log_from_project(context.state_dir, config=context.config))
+    writer.emit('agent.session.run.started', actor='web', payload={
+        'thread_id': 'visible-thread', 'run_id': 'turn-1', 'source': 'kanban'})
+    calls = []
+
+    class Backend:
+        backend_id = 'fixture'
+
+        @managed_turn
+        def run_turn(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(status='completed', provider_session_id='native-thread',
+                                   usage={'input_tokens': 12, 'output_tokens': 3})
+
+    backend = Backend()
+    args = dict(cwd=context.project_root, thread_id='internal-thread-binding',
+                run_thread_id='visible-thread', provider_session_id='', timeout_s=30)
+    result = backend.run_turn(**args)
+    writer.emit('agent.session.run.completed', actor='web', payload={
+        'thread_id': 'visible-thread', 'run_id': 'turn-1', 'source': 'kanban',
+        'provider_session_id': 'native-thread', 'usage': result.usage})
+    synchronize_workspace(config)
+    rows = [r['payload'] for r in peer.records.values()]
+    assert {r['session_id'] for r in rows if r['kind'] == 'session'} == {'visible-thread'}
+    assert {r['session_id'] for r in rows if r['kind'] == 'usage'} == {'visible-thread'}
+    assert calls[0]['thread_id'] == 'internal-thread-binding'
+    assert Ledger(config.state_dir).rows('execution')[0]['body']['native_session_id'] == 'native-thread'
+
+    peer.commands = [{'id': 'stop-visible-thread', 'workspace_id': config.workspace_id,
+        'deployment_id': peer.deployment_id, 'generation': 1, 'policy_version': 2,
+        'expires_at': int(time.time()) + 60, 'user_id': 'owner', 'session_id': 'login',
+        'payload': {'action': 'session.stop', 'project_id': project_id,
+                    'session_id': 'visible-thread', 'operation_id': None}}]
+    synchronize_workspace(config)
+    assert peer.command_receipts[-1]['status'] == 'completed'
+    leases = len(peer.leases)
+    with pytest.raises(ManagedDenied, match='admission is closed'):
+        backend.run_turn(**args)
+    assert len(calls) == 1 and len(peer.leases) == leases
+    writer.event_log.close()
+
+
 def test_managed_event_factory_uses_deployment_binding_without_editing_project(managed):
     config, _, context, _ = managed
     from zf.core.config.loader import load_config
