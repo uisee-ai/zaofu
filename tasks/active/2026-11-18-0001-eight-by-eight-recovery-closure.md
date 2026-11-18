@@ -97,3 +97,6 @@ stdin指引影响闭包808 passed / 1 skipped，sentinel53 passed；不将确定
 补修恢复来源的优先导航：使用原artifact read能力和原source/artifact/path分页读取，在runner探测前呈现绑定恢复材料；正文不内联、不减少必读、不将宿主收据等同通过。真实briefing入口RED2 failed/1 passed，定向55 passed；增加Verify方法并同步三份skill。共享输入/恢复影响闭包待追加。原Candidate、Plan、sandbox和自动宿主白名单均保持原绑定。
 
 恢复导航补修：定向55 passed；首次共享闭包在97%附近收到SIGTERM退出143，无完整结论，保留日志。以4进程重新完整运行同一选择闭包，3408 passed / 1 skipped / 1 failed；唯一失败仍为此前旧基线已复现的test_consumer_lock_contention_defers_without_reporting_failure，未修改其源码或掩盖失败。premerge sentinel53 passed。真实模型需加载新briefing后验证，整批保持active。
+
+
+真实lane0仍等待的另一根因：旧代从未派发的request在环境等待失败后仍requested，后续角色释放及宿主绑定都被它阻挡。沿已接入runtime的reader terminal reconciliation补齐：仅Kernel环境等待失败、完整Run/Stage/Role/Attempt及不可变request中的fanout/child绑定、无任何启动/派发且无更新事件的requested才转机械failed；保留原失败causation，不编造语义结果、不改历史。实际runtime入口RED1 failed/12 passed；定向41 passed，影响闭包149 passed，sentinel53 passed。当前七个新reader已真实优先读取恢复上下文；第八槽位由operator受控暂停以补采精确命令，待验证补丁加载和官方restart。

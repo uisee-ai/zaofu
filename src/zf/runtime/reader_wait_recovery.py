@@ -8,6 +8,57 @@ from zf.core.config.schema import RoleConfig
 from zf.core.events.model import ZfEvent
 
 
+def reconcile_undelivered_wait_failures(runtime: Any, events: list[ZfEvent]) -> bool:
+    """Close only a failed wait's exact request when no provider ever received it."""
+    from zf.runtime.call_result_runtime import workflow_operation_service
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    failures = [e for e in events if e.type == 'fanout.child.failed' and e.origin == 'kernel'
+                and e.payload.get('failure_class') == 'reader_environment_wait_exhausted']
+    if not failures:
+        return False
+    positions = {e.id: i for i, e in enumerate(events)}
+    for op in reduce_workflow_operations(events).values():
+        if (op.get('status') != 'requested' or op.get('operation_type') != 'fanout_reader_child'
+                or op.get('started_event_id') or op.get('call_result_admitted_event_id')):
+            continue
+        for failed in reversed(failures):
+            p = failed.payload
+            bindings = {'workflow_run_id': p.get('workflow_run_id'),
+                        'parent_stage_id': p.get('stage_id'), 'role_instance': p.get('role_instance'),
+                        'active_attempt_id': p.get('run_id')}
+            if (any(not value or op.get(key) != value for key, value in bindings.items())
+                    or positions.get(op.get('last_event_id'), len(events)) > positions[failed.id]):
+                continue
+            if any(e.type in {'workflow.operation.started', 'workflow.operation.retry_started',
+                              'fanout.child.dispatched'}
+                   and (e.payload.get('operation_id') == op['operation_id']
+                        or (e.payload.get('role_instance') == op['role_instance']
+                            and e.payload.get('run_id') == op['active_attempt_id'])) for e in events):
+                continue
+            try:
+                body = hydrate_sidecar_ref(runtime.state_dir, op['request_ref']).payload
+            except (ValueError, KeyError, OSError):
+                continue
+            request = body.get('request', {})
+            if (any(body.get(key) != op.get(key) for key in
+                    ('workflow_run_id', 'operation_id', 'active_attempt_id', 'role_instance'))
+                    or any(not p.get(key) or request.get(key) != p[key]
+                           for key in ('fanout_id', 'child_id', 'stage_id'))):
+                continue
+            workflow_operation_service(runtime).fail(
+                operation_id=op['operation_id'], request_hash=op['request_hash'],
+                workflow_run_id=op['workflow_run_id'], task_id=op.get('task_id', ''),
+                reason=p.get('reason') or 'reader environment wait exhausted before delivery',
+                causation_id=failed.id, correlation_id=op['workflow_run_id'],
+                details={'failure_class': p['failure_class'], 'fanout_id': p['fanout_id'],
+                         'child_id': p['child_id']},
+            )
+            return True
+    return False
+
+
 def exhaust_reader_wait(
     runtime: Any, *, role: RoleConfig, context: Any, child: Any,
     run_id: str, target_ref: str, causation_id: str,
