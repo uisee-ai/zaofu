@@ -40,3 +40,11 @@
 返工必读输入由首轮 17,381 字节增至 182,040 字节，含两份完全相同的 `plan_ports` 语义正文；原生上下文压缩发生。达到预设 1800 秒时，Kernel 自动取消 Planner 并记录 `workflow_budget_exceeded:wall_clock`。业务完成 0/1，正式 Plan 审批、Impl、Task Verify、Candidate/Judge 及业务浏览器均未执行。$10 配置存在，但 110 个用量条目未定价，不能证明费用门禁有效；美元值 0 不表示免费。
 
 一次正常 Owner 决策、零源码故障修复介入；独立预算停止有效。专属 systemd unit 已停止禁用，私有 tmux 及角色进程已清理；候选产物、原始事件和断点保留。证据及后续缺口见 `reports/minimal-real-20261118/README.md`。后续需明确测试输入、去除 Plan 返工重复正文，再验证实际任务输入消费与完整业务交付；不以取消 gate 或无限延长时限替代修复。
+
+## Owner 纠正后的 8×8 启动
+
+Owner 随后明确要求取消 Planner 时间限制，并恢复原定 8×8 小任务验证。复用此前未启动的 `/tmp/zf-eight-recovery-20261118T002529Z/product`，新 Run `workflow-8625b886a7912513` 已通过受控提案审阅和提交进入真实 Scan/Plan；不覆盖上一轮失败记录。
+
+16 个独立小任务、32 条不相交交付路径，Impl/Verify 各 8，活跃流水线和两个背压上限均为 16。原 8×8 配置的 Run、execution profile 和 Planner stage timeout 均为 0，本次不添加 30 分钟覆盖；失联检测、有限返工和独立验收继续保留。补明冻结输入的按钮 Enter 焦点语义。时间限制取消是 Owner 明确要求，不代表 Plan 重复输入问题已修复。
+
+运行时 admission 已固定 timeout=0；当前仅规划阶段运行，尚不能宣称实际 8+8 同时满载或 16/16 完成。启动证据见 `reports/eight-by-eight-real-resumed-20261118/README.md`；本任务仍 active。

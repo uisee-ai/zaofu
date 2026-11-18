@@ -48,3 +48,5 @@
 运行在 1800.281 秒由 Kernel 自动触发 wall-clock budget gate，取消 Planner 并记录 run.goal.blocked；业务完成 0/1，最终验证未执行。配置费用上限 $10，但 110 条 usage 未定价且 cost_fail_closed=false，不能宣称费用门禁通过或没有消耗。预算停止后，试验专属服务及 tmux 已清理、恢复证据保留。报告位于 `reports/minimal-real-20261118/README.md`。
 
 下一轮需先消除最小输入歧义，并为局部 Plan 修订去除重复正文、保留来源摘要绑定和 Owner 确认；独立审查、审批和最终业务验收继续保留。此记录不将上述待修问题或真实 8+8 验收标为已完成。
+
+Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时间限制。已启动另一个 Run `workflow-8625b886a7912513`：16 个独立小任务、Impl/Verify 各 8、活跃流水线与背压上限 16。复用未启动的 8×8 配置，其 Run、execution profile、Planner stage timeout 原本均为 0，不再添加上一轮的 1800 秒覆盖；失联检测、审批与独立验收保留。补明冻结测试输入的 Enter 焦点，未修改验收脚本。当前仅确认真实 Scan/Plan 启动，重复返工输入缺口和实际 8+8 重叠尚未验证解决；启动证据见 `reports/eight-by-eight-real-resumed-20261118/README.md`。
