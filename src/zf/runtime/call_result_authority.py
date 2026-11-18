@@ -440,11 +440,23 @@ class CallResultAuthorityMixin:
             if str(item)
         )
         if expected_tasks and actual_tasks != expected_tasks:
-            issues.append(_currentness_issue(
-                "control_result.contract_snapshot_ref",
-                "stale_contract_snapshot",
-                "candidate contract completed_task_ids do not match current freeze",
-            ))
+            from zf.runtime.candidate_replacement_authority import verified_predecessors
+
+            events = self.event_log.read_all()
+            children = contract_snapshot.get("child_authorities") or []
+            try:
+                replaced = verified_predecessors(
+                    self.state_dir, current_candidate, events[: events.index(current_candidate)], children,
+                )
+            except (KeyError, ValueError, TypeError, OSError) as exc:
+                return [_currentness_issue("control_result.contract_snapshot_ref", "stale_contract_snapshot", str(exc))]
+            if (sorted(child.get("task_id", "") for child in children) != actual_tasks
+                    or sorted(set(expected_tasks) - replaced) != actual_tasks):
+                issues.append(_currentness_issue(
+                    "control_result.contract_snapshot_ref",
+                    "stale_contract_snapshot",
+                    "candidate contract completed_task_ids do not match current freeze",
+                ))
         task_store = TaskStore(self.state_dir / "kanban.json")
         for child in contract_snapshot.get("child_authorities") or []:
             if not isinstance(child, Mapping):
@@ -707,20 +719,6 @@ class CallResultAuthorityMixin:
             ref = str(descriptor.get("ref") or "")
             if ref:
                 admitted_refs.add(ref)
-        issues.extend(claim_set_issues(
-            result,
-            claim_set,
-            admitted_result_refs=admitted_refs,
-            claim_set_descriptor_digest=claim_digest,
-        ))
-        for ref in _string_values(result.get("input_result_refs")):
-            if ref not in admitted_refs:
-                issues.append({
-                    "field": "control_result.input_result_refs",
-                    "code": "result_not_admitted",
-                    "message": ref,
-                })
-
         latest_claim_pin = None
         for candidate in reversed(events):
             if candidate.type != "goal.claim_set.pinned":
@@ -791,6 +789,24 @@ class CallResultAuthorityMixin:
             ):
                 current = body
                 break
+        if current and current.get("has_historical_candidate_reports"):
+            from zf.runtime.goal_historical_candidate_evidence import pinned_historical_result_refs
+
+            admitted_refs.update(pinned_historical_result_refs(self.state_dir, events, current))
+        issues.extend(claim_set_issues(
+            result,
+            claim_set,
+            admitted_result_refs=admitted_refs,
+            claim_set_descriptor_digest=claim_digest,
+        ))
+        for ref in _string_values(result.get("input_result_refs")):
+            if ref not in admitted_refs:
+                issues.append({
+                    "field": "control_result.input_result_refs",
+                    "code": "result_not_admitted",
+                    "message": ref,
+                })
+
         if current is None:
             issues.append({
                 "field": "control_result.closure_fact_ref",

@@ -19,7 +19,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def candidate(project: Path, request: dict, operation: str) -> dict:
+def candidate(project: Path, request: dict, operation: str, *, replan: bool = False) -> dict:
     from tests.test_plan_candidate_preflight import _task_map, _source_index, _plan_ports, _product_acceptance_spec
     task_map = _task_map()
     task = task_map["tasks"][0]
@@ -88,6 +88,8 @@ D-1：Owner 已确认缺失时报错；D-2：生成完整 Plan 后等待审批�
 风险：错误被忽略造成误判。用独立临时目录的缺失文件测试证明错误路径。
 检查来源、范围、验收、命令和证据后由 Owner 决定；审批前 impl/verify 不得派发。
 """
+    if replan:
+        plan += "\n## 失败后的恢复边界\n\n前提：README 缺失；动作：执行原读取入口；结果：明确失败，保留当前文件状态；补齐文件后可按 AC-1 重试。产品测试仍为 NOT_RUN。\n"
     state = project / load_config(project / "zf.yaml").project.state_dir
     directory = state / "artifacts/ui-planning" / operation
     directory.mkdir(parents=True, exist_ok=True)
@@ -134,12 +136,13 @@ def serve(project: Path) -> None:
                                           max_items=0, max_chars=0)
                 if profile == "plan-synth":
                     semantic = {"status": "completed", "execution_status": "completed", "recommendation": "approve",
-                                "plan_content_profile": "derived_plan_full",
+                                "plan_content_profile": "derived_plan",
                                 "summary": "Scripted critic reviewed the bound candidate and requirement.",
                                 "report": {"status": "passed", "recommendation": "approve", "findings": [],
                                            "summary": "Source, README behavior, negative test, ownership and approval boundary are covered."}}
                 elif request.get("stage_id") == "prd-plan":
-                    semantic = candidate(project, request, operation_id)
+                    semantic = candidate(project, request, operation_id,
+                        replan=any(s.get("source_id") == "plan-rework-context" for s in manifest["sources"]))
                 else:
                     semantic = {"status": "passed", "execution_status": "completed", "result_semantics": "artifact_production",
                                 "summary": "README.md is the current repository entry; no product implementation exists.",

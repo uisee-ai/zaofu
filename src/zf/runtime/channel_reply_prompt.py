@@ -379,6 +379,10 @@ def channel_reply_response_contract(
             "A local file link or success summary alone is not a published PRD. " +
             source_reuse +
             "prd_markdown, when used instead, is the complete standalone PRD Markdown. "
+            "Return the complete PRD only once, inside prd_markdown (or the existing prd_file ref). "
+            "Do not print a second full PRD before or after the structured JSON, or repeat it in reply_text/summary. "
+            "For a mechanical contract repair, retain valid requirements and prose; repair the named fields "
+            "and their dependent references, then submit the complete corrected object without a separate prose draft. "
             "For a newly authored formal PRD set spec_format=prd-spec.v1 and document_control "
             "with revision, status, owner, and profile=lite or full. Use the standard sections "
             "Overview, Background and Problem, Goals/Non-goals/Scope, User Personas and "
@@ -422,7 +426,9 @@ def channel_reply_response_contract(
             "Preserve source message and attachment identities, explain conflicts and later corrections, "
             "and do not invent authorization. Build a source-driven requirement inventory. requirement_coverage is a non-empty array "
             "of objects with id, source_refs, evidence_refs, section, acceptance_ids, and status (covered, deferred, or gap). "
-            "Every row must have direct evidence_refs; source_refs alone are not evidence. Research rows "
+            "Every row must have direct evidence_refs as a non-empty array of reference strings "
+            '(for example ["sources/requirement.md"]), not ref/digest objects. Copy actual bound source refs, '
+            "not the illustrative example path; source_refs alone are not evidence. Research rows "
             "(id beginning RES- or kind=research) must also contain adopted_conclusion and applicability_limit. "
             "Every deferred or gap item must also contain a non-empty reason. "
             "Match each source requirement to a real PRD section and acceptance; section must be the exact "

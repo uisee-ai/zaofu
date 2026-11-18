@@ -5,6 +5,42 @@ from tests.e2e.prd_ui.audit import check_preview
 PLAN = '# PRD\nREADME.md\n## SDD\nFiles\n## TDD\nMissing-file error\nLast acceptance\n'
 
 
+@pytest.mark.parametrize("packet,valid", [
+    ({"status": "ready", "diagnostics": []}, True),
+    ({"status": "blocked", "diagnostics": [{"severity": "warning", "code": "owner_pending"}]}, True),
+    ({"diagnostics": [{"severity": "error", "code": "artifact_lineage_mismatch"}]}, False),
+    ({"diagnostics": [{"severity": "error", "code": "review_artifact_unreadable"}]}, False),
+    ({}, False), (None, False),
+])
+def test_preview_requires_mechanical_artifact_integrity_without_approving_owner_decisions(packet, valid):
+    from tests.e2e.prd_ui.audit import check_preview_artifact_integrity
+    if valid:
+        check_preview_artifact_integrity({"review_packet": packet})
+    else:
+        with pytest.raises(AssertionError):
+            check_preview_artifact_integrity({"review_packet": packet})
+
+
+@pytest.mark.parametrize("fault", ["", "old_verdict", "wrong_run", "wrong_plan", "not_web"])
+def test_replan_audit_requires_new_same_run_review_after_controlled_rejection(fault):
+    from zf.core.events import ZfEvent
+    from tests.e2e.prd_ui.audit import check_replan
+    old = ZfEvent(type="fanout.synth.completed", payload={"workflow_run_id": "r", "fanout_id": "f1"})
+    first = ZfEvent(type="plan.approval.requested", payload={"workflow_run_id": "r", "plan_id": old.id})
+    reject = ZfEvent(type="plan.rejected", actor="operator", payload={"plan_id": old.id, "surface": "web"})
+    new = ZfEvent(type="fanout.synth.completed", payload={"workflow_run_id": "r", "fanout_id": "f2"})
+    final = ZfEvent(type="plan.approval.requested", payload={"workflow_run_id": "r", "plan_id": new.id})
+    events = [old, first, reject, new, final]
+    if fault == "old_verdict": events = [old, first, new, reject, final]
+    if fault == "wrong_run": final.payload["workflow_run_id"] = "other"
+    if fault == "wrong_plan": reject.payload["plan_id"] = "other"
+    if fault == "not_web": reject.payload["surface"] = "cli"
+    if fault:
+        with pytest.raises(AssertionError): check_replan(events, [first, final], "r")
+    else:
+        assert check_replan(events, [first, final], "r")["final_plan_id"] == new.id
+
+
 @pytest.mark.parametrize("body", [
     PLAN,
     "# Shared Spec\nUse system cat README.md.\n## Task Spec\nOne owner; restore input.\n## Acceptance\nSeparate normal and missing-file evidence.\n",

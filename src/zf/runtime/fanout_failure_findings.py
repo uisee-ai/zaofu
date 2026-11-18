@@ -65,6 +65,11 @@ def fanout_failure_recovery(
     task_ids: set[str] = set()
     rework_item_ids: set[str] = set()
     semantic_result_refs: set[str] = set()
+    candidate_scope = {}
+    candidate_operations = set()
+    candidate_unscoped = False
+    reader_events = None
+    seen_controls = set()
     dependency_blocked = False
     plan_port_rework = False
     payloads = _fanout_failure_payloads(
@@ -90,7 +95,32 @@ def fanout_failure_recovery(
             continue
         dependency_blocked = True
         task_id = str(result.get("task_id") or payload.get("task_id") or "").strip()
-        if task_id:
+        if result.get("output_profile_id") == "candidate-verify":
+            from zf.runtime.candidate_plan_recovery import candidate_reader_binding
+
+            key = (control_ref["ref"], control_ref["sha256"])
+            if key in seen_controls:
+                continue
+            seen_controls.add(key)
+            if reader_events is None:
+                reader_events = owner.event_log.read_all()
+            try:
+                candidate_scope, admitted = candidate_reader_binding(
+                    owner.state_dir, reader_events, fanout_id=manifest["fanout_id"],
+                    operation_id=str(payload.get("operation_id") or ""),
+                )
+                if candidate_scope["control_result_ref"] != control_ref:
+                    raise ValueError("candidate recovery descriptor differs from admitted result")
+                if admitted != result:
+                    raise ValueError("candidate recovery body differs from admitted result")
+            except (ValueError, OSError, KeyError):
+                return {"failure_class": "dependency_blocked", "recovery_action": "escalate",
+                        "rework_scope": "dependency", "recovery_owner": "dependency_owner",
+                        "failed_task_ids": [], "semantic_result_refs": [control_ref["ref"]]}
+            candidate_operations.add(result["operation_id"])
+            candidate_unscoped |= not candidate_scope["failed_task_ids"]
+            task_ids.update(candidate_scope["failed_task_ids"])
+        elif task_id:
             task_ids.add(task_id)
         semantic_result_refs.add(str(control_ref.get("ref") or ""))
         admitted_ref = payload.get("admitted_call_result_ref")
@@ -113,11 +143,14 @@ def fanout_failure_recovery(
     if not dependency_blocked:
         return {}
     return {
+        **({"candidate_event_id": candidate_scope["candidate_event_id"],
+            "source_commit": candidate_scope["source_commit"],
+            "candidate_verify_operation_ids": sorted(candidate_operations)} if candidate_scope else {}),
         "failure_class": "dependency_blocked",
         "recovery_action": "replan" if plan_port_rework else "escalate",
         "rework_scope": "plan_ports" if plan_port_rework else "dependency",
         "recovery_owner": "planner" if plan_port_rework else "dependency_owner",
-        "failed_task_ids": sorted(task_ids),
+        "failed_task_ids": [] if candidate_unscoped else sorted(task_ids),
         "rework_item_ids": sorted(rework_item_ids),
         "semantic_result_refs": sorted(
             ref for ref in semantic_result_refs if ref

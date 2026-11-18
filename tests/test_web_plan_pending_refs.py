@@ -20,7 +20,7 @@ def test_pending_plan_resolves_custom_state_and_preserves_project_boundary(tmp_p
     target = base / "artifacts/task_map.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps({"tasks": [{
-        "task_id": "core", "allowed_paths": ["app/core/**"],
+        "task_id": "core", "owner_role": "dev_core", "allowed_paths": ["app/core/**"],
         "verification": "python -m pytest",
     }]}))
     ref = str(target) if location == "outside" else "artifacts/task_map.json"

@@ -659,7 +659,8 @@ def _evaluate_allowed_paths_guard(
     offending = sorted({
         target
         for operation, target in operations
-        if not _path_allowed_by_scope(_to_scope_frame(target), scope)
+        if operation != "mkdir"  # Parent directories still pass the assigned-workdir guard.
+        and not _path_allowed_by_scope(_to_scope_frame(target), scope)
         and not (
             operation in scratch_update_operations
             and _is_authorized_result_scratch_target(

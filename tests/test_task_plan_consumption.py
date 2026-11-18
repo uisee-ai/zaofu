@@ -21,11 +21,12 @@ from zf.runtime.task_contract_snapshot import (
 
 
 @pytest.fixture
-def case(tmp_path: Path):
+def case(tmp_path: Path, request):
+    scoped_port = getattr(request, "param", "task_execution_input")
     state = tmp_path / ".zf"
     state.mkdir()
     policy = {"schema_version": "task-plan-input-selection.v1",
-              "implementation": ["task_execution_input"], "task-verify": ["task_execution_input"]}
+              "implementation": [scoped_port], "task-verify": [scoped_port]}
     bodies = {
         "task_map": {"tasks": [{"task_id": "T1", "evidence_contract": {"plan_input_selection": policy}}]},
         "planning_result": {"tasks": [{"task_id": "T1"}]},
@@ -39,6 +40,8 @@ def case(tmp_path: Path):
                                  "tasks": [{"task_id": "T1", "body": {"acceptance": "AC1"}},
                                            {"task_id": "T2", "body": {"acceptance": "AC2"}}]},
     }
+    if scoped_port == "execution_spec":
+        bodies.pop("task_execution_input")
     ports = []
     for name, body in bodies.items():
         ref = write_immutable_json_sidecar(state, body, root="fixtures", kind=name,
@@ -126,7 +129,8 @@ def test_plan_validation_rejects_selection_before_dispatch():
 
 
 def test_resolve_payload_binds_selected_sources_and_read_requirements(case):
-    state, resolver, identity, _ = case
+    state, resolver, identity, policy = case
+    scoped_port = policy["implementation"][0]
     store = TaskStore(state / "kanban.json")
     task = store.get("T1")
     task.contract.evidence_contract["source_refs"] = identity
@@ -143,10 +147,10 @@ def test_resolve_payload_binds_selected_sources_and_read_requirements(case):
     )
     reads = build_canonical_required_reads(manifest, output_profile_id="implementation")
     plan_reads = [(r["source_id"], r["json_path"]) for r in reads if r["source_id"].startswith("plan-port-")]
-    assert plan_reads == [("plan-port-task_execution_input", "$.shared"), ("plan-port-task_execution_input", "$.tasks[0]")]
+    assert plan_reads == [(f"plan-port-{scoped_port}", "$.shared"), (f"plan-port-{scoped_port}", "$.tasks[0]")]
     with pytest.raises(ArtifactReadError, match="not allowed"):
-        read_attempt_artifact(state, manifest=manifest, source_id="plan-port-task_execution_input",
-                              artifact_id="task_execution_input", json_path="$.tasks[1]")
+        read_attempt_artifact(state, manifest=manifest, source_id=f"plan-port-{scoped_port}",
+                              artifact_id=scoped_port, json_path="$.tasks[1]")
 
 
 def test_discovery_handoff_reads_whole_plan_for_parent_without_partition(case):
@@ -176,3 +180,71 @@ def test_discovery_handoff_rejects_wrong_plan_identity(case, fault):
             workflow_run_id="other" if fault == "run" else "run", task_id="PARENT",
             attempt_id="discovery-invalid", dispatch_id="d",
         )
+
+
+@pytest.mark.parametrize("case", ["execution_spec"], indirect=True)
+def test_existing_execution_spec_is_sufficient_without_duplicate_input(case):
+    state, resolver, identity, policy = case
+    for profile in ("implementation", "task-verify"):
+        sources = resolver._current_plan_port_sources(workflow_run_id="run", task_id="T1",
+                                                      currentness=identity, profile=profile)
+        assert [s["artifact_id"] for s in sources] == ["execution_spec"]
+        assert sources[0]["allowed_paths"] == ["$.shared", "$.tasks[0]"]
+    full = resolver._current_plan_port_sources(workflow_run_id="run", task_id="T1",
+                                               currentness=identity, profile="candidate-verify", candidate=True)
+    assert {s["artifact_id"] for s in full} == {"task_map", "planning_result", "execution_spec",
+                                               "acceptance_matrix", "test_matrix", "real_e2e_matrix"}
+    payload = {"required_plan_ports": [s["artifact_id"] for s in full], "tasks": [
+        {"task_id": "T1", "evidence_contract": {"plan_input_selection": policy}}]}
+    assert plan_input_declaration_errors(payload) == []
+    test_resolve_payload_binds_selected_sources_and_read_requirements(case)
+
+
+@pytest.mark.parametrize("case", ["execution_spec"], indirect=True)
+@pytest.mark.parametrize("fault", ["legacy_body", "missing_task", "duplicate_task"])
+def test_selected_execution_spec_requires_complete_bound_partition(case, fault):
+    from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
+    state, resolver, identity, _ = case
+    package = hydrate_plan_artifact_package(state, {"ref": identity["plan_artifact_package_ref"],
+                                                   "sha256": identity["plan_artifact_package_digest"]})
+    port = next(p for p in package["produced"] if p["logical_name"] == "execution_spec")
+    body = json.loads((state / port["ref"]).read_text())
+    if fault == "legacy_body": body = {"legacy": "not a scoped contract"}
+    if fault == "missing_task": body["tasks"] = body["tasks"][1:]
+    if fault == "duplicate_task": body["tasks"].append(body["tasks"][0])
+    descriptor = write_immutable_json_sidecar(state, body, root="fixtures", kind="execution_spec",
+                                              schema_version="v1", created_by="test")
+    port.update(ref=descriptor["ref"], sha256=descriptor["sha256"])
+    updated = write_plan_artifact_package(state, package)
+    current = {**identity, "plan_artifact_package_ref": updated["ref"],
+               "plan_artifact_package_digest": updated["sha256"]}
+    with pytest.raises(ArtifactReadError):
+        resolver._current_plan_port_sources(workflow_run_id="run", task_id="T1",
+                                             currentness=current, profile="implementation")
+
+
+@pytest.mark.parametrize('name', ['execution_spec', 'task_execution_input'])
+def test_unscoped_selection_is_rejected_by_real_candidate_preflight(tmp_path, name):
+    from tests.test_plan_candidate_preflight import _task_map, _source_index
+    from zf.runtime.plan_candidate_preflight import evaluate_plan_candidate_preflight
+    task_map = _task_map()
+    task_map['required_plan_ports'] = ['execution_spec', 'task_execution_input',
+                                     'acceptance_matrix', 'test_matrix', 'real_e2e_matrix']
+    task_map['tasks'][0]['evidence_contract'] = {'plan_input_selection': {
+        'schema_version': 'task-plan-input-selection.v1', 'implementation': [name], 'task-verify': [name]}}
+    report = {'task_map': task_map, 'source_index': _source_index(), 'plan_md': '# Plan',
+              'plan_ports': [{'logical_name': name, 'schema_version': 'v1', 'body': {'legacy': 'body'}}]}
+    result = evaluate_plan_candidate_preflight(state_dir=tmp_path / '.state', project_root=tmp_path,
+        reports=[{'report': report}], manifest={'trigger_payload': {'flow_kind': 'issue'}}, metadata={'flow_kind': 'issue'})
+    assert any(f'selected {name} must be task scoped' in row['message'] for row in result['errors'])
+
+
+@pytest.mark.parametrize('missing', ['execution_spec', 'acceptance_matrix', 'test_matrix', 'real_e2e_matrix'])
+def test_compact_selection_does_not_remove_full_package_obligations(missing):
+    ports = ['execution_spec', 'acceptance_matrix', 'test_matrix', 'real_e2e_matrix']
+    ports.remove(missing)
+    policy = {'schema_version': 'task-plan-input-selection.v1',
+              'implementation': ['execution_spec'], 'task-verify': ['execution_spec']}
+    errors = plan_input_declaration_errors({'required_plan_ports': ports, 'tasks': [
+        {'task_id': 'T1', 'evidence_contract': {'plan_input_selection': policy}}]})
+    assert any('complete plan matrix ports' in error for error in errors)

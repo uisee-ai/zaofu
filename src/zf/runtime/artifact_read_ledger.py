@@ -325,7 +325,7 @@ def build_input_consumption_policy(
             "artifact_id": str(item.get("artifact_id") or ""),
             "artifact_sha256": str(item.get("artifact_sha256") or item.get("sha256") or ""),
             "json_path": str(item.get("json_path") or "$"),
-            "min_returned_bytes": int(item.get("min_returned_bytes") or 1),
+            "min_returned_bytes": int(item.get("min_returned_bytes", 1)),
             "max_items": int(item.get("max_items") or 0),
             "max_chars": int(item.get("max_chars") or 0),
             "allow_truncated": bool(item.get("allow_truncated", False)),
@@ -644,6 +644,21 @@ def render_attempt_source_briefing(
             "the returned `next_page_start` until it is null. The ledger accepts pages "
             "only when they cover the entire selected input without gaps.",
         ])
+        if payload.get("output_profile_id") == "plan-synth":
+            lines.append(
+                "- For Plan review, prefer --format text --page-bytes 32768 on the required-read command "
+                "when the tool can return the full page (reserve at least 16384 output tokens). "
+                "This bounded view prints original content without an outer JSON string escape layer. "
+                "Retain these flags with each cursor; if output truncates, retry the same cursor at 8192 "
+                "or 2048 bytes before continuing. Supplemental source reads also accept --format text; "
+                "their --page-size remains at most 8192 characters. Do not infer command syntax from display escaping."
+            )
+        from zf.runtime.artifact_read_briefing_policy import bound_read_policy_locator
+
+        locator = bound_read_policy_locator(payload, state_dir)
+        if locator:
+            lines.append(locator)
+            return "\n".join(lines) + "\n"
         lines.extend(["- Required reads for this attempt:"])
         for item in required:
             source_id = str(item.get("source_id") or "")

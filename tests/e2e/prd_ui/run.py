@@ -7,6 +7,7 @@ import hashlib
 import fcntl
 import os
 from pathlib import Path
+import shlex
 import signal
 import socket
 import subprocess
@@ -23,7 +24,8 @@ def command(args, *, cwd, env, **kwargs):
     return subprocess.run([str(arg) for arg in args], cwd=cwd, env=env, check=True, **kwargs)
 
 
-def prepare(root: Path, mode: str, journey: str) -> tuple[Path, dict[str, str]]:
+def prepare(root: Path, mode: str, journey: str, *, review_policy=None,
+            channel_template="prd-clarification", channel_model="", channel_reasoning="", kanban_model="") -> tuple[Path, dict[str, str]]:
     root.mkdir(parents=True, exist_ok=False)
     project = root / "project"
     project.mkdir()
@@ -45,9 +47,17 @@ def prepare(root: Path, mode: str, journey: str) -> tuple[Path, dict[str, str]]:
         shim.chmod(0o755)
         env["PATH"] = str(binary) + os.pathsep + env["PATH"]
         env["ZF_KANBAN_AGENT_CODEX_HEADLESS_CMD"] = str(shim)
+    elif kanban_model:
+        env["ZF_KANBAN_AGENT_CODEX_HEADLESS_CMD"] = shlex.join(
+            ["codex", "-c", f"model={json.dumps(kanban_model)}"],
+        )
     documents = list(yaml.safe_load_all((REPO / "zf-prd-v5.yaml").read_text()))
     flow, controller = documents
     flow["spec"].update(prdRef="docs/prd/ui-requirement.md", targetRoot=str(project))
+    if review_policy:
+        flow["spec"]["planReview"] = review_policy
+        env["ZF_UI_REVIEW_POLICY"] = json.dumps(review_policy, ensure_ascii=False)
+    env["ZF_UI_CHANNEL_TEMPLATE"] = channel_template
     spec = controller["spec"]
     spec["profile_sources"] = [str(REPO / path) for path in spec["profile_sources"]]
     spec["skill_sources"][0]["path"] = str(REPO / "skills")
@@ -57,6 +67,10 @@ def prepare(root: Path, mode: str, journey: str) -> tuple[Path, dict[str, str]]:
     spec["runtime"]["autoresearch_resident"] = {"enabled": False}
     # Keep the Channel production budget; do not inherit Kanban's shorter test turn limit.
     spec.setdefault("channel", {})["provider_timeout_seconds"] = 1800
+    if channel_model:
+        spec["channel"]["codex_model"] = channel_model
+    if channel_reasoning:
+        spec["channel"]["codex_reasoning_effort"] = channel_reasoning
     # Fake starts with a different policy, forcing a real Apply/consumer handoff.
     spec["workflow"]["plan_approval"] = mode != "fake"
     if journey == "channel-recovery":
@@ -93,7 +107,16 @@ def main() -> int:
     parser.add_argument("--provider", choices=["fake", "real"], required=True)
     parser.add_argument("--journey", choices=["kanban", "channel", "channel-recovery"], required=True)
     parser.add_argument("--requirement-file", type=Path, help="Frozen common product input for both UI journeys")
+    parser.add_argument("--review-policy", type=Path, help="Explicit Owner-authorized plan_review JSON")
+    parser.add_argument("--channel-template", choices=["prd-clarification", "prd-clarification-on-demand"],
+                        default="prd-clarification")
+    parser.add_argument("--kanban-model", default="", help="Pin the real Kanban Codex model for this isolated journey")
+    parser.add_argument("--channel-model", default="", help="Project-local Codex model pin for Channel evaluation")
+    parser.add_argument("--channel-reasoning", default="", choices=["", "low", "medium", "high", "xhigh"],
+                        help="Project-local Codex reasoning pin; default preserves existing behavior")
     parser.add_argument("--delivery", action="store_true", help="Wait for a reviewed local authorization before UI Plan approval")
+    parser.add_argument("--replan", action="store_true", help="Reject the first Plan through UI and verify a new reviewed preview")
+    parser.add_argument("--execution-replan", action="store_true", help="Delivery with an external protocol change after the first implementation; separately review regenerated Plan")
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--owner-checkpoint", action="store_true", help="Require a real Critic Owner checkpoint and answer it through UI")
@@ -102,6 +125,16 @@ def main() -> int:
     parser.add_argument("--workflow-runtime", choices=["existing", "cold"], default="existing",
                         help="cold stops the idle discussion runtime before the UI starts its Workflow")
     args = parser.parse_args()
+    if args.replan and (args.delivery or args.owner_checkpoint):
+        parser.error("--replan is a separate pending-plan journey; cannot combine with delivery or Owner checkpoint")
+    if args.kanban_model and args.provider != "real":
+        parser.error("--kanban-model requires a real provider")
+    if args.execution_replan and not args.delivery:
+        parser.error("--execution-replan requires --delivery and its real-provider authorization")
+    review_policy = None
+    if args.review_policy:
+        from zf.core.config.plan_review import validate_plan_review
+        review_policy = validate_plan_review(json.loads(args.review_policy.read_text()))
     if args.turn_timeout is None:
         args.turn_timeout = min(args.timeout, 45 if args.provider == 'fake' else 600)
     if not 1 <= args.turn_timeout <= args.timeout:
@@ -122,7 +155,12 @@ def main() -> int:
         command(["codex", "login", "status"], cwd=REPO, env=os.environ, timeout=15)
     if not args.skip_build:
         command(["npm", "--prefix", "web", "run", "build"], cwd=REPO, env=os.environ)
-    project, env = prepare(root, args.provider, args.journey)
+    project, env = prepare(root, args.provider, args.journey, review_policy=review_policy,
+                          channel_template=args.channel_template, channel_model=args.channel_model,
+                          channel_reasoning=args.channel_reasoning, kanban_model=args.kanban_model)
+    if args.execution_replan:
+        from tests.e2e.prd_ui.execution_replan import initialize_protocol
+        initialize_protocol(root)
     port_lock = open("/tmp/zf-prd-ui-port-allocation.lock", "a")
     fcntl.flock(port_lock, fcntl.LOCK_EX)
     port = 8002
@@ -140,6 +178,11 @@ def main() -> int:
     if args.journey == "channel-recovery":
         manifest["test_boundary"] = "real Codex, controlled stdio fault; setup via controlled actions, send/retry through UI"
     manifest["workflow_runtime"] = args.workflow_runtime
+    manifest["requested_review_policy"] = review_policy
+    manifest["channel_template"] = args.channel_template
+    manifest["kanban_model"] = args.kanban_model
+    manifest["channel_model"] = args.channel_model
+    manifest["channel_reasoning_effort"] = args.channel_reasoning
     if args.provider == "fake":
         manifest["fake_fault"] = env.get("ZF_UI_FAKE_FAULT", "")
     manifest["owner_checkpoint_required"] = args.owner_checkpoint
@@ -154,9 +197,13 @@ def main() -> int:
     (evidence / "skill-source.json").write_text(json.dumps({"path": str(REPO / "skills"), "files": skill_hashes}, indent=2))
     if args.requirement_file:
         requirement = args.requirement_file.read_bytes()
+        if args.execution_replan:
+            requirement = requirement.replace(b"${EXTERNAL_PROTOCOL}", str(root / "protocol.json").encode())
         (evidence / "product-input.md").write_bytes(requirement)
         manifest["product_input_sha256"] = hashlib.sha256(requirement).hexdigest()
     manifest["delivery_requested"] = args.delivery
+    manifest["replan_requested"] = args.replan
+    manifest["execution_replan_requested"] = args.execution_replan
     manifest['timeout_seconds'] = args.timeout
     manifest['turn_timeout_seconds'] = args.turn_timeout
     (evidence / "run.json").write_text(json.dumps(manifest, indent=2))
@@ -194,8 +241,12 @@ def main() -> int:
                   "-v", f"{root}:/zf-run", "-w", "/work/web", "-e", "HOME=/tmp/ui-playwright",
                   "-e", f"ZF_WEB_BASE_URL=http://127.0.0.1:{port}", "-e", f"ZF_WEB_ACTION_TOKEN_FOR_TEST={env['ZF_WEB_ACTION_TOKEN']}",
                   "-e", f"ZF_UI_DELIVERY={str(args.delivery).lower()}",
+                  "-e", f"ZF_UI_REPLAN={str(args.replan).lower()}",
+                  "-e", f"ZF_UI_EXECUTION_REPLAN={str(args.execution_replan).lower()}",
                   "-e", f"ZF_UI_PROVIDER={args.provider}", "-e", f"ZF_UI_JOURNEY={args.journey}",
                   "-e", f"ZF_UI_WORKFLOW_RUNTIME={args.workflow_runtime}",
+                  "-e", f"ZF_UI_REVIEW_POLICY={env.get('ZF_UI_REVIEW_POLICY', '')}",
+                  "-e", f"ZF_UI_CHANNEL_TEMPLATE={args.channel_template}",
                   "-e", f"ZF_UI_OWNER_CHECKPOINT={str(args.owner_checkpoint).lower()}",
                   "-e", f"ZF_UI_TURN_TIMEOUT_MS={args.turn_timeout * 1000}",
                   "-e", f"ZF_UI_TIMEOUT_MS={args.timeout * 1000}", "-e", f"ZF_E2E_VIDEO={os.environ.get('ZF_UI_RECORDING', 'on' if args.provider == 'fake' else 'off')}",
@@ -207,6 +258,9 @@ def main() -> int:
         deadline = time.monotonic() + args.timeout + 120
         handoff = evidence / "runtime-handoff.json"
         while browser.poll() is None:
+            if args.execution_replan:
+                from tests.e2e.prd_ui.execution_replan import change_protocol_after_implementation
+                change_protocol_after_implementation(root, project)
             if args.delivery and (evidence / "preview-ready.json").exists() and not (evidence / "preview-audit.json").exists():
                 from tests.e2e.prd_ui.audit import audit
                 (evidence / "preview-audit.json").write_text(json.dumps(audit(project, journey=args.journey), indent=2))
@@ -257,8 +311,11 @@ def main() -> int:
                 elif args.delivery:
                     result_audit = json.loads((evidence / "preview-audit.json").read_text())
                     result_audit["boundary"] = "preview only; delivery evidence audited separately"
+                    if args.execution_replan:
+                        from tests.e2e.prd_ui.execution_replan import audit_execution_replan
+                        result_audit["execution_replan"] = audit_execution_replan(root, project)
                 else:
-                    result_audit = audit(project, journey=args.journey, owner_checkpoint=args.owner_checkpoint)
+                    result_audit = audit(project, journey=args.journey, owner_checkpoint=args.owner_checkpoint, replan=args.replan)
                 if args.provider == "fake" and args.workflow_runtime == "existing":
                     from zf.core.events import EventLog
                     from zf.core.config.loader import load_config

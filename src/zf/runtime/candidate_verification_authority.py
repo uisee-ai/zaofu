@@ -44,7 +44,7 @@ def prepare_candidate_verification_authority(
     """
 
     events = runtime.event_log.read_all()
-    candidate = _frozen_candidate_for_payload(
+    candidate = frozen_candidate_for_payload(
         events,
         workflow_run_id,
         payload=payload,
@@ -113,6 +113,7 @@ def prepare_candidate_verification_authority(
             + ", ".join(missing_commits)
         )
 
+    missing_verify: set[str] = set()
     child_authorities: list[dict[str, Any]] = []
     child_snapshots: list[dict[str, Any]] = []
     for child_task_id in completed_task_ids:
@@ -124,9 +125,8 @@ def prepare_candidate_verification_authority(
             target_commit=task_commits[child_task_id],
         )
         if verification is None:
-            raise CandidateVerificationAuthorityError(
-                f"candidate task {child_task_id!r} lacks current admitted Verify evidence"
-            )
+            missing_verify.add(child_task_id)
+            continue
         child_payload = dict(verification.payload)
         contract_descriptor = _descriptor(
             child_payload,
@@ -221,6 +221,19 @@ def prepare_candidate_verification_authority(
             },
         })
         child_snapshots.append(contract_snapshot)
+
+    if missing_verify:
+        from zf.runtime.candidate_replacement_authority import verified_predecessors
+
+        replaced = verified_predecessors(
+            Path(runtime.state_dir), candidate, events[: events.index(candidate)], child_authorities
+        )
+        unresolved = sorted(missing_verify - replaced)
+        if unresolved:
+            raise CandidateVerificationAuthorityError(
+                f"candidate task {unresolved[0]!r} lacks current admitted Verify evidence"
+            )
+        completed_task_ids = sorted(row["task_id"] for row in child_authorities)
 
     authority_seed = {
         "workflow_run_id": workflow_run_id,
@@ -329,7 +342,7 @@ def _latest_frozen_candidate(
     return None
 
 
-def _frozen_candidate_for_payload(
+def frozen_candidate_for_payload(
     events: list[ZfEvent],
     workflow_run_id: str,
     *,
@@ -636,5 +649,6 @@ def _unique(values: list[str]) -> list[str]:
 
 __all__ = [
     "CandidateVerificationAuthorityError",
+    "frozen_candidate_for_payload",
     "prepare_candidate_verification_authority",
 ]

@@ -23,6 +23,14 @@ def check_preview(preview: dict[str, Any], *, expected_plan_id: str, expected_ma
     # valid Shared Spec / Task Spec documents need not use PRD/SDD/TDD headings.
 
 
+def check_preview_artifact_integrity(preview: dict[str, Any]) -> None:
+    """Opening Markdown is insufficient when bound artifacts have errors."""
+    packet = preview.get("review_packet")
+    assert isinstance(packet, dict) and isinstance(packet.get("diagnostics"), list), "missing review diagnostics"
+    errors = [row for row in packet["diagnostics"] if row.get("severity") == "error"]
+    assert not errors, f"preview artifact integrity errors: {errors}"
+
+
 def check_dispatches(attempts: list[dict], operations: dict, role_kinds: dict) -> set[str]:
     dispatched = set()
     for attempt in attempts:
@@ -117,7 +125,29 @@ def read_generated_plan(approval: Any, preview: dict, events: list, *, state: Pa
     return ref, digest.removeprefix("sha256:"), markdown
 
 
-def audit(project: Path, *, journey: str, owner_checkpoint: bool = False) -> dict[str, Any]:
+def check_replan(events: list, approvals: list, run_id: str) -> dict[str, str]:
+    assert len(approvals) == 2, "replan requires two separately reviewed Plans"
+    old, new = approvals
+    rejected = [e for e in events if e.type == "plan.rejected"]
+    assert len(rejected) == 1, "expected one controlled Plan rejection"
+    rejection = rejected[0]
+    assert rejection.actor == "operator" and rejection.payload.get("surface") == "web"
+    assert rejection.payload.get("plan_id") == old.payload["plan_id"] != new.payload["plan_id"]
+    assert events.index(old) < events.index(rejection) < events.index(new)
+    for approval in approvals:
+        assert approval.payload.get("workflow_run_id") == run_id
+        source = next(e for e in events if e.id == approval.payload["plan_id"])
+        reviews = [e for e in events if e.type == "fanout.synth.completed"
+                   and e.payload.get("fanout_id") == source.payload.get("fanout_id")
+                   and e.payload.get("workflow_run_id") == run_id]
+        assert reviews and events.index(reviews[-1]) <= events.index(source), "missing independent reviewed version"
+        if approval is new:
+            assert events.index(reviews[-1]) > events.index(rejection), "old Critic verdict reused"
+    return {"initial_plan_id": old.payload["plan_id"], "rejection_event_id": rejection.id,
+            "final_plan_id": new.payload["plan_id"]}
+
+
+def audit(project: Path, *, journey: str, owner_checkpoint: bool = False, replan: bool = False) -> dict[str, Any]:
     config = load_config(project / "zf.yaml")
     state = project / config.project.state_dir
     events = EventLog(state / "events.jsonl").read_all()
@@ -126,8 +156,9 @@ def audit(project: Path, *, journey: str, owner_checkpoint: bool = False) -> dic
     invoked = invokes[0]
     run_id = invoked.payload.get("workflow_run_id") or invoked.correlation_id
     approvals = [e for e in events if e.type == "plan.approval.requested"]
-    assert len(approvals) == 1, "expected one generated Plan awaiting approval"
-    approval = approvals[0]
+    replan_evidence = check_replan(events, approvals, run_id) if replan else None
+    assert len(approvals) == (2 if replan else 1), "unexpected generated Plan count"
+    approval = approvals[-1]
     assert run_id in {approval.correlation_id, approval.payload.get("trace_id"), approval.payload.get("workflow_run_id")}, "Plan has wrong Run"
     assert config.version == "5.0.1" and config.workflow.plan_approval_enabled
     assert not any(e.type == "plan.approved" for e in events), "Plan approved beyond test scope"
@@ -140,6 +171,7 @@ def audit(project: Path, *, journey: str, owner_checkpoint: bool = False) -> dic
     preview = build_plan_preview(state, events, plan_id=plan_id, project_root=project)
     ref, digest, markdown = read_generated_plan(approval, preview, events, state=state, project=project)
     check_preview(preview, expected_plan_id=plan_id, expected_markdown=markdown)
+    check_preview_artifact_integrity(preview)
     tasks = TaskStore(state / "kanban.json").list_all()
     assert len(tasks) == 1, "only the parent Task may exist before plan approval"
     task = tasks[0]
@@ -157,10 +189,14 @@ def audit(project: Path, *, journey: str, owner_checkpoint: bool = False) -> dic
         assert binding.get("channel_id") == confirmed.get("channel_id"), "Task belongs to another Channel"
         assert confirmed.get("confirmed_by") == "web", "PRD was not confirmed through UI"
         assert confirmed.get("product_mode") == "multi_lens", "PRD did not come from the multi-role discussion"
-        assert len(set(confirmed.get("signed_by", []))) >= 4, "missing discussion role signatures"
+        from zf.runtime.channel_projection import project_channel
+        from zf.runtime.channel_prd_revision import consensus_mode_and_required_signers
+        channel = project_channel(state, confirmed["channel_id"])
+        _, required = consensus_mode_and_required_signers(channel, thread_id=confirmed.get("thread_id") or "main")
+        assert required and set(required) <= set(confirmed.get("signed_by", [])), "missing actual required role signatures"
     owner_evidence = check_owner_checkpoint(events, run_id) if owner_checkpoint else None
     return {"audit_source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            "owner_checkpoint": owner_evidence,
+            "owner_checkpoint": owner_evidence, "replan": replan_evidence,
             "workflow_run_id": run_id, "plan_id": plan_id, "plan_sha256": digest,
             "plan_artifact_ref": ref, "parent_task_id": task.id, "provider_roles_dispatched": sorted(dispatched),
             "channel_confirmation_event_id": confirmations[0].id if confirmations else None}

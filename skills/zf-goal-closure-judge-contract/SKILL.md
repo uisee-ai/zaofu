@@ -80,6 +80,13 @@ Return one top-level `goal_closure_result` object:
 ```
 
 Copy pinned identity fields exactly; never infer a newer target or generation.
+After a candidate-triggered Plan revision, sources named `historical-candidate-*`
+belong to the indicated earlier generation and commit. Compare its historical
+spec, individual journey, assertion and evidence refs when the approved Plan
+retains a historical obligation. Cite that admitted envelope for the historical
+claim. Evaluate the current product against its own spec and report; a blocked
+historical report can contain individually passing assertions and open gaps.
+
 Cover every mandatory canonical claim exactly once. A `closed` claim requires
 at least one admitted supporting result ref. A `waived` claim requires a
 waiver ref.

@@ -14,6 +14,9 @@ load_on_demand: true
 不替代 Kernel 的引用、路径、代际及完成证据检查。产物使用现有 Plan、task_map、
 矩阵和 Critic verdict；项目语义判断必须附来源，不能变成 Runtime 的项目规则。
 
+Critic 先按本次批准的 `plan_review` 与[按需审查](references/review-scope.md)确定覆盖。
+下文是方法目录，targeted 按 focus 与发现的依赖选择适用部分，不等于所有附录全量加载。
+
 生成或审查任务切片时，读取[任务规格与一致性](references/task-spec-slices.md)。
 每片交接可观察行为、共享合同、失败不变项和独立验收责任；先审规格再审分配，
 并核对最终序列化正文、决定登记与矩阵，而非依赖作者的“已对齐”声明。
@@ -47,6 +50,12 @@ Planner 在提交最终工件前、Critic 在决定 verdict 前，读取并执�
 记录新旧版本、受影响消费者、重审与复用依据；摘要写入现有 Plan 人读正文。
 交付可运行产品或部署环境时，按[可复现交付规划](references/delivery-validation.md)
 明确指南、环境与关键旅程的生产者、独立验证责任和执行时点。
+
+## 审查范围
+
+Planner/Critic 读取[按需审查与有界返修](references/review-scope.md)。下列语义方法按本次
+批准的评审范围执行；首次 targeted 与历史 incremental 分开，实际必读与扩读遵守
+当前派发策略。全量方法不能将定向评审重新扩大为全部附件必读，也不能缩窄本次 focus。
 
 ## 条款与验收责任
 

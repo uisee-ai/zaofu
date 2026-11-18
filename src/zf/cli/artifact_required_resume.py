@@ -6,7 +6,6 @@ historical tool output does not prove that it survived context compaction.
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +15,7 @@ from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.runtime.artifact_output_delivery import observe_artifact_delivery
 from zf.runtime.artifact_read_ledger import active_read_ledger_path
 from zf.runtime.artifact_read_ledger_validation import _parse_ledger
+from zf.runtime.artifact_text_page import parse_artifact_page
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
@@ -96,7 +96,7 @@ def resume_position(
                         continue
                     output_digest = row["output_sha256"]
                     if output_digest not in bodies:
-                        bodies[output_digest] = json.loads(hydrate_sidecar_ref(state_dir, row["output_ref"]).payload["body"])
+                        bodies[output_digest] = parse_artifact_page(hydrate_sidecar_ref(state_dir, row["output_ref"]).payload["body"])
                     page = bodies[output_digest]
                     if (page.get("schema_version") != "required-artifact-page.v2"
                             or page.get("attempt_id") != attempt or page.get("bundle_digest") != bundle_digest

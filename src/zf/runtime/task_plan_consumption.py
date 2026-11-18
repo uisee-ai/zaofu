@@ -25,7 +25,7 @@ def selected_plan_ports(
         "schema_version", "implementation", "task-verify",
     } or policy.get("schema_version") != "task-plan-input-selection.v1":
         raise ValueError("invalid task plan input selection")
-    required_full = {"task_map", "execution_spec", "task_execution_input", "acceptance_matrix", "test_matrix", "real_e2e_matrix"}
+    required_full = {"task_map", "execution_spec", "acceptance_matrix", "test_matrix", "real_e2e_matrix"}
     if not required_full.issubset(required):
         raise ValueError("task selection requires the full canonical matrices in the package")
     task_map = ports.get("task_map")
@@ -51,6 +51,6 @@ def selected_plan_ports(
             raise ValueError(f"{stage} input selection must be a non-empty port list")
         if len(set(value)) != len(value) or any(name not in required for name in value):
             raise ValueError(f"{stage} input selection has duplicate or unbound ports")
-        if "task_execution_input" not in value:
-            raise ValueError(f"{stage} input selection requires task_execution_input")
+        if not {"execution_spec", "task_execution_input"}.intersection(value):
+            raise ValueError(f"{stage} input selection requires a task-scoped execution input")
     return list(policy[profile])

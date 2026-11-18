@@ -38,6 +38,7 @@ from zf.runtime.candidate_rework_generation import (
 )
 from zf.runtime.rework_triage import classify_rework_trigger, is_plan_level_task_contract_blocker
 from zf.runtime.canonical_recovery import classify_recovery_scope
+from zf.runtime.reader_replan_ownership import admitted_plan_blocker
 from zf.runtime.candidate_rework_identity import (
     _candidate_failure_superseded,
     _candidate_generation_stale,
@@ -608,6 +609,8 @@ def plan_candidate_rework(
         if continuation_reason:
             feedback_lines.append(f"continuation admission: {continuation_reason}")
         feedback = tuple(_dedupe_feedback(feedback_lines))
+        if admitted_plan_blocker(event):
+            failed_source = task_ids_from_payload(payload)
         failed_task_ids = tuple(sorted(failed_source))
         if (
             source_event_type == "integration.failed"
@@ -850,6 +853,8 @@ def _infra_only_candidate_failure_ids(events: list) -> set[str]:
         payload = getattr(event, "payload", {}) or {}
         if not isinstance(payload, dict):
             payload = {}
+        if admitted_plan_blocker(event):
+            continue
         if failure_kind_from_payload(payload) == FAILURE_KIND_INFRA:
             out.add(event_id)
             continue

@@ -155,12 +155,22 @@ def consume_workflow_synthesis_operations(
                 continue
             if outcome.request_projection.get("status") == "ready":
                 try:
-                    synthesis._build_synthesis_proposal(
+                    proposal = synthesis._build_synthesis_proposal(
                         state_dir=state_dir,
                         outcome=outcome,
                         operation_context=operation_context,
                         actor=actor,
                     )
+                    if proposal.get("status") == "STOP":
+                        blockers = proposal.get("blockers") or []
+                        reason = "; ".join(str(item.get("message") or item.get("kind") or "")
+                                           for item in blockers if isinstance(item, Mapping))
+                        _record_failure(
+                            writer=writer, service=service, operation=operation,
+                            request_id=request_id, phase="proposal_materialization",
+                            error=ValueError(reason or "Workflow proposal returned STOP"),
+                            retry_limit=0, terminalize=True, blockers=blockers,
+                        )
                 except Exception as exc:
                     _record_failure(
                         writer=writer,
@@ -187,6 +197,7 @@ def _record_failure(
     error: Exception,
     retry_limit: int,
     terminalize: bool = False,
+    blockers: list[dict[str, Any]] | None = None,
 ) -> None:
     operation_id = str(operation.get("operation_id") or "")
     request_hash = str(operation.get("request_hash") or "")
@@ -227,10 +238,12 @@ def _record_failure(
                 retry_limit if phase == "proposal_materialization" and not prerequisite else 0
             ),
             "reason": reason,
-            "blockers": prerequisite.blockers if prerequisite else [],
+            "blockers": blockers if blockers is not None else prerequisite.blockers if prerequisite else [],
+            "requires_resynthesis": blockers is not None,
             "next_action": (
                 "repair Git baseline, then retry preparation"
-                if prerequisite else "repair request sidecar and submit a new revision"
+                if prerequisite else "correct the selection and retry Workflow preparation"
+                if blockers is not None else "repair request sidecar and submit a new revision"
                 if terminalize
                 else (
                     "inspect proposal materialization failure"

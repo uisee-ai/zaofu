@@ -1250,6 +1250,7 @@ def _apply_batch_candidate_ready(
     }
     event = writer.append(ZfEvent(
         type="candidate.ready",
+        origin="kernel",
         actor="zf-cli",
         payload=payload,
         causation_id=checkpoint.blocking_event_id or checkpoint.source_event_id,

@@ -10,7 +10,7 @@ def port_has_prior_review(
     state_dir: Path, *, port: Mapping[str, Any], package: Mapping[str, Any],
     previous: Mapping[str, Any],
 ) -> bool:
-    from zf.runtime.plan_local_review_policy import _has_full_read, _has_observed_read
+    from zf.runtime.plan_input_read_selection import complete_partition_read
 
     required = previous.get("_critic_required_reads") or []
     observed = previous.get("_critic_observed_reads") or []
@@ -19,7 +19,7 @@ def port_has_prior_review(
                 if isinstance(source, Mapping) and any(
                     isinstance(binding, Mapping) and all(binding.get(k) == source.get(k)
                     for k in ("source_id", "artifact_id", "ref", "sha256")) for binding in bindings)
-                and _has_full_read(required, source) and _has_observed_read(observed, source)]
+                and complete_partition_read(state_dir, source, required, observed)]
     if any(source.get("sha256") == port.get("sha256") for source in reviewed):
         return True
     if port.get("logical_name") != "product_acceptance_spec":

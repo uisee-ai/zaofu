@@ -9,7 +9,7 @@ from typing import Any
 
 from zf.runtime.call_result_envelope import canonical_json_bytes
 from zf.runtime.plan_artifact_ports import canonical_plan_port_name, coerce_plan_port_descriptors
-from zf.runtime.sidecar_refs import DEFAULT_HYDRATE_LIMIT_BYTES
+from zf.runtime.sidecar_refs import DEFAULT_HYDRATE_LIMIT_BYTES, sidecar_path
 from zf.runtime.task_map import resolve_artifact_file
 
 
@@ -41,7 +41,7 @@ def plan_port_bodies(
     project_root: Path,
     errors: list[dict[str, str]],
 ) -> dict[str, Mapping[str, Any]]:
-    selected: dict[str, tuple[dict[str, Any], str]] = {}
+    selected: dict[str, tuple[dict[str, Any], str, bool]] = {}
     sources = [(dict(trigger), "trigger_payload"), *(
         (candidate, f"report[{index}]")
         for index, candidate in enumerate(candidates)
@@ -65,7 +65,7 @@ def plan_port_bodies(
                 or ""
             ))
             if name:
-                selected[name] = (descriptor, f"{label}.plan_ports[{index}]")
+                selected[name] = (descriptor, f"{label}.plan_ports[{index}]", True)
         for name, keys in direct_refs.items():
             if name in selected and label == "trigger_payload":
                 continue
@@ -74,6 +74,7 @@ def plan_port_bodies(
                 selected[name] = (
                     {"logical_name": name, "body": dict(inline)},
                     f"{label}.{name}",
+                    False,
                 )
                 continue
             ref = next(
@@ -84,10 +85,10 @@ def plan_port_bodies(
                 canonical_plan_port_name(str(item.get("logical_name") or "")) == name
                 for item in coerce_plan_port_descriptors(source.get("plan_ports"))
             ):
-                selected[name] = ({"logical_name": name, "ref": ref}, f"{label}.{keys[0]}")
+                selected[name] = ({"logical_name": name, "ref": ref}, f"{label}.{keys[0]}", False)
 
     bodies: dict[str, Mapping[str, Any]] = {}
-    for name, (descriptor, field) in selected.items():
+    for name, (descriptor, field, explicit) in selected.items():
         body = descriptor.get("body")
         if isinstance(body, Mapping):
             try:
@@ -99,17 +100,23 @@ def plan_port_bodies(
             continue
         ref = str(descriptor.get("ref") or "").strip()
         if not ref:
+            if explicit:
+                _error(errors, "plan_port_unreadable", field,
+                       "explicit plan port requires ref/sha256 or an inline body")
             continue
         try:
-            path = resolve_artifact_file(
-                ref,
-                project_root=project_root,
-                state_dir=state_dir,
-            )
-            raw = read_plan_port_bytes(path, name)
             expected = str(
                 descriptor.get("sha256") or descriptor.get("digest") or ""
             ).strip()
+            if explicit:
+                # Package admission hydrates explicit descriptors as sidecars;
+                # only direct *_ref inputs are materialized from project paths.
+                if not expected:
+                    raise ValueError("explicit plan port requires ref/sha256 or an inline body")
+                path = sidecar_path(state_dir, ref)
+            else:
+                path = resolve_artifact_file(ref, project_root=project_root, state_dir=state_dir)
+            raw = read_plan_port_bytes(path, name)
             actual = hashlib.sha256(raw).hexdigest()
             if expected and expected != actual:
                 raise ValueError(
@@ -126,7 +133,7 @@ def plan_port_bodies(
     from zf.runtime.task_scoped_plan_inputs import SCHEMA_VERSION
 
     for name, body in bodies.items():
-        descriptor, field = selected[name]
+        descriptor, field, _explicit = selected[name]
         if (descriptor.get("schema_version") == SCHEMA_VERSION
                 and body.get("schema_version") != SCHEMA_VERSION):
             _error(errors, "plan_port_schema_mismatch", field,

@@ -34,6 +34,7 @@ _GOAL_CLAIM_SET_IDENTITY_KEYS = (
 )
 _REPLAN_SEMANTIC_PASSTHROUGH_KEYS = (
     "input_task_ids",
+    "candidate_event_id",
     "source_commit",
     "candidate_base_commit",
     "previous_plan_candidate_refs",
@@ -116,6 +117,9 @@ def build_replan_resynth_event(
         str(getattr(plan, "source_event_id", "") or ""),
     )
     source_payload = _event_payload(source_event)
+    if source_payload.get("candidate_event_id") or getattr(plan, "candidate_event_id", ""):
+        for key in ("input_task_ids", "failed_task_ids", "task_ids", "downstream_task_ids", "resume_scope"):
+            payload.pop(key, None)
     feedback = list(getattr(plan, "feedback", ()) or ())
     source_type = str(
         getattr(source_event, "type", "")

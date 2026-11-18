@@ -17,6 +17,9 @@ PRD、review 或 Workflow 阶段；如已有完整文件，给出群内可预览
 没有完整文件时不要用内存中的字节数/哈希代替交付。
 
 正式 synthesis 由 Runtime 保存 PRD，`read_only` 不妨碍结构化交付，无需因此请求提权。
+完整 PRD 只出现在一种结构化正文载体中；JSON 外、reply_text 和 summary 不重复整篇。
+结构/类型修复保留已有效的需求和正文，只修复被指出的字段及关联一致性；返回完整修正对象，
+不先写另一篇长草稿。独立需求复核仍须执行，不能为省 token 忽略来源或替 Owner 决策。
 若请求给出 `prd_source_file`，完整阅读该不可变快照与所需讨论来源。保留全文时返回
 `prd_file: {ref, sha256}`（与该 descriptor 精确一致），同时提供完整需求覆盖、验收、
 决策和来源声明；需要修改长文件时优先 `prd_composition: {source_ref, source_digest, edits, appendix_markdown}`，
@@ -27,7 +30,9 @@ PRD、review 或 Workflow 阶段；如已有完整文件，给出群内可预览
 实现与操作约束见 `docs/impl/channel-prd-file-publication.md`。
 
 质量增强版 synthesis 必须声明 `quality_contract=channel-prd-quality.v1`。需求覆盖表逐行
-提供直接 `evidence_refs`，研究项补充 `adopted_conclusion` 与 `applicability_limit`；来源
+提供直接 `evidence_refs: list[str]`，例如 `["sources/requirement.md"]`；此字段不是
+`{ref,digest,location}` 对象数组，不能用对象代替合同要求的字符串引用。引用取自当前
+绑定来源，不照抄示例路径。研究项补充 `adopted_conclusion` 与 `applicability_limit`；来源
 attestation 的读取状态不能与 partial/不可读 artifact 同时出现。贡献物分为互斥的
 `canonical_cross_review_refs` 和 `supporting_contribution_refs`，两者并集必须等于消费列表。
 同时提供 `permission_audit_contract`，明确 `deny_by_default`、审计事件字段、查询字段、
@@ -162,9 +167,13 @@ Runtime 会把上述清单和 companion 导出到同版 Markdown；无需复制�
 这次 synthesis 就须交付完整 PRD；不能只给摘要并建议后续 Workflow 再编制。
 先从实际源文档生成需求清单，保留范围、主流程、异常流程、权限、数据约束、状态变化、
 非功能要求和可执行验收；按项目取舍，不套用固定条数或固定产品功能表。
-`requirement_coverage` 每项包含唯一 `id`、`source_refs`、正文 `section`、
+`requirement_coverage` 每项包含唯一 `id`、`source_refs`、字符串数组 `evidence_refs`、正文 `section`、
 `acceptance_ids` 和 `status: covered|deferred|gap`；covered 必须指向声明过的验收 ID，
 其他状态提供具体 `reason`，不得将未覆盖项静默删除。
+先形成验收 ID 登记，再由登记生成 coverage 引用，提交前查空引用及未声明 ID。
+当前会话“只讨论 PRD、以后审批实施”等流程约束保留在 document_control、正文阶段边界
+及其来源记录中；不另造无产品 AC 的 covered 行，也不把流程限制伪装成产品功能 AC。
+产品需求的真实未覆盖项仍须如实列为 gap/deferred，不能借流程分类隐藏。
 `decision_log` 逐项记录问题/决定、依据、理由、异议及处置；没有新决定可为空。
 这些映射与完整正文共同进入 canonical PRD、同版审查和下载文件。
 
