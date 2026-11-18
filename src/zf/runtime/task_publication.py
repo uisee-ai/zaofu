@@ -4,7 +4,6 @@ No interpretation of a worker's error text and no product verdict: the signed
 blocked result chooses paths, owner policy limits publication, and the next
 worker/independent Reader must assess the resulting exact commit.
 """
-from dataclasses import asdict
 import subprocess
 import logging
 
@@ -32,12 +31,20 @@ def reconcile_task_publication(service) -> int:
     policy = getattr(service.config.runtime, 'task_publication', None)
     if not policy or not policy.enabled:
         return 0
-    approval = policy.approval_ref + '#' + digest(asdict(policy))
+    approval = policy.approval_ref + '#' + digest(policy.authorization_payload())
+    applied = 0
     with locked_path(service.state_dir / 'locks' / 'task-candidate-publication'):
         events = service.writer.event_log.read_all()
         if is_dispatch_paused(service.state_dir, events=events):
             return 0
         for op_id, op in reduce_workflow_operations(events).items():
+            if applied >= policy.max_actions_per_tick:
+                break
+            # Each effect may change the Run budget, pause state or ownership.
+            # Never authorize a later candidate using the pre-batch snapshot.
+            events = service.writer.event_log.read_all()
+            if is_dispatch_paused(service.state_dir, events=events):
+                break
             if (op.get('task_pipeline_stage') != 'impl' or op.get('status') != 'settled'
                     or op.get('semantic_verdict') != 'blocked'
                     or active_codex_turn_from_events(events, str(op.get('role_instance') or ''))):
@@ -70,7 +77,7 @@ def reconcile_task_publication(service) -> int:
                             + '. Reassess the exact commit and required self-checks; publication is not an Impl verdict.',
                         config=service.config, apply=True)
                     if retry['status'] == 'requested':
-                        return 1
+                        applied += 1
                     continue
                 if not git(root, 'status', '--porcelain'):
                     result = hydrate_sidecar_ref(service.state_dir, op['admitted_control_result_ref']).payload
@@ -94,11 +101,11 @@ def reconcile_task_publication(service) -> int:
                     raise ValueError('candidate publication budget exhausted')
                 manifest = preview(service, operation_id=op_id, kind='commit', paths=paths)
                 apply(service, manifest, approval_ref=approval, reviewed_digest=manifest['manifest_digest'])
-                return 1
+                applied += 1
             except BlockingIOError:
                 logging.getLogger(__name__).warning(
                     'Candidate publication deferred for %s: dependency environment is being mutated', op_id)
                 continue
             except (ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
                 _escalate(service, events, op, str(exc))
-    return 0
+    return applied

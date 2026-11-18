@@ -350,7 +350,7 @@ def test_prod_controller_profiles_wire_yoke_and_enforcement():
     assert (
         prod["workflow"]["execution_profiles"]["bounded-direct-v1"]
         ["limits"]["token_budget"]
-        == 1_500_000
+        == 0
     )
     assert (
         prod["workflow"]["execution_profiles"]["bounded-direct-v1"]

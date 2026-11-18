@@ -953,6 +953,7 @@ def test_proposal_materialization_failure_has_bounded_retries(
 
 def test_consumer_lock_contention_defers_without_reporting_failure(tmp_path):
     from zf.core.state.locks import locked_path
+    from zf.runtime.workflow_synthesis_consumer import WorkflowSynthesisConsumerBusy
 
     config, state, writer, _ = _context(tmp_path)
     queued = enqueue_workflow_synthesis(
@@ -961,8 +962,9 @@ def test_consumer_lock_contention_defers_without_reporting_failure(tmp_path):
     )
     before = [e.id for e in writer.event_log.read_all()]
     with locked_path(state / "projections/workflow-synthesis-consumer.guard"):
-        assert consume_workflow_synthesis_operations(
-            state_dir=state, project_root=tmp_path, config=config, writer=writer,
-        ) == 0
+        with pytest.raises(WorkflowSynthesisConsumerBusy):
+            consume_workflow_synthesis_operations(
+                state_dir=state, project_root=tmp_path, config=config, writer=writer,
+            )
     assert before == [e.id for e in writer.event_log.read_all()]
     assert load_workflow_operation(writer.event_log, queued.operation_id)["status"] == "requested"

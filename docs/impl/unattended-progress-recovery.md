@@ -80,3 +80,24 @@ Plan 必须审阅批准；批准后冻结 config/合同/源码/授权，观察�
 真实轮另出现行为 RED 明细缺失导致独立 Verify 拒绝、OA 请求人工介入。该拒绝不作为需要绕过的门禁；下一冻结轮必须先证明测试入口能在实际沙箱输出失败断言和退出码。本轮实际 Provider 观测 Impl峰值8、TaskVerify峰值6、同时8+8时长0；不能以修复已提交替代真实无人资格。
 
 本轮于2026-11-18 11:57 UTC以 `failed_qualification` 正常停止，停止前完成8/16项；父控制器、独立Run Manager及两个AR子实验均停止，私有tmux无残留。账本/任务候选全部保留，未覆盖判定或人工补采证。结束实验是操作员操作，与批准后的恢复介入0分开记录。下一轮前先对实际Provider测试入口做RED/GREEN预检。
+
+### 发布队列的有限批量
+
+32任务资格轮进一步观察到：已发布/待发布候选排队时，Impl槽位仍可能空闲；
+`Run Manager → reconcile_task_publication` 每tick原来只执行一次commit或retry。
+8个真实Git工作树的独立回归复现了一轮只能推进1项，不能用已配置8个worker推断发布吞吐。
+
+`zf.yaml` 可显式设置 `runtime.task_publication.max_actions_per_tick: 8`，合法范围1–100，
+默认1保留原节拍。每轮只遍历一次候选，每个operation至多执行一次原有发布或续跑动作；
+Git效果仍逐个执行，继续使用既有受控入口、精确路径与Run总发布预算。
+每项重新读取事件核对暂停、总预算、前置状态及回执，未知效果/活跃worker不被重放。
+此项不调整宿主容器命令执行节拍，也不改变CAS集成或产生业务通过。
+
+默认1的授权摘要省略新增字段，保持旧配置回执在代码升级后有效；显式批量纳入授权摘要。
+批量应在新Run冻结前配置；带未结算旧授权效果的Run不能热改该字段并沿用旧回执。
+当前冻结的32任务实验不加载这份补丁，批处理单测通过也不等于真实8×8资格通过。
+
+验证与任务：[候选发布批处理](../../tasks/active/2026-11-18-1402-publication-batch-throughput.md)，
+记录目录 `reports/publication-throughput-20261118/`。
+
+批处理修复验证：8候选/真实Run Manager的RED复现4 failed、6 passed；专项60 passed。扩大闭包发现两项基线旧断言，已在未改动dev树复现并按现行Busy调用合同与既有token配置对齐，模块及caller70 passed。最终影响闭包8035 passed、10 skipped，哨兵53 passed、流程mock10 passed；尚不能替代新版本真实8×8。
