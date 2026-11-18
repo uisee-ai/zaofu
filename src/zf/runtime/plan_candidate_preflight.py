@@ -161,7 +161,7 @@ def evaluate_plan_candidate_preflight(
                     _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}", str(exc))
                     break
         prior_task_map = _canonical_prior_task_map(
-            trigger=trigger,
+            current=task_map, trigger=trigger,
             state_dir=state_dir,
             project_root=project_root,
             errors=errors,
@@ -411,6 +411,7 @@ def _product_acceptance_spec_errors(
 
 def _canonical_prior_task_map(
     *,
+    current: Mapping[str, Any],
     trigger: Mapping[str, Any],
     state_dir: Path,
     project_root: Path,
@@ -453,7 +454,7 @@ def _canonical_prior_task_map(
             )
             if descriptor is None:
                 raise ValueError("canonical Plan Package has no task_map port")
-            return _load_bound_task_map(
+            prior_map = _load_bound_task_map(
                 descriptor,
                 state_dir=state_dir,
                 project_root=project_root,
@@ -466,6 +467,13 @@ def _canonical_prior_task_map(
                 str(exc),
             )
             return {}
+        from zf.runtime.plan_claim_continuity import candidate_claim_errors
+
+        try:
+            errors.extend(candidate_claim_errors(state_dir, project_root, package, current, trigger))
+        except (OSError, ValueError) as exc:
+            _error(errors, "goal_claim_set_invalid", "task_map.goal_claims", str(exc))
+        return prior_map
 
     descriptors = trigger.get("previous_plan_candidate_refs")
     descriptors = descriptors if isinstance(descriptors, list) else []

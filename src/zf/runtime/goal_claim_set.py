@@ -150,23 +150,7 @@ def build_goal_claim_set(
     return body
 
 
-def pin_goal_claim_set_from_task_map(
-    *,
-    state_dir: Path,
-    project_root: Path,
-    task_map_ref: str,
-    workflow_run_id: str,
-    goal_id: str,
-    task_map_generation: str,
-    objective_ref: str = "",
-    source_event_id: str = "",
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    path = resolve_artifact_file(
-        task_map_ref,
-        project_root=project_root,
-        state_dir=state_dir,
-    )
-    task_map = load_task_map(path)
+def read_goal_objective(state_dir: Path, project_root: Path, objective_ref: str) -> Mapping[str, Any]:
     objective: Mapping[str, Any] = {}
     if objective_ref and Path(objective_ref).suffix.lower() == ".json":
         objective_path = resolve_artifact_file(
@@ -185,13 +169,33 @@ def pin_goal_claim_set_from_task_map(
                 f"objective_ref must contain a JSON object: {objective_ref}"
             )
         objective = decoded
+    return objective
+
+
+def pin_goal_claim_set_from_task_map(
+    *,
+    state_dir: Path,
+    project_root: Path,
+    task_map_ref: str,
+    workflow_run_id: str,
+    goal_id: str,
+    task_map_generation: str,
+    objective_ref: str = "",
+    source_event_id: str = "",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    path = resolve_artifact_file(
+        task_map_ref,
+        project_root=project_root,
+        state_dir=state_dir,
+    )
+    task_map = load_task_map(path)
     claim_set = build_goal_claim_set(
         task_map,
         workflow_run_id=workflow_run_id,
         goal_id=goal_id,
         task_map_generation=task_map_generation,
         objective_ref=objective_ref,
-        objective=objective,
+        objective=read_goal_objective(state_dir, project_root, objective_ref),
     )
     descriptor = write_immutable_json_sidecar(
         state_dir,
