@@ -1086,7 +1086,7 @@ def test_resident_bounds_hung_loop_by_declared_budget(tmp_path):
     """2026-07-10 R4: the resident consumes requests single-file with a
     synchronous runner — one unbounded loop (inner 2h test runner) starved 11
     pending requests of any lifecycle. The runner is now bounded by the loop's
-    own declared budget (budget_cap.max_minutes, 2x grace) and a timeout
+    own declared work budget (budget_cap.max_minutes) and a timeout
     surfaces as LOOP_FAILED rc=124 so the resident moves on."""
     state_dir = tmp_path / ".zf"
     payload = build_loop_request_payload(
@@ -1110,17 +1110,20 @@ def test_resident_bounds_hung_loop_by_declared_budget(tmp_path):
         runner=_hung_runner,
     )
 
-    assert seen_timeouts == [1200]  # 10 min declared * 60 * 2x grace
+    assert seen_timeouts == [600]  # Cleanup is separate from the work deadline.
     failed = [event for event in log.read_all() if event.type == LOOP_FAILED]
     assert failed
     assert failed[-1].payload["returncode"] == 124
+    assert failed[-1].payload["work_timeout_seconds"] == 600
+    assert failed[-1].payload["cleanup_timeout_seconds"] == 90
+    assert failed[-1].payload["diagnosis"]["failure_class"] == "diagnosis_timeout"
     assert "bounded loop" in failed[-1].payload["stderr_tail"]
 
 
 def test_loop_runner_timeout_from_budget_or_fallback():
     from zf.autoresearch.resident import _loop_runner_timeout_s
 
-    assert _loop_runner_timeout_s({"max_minutes": 10}) == 1200
+    assert _loop_runner_timeout_s({"max_minutes": 10}) == 600
     assert _loop_runner_timeout_s({}) == 1800
     assert _loop_runner_timeout_s(None) == 1800
     assert _loop_runner_timeout_s({"max_minutes": "junk"}) == 1800

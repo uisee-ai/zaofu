@@ -510,7 +510,7 @@ def prepare_profiled_stage_result(
         f"- schema: `{profile.schema_version}`",
         *result_workspace_guidance(scratch),
         f"- Edit `{scratch}`. Its JSON root is the complete "
-        f"`{profile.semantic_field}` body; preserve prefilled fields at the root. "
+        f"`{profile.semantic_field}` body; author fields for the actual outcome at the root. "
         f"Do not wrap it under `{profile.semantic_field}` or add identity fields. "
         "The Kernel supplies immutable identity and selects the canonical event.",
         "- Update the prefilled scratch file in place. With apply_patch use "
@@ -523,6 +523,12 @@ def prepare_profiled_stage_result(
         "",
     ]
     if profile_id in {"task-verify", "candidate-verify"}:
+        from zf.runtime.reader_submission_guidance import verifier_failure_schema_guidance
+        lines.append(verifier_failure_schema_guidance(
+            owner=str(semantic_body.get("verification_owner") or "task_verify"),
+            tier=str(semantic_body.get("verification_tier") or "runtime"),
+            submit_command=render_result_validate_command(command) + " --submit",
+        ))
         lines[7:7] = [
             "- Verification command IDs are a closed set. Use `command_id` only "
             "for an exact command already present in the prefilled template; "

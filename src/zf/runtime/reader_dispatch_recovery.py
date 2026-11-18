@@ -42,6 +42,9 @@ class ReaderDispatchRecoveryMixin:
                 if fanout_id and child_id:
                     key = (fanout_id, child_id)
                     dispatches.setdefault(key, []).append(event)
+                    # Prior terminal receipts belong to the replaced dispatch;
+                    # they must not hide loss of this newly admitted attempt.
+                    terminal_children.discard(key)
                     if pending_loss.pop(key, None) is not None:
                         dispatch_lost_count[key] = dispatch_lost_count.get(key, 0) + 1
                 continue

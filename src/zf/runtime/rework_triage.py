@@ -111,6 +111,8 @@ def is_plan_level_task_contract_blocker(event: ZfEvent) -> bool:
     blocker_kind = str(payload.get("blocker_kind") or "").strip().lower()
     if execution_context_failure(payload):
         return False
+    if failure_class == "host_publication_required":
+        return False
     semantic_kind = (
         failure_class in {
             "task_contract_unsatisfiable",
@@ -295,6 +297,12 @@ def classify_rework_trigger(
         )
 
     explicit_failure_class = str(payload.get("failure_class") or "").strip()
+    if explicit_failure_class == "host_publication_required":
+        return _result(
+            "unknown", "host_publication", "run_manager", "request_diagnosis",
+            "host publication requires the configured finite path authorization and an exact receipt; "
+            "it is not a product or Plan failure",
+        )
     if explicit_failure_class == "reader_execution_failure":
         return _result(
             "unknown", "input_delivery", "run_manager", "request_diagnosis",

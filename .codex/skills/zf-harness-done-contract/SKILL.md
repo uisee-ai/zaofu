@@ -154,6 +154,17 @@ Do not submit a success claim when:
 Report the real blocker through the briefing's failure/suspension channel.
 Workers do not mark tasks, candidates, or goals done themselves.
 
+If the assigned worktree has a legitimate delta but the sandbox denies Git
+publication, preserve it and submit the current blocked result with
+`failure_class: host_publication_required`, exact `changed_files`,
+`target_commit` and the failed command evidence. Do not call it a product
+failure, request a new Plan, change sandbox permissions or alter Git metadata
+through an alternate path. Only the configured finite host-publication policy
+may authorize the effect; otherwise request owner guidance. The resulting
+commit receipt is not an Impl pass: the successor must inspect the exact commit,
+read its own required inputs/handoff and produce its required checks before
+independent Verify.
+
 ## Related Methods
 
 - `zf-yoke-dev-worker-role-context` - active Impl/Fix role boundary.

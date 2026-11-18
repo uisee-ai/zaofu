@@ -167,14 +167,13 @@ _LOOP_RUNNER_FALLBACK_TIMEOUT_S = 1800
 
 
 def _loop_runner_timeout_s(budget_cap: dict[str, Any] | None) -> int:
-    """Wall-clock bound for one synchronous loop run: the loop's own declared
-    budget (max_minutes) with 2x grace, else a 30min fallback."""
+    """Work deadline; runtime cleanup has a separate explicit bounded timeout."""
     try:
         max_minutes = int((budget_cap or {}).get("max_minutes") or 0)
     except (TypeError, ValueError):
         max_minutes = 0
     if max_minutes > 0:
-        return max_minutes * 60 * 2
+        return max_minutes * 60
     return _LOOP_RUNNER_FALLBACK_TIMEOUT_S
 
 
@@ -507,8 +506,7 @@ def run_resident_once(
         diagnosis_start = checkpoint_started(writer, state_dir=Path(state_dir),
             request_id=action.loop_request_id, command=action.command,
             worktree=Path(worktree_root) / action.loop_request_id)
-        # Enforce the loop's own declared budget (research_mode_contract
-        # budget_cap.max_minutes, 2x grace) on the synchronous runner. The
+        # Enforce the loop's own declared work budget on the runner. The
         # resident consumes requests single-file, so one unbounded loop starves
         # every request behind it: 2026-07-10 R4 PRD, a loop wedged on an inner
         # 2h test runner blocked the resident 80+ min and 11 pending requests
@@ -518,15 +516,19 @@ def run_resident_once(
         resident_worktree = Path(worktree_root) / action.loop_request_id
         from zf.autoresearch.runtime_cleanup import stop_experiment_runtime
 
+        diagnosis = {}
         try:
-            proc = runner(
-                action.command,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout_s,
-            )
+            if runner is subprocess.run:
+                from zf.autoresearch.child_supervision import run_supervised
+                proc, diagnosis = run_supervised(
+                    action.command, worktree=resident_worktree, timeout_s=timeout_s,
+                )
+            else:
+                proc = runner(action.command, capture_output=True, text=True,
+                              check=False, timeout=timeout_s)
         except subprocess.TimeoutExpired as exc:
+            diagnosis = {"status": "incomplete", "failure_class": "diagnosis_timeout",
+                         "reason": "diagnosis work deadline exhausted", "reproduction_status": "incomplete"}
             proc = subprocess.CompletedProcess(
                 action.command,
                 returncode=124,
@@ -539,6 +541,20 @@ def run_resident_once(
             )
         finally:
             runtime_cleanup = stop_experiment_runtime(resident_worktree, runner=runner)
+        if not diagnosis and proc.returncode != 0:
+            from zf.autoresearch.child_supervision import child_wait
+            diagnosis = child_wait(resident_worktree) or {
+                "status": "incomplete", "failure_class": "diagnosis_runner_failed",
+                "reason": "diagnostic runner exited without a completed diagnosis",
+                "reproduction_status": "incomplete",
+            }
+        diagnosis_ref = {}
+        if diagnosis:
+            from zf.runtime.sidecar_refs import write_sidecar_json
+            diagnosis_ref = write_sidecar_json(Path(state_dir),
+                f"diagnostics/autoresearch/{action.loop_request_id}-partial.json", diagnosis,
+                kind="autoresearch_partial_diagnosis", schema_version="autoresearch-partial-diagnosis.v1",
+                created_by="zf-autoresearch-resident", required=True)
         archive_outcome = _archive_resident_run(
             state_dir=Path(state_dir),
             worktree=resident_worktree,
@@ -585,6 +601,10 @@ def run_resident_once(
                 "stderr_tail": (proc.stderr or "")[-2000:],
                 "worktree_lifecycle": worktree_outcome,
                 "archive_refs": dict(archive_outcome.get("refs") or {}),
+                "diagnosis": diagnosis,
+                "diagnosis_ref": diagnosis_ref,
+                "work_timeout_seconds": timeout_s,
+                "cleanup_timeout_seconds": 90,
             },
         ))
         lifecycle_event = str(worktree_outcome.get("event_type") or "")

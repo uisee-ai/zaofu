@@ -55,9 +55,10 @@ def pin_reader_target_or_defer(
                 config=self.config,
             ).pin_reader_target(role, cleaned)
         except (EnvironmentInUse, TimeoutError):
-            _release_idle_owner(self, role)
+            released = _release_idle_owner(self, role, pending_run_id=run_id,
+                                          workflow_run_id=context.trace_id, stage_id=context.stage_id)
             from zf.runtime.reader_wait_recovery import exhaust_reader_wait
-            if exhaust_reader_wait(
+            if not released and exhaust_reader_wait(
                 self, role=role, context=context, child=child, run_id=run_id,
                 target_ref=cleaned, causation_id=causation_id,
             ):
@@ -111,23 +112,49 @@ def pin_reader_target_or_defer(
     return True
 
 
-def _release_idle_owner(runtime, role: RoleConfig) -> None:
+def _release_idle_owner(runtime, role: RoleConfig, *, pending_run_id: str = "",
+                        workflow_run_id: str = "", stage_id: str = "") -> bool:
     """Release only the managed idle reader; unknown/active holders keep waiting."""
     from zf.runtime.workflow_operation import reduce_workflow_operations
     if not runtime._role_is_on_demand(role):
-        return
+        return False
     try:
-        operations = reduce_workflow_operations(runtime.event_log.read_all())
-        if any(op.get('role_instance') == role.instance_id and op.get('status') in
-               {'requested', 'reserved', 'running', 'suspended'} for op in operations.values()):
-            return
+        events = runtime.event_log.read_all()
+        operations = reduce_workflow_operations(events)
+        for op in operations.values():
+            if op.get('role_instance') != role.instance_id or op.get('status') not in {
+                'requested', 'reserved', 'running', 'suspended',
+            }:
+                continue
+            # Preparing a request before provider delivery does not make an idle
+            # provider its consumer. Keep any previously delivered call fenced.
+            never_delivered = (
+                bool(pending_run_id and workflow_run_id and stage_id)
+                and op.get('status') == 'requested'
+                and op.get('operation_type') == 'fanout_reader_child'
+                and op.get('active_attempt_id') == pending_run_id
+                and op.get('workflow_run_id') == workflow_run_id
+                and op.get('parent_stage_id') == stage_id
+                and not any(
+                    event.type in {'workflow.operation.started', 'workflow.operation.retry_started',
+                                   'fanout.child.dispatched'}
+                    and (event.payload.get('operation_id') == op.get('operation_id')
+                         or (event.payload.get('role_instance') == role.instance_id
+                             and event.payload.get('run_id') == pending_run_id))
+                    for event in events
+                )
+            )
+            if not never_delivered:
+                return False
         if (runtime._active_provider_turn(role.instance_id)
                 or runtime._active_fanout_child_for_instance(role.instance_id) is not None
                 or runtime._active_task_for_instance(role.instance_id) is not None):
-            return
+            return False
         if runtime.transport.is_alive(role.instance_id):
             runtime._suspend_role(role, now=runtime._now())
+            return runtime.transport.is_alive(role.instance_id) is False
     except Exception:
         # Lifecycle already records failure; the actual holder check on the
         # next tick remains authoritative and cannot be waived here.
-        return
+        return False
+    return False

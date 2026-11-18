@@ -35,3 +35,8 @@ def test_environment_failure_does_not_route_to_product_rework():
     assert view["stage"] == "blocked"
     assert view["semantic_failure_count"] == 0
     assert "semantic_rework_exhausted" not in view["blockers"]
+
+
+def test_typed_verifier_product_rejection_consumes_semantic_budget():
+    view = _view([_failure(i, "product_rejection") for i in range(1, 4)])
+    assert view["semantic_failure_count"] == 3

@@ -49,3 +49,8 @@ def test_nested_reader_retry_binds_own_state_and_current_submission(tmp_path: Pa
     assert "Previous attempt failures do not cancel this authorization" in briefing
     assert "Do not repeat a successful submission or reuse stale identities" in briefing
     assert "Never retry or re-send" not in briefing
+    if typed:
+        assert "On error, preserve the exact command/error and stop this attempt" not in briefing
+        assert "preflight" in briefing and "same scratch" in briefing
+        assert "verifier_execution_failure" in briefing
+        assert "omit product_acceptance_report" in briefing

@@ -125,6 +125,16 @@ def test_plan_validation_rejects_selection_before_dispatch():
     assert any("task-verify" in e for e in plan_input_declaration_errors(payload))
 
 
+def test_production_profile_requires_selection_before_plan_admission():
+    from zf.core.config.loader import load_config
+    metadata = load_config(Path(__file__).parents[1] / "zf-prd-v5.yaml").workflow.flow_metadata
+    ports = metadata["artifact_package"]["required_ports"]
+    payload = {"required_plan_ports": ports, "tasks": [{"task_id": "T1"}]}
+    errors = plan_input_declaration_errors(payload, available_ports=ports,
+        require_selection=metadata["artifact_package"]["task_input_policy"] == "task-scoped-v1")
+    assert any("T1.evidence_contract.plan_input_selection is required" in e for e in errors)
+
+
 def test_resolve_payload_binds_selected_sources_and_read_requirements(case):
     state, resolver, identity, _ = case
     store = TaskStore(state / "kanban.json")

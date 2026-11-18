@@ -39,6 +39,23 @@ def prepare_reader_contract_target(runtime: Any, child: Any) -> None:
 
     rescan = uses_rescan_authority(payload)
     descriptor = contract_descriptor_from_payload(payload)
+    snapshot = hydrate_task_contract_snapshot(runtime.state_dir, descriptor)
+    if snapshot.get("authority_scope") == "candidate":
+        from zf.runtime.candidate_currentness import candidate_currentness_issues
+
+        # The workflow anchor is lineage, not the aggregate's Task authority.
+        # Reuse the same frozen-candidate checks as input/result admission;
+        # never replace a retry's target or contract to make it current.
+        issues = candidate_currentness_issues(
+            runtime.state_dir, runtime.event_log.read_all(), identity=payload,
+            contract_ref=str(payload.get("contract_snapshot_ref") or descriptor["ref"]),
+            contract_digest=str(payload.get("contract_snapshot_digest") or descriptor["sha256"]),
+        )
+        if issues:
+            raise TaskContractSnapshotError("; ".join(
+                f"{issue['code']}: {issue['message']}" for issue in issues
+            ))
+        return
     task_id = str(payload.get("task_id") or "")
     task = runtime.task_store.get(task_id) if task_id else None
     expected = {"task_id": task_id}

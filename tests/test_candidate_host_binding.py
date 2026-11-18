@@ -53,11 +53,40 @@ def candidate(case):
         {**identity, 'schema_version': 'verification-result.v1', 'verdict': 'blocked', 'target_commit': head},
         kind='test', schema_version='verification-result.v1', created_by='test')
     for kind, extra in [('workflow.operation.requested', {'request_ref': req}),
-                        ('fanout.child.dispatched', {}),
+                        ('fanout.child.dispatched', {'fanout_id': 'fanout', 'child_id': 'reader',
+                            'stage_id': 'verify', 'run_id': 'reader-attempt', 'target_ref': 'candidate/test'}),
                         ('workflow.call.result.admitted', {'semantic_verdict': 'blocked', 'control_result_ref': result}),
                         ('workflow.operation.settled', {})]:
         service.writer.append(ZfEvent(type=kind, payload={**identity, **extra}))
     return service, root, identity, frozen
+
+
+@pytest.mark.parametrize('change', ['', 'cause', 'previous', 'role', 'target', 'hash', 'untrusted', 'contract'])
+def test_candidate_probe_accepts_only_bound_transport_retry_lineage(candidate, change):
+    service, _, identity, frozen = candidate
+    events = service.writer.event_log.read_all()
+    first = next(e for e in events if e.type == 'fanout.child.dispatched'
+                 and e.payload.get('operation_id') == 'candidate-1')
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    op = reduce_workflow_operations(events)['candidate-1']
+    request = hydrate_sidecar_ref(service.state_dir, op['request_ref']).payload['request']
+    payload = {**first.payload, 'run_id': 'reader-attempt-retry-1', 'retry_of_run_id': 'reader-attempt',
+        'payload': {**identity, **request['result_identity'], 'target_commit': request['target_commit']}}
+    if change == 'previous': payload['retry_of_run_id'] = 'unrelated'
+    if change == 'role': payload['role_instance'] = 'other'
+    if change == 'target': payload['payload']['target_commit'] = 'f' * 40
+    if change == 'hash': payload['payload']['request_hash'] = 'other'
+    if change == 'contract': payload['payload']['contract_snapshot_digest'] = 'f' * 64
+    service.writer.append(ZfEvent(type='fanout.child.dispatched', origin='worker' if change == 'untrusted' else 'kernel',
+        causation_id='unrelated' if change == 'cause' else first.id, payload=payload))
+    if change:
+        with pytest.raises(ValueError):
+            preview(service, operation_id='candidate-1', kind='verify', command_id='contract-verification')
+    else:
+        manifest = preview(service, operation_id='candidate-1', kind='verify', command_id='contract-verification')
+        assert manifest['operation_id'] == 'candidate-1'
+        assert manifest['head'] == request['target_commit']
 
 
 def test_candidate_probe_executes_on_exact_detached_target_without_product_verdict(candidate):

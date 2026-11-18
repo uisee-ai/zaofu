@@ -10,6 +10,7 @@ from typing import Any
 from zf.core.config.schema import RoleConfig
 from zf.core.events.model import ZfEvent
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.reader_submission_guidance import submission_authority
 from zf.runtime.stage_failure_replan import reader_stage_lineage_payload
 from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
 
@@ -315,11 +316,7 @@ def write_fanout_retry_briefing(
             "```",
             "",
             "Do not emit the aggregate success/failure event directly; the kernel publishes it after the fanout barrier or synth role finishes.",
-            f"This dispatch authorizes one submission for `{run_id}`. "
-            "Previous attempt failures do not cancel this authorization. "
-            "Command exit 0 is success; there is no asynchronous ack. "
-            "Do not repeat a successful submission or reuse stale identities. "
-            "On error, preserve the exact command/error and stop this attempt.",
+            submission_authority(run_id),
             "`fanout_id`, `stage_id`, `child_id`, `run_id`, `role_instance`, and `status` must stay as top-level payload fields.",
             "Finding schema: use `severity` = info|low|medium|high|critical, `path`, `message`, and optional integer `line`.",
         ])

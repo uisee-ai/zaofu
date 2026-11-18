@@ -51,6 +51,20 @@ def test_structured_known_environment_failure_preserves_policy(config):
     assert not result.should_increment_retry
 
 
+@pytest.mark.parametrize("authorized", [True, False])
+def test_publication_has_one_recovery_owner(tmp_path, config, authorized):
+    from zf.runtime.failure_diagnosis_routing import pending_failure_diagnoses
+    state, log, writer = _state(tmp_path)
+    TaskStore(state / "kanban.json").add(Task(id="T1", status="in_progress"))
+    config.runtime.task_publication.enabled = authorized
+    writer.emit("dev.blocked", task_id="T1", payload={"failure_class": "host_publication_required",
+        "operation_id": "op-1", "workflow_run_id": "run-1", "reason": "host Git publication denied"})
+    actions = pending_failure_diagnoses(state, log.read_all(), config)
+    assert bool(actions) is not authorized
+    if not authorized:
+        assert actions[0]["target_operation_id"] == "op-1"
+
+
 @pytest.mark.parametrize('background_diagnosis', [False, True, 'busy', 'unavailable', 'human'])
 @pytest.mark.parametrize('reader_failure', [False, True])
 def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tmp_path, config, monkeypatch, background_diagnosis, reader_failure):

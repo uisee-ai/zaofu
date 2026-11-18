@@ -26,6 +26,11 @@ def dispatch_advisory_turn(
         for trigger in triggers:
             runtime._add_layer2_pending(trigger)
         return
+    if primary.payload.get("request_kind") == "worker_guidance":
+        from zf.runtime.orchestrator_advisory_queue import next_advisory_event
+        next_event = next_advisory_event(runtime.event_log.read_all(), orch_role.instance_id or orch_role.name)
+        if next_event is None or next_event.payload.get("request_id") != primary.payload.get("request_id"):
+            return
     from zf.runtime.worker_assistance import claim_assistance_dispatch
 
     if not claim_assistance_dispatch(runtime, primary):

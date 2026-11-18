@@ -73,6 +73,9 @@ def reconcile_task_publication(service) -> int:
                         return 1
                     continue
                 if not git(root, 'status', '--porcelain'):
+                    result = hydrate_sidecar_ref(service.state_dir, op['admitted_control_result_ref']).payload
+                    if result.get('failure_class') == 'host_publication_required':
+                        raise ValueError('host publication requested without a current source delta or receipt')
                     # Result paths may describe already committed work. Only a
                     # current source delta needs a new publication effect.
                     continue

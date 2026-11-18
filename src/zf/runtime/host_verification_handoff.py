@@ -5,6 +5,61 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.stage_failure_replan import reader_stage_for_failure
 
 
+def operator_candidate_receipts(service, operation: dict, contract: dict, events) -> dict:
+    """Carry existing reviewed host facts; never extend automatic execution policy."""
+    if contract.get('authority_scope') != 'candidate':
+        return {}
+    try:
+        body = hydrate_sidecar_ref(service.state_dir, operation['request_ref']).payload
+    except (ValueError, KeyError, OSError):
+        return {}
+    if any(body.get(k) != operation.get(k) for k in ('workflow_run_id', 'operation_id')):
+        return {}
+    target = body.get('request', {}).get('target_commit')
+    contract_digest = body.get('request', {}).get('result_identity', {}).get('contract_snapshot_digest')
+    if not target or not contract_digest:
+        return {}
+    specs = {c['command_id']: c for c in contract['verification_commands']}
+    identity = {k: operation.get(k) for k in ('workflow_run_id', 'task_id', 'task_map_generation')}
+    if not all(identity.values()):
+        return {}
+    receipts = {}
+    for event in reversed(events):
+        p = event.payload
+        trusted_effect = event.origin == 'kernel' or (not event.origin and event.actor == 'web')
+        if (event.type != 'runtime.action.attempt.completed' or not trusted_effect
+                or p.get('action') != 'task-host-assist' or p.get('kind') != 'verify'
+                or any(p.get(k) != v for k, v in identity.items())):
+            continue
+        try:
+            receipt = hydrate_sidecar_ref(service.state_dir, p['receipt_ref']).payload
+        except (ValueError, KeyError, OSError):
+            continue
+        manifest = receipt.get('manifest') or {}
+        spec = specs.get(receipt.get('command_id'))
+        if (not spec or receipt.get('schema_version') != 'task-host-receipt.v1'
+                or receipt.get('execution_origin') != 'operator_authorized_host'
+                or not receipt.get('approval_ref') or receipt['approval_ref'] != p.get('approval_ref')
+                or receipt.get('kind') != 'verify' or receipt.get('status') not in {'completed', 'failed'}
+                or type(receipt.get('exit_code')) is not int or receipt.get('source_stable') is not True
+                or any(receipt.get(k) != v or manifest.get('identity', {}).get(k) != v
+                       for k, v in identity.items())
+                or receipt.get('target_commit') != target or manifest.get('head') != target
+                or manifest.get('schema_version') != 'task-host-manifest.v1' or manifest.get('kind') != 'verify'
+                or manifest.get('contract_digest') != contract_digest
+                or not receipt.get('operation_id') or receipt['operation_id'] != p.get('operation_id')
+                or receipt['operation_id'] != manifest.get('operation_id')
+                or any(receipt.get(k) != spec.get(k) or manifest.get('command', {}).get(k) != spec.get(k)
+                       for k in ('command_id', 'command', 'command_digest'))):
+            continue
+        reviewed = digest({k: v for k, v in manifest.items() if k != 'manifest_digest'})
+        if any(value != reviewed for value in (
+                receipt.get('manifest_digest'), manifest.get('manifest_digest'), p.get('manifest_digest'))):
+            continue
+        receipts.setdefault(receipt['command_id'], p['receipt_ref'])
+    return receipts
+
+
 def reader_probe_handoff_complete(operation: dict, events) -> bool:
     """A kernel successor owns remaining probes; do not drain its predecessor."""
     if operation.get('task_pipeline_stage'):
@@ -71,6 +126,9 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         stage, _ = reader_stage_for_failure(service.config, events, failure)
         if stage is None:
             continue
+        supplemental = operator_candidate_receipts(service, operation, contract, events)
+        receipts = {**supplemental, **receipts}
+        unverified = {c['command_id'] for c in contract['verification_commands']} - receipts.keys()
         from zf.runtime.host_evidence_media import materialize_container_media
         indices = materialize_container_media(service.state_dir, list(receipts.values()), image=policy.image)
         media = (' Read-only media indices (paths relative to state_dir, source/digests bound): '
@@ -83,7 +141,7 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
             'operator_feedback': [
                 'Read the following bound container receipts as execution evidence, independently evaluate the original acceptance criteria. '
                 'Inspect exit codes and output, including failures. Do not repeat an unavailable sandbox command or treat the receipt as a product verdict. '
-                + 'Commands without receipts remain unverified: ' + ', '.join(sorted(required - receipts.keys())) + '. '
+                + 'Commands without receipts remain unverified: ' + ', '.join(sorted(unverified)) + '. '
                 + ', '.join(str(service.state_dir / r['ref']) for r in receipts.values()) + media]}
         requested = service.writer.emit('control.action.requested', actor='run-manager', payload={
             'action': 'stage-replan-new-generation', **payload})

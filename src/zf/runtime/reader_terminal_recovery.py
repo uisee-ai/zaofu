@@ -8,6 +8,10 @@ from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
 def reconcile_exhausted_reader_operations(runtime: Any, events: list[ZfEvent]) -> bool:
+    from zf.runtime.reader_wait_recovery import reconcile_undelivered_wait_failures
+
+    if reconcile_undelivered_wait_failures(runtime, events):
+        return True
     failures = [
         e
         for e in events

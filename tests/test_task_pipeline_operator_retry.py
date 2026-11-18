@@ -139,7 +139,7 @@ def test_retry_rejects_exhausted_budget_before_recording_request(case):
     assert log.path.read_bytes() == before
 
 
-def test_retry_allows_budget_offset_for_superseded_undispatched_repair(case):
+def test_superseded_identity_does_not_grant_more_semantic_failures(case):
     from zf.runtime.task_pipeline_operator_retry import request_impl_retry
 
     state, log, writer, identity, _ = case
@@ -152,11 +152,32 @@ def test_retry_allows_budget_offset_for_superseded_undispatched_repair(case):
     config = SimpleNamespace(workflow=SimpleNamespace(
         flow_metadata={"task_pipeline": {"mode": "blocking", "max_rework_attempts": 0}},
     ))
-    result = request_impl_retry(
-        state_dir=state, event_log=log, event_writer=writer,
-        operation_id="op-1", reason="repair checked", config=config,
-    )
-    assert result["status"] == "preview"
+    with pytest.raises(ValueError, match="retry budget exhausted"):
+        request_impl_retry(
+            state_dir=state, event_log=log, event_writer=writer,
+            operation_id="op-1", reason="repair checked", config=config,
+        )
+
+
+def test_large_identity_generation_does_not_exhaust_admitted_failure_budget(case):
+    from zf.runtime.task_pipeline_operator_retry import request_impl_retry
+    from zf.runtime.sidecar_refs import write_sidecar_json
+    state, log, writer, identity, _ = case
+    identity = {**identity, "operation_id": "op-9", "operation_generation": 9}
+    source = writer.emit("dev.blocked", task_id="T1", payload=identity)
+    ref = write_sidecar_json(state, "artifacts/op9.json",
+        {"verdict": "blocked", "failure_class": "reader_execution_failure"},
+        kind="call_control_result", schema_version="implementation-result.v1",
+        created_by="test", source_event_id=source.id)
+    for kind in ("requested", "settled"):
+        if kind == "settled":
+            writer.emit("workflow.call.result.admitted", payload={
+                **identity, "semantic_verdict": "blocked", "control_result_ref": ref})
+        writer.emit("workflow.operation." + kind, payload=identity)
+    config = SimpleNamespace(workflow=SimpleNamespace(
+        flow_metadata={"task_pipeline": {"mode": "blocking", "max_rework_attempts": 2}}))
+    assert request_impl_retry(state_dir=state, event_log=log, event_writer=writer,
+        operation_id="op-9", reason="input delivery fixed", config=config)["status"] == "preview"
 
 
 @pytest.mark.parametrize(

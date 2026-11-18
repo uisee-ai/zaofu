@@ -251,10 +251,7 @@ def dispatch_pending_assistance(runtime) -> None:
     if any(e.type == REQUESTED and e.payload.get("request_id") not in closed for e in events):
         reconcile_assistance(state_dir=runtime.state_dir, writer=runtime.event_writer, config=runtime.config)
         events = runtime.event_log.read_all()
-    handled = {e.payload.get("request_id") for e in events
-               if e.type in {CLOSED, "worker.assistance.dispatching"}}
-    for event in events:
-        if (event.type == "orchestrator.rework.triage.requested"
-                and event.payload.get("request_kind") == "worker_guidance"
-                and event.payload.get("request_id") not in handled):
-            runtime._fire_orchestrator_turn(role, [event])
+    from zf.runtime.orchestrator_advisory_queue import next_advisory_event
+    event = next_advisory_event(events, role.instance_id or role.name)
+    if event is not None and event.payload.get("request_kind") == "worker_guidance":
+        runtime._fire_orchestrator_turn(role, [event])

@@ -135,6 +135,22 @@ def build_execution_context(
     }
 
 
+def checkpoint_operation_rejection(state_dir, events, request: Mapping[str, Any]) -> str:
+    """Use the same immutable operation snapshot before dispatch and admission."""
+    if request.get("checkpoint") != "semantic_failure":
+        return ""
+    body = hydrate_sidecar_ref(state_dir, request["checkpoint_input_ref"]).payload
+    descriptor = body.get("execution_context_ref")
+    if descriptor is None:
+        return ""
+    context = hydrate_sidecar_ref(state_dir, descriptor).payload
+    expected = context.get("operation_bindings")
+    if not isinstance(expected, Mapping) or not expected:
+        return ""
+    current = operation_bindings(events, context["workflow_run_id"], set(expected))
+    return "execution_operation_changed" if current != expected else ""
+
+
 def execution_decision_rejection(
     runtime: Any, *, decision: Mapping[str, Any], request: Mapping[str, Any],
 ) -> str:
@@ -142,6 +158,9 @@ def execution_decision_rejection(
     checkpoint = str(request.get("checkpoint") or "")
     if checkpoint not in EXECUTION_CHECKPOINTS:
         return ""
+    stale = checkpoint_operation_rejection(runtime.state_dir, runtime.event_log.read_all(), request)
+    if stale:
+        return stale
     input_body = hydrate_sidecar_ref(runtime.state_dir, request["checkpoint_input_ref"]).payload
     descriptor = input_body.get("execution_context_ref")
     flow = str(input_body.get("flow_kind") or "")

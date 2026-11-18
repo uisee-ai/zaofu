@@ -18,6 +18,12 @@ amendment are separate role capabilities supplied by the workflow profile.
 
 ## Context consumption
 
+- On a recovery attempt, consume the pinned recovery context before probing the
+  runner or declaring it unavailable. Inspect any bound host receipts against
+  this target, command, source stability, exit code and evidence; a denied local
+  Docker socket alone does not invalidate authorized host execution. Receipts
+  are execution facts, not a product verdict. All required product reads and
+  independent acceptance judgments still apply; missing commands stay unverified.
 - Start with the current stage card and its controlled required-read batch. Consume
   every `next_cursor` page; identical authorized aliases share content, not authority.
 - Read this role method once per unchanged skill digest. Load dependency references
@@ -52,6 +58,15 @@ amendment are separate role capabilities supplied by the workflow profile.
   exactly `execution_status: failed` and `verdict: abstained`, with truthful
   failure_class and evidence. `blocked` and `inconclusive` are not execution_status
   values. Do not copy prose status words into typed fields.
+- Runner unavailable before product evaluation: prefer the briefing's compact
+  `result validate --stdin --submit` failure command, with the actual error
+  and durable failed-probe evidence. Structurally remove unperformed product
+  reports and assertions; omission is not JSON null, duplicate keys, or moving
+  a report into findings. Preserve the scratch path and Kernel identity binding.
+  A Docker socket path and template placeholders are not execution evidence.
+  The stdin path accepts the complete semantic body without editing a large
+  prefilled success scratch; it retains the same operation/role/capability gates.
+  Do not submit the success scratch after the failure was admitted.
 - Correct a preflight diagnostic using the pinned profile/schema, then validate
   again. After two corrections of the same error without progress, stop guessing:
   report the operation ID, exact diagnostic and attempted corrections through the
@@ -192,6 +207,14 @@ When Candidate Verify receives a current `product_acceptance_spec`:
   This reports an external wait, not product acceptance. If a product report is
   supplied, all its identity and evidence checks still apply. After recovery,
   independently complete the full mandatory product evaluation below.
+- 环境探针（例如 Docker socket）失败时，不要等读完全部产品材料才上报环境等待。
+  使用 `failure_class: verifier_execution_failure`，填写具体 `summary` 和实际失败的
+  `evidence_refs`；未执行的 `requirement_results`、`probe_receipts`、
+  `reused_command_receipt_ids` 留空，移除未执行的产品验收报告模板。保留 briefing
+  绑定的身份，在授权 scratch 原位填写，执行提供的 validate/submit 命令并确认
+  提交成功；只在聊天中说明失败、修改两个状态字段后结束，都不构成结果提交。
+  此路径只承认执行失败，不承认产品通过或拒绝；不扩大 sandbox 权限。恢复后
+  使用当前 operation 的身份继续必读材料和独立验收，不能将旧失败当作通过证据。
 - 以派发的 `output_profile_id=candidate-verify` 识别产品验收义务。兼容流程的任务快照
   可能仍绑定 `verification_owner=task_verify`；保持该不可变身份及任务矩阵责任，
   同时完成独立的 `product_acceptance_report`。任务行的 `not_applicable` 不豁免

@@ -103,6 +103,58 @@ def test_controlled_reader_retry_replaces_cancelled_operation(tmp_path: Path) ->
     assert not any(e.type == 'review.approved' for e in log.read_all())
 
 
+@pytest.mark.parametrize('terminal_path', ['aggregate', 'lost_turn'])
+def test_controlled_retry_after_failed_aggregate_remains_recoverable(tmp_path: Path, terminal_path):
+    from zf.runtime.fanout_recovery_runtime import has_nonterminal_reader_fanouts
+    from zf.runtime.fanout import FanoutManifestProjector
+
+    state, log, _, orch, _, child = _durable_reader_state(tmp_path)
+    old = child['payload']
+    workflow_operation_service(orch).cancel(
+        operation_id=old['operation_id'], request_hash=old['request_hash'],
+        workflow_run_id='run-durable', task_id='T-VERIFY', reason='reader_failed',
+    )
+    orch.event_writer.append(ZfEvent(type='fanout.child.failed', payload={
+        'fanout_id': child['fanout_id'], 'child_id': child['child_id'],
+        'run_id': child['run_id'], 'reason': 'provider closed without result',
+    }))
+    failed = orch.event_writer.append(ZfEvent(type='fanout.aggregate.completed', payload={
+        'fanout_id': child['fanout_id'], 'status': 'failed',
+    }))
+    request = _append_request(
+        state, action_id='retry-failed-aggregate', kind='rerun_fanout_child',
+        idempotency_key='retry-failed-aggregate',
+        fanout_id=child['fanout_id'], fanout_child_id=child['child_id'],
+    )
+    orch.run_once([request])
+    manifest = orch._fanout_manifest(child['fanout_id'])
+    assert manifest['aggregate']['status'] == 'pending'
+    assert manifest['aggregate']['recovered_from_event_id'] == failed.id
+    assert has_nonterminal_reader_fanouts(orch)
+    assert manifest['children'][0]['reason'] == ''
+    # Restart/replay must preserve the live retry, not restore the old failure.
+    rebuilt = FanoutManifestProjector(state).rebuild(child['fanout_id'], log.read_all())
+    assert rebuilt['aggregate']['status'] == 'pending'
+    new = manifest['children'][0]
+    if terminal_path == 'lost_turn':
+        orch.event_writer.append(ZfEvent(type='provider.turn.closed', actor=child['role_instance'],
+            payload={'backend': 'codex', 'instance_id': child['role_instance'],
+                     'turn_id': 'new-reader-turn'}))
+        assert orch._recover_lost_reader_fanout_dispatches(log.read_all())
+        losses = [e for e in log.read_all() if e.type == 'fanout.child.dispatch_lost']
+        assert losses[-1].payload['run_id'] == new['run_id']
+        return
+    # A crash after the terminal child receipt but before aggregation recovers.
+    orch.event_writer.append(ZfEvent(type='fanout.child.failed', payload={
+        'fanout_id': child['fanout_id'], 'child_id': child['child_id'],
+        'run_id': new['run_id'], 'reason': 'new attempt failed',
+    }))
+    orch._recover_incomplete_reader_fanout_aggregates(log.read_all())
+    aggregates = [e for e in log.read_all() if e.type == 'fanout.aggregate.completed']
+    assert len(aggregates) == 2
+    assert aggregates[-1].id != failed.id
+
+
 @pytest.mark.parametrize('resume,reason,ready', [
     (True, 'workflow_run_terminal:run.goal.blocked', True),
     (False, 'workflow_run_terminal:run.goal.blocked', False),
