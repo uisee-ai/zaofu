@@ -1,4 +1,4 @@
-import { consumeDashboardLaunchToken, localWebActionToken } from "../api/dashboardLaunch.js";
+import { configureDashboardSession, localWebActionToken } from "../api/dashboardLaunch.js";
 import { useOverviewPulse } from "./useOverviewPulse";
 import { useDashboardProjectionRefresh } from "./useDashboardProjectionRefresh";
 import { useBoardBootstrap } from "./useBoardBootstrap";
@@ -718,7 +718,7 @@ export function App() {
   const sessionMode = webSessionStatus?.mode ?? snapshot?.runtime.web_session?.mode;
   useEffect(() => {
     if (!sessionMode) return;
-    consumeDashboardLaunchToken(window, sessionMode);
+    configureDashboardSession(window.localStorage, sessionMode);
     setWebActionTokenPresent(Boolean(storedWebActionToken()));
   }, [sessionMode]);
   const [orchestratorFocusSignal, setOrchestratorFocusSignal] = useState(0);

@@ -1,4 +1,4 @@
-import { consumeDashboardLaunchToken } from "../src/api/dashboardLaunch.js";
+import { captureDashboardLaunchToken, configureDashboardSession } from "../src/api/dashboardLaunch.js";
 
 function check(hash: string, initial: string | undefined, expected: string | undefined, url: string, sessionMode = "token_required"): void {
   const values = new Map<string, string>();
@@ -9,7 +9,10 @@ function check(hash: string, initial: string | undefined, expected: string | und
     localStorage: { removeItem: (key: string) => values.delete(key), setItem: (key: string, value: string) => values.set(key, value) },
     history: { state: { retained: true }, replaceState: (_state: unknown, _unused: string, value: string) => { replaced = value; } },
   } as unknown as Pick<Window, "location" | "localStorage" | "history">;
-  consumeDashboardLaunchToken(browser, sessionMode);
+  captureDashboardLaunchToken(browser);
+  if (values.get("zf.webActionToken") !== initial) throw new Error("unverified launch credential was persisted");
+  browser.location.hash = "";
+  configureDashboardSession(browser.localStorage, sessionMode);
   if (values.get("zf.webActionToken") !== expected || replaced !== url) {
     throw new Error("launch credential or URL cleanup mismatch");
   }

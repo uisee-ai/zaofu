@@ -1,3 +1,4 @@
+import { captureDashboardLaunchToken } from "./api/dashboardLaunch.js";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/geist";
@@ -17,6 +18,7 @@ const AgentSessionFixturePage = React.lazy(() => (
   }))
 ));
 
+captureDashboardLaunchToken(window);
 const root = document.getElementById("root");
 
 if (!root) {
