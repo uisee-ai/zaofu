@@ -26,10 +26,16 @@ def managed_runtime(function):
         config, credentials, context = binding
         ledger, key = Ledger(config.state_dir), 'project:' + context.config.observability.controller.project_id
         stop = threading.Event()
-        with WorkspaceTransport(config, credentials) as transport:
+        from zf.core.state.locks import locked_path
+        from zf.integrations.controller.project_lease import retire_released
+
+        with locked_path(config.state_dir / ('runtime-admission-' + key[8:]), timeout_seconds=15), WorkspaceTransport(config, credentials) as transport:
             policy = current_policy(config, credentials, transport, key[8:])
             previous = ledger.get(key)
             claim = os.environ.get('ZF_CONTROLLER_PROJECT_LEASE')
+            if previous and claim != previous['body'].get('lease', {}).get('id'):
+                retire_released(ledger, key, transport, policy, credentials, context.state_dir)
+                previous = ledger.get(key)
             if previous and previous['status'] == 'draining':
                 raise ManagedDenied('Project still has an unresolved draining runtime')
             if previous and previous['status'] in {'starting', 'loaded'}:
@@ -43,7 +49,8 @@ def managed_runtime(function):
                 lease = transport.request('POST', '/internal/v1/me/execution-leases', {
                     'request_id': identifier, 'execution_id': identifier, 'kind': 'project',
                     'project_id': key[8:], 'policy_version': policy['version'], 'seconds': config.lease_seconds})
-                body = {'project_id': key[8:], 'policy_version': policy['version'], 'lease': lease}
+                body = {'project_id': key[8:], 'policy_version': policy['version'], 'lease': lease,
+                        'deployment_id': credentials['deployment_id'], 'generation': credentials['generation']}
             if not (lease.get('executable') or lease.get('status') == 'held'):
                 raise ManagedDenied('Project lease is not executable')
             body.update(pid=os.getpid(), owner=process_identity(os.getpid()))

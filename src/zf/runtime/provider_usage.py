@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 
+class ProviderCallNotStarted(RuntimeError):
+    """The provider call boundary rejected admission before invoking the provider."""
+
+
 def normalize_provider_usage(
     usage: dict[str, Any] | None,
     *,

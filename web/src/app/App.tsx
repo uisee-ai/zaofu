@@ -1,3 +1,4 @@
+import { configureDashboardSession, localWebActionToken } from "../api/dashboardLaunch.js";
 import { useOverviewPulse } from "./useOverviewPulse";
 import { useDashboardProjectionRefresh } from "./useDashboardProjectionRefresh";
 import { useBoardBootstrap } from "./useBoardBootstrap";
@@ -465,7 +466,7 @@ function normalizeWebActionToken(value: string): string {
 
 function storedWebActionToken(): string {
   if (typeof window === "undefined") return "";
-  return normalizeWebActionToken(window.localStorage.getItem("zf.webActionToken") ?? "");
+  return normalizeWebActionToken(localWebActionToken());
 }
 
 function isNoiseTask(task: Task): boolean {
@@ -670,9 +671,7 @@ export function App() {
   const [projectionDetail, setProjectionDetail] = useState<Record<string, unknown> | null>(null);
   const projectionNavigationRef = useRef("");
   const [actionResult, setActionResult] = useState<ActionResponse | null>(null);
-  const [webActionTokenPresent, setWebActionTokenPresent] = useState(() =>
-    Boolean(storedWebActionToken()),
-  );
+  const [webActionTokenPresent, setWebActionTokenPresent] = useState(false);
   const [webSessionStatus, setWebSessionStatus] = useState<NonNullable<RuntimeSummary["web_session"]> | null>(null);
   const { preferences, t } = useUiPreferences();
   const themeMode = preferences.theme;
@@ -710,11 +709,18 @@ export function App() {
     let cancelled = false;
     getWebSession()
       .then((session) => {
-        if (!cancelled) setWebSessionStatus(session);
+        if (cancelled) return;
+        setWebSessionStatus(session);
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
+  const sessionMode = webSessionStatus?.mode ?? snapshot?.runtime.web_session?.mode;
+  useEffect(() => {
+    if (!sessionMode) return;
+    configureDashboardSession(window.localStorage, sessionMode);
+    setWebActionTokenPresent(Boolean(storedWebActionToken()));
+  }, [sessionMode]);
   const [orchestratorFocusSignal, setOrchestratorFocusSignal] = useState(0);
   const [liveState, setLiveState] = useState<LiveState>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -2106,10 +2112,11 @@ export function App() {
     />
   );
 
-  if (showWelcome && (snapshot?.runtime.web_session ?? webSessionStatus)?.mode !== "read_only") {
+  if (showWelcome && sessionMode && sessionMode !== "read_only") {
     return (
       <WelcomeWizard
         accessReady={actionGate.actionReady}
+        controllerSession={sessionMode === "controller_session"}
         tokenPresent={webActionTokenPresent}
         onSaveToken={saveWebActionToken}
         onDone={() => {

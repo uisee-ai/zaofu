@@ -232,7 +232,9 @@ def test_actual_tmux_dispatch_and_compaction_cannot_paste_without_budget(managed
     raw['roles'] = [{'name': 'dev', 'backend': 'codex'}]
     context.config_path.write_text(yaml.safe_dump(raw))
     sent = []
-    transport = TmuxTransport(SimpleNamespace(dry_run=False, send_keys=lambda *args: sent.append(args)))
+    transport = TmuxTransport(SimpleNamespace(dry_run=False, send_keys=lambda *args: sent.append(args),
+        pane_alive=lambda _: True, pane_current_command=lambda _: 'codex',
+        pane_current_path=lambda _: str(context.project_root)))
     transport._expected_cwds['dev'] = context.project_root
     peer.deny_budget = True
     for call in [lambda: transport.send_task('dev', context.state_dir / 'briefing.md', 'fixture'),

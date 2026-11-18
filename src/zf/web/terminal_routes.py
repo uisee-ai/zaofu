@@ -157,6 +157,11 @@ def _same_origin(websocket: WebSocket, config: RuntimeWebTerminalConfig) -> bool
     origin = websocket.headers.get("origin", "").rstrip("/")
     if not origin:
         return False
+    from zf.integrations.controller.access import request_authority
+    if request_authority.get() is True:
+        # The private upstream Host differs from the public browser origin. Trust
+        # only the ingress-verified claim, never a client-supplied forwarded host.
+        return origin == websocket.scope.get("zf.access", {}).get("origin")
     if origin in config.allowed_origins:
         return True
     try:

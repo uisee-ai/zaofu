@@ -325,6 +325,7 @@ multi-agent workflow 与工程落地实践，也可以直接联系作者。
 - Web/API/Integration 只能通过确定性、token-gated action path 修改状态。
 - 产品 quality gate 和 acceptance semantics 必须来自目标项目，ZaoFu 不会虚构。
 - Provider CLI 可能修改文件并消耗模型预算，真实执行前先 validate 和 dry-run。
+- standalone 工作台默认使用本地 action token 授权写操作，localhost 也适用。打开 `zf web` 输出的授权链接即可使用。云端实例使用已登录的 Gateway 会话授权工作台操作和终端访问。
 - 除非网络明确可信，否则 Dashboard 只绑定 loopback。
 - 共享主机上不要使用 `tmux kill-server` 停止单个项目。
 

@@ -11,7 +11,7 @@ from zf.core.events import EventWriter, ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.runtime.agent_session_output import apply_agent_output_contract
 from zf.runtime.live_delta_bus import live_delta_bus_for_writer
-from zf.runtime.provider_usage import normalize_provider_usage
+from zf.runtime.provider_usage import ProviderCallNotStarted, normalize_provider_usage
 
 
 @dataclass(frozen=True)
@@ -181,7 +181,7 @@ class AgentSessionStreamEmitter:
     def fail(
         self,
         *,
-        reason: str,
+        reason: str | Exception,
         status: str = "failed",
         provider_session_id: str = "",
         usage: dict[str, Any] | None = None,
@@ -199,7 +199,8 @@ class AgentSessionStreamEmitter:
             payload=redact_obj({
                 **self._base_payload(provider_session_id=provider_session_id),
                 "status": status,
-                "reason": reason,
+                "reason": str(reason),
+                **({"provider_started": False} if isinstance(reason, ProviderCallNotStarted) else {}),
                 "usage": usage or {},
                 "usage_accounting": normalize_provider_usage(
                     usage,

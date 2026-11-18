@@ -331,7 +331,8 @@ def test_policy_cannot_silently_upgrade_or_expand_scope(workspace, mutation, err
     with pytest.raises(ValueError, match=error):
         synchronize_workspace(config)
     assert peer.receipts[-1] == {'protocol': 'zfc.control.v1', 'version': 2, 'applied': False, 'error': error}
-    assert not peer.records
+    assert {row['payload']['kind'] for row in peer.records.values()} == {'heartbeat'}
+    assert not (Installation(config).path / 'policy.json').exists()
 
 
 def test_registry_state_hint_is_not_authoritative_and_missing_project_is_not_acked(workspace, tmp_path):
@@ -348,6 +349,37 @@ def test_registry_state_hint_is_not_authoritative_and_missing_project_is_not_ack
     with pytest.raises(ValueError, match='local_configuration_invalid'):
         synchronize_workspace(config)
     assert peer.receipts[-1]['applied'] is False
+
+
+def test_rejected_settings_report_liveness_without_ack_or_commands_and_can_recover(workspace, monkeypatch):
+    import hashlib
+
+    config, peer, _ = workspace
+    installation = enrolled(workspace)
+    synchronize_workspace(config)
+    saved = (installation.path / 'policy.json').read_bytes()
+    before = set(peer.records)
+    invalid = dict(protocol='zfc.runtime-settings.v1', interval_seconds=5, batch_size=100,
+        diagnostic_sample_rate=1.0, mode='self_managed_cli', request_tokens=32768,
+        request_money='0', price_version='unknown', request_seconds=600)
+    peer.policy.update(version=3, limits={'management': 'observed', 'runtime_settings': invalid,
+        'runtime_settings_digest': hashlib.sha256(json.dumps(
+            invalid, sort_keys=True, separators=(',', ':')).encode()).hexdigest()})
+    def forbidden(*args, **kwargs):
+        pytest.fail('Rejected policy must not execute commands or maintenance')
+    monkeypatch.setattr('zf.integrations.controller.commands.consume_commands', forbidden)
+    monkeypatch.setattr('zf.integrations.controller.maintenance.maintain', forbidden)
+    with pytest.raises(ValueError, match='local_configuration_invalid'):
+        synchronize_workspace(config)
+    assert (installation.path / 'policy.json').read_bytes() == saved
+    assert peer.receipts[-1]['version'] == 3 and peer.receipts[-1]['applied'] is False
+    fresh = [row for key, row in peer.records.items() if key not in before]
+    assert len(fresh) == 1 and fresh[0]['payload']['kind'] == 'heartbeat'
+    assert fresh[0]['payload']['kernel_status'] == 'unknown'
+    assert fresh[0]['payload']['applied_generation'] == installation.credentials()['generation']
+    peer.policy.update(version=4, limits={'management': 'observed'})
+    assert synchronize_workspace(config)['status'] == 'synchronized'
+    assert peer.receipts[-1]['version'] == 4 and peer.receipts[-1]['applied'] is True
 
 
 def test_ack_loss_capacity_and_revocation_preserve_receipts(workspace):

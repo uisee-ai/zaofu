@@ -13,17 +13,16 @@ from zf.core.workspace.registry import workspace_home
 
 
 def configure_web_access(*, host: str, read_only: bool = False) -> None:
+    from zf.integrations.controller.binding import managed_config
+
     keys = ("ZF_WEB_ACTION_TOKEN", "ZF_WEB_PASSCODE", "ZF_WEB_TRUSTED_SESSION")
-    if read_only:
+    if read_only or managed_config() is not None:
         for key in keys:
             os.environ.pop(key, None)
         return
     # Disabling trusted access selects authentication, not a read-only server.
     trusted = os.environ.get("ZF_WEB_TRUSTED_SESSION", "").strip().lower()
     if any(os.environ.get(key, "").strip() for key in keys[:2]) or trusted in {"1", "true", "yes", "local_trusted"}:
-        return
-    if not trusted and host.strip().lower() in {"localhost", "127.0.0.1", "::1", "[::1]"}:
-        os.environ["ZF_WEB_TRUSTED_SESSION"] = "1"
         return
     token_path = Path(os.environ.get("ZF_WEB_ACTION_TOKEN_FILE") or workspace_home() / "web-action-token").expanduser()
     with locked_path(token_path):

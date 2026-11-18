@@ -18,6 +18,7 @@ from zf.integrations.controller.installation import Installation
 from zf.integrations.controller.ledger import Ledger
 from zf.integrations.controller.workspace import synchronize_workspace, project_contexts
 from zf.integrations.controller.workspace_transport import WorkspaceTransport
+from zf.runtime.provider_usage import ProviderCallNotStarted
 
 
 @pytest.fixture
@@ -71,9 +72,12 @@ def managed(workspace, tmp_path, monkeypatch):
             return httpx2.Response(200, json=result)
         if path.endswith('/settle'):
             records = [r['payload'] for r in peer.records.values() if r['payload'].get('record_id') == body['record_id']]
-            assert len(records) == 1
-            assert records[0]['tokens'] is not None
-            peer.settlements.append(records[0])
+            assert records
+            latest = max(records, key=lambda r: r['revision'])
+            assert latest['tokens'] is not None
+            if latest['completeness'] != 'complete':
+                return httpx2.Response(409, json={'error': 'usage_unresolved'})
+            peer.settlements.append(latest)
             return httpx2.Response(200, json={'status': 'settled'})
         if path == '/internal/v1/me/access/check':
             if not peer.access_allowed:
@@ -150,9 +154,95 @@ def test_backend_reuse_is_admitted_each_turn_and_receipts_are_not_duplicated(man
     assert len(peer.settlements) == 2
     assert sum(row['tokens']['input_tokens'] + row['tokens']['output_tokens'] for row in peer.settlements) == 30
     peer.deny_budget = True
-    with pytest.raises(httpx2.HTTPStatusError):
+    with pytest.raises(ProviderCallNotStarted) as denied:
         backend.run_turn(cwd=context.project_root, thread_id='thread', provider_session_id='native-fixture', timeout_s=30)
+    assert isinstance(denied.value.__cause__, httpx2.HTTPStatusError)
     assert len(calls) == 2
+
+
+def test_managed_turn_uses_public_session_identity_for_receipts_and_remote_fences(managed):
+    config, peer, context, _ = managed
+    project_id = context.config.observability.controller.project_id
+    writer = EventWriter(event_log_from_project(context.state_dir, config=context.config))
+    writer.emit('agent.session.run.started', actor='web', payload={
+        'thread_id': 'visible-thread', 'run_id': 'turn-1', 'source': 'kanban'})
+    calls = []
+
+    class Backend:
+        backend_id = 'fixture'
+
+        @managed_turn
+        def run_turn(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(status='completed', provider_session_id='native-thread',
+                                   usage={'input_tokens': 12, 'output_tokens': 3})
+
+    backend = Backend()
+    args = dict(cwd=context.project_root, thread_id='internal-thread-binding',
+                run_thread_id='visible-thread', provider_session_id='', timeout_s=30)
+    result = backend.run_turn(**args)
+    writer.emit('agent.session.run.completed', actor='web', payload={
+        'thread_id': 'visible-thread', 'run_id': 'turn-1', 'source': 'kanban',
+        'provider_session_id': 'native-thread', 'usage': result.usage})
+    synchronize_workspace(config)
+    rows = [r['payload'] for r in peer.records.values()]
+    assert {r['session_id'] for r in rows if r['kind'] == 'session'} == {'visible-thread'}
+    assert {r['session_id'] for r in rows if r['kind'] == 'usage'} == {'visible-thread'}
+    assert calls[0]['thread_id'] == 'internal-thread-binding'
+    assert Ledger(config.state_dir).rows('execution')[0]['body']['native_session_id'] == 'native-thread'
+
+    peer.commands = [{'id': 'stop-visible-thread', 'workspace_id': config.workspace_id,
+        'deployment_id': peer.deployment_id, 'generation': 1, 'policy_version': 2,
+        'expires_at': int(time.time()) + 60, 'user_id': 'owner', 'session_id': 'login',
+        'payload': {'action': 'session.stop', 'project_id': project_id,
+                    'session_id': 'visible-thread', 'operation_id': None}}]
+    synchronize_workspace(config)
+    assert peer.command_receipts[-1]['status'] == 'completed'
+    leases = len(peer.leases)
+    with pytest.raises(ProviderCallNotStarted, match='admission is closed'):
+        backend.run_turn(**args)
+    assert len(calls) == 1 and len(peer.leases) == leases
+    writer.event_log.close()
+
+
+def test_pre_provider_denial_preserves_failure_without_missing_usage(managed):
+    from zf.runtime.agent_session_stream import AgentSessionIdentity, AgentSessionStreamEmitter
+
+    config, peer, context, _ = managed
+    writer = EventWriter(event_log_from_project(context.state_dir, config=context.config))
+    peer.deny_budget = True
+    calls = []
+
+    class Backend:
+        backend_id = 'fixture'
+
+        @managed_turn
+        def run_turn(self, **kwargs):
+            calls.append(kwargs)
+            raise RuntimeError('provider failed after invocation')
+
+    for denied in (True, False):
+        peer.deny_budget = denied
+        stream = AgentSessionStreamEmitter(writer=writer, identity=AgentSessionIdentity(
+            run_id='turn-' + str(denied), thread_id='visible', source='kanban', actor='web'))
+        stream.start()
+        try:
+            Backend().run_turn(cwd=context.project_root, thread_id='visible', timeout_s=30)
+        except Exception as exc:
+            stream.fail(reason=exc)
+        synchronize_workspace(config)
+        events = writer.event_log.read_all()
+        failed = [e for e in events if e.type == 'agent.session.run.failed'][-1]
+        assert (failed.payload.get('provider_started') is False) is denied
+        receipts = [r['payload'] for r in peer.records.values() if r['payload']['kind'] == 'usage']
+        if denied:
+            assert not calls and not peer.budgets and not receipts
+            assert any(r['payload'].get('operation_id') == 'turn-True'
+                       and r['payload'].get('status') == 'failed' for r in peer.records.values())
+        else:
+            assert len(calls) == 1 and len(peer.budgets) == 1
+            assert receipts and all(r['tokens'] is None for r in receipts)
+    writer.event_log.close()
 
 
 def test_managed_event_factory_uses_deployment_binding_without_editing_project(managed):
@@ -275,3 +365,55 @@ def test_command_retry_runs_controlled_action_once_and_preserves_kernel_state(ma
     assert [r['status'] for r in peer.command_receipts] == ['accepted', 'running', 'completed']
     assert not (context.state_dir / 'kanban.json').exists()
     assert Ledger(config.state_dir).rows('fence')[0]['status'] == 'closed'
+
+
+@pytest.mark.parametrize('read_only', [False, True])
+def test_gateway_login_controls_workspace_actions_without_local_credentials(managed, monkeypatch, read_only):
+    from fastapi.testclient import TestClient
+    from zf.cli.web_access import configure_web_access, dashboard_launch_url
+    from zf.core.task.store import TaskStore
+    from zf.core.workspace.registry import workspace_home
+    from zf.web.server import create_app
+
+    config, peer, ctx, _ = managed
+    monkeypatch.setenv('ZF_WEB_ACTION_TOKEN', 'obsolete-local-credential')
+    configure_web_access(host='0.0.0.0', read_only=read_only)
+    assert '#' not in dashboard_launch_url('localhost', 8002)
+    assert not (workspace_home() / 'web-action-token').exists()
+    app = create_app(ctx.state_dir, config=ctx.config, project_root=ctx.project_root, read_only=read_only)
+    with TestClient(app, base_url=config.gateway_origin) as client:
+        session_path = '/api/web-session'
+        assert client.get(session_path, headers={'x-zf-web-token':'obsolete-local-credential'}).status_code == 403
+        session = client.get(session_path, headers={'x-zf-access-context':gateway_token(config, peer, path=session_path)}).json()
+        assert session['mode'] == ('read_only' if read_only else 'controller_session')
+        assert session['actions_enabled'] is (not read_only)
+        assert session['requires_token'] is session['token_fallback_enabled'] is False
+        action = '/api/actions/create-task'
+        headers = {'x-zf-access-context':gateway_token(config, peer, path=action, method='POST'), 'origin':config.gateway_origin}
+        payload = {'title':'Cloud action proof','contract':{'behavior':'accept the task','verification':'check admission'}}
+        assert client.post(action, headers={**headers,'origin':'https://other.test'}, json=payload).status_code == 403
+        response = client.post(action, headers=headers, json=payload)
+        assert response.status_code == (403 if read_only else 201), response.text
+        if not read_only:
+            assert TaskStore(ctx.state_dir / 'kanban.json').get(response.json()['task_id']) is not None
+        peer.access_allowed = False
+        assert client.post(action, headers=headers, json=payload).status_code == 403
+
+
+def test_operator_websocket_accepts_only_current_gateway_session(managed):
+    from fastapi.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+    from zf.web.server import create_app
+
+    config, peer, ctx, _ = managed
+    path = '/api/operator/control'
+    app = create_app(ctx.state_dir, config=ctx.config, project_root=ctx.project_root)
+    headers = {'origin': config.gateway_origin, 'x-zf-access-context':gateway_token(config, peer, method='WEBSOCKET', path=path)}
+    with TestClient(app, base_url=config.gateway_origin) as client:
+        with client.websocket_connect(path, headers=headers) as ws:
+            assert ws.receive_json()['type'] == 'restore'
+            assert ws.receive_json()['type'] == 'state'
+        peer.access_allowed = False
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(path, headers=headers):
+                pytest.fail('revoked Gateway session opened an operator socket')

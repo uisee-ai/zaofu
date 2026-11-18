@@ -144,6 +144,7 @@ def require_quiet(config):
 def serve(config, *, host, port, ssl_keyfile=None, ssl_certfile=None):
     import uvicorn
     from zf.web.server import create_app
+    from zf.integrations.controller.runtime_settings import PolicyNotApplied
 
     installation = Installation(config)
     if config.hosting == 'cloud' and os.environ.get('ZF_CONTROLLER_CLIENT_SECRET'):
@@ -153,7 +154,12 @@ def serve(config, *, host, port, ssl_keyfile=None, ssl_certfile=None):
     os.environ['ZF_CONTROLLER_WORKSPACE_CONFIG'] = str(config.path)
     stop, thread = threading.Event(), None
     try:
-        synchronize_workspace(config)
+        try:
+            synchronize_workspace(config)
+        except PolicyNotApplied:
+            # Trusted but rejected policy keeps its failed ACK. The connector
+            # must stay alive to receive a correction; access still requires ACK.
+            pass
         app = create_app(config.state_dir, project_root=config.path.parent, default_project_enabled=False)
         def synchronize():
             from zf.core.config.controller_workspace import load_controller_workspace

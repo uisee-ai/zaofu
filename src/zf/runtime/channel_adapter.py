@@ -883,7 +883,7 @@ def _run_headless_reply(
             visible_stream.finish(str(getattr(result, "reply", "") or ""))
         except Exception as exc:
             stream.fail(
-                reason=str(exc), provider_session_id=provider_session_id,
+                reason=exc, provider_session_id=provider_session_id,
                 permission_snapshot=base_snapshot, permission_drift=drift,
             )
             raise

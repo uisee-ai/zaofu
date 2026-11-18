@@ -6,7 +6,7 @@ import time
 
 from zf.integrations.controller.binding import ManagedDenied, project_binding
 from zf.integrations.controller.execution import Execution
-from zf.integrations.controller.native import delta
+from zf.integrations.controller.native import delta, observed_snapshot
 
 
 def managed_terminal(function):
@@ -55,8 +55,12 @@ def observe(service, record, execution):
         if counters.get('total_tokens', 0) is not None and counters.get('total_tokens', 0) >= execution.config.request_tokens:
             current = service.stop_session(record.session_id)
         if current.state != 'active':
-            execution.finish(delta({}, counters, fresh=True), status=current.state,
-                native_session=current.provider_session_id, accounting_mode=counters.get('accounting_mode', 'unknown'),
-                fresh_input=True)
+            from zf.runtime.codex_turn_boundary import completed_session
+            native = observed_snapshot(service.usage, current.provider, current.provider_session_id, service.project_root)
+            final = native if native.get('status') == 'observed' else counters
+            execution.finish(delta({}, final, fresh=True), status=current.state,
+                native_session=current.provider_session_id, accounting_mode=final.get('accounting_mode', 'unknown'),
+                fresh_input=True, subscription_windows=native.get('subscription_windows'), usage_complete=current.provider == 'codex'
+                and completed_session(native, session_id=current.provider_session_id))
             return
         time.sleep(1)

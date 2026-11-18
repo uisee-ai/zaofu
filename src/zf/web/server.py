@@ -674,6 +674,7 @@ def create_app(
     project_root: Path | None = None,
     *,
     default_project_enabled: bool = True,
+    read_only: bool = False,
 ) -> FastAPI:
     """Build a FastAPI app reading state from ``state_dir`` (.zf path).
 
@@ -682,7 +683,7 @@ def create_app(
     """
     app = FastAPI(title="zaofu dashboard", version=__version__)
     from zf.integrations.controller.access import install_access
-    install_access(app)
+    install_access(app, read_only=read_only)
     from zf.web.dashboard_projection import register_pending_handler
     register_pending_handler(app)
     from zf.web.projection_worker import active_worker, register_projection_worker
@@ -802,6 +803,8 @@ def create_app(
         runtime["web_session"] = web_session
         actions = dict(runtime.get("actions") or {})
         actions["requires_token"] = web_session.get("mode") == "token_required"
+        actions["mutation_mode"] = _web_mutation_mode()
+        actions["mutation_enabled"] = _web_action_authorization_available()
         runtime["actions"] = actions
         result["runtime"] = runtime
         return result
@@ -1356,6 +1359,12 @@ def create_app(
                 admission_inspection=admission_inspection,
             )
             return JSONResponse(body, status_code=status_code)
+        try:
+            from zf.integrations.controller.binding import project_directory
+            project_directory(root, str(payload.get("workspace") or "default"),
+                              generated_config.state_dir if generated_config else payload.get("state_dir"))
+        except Exception as exc:
+            return JSONResponse({"ok": False, "status": "init_failed", "reason": str(exc)}, status_code=422)
         if generated_config is not None:
             root.mkdir(parents=True, exist_ok=True)
             (root / "zf.yaml").write_text(
@@ -3446,6 +3455,8 @@ def create_app(
 
     @app.post("/api/web-session/unlock")
     async def web_session_unlock(request: Request) -> JSONResponse:
+        if "zf.access" in request.scope:
+            return JSONResponse({"ok": False, "reason": "session managed by Controller"}, status_code=403)
         payload = await _request_json(request)
         result = _unlock_web_session(
             str(payload.get("passcode") or ""),
@@ -3466,6 +3477,8 @@ def create_app(
 
     @app.post("/api/web-session/lock")
     def web_session_lock(request: Request) -> JSONResponse:
+        if "zf.access" in request.scope:
+            return JSONResponse({"ok": False, "reason": "session managed by Controller"}, status_code=403)
         token = _web_session_cookie(request)
         if token:
             _WEB_SESSIONS.pop(token, None)
@@ -5284,6 +5297,14 @@ def _runtime(
 
 
 def _web_session_projection(web_session_token: str | None = None) -> dict:
+    from zf.integrations.controller.access import request_authority
+    authority = request_authority.get()
+    if authority is not None:
+        return {
+            "mode": "controller_session" if authority else "read_only",
+            "unlocked": authority, "actions_enabled": authority, "expires_at": None,
+            "requires_token": False, "token_fallback_enabled": False,
+        }
     trusted = os.environ.get("ZF_WEB_TRUSTED_SESSION", "").strip().lower()
     if trusted in {"1", "true", "yes", "local_trusted"}:
         return {
@@ -5664,28 +5685,10 @@ def _web_action(
             "reason": "action is not in the web action allowlist",
         }
 
-    configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
-    trusted_session = _web_trusted_session_enabled()
-    passcode_session = _web_session_token_valid(web_session_token)
-    if not configured_token and not trusted_session and not _web_passcode_configured():
-        return {
-            "_status_code": 403,
-            "ok": False,
-            "status": "disabled",
-            "action": action_name,
-            "reason": "mutation disabled; set ZF_WEB_ACTION_TOKEN, ZF_WEB_PASSCODE, or ZF_WEB_TRUSTED_SESSION=1 to enable controlled actions",
-        }
-
-    supplied = x_zf_web_token or _bearer_token(authorization)
-    token_ok = bool(configured_token and supplied == configured_token)
-    if not trusted_session and not passcode_session and not token_ok:
-        return {
-            "_status_code": 403,
-            "ok": False,
-            "status": "unauthorized",
-            "action": action_name,
-            "reason": "missing or invalid web action token/session",
-        }
+    auth_error = _web_mutation_auth_error(action_name, authorization=authorization,
+        x_zf_web_token=x_zf_web_token, web_session_token=web_session_token)
+    if auth_error is not None:
+        return auth_error
 
     if legacy_route and project_root is not None:
         config = _resolve_api_project("default", default_project_id=project_id or "default",
@@ -7313,7 +7316,7 @@ def _run_headless_kanban_agent_turn(
         turn_outcome = classify_headless_failure(reason)
         if durable_run is not None:
             fail_durable_run(state_dir, durable_run, reason=reason)
-        agent_stream.fail(reason=reason, status="failed")
+        agent_stream.fail(reason=exc, status="failed")
         writer.emit(
             "kanban.agent.turn.failed",
             actor="web",
@@ -8825,7 +8828,8 @@ def _handle_archive_task(
 
 
 def _web_action_token_configured() -> bool:
-    return bool(os.environ.get("ZF_WEB_ACTION_TOKEN", ""))
+    from zf.integrations.controller.access import request_authority
+    return request_authority.get() is None and bool(os.environ.get("ZF_WEB_ACTION_TOKEN", ""))
 
 
 
@@ -8846,6 +8850,10 @@ def _web_session_cookie(request: Request) -> str | None:
 def _operator_websocket_authorized(websocket: WebSocket) -> bool:
     if not terminal_routes._same_origin(websocket, terminal_routes.terminal_host_config(None)):
         return False
+    from zf.integrations.controller.access import request_authority
+    authority = request_authority.get()
+    if authority is not None:
+        return authority
     configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
     supplied = (
         websocket.headers.get("x-zf-web-token")
@@ -8978,6 +8986,10 @@ def validate_trusted_session_host(host: str) -> None:
 
 
 def _web_mutation_mode() -> str:
+    from zf.integrations.controller.access import request_authority
+    authority = request_authority.get()
+    if authority is not None:
+        return "controller_session" if authority else "disabled"
     if _web_action_token_configured():
         return "token"
     if _web_passcode_configured():
@@ -8988,11 +9000,7 @@ def _web_mutation_mode() -> str:
 
 
 def _web_action_authorization_available() -> bool:
-    return (
-        _web_action_token_configured()
-        or _web_trusted_session_enabled()
-        or _web_passcode_configured()
-    )
+    return _web_mutation_mode() != "disabled"
 
 
 def _web_mutation_auth_error(

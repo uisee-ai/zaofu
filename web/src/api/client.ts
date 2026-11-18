@@ -1,3 +1,4 @@
+import { localWebActionToken } from "./dashboardLaunch.js";
 import type {
   FleetStats,
   MetricsSnapshotProjection,
@@ -99,7 +100,7 @@ function normalizeWebActionToken(value: string): string {
 }
 
 function webActionToken(): string {
-  return normalizeWebActionToken(window.localStorage.getItem("zf.webActionToken") ?? "");
+  return normalizeWebActionToken(localWebActionToken());
 }
 
 function webActionAuthHeaders(): Record<string, string> {

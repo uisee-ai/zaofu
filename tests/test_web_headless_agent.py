@@ -1552,11 +1552,16 @@ def test_chat_orchestrator_can_use_claude_headless_backend(
     assert turn_completed.payload["retryable"] is False
 
 
+@pytest.mark.parametrize('admission_denied', [False, True])
 def test_chat_orchestrator_failed_turn_carries_timing(
     state_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
+    admission_denied: bool,
 ) -> None:
     def fail_turn(_self, **_kwargs):  # noqa: ANN001
+        if admission_denied:
+            from zf.runtime.provider_usage import ProviderCallNotStarted
+            raise ProviderCallNotStarted('managed quota denied before provider')
         raise RuntimeError("provider failed before output")
 
     monkeypatch.setattr(KanbanHeadlessAgent, "run_turn", fail_turn)
@@ -1574,6 +1579,9 @@ def test_chat_orchestrator_failed_turn_carries_timing(
     )
 
     assert response.status_code == 503
+    terminal = [e for e in EventLog(state_dir / 'events.jsonl').read_all()
+                if e.type == 'agent.session.run.failed'][-1]
+    assert (terminal.payload.get('provider_started') is False) is admission_denied
     failed = [
         event
         for event in EventLog(state_dir / "events.jsonl").read_all()

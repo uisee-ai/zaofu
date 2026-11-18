@@ -72,6 +72,11 @@ def project_lifecycle(service, payload, config, ledger, transport, policy):
     project_id = payload['project_id']
     key = 'project:' + project_id
     old = ledger.get(key)
+    if payload['action'] == 'project.load' and old and old['status'] != 'unloaded':
+        from zf.integrations.controller.installation import Installation
+        from zf.integrations.controller.project_lease import retire_released
+        retire_released(ledger, key, transport, policy, Installation(config).credentials(), service.state_dir)
+        old = ledger.get(key)
     if payload['action'] == 'project.load' and old and old['status'] == 'loaded':
         from zf.integrations.controller.execution import process_identity
         owner = old['body'].get('owner', {})

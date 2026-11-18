@@ -24,6 +24,7 @@ interface Props {
   onDone: () => void;
   onSaveToken: (token: string) => void;
   tokenPresent: boolean;
+  controllerSession: boolean;
 }
 
 export function WelcomeWizard({
@@ -31,6 +32,7 @@ export function WelcomeWizard({
   onDone,
   onSaveToken,
   tokenPresent,
+  controllerSession,
 }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
@@ -240,7 +242,7 @@ export function WelcomeWizard({
 
           {cur.id === "access" ? (
             <div>
-              <div
+              {!controllerSession && <div
                 data-testid="welcome-action-token"
                 style={{
                   display: "grid",
@@ -282,7 +284,7 @@ export function WelcomeWizard({
                 >
                   {tokenPresent ? "替换 token" : "保存 token"}
                 </button>
-              </div>
+              </div>}
               <div
                 data-testid="welcome-access-status"
                 style={{ marginTop: 12, fontSize: 13, color: accessReady ? TONE.ok : TONE.warn }}

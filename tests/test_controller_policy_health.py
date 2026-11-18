@@ -230,6 +230,73 @@ def test_watch_and_cloud_serve_wait_use_applied_interval(managed, monkeypatch):
     assert waits == [3, 3]
 
 
+@pytest.mark.parametrize('existing_policy', [False, True])
+def test_serve_rejected_policy_keeps_access_closed_and_accepts_correction(managed, monkeypatch, existing_policy):
+    from fastapi.testclient import TestClient
+    from zf.integrations.controller import lifecycle
+    import uvicorn
+
+    config, peer, _, _ = managed
+    saved = Installation(config).path / 'policy.json'
+    if not existing_policy:
+        saved.unlink()
+    before = saved.read_bytes() if saved.exists() else None
+    settings(peer, batch_size=100)
+    callbacks = []
+    waits = []
+
+    class Stop:
+        def wait(self, seconds):
+            waits.append(seconds)
+            if len(waits) == 2:
+                settings(peer, batch_size=16)
+            return len(waits) == 3
+
+        def set(self):
+            pass
+
+    class Thread:
+        def __init__(self, target, **kwargs):
+            callbacks.append(target)
+
+        def start(self):
+            pass
+
+        def join(self, **kwargs):
+            pass
+
+    def run(app, **kwargs):
+        assert peer.receipts[-1]['applied'] is False
+        assert (saved.read_bytes() if saved.exists() else None) == before
+        assert any(row['payload']['kind'] == 'heartbeat' for row in peer.records.values())
+        with TestClient(app) as client:
+            assert client.get('/api/workspace/projects').status_code == 403
+            callbacks[0]()
+            assert peer.receipts[-2]['applied'] is False
+            assert peer.receipts[-1]['applied'] is True
+            assert applied(config).batch_size == 16
+            # Recovery cannot turn private ingress into an unauthenticated API.
+            assert client.get('/api/workspace/projects').status_code == 403
+
+    monkeypatch.setattr(lifecycle, 'threading', SimpleNamespace(Event=Stop, Thread=Thread))
+    monkeypatch.setattr(uvicorn, 'run', run)
+    lifecycle.serve(config, host='127.0.0.1', port=8002)
+    assert len(waits) == 3
+
+
+def test_serve_identity_failure_never_binds_listener(managed, monkeypatch):
+    from zf.integrations.controller import lifecycle
+    import uvicorn
+
+    config, _, _, _ = managed
+    def invalid(config):
+        raise ValueError('Controller policy identity mismatch')
+    monkeypatch.setattr(lifecycle, 'synchronize_workspace', invalid)
+    monkeypatch.setattr(uvicorn, 'run', lambda *a, **kw: pytest.fail('invalid identity must not listen'))
+    with pytest.raises(ValueError, match='identity mismatch'):
+        lifecycle.serve(config, host='127.0.0.1', port=8002)
+
+
 def test_health_capture_failure_cannot_erase_accounting_receipt(managed, monkeypatch):
     config, peer, context, _ = managed
     execution = Execution(project_binding(context.project_root), operation_id='diagnostic-failure', provider='fixture', model='m').begin(lambda: None)

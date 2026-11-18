@@ -50,7 +50,8 @@ class Collector:
                 self._usage(event, attribution, binding)
         elif (event.type.startswith("agent.session.run.") and event.type.rsplit('.', 1)[-1] in {"started", "completed", "failed", "cancelled"}) or event.type in {"controller.execution.started", "controller.execution.finished"}:
             phase = event.type.rsplit('.', 1)[-1]
-            if phase in {'completed', 'failed', 'cancelled'} and not (data.get('usage') or {}).get('_controller_accounted'):
+            if (phase in {'completed', 'failed', 'cancelled'} and data.get('provider_started') is not False
+                    and not (data.get('usage') or {}).get('_controller_accounted')):
                 from zf.integrations.controller.health import capture
                 capture(self.state_dir, binding['deployment'], self.cloud.project_id, binding['mode'],
                     identifier(data.get('provider') or data.get('backend')), status=phase,
@@ -59,7 +60,9 @@ class Collector:
                 phase = "completed" if data.get("status") in {"completed", "not_started"} else "cancelled" if data.get("status") in {"cancelled", "stopped"} else "failed"
             session_id = identifier(data.get("thread_id") or data.get("provider_session_id"))
             operation_id = identifier(data.get("operation_id") or data.get("run_id"))
-            if session_id:
+            # Native terminal lifecycle belongs to TerminalRegistry. A later execution
+            # receipt must not overwrite its stopped state with reusable-Session idle.
+            if session_id and data.get("source") != "terminal":
                 source = data.get("source")
                 if source not in {"workflow", "kanban", "channel", "operator", "helper"}:
                     source = "unknown"
@@ -76,6 +79,7 @@ class Collector:
                     "started_at": event.ts if phase == "started" else None,
                     "ended_at": event.ts if phase != "started" else None}, origin_id=binding['deployment'])
             if (phase in {'completed', 'failed', 'cancelled'} and operation_id
+                    and data.get('provider_started') is not False
                     and not (data.get('usage') or {}).get('_controller_accounted')):
                 from zf.runtime.provider_usage import normalize_provider_usage
 
@@ -129,6 +133,9 @@ class Collector:
         if accounting not in {"api", "subscription", "enterprise", "unknown"}:
             accounting = "unknown"
         sample = str(data.get("usage_sample_id") or event.id)
+        revision = data.get('usage_revision', 1) if event.type == 'controller.usage.receipt' else 1
+        if type(revision) is not int or not 1 <= revision <= 10**9:
+            raise ValueError('invalid Controller usage revision')
         series = stable(self.cloud.project_id + ':' + str(data['usage_series_id'])) if data.get("usage_series_id") else None
         cumulative = data.get("usage_semantics") == "cumulative"
         source_started = data.get('usage_series_started_at')
@@ -149,11 +156,13 @@ class Collector:
         namespace = identifier(data.get("request_namespace"))
         if not (request_id and namespace):
             request_id = namespace = None
-        payload = {**attribution, "kind": "usage", "record_id": stable(self.cloud.project_id + ':' + sample), "revision": 1,
+        payload = {**attribution, "kind": "usage", "record_id": stable(self.cloud.project_id + ':' + sample), "revision": revision,
             "provider": identifier(data.get("provider")) or identifier(backend) or "unknown",
             "model": identifier(data.get("model")) or "unknown", "mode": mode, "accounting_mode": accounting,
             "source": "runtime", "source_request_id": request_id, "request_namespace": namespace,
-            "quality": "reported" if present else "missing", "completeness": "complete" if present else "pending",
+            "quality": "reported" if present else "missing",
+            "completeness": ("complete" if data.get('usage_completeness', 'complete') == 'complete'
+                             else "partial") if present else "pending",
             "tokens": tokens if present else None, "semantics": "cumulative" if cumulative and series else "delta",
             "series_id": series, "input_semantics": "fresh_plus_cache",
             "raw_counters": {key: value for key, value in raw.items() if key in {
@@ -168,7 +177,8 @@ class Collector:
             value = data.get(field)
             if isinstance(value, str) and re.fullmatch(r'\d{1,12}(\.\d{1,12})?', value):
                 payload[field] = value
-        self.outbox.enqueue("usage:" + sample, str(data.get("usage_timestamp") or event.ts), payload,
+        key = "usage:" + sample + (':revision:' + str(revision) if revision > 1 else '')
+        self.outbox.enqueue(key, str(data.get("usage_timestamp") or event.ts), payload,
                             sample_series=series if cumulative and series else "", origin_id=binding['deployment'],
                             baseline_first=not known_new_series)
 

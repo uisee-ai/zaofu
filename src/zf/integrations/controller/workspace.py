@@ -191,6 +191,15 @@ def synchronize_workspace(config):
             except PolicyNotApplied as exc:
                 if ('execution_drain_required' not in str(exc) and 'local_consent_required' not in str(exc)
                         or not (installation.path / 'policy.json').exists()):
+                    # Liveness is independent of policy acceptance. Without this,
+                    # one rejected update makes the controller's freshness gate
+                    # prevent the owner from submitting its correction.
+                    outbox = Outbox(config.state_dir, observation(config, credentials))
+                    try:
+                        heartbeat(outbox, credentials['generation'], [])
+                    except OutboxFull:
+                        pass
+                    transport.deliver(outbox)
                     raise
                 policy_error = str(exc).rsplit(': ', 1)[-1]
                 policy = json.loads(private_read(installation.path / 'policy.json'))
@@ -243,7 +252,9 @@ def synchronize_workspace(config):
             if not receipt_only:
                 from zf.integrations.controller.maintenance import maintain
                 maintain(config, credentials, transport, [ctx for ctx in contexts
-                    if ctx.config.observability.controller.project_id not in retired], unresolved)
+                    if ctx.config.observability.controller.project_id not in retired], unresolved,
+                    observation_contexts=contexts, delivery_incomplete=bool(policy_error or health_failures or
+                        any(r["status"] != "synchronized" or r.get("collection_deferred") for r in rows)))
     complete = policy_error is None and all(row['status'] == 'synchronized' for row in rows) and not status['quarantined_records']
     return {'status': 'synchronized' if complete else 'partial',
             'policy_error': policy_error,
