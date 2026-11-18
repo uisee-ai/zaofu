@@ -15,4 +15,4 @@
 
 沿现有 contract、operation、Work Record、RecoveryCase、Store/事件和受控动作，不新增并行状态机、不绕过权限/结果门禁、不恢复用户取消的 Planner/Run 时间及 token 限制。真实 Provider 为独立层，模型保持 Astra High / GPT-6.1 Terra High；Go 不纳入。
 实施说明：[持续推进与无人资格](../../docs/impl/unattended-progress-recovery.md)。
-当前：真实Terra两会话受控接力已通过；Docker浏览器预检通过；新16任务项目已准备，完整无人8×8真实资格尚待执行。 实现提交及最终验证完成前保持 active。
+当前：真实Terra两会话受控接力已通过；Docker浏览器预检通过。冻结源码33a343ed已合入dev ebaa20f5；新16任务项目 workflow-46d731707cd1e693 已经审阅并批准 Plan，正在执行。实际 Impl 峰值8已观测，宿主机自动提交/检查/续跑与独立 Verify 已衔接；完整无人8×8、Candidate/Judge/交付尚未完成，保持 active。

@@ -139,7 +139,8 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
         "execution_evidence_read": zf_cli_cmd() + " artifact handoff-evidence --operation " + target["operation_id"],
         "unknown_effects": _unconfirmed_continuations(events, target["task_id"], source.get("active_attempt_id")),
         "next_action": "Read current contract and handoff, acknowledge receipt, then continue the current authorized stage. "
-                       "For missing historical command output, use execution_evidence_read; select --event from its index "
+                       "For historical command output, including controlled host probes after settlement, "
+                       "use execution_evidence_read; select --event from its index "
                        "or --source-operation for a linked earlier attempt. Observations are not acceptance verdicts.",
         "references": references, "authorizes_execution": False, "business_completed": False,
     })

@@ -67,9 +67,14 @@ def capture_execution_evidence(state_dir: Path, source: dict, events: list) -> d
         entries.append({'event_id': event.id, 'command_preview': body['command'][:160],
                         'command_truncated': len(body['command']) > 160,
                         'status': body['status'], 'ref': ref})
+    from zf.runtime.task_host_evidence import capture_host_evidence
+
+    host_entries = capture_host_evidence(state_dir, source, events)
+    entries.extend(host_entries)
     return write_immutable_json_sidecar(state_dir, {
         'binding': {k: source[k] for k in IDENTITY}, 'entries': entries,
-        'claims_status': 'provider_observation_unverified', 'authorizes_execution': False,
+        'claims_status': ('execution_observations_not_product_verdict' if host_entries
+                          else 'provider_observation_unverified'), 'authorizes_execution': False,
     }, root='task-handoffs/tool-index', kind='task_tool_index',
         schema_version='task-tool-index.v1', created_by='kernel')
 

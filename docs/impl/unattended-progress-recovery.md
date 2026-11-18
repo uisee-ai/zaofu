@@ -42,8 +42,29 @@ Planner/Run 的时间与 token 限制仍为0。诊断、宿主探针各自已有
 旧实验 `/tmp/zf-eight-recovery-20261118T002529Z` 已正常停止，保存账本摘要和退出回执；原始状态/源码/介入证据保留。
 准备轮 `/tmp/zf-unattended-eight-20261118T100101Z` 在 Plan 批准前停止：补充并发测试复现了“等待一个 Reader 提前结束整个恢复扫描”，故不能作为最终资格轮。
 修复将无变更等待与已执行恢复区分；`reader-fairness-baseline-confirmed.txt` 用已提交代码和当前代码对照，证明前者阻挡独立 Reader，后者恢复且保留未知效果等待。最初测试遗漏 backend 和固定扫描顺序，修正后重新复现，未把测试装配失败计作产品缺陷证据。
-新实验 `/tmp/zf-unattended-eight-20261118T102607Z` 已准备16个独立 TypeScript 合同和8+8池，待补充修复提交后启动。
+新实验 `/tmp/zf-unattended-eight-20261118T102607Z` 使用冻结源码 `33a343ed`（已合入 dev `ebaa20f5`），已启动16个独立 TypeScript 合同和8+8池。
+Plan/Critic 使用 Astra High，Impl/Verify 使用 GPT-6.1 Terra High；Plan `evt-adacb064b307` 经独立 Critic 通过、同版本预览/条款/32个互斥写入路径审阅后，由受控动作 `evt-c59b97660bc9` 于 2026-11-18 11:07:24 UTC 批准。
+实际 Task 输入已验证只必读共享约束和自己的任务区；本轮 Plan 未声明可选 `candidate_paths`，因此不能把本轮算作该可选路径的真实验证。该路径目前只有确定性合同验证。
 Plan 必须审阅批准；批准后冻结 config/合同/源码/授权，观察者只读。
 任何追加提示、补采证、状态修复或加载补丁都记为本轮介入，不能回填无人资格。
 分别报告业务 Goal、真实 Impl/TaskVerify 峰值与重叠、故障自动恢复和介入次数；配置8不等于达到8。
 最终仍须真实 Candidate/Judge/交付证据及清理后才能归档 P2。
+
+### 当前轮的并发证据限制
+
+本轮只有16个独立任务。第1项 `TASK-unique_words` 于 `evt-e1b219f7fe27` 完成时，Verify峰值仍为2，未出现8+8重叠；其余15项不能产生16个独立任务阶段同时运行。
+因此这轮即使业务 Goal 和交付成功，也只能证明所观察到的无人推进链，不能满足完整8+8验收。保持冻结合同，不追加伪任务、延迟完成或用两个Run的槽位合并充数。并发资格须另用供给充足的有用工作负载验证，P2在取得该证据前保持 active。
+
+### P2 暴露的宿主证据接力遗漏
+
+`TASK-positive_count` 首次仅提交测试后阻塞；预授权 Docker 已在 `evt-e3d3f7d67945` 产出明确 TODO/RED，下一 Impl 却再次报告缺少明细。既有接力索引在 operation 结算处停止，只覆盖 Provider 工具输出；宿主探针必须等 operation 结算后才执行，所以其输出总在截断之后。
+
+新增 `task_host_evidence.capture_host_evidence` 由实际 `attach_task_handoff → capture_execution_evidence` 调用，把冻结交接前的同 run/task/operation/attempt/lease/dispatch/request/generation 宿主检查加入既有索引与受控分页读取。核对 kernel 起止事件、唯一完成、receipt/manifest/output 摘要与来源；保留命令、目标提交、退出码和失败原文，不产生业务通过或新执行权限。原生工具仍以结算为界，旧 handoff 重放保持冻结；新事实只进入新交接。
+
+验证：`reports/host-evidence-handoff-20261118/`。
+- 先验回归 2 failed / 10 passed，准确复现结算后输出遗漏；修复首轮18 passed。
+- 调用方、宿主动作、发布与交接验证95 passed / 2 deselected；一次误填不存在测试路径的命令未执行测试，已修正，不算通过。
+- 实际账本隔离回放暴露测试夹具把 operation_id 放入 manifest.identity、正式格式在 manifest 顶层的差异，已对齐；最终回放可读同一目标提交上的 TODO/RED 和 exit 1，原运行状态未改动。
+- 最终 dev-verify 影响闭包176 passed（包括鉴权分页、实际dispatch、mock E2E），sentinel 53 passed。
+
+此补丁尚未加载进冻结真实轮；确定性通过和隔离回放不等于新源码的完整无人真实资格。
