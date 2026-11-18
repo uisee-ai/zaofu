@@ -68,3 +68,13 @@ Plan 必须审阅批准；批准后冻结 config/合同/源码/授权，观察�
 - 最终 dev-verify 影响闭包176 passed（包括鉴权分页、实际dispatch、mock E2E），sentinel 53 passed。
 
 此补丁尚未加载进冻结真实轮；确定性通过和隔离回放不等于新源码的完整无人真实资格。
+
+### P2 暴露的并行诊断作用域误判
+
+`TASK-reverse` 的驻留诊断 `evt-842c261510a9` 已匹配当前失败 operation/attempt，却因其他 Task 推进改变全 Run `progress_digest` 被挡下，消费记录停在 `consumed / controlled_action_status=blocked`。原账本只读回放确认，拒绝时唯一变化是该全局摘要。
+
+诊断转 OA 仍走既有 Run Manager 受控入口，但前置条件由内核绑定到原 Task 的完整 operation/attempt/generation/准入结果以及同一 Goal objective。其他 Task 的正常推进不撤销诊断；原 Task 换代、结果变化、目标变化、Run 终结仍拒绝。暂停、人工决策、权限和预算门禁保留，其他 Run 级动作继续使用原前置条件。新范围不能授权业务结论或直接恢复执行。
+
+验证记录在 `reports/task-scoped-diagnosis-20261118/`：RED 为4 failed / 9 passed，专项及直接调用方61 passed。扩大影响闭包5306 passed / 7 skipped / 3 failed；3项均为测试子进程 PATH 缺少 python，补齐已有虚拟环境 PATH 后定向重跑3 passed，无需修改生产代码或基线。sentinel 53 passed、流程 mock 10 passed。实际旧事件前缀只读回放由拒绝变为允许当前故障请求，原运行未改动。
+
+真实轮另出现行为 RED 明细缺失导致独立 Verify 拒绝、OA 请求人工介入。该拒绝不作为需要绕过的门禁；下一冻结轮必须先证明测试入口能在实际沙箱输出失败断言和退出码。本轮实际 Provider 观测 Impl峰值8、TaskVerify峰值6、同时8+8时长0；不能以修复已提交替代真实无人资格。
