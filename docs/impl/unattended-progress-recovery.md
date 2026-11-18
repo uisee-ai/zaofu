@@ -97,7 +97,7 @@ Git效果仍逐个执行，继续使用既有受控入口、精确路径与Run�
 批量应在新Run冻结前配置；带未结算旧授权效果的Run不能热改该字段并沿用旧回执。
 当前冻结的32任务实验不加载这份补丁，批处理单测通过也不等于真实8×8资格通过。
 
-验证与任务：[候选发布批处理](../../tasks/active/2026-11-18-1402-publication-batch-throughput.md)，
+验证与任务：[候选发布批处理](../../tasks/done/2026-11-18-1402-publication-batch-throughput.md)，
 记录目录 `reports/publication-throughput-20261118/`。
 
 批处理修复验证：8候选/真实Run Manager的RED复现4 failed、6 passed；专项60 passed。扩大闭包发现两项基线旧断言，已在未改动dev树复现并按现行Busy调用合同与既有token配置对齐，模块及caller70 passed。最终影响闭包8035 passed、10 skipped，哨兵53 passed、流程mock10 passed；尚不能替代新版本真实8×8。

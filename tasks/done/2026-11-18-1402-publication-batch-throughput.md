@@ -1,8 +1,8 @@
-> 状态: active
+> 状态: done
 
 # P2 补充：预授权候选发布的有界批处理
 
-承接已批准的 P0→P1→P2 实施与收尾、[P2 真实资格](2026-11-18-0933-p2-real-qualification.md)。
+承接已批准的 P0→P1→P2 实施与收尾、[P2 真实资格](../active/2026-11-18-0933-p2-real-qualification.md)。
 真实32任务资格 workflow-8cacd612404a641a 已观察到 Impl 峰值8、Verify峰值6，但未出现8+8重叠。
 源码 `reconcile_task_publication` 每次成功 commit 或 retry 后立即返回；Run Manager 每tick只调用一次。
 已有候选排队而Impl槽位空闲，因此先用独立确定性用例复现发布吞吐限制，再修复机械调度。
@@ -25,3 +25,6 @@
 生产profile在3fe3a300已将 bounded-direct-v1 的token预算设为0，旧断言仍为1500000。
 按当前明确调用合同与既有配置校正两项测试，保留“不产生失败事件、操作仍requested”的断言；生产行为与限制不作额外修改。
 首轮源码专项60 passed，哨兵53 passed、流程mock10 passed。校正后完整影响闭包8035 passed、10 skipped（175.64s），哨兵53 passed，流程mock10 passed；另两断言所在模块与caller70 passed。各集合重叠，不相加为独立测试总数；不是全库或真实8×8通过。
+
+实现提交：`43eb2975` — `feat: batch preauthorized task publication safely`。
+本任务完成有限批量源码及验证；父P2仍保持active，真实8×8由新冻结Run继续验收。
