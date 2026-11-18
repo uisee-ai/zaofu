@@ -189,6 +189,15 @@ def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic
         return None
     authority = [s for s in rows if s.get("source_id") in {"requirement", "goal-objective"}
                  or str(s.get("source_id") or "").startswith("critical-")]
+    # The run contract supplies the workflow input as a project ref. At
+    # preparation it has not passed through the manifest resolver yet.
+    from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
+
+    for index, source in enumerate(authority):
+        if not source.get("sha256") and project_root is not None:
+            bound = materialize_attempt_source_ref(state_dir=state_dir, project_root=project_root,
+                ref=source["ref"], source_id=source["source_id"])
+            authority[index] = {**source, "sha256": bound["sha256"]}
     if not authority or _authority_digests(previous.get("sources", [])) != _authority_digests(authority):
         return None
     old_authority = [s for s in previous.get("sources", []) if isinstance(s, Mapping)

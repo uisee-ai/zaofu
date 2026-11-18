@@ -302,11 +302,15 @@ def prepare_call_operation(
     )
     if critical_sources:
         critical_ids = {source["source_id"] for source in critical_sources}
-        payload["input_refs"] = [
-            *(item for item in (payload.get("input_refs") or [])
-              if not isinstance(item, dict) or item.get("source_id") not in critical_ids),
-            *critical_sources,
-        ]
+        retained = [item for item in (payload.get("input_refs") or [])
+                    if not isinstance(item, dict) or item.get("source_id") not in critical_ids]
+        # Preparation appends its proof after critical inputs. Preserve that
+        # ordering when the same prepared payload is delivered a second time.
+        proof = []
+        if (output_profile_id == "plan-synth" and retained and isinstance(retained[-1], dict)
+                and retained[-1].get("source_id") == "plan-structural-delta"):
+            proof.append(retained.pop())
+        payload["input_refs"] = [*retained, *critical_sources, *proof]
 
     from zf.core.workflow.flow_metadata import flow_metadata_for
     configured_review = flow_metadata_for(runtime.config, payload=payload).get("plan_review", {})
