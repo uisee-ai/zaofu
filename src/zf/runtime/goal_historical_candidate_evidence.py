@@ -1,6 +1,6 @@
 """Pin the prior candidate's admitted report for an execution-time plan revision."""
 
-from collections.abc import Iterator
+from collections.abc import Callable
 from pathlib import Path
 
 from zf.core.events.model import ZfEvent
@@ -170,7 +170,12 @@ class HistoricalCandidateEvidenceError(ValueError):
     """The previously pinned history can no longer be offered to the Judge."""
 
 
-def historical_judge_sources(state: Path, events: list[ZfEvent], closure: dict) -> Iterator[dict[str, str]]:
+def add_historical_judge_inputs(
+    state: Path, events: list[ZfEvent], closure: dict, admitted_refs: list[str],
+    add_descriptor: Callable[..., None],
+) -> None:
+    if not admitted_refs or not closure.get("has_historical_candidate_reports"):
+        return
     try:
         reports = _verified_pinned_reports(state, events, closure)
     except (OSError, ValueError, KeyError) as exc:
@@ -184,12 +189,11 @@ def historical_judge_sources(state: Path, events: list[ZfEvent], closure: dict) 
             "product_acceptance_report",
         ):
             descriptor = report[kind]
-            yield {
-                "ref": descriptor["ref"],
-                "digest": descriptor["sha256"],
-                "source_id": f"historical-candidate-{index}-{kind}",
-                "kind": kind,
-            }
+            add_descriptor(
+                ref=descriptor["ref"], digest=descriptor["sha256"],
+                source_id=f"historical-candidate-{index}-{kind}", kind=kind,
+            )
+        admitted_refs.append(report["envelope"]["ref"])
 
 
 def pinned_historical_result_refs(

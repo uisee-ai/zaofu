@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
-from zf.runtime.goal_historical_candidate_evidence import HistoricalCandidateEvidenceError, historical_judge_sources
+from zf.runtime.goal_historical_candidate_evidence import (
+    HistoricalCandidateEvidenceError, add_historical_judge_inputs,
+)
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.candidate_result_binding import (
     candidate_task_source_commits,
@@ -577,11 +579,7 @@ class GoalClosureBridgeMixin:
                     kind="product_acceptance_report",
                 )
 
-        if admitted_refs and identity.get("has_historical_candidate_reports"):
-            for source in historical_judge_sources(self.state_dir, events, identity):
-                add_descriptor(**source)
-                if source["kind"] == "envelope":
-                    admitted_refs.append(source["ref"])
+        add_historical_judge_inputs(self.state_dir, events, identity, admitted_refs, add_descriptor)
 
         planning_result_ref = str(payload.get("task_map_ref") or "").strip()
         candidate_ref = _resolve_candidate_ref(
