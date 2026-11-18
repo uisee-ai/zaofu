@@ -78,3 +78,5 @@ Plan 必须审阅批准；批准后冻结 config/合同/源码/授权，观察�
 验证记录在 `reports/task-scoped-diagnosis-20261118/`：RED 为4 failed / 9 passed，专项及直接调用方61 passed。扩大影响闭包5306 passed / 7 skipped / 3 failed；3项均为测试子进程 PATH 缺少 python，补齐已有虚拟环境 PATH 后定向重跑3 passed，无需修改生产代码或基线。sentinel 53 passed、流程 mock 10 passed。实际旧事件前缀只读回放由拒绝变为允许当前故障请求，原运行未改动。
 
 真实轮另出现行为 RED 明细缺失导致独立 Verify 拒绝、OA 请求人工介入。该拒绝不作为需要绕过的门禁；下一冻结轮必须先证明测试入口能在实际沙箱输出失败断言和退出码。本轮实际 Provider 观测 Impl峰值8、TaskVerify峰值6、同时8+8时长0；不能以修复已提交替代真实无人资格。
+
+本轮于2026-11-18 11:57 UTC以 `failed_qualification` 正常停止，停止前完成8/16项；父控制器、独立Run Manager及两个AR子实验均停止，私有tmux无残留。账本/任务候选全部保留，未覆盖判定或人工补采证。结束实验是操作员操作，与批准后的恢复介入0分开记录。下一轮前先对实际Provider测试入口做RED/GREEN预检。
