@@ -21,7 +21,7 @@ def _case():
         ("task.pipeline.stage.dispatched", {"task_pipeline_stage": "impl", "task_map_generation": "g2",
                                             "plan_artifact_package_digest": "p2"}),
         ("candidate.ready", {"candidate_head_commit": "c" * 40, "task_map_generation": "g2", "plan_artifact_package_digest": "p2"}),
-        ("run.goal.completed", {"candidate_event_id": "evt-7"}),
+        ("run.goal.completed", {"candidate_event_id": "evt-7", "target_commit": "c" * 40}),
     ]
     events = [ZfEvent(id=f"evt-{i}", type=kind, origin="kernel", correlation_id="run-1",
                      payload={**body, "workflow_run_id": "run-1"}) for i, (kind, body) in enumerate(rows)]
@@ -143,3 +143,38 @@ def test_execution_replan_audits_exact_freeze_after_operator_retry(fault):
         result = check_execution_order(events, change)
         assert result["candidate_event_id"] == frozen.id
         assert result["completion_candidate_event_id"] == retry.id
+
+@pytest.mark.parametrize("fault", ["", "missing_receipt", "other_receipt", "worker", "untrusted_freeze", "other_target", "missing_failure"])
+def test_legacy_cli_retry_requires_provenance_and_the_delivered_git_object(fault):
+    events, change = _case()
+    freeze = events[-2]
+    freeze.payload.update(schema_version="candidate-freeze-receipt.v1", freeze_id="freeze",
+                          candidate_ref="refs/heads/candidate/product")
+    retry = ZfEvent(id="resume", type="candidate.ready", actor="zf-cli", origin="",
+                    correlation_id="run-1", causation_id="failed-reader", payload={
+                        **freeze.payload, "source": "workflow_resume_batch", "resume_checkpoint_ref": "checkpoint", "fanout_id": "verify",
+                        "candidate_snapshot_event_id": freeze.id,
+                    })
+    applied = ZfEvent(id="applied", type="workflow.resume.applied", actor="zf-cli", correlation_id="run-1",
+                      causation_id=retry.causation_id, payload={
+                          **retry.payload, "safe_resume_action": "reemit_candidate_ready", "checkpoint_id": "checkpoint",
+                          "emitted_event_id": "different" if fault == "other_receipt" else retry.id,
+                      })
+    events[-1].payload["candidate_event_id"] = retry.id
+    if fault != "missing_failure":
+        events.insert(-1, ZfEvent(id="failed-reader", type="fanout.aggregate.completed", origin="kernel",
+                                  correlation_id="run-1", payload={"fanout_id": "verify", "status": "failed"}))
+    events.insert(-1, retry)
+    if fault != "missing_receipt":
+        events.insert(-1, applied)
+    if fault == "worker":
+        retry.origin = "worker"
+    elif fault == "untrusted_freeze":
+        freeze.origin = ""
+    elif fault == "other_target":
+        events[-1].payload["target_commit"] = "x" * 40
+    if fault:
+        with pytest.raises(AssertionError):
+            check_execution_order(events, change)
+    else:
+        assert check_execution_order(events, change)["candidate_event_id"] == freeze.id

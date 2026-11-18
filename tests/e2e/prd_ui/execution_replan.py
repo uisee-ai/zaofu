@@ -95,15 +95,37 @@ def check_execution_order(events, change: dict) -> dict:
     completed = [e for e in events if e.type == "run.goal.completed"]
     assert len(completed) == 1, "missing unique final goal completion"
     selected = completed[0].payload.get("candidate_event_id")
-    candidates = {e.id: e for e in events[by_id[impl[-1].id] + 1:by_id[completed[0].id]]
-                  if e.type == "candidate.ready" and e.origin == "kernel"}
+    delivery_events = events[by_id[impl[-1].id] + 1:by_id[completed[0].id]]
+    candidates = {e.id: e for e in delivery_events if e.type == "candidate.ready"}
     assert selected in candidates, "completion lacks the exact post-implementation candidate"
     candidate = candidates[selected]
     source = candidate.payload.get("candidate_snapshot_event_id")
+    if candidate.origin != "kernel":
+        # Older CLI retries omitted origin. Require the completed kernel decision and its applied resume receipt.
+        checkpoint = candidate.payload.get("resume_checkpoint_ref")
+        assert completed[0].origin == "kernel" and not candidate.origin and candidate.actor == "zf-cli"
+        assert source and checkpoint and candidate.payload.get("source") == "workflow_resume_batch"
+        assert any(
+            event.id == candidate.causation_id and event.origin == "kernel"
+            and event.type == "fanout.aggregate.completed" and event.payload.get("status") == "failed"
+            and event.payload.get("fanout_id") and event.payload["fanout_id"] == candidate.payload.get("fanout_id")
+            and by_id[event.id] < by_id[selected] for event in delivery_events
+        ), "legacy candidate retry lacks its failed fanout"
+        assert any(
+            event.type == "workflow.resume.applied" and event.actor == "zf-cli" and event.origin in ("", "kernel")
+            and by_id[event.id] > by_id[selected] and event.payload.get("checkpoint_id") == checkpoint
+            and event.causation_id == candidate.causation_id
+            and event.payload.get("emitted_event_id") == selected
+            and event.payload.get("safe_resume_action") == "reemit_candidate_ready"
+            and all(candidate.payload.get(key) and event.payload.get(key) == candidate.payload[key] for key in
+                    ("candidate_snapshot_event_id", "freeze_id", "candidate_ref", "candidate_head_commit"))
+            for event in delivery_events
+        ), "legacy candidate retry lacks its exact recovery receipt"
     if source:
         # Operator recovery may re-emit a thin trigger referencing the immutable freeze.
         assert source in candidates and by_id[source] < by_id[selected], "unknown candidate freeze"
         freeze = candidates[source]
+        assert freeze.origin == "kernel", "candidate freeze lacks kernel provenance"
         assert freeze.payload.get("schema_version") == "candidate-freeze-receipt.v1", "missing frozen authority"
         for key in ("freeze_id", "candidate_ref", "candidate_head_commit"):
             assert freeze.payload.get(key) and candidate.payload.get(key) == freeze.payload[key], f"retry differs: {key}"
@@ -112,6 +134,7 @@ def check_execution_order(events, change: dict) -> dict:
         candidate = freeze
     assert (candidate.payload.get("task_map_generation") == generation
             and candidate.payload.get("plan_artifact_package_digest") == package), "stale frozen candidate"
+    assert completed[0].payload.get("target_commit") == candidate.payload["candidate_head_commit"], "delivery target differs"
     return {"initial_plan": initial[-1].payload["plan_id"], "revised_plan": approved.payload["plan_id"],
             "candidate_failure": replans[0].payload["rework_of"], "replan_event": replans[0].id,
             "package_digest": package, "generation": generation, "candidate_event_id": candidate.id,

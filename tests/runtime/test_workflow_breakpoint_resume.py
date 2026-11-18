@@ -583,6 +583,7 @@ def test_resume_projection_reemits_candidate_after_runtime_only_reader_failure(
     assert len(dispatched) == 1
     reemitted = dispatched[0]
     assert reemitted.type == "candidate.ready"
+    assert reemitted.origin == "kernel"
     assert reemitted.payload["workflow_run_id"] == "run-candidate-retry"
     assert reemitted.payload["flow_kind"] == "prd"
     assert reemitted.payload["request_kind"] == "prd"
