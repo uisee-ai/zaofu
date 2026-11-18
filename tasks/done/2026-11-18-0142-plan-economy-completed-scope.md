@@ -2,8 +2,8 @@
 
 > 状态: done — `b77e119b` fix: reduce plan handoff overhead and preserve recovery evidence
 
-这是部分范围归档。整批任务仍在 [active](../active/2026-11-18-0000-plan-economy-execution-replan.md)，
-P5/P6 的候选执行恢复尚未通过，不包含在本 done 记录中。方案见
+这是早期部分范围归档。P5/P6 后续实测及唯一交付事件见
+[整批完成记录](./2026-11-18-0000-plan-economy-execution-replan.md)。方案见
 [208](../../docs/design/208-demand-critic-input-and-convergence.md)。未合并、未推送。
 
 - P1 消费者与权威核验 → verify: consumer-audit 与实际调用者核对，未删除独有/必需正文。

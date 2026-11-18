@@ -1,6 +1,17 @@
 # 208 第四批：生成经济性、任务输入与执行中 Replan
 
-> 状态: active
+> 状态: done — `182a4aeb` fix: preserve candidate provenance across workflow recovery
+
+P5/P6 已通过同一真实 v5 Run 的续跑与归档复验。执行中候选失败自动触发局部 Replan，
+第二次 Web 审批后才恢复实施。独立 Judge 关闭 17/17 项，唯一完成事件
+`evt-dbe7a0dde4be`，交付状态 settled。归档 Git bundle 中的 03fb9ad8 独立黑盒
+8/8；首版对新协议为 4/8。原 90 分钟与第一次续跑超时保留，补跑浏览器已观察到
+交付，旧审计对来源缺失的重试返回失败，最终在相同原始账本及 Git 归档上复验通过。
+本批经济性实验未达到 fresh 输入减少 20%、耗时减少 15% 的目标。
+
+实现见 `e3bda193`、`7e297071`、`1b120b03`、`088a6058` 和 `182a4aeb`。
+最终 Judge 相关定向回归 528 文件，6,829 通过、10 跳过、1 项基线失败；
+恢复收据相关闭包 29 文件，643 通过。两组有重叠。以下逐阶段记录保留当时裁定。
 
 用户批准上一轮三批七项方案。基线 `bf6eccf6`，沿用 `wip/codex-20261117-critic-scope`；
 包含隔离小产品的真实 Provider、Web 审批、实施及恢复验证。沿用 208，不增加第二套任务合同。
@@ -10,8 +21,8 @@
 - [x] P2 重复生成收敛 → verify: 单一场景预期、稳定 ID 与机械引用；固定 PRD 新生成及实际 reader 读取减少重复，独有行为不丢失。
 - [x] P3 首稿一致性 → verify: 阶段验收、人工/自动责任、身份、成功/拒绝已知正反例，增加未见样本；不把模型 approve 当 oracle。
 - [x] P4 任务输入分配 → verify: 同包精确 Task 合同、共享规则和本片完整正文，实际 Impl/Verify 派发及受控读取；candidate 保留完整包，陈旧/未绑定选择拒绝。
-- [ ] P5 Replan 范围及恢复 → verify: 语义修订与基础设施恢复区分；旧 finding、执行事实、版本与影响责任保留；局部不冒充全局通过，缺证保持原保护。
-- [ ] P6 执行恢复测试入口 → verify: 原 pending-preview 旅程保持；新增执行中故障、需求变更、重启/重复/上限场景，经真实受控入口、新版本准入、恢复执行及独立最终验收。
+- [x] P5 Replan 范围及恢复 → verify: 语义修订与基础设施恢复区分；旧 finding、执行事实、版本与影响责任保留；局部不冒充全局通过，缺证保持原保护。
+- [x] P6 执行恢复测试入口 → verify: 原 pending-preview 旅程保持；新增执行中故障、需求变更、重启/重复/上限场景，经真实受控入口、新版本准入、恢复执行及独立最终验收。
 - [x] P7 真实对照评测 → verify: Channel/Kanban 同需求；读取 A/B 固定候选、生成对照固定需求及模型、执行恢复单列；fresh/cache/output/耗时/返修和缺陷分别报告，保留失败与清理证据。
 
 质量通过是硬要求；新输入降低 20%、耗时降低 15% 是实验目标，未达到则明确报告，不删除义务或提高预算换取通过。每批先确定性测试，再真实层。
@@ -68,7 +79,7 @@ P5/P6 剩余实施验收（继续沿本任务，不另起重复候选）：
 随后使用项目.venv完成自动tier；未运行全库pytest。原始 Provider 失败和部分通过单列。
 
 已验证实现提交：`b77e119b` fix: reduce plan handoff overhead and preserve recovery evidence。P1/P2/P3/P4/P7 的部分范围记录见
-[完成记录](../done/2026-11-18-0142-plan-economy-completed-scope.md)；本文件因 P5/P6 未通过而继续 active。
+[完成记录](./2026-11-18-0142-plan-economy-completed-scope.md)；本文件因 P5/P6 未通过而继续 active。
 
 候选恢复修复已实施。旧请求 `evt-97c994dff83f` 在原始证据的隔离副本上已进入绑定
 `verify-lane-0` 的 OA 检查点，重复请求复用同一 operation，范围指向 T-CLI。

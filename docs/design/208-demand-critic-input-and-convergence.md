@@ -353,7 +353,7 @@ candidate recovery 处理，不先重发相同候选；缺少准入引用、非 
 后续须为候选阶段设计精确候选、Run、operation、generation 和失败证据绑定的修订
 意图路径，由 Planner 判断受影响 Task；reader 仅请求修订而不获得实现写权，不把
 候选父 Task 冒充实际 writer。新审批、恢复执行及冻结 commit 独立验收全部满足前，
-本批 P5/P6 保持未完成。完整测量在本地 `reports/plan-economy-20261118/evaluation.md`。
+该次运行结束时 P5/P6 待验证；后续真实交付及复验见本节末。完整测量在本地 `reports/plan-economy-20261118/evaluation.md`。
 
 ### 候选 Verify 阻塞与执行中修订
 
@@ -392,3 +392,9 @@ Plan 修订的目标证据；对产品的写入、返工预算和最终验收仍
 候选恢复命令为重新派发的 candidate.ready 显式记录 kernel 来源。审计旧版空来源
 重试时，须核对同一 Run 中失败的 fanout、已执行的恢复收据、原始 kernel 冻结
 记录及交付提交，才能取出该 Git 对象进行独立黑盒验收。
+
+本轮 v5 Kanban 执行验证现已完成。两次 Web 审批分别对应各自 Plan，候选失败引发的
+修订只替换 T-PROTOCOL-001。最终 Judge 关闭 17/17 项，Kernel 唯一完成事件
+`evt-dbe7a0dde4be` 完成交付。归档 Git bundle 上对 03fb9ad8 复跑 8/8 通过。
+首次浏览器限时以及同一 Run 中的恢复介入均已记录。该样本覆盖一次协议替换；成本
+与延迟的实验目标仍未达到。[整批验收记录](../../tasks/done/2026-11-18-0000-plan-economy-execution-replan.md)
