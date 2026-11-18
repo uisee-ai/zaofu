@@ -33,6 +33,7 @@ def register(sub):
     parser.add_argument("--attempt", required=True)
     parser.add_argument("--port", action="append", required=True, choices=_DRAFT_PORTS, help="Logical port name, repeat to include more")
     parser.add_argument("--workspace", action="store_true", help="Create an editable private draft in this Planner workdir")
+    parser.add_argument("--seed-goals", action="store_true", help="Preserve pinned goals in a local task map draft")
     parser.set_defaults(func=run)
 
 
@@ -48,7 +49,7 @@ def _source(manifest, source_id, identity):
     return source
 
 
-def draft_files(state, manifest, identity, names):
+def draft_files(state, manifest, identity, names, *, seed_goals=False):
     if identity["role"] != "planner" or not identity["operation_id"]:
         raise ValueError("a current Planner operation is required")
     package_source = _source(manifest, "plan-rework-package", identity)
@@ -60,8 +61,8 @@ def draft_files(state, manifest, identity, names):
             or package["task_map_generation"] != manifest.get("task_map_generation")):
         raise ValueError("replan baseline Run or generation differs")
     ports = {p["logical_name"]: p for p in [*package["produced"], *package["inherited"]]}
-    for name in dict.fromkeys(names):
-        if name not in _DRAFT_PORTS or name not in ports:
+    def assigned_bytes(name):
+        if name not in ports:
             raise ValueError(f"unknown baseline port: {name}")
         source = _source(manifest, f"baseline-plan-port-{name}", identity)
         if any(source[key] != ports[name][key] for key in ("ref", "sha256")):
@@ -69,6 +70,23 @@ def draft_files(state, manifest, identity, names):
         raw = read_plan_port_bytes(sidecar_path(state, source["ref"]), name)
         if hashlib.sha256(raw).hexdigest() != source["sha256"]:
             raise ValueError(f"baseline bytes differ for {name}")
+        return raw
+
+    for name in dict.fromkeys(names):
+        if name not in _DRAFT_PORTS:
+            raise ValueError(f"unknown editable port: {name}")
+        raw = assigned_bytes(name)
+        if seed_goals and name == "task_map":
+            from zf.runtime.goal_claim_set import validate_goal_claim_set
+
+            goals = validate_goal_claim_set(json.loads(assigned_bytes("goal_claim_set")),
+                workflow_run_id=package["workflow_run_id"], task_map_generation=package["task_map_generation"])
+            task_map = json.loads(raw)
+            # Keep explicit mapping and verification fields intact. A legacy map
+            # can derive its contracts from criteria that the revision will edit.
+            if not task_map.get("goal_claims"):
+                task_map["goal_claims"] = goals["claims"]
+                raw = json.dumps(task_map, ensure_ascii=False, indent=2).encode() + b"\n"
         yield f"{name}.json", raw
 
 
@@ -81,7 +99,7 @@ def write_draft(state, manifest, identity, names, stream):
             archive.addfile(entry, io.BytesIO(raw))
 
 
-def workspace_draft(context, manifest, identity, names):
+def workspace_draft(context, manifest, identity, names, *, seed_goals=False):
     from zf.core.safety.path_guard import assert_owned_workdir
     from zf.runtime.workdirs import WorkdirManager
 
@@ -95,7 +113,7 @@ def workspace_draft(context, manifest, identity, names):
     folder = project / "artifacts" / "plan"
     if folder.resolve() != folder:
         raise ValueError("draft output must stay in the Planner project")
-    files = list(draft_files(context.state_dir, manifest, identity, names))
+    files = list(draft_files(context.state_dir, manifest, identity, names, seed_goals=seed_goals))
     folder.mkdir(parents=True, exist_ok=True)
     draft = Path(mkdtemp(prefix="replan-", dir=folder))
     try:
@@ -109,6 +127,8 @@ def workspace_draft(context, manifest, identity, names):
 
 def run(args):
     try:
+        if args.seed_goals and (not args.workspace or "task_map" not in args.port):
+            raise ValueError("--seed-goals requires --workspace and --port task_map")
         if not args.workspace and sys.stdout.isatty():
             raise ValueError("redirect the archive to a file or pipe")
         context = resolve_project_context(explicit_state_dir=args.state_dir, require_config=args.workspace)
@@ -121,7 +141,7 @@ def run(args):
         finally:
             log.close()
         if args.workspace:
-            print(json.dumps(workspace_draft(context, manifest, identity, args.port)))
+            print(json.dumps(workspace_draft(context, manifest, identity, args.port, seed_goals=args.seed_goals)))
             return 0
         # Validate every member before publishing even the first byte.
         with TemporaryFile() as archive:

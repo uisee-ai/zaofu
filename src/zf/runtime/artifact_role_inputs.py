@@ -55,6 +55,8 @@ def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None, 
             for name in ("task_map", "test_matrix", "source_index"):
                 if f"baseline-plan-port-{name}" in ids:
                     args.extend(["--port", name])
+            if "baseline-plan-port-goal_claim_set" in ids:
+                args.append("--seed-goals")
             command = shlex.join(args)
-            entry += f"\n- After required reads, start local edits from the bound files: `{zf_cli_cmd()} {command}`. Draft only."
+            entry += f"\n- After required reads, start local edits from the bound files: `{zf_cli_cmd()} {command}`. Keep the baseline goals while editing changed behavior, evidence and consumers. Draft only."
     return entry

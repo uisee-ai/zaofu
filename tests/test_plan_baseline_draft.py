@@ -101,3 +101,44 @@ def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, c
         if workspace:
             assert not list(project.glob("artifacts/plan/replan-*"))
     assert not list((state / "artifacts/attempts/a1").glob("read-ledger*.jsonl"))
+
+
+@pytest.mark.parametrize("case", ["legacy", "explicit", "denied", "wrong_generation", "changed_bytes"])
+def test_seed_goals_edits_only_an_authorized_local_copy(tmp_path, case):
+    from zf.cli.plan_baseline_draft import draft_files
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+    from zf.runtime.goal_claim_set import build_goal_claim_set
+
+    package = _package(tmp_path)
+    task_map = {"tasks": [{"id": "render", "acceptance_criteria": ["原协议经批准后再实施"]}]}
+    if case == "explicit":
+        task_map["goal_claims"] = [{"goal_claim_id": "A", "text": "保留验收", "mandatory": True}]
+    goals = build_goal_claim_set(task_map, workflow_run_id="run-1", goal_id="goal-1",
+                                task_map_generation="other" if case == "wrong_generation" else "g1")
+    for name, body in (("task_map", task_map), ("goal_claim_set", goals)):
+        port = next(item for item in package["produced"] if item["logical_name"] == name)
+        descriptor = write_immutable_json_sidecar(tmp_path, body, root="fixtures/seed",
+            kind=name, schema_version=port["schema_version"], created_by="test")
+        port.update(ref=descriptor["ref"], sha256=descriptor["sha256"])
+    ref = write_plan_artifact_package(tmp_path, package)
+    metadata = dict(workflow_run_id="run-1", task_map_generation="g1",
+                    plan_artifact_package_ref=ref["ref"], plan_artifact_package_digest=ref["sha256"])
+    sources = replan_authority_sources(state_dir=tmp_path, project_root=tmp_path, payload=metadata, context={})
+    assigned = next(s for s in sources if s["source_id"] == "baseline-plan-port-goal_claim_set")
+    if case == "denied":
+        assigned["allowed_paths"] = ["$.schema_version"]
+    if case == "changed_bytes":
+        (tmp_path / assigned["ref"]).write_text("{}")
+    identity = dict(role="planner", operation_id="op", actor="planner", purpose="workflow")
+    manifest = {**metadata, "sources": sources}
+    raw = dict(draft_files(tmp_path, manifest, identity, ["task_map"]))["task_map.json"]
+    if case in {"denied", "wrong_generation", "changed_bytes"}:
+        with pytest.raises(ValueError):
+            list(draft_files(tmp_path, manifest, identity, ["task_map"], seed_goals=True))
+        return
+    seeded = dict(draft_files(tmp_path, manifest, identity, ["task_map"], seed_goals=True))["task_map.json"]
+    if case == "explicit":
+        assert seeded == raw
+    else:
+        assert json.loads(seeded) == {**task_map, "goal_claims": goals["claims"]}
+    assert json.loads(raw) == task_map

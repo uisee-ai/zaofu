@@ -22,7 +22,7 @@ def choose_review_reads(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     diagnostic = review_diagnostics(manifest, before=before, after=candidate, explicit=explicit)
     if strategy and before != candidate:
-        navigation = strategy in {"targeted_navigation", "targeted_replan_navigation"}
+        navigation = strategy in {"targeted_navigation", "targeted_replan_navigation", "targeted_markdown_change"}
         diagnostic.update(strategy=strategy,
             mode="targeted" if navigation else "full",
             reason=strategy, eligibility="policy_bound" if navigation else "lossless",
