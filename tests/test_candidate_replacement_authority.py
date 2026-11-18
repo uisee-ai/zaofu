@@ -109,9 +109,23 @@ def test_frozen_history_only_exempts_exact_verified_replacements(tmp_path, fault
         ):
             prepare()
     else:
+        from tests.test_call_result_admission import _runtime as admission_runtime
+
+        dispatch = prepare()
         aggregate = hydrate_task_contract_snapshot(
-            state, descriptor_from_payload(prepare())
+            state, descriptor_from_payload(dispatch)
         )
+        admission, _ = admission_runtime(state)
+        def submit_issues():
+            return admission._candidate_verification_currentness_issues(
+                identity={**dispatch, "workflow_run_id": run},
+                contract_ref=dispatch["contract_snapshot_ref"],
+                contract_digest=dispatch["contract_snapshot_digest"],
+            )
+
+        assert submit_issues() == []
+        (state / task_map["ref"]).write_text('{"tasks": []}')
+        assert [issue["code"] for issue in submit_issues()] == ["stale_contract_snapshot"]
         assert aggregate["completed_task_ids"] == ["TASK-1"]
         assert [r["source_task_id"] for r in aggregate["acceptance_criteria"]] == [
             "TASK-1"

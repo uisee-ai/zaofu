@@ -5,6 +5,7 @@ from pathlib import Path
 from zf.core.events.model import ZfEvent
 from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.task_contract_snapshot import hydrate_task_contract_snapshot
 from zf.runtime.task_map_successor import (
     successor_base_errors,
     task_map_successor_base_commit,
@@ -16,13 +17,13 @@ def verified_predecessors(
     state_dir: Path,
     candidate: ZfEvent,
     history: list[ZfEvent],
-    verified: dict[str, dict],
+    children: list[dict],
 ) -> set[str]:
     """Require the pinned Plan, a prior freeze, and all current replacement Verifies."""
     frozen = candidate.payload
     if (
         candidate.origin != "kernel"
-        or not verified
+        or not children
         or not all(
             frozen.get(key)
             for key in (
@@ -79,6 +80,22 @@ def verified_predecessors(
             historical.setdefault(
                 str(prior.get("candidate_head_commit") or ""), set()
             ).update(prior.get("completed_task_ids") or [])
+
+    verified = {}
+    for child in children:
+        task_id = child["task_id"]
+        verified[task_id] = hydrate_task_contract_snapshot(
+            state_dir,
+            {
+                "ref": child["contract_snapshot_ref"],
+                "sha256": child["contract_snapshot_digest"],
+            },
+            expected={
+                "workflow_run_id": frozen["workflow_run_id"],
+                "task_id": task_id,
+                "task_map_generation": frozen["task_map_generation"],
+            },
+        )
 
     current_ids: set[str] = set()
     replaced: set[str] = set()

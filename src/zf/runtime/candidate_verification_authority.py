@@ -225,16 +225,15 @@ def prepare_candidate_verification_authority(
     if missing_verify:
         from zf.runtime.candidate_replacement_authority import verified_predecessors
 
-        verified = {snapshot["task_id"]: snapshot for snapshot in child_snapshots}
         replaced = verified_predecessors(
-            Path(runtime.state_dir), candidate, events[: events.index(candidate)], verified
+            Path(runtime.state_dir), candidate, events[: events.index(candidate)], child_authorities
         )
         unresolved = sorted(missing_verify - replaced)
         if unresolved:
             raise CandidateVerificationAuthorityError(
                 f"candidate task {unresolved[0]!r} lacks current admitted Verify evidence"
             )
-        completed_task_ids = sorted(verified)
+        completed_task_ids = sorted(row["task_id"] for row in child_authorities)
 
     authority_seed = {
         "workflow_run_id": workflow_run_id,
