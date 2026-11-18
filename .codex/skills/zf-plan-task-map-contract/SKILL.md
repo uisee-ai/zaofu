@@ -265,6 +265,23 @@ and compare contracts before requesting that scope through the controlled
 replan action. Never declare new completion or remove acceptance to retain work.
 `input_task_ids` controls context reading only; it is never a dispatch filter.
 
+For an execution replan, start from the files bound to this Planner attempt.
+After the required reads, export only the files you need into a fresh draft
+directory. For example, using the attempt ID from the briefing:
+
+```bash
+mkdir draft && (set -o pipefail; zf plan draft-baseline --attempt "$attempt" --port task_map --port test_matrix --port source_index | tar -xk -C draft)
+```
+
+Edit stable Task/AC/scenario rows and update all consumers of the changed
+contract, including downstream CLI/API assertions, command owners and evidence
+refs. Keep unchanged bodies or descriptors intact. Rebind any candidate-local
+file refs and generation-specific evidence before the normal submit preflight.
+A draft copy earns no read receipt. If the baseline or scope cannot be proved,
+generate and review the full candidate. Put a short `## 本次变更` near the start
+of the complete Plan Markdown: old → new behavior, affected and preserved
+tasks/ACs, and the evidence for each. Submit the full new version for approval.
+
 ### Optional scope evidence for an incremental Critic
 
 Only for a replan with a current admitted Plan Package and a prior independent

@@ -154,8 +154,30 @@ def _pinned_reports(state: Path, closure: dict) -> list[dict]:
     )
 
 
-def historical_judge_sources(state: Path, closure: dict) -> Iterator[dict[str, str]]:
-    for index, report in enumerate(_pinned_reports(state, closure), start=1):
+def _verified_pinned_reports(state: Path, events: list[ZfEvent], closure: dict) -> list[dict]:
+    """Both sides of Judge dispatch must agree on the same admitted predecessor."""
+    pinned = _pinned_reports(state, closure)
+    if not pinned:
+        return []
+    current = historical_candidate_reports(
+        state, events, closure["workflow_run_id"], closure["task_map_generation"],
+        closure["plan_artifact_package_digest"],
+    )
+    return current if current == pinned else []
+
+
+class HistoricalCandidateEvidenceError(ValueError):
+    """The previously pinned history can no longer be offered to the Judge."""
+
+
+def historical_judge_sources(state: Path, events: list[ZfEvent], closure: dict) -> Iterator[dict[str, str]]:
+    try:
+        reports = _verified_pinned_reports(state, events, closure)
+    except (OSError, ValueError, KeyError) as exc:
+        raise HistoricalCandidateEvidenceError("cannot verify pinned historical candidate evidence") from exc
+    if not reports:
+        raise HistoricalCandidateEvidenceError("pinned historical candidate evidence no longer matches admission")
+    for index, report in enumerate(reports, start=1):
         for kind in (
             "envelope",
             "product_acceptance_spec",
@@ -175,15 +197,7 @@ def pinned_historical_result_refs(
 ) -> set[str]:
     """Accept only admitted predecessor envelopes pinned at this exact Judge dispatch."""
     try:
-        reports = historical_candidate_reports(
-            state,
-            events,
-            closure["workflow_run_id"],
-            closure["task_map_generation"],
-            closure["plan_artifact_package_digest"],
-        )
-        if not reports or reports != _pinned_reports(state, closure):
-            return set()
+        reports = _verified_pinned_reports(state, events, closure)
         return {r["envelope"]["ref"] for r in reports}.intersection(
             closure["input_result_refs"]
         )
