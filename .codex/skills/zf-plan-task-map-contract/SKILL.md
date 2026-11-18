@@ -228,9 +228,11 @@ For an explicitly reviewed task-local consumption contract, a Task Map entry
 may declare `evidence_contract.plan_input_selection` with exactly
 `schema_version: "task-plan-input-selection.v1"` and nonempty
 `implementation` and `task-verify` port-name lists. Each list must include
-`task_execution_input` and only names bound as required ports by the same
-Package; `task_execution_input` must use the task-scoped schema above and
-include a partition for each consuming Task. The Package must also
+either `execution_spec` or `task_execution_input`, and only names bound as
+required ports by the same Package. The selected input must use the task-scoped
+schema above and include a complete partition for each consuming Task. Prefer
+the existing `execution_spec`; do not generate `task_execution_input` merely to
+copy the same body. The latter remains supported for existing contracts. The Package must also
 bind the original `execution_spec`, `task_map`, `acceptance_matrix`, `test_matrix`, and `real_e2e_matrix` as
 required ports for full-scope verification. The lists select
 Impl/Task Verify required Plan ports, not acceptance scope. Supply complete

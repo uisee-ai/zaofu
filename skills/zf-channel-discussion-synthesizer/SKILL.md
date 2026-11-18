@@ -170,6 +170,10 @@ Runtime 会把上述清单和 companion 导出到同版 Markdown；无需复制�
 `requirement_coverage` 每项包含唯一 `id`、`source_refs`、字符串数组 `evidence_refs`、正文 `section`、
 `acceptance_ids` 和 `status: covered|deferred|gap`；covered 必须指向声明过的验收 ID，
 其他状态提供具体 `reason`，不得将未覆盖项静默删除。
+先形成验收 ID 登记，再由登记生成 coverage 引用，提交前查空引用及未声明 ID。
+当前会话“只讨论 PRD、以后审批实施”等流程约束保留在 document_control、正文阶段边界
+及其来源记录中；不另造无产品 AC 的 covered 行，也不把流程限制伪装成产品功能 AC。
+产品需求的真实未覆盖项仍须如实列为 gap/deferred，不能借流程分类隐藏。
 `decision_log` 逐项记录问题/决定、依据、理由、异议及处置；没有新决定可为空。
 这些映射与完整正文共同进入 canonical PRD、同版审查和下载文件。
 

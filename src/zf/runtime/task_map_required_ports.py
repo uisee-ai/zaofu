@@ -74,7 +74,7 @@ def plan_input_declaration_errors(
         if not isinstance(policy, dict) or set(policy) != {"schema_version", "implementation", "task-verify"} or policy.get("schema_version") != "task-plan-input-selection.v1":
             errors.append(f"{prefix} has invalid schema")
             continue
-        full = {"execution_spec", "task_execution_input", "acceptance_matrix", "test_matrix", "real_e2e_matrix"}
+        full = {"execution_spec", "acceptance_matrix", "test_matrix", "real_e2e_matrix"}
         if not full.issubset(available):
             errors.append(f"{prefix} requires complete plan matrix ports")
         for stage in ("implementation", "task-verify"):
@@ -82,9 +82,31 @@ def plan_input_declaration_errors(
             if (not isinstance(values, list) or not values or
                     any(not isinstance(x, str) or not x.strip() or x != x.strip() for x in values)):
                 errors.append(f"{prefix}.{stage} must be a non-empty port list")
-            elif len(values) != len(set(values)) or not set(values).issubset(selectable) or "task_execution_input" not in values:
+            elif (len(values) != len(set(values)) or not set(values).issubset(selectable)
+                  or not {"execution_spec", "task_execution_input"}.intersection(values)):
                 errors.append(f"{prefix}.{stage} contains duplicate, unbound or missing scoped input")
     return errors
 
 
-__all__ = ["plan_input_declaration_errors", "required_plan_port_errors"]
+def selected_input_body_errors(payload: dict[str, Any], ports: dict[str, Any]) -> list[str]:
+    """Reject a claimed scoped input with an unscoped body before approval."""
+    from zf.runtime.task_scoped_plan_inputs import SCHEMA_VERSION
+
+    errors = []
+    for task in payload.get("tasks", []) if isinstance(payload.get("tasks"), list) else []:
+        evidence = task.get("evidence_contract") if isinstance(task, dict) else None
+        policy = evidence.get("plan_input_selection") if isinstance(evidence, dict) else None
+        if not isinstance(policy, dict):
+            continue  # Shape errors belong to plan_input_declaration_errors.
+        for stage in ("implementation", "task-verify"):
+            names = policy.get(stage)
+            for name in names if isinstance(names, list) else []:
+                if not isinstance(name, str) or name not in {"execution_spec", "task_execution_input"}:
+                    continue
+                body = ports.get(name)
+                if not isinstance(body, dict) or body.get("schema_version") != SCHEMA_VERSION:
+                    errors.append(f"{task.get('task_id') or task.get('id')}.{stage}: selected {name} must be task scoped")
+    return errors
+
+
+__all__ = ["plan_input_declaration_errors", "required_plan_port_errors", "selected_input_body_errors"]

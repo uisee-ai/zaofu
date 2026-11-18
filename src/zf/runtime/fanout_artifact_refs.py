@@ -126,8 +126,6 @@ def relocate_fanout_artifact_refs(
         )
         if relocated and relocated != ref:
             replacements[ref] = relocated
-    if not replacements:
-        return rewritten
     for key in _SCALAR_REF_KEYS:
         value = str(rewritten.get(key) or "")
         if value in replacements:
@@ -141,7 +139,13 @@ def relocate_fanout_artifact_refs(
             for item in raw
             if str(item)
         ]
-    return _rewrite_plan_port_refs(rewritten, replacements)
+    from zf.runtime.plan_report_compaction import pin_report_port_refs
+
+    # Final aggregation must use the same pinned descriptors as Critic input.
+    return pin_report_port_refs(
+        _rewrite_plan_port_refs(rewritten, replacements),
+        state_dir=state_dir, project_root=project_root,
+    )
 
 
 def _rewrite_plan_port_refs(
@@ -200,9 +204,8 @@ def prepare_fanout_synth_reports(
             roles=roles,
             prefer_workdir_sources=True,
         )
-        from zf.runtime.plan_report_compaction import compact_report, pin_report_port_refs
+        from zf.runtime.plan_report_compaction import compact_report
 
-        rewritten = pin_report_port_refs(rewritten, state_dir=state_dir, project_root=project_root)
         rewritten = compact_report(rewritten, state_dir=state_dir, project_root=project_root)
         row["report"] = rewritten
         if rewritten != report:

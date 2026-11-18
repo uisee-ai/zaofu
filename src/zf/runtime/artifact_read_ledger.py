@@ -653,6 +653,12 @@ def render_attempt_source_briefing(
                 "or 2048 bytes before continuing. Supplemental source reads also accept --format text; "
                 "their --page-size remains at most 8192 characters. Do not infer command syntax from display escaping."
             )
+        from zf.runtime.artifact_read_briefing_policy import bound_read_policy_locator
+
+        locator = bound_read_policy_locator(payload, state_dir)
+        if locator:
+            lines.append(locator)
+            return "\n".join(lines) + "\n"
         lines.extend(["- Required reads for this attempt:"])
         for item in required:
             source_id = str(item.get("source_id") or "")

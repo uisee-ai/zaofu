@@ -31,3 +31,7 @@ codex exec --ignore-user-config --skip-git-repo-check --sandbox read-only \
 因 NOT_RUN、版式或合法互补责任拒绝。记录真实 verdict、遗漏/误报、fresh/cache/output、
 压缩次数和耗时；关键词命中、fixture 标签及 mock 答复都不能代替语义评测。
 这是已知回归集，不是未见样本的召回率证明，也不是产品实现通过的证据。
+
+第四批增加 `unicode-aligned/conflict`：未见的导出需求，检验省略重复字段后仍能接受
+完整合法矩阵，并发现码点/UTF-8 与 normalization 的真实行为冲突。与既有阶段、身份、
+人工/自动责任及成功/拒绝回归分开报告；少量成对样本不代表通用召回率。

@@ -254,3 +254,103 @@ pytest。全部必读项有同角色/operation 的原生输出证据，额外未
 说明。真实全过程 Critic/Planner 累计输入比均约 1.03，新输入比分别约 1.17 和 1.33；
 不同候选之间不作因果降本比较。Replan 仍有多次压缩，Kanban 矩阵仍约 100 KB，
 端到端延迟与作者首稿稳定性尚需后续观察。
+
+## 第四批：生成经济性、任务输入与执行中 Replan
+
+基线为 `bf6eccf6`。用户授权三批七项：信息权威及消费者核验、重复生成收敛、首稿
+一致性、任务输入分配、Replan 范围及恢复、执行测试入口、真实对照评测。
+
+### 事实与方法
+
+第三批 Kanban 三个任务的矩阵 99942 字节、79 行，79 行 `then` 与 `expected_result`
+相同，51 行 `parameter_coverage` 又等于 `then`；source_index 111411 字节，其
+stage_projections 重复描述任务 AC。增加 Agent 无法消除这些序列化重复和实际依赖。
+参考前述 Anthropic 上下文及分工实践和
+[Agent scaling v3](https://arxiv.org/abs/2512.08296v3)：先减少重复生成、明确责任和
+上下文，再在独立任务上验证并行收益。研究结论不是本产品的成本保证。
+
+1. 先证明消费者：Task Map 保持当前任务合同，test_matrix 保持具名场景和结果，
+   source_index 负责来源定位与映射。无消费者且非配置必需的重复字段由作者省略；
+   独有参数、异常、共享不变量、owner/tier/时点不能省略。机械精确重复诊断只提供
+   写作反馈，不新增语义准入门禁、不修改已经准入的工件。人读 Plan 仍有完整正文。
+2. Planner 先确定来源义务与责任，再填入相关引用；本片 AC 不复制后继义务。沿用
+   最终包读回与跨工件评审，保留身份、人工/自动责任和成功/拒绝历史反例，新增未见
+   校准样本；明确已知回归不证明通用召回率。
+3. 复用现有 task-plan-input-selection.v1 与 task-scoped-plan-input.v1，核验
+   是否可以直接选择已有 execution_spec，避免为相同责任再造 task_execution_input。
+   显式选择须与同包 Task Map 一致，完整共享条款及本任务分区可读；候选验收仍读取
+   完整包，未声明选择沿用原行为。语义充分性由 Planner/Critic 审查，Kernel 只验证
+   声明、身份、版本和读取证据。
+4. Replan 保持原因分流：实现缺陷返回 Impl；合同/依赖错误返回 Plan；需求变化由
+   Agent 重新界定影响；环境/Provider 失败恢复 operation。当前局部重审和历史批准
+   继承仍分别处理。恢复笔记只记录绑定引用、原 finding、变更及未读位置，不作审批
+   或完整阅读证明；未知影响和失效证据保持保护。
+5. 保留 pending-preview 旅程，另扩展执行恢复入口。不得仅解除 --replan/--delivery
+   互斥就声称完成执行中 Replan。三类验证为：保留 commit 的合同修订及恢复交付；
+   需求/共享规则变化下的新旧合同与下游恢复；中断重启、重复事件及有界失败升级。
+   通过正常受控操作、实际 dispatch/result admission 与独立候选验收取证，不直接
+   修改状态或伪造 Agent verdict。真实模型、mock、OS 重启和浏览器层分别报告。
+
+### 验收与测量
+
+每批先定向回归，再真实验证。读取对照冻结同一候选，生成对照固定需求/模型/预算，
+执行恢复计入失败和重试；Channel/Kanban 使用同需求，深度故障按代表性链路分配。
+记录 unique/重复文本、实际读取、fresh/cache/output、阶段与端到端耗时、返修、
+缺陷及误拒。新输入降低 20%、中位耗时降低 15% 为实验目标，不是裁剪合同的门禁；
+小样本仅报告观察，不宣称账单或普遍速度保证。保留 120000 默认预算，不新增固定
+Agent 编制。是否并行由已证明的独立性及收益决定。
+
+P1–P7 的命令、版本、结果和未覆盖项记入本批任务与本地报告；完整需求、独有反例、
+当前绑定和最终交付是验收依据，不能以文件变短、模型 approve 或 Preview 可打开代替。
+
+
+### 第四批执行验证入口
+
+沿用 `tests/e2e/prd_ui/run.py`，新增显式 `--execution-replan --delivery`（只允许 real）。
+输入 `tests/e2e/fixtures/prd-ui/execution-protocol.md`；`${EXTERNAL_PROTOCOL}` 在隔离 root
+绑定为外部只读协议。首个 Impl 产出 commit 并派发 Verify 后，测试操作员更新协议 v1→v2，
+不改已批准包、任务状态或 Agent verdict。测试要求真实发现版本冲突、新 Plan 审批、
+新 generation 恢复派发及唯一 goal completion，并在最终 Git 对象上执行独立黑盒 oracle。
+首次和重新规划的审批分别要求实际 Plan ID/正文摘要匹配的本地审核文件；运行命令不会
+自动批准任意新计划。原 `--replan` 仍只表示 pending-preview 退回，与 delivery 互斥。
+
+执行示例（须已有真实 Provider/小产品实施授权）：
+
+```bash
+.venv/bin/python -m tests.e2e.prd_ui.run --provider real --journey kanban \
+  --requirement-file tests/e2e/fixtures/prd-ui/execution-protocol.md \
+  --delivery --execution-replan --timeout 5400 --turn-timeout 900
+```
+
+本用例证明外部合同版本变化下的执行恢复；不能外推为任意业务需求变更、OS 崩溃或
+多次超限均已真实通过。恢复矩阵、mock/Provider/浏览器层以及失败版本分别保留。
+
+第四批实测还发现 Plan Critic briefing 将同一必读策略展开成 65 条命令，虽已有完整
+策略 sidecar 和批量读取 CLI，仍重复交付定位信息。因此对 plan-synth 采用绑定策略
+定位：仅当 immutable policy 的摘要、Run、attempt 和完整 required_reads 与当前派发
+一致时，正文改为策略 ref/digest、选择数量和既有批量读取/index 命令。任何不一致或
+旧配置均保留原逐项命令。完整正文、JSON paths、读取回执及准入要求一项不减；这属于
+机械展示优化，不是缩减 Critic 审查范围。实测冻结派发的字节变化与真实 token 分开报告。
+
+实测补充（第四批）：Channel 的一个显式 `skill_adapter_plan` port 在 Critic 输入准备时
+已固定到 state sidecar，最终汇总却重新保留原项目绝对路径，直到 Package 准入才失败。
+汇总必须复用既有 pin 方法，在内容摘要匹配时给出与审查准备相同的不可变引用；原内容
+审查后发生变化时拒绝，不能重新签发摘要。显式 descriptor 的 preflight 同步采用
+Package 的 sidecar 路径/摘要合同；可物化的普通 `*_ref` 输入仍沿用原合同。此项属于
+机械协议修复，不改变 Critic 的语义判断，也不把协议错误伪装成质量驳回。
+
+执行验证另发现：新外部协议要求 Owner 修订 Plan，但 Verify 只在文字中提出重规划，
+结构化结果仍为产品拒绝/源码修复范围，导致旧候选重复验收。方法必须区分当前实现缺陷
+与尚未批准的合同变化：后者沿用 `blocked` 及带证据的 `plan_ports:<port>` 交接，
+不从自由文本猜测控制动作。候选 reader 收到已准入的 Plan port 阻塞时，必须让既有
+candidate recovery 处理，不先重发相同候选；缺少准入引用、非 Kernel 事件和普通产品
+拒绝仍沿用原路由。历史结果保持不可变；需操作员介入的续跑单列，不能称自动恢复通过。
+
+
+第四批实测边界：执行中协议变化样本已发现真实冲突，但尚未完成新版交付。旧 Verify
+结果未形成 Plan-port 阻塞；操作员请求 OA 后，候选 reader 又遇到 writer-only
+`return_to_plan` 目标限制。前述方法/优先级修复已有机械回归，不能追溯替换真实失败。
+后续须为候选阶段设计精确候选、Run、operation、generation 和失败证据绑定的修订
+意图路径，由 Planner 判断受影响 Task；reader 仅请求修订而不获得实现写权，不把
+候选父 Task 冒充实际 writer。新审批、恢复执行及冻结 commit 独立验收全部满足前，
+本批 P5/P6 保持未完成。完整测量在本地 `reports/plan-economy-20261118/evaluation.md`。

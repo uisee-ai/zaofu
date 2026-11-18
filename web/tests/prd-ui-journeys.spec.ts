@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { verifyPlanModuleReading } from "./support/prdPlanReading";
 import { verifyPlanReplan } from "./support/prdPlanReplan";
+import { approveExecutionReplan } from "./support/prdExecutionReplan";
 
 import { prdOnlyOption, sameInvocation, terminalPlanningEvent } from "./support/prdJourneyPolicy";
 
@@ -368,6 +369,10 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     }, { timeout, intervals: [2000] }).toBe(true);
     await dialog.getByRole("button", { name: "Approve", exact: true }).click();
     await capture(page, "08-plan-approved");
+    if (process.env.ZF_UI_EXECUTION_REPLAN === "true") {
+      await approveExecutionReplan(page, request, project, planId, evidence, timeout,
+        () => events(request, project));
+    }
     await waitEvent(request, project, "run.goal.completed", timeout);
     const delivered = await events(request, project);
     writeFileSync(`${evidence}/delivery-events.json`, JSON.stringify(delivered, null, 2));

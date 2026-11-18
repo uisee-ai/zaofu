@@ -110,6 +110,7 @@ def main() -> int:
                         help="Project-local Codex reasoning pin; default preserves existing behavior")
     parser.add_argument("--delivery", action="store_true", help="Wait for a reviewed local authorization before UI Plan approval")
     parser.add_argument("--replan", action="store_true", help="Reject the first Plan through UI and verify a new reviewed preview")
+    parser.add_argument("--execution-replan", action="store_true", help="Delivery with an external protocol change after the first implementation; separately review regenerated Plan")
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--owner-checkpoint", action="store_true", help="Require a real Critic Owner checkpoint and answer it through UI")
@@ -120,6 +121,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.replan and (args.delivery or args.owner_checkpoint):
         parser.error("--replan is a separate pending-plan journey; cannot combine with delivery or Owner checkpoint")
+    if args.execution_replan and not args.delivery:
+        parser.error("--execution-replan requires --delivery and its real-provider authorization")
     review_policy = None
     if args.review_policy:
         from zf.core.config.plan_review import validate_plan_review
@@ -147,6 +150,9 @@ def main() -> int:
     project, env = prepare(root, args.provider, args.journey, review_policy=review_policy,
                           channel_template=args.channel_template, channel_model=args.channel_model,
                           channel_reasoning=args.channel_reasoning)
+    if args.execution_replan:
+        from tests.e2e.prd_ui.execution_replan import initialize_protocol
+        initialize_protocol(root)
     port_lock = open("/tmp/zf-prd-ui-port-allocation.lock", "a")
     fcntl.flock(port_lock, fcntl.LOCK_EX)
     port = 8002
@@ -182,10 +188,13 @@ def main() -> int:
     (evidence / "skill-source.json").write_text(json.dumps({"path": str(REPO / "skills"), "files": skill_hashes}, indent=2))
     if args.requirement_file:
         requirement = args.requirement_file.read_bytes()
+        if args.execution_replan:
+            requirement = requirement.replace(b"${EXTERNAL_PROTOCOL}", str(root / "protocol.json").encode())
         (evidence / "product-input.md").write_bytes(requirement)
         manifest["product_input_sha256"] = hashlib.sha256(requirement).hexdigest()
     manifest["delivery_requested"] = args.delivery
     manifest["replan_requested"] = args.replan
+    manifest["execution_replan_requested"] = args.execution_replan
     manifest['timeout_seconds'] = args.timeout
     manifest['turn_timeout_seconds'] = args.turn_timeout
     (evidence / "run.json").write_text(json.dumps(manifest, indent=2))
@@ -224,6 +233,7 @@ def main() -> int:
                   "-e", f"ZF_WEB_BASE_URL=http://127.0.0.1:{port}", "-e", f"ZF_WEB_ACTION_TOKEN_FOR_TEST={env['ZF_WEB_ACTION_TOKEN']}",
                   "-e", f"ZF_UI_DELIVERY={str(args.delivery).lower()}",
                   "-e", f"ZF_UI_REPLAN={str(args.replan).lower()}",
+                  "-e", f"ZF_UI_EXECUTION_REPLAN={str(args.execution_replan).lower()}",
                   "-e", f"ZF_UI_PROVIDER={args.provider}", "-e", f"ZF_UI_JOURNEY={args.journey}",
                   "-e", f"ZF_UI_WORKFLOW_RUNTIME={args.workflow_runtime}",
                   "-e", f"ZF_UI_REVIEW_POLICY={env.get('ZF_UI_REVIEW_POLICY', '')}",
@@ -239,6 +249,9 @@ def main() -> int:
         deadline = time.monotonic() + args.timeout + 120
         handoff = evidence / "runtime-handoff.json"
         while browser.poll() is None:
+            if args.execution_replan:
+                from tests.e2e.prd_ui.execution_replan import change_protocol_after_implementation
+                change_protocol_after_implementation(root, project)
             if args.delivery and (evidence / "preview-ready.json").exists() and not (evidence / "preview-audit.json").exists():
                 from tests.e2e.prd_ui.audit import audit
                 (evidence / "preview-audit.json").write_text(json.dumps(audit(project, journey=args.journey), indent=2))
@@ -289,6 +302,9 @@ def main() -> int:
                 elif args.delivery:
                     result_audit = json.loads((evidence / "preview-audit.json").read_text())
                     result_audit["boundary"] = "preview only; delivery evidence audited separately"
+                    if args.execution_replan:
+                        from tests.e2e.prd_ui.execution_replan import audit_execution_replan
+                        result_audit["execution_replan"] = audit_execution_replan(root, project)
                 else:
                     result_audit = audit(project, journey=args.journey, owner_checkpoint=args.owner_checkpoint, replan=args.replan)
                 if args.provider == "fake" and args.workflow_runtime == "existing":

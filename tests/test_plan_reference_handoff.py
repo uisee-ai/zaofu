@@ -99,9 +99,10 @@ def test_explicit_port_body_and_digest_survive_lossless_compaction(tmp_path):
     state.mkdir()
     body = {'entries': [{'disposition': 'pending', 'reason': 'adverse evidence remains'}]}
     raw = json.dumps(body).encode()
-    (state / 'ledger.json').write_bytes(raw)
+    (state / 'artifacts').mkdir()
+    (state / 'artifacts/ledger.json').write_bytes(raw)
     digest = hashlib.sha256(raw).hexdigest()
-    port = {'logical_name': 'coverage_ledger', 'body': body, 'ref': 'ledger.json', 'sha256': digest}
+    port = {'logical_name': 'coverage_ledger', 'body': body, 'ref': 'artifacts/ledger.json', 'sha256': digest}
     report = {'plan_ports': [port]}
     compacted = compact_report(report, state_dir=state, project_root=tmp_path)
     assert compacted['plan_ports'] == [{key: value for key, value in port.items() if key != 'body'}]
