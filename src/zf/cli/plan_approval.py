@@ -57,11 +57,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--state-dir", default=None)
     sub = parser.add_subparsers(dest="plan_cmd", required=True)
+    from zf.cli.plan_baseline_draft import register as register_baseline_draft
     from zf.cli.plan_execution import register as register_execution
+    from zf.cli.plan_input_review import register as register_input_review
 
     register_execution(sub)
-    from zf.cli.plan_input_review import register as register_input_review
     register_input_review(sub)
+    register_baseline_draft(sub)
 
     review = sub.add_parser("review", help="List plans awaiting review with digest and checklist")
     review.add_argument("--workflow-run-id", default=None)

@@ -25,7 +25,7 @@ def _scoped_policy(runtime: Any, operation: Mapping[str, Any] | None) -> bool:
     if scoped - full:
         return True
     evidence_rows = [row for row in rows if isinstance(row, Mapping)
-                     and row.get("source_id") == "child-artifact-unchanged-review"
+                     and row.get("source_id") in {"child-artifact-unchanged-review", "plan-structural-delta"}
                      and row.get("json_path") == "$"]
     if len(evidence_rows) != 1:
         return False
@@ -40,10 +40,13 @@ def _scoped_policy(runtime: Any, operation: Mapping[str, Any] | None) -> bool:
         manifest_ref = {"ref": f"artifacts/attempts/{attempt}/source-manifests/{digest}.json", "sha256": digest}
     manifest = hydrate_sidecar_ref(runtime.state_dir, dict(manifest_ref)).payload
     sources = [source for source in manifest.get("sources", []) if isinstance(source, Mapping)
-               and source.get("source_id") == "child-artifact-unchanged-review"]
+               and source.get("source_id") == evidence_rows[0]["source_id"]]
     if len(sources) != 1:
         raise ValueError("unchanged review evidence is ambiguous")
     evidence = hydrate_sidecar_ref(runtime.state_dir, dict(sources[0])).payload
+    if evidence_rows[0]["source_id"] == "plan-structural-delta":
+        change = evidence.get("markdown_change") or {}
+        return bool(change.get("source_id")) and change["source_id"] not in full
     return any(isinstance(port, Mapping) and port.get("source_id") not in full
                for port in [*evidence.get("unchanged_ports", []), *evidence.get("changed_ports", [])])
 
@@ -140,11 +143,27 @@ def validate_local_review_output(runtime: Any, *, event: ZfEvent, payload: Mappi
         raise ValueError("local review candidate task map differs from its certificate")
     expected = {str(row.get("logical_name") or ""): str(row.get("sha256") or "")
                 for row in report.get("plan_ports", []) if isinstance(row, Mapping)}
+    from zf.runtime.plan_artifact_package_ports import materialize_explicit_plan_ports
+
+    if cert.get("markdown_change") and cert_source.get("source_id") == "plan-structural-delta":
+        triggers = [e for e in events if e.id == cert["trigger_event_id"] and e.origin == "kernel"
+                    and e.payload.get("workflow_run_id") == run]
+        if len(triggers) != 1:
+            raise ValueError("local review trigger does not match the frozen request")
+        trigger = triggers[0]
+        # Inline ports and scalar refs are both normal producer outputs. Compare
+        # the two effective candidates under the same trigger and port writer.
+        author = materialize_explicit_plan_ports(
+            state_dir=runtime.state_dir, project_root=runtime.project_root,
+            payload={**trigger.payload, **report, "stage_id": cert["stage_id"]},
+            flow_kind=str(payload.get("flow_kind") or ""), required_ports=expected,
+        )
+        expected = {name: port["sha256"] for name, port in author.items() if name != "goal_claim_set"}
+        if not (payload.get("plan_artifact_ref") or payload.get("plan_md")):
+            raise ValueError("local review output requires the current Markdown")
     if not expected or "" in expected or any(not digest for digest in expected.values()):
         raise ValueError("local review candidate Plan ports are invalid")
     expected["task_map"] = str(task_source["sha256"])
-    from zf.runtime.plan_artifact_package_ports import materialize_explicit_plan_ports
-
     actual = materialize_explicit_plan_ports(
         state_dir=runtime.state_dir, project_root=runtime.project_root, payload=payload,
         flow_kind=str(payload.get("flow_kind") or ""), required_ports=expected,

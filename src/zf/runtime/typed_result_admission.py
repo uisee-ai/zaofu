@@ -194,7 +194,7 @@ def _verification_issues(
         )]
 
     try:
-        ports = candidate_plan_ports(result)
+        ports = candidate_plan_ports(result, require_named_port=True)
         if ports:
             from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
 

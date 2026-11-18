@@ -27,3 +27,24 @@ def test_common_first_dispatch_entry_respects_bound_profile_and_required_reads(t
     assert 'binding mismatch' in render_attempt_source_briefing(payload,state_dir=tmp_path)
     payload.pop('attempt_source_manifest_sha256')
     assert 'scope unavailable' in render_attempt_source_briefing(payload,state_dir=tmp_path)
+
+
+def test_replan_planner_sees_one_executable_draft_command(tmp_path):
+    import shlex
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+    source = dict(attempt_id="current", plan_artifact_package_digest="a" * 64,
+                  sources=[{"source_id": name} for name in ("plan-rework-package", "baseline-plan-port-task_map",
+                                                            "baseline-plan-port-source_index")])
+    descriptor = write_immutable_json_sidecar(tmp_path, source, root="attempts", kind="manifest",
+                                              schema_version="attempt-source-manifest.v1", created_by="test")
+    payload = dict(attempt_id="current", attempt_source_manifest_ref=descriptor["ref"],
+                   attempt_source_manifest_digest=descriptor["sha256"])
+    rendered = render_attempt_source_briefing(payload, state_dir=tmp_path, role_name="planner")
+    cmd = next(l.split("`")[1] for l in rendered.splitlines() if "draft-baseline" in l)
+    assert shlex.split(cmd)[-9:] == ["plan", "draft-baseline", "--workspace", "--attempt", "current",
+                                     "--port", "task_map", "--port", "source_index"]
+    assert not any(ch in cmd for ch in "|><;")
+    assert "draft-baseline" not in render_attempt_source_briefing(payload, state_dir=tmp_path, role_name="critic")
+    assert "draft-baseline" not in render_attempt_source_briefing({**payload, "attempt_id": "stale"},
+                                                                  state_dir=tmp_path, role_name="planner")

@@ -118,6 +118,22 @@ def test_closure_pins_only_the_previous_admitted_product_report(
         assert selected[0]["product_acceptance_report"]["sha256"] == report["sha256"]
     else:
         assert selected == []
+    if selected:
+        pinned = save("closure-fact", {"historical_candidate_reports": selected})
+        closure = {**new, "workflow_run_id": RUN_ID, "closure_fact_ref": pinned["ref"],
+                   "closure_fact_digest": pinned["sha256"], "input_result_refs": [envelope["ref"]]}
+        closure["has_historical_candidate_reports"] = True
+        sources = []
+        current = ["current-result"]
+        history.add_historical_judge_inputs(tmp_path, events, closure, current, lambda **s: sources.append(s))
+        assert current == ["current-result", envelope["ref"]]
+        assert {s["ref"] for s in sources} == {envelope["ref"], spec["ref"], report["ref"]}
+        assert history.pinned_historical_result_refs(tmp_path, events, closure) == {envelope["ref"]}
+        (tmp_path / report["ref"]).write_text("{}")
+        with pytest.raises(history.HistoricalCandidateEvidenceError):
+            history.add_historical_judge_inputs(tmp_path, events, closure, current, lambda **s: sources.append(s))
+        assert history.pinned_historical_result_refs(tmp_path, events, closure) == set()
+
 
 
 @pytest.mark.parametrize(

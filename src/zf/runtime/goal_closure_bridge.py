@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
-from zf.runtime.goal_historical_candidate_evidence import historical_judge_sources
+from zf.runtime.goal_historical_candidate_evidence import (
+    HistoricalCandidateEvidenceError, add_historical_judge_inputs,
+)
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.candidate_result_binding import (
     candidate_task_source_commits,
@@ -199,14 +201,18 @@ class GoalClosureBridgeMixin:
                 reason="current task-map generation has no pinned goal claim set",
             )
             return None
-        read_contract = self._goal_closure_read_contract(
-            events,
-            workflow_run_id=workflow_run_id,
-            goal_id=goal_id,
-            identity=identity,
-            claim_set=claim_set,
-            payload=payload,
-        )
+        try:
+            read_contract = self._goal_closure_read_contract(
+                events,
+                workflow_run_id=workflow_run_id,
+                goal_id=goal_id,
+                identity=identity,
+                claim_set=claim_set,
+                payload=payload,
+            )
+        except HistoricalCandidateEvidenceError as exc:
+            self._emit_goal_closure_identity_invalid(source_event, identity=identity, reason=str(exc))
+            return None
         if (
             read_contract.get("product_acceptance_required")
             and not str(
@@ -573,11 +579,7 @@ class GoalClosureBridgeMixin:
                     kind="product_acceptance_report",
                 )
 
-        if admitted_refs and identity.get("has_historical_candidate_reports"):
-            for source in historical_judge_sources(self.state_dir, identity):
-                add_descriptor(**source)
-                if source["kind"] == "envelope":
-                    admitted_refs.append(source["ref"])
+        add_historical_judge_inputs(self.state_dir, events, identity, admitted_refs, add_descriptor)
 
         planning_result_ref = str(payload.get("task_map_ref") or "").strip()
         candidate_ref = _resolve_candidate_ref(

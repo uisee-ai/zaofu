@@ -581,6 +581,7 @@ def render_attempt_source_briefing(
     payload: Mapping[str, Any],
     *,
     state_dir: Path | None = None,
+    role_name: str = "",
 ) -> str:
     ref = str(payload.get("attempt_source_manifest_ref") or "").strip()
     if not ref:
@@ -598,7 +599,7 @@ def render_attempt_source_briefing(
         f"- attempt_id: `{attempt_id}`",
         f"- Index: `{cli_command} artifact index --attempt {attempt_id}`. "
         "Locators only, not read evidence.",
-        render_role_input_entry(payload, state_dir),
+        render_role_input_entry(payload, state_dir, role_name=role_name),
         (
             "- Run one literal command per tool call; no variables, aliases, "
             "loops, pipes, redirections, substitutions, or compound commands "
@@ -606,8 +607,11 @@ def render_attempt_source_briefing(
         ),
     ]
     if required:
-        if any(isinstance(row, Mapping) and row.get("source_id") == "plan-structural-delta"
-               for row in payload.get("input_refs", [])):
+        if any(isinstance(row, Mapping) and row.get("source_id") == "plan-structural-delta" for row in required):
+            lines.append("- Review every bound Markdown hunk, any changed author note, Owner feedback, cited AC and dependent interfaces. "
+                         "Expand the full current Plan or matrices for uncertainty. Return the exact author candidate.")
+        elif any(isinstance(row, Mapping) and row.get("source_id") == "plan-structural-delta"
+                 for row in payload.get("input_refs", [])):
             lines.append(
                 "- The indexed Plan structural delta is an optional navigation aid, not an approval "
                 "or a substitute for current required source text. Review the requirements, shared "
