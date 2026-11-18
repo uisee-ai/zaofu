@@ -100,3 +100,8 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 
 真实lane0仍等待的另一根因：旧代从未派发的request在环境等待失败后仍requested，后续角色释放及宿主绑定都被它阻挡。沿已接入runtime的reader terminal reconciliation补齐：仅Kernel环境等待失败、完整Run/Stage/Role/Attempt及不可变request中的fanout/child绑定、无任何启动/派发且无更新事件的requested才转机械failed；保留原失败causation，不编造语义结果、不改历史。实际runtime入口RED1 failed/12 passed；定向41 passed，影响闭包149 passed，sentinel53 passed。当前七个新reader已真实优先读取恢复上下文；第八槽位由operator受控暂停以补采精确命令，待验证补丁加载和官方restart。
+
+
+收据交接补修：真实Candidate合同20条命令已有完整执行收据，但自动恢复只携带三条自动白名单结果，遗漏Owner批准的键盘补采及16条单项验证，模型再次准确报告未核验。补充仅收集同Run/Task/Map/目标/冻结合同与规范命令完全匹配、来源可信且manifest摘要和明确审批相符的operator host receipts；只传已有执行事实，不扩大自动执行命令、不授予产品通过。无收据列表改为全部规范命令，避免仅对白名单宣称“缺项为空”。实际账本只读复核17条补充均匹配。首次测试fixture的emit origin参数错误已修正，随后对原0cc06813重新运行有效回归复现；不把测试入口错误当作产品RED。
+
+收据补修最终影响闭包141 passed、sentinel53 passed（含目标/合同/命令/代次/Run/审批/摘要/来源否定及失败收据保留）；原0cc06813有效回归12 failed，修复后通过。真实只读对账找到17条精确补充收据，仍须确认恢复后的模型输入实际携带并独立评估；未标产品或无人监工通过。
