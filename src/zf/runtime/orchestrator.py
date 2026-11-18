@@ -3187,7 +3187,10 @@ class WorkflowRuntimeCoordinator(
                 # heartbeat; the sweep must see that idle state rather than the
                 # previous busy heartbeat.
                 from zf.core.state.role_sessions import RoleSessionRegistry
+                from zf.runtime.worker_state_runtime import apply_external_worker_transition
                 try:
+                    if not apply_external_worker_transition(self, event):
+                        return
                     registry = RoleSessionRegistry(
                         self.state_dir / "role_sessions.yaml",
                         project_root=str(self.project_root),

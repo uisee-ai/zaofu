@@ -105,8 +105,10 @@ def build_canonical_required_reads(
                 required_paths[source_id] = (
                     tuple(source.get("allowed_paths") or ["$"])
                     if source_id.startswith("plan-port-")
-                    and source.get("kind") == "task_scoped_plan_input"
-                    and profile in {"implementation", "task-verify"}
+                    and ((source.get("kind") == "task_scoped_plan_input"
+                          and profile in {"implementation", "task-verify"})
+                         or (source.get("kind") == "candidate_scoped_plan_input"
+                             and profile == "candidate-verify"))
                     else ("$",)
                 )
     elif profile == "artifact-delivery":
@@ -156,7 +158,10 @@ def build_canonical_required_reads(
                     "workflow-prompt",
                 }
             ):
-                required_paths[source_id] = ("$",)
+                required_paths[source_id] = (
+                    tuple(source.get("allowed_paths") or ["$"])
+                    if source.get("kind") == "plan_rework_candidate_partition" else ("$",)
+                )
 
     sources = _sources(manifest)
     required_paths.update(semantic_replan_handoff.required_read_paths(sources))

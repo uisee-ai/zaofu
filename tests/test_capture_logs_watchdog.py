@@ -367,6 +367,7 @@ class TestWatchdogEvents:
 
         orch._on_worker_state_changed_event(ZfEvent(
             type="worker.state.changed",
+            origin="kernel",
             actor="dev",
             payload={
                 "instance_id": "dev",

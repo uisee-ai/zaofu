@@ -57,6 +57,33 @@ def _fold_worker_transition(
     return True
 
 
+def apply_external_worker_transition(runtime: Any, event: ZfEvent) -> bool:
+    """Converge live state from kernel facts, retaining the task-generation fence."""
+    if event.origin != "kernel":
+        return False
+    payload = event.payload
+    instance = str(payload.get("instance_id") or payload.get("role") or event.actor or "")
+    state = str(payload.get("to") or "")
+    task_id = str(event.task_id or payload.get("task_id") or "")
+    if (not instance or not state or payload.get("task_id") not in (None, "", task_id)
+            or not _fold_worker_transition(
+                runtime._last_worker_state, runtime._last_worker_task_id,
+                instance_id=instance, state=state, task_id=task_id,
+                generation_override=payload.get("generation_override") is True)):
+        return False
+    recycling = {"pending_recycle", "recycling"}
+    if state in recycling:
+        runtime._instance_state[instance] = state
+    elif runtime._instance_state.get(instance) in recycling and state in {
+        "idle", "busy", "awaiting_review", "completion_pending", "suspended",
+    }:
+        runtime._instance_state[instance] = "healthy"
+    if payload.get("respawn_success_circuit_reset") is True:
+        runtime._respawn_success_circuit_opened.discard(instance)
+        runtime._dead_counter.pop(instance, None)
+    return True
+
+
 class WorkerStateRuntimeMixin:
     """Persist worker state while preventing stale task completions."""
 
@@ -70,15 +97,18 @@ class WorkerStateRuntimeMixin:
         except Exception:
             return
         for event in events:
-            if event.type != "worker.state.changed" or not event.actor:
+            if event.type != "worker.state.changed" or event.origin in {"worker", "external"}:
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
+            instance = str(payload.get("instance_id") or event.actor or "")
+            if not instance:
+                continue
             state = str(event.payload.get("to") or "idle")
             task_id = str(event.task_id or event.payload.get("task_id") or "")
             _fold_worker_transition(
                 self._last_worker_state,
                 self._last_worker_task_id,
-                instance_id=event.actor,
+                instance_id=instance,
                 state=state,
                 task_id=task_id,
                 generation_override=bool(payload.get("generation_override")),
@@ -186,12 +216,15 @@ class WorkerStateRuntimeMixin:
             return out
         task_ids: dict[str, str] = {}
         for event in events:
-            if event.type == "worker.state.changed" and event.actor in out:
+            if event.type == "worker.state.changed" and event.origin not in {"worker", "external"}:
                 payload = event.payload if isinstance(event.payload, dict) else {}
+                instance = str(payload.get("instance_id") or event.actor or "")
+                if instance not in out:
+                    continue
                 _fold_worker_transition(
                     out,
                     task_ids,
-                    instance_id=event.actor,
+                    instance_id=instance,
                     state=str(payload.get("to") or "idle"),
                     task_id=str(event.task_id or payload.get("task_id") or ""),
                     generation_override=bool(payload.get("generation_override")),

@@ -70,11 +70,18 @@ def test_controlled_recovery_carries_only_bound_supplemental_receipt(recovery, i
     service.writer.default_origin = 'kernel'
     if invalid == 'request':
         (state / operation['request_ref']['ref']).write_text('{}')
-    assert resume_reader_after_probes(service, operation, contract, p, service.writer.event_log.read_all())
+    valid = invalid in {'', 'web', 'failed_probe'}
+    assert resume_reader_after_probes(service, operation, contract, p, service.writer.event_log.read_all()) is valid
+    events = service.writer.event_log.read_all()
+    assert not any(e.type == 'test.passed' for e in events)
+    if not valid:
+        # Invalid evidence leaves the frozen command uncovered; it cannot
+        # trigger a fresh Reader round with the same unavailable command.
+        assert not any(e.payload.get('repaired_failure_event_id') for e in events)
+        waits = [e for e in events if e.type == 'human.escalate']
+        assert len(waits) == 1
+        assert waits[0].payload['unverified_command_ids'] == ['supplement']
+        return
     trigger = [e for e in service.writer.event_log.read_all() if e.type == original.type][-1]
     feedback = trigger.payload['operator_feedback'][0]
-    valid = invalid in {'', 'web', 'failed_probe'}
-    assert ('operator-supplement.json' in feedback) is valid
-    if not valid:
-        assert 'Commands without receipts remain unverified: supplement' in feedback
-    assert not any(e.type == 'test.passed' for e in service.writer.event_log.read_all())
+    assert 'operator-supplement.json' in feedback

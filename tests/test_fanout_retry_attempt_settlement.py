@@ -9,13 +9,13 @@ from zf.runtime.task_attempt_runtime import reconcile_task_attempts
 from tests.test_scheduler_task_attempt import _runtime, _send
 
 
-def _case(tmp_path: Path):
+def _case(tmp_path: Path, *, failed=False):
     runtime, _, state = _runtime(tmp_path)
     first = _send(runtime, state, dispatch_id="first")
     retry = _send(runtime, state, dispatch_id="retry")
     assert first and retry and first.operation_id == retry.operation_id
     source = runtime.event_writer.append(ZfEvent(
-        type="flow.verify.child.completed", origin="worker", task_id="TASK-1",
+        type="flow.verify.child.failed" if failed else "flow.verify.child.completed", origin="worker", task_id="TASK-1",
         payload={"workflow_run_id": "RUN-1", "operation_id": first.operation_id,
                  "attempt_id": "first", "dispatch_id": "first"},
     ))
@@ -25,12 +25,16 @@ def _case(tmp_path: Path):
                  "admitted_call_result_ref": {"source_event_id": source.id}},
     ))
     child = ZfEvent(
-        type="fanout.child.completed", origin="kernel", task_id="TASK-1",
+        type="fanout.child.failed" if failed else "fanout.child.completed", origin="kernel", task_id="TASK-1",
         causation_id=source.id,
         payload={"workflow_run_id": "RUN-1", "operation_id": first.operation_id,
                  "result_event_id": source.id, "run_id": "retry", "attempt_id": "first",
                  "status": "completed"},
     )
+    if failed:
+        child.payload.pop("result_event_id")
+        child.payload["task_id"] = "TASK-1"
+        child.task_id = None
     return runtime, TaskAttemptStore(state / "task_attempts.json"), first, retry, admitted, child
 
 
@@ -73,3 +77,35 @@ def test_delayed_admission_cannot_close_newer_retry(tmp_path):
     runtime._settle_task_attempt_result(admitted)
     assert store.get(retry.attempt_id)["status"] == "superseded"
     assert store.get(newer.attempt_id)["status"] == "sent"
+
+
+@pytest.mark.parametrize("recover", [False, True])
+def test_admitted_failure_settles_retry_and_does_not_trigger_duplicate_diagnosis(tmp_path, recover):
+    from zf.runtime.task_attempt_recovery import pending_task_attempt_recovery_actions
+
+    runtime, store, first, retry, admitted, child = _case(tmp_path, failed=True)
+    if recover:
+        store.update(retry.attempt_id, status="failed", updated_at=child.ts,
+                     failure_class="lease_expired", recovery_owner="scheduler")
+    runtime.event_writer.append(child)
+    reconcile_task_attempts(runtime)
+    current = store.get(retry.attempt_id)
+    assert current["status"] == "failed"
+    assert current["failure_class"] == "semantic_result_failed"
+    assert current["recovery_owner"] == "workflow"
+    assert store.get(first.attempt_id)["status"] == "superseded"
+    assert pending_task_attempt_recovery_actions(runtime.state_dir / "projections",
+        canonical_store_path=store.path) == []
+    assert reconcile_task_attempts(runtime) == 0
+
+
+@pytest.mark.parametrize("field", ["origin", "causation_id", "task_id", "workflow_run_id", "operation_id"])
+def test_unbound_failed_result_cannot_close_retry(tmp_path, field):
+    runtime, store, _, retry, admitted, child = _case(tmp_path, failed=True)
+    if field in {"origin", "causation_id", "task_id"}:
+        setattr(child, field, "unrelated")
+    else:
+        child.payload[field] = "unrelated"
+    runtime.event_writer.append(child)
+    runtime._settle_task_attempt_result(admitted)
+    assert store.get(retry.attempt_id)["status"] == "sent"

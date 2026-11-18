@@ -1079,31 +1079,9 @@ class EventReactorMixin(
         self, event: ZfEvent,
     ) -> WorkflowRuntimeDecision | None:
         """Apply external worker state events to the in-memory lifecycle view."""
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        instance = str(
-            payload.get("instance_id") or payload.get("role") or ""
-        ).strip()
-        to_state = str(payload.get("to") or "").strip()
-        if instance and to_state:
-            try:
-                self._last_worker_state[instance] = to_state
-            except Exception:
-                pass
-            try:
-                recycling = {"pending_recycle", "recycling"}
-                resumed = {"idle", "busy", "awaiting_review", "completion_pending", "suspended"}
-                if to_state in recycling:
-                    self._instance_state[instance] = to_state
-                elif self._instance_state.get(instance) in recycling and to_state in resumed:
-                    self._instance_state[instance] = "healthy"
-            except Exception:
-                pass
-        if instance and payload.get("respawn_success_circuit_reset") is True:
-            try:
-                self._respawn_success_circuit_opened.discard(instance)
-                self._dead_counter.pop(instance, None)
-            except Exception:
-                pass
+        from zf.runtime.worker_state_runtime import apply_external_worker_transition
+
+        apply_external_worker_transition(self, event)
         return None
 
     def _on_build_done(self, event: ZfEvent) -> WorkflowRuntimeDecision | None:

@@ -119,10 +119,13 @@ def settle_admitted_operation_attempt(
     admitted_dispatches = {
         str(row.payload.get("run_id") or "")
         for row in events_by_id.values()
-        if row.type == "fanout.child.completed" and row.origin == "kernel"
+        if row.type in {"fanout.child.completed", "fanout.child.failed"} and row.origin == "kernel"
         and row.causation_id == source_event_id
-        and row.task_id == task_id
-        and row.payload.get("result_event_id") == source_event_id
+        and (row.task_id or row.payload.get("task_id")) == task_id
+        and row.payload.get("task_id") in (None, "", task_id)
+        and (row.payload.get("result_event_id") == source_event_id
+             or (row.type == "fanout.child.failed" and terminal == "failed"
+                 and row.payload.get("result_event_id") in (None, "")))
         and row.payload.get("operation_id") == operation_id
         and row.payload.get("workflow_run_id") == run_id
         and row.payload.get("run_id")

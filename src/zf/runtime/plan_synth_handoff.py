@@ -273,6 +273,8 @@ def build_plan_handoff_input_refs(
             raise ValueError(
                 f"previous Plan candidate descriptor {index} must be an object"
             )
+        if descriptor.get("kind") == "plan_rework_candidate_partition":
+            raise ValueError("previous Plan candidate cannot declare a runtime overlap partition")
         ref = str(descriptor.get("ref") or "").strip()
         expected = str(
             descriptor.get("sha256") or descriptor.get("digest") or ""
@@ -317,7 +319,9 @@ def build_plan_handoff_input_refs(
         if identity not in seen_sources:
             input_refs.append(source)
             seen_sources.add(identity)
-    return input_refs
+    from zf.runtime.plan_rework_input_overlap import partition_repeated_candidate_bodies
+
+    return partition_repeated_candidate_bodies(state_dir, input_refs)
 
 
 def _canonical_rework_task_snapshot(

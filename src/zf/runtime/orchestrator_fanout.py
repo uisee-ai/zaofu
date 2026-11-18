@@ -6830,6 +6830,8 @@ class FanoutCoordinationMixin(
             "briefing_path": str(briefing_path),
         }
         self._bind_task_attempt_payload(payload, dispatch_context)
+        if recovery_decision_event is not None:
+            payload["recovery_decision_event_id"] = recovery_decision_event.id
         for key in ("task_id", "scope", "workdir", "source_branch", "pdd_id", "feature_id"):
             value = str(child.get(key) or "")
             if value:
