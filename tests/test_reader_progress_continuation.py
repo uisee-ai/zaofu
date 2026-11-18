@@ -162,3 +162,35 @@ def test_failed_turn_does_not_replay_unknown_tool_effect(tmp_path):
     runtime.run_once(events=[event])
     assert len(transport.sent) == 1
     assert not any(e.type == "fanout.child.dispatch_lost" for e in log.read_all())
+
+
+def test_waiting_reader_does_not_starve_another_reader_recovery(tmp_path):
+    from copy import deepcopy
+    from dataclasses import replace
+    from zf.runtime.orchestrator import Orchestrator
+    from zf.runtime.reader_fanout_recovery_snapshot import build_reader_fanout_recovery_snapshot
+
+    state, log, transport, runtime, config, child = _durable_reader_state(tmp_path)
+    second = deepcopy(config.workflow.stages[0])
+    second.id = "verify-z-independent"
+    second.trigger = "independent.ready"
+    second.children[0].role_instance = "verify-2"
+    config.roles.append(replace(config.roles[0], name="verify-2", instance_id="verify-2"))
+    config.workflow.stages.append(second)
+    runtime = Orchestrator(state, config, transport)
+    runtime.run_once(events=[ZfEvent(type="independent.ready", actor="zf-cli",
+        correlation_id="run-durable", payload={"pdd_id": "F-DURABLE",
+                                                "workflow_run_id": "run-durable"})])
+    assert [row[0] for row in transport.sent] == ["verify-1", "verify-2"]
+    for role in ("verify-1", "verify-2"):
+        log.append(ZfEvent(type="provider.turn.closed", actor=role, payload={
+            "backend": "codex", "turn_id": role + "-closed", "provider_status": "failed",
+            "pending_tool_ids": ["unknown-effect"] if role == "verify-1" else [],
+        }))
+    events = log.read_all()
+    snapshot = build_reader_fanout_recovery_snapshot(runtime, events)
+    assert snapshot.manifests[0][1]["children"][0]["role_instance"] == "verify-1"
+    runtime._recover_lost_reader_fanout_dispatches(events, recovery_snapshot=snapshot)
+    assert [row[0] for row in transport.sent] == ["verify-1", "verify-2", "verify-2"]
+    assert not any(e.type == "fanout.child.dispatch_lost"
+                   and e.payload.get("role_instance") == "verify-1" for e in log.read_all())

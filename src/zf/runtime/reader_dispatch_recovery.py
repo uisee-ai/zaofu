@@ -193,11 +193,14 @@ class ReaderDispatchRecoveryMixin:
                 provider_turn_closed = lost_event.type == "provider.turn.closed"
                 from zf.runtime.reader_progress_continuation import continue_progressing_reader
 
-                if continue_progressing_reader(
+                continued = continue_progressing_reader(
                     self, events=events, manifest=manifest, child=child,
                     dispatch=latest_dispatch, operation=operation,
                     closed=lost_event, attempt=len(child_dispatches),
-                ):
+                )
+                if continued is None:
+                    continue
+                if continued:
                     return True
                 loss_reason = (
                     "provider_turn_closed_without_child_result"

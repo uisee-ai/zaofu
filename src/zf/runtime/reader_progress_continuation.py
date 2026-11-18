@@ -7,16 +7,17 @@ from zf.runtime.pause_lifecycle import is_dispatch_paused
 
 
 def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
-                               operation, closed, attempt: int) -> bool:
+                               operation, closed, attempt: int) -> bool | None:
     """Called under the fanout recovery sweep's existing controller lock.
 
-    True means this path owns the wait/delivery. Unknown delivery stays claimed;
+    True means a mutation, None means wait without blocking other readers,
+    and False leaves recovery to the existing fault path. Unknown delivery stays claimed;
     it cannot be interpreted as permission to resend or as product completion.
     Reads are finite, unique coverage of the unchanged frozen input, not tokens,
     repeated tool calls, chat activity, or an assertion about model memory.
     """
     if is_dispatch_paused(runtime.state_dir, events=events):
-        return True
+        return None
     p = dispatch.payload
     role = str(p.get("role_instance") or "")
     nested = p.get("payload") or {}
@@ -31,7 +32,7 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
             or (nested.get("attempt_id") or p.get("attempt_id")) != attempt_id):
         return False
     if _waiting(events, role, operation_id, attempt_id, operation.get("task_id"), closed):
-        return True
+        return None
     if (closed.type != "provider.turn.closed"
             or closed.payload.get("provider_status") != "completed"):
         return False
@@ -56,7 +57,7 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
                           and (e.payload.get("payload") or {}).get("request_hash") == request_hash
                           and (e.payload.get("payload") or {}).get("attempt_id") == attempt_id]
             if len(deliveries) != 1:
-                return True
+                return None
             runtime.event_writer.append(ZfEvent(
                 type="worker.continuation.reconciled", origin="kernel", actor=role,
                 task_id=operation.get("task_id") or None, causation_id=last.id,
