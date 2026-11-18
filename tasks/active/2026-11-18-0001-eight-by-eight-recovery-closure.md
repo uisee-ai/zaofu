@@ -70,3 +70,7 @@ Owner 随后明确要求取消 Planner 时间限制，并恢复原定 8×8 小�
 恢复边界补修：资源刚释放却同轮超时（RED 1 failed/11 passed，相关31 passed）；reader rerun准备异常无修复动作终态（RED 1 failed/1 passed，相关34 passed）。仅让已证明释放的资源正常复检，并将准备拒绝落入修复动作终态，不自动覆盖历史pending意图。真实产品验收尚未完成。
 
 恢复边界补修最终影响闭包491 passed / 7 skipped，sentinel53 passed，flow-smoke10 passed。历史pending修复请求和真实Candidate闭环仍保留为待核查，不标done。
+
+Candidate重试补修：受控rerun明确拒绝“task contract lacks task_map generation source”，实际fresh-reader caller复现1 failed/8 passed。Candidate快照复用既有currentness校验，避免把血缘锚点当作普通Task契约；保持冻结证据和新调用身份，拒绝身份/摘要/目标/Package偏移及旧Candidate。定向42 passed；影响闭包和真实恢复结果待记录，整批仍active。
+
+Candidate重试补修最终影响闭包263 passed，定向42 passed（集合重叠），sentinel53 passed，flow-smoke10 passed。真实失败child的冻结权威只读复核无issues；这只证明允许合法准备重试，不是产品验收通过。
