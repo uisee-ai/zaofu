@@ -9,7 +9,7 @@ from zf.integrations.controller.installation import Installation
 from zf.integrations.controller.workspace_transport import WorkspaceTransport
 
 
-# None is standalone, False is managed-but-unproven, True is a verified request only.
+# None selects standalone credentials. Only a verified, write-enabled Gateway request sets True.
 request_authority = ContextVar('zf_controller_request_authority', default=None)
 
 
@@ -67,9 +67,10 @@ class AccessVerifier:
 
 
 class ManagedAccessMiddleware:
-    def __init__(self, app, config, verifier=None):
+    def __init__(self, app, config, verifier=None, *, read_only=False):
         self.app, self.config = app, config
         self.verifier = verifier or AccessVerifier(config)
+        self.read_only = read_only
 
     async def __call__(self, scope, receive, send):
         if scope['type'] not in {'http', 'websocket'}:
@@ -108,7 +109,7 @@ class ManagedAccessMiddleware:
             if ((method not in {'GET', 'HEAD', 'OPTIONS'} or scope['type'] == 'websocket')
                     and origins != [self.config.gateway_origin]):
                 raise ManagedDenied('managed request origin mismatch')
-            request_authority.set(True)
+            request_authority.set(not self.read_only)
             task = asyncio.create_task(self.app(scope, receive, tracked_send))
             while True:
                 done, _ = await asyncio.wait({task}, timeout=8)
@@ -132,13 +133,13 @@ class ManagedAccessMiddleware:
             request_authority.reset(context)
 
 
-def install_access(app):
+def install_access(app, *, read_only=False):
     from zf.integrations.controller.binding import managed_config
 
     config = managed_config()
     if config is not None:
         # Eager credential check: misconfigured managed Web must never bind a public socket.
         Installation(config).credentials()
-        app.add_middleware(ManagedAccessMiddleware, config=config)
+        app.add_middleware(ManagedAccessMiddleware, config=config, read_only=read_only)
         from zf.integrations.controller.exports import install_export_route
         install_export_route(app, config)

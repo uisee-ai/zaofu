@@ -142,6 +142,7 @@ def run(args: argparse.Namespace) -> int:
         config=context.config,
         project_root=context.project_root,
         default_project_enabled=(context.config is not None and not getattr(args, "workspace_only", False)),
+        read_only=getattr(args, "read_only", False),
     )
     mode = "workspace" if workspace_shell else "project"
     print(

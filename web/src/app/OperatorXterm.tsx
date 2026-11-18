@@ -1,3 +1,4 @@
+import { localWebActionToken } from "../api/dashboardLaunch.js";
 import "@xterm/xterm/css/xterm.css";
 
 import { FitAddon } from "@xterm/addon-fit";
@@ -26,7 +27,7 @@ type ControlMessage =
 function wsUrl(path: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const url = new URL(`${protocol}//${window.location.host}${path}`);
-  const token = window.localStorage.getItem("zf.webActionToken")?.trim();
+  const token = localWebActionToken();
   if (token) {
     url.searchParams.set("token", token);
   }

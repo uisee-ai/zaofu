@@ -37,16 +37,16 @@ def test_cli_launch_access_controls_real_task_creation(tmp_path, monkeypatch, ca
     with TestClient(apps[0]) as client:
         session = client.get("/api/web-session").json()
         payload = {"title": "Write permission proof", "contract": {"behavior": "render board", "verification": "typecheck"}}
-        if host == "0.0.0.0":
+        if not read_only:
             assert client.post("/api/actions/create-task", json=payload).status_code == 403
-        headers = {"X-ZF-Web-Token": os.environ["ZF_WEB_ACTION_TOKEN"]} if host == "0.0.0.0" else {}
+        headers = {"X-ZF-Web-Token": os.environ["ZF_WEB_ACTION_TOKEN"]} if not read_only else {}
         created = client.post("/api/actions/create-task", json=payload, headers=headers)
     assert created.status_code == (403 if read_only else 201), created.json()
     if read_only:
         assert session["mode"] == "read_only"
     else:
         assert TaskStore(tmp_path / "runtime-state" / "kanban.json").get(created.json()["task_id"]) is not None
-        assert session["mode"] == ("local_trusted" if host == "127.0.0.1" else "token_required")
+        assert session["mode"] == "token_required"
     assert f"http://{host}:8002/" in capsys.readouterr().out
 
 
@@ -70,6 +70,7 @@ def test_network_default_provisions_stable_token_and_authorized_launch_link(tmp_
     ("ZF_WEB_PASSCODE", "explicit-passcode", "remote_passcode"),
     ("ZF_WEB_ACTION_TOKEN", "explicit-token", "token_required"),
     ("ZF_WEB_TRUSTED_SESSION", "0", "token_required"),
+    ("ZF_WEB_TRUSTED_SESSION", "1", "local_trusted"),
 ])
 def test_existing_access_policy_is_preserved(monkeypatch, key, value, mode):
     monkeypatch.setenv(key, value)

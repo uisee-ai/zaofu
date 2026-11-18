@@ -5,7 +5,6 @@ import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/700.css";
 import { UiPreferencesProvider } from "./app/UiPreferences";
 import { App } from "./app/App";
-import { consumeDashboardLaunchToken } from "./api/dashboardLaunch";
 import "./styles.css";
 import "./cockpit.css";
 import "./styles/28-workbench.css";
@@ -19,7 +18,6 @@ const AgentSessionFixturePage = React.lazy(() => (
 ));
 
 const root = document.getElementById("root");
-consumeDashboardLaunchToken(window);
 
 if (!root) {
   throw new Error("missing #root");

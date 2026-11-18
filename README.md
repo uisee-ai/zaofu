@@ -359,6 +359,7 @@ contact the author via WeChat.
   project; ZaoFu does not invent them.
 - Provider CLIs can modify files and spend model budget. Validate and dry-run
   before real execution.
+- Standalone Dashboard writes require the local action token by default, including on localhost. Open the authorized link printed by `zf web`. A cloud Workspace uses the signed-in Gateway session for Dashboard actions and terminal access.
 - Bind the Dashboard to loopback unless the network is explicitly trusted.
 - Never use `tmux kill-server` to stop one project on a shared host.
 

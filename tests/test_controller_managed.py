@@ -365,3 +365,55 @@ def test_command_retry_runs_controlled_action_once_and_preserves_kernel_state(ma
     assert [r['status'] for r in peer.command_receipts] == ['accepted', 'running', 'completed']
     assert not (context.state_dir / 'kanban.json').exists()
     assert Ledger(config.state_dir).rows('fence')[0]['status'] == 'closed'
+
+
+@pytest.mark.parametrize('read_only', [False, True])
+def test_gateway_login_controls_workspace_actions_without_local_credentials(managed, monkeypatch, read_only):
+    from fastapi.testclient import TestClient
+    from zf.cli.web_access import configure_web_access, dashboard_launch_url
+    from zf.core.task.store import TaskStore
+    from zf.core.workspace.registry import workspace_home
+    from zf.web.server import create_app
+
+    config, peer, ctx, _ = managed
+    monkeypatch.setenv('ZF_WEB_ACTION_TOKEN', 'obsolete-local-credential')
+    configure_web_access(host='0.0.0.0', read_only=read_only)
+    assert '#' not in dashboard_launch_url('localhost', 8002)
+    assert not (workspace_home() / 'web-action-token').exists()
+    app = create_app(ctx.state_dir, config=ctx.config, project_root=ctx.project_root, read_only=read_only)
+    with TestClient(app, base_url=config.gateway_origin) as client:
+        session_path = '/api/web-session'
+        assert client.get(session_path, headers={'x-zf-web-token':'obsolete-local-credential'}).status_code == 403
+        session = client.get(session_path, headers={'x-zf-access-context':gateway_token(config, peer, path=session_path)}).json()
+        assert session['mode'] == ('read_only' if read_only else 'controller_session')
+        assert session['actions_enabled'] is (not read_only)
+        assert session['requires_token'] is session['token_fallback_enabled'] is False
+        action = '/api/actions/create-task'
+        headers = {'x-zf-access-context':gateway_token(config, peer, path=action, method='POST'), 'origin':config.gateway_origin}
+        payload = {'title':'Cloud action proof','contract':{'behavior':'accept the task','verification':'check admission'}}
+        assert client.post(action, headers={**headers,'origin':'https://other.test'}, json=payload).status_code == 403
+        response = client.post(action, headers=headers, json=payload)
+        assert response.status_code == (403 if read_only else 201), response.text
+        if not read_only:
+            assert TaskStore(ctx.state_dir / 'kanban.json').get(response.json()['task_id']) is not None
+        peer.access_allowed = False
+        assert client.post(action, headers=headers, json=payload).status_code == 403
+
+
+def test_operator_websocket_accepts_only_current_gateway_session(managed):
+    from fastapi.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+    from zf.web.server import create_app
+
+    config, peer, ctx, _ = managed
+    path = '/api/operator/control'
+    app = create_app(ctx.state_dir, config=ctx.config, project_root=ctx.project_root)
+    headers = {'origin': config.gateway_origin, 'x-zf-access-context':gateway_token(config, peer, method='WEBSOCKET', path=path)}
+    with TestClient(app, base_url=config.gateway_origin) as client:
+        with client.websocket_connect(path, headers=headers) as ws:
+            assert ws.receive_json()['type'] == 'restore'
+            assert ws.receive_json()['type'] == 'state'
+        peer.access_allowed = False
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(path, headers=headers):
+                pytest.fail('revoked Gateway session opened an operator socket')

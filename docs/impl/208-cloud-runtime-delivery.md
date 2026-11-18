@@ -286,3 +286,9 @@ tech scan 被容量准入拒绝；多次受控读取耗时十几至几十秒，�
 云端 Connector 与 Controller 协商 `idle_prepare_v1`。第一次活动报告达到空闲阈值后，按服务端返回的版本重新检查执行、导出、未确认交付、待传回执和已登记终端。原生终端由项目的持久 TerminalRegistry 判定，关闭浏览器不能结束运行责任。两次检查之间新增的活动会取消准备；缺少能力的旧版不能确认自动停机。已加载项目的 watcher 继续续约，安全卸载和恢复的验收见[后续任务](../../tasks/active/2026-11-18-1020-watcher-quiesce-and-restore.md)。
 
 协商 `subscription_windows_v1` 后，原生 Codex 执行、托管终端和 tmux 采集路径可从已绑定的原生会话读取 CLI 报告的订阅窗口。校验会话 ID 与项目工作目录，只读取近期事件中的数字、窗口名称与时间，分别保存各窗口的最近有效观测。未知来源、缺失窗口、API key、不同会话均不推导订阅余额。无论使用哪个接入模式，已有用量回执仍沿原账本上报；订阅百分比独立展示。
+
+## 云端 Web 登录与 standalone 写权限
+
+云端 OAuth/OIDC 登录成功后，Gateway 按当前所有者、Workspace 和部署代次签发短时请求上下文。实例核验签名、权限当前性、请求方法、路径及写请求的 Origin，随后以 `controller_session` 展示工作台并接受受控动作。终端连接仍验证同源和当前授权。用户无需配置本地 Web action token 或 passcode。显式只读启动保留只读语义。实例管理凭据、Provider 密钥和 Workflow 内部操作凭据继续按各自已有合同使用。
+
+standalone 默认在 Workspace 生成或复用权限为 0600 的 action token，包括绑定 localhost 的情形。从 CLI 打印的授权链接打开工作台即可使用。显式 passcode、显式可信本地会话和只读启动仍可选，仅观测注册沿用 standalone 的 Web 授权。

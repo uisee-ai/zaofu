@@ -1486,7 +1486,7 @@ export interface RuntimeSummary {
     requires_token?: boolean;
   };
   web_session?: {
-    mode: "local_trusted" | "remote_passcode" | "token_required" | "read_only" | string;
+    mode: "controller_session" | "local_trusted" | "remote_passcode" | "token_required" | "read_only" | string;
     unlocked: boolean;
     actions_enabled: boolean;
     expires_at?: string | null;
