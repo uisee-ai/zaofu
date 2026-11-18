@@ -105,7 +105,10 @@ class RuntimeAuthorityMixin:
                     raise
                 self.transport.send_task(role_name, briefing_path, prompt)
         except Exception as exc:
-            fail_task_attempt_delivery(self, prepared, error=exc)
+            from zf.runtime.provider_dispatch_wait import release_external_gate_delivery
+
+            if not release_external_gate_delivery(self, prepared, exc):
+                fail_task_attempt_delivery(self, prepared, error=exc)
             self._rollback_inflight_dispatch(delivery_context)
             raise
         mark_task_attempt_sent(self, prepared)

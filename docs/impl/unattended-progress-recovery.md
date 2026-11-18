@@ -1,5 +1,28 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-18 真实资格复核纠正
+
+32任务轮 `workflow-8cacd612404a641a` 已有32项 TaskVerify/集成完成及冻结候选的真实
+Docker浏览器证据，但最终Judge/Goal未完成，实际8 Impl + 6 TaskVerify，8+8重叠为0。
+批处理轮 `workflow-fd9e9212ab345b77` 停在第二次Plan Critic，尚未批准Plan。
+两轮复核发现测试脚本指定的 `TMUX_TMPDIR` 目录均不存在，tmux回退默认server，
+相同的product会话内混有两轮pane。此前“运行互相隔离”的判断撤回，重叠期间证据
+不得用于无人资格通过；不删除原始账本。Provider同时报告usage_limit_reached，
+外部额度不能由自动恢复绕过。两轮已正常停止并保留代码/证据，停止属于监工介入。
+
+补充修复在 [隔离及外部门禁任务](../../tasks/active/2026-11-18-1545-isolation-and-external-gates.md)：
+显式TMUX_TMPDIR必须是现存、可写且可搜索的目录，否则在执行任何tmux命令前失败，
+不自动回退默认server。测试启动还必须实际确认socket路径、独占会话名与pane所属工作区；
+环境变量本身不证明隔离成立。
+
+Reader初始派发和重试将transport证明“输入未发送”的交互门禁记录为既有
+fanout.child.dispatch_deferred。TaskAttempt仅在当前delivery claim仍为delivering时
+原子释放到prepared，维持同一attempt/dispatch/operation及预算，并续接等待租约；
+门禁解除后通过原入口投递。Task Pipeline的Impl/Verify在激活和投递边界同样记录等待，
+不增加派发失败计数或触发冷却。已发送、被替代或结果不明的claim不会回滚。
+只做机械等待，不自动确认额度、登录、信任或权限弹窗，不增加故障重试额度。
+Mock、host隔离探针和真实provider资格分层记录；前两者通过不表示真实8×8已通过。
+
 本批按用户批准的 P0→P1→P2 顺序收敛 [8×8 恢复](eight-by-eight-recovery-closure.md) 的真实缺口。
 基线 dev `70295cc8`。来源为本地 ZF-SPEC-001/002、207–209；源码闭合与独立真实资格分别对账。
 批准任务为 `tasks/active/2026-11-18-0933-*`；未取得完整验收证据的任务保持 active。
@@ -101,3 +124,7 @@ Git效果仍逐个执行，继续使用既有受控入口、精确路径与Run�
 记录目录 `reports/publication-throughput-20261118/`。
 
 批处理修复验证：8候选/真实Run Manager的RED复现4 failed、6 passed；专项60 passed。扩大闭包发现两项基线旧断言，已在未改动dev树复现并按现行Busy调用合同与既有token配置对齐，模块及caller70 passed。最终影响闭包8035 passed、10 skipped，哨兵53 passed、流程mock10 passed；尚不能替代新版本真实8×8。
+
+隔离/门禁补充批次验证：专项60 passed；影响闭包4845 passed、7 skipped，串行4 passed，哨兵53 passed，流程mock10 passed；独立8×8 mock8 passed、真实tmux隔离1 passed。真实模型因额度门禁未重启，本批源代码修复通过不改变P2未验收状态。
+
+最终合并候选验证（含Task Pipeline激活/投递补充）：专项64 passed；影响闭包5020 passed、8 skipped；串行4 passed；哨兵53 passed；流程mock10 passed；8×8 mock8 passed；host双socket隔离1 passed。证据：reports/external-gates-20261118/validation-summary.json；真实provider未重开，P2保持active。

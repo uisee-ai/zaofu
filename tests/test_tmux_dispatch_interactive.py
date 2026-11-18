@@ -85,6 +85,7 @@ def test_reused_provider_checks_current_modal_before_touching_input():
                             context=DispatchContext(backend="codex"))
     assert pane.inputs == []
     assert transport.readiness_diagnostics("planner")["interactive_prompt_marker"] == "quota_model_switch"
+    assert transport.readiness_diagnostics("planner")["input_not_sent"] is True
 
     # Operator dismissed the dialog; ordinary low-quota warning does not block.
     pane.screen = BANNER

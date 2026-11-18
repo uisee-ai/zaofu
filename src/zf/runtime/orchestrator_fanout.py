@@ -626,6 +626,10 @@ class FanoutCoordinationMixin(
             return True
         except Exception as exc:
             reason = str(exc)
+            from zf.runtime.provider_dispatch_wait import defer_reader_external_gate
+            if defer_reader_external_gate(self, exc, context=context, child=child,
+                    role=role, run_id=run_id, causation_id=causation_id):
+                return True
             if (
                 _is_infra_dispatch_failure(reason)
                 and self._reader_child_infra_dispatch_deferrals(
@@ -6793,6 +6797,13 @@ class FanoutCoordinationMixin(
             # send failures (incl. BudgetExceededError) into
             # fanout.child.failed; the retry path let them propagate and kill
             # the reactor turn.
+            from zf.runtime.provider_dispatch_wait import external_gate_reason
+            gate_reason = external_gate_reason(exc)
+            if gate_reason:
+                self._defer_fanout_retry_dispatch(
+                    manifest, child, role, run_id, attempt, previous_dispatch, gate_reason,
+                )
+                return False
             failure_payload = {
                 "fanout_id": fanout_id,
                 "trace_id": trace_id,

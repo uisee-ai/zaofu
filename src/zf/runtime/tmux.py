@@ -8,6 +8,7 @@ import signal
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -61,6 +62,14 @@ def tmux_env(base: "dict[str, str] | None" = None) -> dict[str, str]:
     env = dict(os.environ if base is None else base)
     for var in _NESTED_TMUX_VARS:
         env.pop(var, None)
+    private_root = env.get("TMUX_TMPDIR")
+    if private_root is not None and (
+        not private_root or not Path(private_root).is_dir()
+        or not os.access(private_root, os.W_OK | os.X_OK)
+    ):
+        # tmux silently falls back to /tmp when this directory is missing.
+        # A requested isolation boundary must fail before any server command.
+        raise TmuxError("TMUX_TMPDIR must name an existing writable directory")
     return env
 
 
