@@ -252,7 +252,9 @@ def synchronize_workspace(config):
             if not receipt_only:
                 from zf.integrations.controller.maintenance import maintain
                 maintain(config, credentials, transport, [ctx for ctx in contexts
-                    if ctx.config.observability.controller.project_id not in retired], unresolved)
+                    if ctx.config.observability.controller.project_id not in retired], unresolved,
+                    observation_contexts=contexts, delivery_incomplete=bool(policy_error or health_failures or
+                        any(r["status"] != "synchronized" or r.get("collection_deferred") for r in rows)))
     complete = policy_error is None and all(row['status'] == 'synchronized' for row in rows) and not status['quarantined_records']
     return {'status': 'synchronized' if complete else 'partial',
             'policy_error': policy_error,

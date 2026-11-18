@@ -88,7 +88,7 @@ def observe(transport, role_name, registry, role, before, execution):
                 usage = delta(before, after, fresh=fresh)
                 execution.finish(usage, status='stopped' if stopped else 'completed', native_session=native,
                                  accounting_mode=after.get('accounting_mode', 'unknown'), fresh_input=True,
-                                 usage_complete=complete if role.backend == 'codex' else terminal)
+                                 subscription_windows=after.get('subscription_windows'), usage_complete=complete if role.backend == 'codex' else terminal)
                 return
             time.sleep(1)
     finally:

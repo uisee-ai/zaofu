@@ -1,11 +1,19 @@
 """Exact native Session deltas, using the existing full receipt reader and no transcripts on wire."""
 
 
+def observed_snapshot(service, provider, session_id, project_root):
+    result = service.native_snapshot(provider=provider, session_id=session_id, project_root=project_root)
+    from zf.integrations.controller.subscription import load_windows
+    windows = load_windows(service, provider, session_id, project_root, result)
+    if windows:
+        result['subscription_windows'] = windows
+    return result
+
+
 def snapshot(context, provider, session_id):
     from zf.web.terminal_usage import TerminalUsageService
 
-    return TerminalUsageService(state_dir=context.state_dir).native_snapshot(
-        provider=provider, session_id=session_id, project_root=context.project_root)
+    return observed_snapshot(TerminalUsageService(state_dir=context.state_dir), provider, session_id, context.project_root)
 
 
 def role_snapshot(context, role, session_id, *, cwd=None):
@@ -20,8 +28,8 @@ def role_snapshot(context, role, session_id, *, cwd=None):
         if workdirs not in home.resolve().parents:
             return {'status': 'unavailable'}
         options['codex_sessions_root'] = home
-    return TerminalUsageService(state_dir=context.state_dir, **options).native_snapshot(
-        provider=role.backend, session_id=session_id, project_root=Path(cwd or context.project_root))
+    return observed_snapshot(TerminalUsageService(state_dir=context.state_dir, **options),
+                             role.backend, session_id, Path(cwd or context.project_root))
 
 
 def delta(before, after, *, fresh=False):

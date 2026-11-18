@@ -63,16 +63,18 @@ def test_live_tui_settles_only_complete_native_turn_with_proven_empty_baseline(m
     started = execution.body['started_at'] + .01
     append(path, event('task_started', started, turn_id='turn-a'))
     receipt(path, started + .01)
+    append(path, event('token_count', started + .01, rate_limits={'primary': {
+        'window_minutes': 300, 'used_percent': 8.5}}))
     partial = snapshot(context, 'codex', identity)
     assert not completed_turn(before, partial, started_at=execution.body['started_at'], session_id=identity)
     calls = []
 
     def complete(_):
-        assert not peer.settlements
+        assert not peer.settlements and not calls
         calls.append(True)
         append(path, event('task_complete', started + .02, turn_id='turn-a', last_agent_message='private body'))
 
-    monkeypatch.setattr('zf.integrations.controller.tmux.time.sleep', complete)
+    monkeypatch.setattr('zf.integrations.controller.tmux.time', SimpleNamespace(sleep=complete))
     observe(SimpleNamespace(is_alive=lambda _: True), 'resident', registry,
             RoleConfig(name='resident', backend='codex'), before, execution)
     assert calls == [True]
@@ -83,6 +85,13 @@ def test_live_tui_settles_only_complete_native_turn_with_proven_empty_baseline(m
     assert tokens['input_tokens'] == tokens['cache_read_tokens'] == 50
     assert tokens['output_tokens'] == 10
     assert 'private body' not in json.dumps(execution.body)
+    from zf.integrations.controller.health import deliver
+    reported = []
+    target = SimpleNamespace(hello={'capabilities':['subscription_windows_v1']},
+                             request=lambda _, path, body: reported.append(body) or {'status':'accepted'})
+    assert deliver(config.state_dir, target) == 0
+    windows = [r['subscription_window'] for r in reported if r.get('subscription_window')]
+    assert windows == [{'name':'primary','minutes':300,'used_percent':8.5,'resets_at':None}]
 
 
 def test_native_resumed_turn_subtracts_previous_complete_counters(managed, native):
@@ -213,3 +222,17 @@ def test_ambiguous_native_boundary_never_proves_first_turn(managed, native, dama
         path.write_text(path.read_text().replace(identity, 'unrelated-identity'))
     after = snapshot(context, 'codex', identity)
     assert not completed_turn({}, after, started_at=started - .1, session_id=identity)
+
+
+def test_subscription_windows_are_sparse_time_ordered_and_numeric_only(managed, native):
+    _, _, context, _ = managed
+    path, _, identity = native
+    now = time.time()
+    receipt(path, now)
+    append(path, event('token_count', now, rate_limits={'primary': {'window_minutes': 300,
+             'used_percent': 12.5, 'resets_at': int(now) + 600, 'extra': 'must-stay-local'}}),
+           event('token_count', now-2, rate_limits={'primary': {'window_minutes':300, 'used_percent':99}}),
+           event('token_count', now+1, rate_limits={'secondary': {'window_minutes':10080, 'used_percent':7}}))
+    result = snapshot(context, 'codex', identity)['subscription_windows']
+    assert result['primary']['used_percent'] == 12.5 and result['secondary']['minutes'] == 10080
+    assert 'must-stay-local' not in str(result)

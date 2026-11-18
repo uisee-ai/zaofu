@@ -203,7 +203,7 @@ class Execution:
                 raise ManagedDenied('Session or Operation admission is closed')
 
     def finish(self, usage, *, status, native_session='', accounting_mode='unknown', fresh_input=False, provider_error=None,
-               usage_complete=True):
+               usage_complete=True, subscription_windows=None):
         from zf.core.events import EventWriter
         from zf.core.events.factory import event_log_from_project
 
@@ -229,6 +229,10 @@ class Execution:
         capture(self.config.state_dir, self.credentials['deployment_id'], self.body['project_id'],
                 self.config.effective_mode, self.provider, status=status, error=provider_error,
                 observed_at=self.body['finished_at'], sample_id=self.id)
+        for window in (subscription_windows or {}).values():
+            capture(self.config.state_dir, self.credentials['deployment_id'], self.body['project_id'],
+                    self.config.effective_mode, self.provider, status='unknown', native_session=native_session,
+                    observed_at=window['observed_at'], sample_id=str(window['observed_at']), window=window)
         # Save receipt before EventLog append so recovery can finish a crash in between.
         self.ledger.put(self.id, 'receipt_pending', self.body)
         log = event_log_from_project(self.context.state_dir, config=self.context.config)
@@ -328,7 +332,7 @@ def managed_turn(function):
                 usage = normalized['turn'] if normalized['mode'] == 'per_turn' else {}
             execution.finish(usage, status=getattr(result, 'status', 'unknown'),
                              native_session=native_id, accounting_mode=after.get('accounting_mode', 'unknown'),
-                             fresh_input=bool(native_usage), provider_error=provider_error or getattr(result, 'error', None),
+                             subscription_windows=after.get('subscription_windows'), fresh_input=bool(native_usage), provider_error=provider_error or getattr(result, 'error', None),
                              usage_complete=getattr(result, 'status', '') == 'completed')
             if result is not None:
                 # Preserve local cost counters; the aggregate Session event must not upload them twice.

@@ -41,24 +41,29 @@ def classify(status, error=None):
     return 'unknown'
 
 
-def capture(state_dir, deployment, project, mode, provider, *, status, error=None, observed_at=None, sample_id=''):
+def capture(state_dir, deployment, project, mode, provider, *, status, error=None, observed_at=None, sample_id='', window=None, native_session=''):
     try:
         return _capture(state_dir, deployment, project, mode, provider, status=status, error=error,
-                        observed_at=observed_at, sample_id=sample_id)
+                        observed_at=observed_at, sample_id=sample_id, window=window, native_session=native_session)
     except Exception:
         # Health is diagnostic: a failed observation must never discard a usage receipt.
         # Existing health expires normally; no fresh successful observation is fabricated.
         return False
 
 
-def _capture(state_dir, deployment, project, mode, provider, *, status, error, observed_at, sample_id):
+def _capture(state_dir, deployment, project, mode, provider, *, status, error, observed_at, sample_id, window, native_session):
     # CPA account-pool health is attested by the CPA connector, not by a tenant Runtime.
     if mode not in {'self_managed_api', 'self_managed_cli'} or not identifier(provider):
         return
     observed = observed_at if observed_at is not None else time.time()
     if not time.time() - 300 <= observed <= time.time() + 5:
         return
-    binding = hashlib.sha256(':'.join([deployment, project, mode, provider]).encode()).hexdigest()
+    parts = [deployment, project, mode, provider]
+    if window is not None:
+        if mode != 'self_managed_cli' or not native_session:
+            return
+        parts += ['subscription_window', native_session, window['name']]
+    binding = hashlib.sha256(':'.join(parts).encode()).hexdigest()
     ledger = Ledger(state_dir)
     with locked_path(ledger.path.parent / 'health', timeout_seconds=10):
         previous = ledger.get('health:' + binding)
@@ -68,6 +73,8 @@ def _capture(state_dir, deployment, project, mode, provider, *, status, error, o
         payload = {'protocol': 'zfc.control.v1', 'binding_id': binding,
             'version': ledger.next_version('health:' + binding), 'mode': mode, 'provider': provider,
             'status': classify(status, error), 'observed_at': int(observed), 'valid_seconds': 300}
+        if window is not None:
+            payload['subscription_window'] = {k:window[k] for k in ('name','minutes','used_percent','resets_at')}
         body = {'payload': payload, 'observed_order': observed, 'sample_id': sample_id}
         if not ledger.insert('health:' + binding, 'provider_health', 'pending', body):
             ledger.put('health:' + binding, 'pending', body)
@@ -88,6 +95,8 @@ def deliver(state_dir, transport):
         try:
             if payload['observed_at'] + payload['valid_seconds'] <= int(time.time()):
                 status = 'expired'
+            elif 'subscription_window' in payload and 'subscription_windows_v1' not in transport.hello.get('capabilities', ()):
+                continue
             else:
                 result = transport.request('POST', '/internal/v1/me/provider-health', payload)
                 if result.get('status') not in {'accepted', 'duplicate', 'superseded'}:
