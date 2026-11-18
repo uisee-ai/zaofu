@@ -75,6 +75,11 @@ P5/P6 剩余实施验收（继续沿本任务，不另起重复候选）：
 新增回归覆盖检查点到 resynth、陈旧/跨 Run、普通返工写权、缺少 AC 映射及新审批前
 禁止派发。真实复验及回放材料在 `reports/plan-economy-20261118/candidate-recovery/`。
 
-402 文件定向闭包：5,386 passed、10 skipped、1 failed。已在修改前的 f0823aee
+402 文件定向闭包：5,390 passed、10 skipped、1 failed。已在修改前的 f0823aee
 源码独立复现旧 `review_advice` 对 owner 缺失 Task Map 给 reject 的断言冲突。
 候选控制动作/检查点补充回归 39 passed；sentinel 53、flow smoke 10、串行 10 通过。
+
+本轮在真实 v5 中完成首版 Web 审批、协议改版、候选自动触发局部 Replan、新版
+Web 审批及从旧候选恢复实现。续跑暴露混合代际冻结收据错误索取旧任务验证。
+原始冻结 03fb9ad8 在隔离回放中现可生成仅含 T-PROTOCOL-V2-001 的八条当前验收，
+两代集成历史均保留。完整候选与最终目标的实测结果记录于同一复验报告。

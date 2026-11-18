@@ -70,7 +70,9 @@ def _runtime(tmp_path: Path) -> SimpleNamespace:
     )
 
 
-def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
+def _seed_frozen_candidate(
+    runtime: SimpleNamespace, *, package_fields=None, additional_completed=(),
+) -> dict[str, str]:
     run_id = "run-candidate-authority"
     generation = "generation-1"
     child_task_id = "TASK-1"
@@ -125,6 +127,7 @@ def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
         "risk_class": "low",
         "integration_admission_profile": "standard",
     }
+    contract.update({k: v for k, v in (package_fields or {}).items() if k.startswith("plan_artifact_package_")})
     contract_descriptor = write_task_contract_snapshot(runtime.state_dir, contract)
     target_descriptor = write_target_snapshot(
         runtime.state_dir,
@@ -173,8 +176,9 @@ def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
         "candidate_head_commit": candidate_head,
         "candidate_ref": "refs/heads/candidate/demo",
         "integration_ledger_digest": "d" * 64,
-        "completed_task_ids": [child_task_id],
-        "task_ids": [child_task_id],
+        "completed_task_ids": [child_task_id, *additional_completed],
+        "task_ids": [child_task_id, *additional_completed],
+        **(package_fields or {}),
         "status": "frozen",
     }
     freeze_descriptor = write_immutable_json_sidecar(
@@ -188,6 +192,7 @@ def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
     runtime.event_log.append(ZfEvent(
         id="evt-candidate-ready",
         type="candidate.ready",
+        origin="kernel",
         correlation_id=run_id,
         payload={
             **freeze_receipt,
