@@ -21,7 +21,7 @@ from zf.runtime.task_contract_snapshot import (
     target_descriptor_from_payload,
 )
 from zf.runtime.verification_result import (
-    VerificationResultError,
+    VerificationResultError, candidate_plan_ports,
     validate_verification_result,
     validate_verification_acceptance,
 )
@@ -192,6 +192,22 @@ def _verification_issues(
             owner="task_verify",
             action="result_repair",
         )]
+
+    try:
+        ports = candidate_plan_ports(result)
+        if ports:
+            from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
+
+            package = hydrate_plan_artifact_package(state_dir, {
+                "ref": contract.get("plan_artifact_package_ref"),
+                "sha256": contract.get("plan_artifact_package_digest"),
+            }, validate_ports=False)
+            unknown = ports - {port["logical_name"] for port in [*package["produced"], *package["inherited"]]}
+            if unknown:
+                raise VerificationResultError("unknown Plan ports: " + ", ".join(sorted(unknown)))
+    except (ValueError, OSError) as exc:
+        return [_issue(field="control_result.rework_items", code="candidate_plan_port_invalid",
+                       message=str(exc), owner="candidate_verify", action="result_repair")]
 
     expected_owner = str(
         contract.get("verification_owner") or "task_verify"

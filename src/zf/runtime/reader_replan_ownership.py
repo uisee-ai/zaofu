@@ -7,11 +7,14 @@ from zf.core.events import ZfEvent
 
 def admitted_candidate_plan_recovery_owns_failure(stage: Any, failure: ZfEvent) -> bool:
     """Keep an admitted Plan-port blocker on the candidate recovery route."""
+    return getattr(stage, "trigger", "") == "candidate.ready" and admitted_plan_blocker(failure)
+
+
+def admitted_plan_blocker(failure: ZfEvent) -> bool:
     payload = failure.payload
     refs = payload.get("semantic_result_refs")
     return (
-        getattr(stage, "trigger", "") == "candidate.ready"
-        and failure.origin == "kernel"
+        getattr(failure, "origin", "") == "kernel"
         and payload.get("failure_class") == "dependency_blocked"
         and payload.get("recovery_action") == "replan"
         and payload.get("rework_scope") == "plan_ports"

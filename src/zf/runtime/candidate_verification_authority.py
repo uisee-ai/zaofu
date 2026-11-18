@@ -44,7 +44,7 @@ def prepare_candidate_verification_authority(
     """
 
     events = runtime.event_log.read_all()
-    candidate = _frozen_candidate_for_payload(
+    candidate = frozen_candidate_for_payload(
         events,
         workflow_run_id,
         payload=payload,
@@ -329,7 +329,7 @@ def _latest_frozen_candidate(
     return None
 
 
-def _frozen_candidate_for_payload(
+def frozen_candidate_for_payload(
     events: list[ZfEvent],
     workflow_run_id: str,
     *,
@@ -636,5 +636,6 @@ def _unique(values: list[str]) -> list[str]:
 
 __all__ = [
     "CandidateVerificationAuthorityError",
+    "frozen_candidate_for_payload",
     "prepare_candidate_verification_authority",
 ]

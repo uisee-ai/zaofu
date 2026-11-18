@@ -7,6 +7,7 @@ import hashlib
 import fcntl
 import os
 from pathlib import Path
+import shlex
 import signal
 import socket
 import subprocess
@@ -24,7 +25,7 @@ def command(args, *, cwd, env, **kwargs):
 
 
 def prepare(root: Path, mode: str, journey: str, *, review_policy=None,
-            channel_template="prd-clarification", channel_model="", channel_reasoning="") -> tuple[Path, dict[str, str]]:
+            channel_template="prd-clarification", channel_model="", channel_reasoning="", kanban_model="") -> tuple[Path, dict[str, str]]:
     root.mkdir(parents=True, exist_ok=False)
     project = root / "project"
     project.mkdir()
@@ -46,6 +47,10 @@ def prepare(root: Path, mode: str, journey: str, *, review_policy=None,
         shim.chmod(0o755)
         env["PATH"] = str(binary) + os.pathsep + env["PATH"]
         env["ZF_KANBAN_AGENT_CODEX_HEADLESS_CMD"] = str(shim)
+    elif kanban_model:
+        env["ZF_KANBAN_AGENT_CODEX_HEADLESS_CMD"] = shlex.join(
+            ["codex", "-c", f"model={json.dumps(kanban_model)}"],
+        )
     documents = list(yaml.safe_load_all((REPO / "zf-prd-v5.yaml").read_text()))
     flow, controller = documents
     flow["spec"].update(prdRef="docs/prd/ui-requirement.md", targetRoot=str(project))
@@ -105,6 +110,7 @@ def main() -> int:
     parser.add_argument("--review-policy", type=Path, help="Explicit Owner-authorized plan_review JSON")
     parser.add_argument("--channel-template", choices=["prd-clarification", "prd-clarification-on-demand"],
                         default="prd-clarification")
+    parser.add_argument("--kanban-model", default="", help="Pin the real Kanban Codex model for this isolated journey")
     parser.add_argument("--channel-model", default="", help="Project-local Codex model pin for Channel evaluation")
     parser.add_argument("--channel-reasoning", default="", choices=["", "low", "medium", "high", "xhigh"],
                         help="Project-local Codex reasoning pin; default preserves existing behavior")
@@ -121,6 +127,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.replan and (args.delivery or args.owner_checkpoint):
         parser.error("--replan is a separate pending-plan journey; cannot combine with delivery or Owner checkpoint")
+    if args.kanban_model and args.provider != "real":
+        parser.error("--kanban-model requires a real provider")
     if args.execution_replan and not args.delivery:
         parser.error("--execution-replan requires --delivery and its real-provider authorization")
     review_policy = None
@@ -149,7 +157,7 @@ def main() -> int:
         command(["npm", "--prefix", "web", "run", "build"], cwd=REPO, env=os.environ)
     project, env = prepare(root, args.provider, args.journey, review_policy=review_policy,
                           channel_template=args.channel_template, channel_model=args.channel_model,
-                          channel_reasoning=args.channel_reasoning)
+                          channel_reasoning=args.channel_reasoning, kanban_model=args.kanban_model)
     if args.execution_replan:
         from tests.e2e.prd_ui.execution_replan import initialize_protocol
         initialize_protocol(root)
@@ -172,6 +180,7 @@ def main() -> int:
     manifest["workflow_runtime"] = args.workflow_runtime
     manifest["requested_review_policy"] = review_policy
     manifest["channel_template"] = args.channel_template
+    manifest["kanban_model"] = args.kanban_model
     manifest["channel_model"] = args.channel_model
     manifest["channel_reasoning_effort"] = args.channel_reasoning
     if args.provider == "fake":

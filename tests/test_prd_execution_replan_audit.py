@@ -13,13 +13,17 @@ from zf.core.events.model import ZfEvent
 def _case():
     rows = [
         ("plan.approved", {"plan_id": "old"}),
-        ("task.pipeline.stage.dispatched", {"task_map_generation": "g1"}),
-        ("prd.plan.requested", {}),
+        ("task.pipeline.stage.dispatched", {"task_map_generation": "g1", "plan_artifact_package_digest": "p1"}),
+        ("test.failed", {"fanout_id": "candidate-verify"}),
+        ("prd.plan.requested", {"rework_of": "evt-2"}),
+        ("plan.approval.requested", {"plan_id": "new", "plan_artifact_package_digest": "p2"}),
         ("plan.approved", {"plan_id": "new"}),
-        ("task.pipeline.stage.dispatched", {"task_map_generation": "g2"}),
-        ("run.goal.completed", {"candidate_event_id": "candidate-final"}),
+        ("task.pipeline.stage.dispatched", {"task_pipeline_stage": "impl", "task_map_generation": "g2",
+                                            "plan_artifact_package_digest": "p2"}),
+        ("candidate.ready", {"candidate_head_commit": "c" * 40, "task_map_generation": "g2", "plan_artifact_package_digest": "p2"}),
+        ("run.goal.completed", {"candidate_event_id": "evt-7"}),
     ]
-    events = [ZfEvent(id=f"evt-{i}", type=kind, correlation_id="run-1",
+    events = [ZfEvent(id=f"evt-{i}", type=kind, origin="kernel", correlation_id="run-1",
                      payload={**body, "workflow_run_id": "run-1"}) for i, (kind, body) in enumerate(rows)]
     return events, {"trigger_event_id": "evt-1", "workflow_run_id": "run-1"}
 
@@ -27,23 +31,31 @@ def _case():
 @pytest.mark.parametrize("trigger", ["orchestrator.replan_requested", "prd.plan.requested"])
 def test_execution_replan_requires_new_plan_generation_and_delivery(trigger):
     events, change = _case()
-    events[2].type = trigger
+    events[3].type = trigger
     assert check_execution_order(events, change)["revised_plan"] == "new"
 
 
-@pytest.mark.parametrize("fault", ["preview-only", "old-approval", "old-generation", "other-run", "no-delivery", "duplicate-delivery"])
+@pytest.mark.parametrize("fault", ["preview-only", "old-approval", "old-generation", "other-run", "no-delivery", "duplicate-delivery", "unrelated-failure", "early-impl", "stale-final", "mutable-final"])
 def test_reject_partial_or_unbound_recovery(fault):
     events, change = _case()
     if fault == "preview-only":
-        events[1], events[2] = events[2], events[1]
+        events[1], events[3] = events[3], events[1]
     elif fault == "old-approval":
-        events[3].payload["plan_id"] = "old"
+        events[5].payload["plan_id"] = "old"
     elif fault == "old-generation":
-        events[4].payload["task_map_generation"] = "g1"
+        events[6].payload["task_map_generation"] = "g1"
     elif fault == "other-run":
         events[-1].payload["workflow_run_id"] = "run-2"
     elif fault == "no-delivery":
         events.pop()
+    elif fault == "unrelated-failure":
+        events[3].payload["rework_of"] = "other"
+    elif fault == "early-impl":
+        events[5], events[6] = events[6], events[5]
+    elif fault == "stale-final":
+        events[7].payload["task_map_generation"] = "g1"
+    elif fault == "mutable-final":
+        events[7], events[8] = events[8], events[7]
     else:
         extra = deepcopy(events[-1]); extra.id = "evt-extra"; events.append(extra)
     with pytest.raises(AssertionError):
@@ -60,17 +72,15 @@ def test_final_oracle_uses_completed_candidate_binding(tmp_path, monkeypatch, de
     from tests.e2e.prd_ui import execution_replan
 
     events, change = _case()
-    events.extend([
-        ZfEvent(id="candidate-final", type="candidate.ready", correlation_id="run-1", payload={"candidate_commit": "correct"}),
-        ZfEvent(type="candidate.ready", correlation_id=decoy_run, payload={"candidate_commit": "unrelated"}),
-    ])
+    events.append(ZfEvent(type="candidate.ready", correlation_id=decoy_run,
+                          payload={"candidate_head_commit": "d" * 40}))
     (tmp_path / "evidence").mkdir()
     (tmp_path / "evidence/protocol-change.json").write_text(json.dumps(change))
     monkeypatch.setattr(execution_replan, "_events", lambda _: events)
     monkeypatch.setattr(execution_replan, "verify_protocol_product",
-                        lambda _, commit: {"passed": commit == "correct", "target_commit": commit})
+                        lambda _, commit: {"passed": commit == "c" * 40, "target_commit": commit})
     result = execution_replan.audit_execution_replan(tmp_path, tmp_path / "project")
-    assert result["oracle"]["target_commit"] == "correct"
+    assert result["oracle"]["target_commit"] == "c" * 40
 
 
 @pytest.mark.parametrize("version", [1, 2])

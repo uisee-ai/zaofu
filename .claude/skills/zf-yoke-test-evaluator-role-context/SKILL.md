@@ -137,6 +137,10 @@ amendment are separate role capabilities supplied by the workflow profile.
    evidence_contract.required；路径必须已在原合同写入范围内。不要只列源码/测试，
    使后继无法刷新本来就必须交付的证据；也不能借证据义务扩大权限。若原合同本身
    不允许必需输出，列明真正冲突交 OA 受控修订，不改合同或补造历史通过记录。
+   候选冻结后外部协议或 Owner 决定使当前 Plan 无法授权所需实现时，独立核实冲突，
+   保留旧/新依据和 commit。将受阻的验收行及对应 rework item 标为 blocked，
+   allowed_scope 填 plan_ports:<实际工件名>，并按 verification checklist 提交 blocked
+   verdict。已运行通过的行保留证据，确有实现缺陷的行保留失败；关联产品旅程同样如实记录。
 9. Submit through the exact result profile and completion command in the
    briefing. Do not invent terminal events or mutate runtime truth.
    Treat content-addressed `completion-payloads/<kind>/<digest>.json` files as

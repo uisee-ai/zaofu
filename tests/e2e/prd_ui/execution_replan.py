@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tarfile
@@ -68,26 +69,40 @@ def check_execution_order(events, change: dict) -> dict:
     changed = by_id[change["trigger_event_id"]]
     initial = [e for e in events[:changed] if e.type == "plan.approved"]
     assert initial, "implementation not bound to approved Plan"
+    failures = {e.id for e in events[changed:] if e.type in {"test.failed", "verify.failed"}
+                and e.origin == "kernel" and e.payload.get("fanout_id")}
     replans = [e for e in events[changed:] if e.type in {
         "orchestrator.replan_requested", "prd.plan.requested",
-    }]
-    assert replans, "no execution-time replan"
-    approvals = [e for e in events[by_id[replans[0].id]:] if e.type == "plan.approved"]
+    } and e.payload.get("rework_of") in failures and by_id[e.payload["rework_of"]] < by_id[e.id]]
+    assert replans, "no execution-time replan bound to the candidate failure"
+    approvals = [e for e in events[by_id[replans[0].id]:] if e.type == "plan.approved"
+                 and e.payload.get("plan_id") != initial[-1].payload.get("plan_id")]
     assert approvals, "regenerated Plan not approved"
-    assert approvals[-1].payload["plan_id"] != initial[-1].payload["plan_id"], "old approval reused"
-    dispatches = [e for e in events[by_id[approvals[-1].id]:]
-                  if e.type == "task.pipeline.stage.dispatched"]
-    assert dispatches, "no execution resumed after new approval"
+    approved = approvals[-1]
+    requests = [e for e in events[by_id[replans[0].id]:by_id[approved.id]]
+                if e.type == "plan.approval.requested" and e.payload.get("plan_id") == approved.payload["plan_id"]]
+    assert len(requests) == 1, "revised approval lacks unique preview binding"
+    package = requests[0].payload.get("plan_artifact_package_digest")
     old_generation = events[changed].payload.get("task_map_generation")
-    assert old_generation, "initial execution lacks Task Map generation"
-    assert any(e.payload.get("task_map_generation") and
-               e.payload["task_map_generation"] != old_generation for e in dispatches), "old generation reused"
-    completed = [e for e in events[by_id[dispatches[0].id]:] if e.type == "run.goal.completed"]
+    old_package = events[changed].payload.get("plan_artifact_package_digest")
+    assert old_generation and old_package and package and package != old_package, "old Plan package reused"
+    impl = [e for e in events if e.type == "task.pipeline.stage.dispatched"
+            and e.payload.get("task_pipeline_stage") == "impl" and e.payload.get("plan_artifact_package_digest") == package]
+    assert impl and all(by_id[e.id] > by_id[approved.id] for e in impl), "new implementation requires prior approval"
+    generations = {e.payload.get("task_map_generation") for e in impl}
+    assert len(generations) == 1 and not generations & {None, "", old_generation}, "old or ambiguous generation"
+    generation = generations.pop()
+    completed = [e for e in events if e.type == "run.goal.completed"]
     assert len(completed) == 1, "missing unique final goal completion"
-    return {"initial_plan": initial[-1].payload["plan_id"],
-            "revised_plan": approvals[-1].payload["plan_id"],
-            "replan_event": replans[0].id, "resumed_dispatches": [e.id for e in dispatches],
-            "completed_event": completed[0].id}
+    selected = completed[0].payload.get("candidate_event_id")
+    candidates = [e for e in events[by_id[impl[-1].id]+1:by_id[completed[0].id]] if e.id == selected
+                  and e.type == "candidate.ready" and e.payload.get("task_map_generation") == generation
+                  and e.payload.get("plan_artifact_package_digest") == package]
+    assert len(candidates) == 1, "completion is not bound to the revised implementation candidate"
+    return {"initial_plan": initial[-1].payload["plan_id"], "revised_plan": approved.payload["plan_id"],
+            "candidate_failure": replans[0].payload["rework_of"], "replan_event": replans[0].id,
+            "package_digest": package, "generation": generation, "candidate_event_id": selected,
+            "resumed_dispatches": [e.id for e in impl], "completed_event": completed[0].id}
 
 
 def verify_protocol_product(project: Path, commit: str) -> dict:
@@ -122,16 +137,9 @@ def audit_execution_replan(root: Path, project: Path) -> dict:
     events = _events(project)
     change = json.loads((root / "evidence/protocol-change.json").read_text())
     result = check_execution_order(events, change)
-    completion = next(e for e in events if e.id == result["completed_event"])
-    candidate_id = completion.payload.get("candidate_event_id")
-    assert candidate_id, "completion lacks exact candidate binding"
-    candidates = [e for e in events if e.type == "candidate.ready"
-                  and e.id == candidate_id
-                  and (e.payload.get("workflow_run_id") or e.correlation_id) == change["workflow_run_id"]]
-    assert len(candidates) == 1, "missing unique completed candidate"
-    candidate = candidates[0].payload
-    commit = str(candidate.get("candidate_commit") or candidate.get("target_commit") or candidate.get("target_ref") or "")
-    assert commit, "candidate lacks immutable target"
+    candidate = next(e.payload for e in events if e.id == result["candidate_event_id"])
+    commit = str(candidate.get("candidate_head_commit") or candidate.get("candidate_commit") or candidate.get("target_commit") or "")
+    assert re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit), "candidate lacks immutable Git object ID"
     result["oracle"] = verify_protocol_product(project, commit)
     assert result["oracle"]["passed"], "independent protocol oracle failed"
     result["boundary"] = "real execution replan and frozen-product oracle; restart/cap matrix reported separately"

@@ -69,3 +69,12 @@ P5/P6 剩余实施验收（继续沿本任务，不另起重复候选）：
 
 已验证实现提交：`b77e119b` fix: reduce plan handoff overhead and preserve recovery evidence。P1/P2/P3/P4/P7 的部分范围记录见
 [完成记录](../done/2026-11-18-0142-plan-economy-completed-scope.md)；本文件因 P5/P6 未通过而继续 active。
+
+候选恢复修复已实施。旧请求 `evt-97c994dff83f` 在原始证据的隔离副本上已进入绑定
+`verify-lane-0` 的 OA 检查点，重复请求复用同一 operation，范围指向 T-CLI。
+新增回归覆盖检查点到 resynth、陈旧/跨 Run、普通返工写权、缺少 AC 映射及新审批前
+禁止派发。真实复验及回放材料在 `reports/plan-economy-20261118/candidate-recovery/`。
+
+402 文件定向闭包：5,386 passed、10 skipped、1 failed。已在修改前的 f0823aee
+源码独立复现旧 `review_advice` 对 owner 缺失 Task Map 给 reject 的断言冲突。
+候选控制动作/检查点补充回归 39 passed；sentinel 53、flow smoke 10、串行 10 通过。

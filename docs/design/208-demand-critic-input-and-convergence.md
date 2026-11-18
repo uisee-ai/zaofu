@@ -354,3 +354,24 @@ candidate recovery 处理，不先重发相同候选；缺少准入引用、非 
 意图路径，由 Planner 判断受影响 Task；reader 仅请求修订而不获得实现写权，不把
 候选父 Task 冒充实际 writer。新审批、恢复执行及冻结 commit 独立验收全部满足前，
 本批 P5/P6 保持未完成。完整测量在本地 `reports/plan-economy-20261118/evaluation.md`。
+
+### 候选 Verify 阻塞与执行中修订
+
+候选 Verify 在已完成检查后发现批准的合同阻碍实施时，提交 blocked 裁定、受阻
+AC、对应的 rework item 及真实 Plan port。预检和准入核对 port 是否存在于冻结包，
+并保留同次检查中已通过或失败的其他条款。聚合阶段从已结算的 reader operation
+取回已准入正文，对照当前 fanout、候选、合同快照及目标 commit。冻结 AC 上的
+`source_task_id` 与 `source_acceptance_id` 定位实施子任务。映射不完整时由 Planner
+重新判断范围；候选的全部输入和 reader 所在的锚点任务都不能代替该判断。
+
+历史候选如果曾提交 rejected，操作员可沿现有 semantic failure 入口提交实际的候选
+检查 operation 和聚合失败事件。OA 根据证据决定是否请求 `return_to_plan`。Kernel 在
+建立检查点和应用决定时分别校验 Run、代际、当前候选、失败聚合和 reader attempt。
+确认修订后，沿现有 Plan 生成和 Owner 审批路径继续。reader 的能力仅限于提供此次
+Plan 修订的目标证据；对产品的写入、返工预算和最终验收仍受各自原合同约束。
+重复请求、候选更新、作用域无法确认和普通实现缺陷有独立回归。
+
+隔离旅程可通过 `--kanban-model` 固定已验证可用的真实模型；运行报告记录模型。
+验收同时要求本 Run 的候选失败指向 Replan、新包请求与批准对应、该包的首次 Impl
+派发晚于批准，且唯一完成事件指向该代际实际冻结的 Git commit。最终在该 commit
+运行协议 v2 的八项黑盒用例。历史事件回放只证明修复能处理旧证据。
