@@ -6,6 +6,7 @@ from pathlib import Path
 
 from zf.core.config.schema import RoleConfig
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.reader_submission_guidance import submission_authority
 from zf.runtime.fanout_artifact_refs import refactor_plan_workdir_refs
 from zf.runtime.fanout_execution_boundary import (
     fanout_task_id,
@@ -1062,11 +1063,7 @@ class FanoutBriefingMixin:
                 "",
                 *result_guidance,
                 "",
-                f"This dispatch authorizes one submission for `{run_id}`. "
-                "Previous attempt failures do not cancel this authorization. "
-                "Command exit 0 is success; there is no asynchronous ack. "
-                "Do not repeat a successful submission or reuse stale identities. "
-                "On error, preserve the exact command/error and stop this attempt.",
+                submission_authority(run_id),
                 "",
                 f"Child success event: `{child_success_event}`",
                 f"Child failure event: `{child_failure_event}`",

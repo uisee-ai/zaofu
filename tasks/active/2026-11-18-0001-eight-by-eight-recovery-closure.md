@@ -62,3 +62,7 @@ Owner 随后明确要求取消 Planner 时间限制，并恢复原定 8×8 小�
 真实业务Task已16/16完成、Candidate冻结1589e636；最终Candidate验收尚未通过。多个reader探测Docker权限失败后未提交结果，重试耗尽。追加复现显示，正确的verifier_execution_failure因必读材料未完成被拒；最小补修允许只报告带证据的执行失败，保留产品结果与身份门禁，同时同步Verify方法。新回归初始2 failed/8 passed，最终10 passed；影响闭包及真实断点恢复结果后续追加。当前Impl峰值8、TaskVerify峰值6、两者同时峰值8，8+8同时运行0秒，不能将最终8个Candidate reader等同于目标8+8。整批仍active。
 
 环境失败补修影响闭包539 passed / 1 skipped；premerge sentinel53 passed。三份Verify skill内容一致。该层为确定性验证，尚不代表真实Candidate恢复或产品通过。
+
+第二层真实补修：请求已准入但未交付provider的reader锁自阻塞，真实caller RED 1 failed/10 passed，修复后相关30 passed；新/重试briefing的“preflight修正”与“任何错误停止”冲突，生成briefing RED 1 failed/1 passed。补修后实际验收仍在进行，产品未判定通过。
+
+第二层补修最终影响闭包936 passed / 7 skipped，sentinel53 passed，flow-smoke10 passed；未执行全量pytest/coverage，未将真实reader结束回合当作产品完成。

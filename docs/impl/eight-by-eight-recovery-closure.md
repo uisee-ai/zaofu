@@ -68,3 +68,9 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 `task_input_failure` 仅为 verification-result 增加准确的 `verifier_execution_failure` 类别，仍要求failed/abstained、非空summary与evidence refs；身份、目标、读账本完整性、显式提供的产品报告检查继续执行。不产生通过或产品拒绝，不扩展Impl的环境失败例外。已消费部分仍封存，状态明确记录incomplete。恢复后的语义结果仍需完成必读和完整产品验收。
 
 同步Verify skill：移除未执行的报告模板，未执行矩阵/探针留空，绑定当前operation并检查正式submit成功；聊天中告知等待不是交接完成。新增实际SemanticResultSubmitService回归覆盖Task/Candidate两条入口及8个负例。真实恢复须重新派发受控新operation，不代写worker结果或修改失败历史。
+
+### 真实恢复的第二层缺口
+
+同一候选重试时，Verify预校验明确提示移除未执行的产品报告，但briefing同时包含“预校验失败修正”和“任何错误停止”的冲突指令。第二轮lane3遵循停止指令，再次无结果终止。统一新派发和重试的提交ABI说明：预校验失败未消耗capability，可以按诊断原位修正；正式提交失败停止且保留诊断，绝不绕过身份/授权。Verifier输出卡提供失败结构规则，避免只改两个状态却保留通过模板。语义如何评估继续由skill负责。
+
+恢复请求已准入的lane0在模型派发前启动空闲provider，工作区占用使重新pin等待；旧guard把从未交给provider的requested operation也当作活跃工作，无法释放空闲holder。新guard仅豁免匹配当前Run/stage/attempt的从未started或dispatched的reader请求；已有派发、其他Run/stage/attempt、writer、suspended/running、活跃turn或未知transport仍不释放。官方生命周期负责释放，不直接杀未知进程。真实临时恢复使用已审阅cancel_worker repair action释放lane0空闲provider，作为人工介入记录。

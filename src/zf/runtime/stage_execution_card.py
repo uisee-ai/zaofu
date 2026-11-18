@@ -523,6 +523,8 @@ def prepare_profiled_stage_result(
         "",
     ]
     if profile_id in {"task-verify", "candidate-verify"}:
+        from zf.runtime.reader_submission_guidance import verifier_failure_schema_guidance
+        lines.append(verifier_failure_schema_guidance())
         lines[7:7] = [
             "- Verification command IDs are a closed set. Use `command_id` only "
             "for an exact command already present in the prefilled template; "
