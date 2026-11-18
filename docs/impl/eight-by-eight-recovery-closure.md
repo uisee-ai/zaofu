@@ -86,3 +86,5 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 真实重试已成功派发，但模型在大型通过模板中追加失败字段，留下重复JSON键和null产品报告，预校验正确拒绝。输出卡现提供同一verification-result.v1的精简执行失败示例，明确原位替换正文、使用实际探针证据、删除未执行字段；同时移除“保留预填字段”的笼统指令。方法同步到Verify skill。示例经真实预校验及SemanticResultSubmitService验证，不绕过任何准入，不替worker提交结果，也不以socket路径代替失败证据。
 
 随后核实新reader结束回合后未被回收：受控rerun派发成功，但fanout投影仍为旧aggregate failed，恢复扫描忽略了它。投影现在仅在reader失败聚合收到绑定原operation/run的新调用派发时恢复pending，旧完成/取消聚合及无绑定派发不开放；保留旧聚合事件引用。补齐终态child落盘后、重新聚合前崩溃的恢复路径，不能因历史有aggregate.completed而忽略当前pending重试。实际RepairActionExecutor入口及完整重放验证该边界，不直接改manifest文件。
+
+真实升级复核还发现恢复扫描自身的terminal_children集合只增不减，旧child失败仍屏蔽后续派发。按事件顺序遇到新的派发即移除该child旧终态标记，保留原有恢复次数与后续终态判断。增加完整“旧聚合失败→受控重试→新provider回合关闭”用例，避免仅证明manifest变pending就声称自愈完成。

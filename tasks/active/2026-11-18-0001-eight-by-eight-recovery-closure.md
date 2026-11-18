@@ -82,3 +82,7 @@ Candidate重试补修最终影响闭包263 passed，定向42 passed（集合重�
 真实受控重试另有投影遗漏：旧failed aggregate掩盖新running operation，使恢复扫描跳过已关闭回合。实际控制入口RED复现；绑定原operation/run的新reader派发恢复pending，并补齐中断后重新聚合。完成/取消聚合、writer及无绑定派发不重开。定向34 passed；扩展边界及最终闭包待记录。
 
 投影补修：定向34 passed，扩展边界23 passed；影响闭包5242 passed / 7 skipped / 1 failed。唯一失败test_consumer_lock_contention_defers_without_reporting_failure在旧H=34e68178独立复现，相关源码/测试未改，属于既存consumer Busy行为与测试预期不一致，未冒称全绿。sentinel53 passed，flow-smoke10 passed。真实恢复仍待载入补丁验证。
+
+恢复扫描补修：真实重建投影后仍未回收，扩展端到端恢复用例RED 1 failed/15 passed；terminal_children历史集合缺少新派发时清除，已最小修复并保留原恢复额度。等待影响闭包和真实运行验证。
+
+恢复扫描定向185 passed、影响闭包278 passed、sentinel53 passed；集合重叠不累计。需要加载后观察真实关闭回合及正式failed结果，仍不标整批done。
