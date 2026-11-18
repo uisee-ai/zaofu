@@ -22,3 +22,5 @@
 2026-11-18复核更新：32任务轮workflow-8cacd612404a641a账本32项done、浏览器通过，但TaskVerify峰值6、8+8重叠0，最终Judge/Goal未完成。批处理轮workflow-fd9e9212ab345b77停在第二次Critic，未批准。两轮的TMUX_TMPDIR目录缺失并回退默认server，product会话混有两轮pane；之前隔离成立的判断撤回，重叠区间不能作无人资格证据。监工已正常停止两轮并保留全部证据，记录为介入。
 
 补充修复：显式私有目录fail-closed，Reader外部门禁保留原派发身份和故障预算，仅证明未发送时释放delivery claim。源码回归、8×8 mock与host隔离探针通过；当前真实Codex CLI额度门禁，P2仍active，待最新dev冻结新轮实际8+8、独立Judge/Goal/交付及0人工恢复完成。
+
+补充修复已提交2344e82b，影响闭包5020+串行4 passed，8 skipped，哨兵53、流程mock10、8×8 mock8、host隔离1通过。当前外部额度未恢复，尚未开始最终源码的新真实实验。

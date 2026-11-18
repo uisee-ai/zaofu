@@ -10,7 +10,7 @@ Docker浏览器证据，但最终Judge/Goal未完成，实际8 Impl + 6 TaskVeri
 不得用于无人资格通过；不删除原始账本。Provider同时报告usage_limit_reached，
 外部额度不能由自动恢复绕过。两轮已正常停止并保留代码/证据，停止属于监工介入。
 
-补充修复在 [隔离及外部门禁任务](../../tasks/active/2026-11-18-1545-isolation-and-external-gates.md)：
+补充修复在 [隔离及外部门禁任务](../../tasks/done/2026-11-18-1545-isolation-and-external-gates.md)：
 显式TMUX_TMPDIR必须是现存、可写且可搜索的目录，否则在执行任何tmux命令前失败，
 不自动回退默认server。测试启动还必须实际确认socket路径、独占会话名与pane所属工作区；
 环境变量本身不证明隔离成立。

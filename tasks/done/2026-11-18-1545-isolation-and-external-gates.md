@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 真实8×8复盘：隔离失效与外部门禁错误消耗派发预算
 
@@ -26,3 +26,5 @@ RED：8 failed、2 passed；初次绿色3项fixture未开启blocking协议，修
 第二轮调用链复盘追加：Task Pipeline的Impl/Verify也会把Provider激活/投递门禁累计为派发失败冷却。交付入口和激活入口分别RED 2 failed；修复收敛到实际reconcile边界，四种组合验证门禁解除后原operation继续。Reader等待中重建Orchestrator同样通过。最终专项64 passed（host另跑）。
 
 最终合并候选验证（含Task Pipeline激活/投递补充）：专项64 passed；影响闭包5020 passed、8 skipped；串行4 passed；哨兵53 passed；流程mock10 passed；8×8 mock8 passed；host双socket隔离1 passed。证据：reports/external-gates-20261118/validation-summary.json；真实provider未重开，P2保持active。
+
+实现提交：`2344e82b fix: preserve isolation and external-gate dispatch identity`。源码修复与mock/host验收已完成；P2真实资格未通过，仍保持独立active。
