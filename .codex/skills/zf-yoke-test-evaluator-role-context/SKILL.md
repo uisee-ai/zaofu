@@ -192,6 +192,14 @@ When Candidate Verify receives a current `product_acceptance_spec`:
   This reports an external wait, not product acceptance. If a product report is
   supplied, all its identity and evidence checks still apply. After recovery,
   independently complete the full mandatory product evaluation below.
+- 环境探针（例如 Docker socket）失败时，不要等读完全部产品材料才上报环境等待。
+  使用 `failure_class: verifier_execution_failure`，填写具体 `summary` 和实际失败的
+  `evidence_refs`；未执行的 `requirement_results`、`probe_receipts`、
+  `reused_command_receipt_ids` 留空，移除未执行的产品验收报告模板。保留 briefing
+  绑定的身份，在授权 scratch 原位填写，执行提供的 validate/submit 命令并确认
+  提交成功；只在聊天中说明失败、修改两个状态字段后结束，都不构成结果提交。
+  此路径只承认执行失败，不承认产品通过或拒绝；不扩大 sandbox 权限。恢复后
+  使用当前 operation 的身份继续必读材料和独立验收，不能将旧失败当作通过证据。
 - 以派发的 `output_profile_id=candidate-verify` 识别产品验收义务。兼容流程的任务快照
   可能仍绑定 `verification_owner=task_verify`；保持该不可变身份及任务矩阵责任，
   同时完成独立的 `product_acceptance_report`。任务行的 `not_applicable` 不豁免

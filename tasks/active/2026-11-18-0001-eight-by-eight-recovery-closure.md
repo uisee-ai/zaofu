@@ -56,3 +56,9 @@ Owner 随后明确要求取消 Planner 时间限制，并恢复原定 8×8 小�
 验收：真实锁占用的旧工作区已合法移交 Verify -> verify: 新任务通过实际激活入口启动，原 Verify 不被终止；未知占用、未准入 writer、过期绑定、不同 generation、已退出 reader 或新工作区占用 -> verify: 仍等待退出。第一轮1 failed/10 passed正确复现；初版影响闭包219 passed、sentinel53 passed，补充边界后生命周期相关61 passed。最终复核与真实容量/产品闭环仍需分别记录，整批保持 active。
 
 补修最终影响闭包（相对已验证f90dbf80）230 passed；premerge sentinel 53 passed；此前生命周期61项有重叠，不累计为唯一用例数。`dev-verify plan --base dev`已检查全分支范围，旧批次8088项证据保留，本次按新增变更闭包执行。真实Run仍使用f90dbf80，尚无修复后真实8+8吞吐证据。
+
+## 最终验收环境失败补修
+
+真实业务Task已16/16完成、Candidate冻结1589e636；最终Candidate验收尚未通过。多个reader探测Docker权限失败后未提交结果，重试耗尽。追加复现显示，正确的verifier_execution_failure因必读材料未完成被拒；最小补修允许只报告带证据的执行失败，保留产品结果与身份门禁，同时同步Verify方法。新回归初始2 failed/8 passed，最终10 passed；影响闭包及真实断点恢复结果后续追加。当前Impl峰值8、TaskVerify峰值6、两者同时峰值8，8+8同时运行0秒，不能将最终8个Candidate reader等同于目标8+8。整批仍active。
+
+环境失败补修影响闭包539 passed / 1 skipped；premerge sentinel53 passed。三份Verify skill内容一致。该层为确定性验证，尚不代表真实Candidate恢复或产品通过。

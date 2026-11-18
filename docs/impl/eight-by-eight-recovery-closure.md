@@ -60,3 +60,11 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 回归通过实际 `_activate_task_stage_binding` 入口和真实文件锁复现 RED，再覆盖允许复用及上述拒绝条件。真实运行继续使用冻结版本；修复先在独立 worktree 验证，未经部署不能宣称本轮真实吞吐已因此改善。
 
 补修最终影响闭包230 passed、premerge sentinel53 passed，生命周期专项61 passed（集合重叠）。全分支`--base dev`规划保留；相对已验证f90dbf80运行本次自动闭包，含调度/接力/锁/工作区/操作事件和8槽mock E2E。未运行全pytest或新增真实provider测试；现有真实Run继续保留原源码身份。
+
+## 最终 Candidate 的环境失败闭环（真实续测）
+
+16项任务完成后，最终8个reader中的7个在Docker socket受sandbox限制时结束回合，没有提交结构化失败；有界重试因此耗尽。调查进一步复现：即使按规范提交 `failed + abstained + verifier_execution_failure`，未完成产品必读材料仍导致准入失败，已有例外只接受 `reader_execution_failure`。这不应迫使agent把环境故障误报成输入故障，或先阅读全量产品材料再承认无法执行探针。
+
+`task_input_failure` 仅为 verification-result 增加准确的 `verifier_execution_failure` 类别，仍要求failed/abstained、非空summary与evidence refs；身份、目标、读账本完整性、显式提供的产品报告检查继续执行。不产生通过或产品拒绝，不扩展Impl的环境失败例外。已消费部分仍封存，状态明确记录incomplete。恢复后的语义结果仍需完成必读和完整产品验收。
+
+同步Verify skill：移除未执行的报告模板，未执行矩阵/探针留空，绑定当前operation并检查正式submit成功；聊天中告知等待不是交接完成。新增实际SemanticResultSubmitService回归覆盖Task/Candidate两条入口及8个负例。真实恢复须重新派发受控新operation，不代写worker结果或修改失败历史。
