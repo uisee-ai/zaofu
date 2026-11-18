@@ -648,6 +648,16 @@ def reconcile_task_pipeline_runtime(
                     )
                     continue
                 except Exception as exc:
+                    from zf.runtime.provider_dispatch_wait import external_gate_reason
+                    gate_reason = external_gate_reason(exc)
+                    if gate_reason:
+                        emit_task_pipeline_waiting_once(
+                            runtime, task_id=task_id, stage=stage,
+                            operation_generation=int(assignment.get("operation_generation") or 1),
+                            context=group_contexts[task_id], reason=gate_reason,
+                            detail="provider input not sent",
+                        )
+                        continue
                     record_failure = getattr(
                         runtime,
                         "_record_dispatch_failure",

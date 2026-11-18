@@ -214,6 +214,7 @@ class TmuxReadinessMixin:
     ) -> dict[str, object]:
         diagnostics = self._diagnostic_snapshot(role_name)
         diagnostics["failure_class"] = failure_class
+        diagnostics["input_not_sent"] = True
         launch = self._launch_records.get(role_name, {})
         diagnostics["launch_attempts"] = int(launch.get("launch_attempts") or 0)
         diagnostics.update(extra or {})
