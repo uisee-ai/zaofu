@@ -4590,6 +4590,7 @@ def emit_human_escalation_package(
     reason: str,
     causation_id: str | None = None,
 ) -> ZfEvent:
+    from zf.runtime.run_continuation import escalation_blocking_scope
     workflow_run_id = str(
         action.get("workflow_run_id")
         or action.get("run_id")
@@ -4671,17 +4672,7 @@ def emit_human_escalation_package(
         "resume_condition": str(action.get("resume_condition") or ""),
         "suggested_options": _string_list(action.get("suggested_options"))
         or ["approve_controlled_action", "request_autoresearch", "safe_halt"],
-        # FIX-3(bizsim r4 F1/F8):① blocking_scope——无 workflow 锚点的
-        # 审批不冻结全 run 派发(side);② approval_command——给 operator
-        # 确切的批准入口(r4 教训:直调目标动作活干成但 lease 不放)。
-        "blocking_scope": (
-            "run"
-            if any(
-                str(action.get(key) or "").strip()
-                for key in ("task_id", "stage_id", "lane", "fanout_id", "run_id", "pdd_id")
-            )
-            else "side"
-        ),
+        "blocking_scope": escalation_blocking_scope(action),
         "approval_command": (
             "POST /api/projects/<id>/actions/"
             "human-decision-approve-controlled-action "
@@ -4759,6 +4750,16 @@ def _consume_agent_recommendations(
             continue
         action = _action_from_agent_recommendation(event, payload)
         route = _recommendation_route(payload)
+        from zf.runtime.recovery_step import recommendation_target_current
+        if route == "human" and (
+            not _operation_precondition_holds(writer.event_log.read_all(), action)
+            or not recommendation_target_current(writer.event_log.read_all(), action)
+        ):
+            writer.emit(RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED, actor="run-manager",
+                causation_id=event.id, payload={"source_event_id": event.id, "route": route,
+                    "status": "superseded", "reason": "operation_precondition_changed"})
+            consumed += 1
+            continue
         if route in {"autoresearch", "reflect", "repair"}:
             current_events = writer.event_log.read_all()
             gate = action_gate_reason(state_dir, current_events, action, _pending_human_decisions(current_events))
@@ -5181,6 +5182,8 @@ def _action_from_agent_recommendation(
         "contract_revision",
         "recovery_case_id",
         "operation_precondition",
+        "blocking_scope",
+        "target_operation_id",
         "request_id", "recorded_event_id", "target_commit", "active_attempt_id",
         "plan_artifact_package_digest", "continuation_expected_events",
         "effect_bindings", "effect_expected_events", "effect_required_sequence",
@@ -8295,7 +8298,10 @@ def _consume_autoresearch_candidate_result(
         reason = "expected plan-admission fault is not a source-repair defect"
     elif status == "failed":
         candidate_status = "unverified"
-        reason = "diagnosis incomplete: repair diagnostic environment before bounded retry"
+        reason = (
+            "diagnosis incomplete: " + str(diagnosis.get("failure_class") or "diagnosis_runner_failed")
+            + "; " + str(diagnosis.get("reason") or "inspect the bound diagnostic evidence before bounded retry")
+        )
     elif reproduction in {"confirmed", "reproduced"} and evidence_paths and repair_scope:
         candidate_status = "confirmed"
         reason = "diagnosis reproduced the defect with scoped repair evidence"
@@ -11367,6 +11373,7 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "target_commit": str(action.get("target_commit") or ""),
         "contract_revision": str(action.get("contract_revision") or ""),
         "active_attempt_id": str(action.get("active_attempt_id") or ""),
+        "target_operation_id": str(action.get("target_operation_id") or ""),
         "continuation_expected_events": _string_list(action.get("continuation_expected_events")),
         **({"effect_bindings": action["effect_bindings"]} if "effect_bindings" in action else {}),
         "action": str(action.get("action") or ""),

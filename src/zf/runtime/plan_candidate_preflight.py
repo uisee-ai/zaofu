@@ -179,6 +179,7 @@ def evaluate_plan_candidate_preflight(
 
         binding_errors = plan_input_declaration_errors(
             dict(task_map), available_ports=available | _KERNEL_DERIVED_PORTS,
+            require_selection=(metadata or {}).get("artifact_package", {}).get("task_input_policy") == "task-scoped-v1",
         )
         for message in dict.fromkeys([*validation.errors, *binding_errors]):
             _error(errors, "task_map_invalid", "task_map", message)

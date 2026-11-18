@@ -35,6 +35,8 @@ def reconcile_obsolete_checkpoint_operations(
             if request.get("checkpoint") == "plan_candidate":
                 continue
             target = semantic_failure_target_task_id(service.state_dir, request)
+            from zf.runtime.orchestrator_agent_execution_policy import checkpoint_operation_rejection
+            operation_stale = checkpoint_operation_rejection(service.state_dir, events, request)
             current = current_checkpoint_plan_package(
                 events, workflow_run_id=row["workflow_run_id"], task_id=target,
             )
@@ -43,12 +45,13 @@ def reconcile_obsolete_checkpoint_operations(
                        and current.get("package_" + k) for k in keys):
                 continue
             if all(request["plan_artifact_package_" + k] == current["package_" + k]
-                   for k in keys):
+                   for k in keys) and not operation_stale:
                 continue
         except (KeyError, OSError, ValueError, TypeError):
             continue  # Missing/corrupt evidence cannot authorize retirement.
         cause = str(current.get("admitted_event_id") or current.get("event_id") or "")
-        reason = "queued_checkpoint_plan_package_superseded"
+        reason = ("queued_checkpoint_execution_operation_changed" if operation_stale
+                  else "queued_checkpoint_plan_package_superseded")
         if row["status"] != "requested":
             invalid = next((e for e in reversed(events)
                 if e.type == "workflow.call.result.invalid" and e.origin in {"", "kernel"}

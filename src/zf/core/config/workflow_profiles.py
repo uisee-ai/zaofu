@@ -86,6 +86,7 @@ _COMMON_PRODUCT_FLOW_KEYS = frozenset({
     "artifactPackageMode", "artifact_package_mode",
     "productAcceptanceMode", "product_acceptance_mode",
     "taskPipeline", "task_pipeline",
+    "planInputPolicy", "plan_input_policy",
 })
 _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "topology",  # light(default single lane goal loop) | fanout
@@ -158,6 +159,7 @@ _PRD_PLAN_INSTRUCTIONS = [
     "Convert the completed PRD scan into a machine-readable task_map and a human-readable plan.",
     "The task_map must be JSON and must contain implementable tasks with stable ids, owned paths, acceptance criteria, and verification.",
     "Do not treat unimplemented product requirements as plan failure; they belong in the task_map.",
+    "Read artifact_package.task_input_policy in the effective flow metadata. When task-scoped-v1 is selected, every Task must declare evidence_contract.plan_input_selection; produce execution_spec and task_execution_input plus the full acceptance/test/real-E2E matrices. Follow zf-plan-task-map-contract for complete shared and task-specific obligations; do not leave this policy implicit.",
     *_TASK_MAP_CONTRACT_INSTRUCTIONS,
 ]
 
@@ -1054,6 +1056,12 @@ def _controller_metadata(
         required_ports.append("product_acceptance_spec")
     elif product_acceptance_mode == "shadow":
         conditional_ports.append("product_acceptance_spec")
+    input_policy = str(_pick(params, "planInputPolicy", "plan_input_policy", default="full"))
+    if input_policy not in {"full", "task-scoped-v1"}:
+        raise WorkflowProfileError("planInputPolicy must be full or task-scoped-v1")
+    if input_policy == "task-scoped-v1":
+        required_ports.extend(["execution_spec", "task_execution_input",
+                               "acceptance_matrix", "test_matrix", "real_e2e_matrix"])
     return {
         "flow_kind": kind,
         "quality_floor": str(_pick(
@@ -1089,6 +1097,7 @@ def _controller_metadata(
             "package_slot": "execution_plan",
             "required_ports": required_ports,
             "conditional_ports": conditional_ports,
+            "task_input_policy": input_policy,
         },
         "product_acceptance": {
             "mode": product_acceptance_mode,

@@ -30,6 +30,22 @@ def _status(runtime, prepared):
     return load_workflow_operation(runtime.event_log, prepared.operation_id)["status"]
 
 
+@pytest.mark.parametrize("active", [False, True])
+def test_same_plan_new_task_operation_retires_only_queued_checkpoint(tmp_path, active):
+    runtime, identity = _case(tmp_path)
+    prepared = request_semantic_failure_checkpoint(runtime, _review(runtime))
+    if active:
+        activate_orchestrator_agent_operation(runtime, prepared, dispatch_id="dispatch", causation_id="start")
+    runtime.event_writer.append(ZfEvent(type="workflow.operation.requested", task_id="TASK-1",
+        payload={**identity, "operation_id": "impl-2", "operation_generation": 2, "request_hash": "r2"}))
+    sent = []
+    runtime._notify_orchestrator_agent = sent.append
+    dispatch_pending_orchestrator_checkpoint(runtime)
+    dispatch_pending_orchestrator_checkpoint(runtime)
+    assert not sent
+    assert _status(runtime, prepared) == ("running" if active else "superseded")
+
+
 def test_dispatch_retires_obsolete_queued_request_without_paid_turn(tmp_path):
     runtime, prepared = _obsolete(tmp_path)
     sent = []

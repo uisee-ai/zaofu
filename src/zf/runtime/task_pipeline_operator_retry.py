@@ -159,16 +159,10 @@ def request_impl_retry(
         ):
             raise ValueError("TaskAttempt must settle before operator retry")
         if policy and policy.get("mode") == "blocking":
-            repair_offset = sum(
-                1 for row in operations.values()
-                if row.get("task_id") == task_id
-                and row.get("workflow_run_id") == operation.get("workflow_run_id")
-                and row.get("task_map_generation") == operation.get("task_map_generation")
-                and row.get("status") == "superseded"
-                and row.get("reason") == "missing_flow_kind_before_dispatch"
-            )
-            limit = int(policy.get("max_rework_attempts") or 0) + repair_offset
-            if int(operation.get("operation_generation") or 0) > limit and not authorize_extra_attempt and granted is None:
+            from zf.runtime.task_pipeline_failure_accounting import retry_budget_exhausted
+            if retry_budget_exhausted(
+                state_dir, events, operations.values(), operation, contexts, policy, config,
+            ) and not authorize_extra_attempt and granted is None:
                 raise ValueError(
                     "Impl retry budget exhausted; an explicit one-generation approval is required"
                 )

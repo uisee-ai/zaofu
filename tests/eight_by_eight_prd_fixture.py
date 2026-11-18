@@ -54,7 +54,10 @@ npm test、npm run build、npm run build && node tests/browser.cjs，由独立Ca
 0x等进制前缀、尾缀文本及转换后非有限数，抛可读Error。Number算术，测试在安全有限范围内。
 不得用parseFloat接受尾缀；所有返回值应可JSON序列化。
 
-运行使用v5：8 impl、8 verify、最多16 active pipelines，maxUnverifiedTasks=16，
+运行使用v5.1 task-scoped-v1：完整共享约束放入 execution_spec 的 shared 分区，
+每Task的实现/验收/test/real-E2E义务放入对应tasks.<task_id>，声明plan_input_selection。
+共享数值语法、TDD、独立验证和宿主采证责任不可因分区遗漏；完整全局矩阵供Candidate审阅。
+配置8 impl、8 verify、最多16 active pipelines，maxUnverifiedTasks=16，
 maxIntegrationQueue=16；集成仍单写者CAS。Plan Preview审阅批准后才实施。
 业务成功不自动证明满载；必须从真实operation生命周期单独统计两个阶段峰值及重叠。
 不添加sleep、假任务、假终态或直接改运行状态来凑并发。
@@ -124,7 +127,7 @@ const server=http.createServer((req,res)=>{const rel=new URL(req.url,'http://loc
 const file=path.resolve(root,'.'+(rel==='/'?'/index.html':rel));if(!file.startsWith(root+'/')){res.writeHead(403);res.end();return;}
 try{res.setHeader('Content-Type',file.endsWith('.html')?'text/html; charset=utf-8':'text/javascript');res.end(fs.readFileSync(file));}catch{res.writeHead(404);res.end();}});
 (async()=>{await new Promise(r=>server.listen(0,'0.0.0.0',r));
-const browser=await chromium.launch({executablePath:'/ms-playwright/chromium-1226/chrome-linux64/chrome',args:['--no-sandbox']});
+const browser=await chromium.launch({channel:'chromium',args:['--no-sandbox']});
 try{fs.writeFileSync(path.join(out,'environment.json'),JSON.stringify({browser:browser.version(),node:process.version,source_commit:process.env.ZF_CANDIDATE_COMMIT,image:process.env.ZF_BROWSER_IMAGE_ID}));
 for(const [name,width]of [['desktop',1280],['mobile',390]]){const ctx=await browser.newContext({viewport:{width,height:800},recordVideo:{dir:out}});await ctx.tracing.start({screenshots:true,snapshots:true,sources:true});
 const page=await ctx.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));const video=page.video();

@@ -45,7 +45,15 @@ def _invoke(state, *extra):
 
 
 def test_verify_rejection_requires_bound_grant_and_preserves_verdict(rejected):
-    state, log, _, _, _ = rejected
+    state, log, writer, identity, _ = rejected
+    # Three actual failures exhaust two reworks; generation 4 alone does not.
+    for generation in (1, 2):
+        p = {**identity, "operation_id": f"failed-{generation}",
+             "operation_generation": generation, "task_pipeline_stage": "impl"}
+        writer.emit("workflow.operation.requested", task_id="T1", payload=p)
+        writer.emit("workflow.call.result.admitted", task_id="T1",
+                    payload={**p, "semantic_verdict": "failed"})
+        writer.emit("workflow.operation.settled", task_id="T1", payload=p)
     before = log.path.read_bytes()
     assert _invoke(state) == 1
     assert _invoke(state, "--authorize-extra-attempt") == 1
@@ -64,6 +72,13 @@ def test_verify_rejection_requires_bound_grant_and_preserves_verdict(rejected):
     assert _derive_stage(next_impl, task={}, policy={"max_rework_attempts": 2, "semantic_failure_count": 3}, impl_rework_request=requests["T1"])[:2] == ("verify_ready", 5)
     current = {"impl": {**ops["impl"], "operation_generation": 5}, "verify": {**ops["verify"], "operation_generation": 5}}
     assert _derive_stage(current, task={}, policy={"max_rework_attempts": 2, "semantic_failure_count": 3}, impl_rework_request=requests["T1"])[0] == "blocked"
+
+
+def test_verify_generation_does_not_consume_unused_rework_budget(rejected):
+    state, log, _, _, _ = rejected
+    before = log.path.read_bytes()
+    assert _invoke(state) == 0
+    assert log.path.read_bytes() == before
 
 
 @pytest.mark.parametrize("change", ["passed", "new_impl", "new_verify", "different_target", "impl_not_passed"])

@@ -130,7 +130,7 @@ def bind_recommendation_to_request(events, event: ZfEvent, payload: dict[str, An
     if delivery is None or event.actor != delivery.payload.get("instance_id"):
         raise ValueError("recommendation_responder_mismatch")
     bound = dict(payload)
-    for key in (*IDENTITY_FIELDS, "recovery_case_id"):
+    for key in (*IDENTITY_FIELDS, "recovery_case_id", "target_operation_id", "operation_precondition"):
         value = request.payload.get(key)
         if value:
             if bound.get(key) and bound[key] != value:
@@ -139,3 +139,33 @@ def bind_recommendation_to_request(events, event: ZfEvent, payload: dict[str, An
     bound["checkpoint_id"] = f"recommendation:{event.id}"
     bound["recorded_event_id"] = event.id
     return bound
+
+
+def recommendation_target_current(events, action: Mapping[str, Any]) -> bool:
+    """A diagnosis of an old attempt cannot freeze its live successor."""
+    target = str(action.get("target_operation_id") or "")
+    attempt = str(action.get("active_attempt_id") or "")
+    if not target and not attempt:
+        return True
+    from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
+    task_id = str(action.get("task_id") or "")
+    run_id = str(action.get("workflow_run_id") or action.get("run_id") or "")
+    current = operation_bindings(events, run_id, {task_id}).get(task_id, {})
+    if not current:
+        # Planning/readers precede the Task Pipeline. Compare that owner's
+        # operation lineage, not unrelated parallel readers on the root Task.
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+        rows = list(reduce_workflow_operations(events).values())
+        bound = next((row for row in rows if
+            row.get("workflow_run_id") == run_id and row.get("task_id") == task_id
+            and (row.get("operation_id") == target if target else
+                 row.get("active_attempt_id") == attempt)), None)
+        if bound:
+            current = next((row for row in reversed(rows) if all(
+                row.get(key) == bound.get(key) for key in
+                ("workflow_run_id", "task_id", "operation_type", "role_instance"))), {})
+    if not current or (target and current.get("operation_id") != target):
+        return False
+    if attempt and current.get("active_attempt_id") != attempt:
+        return False
+    return current.get("status") not in {"superseded", "cancelled"}

@@ -7,6 +7,58 @@ from tests.test_run_manager import _config, _state
 from zf.runtime.run_manager import run_manager_tick
 
 
+@pytest.mark.parametrize("scope,expected", [(None, "task"), ("task", "task"), ("run", "run"),
+                                          ("side", "side"), ("invalid", "run")])
+def test_escalation_producer_preserves_scope_through_admission(tmp_path, scope, expected):
+    from zf.runtime.run_manager import emit_human_escalation_package
+    state, log, writer = _state(tmp_path)
+    action = {"task_id": "T1", "run_id": "run-1", "checkpoint_id": "gate"}
+    if scope is not None:
+        action["blocking_scope"] = scope
+    event = emit_human_escalation_package(writer, action=action, reason="owner input")
+    assert event.payload["blocking_scope"] == expected
+    _recommend(writer)
+    with patch("zf.runtime.run_manager._execute_resident_agent_reprompt", return_value="applied") as effect:
+        run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
+    assert effect.call_count == int(expected != "run")
+
+
+def test_stale_human_recommendation_cannot_create_gate(tmp_path):
+    state, log, writer = _state(tmp_path)
+    _recommend(writer, recommended_route="human", operation_precondition={"generation": "outdated"})
+    for _ in range(2):
+        run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
+    assert not any(e.type == "human.escalate" for e in log.read_all())
+    receipts = [e for e in log.read_all() if e.type == "run.manager.agent.recommendation.consumed"]
+    assert len(receipts) == 1 and receipts[0].payload["status"] == "superseded"
+
+
+def test_human_diagnosis_cannot_freeze_a_successor_attempt(tmp_path):
+    state, log, writer = _state(tmp_path)
+    _recommend(writer, recommended_route="human", task_id="T1",
+               workflow_run_id="r", target_operation_id="op-old", active_attempt_id="a-old")
+    writer.emit("workflow.operation.requested", payload={"operation_id": "op-new",
+        "workflow_run_id": "r", "task_id": "T1", "task_pipeline_stage": "impl",
+        "operation_generation": 2, "active_attempt_id": "a-new"})
+    run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
+    assert not any(e.type == "human.escalate" for e in log.read_all())
+
+
+@pytest.mark.parametrize("successor", [False, True])
+def test_current_reader_diagnosis_keeps_owner_escalation(tmp_path, successor):
+    state, log, writer = _state(tmp_path)
+    identity = {"workflow_run_id": "r", "task_id": "T1",
+                "operation_type": "reader", "role_instance": "planner"}
+    writer.emit("workflow.operation.requested", payload={**identity, "operation_id": "read-old"})
+    writer.emit("workflow.operation.failed", payload={**identity, "operation_id": "read-old"})
+    _recommend(writer, recommended_route="human", task_id="T1",
+               workflow_run_id="r", target_operation_id="read-old")
+    if successor:
+        writer.emit("workflow.operation.requested", payload={**identity, "operation_id": "read-new"})
+    run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
+    assert any(e.type == "human.escalate" for e in log.read_all()) == (not successor)
+
+
 def _recommend(writer, *, task_id="T2", **extra):
     return writer.emit("run.manager.agent.recommendation", actor="run-manager", payload={
         "recommended_route": "controlled_action", "safe_resume_action": "resident_agent_reprompt",

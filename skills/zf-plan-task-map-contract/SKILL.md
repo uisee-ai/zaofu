@@ -207,6 +207,17 @@ mandatory rows, risks and cross-task obligations before approving the revision.
 Omitting the selection retains full reads; do not alter an admitted Plan or
 reuse its approval for this new contract.
 
+When the effective flow metadata declares
+`artifact_package.task_input_policy: task-scoped-v1` (PRD v5.1+),
+this selection is required for every Task. Publish the complete
+`execution_spec` and a `task_execution_input` using the shared/tasks schema,
+and declare all canonical matrix ports in `required_plan_ports`.
+Do not copy every Task's body into `shared`; it contains only obligations
+shared by consumers. Critic must reconcile each selected Task's assertions,
+dependencies and source/AC bindings against the full Plan before approval.
+Missing declarations are a candidate validation error, not a fallback to full
+reads. Existing full-policy Plans retain their approved contract.
+
 For new plans, assess the read amplification before submitting: count unique
 required input bytes and provider page turns for Impl, Task Verify, and each
 Candidate Verify lane. Prefer the reviewed task-local selection above when it

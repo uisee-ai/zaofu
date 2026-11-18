@@ -25,6 +25,10 @@ def pending_failure_diagnoses(
         if task is None or task.status in {"done", "cancelled"}:
             continue
         latest.pop(task_id, None)
+        if payload.get("failure_class") == "host_publication_required":
+            policy = getattr(config.runtime, "task_publication", None)
+            if policy and policy.enabled:
+                continue  # The deterministic publisher owns admission, failure and escalation.
         if not wrc and payload.get("failure_class") != "reader_execution_failure":
             continue
         triage = classify_rework_trigger(event, config, evidence_events=events)
@@ -45,6 +49,7 @@ def pending_failure_diagnoses(
             "request_id": f"failure-diagnosis:{event.id}",
             **{key: payload[key] for key in IDENTITY_FIELDS if payload.get(key)},
             "task_id": task_id,
+            "target_operation_id": str(payload.get("operation_id") or ""),
             "workflow_run_id": payload.get("workflow_run_id") or event.correlation_id or "",
             "source_event_id": event.id, "source_event_type": event.type,
             "source_event_ids": [event.id], "failure_event_ids": [event.id], "fingerprint": event.id,

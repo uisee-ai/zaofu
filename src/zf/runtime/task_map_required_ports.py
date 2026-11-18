@@ -48,6 +48,7 @@ def required_plan_port_errors(value: Any) -> list[str]:
 
 def plan_input_declaration_errors(
     payload: dict[str, Any], *, available_ports: Iterable[str] | None = None,
+    require_selection: bool = False,
 ) -> list[str]:
     """Validate optional task selections before admitting a Plan."""
     declared = payload.get("required_plan_ports")
@@ -55,10 +56,12 @@ def plan_input_declaration_errors(
     available = set(declared) if isinstance(declared, list) and all(isinstance(x, str) for x in declared) else set()
     bound = set(available_ports) if available_ports is not None else None
     for task in payload.get("tasks", []) if isinstance(payload.get("tasks"), list) else []:
-        if not isinstance(task, dict) or not isinstance(task.get("evidence_contract"), dict):
+        if not isinstance(task, dict):
             continue
         task_id = str(task.get("task_id") or task.get("id") or "")
-        local = task["evidence_contract"].get("required_plan_ports")
+        evidence = task.get("evidence_contract")
+        evidence = evidence if isinstance(evidence, dict) else {}
+        local = evidence.get("required_plan_ports")
         errors.extend(
             f"{task_id}.evidence_contract.{error}"
             for error in (required_plan_port_errors(local) if local not in (None, "", []) else [])
@@ -67,8 +70,10 @@ def plan_input_declaration_errors(
         if bound is not None and (missing := local_ports - bound):
             errors.append(f"{task_id}.evidence_contract.required_plan_ports contains unbound ports: " + ", ".join(sorted(missing)))
         selectable = available | local_ports
-        policy = task["evidence_contract"].get("plan_input_selection")
+        policy = evidence.get("plan_input_selection")
         if policy is None:
+            if require_selection:
+                errors.append(f"{task_id}.evidence_contract.plan_input_selection is required by task-scoped-v1")
             continue
         prefix = f"{task_id}.evidence_contract.plan_input_selection"
         if not isinstance(policy, dict) or set(policy) != {"schema_version", "implementation", "task-verify"} or policy.get("schema_version") != "task-plan-input-selection.v1":

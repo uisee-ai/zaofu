@@ -315,6 +315,20 @@ def _blocking_human_decisions(value: Any) -> list[dict[str, Any]]:
     ]
 
 
+def escalation_blocking_scope(action: dict[str, Any]) -> str:
+    """Choose scope when producing a new gate; never reinterpret existing gates."""
+    explicit = str(action.get("blocking_scope") or "").strip().lower()
+    if explicit:
+        if explicit == "task" and not str(action.get("task_id") or "").strip():
+            return "run"
+        return explicit if explicit in {"task", "run", "side", "release"} else "run"
+    if str(action.get("task_id") or "").strip():
+        return "task"
+    return "run" if any(action.get(key) for key in (
+        "stage_id", "lane", "fanout_id", "workflow_run_id", "run_id", "pdd_id",
+    )) else "side"
+
+
 def human_decisions_block_action(value: Any, action: dict[str, Any]) -> bool:
     blockers = blocking_decisions_for_action(value, action)
     return bool(blockers) and not (

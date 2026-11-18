@@ -12,12 +12,13 @@ from zf.runtime.task_host_manifest import git
 from zf.runtime.task_publication import reconcile_task_publication
 
 
-def prepare(case):
+def prepare(case, *, failure_class='host_publication_required'):
     service, root, identity = case
     service.config = ZfConfig()
     service.config.runtime.task_publication = TaskPublicationConfig(
         enabled=True, approval_ref='owner:publication', paths=['probe.py'], max_publications_per_run=2)
     body = {**identity, 'changed_files': ['probe.py'], 'verdict': 'blocked',
+            'failure_class': failure_class,
             'target_commit': git(root, 'rev-parse', 'HEAD')}
     ref = write_sidecar_json(service.state_dir, 'artifacts/blocked.json', body,
         kind='call_control_result', schema_version='implementation-result.v1', created_by='test',
@@ -44,6 +45,35 @@ def test_publication_commits_once_then_requests_existing_retry(case):
     assert 'source_commit' in retries[0].payload['reason']
     assert sum(e.type == 'runtime.action.attempt.started' and e.payload.get('kind') == 'commit' for e in events) == 1
     assert not any(e.type in {'dev.build.done', 'task.done', 'run.goal.completed'} for e in events)
+
+
+def test_publication_retry_uses_its_own_finite_budget(case):
+    service, root = prepare(case)
+    service.config.workflow.flow_metadata = {"task_pipeline": {"mode": "blocking", "max_rework_attempts": 0}}
+    assert reconcile_task_publication(service) == 1
+    assert reconcile_task_publication(service) == 1
+    assert len([e for e in service.writer.event_log.read_all() if e.type == 'task.rework.requested']) == 1
+
+
+@pytest.mark.parametrize('evidence', ['missing', 'corrupt', 'foreign', 'valid'])
+def test_publication_retry_requires_exact_kernel_receipt(case, evidence):
+    from dataclasses import replace
+    from zf.runtime.task_pipeline_failure_accounting import retry_budget_exhausted
+    from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+    service, _ = prepare(case)
+    if evidence != 'missing':
+        assert reconcile_task_publication(service) == 1
+    events = service.writer.event_log.read_all()
+    receipt = next((e for e in events if e.type == 'runtime.action.attempt.completed'), None)
+    if evidence == 'corrupt':
+        (service.state_dir / receipt.payload['receipt_ref']['ref']).write_text('{}')
+    if evidence == 'foreign':
+        events = [replace(e, origin='agent') if e is receipt else e for e in events]
+    operations = reduce_workflow_operations(events)
+    assert retry_budget_exhausted(service.state_dir, events, operations.values(),
+        operations['op-1'], task_pipeline_generation_contexts(events),
+        {'max_rework_attempts': 0}, service.config) == (evidence != 'valid')
 
 
 @pytest.mark.parametrize('change', ['disabled', 'outside', 'paused', 'active', 'unknown_effect', 'budget'])
@@ -112,7 +142,7 @@ def test_clean_blocked_candidate_needs_no_publication(case):
     _, root, _ = case
     git(root, 'add', '--', 'probe.py')
     git(root, 'commit', '-m', 'feat: publish candidate before recovery')
-    service, root = prepare(case)
+    service, root = prepare(case, failure_class='none')
     before = git(root, 'rev-parse', 'HEAD')
     assert reconcile_task_publication(service) == 0
     assert reconcile_task_publication(service) == 0

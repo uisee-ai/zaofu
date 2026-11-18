@@ -647,6 +647,7 @@ def prepare_plan_artifact_package(
     input_errors = plan_input_declaration_errors(
         task_map,
         available_ports=(port["logical_name"] for port in [*explicit_ports.values(), *inherited]),
+        require_selection=(metadata or {}).get("artifact_package", {}).get("task_input_policy") == "task-scoped-v1",
     )
     if input_errors:
         raise PlanArtifactPackageError("invalid task plan inputs: " + "; ".join(input_errors))

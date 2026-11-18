@@ -1,0 +1,40 @@
+# 8×8 执行与恢复链路修复
+
+本说明对应 [实施任务](../../tasks/active/2026-11-18-0001-eight-by-eight-recovery-closure.md)。基于 dev dda38a25 的隔离实验发现；原实验仅证明 Impl 峰值 8、Verify 峰值 5、总同时峰值 11，1/16 完成，未证明真实同时 8+8 或最终产品交付。
+
+## 修复边界
+
+1. 新生成的人工 gate 保留显式 task/run/side/release 范围；未声明而绑定具体任务的 gate 默认 task，未知范围及缺任务身份的 task gate 保守按 run。既有 gate 不追溯改写。人工推荐消费前检查当前 run 进度与绑定任务 operation/attempt；过期建议留 superseded 收据，不新增 gate。Planner/Reader 在 Task Pipeline 之前按自身 role/operation 身份链校验，不能被当成无有效任务而丢弃；并行其他 reader 不替代其所有权。既有 run gate 继续通过授权入口处理。
+2. OA 在队列重放和实际投递前，以相同不可变 execution_context 核对 operation bindings；同 Plan 的 G1→G2 也使排队请求过期。运行中请求仍需已有的绑定结果/关闭证据，不因版本变化提前释放。结果准入也使用此检查，包含 block/escalate 路由。
+3. OA checkpoint 与 worker guidance 共用 FIFO；求助超过自身期限一半获得排队优先级。已投递求助、未关闭 provider turn 均占用同一个 OA，禁止双投递。期限到达仍明确进入 task 级等待，不能据此假装答复。
+4. PRD 配置 v5.1.0 显式声明 `planInputPolicy: task-scoped-v1`。编译后的 required ports 包含 execution_spec、task_execution_input 和完整 AC/test/real-E2E 矩阵；每个 Task 必须由 Planner 声明 plan_input_selection。preflight 和正式 Package admission 均校验。Impl/Task Verify 读共享与本任务分区；Candidate Verify 保留全局读取。语义覆盖由 Planner/Critic 审核，不在 Kernel 以删字段或字数截断实现。未选择该策略的既有 profile 保持 full；旧批准不可复用于改变后的输入合同。
+5. `host_publication_required` 表示受限宿主发布需求，不是产品失败。Worker 保留精确路径、提交基线及失败命令证据；RM 的既有发布器负责路径授权、静止工作区、预算、Git 效果和收据，OA 不进行语义返工诊断。未开启发布策略时仍进入诊断。发布结果不替代 Impl 自检、交接阅读及独立 Verify；干净工作区却请求无收据的发布，明确升级为 task gate。
+6. operator retry 与调度器均按实际 admitted 语义失败计数；包含 Verify 的 product_rejection，不按 operation generation 扣额度。reader/input 等基础设施失败独立计数，使用同一配置上限作为独立有限额度；宿主发布使用配置的独立有限预算和精确完成收据。已有单代额外批准仍绑定下一代，不产生无限重试。
+7. AR 默认 runner 每次有界等待后观察其自有子项目的持久状态；run 级 owner gate 及时产出 child_owner_wait 部分诊断、保留 refs、正常停止子运行。task/side/release gate 不被误判为整个子流程停滞。max_minutes 是工作期限，不再乘二；controller 终止与 runtime cleanup 分别有明确短超时。父 RM 保留 typed failure_class/reason，不将未完成统一误报为环境故障。部分诊断不确认 source defect、不触发未经证实的自动修复。
+
+## 分层验收
+
+- 定向回归：实际 producer → consumer，含 gate 范围、同 Plan 换代、忙队列求助、发布收据/额度、AR 等待和停止路径。
+- PRD 输入集成：加载真实配置，经 Package 准入、Task snapshot 和 handoff manifest；增加 64 个无关任务，T1 必读正文保持相同，Candidate 仍完整读取。
+- 容量：真实调度器、独立工作区及持有进程的 deterministic mock E2E 验证 8 Impl + 8 Verify 重叠、重放与背压。此层不是 provider 吞吐证明。
+- 真实 PRD：隔离项目、私有 tmux、8/8 pools、人工 Plan 审查（用户已授权本 session 代审），以全部业务 Task、独立 Verify、Candidate/Judge 和 Docker 浏览器断言为完成条件。记录容量观察但不因未捕获 8+8 瞬时窗口提前结束业务闭环。失败时保留断点，修复必须重测并记录介入。
+
+验证命令：`python scripts/dev-verify.py plan --base dev`、`python scripts/dev-verify.py run --base dev`；精确结果、真实验证过程见本次 reports 目录与任务记录。尚未执行的 gate 不能标通过。
+
+## 明确保留的限制
+
+本次没有赋予 worker 广泛 Git 写权限，也没有把人工 Plan gate 自动批准固化到运行时。实际 owner 决策、外部额度/凭据不可用仍应等待。新 Task 必须读取自己的输入和交接，不能继承上一次 agent 的阅读证明。队列优先级不会中断正在运行的模型调用；长期占用仍交由既有 turn watchdog/有界恢复处理。
+
+## 本轮验证记录（2026-11-18）
+
+- 初始 RED 已复现显式 gate 范围被覆盖、同 Plan 旧 checkpoint 不退休等问题。
+- PRD profile → Package → canonical Task → read manifest 集成通过；64 个无关任务增长不增加 T1 选定正文读取，Candidate 保留全局矩阵。
+- 容量/发布安全/基线快照专项：84 passed，含独立进程实际 8+8 重叠；仅证明 mock 调度容量。
+- Reader currentness 补充回归：238 passed（RM 消费入口、恢复步骤、失败路由、AR 诊断消费者）；有效 Reader 求助保留，旧 operation 求助拒绝。
+- 真实宿主启动、mock provider：1 passed。覆盖配置批准、冻结交付基线、真正运行时启动、派发和清理；不是模型完成业务的证据。
+- 重新同步 v5.1 的初始化与配置版本断言。基线已有的 11 项失败已在干净 dev 重现并仅更新过期测试预期，未改生产预算和唤醒集合；原始日志保留。
+- 真实 PRD 项目已准备，16 个独立功能、8/8 pools、人工 Plan 审查、固定 Docker 镜像。用户追加操作边界提醒后，启动真实模型验收的范围待确认，当前没有启动该 Run，不能宣称真实业务交付或无人监工通过。
+
+精确命令、退出码与分层结果保存在 `reports/eight-by-eight-recovery-20261118/`；报告目录不进入 Git，任务仍 active，待真实验收结论后归档。
+
+自动影响闭包：`PATH="$PWD/.venv/bin:$PATH" python scripts/dev-verify.py run --base dev` → 8088 passed / 16 skipped；premerge sentinel 53 passed；flow smoke 10 passed。另行执行的 8+8 容量/安全专项 84 passed、Reader/RM 专项 238 passed、宿主 mock 启动 1 passed；这些集合存在重叠，不合并宣称唯一用例总数。未执行完整 pytest / coverage / 真实模型业务验收。

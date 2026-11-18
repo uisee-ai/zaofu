@@ -45,6 +45,16 @@ spec:
 
 
 class TestExpansion:
+    def test_prd_production_pins_explicit_scoped_input_contract(self):
+        config = load_config(Path(__file__).parents[1] / "zf-prd-v5.yaml")
+        policy = config.workflow.flow_metadata["artifact_package"]
+        assert policy["task_input_policy"] == "task-scoped-v1"
+        assert {"execution_spec", "task_execution_input", "acceptance_matrix",
+                "test_matrix", "real_e2e_matrix"} <= set(policy["required_ports"])
+        assert expand_prd_flow({})["metadata"]["artifact_package"]["task_input_policy"] == "full"
+        with pytest.raises(WorkflowProfileError, match="planInputPolicy"):
+            expand_prd_flow({"planInputPolicy": "implicit"})
+
     @pytest.mark.parametrize("kind", ["prd", "refactor"])
     def test_full_flow_drafts_enable_semantic_control(
         self,

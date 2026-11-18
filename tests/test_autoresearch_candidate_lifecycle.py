@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import pytest
 
 from zf.autoresearch.self_repair import (
     candidate_from_trigger_event,
@@ -366,7 +367,8 @@ def test_superseded_unbridged_diagnosis_does_not_block_new_request(tmp_path: Pat
     assert [event.id for event in log.read_all()[:3]] == ["blocked", "old-request", "reopened"]
 
 
-def test_failed_diagnosis_keeps_unverified_candidate(tmp_path):
+@pytest.mark.parametrize("failure_class", ["diagnosis_runner_failed", "child_owner_wait", "diagnosis_timeout"])
+def test_failed_diagnosis_keeps_unverified_candidate(tmp_path, failure_class):
     state_dir = _state_dir(tmp_path)
     log = EventLog(state_dir / "events.jsonl")
     writer = EventWriter(log)
@@ -374,10 +376,12 @@ def test_failed_diagnosis_keeps_unverified_candidate(tmp_path):
     log.append(_candidate_created(state_dir, request_id="ar-env", recovery_case_id="case-env"))
     log.append(ZfEvent(type="autoresearch.loop.failed", payload={
         "loop_request_id": "ar-env", "stdout_tail": "validate_failed", "returncode": 1,
+        "diagnosis": {"failure_class": failure_class, "reproduction_status": "incomplete"},
     }))
     assert _consume_autoresearch_results(state_dir, log.read_all(), writer) == 2
     assert not any(e.type == "autoresearch.bug_candidate.dismissed" for e in log.read_all())
     failure = next(e for e in log.read_all() if e.type == "autoresearch.bug_candidate.diagnosis_failed")
     assert failure.payload["candidate"]["status"] == "unverified"
+    assert failure_class in failure.payload["reason"]
     assert failure.payload["repair_task_payload"] is None
     assert _consume_autoresearch_results(state_dir, log.read_all(), writer) == 0
