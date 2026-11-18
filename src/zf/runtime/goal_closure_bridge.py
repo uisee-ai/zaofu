@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.goal_historical_candidate_evidence import historical_judge_sources
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.candidate_result_binding import (
     candidate_task_source_commits,
     same_task_map_generation,
@@ -526,7 +528,6 @@ class GoalClosureBridgeMixin:
                     from zf.runtime.product_acceptance import (
                         validate_product_acceptance_report,
                     )
-                    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
                     hydrated_report = hydrate_sidecar_ref(
                         self.state_dir,
@@ -571,6 +572,12 @@ class GoalClosureBridgeMixin:
                     source_id="product-acceptance-report",
                     kind="product_acceptance_report",
                 )
+
+        if admitted_refs and identity.get("has_historical_candidate_reports"):
+            for source in historical_judge_sources(self.state_dir, identity):
+                add_descriptor(**source)
+                if source["kind"] == "envelope":
+                    admitted_refs.append(source["ref"])
 
         planning_result_ref = str(payload.get("task_map_ref") or "").strip()
         candidate_ref = _resolve_candidate_ref(

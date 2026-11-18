@@ -26,7 +26,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Recover deterministic runtime state from append-only events",
     )
     nested = parser.add_subparsers(dest="recover_command")
+    from zf.cli.recover_goal_evidence import register_recover_goal_evidence
     from zf.cli.recover_task_impl import register_recover_task_impl
+    register_recover_goal_evidence(nested)
     register_recover_task_impl(nested)
     from zf.cli.recover_task_verify import register_recover_task_verify
     register_recover_task_verify(nested)

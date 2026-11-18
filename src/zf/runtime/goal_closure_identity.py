@@ -10,6 +10,7 @@ from typing import Any, Mapping
 from zf.core.events.model import ZfEvent
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.goal_closure_lifecycle_evidence import plan_lifecycle_evidence, workflow_lifecycle_evidence
+from zf.runtime.goal_historical_candidate_evidence import historical_candidate_reports
 from zf.runtime.run_scope import resolve_run_for_event, run_aliases
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
@@ -104,6 +105,12 @@ def build_closure_identity(
             package_identity=package_identity,
         ),
     }
+    historical = historical_candidate_reports(
+        state_dir, events, workflow_run_id, generation,
+        package_identity.get("plan_artifact_package_digest", ""),
+    )
+    if historical:
+        closure_source["historical_candidate_reports"] = historical
     descriptor = write_immutable_json_sidecar(
         state_dir,
         closure_source,
@@ -125,6 +132,7 @@ def build_closure_identity(
     identity = _digest(identity_fields)
     return {
         **identity_fields,
+        **({"has_historical_candidate_reports": True} if historical else {}),
         "closure_fact_ref": str(descriptor.get("ref") or ""),
         "closure_identity": identity,
     }

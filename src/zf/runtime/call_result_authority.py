@@ -719,20 +719,6 @@ class CallResultAuthorityMixin:
             ref = str(descriptor.get("ref") or "")
             if ref:
                 admitted_refs.add(ref)
-        issues.extend(claim_set_issues(
-            result,
-            claim_set,
-            admitted_result_refs=admitted_refs,
-            claim_set_descriptor_digest=claim_digest,
-        ))
-        for ref in _string_values(result.get("input_result_refs")):
-            if ref not in admitted_refs:
-                issues.append({
-                    "field": "control_result.input_result_refs",
-                    "code": "result_not_admitted",
-                    "message": ref,
-                })
-
         latest_claim_pin = None
         for candidate in reversed(events):
             if candidate.type != "goal.claim_set.pinned":
@@ -803,6 +789,24 @@ class CallResultAuthorityMixin:
             ):
                 current = body
                 break
+        if current and current.get("has_historical_candidate_reports"):
+            from zf.runtime.goal_historical_candidate_evidence import pinned_historical_result_refs
+
+            admitted_refs.update(pinned_historical_result_refs(self.state_dir, events, current))
+        issues.extend(claim_set_issues(
+            result,
+            claim_set,
+            admitted_result_refs=admitted_refs,
+            claim_set_descriptor_digest=claim_digest,
+        ))
+        for ref in _string_values(result.get("input_result_refs")):
+            if ref not in admitted_refs:
+                issues.append({
+                    "field": "control_result.input_result_refs",
+                    "code": "result_not_admitted",
+                    "message": ref,
+                })
+
         if current is None:
             issues.append({
                 "field": "control_result.closure_fact_ref",
