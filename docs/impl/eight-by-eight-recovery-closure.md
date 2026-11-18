@@ -50,3 +50,13 @@
 下一轮需先消除最小输入歧义，并为局部 Plan 修订去除重复正文、保留来源摘要绑定和 Owner 确认；独立审查、审批和最终业务验收继续保留。此记录不将上述待修问题或真实 8+8 验收标为已完成。
 
 Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时间限制。已启动另一个 Run `workflow-8625b886a7912513`：16 个独立小任务、Impl/Verify 各 8、活跃流水线与背压上限 16。复用未启动的 8×8 配置，其 Run、execution profile、Planner stage timeout 原本均为 0，不再添加上一轮的 1800 秒覆盖；失联检测、审批与独立验收保留。补明冻结测试输入的 Enter 焦点，未修改验收脚本。当前仅确认真实 Scan/Plan 启动，重复返工输入缺口和实际 8+8 重叠尚未验证解决；启动证据见 `reports/eight-by-eight-real-resumed-20261118/README.md`。
+
+## 真实续测发现的槽位复用耦合
+
+`workflow-8625b886a7912513` 已完成正式 Plan 批准并进入真实 Impl/Task Verify。观察到同一物理 Impl 槽位切换任务时，`ensure_stage_workspace_idle` 同时要求新、旧工作区独占空闲；旧工作区已移交给合法 Verify 后，其正常读锁仍会阻塞新任务的 Impl。历史 mixed 8+8 mock 从 verify-only 起步，未覆盖“同一批 writer 槽位先实现、再移交 reader、再复用”的顺序，因此未发现这个限制。
+
+修复仅在可证明移交时排除旧工作区探测：旧 writer 已退出且无活跃 operation，其 Impl 结果已准入 passed；运行中的 Verify 必须绑定同一 Run、Task、Task Map、operation/workspace generation、当前 session binding 及同一旧工作区，且对应 transport 仍活跃。新工作区始终执行独占探测；身份不明、未准入、过期绑定、换代或 reader 已退出时保留原有拒绝路径。不停止合法 Verify，不扩大 worker 权限。
+
+回归通过实际 `_activate_task_stage_binding` 入口和真实文件锁复现 RED，再覆盖允许复用及上述拒绝条件。真实运行继续使用冻结版本；修复先在独立 worktree 验证，未经部署不能宣称本轮真实吞吐已因此改善。
+
+补修最终影响闭包230 passed、premerge sentinel53 passed，生命周期专项61 passed（集合重叠）。全分支`--base dev`规划保留；相对已验证f90dbf80运行本次自动闭包，含调度/接力/锁/工作区/操作事件和8槽mock E2E。未运行全pytest或新增真实provider测试；现有真实Run继续保留原源码身份。

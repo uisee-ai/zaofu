@@ -48,3 +48,11 @@ Owner 随后明确要求取消 Planner 时间限制，并恢复原定 8×8 小�
 16 个独立小任务、32 条不相交交付路径，Impl/Verify 各 8，活跃流水线和两个背压上限均为 16。原 8×8 配置的 Run、execution profile 和 Planner stage timeout 均为 0，本次不添加 30 分钟覆盖；失联检测、有限返工和独立验收继续保留。补明冻结输入的按钮 Enter 焦点语义。时间限制取消是 Owner 明确要求，不代表 Plan 重复输入问题已修复。
 
 运行时 admission 已固定 timeout=0；当前仅规划阶段运行，尚不能宣称实际 8+8 同时满载或 16/16 完成。启动证据见 `reports/eight-by-eight-real-resumed-20261118/README.md`；本任务仍 active。
+
+## 真实续测补修：writer 槽位与 reader 工作区解耦
+
+真实 Plan 已于03:47 UTC批准，8个Impl并发已观察到，随后独立 Verify/任务集成开始。发现旧任务 Verify 的读锁错误阻塞同一物理 Impl 槽位承接新任务，归入第6项真实并发验证缺口；在独立临时 worktree 修复，不热改正在运行的源码。
+
+验收：真实锁占用的旧工作区已合法移交 Verify -> verify: 新任务通过实际激活入口启动，原 Verify 不被终止；未知占用、未准入 writer、过期绑定、不同 generation、已退出 reader 或新工作区占用 -> verify: 仍等待退出。第一轮1 failed/10 passed正确复现；初版影响闭包219 passed、sentinel53 passed，补充边界后生命周期相关61 passed。最终复核与真实容量/产品闭环仍需分别记录，整批保持 active。
+
+补修最终影响闭包（相对已验证f90dbf80）230 passed；premerge sentinel 53 passed；此前生命周期61项有重叠，不累计为唯一用例数。`dev-verify plan --base dev`已检查全分支范围，旧批次8088项证据保留，本次按新增变更闭包执行。真实Run仍使用f90dbf80，尚无修复后真实8+8吞吐证据。
