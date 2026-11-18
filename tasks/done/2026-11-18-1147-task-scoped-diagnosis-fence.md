@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `83241455` fix: scope recovery diagnosis to its failed task operation
 
 # 任务诊断续接按原故障作用域校验
 
