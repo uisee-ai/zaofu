@@ -1,4 +1,5 @@
 """An unavailable runner can be reported without asserting unread product claims."""
+import json
 import pytest
 
 from tests.test_verification_submit_preflight import _running_verify
@@ -7,6 +8,22 @@ from zf.runtime.call_result_runtime import prepare_call_operation, mark_call_ope
 from zf.runtime.result_submit import ResultSubmitError
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import load_workflow_operation
+from zf.runtime.reader_submission_guidance import verifier_failure_schema_guidance
+
+
+@pytest.mark.parametrize("profile", ["task-verify", "candidate-verify"])
+def test_rendered_failure_example_validates_and_submits_without_success_template(tmp_path, profile):
+    runtime, service, args, result = _unread_verifier(tmp_path, profile)
+    guidance = verifier_failure_schema_guidance(
+        owner=result["verification_owner"], tier=result["verification_tier"],
+    )
+    body = json.loads(guidance.split("```json\n", 1)[1].split("\n```", 1)[0])
+    body.update(summary=result["summary"], evidence_refs=result["evidence_refs"])
+    validated = service.validate_plan_candidate(**args, semantic_result=body)
+    assert validated["status"] == "passed", validated
+    submitted = service.submit(**args, semantic_result=body)
+    assert submitted.canonical_event_type == "verify.child.failed"
+    assert not any(e.type == "verify.child.completed" for e in runtime.event_log.read_all())
 
 
 def _unread_verifier(tmp_path, profile):

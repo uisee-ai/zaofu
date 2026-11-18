@@ -74,3 +74,7 @@ Owner 随后明确要求取消 Planner 时间限制，并恢复原定 8×8 小�
 Candidate重试补修：受控rerun明确拒绝“task contract lacks task_map generation source”，实际fresh-reader caller复现1 failed/8 passed。Candidate快照复用既有currentness校验，避免把血缘锚点当作普通Task契约；保持冻结证据和新调用身份，拒绝身份/摘要/目标/Package偏移及旧Candidate。定向42 passed；影响闭包和真实恢复结果待记录，整批仍active。
 
 Candidate重试补修最终影响闭包263 passed，定向42 passed（集合重叠），sentinel53 passed，flow-smoke10 passed。真实失败child的冻结权威只读复核无issues；这只证明允许合法准备重试，不是产品验收通过。
+
+34e68178已在真实Run完成新reader派发，但失败结果编写暴露重复键/null PAS问题；补充精简失败JSON及结构化删除方法，移除保留所有预填字段的歧义。生成示例经真实preflight和submit两条入口验证，相关29 passed；产品仍未验收完成。
+
+失败编写方法补修影响闭包806 passed / 1 skipped，sentinel53 passed；三份skill一致。未新增结果schema或放宽产品报告验证。

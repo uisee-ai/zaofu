@@ -52,6 +52,12 @@ amendment are separate role capabilities supplied by the workflow profile.
   exactly `execution_status: failed` and `verdict: abstained`, with truthful
   failure_class and evidence. `blocked` and `inconclusive` are not execution_status
   values. Do not copy prose status words into typed fields.
+- Runner unavailable before product evaluation: use the briefing's compact
+  execution-failure JSON in the same authorized scratch, with the actual error
+  and durable failed-probe evidence. Structurally remove unperformed product
+  reports and assertions; omission is not JSON null, duplicate keys, or moving
+  a report into findings. Preserve the scratch path and Kernel identity binding.
+  A Docker socket path and template placeholders are not execution evidence.
 - Correct a preflight diagnostic using the pinned profile/schema, then validate
   again. After two corrections of the same error without progress, stop guessing:
   report the operation ID, exact diagnostic and attempted corrections through the

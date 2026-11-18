@@ -82,3 +82,5 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 修复动作落下明确拒绝原因后，发现重试把已有Candidate聚合快照按工作流锚点Task的局部契约重新校验；锚点只有血缘关系，没有TaskMap生成来源，因此首次派发能执行而重试失败。reader准备阶段按已验摘要的快照authority_scope识别Candidate，复用输入/结果准入的candidate_currentness检查；不凭profile名称跳过校验，不补写锚点Task契约，也不替换重试的冻结目标来迎合当前状态。
 
 实际fresh-reader caller回归证明新operation/attempt/scratch与原调用不同，冻结contract/target/generation保持一致；错Run、任务、generation、目标、摘要、PlanPackage和已换代Candidate仍拒绝。普通Task与rescan继续沿各自权威路径。真实恢复和产品验收需另行证明。
+
+真实重试已成功派发，但模型在大型通过模板中追加失败字段，留下重复JSON键和null产品报告，预校验正确拒绝。输出卡现提供同一verification-result.v1的精简执行失败示例，明确原位替换正文、使用实际探针证据、删除未执行字段；同时移除“保留预填字段”的笼统指令。方法同步到Verify skill。示例经真实预校验及SemanticResultSubmitService验证，不绕过任何准入，不替worker提交结果，也不以socket路径代替失败证据。
