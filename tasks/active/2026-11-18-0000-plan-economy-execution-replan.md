@@ -66,3 +66,6 @@ P5/P6 剩余实施验收（继续沿本任务，不另起重复候选）：
 候选路由144 + 调用者117；独立执行oracle审计13；sentinel53与flow smoke10通过。
 上述有重叠，不累加成“独立测试总数”。系统python缺pytest-cov的验证启动失败保留，
 随后使用项目.venv完成自动tier；未运行全库pytest。原始 Provider 失败和部分通过单列。
+
+已验证实现提交：`b77e119b` fix: reduce plan handoff overhead and preserve recovery evidence。P1/P2/P3/P4/P7 的部分范围记录见
+[完成记录](../done/2026-11-18-0142-plan-economy-completed-scope.md)；本文件因 P5/P6 未通过而继续 active。
