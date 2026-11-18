@@ -1,5 +1,8 @@
 """An unavailable runner can be reported without asserting unread product claims."""
 import json
+import io
+import shlex
+from types import SimpleNamespace
 import pytest
 
 from tests.test_verification_submit_preflight import _running_verify
@@ -23,6 +26,46 @@ def test_rendered_failure_example_validates_and_submits_without_success_template
     assert validated["status"] == "passed", validated
     submitted = service.submit(**args, semantic_result=body)
     assert submitted.canonical_event_type == "verify.child.failed"
+    assert not any(e.type == "verify.child.completed" for e in runtime.event_log.read_all())
+
+
+@pytest.mark.parametrize("profile", ["task-verify", "candidate-verify"])
+def test_rendered_stdin_failure_command_uses_real_cli_admission(tmp_path, profile, monkeypatch, capsys):
+    from zf.cli.main import build_parser
+    from zf.cli.hook_workdir_guard import bash_command_looks_mutating
+    from zf.runtime.stage_execution_card import prepare_profiled_stage_result
+
+    runtime, service, args, result = _unread_verifier(tmp_path, profile)
+    (runtime.project_root / "zf.yaml").write_text(
+        'version: "1.0"\nproject: {name: failure-stdin, state_dir: .zf}\nroles: []\n')
+    monkeypatch.chdir(runtime.project_root)
+    monkeypatch.setenv("ZF_ROLE_INSTANCE", args["role_instance"])
+    monkeypatch.setenv("ZF_RESULT_SUBMIT_TOKEN", args["credential"])
+    monkeypatch.delenv("ZF_RESULT_SUBMIT_TOKEN_FILE", raising=False)
+    operation = load_workflow_operation(runtime.event_log, args["operation_id"])
+    request = hydrate_sidecar_ref(runtime.state_dir, operation["request_ref"]).payload["request"]
+    _, lines = prepare_profiled_stage_result(
+        state_dir=runtime.state_dir, child_payload={**request, "operation_id": args["operation_id"],
+            "output_profile_id": profile, "output_profile_revision": "1"},
+        success_payload={"verification_result": {**result, "product_acceptance_report": {}}},
+        run_id="unread-verify", cli_command="zf",
+    )
+    rendered = "\n".join(lines).split("Execution-failure command:", 1)[1]
+    command = rendered.split("```bash\n", 1)[1].split("\n```", 1)[0]
+    head, body = command.split(" <<'ZF_EXECUTION_FAILURE'\n", 1)
+    semantic = json.loads(body.rsplit("\nZF_EXECUTION_FAILURE", 1)[0])
+    semantic.update(summary=result["summary"], evidence_refs=result["evidence_refs"])
+    body = json.dumps(semantic)
+    assert not bash_command_looks_mutating(head + " <<'ZF_EXECUTION_FAILURE'\n" + body + "\nZF_EXECUTION_FAILURE")
+    scratch = runtime.state_dir / request["result_scratch_ref"]
+    before = scratch.read_bytes()
+    cli = build_parser().parse_args(shlex.split(head)[1:])
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(buffer=io.BytesIO(body.encode())))
+    assert cli.func(cli) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "admitted"
+    assert output["canonical_event_type"] == "verify.child.failed"
+    assert scratch.read_bytes() == before
     assert not any(e.type == "verify.child.completed" for e in runtime.event_log.read_all())
 
 

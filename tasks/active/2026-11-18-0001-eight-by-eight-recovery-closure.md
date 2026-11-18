@@ -86,3 +86,7 @@ Candidate重试补修最终影响闭包263 passed，定向42 passed（集合重�
 恢复扫描补修：真实重建投影后仍未回收，扩展端到端恢复用例RED 1 failed/15 passed；terminal_children历史集合缺少新派发时清除，已最小修复并保留原恢复额度。等待影响闭包和真实运行验证。
 
 恢复扫描定向185 passed、影响闭包278 passed、sentinel53 passed；集合重叠不累计。需要加载后观察真实关闭回合及正式failed结果，仍不标整批done。
+
+真实4e16e6c4已自动结算僵态operation。精简JSON的后续模型仍未完成scratch编辑，采用已有stdin提交入口的生成指引，未新增权限或提交旁路。真实CLI/hook/准入定向31 passed，包含Task/Candidate失败提交且scratch不变；后续真实失败交接待核验。
+
+stdin指引影响闭包808 passed / 1 skipped，sentinel53 passed；不将确定性CLI通过等同真实模型完整验收。

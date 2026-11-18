@@ -527,6 +527,7 @@ def prepare_profiled_stage_result(
         lines.append(verifier_failure_schema_guidance(
             owner=str(semantic_body.get("verification_owner") or "task_verify"),
             tier=str(semantic_body.get("verification_tier") or "runtime"),
+            submit_command=render_result_validate_command(command) + " --submit",
         ))
         lines[7:7] = [
             "- Verification command IDs are a closed set. Use `command_id` only "

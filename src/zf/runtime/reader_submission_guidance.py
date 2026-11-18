@@ -1,6 +1,7 @@
 """Submission ABI guidance shared by fresh and retried reader briefings."""
 
 import json
+import shlex
 
 
 def submission_authority(run_id: str) -> str:
@@ -17,7 +18,33 @@ def submission_authority(run_id: str) -> str:
     )
 
 
-def verifier_failure_schema_guidance(*, owner: str = "task_verify", tier: str = "runtime") -> str:
+def verifier_failure_schema_guidance(
+    *, owner: str = "task_verify", tier: str = "runtime", submit_command: str = "",
+) -> str:
+    body = json.dumps({
+        "schema_version": "verification-result.v1",
+        "execution_status": "failed", "verdict": "abstained",
+        "failure_class": "verifier_execution_failure",
+        "summary": "<exact observed runner failure>",
+        "evidence_refs": ["<durable actual failed probe output ref>"],
+        "verification_owner": owner, "verification_tier": tier,
+        "requirement_results": [], "probe_receipts": [],
+        "reused_command_receipt_ids": [], "rework_items": [],
+    }, ensure_ascii=False, indent=2)
+    if submit_command:
+        args = ["--stdin" if arg == "--scratch" else arg
+                for arg in shlex.split(submit_command)]
+        example = (
+            "Execution-failure command: fill summary/evidence_refs in this stdin body, "
+            "then execute it directly. No scratch editing is required for this path. "
+            "The quoted heredoc supplies CLI input only; it writes no filesystem path. "
+            "It uses the same authorization, preflight and one-shot admission. "
+            "Do not run the Success command after an admitted failure.\n```bash\n"
+            + shlex.join(args) + " <<'ZF_EXECUTION_FAILURE'\n"
+            + body + "\nZF_EXECUTION_FAILURE\n```"
+        )
+    else:
+        example = "```json\n" + body + "\n```"
     return (
         "- Runner unavailable before evaluation: execution_status=failed, verdict=abstained, "
         "failure_class=verifier_execution_failure, concrete summary and actual failure evidence_refs. "
@@ -28,20 +55,10 @@ def verifier_failure_schema_guidance(*, owner: str = "task_verify", tier: str = 
         "not unperformed template assertions. Use this operation's validate/submit command "
         "and confirm submission success; a final chat message alone is not a result. "
         "After recovery, product judgment still requires all mandatory reads and evidence.\n"
-        "- For this execution-failure case, replace the JSON contents of the existing "
-        "scratch in place with the compact body below, filling summary and evidence_refs "
+        "- For this execution-failure case, use the compact body below, filling summary and evidence_refs "
         "from the actual failed probe. Do not retain the success template's assertions. "
         "Use structural JSON editing: omit means delete the key, not set null or rename "
         "the report into findings. Never append duplicate keys. Keep the scratch path; "
         "do not add identity fields. A socket path or placeholder is not failure evidence.\n"
-        "```json\n" + json.dumps({
-            "schema_version": "verification-result.v1",
-            "execution_status": "failed", "verdict": "abstained",
-            "failure_class": "verifier_execution_failure",
-            "summary": "<exact observed runner failure>",
-            "evidence_refs": ["<durable actual failed probe output ref>"],
-            "verification_owner": owner, "verification_tier": tier,
-            "requirement_results": [], "probe_receipts": [],
-            "reused_command_receipt_ids": [], "rework_items": [],
-        }, ensure_ascii=False, indent=2) + "\n```"
+        + example
     )

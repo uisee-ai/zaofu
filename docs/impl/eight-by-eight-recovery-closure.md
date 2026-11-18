@@ -88,3 +88,5 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 随后核实新reader结束回合后未被回收：受控rerun派发成功，但fanout投影仍为旧aggregate failed，恢复扫描忽略了它。投影现在仅在reader失败聚合收到绑定原operation/run的新调用派发时恢复pending，旧完成/取消聚合及无绑定派发不开放；保留旧聚合事件引用。补齐终态child落盘后、重新聚合前崩溃的恢复路径，不能因历史有aggregate.completed而忽略当前pending重试。实际RepairActionExecutor入口及完整重放验证该边界，不直接改manifest文件。
 
 真实升级复核还发现恢复扫描自身的terminal_children集合只增不减，旧child失败仍屏蔽后续派发。按事件顺序遇到新的派发即移除该child旧终态标记，保留原有恢复次数与后续终态判断。增加完整“旧聚合失败→受控重试→新provider回合关闭”用例，避免仅证明manifest变pending就声称自愈完成。
+
+精简失败示例的真实重试仍未完成：模型找到了真实Docker失败事件，却无法用局部文本patch替换大型scratch。最终复用已有`result validate --stdin --submit`，直接在briefing渲染同operation绑定的失败命令及紧凑JSON；worker填实际summary/evidence，不需要改成功模板，不新增草稿命令或权限。通过实际CLI解析、hook命令分类、preflight及submit证明失败准入且scratch保持原样。正式成功验收仍须完整产品报告；输入通道改变不绕过身份/lease/target门禁。
