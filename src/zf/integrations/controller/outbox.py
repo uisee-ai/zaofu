@@ -31,6 +31,7 @@ class Outbox:
                   UNIQUE(origin_id, wire_seq));
                 CREATE TABLE IF NOT EXISTS samples(series TEXT PRIMARY KEY, sequence INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS bindings(deployment TEXT PRIMARY KEY, mode TEXT NOT NULL, started REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS provider_routes(deployment TEXT PRIMARY KEY, routes TEXT NOT NULL, namespace TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS mode_epochs(deployment TEXT NOT NULL, mode TEXT NOT NULL,
                   started REAL NOT NULL, PRIMARY KEY(deployment, started));
                 CREATE TABLE IF NOT EXISTS capacity(id TEXT PRIMARY KEY, records INTEGER NOT NULL, bytes INTEGER NOT NULL);
@@ -44,7 +45,12 @@ class Outbox:
                     raise ValueError("persistent outbox identity mismatch")
                 db.execute("INSERT OR IGNORE INTO metadata VALUES (?, ?)", (key, value))
             binding = db.execute("SELECT * FROM bindings ORDER BY started DESC LIMIT 1").fetchone()
+            routes = json.dumps(getattr(config, '_provider_modes', {}), sort_keys=True)
+            namespace = getattr(config, '_cpa_request_namespace', '')
+            existing_routes = db.execute('SELECT routes,namespace FROM provider_routes WHERE deployment=?', (config.deployment_id,)).fetchone()
             if binding is not None and binding['deployment'] == config.deployment_id:
+                if (tuple(existing_routes) if existing_routes else ('{}', '')) != (routes, namespace):
+                    raise ValueError('changing provider routes requires a new deployment binding')
                 if binding['mode'] != config.mode:
                     epoch = getattr(config, '_mode_epoch', 0)
                     latest = db.execute('SELECT MAX(started) FROM mode_epochs WHERE deployment=?', (config.deployment_id,)).fetchone()[0]
@@ -55,6 +61,7 @@ class Outbox:
             else:
                 if db.execute("SELECT 1 FROM bindings WHERE deployment=?", (config.deployment_id,)).fetchone():
                     raise ValueError("retired deployment cannot reclaim an outbox")
+                db.execute('INSERT INTO provider_routes VALUES (?,?,?)', (config.deployment_id, routes, namespace))
                 db.execute("INSERT INTO bindings VALUES (?,?,?)", (config.deployment_id, config.mode, time.time()))
                 db.execute('INSERT INTO mode_epochs SELECT deployment,mode,started FROM bindings WHERE deployment=?', (config.deployment_id,))
         os.chmod(self.path, 0o600)
@@ -71,13 +78,23 @@ class Outbox:
         finally:
             db.close()
 
-    def binding_at(self, timestamp: str) -> dict | None:
+    def binding_at(self, timestamp: str, backend: str = "") -> dict | None:
         occurred = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
         if occurred.tzinfo is None:
             raise ValueError("source timestamp must include a timezone")
         with self.connect() as db:
             row = db.execute("SELECT * FROM mode_epochs WHERE started<=? ORDER BY started DESC LIMIT 1", (occurred.timestamp(),)).fetchone()
-        return dict(row) if row else None
+            if row is None:
+                return None
+            result = dict(row)
+            if backend:
+                from zf.core.config.controller_workspace import provider_mode
+                routes = db.execute('SELECT routes,namespace FROM provider_routes WHERE deployment=?', (row['deployment'],)).fetchone()
+                if routes:
+                    result['mode'] = provider_mode(json.loads(routes[0]), backend, row['mode'])
+                    if routes[1]:
+                        result['request_namespace'] = routes[1]
+            return result
 
     def has_reservations(self):
         with self.connect() as db:

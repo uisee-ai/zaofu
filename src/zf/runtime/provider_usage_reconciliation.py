@@ -100,6 +100,12 @@ def build_disk_usage_event(
         "backend": role.backend,
         "usage_timestamp": usage.timestamp,
     }
+    if usage_semantics == 'incremental' and getattr(usage, 'source_request_id', ''):
+        payload['source_request_id'] = usage.source_request_id
+        if getattr(usage, 'provider_session_id', ''):
+            payload.setdefault('provider_session_id', usage.provider_session_id)
+            if not payload.get('session_id') and not payload.get('thread_id'):
+                payload['session_id'] = usage.provider_session_id
     if usage_series_id:
         payload["usage_series_id"] = usage_series_id
         payload['usage_series_started_at'] = str(getattr(usage, 'series_started_at', '') or '')

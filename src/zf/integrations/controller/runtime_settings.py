@@ -22,7 +22,7 @@ def validate(limits):
         return None
     keys = {'protocol', 'interval_seconds', 'batch_size', 'diagnostic_sample_rate', 'mode',
             'request_tokens', 'request_money', 'price_version', 'request_seconds'}
-    if not isinstance(settings, dict) or set(settings) != keys:
+    if not isinstance(settings, dict) or set(settings) - {'provider_modes'} != keys:
         raise ValueError('unsupported runtime settings')
     digest = hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     if digest != limits.get('runtime_settings_digest') or settings['protocol'] != 'zfc.runtime-settings.v1':
@@ -40,6 +40,10 @@ def validate(limits):
             or not isinstance(settings['price_version'], str)
             or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}', settings['price_version'])):
         raise ValueError('invalid runtime model access settings')
+    modes = settings.get('provider_modes', {})
+    if not isinstance(modes, dict) or set(modes) - {'claude-code', 'codex'} or any(
+            m not in ('managed_cpa', 'self_managed_api', 'self_managed_cli') for m in modes.values()):
+        raise ValueError('invalid provider access modes')
     return settings
 
 
@@ -55,7 +59,7 @@ def overlay(config, snapshot):
     settings = validate(snapshot.get('limits', {}))
     if settings is None:
         return config
-    if settings['mode'] not in (config.allowed_modes or (config.mode,)):
+    if settings['mode'] not in (config.allowed_modes or (config.mode,)) or settings.get('provider_modes', {}) != config.provider_modes:
         raise ValueError('applied mode no longer has local consent')
     return replace(config, **{k: settings[k] for k in ('interval_seconds', 'batch_size',
         'request_tokens', 'request_money', 'price_version', 'request_seconds')},
@@ -66,7 +70,7 @@ def prepare(config, snapshot, previous, contexts, credentials):
     settings = validate(snapshot.get('limits', {}))
     if settings is None:
         return None
-    if settings['mode'] not in (config.allowed_modes or (config.mode,)):
+    if settings['mode'] not in (config.allowed_modes or (config.mode,)) or settings.get('provider_modes', {}) != config.provider_modes:
         return 'local_consent_required'
     old = overlay(config, previous)
     snapshot['mode_epoch'] = previous.get('mode_epoch', 0)

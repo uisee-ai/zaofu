@@ -28,6 +28,8 @@ def observation(config, credentials, project_id=''):
         max_pending_records=config.max_pending_records, max_pending_bytes=config.max_pending_bytes)
     # Applied-policy metadata is intentionally absent from the Project YAML schema.
     cloud._mode_epoch = config.mode_epoch
+    cloud._provider_modes = config.provider_modes
+    cloud._cpa_request_namespace = config.cpa_request_namespace
     return cloud
 
 
