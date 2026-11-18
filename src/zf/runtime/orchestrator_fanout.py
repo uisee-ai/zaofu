@@ -905,7 +905,10 @@ class FanoutCoordinationMixin(
         for fanout_id, manifest in manifests:
             if not manifest or manifest.get("topology") != "fanout_reader":
                 continue
-            if fanout_id in completed_fanouts:
+            if fanout_id in completed_fanouts and not (
+                (manifest.get("aggregate") or {}).get("status") == "pending"
+                and (manifest.get("aggregate") or {}).get("recovered_from_event_id")
+            ):
                 continue
             aggregate = (
                 manifest.get("aggregate")

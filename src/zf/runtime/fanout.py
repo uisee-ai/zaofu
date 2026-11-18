@@ -569,6 +569,9 @@ class FanoutManifestProjector:
                 })
             elif event.type == "fanout.child.dispatched":
                 child = _child(children, payload)
+                from zf.runtime.fanout_retry_projection import project_reader_retry
+
+                project_reader_retry(manifest, child, payload, event.id)
                 child.update({
                     "status": "dispatched",
                     "run_id": _payload_str(payload, "run_id"),

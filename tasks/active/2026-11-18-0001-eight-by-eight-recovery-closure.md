@@ -78,3 +78,7 @@ Candidate重试补修最终影响闭包263 passed，定向42 passed（集合重�
 34e68178已在真实Run完成新reader派发，但失败结果编写暴露重复键/null PAS问题；补充精简失败JSON及结构化删除方法，移除保留所有预填字段的歧义。生成示例经真实preflight和submit两条入口验证，相关29 passed；产品仍未验收完成。
 
 失败编写方法补修影响闭包806 passed / 1 skipped，sentinel53 passed；三份skill一致。未新增结果schema或放宽产品报告验证。
+
+真实受控重试另有投影遗漏：旧failed aggregate掩盖新running operation，使恢复扫描跳过已关闭回合。实际控制入口RED复现；绑定原operation/run的新reader派发恢复pending，并补齐中断后重新聚合。完成/取消聚合、writer及无绑定派发不重开。定向34 passed；扩展边界及最终闭包待记录。
+
+投影补修：定向34 passed，扩展边界23 passed；影响闭包5242 passed / 7 skipped / 1 failed。唯一失败test_consumer_lock_contention_defers_without_reporting_failure在旧H=34e68178独立复现，相关源码/测试未改，属于既存consumer Busy行为与测试预期不一致，未冒称全绿。sentinel53 passed，flow-smoke10 passed。真实恢复仍待载入补丁验证。
