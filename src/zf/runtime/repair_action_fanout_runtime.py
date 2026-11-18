@@ -162,13 +162,22 @@ class RepairActionFanoutRuntimeMixin:
                 task_id=task_id,
                 force=True,
             )
-        dispatched = self._retry_fanout_child(
-            manifest=manifest,
-            child=child,
-            previous_dispatch=previous_dispatch,
-            attempt=len(dispatches),
-            fresh_operation=True,
-        )
+        try:
+            dispatched = self._retry_fanout_child(
+                manifest=manifest,
+                child=child,
+                previous_dispatch=previous_dispatch,
+                attempt=len(dispatches),
+                fresh_operation=True,
+            )
+        except ValueError as exc:
+            # Preparation can defer after releasing an idle workspace holder.
+            # The repair intent still needs a terminal receipt, not a swallowed
+            # exception that leaves the operator waiting for nonexistent work.
+            return WorkflowRuntimeDecision(
+                action="rerun_fanout_child_failed", role=role.instance_id,
+                task_id=task_id, reason=f"reader retry preparation failed: {exc}",
+            )
         if not dispatched:
             return WorkflowRuntimeDecision(
                 action="rerun_fanout_child_failed",

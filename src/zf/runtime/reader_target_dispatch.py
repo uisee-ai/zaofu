@@ -55,10 +55,10 @@ def pin_reader_target_or_defer(
                 config=self.config,
             ).pin_reader_target(role, cleaned)
         except (EnvironmentInUse, TimeoutError):
-            _release_idle_owner(self, role, pending_run_id=run_id,
-                                workflow_run_id=context.trace_id, stage_id=context.stage_id)
+            released = _release_idle_owner(self, role, pending_run_id=run_id,
+                                          workflow_run_id=context.trace_id, stage_id=context.stage_id)
             from zf.runtime.reader_wait_recovery import exhaust_reader_wait
-            if exhaust_reader_wait(
+            if not released and exhaust_reader_wait(
                 self, role=role, context=context, child=child, run_id=run_id,
                 target_ref=cleaned, causation_id=causation_id,
             ):
@@ -113,11 +113,11 @@ def pin_reader_target_or_defer(
 
 
 def _release_idle_owner(runtime, role: RoleConfig, *, pending_run_id: str = "",
-                        workflow_run_id: str = "", stage_id: str = "") -> None:
+                        workflow_run_id: str = "", stage_id: str = "") -> bool:
     """Release only the managed idle reader; unknown/active holders keep waiting."""
     from zf.runtime.workflow_operation import reduce_workflow_operations
     if not runtime._role_is_on_demand(role):
-        return
+        return False
     try:
         events = runtime.event_log.read_all()
         operations = reduce_workflow_operations(events)
@@ -145,14 +145,16 @@ def _release_idle_owner(runtime, role: RoleConfig, *, pending_run_id: str = "",
                 )
             )
             if not never_delivered:
-                return
+                return False
         if (runtime._active_provider_turn(role.instance_id)
                 or runtime._active_fanout_child_for_instance(role.instance_id) is not None
                 or runtime._active_task_for_instance(role.instance_id) is not None):
-            return
+            return False
         if runtime.transport.is_alive(role.instance_id):
             runtime._suspend_role(role, now=runtime._now())
+            return runtime.transport.is_alive(role.instance_id) is False
     except Exception:
         # Lifecycle already records failure; the actual holder check on the
         # next tick remains authoritative and cannot be waived here.
-        return
+        return False
+    return False

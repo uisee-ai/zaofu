@@ -66,3 +66,7 @@ Owner 随后明确要求取消 Planner 时间限制，并恢复原定 8×8 小�
 第二层真实补修：请求已准入但未交付provider的reader锁自阻塞，真实caller RED 1 failed/10 passed，修复后相关30 passed；新/重试briefing的“preflight修正”与“任何错误停止”冲突，生成briefing RED 1 failed/1 passed。补修后实际验收仍在进行，产品未判定通过。
 
 第二层补修最终影响闭包936 passed / 7 skipped，sentinel53 passed，flow-smoke10 passed；未执行全量pytest/coverage，未将真实reader结束回合当作产品完成。
+
+恢复边界补修：资源刚释放却同轮超时（RED 1 failed/11 passed，相关31 passed）；reader rerun准备异常无修复动作终态（RED 1 failed/1 passed，相关34 passed）。仅让已证明释放的资源正常复检，并将准备拒绝落入修复动作终态，不自动覆盖历史pending意图。真实产品验收尚未完成。
+
+恢复边界补修最终影响闭包491 passed / 7 skipped，sentinel53 passed，flow-smoke10 passed。历史pending修复请求和真实Candidate闭环仍保留为待核查，不标done。

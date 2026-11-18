@@ -1,16 +1,18 @@
 """A never-delivered reader request must not deadlock its idle provider's pin."""
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 import pytest
 
 from tests.test_role_lifecycle_runtime import _runtime
+from zf.core.events import ZfEvent
 from zf.runtime.environment_usage import EnvironmentInUse
 from zf.runtime.reader_target_dispatch import pin_reader_target_or_defer
 from zf.runtime.workflow_operation import WorkflowOperationService, load_workflow_operation
 from zf.runtime.workdirs import WorkdirManager
 
 
-@pytest.mark.parametrize("fault", ["", "running", "suspended", "prior_start", "prior_send",
+@pytest.mark.parametrize("fault", ["", "deadline", "running", "suspended", "prior_start", "prior_send",
     "other_attempt", "other_run", "other_stage", "writer", "active_turn", "unknown_transport"])
 def test_pending_pin_releases_only_its_never_delivered_idle_provider(tmp_path, monkeypatch, fault):
     runtime, role, transport = _runtime(tmp_path)
@@ -43,13 +45,19 @@ def test_pending_pin_releases_only_its_never_delivered_idle_provider(tmp_path, m
     monkeypatch.setattr(WorkdirManager, "pin_reader_target", pin)
     context = SimpleNamespace(stage_id="verify", trace_id="run", fanout_id="f")
     child = SimpleNamespace(child_id="reader", payload={})
+    if fault == "deadline":
+        runtime.event_writer.append(ZfEvent(type="fanout.child.dispatch_deferred",
+            ts=datetime.fromtimestamp(runtime._now() - role.stuck_threshold_seconds - 61,
+                timezone.utc).isoformat(), payload={"fanout_id": "f", "child_id": "reader",
+                "run_id": "attempt", "reason": "reader_environment_busy"}))
     args = dict(role=role, target_ref="HEAD", context=context, child=child,
         run_id="attempt", causation_id="start")
     assert not pin_reader_target_or_defer(runtime, **args)
-    if fault:
+    if fault not in {"", "deadline"}:
         assert not transport.terminated
     else:
         assert transport.terminated == [role.instance_id]
+        assert not any(e.type == "fanout.child.failed" for e in runtime.event_log.read_all())
         assert pin_reader_target_or_defer(runtime, **args)
         assert child.payload["target_commit"] == "a" * 40
         assert load_workflow_operation(runtime.event_log, "op")["status"] == "requested"
