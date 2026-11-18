@@ -47,9 +47,8 @@ def retry_budget_exhausted(state_dir, events, operations, operation, contexts, p
         # A worker's failure label grants no host authority or free retry.
         if not publication or not publication.enabled:
             return True
-        from dataclasses import asdict
         from zf.runtime.task_host_manifest import digest
-        approval = publication.approval_ref + "#" + digest(asdict(publication))
+        approval = publication.approval_ref + "#" + digest(publication.authorization_payload())
         receipts = [e for e in events if e.type == "runtime.action.attempt.completed"
             and e.origin in {"", "kernel"} and e.payload.get("action") == "task-host-assist"
             and e.payload.get("kind") == "commit"
