@@ -72,7 +72,8 @@ def test_compound_command_preview_explicitly_requires_full_body_read(tmp_path):
     assert original['authorizes_execution'] is False
 
 
-def test_real_dispatch_attaches_reachable_observation_index(dispatch_fixture):
+@pytest.mark.parametrize('host', [False, True])
+def test_real_dispatch_attaches_reachable_observation_index(dispatch_fixture, host):
     import subprocess
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
     runtime, _, _, prepared, dispatch_task = dispatch_fixture
@@ -82,6 +83,11 @@ def test_real_dispatch_attaches_reachable_observation_index(dispatch_fixture):
         subprocess.run(['git', *args], cwd=root, check=True, capture_output=True)
     source, dispatched, hook, settled = observations(root)
     source.update(workflow_run_id='run-1', task_id='TASK-1', task_pipeline_stage='impl')
+    extra = []
+    if host:
+        from tests.test_task_host_evidence import host_probe
+        start, completed, _ = host_probe(runtime.state_dir, source)
+        extra = [start, completed]
     source['request_ref'] = write_immutable_json_sidecar(runtime.state_dir, {'request': {}},
         root='requests', kind='request', schema_version='request.v1', created_by='kernel')
     requested = ZfEvent(type='workflow.operation.requested', origin='kernel', task_id='TASK-1', payload=source)
@@ -89,17 +95,17 @@ def test_real_dispatch_attaches_reachable_observation_index(dispatch_fixture):
         payload={**source, 'attempt_id': 'a0', 'workdir': str(root)})
     hook = replace(hook, correlation_id='run-1')
     settled = replace(settled, task_id='TASK-1', payload=source)
-    for event in (requested, dispatched, hook, settled):
+    for event in (requested, dispatched, hook, settled, *extra):
         runtime.event_writer.append(event)
     dispatch_task()
     body = hydrate_sidecar_ref(runtime.state_dir, prepared[-1]['payload']['task_handoff_ref']).payload
     index = hydrate_sidecar_ref(runtime.state_dir, body['execution_evidence_ref']).payload
-    assert [e['event_id'] for e in index['entries']] == [hook.id]
+    assert [e['event_id'] for e in index['entries']] == [hook.id, *([completed.id] if host else [])]
     assert 'handoff-evidence' in body['execution_evidence_read']
 
 
-@pytest.fixture
-def evidence_handoff(tmp_path, monkeypatch):
+@pytest.fixture(params=['native', 'host'])
+def evidence_handoff(tmp_path, monkeypatch, request):
     from tests.test_work_record import setup
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
     from zf.runtime.artifact_read_ledger import source_manifest_from_payload
@@ -107,7 +113,14 @@ def evidence_handoff(tmp_path, monkeypatch):
     state = tmp_path / 'state'
     source, dispatched, hook, settled = observations(tmp_path)
     hook = replace(hook, payload={**hook.payload, 'tool_response': 'original RED\n' * 300})
-    index = capture_execution_evidence(state, source, [dispatched, hook, settled])
+    if request.param == 'host':
+        from tests.test_task_host_evidence import host_probe
+        start, completed, _ = host_probe(state, source, 'original RED\n' * 300)
+        events = [dispatched, settled, start, completed]
+        hook = completed
+    else:
+        events = [dispatched, hook, settled]
+    index = capture_execution_evidence(state, source, events)
     def inputs(state):
         old = {'schema_version': 'task-handoff.v1',
             'target': {'workflow_run_id': 'r', 'task_id': 'T7', 'operation_id': 'middle'},
