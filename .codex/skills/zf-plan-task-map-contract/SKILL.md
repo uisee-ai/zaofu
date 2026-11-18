@@ -266,12 +266,11 @@ replan action. Never declare new completion or remove acceptance to retain work.
 `input_task_ids` controls context reading only; it is never a dispatch filter.
 
 For an execution replan, start from the files bound to this Planner attempt.
-After the required reads, export only the files you need into a fresh draft
-directory. For example, using the attempt ID from the briefing:
-
-```bash
-mkdir draft && (set -o pipefail; zf plan draft-baseline --attempt "$attempt" --port task_map --port test_matrix --port source_index | tar -xk -C draft)
-```
+After the required reads, use the literal `zf plan draft-baseline --workspace`
+command in the Controlled Artifact Inputs briefing. It creates editable files
+in a new private directory under your own `artifacts/plan` and prints their
+paths. Select the assigned ports you need. For a pending Plan rejected by the
+Owner, carry the rejection forward when reusing its files.
 
 Edit stable Task/AC/scenario rows and update all consumers of the changed
 contract, including downstream CLI/API assertions, command owners and evidence

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import io
 import hashlib
+import json
 import shutil
 import sys
 import tarfile
-from tempfile import TemporaryFile
+from pathlib import Path
+from tempfile import TemporaryFile, mkdtemp
 
 from zf.core.config.loader import ConfigError
 from zf.core.config.project_context import resolve_project_context
@@ -30,6 +32,7 @@ def register(sub):
     parser = sub.add_parser("draft-baseline", help="Export pinned Plan ports as a tar stream for local editing")
     parser.add_argument("--attempt", required=True)
     parser.add_argument("--port", action="append", required=True, choices=_DRAFT_PORTS, help="Logical port name, repeat to include more")
+    parser.add_argument("--workspace", action="store_true", help="Create an editable private draft in this Planner workdir")
     parser.set_defaults(func=run)
 
 
@@ -45,7 +48,7 @@ def _source(manifest, source_id, identity):
     return source
 
 
-def write_draft(state, manifest, identity, names, stream):
+def draft_files(state, manifest, identity, names):
     if identity["role"] != "planner" or not identity["operation_id"]:
         raise ValueError("a current Planner operation is required")
     package_source = _source(manifest, "plan-rework-package", identity)
@@ -57,27 +60,58 @@ def write_draft(state, manifest, identity, names, stream):
             or package["task_map_generation"] != manifest.get("task_map_generation")):
         raise ValueError("replan baseline Run or generation differs")
     ports = {p["logical_name"]: p for p in [*package["produced"], *package["inherited"]]}
+    for name in dict.fromkeys(names):
+        if name not in _DRAFT_PORTS or name not in ports:
+            raise ValueError(f"unknown baseline port: {name}")
+        source = _source(manifest, f"baseline-plan-port-{name}", identity)
+        if any(source[key] != ports[name][key] for key in ("ref", "sha256")):
+            raise ValueError(f"baseline descriptor differs for {name}")
+        raw = read_plan_port_bytes(sidecar_path(state, source["ref"]), name)
+        if hashlib.sha256(raw).hexdigest() != source["sha256"]:
+            raise ValueError(f"baseline bytes differ for {name}")
+        yield f"{name}.json", raw
+
+
+def write_draft(state, manifest, identity, names, stream):
     with tarfile.open(fileobj=stream, mode="w") as archive:
-        for name in dict.fromkeys(names):
-            if name not in _DRAFT_PORTS or name not in ports:
-                raise ValueError(f"unknown baseline port: {name}")
-            source = _source(manifest, f"baseline-plan-port-{name}", identity)
-            if any(source[key] != ports[name][key] for key in ("ref", "sha256")):
-                raise ValueError(f"baseline descriptor differs for {name}")
-            raw = read_plan_port_bytes(sidecar_path(state, source["ref"]), name)
-            if hashlib.sha256(raw).hexdigest() != source["sha256"]:
-                raise ValueError(f"baseline bytes differ for {name}")
-            entry = tarfile.TarInfo(f"{name}.json")
+        for filename, raw in draft_files(state, manifest, identity, names):
+            entry = tarfile.TarInfo(filename)
             entry.mode = 0o600
             entry.size = len(raw)
             archive.addfile(entry, io.BytesIO(raw))
 
 
+def workspace_draft(context, manifest, identity, names):
+    from zf.core.safety.path_guard import assert_owned_workdir
+    from zf.runtime.workdirs import WorkdirManager
+
+    manager = WorkdirManager(state_dir=context.state_dir, project_root=context.project_root, config=context.config)
+    role_dir = manager.root / identity["actor"]
+    marker = assert_owned_workdir(role_dir, state_dir=context.state_dir, workdir_root=manager.root)
+    project = role_dir / "project"
+    if (marker.instance_id != identity["actor"] or Path(marker.project_root) != context.project_root
+            or project != Path.cwd() or project != project.resolve()):
+        raise ValueError("draft must be created in the bound Planner project")
+    folder = project / "artifacts" / "plan"
+    if folder.resolve() != folder:
+        raise ValueError("draft output must stay in the Planner project")
+    files = list(draft_files(context.state_dir, manifest, identity, names))
+    folder.mkdir(parents=True, exist_ok=True)
+    draft = Path(mkdtemp(prefix="replan-", dir=folder))
+    try:
+        for filename, raw in files:
+            (draft / filename).write_bytes(raw)
+    except BaseException:
+        shutil.rmtree(draft)
+        raise
+    return {"draft_dir": str(draft.relative_to(project)), "files": [filename for filename, _ in files]}
+
+
 def run(args):
     try:
-        if sys.stdout.isatty():
+        if not args.workspace and sys.stdout.isatty():
             raise ValueError("redirect the archive to a file or pipe")
-        context = resolve_project_context(explicit_state_dir=args.state_dir)
+        context = resolve_project_context(explicit_state_dir=args.state_dir, require_config=args.workspace)
         manifest = load_attempt_source_manifest(context.state_dir, args.attempt)
         log = event_log_from_project(context.state_dir, config=context.config)
         try:
@@ -86,6 +120,9 @@ def run(args):
             )
         finally:
             log.close()
+        if args.workspace:
+            print(json.dumps(workspace_draft(context, manifest, identity, args.port)))
+            return 0
         # Validate every member before publishing even the first byte.
         with TemporaryFile() as archive:
             write_draft(context.state_dir, manifest, identity, args.port, archive)

@@ -1,6 +1,7 @@
 """Explain existing input profiles without creating a new selection policy."""
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -23,7 +24,7 @@ def role_input_view(manifest: Mapping[str, Any]) -> dict[str, Any]:
             'independent_consumption': True, 'authorizes_scope_change': False}
 
 
-def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None) -> str:
+def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None, *, role_name: str = "") -> str:
     if state_dir is None:
         return ''
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -41,5 +42,19 @@ def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None) 
         view = role_input_view(manifest)
     except (KeyError, ValueError, OSError, TypeError):
         return '- Role input scope unavailable; use the pinned manifest and required reads.'
-    return (f"- `{view['profile'] or 'unknown'}` / `{view['scope']}`; independent. "
+    entry = (f"- `{view['profile'] or 'unknown'}` / `{view['scope']}`; independent. "
             '`artifact recover`, `artifact costs`.')
+
+    if role_name == "planner" and manifest.get("plan_artifact_package_digest"):
+        ids = {row.get("source_id") for row in manifest.get("sources", [])
+               if isinstance(row, Mapping) and "$" in (row.get("allowed_paths") or ["$"])}
+        if {"plan-rework-package", "baseline-plan-port-task_map"} <= ids:
+            from zf.runtime.cli_command import zf_cli_cmd
+
+            args = ["plan", "draft-baseline", "--workspace", "--attempt", attempt]
+            for name in ("task_map", "test_matrix", "source_index"):
+                if f"baseline-plan-port-{name}" in ids:
+                    args.extend(["--port", name])
+            command = shlex.join(args)
+            entry += f"\n- After required reads, start local edits from the bound files: `{zf_cli_cmd()} {command}`. Draft only."
+    return entry

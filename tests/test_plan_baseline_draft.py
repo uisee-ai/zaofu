@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import tarfile
 
 import pytest
@@ -17,6 +18,7 @@ from zf.runtime.plan_replan_authority_inputs import replan_authority_sources
 @pytest.mark.parametrize("change", [
     "none", "wrong_role", "terminal", "no_credential", "run", "generation", "package",
     "acl", "selection", "descriptor", "bytes", "missing",
+    "workspace_ok", "workspace_cwd", "workspace_symlink", "workspace_partial",
 ])
 def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, capsysbinary, change):
     state = tmp_path / "custom-state"
@@ -58,8 +60,25 @@ def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, c
         log.append(ZfEvent(type="workflow.operation.settled", actor="kernel", task_id="T1", payload=facts))
     log.close()
 
-    status = main(["plan", "--state-dir", str(state), "draft-baseline", "--attempt", "a1", "--port", "task_map",
-                   "--port", "source_index" if change == "missing" else "test_matrix", "--port", "task_map"])
+    workspace = change.startswith("workspace_")
+    if workspace:
+        from zf.core.safety.path_guard import write_workdir_owner_marker
+        (tmp_path / "zf.yaml").write_text(
+            'version: "1.0"\nproject: {name: demo, state_dir: custom-state}\n'
+            'roles: [{name: planner, backend: mock}]\n'
+            'runtime: {workdirs: {enabled: true, root: custom-state/roles, mode: dry-run}}\n'
+        )
+        role_dir = state / "roles" / role
+        write_workdir_owner_marker(role_dir, project_name="demo", instance_id=role, project_root=tmp_path)
+        project = role_dir / "project"
+        project.mkdir()
+        monkeypatch.setenv("ZF_PROJECT_ROOT", str(tmp_path))
+        monkeypatch.chdir(tmp_path if change == "workspace_cwd" else project)
+        if change == "workspace_symlink":
+            (project / "artifacts").symlink_to(tmp_path)
+    args = ["plan", "--state-dir", str(state), "draft-baseline", "--attempt", "a1", "--port", "task_map",
+                   "--port", "source_index" if change in ("missing", "workspace_partial") else "test_matrix", "--port", "task_map"]
+    status = main([*args, "--workspace"] if workspace else args)
     stdout, stderr = capsysbinary.readouterr()
     if change == "none":
         assert status == 0, stderr
@@ -68,6 +87,17 @@ def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, c
             for name in files.getnames():
                 port = next(p for p in package["produced"] if p["logical_name"] == name[:-5])
                 assert files.extractfile(name).read() == (state / port["ref"]).read_bytes()
+    elif change == "workspace_ok":
+        assert status == 0, stderr
+        output = json.loads(stdout)
+        path = project / output["draft_dir"] / "test_matrix.json"
+        assert path.read_bytes() == (state / matrix["ref"]).read_bytes()
+        path.write_text("edited")
+        assert main([*args, "--workspace"]) == 0
+        retry = json.loads(capsysbinary.readouterr().out)
+        assert retry["draft_dir"] != output["draft_dir"] and path.read_text() == "edited"
     else:
         assert status == 1 and stderr and stdout == b""
+        if workspace:
+            assert not list(project.glob("artifacts/plan/replan-*"))
     assert not list((state / "artifacts/attempts/a1").glob("read-ledger*.jsonl"))
