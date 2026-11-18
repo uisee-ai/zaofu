@@ -33,8 +33,18 @@
 - Reader currentness 补充回归：238 passed（RM 消费入口、恢复步骤、失败路由、AR 诊断消费者）；有效 Reader 求助保留，旧 operation 求助拒绝。
 - 真实宿主启动、mock provider：1 passed。覆盖配置批准、冻结交付基线、真正运行时启动、派发和清理；不是模型完成业务的证据。
 - 重新同步 v5.1 的初始化与配置版本断言。基线已有的 11 项失败已在干净 dev 重现并仅更新过期测试预期，未改生产预算和唤醒集合；原始日志保留。
-- 真实 PRD 项目已准备，16 个独立功能、8/8 pools、人工 Plan 审查、固定 Docker 镜像。用户追加操作边界提醒后，启动真实模型验收的范围待确认，当前没有启动该 Run，不能宣称真实业务交付或无人监工通过。
+- 16 个独立功能、8/8 pools 的新隔离项目已准备且未启动。用户随后明确授权最小真实模型测试，另建一个业务 Task、1/1 pools 的项目；真实模型已执行，但未完成业务闭环，详见下节。
 
 精确命令、退出码与分层结果保存在 `reports/eight-by-eight-recovery-20261118/`；报告目录不进入 Git，任务仍 active，待真实验收结论后归档。
 
-自动影响闭包：`PATH="$PWD/.venv/bin:$PATH" python scripts/dev-verify.py run --base dev` → 8088 passed / 16 skipped；premerge sentinel 53 passed；flow smoke 10 passed。另行执行的 8+8 容量/安全专项 84 passed、Reader/RM 专项 238 passed、宿主 mock 启动 1 passed；这些集合存在重叠，不合并宣称唯一用例总数。未执行完整 pytest / coverage / 真实模型业务验收。
+自动影响闭包：`PATH="$PWD/.venv/bin:$PATH" python scripts/dev-verify.py run --base dev` → 8088 passed / 16 skipped；premerge sentinel 53 passed；flow smoke 10 passed。另行执行的 8+8 容量/安全专项 84 passed、Reader/RM 专项 238 passed、宿主 mock 启动 1 passed；这些集合存在重叠，不合并宣称唯一用例总数。未执行完整 pytest / coverage。
+
+## 最小真实验收结果
+
+2026-11-18 使用实现提交 `de770b5c`，运行 `workflow-5bb0af811aaa5397`（隔离目录 `/tmp/zf-minimal-real-20261118T013230Z`）。Terra High 的两个 Scan 完成，Astra High 的首轮 Planner/Critic 均完成结果提交；Critic 的语义结果为 needs_rework，不能视为 Plan 已批准。测试 PRD 未明确 Enter 焦点，本 session 经受控 Owner 决策确认冻结脚本的按钮焦点语义，系统自动派发 Planner 返工。
+
+返工 Planner 的必读选择量为 182,040 字节，首轮为 17,381 字节。上一轮 prepared report 与 control result 中完全相同的 `plan_ports` 同时被要求读取；原生 context compaction 实际发生。这里暴露的是 Plan 返工输入重复，与已实现的 Impl/Task Verify task-scoped 输入属于不同链路。尚未派发 Impl，因此不能用本次运行证明 worker 已消费裁剪输入。
+
+运行在 1800.281 秒由 Kernel 自动触发 wall-clock budget gate，取消 Planner 并记录 run.goal.blocked；业务完成 0/1，最终验证未执行。配置费用上限 $10，但 110 条 usage 未定价且 cost_fail_closed=false，不能宣称费用门禁通过或没有消耗。预算停止后，试验专属服务及 tmux 已清理、恢复证据保留。报告位于 `reports/minimal-real-20261118/README.md`。
+
+下一轮需先消除最小输入歧义，并为局部 Plan 修订去除重复正文、保留来源摘要绑定和 Owner 确认；独立审查、审批和最终业务验收继续保留。此记录不将上述待修问题或真实 8+8 验收标为已完成。

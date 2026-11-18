@@ -23,7 +23,7 @@
 
 ## 实施进度
 
-1–5 已实现并通过定向及集成回归；第 6 项已通过 mock 8+8 与宿主启动/mock provider 验证。真实模型 PRD 验收已准备但尚未启动：用户追加操作边界提醒，已询问本轮是否包含会消耗模型额度的新隔离验收，等待范围确认。
+1–5 已实现并通过定向及集成回归，实现提交 `de770b5c fix: bound parallel task recovery and scoped PRD inputs`；第 6 项已通过 mock 8+8 与宿主启动/mock provider 验证。用户随后明确授权最小真实模型测试，已完成一次有界运行，但业务闭环未通过，整批仍为 active。
 
 待验证项目：`/tmp/zf-eight-recovery-20261118T002529Z/product`。只完成本地源码/配置冻结和 SessionStore 初始化；无 workflow-submit、无模型任务。原实验 `/tmp/zf-eight-by-eight-20261117T151837Z` 保持停止及证据保留。
 
@@ -31,4 +31,12 @@
 
 不把 mock 容量当作真实模型吞吐，不把浏览器可启动当作产品验收。全部真实完成前不标记整批 done。
 
-自动影响闭包：`PATH="$PWD/.venv/bin:$PATH" python scripts/dev-verify.py run --base dev` → 8088 passed / 16 skipped；premerge sentinel 53 passed；flow smoke 10 passed。另行执行的 8+8 容量/安全专项 84 passed、Reader/RM 专项 238 passed、宿主 mock 启动 1 passed；这些集合存在重叠，不合并宣称唯一用例总数。未执行完整 pytest / coverage / 真实模型业务验收。
+自动影响闭包：`PATH="$PWD/.venv/bin:$PATH" python scripts/dev-verify.py run --base dev` → 8088 passed / 16 skipped；premerge sentinel 53 passed；flow smoke 10 passed。另行执行的 8+8 容量/安全专项 84 passed、Reader/RM 专项 238 passed、宿主 mock 启动 1 passed；这些集合存在重叠，不合并宣称唯一用例总数。未执行完整 pytest / coverage。
+
+## 最小真实模型测试（2026-11-18）
+
+项目 `/tmp/zf-minimal-real-20261118T013230Z/product`，workflow `workflow-5bb0af811aaa5397`，源代码 `de770b5c`；一个文本整理业务 Task，1 Impl / 1 Verify，PRD v5.1。真实 Terra High 完成 Scan，Astra High 产出首轮 Plan 并执行 Critic。Critic 因测试 PRD 的 Enter 焦点歧义要求 Owner 决定；本 session 按既有授权经受控入口确认按钮焦点 Enter，系统自动派回 Planner。
+
+返工必读输入由首轮 17,381 字节增至 182,040 字节，含两份完全相同的 `plan_ports` 语义正文；原生上下文压缩发生。达到预设 1800 秒时，Kernel 自动取消 Planner 并记录 `workflow_budget_exceeded:wall_clock`。业务完成 0/1，正式 Plan 审批、Impl、Task Verify、Candidate/Judge 及业务浏览器均未执行。$10 配置存在，但 110 个用量条目未定价，不能证明费用门禁有效；美元值 0 不表示免费。
+
+一次正常 Owner 决策、零源码故障修复介入；独立预算停止有效。专属 systemd unit 已停止禁用，私有 tmux 及角色进程已清理；候选产物、原始事件和断点保留。证据及后续缺口见 `reports/minimal-real-20261118/README.md`。后续需明确测试输入、去除 Plan 返工重复正文，再验证实际任务输入消费与完整业务交付；不以取消 gate 或无限延长时限替代修复。
