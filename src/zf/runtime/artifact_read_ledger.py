@@ -608,7 +608,7 @@ def render_attempt_source_briefing(
     ]
     if required:
         if any(isinstance(row, Mapping) and row.get("source_id") == "plan-structural-delta" for row in required):
-            lines.append("- Review the bound Markdown change, Owner feedback, cited AC and dependent interfaces. "
+            lines.append("- Review every bound Markdown hunk, any changed author note, Owner feedback, cited AC and dependent interfaces. "
                          "Expand the full current Plan or matrices for uncertainty. Return the exact author candidate.")
         elif any(isinstance(row, Mapping) and row.get("source_id") == "plan-structural-delta"
                  for row in payload.get("input_refs", [])):

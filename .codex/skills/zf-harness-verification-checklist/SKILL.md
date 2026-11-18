@@ -63,6 +63,7 @@ event schema or recovery state machine.
 实现的缺陷与合同阻塞。若判定修复依赖修改不可变 Plan port，采用已有 `blocked`
 结果与对应 blocked requirement，结构化 rework item 的 `allowed_scope` 写明
 `plan_ports:<实际 port 名>`，附原/新权威、版本冲突、当前实现及批准缺口的证据。
+例如任务合同确需修订时填写 `plan_ports:task_map`。单独的 `plan_ports` 缺少工件名。
 这表示交给 Planner 修订，不授权 Verify 修改 Plan。不能只在 summary/owner/next_gate
 中写“重新规划”，同时把范围全写成源码路径；也不能把普通产品错误改报为合同阻塞。
 混合缺陷分别保留，不用重规划请求掩盖已证明的实现错误。

@@ -61,3 +61,35 @@ def test_markdown_delta_requires_the_same_case_and_a_completed_read(tmp_path, ca
     assert (patch["before"], patch["after"], patch["start_line"]) == (old, new, 21)
     assert (patch["prior_sha256"], patch["current_sha256"]) == (a["sha256"], b["sha256"])
     assert patch["previously_read_inline_ports"] is (case != "inline_unread")
+
+
+
+def test_separated_edits_replay_against_both_versions_without_unchanged_middle():
+    from zf.runtime.plan_text_change import _changed_hunks
+    old = [f"line {n}: " + "a"*180 + "\n" for n in range(380)]
+    new = old.copy()
+    new[3] = "title update\n"
+    new[100:100] = ["saved on retry\n"]
+    new[-4] = "evidence update\n"
+    hunks = _changed_hunks(old, new)
+    assert len(hunks) == 3
+    for h in reversed(hunks):
+        start = h["prior_start_line"] - 1
+        prior = h["before"].splitlines(keepends=True)
+        assert old[start:start + len(prior)] == prior
+        old[start:start + len(prior)] = h["after"].splitlines(keepends=True)
+    assert old == new
+
+
+@pytest.mark.parametrize("case", ["valid", "contract", "not_evidence", "different_document", "independent"])
+def test_changed_note_is_bounded_to_the_author_and_doc(tmp_path, case):
+    from zf.runtime.plan_text_change import _author_note
+    doc = {"sha256": "a" * 64}
+    body = {"review_kind": "author_self_review", "independent_critic": case == "independent",
+            "plan_sha256": "b" * 64 if case == "different_document" else doc["sha256"]}
+    note = write_immutable_json_sidecar(tmp_path, body, root="fixtures", kind="note",
+                                        schema_version="note.v1", created_by="test")
+    report = {"artifact_refs": [note["ref"]], "evidence_refs": [] if case == "not_evidence" else [note["ref"]]}
+    if case == "contract":
+        report["task_map_ref"] = note["ref"]
+    assert _author_note(tmp_path, note, report, doc) == (body if case == "valid" else None)

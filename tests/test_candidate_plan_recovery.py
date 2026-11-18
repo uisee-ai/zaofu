@@ -292,15 +292,19 @@ def test_plan_scope_requires_explicit_blocked_row(verdict, item_status, ac):
         normalize_candidate_blocker(result)
 
 
-def test_candidate_submit_rejects_undeclared_plan_port(tmp_path):
+@pytest.mark.parametrize("scope", ["plan_ports:invented", "plan_ports", "plan_ports:"])
+def test_candidate_submit_rejects_undeclared_plan_port(tmp_path, scope):
     runtime, _, _, child = _incident(tmp_path, blocked=True)
     result = child["verification_result"]
-    result["rework_items"][0]["allowed_scope"] = ["plan_ports:invented"]
+    result["rework_items"][0]["allowed_scope"] = [scope]
+    if scope == "plan_ports":
+        # A previously admitted result can still be decoded from its original event.
+        normalize_candidate_blocker(result)
     issues = typed_result_admission_issues(
         runtime.state_dir, schema_version=result["schema_version"], result=result, semantic_submit=True
     )
     assert [i["code"] for i in issues] == ["candidate_plan_port_invalid"]
-    assert "invented" in issues[0]["message"]
+    assert ("invented" if scope == "plan_ports:invented" else "plan_ports:task_map") in issues[0]["message"]
 
 
 @pytest.mark.parametrize("change", ["current", "stale", "cross_run", "retry_same_candidate"])
