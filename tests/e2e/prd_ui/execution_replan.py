@@ -95,13 +95,27 @@ def check_execution_order(events, change: dict) -> dict:
     completed = [e for e in events if e.type == "run.goal.completed"]
     assert len(completed) == 1, "missing unique final goal completion"
     selected = completed[0].payload.get("candidate_event_id")
-    candidates = [e for e in events[by_id[impl[-1].id]+1:by_id[completed[0].id]] if e.id == selected
-                  and e.type == "candidate.ready" and e.payload.get("task_map_generation") == generation
-                  and e.payload.get("plan_artifact_package_digest") == package]
-    assert len(candidates) == 1, "completion is not bound to the revised implementation candidate"
+    candidates = {e.id: e for e in events[by_id[impl[-1].id] + 1:by_id[completed[0].id]]
+                  if e.type == "candidate.ready" and e.origin == "kernel"}
+    assert selected in candidates, "completion lacks the exact post-implementation candidate"
+    candidate = candidates[selected]
+    source = candidate.payload.get("candidate_snapshot_event_id")
+    if source:
+        # Operator recovery may re-emit a thin trigger referencing the immutable freeze.
+        assert source in candidates and by_id[source] < by_id[selected], "unknown candidate freeze"
+        freeze = candidates[source]
+        assert freeze.payload.get("schema_version") == "candidate-freeze-receipt.v1", "missing frozen authority"
+        for key in ("freeze_id", "candidate_ref", "candidate_head_commit"):
+            assert freeze.payload.get(key) and candidate.payload.get(key) == freeze.payload[key], f"retry differs: {key}"
+        for key in ("task_map_generation", "plan_artifact_package_digest"):
+            assert key not in candidate.payload or candidate.payload[key] == freeze.payload.get(key), f"retry differs: {key}"
+        candidate = freeze
+    assert (candidate.payload.get("task_map_generation") == generation
+            and candidate.payload.get("plan_artifact_package_digest") == package), "stale frozen candidate"
     return {"initial_plan": initial[-1].payload["plan_id"], "revised_plan": approved.payload["plan_id"],
             "candidate_failure": replans[0].payload["rework_of"], "replan_event": replans[0].id,
-            "package_digest": package, "generation": generation, "candidate_event_id": selected,
+            "package_digest": package, "generation": generation, "candidate_event_id": candidate.id,
+            "completion_candidate_event_id": selected,
             "resumed_dispatches": [e.id for e in impl], "completed_event": completed[0].id}
 
 

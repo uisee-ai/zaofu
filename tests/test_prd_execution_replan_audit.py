@@ -113,3 +113,33 @@ def main():
     assert report["passed"] == (version == 2)
     assert report["target_commit"] == commit
     assert len(report["cases"]) == 8
+
+
+@pytest.mark.parametrize("fault", ["", "wrong_commit", "wrong_freeze", "unknown_ref", "other_run", "stale_package"])
+def test_execution_replan_audits_exact_freeze_after_operator_retry(fault):
+    events, change = _case()
+    frozen = events[-2]
+    frozen.payload.update(schema_version="candidate-freeze-receipt.v1", freeze_id="freeze-2",
+                          candidate_ref="refs/heads/candidate/demo")
+    retry = ZfEvent(id="evt-retry", type="candidate.ready", origin="kernel", correlation_id="run-1", payload={
+        "workflow_run_id": "run-1", "candidate_snapshot_event_id": frozen.id, "freeze_id": "freeze-2",
+        "candidate_ref": frozen.payload["candidate_ref"], "candidate_head_commit": "c" * 40})
+    if fault == "wrong_commit":
+        retry.payload["candidate_head_commit"] = "a" * 40
+    elif fault == "wrong_freeze":
+        retry.payload["freeze_id"] = "another"
+    elif fault == "unknown_ref":
+        retry.payload["candidate_snapshot_event_id"] = "evt-unknown"
+    elif fault == "other_run":
+        frozen.payload["workflow_run_id"] = "run-2"
+    elif fault == "stale_package":
+        retry.payload["plan_artifact_package_digest"] = "p1"
+    events.insert(-1, retry)
+    events[-1].payload["candidate_event_id"] = retry.id
+    if fault:
+        with pytest.raises(AssertionError):
+            check_execution_order(events, change)
+    else:
+        result = check_execution_order(events, change)
+        assert result["candidate_event_id"] == frozen.id
+        assert result["completion_candidate_event_id"] == retry.id
