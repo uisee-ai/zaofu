@@ -90,3 +90,10 @@ Candidate重试补修最终影响闭包263 passed，定向42 passed（集合重�
 真实4e16e6c4已自动结算僵态operation。精简JSON的后续模型仍未完成scratch编辑，采用已有stdin提交入口的生成指引，未新增权限或提交旁路。真实CLI/hook/准入定向31 passed，包含Task/Candidate失败提交且scratch不变；后续真实失败交接待核验。
 
 stdin指引影响闭包808 passed / 1 skipped，sentinel53 passed；不将确定性CLI通过等同真实模型完整验收。
+
+
+真实宿主交接进展：0491221e已使Terra通过stdin正式提交环境失败；RM自动运行build/test/browser三条冻结命令并恢复8个Candidate reader，原验收及已批准键盘补采均执行成功，尚待独立产品裁决。新reader的恢复上下文在19个必读来源中排第16，未进入briefing前8个导航；多名reader在读到宿主收据之前再次报告本地Docker拒绝。
+
+补修恢复来源的优先导航：使用原artifact read能力和原source/artifact/path分页读取，在runner探测前呈现绑定恢复材料；正文不内联、不减少必读、不将宿主收据等同通过。真实briefing入口RED2 failed/1 passed，定向55 passed；增加Verify方法并同步三份skill。共享输入/恢复影响闭包待追加。原Candidate、Plan、sandbox和自动宿主白名单均保持原绑定。
+
+恢复导航补修：定向55 passed；首次共享闭包在97%附近收到SIGTERM退出143，无完整结论，保留日志。以4进程重新完整运行同一选择闭包，3408 passed / 1 skipped / 1 failed；唯一失败仍为此前旧基线已复现的test_consumer_lock_contention_defers_without_reporting_failure，未修改其源码或掩盖失败。premerge sentinel53 passed。真实模型需加载新briefing后验证，整批保持active。

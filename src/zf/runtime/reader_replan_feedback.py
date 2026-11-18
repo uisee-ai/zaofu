@@ -2,9 +2,35 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import shlex
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+
+
+def repair_read_navigation(required: list, *, cli_command: str, attempt_id: str) -> list[str]:
+    """Expose the pinned recovery source before bulk product input navigation."""
+    for row in required:
+        if (not isinstance(row, Mapping)
+                or row.get('source_id') != 'critical-reader-repair-context'
+                or not row.get('artifact_id')):
+            continue
+        command = ' '.join([
+            cli_command, 'artifact read --attempt', shlex.quote(attempt_id),
+            '--source critical-reader-repair-context --artifact',
+            shlex.quote(str(row['artifact_id'])), '--json-path',
+            shlex.quote(str(row.get('json_path') or '$')),
+            '--page-start 0 --page-size 4096',
+        ])
+        return [
+            '- Recovery input first: before probing the runner or declaring it unavailable, '
+            'read the current recovery context, including any bound host execution receipts.',
+            f'  `{command}`. Consume every page with the returned `next_page_start` until null.',
+            '  Recovery context is not a product verdict or permission to bypass isolation. '
+            'Evaluate receipt target, command, source stability, exit code and evidence; '
+            'all original required reads and acceptance obligations remain mandatory.',
+        ]
+    return []
 
 
 def input_task_ids(payload: Mapping[str, Any]) -> list[str]:

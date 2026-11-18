@@ -18,6 +18,12 @@ amendment are separate role capabilities supplied by the workflow profile.
 
 ## Context consumption
 
+- On a recovery attempt, consume the pinned recovery context before probing the
+  runner or declaring it unavailable. Inspect any bound host receipts against
+  this target, command, source stability, exit code and evidence; a denied local
+  Docker socket alone does not invalidate authorized host execution. Receipts
+  are execution facts, not a product verdict. All required product reads and
+  independent acceptance judgments still apply; missing commands stay unverified.
 - Start with the current stage card and its controlled required-read batch. Consume
   every `next_cursor` page; identical authorized aliases share content, not authority.
 - Read this role method once per unchanged skill digest. Load dependency references

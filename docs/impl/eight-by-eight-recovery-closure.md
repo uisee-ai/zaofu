@@ -90,3 +90,10 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 真实升级复核还发现恢复扫描自身的terminal_children集合只增不减，旧child失败仍屏蔽后续派发。按事件顺序遇到新的派发即移除该child旧终态标记，保留原有恢复次数与后续终态判断。增加完整“旧聚合失败→受控重试→新provider回合关闭”用例，避免仅证明manifest变pending就声称自愈完成。
 
 精简失败示例的真实重试仍未完成：模型找到了真实Docker失败事件，却无法用局部文本patch替换大型scratch。最终复用已有`result validate --stdin --submit`，直接在briefing渲染同operation绑定的失败命令及紧凑JSON；worker填实际summary/evidence，不需要改成功模板，不新增草稿命令或权限。通过实际CLI解析、hook命令分类、preflight及submit证明失败准入且scratch保持原样。正式成功验收仍须完整产品报告；输入通道改变不绕过身份/lease/target门禁。
+
+
+真实宿主交接进展：0491221e已使Terra通过stdin正式提交环境失败；RM自动运行build/test/browser三条冻结命令并恢复8个Candidate reader，原验收及已批准键盘补采均执行成功，尚待独立产品裁决。新reader的恢复上下文在19个必读来源中排第16，未进入briefing前8个导航；多名reader在读到宿主收据之前再次报告本地Docker拒绝。
+
+补修恢复来源的优先导航：使用原artifact read能力和原source/artifact/path分页读取，在runner探测前呈现绑定恢复材料；正文不内联、不减少必读、不将宿主收据等同通过。真实briefing入口RED2 failed/1 passed，定向55 passed；增加Verify方法并同步三份skill。共享输入/恢复影响闭包待追加。原Candidate、Plan、sandbox和自动宿主白名单均保持原绑定。
+
+恢复导航补修：定向55 passed；首次共享闭包在97%附近收到SIGTERM退出143，无完整结论，保留日志。以4进程重新完整运行同一选择闭包，3408 passed / 1 skipped / 1 failed；唯一失败仍为此前旧基线已复现的test_consumer_lock_contention_defers_without_reporting_failure，未修改其源码或掩盖失败。premerge sentinel53 passed。真实模型需加载新briefing后验证，整批保持active。

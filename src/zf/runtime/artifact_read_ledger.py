@@ -606,6 +606,11 @@ def render_attempt_source_briefing(
         ),
     ]
     if required:
+        from zf.runtime.reader_replan_feedback import repair_read_navigation
+
+        lines.extend(repair_read_navigation(
+            required, cli_command=cli_command, attempt_id=attempt_id,
+        ))
         if any(isinstance(row, Mapping) and row.get("source_id") == "plan-structural-delta"
                for row in payload.get("input_refs", [])):
             lines.append(
