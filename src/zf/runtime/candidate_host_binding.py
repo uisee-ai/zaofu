@@ -9,6 +9,30 @@ from zf.runtime.task_contract_snapshot import descriptor_from_payload, hydrate_t
 from zf.runtime.workdirs import WorkdirManager
 
 
+def _validate_dispatch_lineage(dispatches, op, identity, target):
+    if not dispatches or dispatches[0].payload.get('role_instance') != op['role_instance']:
+        raise ValueError('candidate reader lacks a bound dispatch workspace')
+    first = dispatches[0]
+    by_run = {first.payload.get('run_id'): first}
+    for dispatched in dispatches[1:]:
+        p = dispatched.payload
+        previous = by_run.get(p.get('retry_of_run_id'))
+        nested = p.get('payload') or {}
+        scopes = ('fanout_id', 'child_id', 'stage_id', 'workflow_run_id', 'role_instance', 'target_ref')
+        pins = ('contract_snapshot_ref', 'contract_snapshot_digest', 'target_snapshot_ref', 'target_snapshot_digest')
+        if (dispatched.origin != 'kernel' or previous is None or dispatched.causation_id != previous.id
+                or not p.get('run_id') or p['run_id'] in by_run
+                or any(not first.payload.get(k) or p.get(k) != first.payload[k] for k in scopes)
+                or nested.get('operation_id') != op['operation_id']
+                or nested.get('request_hash') != op['request_hash']
+                or nested.get('workflow_run_id') != op['workflow_run_id']
+                or nested.get('task_map_generation') != op['task_map_generation']
+                or nested.get('target_commit') != target['target_commit']
+                or any(not identity.get(k) or nested.get(k) != identity[k] for k in pins)):
+            raise ValueError('candidate reader dispatch retry is not bound to its original authority')
+        by_run[p['run_id']] = dispatched
+
+
 def binding(service, op, request, events, operations):
     from zf.runtime.task_host_manifest import git
 
@@ -53,8 +77,7 @@ def binding(service, op, request, events, operations):
     hydrate_sidecar_ref(service.state_dir, descriptor)
     dispatches = [e for e in events if e.type == 'fanout.child.dispatched'
                   and e.payload.get('operation_id') == op['operation_id']]
-    if len(dispatches) != 1 or dispatches[0].payload.get('role_instance') != op['role_instance']:
-        raise ValueError('candidate reader lacks a unique dispatch')
+    _validate_dispatch_lineage(dispatches, op, identity, target)
     role = next((r for r in service.config.roles if r.instance_id == op['role_instance']), None)
     if role is None:
         raise ValueError('candidate reader role is no longer configured')

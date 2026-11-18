@@ -105,3 +105,8 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 收据交接补修：真实Candidate合同20条命令已有完整执行收据，但自动恢复只携带三条自动白名单结果，遗漏Owner批准的键盘补采及16条单项验证，模型再次准确报告未核验。补充仅收集同Run/Task/Map/目标/冻结合同与规范命令完全匹配、来源可信且manifest摘要和明确审批相符的operator host receipts；只传已有执行事实，不扩大自动执行命令、不授予产品通过。无收据列表改为全部规范命令，避免仅对白名单宣称“缺项为空”。实际账本只读复核17条补充均匹配。首次测试fixture的emit origin参数错误已修正，随后对原0cc06813重新运行有效回归复现；不把测试入口错误当作产品RED。
 
 收据补修最终影响闭包141 passed、sentinel53 passed（含目标/合同/命令/代次/Run/审批/摘要/来源否定及失败收据保留）；原0cc06813有效回归12 failed，修复后通过。真实只读对账找到17条精确补充收据，仍须确认恢复后的模型输入实际携带并独立评估；未标产品或无人监工通过。
+
+
+真实恢复再现Candidate宿主绑定拒绝：合法transport retry形成两条fanout dispatch，唯一派发数量检查误拒。改为同一operation已固定权威下的严格重试链：Kernel来源、previous run/cause、同fanout/child/stage/Run/role/ref、request hash、代次、精确目标和合同/目标快照refs/digests均匹配；未知派发仍拒绝。原始回归1 failed/16 passed；定向82 passed/2 deselected。实际失败operation在F源码只读preview已恢复到冻结1589e636，未执行任何新命令。等待最终闭包及实验载入。
+
+重试绑定补修最终影响闭包见host-retry-lineage-closure.txt；sentinel53 passed、flow-smoke10 passed。实际恢复仍待模型与自动RM验证，原业务目标和必读要求保持。
