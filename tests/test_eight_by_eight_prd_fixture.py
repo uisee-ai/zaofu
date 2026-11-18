@@ -29,3 +29,10 @@ def test_prepared_project_compiles_real_eight_by_eight_policy(tmp_path):
     assert len(FEATURES) == 16
     assert not (root / ".zf").exists()  # preparation does not start/admit a Run
     assert config.runtime.host_verification.protected_files["tests/browser.cjs"] == hashlib.sha256((root / "tests/browser.cjs").read_bytes()).hexdigest()
+    commands = set(config.runtime.host_verification.commands)
+    assert len(commands) == 19
+    assert {f"npm run build && node --test app/tests/{key}.test.mjs" for key, *_ in FEATURES} <= commands
+    assert config.workflow.run_limits.timeout_seconds == 0
+    assert config.workflow.run_limits.token_budget == 0
+    assert all(p.limits.timeout_seconds == 0 and p.limits.token_budget == 0
+               for p in config.workflow.execution_profiles.values())

@@ -47,7 +47,8 @@ def _declared_input_paths(body: Mapping[str, Any], *, task_id: str, candidate: b
     policy = body["task_input_policy"]
     if (
         not isinstance(policy, Mapping)
-        or set(policy) != {"schema_version", "shared_paths", "tasks"}
+        or not {"schema_version", "shared_paths", "tasks"} <= set(policy)
+        or set(policy) - {"schema_version", "shared_paths", "tasks", "candidate_paths"}
         or policy.get("schema_version") != "task-input-policy.v1"
         or not isinstance(policy["tasks"], list)
     ):
@@ -69,6 +70,11 @@ def _declared_input_paths(body: Mapping[str, Any], *, task_id: str, candidate: b
         return value
 
     shared = list(paths(policy["shared_paths"]))
+    candidate_paths = None
+    if "candidate_paths" in policy:
+        candidate_paths = list(paths(policy["candidate_paths"]))
+        if not candidate_paths:
+            raise ValueError("candidate input paths must not be empty")
     # Package admission stamps these mechanical identities after the producer
     # partitions its semantic body. Include their original bytes in every read;
     # do not rewrite the immutable artifact or infer any business partition.
@@ -111,7 +117,7 @@ def _declared_input_paths(body: Mapping[str, Any], *, task_id: str, candidate: b
 
     check_coverage(body, "$")
     if candidate:
-        return ["$"]
+        return list(dict.fromkeys([*shared, *candidate_paths])) if candidate_paths else ["$"]
     if task_id not in partitions:
         raise ValueError(f"task input policy has no partition for {task_id!r}")
     return list(dict.fromkeys([*shared, *partitions[task_id]]))
@@ -388,6 +394,9 @@ def current_plan_port_sources(
                 )
                 else str(ports[name].get("artifact_kind") or name)
             )
+            if candidate and isinstance(body, Mapping) and isinstance(body.get("task_input_policy"), Mapping):
+                if "candidate_paths" in body["task_input_policy"]:
+                    kinds[name] = "candidate_scoped_plan_input"
             if selection is not None and name == "task_execution_input" and kinds[name] != "task_scoped_plan_input":
                 raise ValueError("selected task_execution_input must be task scoped")
         except ValueError as exc:

@@ -1,5 +1,6 @@
 """Hand container evidence back to the existing independent Reader recovery gate."""
 from dataclasses import asdict
+from zf.core.events.model import ZfEvent
 from zf.runtime.task_host_manifest import digest
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.stage_failure_replan import reader_stage_for_failure
@@ -129,6 +130,22 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         supplemental = operator_candidate_receipts(service, operation, contract, events)
         receipts = {**supplemental, **receipts}
         unverified = {c['command_id'] for c in contract['verification_commands']} - receipts.keys()
+        if unverified and not failed_probe:
+            # A partial execution allowlist is not the frozen acceptance contract.
+            # Hold the checkpoint; never invent permission for remaining commands.
+            if not any(e.type == 'human.escalate' and e.origin == 'kernel'
+                       and e.payload.get('host_coverage_failure_id') == failure.id
+                       and e.payload.get('policy_digest') == digest(asdict(policy)) for e in events):
+                service.writer.append(ZfEvent(type='human.escalate', actor='run-manager', origin='kernel',
+                    correlation_id=operation['workflow_run_id'], payload={
+                        'reason': 'preauthorized_verification_coverage_incomplete',
+                        'host_coverage_failure_id': failure.id,
+                        'operation_id': operation['operation_id'],
+                        'policy_digest': digest(asdict(policy)),
+                        'unverified_command_ids': sorted(unverified),
+                        'owner_route': 'run_manager', 'blocking_scope': 'verification',
+                        'resume_condition': 'bound execution receipts for the complete frozen command contract'}))
+            return False
         from zf.runtime.host_evidence_media import materialize_container_media
         indices = materialize_container_media(service.state_dir, list(receipts.values()), image=policy.image)
         media = (' Read-only media indices (paths relative to state_dir, source/digests bound): '

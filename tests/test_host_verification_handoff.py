@@ -79,3 +79,28 @@ def test_reconciler_skips_old_reader_only_after_kernel_successor(recovery, monke
     monkeypatch.setattr(module, 'binding', binding)
     assert module.reconcile_host_verification(service) == 0
     assert [call.args[1] for call in binding.call_args_list] == (['new'] if not invalid else ['old', 'new'])
+
+
+def test_partial_allowlist_cannot_reopen_reader_as_if_all_commands_were_probed(recovery):
+    service, failure, _ = recovery
+    p = policy()
+    operation = {'operation_id': 'op-reader', 'workflow_run_id': 'run-1'}
+    service.writer.emit('fanout.child.dispatched', payload={**operation, 'fanout_id': 'f1'})
+    failure = service.writer.emit(failure.type, correlation_id='run-1', payload=failure.payload)
+    ref = write_sidecar_json(service.state_dir, 'artifacts/partial.json', {
+        'command_id': 'probe', 'status': 'completed', 'source_stable': True, 'exit_code': 0,
+        'execution_origin': 'preauthorized_container', 'policy_digest': digest(asdict(p))},
+        kind='test', schema_version='test.v1', created_by='test')
+    service.writer.emit('runtime.action.attempt.completed', payload={**operation,
+        'approval_ref': p.approval_ref, 'kind': 'verify', 'receipt_ref': ref})
+    contract = {'verification_commands': [
+        {'command_id': 'probe', 'command': 'python3 probe.py'},
+        {'command_id': 'not-authorized', 'command': 'python3 another.py'}]}
+    for _ in range(2):
+        assert not resume_reader_after_probes(service, operation, contract, p, service.writer.event_log.read_all())
+    events = service.writer.event_log.read_all()
+    assert not any(e.payload.get('repaired_failure_event_id') == failure.id for e in events)
+    waits = [e for e in events if e.type == 'human.escalate']
+    assert len(waits) == 1
+    assert waits[0].payload['unverified_command_ids'] == ['not-authorized']
+    assert p.commands == ['python3 probe.py']

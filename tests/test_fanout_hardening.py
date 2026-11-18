@@ -329,6 +329,7 @@ def test_pending_recycle_fanout_dispatches_after_fresh_restart_state(
 
     recovered = EventWriter(log).append(ZfEvent(
         type="worker.state.changed",
+        origin="kernel",
         actor="review-a",
         payload={
             "instance_id": "review-a",

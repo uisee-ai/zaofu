@@ -48,6 +48,9 @@ def prepare(root: Path, *, harness: Path, image: str) -> dict:
 npm test、npm run build、npm run build && node tests/browser.cjs，由独立Candidate Verify审查。
 浏览器只通过既有预授权Docker宿主采证机制运行，不能要求沙箱Impl访问Docker。
 桌面和移动端逐项断言，保存截图、trace、WebM及镜像/浏览器/源码身份。Judge负责最终验收。
+键盘验收为按钮聚焦后按Enter触发；textarea内Enter保留换行，不改冻结页面。
+规范命令注册表仅含上述3条全局命令和16条逐模块build+test命令；额外边界断言写入模块测试，
+浏览器断言沿冻结脚本执行。不得额外生成未授权宿主命令或要求监工临时补采证。
 
 后8个数列模块共享语义但不共享源文件：全空白为[]；否则逗号分段、每段trim，拒绝空段，
 只允许有可选正负号的十进制整数/小数及可选指数（如1、.5、1.、-2e3）。拒绝NaN、Infinity、
@@ -57,6 +60,9 @@ npm test、npm run build、npm run build && node tests/browser.cjs，由独立Ca
 运行使用v5.1 task-scoped-v1：完整共享约束放入 execution_spec 的 shared 分区，
 每Task的实现/验收/test/real-E2E义务放入对应tasks.<task_id>，声明plan_input_selection。
 共享数值语法、TDD、独立验证和宿主采证责任不可因分区遗漏；完整全局矩阵供Candidate审阅。
+可用task_input_policy.candidate_paths绑定完整验收正文，避免Candidate重复读取实现步骤；
+Critic须从本PRD反向审查所有共享规则、异常、来源与命令，缺少正文不得批准。
+各plan_ports使用ref/sha256交付一次完整工件，不在多个结果正文重复内嵌全部矩阵。
 配置8 impl、8 verify、最多16 active pipelines，maxUnverifiedTasks=16，
 maxIntegrationQueue=16；集成仍单写者CAS。Plan Preview审阅批准后才实施。
 业务成功不自动证明满载；必须从真实operation生命周期单独统计两个阶段峰值及重叠。
@@ -107,8 +113,9 @@ maxIntegrationQueue=16；集成仍单写者CAS。Plan Preview审阅批准后才�
     cfg["runtime"]["host_verification"] = {
         "enabled": True, "approval_ref": approval, "image": image, "network": "host",
         "protected_files": {"tests/browser.cjs": hashlib.sha256(browser.encode()).hexdigest()},
-        "commands": ["npm test", "npm run build", "npm run build && node tests/browser.cjs"],
-        "max_executions_per_run": 32, "timeout_seconds": 180,
+        "commands": ["npm test", "npm run build", "npm run build && node tests/browser.cjs",
+                     *[f"npm run build && node --test app/tests/{key}.test.mjs" for key, *_ in FEATURES]],
+        "max_executions_per_run": 100, "timeout_seconds": 180,
     }
     cfg["runtime"]["task_publication"] = {"enabled": True, "approval_ref": approval, "paths": owned, "max_publications_per_run": 32}
     cfg["runtime"]["git"]["auto_ship_on_judge_passed"] = True
