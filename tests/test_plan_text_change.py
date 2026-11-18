@@ -10,7 +10,7 @@ from zf.runtime.plan_text_change import text_change
 
 @pytest.mark.parametrize("case", ["addition", "deletion", "replace", "first_review", "other_run",
                                   "different_port", "unread", "inline_unread", "human_resolution",
-                                  "different_package", "oversized"])
+                                  "different_package", "different_request", "different_preview", "oversized"])
 def test_markdown_delta_requires_the_same_case_and_a_completed_read(tmp_path, case):
     def save(name, body, source_id):
         ref = write_immutable_json_sidecar(tmp_path, body, root="fixtures", kind=name,
@@ -47,9 +47,11 @@ def test_markdown_delta_requires_the_same_case_and_a_completed_read(tmp_path, ca
     current_structure = {**structural, "sha256": "0" * 64} if case == "different_port" else structural
     trigger = ZfEvent(type="prd.plan.requested", origin="kernel", payload={"rework_of": "reject"})
     events = [ZfEvent(id="reject", type="plan.rejected", actor="operator",
-                      payload={"workflow_run_id": "other" if case == "other_run" else "run", "plan_id": "p"}),
-              ZfEvent(type="plan.approval.requested", origin="kernel", payload={"workflow_run_id": "run",
-                      "plan_id": "p", "plan_artifact_package_digest": "bad" if case == "different_package" else "pkg"})]
+                      payload={"workflow_run_id": "other" if case == "other_run" else "run", "plan_id": "p",
+                               "request_event_id": "other" if case == "different_request" else "request"}),
+              ZfEvent(id="request", type="plan.approval.requested", origin="kernel", payload={"workflow_run_id": "run",
+                      "plan_id": "p", "plan_artifact_digest": "0" * 64 if case == "different_preview" else a["sha256"],
+                      "plan_artifact_package_digest": "bad" if case == "different_package" else "pkg"})]
     patch = text_change(tmp_path, sources=[b, br, current_structure, save("context", context, "plan-rework-context")],
                         previous=previous, report=report, trigger=trigger, events=[] if case == "first_review" else events,
                         run="run", package_digest="pkg")

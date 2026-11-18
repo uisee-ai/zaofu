@@ -51,6 +51,7 @@ def attach_unchanged_review(runtime: Any, *, payload: dict[str, Any], stage: str
             runtime.state_dir, events=runtime.event_log.read_all(), sources=refs,
             run=str(payload.get("workflow_run_id") or ""), fanout=str(payload.get("fanout_id") or ""),
             stage=stage, trigger_id=trigger_id, critic_role=str(payload.get("role_instance") or ""), compare_text=compare_text,
+            project_root=runtime.project_root,
         )
         if not evidence:
             return
@@ -139,17 +140,18 @@ def _trusted_trigger(events: Sequence[ZfEvent], trigger: ZfEvent, run: str) -> b
 
 def build_evidence(
     state_dir: Path, *, events: Sequence[ZfEvent], sources: Sequence[Mapping[str, Any]],
-    run: str, fanout: str, stage: str, trigger_id: str, critic_role: str, compare_text: bool = False,
+    run: str, fanout: str, stage: str, trigger_id: str, critic_role: str, compare_text: bool = False, project_root: Path | None = None,
 ) -> dict[str, Any] | None:
     """Return complete review evidence, or no optimization on any ambiguity."""
     try:
         return _build(state_dir, events=events, sources=sources, run=run, fanout=fanout,
-                      stage=stage, trigger_id=trigger_id, critic_role=critic_role, compare_text=compare_text)
+                      stage=stage, trigger_id=trigger_id, critic_role=critic_role, compare_text=compare_text,
+                      project_root=project_root)
     except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, StopIteration, RecursionError):
         return None
 
 
-def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic_role, compare_text=False):
+def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic_role, compare_text=False, project_root=None):
     from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package, reduce_plan_artifact_packages
 
     if not all((run, fanout, stage, trigger_id, critic_role)):
@@ -221,7 +223,7 @@ def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic
     if compare_text:
         from zf.runtime.plan_text_change import text_change
         change = text_change(state_dir, sources=rows, previous=previous, report=report, trigger=trigger[0],
-                             events=events, run=run, package_digest=baseline["sha256"])
+                             events=events, run=run, package_digest=baseline["sha256"], project_root=project_root)
     prior_bindings = previous.get("_critic_source_bindings") or []
     reused = []
     deltas = []

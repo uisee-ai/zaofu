@@ -33,7 +33,7 @@ def _document(state, sources, report):
     return source, text.splitlines(keepends=True)
 
 
-def text_change(state: Path, *, sources, previous, report, trigger, events, run, package_digest):
+def text_change(state: Path, *, sources, previous, report, trigger, events, run, package_digest, project_root=None):
     if trigger.origin != "kernel":
         return None
     context_source = _unique(sources, lambda s: s["source_id"] == "plan-rework-context")
@@ -50,12 +50,26 @@ def text_change(state: Path, *, sources, previous, report, trigger, events, run,
     request = [e for e in events if e.type == "plan.approval.requested" and e.origin == "kernel"
                and e.payload.get("workflow_run_id") == run and e.payload.get("plan_id") == rejected[0].payload["plan_id"]
                and e.payload.get("plan_artifact_package_digest") == package_digest]
-    if len(request) != 1:
+    if len(request) != 1 or rejected[0].payload.get("request_event_id") != request[0].id:
         return None
     prior = previous["sources"]
     prior_report = _unique(prior, lambda s: s["source_id"].startswith("child-result-"))
     old_report = hydrate_sidecar_ref(state, prior_report).payload
     old, before = _document(state, prior, old_report)
+    visible_digest = request[0].payload.get("plan_artifact_digest")
+    if not visible_digest:
+        from zf.runtime.operator_plan_preview import build_plan_preview
+
+        # Older approval requests can point at a logical synthesis path. Use
+        # the Web resolver and accept only the prior immutable artifact.
+        preview = build_plan_preview(state, events, plan_id=request[0].payload["plan_id"], project_root=project_root)
+        refs = preview.get("refs", {})
+        if (not preview.get("ok") or preview.get("content_kind") != "full_plan"
+                or refs.get("markdown_ref") != old["ref"]):
+            return None
+        visible_digest = refs.get("plan_artifact_digest")
+    if visible_digest != old["sha256"]:
+        return None
     new, after = _document(state, sources, report)
     required, observed = previous["_critic_required_reads"], previous["_critic_observed_reads"]
     if not _has_full_read(required, old) or not _has_observed_read(observed, old):
@@ -92,7 +106,7 @@ def text_change(state: Path, *, sources, previous, report, trigger, events, run,
     return change
 
 
-def select_text_change(state, manifest, required, *, events, fanout, stage, role, policy, explicit):
+def select_text_change(state, manifest, required, *, events, fanout, stage, role, policy, explicit, project_root=None):
     from zf.runtime.plan_unchanged_review import EVIDENCE_ID, build_evidence
 
     if explicit or policy.get("mode") != "targeted" or not policy.get("focus"):
@@ -106,7 +120,8 @@ def select_text_change(state, manifest, required, *, events, fanout, stage, role
             return None
         # Never select partial reads on the strength of a caller-supplied sidecar.
         if certified != build_evidence(state, events=events, sources=sources, run=manifest["workflow_run_id"],
-                fanout=fanout, stage=stage, trigger_id=manifest["source_event_id"], critic_role=role, compare_text=True):
+                fanout=fanout, stage=stage, trigger_id=manifest["source_event_id"], critic_role=role, compare_text=True,
+                project_root=project_root):
             return None
         report = _unique(sources, lambda s: s["source_id"].startswith("child-result-"))
         body = hydrate_sidecar_ref(state, report).payload

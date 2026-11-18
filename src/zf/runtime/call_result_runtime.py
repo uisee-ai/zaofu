@@ -386,7 +386,8 @@ def prepare_call_operation(
             from zf.runtime.plan_text_change import select_text_change
             selected = select_text_change(runtime.state_dir, source_manifest, required_reads,
                 events=runtime.event_log.read_all(), fanout=payload.get("fanout_id"), stage=stage_id,
-                role=payload.get("role_instance"), policy=configured_review, explicit=bool(explicit_required_reads))
+                role=payload.get("role_instance"), policy=configured_review, explicit=bool(explicit_required_reads),
+                project_root=runtime.project_root)
             if selected:
                 required_reads, selection_strategy = selected
         if required_reads == full_plan_reads:
