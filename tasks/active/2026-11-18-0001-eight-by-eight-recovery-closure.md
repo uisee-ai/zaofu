@@ -110,3 +110,15 @@ stdin指引影响闭包808 passed / 1 skipped，sentinel53 passed；不将确定
 真实恢复再现Candidate宿主绑定拒绝：合法transport retry形成两条fanout dispatch，唯一派发数量检查误拒。改为同一operation已固定权威下的严格重试链：Kernel来源、previous run/cause、同fanout/child/stage/Run/role/ref、request hash、代次、精确目标和合同/目标快照refs/digests均匹配；未知派发仍拒绝。原始回归1 failed/16 passed；定向82 passed/2 deselected。实际失败operation在F源码只读preview已恢复到冻结1589e636，未执行任何新命令。等待最终闭包及实验载入。
 
 重试绑定补修最终影响闭包见host-retry-lineage-closure.txt；sentinel53 passed、flow-smoke10 passed。实际恢复仍待模型与自动RM验证，原业务目标和必读要求保持。
+
+## 合并时的真实验证边界（2026-11-18）
+
+本批修复提交至 `4033786a` 已载入实验控制器。真实 Run `workflow-8625b886a7912513` 的16个业务Task已完成，Candidate `1589e63605ae7237c959a56961cdca51293ecd9e` 的20条规范命令均有同目标、exit 0、source_stable执行收据。07:11 UTC的自动恢复已把全部20条收据带入新reader输入，包含17条经Owner批准的补采；该交接现在已有真实调用链证据。
+
+控制器已真实识别未提交结果的关闭回合，并沿同operation/session和分页cursor续跑。但07:33 UTC快照中最终Verify已有4路因续跑后仍未正式提交而失败，另4路未结束，尚无Candidate整体通过、Judge或交付完成记录。每路19个必读来源共596176字节，内容相同的两个别名属于可选输入，不是必读重复。正常长输入工作接力与故障重试预算、模型持续完成方法，以及role restart后的状态刷新仍需进一步验证和改进。
+
+本轮包含监工补丁部署、空闲环境释放、17条命令补采和一次投影重建，不能称为无人监工闭环成功。真实业务阶段Impl峰值8、TaskVerify峰值6、合计峰值8，8+8同时运行0秒；最终8个Candidate reader不替代该容量证明。Planner/Run原有取消的时间及token限制保持不变。
+
+本次合并交付已实施的修复，不把上述待验收项标成完成。任务保持active；原始事件、浏览器截图/WebM/trace和监工记录保留于实验worktree的 `reports/eight-by-eight-real-resumed-20261118/`，运行状态和私有凭据不进入Git。后续实际验证独立于源码合并继续评估。
+
+合并前最终影响闭包：`python scripts/dev-verify.py run --base dev --workers 4 --keep-going` → 9832 passed / 16 skipped / 1 failed，耗时352.24秒；唯一失败为 `test_workflow_synthesis.py::test_consumer_lock_contention_defers_without_reporting_failure`。在干净的dev基线 `dda38a25` 独立执行同一用例，同样抛出WorkflowSynthesisConsumerBusy，确认本批未引入该失败；未修改该源码/测试或隐藏退出码。自动流程继续完成premerge sentinel 53 passed及flow-smoke 10 passed。此为影响闭包，不是全量pytest或真实产品验收；三套分发skill的metadata与源码一致性也已核对。
