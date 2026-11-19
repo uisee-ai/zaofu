@@ -480,3 +480,13 @@ superseded消费回执；后续tick不再反复deferred，也不对旧身份启�
 诊断动作保留原失败明确给出的Run及task-map代际，Autoresearch请求同时携带
 顶层Task ID和事件Task ID，让后续intake可沿原身份处理；不从当前最新Run猜测
 已有失败归属。上下文附件仍保留完整操作证据，诊断请求不授予产品状态写权限。
+
+### 诊断中的控制器版本证据
+
+诊断context侧车的`runtime_sources`复用已有`loop.started.runtime_load_ref`，
+同时索引各来源失败事件发生前的启动回执及最新启动回执。验证侧车摘要、schema
+和state_dir归属后才暴露source_root/revision；缺失、损坏、跨状态目录保持
+unavailable，不能用最新版本填补历史未知。运行版本与产品target、诊断实验基线
+是不同身份；启动回执也不证明进程仍在线或修复有效。此信息供诊断核对，不自动
+切换实验工作区、执行代码或授予合并权限。实际诊断发起入口与反例见
+`tests/test_diagnosis_runtime_context.py`。

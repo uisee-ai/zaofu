@@ -4347,12 +4347,17 @@ def _write_run_manager_context_sidecars(
             project_root=project_root,
         )
     safe_request = _safe_ref_slug(request_id)
+    from zf.runtime.diagnosis_runtime_context import diagnosis_runtime_sources
+
     context_payload = redact_obj({
         "schema_version": RUN_MANAGER_CONTEXT_SIDECAR_SCHEMA_VERSION,
         "request_id": request_id,
         "legacy_context_ref": _legacy_run_manager_context_ref(),
         "action": action,
         "context": context,
+        "runtime_sources": diagnosis_runtime_sources(
+            state_dir, _read_events(state_dir), _string_list(action.get("source_event_ids")),
+        ),
         "monitor": projection.get("monitor") if isinstance(projection.get("monitor"), dict) else {},
         "status_explain": (
             projection.get("status_explain")
