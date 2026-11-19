@@ -20,7 +20,7 @@ def reconcile_undelivered_wait_failures(runtime: Any, events: list[ZfEvent]) -> 
         return False
     positions = {e.id: i for i, e in enumerate(events)}
     for op in reduce_workflow_operations(events).values():
-        if (op.get('status') != 'requested' or op.get('operation_type') != 'fanout_reader_child'
+        if (op.get('status') not in {'requested', 'suspended'} or op.get('operation_type') != 'fanout_reader_child'
                 or op.get('started_event_id') or op.get('call_result_admitted_event_id')):
             continue
         for failed in reversed(failures):

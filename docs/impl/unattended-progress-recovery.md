@@ -418,3 +418,14 @@ failed/abstained路径上报。此方法修复不增加确定性语义门禁，�
 复用前核对父调用Run/Task/role、必读登记、摘要、正文及恢复字段；改变或未绑定的
 输入拒绝沿此路径继承。原结果不改，旧read coverage不转移。实际Candidate准备入口
 及连续两次重试、篡改/错身份反例见`tests/test_candidate_reader_retry_authority.py`。
+
+### 从未送达的Reader等待失败
+
+环境等待超时后，requested或从未送达的suspended调用都应沿精确失败事件收敛；
+曾started、retry_started或dispatched的调用不得当作未送达。现有单子项受控重试
+入口可处理这类失败：要求当前running Run、未暂停、当前fanout、唯一匹配的
+Reader请求及完整不可变身份，先结算原失败，再经过普通准备、目标锁定、权限
+和transport门禁创建新调用。首次真实dispatch以原等待失败事件为因果，不伪造
+历史派发，不重新Plan/Impl。新一轮继续失败时attempt序号仍递增，避免重复身份。
+暂停、取消、已送达、错请求、晚于原失败的新状态均拒绝这一窄恢复路径。
+回归`tests/test_reader_undelivered_retry.py`包含实际repair.action入口、幂等和反例。
