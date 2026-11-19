@@ -15,6 +15,7 @@
 !deploy/
 !deploy/cloud/
 !deploy/cloud/check_runtime.py
+!deploy/cloud/provider-entry
 !deploy/cloud/providers/
 !deploy/cloud/providers/package.json
 !deploy/cloud/providers/package-lock.json

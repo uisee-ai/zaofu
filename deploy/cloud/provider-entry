@@ -1,0 +1,4 @@
+#!/opt/zaofu/.venv/bin/python
+from zf.integrations.controller.cpa_client import main
+
+main()

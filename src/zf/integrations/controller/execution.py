@@ -80,6 +80,7 @@ class Execution:
         self.id = 'zfc-' + uuid.uuid4().hex
         self.operation_id = operation_id
         self.provider, self.model = provider, model or 'unknown'
+        self.mode = self.config.mode_for(provider)
         self.session_id, self.source = session_id, source
         self.ledger = Ledger(self.config.state_dir)
         self.collector = Collector(self.context.state_dir, self.context.config)
@@ -88,7 +89,7 @@ class Execution:
         self.revoked = False
         self.body = {'operation_id': self.id, 'parent_operation_id': operation_id,
                      'project_id': self.collector.cloud.project_id, 'provider': provider,
-                     'model': self.model, 'session_id': session_id, 'source': source,
+                     'model': self.model, 'mode': self.mode, 'session_id': session_id, 'source': source,
                      'deployment_id': self.credentials['deployment_id'], 'generation': self.credentials['generation'],
                      'owner': process_identity(os.getpid())}
 
@@ -100,7 +101,7 @@ class Execution:
             with locked_path(Installation(self.config).path / 'admission', timeout_seconds=15):
                 current = applied(self.config)
                 if any(getattr(current, key) != getattr(self.config, key) for key in
-                        ('effective_mode', 'mode_epoch', 'request_tokens', 'request_money', 'price_version', 'request_seconds')):
+                        ('effective_mode', 'provider_modes', 'mode_epoch', 'request_tokens', 'request_money', 'price_version', 'request_seconds')):
                     raise ManagedDenied('runtime model access changed; retry admission')
                 return self._begin(cancel)
         except Exception:
@@ -135,7 +136,7 @@ class Execution:
             try:
                 self.body['budget_request'] = {
                     'protocol': 'zfc.control.v1', 'request_id': self.id, 'operation_id': self.id,
-                    'project_id': self.body['project_id'], 'mode': self.config.effective_mode,
+                    'project_id': self.body['project_id'], 'mode': self.mode,
                     'provider': self.provider, 'model': self.model, 'policy_version': policy['version'],
                     'max_tokens': self.config.request_tokens, 'max_money': self.config.request_money,
                     'price_version': self.config.price_version, 'expires_in': self.config.request_seconds}
@@ -227,11 +228,11 @@ class Execution:
             (self.body['project_id'] + ':' + self.id).encode()).hexdigest())
         from zf.integrations.controller.health import capture
         capture(self.config.state_dir, self.credentials['deployment_id'], self.body['project_id'],
-                self.config.effective_mode, self.provider, status=status, error=provider_error,
+                self.mode, self.provider, status=status, error=provider_error,
                 observed_at=self.body['finished_at'], sample_id=self.id)
         for window in (subscription_windows or {}).values():
             capture(self.config.state_dir, self.credentials['deployment_id'], self.body['project_id'],
-                    self.config.effective_mode, self.provider, status='unknown', native_session=native_session,
+                    self.mode, self.provider, status='unknown', native_session=native_session,
                     observed_at=window['observed_at'], sample_id=str(window['observed_at']), window=window)
         # Save receipt before EventLog append so recovery can finish a crash in between.
         self.ledger.put(self.id, 'receipt_pending', self.body)
@@ -372,6 +373,7 @@ def reconcile_executions(config, credentials, transport, contexts):
                 execution = Execution((config, credentials, context), operation_id=body['parent_operation_id'],
                     provider=body['provider'], model=body['model'], session_id=body['session_id'], source=body['source'])
                 execution.id, execution.body = row['id'], body
+                execution.mode = body.get('mode', body.get('budget_request', {}).get('mode', execution.mode))
                 if body.get('budget'):
                     execution.finish({'input_tokens': 0, 'output_tokens': 0}, status='not_started')
                 else:

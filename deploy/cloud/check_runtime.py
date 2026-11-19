@@ -23,6 +23,8 @@ def main():
         assert capability.available and capability.tab_rename, capability.reason
         codex = subprocess.check_output(['codex', '--version'], text=True, timeout=15).strip()
         assert codex == 'codex-cli 0.166.0', codex
+        claude = subprocess.check_output(['claude', '--version'], text=True, timeout=15).strip()
+        assert claude == '2.1.300 (Claude Code)', claude
         project = root / 'project'
         result = init_flow_project(kind='prd', controller_id=DEFAULT_PROJECT_CONTROLLER,
             name='image-check', backend='codex', project_root=project, create_root=True,

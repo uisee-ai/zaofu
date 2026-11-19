@@ -1,6 +1,6 @@
 """Explicit deployment-level zf.yaml; a Workspace is not a synthetic Project."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
@@ -36,6 +36,11 @@ class ControllerWorkspaceConfig:
     allowed_modes: tuple[str, ...] = ()
     runtime_mode: str | None = None
     mode_epoch: float = 0
+    provider_modes: dict[str, str] = field(default_factory=dict)
+    cpa_request_namespace: str = ''
+
+    def mode_for(self, backend):
+        return provider_mode(self.provider_modes, backend, self.effective_mode)
 
     @property
     def effective_mode(self):
@@ -43,7 +48,17 @@ class ControllerWorkspaceConfig:
 
     def target(self) -> dict:
         return {"endpoint": self.endpoint, "issuer": self.issuer,
-                "workspace_id": self.workspace_id, "workspace": self.workspace, "mode": self.mode}
+                "workspace_id": self.workspace_id, "workspace": self.workspace, "mode": self.mode,
+                **({'provider_modes': self.provider_modes} if self.provider_modes else {}),
+                **({'cpa_request_namespace': self.cpa_request_namespace} if self.cpa_request_namespace else {})}
+
+
+def provider_mode(modes, backend, default):
+    from zf.core.config.backend_identity import catalog_backend_id
+
+    family = catalog_backend_id(backend)
+    backend = {'openai': 'codex', 'anthropic': 'claude-code', 'claude': 'claude-code'}.get(family, family)
+    return modes.get(backend, default)
 
 
 def _mapping(value: object, allowed: set[str]) -> dict:
@@ -72,7 +87,7 @@ def load_controller_workspace(path: Path) -> ControllerWorkspaceConfig:
         "receipt_retention_seconds",
         "request_seconds",
         "hosting", "project_root",
-        "allowed_modes",
+        "allowed_modes", "provider_modes", "cpa_request_namespace",
     })
     management = cloud.get('management')
     if management not in {'observed', 'managed'}:
@@ -107,6 +122,12 @@ def load_controller_workspace(path: Path) -> ControllerWorkspaceConfig:
             or len(set(allowed_modes)) != len(allowed_modes)
             or any(m not in {'self_managed_cli', 'self_managed_api', 'managed_cpa', 'unknown'} for m in allowed_modes)):
         raise ValueError('invalid locally consented model access modes')
+    provider_modes = _mapping(cloud.get('provider_modes', {}), {'codex', 'claude-code'})
+    if any(value not in allowed_modes or value == 'unknown' for value in provider_modes.values()):
+        raise ValueError('provider mode requires explicit locally allowed mode')
+    namespace = cloud.get('cpa_request_namespace', '')
+    if namespace != '' and (not identifier(namespace) or 'managed_cpa' not in allowed_modes):
+        raise ValueError('invalid CPA request namespace or access mode')
     hosting = cloud.get('hosting', 'external')
     if hosting not in {'external', 'cloud'} or (hosting == 'cloud' and management != 'managed'):
         raise ValueError('invalid hosting or management combination')
@@ -144,5 +165,5 @@ def load_controller_workspace(path: Path) -> ControllerWorkspaceConfig:
                                      cloud["workspace_id"], tuple(projects), mode, development,
                                      management=management, gateway_origin=cloud.get('gateway_origin', ''),
                                      request_money=money, price_version=price, hosting=hosting,
-                                     allowed_modes=tuple(allowed_modes),
+                                     allowed_modes=tuple(allowed_modes), provider_modes=provider_modes, cpa_request_namespace=namespace,
                                      project_root=Path(project_root) if project_root else None, **limits)

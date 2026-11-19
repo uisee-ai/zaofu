@@ -32,11 +32,11 @@ class Collector:
 
     def __call__(self, event):
         timestamp = (event.payload or {}).get('usage_timestamp') if event.type in {'agent.usage', 'controller.usage.receipt'} else None
-        binding = self.outbox.binding_at(timestamp or event.ts)
+        data = event.payload or {}
+        binding = self.outbox.binding_at(timestamp or event.ts, data.get('backend') or data.get('provider') or '')
         if binding is None:
             # Pre-enrollment history has no proven deployment/mode binding. Do not relabel it.
             return
-        data = event.payload or {}
         version = int(datetime.fromisoformat(event.ts.replace('Z', '+00:00')).timestamp() * 1_000_000)
         attribution = {"project_id": self.cloud.project_id,
             "session_id": identifier(data.get("thread_id") or data.get("session_id")),
@@ -104,7 +104,12 @@ class Collector:
         from zf.runtime.provider_usage import canonical_usage_tokens
 
         data = event.payload or {}
-        if event.type == 'agent.usage' and data.get('source') == 'disk_reader':
+        request_id = identifier(data.get('source_request_id'))
+        disk_receipt = event.type == 'agent.usage' and data.get('source') == 'disk_reader'
+        exact_cpa = (disk_receipt and binding['mode'] == 'managed_cpa' and binding.get('request_namespace')
+                     and data.get('usage_semantics') == 'incremental'
+                     and re.fullmatch(r'req_[A-Za-z0-9_-]{16,120}', request_id or ''))
+        if disk_receipt and not exact_cpa:
             from zf.integrations.controller.binding import managed_config
             managed = managed_config()
             if managed:
@@ -152,8 +157,7 @@ class Collector:
         if data.get("usage_scope") == "inclusive":
             # Parent aggregate receipts need an explicit covered-sample contract; never sum with children.
             present = False
-        request_id = identifier(data.get("source_request_id"))
-        namespace = identifier(data.get("request_namespace"))
+        namespace = binding['request_namespace'] if exact_cpa else identifier(data.get("request_namespace"))
         if not (request_id and namespace):
             request_id = namespace = None
         payload = {**attribution, "kind": "usage", "record_id": stable(self.cloud.project_id + ':' + sample), "revision": revision,

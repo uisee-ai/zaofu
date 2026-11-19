@@ -148,3 +148,28 @@ premerge sentinel 53 passed、flow mock E2E 10 passed。闭包超过工具的 80
 经既有 reader/factory 和 EventWriter 进入账本；Session/Operation 的另一项目为确定性
 fixture。此结果证明部署 Connector 与该计量来源，不替代所有入口的完整 Workflow 验收。
 具体命令与原生会话标识见 Z01a 记录。
+
+## 按客户端选择 CPA 或个人凭证
+
+已注册的 standalone 可在安装级 `zf.yaml` 的 `workspace.controller` 下添加以下配置。
+下面的例子让 Codex 使用个人订阅，Claude Code 使用已分配给本 Workspace 的 CPA 专用推理 key。
+
+```yaml
+mode: self_managed_cli
+allowed_modes: [self_managed_cli, managed_cpa]
+provider_modes:
+  claude-code: managed_cpa
+cpa_request_namespace: cpamp-production.events
+```
+
+在首次注册前设置该映射。已绑定安装更换来源时，先排空待上报数据，再显式迁移安装身份。
+外部实例的连接器负责统计。Claude Code 的原生配置使用 `ANTHROPIC_BASE_URL` 和由本地秘密存储提供的
+`ANTHROPIC_AUTH_TOKEN`。若选 Codex 走 CPA，在原生 model provider 中设置 `base_url`
+为推理地址加 `/v1`、`wire_api = "responses"`，并使用 `env_key` 引用专用推理凭证。
+个人 API 可选择 `self_managed_api`。未注册的单机沿用本地登录与采集路径。
+
+云端由 Controller 从审批过的 runtime profile 生成以上配置，并将专用推理 key 只读挂载到实例。
+带 CPA 支持的云镜像按客户端从挂载文件取 key，保留另一个客户端的原生登录。
+平台的 CPAMP 回执和实例上报的样本以完整上游请求 ID 做关联。Claude reader 只为实际读到的
+单次 assistant 样本携带该 ID。缺少两端共同 ID 时，Controller 仍能统计 Workspace 的 CPA
+总量，不能据此细分到某个 Session。订阅费用以可取得的账单证据为准。

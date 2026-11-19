@@ -39,6 +39,7 @@ from __future__ import annotations
 import glob
 import hashlib
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,6 +132,12 @@ class UsageReport:
 
     series_started_at: str = ""
     """Observed native session creation time, when the provider records it."""
+
+    source_request_id: str = ""
+    """Provider-issued ID of this exact incremental request, when available."""
+
+    provider_session_id: str = ""
+    """Native session confirmed by both the record and transcript filename."""
 
 
 # Claude 4.x large-context models report a 1M context window. The 200k
@@ -244,6 +251,8 @@ class ClaudeSessionReader(BackendSessionReader):
         latest: dict | None = None
         latest_ts: str = ""
         latest_model: str = ""
+        latest_request = ""
+        native_session = ""
         try:
             text = session_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -262,6 +271,9 @@ class ClaudeSessionReader(BackendSessionReader):
             if not isinstance(usage, dict):
                 continue
             latest = usage
+            native_session = session_path.stem if obj.get("sessionId") == session_path.stem else ""
+            request = obj.get("requestId")
+            latest_request = request if isinstance(request, str) and re.fullmatch(r'req_[A-Za-z0-9_-]{16,120}', request) else ""
             latest_ts = obj.get("timestamp", "")
             latest_model = obj.get("message", {}).get("model", "") or latest_model
         if latest is None:
@@ -285,6 +297,8 @@ class ClaudeSessionReader(BackendSessionReader):
             timestamp=latest_ts,
             raw=dict(latest),
             model=latest_model,
+            source_request_id=latest_request,
+            provider_session_id=native_session,
             provider="anthropic",
             input_semantics="fresh_plus_cache",
         )
