@@ -281,3 +281,15 @@ handoff中的`host_execution_evidence_reads`从已核验、已冻结的宿主证
 退出事实、拒绝创建事件及跨代读取；`tests/test_reader_repair_navigation.py`覆盖
 提示与实际来源一致。真实Average重复输入失败的证据在
 `reports/recovery-input-navigation-20261119/`，真实验收状态单独记录。
+
+### Provider重启后的同attempt接续
+
+Task Pipeline当前attempt已经sent而Provider进程退出时，重启并等待就绪后的
+恢复briefing必须走既有continuation校验，不再次申请首次派发claim。读取当前
+canonical attempt绑定的operation/dispatch/lease，保留原typed输入和输出合同；
+不扩展租约、不生成新attempt，也不把进程启动或提示送达当作业务完成。
+
+仅sent使用此路径；prepared/delivering保持首次投递语义。暂停、过期、Task/role
+不匹配、operation已结算、预算限制及不在线的目标仍由原门禁拒绝。回归
+`tests/test_pipeline_respawn_continuation.py`直接覆盖实际恢复入口，且保持TaskAttempt
+未变。初始Provider退出原因及最终真实验收分别记录，不因此修复而假定全部通过。
