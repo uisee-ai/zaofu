@@ -47,6 +47,8 @@ def actor_from_workdir_cwd(state_dir: Path, payload: dict) -> str:
 def bash_command_looks_mutating(command: str) -> bool:
     if _literal_shell_patch(command) is not None:
         return True
+    if _literal_controlled_result_stdin(command):
+        return False
     normalized = f" {_NON_MUTATING_REDIRECTION_RE.sub(' ', command).strip()} "
     if " zf task-doc ingest " in normalized:
         return True
@@ -115,6 +117,8 @@ def _contains_active_shell_substitution(command: str) -> bool:
 def _is_simple_controlled_zf_result_command(
     command: str,
     tokens: list[str],
+    *,
+    stdin_only: bool = False,
 ) -> bool:
     """Recognize one side-effect-controlled zf CLI invocation.
 
@@ -156,11 +160,42 @@ def _is_simple_controlled_zf_result_command(
     }:
         return False
     args = tokens[index + 1:]
+    if stdin_only:
+        return args[:2] == ["result", "validate"] and "--stdin" in args
     return bool(
         args[:1] == ["emit"]
         or args[:2] in (["result", "submit"], ["result", "validate"])
         or args[:3] == ["recover", "assistance", "request"]
     )
+
+
+def _literal_controlled_result_stdin(command: str) -> bool:
+    """Recognize only one controlled CLI with a fully literal stdin heredoc.
+
+    The first closing delimiter must end the command. Shell syntax in the
+    header keeps the normal conservative checks; the body reaches the existing
+    result authorization and schema validators as data, not executable shell.
+    """
+    lines = command.strip().splitlines()
+    if not lines:
+        return False
+    header = re.fullmatch(
+        r"(.+?)\s+<<\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\2", lines[0],
+    )
+    if header is None:
+        return False
+    end = next((i for i, line in enumerate(lines[1:], 1) if line == header.group(3)), None)
+    if end != len(lines) - 1:
+        return False
+    prefix = header.group(1)
+    lexer = shlex.shlex(prefix, posix=True, punctuation_chars="<>|&;")
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    return _is_simple_controlled_zf_result_command(prefix, tokens, stdin_only=True)
 
 
 def _literal_shell_patch(command: str) -> str | None:

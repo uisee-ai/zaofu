@@ -238,3 +238,19 @@ Candidate operation。不是缺少业务测试或模型额度，不能靠伪造�
 真实冻结 Task 的同一 scratch 在旧代码只读回放返回缺全局报告，修复后预检通过；
 已停止的旧Run没有重新准入结果或补写通过。证据在
 `reports/task-audit-acceptance-20261119/`，完整真实资格仍须新轮核验。
+
+### 受控失败提交的字面量 stdin
+
+真实轮 `workflow-863563136fc24d34` 的Mask和Average使用briefing生成的
+`zf result validate --stdin --submit`报告执行失败。说明文字中的Markdown反引号
+位于带引号的here-doc正文，原守卫却将其按活动shell替换扫描，误拒结果提交。
+完成提醒不会改变同一解析行为；没有入账的失败结果也无法启动已有宿主证据接续。
+
+共享shell分类器只识别单个受控`result validate --stdin`命令和完整带引号的
+here-doc。正文作为CLI输入交给既有身份、权限、schema及一次性准入检查；这不授予
+runtime目录写权限，也不把hook放行当作提交成功或产品通过。未引用delimiter、
+头部替换/重定向/管道/分号、尾随命令、提前结束、其他程序等仍走原保守检查。
+
+回归`tests/test_hook_literal_result_stdin.py`直接使用真实提示生成器和Codex/Claude
+hook入口，覆盖合法正文及shell副作用反例。运行中的旧实验不因源码修复而变为
+新源码验证；任何批准后的源码维护仍须明确计入人工介入。
