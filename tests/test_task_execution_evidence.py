@@ -102,6 +102,23 @@ def test_real_dispatch_attaches_reachable_observation_index(dispatch_fixture, ho
     index = hydrate_sidecar_ref(runtime.state_dir, body['execution_evidence_ref']).payload
     assert [e['event_id'] for e in index['entries']] == [hook.id, *([completed.id] if host else [])]
     assert 'handoff-evidence' in body['execution_evidence_read']
+    reads = body['host_execution_evidence_reads']
+    assert len(reads) == int(host)
+    if host:
+        import shlex
+        from zf.runtime.task_execution_evidence import read_execution_evidence
+        args = shlex.split(reads[0])
+        assert args[args.index('--event') + 1] == completed.id
+        assert args[args.index('--source-operation') + 1] == source['operation_id']
+        assert args[args.index('--operation') + 1] == body['target']['operation_id']
+        handoff = prepared[-1]['payload']['task_handoff_ref']
+        manifest = {'sources': [{**handoff, 'source_id': 'task-handoff'}]}
+        _, fact = read_execution_evidence(runtime.state_dir, manifest, body['target'],
+            source['operation_id'], completed.id)
+        assert fact['exit_code'] == 1 and fact['authorizes_execution'] is False
+        with pytest.raises(ValueError, match='outside pinned'):
+            read_execution_evidence(runtime.state_dir, manifest, body['target'],
+                source['operation_id'], start.id)
 
 
 @pytest.fixture(params=['native', 'host'])

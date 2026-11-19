@@ -38,6 +38,15 @@ def test_no_repair_source_does_not_invent_feedback():
     assert "before probing the runner" not in render_attempt_source_briefing(payload)
 
 
+def test_failure_guidance_requires_only_a_pinned_recovery_source():
+    from zf.runtime.reader_submission_guidance import verifier_failure_schema_guidance
+    text = verifier_failure_schema_guidance()
+    assert "If the current manifest pins critical-reader-repair-context" in text
+    assert "host_execution_evidence_reads" in text
+    assert "absence of an unpinned repair source is not a read failure" in text
+    assert "On a recovery attempt, first consume every page" not in text
+
+
 def test_actual_fanout_briefing_delivers_recovery_navigation(tmp_path):
     from tests.test_reader_fanout_runtime import _durable_reader_state
     from zf.runtime.fanout import FanoutContext

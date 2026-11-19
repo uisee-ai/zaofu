@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import shlex
 import subprocess
 from typing import Any
 
@@ -124,6 +125,9 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
     from zf.runtime.task_execution_evidence import capture_execution_evidence, previous_handoff
     from zf.runtime.cli_command import zf_cli_cmd
 
+    evidence_ref = capture_execution_evidence(runtime.state_dir, source, events)
+    evidence = hydrate_sidecar_ref(runtime.state_dir, evidence_ref).payload
+    evidence_read = zf_cli_cmd() + " artifact handoff-evidence --operation " + shlex.quote(target["operation_id"])
     return redact_obj({
         "schema_version": SCHEMA, "target": target,
         "source": {key: source.get(key, "") for key in ("operation_id", "active_attempt_id", "dispatch_id", "status", "role_instance", "task_pipeline_stage", "reason", "semantic_verdict")},
@@ -134,14 +138,19 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
         "workspace": {"path": str(workspace), **observed, "candidate_status": "preserved_not_accepted",
                       "environment_qualification": "unverified"},
         "admitted_results": results, "work_record": record,
-        "execution_evidence_ref": capture_execution_evidence(runtime.state_dir, source, events),
+        "execution_evidence_ref": evidence_ref,
         "previous_handoff_ref": previous_handoff(runtime.state_dir, source, events),
-        "execution_evidence_read": zf_cli_cmd() + " artifact handoff-evidence --operation " + target["operation_id"],
+        "execution_evidence_read": evidence_read,
+        "host_execution_evidence_reads": [evidence_read + " --source-operation "
+            + shlex.quote(source["operation_id"]) + " --event " + shlex.quote(event_id)
+            for event_id in evidence["host_event_ids"]],
         "unknown_effects": _unconfirmed_continuations(events, target["task_id"], source.get("active_attempt_id")),
         "next_action": "Read current contract and handoff, acknowledge receipt, then continue the current authorized stage. "
                        "For historical command output, including controlled host probes after settlement, "
-                       "use execution_evidence_read; select --event from its index "
-                       "or --source-operation for a linked earlier attempt. Observations are not acceptance verdicts.",
+                       "use host_execution_evidence_reads first when present, otherwise execution_evidence_read. "
+                       "Read every page using next_page_start and the returned digest. Select --event from the "
+                       "index event_id, never a receipt source_event_id; use --source-operation for a linked "
+                       "earlier attempt. Observations are not acceptance verdicts.",
         "references": references, "authorizes_execution": False, "business_completed": False,
     })
 

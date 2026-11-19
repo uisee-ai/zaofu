@@ -265,3 +265,19 @@ Task/Run/map/stage/generation识别唯一内核派发，不按整个历史记录
 
 回归`tests/test_task_host_redrive_binding.py`覆盖实际RunManager tick→隔离命令→独立
 Verify接续，并保留错误绑定不产生宿主效果的反例。真实轮维护前后证据分开记录。
+
+### 区分Reader修复源与Task宿主事实
+
+恢复不必然带有`critical-reader-repair-context`。失败提示只要求消费当前manifest
+实际绑定的恢复源；Task宿主重试通过既有`task-handoff`携带证据。缺少未绑定的
+可选恢复源不构成读取失败，实际绑定的源不可读仍须报告真实失败。
+
+handoff中的`host_execution_evidence_reads`从已核验、已冻结的宿主证据索引生成，
+精确选择前序operation及完成事件，避免把回执`source_event_id`的动作创建事件
+误作可读取的完成事件。原索引、摘要、完整输出分页和CLI身份鉴权继续有效；没有
+宿主事实则导航为空，不新增执行权或产品结论。历史handoff保持不可变。
+
+回归`tests/test_task_execution_evidence.py`覆盖实际派发产生导航、受控读取非零
+退出事实、拒绝创建事件及跨代读取；`tests/test_reader_repair_navigation.py`覆盖
+提示与实际来源一致。真实Average重复输入失败的证据在
+`reports/recovery-input-navigation-20261119/`，真实验收状态单独记录。
