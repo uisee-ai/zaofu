@@ -24,6 +24,7 @@ from zf.runtime.call_result_envelope import canonical_json_bytes
 from zf.runtime.plan_candidate_ports import (
     PlanPortTooLarge, check_plan_port_size, read_plan_port_bytes,
     plan_port_bodies as _plan_port_bodies,
+    prepared_plan_port_path_errors,
 )
 from zf.runtime.task_map import (
     resolve_artifact_file,
@@ -52,6 +53,7 @@ def evaluate_plan_candidate_preflight(
     metadata: Mapping[str, Any] | None,
     writer_policy: Mapping[str, Any] | None = None,
     review_input_limits: Mapping[str, Any] | None = None,
+    ports_materialized: bool = False,
 ) -> dict[str, Any]:
     """Return structured, deterministic readiness facts for one plan candidate."""
 
@@ -66,6 +68,8 @@ def evaluate_plan_candidate_preflight(
         if isinstance(row, Mapping) and isinstance(row.get("report"), Mapping)
     ]
     errors: list[dict[str, str]] = []
+    if ports_materialized:
+        errors.extend(prepared_plan_port_path_errors(candidates, state_dir=state_dir))
     from zf.runtime.workflow_read_result import workflow_read_finding_issues
 
     for index, candidate in enumerate(candidates):
