@@ -220,3 +220,21 @@ actor/来源及完整原因，不能仅以历史 `operator_verify_execution_retr
 租约过期进入 Run Manager 所有的绑定恢复路径。默认兼容策略、重试上限和安全边界
 不变。启动前应核对实际加载配置及冻结摘要；旧实验保持原配置和失败证据，
 不能把新实验策略回填到旧实验并声称完成了原资格。
+
+### Task 审计不提前承担全产品报告
+
+同轮 TOOL-NORMALIZE 的下一代 Verify 已读取成功的宿主回执，但其通过结果在预检
+被误要求完整 `product_acceptance_report`。原判定以结果的 `verification_owner`
+推断全产品职责，混淆了仅审计一个冻结 Task 的 `candidate_verify` 条款责任与最终
+Candidate operation。不是缺少业务测试或模型额度，不能靠伪造全局报告放行。
+
+共享 Product Acceptance 绑定器现在识别内核 operation 的三个同时成立的条件：
+`task-stage`、`task_pipeline_stage=verify`、`output_profile_id=task-verify`。
+这个 Task 范围仍经过原单Task条款、命令、目标快照、身份与准入校验；全产品门禁
+继续由真正的 Candidate/Discovery 承担，未知或旧式调用仍保守保留原判断。
+语义结果自行声明这些字段不能改变内核绑定的阶段或输出 profile。
+
+回归 `tests/test_task_audit_acceptance_scope.py` 覆盖预检、正式准入和拒绝反例。
+真实冻结 Task 的同一 scratch 在旧代码只读回放返回缺全局报告，修复后预检通过；
+已停止的旧Run没有重新准入结果或补写通过。证据在
+`reports/task-audit-acceptance-20261119/`，完整真实资格仍须新轮核验。
