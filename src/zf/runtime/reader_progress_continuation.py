@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
-from zf.runtime.attempt_read_progress import required_read_progress
+from zf.runtime.attempt_read_progress import required_read_progress, required_reads_complete
 from zf.runtime.pause_lifecycle import is_dispatch_paused
 
 
@@ -15,6 +15,7 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
     it cannot be interpreted as permission to resend or as product completion.
     Reads are finite, unique coverage of the unchanged frozen input, not tokens,
     repeated tool calls, chat activity, or an assertion about model memory.
+    Complete input permits one result-completion turn under the same gates.
     """
     if is_dispatch_paused(runtime.state_dir, events=events):
         return None
@@ -73,8 +74,20 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
     progress = required_read_progress(runtime.state_dir, events,
                                      attempt_id=attempt_id, operation_id=operation_id)
     previous = claims[-1].payload.get("input_read_progress") if claims else 0
-    if progress is None or type(previous) is not int or progress <= previous:
+    if progress is None or type(previous) is not int:
         return False
+    phase = "required_reads"
+    if progress <= previous:
+        # Reading and delivering the result are distinct obligations. Give the
+        # same authorized call one bounded completion turn after all input is
+        # covered, without charging a new infrastructure attempt or retrying
+        # unknown effects. Further no-progress turns keep the existing limit.
+        if (not claims or progress != previous
+                or any(e.payload.get("continuation_phase") == "result_completion" for e in claims)
+                or not required_reads_complete(runtime.state_dir, events,
+                    attempt_id=attempt_id, operation_id=operation_id)):
+            return False
+        phase = "result_completion"
     claim = runtime.event_writer.append(ZfEvent(
         type="worker.continuation.claimed", origin="kernel", actor=role,
         task_id=operation.get("task_id") or None,
@@ -85,12 +98,14 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
                  "workflow_run_id": operation.get("workflow_run_id"),
                  "fanout_id": p.get("fanout_id"), "child_id": p.get("child_id"),
                  "input_read_progress": progress, "closed_event_id": closed.id,
+                 "continuation_phase": phase,
                  "delivery_status": "unknown", "business_completed": False,
                  "recovery_owner": "run_manager",
                  "tool_result_observations": tool_observations,
                  "next_action": "reconcile_existing_turn_before_retry"},
     ))
-    runtime._set_worker_state(role, "idle", reason="reader_input_progress", force=True)
+    runtime._set_worker_state(role, "idle", force=True,
+        reason="reader_result_completion" if phase == "result_completion" else "reader_input_progress")
     delivered = runtime._retry_fanout_child(
         manifest=manifest, child=child, previous_dispatch=dispatch,
         attempt=attempt, provider_session_replaced=True,

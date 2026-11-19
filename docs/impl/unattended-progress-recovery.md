@@ -439,3 +439,17 @@ Reader请求及完整不可变身份，先结算原失败，再经过普通准�
 要求kernel事件、晚于失败、相同Run/fanout/child/stage/role/target及精确retry-of；
 伪造、错身份、早于失败或同attempt事件不能清除。旧失败与RecoveryCase历史保留，
 不代表产品通过；后续新的等待失败仍有独立诊断责任。
+
+### 必读完成后的单次结果收尾
+
+正常成功关闭的Reader回合若没有新增读取量，不能立即等同于Provider故障：输入
+消费与结果交付是两个义务。对同一运行中的operation/request/attempt，在此前
+已交付续跑、当前全部必读通过原ledger规则、没有未结束工具/审批/协助且没有
+交付未知的条件下，允许一次`continuation_phase=result_completion`。它继续原
+TaskAttempt/lease及原生会话，走原发送时预算、暂停、身份和权限门禁；不重读
+已知材料来人为增加进度，不使用Task工作记录的越权替代，不生成产品通过结果。
+
+此收尾机会不因控制器重启或重复关闭事件重置；后续仍无结果时回到原有有界
+故障恢复。输入未读全、证据无效、失败的Provider回合或未知工具效果不获此机会。
+这是机械交付宽限，不是对业务“已完成”的语义判断，不能代替validate/submit与
+独立准入。回归同时覆盖TaskAttempt enforce和发送瞬间的预算/权限/暂停反例。

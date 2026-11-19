@@ -194,3 +194,48 @@ def test_waiting_reader_does_not_starve_another_reader_recovery(tmp_path):
     assert [row[0] for row in transport.sent] == ["verify-1", "verify-2", "verify-2"]
     assert not any(e.type == "fanout.child.dispatch_lost"
                    and e.payload.get("role_instance") == "verify-1" for e in log.read_all())
+
+
+def test_complete_inputs_allow_one_bounded_result_completion_turn(tmp_path):
+    state, log, transport, runtime, _, child = _durable_reader_state(tmp_path)
+    manifest = hydrate_sidecar_ref(state, child["payload"]["attempt_source_manifest"]).payload
+    read_attempt_artifact(state, manifest=manifest, source_id="context", artifact_id="context", json_path="$.facts")
+    operation_id = child["payload"]["operation_id"]
+    before = reduce_workflow_operations(log.read_all())[operation_id]
+    close_turn(runtime, "reads-complete")
+    close_turn(runtime, "result-in-progress")
+    claims = [e for e in log.read_all() if e.type == "worker.continuation.claimed"
+              and e.payload.get("continuation_phase") == "result_completion"]
+    assert len(claims) == 1
+    current = reduce_workflow_operations(log.read_all())[operation_id]
+    assert current["active_attempt_id"] == before["active_attempt_id"]
+    assert current["request_hash"] == before["request_hash"]
+    assert not any(e.type == "fanout.child.dispatch_lost" for e in log.read_all())
+    from zf.runtime.orchestrator import Orchestrator
+    runtime = Orchestrator(state, runtime.config, transport)
+    for n in range(4):
+        close_turn(runtime, f"still-no-result-{n}")
+    assert len([e for e in log.read_all() if e.type == "worker.continuation.claimed"
+                and e.payload.get("continuation_phase") == "result_completion"]) == 1
+    assert any(e.type == "fanout.child.failed" for e in log.read_all())
+
+
+@pytest.mark.parametrize("wait", ["pause", "pending_tool", "approval", "failed_turn"])
+def test_completion_turn_cannot_override_wait_or_failed_provider(tmp_path, wait):
+    state, log, transport, runtime, _, child = _durable_reader_state(tmp_path)
+    manifest = hydrate_sidecar_ref(state, child["payload"]["attempt_source_manifest"]).payload
+    read_attempt_artifact(state, manifest=manifest, source_id="context", artifact_id="context", json_path="$.facts")
+    close_turn(runtime, "reads-complete")
+    if wait == "pause":
+        runtime.event_writer.append(ZfEvent(type="dispatch.paused", actor="operator"))
+    elif wait == "pending_tool":
+        runtime.event_writer.append(ZfEvent(type="agent.tool.use", actor="verify-1", payload={"tool_use_id":"pending"}))
+    elif wait == "approval":
+        runtime.event_writer.append(ZfEvent(type="approval.requested", actor="verify-1", task_id="T-VERIFY", payload={"approval_ref":"waiting"}))
+    if wait == "failed_turn":
+        event = runtime.event_writer.append(ZfEvent(type="provider.turn.closed", actor="verify-1", payload={"provider_status":"failed", "backend":"codex"}))
+        runtime.run_once(events=[event])
+    else:
+        close_turn(runtime, "not-ready")
+    assert not any(e.type == "worker.continuation.claimed"
+                   and e.payload.get("continuation_phase") == "result_completion" for e in log.read_all())

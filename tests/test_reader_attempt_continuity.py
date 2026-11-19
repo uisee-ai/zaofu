@@ -33,6 +33,10 @@ def test_reader_progress_preserves_enforced_attempt_across_four_turns(tmp_path):
     manifest = hydrate_sidecar_ref(state, child["payload"]["attempt_source_manifest"]).payload
     read_attempt_artifact(state, manifest=manifest, source_id="context",
                           artifact_id="context", json_path="$.facts")
+    close_turn(runtime, "final-read-pages")
+    close_turn(runtime, "finish-current-result")
+    assert store.current_rows() == original
+    assert any(e.payload.get("continuation_phase") == "result_completion" for e in log.read_all())
     latest = _manifest(state, child["fanout_id"])["children"][0]
     latest["fanout_id"] = child["fanout_id"]
     result = runtime.event_writer.append(ZfEvent(
@@ -44,13 +48,21 @@ def test_reader_progress_preserves_enforced_attempt_across_four_turns(tmp_path):
     assert reduce_workflow_operations(log.read_all())[original[0]["operation_id"]]["status"] == "settled"
 
 
+@pytest.mark.parametrize("phase", ["required_reads", "result_completion"])
 @pytest.mark.parametrize("fault", ["expired", "settled", "dispatch", "budget", "dead", "pause"])
-def test_reader_continuation_keeps_send_time_fences(tmp_path, monkeypatch, fault):
+def test_reader_continuation_keeps_send_time_fences(tmp_path, monkeypatch, fault, phase):
     state, log, transport, runtime, config, child = _durable_reader_state(tmp_path)
     config.workflow.task_attempt.mode = "enforce"
     store = task_attempt_store(runtime)
     row = store.current_rows()[0]
-    read_page(state, child, 0)
+    if phase == "result_completion":
+        manifest = hydrate_sidecar_ref(state, child["payload"]["attempt_source_manifest"]).payload
+        read_attempt_artifact(state, manifest=manifest, source_id="context", artifact_id="context", json_path="$.facts")
+        close_turn(runtime, "full-inputs")
+    else:
+        read_page(state, child, 0)
+    sent_before = len(transport.sent)
+    events_before = len(log.read_all())
     original = runtime._retry_fanout_child
 
     def race(**kwargs):
@@ -71,9 +83,9 @@ def test_reader_continuation_keeps_send_time_fences(tmp_path, monkeypatch, fault
 
     monkeypatch.setattr(runtime, "_retry_fanout_child", race)
     close_turn(runtime, 1)
-    assert len(transport.sent) == 1
+    assert len(transport.sent) == sent_before
     assert not any(e.type == "worker.continuation.reconciled"
-                   and e.payload.get("delivery_status") == "delivered" for e in log.read_all())
+                   and e.payload.get("delivery_status") == "delivered" for e in log.read_all()[events_before:])
     assert not any(e.type == "task.attempt.superseded" for e in log.read_all())
 
 
