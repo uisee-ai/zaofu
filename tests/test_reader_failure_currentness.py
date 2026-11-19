@@ -75,3 +75,36 @@ def test_parallel_reader_failures_keep_distinct_diagnoses_on_shared_task():
     events = [request('reader-0'), request('reader-1', role_instance='verify-1'), first, second]
     actions = _pending_semantic_event_actions(events)
     assert {tuple(a['source_event_ids']) for a in actions} == {(first.id,), (second.id,)}
+
+
+def test_current_failure_keeps_task_and_run_through_diagnosis_intake(tmp_path):
+    from tests.test_run_manager import _state
+    from zf.runtime.autoresearch_invocation import build_invocation_request_from_run_manager_event
+    from zf.runtime.run_manager import _emit_autoresearch_request
+
+    state, log, writer = _state(tmp_path)
+    event = replace(failure('reader-0'), payload={
+        **failure('reader-0').payload, 'task_map_generation': 'generation-1'})
+    action = _pending_semantic_event_actions([event])[0]
+    assert action.get('workflow_run_id') == 'R1'
+    assert action.get('task_map_generation') == 'generation-1'
+    assert _emit_autoresearch_request(state_dir=state, writer=writer, action=action,
+        projection={}, project_root=tmp_path, causation_id=event.id)
+    requested = next(e for e in log.read_all() if e.type == 'run.manager.autoresearch.requested')
+    invocation = build_invocation_request_from_run_manager_event(requested, events=log.read_all())
+    assert invocation.task_id == invocation.payload['task_id'] == 'T1'
+    assert invocation.payload['workflow_run_id'] == 'R1'
+    assert invocation.payload['task_map_generation'] == 'generation-1'
+    assert invocation.payload['source_event_ids'] == [event.id]
+
+
+def test_diagnosis_request_does_not_drop_explicit_task(tmp_path):
+    from tests.test_run_manager import _state
+    from zf.runtime.run_manager import _emit_autoresearch_request
+
+    state, log, writer = _state(tmp_path)
+    assert _emit_autoresearch_request(state_dir=state, writer=writer,
+        action={'action': 'diagnose-attention', 'task_id': 'T1', 'checkpoint_id': 'failure'},
+        projection={}, project_root=tmp_path, causation_id='failure')
+    requested = next(e for e in log.read_all() if e.type == 'run.manager.autoresearch.requested')
+    assert requested.task_id == requested.payload.get('task_id') == 'T1'

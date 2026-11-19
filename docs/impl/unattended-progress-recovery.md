@@ -477,3 +477,6 @@ superseded消费回执；后续tick不再反复deferred，也不对旧身份启�
 回归`tests/test_reader_failure_currentness.py`沿Run Manager实际选择入口验证。
 并行Reader共享Task时，调用失败的诊断去重按operation身份区分，避免一个Reader
 的诊断吞掉另一项当前失败；缺少operation身份的历史事件保持原有回退规则。
+诊断动作保留原失败明确给出的Run及task-map代际，Autoresearch请求同时携带
+顶层Task ID和事件Task ID，让后续intake可沿原身份处理；不从当前最新Run猜测
+已有失败归属。上下文附件仍保留完整操作证据，诊断请求不授予产品状态写权限。

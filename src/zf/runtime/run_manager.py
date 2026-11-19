@@ -5397,6 +5397,7 @@ def _emit_autoresearch_request(
     payload = {
         "schema_version": "run-manager.autoresearch-request.v2",
         "request_id": request_id,
+        "task_id": str(action.get("task_id") or ""),
         "operation_key": str(action.get("operation_key") or ""),
         "recovery_case_id": recovery_case_id,
         "fingerprint": _fingerprint(action, fallback=request_id),
@@ -5447,6 +5448,7 @@ def _emit_autoresearch_request(
     writer.emit(
         RUN_MANAGER_AUTORESEARCH_REQUESTED,
         actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
         causation_id=causation_id,
         correlation_id=request_id,
         payload=payload,
@@ -10060,6 +10062,12 @@ def _semantic_event_diagnostic_action(
         ],
         "route_registry": "event-problem-registry.v1",
     }
+    # Diagnosis must retain the source failure's scope, not borrow the latest
+    # active Run from a later projection or reconstruct it from a fingerprint.
+    for key in ("workflow_run_id", "run_id", "task_map_generation"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            action[key] = value
     if direct_controlled_action:
         for key in (
             "workflow_run_id", "run_id", "goal_id", "claim_id",

@@ -141,3 +141,9 @@ Reader失败仍压住当前调用诊断；补齐基于完整kernel后继请求�
 本批最终影响闭包280项通过，包含确定性recovery control-loop；哨兵53项通过。
 验证计划无errors/warnings；只读真实历史回放选中evt-9934cdebe522，旧resolved
 断点不再压住该项。下一步冻结此修复控制器并核实真实诊断/动作闭环。
+
+3701887a于14:15仅替换控制器后，旧reflect建议真实superseded；Run Manager
+将evt-9934cdebe522送入rmar-2e95b668c8d1，Autoresearch真实接受并启动隔离诊断。
+后续观察发现诊断顶层Task丢失，原Run/代际也未从语义失败动作完整传递；两项
+RED复现后补齐，282项恢复回归、31项诊断消费者回归及53项哨兵通过。该后续
+修复尚未加载，避免为尚在执行的诊断重启；最终Reader/Judge/Goal仍未完成。
