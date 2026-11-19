@@ -28,6 +28,9 @@ Goal/Plan 事件必须通过实际 v5 schema，写入拒绝立即停止后续 Ca
 handoff 仅经接续回执鉴权后读取原 TaskRef 来源，新冻结候选和包仍绑定新 Run。
 Reader 派发入口同样先补齐接续生命周期；不能让启动时积压的 Candidate 先派发，
 再等待空闲巡检修复，否则会浪费一次 Reader 重试。补齐失败时禁止启动 fanout。
+带重试来源的 Candidate Reader 在输入 index/recover 中先验证其不可变候选合同、
+operation/request、冻结目标和当前包；活动锚点没有 Task 合同不是重绑定理由。
+普通 Task/Task recovery 的校验保留，篡改或已终止 Reader 仍不可读取为 current。
 当前范围限定同项目、已取消/失败的原始 Task Pipeline Run；不支持接续的再次接续，
 也不把历史8×8并发记作新源码从头无人资格。需要改产品候选时仍走正常修复规划。
 

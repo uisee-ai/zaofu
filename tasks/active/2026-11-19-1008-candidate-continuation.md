@@ -37,3 +37,9 @@ K7最终Reader/Judge/Goal/交付未验收，任务保持active，P2无人资格�
 修复05ba2f05已通过完整dev-verify：5773 passed/9 skipped，Web及53项sentinel、
 10项flow smoke通过。真实恢复证明空闲补发成功，但先处理积压Candidate产生一次
 额外失败；第二次维护将补齐动作接入Reader实际派发前，回归验证补齐失败不启动fanout。
+
+74a02915真实恢复后8个Reader均进入running并产生受控读取。发现带continuation_key
+的Candidate输入恢复先解析空锚点Task合同而返回unknown/rebind_required，实际候选
+权威检查为true。已以同形活动锚点复现RED并改为优先校验不可变Candidate权威；
+58项回归通过，真实只读回放由unknown变为current。Docker沙箱失败已由Run Manager
+自动进入预授权宿主采证，监工未放开沙箱权限；最终验收继续等待真实结果。
