@@ -214,7 +214,9 @@ def build_canonical_required_reads(
                 continue
             seen_plan_slices.add(slice_key)
         deduped.append(row)
-    return deduped
+    # Only new declarations change order; pinned attempts/cursors keep theirs.
+    # The default page must expose the recovery input before bulk product data.
+    return sorted(deduped, key=lambda row: row['source_id'] != 'critical-reader-repair-context')
 
 
 def _sources(manifest: Mapping[str, Any]) -> list[Mapping[str, Any]]:

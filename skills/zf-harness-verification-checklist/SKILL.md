@@ -31,6 +31,12 @@ event schema or recovery state machine.
 
 ## Verdict Method
 
+- Recovery attempts: read the current recovery context before probing a runner.
+  Inspect any supplied execution receipts against the exact target, command,
+  source stability, exit code and required evidence. An unavailable local Docker
+  socket does not invalidate a bound host execution receipt. Receipt availability
+  alone does not establish product acceptance. If the recovery input itself is
+  unreadable, report an input failure with the actual diagnostic evidence.
 - `passed`: all mandatory criteria are covered; no blocking finding remains.
 - `rejected`: verification executed successfully and evidence proves one or
   more product criteria failed.

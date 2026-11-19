@@ -69,6 +69,15 @@ def validate_verification_submission(
     )
     errors = [dict(issue) for issue in adapted.issues]
     errors.extend(typed_admission_issues_for(state_dir, adapted, semantic_submit=True))
+    if adapted.payload.get('failure_class') == 'verifier_execution_failure':
+        from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+        from zf.runtime.task_input_failure import recovery_input_issues
+
+        policy = request.get('input_consumption_policy') or {}
+        if request.get('input_consumption_policy_ref'):
+            policy = hydrate_sidecar_ref(state_dir, request['input_consumption_policy_ref']).payload
+        errors.extend(recovery_input_issues(state_dir, policy=policy,
+            schema=adapted.schema_version, result=adapted.payload))
     return {
         "schema_version": "semantic-result-preflight.v1",
         "status": "failed" if errors else "passed",

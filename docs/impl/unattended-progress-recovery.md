@@ -162,3 +162,11 @@ Git效果仍逐个执行，继续使用既有受控入口、精确路径与Run�
 隔离/门禁补充批次验证：专项60 passed；影响闭包4845 passed、7 skipped，串行4 passed，哨兵53 passed，流程mock10 passed；独立8×8 mock8 passed、真实tmux隔离1 passed。真实模型因额度门禁未重启，本批源代码修复通过不改变P2未验收状态。
 
 最终合并候选验证（含Task Pipeline激活/投递补充）：专项64 passed；影响闭包5020 passed、8 skipped；串行4 passed；哨兵53 passed；流程mock10 passed；8×8 mock8 passed；host双socket隔离1 passed。证据：reports/external-gates-20261118/validation-summary.json；真实provider未重开，P2保持active。
+
+## 恢复 Reader 的输入消费（2026-11-19）
+
+宿主验证产生当前候选绑定的回执后，Reader 仍须独立判断；不能因为其沙箱无 Docker socket 就忽略宿主执行证据。新 canonical required-read 声明将 `critical-reader-repair-context` 排在产品大输入之前；既有已冻结声明及分页游标保持不变。
+
+若当前 attempt 有该必读恢复输入，`verifier_execution_failure` 的只读预检和正式准入都会检查该输入的完整读取凭证。未读或部分读返回可纠正的 `recovery_input_unread`，不消费预检凭据，也不把命令成功判为产品通过。读取后仍可依据实际证据报告 runner 失败；真实 `reader_execution_failure` 仍可在产品输入未读完时报告。错误 attempt、摘要和损坏 ledger 不予接受。此检查仅证明输入生产的完整性，不证明模型理解。
+
+运行时只维护输入/凭证边界，回执的适用性与产品判断方法在 `skills/zf-harness-verification-checklist/SKILL.md`。回归入口：`tests/test_verifier_environment_failure_reads.py`、`tests/test_reader_replan_feedback.py`。本修复不包含额度主动探测或 Docker 权限扩展。
