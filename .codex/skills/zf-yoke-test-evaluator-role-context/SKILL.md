@@ -48,8 +48,13 @@ amendment are separate role capabilities supplied by the workflow profile.
   or size and reread the affected page from its original cursor. Do not keep
   retrying a known oversized batch while the tool capacity is unchanged.
   Preserve every page in the returned tool output; do not replace bodies with
-  digests, discard output, or pipe it to a summary. Stop at the bounded page
-  count and keep the exact next cursor. Each page retains its own authorization,
+  digests, discard output, or pipe it to a summary. End each bounded batch at its
+  page count, then continue the next batch with the exact next cursor; this is
+  not the end of the verification attempt. `complete:false` with a cursor is
+  remaining work, not an execution failure. If an invalid page-size option is
+  corrected and reads succeed, continue with the accepted size/default; the
+  recovered error does not justify a terminal failed/abstained result.
+  Each page retains its own authorization,
   validation, and receipt.
   Avoid one model round trip for each tiny page and avoid restarting page one
   after inspecting the manifest. Provider output truncation still requires

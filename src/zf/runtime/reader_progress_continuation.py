@@ -31,7 +31,11 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
             or (p.get("request_hash") or nested.get("request_hash")) != request_hash
             or (nested.get("attempt_id") or p.get("attempt_id")) != attempt_id):
         return False
-    if _waiting(events, role, operation_id, attempt_id, operation.get("task_id"), closed):
+    waiting, tool_observations = _waiting(
+        events, role, operation_id, attempt_id, operation.get("task_id"), closed,
+        state_dir=runtime.state_dir,
+    )
+    if waiting:
         return None
     if (closed.type != "provider.turn.closed"
             or closed.payload.get("provider_status") != "completed"):
@@ -83,6 +87,7 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
                  "input_read_progress": progress, "closed_event_id": closed.id,
                  "delivery_status": "unknown", "business_completed": False,
                  "recovery_owner": "run_manager",
+                 "tool_result_observations": tool_observations,
                  "next_action": "reconcile_existing_turn_before_retry"},
     ))
     runtime._set_worker_state(role, "idle", reason="reader_input_progress", force=True)
@@ -103,10 +108,10 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
     return True
 
 
-def _waiting(events, role, operation_id, attempt_id, task_id, closed) -> bool:
+def _waiting(events, role, operation_id, attempt_id, task_id, closed, *, state_dir) -> tuple[bool, list[dict]]:
     if closed.payload.get("pending_tool_ids") or closed.payload.get("tool_identity_unknown"):
-        return True
-    pending = set()
+        return True, []
+    pending = {}
     seen_dispatch = False
     for event in events:
         p = event.payload
@@ -117,22 +122,27 @@ def _waiting(events, role, operation_id, attempt_id, task_id, closed) -> bool:
             continue
         if event.type == "agent.tool.use":
             if not p.get("tool_use_id"):
-                return True
-            pending.add(p["tool_use_id"])
+                return True, []
+            pending[p["tool_use_id"]] = event
         elif event.type == "agent.tool.result":
-            pending.discard(p.get("tool_use_id"))
+            pending.pop(p.get("tool_use_id"), None)
     approvals = {e.payload.get("approval_ref") for e in events
                  if e.type == "approval.resolved" and e.origin == "kernel"}
     if task_id and any(
         e.type == "approval.requested" and (e.task_id or e.payload.get("task_id")) == task_id
         and e.payload.get("approval_ref") not in approvals for e in events
     ):
-        return True
+        return True, []
     resolved = {e.payload.get("request_id") for e in events
                 if e.type == "worker.assistance.closed" and e.origin == "kernel"}
-    return bool(pending) or any(
+    if any(
         e.type == "worker.assistance.requested" and e.actor == role
         and e.payload.get("operation_id") == operation_id
         and e.payload.get("active_attempt_id") == attempt_id
         and e.payload.get("request_id") not in resolved for e in events
-    )
+    ):
+        return True, []
+    from zf.runtime.reader_tool_observation import observe_completed_tools
+    observations = observe_completed_tools(state_dir, role, pending, closed)
+    observed = {row["tool_use_id"] for row in observations}
+    return bool(pending.keys() - observed), observations

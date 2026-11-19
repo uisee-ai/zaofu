@@ -378,3 +378,19 @@ canonical attempt绑定的operation/dispatch/lease，保留原typed输入和输�
 `reader_progress_continuation`在必读材料唯一覆盖增加后，使用原生session和原简报继续原sent TaskAttempt。它不调用故障重试分配器，不改变lease、dispatch、durable call request/attempt，也不因续读增加故障重试次数。真实K3暴露旧实现保留了逻辑WorkflowOperation attempt，但重新分配底层TaskAttempt，导致正常读取耗尽3/3预算；原shadow测试未覆盖该边界。
 
 新的发送仍经过统一预算及Run门禁，再校验kernel claim、当前Reader/operation/fanout/dispatch、独立的transport TaskAttempt身份、未到期lease和活worker。发送成功才记dispatched；结果未知保留原claim，不盲目重送。重复页不产生新进展，真实失败仍走原有有界故障恢复。该路径不赋予Reader写权限，也不替代最终结果准入。回归入口见`tests/test_reader_attempt_continuity.py`和`tests/test_reader_progress_continuation.py`。
+
+### Reader返回遗漏的证据对账与分页方法
+
+控制器在工具执行期间重启，遥测tailer从EOF重新挂接可能漏掉返回事件。Reader的
+续跑器不能因账本中存在历史tool.use就永久等待，也不能将未知工具当作完成。
+仅对当前RoleSessionRegistry绑定的Codex会话核对精确call ID、工具名、输入及
+完成时间；单一调用/返回对存在且返回不晚于已关闭回合时，保存完整不可变观察
+sidecar并绑定到continuation claim。缺失、重复、错会话、错输入、未来返回均
+保持等待；显式pending tool、未知身份、审批和协助等待也不被覆盖。不重放工具，
+不补造产品结果，不把历史返回当作当前模型理解。实际恢复入口的正反例见
+`tests/test_reader_tool_observation.py`。
+
+分页的`complete:false`和next_cursor表示继续工作。单批页数限制不是整个验收
+attempt的结束条件；修正选项后已恢复读取的错误不再是弃权依据。Evaluator skill
+及实际Task/Candidate输出合同统一说明这一点；真正未解决的执行失败仍按原
+failed/abstained路径上报。此方法修复不增加确定性语义门禁，也不降低必读义务。
