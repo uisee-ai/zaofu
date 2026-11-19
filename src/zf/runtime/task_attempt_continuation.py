@@ -16,7 +16,8 @@ def continuation_context(runtime: Any, role: str, context: Any) -> Any:
     from zf.runtime.task_pipeline_attempt_recovery import live_task_pipeline_attempt_for_role
 
     attempt = live_task_pipeline_attempt_for_role(runtime, role)
-    if not isinstance(context, DispatchContext) or attempt is None:
+    if (not isinstance(context, DispatchContext) or attempt is None
+            or attempt.get("status") != "sent"):
         return context
     return replace(context, continuation=True, run_id=attempt["run_id"],
         operation_id=attempt["operation_id"], attempt_id=attempt["attempt_id"],

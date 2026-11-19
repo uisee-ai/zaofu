@@ -2054,6 +2054,9 @@ class LifecycleManagerMixin(
                 briefing_path=path,
                 task_id=task_id,
             )
+            from zf.runtime.task_attempt_continuation import continuation_context
+
+            context = continuation_context(self, role.instance_id, context)
             self._send_transport_task(role.instance_id, path, prompt, context)
             self._get_spawn_coordinator().notify_first_dispatch(role)
         except Exception:
