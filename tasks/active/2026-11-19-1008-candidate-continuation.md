@@ -128,3 +128,16 @@ result_completion续跑后以evt-1acaab250e88通过，同Reader调用/attempt未
 Reader7建议都已不满足原运行条件。统一三条诊断路由与human既有的superseded
 结算，保留临时共享资源等待与暂停。9项RED复现，267项RunManager/恢复案卷/
 条件绑定及确定性control-loop回归通过；真实控制器尚未加载，不中断在途验收。
+
+13:50 Reader0再次正常关闭但未提交结果，单次收尾及原故障恢复耗尽；7份passed
+保留，test.failed，Judge未到达。额度无受限、上下文43.5%，不是本次停滞的证据。
+诊断发现已resolved的旧恢复断点在优先级选择前仍占位，最终去重后队列为空；
+首次修补又遗漏problem envelope参与案卷身份，补齐同形RED后修正。随后发现旧
+Reader失败仍压住当前调用诊断；补齐基于完整kernel后继请求的旧失败退场，保留
+错身份、缺失及不同行为主体的诊断。真实只读回放现已选中当前Reader0失败，
+尚未加载或取得自动恢复成功，不把候选队列出现视为完成。
+
+同Task并行Reader失败的诊断去重补充独立RED，改为优先绑定operation身份。
+本批最终影响闭包280项通过，包含确定性recovery control-loop；哨兵53项通过。
+验证计划无errors/warnings；只读真实历史回放选中evt-9934cdebe522，旧resolved
+断点不再压住该项。下一步冻结此修复控制器并核实真实诊断/动作闭环。

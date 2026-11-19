@@ -1157,6 +1157,16 @@ def build_run_manager_projection(
             )
         )
     ]
+    # Resolved checkpoint aliases must not suppress the diagnostic fallback
+    # before the final case admission removes them. Keep active/waiting gates.
+    resolved_cases = {
+        row["recovery_case_id"]
+        for row in build_recovery_case_projection(events).get("cases", [])
+        if row.get("status") == "resolved"
+    }
+    workflow_actions = [_action_with_problem_envelope(action) for action in workflow_actions]
+    workflow_actions = [action for action in workflow_actions
+                        if recovery_case_id_from_payload(action) not in resolved_cases]
     attempt_recovery_actions = _pending_task_attempt_recovery_actions(
         state_dir,
         config=config,
@@ -9665,11 +9675,16 @@ def _pending_semantic_event_actions(
     )
 
     integration_sources, integration_operations = integration_review_sources(events)
+    from zf.runtime.reader_failure_currentness import superseded_reader_failure_ids
+
+    superseded_reader_failures = superseded_reader_failure_ids(events)
 
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for idx, event in enumerate(events):
         event_payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.id in superseded_reader_failures:
+            continue
         if (event.type == "workflow.operation.blocked"
                 and event_payload.get("operation_id") in integration_operations):
             continue
@@ -10169,6 +10184,10 @@ def _matching_delivery_failure_exists(
 
 
 def _semantic_event_scope(event: ZfEvent, payload: dict[str, Any]) -> str:
+    if event.type in {"task.attempt.failed", "workflow.operation.failed", "workflow.operation.blocked"}:
+        operation_id = str(payload.get("operation_id") or "").strip()
+        if operation_id:
+            return f"operation_id:{operation_id}"
     for key in (
         "pdd_id",
         "feature_id",

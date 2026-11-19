@@ -462,3 +462,18 @@ superseded消费回执；后续tick不再反复deferred，也不对旧身份启�
 及原失败历史保留，产品Task/Run状态不受此诊断清理影响。共享修复被其他案卷
 持有等临时门禁仍deferred，门禁解除且身份仍有效时可重新消费；暂停期间不消费。
 真实Run Manager入口及临时等待恢复反例见`tests/test_run_manager_action_admission.py`。
+
+### 已解决断点与后继Reader的诊断选择
+
+工作流恢复断点参与优先级选择前，先按正式problem envelope规范化案卷身份。
+已有resolved回执的断点不再占据恢复分支，避免后续去重删除旧动作后留下空队列、
+同时压住当前失败的诊断。verifying、waiting、blocked案卷保持原有门禁与所有权。
+旧案卷事件和投影保留，回归见`tests/test_run_manager_recovery_frontier.py`。
+
+同一Run/Task/阶段/role的内核Reader请求已存在不同的后继operation时，旧调用的
+失败不再抢占语义诊断入口。必须有完整旧/新请求身份、非空摘要和匹配的失败归属；
+缺失、歧义、worker来源、不同角色/Run/Task/阶段均不能据此屏蔽诊断。晚到的旧
+失败同样不能冻结后继，当前调用失败仍须诊断；不删除历史、不生成产品通过。
+回归`tests/test_reader_failure_currentness.py`沿Run Manager实际选择入口验证。
+并行Reader共享Task时，调用失败的诊断去重按operation身份区分，避免一个Reader
+的诊断吞掉另一项当前失败；缺少operation身份的历史事件保持原有回退规则。
