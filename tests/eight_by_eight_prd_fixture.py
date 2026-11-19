@@ -98,6 +98,8 @@ maxIntegrationQueue=16；集成仍单写者CAS。Plan Preview审阅批准后才�
         (root / name).write_text(body)
     docs = configuration(root, harness=harness)
     flow, cfg = docs[0]["spec"], docs[1]["spec"]
+    # An unattended expiry must retain Run Manager-owned redrive, not shadow failure.
+    cfg["workflow"].setdefault("task_attempt", {})["mode"] = "enforce"
     flow["lanes"] = 8
     pipeline = flow["taskPipeline"]
     pipeline["maxActiveTaskPipelines"] = 16
