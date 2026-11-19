@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现: `dbf9f4f2` — fix: resume independent task verification from bound host probes
 
 # TaskVerify 预授权宿主验证与续跑
 
@@ -25,3 +26,11 @@ candidate_verify，但 Task Pipeline 入口仍为 verify_only。
 全绿；一次测试路径误填未执行，已更正。详见 reports/task-audit-host-recovery-20261119。
 真实失败任务的只读预览通过；合并后受控维护恢复及全流程资格另在P2记录，
 不以源码测试代替真实无人通过。
+
+已合入dev `00d6a0f8`；合并后89项和哨兵53项通过。真实运行经一次明确记录的
+源码维护后，Run Manager 自动执行TOOL-NORMALIZE的预授权Docker命令
+（evt-6bce3af23699，exit0、source_stable），自动请求Verify重试
+（evt-523cccab6ed1）并实际派发下一代（evt-c063e3fa2bc2）。新handoff摘要绑定
+宿主原始输出，详见 reports/task-audit-host-recovery-20261119/task-host-real-handoff-effect.json。
+这证明本补丁的真实执行接续，不是完整产品/无人资格通过；P2继续保留active。
+另两个租约过期任务的shadow策略遗漏独立跟踪，未绕过其权限拒绝或伪造结果。
