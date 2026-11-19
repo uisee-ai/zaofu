@@ -22,7 +22,10 @@ Candidate Readers；不发布 task_map.ready，不重新执行 scan、Plan 或 I
 事实及必读证据包含接续授权、历史批准和 Task 结果来源，当前验收仍走原准入门禁。
 
 受控动作回执先于 invoke 持久化；接纳、Goal、包及候选各步幂等。既有 Orchestrator
-空闲重放入口补齐“已接纳但候选未发布”的崩溃窗口，paused/terminal 不补发。
+空闲重放入口补齐已接纳但入口生命周期不完整的崩溃窗口，paused/terminal 不补发。
+Goal/Plan 事件必须通过实际 v5 schema，写入拒绝立即停止后续 Candidate 发布；
+历史上已发 Candidate 但缺失 Goal/Plan 准入的情况同样幂等补齐。Reader 的 canonical
+handoff 仅经接续回执鉴权后读取原 TaskRef 来源，新冻结候选和包仍绑定新 Run。
 当前范围限定同项目、已取消/失败的原始 Task Pipeline Run；不支持接续的再次接续，
 也不把历史8×8并发记作新源码从头无人资格。需要改产品候选时仍走正常修复规划。
 

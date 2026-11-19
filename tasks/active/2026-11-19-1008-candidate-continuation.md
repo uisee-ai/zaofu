@@ -26,4 +26,10 @@ Mock证明8Reader派发且无Plan/Impl、崩溃补发和暂停/终态拒绝。
 这3项及最终接续16项全部通过（19 passed）。Web typecheck/unit、53项sentinel及flow
 smoke通过。后续PAS身份修复及直接调用方144 passed；保留RED和环境失败原始记录。
 source action/runtime由tests/test_candidate_continuation.py显式覆盖并在dev-verify传入，
-未缩小其余自动影响闭包。真实接续尚待运行，任务保持active，P2无人资格不归档。
+未缩小其余自动影响闭包。实现提交bf8481bb feat: continue frozen candidate verification in a successor run。
+
+真实K7已沿K5进入Candidate，原16 Task保持done、Plan/Impl未重复派发；随后发现
+Goal/Plan事件漏必填字段且未检查写入拒绝，生产schema阻断Reader入口。已受控暂停
+同一Run并停止Provider，计1次修复介入。修复包含v5 schema回归、缺失生命周期幂等
+补发及真实canonical Reader入口继承原TaskRef校验；保留RED及原始失败账本。
+K7最终Reader/Judge/Goal/交付未验收，任务保持active，P2无人资格不归档。

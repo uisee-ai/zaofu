@@ -156,6 +156,15 @@ def test_successor_runtime_reuses_old_task_authority_and_replays_without_duplica
                                    "sha256": authority["contract_snapshot_digest"]}).payload
     assert contract["workflow_run_id"] == successor
     assert contract["child_authorities"][0]["workflow_run_id"] == run_id
+    from zf.runtime.artifact_query.handoff import CanonicalHandoffResolver, build_handoff_authority_contract
+    handoff_payload = {**authority, "output_profile_id": "candidate-verify", "artifact_package_mode": "blocking"}
+    handoff_payload["handoff_authority_contract"] = build_handoff_authority_contract(
+        handoff_payload, output_profile_id="candidate-verify", stage_id="review", operation_type="read")
+    resolver = CanonicalHandoffResolver(state_dir=runtime.state_dir,
+        project_root=runtime.project_root, config=runtime.config)
+    handoff, _ = resolver.resolve_payload(payload=handoff_payload, workflow_run_id=successor,
+        task_id=invoke.task_id, attempt_id="continued-reader", dispatch_id="continued-reader-dispatch")
+    assert handoff["workflow_run_id"] == successor
     from zf.runtime.product_acceptance import product_acceptance_binding_from_package
     acceptance = product_acceptance_binding_from_package(runtime.state_dir, {
         "ref": candidates[0].payload["plan_artifact_package_ref"],
@@ -169,6 +178,12 @@ def test_successor_runtime_reuses_old_task_authority_and_replays_without_duplica
                and e.payload.get("workflow_run_id") == successor]
     assert len(started) == 1
     assert started[0].payload["stage_id"] == "review"
+    from zf.runtime.artifact_read_ledger import ArtifactReadError
+    continuation_ref = candidates[0].payload["candidate_continuation_ref"]
+    (runtime.state_dir / continuation_ref["ref"]).write_text('{}')
+    with pytest.raises(ArtifactReadError, match="invalid Candidate continuation authority"):
+        resolver.resolve_payload(payload=handoff_payload, workflow_run_id=successor,
+            task_id=invoke.task_id, attempt_id="forged-reader", dispatch_id="forged-reader-dispatch")
 
 
 def test_web_continuation_requires_explicit_operator_token(tmp_path, monkeypatch):
@@ -291,6 +306,60 @@ def test_eight_reader_continuation_dispatches_no_planner_or_impl(source):
     assert {e.payload["role_instance"] for e in dispatches} == {r.instance_id for r in roles}
     assert len(dispatches) == 8
     assert not any(e.type == "task.pipeline.stage.dispatched" for e in seeded.event_log.read_all())
+
+
+def test_successor_entry_passes_real_v5_blocking_event_schema(source):
+    from tests.test_run_admission import _Transport
+    from zf.core.config.loader import load_config
+    from zf.core.events.writer import EventWriter
+    from zf.core.verification.event_schema import EventSchemaRegistry
+    from zf.runtime.orchestrator import Orchestrator
+    seeded, service, run_id, candidate = source
+    result = _action(service, run_id, candidate, dry_run=True)
+    accepted = _action(service, run_id, candidate, reviewed_digest=result["manifest"]["manifest_digest"],
+                       approval_ref="owner:continue")
+    invoke = next(e for e in seeded.event_log.read_all() if e.id == accepted["event_id"])
+    runtime = Orchestrator(seeded.state_dir, seeded.config, _Transport(), project_root=seeded.project_root)
+    production = load_config(Path(__file__).resolve().parents[1] / "zf-prd-v5.yaml")
+    runtime.event_writer = EventWriter(seeded.event_log,
+        schema_registry=EventSchemaRegistry.from_config(production), schema_mode="blocking")
+    assert runtime._on_workflow_invoke_requested(invoke).action == "workflow_invoke"
+    rows = [e for e in seeded.event_log.read_all() if e.payload.get("workflow_run_id") == accepted["workflow_run_id"]]
+    assert not [e.payload.get("violations") for e in rows if e.type == "discriminator.failed"]
+    assert {"goal.claim_set.pinned", "plan.artifact_package.admitted", "candidate.ready"} <= {e.type for e in rows}
+
+
+@pytest.mark.parametrize("historical_partial", [False, True])
+def test_replay_repairs_missing_lifecycle_and_never_publishes_after_gate_rejection(source, monkeypatch, historical_partial):
+    from tests.test_run_admission import _Transport
+    from zf.runtime.orchestrator import Orchestrator
+    from zf.runtime.orchestrator_periodic_sweep import run_replay_sweep
+    seeded, service, run_id, candidate = source
+    result = _action(service, run_id, candidate, dry_run=True)
+    accepted = _action(service, run_id, candidate, reviewed_digest=result["manifest"]["manifest_digest"],
+                       approval_ref="owner:continue")
+    invoke = next(e for e in seeded.event_log.read_all() if e.id == accepted["event_id"])
+    runtime = Orchestrator(seeded.state_dir, seeded.config, _Transport(), project_root=seeded.project_root)
+    append = runtime.event_writer.append
+    def drop_lifecycle(event):
+        if event.type in {"goal.claim_set.pinned", "plan.artifact_package.admitted"}:
+            # Historical fixture models the previous unchecked writer result;
+            # normal rejection must stop before Candidate publication.
+            return event if historical_partial else ZfEvent(type="discriminator.failed", actor="kernel")
+        return append(event)
+    monkeypatch.setattr(runtime.event_writer, "append", drop_lifecycle)
+    if historical_partial:
+        runtime._on_workflow_invoke_requested(invoke)
+    else:
+        with pytest.raises(ValueError, match="event admission blocked"):
+            runtime._on_workflow_invoke_requested(invoke)
+        assert not any(e.type == "candidate.ready" and e.payload.get("workflow_run_id") == accepted["workflow_run_id"]
+                       for e in seeded.event_log.read_all())
+    monkeypatch.setattr(runtime.event_writer, "append", append)
+    run_replay_sweep(runtime, events=[])
+    rows = [e for e in seeded.event_log.read_all() if e.payload.get("workflow_run_id") == accepted["workflow_run_id"]]
+    for kind in ("goal.claim_set.pinned", "plan.artifact_package.admitted", "candidate.ready"):
+        assert len([e for e in rows if e.type == kind]) == 1
 
 
 def test_continuation_preview_rejects_missing_source_without_invoking(tmp_path: Path):

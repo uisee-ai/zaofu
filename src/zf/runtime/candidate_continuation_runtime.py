@@ -10,16 +10,28 @@ from zf.runtime.candidate_continuation import authorized_manifest, preview, _jso
 from zf.runtime.flow_role_activation_fence import live_run_acceptance
 from zf.runtime.goal_claim_set import _digest as claim_digest
 from zf.runtime.plan_artifact_package import (
-    build_plan_artifact_package, hydrate_plan_artifact_package, write_plan_artifact_package,
+    build_plan_artifact_package, hydrate_plan_artifact_package, package_event_payload,
+    write_plan_artifact_package,
 )
 from zf.runtime.run_admission import admit_workflow_invoke, build_run_admission_projection
 from zf.runtime.workflow_anchor import mark_workflow_fanout_anchor, mark_workflow_managed_task
+
+_ENTRY_EVENTS = frozenset({"workflow.invoke.accepted", "run.goal.started", "goal.claim_set.pinned",
+                           "plan.artifact_package.admitted", "candidate.ready"})
+
+
+def _entry_complete(events) -> bool:
+    return _ENTRY_EVENTS <= {e.type for e in events}
 
 
 def recover_pending_continuations(runtime) -> None:
     """The idle replay caller repairs a crash after acceptance but before entry."""
     events = runtime.event_log.read_all()
-    published = {e.payload.get("workflow_run_id") for e in events if e.type == "candidate.ready"}
+    scopes = {}
+    for event in events:
+        if event.type in _ENTRY_EVENTS:
+            scopes.setdefault(event.payload.get("workflow_run_id"), set()).add(event.type)
+    published = {run for run, types in scopes.items() if _ENTRY_EVENTS <= types}
     rejected = {e.payload.get("source_event_id") for e in events if e.type == "workflow.invoke.rejected"}
     pending = [e for e in events if e.type == "workflow.invoke.requested"
                and e.payload.get("candidate_continuation_ref")
@@ -64,7 +76,7 @@ def admit_continuation(runtime, event):
     with live_run_acceptance(runtime, payload):
         events = runtime.event_log.read_all()
         existing = [e for e in events if e.payload.get("workflow_run_id") == run_id]
-        if any(e.type == "candidate.ready" for e in existing):
+        if _entry_complete(existing):
             return WorkflowRuntimeDecision(action="observe", task_id=task_id,
                                            reason="Candidate continuation entry already published")
         _publish_entry(runtime, event, receipt, existing)
@@ -121,7 +133,8 @@ def _publish_entry(runtime, invoked, receipt, existing):
                       "plan_artifact_package_digest": package_ref["sha256"]}
     claim_fields = {"goal_claim_set_ref": claim_ref["ref"], "goal_claim_set_digest": claim_ref["sha256"]}
     common = {**invoked.payload, **package_fields, **claim_fields, "task_map_generation": generation,
-              "candidate_continuation_ref": descriptor}
+              "candidate_continuation_ref": descriptor,
+              "task_map_ref": next(p["ref"] for p in inherited if p["logical_name"] == "task_map")}
 
     def emit_once(kind, body):
         prior = next((e for e in existing if e.type == kind), None)
@@ -129,6 +142,8 @@ def _publish_entry(runtime, invoked, receipt, existing):
             return prior
         event = runtime.event_writer.append(ZfEvent(type=kind, actor="orchestrator", origin="kernel",
             task_id=task_id, payload=body, causation_id=invoked.id, correlation_id=run_id))
+        if event.type != kind:
+            raise ValueError("Candidate continuation event admission blocked: " + kind)
         existing.append(event)
         return event
 
@@ -147,12 +162,10 @@ def _publish_entry(runtime, invoked, receipt, existing):
                                    "execution_scope": "candidate_continuation"})
     emit_once("goal.claim_set.pinned", {**common, "status": "ready", "mode": "blocking",
         "goal_claim_set_content_digest": claims["claim_set_digest"], "source": "candidate-continuation"})
-    emit_once("plan.artifact_package.admitted", {**common, "status": "admitted",
-        "package_id": package_ref["package_id"], "package_ref": package_ref["ref"],
-        "package_digest": package_ref["sha256"], "plan_revision": package["plan_revision"],
-        "package_slot": package["package_slot"], "producer_stage_id": "candidate-continuation",
-        "artifact_package_mode": package.get("artifact_package_mode", "blocking"),
-        "source": "candidate-continuation"})
+    emit_once("plan.artifact_package.admitted", {
+        **common, **package_event_payload(package, package_ref, status="admitted"),
+        "mode": package.get("artifact_package_mode", "blocking"),
+        "source_event_id": invoked.id, "source": "candidate-continuation"})
     freeze = _json(state, manifest["freeze_receipt_ref"])
     freeze.update({**package_fields, **claim_fields, "workflow_run_id": run_id, "goal_id": run_id,
         "pdd_id": task_id, "feature_id": task_id, "task_id": task_id,
