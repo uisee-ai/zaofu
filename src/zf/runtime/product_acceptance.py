@@ -464,10 +464,19 @@ def bind_product_acceptance_report(
         or identity.get("plan_artifact_package_digest")
         or ""
     )
+    # A write-free Task audit can own candidate_verify criteria while still
+    # evaluating only its frozen Task target. The kernel operation/profile,
+    # not a worker-authored owner label, determines full-product authority.
+    is_task_verify = (
+        operation.get("operation_type") == "task-stage"
+        and operation.get("task_pipeline_stage") == "verify"
+        and operation.get("output_profile_id") == "task-verify"
+    )
     is_candidate = (
         is_discovery
         or str(operation.get("output_profile_id") or "") == "candidate-verify"
-        or str(result.get("verification_owner") or "") == "candidate_verify"
+        or (str(result.get("verification_owner") or "") == "candidate_verify"
+            and not is_task_verify)
     )
     if not package_ref or not package_digest:
         return adapted

@@ -17,7 +17,7 @@ from zf.runtime.task_contract_snapshot import (
 )
 
 
-def _running_verify(tmp_path, profile, owner="task_verify"):
+def _running_verify(tmp_path, profile, owner="task_verify", *, pipeline=False):
     runtime = _runtime(tmp_path)
     runtime.config.workflow.flow_metadata["result_protocol"]["semantic_submit_profiles"][profile] = "blocking"
     credential_path = provision_role_submit_credential(runtime.state_dir, "verify-1")
@@ -26,6 +26,10 @@ def _running_verify(tmp_path, profile, owner="task_verify"):
     contract.update(workflow_run_id=RUN_ID, task_map_generation=GENERATION)
     contract["verification_owner"] = owner
     contract["acceptance_criteria"][0]["verification_owner"] = owner
+    if pipeline:
+        contract["verification_commands"][0]["owner"] = owner
+        contract["allowed_paths"] = []
+        contract["evidence_contract"] = {"runtime_only": True, "write_free": True}
     descriptor = write_task_contract_snapshot(runtime.state_dir, contract)
     target = write_target_snapshot(runtime.state_dir, build_target_snapshot(
         descriptor, target_commit=TARGET, contract_snapshot=contract,
@@ -56,11 +60,14 @@ def _running_verify(tmp_path, profile, owner="task_verify"):
         state_dir=runtime.state_dir, event_log=runtime.event_log, event_writer=runtime.event_writer,
     )
     prepared = SimpleNamespace(operation_id="op-verify")
+    pipeline_identity = ({"task_pipeline_stage": "verify", "operation_generation": 1,
+                          "task_map_generation": GENERATION} if pipeline else {})
+    payload.update(pipeline_identity)
     ensured = operations.ensure_operation(
         workflow_run_id=RUN_ID, operation_id=prepared.operation_id,
-        operation_type="fanout_reader_child", task_id="TASK-1",
+        operation_type="task-stage" if pipeline else "fanout_reader_child", task_id="TASK-1",
         role_instance="verify-1", active_attempt_id="attempt-verify", lease_id="lease-verify",
-        request={"output_profile_id": profile, "output_profile_revision": "1",
+        request={**pipeline_identity, "output_profile_id": profile, "output_profile_revision": "1",
                  "semantic_result_submit_mode": "blocking", "result_identity": payload,
                  "result_scratch_ref": "tmp/result-submit/op-verify/result.json",
                  "canonical_success_event": "verify.child.completed",
