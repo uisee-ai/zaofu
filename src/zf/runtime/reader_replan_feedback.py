@@ -80,6 +80,11 @@ def repair_input_refs(state_dir, payload: Mapping[str, Any], *, workflow_run_id:
         return _replayed_task_repair_input(
             state_dir, payload, workflow_run_id=workflow_run_id, task_id=task_id,
         )
+    retained = _fresh_retry_repair_inputs(
+        state_dir, payload, fields=fields, workflow_run_id=workflow_run_id, task_id=task_id,
+    )
+    if retained:
+        return retained
     descriptor = write_immutable_json_sidecar(state_dir, {
         'schema_version': 'reader-repair-context.v1', 'workflow_run_id': workflow_run_id,
         'task_id': task_id, 'source_event_id': source_event_id, **fields,
@@ -87,6 +92,50 @@ def repair_input_refs(state_dir, payload: Mapping[str, Any], *, workflow_run_id:
     }, root='reader-repair-context', kind='reader_repair_context', schema_version='reader-repair-context.v1',
         created_by='canonical-handoff-resolver', source_event_id=source_event_id)
     return [{**descriptor, 'source_id':'critical-reader-repair-context', 'allowed_paths':['$']}]
+
+
+def _fresh_retry_repair_inputs(state_dir, payload, *, fields, workflow_run_id, task_id):
+    """Keep unchanged recovery bodies pinned when minting a new reader call.
+
+    A new dispatch causation must not replace an immutable input while its old
+    required-read locator remains in the request. Retain both original content
+    and provenance; this grants no old attempt's read coverage to the new one.
+    """
+    from pathlib import Path
+    from zf.core.events.log import EventLog
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    parent = str(payload.get('retry_of_operation_id') or '')
+    reads = [r for r in payload.get('required_reads', [])
+             if r.get('source_id') == 'critical-reader-repair-context']
+    if not parent or not reads:
+        return []
+    operation = load_workflow_operation(EventLog(Path(state_dir) / 'events.jsonl'), parent)
+    if not operation or operation.get('operation_type') != 'fanout_reader_child':
+        raise ValueError('reader retry recovery input has no parent Reader operation')
+    body = hydrate_sidecar_ref(state_dir, operation['request_ref']).payload
+    if any(body.get(key) != value for key, value in (
+        ('workflow_run_id', workflow_run_id), ('task_id', task_id), ('operation_id', parent),
+        ('role_instance', payload.get('role_instance')),
+    )):
+        raise ValueError('reader retry recovery input parent identity mismatch')
+    refs = []
+    for row in reads:
+        if row not in body['request'].get('required_reads', []):
+            raise ValueError('reader retry recovery input was not pinned by its parent')
+        digest = str(row.get('artifact_sha256') or '')
+        descriptor = {'ref': f'artifacts/reader-repair-context/{digest}.json', 'sha256': digest,
+                      'kind': 'reader_repair_context', 'content_type': 'application/json'}
+        context = hydrate_sidecar_ref(state_dir, descriptor).payload
+        if (row.get('artifact_id') != f'{digest}.json'
+                or context.get('schema_version') != 'reader-repair-context.v1'
+                or context.get('workflow_run_id') != workflow_run_id
+                or context.get('task_id') != task_id
+                or any(context.get(key) != value for key, value in fields.items())):
+            raise ValueError('reader retry recovery context changed; requires a new recovery input')
+        refs.append({**descriptor, 'source_id': row['source_id'], 'allowed_paths': ['$']})
+    return refs
 
 
 def _replayed_task_repair_input(state_dir, payload: Mapping[str, Any], *,

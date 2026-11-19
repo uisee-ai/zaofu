@@ -79,3 +79,10 @@ timeout，导致其余五个活Reader的原生续跑也停止。新增wait_for_a
 部分超时修复最终影响闭包303 passed；新增全局暂停反例后入口11 passed；
 53项sentinel、7项flow smoke通过。真实只读预检确认当前K7符合精确对账条件，
 仅将健康Reader聚合恢复为等待，不恢复Reader3/7失败attempt。
+
+定向重试0/2/3经原repair.action入口请求；0因环境占用拒绝，2/3实际派发但恢复
+材料不可读而abstained。根因是新来源事件改变材料摘要，旧必读引用仍被继承。
+Candidate入口一项RED复现；保留父调用已固定且语义未变的恢复材料，原读取义务
+不转移。91项影响闭包通过，最终sentinel/mock及真实重试结果另记；未标全流程完成。
+
+本次输入修复最终91项影响闭包、53项sentinel、3项确定性flow smoke通过。

@@ -408,3 +408,13 @@ failed/abstained路径上报。此方法修复不增加确定性语义门禁，�
 失败事件和已失败子项不变，所有operation/attempt/lease不变。暂停、终态Run、
 已替代批次、整阶段超时、错调用/attempt均不恢复；不是重启终态Run或复用旧通过。
 回归`tests/test_reader_partial_timeout.py`直接覆盖超时和实际恢复入口及最终聚合。
+
+### 同批Reader定向重试的恢复材料
+
+现有`repair.action.requested(kind=rerun_fanout_child)`可为单个失败Reader创建新调用，
+保留同批已通过和仍在运行的兄弟项。新调用必须重新完成自己的必读义务。
+恢复材料正文未变化时保留父Reader已固定的不可变引用和来源，避免新dispatch
+因source_event_id变化生成不同摘要，却把旧required_reads带入新请求而不可读。
+复用前核对父调用Run/Task/role、必读登记、摘要、正文及恢复字段；改变或未绑定的
+输入拒绝沿此路径继承。原结果不改，旧read coverage不转移。实际Candidate准备入口
+及连续两次重试、篡改/错身份反例见`tests/test_candidate_reader_retry_authority.py`。
