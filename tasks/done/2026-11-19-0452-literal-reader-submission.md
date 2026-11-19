@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # P2 真实验收补丁：字面量 stdin 的受控提交
 
@@ -27,3 +27,6 @@
 - `bash scripts/dev-premerge-gate.sh`：53 passed；文档与结构检查通过。
 - `git diff --check`：通过。范围是确定性验证；旧真实Run尚未使用本补丁，不能据此声明完整无人资格。
 - 日志：`reports/literal-reader-submit-20261119/{verification-plan,impact-closure,mock,sentinel}.txt`。
+
+实现提交：`5b2782c5 fix: preserve literal stdin in controlled reader submissions`。
+范围完成：生成命令的字面量正文误拒修复及确定性回归；真实无人资格仍由P2主任务验收。
