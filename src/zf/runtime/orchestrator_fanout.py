@@ -6631,6 +6631,16 @@ class FanoutCoordinationMixin(
         provider_session_replaced: bool = False,
         recovery_decision_event: ZfEvent | None = None,
     ) -> bool:
+        if (recovery_decision_event is not None
+                and recovery_decision_event.payload.get("recovery_action")
+                == "reader_progress_continuation"
+                and (previous_dispatch.payload.get("task_id")
+                     or (previous_dispatch.payload.get("payload") or {}).get("task_id"))):
+            from zf.runtime.reader_attempt_continuation import deliver_reader_continuation
+
+            return deliver_reader_continuation(
+                self, previous_dispatch, recovery_decision_event,
+            )
         fanout_id = str(manifest.get("fanout_id") or "")
         child_id = str(child.get("child_id") or "")
         role_instance = str(child.get("role_instance") or "")

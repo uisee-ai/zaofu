@@ -303,3 +303,9 @@ canonical attempt绑定的operation/dispatch/lease，保留原typed输入和输�
 真实Reader反复因寻找额外持久引用而不提交的记录在
 `reports/failure-evidence-guidance-20261119/`；真实CLI回归同时覆盖文件和原生工具输出
 引用，均只准入failed/abstained，未执行的产品报告保持不存在。
+
+### Reader分页续跑与TaskAttempt enforce
+
+`reader_progress_continuation`在必读材料唯一覆盖增加后，使用原生session和原简报继续原sent TaskAttempt。它不调用故障重试分配器，不改变lease、dispatch、durable call request/attempt，也不因续读增加故障重试次数。真实K3暴露旧实现保留了逻辑WorkflowOperation attempt，但重新分配底层TaskAttempt，导致正常读取耗尽3/3预算；原shadow测试未覆盖该边界。
+
+新的发送仍经过统一预算及Run门禁，再校验kernel claim、当前Reader/operation/fanout/dispatch、独立的transport TaskAttempt身份、未到期lease和活worker。发送成功才记dispatched；结果未知保留原claim，不盲目重送。重复页不产生新进展，真实失败仍走原有有界故障恢复。该路径不赋予Reader写权限，也不替代最终结果准入。回归入口见`tests/test_reader_attempt_continuity.py`和`tests/test_reader_progress_continuation.py`。

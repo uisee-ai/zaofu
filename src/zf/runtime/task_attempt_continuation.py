@@ -30,6 +30,13 @@ def validate_task_continuation(runtime: Any, role: str, context: DispatchContext
         raise RuntimeError("continuation requires a trustworthy ledger; preserve original history")
     if is_dispatch_paused(runtime.state_dir, events=events):
         raise RuntimeError("continuation is paused")
+    if context.continuation_id:
+        claim = next((e for e in events if e.id == context.continuation_id), None)
+        if claim and claim.payload.get("recovery_action") == "reader_progress_continuation":
+            from zf.runtime.reader_attempt_continuation import validate_reader_continuation
+
+            validate_reader_continuation(runtime, role, context, events, claim)
+            return
     task = runtime.task_store.get(str(context.task_id or ""))
     row = task_attempt_store(runtime).get(str(context.attempt_id or "")) or {}
     expected = {"run_id": context.run_id, "task_id": context.task_id,
