@@ -24,6 +24,25 @@ def _entry_complete(events) -> bool:
     return _ENTRY_EVENTS <= {e.type for e in events}
 
 
+def ensure_candidate_entry(runtime, candidate) -> bool:
+    """Queued Candidate replay must not outrun repair of its own Run entry."""
+    descriptor = candidate.payload.get("candidate_continuation_ref")
+    if not descriptor:
+        return True
+    run_id = candidate.payload.get("workflow_run_id")
+    def scoped():
+        return [e for e in runtime.event_log.read_all() if e.payload.get("workflow_run_id") == run_id]
+    events = scoped()
+    if _entry_complete(events):
+        return True
+    invoked = next((e for e in events if e.type == "workflow.invoke.requested"
+                    and e.payload.get("candidate_continuation_ref") == descriptor), None)
+    if invoked is None:
+        return False
+    runtime._safe_housekeeping("candidate_continuation_entry", lambda: runtime._on_workflow_invoke_requested(invoked))
+    return _entry_complete(scoped())
+
+
 def recover_pending_continuations(runtime) -> None:
     """The idle replay caller repairs a crash after acceptance but before entry."""
     events = runtime.event_log.read_all()

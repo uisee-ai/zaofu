@@ -2353,6 +2353,10 @@ class FanoutCoordinationMixin(
             return False
         if self._run_fanout_dispatch_blocked(event):
             return False
+        if event.type == "candidate.ready" and trigger_payload.get("candidate_continuation_ref"):
+            from zf.runtime.candidate_continuation_runtime import ensure_candidate_entry
+            if not ensure_candidate_entry(self, event):
+                return False
         if stage_barrier_blocks_dispatch(self, event):
             return False
         from zf.runtime.fanout import FanoutChild, FanoutContext

@@ -33,3 +33,7 @@ Goal/Plan事件漏必填字段且未检查写入拒绝，生产schema阻断Reade
 同一Run并停止Provider，计1次修复介入。修复包含v5 schema回归、缺失生命周期幂等
 补发及真实canonical Reader入口继承原TaskRef校验；保留RED及原始失败账本。
 K7最终Reader/Judge/Goal/交付未验收，任务保持active，P2无人资格不归档。
+
+修复05ba2f05已通过完整dev-verify：5773 passed/9 skipped，Web及53项sentinel、
+10项flow smoke通过。真实恢复证明空闲补发成功，但先处理积压Candidate产生一次
+额外失败；第二次维护将补齐动作接入Reader实际派发前，回归验证补齐失败不启动fanout。

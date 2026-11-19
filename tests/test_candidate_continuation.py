@@ -350,12 +350,23 @@ def test_replay_repairs_missing_lifecycle_and_never_publishes_after_gate_rejecti
     monkeypatch.setattr(runtime.event_writer, "append", drop_lifecycle)
     if historical_partial:
         runtime._on_workflow_invoke_requested(invoke)
+        frozen = next(e for e in seeded.event_log.read_all() if e.type == "candidate.ready"
+                      and e.payload.get("workflow_run_id") == accepted["workflow_run_id"])
+        assert runtime._maybe_start_reader_fanout(frozen) is False
+        assert not any(e.type == "fanout.started" for e in seeded.event_log.read_all())
     else:
         with pytest.raises(ValueError, match="event admission blocked"):
             runtime._on_workflow_invoke_requested(invoke)
         assert not any(e.type == "candidate.ready" and e.payload.get("workflow_run_id") == accepted["workflow_run_id"]
                        for e in seeded.event_log.read_all())
     monkeypatch.setattr(runtime.event_writer, "append", append)
+    if historical_partial:
+        frozen = next(e for e in seeded.event_log.read_all() if e.type == "candidate.ready"
+                      and e.payload.get("workflow_run_id") == accepted["workflow_run_id"])
+        assert runtime._maybe_start_reader_fanout(frozen)
+        before_idle = [e.type for e in seeded.event_log.read_all()
+                       if e.payload.get("workflow_run_id") == accepted["workflow_run_id"]]
+        assert before_idle.index("plan.artifact_package.admitted") < before_idle.index("fanout.started")
     run_replay_sweep(runtime, events=[])
     rows = [e for e in seeded.event_log.read_all() if e.payload.get("workflow_run_id") == accepted["workflow_run_id"]]
     for kind in ("goal.claim_set.pinned", "plan.artifact_package.admitted", "candidate.ready"):

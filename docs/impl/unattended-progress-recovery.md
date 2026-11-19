@@ -26,6 +26,8 @@ Candidate Readers；不发布 task_map.ready，不重新执行 scan、Plan 或 I
 Goal/Plan 事件必须通过实际 v5 schema，写入拒绝立即停止后续 Candidate 发布；
 历史上已发 Candidate 但缺失 Goal/Plan 准入的情况同样幂等补齐。Reader 的 canonical
 handoff 仅经接续回执鉴权后读取原 TaskRef 来源，新冻结候选和包仍绑定新 Run。
+Reader 派发入口同样先补齐接续生命周期；不能让启动时积压的 Candidate 先派发，
+再等待空闲巡检修复，否则会浪费一次 Reader 重试。补齐失败时禁止启动 fanout。
 当前范围限定同项目、已取消/失败的原始 Task Pipeline Run；不支持接续的再次接续，
 也不把历史8×8并发记作新源码从头无人资格。需要改产品候选时仍走正常修复规划。
 
