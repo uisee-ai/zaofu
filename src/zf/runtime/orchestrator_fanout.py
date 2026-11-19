@@ -6350,7 +6350,7 @@ class FanoutCoordinationMixin(
                 continue
             pending_children = [str(child.get("child_id") or "") for child in timed_out]
             for child in timed_out:
-                self.event_writer.append(ZfEvent(
+                child_failure = self.event_writer.append(ZfEvent(
                     type="fanout.child.failed",
                     actor="zf-cli",
                     payload={
@@ -6365,6 +6365,7 @@ class FanoutCoordinationMixin(
                             str(child.get("child_id") or ""), "timeout"
                         ),
                         "timeout_seconds": timeout_seconds,
+                        "failure_kind": "infra",
                     },
                     correlation_id=str(manifest.get("trace_id") or ""),
                 ))
@@ -6375,6 +6376,11 @@ class FanoutCoordinationMixin(
                     run_id=str(child.get("run_id") or ""),
                     task_id=str(child.get("task_id") or ""),
                 )
+            if self._defer_partial_reader_timeout(
+                manifest=manifest, pending_children=pending_children,
+                causation_event=child_failure,
+            ):
+                continue
             timed_out_event = self.event_writer.append(ZfEvent(
                 type="fanout.timed_out",
                 actor="zf-cli",

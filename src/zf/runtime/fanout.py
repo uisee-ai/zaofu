@@ -612,11 +612,20 @@ class FanoutManifestProjector:
                 _apply_child_metadata(child, payload)
                 _apply_report_payload(child, payload)
             elif event.type == "fanout.aggregate.started":
+                prior_aggregate = manifest.get("aggregate") or {}
                 manifest["aggregate"] = {
                     "status": "started",
                     "mode": _payload_str(payload, "mode"),
                     "last_event_id": event.id,
                 }
+                if (event.origin == "kernel"
+                        and payload.get("recovery_kind") == "partial_reader_idle_timeout"
+                        and prior_aggregate.get("reason") == "timeout"
+                        and prior_aggregate.get("status") == "failed"
+                        and payload.get("recovered_from_event_id") == prior_aggregate.get("last_event_id")):
+                    manifest["status"] = "running"
+                    manifest["aggregate"].update(status="pending",
+                        recovered_from_event_id=payload["recovered_from_event_id"])
             elif event.type == "fanout.aggregate.completed":
                 manifest["aggregate"] = {
                     "status": _payload_str(payload, "status") or "completed",

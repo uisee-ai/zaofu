@@ -394,3 +394,17 @@ sidecar并绑定到continuation claim。缺失、重复、错会话、错输入�
 attempt的结束条件；修正选项后已恢复读取的错误不再是弃权依据。Evaluator skill
 及实际Task/Candidate输出合同统一说明这一点；真正未解决的执行失败仍按原
 failed/abstained路径上报。此方法修复不增加确定性语义门禁，也不降低必读义务。
+
+### wait_for_all中的单Reader空闲失败
+
+单个Reader空闲超时只结算该子项及其durable operation。还有健康子项时不发布
+整个fanout的timed_out或最终失败；它们继续原身份的阅读、结果编写与提交，最后
+仍按原wait_for_all策略聚合。any_failed_fail及真实整阶段期限保持既有终止语义。
+超时聚合沿普通fanout路径携带父Run/Plan身份；禁用阶段时限时不显示误导的“0秒”。
+
+历史版本可能已因单项idle错误地终止聚合、留下其他dispatched Reader。恢复扫尾
+只对当前running Run、当前wait_for_all Reader批次、timeout_seconds=0且存在精确
+匹配的running调用进行对账，追加带原失败引用的aggregate.started恢复等待。原
+失败事件和已失败子项不变，所有operation/attempt/lease不变。暂停、终态Run、
+已替代批次、整阶段超时、错调用/attempt均不恢复；不是重启终态Run或复用旧通过。
+回归`tests/test_reader_partial_timeout.py`直接覆盖超时和实际恢复入口及最终聚合。
