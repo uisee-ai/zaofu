@@ -13,6 +13,7 @@ from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.source_repair_apply import _hard_denied
 from zf.runtime.task_host_actions import apply
+from zf.runtime.task_host_quiescence import unrelated_task_turn_isolated
 from zf.runtime.task_host_manifest import binding, dependency_digest, digest, git, preview, source_files
 from zf.runtime.task_pipeline_operator_retry import request_impl_retry
 from zf.runtime.workflow_operation import reduce_workflow_operations
@@ -46,8 +47,7 @@ def reconcile_task_publication(service) -> int:
             if is_dispatch_paused(service.state_dir, events=events):
                 break
             if (op.get('task_pipeline_stage') != 'impl' or op.get('status') != 'settled'
-                    or op.get('semantic_verdict') != 'blocked'
-                    or active_codex_turn_from_events(events, str(op.get('role_instance') or ''))):
+                    or op.get('semantic_verdict') != 'blocked'):
                 continue
             try:
                 _, _, _, root = binding(service, op_id)
@@ -55,6 +55,9 @@ def reconcile_task_publication(service) -> int:
                 logging.getLogger(__name__).warning(
                     'Candidate publication deferred for %s: %s', op_id, exc)
                 continue  # A stale operation, changed contract or live successor has no authority.
+            turn = active_codex_turn_from_events(events, str(op.get('role_instance') or ''))
+            if turn and not unrelated_task_turn_isolated(service, op, root, turn, events):
+                continue
             if any(e.type == 'human.escalate' and e.payload.get('task_publish_operation') == op_id for e in events):
                 continue
             try:

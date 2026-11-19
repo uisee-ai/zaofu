@@ -1,5 +1,22 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-19 工作区发布等待范围
+
+额度恢复后的隔离32任务轮证明，worker名称复用不等于原任务工作区仍被占用。
+`TOOL-MAX` 的 Impl turn 在00:02:35结束；`dev-lane-0`随后执行其他独立Task，
+旧候选直到00:20:58才发布。隔离mock复现：8个待发布候选中，旧worker在另一个
+工作区执行会使其中1项持续等待；该turn结束后才恢复。此前发布批量8没有消除这个条件。
+
+发布协调器和受控宿主动作现在共享同一机械核验：只有真实kernel hook的
+session/turn、causation指向的kernel派发、唯一当前running operation、run/task/role/
+dispatch及cwd均对应另一个Task，两个工作区不重叠且均在state_dir内，原工作区
+进程持有者检查确认空闲，才允许继续原授权动作。同任务、未知/伪造/不完整绑定、
+同目录/嵌套目录或遗留进程均保持等待。没有扩大可写路径、Run预算或发布verdict，
+同一任务的新operation仍由原binding gate拒绝。
+
+本项见[发布工作区修复](../../tasks/active/2026-11-19-0033-publication-workspace-fence.md)。
+冻结真实轮不热加载此补丁；mock/源码回归不能替代修复版真实8×8资格。
+
 ## 2026-11-18 真实资格复核纠正
 
 32任务轮 `workflow-8cacd612404a641a` 已有32项 TaskVerify/集成完成及冻结候选的真实

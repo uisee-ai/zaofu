@@ -15,6 +15,7 @@ from zf.runtime.environment_resources import environment_lock_plan
 from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json, write_sidecar_text
 from zf.runtime.task_host_manifest import binding, dependency_digest, digest, git, preview, source_files
+from zf.runtime.task_host_quiescence import unrelated_task_turn_isolated
 from zf.runtime.workflow_git_readiness import git_environment
 
 ACTION = "task-host-assist"
@@ -97,7 +98,9 @@ def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, v
         if any(e.type == "runtime.action.attempt.started" for e in prior):
             raise ValueError("prior host effect is unresolved; inspect it, do not rerun")
         op, _, _, root = binding(service, manifest["operation_id"])
-        if active_codex_turn_from_events(service.writer.event_log.read_all(), str(op.get("role_instance") or "")):
+        events = service.writer.event_log.read_all()
+        turn = active_codex_turn_from_events(events, str(op.get("role_instance") or ""))
+        if turn and not unrelated_task_turn_isolated(service, op, root, turn, events):
             raise BlockingIOError("host assistance requires a closed provider turn")
         # Publication reads dependencies; isolated snapshots also only read the
         # host workspace. Neither needs to evict idle provider environment readers.
