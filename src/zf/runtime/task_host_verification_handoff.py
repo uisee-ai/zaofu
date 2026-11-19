@@ -10,7 +10,7 @@ from zf.runtime.host_probe_diagnosis import bound_container_probe_receipt
 from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.task_host_evidence import IDENTITY
-from zf.runtime.task_host_manifest import preview
+from zf.runtime.task_host_manifest import current_task_dispatch, preview
 from zf.runtime.task_host_quiescence import unrelated_task_turn_isolated
 from zf.runtime.task_pipeline_verify_retry import request_verify_retry
 from zf.runtime.verification_commands import verification_command_required_for_stage
@@ -84,10 +84,12 @@ def resume_task_after_probes(
         return False
     turn = active_codex_turn_from_events(events, str(operation.get('role_instance') or ''))
     if turn:
-        dispatch = next((e for e in events if e.type == 'task.pipeline.stage.dispatched'
-                         and e.payload.get('operation_id') == operation['operation_id']), None)
-        if (dispatch is None or not unrelated_task_turn_isolated(service, operation,
-                Path(dispatch.payload['workdir']), turn, events)):
+        try:
+            dispatch = current_task_dispatch(events, operation)
+        except ValueError:
+            return False
+        if not unrelated_task_turn_isolated(service, operation,
+                Path(dispatch['workdir']), turn, events):
             return False
     try:
         result = request_verify_retry(state_dir=service.state_dir,

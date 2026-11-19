@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 
+from zf.core.events import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.runtime.project_git_baseline import _file, _relative
 from zf.runtime.run_admission import build_run_admission_projection, fold_terminal_run_scope
@@ -72,11 +73,7 @@ def binding(service, operation_id: str) -> tuple[dict, dict, dict, Path]:
     if task is None or any(str(contract.get(k) or "") != str(v or "")
                            for k, v in current_task_contract_identity(task).items()):
         raise ValueError("task contract is no longer current")
-    dispatches = [e for e in events if e.type == "task.pipeline.stage.dispatched"
-                  and e.payload.get("operation_id") == operation_id]
-    if len(dispatches) != 1:
-        raise ValueError("task operation lacks a unique dispatch workspace")
-    dispatch = dispatches[0].payload
+    dispatch = current_task_dispatch(events, op)
     root = Path(dispatch["workdir"])
     if root.is_symlink() or root.resolve() != root or not root.is_relative_to(service.state_dir.resolve()):
         raise ValueError("workspace must be the dispatched owned path under state_dir")
@@ -89,6 +86,27 @@ def binding(service, operation_id: str) -> tuple[dict, dict, dict, Path]:
     if branch != identity.get("source_branch") or branch != dispatch.get("source_branch"):
         raise ValueError("workspace branch differs from dispatch authority")
     return op, request, contract, root
+
+
+def current_task_dispatch(events: list[ZfEvent], operation: dict) -> dict:
+    """Bind the settled attempt, never an arbitrary historical placement."""
+    dispatch_id = operation.get("dispatch_id")
+    attempt_id = operation.get("active_attempt_id")
+    rows = [e for e in events if e.type == "task.pipeline.stage.dispatched"
+            and e.payload.get("operation_id") == operation.get("operation_id")
+            and e.payload.get("dispatch_id") == dispatch_id]
+    if not dispatch_id or not attempt_id or len(rows) != 1:
+        raise ValueError("task operation lacks a unique dispatch workspace")
+    event, payload = rows[0], rows[0].payload
+    attempts = {str(payload[k]) for k in ("attempt_id", "active_attempt_id") if payload.get(k)}
+    keys = ("task_id", "workflow_run_id", "task_map_generation",
+            "task_pipeline_stage", "operation_generation", "lease_id")
+    if (event.origin != "kernel" or attempts != {str(attempt_id)}
+            or any(not operation.get(k) or str(payload.get(k)) != str(operation[k]) for k in keys)
+            or (operation.get("role_instance")
+                and payload.get("role_instance") != operation["role_instance"])):
+        raise ValueError("task dispatch identity does not match the current attempt")
+    return payload
 
 
 def source_files(root: Path) -> list[dict]:
