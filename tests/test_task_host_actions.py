@@ -52,7 +52,7 @@ def case(tmp_path, monkeypatch):
     writer.append(ZfEvent(type="task.pipeline.generation.admitted", payload={**identity,
         "schema_version": "task-pipeline-generation.v1", "task_ids": ["T1"]}))
     writer.append(ZfEvent(type="workflow.operation.requested", payload={**identity, "request_ref": ref}))
-    writer.append(ZfEvent(type="task.pipeline.stage.dispatched", payload={**identity,
+    writer.append(ZfEvent(type="task.pipeline.stage.dispatched", origin="kernel", payload={**identity,
         "workdir": str(root), "source_branch": "worker-test"}))
     writer.append(ZfEvent(type="workflow.call.result.admitted", payload={**identity,
         "semantic_verdict": "blocked", "control_result_ref": {"source_event_id": "blocked"}}))
@@ -229,7 +229,7 @@ def test_verify_abstention_requires_its_own_failed_execution_receipt(case, execu
         ('workflow.call.result.admitted', {'semantic_verdict': 'abstained', 'control_result_ref': result}),
         ('workflow.operation.settled', {}),
     ]:
-        service.writer.append(ZfEvent(type=kind, payload={**own, **extra}))
+        service.writer.append(ZfEvent(type=kind, origin='kernel', payload={**own, **extra}))
     if not accepted:
         with pytest.raises(ValueError, match='failed Verify execution'):
             preview(service, operation_id='verify-1', kind='verify', command_id='contract-verification')

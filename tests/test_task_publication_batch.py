@@ -48,7 +48,7 @@ def batch(case):
             {'request': request}, kind='test', schema_version='test.v1', created_by='test')
         service.writer.append(ZfEvent(type='workflow.operation.requested',
             payload={**identity, 'request_ref': ref}))
-        service.writer.append(ZfEvent(type='task.pipeline.stage.dispatched',
+        service.writer.append(ZfEvent(type='task.pipeline.stage.dispatched', origin='kernel',
             payload={**identity, 'workdir': str(root), 'source_branch': branch}))
         result = {**identity, 'changed_files': ['probe.py'], 'verdict': 'blocked',
             'failure_class': 'host_publication_required', 'target_commit': git(root, 'rev-parse', 'HEAD')}

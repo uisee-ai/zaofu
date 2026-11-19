@@ -254,3 +254,14 @@ runtime目录写权限，也不把hook放行当作提交成功或产品通过。
 回归`tests/test_hook_literal_result_stdin.py`直接使用真实提示生成器和Codex/Claude
 hook入口，覆盖合法正文及shell副作用反例。运行中的旧实验不因源码修复而变为
 新源码验证；任何批准后的源码维护仍须明确计入人工介入。
+
+### Task宿主动作绑定当前派发
+
+同一operation在租约恢复或受控resume后可以有多个`task.pipeline.stage.dispatched`
+历史记录。宿主动作和Verify证据接续按当前operation的dispatch、attempt、lease及
+Task/Run/map/stage/generation识别唯一内核派发，不按整个历史记录数量，也不选择
+账本中的第一条或最后一条。原有合同、目标、工作区、静默、审批和副作用幂等检查保留。
+重复当前派发、缺失当前派发、身份冲突或非内核来源仍拒绝执行。
+
+回归`tests/test_task_host_redrive_binding.py`覆盖实际RunManager tick→隔离命令→独立
+Verify接续，并保留错误绑定不产生宿主效果的反例。真实轮维护前后证据分开记录。
