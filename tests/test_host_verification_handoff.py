@@ -104,3 +104,36 @@ def test_partial_allowlist_cannot_reopen_reader_as_if_all_commands_were_probed(r
     assert len(waits) == 1
     assert waits[0].payload['unverified_command_ids'] == ['not-authorized']
     assert p.commands == ['python3 probe.py']
+
+
+@pytest.mark.parametrize('different', ['', 'fanout', 'target', 'contract', 'run'])
+def test_completed_candidate_probe_owner_does_not_duplicate_sibling_effects(recovery, monkeypatch, different):
+    from zf.runtime import host_verification as module
+    from zf.runtime import host_verification_handoff as handoff
+    service, _, _ = recovery
+    service.config.runtime.host_verification = policy()
+    result = write_sidecar_json(service.state_dir, 'artifacts/environment.json',
+        {'failure_class': 'environment'}, kind='test', schema_version='test.v1', created_by='test')
+    first = {'operation_id': 'owner', 'workflow_run_id': 'run-1', 'status': 'settled',
+             'semantic_verdict': 'abstained', 'admitted_control_result_ref': result}
+    second = {**first, 'operation_id': 'sibling'}
+    if different == 'run': second['workflow_run_id'] = 'run-2'
+    contract = {'authority_scope': 'candidate', 'verification_commands': [
+        {'command_id': 'probe', 'command': 'python3 probe.py'}]}
+    requests = {op['operation_id']: {'fanout_id': 'fanout-1', 'target_commit': 'target-1',
+        'result_identity': {'contract_snapshot_digest': 'contract-1'}} for op in (first, second)}
+    if different in {'fanout', 'target'}:
+        requests['sibling']['fanout_id' if different == 'fanout' else 'target_commit'] = 'changed'
+    if different == 'contract': requests['sibling']['result_identity']['contract_snapshot_digest'] = 'changed'
+    operations = {'owner': first, 'sibling': second}
+    monkeypatch.setattr(module, 'reduce_workflow_operations', lambda events: operations)
+    monkeypatch.setattr(module, 'binding', lambda service, oid: (operations[oid], requests[oid], contract, service.project_root))
+    monkeypatch.setattr(handoff, 'completed_reader_probes', lambda service, op, *args:
+        ({'probe'}, {'probe': result} if op['operation_id'] == 'owner' else {}, False))
+    service.writer.emit('runtime.action.attempt.completed', payload={'manifest_digest': 'owner'})
+    monkeypatch.setattr(module, 'preview', lambda service, **kw:
+        {'manifest_digest': kw['operation_id'], 'identity': {'workflow_run_id': operations[kw['operation_id']]['workflow_run_id']}})
+    effects = []
+    monkeypatch.setattr(module, 'apply', lambda service, manifest, **kw: effects.append(manifest['manifest_digest']))
+    assert module.reconcile_host_verification(service) == bool(different)
+    assert effects == (['sibling'] if different else [])

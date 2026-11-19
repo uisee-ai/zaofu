@@ -43,3 +43,8 @@ K7最终Reader/Judge/Goal/交付未验收，任务保持active，P2无人资格�
 权威检查为true。已以同形活动锚点复现RED并改为优先校验不可变Candidate权威；
 58项回归通过，真实只读回放由unknown变为current。Docker沙箱失败已由Run Manager
 自动进入预授权宿主采证，监工未放开沙箱权限；最终验收继续等待真实结果。
+
+9cc5b624保存输入恢复修复，最终94项影响闭包及53项sentinel通过。在线进一步发现
+首Reader19条宿主采证完成、仍等待fanout聚合时，为第二Reader重新执行相同命令。
+修复按精确Run/fanout/target/contract协调已采证owner，不额外改写reusable或产品
+verdict；同组重复及不同组独立推进回归RED→GREEN，268 passed/2 host deselected。

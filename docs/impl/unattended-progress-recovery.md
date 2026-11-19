@@ -31,6 +31,9 @@ Reader 派发入口同样先补齐接续生命周期；不能让启动时积压�
 带重试来源的 Candidate Reader 在输入 index/recover 中先验证其不可变候选合同、
 operation/request、冻结目标和当前包；活动锚点没有 Task 合同不是重绑定理由。
 普通 Task/Task recovery 的校验保留，篡改或已终止 Reader 仍不可读取为 current。
+预授权宿主采证按同Run、fanout、冻结目标和合同摘要协调一个已开始采证的Reader。
+它等待聚合并交回原恢复入口时，兄弟Reader不重复执行同组命令；不同目标、合同或
+fanout不互相阻塞。这里只协调外部执行效果，不共享Reader结论或授予跨attempt读取。
 当前范围限定同项目、已取消/失败的原始 Task Pipeline Run；不支持接续的再次接续，
 也不把历史8×8并发记作新源码从头无人资格。需要改产品候选时仍走正常修复规划。
 
