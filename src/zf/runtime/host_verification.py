@@ -140,6 +140,9 @@ def reconcile_host_verification(service) -> int:
                 _, _, contract, _ = binding(service, operation_id)
             except (ValueError, KeyError, OSError):
                 continue
+            from zf.runtime.task_host_verification_handoff import resume_task_after_probes
+            if resume_task_after_probes(service, operation, contract, policy, events):
+                return 1
             from zf.runtime.host_verification_handoff import completed_reader_probes, resume_reader_after_probes
             if resume_reader_after_probes(service, operation, contract, policy, events):
                 return 1

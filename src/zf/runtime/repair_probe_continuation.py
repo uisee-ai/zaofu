@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events import ZfEvent
-from zf.runtime.host_probe_diagnosis import _receipt
+from zf.runtime.host_probe_diagnosis import bound_container_probe_receipt
 
 
 def probe_repair_revalidated(
@@ -36,7 +36,7 @@ def probe_repair_revalidated(
     failures: list[dict] = []
     latest = None
     for index, event in enumerate(events):
-        receipt = _receipt(state_dir, event, prior, policy)
+        receipt = bound_container_probe_receipt(state_dir, event, prior, policy)
         prior[event.id] = event
         if receipt is None:
             continue
