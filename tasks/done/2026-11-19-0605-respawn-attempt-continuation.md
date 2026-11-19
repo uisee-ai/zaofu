@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # Provider重启后接续当前TaskAttempt
 
@@ -18,3 +18,6 @@
 RED：有效fixture下1失败、5拒绝反例通过；初次fixture API错误不算业务RED。
 
 验证：直接入口及continuation聚焦32 passed；dev-verify自动影响闭包3075 passed / 7 skipped，sentinel53 passed，flow-smoke10 passed。真实故障来自K4的3个worker；K4容量验收已失败并正常停止，保留候选代码，不追认为无人通过。
+
+实现提交：`27a82f08 fix: continue sent task attempts after worker respawn`。
+此done仅指修复条目，8×8无人真实验收仍需新轮证明。
