@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现: `dad9683e` — fix: distinguish task audit acceptance from full product review
 
 # Task 审计与完整 Product Acceptance 的机械边界
 
@@ -16,3 +17,5 @@
 验证：旧HEAD复现1失败/6通过（错误要求完整Product Acceptance报告）；修复后29项定向
 通过、影响闭包1200通过。真实停止Run的同一scratch在旧代码预检failed，在修复代码
 预检passed，无账本写入、无准入或恢复。源码修复的真实资格由下一轮P2继续核验。
+
+补充流程mock和文档检查通过，合并哨兵53通过。全真实P2仍未通过，待新版新轮验证。
