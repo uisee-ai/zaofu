@@ -387,7 +387,10 @@ def build_terminal_router(
                 cols=cols,
                 rows=rows,
             )
+            from zf.web.local_login import current_grant
+            grant = current_grant.get()
             ticket = tickets.issue(
+                browser_binding=grant.binding if grant else "",
                 project_id=terminal_service.project_id,
                 session_id=session_id,
                 mode=mode,
@@ -478,8 +481,11 @@ def build_terminal_router(
             websocket.headers.get("sec-websocket-protocol", "")
         )
         try:
+            from zf.web.local_login import current_grant
+            grant = current_grant.get()
             attachment = tickets.consume(
                 token,
+                browser_binding=grant.binding if grant else "",
                 project_id=terminal_service.project_id,
                 session_id=session_id,
                 mode=mode,

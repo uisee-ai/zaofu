@@ -218,7 +218,7 @@ mkdir -p "$workspace_home"
 launch_log="$workspace_home/install-web-${port}.log"
 [[ ! -L "$launch_log" ]] || fail 'The launch log must not be a symlink'
 : >> "$launch_log"; chmod 600 "$launch_log"
-# The existing launcher prints a credential-bearing URL; retain it only in a private log.
+# The compatibility launcher may print a legacy credential; keep its output private.
 if ! bash tools/start-webkanban.sh --workspace-home "$workspace_home" --workspace-only \
   --host "$host" --port "$port" --session "zf-web-$port" --no-build --no-restart >> "$launch_log" 2>&1; then
   fail "Dashboard startup failed (existing processes are preserved); inspect $launch_log"
@@ -229,7 +229,7 @@ probe_host=127.0.0.1
 [[ "$host" != ::1 ]] || probe_host='[::1]'
 ready=0
 for ((attempt=0; attempt<30; attempt++)); do
-  if tmux has-session -t "=zf-web-$port" 2>/dev/null && curl --noproxy '*' -fsS --max-time 2 "http://$probe_host:$port/api/workspace/projects" >/dev/null; then ready=1; break; fi
+  if tmux has-session -t "=zf-web-$port" 2>/dev/null && curl --noproxy '*' -fsS --max-time 2 "http://$probe_host:$port/readyz" >/dev/null; then ready=1; break; fi
   sleep 1
 done
 [[ "$ready" == 1 ]] || fail "Dashboard health check failed; inspect $launch_log"
@@ -246,6 +246,10 @@ if [[ "$mode" == observed ]]; then
   tmux has-session -t "=$connector_session" 2>/dev/null || fail "The Connector exited; the Dashboard is running. Inspect $connector_log"
 fi
 printf '\nDashboard ready: http://%s:%s/\nMode: %s\nWorkspace: %s\n' "$probe_host" "$port" "$mode" "$workspace_home"
-printf 'The authenticated access link is stored in this private file: %s\n' "$launch_log"
+if [[ -f "$workspace_home/web-account.json" ]]; then
+  printf 'Local username: zaofu. Use Account in the Dashboard to change your password.\n'
+else
+  printf 'Legacy access is configured. Private launcher log: %s\n' "$launch_log"
+fi
 printf 'Services run in user tmux sessions; rerun after a reboot. Install and sign in to your provider CLI separately.\n'
-if [[ "$host" == 0.0.0.0 ]]; then printf 'Listening on all interfaces as requested. Use the node address and the private access link for remote access.\n'; fi
+if [[ "$host" == 0.0.0.0 ]]; then printf 'Listening on all interfaces as requested. Use the node address for remote access. Anyone with the local credentials can control the terminal.\n'; fi

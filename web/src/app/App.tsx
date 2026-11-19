@@ -1,4 +1,4 @@
-import { configureDashboardSession, localWebActionToken } from "../api/dashboardLaunch.js";
+import { configureDashboardSession, localWebActionToken, watchDashboardLogin } from "../api/dashboardLaunch.js";
 import { useOverviewPulse } from "./useOverviewPulse";
 import { useDashboardProjectionRefresh } from "./useDashboardProjectionRefresh";
 import { useBoardBootstrap } from "./useBoardBootstrap";
@@ -209,6 +209,7 @@ import {
   type ProjectAdmissionDraft,
 } from "../components/workspace/ProjectAdmissionModal";
 import { WorkspaceRail } from "../components/workspace/WorkspaceRail";
+import { AccountControls } from "../components/workspace/AccountControls";
 import { WelcomeWizard } from "../components/workspace/WelcomeWizard";
 import { AddAgentModal } from "../components/modals/AddAgentModal";
 import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
@@ -693,7 +694,25 @@ export function App() {
   const [projectWizardError, setProjectWizardError] = useState("");
   const [projectSetupNotice, setProjectSetupNotice] = useState<{ projectId: string; message: string } | null>(null);
   const [showWelcome, setShowWelcome] = useState<boolean | null>(null);
+  const [welcomeAttempt, retryWelcome] = useState(0);
+  const [welcomeError, setWelcomeError] = useState(false);
+  const [sessionError, setSessionError] = useState(false);
+  const [sessionAttempt, retrySession] = useState(0);
   useEffect(() => {
+    let cancelled = false;
+    setSessionError(false);
+    getWebSession()
+      .then((session) => {
+        if (cancelled) return;
+        setWebSessionStatus(session);
+      })
+      .catch(() => { if (!cancelled) setSessionError(true); });
+    return () => { cancelled = true; };
+  }, [sessionAttempt]);
+  const sessionMode = webSessionStatus?.mode ?? snapshot?.runtime.web_session?.mode;
+  useEffect(() => {
+    if (!sessionMode || sessionMode === "read_only") return;
+    setWelcomeError(false);
     let cancelled = false;
     getOnboarding()
       .then((o) => {
@@ -702,25 +721,19 @@ export function App() {
           setShowWelcome(o.show_welcome);
         }
       })
-      .catch(() => { if (!cancelled) setShowWelcome(false); });
+      .catch(() => { if (!cancelled) setWelcomeError(true); });
     return () => { cancelled = true; };
-  }, []);
-  useEffect(() => {
-    let cancelled = false;
-    getWebSession()
-      .then((session) => {
-        if (cancelled) return;
-        setWebSessionStatus(session);
-      })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
-  const sessionMode = webSessionStatus?.mode ?? snapshot?.runtime.web_session?.mode;
+  }, [sessionMode, welcomeAttempt]);
   useEffect(() => {
     if (!sessionMode) return;
     configureDashboardSession(window.localStorage, sessionMode);
     setWebActionTokenPresent(Boolean(storedWebActionToken()));
   }, [sessionMode]);
+  useEffect(() => {
+    if (webSessionStatus?.local_account || webSessionStatus?.controller_managed) {
+      return watchDashboardLogin(Boolean(webSessionStatus.controller_managed));
+    }
+  }, [webSessionStatus?.local_account, webSessionStatus?.controller_managed]);
   const [orchestratorFocusSignal, setOrchestratorFocusSignal] = useState(0);
   const [liveState, setLiveState] = useState<LiveState>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -2112,11 +2125,22 @@ export function App() {
     />
   );
 
-  if (showWelcome && sessionMode && sessionMode !== "read_only") {
+  const accountControls = <AccountControls local={Boolean(webSessionStatus?.local_account)}
+    cloud={sessionMode === "controller_session" || Boolean(webSessionStatus?.controller_managed)} />;
+  if (sessionError && !sessionMode) return <main role="alert">登录状态加载失败。
+    <button type="button" onClick={() => retrySession(n => n + 1)}>重试</button></main>;
+  if (welcomeError) return <main role="alert">首次设置状态加载失败。
+    <button type="button" onClick={() => retryWelcome(n => n + 1)}>重试</button>{accountControls}</main>;
+  if (showWelcome === null && (sessionMode === "local_account" || sessionMode === "controller_session")) {
+    return <main role="status">正在读取工作台设置…</main>;
+  }
+  if (showWelcome && onboardingStatus && sessionMode && sessionMode !== "read_only") {
     return (
       <WelcomeWizard
+        initialStatus={onboardingStatus}
         accessReady={actionGate.actionReady}
-        controllerSession={sessionMode === "controller_session"}
+        sessionAuthorized={sessionMode === "controller_session" || sessionMode === "local_account"}
+        accountControls={accountControls}
         tokenPresent={webActionTokenPresent}
         onSaveToken={saveWebActionToken}
         onDone={() => {
@@ -2136,6 +2160,7 @@ export function App() {
           {page === "board" && <><span className="breadcrumb-separator">/</span><span className="breadcrumb-current">{topbarProjectName}</span></>}
         </div>
         <div className="status-row">
+          {accountControls}
           <div className="topbar-search-control">
             <input
               className="search-input"

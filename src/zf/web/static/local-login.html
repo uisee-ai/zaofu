@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN" data-page="__PAGE__">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>本地工作区 · ZaoFu</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:24px 16px;min-height:100dvh;display:grid;place-items:center;background:#f6f7f9;color:#181d25;font:16px/1.5 Inter,system-ui,"PingFang SC","Microsoft YaHei",sans-serif}
+main{width:100%;max-width:432px;background:white;padding:clamp(24px,5vw,40px);border:1px solid #e1e5ea;border-radius:18px;box-shadow:0 4px 20px rgb(23 34 50 / 5%)}
+header{display:flex;align-items:center;gap:10px;margin-bottom:28px;font-size:19px;font-weight:700}
+header span{display:grid;place-items:center;width:32px;height:32px;background:#175db0;color:white;border-radius:9px}
+h1{font-size:28px;line-height:1.2;letter-spacing:-.035em;margin:0 0 20px}
+label{display:block;margin:0 0 16px;font-size:14px;font-weight:550}
+input,button{width:100%;min-height:44px;border-radius:8px;font:inherit}
+input{margin-top:6px;padding:8px 12px;border:1px solid #d5dae1}
+button{cursor:pointer;border:0;background:#175db0;color:white;font-weight:600;margin-top:6px}
+button.secondary{background:#f1f3f6;color:#181d25}
+:focus-visible{outline:2px solid #2778cf;outline-offset:2px}
+[role=alert]{color:#b42318} [role=alert]:empty{display:none}
+a{color:#175db0} [data-page=login] .account,[data-page=account] .login{display:none}
+</style></head><body><main>
+<header><span aria-hidden="true">造</span>ZaoFu</header>
+<h1 class="login">登录本地工作区</h1><h1 class="account">本地账号</h1>
+<form class="login" method="post" action="/auth/local/login" data-action="login">
+<label>用户名<input name="username" autocomplete="username" required></label>
+<label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+<button>登录</button></form>
+<form class="account" method="post" action="/auth/local/password" data-action="password">
+<label>当前密码<input name="current" type="password" autocomplete="current-password" required></label>
+<label>新密码<input name="password" type="password" autocomplete="new-password" required></label>
+<button>修改密码</button></form>
+<form class="account" method="post" action="/auth/local/logout" data-action="logout"><button class="secondary">退出登录</button></form>
+<p class="account"><a href="/">返回工作台</a></p><p role="alert" aria-live="polite"></p>
+</main>
+<script>
+for(const form of document.forms) {
+  form.addEventListener("submit",async event=>{
+    event.preventDefault();
+    const button=form.querySelector("button"), error=document.querySelector("[role=alert]");
+    button.disabled=true;
+    error.textContent="";
+    try {
+      const response=await fetch("/auth/local/"+form.dataset.action,{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(new FormData(form)))});
+      if(!response.ok) {error.textContent=(await response.json()).error;return;}
+      if(form.dataset.action==="login" && !location.pathname.startsWith("/auth/local/")) location.reload();
+      else location.replace("/");
+    } catch {error.textContent="连接失败，请重试。";}
+    finally {button.disabled=false;}
+  });
+}
+</script></body></html>

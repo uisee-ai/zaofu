@@ -1312,6 +1312,7 @@ export async function getWebSession(): Promise<NonNullable<RuntimeSummary["web_s
     headers: { Accept: "application/json" },
     cache: "no-store",
   });
+  if (response.status === 401) window.location.reload();
   if (!response.ok) throw new Error(`web session fetch returned ${response.status}`);
   return response.json();
 }

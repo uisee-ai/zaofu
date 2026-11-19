@@ -25,4 +25,5 @@ check("#zf-action-token=%E2%80%A2", "existing", "existing", "/projects/test?tab=
 check("#zf-action-token=unused&panel=task", "stale", undefined, "/projects/test?tab=kanban#panel=task", "controller_session");
 check("", "stale", undefined, "", "controller_session");
 check("#zf-action-token=unused", "saved", "saved", "/projects/test?tab=kanban", "read_only");
+check("#zf-action-token=old", "stale", undefined, "/projects/test?tab=kanban", "local_account");
 console.log("dashboardLaunch tests passed");

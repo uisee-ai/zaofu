@@ -1,39 +1,57 @@
-"""Writable dashboard defaults at the operator CLI boundary."""
+"""Select the Dashboard access policy before binding its listener."""
 
-from __future__ import annotations
-
+import getpass
 import os
-import secrets
 from pathlib import Path
 from urllib.parse import urlencode
 
-from zf.core.state.atomic_io import atomic_write_text
-from zf.core.state.locks import locked_path
 from zf.core.workspace.registry import workspace_home
+from zf.core.workspace.web_account import LocalAccount
+
+_LEGACY_KEYS = ("ZF_WEB_ACTION_TOKEN", "ZF_WEB_PASSCODE", "ZF_WEB_TRUSTED_SESSION")
 
 
-def configure_web_access(*, host: str, read_only: bool = False) -> None:
+def setup_account(*, reset: bool) -> None:
     from zf.integrations.controller.binding import managed_config
+    if managed_config() is not None:
+        raise RuntimeError("Managed workspaces use the Controller identity provider")
+    account = LocalAccount()
+    if account.path.exists() and not reset:
+        raise RuntimeError("Account already configured. Use --reset-password for recovery")
+    password = getpass.getpass("New password (empty selects zaofu): ") or "zaofu"
+    if password != (getpass.getpass("Confirm password: ") or "zaofu"):
+        raise ValueError("Passwords do not match")
+    account.initialize(password, reset=reset)
+    print("Local account configured. Restart all Dashboard processes for this workspace home.")
 
-    keys = ("ZF_WEB_ACTION_TOKEN", "ZF_WEB_PASSCODE", "ZF_WEB_TRUSTED_SESSION")
-    if read_only or managed_config() is not None:
-        for key in keys:
+
+def configure_web_access(*, host: str, read_only: bool = False) -> LocalAccount | None:
+    from zf.integrations.controller.binding import managed_config
+    if managed_config() is not None:
+        for key in _LEGACY_KEYS:
             os.environ.pop(key, None)
-        return
-    # Disabling trusted access selects authentication, not a read-only server.
-    trusted = os.environ.get("ZF_WEB_TRUSTED_SESSION", "").strip().lower()
-    if any(os.environ.get(key, "").strip() for key in keys[:2]) or trusted in {"1", "true", "yes", "local_trusted"}:
-        return
+        return None
+
+    account = LocalAccount()
     token_path = Path(os.environ.get("ZF_WEB_ACTION_TOKEN_FILE") or workspace_home() / "web-action-token").expanduser()
-    with locked_path(token_path):
-        if token_path.is_symlink():
-            raise RuntimeError(f"web action token file must not be a symlink: {token_path}")
-        token = token_path.read_text().strip() if token_path.exists() else ""
+    if token_path.is_symlink():
+        raise RuntimeError("Refusing symbolic link at web token path")
+    explicit = (any(os.environ.get(key, "").strip() for key in _LEGACY_KEYS[:2])
+                or os.environ.get("ZF_WEB_TRUSTED_SESSION", "").strip().lower() in {"1", "true", "yes", "local_trusted"})
+    if account.path.exists() or account.path.is_symlink() or not (explicit or token_path.exists()):
+        account.initialize()
+        for key in _LEGACY_KEYS:
+            os.environ.pop(key, None)
+        return account
+    if read_only:
+        for key in _LEGACY_KEYS:
+            os.environ.pop(key, None)
+    elif not explicit:
+        token = token_path.read_text().strip()
         if not token:
-            token = secrets.token_hex(32)
-            atomic_write_text(token_path, token + "\n")
-        token_path.chmod(0o600)
-    os.environ["ZF_WEB_ACTION_TOKEN"] = token
+            raise RuntimeError("Empty legacy token file. Use zf web --setup-account to migrate")
+        os.environ["ZF_WEB_ACTION_TOKEN"] = token
+    return None
 
 
 def dashboard_launch_url(host: str, port: int) -> str:
@@ -41,6 +59,5 @@ def dashboard_launch_url(host: str, port: int) -> str:
     url = f"http://{authority}:{port}/"
     token = os.environ.get("ZF_WEB_ACTION_TOKEN", "").strip()
     if token:
-        # Fragments never reach HTTP request logs or Referer headers.
         url += "#" + urlencode({"zf-action-token": token})
     return url

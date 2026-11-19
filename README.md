@@ -86,10 +86,9 @@ user directory, syncs locked Python dependencies, builds the Dashboard, and
 checks service readiness. Install and sign in to Codex or Claude Code separately
 before starting agent work.
 
-By default, open **http://127.0.0.1:8001/**. The authenticated access link is saved
-in the private file `<workspace-home>/install-web-<port>.log`; the default
-Workspace directory is `~/.zaofu` (or `ZF_WORKSPACE_HOME`). Use that link to
-complete Web Bootstrap and add/open projects. For a remote node, forward the
+Open **http://127.0.0.1:8001/** and sign in with username `zaofu` and password `zaofu` on a new installation.
+Choose **本地账号 (Local account)** to change your password or sign out. Complete or skip the first-run wizard, then add a project.
+If you expose this address with the default password, anyone who can reach it can use the writable terminal. For a remote node, forward the
 default port with `ssh -L 8001:127.0.0.1:8001 user@your-node`.
 
 ```bash
@@ -359,7 +358,8 @@ contact the author via WeChat.
   project; ZaoFu does not invent them.
 - Provider CLIs can modify files and spend model budget. Validate and dry-run
   before real execution.
-- Standalone Dashboard writes require the local action token by default, including on localhost. Open the authorized link printed by `zf web`. A cloud Workspace uses the signed-in Gateway session for Dashboard actions and terminal access.
+- Standalone and observed installations use the same local account. Your session authorizes Dashboard writes and terminal access. Cloud workspaces use the registered Controller account through Keycloak SSO.
+- Existing Token/passcode/trusted installations keep their access policy. To migrate, stop the old Web processes, run `zf web --setup-account` with the same `ZF_WORKSPACE_HOME`, then restart. Local recovery uses `zf web --reset-password`. Set `ZF_WEB_API_TOKEN` explicitly for scripts using a Bearer header. Behind HTTPS, preserve Host and pass the original scheme from a trusted proxy.
 - Bind the Dashboard to loopback unless the network is explicitly trusted.
 - Never use `tmux kill-server` to stop one project on a shared host.
 

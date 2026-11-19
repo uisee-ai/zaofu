@@ -15,11 +15,25 @@ export function captureDashboardLaunchToken(browser: Pick<Window, "location" | "
 
 export function configureDashboardSession(storage: Storage, sessionMode: string): void {
   localTokenEnabled = ["local_trusted", "remote_passcode", "token_required"].includes(sessionMode);
-  if (sessionMode === "controller_session") storage.removeItem("zf.webActionToken");
+  if (sessionMode === "local_account" || sessionMode === "controller_session") storage.removeItem("zf.webActionToken");
   if (localTokenEnabled && pendingLaunchToken) storage.setItem("zf.webActionToken", pendingLaunchToken);
   pendingLaunchToken = null;
 }
 
 export function localWebActionToken(): string {
   return localTokenEnabled ? window.localStorage.getItem("zf.webActionToken")?.trim() ?? "" : "";
+}
+
+/** A rejected session returns the user to the owning login flow, including writes from nested panels. */
+export function watchDashboardLogin(managed: boolean): () => void {
+  const original = window.fetch;
+  window.fetch = async (...args) => {
+    const response = await original.call(window, ...args);
+    if (response.status === 401 && response.url && new URL(response.url).origin === window.location.origin
+        && (response.headers.get("X-ZF-Login") === "required" || (managed && new URL(response.url).pathname.startsWith("/api/")))) {
+      window.location.reload();
+    }
+    return response;
+  };
+  return () => { window.fetch = original; };
 }

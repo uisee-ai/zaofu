@@ -1492,6 +1492,8 @@ export interface RuntimeSummary {
     expires_at?: string | null;
     requires_token?: boolean;
     token_fallback_enabled?: boolean;
+    local_account?: boolean;
+    controller_managed?: boolean;
   };
   agent_surface?: {
     id: string;
