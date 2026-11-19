@@ -5317,7 +5317,7 @@ def _web_session_projection(web_session_token: str | None = None) -> dict:
     grant = current_grant.get()
     if grant is not None:
         return {"mode": "local_account" if grant.writable else "read_only",
-                "local_account": True, "unlocked": True, "actions_enabled": grant.writable,
+                "local_account": True, "username": LocalAccount.username, "unlocked": True, "actions_enabled": grant.writable,
                 "expires_at": None, "requires_token": False, "token_fallback_enabled": False}
     trusted = os.environ.get("ZF_WEB_TRUSTED_SESSION", "").strip().lower()
     if trusted in {"1", "true", "yes", "local_trusted"}:

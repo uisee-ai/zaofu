@@ -1,5 +1,18 @@
 // Backend bodies and protocol identifiers retain their source language.
 export const CHINESE_MESSAGES: Record<string, string> = {
+  "Security": "安全",
+  "Password": "密码",
+  "Local account": "本地账号",
+  "Sign out": "退出登录",
+  "Sign out failed. Try again.": "退出失败，请重试。",
+  "Current password": "当前密码",
+  "New password": "新密码",
+  "Confirm new password": "确认新密码",
+  "Update password": "修改密码",
+  "New passwords do not match.": "两次输入的新密码不一致。",
+  "Could not change password.": "修改密码失败，请重试。",
+  "Password changes require write access.": "修改密码需要可写权限。",
+  "Changing your password signs you out of all sessions.": "改密后，所有已登录的浏览器均需重新登录。",
   "Project overview": "项目总览",
   "Updated": "更新于",
   "Loading project summary…": "正在加载项目概况…",

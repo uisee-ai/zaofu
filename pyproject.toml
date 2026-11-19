@@ -38,7 +38,7 @@ zf = "zf.cli:main"
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-"zf.web" = ["static/*.html", "static/*.css"]
+"zf.web" = ["static/*.html", "static/*.css", "static/geist-latin.woff2", "static/geist-LICENSE.txt"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

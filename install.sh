@@ -247,7 +247,7 @@ if [[ "$mode" == observed ]]; then
 fi
 printf '\nDashboard ready: http://%s:%s/\nMode: %s\nWorkspace: %s\n' "$probe_host" "$port" "$mode" "$workspace_home"
 if [[ -f "$workspace_home/web-account.json" ]]; then
-  printf 'Local username: zaofu. Use Account in the Dashboard to change your password.\n'
+  printf 'Local username: zaofu. Change your password in Settings > Security > Password.\n'
 else
   printf 'Legacy access is configured. Private launcher log: %s\n' "$launch_log"
 fi

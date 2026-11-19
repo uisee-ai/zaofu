@@ -13,6 +13,13 @@ test("local login, first use, and password change across two browsers", async ({
   }
   try {
     await page.goto("/?page=project");
+    await expect(page.locator("header")).toHaveText("ZaoFu");
+    await expect(page.getByText("造", { exact: true })).toHaveCount(0);
+    await page.evaluate(() => document.fonts.ready);
+    expect(await page.evaluate(() => document.fonts.check('600 14.5px Geist', "ZaoFu"))).toBe(true);
+    const signInButton = page.getByRole("button", { name: "登录", exact: true });
+    await expect(signInButton).toHaveCSS("height", "36px");
+    await expect(signInButton).toHaveCSS("border-radius", "6px");
     await signIn(page, "wrong");
     await expect(page.getByRole("alert")).toContainText("用户名或密码错误");
     await page.route("**/api/web-session", route => route.fulfill({ status: 503, body: "{}" }), { times: 1 });
@@ -48,19 +55,32 @@ test("local login, first use, and password change across two browsers", async ({
     await expect(wizard).toBeHidden();
     await second.goto("/");
     await signIn(second, "zaofu");
-    await expect(second.getByRole("link", { name: "本地账号" })).toBeVisible();
+    await expect(second.locator(".rail-account summary")).toHaveAccessibleName("zaofu");
     await expect(second.getByTestId("welcome-wizard")).toHaveCount(0);
 
-    await page.getByRole("link", { name: "本地账号" }).click();
-    await page.getByLabel("当前密码").fill("zaofu");
-    await page.getByLabel("新密码").fill("browser-test-password");
-    await page.getByRole("button", { name: "修改密码" }).click();
+    for (const button of ["Open Kanban Agent", "Toggle Terminal"]) {
+      await page.getByRole("button", { name: button }).click();
+      const dialog = page.getByRole("dialog", { name: "Add/Open Project" });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: "Close" }).click();
+    }
+    await page.getByRole("button", { name: /^(Settings|设置)$/ }).click();
+    await page.getByRole("button", { name: /^(Password|密码)$/ }).click();
+    await page.getByLabel(/^(Current password|当前密码)$/).fill("zaofu");
+    await page.getByLabel(/^(New password|新密码)$/).fill("browser-test-password");
+    const confirm = page.getByLabel(/^(Confirm new password|确认新密码)$/);
+    await confirm.fill("mismatched");
+    const save = page.getByRole("button", { name: /^(Update password|修改密码)$/ });
+    await save.click();
+    await expect(page.getByRole("alert")).toContainText(/match|不一致/);
+    await confirm.fill("browser-test-password");
+    await save.click();
     await expect(page.getByRole("heading", { name: "登录本地工作区" })).toBeVisible();
     await second.reload();
     await expect(second.getByRole("heading", { name: "登录本地工作区" })).toBeVisible();
     await signIn(page, "browser-test-password");
-    await page.getByRole("link", { name: "本地账号" }).click();
-    await page.getByRole("button", { name: "退出登录" }).click();
+    await page.locator(".rail-account summary").click();
+    await page.getByRole("button", { name: /Sign out|退出登录/ }).click();
     await expect(page.getByRole("heading", { name: "登录本地工作区" })).toBeVisible();
   } finally {
     await other.close();

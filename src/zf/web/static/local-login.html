@@ -1,52 +1,73 @@
 <!doctype html>
-<html lang="zh-CN" data-page="__PAGE__">
+<html lang="zh-CN">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>本地工作区 · ZaoFu</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>登录本地工作区 · ZaoFu</title>
 <style>
-*{box-sizing:border-box}
-body{margin:0;padding:24px 16px;min-height:100dvh;display:grid;place-items:center;background:#f6f7f9;color:#181d25;font:16px/1.5 Inter,system-ui,"PingFang SC","Microsoft YaHei",sans-serif}
-main{width:100%;max-width:432px;background:white;padding:clamp(24px,5vw,40px);border:1px solid #e1e5ea;border-radius:18px;box-shadow:0 4px 20px rgb(23 34 50 / 5%)}
-header{display:flex;align-items:center;gap:10px;margin-bottom:28px;font-size:19px;font-weight:700}
-header span{display:grid;place-items:center;width:32px;height:32px;background:#175db0;color:white;border-radius:9px}
-h1{font-size:28px;line-height:1.2;letter-spacing:-.035em;margin:0 0 20px}
-label{display:block;margin:0 0 16px;font-size:14px;font-weight:550}
-input,button{width:100%;min-height:44px;border-radius:8px;font:inherit}
-input{margin-top:6px;padding:8px 12px;border:1px solid #d5dae1}
-button{cursor:pointer;border:0;background:#175db0;color:white;font-weight:600;margin-top:6px}
-button.secondary{background:#f1f3f6;color:#181d25}
-:focus-visible{outline:2px solid #2778cf;outline-offset:2px}
-[role=alert]{color:#b42318} [role=alert]:empty{display:none}
-a{color:#175db0} [data-page=login] .account,[data-page=account] .login{display:none}
-</style></head><body><main>
-<header><span aria-hidden="true">造</span>ZaoFu</header>
-<h1 class="login">登录本地工作区</h1><h1 class="account">本地账号</h1>
-<form class="login" method="post" action="/auth/local/login" data-action="login">
-<label>用户名<input name="username" autocomplete="username" required></label>
-<label>密码<input name="password" type="password" autocomplete="current-password" required></label>
-<button>登录</button></form>
-<form class="account" method="post" action="/auth/local/password" data-action="password">
-<label>当前密码<input name="current" type="password" autocomplete="current-password" required></label>
-<label>新密码<input name="password" type="password" autocomplete="new-password" required></label>
-<button>修改密码</button></form>
-<form class="account" method="post" action="/auth/local/logout" data-action="logout"><button class="secondary">退出登录</button></form>
-<p class="account"><a href="/">返回工作台</a></p><p role="alert" aria-live="polite"></p>
+@font-face {
+  font-family:Geist; font-style:normal; font-weight:100 900; font-display:swap;
+  src:url("/auth/local/geist-latin.woff2") format("woff2");
+}
+:root {
+  color-scheme:light dark;
+  --bg:light-dark(#fbfaf8,#1a1a19); --text:light-dark(#1d1c1a,#eceae5);
+  --field:light-dark(#fff,#1d1d1c); --border:light-dark(#dad7d0,#3a3936);
+  --accent:light-dark(#4b5bd6,#8e9af3); --on-accent:light-dark(#fff,#12131c);
+}
+* { box-sizing:border-box }
+body {
+  margin:0; min-height:100dvh; background:var(--bg); color:var(--text);
+  font:13.5px/1.45 Geist,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased; font-feature-settings:"ss01","cv11";
+}
+header { padding:18px 24px; font-size:14.5px; font-weight:600; letter-spacing:-.01em }
+main { width:min(380px,calc(100% - 32px)); margin:6vh auto 40px }
+h1 { margin:0 0 16px; text-align:center; font-size:23px; font-weight:600; letter-spacing:-.022em }
+form { display:grid; gap:16px }
+label { display:grid; gap:6px; font-size:12.5px; font-weight:500 }
+input,button { width:100%; height:36px; border-radius:6px; font:inherit; font-size:13.5px }
+input { padding:0 10px; border:1px solid var(--border); background:var(--field); color:inherit; font-weight:400 }
+input:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent); outline:none }
+button {
+  padding:0 14px; border:1px solid transparent; background:var(--accent); color:var(--on-accent);
+  box-shadow:inset 0 -1px #0000001f; font-weight:500; cursor:pointer;
+  transition:background .14s, transform .14s;
+}
+button:hover { background:color-mix(in srgb,var(--accent) 88%,var(--text)) }
+button:active { background:color-mix(in srgb,var(--accent) 78%,var(--text)); transform:scale(.97) }
+button:focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+button:disabled { opacity:.45; box-shadow:none; pointer-events:none }
+@media (prefers-reduced-motion:reduce) { button,button:active { transition:none; transform:none } }
+[role=alert] { color:light-dark(#b23c30,#e57d70); font-size:12.5px; margin:0 }
+[role=alert]:empty { display:none }
+</style></head>
+<body>
+<header>ZaoFu</header>
+<main>
+  <h1>登录本地工作区</h1>
+  <form method="post" action="/auth/local/login">
+    <label>用户名<input name="username" autocomplete="username" required></label>
+    <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+    <p role="alert" aria-live="polite"></p>
+    <button type="submit">登录</button>
+  </form>
 </main>
 <script>
-for(const form of document.forms) {
-  form.addEventListener("submit",async event=>{
-    event.preventDefault();
-    const button=form.querySelector("button"), error=document.querySelector("[role=alert]");
-    button.disabled=true;
-    error.textContent="";
-    try {
-      const response=await fetch("/auth/local/"+form.dataset.action,{method:"POST",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(new FormData(form)))});
-      if(!response.ok) {error.textContent=(await response.json()).error;return;}
-      if(form.dataset.action==="login" && !location.pathname.startsWith("/auth/local/")) location.reload();
-      else location.replace("/");
-    } catch {error.textContent="连接失败，请重试。";}
-    finally {button.disabled=false;}
-  });
-}
+const form = document.querySelector("form");
+form.addEventListener("submit", async event => {
+  event.preventDefault();
+  const button = form.querySelector("button"), error = form.querySelector("[role=alert]");
+  button.disabled = true;
+  error.textContent = "";
+  try {
+    const response = await fetch(form.action, {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(Object.fromEntries(new FormData(form)))
+    });
+    if (response.ok) location.reload();
+    else error.textContent = (await response.json()).error || "登录失败，请重试。";
+  } catch { error.textContent = "连接失败，请重试。"; }
+  finally { button.disabled = false; }
+});
 </script></body></html>

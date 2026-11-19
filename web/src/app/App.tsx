@@ -210,6 +210,7 @@ import {
 } from "../components/workspace/ProjectAdmissionModal";
 import { WorkspaceRail } from "../components/workspace/WorkspaceRail";
 import { AccountControls } from "../components/workspace/AccountControls";
+
 import { WelcomeWizard } from "../components/workspace/WelcomeWizard";
 import { AddAgentModal } from "../components/modals/AddAgentModal";
 import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
@@ -273,6 +274,7 @@ interface NewChannelDraft {
   channelId: string;
 }
 
+const SettingsRoute = lazy(() => import("../components/settings/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const TerminalDrawer = lazy(() => import("../components/terminal/TerminalDrawer"));
 
 interface RuntimeActionState {
@@ -1943,7 +1945,20 @@ export function App() {
     setProjectWizardOpen(true);
   }
 
+  function selectProjectForTool() {
+    if (!activeProjectId) {
+      openProjectWizard();
+      return false;
+    }
+    if (activeProject && !activeProjectReady) {
+      setPage("project");
+      return false;
+    }
+    return true;
+  }
+
   function openTaskAgent() {
+    if (!selectProjectForTool()) return;
     setAgentPanelHasOpened(true);
     setAgentPanelMode((mode) => (mode === "fullscreen" ? "fullscreen" : "docked"));
     setOrchestratorFocusSignal((value) => value + 1);
@@ -2095,7 +2110,8 @@ export function App() {
   }
   const topbarProjectName = snapshot?.project.name || activeProject?.name || projectLabelFromId(activeProjectId) || "ZaoFu Project";
 
-  const agentPanelVisible = agentPanelMode !== "collapsed";
+  const projectToolsAvailable = Boolean(activeProjectId && (!activeProject || activeProjectReady));
+  const agentPanelVisible = projectToolsAvailable && agentPanelMode !== "collapsed";
   const renderedAgentPanelMode: Exclude<AgentPanelMode, "collapsed"> = agentPanelMode === "fullscreen"
     ? "fullscreen"
     : "docked";
@@ -2125,16 +2141,19 @@ export function App() {
     />
   );
 
-  const accountControls = <AccountControls local={Boolean(webSessionStatus?.local_account)}
-    cloud={sessionMode === "controller_session" || Boolean(webSessionStatus?.controller_managed)} />;
+  const cloudSession = sessionMode === "controller_session" || Boolean(webSessionStatus?.controller_managed);
+  const localSettings = page === "settings" && Boolean(webSessionStatus?.local_account);
+  const accountControls = webSessionStatus?.local_account || cloudSession
+    ? <AccountControls username={webSessionStatus?.username} local={Boolean(webSessionStatus?.local_account)} />
+    : null;
   if (sessionError && !sessionMode) return <main role="alert">登录状态加载失败。
     <button type="button" onClick={() => retrySession(n => n + 1)}>重试</button></main>;
-  if (welcomeError) return <main role="alert">首次设置状态加载失败。
+  if (!localSettings && welcomeError) return <main role="alert">首次设置状态加载失败。
     <button type="button" onClick={() => retryWelcome(n => n + 1)}>重试</button>{accountControls}</main>;
-  if (showWelcome === null && (sessionMode === "local_account" || sessionMode === "controller_session")) {
+  if (!localSettings && showWelcome === null && (sessionMode === "local_account" || sessionMode === "controller_session")) {
     return <main role="status">正在读取工作台设置…</main>;
   }
-  if (showWelcome && onboardingStatus && sessionMode && sessionMode !== "read_only") {
+  if (!localSettings && showWelcome && onboardingStatus && sessionMode && sessionMode !== "read_only") {
     return (
       <WelcomeWizard
         initialStatus={onboardingStatus}
@@ -2160,7 +2179,7 @@ export function App() {
           {page === "board" && <><span className="breadcrumb-separator">/</span><span className="breadcrumb-current">{topbarProjectName}</span></>}
         </div>
         <div className="status-row">
-          {accountControls}
+          {cloudSession && accountControls}
           <div className="topbar-search-control">
             <input
               className="search-input"
@@ -2204,12 +2223,11 @@ export function App() {
           <span className="topbar-tool-separator" aria-hidden="true" />
           <button
             className="topbar-tool-button topbar-terminal-button topbar-terminal-launch"
-            disabled={!activeProjectId}
             type="button"
             aria-label="Toggle Terminal"
             aria-pressed={terminalOpen}
             title={terminalOpen ? "Close terminal" : "Open terminal"}
-            onClick={() => setTerminalOpen((value) => !value)}
+            onClick={() => { if (selectProjectForTool()) setTerminalOpen(value => !value); }}
           >
             <Terminal size={16} strokeWidth={1.9} aria-hidden="true" />
           </button>
@@ -2223,8 +2241,9 @@ export function App() {
       </div> : null}
       <ReadProjectionNotice snapshot={snapshot} />
 
-      <main className={`workspace ${terminalOpen && activeProjectId ? "has-web-terminal" : ""}`.trim()}>
+      <main className={`workspace ${terminalOpen && projectToolsAvailable ? "has-web-terminal" : ""}`.trim()}>
         <WorkspaceRail
+          accountControls={webSessionStatus?.local_account ? accountControls : null}
           actionResult={actionResult}
           activePage={page}
           activeProjectId={activeProjectId}
@@ -2245,7 +2264,12 @@ export function App() {
         />
 
         <section className="board-panel" data-page={page}>
-          {!activeProjectId ? (
+          {page === "settings" ? (
+            <Suspense fallback={<div role="status">{t("Settings")}</div>}>
+              <SettingsRoute snapshot={snapshot} localAccount={Boolean(webSessionStatus?.local_account)}
+                canChangePassword={Boolean(webSessionStatus?.actions_enabled)} />
+            </Suspense>
+          ) : !activeProjectId ? (
             <WorkspaceEmptyPanel onAddProject={() => openProjectWizard()} />
           ) : activeProject && !activeProjectReady ? (
             <ProjectInitPanel
@@ -2429,7 +2453,7 @@ export function App() {
             </section>
           )}
         </section>
-        {terminalOpen && activeProjectId ? (
+        {terminalOpen && projectToolsAvailable && activeProjectId ? (
           <Suspense fallback={<div className="web-terminal-loading">Loading terminal UI…</div>}>
             <TerminalDrawer
               key={activeProjectId}
@@ -2440,7 +2464,7 @@ export function App() {
           </Suspense>
         ) : null}
       </main>
-      {agentPanelMode === "collapsed" ? (
+      {!agentPanelVisible ? (
         <button
           className="agent-fab"
           type="button"
@@ -2450,7 +2474,7 @@ export function App() {
           <MessageCircle size={20} strokeWidth={1.9} aria-hidden="true" />
         </button>
       ) : null}
-      {agentPanelHasOpened ? (
+      {agentPanelHasOpened && projectToolsAvailable ? (
         <div
           aria-hidden={agentPanelVisible ? undefined : true}
           className={`agent-page-shell ${renderedAgentPanelMode}`}

@@ -2,6 +2,7 @@ import { useUiPreferences } from "../../app/UiPreferences";
 // WorkspaceRail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, ChannelSummary, Snapshot, WorkspaceProject } from "../../api/types";
 import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, Menu, MessageSquare, PanelLeft, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
+import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { LiveState, PageId } from "../../app/sharedTypes";
@@ -23,6 +24,7 @@ function shouldShowRailActionResult(result: ActionResponse): boolean {
 
 
 export function WorkspaceRail({
+  accountControls,
   actionResult,
   activePage,
   activeProjectId,
@@ -41,6 +43,7 @@ export function WorkspaceRail({
   selectedChannelId,
   snapshot,
 }: {
+  accountControls?: ReactNode;
   actionResult: ActionResponse | null;
   activePage: PageId;
   activeProjectId: string;
@@ -95,7 +98,7 @@ export function WorkspaceRail({
         setMobileOpen(false);
       }
       if (event.key !== "Tab") return;
-      const items = [...(rail?.querySelectorAll<HTMLElement>("button:not([disabled]), select:not([disabled]), summary, [tabindex='0']") ?? [])]
+      const items = [...(rail?.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), select:not([disabled]), summary, [tabindex='0']") ?? [])]
         .filter((item) => item.getClientRects().length > 0);
       const first = items[0], last = items[items.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
@@ -307,6 +310,7 @@ export function WorkspaceRail({
           <p className="empty-text compact-error">{actionResult.status}: {actionResult.reason}</p>
         ) : null}
       </div>
+      {accountControls && <footer className="rail-account">{accountControls}</footer>}
     </section>
     </>
   );

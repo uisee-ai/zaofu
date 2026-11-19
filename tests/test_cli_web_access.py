@@ -56,9 +56,17 @@ def test_cli_launch_access_controls_real_task_creation(launch, tmp_path, capsys,
         assert client.get("/api/workspace/onboarding").status_code == 401
         assert client.get("/health").status_code == 401
         assert "登录本地工作区" in client.get("/?page=project", headers={"accept": "text/html"}).text
+        font = client.get("/auth/local/geist-latin.woff2")
+        assert font.headers["content-type"] == "font/woff2" and font.content.startswith(b"wOF2")
+        assert client.get("/auth/local/other.woff2").status_code == 401
         assert login(client, "wrong").status_code == 401
         assert login(client).status_code == 200
-        assert client.get("/api/web-session").json()["mode"] == ("read_only" if read_only else "local_account")
+        session = client.get("/api/web-session").json()
+        assert session["mode"] == ("read_only" if read_only else "local_account")
+        assert session["username"] == "zaofu"
+        account_link = client.get("/auth/local/account", follow_redirects=False)
+        assert account_link.status_code == 303
+        assert account_link.headers["location"] == "/?page=settings&settings=password"
         assert client.post("/api/actions/create-task", json=payload, headers={"origin": "http://other"}).status_code == 403
         created = client.post("/api/actions/create-task", json=payload, headers=ORIGIN)
         assert created.status_code == (403 if read_only else 201), created.text

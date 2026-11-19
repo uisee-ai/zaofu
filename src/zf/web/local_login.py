@@ -8,7 +8,7 @@ import secrets
 
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import HTTPConnection, Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from zf.core.workspace.web_account import LocalAccount, session_key
 from zf.integrations.controller import binding
@@ -41,10 +41,10 @@ class LocalLoginMiddleware:
         # An already-running local server must retire when the installation is taken over.
         return os.path.lexists(self.account.path.parent / "controller-binding.json") or os.path.lexists(binding.SYSTEM_CONFIG)
 
-    def page(self, account_settings: bool = False) -> HTMLResponse:
-        return HTMLResponse(_PAGE.read_text().replace("__PAGE__", "account" if account_settings else "login"),
+    def page(self) -> HTMLResponse:
+        return HTMLResponse(_PAGE.read_text(),
                             headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
-                                     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
+                                     "Content-Security-Policy": "default-src 'none'; font-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
 
     async def account_action(self, request: Request, path: str, token: str):
         from zf.web.server import (_web_session_ttl_seconds, _web_unlock_retry_after,
@@ -112,6 +112,8 @@ class LocalLoginMiddleware:
             response = _json({"ok": True})
         elif managed:
             response = _json({"error": "managed_workspace"}, 403)
+        elif path == _BASE + "/geist-latin.woff2" and method in {"GET", "HEAD"}:
+            response = FileResponse(_PAGE.with_name("geist-latin.woff2"), media_type="font/woff2")
         elif not safe and not api and conn.headers.get("origin") != expected_origin:
             response = _json({"error": "invalid_origin"}, 403)
         elif method == "POST" and (path.startswith(_BASE + "/") or path == "/api/web-session/lock"):
@@ -127,7 +129,7 @@ class LocalLoginMiddleware:
         elif not safe and self.read_only:
             response = _json({"error": "read_only"}, 403)
         elif path == _BASE + "/account" and method == "GET":
-            response = self.page(account_settings=True)
+            response = RedirectResponse("/?page=settings&settings=password", status_code=303, headers={"Cache-Control": "no-store"})
         if response is not None:
             if socket:
                 return await send({"type": "websocket.close", "code": 4403})
