@@ -12,6 +12,7 @@ def test_prepared_project_compiles_real_eight_by_eight_policy(tmp_path):
     config = load_config(root / "zf.yaml")
     policy = config.workflow.flow_metadata["task_pipeline"]
     assert config.workflow.plan_approval_enabled
+    assert config.workflow.task_attempt.mode == "enforce"
     assert policy["max_active_task_pipelines"] == 16
     assert policy["backpressure"]["max_unverified_tasks"] == 16
     assert policy["backpressure"]["max_integration_queue"] == 16
@@ -36,3 +37,27 @@ def test_prepared_project_compiles_real_eight_by_eight_policy(tmp_path):
     assert config.workflow.run_limits.token_budget == 0
     assert all(p.limits.timeout_seconds == 0 and p.limits.token_budget == 0
                for p in config.workflow.execution_profiles.values())
+
+
+def test_prepared_unattended_policy_routes_expiry_to_run_manager(tmp_path, monkeypatch):
+    from tests.test_task_pipeline_fault_matrix import _runtime, _running_operation_v2_attempt
+    from zf.core.state.task_attempts import TaskAttemptStore
+    from zf.runtime.task_attempt_runtime import reconcile_task_attempts
+    from zf.runtime.task_attempt_recovery import pending_task_attempt_recovery_actions
+
+    root = tmp_path / "product"
+    prepare(root, harness=Path(__file__).resolve().parents[1], image="sha256:" + "a" * 64)
+    runtime = _runtime(root)
+    runtime.config = load_config(root / "zf.yaml")
+    attempt = _running_operation_v2_attempt(runtime)
+    monkeypatch.setattr("zf.runtime.task_attempt_runtime._expired", lambda _: True)
+    assert reconcile_task_attempts(runtime) >= 1
+    store = TaskAttemptStore(runtime.state_dir / "task_attempts.json")
+    assert store.get(attempt["attempt_id"])["status"] == "expired"
+    actions = pending_task_attempt_recovery_actions(runtime.state_dir / "projections",
+                                                   canonical_store_path=store.path)
+    assert len(actions) == 1
+    assert actions[0]["action"] == "worker-lifecycle-recover"
+    assert actions[0]["operation_id"] == attempt["operation_id"]
+    assert actions[0]["attempt_id"] == attempt["attempt_id"]
+    assert actions[0]["recovery_decision_owner"] == "run_manager"

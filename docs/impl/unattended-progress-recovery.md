@@ -208,3 +208,15 @@ actor/来源及完整原因，不能仅以历史 `operator_verify_execution_retr
 隔离容器 mock、Verify 下一代调度、输出接力和拒绝反例。复现和验证记录位于
 `reports/task-audit-host-recovery-20261119/`。源码通过不等于真实工作流通过；
 在批准后的 Run 加载补丁必须记为人工维护，不能回填零介入资格。
+
+### 无人资格的 TaskAttempt 策略
+
+混合真实轮的 TOOL-LINES / TOOL-INITIALS 在没有有效结果的情况下租约到期，
+按默认 `workflow.task_attempt.mode: shadow` 记为 `lease_expired_shadow_only`，
+没有保留供同 operation 自动重派的 expired 状态。这是验收配置遗漏，不是额度故障；
+启用 Run Manager、OA 和 Autoresearch 并不隐含启用所有执行策略。
+
+8×8 生成器现在为新实验显式配置既有 `enforce` 模式，并用实际编译配置验证
+租约过期进入 Run Manager 所有的绑定恢复路径。默认兼容策略、重试上限和安全边界
+不变。启动前应核对实际加载配置及冻结摘要；旧实验保持原配置和失败证据，
+不能把新实验策略回填到旧实验并声称完成了原资格。
