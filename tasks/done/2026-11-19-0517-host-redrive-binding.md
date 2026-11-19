@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # P2 真实验收补丁：重派后的宿主验证身份绑定
 
@@ -25,3 +25,5 @@
 - premerge sentinel：53 passed；文档/结构检查通过。
 - 候选代码对两个真实operation只读预检通过；未运行宿主命令、未提交验证结果。
 - 记录位于`reports/host-redrive-binding-20261119/`。完整无人资格仍由P2主任务验证。
+
+实现提交：`dfccba59 fix: bind task host recovery to the current dispatch`。
