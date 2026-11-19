@@ -183,3 +183,28 @@ Package 的同一 sidecar 路径边界校验显式端口。绝对路径、非 si
 生产者提交前使用的预检仍允许其本地文件，路径闭包在 Kernel 完成归档的实际调用点检查；
 不能把生产者预检通过等同于最终 Package 已准入。回归见
 `tests/test_prepared_plan_port_paths.py`（实际 Critic 派发入口及越界拒绝）。
+
+### TaskVerify 的预授权宿主证据自动接续
+
+混合 8×8 真实轮 `workflow-5d021bd50a5ec52b` 的只读审计任务因沙箱无法写入
+构建目录而报告 `verifier_execution_failure`。其冻结合同将审计验收责任标为
+`candidate_verify`，但宿主命令选择硬编码为 `task_verify`，导致已授权命令被误拒。
+Task Pipeline 的 Verify 命令选择现在沿用冻结 snapshot 的验证责任；普通任务的
+未来 Candidate 命令仍不可提前执行，调用者不能通过请求字段扩大授权。
+
+真实 Run Manager tick 仍以原预授权 Docker 路径执行隔离快照。随后核对全部当前阶段
+必需命令的完整回执、kernel 起止事件、唯一完成、策略/合同/源码/依赖摘要、输出摘要
+和 operation/attempt/dispatch/lease 身份，才沿既有 Verify retry 入口请求下一代
+独立验证。只重开执行失败且没有产品结论的 Verify，保留已通过的 Impl 和 TaskRef。
+非零退出码也作为事实交给独立 Verify；容器成功本身不产生 task.done 或产品通过。
+
+暂停、活动调用、目标/合同变化、其他 operation 已接管、缺少或损坏的回执均保留等待。
+同一 operation 的回执不重复消费，宿主执行沿用原 Run 总预算；跨代反复失败并不能
+仅凭此次自动接续宣称已自愈。接续后继续使用已有 handoff evidence 分页，不新增任务
+状态或证据协议。既有 retry 原因前缀保留兼容；判断是否人工介入须看 kernel 事件的
+actor/来源及完整原因，不能仅以历史 `operator_verify_execution_retry` 前缀计数。
+
+回归入口 `tests/test_task_host_verification_handoff.py` 包含真实 Run Manager 调用、
+隔离容器 mock、Verify 下一代调度、输出接力和拒绝反例。复现和验证记录位于
+`reports/task-audit-host-recovery-20261119/`。源码通过不等于真实工作流通过；
+在批准后的 Run 加载补丁必须记为人工维护，不能回填零介入资格。

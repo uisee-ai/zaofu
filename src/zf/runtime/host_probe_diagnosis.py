@@ -10,7 +10,10 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.task_host_manifest import digest
 
 
-def _receipt(state_dir: Path, event: ZfEvent, prior: dict[str, ZfEvent], policy: Any) -> dict | None:
+def bound_container_probe_receipt(
+    state_dir: Path, event: ZfEvent, prior: dict[str, ZfEvent], policy: Any,
+) -> dict | None:
+    """Validate current-policy execution facts for diagnosis or independent retry."""
     p = event.payload
     if (event.origin != "kernel" or event.type != "runtime.action.attempt.completed"
             or p.get("action") != "task-host-assist" or p.get("kind") != "verify"
@@ -67,7 +70,7 @@ def pending_host_probe_diagnoses(state_dir: Path, events: list[ZfEvent], config:
                 terminal.add(run)
             if event.type == "candidate.ready" and p.get("commit"):
                 targets[run] = p["commit"]
-        receipt = _receipt(state_dir, event, prior, policy)
+        receipt = bound_container_probe_receipt(state_dir, event, prior, policy)
         if receipt is not None:
             key = (run, p["task_id"], receipt["target_commit"], receipt["command"])
             if receipt["exit_code"] == 0:

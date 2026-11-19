@@ -157,7 +157,8 @@ def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = 
         command = commands[0]
         from zf.runtime.verification_commands import verification_command_required_for_stage
         owner = ("candidate_verify" if contract.get("authority_scope") == "candidate" else
-                 "impl_self_check" if op["task_pipeline_stage"] == "impl" else "task_verify")
+                 "impl_self_check" if op["task_pipeline_stage"] == "impl" else
+                 str(contract.get("verification_owner") or "task_verify"))
         if not verification_command_required_for_stage(command, verification_owner=owner, task_id=op["task_id"]):
             raise ValueError("verification command belongs to a different stage")
         if owner != "impl_self_check" and request.get("target_commit") != git(root, "rev-parse", "HEAD"):
