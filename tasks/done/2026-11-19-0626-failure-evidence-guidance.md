@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 明确只读Verifier的实际工具失败证据引用
 
@@ -15,3 +15,5 @@ Owner已授权真实无人验证暴露问题后修复。K3 Reader verify-lane-7�
 - 真实补丁载入及任何人工恢复单独记账，不覆盖历史无人失败资格。
 
 验证：60聚焦通过/1skip；116影响闭包通过/1skip；53sentinel通过；三份skill metadata及内容一致。已有CLI能力先验证成立，不声称业务RED。
+
+实现：`7f86dfaa fix: clarify native tool evidence for verifier failure reports`。done仅为方法修正条目，真实无人验收待完成。
