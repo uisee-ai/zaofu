@@ -6310,7 +6310,9 @@ class FanoutCoordinationMixin(
                                     stale_reason = "idle"
                     if not stale_reason:
                         continue
-                    if len(child_dispatches) <= max_retries:
+                    from zf.runtime.reader_retry_budget import reader_fault_dispatch_count
+
+                    if reader_fault_dispatch_count(child_dispatches, events) <= max_retries:
                         self._retry_fanout_child(
                             manifest=manifest,
                             child=child,

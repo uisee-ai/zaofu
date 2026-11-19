@@ -1,5 +1,26 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-19 Reader 失败路由与 idle 预算
+
+K5真实轮第二Candidate的输入读取失败被预授权宿主协调器错误选中，额外执行19条
+命令。该协调器现在为Candidate读取已经准入、摘要绑定的结果；`reader_execution_failure`
+留给既有诊断/Reader恢复流程，不以产品命令执行冒充输入修复。真正的runner失败
+仍保留原宿主授权、冻结目标、合同与执行预算门禁。未改写历史失败或生成产品通过。
+
+真实分页续跑已证明保持同一TaskAttempt，但隔离回归发现idle分支仍按全部dispatch
+计算故障次数。现仅豁免具有kernel进展claim、前序dispatch和完全匹配的
+role/Run/operation/request/语义attempt/transport dispatch身份的正常续读。
+真正故障重试继续计数，未知、伪造、跨操作及未来claim不享受豁免；原idle边界、
+暂停、租约、权限与最终结果门禁不变。该idle故障是mock复现，未冒称K5现场触发。
+
+方法层补充恢复时逐命令对账：执行事实已覆盖原命令时，Reader继续必读和独立判断；
+本地Docker权限拒绝不推翻既有授权执行事实，也不能把尚未阅读误写成缺少执行。
+这一语义判断仍由agent/skill负责，runtime不根据exit0代填passed。
+
+任务：[Reader恢复修复](../../tasks/active/2026-11-19-0917-reader-recovery-routing.md)。
+K5的16项Task、8×8重叠89.420秒和原始浏览器通过保留，但最终Judge/Goal未完成，
+诊断收尾取消1次，整体资格未通过。完整额度主动探测/自动恢复不在本补丁范围。
+
 ## 2026-11-19 OA 旧任务提示失效
 
 同轮的 `TOOL-MAX` 已在 `evt-d90ef9d24cc1` 经独立验证和集成完成，但

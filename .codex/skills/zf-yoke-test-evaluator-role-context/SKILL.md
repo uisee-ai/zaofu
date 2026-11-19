@@ -24,6 +24,16 @@ amendment are separate role capabilities supplied by the workflow profile.
   Docker socket alone does not invalidate authorized host execution. Receipts
   are execution facts, not a product verdict. All required product reads and
   independent acceptance judgments still apply; missing commands stay unverified.
+- Before declaring the recovered runner unavailable, reconcile each frozen
+  command with the pinned receipts: target, command identity, source stability,
+  exit code and complete output. Name the specific still-uncovered command or
+  explain why its bound receipt is unusable. When execution facts cover the
+  declared commands, continue the remaining required reads and acceptance review;
+  a denied local `docker version` does not undo those facts or justify stopping
+  before review. Do not rerun that unavailable runner merely to rediscover the
+  same permission error. Input truncation belongs to bounded rereading and, if
+  genuinely unrecoverable, `reader_execution_failure`; it is not missing test
+  execution. Existing receipts never authorize an automatic product pass.
 - Start with the current stage card and its controlled required-read batch. Consume
   every `next_cursor` page; identical authorized aliases share content, not authority.
 - Read this role method once per unchanged skill digest. Load dependency references
