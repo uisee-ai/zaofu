@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现: `7de42409` — chore: enforce attempt recovery in unattended qualification fixtures
 
 # 无人验收显式启用 TaskAttempt 恢复策略
 
@@ -16,3 +17,9 @@
 
 验证：旧生成配置及真实过期路径2项RED；修复后故障矩阵/8槽位mock9通过；
 dev-verify生成器及文档闭包10通过。当前Run的shadow状态保持，未补写expired状态。
+
+已合入dev `fadf730b`。新隔离轮 /tmp/zf-eight-enforce-20261119T034022Z
+在尚未启动时读取实际编译配置：enforce、max_attempts=3、8/8及16 active，
+Plan仍需批准，浏览器脚本摘要保持。新的driver在受控workflow-submit前再次断言enforce。
+证据：reports/unattended-attempt-policy-20261119/next-run-compiled-policy-preflight.json。
+真实完整资格仍由P2跟踪，本任务完成仅指验收配置及其恢复路径mock修正。
