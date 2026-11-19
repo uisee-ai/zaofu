@@ -69,7 +69,7 @@ def test_rendered_stdin_failure_command_uses_real_cli_admission(tmp_path, profil
     assert not any(e.type == "verify.child.completed" for e in runtime.event_log.read_all())
 
 
-def _unread_verifier(tmp_path, profile):
+def _unread_verifier(tmp_path, profile, *, recovery_feedback=None):
     runtime, original, service, credential, result = _running_verify(tmp_path, profile)
     operation = load_workflow_operation(runtime.event_log, original.operation_id)
     request = hydrate_sidecar_ref(runtime.state_dir, operation["request_ref"]).payload["request"]
@@ -90,6 +90,8 @@ def _unread_verifier(tmp_path, profile):
         "output_profile_id": profile, "input_refs": [ref],
         "canonical_success_event": "verify.child.completed",
         "canonical_failure_event": "verify.child.failed"}
+    if recovery_feedback:
+        payload["operator_feedback"] = [recovery_feedback]
     prepared = prepare_call_operation(runtime, payload=payload,
         operation_type="fanout_reader_child", operation_key="unread-verify",
         stage_id="verify", task_id=result["task_id"], dispatch_id="unread-verify")
@@ -141,3 +143,71 @@ def test_environment_abstention_preserves_admission_boundaries(tmp_path, fault):
     with pytest.raises(ResultSubmitError):
         service.submit(**args, semantic_result=result)
     assert not any(e.type == "verify.child.completed" for e in runtime.event_log.read_all())
+
+
+@pytest.mark.parametrize("profile", ["task-verify", "candidate-verify"])
+def test_recovered_runner_failure_requires_recovery_read_before_submit(tmp_path, profile):
+    from zf.runtime.artifact_read_ledger import read_attempt_artifact
+
+    runtime, service, args, result = _unread_verifier(
+        tmp_path, profile, recovery_feedback="Current target host receipts are available. " * 300,
+    )
+    operation = load_workflow_operation(runtime.event_log, args["operation_id"])
+    request = hydrate_sidecar_ref(runtime.state_dir, operation["request_ref"]).payload["request"]
+    policy = hydrate_sidecar_ref(runtime.state_dir, request["input_consumption_policy_ref"]).payload
+    recovery = next(r for r in policy["required_reads"]
+                    if r["source_id"] == "critical-reader-repair-context")
+    from zf.runtime.artifact_input_index import load_attempt_source_manifest
+    manifest = load_attempt_source_manifest(runtime.state_dir, policy['attempt_id'])
+    before = {p: p.read_bytes() for p in runtime.state_dir.rglob("*") if p.is_file()}
+    checked = service.validate_plan_candidate(**args, semantic_result=result)
+    assert checked["status"] == "failed", checked
+    assert any(e["code"] == "recovery_input_unread" for e in checked["errors"])
+    assert before == {p: p.read_bytes() for p in runtime.state_dir.rglob("*") if p.is_file()}
+    with pytest.raises(ResultSubmitError):
+        service.submit(**args, semantic_result=result)
+    assert not any(e.type == "verify.child.failed" for e in runtime.event_log.read_all())
+    read_args = dict(manifest=manifest, source_id=recovery["source_id"],
+                     artifact_id=recovery["artifact_id"], json_path="$")
+    first = read_attempt_artifact(runtime.state_dir, **read_args, page_start=0, page_size=4096)
+    assert first["read"]["page_end"] < first["read"]["page_total"]
+    assert service.validate_plan_candidate(**args, semantic_result=result)["status"] == "failed"
+    read_attempt_artifact(runtime.state_dir, **read_args)
+    assert service.validate_plan_candidate(**args, semantic_result=result)["status"] == "passed"
+    # Recovery evidence may still be insufficient; only the agent judges that.
+    submitted = service.submit(**args, semantic_result=result)
+    assert submitted.canonical_event_type == "verify.child.failed"
+
+
+def test_unread_recovery_can_report_actual_input_failure(tmp_path):
+    runtime, service, args, result = _unread_verifier(
+        tmp_path, "candidate-verify", recovery_feedback="Read the current host receipt.",
+    )
+    from pathlib import Path
+    Path(result['evidence_refs'][0]).write_text('artifact read failed: recovery source unavailable\n')
+    result.update(failure_class="reader_execution_failure", summary="Recovery input read unavailable.")
+    assert service.validate_plan_candidate(**args, semantic_result=result)["status"] == "passed"
+    assert service.submit(**args, semantic_result=result).canonical_event_type == "verify.child.failed"
+
+
+@pytest.mark.parametrize('fault', ['wrong_digest', 'wrong_attempt', 'corrupt'])
+def test_runner_failure_rejects_invalid_recovery_read_proof(tmp_path, fault):
+    from zf.runtime.artifact_input_index import load_attempt_source_manifest
+    from zf.runtime.artifact_read_ledger import read_attempt_artifact
+
+    runtime, service, args, result = _unread_verifier(
+        tmp_path, 'candidate-verify', recovery_feedback='Read current bound execution receipts.',
+    )
+    manifest = load_attempt_source_manifest(runtime.state_dir, 'unread-verify')
+    source = next(s for s in manifest['sources'] if s['source_id'] == 'critical-reader-repair-context')
+    read_attempt_artifact(runtime.state_dir, manifest=manifest,
+        source_id=source['source_id'], artifact_id=source['artifact_id'], json_path='$')
+    path = active_read_ledger_path(runtime.state_dir, 'unread-verify')
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    if fault == 'wrong_digest': rows[0]['artifact_sha256'] = '0' * 64
+    elif fault == 'wrong_attempt': rows[0]['attempt_id'] = 'stale-attempt'
+    path.write_text('corrupt\n' if fault == 'corrupt' else '\n'.join(map(json.dumps, rows)) + '\n')
+    assert service.validate_plan_candidate(**args, semantic_result=result)['status'] == 'failed'
+    with pytest.raises(ResultSubmitError):
+        service.submit(**args, semantic_result=result)
+    assert not any(e.type == 'verify.child.failed' for e in runtime.event_log.read_all())

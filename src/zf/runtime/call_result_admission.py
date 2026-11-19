@@ -203,6 +203,13 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             execution_status="failed" if reader_failed else "",
         )
         issues = [dict(item) for item in adapted.issues]
+        from zf.runtime.task_input_failure import recovery_input_issues
+
+        if policy and ledger_descriptor:
+            issues.extend(recovery_input_issues(
+                self.state_dir, policy=policy, schema=adapted.schema_version,
+                result=adapted.payload, ledger_descriptor=ledger_descriptor,
+            ))
         issues.extend(provider_summary_issues)
         issues.extend(typed_admission_issues_for(self.state_dir, adapted, semantic_submit))
         if require_semantic_submit and not semantic_submit:

@@ -170,8 +170,14 @@ def test_canonical_dispatch_pins_operator_repair_as_required_lossless_input(tmp_
         attempt_id='a1', dispatch_id='a1', source_event_id='retry')
     source = next(s for s in manifest['sources'] if s['source_id']=='critical-reader-repair-context')
     for profile in ['implementation','task-verify','candidate-verify','workflow-read']:
-        assert any(r['source_id']==source['source_id'] and r['json_path']=='$'
-                   for r in canonical_required_reads(manifest, output_profile_id=profile))
+        required = canonical_required_reads(manifest, output_profile_id=profile)
+        assert required[0]['source_id'] == source['source_id']
+        assert required[0]['json_path'] == '$'
+        from zf.cli.artifact_required_read import prepare_required_read
+        output, _ = prepare_required_read(state, manifest=manifest, rows=required,
+            identity={'attempt_id':'a1'}, page_bytes=2048)
+        import json
+        assert json.loads(output)['items'][0]['source_id'] == source['source_id']
     content = read_attempt_artifact(state, manifest=manifest, source_id=source['source_id'],
         artifact_id=source['artifact_id'], json_path='$')['content']
     assert message in content
