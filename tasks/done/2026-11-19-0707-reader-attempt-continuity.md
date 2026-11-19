@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # Reader正常读取续跑保留执行尝试
 
@@ -10,3 +10,5 @@
 - 影响闭包、sentinel、mock -> verify: 记录准确命令、结果与未覆盖的真实范围，合入后才准备新轮源码。
 
 验证：当前dev有效RED为1失败（期待5次发送，实际3次）；修复后聚焦26通过；dev-verify影响闭包3158通过/7跳过，sentinel53、flow-smoke10通过。真实源码切换与无人验收尚待独立运行，未宣称通过。
+
+实现：`ebe0fb79 fix: preserve reader task attempts during progress continuation`。真实资格仍由P2运行记录负责，不在本修复任务中虚报。
