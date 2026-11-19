@@ -73,6 +73,7 @@ def capture_execution_evidence(state_dir: Path, source: dict, events: list) -> d
     entries.extend(host_entries)
     return write_immutable_json_sidecar(state_dir, {
         'binding': {k: source[k] for k in IDENTITY}, 'entries': entries,
+        'host_event_ids': [row['event_id'] for row in host_entries],
         'claims_status': ('execution_observations_not_product_verdict' if host_entries
                           else 'provider_observation_unverified'), 'authorizes_execution': False,
     }, root='task-handoffs/tool-index', kind='task_tool_index',
