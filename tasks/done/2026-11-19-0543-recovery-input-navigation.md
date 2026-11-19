@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `09c7ebb7` fix: navigate only bound recovery inputs and host facts
 
 # 恢复输入和宿主回执导航
 
