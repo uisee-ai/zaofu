@@ -196,6 +196,14 @@ def _publish_entry(runtime, invoked, receipt, existing):
         created_by="candidate-continuation")
     # This is a new freeze over the same commit, never an old verdict re-labelled.
     evidence_paths = [str(state / p["receipt_ref"]["ref"]) for p in manifest["execution_evidence"]]
+    from zf.runtime.host_evidence_media import materialize_container_media
+
+    media_indices = []
+    for fact in manifest["execution_evidence"]:
+        old_receipt = _json(state, fact["receipt_ref"])
+        if old_receipt.get("execution_origin") == "preauthorized_container" and old_receipt.get("evidence_ref"):
+            media_indices.extend(materialize_container_media(
+                state, [fact["receipt_ref"]], image=old_receipt.get("image", "")))
     feedback = (
         "This is an owner-approved verification continuation, not a fresh Impl run. "
         "Completed Tasks retain their source Run and independent verification identity. "
@@ -205,6 +213,11 @@ def _publish_entry(runtime, invoked, receipt, existing):
         "Continuation receipt: " + str(state / descriptor["ref"])
         + ". Source execution receipts: " + ", ".join(evidence_paths)
     )
+    if media_indices:
+        feedback += (". Read-only media indices: "
+            + ", ".join(str(state / ref["ref"]) for ref in media_indices)
+            + ". Open indexed image files with the image viewer; no extraction or write is needed. "
+            "Media presence is not product acceptance; independently evaluate the frozen obligations.")
     emit_once("candidate.ready", {**freeze, "freeze_receipt_ref": freeze_ref,
         "freeze_receipt_digest": freeze_ref["sha256"], "target_commit": manifest["candidate_head_commit"],
         "target_ref": manifest["candidate_ref"], "source": "candidate-continuation",

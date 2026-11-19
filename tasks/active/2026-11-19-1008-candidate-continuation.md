@@ -48,3 +48,9 @@ K7最终Reader/Judge/Goal/交付未验收，任务保持active，P2无人资格�
 首Reader19条宿主采证完成、仍等待fanout聚合时，为第二Reader重新执行相同命令。
 修复按精确Run/fanout/target/contract协调已采证owner，不额外改写reusable或产品
 verdict；同组重复及不同组独立推进回归RED→GREEN，268 passed/2 host deselected。
+
+Reader 0/5随后读完材料并确认浏览器回执通过，但图片只有base64，无法完成视觉
+审查。既有媒体投影只在失败恢复入口调用，首次接续未接入。复用该投影器补齐入口，
+以真实Orchestrator消费者验证首次即可读图片、损坏摘要不得发布Candidate；两项
+RED复现后，99项接续/媒体/恢复/输入回归通过。旧K7的现有失败仍等待原恢复机制交回，
+不把源码修复或图片存在当作产品验收通过。
