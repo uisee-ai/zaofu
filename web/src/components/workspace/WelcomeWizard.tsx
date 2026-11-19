@@ -20,21 +20,23 @@ const STEPS: StepDef[] = [
 ];
 
 interface Props {
+  initialStatus: OnboardingStatus;
   accessReady: boolean;
   onDone: () => void;
   onSaveToken: (token: string) => void;
   tokenPresent: boolean;
-  controllerSession: boolean;
+  sessionAuthorized: boolean;
+  accountControls?: React.ReactNode;
 }
 
 export function WelcomeWizard({
-  accessReady,
+  initialStatus, accessReady,
   onDone,
   onSaveToken,
   tokenPresent,
-  controllerSession,
+  sessionAuthorized, accountControls,
 }: Props) {
-  const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [status, setStatus] = useState<OnboardingStatus>(initialStatus);
   const [stepIdx, setStepIdx] = useState(0);
   const [backend, setBackend] = useState("");
   const [mixedEnabled, setMixedEnabled] = useState(false);
@@ -43,27 +45,29 @@ export function WelcomeWizard({
   const [tokenDraft, setTokenDraft] = useState("");
 
   useEffect(() => {
-    getOnboarding().then((s) => {
-      setStatus(s);
-      setStepIdx(Math.min(Math.max((s.step || 1) - 1, 0), STEPS.length - 1));
-      if (s.primary_backend || s.backend) setBackend(s.primary_backend || s.backend);
-      else {
-        const primaryBackends = s.backends.filter(
-          (item) => item.id === "codex" || item.id === "claude-code",
-        );
-        const pre = primaryBackends.find((b) => b.detected)
-          ?? primaryBackends[0];
-        if (pre) setBackend(pre.id);
-      }
-      setMixedEnabled(Boolean(s.mixed_enabled && s.mixed_available));
-    }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
-  }, []);
+    const s = initialStatus;
+    const saved = Math.min(Math.max((s.step || 1) - 1, 0), STEPS.length - 1);
+    setStepIdx(sessionAuthorized && saved === 2 ? 3 : saved);
+    if (s.primary_backend || s.backend) setBackend(s.primary_backend || s.backend);
+    else {
+      const primaryBackends = s.backends.filter(
+        (item) => item.id === "codex" || item.id === "claude-code",
+      );
+      const pre = primaryBackends.find((b) => b.detected)
+        ?? primaryBackends[0];
+      if (pre) setBackend(pre.id);
+    }
+    setMixedEnabled(Boolean(s.mixed_enabled && s.mixed_available));
+  }, [initialStatus, sessionAuthorized]);
 
   const cur = STEPS[stepIdx];
+  const visibleSteps = STEPS.filter(s => !sessionAuthorized || s.id !== "access");
+  const stepLabel = (visibleSteps.indexOf(cur) + 1) + "/" + visibleSteps.length;
   const preflightOk = useMemo(
     () => (status?.preflight ?? []).every((c) => c.ok), [status]);
 
   async function persistStep(nextIdx: number) {
+    if (sessionAuthorized && nextIdx === 2) nextIdx = stepIdx < 2 ? 3 : 1;
     if (!accessReady) {
       setStepIdx(nextIdx);
       return;
@@ -113,16 +117,6 @@ export function WelcomeWizard({
     }
   }
 
-  if (!status) {
-    return (
-      <div style={overlay}>
-        <div style={{ color: error ? TONE.err : TONE.muted }}>
-          {error || "加载引导…"}
-        </div>
-      </div>
-    );
-  }
-
   const canContinue =
     (cur.id === "backend" && !!backend)
     || (cur.id === "preflight" && preflightOk)
@@ -135,18 +129,19 @@ export function WelcomeWizard({
         {/* header + progress rail */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
           <div style={{ fontSize: 11, letterSpacing: 0, textTransform: "uppercase", color: TONE.muted }}>
-            设置 ZaoFu · STEP {cur.num}/{STEPS.length}
+            设置 ZaoFu · STEP {stepLabel}
           </div>
+          {accountControls}
           <button type="button" onClick={skipAll} disabled={busy} data-testid="welcome-skip"
             style={linkBtn}>跳过全部</button>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", margin: "8px 0 18px" }}>
-          {STEPS.map((s, i) => (
+          {visibleSteps.map((s) => (
             <div key={s.id} data-testid={`welcome-rail-${s.id}`}
-              onClick={() => i <= stepIdx && persistStep(i)}
+              onClick={() => s.num - 1 <= stepIdx && persistStep(s.num - 1)}
               style={{
-                flex: 1, height: 4, borderRadius: 2, cursor: i <= stepIdx ? "pointer" : "default",
-                background: i < stepIdx ? TONE.ok : i === stepIdx ? TONE.brand : TONE.line,
+                flex: 1, height: 4, borderRadius: 2, cursor: s.num - 1 <= stepIdx ? "pointer" : "default",
+                background: s.num - 1 < stepIdx ? TONE.ok : s.num - 1 === stepIdx ? TONE.brand : TONE.line,
               }} />
           ))}
         </div>
@@ -232,7 +227,7 @@ export function WelcomeWizard({
               {!preflightOk ? (
                 <div style={{ marginTop: 8, fontSize: 12, color: TONE.warn }}>
                   有硬依赖缺失,装好后 <button type="button" style={linkBtn}
-                    onClick={() => getOnboarding().then(setStatus)}>重验</button> —— 通过才能继续。
+                    onClick={() => getOnboarding().then(setStatus).catch(() => setError("环境检查失败，请重试"))}>重验</button> —— 通过才能继续。
                 </div>
               ) : (
                 <div style={{ marginTop: 8, fontSize: 12, color: TONE.ok }}>环境就绪。</div>
@@ -242,7 +237,7 @@ export function WelcomeWizard({
 
           {cur.id === "access" ? (
             <div>
-              {!controllerSession && <div
+              {!sessionAuthorized && <div
                 data-testid="welcome-action-token"
                 style={{
                   display: "grid",
@@ -314,7 +309,7 @@ export function WelcomeWizard({
           <button type="button" disabled={stepIdx === 0 || busy}
             onClick={() => persistStep(stepIdx - 1)} style={ghostBtn}>← 上一步</button>
           <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: TONE.faint }}>
-            {cur.num} / {STEPS.length}
+            {stepLabel}
           </div>
           {cur.id !== "ready" && cur.id !== "access" ? (
             <button type="button" onClick={() => persistStep(stepIdx + 1)} style={linkBtn}>跳过此步</button>

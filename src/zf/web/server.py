@@ -121,6 +121,8 @@ from zf.runtime.operator_reliability import (
     project_worktree_drift_audit,
 )
 from zf.runtime.pause_lifecycle import project_pause_lifecycle
+from zf.core.workspace.web_account import LocalAccount
+from zf.web.local_login import LocalLoginMiddleware, current_grant
 from zf.runtime.provider_capabilities import (
     project_provider_capabilities,
     provider_capability_for_backend,
@@ -675,6 +677,7 @@ def create_app(
     *,
     default_project_enabled: bool = True,
     read_only: bool = False,
+    local_account: LocalAccount | None = None,
 ) -> FastAPI:
     """Build a FastAPI app reading state from ``state_dir`` (.zf path).
 
@@ -683,6 +686,8 @@ def create_app(
     """
     app = FastAPI(title="zaofu dashboard", version=__version__)
     from zf.integrations.controller.access import install_access
+    if local_account is not None:
+        app.add_middleware(LocalLoginMiddleware, account=local_account, read_only=read_only)
     install_access(app, read_only=read_only)
     from zf.web.dashboard_projection import register_pending_handler
     register_pending_handler(app)
@@ -913,6 +918,10 @@ def create_app(
     # Two incidents this week served week-old code invisibly (a 22h-old server
     # process predating a perf merge; a 1.5-day-stale web/dist). /health makes
     # "which code is this server actually running" a one-curl question.
+
+    @app.get("/readyz")
+    def readyz() -> dict:
+        return {"ok": True}
 
     @app.get("/health")
     def health() -> JSONResponse:
@@ -5301,10 +5310,15 @@ def _web_session_projection(web_session_token: str | None = None) -> dict:
     authority = request_authority.get()
     if authority is not None:
         return {
-            "mode": "controller_session" if authority else "read_only",
+            "mode": "controller_session" if authority else "read_only", "controller_managed": True,
             "unlocked": authority, "actions_enabled": authority, "expires_at": None,
             "requires_token": False, "token_fallback_enabled": False,
         }
+    grant = current_grant.get()
+    if grant is not None:
+        return {"mode": "local_account" if grant.writable else "read_only",
+                "local_account": True, "username": LocalAccount.username, "unlocked": True, "actions_enabled": grant.writable,
+                "expires_at": None, "requires_token": False, "token_fallback_enabled": False}
     trusted = os.environ.get("ZF_WEB_TRUSTED_SESSION", "").strip().lower()
     if trusted in {"1", "true", "yes", "local_trusted"}:
         return {
@@ -8854,6 +8868,9 @@ def _operator_websocket_authorized(websocket: WebSocket) -> bool:
     authority = request_authority.get()
     if authority is not None:
         return authority
+    grant = current_grant.get()
+    if grant is not None:
+        return grant.writable
     configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
     supplied = (
         websocket.headers.get("x-zf-web-token")
@@ -8990,6 +9007,9 @@ def _web_mutation_mode() -> str:
     authority = request_authority.get()
     if authority is not None:
         return "controller_session" if authority else "disabled"
+    grant = current_grant.get()
+    if grant is not None:
+        return "local_account" if grant.writable else "disabled"
     if _web_action_token_configured():
         return "token"
     if _web_passcode_configured():
@@ -9015,6 +9035,9 @@ def _web_mutation_auth_error(
         return None if request_authority.get() else {
             '_status_code': 403, 'ok': False, 'status': 'unauthorized',
             'action': action_name, 'reason': 'current Gateway authorization required'}
+    grant = current_grant.get()
+    if grant is not None:
+        return None if grant.writable else {"_status_code": 403, "ok": False, "status": "disabled", "action": action_name}
     configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
     trusted_session = _web_trusted_session_enabled()
     passcode_session = _web_session_token_valid(web_session_token)

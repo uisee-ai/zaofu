@@ -1,9 +1,10 @@
-import { Building2, Check, Globe2, Palette, Clock3, Sun, Moon, Monitor } from "lucide-react";
+import { Building2, KeyRound, Check, Globe2, Palette, Clock3, Sun, Moon, Monitor } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode, CSSProperties } from "react";
 import type { Snapshot } from "../../api/types";
 import { useUiPreferences } from "../../app/UiPreferences";
 import { ACCENTS, formatDateTime, validTimeZone } from "../../lib/uiPreferences";
+import { PasswordSettings } from "./PasswordSettings";
 import type { UiPreferences } from "../../lib/uiPreferences";
 
 const SECTIONS = [
@@ -29,14 +30,24 @@ function ThemePreview({ mode }: { mode: "light" | "dark" | "system" }) {
     </>}
   </span>;
 }
-export function SettingsPage({ snapshot }: { snapshot: Snapshot | null }) {
+export function SettingsPage({ snapshot, localAccount, canChangePassword }: {
+  snapshot: Snapshot | null; localAccount: boolean; canChangePassword: boolean;
+}) {
   const { preferences: p, updatePreferences: update, t, storageError } = useUiPreferences();
-  const [section, setSection] = useState(() => {
+  const [selected, setSection] = useState<typeof SECTIONS[number]["id"] | "password">(() => {
     const fromUrl = new URLSearchParams(window.location.search).get("settings");
+    if (fromUrl === "password") return "password";
     return SECTIONS.find((item) => item.id === fromUrl)?.id ?? "workspace";
   });
   const [previewDate] = useState(() => new Date().toISOString());
-  const title = SECTIONS.find((item) => item.id === section)!.label;
+  const section = selected === "password" && !localAccount ? "workspace" : selected;
+  const title = section === "password" ? "Password" : SECTIONS.find(item => item.id === section)!.label;
+  function navigate(id: typeof selected) {
+    setSection(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("settings", id);
+    window.history.replaceState(null, "", url);
+  }
   const select = <K extends keyof UiPreferences>(key: K, label: string, options: Array<[UiPreferences[K], string]>) => (
     <select aria-label={t(label)} value={p[key]} onChange={(event) => update({ [key]: event.target.value })}>
       {options.map(([value, name]) => <option value={value} key={value}>{t(name)}</option>)}
@@ -49,13 +60,17 @@ export function SettingsPage({ snapshot }: { snapshot: Snapshot | null }) {
     <div className="general-settings-layout">
       <nav className="general-settings-nav" aria-label={t("General")}>
         <span className="settings-nav-caption">{t("General")}</span>
-        {SECTIONS.map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => {
-          setSection(id);
-          const url = new URL(window.location.href); url.searchParams.set("settings", id); window.history.replaceState(null, "", url);
-        }}><Icon size={16} aria-hidden="true" />{t(label)}</button>)}
+        {SECTIONS.map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => navigate(id)}><Icon size={16} aria-hidden="true" />{t(label)}</button>)}
+        {localAccount && <>
+          <span className="settings-nav-caption">{t("Security")}</span>
+          <button type="button" aria-current={section === "password" ? "page" : undefined} onClick={() => navigate("password")}>
+            <KeyRound size={16} aria-hidden="true" />{t("Password")}
+          </button>
+        </>}
       </nav>
       <section className="general-settings-content" aria-label={t(title)}>
         <h3>{t(title)}</h3>
+        {section === "password" && <PasswordSettings writable={canChangePassword} />}
         {section === "workspace" && <>
           <p className="settings-description">{t("Managed by the project configuration.")}</p>
           {[["Project name", snapshot?.project.name], ["Project root", snapshot?.project.root], ["State directory", snapshot?.project.state_dir], ["Configuration", "zf.yaml"]].map(([label, value]) =>
@@ -92,7 +107,7 @@ export function SettingsPage({ snapshot }: { snapshot: Snapshot | null }) {
           <SettingRow title={t("Time format")}>{select("hourCycle", "Time format", [["h23", "24 hour"], ["h12", "12 hour"]])}</SettingRow>
           <div className="settings-time-preview"><span>{t("Preview")}</span><time dateTime={previewDate}>{formatDateTime(previewDate, p)}</time></div>
         </>}
-        <p className={`settings-footnote ${storageError ? "error" : ""}`} role="status">{t(storageError ? "Preferences could not be saved. Changes apply to this tab only." : "Local preferences are saved on this device.")}</p>
+        {section !== "password" && <p className={`settings-footnote ${storageError ? "error" : ""}`} role="status">{t(storageError ? "Preferences could not be saved. Changes apply to this tab only." : "Local preferences are saved on this device.")}</p>}
       </section>
     </div>
   </div>;

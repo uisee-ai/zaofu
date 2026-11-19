@@ -80,9 +80,9 @@ cd zaofu
 Python 依赖、构建 Dashboard 并检查服务就绪。开始 Agent 工作前，需自行安装并登录
 Codex 或 Claude Code。
 
-默认访问 **http://127.0.0.1:8001/**。带写权限的访问链接保存在私有文件
-`<workspace-home>/install-web-<port>.log`，Workspace 目录默认为 `~/.zaofu`
-（或 `ZF_WORKSPACE_HOME`）。使用该链接完成 Web Bootstrap，再添加/打开项目。
+新装后打开 **http://127.0.0.1:8001/**，使用初始用户名和密码 `zaofu / zaofu` 登录。
+可在「设置 → 安全 → 密码」改密，或从侧栏底部的账号菜单退出。完成或跳过首次设置后即可添加项目。
+若将默认密码的实例开放给网络，能访问该地址的人可以操作可写终端。
 远程节点可通过 `ssh -L 8001:127.0.0.1:8001 user@your-node` 转发默认端口。
 
 ```bash
@@ -325,7 +325,8 @@ multi-agent workflow 与工程落地实践，也可以直接联系作者。
 - Web/API/Integration 只能通过确定性、token-gated action path 修改状态。
 - 产品 quality gate 和 acceptance semantics 必须来自目标项目，ZaoFu 不会虚构。
 - Provider CLI 可能修改文件并消耗模型预算，真实执行前先 validate 和 dry-run。
-- standalone 工作台默认使用本地 action token 授权写操作，localhost 也适用。打开 `zf web` 输出的授权链接即可使用。云端实例使用已登录的 Gateway 会话授权工作台操作和终端访问。
+- Standalone 与仅上报节点使用同一个本地账号。登录会话授权 Dashboard 写操作和终端访问。云端个人工作台使用注册的 Controller 账号通过 Keycloak 单点登录。
+- 旧 Token、passcode 和 trusted 安装保留原访问方式。迁移时停止旧 Web 进程，指定相同的 `ZF_WORKSPACE_HOME` 执行 `zf web --setup-account` 并重新启动。本机恢复使用 `zf web --reset-password`。自动化脚本可显式配置 `ZF_WEB_API_TOKEN` 并通过 Bearer 请求头访问 API。HTTPS 反向代理需保留 Host，由受信代理传递原始协议。
 - 除非网络明确可信，否则 Dashboard 只绑定 loopback。
 - 共享主机上不要使用 `tmux kill-server` 停止单个项目。
 

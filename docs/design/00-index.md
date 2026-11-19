@@ -5,7 +5,7 @@
 
 ## 编号与状态
 
-当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 207；201–205 已在本地设计工作中占用，不复用。
+当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 211；201–205 已在本地设计工作中占用，不复用。
 117 为历史保留编号，不复用。
 后续新增前仍需核对目录、索引及历史引用，避免重号。
 
@@ -27,5 +27,6 @@
 | 207 | [评审成本与增量证据优化方案](207-review-cost-and-incremental-evidence-optimization.md) | implementing | 基于真实 v5 成本与公开资料，提出输入减负、审批前/已批准增量评审、finding 收敛及交付后复核优化；含分批范围、质量约束与对照验收。 |
 
 | 208 | [按需 Critic 的输入范围与返修收敛](208-demand-critic-input-and-convergence.md) | implementing | 修复 none/STOP，减少无损包装重复，分离首次定向与历史增量，并以真实 Channel → Plan Preview 验证。 |
+| 211 | [Standalone 账号登录与云端个人工作台体验](211-standalone-login-and-cloud-workbench.md) | implemented | 定义本地默认账号、可选改密、旧 Token 迁移、云端 SSO 和登录页视觉对齐，列出两端工作台的实施与验收范围。 |
 
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。
