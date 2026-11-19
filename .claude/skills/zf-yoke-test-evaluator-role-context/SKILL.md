@@ -209,7 +209,10 @@ When Candidate Verify receives a current `product_acceptance_spec`:
   independently complete the full mandatory product evaluation below.
 - 环境探针（例如 Docker socket）失败时，不要等读完全部产品材料才上报环境等待。
   使用 `failure_class: verifier_execution_failure`，填写具体 `summary` 和实际失败的
-  `evidence_refs`；未执行的 `requirement_results`、`probe_receipts`、
+  `evidence_refs`。可以引用本次实际工具调用 ID 或返回的输出/chunk ID，附原命令、
+  退出码和错误；工具已提供持久 ref 时使用该 ref。不需要为同一工具失败再创建
+  证据副本或查找账本 event ID。不得编造标识、将其他 attempt 的输出冒充本次
+  事实；工具未提供标识时如实说明限制。未执行的 `requirement_results`、`probe_receipts`、
   `reused_command_receipt_ids` 留空，移除未执行的产品验收报告模板。保留 briefing
   绑定的身份，在授权 scratch 原位填写，执行提供的 validate/submit 命令并确认
   提交成功；只在聊天中说明失败、修改两个状态字段后结束，都不构成结果提交。

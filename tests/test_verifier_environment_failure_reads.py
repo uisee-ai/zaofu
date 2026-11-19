@@ -30,12 +30,30 @@ def test_rendered_failure_example_validates_and_submits_without_success_template
 
 
 @pytest.mark.parametrize("profile", ["task-verify", "candidate-verify"])
-def test_rendered_stdin_failure_command_uses_real_cli_admission(tmp_path, profile, monkeypatch, capsys):
+@pytest.mark.parametrize("evidence_kind", ["file", "native_tool_output"])
+def test_rendered_stdin_failure_command_uses_real_cli_admission(tmp_path, profile, evidence_kind, monkeypatch, capsys):
     from zf.cli.main import build_parser
     from zf.cli.hook_workdir_guard import bash_command_looks_mutating
     from zf.runtime.stage_execution_card import prepare_profiled_stage_result
 
     runtime, service, args, result = _unread_verifier(tmp_path, profile)
+    if evidence_kind == "native_tool_output":
+        # The worker already has this returned tool observation; no extra file
+        # or ledger-event lookup is needed to report an environment failure.
+        from pathlib import Path
+        Path(result["evidence_refs"][0]).unlink()
+        runtime.event_writer.emit("agent.tool.use", actor="verify-1", payload={
+            "tool": "exec_command", "tool_use_id": "call-docker-probe",
+            "input": '{"cmd":"docker version"}',
+        })
+        runtime.event_writer.emit("agent.tool.result", actor="verify-1", payload={
+            "tool_use_id": "call-docker-probe", "is_error": False,
+            "content": "Chunk ID: probe-1; exit 1; Docker socket: operation not permitted",
+        })
+        result["evidence_refs"] = [
+            "tool call-docker-probe / output probe-1: docker version exit 1; "
+            "Docker socket: operation not permitted"
+        ]
     (runtime.project_root / "zf.yaml").write_text(
         'version: "1.0"\nproject: {name: failure-stdin, state_dir: .zf}\nroles: []\n')
     monkeypatch.chdir(runtime.project_root)
