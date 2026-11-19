@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `1e3bb5d6 fix: validate prepared plan port paths before critic dispatch`
 
 # Critic 前关闭 Plan port 引用与 Package 的路径差异
 
