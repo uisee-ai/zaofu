@@ -98,3 +98,8 @@ Reader7已真实首次派发（evt-c45ef0b6a798），同批保持4 passed+4 runn
 258项Reader、角色生命周期、直接调用方和flow mock通过，53项sentinel通过。
 此补丁暂留工作分支，避免为非当前卡点继续重启在途Provider控制器；现场结果不
 归因于尚未加载代码。
+
+只读检查还发现Reader7已真实派发，pending_reader_wait_diagnoses仍列出旧等待。
+修复仅在绑定的kernel后继dispatch后移除旧诊断待办，保留事件和产品验收义务。
+一项RED；223项RunManager/Reader/flow mock及53项sentinel通过，真实历史只读
+投影旧待办由1变0。尚未加载，不能据此宣称线上RunManager闭环通过。
