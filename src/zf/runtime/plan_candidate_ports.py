@@ -9,7 +9,7 @@ from typing import Any
 
 from zf.runtime.call_result_envelope import canonical_json_bytes
 from zf.runtime.plan_artifact_ports import canonical_plan_port_name, coerce_plan_port_descriptors
-from zf.runtime.sidecar_refs import DEFAULT_HYDRATE_LIMIT_BYTES
+from zf.runtime.sidecar_refs import DEFAULT_HYDRATE_LIMIT_BYTES, SidecarRefError, sidecar_path
 from zf.runtime.task_map import resolve_artifact_file
 
 
@@ -31,6 +31,35 @@ def read_plan_port_bytes(path: Path, name: str) -> bytes:
         raw = handle.read(DEFAULT_HYDRATE_LIMIT_BYTES + 1)
     check_plan_port_size(name, len(raw))
     return raw
+
+
+def prepared_plan_port_path_errors(
+    candidates: list[dict[str, Any]], *, state_dir: Path,
+) -> list[dict[str, str]]:
+    """After producer relocation, explicit refs must satisfy Package paths.
+
+    Raw producer-local files are still valid before relocation. Do not copy
+    arbitrary input paths or relax the sidecar boundary to make a port pass.
+    Content, digest and size checks remain in the common candidate preflight.
+    """
+    errors: list[dict[str, str]] = []
+    for candidate_index, candidate in enumerate(candidates):
+        for index, port in enumerate(coerce_plan_port_descriptors(candidate.get("plan_ports"))):
+            if isinstance(port.get("body"), Mapping):
+                continue
+            ref = str(port.get("ref") or "").strip()
+            if not ref:
+                continue  # Existing descriptor validation owns missing refs.
+            try:
+                sidecar_path(state_dir, ref)
+            except (SidecarRefError, OSError, RuntimeError) as exc:
+                name = str(port.get("logical_name") or port.get("artifact_kind") or "")
+                _error(errors, "plan_port_not_materialized",
+                       f"report[{candidate_index}].plan_ports[{index}].ref",
+                       f"plan port {name!r} ref {ref!r} is not a Package sidecar: {exc}. "
+                       "Use a digest-bound controlled sidecar or declare a producer-local "
+                       "artifact for normal relocation; preserve the original content and digest.")
+    return errors
 
 
 def plan_port_bodies(

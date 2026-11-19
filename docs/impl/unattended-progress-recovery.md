@@ -170,3 +170,16 @@ Git效果仍逐个执行，继续使用既有受控入口、精确路径与Run�
 若当前 attempt 有该必读恢复输入，`verifier_execution_failure` 的只读预检和正式准入都会检查该输入的完整读取凭证。未读或部分读返回可纠正的 `recovery_input_unread`，不消费预检凭据，也不把命令成功判为产品通过。读取后仍可依据实际证据报告 runner 失败；真实 `reader_execution_failure` 仍可在产品输入未读完时报告。错误 attempt、摘要和损坏 ledger 不予接受。此检查仅证明输入生产的完整性，不证明模型理解。
 
 运行时只维护输入/凭证边界，回执的适用性与产品判断方法在 `skills/zf-harness-verification-checklist/SKILL.md`。回归入口：`tests/test_verifier_environment_failure_reads.py`、`tests/test_reader_replan_feedback.py`。本修复不包含额度主动探测或 Docker 权限扩展。
+
+### Critic 派发前的 Plan port 路径闭包
+
+生产者本地文件可在正常 fanout 归档后成为 sidecar；原始输入的绝对路径不能直接当作
+`plan_ports` 的已归档引用。`plan_synth_runtime` 在完成文件归档后，要求机械预检按
+Package 的同一 sidecar 路径边界校验显式端口。绝对路径、非 sidecar 根、父目录越界或
+逃逸符号链接返回 `plan_port_not_materialized`，包含具体端口与字段，并走既有协议修复
+入口，不启动完整 Critic。inline body、已归档相对引用与正常生产者文件归档保留。
+
+此检查不复制任意输入，不改摘要、不扩展安全根，也不代替内容/大小/摘要和独立语义审查。
+生产者提交前使用的预检仍允许其本地文件，路径闭包在 Kernel 完成归档的实际调用点检查；
+不能把生产者预检通过等同于最终 Package 已准入。回归见
+`tests/test_prepared_plan_port_paths.py`（实际 Critic 派发入口及越界拒绝）。

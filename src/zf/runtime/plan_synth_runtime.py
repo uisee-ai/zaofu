@@ -581,6 +581,7 @@ class PlanSynthRuntimeMixin:
                         payload=trigger_payload,
                     ),
                     writer_policy=plan_candidate_writer_policy(self.config),
+                    ports_materialized=True,
                 )
                 execution_review = preflight.get("execution_review")
                 if preflight["status"] != "passed":
