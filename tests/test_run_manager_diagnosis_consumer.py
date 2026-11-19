@@ -122,6 +122,30 @@ def test_explicit_autoresearch_route_is_preserved(tmp_path, monkeypatch):
     assert not any(c[:2] == ["tmux", "send-keys"] for c in calls)
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_failed_reader_attempt_uses_configured_resident_before_deep_research(tmp_path, monkeypatch, enabled):
+    from zf.core.events.model import ZfEvent
+
+    state, log, writer, cfg, calls = _setup(tmp_path, monkeypatch)
+    cfg.runtime.run_manager.resident_agent.enabled = enabled
+    failed = writer.append(ZfEvent(type='task.attempt.failed', origin='kernel', task_id='T1', payload={
+        'task_id': 'T1', 'workflow_run_id': 'R1', 'operation_id': 'reader-0',
+        'identity_version': 'role-v1', 'recovery_owner': 'workflow', 'retryable': False,
+        'reason': 'provider_turn_closed_without_child_result_recovery_exhausted',
+    }))
+    result = _tick(state, log, writer, cfg, tmp_path)
+    prompts = [e for e in log.read_all() if e.type == 'run.manager.resident.prompted'
+               and e.payload.get('reprompt')]
+    assert len(prompts) == int(enabled)
+    assert result.autoresearch_requested == int(not enabled)
+    if enabled:
+        ref = prompts[0].payload['diagnosis_context']['recovery_context_ref']
+        body = json.loads((state / ref['ref']).read_text())
+        assert body['action']['source_event_ids'] == [failed.id]
+        assert body['action']['workflow_run_id'] == 'R1'
+    assert not any(e.type in {'task.done', 'run.goal.completed'} for e in log.read_all())
+
+
 def test_failed_resident_delivery_keeps_fault_open_and_records_fallback(tmp_path, monkeypatch):
     state, log, writer, cfg, calls = _setup(tmp_path, monkeypatch)
     monkeypatch.setattr("zf.runtime.run_manager.subprocess.run",

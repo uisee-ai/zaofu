@@ -490,3 +490,12 @@ unavailable，不能用最新版本填补历史未知。运行版本与产品tar
 是不同身份；启动回执也不证明进程仍在线或修复有效。此信息供诊断核对，不自动
 切换实验工作区、执行代码或授予合并权限。实际诊断发起入口与反例见
 `tests/test_diagnosis_runtime_context.py`。
+
+### 当前调用失败的常驻诊断路由
+
+`task.attempt.failed`通过统一事件注册表声明`run_manager_recovery`，进入已有
+常驻Run Manager诊断消费者；可用时投递带request/context绑定的诊断，收到建议
+前仍保持原故障未解决。显式Autoresearch路由和常驻不可用的回退保持不变。
+当前配置明确关闭resident时，历史spawn事件只能作为历史证据，不能重新启用
+发消息能力；无配置的只读投影仍可根据历史描述观察状态。实际tick入口及关闭、
+投递失败、等待响应反例见`tests/test_run_manager_diagnosis_consumer.py`。

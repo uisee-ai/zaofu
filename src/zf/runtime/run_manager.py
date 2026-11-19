@@ -1791,7 +1791,8 @@ def build_resident_agent_projection(
     spawned_index, spawned = _last_event_with_index(events, (RUN_MANAGER_RESIDENT_SPAWNED,))
     prompted_index, prompted = _last_event_with_index(events, (RUN_MANAGER_RESIDENT_PROMPTED,))
     if spawned is not None:
-        enabled = True
+        if config is None:
+            enabled = True
         payload = spawned.payload if isinstance(spawned.payload, dict) else {}
         instance_id = str(payload.get("instance_id") or instance_id)
     spawned_payload = spawned.payload if spawned and isinstance(spawned.payload, dict) else {}
