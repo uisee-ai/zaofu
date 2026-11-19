@@ -48,33 +48,41 @@ def pin_reader_target_or_defer(
     elif not reason and cleaned and not self._fanout_target_ref_is_project_path(cleaned):
         from zf.runtime.workdirs import WorkdirManager
 
+        manager = WorkdirManager(state_dir=self.state_dir,
+                                 project_root=self.project_root, config=self.config)
         try:
-            pinned = WorkdirManager(
-                state_dir=self.state_dir,
-                project_root=self.project_root,
-                config=self.config,
-            ).pin_reader_target(role, cleaned)
+            pinned = manager.pin_reader_target(role, cleaned)
         except (EnvironmentInUse, TimeoutError):
             released = _release_idle_owner(self, role, pending_run_id=run_id,
                                           workflow_run_id=context.trace_id, stage_id=context.stage_id)
-            from zf.runtime.reader_wait_recovery import exhaust_reader_wait
-            if not released and exhaust_reader_wait(
-                self, role=role, context=context, child=child, run_id=run_id,
-                target_ref=cleaned, causation_id=causation_id,
-            ):
+            if released:
+                # The controlled action is synchronous. Re-probe the actual
+                # resource once after confirmed release; never waive its lock.
+                try:
+                    pinned = manager.pin_reader_target(role, cleaned)
+                except (EnvironmentInUse, TimeoutError):
+                    pass
+                except Exception as exc:
+                    reason = f"pin_failed: {exc}"
+            if not pinned and not reason:
+                from zf.runtime.reader_wait_recovery import exhaust_reader_wait
+                if not released and exhaust_reader_wait(
+                    self, role=role, context=context, child=child, run_id=run_id,
+                    target_ref=cleaned, causation_id=causation_id,
+                ):
+                    return False
+                try:
+                    alive = self.transport.is_alive(role.instance_id)
+                except Exception:
+                    alive = None  # Unknown transport state is not evidence of death.
+                self._emit_fanout_dispatch_deferred_once(
+                    fanout_id=context.fanout_id, trace_id=context.trace_id,
+                    stage_id=context.stage_id, child_id=child.child_id, run_id=run_id,
+                    role_instance=role.instance_id, prompt_kind="reader",
+                    reason="reader_environment_busy", state="waiting_environment",
+                    alive=alive, dispatchable=False, causation_id=causation_id,
+                )
                 return False
-            try:
-                alive = self.transport.is_alive(role.instance_id)
-            except Exception:
-                alive = None  # Unknown transport state is not evidence of death.
-            self._emit_fanout_dispatch_deferred_once(
-                fanout_id=context.fanout_id, trace_id=context.trace_id,
-                stage_id=context.stage_id, child_id=child.child_id, run_id=run_id,
-                role_instance=role.instance_id, prompt_kind="reader",
-                reason="reader_environment_busy", state="waiting_environment",
-                alive=alive, dispatchable=False, causation_id=causation_id,
-            )
-            return False
         except Exception as exc:
             reason = f"pin_failed: {exc}"
     if reason:

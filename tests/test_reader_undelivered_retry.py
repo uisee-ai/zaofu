@@ -112,3 +112,44 @@ def test_next_retry_after_first_delivery_uses_a_distinct_attempt(tmp_path):
     last = [e for e in runtime.event_log.read_all() if e.type == "fanout.child.dispatched"][-1]
     assert last.payload["run_id"].endswith("-retry-2")
     assert last.payload["operation_id"] != first.payload["operation_id"]
+
+
+def test_controlled_retry_rechecks_released_environment_before_rejecting(tmp_path, monkeypatch):
+    from zf.runtime.environment_usage import EnvironmentInUse
+    from zf.runtime.workdirs import WorkdirManager
+    runtime, context, _, _ = _waiting(tmp_path)
+    released = []
+    probes = []
+    def pin(*_):
+        probes.append(True)
+        if not released:
+            raise EnvironmentInUse("managed idle holder")
+        return context.target_ref
+    monkeypatch.setattr(WorkdirManager, "pin_reader_target", pin)
+    monkeypatch.setattr("zf.runtime.reader_target_dispatch._release_idle_owner",
+        lambda *args, **kwargs: released.append(True) or True)
+    result = runtime._rerun_fanout_child(context.fanout_id, "verify")
+    assert result.action == "rerun_fanout_child", result.reason
+    assert len(probes) == 2
+    assert len(runtime.transport.sent) == 1
+
+
+@pytest.mark.parametrize("second_error", ["busy", "timeout", "invalid"])
+def test_released_holder_does_not_waive_second_pin_failure(tmp_path, monkeypatch, second_error):
+    from zf.runtime.environment_usage import EnvironmentInUse
+    from zf.runtime.workdirs import WorkdirManager
+    runtime, context, _, _ = _waiting(tmp_path)
+    probes = []
+    def pin(*_):
+        probes.append(True)
+        if len(probes) == 1 or second_error == "busy":
+            raise EnvironmentInUse("still held")
+        if second_error == "timeout":
+            raise TimeoutError("lock unavailable")
+        raise RuntimeError("invalid target")
+    monkeypatch.setattr(WorkdirManager, "pin_reader_target", pin)
+    monkeypatch.setattr("zf.runtime.reader_target_dispatch._release_idle_owner", lambda *a, **k: True)
+    result = runtime._rerun_fanout_child(context.fanout_id, "verify")
+    assert result.action == "rerun_fanout_child_failed"
+    assert len(probes) == 2
+    assert not runtime.transport.sent

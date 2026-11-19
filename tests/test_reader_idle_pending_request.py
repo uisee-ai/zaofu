@@ -54,10 +54,12 @@ def test_pending_pin_releases_only_its_never_delivered_idle_provider(tmp_path, m
                 "run_id": "attempt", "reason": "reader_environment_busy"}))
     args = dict(role=role, target_ref="HEAD", context=context, child=child,
         run_id="attempt", causation_id="start")
-    assert not pin_reader_target_or_defer(runtime, **args)
+    result = pin_reader_target_or_defer(runtime, **args)
     if fault not in {"", "deadline", "never_sent_suspended"}:
+        assert not result
         assert not transport.terminated
     else:
+        assert result
         assert transport.terminated == [role.instance_id]
         assert not any(e.type == "fanout.child.failed" for e in runtime.event_log.read_all())
         assert pin_reader_target_or_defer(runtime, **args)
@@ -95,7 +97,7 @@ def test_dead_provider_shell_is_released_only_in_its_managed_idle_slot(tmp_path,
     args = dict(role=role, target_ref='HEAD', context=SimpleNamespace(
         stage_id='verify', trace_id='run', fanout_id='f'),
         child=SimpleNamespace(child_id='reader', payload={}), run_id='attempt', causation_id='start')
-    assert not pin_reader_target_or_defer(runtime, **args)
+    assert pin_reader_target_or_defer(runtime, **args) is (not bool(fault))
     assert transport.terminated == ([] if fault else [role.instance_id])
     if not fault:
         assert pin_reader_target_or_defer(runtime, **args)
