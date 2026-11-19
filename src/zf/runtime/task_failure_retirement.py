@@ -6,6 +6,9 @@ from zf.core.events.model import ZfEvent
 def task_failure_retired(events: list[ZfEvent], source: ZfEvent) -> bool | None:
     """None leaves non-task failures with their existing progress policy."""
     if source.type == "human.escalate":
+        if source.payload.get("orchestrator_operation_id"):
+            from zf.runtime.orchestrator_failure_retirement import orchestrator_failure_retired
+            return orchestrator_failure_retired(events, source)
         failure = _resident_diagnosed_failure(events, source)
         return task_failure_retired(events, failure) if failure is not None else None
     if source.type not in {"task.attempt.failed", "task.pipeline.verify.failed"}:

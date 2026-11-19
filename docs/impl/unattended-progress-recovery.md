@@ -1,5 +1,22 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-19 OA 旧任务提示失效
+
+同轮的 `TOOL-MAX` 已在 `evt-d90ef9d24cc1` 经独立验证和集成完成，但
+`evt-5a8f4d563187` 仍被 Run Manager 列为 Run 级待人工决策。旧 OA semantic_failure
+提示没有 Task 字段，原有 Task 故障失效逻辑无法识别其目标。
+
+现在由既有 `task_failure_retired → Run Manager` 投影沿 kernel 决策准入、
+checkpoint 和 Task 范围故障请求的因果链确认原 run/task/map。只有提示之后出现
+匹配的 kernel `task.done`，authority 为 `task_integration_receipt` 且带集成回执绑定，
+才使该旧提示失效。只改变派生投影；不改原账本，不伪造用户批准，不派发恢复命令。
+没有准入、来源冲突、不同 Task/Run/map、worker 自报完成、普通审批或新故障都保留。
+Agent submitted 事件本身不提供权限，必须由 exact kernel admitted 决策绑定；
+诊断 correlation_id 可是诊断编号，其显式 workflow_run_id 才是 Run 身份。
+
+任务：[OA故障提示失效](../../tasks/active/2026-11-19-0044-oa-task-escalation-retirement.md)。
+当前冻结真实轮不热加载此修复；真实账本只读回放不等于新版无人全流程通过。
+
 ## 2026-11-19 工作区发布等待范围
 
 额度恢复后的隔离32任务轮证明，worker名称复用不等于原任务工作区仍被占用。
