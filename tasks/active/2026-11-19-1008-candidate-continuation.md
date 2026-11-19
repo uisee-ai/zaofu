@@ -115,3 +115,16 @@ sentinel通过。原先258项mock未覆盖构造器失败，因此新增该反�
 重启后宽限不可重置反例继续校验，真实效果待加载。
 
 结果收尾补充重启验证后31项Reader/TaskAttempt入口回归通过；旧读取阶段状态原因保持兼容。
+
+13:21控制器已切到e3c750fd，四个在途Provider保持原PID，前述repin、旧等待诊断
+和结果收尾补丁均已加载。13:31当前gen4为7/8 passed：Reader7首次送达后的结果
+evt-f325a1b859ff通过，Reader3 evt-d8d8aa50bed1通过；Reader2由系统自动进行一次
+result_completion续跑后以evt-1acaab250e88通过，同Reader调用/attempt未替换。
+七份当前control/PAS/envelope/封存读取账本摘要已只读核验，均绑定a84d24b4。
+最后Reader0仍在验收，Judge/Goal/local delivery未到达，任务继续active。
+本轮已有14批手工维护，不将这一单项自动恢复闭环记作8×8无人资格通过。
+
+继续只读审计发现旧reflect建议仍在每个tick重复deferred：旧Task调用及已恢复的
+Reader7建议都已不满足原运行条件。统一三条诊断路由与human既有的superseded
+结算，保留临时共享资源等待与暂停。9项RED复现，267项RunManager/恢复案卷/
+条件绑定及确定性control-loop回归通过；真实控制器尚未加载，不中断在途验收。

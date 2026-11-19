@@ -453,3 +453,12 @@ TaskAttempt/lease及原生会话，走原发送时预算、暂停、身份和权
 故障恢复。输入未读全、证据无效、失败的Provider回合或未知工具效果不获此机会。
 这是机械交付宽限，不是对业务“已完成”的语义判断，不能代替validate/submit与
 独立准入。回归同时覆盖TaskAttempt enforce和发送瞬间的预算/权限/暂停反例。
+
+### 过期诊断建议的一次结算
+
+Resident返回的human、reflect、repair、autoresearch建议沿同一运行条件和当前
+operation/attempt校验。目标已被后继替代或绑定的运行条件已失效时，追加一次
+superseded消费回执；后续tick不再反复deferred，也不对旧身份启动新效果。原建议
+及原失败历史保留，产品Task/Run状态不受此诊断清理影响。共享修复被其他案卷
+持有等临时门禁仍deferred，门禁解除且身份仍有效时可重新消费；暂停期间不消费。
+真实Run Manager入口及临时等待恢复反例见`tests/test_run_manager_action_admission.py`。

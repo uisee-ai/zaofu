@@ -23,9 +23,10 @@ def test_escalation_producer_preserves_scope_through_admission(tmp_path, scope, 
     assert effect.call_count == int(expected != "run")
 
 
-def test_stale_human_recommendation_cannot_create_gate(tmp_path):
+@pytest.mark.parametrize("route", ["human", "reflect", "repair", "autoresearch"])
+def test_stale_recommendation_is_retired_once_without_effect(tmp_path, route):
     state, log, writer = _state(tmp_path)
-    _recommend(writer, recommended_route="human", operation_precondition={"generation": "outdated"})
+    _recommend(writer, recommended_route=route, operation_precondition={"generation": "outdated"})
     for _ in range(2):
         run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
     assert not any(e.type == "human.escalate" for e in log.read_all())
@@ -33,15 +34,19 @@ def test_stale_human_recommendation_cannot_create_gate(tmp_path):
     assert len(receipts) == 1 and receipts[0].payload["status"] == "superseded"
 
 
-def test_human_diagnosis_cannot_freeze_a_successor_attempt(tmp_path):
+@pytest.mark.parametrize("route", ["human", "reflect", "repair", "autoresearch"])
+def test_diagnosis_cannot_recover_a_superseded_attempt(tmp_path, route):
     state, log, writer = _state(tmp_path)
-    _recommend(writer, recommended_route="human", task_id="T1",
+    _recommend(writer, recommended_route=route, task_id="T1",
                workflow_run_id="r", target_operation_id="op-old", active_attempt_id="a-old")
     writer.emit("workflow.operation.requested", payload={"operation_id": "op-new",
         "workflow_run_id": "r", "task_id": "T1", "task_pipeline_stage": "impl",
         "operation_generation": 2, "active_attempt_id": "a-new"})
-    run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
+    for _ in range(2):
+        run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
     assert not any(e.type == "human.escalate" for e in log.read_all())
+    receipts = [e for e in log.read_all() if e.type == "run.manager.agent.recommendation.consumed"]
+    assert len(receipts) == 1 and receipts[0].payload["status"] == "superseded"
 
 
 @pytest.mark.parametrize("successor", [False, True])
@@ -158,4 +163,27 @@ def test_diagnostic_recommendation_routes_cannot_bypass_common_admission(tmp_pat
             project_root=tmp_path, events=log.read_all(), causation_id=recommendation.id, reflect_fn=None)
         effect.assert_not_called()
     receipt = [e for e in log.read_all() if e.type == "run.manager.agent.recommendation.consumed"][-1]
-    assert receipt.payload["status"] == "deferred"
+    assert receipt.payload["status"] == ("superseded" if blocker == "stale_precondition" else "deferred")
+
+
+@pytest.mark.parametrize("route,consumer", [
+    ("autoresearch", "_emit_autoresearch_request"),
+    ("reflect", "_maybe_invoke_run_manager_reflect"),
+    ("repair", "_emit_repair_acceptance_from_agent"),
+])
+def test_current_diagnostic_advice_survives_a_temporary_gate(tmp_path, route, consumer):
+    from zf.runtime.run_manager import _consume_agent_recommendations
+    state, log, writer = _state(tmp_path)
+    recommendation = _recommend(writer, recommended_route=route)
+    with patch(f"zf.runtime.run_manager.{consumer}", return_value=True) as effect, \
+            patch("zf.runtime.run_manager.action_gate_reason",
+                  side_effect=["shared_repair_owned_by_another_case", ""]), \
+            patch("zf.runtime.run_manager._run_manager_reflect_enabled", return_value=True), \
+            patch("zf.runtime.run_manager._run_manager_source_repair_enabled", return_value=True):
+        for _ in range(3):
+            _consume_agent_recommendations(state_dir=state, writer=writer, config=_config(),
+                project_root=tmp_path, events=log.read_all(),
+                causation_id=recommendation.id, reflect_fn=None)
+        effect.assert_called_once()
+    receipts = [e for e in log.read_all() if e.type == "run.manager.agent.recommendation.consumed"]
+    assert [e.payload["status"] for e in receipts] == ["deferred", "consumed"]

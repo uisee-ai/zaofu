@@ -4751,7 +4751,7 @@ def _consume_agent_recommendations(
         action = _action_from_agent_recommendation(event, payload)
         route = _recommendation_route(payload)
         from zf.runtime.recovery_step import recommendation_target_current
-        if route == "human" and (
+        if route in {"human", "autoresearch", "reflect", "repair"} and (
             not _operation_precondition_holds(writer.event_log.read_all(), action)
             or not recommendation_target_current(writer.event_log.read_all(), action)
         ):
