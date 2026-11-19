@@ -130,7 +130,7 @@ def _release_idle_owner(runtime, role: RoleConfig, *, pending_run_id: str = "",
             # provider its consumer. Keep any previously delivered call fenced.
             never_delivered = (
                 bool(pending_run_id and workflow_run_id and stage_id)
-                and op.get('status') == 'requested'
+                and op.get('status') in {'requested', 'suspended'}
                 and op.get('operation_type') == 'fanout_reader_child'
                 and op.get('active_attempt_id') == pending_run_id
                 and op.get('workflow_run_id') == workflow_run_id
@@ -150,7 +150,8 @@ def _release_idle_owner(runtime, role: RoleConfig, *, pending_run_id: str = "",
                 or runtime._active_fanout_child_for_instance(role.instance_id) is not None
                 or runtime._active_task_for_instance(role.instance_id) is not None):
             return False
-        if runtime.transport.is_alive(role.instance_id):
+        if (runtime.transport.is_alive(role.instance_id)
+                or _idle_managed_shell(runtime, role)):
             runtime._suspend_role(role, now=runtime._now())
             return runtime.transport.is_alive(role.instance_id) is False
     except Exception:
@@ -158,3 +159,23 @@ def _release_idle_owner(runtime, role: RoleConfig, *, pending_run_id: str = "",
         # next tick remains authoritative and cannot be waived here.
         return False
     return False
+
+
+def _idle_managed_shell(runtime, role: RoleConfig) -> bool:
+    """An exited provider can leave its own empty pane holding the workspace."""
+    from pathlib import Path
+    from zf.runtime.workdirs import WorkdirManager
+
+    snapshot = runtime.transport.lifecycle_snapshot(role.instance_id)
+    probe = snapshot.process_probe
+    if (snapshot.role_name != role.instance_id or snapshot.alive
+            or not snapshot.pane_pid.isdigit()
+            or snapshot.current_command not in {'bash', 'sh', 'zsh', 'fish', 'dash'}
+            or probe.get('available') is not True
+            or str(probe.get('pane_pid')) != snapshot.pane_pid
+            or probe.get('processes') != [] or not snapshot.current_path):
+        return False
+    plan = WorkdirManager(state_dir=runtime.state_dir, project_root=runtime.project_root,
+                          config=runtime.config).plan(role)
+    return (plan.enabled and plan.mode == 'worktree' and plan.role_kind == 'reader'
+            and Path(snapshot.current_path).resolve() == Path(plan.project_path).resolve())
