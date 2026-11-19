@@ -16,7 +16,7 @@ import tempfile
 
 from zf.core.state.locks import locked_path
 from zf.runtime.pause_lifecycle import is_dispatch_paused
-from zf.runtime.sidecar_refs import write_sidecar_json
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json
 from zf.runtime.task_host_actions import apply
 from zf.runtime.task_host_manifest import binding, dependency_digest, digest, git, preview, source_files
 from zf.runtime.workflow_operation import reduce_workflow_operations
@@ -138,6 +138,13 @@ def reconcile_host_verification(service) -> int:
                 continue
             try:
                 _, _, contract, _ = binding(service, operation_id)
+                if contract.get('authority_scope') == 'candidate':
+                    result = hydrate_sidecar_ref(service.state_dir,
+                        operation.get('admitted_control_result_ref') or {}).payload
+                    if result.get('failure_class') == 'reader_execution_failure':
+                        # Product commands cannot repair missing input delivery.
+                        # Preserve the failure for the existing Reader recovery owner.
+                        continue
             except (ValueError, KeyError, OSError):
                 continue
             from zf.runtime.task_host_verification_handoff import resume_task_after_probes
