@@ -579,6 +579,7 @@ _ACTION_ALIASES = {
     "workflow-request",
     "project-git-baseline",
     "task-host-assist",
+    "candidate-continue",
     "workflow.request",
     "task-workflow-start",
     "task.workflow.start",
@@ -5674,9 +5675,9 @@ def _web_action(
 
     supplied = x_zf_web_token or _bearer_token(authorization)
     token_ok = bool(configured_token and supplied == configured_token)
-    if action_name == "task-host-assist" and not token_ok:
+    if action_name in {"task-host-assist", "candidate-continue"} and not token_ok:
         return {"_status_code": 403, "ok": False, "status": "unauthorized",
-                "reason": "task host assistance requires the explicit operator action token"}
+                "reason": f"{action_name} requires the explicit operator action token"}
     if not trusted_session and not passcode_session and not token_ok:
         return {
             "_status_code": 403,

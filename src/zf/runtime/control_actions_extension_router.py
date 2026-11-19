@@ -29,6 +29,10 @@ def dispatch_extension_action(
 ) -> dict[str, Any] | None:
     """Dispatch an isolated action family, or return None when unregistered."""
 
+    if action == "candidate-continue":
+        from zf.runtime.candidate_continuation_action import execute_action
+        return execute_action(service, requested=requested, action=action,
+                              requested_action=requested_action, payload=payload)
     if action == "task-host-assist":
         from zf.runtime.task_host_actions import execute_action
         return execute_action(service, requested=requested, action=action,

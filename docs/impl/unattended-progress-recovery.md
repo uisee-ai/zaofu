@@ -1,5 +1,35 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-19 冻结候选的验收接续
+
+K5 已完成16项 Task，但最终 Reader/Goal 未完成，且诊断收尾已取消 Run。
+`run-resume` 只恢复 paused；取消记录不能通过改状态复活。`candidate-continue`
+增加显式操作员令牌控制的后继入口：先以 source_run_id、candidate_event_id 和
+dry_run=true 获取预览，再提交同一输入、reviewed_digest 和 approval_ref。
+入口为 `POST /api/projects/{id}/actions/candidate-continue`；同摘要重复提交不创建第二个 Run。
+
+预览及实际 admission 均核对终态、最新冻结候选、Git ref/提交、当前代际完整 Task
+集合、done 状态、独立 Verify 准入、当前 Task 合同权威、不可变 Plan/端口、原批准、
+Goal claims 与执行策略摘要。预览可生成不可变校验快照，但不创建任务或派发 Provider。
+任何输入漂移都需要新预览。新 Run 沿原 admission/队列/暂停/终态门禁进入配置的
+Candidate Readers；不发布 task_map.ready，不重新执行 scan、Plan 或 Impl。
+
+新 Plan package 显式继承原端口并记录来源包，Goal claims 与产品验收规格（PAS）只
+重绑定运行身份，原始条款、用户旅程和断言保持不变；新候选合同
+绑定新 Run，子 Task 权威仍指向旧 Run。旧 Run、Task、验证事件不改写，不建立 Run
+别名，也不导入旧 Candidate passed。宿主采证仅复用同一目标的逐命令最新观察
+（包括失败），原始执行事件仍保留；Reader 独立判断适用性和缺失项。最终 Judge 的
+事实及必读证据包含接续授权、历史批准和 Task 结果来源，当前验收仍走原准入门禁。
+
+受控动作回执先于 invoke 持久化；接纳、Goal、包及候选各步幂等。既有 Orchestrator
+空闲重放入口补齐“已接纳但候选未发布”的崩溃窗口，paused/terminal 不补发。
+当前范围限定同项目、已取消/失败的原始 Task Pipeline Run；不支持接续的再次接续，
+也不把历史8×8并发记作新源码从头无人资格。需要改产品候选时仍走正常修复规划。
+
+任务：[冻结候选接续](../../tasks/active/2026-11-19-1008-candidate-continuation.md)。
+验证记录位于 `reports/candidate-continuation-20261119/`；真实接续完成与否单独记录，
+源码/mock 通过不能把未完成的 P2 资格归档。
+
 ## 2026-11-19 Reader 失败路由与 idle 预算
 
 K5真实轮第二Candidate的输入读取失败被预授权宿主协调器错误选中，额外执行19条
