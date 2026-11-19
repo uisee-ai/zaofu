@@ -293,3 +293,13 @@ canonical attempt绑定的operation/dispatch/lease，保留原typed输入和输�
 不匹配、operation已结算、预算限制及不在线的目标仍由原门禁拒绝。回归
 `tests/test_pipeline_respawn_continuation.py`直接覆盖实际恢复入口，且保持TaskAttempt
 未变。初始Provider退出原因及最终真实验收分别记录，不因此修复而假定全部通过。
+
+### 环境失败报告的证据定位
+
+只读Verifier可以在失败结果中引用当前实际工具调用/输出标识，附命令、退出码和
+原始诊断；已有持久ref时优先引用。无需另写探针文件或从账本查event ID，不能
+编造标识、复用其他attempt冒充本次输出。方法在Evaluator skill与派发提示一致。
+这是明确既有failure admission能力，不放宽产品通过、身份、必读输入或权限门禁。
+真实Reader反复因寻找额外持久引用而不提交的记录在
+`reports/failure-evidence-guidance-20261119/`；真实CLI回归同时覆盖文件和原生工具输出
+引用，均只准入failed/abstained，未执行的产品报告保持不存在。

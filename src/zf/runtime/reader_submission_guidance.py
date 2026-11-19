@@ -26,7 +26,7 @@ def verifier_failure_schema_guidance(
         "execution_status": "failed", "verdict": "abstained",
         "failure_class": "verifier_execution_failure",
         "summary": "<exact observed runner failure>",
-        "evidence_refs": ["<durable actual failed probe output ref>"],
+        "evidence_refs": ["<actual tool-call/output ID or persisted probe ref; command, exit code and diagnostic>"],
         "verification_owner": owner, "verification_tier": tier,
         "requirement_results": [], "probe_receipts": [],
         "reused_command_receipt_ids": [], "rework_items": [],
@@ -49,6 +49,12 @@ def verifier_failure_schema_guidance(
         "- Runner unavailable before evaluation: execution_status=failed, verdict=abstained, "
         "failure_class=verifier_execution_failure, concrete summary and actual failure evidence_refs. "
         "Incomplete product reads do not prevent reporting this execution failure. "
+        "Reference the actual tool-call ID or returned output/chunk ID with the command, "
+        "exit code and observed diagnostic; use a persisted probe ref when one is provided. "
+        "A concrete reference to the current attempt tool output does not require creating "
+        "another evidence file or discovering a ledger event ID. Never invent an ID or "
+        "cite another attempt as this attempt. If no identifier is available, report that "
+        "limitation instead of fabricating a reference. "
         "If the current manifest pins critical-reader-repair-context, first consume every page "
         "and independently assess its bound execution evidence. A Task retry can instead carry "
         "host facts in task-handoff: use its host_execution_evidence_reads and page to completion. "
