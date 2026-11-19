@@ -42,6 +42,8 @@
 - 至少一个已安装并登录的 provider CLI：Codex 或 Claude Code；
 - 使用 Claude Code stream-json transport 时安装 `stream-json` extra。
 
+Kanban Agent 使用运行 ZaoFu 的主机上的 Codex CLI。若 ChatGPT 登录提示所选模型不受支持，在同一运行用户下检查 `codex --version` 和交互终端的 `/model`。较旧的客户端可能看不到账号已可用的模型。更新实际启动的 CLI 后，可在原会话重新发送。若配置了 `ZF_KANBAN_AGENT_CODEX_HEADLESS_CMD`，检查该命令指向的客户端。可见模型以当前客户端与登录返回的目录为准。[Codex 模型说明](https://developers.openai.com/codex/models/)
+
 从 source checkout 安装并检查 CLI：
 
 ```bash

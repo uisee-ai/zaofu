@@ -901,6 +901,9 @@ class CodexHeadlessBackend:
             error = str(exc)
             status = _codex_failure_status(error)
             incomplete = _provider_completion_incomplete(status, error)
+            if "model is not supported when using Codex with a ChatGPT account" in error:
+                error += (" Check the Codex CLI version on the ZaoFu host and the models listed "
+                          "by /model with that login. Update that CLI or select an available model.")
             return HeadlessTurnResult(
                 ok=False,
                 status="incomplete" if incomplete else status,
