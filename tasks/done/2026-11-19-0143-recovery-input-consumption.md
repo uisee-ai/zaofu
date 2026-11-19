@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 恢复 Reader 必须先消费当前恢复输入
 
@@ -25,3 +25,5 @@
 - dev-verify影响闭包：2161 passed、1 skipped、8环境失败（PATH缺zf）；补正PATH后受影响CLI启动文件43 passed，原8项全部通过。未改代码迎合环境失败。
 - premerge sentinel 53 passed，skill三份metadata及正文一致；不是完整pytest或真实无人闭环通过证明。
 - 真实观察仍在冻结旧源码上；修复效果须后续同源真实轮验证。
+
+实现提交：`e03ee209 fix: require recovery evidence before repeating runner failure`。已完成本补丁的定向、影响闭包、调度mock和哨兵验证；P2真实无人8×8资格仍未完成，独立保留。
