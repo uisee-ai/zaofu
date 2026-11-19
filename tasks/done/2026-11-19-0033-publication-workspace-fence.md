@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 8fff658c `fix: scope task publication liveness to its workspace`
 
 # 发布按实际工作区确认静默
 

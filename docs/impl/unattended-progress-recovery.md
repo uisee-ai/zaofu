@@ -14,7 +14,7 @@ dispatch及cwd均对应另一个Task，两个工作区不重叠且均在state_di
 同目录/嵌套目录或遗留进程均保持等待。没有扩大可写路径、Run预算或发布verdict，
 同一任务的新operation仍由原binding gate拒绝。
 
-本项见[发布工作区修复](../../tasks/active/2026-11-19-0033-publication-workspace-fence.md)。
+本项见[发布工作区修复](../../tasks/done/2026-11-19-0033-publication-workspace-fence.md)。
 冻结真实轮不热加载此补丁；mock/源码回归不能替代修复版真实8×8资格。
 
 ## 2026-11-18 真实资格复核纠正
