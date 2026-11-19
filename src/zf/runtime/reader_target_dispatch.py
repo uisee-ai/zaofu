@@ -48,9 +48,9 @@ def pin_reader_target_or_defer(
     elif not reason and cleaned and not self._fanout_target_ref_is_project_path(cleaned):
         from zf.runtime.workdirs import WorkdirManager
 
-        manager = WorkdirManager(state_dir=self.state_dir,
-                                 project_root=self.project_root, config=self.config)
         try:
+            manager = WorkdirManager(state_dir=self.state_dir,
+                                     project_root=self.project_root, config=self.config)
             pinned = manager.pin_reader_target(role, cleaned)
         except (EnvironmentInUse, TimeoutError):
             released = _release_idle_owner(self, role, pending_run_id=run_id,

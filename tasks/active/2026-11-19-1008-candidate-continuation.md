@@ -103,3 +103,7 @@ Reader7已真实首次派发（evt-c45ef0b6a798），同批保持4 passed+4 runn
 修复仅在绑定的kernel后继dispatch后移除旧诊断待办，保留事件和产品验收义务。
 一项RED；223项RunManager/Reader/flow mock及53项sentinel通过，真实历史只读
 投影旧待办由1变0。尚未加载，不能据此宣称线上RunManager闭环通过。
+
+未加载补丁的二次审阅发现repin重构把WorkdirManager构造移到异常护栏外，可能
+让初始化失败直接冒泡；上线前以新增回归复现并修正。66项直接影响回归及53项
+sentinel通过。原先258项mock未覆盖构造器失败，因此新增该反例，保留RED记录。

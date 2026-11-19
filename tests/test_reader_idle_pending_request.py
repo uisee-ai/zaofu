@@ -102,3 +102,16 @@ def test_dead_provider_shell_is_released_only_in_its_managed_idle_slot(tmp_path,
     if not fault:
         assert pin_reader_target_or_defer(runtime, **args)
     assert not transport.sent
+
+
+def test_target_manager_initialization_failure_keeps_dispatch_fenced(tmp_path, monkeypatch):
+    runtime, role, transport = _runtime(tmp_path)
+    def unavailable(*a, **k):
+        raise ValueError("target manager unavailable")
+    monkeypatch.setattr(WorkdirManager, "__init__", unavailable)
+    assert not pin_reader_target_or_defer(runtime, role=role, target_ref="HEAD",
+        context=SimpleNamespace(stage_id="verify", trace_id="run", fanout_id="f"),
+        child=SimpleNamespace(child_id="reader", payload={}), run_id="attempt", causation_id="start")
+    assert not transport.sent
+    failed = [e for e in runtime.event_log.read_all() if e.type == "fanout.child.failed"]
+    assert failed[-1].payload["reason"] == "pin_failed: target manager unavailable"
