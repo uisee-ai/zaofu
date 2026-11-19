@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 9d7e6307 `fix: retire obsolete task-bound orchestration escalations`
 
 # 原任务完成后的 OA 故障提示失效
 

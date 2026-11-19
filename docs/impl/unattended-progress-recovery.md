@@ -14,7 +14,7 @@ checkpoint 和 Task 范围故障请求的因果链确认原 run/task/map。只�
 Agent submitted 事件本身不提供权限，必须由 exact kernel admitted 决策绑定；
 诊断 correlation_id 可是诊断编号，其显式 workflow_run_id 才是 Run 身份。
 
-任务：[OA故障提示失效](../../tasks/active/2026-11-19-0044-oa-task-escalation-retirement.md)。
+任务：[OA故障提示失效](../../tasks/done/2026-11-19-0044-oa-task-escalation-retirement.md)。
 当前冻结真实轮不热加载此修复；真实账本只读回放不等于新版无人全流程通过。
 
 ## 2026-11-19 工作区发布等待范围
