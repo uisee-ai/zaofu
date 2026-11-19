@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实现：`cdc1089f fix: route reader failures without consuming progress retries`。
 
 # Reader 恢复路由与故障预算
 

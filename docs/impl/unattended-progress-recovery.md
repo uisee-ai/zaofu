@@ -17,7 +17,7 @@ role/Run/operation/request/语义attempt/transport dispatch身份的正常续读
 本地Docker权限拒绝不推翻既有授权执行事实，也不能把尚未阅读误写成缺少执行。
 这一语义判断仍由agent/skill负责，runtime不根据exit0代填passed。
 
-任务：[Reader恢复修复](../../tasks/active/2026-11-19-0917-reader-recovery-routing.md)。
+任务：[Reader恢复修复](../../tasks/done/2026-11-19-0917-reader-recovery-routing.md)。
 K5的16项Task、8×8重叠89.420秒和原始浏览器通过保留，但最终Judge/Goal未完成，
 诊断收尾取消1次，整体资格未通过。完整额度主动探测/自动恢复不在本补丁范围。
 
