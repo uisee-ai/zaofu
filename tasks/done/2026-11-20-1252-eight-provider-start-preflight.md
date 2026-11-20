@@ -1,6 +1,8 @@
 # 8×8 真实验证：受限 Codex 启动前沙箱检查
 
-> 状态: active
+> 状态: done
+
+实现：`2ba5ac95 fix: reject unavailable restricted Codex sandbox before startup`。
 
 来源：用户授权真实 8×8 无监工验证、发现问题修复并评估。首轮 Run
 `workflow-055abbd5196f67c6` 的 product-scan、tech-scan 和 Run Manager 均无法启动
