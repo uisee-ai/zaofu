@@ -66,3 +66,11 @@ Discovery 增加必需产品报告模板、同源只读 preflight 和报告 ref/
 广覆盖首跑 4063 passed/4 failed，其中旧事件派发 ID 兼容缺口已修复，另三项是
 测试 PATH 缺 python；修正入口后的失败项及新增反例 28 passed，最终相关完整模块
 233 passed。首轮失败保留。实际纠错送达、产品准入及后续阶段仍待观察。
+
+2c5dee61 已实际加载。01:28:22 Discovery 正式准入，01:28:40 自动进入
+Judge，原 Run/候选/16 Task 保留。边界复核发现预算发送前拒绝误留 unknown
+导致恢复后不再发送，新增回归 RED→GREEN，明确未发送与未知发送保持区别。
+现场又复现父 Task 历史 discriminator.failed 将新 Judge 误标 idle 并跳过
+卡顿监测；活跃 fanout child 改按自身派发判断，普通 Task 完成识别保留。
+相关63 passed；最终影响闭包3567 passed/7 skipped、premerge53、mock flow10
+均通过。Judge 正在独立审阅90项输入，最终产品/Goal/交付仍未宣称通过。

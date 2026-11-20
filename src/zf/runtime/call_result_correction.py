@@ -217,7 +217,14 @@ def dispatch_call_result_correction(
     if isinstance(context, DispatchContext) and context.task_id and prepared is None:
         return False
     context = prepared
-    runtime._send_transport_task(role.instance_id, path, prompt, context)
+    from zf.runtime.orchestrator import BudgetExceededError
+    from zf.runtime.run_admission import RunDispatchBlocked
+    try:
+        runtime._send_transport_task(role.instance_id, path, prompt, context)
+    except (BudgetExceededError, RunDispatchBlocked) as exc:
+        from zf.runtime.call_result_repair_delivery import record_unsent_repair
+        record_unsent_repair(runtime, context, type(exc).__name__)
+        raise
     if isinstance(context, DispatchContext) and context.continuation_id:
         runtime.event_writer.append(ZfEvent(type="worker.continuation.reconciled", origin="kernel",
             actor=role.instance_id, task_id=task_id or None, causation_id=context.continuation_id,

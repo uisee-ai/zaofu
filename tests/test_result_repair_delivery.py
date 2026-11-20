@@ -72,3 +72,14 @@ def test_repair_cannot_bypass_delivery_authority(tmp_path, guard):
         with pytest.raises(RuntimeError):
             reconcile_call_result_repairs(runtime)
     assert len(transport.sent) == 1
+
+
+def test_budget_rejection_can_resume_correction_after_budget_recovers(tmp_path):
+    state, log, transport, runtime, config, child = rejected_reader(tmp_path)
+    runtime._budget_exceeded = lambda _: True
+    with pytest.raises(RuntimeError, match="budget exceeded"):
+        reconcile_call_result_repairs(runtime)
+    runtime._budget_exceeded = lambda _: False
+    assert reconcile_call_result_repairs(runtime) == 1
+    assert len(transport.sent) == 2
+    assert reconcile_call_result_repairs(runtime) == 0

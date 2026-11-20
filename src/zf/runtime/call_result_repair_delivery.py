@@ -19,9 +19,15 @@ def prepare_repair_continuation(runtime: Any, context: Any, outcome: Any, prompt
     with locked_path(runtime.state_dir / "locks" / "result-repair-delivery"):
         events = runtime.event_log.read_all()
         digest = outcome.correction_ref.get("sha256")
+        unsent = {e.payload.get("claim_id") for e in events
+                  if e.type == "worker.continuation.reconciled" and e.origin == "kernel"
+                  and e.actor == context.instance_id and e.task_id == context.task_id
+                  and e.payload.get("operation_id") == outcome.operation_id
+                  and e.payload.get("delivery_status") == "not_sent"}
         if any(e.type == "worker.continuation.claimed" and e.origin == "kernel"
                and e.payload.get("operation_id") == outcome.operation_id
-               and e.payload.get("correction_digest") == digest for e in events):
+               and e.payload.get("correction_digest") == digest
+               and e.id not in unsent for e in events):
             return None
         rows = [r for r in task_attempt_store(runtime).current_rows()
                 if r.get("operation_id") == context.operation_id
@@ -83,3 +89,15 @@ def validate_repair_continuation(runtime: Any, role: str, context: DispatchConte
             raise RuntimeError("result correction task owner is stale")
     if not runtime.transport.is_alive(role):
         raise RuntimeError("result correction requires the existing live worker")
+
+
+def record_unsent_repair(runtime: Any, context: Any, reason: str) -> None:
+    """A charging/Run gate rejected before transport; this is not an unknown send."""
+    if not isinstance(context, DispatchContext) or not context.continuation_id:
+        return
+    runtime.event_writer.append(ZfEvent(type="worker.continuation.reconciled", origin="kernel",
+        actor=context.instance_id, task_id=context.task_id, correlation_id=context.run_id,
+        causation_id=context.continuation_id, payload={**context.to_payload(),
+            "claim_id": context.continuation_id, "recovery_action": "result_protocol_correction",
+            "delivery_status": "not_sent", "reason": reason, "business_completed": False,
+            "next_action": "wait_for_dispatch_authority"}))

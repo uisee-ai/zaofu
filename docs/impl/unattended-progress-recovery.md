@@ -565,3 +565,9 @@ Discovery 的产品评估输出补齐与 Candidate Verify 同源的报告模板�
 回归通过真实 `_send_transport_task` 检查幂等、控制器重启、发送未知、租约、预算
 和身份边界：`tests/test_result_repair_delivery.py`；预检与实际提交、输出卡片见
 `tests/test_verification_submit_preflight.py`。测试不再替换掉 TaskAttempt 发送保护。
+
+发送前的预算或 Run 授权拒绝可以证明没有发送，单独记为 `not_sent`，恢复授权后
+仍可纠错。仅这两类明确的前置拒绝可释放 claim；运输异常保持 unknown，禁止
+将失败一律当作未发送。最终 Judge 的活跃 fanout child 也拥有自己的派发身份，
+父 Task 的历史 discriminator/完成事件不能将它写为空闲或关闭其卡顿监测；
+普通 Task 当前派发的真实完成仍按原规则识别。
