@@ -240,6 +240,12 @@ class RecoveryActionsMixin:
     def _stage_retrigger_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        from zf.runtime.reader_replan_feedback import bind_operator_feedback, operator_feedback
+
+        try:
+            feedback = operator_feedback(payload)
+        except ValueError as exc:
+            return self._recovery_failed(requested, action, requested_action, str(exc))
         source_event_id = str(payload.get("source_event_id") or "").strip()
         if not source_event_id:
             return self._recovery_failed(
@@ -321,6 +327,8 @@ class RecoveryActionsMixin:
             causation_id=requested.id,
             correlation_id=source.correlation_id,
         )
+        if "operator_feedback" in payload:
+            bind_operator_feedback(trigger, feedback, request_id=requested.id)
         from zf.runtime.reader_shadow_recovery import retain_shadow_as_observation
 
         retain_shadow_as_observation(

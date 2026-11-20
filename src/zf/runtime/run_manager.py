@@ -8530,6 +8530,22 @@ def _consume_human_decisions(
         escalation = escalations.get(token, {})
         action = _human_decision_action(payload, escalation)
         decision = str(payload.get("decision") or payload.get("resolution") or "acknowledged")
+        if decision == "dismissed" and escalation:
+            writer.emit(
+                RUN_MANAGER_HUMAN_DECISION_APPLIED,
+                actor="run-manager", task_id=event.task_id,
+                causation_id=event.id, correlation_id=event.correlation_id,
+                payload={
+                    "schema_version": "run-manager.human-decision.v1",
+                    "decision_token": token, "source_event_id": event.id,
+                    "source_escalation_event_id": str(escalation.get("event_id") or ""),
+                    "decision": decision, "next_route": "none",
+                    "reason": str(payload.get("reason") or ""),
+                },
+            )
+            applied += 1
+            seen.update({token, event.id})
+            continue
         if decision == "approve_controlled_action":
             if not escalation:
                 writer.emit(RUN_MANAGER_HUMAN_DECISION_REJECTED, actor="run-manager",
