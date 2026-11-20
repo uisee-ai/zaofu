@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 9f4e7ee4 `fix: preserve recovery after pre-send rejection and parent progress`
 
 # 冻结候选续跑：证据接力与恢复闭环
 
@@ -74,3 +74,37 @@ Judge，原 Run/候选/16 Task 保留。边界复核发现预算发送前拒绝�
 卡顿监测；活跃 fanout child 改按自身派发判断，普通 Task 完成识别保留。
 相关63 passed；最终影响闭包3567 passed/7 skipped、premerge53、mock flow10
 均通过。Judge 正在独立审阅90项输入，最终产品/Goal/交付仍未宣称通过。
+
+## 最终验收（2026-11-20 02:24 UTC）
+
+上述进度段保留发生时状态；本节记录最终结果。实现提交依次为：
+
+- 3021c89e `fix: carry continuation evidence through downstream review`
+- 4aa7f310 `fix: keep reader continuations working until bounded completion`
+- 2b6f4c05 `fix: retain native and predecessor execution observations`
+- 2c5dee61 `fix: resume result corrections on the existing reader attempt`
+- 9f4e7ee4 `fix: preserve recovery after pre-send rejection and parent progress`
+
+C01/C02 的确定性影响闭包、实际入口与反例验证已完成，见上文各批结果；
+C03 的真实 provider 断点续跑也已完成：同一 Run、候选、代际保留16个已完成
+业务Task及8个候选Reader。Discovery正式通过后自动进入Judge；Judge读完90/90
+项输入，02:20:26正式准入evt-b085a8f519aa，随后自动完成本地交付
+evt-e8a597475892与Goal终态evt-5620a1580edd（02:20:53）。没有重启Plan/Impl，
+本session没有代写Judge结论、产品通过或Goal终态。
+
+独立核对：19/19冻结产品声明closed；21个支持结果均已准入且摘要一致；
+产品报告17条旅程、41项断言的引用可校验；原Docker回执绑定候选a84d24b4、
+退出码0与稳定源码，PNG/trace/WebM及环境记录均通过摘要核对。本次没有重新
+执行浏览器测试，没有将证据复核表述为新测试。测试产品本地dev交付08e22e54
+的文件树与候选完全一致；这不是ZaoFu源码dev合并。活动fanout和未闭反馈均为0。
+
+最终回执在主checkout的reports/continuation-evidence-20261120/：
+review.md、goal-completion-receipt.json、final-evidence-audit.json、
+final-browser-evidence-audit.json。终态之后通过既有simulation生命周期助手写入
+evt-42eb04c5103b，再关闭本次临时控制器及其两个tmux session；运行证据和产品
+保留供复盘，未删除worktree、未push、未merge ZaoFu dev。
+
+本批完成范围是证据接力、恢复修复和获准的增量产品闭环。原轮严格8×8/无人
+资格仍not_passed，21批历史人工维护保留；原始独立行为RED-before-GREEN与
+同时并发资格不能由此次产品通过追认。另记录Judge材料约1 MB、至少167页的
+审阅延迟，作为后续输入分层优化依据，不在已运行attempt内删减必读契约。
