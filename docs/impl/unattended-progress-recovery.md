@@ -548,3 +548,20 @@ continuation 复用 `task_execution_evidence.capture_execution_evidence`：核�
 保留 unavailable；当前通过状态仍只取已通过且与 Task Verify 提交一致的 Impl。
 前序结算后发生的受控宿主机验证沿同一捕获器的完整 lease/request/代际/批准及
 回执校验读取；rework 控制事件显式说明不是执行输出，不能补成测试证明。
+
+### 结果纠错必须沿用当前派发（2026-11-20）
+
+Discovery 首次提交缺少产品验收报告时，结果修复已请求，但发送入口把纠错当作
+新 TaskAttempt delivery，被防重复派发保护拒绝。纠错现绑定原 operation/request、
+纠错侧车、当前未过期的 sent TaskAttempt，使用 continuation 通过既有发送入口；
+预算、暂停、Run、身份和存活检查仍执行。发送前记录 claim，未知发送结果不盲目
+重试，也不新增 attempt 或清空读取进度。发送完成仅是交付回执，不是产品通过。
+
+Discovery 的产品评估输出补齐与 Candidate Verify 同源的报告模板及只读 preflight。
+缺报告、错目标或缺旅程在实际提交前返回诊断；准入仍复查当前身份与证据。已有
+报告只有经独立审阅并以 ref/digest 正式绑定才算报告，普通 evidence_refs 引用不
+替代绑定。旧 attempt 只接收有界纠错，不改写其既有 source manifest。
+
+回归通过真实 `_send_transport_task` 检查幂等、控制器重启、发送未知、租约、预算
+和身份边界：`tests/test_result_repair_delivery.py`；预检与实际提交、输出卡片见
+`tests/test_verification_submit_preflight.py`。测试不再替换掉 TaskAttempt 发送保护。

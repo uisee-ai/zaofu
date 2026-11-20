@@ -989,7 +989,7 @@ def _manifest(state_dir: Path, fanout_id: str) -> dict:
     )
 
 
-def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False):
+def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False, semantic_submit: bool = False):
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
@@ -1007,7 +1007,8 @@ def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False):
             ),
         ],
         workflow=WorkflowConfig(
-            flow_metadata={"result_protocol": {"mode": "blocking"}},
+            flow_metadata={"result_protocol": {"mode": "blocking", "semantic_submit_profiles":
+                {"candidate-verify": "blocking", "task-verify": "blocking"} if semantic_submit else {}}},
             stages=[
                 WorkflowStageConfig(
                     id="verify-selected",
@@ -1047,6 +1048,9 @@ def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False):
             ],
         ),
     )
+    if semantic_submit:
+        from zf.runtime.result_submit import provision_role_submit_credential
+        provision_role_submit_credential(state_dir, "verify-1")
     log = EventLog(state_dir / "events.jsonl")
     transport = _RecordingTransport()
     orch = Orchestrator(state_dir, config, transport)  # type: ignore[arg-type]

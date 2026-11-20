@@ -58,3 +58,11 @@ kernel origin；且19条TDD记录属于前序已准入但blocked的attempt。复
 1453 passed，premerge53及mock flow10 passed。原failed预检和中间8/27、21/27
 记录均保留在reports。Discovery已读完102/102，提交因缺product_acceptance_report
 进入结果repair_pending（operation投影仍running），该后续问题继续处理，任务不归档。
+
+C11 实际加载 2b6f4c05，102/102 读取已完成；发现纠错错走首次派发，引发
+TaskAttemptDeliveryClaimedError。C12 将纠错绑定到当前 sent attempt 并记录
+发送 claim，未知发送不盲目重试；保留真实发送入口的预算、身份、存活与租约门禁。
+Discovery 增加必需产品报告模板、同源只读 preflight 和报告 ref/digest 指引。
+广覆盖首跑 4063 passed/4 failed，其中旧事件派发 ID 兼容缺口已修复，另三项是
+测试 PATH 缺 python；修正入口后的失败项及新增反例 28 passed，最终相关完整模块
+233 passed。首轮失败保留。实际纠错送达、产品准入及后续阶段仍待观察。
