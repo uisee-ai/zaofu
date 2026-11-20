@@ -1566,13 +1566,9 @@ def _emit_cost_blackout_if_needed(
     if now_wall - state.last_blackout_emit_at < intervals.cost_blackout_cooldown_s:
         return False
     events = read_runtime_events(event_log, state_dir)
-    last_dispatch = next(
-        (
-            event for event in reversed(events)
-            if event.type in ("task.dispatched", "fanout.child.dispatched")
-        ),
-        None,
-    )
+    from zf.runtime.cost_dispatch_liveness import last_open_cost_dispatch
+
+    last_dispatch = last_open_cost_dispatch(events)
     if last_dispatch is None:
         return False
     # A terminal from the same run closes the accounting surface.  Do not let

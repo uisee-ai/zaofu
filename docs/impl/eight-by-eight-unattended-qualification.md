@@ -106,3 +106,13 @@ infra 失败输入，才能重新获得诊断准入。case identity 与历史保
 预检不搬移文件、不写事件；实际交付仍走原受控提交与工件搬移。
 `tests/test_author_plan_port_preflight.py`覆盖实际Service validate/submit→Kernel搬移→
 下游全文/摘要保留及边界反例。该修复不放过Planner另有的schema错误或语义缺口。
+
+## 2026-11-20：已完成Reader触发成本停更误报
+
+15:44 UTC的cost.usage.blackout引用15:21的product-scan派发，但该child在15:25
+已经完成。检测器只排除Run终态，错误保留了child活动表面。现在按内核记录的
+workflow_run_id/fanout_id/child_id/run_id完整身份排除已完成或失败的Reader，
+继续查找尚未结束的派发。其他child、旧重试、异Run和worker自报不能关闭当前派发。
+不调整预算、阈值或冷却；未知身份保留旧保守行为。
+`tests/test_cost_blackout_reader_terminal.py`通过真实tick入口验证这些边界；
+原告警时刻的账本只读重放不再触发告警，不改写原事件或伪造关闭结果。
