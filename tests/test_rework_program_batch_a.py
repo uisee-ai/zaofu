@@ -85,9 +85,10 @@ def test_a1_missing_everywhere_still_fail_closed(tmp_path: Path) -> None:
 def test_a2_reactor_applies_external_state_event() -> None:
     from zf.runtime.orchestrator_reactor import EventReactorMixin
 
-    host = SimpleNamespace(_last_worker_state={"dev-lane-0": "blocked_human"})
+    host = SimpleNamespace(_last_worker_state={"dev-lane-0": "blocked_human"},
+                           _last_worker_task_id={}, _instance_state={})
     event = ZfEvent(
-        type="worker.state.changed", actor="operator",
+        type="worker.state.changed", actor="operator", origin="kernel",
         payload={"instance_id": "dev-lane-0", "from": "blocked_human",
                  "to": "idle", "reason": "operator unblock"},
     )
@@ -127,5 +128,6 @@ def test_a2_unblock_cli_emits_event(tmp_path: Path, monkeypatch) -> None:
     assert agents_cli._run_unblock(args) == 0
     events = log.read_all()
     assert events[-1].type == "worker.state.changed"
+    assert events[-1].origin == "kernel"
     assert events[-1].payload["to"] == "idle"
     assert events[-1].payload["source"] == "zf_agents_unblock"

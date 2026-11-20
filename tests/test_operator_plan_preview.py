@@ -124,7 +124,8 @@ def test_review_dossier_backfills_bound_decision_register(tmp_path):
 
     assert result["decision_count"] == 1
     assert result["owner_decision_items"][0]["decision_id"] == "CR01"
-    assert "**决定登记**：`1` 项" in result["review_dossier_markdown"]
+    assert "结构化登记未确认，数量未知" in result["review_dossier_markdown"]
+    assert "**决定登记**：`0`" not in result["review_dossier_markdown"]
     assert "Choose the clock contract?" in result["review_dossier_markdown"]
 
 
@@ -191,6 +192,7 @@ def test_owner_decision_checkpoint_exposes_the_same_full_plan_preview(tmp_path):
             "plan_id": "evt-owner-plan",
             "plan_preview": True,
             "approval_ref": "plan-owner-checkpoint",
+            "proposal_ref": "proposal.json", "eval_ref": "eval.json",
             "owner_decision_items": [{"decision_id": "CR01", "question": "Approve?"}],
             "approve_action": "replan-approve",
             "reject_action": "replan-reject",
@@ -253,8 +255,10 @@ def test_legacy_owner_checkpoint_backfills_candidate_refs_from_source_event(tmp_
         },
     )
     events = [source, request]
+    from zf.runtime.operator_inbox import build_runtime_requests
     inbox = build_operator_inbox(state, events, project_root=state.parent)
-    item = inbox["items"][0]
+    assert inbox["items"] == []
+    item = build_runtime_requests(state, events, project_root=state.parent)[0]
     assert item["plan_id"] == source.id
     assert item["preview"]["available"] is True
     result = build_plan_preview(
@@ -538,7 +542,7 @@ def test_current_digest_uses_bound_task_commands_without_rewriting_history(tmp_p
 
     state, full, payload = _artifacts(tmp_path)
     task_map = json.dumps({"tasks": [{
-        "task_id": "SLICE-1", "allowed_paths": ["src/feature.py"], "wave": 1,
+        "task_id": "SLICE-1", "owner_role": "dev-0", "allowed_paths": ["feature.py"], "wave": 1,
         "validation": {"commands": [{"id": "local", "command": "node --test tests/feature.mjs"}]},
     }]})
     (state / payload["task_map_ref"]).write_text(task_map)
@@ -559,6 +563,7 @@ def test_current_digest_uses_bound_task_commands_without_rewriting_history(tmp_p
     result = _preview(state, payload)
     assert result["markdown"] == full
     assert "node --test tests/feature.mjs" in result["digest_markdown"]
+    assert "不要求独立 assembly" in result["digest_markdown"]
     assert result["digest_source"] == "bound_task_map"
     assert "🔴" not in result["digest_markdown"]
     assert (state / payload["digest_ref"]).read_bytes() == stored

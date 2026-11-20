@@ -489,6 +489,15 @@ class ModuleParityBridgeMixin(CandidateSuccessCurrentnessMixin, GoalClosureBridg
             "gap_task_count",
         )
         if gap_tasks:
+            # A reader's explicit replacement graph supersedes the recovery
+            # request's historical hint, including an explicitly additive [].
+            supersedes = self._payload_text_list(payload, "supersedes_task_ids")
+            if any("supersedes_task_ids" in task for task in gap_tasks):
+                supersedes = list(dict.fromkeys(
+                    task_id
+                    for task in gap_tasks
+                    for task_id in self._payload_text_list(task, "supersedes_task_ids")
+                ))
             gap_event = self.event_writer.append(ZfEvent(
                 type="flow.gap_plan.ready",
                 actor="zf-cli",
@@ -518,10 +527,7 @@ class ModuleParityBridgeMixin(CandidateSuccessCurrentnessMixin, GoalClosureBridg
                     "dispatch_base_commit": dispatch_base_commit,
                     "gap_tasks": gap_tasks,
                     "gap_task_count": len(gap_tasks),
-                    "supersedes_task_ids": self._payload_text_list(
-                        payload,
-                        "supersedes_task_ids",
-                    ),
+                    "supersedes_task_ids": supersedes,
                     "source_event_id": event.id,
                     "source": "flow_discovery_bridge",
                     **ref_payload,

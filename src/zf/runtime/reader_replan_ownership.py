@@ -6,6 +6,24 @@ from zf.core.events import ZfEvent
 from zf.runtime.reader_replan_index import ReaderReplanIndex
 
 
+def admitted_candidate_plan_recovery_owns_failure(stage: Any, failure: ZfEvent) -> bool:
+    """Keep an admitted Plan-port blocker on the candidate recovery route."""
+    return getattr(stage, "trigger", "") == "candidate.ready" and admitted_plan_blocker(failure)
+
+
+def admitted_plan_blocker(failure: ZfEvent) -> bool:
+    payload = failure.payload
+    refs = payload.get("semantic_result_refs")
+    return (
+        getattr(failure, "origin", "") == "kernel"
+        and payload.get("failure_class") == "dependency_blocked"
+        and payload.get("recovery_action") == "replan"
+        and payload.get("rework_scope") == "plan_ports"
+        and isinstance(refs, list)
+        and any(str(ref or "").strip() for ref in refs)
+    )
+
+
 def active_candidate_replan_owns_failure(
     config: Any, events: list[ZfEvent], failure: ZfEvent, *,
     event_index: ReaderReplanIndex | None = None,

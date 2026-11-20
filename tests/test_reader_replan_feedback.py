@@ -144,3 +144,44 @@ def test_later_generation_without_feedback_does_not_reuse_old_input(tmp_path):
     assert 'operator_feedback' not in trigger.payload
     assert 'input_task_ids' not in trigger.payload
     assert _apply(svc, second_payload)['replayed']
+
+
+def test_canonical_dispatch_pins_operator_repair_as_required_lossless_input(tmp_path):
+    from zf.core.task.schema import Task, TaskContract
+    from zf.core.task.store import TaskStore
+    from zf.runtime.artifact_query.handoff import CanonicalHandoffResolver
+    from zf.runtime.task_contract_snapshot import build_task_contract_snapshot, write_task_contract_snapshot, current_task_contract_identity
+    from zf.runtime.artifact_read_ledger import canonical_required_reads, read_attempt_artifact
+    state = tmp_path / 'custom-state'
+    state.mkdir()
+    task = Task(id='T1', title='Repair review', status='in_progress', contract=TaskContract(
+        acceptance_criteria=['AC1'], verification='node --test', scope=['app/'], evidence_contract={'task_map_generation':'G1'}))
+    TaskStore(state / 'kanban.json').add(task)
+    ref = write_task_contract_snapshot(state, build_task_contract_snapshot(task,
+        workflow_run_id='run', task_map_generation_id='G1', base_commit='base', task_ref='task/T1'))
+    base = {**current_task_contract_identity(task), 'output_profile_id':'implementation',
+        'base_commit':'base', 'task_ref':'task/T1', 'task_map_generation':'G1',
+        'contract_snapshot_ref':ref['ref'], 'contract_snapshot_digest':ref['sha256']}
+    message = 'Read exact candidate host receipt, not an approval. ' * 1000
+    payload = {**base, 'trigger_payload':{'operator_feedback':[message],
+        'rework_feedback':[{'message':message, 'source':'operator', 'source_event_id':'approval'}]}}
+    resolver = CanonicalHandoffResolver(state_dir=state, project_root=tmp_path, config=None)
+    manifest, _ = resolver.resolve_payload(payload=payload, workflow_run_id='run', task_id='T1',
+        attempt_id='a1', dispatch_id='a1', source_event_id='retry')
+    source = next(s for s in manifest['sources'] if s['source_id']=='critical-reader-repair-context')
+    for profile in ['implementation','task-verify','candidate-verify','workflow-read']:
+        required = canonical_required_reads(manifest, output_profile_id=profile)
+        assert required[0]['source_id'] == source['source_id']
+        assert required[0]['json_path'] == '$'
+        from zf.cli.artifact_required_read import prepare_required_read
+        output, _ = prepare_required_read(state, manifest=manifest, rows=required,
+            identity={'attempt_id':'a1'}, page_bytes=2048)
+        import json
+        assert json.loads(output)['items'][0]['source_id'] == source['source_id']
+    content = read_attempt_artifact(state, manifest=manifest, source_id=source['source_id'],
+        artifact_id=source['artifact_id'], json_path='$')['content']
+    assert message in content
+    assert 'approval' in content
+    changed, _ = resolver.resolve_payload(payload={**base,'operator_feedback':['new evidence']},
+        workflow_run_id='run',task_id='T1',attempt_id='a2',dispatch_id='a2',source_event_id='retry2')
+    assert changed['source_snapshot']['identity_digest'] != manifest['source_snapshot']['identity_digest']

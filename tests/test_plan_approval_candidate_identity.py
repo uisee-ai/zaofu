@@ -27,9 +27,9 @@ def test_incremental_approval_digest_checks_assembly_in_bound_full_map(tmp_path)
     state, log, orch = _approval_orch(tmp_path, enabled=True)
     path = state / "artifacts" / "full-map.json"
     path.write_text(json.dumps({"tasks": [
-        {"task_id": "ASSEMBLY", "root_owner_class": "assembly", "allowed_paths": ["root.json"]},
-        {"task_id": "NEW-A", "allowed_paths": ["src/a/**"]},
-        {"task_id": "NEW-B", "allowed_paths": ["src/b/**"]},
+        {"task_id": "ASSEMBLY", "root_owner_class": "assembly", "owner_role": "assembler", "allowed_paths": ["root.json"]},
+        {"task_id": "NEW-A", "owner_role": "dev-a", "allowed_paths": ["src/a/**"]},
+        {"task_id": "NEW-B", "owner_role": "dev-b", "allowed_paths": ["src/b/**"]},
     ]}))
     event = EventWriter(log).append(ZfEvent(type="task_map.ready", correlation_id="run-1",
                                              payload={"pdd_id": "PDD-1"}))

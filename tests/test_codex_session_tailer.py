@@ -227,3 +227,36 @@ class TestCodexEventMsgIgnored:
 class TestCodexSessionPath:
     def test_returns_none_when_no_match(self, monkeypatch):
         assert codex_session_path("ffffffff-ffff-ffff-ffff-ffffffffffff") is None
+
+
+@pytest.mark.parametrize("newer_turn", [False, True])
+def test_interrupted_turn_releases_only_its_liveness_fence(event_log, newer_turn):
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
+
+    event_log.append(ZfEvent(type="codex.hook.user_prompt_submit", actor="critic",
+        payload={"session_id": "session", "turn_id": "old-turn"}))
+    if newer_turn:
+        event_log.append(ZfEvent(type="codex.hook.user_prompt_submit", actor="critic",
+            payload={"session_id": "session", "turn_id": "new-turn"}))
+    CodexSessionTailer(event_log)._emit_from_line("critic", json.dumps({
+        "type": "event_msg", "timestamp": "2026-11-09T15:19:09.415Z",
+        "payload": {"type": "turn_aborted", "turn_id": "old-turn",
+                    "reason": "interrupted", "last_agent_message": "private-body"},
+    }))
+    events = event_log.read_all()
+    closed = [e for e in events if e.type == "provider.turn.closed"]
+    assert len(closed) == 1
+    assert closed[0].payload["provider_status"] == "cancelled"
+    assert closed[0].payload["provider_event"] == "turn_aborted"
+    assert "private-body" not in json.dumps(closed[0].payload)
+    active = active_codex_turn_from_events(events, "critic")
+    assert (active["turn_id"] if active else None) == ("new-turn" if newer_turn else None)
+    assert not any(e.type in {"task.done", "fanout.synth.completed"} for e in events)
+
+
+def test_interruption_without_turn_id_cannot_release_liveness(event_log):
+    CodexSessionTailer(event_log)._emit_from_line("critic", json.dumps({
+        "type": "event_msg", "payload": {"type": "turn_aborted", "reason": "interrupted"},
+    }))
+    assert not event_log.read_all()

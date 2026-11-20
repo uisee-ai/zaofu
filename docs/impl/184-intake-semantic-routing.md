@@ -83,11 +83,10 @@ Web/Workflow 授权凭证，仍执行原有 preflight、tmux/transport、sidecar
 
 ### Dashboard 默认写权限
 
-`zf web` 在未配置权限策略时默认启用写操作：loopback 使用可信本机会话，
-非 loopback（含 `0.0.0.0`）复用或创建 Workspace 的 `web-action-token`（权限 0600）。
+standalone 的 `zf web` 在未显式配置授权方式时复用或创建 Workspace 的 `web-action-token`（权限 0600），包括 loopback 监听。云端受管工作台使用 Gateway 验证的 Controller 会话。
 已有 Token/Passcode/可信会话策略保持不变；`--read-only` 显式禁用写操作。
 `tools/start-webkanban.sh` 默认可写，并输出 `write_url`；浏览器从 URL fragment
-读取授权到既有 Token 存储，立即清除 fragment，再发送 API 请求。Token 不进入 HTTP
+读取授权到既有 Token 存储，清除 fragment 后发送受控写请求。Token 不进入 HTTP
 请求路径、查询参数或 Referer。局域网匿名请求仍被拒绝；所有写操作仍经过受控 action。
 Kanban Agent 默认文件权限统一为 `workspace_writer`（Write），Workflow 独立批准仍然必需。
 显式选择 `dangerous_full` 继续要求原有确认字段，不通过省略权限字段隐式扩大写入范围。

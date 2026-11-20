@@ -34,13 +34,14 @@ def test_context_window_config_and_default_do_not_override_global_command(tmp_pa
     assert ChannelConfig().codex_context_window_tokens==0
 
 
-def test_dispatch_passes_project_budget_to_actual_codex_adapter_factory(tmp_path, monkeypatch):
+@pytest.mark.parametrize('member_model', ['', 'gpt-6-astra'])
+def test_dispatch_passes_project_budget_to_actual_codex_adapter_factory(tmp_path, monkeypatch, member_model):
     state,writer,service,file,body=setup(tmp_path,monkeypatch)
     writer.emit('channel.member.invited',actor='web',payload={'channel_id':'ch-file','member_id':'synth',
                 'channel_role':'synthesizer','member_type':'provider_agent','backend':'codex',
-                'permission_profile':'read_only'})
+                'permission_profile':'read_only', 'model':member_model})
     service.config=ZfConfig(channel=ChannelConfig(semantic_source_max_chars=1_000_000,codex_context_window_tokens=650000,
-                                               provider_timeout_seconds=3600))
+                                               provider_timeout_seconds=3600, codex_model='gpt-6.1-sol', codex_reasoning_effort='medium'))
     monkeypatch.setenv('ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S', '180')
     result=request(service,writer,file,body)
     assert result['ok'],result
@@ -54,8 +55,35 @@ def test_dispatch_passes_project_budget_to_actual_codex_adapter_factory(tmp_path
     started=next(e for e in writer.event_log.read_all() if e.type=='channel.agent.reply.started' and e.payload['request_id']==reply['request_id'])
     assert started.payload['codex_context_window_tokens']==650000
     assert started.payload['provider_timeout_seconds']==3600
+    expected_model = member_model or 'gpt-6.1-sol'
+    expected_reasoning = 'medium'
+    assert started.payload['codex_model']==expected_model
+    assert started.payload['codex_reasoning_effort']==expected_reasoning
+    assert f'model="{expected_model}"' in shlex.split(adapter.command)
+    assert adapter.calls[0]['model']==expected_model
+    assert adapter.calls[0]['thinking_level']==expected_reasoning
     assert 1800 < adapter.calls[0]['timeout_s'] <= 3600
     assert body.rstrip() in adapter.calls[0]['prompt'].replace('\\n','\n')
+
+
+@pytest.mark.parametrize('key,value', [('codex_model', 42), ('codex_model', 'bad name'),
+    ('codex_reasoning_effort', 'extreme'), ('codex_reasoning_effort', [])])
+def test_invalid_provider_pins_fail_at_config_load(tmp_path, key, value):
+    import yaml
+    path = tmp_path / 'zf.yaml'
+    path.write_text(yaml.safe_dump({'version': '1.0', 'project': {'name': 'review'}, 'channel': {key: value}}))
+    with pytest.raises(ConfigError, match=key):
+        load_config(path)
+
+
+def test_provider_pins_load_without_mutating_global_defaults(tmp_path, monkeypatch):
+    path = tmp_path / 'zf.yaml'
+    path.write_text("version: '1.0'\nproject:\n  name: review\nchannel:\n  codex_model: gpt-6.1-sol\n  codex_reasoning_effort: medium\n")
+    config = load_config(path)
+    assert config.channel.codex_model == 'gpt-6.1-sol'
+    assert config.channel.codex_reasoning_effort == 'medium'
+    monkeypatch.setenv('ZF_KANBAN_AGENT_CODEX_HEADLESS_CMD', 'codex --profile channel')
+    assert channel_codex_backend().command == 'codex --profile channel'
 
 
 @pytest.mark.parametrize('value', [True, -1, 7201, '3600', 1.5])

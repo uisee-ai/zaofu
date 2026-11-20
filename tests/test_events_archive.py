@@ -234,7 +234,7 @@ class TestEventsActiveArchive:
         assert [event.type for event in log.read_all()] == ["first"]
         assert [event.type for event in log.read_all()] == ["first", "second"]
 
-    def test_rotation_collision_appends(self, tmp_path: Path):
+    def test_rotation_collision_preserves_separate_segments(self, tmp_path: Path):
         path = tmp_path / "events.jsonl"
         archive_dir = tmp_path / "events"
         archive_dir.mkdir()
@@ -247,8 +247,11 @@ class TestEventsActiveArchive:
         log = EventLog(path)
         log.append(ZfEvent(type="today_fresh"))
 
-        combined = yesterday_archive.read_text()
-        assert "already" in combined
-        assert "yesterday_active" in combined
+        assert yesterday_archive.read_text() == '{"type":"already"}\n'
+        extra = archive_dir / f"{_day_str(1)}~0001.jsonl"
+        assert extra.read_text() == '{"type":"yesterday_active"}\n'
+        assert [event.type for event in log.read_all()] == [
+            "already", "yesterday_active", "today_fresh",
+        ]
         # today_fresh is in the new active file, not archive
         assert path.read_text().count("today_fresh") == 1

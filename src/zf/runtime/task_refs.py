@@ -886,12 +886,12 @@ class TaskRefManager:
                 "--verify",
                 f"{source_commit}^{{commit}}",
             ).strip()
-            raw = self._git("diff", "--name-only", f"{base_commit}..{source}")
+            raw = self._git("diff", "--name-only", "-z", f"{base_commit}..{source}")
         except Exception:
             return []
         return [
             self._normalize_artifact_path(line)
-            for line in raw.splitlines()
+            for line in raw.split("\0")
             if self._normalize_artifact_path(line)
         ]
 
@@ -1089,10 +1089,10 @@ class TaskRefManager:
                         "--verify",
                         f"{candidate}^{{commit}}",
                     ).strip()
-                    raw = self._git("diff", "--name-only", f"{commit}..{source_commit}")
+                    raw = self._git("diff", "--name-only", "-z", f"{commit}..{source_commit}")
                 except Exception:
                     continue
-                distance = len([line for line in raw.splitlines() if line.strip()])
+                distance = len([path for path in raw.split("\0") if path])
                 if best_distance < 0 or distance < best_distance:
                     best = commit
                     best_distance = distance

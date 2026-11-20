@@ -284,6 +284,86 @@ def test_task_pipeline_legacy_hash_reopens_only_for_attempt_local_evidence(
     assert divergent.status == "divergent"
 
 
+def test_task_pipeline_replay_ignores_flow_protocol_metadata_addition(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    base_request = {
+        "task_pipeline_stage": "impl",
+        "task_id": "T-FLOW",
+        "operation_generation": 1,
+        "task_map_generation": 3,
+        "workspace_generation": 1,
+        "pipeline_key": "tp-T-FLOW",
+        "task_stage_session_binding": "binding-T-FLOW",
+        "prompt": "implement the admitted task contract",
+    }
+    first = service.ensure_operation(
+        workflow_run_id="run-1",
+        operation_id="op-task-flow-metadata",
+        operation_type="task-stage",
+        request=base_request,
+        task_id="T-FLOW",
+    )
+    replay = service.ensure_operation(
+        workflow_run_id="run-1",
+        operation_id="op-task-flow-metadata",
+        operation_type="task-stage",
+        request={**base_request, "flow_kind": "prd", "request_kind": "prd"},
+        task_id="T-FLOW",
+    )
+
+    assert replay.status == "requested"
+    assert replay.replay_hit is True
+    assert replay.request_hash == first.request_hash
+
+
+def test_task_pipeline_replay_ignores_derived_semantic_submit_mode_migration(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    base_request = {
+        "task_pipeline_stage": "impl",
+        "task_id": "T-PROTOCOL",
+        "operation_generation": 1,
+        "task_map_generation": 3,
+        "workspace_generation": 1,
+        "pipeline_key": "tp-T-PROTOCOL",
+        "prompt": "implement the admitted task contract",
+        "semantic_result_submit_mode": "off",
+        "result_identity": {
+            "attempt_domain": "task",
+            "pipeline_key": "tp-T-PROTOCOL",
+        },
+    }
+    first = service.ensure_operation(
+        workflow_run_id="run-1",
+        operation_id="op-task-protocol-migration",
+        operation_type="task-stage",
+        request=base_request,
+        task_id="T-PROTOCOL",
+    )
+    replay = service.ensure_operation(
+        workflow_run_id="run-1",
+        operation_id="op-task-protocol-migration",
+        operation_type="task-stage",
+        request={
+            **base_request,
+            "semantic_result_submit_mode": "blocking",
+            "result_identity": {
+                **base_request["result_identity"],
+                "flow_kind": "prd",
+                "workdir": "/tmp/current-task-workdir",
+                "placement_epoch": 2,
+            },
+        },
+        task_id="T-PROTOCOL",
+    )
+
+    assert replay.status == "requested"
+    assert replay.replay_hit is True
+    assert replay.request_hash == first.request_hash
+
 def test_operation_settles_even_when_product_verdict_is_rejected(tmp_path: Path) -> None:
     service = _service(tmp_path)
     operation_id = "op-rejected"

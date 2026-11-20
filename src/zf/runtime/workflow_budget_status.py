@@ -116,6 +116,20 @@ def operation_budget_status(
         ),
         cost_fail_closed=bool(getattr(config, "budget_fail_closed", False)),
     )
+    headroom = budget_headroom(limits, measurement)
+    exceeded = _exceeded_dimensions(limits, measurement)
+    continuation = (
+        "Preserve a continuation note with current identity, source digests, "
+        "HEAD, open items and evidence refs. "
+    )
+    if exceeded:
+        guidance = continuation + "Use controlled recovery for the reported budget guard violation. "
+    else:
+        guidance = continuation if headroom["warning_level"] >= 50 else ""
+        guidance += (
+            "Continue the current authorized work within the existing gates and limits. "
+            "Checkpointing does not pause or complete an attempt. "
+        )
     return {
         "operation_id": operation_id, "workflow_run_id": operation.get("workflow_run_id"),
         "role_instance": operation.get("role_instance"),
@@ -124,13 +138,9 @@ def operation_budget_status(
             key: value for key, value in measurement.items()
             if key not in {"baseline", "current"}
         },
-        **budget_headroom(limits, measurement),
-        "exceeded": _exceeded_dimensions(limits, measurement),
-        "guidance": (
-            "Preserve a continuation note with current identity, source digests, "
-            "HEAD, open items and evidence refs. Retain full sources; do not "
-            "reset budgets or skip gates."
-        ),
+        **headroom,
+        "exceeded": exceeded,
+        "guidance": guidance + "Retain full sources; do not reset budgets or skip gates.",
     }
 
 

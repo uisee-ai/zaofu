@@ -22,8 +22,8 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.task_refs import TaskRefManager
 
 
-def scenario(tmp_path, fault=""):
-    state, log, writer, config, _, base, partial = setup(tmp_path, fault)
+def scenario(tmp_path, fault="", product_path="product.txt"):
+    state, log, writer, config, _, base, partial = setup(tmp_path, fault, product_path=product_path)
     git(tmp_path, "checkout", "-qb", "candidate/FEATURE", base)
     (tmp_path / "concurrent.txt").write_text("other task\n")
     git(tmp_path, "add", "--", "concurrent.txt")
@@ -35,7 +35,7 @@ def scenario(tmp_path, fault=""):
     task = Task(id="NEXT", title="continue", key="FEATURE:NEXT")
     task.contract.feature_id = "FEATURE"
     task.contract.contract_revision = "next-contract"
-    task.contract.scope = ["product.txt", "gap.txt"]
+    task.contract.scope = [product_path, "gap.txt"]
     task.contract.source_ref = "git:" + partial
     task.contract.evidence_contract = {
         "supersedes_task_ids": ["PART"],

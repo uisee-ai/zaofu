@@ -192,7 +192,10 @@ def test_dispatch_rejects_canonical_contract_changed_since_selection(dispatch_fi
 def test_transport_receives_fresh_capsule_and_real_briefing(
     dispatch_fixture, monkeypatch
 ):
-    runtime, task, _, _, dispatch = dispatch_fixture
+    import hashlib
+    import json
+
+    runtime, task, snapshot, _, dispatch = dispatch_fixture
     from zf.runtime.task_doc import task_doc_path
 
     monkeypatch.setattr(

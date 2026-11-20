@@ -61,6 +61,7 @@ def fleet(state_dir: Path, config=None, *, now=None) -> dict:
 
 def pulse(state_dir: Path, config=None, *, now=None) -> dict:
     from zf.web import overview_pulse as p
+    from zf.runtime.runtime_version_projection import runtime_version_snapshot
     facts.refresh_events(state_dir, config)
     tasks.refresh(state_dir)
     current = now or datetime.now(timezone.utc)
@@ -71,7 +72,9 @@ def pulse(state_dir: Path, config=None, *, now=None) -> dict:
     return {"schema_version": p.SCHEMA_VERSION, "is_derived_projection": True,
             "generated_at": current.isoformat(),
             "run_pulse": {**p._run_pulse(selected, current), "loop": {"status": loop.get("status"), "age_seconds": loop.get("age_seconds")},
-                          "sessions": p._sessions(state_dir, config, selected)},
+                          "sessions": p._sessions(state_dir, config, selected),
+                          "versions": runtime_version_snapshot(state_dir, (event for _, event in facts.events(
+                              state_dir, types=("loop.started", "loop.stopped", "worker.runtime.observed"), prefixes=("workflow.operation.",))))},
             "task_flow": p._task_flow(state_dir, config, selected, current,
                                       projected_tasks=tasks.rows(state_dir), projected_counts=tasks.counts(state_dir)),
             "attention": p._attention(selected, current), "why_not": p._why_not(state_dir, selected, loop)}

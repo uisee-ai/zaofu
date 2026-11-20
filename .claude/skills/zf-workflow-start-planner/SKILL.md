@@ -106,6 +106,9 @@ Owner 请求 Workflow 交付时，默认进入：输入 Task → Synthesis 语�
 - 新建交付 Task：create-task 提案设置 execution_mode=workflow、prepare_workflow=true，
   不同时附带旧 workflow_plan。批准建单后自动准备，展示返回的
   workflow_preparation.preview_url，在 Workflows 页面回答问题并审核配置。
+- 来源明确的条件、审批边界写入 `contract.constraints` 字符串数组；非目标用
+  `explicit_non_goals`，产品验收用 `acceptance_criteria`。Task→Requirement 会继承这些条件；
+  条件不是授权。来源未要求审批不得补造，配置选择仍须引用真实原话并经受控预览。
 - 已有 Task：提案 workflow-request，包含真实 task_id、kind=auto；CLI 使用
   `zf workflow prepare --task TASK-ID`，独立需求可使用 `--objective`。
 - 仅跟踪省略 prepare_workflow 和 workflow_plan，不调用模型。

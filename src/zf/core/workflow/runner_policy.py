@@ -34,6 +34,7 @@ CLAUDE_AGGREGATOR_ALLOWED_TOOLS: tuple[str, ...] = (
     "Bash(zf artifact costs *)",
     "Bash(zf artifact work-record show *)",
     "Bash(zf artifact work-record publish *)",
+    "Bash(zf artifact handoff-accept *)",
     "Bash(zf artifact read *)",
     "Bash(zf result submit *)",
     "Bash(cat .zf/artifacts/*)",
@@ -64,6 +65,7 @@ def claude_aggregator_allowed_tools(config: ZfConfig | None) -> tuple[str, ...]:
             "artifact costs",
             "artifact work-record show",
             "artifact work-record publish",
+            "artifact handoff-accept",
             "artifact read",
             "result submit",
         )

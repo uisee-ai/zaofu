@@ -1,0 +1,34 @@
+{
+  "boundary": "Historical confirmed discrepancy plus small authored positive/negative fixtures; not blind recall",
+  "cases": [
+    {
+      "id": "aligned",
+      "expected": "approve"
+    },
+    {
+      "id": "conflict",
+      "expected": "reject"
+    },
+    {
+      "id": "complementary",
+      "expected": "approve"
+    },
+    {
+      "id": "outcome-conflict",
+      "expected": "reject"
+    },
+    {
+      "id": "outcome-aligned",
+      "expected": "approve"
+    },
+    {
+      "id": "downstream-aligned",
+      "expected": "approve"
+    },
+    {
+      "id": "downstream-conflict",
+      "expected": "reject"
+    }
+  ],
+  "origin": "208 第三批：真实历史 AC-22 人工阅读与 E2E 责任冲突的精简变体。不是未见过的盲测。 追加真实 Channel 合法读取与拒绝分支共用失败预期的反例及明确分支正例。"
+}

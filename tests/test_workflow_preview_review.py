@@ -584,7 +584,9 @@ def test_synthesis_preview_lane_reduction_rebinds_compiled_roles(tmp_path, kind)
 def test_preview_apply_holds_preparation_consumer_lease(setup, monkeypatch):
     from zf.core.config.loader import load_config
     from zf.runtime import workflow_preview_review as module
-    from zf.runtime.workflow_synthesis_consumer import consume_workflow_synthesis_operations
+    from zf.runtime.workflow_synthesis_consumer import (
+        WorkflowSynthesisConsumerBusy, consume_workflow_synthesis_operations,
+    )
     _, service, binding = setup
     change = service.discuss({**binding, 'field': 'config.0.lanes', 'mode': 'revise', 'message': 'Two lanes'},
         agent=Agent({'answer': '两条 lane', 'replacement': 2}))
@@ -594,9 +596,10 @@ def test_preview_apply_holds_preparation_consumer_lease(setup, monkeypatch):
     def compile_during_consumer_tick(*args, **kwargs):
         def unexpected_read():
             pytest.fail("consumer must not read operations while preview holds its lease")
-        assert consume_workflow_synthesis_operations(state_dir=service.state_dir,
-            project_root=service.project_root, config=load_config(service.config_path), writer=service.writer,
-            read_operation_events=unexpected_read) == 0
+        with pytest.raises(WorkflowSynthesisConsumerBusy):
+            consume_workflow_synthesis_operations(state_dir=service.state_dir,
+                project_root=service.project_root, config=load_config(service.config_path), writer=service.writer,
+                read_operation_events=unexpected_read)
         observed.append(True)
         return original(*args, **kwargs)
 

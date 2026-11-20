@@ -85,7 +85,9 @@ spec:
         limits:
           timeout_seconds: 900
           max_usage_samples: 60
-          token_budget: 1500000
+          # 0 disables the per-operation token breaker; the run-level timeout
+          # and cost budget remain active.
+          token_budget: 0
           cost_budget_usd: 8
     run_limits:
       timeout_seconds: 0

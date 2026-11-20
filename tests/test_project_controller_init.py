@@ -19,7 +19,7 @@ def test_dashboard_default_uses_v5_with_local_assets(tmp_path, monkeypatch):
                                  "state_dir": ".runtime", "skip_instruction_docs": True})
     assert response.status_code == 201, response.text
     config = load_config(target / "zf.yaml")
-    assert config.version == "5.0.1"
+    assert config.version == "5.1.0"
     assert config.project.state_dir == ".runtime"
     assert config.workflow.orchestration.normal_frontier_owner == "wrc"
     assert config.workflow.flow_metadata["task_pipeline"]["mode"] == "blocking"

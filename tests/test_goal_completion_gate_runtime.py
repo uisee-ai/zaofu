@@ -116,6 +116,21 @@ def test_explicit_blocked_goal_closure_cannot_claim_on_redrive(
     assert "run.goal.completed" not in types
 
 
+@pytest.mark.parametrize("verdict", ["rejected", "blocked", "", "unknown"])
+def test_non_passed_artifact_delivery_cannot_claim_on_runtime_replay(tmp_path, verdict):
+    orchestrator, log = _orchestrator(tmp_path)
+    run_id = "R-NEGATIVE-ARTIFACT"
+    log.append(ZfEvent(type="run.goal.started", payload={"run_id": run_id}))
+    cause = ZfEvent(type="artifact.delivery.verified", correlation_id=run_id, payload={
+        "artifact_delivery_result": {"workflow_run_id": run_id, "goal_id": run_id, "verdict": verdict}})
+    log.append(cause)
+    orchestrator._maybe_complete_run_goal(cause)
+    orchestrator._reconcile_run_goal_completion()
+    types = [event.type for event in log.read_all()]
+    assert "run.goal.completion.claimed" not in types
+    assert "run.goal.completed" not in types
+
+
 def test_orchestrator_records_blocked_claim_without_completing(tmp_path: Path) -> None:
     orchestrator, log = _orchestrator(tmp_path)
     log.append(ZfEvent(type="run.goal.started", payload={"run_id": "R-OPEN"}))

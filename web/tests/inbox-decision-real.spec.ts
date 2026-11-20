@@ -11,10 +11,10 @@ test("Inbox reads and Plan decisions reach the real backend", async ({ page, req
   const skipOnboarding = page.getByRole("button", { name: /跳过全部|Skip all/ });
   if (await skipOnboarding.isVisible()) await skipOnboarding.click();
   const plan = page.locator('[data-inbox-id="plan:plan-inbox"]');
-  const question = page.locator('[data-inbox-id="channel-question:ch-inbox:main:q-inbox"]');
+  const otherPlan = page.locator('[data-inbox-id="plan:plan-other"]');
   const badge = page.locator("button.rail-nav-button").filter({ hasText: /Inbox|收件箱/ }).locator(".rail-nav-badge");
   await expect(plan).toBeVisible();
-  await expect(question).toBeVisible();
+  await expect(otherPlan).toBeVisible();
   await expect(plan.locator(".operator-inbox-unread-dot")).toHaveCount(1);
   await expect(page.locator(".inbox-pending-count")).toHaveText("2");
   await expect(badge).toHaveText("2");
@@ -25,7 +25,7 @@ test("Inbox reads and Plan decisions reach the real backend", async ({ page, req
   await expect(page.locator(".inbox-pending-count")).toHaveText("2");
   await page.reload();
   await expect(plan.locator(".operator-inbox-unread-dot")).toHaveCount(0);
-  await expect(question.locator(".operator-inbox-unread-dot")).toHaveCount(1);
+  await expect(otherPlan.locator(".operator-inbox-unread-dot")).toHaveCount(1);
   await expect(badge).toHaveText("1");
   await page.getByRole("button", { name: "Workflows", exact: true }).click();
   await expect(badge).toHaveText("1");
@@ -46,5 +46,29 @@ test("Inbox reads and Plan decisions reach the real backend", async ({ page, req
   await expect(badge).toHaveCount(0);
   const final = await (await request.get(api)).json();
   expect(final.summary.action_required_pending).toBe(1);
-  expect(final.items.find((item: { id: string }) => item.id === "channel-question:ch-inbox:main:q-inbox").unread).toBe(false);
+  expect(final.items.find((item: { id: string }) => item.id === "plan:plan-other").unread).toBe(false);
+});
+
+test("Removed recovery requests remain discoverable and actionable in Operations", async ({ page, request }) => {
+  test.skip(process.env.ZF_INBOX_BROWSER_FIXTURE !== "plan", "requires the isolated plan fixture");
+  await page.addInitScript(() => localStorage.setItem("zf.webActionToken", "zf-isolated-inbox-browser"));
+  const projectId = String((await (await request.get("/api/workspace/projects")).json()).active_project_id);
+  const inboxApi = `/api/projects/${encodeURIComponent(projectId)}/operator/inbox`;
+  await page.goto(`/?project=${encodeURIComponent(projectId)}&page=inbox`);
+  await page.locator("button.rail-nav-button").filter({ hasText: /^Traces$/ }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
+  const panel = page.getByTestId("runtime-source-requests");
+  await expect(panel).toContainText("Legacy repair proposal");
+  const recovery = panel.locator('[data-runtime-request-id="human:runtime-inbox-test"]');
+  await expect(recovery).toContainText("Inspect the isolated recovery request");
+  const response = page.waitForResponse(r => r.url().endsWith("/actions/human-decision-request-autoresearch") && r.request().method() === "POST");
+  await recovery.getByRole("button", { name: "Diagnose", exact: true }).click();
+  expect((await response).status()).toBe(202);
+  await expect(recovery).toContainText("决定已提交，等待运行系统处理");
+  await expect(recovery.getByRole("button")).toHaveCount(0);
+  await page.reload();
+  await expect(recovery).toContainText("决定已提交，等待运行系统处理");
+  const inbox = await (await request.get(inboxApi)).json();
+  expect(inbox.items.every((item: { kind: string }) => ["plan_approval", "approval"].includes(item.kind))).toBe(true);
+  expect(inbox.items.some((item: { id: string }) => item.id.includes("runtime-inbox-test"))).toBe(false);
 });

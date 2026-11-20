@@ -419,7 +419,7 @@ test("a changed generation reloads structure and retries once before showing ful
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("repeated generation changes stop retrying and keep the partial view until an explicit retry", async ({ page }) => {
+test("repeated generation changes keep partial data until explicit complete replacement", async ({ page }) => {
   await setup(page);
   let structures = 0;
   let details = 0;
@@ -431,8 +431,8 @@ test("repeated generation changes stop retrying and keep the partial view until 
   await page.route("**/workflow-requests/A/graph?*", route => {
     details++;
     if (!allow) return route.fulfill({ status: 409, json: { status: "structure_changed" } });
-    expect(route.request().headers()["x-zf-structure-generation"]).toBe(`generation-A-${9 + structures}`);
-    return route.fulfill({ json: full("A", 9 + structures) });
+    expect(route.request().headers()["x-zf-structure-generation"]).toBeUndefined();
+    return route.fulfill({ json: full("A", 20) });
   });
   await open(page);
   await page.getByRole("button", { name: "Graph filters" }).click();
@@ -445,8 +445,9 @@ test("repeated generation changes stop retrying and keep the partial view until 
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.locator(".sdlc-plans")).toHaveCount(0);
   await expect.poll(() => details).toBe(3);
-  expect(structures).toBe(3);
+  expect(structures).toBe(2);
   expect(details).toBe(3);
+  await expect(page.locator(".sdlc-footer")).toHaveAttribute("title", /Event 20/);
   await expect(page.getByTestId("actions")).toHaveText("[]");
 });
 
@@ -474,3 +475,27 @@ test("late full detail cannot replace the newly selected request", async ({ page
     await expect(page.getByLabel("Select workflow")).toHaveValue("B");
   } finally { release(); }
 });
+
+for (const changed of ["run_id", "revision", "proposal_digest", "head_seq"] as const) {
+  test(`complete replacement rejects a changed ${changed}`, async ({ page }) => {
+    await setup(page);
+    let allow = false;
+    await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ json: structure("A") }));
+    await page.route("**/workflow-requests/A/graph?*", route => {
+      if (!allow) return route.fulfill({ status: 409, json: { status: "structure_changed" } });
+      expect(route.request().headers()["x-zf-structure-generation"]).toBeUndefined();
+      const graph = full("A", 20);
+      Object.assign(graph.scope, { [changed]: changed === "head_seq" ? 9 : changed === "revision" ? 2 : "different" });
+      return route.fulfill({ json: graph });
+    });
+    await open(page);
+    await page.getByRole("button", { name: "Graph filters" }).click();
+    await expect(page.getByRole("alert")).toContainText("HTTP 409");
+    allow = true;
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("Workflow graph replacement scope mismatch");
+    await expect(page.getByText("Structure A", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveCount(0);
+    await expect(page.getByTestId("actions")).toHaveText("[]");
+  });
+}

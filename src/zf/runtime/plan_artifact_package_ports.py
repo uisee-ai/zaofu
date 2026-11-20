@@ -51,6 +51,21 @@ class PlanArtifactPackageError(ValueError):
     """A package cannot be trusted or selected as current."""
 
 
+def bind_product_acceptance_identity(
+    body: Mapping[str, Any], *, workflow_run_id: str, flow_kind: str,
+    plan_revision: str, task_map_generation: str,
+) -> dict[str, Any]:
+    """Apply the same kernel-owned identity at admission and exact replay."""
+    from zf.runtime.product_acceptance import bind_product_acceptance_spec_identity
+
+    if not isinstance(body, Mapping):
+        raise PlanArtifactPackageError("product_acceptance_spec must contain a JSON object")
+    return bind_product_acceptance_spec_identity(
+        body, workflow_run_id=workflow_run_id, flow_kind=flow_kind,
+        plan_revision=plan_revision, task_map_generation=task_map_generation,
+    )
+
+
 def materialize_explicit_plan_ports(
     *,
     state_dir: Path,

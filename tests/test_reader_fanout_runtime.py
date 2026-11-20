@@ -990,7 +990,7 @@ def _manifest(state_dir: Path, fanout_id: str) -> dict:
 
 
 def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False,
-                          plan_admission_source: bool = False):
+                          plan_admission_source: bool = False, semantic_submit: bool = False):
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
@@ -1008,7 +1008,8 @@ def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False,
             ),
         ],
         workflow=WorkflowConfig(
-            flow_metadata={"result_protocol": {"mode": "blocking"}},
+            flow_metadata={"result_protocol": {"mode": "blocking", "semantic_submit_profiles":
+                {"candidate-verify": "blocking", "task-verify": "blocking"} if semantic_submit else {}}},
             stages=[
                 WorkflowStageConfig(
                     id="verify-selected",
@@ -1048,6 +1049,9 @@ def _durable_reader_state(tmp_path: Path, *, rework_source: bool = False,
             ],
         ),
     )
+    if semantic_submit:
+        from zf.runtime.result_submit import provision_role_submit_credential
+        provision_role_submit_credential(state_dir, "verify-1")
     log = EventLog(state_dir / "events.jsonl")
     transport = _RecordingTransport()
     orch = Orchestrator(state_dir, config, transport)  # type: ignore[arg-type]
@@ -1739,8 +1743,9 @@ def test_flow_discovery_aggregate_strips_invalid_gap_tasks(
     ]
 
 
+@pytest.mark.parametrize("explicit_goal", [False, True])
 def test_flow_discovery_aggregate_preserves_parent_goal_identity(
-    tmp_path: Path,
+    tmp_path: Path, explicit_goal: bool,
 ) -> None:
     _state_dir, log, _transport, orch = _state(tmp_path)
     stage = orch.config.workflow.stages[0]
@@ -1749,7 +1754,8 @@ def test_flow_discovery_aggregate_preserves_parent_goal_identity(
     stage.aggregate.child_failure_event = "flow.discovery.child.failed"
     stage.aggregate.success_event = "flow.discovery.completed"
     stage.aggregate.failure_event = "flow.discovery.failed"
-    _start_fanout(orch)
+    _start_fanout(orch, payload={"goal_id": "bound-goal"} if explicit_goal else {})
+    expected_goal = "bound-goal" if explicit_goal else "F-11111111"
     dispatched = next(
         event for event in log.read_all()
         if event.type == "fanout.child.dispatched"
@@ -1788,7 +1794,7 @@ def test_flow_discovery_aggregate_preserves_parent_goal_identity(
     assert completed.payload["workflow_run_id"] == "trace-1"
     assert completed.payload["pdd_id"] == "F-11111111"
     assert completed.payload["feature_id"] == "F-11111111"
-    assert completed.payload["goal_id"] == "F-11111111"
+    assert completed.payload["goal_id"] == expected_goal
     assert {
         item["key"] for item in completed.payload["identity_conflicts"]
     } == {"pdd_id", "feature_id", "goal_id"}
@@ -1811,7 +1817,7 @@ def test_flow_discovery_aggregate_preserves_parent_goal_identity(
     assert len(rebuilt) == 2
     assert rebuilt[-1].payload["rebuild_of"] == completed.id
     assert rebuilt[-1].payload["recovery_generation"] == 1
-    assert rebuilt[-1].payload["goal_id"] == "F-11111111"
+    assert rebuilt[-1].payload["goal_id"] == expected_goal
 
 
 def test_goal_identity_recovery_drill_rebuilds_legacy_aggregate_without_agent(
@@ -4540,8 +4546,9 @@ def test_synth_failure_preserves_previous_plan_candidate_refs(tmp_path: Path):
     assert blocked.payload["previous_plan_candidate_refs"] == previous_refs
 
 
+@pytest.mark.parametrize("action, decision", [("replan-approve", "approved"), ("replan-reject", "rejected")])
 def test_plan_synth_owner_decision_holds_then_resumes_same_run(
-    tmp_path: Path,
+    tmp_path: Path, action: str, decision: str,
 ) -> None:
     state_dir, log, orch, fanout_id = _task_map_synth_orchestrator(tmp_path)
     decision_items = [{
@@ -4604,7 +4611,7 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
         type="web.action.requested",
         actor="web",
         correlation_id="trace-product",
-        payload={"action": "replan-approve"},
+        payload={"action": action},
     ))
     service = ControlledActionService(
         state_dir,
@@ -4616,8 +4623,8 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
         surface="web",
     )
     result = service.execute(
-        action="replan-approve",
-        requested_action="replan.approve",
+        action=action,
+        requested_action=action.replace("-", "."),
         requested=requested,
         payload={
             "approval_ref": item["approval_ref"],
@@ -4632,7 +4639,7 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
             "owner": "owner:min",
         },
     )
-    assert result["status"] == "approved"
+    assert result["status"] == decision
 
     orch.run_once(events=[])
 
@@ -4642,7 +4649,7 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
         event for event in events
         if event.type == "plan.synth.owner_decision.resolved"
     )
-    assert resolved.payload["decision"] == "approved"
+    assert resolved.payload["decision"] == decision
     aggregate = next(
         event for event in events
         if event.type == "fanout.aggregate.completed"
@@ -4650,7 +4657,7 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
     )
     assert aggregate.payload["status"] == "failed"
     blocked = next(event for event in events if event.type == "task_map.blocked")
-    assert blocked.payload["owner_decision_resolution"] == "approved"
+    assert blocked.payload["owner_decision_resolution"] == decision
     confirmation_ref = blocked.payload["owner_confirmation_ref"]
     assert confirmation_ref
     assert (state_dir / confirmation_ref).exists()
@@ -5082,6 +5089,8 @@ def test_plan_reader_operation_pins_artifact_scope_and_result_semantics(
                 roles=["issue-triage"],
                 target_ref="docs/issues/bug.md",
                 aggregate=FanoutAggregateConfig(
+                    review_input_max_bytes=4194304,
+                    review_input_max_pages=512,
                     mode="wait_for_all",
                     child_success_event="issue.triage.child.completed",
                     child_failure_event="issue.triage.child.failed",
@@ -5128,6 +5137,8 @@ def test_plan_reader_operation_pins_artifact_scope_and_result_semantics(
     )
     assert validation["manifest"]["stage_id"] == "issue-triage"
     assert validation["manifest"]["fanout_id"]
+
+    assert validation["review_input_limits"] == {"review_input_max_bytes": 4194304, "review_input_max_pages": 512}
 
 
 def test_scan_reader_operation_does_not_receive_plan_candidate_validation(
@@ -5532,6 +5543,8 @@ def test_refactor_plan_critic_submits_only_verdict_delta(tmp_path: Path):
     assert "`goal_claim_set` and `planning_result` are Kernel-derived" in briefing
     assert "issue flows adapt `requirement_spec` to `issue_spec`" in briefing
     assert "Edit only the signed result scratch file" in briefing
+    assert "explicit top-level `plan_content_profile` judged under the Critic skill" in briefing
+    assert "coverage claim is verdict metadata" in briefing
     assert f"Edit `{(state_dir / scratch_ref).resolve()}`" in briefing
     assert "Use native Edit/Write/apply_patch" in briefing
     assert "not shell redirection or Python/shell heredocs" in briefing

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import shlex
+from zf.runtime.result_workspace_guidance import result_workspace_guidance
+
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -242,6 +244,7 @@ def prepare_result_file_command(
     operation_id: str,
     cli_command: str,
     semantic_template: Mapping[str, Any],
+    attempt_id: str = "",
 ) -> tuple[str, Path]:
     state_root = Path(state_dir).expanduser().resolve()
     scratch_ref = str(result_scratch_ref or "").strip()
@@ -250,7 +253,14 @@ def prepare_result_file_command(
     scratch = (state_root / scratch_ref).resolve()
     if state_root not in scratch.parents:
         raise ValueError("result_scratch_ref escapes state dir")
-    if not scratch.exists():
+    if attempt_id:
+        from zf.runtime.result_scratch_attempt import prepare_attempt_scratch
+
+        prepare_attempt_scratch(
+            state_dir=state_root, scratch=scratch, operation_id=operation_id,
+            attempt_id=attempt_id, template=semantic_template,
+        )
+    elif not scratch.exists():
         atomic_write_text(
             scratch,
             json.dumps(
@@ -318,6 +328,10 @@ def prepare_fanout_result_guidance(
     if has_contract_snapshot:
         verification_prefix = "" if semantic_submit else "verification_result."
         guidance.extend([
+            "If required input delivery fails, use execution_status=failed, "
+            "verdict=abstained, failure_class=reader_execution_failure and durable "
+            "diagnostic evidence_refs. An incomplete read can report this technical "
+            "failure; it cannot establish a product verdict or passing requirements.",
             f"For `{verification_prefix}requirement_results[].status`, use only "
             "`passed`, `failed`, `blocked`, `waived`, or `not_applicable`; "
             "a `rejected` verdict requires at least one `failed` requirement.",
@@ -461,6 +475,23 @@ def prepare_profiled_stage_result(
         for key, value in semantic_body.items()
         if key not in _IMMUTABLE_RESULT_FIELDS
     }
+    is_discovery = (profile_id == "workflow-read"
+                    and child_payload.get("canonical_success_event") == "flow.discovery.child.completed")
+    if is_discovery:
+        from zf.runtime.product_acceptance import product_acceptance_binding_from_package, product_acceptance_report_template
+
+        package_ref = child_payload.get("plan_artifact_package_ref")
+        package_digest = child_payload.get("plan_artifact_package_digest")
+        if package_ref and package_digest:
+            binding = product_acceptance_binding_from_package(
+                state_dir, {"ref": package_ref, "sha256": package_digest},
+            )
+            if binding.get("spec"):
+                semantic_body.setdefault("product_acceptance_report", product_acceptance_report_template(
+                    spec=binding["spec"], spec_ref=binding["spec_ref"], spec_digest=binding["spec_digest"],
+                    candidate_ref=str(child_payload.get("candidate_ref") or ""),
+                    target_commit=str(child_payload.get("target_commit") or ""),
+                ))
     output_names = [
         str(port.get("name") or "").strip()
         for port in child_payload.get("workflow_output_ports") or []
@@ -485,6 +516,7 @@ def prepare_profiled_stage_result(
             )
         ),
         operation_id=str(child_payload["operation_id"]),
+        attempt_id=str(child_payload.get("attempt_id") or ""),
         cli_command=cli_command,
         semantic_template=semantic_body,
     )
@@ -493,8 +525,9 @@ def prepare_profiled_stage_result(
         "",
         f"- profile: `{profile_id}` revision `{profile_revision}`",
         f"- schema: `{profile.schema_version}`",
+        *result_workspace_guidance(scratch),
         f"- Edit `{scratch}`. Its JSON root is the complete "
-        f"`{profile.semantic_field}` body; preserve prefilled fields at the root. "
+        f"`{profile.semantic_field}` body; author fields for the actual outcome at the root. "
         f"Do not wrap it under `{profile.semantic_field}` or add identity fields. "
         "The Kernel supplies immutable identity and selects the canonical event.",
         "- Update the prefilled scratch file in place. With apply_patch use "
@@ -506,14 +539,23 @@ def prepare_profiled_stage_result(
         "- Submit authorization is transport-owned; do not print or inspect it.",
         "",
     ]
+    if (child_payload.get("task_id")
+            and (child_payload.get("handoff_authority_contract") or {}).get("operation_type") == "fanout_reader_child"):
+        lines.append("- Optional semantic checkpoint: `artifact recover`.")
     if profile_id in {"task-verify", "candidate-verify"}:
+        from zf.runtime.reader_submission_guidance import verifier_failure_schema_guidance
+        lines.append(verifier_failure_schema_guidance(
+            owner=str(semantic_body.get("verification_owner") or "task_verify"),
+            tier=str(semantic_body.get("verification_tier") or "runtime"),
+            submit_command=render_result_validate_command(command) + " --submit",
+        ))
         lines[7:7] = [
             "- Verification command IDs are a closed set. Use `command_id` only "
             "for an exact command already present in the prefilled template; "
             "record extra independent probes without `command_id` and attach "
             "their command/evidence through requirement reproduction evidence.",
         ]
-    if profile_id == "candidate-verify" and semantic_body.get("product_acceptance_report"):
+    if (profile_id == "candidate-verify" or is_discovery) and semantic_body.get("product_acceptance_report"):
         lines.extend([
             "- Candidate Product Acceptance is separate from task requirement rows: "
             "verify every mandatory product journey/assertion on this target, even "
@@ -571,7 +613,7 @@ def prepare_profiled_stage_result(
             "```",
             "",
         ])
-    elif profile_id in {"task-verify", "candidate-verify"}:
+    elif profile_id in {"task-verify", "candidate-verify"} or is_discovery:
         command = render_result_validate_command(command) + " --submit"
         operation_id = str(child_payload.get("operation_id") or "").strip()
         lines.extend([
@@ -637,6 +679,7 @@ def prepare_writer_execution_card(
             )
         ),
         operation_id=str(task_item["operation_id"]),
+        attempt_id=str(task_item.get("attempt_id") or ""),
         cli_command=cli_command,
         semantic_template={
             "schema_version": "implementation-result.v1",
@@ -656,15 +699,18 @@ def prepare_writer_execution_card(
         "## Output Contract",
         "",
         "- profile: `implementation` revision `1`",
+        *result_workspace_guidance(scratch),
         f"- Edit the complete semantic result at `{scratch}`.",
         "- Update the prefilled scratch file in place. With apply_patch use "
         "`*** Update File`; never delete, add, move, or recreate the scratch path.",
-        "- For a blocker, set `execution_status` to `failed`, describe "
-        "the reproducible blocker, and run the same submit command.",
-        "- If task capsule/briefing/snapshot versions disagree, stop and set "
-        "both `failure_class` and `blocker_kind` to `task_context_stale`; "
-        "attach the exact conflicting revisions as evidence. This is a "
-        "runtime context repair, not an upstream product scope gap.",
+        "- Blocked: execution_status=failed/verdict=blocked; target_commit=observed HEAD, "
+        "changed_files=actual diff, evidence_refs=durable refs. Clear template slots and "
+        "unexecuted self-check rows; unknown facts may be empty. Submit normally.",
+        "- Input delivery failure: execution_status=failed, verdict=blocked, "
+        "failure_class=blocker_kind=reader_execution_failure. Attach durable diagnostics/summary; "
+        "incomplete reads never justify success or product rejection.",
+        "- Capsule/briefing/snapshot version conflict: stop; set failure_class=blocker_kind="
+        "task_context_stale and cite conflicting revisions. Request context repair, not scope expansion.",
         "- If the blocker proves this task contract is unsatisfiable inside "
         "its allowed paths, set both `failure_class` and `blocker_kind` to "
         "one of `task_contract_unsatisfiable`, `upstream_contract_gap`, or "
@@ -674,6 +720,8 @@ def prepare_writer_execution_card(
         "- Self-check command IDs are a closed set. Include a command receipt "
         "only for an exact command already present in the prefilled template; "
         "record extra checks as evidence instead of inventing a `command_id`.",
+        "- Evidence: read done-contract's full lookup method. Hooks use --actor, not --task; "
+        "`event:<id>` can cite short output. Read truncated command previews in full.",
         "",
     ]
     return command, command, display, lines

@@ -40,10 +40,10 @@ class RuntimeAuthorityMixin:
         role_name: str,
         context: DispatchContext | None,
     ) -> None:
-        if context is None or not context.task_id:
+        if context is None:
             return
         try:
-            task = self.task_store.get(context.task_id)
+            task = self.task_store.get(context.task_id) if context.task_id else None
         except Exception:
             task = None
         from zf.runtime.run_admission import (
@@ -53,7 +53,9 @@ class RuntimeAuthorityMixin:
         )
 
         run_id = str(context.run_id or "")
-        blocker = run_dispatch_block_reason(self, task=task, run_id=run_id)
+        from zf.runtime.pause_lifecycle import is_dispatch_paused
+        blocker = ("dispatch_paused" if is_dispatch_paused(self.state_dir)
+                   else run_dispatch_block_reason(self, task=task, run_id=run_id))
         if not blocker:
             return
         record_run_dispatch_blocked(
@@ -82,11 +84,15 @@ class RuntimeAuthorityMixin:
             prepare_task_attempt,
         )
 
-        prepared = prepare_task_attempt(
-            self,
-            context=context,
-            briefing_path=briefing_path,
-        )
+        if context is not None and context.continuation:
+            from zf.runtime.task_attempt_continuation import validate_task_continuation
+
+            validate_task_continuation(self, role_name, context)
+            prepared = None
+        else:
+            prepared = prepare_task_attempt(
+                self, context=context, briefing_path=briefing_path,
+            )
         delivery_context = prepared.context if prepared is not None else context
         try:
             try:
@@ -101,7 +107,10 @@ class RuntimeAuthorityMixin:
                     raise
                 self.transport.send_task(role_name, briefing_path, prompt)
         except Exception as exc:
-            fail_task_attempt_delivery(self, prepared, error=exc)
+            from zf.runtime.provider_dispatch_wait import release_external_gate_delivery
+
+            if not release_external_gate_delivery(self, prepared, exc):
+                fail_task_attempt_delivery(self, prepared, error=exc)
             self._rollback_inflight_dispatch(delivery_context)
             raise
         mark_task_attempt_sent(self, prepared)

@@ -73,16 +73,30 @@ def pin_replayed_review_usage(
     old_source, new_source = previous[0], sources[0]
     old = hydrate_sidecar_ref(runtime.state_dir, dict(old_source)).payload
     new = hydrate_sidecar_ref(runtime.state_dir, dict(new_source)).payload
+    from zf.runtime.plan_execution_delivery import expanded_verification
+
+    old_comparable = expanded_verification(runtime.state_dir, old, manifest.get("sources", []))
+    new_comparable = expanded_verification(runtime.state_dir, new, payload.get("input_refs", []))
     # Usage is observational, while all candidate/policy/graph facts remain
     # request identity. A real change must still reach the divergence guard.
-    if ({key: value for key, value in old.items() if key != "usage_observations"}
-            != {key: value for key, value in new.items() if key != "usage_observations"}):
+    if ({key: value for key, value in old_comparable.items() if key != "usage_observations"}
+            != {key: value for key, value in new_comparable.items() if key != "usage_observations"}):
         return
     for key in ("ref", "sha256", "byte_count"):
         if key in old_source:
             new_source[key] = old_source[key]
         else:
             new_source.pop(key, None)
+    # Preserve the exact legacy inline/detail representation for this attempt.
+    refs = payload.get("input_refs", [])
+    refs[:] = [source for source in refs if not isinstance(source, Mapping)
+               or source.get("source_id") != "plan-execution-verification"]
+    old_verification = [source for source in manifest.get("sources", [])
+                        if source.get("source_id") == "plan-execution-verification"]
+    if old_verification:
+        position = next(i for i, source in enumerate(refs)
+                        if source.get("source_id") == "plan-execution-review")
+        refs.insert(position, dict(old_verification[0]))
     old_usage = [source for source in manifest.get("sources", [])
                  if source.get("source_id") == "plan-execution-usage"]
     if len(old_usage) > 1:

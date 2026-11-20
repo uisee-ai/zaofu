@@ -246,6 +246,15 @@ def _probe_provider_auth(backend: str) -> tuple[bool, str]:
     command, login_hint = command_and_hint
     if shutil.which(command[0]) is None:
         return False, f"command missing: {command[0]!r}"
+    from zf.integrations.controller.cpa_client import KEY_FILE, URL_VARIABLE, WRAPPER_BIN, read_key
+
+    if (os.environ.get(URL_VARIABLE[command[0]])
+            and shutil.which(command[0]) == str(WRAPPER_BIN / command[0])):
+        try:
+            read_key(KEY_FILE)
+        except (OSError, ValueError):
+            return False, "Workspace CPA inference credential unavailable"
+        return True, "Workspace CPA inference credential configured"
     if probe_backend == "claude-code" and any(
         str(os.environ.get(name) or "").strip()
         for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")

@@ -559,6 +559,14 @@ class FanoutDispatchLivenessMixin:
                 "failure_class": "worker_noop_or_terminal_missing",
                 "lost_signal_event_id": lost_event.id,
                 "lost_signal_type": lost_event.type,
+                "report": {
+                    "child_id": child_id, "status": "failed", "execution_status": "failed",
+                    "failure_class": "reader_execution_failure", "recommendation": "needs_rework",
+                    "summary": "Reader transport recovery exhausted without a canonical result",
+                    "findings": [{"severity": "high", "category": "reader_execution_failure",
+                                  "message": f"{loss_reason}_recovery_exhausted",
+                                  "evidence_refs": [f"events.jsonl#{lost_event.id}"]}],
+                },
             },
             causation_id=lost_event.id,
             correlation_id=trace_id,
@@ -592,6 +600,7 @@ class FanoutDispatchLivenessMixin:
         prompt_kind: str = "fanout_child",
         skip_send_window: bool = False,
         provider_session_replaced: bool = False,
+        prepare_only: bool = False,
     ) -> bool:
         """Return whether a fanout role can receive a prompt now."""
 
@@ -625,6 +634,22 @@ class FanoutDispatchLivenessMixin:
                     force=True,
                 )
                 state = "idle"
+
+        if prepare_only:
+            # Check ownership before materializing skills or mutating a target,
+            # but never activate a provider just to prepare its workspace.
+            busy = state in {"busy", "blocked_human", "recycling", "respawning"}
+            turning = self._fanout_role_has_active_provider_turn(role.instance_id)
+            if busy or turning:
+                self._emit_fanout_dispatch_deferred_once(
+                    fanout_id=fanout_id, trace_id=trace_id, stage_id=stage_id,
+                    child_id=child_id, run_id=run_id, role_instance=role.instance_id,
+                    prompt_kind=prompt_kind,
+                    reason="provider_turn_active" if turning else f"worker_state_not_dispatchable:{state}",
+                    state=state, alive=None, dispatchable=False, causation_id=causation_id,
+                )
+                return False
+            return True
 
         context_ready, context_rotation = self._prepare_reader_fanout_context(
             role=role,
@@ -827,7 +852,7 @@ class FanoutDispatchLivenessMixin:
         prompt_kind: str,
         reason: str,
         state: str,
-        alive: bool,
+        alive: bool | None,
         dispatchable: bool,
         causation_id: str | None,
     ) -> None:

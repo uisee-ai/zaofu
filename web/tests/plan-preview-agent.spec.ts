@@ -89,6 +89,7 @@ test("quoted Preview preserves reading typography and formats a long table with 
   const heading = panel.getByRole("heading", { name: "格式化长计划", exact: true });
   await expect(heading).toBeVisible();
   const readingFont = await heading.evaluate(element => getComputedStyle(element).fontSize);
+  const readingWeight = await panel.locator('[data-streamdown="strong"]').filter({ hasText: /^原子提交$/ }).evaluate(element => getComputedStyle(element).fontWeight);
   await panel.getByRole("button", { name: "引用编辑", exact: true }).click();
   const document = panel.getByTestId("plan-review-document");
   await expect(document.getByRole("heading", { name: "格式化长计划", exact: true })).toHaveCSS("font-size", readingFont);
@@ -96,7 +97,7 @@ test("quoted Preview preserves reading typography and formats a long table with 
   await expect(document.locator(".agent-markdown-plain-guard")).toHaveCount(0);
   const bold = document.locator('[data-streamdown="strong"]');
   await expect(bold).toContainText(["原子提交"]);
-  await expect(bold).toHaveCSS("font-weight", "700");
+  await expect(bold).toHaveCSS("font-weight", readingWeight);
   const toolbar = panel.getByRole("navigation", { name: "Plan document view" });
   await expect(toolbar.getByRole("button", { name: "Preview", exact: true })).toHaveAttribute("aria-pressed", "true");
   await toolbar.getByRole("button", { name: "Raw", exact: true }).click();
@@ -128,10 +129,12 @@ test("Inbox Plan editing uses quoted headless chat and keeps approval locked thr
   let applied = 0;
   await page.route("**/actions/chat-orchestrator", route => { legacyChats++; return route.fulfill({ json: { ok: false } }); });
   await page.route("**/actions/plan-approve", route => { approvals++; return route.fulfill({ json: { ok: true } }); });
-  await page.route(`**/plans/${planId}/preview`, async route => {
-    const response = await route.fetch();
-    await route.fulfill({ json: { ...await response.json(), status } });
-  });
+  for (const endpoint of ["preview", "preview/summary"]) {
+    await page.route(`**/plans/${planId}/${endpoint}`, async route => {
+      const response = await route.fetch();
+      await route.fulfill({ json: { ...await response.json(), status } });
+    });
+  }
   await page.route("**/plan-artifact-review", async route => {
     const payload = route.request().postDataJSON();
     if (payload.operation === "context") {

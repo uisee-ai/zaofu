@@ -3,7 +3,7 @@
 Run: uvicorn tests.plan_preview_app:create_test_app --factory --host 0.0.0.0 --port 8003
 The data is explicitly synthetic; no provider, product run, or approval occurs.
 """
-import atexit
+from contextlib import asynccontextmanager
 import hashlib
 import json
 import os
@@ -15,6 +15,7 @@ from zf.core.config.loader import load_config
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
+from zf.core.state.atomic_io import atomic_write_text
 from zf.runtime.plan_artifact_package import build_plan_artifact_package, write_plan_artifact_package
 from zf.web.server import create_app
 from tests.test_plan_artifact_package import _fixture_port, _run_contract
@@ -22,7 +23,6 @@ from tests.test_plan_artifact_package import _fixture_port, _run_contract
 
 def create_test_app():
     directory = TemporaryDirectory(prefix=f"zf-plan-preview-e2e-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-")
-    atexit.register(directory.cleanup)
     root = Path(directory.name)
     # The standalone fixture also starts workspace background consumers.
     # Never let a browser simulation discover or consume real projects.
@@ -64,9 +64,6 @@ def create_test_app():
     )
     descriptor = write_plan_artifact_package(state, package)
     writer = EventWriter(EventLog(state / "events.jsonl"))
-    atexit.register(writer.append, ZfEvent(
-        type="simulation.done", actor="fixture", payload={"purpose": "plan-preview-e2e"},
-    ))
     for plan_id, plan_ref in [("evt-preview-complete", "artifacts/full-plan.md"), ("evt-preview-missing", "artifacts/missing.md"), ("evt-preview-digest", ""), ("evt-preview-long", "artifacts/long-plan.md"), ("evt-preview-rich", "artifacts/rich-plan.md"), ("evt-preview-undeclared", "artifacts/full-plan.md")]:
         content_profile = "summary_only" if plan_id == "evt-preview-digest" else "derived_plan_full"
         writer.append(ZfEvent(type="plan.approval.requested", actor="fixture", payload={
@@ -80,4 +77,31 @@ def create_test_app():
     from tests.plan_human_review_fixture import add_human_review_fixture
 
     add_human_review_fixture(state, writer)
-    return create_app(state, config=load_config(config_path), project_root=root)
+    from tests.plan_source_document_fixture import add_source_document_fixture
+
+    add_source_document_fixture(state, writer)
+    from tests.plan_review_policy_fixture import add_plan_review_policy_fixtures
+    add_plan_review_policy_fixtures(state, writer)
+    app = create_app(state, config=load_config(config_path), project_root=root)
+    original_lifespan = app.router.lifespan_context
+    receipt_path = os.environ.get("ZF_PREVIEW_FIXTURE_RECEIPT", "")
+
+    def receipt(body):
+        if receipt_path:
+            atomic_write_text(Path(receipt_path), json.dumps({"fixture_root": str(root), **body}) + "\n")
+
+    @asynccontextmanager
+    async def fixture_lifespan(application):
+        try:
+            async with original_lifespan(application):
+                receipt({"status": "started"})
+                yield
+        finally:
+            event = writer.append(ZfEvent(type="simulation.done", actor="fixture",
+                payload={"purpose": "plan-preview-e2e"}))
+            directory.cleanup()
+            receipt({"status": "cleaned", "simulation_done_event_id": event.id,
+                     "fixture_removed": not root.exists()})
+
+    app.router.lifespan_context = fixture_lifespan
+    return app

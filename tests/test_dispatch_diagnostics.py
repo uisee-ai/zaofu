@@ -13,6 +13,7 @@ from zf.runtime.dispatch_diagnostics import (
     build_dispatch_diagnostics,
     build_worker_availability,
 )
+from zf.runtime.workflow_anchor import mark_workflow_managed_task
 
 
 def _state_dir(tmp_path: Path) -> Path:
@@ -109,6 +110,66 @@ def test_fanout_child_dispatch_satisfies_assigned_without_dispatch(
     assert not any(
         item["kind"] == "assigned_without_dispatch"
         and item["task_id"] == "TASK-1"
+        for item in diagnostics["notifications"]
+    )
+
+
+def test_terminal_task_clears_historical_assignment_without_dispatch(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state_dir(tmp_path)
+    now = datetime.now(timezone.utc)
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(
+        type="task.assigned",
+        actor="zf-cli",
+        task_id="TASK-1",
+        ts=(now - timedelta(seconds=60)).isoformat(),
+        payload={"assignee": "dev-1"},
+    ))
+    log.append(ZfEvent(
+        type="task.done",
+        actor="zf-cli",
+        task_id="TASK-1",
+        ts=(now - timedelta(seconds=5)).isoformat(),
+        payload={"authority": "task_integration_receipt"},
+    ))
+
+    diagnostics = build_dispatch_diagnostics(state_dir)
+
+    assert not any(
+        item["kind"] == "assigned_without_dispatch"
+        and item["task_id"] == "TASK-1"
+        for item in diagnostics["notifications"]
+    )
+
+
+def test_workflow_managed_backlog_anchor_is_not_provider_ready(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state_dir(tmp_path)
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(mark_workflow_managed_task(Task(
+        id="FLOW-ROOT",
+        title="workflow root",
+        status="backlog",
+        contract=TaskContract(evidence_contract={"execution_owner": "workflow"}),
+    )))
+    log = EventLog(state_dir / "events.jsonl")
+    for _ in range(2):
+        log.append(ZfEvent(
+            type="orchestrator.dispatch_skipped",
+            actor="zf-cli",
+            task_id="FLOW-ROOT",
+            payload={"reason": "workflow_runtime_owned"},
+        ))
+
+    diagnostics = build_dispatch_diagnostics(state_dir)
+
+    assert diagnostics["ready_task_count"] == 0
+    assert not any(
+        item["kind"] == "repeated_dispatch_skipped"
+        and item["task_id"] == "FLOW-ROOT"
         for item in diagnostics["notifications"]
     )
 

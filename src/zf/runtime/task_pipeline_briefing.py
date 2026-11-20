@@ -253,6 +253,11 @@ def write_task_pipeline_briefing(
     ]
     if controlled_inputs:
         lines.extend([controlled_inputs, ""])
+    if payload.get("task_handoff_ref"):
+        digest = payload["task_handoff_ref"]["sha256"]
+        lines.extend(["## Handoff receipt", "Read the complete task-handoff required input, then acknowledge its exact version:",
+            f"`{zf_cli_cmd()} artifact handoff-accept --operation {prepared.operation_id} --digest {digest}`",
+            "Receipt confirms this handoff was received. Current task authority and independent result gates still apply.", ""])
     feedback = payload.get("rework_feedback")
     if feedback:
         lines.extend([

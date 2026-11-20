@@ -1010,7 +1010,12 @@ def agent_session_history(
             task_id=task_id,
         ):
             continue
-        out.append(_full_event_dict(seq, event))
+        out.append(_bind_kanban_history_event(
+            _full_event_dict(seq, event),
+            project_id=project_id,
+            conversation_id=conversation_id,
+            thread_id=thread_id,
+        ))
         primary_oldest_seq = seq
         if len(out) >= limit:
             break
@@ -1232,6 +1237,10 @@ def operator_inbox(
         PLAN_APPROVAL_REQUESTED,
         PLAN_APPROVED,
         PLAN_REJECTED,
+        # Semantic PRD approvals can be emitted without a preceding plan
+        # approval request.  Keep task_map.ready available so the inbox can
+        # bind the resolved item to its canonical Plan/PRD artifacts.
+        "task_map.ready",
         GENERIC_APPROVAL_REQUESTED,
         GENERIC_APPROVAL_RESOLVED,
         GENERIC_APPROVAL_EXPIRED,
@@ -1255,7 +1264,7 @@ def operator_inbox(
     events = hydrate_events(
         state_dir,
         types=types,
-        type_prefixes=["runtime.attention.", "channel.member."],
+        type_prefixes=["runtime.attention.", "channel.member.", "workflow.request."],
         config=config,
         require_fresh=True,
         slim=False,
@@ -1358,7 +1367,12 @@ def _kanban_agent_context_events(
             continue
         if not _kanban_agent_is_context_event(event, turn_ids=turn_ids, message_event_ids=message_event_ids):
             continue
-        out.append(_full_event_dict(seq, event))
+        out.append(_bind_kanban_history_event(
+            _full_event_dict(seq, event),
+            project_id=project_id,
+            conversation_id=conversation_id,
+            thread_id=thread_id,
+        ))
         if len(out) >= 80:
             break
     return list(reversed(out))
@@ -1474,7 +1488,13 @@ def _kanban_agent_history_event_matches(
         return False
     payload_conversation = str(payload.get("conversation_id") or "").strip()
     if conversation_id and payload_conversation and payload_conversation != conversation_id:
-        return False
+        if not _kanban_identity_alias(
+            project_id,
+            requested=conversation_id,
+            actual=payload_conversation,
+            kind="conversation",
+        ):
+            return False
     if event_type not in {
         "kanban.agent.proposal.resolved",
         "operator.action.resolved",
@@ -1482,7 +1502,13 @@ def _kanban_agent_history_event_matches(
     }:
         payload_thread = str(payload.get("thread_key") or payload.get("thread_id") or "").strip() or "main"
         if thread_id and payload_thread != thread_id:
-            return False
+            if not _kanban_identity_alias(
+                project_id,
+                requested=thread_id,
+                actual=payload_thread,
+                kind="thread",
+            ):
+                return False
     # NOTE (frontend-stress S9/S10 2026-07-15): do NOT exclude by backend.
     # The kanban-agent conversation is one durable thread per (project, thread_id)
     # that legitimately spans backends — a user may switch codex<->claude mid
@@ -1497,6 +1523,64 @@ def _kanban_agent_history_event_matches(
     if task_id and event.task_id and event.task_id != task_id:
         return False
     return True
+
+
+def _kanban_identity_alias(
+    project_id: str,
+    *,
+    requested: str,
+    actual: str,
+    kind: str,
+) -> bool:
+    """Match the pre-migration Kanban identity in a project read projection.
+
+    Older headless turns used ``kanban-agent:<project>/main`` while the Web
+    surface now uses ``kanban:<project>/kanban:<project>``.  The event ledger
+    remains unchanged; this narrow alias only lets the current read model
+    render those historical turns in the canonical project conversation.
+    """
+    if not project_id or not requested or not actual:
+        return False
+    if kind == "conversation":
+        aliases = {f"kanban:{project_id}", f"kanban-agent:{project_id}"}
+    elif kind == "thread":
+        aliases = {f"kanban:{project_id}", "main"}
+    else:
+        return False
+    return requested in aliases and actual in aliases
+
+
+def _bind_kanban_history_event(
+    item: dict[str, Any],
+    *,
+    project_id: str,
+    conversation_id: str,
+    thread_id: str,
+) -> dict[str, Any]:
+    payload = item.get("payload")
+    if not isinstance(payload, dict):
+        return item
+    actual_conversation = str(payload.get("conversation_id") or "").strip()
+    actual_thread = str(payload.get("thread_key") or payload.get("thread_id") or "").strip() or "main"
+    if (
+        conversation_id
+        and actual_conversation
+        and actual_conversation != conversation_id
+        and _kanban_identity_alias(project_id, requested=conversation_id, actual=actual_conversation, kind="conversation")
+    ) or (
+        thread_id
+        and actual_thread != thread_id
+        and _kanban_identity_alias(project_id, requested=thread_id, actual=actual_thread, kind="thread")
+    ):
+        bound = dict(item)
+        bound_payload = dict(payload)
+        if conversation_id:
+            bound_payload["conversation_id"] = conversation_id
+        if thread_id:
+            bound_payload["thread_key"] = thread_id
+        bound["payload"] = bound_payload
+        return bound
+    return item
 
 
 def _canonical_backend(value: str) -> str:

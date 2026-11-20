@@ -26,9 +26,7 @@ def _verification_summary(item: dict) -> str:
 
 
 def _is_assembly(item: dict) -> bool:
-    if str(item.get("root_owner_class") or "") == "assembly":
-        return True
-    return "ASSEMBLY" in str(item.get("task_id") or "").upper()
+    return str(item.get("root_owner_class") or "").strip().lower() == "assembly"
 
 
 def _root_paths(item: dict) -> list[str]:
@@ -41,17 +39,31 @@ def _root_paths(item: dict) -> list[str]:
     return out
 
 
-def _is_simple_serial(
-    items: list[dict],
-    *,
-    missing_verify: list[str],
-    overlaps: list[str],
-) -> bool:
-    if len(items) != 1 or missing_verify or overlaps:
-        return False
-    item = items[0]
-    paths = [str(path).strip() for path in item.get("allowed_paths", []) or []]
-    return bool(paths) and not _is_assembly(item) and not _root_paths(item)
+def _assembly_check(items: list[dict]) -> tuple[bool | None, str]:
+    """Project the same owner/dependency topology used by Task Map admission."""
+    from zf.runtime.task_map_assembly import assembly_ownership_errors
+
+    ids = [str(item.get("task_id") or "") for item in items]
+    if (not items or not all(ids) or len(set(ids)) != len(ids)
+            or any(not str(item.get("owner_role") or "").strip() for item in items)):
+        return None, "owner/任务身份不完整，无法确认 assembly 拓扑；请核对完整任务图"
+    dependencies = {}
+    assemblies, bundles = {}, {}
+    for item in items:
+        task_id = str(item["task_id"])
+        blocked = item.get("blocked_by", [])
+        if not isinstance(blocked, list) or any(not isinstance(dep, str) or dep not in ids for dep in blocked):
+            return None, "依赖身份不完整，无法确认 assembly 拓扑"
+        dependencies[task_id] = blocked
+        target = assemblies if str(item.get("root_owner_class") or "").strip().lower() == "assembly" else bundles
+        target[task_id] = str(item["owner_role"]).strip()
+    errors = assembly_ownership_errors(assembly_owner_roles=assemblies,
+        bundle_owner_roles=bundles, task_dependencies=dependencies)
+    if errors:
+        return False, "; ".join(errors)
+    if assemblies:
+        return True, ", ".join(assemblies)
+    return True, "串行或单一 owner 拓扑，不要求独立 assembly 任务；集成验收责任仍须保留"
 
 
 def plan_digest_checklist(
@@ -63,7 +75,7 @@ def plan_digest_checklist(
 ) -> list[dict[str, Any]]:
     """机械核结果(每项 {key,label,ok,detail})—— 红绿一眼可见。"""
     items = list(task_items or [])
-    assemblies = [i for i in (assembly_context_items if assembly_context_items is not None else items) if _is_assembly(i)]
+    assembly_items = assembly_context_items if assembly_context_items is not None else items
     root_owners = [i for i in items if _root_paths(i)]
     root_path_owners: dict[str, set[str]] = defaultdict(set)
     for item in root_owners:
@@ -89,20 +101,9 @@ def plan_digest_checklist(
                 overlaps.append(f"{p} ({seen[p]} ∩ {tid})")
             else:
                 seen[p] = tid
-    simple_serial = _is_simple_serial(
-        items,
-        missing_verify=missing_verify,
-        overlaps=overlaps,
-    )
-    assembly_ok = len(assemblies) >= 1 or simple_serial
-    if assemblies:
-        assembly_detail = ", ".join(str(i.get("task_id")) for i in assemblies)
-        if assembly_context_items is not None:
-            assembly_detail += "（完整任务图）"
-    elif simple_serial:
-        assembly_detail = f"simple serial: {items[0].get('task_id')}"
-    else:
-        assembly_detail = "缺 assembly 任务"
+    assembly_ok, assembly_detail = _assembly_check(assembly_items)
+    if assembly_context_items is not None:
+        assembly_detail += "（完整任务图）"
     checks = [
         {"key": "assembly_present", "label": "assembly/根 owner 在位",
          "ok": assembly_ok,
@@ -199,7 +200,7 @@ def render_plan_digest(
         require_unique_owner_roles=require_unique_owner_roles,
         assembly_context_items=assembly_context_items,
     ):
-        lines.append(f"- {'🟢' if c['ok'] else '🔴'} **{c['label']}** — {c['detail']}")
+        lines.append(f"- {'⚪' if c['ok'] is None else '🟢' if c['ok'] else '🔴'} **{c['label']}** — {c['detail']}")
     lines.append("")
     return "\n".join(lines)
 

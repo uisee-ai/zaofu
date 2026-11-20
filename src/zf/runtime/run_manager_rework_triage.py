@@ -61,8 +61,6 @@ def pending_rework_triage_actions(
 ) -> list[dict[str, Any]]:
     """Derive one current Run Manager action per repeated-failure scope."""
 
-    if threshold <= 0:
-        return []
     now = now or datetime.now(timezone.utc)
     groups: dict[tuple[str, str], tuple[int, ZfEvent]] = {}
     for index, event in enumerate(events):
@@ -82,8 +80,7 @@ def pending_rework_triage_actions(
             or payload.get("fingerprint")
             or event.id
         )
-        failure_count = int(payload.get("failure_count") or payload.get("retry_count") or 0)
-        if not task_id or failure_count < threshold:
+        if not task_id:
             continue
         groups[(task_id, fingerprint)] = (index, event)
 
@@ -411,6 +408,7 @@ def _request_action(
         ),
         "failure_count": int(payload.get("failure_count") or payload.get("retry_count") or 0),
         "triage_threshold": threshold,
+        "semantic_triage_required": payload.get("semantic_triage_required") is True,
         "owner_route": "run_manager",
         "action_policy": "auto_decide",
         "intervention_class": "semantic_replan",
@@ -876,11 +874,13 @@ def _event_age_seconds(event: ZfEvent, now: datetime) -> int:
 def is_semantic_triage_cap(event: ZfEvent, *, threshold: int) -> bool:
     """Separate same-fingerprint semantic caps from aggregate retry exhaustion."""
 
-    if event.type not in _TRIAGE_CAP_EVENTS or threshold <= 0:
+    if event.type not in _TRIAGE_CAP_EVENTS:
         return False
     payload = _payload(event)
-    if bool(payload.get("semantic_triage_required")):
+    if payload.get("semantic_triage_required") is True:
         return True
+    if threshold <= 0:
+        return False
     evidence_ids = _string_list(payload.get("failure_event_ids"))
     return bool(
         str(payload.get("failure_fingerprint") or "").strip()
@@ -918,7 +918,7 @@ def triage_action_preflight(
             and bool(payload.get("task_map_generation"))
             and int(payload.get("failure_count") or 0) >= 1
         )
-        if not execution_review and int(payload.get("failure_count") or 0) < threshold:
+        if not execution_review and payload.get("semantic_triage_required") is not True and int(payload.get("failure_count") or 0) < threshold:
             failures.append("failure_count_below_semantic_triage_threshold")
         if not _string_list(payload.get("source_event_ids")):
             failures.append("missing_failure_evidence")

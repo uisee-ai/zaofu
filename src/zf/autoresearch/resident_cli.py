@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fcntl
 import signal
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,24 @@ from zf.autoresearch.resident import actions_json, run_resident_once
 
 
 def run_resident_cli(args: Any, *, state_dir: Path) -> int:
+    if not args.execute:
+        return _run_resident_loop(args, state_dir=state_dir)
+    # The launcher lock dies with the watcher; this lock belongs to the actual
+    # consumer, including orphaned residents and direct one-shot CLI calls.
+    lock_path = state_dir.resolve() / "processes" / "autoresearch-resident-execution.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f"Autoresearch resident already running for {state_dir}", file=sys.stderr)
+            return 1
+        # Never unlink: waiters must always contend on the same inode. Closing
+        # the non-inheritable descriptor releases ownership even after a crash.
+        return _run_resident_loop(args, state_dir=state_dir)
+
+
+def _run_resident_loop(args: Any, *, state_dir: Path) -> int:
     output_root = (
         args.output_root
         if args.output_root is not None
@@ -29,6 +49,11 @@ def run_resident_cli(args: Any, *, state_dir: Path) -> int:
     previous_sigterm = signal.signal(signal.SIGTERM, _request_shutdown)
     try:
         while not shutdown_requested.is_set():
+            if args.execute:
+                from zf.autoresearch.interrupted_checkpoint import reconcile_interrupted
+                from zf.core.events import EventWriter
+                from zf.core.events.factory import event_log_from_project
+                reconcile_interrupted(EventWriter(event_log_from_project(state_dir)), state_dir=state_dir)
             actions = run_resident_once(
                 state_dir=state_dir,
                 worktree_root=args.worktree_root,
@@ -41,6 +66,10 @@ def run_resident_cli(args: Any, *, state_dir: Path) -> int:
                 should_stop=shutdown_requested.is_set,
             )
             print(actions_json(actions), flush=True)
+            from zf.runtime.autoresearch_parent_exit import parent_completed
+            from zf.core.events.factory import event_log_from_project
+            if not actions and parent_completed(event_log_from_project(state_dir).read_all()):
+                break  # continue policy drains its finite queue, then releases ownership
             if shutdown_requested.is_set() or not getattr(args, "watch", False):
                 break
             shutdown_requested.wait(interval)

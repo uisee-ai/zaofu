@@ -51,6 +51,10 @@ Run 内 OA 消费已确认需求，提出路线、任务映射或有界修订；
   Owner；不得据此要求当前任务越权实现后续模块，也不得宣称候选通过。当前任务本应
   提供的产物或检查失败仍阻塞交付。若返工指令已与冻结责任冲突，修订指令或走受控
   Plan 修订，保留已有提交与失败记录；不能靠重复派发、扩额或改判旧结果解决。
+- semantic failure 输入含 `candidate_verify` 时，对照冻结 Plan、独立 Verify 结果和外部依据。
+  若当前批准内容妨碍修复，可将 `return_to_plan` 的目标原样绑定为 checkpoint 所列的
+  reader、attempt、stage 和锚点 Task，向 Planner 说明受影响子任务及保留的提交。
+  该动作只请求新 Plan。普通实现缺陷继续走已有产品返工，证据不足时提交待核实项。
 - 绑定模板 ID、输入 refs/digests、generation 和精确 target；解释选择理由。
   不存在匹配能力时提交能力缺口，不静默降低 Verify/Critic 或完成要求。
 - typed delta 的 `basis_refs`、`reuse_refs`、`invalidate_refs` 必须逐项匹配本 operation

@@ -24,6 +24,7 @@ from zf.runtime.candidate_incremental import (
     CandidateIncrementalError,
     _rolling_smoke_environment_error,
     _rolling_smoke_command,
+    _restore_rolling_smoke_producer_paths,
     _select_integration_base,
     _successor_contract_binds_base,
     _update_candidate_ref,
@@ -46,7 +47,7 @@ def test_rolling_smoke_npm_prefix_runs_from_package_root(tmp_path) -> None:
 def test_rolling_smoke_reports_missing_npm_environment(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
-    (app / "package.json").write_text("{}\n", encoding="utf-8")
+    (app / "package.json").write_text('{"devDependencies":{"typescript":"*"}}\n', encoding="utf-8")
 
     error = _rolling_smoke_environment_error(
         "npm --prefix app exec tsc -- --noEmit",
@@ -54,6 +55,28 @@ def test_rolling_smoke_reports_missing_npm_environment(tmp_path) -> None:
     )
 
     assert error == f"candidate_environment_not_ready: dependencies missing at {app}"
+
+
+def test_rolling_smoke_restores_declared_tracked_producer_paths(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Integration Test")
+    _git(tmp_path, "config", "user.email", "integration@example.com")
+    output = tmp_path / "app" / "evidence.json"
+    output.parent.mkdir()
+    output.write_text("committed\n", encoding="utf-8")
+    _git(tmp_path, "add", "app/evidence.json")
+    _git(tmp_path, "commit", "-q", "-m", "base")
+    commit = _git(tmp_path, "rev-parse", "HEAD")
+    output.write_text("generated\n", encoding="utf-8")
+
+    _restore_rolling_smoke_producer_paths(
+        tmp_path,
+        target_commit=commit,
+        producer_paths=["app/evidence.json"],
+    )
+
+    assert output.read_text(encoding="utf-8") == "committed\n"
+    assert _git(tmp_path, "status", "--porcelain") == ""
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json
 from zf.runtime.task_refs import TaskRefManager
 from zf.runtime.task_pipeline_terminal import (
@@ -1130,6 +1153,19 @@ def test_archived_slot_release_reprobes_after_safe_terminate_rejection(
         binding_key=binding["binding_key"],
         role_instance="verify-1",
     )
+    from zf.runtime.provider_turn_liveness import active_codex_turn
+
+    writer.append(ZfEvent(
+        type="codex.hook.user_prompt_submit", actor="verify-1",
+        payload={"session_id": "archived", "turn_id": "archived"},
+    ))
+
+    def emit_lifecycle(event_type, role, *, task_id, payload):
+        writer.append(ZfEvent(
+            type=event_type, actor="orchestrator", origin="kernel", task_id=task_id,
+            payload={"instance_id": role.instance_id, **payload},
+        ))
+
     probes = iter((True, alive_after_failure))
 
     class _Transport:
@@ -1148,7 +1184,7 @@ def test_archived_slot_release_reprobes_after_safe_terminate_rejection(
             SimpleNamespace(instance_id=instance)
         ),
         _set_worker_state=lambda *_args, **_kwargs: None,
-        _emit_role_lifecycle_event=lambda *_args, **_kwargs: None,
+        _emit_role_lifecycle_event=emit_lifecycle,
     )
 
     assert _release_archived_task_stage_slot(
@@ -1172,3 +1208,4 @@ def test_archived_slot_release_reprobes_after_safe_terminate_rejection(
         ) or ""
     )
     assert (active_key == "") is released
+    assert (active_codex_turn(log, state_dir, "verify-1") is None) is released

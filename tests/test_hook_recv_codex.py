@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from zf.cli.hook_workdir_guard import bash_command_looks_mutating
 from zf.cli.hook_recv import run as hook_recv_run
 from zf.core.events.log import EventLog
@@ -474,6 +476,77 @@ def _seed_scoped_worker_task(state_dir: Path, scope: list[str]) -> Path:
     return transcript
 
 
+def test_codex_task_pipeline_workspace_is_authorized_for_active_attempt(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The running operation authorizes its current task-stage worktree."""
+
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    role_root = state_dir / "workdirs" / "prd-dev-lane-0" / "project"
+    role_root.mkdir(parents=True)
+    task_root = state_dir / "workdirs" / "tasks" / "run-1" / "TASK-1" / "g1" / "project"
+    task_root.mkdir(parents=True)
+    (task_root / ".git").mkdir()
+    transcript = (
+        state_dir / "workdirs" / "prd-dev-lane-0" / "codex-home"
+        / "sessions" / "2026" / "10" / "25" / "rollout.jsonl"
+    )
+    event_log = EventLog(state_dir / "events.jsonl")
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="TASK-1", status="in_progress", contract=TaskContract(scope=["app/**"]),
+    ))
+    dispatch_payload = {
+        "role_instance": "prd-dev-lane-0",
+        "assignee": "prd-dev-lane-0",
+        "task_id": "TASK-1",
+        "operation_id": "op-1",
+        "attempt_id": "attempt-1",
+        "task_pipeline_stage": "impl",
+        "dispatch_id": "dispatch-1",
+        "task_map_generation": "map-1",
+        "workspace_generation": 1,
+        "placement_epoch": 1,
+        "workdir": str(task_root),
+    }
+    writer = EventWriter(event_log)
+    for kind in (
+        "workflow.operation.requested", "workflow.operation.started",
+        "task.pipeline.stage.dispatched",
+    ):
+        writer.append(ZfEvent(
+            type=kind, actor="orchestrator", origin="kernel",
+            task_id="TASK-1", payload=dispatch_payload,
+        ))
+
+    code = _invoke(
+        state_dir,
+        event="codex.hook.pre_tool_use",
+        backend="codex",
+        payload={
+            "session_id": "uuid-task-pipeline",
+            "transcript_path": str(transcript),
+            "cwd": str(task_root),
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "command": (
+                    "*** Begin Patch\n"
+                    "*** Add File: app/src/index.ts\n"
+                    "+export {};\n"
+                    "*** End Patch"
+                ),
+            },
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code != 2
+    assert not [
+        event for event in event_log.read_all()
+        if event.type == "worker.scope_write.rejected"
+    ]
+
+
 def test_codex_apply_patch_blocks_write_outside_allowed_paths(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -546,9 +619,11 @@ def test_codex_apply_patch_allows_write_inside_allowed_paths(
     assert not [e for e in events if e.type == "worker.scope_write.rejected"]
 
 
+@pytest.mark.parametrize("tool_name", ["apply_patch", "Bash"])
 def test_codex_allowed_paths_guard_allows_only_current_result_scratch(
     tmp_path: Path,
     monkeypatch,
+    tool_name: str,
 ) -> None:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -598,6 +673,13 @@ def test_codex_allowed_paths_guard_allows_only_current_result_scratch(
     sibling.write_text("{}\n", encoding="utf-8")
 
     def invoke_patch(target: Path, session_id: str) -> int:
+        patch = (
+            "*** Begin Patch\n"
+            f"*** Update File: {target}\n"
+            "@@\n-{}\n+{\"verdict\": \"passed\"}\n*** End Patch"
+        )
+        if tool_name == "Bash":
+            patch = f"apply_patch <<'PATCH'\n{patch}\nPATCH"
         return _invoke(
             state_dir,
             event="codex.hook.pre_tool_use",
@@ -605,17 +687,8 @@ def test_codex_allowed_paths_guard_allows_only_current_result_scratch(
             payload={
                 "session_id": session_id,
                 "transcript_path": str(transcript),
-                "tool_name": "apply_patch",
-                "tool_input": {
-                    "command": (
-                        "*** Begin Patch\n"
-                        f"*** Update File: {target}\n"
-                        "@@\n"
-                        "-{}\n"
-                        "+{\"verdict\": \"passed\"}\n"
-                        "*** End Patch"
-                    ),
-                },
+                "tool_name": tool_name,
+                "tool_input": {"command": patch},
             },
             monkeypatch=monkeypatch,
         )

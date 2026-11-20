@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any
 
@@ -52,6 +52,9 @@ class TaskContract:
     canonical_behavior_test: str = ""
     package_namespace: str = ""
     scope: list[str] = field(default_factory=list)
+    # Source-authored conditions (including approval boundaries), not permission
+    # grants. Keep them in the canonical contract through Workflow preparation.
+    constraints: list[str] = field(default_factory=list)
     affected_files: list[str] = field(default_factory=list)
     exclusions: list[str] = field(default_factory=list)
     explicit_non_goals: list[str] = field(default_factory=list)
@@ -150,6 +153,14 @@ class TaskContract:
     #    "test":   {"enabled": False}}
     # Empty dict = inherit yaml default verbatim (current behavior).
     quality_gates_override: dict = field(default_factory=dict)
+
+
+def task_contract_identity_payload(contract: TaskContract) -> dict[str, Any]:
+    """Preserve legacy identities when additive source conditions are absent."""
+    payload = asdict(contract)
+    if not payload["constraints"]:
+        payload.pop("constraints")
+    return payload
 
 
 def task_contract_from_mapping(value: object) -> TaskContract:

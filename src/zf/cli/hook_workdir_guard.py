@@ -46,6 +46,10 @@ def actor_from_workdir_cwd(state_dir: Path, payload: dict) -> str:
 
 
 def bash_command_looks_mutating(command: str) -> bool:
+    if _literal_shell_patch(command) is not None:
+        return True
+    if _literal_controlled_result_stdin(command):
+        return False
     normalized = f" {_NON_MUTATING_REDIRECTION_RE.sub(' ', command).strip()} "
     if " zf task-doc ingest " in normalized:
         return True
@@ -118,11 +122,13 @@ def _contains_active_shell_substitution(command: str) -> bool:
 def _is_simple_controlled_zf_result_command(
     command: str,
     tokens: list[str],
+    *,
+    stdin_only: bool = False,
 ) -> bool:
     """Recognize one side-effect-controlled zf CLI invocation.
 
     Semantic JSON is opaque data. Looking for strings such as ``.write_text``
-    inside a quoted ``zf emit``/``zf result submit|validate`` payload incorrectly
+    inside a quoted result or assistance payload incorrectly
     classifies that data as a Python filesystem mutation. Shell composition
     remains fail-closed: substitutions, pipes, separators and redirects never
     enter this exemption.
@@ -159,15 +165,70 @@ def _is_simple_controlled_zf_result_command(
     }:
         return False
     args = tokens[index + 1:]
+    if stdin_only:
+        return args[:2] == ["result", "validate"] and "--stdin" in args
     return bool(
         args[:1] == ["emit"]
         or args[:2] in (["result", "submit"], ["result", "validate"])
+        or args[:3] == ["recover", "assistance", "request"]
     )
+
+
+def _literal_controlled_result_stdin(command: str) -> bool:
+    """Recognize only one controlled CLI with a fully literal stdin heredoc.
+
+    The first closing delimiter must end the command. Shell syntax in the
+    header keeps the normal conservative checks; the body reaches the existing
+    result authorization and schema validators as data, not executable shell.
+    """
+    lines = command.strip().splitlines()
+    if not lines:
+        return False
+    header = re.fullmatch(
+        r"(.+?)\s+<<\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\2", lines[0],
+    )
+    if header is None:
+        return False
+    end = next((i for i, line in enumerate(lines[1:], 1) if line == header.group(3)), None)
+    if end != len(lines) - 1:
+        return False
+    prefix = header.group(1)
+    lexer = shlex.shlex(prefix, posix=True, punctuation_chars="<>|&;")
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    return _is_simple_controlled_zf_result_command(prefix, tokens, stdin_only=True)
+
+
+def _literal_shell_patch(command: str) -> str | None:
+    """Recognize only one apply_patch with an entirely literal heredoc body.
+
+    Unsupported shell syntax retains conservative command inspection. The first
+    delimiter must end the command: a later delimiter cannot hide shell suffixes.
+    """
+    lines = command.strip().splitlines()
+    if not lines:
+        return None
+    header = re.fullmatch(r"apply_patch\s+<<\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1", lines[0])
+    if header is None:
+        return None
+    delimiter = header.group(2)
+    end = next((i for i, line in enumerate(lines[1:], 1) if line == delimiter), None)
+    if end != len(lines) - 1:
+        return None
+    body = lines[1:end]
+    if len(body) < 3 or body[0] != "*** Begin Patch" or body[-1] != "*** End Patch":
+        return None
+    return "\n".join(body)
 
 
 def write_target_paths(tool_name: str, tool_input: dict) -> list[str]:
     """Return explicit paths targeted by provider-native write tools."""
-    return [path for _operation, path in write_target_operations(tool_name, tool_input)]
+    # Parent directory creation is checked by the workdir guard, not file globs.
+    return [path for operation, path in write_target_operations(tool_name, tool_input) if operation != "mkdir"]
 
 
 def runtime_write_guard_text(tool_name: str, tool_input: object, *, cwd: str = "") -> str:
@@ -192,16 +253,22 @@ def write_target_operations(
     *,
     cwd: str = "",
 ) -> list[tuple[str, str]]:
-    """Return normalized operation/path pairs for provider-native writes."""
+    """Return targets for native writes and single literal shell patches."""
 
     lower = tool_name.lower().strip()
     if lower in {"bash", "shell"}:
+        from zf.cli.literal_shell_write import literal_shell_write_targets
+
         command = str(tool_input.get("command") or "")
+        targets = literal_shell_write_targets(command)
+        if targets:
+            return targets
         target = _literal_handoff_target(command)
         if target:
             return [("write", target)]
         copy = copy_intent(command)
-        return [("copy", resolved_copy_target(copy, cwd))] if copy and copy.target else []
+        if copy and copy.target:
+            return [("copy", resolved_copy_target(copy, cwd))]
     if lower in {"write", "edit", "multiedit", "notebookedit"}:
         raw = (
             tool_input.get("file_path")
@@ -210,7 +277,7 @@ def write_target_operations(
         )
         text = str(raw or "").strip()
         return [(lower, text)] if text else []
-    if lower != "apply_patch":
+    if lower not in {"apply_patch", "bash", "shell"}:
         return []
     command = str(
         tool_input.get("command")
@@ -218,6 +285,11 @@ def write_target_operations(
         or tool_input.get("input")
         or ""
     )
+    if lower in {"bash", "shell"}:
+        patch = _literal_shell_patch(str(tool_input.get("command") or ""))
+        if patch is None:
+            return []
+        command = patch
     operations: list[tuple[str, str]] = []
     for line in command.splitlines():
         stripped = line.strip()
@@ -457,6 +529,7 @@ def evaluate_workdir_write_guard(
         if (
             (
                 operation == "copy"
+                or tool_name.lower() in {"bash", "shell"}
                 or any(_path_is_within(target, root) for root in project_roots)
             )
             and not any(

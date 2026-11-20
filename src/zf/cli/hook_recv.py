@@ -560,7 +560,14 @@ def _evaluate_runtime_write_guard(
             command = str(tool_input.get("command") or "")
         else:
             command = input_text
-        if " zf task-doc ingest " in f" {command.strip()} ":
+        literal_targets = (
+            _write_target_operations(tool_name, tool_input)
+            if isinstance(tool_input, dict) else []
+        )
+        if literal_targets:
+            if protected:
+                reason = "shell_write_targets_runtime_state"
+        elif " zf task-doc ingest " in f" {command.strip()} ":
             reason = "worker_task_doc_ingest_forbidden"
         elif protected and _bash_command_looks_mutating(command):
             reason = "shell_write_targets_runtime_state"
@@ -660,7 +667,8 @@ def _evaluate_allowed_paths_guard(
     offending = sorted({
         target
         for operation, target in operations
-        if not (frames[target] is not None and _path_allowed_by_scope(frames[target], scope))
+        if operation != "mkdir"
+        and not (frames[target] is not None and _path_allowed_by_scope(frames[target], scope))
         and not (
             operation in scratch_update_operations
             and _is_authorized_result_scratch_target(
@@ -812,6 +820,9 @@ def run(args: argparse.Namespace) -> int:
         for k in ("turn_id", "transcript_path", "permission_mode"):
             if k in payload:
                 event_payload[k] = payload[k]
+    if args.event == "codex.hook.user_prompt_submit" and isinstance(payload.get("prompt"), str):
+        import hashlib
+        event_payload["submitted_prompt_sha256"] = hashlib.sha256(payload["prompt"].encode()).hexdigest()
     if args.event.endswith(".stop"):
         event_payload["provider_stop_reason"] = classify_provider_stop(
             event_payload | payload,
@@ -843,6 +854,7 @@ def run(args: argparse.Namespace) -> int:
     try:
         event_writer.append(ZfEvent(
             type=args.event,
+            origin="kernel" if args.event == "codex.hook.user_prompt_submit" else "",
             actor=actor,
             payload=event_payload,
             causation_id=causation_id,

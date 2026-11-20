@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.call_result_admission import CallResultAdmissionOutcome
-from zf.runtime.call_result_correction import dispatch_call_result_correction
+from zf.runtime.call_result_correction import dispatch_call_result_correction, record_repair_dispatch
 from zf.runtime.event_window import read_runtime_events
 from zf.runtime.pause_lifecycle import is_dispatch_paused
 from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
@@ -83,8 +83,6 @@ def reconcile_call_result_repairs(runtime: Any) -> int:
                             and other.get("operation_id") != operation_id
                             for other in operations.values()):
             continue
-        if active_codex_turn_from_events(events, actor):
-            continue
         source = replace(event, actor=actor, task_id=operation.get("task_id") or None,
                          payload={**request, "role_instance": actor,
                                   "dispatch_id": operation.get("dispatch_id", ""),
@@ -95,6 +93,21 @@ def reconcile_call_result_repairs(runtime: Any) -> int:
             repair_round=int(payload.get("repair_round") or 0),
             issues=tuple(packet.get("issues") or ()), correction_dispatch_required=True,
         )
+        claims = {e.id for e in events if e.type == "worker.continuation.claimed"
+                  and e.origin == "kernel" and e.actor == actor
+                  and e.payload.get("operation_id") == operation_id
+                  and e.payload.get("request_hash") == request_hash
+                  and e.payload.get("correction_ref") == correction_ref}
+        receipt = next((e for e in events if e.type == "worker.continuation.reconciled"
+                        and e.origin == "kernel" and e.actor == actor
+                        and e.payload.get("claim_id") in claims
+                        and e.payload.get("delivery_status") in {"sent", "observed"}), None)
+        if receipt is not None:
+            record_repair_dispatch(runtime, source_event=source, outcome=outcome, receipt_event_id=receipt.id)
+            count += 1
+            continue
+        if active_codex_turn_from_events(events, actor):
+            continue
         if dispatch_call_result_correction(runtime, source_event=source, outcome=outcome,
                                            stop_timeout_seconds=0.0):
             count += 1

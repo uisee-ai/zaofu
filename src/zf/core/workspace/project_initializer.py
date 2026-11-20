@@ -12,6 +12,7 @@ from zf.core.config.project_context import ProjectContext, resolve_project_conte
 from zf.core.events import ZfEvent
 from zf.core.events.factory import event_log_from_project
 from zf.core.state.session import SessionStore
+from zf.integrations.controller.project_admission import serialize_initialization
 from zf.core.workspace.registry import (
     WorkspaceProject,
     WorkspaceRegistry,
@@ -55,6 +56,7 @@ class ProjectInitializer:
     def __init__(self, *, workspace: str = "default") -> None:
         self.workspace = workspace
 
+    @serialize_initialization
     def initialize(
         self,
         *,
@@ -83,10 +85,13 @@ class ProjectInitializer:
             load_config_with_explicit=True,
         )
         state_dir = context.state_dir
-        if state_dir.exists() and not force:
+        from zf.integrations.controller.project_admission import admit_project, pending_metadata_only
+        if state_dir.exists() and not force and not pending_metadata_only(context):
             raise FileExistsError(
                 f"{state_dir} already exists. Use --force to re-initialize."
             )
+
+        cloud_registered = admit_project(context, self.workspace)
 
         state_dir.mkdir(parents=True, exist_ok=True)
         (state_dir / "memory").mkdir(exist_ok=True)
@@ -149,7 +154,7 @@ class ProjectInitializer:
             config=context.config,
         )
 
-        registered = None
+        registered = cloud_registered
         registry = WorkspaceRegistry(workspace=self.workspace)
         # FIX-7(bizsim r4 F7):root 已注册的项目,重 init(换 state_dir/
         # 改名)必须无条件回写注册表——r4 实锚:CLI 重 init 后 hint 仍指向
@@ -159,9 +164,9 @@ class ProjectInitializer:
             for item in registry.list_projects()
         )
         project_group_enabled = _feishu_project_group_enabled(context.config)
-        if already_registered or project_group_enabled or self._should_register(
+        if cloud_registered is None and (already_registered or project_group_enabled or self._should_register(
             context, requested=workspace_register,
-        ):
+        )):
             registered = registry.upsert_context(
                 context,
                 display_name=os.environ.get("ZF_WORKSPACE_PROJECT_DISPLAY_NAME", ""),

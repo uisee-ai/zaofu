@@ -78,7 +78,9 @@ def build_resident_run_manager_role(config: ZfConfig) -> RoleConfig | None:
         model=resident.model,
         model_reasoning_effort=resident.model_reasoning_effort,
         provider_session=(
-            ProviderSessionConfig(effort=resident.model_reasoning_effort)
+            ProviderSessionConfig(sandbox="workspace-write", native_delegation=False)
+            if run_manager.backend == "codex"
+            else ProviderSessionConfig(effort=resident.model_reasoning_effort)
             if run_manager.backend == "claude-code"
             and resident.model_reasoning_effort
             else None
@@ -195,7 +197,8 @@ def build_resident_run_manager_briefing(
                 "title": "optional bounded repair task title",
                 "contract": {
                     "scope": ["src/zf/**", "tests/**"],
-                    "verification": "focused pytest command",
+                    "verification": "expected behavior and evidence to review",
+                    "verification_commands": ["pytest -q tests/test_affected_behavior.py"],
                 },
             },
         },
@@ -245,6 +248,12 @@ def build_resident_run_manager_briefing(
         "没有信号是未知，需结合 operation、合同及证据判断。",
         "4. 判断是否只是正常等待、是否有确定性 action、是否需要 repair worker、"
         "autoresearch 深诊断、reflect 或人工介入。",
+        "   先读取本次 context 的 recovery_capabilities；关闭或未知的能力不得当作已可用。",
+        "   证据不可用不等于执行失败。先由本 resident 做一次有界只读对账，沿",
+        "   continuation_evidence_refs 核对原 Run、任务、目标和工具记录，说明缺失、矛盾或范围未决。",
+        "   不必为已有材料的读取再请求 reflect/repair。人工门禁保留：只读诊断不释放门禁，",
+        "   不重试 worker、不改状态、不承诺产品通过；恢复建议应给出精确失败身份、",
+        "   已补证据及可用受控动作。没有可用动作时明确 owner 决策内容，不提交抽象批准。",
         "5. 写一条观察事件,例如:",
         "",
         "```bash",
@@ -286,6 +295,8 @@ def build_resident_run_manager_briefing(
         "- 如果是 harness bug、candidate hygiene/gate bug、projection/action bug,优先写"
         " `run.manager.agent.recommendation` 且 `recommended_route=repair`,附带 bounded"
         " `repair_task_payload`、scope、verification 和 evidence refs。",
+        "  contract.verification 仅写语义验收说明；可执行命令单独放入 contract.verification_commands 数组，",
+        "  每项只含一个完整命令，不追加分号后的自然语言或未来动作。runtime 不从说明文字猜命令。",
         "- 当前已准入 Impl 失败经诊断确认须 OA 裁决时，绑定原 request_id 发 recommendation：",
         "  recommended_route=controlled_action、action=orchestrator-rework-triage、task_id、target_operation_id、",
         "  summary 与证据；runtime 复用已配置 OA 的当前失败审核入口，保留原案卷，不直接重派 Worker。",
@@ -302,7 +313,8 @@ def build_resident_run_manager_briefing(
         "  投影不替代权威状态，未命中或窗口缺失不证明故障或依赖不存在。",
         "- 针对矛盾可用的恢复动词(经受控动作,前置条件不满足会被内核拒绝):",
         "  `task-requeue`(wip_without_carrier:任务挂进行中但承接 child 已死)、",
-        "  `child-rebuild`(为死 child 走 rework 重建承接)、",
+        "  `child-rebuild`(精确重试失败 Reader；action_payload 必须包含 fanout_id、fanout_child_id、",
+        "  workflow_run_id、target_operation_id、active_attempt_id、source_event_id，最后一项为当前失败事件)、",
         "  `stage-retrigger`(推进事件未消费/消费已败,自动新代际)、",
         "  `stage-replan-new-generation`(stage replan cap 后凭 owner approval 开新代际,保留既有 checkpoint)、",
         "  `rescan-grant`(goal idle 驱动器弹尽后追加一轮)。",
@@ -310,6 +322,8 @@ def build_resident_run_manager_briefing(
         "  `recommended_route=controlled_action`、`action=<动词>`、`action_payload={...}`、",
         "  矛盾指纹与证据 refs。runtime 按当前策略、身份和受控准入消费建议；",
         "  建议提交不等于批准或执行成功，须核对 consumed、动作回执和实际下游效果。",
+        "  精确 Reader 重试受当前 Run/暂停/身份门禁约束；task-requeue、stage-retrigger、",
+        "  stage-replan-new-generation、rescan-grant 由 owner 审批后执行，不据此宣称可自动恢复。",
         "- 若矛盾根因是配置/代码(如质量门命令不适配栈),优先",
         "  `recommended_route=human` 并写明修改建议,不要用流程动词硬推。",
         "",

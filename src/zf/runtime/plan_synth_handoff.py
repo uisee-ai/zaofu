@@ -38,6 +38,7 @@ _CHILD_ARTIFACT_SCALAR_KEYS = (
 )
 _PLAN_SOURCE_CANDIDATES = (
     ("goal-objective", "goal_objective", "objective_ref"),
+    ("requirement", "requirement_authority", "source_ref"),
     ("requirement", "requirement_authority", "target_ref"),
     ("requirement", "requirement_spec", "requirement_spec_ref"),
     ("requirement", "requirement_spec", "requirement_ref"),
@@ -55,6 +56,8 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "rework_feedback",
     "operator_feedback",
     "input_task_ids",
+    "dispatch_scope_source_event_id",
+    "changed_task_ids",
     "historical_orchestration_context",
     "diagnostics_ref",
     "plan_compile_gate",
@@ -181,6 +184,10 @@ def build_plan_handoff_input_refs(
         or trigger.get("workflow_run_id") or payload.get("trace_id")
         or trigger.get("trace_id") or ""))
     payload = {**payload, **binding}
+    source_refs = {
+        **(trigger.get("source_refs") if isinstance(trigger.get("source_refs"), Mapping) else {}),
+        **(payload.get("source_refs") if isinstance(payload.get("source_refs"), Mapping) else {}),
+    }
     input_refs: list[dict[str, Any]] = []
     seen_sources: set[tuple[str, str]] = set()
     if binding:
@@ -189,7 +196,8 @@ def build_plan_handoff_input_refs(
     for source_id, kind, key in _PLAN_SOURCE_CANDIDATES:
         if binding and source_id in {"requirement", "goal-objective"} and key != "requirement_spec_ref":
             continue  # Prior authority remains in the amendment/previous package.
-        ref = str(payload.get(key) or trigger.get(key) or "").strip()
+        ref = str(payload.get(key) or trigger.get(key)
+                  or (source_refs.get(key) if key == "source_ref" else "") or "").strip()
         if not ref:
             continue
         source = materialize_attempt_source_ref(
@@ -215,6 +223,15 @@ def build_plan_handoff_input_refs(
             rework_context[key] = value
     if len(rework_context) > 1:
         from zf.runtime.plan_replan_authority_inputs import replan_authority_sources
+        from zf.runtime.plan_rejected_review import rejected_review_source
+
+        prior_review = rejected_review_source(
+            state_dir, trigger_id=source_event_id,
+            run=str(payload.get('workflow_run_id') or trigger.get('workflow_run_id') or ''),
+            rework_of=str(rework_context.get('rework_of') or ''),
+        )
+        if prior_review:
+            input_refs.append(prior_review)
 
         input_refs.extend(replan_authority_sources(
             state_dir=state_dir, project_root=project_root,
@@ -266,6 +283,8 @@ def build_plan_handoff_input_refs(
             raise ValueError(
                 f"previous Plan candidate descriptor {index} must be an object"
             )
+        if descriptor.get("kind") == "plan_rework_candidate_partition":
+            raise ValueError("previous Plan candidate cannot declare a runtime overlap partition")
         ref = str(descriptor.get("ref") or "").strip()
         expected = str(
             descriptor.get("sha256") or descriptor.get("digest") or ""
@@ -310,7 +329,9 @@ def build_plan_handoff_input_refs(
         if identity not in seen_sources:
             input_refs.append(source)
             seen_sources.add(identity)
-    return input_refs
+    from zf.runtime.plan_rework_input_overlap import partition_repeated_candidate_bodies
+
+    return partition_repeated_candidate_bodies(state_dir, input_refs)
 
 
 def _canonical_rework_task_snapshot(

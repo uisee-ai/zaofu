@@ -24,6 +24,7 @@ from zf.runtime.call_result_envelope import canonical_json_bytes
 from zf.runtime.plan_candidate_ports import (
     PlanPortTooLarge, check_plan_port_size, read_plan_port_bytes,
     plan_port_bodies as _plan_port_bodies,
+    prepared_plan_port_path_errors,
 )
 from zf.runtime.task_map import (
     resolve_artifact_file,
@@ -51,6 +52,8 @@ def evaluate_plan_candidate_preflight(
     manifest: Mapping[str, Any],
     metadata: Mapping[str, Any] | None,
     writer_policy: Mapping[str, Any] | None = None,
+    review_input_limits: Mapping[str, Any] | None = None,
+    ports_materialized: bool = False,
 ) -> dict[str, Any]:
     """Return structured, deterministic readiness facts for one plan candidate."""
 
@@ -64,7 +67,16 @@ def evaluate_plan_candidate_preflight(
         for row in reports
         if isinstance(row, Mapping) and isinstance(row.get("report"), Mapping)
     ]
+    from zf.runtime.plan_candidate_owner_review import owner_review_preflight
+
+    draft_review = owner_review_preflight(
+        candidates, state_dir=state_dir, project_root=project_root,
+    )
+    if draft_review is not None:
+        return draft_review
     errors: list[dict[str, str]] = []
+    if ports_materialized:
+        errors.extend(prepared_plan_port_path_errors(candidates, state_dir=state_dir))
     from zf.runtime.workflow_read_result import workflow_read_finding_issues
 
     for index, candidate in enumerate(candidates):
@@ -136,7 +148,7 @@ def evaluate_plan_candidate_preflight(
             except ValueError as exc:
                 _error(errors, "task_scoped_input_invalid", f"plan_ports.{name}", str(exc))
         prior_task_map = _canonical_prior_task_map(
-            trigger=trigger,
+            current=task_map, trigger=trigger,
             state_dir=state_dir,
             project_root=project_root,
             errors=errors,
@@ -156,11 +168,13 @@ def evaluate_plan_candidate_preflight(
             dict(task_map),
             require_task_verification=True,
         )
-        from zf.runtime.task_map_required_ports import plan_input_declaration_errors
+        from zf.runtime.task_map_required_ports import plan_input_declaration_errors, selected_input_body_errors
 
         binding_errors = plan_input_declaration_errors(
             dict(task_map), available_ports=available | _KERNEL_DERIVED_PORTS,
+            require_selection=(metadata or {}).get("artifact_package", {}).get("task_input_policy") == "task-scoped-v1",
         )
+        binding_errors.extend(selected_input_body_errors(dict(task_map), port_bodies))
         for message in dict.fromkeys([*validation.errors, *binding_errors]):
             _error(errors, "task_map_invalid", "task_map", message)
         for diagnostic in validation.summary.get("goal_coverage", {}).get(
@@ -196,8 +210,10 @@ def evaluate_plan_candidate_preflight(
                     except (RuntimeError, ValueError) as exc:
                         _error(errors, "writer_fanout_task_map_invalid", "task_map.tasks", str(exc))
                     try:
+                        from zf.runtime.writer_fanout_admission import writer_task_map_dispatch_target
+
                         writer_fanout_dispatch_base_commit(
-                            selected,
+                            selected, fallback=writer_task_map_dispatch_target(task_map, trigger),
                             independent_task_bases=(
                                 (metadata or {}).get("task_pipeline", {}).get("mode")
                                 == "blocking"
@@ -242,6 +258,19 @@ def evaluate_plan_candidate_preflight(
             _error(errors, "source_index_invalid", "source_index", message)
 
     if task_map:
+        from zf.runtime.source_index_gate import evaluate_source_index_gate
+
+        # Mirror writer admission before spending a Critic attempt. This is
+        # anchor presence only; semantic coverage remains the Critic's job.
+        source_gate = evaluate_source_index_gate(
+            task_items=[{**task, "task_id": task.get("task_id") or task.get("id")}
+                        for task in task_map.get("tasks", []) if isinstance(task, Mapping)],
+            source_index=source_index, findings=None,
+            harness_profile=str((writer_policy or {}).get("harness_profile") or ""),
+        )
+        if not source_gate.passed:
+            _error(errors, "source_index_gap", "source_index",
+                   f"{source_gate.note}: {', '.join(source_gate.missing_anchor_task_ids)}")
         errors.extend(plan_matrix_admission_errors(
             task_map=task_map,
             source_index=source_index,
@@ -270,8 +299,11 @@ def evaluate_plan_candidate_preflight(
             "human-readable plan Markdown has no resolvable producer",
         )
 
+    from zf.runtime.plan_candidate_input_cost import candidate_input_cost
+
     return {
         "schema_version": SCHEMA_VERSION,
+        "input_cost": candidate_input_cost(task_map or {}, port_bodies, review_input_limits),
         "execution_review": review_execution(
             task_map or {}, ports=port_bodies,
             policy=(writer_policy or {}).get("execution", {}), metadata=metadata or {},
@@ -378,6 +410,7 @@ def _product_acceptance_spec_errors(
 
 def _canonical_prior_task_map(
     *,
+    current: Mapping[str, Any],
     trigger: Mapping[str, Any],
     state_dir: Path,
     project_root: Path,
@@ -420,7 +453,7 @@ def _canonical_prior_task_map(
             )
             if descriptor is None:
                 raise ValueError("canonical Plan Package has no task_map port")
-            return _load_bound_task_map(
+            prior_map = _load_bound_task_map(
                 descriptor,
                 state_dir=state_dir,
                 project_root=project_root,
@@ -433,6 +466,13 @@ def _canonical_prior_task_map(
                 str(exc),
             )
             return {}
+        from zf.runtime.plan_claim_continuity import candidate_claim_errors
+
+        try:
+            errors.extend(candidate_claim_errors(state_dir, project_root, package, current, trigger))
+        except (OSError, ValueError) as exc:
+            _error(errors, "goal_claim_set_invalid", "task_map.goal_claims", str(exc))
+        return prior_map
 
     descriptors = trigger.get("previous_plan_candidate_refs")
     descriptors = descriptors if isinstance(descriptors, list) else []
@@ -745,207 +785,9 @@ def _has_plan_markdown(
     return False
 
 
-def _claim_acceptance_command_errors(task_map: Mapping[str, Any]) -> list[dict[str, str]]:
-    errors: list[dict[str, str]] = []
-    claims = {
-        str(item.get("goal_claim_id") or item.get("id") or "").strip()
-        for item in task_map.get("goal_claims", [])
-        if isinstance(item, Mapping) and bool(item.get("mandatory", True))
-    }
-    command_ids = {
-        str(row.get("id") or row.get("command_id") or "").strip(): row
-        for task in task_map.get("tasks", [])
-        if isinstance(task, Mapping)
-        for row in _command_rows(task)
-        if str(row.get("id") or row.get("command_id") or "").strip()
-    }
-    for task in task_map.get("tasks", []):
-        if not isinstance(task, Mapping):
-            continue
-        task_id = str(task.get("task_id") or task.get("id") or "<unknown>")
-        task_claims = {
-            str(value).strip() for value in task.get("goal_claim_ids", [])
-            if str(value).strip()
-        }
-        criteria = task.get("acceptance_criteria")
-        criteria = criteria if isinstance(criteria, list) else []
-        if (not claims or task_claims & claims) and not criteria:
-            _error(errors, "claim_acceptance_missing", task_id, "claim-owning task has no acceptance criteria")
-            continue
-        commands = _command_rows(task)
-        for index, criterion in enumerate(criteria):
-            if not isinstance(criterion, Mapping) or not bool(criterion.get("mandatory", True)):
-                continue
-            path = f"{task_id}.acceptance_criteria[{index}]"
-            for field in ("id", "verification_owner", "verification_tier"):
-                if not str(criterion.get(field) or "").strip():
-                    _error(errors, f"acceptance_{field}_missing", f"{path}.{field}", f"mandatory acceptance criterion requires {field}")
-            refs = [
-                str(value).strip()
-                for value in criterion.get("verification_command_ids", [])
-                if str(value).strip()
-            ]
-            immutable_baseline = (
-                str(criterion.get("evidence_mode") or "")
-                == "immutable_baseline_only"
-            )
-            if immutable_baseline:
-                if refs:
-                    _error(
-                        errors,
-                        "immutable_baseline_command_refs_present",
-                        f"{path}.verification_command_ids",
-                        "immutable E2E baseline must be command-free; keep downstream "
-                        "runtime audits outside this criterion's command ids",
-                    )
-                if not _is_pinned_immutable_baseline(criterion):
-                    _error(
-                        errors,
-                        "immutable_baseline_evidence_unpinned",
-                        f"{path}.evidence_refs",
-                        "immutable E2E baseline requires tier e2e, a pinned git commit, "
-                        "and retained artifact evidence",
-                    )
-            elif not refs:
-                _error(errors, "acceptance_command_missing", f"{path}.verification_command_ids", "mandatory acceptance criterion requires command ids")
-            for command_id in refs:
-                if command_id not in command_ids:
-                    _error(errors, "acceptance_command_unknown", f"{path}.verification_command_ids", f"unknown verification command {command_id!r}")
-        for command in commands:
-            command_id = str(
-                command.get("id") or command.get("command_id") or ""
-            ).strip()
-            if not command_id:
-                continue
-            for field in ("owner", "tier"):
-                if not str(command.get(field) or "").strip():
-                    _error(errors, f"command_{field}_missing", f"{task_id}.validation.commands[{command_id}].{field}", f"verification command requires {field}")
-    return errors
-
-
-def _is_pinned_immutable_baseline(criterion: Mapping[str, Any]) -> bool:
-    """Allow command-free E2E claims only when immutable evidence is pinned."""
-
-    if (
-        str(criterion.get("evidence_mode") or "")
-        != "immutable_baseline_only"
-        or str(criterion.get("verification_tier") or "") != "e2e"
-    ):
-        return False
-    evidence_refs = {
-        str(value).strip()
-        for value in criterion.get("evidence_refs", [])
-        if str(value).strip()
-    }
-    pinned_commits = [
-        value.removeprefix("git:")
-        for value in evidence_refs
-        if value.startswith("git:")
-    ]
-    has_pinned_commit = any(
-        len(value) in {40, 64}
-        and all(character in "0123456789abcdef" for character in value.lower())
-        for value in pinned_commits
-    )
-    has_artifact_evidence = any(
-        value.startswith("artifacts/") for value in evidence_refs
-    )
-    return has_pinned_commit and has_artifact_evidence
-
-
-def _command_rows(task: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    validation = task.get("validation")
-    values = [
-        validation.get("commands") if isinstance(validation, Mapping) else None,
-        task.get("verification_commands"),
-        task.get("verify_commands"),
-    ]
-    return [
-        row
-        for value in values
-        if isinstance(value, list)
-        for row in value
-        if isinstance(row, Mapping)
-    ]
-
-
-def _rolling_smoke_command_errors(
-    task_map: Mapping[str, Any],
-    *,
-    metadata: Mapping[str, Any] | None,
-) -> list[dict[str, str]]:
-    task_pipeline = (
-        metadata.get("task_pipeline")
-        if isinstance(metadata, Mapping)
-        and isinstance(metadata.get("task_pipeline"), Mapping)
-        else {}
-    )
-    candidate = (
-        task_pipeline.get("candidate")
-        if isinstance(task_pipeline.get("candidate"), Mapping)
-        else {}
-    )
-    if str(candidate.get("rolling_smoke") or "") != "required":
-        return []
-
-    errors: list[dict[str, str]] = []
-    for task in task_map.get("tasks", []):
-        if not isinstance(task, Mapping):
-            continue
-        task_id = str(task.get("task_id") or task.get("id") or "<unknown>")
-        marked = [
-            command
-            for command in _command_rows(task)
-            if command.get("rolling_smoke") is True
-        ]
-        if not marked:
-            _error(
-                errors,
-                "rolling_smoke_command_missing",
-                f"{task_id}.validation.commands",
-                "v4 Task Pipeline requires an explicitly marked rolling-smoke command",
-            )
-            continue
-        for command in marked:
-            command_id = str(
-                command.get("id")
-                or command.get("command_id")
-                or "<unknown>"
-            )
-            field = f"{task_id}.validation.commands[{command_id}]"
-            if command.get("deterministic") is not True:
-                _error(
-                    errors,
-                    "rolling_smoke_not_deterministic",
-                    f"{field}.deterministic",
-                    "rolling-smoke command must be deterministic",
-                )
-            if command.get("reusable") is not True:
-                _error(
-                    errors,
-                    "rolling_smoke_not_reusable",
-                    f"{field}.reusable",
-                    "rolling-smoke command must be reusable",
-                )
-            tier = str(command.get("tier") or "")
-            if tier not in {"static", "runtime"}:
-                _error(
-                    errors,
-                    "rolling_smoke_tier_invalid",
-                    f"{field}.tier",
-                    "rolling-smoke command tier must be static or runtime",
-                )
-    return errors
-
-
-def rolling_smoke_command_errors(
-    task_map: Mapping[str, Any],
-    *,
-    metadata: Mapping[str, Any] | None,
-) -> list[dict[str, str]]:
-    """Expose the candidate rolling-smoke policy for revised task maps."""
-
-    return _rolling_smoke_command_errors(task_map, metadata=metadata)
+from zf.runtime.plan_candidate_commands import (
+    _claim_acceptance_command_errors, _rolling_smoke_command_errors, rolling_smoke_command_errors,
+)
 
 
 def _error(errors: list[dict[str, str]], code: str, field: str, message: str) -> None:

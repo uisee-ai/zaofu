@@ -242,8 +242,9 @@ def execute_skill_optimizer_proposal(
                 *(["--model", str(request["model"])] if request.get("model") else []),
                 prompt,
             ]
-        proc = runner(
-            command,
+        from zf.integrations.controller.helper import run_provider
+        proc = run_provider(
+            command, backend=backend, state_dir=state_dir, model=str(request.get("model") or ""), runner=runner,
             cwd=work,
             env=os.environ.copy(),
             capture_output=True,

@@ -725,6 +725,10 @@ def _refresh_pricing_catalog(config, state_dir: Path) -> None:
         print(f"Warning: {exc}; using last-known-good pricing", file=sys.stderr)
 
 
+from zf.integrations.controller.project_runtime import managed_runtime
+
+
+@managed_runtime
 def run(args: argparse.Namespace) -> int:
     project_root = Path.cwd()
     # doc 78 O-7 fix: load the project .env so the watcher (and the O-7
@@ -734,6 +738,8 @@ def run(args: argparse.Namespace) -> int:
     # (R8 stall: 29 requested, 0 delivered). Non-overriding.
     from zf.core.config.project_context import load_project_env
     load_project_env(project_root)
+    from zf.integrations.controller.execution import check_project
+    check_project(project_root)
     config_path = project_root / "zf.yaml"
     dry_run = getattr(args, "dry_run", False)
     if not dry_run:
@@ -1001,6 +1007,12 @@ def run(args: argparse.Namespace) -> int:
             _preserved_run_manager_start_context(config, state_dir)
         )
 
+        # Declare source resources before tmux creates a shell whose cwd is
+        # the project. That shell is correctly treated as a live holder later.
+        if config.runtime.workdirs.enabled and not dry_run:
+            from zf.runtime.environment_resources import register_environment_resources
+            register_environment_resources(project_root, config.runtime.workdirs.provision_paths)
+
         # 6. Initialize transport (creates tmux session today)
         transport = make_transport(config, dry_run=dry_run)
         if not _initialize_start_transport(
@@ -1203,6 +1215,13 @@ def run(args: argparse.Namespace) -> int:
                     # first_dispatch → observe_codex_session to resolve
                     # it; tailer can be re-attached lazily if needed.
 
+        if control_plane_only:
+            from zf.runtime.session_tailer_recovery import restore_preserved_session_tailers
+
+            restore_preserved_session_tailers(
+                registry, codex_tailer, claude_tailer, dry_run=dry_run,
+            )
+
         from zf.runtime.run_manager_resident import (
             clear_resident_preserve_marker,
             dedicated_resident_run_manager_role,
@@ -1384,6 +1403,7 @@ def run(args: argparse.Namespace) -> int:
         )
         orchestrator = WorkflowRuntimeCoordinator(
             state_dir, config, transport, project_root=project_root,
+            control_plane_only=control_plane_only,
         )
         orchestrator._claude_session_tailer = claude_tailer
         orchestrator._codex_session_tailer = codex_tailer
@@ -1420,6 +1440,7 @@ def run(args: argparse.Namespace) -> int:
 
         _tick_service_state = TickServiceState()
         _tick_service_intervals = TickServiceIntervals()
+        from zf.runtime.host_watchdog import notify_host_watchdog
 
         def _on_tick() -> None:
             # A fully silent worker produces no events, so an event-only
@@ -1432,9 +1453,13 @@ def run(args: argparse.Namespace) -> int:
             # alive while no work was happening. Surface failures as
             # `orchestrator.tick.failed` events so operators can see them
             # in events.jsonl and the web dashboard.
+            tick_completed = False
             try:
-                watcher_guard.heartbeat()
+                if not watcher_guard.heartbeat():
+                    watcher.stop()
+                    return
                 _run_orchestrator_idle_tick(orchestrator)
+                tick_completed = True
             except Exception as exc:
                 try:
                     _append_event(event_log, ZfEvent(
@@ -1457,6 +1482,8 @@ def run(args: argparse.Namespace) -> int:
                 now=now,
                 intervals=_tick_service_intervals,
             )
+            if tick_completed:
+                notify_host_watchdog(watcher_guard)
 
         watcher = EventWatcher(
             state_dir / "events.jsonl",
@@ -1501,7 +1528,8 @@ def run(args: argparse.Namespace) -> int:
                 runtime_load_payload(config=config, state_dir=state_dir, project_root=project_root)))
             from zf.runtime.workflow_runtime_start import mark_runtime_ready
 
-            mark_runtime_ready(state_dir)
+            mark_runtime_ready(state_dir, config=config)
+            notify_host_watchdog(watcher_guard, ready=True)
             try:
                 watcher.run(poll_interval=1.0, tick_interval=5.0)
             except KeyboardInterrupt:
@@ -1535,13 +1563,9 @@ def run(args: argparse.Namespace) -> int:
         return 1
     finally:
         if autoresearch_resident_sidecar is not None:
-            from zf.runtime.autoresearch_resident_sidecar import (
-                stop_autoresearch_resident_sidecar,
-            )
-
-            stop_autoresearch_resident_sidecar(
-                autoresearch_resident_sidecar,
-                event_log=event_log,
+            from zf.runtime.autoresearch_parent_exit import finish_resident_on_parent_exit
+            finish_resident_on_parent_exit(
+                autoresearch_resident_sidecar, config=config, event_log=event_log,
             )
         if feishu_inbound_sidecar is not None:
             from zf.runtime.feishu_inbound_sidecar import (

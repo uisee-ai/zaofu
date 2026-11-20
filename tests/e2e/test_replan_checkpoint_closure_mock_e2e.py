@@ -100,13 +100,23 @@ def _map():
     return body
 
 
-def _admit(runtime, body, generation, **scope):
+def _admit(runtime, body, generation, *, plan_inputs=None, **scope):
     descriptor = write_immutable_json_sidecar(
         runtime.state_dir, body, root="fixtures/maps", kind="task_map",
         schema_version="task-map.v1", created_by="mock-planner",
     )
     package = _package(runtime.state_dir, generation=generation, revision=generation)
     package["workflow_run_id"] = RUN
+    for name, content in (plan_inputs or {}).items():
+        source = write_immutable_json_sidecar(
+            runtime.state_dir, content, root="fixtures/inputs", kind=name,
+            schema_version=content.get("schema_version", "v1"), created_by="mock-planner",
+        )
+        package["produced"].append({
+            "logical_name": name, "artifact_kind": name, "schema_version": "v1",
+            "producer_stage_id": "prd-plan", "ref": source["ref"], "sha256": source["sha256"],
+        })
+        package["required_ports"].append(name)
     port = next(p for p in package["produced"] if p["logical_name"] == "task_map")
     port.update(ref=descriptor["ref"], sha256=descriptor["sha256"])
     ref = write_plan_artifact_package(runtime.state_dir, package)
@@ -131,6 +141,38 @@ def _dispatches(runtime):
     return [e for e in runtime.event_log.read_all() if e.type == "task.pipeline.stage.dispatched"]
 
 
+def test_actual_impl_and_verify_dispatch_select_existing_execution_spec(tmp_path):
+    runtime = _runtime(tmp_path)
+    body = _map()
+    body["tasks"][0]["acceptance_criteria"].pop()
+    body["tasks"][0]["validation"]["commands"].pop()
+    inputs = {"execution_spec": {
+        "schema_version": "task-scoped-plan-input.v1", "shared": {"rule": "retain source identity"},
+        "tasks": [{"task_id": task["task_id"], "body": {"contract": deepcopy(task)}} for task in body["tasks"]],
+    }, **{name: {"rows": [{"required": "complete final obligation"}]} for name in
+          ("acceptance_matrix", "test_matrix", "real_e2e_matrix")}}
+    body["required_plan_ports"] = list(inputs)
+    for task in body["tasks"]:
+        task.setdefault("evidence_contract", {})["plan_input_selection"] = {
+            "schema_version": "task-plan-input-selection.v1",
+            "implementation": ["execution_spec"], "task-verify": ["execution_spec"],
+        }
+    _admit(runtime, body, "g1", plan_inputs=inputs)
+    impl = _dispatches(runtime)[0]
+    _commit(Path(impl.payload["workdir"]), "slice-1.txt", "owned slice\n", "feat: implement local slice")
+    _submit(runtime, impl, _check_result(runtime, impl))
+    verify = _dispatches(runtime)[-1]
+    assert verify.payload["task_pipeline_stage"] == "verify"
+    for dispatch in (impl, verify):
+        reads = [r for r in dispatch.payload["required_reads"] if r["source_id"].startswith("plan-port-")]
+        assert {(r["artifact_id"], r["json_path"]) for r in reads} == {
+            ("execution_spec", "$.shared"), ("execution_spec", "$.tasks[0]"),
+        }
+        assert all(not r.get("allow_truncated") for r in reads)
+    _submit(runtime, verify, _check_result(runtime, verify))
+    assert runtime.task_store.get("TASK-1").status == "done"
+
+
 def _submit(runtime, dispatch, result):
     payload = dispatch.payload
     manifest = hydrate_sidecar_ref(runtime.state_dir, payload["attempt_source_manifest"]).payload
@@ -140,6 +182,13 @@ def _submit(runtime, dispatch, result):
         })
     role = payload["role_instance"]
     token = (runtime.state_dir / f"private/result-submit/roles/{role}.token").read_text().strip()
+    from zf.runtime.task_handoff import SOURCE_ID
+    from zf.runtime.task_handoff_receipt import accept_task_handoff
+    for source in manifest.get("sources", []):
+        if source.get("source_id") == SOURCE_ID:
+            accept_task_handoff(state_dir=runtime.state_dir, event_log=runtime.event_log,
+                operation_id=payload["operation_id"], role=role, credential=token,
+                digest=source["sha256"])
     submitted = SemanticResultSubmitService(
         state_dir=runtime.state_dir, event_log=runtime.event_log, event_writer=runtime.event_writer,
     ).submit(operation_id=payload["operation_id"], semantic_result=result,
@@ -182,7 +231,9 @@ def _check_result(runtime, dispatch):
             return [fill(v) for v in value]
         if value in ("<HEAD commit>", "<exact target_commit from Stage Context>"):
             return _git(Path(payload["workdir"]), "rev-parse", "HEAD")
-        return evidence if isinstance(value, str) and value.startswith("<durable") else value
+        return evidence if isinstance(value, str) and (
+            value.startswith("<durable") or value == "<implementation summary artifact or event ref>"
+        ) else value
     return fill(result)
 
 
@@ -230,6 +281,7 @@ def test_local_replan_retains_commit_and_releases_two_downstream_workers(tmp_pat
         "known_gaps": ["local contract requires downstream artifact"],
         "summary": "contract phase conflict", "failure_class": "contract_phase_conflict",
         "evidence_refs": ["mock://phase-conflict"],
+        "self_check": {},  # This blocked attempt has no successful self-check receipts.
     })
     replan = _oa_replan(runtime, failed)
     assert replan.payload["task_ids"] == ["TASK-1"]

@@ -13,7 +13,7 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     config = load_config(source)
     documents = list(yaml.safe_load_all(source.read_text(encoding="utf-8")))
 
-    assert config.version == "5.0.1"
+    assert config.version == "5.1.0"
     assert documents[0]["metadata"]["name"] == "zaofu-prd/v5-production"
     assert documents[1]["metadata"]["name"] == "zaofu-prd-v5-production"
     assert documents[1]["metadata"]["zaofu"]["catalog"]["preferred"] is True

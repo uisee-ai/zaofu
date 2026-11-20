@@ -40,6 +40,19 @@ def active_codex_turn_from_events(
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
         if (
+            event.type == "role.lifecycle.suspended"
+            and event.origin == "kernel"
+            and event.actor == "orchestrator"
+            and payload.get("instance_id") == instance_id
+            and payload.get("reason") == "task_stage_session_archived"
+            and payload.get("preserve_session") is False
+        ):
+            # Terminal archival has stopped the transport and rotated its
+            # session. A killed provider cannot emit the old turn's stop hook.
+            active.clear()
+            recycling_turns = None
+            continue
+        if (
             event.type == "worker.launch_artifact.written"
             and str(payload.get("instance_id") or "") == instance_id
         ):

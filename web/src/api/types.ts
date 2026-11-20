@@ -1135,6 +1135,7 @@ export interface OperationsObservability {
   project_id: string;
   scope: { kind: string; note: string };
   owner_delivery?: { available: boolean; routes: Array<{ target: string; route: string; status: string; failure_count: number; reason: string; last_at: string }> };
+  source_requests?: { available: boolean; items: OperatorInboxItem[] };
   provider_telemetry: {
     requested_mode: string;
     updated_at: string;
@@ -1485,12 +1486,15 @@ export interface RuntimeSummary {
     requires_token?: boolean;
   };
   web_session?: {
-    mode: "local_trusted" | "remote_passcode" | "token_required" | "read_only" | string;
+    mode: "controller_session" | "local_account" | "local_trusted" | "remote_passcode" | "token_required" | "read_only" | string;
     unlocked: boolean;
     actions_enabled: boolean;
     expires_at?: string | null;
     requires_token?: boolean;
     token_fallback_enabled?: boolean;
+    local_account?: boolean;
+    username?: string;
+    controller_managed?: boolean;
   };
   agent_surface?: {
     id: string;
@@ -2270,11 +2274,19 @@ export interface TaskRunPanelProjection {
 
 export interface HandoffSummaryProjection {
   schema_version: string;
+  receipt?: {
+    status: "unavailable" | "awaiting_receipt" | "accepted" | "incomplete";
+    delivery_status?: "dispatched" | "not_dispatched";
+    target_operation_id?: string;
+    business_completed: false;
+  };
   generated_at?: string;
   task_id: string;
   objective: string;
   current_state: string;
   current_stage: string;
+  pipeline?: Record<string, unknown> | null;
+  input_recovery?: Record<string, unknown>;
   owner?: Record<string, unknown>;
   completed?: Array<Record<string, unknown>>;
   missing_evidence?: Array<Record<string, unknown>>;
@@ -3126,6 +3138,10 @@ export interface OperatorInboxItem {
   read_version?: string;
   resolution?: string;
   verification_required?: boolean;
+  reviewable?: boolean;
+  execution_status?: string;
+  proposal_digest?: string;
+  workflow_proposal_ref?: Record<string, unknown>;
   kind: string;
   status: string;
   title: string;
@@ -3222,6 +3238,8 @@ export interface OperatorInboxProjection {
 }
 
 export interface PlanPreview {
+  content_state?: "deferred";
+  critic_review?: { mode: string; label: string; reason: string; focus: string[]; error?: string };
   action_payload?: Record<string, unknown>;
   schema_version: string;
   ok: boolean;
@@ -3366,6 +3384,21 @@ export interface RunPulseSessions {
 }
 
 export interface RunPulse {
+  versions?: {
+    source_revision: string;
+    loaded_revision: string;
+    comparison: "unknown" | "same_revision" | "different";
+    lifecycle: "unknown" | "started" | "stopped";
+    event_id: string;
+    receipt_status: "unavailable" | "available";
+    task_adoption?: {
+      scope: "authenticated_worker_cli";
+      active: number;
+      observed: number;
+      tasks: Array<{ task_id: string; actor: string; dispatch_id: string; status: "unknown" | "observed";
+        source_revision: string; comparison: "unknown" | "same_revision" | "different"; event_id: string }>;
+    };
+  };
   last_event_age_seconds?: number | null;
   events_per_bucket?: number[];
   bucket_seconds?: number | null;

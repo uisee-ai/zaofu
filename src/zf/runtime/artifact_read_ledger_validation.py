@@ -106,7 +106,7 @@ def _read_matches(row: Mapping[str, Any], requirement: Mapping[str, Any]) -> boo
         return False
     if str(requirement.get("json_path") or "$") != str(row.get("json_path") or "$"):
         return False
-    if int(row.get("returned_bytes") or 0) < int(requirement.get("min_returned_bytes") or 1):
+    if int(row.get("returned_bytes") or 0) < int(requirement.get("min_returned_bytes", 1)):
         return False
     if bool(row.get("truncated")) and not bool(requirement.get("allow_truncated", False)):
         return False
@@ -143,6 +143,9 @@ def required_read_satisfied(rows: Iterable[Mapping[str, Any]], requirement: Mapp
         except (ValueError, TypeError, KeyError):
             continue
         digest = str(row.get("selected_sha256") or "")
+        if (requirement.get("min_returned_bytes") == 0 and start == end == total == size == selected_bytes == 0
+                and digest == hashlib.sha256(b"").hexdigest() and not row.get("truncated")):
+            return True  # A delivered empty JSON string is still a bound read, not missing evidence.
         if len(digest) != 64 or start < 0 or end <= start or end > total or size <= 0 or selected_bytes < total:
             continue
         groups.setdefault((digest, total, selected_bytes), []).append((start, end))
@@ -152,6 +155,6 @@ def required_read_satisfied(rows: Iterable[Mapping[str, Any]], requirement: Mapp
             if start > end:
                 break
             end = max(end, stop)
-        if end == total and selected_bytes >= int(requirement.get("min_returned_bytes") or 1):
+        if end == total and selected_bytes >= int(requirement.get("min_returned_bytes", 1)):
             return True
     return False

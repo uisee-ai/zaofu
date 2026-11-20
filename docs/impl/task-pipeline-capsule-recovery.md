@@ -1,5 +1,8 @@
 # Task Pipeline 上下文发布与恢复
 
+自定义工作区恢复、当前阶段接力视图及受控输入续读的补强见
+[任务接力可靠性](task-handoff-reliability.md)。
+
 局部重规划保留代码、合同代次及下游调度的完整 mock 链路与候选冻结修复，见
 [断点恢复闭环验证](recovery-closure-validation.md)。冻结须覆盖同一 Run 全部当前任务，
 不能仅因修订任务完成就忽略沿用旧代次的下游任务。
@@ -123,6 +126,8 @@ RM 受控执行器 → WRC 重派及新 attempt；`tests/test_task_pipeline_shad
 覆盖旧 shadow 变体的身份、因果、终态和预算拒绝边界。这些机械检查不证明业务验收。
 
 Task 尚未 done 不代表 Impl/Verify worker 仍有执行义务。watchdog 对精确匹配的 Task Pipeline dispatch 和 operation 终态停止恢复该 worker，避免在等待集成时重启 provider 或重排 Task。新的活跃 operation 仍受监测，旧终态不能屏蔽下一次派发。
+
+按需角色在任务结束后触发上下文回收时，先复用休眠门禁检查角色占用、未结 operation、会话身份与未保存工作；满足条件则终止旧进程并更换恢复绑定，保持 suspended，下一次派发才启动新 provider。回收已要求替换进程，因此该路径不重复等待普通 idle_seconds；冷却、身份、证据及工作目录检查仍生效。终止失败保留原恢复身份并记录 worker.recycle.failed；活动任务与 fanout 继续原有换新及断点恢复。避免空白 Codex 尚未产生会话身份却立即被启动，随后按分钟拒绝休眠。`tests/test_idle_context_recycle.py` 覆盖回收入口、下次派发与拒绝/终止失败分支。
 
 结果接纳会先清空 Task 的 active_dispatch_id，集成失败时 Task 仍可保留 in_progress。此时仍按精确匹配的派发与 operation 终态排除旧 worker，不能因为活动标记已清空而再次催交旧完成事件；新的运行中 operation 或不同派发仍可见。`tests/test_task_pipeline_worker_liveness.py` 通过真实派发标记清理入口与 watchdog 验证这一交接。
 

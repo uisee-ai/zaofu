@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
+from zf.runtime.module_gap_task_declarations import _acceptance, _verification, _string_list
 
 from zf.core.state.atomic_io import atomic_write_text
 
@@ -236,6 +237,9 @@ def _write_gap_source_index_amend_artifact(
         return value
 
     amended = rewrite(source_index)
+    from zf.runtime.gap_input_policy import rebind_gap_source_partitions
+
+    rebind_gap_source_partitions(source_index, amended, gap_tasks=gap_tasks)
     artifact_rel = (
         Path("artifacts")
         / _safe_artifact_part(pdd_id or "unknown")
@@ -424,6 +428,18 @@ def build_gap_task_map_amend(
         out["amend"]["goal_kind"] = goal_kind
     if gap_category:
         out["amend"]["gap_category"] = gap_category
+    # Dispatch selectors belong to this amendment, not the inherited plan batch.
+    if "dispatch_delta_task_ids" in out:
+        out["dispatch_delta_task_ids"] = list(appended)
+    metadata = out.get("metadata")
+    if isinstance(metadata, dict) and "dispatch_delta_task_ids" in metadata:
+        out["metadata"] = {**metadata, "dispatch_delta_task_ids": list(appended)}
+    from zf.runtime.gap_input_policy import rebind_gap_input_policy
+
+    rebind_gap_input_policy(
+        base_task_map, out, gap_tasks=gap_tasks,
+        replacements=_replacement_ids_by_superseded(gap_tasks),
+    )
     return out
 
 
@@ -913,40 +929,8 @@ def _claim_paths(raw: dict[str, Any]) -> list[str]:
     )
 
 
-def _acceptance(raw: dict[str, Any]) -> list[str]:
-    values = raw.get("acceptance") or raw.get("acceptance_criteria")
-    if not isinstance(values, list):
-        return _string_list(values)
-    return _string_list([
-        item.get("statement") or item.get("text") or item.get("criterion")
-        or item.get("description") or item.get("acceptance") or item.get("title") or ""
-        if isinstance(item, dict) else item
-        for item in values
-    ])
 
 
-def _verification(raw: dict[str, Any]) -> list[str]:
-    source = raw.get("verify_commands") or raw.get("verification")
-    if isinstance(source, dict):
-        source = source.get("commands")
-    if isinstance(source, list):
-        source = [
-            row.get("command") or row.get("cmd") or "" if isinstance(row, dict) else row
-            for row in source
-        ]
-    commands = _string_list(source)
-    if commands:
-        return commands
-    validation = raw.get("validation")
-    rows = validation.get("commands") if isinstance(validation, dict) else []
-    if not isinstance(rows, list):
-        return []
-    return [
-        command
-        for row in rows
-        if isinstance(row, dict)
-        and (command := str(row.get("command") or "").strip())
-    ]
 
 
 def _dict_list(value: Any) -> list[dict[str, Any]]:
@@ -955,14 +939,6 @@ def _dict_list(value: Any) -> list[dict[str, Any]]:
     return [dict(item) for item in value if isinstance(item, dict)]
 
 
-def _string_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list | tuple | set):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str) and value.strip():
-        return [value.strip()]
-    return []
 
 
 def _int_value(value: Any, *, default: int = 0) -> int:

@@ -257,6 +257,21 @@ def _apply_semantic_failure(
         source_event_id=event.id,
     )
     expected = _operation_checkpoint_context(runtime, outcome)
+    candidate = {}
+    if expected.get("candidate_operation_id"):
+        from zf.runtime.candidate_plan_recovery import candidate_checkpoint_binding
+
+        if action != "return_to_plan":
+            return _reject_semantic_directive(runtime, event, outcome, "candidate_reader_plan_only")
+        try:
+            candidate = candidate_checkpoint_binding(
+                runtime.state_dir, runtime.event_log.read_all(),
+                failure_id=expected["candidate_failure_id"],
+                operation_id=expected["candidate_operation_id"],
+                run_id=decision["identity"]["workflow_run_id"], task_id=expected["target_task_id"],
+            )
+        except (ValueError, OSError) as exc:
+            return _reject_semantic_directive(runtime, event, outcome, str(exc))
     allowed_refs = _operation_source_descriptors(runtime, outcome)
     emitted: list[str] = []
     for directive in action_directives:
@@ -267,6 +282,7 @@ def _apply_semantic_failure(
             target,
             expected,
             action=action,
+            candidate=candidate,
         ) or _directive_ref_rejection(directive, allowed_refs)
         if rejection:
             return _reject_semantic_directive(
@@ -285,6 +301,7 @@ def _apply_semantic_failure(
                 directive=directive,
                 delta_ref=delta_ref,
                 expected=expected,
+                candidate=candidate,
             )
         task_id = str(target["task_id"])
         request = runtime.event_writer.append(ZfEvent(
@@ -399,6 +416,7 @@ def _apply_return_to_plan(
     directive: Mapping[str, Any],
     delta_ref: Mapping[str, Any],
     expected: Mapping[str, Any],
+    candidate: Mapping[str, Any],
 ) -> dict[str, Any]:
     if _semantic_replan_breaker_open(runtime, decision):
         runtime.event_writer.append(ZfEvent(
@@ -488,6 +506,19 @@ def _apply_return_to_plan(
         "reuse_refs": list(directive.get("reuse_refs") or []),
         "invalidate_refs": list(directive.get("invalidate_refs") or []),
     }
+    if candidate:
+        from zf.runtime.control_actions_candidate_rework import _replan_task_scope_payload
+
+        payload.update({
+            "pdd_id": candidate["pdd_id"], "feature_id": candidate["pdd_id"],
+            "candidate_event_id": candidate["candidate_event_id"],
+            "source_commit": candidate["source_commit"], "target_ref": candidate["candidate_ref"],
+            "candidate_failure_id": expected["candidate_failure_id"], "rework_of": expected["candidate_failure_id"],
+            "failed_task_ids": candidate["failed_task_ids"], "task_ids": [], "resume_scope": "",
+        })
+        payload.update(_replan_task_scope_payload(
+            payload, state_dir=runtime.state_dir, project_root=getattr(runtime, "project_root", None),
+        ))
     marker = runtime.event_writer.append(ZfEvent(
         type="orchestrator.replan_requested",
         actor="zf-cli",
@@ -500,7 +531,7 @@ def _apply_return_to_plan(
     from zf.runtime import replan_resynth
 
     plan = SimpleNamespace(
-        pdd_id=feature_id,
+        pdd_id=payload["pdd_id"],
         trace_id=workflow_run_id,
         target_ref=payload["target_ref"],
         source_event_id=payload["rework_of"],
@@ -510,10 +541,10 @@ def _apply_return_to_plan(
         failure_categories=tuple(payload["rework_categories"]),
         rework_summary=dict(payload["rework_summary"]),
         classification=payload["classification"],
-        failed_task_ids=(task_id,),
-        task_ids=(task_id,),
-        downstream_task_ids=(),
-        resume_scope="failed_children_only",
+        failed_task_ids=tuple(payload["failed_task_ids"]),
+        task_ids=tuple(payload["task_ids"]),
+        downstream_task_ids=tuple(payload.get("downstream_task_ids", [])),
+        resume_scope=payload["resume_scope"],
         flow_kind=payload["flow_kind"],
         task_map_ref=task_map_ref,
         task_map_generation=payload["task_map_generation"],
@@ -525,6 +556,7 @@ def _apply_return_to_plan(
         plan=plan,
         events=runtime.event_log.read_all(),
         config=runtime.config,
+        state_dir=runtime.state_dir,
     )
     emitted = [marker.id]
     if resynth is not None:
@@ -561,6 +593,7 @@ def _target_rejection(
     expected: Mapping[str, Any],
     *,
     action: str = "rework",
+    candidate: Mapping[str, Any] | None = None,
 ) -> str:
     comparisons = {
         "task_id": "target_task_id",
@@ -588,8 +621,13 @@ def _target_rejection(
     )
     if role is None:
         return "target_role_missing"
+    if candidate:
+        if action != "return_to_plan" or any(target[key] != candidate[key] for key in (
+            "attempt_id", "stage_id", "role_instance",
+        )):
+            return "candidate_target_mismatch"
     kind = str(getattr(role, "role_kind", "auto") or "auto")
-    if action in {"rework", "rebind", "invalidate", "return_to_plan"} and (
+    if not candidate and action in {"rework", "rebind", "invalidate", "return_to_plan"} and (
         kind == "reader" or (
         kind == "auto"
         and str(role.name) in {"review", "test", "judge", "verify", "critic"}

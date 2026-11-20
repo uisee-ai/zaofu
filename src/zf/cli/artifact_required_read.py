@@ -11,6 +11,7 @@ from zf.runtime.artifact_read_snapshot import open_selection
 from zf.runtime.call_result_envelope import canonical_json_sha256
 
 PAGE_BYTES = 8192
+MAX_PAGE_BYTES = 32768
 PAGE_SCHEMA = "required-artifact-page.v2"
 
 
@@ -18,9 +19,12 @@ def prepare_required_read(
     state_dir: Path, *, manifest: dict[str, Any], rows: list[dict[str, Any]],
     identity: dict[str, Any], cursor: str | None = None, page_bytes: int = PAGE_BYTES,
     resume: bool = False, event_log: Any = None,
+    output_format: str = "json",
 ) -> tuple[str, list[dict[str, Any]]]:
-    if not 1024 <= page_bytes <= PAGE_BYTES:
-        raise ValueError("--page-bytes must be between 1024 and 8192")
+    if not 1024 <= page_bytes <= MAX_PAGE_BYTES:
+        raise ValueError("--page-bytes must be between 1024 and 32768")
+    if output_format not in {"json", "text"}:
+        raise ValueError("artifact output format must be json or text")
     # Authorize every occurrence before exposing metadata or content. New
     # manifests carry immutable selection digests; legacy inputs retain full reads.
     previews = [open_selection(state_dir, manifest=manifest, row=row, identity=identity)
@@ -56,14 +60,22 @@ def prepare_required_read(
         "manifest": manifest, "requirements": rows, "selections": list(groups),
         "identity": identity,
     })
+    resume_info = None
     if resume:
-        from zf.cli.artifact_required_resume import resume_position
+        from zf.cli.artifact_required_resume import resume_decision
 
-        index, start = resume_position(
+        decision = resume_decision(
             state_dir, manifest=manifest, identity=identity,
             bundle_digest=bundle_digest, groups=list(groups.values()),
             receipts=list(receipts.values()), event_log=event_log,
         )
+        index, start = decision.index, decision.offset
+        skipped = sum(group["selection"].chars for group in list(groups.values())[:index]) + start
+        resume_info = {
+            "mode": "resume" if skipped else "full", "reason": decision.reason,
+            "skipped_chars": skipped, "current_memory": "unknown",
+            "required_occurrences": len(rows), "distinct_bodies": len(groups),
+        }
     else:
         index, start = _position(cursor, bundle_digest, list(groups.values())) if groups or cursor else (0, 0)
     items: list[dict[str, Any]] = []
@@ -72,7 +84,7 @@ def prepare_required_read(
 
     def render(extra: dict[str, Any] | None, position: tuple[int, int]) -> str:
         continuation = _cursor(bundle_digest, *position) if position[0] < len(groups) else None
-        return json.dumps({
+        page = {
             "schema_version": PAGE_SCHEMA,
             "attempt_id": str(manifest.get("attempt_id") or ""),
             "delivery_id": delivery_id,
@@ -80,7 +92,14 @@ def prepare_required_read(
             "items": [*items, *([extra] if extra is not None else [])],
             "next_cursor": continuation,
             "complete": continuation is None,
-        }, ensure_ascii=False)
+            "next_action": "read_next_page" if continuation else "confirm_delivery_then_continue_current_step",
+            **({"continuation": resume_info} if resume_info is not None else {}),
+        }
+        if output_format == "text":
+            from zf.runtime.artifact_text_page import render_text_page
+
+            return render_text_page(page)
+        return json.dumps(page, ensure_ascii=False)
 
     # Fill a page with complete small items and at most one partial tail. This
     # avoids a provider round trip per tiny source without dropping any body.

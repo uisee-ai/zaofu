@@ -75,6 +75,7 @@ def project_provider_health(
             "dispatch_id": "",
             "diagnostics": {},
             "fallback": {},
+            "external_wait": {},
         })
         reason = _provider_reason(event, payload)
         action = _payload_str(payload, "action")
@@ -96,6 +97,11 @@ def project_provider_health(
             "diagnostics": _safe_diagnostics(payload),
         })
         cooldown_until = _payload_str(payload, "cooldown_until")
+        if status == "healthy":
+            record["external_wait"] = {}
+            record["cooldown_until"] = ""
+        elif isinstance(payload.get("external_wait"), dict):
+            record["external_wait"] = _safe_diagnostics(payload["external_wait"])
         if cooldown_until:
             record["cooldown_until"] = cooldown_until
         if event.type == "provider.fallback.selected":
@@ -143,6 +149,8 @@ def _provider_reason(event: ZfEvent, payload: dict[str, Any]) -> str:
 
 def _status_for_event(event_type: str, payload: dict[str, Any], reason: str, action: str) -> str:
     explicit = _payload_str(payload, "status")
+    if reason == "quota_exhausted":
+        return "exhausted"
     if explicit:
         return explicit
     if event_type == "provider.account.exhausted":
@@ -159,6 +167,7 @@ def _status_for_event(event_type: str, payload: dict[str, Any], reason: str, act
 def _requires_operator(reason: str, action: str, event_type: str) -> bool:
     return (
         event_type == "provider.account.exhausted"
+        or reason == "quota_exhausted"
         or action == "suspend"
         or reason in {
             "auth_error",

@@ -126,7 +126,9 @@ def test_production_controllers_allow_long_horizon_with_cost_and_usage_guards(na
     profile = config.workflow.execution_profiles["bounded-direct-v1"]
     assert profile.limits.timeout_seconds == 900
     assert profile.limits.max_usage_samples == 60
-    assert profile.limits.token_budget == 1_500_000
+    # 3fe3a300 disabled the shared PRD/issue operation token breaker.
+    # Refactor retains its separate bounded profile; run/cost guards remain.
+    assert profile.limits.token_budget == (1_500_000 if name.startswith("refactor-") else 0)
     assert profile.limits.cost_budget_usd == 8
     assert all(
         role.execution.default_profile == "bounded-direct-v1"

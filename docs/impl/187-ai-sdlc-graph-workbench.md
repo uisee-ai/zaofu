@@ -216,6 +216,8 @@ CallResult协议修正可保留不可变CallRequest的初始attempt身份；Task
 
 当前generation的Kernel run.goal.completed也为其pdd_id/feature_id顶层需求任务提供接受证据，和运行时对需求容器的收尾一致；仍要求Run、generation与Kernel来源匹配，不凭TaskStore done字段涂绿。
 
+完整图首次加载仍绑定结构代际，冲突后只自动刷新结构并重试一次。运行持续追加事件导致再次冲突时，显式 Retry 改为读取一份独立完整投影并整体替换；继续核对 Request、Run、提案修订/摘要及事件序号不倒退，失败时保留原结构且不展示新 Plan。单节点详情仍严格绑定结构代际，审批仍走既有受控入口。此路径复用已有完整图读取 API，不把新详情拼接到旧结构，也不以无限重试等待运行停写。浏览器回归见 `web/tests/workflow-graph-structure.spec.ts` 的 complete replacement 场景。
+
 执行 Graph 默认按编译阶段展示已观测角色与执行记录，并按角色和 Task 聚合重试；计数不代表当前存活进程。卡片显示绑定的 Task 和最近观测到的活动，展开阶段可查看所有执行记录。无关联或未观测时明确显示未知，模型来源区分运行用量、配置快照与未知。为显示执行信息，已启动的运行在结构预览加载后自动读取同代完整图，未启动的预览仍按需读取；读取失败时保留结构并提供重试。
 
 任务 Graph 聚焦目标、Claim 和 Task，关系直接使用图中已有声明和依赖，不推断未声明的链路。两种视图可从已关联的执行记录和 Task 互相跳转；Timeline 和完整流程结构仍可访问。所有内容均为只读投影，不改变 Kernel、Task 或事件真值。

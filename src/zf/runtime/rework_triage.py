@@ -111,6 +111,8 @@ def is_plan_level_task_contract_blocker(event: ZfEvent) -> bool:
     blocker_kind = str(payload.get("blocker_kind") or "").strip().lower()
     if execution_context_failure(payload):
         return False
+    if failure_class == "host_publication_required":
+        return False
     semantic_kind = (
         failure_class in {
             "task_contract_unsatisfiable",
@@ -295,6 +297,18 @@ def classify_rework_trigger(
         )
 
     explicit_failure_class = str(payload.get("failure_class") or "").strip()
+    if explicit_failure_class == "host_publication_required":
+        return _result(
+            "unknown", "host_publication", "run_manager", "request_diagnosis",
+            "host publication requires the configured finite path authorization and an exact receipt; "
+            "it is not a product or Plan failure",
+        )
+    if explicit_failure_class == "reader_execution_failure":
+        return _result(
+            "unknown", "input_delivery", "run_manager", "request_diagnosis",
+            "reader execution did not complete; diagnose the fixed inputs before "
+            "controlled retry, without inferring a product or manual-evidence failure",
+        )
     agent_diagnosis = getattr(
         getattr(getattr(config, "workflow", None), "orchestration", None),
         "normal_frontier_owner", "",
@@ -457,7 +471,7 @@ def classify_rework_trigger(
             "failure text points at harness/gate/rule behavior",
         )
 
-    if _contains_any(text, _ENVIRONMENT_MARKERS):
+    if _contains_any(_failure_diagnostic_text(payload), _ENVIRONMENT_MARKERS):
         return _result(
             "environment_issue",
             gate or "environment",
@@ -684,6 +698,21 @@ def _payload_text(payload: dict[str, Any]) -> str:
         return json.dumps(payload, ensure_ascii=False, sort_keys=True).lower()
     except (TypeError, ValueError):
         return str(payload).lower()
+
+
+def _failure_diagnostic_text(payload: dict[str, Any]) -> str:
+    """Read diagnostics, not commands, paths or successful probe metadata."""
+    fields = ("error", "reason", "message", "summary", "detail", "details", "known_gaps", "findings")
+    parts = [str(payload[key]) for key in fields if payload.get(key)]
+    for key in ("probe_receipts", "acceptance_results", "command_receipts"):
+        rows = payload.get(key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict) or row.get("status") in {"passed", "success", "succeeded"}:
+                continue
+            parts.extend(str(row[field]) for field in fields if row.get(field))
+    return " ".join(parts).lower()
 
 
 def _integration_plan_reason_text(payload: dict[str, Any]) -> str:

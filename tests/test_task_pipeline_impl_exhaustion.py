@@ -88,4 +88,7 @@ def test_impl_exhaustion_reaches_run_manager_once_across_restart(tmp_path):
     from zf.runtime.run_manager import _pending_semantic_event_actions
 
     assert _pending_semantic_event_actions(events, triage_threshold=3) == []
-    assert len(_pending_semantic_event_actions(events, triage_threshold=0)) == 1
+    # An explicit semantic-triage requirement retains one owner even when
+    # automatic threshold detection is disabled.
+    assert _pending_semantic_event_actions(events, triage_threshold=0) == []
+    assert len(pending_rework_triage_actions(events, threshold=0, stale_seconds=300)) == 1

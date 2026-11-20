@@ -79,6 +79,17 @@ def main() -> None:
             "channel_id": "ch-inbox", "thread_id": "main", "question_id": "q-inbox",
             "kind": "owner_decision", "target_member_id": "owner", "question": "Choose release scope",
         }))
+        writer.append(ZfEvent(type="plan.approval.requested", id="evt-plan-other", actor="zf-cli", payload={
+            "plan_id": "plan-other", "stage_id": "plan", "task_count": 2,
+        }))
+        writer.emit("human.escalate", actor="run-manager", payload={
+            "decision_token": "runtime-inbox-test", "checkpoint_id": "checkpoint-inbox-test",
+            "reason": "Inspect the isolated recovery request",
+        })
+        writer.emit("approval.requested", actor="run-manager", payload={
+            "approval_ref": "unsupported-inbox-test", "title": "Legacy repair proposal",
+            "summary": "No registered operation", "approve_action": "approve-source-repair-once",
+        })
     elif args.scenario == "kanban":
         service = ControlledActionService(state, writer, config=config, project_root=root,
                                           actor="web", source="kanban-agent", surface="web")

@@ -10,9 +10,13 @@ def bind_nested_workflow_target(payload: dict[str, Any], context: dict[str, Any]
     """Carry the trusted project target into the proposal before approval."""
     plan = payload.get("workflow_plan")
     target = str(context.get("target_root") or "").strip()
-    if not target or not isinstance(plan, dict):
+    if not target:
         return payload
     copied = deepcopy(payload)
+    if copied.get("prepare_workflow") is True and "target_root" not in copied:
+        copied["target_root"] = target
+    if not isinstance(plan, dict):
+        return copied
     for option in copied["workflow_plan"].get("options") or []:
         if not isinstance(option, dict) or not option.get("route_id"):
             continue
@@ -121,6 +125,7 @@ def normalize_channel_task_submit_payload(
         "acceptance_criteria",
         "channel_authority",
         "explicit_non_goals",
+        "constraints",
         "objective",
         "priority",
         "scope",
@@ -129,6 +134,7 @@ def normalize_channel_task_submit_payload(
         "title",
         "workflow_plan",
         "prepare_workflow",
+        "target_root",
         "channel_prd_scope",
         "verification",
         "verification_tiers",
@@ -195,6 +201,11 @@ def normalize_channel_task_submit_payload(
                 return {}, {}, f"approved_task requires {field}"
         if raw_payload.get("validation") is not None and not isinstance(raw_payload["validation"], dict):
             return {}, {}, "validation must be a mapping"
+    if "constraints" in raw_payload and (
+        not isinstance(raw_payload["constraints"], list)
+        or any(not isinstance(item, str) for item in raw_payload["constraints"])
+    ):
+        return {}, {}, "submit_payload.constraints must be a list of strings"
     scope = _string_values(raw_payload.get("scope"))
     invalid_scope = [
         entry for entry in scope if not scope_entry_is_path_like(entry)
@@ -218,6 +229,7 @@ def normalize_channel_task_submit_payload(
             raw_payload.get("acceptance_criteria")
         ),
         "scope": scope,
+        "constraints": _string_values(raw_payload.get("constraints")),
         "explicit_non_goals": _string_values(
             raw_payload.get("explicit_non_goals")
         ),
@@ -266,6 +278,11 @@ def normalize_channel_task_submit_payload(
         if not isinstance(raw_payload["prepare_workflow"], bool):
             return {}, {}, "prepare_workflow must be a boolean"
         payload["prepare_workflow"] = raw_payload["prepare_workflow"]
+    if "target_root" in raw_payload:
+        target = raw_payload["target_root"]
+        if not isinstance(target, str) or not target.strip():
+            return {}, {}, "target_root must be a non-empty string"
+        payload["target_root"] = target.strip()
     workflow_plan = raw_payload.get("workflow_plan")
     if workflow_plan is not None:
         if not isinstance(workflow_plan, dict):

@@ -360,6 +360,17 @@ def apply_consensus_review_reply(
             },
         )
         return
+    from zf.runtime.channel_review_evidence import preserve_review, review_evidence_refs
+
+    try:
+        evidence_refs = review_evidence_refs(review.get("evidence_refs", []))
+    except ValueError as exc:
+        writer.emit("channel.consensus.review.rejected", actor=member_id or actor,
+                    causation_id=reply_event_id, correlation_id=channel_id,
+                    payload={"channel_id": channel_id, "thread_id": thread_id,
+                             "member_id": member_id, "review_id": review_id,
+                             "reason": str(exc), "source": source})
+        return
     common = {
         "channel_id": channel_id,
         "thread_id": thread_id,
@@ -368,9 +379,15 @@ def apply_consensus_review_reply(
         "artifact_digest": expected_digest,
         "review_id": review_id,
         "summary": str(review.get("summary") or "").strip(),
-        "evidence_refs": string_refs(review.get("evidence_refs")),
+        "evidence_refs": evidence_refs,
         "source": source,
     }
+    common.update(preserve_review(
+        state_dir, review=review,
+        binding={key: common[key] for key in (
+            "channel_id", "thread_id", "member_id", "artifact_ref", "artifact_digest", "review_id")},
+        actor=member_id or actor, reply_event_id=reply_event_id,
+    ))
     if verdict == "signed":
         writer.emit(
             "channel.consensus.signed",

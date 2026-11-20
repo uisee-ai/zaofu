@@ -1,7 +1,8 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
-import { planMarkdownPages, PLAN_PAGE_LIMIT } from "../src/components/delivery-trace/planMarkdownPages.js";
+import { parsePlanMarkdown, planMarkdownPages, PLAN_PAGE_LIMIT } from "../src/components/delivery-trace/planMarkdownPages.js";
+import { planDocumentSections } from "../src/components/delivery-trace/planDocumentSections.js";
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 const parse = (text: string) => fromMarkdown(text, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
@@ -35,4 +36,10 @@ for (const page of planMarkdownPages(code)) {
 }
 assert((codeText.match(/echo 行-/g) || []).length === 4000, "all code lines stay in fenced code blocks");
 assert(planMarkdownPages("# A\n\n正文\n\n## B\n\n正文")[0].title === "A", "navigation keeps the page's first heading");
+const sharedSource = "# A\n\n```md\n# not a section\n```\n\n<a id=\"decision\"></a>\n## B\n\n|a|b|\n|-|-|\n|1|2|\n";
+const sharedTree = parsePlanMarkdown(sharedSource);
+const sharedSections = planDocumentSections(sharedSource, sharedTree);
+assert(sharedSections.length === 2 && sharedSections[1].anchor === "decision", "shared GFM parsing retains real headings and explicit anchors");
+assert(sharedSections.map(section => section.content).join("") === sharedSource, "shared outline retains full source");
+assert(planMarkdownPages(sharedSource, sharedTree).map(page => page.source).join("") === sharedSource, "shared pagination retains full source");
 console.log("planMarkdownPages.test.ts OK");

@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
 from zf.core.config.render import redact_config, renderable_config_to_primitive
 from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
+
+
+def consumer_policy_digest(config: Any) -> str:
+    body = _execution_fields(redact_config(renderable_config_to_primitive(config)))
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def approved_config_consumer_error(

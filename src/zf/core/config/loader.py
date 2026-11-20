@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from zf.core.config.controller import parse_controller_observation
+
 
 _ROLE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{0,31}$")
 # Permission modes describe ZaoFu's logical role policy. Trusted provider
@@ -328,7 +330,7 @@ _KNOWN_COST_KEYS = frozenset({
     "pricing_refresh_timeout_seconds",
     "backend_accounting_modes",
 })
-_KNOWN_CHANNEL_KEYS = frozenset({"agent_profiles", "semantic_source_max_chars", "codex_context_window_tokens", "provider_timeout_seconds"})
+_KNOWN_CHANNEL_KEYS = frozenset({"agent_profiles", "semantic_source_max_chars", "codex_context_window_tokens", "provider_timeout_seconds", "codex_model", "codex_reasoning_effort"})
 _KNOWN_CHANNEL_AGENT_PROFILE_KEYS = frozenset({
     "revision",
     "persona",
@@ -374,7 +376,7 @@ _KNOWN_ROLE_KEYS = frozenset({
     "agent", "provider_session", "lifecycle",
 })
 _KNOWN_PROVIDER_SESSION_KEYS = frozenset({
-    "effort", "agent", "max_parallel_agents", "native_delegation",
+    "effort", "agent", "max_parallel_agents", "native_delegation", "sandbox",
 })
 _KNOWN_ROLE_LIFECYCLE_KEYS = frozenset({
     "mode", "idle_seconds", "cooldown_seconds",
@@ -420,6 +422,27 @@ def _parse_project_setup_script(project_data: dict) -> str:
     if setup and not isinstance(setup, str):
         raise ConfigError("project.scripts.setup must be a string")
     return str(setup or "").strip()
+
+
+def _parse_project_setup_inputs(value: object) -> list[str]:
+    if (not isinstance(value, list) or any(not isinstance(item, str) or not item.strip()
+            or Path(item).is_absolute() or ".." in Path(item).parts for item in value)):
+        raise ConfigError("project.setup_inputs must list nonempty workspace-relative file paths")
+    return list(dict.fromkeys(value))
+
+
+def _parse_project_setup_scope(value: object) -> str:
+    if value not in ("workspace", "shared_resources"):
+        raise ConfigError("project.setup_scope must be workspace or shared_resources")
+    return str(value)
+
+
+def _parse_required_environment_paths(value: object) -> list[str]:
+    if (not isinstance(value, list) or any(not isinstance(item, str) or not item.strip()
+            or Path(item).is_absolute() or '..' in Path(item).parts or not Path(item).parts
+            for item in value)):
+        raise ConfigError('runtime.workdirs.required_paths must list nonempty workspace-relative paths')
+    return list(dict.fromkeys(str(Path(item)) for item in value))
 
 
 def _parse_project_description(project_data: dict) -> str:
@@ -505,6 +528,7 @@ def _build_provider_session(
             agent=str(agent or "").strip(),
             max_parallel_agents=parallel,
             native_delegation=data.get("native_delegation"),
+            sandbox=data.get("sandbox", ""),
         )
     except ValueError as exc:
         raise ConfigError(
@@ -2004,6 +2028,12 @@ def _build_fanout_aggregate(data: object) -> FanoutAggregateConfig:
     retry = raw.get("retry") or {}
     if retry and not isinstance(retry, dict):
         raise ConfigError("workflow stage aggregate.retry must be a mapping")
+    review_limits = {}
+    for key in ("review_input_max_bytes", "review_input_max_pages"):
+        value = raw.get(key, 0)
+        if type(value) is not int or value < 0:
+            raise ConfigError(f"workflow stage aggregate.{key} must be a nonnegative integer")
+        review_limits[key] = value
     return FanoutAggregateConfig(
         mode=str(raw.get("mode") or "wait_for_all"),
         success_event=str(raw.get("success_event") or ""),
@@ -2027,6 +2057,7 @@ def _build_fanout_aggregate(data: object) -> FanoutAggregateConfig:
         quorum=int(raw.get("quorum") or 0),
         # B3 (R25 ISSUE-005): dedicated synth wait budget.
         synth_timeout_seconds=int(raw.get("synth_timeout_seconds") or 0),
+        **review_limits,
     )
 
 
@@ -2930,6 +2961,8 @@ def load_config(path: Path) -> ZfConfig:
             workspace=project_data.get("workspace", "."),
             state_dir=project_data.get("state_dir", ".zf"),
             setup_script=_parse_project_setup_script(project_data),
+            setup_inputs=_parse_project_setup_inputs(project_data.get("setup_inputs", [])),
+            setup_scope=_parse_project_setup_scope(project_data.get("setup_scope", "workspace")),
         ),
         session=_build_session(session_data),
         orchestrator=OrchestratorConfig(
@@ -3597,6 +3630,15 @@ def _build_runtime(
         return RuntimeConfig()
     if not isinstance(data, dict):
         raise ConfigError("runtime must be a mapping")
+    from math import isfinite
+    try:
+        watchdog_raw = data.get("host_watchdog_seconds", 0)
+        host_watchdog_seconds = float(watchdog_raw)
+        if (isinstance(watchdog_raw, bool) or not isfinite(host_watchdog_seconds)
+                or host_watchdog_seconds != 0 and host_watchdog_seconds < 15):
+            raise ValueError("invalid watchdog interval")
+    except (ValueError, TypeError) as exc:
+        raise ConfigError("runtime.host_watchdog_seconds must be 0 (disabled) or >= 15 seconds") from exc
     workdirs_raw = data.get("workdirs") or {}
     git_raw = data.get("git") or {}
     skills_raw = data.get("skills") or {}
@@ -3826,6 +3868,16 @@ def _build_runtime(
     reflect_raw = run_manager_raw.get("reflect") or {}
     if not isinstance(reflect_raw, dict):
         raise ConfigError("runtime.run_manager.reflect must be a mapping")
+    ar_terminal_policy = autoresearch_resident_raw.get("on_parent_terminal", "preserve")
+    if ar_terminal_policy not in {"cancel", "preserve", "continue"}:
+        raise ConfigError("runtime.autoresearch_resident.on_parent_terminal must be cancel, preserve or continue")
+    from zf.core.config.host_verification import parse_host_verification
+    from zf.core.config.task_publication import parse_task_publication
+    try:
+        host_verification = parse_host_verification(data.get("host_verification"))
+        task_publication = parse_task_publication(data.get("task_publication"))
+    except (ValueError, TypeError) as exc:
+        raise ConfigError(str(exc)) from exc
     source_repair_raw = run_manager_raw.get("source_repair") or {}
     if not isinstance(source_repair_raw, dict):
         raise ConfigError("runtime.run_manager.source_repair must be a mapping")
@@ -4159,10 +4211,12 @@ def _build_runtime(
             f"must be one of {_VALID_SHIP_TASK_STRATEGIES}"
         )
     return RuntimeConfig(
+        host_watchdog_seconds=host_watchdog_seconds,
         workdirs=WorkdirConfig(
             enabled=bool(workdirs_raw.get("enabled", False)),
             root=str(workdirs_raw.get("root", ".zf/workdirs")),
             mode=mode,
+            required_paths=_parse_required_environment_paths(workdirs_raw.get('required_paths', [])),
             provision_paths=[
                 str(p).strip()
                 for p in (workdirs_raw.get("provision_paths") or [])
@@ -4199,6 +4253,8 @@ def _build_runtime(
             lock_file=str(skills_raw.get("lock_file", ".zf/skills.lock.json")),
             strict=bool(skills_raw.get("strict", False)),
         ),
+        host_verification=host_verification,
+        task_publication=task_publication,
         run_manager=RuntimeRunManagerConfig(
             backend=run_manager_backend,
             reflect=RuntimeRunManagerReflectConfig(
@@ -4223,6 +4279,9 @@ def _build_runtime(
                 tmux_session=resident_tmux_session,
             ),
             source_repair=RuntimeRunManagerSourceRepairConfig(
+                publish_candidate=_bool_value(source_repair_raw.get("publish_candidate"), default=False),
+                model=str(source_repair_raw.get("model") or ""),
+                model_reasoning_effort=str(source_repair_raw.get("model_reasoning_effort") or ""),
                 enabled=_bool_value(
                     source_repair_raw.get("enabled"),
                     default=False,
@@ -4259,6 +4318,7 @@ def _build_runtime(
             ),
         ),
         autoresearch_resident=RuntimeAutoresearchResidentConfig(
+            on_parent_terminal=ar_terminal_policy,
             enabled=_bool_value(
                 autoresearch_resident_raw.get("enabled"),
                 default=False,
@@ -4636,8 +4696,13 @@ def _build_channel(data: object) -> ChannelConfig:
     timeout = data.get("provider_timeout_seconds", 0)
     if type(timeout) is not int or not 0 <= timeout <= 7200:
         raise ConfigError("channel.provider_timeout_seconds must be an integer between 0 and 7200")
-    return ChannelConfig(agent_profiles=profiles, semantic_source_max_chars=budget,
-                         codex_context_window_tokens=context_window, provider_timeout_seconds=timeout)
+    try:
+        return ChannelConfig(agent_profiles=profiles, semantic_source_max_chars=budget,
+                             codex_context_window_tokens=context_window, provider_timeout_seconds=timeout,
+                             codex_model=data.get("codex_model", ""),
+                             codex_reasoning_effort=data.get("codex_reasoning_effort", ""))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 _FEISHU_ROUTE_TARGETS = {
@@ -5025,7 +5090,7 @@ _KNOWN_GOAL_KEYS = frozenset({
     "rework_fingerprint", "quiescent_after_escalate", "micro_loop",
 })
 _KNOWN_OBSERVABILITY_KEYS = frozenset({
-    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts",
+    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts", "controller",
 })
 _KNOWN_PROVIDER_TELEMETRY_KEYS = frozenset({
     "mode", "profile_id", "endpoint_env", "enable_traces",
@@ -5046,6 +5111,10 @@ def _build_observability(data: object) -> ObservabilityConfig:
     if not isinstance(data, dict):
         raise ConfigError("observability must be a mapping")
     _reject_unknown_keys(data, _KNOWN_OBSERVABILITY_KEYS, "observability")
+    try:
+        controller = parse_controller_observation(data.get("controller"))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(str(exc)) from exc
     telemetry_raw = data.get("provider_telemetry") or {}
     metrics_raw = data.get("metrics") or {}
     runtime_logs_raw = data.get("runtime_logs") or {}
@@ -5168,6 +5237,7 @@ def _build_observability(data: object) -> ObservabilityConfig:
             "observability.alerts.cooldown_seconds must be 30..86400"
         )
     return ObservabilityConfig(
+        controller=controller,
         provider_telemetry=ProviderTelemetryConfig(
             mode=mode,
             profile_id=str(

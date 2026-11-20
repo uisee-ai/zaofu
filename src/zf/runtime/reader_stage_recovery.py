@@ -6,7 +6,7 @@ from typing import Any
 
 from zf.core.config.schema import ZfConfig
 from zf.core.events.model import ZfEvent
-from zf.runtime.failure_kind import FAILURE_KIND_INFRA, failure_kind_from_payload
+from zf.runtime.failure_kind import FAILURE_KIND_INFRA
 from zf.runtime.run_admission import build_run_admission_projection
 from zf.runtime.stage_failure_replan import (
     _event_run_id, plan_reader_stage_replan, reader_stage_for_failure,
@@ -25,7 +25,8 @@ def repaired_reader_stage_trigger(
     if not approval_ref or not str(payload.get("reason") or "").strip():
         raise ValueError("reader repair retry requires approval_ref and repair reason")
     failure = next((e for e in events if e.id == failure_id), None)
-    if failure is None or failure_kind_from_payload(failure.payload) != FAILURE_KIND_INFRA:
+    from zf.runtime.reader_failure_repair import repaired_failure_kind
+    if failure is None or repaired_failure_kind(state_dir, events, failure) != FAILURE_KIND_INFRA:
         raise ValueError("reader repair retry requires an infrastructure failure")
     stage, reason = reader_stage_for_failure(config, events, failure)
     if stage is None:
@@ -55,7 +56,9 @@ def repaired_reader_stage_trigger(
     if trigger is None:
         raise ValueError(f"reader repair retry rejected: {reason}")
     from zf.runtime.plan_requirement_amendment import amendment_binding
+    from zf.runtime.reader_replan_feedback import bind_operator_feedback, operator_feedback
     trigger.payload.update(amendment_binding(state_dir, run_id, events=events))
+    bind_operator_feedback(trigger, operator_feedback(payload), request_id=requested.id)
     trigger.payload.update(repaired_failure_event_id=failure.id,
                            repair_reason=str(payload["reason"]))
     return trigger

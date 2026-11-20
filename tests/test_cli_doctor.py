@@ -71,12 +71,14 @@ def test_doctor_provider_flags_unsupported_network_namespace(monkeypatch, capsys
     def fake_run(argv, **kwargs):
         if argv[:2] == ["/usr/bin/codex", "--version"]:
             return subprocess.CompletedProcess(argv, 0, stdout="codex 1.2.3\n", stderr="")
-        if argv[:3] == ["/usr/bin/unshare", "-n", "true"]:
+        if argv == ["/usr/bin/codex", "sandbox", "--help"]:
+            return subprocess.CompletedProcess(argv, 0, stdout="--permission-profile --include-managed-config", stderr="")
+        if argv[:2] == ["/usr/bin/codex", "sandbox"]:
             return subprocess.CompletedProcess(
                 argv,
                 1,
                 stdout="",
-                stderr="unshare: unshare failed: Operation not permitted\n",
+                stderr="bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n",
             )
         raise AssertionError(argv)
 
@@ -89,7 +91,30 @@ def test_doctor_provider_flags_unsupported_network_namespace(monkeypatch, capsys
     out = capsys.readouterr().out
     assert "codex_version: codex 1.2.3" in out
     assert "sandbox: unsupported" in out
-    assert "network namespace is not available" in out
+    assert "restricted sandbox preflight failed" in out
+
+
+def test_doctor_uses_actual_sandbox_even_when_unshare_would_fail(monkeypatch, capsys):
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/" + name)
+    def run(argv, **kwargs):
+        assert "unshare" not in argv[0]
+        output = "--permission-profile --include-managed-config" if argv[-1] == "--help" else "codex 0.164.0"
+        return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
+    monkeypatch.setattr(doctor.subprocess, "run", run)
+    assert main(["doctor", "provider", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["sandbox"]["status"] == "ok"
+    assert report["sandbox"]["qualification"] == "command_startup_only"
+    assert report["sandbox"]["probe"]["command"][-1] == "/usr/bin/true"
+
+
+def test_doctor_unknown_cli_cannot_report_success(monkeypatch, capsys):
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(doctor.subprocess, "run", lambda argv, **kwargs:
+        subprocess.CompletedProcess(argv, 0, stdout="unrecognized interface", stderr=""))
+    assert main(["doctor", "provider", "--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["sandbox"]["status"] == "unknown" and not report["ok"]
 
 
 def test_doctor_sidecar_json_reports_clean_refs(tmp_path: Path, monkeypatch, capsys):

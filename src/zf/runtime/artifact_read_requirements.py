@@ -61,6 +61,7 @@ def build_canonical_required_reads(
     """Declare the canonical artifact slices one stage must consume."""
 
     rows = [dict(item) for item in explicit if isinstance(item, Mapping)]
+    explicit_ids = {(row.get('source_id'), row.get('artifact_id')) for row in rows}
     profile = str(output_profile_id or "").strip()
     required_paths: dict[str, tuple[str, ...]] = {}
     # A task contract is already scoped. AC/command-only reads silently omit
@@ -105,8 +106,10 @@ def build_canonical_required_reads(
                 required_paths[source_id] = (
                     tuple(source.get("allowed_paths") or ["$"])
                     if source_id.startswith("plan-port-")
-                    and source.get("kind") == "task_scoped_plan_input"
-                    and profile in {"implementation", "task-verify"}
+                    and ((source.get("kind") == "task_scoped_plan_input"
+                          and profile in {"implementation", "task-verify"})
+                         or (source.get("kind") == "candidate_scoped_plan_input"
+                             and profile == "candidate-verify"))
                     else ("$",)
                 )
     elif profile == "artifact-delivery":
@@ -148,6 +151,7 @@ def build_canonical_required_reads(
                     "owner-requirement-amendment",
                     "review-artifact",
                     "plan-rework-context",
+                    "plan-rejected-review",
                     "plan-rework-package",
                     "plan-rework-decision",
                     "plan-rework-delta",
@@ -156,13 +160,22 @@ def build_canonical_required_reads(
                     "workflow-prompt",
                 }
             ):
-                required_paths[source_id] = ("$",)
+                required_paths[source_id] = (
+                    tuple(source.get("allowed_paths") or ["$"])
+                    if source.get("kind") == "plan_rework_candidate_partition" else ("$",)
+                )
 
     sources = _sources(manifest)
     required_paths.update(semantic_replan_handoff.required_read_paths(sources))
+    if profile == "plan-synth":
+        # Keep the authority identity when its bytes also appear as a port.
+        # Local-review eligibility validates the authority's exact receipt.
+        sources = sorted(sources, key=lambda source: not (
+            source.get("source_id") in {"requirement", "goal-objective"}
+            or str(source.get("source_id") or "").startswith("critical-")))
     for source in sources:
         source_id = str(source.get("source_id") or "")
-        if source_id.startswith("critical-") or source_id == "rework-feedback":
+        if source_id.startswith("critical-") or source_id in {"rework-feedback", "task-handoff"}:
             required_paths[source_id] = ("$",)
         for json_path in required_paths.get(source_id, ()):
             rows.append({
@@ -183,6 +196,7 @@ def build_canonical_required_reads(
          str(source.get("sha256") or "")): source for source in sources
     }
     seen_plan_slices: set[tuple[Any, ...]] = set()
+    seen_profile_slices: set[tuple[Any, ...]] = set()
     for row in rows:
         key = (
             str(row.get("source_id") or ""),
@@ -195,21 +209,30 @@ def build_canonical_required_reads(
         seen.add(key)
         source = source_by_identity.get(key[:3], {})
         ref = str(source.get("ref") or "")
+        constraints = (
+            row.get("min_returned_bytes", 1), row.get("max_items", 0),
+            row.get("max_chars", 0), row.get("allow_truncated", False),
+            json.dumps(source.get("access_scope") or {}, sort_keys=True),
+            json.dumps(source.get("retention") or {}, sort_keys=True),
+        )
         if key[0].startswith("plan-port-") and ref:
-            # Preserve logical ports and attempt-local evidence authority;
-            # only collapse equal pinned reads in this new declaration.
-            slice_key = (
-                ref, key[2], key[3],
-                row.get("min_returned_bytes", 1), row.get("max_items", 0),
-                row.get("max_chars", 0), row.get("allow_truncated", False),
-                json.dumps(source.get("access_scope") or {}, sort_keys=True),
-                json.dumps(source.get("retention") or {}, sort_keys=True),
-            )
+            # Preserve the existing same-file Plan port alias contract.
+            slice_key = (ref, key[2], key[3], *constraints)
             if slice_key in seen_plan_slices:
                 continue
             seen_plan_slices.add(slice_key)
+        elif profile in {"plan-synth", "workflow-read"} and ref and key[:2] not in explicit_ids:
+            # Occurrence IDs differ for logical aliases. Their full identity
+            # stays in the manifest; only the identical delivered body merges.
+            slice_key = (key[2], key[3], source.get('source_event_id', ''),
+                         tuple(source.get('allowed_paths') or ['$']), *constraints)
+            if slice_key in seen_profile_slices:
+                continue
+            seen_profile_slices.add(slice_key)
         deduped.append(row)
-    return deduped
+    # Only new declarations change order; pinned attempts/cursors keep theirs.
+    # The default page must expose the recovery input before bulk product data.
+    return sorted(deduped, key=lambda row: row['source_id'] != 'critical-reader-repair-context')
 
 
 def _sources(manifest: Mapping[str, Any]) -> list[Mapping[str, Any]]:

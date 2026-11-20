@@ -63,6 +63,7 @@ def build_parser(*, command: str | None = None) -> argparse.ArgumentParser:
     from zf.cli import channel as channel_cli
     from zf.cli import profile as profile_cli
     from zf.cli import flow as flow_cli
+    from zf.cli import controller as controller_cli
     init.register(subparsers)
     profile_cli.register(subparsers)
     flow_cli.register(subparsers)
@@ -130,6 +131,7 @@ def build_parser(*, command: str | None = None) -> argparse.ArgumentParser:
     eval_preset_cli.register(subparsers)
     failure_cli.register(subparsers)
     evolution_cli.register(subparsers)
+    controller_cli.register(subparsers)
 
     return parser
 

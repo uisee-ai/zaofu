@@ -1805,9 +1805,9 @@ def test_candidate_verify_binds_frozen_candidate_not_workflow_anchor_contract(
         )
 
 
-@pytest.mark.parametrize("scoped", [False, True])
+@pytest.mark.parametrize("scoped", [False, True, "declared"])
 def test_handoff_resolver_materializes_current_required_plan_ports(
-    tmp_path: Path, scoped: bool,
+    tmp_path: Path, scoped: bool | str,
 ) -> None:
     project_root, state_dir, _ = _service(tmp_path)
     run_contract_body = {
@@ -1830,6 +1830,16 @@ def test_handoff_resolver_materializes_current_required_plan_ports(
                            {"task_id": "other", "body": {"action": "archive"}}]}
                 if logical_name == "execution_spec"
                 else {"schema_version": f"{logical_name}.v1", "rows": [{"id": "AC-1"}]})
+        if scoped == "declared" and logical_name == "execution_spec":
+            body["schema_version"] = "execution-spec.v1"
+            body["task_input_policy"] = {
+                "schema_version": "task-input-policy.v1",
+                "shared_paths": ["$.schema_version", "$.shared"],
+                "tasks": [
+                    {"task_id": "T-ports", "paths": ["$.tasks[0]"]},
+                    {"task_id": "other", "paths": ["$.tasks[1]"]},
+                ],
+            }
         descriptor = write_immutable_json_sidecar(
             state_dir,
             body,
@@ -1944,7 +1954,9 @@ def test_handoff_resolver_materializes_current_required_plan_ports(
 
         reads = build_canonical_required_reads(manifest, output_profile_id="implementation")
         selected = [r for r in reads if r["source_id"] == "plan-port-execution_spec"]
-        assert [r["json_path"] for r in selected] == ["$.shared", "$.tasks[0]"]
+        assert [r["json_path"] for r in selected] == (
+            (["$.schema_version"] if scoped == "declared" else []) + ["$.shared", "$.tasks[0]"]
+        )
         for row in selected:
             read_attempt_artifact(state_dir, manifest=manifest,
                                   source_id=row["source_id"], artifact_id=row["artifact_id"],

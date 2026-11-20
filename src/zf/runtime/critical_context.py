@@ -91,6 +91,13 @@ def critical_context_sources(
                            "request_revision": snapshot.get("request_revision"),
                            "flow_documents": specs}
         sources.append({**approved, "source_id": "approved-config-full"})
+        if specs:
+            flow_ref = write_immutable_json_sidecar(
+                state_dir, config_identity, root="critical-context", kind="approved_flow",
+                schema_version="approved-flow-context.v1", created_by="call-result-runtime",
+                source_event_id=binding.id,
+            )
+            sources.append({**flow_ref, "source_id": "critical-approved-flow"})
     body = {
         "schema_version": "critical-context.v1", "workflow_run_id": workflow_run_id,
         "binding_event_id": binding.id, "original_user_inputs": messages,

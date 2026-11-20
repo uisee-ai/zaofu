@@ -1,4 +1,4 @@
-"""Bind a failed provider turn to its exact still-live Task Pipeline attempt."""
+"""Bind a provider turn outcome to its exact still-live Task Pipeline attempt."""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -15,12 +15,41 @@ def bind_failed_task_pipeline_turn(runtime: Any, event: ZfEvent) -> ZfEvent | No
     if (payload.get("backend") != "codex" or payload.get("provider_status") != "failed"
             or not payload.get("provider_stop_reason") or not payload.get("turn_id")):
         return None
+    return _bind_current_task_pipeline_turn(runtime, event)
+
+
+def bind_completed_task_pipeline_turn(runtime: Any, event: ZfEvent) -> ZfEvent | None:
+    payload = event.payload
+    if (payload.get("backend") not in {"codex", "claude-code"} or payload.get("provider_status") != "completed"
+            or not payload.get("turn_id")):
+        return None
+    return _bind_current_task_pipeline_turn(runtime, event)
+
+
+def _bind_current_task_pipeline_turn(runtime: Any, event: ZfEvent) -> ZfEvent | None:
+    payload = event.payload
     attempts = [row for row in task_attempt_store(runtime).current_rows()
                 if row.get("identity_version") == "operation-v2"
                 and row.get("instance_id") == event.actor and row.get("status") == "sent"]
     if len(attempts) != 1:
         return None
     attempt = attempts[0]
+    if payload.get("backend") == "claude-code":
+        from zf.runtime.stream_turn_lifecycle import current_stream_turn_matches
+
+        events = runtime.event_log.read_all()
+        if not current_stream_turn_matches(events, event, attempt):
+            return None
+        role = next((r for r in runtime.config.roles if r.instance_id == event.actor), None)
+        if role is None or role.backend != "claude-code":
+            return None
+        operation = load_workflow_operation(runtime.event_log, attempt["operation_id"]) or {}
+        if (operation.get("status") != "running" or operation.get("active_attempt_id") != attempt["attempt_id"]
+                or operation.get("lease_id") != attempt["lease_id"] or operation.get("dispatch_id") != attempt["dispatch_id"]
+                or operation.get("workflow_run_id") != attempt["run_id"] or operation.get("task_id") != attempt["task_id"]
+                or operation.get("role_instance") != event.actor):
+            return None
+        return replace(event, task_id=attempt["task_id"], correlation_id=attempt["run_id"])
     created = _parse_event_ts(attempt.get("created_at"))
     closed = _parse_event_ts(event.ts)
     prompts = [row for row in runtime.event_log.read_all()

@@ -71,3 +71,19 @@ def test_resume_requested_dispatch_cannot_relabel_current_attempt(tmp_path: Path
                                  project_root=tmp_path, index=TaskEventIndex([]))
     assert packet["attempt_identity"]["status"] == "unknown"
     assert packet["attempt_identity"]["identity"] == {}
+
+
+def test_authenticated_operation_selects_exact_current_lane(tmp_path):
+    from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
+    state = tmp_path / 'state'; state.mkdir()
+    task = Task(id='T', active_dispatch_id='new')
+    store = TaskAttemptStore(state / 'task_attempts.json')
+    for op, dispatch in [('old-op','old'), ('new-op','new')]:
+        store.ensure_for_dispatch(run_id='R', task_id='T', dispatch_id=dispatch,
+            role='dev', instance_id='dev', operation_id=op, briefing_ref='',
+            created_at='2026-11-16T00:00:00+00:00', lease_expires_at='', max_attempts=3,
+            identity_version='operation-v2', placement_epoch=1)
+    assert recovery_attempt_facts(state, task, run_id='R')['status'] == 'unknown'
+    assert recovery_attempt_facts(state, task, run_id='R', operation_id='new-op')['status'] == 'bound'
+    assert recovery_attempt_facts(state, task, run_id='R', operation_id='old-op')['status'] == 'unknown'
+    assert recovery_attempt_facts(state, task, run_id='other', operation_id='new-op')['status'] == 'unknown'

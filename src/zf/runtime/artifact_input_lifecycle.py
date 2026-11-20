@@ -2,6 +2,8 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+from zf.runtime.candidate_input_binding import current_candidate_input_binding
+from zf.runtime.reader_input_dispatch import reader_input_dispatch_matches
 
 from zf.runtime.plan_artifact_package import (
     admitted_plan_artifact_package_for_generation,
@@ -28,6 +30,18 @@ def input_lifecycle(manifest: Mapping[str, Any], events: Sequence[Any], *,
         return row.get("package_ref") == ref and (row.get("package_digest") or row.get("package_sha256")) == digest
     current = reduced.get("current") or {}
     if matches(current):
+        authority = manifest.get("handoff_authority_contract") or {}
+        if state_dir is not None and isinstance(authority, Mapping) and authority.get("attempt_domain") == "task":
+            try:
+                # Frozen Reader authority is independent of its mutable anchor,
+                # whose empty Task contract must not abort this validation.
+                valid = (current_candidate_input_binding(state_dir, manifest, events)
+                         or _current_task_binding(state_dir, manifest, events)
+                         or _current_recovery_reader_binding(state_dir, manifest, events))
+            except (OSError, ValueError):
+                return {**result, "status": "unknown", "reason": "task_binding_unavailable", "requires_rebind": True}
+            if not valid:
+                return {**result, "status": "stale", "reason": "task_binding_changed", "requires_rebind": True}
         return {**result, "status": "current"}
     if any(matches(row) for row in reduced.get("history", [])):
         try:
@@ -120,7 +134,8 @@ def _current_recovery_reader_binding(state_dir: Path, manifest: Mapping[str, Any
     if (row.get("status") != "running" or row.get("operation_type") != "fanout_reader_child"
             or row.get("attempt_domain") != "task" or not row.get("lease_id")
             or any(not manifest.get(key) or row.get(key) != manifest[key] for key in (
-                "task_id", "workflow_run_id", "dispatch_id", "task_map_generation"))):
+                "task_id", "workflow_run_id", "task_map_generation"))
+            or not reader_input_dispatch_matches(row, manifest, events)):
         return False
     # The immutable request binds both the complete manifest and its result identity.
     body = hydrate_sidecar_ref(state_dir, row.get("request_ref") or {}).payload

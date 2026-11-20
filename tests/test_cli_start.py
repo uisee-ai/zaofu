@@ -308,6 +308,28 @@ def project_dir(tmp_path: Path, monkeypatch):
 
 
 class TestZfStart:
+    def test_control_plane_reload_visits_registered_dynamic_sessions(
+        self, project_dir: Path, monkeypatch,
+    ):
+        import zf.cli.start as start_mod
+        import zf.runtime.session_tailer_recovery as recovery
+        from zf.core.state.role_sessions import RoleSessionRegistry
+
+        registry = RoleSessionRegistry(project_dir / '.zf/role_sessions.yaml', project_dir)
+        registry.get_or_create('prd-dev-lane-7', backend='codex')
+        calls = []
+
+        def record(registry, codex, claude, *, dry_run=False):
+            calls.append((set(registry.all()), dry_run))
+            return []
+
+        monkeypatch.setattr(recovery, 'restore_preserved_session_tailers', record)
+        monkeypatch.setattr(start_mod, '_initialize_start_transport', lambda *a, **kw: True)
+        assert main(['start', '--dry-run', '--control-plane-only', '--skip-workflow-inspect']) == 0
+        assert len(calls) == 1
+        assert 'prd-dev-lane-7' in calls[0][0]
+        assert calls[0][1] is True
+
     def test_control_plane_reload_recovers_enabled_autoresearch_sidecar(
         self, project_dir: Path, monkeypatch,
     ):

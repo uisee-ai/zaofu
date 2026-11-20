@@ -4,17 +4,18 @@ import { planArtifactUrl, reviewPorts } from "./planReviewModel";
 import type { ReviewArtifacts, ReviewPort } from "./planReviewModel";
 
 /** Frozen bindings are the cache key. Detailed trace ports load on demand. */
-export function usePlanArtifacts(preview: PlanPreview, projectId: string, detailed: boolean) {
+export function usePlanArtifacts(preview: PlanPreview, projectId: string, detailed: boolean, enabled = true) {
   const bindings = JSON.stringify(preview.artifacts?.filter(p => reviewPorts.includes(p.name as ReviewPort)) || []);
   const [cache, setCache] = useState<{ key: string; artifacts: ReviewArtifacts }>({ key: "", artifacts: {} });
   const [errors, setErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const key = `${projectId}:${preview.plan_id}:${bindings}`;
   useEffect(() => {
+    if (!enabled) { setLoading(false); return; }
     const controller = new AbortController();
     const saved = cache.key === key ? cache.artifacts : {};
     const ports = JSON.parse(bindings) as Array<{ name: ReviewPort }>;
-    const names = ports.map(p => p.name).filter(name => (detailed || ["task_map", "execution_spec", "source_inventory"].includes(name)) && !(name in saved));
+    const names = ports.map(p => p.name).filter(name => (detailed || ["task_map", "execution_spec", "source_inventory", "product_acceptance_spec"].includes(name)) && !(name in saved));
     setErrors([]); setLoading(names.length > 0);
     void Promise.all(names.map(async name => {
       try {
@@ -34,6 +35,6 @@ export function usePlanArtifacts(preview: PlanPreview, projectId: string, detail
     return () => controller.abort();
     // Cache updates are results, not a reason to restart in-flight reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, detailed]);
+  }, [key, detailed, enabled]);
   return { artifacts: cache.key === key ? cache.artifacts : {}, errors, loading };
 }

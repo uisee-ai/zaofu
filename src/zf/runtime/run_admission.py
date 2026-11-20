@@ -289,6 +289,9 @@ def admit_workflow_invoke(
 ) -> RunAdmissionDecision:
     """Atomically admit or queue one canonical workflow invocation."""
 
+    from zf.integrations.controller.execution import check_project
+    check_project(getattr(runtime, 'project_root', Path.cwd()))
+
     payload = _payload(event)
     run_id = _event_run_id(event)
     request_id = str(payload.get("request_id") or run_id).strip()

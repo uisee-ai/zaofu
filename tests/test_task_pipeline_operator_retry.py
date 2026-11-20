@@ -139,7 +139,7 @@ def test_retry_rejects_exhausted_budget_before_recording_request(case):
     assert log.path.read_bytes() == before
 
 
-def test_retry_allows_budget_offset_for_superseded_undispatched_repair(case):
+def test_superseded_identity_does_not_grant_more_semantic_failures(case):
     from zf.runtime.task_pipeline_operator_retry import request_impl_retry
 
     state, log, writer, identity, _ = case
@@ -152,11 +152,32 @@ def test_retry_allows_budget_offset_for_superseded_undispatched_repair(case):
     config = SimpleNamespace(workflow=SimpleNamespace(
         flow_metadata={"task_pipeline": {"mode": "blocking", "max_rework_attempts": 0}},
     ))
-    result = request_impl_retry(
-        state_dir=state, event_log=log, event_writer=writer,
-        operation_id="op-1", reason="repair checked", config=config,
-    )
-    assert result["status"] == "preview"
+    with pytest.raises(ValueError, match="retry budget exhausted"):
+        request_impl_retry(
+            state_dir=state, event_log=log, event_writer=writer,
+            operation_id="op-1", reason="repair checked", config=config,
+        )
+
+
+def test_large_identity_generation_does_not_exhaust_admitted_failure_budget(case):
+    from zf.runtime.task_pipeline_operator_retry import request_impl_retry
+    from zf.runtime.sidecar_refs import write_sidecar_json
+    state, log, writer, identity, _ = case
+    identity = {**identity, "operation_id": "op-9", "operation_generation": 9}
+    source = writer.emit("dev.blocked", task_id="T1", payload=identity)
+    ref = write_sidecar_json(state, "artifacts/op9.json",
+        {"verdict": "blocked", "failure_class": "reader_execution_failure"},
+        kind="call_control_result", schema_version="implementation-result.v1",
+        created_by="test", source_event_id=source.id)
+    for kind in ("requested", "settled"):
+        if kind == "settled":
+            writer.emit("workflow.call.result.admitted", payload={
+                **identity, "semantic_verdict": "blocked", "control_result_ref": ref})
+        writer.emit("workflow.operation." + kind, payload=identity)
+    config = SimpleNamespace(workflow=SimpleNamespace(
+        flow_metadata={"task_pipeline": {"mode": "blocking", "max_rework_attempts": 2}}))
+    assert request_impl_retry(state_dir=state, event_log=log, event_writer=writer,
+        operation_id="op-9", reason="input delivery fixed", config=config)["status"] == "preview"
 
 
 @pytest.mark.parametrize(
@@ -298,3 +319,107 @@ def test_cli_preserves_run_contract_gate(case, monkeypatch):
     before = log.path.read_bytes()
     assert invoke(state, apply=True) == 1
     assert log.path.read_bytes() == before
+
+
+def test_explicit_extra_retry_remains_bound_to_one_next_generation(case):
+    from zf.runtime.task_pipeline_operator_retry import request_impl_retry
+
+    state, log, writer, _, _ = case
+    config = SimpleNamespace(workflow=SimpleNamespace(
+        flow_metadata={"task_pipeline": {"mode": "blocking", "max_rework_attempts": 0}},
+    ))
+    kwargs = dict(state_dir=state, event_log=log, event_writer=writer,
+                  operation_id="op-1", reason="repair verified", config=config)
+    with pytest.raises(ValueError, match="approval_ref"):
+        request_impl_retry(**kwargs, authorize_extra_attempt=True)
+    request_impl_retry(**kwargs, authorize_extra_attempt=True,
+                       approval_ref="operator:approved-once", apply=True)
+    replay = request_impl_retry(**kwargs, apply=True)
+    assert replay["status"] == "already_requested"
+    grants = [e for e in log.read_all() if e.type == "task.rework.requested"]
+    assert len(grants) == 1
+    assert grants[0].payload["authorized_next_operation_generation"] == 2
+
+
+def test_retry_replay_folds_terminal_scope_once_and_observes_new_events(case, monkeypatch):
+    from dataclasses import replace
+    from zf.runtime import run_admission
+
+    state, log, _, _, _ = case
+    assert invoke(state, apply=True) == 0
+    first = log.read_all()
+    second = []
+    for event in first:
+        payload = dict(event.payload)
+        for key, old, new in (
+            ('workflow_run_id', 'run-1', 'run-2'),
+            ('task_id', 'T1', 'T2'),
+            ('operation_id', 'op-1', 'op-2'),
+        ):
+            if payload.get(key) == old:
+                payload[key] = new
+        if 'task_ids' in payload:
+            payload['task_ids'] = ['T2']
+        if 'source_event_id' in payload:
+            payload['source_event_id'] += '-second'
+        if 'control_result_ref' in payload:
+            payload['control_result_ref'] = {
+                'source_event_id': payload['control_result_ref']['source_event_id'] + '-second',
+            }
+        second.append(replace(
+            event, id=event.id + '-second',
+            task_id='T2' if event.task_id else None, payload=payload,
+            correlation_id='run-2' if event.correlation_id == 'run-1' else event.correlation_id,
+        ))
+    events = first + second
+    # Repeated historical requests must retain the last authorized request,
+    # without refolding the whole ledger for every request or every Run.
+    for index in range(8):
+        events.append(replace(first[-1], id=f'retry-replay-{index}'))
+    fold = run_admission.fold_terminal_run_scope
+    calls = []
+
+    def observed_fold(rows):
+        calls.append(len(rows))
+        return fold(rows)
+
+    monkeypatch.setattr(run_admission, 'fold_terminal_run_scope', observed_fold)
+
+    def project():
+        return derive_impl_rework_requests(
+            events=events,
+            generation_contexts=task_pipeline_generation_contexts(events),
+            operation_rows=list(reduce_workflow_operations(events).values()),
+        )
+
+    requests = project()
+    assert set(requests) == {'T1', 'T2'}
+    assert requests['T1']['event_id'] == 'retry-replay-7'
+    assert len(calls) == 1
+
+    events.append(ZfEvent(type='run.goal.blocked', payload={'run_id': 'run-1'}))
+    assert set(project()) == {'T2'}
+    assert len(calls) == 2
+    events.append(ZfEvent(type='run.goal.updated', payload={'run_id': 'run-1', 'status': 'active'}))
+    assert set(project()) == {'T1', 'T2'}
+    assert len(calls) == 3
+    events.append(ZfEvent(type='run.cancelled', payload={'run_id': 'run-2'}))
+    assert set(project()) == {'T1'}
+    assert len(calls) == 4
+
+
+def test_no_operator_retry_does_not_fold_terminal_scope(case, monkeypatch):
+    from zf.runtime import run_admission
+
+    _, log, _, _, _ = case
+
+    def unexpected_fold(events):
+        pytest.fail("a replay without operator retries must not fold terminal scope")
+
+    monkeypatch.setattr(run_admission, "fold_terminal_run_scope", unexpected_fold)
+    events = log.read_all()
+    assert derive_impl_rework_requests(
+        events=events,
+        generation_contexts=task_pipeline_generation_contexts(events),
+        operation_rows=list(reduce_workflow_operations(events).values()),
+    ) == {}

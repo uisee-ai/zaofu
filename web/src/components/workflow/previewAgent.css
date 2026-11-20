@@ -1,13 +1,14 @@
 .plan-artifact-review { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
 :where(.plan-artifact-review) button { border:1px solid var(--line); border-radius:7px; padding:7px 12px; background:var(--panel); color:var(--text); cursor:pointer; font-size:var(--text-12); }
 :where(.plan-artifact-review) button:disabled { opacity:.5; cursor:default; }
-.plan-artifact-review > label { display:flex; align-items:center; gap:8px; font-size:var(--text-12); flex-shrink:0; }
+.plan-artifact-review > label,.plan-source-toolbar > label { display:flex; align-items:center; gap:8px; font-size:var(--text-12); flex-shrink:0; }
 .plan-artifact-review select { min-width:0; max-width:100%; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--text); }
 .plan-artifact-source { max-height:340px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--canvas); font-size:var(--text-12); }
 .plan-artifact-review > .plan-selection-action { z-index:65; display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:8px; padding:8px 12px; color:var(--text); background:var(--panel); box-shadow:0 4px 16px var(--shadow); white-space:nowrap; }
 .plan-agent-anchor { position:absolute; top:100%; left:0; width:min(440px,100%); z-index:60; }
 .plan-source-toolbar { position:relative; display:flex; align-items:center; gap:8px; margin:12px 0; flex-wrap:wrap; flex-shrink:0; }
 .plan-source-toolbar small { color:var(--text-secondary); font-size:var(--text-12); }
+@media(max-width:600px) { .plan-source-toolbar > label { flex-basis:100%; } }
 .plan-source-toolbar button[aria-pressed="true"],.plan-source-toolbar button[aria-expanded="true"] { color:var(--brand); border-color:var(--brand); }
 .plan-bound-document { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; border:1px solid var(--line); border-radius:8px; padding:20px; background:var(--canvas); }
 .plan-bound-document .plan-artifact-source { margin:0; padding:0; border:0; max-height:none; }

@@ -14,7 +14,7 @@ from zf.runtime.owner_visible_delivery import (
     deliver_owner_visible_messages_once,
     project_owner_visible_inbox,
 )
-from zf.runtime.operator_inbox import build_operator_inbox
+from zf.runtime.operator_inbox import build_operator_inbox, build_runtime_requests
 
 
 class _FailingTransport(MockFeishuTransport):
@@ -177,10 +177,11 @@ def test_owner_visible_delivery_missing_route_falls_back_to_operator_inbox(
     assert OWNER_MESSAGE_FAILED in types
     assert "approval.requested" in types
     inbox = build_operator_inbox(tmp_path / ".zf", events)
-    assert inbox["summary"]["action_required_pending"] == 1
-    assert inbox["pending"][0]["kind"] == "owner_attention"
-    assert inbox["pending"][0]["verification_required"] is True
-    assert inbox["pending"][0]["actions"] == []
+    assert inbox["items"] == []
+    source = build_runtime_requests(tmp_path / ".zf", events)
+    assert source[0]["kind"] == "owner_attention"
+    assert source[0]["verification_required"] is True
+    assert source[0]["actions"] == []
 
 
 def test_owner_visible_inbox_projects_pending_and_failed(tmp_path: Path) -> None:

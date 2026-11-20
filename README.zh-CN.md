@@ -56,6 +56,86 @@ ZaoFu 的承诺不是“模型更聪明”，而是让 AI-agent 软件交付变�
 
 ## 快速开始
 
+### 安装并启动工作台
+
+在 Linux 或 macOS 上以普通用户运行安装器。系统需有 Bash、Python 3、curl、Git、
+tmux 和 tar；Ubuntu 缺失时可先执行 `sudo apt install python3 curl git tmux tar`。
+
+```bash
+git clone https://github.com/uisee-ai/zaofu
+cd zaofu
+./install.sh
+```
+
+安装器使用英文提示，菜单提供四种选择：
+
+| 菜单选项 | 结果 |
+| --- | --- |
+| **1) Install standalone**（默认） | 本机完整工作台，无需 Controller 账号或注册。 |
+| **2) Install and enroll with a Controller** | 本机工作台接入 Controller，汇总实例、已授权项目、Session 和 token 观测数据（`observed` 模式）。 |
+| **3) Use a cloud workspace** | 提示前往 Controller 门户申请实例，审核后由云端创建，本机不安装。 |
+| **4) Remove ZaoFu** | 停止当前安装的服务、移除生成的运行环境，保留用户数据。 |
+
+脚本会在用户目录安装缺少的 uv、Node.js 22 和 Web Terminal 所需的 Herdr，同步锁定的
+Python 依赖、构建 Dashboard 并检查服务就绪。开始 Agent 工作前，需自行安装并登录
+Codex 或 Claude Code。
+
+新装后打开 **http://127.0.0.1:8001/**，使用初始用户名和密码 `zaofu / zaofu` 登录。
+可在「设置 → 安全 → 密码」改密，或从侧栏底部的账号菜单退出。完成或跳过首次设置后即可添加项目。
+若将默认密码的实例开放给网络，能访问该地址的人可以操作可写终端。
+远程节点可通过 `ssh -L 8001:127.0.0.1:8001 user@your-node` 转发默认端口。
+
+```bash
+./install.sh --mode standalone                 # 非交互安装本地版本
+./install.sh --yes --no-start                   # 只安装，不启动服务
+./install.sh --mode standalone --skip-deps --port 8002  # 复用已有依赖和构建
+./install.sh --help                            # 查看全部选项
+```
+
+用 `--workspace-home /path/to/workspace` 自定义数据目录；可信网络内需要直连时传
+`--host 0.0.0.0`。重复安装保留配置和数据，不会替换已有服务。服务运行在用户 tmux
+会话中，机器重启后需重新运行安装器。
+
+### 将本地节点注册到 Controller
+
+先取得已批准的 **external Workspace**、Controller HTTPS origin 和 Keycloak realm
+issuer，再运行交互注册流程：
+
+```bash
+./install.sh --mode observed
+```
+
+按提示选择授权的本地 Registry Project ID；留空只上报实例心跳。首次执行准备安装公钥，
+未提供注册码时以退出码 **3** 返回且不启动服务。由 Controller 所有者针对该公钥签发
+注册码，存入当前用户拥有的文件后继续：
+
+```bash
+chmod 600 /private/enrollment-code
+./install.sh --mode observed --skip-deps --code-file /private/enrollment-code
+```
+
+若自定义了 `--workspace-home` 或 `--workspace-config`，每次都使用相同路径。
+`observed` 增加观测能力；managed/cloud 实例的创建、授权和释放沿用 Controller 生命周期。
+
+### 卸载 ZaoFu
+
+选择 **4) Remove ZaoFu**，或在当前安装的源码目录执行：
+
+```bash
+./install.sh remove          # 显示计划并交互确认，默认 No
+./install.sh remove --yes    # 无交互确认执行卸载
+```
+
+卸载会停止属于该安装的 Dashboard/Connector 服务，删除 `.venv`、`web/node_modules`
+和 `web/dist`；保留源码、项目、Workspace 数据、凭据及共享的 uv、Node.js、Herdr。
+先停止活跃项目 runtime 和 Web Terminal；managed 绑定需先由 Controller 释放。
+卸载不会撤销 Controller 注册身份。自定义 Workspace 时传原来的 `--workspace-home`，
+重新运行 `./install.sh` 即可重装。
+
+完整参数、日志和生命周期说明见[安装与注册手册](docs/manual/getting-started/install.md)。
+
+### 开发与 CLI 配置
+
 在 ZaoFu 源码 checkout 中安装常用开发与运行依赖，然后检查目标项目的产品
 Controller 推荐结果：
 
@@ -217,6 +297,7 @@ repair proposal 或 backlog candidate。
 
 | 从这里开始 | 文档 |
 |---|---|
+| 安装、注册与卸载 | [安装器使用手册](docs/manual/getting-started/install.md) |
 | 首个项目与首个 request | [快速开始](docs/manual/01-quickstart.md) |
 | Kernel、状态与生命周期模型 | [架构总览](docs/manual/architecture.md) |
 | 日常操作命令 | [CLI 操作手册](docs/manual/03-cli-operations.md) |
@@ -244,6 +325,8 @@ multi-agent workflow 与工程落地实践，也可以直接联系作者。
 - Web/API/Integration 只能通过确定性、token-gated action path 修改状态。
 - 产品 quality gate 和 acceptance semantics 必须来自目标项目，ZaoFu 不会虚构。
 - Provider CLI 可能修改文件并消耗模型预算，真实执行前先 validate 和 dry-run。
+- Standalone 与仅上报节点使用同一个本地账号。登录会话授权 Dashboard 写操作和终端访问。云端个人工作台使用注册的 Controller 账号通过 Keycloak 单点登录。
+- 旧 Token、passcode 和 trusted 安装保留原访问方式。迁移时停止旧 Web 进程，指定相同的 `ZF_WORKSPACE_HOME` 执行 `zf web --setup-account` 并重新启动。本机恢复使用 `zf web --reset-password`。自动化脚本可显式配置 `ZF_WEB_API_TOKEN` 并通过 Bearer 请求头访问 API。HTTPS 反向代理需保留 Host，由受信代理传递原始协议。
 - 除非网络明确可信，否则 Dashboard 只绑定 loopback。
 - 共享主机上不要使用 `tmux kill-server` 停止单个项目。
 

@@ -83,7 +83,8 @@ def test_controlled_replan_requires_exact_applied_action_chain(tmp_path):
     assert build_evidence(tmp_path, events=events, **args) is None
 
 
-def test_actual_dispatch_and_result_bind_unchanged_policy_to_candidate(tmp_path, monkeypatch):
+@pytest.mark.parametrize("deferred_authority", [False, True])
+def test_actual_dispatch_and_result_bind_unchanged_policy_to_candidate(tmp_path, monkeypatch, deferred_authority):
     from tests.test_call_result_runtime import _runtime
     from zf.runtime.artifact_read_ledger import read_attempt_artifact, seal_read_ledger, render_attempt_source_briefing
     from zf.runtime.call_result_runtime import admit_runtime_call_result, mark_call_operation_started, prepare_call_operation
@@ -111,6 +112,13 @@ def test_actual_dispatch_and_result_bind_unchanged_policy_to_candidate(tmp_path,
                'canonical_success_event': 'fanout.synth.completed', 'canonical_failure_event': 'fanout.synth.completed',
                'plan_revision': old_contract['plan_revision'], 'plan_synth_contract_ref': contract['ref'],
                'plan_synth_contract_digest': contract['sha256'], 'reviewed_plan_candidate_digest': contract['sha256']}
+    if deferred_authority:
+        # The Run contract supplies a ref before handoff materialization. The
+        # candidate must still bind its bytes and replay in the same order.
+        from zf.runtime import critical_context
+        authority = next(s for s in manifest['sources'] if s['source_id'] == 'requirement')
+        monkeypatch.setattr(critical_context, 'critical_context_sources',
+                            lambda *args: [{'source_id': 'requirement', 'ref': authority['ref']}])
     original_payload = deepcopy(payload)
     prepared = prepare_call_operation(runtime, payload=payload, operation_type='fanout_synth', operation_key='critic',
                                       stage_id='plan', task_id='', dispatch_id='new-attempt', causation_id='trigger')

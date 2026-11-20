@@ -12,6 +12,10 @@ WORKFLOW_READ_PROFILE_ID = "workflow-read"
 WORKFLOW_READ_PROFILE_REVISION = "1"
 
 _TOP_LEVEL_HANDOFF_FIELDS = (
+    "candidate_kind",
+    "owner_decision_items",
+    "plan_artifact_sha256",
+    "source_index_sha256",
     "artifact_refs",
     "evidence_refs",
     "plan_ports",
@@ -78,7 +82,8 @@ def normalize_workflow_read_result(
         verdict = "abstained"
         failure_class = "reader_execution_failure"
     elif result_semantics != "artifact_production" and (
-        (event.type.endswith(".failed") and not had_structured_report)
+        explicit_execution_failure
+        or (event.type.endswith(".failed") and not had_structured_report)
         or execution_hint == "failed"
     ):
         execution_status = "failed"
@@ -113,7 +118,10 @@ def normalize_workflow_read_result(
     report["subject_verdict"] = subject_verdict
     if result_semantics:
         report["result_semantics"] = result_semantics
-    report.setdefault("recommendation", "approve" if verdict == "passed" else "reject")
+    report.setdefault("recommendation", {
+        "passed": "approve", "rejected": "reject", "blocked": "block",
+        "abstained": "abstain", "needs_rework": "needs_rework",
+    }[subject_verdict])
     report.setdefault(
         "summary",
         str(payload.get("summary") or payload.get("reason") or ""),
@@ -157,12 +165,18 @@ def workflow_read_finding_issues(
 def _subject_verdict(*, recommendation: str, status: str) -> str:
     if recommendation == "needs_rework":
         return "needs_rework"
-    if recommendation in {"reject", "rejected"} or status in {"failed", "rejected"}:
+    if recommendation in {"reject", "rejected"}:
         return "rejected"
-    if recommendation in {"block", "blocked"} or status == "blocked":
+    if recommendation in {"block", "blocked"}:
         return "blocked"
     if recommendation in {"abstain", "abstained"}:
         return "abstained"
+    # Canonical status=failed includes unavailable outcomes; do not reinterpret
+    # an explicit subject decision on the second admission/adapter pass.
+    if status in {"failed", "rejected"}:
+        return "rejected"
+    if status == "blocked":
+        return "blocked"
     return "passed"
 
 

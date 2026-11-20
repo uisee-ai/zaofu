@@ -285,6 +285,7 @@ def render_human_review_dossier(
     decision_items: list[dict[str, Any]],
     status: str,
     review_packet: dict[str, Any],
+    decision_register_available: bool = False,
 ) -> str:
     """Build the short SDD/TDD approval guide from bound plan ports.
 
@@ -341,19 +342,26 @@ def render_human_review_dossier(
         f"- **计划状态**：`{status}`；Plan ID：`{payload.get('plan_id') or ''}`；阶段：`{payload.get('stage_id') or '未声明'}`。",
         f"- **目标**：{objective}",
         f"- **权威输入**：{', '.join(f'`{ref}`' for ref in authority_refs) or '`未绑定`'}。",
-        f"- **决定登记**：`{len(decision_items)}` 项；待决定 `{decision_counts(decision_items)['pending']}`，"
-        f"明确阻塞 `{decision_counts(decision_items)['blocking']}`，已授权待落实 `{decision_counts(decision_items)['follow_up']}`。"
-        "未来决定仅在其受影响动作前关闭；Plan 批准不自动关闭决定。",
+        (
+            f"- **决定登记**：`{len(decision_items)}` 项；待决定 `{decision_counts(decision_items)['pending']}`，"
+            f"明确阻塞 `{decision_counts(decision_items)['blocking']}`，已授权待落实 `{decision_counts(decision_items)['follow_up']}`。"
+            "未来决定仅在其受影响动作前关闭；Plan 批准不自动关闭决定。"
+            if decision_register_available else
+            "- **决定登记**：结构化登记未确认，数量未知；请核对同版 Plan 的 Decision Register。不能据此认定没有待决事项。"
+        ),
         "- **审批边界**：以当前审批请求为准；未决方案及尚未取得的验证结果仍需独立确认。",
         "",
         "## 1.1 审核包状态",
         "",
         f"- **总体状态**：`{review_packet.get('status') or 'unknown'}`；`missing_is_not_pass=true`。",
+        "",
         "| 分区 | 状态 | 计数 | 需要人工确认 |",
         "|---|---|---|---|",
     ]
     for item in review_packet.get("sections", []):
         counts = ", ".join(f"{key}={value}" for key, value in (item.get("counts") or {}).items()) or "-"
+        if item.get("id") == "decisions" and not decision_register_available:
+            counts = "未确认，数量未知"
         notes = "；".join(str(note) for note in item.get("notes", [])[:2]) or "-"
         lines.append(f"| {item.get('title') or item.get('id') or '-'} | `{item.get('status') or '-'}` | {counts} | {notes} |")
     if review_packet.get("diagnostics"):

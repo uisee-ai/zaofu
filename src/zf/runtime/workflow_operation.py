@@ -495,7 +495,14 @@ class WorkflowOperationService:
             existing = load_workflow_operation(self.event_log, operation_id)
             if existing is not None:
                 existing_hash = str(existing.get("request_hash") or "")
-                if existing_hash and existing_hash != request_hash:
+                restoring_blocked_request = (
+                    bool(request.get("task_pipeline_stage"))
+                    and existing.get("status") == "blocked"
+                    and existing.get("reason") in {
+                        "request_hash_divergence", "request_hash_compatibility_failed",
+                    }
+                )
+                if existing_hash and (existing_hash != request_hash or restoring_blocked_request):
                     compatibility = self._task_pipeline_replay_compatibility(
                         existing=existing,
                         current_request_body=request_body,
@@ -554,6 +561,10 @@ class WorkflowOperationService:
                                 result_ref.get("sha256") or ""
                             ),
                             reason="task_pipeline_attempt_local_replay",
+                        )
+                    if existing_hash == request_hash:
+                        raise WorkflowOperationError(
+                            "Task Pipeline replay compatibility proof unavailable"
                         )
                     if (
                         str(existing.get("status") or "") == "blocked"
@@ -699,11 +710,26 @@ class WorkflowOperationService:
                 current_request,
             )
         )
-        if (
-            persisted_compatibility_hash != current_compatibility_hash
-            or current_compatibility_hash != current_request_hash
-        ):
+        if current_compatibility_hash != current_request_hash:
             return None
+        read_compatibility = None
+        if persisted_compatibility_hash != current_compatibility_hash:
+            from zf.runtime.task_pipeline_read_replay import read_policy_compatibility
+
+            read_compatibility = read_policy_compatibility(
+                persisted_request, current_request,
+            )
+            if read_compatibility is None:
+                return None
+            # Compare every other semantic field normally. The original hash
+            # remains authoritative; the proof binds the stricter current reads.
+            aligned_request = dict(current_request)
+            aligned_request["required_reads"] = persisted_request["required_reads"]
+            aligned_body = {**dict(current_request_body), "request": aligned_request}
+            if operation_request_hash(task_pipeline_request_hash_body(
+                aligned_body, aligned_request,
+            )) != persisted_compatibility_hash:
+                return None
         compatibility_body = {
             "schema_version": "task-pipeline-request-replay-compatibility.v1",
             "operation_id": str(existing.get("operation_id") or ""),
@@ -717,6 +743,8 @@ class WorkflowOperationService:
             ],
             "current_request": dict(current_request_body),
         }
+        if read_compatibility is not None:
+            compatibility_body["read_policy_compatibility"] = read_compatibility
         compatibility_descriptor = write_immutable_json_sidecar(
             self.state_dir,
             compatibility_body,
@@ -1143,6 +1171,12 @@ class WorkflowOperationService:
         if parent_task_id:
             emitted_body.setdefault("parent_task_id", parent_task_id)
         for event in reversed(events):
+            if (event_type == "workflow.operation.blocked"
+                    and payload.get("reason") in {"request_hash_divergence", "request_hash_compatibility_failed"}
+                    and event.type == "loop.started" and event.origin == "kernel"):
+                # A reload may recheck old compatibility failures once. Keep
+                # the new failed occurrence so scheduling cannot poll forever.
+                break
             if event_type == "workflow.operation.started" and starts_new_redrive_epoch(
                 event, existing_operation, operation_id, request_hash,
             ):
@@ -1154,6 +1188,14 @@ class WorkflowOperationService:
                 str(existing_body.get("operation_id") or "") == operation_id
                 and str(existing_body.get("request_hash") or "") == request_hash
             ):
+                if (
+                    event_type == "workflow.operation.settled"
+                    and existing_operation.get("verification_recovery_count")
+                    and existing_operation.get("status") == "running"
+                    and (payload.get("admitted_call_result_ref") or {}).get("sha256")
+                    != (existing_body.get("admitted_call_result_ref") or {}).get("sha256")
+                ):
+                    continue
                 if event_type == "workflow.operation.started":
                     occurrence = (
                         str(payload.get("active_attempt_id") or ""),

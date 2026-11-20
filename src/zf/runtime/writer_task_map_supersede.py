@@ -19,6 +19,7 @@ def apply_explicit_task_supersedes(
     event_writer: EventWriter,
     loaded: Any,
     trigger_event: ZfEvent | None = None,
+    historical_proofs: dict[str, list[str]] | None = None,
 ) -> list[str]:
     """Cancel only ids explicitly replaced by a validated amended task-map."""
 
@@ -30,20 +31,34 @@ def apply_explicit_task_supersedes(
     raw_ids = amend.get("superseded_task_ids")
     if not isinstance(raw_ids, list):
         return []
-    task_ids = _unique_strings(raw_ids)
+    task_ids = _unique_strings([*raw_ids, *(historical_proofs or {})])
     if not task_ids:
         return []
     cancelled: list[str] = []
     for task_id in task_ids:
         task = task_store.get(task_id)
-        if task is None or task.status in {"done", "cancelled"}:
+        if task is None or task.status == "done":
             continue
-        updated = task_store.update(
-            task_id,
-            status="cancelled",
-            blocked_reason=f"superseded by {loaded.task_map_ref}",
-            active_dispatch_id="",
-        )
+        if task.status == "cancelled":
+            if not (historical_proofs or {}).get(task_id):
+                continue
+            if any(
+                event.type == "task.superseded" and event.task_id == task_id
+                and event.correlation_id == str(getattr(loaded, "workflow_run_id", "") or "")
+                and event.payload.get("superseded_by_task_map_ref") == loaded.task_map_ref
+                for event in event_writer.event_log.read_all()
+            ):
+                continue
+            # Rebind a historical cancellation to its admitted continuation;
+            # no TaskStore status change or synthetic completion is needed.
+            updated = task
+        else:
+            updated = task_store.update(
+                task_id,
+                status="cancelled",
+                blocked_reason=f"superseded by {loaded.task_map_ref}",
+                active_dispatch_id="",
+            )
         if updated is None:
             continue
         cancelled.append(task_id)
@@ -59,6 +74,7 @@ def apply_explicit_task_supersedes(
                 "superseded_by_task_map_ref": str(loaded.task_map_ref or ""),
                 "superseded_task_ids": task_ids,
                 "status": "cancelled",
+                "historical_supersession_event_ids": (historical_proofs or {}).get(task_id, []),
             },
         ))
     return cancelled
@@ -71,6 +87,7 @@ def reconcile_retained_task_dependencies(
     loaded: Any,
     state_dir: Path,
     project_root: Path,
+    historical_proofs: dict[str, list[str]] | None = None,
 ) -> list[str]:
     """Adopt amended dependency edges without reopening retained tasks."""
 
@@ -78,6 +95,7 @@ def reconcile_retained_task_dependencies(
     amend = payload.get("amend") if isinstance(payload, dict) else {}
     amend = amend if isinstance(amend, dict) else {}
     superseded = set(_unique_strings(amend.get("superseded_task_ids") or []))
+    superseded.update(historical_proofs or {})
     raw_tasks = payload.get("tasks") if isinstance(payload, dict) else []
     if not superseded or not isinstance(raw_tasks, list):
         return []

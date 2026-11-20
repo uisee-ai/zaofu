@@ -63,6 +63,12 @@ class WriterDispatchFenceMixin:
         for event in events[start_index + 1:]:
             payload = event.payload if isinstance(event.payload, dict) else {}
             event_task_id = str(event.task_id or payload.get("task_id") or "")
+            if (
+                event.type == "workflow.operation.interrupted"
+                and event_task_id == task_id
+                and str(payload.get("source_attempt_id") or "") == dispatch_id
+            ):
+                return False
             event_dispatch_ids = {
                 str(payload.get(key) or "")
                 for key in ("dispatch_id", "attempt_id", "run_id")

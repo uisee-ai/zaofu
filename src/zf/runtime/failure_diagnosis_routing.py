@@ -13,8 +13,7 @@ from zf.runtime.recovery_step import IDENTITY_FIELDS
 def pending_failure_diagnoses(
     state_dir: Path, events: list[ZfEvent], config: Any,
 ) -> list[dict[str, Any]]:
-    if config.workflow.orchestration.normal_frontier_owner != "wrc":
-        return []
+    wrc = config.workflow.orchestration.normal_frontier_owner == "wrc"
     store = TaskStore(state_dir / "kanban.json")
     latest: dict[str, tuple[int, ZfEvent]] = {}
     for index, event in enumerate(events):
@@ -25,10 +24,20 @@ def pending_failure_diagnoses(
         task = store.get(task_id) if task_id else None
         if task is None or task.status in {"done", "cancelled"}:
             continue
+        latest.pop(task_id, None)
+        if payload.get("failure_class") == "host_publication_required":
+            policy = getattr(config.runtime, "task_publication", None)
+            if policy and policy.enabled:
+                continue  # The deterministic publisher owns admission, failure and escalation.
+        if not wrc and payload.get("failure_class") != "reader_execution_failure":
+            continue
         triage = classify_rework_trigger(event, config, evidence_events=events)
         if triage.recommended_action == "request_diagnosis":
             latest[task_id] = index, event
-    actions = []
+    from zf.runtime.reader_wait_recovery import pending_reader_wait_diagnoses
+    from zf.runtime.host_probe_diagnosis import pending_host_probe_diagnoses
+    actions = [*pending_reader_wait_diagnoses(events),
+               *pending_host_probe_diagnoses(state_dir, events, config)]
     for task_id, (index, event) in latest.items():
         if has_later_task_progress(events, index, task_id):
             continue
@@ -40,6 +49,7 @@ def pending_failure_diagnoses(
             "request_id": f"failure-diagnosis:{event.id}",
             **{key: payload[key] for key in IDENTITY_FIELDS if payload.get(key)},
             "task_id": task_id,
+            "target_operation_id": str(payload.get("operation_id") or ""),
             "workflow_run_id": payload.get("workflow_run_id") or event.correlation_id or "",
             "source_event_id": event.id, "source_event_type": event.type,
             "source_event_ids": [event.id], "failure_event_ids": [event.id], "fingerprint": event.id,
@@ -50,6 +60,6 @@ def pending_failure_diagnoses(
             "continuation_expected_events": ["run.manager.agent.recommendation"],
             "summary": "诊断当前失败事实、已尝试方法和适用合同；先收集证据，再决定修复或向 OA 移交。",
             "expected_downstream_events": ["run.manager.resident.prompted", "run.manager.autoresearch.requested"],
-            "effect_expected_events": ["task.done", "task.done.accepted"],
+            "effect_expected_events": ["run.manager.agent.recommendation"],
         })
     return actions

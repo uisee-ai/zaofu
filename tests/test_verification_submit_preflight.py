@@ -17,7 +17,7 @@ from zf.runtime.task_contract_snapshot import (
 )
 
 
-def _running_verify(tmp_path, profile, owner="task_verify"):
+def _running_verify(tmp_path, profile, owner="task_verify", *, pipeline=False):
     runtime = _runtime(tmp_path)
     runtime.config.workflow.flow_metadata["result_protocol"]["semantic_submit_profiles"][profile] = "blocking"
     credential_path = provision_role_submit_credential(runtime.state_dir, "verify-1")
@@ -26,6 +26,10 @@ def _running_verify(tmp_path, profile, owner="task_verify"):
     contract.update(workflow_run_id=RUN_ID, task_map_generation=GENERATION)
     contract["verification_owner"] = owner
     contract["acceptance_criteria"][0]["verification_owner"] = owner
+    if pipeline:
+        contract["verification_commands"][0]["owner"] = owner
+        contract["allowed_paths"] = []
+        contract["evidence_contract"] = {"runtime_only": True, "write_free": True}
     descriptor = write_task_contract_snapshot(runtime.state_dir, contract)
     target = write_target_snapshot(runtime.state_dir, build_target_snapshot(
         descriptor, target_commit=TARGET, contract_snapshot=contract,
@@ -36,8 +40,10 @@ def _running_verify(tmp_path, profile, owner="task_verify"):
     semantic.update(workflow_run_id=RUN_ID, task_map_generation=GENERATION,
                     target_commit=TARGET, candidate_ref=CANDIDATE)
     semantic["probe_receipts"][0]["target_commit"] = TARGET
-    if profile == "candidate-verify":
+    if profile in {"candidate-verify", "workflow-read"}:
         semantic["product_acceptance_report"] = _report(spec)
+    success_event = "flow.discovery.child.completed" if profile == "workflow-read" else "verify.child.completed"
+    failure_event = "flow.discovery.child.failed" if profile == "workflow-read" else "verify.child.failed"
     payload = {
         **{k: semantic[k] for k in (
             "workflow_run_id", "task_id", "contract_revision", "task_map_generation",
@@ -49,22 +55,25 @@ def _running_verify(tmp_path, profile, owner="task_verify"):
         "role_instance": "verify-1", "fanout_id": "verify", "child_id": "verify-1",
         "stage_id": "verify", "run_id": "attempt-verify",
         "output_profile_id": profile, "output_profile_revision": "1",
-        "canonical_success_event": "verify.child.completed",
-        "canonical_failure_event": "verify.child.failed",
+        "canonical_success_event": success_event,
+        "canonical_failure_event": failure_event,
     }
     operations = WorkflowOperationService(
         state_dir=runtime.state_dir, event_log=runtime.event_log, event_writer=runtime.event_writer,
     )
     prepared = SimpleNamespace(operation_id="op-verify")
+    pipeline_identity = ({"task_pipeline_stage": "verify", "operation_generation": 1,
+                          "task_map_generation": GENERATION} if pipeline else {})
+    payload.update(pipeline_identity)
     ensured = operations.ensure_operation(
         workflow_run_id=RUN_ID, operation_id=prepared.operation_id,
-        operation_type="fanout_reader_child", task_id="TASK-1",
+        operation_type="task-stage" if pipeline else "fanout_reader_child", task_id="TASK-1",
         role_instance="verify-1", active_attempt_id="attempt-verify", lease_id="lease-verify",
-        request={"output_profile_id": profile, "output_profile_revision": "1",
+        request={**pipeline_identity, "output_profile_id": profile, "output_profile_revision": "1",
                  "semantic_result_submit_mode": "blocking", "result_identity": payload,
                  "result_scratch_ref": "tmp/result-submit/op-verify/result.json",
-                 "canonical_success_event": "verify.child.completed",
-                 "canonical_failure_event": "verify.child.failed"},
+                 "canonical_success_event": success_event,
+                 "canonical_failure_event": failure_event},
     )
     operations.mark_started(
         workflow_run_id=RUN_ID, operation_id=prepared.operation_id,
@@ -76,7 +85,45 @@ def _running_verify(tmp_path, profile, owner="task_verify"):
     service = SemanticResultSubmitService(
         state_dir=runtime.state_dir, event_log=runtime.event_log, event_writer=runtime.event_writer,
     )
+    if profile == "workflow-read":
+        semantic = {"execution_status": "completed", "status": "passed", "recommendation": "approve",
+                    "summary": "Product independently assessed", "findings": [],
+                    "product_acceptance_report": semantic["product_acceptance_report"]}
     return runtime, prepared, service, credential_path, semantic
+
+
+def test_discovery_preflight_rejects_missing_report_without_consuming_submission(tmp_path):
+    runtime, prepared, service, credential, semantic = _running_verify(tmp_path, "workflow-read")
+    args = dict(operation_id=prepared.operation_id, role_instance="verify-1", credential=credential.read_text().strip())
+    before = {p.relative_to(runtime.state_dir): p.read_bytes() for p in runtime.state_dir.rglob("*") if p.is_file()}
+    bad = {k: v for k, v in semantic.items() if k != "product_acceptance_report"}
+    failed = service.validate_plan_candidate(**args, semantic_result=bad)
+    assert failed["status"] == "failed"
+    assert any(i["code"] == "product_acceptance_invalid" for i in failed["errors"])
+    assert service.validate_plan_candidate(**args, semantic_result=semantic)["status"] == "passed"
+    assert before == {p.relative_to(runtime.state_dir): p.read_bytes() for p in runtime.state_dir.rglob("*") if p.is_file()}
+    assert service.submit(**args, semantic_result=semantic).canonical_event_type == "flow.discovery.child.completed"
+
+
+def test_discovery_output_card_supplies_product_contract_and_atomic_preflight(tmp_path):
+    from zf.runtime.stage_execution_card import prepare_profiled_stage_result
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    runtime, prepared, service, credential, semantic = _running_verify(tmp_path, "workflow-read")
+    operation = load_workflow_operation(runtime.event_log, prepared.operation_id)
+    request = hydrate_sidecar_ref(runtime.state_dir, operation["request_ref"]).payload["request"]
+    child = {**request, **request["result_identity"], "operation_id": prepared.operation_id,
+             "attempt_id": operation["active_attempt_id"]}
+    command, lines = prepare_profiled_stage_result(state_dir=runtime.state_dir, child_payload=child,
+        success_payload={"report": {"summary": "pending", "status": "passed", "findings": []}},
+        run_id="attempt-verify", cli_command="zf")
+    assert "result validate" in command and "--submit" in command
+    scratch = json.loads((runtime.state_dir / request["result_scratch_ref"]).read_text())
+    assert scratch["product_acceptance_report"]["journey_results"][0]["journey_id"] == "journey-create"
+    assert "mandatory product journey/assertion" in "\n".join(lines)
+    assert service.validate_plan_candidate(operation_id=prepared.operation_id, role_instance="verify-1",
+        credential=credential.read_text().strip(), use_operation_scratch=True)["status"] == "failed"
 
 
 @pytest.mark.parametrize("profile", ["task-verify", "candidate-verify"])
@@ -210,3 +257,18 @@ def test_verifier_preflight_cli_keeps_binding_for_corrected_submit(tmp_path, mon
     submitted = service.submit(operation_id=prepared.operation_id, use_operation_scratch=True,
         role_instance="verify-1", credential=credential_path.read_text().strip())
     assert submitted.canonical_event_type == "verify.child.completed"
+
+
+def test_failed_execution_diagnostic_names_exact_legal_fields(tmp_path):
+    from zf.runtime.verification_result import validate_verification_result, VerificationResultError
+    with pytest.raises(VerificationResultError, match="allowed: completed, failed"):
+        result = {key: "bound" for key in (
+            "workflow_run_id", "task_id", "contract_revision", "task_map_generation",
+            "base_commit", "task_ref", "contract_snapshot_ref", "contract_snapshot_digest",
+            "target_snapshot_ref", "target_commit", "target_snapshot_digest",
+            "verification_owner", "verification_tier")}
+        result.update(schema_version="verification-result.v1", execution_status="blocked", verdict="inconclusive")
+        validate_verification_result(result)
+    result.update(execution_status="failed")
+    with pytest.raises(VerificationResultError, match='verdict="abstained"'):
+        validate_verification_result(result)

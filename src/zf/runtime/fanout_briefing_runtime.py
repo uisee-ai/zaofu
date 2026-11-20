@@ -6,6 +6,7 @@ from pathlib import Path
 
 from zf.core.config.schema import RoleConfig
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.reader_submission_guidance import submission_authority
 from zf.runtime.fanout_artifact_refs import refactor_plan_workdir_refs
 from zf.runtime.fanout_execution_boundary import (
     fanout_task_id,
@@ -562,8 +563,7 @@ class FanoutBriefingMixin:
                 child_payload, project_root=self.project_root,
             )
             controlled_inputs = render_attempt_source_briefing(
-                child_payload,
-                state_dir=self.state_dir,
+                child_payload, state_dir=self.state_dir, role_name=role.name,
             ).strip()
             if controlled_inputs:
                 payload_section.extend([*controlled_inputs.splitlines(), ""])
@@ -1054,7 +1054,7 @@ class FanoutBriefingMixin:
                 "Submit one result below; fanout, operation, attempt, and lease "
                 "identity is authoritative.",
                 "",
-                "Use `--state-dir`; this role may run from a detached workdir.",
+                "Keep the command's exact `--state-dir`; source_state_dir is read-only evidence, not the submission target.",
                 "",
                 *result_preview_lines,
                 *command_lines,
@@ -1062,8 +1062,7 @@ class FanoutBriefingMixin:
                 "",
                 *result_guidance,
                 "",
-                "Emit once: command exit 0 is success; there is no asynchronous ack. "
-                "Never retry or re-send (stale generations are discarded). Then stop.",
+                submission_authority(run_id),
                 "",
                 f"Child success event: `{child_success_event}`",
                 f"Child failure event: `{child_failure_event}`",

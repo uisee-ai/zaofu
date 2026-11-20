@@ -544,7 +544,9 @@ def _normalize_agent_intent(
         return {}, "intent is required and must be a mapping"
 
     errors: list[str] = []
-    unknown = sorted(set(raw) - {"decision", "source_quote"})
+    # The source event id is a durable causation reference added by the
+    # Kanban Agent for auditability; accept it alongside the semantic fields.
+    unknown = sorted(set(raw) - {"decision", "source_quote", "source_message_event_id"})
     if unknown:
         errors.append("unsupported intent field(s): " + ", ".join(unknown))
     decision = str(raw.get("decision") or "").strip()

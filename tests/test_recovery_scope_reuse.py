@@ -62,18 +62,18 @@ def test_escalation_batch_reuses_scope_and_refreshes_next_call(tmp_path: Path, m
     assert writer.event_log.read_all() == emitted
 
 
-def test_reader_checkpoint_batch_reuses_scope_and_observes_new_success(monkeypatch):
+def test_reader_checkpoint_batch_reuses_scope_and_observes_new_success(tmp_path, monkeypatch):
     calls = count_aliases(monkeypatch)
     rows = []
     for run in ["A", "B", "C"]:
         rows += [event("run.goal.started", run),
                  event("issue.requested", run, target_ref="requirements.md"),
                  event("issue.triage.failed", run)]
-    first = _reader_stage_replan_checkpoints(rows, [], config())
+    first = _reader_stage_replan_checkpoints(rows, [], config(), state_dir=tmp_path)
     assert {r.workflow_run_id for r in first} == {"A", "B", "C"}
     assert len(calls) == 1
     rows.append(event("issue.triage.done", "A"))
-    second = _reader_stage_replan_checkpoints(rows, [], config())
+    second = _reader_stage_replan_checkpoints(rows, [], config(), state_dir=tmp_path)
     assert {r.workflow_run_id for r in second} == {"B", "C"}
     assert len(calls) == 2
     assert [r.__dict__ for r in second] == [r.__dict__ for r in first if r.workflow_run_id != "A"]
@@ -84,5 +84,5 @@ def test_no_recovery_candidate_needs_no_alias_scan(tmp_path, monkeypatch):
     rows = [event("run.goal.started", "A"), event("worker.heartbeat", "A")]
     writer = EventWriter(EventLog(tmp_path / "events.jsonl"))
     assert escalation_terminal.converge_unrecoverable_escalations(rows, writer=writer) == 0
-    assert _reader_stage_replan_checkpoints(rows, [], config()) == []
+    assert _reader_stage_replan_checkpoints(rows, [], config(), state_dir=tmp_path) == []
     assert not calls

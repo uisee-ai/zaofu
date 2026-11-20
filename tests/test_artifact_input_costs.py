@@ -40,6 +40,9 @@ def test_cli_usage_accounting_keeps_navigation_body_recovery_and_provider_distin
     assert report['produced_body_bytes'] == 2*report['repeated_exact_body_bytes']
     assert report['read_bytes_by_reason']['recovery'] == report['repeated_exact_body_bytes']
     assert report['host_read_ms'] is not None
+    assert report['paging']['truncation_repair_calls'] is None
+    assert report['provider_tool_calls'] is None
+    assert report['timing']['model_reasoning_ms'] is None
     assert report['provider_usage']['input_tokens'] == 70
     assert report['provider_usage']['cache_read_tokens'] == 80
     assert report['provider_usage']['sample_count'] == 1
@@ -56,9 +59,24 @@ def test_costs_filter_scope_and_never_attribute_another_consumer_or_unbound_usag
     report=input_cost_report(state_dir=tmp_path,manifest=manifest,identity=IDENTITY,
         events=writer.event_log.read_all(),reads=[],consumer_actor='verify-1')
     assert report['visible_sources'] == 1 and report['scope_complete'] is False
+    assert report['required_input'] is None
     assert report['provider_usage'] is None and report['read_deliveries'] == 0
     assert 'alias' not in json.dumps(report)
     assert service.attempt_input_costs('a',context=service.context(role='verify'))['provider_usage'] is None
+
+
+def test_cli_costs_distinguish_available_from_frozen_required_selection(tmp_path, monkeypatch, capsys):
+    manifest, required, _ = published(tmp_path)
+    current_dispatch(tmp_path, required[:1])
+    _grant(tmp_path, monkeypatch, manifest=manifest, operation_id='op')
+    assert main(['artifact', 'costs', '--attempt', 'a', '--state-dir', str(tmp_path)]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report['selected_bytes_scope'] == 'all_visible_selections_not_required_reads'
+    assert report['required_input']['required_rows'] == 1
+    assert report['required_input']['distinct_selected_bytes'] == len('规则'.encode())
+    assert report['required_input']['unknown_rows'] == 0
+    assert report['selected_bytes'] > report['required_input']['distinct_selected_bytes']
+    assert report['read_deliveries'] == 0 and report['body_read_evidence'] is False
 
 
 def test_comparison_requires_same_material_scope_and_qualified_acceptance(tmp_path):
@@ -76,3 +94,50 @@ def test_comparison_requires_same_material_scope_and_qualified_acceptance(tmp_pa
     for change in ({'actor':'verify-1'},{'binding_digest':'changed'},{'comparison_qualified':False}):
         with pytest.raises(ValueError):
             compare_input_costs(before,{**after,**change})
+
+
+@pytest.mark.parametrize('rich_descriptor', [False, True])
+def test_review_outcome_uses_exact_admitted_attempt_and_does_not_invent_quality(tmp_path, rich_descriptor):
+    from tests.test_plan_local_review import _policy_fixture
+    from zf.runtime.artifact_input_costs import review_outcome
+    _, _, events = _policy_fixture(tmp_path, 'rejected')
+    admission = next(e for e in events if e.type == 'workflow.call.result.admitted')
+    if rich_descriptor:
+        # Production admission retains sidecar metadata omitted by the envelope.
+        admission.payload['control_result_ref'] = {
+            **admission.payload['control_result_ref'], 'required': True,
+            'retention': {'class': 'audit_required'}, 'source_event_id': 'old-synth'}
+    operation = {'operation_id': 'old-operation', 'workflow_run_id': 'run-1'}
+    outcome = review_outcome(tmp_path, events, operation, 'old-attempt')
+    assert outcome['verdict'] == 'rejected'
+    assert outcome['finding_status_counts'] == {'unspecified': 1}
+    assert outcome['quality_attribution'] == 'reviewer_declared_not_independent_ground_truth'
+    assert review_outcome(tmp_path, events, operation, 'new-attempt') is None
+    assert review_outcome(tmp_path, [*events, admission], operation, 'old-attempt') == outcome
+    original = dict(admission.payload['control_result_ref'])
+    for key in ('ref', 'sha256', 'schema_version'):
+        admission.payload['control_result_ref'] = {**original, key: 'wrong'}
+        assert review_outcome(tmp_path, events, operation, 'old-attempt') is None
+
+
+def test_review_selection_uses_bound_dispatch_and_retains_unknown_on_conflict():
+    from copy import deepcopy
+    from zf.runtime.artifact_input_costs import review_selection
+    from zf.runtime.call_result_envelope import canonical_json_sha256
+    manifest = {'attempt_id': 'a', 'workflow_run_id': 'r', 'sources': []}
+    operation = {'operation_id': 'op', 'request_hash': 'request'}
+    value = {'schema_version': 'plan-review-input-diagnostics.v1', 'mode': 'full'}
+    event = ZfEvent(type='fanout.synth.dispatched', origin='kernel', payload={
+        **operation, 'attempt_id': 'a', 'workflow_run_id': 'r',
+        'attempt_source_manifest_digest': canonical_json_sha256(manifest),
+        'plan_review_optimization': value})
+    assert review_selection([event, event], operation, manifest) == value
+    for key in ('operation_id', 'request_hash', 'workflow_run_id', 'attempt_id', 'attempt_source_manifest_digest'):
+        invalid = deepcopy(event)
+        invalid.payload[key] = 'wrong'
+        assert review_selection([invalid], operation, manifest) is None
+    conflict = deepcopy(event)
+    conflict.payload['plan_review_optimization']['mode'] = 'incremental'
+    assert review_selection([event, conflict], operation, manifest) is None
+    event.origin = 'agent'
+    assert review_selection([event], operation, manifest) is None

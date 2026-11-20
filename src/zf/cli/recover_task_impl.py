@@ -14,12 +14,15 @@ from zf.runtime.task_pipeline_operator_retry import request_impl_retry
 
 def register_recover_task_impl(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
-        "task-impl", help="Preview or request retry after a blocked Impl repair"
+        "task-impl", help="Preview or request Impl retry after blocked Impl or rejected Verify"
     )
     parser.add_argument("--state-dir", default=None)
     parser.add_argument("--operation", required=True)
     parser.add_argument("--reason", required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--authorize-extra-attempt", action="store_true",
+                        help="Explicitly authorize exactly one next Impl generation beyond the rework cap")
+    parser.add_argument("--approval-ref", default="", help="Operator approval evidence for the extra generation")
     parser.set_defaults(func=run)
 
 
@@ -47,6 +50,8 @@ def run(args: argparse.Namespace) -> int:
             reason=args.reason,
             apply=args.apply,
             config=context.config,
+            authorize_extra_attempt=args.authorize_extra_attempt,
+            approval_ref=args.approval_ref,
         )
     except (ConfigError, ValueError, OSError) as exc:
         print(json.dumps({"status": "rejected", "reason": str(exc)}))

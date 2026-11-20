@@ -207,6 +207,10 @@ def project_synth_failure_payload(
         artifact_payload["findings"] = findings
     for key in (
         "failure_class",
+        "failure_kind",
+        "semantic_attempt_consumed",
+        "plan_review_optimization",
+        "evidence_refs",
         "attempt_domain",
         "semantic_rework_cost",
         "plan_candidate_preflight_ref",

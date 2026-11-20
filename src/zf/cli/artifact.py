@@ -112,6 +112,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     costs.set_defaults(func=run_input_costs)
     from zf.cli.work_record import register as register_work_record
     register_work_record(sub)
+    from zf.cli.artifact_handoff import register as register_handoff
+    register_handoff(sub)
 
     read_cmd = sub.add_parser(
         "read",
@@ -122,7 +124,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
     read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded, deduplicated pages")
-    read_cmd.add_argument("--page-bytes", type=int, default=8192, help="Required output UTF-8 budget including metadata; 1024..8192 bytes")
+    read_cmd.add_argument("--page-bytes", type=int, default=8192, help="Required output UTF-8 budget including metadata; 1024..32768 bytes")
+    read_cmd.add_argument("--format", choices=["json", "text"], default="json", dest="output_format",
+                          help="Text pages preserve body quoting; complete output is still required for delivery evidence")
+    read_cmd.add_argument("--pages", type=int, default=1, help="Required pages per call, 1..4; emits JSON Lines, at most pages * page-bytes bytes")
     read_cmd.add_argument("--cursor", default=None, help="Continue a bound --required page")
     read_cmd.add_argument("--resume", action="store_true", help="Resume observed pages in the current provider session")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
@@ -237,6 +242,11 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
     started = perf_counter()
     try:
         required = getattr(args, "required", False)
+        pages = getattr(args, "pages", 1)
+        if not 1 <= pages <= 4:
+            raise ValueError("--pages must be 1..4")
+        if pages != 1 and not required:
+            raise ValueError("--pages requires --required")
         if getattr(args, "resume", False) and (not required or getattr(args, "cursor", None)):
             raise ValueError("--resume requires --required and cannot be combined with --cursor")
         if required:
@@ -264,27 +274,42 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             # The conservative view retains all operation facts and signing checks.
             use_artifact_context=True,
         )
+        from zf.runtime.worker_load_receipt import record_worker_cli_load
+        record_worker_cli_load(context.state_dir, event_log, manifest, identity, _run_attempt_read)
         if required:
             from zf.runtime.artifact_read_requirements import required_reads_for_attempt
             from zf.runtime.artifact_context_events import artifact_context_events
 
-            rows = required_reads_for_attempt(
-                artifact_context_events(event_log),
-                args.attempt,
-                state_dir=context.state_dir, operation_id=identity["operation_id"],
-            )
             from zf.cli.artifact_required_read import prepare_required_read
             from zf.runtime.artifact_output_delivery import emit_artifact_output
 
-            output, receipts = prepare_required_read(
-                context.state_dir, manifest=manifest, rows=rows, identity=identity,
-                cursor=getattr(args, "cursor", None) or None, page_bytes=args.page_bytes,
-                event_log=event_log,
-                resume=getattr(args, "resume", False),
-            )
-            for row in receipts:
-                row.update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))
-            emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
+            cursor = getattr(args, "cursor", None) or None
+            for page in range(pages):
+                page_started = started if page == 0 else perf_counter()
+                if page:
+                    # Reuse only unchanged ledger segments, never authorization.
+                    identity = authorize_artifact_read_from_environment(
+                        context.state_dir, manifest=manifest, event_log=event_log,
+                        use_artifact_context=True,
+                    )
+                rows = required_reads_for_attempt(
+                    artifact_context_events(event_log), args.attempt,
+                    state_dir=context.state_dir, operation_id=identity["operation_id"],
+                )
+                output, receipts = prepare_required_read(
+                    context.state_dir, manifest=manifest, rows=rows, identity=identity,
+                    cursor=cursor, page_bytes=args.page_bytes, event_log=event_log,
+                    resume=bool(page == 0 and getattr(args, "resume", False)),
+                    output_format=getattr(args, "output_format", "json"),
+                )
+                for row in receipts:
+                    row.update(read_reason=getattr(args, "reason", "unspecified"),
+                               host_elapsed_ms=round((perf_counter()-page_started)*1000, 3))
+                emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
+                from zf.runtime.artifact_text_page import parse_artifact_page
+                cursor = parse_artifact_page(output)["next_cursor"]
+                if not cursor:
+                    break
             return 0
         result = read_attempt_artifact(
             context.state_dir,
@@ -316,6 +341,15 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                          ensure_ascii=False)
     else:
         output = result["content"]
+    if getattr(args, "output_format", "json") == "text":
+        from zf.runtime.artifact_text_page import render_text_page
+
+        row = result["read"]
+        output = render_text_page({"schema_version": "artifact-page.v1", "items": [{
+            **{k: row[k] for k in ("source_id", "artifact_id", "artifact_sha256", "json_path")},
+            **{k: row[k] for k in ("page_start", "page_end", "page_total") if k in row},
+            "content": result["content"],
+        }]})
     from zf.runtime.artifact_output_delivery import emit_artifact_output
     try:
         result["read"].update(operation_id=identity.get("operation_id", ""),

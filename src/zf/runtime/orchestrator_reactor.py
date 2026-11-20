@@ -34,6 +34,7 @@ from zf.runtime.channel_synthesis_reactor import (
     react_channel_synthesis_repair_requested,
     react_channel_synthesis_requested,
 )
+from zf.runtime.orchestrator_gap_admission import GapAdmissionRecoveryMixin
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.durable_call_workflow import DurableCallWorkflowMixin
 from zf.runtime.feature_completion import close_feature_if_all_tasks_done
@@ -115,6 +116,7 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
     ("judge.failed", "_on_judge_failed"),
     ("discriminator.failed", "_on_discriminator_failed"),
     ("task.done.blocked", "_on_task_done_blocked"),
+    ("task_map.amend.failed", "_on_gap_admission_failed"),
     ("orchestrator.evidence_rework.requested", "_on_evidence_rework_requested"),
     ("orchestrator.semantic.failure.requested", "_on_orchestrator_semantic_failure_requested"),
     ("orchestrator.semantic.rework.requested", "_on_orchestrator_semantic_rework_requested"),
@@ -334,25 +336,9 @@ def _autoresearch_repair_mode(config: object) -> str:
     return mode if mode in {"proposal_only", "bounded_repair"} else "proposal_only"
 
 
-def _autoresearch_failure_class(fingerprint: str) -> str:
-    for prefix in (
-        "task_ref_rejected",
-        "missing_task_ref_after_dev_build_done",
-        "fanout_timed_out",
-        "completion_snapshot_ref_missing",
-        "task_contract_invalid",
-    ):
-        if fingerprint.startswith(f"{prefix}:"):
-            return prefix
-    parts = fingerprint.split(":")
-    if len(parts) >= 2 and parts[0] == "failure":
-        return parts[1]
-    if parts and parts[0] == "stall":
-        return "stall"
-    return ""
-
-
-class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin):
+class EventReactorMixin(
+    OrchestratorAgentReactorMixin, DurableCallWorkflowMixin, GapAdmissionRecoveryMixin,
+):
     """Event handlers + state-machine transitions of Orchestrator.
     Mixin contract: relies on host Orchestrator's instance fields. Do
     not instantiate standalone."""
@@ -488,7 +474,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         from zf.runtime.stage_failure_replan import plan_reader_stage_replan
 
         events = read_runtime_events(self.event_log, self.state_dir)
-        replan_event, note = plan_reader_stage_replan(self.config, events, event)
+        replan_event, note = plan_reader_stage_replan(self.config, events, event, state_dir=self.state_dir)
         if replan_event is None:
             if note == "cap_exhausted":
                 from zf.runtime.escalation_terminal import converge_stage_replan_cap
@@ -1093,31 +1079,9 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         self, event: ZfEvent,
     ) -> WorkflowRuntimeDecision | None:
         """Apply external worker state events to the in-memory lifecycle view."""
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        instance = str(
-            payload.get("instance_id") or payload.get("role") or ""
-        ).strip()
-        to_state = str(payload.get("to") or "").strip()
-        if instance and to_state:
-            try:
-                self._last_worker_state[instance] = to_state
-            except Exception:
-                pass
-            try:
-                recycling = {"pending_recycle", "recycling"}
-                resumed = {"idle", "busy", "awaiting_review", "completion_pending"}
-                if to_state in recycling:
-                    self._instance_state[instance] = to_state
-                elif self._instance_state.get(instance) in recycling and to_state in resumed:
-                    self._instance_state[instance] = "healthy"
-            except Exception:
-                pass
-        if instance and payload.get("respawn_success_circuit_reset") is True:
-            try:
-                self._respawn_success_circuit_opened.discard(instance)
-                self._dead_counter.pop(instance, None)
-            except Exception:
-                pass
+        from zf.runtime.worker_state_runtime import apply_external_worker_transition
+
+        apply_external_worker_transition(self, event)
         return None
 
     def _on_build_done(self, event: ZfEvent) -> WorkflowRuntimeDecision | None:
@@ -6048,12 +6012,12 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         the same work unit without treating context exhaustion as success or
         product failure.
         """
-        from zf.runtime.reader_context_recovery import reader_fanout_owns_context_recovery
+        from zf.runtime.task_pipeline_context_recovery import lifecycle_owns_context_recovery
 
-        if reader_fanout_owns_context_recovery(self, event):
+        if lifecycle_owns_context_recovery(self, event):
             return WorkflowRuntimeDecision(
                 action="skip", task_id=event.task_id,
-                reason="context recovery belongs to reader fanout lifecycle",
+                reason="context recovery belongs to its provider lifecycle",
             )
         payload = event.payload if isinstance(event.payload, dict) else {}
         task_id = (
@@ -6133,12 +6097,12 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         deterministic state transition that makes the task dispatchable again.
         It does not mark the task done and it does not invent new evidence.
         """
-        from zf.runtime.reader_context_recovery import reader_fanout_owns_context_recovery
+        from zf.runtime.task_pipeline_context_recovery import lifecycle_owns_context_recovery
 
-        if reader_fanout_owns_context_recovery(self, event):
+        if lifecycle_owns_context_recovery(self, event):
             return WorkflowRuntimeDecision(
                 action="skip", task_id=event.task_id,
-                reason="context retry belongs to reader fanout lifecycle",
+                reason="context retry belongs to its provider lifecycle",
             )
         task_id = event.task_id or ""
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -6197,6 +6161,11 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         assigned_to = (
             str(getattr(task, "assigned_to", "") or "")
             or str(payload.get("recommended_role") or payload.get("role") or "")
+        )
+        from zf.runtime.task_pipeline_completion_recovery import interrupt_completion_operation
+
+        interrupt_completion_operation(
+            self, event, task_id=task_id, dispatch_id=active_dispatch_id,
         )
         previous_status = task.status
         updates: dict[str, Any] = {
@@ -6432,6 +6401,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
                 REPAIR_DISPATCH_EVENT,
                 SELF_REPAIR_SKILL,
                 decide_repair,
+                repair_dispatch_failure_class,
             )
 
             repair_mode = _autoresearch_repair_mode(self.config)
@@ -6466,7 +6436,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
                     "repair_task_payload": repair_task_payload,
                     "apply_policy": repair_mode,
                     "repair_mode": repair_mode,
-                    "failure_class": _autoresearch_failure_class(decision.fingerprint),
+                    "failure_class": repair_dispatch_failure_class(decision.fingerprint),
                     "repair_bucket": decision.bucket,
                     "recovery_case_id": str(payload.get("recovery_case_id") or ""),
                     "source_event_id": event.id,

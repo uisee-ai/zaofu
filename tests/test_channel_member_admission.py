@@ -23,7 +23,7 @@ def execute(service, writer, action, payload):
     return service.execute(action=action, requested_action=action, payload=payload, requested=request)
 
 
-def fixture(tmp_path: Path, monkeypatch, *, role_context_ref=""):
+def fixture(tmp_path: Path, monkeypatch, *, role_context_ref="", template_id="prd-clarification"):
     state = tmp_path / "state"
     writer = EventWriter(EventLog(state / "events.jsonl"))
     config = ZfConfig(project=ProjectConfig(name="admission"), channel=ChannelConfig(agent_profiles={
@@ -33,7 +33,7 @@ def fixture(tmp_path: Path, monkeypatch, *, role_context_ref=""):
     }))
     service = ControlledActionService(state, writer, project_root=tmp_path, actor="web", config=config)
     created = execute(service, writer, "channel-create-from-template", {
-        "channel_id": "ch-admit", "template_id": "prd-clarification", "name": "Admission",
+        "channel_id": "ch-admit", "template_id": template_id, "name": "Admission",
         "mode": "multi_lens", "overrides": {"backend": "fake"},
     })
     assert created["ok"], created

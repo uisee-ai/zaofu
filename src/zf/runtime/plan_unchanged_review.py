@@ -22,7 +22,7 @@ EVIDENCE_SCHEMA = "unchanged-plan-review.v1"
 
 
 def attach_unchanged_review(runtime: Any, *, payload: dict[str, Any], stage: str, trigger_id: str,
-                            operation_id: str) -> None:
+                            operation_id: str, compare_text: bool = False) -> None:
     """Bind candidate evidence before the immutable source manifest is published."""
     refs = payload.get("input_refs")
     if not isinstance(refs, list) or any(isinstance(s, Mapping) and s.get("source_id") == EVIDENCE_ID for s in refs):
@@ -50,7 +50,8 @@ def attach_unchanged_review(runtime: Any, *, payload: dict[str, Any], stage: str
         evidence = build_evidence(
             runtime.state_dir, events=runtime.event_log.read_all(), sources=refs,
             run=str(payload.get("workflow_run_id") or ""), fanout=str(payload.get("fanout_id") or ""),
-            stage=stage, trigger_id=trigger_id, critic_role=str(payload.get("role_instance") or ""),
+            stage=stage, trigger_id=trigger_id, critic_role=str(payload.get("role_instance") or ""), compare_text=compare_text,
+            project_root=runtime.project_root,
         )
         if not evidence:
             return
@@ -139,17 +140,18 @@ def _trusted_trigger(events: Sequence[ZfEvent], trigger: ZfEvent, run: str) -> b
 
 def build_evidence(
     state_dir: Path, *, events: Sequence[ZfEvent], sources: Sequence[Mapping[str, Any]],
-    run: str, fanout: str, stage: str, trigger_id: str, critic_role: str,
+    run: str, fanout: str, stage: str, trigger_id: str, critic_role: str, compare_text: bool = False, project_root: Path | None = None,
 ) -> dict[str, Any] | None:
     """Return complete review evidence, or no optimization on any ambiguity."""
     try:
         return _build(state_dir, events=events, sources=sources, run=run, fanout=fanout,
-                      stage=stage, trigger_id=trigger_id, critic_role=critic_role)
+                      stage=stage, trigger_id=trigger_id, critic_role=critic_role, compare_text=compare_text,
+                      project_root=project_root)
     except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, StopIteration, RecursionError):
         return None
 
 
-def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic_role):
+def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic_role, compare_text=False, project_root=None):
     from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package, reduce_plan_artifact_packages
 
     if not all((run, fanout, stage, trigger_id, critic_role)):
@@ -187,6 +189,15 @@ def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic
         return None
     authority = [s for s in rows if s.get("source_id") in {"requirement", "goal-objective"}
                  or str(s.get("source_id") or "").startswith("critical-")]
+    # The run contract supplies the workflow input as a project ref. At
+    # preparation it has not passed through the manifest resolver yet.
+    from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
+
+    for index, source in enumerate(authority):
+        if not source.get("sha256") and project_root is not None:
+            bound = materialize_attempt_source_ref(state_dir=state_dir, project_root=project_root,
+                ref=source["ref"], source_id=source["source_id"])
+            authority[index] = {**source, "sha256": bound["sha256"]}
     if not authority or _authority_digests(previous.get("sources", [])) != _authority_digests(authority):
         return None
     old_authority = [s for s in previous.get("sources", []) if isinstance(s, Mapping)
@@ -217,10 +228,15 @@ def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic
         new_ports[name] = port
     if not new_ports:
         return None
+    change = None
+    if compare_text:
+        from zf.runtime.plan_text_change import text_change
+        change = text_change(state_dir, sources=rows, previous=previous, report=report, trigger=trigger[0],
+                             events=events, run=run, package_digest=baseline["sha256"], project_root=project_root)
     prior_bindings = previous.get("_critic_source_bindings") or []
     reused = []
     deltas = []
-    for name, port in new_ports.items():
+    for name, port in (() if change else new_ports.items()):
         old = old_ports.get(name)
         if not old or name in {"task_map", "goal_claim_set"}:
             continue
@@ -271,7 +287,7 @@ def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic
         except (ValueError, TypeError, UnicodeDecodeError, RecursionError):
             continue
     selected = reused + deltas
-    if not selected or len({r["source_id"] for r in selected}) != len(selected):
+    if (not selected and not change) or len({r["source_id"] for r in selected}) != len(selected):
         return None
     evidence = {"schema_version": EVIDENCE_SCHEMA, "workflow_run_id": run, "fanout_id": fanout,
             "stage_id": stage, "trigger_event_id": trigger_id, "target_ref": trigger[0].payload["target_ref"],
@@ -282,6 +298,8 @@ def _build(state_dir, *, events, sources, run, fanout, stage, trigger_id, critic
             "candidate_report_artifact_id": report_source["artifact_id"], "prior_review_ref": previous["_critic_control_ref"],
             "prior_review": previous["_critic_control"], "unchanged_ports": sorted(reused, key=lambda r: r["logical_name"]),
             "changed_ports": sorted(deltas, key=lambda r: r["logical_name"])}
+    if change:
+        evidence["markdown_change"] = change
     # The proof is itself mandatory input; never inflate review with an
     # unbounded certificate or exceed the ordinary sidecar consumer limit.
     if len(json.dumps(evidence, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > 900 * 1024:

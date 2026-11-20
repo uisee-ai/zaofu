@@ -51,8 +51,10 @@ def _terminal_run_scope(
             status in {"active", "running"}
             and epoch is not None
             and epoch[1] == "run.goal.blocked"
+            and epoch[2] < 0
             and index > epoch[0]
         ):
+            # Reaffirming active must not move the epoch past running readers.
             terminal_epochs[run_id] = (epoch[0], epoch[1], index)
     return aliases, terminal_epochs
 

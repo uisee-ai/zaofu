@@ -77,10 +77,13 @@ def workflow_reader_required_source_paths(
         if isinstance(manifest.get("sources"), list)
         else []
     )
+    exact_flow_present = any(isinstance(source, Mapping)
+                             and source.get("source_id") == "critical-approved-flow" for source in sources)
     required = {
         str(source.get("source_id") or ""): ("$",)
         for source in sources
         if isinstance(source, Mapping) and str(source.get("source_id") or "")
+        and not (exact_flow_present and source.get("source_id") == "approved-config-full")
     }
     return required, "" if required else stage_id
 

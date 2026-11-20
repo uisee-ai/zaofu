@@ -189,3 +189,54 @@ def test_assistance_briefing_does_not_load_global_projections(running, monkeypat
         assert r.identity[field] in text
     assert "orchestrator.rework.triage.recorded" in text
     assert "orchestrator.round.complete" in text
+
+
+def test_busy_checkpoint_queues_guidance_and_replays_before_new_checkpoint(running, monkeypatch):
+    from zf.runtime.orchestrator import Orchestrator
+    from zf.runtime.worker_assistance import dispatch_pending_assistance
+    from zf.runtime.orchestrator_agent_transport import orchestrator_checkpoint_busy
+    r = running
+    writer = r.event_writer
+    identity = {"operation_id": "oa-active", "request_hash": "h",
+                "operation_type": "orchestrator_agent_semantic", "workflow_run_id": "run-1",
+                "role_instance": "orchestrator"}
+    for kind in ("requested", "started"):
+        writer.emit("workflow.operation." + kind, payload=identity)
+    _request(r)
+    sent = []
+    r._add_layer2_pending = lambda _: None
+    r._record_skill_provenance = lambda **kw: None
+    r._dispatch_context = lambda **kw: {}
+    r._send_transport_task = lambda *args: sent.append(args)
+    r._fire_orchestrator_turn = lambda role, events: Orchestrator._fire_orchestrator_turn(r, role, events)
+    monkeypatch.setattr("zf.runtime.orchestrator_agent_role.orchestrator_instance_id", lambda _: "orchestrator")
+    monkeypatch.setattr("zf.runtime.orchestrator.build_orchestrator_briefing",
+                        lambda **kw: _render_rework_triage_contract(kw["trigger_event"]))
+    dispatch_pending_assistance(r)
+    assert not sent
+    writer.emit("workflow.operation.settled", payload=identity)
+    queued = {**identity, "operation_id": "oa-queued"}
+    writer.emit("workflow.operation.requested", payload=queued)
+    writer.emit("orchestrator.semantic.checkpoint.requested", payload=queued)
+    dispatch_pending_assistance(r)
+    dispatch_pending_assistance(r)
+    assert len(sent) == 1
+    assert orchestrator_checkpoint_busy(r)  # The guidance delivery also owns the pane.
+
+
+def test_guidance_deadline_priority_does_not_override_active_provider():
+    from zf.runtime.orchestrator_advisory_queue import guidance_inflight, next_advisory_event
+    old = (datetime.now(timezone.utc) - timedelta(seconds=400)).isoformat()
+    events = [
+        ZfEvent(type="workflow.operation.requested", payload={"operation_id": "oa",
+            "workflow_run_id": "r", "operation_type": "orchestrator_agent_semantic",
+            "role_instance": "orchestrator"}),
+        ZfEvent(type="orchestrator.semantic.checkpoint.requested", payload={"operation_id": "oa"}),
+        ZfEvent(type="orchestrator.rework.triage.requested", ts=old, payload={
+            "request_id": "help", "request_kind": "worker_guidance", "owner_instance": "orchestrator",
+            "timeout_seconds": 600}),
+    ]
+    assert next_advisory_event(events, "orchestrator").payload["request_id"] == "help"
+    events.append(ZfEvent(type="codex.hook.user_prompt_submit", actor="orchestrator",
+                         payload={"session_id": "s", "turn_id": "t"}))
+    assert guidance_inflight(events, "orchestrator")

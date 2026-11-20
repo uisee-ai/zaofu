@@ -1,6 +1,7 @@
 ---
 name: zf-channel-discussion-participant
 description: "Use for every active lens in a ZaoFu fanout-then-synthesis Channel. Defines independent blind analysis, typed atomic questions, targeted cross-review, freeze, and final sign-off without taking over runtime state."
+dependencies: [zf-document-reading]
 ---
 
 # Channel 需求澄清讨论 — 参与者协议
@@ -10,6 +11,9 @@ description: "Use for every active lens in a ZaoFu fanout-then-synthesis Channel
 关键约束。
 
 通过本次 briefing 的 typed reply 报告结果，由 runtime 写入受控事件；不要自行写状态或模拟审批。payload 里 `channel_id` / `thread_id` 用简报里给你的值。
+
+编写或同版评审 PRD 时应用已交付的 `zf-document-reading` 正文方法；在现有意见字段记录
+开头、代表场景及来源升级的具体证据，不把纯版式偏好升级为 Owner 阻塞。
 
 ## 通用纪律
 
@@ -133,3 +137,13 @@ provider、skill 或权限。提案待受控批准；批准后 runtime 派发正
 - 评估时逐项核对：Owner 决定是否全部继承；暂缓是否被当成批准或删除；新问题是否有新增
   证据；每条需求是否有章节与验收；异议是否有处置；review 是否绑定当前版本。
   输出具体反例及 source_refs，区分文档修订、Owner 决策与缺少证据，禁止无差别重跑所有角色。
+
+
+## 有范围的审查记录
+
+共识评审的 evidence_refs 可为非空字符串，或带非空 ref 的对象；对象的 digest、
+location、detail 等完整内容由不可变评审 sidecar 保存。引用导航不等于证据已验证。
+summary 记录当前 PRD 版本、自己实际检查的条款/问题、开头与代表场景短引文、关键
+反例和未覆盖项。定向 cross-review 只回答指定问题及其影响，不重复其他角色的全量
+审查；若发现范围外的实质问题，明确提出扩大范围。旧记录没有阅读证据就标缺失，
+不能把其他人的事后补审回填为本次已审。

@@ -17,7 +17,7 @@ import { executionContext, unassignedExecutionGroup } from "./executionContextMo
 import { X, Code, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
 import { activeStatus, expandedNodeIds, GraphLayoutCache, graphViews, isWaitingAuxiliaryStage, relatedNodes, statusLabels, workflowNodeLabel, workflowSummaryEdges, workflowSummaryIds, workflowSummaryPositions, type GraphView } from "./sdlcGraphModel";
 
-const graphFitOptions = { padding: 0.22, maxZoom: 0.9, minZoom: 0.8 };
+const graphFitOptions = { padding: 0.22, maxZoom: 0.9, minZoom: 0 };
 
 export default function WorkflowGraphWorkbench({ projectId, requestId, revision, goalObjective = "", onOpenRaw, recentEvents, liveState }: {
   projectId: string; requestId: string; revision: string; goalObjective?: string;
@@ -159,7 +159,10 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     });
     setCanvasScope(layoutScope);
   }, [filtered, selected, view, layoutScope, fullStructure, graph, structureOnly, pick, executionMode]);
+  const currentStage = filtered.nodes.find(n => n.id.startsWith("workflow:stage:") && ["blocked", "failed"].includes(n.status))
+    || filtered.nodes.find(n => n.id.startsWith("workflow:stage:") && (activeStatus(n.status) || n.status === "aggregating"));
   const focusIds = selected && filtered.nodes.some(n => n.id === selected) ? [selected] :
+    view === "workflow" && !fullStructure && currentStage ? [currentStage.id] :
     view === "workflow" && !fullStructure ? [...filtered.nodes.filter(n => ["goal", "run"].includes(String(n.data.context_kind))), ...filtered.nodes.filter(n => n.id.startsWith("workflow:role:") || n.data.unassigned_execution).slice(0, 1), ...filtered.nodes.filter(n => n.id.startsWith("workflow:stage:")).slice(0, 1)].map(n => n.id) :
     filtered.nodes.length > 12 ? [filtered.nodes.find(n => ["goal", "requirement"].includes(n.kind))?.id || filtered.nodes[0]?.id].filter(Boolean) : [];
   const activeNodes = useMemo(() => new Set(filtered.nodes.filter(n => activeStatus(n.status)).map(n => n.id)), [filtered.nodes]);
@@ -228,7 +231,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
         <div className={`sdlc-body${selectedNode ? " has-inspector" : ""}`}>
           {partial && (view !== "workflow" || Boolean(search.trim())) ? <p role="status">正在读取完整运行关系…</p> : singleTask ? <section className="sdlc-single-task" aria-label="单任务概览"><h3>当前仅有一个任务</h3><p>没有其他任务可展示依赖关系。</p><button type="button" onClick={() => pick(singleTask.id)}>{singleTask.label} · {statusLabels[singleTask.status] || singleTask.status}</button><details><summary>关联 Claim · {singleClaims.length}</summary>{singleClaims.length ? singleClaims.map(claim => <p key={claim.id}>{claim.label} · {statusLabels[claim.status] || claim.status}</p>) : <p>尚无已声明的 Claim 关联。</p>}<p>任务映射不代表验收通过。</p></details></section> : view === "timeline" && "timeline" in graph ? <WorkflowExecutionTimeline graph={graph} onSelect={pick} /> : <div className="sdlc-canvas" data-testid="workflow-graph-canvas">
             <ReactFlow key={canvasScope} nodes={canvasNodes} edges={canvasEdges} nodeTypes={workflowNodeTypes} onNodesChange={onNodesChange} onNodeClick={(_, node) => { const item = node.data.node as typeof filtered.nodes[number] | undefined; if (!item?.data.unassigned_execution) pick(String(item?.data.context_target || node.id)); }} fitView fitViewOptions={{ ...graphFitOptions, ...(focusIds.length ? { nodes: focusIds.map(id => ({ id })) } : {}) }} minZoom={0} onlyRenderVisibleElements={filtered.nodes.length > 40} nodesConnectable={false} deleteKeyCode={null} aria-label="Workflow 关系图">
-              <FitResizedCanvas focusIds={focusIds} focusKey={structureOnly ? "structure" : executionSummary ? "execution" : "full"} />{view === "workflow" && !fullStructure && <FitAllButton resultId={`ui:run-result:${requestId}`} />}<Controls showInteractive={false} fitViewOptions={{ ...graphFitOptions, minZoom: 0 }} /><MiniMap pannable zoomable maskColor="var(--surface)" nodeColor="var(--text-tertiary)" style={{ width: 130, height: 85 }} />
+              <FitResizedCanvas focusIds={focusIds} focusKey={structureOnly ? "structure" : executionSummary ? "execution" : "full"} />{view === "workflow" && !fullStructure && <FitAllButton resultId={`ui:run-result:${requestId}`} currentStageId={currentStage?.id} />}<Controls showInteractive={false} fitViewOptions={{ ...graphFitOptions, minZoom: 0 }} /><MiniMap pannable zoomable maskColor="var(--surface)" nodeColor="var(--text-tertiary)" style={{ width: 130, height: 85 }} />
             </ReactFlow>
             {!filtered.nodes.length && <p className="sdlc-empty">{graph.nodes.length ? "No nodes match these filters." : "The graph will appear as this workflow is prepared."}</p>}
           </div>}
@@ -278,12 +281,12 @@ function FitResizedCanvas({ focusIds, focusKey }: { focusIds: string[]; focusKey
     const changed = previous.current !== size || firstDetail;
     previous.current = size;
     // Fit the first detailed graph, but do not reset the viewport on live polls.
-    if (changed) void fitView({ ...graphFitOptions, ...(focusIds.length ? { nodes: focusIds.map(id => ({ id })) } : {}), minZoom: 0.8, duration: 150 });
+    if (changed) void fitView({ ...graphFitOptions, ...(focusIds.length ? { nodes: focusIds.map(id => ({ id })) } : {}), duration: 150 });
   }, [width, height, initialized, fitView, focusIds, focusKey, nodes]);
   return null;
 }
 
-function FitAllButton({ resultId }: { resultId: string }) {
+function FitAllButton({ resultId, currentStageId }: { resultId: string; currentStageId?: string }) {
   const { fitView } = useReactFlow();
-  return <Panel position="top-right"><button className="sdlc-fit-all" type="button" onClick={() => void fitView({ ...graphFitOptions, nodes: [{ id: resultId }], minZoom: 0, duration: 150 })}>查看运行结果</button> <button className="sdlc-fit-all" type="button" onClick={() => void fitView({ ...graphFitOptions, minZoom: 0, duration: 150 })}>查看全图</button></Panel>;
+  return <Panel position="top-right">{currentStageId && <button className="sdlc-fit-all" type="button" onClick={() => void fitView({ ...graphFitOptions, nodes: [{ id: currentStageId }], duration: 150 })}>查看当前阶段</button>} <button className="sdlc-fit-all" type="button" onClick={() => void fitView({ ...graphFitOptions, nodes: [{ id: resultId }], minZoom: 0, duration: 150 })}>查看运行结果</button> <button className="sdlc-fit-all" type="button" onClick={() => void fitView({ ...graphFitOptions, minZoom: 0, duration: 150 })}>查看全图</button></Panel>;
 }

@@ -13,8 +13,11 @@ export interface PlanMarkdownPage {
 
 // Prefer syntax boundaries, while keeping an exact source partition for review
 // and download. Repeated table headers/fences exist only in the rendered view.
-export function planMarkdownPages(content: string): PlanMarkdownPage[] {
-  const tree = fromMarkdown(content, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
+export function parsePlanMarkdown(content: string) {
+  return fromMarkdown(content, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
+}
+
+export function planMarkdownPages(content: string, tree = parsePlanMarkdown(content)): PlanMarkdownPage[] {
   const pages: PlanMarkdownPage[] = [];
   let title = "计划正文";
   let cursor = 0;

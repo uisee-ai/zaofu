@@ -10,6 +10,7 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.plan_claim_continuity import package_claim_continuity, plan_objective_ref
 from zf.runtime.goal_claim_set import (
     canonical_task_map_generation,
     mandatory_claim_continuity,
@@ -464,10 +465,10 @@ def prepare_plan_artifact_package(
     metadata: Mapping[str, Any] | None = None,
     source_event_id: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Build Claim Set and Package from explicit caller refs only."""
+    """Build claims and package from explicit or admitted inherited refs."""
 
     event_list = list(events)
-    from zf.runtime.plan_requirement_amendment import amendment_binding, amended_claim_set_baseline
+    from zf.runtime.plan_requirement_amendment import amendment_binding
     owner_binding = amendment_binding(state_dir, workflow_run_id, events=event_list)
     payload = {**payload, **owner_binding}
     mode = artifact_package_mode(metadata)
@@ -495,24 +496,6 @@ def prepare_plan_artifact_package(
         task_map_digest=payload.get("task_map_digest"),
         task_map_ref=task_map_ref,
     )
-    objective_ref = str(
-        payload.get("requirement_spec_ref")
-        or payload.get("objective_ref")
-        or payload.get("prd_ref")
-        or payload.get("product_spec_ref")
-        or payload.get("issue_ref")
-        or ""
-    )
-    claim_set, claim_descriptor = pin_goal_claim_set_from_task_map(
-        state_dir=state_dir,
-        project_root=project_root,
-        task_map_ref=task_map_ref,
-        workflow_run_id=workflow_run_id,
-        goal_id=goal_id,
-        task_map_generation=generation,
-        objective_ref=objective_ref,
-        source_event_id=source_event_id,
-    )
     explicit_ports = materialize_explicit_plan_ports(
         state_dir=state_dir,
         project_root=project_root,
@@ -534,6 +517,51 @@ def prepare_plan_artifact_package(
             "schema_version": "requirement-spec.v1", "producer_stage_id": producer_stage_id,
             "ref": owner_binding["requirement_spec_ref"], "sha256": owner_binding["requirement_spec_digest"],
         }
+    reduced = reduce_plan_artifact_packages(event_list, workflow_run_id=workflow_run_id)
+    previous = reduced.get("current")
+    previous = previous if isinstance(previous, Mapping) else {}
+    if payload.get("resume_scope") == "gap_tasks_only" and payload.get("supersedes_task_map_generation"):
+        previous = admitted_plan_artifact_package_for_generation(
+            reduced, task_map_generation=str(payload["supersedes_task_map_generation"]),
+        )
+        if not previous:
+            from zf.runtime.product_acceptance import ProductAcceptanceError
+
+            raise ProductAcceptanceError("gap acceptance inheritance requires exact prior plan lineage")
+    prior_body = None
+    if previous.get("package_ref") and previous.get("package_digest"):
+        prior_body = hydrate_plan_artifact_package(state_dir, {
+            "ref": previous["package_ref"], "sha256": previous["package_digest"],
+        })
+    objective_ref = str(
+        payload.get("requirement_spec_ref")
+        or payload.get("objective_ref")
+        or payload.get("prd_ref")
+        or payload.get("product_spec_ref")
+        or payload.get("issue_ref")
+        or ""
+    )
+    if not objective_ref:
+        requirement_port = "issue_spec" if flow_kind == "issue" else "requirement_spec"
+        inherited_ports = {
+            port["logical_name"]: port
+            for port in [*prior_body["produced"], *prior_body["inherited"]]
+        } if prior_body else {}
+        # A gap plan can omit the unchanged requirement ref. Use the same
+        # digest-verified port that the new package inherits, before checking
+        # mandatory claim continuity. Explicit replacement still takes priority.
+        requirement = explicit_ports.get(requirement_port) or inherited_ports.get(requirement_port) or {}
+        objective_ref = str(requirement.get("ref") or "")
+    claim_set, claim_descriptor = pin_goal_claim_set_from_task_map(
+        state_dir=state_dir,
+        project_root=project_root,
+        task_map_ref=task_map_ref,
+        workflow_run_id=workflow_run_id,
+        goal_id=goal_id,
+        task_map_generation=generation,
+        objective_ref=objective_ref,
+        source_event_id=source_event_id,
+    )
     explicit_ports["goal_claim_set"] = {
         "logical_name": "goal_claim_set",
         "artifact_kind": "goal_claim_set",
@@ -549,57 +577,12 @@ def prepare_plan_artifact_package(
             "source_logical_name": "task_map",
             "adapter_version": "planning-result-task-map-adapter.v1",
         }
-    reduced = reduce_plan_artifact_packages(
-        event_list,
-        workflow_run_id=workflow_run_id,
-    )
-    previous = reduced.get("current")
-    previous = previous if isinstance(previous, Mapping) else {}
-    if payload.get("resume_scope") == "gap_tasks_only" and payload.get("supersedes_task_map_generation"):
-        previous = admitted_plan_artifact_package_for_generation(
-            reduced, task_map_generation=str(payload["supersedes_task_map_generation"]),
-        )
-        if not previous:
-            from zf.runtime.product_acceptance import ProductAcceptanceError
-
-            raise ProductAcceptanceError("gap acceptance inheritance requires exact prior plan lineage")
     inherited: list[dict[str, Any]] = []
     continuity = mandatory_claim_continuity(None, claim_set)
-    if previous and previous.get("package_ref") and previous.get("package_digest"):
-        prior_body = hydrate_plan_artifact_package(
-            state_dir,
-            {
-                "ref": previous["package_ref"],
-                "sha256": previous["package_digest"],
-            },
-        )
-        prior_claim_port = next(
-            (
-                port
-                for port in [*prior_body["produced"], *prior_body["inherited"]]
-                if str(port.get("logical_name") or "") == "goal_claim_set"
-            ),
-            None,
-        )
-        previous_claim_set: Mapping[str, Any] | None = None
-        if isinstance(prior_claim_port, Mapping):
-            hydrated_claim = hydrate_sidecar_ref(
-                state_dir,
-                {
-                    "ref": str(prior_claim_port.get("ref") or ""),
-                    "sha256": str(prior_claim_port.get("sha256") or ""),
-                },
-            )
-            if isinstance(hydrated_claim.payload, Mapping):
-                previous_claim_set = hydrated_claim.payload
-        continuity = mandatory_claim_continuity(
-            amended_claim_set_baseline(state_dir, workflow_run_id, previous_claim_set),
-            claim_set,
-            claim_waivers=_goal_claim_waivers(payload),
-            active_waiver_refs=_active_goal_claim_waiver_refs(
-                event_list,
-                goal_id=goal_id,
-            ),
+    if prior_body is not None:
+        continuity = package_claim_continuity(
+            state_dir, prior_body, claim_set, workflow_run_id=workflow_run_id,
+            goal_id=goal_id, payload=payload, events=event_list,
         )
         if continuity["status"] != "passed":
             rejected_ids = ", ".join(
@@ -647,9 +630,24 @@ def prepare_plan_artifact_package(
     input_errors = plan_input_declaration_errors(
         task_map,
         available_ports=(port["logical_name"] for port in [*explicit_ports.values(), *inherited]),
+        require_selection=(metadata or {}).get("artifact_package", {}).get("task_input_policy") == "task-scoped-v1",
     )
     if input_errors:
         raise PlanArtifactPackageError("invalid task plan inputs: " + "; ".join(input_errors))
+    from zf.runtime.plan_acceptance_rework import rebind_inherited_gap_acceptance
+
+    rebind_inherited_gap_acceptance(
+        state_dir=state_dir, project_root=project_root, payload=payload,
+        workflow_run_id=workflow_run_id, flow_kind=flow_kind,
+        explicit_ports=explicit_ports, inherited=inherited,
+    )
+    from zf.runtime.plan_gap_input_partitions import rebind_gap_port_partitions
+
+    rebind_gap_port_partitions(
+        state_dir=state_dir, task_map=task_map, payload=payload,
+        explicit_ports=explicit_ports, inherited=inherited,
+        source_event_id=source_event_id,
+    )
     from zf.runtime.plan_candidate_input_lineage import validate_dispatch_input_partitions
 
     try:
@@ -663,13 +661,6 @@ def prepare_plan_artifact_package(
         )
     except ValueError as exc:
         raise PlanArtifactPackageError(f"invalid task input partitions: {exc}") from exc
-    from zf.runtime.plan_acceptance_rework import rebind_inherited_gap_acceptance
-
-    rebind_inherited_gap_acceptance(
-        state_dir=state_dir, project_root=project_root, payload=payload,
-        workflow_run_id=workflow_run_id, flow_kind=flow_kind,
-        explicit_ports=explicit_ports, inherited=inherited,
-    )
     product_acceptance_port = next(
         (
             port
@@ -682,7 +673,6 @@ def prepare_plan_artifact_package(
     if isinstance(product_acceptance_port, Mapping):
         from zf.runtime.product_acceptance import (
             PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
-            bind_product_acceptance_spec,
             validate_product_acceptance_spec,
         )
 
@@ -699,10 +689,11 @@ def prepare_plan_artifact_package(
             )
         product_acceptance_spec = dict(hydrated.payload)
         if "product_acceptance_spec" in explicit_ports:
-            product_acceptance_spec = bind_product_acceptance_spec(
-                product_acceptance_spec, workflow_run_id=workflow_run_id,
-                flow_kind=flow_kind, plan_revision=plan_revision,
-                task_map_generation=generation,
+            from zf.runtime.plan_artifact_package_ports import bind_product_acceptance_identity
+
+            product_acceptance_spec = bind_product_acceptance_identity(
+                product_acceptance_spec, workflow_run_id=workflow_run_id, flow_kind=flow_kind,
+                plan_revision=plan_revision, task_map_generation=generation,
             )
             descriptor = write_immutable_json_sidecar(
                 state_dir,
@@ -1044,39 +1035,6 @@ def _event_parts(
         str(event.get("id") or ""),
         dict(payload) if isinstance(payload, Mapping) else {},
     )
-
-
-def _goal_claim_waivers(payload: Mapping[str, Any]) -> dict[str, str]:
-    raw = payload.get("goal_claim_waivers")
-    rows = raw if isinstance(raw, list) else []
-    return {
-        str(item.get("goal_claim_id") or "").strip(): str(
-            item.get("waiver_ref") or ""
-        ).strip()
-        for item in rows
-        if isinstance(item, Mapping)
-        and str(item.get("goal_claim_id") or "").strip()
-        and str(item.get("waiver_ref") or "").strip()
-    }
-
-
-def _active_goal_claim_waiver_refs(
-    events: list[ZfEvent | Mapping[str, Any]],
-    *,
-    goal_id: str,
-) -> set[str]:
-    from zf.runtime.waivers import active_waivers
-
-    active = active_waivers(
-        [event for event in events if isinstance(event, ZfEvent)],
-        goal_id,
-    )
-    return {
-        str(value)
-        for waiver in active
-        for value in (waiver.get("signature"), waiver.get("event_id"))
-        if str(value).strip()
-    }
 
 
 def _strings(value: Any) -> list[str]:

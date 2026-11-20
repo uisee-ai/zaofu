@@ -157,6 +157,11 @@ def _same_origin(websocket: WebSocket, config: RuntimeWebTerminalConfig) -> bool
     origin = websocket.headers.get("origin", "").rstrip("/")
     if not origin:
         return False
+    from zf.integrations.controller.access import request_authority
+    if request_authority.get() is True:
+        # The private upstream Host differs from the public browser origin. Trust
+        # only the ingress-verified claim, never a client-supplied forwarded host.
+        return origin == websocket.scope.get("zf.access", {}).get("origin")
     if origin in config.allowed_origins:
         return True
     try:
@@ -382,7 +387,10 @@ def build_terminal_router(
                 cols=cols,
                 rows=rows,
             )
+            from zf.web.local_login import current_grant
+            grant = current_grant.get()
             ticket = tickets.issue(
+                browser_binding=grant.binding if grant else "",
                 project_id=terminal_service.project_id,
                 session_id=session_id,
                 mode=mode,
@@ -473,8 +481,11 @@ def build_terminal_router(
             websocket.headers.get("sec-websocket-protocol", "")
         )
         try:
+            from zf.web.local_login import current_grant
+            grant = current_grant.get()
             attachment = tickets.consume(
                 token,
+                browser_binding=grant.binding if grant else "",
                 project_id=terminal_service.project_id,
                 session_id=session_id,
                 mode=mode,

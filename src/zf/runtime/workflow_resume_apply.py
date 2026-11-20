@@ -334,7 +334,8 @@ def _apply_operation_checkpoint(
         reduce_workflow_operations,
     )
 
-    operations = reduce_workflow_operations(writer.event_log.read_all())
+    operation_events = writer.event_log.read_all()
+    operations = reduce_workflow_operations(operation_events)
     current = operations.get(checkpoint.operation_id)
     if current is None:
         return WorkflowResumeApplyResult(
@@ -361,6 +362,8 @@ def _apply_operation_checkpoint(
         "redrive_interrupted_budget_reader_operation",
         "redrive_interrupted_task_pipeline_operation",
         "redrive_cancelled_interrupted_task_pipeline_operation",
+        "redrive_undispatched_task_pipeline_operation",
+        "redrive_abstained_task_verification",
         "redrive_budget_amended_task_pipeline_operation",
         "redrive_budget_amended_synth_operation",
         "redrive_budget_amended_reader_operation",
@@ -385,7 +388,10 @@ def _apply_operation_checkpoint(
                 "was not applied"
             ),
         )
-    if current_status in {"settled", "failed", "superseded"} or (
+    if current_status in {"failed", "superseded"} or (
+        current_status == "settled"
+        and checkpoint.safe_resume_action != "redrive_abstained_task_verification"
+    ) or (
         current_status == "blocked"
         and checkpoint.safe_resume_action not in {
             "redrive_budget_amended_task_pipeline_operation",
@@ -444,6 +450,24 @@ def _apply_operation_checkpoint(
                 checkpoint=checkpoint, applied=False,
                 reason="reader carrier no longer has a terminal occurrence",
             )
+    if checkpoint.safe_resume_action == "redrive_undispatched_task_pipeline_operation":
+        from zf.runtime.undispatched_pipeline_recovery import undispatched_pipeline_request
+
+        if current_status != "cancelled" or not undispatched_pipeline_request(
+            current, state_dir, operation_events,
+        ):
+            return WorkflowResumeApplyResult(
+                checkpoint=checkpoint, applied=False,
+                reason="pipeline request no longer has proof of no scheduler delivery",
+            )
+    if checkpoint.safe_resume_action == "redrive_abstained_task_verification":
+        from zf.runtime.abstained_verify_recovery import recoverable_abstention
+
+        if not recoverable_abstention(current, operation_events, state_dir):
+            return WorkflowResumeApplyResult(
+                checkpoint=checkpoint, applied=False,
+                reason="verifier retry is no longer eligible or has already been consumed",
+            )
     planned = writer.append(ZfEvent(
         type=WORKFLOW_RESUME_PLANNED_EVENT,
         actor="zf-cli",
@@ -482,6 +506,10 @@ def _apply_operation_checkpoint(
             reason=(
                 "Owner budget amendment admitted a bounded operation redrive"
                 if budget_redrive
+                else "Controlled same-target verifier execution recovery"
+                if checkpoint.safe_resume_action == "redrive_abstained_task_verification"
+                else "Kernel replay restored a never-dispatched pipeline request"
+                if checkpoint.safe_resume_action == "redrive_undispatched_task_pipeline_operation"
                 else "Kernel replay admitted after explicit runtime restart"
             ),
             recovery_decision_owner=(
@@ -641,6 +669,7 @@ def _apply_checkpoint(
             emitted,
             config=config,
             events=events,
+            state_dir=state_dir,
         )
 
     if checkpoint.safe_resume_action == "needs_rework_dispatch":
@@ -742,6 +771,7 @@ def _apply_stage_replan(
     *,
     config: object,
     events: list[ZfEvent] | None,
+    state_dir: Path | None = None,
 ) -> WorkflowResumeApplyResult:
     if config is None:
         return WorkflowResumeApplyResult(
@@ -769,7 +799,7 @@ def _apply_stage_replan(
         )
     from zf.runtime.stage_failure_replan import plan_reader_stage_replan
 
-    replan_event, note = plan_reader_stage_replan(config, event_list, failure_event)
+    replan_event, note = plan_reader_stage_replan(config, event_list, failure_event, state_dir=state_dir)
     if replan_event is None:
         applied = writer.append(ZfEvent(
             type=WORKFLOW_RESUME_APPLIED_EVENT,
@@ -1126,20 +1156,9 @@ _RESUME_PLAN_IDENTITY_KEYS = (
 def _writer_resume_feedback(
     payload: Mapping[str, Any], feedback: list[str],
 ) -> list[str]:
-    """Do not replay planner-only findings into a current writer package."""
+    """Preserve findings unless their supersession is proven by evidence."""
 
-    if not str(payload.get("plan_artifact_package_ref") or "").strip():
-        return feedback
-    stale_markers = (
-        "mandatory_goal_claim_contract_rewritten",
-        "task_map_invalid",
-        "source_index_invalid",
-        "upstream dependency failed",
-    )
-    return [
-        line for line in feedback
-        if not any(marker in str(line).lower() for marker in stale_markers)
-    ]
+    return feedback
 
 
 def _resume_plan_identity(
@@ -1261,6 +1280,7 @@ def _apply_batch_candidate_ready(
     }
     event = writer.append(ZfEvent(
         type="candidate.ready",
+        origin="kernel",
         actor="zf-cli",
         payload=payload,
         causation_id=checkpoint.blocking_event_id or checkpoint.source_event_id,

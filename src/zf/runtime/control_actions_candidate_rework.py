@@ -68,6 +68,23 @@ class CandidateReworkActionsMixin:
             )
 
         from zf.runtime.candidate_rework import _infra_only_candidate_failure_ids
+        from zf.runtime.reader_replan_ownership import admitted_plan_blocker
+        if source is not None and admitted_plan_blocker(source):
+            if rework_action == "retrigger":
+                return self._failed(
+                    requested=requested, action=action, requested_action=requested_action, task_id=None,
+                    reason="candidate Plan blocker requires replan", status_code=409, status="rejected",
+                )
+            if rework_action == "replan" and source.payload.get("candidate_event_id"):
+                from zf.runtime.candidate_plan_recovery import candidate_action_scope
+
+                try:
+                    payload = {**payload, **candidate_action_scope(self.state_dir, events, source, payload)}
+                except (ValueError, OSError, KeyError) as exc:
+                    return self._failed(
+                        requested=requested, action=action, requested_action=requested_action,
+                        task_id=None, reason=str(exc), status_code=409, status="rejected",
+                    )
         if rework_action != "escalate" and source_id in _infra_only_candidate_failure_ids(events):
             return self._failed(
                 requested=requested, action=action, requested_action=requested_action,
@@ -617,7 +634,7 @@ def _build_resynth_event(
                 **replan_semantic_context(payload),
             },
         )
-        return build_replan_resynth_event(plan=plan, events=events, config=config)
+        return build_replan_resynth_event(plan=plan, events=events, config=config, state_dir=state_dir)
     except Exception:
         return None
 

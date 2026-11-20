@@ -1,3 +1,4 @@
+import { localWebActionToken } from "./dashboardLaunch.js";
 import type {
   FleetStats,
   MetricsSnapshotProjection,
@@ -99,7 +100,7 @@ function normalizeWebActionToken(value: string): string {
 }
 
 function webActionToken(): string {
-  return normalizeWebActionToken(window.localStorage.getItem("zf.webActionToken") ?? "");
+  return normalizeWebActionToken(localWebActionToken());
 }
 
 function webActionAuthHeaders(): Record<string, string> {
@@ -1311,6 +1312,7 @@ export async function getWebSession(): Promise<NonNullable<RuntimeSummary["web_s
     headers: { Accept: "application/json" },
     cache: "no-store",
   });
+  if (response.status === 401) window.location.reload();
   if (!response.ok) throw new Error(`web session fetch returned ${response.status}`);
   return response.json();
 }
@@ -1389,9 +1391,10 @@ export function getOperatorInbox(projectId?: string, signal?: AbortSignal): Prom
   return requestJson<OperatorInboxProjection>(`${projectPrefix(projectId)}/operator/inbox`, { signal });
 }
 
-export function getPlanPreview(planId: string, projectId?: string): Promise<PlanPreview> {
+export function getPlanPreview(planId: string, projectId?: string, summary = false, signal?: AbortSignal): Promise<PlanPreview> {
   return requestJson<PlanPreview>(
-    `${projectPrefix(projectId)}/plans/${encodeURIComponent(planId)}/preview`,
+    `${projectPrefix(projectId)}/plans/${encodeURIComponent(planId)}/preview${summary ? "/summary" : ""}`,
+    { signal, bypassCache: true },
   );
 }
 

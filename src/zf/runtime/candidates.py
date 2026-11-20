@@ -1559,8 +1559,20 @@ class CandidateRebuilder:
             worktree,
             script,
             marker_dir=worktree.parent,
-            force=True,
+            force=self.config.project.setup_scope != 'shared_resources',
+            setup_inputs=getattr(self.config.project, "setup_inputs", []),
+            setup_scope=self.config.project.setup_scope,
+            required_paths=self.config.runtime.workdirs.required_paths,
         )
+        from dataclasses import replace
+        from zf.runtime.required_environment import require_workspace_environment
+
+        if result.ok:
+            try:
+                require_workspace_environment(worktree, self.config.runtime.workdirs.required_paths,
+                    qualified_setup=bool(script.strip()))
+            except (RuntimeError, OSError, ValueError) as exc:
+                result = replace(result, ok=False, detail=str(exc))
         return {
             "schema_version": "candidate-environment.v1",
             "status": "ready" if result.ok else "failed",
@@ -2030,11 +2042,12 @@ class CandidateRebuilder:
             "diff-tree",
             "--no-commit-id",
             "--name-only",
+            "-z",
             "-r",
             "--root",
             commit,
         )
-        return {line.strip() for line in out.splitlines() if line.strip()}
+        return {path for path in out.split("\0") if path}
 
     def _apply_task_commit(
         self,
@@ -2123,11 +2136,12 @@ class CandidateRebuilder:
             "ls-tree",
             "-r",
             "--name-only",
+            "-z",
             commit,
             "--",
             *paths,
         )
-        return {line.strip() for line in out.splitlines() if line.strip()}
+        return {path for path in out.split("\0") if path}
 
     def _cherry_pick_commit(self, worktree: Path, commit: str) -> str:
         result = subprocess.run(
@@ -2194,14 +2208,14 @@ class CandidateRebuilder:
             ["git", *args],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            text="-z" not in args,
             check=False,
             env=git_env(),
         )
         if result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip()
             raise RuntimeError(f"git {' '.join(args)} failed in {cwd}: {detail}")
-        return result.stdout.strip()
+        return os.fsdecode(result.stdout) if "-z" in args else result.stdout.strip()
 
 
 def _copy_materialized_candidate_path(*, source: Path, target: Path) -> bool:

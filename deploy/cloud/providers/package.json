@@ -1,0 +1,9 @@
+{
+  "name": "zaofu-cloud-providers",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.300",
+    "@openai/codex": "0.166.0"
+  }
+}

@@ -108,6 +108,21 @@ export function PulseBand({ pulse }: { pulse: RunPulse | null | undefined }) {
           tone={sessStale > 0 ? "warn" : undefined}
           value={sessActive == null ? null : `${sessActive} active${sessStale > 0 ? ` · ${sessStale} stale` : ""}`}
         />
+        <PulseItem label="source" value={pulse.versions?.source_revision?.slice(0, 8) || null} />
+        <PulseItem
+          label="last loaded"
+          value={pulse.versions?.loaded_revision?.slice(0, 8) || null}
+          tone={pulse.versions?.comparison === "different" ? "warn" : undefined}
+          hint={pulse.versions?.comparison === "different"
+            ? "The startup receipt differs from this checkout. Updating source does not reload running workers."
+            : "Last startup receipt; matching revisions do not prove current worker code or uncommitted changes."}
+        />
+        <PulseItem label="task adoption"
+          value={pulse.versions?.task_adoption
+            ? `${pulse.versions.task_adoption.observed}/${pulse.versions.task_adoption.active} CLI observed`
+            : "unverified"}
+          tone={pulse.versions?.task_adoption?.tasks.some(task => task.comparison === "different") ? "warn" : undefined}
+          hint="Authenticated CLI observations for current task dispatches; this does not prove provider adoption or a clean checkout." />
       </div>
     </section>
   );

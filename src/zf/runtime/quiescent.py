@@ -34,6 +34,7 @@ _WAKE_EVENT_TYPES = frozenset({
     # (ZF-REVIEW-141-QW:07-16 实弹里 dismiss 落盘后 run 仍冬眠)
     "human.escalation.acknowledged",
     "run.goal.updated",
+    "plan.approved",
     "dispatch.resumed",
     "loop.resume_requested",
 })
@@ -75,11 +76,13 @@ def quiescent_now(
 ) -> QuiescentStatus:
     if not _enabled(config):
         return QuiescentStatus(quiescent=False, reason="disabled")
+    rows = list(events)
+    from zf.runtime.task_failure_retirement import task_failure_retired
     escalate: ZfEvent | None = None
     woke_after = False
     progress = _progress_events()
     inflight_fanouts: set[str] = set()
-    for event in events:
+    for event in rows:
         payload = event.payload if isinstance(event.payload, dict) else {}
         fanout_id = str(payload.get("fanout_id") or "")
         if event.type == "fanout.started" and fanout_id:
@@ -89,12 +92,33 @@ def quiescent_now(
         }:
             inflight_fanouts.discard(fanout_id)
         if event.type == _ESCALATE_EVENT:
+            if task_failure_retired(rows, event) is True:
+                continue
+            # Side-track approval cannot suspend product recovery. Keep any
+            # earlier run-scoped escalation; this is not an acknowledgement.
+            if str(payload.get("blocking_scope") or "run").strip().lower() == "side":
+                continue
             escalate = event
             woke_after = False
             continue
         if escalate is None:
             continue
-        if event.type in progress or event.type in _WAKE_EVENT_TYPES:
+        pipeline_fact = bool(payload.get("workflow_run_id")) and (
+            (event.origin == "kernel" and event.type in {"task.dispatched", "task.done"})
+            or (
+                event.type in {"dev.build.done", "dev.blocked", "task.pipeline.verify.completed"}
+                and payload.get("operation_id") and payload.get("control_result_ref")
+            )
+        )
+        controlled_retry = (
+            event.type == "task.rework.requested" and event.origin == "kernel"
+            and payload.get("source") in {
+                "task_pipeline_operator_retry", "task_pipeline_integration_rework",
+            } and bool(payload.get("operation_id"))
+        )
+        if event.type in progress or event.type in _WAKE_EVENT_TYPES or pipeline_fact or controlled_retry:
+            # A fresh admitted failure needs recovery too; this is a wake,
+            # never a success verdict or automatic dismissal of escalation.
             woke_after = True
     if escalate is None:
         return QuiescentStatus(quiescent=False, reason="no_escalate")
@@ -105,6 +129,14 @@ def quiescent_now(
         # (含待派发 child)→ 静默会暂停派发扫描,潜在互锁。有活干
         # 就不静默;E6 超时地板保证 zombie 不会把此闸永久钉开。
         return QuiescentStatus(quiescent=False, reason="inflight_fanouts")
+    from zf.runtime.workflow_operation import reduce_workflow_operations, TERMINAL_OPERATION_STATUSES
+
+    if any(
+        op.get("operation_type") == "task-stage"
+        and op.get("status") not in TERMINAL_OPERATION_STATUSES
+        for op in reduce_workflow_operations(rows).values()
+    ):
+        return QuiescentStatus(quiescent=False, reason="inflight_task_operations")
     age = now_epoch - _event_epoch(escalate)
     if age < _GRACE_SECONDS:
         return QuiescentStatus(quiescent=False, reason="grace_window")

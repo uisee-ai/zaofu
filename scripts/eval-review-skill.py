@@ -117,6 +117,7 @@ def run_one(run_dir: Path, prompt: str, args: argparse.Namespace) -> dict:
             "--memory=1g", "--cpus=1", "--network=host",
             "--tmpfs", "/tmp:rw,nosuid,size=128m",
             "--tmpfs", "/root:rw,nosuid,size=128m",
+            "-e", "CODEX_HOME=/root/.codex",
             "-v", f"{Path(shutil.which('codex')).resolve().parent}:/opt/codex:ro",
             "-v", f"{Path(shutil.which('rg')).resolve()}:/usr/local/bin/rg:ro",
             "-v", f"{args.auth_file.resolve()}:/root/.codex/auth.json:ro",

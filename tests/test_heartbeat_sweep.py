@@ -914,6 +914,7 @@ def test_worker_state_changed_idle_resets_stale_busy_heartbeat_before_sweep(
 
     orch._apply_housekeeping(ZfEvent(  # type: ignore[attr-defined]
         type="worker.state.changed",
+        origin="kernel",
         actor="critic",
         payload={"from": "busy", "to": "idle", "reason": "gate completed"},
     ))

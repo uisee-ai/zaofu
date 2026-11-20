@@ -218,7 +218,12 @@ class PlanSynthRuntimeMixin:
             ):
                 continue
             recovery_attempts = sum(index > replay_boundary for index in recovery_losses.get(fanout_id, []))
-            if recovery_attempts >= allowed_recoveries:
+            from zf.runtime.reader_loss_progress import reader_loss_progress
+
+            read_checkpoint, made_progress = reader_loss_progress(
+                self.state_dir, events, latest_dispatch, lost_event,
+            )
+            if recovery_attempts >= allowed_recoveries and not made_progress:
                 self._fail_lost_fanout_synth_dispatch(
                     manifest=manifest,
                     latest_dispatch=latest_dispatch,
@@ -230,6 +235,7 @@ class PlanSynthRuntimeMixin:
                 latest_dispatch=latest_dispatch,
                 lost_event=lost_event,
                 attempt=recovery_attempts + 1,
+                read_checkpoint=read_checkpoint,
             ):
                 return True
         return False
@@ -311,6 +317,7 @@ class PlanSynthRuntimeMixin:
         latest_dispatch: ZfEvent,
         lost_event: ZfEvent,
         attempt: int,
+        read_checkpoint: dict[str, Any] | None = None,
     ) -> bool:
         payload = (
             dict(latest_dispatch.payload)
@@ -432,6 +439,7 @@ class PlanSynthRuntimeMixin:
                 "lost_signal_event_id": lost_event.id,
                 "lost_signal_type": lost_event.type,
                 "semantic_attempt_consumed": False,
+                **(read_checkpoint or {}),
             },
             causation_id=lost_event.id,
             correlation_id=trace_id,
@@ -581,6 +589,7 @@ class PlanSynthRuntimeMixin:
                         payload=trigger_payload,
                     ),
                     writer_policy=plan_candidate_writer_policy(self.config),
+                    ports_materialized=True,
                 )
                 execution_review = preflight.get("execution_review")
                 if preflight["status"] != "passed":
@@ -805,6 +814,44 @@ class PlanSynthRuntimeMixin:
         except RunDispatchBlocked:
             return
         except Exception as exc:
+            from zf.runtime.plan_review_input_budget import PlanReviewInputBudgetExceeded
+
+            if isinstance(exc, PlanReviewInputBudgetExceeded):
+                from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+                diagnostic_ref = write_immutable_json_sidecar(
+                    self.state_dir, exc.diagnostic, root="plan-review-input-preflight",
+                    kind="plan_review_input_preflight", schema_version="plan-review-input-diagnostics.v1",
+                    created_by="plan-review-preflight", source_event_id=str(manifest.get("trigger_event_id") or ""),
+                )
+                failure = self.event_writer.append(ZfEvent(
+                    type="fanout.synth.completed", actor="zf-cli", origin="kernel",
+                    payload={"fanout_id": fanout_id, "trace_id": trace_id, "stage_id": stage_id,
+                             "role_instance": role.instance_id, "run_id": run_id,
+                             "status": "failed", "recommendation": "abstain",
+                             "reason": "plan_review_input_budget_exceeded",
+                             "failure_class": "reader_execution_failure", "failure_kind": "infra",
+                             "semantic_attempt_consumed": False, "summary": str(exc),
+                             "evidence_refs": [diagnostic_ref],
+                             "plan_review_optimization": exc.diagnostic},
+                    causation_id=str(manifest.get("trigger_event_id") or "") or None,
+                    correlation_id=trace_id,
+                ))
+                self._finalize_fanout_synth(failure)
+                return
+            blocker = getattr(exc, "interactive_prompt_marker", "")
+            if blocker:
+                # No critic turn ran: preserve planner results and retry dispatch.
+                self._emit_fanout_dispatch_deferred_once(
+                    fanout_id=fanout_id, trace_id=trace_id, stage_id=stage_id,
+                    child_id="synth", run_id=run_id, role_instance=role.instance_id,
+                    prompt_kind="fanout_synth", reason=f"provider_interactive:{blocker}",
+                    state=getattr(self, "_last_worker_state", {}).get(role.instance_id, "idle"),
+                    alive=bool(getattr(exc, "pane_alive", False)),
+                    dispatchable=False,
+                    causation_id=str(manifest.get("trigger_event_id") or "") or None,
+                )
+                return
             failure_event = self.event_writer.append(ZfEvent(
                 type="fanout.synth.completed",
                 actor="zf-cli",
@@ -871,12 +918,19 @@ class PlanSynthRuntimeMixin:
                     (outcome.envelope_ref or {}).get("sha256") or ""
                 ),
             }
-            if payload.get("failure_class") == "reader_execution_failure":
+            if (
+                payload.get("failure_class") == "reader_execution_failure"
+                or payload.get("owner_decision_items")
+                or (control_result.get("execution_status") == "completed"
+                    and control_result.get("verdict") == "rejected")
+            ):
                 from zf.runtime.artifact_context_events import artifact_context_events
                 from zf.runtime.plan_synth_recovery_refs import failed_critic_candidate_refs
 
                 payload["previous_plan_candidate_refs"] = failed_critic_candidate_refs(
-                    self.state_dir, artifact_context_events(self.event_log), payload,
+                    self.state_dir, artifact_context_events(self.event_log),
+                    {**payload, "execution_status": control_result.get("execution_status"),
+                     "verdict": control_result.get("verdict")},
                 )
             event = replace(event, payload=payload)
         from zf.runtime.plan_synth_owner_checkpoint import (

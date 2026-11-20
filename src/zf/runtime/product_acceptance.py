@@ -34,11 +34,11 @@ class ProductAcceptanceError(ValueError):
     """A Product Acceptance artifact cannot be admitted mechanically."""
 
 
-def bind_product_acceptance_spec(
+def bind_product_acceptance_spec_identity(
     spec: Mapping[str, Any], *, workflow_run_id: str, flow_kind: str,
     plan_revision: str, task_map_generation: str,
 ) -> dict[str, Any]:
-    """Bind authored semantics to the package identity at admission or replay."""
+    """Apply the same kernel-owned identity at initial admission and replay."""
     return {
         **spec,
         "schema_version": PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
@@ -465,10 +465,19 @@ def bind_product_acceptance_report(
         or identity.get("plan_artifact_package_digest")
         or ""
     )
+    # A write-free Task audit can own candidate_verify criteria while still
+    # evaluating only its frozen Task target. The kernel operation/profile,
+    # not a worker-authored owner label, determines full-product authority.
+    is_task_verify = (
+        operation.get("operation_type") == "task-stage"
+        and operation.get("task_pipeline_stage") == "verify"
+        and operation.get("output_profile_id") == "task-verify"
+    )
     is_candidate = (
         is_discovery
         or str(operation.get("output_profile_id") or "") == "candidate-verify"
-        or str(result.get("verification_owner") or "") == "candidate_verify"
+        or (str(result.get("verification_owner") or "") == "candidate_verify"
+            and not is_task_verify)
     )
     if not package_ref or not package_digest:
         return adapted
@@ -592,6 +601,18 @@ def bind_product_acceptance_report(
         )
         return replace(adapted, payload=result, descriptor=descriptor)
     except (OSError, ValueError) as exc:
+        message = str(exc)
+        if (
+            schema == "verification-result.v1"
+            and result.get("execution_status") == "failed"
+            and result.get("verdict") == "abstained"
+        ):
+            message += (
+                ". If no product evaluation was possible, omit product_acceptance_report, "
+                "product_acceptance_report_ref and product_acceptance_report_digest; retain "
+                "the truthful execution failure and its evidence. Supplied product reports "
+                "remain subject to full validation; do not fabricate assertion evidence."
+            )
         return replace(
             adapted,
             issues=(
@@ -599,7 +620,7 @@ def bind_product_acceptance_report(
                 {
                     "field": "control_result.product_acceptance_report",
                     "code": "product_acceptance_invalid",
-                    "message": str(exc),
+                    "message": message,
                 },
             ),
         )

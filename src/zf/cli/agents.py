@@ -75,6 +75,7 @@ def _run_unblock(args: argparse.Namespace) -> int:
     ))
     event = writer.append(ZfEvent(
         type="worker.state.changed",
+        origin="kernel",
         actor="operator",
         payload={
             "instance_id": str(args.instance_id),

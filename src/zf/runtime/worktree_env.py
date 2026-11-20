@@ -18,11 +18,21 @@ later as a normal gate failure, not a crash here.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+from zf.core.state.atomic_io import atomic_write_text
+from zf.core.state.locks import locked_path
+from zf.runtime.environment_preparation import declared_setup_identity, environment_preparation_dir
+from zf.runtime.environment_usage import EnvironmentInUse, environment_in_use, environment_mutation
+from zf.runtime.environment_resources import register_environment_resources
+from zf.runtime.environment_readiness import (
+    setup_environment_matches, invalidate_setup_environment, record_setup_environment,
+)
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -32,6 +42,9 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 SETUP_MARKER = ".zf-setup.done"
 
 _SETUP_INPUT_NAMES = {
+    ".node-version",
+    ".python-version",
+    ".tool-versions",
     "Cargo.lock",
     "Cargo.toml",
     "Gemfile",
@@ -73,9 +86,10 @@ class ProjectSetupResult:
     ok: bool
     exit_code: int | None = None
     detail: str = ""
+    waiting_for_resources: bool = False
 
 
-def _setup_digest(worktree: Path, script: str) -> str:
+def _setup_digest(worktree: Path, script: str, setup_inputs: list[str] | None = None) -> str:
     """Bind setup readiness to the script and tracked dependency surfaces.
 
     A newly scaffolded project can add its package manifests after role
@@ -84,6 +98,8 @@ def _setup_digest(worktree: Path, script: str) -> str:
     """
     digest = hashlib.sha256()
     digest.update(script.encode("utf-8"))
+    if setup_inputs:
+        digest.update(declared_setup_identity(worktree, setup_inputs).encode())
     inputs: list[Path] = []
     try:
         for root, dirs, files in os.walk(worktree):
@@ -112,6 +128,9 @@ def run_project_setup(
     timeout_s: int = 600,
     runner: Runner | None = None,
     force: bool = False,
+    setup_inputs: list[str] | None = None,
+    required_paths: list[str] | None = None,
+    setup_scope: str = "workspace",
 ) -> ProjectSetupResult:
     """Execute the project-declared setup script inside a fresh worktree.
 
@@ -121,19 +140,79 @@ def run_project_setup(
     setup 即为项目合约,失败必须上浮给调用方 fail-closed,不能静默降级。
     """
     script = (script or "").strip()
+    if setup_scope not in {"workspace", "shared_resources"}:
+        raise ValueError('invalid setup_scope')
+    if setup_scope == 'shared_resources' and not (script and setup_inputs and required_paths):
+        raise ValueError('shared setup requires script, setup_inputs and required_paths')
+    try:
+        register_environment_resources(worktree, required_paths or [])
+    except TimeoutError as exc:
+        return ProjectSetupResult(ran=False, ok=False, detail=str(exc), waiting_for_resources=True)
+    except (OSError, ValueError) as exc:
+        return ProjectSetupResult(ran=False, ok=False, detail=f'environment declaration unavailable: {exc}')
     if not script:
         return ProjectSetupResult(ran=False, ok=True, detail="no setup declared")
-    digest = _setup_digest(worktree, script)
     marker = (marker_dir or worktree) / SETUP_MARKER
+    try:
+        if not force:
+            # Read-only reuse may coexist with workers; mutation still needs
+            # the exclusive lock and rechecks inputs after acquiring it.
+            with environment_in_use(worktree):
+                from zf.runtime.shared_environment_setup import shared_setup_matches
+                try:
+                    digest = _setup_digest(worktree, script, setup_inputs)
+                except (OSError, ValueError):
+                    digest = ""  # Recheck/invalidate under the mutation lock below.
+                if digest and setup_scope == 'shared_resources' and shared_setup_matches(
+                        worktree, digest):
+                    record_setup_environment(worktree, marker)
+                    atomic_write_text(marker, digest + '\n')
+                    return ProjectSetupResult(ran=False, ok=True, detail='shared setup receipt matches')
+                try:
+                    if (digest and setup_scope == "workspace"
+                            and marker.read_text(encoding="utf-8").strip() == digest
+                            and setup_environment_matches(worktree, marker)):
+                        return ProjectSetupResult(ran=False, ok=True, detail="setup marker matches")
+                except (OSError, ValueError):
+                    pass
+        with environment_mutation(worktree):
+            with locked_path(marker, timeout_seconds=0):
+                result = _run_locked_setup(worktree, script, marker, timeout_s, runner, force, setup_inputs)
+                if result.ok and setup_scope == 'shared_resources':
+                    from zf.runtime.shared_environment_setup import record_shared_setup
+                    record_shared_setup(worktree, _setup_digest(worktree, script, setup_inputs))
+                return result
+    except (TimeoutError, EnvironmentInUse):
+        return ProjectSetupResult(ran=False, ok=False, detail="environment in use or setup already in progress; retry after holders exit", waiting_for_resources=True)
+    except (OSError, ValueError) as exc:
+        return ProjectSetupResult(ran=False, ok=False, detail=f"setup readiness unavailable: {exc}")
+
+
+def _run_locked_setup(
+    worktree: Path, script: str, marker: Path, timeout_s: int,
+    runner: Runner | None, force: bool, setup_inputs: list[str] | None,
+) -> ProjectSetupResult:
+    try:
+        digest = _setup_digest(worktree, script, setup_inputs)
+    except (ValueError, OSError) as exc:
+        marker.unlink(missing_ok=True)
+        return ProjectSetupResult(ran=False, ok=False, detail=str(exc))
     try:
         if (
             not force
             and marker.exists()
             and marker.read_text(encoding="utf-8").strip() == digest
+            and setup_environment_matches(worktree, marker)
         ):
             return ProjectSetupResult(ran=False, ok=True, detail="setup marker matches")
     except OSError:
         pass
+    # An interrupted rebuild must not leave a previous readiness claim usable.
+    try:
+        marker.unlink(missing_ok=True)
+        invalidate_setup_environment(worktree, marker)
+    except OSError as exc:
+        return ProjectSetupResult(ran=False, ok=False, detail=f"cannot invalidate setup readiness: {exc}")
     run = runner or subprocess.run
     try:
         result = run(
@@ -152,10 +231,18 @@ def run_project_setup(
             ran=True, ok=False, exit_code=result.returncode, detail=tail,
         )
     try:
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(digest + "\n", encoding="utf-8")
-    except OSError:
-        pass
+        current_digest = _setup_digest(worktree, script, setup_inputs)
+    except (ValueError, OSError) as exc:
+        return ProjectSetupResult(ran=True, ok=False, exit_code=0, detail=str(exc))
+    if current_digest != digest:
+        return ProjectSetupResult(ran=True, ok=False, exit_code=0,
+                                  detail="setup inputs changed during preparation; readiness not published")
+    try:
+        record_setup_environment(worktree, marker)
+        atomic_write_text(marker, digest + "\n")
+    except OSError as exc:
+        return ProjectSetupResult(ran=True, ok=False, exit_code=0,
+                                  detail=f"setup readiness could not be persisted: {exc}")
     return ProjectSetupResult(ran=True, ok=True, exit_code=0)
 
 
@@ -172,12 +259,62 @@ def provision_worktree_env(
     Best-effort and idempotent: skips paths whose source is missing or whose
     destination already exists. Returns the relative paths provisioned.
     """
+    if not paths:
+        return []
+    register_environment_resources(worktree, paths)
+    if source_root.exists():
+        register_environment_resources(source_root, paths)
+    try:
+        with environment_mutation(worktree):
+            return _provision_locked(worktree, source_root, paths, bootstrap_uv_dev=bootstrap_uv_dev, runner=runner)
+    except TimeoutError as busy:
+        # A worker may hold the environment while another role reuses it.
+        # Prove that no mutation is needed; unknown readiness still waits.
+        try:
+            with environment_in_use(worktree):
+                reused = _reuse_provisioned_env(worktree, source_root, paths, bootstrap_uv_dev)
+        except EnvironmentInUse:
+            raise busy
+        if reused is not None:
+            return reused
+        raise
+
+
+def _reuse_provisioned_env(
+    worktree: Path, source_root: Path, paths: list[str], bootstrap_uv_dev: bool,
+) -> list[str] | None:
+    reused: list[str] = []
+    for raw in paths:
+        relative = str(raw).strip().strip("/")
+        if not relative:
+            continue
+        if relative == ".venv" and bootstrap_uv_dev and (worktree / "pyproject.toml").exists():
+            try:
+                receipt = json.loads((environment_preparation_dir(worktree) / "uv-bootstrap.json").read_text())
+                identity = _local_venv_identity(worktree)
+                if (not isinstance(receipt, dict) or receipt.get("status") != "ready" or not identity
+                        or receipt.get("environment") != identity
+                        or receipt.get("digest") != _setup_digest(worktree, "uv sync --extra dev; fallback uv sync")):
+                    return None
+            except (OSError, ValueError):
+                return None
+            reused.append(relative)
+        elif (source_root / relative).exists():
+            target = worktree / relative
+            if not target.exists() and not target.is_symlink():
+                return None
+    return reused
+
+
+def _provision_locked(worktree: Path, source_root: Path, paths: list[str], *,
+                      bootstrap_uv_dev: bool, runner: Runner | None) -> list[str]:
     normalized_paths = [
         str(raw).strip().strip("/")
         for raw in (paths or [])
         if str(raw).strip().strip("/")
     ]
     bootstrapped: set[str] = set()
+    local_python_required = bootstrap_uv_dev and (worktree / "pyproject.toml").exists()
     if bootstrap_uv_dev and ".venv" in normalized_paths:
         if _bootstrap_uv_dev_env(worktree, runner=runner):
             bootstrapped.add(".venv")
@@ -189,6 +326,8 @@ def provision_worktree_env(
         if rel in bootstrapped:
             provisioned.append(rel)
             continue
+        if rel == ".venv" and local_python_required:
+            continue  # A failed local bootstrap must not inherit another checkout's editable install.
         if not src.exists():
             continue
         if dst.exists() or dst.is_symlink():
@@ -212,10 +351,25 @@ def _bootstrap_uv_dev_env(project_root: Path, *, runner: Runner | None = None) -
     Failure is intentionally non-fatal; the gate command will surface the real
     dependency issue later.
     """
-    if (project_root / ".venv").exists():
-        return True
     if not (project_root / "pyproject.toml").exists():
         return False
+    receipt = environment_preparation_dir(project_root) / "uv-bootstrap.json"
+    digest = _setup_digest(project_root, "uv sync --extra dev; fallback uv sync")
+    previous = {}
+    if receipt.exists():
+        try:
+            previous = json.loads(receipt.read_text())
+        except (OSError, ValueError):
+            return False  # Unknown preparation evidence never becomes ready by existence.
+        if not isinstance(previous, dict):
+            return False
+    if (project_root / ".venv").exists():
+        if (previous.get("status") == "ready" and previous.get("digest") == digest
+                and previous.get("environment") and previous["environment"] == _local_venv_identity(project_root)):
+            return True
+        if previous.get("status") not in {"preparing", "failed"}:
+            return False  # Preserve externally managed/in-use environments; no implicit rebuild.
+    atomic_write_text(receipt, json.dumps({"status": "preparing", "digest": digest}) + "\n")
     run = runner or subprocess.run
     attempts = (
         ["uv", "sync", "--extra", "dev"],
@@ -232,7 +386,21 @@ def _bootstrap_uv_dev_env(project_root: Path, *, runner: Runner | None = None) -
                 check=False,
             )
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            atomic_write_text(receipt, json.dumps({"status": "failed", "digest": digest}) + "\n")
             return False
-        if result.returncode == 0 or (project_root / ".venv").exists():
+        environment = _local_venv_identity(project_root)
+        if (result.returncode == 0 and environment
+                and _setup_digest(project_root, "uv sync --extra dev; fallback uv sync") == digest):
+            atomic_write_text(receipt, json.dumps({"status": "ready", "digest": digest,
+                "command": argv, "environment": environment}) + "\n")
             return True
+    atomic_write_text(receipt, json.dumps({"status": "failed", "digest": digest}) + "\n")
     return False
+
+
+def _local_venv_identity(project_root: Path) -> dict[str, object] | None:
+    path = project_root / ".venv"
+    if path.is_symlink() or not path.is_dir():
+        return None
+    stat = path.stat()
+    return {"path": str(path.resolve()), "device": stat.st_dev, "inode": stat.st_ino}

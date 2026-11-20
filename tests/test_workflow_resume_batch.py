@@ -126,17 +126,25 @@ def test_pre_task_reader_failure_is_owned_by_stage_replan(
     assert projection["batch_checkpoints"] == []
 
 
-def test_structured_discovery_gap_owns_resume_with_candidate_refs(
+def test_rejected_discovery_gap_returns_to_bounded_reader_repair(
     tmp_path: Path,
 ) -> None:
     fanout_id = "fanout-prd-post-verify-discovery"
     projection = _projection(tmp_path, [
         ZfEvent(
+            type="flow.discovery.requested",
+            id="evt-discovery-origin",
+            correlation_id="workflow-1",
+            payload={"workflow_run_id": "workflow-1", "pdd_id": "PRD-1",
+                     "target_ref": "abc123"},
+        ),
+        ZfEvent(
             type="fanout.started",
             id="evt-discovery-started",
-            correlation_id="workflow-1",
+            correlation_id="semantic-replan-child",
             payload={
                 "fanout_id": fanout_id,
+                "trigger_event_id": "evt-discovery-origin",
                 "stage_id": "prd-post-verify-discovery",
                 "topology": "fanout_reader",
             },
@@ -195,7 +203,10 @@ def test_structured_discovery_gap_owns_resume_with_candidate_refs(
 
     assert projection["summary"]["batch_pending"] == 0
     assert projection["batch_checkpoints"] == []
-    assert projection["checkpoints"] == []
+    assert len(projection["checkpoints"]) == 1
+    checkpoint = projection["checkpoints"][0]
+    assert checkpoint["safe_resume_action"] == "needs_stage_replan"
+    assert checkpoint["blocking_event_id"] == "evt-discovery-failed"
 
 
 def test_scheduler_queue_timeout_produces_gap_only_resume_checkpoint(
@@ -428,6 +439,25 @@ def test_candidate_dependency_failure_does_not_reopen_quality_gate_owners(
     checkpoint = projection["batch_checkpoints"][0]
     assert checkpoint["safe_resume_action"] == "trigger_rework"
     assert checkpoint["failed_children"] == []
+
+
+def test_integration_failure_task_ids_are_not_completed_dependencies(tmp_path: Path) -> None:
+    projection = _projection(tmp_path, [
+        ZfEvent(
+            type="integration.failed", id="evt-integration-failed", actor="zf-cli",
+            payload={
+                "fanout_id": "fanout-impl", "stage_id": "prd-lanes-impl",
+                "pdd_id": "PRD-1", "task_map_ref": ".zf/artifacts/task_map.json",
+                "candidate_base_commit": "base123", "source_commit": "base123",
+                "task_ids": ["TASK-A", "TASK-B"],
+                "completed_task_ids": ["TASK-A"],
+                "failed_children": ["dev-lane-1-TASK-B"],
+            },
+        ),
+    ])
+    checkpoint = projection["batch_checkpoints"][0]
+    assert checkpoint["completed_task_ids"] == ["TASK-A"]
+    assert checkpoint["failed_children"] == ["dev-lane-1-TASK-B"]
 
 
 def test_failed_child_identity_prefers_manifest_task_id_over_transport_suffix(

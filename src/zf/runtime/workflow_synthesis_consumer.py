@@ -16,6 +16,10 @@ from zf.runtime.workflow_operation import (
 from zf.runtime.workflow_requests import load_workflow_request
 
 
+class WorkflowSynthesisConsumerBusy(TimeoutError):
+    """Another host owns the consumer lease; retry without marking work failed."""
+
+
 def consume_workflow_synthesis_operations(
     *,
     state_dir: Path,
@@ -33,19 +37,18 @@ def consume_workflow_synthesis_operations(
 
     state_dir = Path(state_dir)
     consumed = 0
+    superseded = 0
     lock = state_dir / "projections" / "workflow-synthesis-consumer.guard"
     service = WorkflowOperationService(
         state_dir=state_dir,
         event_log=writer.event_log,
         event_writer=writer,
     )
-    lease = ExitStack()
-    try:
-        lease.enter_context(locked_path(lock, timeout_seconds=0.1))
-    except TimeoutError:
-        lease.close()
-        return 0  # Another consumer owns this tick; retry on the next wake.
-    with lease:
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(locked_path(lock, timeout_seconds=0.1))
+        except TimeoutError as exc:
+            raise WorkflowSynthesisConsumerBusy(str(exc)) from exc
         # Web may locate these canonical events through a disposable index.
         # Read under the consumer lease; admission and writes remain canonical.
         operations = reduce_workflow_operations(
@@ -56,18 +59,16 @@ def consume_workflow_synthesis_operations(
             for operation in operations.values()
             if operation.get("operation_type")
             == synthesis.WORKFLOW_SYNTHESIS_OPERATION_TYPE
-            and operation.get("status") in {"requested", "running", "settled"}
+            and operation.get("status") in {"requested", "running", "settled", "suspended"}
         ]
         candidates.sort(
             key=lambda item: str(item.get("last_event_at") or "")
         )
         if request_id:
-            revision = load_workflow_request(state_dir, request_id).get("revision")
             candidates = [op for op in candidates if (
-                (body := synthesis._hydrate_operation_request(state_dir, op)).get("request_id") == request_id
-                and body.get("request_revision") == revision)]
+                synthesis._hydrate_operation_request(state_dir, op).get("request_id") == request_id)]
         for operation in candidates:
-            if consumed >= max(1, int(limit or 1)):
+            if consumed - superseded >= max(1, int(limit or 1)):
                 break
             try:
                 request_body = synthesis._hydrate_operation_request(
@@ -110,6 +111,11 @@ def consume_workflow_synthesis_operations(
                     correlation_id=request_id,
                 )
                 consumed += 1
+                superseded += 1  # Cleanup must not starve the requested revision's dispatch slot.
+                continue
+            # A new requirement revision supersedes even paused older work.
+            # The current revision stays paused until an explicit recovery action.
+            if operation.get("status") == "suspended":
                 continue
             if str(request_projection.get("status") or "") in {
                 "proposed",
@@ -151,12 +157,22 @@ def consume_workflow_synthesis_operations(
                 continue
             if outcome.request_projection.get("status") == "ready":
                 try:
-                    synthesis._build_synthesis_proposal(
+                    proposal = synthesis._build_synthesis_proposal(
                         state_dir=state_dir,
                         outcome=outcome,
                         operation_context=operation_context,
                         actor=actor,
                     )
+                    if proposal.get("status") == "STOP":
+                        blockers = proposal.get("blockers") or []
+                        reason = "; ".join(str(item.get("message") or item.get("kind") or "")
+                                           for item in blockers if isinstance(item, Mapping))
+                        _record_failure(
+                            writer=writer, service=service, operation=operation,
+                            request_id=request_id, phase="proposal_materialization",
+                            error=ValueError(reason or "Workflow proposal returned STOP"),
+                            retry_limit=0, terminalize=True, blockers=blockers,
+                        )
                 except Exception as exc:
                     _record_failure(
                         writer=writer,
@@ -183,6 +199,7 @@ def _record_failure(
     error: Exception,
     retry_limit: int,
     terminalize: bool = False,
+    blockers: list[dict[str, Any]] | None = None,
 ) -> None:
     operation_id = str(operation.get("operation_id") or "")
     request_hash = str(operation.get("request_hash") or "")
@@ -223,10 +240,12 @@ def _record_failure(
                 retry_limit if phase == "proposal_materialization" and not prerequisite else 0
             ),
             "reason": reason,
-            "blockers": prerequisite.blockers if prerequisite else [],
+            "blockers": blockers if blockers is not None else prerequisite.blockers if prerequisite else [],
+            "requires_resynthesis": blockers is not None,
             "next_action": (
                 "repair Git baseline, then retry preparation"
-                if prerequisite else "repair request sidecar and submit a new revision"
+                if prerequisite else "correct the selection and retry Workflow preparation"
+                if blockers is not None else "repair request sidecar and submit a new revision"
                 if terminalize
                 else (
                     "inspect proposal materialization failure"

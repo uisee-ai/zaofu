@@ -187,6 +187,18 @@ class TmuxReadinessMixin:
             return ""
         return provider_interactive_prompt_marker(str(screen))
 
+    def _assert_dispatch_prompt_ready(self, role_name: str) -> None:
+        """Recheck reused providers before paste/Enter can answer a modal."""
+        blocker = self._interactive_prompt_blocker(role_name)
+        if blocker:
+            diagnostics = self._record_readiness_failure(
+                role_name,
+                failure_class="provider_interactive_blocked",
+                extra={"interactive_prompt_marker": blocker},
+            )
+            raise build_tmux_readiness_error(role_name, diagnostics)
+        self._readiness_failures.pop(role_name, None)
+
     def readiness_diagnostics(self, role_name: str) -> dict[str, object]:
         existing = self._readiness_failures.get(role_name)
         if existing is not None:
@@ -202,6 +214,7 @@ class TmuxReadinessMixin:
     ) -> dict[str, object]:
         diagnostics = self._diagnostic_snapshot(role_name)
         diagnostics["failure_class"] = failure_class
+        diagnostics["input_not_sent"] = True
         launch = self._launch_records.get(role_name, {})
         diagnostics["launch_attempts"] = int(launch.get("launch_attempts") or 0)
         diagnostics.update(extra or {})
