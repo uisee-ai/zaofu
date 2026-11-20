@@ -37,9 +37,28 @@ def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[s
             or operation.get("workflow_run_id") != payload["workflow_run_id"]
             or (payload.get("task_id") and payload["task_id"] != operation.get("task_id"))
             or operation.get("active_attempt_id") != payload["active_attempt_id"]
-            or failed.payload.get("run_id") != payload["active_attempt_id"]
             or failed.payload.get("role_instance") != operation.get("role_instance")):
         return "reader rebuild operation binding is stale"
+    dispatch = next((e for e in reversed(children) if e.type == "fanout.child.dispatched"), None)
+    if dispatch is None:
+        # A never-delivered environment wait has only its durable call identity.
+        if failed.payload.get("run_id") != payload["active_attempt_id"]:
+            return "reader rebuild operation binding is stale"
+    else:
+        # Infrastructure retries replace transport dispatch/TaskAttempt identities
+        # while preserving the durable call attempt in the nested call payload.
+        data = dispatch.payload
+        call = data.get("payload")
+        if (dispatch.origin != "kernel" or not isinstance(call, dict)
+                or failed.payload.get("run_id") != data.get("run_id")
+                or data.get("operation_id") != operation.get("operation_id")
+                or data.get("workflow_run_id") != operation.get("workflow_run_id")
+                or data.get("role_instance") != operation.get("role_instance")
+                or any(call.get(key) != operation.get(field) for key, field in (
+                    ("operation_id", "operation_id"), ("request_hash", "request_hash"),
+                    ("workflow_run_id", "workflow_run_id"), ("attempt_id", "active_attempt_id"),
+                ))):
+            return "reader rebuild transport/call binding is stale"
     try:
         request = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload["request"]
     except (ValueError, KeyError, OSError):

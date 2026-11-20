@@ -26,3 +26,18 @@ Run Manager 诊断请求；RM 自身也受同一环境问题阻塞，无法读�
 
 本轮停止是操作者介入，发生于 Plan 批准前；若将本次启动也纳入端到端无人干预资格，
 该项不能通过。计划后窗口尚未开始，业务、8+8 容量与最终交付均未验证。
+
+## 2026-11-20：自动重试后 Reader 恢复被错误拒绝
+
+保存的真实账本显示：扫描 Reader 的失败 `run_id` 为 retry-1 派发，但 Operation
+的 durable `active_attempt_id` 保持首次 call 身份。二者分层本身正确；旧
+`reader_rebuild_error` 将两者直接比较，导致即使宿主修复，child-rebuild 仍拒绝。
+
+准入改为沿最新 kernel 派发核对失败的 transport ID，再核对嵌套 call 的 Operation、
+请求摘要、workflow Run 和 durable attempt。外层 TaskAttempt 不冒充 call attempt；
+不重写旧 Operation、放宽 Run 终态或跳过侧车校验。尚未派发的环境等待仍走原分支。
+
+`tests/test_reader_rebuild_after_transport_retry.py` 从真实 Orchestrator/mock transport
+的两次 Provider turn closed 重现失败，经 Run Manager recommendation → controlled
+child-rebuild → Kernel 派发验证恢复；同时覆盖进程重建、幂等和错误身份拒绝。
+真实 Provider 的恢复与后续 8×8 仍等待宿主修复，mock 通过不替代该层结论。
