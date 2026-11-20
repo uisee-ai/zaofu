@@ -63,6 +63,16 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 ## 最终 Candidate 的环境失败闭环（真实续测）
 
+### 已完成任务在 Plan 恢复后重复实施（2026-11-20）
+
+真实实验的新 Plan 更新恢复基线与来源边界说明，原 16 项已完成，但完整 Task Map 的新代际令 runtime 全部重开。OA 的文字要求“保留完成证据”没有执行效力；pre_impl 为 shadow，所以不是 blocking gate 被绕过。
+
+受控 `stage-retrigger` 增加 `reuse_completed_plan=true`：先 `dry_run=true` 生成完整新旧合同、原 native Verify/integration、原 Candidate 与当前 Plan 审批绑定的 manifest。Owner 审阅精确 `manifest_digest` 后，以 `reviewed_digest`、`reuse_rationale`、`approval_ref` 执行。只支持原完整 Task 集合、原冻结提交、验收/执行合同不变的 Plan 导航更新；拒绝 terminal Run、目标移动、过期审批、活动 Task、未停止或有改动的重新派发工作区。导航材料的语义适用性由审核人负责，运行时不从 ID 或文件存在推断。
+
+运行时通过 TaskStore CAS 恢复原完成时间，保留旧 Task generation、native 回执和原 Candidate 基线；已停止的新 attempt 通过操作服务取消并结清，Task-stage 会话归档释放。`task.status_changed` 引用不可变复用证明，不制造新的 worker passed 或 task.done。Candidate 在新 Plan 下重新冻结，独立审核输入核验旧证明与当前合同的显式映射，合同/目标/证明再次变化时拒绝。Candidate、Judge、Goal 与交付结果均不继承。
+
+入口只解决经过显式审阅的恢复；OA 自动提交等价绑定决定仍属后续能力，不能将此人工恢复记作零介入。相关任务见 [Plan 完成复用修复](../../tasks/active/2026-11-20-2120-plan-completion-reuse.md)。
+
 16项任务完成后，最终8个reader中的7个在Docker socket受sandbox限制时结束回合，没有提交结构化失败；有界重试因此耗尽。调查进一步复现：即使按规范提交 `failed + abstained + verifier_execution_failure`，未完成产品必读材料仍导致准入失败，已有例外只接受 `reader_execution_failure`。这不应迫使agent把环境故障误报成输入故障，或先阅读全量产品材料再承认无法执行探针。
 
 `task_input_failure` 仅为 verification-result 增加准确的 `verifier_execution_failure` 类别，仍要求failed/abstained、非空summary与evidence refs；身份、目标、读账本完整性、显式提供的产品报告检查继续执行。不产生通过或产品拒绝，不扩展Impl的环境失败例外。已消费部分仍封存，状态明确记录incomplete。恢复后的语义结果仍需完成必读和完整产品验收。

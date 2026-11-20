@@ -378,6 +378,15 @@ def _freeze_generation(
     candidate_base_commit = str(
         context.get("dispatch_base_commit") or ""
     )
+    reuse_refs = [row.get("completion_reuse_ref") for row in task_contexts.values()]
+    if reuse_refs and all(reuse_refs) and all(ref == reuse_refs[0] for ref in reuse_refs):
+        from zf.runtime.candidate_continuation import _json
+
+        reuse = _json(Path(runtime.state_dir), reuse_refs[0])["manifest"]
+        if (reuse["task_map_generation"] != task_map_generation
+                or reuse["candidate_head_commit"] != candidate_head):
+            return False
+        candidate_base_commit = reuse["candidate_base_commit"]
     flow_kind = str(context.get("flow_kind") or "").strip()
     pdd_id = str(
         context.get("pdd_id")

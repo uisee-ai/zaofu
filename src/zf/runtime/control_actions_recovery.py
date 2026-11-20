@@ -296,7 +296,18 @@ class RecoveryActionsMixin:
                     f"already retriggered by {event.id}", 409,
                 )
         base = dict(source.payload if isinstance(source.payload, dict) else {})
-        if payload.get("repair_plan_output"):
+        if payload.get("reuse_completed_plan"):
+            from zf.core.state.locks import locked_path
+            from zf.runtime.plan_completion_reuse import apply, preview
+
+            try:
+                with locked_path(self.state_dir / "locks" / "plan-output-recovery"):
+                    if payload.get("dry_run"):
+                        return {"ok": True, "action": action, "manifest": preview(self, source)}
+                    base = apply(self, source, payload, requested)
+            except (ValueError, OSError) as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+        elif payload.get("repair_plan_output"):
             from zf.core.state.locks import locked_path
             from zf.runtime.plan_output_recovery import repair_plan_output
 

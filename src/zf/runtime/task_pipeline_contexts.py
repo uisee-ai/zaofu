@@ -73,7 +73,22 @@ def task_pipeline_generation_contexts(
     """Project the latest admitted generation context for each Task."""
 
     contexts: dict[str, dict[str, Any]] = {}
+    admitted: dict[str, dict[str, Any]] = {}
     for event in events:
+        if (event.type == "task.status_changed" and event.origin == "kernel"
+                and event.payload.get("source") == "plan_completion_reuse"):
+            current = contexts.get(str(event.task_id or ""), {})
+            previous = admitted.get(str(event.payload.get("prior_generation_event_id") or ""))
+            if (previous and event.task_id in previous.get("task_ids", [])
+                    and current.get("generation_admitted_event_id") == event.payload.get("generation_admitted_event_id")
+                    and previous.get("workflow_run_id") == current.get("workflow_run_id")
+                    and event.payload.get("completion_reuse_ref")):
+                restored = dict(previous)
+                restored["completion_reuse_ref"] = event.payload["completion_reuse_ref"]
+                if previous.get("task_dispatch_base_commits"):
+                    restored["dispatch_base_commit"] = previous["task_dispatch_base_commits"][event.task_id]
+                contexts[event.task_id] = restored
+            continue
         if event.type != TASK_PIPELINE_GENERATION_ADMITTED:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -84,6 +99,7 @@ def task_pipeline_generation_contexts(
             "generation_admitted_event_id": event.id,
             "generation_admitted_at": event.ts,
         }
+        admitted[event.id] = context
         bases = payload.get("task_dispatch_base_commits")
         if bases is not None and (
             not isinstance(bases, dict)

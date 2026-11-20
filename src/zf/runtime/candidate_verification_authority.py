@@ -121,19 +121,29 @@ def prepare_candidate_verification_authority(
         )
 
     missing_verify: set[str] = set()
+    from zf.runtime.plan_completion_reuse import current_proofs
+
+    try:
+        reused = current_proofs(runtime, events, candidate)
+    except ValueError as exc:
+        raise CandidateVerificationAuthorityError(str(exc)) from exc
     child_authorities: list[dict[str, Any]] = []
     child_snapshots: list[dict[str, Any]] = []
     for child_task_id in completed_task_ids:
+        reuse = reused.get(child_task_id)
+        child_generation = str(reuse["task_map_generation"]) if reuse else generation
         verification = _latest_task_verification(
             events,
             workflow_run_id=evidence_run_id,
             task_id=child_task_id,
-            task_map_generation=generation,
+            task_map_generation=child_generation,
             target_commit=task_commits[child_task_id],
         )
         if verification is None:
             missing_verify.add(child_task_id)
             continue
+        if reuse and verification.id != reuse["verification_event_id"]:
+            raise CandidateVerificationAuthorityError("reused Task verification changed: " + child_task_id)
         if inherited_proofs:
             current_task = runtime.task_store.get(child_task_id)
             if (verification.id != inherited_proofs[child_task_id]["verification_event_id"]
@@ -153,7 +163,7 @@ def prepare_candidate_verification_authority(
         expected_contract = {
             "workflow_run_id": evidence_run_id,
             "task_id": child_task_id,
-            "task_map_generation": generation,
+            "task_map_generation": child_generation,
         }
         contract_snapshot = hydrate_task_contract_snapshot(
             Path(runtime.state_dir),
@@ -170,7 +180,7 @@ def prepare_candidate_verification_authority(
                     f"candidate task {child_task_id!r} has no current TaskStore authority"
                 )
             try:
-                current_identity = current_task_contract_identity(current_task)
+                current_identity = reuse["prior_identity"] if reuse else current_task_contract_identity(current_task)
             except Exception as exc:
                 raise CandidateVerificationAuthorityError(
                     f"candidate task {child_task_id!r} authority is unreadable: {exc}"
@@ -204,6 +214,7 @@ def prepare_candidate_verification_authority(
             },
         )
         child_authorities.append({
+            **({"completion_reuse_ref": reuse["completion_reuse_ref"]} if reuse else {}),
             "task_id": child_task_id,
             "target_commit": task_commits[child_task_id],
             "verification_event_id": verification.id,
