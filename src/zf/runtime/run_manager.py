@@ -6244,13 +6244,6 @@ def _execute_orchestrator_triage_request(
             human=False,
         )
         return "blocked"
-    planned = writer.emit(
-        RUN_MANAGER_ACTION_PLANNED,
-        actor="run-manager",
-        task_id=str(action.get("task_id") or "") or None,
-        causation_id=causation_id,
-        payload={"schema_version": "run-manager.action.v1", **_action_payload(action)},
-    )
     from zf.runtime.orchestrator_agent_semantic_failure import (
         semantic_failure_request_type,
     )
@@ -6259,6 +6252,15 @@ def _execute_orchestrator_triage_request(
         config,
         flow_kind=str(action.get("flow_kind") or ""),
         source=action,
+    )
+    action = {**action, "expected_downstream_events": [request_type],
+              "verify_condition": f"expected_downstream_event:{request_type}"}
+    planned = writer.emit(
+        RUN_MANAGER_ACTION_PLANNED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=causation_id,
+        payload={"schema_version": "run-manager.action.v1", **_action_payload(action)},
     )
     role_ref = str(
         action.get("instance_id")

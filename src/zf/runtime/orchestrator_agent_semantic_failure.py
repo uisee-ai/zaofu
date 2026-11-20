@@ -85,7 +85,19 @@ def request_semantic_failure_checkpoint(
             raise SemanticFailureCheckpointError("failure_target_scope_mismatch")
     candidate = {}
     operation_id = str(payload.get("target_operation_id") or "")
-    if operation_id:
+    aggregate_candidate = payload.get("recovery_scope") == "candidate" and not operation_id
+    if aggregate_candidate:
+        from zf.runtime.candidate_failure_checkpoint import aggregate_candidate_binding
+        try:
+            candidate = aggregate_candidate_binding(runtime.state_dir, events,
+                failure_id=failures[-1].id, run_id=workflow_run_id, task_id=task_id)
+        except (ValueError, OSError) as exc:
+            raise SemanticFailureCheckpointError(str(exc)) from exc
+        operation_id = candidate["operation_id"]
+        if (candidate["task_map_generation"] != package.get("task_map_generation")
+                or candidate["plan_artifact_package_digest"] != package.get("package_digest")):
+            raise SemanticFailureCheckpointError("candidate Plan package superseded")
+    elif operation_id:
         from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
         from zf.runtime.workflow_operation import reduce_workflow_operations
 
@@ -101,14 +113,15 @@ def request_semantic_failure_checkpoint(
             if (candidate["task_map_generation"] != package.get("task_map_generation")
                     or candidate["plan_artifact_package_digest"] != package.get("package_digest")):
                 raise SemanticFailureCheckpointError("candidate Plan package superseded")
-            for key, bound_key in (("active_attempt_id", "attempt_id"), ("dispatch_id", "attempt_id"),
-                                   ("role", "role_instance"), ("target_stage_id", "stage_id")):
-                if payload.get(key) and payload[key] != candidate[bound_key]:
-                    raise SemanticFailureCheckpointError(f"candidate target mismatch: {key}")
         else:
             current = operation_bindings(events, workflow_run_id, {task_id}).get(task_id, {})
             if current.get("operation_id") != operation_id or current.get("status") != "settled":
                 raise SemanticFailureCheckpointError("target_operation_stale")
+    if candidate:
+        for key, bound_key in (("active_attempt_id", "attempt_id"), ("dispatch_id", "attempt_id"),
+                               ("role", "role_instance"), ("target_stage_id", "stage_id")):
+            if payload.get(key) and payload[key] != candidate[bound_key]:
+                raise SemanticFailureCheckpointError(f"candidate target mismatch: {key}")
     latest_failure_payload = (
         failures[-1].payload if failures and isinstance(failures[-1].payload, dict)
         else {}
@@ -126,7 +139,8 @@ def request_semantic_failure_checkpoint(
     if not active_attempt_id:
         raise SemanticFailureCheckpointError("target_attempt_missing")
     target_role = str(
-        bound_operation.get("role_instance")
+        candidate.get("role_instance")
+        or bound_operation.get("role_instance")
         or getattr(getattr(task, "contract", None), "owner_instance", "")
         or getattr(task, "assigned_to", "")
         or payload.get("role")
@@ -166,6 +180,22 @@ def request_semantic_failure_checkpoint(
             **candidate, "failure_event_id": failures[-1].id, "operation_id": operation_id,
             "permitted_recovery_action": "return_to_plan",
         }
+    media_refs = []
+    if aggregate_candidate:
+        from zf.runtime.diagnosis_host_recovery import host_recovery_context
+        from zf.runtime.host_evidence_media import materialize_container_media
+        host = host_recovery_context(runtime.state_dir, events, runtime.config, workflow_run_id,
+            operation_ids=frozenset(member["operation_id"] for member in candidate["members"]))
+        failure_body["preauthorized_host_recovery"] = host
+        receipt_refs = [row["receipt_ref"] for row in host["effects"]
+                        if row.get("receipt_status") == "observed"
+                        and row.get("target_commit") == candidate["source_commit"]]
+        image = host["host_verification"].get("image")
+        if receipt_refs and image:
+            try:
+                media_refs = materialize_container_media(runtime.state_dir, receipt_refs, image=image)
+            except (ValueError, OSError) as exc:
+                failure_body["host_media_unavailable"] = str(exc)
     failure_ref = write_immutable_json_sidecar(
         runtime.state_dir,
         failure_body,
@@ -179,8 +209,14 @@ def request_semantic_failure_checkpoint(
         **failure_ref,
         "source_id": "semantic-failure-input",
     }]
-    if candidate:
+    if aggregate_candidate:
+        artifact_refs.extend({**member["control_result_ref"],
+            "source_id": f"candidate-verification-{member['child_id']}"}
+            for member in candidate["members"])
+    elif candidate:
         artifact_refs.append({**candidate["control_result_ref"], "source_id": "candidate-verification"})
+    artifact_refs.extend({**ref, "source_id": f"candidate-host-media-{index}"}
+                         for index, ref in enumerate(media_refs))
     recovery_ref = payload.get("recovery_context_ref")
     if isinstance(recovery_ref, Mapping):
         hydrate_sidecar_ref(runtime.state_dir, dict(recovery_ref))
@@ -194,6 +230,7 @@ def request_semantic_failure_checkpoint(
         "failure_fingerprint": fingerprint,
         "candidate_failure_id": failures[-1].id if candidate else "",
         "candidate_operation_id": operation_id if candidate else "",
+        "candidate_failure_scope": "aggregate" if aggregate_candidate else "",
         "workflow_run_id": workflow_run_id,
         "flow_kind": flow_kind,
         "plan_revision": str(package.get("plan_revision") or ""),

@@ -9,6 +9,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 def host_recovery_context(
     state_dir: Path, events: list[ZfEvent], config: ZfConfig | None, run_id: str,
+    *, operation_ids: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     def policy(name: str) -> dict[str, Any]:
         value = getattr(config.runtime, name, None) if config else None
@@ -23,6 +24,7 @@ def host_recovery_context(
     for event in events:
         p = event.payload
         if (not run_id or event.origin != 'kernel' or p.get('workflow_run_id') != run_id
+                or (operation_ids is not None and p.get('operation_id') not in operation_ids)
                 or p.get('action') != 'task-host-assist'
                 or not event.type.startswith('runtime.action.attempt.')):
             continue

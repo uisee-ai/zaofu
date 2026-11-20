@@ -270,6 +270,13 @@ def _apply_semantic_failure(
                 operation_id=expected["candidate_operation_id"],
                 run_id=decision["identity"]["workflow_run_id"], task_id=expected["target_task_id"],
             )
+            if expected.get("candidate_failure_scope") == "aggregate":
+                from zf.runtime.candidate_failure_checkpoint import aggregate_candidate_binding
+                candidate = aggregate_candidate_binding(runtime.state_dir, runtime.event_log.read_all(),
+                    failure_id=expected["candidate_failure_id"],
+                    run_id=decision["identity"]["workflow_run_id"], task_id=expected["target_task_id"])
+                if candidate["operation_id"] != expected["candidate_operation_id"]:
+                    raise ValueError("candidate aggregate identity changed")
         except (ValueError, OSError) as exc:
             return _reject_semantic_directive(runtime, event, outcome, str(exc))
     allowed_refs = _operation_source_descriptors(runtime, outcome)

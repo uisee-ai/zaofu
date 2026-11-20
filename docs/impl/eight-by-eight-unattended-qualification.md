@@ -194,3 +194,28 @@ Provider观察，但自动生成策略仍要求至少1字节，导致反复补�
 真实RM案卷rmd-2d226c8e1e519f24包含启用的19条宿主命令、授权和同Run执行事实，Agent核对后提出有owner与唤醒条件的等待，runtime已消费。新cohort的19条冻结Docker命令始终由同一lane6 owner完成。浏览器正式收据evt-db22dcbf5981记录exit0、source_stable=true；固定候选09094c2d及镜像绑定正确，桌面/移动16功能、非法输入恢复、键盘和布局断言成功。PNG/trace/WebM/environment均通过摘要核验，当前控制器未重启。旧未知浏览器effect不被覆盖或追认。
 
 此时只可判定16项Task、8×8容量及19条最终命令通过；Candidate独立总判定、Judge、Goal、本地交付仍待执行。原始Plan后完整无人资格未通过。局部修复与本轮后续接续不可改变首窗口失败结论。
+
+
+## 2026-11-20 候选混合失败交接修复
+
+真实Run `workflow-055abbd5196f67c6` 在16项业务完成、8+8真实重叠227.597129秒后，
+最终冻结候选的19条宿主命令（含原始浏览器脚本）全部执行成功。最终Reader汇总仍为
+mixed：6路环境弃权、1路依赖阻塞、1路语义拒绝。宿主成功不代替这些独立结果，
+数值安全范围争议保持未裁决。20:12 UTC关闭本轮只读观察并停止专属控制器进行修复。
+
+已复现的交接缺口及边界：
+
+- 宿主队列完成后只对infra失败请求原地Reader恢复；mixed/quality/unknown保留给语义责任方，不能改标签绕过恢复条件。
+- Candidate上限触发的RM请求以当前已准入的整个失败汇总创建OA checkpoint，不依赖工作流锚点的不存在的TaskAttempt。所有失败Reader结果、当前候选/合同/计划、作用域和新宿主事实均进入证据包；主Reader仅为身份锚点。
+- 受控重启事件保持operator来源，Kernel同Run fanout准入且冻结身份不变才承认其新候选事件身份；伪造redrive、缺准入、异Run、目标变化不能获得恢复权。
+- OA提交时再次核验全部成员引用与当前候选，仍只允许请求Plan修订，不授予writer、通过或门禁豁免。未知AC作用域留给Planner判断。
+- RM后置验证按配置实际选择semantic或legacy入口事件；入口请求成功不等于Agent已完成分诊。
+- Verify方法区分Impl缓存复用与同一候选恢复链上的独立宿主执行事实，保留真实execution_origin与执行身份。新宿主事实与历史缺证结果并列，不能自动变成产品通过。
+
+回归覆盖真实RM→OA入口、多Reader证据保留、摘要篡改/失效操作/过期候选/缺成员、
+操作员重启准入、混合失败不重复请求infra恢复，以及OA接收同组新宿主事实。
+实际恢复后的OA决定、最终Candidate/Judge/Goal/交付须另行验证。原始无人监工窗口
+失败不因后续修复被改写。任务记录：
+[tasks/active/2026-11-20-2013-candidate-semantic-handoff.md](../../tasks/active/2026-11-20-2013-candidate-semantic-handoff.md)。
+
+本补修相对aa4a9611的自动影响闭包6072 passed/8 skipped；sentinel53 passed，flow mock10 passed；聚焦108 passed与闭包有重叠，不合并计数。未运行全pytest或coverage。真实账本只读回放确认8路结果与19条宿主收据绑定同一冻结候选，实际OA接续尚待部署验证。

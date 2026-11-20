@@ -128,6 +128,11 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         stage, _ = reader_stage_for_failure(service.config, events, failure)
         if stage is None:
             continue
+        from zf.runtime.reader_failure_repair import repaired_failure_kind
+        if repaired_failure_kind(service.state_dir, events, failure) != 'infra':
+            # Successful commands do not resolve mixed or semantic findings.
+            # Their existing semantic owner retains the aggregate and receipts.
+            return False
         supplemental = operator_candidate_receipts(service, operation, contract, events)
         receipts = {**supplemental, **receipts}
         unverified = {c['command_id'] for c in contract['verification_commands']} - receipts.keys()

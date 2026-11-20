@@ -330,5 +330,11 @@ reused_command_receipt_ids 明确引用，不伪称本次独立执行，也不�
 采证。恢复时核对账本 `runtime.action.attempt.completed`、receipt_ref/output_ref摘要、
 Run/Task/合同、固定 target、命令、source_stable与退出码，并重新独立审查业务断言。
 如需新探测仍提出具体需求；不能用 Impl 的宿主回执冒充 Verify 自己的独立执行证据。
-结果注明 execution_origin=operator_authorized_host及原执行身份；新结果使用当前派发
-身份。宿主动作不发 test.passed/task.done，也不代替 Verify/Judge 的语义判断。
+结果按真实回执注明 execution_origin：人工授权为 operator_authorized_host，预授权
+容器为 preauthorized_container；保留原执行身份，新结果使用当前派发身份。命令
+reusable=false 限制的是 Impl 命令缓存抵扣，不能据此抹去当前候选恢复链上内核授权
+执行的独立宿主事实。多路 Reader 或受控接续消费这些事实时，仍须逐项核对候选、
+合同、命令、授权、来源与摘要，注明引用而非声称亲自重跑；仅同 Run 或退出码为零
+不足以通过验收。历史缺证结论与新收据并列保留，独立判断缺口是否已补足；分歧交
+给有权语义角色裁决，不擅自扩大原始验收范围。宿主动作不发 test.passed/task.done，
+也不代替 Verify/Judge 的语义判断。
